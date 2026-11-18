@@ -483,7 +483,7 @@ private def runUnitReturnWitness : IO Unit := do
 /-- The ordinary badge round trip: signal 42, then `.notificationWait`.
 Pre-flip the badge was consumed and delivered nowhere (the register file
 provably nowhere contained 42, and `badge()` read the caller's own `x1`).
-Now the wait's arm stages `returnFrameOfBadge`, the boundary reads it
+Now the wait's arm stages `badgeReturnFrame`, the boundary reads it
 back, and `badge()` — reading `x0` — hands back exactly 42. -/
 private def runBadgeDeliveryWitness : IO Unit := do
   IO.println "-- §5 inverted witness B: the signal-before-wait badge round trip DELIVERS"
@@ -525,6 +525,12 @@ private def runBadgeDeliveryWitness : IO Unit := do
 -- §6  INVERTED witness C — full-width badges survive; the aliasing is gone
 -- ============================================================================
 
+/-- A frame carrying a badge in `x0` and nothing else: the badge register a
+consumed wait or a signal's wake writes, laid on an all-zero frame so the
+decode reads the badge alone. -/
+private def badgeOnlyFrame (b : Badge) : Kernel.Architecture.SyscallReturnFrame :=
+  { x0 := b.word }
+
 /-- Pre-flip `encodeOk` masked bit 63, collapsing distinct badges.  The
 frame convention carries `x0` at full width: two badges differing only at
 bit 63 produce two distinct frames, and the high badge survives the
@@ -536,8 +542,8 @@ private def runFullWidthBadgeWitness : IO Unit := do
   let highBadge : UInt64 := 0x8000000000000042
   assertBool "control: the two badge values are distinct"
     (lowBadge != highBadge)
-  let lowFrame := Kernel.Architecture.returnFrameOfBadge (Badge.ofNatMasked lowBadge.toNat)
-  let highFrame := Kernel.Architecture.returnFrameOfBadge (Badge.ofNatMasked highBadge.toNat)
+  let lowFrame := badgeOnlyFrame (Badge.ofNatMasked lowBadge.toNat)
+  let highFrame := badgeOnlyFrame (Badge.ofNatMasked highBadge.toNat)
   assertBool "FLIPPED: the two frames are distinct (no masking anywhere)"
     (lowFrame != highFrame)
   assertBool "FLIPPED: the high badge survives the decode round trip bit for bit"
@@ -991,7 +997,7 @@ private def returnAbiTraceLines : List String :=
       (dispatchFromAbi SyscallId.notificationWait 0 0 witnessState)
   , s!"[ret-abi] error labels: every discriminant below {errorCount} round-trips or is retired = {labelRoundtrips}; retired {retired} unassigned = {retiredUnassigned}; {errorCount} unassigned = {labelBoundary}"
   , s!"[ret-abi] full-width badge frame: " ++
-      frameCells (Kernel.Architecture.returnFrameOfBadge
+      frameCells (badgeOnlyFrame
         (Badge.ofNatMasked 0x8000000000000042))
   -- RA.B.5b: the blocked orderings' staged frames, computed from the live
   -- two-core scenarios (§7b) — the unblocking syscall's staging is now an

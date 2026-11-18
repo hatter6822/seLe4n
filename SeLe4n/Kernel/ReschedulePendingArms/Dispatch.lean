@@ -1573,14 +1573,6 @@ theorem stepCovers_clearStash_stage {e : CoreId} {st s st' : SystemState}
       ((hStage _ hF.2.2).stepCoversInv (hRes := hStageM _)
         (hBank := banksKeptOffCore_of_eq (hStageB _)))
 
-/-- The two badge stagings a signal arm ends with. -/
-theorem keyFrame_trans_stage {x : SystemState} {w p : Option SeLe4n.ThreadId}
-    (hx : x.objects.invExt) :
-    capabilityKeyFrame x (Architecture.stageWokenDelivery
-      (Architecture.stageWokenDelivery x w 0) p 0) := by
-  have h1 := stageWokenDelivery_keyFrame x w 0 hx
-  exact h1.trans (stageWokenDelivery_keyFrame _ p 0 h1.2.2)
-
 /-- **A reply holder's cancel covers** (seL4-MCS `cancelIPC` on the reply's
 holder): the suspend's IPC cancel, the chain revert and the key-free
 `Inactive` write. -/
@@ -1787,8 +1779,8 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     · rename_i hSig
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
         (notificationSignalBoundCrossCoreDispatchChecked_stepCovers e hInv) hSig
-      exact stepCovers_clearStash_stage hS hSInv
-        (fun x hx => keyFrame_trans_stage hx) h
+      exact stepCovers_clearStash_stage (stage := id) hS hSInv
+        (fun _ hx => capabilityKeyFrame_refl hx) h (fun _ => rfl) (fun _ => rfl)
     · cases h
   case none.notificationWait.object notifId =>
     by_cases hNb : waitFindsNothing ctx (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid
@@ -1843,8 +1835,8 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     · rename_i hSig
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
         (notificationSignalDeclassifiedOnCore_stepCovers e hInv) hSig
-      exact stepCovers_clearStash_stage hS hSInv
-        (fun x hx => keyFrame_trans_stage hx) h
+      exact stepCovers_clearStash_stage (stage := id) hS hSInv
+        (fun _ hx => capabilityKeyFrame_refl hx) h (fun _ => rfl) (fun _ => rfl)
     · cases h
 
 /-! ### The checked syscall dispatch -/

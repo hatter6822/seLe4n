@@ -209,6 +209,21 @@ theorem storeTcbIpcStateAndMessage_preserves_projectionOnCore (ctx : LabelingCon
       hTidObjHigh hObjInv hStep)
     (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hMach])
 
+/-- `storeTcbIpcStateAndMessage_preserves_projectionOnCore` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_preserves_projectionOnCore (ctx : LabelingContext)
+    (observer : IfObserver) (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (c : CoreId)
+    (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
+  have hSched := storeTcbSignalWoken_scheduler_eq st st' tid badge hStep
+  have hMach := storeTcbSignalWoken_machine_eq st st' tid badge hStep
+  exact projectStateOnCore_congr ctx observer
+    (storeTcbSignalWoken_preserves_projection ctx observer st st' tid badge
+      hTidObjHigh hObjInv hStep)
+    (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hMach])
+
 /-- Enqueuing a high thread preserves the per-core projection (the run-queue
 insert is filter-invisible; current / domain / registers untouched). -/
 theorem enqueueRunnableOnCore_preserves_projectionOnCore (ctx : LabelingContext)

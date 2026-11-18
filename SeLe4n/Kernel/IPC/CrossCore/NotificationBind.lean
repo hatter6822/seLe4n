@@ -44,14 +44,13 @@ cross-core `notificationSignalOnCore` runs. -/
     SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
   match boundDeliveryTarget? st notificationId with
   | some (t, epId) =>
-      let badgeMsg : IpcMessage := { IpcMessage.empty with badge := some badge }
       match endpointQueueRemoveDual epId true t st with
       | .error e => (st, .error e)
       | .ok ((), st1) =>
           -- IPC de-threading D3 (Finding F-1): the bound TCB was
           -- `.blockedOnReceive`; a non-`Call` badge delivery clears its
           -- server-first `pendingReceiveReply` stash (no `Call` arrived).
-          match storeTcbReceiveComplete st1 t (some badgeMsg) with
+          match storeTcbSignalBoundWoken st1 t badge with
           | .error e => (st, .error e)
           | .ok st2 =>
               ((wakeThread st2 t executingCore).1, .ok (wakeThread st2 t executingCore).2)
@@ -79,8 +78,7 @@ theorem notificationSignalBoundOnCore_delivery_eq
     (st : SystemState) (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) (st1 st2 : SystemState)
     (hTarget : boundDeliveryTarget? st notificationId = some (t, epId))
     (hRemove : endpointQueueRemoveDual epId true t st = .ok ((), st1))
-    (hStore : storeTcbReceiveComplete st1 t
-        (some { IpcMessage.empty with badge := some badge }) = .ok st2) :
+    (hStore : storeTcbSignalBoundWoken st1 t badge = .ok st2) :
     notificationSignalBoundOnCore notificationId badge executingCore st
       = ((wakeThread st2 t executingCore).1, .ok (wakeThread st2 t executingCore).2) := by
   unfold notificationSignalBoundOnCore
@@ -99,8 +97,7 @@ theorem notificationSignalBoundOnCore_delivery_remote_wake
     (tTcb2 : TCB) (st1 st2 : SystemState)
     (hTarget : boundDeliveryTarget? st notificationId = some (t, epId))
     (hRemove : endpointQueueRemoveDual epId true t st = .ok ((), st1))
-    (hStore : storeTcbReceiveComplete st1 t
-        (some { IpcMessage.empty with badge := some badge }) = .ok st2)
+    (hStore : storeTcbSignalBoundWoken st1 t badge = .ok st2)
     (hTcb2 : st2.getTcb? t = some tTcb2)
     (hRemote : determineTargetCore st2 t ≠ executingCore) :
     (notificationSignalBoundOnCore notificationId badge executingCore st).2
@@ -117,8 +114,7 @@ theorem notificationSignalBoundOnCore_delivery_no_sgi_if_local
     (st : SystemState) (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) (st1 st2 : SystemState)
     (hTarget : boundDeliveryTarget? st notificationId = some (t, epId))
     (hRemove : endpointQueueRemoveDual epId true t st = .ok ((), st1))
-    (hStore : storeTcbReceiveComplete st1 t
-        (some { IpcMessage.empty with badge := some badge }) = .ok st2)
+    (hStore : storeTcbSignalBoundWoken st1 t badge = .ok st2)
     (hLocal : determineTargetCore st2 t = executingCore) :
     (notificationSignalBoundOnCore notificationId badge executingCore st).2 = .ok none := by
   rw [notificationSignalBoundOnCore_delivery_eq notificationId badge executingCore st t epId
@@ -151,12 +147,11 @@ theorem notificationSignalBoundOnCore_preserves_objects_invExt
     | ok p =>
       simp only
       have hInv1 := endpointQueueRemoveDual_preserves_objects_invExt st p.2 epId true t hObjInv hRemove
-      cases hStore : storeTcbReceiveComplete p.2 t
-          (some { IpcMessage.empty with badge := some badge }) with
+      cases hStore : storeTcbSignalBoundWoken p.2 t badge with
       | error e => simp only; exact hObjInv
       | ok st2 =>
         simp only
-        have hInv2 := storeTcbReceiveComplete_preserves_objects_invExt p.2 st2 t _ hInv1 hStore
+        have hInv2 := storeTcbSignalBoundWoken_preserves_objects_invExt p.2 st2 t _ hInv1 hStore
         show (wakeThread st2 t executingCore).1.objects.invExt
         exact wakeThread_preserves_objects_invExt st2 t executingCore hInv2
 
@@ -182,15 +177,14 @@ theorem notificationSignalBoundOnCore_preserves_ipcInvariant
       simp only
       have hInv1 := endpointQueueRemoveDual_preserves_ipcInvariant st p.2 epId true t hInv hObjInv hRemove
       have hObj1 := endpointQueueRemoveDual_preserves_objects_invExt st p.2 epId true t hObjInv hRemove
-      cases hStore : storeTcbReceiveComplete p.2 t
-          (some { IpcMessage.empty with badge := some badge }) with
+      cases hStore : storeTcbSignalBoundWoken p.2 t badge with
       | error e => simp only; exact hInv
       | ok st2 =>
         simp only
-        have hInv2 := storeTcbReceiveComplete_preserves_ipcInvariant p.2 st2 t _ hInv1 hObj1 hStore
-        have hObj2 := storeTcbReceiveComplete_preserves_objects_invExt p.2 st2 t _ hObj1 hStore
+        have hInv2 := storeTcbSignalBoundWoken_preserves_ipcInvariant p.2 st2 t _ hInv1 hObj1 hStore
+        have hObj2 := storeTcbSignalBoundWoken_preserves_objects_invExt p.2 st2 t _ hObj1 hStore
         obtain ⟨tr, hTrGet, hTrReady⟩ :=
-          storeTcbReceiveComplete_getTcb?_ipcState p.2 st2 t _ hObj1 hStore
+          storeTcbSignalBoundWoken_getTcb?_ipcState p.2 st2 t _ hObj1 hStore
         show ipcInvariant (wakeThread st2 t executingCore).1
         exact fun oid ntfn' h => hInv2 oid ntfn'
           ((wakeThread_objectsAgreeOffRunLinks_of_ready st2 t executingCore tr hTrGet hTrReady
@@ -280,24 +274,19 @@ theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull
         obtain rfl : tcb = tcbPost := (KernelObject.tcb.inj (Option.some.inj hTcb)).symm
         rw [hStatePost] at hEq
         cases hEq
-      cases hStore : storeTcbReceiveComplete p.2 t
-          (some { IpcMessage.empty with badge := some badge }) with
+      cases hStore : storeTcbSignalBoundWoken p.2 t badge with
       | error e => simp only; exact hInv
       | ok st2 =>
         simp only
         have hFull2 : ipcInvariantFull st2 :=
-          storeTcbReceiveComplete_closes_exceptMembership p.2 st2 t _ hObj1
-            (fun m hm => by
-              cases hm
-              unfold IpcMessage.bounded IpcMessage.empty maxMessageRegisters
-              simp [Array.size])
+          storeTcbSignalBoundWoken_closes_exceptMembership p.2 st2 t _ hObj1
             (fun tcbX hX => hAllNone1 t tcbX hX) hNotReply1 hNotHead1 hNotTail1 hNoIncoming1
             ⟨hIpc1, hDual1, hBounded1, hBadge1, hPend1, hNoDup1, hMem1, hQNB1, hQHB1,
               hTimeout1, hAcyc1, hOwner1, hBudget1, hRLink1, hStash1, hUniq1,
               hQTB1, hQNT1⟩ hStore
-        have hObj2 := storeTcbReceiveComplete_preserves_objects_invExt p.2 st2 t _ hObj1 hStore
+        have hObj2 := storeTcbSignalBoundWoken_preserves_objects_invExt p.2 st2 t _ hObj1 hStore
         obtain ⟨tr, hTrGet, hTrReady⟩ :=
-          storeTcbReceiveComplete_getTcb?_ipcState p.2 st2 t _ hObj1 hStore
+          storeTcbSignalBoundWoken_getTcb?_ipcState p.2 st2 t _ hObj1 hStore
         show ipcInvariantFull (wakeThread st2 t executingCore).1
         exact ipcInvariantFull_of_objectsAgreeOffRunLinks
           (wakeThread_objectsAgreeOffRunLinks_of_ready st2 t executingCore tr hTrGet hTrReady hObj2)
@@ -547,12 +536,12 @@ theorem notificationSignalBoundOnCore_replenishQueueOnCore (nid : SeLe4n.ObjId)
     | ok u =>
       obtain ⟨_, st1⟩ := u
       simp only []
-      cases hRecv : storeTcbReceiveComplete st1 t (some { IpcMessage.empty with badge := some badge }) with
+      cases hRecv : storeTcbSignalBoundWoken st1 t badge with
       | error e => rfl
       | ok st2 =>
         simp only []
         rw [wakeThread_replenishQueueOnCore,
-          storeTcbReceiveComplete_scheduler_eq st1 st2 _ _ hRecv,
+          storeTcbSignalBoundWoken_scheduler_eq st1 st2 _ _ hRecv,
           endpointQueueRemoveDual_scheduler_eq st st1 epId true t hRemove]
 
 /-- WS-SM SM8.B.2, relocated to production at **WS-RR RR8.12**: **the cores a

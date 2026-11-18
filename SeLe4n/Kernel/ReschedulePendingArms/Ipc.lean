@@ -79,6 +79,10 @@ macro_rules | `(tactic| machine_chain) => `(tactic|
 macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (storeTcbIpcState_machine_eq _ _ _ _ (by assumption)).trans ?_; machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (storeTcbSignalWoken_machine_eq _ _ _ _ (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
+  (with_reducible refine (storeTcbSignalBoundWoken_machine_eq _ _ _ _ (by assumption)).trans ?_; machine_chain))
+macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (linkCallerReply_machine_eq _ _ _ _ (by assumption)).trans ?_; machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (cleanupPreReceiveDonationMigrated_machine_eq _ _ _ (by assumption)).trans ?_; machine_chain))
@@ -299,6 +303,18 @@ theorem storeTcbIpcStateAndMessage_keyFrame {st st' : SystemState} {tid : SeLe4n
   unfold storeTcbIpcStateAndMessage at h
   exact modifyTcb_keyFrame (f := fun tcb => (TCB.setIpcState { tcb with pendingMessage := msg } ipc))
     (fun _ => rfl) hInv h
+
+theorem storeTcbSignalWoken_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {badge : SeLe4n.Badge} (hInv : st.objects.invExt)
+    (h : storeTcbSignalWoken st tid badge = .ok st') : capabilityKeyFrame st st' := by
+  unfold storeTcbSignalWoken at h
+  exact modifyTcb_keyFrame (f := TCB.signalWoken badge) (fun _ => rfl) hInv h
+
+theorem storeTcbSignalBoundWoken_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {badge : SeLe4n.Badge} (hInv : st.objects.invExt)
+    (h : storeTcbSignalBoundWoken st tid badge = .ok st') : capabilityKeyFrame st st' := by
+  unfold storeTcbSignalBoundWoken at h
+  exact modifyTcb_keyFrame (f := TCB.signalBoundWoken badge) (fun _ => rfl) hInv h
 
 theorem storeTcbReceiveComplete_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {msg : Option IpcMessage} (hInv : st.objects.invExt)
@@ -1465,8 +1481,8 @@ theorem notificationSignalOnCore_stepCovers (e : CoreId) {notificationId : SeLe4
         split
         · exact hRefl
         · rename_i st2 hT
-          have hF2 := hF1.trans (storeTcbIpcStateAndMessage_keyFrame hF1.2.2 hT)
-          have hI2 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hF1.2.2 hT
+          have hF2 := hF1.trans (storeTcbSignalWoken_keyFrame hF1.2.2 hT)
+          have hI2 := storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hF1.2.2 hT
           exact (wakeThread_stepCovers e _ _ executingCore
             (hF2.trans (detachNtfnHead_keyFrame _ _ hI2)).2.2).imp_left
             (stepCovers_trans (hF2.trans (detachNtfnHead_keyFrame _ _ hI2)).stepCovers)
@@ -1487,15 +1503,14 @@ theorem notificationSignalBoundOnCore_stepCovers (e : CoreId) {notificationId : 
       (notificationSignalBoundOnCore notificationId badge executingCore st).1.objects.invExt := by
   unfold notificationSignalBoundOnCore
   split
-  · dsimp only
-    split
+  · split
     · exact ⟨stepCovers_refl e st, hInv⟩
     · rename_i st1 hR
       have hF1 := endpointQueueRemoveDual_keyFrame hInv hR
       split
       · exact ⟨stepCovers_refl e st, hInv⟩
       · rename_i st2 hT
-        have hF2 := hF1.trans (storeTcbReceiveComplete_keyFrame hF1.2.2 hT)
+        have hF2 := hF1.trans (storeTcbSignalBoundWoken_keyFrame hF1.2.2 hT)
         exact (wakeThread_stepCovers e st2 _ executingCore hF2.2.2).imp_left
           (stepCovers_trans hF2.stepCovers)
   · exact notificationSignalOnCore_stepCovers e hInv

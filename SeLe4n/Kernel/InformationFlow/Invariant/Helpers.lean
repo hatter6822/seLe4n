@@ -683,6 +683,46 @@ theorem storeTcbIpcStateAndMessage_preserves_projection
       · -- R5-C.1: memory
         exact storeObject_preserves_projectMemory ctx observer st pair.2 tid.toObjId _ hStore
 
+/-- `storeTcbIpcStateAndMessage_preserves_projection` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold storeTcbSignalWoken modifyTcb at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId
+        (.tcb (TCB.signalWoken badge tcb)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore, Except.ok.injEq] at hStep; subst hStep
+      simp only [projectState]; congr 1
+      · funext oid; by_cases hObs : objectObservable ctx observer oid
+        · simp [projectObjects, hObs, SystemState.getObject?]
+          by_cases hEq : oid = tid.toObjId
+          · subst hEq; simp [hTidObjHigh] at hObs
+          · exact congrArg (Option.map (projectKernelObject ctx observer))
+              (storeObject_objects_ne st pair.2 tid.toObjId oid _ hEq hObjInv hStore)
+        · simp [projectObjects, hObs]
+      · simp [projectRunnable, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
+      · simp [projectCurrent, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
+      · simp [projectActiveDomain, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
+      · funext irq; simp only [projectIrqSignalLines, storeObject_irqSignalLines_eq st pair.2 tid.toObjId _ hStore]
+      · exact storeObject_preserves_projectObjectIndex ctx observer st pair.2 tid.toObjId _ hTidObjHigh hStore
+      · simp [projectDomainTimeRemaining, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
+      · simp [projectDomainSchedule, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
+      · simp [projectDomainScheduleIndex, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore]
+      · simp [projectMachineRegs, storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore,
+              storeObject_machine_eq st pair.2 tid.toObjId _ hStore]
+      · -- R5-C.1: memory
+        exact storeObject_preserves_projectMemory ctx observer st pair.2 tid.toObjId _ hStore
+
 /-- storeObject at a non-observable object preserves projection (single-state). -/
 theorem storeObject_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
@@ -733,6 +773,28 @@ theorem storeTcbReceiveComplete_preserves_projection
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId
         (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      obtain ⟨⟨⟩, st''⟩ := pair
+      simp only [hStore, Except.ok.injEq] at hStep; subst hStep
+      exact storeObject_preserves_projection ctx observer st st'' tid.toObjId _ hTidObjHigh hObjInv hStore
+
+/-- `storeTcbReceiveComplete_preserves_projection` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold storeTcbSignalBoundWoken modifyTcb at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId
+        (.tcb (TCB.signalBoundWoken badge tcb)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       obtain ⟨⟨⟩, st''⟩ := pair
@@ -1527,8 +1589,7 @@ theorem notificationSignal_projection_preserved
         | error e => simp
         | ok pair =>
           simp only []
-          cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
-              (some { IpcMessage.empty with badge := some badge }) with
+          cases hTcb : storeTcbSignalWoken pair.2 waiter badge with
           | error e => simp
           | ok st2 =>
             simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
@@ -1538,8 +1599,8 @@ theorem notificationSignal_projection_preserved
                   (fun n hn => hSuccHigh n
                     ((notificationSignalSuccessor?_eq_wake st notificationId ntfn waiter hObj
                       hWaiters).trans hn))
-                  (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInvMid hTcb),
-                storeTcbIpcStateAndMessage_preserves_projection ctx observer pair.2 st2 waiter _ _ hWaiterObjHigh hObjInvMid hTcb,
+                  (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInvMid hTcb),
+                storeTcbSignalWoken_preserves_projection ctx observer pair.2 st2 waiter _ hWaiterObjHigh hObjInvMid hTcb,
                 storeObject_preserves_projection ctx observer st pair.2 notificationId _ hNtfnHigh hObjInv hStore]
 
 /-- WS-F3/F-21: notificationSignal preserves low-equivalence. -/

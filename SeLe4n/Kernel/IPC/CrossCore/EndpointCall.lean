@@ -1275,6 +1275,27 @@ theorem storeTcbReceiveComplete_determineTargetCore_eq (st st' : SystemState)
         ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr
           (lookupTcb_some_objects st tid tcb hTcb)) rfl hObjInv hStore
 
+/-- `storeTcbReceiveComplete_determineTargetCore_eq` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_determineTargetCore_eq (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge) (x : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    determineTargetCore st' x = determineTargetCore st x := by
+  unfold storeTcbSignalBoundWoken modifyTcb at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.signalBoundWoken badge tcb)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      exact storeObject_tcb_determineTargetCore_eq st pair.2 tid tcb
+        (TCB.signalBoundWoken badge tcb) x
+        ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr
+          (lookupTcb_some_objects st tid tcb hTcb)) rfl hObjInv hStore
+
 /-- SM8.B.2: `endpointQueuePopHead` is not a migration either — it rewrites the
 endpoint's queue and two threads' link fields, and nothing's affinity. -/
 theorem endpointQueuePopHead_determineTargetCore_eq (endpointId : SeLe4n.ObjId)
@@ -1483,6 +1504,30 @@ theorem storeTcbIpcStateAndMessage_determineTargetCore_eq
       by_cases hEq2 : x.toObjId = tid.toObjId
       · rw [hEq2]
         simp [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hSO,
+              lookupTcb_some_objects st tid tcb hLk]
+      · rw [storeObject_objects_ne' st tid.toObjId x.toObjId _ pair hEq2 hObjInv hSO]
+
+/-- `storeTcbIpcStateAndMessage_determineTargetCore_eq` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_determineTargetCore_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge) (x : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    determineTargetCore st' x = determineTargetCore st x := by
+  refine determineTargetCore_congr st st' x ?_
+  unfold storeTcbSignalWoken modifyTcb at hStep
+  cases hLk : lookupTcb st tid with
+  | none => simp [hLk] at hStep
+  | some tcb =>
+    simp only [hLk] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.signalWoken badge tcb)) st with
+    | error e => simp [hSO] at hStep
+    | ok pair =>
+      simp only [hSO] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      simp only [SystemState.getTcb?]
+      by_cases hEq2 : x.toObjId = tid.toObjId
+      · rw [hEq2]
+        simp [TCB.signalWoken, storeObject_objects_eq' st tid.toObjId _ pair hObjInv hSO,
               lookupTcb_some_objects st tid tcb hLk]
       · rw [storeObject_objects_ne' st tid.toObjId x.toObjId _ pair hEq2 hObjInv hSO]
 
@@ -1940,6 +1985,24 @@ theorem storeTcbIpcStateAndMessage_getTcb?_ipcState
   exact ⟨tcb', (SystemState.getTcb?_eq_some_iff st' tid tcb').mpr hTcb',
          storeTcbIpcStateAndMessage_ipcState_eq st st' tid ipc msg hObjInv hStep tcb' hTcb'⟩
 
+
+/-- The thread a signal wakes is ready after its store (`TCB.signalWoken`). -/
+theorem storeTcbSignalWoken_getTcb?_ipcState
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    ∃ t, st'.getTcb? tid = some t ∧ t.ipcState = .ready := by
+  obtain ⟨tcb, _, _, hAt, _⟩ := modifyTcb_objects hObjInv hStep
+  exact ⟨_, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hAt, rfl⟩
+
+/-- The thread a signal wakes is ready after its store (`TCB.signalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_getTcb?_ipcState
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    ∃ t, st'.getTcb? tid = some t ∧ t.ipcState = .ready := by
+  obtain ⟨tcb, _, _, hAt, _⟩ := modifyTcb_objects hObjInv hStep
+  exact ⟨_, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hAt, rfl⟩
 /-- WS-SM SM6.A.1: the cross-core endpoint call preserves object-store
 integrity (`invExt`).  On every control path the post-state's object store is
 either `st`'s (an error / no-op leaf) or the result of the

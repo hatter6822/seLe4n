@@ -1895,21 +1895,6 @@ def interruptStepHidden (ctx : LabelingContext) (observer : IfObserver) (st : Sy
   ∀ ntfn badge, Architecture.irqBinding? st line = some (ntfn, badge) →
     boundSignalHidden ctx observer st ntfn
 
-/-- **A woken thread's delivery is invisible on every core**: it writes the
-thread's register context, which no projection shows, and neither the
-scheduler nor the machine. -/
-theorem stageWokenDelivery_lowEquivalent (s : SystemState) (w : Option SeLe4n.ThreadId)
-    (n : Nat) (hInv : s.objects.invExt) :
-    lowEquivalent_smp ctx observer (Architecture.stageWokenDelivery s w n) s := fun c =>
-  projectStateOnCore_congr ctx observer
-    (stageWokenDelivery_preserves_projection ctx observer s w n hInv)
-    (by rw [Architecture.stageWokenDelivery_scheduler_eq])
-    (by rw [Architecture.stageWokenDelivery_scheduler_eq])
-    (by rw [Architecture.stageWokenDelivery_scheduler_eq])
-    (by rw [Architecture.stageWokenDelivery_scheduler_eq])
-    (by rw [Architecture.stageWokenDelivery_scheduler_eq])
-    (by rw [Architecture.stageWokenDelivery_machine_eq])
-
 /-- **A woken receiver's stash clear is invisible on every core** when the
 receiver's object is hidden: one store at that object, and neither the
 scheduler nor the machine. -/
@@ -1936,9 +1921,9 @@ theorem clearWokenReceiverStash_lowEquivalent {w : Option SeLe4n.ThreadId} {s s'
 
 /-- **seL4's `handleInterrupt` is invisible on every core** when the signal it
 sends writes only hidden state: the signal
-(`notificationSignalBoundOnCore_lowEquivalent`), the bound receiver's stash
-clear (its object hidden), the two stagings of the badge into the woken
-threads' frames (`stageWokenDelivery_lowEquivalent`), and the mask. -/
+(`notificationSignalBoundOnCore_lowEquivalent`, whose badge-register write
+lands in a register context no projection shows), the bound receiver's stash
+clear (its object hidden), and the mask. -/
 theorem handleInterruptOnCore_lowEquivalent (st : SystemState) (c : CoreId) (line : Nat)
     (hInv : st.objects.invExt) (h : interruptStepHidden ctx observer st line) :
     lowEquivalent_smp ctx observer (handleInterruptOnCore st c line) st :=
@@ -1960,10 +1945,7 @@ theorem handleInterruptOnCore_lowEquivalent (st : SystemState) (c : CoreId) (lin
               obtain ⟨t', epId⟩ := p
               rw [hB] at ht; cases ht
               exact ((h ntfn badge hN).bound t' epId hB).2.2
-          lowEquivalent_smp_trans (stageWokenDelivery_lowEquivalent _ _ 0
-              (stageWokenDelivery_preserves_objects_invExt _ _ 0 hI2))
-            (lowEquivalent_smp_trans (stageWokenDelivery_lowEquivalent _ _ 0 hI2)
-              (lowEquivalent_smp_trans (clearWokenReceiverStash_lowEquivalent hI1 hW hC) hL)))
+          lowEquivalent_smp_trans (clearWokenReceiverStash_lowEquivalent hI1 hW hC) hL)
 
 /-- …and so is the raw step. -/
 theorem interruptEntryStep_lowEquivalent (st : SystemState) (coreId intId : UInt64)

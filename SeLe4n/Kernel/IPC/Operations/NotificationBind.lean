@@ -447,8 +447,9 @@ theorem boundDeliveryTarget?_some (st : SystemState) (notificationId : SeLe4n.Ob
 
 /-- WS-SM SM6.B: the canonical notification signal.  When `boundDeliveryTarget?`
 applies, deliver the badge directly to the bound TCB — dequeue it from its
-endpoint receive queue (`endpointQueueRemoveDual`), store the badge into its
-`pendingMessage` and mark it `.ready`, then make it runnable.  Otherwise fall
+endpoint receive queue (`endpointQueueRemoveDual`), write the badge into its
+badge register and mark it `.ready` (`storeTcbSignalBoundWoken`, seL4's
+`sendSignal`), then make it runnable.  Otherwise fall
 through to the unchanged single-core `notificationSignal` (so every existing
 `notificationSignal` proof carries over verbatim). -/
 def notificationSignalBound (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) :
@@ -456,14 +457,13 @@ def notificationSignalBound (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badg
   fun st =>
     match boundDeliveryTarget? st notificationId with
     | some (t, epId) =>
-        let badgeMsg : IpcMessage := { IpcMessage.empty with badge := some badge }
         match endpointQueueRemoveDual epId true t st with
         | .error e => .error e
         | .ok ((), st1) =>
             -- IPC de-threading D3 (Finding F-1): the bound TCB was
             -- `.blockedOnReceive`; a non-`Call` badge delivery clears its
             -- server-first `pendingReceiveReply` stash (no `Call` arrived).
-            match storeTcbReceiveComplete st1 t (some badgeMsg) with
+            match storeTcbSignalBoundWoken st1 t badge with
             | .error e => .error e
             | .ok st2 => .ok ((), ensureRunnable st2 t)
     | none => notificationSignal notificationId badge st

@@ -922,6 +922,36 @@ def storeTcbIpcStateAndMessage (st : SystemState) (tid : SeLe4n.ThreadId)
     (ipcState : ThreadIpcState) (msg : Option IpcMessage) : Except KernelError SystemState :=
   modifyTcb st tid (fun tcb => (TCB.setIpcState { tcb with pendingMessage := msg } ipcState))
 
+/-- **A thread a signal wakes** (seL4's `sendSignal`: `setThreadState(tcb,
+Running)` then `setRegister(tcb, badgeRegister, badge)`): ready, the badge
+written into its badge register `x0` and nothing else.  A signal transfers no
+message, so no message is held and no message-info word is written.  WS-SX SX7. -/
+@[inline] def TCB.signalWoken (badge : SeLe4n.Badge) (tcb : TCB) : TCB :=
+  TCB.setIpcState { tcb with
+    pendingMessage := none
+    registerContext := { tcb.registerContext with x0 := badge.word } } .ready
+
+/-- The store of a thread a signal wakes (`TCB.signalWoken`). -/
+def storeTcbSignalWoken (st : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge) :
+    Except KernelError SystemState :=
+  modifyTcb st tid (TCB.signalWoken badge)
+
+/-- **A bound thread a signal wakes off its endpoint receive** (seL4's
+`sendSignal`, a bound TCB in `BlockedOnReceive`: `cancelIPC`, then
+`setThreadState(Running)` and `setRegister(badgeRegister, badge)`): as
+`TCB.signalWoken`, the receive's stashed reply dropped as `cancelIPC` unlinks
+it. -/
+@[inline] def TCB.signalBoundWoken (badge : SeLe4n.Badge) (tcb : TCB) : TCB :=
+  TCB.setIpcState { tcb with
+    pendingMessage := none
+    pendingReceiveReplyCode := 0
+    registerContext := { tcb.registerContext with x0 := badge.word } } .ready
+
+/-- The store of a bound thread a signal wakes (`TCB.signalBoundWoken`). -/
+def storeTcbSignalBoundWoken (st : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) : Except KernelError SystemState :=
+  modifyTcb st tid (TCB.signalBoundWoken badge)
+
 /-- WS-ZA ZA4.7: **what a blocked sender's capability contributed** — its badge
 and grant right (`TCB.setSendCap`), as seL4 keeps `blockingIPCBadge` and
 `blockingIPCCanGrant` in the blocked thread's state.  The message's words stay
@@ -1558,6 +1588,88 @@ theorem storeTcbIpcStateAndMessage_kindPreservingWrite
     (hStore : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
     kindPreservingWrite st st' :=
   modifyTcb_kindPreservingWrite hObjInv hStore
+
+/-- The store of a thread a signal wakes is a `kindPreservingWrite`, and leaves
+the scheduler, the machine, the derivation tree and every other object as they
+were: it is `modifyTcb` (`TCB.signalWoken`). -/
+theorem storeTcbSignalWoken_kindPreservingWrite {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {badge : SeLe4n.Badge} (hObjInv : st.objects.invExt)
+    (hStore : storeTcbSignalWoken st tid badge = .ok st') : kindPreservingWrite st st' :=
+  modifyTcb_kindPreservingWrite hObjInv hStore
+
+theorem storeTcbSignalWoken_preserves_objects_invExt (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (hObjInv : st.objects.invExt)
+    (hStore : storeTcbSignalWoken st tid badge = .ok st') : st'.objects.invExt :=
+  modifyTcb_preserves_objects_invExt hObjInv hStore
+
+theorem storeTcbSignalWoken_scheduler_eq (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (hStore : storeTcbSignalWoken st tid badge = .ok st') :
+    st'.scheduler = st.scheduler :=
+  modifyTcb_scheduler_eq hStore
+
+theorem storeTcbSignalWoken_machine_eq (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (hStore : storeTcbSignalWoken st tid badge = .ok st') :
+    st'.machine = st.machine :=
+  modifyTcb_machine_eq hStore
+
+theorem storeTcbSignalWoken_cdt_eq (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (hStore : storeTcbSignalWoken st tid badge = .ok st') :
+    st'.cdt = st.cdt :=
+  modifyTcb_cdt_eq hStore
+
+theorem storeTcbSignalWoken_preserves_objects_ne (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
+    (hObjInv : st.objects.invExt) (hStore : storeTcbSignalWoken st tid badge = .ok st') :
+    st'.objects[oid]? = st.objects[oid]? :=
+  modifyTcb_preserves_objects_ne oid hNe hObjInv hStore
+
+theorem storeTcbSignalWoken_notification_backward (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hObjInv : st.objects.invExt) (hStore : storeTcbSignalWoken st tid badge = .ok st')
+    (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) :=
+  modifyTcb_notification_backward oid ntfn hObjInv hStore hNtfn
+
+/-- The store of a thread a signal wakes is a `kindPreservingWrite`, and leaves
+the scheduler, the machine, the derivation tree and every other object as they
+were: it is `modifyTcb` (`TCB.signalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_kindPreservingWrite {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {badge : SeLe4n.Badge} (hObjInv : st.objects.invExt)
+    (hStore : storeTcbSignalBoundWoken st tid badge = .ok st') : kindPreservingWrite st st' :=
+  modifyTcb_kindPreservingWrite hObjInv hStore
+
+theorem storeTcbSignalBoundWoken_preserves_objects_invExt (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (hObjInv : st.objects.invExt)
+    (hStore : storeTcbSignalBoundWoken st tid badge = .ok st') : st'.objects.invExt :=
+  modifyTcb_preserves_objects_invExt hObjInv hStore
+
+theorem storeTcbSignalBoundWoken_scheduler_eq (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (hStore : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    st'.scheduler = st.scheduler :=
+  modifyTcb_scheduler_eq hStore
+
+theorem storeTcbSignalBoundWoken_machine_eq (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (hStore : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    st'.machine = st.machine :=
+  modifyTcb_machine_eq hStore
+
+theorem storeTcbSignalBoundWoken_cdt_eq (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (hStore : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    st'.cdt = st.cdt :=
+  modifyTcb_cdt_eq hStore
+
+theorem storeTcbSignalBoundWoken_preserves_objects_ne (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
+    (hObjInv : st.objects.invExt) (hStore : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    st'.objects[oid]? = st.objects[oid]? :=
+  modifyTcb_preserves_objects_ne oid hNe hObjInv hStore
+
+theorem storeTcbSignalBoundWoken_notification_backward (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hObjInv : st.objects.invExt) (hStore : storeTcbSignalBoundWoken st tid badge = .ok st')
+    (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) :=
+  modifyTcb_notification_backward oid ntfn hObjInv hStore hNtfn
 
 /-- The `ipcState` store is a `kindPreservingWrite`. -/
 theorem storeTcbIpcState_kindPreservingWrite
@@ -9540,10 +9652,9 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
             match storeObject notificationId (.notification (ntfn.withHeadPopped next)) st with
             | .error e => .error e
             | .ok ((), st') =>
-                -- R3-A/M-16: Deliver signaled badge to woken waiter via pendingMessage.
-                -- In seL4, the badge from Signal is returned as the Wait syscall's result.
-                let badgeMsg : IpcMessage := { IpcMessage.empty with badge := some badge }
-                match storeTcbIpcStateAndMessage st' waiter .ready (some badgeMsg) with
+                -- WS-SX SX7: seL4's `sendSignal` writes the badge into the
+                -- woken waiter's badge register and transfers no message.
+                match storeTcbSignalWoken st' waiter badge with
                 | .error e => .error e
                 | .ok st'' => .ok ((), ensureRunnable (detachNtfnHead st'' waiter next) waiter)
         | none =>
@@ -9629,9 +9740,9 @@ def notificationWaitPark
                       -- message, then Wait on an idle notification.
                       --
                       -- Nothing owes the parked waiter that payload: the wake
-                      -- (`notificationSignal`) overwrites `pendingMessage` with the
-                      -- badge message it delivers, so the cleared field is dead
-                      -- from the block to the wake.
+                      -- (`notificationSignal`) writes the badge into the badge
+                      -- register and clears `pendingMessage`, so the cleared field
+                      -- is dead from the block to the wake.
                       match storeTcbIpcStateAndMessage_fromTcb st1 waiter tcb
                           (.blockedOnNotification notificationId) none with
                       | .error e => .error e
@@ -9672,21 +9783,6 @@ matches the head where it reads it and the `some` is never built. -/
   match st.getNotification? notificationId with
   | some ntfn => ntfn.waitHead
   | none => none
-
-/-- WS-ZA ZA4.7: `notificationSignalWaiter?` as its code (`ThreadId.optCode`),
-so a caller that holds the waiter across the signal holds a word. -/
-@[inline] def notificationSignalWaiterCode (st : SystemState) (notificationId : SeLe4n.ObjId) :
-    Nat :=
-  match st.getNotification? notificationId with
-  | some ntfn => ntfn.waitHeadCode
-  | none => 0
-
-@[simp] theorem ofOptCode_notificationSignalWaiterCode (st : SystemState)
-    (notificationId : SeLe4n.ObjId) :
-    SeLe4n.ThreadId.ofOptCode (notificationSignalWaiterCode st notificationId) =
-      notificationSignalWaiter? st notificationId := by
-  unfold notificationSignalWaiterCode notificationSignalWaiter?
-  split <;> rfl
 
 /-- WS-ZA ZA4.4: the waiter that heads the queue once a signal has woken its
 head -- the head's successor, read from the head's own link, exactly as the

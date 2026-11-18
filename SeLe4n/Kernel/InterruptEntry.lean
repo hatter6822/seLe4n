@@ -146,8 +146,7 @@ theorem interruptEntryStep_coversWrites (coreId intId : UInt64) (st : SystemStat
     refine footprintCoversWrites_of_frame
       (interruptSignal_of (P := footprintCoversWrites S st) ntfn _ c st hB
         (fun _ s2 _ hC => footprintCoversWrites_of_table hB hT ?_)) rfl rfl
-    rw [Architecture.stageWokenDelivery_scheduler_eq, Architecture.stageWokenDelivery_scheduler_eq,
-      clearWokenReceiverStash_scheduler_eq _ _ ((), s2) hC]
+    rw [clearWokenReceiverStash_scheduler_eq _ _ ((), s2) hC]
 
 /-- The declared footprint names the table write lock… -/
 theorem declaredLockSetForInterrupt_objStore {coreId intId : UInt64} {st : SystemState}

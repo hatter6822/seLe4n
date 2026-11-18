@@ -79,12 +79,11 @@ theorem notificationSignalOnCore_preserves_objects_invExt
       | ok pair =>
         simp only
         have hObj1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-        cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
-            (some { IpcMessage.empty with badge := some badge }) with
+        cases hTcb : storeTcbSignalWoken pair.2 waiter badge with
         | error e => simp only; exact hObjInv
         | ok st'' =>
           simp only
-          have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2 st'' waiter _ _ hObj1 hTcb
+          have hObj2 := storeTcbSignalWoken_preserves_objects_invExt pair.2 st'' waiter _ hObj1 hTcb
           show (wakeThread _ waiter executingCore).1.objects.invExt
           exact wakeThread_preserves_objects_invExt _ waiter executingCore
             (detachNtfnHead_linksRewritten _ _ _ hObj2).2.1
@@ -182,15 +181,14 @@ theorem notificationSignalOnCore_preserves_ipcInvariant
         have hInv1 := storeObject_notification_preserves_ipcInvariant st pair.2 notificationId _ hInv
           hObjInv hStore (notificationSignal_result_wellFormed_wake ntfn _)
         have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-        cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
-            (some { IpcMessage.empty with badge := some badge }) with
+        cases hTcb : storeTcbSignalWoken pair.2 waiter badge with
         | error e => simp only; exact hInv
         | ok st'' =>
           simp only
-          have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcInvariant pair.2 st'' waiter _ _ hInv1 hObjInv1 hTcb
-          have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2 st'' waiter _ _ hObjInv1 hTcb
+          have hInv2 := storeTcbSignalWoken_preserves_ipcInvariant pair.2 st'' waiter _ hInv1 hObjInv1 hTcb
+          have hObj2 := storeTcbSignalWoken_preserves_objects_invExt pair.2 st'' waiter _ hObjInv1 hTcb
           obtain ⟨tr, hTrGet, hTrReady⟩ :=
-            storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2 st'' waiter .ready _ hObjInv1 hTcb
+            storeTcbSignalWoken_getTcb?_ipcState pair.2 st'' waiter _ hObjInv1 hTcb
           have hD := detachNtfnHead_linksRewritten st'' waiter (ntfnSuccessor? st waiter) hObj2
           obtain ⟨tr3, hTrGet3, ⟨_, _, rfl⟩⟩ := hD.getTcb?_fwd hTrGet
           show ipcInvariant (wakeThread _ waiter executingCore).1
@@ -322,17 +320,16 @@ theorem notificationSignalOnCore_post_agrees
       | error e => left; rfl
       | ok pair =>
         simp only
-        cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
-            (some { IpcMessage.empty with badge := some badge }) with
+        cases hTcb : storeTcbSignalWoken pair.2 waiter badge with
         | error e => left; rfl
         | ok st2 =>
           right
           simp only
           have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-          have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2 st2 waiter _ _
+          have hObjInv2 := storeTcbSignalWoken_preserves_objects_invExt pair.2 st2 waiter _
             hObjInv1 hTcb
           obtain ⟨tr, hTrGet, hTrReady⟩ :=
-            storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2 st2 waiter .ready _ hObjInv1 hTcb
+            storeTcbSignalWoken_getTcb?_ipcState pair.2 st2 waiter _ hObjInv1 hTcb
           have hD := detachNtfnHead_linksRewritten st2 waiter (ntfnSuccessor? st waiter) hObjInv2
           obtain ⟨tr3, hTrGet3, ⟨_, _, rfl⟩⟩ := hD.getTcb?_fwd hTrGet
           refine ⟨ensureRunnable (detachNtfnHead st2 waiter (ntfnSuccessor? st waiter)) waiter,

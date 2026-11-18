@@ -322,6 +322,78 @@ theorem storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent
         | .blockedOnReply _ _ => trivial
         | .blockedOnNotification _ => trivial
 
+/-- `storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_preserves_ipcStateQueueMembershipConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hInv : ipcStateQueueMembershipConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbSignalWoken st tid badge = .ok st') :
+    ipcStateQueueMembershipConsistent st' := by
+  unfold storeTcbSignalWoken modifyTcb at hStore
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStore
+  | some tcb =>
+    simp only [hLookup] at hStore
+    cases hSt : storeObject tid.toObjId
+        (.tcb (TCB.signalWoken badge tcb)) st with
+    | error e => simp [hSt] at hStore
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStore; subst hStore
+      have hFrame : ∀ x, x ≠ tid.toObjId → pair.2.objects[x]? = st.objects[x]? :=
+        fun x hNe => storeObject_objects_ne st pair.2 tid.toObjId x _ hNe hObjInv hSt
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt
+      have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
+      have transferPrev : ∀ (tid2 : SeLe4n.ThreadId)
+          (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+          st.objects[prev.toObjId]? = some (.tcb prevTcb) →
+          prevTcb.queueNext = some tid2 →
+          ∃ prevTcb', pair.2.objects[prev.toObjId]? = some (.tcb prevTcb') ∧
+            prevTcb'.queueNext = some tid2 := by
+        intro tid2 prev prevTcb hPrev hNext
+        by_cases hPrevEq : prev.toObjId = tid.toObjId
+        · rw [hPrevEq] at hPrev; rw [hTcbObj] at hPrev; cases hPrev
+          exact ⟨(TCB.signalWoken badge tcb),
+            by rw [hPrevEq]; exact hEqAt, hNext⟩
+        · exact ⟨prevTcb, by rw [hFrame _ hPrevEq]; exact hPrev, hNext⟩
+      intro tid2 tcb2 hTcb2
+      by_cases hEq : tid2.toObjId = tid.toObjId
+      · -- tid2 is the stored TCB: new ipcState is trivially V3-J
+        rw [hEq, hEqAt] at hTcb2
+        simp only [Option.some.injEq, KernelObject.tcb.injEq] at hTcb2; subst hTcb2
+        trivial
+      · -- tid2 ≠ tid: transfer pre-state V3-J evidence
+        rw [hFrame tid2.toObjId hEq] at hTcb2
+        have hPre := hInv tid2 tcb2 hTcb2
+        match hIpc : tcb2.ipcState with
+        | .blockedOnSend epId =>
+          simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
+          have hNeEp : epId ≠ tid.toObjId := by
+            intro h; subst h; rw [hTcbObj] at hEp; cases hEp
+          exact ⟨ep, by rw [hFrame epId hNeEp]; exact hEp,
+            hReach.elim Or.inl fun ⟨prev, prevTcb, hP, hN⟩ =>
+              let ⟨pt, hPt, hNt⟩ := transferPrev tid2 prev prevTcb hP hN
+              Or.inr ⟨prev, pt, hPt, hNt⟩⟩
+        | .blockedOnReceive epId =>
+          simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
+          have hNeEp : epId ≠ tid.toObjId := by
+            intro h; subst h; rw [hTcbObj] at hEp; cases hEp
+          exact ⟨ep, by rw [hFrame epId hNeEp]; exact hEp,
+            hReach.elim Or.inl fun ⟨prev, prevTcb, hP, hN⟩ =>
+              let ⟨pt, hPt, hNt⟩ := transferPrev tid2 prev prevTcb hP hN
+              Or.inr ⟨prev, pt, hPt, hNt⟩⟩
+        | .blockedOnCall epId =>
+          simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
+          have hNeEp : epId ≠ tid.toObjId := by
+            intro h; subst h; rw [hTcbObj] at hEp; cases hEp
+          exact ⟨ep, by rw [hFrame epId hNeEp]; exact hEp,
+            hReach.elim Or.inl fun ⟨prev, prevTcb, hP, hN⟩ =>
+              let ⟨pt, hPt, hNt⟩ := transferPrev tid2 prev prevTcb hP hN
+              Or.inr ⟨prev, pt, hPt, hNt⟩⟩
+        | .ready => trivial
+        | .blockedOnReply _ _ => trivial
+        | .blockedOnNotification _ => trivial
+
 /-- storeTcbIpcStateAndMessage_fromTcb preserves ipcStateQueueMembershipConsistent. -/
 theorem storeTcbIpcStateAndMessage_fromTcb_preserves_ipcStateQueueMembershipConsistent
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
@@ -541,7 +613,7 @@ theorem notificationSignal_preserves_ipcStateQueueMembershipConsistent
             (fun ep => by intro h; cases h) (fun tcb => by intro h; cases h)
             (fun ep => by rw [hObj]; intro h; cases h) (fun tcb => by rw [hObj]; intro h; cases h)
             hStore1
-          generalize hMsg : storeTcbIpcStateAndMessage pair1.2 waiter .ready _ = rMsg at hStep
+          generalize hMsg : storeTcbSignalWoken pair1.2 waiter badge = rMsg at hStep
           cases rMsg with
           | error e => simp at hStep
           | ok st2 =>
@@ -550,10 +622,9 @@ theorem notificationSignal_preserves_ipcStateQueueMembershipConsistent
             exact ensureRunnable_preserves_ipcStateQueueMembershipConsistent _ _ <|
               ipcStateQueueMembershipConsistent_of_ntfnLinksRewritten
                 (detachNtfnHead_linksRewritten _ _ _
-                  (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hMsg)) <|
-              storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent _ _ _ _ _ hInv1 hObjInv1
-                (fun epId => by intro h; cases h) (fun epId => by intro h; cases h)
-                (fun epId => by intro h; cases h) hMsg
+                  (modifyTcb_preserves_objects_invExt hObjInv1 hMsg)) <|
+              storeTcbSignalWoken_preserves_ipcStateQueueMembershipConsistent _ _ _ _ hInv1 hObjInv1
+                hMsg
       | none =>
         simp only [hWaiters] at hStep
         exact storeObject_non_ep_non_tcb_preserves_ipcStateQueueMembershipConsistent
@@ -1597,6 +1668,101 @@ theorem storeTcbReceiveComplete_partial_preserves_ipcStateQueueMembershipConsist
       intro tid2 tcb2 hTcb2
       by_cases hEq : tid2.toObjId = tid.toObjId
       · -- tid2 is the stored TCB: new ipcState `.ready` is non-blocking → trivially V3-J
+        have hTidEq := ThreadId.toObjId_injective tid2 tid hEq; subst hTidEq
+        rw [hEqAt] at hTcb2
+        simp only [Option.some.injEq, KernelObject.tcb.injEq] at hTcb2; subst hTcb2
+        trivial
+      · -- tid2 ≠ tid: transfer from partial pre-state V3-J
+        rw [hFrame tid2.toObjId hEq] at hTcb2
+        have hPre := hPartialInv tid2 tcb2 hTcb2 hEq
+        match hIpc : tcb2.ipcState with
+        | .blockedOnSend epId =>
+          simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
+          have hNeEp : epId ≠ tid.toObjId := by
+            intro h; subst h; rw [hTcbObj] at hEp; cases hEp
+          exact ⟨ep, by rw [hFrame epId hNeEp]; exact hEp,
+            hReach.elim Or.inl fun ⟨prev', prevTcb, hP, hN⟩ =>
+              let ⟨pt, hPt, hNt⟩ := transferPrev tid2 prev' prevTcb hP hN
+              Or.inr ⟨prev', pt, hPt, hNt⟩⟩
+        | .blockedOnReceive epId =>
+          simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
+          have hNeEp : epId ≠ tid.toObjId := by
+            intro h; subst h; rw [hTcbObj] at hEp; cases hEp
+          exact ⟨ep, by rw [hFrame epId hNeEp]; exact hEp,
+            hReach.elim Or.inl fun ⟨prev', prevTcb, hP, hN⟩ =>
+              let ⟨pt, hPt, hNt⟩ := transferPrev tid2 prev' prevTcb hP hN
+              Or.inr ⟨prev', pt, hPt, hNt⟩⟩
+        | .blockedOnCall epId =>
+          simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
+          have hNeEp : epId ≠ tid.toObjId := by
+            intro h; subst h; rw [hTcbObj] at hEp; cases hEp
+          exact ⟨ep, by rw [hFrame epId hNeEp]; exact hEp,
+            hReach.elim Or.inl fun ⟨prev', prevTcb, hP, hN⟩ =>
+              let ⟨pt, hPt, hNt⟩ := transferPrev tid2 prev' prevTcb hP hN
+              Or.inr ⟨prev', pt, hPt, hNt⟩⟩
+        | .ready => trivial
+        | .blockedOnReply _ _ => trivial
+        | .blockedOnNotification _ => trivial
+
+/-- `storeTcbReceiveComplete_partial_preserves_ipcStateQueueMembershipConsistent` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_partial_preserves_ipcStateQueueMembershipConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hPartialInv : ∀ (tid2 : SeLe4n.ThreadId) (tcb2 : TCB),
+        st.objects[tid2.toObjId]? = some (.tcb tcb2) →
+        tid2.toObjId ≠ tid.toObjId →
+        match tcb2.ipcState with
+        | .blockedOnSend epId =>
+            ∃ ep, st.objects[epId]? = some (KernelObject.endpoint ep) ∧
+              (ep.sendQ.head = some tid2 ∨
+               ∃ (prev' : SeLe4n.ThreadId) (prevTcb : TCB),
+                 st.objects[prev'.toObjId]? = some (KernelObject.tcb prevTcb) ∧
+                 TCB.queueNext prevTcb = some tid2)
+        | .blockedOnReceive epId =>
+            ∃ ep, st.objects[epId]? = some (KernelObject.endpoint ep) ∧
+              (ep.receiveQ.head = some tid2 ∨
+               ∃ (prev' : SeLe4n.ThreadId) (prevTcb : TCB),
+                 st.objects[prev'.toObjId]? = some (KernelObject.tcb prevTcb) ∧
+                 TCB.queueNext prevTcb = some tid2)
+        | .blockedOnCall epId =>
+            ∃ ep, st.objects[epId]? = some (KernelObject.endpoint ep) ∧
+              (ep.sendQ.head = some tid2 ∨
+               ∃ (prev' : SeLe4n.ThreadId) (prevTcb : TCB),
+                 st.objects[prev'.toObjId]? = some (KernelObject.tcb prevTcb) ∧
+                 TCB.queueNext prevTcb = some tid2)
+        | _ => True)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    ipcStateQueueMembershipConsistent st' := by
+  unfold storeTcbSignalBoundWoken modifyTcb at hStore
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStore
+  | some tcb =>
+    simp only [hLookup] at hStore
+    cases hSt : storeObject tid.toObjId
+        (.tcb (TCB.signalBoundWoken badge tcb)) st with
+    | error e => simp [hSt] at hStore
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStore; subst hStore
+      have hFrame : ∀ x, x ≠ tid.toObjId → pair.2.objects[x]? = st.objects[x]? :=
+        fun x hNe => storeObject_objects_ne st pair.2 tid.toObjId x _ hNe hObjInv hSt
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt
+      have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
+      have transferPrev : ∀ (tid2 : SeLe4n.ThreadId)
+          (prev' : SeLe4n.ThreadId) (prevTcb : TCB),
+          st.objects[prev'.toObjId]? = some (.tcb prevTcb) →
+          prevTcb.queueNext = some tid2 →
+          ∃ prevTcb', pair.2.objects[prev'.toObjId]? = some (.tcb prevTcb') ∧
+            prevTcb'.queueNext = some tid2 := by
+        intro tid2 prev' prevTcb hPrev hNext
+        by_cases hPrevEq : prev'.toObjId = tid.toObjId
+        · rw [hPrevEq] at hPrev; rw [hTcbObj] at hPrev; cases hPrev
+          exact ⟨(TCB.signalBoundWoken badge tcb),
+            by rw [hPrevEq]; exact hEqAt, hNext⟩
+        · exact ⟨prevTcb, by rw [hFrame _ hPrevEq]; exact hPrev, hNext⟩
+      intro tid2 tcb2 hTcb2
+      by_cases hEq : tid2.toObjId = tid.toObjId
+      · -- tid2 is the stored TCB: new ThreadIpcState.ready `.ready` is non-blocking → trivially V3-J
         have hTidEq := ThreadId.toObjId_injective tid2 tid hEq; subst hTidEq
         rw [hEqAt] at hTcb2
         simp only [Option.some.injEq, KernelObject.tcb.injEq] at hTcb2; subst hTcb2

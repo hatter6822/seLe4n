@@ -6329,19 +6329,14 @@ def dispatchWithCapChecked (ctx : LabelingContext)
           -- WS-SM SM6.D (PR #822 review): clear a woken bound receiver's server-first
           -- reply stash (mirrors the unchecked arm + the plain-Send wake).
           let woken? := (boundDeliveryTarget? st notifId).map (·.1)
-          -- WS-RA RA.B.5b: the woken waiter's staged badge frame (checked twin;
-          -- the checked dispatch's notification→receiver gate ran before the
-          -- wake, so a denied delivery errors and stages nothing).
-          let plainWaiter? := notificationSignalWaiter? st notifId
+          -- WS-SX SX7: the wake writes the badge into the woken thread's badge
+          -- register itself (seL4's `sendSignal`), so nothing is staged after it.
           match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid cap.signalBadge executingCore st with
           | (st', .ok _) =>
               match clearWokenReceiverStash woken? st' with
               | .error e => .error e
               | .ok ((), st'') =>
-                  -- Installed count 0 for both stagers: badge-only deliveries.
-                  .ok ((), Architecture.stageWokenDelivery
-                            (Architecture.stageWokenDelivery st'' woken? 0)
-                            plainWaiter? 0)
+                  .ok ((), st'')
           | (_, .error e) => .error e
     | _ => fun _ => .error (.invalidCapability 0)
   -- V2-A/T6-I: Notification wait — checked for notification→waiter flow
@@ -6487,17 +6482,13 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         | .error e => .error e
         | .ok (ntfnCap, notifId) =>
           let woken? := (boundDeliveryTarget? st notifId).map (·.1)
-          let plainWaiter? := notificationSignalWaiter? st notifId
           match notificationSignalDeclassifiedCrossCoreDispatch (liftLegacyContext ctx)
                   ctx.declassificationPolicy notifId ntfnCap.signalBadge executingCore st with
           | (st', .ok _) =>
               match clearWokenReceiverStash woken? st' with
               | .error e => .error e
               | .ok ((), st'') =>
-                  -- Installed count 0 for both stagers: badge-only deliveries.
-                  .ok ((), Architecture.stageWokenDelivery
-                            (Architecture.stageWokenDelivery st'' woken? 0)
-                            plainWaiter? 0)
+                  .ok ((), st'')
           | (_, .error e) => .error e
     | _ => fun _ => .error (.invalidCapability 0)
   -- WS-SM SM9.A.10: **the live audit read.**
@@ -8404,10 +8395,7 @@ theorem dispatchWithCapChecked_declassifySignal_delegates
            (match clearWokenReceiverStash ((boundDeliveryTarget? st notifId).map (·.1)) st' with
             | .error e => .error e
             | .ok ((), st'') =>
-                .ok ((), Architecture.stageWokenDelivery
-                          (Architecture.stageWokenDelivery st''
-                            ((boundDeliveryTarget? st notifId).map (·.1)) 0)
-                          (notificationSignalWaiter? st notifId) 0))
+                .ok ((), st''))
        | (_, .error e) => .error e) := by
   unfold dispatchWithCapChecked dispatchCapabilityOnly
   rw [hSyscall]
@@ -8453,8 +8441,8 @@ grow** — and since an entry is appended exactly when a downgrade is authorized
 happened".
 
 Stated at the dispatch, over the committed post-state of the whole arm, because
-the post-processing after the transition (the stash clear and both WS-RA
-stagers) must not touch the trail either — an arm that appended there would
+the post-processing after the transition (the stash clear) must not touch the
+trail either — an arm that appended there would
 falsify this while the transition's own theorem stayed true. -/
 theorem dispatchWithCapChecked_declassifySignal_default_no_downgrade
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
@@ -8480,7 +8468,7 @@ theorem dispatchWithCapChecked_declassifySignal_default_no_downgrade
   | ok sgi =>
     simp only at hStep
     -- The transition's own trail statement, then the arm's post-processing —
-    -- neither the stash clear nor either stager touches the trail.
+    -- the stash clear does not touch the trail.
     have hTrail := declassifiedSignal_default_policy_never_downgrades (liftLegacyContext ctx)
       ctx.declassificationPolicy notifId ntfnCap.signalBadge executingCore st stT
       sgi hDefault hPair
@@ -8495,9 +8483,7 @@ theorem dispatchWithCapChecked_declassifySignal_default_no_downgrade
       simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
       obtain ⟨-, hSt'⟩ := hStep
       rw [← hSt']
-      rw [Architecture.stageWokenDelivery_declassificationAuditLog_eq,
-        Architecture.stageWokenDelivery_declassificationAuditLog_eq,
-        clearWokenReceiverStash_declassificationAuditLog_eq _ _ _ hStash]
+      rw [clearWokenReceiverStash_declassificationAuditLog_eq _ _ _ hStash]
       exact hTrail
 
 /-- **WS-SM SM9.A.10: the live `.auditRead` arm routes to `auditReadFromCore`,
@@ -9348,10 +9334,7 @@ def syscallDelegates : SyscallId → Prop
                (match clearWokenReceiverStash ((boundDeliveryTarget? st notifId).map (·.1)) st' with
                 | .error e => .error e
                 | .ok ((), st'') =>
-                    .ok ((), Architecture.stageWokenDelivery
-                              (Architecture.stageWokenDelivery st''
-                                ((boundDeliveryTarget? st notifId).map (·.1)) 0)
-                              (notificationSignalWaiter? st notifId) 0))
+                    .ok ((), st''))
            | (_, .error e) => .error e)
   -- WS-SM SM9.A.10: the live audit arms.  Stated over the *checked* dispatch,
   -- like `.declassify`, because that is the only path they have — and the

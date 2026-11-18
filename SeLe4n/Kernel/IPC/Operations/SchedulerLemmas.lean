@@ -350,6 +350,22 @@ theorem storeTcbIpcStateAndMessage_preserves_endpoint
     simp [hLookup] at hStep
   · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg epId hEq hObjInv hStep]; exact hEp
 
+/-- `storeTcbIpcStateAndMessage_preserves_endpoint` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_preserves_endpoint
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (epId : SeLe4n.ObjId) (ep : Endpoint)
+    (hObjInv : st.objects.invExt)
+    (hEp : st.objects[epId]? = some (.endpoint ep))
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    st'.objects[epId]? = some (.endpoint ep) := by
+  by_cases hEq : epId = tid.toObjId
+  · subst hEq
+    unfold storeTcbSignalWoken modifyTcb at hStep
+    have hLookup : lookupTcb st tid = none := by unfold lookupTcb SystemState.getTcb?; simp [hEp]
+    simp [hLookup] at hStep
+  · rw [storeTcbSignalWoken_preserves_objects_ne st st' tid badge epId hEq hObjInv hStep]; exact hEp
+
 /-- Finding F-1: `storeTcbReceiveComplete` preserves endpoint objects.
 Mirror of `storeTcbIpcStateAndMessage_preserves_endpoint`. -/
 theorem storeTcbReceiveComplete_preserves_endpoint
@@ -477,6 +493,46 @@ theorem storeTcbIpcStateAndMessage_tcb_exists_at_target
       simp only [hStore] at hStep
       have := Except.ok.inj hStep; subst this
       exact ⟨_, storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore⟩
+
+/-- The thread a signal wakes is stored `.ready` (`TCB.signalWoken`). -/
+theorem storeTcbSignalWoken_ipcState_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st')
+    (tcb : TCB) (hTcb : st'.objects[tid.toObjId]? = some (.tcb tcb)) :
+    tcb.ipcState = .ready := by
+  obtain ⟨t0, _, _, hAt, _⟩ := modifyTcb_objects hObjInv hStep
+  rw [hAt] at hTcb; cases hTcb; rfl
+
+/-- The thread a signal wakes is still a TCB after its store. -/
+theorem storeTcbSignalWoken_tcb_exists_at_target
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st')
+    (_hTcb : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb)) :
+    ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') := by
+  obtain ⟨t0, _, _, hAt, _⟩ := modifyTcb_objects hObjInv hStep
+  exact ⟨_, hAt⟩
+
+/-- The thread a signal wakes is stored `.ready` (`TCB.signalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_ipcState_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st')
+    (tcb : TCB) (hTcb : st'.objects[tid.toObjId]? = some (.tcb tcb)) :
+    tcb.ipcState = .ready := by
+  obtain ⟨t0, _, _, hAt, _⟩ := modifyTcb_objects hObjInv hStep
+  rw [hAt] at hTcb; cases hTcb; rfl
+
+/-- The thread a signal wakes is still a TCB after its store. -/
+theorem storeTcbSignalBoundWoken_tcb_exists_at_target
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st')
+    (_hTcb : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb)) :
+    ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') := by
+  obtain ⟨t0, _, _, hAt, _⟩ := modifyTcb_objects hObjInv hStep
+  exact ⟨_, hAt⟩
 
 /-- Finding F-1: TCB existence at target after `storeTcbReceiveComplete`.
 Mirror of `storeTcbIpcStateAndMessage_tcb_exists_at_target`. -/

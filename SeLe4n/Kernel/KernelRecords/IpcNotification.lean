@@ -233,12 +233,12 @@ theorem notificationSignalOnCore {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge} {c 
         split
         · exact refl hInv
         · rename_i st2 hT
-          have S2 := storeTcbIpcStateAndMessage F1.invExt hT
-            (fun x hx => .inl ((notificationHead_notParked hN hG hH).frame F1 x hx))
+          have S2 := storeTcbSignalWoken F1.invExt hT
+            ((notificationHead_notParked hN hG hH).frame F1)
           obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hT
           have F3 := RecordsFrame.detachNtfnHead st2 w (ntfnSuccessor? st w) S2.invExt
           have F4 := RecordsFrame.wakeThread _ w c F3.invExt (F3.ready (fun y hy => by
-            rw [hx] at hy; cases hy; simp))
+            rw [hx] at hy; cases hy; simp [TCB.signalWoken]))
           exact (of_frame F1).trans (S2.trans ((of_frame F3).trans (of_frame F4)))
     · dsimp only
       cases hS : SeLe4n.Model.storeObject nid _ st with
@@ -255,7 +255,6 @@ theorem notificationSignalBoundOnCore {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge
   split
   · rename_i t epId hB
     obtain ⟨tcb, hT, hR⟩ := boundDeliveryTarget?_some st nid t epId hB
-    dsimp only
     split
     · exact refl hInv
     · rename_i st1 hRm
@@ -265,10 +264,10 @@ theorem notificationSignalBoundOnCore {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge
       · rename_i st2 hC
         have hNP : NotParkedAt st t := fun x hx => by
           rw [hT] at hx; cases hx; rw [hR]; simp
-        have S2 := storeTcbReceiveComplete F1.invExt hC (hNP.frame F1)
+        have S2 := storeTcbSignalBoundWoken F1.invExt hC (hNP.frame F1)
         obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hC
         have F3 := RecordsFrame.wakeThread st2 t c S2.invExt (fun y hy => by
-          rw [hx] at hy; cases hy; simp)
+          rw [hx] at hy; cases hy; simp [TCB.signalBoundWoken])
         exact (of_frame F1).trans (S2.trans (of_frame F3))
   · exact notificationSignalOnCore hInv hN
 

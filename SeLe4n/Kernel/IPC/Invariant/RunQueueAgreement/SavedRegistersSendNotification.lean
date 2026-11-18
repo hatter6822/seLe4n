@@ -522,81 +522,120 @@ theorem endpointSendCrossCoreDispatchChecked_savedRegsUnwritten (ctx : LabelingC
 
 /-! ### The notifications -/
 
-/-- The per-core signal writes no saved register: the head waiter is handed
-the badge as a pending message, unlinked and woken, or the badge is merged into
-the notification. -/
-theorem notificationSignalOnCore_savedRegsUnwritten (notificationId : SeLe4n.ObjId)
+/-- A TCB rewrite writes the saved registers of that thread alone. -/
+theorem savedRegsKeptExcept.of_modifyTcb_written {W : SeLe4n.ThreadId → Prop}
+    {st st' : SystemState} {tid : SeLe4n.ThreadId} {f : TCB → TCB} (hInv : st.objects.invExt)
+    (h : modifyTcb st tid f = .ok st') (hW : W tid) : savedRegsKeptExcept W st st' :=
+  fun t ht => by
+    obtain ⟨_, _, hS⟩ := modifyTcb_ok_decompose h
+    unfold SystemState.savedRegs
+    rw [storeObject_getTcb?_ne st st' _ _ t
+      (fun h' => ht (by rw [SeLe4n.ThreadId.toObjId_injective _ _ h']; exact hW)) hInv hS]
+
+/-- The threads a signal writes: the bound thread blocked on receive, or the
+notification's head waiter. seL4's `sendSignal` writes the badge register of
+the thread it wakes and no other register. -/
+def signalWritten (st : SystemState) (nid : SeLe4n.ObjId) (t : SeLe4n.ThreadId) : Prop :=
+  (boundDeliveryTarget? st nid).map (·.1) = some t ∨ notificationSignalWaiter? st nid = some t
+
+/-- The per-core signal writes the saved registers of the head waiter alone:
+its badge register, as it is unlinked and woken. Merging the badge into the
+notification writes no register. -/
+theorem notificationSignalOnCore_savedRegsKept (notificationId : SeLe4n.ObjId)
     (badge : SeLe4n.Badge) (c : CoreId) {st : SystemState} (hInv : st.objects.invExt) :
-    savedRegsUnwritten st (notificationSignalOnCore notificationId badge c st).1 := by
+    savedRegsKeptExcept (fun t => notificationSignalWaiter? st notificationId = some t) st
+        (notificationSignalOnCore notificationId badge c st).1 ∧
+      (notificationSignalOnCore notificationId badge c st).1.objects.invExt := by
   unfold notificationSignalOnCore
   split
   · rename_i ntfn hN
     split
-    · try dsimp only
+    · rename_i waiter hHead
+      try dsimp only
       split
-      · exact .refl hInv
+      · exact ⟨.refl _, hInv⟩
       · rename_i st1 hS
         have h1 := savedRegsUnwritten.of_storeObject_notification hN (.refl hInv) hS
         try dsimp only
         split
-        · exact .refl hInv
+        · exact ⟨.refl _, hInv⟩
         · rename_i st2 hT
-          have h2 := h1.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h1.2 hT)
-          exact (h2.trans (savedRegsUnwritten.of_detachNtfnHead st2 _ _ h2.2)).trans
-            (savedRegsUnwritten.of_wakeThread _ _ c (detachNtfnHead_linksRewritten _ _ _ h2.2).2.1)
+          have hW : notificationSignalWaiter? st notificationId = some waiter := by
+            simp only [notificationSignalWaiter?, hN, hHead]
+          have hI2 := storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ h1.2 hT
+          have k2 : savedRegsKeptExcept (fun t => notificationSignalWaiter? st notificationId = some t)
+              st1 st2 := by
+            unfold storeTcbSignalWoken at hT
+            exact savedRegsKeptExcept.of_modifyTcb_written h1.2 hT hW
+          have h3 := (savedRegsUnwritten.of_detachNtfnHead st2 waiter (ntfnSuccessor? st waiter)
+            hI2).trans (savedRegsUnwritten.of_wakeThread _ waiter c
+              (detachNtfnHead_linksRewritten st2 waiter (ntfnSuccessor? st waiter) hI2).2.1)
+          exact ⟨(h1.kept.trans k2).trans h3.kept, h3.2⟩
     · try dsimp only
       split
-      · exact .refl hInv
+      · exact ⟨.refl _, hInv⟩
       · rename_i st1 hS
-        exact savedRegsUnwritten.of_storeObject_notification hN (.refl hInv) hS
-  · split <;> exact .refl hInv
+        have h1 := savedRegsUnwritten.of_storeObject_notification hN (.refl hInv) hS
+        exact ⟨h1.kept, h1.2⟩
+  · split <;> exact ⟨.refl _, hInv⟩
 
-/-- The bound signal writes no saved register: the bound thread is removed from
-its endpoint, handed the badge as a pending message and woken, or the ordinary
-signal runs. -/
-theorem notificationSignalBoundOnCore_savedRegsUnwritten (notificationId : SeLe4n.ObjId)
+/-- The bound signal writes the saved registers of the thread it wakes alone:
+the bound thread is removed from its endpoint, given the badge in its badge
+register and woken, or the ordinary signal runs. -/
+theorem notificationSignalBoundOnCore_savedRegsKept (notificationId : SeLe4n.ObjId)
     (badge : SeLe4n.Badge) (c : CoreId) {st : SystemState} (hInv : st.objects.invExt) :
-    savedRegsUnwritten st (notificationSignalBoundOnCore notificationId badge c st).1 := by
+    savedRegsKeptExcept (signalWritten st notificationId) st
+        (notificationSignalBoundOnCore notificationId badge c st).1 ∧
+      (notificationSignalBoundOnCore notificationId badge c st).1.objects.invExt := by
   unfold notificationSignalBoundOnCore
   split
-  · try dsimp only
+  · rename_i t epId hB
+    try dsimp only
     split
-    · exact .refl hInv
+    · exact ⟨.refl _, hInv⟩
     · rename_i st1 hR
       have h1 := endpointQueueRemoveDual_savedRegsUnwritten hInv hR
       split
-      · exact .refl hInv
+      · exact ⟨.refl _, hInv⟩
       · rename_i st2 hT
-        have h2 := h1.trans (savedRegsUnwritten.of_storeTcbReceiveComplete h1.2 hT)
-        exact h2.trans (savedRegsUnwritten.of_wakeThread st2 _ c h2.2)
-  · exact notificationSignalOnCore_savedRegsUnwritten _ _ _ hInv
+        have hI2 := storeTcbSignalBoundWoken_preserves_objects_invExt _ _ _ _ h1.2 hT
+        have k2 : savedRegsKeptExcept (signalWritten st notificationId) st1 st2 := by
+          unfold storeTcbSignalBoundWoken at hT
+          exact savedRegsKeptExcept.of_modifyTcb_written h1.2 hT (.inl (by rw [hB]; rfl))
+        have h3 := savedRegsUnwritten.of_wakeThread st2 t c hI2
+        exact ⟨(h1.kept.trans k2).trans h3.kept, h3.2⟩
+  · obtain ⟨k, i⟩ := notificationSignalOnCore_savedRegsKept notificationId badge c hInv
+    exact ⟨k.mono fun _ h => .inr h, i⟩
 
-/-- The checked signal writes no saved register. -/
-theorem notificationSignalBoundCrossCoreDispatchChecked_savedRegsUnwritten
+/-- The checked signal writes the saved registers of the thread it wakes alone. -/
+theorem notificationSignalBoundCrossCoreDispatchChecked_savedRegsKept
     (ctx : LabelingContext) (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId)
     (badge : SeLe4n.Badge) (c : CoreId) {st : SystemState} (hInv : st.objects.invExt) :
-    savedRegsUnwritten st (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId
-      signaler badge c st).1 := by
+    savedRegsKeptExcept (signalWritten st notificationId) st
+        (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler badge c st).1 ∧
+      (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
+        badge c st).1.objects.invExt := by
   unfold notificationSignalBoundCrossCoreDispatchChecked
   repeat' split
   all_goals first
-    | exact notificationSignalBoundOnCore_savedRegsUnwritten _ _ _ hInv
-    | exact .refl hInv
+    | exact notificationSignalBoundOnCore_savedRegsKept _ _ _ hInv
+    | exact ⟨.refl _, hInv⟩
 
-/-- The declassifying signal writes no saved register: the bound signal, then
-the audit trail. -/
-theorem notificationSignalDeclassifiedCrossCoreDispatch_savedRegsUnwritten
+/-- The declassifying signal writes the saved registers of the thread it wakes
+alone: the bound signal, then the audit trail. -/
+theorem notificationSignalDeclassifiedCrossCoreDispatch_savedRegsKept
     {ctx : GenericLabelingContext} {declPolicy : DeclassificationPolicy}
     {notificationId : SeLe4n.ObjId} {badge : SeLe4n.Badge} {c : CoreId}
     {st st' : SystemState} {sgi : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
     (h : notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy notificationId badge c st
-      = (st', .ok sgi)) : savedRegsUnwritten st st' := by
+      = (st', .ok sgi)) :
+    savedRegsKeptExcept (signalWritten st notificationId) st st' ∧ st'.objects.invExt := by
   have hF := notificationSignalDeclassifiedOnCore_frame ctx declPolicy notificationId badge c
     st st' sgi h
-  have h1 := notificationSignalBoundOnCore_savedRegsUnwritten notificationId badge c hInv
+  obtain ⟨k, i⟩ := notificationSignalBoundOnCore_savedRegsKept notificationId badge c hInv
   have hO : st'.objects = (notificationSignalBoundOnCore notificationId badge c st).1.objects := by
     rw [hF]
-  exact h1.trans ⟨.of_objects_eq hO, by rw [hO]; exact h1.2⟩
+  exact ⟨k.trans (.of_objects_eq hO), by rw [hO]; exact i⟩
 
 /-- The per-core wait writes no saved register: the badge's consumption clears
 the notification and readies the caller; the block appends the caller, stores
@@ -806,22 +845,26 @@ theorem sendArm_savedRegsWrittenFree {ctx : LabelingContext} {epId : SeLe4n.ObjI
   exact h2.writtenFree.trans (stageWokenDelivery_savedRegsWrittenFree n h2.2 fun _ h =>
     offCoreFree_of_receiveHead P.dequeued P.queueHeads hRT hBNR h).1
 
-/-- WS-ZA ZA6.26: **a signal arm writes only the threads it wakes**: the signal
-and the stash clear write no saved register, and the two stagings name the
-bound thread blocked on receive and the notification's head waiter at the
-entry's start, both blocked there. -/
+/-- **The threads a signal writes are held by no core**: the bound thread is
+blocked on receive and the notification's head waiter is blocked. -/
+theorem offCoreFree_of_signalWritten {e : CoreId} {st : SystemState} {nid : SeLe4n.ObjId}
+    {t : SeLe4n.ThreadId} (P : EntryPremises st) (hRT : st.residentsHaveTcbs)
+    (hBNR : st.blockedNotResident) (h : signalWritten st nid t) : offCoreFree e st t :=
+  h.elim (offCoreFree_of_boundTarget P.dequeued hRT hBNR)
+    (offCoreFree_of_signalWaiter P.dequeued P.ntfnHeads hRT hBNR)
+
+/-- WS-ZA ZA6.26: **a signal arm writes only the thread it wakes**: the signal
+writes the badge register of the bound thread blocked on receive or of the
+notification's head waiter, both blocked at the entry's start, and the stash
+clear writes no saved register. -/
 theorem signalArm_savedRegsWrittenFree {nid : SeLe4n.ObjId}
     {e : CoreId} {st s1 s2 : SystemState} (P : EntryPremises st)
-    (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident) (h1 : savedRegsUnwritten st s1)
+    (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
+    (h1 : savedRegsKeptExcept (signalWritten st nid) st s1 ∧ s1.objects.invExt)
     (hClr : clearWokenReceiverStash ((boundDeliveryTarget? st nid).map (·.1)) s1 = .ok ((), s2)) :
-    savedRegsWrittenFree e st st (Architecture.stageWokenDelivery
-      (Architecture.stageWokenDelivery s2 ((boundDeliveryTarget? st nid).map (·.1)) 0)
-      (notificationSignalWaiter? st nid) 0) := by
-  have h2 := h1.trans (clearWokenReceiverStash_savedRegsUnwritten h1.2 hClr)
-  obtain ⟨w1, i1⟩ := stageWokenDelivery_savedRegsWrittenFree (e := e) (base := st) 0 h2.2
-    fun _ h => offCoreFree_of_boundTarget P.dequeued hRT hBNR h
-  exact (h2.writtenFree.trans w1).trans (stageWokenDelivery_savedRegsWrittenFree 0 i1 fun _ h =>
-    offCoreFree_of_signalWaiter P.dequeued P.ntfnHeads hRT hBNR h).1
+    savedRegsWrittenFree e st st s2 :=
+  .of_kept (h1.1.trans (clearWokenReceiverStash_savedRegsUnwritten h1.2 hClr).kept)
+    fun _ h => offCoreFree_of_signalWritten P hRT hBNR h
 
 /-- The checked signal arm. -/
 theorem notificationSignalArm_savedRegsWrittenFree {ctx : LabelingContext} {nid : SeLe4n.ObjId}
@@ -830,10 +873,8 @@ theorem notificationSignalArm_savedRegsWrittenFree {ctx : LabelingContext} {nid 
     (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident)
     (hSig : notificationSignalBoundCrossCoreDispatchChecked ctx nid tid badge ec st = (s1, .ok r))
     (hClr : clearWokenReceiverStash ((boundDeliveryTarget? st nid).map (·.1)) s1 = .ok ((), s2)) :
-    savedRegsWrittenFree e st st (Architecture.stageWokenDelivery
-      (Architecture.stageWokenDelivery s2 ((boundDeliveryTarget? st nid).map (·.1)) 0)
-      (notificationSignalWaiter? st nid) 0) := by
-  have h1 := notificationSignalBoundCrossCoreDispatchChecked_savedRegsUnwritten ctx nid tid badge
+    savedRegsWrittenFree e st st s2 := by
+  have h1 := notificationSignalBoundCrossCoreDispatchChecked_savedRegsKept ctx nid tid badge
     ec P.objInv
   rw [hSig] at h1
   exact signalArm_savedRegsWrittenFree P.toEntryPremises hRT hBNR h1 hClr
@@ -847,17 +888,15 @@ theorem declassifySignalArm_savedRegsWrittenFree {ctx : GenericLabelingContext}
     (hSig : notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy nid badge ec st
       = (s1, .ok r))
     (hClr : clearWokenReceiverStash ((boundDeliveryTarget? st nid).map (·.1)) s1 = .ok ((), s2)) :
-    savedRegsWrittenFree e st st (Architecture.stageWokenDelivery
-      (Architecture.stageWokenDelivery s2 ((boundDeliveryTarget? st nid).map (·.1)) 0)
-      (notificationSignalWaiter? st nid) 0) :=
+    savedRegsWrittenFree e st st s2 :=
   signalArm_savedRegsWrittenFree P.toEntryPremises hRT hBNR
-    (notificationSignalDeclassifiedCrossCoreDispatch_savedRegsUnwritten P.objInv hSig) hClr
+    (notificationSignalDeclassifiedCrossCoreDispatch_savedRegsKept P.objInv hSig) hClr
 
-/-- WS-ZA ZA6.32: **the interrupt step writes only the threads its signal
+/-- WS-ZA ZA6.32: **the interrupt step writes only the thread its signal
 wakes**: seL4's `handleInterrupt` signals the bound notification
-(`interruptSignal`), whose signal and stash clear write no saved register and
-whose two stagings name the bound thread blocked on receive and the
-notification's head waiter, both blocked at the entry's start; the mask writes
+(`interruptSignal`), whose signal writes the badge register of the bound thread
+blocked on receive or of the notification's head waiter, both blocked at the
+entry's start, and whose stash clear writes no saved register; the mask writes
 the machine's mask words and the physical-write ledger only. -/
 theorem handleInterruptOnCore_savedRegsWrittenFree {e : CoreId} (st : SystemState) (c : CoreId)
     (line : Nat) (E : EntryPremises st) (hRT : st.residentsHaveTcbs)
@@ -866,10 +905,11 @@ theorem handleInterruptOnCore_savedRegsWrittenFree {e : CoreId} (st : SystemStat
   have hM : ∀ s, savedRegsWrittenFree e st st s →
       savedRegsWrittenFree e st st (Architecture.setInterruptLineMask s line true) :=
     fun _ hs t => hs t
-  have h1 := fun ntfn badge => notificationSignalBoundOnCore_savedRegsUnwritten ntfn badge c E.objInv
+  have h1 := fun ntfn badge => notificationSignalBoundOnCore_savedRegsKept ntfn badge c E.objInv
   unfold handleInterruptOnCore
   split
-  · exact hM _ (interruptSignal_of (P := savedRegsWrittenFree e st st) _ _ c st (h1 _ _).writtenFree
+  · exact hM _ (interruptSignal_of (P := savedRegsWrittenFree e st st) _ _ c st
+      (.of_kept (h1 _ _).1 fun _ h => offCoreFree_of_signalWritten E hRT hBNR h)
       fun _ _ _ hClr => signalArm_savedRegsWrittenFree E hRT hBNR (h1 _ _) hClr)
   · exact hM _ (.refl _)
 

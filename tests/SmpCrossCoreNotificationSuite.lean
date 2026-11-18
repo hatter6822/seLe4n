@@ -213,8 +213,7 @@ example (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : 
     (hWaiters : ntfn.waitHead = some waiter)
     (hStore : storeObject notificationId (.notification
         (ntfn.withHeadPopped (ntfnSuccessor? st waiter))) st = .ok ((), st'))
-    (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
-        (some { IpcMessage.empty with badge := some badge }) = .ok st'')
+    (hMsg : storeTcbSignalWoken st' waiter badge = .ok st'')
     (hTcb'' : st''.getTcb? waiter = some waiterTcb'')
     (hRemote : determineTargetCore st'' waiter ≠ executingCore)
     (hObjInv : st.objects.invExt) :
@@ -244,8 +243,7 @@ example (ctx : LabelingContext) (observer : IfObserver)
     (hWaiters : ntfn.waitHead = some waiter)
     (hStore : storeObject notificationId (.notification
         (ntfn.withHeadPopped (ntfnSuccessor? st waiter))) st = .ok ((), st'))
-    (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
-        (some { IpcMessage.empty with badge := some badge }) = .ok st'')
+    (hMsg : storeTcbSignalWoken st' waiter badge = .ok st'')
     (hObjInv : st.objects.invExt)
     (hNtfnHigh : objectObservable ctx observer notificationId = false)
     (hWaiterHigh : threadObservable ctx observer waiter = false)
@@ -268,8 +266,7 @@ example (ctx : LabelingContext) (observer : IfObserver)
     (st st1 st2 : SystemState) (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
     (hTarget : boundDeliveryTarget? st notificationId = some (t, epId))
     (hRemove : endpointQueueRemoveDual epId true t st = .ok ((), st1))
-    (hRecv : storeTcbReceiveComplete st1 t
-        (some { IpcMessage.empty with badge := some badge }) = .ok st2)
+    (hRecv : storeTcbSignalBoundWoken st1 t badge = .ok st2)
     (hSplice : endpointSpliceHigh ctx observer st epId t)
     (hObjInv : st.objects.invExt)
     (hBoundHigh : threadObservable ctx observer t = false)
@@ -461,7 +458,7 @@ private def runSignalWakeChecks : IO Unit := do
       let (st', _) := notificationSignalOnCore nId badge bootCoreId st
       assertBool "signal delivers the badge to the woken local waiter (.ready + badge value)"
         (match st'.getTcb? waiterLocalTid with
-         | some t => decide (t.ipcState = .ready ∧ t.pendingMessage.bind (·.badge) = some badge)
+         | some t => decide (t.ipcState = .ready ∧ t.registerContext.x0 = badge.word ∧ t.pendingMessage = none)
          | none => false)
   | none => assertBool "signal setup (local waiter) succeeded" false
   -- Remote waiter (core1-bound): a reschedule SGI is fired to core 1.
@@ -573,7 +570,7 @@ private def runBoundChecks : IO Unit := do
             (match res with | .ok none => true | _ => false)
           assertBool "bound signal makes the bound TCB ready with the badge delivered (value pinned)"
             (match stSig.getTcb? boundTid with
-             | some t => decide (t.ipcState = .ready ∧ t.pendingMessage.bind (·.badge) = some badge)
+             | some t => decide (t.ipcState = .ready ∧ t.registerContext.x0 = badge.word ∧ t.pendingMessage = none)
              | none => false)
           -- The bound TCB is dequeued from the endpoint's receive queue.
           assertBool "bound signal dequeues the bound TCB from its endpoint"
@@ -840,7 +837,7 @@ private def runBoundDeliveryNonInterferenceChecks : IO Unit := do
       -- Guard 1: the delivery really ran (otherwise every equality below is trivial).
       assertBool "bound-delivery NI fixture: the badge was delivered"
         (match stSig.getTcb? boundTid with
-         | some t => decide (t.pendingMessage.bind (·.badge) = some badge)
+         | some t => decide (t.registerContext.x0 = badge.word ∧ t.pendingMessage = none)
          | none => false)
       assertBool "bound-delivery NI fixture: the endpoint receive queue emptied"
         (match stSig.objects[epId]? with

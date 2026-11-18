@@ -879,9 +879,8 @@ private def frozenDeliveryIsHonest : IO Unit := do
   | .ok (_, fstSig) =>
   expect "FO-023: the signalled waiter is handed the badge, not only woken"
     (match frozenLookupTcb fstSig ⟨4⟩ with
-     | some wt => match wt.pendingMessage with
-                  | some m => m.badge == some (Badge.ofNatMasked 42)
-                  | none => false
+     | some wt => wt.registerContext.x0 == (Badge.ofNatMasked 42).word &&
+                  wt.pendingMessage.isNone
      | none => false)
   expect "FO-023: the notification is left holding none of it"
     (match fstSig.objects.get? ⟨5⟩ with
@@ -1003,9 +1002,9 @@ private def frozenBoundNotificationDelivery : IO Unit := do
   match frozenNotificationSignal notifId signaller badge fst with
   | .error _ => throw <| IO.userError "FO-025: bound delivery should succeed"
   | .ok ((), fst') =>
-    expect "FO-025: the badge is delivered into the bound thread's pendingMessage"
+    expect "FO-025: the badge is delivered into the bound thread's badge register"
       (match frozenLookupTcb fst' bound with
-       | some t => (t.pendingMessage.bind (·.badge)) == some badge
+       | some t => t.registerContext.x0 == badge.word && t.pendingMessage.isNone
        | none => false)
     expect "FO-025: the bound thread is unblocked and off the endpoint queue"
       ((match frozenLookupTcb fst' bound with

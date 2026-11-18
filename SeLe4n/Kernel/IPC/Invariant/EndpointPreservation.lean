@@ -336,6 +336,13 @@ theorem storeTcbIpcStateAndMessage_preserves_ipcInvariant
     ipcInvariant st' := by
   exact fun oid ntfn h => hInv oid ntfn (storeTcbIpcStateAndMessage_notification_backward st st' tid ipc msg oid ntfn hObjInv hStep h)
 
+/-- `storeTcbIpcStateAndMessage_preserves_ipcInvariant` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_preserves_ipcInvariant
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hInv : ipcInvariant st) (hObjInv : st.objects.invExt) (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    ipcInvariant st' := by
+  exact fun oid ntfn h => hInv oid ntfn (storeTcbSignalWoken_notification_backward st st' tid badge oid ntfn hObjInv hStep h)
+
 /-- Finding F-1: `storeTcbReceiveComplete` preserves ipcInvariant (pure backward
 transport). Mirror of `storeTcbIpcStateAndMessage_preserves_ipcInvariant`. -/
 theorem storeTcbReceiveComplete_preserves_ipcInvariant
@@ -343,6 +350,13 @@ theorem storeTcbReceiveComplete_preserves_ipcInvariant
     (hInv : ipcInvariant st) (hObjInv : st.objects.invExt) (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
     ipcInvariant st' := by
   exact fun oid ntfn h => hInv oid ntfn (storeTcbReceiveComplete_notification_backward st st' tid msg oid ntfn hObjInv hStep h)
+
+/-- `storeTcbReceiveComplete_preserves_ipcInvariant` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_preserves_ipcInvariant
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hInv : ipcInvariant st) (hObjInv : st.objects.invExt) (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    ipcInvariant st' := by
+  exact fun oid ntfn h => hInv oid ntfn (storeTcbSignalBoundWoken_notification_backward st st' tid badge oid ntfn hObjInv hStep h)
 
 /-- storeTcbIpcState preserves ipcInvariant (pure backward transport). -/
 theorem storeTcbIpcState_preserves_ipcInvariant

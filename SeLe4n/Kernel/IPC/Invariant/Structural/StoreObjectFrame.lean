@@ -1122,6 +1122,52 @@ theorem storeTcbIpcStateAndMessage_preserves_pendingMessagesSatisfy
               rwa [storeObject_objects_ne st pair.2 tid.toObjId t.toObjId _ hEq hObjInv hStore] at hObj
             exact hInv t tcb' m hObjPre hPend
 
+/-- The store of a thread a signal wakes holds no message (`TCB.signalWoken`), so every
+in-flight message predicate survives it. -/
+theorem storeTcbSignalWoken_preserves_pendingMessagesSatisfy
+    {P : IpcMessage → Prop}
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st')
+    (hInv : pendingMessagesSatisfy P st) :
+    pendingMessagesSatisfy P st' := by
+  obtain ⟨t0, _, _, hAt, hO⟩ := modifyTcb_objects hObjInv hStep
+  intro t tcb' m hObj hPend
+  by_cases hEq : t.toObjId = tid.toObjId
+  · rw [hEq, hAt] at hObj; cases hObj; cases hPend
+  · exact hInv t tcb' m (by rwa [hO _ hEq] at hObj) hPend
+
+theorem storeTcbSignalWoken_preserves_allPendingMessagesBounded
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st')
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' :=
+  storeTcbSignalWoken_preserves_pendingMessagesSatisfy st st' tid badge hObjInv hStep hInv
+
+/-- The store of a thread a signal wakes holds no message (`TCB.signalBoundWoken`), so every
+in-flight message predicate survives it. -/
+theorem storeTcbSignalBoundWoken_preserves_pendingMessagesSatisfy
+    {P : IpcMessage → Prop}
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st')
+    (hInv : pendingMessagesSatisfy P st) :
+    pendingMessagesSatisfy P st' := by
+  obtain ⟨t0, _, _, hAt, hO⟩ := modifyTcb_objects hObjInv hStep
+  intro t tcb' m hObj hPend
+  by_cases hEq : t.toObjId = tid.toObjId
+  · rw [hEq, hAt] at hObj; cases hObj; cases hPend
+  · exact hInv t tcb' m (by rwa [hO _ hEq] at hObj) hPend
+
+theorem storeTcbSignalBoundWoken_preserves_allPendingMessagesBounded
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st')
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' :=
+  storeTcbSignalBoundWoken_preserves_pendingMessagesSatisfy st st' tid badge hObjInv hStep hInv
+
 /-- WS-H12e: storeTcbIpcStateAndMessage preserves allPendingMessagesBounded when the
 new pending message (if any) is bounded — the boundedness instance of the generic
 in-flight transport above. -/
@@ -1588,22 +1634,19 @@ theorem notificationSignal_preserves_allPendingMessagesBounded
               have hInv1 := storeObject_notification_preserves_allPendingMessagesBounded
                 st pair.2 notificationId _ hObjInv hStore hInv
               -- R3-A/M-16: storeTcbIpcStateAndMessage replaces storeTcbIpcState
-              cases hIpc : storeTcbIpcStateAndMessage pair.2 waiter .ready
-                  (some { IpcMessage.empty with badge := some badge }) with
+              cases hIpc : storeTcbSignalWoken pair.2 waiter badge with
               | error e => simp
               | ok st'' =>
                   simp only [Except.ok.injEq, Prod.mk.injEq]
                   intro ⟨_, hEq⟩; subst hEq
                   have hObjInvPair : pair.2.objects.invExt :=
                     storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
-                  have hInv2 := storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
-                    pair.2 st'' waiter .ready _
-                    (fun m hm => by cases hm; exact IpcMessage.empty_bounded)
-                    hObjInvPair hIpc hInv1
+                  have hInv2 := storeTcbSignalWoken_preserves_allPendingMessagesBounded
+                    pair.2 st'' waiter _ hObjInvPair hIpc hInv1
                   exact ensureRunnable_preserves_allPendingMessagesBounded _ waiter
                     (allPendingMessagesBounded_of_ntfnLinksRewritten
                       (detachNtfnHead_linksRewritten _ _ _
-                        (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _
+                        (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _
                           hObjInvPair hIpc)) hInv2)
       | none =>
           simp only [hWaiters] at hStep
@@ -1861,17 +1904,16 @@ theorem notificationSignal_preserves_dualQueueSystemInvariant
           have hInv1 := storeObject_notification_preserves_dualQueueSystemInvariant
             st pair.2 notificationId _ hObjInv hStore (.inl ⟨ntfn, hObj⟩) hInv
           have hObjInv1 := storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
-          cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
-              (some { IpcMessage.empty with badge := some badge }) with
+          cases hTcb : storeTcbSignalWoken pair.2 waiter badge with
           | error e => simp
           | ok st'' =>
             simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
             exact ensureRunnable_preserves_dualQueueSystemInvariant _ waiter
               (dualQueueSystemInvariant_of_ntfnLinksRewritten
                 (detachNtfnHead_linksRewritten _ _ _
-                  (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hTcb))
-                (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
-                  pair.2 st'' waiter .ready _ hObjInv1 hTcb hInv1))
+                  (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hTcb))
+                (storeTcbSignalWoken_preserves_dualQueueSystemInvariant
+                  pair.2 st'' waiter _ hObjInv1 hTcb hInv1))
       | none =>
         simp only [hWaiters] at hStep
         exact storeObject_notification_preserves_dualQueueSystemInvariant

@@ -508,7 +508,8 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     · rename_i hSig
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
         (notificationSignalBoundCrossCoreDispatchChecked_stepCovers e' hInv) hSig
-      have hCv := (stepCovers_clearStash_stage hS hSInv (fun x hx => keyFrame_trans_stage hx) h).1
+      have hCv := (stepCovers_clearStash_stage (stage := id) hS hSInv
+        (fun _ hx => capabilityKeyFrame_refl hx) h (fun _ => rfl) (fun _ => rfl)).1
       split at h
       · cases h
       rename_i hClr
@@ -572,7 +573,8 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     · rename_i hSig
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
         (notificationSignalDeclassifiedOnCore_stepCovers e' hInv) hSig
-      have hCv := (stepCovers_clearStash_stage hS hSInv (fun x hx => keyFrame_trans_stage hx) h).1
+      have hCv := (stepCovers_clearStash_stage (stage := id) hS hSInv
+        (fun _ hx => capabilityKeyFrame_refl hx) h (fun _ => rfl) (fun _ => rfl)).1
       split at h
       · cases h
       rename_i hClr

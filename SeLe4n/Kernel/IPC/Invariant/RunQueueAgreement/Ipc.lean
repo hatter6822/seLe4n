@@ -130,6 +130,12 @@ theorem boundTarget_blockedAt {st : SystemState} {nid : SeLe4n.ObjId} {t : SeLe4
   ⟨tcb, hT, by rw [hS]; exact fun h => by cases h⟩
 macro_rules | `(tactic| run_queue_current_nowhere_step) => `(tactic|
   refine SystemState.currentNowhere.of_scheduler_eq (detachNtfnHead_scheduler _ _ _) ?_)
+macro_rules | `(tactic| run_queue_current_nowhere_step) => `(tactic|
+  refine SystemState.currentNowhere.of_scheduler_eq
+    (storeTcbSignalWoken_scheduler_eq _ _ _ _ (by with_reducible assumption)) ?_)
+macro_rules | `(tactic| run_queue_current_nowhere_step) => `(tactic|
+  refine SystemState.currentNowhere.of_scheduler_eq
+    (storeTcbSignalBoundWoken_scheduler_eq _ _ _ _ (by with_reducible assumption)) ?_)
 
 /-- The signal: the waiter it wakes is the notification's head, which
 `hHeads` says is blocked and current nowhere. -/
@@ -142,7 +148,7 @@ theorem notificationSignalOnCore_runQueueStage (notificationId : SeLe4n.ObjId)
   all_goals first
     | exact RunQueueStage.refl _
     | (refine (((storeObject_notificationOver_runQueueStage (by assumption) (by assumption)).trans
-         (storeTcbIpcStateAndMessage_runQueueStage (by assumption) rfl)).trans
+         (storeTcbSignalWoken_runQueueStage (by assumption))).trans
          (detachNtfnHead_runQueueStage _ _ _)).then_wake _ ?_
          (notificationHeadsWakeable.blocked hHeads (by assumption) (by assumption))
        run_queue_current_nowhere; done)
@@ -159,7 +165,7 @@ theorem notificationSignalBoundOnCore_runQueueStage (notificationId : SeLe4n.Obj
     | exact RunQueueStage.refl _
     | exact notificationSignalOnCore_runQueueStage _ _ _ _ hHeads
     | (refine ((endpointQueueRemoveDual_runQueueStage (by assumption)).trans
-         (storeTcbReceiveComplete_runQueueStage (by assumption))).then_wake _ ?_
+         (storeTcbSignalBoundWoken_runQueueStage (by assumption))).then_wake _ ?_
          (boundTarget_blockedAt (by assumption))
        run_queue_current_nowhere; done)
 

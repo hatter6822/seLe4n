@@ -563,12 +563,6 @@ theorem clearStashStage_mappingStage {st s st' : SystemState}
     cases h
     exact hS.trans ((clearWokenReceiverStash_mappingStage woken? hClr).trans (hStage _))
 
-/-- The two badge stagings a signal arm ends with. -/
-theorem stageWokenDeliveryTwice_mappingStage (x : SystemState) (w p : Option SeLe4n.ThreadId) :
-    MappingStage x (Architecture.stageWokenDelivery
-      (Architecture.stageWokenDelivery x w 0) p 0) :=
-  (stageWokenDelivery_mappingStage x w 0).trans (stageWokenDelivery_mappingStage _ p 0)
-
 /-- **A reply holder's cancel keeps the mappings recorded**: the suspend's IPC
 cancel, the chain revert and the `Inactive` write. -/
 theorem cancelReplyHolder_mappingStage (st : SystemState) (holder : SeLe4n.ThreadId)
@@ -709,7 +703,7 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     · rename_i hSig
       exact clearStashStage_mappingStage
         (MappingStage.of_fst_eq notificationSignalBoundCrossCoreDispatchChecked_mappingStage hSig)
-        (fun x => stageWokenDeliveryTwice_mappingStage x _ _) h
+        (stage := id) (fun x => MappingStage.refl x) h
     · cases h
   case none.notificationWait.object notifId =>
     split at h
@@ -765,7 +759,7 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     · rename_i hSig
       exact clearStashStage_mappingStage
         (MappingStage.of_fst_eq (notificationSignalDeclassifiedOnCore_mappingStage _ _ _ _ _ _) hSig)
-        (fun x => stageWokenDeliveryTwice_mappingStage x _ _) h
+        (stage := id) (fun x => MappingStage.refl x) h
     · cases h
 
 /-- **The checked syscall dispatch keeps the mappings recorded**: the yield, the

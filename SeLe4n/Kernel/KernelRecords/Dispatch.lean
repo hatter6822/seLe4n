@@ -709,12 +709,6 @@ theorem stageWokenDelivery_recordsStage (x : SystemState) (w : Option SeLe4n.Thr
     RecordsStage x (Architecture.stageWokenDelivery x w n) :=
   .of_frameK fun hI => RecordsFrame.stageWokenDelivery x w n hI
 
-/-- The two badge stagings a signal arm ends with. -/
-theorem stageWokenDeliveryTwice_recordsStage (x : SystemState) (w p : Option SeLe4n.ThreadId) :
-    RecordsStage x (Architecture.stageWokenDelivery
-      (Architecture.stageWokenDelivery x w 0) p 0) :=
-  (stageWokenDelivery_recordsStage x w 0).trans (stageWokenDelivery_recordsStage _ p 0)
-
 /-- A return-frame write. -/
 theorem writeReturnFrameToTcb_recordsStage (x : SystemState) (t : SeLe4n.ThreadId)
     (f : Architecture.SyscallReturnFrame) : RecordsStage x (Architecture.writeReturnFrameToTcb x t f) :=
@@ -904,7 +898,7 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
       exact clearStashStage_recordsStage
         (RecordsStage.of_fst_eq
           (RecordsStage.notificationSignalBoundCrossCoreDispatchChecked P.deletes.1) hSig)
-        (fun x => stageWokenDeliveryTwice_recordsStage x _ _) h
+        (stage := id) (fun x => RecordsStage.refl x) h
     · cases h
   case none.notificationWait.object notifId =>
     split at h
@@ -932,7 +926,7 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     · rename_i hSig
       exact clearStashStage_recordsStage
         (RecordsStage.of_fst_eq (RecordsStage.notificationSignalDeclassifiedOnCore P.deletes.1) hSig)
-        (fun x => stageWokenDeliveryTwice_recordsStage x _ _) h
+        (stage := id) (fun x => RecordsStage.refl x) h
     · cases h
 
 /-- **The taint pass keeps the records**: it writes the taint words alone. -/

@@ -69,7 +69,6 @@ theorem notificationSignalBoundOnCore_preserves_replyWaitersConsistent (nid : Se
     have hSF : ∀ v, st.replyViews t.toObjId = some v → v.server = none :=
       serverFree_of_tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
         (by simp only [TCB.blockingServer?, hR])
-    dsimp only
     split
     · exact hC
     · rename_i st1 hRm
@@ -77,9 +76,9 @@ theorem notificationSignalBoundOnCore_preserves_replyWaitersConsistent (nid : Se
       split
       · exact hC
       · rename_i st2 hS
-        have hI2 := storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ F.invExt hS
+        have hI2 := storeTcbSignalBoundWoken_preserves_objects_invExt _ _ _ _ F.invExt hS
         have hV2 : st2.replyViews = st.replyViews := by
-          rw [replyViews_storeTcbReceiveComplete F.invExt hS, F.replyViews]
+          rw [replyViews_storeTcbSignalBoundWoken F.invExt hS, F.replyViews]
           exact ReplyViews.setServer_of_server hSF
         refine SystemState.replyWaitersConsistent.of_views ?_ hC
         rw [SystemState.wakeThread_replyViews_eq _ _ _ hI2 (by rw [hV2]; exact hSF), hV2]

@@ -20,12 +20,10 @@ thread is blocked receiving on an endpoint, hands the badge to that thread
 TCB: `cancelIPC`, then `setThreadState Running` with the badge in its
 `badgeRegister`).  The specification's form (`notificationSignalBoundOnCore`)
 takes the thread off the endpoint's receive queue (`endpointQueueRemoveDual`),
-completes its receive holding the badge message (`storeTcbReceiveComplete`) and
-wakes it.  Here the removal is the in-place removal (`storeQueueRemove`,
-`queueRemove_inPlace`) and the receive completion a write of the thread where
-it stands (`notificationSignalBoundOnCore_bound_eq`), so the delivery's only
-remaining record is the message, which the callers write as the frame
-instead of holding it.
+makes it ready with the badge in its badge register and no message held
+(`storeTcbSignalBoundWoken`), and wakes it.  Here the removal is the in-place
+removal (`storeQueueRemove`, `queueRemove_inPlace`) and the wake a write of the
+thread where it stands (`notificationSignalBoundOnCore_bound_eq`).
 -/
 
 namespace SeLe4n.Kernel
@@ -54,8 +52,9 @@ theorem storeQueueRemove_noResizeDue (st : SystemState) (endpointId : SeLe4n.Obj
 
 /-- **A bound delivery's writes, each in its slot**: the bound thread `t`, blocked
 receiving on `epId`, taken off that endpoint's receive queue where every write
-stays in its slot (`queueRemoveInPlace`), its receive completed holding the
-badge message as a write of the thread in its slot, then the wake. -/
+stays in its slot (`queueRemoveInPlace`), made ready with the badge in its
+badge register (`TCB.signalBoundWoken`) as a write of the thread in its slot,
+then the wake. -/
 theorem notificationSignalBoundOnCore_bound_eq (nid : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (c : CoreId) (st : SystemState) (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
     (ep : Endpoint) (tcb : TCB)
@@ -65,18 +64,17 @@ theorem notificationSignalBoundOnCore_bound_eq (nid : SeLe4n.ObjId) (badge : SeL
     (hG : queueRemoveInPlace st epId true t ep tcb = true) :
     notificationSignalBoundOnCore nid badge c st =
       ((wakeThread ((storeQueueRemove st epId true t ep tcb).updateTcb t
-          (receiveCompleteTcb { IpcMessage.empty with badge := some badge })) t c).1,
+          (TCB.signalBoundWoken badge)) t c).1,
         .ok (wakeThread ((storeQueueRemove st epId true t ep tcb).updateTcb t
-          (receiveCompleteTcb { IpcMessage.empty with badge := some badge })) t c).2) := by
+          (TCB.signalBoundWoken badge)) t c).2) := by
   obtain ⟨hRm, hFr⟩ := queueRemove_inPlace st epId true t ep tcb hE hT hG
   have hG' := hG
   unfold queueRemoveInPlace at hG'
   simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG'
   obtain ⟨⟨⟨⟨⟨⟨hR, _⟩, _⟩, hLT⟩, _⟩, _⟩, _⟩ := hG'
-  have hStore : storeTcbReceiveComplete (storeQueueRemove st epId true t ep tcb) t
-      (some { IpcMessage.empty with badge := some badge }) =
+  have hStore : storeTcbSignalBoundWoken (storeQueueRemove st epId true t ep tcb) t badge =
       .ok ((storeQueueRemove st epId true t ep tcb).updateTcb t
-        (receiveCompleteTcb { IpcMessage.empty with badge := some badge })) :=
+        (TCB.signalBoundWoken badge)) :=
     modifyTcb_eq_updateTcb _ hR hFr.removed_tcb (hFr.leaves hLT)
   unfold notificationSignalBoundOnCore
   rw [hTarget]

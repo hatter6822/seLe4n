@@ -380,14 +380,11 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
                 match frozenLookupTcb st1 boundTid with
                 | none => .error .objectNotFound
                 | some boundTcb =>
-                  -- `pendingReceiveReply` is cleared with the delivery: the bound
-                  -- TCB was `.blockedOnReceive` and no `Call` arrived, which is
-                  -- what `storeTcbReceiveComplete` does on the live path.
-                  match frozenStoreTcb boundTid
-                      (TCB.setIpcState { boundTcb with
-                        pendingReceiveReplyCode := 0,
-                        pendingMessage :=
-                          some { IpcMessage.empty with badge := some badge } } .ready) st1 with
+                  -- The bound thread is made ready with the badge in its badge
+                  -- register and no message held, and its `pendingReceiveReply`
+                  -- cleared (no `Call` arrived): the live path's
+                  -- `storeTcbSignalBoundWoken`, seL4's `sendSignal`.
+                  match frozenStoreTcb boundTid (TCB.signalBoundWoken badge boundTcb) st1 with
                   | .error e => .error e
                   | .ok ((), st2) =>
                       -- PR #873 round 15: the woken thread re-enters the run
@@ -415,16 +412,14 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
             let ntfn' : Notification := ntfn.withHeadPopped next
             match frozenWithObjectStored st notificationId (.notification ntfn') with
             | .ok st' =>
-                -- **The badge is delivered, not just dropped.**  This branch
-                -- clears `pendingBadge` and woke the waiter, but stored no
-                -- message — so the badge vanished while the state claimed a
-                -- delivery had happened.  The live `notificationSignal` stores
-                -- a badge-only `IpcMessage` in the waiter's `pendingMessage`
-                -- on this path, and a frozen snapshot that does otherwise is
-                -- not a snapshot of this kernel.  Storing both fields in one
-                -- write also keeps the taint flow below honest: it says the
-                -- waiter received the signaller's content, which is only true
-                -- if the content is actually there.
+                -- **The badge is delivered, not just dropped.**  The live
+                -- `notificationSignal` writes the badge into the waiter's badge
+                -- register as it wakes it (`TCB.signalWoken`, seL4's
+                -- `sendSignal`), and a frozen snapshot that does otherwise is
+                -- not a snapshot of this kernel.  The same write keeps the
+                -- taint flow below honest: it says the waiter received the
+                -- signaller's content, which is only true if the content is
+                -- actually there.
                 match frozenLookupTcb st' waiter with
                 | none => .error .objectNotFound
                 | some waiterTcb =>
@@ -432,11 +427,9 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
                   -- links, and its successor heads it with no predecessor
                   -- (the live `detachNtfnHead`).
                   match (frozenStoreTcb waiter
-                      (TCB.setIpcState { waiterTcb with
-                        pendingMessage :=
-                          some { IpcMessage.empty with badge := some badge },
+                      (TCB.signalWoken badge { waiterTcb with
                         ntfnPrevCode := SeLe4n.ThreadId.optCode none,
-                        ntfnNextCode := SeLe4n.ThreadId.optCode none } .ready) st').bind
+                        ntfnNextCode := SeLe4n.ThreadId.optCode none }) st').bind
                       (fun r => (frozenModifyTcbOpt r.2 next
                         (fun t => { t with ntfnPrevCode := SeLe4n.ThreadId.optCode none })).map
                         (fun s => ((), s))) with

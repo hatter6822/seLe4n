@@ -1513,7 +1513,7 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
           P.blocked) hSig).entry (.of_stage (runQueueStage_of_pair_eq
         (notificationSignalBoundCrossCoreDispatchChecked_runQueueStage _ _ _ _ _ _ P.ntfnHeads
           P.blocked) hSig))
-        (fun x => stageWokenDeliveryTwice_runQueueStage x _ _) h
+        (stage := id) (fun x => SystemState.RunQueueStage.refl x) h
     · cases h
   case none.notificationWait.object notifId =>
     split at h
@@ -1571,7 +1571,7 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
           P.blocked) hSig).entry (.of_stage (runQueueStage_of_pair_eq
         (notificationSignalDeclassifiedOnCore_runQueueStage _ _ _ _ _ _ P.ntfnHeads
           P.blocked) hSig))
-        (fun x => stageWokenDeliveryTwice_runQueueStage x _ _) h
+        (stage := id) (fun x => SystemState.RunQueueStage.refl x) h
     · cases h
 
 

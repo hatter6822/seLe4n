@@ -113,12 +113,42 @@ theorem storeTcbIpcStateAndMessage_declassificationAuditLog_eq (st st' : SystemS
       subst h
       exact storeObject_declassificationAuditLog_eq st _ _ ((), pair) hStore
 
+/-- `storeTcbIpcStateAndMessage_declassificationAuditLog_eq` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_declassificationAuditLog_eq (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (h : storeTcbSignalWoken st tid badge = .ok st') :
+    st'.declassificationAuditLog = st.declassificationAuditLog := by
+  unfold storeTcbSignalWoken modifyTcb at h
+  split at h
+  · exact absurd h (by simp)
+  · split at h
+    · exact absurd h (by simp)
+    · rename_i pair hStore
+      simp only [Except.ok.injEq] at h
+      subst h
+      exact storeObject_declassificationAuditLog_eq st _ _ ((), pair) hStore
+
 /-- WS-SM SM9.C.1: a receive-complete store leaves the trail alone. -/
 theorem storeTcbReceiveComplete_declassificationAuditLog_eq (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
     (h : storeTcbReceiveComplete st tid msg = .ok st') :
     st'.declassificationAuditLog = st.declassificationAuditLog := by
   unfold storeTcbReceiveComplete modifyTcb at h
+  split at h
+  · exact absurd h (by simp)
+  · split at h
+    · exact absurd h (by simp)
+    · rename_i pair hStore
+      simp only [Except.ok.injEq] at h
+      subst h
+      exact storeObject_declassificationAuditLog_eq st _ _ ((), pair) hStore
+
+/-- `storeTcbReceiveComplete_declassificationAuditLog_eq` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_declassificationAuditLog_eq (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (h : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    st'.declassificationAuditLog = st.declassificationAuditLog := by
+  unfold storeTcbSignalBoundWoken modifyTcb at h
   split at h
   · exact absurd h (by simp)
   · split at h
@@ -184,14 +214,13 @@ theorem notificationSignalOnCore_declassificationAuditLog_eq (notificationId : S
       | error e => rfl
       | ok p1 =>
         simp only []
-        cases hMsg : storeTcbIpcStateAndMessage p1.2 pair .ready
-            (some { IpcMessage.empty with badge := some badge }) with
+        cases hMsg : storeTcbSignalWoken p1.2 pair badge with
         | error e => rfl
         | ok st2 =>
           simp only []
           rw [wakeThread_declassificationAuditLog_eq _ pair executingCore,
             detachNtfnHead_declassificationAuditLog,
-            storeTcbIpcStateAndMessage_declassificationAuditLog_eq p1.2 st2 pair .ready _ hMsg,
+            storeTcbSignalWoken_declassificationAuditLog_eq p1.2 st2 pair _ hMsg,
             storeObject_declassificationAuditLog_eq st _ _ p1 hStore]
 
 /-- WS-SM SM9.C.1: the bound-aware signal too — the delivery path composes a
@@ -215,13 +244,12 @@ theorem notificationSignalBoundOnCore_declassificationAuditLog_eq
     | ok u =>
       obtain ⟨_, st1⟩ := u
       simp only []
-      cases hStore : storeTcbReceiveComplete st1 t
-          (some { IpcMessage.empty with badge := some badge }) with
+      cases hStore : storeTcbSignalBoundWoken st1 t badge with
       | error e => rfl
       | ok st2 =>
         simp only []
         rw [wakeThread_declassificationAuditLog_eq st2 t executingCore,
-          storeTcbReceiveComplete_declassificationAuditLog_eq st1 st2 t _ hStore,
+          storeTcbSignalBoundWoken_declassificationAuditLog_eq st1 st2 t _ hStore,
           endpointQueueRemoveDual_declassificationAuditLog_eq st st1 epId true t hRemove]
 
 
@@ -249,8 +277,7 @@ theorem notificationSignalOnCore_error_state (notificationId : SeLe4n.ObjId)
       | error e' => rfl
       | ok p1 =>
         simp only [hStore] at h ⊢
-        cases hMsg : storeTcbIpcStateAndMessage p1.2 pair .ready
-            (some { IpcMessage.empty with badge := some badge }) with
+        cases hMsg : storeTcbSignalWoken p1.2 pair badge with
         | error e' => rfl
         | ok st2 => simp only [hMsg] at h; exact absurd h (by simp)
 
@@ -271,8 +298,7 @@ theorem notificationSignalBoundOnCore_error_state (notificationId : SeLe4n.ObjId
     | error e' => rfl
     | ok u =>
       simp only [hRemove] at h ⊢
-      cases hStore : storeTcbReceiveComplete u.2 t
-          (some { IpcMessage.empty with badge := some badge }) with
+      cases hStore : storeTcbSignalBoundWoken u.2 t badge with
       | error e' => rfl
       | ok st2 => simp only [hStore] at h; exact absurd h (by simp)
 
@@ -306,15 +332,14 @@ theorem notificationSignalOnCore_currentOnCore_eq (notificationId : SeLe4n.ObjId
       | error e => rfl
       | ok p1 =>
         simp only []
-        cases hMsg : storeTcbIpcStateAndMessage p1.2 pair .ready
-            (some { IpcMessage.empty with badge := some badge }) with
+        cases hMsg : storeTcbSignalWoken p1.2 pair badge with
         | error e => rfl
         | ok st2 =>
           simp only []
           show ((wakeThread _ pair executingCore).1).scheduler.currentOnCore c = _
           unfold wakeThread
           rw [enqueueRunnableOnCore_currentOnCore _ _ pair c, detachNtfnHead_scheduler,
-            storeTcbIpcStateAndMessage_scheduler_eq p1.2 st2 pair .ready _ hMsg,
+            storeTcbSignalWoken_scheduler_eq p1.2 st2 pair _ hMsg,
             storeObject_scheduler_eq st p1.2 _ _ (by cases p1 with | mk u v => cases u; exact hStore)]
 
 /-- WS-SM SM9.C.1: the bound-aware signal too — bound delivery dequeues, stores
@@ -336,15 +361,14 @@ theorem notificationSignalBoundOnCore_currentOnCore_eq (notificationId : SeLe4n.
     | ok u =>
       obtain ⟨_, st1⟩ := u
       simp only []
-      cases hStore : storeTcbReceiveComplete st1 t
-          (some { IpcMessage.empty with badge := some badge }) with
+      cases hStore : storeTcbSignalBoundWoken st1 t badge with
       | error e => rfl
       | ok st2 =>
         simp only []
         show ((wakeThread st2 t executingCore).1).scheduler.currentOnCore c = _
         unfold wakeThread
         rw [enqueueRunnableOnCore_currentOnCore st2 _ t c,
-          storeTcbReceiveComplete_scheduler_eq st1 st2 t _ hStore,
+          storeTcbSignalBoundWoken_scheduler_eq st1 st2 t _ hStore,
           endpointQueueRemoveDual_scheduler_eq st st1 epId true t hRemove]
 
 -- ============================================================================

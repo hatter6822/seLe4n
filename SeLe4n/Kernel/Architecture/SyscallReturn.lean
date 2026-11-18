@@ -372,14 +372,6 @@ staging site, so the synthesis cannot drift between sites.
     x4 := ((msg.registers[2]?.map RegValue.word).getD 0)
     x5 := ((msg.registers[3]?.map RegValue.word).getD 0) }
 
-/-- A badge message's frame — what a signal's badge message
-(`IpcMessage.empty` with the badge) stages for the waiter it wakes
-(`returnFrameOfMessage_badge`): the badge in `x0`, the all-zero
-`MessageInfo` in `x1`, no message words.  A wait that consumes a pending
-badge itself writes `x0` alone (`badgeReturnFrame`). -/
-@[inline] def returnFrameOfBadge (b : Badge) : SyscallReturnFrame :=
-  { x0 := b.word }
-
 -- ============================================================================
 -- §4b  Staging a frame into a register context (RA.B.1's pure core)
 -- ============================================================================

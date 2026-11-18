@@ -1119,35 +1119,8 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                               simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
                               have hClearInv := clearWokenReceiverStash_preserves_ipcInvariantFull
                                 _ st1 pair2 hObjInv1 hSigInv hClear
-                              have hClearObjInv : pair2.2.objects.invExt := by
-                                unfold clearWokenReceiverStash at hClear
-                                cases hW : (boundDeliveryTarget? st notifId).map (·.1) with
-                                | none => rw [hW] at hClear; cases hClear; exact hObjInv1
-                                | some receiver =>
-                                    rw [hW] at hClear
-                                    simp only [] at hClear
-                                    cases hTcb2 : st1.getTcb? receiver with
-                                    | none => rw [hTcb2] at hClear; cases hClear; exact hObjInv1
-                                    | some tcb2 =>
-                                        rw [hTcb2] at hClear
-                                        simp only [] at hClear
-                                        split at hClear <;> cases hClear
-                                        · exact RHTable_insert_preserves_invExt _ _ _ hObjInv1
-                                        · exact hObjInv1
-                              have hD1 := stageWokenDelivery_preserves_ipcInvariantFull pair2.2
-                                ((boundDeliveryTarget? st notifId).map (·.1)) 0
-                                hClearObjInv hClearInv
-                              have hD1obj : (Architecture.stageWokenDelivery pair2.2
-                                  ((boundDeliveryTarget? st notifId).map (·.1)) 0).objects.invExt := by
-                                cases hW : (boundDeliveryTarget? st notifId).map (·.1) with
-                                | none => exact hClearObjInv
-                                | some w =>
-                                    rw [Architecture.stageWokenDelivery_some]
-                                    exact stageDeliveredMessage_objects_invExt pair2.2 w 0
-                                      hClearObjInv
                               rw [← hStep]
-                              exact stageWokenDelivery_preserves_ipcInvariantFull _ _ 0
-                                hD1obj hD1
+                              exact hClearInv
         all_goals cases hStep
       case notificationWait =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1314,35 +1287,8 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
                           have hClearInv := clearWokenReceiverStash_preserves_ipcInvariantFull
                             _ st1 pair2 hObjInv1 hSigInv hClear
-                          have hClearObjInv : pair2.2.objects.invExt := by
-                            unfold clearWokenReceiverStash at hClear
-                            cases hW : (boundDeliveryTarget? st notifId).map (·.1) with
-                            | none => rw [hW] at hClear; cases hClear; exact hObjInv1
-                            | some receiver =>
-                                rw [hW] at hClear
-                                simp only [] at hClear
-                                cases hTcb2 : st1.getTcb? receiver with
-                                | none => rw [hTcb2] at hClear; cases hClear; exact hObjInv1
-                                | some tcb2 =>
-                                    rw [hTcb2] at hClear
-                                    simp only [] at hClear
-                                    split at hClear <;> cases hClear
-                                    · exact RHTable_insert_preserves_invExt _ _ _ hObjInv1
-                                    · exact hObjInv1
-                          have hD1 := stageWokenDelivery_preserves_ipcInvariantFull pair2.2
-                            ((boundDeliveryTarget? st notifId).map (·.1)) 0
-                            hClearObjInv hClearInv
-                          have hD1obj : (Architecture.stageWokenDelivery pair2.2
-                              ((boundDeliveryTarget? st notifId).map (·.1)) 0).objects.invExt := by
-                            cases hW : (boundDeliveryTarget? st notifId).map (·.1) with
-                            | none => exact hClearObjInv
-                            | some w =>
-                                rw [Architecture.stageWokenDelivery_some]
-                                exact stageDeliveredMessage_objects_invExt pair2.2 w 0
-                                  hClearObjInv
                           rw [← hStep]
-                          exact stageWokenDelivery_preserves_ipcInvariantFull _ _ 0
-                            hD1obj hD1
+                          exact hClearInv
         all_goals cases hStep
       case auditRead =>
         cases hAuth : extractAuditAuthority cap with

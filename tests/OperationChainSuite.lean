@@ -2138,7 +2138,9 @@ private def revokeFinalisingTakesPlainLoop : IO Unit := do
   assertInvariants "plain delete: invariants after the step" stDeleted
 
 /-- R3-A.3: Badge delivery test — verifies that notificationSignal delivers
-the badge to the woken waiter's pendingMessage when waking a blocked thread.
+the badge to the woken waiter's badge register (`x0`) when waking a blocked
+thread, and holds no message (seL4's `sendSignal` writes the badge register
+alone).
 Steps: wait (blocks waiter) → signal (wakes waiter with badge) → verify badge. -/
 private def chain22NotificationBadgeDelivery : IO Unit := do
   let ntfnId : SeLe4n.ObjId := ⟨260⟩
@@ -2163,15 +2165,13 @@ private def chain22NotificationBadgeDelivery : IO Unit := do
   -- Step 2: signal with badge 0xCAFE — should wake the waiter
   let (_, st2) ← expectOkSt "chain22: signal wakes waiter"
     (SeLe4n.Kernel.notificationSignal ntfnId badge st1)
-  -- Step 3: Verify badge was delivered to waiter's pendingMessage
+  -- Step 3: Verify badge was delivered to the waiter's badge register
   match st2.objects[waiter.toObjId]? with
   | some (.tcb tcb) =>
     expect "chain22: waiter ipcState is ready after wake" (tcb.ipcState = .ready)
-    match tcb.pendingMessage with
-    | some msg =>
-      expect "chain22: badge delivered via pendingMessage"
-        (msg.badge = some (SeLe4n.Badge.ofNatMasked 0xCAFE))
-    | none => throw (IO.userError "chain22: FAIL — waiter pendingMessage is none after signal wake")
+    expect "chain22: badge delivered in the badge register (x0)"
+      (tcb.registerContext.x0 = badge.word)
+    expect "chain22: the wake holds no message" (tcb.pendingMessage = none)
   | _ => throw (IO.userError "chain22: FAIL — waiter TCB not found after signal wake")
   -- Step 4: Verify waiter is runnable again
   expect "chain22: waiter is runnable after wake" (st2.queuedOn bootCoreId waiter)

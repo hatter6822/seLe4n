@@ -658,6 +658,11 @@ theorem replyViews_storeTcbReceiveComplete {st st' : SystemState} {t : SeLe4n.Th
     st'.replyViews = ReplyViews.setServer st.replyViews t none :=
   replyViews_modifyTcb hInv h (fun _ => rfl)
 
+theorem replyViews_storeTcbSignalBoundWoken {st st' : SystemState} {t : SeLe4n.ThreadId}
+    {b : SeLe4n.Badge} (hInv : st.objects.invExt) (h : storeTcbSignalBoundWoken st t b = .ok st') :
+    st'.replyViews = ReplyViews.setServer st.replyViews t none :=
+  replyViews_modifyTcb hInv h (fun _ => rfl)
+
 /-- **Send keeps the reply-waiter queues consistent**: the receiver it wakes
 was blocked on a receive and the sender it blocks was running, so neither waits
 on a server before or after. -/
@@ -797,9 +802,9 @@ theorem notificationSignalOnCore_preserves_replyWaitersConsistent (nid : SeLe4n.
         split
         · exact hC
         · rename_i st'' hStore
-          have hI2 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hI1 hStore
+          have hI2 := storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hI1 hStore
           have hV2 : st''.replyViews = st.replyViews := by
-            rw [replyViews_storeTcbIpcStateAndMessage hI1 hStore, hV1]
+            rw [replyViews_storeTcbSignalWoken hI1 hStore, hV1]
             exact ReplyViews.setServer_of_server hSF
           have hV3 := (detachNtfnHead_replyViews_eq st'' w (ntfnSuccessor? st w) hI2).trans hV2
           refine replyWaitersConsistent.of_views ?_ hC

@@ -10351,8 +10351,8 @@ private def runDeclassifiedSignalWaiterGateChecks : IO Unit := do
       | (st', .ok _) =>
           (match st'.getTcb? crossCoreWaiter with
            | some tcb =>
-               decide ((tcb.pendingMessage.bind (·.badge))
-                 = some (SeLe4n.Badge.ofNatMasked 0x5C)) &&
+               decide (tcb.registerContext.x0 = (SeLe4n.Badge.ofNatMasked 0x5C).word) &&
+               decide (tcb.pendingMessage = none) &&
                decide (tcb.ipcState = ThreadIpcState.ready)
            | none => false)
       | (_, .error _) => false) &&

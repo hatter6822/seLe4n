@@ -314,6 +314,42 @@ theorem storeTcbIpcStateAndMessage_ready_preserves_queueNextBlockingConsistent
     (fun _ _ _ _ _ _ => queueNextBlockingMatch_ready_left _)
     (fun _ _ _ _ _ _ => queueNextBlockingMatch_ready_right _)
 
+/-- `storeTcbIpcStateAndMessage_ready_preserves_queueNextBlockingConsistent` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_ready_preserves_queueNextBlockingConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hInv : queueNextBlockingConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    queueNextBlockingConsistent st' := by
+  unfold storeTcbSignalWoken modifyTcb at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some origTcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.signalWoken badge origTcb)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore, Except.ok.injEq] at hStep; subst hStep
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hStore
+      have hOrigTcb := lookupTcb_some_objects st tid origTcb hLookup
+      have hFrame : ∀ x, x ≠ tid.toObjId → pair.2.objects[x]? = st.objects[x]? :=
+        fun x hNe => storeObject_objects_ne st pair.2 tid.toObjId x _ hNe hObjInv hStore
+      intro a b tcbA tcbB hA hB hN
+      by_cases hEqA : a.toObjId = tid.toObjId
+      · -- a is the target: stored ThreadIpcState.ready = .ready, so match holds left.
+        rw [hEqA] at hA; rw [hEqAt] at hA
+        have hIpcA : tcbA.ipcState = .ready := by cases Option.some.inj hA; rfl
+        rw [hIpcA]; exact queueNextBlockingMatch_ready_left _
+      · rw [hFrame a.toObjId hEqA] at hA
+        by_cases hEqB : b.toObjId = tid.toObjId
+        · -- b is the target: stored ThreadIpcState.ready = .ready, so match holds right.
+          rw [hEqB] at hB; rw [hEqAt] at hB
+          have hIpcB : tcbB.ipcState = .ready := by cases Option.some.inj hB; rfl
+          rw [hIpcB]; exact queueNextBlockingMatch_ready_right _
+        · rw [hFrame b.toObjId hEqB] at hB
+          exact hInv a b tcbA tcbB hA hB hN
+
 /-- When tid has queueNext = none and no predecessor, preservation is unconditional. -/
 theorem storeTcbIpcStateAndMessage_nolinks_preserves_queueNextBlockingConsistent
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -376,6 +412,42 @@ theorem storeTcbIpcStateAndMessage_preserves_queueHeadBlockedConsistent
     simp only [hLookup] at hStep
     cases hSt : storeObject tid.toObjId
         (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipcState)) st with
+    | error e => simp [hSt] at hStep
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStep; subst hStep
+      have hFrame := fun x (h : x ≠ tid.toObjId) =>
+        storeObject_objects_ne st pair.2 tid.toObjId x _ h hObjInv hSt
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt
+      intro epId ep hd hdTcb hEp hTcb
+      have hNeEp : epId ≠ tid.toObjId := by
+        intro h; subst h; rw [hEqAt] at hEp; cases hEp
+      rw [hFrame epId hNeEp] at hEp
+      by_cases hHdEq : hd.toObjId = tid.toObjId
+      · -- hd = tid: but hNotHead says tid is not a queue head — contradiction
+        have hTidEq := ThreadId.toObjId_injective hd tid hHdEq; subst hTidEq
+        have ⟨hNR, hNS⟩ := hNotHead epId ep hEp
+        exact ⟨fun h => absurd h hNR, fun h => absurd h hNS⟩
+      · rw [hFrame hd.toObjId hHdEq] at hTcb
+        exact hInv epId ep hd hdTcb hEp hTcb
+
+/-- `storeTcbIpcStateAndMessage_preserves_queueHeadBlockedConsistent` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_preserves_queueHeadBlockedConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hInv : queueHeadBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st')
+    (hNotHead : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.receiveQ.head ≠ some tid ∧ ep.sendQ.head ≠ some tid) :
+    queueHeadBlockedConsistent st' := by
+  unfold storeTcbSignalWoken modifyTcb at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hSt : storeObject tid.toObjId
+        (.tcb (TCB.signalWoken badge tcb)) st with
     | error e => simp [hSt] at hStep
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStep; subst hStep
@@ -497,6 +569,42 @@ theorem storeTcbReceiveComplete_preserves_queueNextBlockingConsistent
         · rw [hFrame b.toObjId hEqB] at hB
           exact hInv a b tcbA tcbB hA hB hN
 
+/-- `storeTcbReceiveComplete_preserves_queueNextBlockingConsistent` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_preserves_queueNextBlockingConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hInv : queueNextBlockingConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    queueNextBlockingConsistent st' := by
+  unfold storeTcbSignalBoundWoken modifyTcb at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some origTcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.signalBoundWoken badge origTcb)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore, Except.ok.injEq] at hStep; subst hStep
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hStore
+      have hOrigTcb := lookupTcb_some_objects st tid origTcb hLookup
+      have hFrame : ∀ x, x ≠ tid.toObjId → pair.2.objects[x]? = st.objects[x]? :=
+        fun x hNe => storeObject_objects_ne st pair.2 tid.toObjId x _ hNe hObjInv hStore
+      intro a b tcbA tcbB hA hB hN
+      by_cases hEqA : a.toObjId = tid.toObjId
+      · -- a is the target: stored ThreadIpcState.ready = .ready, so match holds left.
+        rw [hEqA] at hA; rw [hEqAt] at hA
+        have hIpcA : tcbA.ipcState = .ready := by cases Option.some.inj hA; rfl
+        rw [hIpcA]; exact queueNextBlockingMatch_ready_left _
+      · rw [hFrame a.toObjId hEqA] at hA
+        by_cases hEqB : b.toObjId = tid.toObjId
+        · -- b is the target: stored ThreadIpcState.ready = .ready, so match holds right.
+          rw [hEqB] at hB; rw [hEqAt] at hB
+          have hIpcB : tcbB.ipcState = .ready := by cases Option.some.inj hB; rfl
+          rw [hIpcB]; exact queueNextBlockingMatch_ready_right _
+        · rw [hFrame b.toObjId hEqB] at hB
+          exact hInv a b tcbA tcbB hA hB hN
+
 /-- `storeTcbReceiveComplete` stores the receiver `.ready`. A `.ready` thread is
 neither a sendQ nor receiveQ head (heads are blocked), so this preserves
 `queueHeadBlockedConsistent` for any thread that *was* a head (its ipcState is
@@ -537,6 +645,41 @@ theorem storeTcbReceiveComplete_preserves_queueHeadBlockedConsistent
       · rw [hFrame hd.toObjId hHdEq] at hTcb
         exact hInv epId ep hd hdTcb hEp hTcb
 
+/-- `storeTcbReceiveComplete_preserves_queueHeadBlockedConsistent` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_preserves_queueHeadBlockedConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hInv : queueHeadBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st')
+    (hNotHead : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.receiveQ.head ≠ some tid ∧ ep.sendQ.head ≠ some tid) :
+    queueHeadBlockedConsistent st' := by
+  unfold storeTcbSignalBoundWoken modifyTcb at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hSt : storeObject tid.toObjId (.tcb (TCB.signalBoundWoken badge tcb)) st with
+    | error e => simp [hSt] at hStep
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStep; subst hStep
+      have hFrame := fun x (h : x ≠ tid.toObjId) =>
+        storeObject_objects_ne st pair.2 tid.toObjId x _ h hObjInv hSt
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt
+      intro epId ep hd hdTcb hEp hTcb
+      have hNeEp : epId ≠ tid.toObjId := by
+        intro h; subst h; rw [hEqAt] at hEp; cases hEp
+      rw [hFrame epId hNeEp] at hEp
+      by_cases hHdEq : hd.toObjId = tid.toObjId
+      · -- hd = tid: but hNotHead says tid is not a queue head — contradiction.
+        have hTidEq := ThreadId.toObjId_injective hd tid hHdEq; subst hTidEq
+        have ⟨hNR, hNS⟩ := hNotHead epId ep hEp
+        exact ⟨fun h => absurd h hNR, fun h => absurd h hNS⟩
+      · rw [hFrame hd.toObjId hHdEq] at hTcb
+        exact hInv epId ep hd hdTcb hEp hTcb
+
 /-- `storeTcbReceiveComplete` preserves `endpointQueueTailBlockedConsistent` when the woken
 thread is not a queue tail (`hNotTail`).  Tail dual of
 `storeTcbReceiveComplete_preserves_queueHeadBlockedConsistent`: the receiver is set `.ready`, so
@@ -559,6 +702,42 @@ theorem storeTcbReceiveComplete_preserves_endpointQueueTailBlockedConsistent
     simp only [hLookup] at hStep
     cases hSt : storeObject tid.toObjId
         (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready))
+        st with
+    | error e => simp [hSt] at hStep
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStep; subst hStep
+      have hFrame := fun x (h : x ≠ tid.toObjId) =>
+        storeObject_objects_ne st pair.2 tid.toObjId x _ h hObjInv hSt
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt
+      intro epId ep tl tlTcb hEp hTcb
+      have hNeEp : epId ≠ tid.toObjId := by
+        intro h; subst h; rw [hEqAt] at hEp; cases hEp
+      rw [hFrame epId hNeEp] at hEp
+      by_cases hTlEq : tl.toObjId = tid.toObjId
+      · have hTidEq := ThreadId.toObjId_injective tl tid hTlEq; subst hTidEq
+        have ⟨hNR, hNS⟩ := hNotTail epId ep hEp
+        exact ⟨fun h => absurd h hNR, fun h => absurd h hNS⟩
+      · rw [hFrame tl.toObjId hTlEq] at hTcb
+        exact hInv epId ep tl tlTcb hEp hTcb
+
+/-- `storeTcbReceiveComplete_preserves_endpointQueueTailBlockedConsistent` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_preserves_endpointQueueTailBlockedConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hInv : endpointQueueTailBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st')
+    (hNotTail : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.receiveQ.tail ≠ some tid ∧ ep.sendQ.tail ≠ some tid) :
+    endpointQueueTailBlockedConsistent st' := by
+  unfold storeTcbSignalBoundWoken modifyTcb at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hSt : storeObject tid.toObjId
+        (.tcb (TCB.signalBoundWoken badge tcb))
         st with
     | error e => simp [hSt] at hStep
     | ok pair =>
@@ -1120,6 +1299,41 @@ theorem storeTcbIpcStateAndMessage_preserves_endpointQueueTailBlockedConsistent
     simp only [hLookup] at hStep
     cases hSt : storeObject tid.toObjId
         (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipcState)) st with
+    | error e => simp [hSt] at hStep
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStep; subst hStep
+      have hFrame := fun x (h : x ≠ tid.toObjId) =>
+        storeObject_objects_ne st pair.2 tid.toObjId x _ h hObjInv hSt
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt
+      intro epId ep tl tlTcb hEp hTcb
+      have hNeEp : epId ≠ tid.toObjId := by
+        intro h; subst h; rw [hEqAt] at hEp; cases hEp
+      rw [hFrame epId hNeEp] at hEp
+      by_cases hTlEq : tl.toObjId = tid.toObjId
+      · have hTidEq := ThreadId.toObjId_injective tl tid hTlEq; subst hTidEq
+        have ⟨hNR, hNS⟩ := hNotTail epId ep hEp
+        exact ⟨fun h => absurd h hNR, fun h => absurd h hNS⟩
+      · rw [hFrame tl.toObjId hTlEq] at hTcb
+        exact hInv epId ep tl tlTcb hEp hTcb
+
+/-- `storeTcbIpcStateAndMessage_preserves_endpointQueueTailBlockedConsistent` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_preserves_endpointQueueTailBlockedConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hInv : endpointQueueTailBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st')
+    (hNotTail : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.receiveQ.tail ≠ some tid ∧ ep.sendQ.tail ≠ some tid) :
+    endpointQueueTailBlockedConsistent st' := by
+  unfold storeTcbSignalWoken modifyTcb at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hSt : storeObject tid.toObjId
+        (.tcb (TCB.signalWoken badge tcb)) st with
     | error e => simp [hSt] at hStep
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStep; subst hStep
@@ -1855,6 +2069,64 @@ theorem storeTcbIpcStateAndMessage_preserves_queueNextTargetBlocked
         · rw [hFrame b.toObjId hEqB] at hB
           exact hInv a b tcbA tcbB hA hB hN
 
+/-- `storeTcbIpcStateAndMessage_preserves_queueNextTargetBlocked` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hInv : queueNextTargetBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st')
+    (hFwd : ∀ (b : SeLe4n.ThreadId) (tcbTid tcbB : TCB),
+      st.objects[tid.toObjId]? = some (.tcb tcbTid) →
+      tcbTid.queueNext = some b →
+      st.objects[b.toObjId]? = some (.tcb tcbB) →
+      (∀ ep, ThreadIpcState.ready = .blockedOnReceive ep → tcbB.ipcState = .blockedOnReceive ep) ∧
+      (∀ ep, (ThreadIpcState.ready = .blockedOnSend ep ∨ ThreadIpcState.ready = .blockedOnCall ep) →
+        (tcbB.ipcState = .blockedOnSend ep ∨ tcbB.ipcState = .blockedOnCall ep)))
+    (hBwd : ∀ (a : SeLe4n.ThreadId) (tcbA tcbTid : TCB),
+      st.objects[a.toObjId]? = some (.tcb tcbA) →
+      tcbA.queueNext = some tid →
+      st.objects[tid.toObjId]? = some (.tcb tcbTid) →
+      (∀ ep, tcbA.ipcState = .blockedOnReceive ep → ThreadIpcState.ready = .blockedOnReceive ep) ∧
+      (∀ ep, (tcbA.ipcState = .blockedOnSend ep ∨ tcbA.ipcState = .blockedOnCall ep) →
+        (ThreadIpcState.ready = .blockedOnSend ep ∨ ThreadIpcState.ready = .blockedOnCall ep))) :
+    queueNextTargetBlocked st' := by
+  unfold storeTcbSignalWoken modifyTcb at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some origTcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.signalWoken badge origTcb)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      have hEqAt := storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore
+      have hOrigTcb := lookupTcb_some_objects st tid origTcb hLookup
+      have hFrame : ∀ x, x ≠ tid.toObjId → pair.snd.objects[x]? = st.objects[x]? :=
+        fun x hNe => storeObject_objects_ne' st tid.toObjId x _ pair hNe hObjInv hStore
+      intro a b tcbA tcbB hA hB hN
+      by_cases hEqA : a.toObjId = tid.toObjId
+      · rw [hEqA] at hA; rw [hEqAt] at hA
+        have hIpcA : tcbA.ipcState = ThreadIpcState.ready := by cases Option.some.inj hA; rfl
+        have hQNA : tcbA.queueNext = origTcb.queueNext := by cases Option.some.inj hA; rfl
+        by_cases hEqB : b.toObjId = tid.toObjId
+        · rw [hEqB] at hB; rw [hEqAt] at hB
+          have hIpcB : tcbB.ipcState = ThreadIpcState.ready := by cases Option.some.inj hB; rfl
+          rw [hIpcA, hIpcB]; exact ⟨fun _ h => h, fun _ h => h⟩
+        · rw [hFrame b.toObjId hEqB] at hB
+          rw [hIpcA]; rw [hQNA] at hN
+          exact hFwd b origTcb tcbB hOrigTcb hN hB
+      · rw [hFrame a.toObjId hEqA] at hA
+        by_cases hEqB : b.toObjId = tid.toObjId
+        · rw [hEqB] at hB; rw [hEqAt] at hB
+          have hIpcB : tcbB.ipcState = ThreadIpcState.ready := by cases Option.some.inj hB; rfl
+          have hBTid := SeLe4n.ThreadId.toObjId_injective b tid hEqB; subst hBTid
+          rw [hIpcB]
+          exact hBwd a tcbA origTcb hA hN hOrigTcb
+        · rw [hFrame b.toObjId hEqB] at hB
+          exact hInv a b tcbA tcbB hA hB hN
+
 /-- IPC de-threading D4 Slice 2c: waking a `.blockedOnReply` thread to `.ready`
 (`storeTcbIpcStateAndMessage tid .ready`) preserves `queueNextTargetBlocked`.  The forward
 obligation is vacuous (`.ready` matches no blocking antecedent).  The backward obligation —
@@ -1910,6 +2182,35 @@ theorem storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_queueNe
     (hStep : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
     queueNextTargetBlocked st' := by
   refine storeTcbIpcStateAndMessage_preserves_queueNextTargetBlocked st st' tid ipcState msg hInv
+    hObjInv hStep ?_ ?_
+  · -- hFwd: the new state matches no blocking antecedent.
+    intro b tcbTid tcbB _ _ _
+    refine ⟨fun ep h => absurd h (hIpcNotBlocked.1 ep), fun ep h => ?_⟩
+    rcases h with h | h
+    · exact absurd h (hIpcNotBlocked.2.1 ep)
+    · exact absurd h (hIpcNotBlocked.2.2 ep)
+  · -- hBwd: no blocked thread links to `tid`.
+    intro a tcbA _ hA hN _
+    refine ⟨fun ep h => absurd h ((hNoIncoming a tcbA hA hN).1 ep), fun ep h => ?_⟩
+    rcases h with h | h
+    · exact absurd h ((hNoIncoming a tcbA hA hN).2.1 ep)
+    · exact absurd h ((hNoIncoming a tcbA hA hN).2.2 ep)
+
+/-- `storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hInv : queueNextTargetBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hIpcNotBlocked : (∀ ep, ThreadIpcState.ready ≠ .blockedOnReceive ep) ∧
+      (∀ ep, ThreadIpcState.ready ≠ .blockedOnSend ep) ∧ (∀ ep, ThreadIpcState.ready ≠ .blockedOnCall ep))
+    (hNoIncoming : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
+      st.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext = some tid →
+      (∀ ep, tcbA.ipcState ≠ .blockedOnReceive ep) ∧
+      (∀ ep, tcbA.ipcState ≠ .blockedOnSend ep) ∧ (∀ ep, tcbA.ipcState ≠ .blockedOnCall ep))
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    queueNextTargetBlocked st' := by
+  refine storeTcbSignalWoken_preserves_queueNextTargetBlocked st st' tid badge hInv
     hObjInv hStep ?_ ?_
   · -- hFwd: the new state matches no blocking antecedent.
     intro b tcbTid tcbB _ _ _
@@ -2262,6 +2563,42 @@ theorem storeTcbReceiveComplete_preserves_queueNextTargetBlocked
         · rw [hFrame b.toObjId hEqB] at hB
           exact hInv a b tcbA tcbB hA hB hN
 
+/-- `storeTcbReceiveComplete_preserves_queueNextTargetBlocked` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hInv : queueNextTargetBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st')
+    (hNoIncoming : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
+      st.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext ≠ some tid) :
+    queueNextTargetBlocked st' := by
+  unfold storeTcbSignalBoundWoken modifyTcb at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some origTcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId
+        (.tcb (TCB.signalBoundWoken badge origTcb)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      have hEqAt := storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore
+      have hFrame : ∀ x, x ≠ tid.toObjId → pair.snd.objects[x]? = st.objects[x]? :=
+        fun x hNe => storeObject_objects_ne' st tid.toObjId x _ pair hNe hObjInv hStore
+      intro a b tcbA tcbB hA hB hN
+      by_cases hEqA : a.toObjId = tid.toObjId
+      · rw [hEqA] at hA; rw [hEqAt] at hA
+        have hIpcA : tcbA.ipcState = .ready := by cases Option.some.inj hA; rfl
+        rw [hIpcA]
+        exact ⟨fun ep h => by simp at h, fun ep h => by rcases h with h | h <;> simp at h⟩
+      · rw [hFrame a.toObjId hEqA] at hA
+        by_cases hEqB : b.toObjId = tid.toObjId
+        · have hBTid := SeLe4n.ThreadId.toObjId_injective b tid hEqB; subst hBTid
+          exact absurd hN (hNoIncoming a tcbA hA)
+        · rw [hFrame b.toObjId hEqB] at hB
+          exact hInv a b tcbA tcbB hA hB hN
+
 /-- Generic transport of the "no thread's `queueNext` points to `t`" fact across any store that
 preserves every TCB's `queueNext` (supplied as a backward map). -/
 theorem queueNext_noIncoming_of_backward
@@ -2529,6 +2866,34 @@ theorem storeTcbIpcStateAndMessage_preserves_endpointQueueLinksOnlyBlocked
       · exact .inl (by simpa using hq)
       · exact absurd (hn origTcb hOrig) (by simpa using hN)
 
+/-- `storeTcbIpcStateAndMessage_preserves_endpointQueueLinksOnlyBlocked` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_preserves_endpointQueueLinksOnlyBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hInv : endpointQueueLinksOnlyBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st')
+    (hNew : ipcStateEndpointQueued ThreadIpcState.ready = true ∨
+      ∀ tcbTid : TCB, st.objects[tid.toObjId]? = some (.tcb tcbTid) → tcbTid.queueNext = none) :
+    endpointQueueLinksOnlyBlocked st' := by
+  unfold storeTcbSignalWoken modifyTcb at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some origTcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId
+        (.tcb (TCB.signalWoken badge origTcb)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      have hOrig := lookupTcb_some_objects st tid origTcb hLookup
+      refine storeObject_tcb_preserves_endpointQueueLinksOnlyBlocked st pair.2 tid.toObjId _
+        hObjInv (fun hN => ?_) hInv (by cases pair; exact hStore)
+      rcases hNew with hq | hn
+      · exact .inl (by simpa using hq)
+      · exact absurd (hn origTcb hOrig) (by simpa using hN)
+
 /-- `storeTcbIpcState` keeps `endpointQueueLinksOnlyBlocked` on the same terms. -/
 theorem storeTcbIpcState_preserves_endpointQueueLinksOnlyBlocked
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState)
@@ -2571,6 +2936,31 @@ theorem storeTcbReceiveComplete_preserves_endpointQueueLinksOnlyBlocked
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId
         (.tcb (TCB.setIpcState { origTcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      have hOrig := lookupTcb_some_objects st tid origTcb hLookup
+      refine storeObject_tcb_preserves_endpointQueueLinksOnlyBlocked st pair.2 tid.toObjId _
+        hObjInv (fun hN => ?_) hInv (by cases pair; exact hStore)
+      exact absurd (hNone origTcb hOrig) (by simpa using hN)
+
+/-- `storeTcbReceiveComplete_preserves_endpointQueueLinksOnlyBlocked` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_preserves_endpointQueueLinksOnlyBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hInv : endpointQueueLinksOnlyBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st')
+    (hNone : ∀ tcbTid : TCB, st.objects[tid.toObjId]? = some (.tcb tcbTid) →
+      tcbTid.queueNext = none) :
+    endpointQueueLinksOnlyBlocked st' := by
+  unfold storeTcbSignalBoundWoken modifyTcb at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some origTcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId
+        (.tcb (TCB.signalBoundWoken badge origTcb)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
@@ -2884,6 +3274,20 @@ theorem storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_endpoin
     (hStep : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
     endpointQueueLinksOnlyBlocked st' :=
   storeTcbIpcStateAndMessage_preserves_endpointQueueLinksOnlyBlocked st st' tid ipcState msg hInv
+    hObjInv hStep (.inr hNoNext)
+
+/-- `storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_endpointQueueLinksOnlyBlocked` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_no_incoming_nonQueueBlocked_preserves_endpointQueueLinksOnlyBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hInv : endpointQueueLinksOnlyBlocked st)
+    (hObjInv : st.objects.invExt)
+    (_hIpcNotBlocked : (∀ ep, ThreadIpcState.ready ≠ .blockedOnReceive ep) ∧
+      (∀ ep, ThreadIpcState.ready ≠ .blockedOnSend ep) ∧ (∀ ep, ThreadIpcState.ready ≠ .blockedOnCall ep))
+    (hNoNext : ∀ t : TCB, st.objects[tid.toObjId]? = some (.tcb t) → t.queueNext = none)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    endpointQueueLinksOnlyBlocked st' :=
+  storeTcbSignalWoken_preserves_endpointQueueLinksOnlyBlocked st st' tid badge hInv
     hObjInv hStep (.inr hNoNext)
 
 /-- The message-free counterpart. -/

@@ -2533,6 +2533,36 @@ theorem storeTcbReceiveComplete_preserves_blockedThreadTimeoutConsistent
     rw [← storeTcbReceiveComplete_preserves_objects_ne st st' tid msg _ hk hObjInv hStep] at hO
     exact ⟨sc, hO⟩
 
+/-- `storeTcbReceiveComplete_preserves_blockedThreadTimeoutConsistent` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_preserves_blockedThreadTimeoutConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hBudget : ∀ (tcb : TCB), st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.timeoutBudget = none)
+    (hPre : blockedThreadTimeoutConsistent st)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    blockedThreadTimeoutConsistent st' := by
+  obtain ⟨tcbT, hTcbT⟩ : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) := by
+    unfold storeTcbSignalBoundWoken modifyTcb at hStep
+    cases hL : lookupTcb st tid with
+    | none => simp [hL] at hStep
+    | some tcb => exact ⟨tcb, lookupTcb_some_objects st tid tcb hL⟩
+  refine blockedThreadTimeoutConsistent_of_rewrites hPre ?_ ?_
+  · intro t tcb' scId hT hB
+    by_cases hk : t.toObjId = tid.toObjId
+    · obtain ⟨tcb, h0, hb⟩ :=
+        storeTcbSignalBoundWoken_timeoutBudgetFrame st st' tid badge hObjInv hStep t tcb' hT
+      rw [hk] at h0
+      rw [hBudget tcb h0] at hb
+      rw [← hb] at hB
+      cases hB
+    · rw [storeTcbSignalBoundWoken_preserves_objects_ne st st' tid badge _ hk hObjInv hStep] at hT
+      exact ⟨tcb', hT, hB, rfl⟩
+  · intro o sc hO
+    have hk : o ≠ tid.toObjId := by intro h; rw [h, hTcbT] at hO; cases hO
+    rw [← storeTcbSignalBoundWoken_preserves_objects_ne st st' tid badge _ hk hObjInv hStep] at hO
+    exact ⟨sc, hO⟩
+
 /-- **WS-RR RR7.22 (residual)**: the receive-completing store turns the splice's
 relaxed bundle back into the full one.
 
@@ -2644,6 +2674,83 @@ theorem storeTcbReceiveComplete_closes_exceptMembership
     notificationBindingReciprocal.of_kindPreservingWrite
       (storeTcbReceiveComplete_kindPreservingWrite hObjInv hStep) hNBR,
     storeTcbReceiveComplete_preserves_endpointQueueLinksOnlyBlocked st st' tid msg hLinks
+      hObjInv hStep hNoNext⟩
+
+/-- `storeTcbReceiveComplete_closes_exceptMembership` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_closes_exceptMembership
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hNoBudget : ∀ (tcb : TCB), st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.timeoutBudget = none)
+    (hNotReply : ∀ (tcb : TCB), st.objects[tid.toObjId]? = some (.tcb tcb) →
+      ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hNotHead : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.receiveQ.head ≠ some tid ∧ ep.sendQ.head ≠ some tid)
+    (hNotTail : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.receiveQ.tail ≠ some tid ∧ ep.sendQ.tail ≠ some tid)
+    (hNoIncoming : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
+      st.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext ≠ some tid)
+    (hExcept : ipcInvariantFullExceptMembership st tid)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    ipcInvariantFull st' := by
+  obtain ⟨hIpc, hDual, hBounded, hBadge, hPend, hNoDup, hMemExcept, hQNB, hQHB,
+    hTimeout, _hAcyc, hOwnerValid, hBudget, hReplyLink,
+    hStash, hUnique, hTail, hQNT, hNBR, hLinks, hNoNext⟩ := hExcept
+  -- `tid` carries no reply object: a `replyObject` forces a reciprocal `caller`
+  -- back-link, and the backward clause makes that caller `.blockedOnReply` —
+  -- which `hNotReply` denies.
+  have hUnlinked : ∀ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.replyObject = none := by
+    intro tcb hTcb
+    cases hR : tcb.replyObject with
+    | none => rfl
+    | some rid =>
+      obtain ⟨r, hr, hCaller⟩ := hReplyLink.1.1 tid tcb rid hTcb hR
+      obtain ⟨tcb2, hTcb2, _, ep, rt, hBlocked⟩ := hReplyLink.1.2 rid r tid hr hCaller
+      rw [hTcb] at hTcb2
+      have hEq : tcb2 = tcb := (KernelObject.tcb.inj (Option.some.inj hTcb2)).symm
+      exact ((hNotReply tcb hTcb ep rt) (by rw [← hEq]; exact hBlocked)).elim
+  have hSame := storeTcbSignalBoundWoken_sameSchedContextBindings st st' tid badge hObjInv hStep
+  have hOwnerFrame :=
+    storeTcbSignalBoundWoken_donationOwnerFrame st st' tid badge hNotReply hObjInv hStep
+  have hOwnerValid' : donationOwnerValid st' :=
+    donationOwnerValid_of_frames hSame hOwnerFrame hOwnerValid
+  exact ⟨storeTcbSignalBoundWoken_preserves_ipcInvariant st st' tid badge hIpc hObjInv hStep,
+    storeTcbSignalBoundWoken_preserves_dualQueueSystemInvariant st st' tid badge hObjInv hStep hDual,
+    storeTcbSignalBoundWoken_preserves_allPendingMessagesBounded st st' tid badge
+      hObjInv hStep hBounded,
+    storeTcbSignalBoundWoken_preserves_badgeWellFormed st st' tid badge hBadge hObjInv hStep,
+    storeTcbSignalBoundWoken_preserves_blockedThreadsPendingMessageConsistent st st' tid badge
+      hObjInv hStep hPend,
+    storeTcbSignalBoundWoken_preserves_endpointQueueNoDup st st' tid badge hNoDup hObjInv hStep,
+    storeTcbSignalBoundWoken_partial_preserves_ipcStateQueueMembershipConsistent st st' tid badge
+      hMemExcept hObjInv hStep,
+    storeTcbSignalBoundWoken_preserves_queueNextBlockingConsistent st st' tid badge hQNB hObjInv
+      hStep,
+    storeTcbSignalBoundWoken_preserves_queueHeadBlockedConsistent st st' tid badge hQHB hObjInv
+      hStep hNotHead,
+    storeTcbSignalBoundWoken_preserves_blockedThreadTimeoutConsistent st st' tid badge hObjInv
+      hNoBudget hTimeout hStep,
+    donationOwnerValid_implies_donationChainAcyclic st' hOwnerValid',
+    hOwnerValid',
+    donationBudgetTransfer_of_sameSchedContextBindings hSame hBudget,
+    ⟨replyCallerLinkageReciprocal_of_frame
+        (storeTcbSignalBoundWoken_replyLinkageFrame_of_unlinked st st' tid badge hUnlinked
+          hObjInv hStep)
+        hReplyLink.1,
+      storeTcbSignalBoundWoken_nonBlocked_preserves_blockedOnReplyHasReplyObject st st' tid badge
+        hObjInv hReplyLink.2 hStep⟩,
+    storeTcbSignalBoundWoken_preserves_pendingReceiveReplyWellFormed st st' tid badge hObjInv
+      hStash hStep,
+    donationOwnerUnique_of_sameSchedContextBindings hSame hUnique,
+    storeTcbSignalBoundWoken_preserves_endpointQueueTailBlockedConsistent st st' tid badge hTail
+      hObjInv hStep hNotTail,
+    storeTcbSignalBoundWoken_preserves_queueNextTargetBlocked st st' tid badge hQNT hObjInv hStep
+      hNoIncoming,
+    notificationBindingReciprocal.of_kindPreservingWrite
+      (storeTcbSignalBoundWoken_kindPreservingWrite hObjInv hStep) hNBR,
+    storeTcbSignalBoundWoken_preserves_endpointQueueLinksOnlyBlocked st st' tid badge hLinks
       hObjInv hStep hNoNext⟩
 
 -- ============================================================================

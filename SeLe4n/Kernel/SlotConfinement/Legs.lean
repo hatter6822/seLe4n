@@ -210,6 +210,14 @@ theorem storeTcbIpcStateAndMessage_confinedToCores (st st' : SystemState)
     (storeTcbIpcStateAndMessage_scheduler_eq st st' tid ipc msg hStep)
     (storeTcbIpcStateAndMessage_machine_eq st st' tid ipc msg hStep)
 
+theorem storeTcbSignalWoken_confinedToCores (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    observableSlotsConfinedToCores st st' [] :=
+  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+    (storeTcbSignalWoken_scheduler_eq st st' tid badge hStep)
+    (storeTcbSignalWoken_machine_eq st st' tid badge hStep)
+
 theorem storeTcbIpcState_confinedToCores (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
@@ -326,6 +334,15 @@ theorem storeTcbReceiveComplete_confinedToCores (st st' : SystemState)
   observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
     (storeTcbReceiveComplete_scheduler_eq st st' tid msg hStep)
     (storeTcbReceiveComplete_machine_eq st st' tid msg hStep)
+
+/-- `storeTcbReceiveComplete_confinedToCores` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_confinedToCores (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    observableSlotsConfinedToCores st st' [] :=
+  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+    (storeTcbSignalBoundWoken_scheduler_eq st st' tid badge hStep)
+    (storeTcbSignalBoundWoken_machine_eq st st' tid badge hStep)
 
 /-- SM8.B.2: a replenishment migration is per-core silent — it moves a
 SchedContext's replenishments between two cores' **replenishment** queues, and
@@ -504,16 +521,16 @@ theorem notificationSignalOnCore_confinedToCores (notificationId : SeLe4n.ObjId)
             storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hStore
           have hNtfn' := storeObject_objects_eq st st1 notificationId _ hObjInv hStore
           have hNe : notificationId ≠ w.toObjId :=
-            notification_ne_waiter_of_store st1 st2 notificationId w _ .ready _
+            notification_ne_waiter_of_store st1 st2 notificationId w _ _
               hNtfn' hMsg
           have hTarget : determineTargetCore st2 w = determineTargetCore st w := by
-            rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st1 st2 w .ready _
+            rw [storeTcbSignalWoken_determineTargetCore_eq st1 st2 w _
                   w hInv' hMsg,
                 storeObject_determineTargetCore_eq st st1 notificationId _ w hNe
                   hObjInv hStore]
           -- The pop's link rewrite writes TCB links only: no scheduler slot.
           have hInv2 : st2.objects.invExt :=
-            storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hInv' hMsg
+            storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hInv' hMsg
           have hDetach : observableSlotsConfinedToCores st2
               (detachNtfnHead st2 w (ntfnSuccessor? st w)) [] :=
             observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
@@ -522,7 +539,7 @@ theorem notificationSignalOnCore_confinedToCores (notificationId : SeLe4n.ObjId)
             (observableSlotsConfinedToCores_trans
               (observableSlotsConfinedToCores_trans
                 (storeObject_confinedToCores st st1 _ _ hStore)
-                (storeTcbIpcStateAndMessage_confinedToCores st1 st2 w .ready _ hMsg))
+                (storeTcbSignalWoken_confinedToCores st1 st2 w _ hMsg))
               hDetach)
             (wakeThread_confinedToCores (detachNtfnHead st2 w (ntfnSuccessor? st w)) w
               executingCore)
@@ -628,16 +645,15 @@ theorem notificationSignalBoundOnCore_confinedToCores (notificationId : SeLe4n.O
         endpointQueueRemoveDual_preserves_objects_invExt st st1 epId true t hObjInv hRemove
       have hT1 : determineTargetCore st1 t = determineTargetCore st t :=
         endpointQueueRemoveDual_determineTargetCore_eq st st1 epId true t t hObjInv hRemove
-      cases hStore : storeTcbReceiveComplete st1 t
-          (some { IpcMessage.empty with badge := some badge }) with
+      cases hStore : storeTcbSignalBoundWoken st1 t badge with
       | error e => exact observableSlotsConfinedToCores_of_eq _ rfl
       | ok st2 =>
         have hT2 : determineTargetCore st2 t = determineTargetCore st1 t :=
-          storeTcbReceiveComplete_determineTargetCore_eq st1 st2 t _ t hInv1 hStore
+          storeTcbSignalBoundWoken_determineTargetCore_eq st1 st2 t _ t hInv1 hStore
         have hChain := observableSlotsConfinedToCores_widen_cons
           (observableSlotsConfinedToCores_trans
             (endpointQueueRemoveDual_confinedToCores epId true t st st1 hRemove)
-            (storeTcbReceiveComplete_confinedToCores st1 st2 t _ hStore))
+            (storeTcbSignalBoundWoken_confinedToCores st1 st2 t _ hStore))
           (wakeThread_confinedToCores st2 t executingCore)
         rw [hT2, hT1] at hChain
         exact hChain

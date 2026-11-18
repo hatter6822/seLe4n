@@ -77,13 +77,12 @@ theorem notificationSignalOnCore_objects_capacity_le
         simp only
         have hC1 := (storeObject_capacity_le hStore).1
         have hObj1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-        cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
-            (some { IpcMessage.empty with badge := some badge }) with
+        cases hTcb : storeTcbSignalWoken pair.2 waiter badge with
         | error e => simp only; exact Nat.le_refl _
         | ok st'' =>
           simp only
-          have hC2 := (storeTcbIpcStateAndMessage_kindPreservingWrite hObj1 hTcb).ghosts.objectsCapacity
-          have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2 st'' waiter _ _ hObj1 hTcb
+          have hC2 := (storeTcbSignalWoken_kindPreservingWrite hObj1 hTcb).ghosts.objectsCapacity
+          have hObj2 := storeTcbSignalWoken_preserves_objects_invExt pair.2 st'' waiter _ hObj1 hTcb
           show _ ≤ (wakeThread _ waiter executingCore).1.objects.capacity
           exact Nat.le_trans (le_detachNtfnHead_objects_capacity _ _ _ (Nat.le_trans hC1 hC2))
             (wakeThread_kindPreservingWrite _ waiter executingCore
@@ -668,8 +667,7 @@ theorem notificationSignalBoundOnCore_mappingStage {notificationId : SeLe4n.ObjI
     MappingStage st (notificationSignalBoundOnCore notificationId badge executingCore st).1 := by
   unfold notificationSignalBoundOnCore
   split
-  · dsimp only
-    split
+  · split
     · exact MappingStage.refl _
     · rename_i st1 hR
       have h1 : MappingStage st st1 := MappingStage.of_kindPreservingWrite
@@ -679,8 +677,8 @@ theorem notificationSignalBoundOnCore_mappingStage {notificationId : SeLe4n.ObjI
       · exact MappingStage.refl _
       · rename_i st2 hT
         have h2 : MappingStage st1 st2 := MappingStage.of_kindPreservingWrite
-          (fun h => storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ h hT)
-          (fun h => storeTcbReceiveComplete_kindPreservingWrite h hT)
+          (fun h => storeTcbSignalBoundWoken_preserves_objects_invExt _ _ _ _ h hT)
+          (fun h => storeTcbSignalBoundWoken_kindPreservingWrite h hT)
         exact (h1.trans h2).trans (wakeThread_mappingStage _ _ executingCore)
   · exact notificationSignalOnCore_mappingStage
 

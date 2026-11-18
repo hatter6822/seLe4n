@@ -396,6 +396,21 @@ theorem storeTcbReceiveComplete {st st' : SystemState} {t : SeLe4n.ThreadId}
     (hP : ∀ x, st.getTcb? t = some x → ¬ ipcParked x.ipcState) : RecordsStep st st' :=
   modifyTcb hInv h fun x hx => TcbStaysParked.of_ipc rfl rfl (by simpa using hP x hx)
 
+/-- A signal's wake: the woken thread made `.ready`, with the badge in its badge
+register, out of an unparked state. -/
+theorem storeTcbSignalWoken {st st' : SystemState} {t : SeLe4n.ThreadId}
+    {b : SeLe4n.Badge} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.storeTcbSignalWoken st t b = .ok st')
+    (hP : ∀ x, st.getTcb? t = some x → ¬ ipcParked x.ipcState) : RecordsStep st st' :=
+  modifyTcb hInv h fun x hx => TcbStaysParked.of_ipc rfl rfl (.inl (hP x hx))
+
+/-- …and the bound receiver's. -/
+theorem storeTcbSignalBoundWoken {st st' : SystemState} {t : SeLe4n.ThreadId}
+    {b : SeLe4n.Badge} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.storeTcbSignalBoundWoken st t b = .ok st')
+    (hP : ∀ x, st.getTcb? t = some x → ¬ ipcParked x.ipcState) : RecordsStep st st' :=
+  modifyTcb hInv h fun x hx => TcbStaysParked.of_ipc rfl rfl (.inl (hP x hx))
+
 end RecordsStep
 
 -- ============================================================================

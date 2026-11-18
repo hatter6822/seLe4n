@@ -540,6 +540,16 @@ theorem storeTcbIpcStateAndMessage_confinedToCore (st st' : SystemState)
     (storeTcbIpcStateAndMessage_scheduler_eq st st' tid ipc msg hStep)
     (storeTcbIpcStateAndMessage_machine_eq st st' tid ipc msg hStep)
 
+
+/-- `storeTcbIpcStateAndMessage_confinedToCore` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_confinedToCore (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge) (c₀ : CoreId)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    observableSlotsConfinedToCore st st' c₀ :=
+  observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
+    (storeTcbSignalWoken_scheduler_eq st st' tid badge hStep)
+    (storeTcbSignalWoken_machine_eq st st' tid badge hStep)
+
 theorem storeTcbQueueLinks_confinedToCore (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
     (next : Option SeLe4n.ThreadId) (c₀ : CoreId)
@@ -856,7 +866,7 @@ theorem notificationSignal_confinedToBootCore (st st' : SystemState)
             refine observableSlotsConfinedToCore_trans
               (storeObject_confinedToCore st st1 notificationId _ bootCoreId hStore) ?_
             refine observableSlotsConfinedToCore_trans
-              (storeTcbIpcStateAndMessage_confinedToCore st1 st2 waiter _ _ bootCoreId hStore2) ?_
+              (storeTcbSignalWoken_confinedToCore st1 st2 waiter _ bootCoreId hStore2) ?_
             -- The pop's link rewrite writes no scheduler slot or register.
             refine observableSlotsConfinedToCore_trans
               (observableSlotsConfinedToCore_of_scheduler_machine_eq bootCoreId

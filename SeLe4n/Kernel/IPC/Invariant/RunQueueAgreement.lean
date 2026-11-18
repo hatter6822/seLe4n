@@ -49,6 +49,19 @@ theorem storeTcbIpcStateAndMessage_runQueueStage {st st' : SystemState}
     RunQueueStage st st' := by
   subst hs; exact modifyTcb_runQueueStage h (fun _ _ => rfl)
 
+/-- A signal's wake store writes the woken thread's x0, message slot and
+thread state to `.ready`: no run link or scheduler field. -/
+theorem storeTcbSignalWoken_runQueueStage {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {badge : SeLe4n.Badge}
+    (h : storeTcbSignalWoken st tid badge = .ok st') : RunQueueStage st st' :=
+  modifyTcb_runQueueStage h (fun _ _ => rfl)
+
+/-- …and so does the bound-receiver form. -/
+theorem storeTcbSignalBoundWoken_runQueueStage {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {badge : SeLe4n.Badge}
+    (h : storeTcbSignalBoundWoken st tid badge = .ok st') : RunQueueStage st st' :=
+  modifyTcb_runQueueStage h (fun _ _ => rfl)
+
 /-- WS-ZA ZA4.7: the send-cap record of a blocking sender writes a badge word
 and two flags: no run link, thread state or scheduler field. -/
 theorem recordSendCap_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)

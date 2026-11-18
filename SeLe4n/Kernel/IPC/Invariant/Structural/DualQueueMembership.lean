@@ -3002,6 +3002,35 @@ theorem storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent
       rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
       exact ⟨ep, storeTcbIpcStateAndMessage_preserves_endpoint st st' tid ipc msg epId ep hObjInv hEp hStep⟩
 
+/-- `storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_preserves_ipcStateQueueConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st')
+    (hInv : ipcStateQueueConsistent st) :
+    ipcStateQueueConsistent st' := by
+  intro tid' tcb' hTcb'
+  by_cases hEq : tid'.toObjId = tid.toObjId
+  · -- Target TCB: ThreadIpcState.ready was set to `ThreadIpcState.ready`
+    have hIpcEq := storeTcbSignalWoken_ipcState_eq st st' tid badge hObjInv hStep tcb' (hEq ▸ hTcb')
+    rw [hIpcEq]; trivial
+  · -- Non-target TCB: object unchanged, pre-state invariant applies
+    have hObjEq := storeTcbSignalWoken_preserves_objects_ne st st' tid badge tid'.toObjId hEq hObjInv hStep
+    rw [hObjEq] at hTcb'
+    have hPre := hInv tid' tcb' hTcb'
+    match h : tcb'.ipcState with
+    | .ready | .blockedOnNotification _ | .blockedOnReply _ _ => trivial
+    | .blockedOnSend epId =>
+      rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+      exact ⟨ep, storeTcbSignalWoken_preserves_endpoint st st' tid badge epId ep hObjInv hEp hStep⟩
+    | .blockedOnReceive epId =>
+      rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+      exact ⟨ep, storeTcbSignalWoken_preserves_endpoint st st' tid badge epId ep hObjInv hEp hStep⟩
+    | .blockedOnCall epId =>
+      rw [h] at hPre; obtain ⟨ep, hEp⟩ := hPre
+      exact ⟨ep, storeTcbSignalWoken_preserves_endpoint st st' tid badge epId ep hObjInv hEp hStep⟩
+
 /-- Finding F-1: `storeTcbReceiveComplete` preserves `ipcStateQueueConsistent`.
 The stored ipcState is `.ready`, which carries no endpoint-existence obligation,
 so no `hNewIpc` precondition is needed. Mirror of
@@ -3665,7 +3694,7 @@ theorem notificationSignal_preserves_ipcStateQueueConsistent
         | error e => simp at hStep
         | ok pair1 =>
           simp only [] at hStep
-          generalize hMsg : storeTcbIpcStateAndMessage pair1.2 waiter .ready _ = rMsg at hStep
+          generalize hMsg : storeTcbSignalWoken pair1.2 waiter badge = rMsg at hStep
           cases rMsg with
           | error e => simp at hStep
           | ok st2 =>
@@ -3674,10 +3703,10 @@ theorem notificationSignal_preserves_ipcStateQueueConsistent
             have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair1 hObjInv hStore1
             exact ensureRunnable_preserves_ipcStateQueueConsistent _ _ <|
               ipcStateQueueConsistent_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _
-                (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hMsg)) <|
-              storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hObjInv1 hMsg
+                (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hMsg)) <|
+              storeTcbSignalWoken_preserves_ipcStateQueueConsistent _ _ _ _ hObjInv1 hMsg
                 (storeObject_notification_preserves_ipcStateQueueConsistent st pair1.2 notificationId _
-                  ⟨ntfn, hObj⟩ hObjInv hStore1 hInv) trivial
+                  ⟨ntfn, hObj⟩ hObjInv hStore1 hInv)
       | none =>
         -- Accumulate path: storeObject (notification) only
         simp only [hWaiters] at hStep
@@ -5368,6 +5397,31 @@ theorem storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyOb
       subst ho
       exact absurd hb (by simpa using hNotBlocked ep rt)
 
+/-- `storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_nonBlocked_preserves_blockedOnReplyHasReplyObject
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasReplyObject st)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    blockedOnReplyHasReplyObject st' := by
+  unfold storeTcbSignalWoken modifyTcb at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.signalWoken badge tcb)) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      refine storeObject_preserves_blockedOnReplyHasReplyObject st st'' tid.toObjId _ hObjInv hInv
+        (fun t ep rt ho hb => ?_) hSO
+      simp only [KernelObject.tcb.injEq] at ho
+      subst ho
+      simp [TCB.signalWoken] at hb
+
 open SeLe4n.Model.SystemState in
 /-- Finding F-1: `storeTcbReceiveComplete` preserves the third clause — the stored
 TCB is `.ready`, never `.blockedOnReply`, so the keystone discharge is automatic (no
@@ -5396,6 +5450,31 @@ theorem storeTcbReceiveComplete_nonBlocked_preserves_blockedOnReplyHasReplyObjec
       simp only [KernelObject.tcb.injEq] at ho
       subst ho
       simp at hb
+
+/-- `storeTcbReceiveComplete_nonBlocked_preserves_blockedOnReplyHasReplyObject` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_nonBlocked_preserves_blockedOnReplyHasReplyObject
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasReplyObject st)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    blockedOnReplyHasReplyObject st' := by
+  unfold storeTcbSignalBoundWoken modifyTcb at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.signalBoundWoken badge tcb)) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      refine storeObject_preserves_blockedOnReplyHasReplyObject st st'' tid.toObjId _ hObjInv hInv
+        (fun t ep rt ho hb => ?_) hSO
+      simp only [KernelObject.tcb.injEq] at ho
+      subst ho
+      simp [TCB.signalBoundWoken] at hb
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: the `storeTcbIpcState` analogue of the non-blocked frame — a
@@ -6518,6 +6597,30 @@ theorem storeTcbIpcStateAndMessage_replyLinkageFrame_of_unlinked
         (TCB.setIpcState { tcb with pendingMessage := msg } ipc) hOrig rfl
         (fun ⟨rid, hRid⟩ => absurd hRid (by rw [hUnlinked tcb hOrig]; simp)) hObjInv hSO
 
+/-- `storeTcbIpcStateAndMessage_replyLinkageFrame_of_unlinked` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_replyLinkageFrame_of_unlinked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hUnlinked : ∀ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.replyObject = none)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    replyLinkageFrame st st' := by
+  unfold storeTcbSignalWoken modifyTcb at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.signalWoken badge tcb)) st with
+    | error e => simp [hSO] at hStep
+    | ok pr =>
+      obtain ⟨⟨⟩, st''⟩ := pr
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      have hOrig := lookupTcb_some_objects st tid tcb hL
+      exact storeObject_modifiedTcb_replyLinkageFrame st st'' tid.toObjId tcb
+        (TCB.signalWoken badge tcb) hOrig rfl
+        (fun ⟨rid, hRid⟩ => absurd hRid (by rw [hUnlinked tcb hOrig]; simp)) hObjInv hSO
+
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.7: the `_fromTcb` form of the store above. -/
 theorem storeTcbIpcStateAndMessage_fromTcb_replyLinkageFrame_of_unlinked
@@ -6588,6 +6691,31 @@ theorem storeTcbReceiveComplete_replyLinkageFrame_of_unlinked
       have hOrig := lookupTcb_some_objects st tid tcb hL
       exact storeObject_modifiedTcb_replyLinkageFrame st st'' tid.toObjId tcb
         (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)
+        hOrig rfl
+        (fun ⟨rid, hRid⟩ => absurd hRid (by rw [hUnlinked tcb hOrig]; simp)) hObjInv hSO
+
+/-- `storeTcbReceiveComplete_replyLinkageFrame_of_unlinked` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_replyLinkageFrame_of_unlinked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hUnlinked : ∀ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.replyObject = none)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    replyLinkageFrame st st' := by
+  unfold storeTcbSignalBoundWoken modifyTcb at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId
+        (.tcb (TCB.signalBoundWoken badge tcb)) st with
+    | error e => simp [hSO] at hStep
+    | ok pr =>
+      obtain ⟨⟨⟩, st''⟩ := pr
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      have hOrig := lookupTcb_some_objects st tid tcb hL
+      exact storeObject_modifiedTcb_replyLinkageFrame st st'' tid.toObjId tcb
+        (TCB.signalBoundWoken badge tcb)
         hOrig rfl
         (fun ⟨rid, hRid⟩ => absurd hRid (by rw [hUnlinked tcb hOrig]; simp)) hObjInv hSO
 
@@ -6901,10 +7029,10 @@ theorem notificationSignal_preserves_blockedOnReplyHasReplyObject
         next st2 hSM =>
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          have hInv2 := storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject
-            st1 st2 waiter .ready _ hObjInv1 hInv1 (by simp) hSM
+          have hInv2 := storeTcbSignalWoken_nonBlocked_preserves_blockedOnReplyHasReplyObject
+            st1 st2 waiter _ hObjInv1 hInv1 hSM
           exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks _ waiter)
-            (blockedOnReplyHasReplyObject_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM)) hInv2)
+            (blockedOnReplyHasReplyObject_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hSM)) hInv2)
     | none =>
       simp only [hWaiters] at hStep
       split at hStep
@@ -7367,6 +7495,26 @@ theorem storeTcbIpcStateAndMessage_sameSchedContextBindings
       exact storeObject_modifiedTcb_sameSchedContextBindings st st'' tid.toObjId tcb
         (TCB.setIpcState { tcb with pendingMessage := msg } ipc) (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
 
+/-- `storeTcbIpcStateAndMessage_sameSchedContextBindings` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_sameSchedContextBindings
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    sameSchedContextBindings st st' := by
+  unfold storeTcbSignalWoken modifyTcb at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.signalWoken badge tcb)) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      exact storeObject_modifiedTcb_sameSchedContextBindings st st'' tid.toObjId tcb
+        (TCB.signalWoken badge tcb) (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
+
 open SeLe4n.Model.SystemState in
 /-- D6: `storeTcbReceiveComplete` preserves every TCB's binding. -/
 theorem storeTcbReceiveComplete_sameSchedContextBindings
@@ -7387,6 +7535,27 @@ theorem storeTcbReceiveComplete_sameSchedContextBindings
       subst hStep
       exact storeObject_modifiedTcb_sameSchedContextBindings st st'' tid.toObjId tcb
         (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)
+        (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
+
+/-- `storeTcbReceiveComplete_sameSchedContextBindings` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_sameSchedContextBindings
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    sameSchedContextBindings st st' := by
+  unfold storeTcbSignalBoundWoken modifyTcb at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.signalBoundWoken badge tcb)) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      exact storeObject_modifiedTcb_sameSchedContextBindings st st'' tid.toObjId tcb
+        (TCB.signalBoundWoken badge tcb)
         (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
 
 open SeLe4n.Model.SystemState in
@@ -7480,6 +7649,27 @@ theorem storeTcbReceiveComplete_timeoutBudgetFrame
       subst hStep
       exact storeObject_modifiedTcb_timeoutBudgetFrame st st'' tid.toObjId tcb
         (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)
+        (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
+
+/-- `storeTcbReceiveComplete_timeoutBudgetFrame` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_timeoutBudgetFrame
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    timeoutBudgetFrame st st' := by
+  unfold storeTcbSignalBoundWoken modifyTcb at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.signalBoundWoken badge tcb)) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      exact storeObject_modifiedTcb_timeoutBudgetFrame st st'' tid.toObjId tcb
+        (TCB.signalBoundWoken badge tcb)
         (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
 
 open SeLe4n.Model.SystemState in
@@ -7662,6 +7852,29 @@ theorem storeTcbIpcStateAndMessage_donationOwnerFrame
       exact storeObject_modifiedTcb_donationOwnerFrame st st'' tid.toObjId tcb
         (TCB.setIpcState { tcb with pendingMessage := msg } ipc) hOrig (hPreNotReply tcb hOrig) hObjInv hSO
 
+/-- `storeTcbIpcStateAndMessage_donationOwnerFrame` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_donationOwnerFrame
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hPreNotReply : ∀ (tcb : TCB), st.objects[tid.toObjId]? = some (.tcb tcb) →
+      ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    donationOwnerFrame st st' := by
+  unfold storeTcbSignalWoken modifyTcb at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.signalWoken badge tcb)) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      have hOrig := lookupTcb_some_objects st tid tcb hL
+      exact storeObject_modifiedTcb_donationOwnerFrame st st'' tid.toObjId tcb
+        (TCB.signalWoken badge tcb) hOrig (hPreNotReply tcb hOrig) hObjInv hSO
+
 open SeLe4n.Model.SystemState in
 /-- D6: `storeTcbReceiveComplete` frames the owner side forward (it sets the rewritten thread
 `.ready` — given that thread's pre-state is not `.blockedOnReply`, no owner witness is lost). -/
@@ -7686,6 +7899,30 @@ theorem storeTcbReceiveComplete_donationOwnerFrame
       have hOrig := lookupTcb_some_objects st tid tcb hL
       exact storeObject_modifiedTcb_donationOwnerFrame st st'' tid.toObjId tcb
         (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)
+        hOrig (hPreNotReply tcb hOrig) hObjInv hSO
+
+/-- `storeTcbReceiveComplete_donationOwnerFrame` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_donationOwnerFrame
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hPreNotReply : ∀ (tcb : TCB), st.objects[tid.toObjId]? = some (.tcb tcb) →
+      ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    donationOwnerFrame st st' := by
+  unfold storeTcbSignalBoundWoken modifyTcb at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.signalBoundWoken badge tcb)) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      have hOrig := lookupTcb_some_objects st tid tcb hL
+      exact storeObject_modifiedTcb_donationOwnerFrame st st'' tid.toObjId tcb
+        (TCB.signalBoundWoken badge tcb)
         hOrig (hPreNotReply tcb hOrig) hObjInv hSO
 
 open SeLe4n.Model.SystemState in
@@ -7843,6 +8080,26 @@ theorem storeTcbIpcStateAndMessage_timeoutBudgetFrame
       subst hStep
       exact storeObject_modifiedTcb_timeoutBudgetFrame st st'' tid0.toObjId tcb
         (TCB.setIpcState { tcb with pendingMessage := msg } ipc) (lookupTcb_some_objects st tid0 tcb hL) rfl hObjInv hSO
+
+/-- `storeTcbIpcStateAndMessage_timeoutBudgetFrame` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_timeoutBudgetFrame
+    (st st' : SystemState) (tid0 : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid0 badge = .ok st') :
+    timeoutBudgetFrame st st' := by
+  unfold storeTcbSignalWoken modifyTcb at hStep
+  cases hL : lookupTcb st tid0 with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid0.toObjId (.tcb (TCB.signalWoken badge tcb)) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      exact storeObject_modifiedTcb_timeoutBudgetFrame st st'' tid0.toObjId tcb
+        (TCB.signalWoken badge tcb) (lookupTcb_some_objects st tid0 tcb hL) rfl hObjInv hSO
 
 open SeLe4n.Model.SystemState in
 open SeLe4n.Model.SystemState in
@@ -10790,8 +11047,8 @@ theorem notificationSignal_sameSchedContextBindings
         next st2 hSM =>
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          exact (hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 waiter .ready _ hObjInv1 hSM)).trans
-            ((sameSchedContextBindings.of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))).trans
+          exact (hS1.trans (storeTcbSignalWoken_sameSchedContextBindings st1 st2 waiter _ hObjInv1 hSM)).trans
+            ((sameSchedContextBindings.of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hSM))).trans
               (sameSchedContextBindings.of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks _ waiter)))
     | none =>
       simp only [hWaiters] at hStep
@@ -10828,8 +11085,8 @@ theorem notificationSignal_kindPreservingWrite
         next st2 hSM =>
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          exact (hS1.trans (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv1 hSM)).trans
-            (((ntfnLinksRewritten.kindPreserving (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM)))).trans
+          exact (hS1.trans (storeTcbSignalWoken_kindPreservingWrite hObjInv1 hSM)).trans
+            (((ntfnLinksRewritten.kindPreserving (detachNtfnHead_linksRewritten _ _ _ (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hSM)))).trans
               ((SystemState.objectsAgreeOffRunLinks.kindPreserving (ensureRunnable_objectsAgreeOffRunLinks _ waiter))))
     | none =>
       simp only [hWaiters] at hStep
@@ -10876,9 +11133,9 @@ theorem notificationSignal_donationOwnerFrame
         next st2 hSM =>
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          refine (hF1.trans (storeTcbIpcStateAndMessage_donationOwnerFrame st1 st2 waiter .ready _
+          refine (hF1.trans (storeTcbSignalWoken_donationOwnerFrame st1 st2 waiter _
             (fun tcb hTcb1 ep rt => ?_) hObjInv1 hSM)).trans
-            ((donationOwnerFrame.of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))).trans
+            ((donationOwnerFrame.of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hSM))).trans
               (donationOwnerFrame.of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks _ waiter)))
           rw [hWTcb1] at hTcb1
           obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcb1)
@@ -11356,7 +11613,7 @@ theorem endpointReceiveDual_preserves_replyCallerLinkageReciprocal
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.9: `notificationSignal` **establishes** `replyCallerLinkageReciprocal`
 from the pre-state. It writes the notification object and, on the wake path, the
-head waiter (`.ready` + badge message). That waiter is a wait-queue member, so
+head waiter (`.ready`, the badge in its badge register). That waiter is a wait-queue member, so
 `notificationWaiterConsistent` puts it at `.blockedOnNotification`; a thread that
 is not `.blockedOnReply` carries no reply object, so readying it is invisible to
 both clauses. -/
@@ -11392,12 +11649,12 @@ theorem notificationSignal_preserves_replyCallerLinkageReciprocal
         next st2 hSM =>
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          refine (hF1.trans (storeTcbIpcStateAndMessage_replyLinkageFrame_of_unlinked st1 st2
-            waiter .ready _ (fun tcb hTcb1 => by
+          refine (hF1.trans (storeTcbSignalWoken_replyLinkageFrame_of_unlinked st1 st2
+            waiter _ (fun tcb hTcb1 => by
               rw [hWTcb1] at hTcb1
               obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcb1)
               exact hUnlinked) hObjInv1 hSM)).trans ?_
-          exact (replyLinkageFrame.of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))).trans
+          exact (replyLinkageFrame.of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hSM))).trans
             (replyLinkageFrame.of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks _ waiter))
     | none =>
       simp only [hWaiters] at hStep
@@ -11590,9 +11847,9 @@ theorem notificationSignal_timeoutBudgetFrame
         next st2 hSM =>
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          exact (hF1.trans (storeTcbIpcStateAndMessage_timeoutBudgetFrame st1 st2 waiter .ready _
+          exact (hF1.trans (storeTcbSignalWoken_timeoutBudgetFrame st1 st2 waiter _
             hObjInv1 hSM)).trans
-            ((timeoutBudgetFrame.of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))).trans
+            ((timeoutBudgetFrame.of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hSM))).trans
               (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks _ waiter)))
     | none =>
       simp only [hWaiters] at hStep
@@ -12355,6 +12612,40 @@ theorem storeTcbIpcStateAndMessage_preserves_pendingReceiveReplyWellFormed
         have hStashOld : tcb.pendingReceiveReply = some rid := hStash
         exact hne (hInv.2.1 tid' tid tcb' tcb rid hTcb' hOld hStash' hStashOld)
 
+/-- `storeTcbIpcStateAndMessage_preserves_pendingReceiveReplyWellFormed` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_preserves_pendingReceiveReplyWellFormed
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hInv : pendingReceiveReplyWellFormed st)
+    (hStashOk : ∀ (tcb : TCB) (rid : SeLe4n.ReplyId), st.getTcb? tid = some tcb →
+        tcb.pendingReceiveReply = some rid → ∃ ep, ThreadIpcState.ready = .blockedOnReceive ep)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    pendingReceiveReplyWellFormed st' := by
+  unfold storeTcbSignalWoken modifyTcb at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.signalWoken badge tcb)) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      have hOld : st.getTcb? tid = some tcb :=
+        (SystemState.getTcb?_eq_some_iff st tid tcb).mpr (lookupTcb_some_objects st tid tcb hL)
+      refine storeObject_tcb_preserves_pendingReceiveReplyWellFormed st st'' tid tcb
+        (TCB.signalWoken badge tcb) hObjInv hOld hInv ?_ ?_
+        (fun rid h => hInv.2.2 tid tcb rid hOld h) hSO
+      · intro rid hStash
+        have hStashOld : tcb.pendingReceiveReply = some rid := hStash
+        obtain ⟨_, hFree⟩ := hInv.1 tid tcb rid hOld hStashOld
+        exact ⟨(by simpa using (hStashOk tcb rid hOld hStashOld)), hFree⟩
+      · intro rid hStash tid' tcb' hne hTcb' hStash'
+        have hStashOld : tcb.pendingReceiveReply = some rid := hStash
+        exact hne (hInv.2.1 tid' tid tcb' tcb rid hTcb' hOld hStash' hStashOld)
+
 open SeLe4n.Model.SystemState in
 /-- Finding F-1: `storeTcbReceiveComplete` (writes `ipcState := .ready`,
 `pendingMessage`, **and clears** `pendingReceiveReply := none`) preserves
@@ -12388,6 +12679,33 @@ theorem storeTcbReceiveComplete_preserves_pendingReceiveReplyWellFormed
         (fun rid h => by simp at h) hSO
       · intro rid hStash; simp at hStash
       · intro rid hStash; simp at hStash
+
+/-- `storeTcbReceiveComplete_preserves_pendingReceiveReplyWellFormed` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_preserves_pendingReceiveReplyWellFormed
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hInv : pendingReceiveReplyWellFormed st)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    pendingReceiveReplyWellFormed st' := by
+  unfold storeTcbSignalBoundWoken modifyTcb at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.signalBoundWoken badge tcb)) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      have hOld : st.getTcb? tid = some tcb :=
+        (SystemState.getTcb?_eq_some_iff st tid tcb).mpr (lookupTcb_some_objects st tid tcb hL)
+      refine storeObject_tcb_preserves_pendingReceiveReplyWellFormed st st'' tid tcb
+        (TCB.signalBoundWoken badge tcb) hObjInv hOld hInv ?_ ?_
+        (fun rid h => by simp [TCB.signalBoundWoken] at h) hSO
+      · intro rid hStash; simp [TCB.signalBoundWoken] at hStash
+      · intro rid hStash; simp [TCB.signalBoundWoken] at hStash
 
 open SeLe4n.Model.SystemState in
 /-- D3: `storeTcbIpcState` analogue of the above (`ipcState` only). -/
@@ -12963,6 +13281,23 @@ theorem storeTcbIpcStateAndMessage_notReceiving_preserves_pendingReceiveReplyWel
     pendingReceiveReplyWellFormed st' := by
   refine storeTcbIpcStateAndMessage_preserves_pendingReceiveReplyWellFormed
     st st' tid ipc msg hObjInv hInv ?_ hStep
+  intro tcb rid hTcb hStash
+  -- `tid` stashes `rid` ⇒ (C1) `tid` is `.blockedOnReceive`, contradicting `hPreNotRecv`.
+  obtain ⟨⟨ep, hBlk⟩, _⟩ := hInv.1 tid tcb rid hTcb hStash
+  exact absurd hBlk (hPreNotRecv tcb hTcb ep)
+
+/-- `storeTcbIpcStateAndMessage_notReceiving_preserves_pendingReceiveReplyWellFormed` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_notReceiving_preserves_pendingReceiveReplyWellFormed
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hInv : pendingReceiveReplyWellFormed st)
+    (hPreNotRecv : ∀ (tcb : TCB), st.getTcb? tid = some tcb →
+        ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    pendingReceiveReplyWellFormed st' := by
+  refine storeTcbSignalWoken_preserves_pendingReceiveReplyWellFormed
+    st st' tid badge hObjInv hInv ?_ hStep
   intro tcb rid hTcb hStash
   -- `tid` stashes `rid` ⇒ (C1) `tid` is `.blockedOnReceive`, contradicting `hPreNotRecv`.
   obtain ⟨⟨ep, hBlk⟩, _⟩ := hInv.1 tid tcb rid hTcb hStash
@@ -13786,11 +14121,11 @@ theorem notificationSignal_preserves_pendingReceiveReplyWellFormed
         next st2 hSM =>
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          have hInv2 := storeTcbIpcStateAndMessage_notReceiving_preserves_pendingReceiveReplyWellFormed
-            st1 st2 waiter .ready _ hObjInv1 hInv1 ?_ hSM
+          have hInv2 := storeTcbSignalWoken_notReceiving_preserves_pendingReceiveReplyWellFormed
+            st1 st2 waiter _ hObjInv1 hInv1 ?_ hSM
           · exact pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks
               (ensureRunnable_objectsAgreeOffRunLinks _ waiter)
-              (pendingReceiveReplyWellFormed_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM)) hInv2)
+              (pendingReceiveReplyWellFormed_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hSM)) hInv2)
           · intro tcb' hTcb' ep h
             -- `waiter`'s TCB is unchanged by the notification store: derive its pre-state.
             have hNe : waiter.toObjId ≠ notificationId := by
@@ -17576,8 +17911,8 @@ theorem notificationSignal_preserves_queueNextBlockingConsistent
           obtain ⟨_, rfl⟩ := hStep
           exact queueNextBlockingConsistent_of_objectsAgreeOffRunLinks
             (ensureRunnable_objectsAgreeOffRunLinks _ waiter)
-            <| queueNextBlockingConsistent_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))
-            (storeTcbIpcStateAndMessage_ready_preserves_queueNextBlockingConsistent
+            <| queueNextBlockingConsistent_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hSM))
+            (storeTcbSignalWoken_ready_preserves_queueNextBlockingConsistent
               st1 st2 waiter _ hInv1 hObjInv1 hSM)
     | none =>
       simp only [hWaiters] at hStep
@@ -17630,9 +17965,9 @@ theorem notificationSignal_preserves_queueHeadBlockedConsistent
             · have := (hInv1 epId' ep' waiter wTcb hEp' hWTcb1).1 hHd; rw [hWIpc] at this; cases this
             · rcases (hInv1 epId' ep' waiter wTcb hEp' hWTcb1).2 hHd with h | h <;> rw [hWIpc] at h <;> cases h
           exact ensureRunnable_preserves_queueHeadBlockedConsistent _ waiter
-            <| queueHeadBlockedConsistent_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))
-            (storeTcbIpcStateAndMessage_preserves_queueHeadBlockedConsistent
-              st1 st2 waiter .ready _ hInv1 hObjInv1 hSM hNotHead)
+            <| queueHeadBlockedConsistent_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hSM))
+            (storeTcbSignalWoken_preserves_queueHeadBlockedConsistent
+              st1 st2 waiter _ hInv1 hObjInv1 hSM hNotHead)
     | none =>
       simp only [hWaiters] at hStep
       exact storeObject_nonEndpointNonTcb_preserves_queueHeadBlockedConsistent
@@ -17678,9 +18013,9 @@ theorem notificationSignal_preserves_queueNextTargetBlocked
               (∀ ep, wTcb.ipcState ≠ .blockedOnSend ep) ∧ (∀ ep, wTcb.ipcState ≠ .blockedOnCall ep) :=
             ⟨fun ep => by rw [hWIpc]; simp, fun ep => by rw [hWIpc]; simp, fun ep => by rw [hWIpc]; simp⟩
           exact ensureRunnable_preserves_queueNextTargetBlocked _ waiter
-            <| queueNextTargetBlocked_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))
-            (storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked
-              st1 st2 waiter .ready _ hInv1 hObjInv1 ⟨fun _ => by simp, fun _ => by simp, fun _ => by simp⟩
+            <| queueNextTargetBlocked_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hSM))
+            (storeTcbSignalWoken_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked
+              st1 st2 waiter _ hInv1 hObjInv1 ⟨fun _ => by simp, fun _ => by simp, fun _ => by simp⟩
               (queueNextTargetBlocked_no_incoming_of_notQueueBlocked st1 hInv1 waiter wTcb hWTcb1
                 hWaiterNotBlocked) hSM)
     | none =>
@@ -17731,9 +18066,9 @@ theorem notificationSignal_preserves_endpointQueueLinksOnlyBlocked
               (∀ ep, wTcb.ipcState ≠ .blockedOnSend ep) ∧ (∀ ep, wTcb.ipcState ≠ .blockedOnCall ep) :=
             ⟨fun ep => by rw [hWIpc]; simp, fun ep => by rw [hWIpc]; simp, fun ep => by rw [hWIpc]; simp⟩
           exact ensureRunnable_preserves_endpointQueueLinksOnlyBlocked _ waiter
-            <| endpointQueueLinksOnlyBlocked_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))
-            (storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_endpointQueueLinksOnlyBlocked
-              st1 st2 waiter .ready _ hInv1 hObjInv1 ⟨fun _ => by simp, fun _ => by simp, fun _ => by simp⟩
+            <| endpointQueueLinksOnlyBlocked_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hSM))
+            (storeTcbSignalWoken_no_incoming_nonQueueBlocked_preserves_endpointQueueLinksOnlyBlocked
+              st1 st2 waiter _ hInv1 hObjInv1 ⟨fun _ => by simp, fun _ => by simp, fun _ => by simp⟩
               (endpointQueueLinksOnlyBlocked_no_incoming_of_notQueueBlocked st1 hInv1 waiter wTcb hWTcb1
                 hWaiterNotBlocked) hSM)
     | none =>
@@ -17783,9 +18118,9 @@ theorem notificationSignal_preserves_endpointQueueTailBlockedConsistent
             · have := (hInv1 epId' ep' waiter wTcb hEp' hWTcb1).1 hTl; rw [hWIpc] at this; cases this
             · rcases (hInv1 epId' ep' waiter wTcb hEp' hWTcb1).2 hTl with h | h <;> rw [hWIpc] at h <;> cases h
           exact ensureRunnable_preserves_endpointQueueTailBlockedConsistent _ waiter
-            <| endpointQueueTailBlockedConsistent_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))
-            (storeTcbIpcStateAndMessage_preserves_endpointQueueTailBlockedConsistent
-              st1 st2 waiter .ready _ hInv1 hObjInv1 hSM hNotTail)
+            <| endpointQueueTailBlockedConsistent_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hSM))
+            (storeTcbSignalWoken_preserves_endpointQueueTailBlockedConsistent
+              st1 st2 waiter _ hInv1 hObjInv1 hSM hNotTail)
     | none =>
       simp only [hWaiters] at hStep
       exact storeObject_nonEndpointNonTcb_preserves_endpointQueueTailBlockedConsistent

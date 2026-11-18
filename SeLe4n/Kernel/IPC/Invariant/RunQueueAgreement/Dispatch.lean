@@ -880,12 +880,6 @@ theorem clearStashStage_runQueueEntryStage {st s st' : SystemState}
     cases h
     exact hS.trans ((clearWokenReceiverStash_runQueueStage woken? hClr).trans (hStage _)).entry
 
-/-- The two badge stagings a signal arm ends with. -/
-theorem stageWokenDeliveryTwice_runQueueStage (x : SystemState) (w p : Option SeLe4n.ThreadId) :
-    RunQueueStage x (Architecture.stageWokenDelivery
-      (Architecture.stageWokenDelivery x w 0) p 0) :=
-  (stageWokenDelivery_runQueueStage x w 0).trans (stageWokenDelivery_runQueueStage _ p 0)
-
 theorem endpointSendCrossCoreDispatchChecked_runQueueEntryStage (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (c : Concurrency.CoreId)
@@ -1147,7 +1141,7 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
       exact clearStashStage_runQueueEntryStage (runQueueStage_of_pair_eq
         (notificationSignalBoundCrossCoreDispatchChecked_runQueueStage _ _ _ _ _ _ P.ntfnHeads
           P.blocked) hSig).entry
-        (fun x => stageWokenDeliveryTwice_runQueueStage x _ _) h
+        (stage := id) (fun x => RunQueueStage.refl x) h
     · cases h
   case none.notificationWait.object notifId =>
     split at h
@@ -1199,7 +1193,7 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
       exact clearStashStage_runQueueEntryStage (runQueueStage_of_pair_eq
         (notificationSignalDeclassifiedOnCore_runQueueStage _ _ _ _ _ _ P.ntfnHeads
           P.blocked) hSig).entry
-        (fun x => stageWokenDeliveryTwice_runQueueStage x _ _) h
+        (stage := id) (fun x => RunQueueStage.refl x) h
     · cases h
 
 /-- WS-ZA ZA6.29: **every arm `dispatchWithCapChecked` routes links only the

@@ -660,12 +660,9 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
         subst hDisp
         have h₁ := notificationSignalBoundCrossCoreDispatchChecked_fst_of_ok ctx nId tid
           cap.signalBadge e st st₁ r hSig
-        refine footprintCoversWrites_trans S ?_ (footprintCoversWrites_trans S
+        refine footprintCoversWrites_trans S ?_
           (footprintCoversWrites_of_scheduler_eq S hTable
             (clearWokenReceiverStash_scheduler_eq _ _ _ hClr))
-          (footprintCoversWrites_of_scheduler_eq S hTable
-            (by rw [Architecture.stageWokenDelivery_scheduler_eq,
-              Architecture.stageWokenDelivery_scheduler_eq])))
         rw [← h₁]
         exact schedLockSet_notificationSignalBoundOnCore_coversWrites nId cap.signalBadge e st S
           hObjInv hSched

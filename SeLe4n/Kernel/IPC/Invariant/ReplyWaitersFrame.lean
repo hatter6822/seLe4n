@@ -90,6 +90,16 @@ theorem replyViews_storeTcbIpcStateAndMessage {st st' : SystemState} {t : Thread
   replyViews_modifyTcb hInv h (fun x => by
     simp only [TCB.replyView, blockingServer?_eq_ipcServer?, TCB.ipcState_setIpcState])
 
+/-- The store of a thread a signal wakes sets its server view to a ready
+thread's (`TCB.signalWoken`). -/
+theorem replyViews_storeTcbSignalWoken {st st' : SystemState} {t : ThreadId}
+    {b : SeLe4n.Badge}
+    (hInv : st.objects.invExt) (h : storeTcbSignalWoken st t b = .ok st') :
+    st'.replyViews = ReplyViews.setServer st.replyViews t (ipcServer? .ready) :=
+  replyViews_modifyTcb hInv h (fun x => by
+    simp only [TCB.replyView, blockingServer?_eq_ipcServer?, TCB.signalWoken,
+      TCB.ipcState_setIpcState])
+
 /-- **A store of an object with no view over a slot with none keeps the views.** -/
 theorem replyViews_storeObject_eq {st st' : SystemState} {k : ObjId} {obj : KernelObject}
     (hInv : st.objects.invExt) (h : storeObject k obj st = .ok ((), st'))

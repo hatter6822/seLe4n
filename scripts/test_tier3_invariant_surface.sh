@@ -4900,13 +4900,13 @@ run_negative_check "INVARIANT" rg -n 'capabilityObjectArm' SeLe4n
 # the taint pass writes taint words, and the ABI dispatch composes them.
 run_check "INVARIANT" rg -n -U '^def savedRegsUnwritten \(pre post : SystemState\) : Prop :=\n  savedRegsKeptExcept \(fun _ => False\) pre post ∧ post\.objects\.invExt$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
 run_check "INVARIANT" rg -n -U '^    savedRegsUnwritten st\n      \(endpointSendCrossCoreDispatchChecked ctx endpointId sender payload c st\)\.1 :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
-run_check "INVARIANT" rg -n -U '^    savedRegsUnwritten st \(notificationSignalBoundCrossCoreDispatchChecked ctx notificationId\n      signaler badge c st\)\.1 :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
+run_check "INVARIANT" rg -n -U '^    savedRegsKeptExcept \(signalWritten st notificationId\) st\n        \(notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler badge c st\)\.1 ∧' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
 run_check "INVARIANT" rg -n -U '^    savedRegsUnwritten st\n      \(notificationWaitCrossCoreDispatchChecked ctx notificationId waiter c st\)\.1 :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
 run_check "INVARIANT" rg -n -U '^    savedRegsKeptExcept \(· = tid\) st \(Architecture\.stageDeliveredMessage st tid n\) ∧' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
 run_check "INVARIANT" rg -n -U '^    \(h : ∀ x, st\.getTcb\? t = some x → x\.ipcState ≠ \.ready\) : offCoreFree e st t :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
 run_check "INVARIANT" rg -n -U '^    savedRegsWrittenFree e st st \(Architecture\.stageWokenDelivery s2\n      \(\(st\.getEndpoint\? epId\)\.bind \(·\.receiveQ\.head\)\) n\) :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
 run_check "INVARIANT" rg -n '^    offCoreFree_of_receiveHead P\.dequeued P\.queueHeads hRT hBNR h\)\.1$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
-run_check "INVARIANT" rg -n '^    offCoreFree_of_signalWaiter P\.dequeued P\.ntfnHeads hRT hBNR h\)\.1$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
+run_check "INVARIANT" rg -n '^    fun _ h => offCoreFree_of_signalWritten P hRT hBNR h$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
 run_check "INVARIANT" rg -n '^      offCoreFree_of_current P\.current \(currentsUnique_of_dequeuedUnique P\.dequeued\) hN\)⟩$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersSendNotification.lean
 run_check "INVARIANT" rg -n '^    offCoreFree_of_receiveHead P\.dequeued P\.queueHeads hRT hBNR h\)\.1$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
 run_check "INVARIANT" rg -n '^      · exact ⟨\.refl _, hInv, fun _ h => offCoreFree_of_sendHead P\.dequeued P\.queueHeads hRT hBNR h⟩$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
@@ -22595,7 +22595,7 @@ run_check "INVARIANT" rg -F -n 'import SeLe4n.Kernel.SyscallSeamCoverage' SeLe4n
 run_check "INVARIANT" rg -n '^theorem syscallDispatchCrossCoreStep_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSeamCoverage.lean
 # The RELATION: the footprint is the seam's own resolver at the ENTRY state, and
 # the covered state is the seam's whole post-state, tail included.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem syscallDispatchCrossCoreStep_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hU : declaredUnifiedLockSetForAbiEntry ctx e syscallId x0 x1 x2 x3 x4 x5 st = some U\) :\n *footprintCoversWrites U st\n *\(syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr\n *spEl0 x30 st\)\.2 := by" SeLe4n/Kernel/SyscallSeamCoverage.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem syscallDispatchCrossCoreStep_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hU : declaredUnifiedLockSetForAbiEntry ctx e syscallId x0 x1 x2 x3 x4 x5 x6 st = some U\) :\n *footprintCoversWrites U st\n *\(syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr\n *spEl0 x30 st\)\.2 := by" SeLe4n/Kernel/SyscallSeamCoverage.lean'
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSeamCoverage.lean
 run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSeamCoverage.lean
 # The seam theorem DISCHARGES the bridge's coverage premise rather than taking
@@ -24099,7 +24099,6 @@ run_check "INVARIANT" rg -n '^theorem interruptEntryTail_coversWrites($|[ ({:\[\
 run_check "INVARIANT" rg -n '^theorem interruptEntryState_mappingStage($|[ ({:\[\]])' SeLe4n/Kernel/MappingRecordStage/Entry.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
 run_check "INVARIANT" rg -n '^theorem interruptEntryState_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
-run_check "INVARIANT" rg -n '^theorem stageWokenDelivery_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem clearWokenReceiverStash_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem interruptEntry_commits($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem syscallDelegates_irqHandlerAck($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
