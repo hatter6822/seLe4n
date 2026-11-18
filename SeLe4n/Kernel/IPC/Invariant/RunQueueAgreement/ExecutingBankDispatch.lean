@@ -290,7 +290,7 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
     | (cases h; rename_i hS
        first
         | (rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hS]
-           exact (bankFrame.writeReturnFrameToTcb_caller _ hInv).bankAgree hA)
+           exact (bankFrame.writeCallReturnWord_caller _ hInv).bankAgree hA)
         | exact hP (schedContextUnbindOnCore_schedPointPrefix hInv hS)
         | exact schedContextConsumedOnCore_bankAgree hne hInv P.current hA hS
         | exact schedContextYieldToOnCore_bankAgree hne hInv hYA hYN P.current hA hS
@@ -406,7 +406,7 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     rename_i hA'
     cases h
     rw [auditReadFromCore_frame _ _ _ _ _ _ _ hA']
-    exact (bankFrame.writeReturnFrameToTcb_caller _ hInv).bankAgree hA
+    exact (bankFrame.writeCallReturnWord_caller _ hInv).bankAgree hA
   case none.auditDrain =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
@@ -415,7 +415,7 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     unfold auditDrainVisiblePrefix at hA'
     split at hA'
     · cases hA'
-      refine (bankFrame.trans ?_ (bankFrame.writeReturnFrameToTcb_caller _ ?_)).bankAgree hA
+      refine (bankFrame.trans ?_ (bankFrame.writeCallReturnWord_caller _ ?_)).bankAgree hA
       · exact bankFrame.of_frame rfl rfl rfl
       · exact hInv
     · cases hA'

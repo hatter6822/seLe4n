@@ -208,7 +208,8 @@ theorem dispatchCapabilityOnly_mappingStage
           subst hStEq
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
           subst hStep
-          exact writeReturnFrameToTcb_mappingStage _ _ _
+          exact Architecture.writeCallReturnWord_of_frame (MappingStage _) (MappingStage.refl _)
+            (fun _ => writeReturnFrameToTcb_mappingStage _ _ _)
     all_goals try cases hStep
   case schedContextConfigure =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -619,13 +620,17 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     all_goals first | (cases h; done) | skip
     rename_i hA
     cases h
-    exact (auditReadFromCore_mappingStage hA).trans (writeReturnFrameToTcb_mappingStage _ _ _)
+    exact (auditReadFromCore_mappingStage hA).trans
+      (Architecture.writeCallReturnWord_of_frame (MappingStage _) (MappingStage.refl _)
+        (fun _ => writeReturnFrameToTcb_mappingStage _ _ _))
   case none.auditDrain =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i hA
     cases h
-    exact (auditDrainVisiblePrefix_mappingStage hA).trans (writeReturnFrameToTcb_mappingStage _ _ _)
+    exact (auditDrainVisiblePrefix_mappingStage hA).trans
+      (Architecture.writeCallReturnWord_of_frame (MappingStage _) (MappingStage.refl _)
+        (fun _ => writeReturnFrameToTcb_mappingStage _ _ _))
   all_goals
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip

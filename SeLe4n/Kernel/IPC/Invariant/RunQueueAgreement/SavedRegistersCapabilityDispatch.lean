@@ -1665,7 +1665,7 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
     | (cases h; rename_i hS
        first
         | (rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hS]
-           exact writeReturnFrameToTcb_savedRegsKeptOffCore _ hInv P.current hU hN)
+           exact writeCallReturnWord_savedRegsKeptOffCore _ hInv P.current hU hN)
         | exact hW (schedContextUnbindOnCore_savedRegsWrittenFree hInv hU hN hS)
         | exact hW (schedContextConsumedOnCore_savedRegsWrittenFree hInv hU hN hS)
         | exact hW (schedContextYieldToOnCore_savedRegsWrittenFree hInv hU hN hYA hYN hS)

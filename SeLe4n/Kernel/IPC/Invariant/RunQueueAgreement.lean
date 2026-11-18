@@ -1177,6 +1177,13 @@ theorem writeReturnFrameToTcb_runQueueStage (st : SystemState) (tid : SeLe4n.Thr
     RunQueueStage st (Architecture.writeReturnFrameToTcb st tid frame) :=
   RunQueueStage.updateTcb st tid (fun _ _ => rfl)
 
+/-- The `Call`-gated reply write is a run-queue stage: a return-frame write or
+the identity (`Architecture.writeCallReturnWord_of_frame`). -/
+theorem writeCallReturnWord_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : UInt64) : RunQueueStage st (Architecture.writeCallReturnWord st tid w) :=
+  Architecture.writeCallReturnWord_of_frame (RunQueueStage st) (RunQueueStage.of_frame rfl rfl rfl)
+    (fun _ => writeReturnFrameToTcb_runQueueStage _ _ _)
+
 theorem writeDeliveredFrameToTcb_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : Architecture.SyscallReturnFrame) :
     RunQueueStage st (Architecture.writeDeliveredFrameToTcb st tid frame) :=

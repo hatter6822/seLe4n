@@ -1039,6 +1039,87 @@ theorem writeReturnFrameToTcb_ofWord_eq_words (st : SystemState) (tid : SeLe4n.T
     writeReturnFrameToTcb st tid (returnFrameOfWord w) =
       st.updateTcb tid (SeLe4n.Model.TCB.withReturnWords · w 0 0 0 0 0) := rfl
 
+/-- **seL4's `isCall`, read from the thread's trapped syscall word**: the word
+in the syscall-number register (`x7`) is `Call`'s.  seL4's `handleInvocation`
+writes an invocation's reply only when `isCall` (`replyFromKernel` under
+`if (isCall)`, and `setConsumed(.., call)`); a `Send` or an `NBSend` of the same
+invocation writes nothing. -/
+@[inline] def _root_.SeLe4n.Model.TCB.trappedCall (t : TCB) : Bool :=
+  SeLe4n.readRegWord t.registerContext SeLe4n.arm64DefaultLayout.syscallNumReg ==
+    SeLe4n.Model.Syscall.call.word
+
+/-- **A queried word's reply, written only on `Call`**: on a thread that
+trapped with `Call` the word in `x0` and the success label in `x1`, the message
+registers as the thread holds them (a reply of no message words writes none,
+as `copyMRs` writes none); on any other syscall the thread is unchanged. -/
+@[inline] def _root_.SeLe4n.Model.TCB.withCallReturnWord (t : TCB) (w : UInt64) : TCB :=
+  if t.trappedCall then
+    t.withReturnWords w 0 t.registerContext.x2 t.registerContext.x3 t.registerContext.x4
+      t.registerContext.x5
+  else t
+
+/-- **A value-returning invocation's reply** (`.serviceQuery` and the audit
+reads): the queried word staged into the caller's registers when it trapped
+with `Call` (`TCB.withCallReturnWord`), and nothing written otherwise.  One
+`updateTcb`, so every frame fact of that primitive is this write's. -/
+def writeCallReturnWord (st : SystemState) (tid : SeLe4n.ThreadId) (w : UInt64) :
+    SystemState :=
+  st.updateTcb tid (SeLe4n.Model.TCB.withCallReturnWord · w)
+
+theorem writeCallReturnWord_scheduler (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : UInt64) : (writeCallReturnWord st tid w).scheduler = st.scheduler :=
+  SystemState.updateTcb_scheduler st tid _
+
+theorem writeCallReturnWord_machine (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : UInt64) : (writeCallReturnWord st tid w).machine = st.machine :=
+  SystemState.updateTcb_machine st tid _
+
+/-- **The reply as a return-frame write**: on a thread that trapped with `Call`
+the frame of the word, the success label and the thread's own message
+registers; on any other the thread's own six words, so every frame fact of
+`writeReturnFrameToTcb` is this write's. -/
+theorem writeCallReturnWord_eq_frame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : UInt64) (t : TCB) (h : st.getTcb? tid = some t) :
+    writeCallReturnWord st tid w =
+      writeReturnFrameToTcb st tid
+        (if t.trappedCall then
+          { x0 := w, x1 := 0, x2 := t.registerContext.x2, x3 := t.registerContext.x3,
+            x4 := t.registerContext.x4, x5 := t.registerContext.x5 }
+        else
+          { x0 := t.registerContext.x0, x1 := t.registerContext.x1,
+            x2 := t.registerContext.x2, x3 := t.registerContext.x3,
+            x4 := t.registerContext.x4, x5 := t.registerContext.x5 }) := by
+  unfold writeCallReturnWord writeReturnFrameToTcb
+  rw [SystemState.updateTcb_eq_of_some h, SystemState.updateTcb_eq_of_some h]
+  unfold SeLe4n.Model.TCB.withCallReturnWord
+  split <;> rfl
+
+/-- A target that is not a TCB is left alone. -/
+theorem writeCallReturnWord_id_when_not_tcb (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : UInt64) (h : st.getTcb? tid = none) : writeCallReturnWord st tid w = st :=
+  SystemState.updateTcb_eq_self_of_none h _
+
+/-- **Every property a return-frame write keeps, the reply write keeps**: it is
+one such write or the identity (`writeCallReturnWord_eq_frame`). -/
+theorem writeCallReturnWord_of_frame (P : SystemState → Prop) {st : SystemState}
+    {tid : SeLe4n.ThreadId} {w : UInt64} (hSelf : P st)
+    (hW : ∀ f, P (writeReturnFrameToTcb st tid f)) : P (writeCallReturnWord st tid w) := by
+  cases h : st.getTcb? tid with
+  | none => rw [writeCallReturnWord_id_when_not_tcb st tid w h]; exact hSelf
+  | some t => rw [writeCallReturnWord_eq_frame st tid w t h]; exact hW _
+
+/-- On a `Call`, the reply's read-back is the word, the success label and the
+message registers the caller held. -/
+theorem readReturnFrame_writeCallReturnWord (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : UInt64) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    (hObjInv : st.objects.invExt) (hCall : tcb.trappedCall = true) :
+    readReturnFrame (writeCallReturnWord st tid w) tid =
+      { readReturnFrame st tid with x0 := w, x1 := 0 } := by
+  unfold writeCallReturnWord readReturnFrame
+  rw [SystemState.updateTcb_getTcb?_self st tid _ hObjInv, hTcb]
+  simp only [Option.map_some, SeLe4n.Model.TCB.withCallReturnWord, hCall, ↓reduceIte]
+  rfl
+
 -- ============================================================================
 -- §4d  Staging for a woken counterparty (RA.B.5b)
 -- ============================================================================

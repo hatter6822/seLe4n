@@ -419,6 +419,14 @@ theorem capabilityKeyFrame.stepCoversInv {e : CoreId} {st st' : SystemState}
     SeLe4n.Kernel.stepCovers e st st' ∧ st'.objects.invExt :=
   ⟨h.stepCovers hRes hBank, h.2.2⟩
 
+/-- The `Call`-gated reply write keeps the capability key frame: it is a
+return-frame write or the identity (`Architecture.writeCallReturnWord_of_frame`). -/
+theorem writeCallReturnWord_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId) (w : UInt64)
+    (hInv : st.objects.invExt) :
+    capabilityKeyFrame st (Architecture.writeCallReturnWord st tid w) :=
+  Architecture.writeCallReturnWord_of_frame (capabilityKeyFrame st) (capabilityKeyFrame_refl hInv)
+    (fun _ => writeReturnFrameToTcb_keyFrame _ _ _ hInv)
+
 /-- Coverage composes, the invariant read off the second leg. -/
 theorem stepCoversInv_trans {e : CoreId} {a b d : SystemState} (h₁ : stepCovers e a b)
     (h₂ : stepCovers e b d ∧ d.objects.invExt) : stepCovers e a d ∧ d.objects.invExt :=
@@ -1515,8 +1523,8 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
     | (cases h; rename_i hU
        first
         | (rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hU]
-           exact (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCoversInv
-             (hRes := by rw [Architecture.writeReturnFrameToTcb_machine_eq]) (hBank := banksKeptOffCore_of_eq (by rw [Architecture.writeReturnFrameToTcb_machine_eq])))
+           exact (writeCallReturnWord_keyFrame _ _ _ hInv).stepCoversInv
+             (hRes := by rw [Architecture.writeCallReturnWord_machine]) (hBank := banksKeptOffCore_of_eq (by rw [Architecture.writeCallReturnWord_machine])))
         | exact (schedContextUnbindOnCore_stepCovers _ _ _ _ _ hInv hU)
         | exact (schedContextConsumedOnCore_stepCovers _ hInv hU)
         | exact (schedContextYieldToOnCore_stepCovers hInv hU)
@@ -1681,7 +1689,9 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     rename_i hA
     cases h
     rw [auditReadFromCore_frame _ _ _ _ _ _ _ hA]
-    exact (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCoversInv
+    exact (writeCallReturnWord_keyFrame _ _ _ hInv).stepCoversInv
+      (hRes := by rw [Architecture.writeCallReturnWord_machine])
+      (hBank := banksKeptOffCore_of_eq (by rw [Architecture.writeCallReturnWord_machine]))
   case none.auditDrain =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
@@ -1693,9 +1703,9 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
       refine stepCoversInv_trans (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl) ?_
       apply capabilityKeyFrame.stepCoversInv
       all_goals first
-        | exact writeReturnFrameToTcb_keyFrame _ _ _ (by exact hInv)
-        | rw [Architecture.writeReturnFrameToTcb_machine_eq]
-        | exact banksKeptOffCore_of_eq (by rw [Architecture.writeReturnFrameToTcb_machine_eq])
+        | exact writeCallReturnWord_keyFrame _ _ _ (by exact hInv)
+        | rw [Architecture.writeCallReturnWord_machine]
+        | exact banksKeptOffCore_of_eq (by rw [Architecture.writeCallReturnWord_machine])
     · cases hA
   all_goals
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h

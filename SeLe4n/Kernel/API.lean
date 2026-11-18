@@ -4836,8 +4836,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
             -- `ServiceId` is staged as the caller's return word instead of
             -- being discarded (`x0` = sid, success `x1`, no message
             -- registers).  The lookup itself is read-only (`st' = st`).
-            .ok ((), Architecture.writeReturnFrameToTcb st' tid
-              (Architecture.returnFrameOfWord reg.sid.val.toUInt64))
+            .ok ((), Architecture.writeCallReturnWord st' tid reg.sid.val.toUInt64)
         | .error e => .error e
     | _ => fun _ => .error (.invalidCapability 0)
   -- Z5-J: SchedContext configure — decode args, validate, configure
@@ -5462,7 +5461,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           subst hStEq
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hK
           subst hK
-          exact writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _ hObjInv hInv
+          exact Architecture.writeCallReturnWord_of_frame _ hInv
+            (fun _ => writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _ hObjInv hInv)
     all_goals try cases hStep
   case schedContextConfigure =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -6549,8 +6549,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                       executingCore op st with
                   | .error e => .error e
                   | .ok (w, st') =>
-                      .ok ((), Architecture.writeReturnFrameToTcb st' tid
-                        (Architecture.returnFrameOfWord w.toUInt64))
+                      .ok ((), Architecture.writeCallReturnWord st' tid w.toUInt64)
         else .error .illegalAuthority
   -- WS-SM SM9.A.10: **the live audit drain**, which is what makes the
   -- fail-closed 256-entry capacity bound survivable rather than a feature that
@@ -6584,8 +6583,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                   executingCore args.count st with
               | .error e => .error e
               | .ok (n, st') =>
-                  .ok ((), Architecture.writeReturnFrameToTcb st' tid
-                    (Architecture.returnFrameOfWord n.toUInt64))
+                  .ok ((), Architecture.writeCallReturnWord st' tid n.toUInt64)
         else .error .illegalAuthority
   -- AE1-A/AE1-B/AE1-C: All remaining capability-only arms (tcbSetPriority,
   -- tcbSetMCPriority, tcbSetIPCBuffer, cspaceDelete, vspaceMap,
@@ -7620,8 +7618,10 @@ theorem dispatchArm_notificationWait_matches_returnShape
   · exact Architecture.readReturnFrame_writeReturnFrame st1 tid _ tcb hTcb hObjInv
 
 /-- RA.B.8, `.serviceQuery` (`.word`): the arm stages the resolved
-registration's `ServiceId` — the answer it used to discard — and the
-boundary read recovers it.  Stated like its four siblings, over the live
+registration's `ServiceId` — the answer it used to discard — and, the caller
+having trapped with `Call` (`hCall`; seL4 replies only on `Call`), the boundary
+read recovers it beside the success label and the message registers the caller
+held.  Stated like its four siblings, over the live
 dispatch at the given state, so the lookup hypothesis is load-bearing (a
 first draft concluded only the arm's generic function equality and never
 consumed `hLookup` — the decorative-hypothesis defect class SM8.D's
@@ -7635,18 +7635,18 @@ theorem dispatchArm_serviceQuery_matches_returnShape
     (hRes : resolveServiceEndpoint .serviceQuery tid decoded.msgInfo.extraCaps st = .ok (epCap, epId))
     (hLookup : lookupServiceChecked ctx tid epId st = .ok (reg, st'))
     (hTcb : st'.getTcb? tid = some tcb)
+    (hCall : tcb.trappedCall = true)
     (hObjInv : st'.objects.invExt) :
     Architecture.syscallReturnShape .serviceQuery = .word ∧
     ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
-        = Architecture.returnFrameOfWord reg.sid.val.toUInt64 := by
+        = { Architecture.readReturnFrame st' tid with x0 := reg.sid.val.toUInt64, x1 := 0 } := by
   refine ⟨rfl,
-    Architecture.writeReturnFrameToTcb st' tid
-      (Architecture.returnFrameOfWord reg.sid.val.toUInt64),
+    Architecture.writeCallReturnWord st' tid reg.sid.val.toUInt64,
     ?_, ?_⟩
   · simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked,
       serviceEndpointArm, hRes, serviceQueryStaged, hSyscall, hTarget, hLookup]
-  · exact Architecture.readReturnFrame_writeReturnFrame st' tid _ tcb hTcb hObjInv
+  · exact Architecture.readReturnFrame_writeCallReturnWord st' tid _ tcb hTcb hObjInv hCall
 
 /-- RA.B.8 / WS-SM SM9.A.10, `.auditRead` (`.word`): the arm stages **the
 selected word** — the entry the caller's index names, at the caller's own
@@ -7670,18 +7670,19 @@ theorem dispatchArm_auditRead_matches_returnShape
     (hRead : auditReadFromCore (liftLegacyContext ctx) (validatedAuditMonitorClearance ctx)
       executingCore op st = .ok (w, st'))
     (hTcb : st'.getTcb? tid = some tcb)
+    (hCall : tcb.trappedCall = true)
     (hObjInv : st'.objects.invExt) :
     Architecture.syscallReturnShape .auditRead = .word ∧
     ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
-        = Architecture.returnFrameOfWord w.toUInt64 := by
+        = { Architecture.readReturnFrame st' tid with x0 := w.toUInt64, x1 := 0 } := by
   refine ⟨rfl,
-    Architecture.writeReturnFrameToTcb st' tid (Architecture.returnFrameOfWord w.toUInt64),
+    Architecture.writeCallReturnWord st' tid w.toUInt64,
     ?_, ?_⟩
   · unfold dispatchWithCapChecked dispatchCapabilityOnly
     rw [hSyscall]
     simp only [extractAuditAuthority, hTarget, hRight, hArgs, hOp, hRead, if_true]
-  · exact Architecture.readReturnFrame_writeReturnFrame st' tid _ tcb hTcb hObjInv
+  · exact Architecture.readReturnFrame_writeCallReturnWord st' tid _ tcb hTcb hObjInv hCall
 
 /-- RA.B.8 / WS-SM SM9.A.10, `.auditDrain` (`.word`): the arm stages the **new
 visible length**, which is what a monitor recovering from the capacity cliff
@@ -7699,18 +7700,19 @@ theorem dispatchArm_auditDrain_matches_returnShape
       (validatedAuditMonitorClearance ctx)
       executingCore args.count st = .ok (n, st'))
     (hTcb : st'.getTcb? tid = some tcb)
+    (hCall : tcb.trappedCall = true)
     (hObjInv : st'.objects.invExt) :
     Architecture.syscallReturnShape .auditDrain = .word ∧
     ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
-        = Architecture.returnFrameOfWord n.toUInt64 := by
+        = { Architecture.readReturnFrame st' tid with x0 := n.toUInt64, x1 := 0 } := by
   refine ⟨rfl,
-    Architecture.writeReturnFrameToTcb st' tid (Architecture.returnFrameOfWord n.toUInt64),
+    Architecture.writeCallReturnWord st' tid n.toUInt64,
     ?_, ?_⟩
   · unfold dispatchWithCapChecked dispatchCapabilityOnly
     rw [hSyscall]
     simp only [extractAuditAuthority, hTarget, hRight, hArgs, hDrain, if_true]
-  · exact Architecture.readReturnFrame_writeReturnFrame st' tid _ tcb hTcb hObjInv
+  · exact Architecture.readReturnFrame_writeCallReturnWord st' tid _ tcb hTcb hObjInv hCall
 
 /-- RA.B.8, `.receive` (`.message`): the arm's non-blocking consume stages
 the delivered message — the boundary read is of the fresh delivery, not the
@@ -8524,8 +8526,7 @@ theorem dispatchWithCapChecked_auditRead_delegates
           executingCore op st with
        | .error e => .error e
        | .ok (w, st') =>
-           .ok ((), Architecture.writeReturnFrameToTcb st' tid
-             (Architecture.returnFrameOfWord w.toUInt64))) := by
+           .ok ((), Architecture.writeCallReturnWord st' tid w.toUInt64)) := by
   unfold dispatchWithCapChecked dispatchCapabilityOnly
   rw [hSyscall]
   simp only [extractAuditAuthority, hTarget, hRight, hArgs, hOp, if_true]
@@ -8546,8 +8547,7 @@ theorem dispatchWithCapChecked_auditDrain_delegates
           executingCore args.count st with
        | .error e => .error e
        | .ok (n, st') =>
-           .ok ((), Architecture.writeReturnFrameToTcb st' tid
-             (Architecture.returnFrameOfWord n.toUInt64))) := by
+           .ok ((), Architecture.writeCallReturnWord st' tid n.toUInt64)) := by
   unfold dispatchWithCapChecked dispatchCapabilityOnly
   rw [hSyscall]
   simp only [extractAuditAuthority, hTarget, hRight, hArgs, if_true]
@@ -9372,8 +9372,7 @@ def syscallDelegates : SyscallId → Prop
               executingCore op st with
            | .error e => .error e
            | .ok (w, st') =>
-               .ok ((), Architecture.writeReturnFrameToTcb st' tid
-                 (Architecture.returnFrameOfWord w.toUInt64)))
+               .ok ((), Architecture.writeCallReturnWord st' tid w.toUInt64))
   | .auditDrain =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
         (gate : SyscallGate) (cap : Capability)
@@ -9388,8 +9387,7 @@ def syscallDelegates : SyscallId → Prop
               executingCore args.count st with
            | .error e => .error e
            | .ok (n, st') =>
-               .ok ((), Architecture.writeReturnFrameToTcb st' tid
-                 (Architecture.returnFrameOfWord n.toUInt64)))
+               .ok ((), Architecture.writeCallReturnWord st' tid n.toUInt64))
   -- WS-ZA ZA5.4 part 14: the carve, the one way a kernel object is made.
   | .untypedRetype =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)

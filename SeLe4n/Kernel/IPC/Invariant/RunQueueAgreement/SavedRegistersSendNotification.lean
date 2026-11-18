@@ -704,6 +704,12 @@ theorem writeReturnFrameToTcb_savedRegsKeptExcept (st : SystemState) (tid : SeLe
     savedRegsKeptExcept (· = tid) st (Architecture.writeReturnFrameToTcb st tid f) :=
   savedRegsKeptExcept.updateTcb_written (W := (· = tid)) _ tid _ hInv rfl
 
+/-- The `Call`-gated reply write writes the caller alone. -/
+theorem writeCallReturnWord_savedRegsKeptExcept (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : UInt64) (hInv : st.objects.invExt) :
+    savedRegsKeptExcept (· = tid) st (Architecture.writeCallReturnWord st tid w) :=
+  savedRegsKeptExcept.updateTcb_written (W := (· = tid)) _ tid _ hInv rfl
+
 /-- **A woken thread's delivery writes that thread alone**, so it writes only
 threads free at `base` when the thread it names is. -/
 theorem stageWokenDelivery_savedRegsWrittenFree {e : CoreId} {base s : SystemState}

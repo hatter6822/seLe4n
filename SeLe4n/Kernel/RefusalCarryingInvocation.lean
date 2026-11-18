@@ -1055,8 +1055,7 @@ refusal is read where it is, never rebuilt. -/
         (serviceEndpointReadAdmitted ctx tid epId && recordedRegistrationPresent st epId)
         (fun st => serviceQueryPerform st tid epId)
         (lookupServiceChecked ctx tid epId)
-        (fun r => .ok ((), Architecture.writeReturnFrameToTcb r.2 tid
-          (Architecture.returnFrameOfWord r.1.sid.val.toUInt64))) st
+        (fun r => .ok ((), Architecture.writeCallReturnWord r.2 tid r.1.sid.val.toUInt64)) st
     | _ => .error (.invalidCapability 0, st)
   | _ =>
     match dispatchInvocationBy ctx sid capAddr xc layout regs tid executingCore cap st with

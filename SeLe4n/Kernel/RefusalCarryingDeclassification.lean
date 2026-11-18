@@ -114,8 +114,7 @@ call's compiled path carries no other syscall's arm; an identifier
                       executingCore op st with
                   | .error e => .error e
                   | .ok (w, st') =>
-                      .ok ((), Architecture.writeReturnFrameToTcb st' tid
-                        (Architecture.returnFrameOfWord w.toUInt64))
+                      .ok ((), Architecture.writeCallReturnWord st' tid w.toUInt64)
         else .error .illegalAuthority
   | .auditDrain =>
     fun st =>
@@ -132,8 +131,7 @@ call's compiled path carries no other syscall's arm; an identifier
                   executingCore args.count st with
               | .error e => .error e
               | .ok (n, st') =>
-                  .ok ((), Architecture.writeReturnFrameToTcb st' tid
-                    (Architecture.returnFrameOfWord n.toUInt64))
+                  .ok ((), Architecture.writeCallReturnWord st' tid n.toUInt64)
         else .error .illegalAuthority
   | _ => fun _ => .error .illegalState
 
@@ -691,14 +689,15 @@ entry of the trail (`auditDrainViewComplete`, walked in place). -/
 
 /-- **An admitted drain's writes**: the trail's first `min count length` entries
 drained (`AuditRing.dropFront`) and the new length staged into the caller's
-return registers as words (`writeReturnFrameToTcb_ofWord_eq_words`). -/
+return registers when it trapped with `Call`, nothing otherwise
+(`Architecture.writeCallReturnWord`). -/
 @[noinline] def auditDrainPerform (tid : SeLe4n.ThreadId) (count : Nat) (st : SystemState) :
     SystemState :=
   let len := st.declassificationAudit.length
   let removed := min count len
   let w := (len - removed).toUInt64
   ({ st with declassificationAudit := st.declassificationAudit.dropFront removed }).updateTcb tid
-    (TCB.withReturnWords · w 0 0 0 0 0)
+    (TCB.withCallReturnWord · w)
 
 /-- A configured clearance validates exactly when it dominates every subject
 label (`auditClearanceDominates`). -/
@@ -785,7 +784,7 @@ theorem auditedArmSpec_auditDrain_admitted (ctx : LabelingContext) (capAddr : Se
       Except.pure, hV, auditDrainVisiblePrefix, auditMonitorGate, auditReaderDomain, hCur,
       Option.map_some, auditMonitorAuthorized, auditDrainViewComplete, liftLegacyContext_policy,
       liftLegacyContext_threadDomainOf, hComplete, hMon, decide_true, Bool.and_true]
-    rw [Architecture.writeReturnFrameToTcb_ofWord_eq_words]
+    rw [Architecture.writeCallReturnWord]
     rfl
   · cases hA
 
@@ -2521,10 +2520,11 @@ theorem auditReadFastRefusalW_eq (ctx : LabelingContext) (reader : SecurityDomai
   · exact auditReadFastRefusal_wideIndex ctx reader st hNotChain hNotArchived h1 h2 _
 
 /-- **An admitted read's write**: the word staged into the caller's return
-registers as words (`writeReturnFrameToTcb_ofWord_eq_words`). -/
+registers when it trapped with `Call`, nothing otherwise
+(`Architecture.writeCallReturnWord`). -/
 @[noinline] def auditReadPerform (tid : SeLe4n.ThreadId) (w : Nat) (st : SystemState) :
     SystemState :=
-  st.updateTcb tid (TCB.withReturnWords · w.toUInt64 0 0 0 0 0)
+  st.updateTcb tid (TCB.withCallReturnWord · w.toUInt64)
 
 /-- The opcode, index and chunk of a read, from the caller's registers: the
 index and chunk read as words (`auditReadFastCodeW`). -/

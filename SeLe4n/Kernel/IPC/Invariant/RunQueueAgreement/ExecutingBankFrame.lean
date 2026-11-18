@@ -239,6 +239,13 @@ theorem writeReturnFrameToTcb_caller {s : SystemState} (f : Architecture.Syscall
     (hInv : s.objects.invExt) : bankFrame e c0 s (Architecture.writeReturnFrameToTcb s c0 f) :=
   updateTcb_caller _ hInv fun _ => rfl
 
+/-- The `Call`-gated reply write keeps the agreement: it is a return-frame
+write to the caller or the identity. -/
+theorem writeCallReturnWord_caller {s : SystemState} (w : UInt64)
+    (hInv : s.objects.invExt) : bankFrame e c0 s (Architecture.writeCallReturnWord s c0 w) :=
+  Architecture.writeCallReturnWord_of_frame (bankFrame e c0 s) (refl s)
+    (fun _ => writeReturnFrameToTcb_caller _ hInv)
+
 /-- **A delivered message staged into the caller keeps the agreement**: its frame
 lands in the caller's return window, and the overflow words in memory. -/
 theorem stageDeliveredMessage_caller {s : SystemState} (n : Nat) (hInv : s.objects.invExt) :

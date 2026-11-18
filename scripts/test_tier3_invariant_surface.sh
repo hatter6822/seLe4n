@@ -23819,7 +23819,7 @@ run_check "INVARIANT" rg -n '^        \(serviceEndpointWriteAdmitted ctx tid epI
 # The query's word is written as the frame's six words, and the endpoint's
 # record is cleared in its slot.
 run_check "INVARIANT" rg -n '^theorem writeReturnFrameToTcb_ofWord_eq_words($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n -U '^      st\.updateTcb caller\n        \(TCB\.withReturnWords · \(ServiceId\.ofNat epId\.toNat\)\.val\.toUInt64 0 0 0 0 0\)$' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n -U '^      st\.updateTcb caller\n        \(TCB\.withCallReturnWord · \(ServiceId\.ofNat epId\.toNat\)\.val\.toUInt64\)$' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem clearServiceRecord_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem registerServicePerform_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Service/Registry.lean
 # WS-ZA ZA5.9: the compiled register arm reads its checks and builds its record

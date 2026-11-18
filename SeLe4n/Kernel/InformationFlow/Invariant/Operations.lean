@@ -595,6 +595,20 @@ theorem writeReturnFrameToTcb_preserves_projection
             · simp [hEq]
           · rfl)
 
+
+/-- The `Call`-gated reply write (`Architecture.writeCallReturnWord`) is a
+return-frame write or the identity, so it is invisible to every observer. -/
+theorem writeCallReturnWord_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (w : UInt64) (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Architecture.writeCallReturnWord st tid w)
+      = projectState ctx observer st := by
+  cases hTcb : st.getTcb? tid with
+  | none => rw [Architecture.writeCallReturnWord_id_when_not_tcb st tid w hTcb]
+  | some t =>
+      rw [Architecture.writeCallReturnWord_eq_frame st tid w t hTcb]
+      exact writeReturnFrameToTcb_preserves_projection ctx observer st tid _ hObjInv
+
 /-- **WS-ZA ZA4.7**: so is the delivery write: the projection strips both the
 saved registers and the pending message it drops. -/
 theorem writeDeliveredFrameToTcb_preserves_projection
@@ -5045,7 +5059,7 @@ theorem serviceQueryStaged_preserves_projection
     unfold lookupServiceChecked at hU
     split at hU
     · rw [lookupServiceByRecordedRegistration_preserves_state epId st reg st₁ hU]
-      exact writeReturnFrameToTcb_preserves_projection ctx observer st caller _ hObjInv
+      exact writeCallReturnWord_preserves_projection ctx observer st caller _ hObjInv
     · cases hU
   · cases hStep
 
@@ -5163,10 +5177,8 @@ theorem serviceQueryStaged_answer_lowEquivalent
     (∃ e, serviceQueryStaged ctx caller epId s₁ = .error e ∧
         serviceQueryStaged ctx caller epId s₂ = .error e) ∨
     (∃ w : UInt64,
-      serviceQueryStaged ctx caller epId s₁ = .ok ((), Architecture.writeReturnFrameToTcb s₁ caller
-        (Architecture.returnFrameOfWord w)) ∧
-      serviceQueryStaged ctx caller epId s₂ = .ok ((), Architecture.writeReturnFrameToTcb s₂ caller
-        (Architecture.returnFrameOfWord w))) := by
+      serviceQueryStaged ctx caller epId s₁ = .ok ((), Architecture.writeCallReturnWord s₁ caller w) ∧
+      serviceQueryStaged ctx caller epId s₂ = .ok ((), Architecture.writeCallReturnWord s₂ caller w)) := by
   have hA := lookupServiceChecked_answer_lowEquivalent ctx observer caller epId s₁ s₂ hCallerLow
     hLow
   have hState : ∀ s reg s', lookupServiceChecked ctx caller epId s = .ok (reg, s') → s' = s := by

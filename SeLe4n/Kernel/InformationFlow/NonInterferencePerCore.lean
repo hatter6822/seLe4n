@@ -1603,8 +1603,8 @@ theorem serviceQueryStaged_confinedToCore (ctx : LabelingContext) (st st' : Syst
     split at hU
     · rw [lookupServiceByRecordedRegistration_preserves_state epId st reg st₁ hU]
       exact observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
-        (Architecture.writeReturnFrameToTcb_scheduler_eq st caller _)
-        (Architecture.writeReturnFrameToTcb_machine_eq st caller _)
+        (Architecture.writeCallReturnWord_scheduler st caller _)
+        (Architecture.writeCallReturnWord_machine st caller _)
     · cases hU
   · cases hStep
 

@@ -295,7 +295,7 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
     rename_i hA
     cases h
     rw [auditReadFromCore_frame _ _ _ _ _ _ _ hA] at hW ⊢
-    exact hW (.of_kept (writeReturnFrameToTcb_savedRegsKeptExcept st tid _ hInv) fun _ e =>
+    exact hW (.of_kept (writeCallReturnWord_savedRegsKeptExcept st tid _ hInv) fun _ e =>
       e ▸ hFr)
   case none.auditDrain =>
     repeat' split at h
@@ -306,7 +306,7 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
     split at hA
     · cases hA
       exact hW (.of_kept ((savedRegsKeptExcept.of_objects_eq rfl).trans
-        (writeReturnFrameToTcb_savedRegsKeptExcept _ tid _ hInv)) fun _ e => e ▸ hFr)
+        (writeCallReturnWord_savedRegsKeptExcept _ tid _ hInv)) fun _ e => e ▸ hFr)
     · cases hA
   all_goals
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h

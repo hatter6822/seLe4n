@@ -487,7 +487,8 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
           subst hStep
           refine RunQueueStage.entry ?_
-          exact writeReturnFrameToTcb_runQueueStage _ _ _
+          exact Architecture.writeCallReturnWord_of_frame (RunQueueStage _)
+            (RunQueueStage.of_frame rfl rfl rfl) (fun _ => writeReturnFrameToTcb_runQueueStage _ _ _)
     all_goals try cases hStep
   case schedContextConfigure =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1056,7 +1057,8 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     cases h
     rw [auditReadFromCore_frame _ _ _ _ _ _ _ hA]
     refine RunQueueStage.entry ?_
-    exact writeReturnFrameToTcb_runQueueStage _ _ _
+    exact Architecture.writeCallReturnWord_of_frame (RunQueueStage _)
+      (RunQueueStage.of_frame rfl rfl rfl) (fun _ => writeReturnFrameToTcb_runQueueStage _ _ _)
   case none.auditDrain =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
@@ -1066,7 +1068,8 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     split at hA
     · cases hA
       refine RunQueueStage.entry ?_
-      refine RunQueueStage.trans ?_ (writeReturnFrameToTcb_runQueueStage _ _ _)
+      refine RunQueueStage.trans ?_ (Architecture.writeCallReturnWord_of_frame (RunQueueStage _)
+        (RunQueueStage.of_frame rfl rfl rfl) (fun _ => writeReturnFrameToTcb_runQueueStage _ _ _))
       exact RunQueueStage.of_frame rfl rfl rfl
     · cases hA
   all_goals

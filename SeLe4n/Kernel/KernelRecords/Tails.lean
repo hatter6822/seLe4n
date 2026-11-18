@@ -32,6 +32,12 @@ theorem writeReturnFrameToTcb (st : SystemState) (t : SeLe4n.ThreadId)
     RecordsFrame st (Architecture.writeReturnFrameToTcb st t f) :=
   updateTcb st t hInv fun _ => rfl
 
+/-- The `Call`-gated reply write: a return-frame write or the identity. -/
+theorem writeCallReturnWord (st : SystemState) (t : SeLe4n.ThreadId) (w : UInt64)
+    (hInv : st.objects.invExt) : RecordsFrame st (Architecture.writeCallReturnWord st t w) :=
+  Architecture.writeCallReturnWord_of_frame (RecordsFrame st) (refl hInv)
+    (fun f => writeReturnFrameToTcb st t f hInv)
+
 theorem writeDeliveredFrameToTcb (st : SystemState) (t : SeLe4n.ThreadId)
     (f : Architecture.SyscallReturnFrame) (hInv : st.objects.invExt) :
     RecordsFrame st (Architecture.writeDeliveredFrameToTcb st t f) :=

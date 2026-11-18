@@ -316,7 +316,7 @@ theorem dispatchCapabilityOnly_recordsStage
           subst hStEq
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
           subst hStep
-          exact .of_frameK fun hI => RecordsFrame.writeReturnFrameToTcb _ _ _ hI
+          exact .of_frameK fun hI => RecordsFrame.writeCallReturnWord _ _ _ hI
     all_goals try cases hStep
   case schedContextConfigure =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -720,6 +720,11 @@ theorem writeReturnFrameToTcb_recordsStage (x : SystemState) (t : SeLe4n.ThreadI
     (f : Architecture.SyscallReturnFrame) : RecordsStage x (Architecture.writeReturnFrameToTcb x t f) :=
   .of_frameK fun hI => RecordsFrame.writeReturnFrameToTcb x t f hI
 
+/-- The `Call`-gated reply write keeps the records. -/
+theorem writeCallReturnWord_recordsStage (x : SystemState) (t : SeLe4n.ThreadId)
+    (w : UInt64) : RecordsStage x (Architecture.writeCallReturnWord x t w) :=
+  .of_frameK fun hI => RecordsFrame.writeCallReturnWord x t w hI
+
 /-- A receive run on its busy-reply-cancelled state keeps the records: the
 `.receive` arm, and the `.replyRecv` arm whose reply is skipped. -/
 theorem receiveResolvedArm_recordsStage (ctx : LabelingContext)
@@ -802,14 +807,14 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     rename_i hA
     cases h
     exact (RecordsStage.of_frameK fun hI => RecordsFrame.auditReadFromCore hI hA).trans
-      (writeReturnFrameToTcb_recordsStage _ _ _)
+      (writeCallReturnWord_recordsStage _ _ _)
   case none.auditDrain =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i hA
     cases h
     exact (RecordsStage.of_frameK fun hI => RecordsFrame.auditDrainVisiblePrefix hI hA).trans
-      (writeReturnFrameToTcb_recordsStage _ _ _)
+      (writeCallReturnWord_recordsStage _ _ _)
   all_goals
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip

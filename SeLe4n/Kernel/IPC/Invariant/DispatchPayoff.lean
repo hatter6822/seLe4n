@@ -1371,8 +1371,9 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                             (validatedAuditMonitorClearance ctx)
                             executingCore op st w st1 hRead
                           rw [← hStep, hFr]
-                          exact writeReturnFrameToTcb_preserves_ipcInvariantFull st tid _
-                            hObjInv hInv
+                          exact Architecture.writeCallReturnWord_of_frame _ hInv
+                            (fun _ => writeReturnFrameToTcb_preserves_ipcInvariantFull st tid _
+                              hObjInv hInv)
             case isFalse => cases hStep
       case auditDrain =>
         cases hAuth : extractAuditAuthority cap with
@@ -1403,8 +1404,9 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                       have hObjInv1 : st1.objects.invExt := by
                         rw [hEq]; exact hObjInv
                       rw [← hStep]
-                      exact writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _
-                        hObjInv1 hInv1
+                      exact Architecture.writeCallReturnWord_of_frame _ hInv1
+                        (fun _ => writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _
+                          hObjInv1 hInv1)
             case isFalse => cases hStep
       all_goals cases hStep
 

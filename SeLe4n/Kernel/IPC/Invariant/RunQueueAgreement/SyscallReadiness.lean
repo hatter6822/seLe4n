@@ -941,7 +941,7 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
           subst hStep
           refine readyKeptStage.of_stage ?_
-          exact writeReturnFrameToTcb_runQueueStage _ _ _
+          exact writeCallReturnWord_runQueueStage _ _ _
     all_goals try cases hStep
   case schedContextConfigure =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1419,7 +1419,7 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     cases h
     rw [auditReadFromCore_frame _ _ _ _ _ _ _ hA]
     refine readyKeptStage.of_stage ?_
-    exact writeReturnFrameToTcb_runQueueStage _ _ _
+    exact writeCallReturnWord_runQueueStage _ _ _
   case none.auditDrain =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
@@ -1429,7 +1429,7 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     split at hA
     · cases hA
       refine readyKeptStage.of_stage ?_
-      refine SystemState.RunQueueStage.trans ?_ (writeReturnFrameToTcb_runQueueStage _ _ _)
+      refine SystemState.RunQueueStage.trans ?_ (writeCallReturnWord_runQueueStage _ _ _)
       exact SystemState.RunQueueStage.of_frame rfl rfl rfl
     · cases hA
   all_goals

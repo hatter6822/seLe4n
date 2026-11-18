@@ -734,6 +734,28 @@ private def serviceQueryScenario :
     (({ length := 0, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64)
     registryCapPtr.toUInt64 0 0 0 st2
 
+/-- 9f-send: the same query issued with `Send` rather than `Call`.  seL4 writes
+an invocation's reply only on `Call` (`handleInvocation`'s `isCall`), so the
+query runs and the caller's registers are left as it trapped them.  Returns the
+caller's registers before and after. -/
+private def serviceQuerySendScenario :
+    Except KernelError (Kernel.Architecture.SyscallReturnFrame ×
+      Kernel.Architecture.SyscallReturnFrame) := do
+  let iface : InterfaceSpec :=
+    { ifaceId := ⟨910⟩, methodCount := 1, maxMessageSize := 64,
+      maxResponseSize := 64, requiresGrant := false }
+  let ((), st1) ← Kernel.registerInterface iface twoThreadState
+  let ((), st2) ← Kernel.registerService
+    { iface := iface, endpointCap := epCap } st1
+  let st2 := SeLe4n.Testing.withSenderCapAddrs st2 callerTid #[SeLe4n.CPtr.ofNat epCapPtr]
+  let (_, st3) ← SeLe4n.Testing.dispatchFromAbi trustedLabeling
+    SeLe4n.Kernel.Concurrency.bootCoreId Syscall.send.number.toUInt32
+    registryCapPtr.toUInt64
+    (SyscallId.serviceQuery.msgInfoWithLabel
+      (({ length := 0, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64))
+    0x22 0x33 0x44 0x55 0 0 0 0 0 st2
+  pure (stagedFrame st2 callerTid, stagedFrame st3 callerTid)
+
 /-- 9f': `.serviceRegister` end to end (WS-SX SX6.7): invoked on the
 service-registry capability, the endpoint it registers on extra capability 0,
 the interface's four words in x2-x5 and the fifth (no grant) the IPC buffer's
@@ -1146,6 +1168,14 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
           | .returns f =>
               rustDecodeResponse (postTrapRegs f) == .ok queriedSid.toUInt64 #[0, 0, 0, 0]
           | .blocks | .faulted | .resumes => false)
+  -- 9f-send — a query issued with Send writes no reply
+  match serviceQuerySendScenario with
+  | .error e => assertBool s!"9f-send dispatches (got .error {reprStr e})" false
+  | .ok (_, after) => do
+      assertBool s!"9f-send: no ServiceId is written under Send (got {reprStr after})"
+        (after.x0 != queriedSid.toUInt64)
+      assertBool "9f-send: x2-x5 are the words the caller trapped with"
+        (after.x2 == 0x22 && after.x3 == 0x33 && after.x4 == 0x44 && after.x5 == 0x55)
   -- 9f' — the register on the registry capability, endpoint extra cap 0
   match serviceRegisterScenario with
   | .error e => assertBool s!"9f' dispatches (got .error {reprStr e})" false
