@@ -755,7 +755,7 @@ theorem schedContextYieldToOnCore_replenishQueueOnCore_ne (scObjId : SeLe4n.ObjI
     s = st2 at h2 ⊢
   have hSet : ∀ X : SystemState, X.scheduler.replenishQueueOnCore d =
       st.scheduler.replenishQueueOnCore d →
-      (setConsumed X s caller).scheduler.replenishQueueOnCore d =
+      (setConsumed X s caller true).scheduler.replenishQueueOnCore d =
         st.scheduler.replenishQueueOnCore d := fun X hX => by
     rw [SystemState.setConsumed_scheduler]; exact hX
   split

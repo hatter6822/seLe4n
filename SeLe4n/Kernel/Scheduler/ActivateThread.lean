@@ -76,7 +76,7 @@ and the file was copied on every write. -/
     (rf : SeLe4n.RegisterFile) : SeLe4n.RegisterFile :=
   rf.withConsumed w
 
-/-- Core `c`'s bank takes the two registers `setConsumed` writes
+/-- Core `c`'s bank takes the three registers `setConsumed` writes
 (`RegisterFile.withConsumed`), in its slot (`modifyRegsOnCore`).  Out of line,
 so the state arrives owned and its record and the machine's are rewritten in
 place: written inside `completeCurrentYield`, the bank's bounds test and the
@@ -430,10 +430,10 @@ theorem activateThreadOnCore_completes (st : SystemState) (c : CoreId) (tid : Se
   have h2 : setConsumed st ⟨k⟩ tid =
       (st.updateSchedContext ⟨k⟩ SchedContext.updateConsumed).updateTcb tid
         (TCB.withConsumed · sc.consumedReading.toUInt64) := by
-    unfold setConsumed; rw [hS]
+    unfold setConsumed; rw [hS]; rfl
   have hI1 := SystemState.updateSchedContext_preserves_objects_invExt st ⟨k⟩
     SchedContext.updateConsumed hInv
-  have hI0 := SystemState.setConsumed_preserves_objects_invExt st ⟨k⟩ tid hInv
+  have hI0 := SystemState.setConsumed_preserves_objects_invExt (callOnly := false) st ⟨k⟩ tid hInv
   rw [h2] at hI0
   have hT0 : ((st.updateSchedContext ⟨k⟩ SchedContext.updateConsumed).updateTcb tid
       (TCB.withConsumed · sc.consumedReading.toUInt64)).getTcb? tid =

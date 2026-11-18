@@ -215,8 +215,8 @@ theorem cancelYieldTo_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId) :
 
 /-- WS-ZA ZA6.6: `setConsumed` rewrites a context and a thread's two return
 registers in place. -/
-theorem setConsumed_mappingStage (st : SystemState) (s : SeLe4n.SchedContextId)
-    (t : SeLe4n.ThreadId) : MappingStage st (setConsumed st s t) := by
+theorem setConsumed_mappingStage {callOnly : Bool} (st : SystemState) (s : SeLe4n.SchedContextId)
+    (t : SeLe4n.ThreadId) : MappingStage st (setConsumed st s t callOnly) := by
   unfold setConsumed
   split
   · exact (updateSchedContext_mappingStage _ _ _).trans (updateTcb_mappingStage _ _ _)

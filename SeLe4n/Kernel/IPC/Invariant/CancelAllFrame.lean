@@ -2093,8 +2093,8 @@ theorem cancelYieldTo (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.object
   · exact .refl hInv
 
 /-- A context's consumed time handed to a thread's registers. -/
-theorem setConsumed (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) : FinaliseFrame st (SeLe4n.Kernel.setConsumed st s t) := by
+theorem setConsumed (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId) {callOnly : Bool}
+    (hInv : st.objects.invExt) : FinaliseFrame st (SeLe4n.Kernel.setConsumed st s t callOnly) := by
   unfold SeLe4n.Kernel.setConsumed
   split
   · have h1 := updateSchedContext st s SchedContext.updateConsumed hInv (fun _ => rfl)
@@ -2121,7 +2121,7 @@ theorem completeYieldFrom (st : SystemState) (s : SeLe4n.SchedContextId)
   · split
     · exact .refl hInv
     · rename_i k _
-      have h1 := setConsumed st s ⟨k⟩ hInv
+      have h1 := setConsumed (callOnly := false) st s ⟨k⟩ hInv
       exact h1.trans (cancelYieldFrom _ s h1.invExt)
   · exact .refl hInv
 end FinaliseFrame

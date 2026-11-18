@@ -5494,10 +5494,10 @@ theorem updateSchedContext_boundKept_preserves_ipcInvariantFull (st : SystemStat
     exact insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull st s sc _
       hObjInv hInv ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS) (hf sc)
 
-/-- `setConsumed` keeps the bundle: a count and two registers. -/
-theorem setConsumed_preserves_ipcInvariantFull (st : SystemState) (s : SeLe4n.SchedContextId)
+/-- `setConsumed` keeps the bundle: a count and three registers. -/
+theorem setConsumed_preserves_ipcInvariantFull {callOnly : Bool} (st : SystemState) (s : SeLe4n.SchedContextId)
     (t : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (setConsumed st s t) := by
+    ipcInvariantFull (setConsumed st s t callOnly) := by
   unfold setConsumed
   split
   · exact updateTcb_yieldWrite_preserves_ipcInvariantFull _ t _
@@ -5580,7 +5580,7 @@ theorem schedContextYieldToOnCore_preserves_ipcInvariantFull {s : SeLe4n.SchedCo
   generalize (completeYieldFrom st s).releasePlace (determineTargetCore (completeYieldFrom st s) t) s
     = st2 at hO2 hI2 ⊢
   have hC : ∀ X : SystemState, X.objects.invExt → ipcInvariantFull X →
-      ipcInvariantFull (setConsumed X s caller) := fun X hX hI =>
+      ipcInvariantFull (setConsumed X s caller true) := fun X hX hI =>
     setConsumed_preserves_ipcInvariantFull X s caller hX hI
   split
   · exact hC _ hO2 hI2

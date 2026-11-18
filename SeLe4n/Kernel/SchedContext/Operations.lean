@@ -2449,19 +2449,19 @@ def yieldToBound (st : SystemState) (c : Concurrency.CoreId) (s : SeLe4n.SchedCo
   let home := determineTargetCore st1 t
   let st2 := st1.releasePlace home s
   match st2.getTcb? t with
-  | none => setConsumed st2 s caller
+  | none => setConsumed st2 s caller (callOnly := true)
   | some tT =>
     match st2.getTcb? caller with
-    | none => setConsumed st2 s caller
+    | none => setConsumed st2 s caller (callOnly := true)
     | some cT =>
       match st2.getSchedContext? s with
-      | none => setConsumed st2 s caller
+      | none => setConsumed st2 s caller (callOnly := true)
       | some sc =>
         if tT.isRunnable && !isIdleThreadId t && sc.budgetRemaining.isPositive then
           if home.val != c.val || decide (tT.boostedPriority.val < cT.boostedPriority.val) then
-            setConsumed (yieldToRequeue st2 home t tT.boostedPriority) s caller
+            setConsumed (yieldToRequeue st2 home t tT.boostedPriority) s caller (callOnly := true)
           else yieldToLink st2 c s caller t cT.boostedPriority tT.boostedPriority
-        else setConsumed st2 s caller
+        else setConsumed st2 s caller (callOnly := true)
 
 /-- The linked branch's scheduling point is core `c`'s reschedule, which never
 refuses. -/

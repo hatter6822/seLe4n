@@ -253,21 +253,21 @@ theorem completeYieldFrom_savedRegsKeptExcept {st : SystemState} {s : SeLe4n.Sch
       unfold setConsumed cancelYieldFrom
       simp only [hS]
       have hS1 : ((st.updateSchedContext s SchedContext.updateConsumed).updateTcb ⟨k⟩
-          (TCB.withConsumed · sc.consumedReading.toUInt64)).getSchedContext? s =
+          (TCB.withConsumedMsg · sc.consumedReading.toUInt64 false)).getSchedContext? s =
           some (SchedContext.updateConsumed sc) := by
         rw [SystemState.updateTcb_getSchedContext? _ _ _ hInv1,
           SystemState.updateSchedContext_getSchedContext?_self _ _ _ hInv, hS]; rfl
       have hC1 : (SchedContext.updateConsumed sc).yieldFromCode = k + 1 := hC
       simp only [hS1, hC1]
       have hInv2 := SystemState.updateTcb_preserves_objects_invExt _ ⟨k⟩
-        (TCB.withConsumed · sc.consumedReading.toUInt64) hInv1
+        (TCB.withConsumedMsg · sc.consumedReading.toUInt64 false) hInv1
       have hInv3 := SystemState.updateSchedContext_preserves_objects_invExt _ s
         SchedContext.yieldCleared hInv2
       rw [savedRegs_updateTcb_ne hInv3 hNe]
       unfold SystemState.savedRegs
       rw [SystemState.updateSchedContext_getTcb? _ _ _ hInv2]
       rw [show ((st.updateSchedContext s SchedContext.updateConsumed).updateTcb ⟨k⟩
-          (TCB.withConsumed · sc.consumedReading.toUInt64)).getTcb? t =
+          (TCB.withConsumedMsg · sc.consumedReading.toUInt64 false)).getTcb? t =
           (st.updateSchedContext s SchedContext.updateConsumed).getTcb? t from
         SystemState.updateTcb_getTcb?_ne _ _ _ hInv1 t
           (fun h => hNe (SeLe4n.ThreadId.toObjId_injective _ _ h.symm)),

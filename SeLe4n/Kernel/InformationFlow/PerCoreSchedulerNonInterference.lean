@@ -1602,7 +1602,7 @@ theorem schedContextYieldToOnCore_lowEquivalent {s : SeLe4n.SchedContextId} {c :
   generalize (completeYieldFrom st s).releasePlace home s = st2 at hL2 hI2 hR2 hQ2 hCur2
   have hL12 := lowEquivalent_smp_trans hL2 hL1
   have hSet : ∀ X : SystemState, X.objects.invExt → lowEquivalent_smp ctx observer X st →
-      lowEquivalent_smp ctx observer (setConsumed X s caller) st := fun X hX hXL =>
+      lowEquivalent_smp ctx observer (setConsumed X s caller true) st := fun X hX hXL =>
     lowEquivalent_smp_trans (lowEquivalent_smp_of_projectedObjectsWrite
       (projectedObjectsWrite.setConsumed X s caller hX hH.context)) hXL
   split

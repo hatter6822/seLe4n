@@ -1039,15 +1039,6 @@ theorem writeReturnFrameToTcb_ofWord_eq_words (st : SystemState) (tid : SeLe4n.T
     writeReturnFrameToTcb st tid (returnFrameOfWord w) =
       st.updateTcb tid (SeLe4n.Model.TCB.withReturnWords · w 0 0 0 0 0) := rfl
 
-/-- **seL4's `isCall`, read from the thread's trapped syscall word**: the word
-in the syscall-number register (`x7`) is `Call`'s.  seL4's `handleInvocation`
-writes an invocation's reply only when `isCall` (`replyFromKernel` under
-`if (isCall)`, and `setConsumed(.., call)`); a `Send` or an `NBSend` of the same
-invocation writes nothing. -/
-@[inline] def _root_.SeLe4n.Model.TCB.trappedCall (t : TCB) : Bool :=
-  SeLe4n.readRegWord t.registerContext SeLe4n.arm64DefaultLayout.syscallNumReg ==
-    SeLe4n.Model.Syscall.call.word
-
 /-- **A queried word's reply, written only on `Call`**: on a thread that
 trapped with `Call` the word in `x0` and the success label in `x1`, the message
 registers as the thread holds them (a reply of no message words writes none,

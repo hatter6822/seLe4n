@@ -200,9 +200,9 @@ theorem settleResidencyOnCore_savedRegs (st : SystemState) (c : CoreId)
     dispatchVacatedCore_savedRegs st c hInv t]
 
 /-- `setConsumed` writes the saved registers of the thread it names alone. -/
-theorem setConsumed_savedRegsKeptExcept (st : SystemState) (s : SeLe4n.SchedContextId)
+theorem setConsumed_savedRegsKeptExcept {callOnly : Bool} (st : SystemState) (s : SeLe4n.SchedContextId)
     (y : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    savedRegsKeptExcept (· = y) st (setConsumed st s y) := by
+    savedRegsKeptExcept (· = y) st (setConsumed st s y callOnly) := by
   unfold setConsumed
   split
   · exact (savedRegsKeptExcept.updateSchedContext st s _ hInv).trans

@@ -892,9 +892,9 @@ theorem schedContextConsumedOnCore_savedRegsWrittenFree {e : CoreId} {st st' : S
 /-! ### The yieldTo invocation -/
 
 /-- WS-ZA ZA6.29: `setConsumed` writes its thread's saved registers alone. -/
-theorem setConsumed_savedRegsKeptExceptThread (X : SystemState) (s : SeLe4n.SchedContextId)
+theorem setConsumed_savedRegsKeptExceptThread {callOnly : Bool} (X : SystemState) (s : SeLe4n.SchedContextId)
     (y : SeLe4n.ThreadId) (hX : X.objects.invExt) :
-    savedRegsKeptExcept (· = y) X (setConsumed X s y) := by
+    savedRegsKeptExcept (· = y) X (setConsumed X s y callOnly) := by
   unfold setConsumed
   split
   · exact (savedRegsKeptExcept.updateSchedContext X _ _ hX).trans
@@ -979,7 +979,7 @@ theorem schedContextYieldToOnCore_savedRegsWrittenFree {e : CoreId} {st st' : Sy
   generalize (completeYieldFrom st s).releasePlace (determineTargetCore (completeYieldFrom st s) t)
     s = st2 at h2 hInv2 hCur2 ⊢
   have hSet : ∀ X : SystemState, X.objects.invExt → savedRegsWrittenFree e st st X →
-      savedRegsWrittenFree e st st (setConsumed X s caller) := fun X hX hW =>
+      savedRegsWrittenFree e st st (setConsumed X s caller true) := fun X hX hW =>
     hW.trans (.of_kept (setConsumed_savedRegsKeptExceptThread X s caller hX) fun _ hy => hy ▸ hFreeC)
   have hLink : ∀ pC pT, savedRegsWrittenFree e st st
       (SchedContextOps.yieldToLink st2 e s caller t pC pT) := fun pC pT =>

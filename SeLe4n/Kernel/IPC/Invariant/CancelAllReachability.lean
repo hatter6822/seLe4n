@@ -1002,8 +1002,8 @@ theorem cancelYieldTo (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.object
   · exact of_objects_eq rfl
 
 /-- WS-ZA ZA6.6: a context's consumed time handed to a thread's registers. -/
-theorem setConsumed (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) : ReachFieldFrame st (SeLe4n.Kernel.setConsumed st s t) := by
+theorem setConsumed (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId) {callOnly : Bool}
+    (hInv : st.objects.invExt) : ReachFieldFrame st (SeLe4n.Kernel.setConsumed st s t callOnly) := by
   unfold SeLe4n.Kernel.setConsumed
   split
   · exact (updateSchedContext st s _ hInv).trans (updateTcb _ t
@@ -2227,7 +2227,7 @@ theorem cut {s : SystemState} (t : TCB) (h : finaliseStepInvariant s) :
     q.2.1⟩
 
 /-- WS-ZA ZA6.6: a yield step carries it, and frames every budget: the yield
-codes, a context's consumed count and a yielder's two return registers. -/
+codes, a context's consumed count and a yielder's three return registers. -/
 theorem yieldStep {s s' : SystemState} (h : finaliseStepInvariant s)
     (hI : ipcInvariantFull s') (R : ReachFieldFrame s s') (F : FinaliseFrame s s') :
     finaliseStepInvariant s' ∧ timeoutBudgetFrame s s' :=

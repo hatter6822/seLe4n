@@ -5423,6 +5423,15 @@ theorem wordCanReply_word (s : Syscall) : wordCanReply s.word = s.receiveCanRepl
 
 end Syscall
 
+/-- **seL4's `isCall`, read from the thread's trapped syscall word**: the word
+in the syscall-number register (`x7`) is `Call`'s.  seL4's `handleInvocation`
+writes an invocation's reply only when `isCall` (`replyFromKernel` under
+`if (isCall)`, and `setConsumed(.., call)`); a `Send` or an `NBSend` of the same
+invocation writes nothing. -/
+@[inline] def _root_.SeLe4n.Model.TCB.trappedCall (t : TCB) : Bool :=
+  SeLe4n.readRegWord t.registerContext SeLe4n.arm64DefaultLayout.syscallNumReg ==
+    SeLe4n.Model.Syscall.call.word
+
 namespace SyscallId
 
 /-- **The invocation label of an operation**, seL4's generated

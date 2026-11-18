@@ -175,10 +175,10 @@ theorem purgeReplenishment (st : SystemState) (s : SeLe4n.SchedContextId)
         (SchedContextOps.purgeReplenishment_releaseOnlyWrite st s).1
       exact h)
 
-/-- `setConsumed` rewrites a context and a thread's two return registers in
+/-- `setConsumed` rewrites a context and a thread's three return registers in
 place. -/
-theorem setConsumed (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) : RecordsFrame st (_root_.SeLe4n.Kernel.setConsumed st s t) := by
+theorem setConsumed (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId) {callOnly : Bool}
+    (hInv : st.objects.invExt) : RecordsFrame st (_root_.SeLe4n.Kernel.setConsumed st s t callOnly) := by
   unfold _root_.SeLe4n.Kernel.setConsumed
   split
   · exact (updateSchedContext st s _ hInv).andThen fun h => updateTcb _ t h fun _ => rfl

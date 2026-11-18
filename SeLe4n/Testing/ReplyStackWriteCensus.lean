@@ -303,7 +303,7 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.cancelYieldFrom,
       "`{ sc with yieldFromCode := 0 }` on the context, then its yielder's `yieldToCode`; `scReply` is untouched")
   , (`SeLe4n.Kernel.setConsumed,
-      "`{ sc with consumed := _ }` (`SchedContext.updateConsumed`), then the thread's two return registers; `scReply` is untouched")
+      "`{ sc with consumed := _ }` (`SchedContext.updateConsumed`), then the thread's three return registers; `scReply` is untouched")
     -- WS-ZA ZA6.29: the yieldTo invocation's link (seL4-MCS's
     -- `cur->tcbYieldTo = sc; sc->scYieldFrom = cur`).
   , (`SeLe4n.Kernel.setYieldLink,

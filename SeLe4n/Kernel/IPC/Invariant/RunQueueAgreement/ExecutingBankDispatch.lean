@@ -119,7 +119,7 @@ theorem schedContextYieldToOnCore_bankAgree {e e' : CoreId} {c0 : SeLe4n.ThreadI
   generalize (completeYieldFrom st s).releasePlace (determineTargetCore (completeYieldFrom st s) t)
     s = st2 at hA2 hInv2 ⊢
   have hSet : ∀ X : SystemState, X.objects.invExt → bankAgree e c0 X →
-      bankAgree e c0 (setConsumed X s c0) := fun X hX hAX =>
+      bankAgree e c0 (setConsumed X s c0 true) := fun X hX hAX =>
     (bankFrame.mk (by rw [SystemState.setConsumed_eq_objects])
       (.of_eq (by rw [SystemState.setConsumed_scheduler])) fun u _ => (by
         unfold setConsumed
@@ -127,7 +127,7 @@ theorem schedContextYieldToOnCore_bankAgree {e e' : CoreId} {c0 : SeLe4n.ThreadI
         · exact (regsMaskKept.of_kept (savedRegsKeptExcept.updateSchedContext (W := fun _ => False)
             X _ _ hX)).trans (regsMaskKept.updateTcb_caller _
               (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hX) fun _ => rfl)
-        · exact .refl _ : regsMaskKept c0 X (setConsumed X s c0)) u).bankAgree hAX
+        · exact .refl _ : regsMaskKept c0 X (setConsumed X s c0 true)) u).bankAgree hAX
   have hLink : ∀ pC pT, bankAgree e c0 (SchedContextOps.yieldToLink st2 e s c0 t pC pT) :=
     fun pC pT => bankAgree_schedPoint
       (SchedContextOps.yieldToLinkPrefix_objects_invExt st2 e s c0 t pC pT hInv2)

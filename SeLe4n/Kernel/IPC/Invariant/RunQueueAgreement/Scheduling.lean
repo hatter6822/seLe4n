@@ -2097,7 +2097,7 @@ theorem schedContextYieldToOnCore_runQueueEntryStage {s : SeLe4n.SchedContextId}
   generalize determineTargetCore (completeYieldFrom st s) t = home at hCur2 hHome2 hY2 hF2 ⊢
   generalize (completeYieldFrom st s).releasePlace home s = st2 at hCur2 hHome2 hY2 hF2 ⊢
   have hSet : ∀ X : SystemState,
-      SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st c) X (setConsumed X s caller) :=
+      SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st c) X (setConsumed X s caller true) :=
     fun X => (SystemState.setConsumed_runQueueStage X s caller).entry.toOn _
   split
   · exact hSet _

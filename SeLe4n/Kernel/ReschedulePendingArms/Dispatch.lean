@@ -118,8 +118,8 @@ theorem setIPCBufferOp_machine_eq {ec : CoreId} {st st' : SystemState}
   rw [SystemState.updateTcb_machine, (retireFinalObject_fields ec _ _ _).2.2,
     threadSlotCopied_machine]
 
-theorem setConsumed_machine (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId) :
-    (setConsumed st s t).machine = st.machine := by
+theorem setConsumed_machine {callOnly : Bool} (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId) :
+    (setConsumed st s t callOnly).machine = st.machine := by
   unfold setConsumed
   split <;> simp [SystemState.updateTcb_machine, SystemState.updateSchedContext_machine]
 
@@ -1370,7 +1370,7 @@ theorem schedContextYieldToOnCore_stepCovers {e : CoreId} {s : SeLe4n.SchedConte
   have hInv2 := SystemState.releasePlace_objects_invExt _
     (determineTargetCore (completeYieldFrom st s) t) s hInv1
   have hSet : ∀ X : SystemState, X.objects.invExt →
-      stepCovers e X (setConsumed X s caller) ∧ (setConsumed X s caller).objects.invExt :=
+      stepCovers e X (setConsumed X s caller true) ∧ (setConsumed X s caller true).objects.invExt :=
     fun X hX => ⟨stepCovers_of_keys_sched
       (keyInputsEq_of_objectsAgreeOffYield (SystemState.setConsumed_objectsAgreeOffYield X s caller hX))
       (SystemState.setConsumed_scheduler X s caller),

@@ -222,9 +222,9 @@ theorem cancelYieldFrom (s : SystemState) (c : SeLe4n.SchedContextId)
 
 /-- A hidden context's consumed time handed to a thread: the count is written
 at a hidden key, the registers are erased by the projection. -/
-theorem setConsumed (s : SystemState) (c : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId)
+theorem setConsumed (s : SystemState) (c : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId) {callOnly : Bool}
     (hInv : s.objects.invExt) (hX : objectObservable ctx observer c.toObjId = false) :
-    projectedObjectsWrite ctx observer s (SeLe4n.Kernel.setConsumed s c t) := by
+    projectedObjectsWrite ctx observer s (SeLe4n.Kernel.setConsumed s c t callOnly) := by
   unfold SeLe4n.Kernel.setConsumed
   split
   · exact (of_hidden (hiddenObjectsWrite.updateSchedContext s c _ hInv hX)).trans (updateTcb _ t _

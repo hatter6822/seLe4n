@@ -491,7 +491,7 @@ theorem schedContextYieldToOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
   dsimp only
   generalize (completeYieldFrom st s).releasePlace (determineTargetCore (completeYieldFrom st s) t) s
     = st2
-  have hSet : ∀ X : SystemState, readyKeptStage S X (setConsumed X s caller) := fun X =>
+  have hSet : ∀ X : SystemState, readyKeptStage S X (setConsumed X s caller true) := fun X =>
     .of_stage (SystemState.setConsumed_runQueueStage X s caller)
   have hLink : ∀ pC pT,
       readyKeptStage S st2 (SchedContextOps.yieldToLink st2 c s caller t pC pT) := fun pC pT =>
@@ -499,7 +499,7 @@ theorem schedContextYieldToOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
       (fun hI hR => .of_stateMono (yieldToLinkPrefix_links st2 c s caller t pC pT hI hR).2)
       (handleRescheduleSgiOnCore_readyKeptStage (SchedContextOps.yieldToLink_sgi st2 c s caller t pC pT))
   have hReq : ∀ home pT,
-      readyKeptStage S st2 (setConsumed (SchedContextOps.yieldToRequeue st2 home t pT) s caller) :=
+      readyKeptStage S st2 (setConsumed (SchedContextOps.yieldToRequeue st2 home t pT) s caller true) :=
     fun home pT => readyKeptStage.trans_links (yieldToRequeue_links st2 home t pT)
       (fun _ _ => .of_stateMono (yieldToRequeue_stateMono st2 home t pT)) (hSet _)
   split

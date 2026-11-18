@@ -52,16 +52,51 @@ with `length` the one register `mode_setTimeArg` fills on a 64-bit word). -/
 def consumedInfoWord : UInt64 :=
   (({ length := 1, extraCaps := 0, label := 0 } : MessageInfo).encode).toUInt64
 
-/-- A register file after `setConsumed`: the message info in `x1` and the
-consumed time in `x2`, the first message register; every other register as it
-was, as seL4 writes only `msgInfoRegister` and the one message register. -/
+/-- A register file after `setConsumed` (seL4-MCS's `replyFromKernel_consumed`):
+`x0`, the badge register, zeroed, the message info in `x1` and the consumed time
+in `x2`, the first message register; every other register as it was, as seL4
+writes only `badgeRegister`, `msgInfoRegister` and the one message register. -/
 @[inline] def _root_.SeLe4n.RegisterFile.withConsumed (rf : SeLe4n.RegisterFile)
     (w : UInt64) : SeLe4n.RegisterFile :=
-  { rf with x1 := consumedInfoWord, x2 := w }
+  { rf with x0 := 0, x1 := consumedInfoWord, x2 := w }
 
 /-- A thread after `setConsumed` wrote its saved registers. -/
 @[inline] def _root_.SeLe4n.Model.TCB.withConsumed (t : TCB) (w : UInt64) : TCB :=
   { t with registerContext := t.registerContext.withConsumed w }
+
+/-- **`setConsumed`'s message, under seL4-MCS's `write_msg`**: a register file
+after `setConsumed` wrote it (`RegisterFile.withConsumed`), unless `callOnly`
+holds and the file's syscall-number register (`x7`) does not hold `Call`'s word,
+when nothing is written.  The Consumed invocation and the yieldTo invocation's
+immediate return pass `callOnly` (seL4's `setConsumed(sc, ksCurThread, call)`);
+the completion of a recorded yield writes always (`write_msg = true`).  Written
+register by register, so every reading of the file off `x0`-`x2` is the file's
+own by definition. -/
+@[inline] def _root_.SeLe4n.RegisterFile.withConsumedMsg (rf : SeLe4n.RegisterFile)
+    (w : UInt64) (callOnly : Bool) : SeLe4n.RegisterFile :=
+  let keep := callOnly && !(SeLe4n.readRegWord rf SeLe4n.arm64DefaultLayout.syscallNumReg ==
+    SeLe4n.Model.Syscall.call.word)
+  { rf with x0 := if keep then rf.x0 else 0,
+            x1 := if keep then rf.x1 else consumedInfoWord,
+            x2 := if keep then rf.x2 else w }
+
+/-- A thread after `setConsumed`'s message (`RegisterFile.withConsumedMsg`):
+written unless `callOnly` holds and the thread did not trap with `Call`
+(`TCB.trappedCall`). -/
+@[inline] def _root_.SeLe4n.Model.TCB.withConsumedMsg (t : TCB) (w : UInt64)
+    (callOnly : Bool) : TCB :=
+  { t with registerContext := t.registerContext.withConsumedMsg w callOnly }
+
+/-- Always written when `callOnly` is off. -/
+theorem _root_.SeLe4n.Model.TCB.withConsumedMsg_false (t : TCB) (w : UInt64) :
+    t.withConsumedMsg w false = t.withConsumed w := rfl
+
+/-- With `callOnly`, written exactly for a thread that trapped with `Call`. -/
+theorem _root_.SeLe4n.Model.TCB.withConsumedMsg_true (t : TCB) (w : UInt64) :
+    t.withConsumedMsg w true = if t.trappedCall then t.withConsumed w else t := by
+  unfold TCB.withConsumedMsg SeLe4n.RegisterFile.withConsumedMsg TCB.trappedCall
+  cases h : (SeLe4n.readRegWord t.registerContext SeLe4n.arm64DefaultLayout.syscallNumReg ==
+    SeLe4n.Model.Syscall.call.word) <;> simp [h] <;> rfl
 
 /-- A thread's end of the yield link, cleared. -/
 @[inline] def _root_.SeLe4n.Model.TCB.yieldCleared (t : TCB) : TCB :=
@@ -97,14 +132,18 @@ def cancelYieldTo (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
 /-- **seL4-MCS's `setConsumed`**: the consumed time of context `s` — at most a
 word (`SchedContext.consumedReading`) — taken off it
 (`schedContext_updateConsumed`) and written into thread `t`'s first message
-register, with the one-register message info (`TCB.withConsumed`).  The
-identity when `s` names no context. -/
-def setConsumed (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId) :
-    SystemState :=
+register, with the badge register zeroed and the one-register message info
+(`TCB.withConsumed`), as `replyFromKernel_consumed` writes them.  With
+`callOnly` (seL4's `write_msg = call`) the registers are written only for a
+thread that trapped with `Call` (`TCB.withConsumedMsg`); the count is taken off
+the context either way.  The identity when `s` names no context. -/
+def setConsumed (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId)
+    (callOnly : Bool := false) : SystemState :=
   match st.getSchedContext? s with
   | some sc =>
     let w := sc.consumedReading.toUInt64
-    (st.updateSchedContext s SchedContext.updateConsumed).updateTcb t (TCB.withConsumed · w)
+    (st.updateSchedContext s SchedContext.updateConsumed).updateTcb t
+      (TCB.withConsumedMsg · w callOnly)
   | none => st
 
 /-- **seL4-MCS's `schedContext_completeYieldTo`**: a yielder linked to a
@@ -186,13 +225,14 @@ def schedContextConsumedOnCore (s : SeLe4n.SchedContextId) (c : Concurrency.Core
   | some caller =>
     match st.getSchedContext? s with
     | none => .error (.invalidCapability 0)
-    | some _ => .ok (setConsumed st s caller)
+    | some _ => .ok (setConsumed st s caller (callOnly := true))
 
 /-- A Consumed invocation that succeeds is `setConsumed` for the core's current
 thread. -/
 theorem schedContextConsumedOnCore_ok {s : SeLe4n.SchedContextId} {c : Concurrency.CoreId}
     {st st' : SystemState} (h : schedContextConsumedOnCore s c st = .ok st') :
-    ∃ caller, st.scheduler.currentOnCore c = some caller ∧ st' = setConsumed st s caller := by
+    ∃ caller, st.scheduler.currentOnCore c = some caller ∧
+      st' = setConsumed st s caller (callOnly := true) := by
   unfold schedContextConsumedOnCore at h
   split at h
   · cases h
@@ -212,7 +252,7 @@ current thread. -/
 @[inline] def schedContextConsumedPerform (st : SystemState) (s : SeLe4n.SchedContextId)
     (c : Concurrency.CoreId) : SystemState :=
   match st.scheduler.currentOnCore c with
-  | some caller => setConsumed st s caller
+  | some caller => setConsumed st s caller (callOnly := true)
   | none => st
 
 theorem schedContextConsumedOnCore_of_admitted (st : SystemState) (s : SeLe4n.SchedContextId)
@@ -262,15 +302,16 @@ theorem cancelYieldTo_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) :
 
 /-- `setConsumed` writes the object store alone. -/
 theorem setConsumed_eq_objects (st : SystemState) (s : SeLe4n.SchedContextId)
-    (t : SeLe4n.ThreadId) :
-    setConsumed st s t = { st with objects := (setConsumed st s t).objects } := by
+    (t : SeLe4n.ThreadId) {callOnly : Bool} :
+    setConsumed st s t callOnly = { st with objects := (setConsumed st s t callOnly).objects } := by
   unfold setConsumed
   split
   · rw [updateTcb_eq_objects_update, updateSchedContext_eq_objects_update]
   · rfl
 
 theorem setConsumed_scheduler (st : SystemState) (s : SeLe4n.SchedContextId)
-    (t : SeLe4n.ThreadId) : (setConsumed st s t).scheduler = st.scheduler := by
+    (t : SeLe4n.ThreadId) {callOnly : Bool} :
+    (setConsumed st s t callOnly).scheduler = st.scheduler := by
   rw [setConsumed_eq_objects]
 
 theorem completeYieldTo_eq_objects (st : SystemState) (y : SeLe4n.ThreadId) :

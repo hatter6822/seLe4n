@@ -775,7 +775,7 @@ theorem schedContextYieldToOnCore_confinedToCores (scObjId : SeLe4n.ObjId) (e : 
   generalize determineTargetCore (completeYieldFrom st s) t = home at hPrefix ⊢
   generalize (completeYieldFrom st s).releasePlace home s = st2 at hPrefix ⊢
   have hSet : ∀ X : SystemState, observableSlotsConfinedToCores st2 X [e, home] →
-      observableSlotsConfinedToCores st (setConsumed X s caller) [e, home] := fun X hX =>
+      observableSlotsConfinedToCores st (setConsumed X s caller true) [e, home] := fun X hX =>
     observableSlotsConfinedToCores_then_flagOnly
       (observableSlotsConfinedToCores_mono (fun d hd => by simpa using hd)
         (observableSlotsConfinedToCores_trans hPrefix hX))
