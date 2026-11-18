@@ -5939,6 +5939,59 @@ theorem sendDropsMessage_blocking (ctx : LabelingContext) (st : SystemState)
     (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) :
     sendDropsMessage ctx true st tid epId = false := rfl
 
+/-- An `NBSend` whose flow to the endpoint is denied drops nothing, whatever
+the endpoint's queue holds: it is refused by the send's own gate, so the
+sender learns nothing of whether a receiver waits. -/
+theorem sendDropsMessage_false_of_flowDenied (ctx : LabelingContext) (blocks : Bool)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (hDeny : endpointFlowGate ctx epId (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId) = false) :
+    sendDropsMessage ctx blocks st tid epId = false := by
+  simp [sendDropsMessage, hDeny]
+
+/-- The endpoint view the drop test reads: whether no receiver waits on it. -/
+def endpointReceiveIdleOf? : Option KernelObject → Option Bool
+  | some (.endpoint e) => some e.receiveQ.head.isNone
+  | _ => none
+
+theorem endpointReceiveIdleOf?_project (ctx : LabelingContext) (observer : IfObserver)
+    (o : Option KernelObject) :
+    endpointReceiveIdleOf? (o.map (projectKernelObject ctx observer)) =
+      endpointReceiveIdleOf? o := by
+  rcases o with _ | k
+  · rfl
+  · cases k <;> rfl
+
+/-- The drop test, read through the endpoint view. -/
+theorem sendDropsMessage_eq_view (ctx : LabelingContext) (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) :
+    sendDropsMessage ctx blocks st tid epId =
+      (!blocks && (endpointReceiveIdleOf? st.objects[epId]?).getD false &&
+        endpointFlowGate ctx epId (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId)) := by
+  unfold sendDropsMessage SystemState.getEndpoint?
+  cases h : st.objects[epId]? with
+  | none => rfl
+  | some k => cases k <;> rfl
+
+/-- **Non-interference of the `NBSend` drop, sender side**: two states an
+observer cannot tell apart give the same drop decision, for an endpoint the
+observer sees.  The decision reads only the endpoint's receive queue (which the
+projection keeps), behind the send's own flow gate.  A drop writes nothing,
+and, as seL4's `NBSend`, a delivered message and a dropped one alike return to
+the sender with no register written (`.resumes`). -/
+theorem sendDropsMessage_lowEquivalent (ctx : LabelingContext) (observer : IfObserver)
+    (blocks : Bool) (st₁ st₂ : SystemState) (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
+    (hLow : lowEquivalent ctx observer st₁ st₂)
+    (hEpObs : objectObservable ctx observer epId = true) :
+    sendDropsMessage ctx blocks st₁ tid epId = sendDropsMessage ctx blocks st₂ tid epId := by
+  have h := congrFun (congrArg ObservableState.objects hLow) epId
+  have hObj : (st₁.objects[epId]?).map (projectKernelObject ctx observer) =
+      (st₂.objects[epId]?).map (projectKernelObject ctx observer) := by
+    simpa [projectState, projectObjects, hEpObs, SystemState.getObject?] using h
+  have hV : endpointReceiveIdleOf? st₁.objects[epId]? = endpointReceiveIdleOf? st₂.objects[epId]? := by
+    rw [← endpointReceiveIdleOf?_project ctx observer,
+      ← endpointReceiveIdleOf?_project ctx observer (st₂.objects[epId]?), hObj]
+  rw [sendDropsMessage_eq_view, sendDropsMessage_eq_view, hV]
+
 /-- **seL4's `receiveIPC` with `isBlocking = false` on an endpoint no sender
 waits on** (`doNBRecvFailedTransfer`). -/
 @[inline] def receiveFindsNothing (blocks : Bool) (st : SystemState) (epId : SeLe4n.ObjId) :

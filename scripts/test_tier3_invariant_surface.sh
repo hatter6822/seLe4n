@@ -5976,6 +5976,10 @@ run_check "INVARIANT" rg -n 'if receiveFindsNothing \(Syscall\.wordReceiveBlocks
 run_check "INVARIANT" rg -n -U '^        if waitFindsNothing ctx \(Syscall\.wordReceiveBlocks \(callerSyscallWord st tid\)\) st tid\n            notifId then$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem nbRecvFailedTransfer_eq_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n 'an NBSend to an endpoint no receiver waits on drops the message' tests/FaultHandlingSuite.lean
+# The NBSend drop decision, sender side: refused by the send's own gate when the
+# flow is denied, and equal on low-equivalent states for a visible endpoint.
+run_check "INVARIANT" rg -n '^theorem sendDropsMessage_false_of_flowDenied($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem sendDropsMessage_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'an NBWait on an endpoint no sender waits on returns at once, x0 = 0' tests/FaultHandlingSuite.lean
 # seL4-MCS `receiveIPC`: a receive whose bound notification is active
 # completes it (`completeSignal`) before the endpoint is consulted, gated on the
