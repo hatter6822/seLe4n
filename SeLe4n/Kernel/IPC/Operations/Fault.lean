@@ -711,6 +711,29 @@ seam's spill and the return-frame staging are. -/
     (w : FaultRegisterWindow) : SystemState :=
   st.updateTcb tid fun tcb => { tcb with registerContext := w.spill tcb.registerContext }
 
+/-- The spill handed the window's ten words, out of line: the update it applies
+is a lambda over this function's own scalar parameters, so the compiler
+specialises `updateTcb` on it here and the entry calls a function of unboxed
+words.  Inlined into a caller whose window flows through join points, the same
+lambda was let-bound ahead of the branches and handed to an unspecialised
+`updateTcb` as a closure of ten boxed words. -/
+def writeFaultWordsToTcb (st : SystemState) (tid : SeLe4n.ThreadId)
+    (x0 x1 x2 x3 x4 x5 x6 x7 sp lr : UInt64) : SystemState :=
+  st.updateTcb tid fun tcb =>
+    { tcb with registerContext :=
+        { tcb.registerContext with
+          x0 := x0, x1 := x1, x2 := x2, x3 := x3, x4 := x4, x5 := x5, x6 := x6, x7 := x7,
+          x30 := lr, sp := sp } }
+
+/-- The compiled `writeFaultRegistersToTcb`: the window's words handed to the
+out-of-line writer. -/
+@[inline] def writeFaultRegistersToTcbImpl (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : FaultRegisterWindow) : SystemState :=
+  writeFaultWordsToTcb st tid w.x0 w.x1 w.x2 w.x3 w.x4 w.x5 w.x6 w.x7 w.sp w.lr
+
+@[csimp] theorem writeFaultRegistersToTcb_eq_impl :
+    @writeFaultRegistersToTcb = @writeFaultRegistersToTcbImpl := rfl
+
 /-- The spill touches no scheduler state — it is a register write, and the
 delivery it precedes is what deschedules the thread. -/
 @[simp] theorem writeFaultRegistersToTcb_scheduler (st : SystemState)

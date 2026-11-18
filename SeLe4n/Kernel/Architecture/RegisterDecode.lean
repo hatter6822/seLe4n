@@ -422,6 +422,15 @@ theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
   unfold decodeCapPtr
   rw [readReg_eq_word]
 
+/-- Every register of `regs` lies below `regCount`: the layout's message
+    registers bounds test, out of line.  Its predicate is a lambda over this
+    function's own parameter, so `Array.all` is specialised here; inlined into
+    an entry that reaches the test through join points, the same lambda was
+    built as a heap closure on every decode.  Reducible, so a statement of the
+    test as `Array.all` is the same proposition. -/
+@[reducible, noinline] def regsBelow (regs : Array RegName) (regCount : Nat) : Bool :=
+  regs.all (·.val < regCount)
+
 /-- `decodeSyscallArgsFromState`, building nothing a caller does not use.  The
     register bounds are one test rather than a `mapM` pass that copies the
     layout's register array, and the result is inlined, so a caller that reads
@@ -435,7 +444,7 @@ theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
     (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (regCount : Nat := 32) : Except KernelError SyscallDecodeResult :=
   if layout.capPtrReg.val < regCount ∧ layout.msgInfoReg.val < regCount ∧
-      layout.syscallNumReg.val < regCount ∧ layout.msgRegs.all (·.val < regCount) = true then
+      layout.syscallNumReg.val < regCount ∧ regsBelow layout.msgRegs regCount = true then
     let capAddr := CPtr.ofWord (readRegWord regs layout.capPtrReg)
     match decodeMsgInfoWord (readRegWord regs layout.msgInfoReg) with
     | .error e => .error e
@@ -1257,7 +1266,7 @@ theorem registerRoutedSyscallOf_unnumbered (layout : SyscallRegisterLayout) (reg
 @[inline] def registerRoutedSyscall (opCode : Nat) (layout : SyscallRegisterLayout)
     (regs : RegisterFile) (regCount : Nat := 32) : RegisterRoutedSyscall :=
   if layout.capPtrReg.val < regCount ∧ layout.msgInfoReg.val < regCount ∧
-      layout.syscallNumReg.val < regCount ∧ layout.msgRegs.all (·.val < regCount) = true then
+      layout.syscallNumReg.val < regCount ∧ regsBelow layout.msgRegs regCount = true then
     registerRoutedSyscallOf opCode layout regs
   else .viaDecode
 
