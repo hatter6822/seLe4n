@@ -248,10 +248,13 @@ theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
 thread's, carrying the write right, naming a reply object.  A reply object with
 an outstanding caller goes to `onOk` with the caller and the capability's
 badge, one with none to `onNone` (WS-SX SX7.2), a refusal to `onErr`, so no
-`Except`, `Option` or tuple cell is built. -/
+`Except`, `Option` or tuple cell is built.  `onOk` is also handed the capability
+itself, as the slot holds it, so an arm that answers the caller through the
+`.reply` arm's in-place forms runs them on it. -/
 @[inline] def replyRecvCapK {α : Type} (st : SystemState) (cap? : Option Capability)
     (onErr : KernelError → α) (onNone : Unit → α)
-    (onOk : SeLe4n.ReplyId → SeLe4n.ThreadId → Option SeLe4n.Badge → Bool → α) : α :=
+    (onOk : Capability → SeLe4n.ReplyId → SeLe4n.ThreadId → Option SeLe4n.Badge → Bool → α) :
+    α :=
   match cap? with
   | none => onErr (.failedLookup false (.missingCapability 0))
   | some cap =>
@@ -262,16 +265,17 @@ badge, one with none to `onNone` (WS-SX SX7.2), a refusal to `onErr`, so no
         match cap.target with
         | .replyCap rid =>
             match replyAnsweredCaller? st rid with
-            | some c => onOk rid c cap.badge (cap.rights.mem .grant)
+            | some c => onOk cap rid c cap.badge (cap.rights.mem .grant)
             | none => onNone ()
         | _ => onErr (.failedLookup false (.missingCapability 0))
 
-/-- `resolveReplyRecvReplyR` in continuation form (`resolveReplyRecvK_eq`), on
+/-- `resolveReplyRecvReplyR` in continuation form (`resolveReplyRecvK_eq_of`), on
 the reply register's address: the slot is resolved through `lookupSlotFromK`,
 as the operand is.  WS-ZA ZA4.7. -/
 @[inline] def resolveReplyRecvK {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
     (replyAddr : SeLe4n.CPtr) (onErr : KernelError → α) (onNone : Unit → α)
-    (onOk : SeLe4n.ReplyId → SeLe4n.ThreadId → Option SeLe4n.Badge → Bool → α) : α :=
+    (onOk : Capability → SeLe4n.ReplyId → SeLe4n.ThreadId → Option SeLe4n.Badge → Bool → α) :
+    α :=
   match callerCspaceRoot st tid with
   | none => onErr (.failedLookup false .invalidRoot)
   | some root =>
@@ -281,14 +285,22 @@ as the operand is.  WS-ZA ZA4.7. -/
         replyRecvCapK st (SystemState.lookupSlotCap st { cnode := cnode, slot := slot })
           onErr onNone onOk)
 
-theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
+/-- The continuation form is the resolution, for an `onOk` that reads the
+capability it is handed only through the facts the resolution reports: it names
+reply object `rid`, whose caller is `c`, and carries the badge and grant right
+passed beside it (`onOk'`). -/
+theorem resolveReplyRecvK_eq_of {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
     (replyAddr : SeLe4n.CPtr) (onErr : KernelError → α) (onNone : Unit → α)
-    (onOk : SeLe4n.ReplyId → SeLe4n.ThreadId → Option SeLe4n.Badge → Bool → α) :
+    (onOk : Capability → SeLe4n.ReplyId → SeLe4n.ThreadId → Option SeLe4n.Badge → Bool → α)
+    (onOk' : SeLe4n.ReplyId → SeLe4n.ThreadId → Option SeLe4n.Badge → Bool → α)
+    (hOk : ∀ cap rid c, cap.target = .replyCap rid → replyAnsweredCaller? st rid = some c →
+      onOk cap rid c cap.badge (cap.rights.mem .grant) =
+        onOk' rid c cap.badge (cap.rights.mem .grant)) :
     resolveReplyRecvK st tid replyAddr onErr onNone onOk =
       match resolveReplyRecvReplyR st tid replyAddr with
       | .error e => onErr e
       | .ok none => onNone ()
-      | .ok (some (rid, c, b, g)) => onOk rid c b g := by
+      | .ok (some (rid, c, b, g)) => onOk' rid c b g := by
   unfold resolveReplyRecvK resolveReplyRecvReplyR
   simp only [lookupReplyCap, syscallLookupCap, syscallResolveCap]
   simp only [SyscallGate.lookupSlot]
@@ -308,10 +320,12 @@ theorem resolveReplyRecvK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
       · simp only [hIdle, ↓reduceIte] <;> rfl
       · by_cases hRight : cap.hasRight .write = true
         · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_true]
-          cases cap.target <;> try rfl
+          cases hT : cap.target <;> try rfl
           rename_i rid
           simp only []
-          cases replyAnsweredCaller? st rid <;> rfl
+          cases hA : replyAnsweredCaller? st rid with
+          | none => rfl
+          | some c => exact hOk cap rid c hT hA
         · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_false] <;> rfl
 
 /-- WS-ZA ZA4.7: a reply-receive answers a caller blocked on this server and
@@ -1348,6 +1362,110 @@ theorem replyRecvFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
         · rfl
   · rfl
 
+/-- **The reply leg's words, read as the `.reply` arm reads them**: the layout's
+message registers under the declared length, or the body the reply-receive cut
+from them (`replyRecvReplyMessageInfo`), agree on every word a fault decode
+reads. -/
+theorem replyWordOr_regMessageRegs_body (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat) (i : Nat) (fb : UInt64)
+    (hi : i ≤ 10) :
+    Architecture.replyWordOr { length := len, extraCaps := extraCaps, label := label }
+        (Architecture.regMessageRegs layout rf) i fb =
+      Architecture.replyWordOr
+        (replyRecvReplyMessageInfo label
+          { registers := Architecture.regMessageBody layout rf len, badge := none })
+        (Architecture.regMessageBody layout rf len) i fb := by
+  have hS : (Architecture.regMessageRegs layout rf).size = layout.msgRegs.size := by
+    simp only [Architecture.regMessageRegs, Array.size_map]
+  have hB := Architecture.regMessageBody_size layout rf len
+  unfold Architecture.replyWordOr
+  simp only [hS, hB, Nat.min_self]
+  have hMax : (10 : Nat) < maxMessageRegisters := by unfold maxMessageRegisters; omega
+  by_cases hLt : i < min len layout.msgRegs.size
+  · have hLt' : i < Architecture.regMessageLength layout len := by
+      unfold Architecture.regMessageLength; omega
+    rw [if_pos hLt, if_pos hLt', wordAt_regMessageRegs, wordAt_regMessageBody layout rf len i hLt']
+  · have hLt' : ¬ i < Architecture.regMessageLength layout len := by
+      unfold Architecture.regMessageLength; omega
+    rw [if_neg hLt, if_neg hLt']
+
+/-- **The reply-receive whose receive completes the bound notification, in
+place** (`replyRecvCompletesSignalArm`, `replyRecvSignalArmR_eq`): seL4's
+`doReplyTransfer` alone, run as the `.reply` arm runs it on the reply
+capability `rcap` the reply register names (`endpointReplyCheckedArmR`, whose
+in-place forms answer every caller shape a reply may write in its slots), then,
+when the receive's test holds on the state the reply left, `receiveIPC`'s
+`completeSignal` (`notificationWaitGatedR`, the wait's in-place consumption).
+No result is built between the legs: the reply arm is inlined and its result
+matched where it is made. -/
+@[inline] def replyRecvSignalArmR (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (rcap : Capability) :
+    RefusalCarrying Unit :=
+  fun st =>
+    match endpointReplyCheckedArmR ctx layout rf len extraCaps label tid executingCore rcap st with
+    | .error r => .error r
+    | .ok ((), st1) =>
+        if receiveCompletesSignal ctx st1 tid && receiverIpcReady st1 tid then
+          match notificationWaitGatedR ctx tid (receiverBoundNotification st1 tid) executingCore
+              st1 with
+          | .ok r => .ok r
+          | .error (e, _) => .error (e, st)
+        else .ok ((), st1)
+
+/-- The signal arm's second leg, in place, is the specification's: the gated
+wait on the state the reply left, its refusal reported in the state the arm was
+handed. -/
+theorem replyRecvSignalLeg_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (st st1 : SystemState) :
+    (if receiveCompletesSignal ctx st1 tid && receiverIpcReady st1 tid then
+        match notificationWaitGatedR ctx tid (receiverBoundNotification st1 tid) executingCore
+            st1 with
+        | .ok r => .ok r
+        | .error (e, _) => .error (e, st)
+      else .ok ((), st1) : Except (KernelError × SystemState) (Unit × SystemState)) =
+      match (if receiveCompletesSignal ctx st1 tid && receiverIpcReady st1 tid then
+          completeSignalArm ctx tid (receiverBoundNotification st1 tid) executingCore st1
+        else .ok ((), st1) : Except KernelError (Unit × SystemState)) with
+      | .ok r => .ok r
+      | .error e => .error (e, st) := by
+  split
+  · rw [notificationWaitGatedR_eq]
+    simp only [RefusalCarrying.ofKernel]
+    rcases completeSignalArm ctx tid (receiverBoundNotification st1 tid) executingCore st1 with
+      _ | _ <;> rfl
+  · rfl
+
+theorem replyRecvSignalArmR_eq (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (rcap : Capability)
+    (rid : SeLe4n.ReplyId) (c : SeLe4n.ThreadId) (st : SystemState)
+    (hTgt : rcap.target = .replyCap rid) (hAns : replyAnsweredCaller? st rid = some c)
+    (hFlow : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) = true) :
+    replyRecvSignalArmR ctx layout rf len extraCaps label tid executingCore rcap st =
+      match replyRecvCompletesSignalArm ctx tid c label
+          { registers := Architecture.regMessageBody layout rf len, badge := rcap.badge }
+          (rcap.rights.mem .grant) executingCore st with
+      | .ok r => .ok r
+      | .error e => .error (e, st) := by
+  unfold replyRecvSignalArmR replyRecvCompletesSignalArm
+  rw [endpointReplyCheckedArmR_eq_general]
+  simp only [endpointReplyCheckedArmGeneralR, hTgt, hAns, hFlow, ↓reduceIte]
+  rw [replyTransferOnCoreChecked_congr_words ctx tid c
+    { length := len, extraCaps := extraCaps, label := label }
+    (replyRecvReplyMessageInfo label
+      { registers := Architecture.regMessageBody layout rf len, badge := rcap.badge })
+    (Architecture.regMessageRegs layout rf) (Architecture.regMessageBody layout rf len) _ _ _ st
+    rfl (fun i fb hi => replyWordOr_regMessageRegs_body layout rf len extraCaps label i fb hi)]
+  have hMsg : ({ registers := extractMessageRegisters (Architecture.regMessageRegs layout rf) { length := len, extraCaps := extraCaps, label := label }, badge := rcap.badge } : IpcMessage) =
+      { registers := Architecture.regMessageBody layout rf len, badge := rcap.badge } := rfl
+  rw [hMsg]
+  rcases replyTransferOnCoreChecked ctx tid c _ _
+      { registers := Architecture.regMessageBody layout rf len, badge := rcap.badge }
+      (rcap.rights.mem .grant) executingCore st with e | ⟨⟨⟩, st1⟩
+  · rfl
+  · exact replyRecvSignalLeg_eq ctx tid executingCore st st1
+
 /-- The checked reply-receive once its reply capability resolved to reply object
 `rid`, answering caller `c` with badge `badge`: the reply leg's flow gate, then a
 caller carrying a fault answered through the specification's path (its fault
@@ -1359,19 +1477,18 @@ donated reply; `replyRecvCapsArmR` when the reply leg installs under the grant
 right, its transfer run in place between the reply's writes and the receive),
 the specification's otherwise.  Every
 in-place path delivers the reply as a message, which is the answer only for a
-caller carrying no fault, so the fault test runs first. -/
+caller carrying no fault, so the fault test runs first.  A receive that
+completes the replier's bound notification (`receiveCompletesSignal`) runs
+`signalArm` instead, the reply alone and then the completion: the in-place
+`replyRecvSignalArmR` on the reply capability the caller resolved. -/
 @[inline] def replyRecvResolvedR (ctx : LabelingContext) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
-    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+    (executingCore : Concurrency.CoreId) (signalArm : RefusalCarrying Unit) :
+    RefusalCarrying Unit :=
   fun st =>
     if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) then
-      if receiveCompletesSignal ctx st tid then
-        match replyRecvCompletesSignalArm ctx tid c label
-            { registers := Architecture.regMessageBody layout rf len, badge := badge } grant
-            executingCore st with
-        | .ok r => .ok r
-        | .error e => .error (e, st)
+      if receiveCompletesSignal ctx st tid then signalArm st
       else if threadHasPendingFault st c then
         replyRecvFaultArmR epId tid c rid badge grant layout rf len label executingCore st
       else if decide (Architecture.regMessageLength layout len ≤ 4) &&
@@ -1414,8 +1531,9 @@ receives alone (WS-SX SX7.2). -/
         callerExtraCapsFailK st tid extraCaps
           (fun _ => endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap st)
           (fun _ =>
-            let resolved := fun rid c badge grant =>
-              replyRecvResolvedR ctx epId tid c rid badge grant layout rf len label executingCore st
+            let resolved := fun rcap rid c badge grant =>
+              replyRecvResolvedR ctx epId tid c rid badge grant layout rf len label executingCore
+                (replyRecvSignalArmR ctx layout rf len extraCaps label tid executingCore rcap) st
             resolveReplyRecvK st tid replyAddr (fun e => .error (e, st))
               (fun _ => endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap st)
               resolved)
@@ -1442,7 +1560,20 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
       | some _ => rfl
       | none =>
       simp only []
-      rw [resolveReplyRecvK_eq st tid]
+      rw [resolveReplyRecvK_eq_of st tid _ _ _ _ (fun rid c badge grant =>
+        replyRecvResolvedR ctx epId tid c rid badge grant layout rf len label executingCore
+          (fun st' => match replyRecvCompletesSignalArm ctx tid c label
+              { registers := Architecture.regMessageBody layout rf len, badge := badge } grant
+              executingCore st' with
+            | .ok r => .ok r
+            | .error e => .error (e, st')) st)
+        (fun rcap rid c hT hA => by
+          simp only [replyRecvResolvedR]
+          split
+          · next hFlow =>
+            rw [replyRecvSignalArmR_eq ctx layout rf len extraCaps label tid executingCore rcap rid
+              c st hT hA hFlow]
+          · rfl)]
       cases resolveReplyRecvReplyR st tid (SeLe4n.CPtr.ofWord (SeLe4n.readRegWord rf layout.replyReg)) with
       | error e => rfl
       | ok r =>
@@ -2248,6 +2379,99 @@ theorem replyRecvLongFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId
         · rfl
   · rfl
 
+/-- **A cut of the reply's words decodes as the words it was cut from**, on
+every word a fault decode reads (`Architecture.decodeFaultReply_congr`): the
+words below the cut are the same words, and the declared length covers them on
+both readings. -/
+theorem replyWordOr_extractMessageRegisters (mi mi' : MessageInfo)
+    (regs : Array SeLe4n.RegValue) (i : Nat) (fb : UInt64) (hi : i < maxMessageRegisters)
+    (hmi : mi'.length = (extractMessageRegisters regs mi).size) :
+    Architecture.replyWordOr mi regs i fb =
+      Architecture.replyWordOr mi' (extractMessageRegisters regs mi) i fb := by
+  unfold Architecture.replyWordOr
+  rw [hmi, Nat.min_self]
+  unfold extractMessageRegisters Architecture.wordAt
+  simp only [Array.size_extract]
+  by_cases h : i < min mi.length regs.size
+  · have h' : i < min (min mi.length (min maxMessageRegisters regs.size)) regs.size - 0 := by
+      omega
+    rw [if_pos h, if_pos h', Array.getElem?_extract]
+    simp only [Nat.zero_add]
+    rw [if_pos h']
+  · have h' : ¬ i < min (min mi.length (min maxMessageRegisters regs.size)) regs.size - 0 := by
+      omega
+    rw [if_neg h, if_neg h']
+
+/-- **The long reply-receive whose receive completes the bound notification, in
+place**: the long `.reply` arm's reply on the reply capability `rcap`
+(`endpointReplyLongCheckedArmR`, its overflow words copied in place), then the
+completion, as `replyRecvSignalArmR` runs them for a short reply
+(`replyRecvLongSignalArmR_eq`). -/
+@[inline] def replyRecvLongSignalArmR (ctx : LabelingContext) (rf : SeLe4n.RegisterFile)
+    (len extraCaps label : Nat) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (rcap : Capability) : RefusalCarrying Unit :=
+  fun st =>
+    match endpointReplyLongCheckedArmR ctx rf len extraCaps label tid executingCore rcap st with
+    | .error r => .error r
+    | .ok ((), st1) =>
+        if receiveCompletesSignal ctx st1 tid && receiverIpcReady st1 tid then
+          match notificationWaitGatedR ctx tid (receiverBoundNotification st1 tid) executingCore
+              st1 with
+          | .ok r => .ok r
+          | .error (e, _) => .error (e, st)
+        else .ok ((), st1)
+
+theorem replyRecvLongSignalArmR_eq (ctx : LabelingContext) (rf : SeLe4n.RegisterFile)
+    (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (rcap : Capability) (rid : SeLe4n.ReplyId)
+    (c : SeLe4n.ThreadId) (st : SystemState)
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 =
+      .replyRecvLong capAddr mi)
+    (hRead : ∀ j, j < mi.length - 4 →
+      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w)
+    (hRf : ∀ stcb, st.getTcb? tid = some stcb → stcb.registerContext = rf)
+    (hTgt : rcap.target = .replyCap rid) (hAns : replyAnsweredCaller? st rid = some c)
+    (hFlow : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) = true) :
+    replyRecvLongSignalArmR ctx rf mi.length mi.extraCaps mi.label tid executingCore rcap st =
+      match replyRecvCompletesSignalArm ctx tid c mi.label
+          { registers := longReplyRecvRegs rf st tid mi.length, badge := rcap.badge }
+          (rcap.rights.mem .grant) executingCore st with
+      | .ok r => .ok r
+      | .error e => .error (e, st) := by
+  obtain ⟨hGt, hMax, -⟩ :=
+    Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReplyRecvLong st tid _ rf 32
+      capAddr mi hR
+  have hSz4 : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
+  rw [hSz4] at hGt
+  have hExt : extractMessageRegisters (longReplyRegs st tid rf mi.length)
+      { length := mi.length, extraCaps := mi.extraCaps, label := mi.label } =
+      longReplyRecvRegs rf st tid mi.length :=
+    congrArg IpcMessage.registers
+      (longMessageDecode_message .replyRecv st tid rf capAddr mi none (by omega) hMax)
+  unfold replyRecvLongSignalArmR replyRecvCompletesSignalArm
+  rw [endpointReplyLongCheckedArmR_eq_general ctx rf capAddr mi tid executingCore rcap st
+    .replyRecv (.inr ⟨hR, rfl⟩) hRead hRf]
+  unfold endpointReplyLongGeneralR
+  simp only [endpointReplyCheckedArmGeneralR, hTgt, hAns, hFlow, ↓reduceIte]
+  rw [replyTransferOnCoreChecked_congr_words ctx tid c
+    { length := mi.length, extraCaps := mi.extraCaps, label := mi.label }
+    (replyRecvReplyMessageInfo mi.label
+      { registers := longReplyRecvRegs rf st tid mi.length, badge := rcap.badge })
+    (longReplyRegs st tid rf mi.length) (longReplyRecvRegs rf st tid mi.length) _ _ _ st rfl
+    (fun i fb hi => by
+      rw [← hExt]
+      exact replyWordOr_extractMessageRegisters _ _ _ i fb
+        (by unfold maxMessageRegisters; omega) rfl)]
+  have hMsg : ({ registers := extractMessageRegisters (longReplyRegs st tid rf mi.length) { length := mi.length, extraCaps := mi.extraCaps, label := mi.label }, badge := rcap.badge } : IpcMessage) =
+      { registers := longReplyRecvRegs rf st tid mi.length, badge := rcap.badge } := by
+    rw [hExt]
+  rw [hMsg]
+  rcases replyTransferOnCoreChecked ctx tid c _ _
+      { registers := longReplyRecvRegs rf st tid mi.length, badge := rcap.badge }
+      (rcap.rights.mem .grant) executingCore st with e | ⟨⟨⟩, st1⟩
+  · rfl
+  · exact replyRecvSignalLeg_eq ctx tid executingCore st st1
+
 /-- The checked long reply-receive once its reply capability resolved to reply
 object `rid`, answering caller `c`: the reply leg's flow gate, then a caller
 carrying a fault answered by the long fault answer (`replyRecvLongFaultArmR`, in
@@ -2260,16 +2484,11 @@ reply-receive may block in place
 specification's path. -/
 @[inline] def replyRecvLongResolvedR (ctx : LabelingContext) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
-    (rf : SeLe4n.RegisterFile) (len label : Nat) (executingCore : Concurrency.CoreId) :
-    RefusalCarrying Unit :=
+    (rf : SeLe4n.RegisterFile) (len label : Nat) (executingCore : Concurrency.CoreId)
+    (signalArm : RefusalCarrying Unit) : RefusalCarrying Unit :=
   fun st =>
     if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) then
-      if receiveCompletesSignal ctx st tid then
-        match replyRecvCompletesSignalArm ctx tid c label
-            { registers := longReplyRecvRegs rf st tid len, badge := badge } grant
-            executingCore st with
-        | .ok r => .ok r
-        | .error e => .error (e, st)
+      if receiveCompletesSignal ctx st tid then signalArm st
       else if threadHasPendingFault st c then
         replyRecvLongFaultArmR epId tid c rid badge grant rf len label executingCore st
       else if replyRecvBlocksFast st epId tid c rid && replyRecvReplyInertW st tid c grant then
@@ -2309,8 +2528,9 @@ replier's overflow words into the caller's buffer
           (fun _ =>
             resolveReplyRecvK st tid replyAddr (fun e => .error (e, st))
               (fun _ => endpointReceiveCheckedArmR ctx tid true replyAddr executingCore cap st)
-              (fun rid c badge grant =>
-                replyRecvLongResolvedR ctx epId tid c rid badge grant rf len label executingCore st))
+              (fun rcap rid c badge grant =>
+                replyRecvLongResolvedR ctx epId tid c rid badge grant rf len label executingCore
+                  (replyRecvLongSignalArmR ctx rf len extraCaps label tid executingCore rcap) st))
     | _ => .error (.invalidCapability 0, st)
 
 theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)
@@ -2351,7 +2571,20 @@ theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)
       | some _ => rfl
       | none =>
       simp only []
-      rw [resolveReplyRecvK_eq st tid]
+      rw [resolveReplyRecvK_eq_of st tid _ _ _ _ (fun rid c badge grant =>
+        replyRecvLongResolvedR ctx epId tid c rid badge grant rf mi.length mi.label executingCore
+          (fun st' => match replyRecvCompletesSignalArm ctx tid c mi.label
+              { registers := longReplyRecvRegs rf st' tid mi.length, badge := badge } grant
+              executingCore st' with
+            | .ok r => .ok r
+            | .error e => .error (e, st')) st)
+        (fun rcap rid c hT hA => by
+          simp only [replyRecvLongResolvedR]
+          split
+          · next hFlow =>
+            rw [replyRecvLongSignalArmR_eq ctx rf capAddr mi tid executingCore rcap rid c st hR
+              hRead hRf hT hA hFlow]
+          · rfl)]
       cases resolveReplyRecvReplyR st tid
           (SeLe4n.CPtr.ofWord (SeLe4n.readRegWord rf SeLe4n.arm64DefaultLayout.replyReg)) with
       | error e => rfl

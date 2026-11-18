@@ -567,7 +567,6 @@ theorem replyRecvTakeFrame_staged (Y : SystemState) (c tid s : SeLe4n.ThreadId)
         core).1.updateTcb tid receiverReady) tid core).1 tid (holdMessage msgS)).objects.noResizeDue :=
     (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoZ
   have hNoD := deliverReplyRecvCapsFrame_noResizeDue capInfo _ c layout rf len badge hNoZ
-  have hNoE := hNoD
   rw [storePopHead_msg c _ _ _ Y epId false s sTcb.queueNext hNo] at hW3r ⊢
   rw [updateTcb_msg c _ _ _ _ s receiverReady hNoPY (fun h => absurd h hSC)] at hW3r ⊢
   rw [wakeThread_msg c _ _ _ _ s core hNoU] at hW3r ⊢
@@ -577,7 +576,7 @@ theorem replyRecvTakeFrame_staged (Y : SystemState) (c tid s : SeLe4n.ThreadId)
   dsimp only
   rw [← TCB.optCode_queueNext, SeLe4n.ThreadId.ofOptCode_optCode]
   generalize (wakeThread ((storePopHead Y epId false s sTcb.queueNext).updateTcb s receiverReady) s
-    core).1 = W at hW3r hNoWY hNoWr hNoZ hNoZs hNoD hNoE ⊢
+    core).1 = W at hW3r hNoWY hNoWr hNoZ hNoZs hNoD ⊢
   have hNoWrc : ((W.updateTcb tid receiverReady).mapTcbInPlace c (holdMessage m)).objects.noResizeDue :=
     (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoWr
   rw [updateTcb_msg c _ _ _ _ tid (callReceiverTcb msgS) hNoWY (fun h => absurd h hNe),
@@ -597,23 +596,22 @@ theorem replyRecvTakeFrame_staged (Y : SystemState) (c tid s : SeLe4n.ThreadId)
       hW3r]; rfl
   obtain ⟨x, hX, hXs⟩ := propagatePipChainCrossCore_ipcStateCarried _ tid core hNoWr tid _ hWr
   generalize (PriorityInheritance.propagatePipChainCrossCore (W.updateTcb tid receiverReady) tid
-    core).1 = Z at hX hNoZ hNoZs hNoD hNoE ⊢
+    core).1 = Z at hX hNoZ hNoZs hNoD ⊢
   rw [show writeDeliveredFrameIfReady Z c (regMessageFrameCapsOpt layout rf len badge capInfo)
       (fun _ => Z.mapTcbInPlace c (holdMessage
         { registers := Architecture.regMessageBody layout rf len, badge := badge })) =
       deliverReplyRecvCapsFrame capInfo Z c layout rf len badge from rfl]
   have hDr := (deliverReplyRecvCapsFrame_getTcb?_ne capInfo Z c tid layout rf len badge hCT).trans hX
-  generalize deliverReplyRecvCapsFrame capInfo Z c layout rf len badge = D at hDr hNoD hNoE ⊢
-  have hEr := hDr
+  generalize deliverReplyRecvCapsFrame capInfo Z c layout rf len badge = D at hDr hNoD ⊢
   have hSzS : msgS.registers.size ≤ 4 := by
     rw [hMsg]
     simp only [Architecture.regMessageBody_size, Architecture.regMessageLength]
     have : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
     omega
-  rw [stageDeliveredMessage_holdMessage _ _ _ hNoE hSzS, hMsg,
+  rw [stageDeliveredMessage_holdMessage _ _ _ hNoD hSzS, hMsg,
     Architecture.returnFrameOfMessage_regMessageBody]
   unfold writeDeliveredFrameIfReady
-  rw [hEr]
+  rw [hDr]
   dsimp only
   rw [if_pos (by rw [hXs]; rfl)]
 

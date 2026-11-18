@@ -835,6 +835,22 @@ def replyTransferOnCoreChecked (ctx : LabelingContext)
         | .error e => .error e
     | (_, .error e) => .error e
 
+/-- **The checked reply transfer reads its words only through the fault
+decode**: two readings of the reply that agree on its label and its first
+eleven words (`Architecture.decodeFaultReply_congr`) make one transfer.  An
+answer to an unfaulted caller reads `msg` alone. -/
+theorem replyTransferOnCoreChecked_congr_words (ctx : LabelingContext)
+    (replier callerTid : SeLe4n.ThreadId) (mi₁ mi₂ : MessageInfo)
+    (regs₁ regs₂ : Array SeLe4n.RegValue) (msg : IpcMessage) (grant : Bool) (c : CoreId)
+    (st : SystemState) (hl : mi₁.label = mi₂.label)
+    (hw : ∀ i fb, i ≤ 10 →
+      Architecture.replyWordOr mi₁ regs₁ i fb = Architecture.replyWordOr mi₂ regs₂ i fb) :
+    replyTransferOnCoreChecked ctx replier callerTid mi₁ regs₁ msg grant c st =
+      replyTransferOnCoreChecked ctx replier callerTid mi₂ regs₂ msg grant c st := by
+  have h := fun f fc => Architecture.decodeFaultReply_congr f fc mi₁ mi₂ regs₁ regs₂ hl hw
+  unfold replyTransferOnCoreChecked faultReplyOnCore
+  simp only [h]
+
 /-- WS-RR RR4.14: under the arm's own flow guard, checked and unchecked reply
 transfer coincide — on **both** branches.  This is what keeps
 `checkedDispatch_reply_eq_unchecked_when_allowed` a two-line proof after the

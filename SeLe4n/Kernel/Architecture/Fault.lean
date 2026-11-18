@@ -802,6 +802,25 @@ theorem decodeFaultReply_resume_of_empty (f : Fault) (ctx : FaultContext)
   cases f <;>
     simp [decodeFaultReply, faultRestartFrameOfContext, hLabel, replyWordOr, hLen]
 
+/-- **The decode reads the reply's label and its first eleven words**: two
+replies that agree on both decode every fault alike.  The reply a
+reply-receive's reply leg carries is decoded once, whichever reading of its
+words the arm holds (the layout's message registers, or the body the
+reply-receive cut from them). -/
+theorem decodeFaultReply_congr (f : Fault) (ctx : FaultContext) (mi₁ mi₂ : MessageInfo)
+    (regs₁ regs₂ : Array SeLe4n.RegValue) (hl : mi₁.label = mi₂.label)
+    (hw : ∀ i fb, i ≤ 10 → replyWordOr mi₁ regs₁ i fb = replyWordOr mi₂ regs₂ i fb) :
+    decodeFaultReply f ctx mi₁ regs₁ = decodeFaultReply f ctx mi₂ regs₂ := by
+  cases f with
+  | vmFault _ _ _ => rfl
+  | capFault _ _ _ => rfl
+  | unknownSyscall _ =>
+    simp only [decodeFaultReply, hl, hw 0 _ (by decide), hw 1 _ (by decide), hw 2 _ (by decide),
+      hw 3 _ (by decide), hw 4 _ (by decide), hw 5 _ (by decide), hw 6 _ (by decide),
+      hw 7 _ (by decide), hw 8 _ (by decide), hw 9 _ (by decide), hw 10 _ (by decide)]
+  | userException _ _ =>
+    simp only [decodeFaultReply, hl, hw 0 _ (by decide), hw 1 _ (by decide)]
+
 /-- WS-RR RR4.15: the outcome is total and binary — a fault reply either
 restarts the thread or abandons it.  There is no third disposition, and in
 particular none that leaves the thread runnable at the faulting instruction

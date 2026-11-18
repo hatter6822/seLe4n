@@ -843,7 +843,6 @@ theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
       (ipcBufferReadsAgree_updateTcb _ receiver receiverReady (fun _ => ⟨rfl, rfl⟩) hNoW).trans
         ((ipcBufferReadsAgree_wakeThread _ s core hNo2).trans
           (ipcBufferReadsAgree_updateTcb _ s receiverReady (fun _ => ⟨rfl, rfl⟩) hNoP))
-    have hAZ := hAY
     rw [hS4, hMsg,
       TCB.ipcBadgeView_eq_opt]
     unfold performReceiveDeliveredLong
@@ -851,6 +850,6 @@ theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
       deliverLongSendFrameWords_eq _ _ SeLe4n.arm64DefaultLayout sTcb.registerContext _ _ _ _ 0 _ hZr
         (by simp only [receiverReady, TCB.ipcState_setIpcState])]
     exact (deliverLongSendFrame_eq _ _ receiver s SeLe4n.arm64DefaultLayout sTcb.registerContext
-      mi.length _ _ 0 hNoZ hAZ.words hSz (by omega)).symm
+      mi.length _ _ 0 hNoZ hAY.words hSz (by omega)).symm
 
 end SeLe4n.Kernel

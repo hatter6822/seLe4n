@@ -4608,7 +4608,7 @@ run_check "INVARIANT" rg -n '^theorem replyRecvLongFaultArmR_eq($|[ ({:\[\]])' S
 run_check "INVARIANT" rg -n -U '                              if ct\.faultWords\.isFault then\n                                if replyWakesInPlace st c ct rid then\n                                  \.ok \(\(\), performFaultReplyAnswerLong st c server rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n -U '                                else if replyPopsInPlace st c ct\.scBindingScCode server rid then\n                                  \.ok \(\(\), performFaultReplyDonatedAnswerLong st c server rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n -U '                              if ct\.faultWords\.isFault then\n                                \.ok \(\(\), performFaultReplyUnheldAnswerLong st c rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
-run_check "INVARIANT" rg -n -U '      if threadHasPendingFault st c then\n        replyRecvLongFaultArmR epId tid c rid badge grant rf len label executingCore st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '      else if threadHasPendingFault st c then\n        replyRecvLongFaultArmR epId tid c rid badge grant rf len label executingCore st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '        if replyRecvBlocksFast st epId tid c rid then\n          \.ok \(\(\), performReplyRecvFaultAnswerLong st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '        else if replyRecvDonatedBlocks st epId tid c rid then\n          \.ok \(\(\), performReplyRecvDonatedFaultAnswerLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '        else if replyRecvUnheldBlocks st epId tid c rid then\n          \.ok \(\(\), performReplyRecvUnheldFaultAnswerLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
@@ -11112,6 +11112,17 @@ open SeLe4n.Kernel.Concurrency
 #check @lockSetForSyscall_replyRecv_covers_boundNotification
 #check @endpointReplyRecvCheckedArmR_eq_general
 #check @endpointReplyRecvLongCheckedArmR_eq_general
+#check @replyRecvSignalArmR
+#check @replyRecvSignalArmR_eq
+#check @replyRecvLongSignalArmR
+#check @replyRecvLongSignalArmR_eq
+#check @replyRecvSignalLeg_eq
+#check @resolveReplyRecvK_eq_of
+#check @replyWordOr_regMessageRegs_body
+#check @replyWordOr_extractMessageRegisters
+#check @replyTransferOnCoreChecked_congr_words
+#check @Architecture.decodeFaultReply_congr
+#check @endpointReplyLongCheckedArmR_eq_general
 EOF'
 # The receive-side footprints carry the state-level member on the SAME flag the
 # transition branches on, so the declaration tracks the write rather than being
@@ -12804,6 +12815,7 @@ run_check "INVARIANT" rg -n '^theorem dispatchArm_notificationWait_matches_retur
 run_check "INVARIANT" rg -n '^theorem dispatchArm_serviceQuery_matches_returnShape($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchArm_receive_matches_returnShape($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchArm_replyRecv_matches_returnShape($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_replyRecv_signal_matches_returnShape($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchArm_call_frame_delivered_by_reply($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def syscallReturnOutcome($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem readReturnValue_eq_readReturnFrame_x0($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean

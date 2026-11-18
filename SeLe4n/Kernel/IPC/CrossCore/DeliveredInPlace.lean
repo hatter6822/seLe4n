@@ -508,6 +508,20 @@ theorem replyWakesInPlace_noResizeDue {st : SystemState} {c : SeLe4n.ThreadId} {
   simp only [replyWakesInPlace, Bool.and_eq_true] at h
   exact RHTable.noResizeDue_of_findsInPlace h.1.1.1.2
 
+/-- The rendezvous of a reply longer than four words, its message read from the
+registers where it runs.  Out of line: the read (`Architecture.regMessageBody`)
+is a closure over the register file, and an inlined copy lets the compiler
+build that closure at the entry of every arm that inlines the rendezvous, on
+its in-place paths too. -/
+@[noinline] def performReplyRendezvousRegs (st : SystemState) (c server : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badgeWord : SeLe4n.Badge) (badged : Bool)
+    (core : Concurrency.CoreId) : SystemState :=
+  performReplyRendezvous st c server rid
+    { registers := Architecture.regMessageBody layout rf len,
+      badge := SeLe4n.Badge.opt badgeWord badged } core
+
 /-- The checked reply arm's rendezvous: a reply of at most four words is
 delivered straight into the caller's registers (`performReplyDelivered`). -/
 @[inline] def replyRendezvousDelivered (st : SystemState) (c server : SeLe4n.ThreadId)
@@ -517,9 +531,7 @@ delivered straight into the caller's registers (`performReplyDelivered`). -/
     (core : Concurrency.CoreId) : SystemState :=
   if Architecture.regMessageLength layout len ≤ 4 then
     performReplyDelivered st c server rid layout rf len badgeWord badged core
-  else performReplyRendezvous st c server rid
-    { registers := Architecture.regMessageBody layout rf len,
-      badge := SeLe4n.Badge.opt badgeWord badged } core
+  else performReplyRendezvousRegs st c server rid layout rf len badgeWord badged core
 
 theorem replyRendezvousDelivered_eq (st : SystemState) (c server : SeLe4n.ThreadId) (ct : TCB)
     (rid : SeLe4n.ReplyId)

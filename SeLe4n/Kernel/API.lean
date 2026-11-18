@@ -8223,6 +8223,53 @@ theorem dispatchArm_replyRecv_matches_returnShape
   · exact Architecture.blockedReturn_staged_in_waiter_frame stB tid tcb msg
       summary.capInfo hTcb hReady hMsg hObjInv
 
+/-- RA.B.8, `.replyRecv` whose receive **completes the bound notification**
+(seL4-MCS `receiveIPC`'s `completeSignal`): the reply leg answers the caller, and
+the receive stages exactly the consumed badge in the badge register
+(`badgeReturnFrame`), every other register as the replier left it, as a `Wait`
+on the notification stages it (`dispatchArm_notificationWait_matches_returnShape`).
+The `.message` shape's pass-through read is of that fresh frame. -/
+theorem dispatchArm_replyRecv_signal_matches_returnShape
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate)
+    (cap : Capability) (epId : SeLe4n.ObjId)
+    (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge)
+    (replyGrant : Bool) (st st1 st2 : SystemState) (badge : SeLe4n.Badge) (tcb : TCB)
+    (hSyscall : decoded.syscallId = .replyRecv)
+    (hTarget : cap.target = .object epId)
+    (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
+    (hXc : callerExtraCapsFault? st tid decoded.msgInfo.extraCaps = none)
+    (hResolve : resolveReplyRecvReply gate decoded st =
+      .ok (some (rid, prevCaller, replyBadge, replyGrant)))
+    (hReplyFlow : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) = true)
+    (hSig : receiveCompletesSignal ctx st tid = true)
+    (hReply : replyTransferOnCoreChecked ctx tid prevCaller
+        (replyRecvReplyMessageInfo decoded.msgInfo.label
+          { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+            badge := replyBadge })
+        (extractMessageRegisters decoded.msgRegs decoded.msgInfo)
+        { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+          badge := replyBadge }
+        replyGrant executingCore st = .ok ((), st1))
+    (hSig1 : receiveCompletesSignal ctx st1 tid = true)
+    (hReady1 : receiverIpcReady st1 tid = true)
+    (hWait : notificationWaitCrossCoreDispatchChecked ctx (receiverBoundNotification st1 tid) tid
+        executingCore st1 = (st2, .ok (some badge)))
+    (hTcb : st2.getTcb? tid = some tcb)
+    (hObjInv : st2.objects.invExt) :
+    Architecture.syscallReturnShape .replyRecv = .message ∧
+    ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
+      Architecture.readReturnFrame stPost tid = Architecture.badgeReturnFrame st2 tid badge := by
+  refine ⟨rfl,
+    Architecture.writeReturnFrameToTcb st2 tid (Architecture.badgeReturnFrame st2 tid badge),
+    ?_, ?_⟩
+  · simp only [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow,
+      Bool.not_true, Bool.false_eq_true, ↓reduceIte, hXc, hResolve, hReplyFlow, hSig]
+    unfold replyRecvCompletesSignalArm
+    rw [hReply]
+    simp only [hSig1, hReady1, Bool.and_self, ↓reduceIte, completeSignalArm, hWait]
+  · exact Architecture.readReturnFrame_writeReturnFrame st2 tid _ tcb hTcb hObjInv
+
 /-- RA.B.8, `.call` (`.message`) — **through the reply arm**, per §3.5: a
 successful call leaves the caller `blockedOnReply` in every ordering, so
 its `.message` frame is delivered entirely by the reply path's RA.B.5b

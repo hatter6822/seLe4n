@@ -88,6 +88,7 @@ open SeLe4n.Platform.FFI
 #check @SeLe4n.Kernel.dispatchArm_serviceQuery_matches_returnShape
 #check @SeLe4n.Kernel.dispatchArm_receive_matches_returnShape
 #check @SeLe4n.Kernel.dispatchArm_replyRecv_matches_returnShape
+#check @SeLe4n.Kernel.dispatchArm_replyRecv_signal_matches_returnShape
 #check @SeLe4n.Kernel.dispatchArm_call_frame_delivered_by_reply
 
 private def assertBool (label : String) (b : Bool) : IO Unit :=
