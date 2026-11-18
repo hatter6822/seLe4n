@@ -143,7 +143,10 @@ def crossCoreEnforcementEntries : List EnforcementClass :=
   -- wrapper (and, for a remap of the address the capability records, the
   -- unmap), which the routing walk reaches from it.
   , .capabilityOnly "vspaceMapOrRemapFromFrameCap"
-  , .capabilityOnly "vspaceUnmapPageWithShootdownAndIcacheBroadcast"
+  -- `.vspaceUnmap` (seL4's `Page_Unmap`) reaches `vspaceUnmapFrameCap` — the
+  -- unmap of the frame capability's own record (`unmapLivePages`, which calls
+  -- the per-core shootdown and I-cache wrapper) and the record's clear.
+  , .capabilityOnly "vspaceUnmapFrameCap"
   -- PR #861 review round 12: the priority-control arms were boot-pinned twice
   -- over — the run-queue re-bucket tested membership in the BOOT core's queue
   -- (a silent no-op for a thread queued anywhere else, so a demotion never took
@@ -269,7 +272,7 @@ def syscallIdToEnforcementNamePerCore : SyscallId → String
   | .send                => "endpointSendCrossCoreDispatchChecked"
   | .tcbResume           => "restartThreadOnCore"
   | .vspaceMap           => "vspaceMapOrRemapFromFrameCap"
-  | .vspaceUnmap         => "vspaceUnmapPageWithShootdownAndIcacheBroadcast"
+  | .vspaceUnmap         => "vspaceUnmapFrameCap"
   | .tcbSetPriority      => "setPriorityOnCore"
   | .tcbSetMCPriority    => "setMCPriorityOnCore"
   | .tcbSetAffinity      => "setThreadCpuAffinityOnCore"
