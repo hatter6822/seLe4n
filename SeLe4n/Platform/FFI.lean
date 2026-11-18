@@ -3436,9 +3436,55 @@ TCB. -/
     (selectedOperationCode st tcb SeLe4n.arm64DefaultLayout tcb.registerContext).toUInt32
   | none => SyscallId.encodingBound.toUInt32
 
+/-- **seL4's fault drop for a capability fault in phase `inRecv`** raised by
+the syscall numbered `syscallId`: dropped exactly when it is raised in the
+invoke phase of a non-blocking invocation (`handleInvocation` with
+`isBlocking = false`: `NBSend`, and the invoke phase of `ReplyRecv`,
+`NBSendRecv` and `NBSendWait`, `Syscall.dropsInvocationFault`); a
+receive-phase fault is always delivered (`handleRecv`). -/
+@[inline] def syscallDropsCapFault (syscallId : UInt32) (inRecv : Bool) : Bool :=
+  !inRecv && Syscall.numberDropsInvocationFault syscallId
+
+/-- `syscallDropsCapFault` on a fault the seam raised: a capability fault's
+phase is its `InRecvPhase` word; no other fault is dropped. -/
+@[inline] def syscallDropsFault (syscallId : UInt32) : Fault → Bool
+  | .capFault _ inRecv _ => syscallDropsCapFault syscallId inRecv
+  | _ => false
+
+/-- A receive-phase fault is never dropped, whatever the syscall. -/
+theorem syscallDropsCapFault_recv (syscallId : UInt32) :
+    syscallDropsCapFault syscallId true = false := rfl
+
+/-- A blocking invocation's fault is never dropped: `Call` and `Send` run
+`handleInvocation` with `isBlocking`. -/
+theorem syscallDropsCapFault_blocking (s : Syscall) (inRecv : Bool)
+    (h : s.invocationBlocks = true) :
+    syscallDropsCapFault s.number.toUInt32 inRecv = false := by
+  unfold syscallDropsCapFault
+  rw [Syscall.numberDropsInvocationFault_number]
+  cases s <;> simp_all [Syscall.invocationBlocks, Syscall.dropsInvocationFault]
+
+/-- An invoke-phase fault of `NBSend`, or of the invoke phase of `ReplyRecv`,
+`NBSendRecv` or `NBSendWait`, is dropped. -/
+theorem syscallDropsCapFault_nonBlocking (s : Syscall)
+    (h : s.dropsInvocationFault = true) :
+    syscallDropsCapFault s.number.toUInt32 false = true := by
+  unfold syscallDropsCapFault
+  rw [Syscall.numberDropsInvocationFault_number, h]
+  rfl
+
 /-- WS-RC R2.B.1 (restated at the WS-RA type): the pure typed-ABI entry
     point behind the `lean_syscall_dispatch_cross_core` export
     (`Kernel/SyscallDispatchEntry.lean`).
+
+`syscallId` is **seL4's syscall number** (WS-SX SX7.2): `1` (`Call`) to `11`
+(`Yield`), the trapped `x7` negated (`Syscall.numberOfWord`), never an
+operation.  The spill writes its word back into `x7` (`Syscall.wordOfNumber`),
+and the operation the syscall invokes is selected on the spilled state from
+the syscall, the invoked capability's type and the label in `x1`
+(`seamOperationCode`), as seL4's `handleSyscall` and `decodeInvocation` do.
+How the seam answers depends on the syscall alone: only a `Call` receives an
+error frame, and a fault is dropped by `syscallDropsFault`.
 
 Pipeline:
   1. Look up `(st.scheduler.currentOnCore executingCore)` (must be `some` on a real syscall,
@@ -3527,10 +3573,12 @@ def syscallDispatchFromAbi
               -- `handleInvocation` / `handleRecv` `CapFault`.  The outcome
               -- is `.faulted` (tag 2): the thread now waits on its handler,
               -- no frame exists for it, and the trap layer halts rather
-              -- than resumes it (PR #887 review round 5).  WS-SX SX7.2: an
-              -- `NBSend` runs `handleInvocation` without `isBlocking`, so its
-              -- failed lookup is dropped and the thread resumes unchanged.
-              if syscallId = Syscall.nbSend.number.toUInt32 then .ok (.resumes, stR) else
+              -- than resumes it (PR #887 review round 5).  WS-SX SX7.2: a
+              -- non-blocking invocation runs `handleInvocation` without
+              -- `isBlocking`, so its invoke-phase fault is dropped and the
+              -- thread resumes unchanged; a receive-phase fault is always
+              -- delivered (`syscallDropsFault`).
+              if syscallDropsFault syscallId fault then .ok (.resumes, stR) else
               .ok (.faulted,
                    deliverSyscallCapFault ctx executingCore stR tid fault
                      (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
@@ -3908,7 +3956,7 @@ them (`abiEntryRoutedWith_eq`). -/
     (fun d w0 w1 w2 w3 w4 s =>
       match syscallCapFaultOfW SeLe4n.arm64DefaultLayout s tid d w0 w1 w2 w3 w4 with
       | some fault =>
-          if syscallId = Syscall.nbSend.number.toUInt32 then (Architecture.SyscallOutcome.resumes.words, s) else
+          if syscallDropsFault syscallId fault then (Architecture.SyscallOutcome.resumes.words, s) else
           (Architecture.SyscallOutcome.faulted.words,
           deliverSyscallCapFault ctx executingCore s tid fault
             (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr)
@@ -3917,7 +3965,7 @@ them (`abiEntryRoutedWith_eq`). -/
     (fun d w0 w1 w2 w3 w4 s =>
       match capFaultReceivePhase? sid with
       | some inRecv =>
-          if syscallId = Syscall.nbSend.number.toUInt32 then (Architecture.SyscallOutcome.resumes.words, s) else
+          if syscallDropsCapFault syscallId inRecv then (Architecture.SyscallOutcome.resumes.words, s) else
           (Architecture.SyscallOutcome.faulted.words,
           deliverSyscallLookupFault ctx executingCore s tid capWord inRecv d w1 w2 w3 w4
             syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30 elr spsr)
@@ -3927,7 +3975,7 @@ them (`abiEntryRoutedWith_eq`). -/
     (fun replyWord w1 w2 w3 w4 s =>
       match capFaultReceivePhase? sid with
       | some inRecv =>
-          if syscallId = Syscall.nbSend.number.toUInt32 then (Architecture.SyscallOutcome.resumes.words, s) else
+          if syscallDropsCapFault syscallId inRecv then (Architecture.SyscallOutcome.resumes.words, s) else
           (Architecture.SyscallOutcome.faulted.words,
           deliverSyscallLookupFault ctx executingCore s tid replyWord inRecv
             (KernelError.failedLookup false .invalidRoot).toDiscriminant w1 w2 w3 w4
@@ -3948,7 +3996,7 @@ theorem abiEntryRoutedWith_eq (ctx : LabelingContext)
       syscallEntryCheckedK ctx executingCore st
         (syscallRefusalOutcome tid
           (fun s fault =>
-            if syscallId = Syscall.nbSend.number.toUInt32 then (Architecture.SyscallOutcome.resumes.words, s) else
+            if syscallDropsFault syscallId fault then (Architecture.SyscallOutcome.resumes.words, s) else
             (Architecture.SyscallOutcome.faulted.words,
             deliverSyscallCapFault ctx executingCore s tid fault
               (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr))
@@ -3959,7 +4007,7 @@ theorem abiEntryRoutedWith_eq (ctx : LabelingContext)
           (fun st' => (returnOutcomeWords opCode st' tid, st')))
         (syscallLookupOutcome
           (fun s w b e =>
-            if syscallId = Syscall.nbSend.number.toUInt32 then (Architecture.SyscallOutcome.resumes.words, s) else
+            if syscallDropsCapFault syscallId b then (Architecture.SyscallOutcome.resumes.words, s) else
             (Architecture.SyscallOutcome.faulted.words,
             deliverSyscallCapFault ctx executingCore s tid (.capFault w b e.capFaultLookup)
               (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr))
@@ -4059,8 +4107,8 @@ theorem syscallDispatchFromAbiWords_eq
               (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid ke with
         | some fault =>
           simp only [hF] at h ⊢
-          by_cases hN : syscallId = Syscall.nbSend.number.toUInt32
-          · simp only [hN, ↓reduceIte] at h ⊢; cases h; rfl
+          cases hN : syscallDropsFault syscallId fault
+          · simp only [hN, Bool.false_eq_true, ↓reduceIte] at h ⊢; cases h; rfl
           · simp only [hN, ↓reduceIte] at h ⊢; cases h; rfl
         | none =>
           simp only [hF] at h ⊢
@@ -4112,7 +4160,7 @@ theorem syscallDispatchFromAbi_total
                 (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid ke with
           | some fault =>
               simp only [hCap, ↓reduceIte, Bool.false_eq_true]
-              by_cases hN : syscallId = Syscall.nbSend.number.toUInt32
+              by_cases hN : syscallDropsFault syscallId fault = true
               · rw [if_pos hN]; exact ⟨_, _, rfl⟩
               · rw [if_neg hN]; exact ⟨_, _, rfl⟩
           | none =>
@@ -4947,7 +4995,7 @@ theorem syscallDispatchFromAbi_capFault_faulted
         (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
         (cancelReceiveBusyReply ctx executingCore
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid ke = some fault)
-    (hBlocking : syscallId ≠ Syscall.nbSend.number.toUInt32) :
+    (hDelivered : syscallDropsFault syscallId fault = false) :
     syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr
         elr spsr spEl0 x30 st
       = Except.ok (.faulted,
@@ -4956,7 +5004,7 @@ theorem syscallDispatchFromAbi_capFault_faulted
               (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid fault
             (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) elr spsr) := by
   unfold syscallDispatchFromAbi
-  simp [hCur, hNI, hSyscall, hCap, hBlocking]
+  simp [hCur, hNI, hSyscall, hCap, hDelivered]
 
 /-- **WS-SX SX7.2 (an error only a `Call` receives)**: when the checked entry
 refuses a syscall other than `Call` and the refusal raises no fault, the seam
@@ -4992,33 +5040,37 @@ theorem syscallDispatchFromAbi_error_resumes_of_not_call
   unfold syscallDispatchFromAbi
   simp [hCur, hNI, hSyscall, hNoCapFault, hNotCall]
 
-/-- **WS-SX SX7.2 (a failed `NBSend` lookup is silent)**: seL4 runs `NBSend`'s
-`handleInvocation` without `isBlocking`, so a failed capability lookup is
-dropped: no fault is delivered, nothing is written, and the caller resumes
-with the registers it trapped with. -/
-theorem syscallDispatchFromAbi_nbSend_fault_dropped
+/-- **WS-SX SX7.2 (a non-blocking invocation's failed lookup is silent)**: seL4
+runs `handleInvocation` without `isBlocking` for `NBSend` and the invoke phase
+of `ReplyRecv`, `NBSendRecv` and `NBSendWait`, so an invoke-phase capability
+fault is dropped: no fault is delivered, nothing is written, and the caller
+resumes with the registers it trapped with (`syscallDropsFault`; a
+receive-phase fault is delivered, `syscallDropsCapFault_recv`). -/
+theorem syscallDispatchFromAbi_invokeFault_dropped
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (fault : Fault)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hNI : SeLe4n.Kernel.isIdleThreadId tid = false)
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
-          (writeFfiRegistersToTcb st tid Syscall.nbSend.number.toUInt32 x0 x1 x2 x3 x4 x5)
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
         = Except.error ke)
     (hCap : syscallCapFaultAt SeLe4n.arm64DefaultLayout
-        (writeFfiRegistersToTcb st tid Syscall.nbSend.number.toUInt32 x0 x1 x2 x3 x4 x5)
+        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
         (cancelReceiveBusyReply ctx executingCore
-          (writeFfiRegistersToTcb st tid Syscall.nbSend.number.toUInt32 x0 x1 x2 x3 x4 x5))
-          tid ke = some fault) :
-    syscallDispatchFromAbi ctx executingCore Syscall.nbSend.number.toUInt32 x0 x1 x2 x3 x4 x5
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
+          tid ke = some fault)
+    (hDrop : syscallDropsFault syscallId fault = true) :
+    syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5
         ipcBufferAddr elr spsr spEl0 x30 st
       = Except.ok (.resumes,
           cancelReceiveBusyReply ctx executingCore
-            (writeFfiRegistersToTcb st tid Syscall.nbSend.number.toUInt32 x0 x1 x2 x3 x4 x5)) := by
+            (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) := by
   unfold syscallDispatchFromAbi
-  simp [hCur, hNI, hSyscall, hCap]
+  simp [hCur, hNI, hSyscall, hCap, hDrop]
 
 /-- **The registers a resumed caller returns with are the ones it trapped
 with**: the spill writes the trapped `x0`-`x5` into the caller's saved

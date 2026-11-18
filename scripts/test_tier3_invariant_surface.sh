@@ -5957,6 +5957,11 @@ run_check "INVARIANT" rg -n '^theorem capFaultReceivePhase\?_none_iff_records' S
 run_check "INVARIANT" rg -n '^def deliverSyscallCapFault($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def svcFaultIP \(elr : UInt64\) : UInt64 := elr - 4' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_faulted($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+# WS-SX SX7.2: seL4's fault drop, by phase: an invoke-phase fault of a
+# non-blocking invocation resumes the caller; a receive-phase one never drops.
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_invokeFault_dropped($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDropsCapFault_recv($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n 'an NBSend at the same CPtr drops its fault' tests/FaultHandlingSuite.lean
 # WS-ZA ZA6.31: the fault paths allocate nothing.  (1) A syscall's failed
 # operand resolution is delivered from the words the entry's own lookup
 # produced: the operand dispatch hands an empty slot and the resolution's

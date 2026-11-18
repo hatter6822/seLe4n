@@ -1450,6 +1450,12 @@ private def seamDispatch (ctx : LabelingContext) (sid : SyscallId) (cptr : UInt6
   SeLe4n.Testing.dispatchOperationFromAbi ctx c0 sid cptr 0 0 0 0 0 0
     svcElr svcSpsr svcSpEl0 svcX30 stRunning
 
+/-- The seam at seL4 syscall `sys` itself, the message-info word unlabelled. -/
+private def seamDispatchSyscall (ctx : LabelingContext) (sys : Syscall) (cptr : UInt64) :
+    Except KernelError (SyscallOutcome × SystemState) :=
+  SeLe4n.Testing.dispatchFromAbi ctx c0 sys.number.toUInt32 cptr 0 0 0 0 0 0
+    svcElr svcSpsr svcSpEl0 svcX30 stRunning
+
 /-- An address that misses the root CNode's guard (its 62 guard bits are 0, and
 bit 2 is set above the root's two radix bits), so the lookup fails at the root
 with a guard mismatch: 64 bits left, guard 0, guard size 62.  An empty slot is
@@ -1547,6 +1553,19 @@ private def runSyscallCapFaultChecks : IO Unit := do
     (seamCapFault (seamDispatch seamCtx .receive unresolvedCPtr) (unresolvedFault true))
   assertBool "a Signal at the same CPtr faults in the send phase — seL4_Signal is seL4_Send"
     (seamCapFault (seamDispatch seamCtx .notificationSignal unresolvedCPtr) (unresolvedFault false))
+  -- seL4's `handleInvocation` without `isBlocking` (NBSend): the invoke-phase
+  -- fault is dropped, nothing is recorded and the caller resumes as it trapped.
+  assertBool "an NBSend at the same CPtr drops its fault: the caller resumes, no fault recorded, still running"
+    (match seamDispatchSyscall seamCtx .nbSend unresolvedCPtr with
+     | .ok (.resumes, st) =>
+         pendingFaultOf st faulter == none && ipcStateOf st faulter == ipcStateOf stRunning faulter
+     | _ => false)
+  -- `handleRecv` faults whatever the blocking flag: the receive phase of an
+  -- NBRecv and of the compound syscalls is delivered.
+  assertBool "an NBRecv at the same CPtr faults in the receive phase (handleRecv faults unconditionally)"
+    (seamCapFault (seamDispatchSyscall seamCtx .nbRecv unresolvedCPtr) (unresolvedFault true))
+  assertBool "an NBSendRecv whose receive capability does not resolve faults in the receive phase"
+    (seamCapFault (seamDispatchSyscall seamCtx .nbSendRecv unresolvedCPtr) (unresolvedFault true))
   assertBool "a TCB invocation at the same CPtr faults too — handleInvocation raises CapFault for every blocking invocation"
     (seamCapFault (seamDispatch seamCtx .tcbSuspend unresolvedCPtr) (unresolvedFault false))
   -- An empty slot (CPtr 3) resolves: seL4's `lookupCapAndSlot` hands the null

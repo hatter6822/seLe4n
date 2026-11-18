@@ -5329,6 +5329,28 @@ capability is delivered as a capability fault only on these
   | .call | .send => true
   | _ => false
 
+/-- **The invocations whose failed lookup is dropped**: seL4's `handleSyscall`
+runs `handleInvocation` with `isBlocking = false` for `NBSend` and for the
+invoke phase of `ReplyRecv`, `NBSendRecv` and `NBSendWait`, so a failed lookup
+of the capability they invoke raises no fault (`if (isBlocking)
+handleFault`).  A receive-phase lookup fault is never dropped (`handleRecv`
+calls `handleFault` unconditionally). -/
+@[inline] def dropsInvocationFault (s : Syscall) : Bool := s.invokes && !s.invocationBlocks
+
+theorem dropsInvocationFault_iff (s : Syscall) :
+    s.dropsInvocationFault = true ↔
+      s = .nbSend ∨ s = .replyRecv ∨ s = .nbSendRecv ∨ s = .nbSendWait := by
+  cases s <;> decide
+
+/-- `dropsInvocationFault` of the syscall the seam's number names, tested on
+the number itself; `false` for a number naming no syscall. -/
+@[inline] def numberDropsInvocationFault (n : UInt32) : Bool :=
+  n == 2 || n == 3 || n == 4 || n == 6
+
+theorem numberDropsInvocationFault_number (s : Syscall) :
+    numberDropsInvocationFault s.number.toUInt32 = s.dropsInvocationFault := by
+  cases s <;> decide
+
 /-- The receives seL4 runs with `isBlocking` (`handleRecv`). -/
 @[inline] def receiveBlocks : Syscall → Bool
   | .recv | .wait | .replyRecv | .nbSendRecv | .nbSendWait => true

@@ -1127,17 +1127,19 @@ theorem syscallDispatchFromAbi_capFault_not_dispatchable
     (hCommit : Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId
         x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st = Except.ok (.faulted, st')) :
     ¬ dispatchableOnCore st' tid executingCore := by
-  -- WS-SX SX7.2: a faulted outcome is never an `NBSend`'s, whose failed
-  -- lookup is dropped (`syscallDispatchFromAbi_nbSend_fault_dropped`)
-  have hBlocking : syscallId ≠ Syscall.nbSend.number.toUInt32 := by
-    intro hN; subst hN
-    rw [Platform.FFI.syscallDispatchFromAbi_nbSend_fault_dropped ctx executingCore
-      x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke fault hCur hNI hSyscall hCap]
-      at hCommit
-    simp at hCommit
+  -- WS-SX SX7.2: a faulted outcome never carries a dropped fault, an
+  -- invoke-phase fault of a non-blocking invocation
+  -- (`syscallDispatchFromAbi_invokeFault_dropped`)
+  have hDelivered : Platform.FFI.syscallDropsFault syscallId fault = false := by
+    cases hD : Platform.FFI.syscallDropsFault syscallId fault
+    · rfl
+    · rw [Platform.FFI.syscallDispatchFromAbi_invokeFault_dropped ctx executingCore syscallId
+        x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke fault hCur hNI hSyscall hCap
+        hD] at hCommit
+      simp at hCommit
   rw [Platform.FFI.syscallDispatchFromAbi_capFault_faulted ctx executingCore syscallId
     x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke fault hCur hNI hSyscall hCap
-    hBlocking] at hCommit
+    hDelivered] at hCommit
   have hSt : st' = Platform.FFI.deliverSyscallCapFault ctx executingCore
       (cancelReceiveBusyReply ctx executingCore
         (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid fault
