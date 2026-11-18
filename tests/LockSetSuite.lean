@@ -438,8 +438,10 @@ example : permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext, .reply
 -- `scThreadIndex`, an `RHTable` whose insert may rehash the whole table.
 example : permittedKinds .reply =
     [.tcb, .cnode, .schedContext, .reply, .objStore] := by decide
+-- seL4-MCS `handleReplyRecv`: `.notification` joins `.replyRecv` -- its receive
+-- completes the replier's bound notification when it is active.
 example : permittedKinds .replyRecv =
-    [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore] := by decide
+    [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply, .objStore] := by decide
 -- WS-SM SM6.B: `.notificationSignal` gains `.endpoint` for the bound-delivery
 -- dequeue (a signal to a notification whose bound TCB is BlockedOnReceive removes
 -- it from its endpoint); `.notificationWait` is unchanged.
@@ -892,9 +894,10 @@ private def runPermittedKindsChecks : IO Unit := do
   -- WS-OD OD3.5: `.objStore` — the donation return maintains `scThreadIndex`.
   assertBool "permittedKinds .reply (donation-return + reply-object + index kinds)"
     (decide (permittedKinds .reply = [.tcb, .cnode, .schedContext, .reply, .objStore]))
-  assertBool "permittedKinds .replyRecv (donation-return + reply-object kind)"
+  -- seL4-MCS `handleReplyRecv`: the receive completes an active bound notification.
+  assertBool "permittedKinds .replyRecv (donation-return + reply-object + bound-notification kinds)"
     (decide (permittedKinds .replyRecv =
-      [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore]))
+      [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply, .objStore]))
   -- Audit-pass-6: .tcbSetPriority / .tcbSetMCPriority include .schedContext.
   -- updatePrioritySource writes the bound SC if binding is .bound/.donated.
   assertBool "permittedKinds .tcbSetPriority (audit-pass-6: includes .schedContext)"
