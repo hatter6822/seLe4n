@@ -1628,8 +1628,7 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation
   unfold endpointReplyRecvAnsweringOnCore at hBody
   simp only [hReply, hPop, hX, hRecv, hPost] at hBody
   have hOut := (Prod.mk.inj (Except.ok.inj hBody)).2
-  rw [← hOut, Architecture.stageWokenSendCompletion_scheduler_eq,
-    replyRecvAnswerCaller_replenishQueueOnCore]
+  rw [← hOut, replyRecvAnswerCaller_replenishQueueOnCore]
   rcases applyReceiveLegPipHandoff_cases st3 receiver nextThread
       ((recordedReplyServer? st prevCaller).getD receiver) executingCore with hH | hH
   · rw [hH, hR3, hR2, hR1]
@@ -1743,8 +1742,7 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_ne
                   executingCore
                   returned? st2 st3 u hInv2 hPost
               have hOut := (Prod.mk.inj (Except.ok.inj hBody)).2
-              rw [← hOut, Architecture.stageWokenSendCompletion_scheduler_eq,
-                replyRecvAnswerCaller_replenishQueueOnCore]
+              rw [← hOut, replyRecvAnswerCaller_replenishQueueOnCore]
               rcases applyReceiveLegPipHandoff_cases st3 receiver nextThread
                   ((recordedReplyServer? st prevCaller).getD receiver) executingCore with hH | hH
               · rw [hH, hR3, hR2, hR1p, hR1]
@@ -1967,9 +1965,8 @@ theorem endpointReplyRecvOnCore_preserves_objects_invExt
               have hInv3 := replyRecvPostReceiveDonation_preserves_objects_invExt receiver
                 ((recordedReplyServer? st prevCaller).getD receiver) nextThread executingCore
                 returnedSc? st2 st3 u2 hInv2 hDon
-              exact stageWokenSendCompletion_objects_invExt _ _
-                (replyRecvAnswerCaller_preserves_objects_invExt _ _ _ _
-                  (applyReceiveLegPipHandoff_preserves_objects_invExt _ _ _ _ _ hInv3))
+              exact replyRecvAnswerCaller_preserves_objects_invExt _ _ _ _
+                  (applyReceiveLegPipHandoff_preserves_objects_invExt _ _ _ _ _ hInv3)
 
 open SeLe4n.Kernel.Concurrency in
 /-- **Audit IPC-2** (**WS-LS LS2.1**: over the pair, hypothesis-free): under the

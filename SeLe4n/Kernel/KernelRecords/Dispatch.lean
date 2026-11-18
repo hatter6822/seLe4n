@@ -745,7 +745,6 @@ theorem receiveResolvedArm_recordsStage (ctx : LabelingContext)
         hCaller.cancelReplyHolder hInv (Ne.symm hne)⟩
   obtain ⟨hS, hIC, hQC, hCC⟩ := hSC
   generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC at h hS hIC hQC hCC
-  simp only at h
   by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
   · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
     cases hRes : resolveRecvReplyId gate decoded stC with
@@ -767,8 +766,7 @@ theorem receiveResolvedArm_recordsStage (ctx : LabelingContext)
     cases h
     exact hS.trans ((RecordsStage.of_fst_eq
       (RecordsStage.endpointReceiveDualWithCapsOnCore hIC hQC hCC) hRecv).trans
-      (((RecordsStage.of_frameK fun hI => RecordsFrame.applyReceiveRendezvousHandoff hI hHand).trans
-        (RecordsStage.of_frameK fun hI => RecordsFrame.stageWokenSendCompletion _ _ hI)).trans
+      ((RecordsStage.of_frameK fun hI => RecordsFrame.applyReceiveRendezvousHandoff hI hHand).trans
         (RecordsStage.of_frameK fun hI => RecordsFrame.stageDeliveredMessage _ _ _ hI)))
   · cases h
 

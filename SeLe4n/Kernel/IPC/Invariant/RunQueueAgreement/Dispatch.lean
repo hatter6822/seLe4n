@@ -991,7 +991,6 @@ theorem receiveResolvedArm_runQueueEntryStage (ctx : LabelingContext)
   have hDC := hS.2 P.objInv P.refined hRC P.dequeued
   generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC
     at h hS hHC hCurC hActC hIC hRC hDC
-  simp only at h
   by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
   · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
     cases hRes : resolveRecvReplyId gate decoded stC with
@@ -1016,9 +1015,8 @@ theorem receiveResolvedArm_runQueueEntryStage (ctx : LabelingContext)
         hCurC P.notIdle hActC) hRecv
     obtain ⟨_, hR2⟩ := E.1.links hIC hRC
     exact runQueueEntryStage_trans_of_invExt hS fun _ _ => E.trans
-      (((applyReceiveRendezvousHandoff_runQueueStage
+      ((applyReceiveRendezvousHandoff_runQueueStage
           ((E.2 hIC hRC hR2 hDC).coherent _) hHand).trans
-        (stageWokenSendCompletion_runQueueStage _ _)).trans
         (stageDeliveredMessage_runQueueStage _ _ _)).entry
   · cases h
 

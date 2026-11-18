@@ -1624,7 +1624,6 @@ theorem receiveResolvedArm_cancelled_stepCovers (e : CoreId) {ctx : LabelingCont
   unfold receiveResolvedArm at h
   obtain ⟨hC, hCInv⟩ := cancelRecvBusyReply_stepCovers e ctx tid gate decoded e st hInv
   generalize cancelRecvBusyReply ctx tid gate decoded e st = stC at h hC hCInv
-  simp only at h
   by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC
       epId = true
   · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
@@ -1648,11 +1647,9 @@ theorem receiveResolvedArm_cancelled_stepCovers (e : CoreId) {ctx : LabelingCont
     obtain ⟨hV, hVInv⟩ := stepCovers_of_pair_eq
       (endpointReceiveDualWithCapsOnCore_stepCovers e hCInv) hRecv
     obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e hVInv hHand
-    have hS1 := stageWokenSendCompletion_keyFrame stDon
-      ((stC.getEndpoint? epId).bind (·.sendQ.head)) hDInv
-    have hS2 := stageDeliveredMessage_keyFrame _ tid summ.capInfo hS1.2.2
+    have hS2 := stageDeliveredMessage_keyFrame _ tid summ.capInfo hDInv
     exact stepCoversInv_trans
-      (stepCovers_trans (stepCovers_trans (stepCovers_trans hC hV) hD) hS1.stepCovers)
+      (stepCovers_trans (stepCovers_trans hC hV) hD)
       hS2.stepCoversInv
   · cases h
 

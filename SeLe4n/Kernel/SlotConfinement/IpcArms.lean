@@ -946,12 +946,9 @@ theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
                         ((recordedReplyServer? st prevCaller).getD receiver) executingCore)
                       prevCaller)) := by
                 rw [← hStep.2]
-                exact observableSlotsConfinedToCores_of_framed_suffix
-                  (Architecture.stageWokenSendCompletion_scheduler_eq _ _)
-                  (Architecture.stageWokenSendCompletion_machine_eq _ _)
-                  (observableSlotsConfinedToCores_trans hConf
+                exact observableSlotsConfinedToCores_trans hConf
                     (observableSlotsConfinedToCores_trans hPip
-                      (replyRecvAnswerCaller_confinedToCores answer _ prevCaller _)))
+                      (replyRecvAnswerCaller_confinedToCores answer _ prevCaller _))
               exact observableSlotsConfinedToCores_trans hReply
                 (observableSlotsConfinedToCores_trans
                   (by simpa using observableSlotsConfinedToCores_trans hPopConf hRecv) hStaged)

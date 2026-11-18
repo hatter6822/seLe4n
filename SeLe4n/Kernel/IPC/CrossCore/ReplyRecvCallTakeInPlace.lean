@@ -543,17 +543,11 @@ theorem replyRecvOnCore_callTake_delivered (st : SystemState) (epId : SeLe4n.Obj
   have hNoW := writeDeliveredFrameIfReady_noResizeDue Y0 c
     (Architecture.regMessageFrame layout rf len badge)
     (holdMessage { registers := Architecture.regMessageBody layout rf len, badge := badge }) hNoY
-  rw [stageWokenSendCompletion_msg _ tid s id _ id hst hNoW,
-    Architecture.stageWokenSendCompletion_id_when_not_ready _ s x'
-      ((writeDeliveredFrameIfReady_getTcb?_ne Y0 c s _ _ hcsO).trans hx')
-      (by rw [e', e1, hxI]; exact fun h => by cases h)]
   have hSzS : (Architecture.regMessageBody arm64DefaultLayout sTcbP.registerContext
       mi.length).size ≤ 4 := by
     simp only [Architecture.regMessageBody_size, Architecture.regMessageLength]
     have : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
     omega
-  rw [show ∀ m : IpcMessage, TCB.withMessageSlots id (fun _ => some m) id = holdMessage m from
-    fun _ => rfl]
   rw [stageDeliveredMessage_holdMessage _ tid _ hNoW hSzS,
     Architecture.returnFrameOfMessage_regMessageBody, Architecture.regMessageFrameW_eq,
     TCB.ipcBadgeView_eq_opt, hKept.regs, hKept.badge, hKept.badged]

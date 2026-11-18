@@ -549,7 +549,6 @@ private def runRendezvousChecks : IO Unit := do
 -- the replyRecv three-stage composite:
 #check @stageDeliveredMessage_preserves_ipcInvariantFull
 #check @stageWokenDelivery_preserves_ipcInvariantFull
-#check @stageWokenSendCompletion_preserves_ipcInvariantFull
 #check @endpointReplyRecvOnCore_preserves_ipcInvariantFull
 -- WS-RR RR3.23–RR3.25 — the dispatch payoffs and their pre-state packs
 -- (the capability tier production in `API.lean`; the two dispatch tiers

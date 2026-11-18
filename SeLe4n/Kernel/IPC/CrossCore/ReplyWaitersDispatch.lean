@@ -116,18 +116,6 @@ theorem stageWokenDelivery_replyViews_eq (st : SystemState) (w? : Option SeLe4n.
   · exact stageDeliveredMessage_replyViews_eq _ _ _ hInv
   · rfl
 
-theorem stageWokenSendCompletion_replyViews_eq (st : SystemState) (w? : Option SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) :
-    (Architecture.stageWokenSendCompletion st w?).replyViews = st.replyViews := by
-  unfold Architecture.stageWokenSendCompletion
-  split
-  · rfl
-  · split
-    · split
-      · exact writeReturnFrameToTcb_replyViews_eq _ _ _ hInv
-      · rfl
-    · rfl
-
 theorem recordPendingFault_replyViews_eq (st : SystemState) (t : SeLe4n.ThreadId)
     (tf : ThreadFault) (hInv : st.objects.invExt) :
     (recordPendingFault st t tf).replyViews = st.replyViews :=
@@ -643,9 +631,7 @@ theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
             have hI4 := applyReceiveLegPipHandoff_preserves_objects_invExt st3 tid nxt
               ((recordedReplyServer? st prevCaller).getD tid) ec hI3
             refine replyWaitersConsistent.of_views ?_ hB2
-            rw [stageWokenSendCompletion_replyViews_eq _ _
-                (replyRecvAnswerCaller_preserves_objects_invExt _ _ _ _ hI4),
-              replyRecvAnswerCaller_replyViews_eq _ _ _ _ hI4,
+            rw [replyRecvAnswerCaller_replyViews_eq _ _ _ _ hI4,
               applyReceiveLegPipHandoff_replyViews_eq _ _ _ _ _ hI3,
               replyRecvPostReceiveDonation_replyViews_eq hI2 hD]
 

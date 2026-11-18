@@ -366,7 +366,6 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
             P.toEntryPremises.queueHeadCancelFacts h⟩
     obtain ⟨c0, w0, hIC, hHC⟩ := hSC
     generalize cancelRecvBusyReply ctx tid gate decoded ec st = stC at h c0 w0 hIC hHC
-    simp only at h
     by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
     · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the caller's
       -- badge register.
@@ -390,12 +389,9 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
       obtain ⟨hV, hVInv⟩ := stepCovers_of_pair_eq
         (endpointReceiveDualWithCapsOnCore_stepCovers e' hIC) hRecv
       obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e' hVInv hHand
-      have hS1 := stageWokenSendCompletion_keyFrame stDon
-        ((stC.getEndpoint? epId).bind (·.sendQ.head)) hDInv
       obtain ⟨w1, i1⟩ := receiveArmCompletion_savedRegsWrittenFree (e := e') (base := st)
         hIC hHC hRecv hHand
-      exact ((hW (stepCovers_trans c0 (stepCovers_trans (stepCovers_trans hV hD)
-        hS1.stepCovers)) (w0.trans w1)).trans
+      exact ((hW (stepCovers_trans c0 (stepCovers_trans hV hD)) (w0.trans w1)).trans
         (bankFrame.stageDeliveredMessage_caller _ i1)).bankAgree hA
     · cases h
   cases hId : decoded.syscallId <;> rw [hId] at h <;> dsimp only at h

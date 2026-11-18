@@ -701,26 +701,6 @@ theorem sendHead_backward {st s : SystemState} {epId : SeLe4n.ObjId} {t : SeLe4n
       (hB _ _ ((SystemState.getEndpoint?_eq_some_iff s epId ep).mp hE))]
     exact h
 
-/-- **A send's completion staging writes the woken sender alone**, so it writes
-only threads free at `base` when the sender it names is. -/
-theorem stageWokenSendCompletion_savedRegsWrittenFree {e : CoreId} {base s : SystemState}
-    {w : Option SeLe4n.ThreadId} (hInv : s.objects.invExt)
-    (hF : ∀ t, w = some t → offCoreFree e base t) :
-    savedRegsWrittenFree e base s (Architecture.stageWokenSendCompletion s w) ∧
-      (Architecture.stageWokenSendCompletion s w).objects.invExt := by
-  refine ⟨?_, stageWokenSendCompletion_objects_invExt s w hInv⟩
-  cases w with
-  | none => exact .refl _
-  | some t =>
-    unfold Architecture.stageWokenSendCompletion
-    try dsimp only
-    split
-    · split
-      · exact .of_kept (writeReturnFrameToTcb_savedRegsKeptExcept s t _ hInv) fun _ h =>
-          h ▸ hF t rfl
-      · exact .refl _
-    · exact .refl _
-
 /-- **A successful reply leg names a thread blocked on its reply**: the leg
 refuses any other. -/
 theorem endpointReplyOnCore_ok_target_notReady {replier target : SeLe4n.ThreadId}
@@ -786,15 +766,12 @@ theorem receiveArmCompletion_savedRegsWrittenFree {epId : SeLe4n.ObjId} {tid : S
       = (s1, .ok (dequeued, summary, sgi)))
     (hHand : applyReceiveRendezvousHandoff s1 tid dequeued ec = .ok stDon) :
     savedRegsWrittenFree e base st
-      (Architecture.stageWokenSendCompletion stDon ((st.getEndpoint? epId).bind (·.sendQ.head))) ∧
-    (Architecture.stageWokenSendCompletion stDon
-      ((st.getEndpoint? epId).bind (·.sendQ.head))).objects.invExt := by
+      stDon ∧
+    stDon.objects.invExt := by
   have h1 := endpointReceiveDualWithCapsOnCore_savedRegsUnwritten epId tid replyId ec hInv
   rw [hRecv] at h1
   have h2 := h1.trans (applyReceiveRendezvousHandoff_savedRegsUnwritten h1.2 hHand)
-  obtain ⟨w1, i1⟩ := stageWokenSendCompletion_savedRegsWrittenFree (e := e) (base := base) h2.2
-    hHead
-  exact ⟨h2.writtenFree.trans w1, i1⟩
+  exact ⟨h2.writtenFree, h2.2⟩
 
 /-- WS-ZA ZA6.26: **the receive arm writes only the woken sender and the
 caller**: up to the caller's staging it writes only the woken sender
@@ -810,7 +787,7 @@ theorem receiveArm_savedRegsWrittenFree {epId : SeLe4n.ObjId} {tid : SeLe4n.Thre
       = (s1, .ok (dequeued, summary, sgi)))
     (hHand : applyReceiveRendezvousHandoff s1 tid dequeued ec = .ok stDon) :
     savedRegsWrittenFree ec base st (Architecture.stageDeliveredMessage
-      (Architecture.stageWokenSendCompletion stDon ((st.getEndpoint? epId).bind (·.sendQ.head)))
+      stDon
       tid n) := by
   obtain ⟨w1, i1⟩ := receiveArmCompletion_savedRegsWrittenFree (e := ec) hInv hHead hRecv hHand
   obtain ⟨k, -⟩ := stageDeliveredMessage_savedRegsKeptExcept _ tid n i1
@@ -974,11 +951,7 @@ theorem endpointReplyRecvOnCore_savedRegsWrittenFree {epId : SeLe4n.ObjId}
   have h4 := h3.trans (applyReceiveLegPipHandoff_savedRegsUnwritten st3 tid nextThread
     ((recordedReplyServer? st prevCaller).getD tid) ec h3.2)
   obtain ⟨k5, i5⟩ := replyRecvAnswerCaller_savedRegsKeptExcept answer _ prevCaller _ h4.2
-  obtain ⟨w6, i6⟩ := stageWokenSendCompletion_savedRegsWrittenFree (e := e) (base := st)
-    (w := (st1p.getEndpoint? epId).bind (·.sendQ.head)) i5 fun _ ht =>
-      offCoreFree_of_sendHead hD hQ hRT hBNR
-        (sendHead_backward (fun o ep hx => hB0 o ep (hB1 o ep hx)) ht)
-  exact ⟨(h4.writtenFree.trans (.of_kept k5 fun _ e =>
-    e ▸ offCoreFree_of_notReady hD hRT hBNR hPC)).trans w6, i6⟩
+  exact ⟨h4.writtenFree.trans (.of_kept k5 fun _ e =>
+    e ▸ offCoreFree_of_notReady hD hRT hBNR hPC), i5⟩
 
 end SeLe4n.Kernel

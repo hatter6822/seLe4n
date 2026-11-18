@@ -465,7 +465,7 @@ theorem receiveTakeCaps_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
       endpointReceiveDualWithCapsOnCore endpointId receiver replyId
         core st = (S4, .ok (s, summary, W.2))) ∧
       applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
-      Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion S4 (some s))
+      Architecture.stageDeliveredMessage S4
           receiver 0 =
         performReceiveDelivered st endpointId s sTcb.queueNextCode receiver core
           f.x0 f.x1 f.x2 f.x3 f.x4 f.x5 := by
@@ -517,8 +517,7 @@ theorem rendezvousDequeuedCall_of_keepsBindings {B S : SystemState} (h : KeepsBi
 /-- **The take of a blocked capability-carrying send that transfers, delivered**:
 the WithCaps receive takes the sender in place and runs the specification's
 transfer on the state the take left, the rendezvous hands off no donation, and
-staging the woken sender's completion and the receiver's message with the
-transfer's report writes `performTakeCapsDelivered`'s state. -/
+staging the receiver's message with the transfer's report writes `performTakeCapsDelivered`'s state. -/
 theorem receiveTakeCapsTransfer_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (core : Concurrency.CoreId) (s : SeLe4n.ThreadId) (sTcb rt : TCB)
@@ -538,7 +537,7 @@ theorem receiveTakeCapsTransfer_delivered (st : SystemState) (endpointId : SeLe4
       endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
         (st'', .ok (s, summary, W.2)) ∧
       applyReceiveRendezvousHandoff st'' receiver s core = .ok st'' ∧
-      Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion st'' (some s))
+      Architecture.stageDeliveredMessage st''
           receiver summary.capInfo =
         performTakeCapsDelivered st endpointId s sTcb.queueNextCode receiver core
           SeLe4n.arm64DefaultLayout mi.length
@@ -612,16 +611,8 @@ theorem receiveTakeCapsTransfer_delivered (st : SystemState) (endpointId : SeLe4
     apply applyReceiveRendezvousHandoff_of_no_call
     exact rendezvousDequeuedCall_of_keepsBindings hK s
       (receiveTake_dequeuedNoCall st endpointId ep receiver core s sTcb _ hE hH hT hG)
-  · have hNoZ : (Architecture.stageWokenSendCompletion Y1 (some s)).objects.noResizeDue := by
-      unfold Architecture.stageWokenSendCompletion
-      dsimp only
-      split
-      · split
-        · exact updateTcb_noResizeDue _ _ _ hNo1
-        · exact hNo1
-      · exact hNo1
-    rw [stageWokenSendCompletion_msg _ receiver s _ _ _ hRS hNo1,
-      stageDeliveredMessage_holdMessage_caps _ _ _ _ hNoZ
+  · have hNoZ : Y1.objects.noResizeDue := hNo1
+    rw [stageDeliveredMessage_holdMessage_caps _ _ _ _ hNoZ
         (by rw [hMsg, Architecture.regMessageBody_size]
             simp only [Architecture.regMessageLength]
             have : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
@@ -630,7 +621,7 @@ theorem receiveTakeCapsTransfer_delivered (st : SystemState) (endpointId : SeLe4
     have hKY : KeepsBindings (W.1.updateTcb receiver receiverReady) Y1 :=
       receiveTransferCaps_keepsBindings _ _ _ (KeepsBindings.refl _ hNoY) hTY
     have hFrame : ∀ g, writeDeliveredFrameIfReady
-        (Architecture.stageWokenSendCompletion Y1 (some s))
+        Y1
         receiver (regMessageFrameCapsW SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
           (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged summary.capInfo) g =
         finishTakeCaps summary.capInfo Y1 s receiver SeLe4n.arm64DefaultLayout mi.length
@@ -641,11 +632,10 @@ theorem receiveTakeCapsTransfer_delivered (st : SystemState) (endpointId : SeLe4
           (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 3) := by
       intro g
       unfold writeDeliveredFrameIfReady finishTakeCaps
-      rw [stageWokenSendCompletion_getTcb?_ne _ s receiver hRS hNo1]
       cases hZ : Y1.getTcb? receiver with
       | none =>
         exact (mapTcbInPlace_eq_self_of_getTcb?_none _ _ _
-          (by rw [stageWokenSendCompletion_getTcb?_ne _ s receiver hRS hNo1, hZ])).symm
+          (by rw [hZ])).symm
       | some t =>
         simp only [ready_of_keepsBindings_receiverReady hNoW hKY hZ, ↓reduceIte]
         rfl
@@ -693,8 +683,7 @@ theorem receiveCallTakeCapsTransfer_delivered (st : SystemState) (endpointId : S
         (st'', .ok (s, summary, none)) ∧
       applyReceiveRendezvousHandoff st'' receiver s core =
         .ok (applyReceiverPipHandoff st'' receiver core) ∧
-      Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion
-          (applyReceiverPipHandoff st'' receiver core) (some s)) receiver summary.capInfo =
+      Architecture.stageDeliveredMessage (applyReceiverPipHandoff st'' receiver core) receiver summary.capInfo =
         performCallTakeCapsDelivered st endpointId s sTcb.queueNextCode receiver rid core
           SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
           (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.spaceCells[2] sTcb.ipcBuffer
@@ -785,8 +774,6 @@ theorem receiveCallTakeCapsTransfer_delivered (st : SystemState) (endpointId : S
   · obtain ⟨x'', hx'', hxI''⟩ := propagatePipChainCrossCore_ipcStateCarried _ receiver core hNoZ
       s x' ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hx')
     unfold applyReceiverPipHandoff
-    rw [Architecture.stageWokenSendCompletion_id_when_not_ready _ s x'' hx''
-      (by rw [hxI'', hxI']; simp)]
     rw [propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNo1,
       stageDeliveredMessage_holdMessage_caps _ _ _ _
         (propagatePipChainCrossCore_noResizeDue _ _ _ hNo1)
@@ -829,7 +816,7 @@ theorem receiveTakeCapsTransferLong_delivered (st : SystemState) (endpointId : S
       endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
         (st'', .ok (s, summary, W.2)) ∧
       applyReceiveRendezvousHandoff st'' receiver s core = .ok st'' ∧
-      Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion st'' (some s))
+      Architecture.stageDeliveredMessage st''
           receiver summary.capInfo =
         performTakeCapsDeliveredLong st endpointId s sTcb.queueNextCode receiver core mi.length
           (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
@@ -909,23 +896,15 @@ theorem receiveTakeCapsTransferLong_delivered (st : SystemState) (endpointId : S
     apply applyReceiveRendezvousHandoff_of_no_call
     exact rendezvousDequeuedCall_of_keepsBindings hK s
       (receiveTake_dequeuedNoCall st endpointId ep receiver core s sTcb _ hE hH hT hG)
-  · have hNoZ : (Architecture.stageWokenSendCompletion Y1 (some s)).objects.noResizeDue := by
-      unfold Architecture.stageWokenSendCompletion
-      dsimp only
-      split
-      · split
-        · exact updateTcb_noResizeDue _ _ _ hNo1
-        · exact hNo1
-      · exact hNo1
+  · have hNoZ : Y1.objects.noResizeDue := hNo1
     have hKY : KeepsBindings (W.1.updateTcb receiver receiverReady) Y1 :=
       receiveTransferCaps_keepsBindings _ _ _ (KeepsBindings.refl _ hNoY) hTY
     have hAY : ipcBufferReadsAgree (W.1.updateTcb receiver receiverReady) P :=
       (ipcBufferReadsAgree_updateTcb _ receiver receiverReady (fun _ => ⟨rfl, rfl⟩) hNoW).trans
         ((ipcBufferReadsAgree_wakeThread _ s core hNo2).trans
           (ipcBufferReadsAgree_updateTcb _ s receiverReady (fun _ => ⟨rfl, rfl⟩) hNoP))
-    have hAZ : ipcWordReadsAgree (Architecture.stageWokenSendCompletion Y1 (some s)) P :=
-      (ipcBufferReadsAgree_stageWokenSendCompletion Y1 s hNo1).words.trans
-        ((ipcWordReadsAgree_receiveTransferCaps _ _ _ hNoY hTY).trans hAY.words)
+    have hAZ : ipcWordReadsAgree Y1 P :=
+      (ipcWordReadsAgree_receiveTransferCaps _ _ _ hNoY hTY).trans hAY.words
     have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
     have hFin : finishTakeCapsLong summary.capInfo Y1 s receiver mi.length
         (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
@@ -933,20 +912,19 @@ theorem receiveTakeCapsTransferLong_delivered (st : SystemState) (endpointId : S
         (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 1)
         (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 2)
         (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 3) =
-        deliverLongCapsFrame summary.capInfo (Architecture.stageWokenSendCompletion Y1 (some s))
+        deliverLongCapsFrame summary.capInfo Y1
           receiver SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length s
           (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged := by
       unfold finishTakeCapsLong deliverLongCapsFrame
-      cases hZ : (Architecture.stageWokenSendCompletion Y1 (some s)).getTcb? receiver with
+      cases hZ : Y1.getTcb? receiver with
       | none =>
         unfold deliverLongSendFrameWords deliverLongSendFrame
         rw [hZ]
       | some t =>
         have hZ' := hZ
-        rw [stageWokenSendCompletion_getTcb?_ne _ s receiver hRS hNo1] at hZ'
         exact deliverLongSendFrameWords_eq _ receiver SeLe4n.arm64DefaultLayout
           sTcb.registerContext _ s _ _ _ t hZ (ready_of_keepsBindings_receiverReady hNoW hKY hZ')
-    rw [stageWokenSendCompletion_msg _ receiver s _ _ _ hRS hNo1, hMsg, TCB.ipcBadgeView_eq_opt,
+    rw [hMsg, TCB.ipcBadgeView_eq_opt,
       ← deliverLongCapsFrame_eq _ P receiver s SeLe4n.arm64DefaultLayout sTcb.registerContext
         mi.length _ _ summary.capInfo hNoZ hAZ hSz (by omega), ← hFin]
     unfold performTakeCapsDeliveredLong
@@ -991,8 +969,7 @@ theorem receiveCallTakeCapsTransferLong_delivered (st : SystemState)
         (st'', .ok (s, summary, none)) ∧
       applyReceiveRendezvousHandoff st'' receiver s core =
         .ok (applyReceiverPipHandoff st'' receiver core) ∧
-      Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion
-          (applyReceiverPipHandoff st'' receiver core) (some s)) receiver summary.capInfo =
+      Architecture.stageDeliveredMessage (applyReceiverPipHandoff st'' receiver core) receiver summary.capInfo =
         performCallTakeCapsDeliveredLong st endpointId s sTcb.queueNextCode receiver rid core
           SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
           (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.spaceCells[2] sTcb.ipcBuffer
@@ -1087,8 +1064,6 @@ theorem receiveCallTakeCapsTransferLong_delivered (st : SystemState)
   · obtain ⟨x'', hx'', hxI''⟩ := propagatePipChainCrossCore_ipcStateCarried _ receiver core hNoZ
       s x' ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hx')
     unfold applyReceiverPipHandoff
-    rw [Architecture.stageWokenSendCompletion_id_when_not_ready _ s x'' hx''
-      (by rw [hxI'', hxI']; simp)]
     have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
     have hAZ : ipcWordReadsAgree (PriorityInheritance.propagatePipChainCrossCore Y1 receiver core).1
         (storePopHead st endpointId false s sTcb.queueNext) :=
@@ -4029,13 +4004,13 @@ theorem resolveRecvReplyK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
   resolveRecvReplyRootK_eq st tid _ canReply replyAddr onErr onOk
 
 /-- The checked receive arm's rendezvous through the specification: the
-WithCaps receive, the rendezvous hand-off, then the woken sender's completion
-and the receiver's message staged. -/
+WithCaps receive, the rendezvous hand-off, then the receiver's message staged
+(the woken plain sender is only made ready: seL4 writes none of its
+registers). -/
 @[inline] def endpointReceiveRendezvousR (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (replyCode : Nat) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
       let rid := SeLe4n.ReplyId.ofOptCode replyCode
-      let wokenSender? := (st.getEndpoint? epId).bind (·.sendQ.head)
       match endpointReceiveDualWithCapsOnCore epId tid rid
       executingCore st with
       | (st', .ok (dequeued, summary, _sgi)) =>
@@ -4043,7 +4018,7 @@ and the receiver's message staged. -/
           | .error e => .error (e, st)
           | .ok stDon =>
               .ok ((), Architecture.stageDeliveredMessage
-                (Architecture.stageWokenSendCompletion stDon wokenSender?) tid
+                stDon tid
                 summary.capInfo)
       | (_, .error e) => .error (e, st)
 
@@ -4515,7 +4490,7 @@ theorem endpointReceiveReplyResolvedR_eq (decoded : SyscallDecodeResult) (tid : 
               · exact hT]
             simp only [hB]
           rw [applyReceiveRendezvousHandoff_of_no_call _ _ _ _ hNoCall]
-          simp only [hS, Option.bind_some, Architecture.stageWokenSendCompletion_none]
+          simp only [hS, Option.bind_some]
           unfold Architecture.stageDeliveredMessage
           simp only [hT, hB, reduceCtorEq, ↓reduceIte]
         | _ => simp only [SystemState.getTcb?, hR] at hO; cases hO

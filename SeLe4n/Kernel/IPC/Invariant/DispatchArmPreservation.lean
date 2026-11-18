@@ -5741,24 +5741,6 @@ theorem stageWokenDelivery_preserves_objects_invExt
       rw [Architecture.stageWokenDelivery_some]
       exact stageDeliveredMessage_preserves_objects_invExt st tid capInfo hObjInv
 
-/-- Send-completion staging: the unit success frame or the identity. -/
-theorem stageWokenSendCompletion_preserves_ipcInvariantFull
-    (st : SystemState) (woken? : Option SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (Architecture.stageWokenSendCompletion st woken?) := by
-  unfold Architecture.stageWokenSendCompletion
-  cases woken? with
-  | none => exact hInv
-  | some tid =>
-      dsimp only []
-      cases st.getTcb? tid with
-      | none => exact hInv
-      | some tcb =>
-          dsimp only []
-          split
-          · exact writeReturnFrameToTcb_preserves_ipcInvariantFull st tid _ hObjInv hInv
-          · exact hInv
-
 /-- Staging never disturbs the object-store invariant: every arm is one TCB
 insert or the identity. -/
 theorem stageDeliveredMessage_objects_invExt
@@ -5776,23 +5758,6 @@ theorem stageDeliveredMessage_objects_invExt
         | some msg =>
             exact writeDeliveredFrameToTcb_preserves_objects_invExt st tid _ hObjInv
       · exact hObjInv
-
-theorem stageWokenSendCompletion_objects_invExt
-    (st : SystemState) (woken? : Option SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt) :
-    (Architecture.stageWokenSendCompletion st woken?).objects.invExt := by
-  unfold Architecture.stageWokenSendCompletion
-  cases woken? with
-  | none => exact hObjInv
-  | some tid =>
-      dsimp only []
-      cases st.getTcb? tid with
-      | none => exact hObjInv
-      | some tcb =>
-          dsimp only []
-          split
-          · exact writeReturnFrameToTcb_preserves_objects_invExt st tid _ hObjInv
-          · exact hObjInv
 
 /-- **WS-RM (`v0.35.6`)**: a return-frame writeback carries no chain data.  Its
 one write is a `.tcb` at a key that already held one (`getTcb?` is what selects
@@ -5850,25 +5815,6 @@ theorem stageDeliveredMessage_donationChainFrame
             exact recordPhysicalWrites_donationChainFrame st _ _
               (writeDeliveredFrameToTcb_donationChainFrame st tid _ hObjInv)
       · exact donationChainFrame.refl st
-
-/-- **WS-RM (`v0.35.6`)**: and so does the woken sender's completion frame. -/
-theorem stageWokenSendCompletion_donationChainFrame
-    (st : SystemState) (woken? : Option SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt) :
-    donationChainFrame st (Architecture.stageWokenSendCompletion st woken?) := by
-  unfold Architecture.stageWokenSendCompletion
-  cases woken? with
-  | none => exact donationChainFrame.refl st
-  | some tid =>
-      dsimp only []
-      cases hLk : st.getTcb? tid with
-      | none => simp only []; exact donationChainFrame.refl st
-      | some tcb =>
-          simp only []
-          split
-          · exact writeReturnFrameToTcb_donationChainFrame st tid _ hObjInv
-          · exact donationChainFrame.refl st
-
 
 /-! ### WS-ZA ZA6.32: the interrupt-control and interrupt-handler invocations -/
 

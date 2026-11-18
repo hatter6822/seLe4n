@@ -151,8 +151,6 @@ macro_rules | `(tactic| machine_chain) => `(tactic|
 macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (Architecture.stageWokenDelivery_machine_eq _ _ _).trans ?_; machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
-  (with_reducible refine (Architecture.stageWokenSendCompletion_machine_eq _ _).trans ?_; machine_chain))
-macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (Architecture.writeDeliveredFrameToTcb_machine_eq _ _ _).trans ?_; machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (detachNtfnHead_machine _ _ _).trans ?_; machine_chain))
@@ -826,19 +824,6 @@ theorem stageWokenDelivery_keyFrame (st : SystemState) (woken? : Option SeLe4n.T
   split
   · exact stageDeliveredMessage_keyFrame st _ n hInv
   · exact capabilityKeyFrame_of_objects_scheduler_eq hInv rfl rfl
-
-theorem stageWokenSendCompletion_keyFrame (st : SystemState) (woken? : Option SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) :
-    capabilityKeyFrame st (Architecture.stageWokenSendCompletion st woken?) := by
-  have hRefl := capabilityKeyFrame_of_objects_scheduler_eq hInv rfl rfl
-  unfold Architecture.stageWokenSendCompletion
-  split
-  · exact hRefl
-  · split
-    · split
-      · exact writeReturnFrameToTcb_keyFrame st _ _ hInv
-      · exact hRefl
-    · exact hRefl
 
 /-! ### Call -/
 
@@ -1759,10 +1744,7 @@ theorem endpointReplyRecvOnCore_stepCovers (e : CoreId)
       have hK := stageDeliveredMessage_keyFrame _ prevCaller xs.capInfo hWInv
       exact ⟨hK.stepCovers, hK.2.2⟩
     | some o => exact faultReplyApplyOnCore_stepCovers e _ prevCaller o hWInv
-  have hS2 := stageWokenSendCompletion_keyFrame _ ((st1p.getEndpoint? epId).bind (·.sendQ.head))
-    hS1Inv
   exact ⟨stepCovers_trans (stepCovers_trans (stepCovers_trans (stepCovers_trans
-    (stepCovers_trans (stepCovers_trans hR hP) hV) hD) hW) hS1) hS2.stepCovers,
-    hS2.2.2⟩
+    (stepCovers_trans hR hP) hV) hD) hW) hS1, hS1Inv⟩
 
 end SeLe4n.Kernel

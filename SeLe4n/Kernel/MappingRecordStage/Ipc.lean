@@ -448,17 +448,6 @@ theorem stageWokenDelivery_mappingStage (st : SystemState) (woken? : Option SeLe
   | none => exact MappingStage.refl _
   | some tid => exact stageDeliveredMessage_mappingStage st tid n
 
-theorem stageWokenSendCompletion_mappingStage (st : SystemState) (woken? : Option SeLe4n.ThreadId) :
-    MappingStage st (Architecture.stageWokenSendCompletion st woken?) := by
-  unfold Architecture.stageWokenSendCompletion
-  split
-  · exact MappingStage.refl _
-  · split
-    · split
-      · exact writeReturnFrameToTcb_mappingStage st _ _
-      · exact MappingStage.refl _
-    · exact MappingStage.refl _
-
 theorem descheduleAtPlacement_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId) :
     MappingStage st (descheduleAtPlacement st tid) :=
   MappingStage.of_objectsAgreeOffRunLinks (descheduleAtPlacement_preserves_objects_invExt st tid)
@@ -861,10 +850,9 @@ theorem endpointReplyRecvOnCore_mappingStage {answer : Option Architecture.Fault
   · cases h
   rename_i st3 hPost
   cases h
-  exact ((((((hR.trans hP).trans hXs).trans hV).trans
+  exact (((((hR.trans hP).trans hXs).trans hV).trans
     (replyRecvPostReceiveDonation_mappingStage hPost)).trans
     (applyReceiveLegPipHandoff_mappingStage _ _ _ _ _)).trans
-    (replyRecvAnswerCaller_mappingStage answer _ prevCaller _)).trans
-    (stageWokenSendCompletion_mappingStage _ _)
+    (replyRecvAnswerCaller_mappingStage answer _ prevCaller _)
 
 end SeLe4n.Kernel

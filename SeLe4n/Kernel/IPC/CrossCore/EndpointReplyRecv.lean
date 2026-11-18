@@ -597,11 +597,6 @@ def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOut
         match replyRecvReplyTransfer answer st tid prevCaller grant st1q with
         | .error e => .error e
         | .ok (replySummary, st1p) =>
-        -- WS-RA RA.B.5b: capture the send-queue head the receive leg will
-        -- dequeue (from `st1p`, the state that leg runs on) — a *plain* sender
-        -- completing there is owed the unit success frame; a `Call` sender
-        -- lands `.blockedOnReply` and the completion stager's guard skips it.
-        let wokenSender? := (st1p.getEndpoint? epId).bind (·.sendQ.head)
         -- WS-SM SM6.D (#7.2 fold): the receive leg links the *same* reply object
         -- `rid` (freed by the reply leg's folded consume — PR #827 review #3, and
         -- taken off its reply stack by the pop above — WS-RM) to the next `Call`
@@ -642,12 +637,10 @@ def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOut
                 -- this one, so the non-delegated arm is unchanged.
                 -- The answered caller: its delivered message staged, or, on a
                 -- faulted caller, the fault answered (`replyRecvAnswerCaller`).
-                .ok (summary, Architecture.stageWokenSendCompletion
-                          (replyRecvAnswerCaller answer
+                .ok (summary, replyRecvAnswerCaller answer
                             (applyReceiveLegPipHandoff st3 tid nextThread recordedServer
                               executingCore)
                             prevCaller replySummary.capInfo)
-                          wokenSender?)
 
 /-- The `.replyRecv` composite for a caller carrying **no** fault: the reply leg
 delivers `msg` and its return frame is staged (`endpointReplyRecvAnsweringOnCore`

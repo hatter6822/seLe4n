@@ -2083,10 +2083,6 @@ run_check "INVARIANT" rg -n '^def applyReceiveRendezvousDonation($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n 'applyReceiveRendezvousHandoff st. tid dequeued' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem dispatchWithCapChecked_receive_delegates[^\n]*(\n([ \t][^\n]*)?)*applyReceiveRendezvousHandoff st. tid dequeued" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.receive =>\n      \u2200 \(ctx : LabelingContext\)[^\n]*(\n([ \t][^\n]*)?)*applyReceiveRendezvousHandoff st. tid dequeued" SeLe4n/Kernel/API.lean'
-# NEGATIVE: and the unchecked arm must not stage from the RECEIVE's post-state,
-# which is what it did before OD3.6 -- a token-preserving mutation that keeps the
-# donation call in the file while staging around it.
-run_negative_check "INVARIANT" rg -n 'stageWokenSendCompletion st. wokenSender' SeLe4n/Kernel/API.lean
 # ...and `.replyRecv`'s post-receive donation runs the SAME step rather than its
 # own copy.  The negative refuses ANY direct `applyCallDonationOnCore` inside
 # that declaration: keeping the call while un-sharing it is how the two would
@@ -12739,15 +12735,11 @@ run_check "INVARIANT" rg -n '^def writeReturnFrameToTcb($|[ ({:\[\]])' SeLe4n/Ke
 run_check "INVARIANT" rg -n '^def readReturnFrame($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem readReturnFrame_writeReturnFrame($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^def stageDeliveredMessage($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-# WS-RA RA.B.5b: the blocked-waiter staging seam — the Option-lifted stagers
-# the unblocking arms compose, the plan-named theorem, and its unit dual.
+# WS-RA RA.B.5b: the blocked-waiter staging seam — the Option-lifted stager
+# the unblocking arms compose and the plan-named theorem.
 run_check "INVARIANT" rg -n '^@\[inline\] def stageWokenDelivery($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^@\[inline\] def stageWokenSendCompletion($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem stageWokenSendCompletion_stages_zero($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem blockedReturn_staged_in_waiter_frame($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem blockedUnitReturn_staged_in_sender_frame($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem stageWokenDelivery_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
-run_check "INVARIANT" rg -n '^theorem stageWokenSendCompletion_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # WS-RA RA.B.8: the per-arm shape-coherence family — the classification and
 # the live dispatch arms cannot disagree (`.call` through the reply arm, §3.5).
 run_check "INVARIANT" rg -n '^theorem dispatchArm_notificationWait_matches_returnShape($|[ ({:\[\]])' SeLe4n/Kernel/API.lean

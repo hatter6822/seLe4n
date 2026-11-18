@@ -406,20 +406,19 @@ theorem callDispatchChecked_inPlace_transfer (ctx : LabelingContext) (st : Syste
 
 /-! ## The take of a blocked send, delivered -/
 
-/-- **A take's last writes, with the transfer's report**: the woken sender's
-completion frame on the state the transfer left, then the receiver's frame
-carrying the report.  The message words enter as words, read from the sender's
-registers before the take: the completion rewrites those registers, so a
-register file still held here would be copied. -/
+/-- **A take's last write, with the transfer's report**: the receiver's frame
+carrying the report, on the state the transfer left.  The message words enter
+as words, read from the sender's registers before the take, so no register
+file is held across the transfer. -/
 @[noinline] def finishTakeCaps (capInfo : Nat) (Y : SystemState) (s receiver : SeLe4n.ThreadId)
     (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) (w0 w2 w3 w4 w5 : UInt64) :
     SystemState :=
-  (Architecture.stageWokenSendCompletion Y (some s)).mapTcbInPlace receiver
+  Y.mapTcbInPlace receiver
     (withFrameWords w0 (regMessageInfoWordCaps layout len capInfo) w2 w3 w4 w5)
 
 /-- **The take of a blocked send that transfers capabilities, delivered**: the
 sender popped, made ready and woken, the receiver made ready, the transfer in
-place, the sender's completion frame, then the receiver's frame with the
+place, then the receiver's frame with the
 transfer's report, its words `w0`, `w2`..`w5` read from the sender's saved
 registers before the take.  The sender and the receiver enter as the words the
 transfer reads of them (`capTransferK`), read before the take. -/
@@ -454,20 +453,6 @@ theorem ready_of_keepsBindings_receiverReady {W Y : SystemState} {r : SeLe4n.Thr
     simp only [Option.map_some, Option.some.injEq] at h0'
     rw [hI, ← h0']
     simp only [receiverReady, TCB.ipcState_setIpcState]
-
-/-- The woken sender's completion frame reads every other thread where it was. -/
-theorem stageWokenSendCompletion_getTcb?_ne (Y : SystemState) (s r : SeLe4n.ThreadId)
-    (hNe : s ≠ r) (hNo : Y.objects.noResizeDue) :
-    (Architecture.stageWokenSendCompletion Y (some s)).getTcb? r = Y.getTcb? r := by
-  unfold Architecture.stageWokenSendCompletion
-  dsimp only
-  split
-  · split
-    · unfold Architecture.writeReturnFrameToTcb
-      rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo, SystemState.getTcb?_mapTcbInPlace,
-        if_neg hNe]
-    · rfl
-  · rfl
 
 /-- The take's state before its transfer reads every buffer and CNode where the
 receive found it. -/

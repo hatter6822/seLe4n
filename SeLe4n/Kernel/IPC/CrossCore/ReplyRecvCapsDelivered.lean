@@ -175,8 +175,7 @@ theorem replyRecvOnCore_blocks_transfer (st : SystemState) (epId : SeLe4n.ObjId)
     have h := hG2
     simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at h
     exact h.1.1.1.1.1.1.1
-  simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff,
-    Architecture.stageWokenSendCompletion_none, replyRecvAnswerCaller]
+  simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff, replyRecvAnswerCaller]
 
 /-- The receive leg that blocks, after the reply's transfer: the server's block
 on the endpoint, the server taken off its core, then its priority walk. -/
@@ -408,8 +407,7 @@ theorem replyRecvOnCore_donated_transfer (st : SystemState) (epId : SeLe4n.ObjId
     simp only [hSRes, Bool.false_eq_true, ↓reduceIte, hTb, hBk]
   unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
   simp only [hRecS, Option.getD_some, hEq, hPop, hXf', hRecv, hEp2, Option.bind_some, hS]
-  simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff,
-    Architecture.stageWokenSendCompletion_none, replyRecvAnswerCaller]
+  simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff, replyRecvAnswerCaller]
 
 /-- The donated receive leg after the reply's transfer: the server's block on
 the endpoint, the server taken off its core and off its placement, then its
@@ -646,8 +644,7 @@ theorem replyRecvOnCore_unheld_transfer (st : SystemState) (epId : SeLe4n.ObjId)
     have h := hG2
     simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at h
     exact h.1.1.1.1.1.1.1
-  simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff,
-    Architecture.stageWokenSendCompletion_none, replyRecvAnswerCaller]
+  simp [replyRecvPostReceiveDonation_none_self _ _ _ _ hRes, applyReceiveLegPipHandoff, replyRecvAnswerCaller]
 
 /-- **The unheld reply-receive whose reply leg transfers, delivered**: the reply
 leg's writes, the unheld pop and its settle, the transfer in place on no

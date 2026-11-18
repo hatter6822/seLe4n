@@ -1111,21 +1111,19 @@ theorem readReturnFrame_writeCallReturnWord (st : SystemState) (tid : SeLe4n.Thr
 -- counterparty that was blocked in ITS OWN syscall, the woken thread's
 -- return frame must be staged now — its own boundary crossing ended in
 -- `.blocks` with no frame written, and the context restore (WS-BP BP7.6) delivers
--- whatever its `registerContext` holds.  Every wake in the tree delivers
--- through one of two shapes, and each gets a guarded Option-lifted stager
--- so the dispatch arms compose them in one call:
+-- whatever its `registerContext` holds.  A wake that delivers a payload has
+-- the payload's frame staged by a guarded Option-lifted stager the dispatch
+-- arms compose in one call:
 --
 -- * a **payload wake** — the wake wrote `.ready` + `pendingMessage := msg`
 --   (`storeTcbIpcStateAndMessage` / `storeTcbReceiveComplete`): the frame
 --   is `returnFrameOfMessage msg`, which is `stageDeliveredMessage` —
---   `stageWokenDelivery` lifts it over the arm's pre-resolved counterparty;
--- * a **completion wake** — a plain sender whose send finished at a
---   rendezvous was woken `.ready` with its `pendingMessage` *consumed*
---   (`none`): its syscall returns `Unit`, so the frame is the zero frame —
---   `stageWokenSendCompletion`, whose guard (`.ready` AND no pending
---   delivery) keeps it inert on a consumed `Call` sender (which lands
---   `.blockedOnReply` and is owed its frame by the reply path) and on a
---   payload wake (owed `returnFrameOfMessage` instead).
+--   `stageWokenDelivery` lifts it over the arm's pre-resolved counterparty.
+--
+-- A plain sender woken because its send finished at a rendezvous is owed no
+-- frame: seL4's `receiveIPC` only sets it `Running` (`setThreadState`), so it
+-- resumes with the registers it trapped with and the kernel writes none of
+-- them.
 
 /-- WS-RA RA.B.5b: stage the delivered message of an optionally-woken
 counterparty — `stageDeliveredMessage` lifted over the dispatch arm's
@@ -1149,68 +1147,6 @@ delivering transfer's `capInfo`, `0` on transfer-free paths. -/
     (tid : SeLe4n.ThreadId) (capInfo : Nat) :
     stageWokenDelivery st (some tid) capInfo
       = stageDeliveredMessage st tid capInfo := rfl
-
-/-- WS-RA RA.B.5b: stage the **unit success frame** for a woken plain
-sender whose send completed at a rendezvous.  Guarded on the
-counterparty's post-state being `.ready` with **no** pending delivery: a
-consumed `Call` sender lands `.blockedOnReply` (frame owed by the reply
-path), and a `.ready` thread WITH a pending delivery is a payload wake
-owed `returnFrameOfMessage` by `stageWokenDelivery` instead — staging
-zero there would clobber a real value.
-
-`@[inline]` so a caller that names the woken thread (`some s`) builds no
-`Option` cell: the match folds at the call site (WS-ZA ZA4.7). -/
-@[inline] def stageWokenSendCompletion (st : SystemState)
-    (woken? : Option SeLe4n.ThreadId) : SystemState :=
-  match woken? with
-  | none => st
-  | some tid =>
-      match st.getTcb? tid with
-      | some tcb =>
-          if tcb.ipcState = .ready ∧ tcb.pendingMessage = none then
-            writeReturnFrameToTcb st tid .zero
-          else st
-      | none => st
-
-@[simp] theorem stageWokenSendCompletion_none (st : SystemState) :
-    stageWokenSendCompletion st none = st := rfl
-
-/-- The completion stager is inert on a counterparty the rendezvous did
-not complete — a consumed `Call` sender (`.blockedOnReply`), a still-queued
-sender, or any non-`.ready` post-state. -/
-theorem stageWokenSendCompletion_id_when_not_ready
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb)
-    (hNotReady : tcb.ipcState ≠ .ready) :
-    stageWokenSendCompletion st (some tid) = st := by
-  simp only [stageWokenSendCompletion]
-  rw [hTcb]
-  simp [hNotReady]
-
-/-- The completion stager is inert on a payload wake — a `.ready`
-counterparty still holding a pending delivery is owed
-`returnFrameOfMessage`, never the zero frame. -/
-theorem stageWokenSendCompletion_id_when_pending
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (msg : IpcMessage)
-    (hTcb : st.getTcb? tid = some tcb)
-    (hPending : tcb.pendingMessage = some msg) :
-    stageWokenSendCompletion st (some tid) = st := by
-  simp only [stageWokenSendCompletion]
-  rw [hTcb]
-  simp [hPending]
-
-/-- The completion stager's positive arm: a genuinely completed sender
-(`.ready`, delivery consumed) gets exactly the zero frame staged. -/
-theorem stageWokenSendCompletion_stages_zero
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb)
-    (hReady : tcb.ipcState = .ready)
-    (hConsumed : tcb.pendingMessage = none) :
-    stageWokenSendCompletion st (some tid)
-      = writeReturnFrameToTcb st tid .zero := by
-  simp only [stageWokenSendCompletion]
-  rw [hTcb]
-  simp [hReady, hConsumed]
 
 /-- RA.B.5b frame lemma: neither stager touches the scheduler. -/
 theorem stageWokenDelivery_scheduler_eq (st : SystemState)
@@ -1288,40 +1224,6 @@ theorem stageWokenDelivery_declassificationAuditLog_eq (st : SystemState)
   | none => rfl
   | some tid => exact stageDeliveredMessage_declassificationAuditLog_eq st tid capInfo
 
-/-- RA.B.5b frame lemma: the completion stager never touches the
-scheduler. -/
-theorem stageWokenSendCompletion_scheduler_eq (st : SystemState)
-    (woken? : Option SeLe4n.ThreadId) :
-    (stageWokenSendCompletion st woken?).scheduler = st.scheduler := by
-  cases woken? with
-  | none => rfl
-  | some tid =>
-      simp only [stageWokenSendCompletion]
-      cases st.getTcb? tid with
-      | none => rfl
-      | some tcb =>
-          by_cases hGuard : tcb.ipcState = .ready ∧ tcb.pendingMessage = none
-          · simp only [hGuard]
-            exact writeReturnFrameToTcb_scheduler_eq st tid _
-          · simp [hGuard]
-
-/-- RA.B.5b frame lemma: the completion stager never touches the
-machine. -/
-theorem stageWokenSendCompletion_machine_eq (st : SystemState)
-    (woken? : Option SeLe4n.ThreadId) :
-    (stageWokenSendCompletion st woken?).machine = st.machine := by
-  cases woken? with
-  | none => rfl
-  | some tid =>
-      simp only [stageWokenSendCompletion]
-      cases st.getTcb? tid with
-      | none => rfl
-      | some tcb =>
-          by_cases hGuard : tcb.ipcState = .ready ∧ tcb.pendingMessage = none
-          · simp only [hGuard]
-            exact writeReturnFrameToTcb_machine_eq st tid _
-          · simp [hGuard]
-
 /-- **WS-RA RA.B.5b — the plan-named theorem (§3.5, §8).**  A payload wake
 leaves the woken waiter's frame staged: whenever a wake delivered `msg`
 into a counterparty (post-state `.ready` with `pendingMessage = some msg`
@@ -1353,19 +1255,6 @@ theorem blockedReturn_staged_in_waiter_frame
   exact readReturnFrame_writeDeliveredFrame st w
     (returnFrameOfMessage msg capInfo (messageOverflowWrites st tcb msg).length)
     tcb hTcb hObjInv
-
-/-- WS-RA RA.B.5b — the completion dual: a woken plain sender's staged
-frame is the zero frame (unit success), recovered by the boundary read. -/
-theorem blockedUnitReturn_staged_in_sender_frame
-    (st : SystemState) (s : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? s = some tcb)
-    (hReady : tcb.ipcState = .ready)
-    (hConsumed : tcb.pendingMessage = none)
-    (hObjInv : st.objects.invExt) :
-    readReturnFrame (stageWokenSendCompletion st (some s)) s
-      = SyscallReturnFrame.zero := by
-  rw [stageWokenSendCompletion_stages_zero st s tcb hTcb hReady hConsumed]
-  exact readReturnFrame_writeReturnFrame st s .zero tcb hTcb hObjInv
 
 -- ============================================================================
 -- §5  Error carriage on the x1 label (RA.A.5, RA.A.6)

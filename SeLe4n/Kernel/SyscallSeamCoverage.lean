@@ -232,7 +232,6 @@ theorem receiveResolvedArm_coversWrites (ctx : LabelingContext)
   unfold receiveLockOperands at hOps
   unfold receiveResolvedArm at hDisp
   generalize hC : cancelRecvBusyReply ctx tid gate decoded e st = stC at hDisp
-  simp only at hDisp
   by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
   · -- WS-SX SX7.2: `NBRecv` with no sender waiting: the holder's cancel, then
     -- the badge register written, which moves no scheduler state.
@@ -286,8 +285,7 @@ theorem receiveResolvedArm_coversWrites (ctx : LabelingContext)
     subst hDisp
     refine footprintCoversWrites_trans S (st₂ := stDon) ?_
       (footprintCoversWrites_of_scheduler_eq S hTable
-        (by rw [Architecture.stageDeliveredMessage_scheduler_eq,
-          Architecture.stageWokenSendCompletion_scheduler_eq]))
+        (by rw [Architecture.stageDeliveredMessage_scheduler_eq]))
     unfold cancelRecvBusyReply at hC
     cases hCode : recvBusyReplyHolderCode ctx tid gate decoded st with
     | zero =>

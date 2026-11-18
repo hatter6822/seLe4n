@@ -383,8 +383,8 @@ under the reply's guard, a reply leg whose transfer answers `(summary, S2)` on
 the state the reply leaves, and on `S2` a sender `s` at the head of the send
 queue blocked by a routed capability-free send, not delivering a fault, whose
 take writes only its slots, the composite is the reply's writes, the transfer,
-the take (`receiveTake_inPlace`), the server's priority walk, the caller staged
-with the transfer's report and the sender's completion staged. -/
+the take (`receiveTake_inPlace`), the server's priority walk and the caller
+staged with the transfer's report. -/
 theorem replyRecvOnCore_take_transfer (st : SystemState) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage) (grant : Bool)
     (core : CoreId) (ct : TCB) (ep0 : SeLe4n.ObjId) (ep : Endpoint) (s : SeLe4n.ThreadId)
@@ -406,13 +406,12 @@ theorem replyRecvOnCore_take_transfer (st : SystemState) (epId : SeLe4n.ObjId)
       sTcb2.registerContext 32 = .send capAddr mi)
     (hF : sTcb2.ipcFaultSend = false) :
     endpointReplyRecvOnCore epId tid rid c msg grant core st =
-      .ok ({ results := #[] }, Architecture.stageWokenSendCompletion
-        (Architecture.stageDeliveredMessage
+      .ok ({ results := #[] }, Architecture.stageDeliveredMessage
           (PriorityInheritance.propagatePipChainCrossCore
             ((wakeThread ((storePopHead S2 epId false s sTcb2.queueNext).updateTcb s
                 receiverReady) s core).1.updateTcb tid
               (callReceiverTcb (blockedSenderMessage (storePopHead S2 epId false s sTcb2.queueNext)
-                s sTcb2))) tid core).1 c summary.capInfo) (some s)) := by
+                s sTcb2))) tid core).1 c summary.capInfo) := by
   obtain ⟨hEq, hHead⟩ := replyOnCore_inPlace st tid c tid ct ep0 rid msg core hSz hT hIpc hRO hG
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hRec : recordedReplyServer? st c = some tid := by
@@ -435,8 +434,8 @@ theorem replyRecvOnCore_take_transfer (st : SystemState) (epId : SeLe4n.ObjId)
 
 /-- The take's writes before the server's own frame: the sender popped, made
 ready and woken, the server made ready, its priority walk, then the caller's
-frame with the transfer's report (read from the server's saved registers `rf`)
-and the sender's completion frame. -/
+frame with the transfer's report (read from the server's saved registers
+`rf`). -/
 @[noinline] def replyRecvTakeLegs (capInfo : Nat) (Y : SystemState) (c tid s : SeLe4n.ThreadId)
     (epId : SeLe4n.ObjId) (nextCode : Nat) (core : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
@@ -445,8 +444,7 @@ and the sender's completion frame. -/
     receiverReady) s core).1
   let Z := (PriorityInheritance.propagatePipChainCrossCore (W.updateTcb tid receiverReady) tid
     core).1
-  Architecture.stageWokenSendCompletion (deliverReplyRecvCapsFrame capInfo Z c layout rf len badge)
-    (some s)
+  deliverReplyRecvCapsFrame capInfo Z c layout rf len badge
 
 /-- The server's own frame, its six words read from the sender's saved
 registers before any write.  Out of line from the legs (`replyRecvTakeLegs`):
@@ -475,23 +473,10 @@ theorem deliverReplyRecvCapsFrame_getTcb?_ne (capInfo : Nat) (Y : SystemState)
   · split <;> exact SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _ hNe
   · rfl
 
-theorem stageWokenSendCompletion_noResizeDue (X : SystemState) (s? : Option SeLe4n.ThreadId)
-    (hNo : X.objects.noResizeDue) :
-    (Architecture.stageWokenSendCompletion X s?).objects.noResizeDue := by
-  unfold Architecture.stageWokenSendCompletion
-  split
-  · exact hNo
-  · split
-    · split
-      · exact updateTcb_noResizeDue _ _ _ hNo
-      · exact hNo
-    · exact hNo
-
 /-- **The take's tail stages the caller's held reply and the server's message
 as frames**: on `Y` with the caller holding the reply (`S2`), where the take
 runs in place for a sender blocked by a routed capability-free send, staging
-the caller with the report, the woken sender's completion and the server's
-message is the legs (`replyRecvTakeLegs`) and then the server's frame
+the caller with the report and the server's message is the legs (`replyRecvTakeLegs`) and then the server's frame
 (`writeTakerFrame`), its six words read from the sender's saved registers. -/
 theorem replyRecvTakeFrame_staged (Y : SystemState) (c tid s : SeLe4n.ThreadId)
     (epId : SeLe4n.ObjId) (ep : Endpoint) (sTcb : TCB) (core : CoreId)
@@ -512,15 +497,14 @@ theorem replyRecvTakeFrame_staged (Y : SystemState) (c tid s : SeLe4n.ThreadId)
       (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout
       sTcb.registerContext 32 = .send capAddr mi)
     (hF : sTcb.ipcFaultSend = false) :
-    Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion
-        (Architecture.stageDeliveredMessage
+    Architecture.stageDeliveredMessage (Architecture.stageDeliveredMessage
           (PriorityInheritance.propagatePipChainCrossCore
             ((wakeThread ((storePopHead (Y.mapTcbInPlace c (holdMessage
                 { registers := Architecture.regMessageBody layout rf len, badge := badge }))
                 epId false s sTcb.queueNext).updateTcb s receiverReady) s core).1.updateTcb tid
               (callReceiverTcb (blockedSenderMessage (storePopHead (Y.mapTcbInPlace c (holdMessage
                 { registers := Architecture.regMessageBody layout rf len, badge := badge }))
-                epId false s sTcb.queueNext) s sTcb))) tid core).1 c capInfo) (some s)) tid 0 =
+                epId false s sTcb.queueNext) s sTcb))) tid core).1 c capInfo) tid 0 =
       writeTakerFrame
         (replyRecvTakeLegs capInfo Y c tid s epId sTcb.queueNextCode core layout rf len badge) tid
         (Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length
@@ -583,7 +567,7 @@ theorem replyRecvTakeFrame_staged (Y : SystemState) (c tid s : SeLe4n.ThreadId)
         core).1.updateTcb tid receiverReady) tid core).1 tid (holdMessage msgS)).objects.noResizeDue :=
     (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoZ
   have hNoD := deliverReplyRecvCapsFrame_noResizeDue capInfo _ c layout rf len badge hNoZ
-  have hNoE := stageWokenSendCompletion_noResizeDue _ (some s) hNoD
+  have hNoE := hNoD
   rw [storePopHead_msg c _ _ _ Y epId false s sTcb.queueNext hNo] at hW3r ⊢
   rw [updateTcb_msg c _ _ _ _ s receiverReady hNoPY (fun h => absurd h hSC)] at hW3r ⊢
   rw [wakeThread_msg c _ _ _ _ s core hNoU] at hW3r ⊢
@@ -620,14 +604,13 @@ theorem replyRecvTakeFrame_staged (Y : SystemState) (c tid s : SeLe4n.ThreadId)
       deliverReplyRecvCapsFrame capInfo Z c layout rf len badge from rfl]
   have hDr := (deliverReplyRecvCapsFrame_getTcb?_ne capInfo Z c tid layout rf len badge hCT).trans hX
   generalize deliverReplyRecvCapsFrame capInfo Z c layout rf len badge = D at hDr hNoD hNoE ⊢
-  have hEr := (stageWokenSendCompletion_getTcb?_ne D s tid hST hNoD).trans hDr
+  have hEr := hDr
   have hSzS : msgS.registers.size ≤ 4 := by
     rw [hMsg]
     simp only [Architecture.regMessageBody_size, Architecture.regMessageLength]
     have : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
     omega
-  rw [stageWokenSendCompletion_msg D tid s _ _ _ hST hNoD,
-    stageDeliveredMessage_holdMessage _ _ _ hNoE hSzS, hMsg,
+  rw [stageDeliveredMessage_holdMessage _ _ _ hNoE hSzS, hMsg,
     Architecture.returnFrameOfMessage_regMessageBody]
   unfold writeDeliveredFrameIfReady
   rw [hEr]
@@ -640,7 +623,7 @@ theorem SenderWordsKept.ipcBadgeView {t' t : TCB} (h : SenderWordsKept t' t) :
 
 /-- **The reply-receive meeting a waiting sender, its reply transferring
 nothing, delivered**: the reply's writes, the take, the server's priority walk,
-then the caller's frame, the sender's completion and the server's frame, its six
+then the caller's frame and the server's frame, its six
 words read from the sender's saved registers before any write. -/
 @[noinline] def performReplyRecvTakeLegs (st : SystemState) (c tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId) (nextCode : Nat)
@@ -754,8 +737,8 @@ theorem takeGuard_of_transferFrame {s' s : SystemState} (h : transferFrame s' s)
 
 /-- **The reply-receive meeting a waiting sender, its reply leg transferring,
 delivered**: the reply's writes, the transfer in place on no endpoint, the take,
-the server's priority walk, then the caller's frame with the transfer's report,
-the sender's completion and the server's frame.  The replier and the caller
+the server's priority walk, then the caller's frame with the transfer's report
+and the server's frame.  The replier and the caller
 enter as the words the transfer reads of them, the sender as its successor and
 the six words of its frame, all read before the reply's writes. -/
 @[noinline] def performReplyRecvTakeCapsLegs (st : SystemState) (c tid : SeLe4n.ThreadId)

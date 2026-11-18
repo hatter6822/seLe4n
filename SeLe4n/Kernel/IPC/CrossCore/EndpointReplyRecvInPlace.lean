@@ -460,7 +460,7 @@ theorem replyRecvAnsweringOnCore_blocks_inPlace
   unfold endpointReplyRecvAnsweringOnCore
   simp only [hRec, Option.getD_some, hEq, hPop, hXf, hRecv, hEp1, Option.bind_some, hS,
     replyRecvPostReceiveDonation_none_self _ _ _ _ hRes]
-  simp [applyReceiveLegPipHandoff, Architecture.stageWokenSendCompletion_none]
+  simp [applyReceiveLegPipHandoff]
 
 /-- **The reply-receive that blocks, in place**: the composite for a caller
 carrying no fault (`replyRecvAnsweringOnCore_blocks_inPlace` at `none`) is the

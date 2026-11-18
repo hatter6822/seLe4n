@@ -419,8 +419,8 @@ specification's**: under `receiveCallTakesInPlace`, for a caller blocked by a
 routed capability-free call of more than four words whose overflow slots all
 read, the WithCaps receive installs nothing and commits the take, the
 rendezvous hands off no SchedContext and runs the receiver's priority walk, the
-caller left blocked on the reply is owed no completion frame, and staging the
-receiver's message writes `performReceiveCallDeliveredLong`'s state. -/
+caller is left blocked on the reply, and staging the receiver's message writes
+`performReceiveCallDeliveredLong`'s state. -/
 theorem receiveCallLongTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
@@ -440,9 +440,8 @@ theorem receiveCallLongTake_delivered (st : SystemState) (endpointId : SeLe4n.Ob
           receiver s core =
         .ok (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
           receiver core) ∧
-      Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion
-          (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
-            receiver core) (some s)) receiver 0 =
+      Architecture.stageDeliveredMessage (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
+            receiver core) receiver 0 =
         performReceiveCallDeliveredLong st endpointId s sTcb.queueNextCode receiver rid core
           sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged := by
   obtain ⟨hTake, hIpc, hBs, hBr⟩ :=
@@ -504,8 +503,6 @@ theorem receiveCallLongTake_delivered (st : SystemState) (endpointId : SeLe4n.Ob
           (storePopHead_noResizeDue _ _ _ _ _ hNo)))))
     obtain ⟨x', hx', hxI'⟩ := propagatePipChainCrossCore_ipcStateCarried _ receiver core hNo4 s x hx
     unfold applyReceiverPipHandoff
-    rw [Architecture.stageWokenSendCompletion_id_when_not_ready _ s x' hx'
-      (by rw [hxI', hxI]; simp)]
     rw [receiveCallTakeState_eq_hold _ _ _ _ _ _ hNo, propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoS]
     have hAP := ipcBufferReadsAgree_storePopHead st endpointId false s sTcb.queueNext hNo
     have hReadP : ∀ j, j < mi.length - 4 → ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr
@@ -595,9 +592,8 @@ theorem receiveCallTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
           receiver s core =
         .ok (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
           receiver core) ∧
-      Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion
-          (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
-            receiver core) (some s)) receiver 0 =
+      Architecture.stageDeliveredMessage (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
+            receiver core) receiver 0 =
         performReceiveCallDelivered st endpointId s sTcb.queueNextCode receiver rid core
           sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged := by
   obtain ⟨hTake, hIpc, hBs, hBr⟩ :=
@@ -659,8 +655,6 @@ theorem receiveCallTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
           (storePopHead_noResizeDue _ _ _ _ _ hNo)))))
     obtain ⟨x', hx', hxI'⟩ := propagatePipChainCrossCore_ipcStateCarried _ receiver core hNo4 s x hx
     unfold applyReceiverPipHandoff
-    rw [Architecture.stageWokenSendCompletion_id_when_not_ready _ s x' hx'
-      (by rw [hxI', hxI]; simp)]
     rw [receiveCallTakeState_eq_hold _ _ _ _ _ _ hNo, propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoS]
     have hNoY := propagatePipChainCrossCore_noResizeDue _ receiver core hNoS
     have hSz : (blockedSenderMessage (storePopHead st endpointId false s sTcb.queueNext) s
@@ -674,21 +668,6 @@ theorem receiveCallTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
       Architecture.returnFrameOfMessage_regMessageBody, TCB.ipcBadgeView_eq_opt]
     unfold performReceiveCallDelivered
     rw [Architecture.regMessageFrameW_eq]
-
-/-- A woken sender's completion frame keeps every read. -/
-theorem ipcBufferReadsAgree_stageWokenSendCompletion (Y : SystemState) (t : SeLe4n.ThreadId)
-    (hNo : Y.objects.noResizeDue) :
-    ipcBufferReadsAgree (Architecture.stageWokenSendCompletion Y (some t)) Y := by
-  unfold Architecture.stageWokenSendCompletion
-  dsimp only
-  cases Y.getTcb? t with
-  | none => exact .refl Y
-  | some tcb =>
-    dsimp only
-    split
-    · unfold Architecture.writeReturnFrameToTcb
-      exact ipcBufferReadsAgree_updateTcb _ t _ (fun _ => ⟨rfl, rfl⟩) hNo
-    · exact .refl Y
 
 /-! ## A receive taking a blocked long sender -/
 
@@ -723,10 +702,9 @@ theorem deliverLongSendFrameWords_eq (X : SystemState) (r : SeLe4n.ThreadId)
   simp only [hR, ↓reduceIte]
 
 /-- **The receive's take of a blocked long sender, delivered**: the sender
-popped, made ready and woken with its completion frame, the receiver made
-ready, then the sender's four inline words (read from its saved registers
-before any write, so the completion frame's write to them copies nothing)
-written into the receiver's saved registers and its overflow words copied from
+popped, made ready and woken (none of its registers written, as seL4's
+`receiveIPC`), the receiver made ready, then the sender's four inline words
+(read from its saved registers before any write) written into the receiver's saved registers and its overflow words copied from
 its IPC buffer into the receiver's (`deliverLongSendFrameWords`).  No message
 is built. -/
 @[noinline] def performReceiveDeliveredLong (st : SystemState) (endpointId : SeLe4n.ObjId)
@@ -735,15 +713,14 @@ is built. -/
     SystemState :=
   let X := (wakeThread ((storePopHead st endpointId false s (ThreadId.ofOptCode nextCode)).updateTcb
     s receiverReady) s core).1
-  deliverLongSendFrameWords (Architecture.stageWokenSendCompletion
-    (X.updateTcb receiver receiverReady) (some s)) receiver len s badgeWord badged 0 w0 w1 w2 w3
+  deliverLongSendFrameWords (X.updateTcb receiver receiverReady) receiver len s badgeWord badged 0 w0 w1 w2 w3
 
 /-- **The receive's take of a blocked long sender, delivered, is the
 specification's**: under `receiveTakesInPlace`, a sender blocked by a routed
 capability-free send of more than four words whose overflow slots all read and
 not delivering a fault, the WithCaps receive installs nothing and takes the
-in-place writes, the rendezvous hands off no donation, and staging the woken
-sender's completion and the receiver's message writes
+in-place writes, the rendezvous hands off no donation, and staging the
+receiver's message writes
 `performReceiveDeliveredLong`'s state. -/
 theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId) (ep : Endpoint)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
@@ -763,7 +740,7 @@ theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
         (S4, .ok (s, { results := #[] }, W.2)) ∧
       applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
-      Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion S4 (some s))
+      Architecture.stageDeliveredMessage S4
           receiver 0 =
         performReceiveDeliveredLong st endpointId s sTcb.queueNextCode receiver core
           mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
@@ -857,26 +834,8 @@ theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
       rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoW,
         SystemState.mapTcbInPlace_getTcb?_self, hW3r]
       rfl
-    have hNoZ : (Architecture.stageWokenSendCompletion (W.1.updateTcb receiver receiverReady)
-        (some s)).objects.noResizeDue := by
-      unfold Architecture.stageWokenSendCompletion
-      dsimp only
-      split
-      · split
-        · exact updateTcb_noResizeDue _ _ _ hNoY
-        · exact hNoY
-      · exact hNoY
-    have hZr : (Architecture.stageWokenSendCompletion (W.1.updateTcb receiver receiverReady)
-        (some s)).getTcb? receiver = some (receiverReady rt3) := by
-      unfold Architecture.stageWokenSendCompletion
-      dsimp only
-      split
-      · split
-        · unfold Architecture.writeReturnFrameToTcb
-          rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoY, SystemState.getTcb?_mapTcbInPlace,
-            if_neg hRS', hYr]
-        · exact hYr
-      · exact hYr
+    have hNoZ : (W.1.updateTcb receiver receiverReady).objects.noResizeDue := hNoY
+    have hZr : (W.1.updateTcb receiver receiverReady).getTcb? receiver = some (receiverReady rt3) := hYr
     have hGt := (decodeSyscallArgsFromState_of_routedSendLong st s _ _ 32 capAddr mi hR).1
     have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
     rw [hSz] at hGt
@@ -884,8 +843,8 @@ theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
       (ipcBufferReadsAgree_updateTcb _ receiver receiverReady (fun _ => ⟨rfl, rfl⟩) hNoW).trans
         ((ipcBufferReadsAgree_wakeThread _ s core hNo2).trans
           (ipcBufferReadsAgree_updateTcb _ s receiverReady (fun _ => ⟨rfl, rfl⟩) hNoP))
-    have hAZ := (ipcBufferReadsAgree_stageWokenSendCompletion _ s hNoY).trans hAY
-    rw [hS4, stageWokenSendCompletion_msg _ receiver s _ _ _ hRS' hNoY, hMsg,
+    have hAZ := hAY
+    rw [hS4, hMsg,
       TCB.ipcBadgeView_eq_opt]
     unfold performReceiveDeliveredLong
     rw [← TCB.optCode_queueNext, SeLe4n.ThreadId.ofOptCode_optCode,

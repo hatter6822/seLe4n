@@ -78,10 +78,7 @@ open SeLe4n.Platform.FFI
 #check @SeLe4n.Kernel.Architecture.bit63Encoding_not_injective_on_badges
 -- RA.B.5b — the blocked-waiter staging seam
 #check @SeLe4n.Kernel.Architecture.stageWokenDelivery
-#check @SeLe4n.Kernel.Architecture.stageWokenSendCompletion
-#check @SeLe4n.Kernel.Architecture.stageWokenSendCompletion_stages_zero
 #check @SeLe4n.Kernel.Architecture.blockedReturn_staged_in_waiter_frame
-#check @SeLe4n.Kernel.Architecture.blockedUnitReturn_staged_in_sender_frame
 -- PR #866 round-2 — the transfer-honesty surface (installed, never requested)
 #check @SeLe4n.Model.CapTransferSummary.capInfo
 #check @SeLe4n.Kernel.Architecture.returnMessageInfo_extraCaps_le_capInfo
@@ -625,18 +622,20 @@ private def receiveThenSendScenario :
 /-- 9c: blocked plain sender.  The peer's send parks (no receiver, core 1);
 the caller's `.receive` consumes it (core 0) — the caller's own outcome is
 the message frame (the immediate half), and the completed **sender**'s
-staged frame is the zero frame (unit success).  Returns (pre-receive
-sender staged x0, the receive outcome, post-receive sender frame). -/
+registers are the ones it trapped with: seL4's `receiveIPC` only sets the
+woken sender `Running` and writes none of its registers.  Returns (the
+pre-receive sender frame, the receive outcome, the post-receive sender
+frame). -/
 private def sendThenReceiveScenario :
-    Except KernelError (UInt64 × Kernel.Architecture.SyscallOutcome ×
-      Kernel.Architecture.SyscallReturnFrame) := do
+    Except KernelError (Kernel.Architecture.SyscallReturnFrame ×
+      Kernel.Architecture.SyscallOutcome × Kernel.Architecture.SyscallReturnFrame) := do
   let (out1, st1) ← dispatchFromAbiOn core1
     SyscallId.send 2 epCapPtr.toUInt64 7 8 0 twoThreadState
   if out1 != .blocks then throw .illegalState
-  let preStagedX0 := (stagedFrame st1 peerTid).x0
+  let preFrame := stagedFrame st1 peerTid
   let (out2, st2) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
     endpointWait 0 epCapPtr.toUInt64 0 0 0 st1
-  pure (preStagedX0, out2, stagedFrame st2 peerTid)
+  pure (preFrame, out2, stagedFrame st2 peerTid)
 
 /-- 9d: the reply delivery — `.call`'s `.message` frame.  The caller is
 already `.blockedOnReply` linked to the reply object; the peer replies
@@ -1009,8 +1008,8 @@ private def returnAbiTraceLines : List String :=
      | .ok f => s!"[ret-abi] staged blocked-receiver message frame: {frameCells f}"
      | .error e => s!"[ret-abi] staged blocked-receiver message frame: dispatch-error {reprStr e}")
   , (match sendThenReceiveScenario with
-     | .ok (_, _, f) => s!"[ret-abi] staged completed-sender unit frame: {frameCells f}"
-     | .error e => s!"[ret-abi] staged completed-sender unit frame: dispatch-error {reprStr e}")
+     | .ok (_, _, f) => s!"[ret-abi] completed-sender registers, unwritten: {frameCells f}"
+     | .error e => s!"[ret-abi] completed-sender registers, unwritten: dispatch-error {reprStr e}")
   -- RA.B.8: the `.word` shape's live outcome (the fourth value shape,
   -- completing the fixture's coverage of the value surface).
   , outcomeLine "word query (registered service 905)" serviceQueryScenario
@@ -1125,15 +1124,15 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
   -- 9c — blocked plain sender completed by a receive
   match sendThenReceiveScenario with
   | .error e => assertBool s!"9c dispatches (got .error {reprStr e})" false
-  | .ok (preX0, out2, senderFrame) => do
+  | .ok (preFrame, out2, senderFrame) => do
       assertBool "9c control: pre-receive the parked sender's staged x0 is its own cap ptr"
-        (preX0 == epCapPtr.toUInt64)
+        (preFrame.x0 == epCapPtr.toUInt64)
       assertBool "9c: the receive's own outcome is the consumed message (immediate half)"
         (match out2 with
           | .returns f => f.x0 == epBadgeVal.toUInt64 && f.x2 == 7 && f.x3 == 8
           | .blocks | .faulted | .resumes => false)
-      assertBool "9c: the completed sender's staged frame is the unit zero frame"
-        (senderFrame == .zero)
+      assertBool "9c: the completed sender's registers are the ones it trapped with (no write)"
+        (senderFrame == preFrame && senderFrame.x0 == epCapPtr.toUInt64)
   -- 9d — the reply delivers `.call`'s frame
   match replyDeliveryScenario with
   | .error e => assertBool s!"9d dispatches (got .error {reprStr e})" false

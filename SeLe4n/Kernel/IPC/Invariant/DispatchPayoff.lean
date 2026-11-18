@@ -348,9 +348,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
                         have hObjInvD := replyRecvAnswerCaller_preserves_objects_invExt answer _
                           prevCaller xs.capInfo hObjInv3P
                         rw [← hOut]
-                        exact ⟨stageWokenSendCompletion_preserves_ipcInvariantFull _ _
-                            hObjInvD hInvD,
-                          stageWokenSendCompletion_objects_invExt _ _ hObjInvD⟩
+                        exact ⟨hInvD, hObjInvD⟩
 
 -- ============================================================================
 -- §4  The dispatch payoff's pre-state pack
@@ -726,13 +724,9 @@ private theorem receiveResolvedArm_cancelled_preserves_ipcInvariantFull
                   have hDonObj : stDon.objects.invExt :=
                     applyReceiveRendezvousHandoff_preserves_objects_invExt st1 stDon
                       tid nextThread executingCore hObjInv1 hDonation
-                  have hSC := stageWokenSendCompletion_preserves_ipcInvariantFull stDon
-                    ((st.getEndpoint? epId).bind (·.sendQ.head)) hDonObj hDonInv
-                  have hSCobj := stageWokenSendCompletion_objects_invExt stDon
-                    ((st.getEndpoint? epId).bind (·.sendQ.head)) hDonObj
                   rw [← hStep]
                   exact stageDeliveredMessage_preserves_ipcInvariantFull _ tid _
-                    hSCobj hSC
+                    hDonObj hDonInv
 
 /-- WS-RR RR3.24 (**the dispatch payoff**): every syscall
 `dispatchWithCapChecked` routes preserves `ipcInvariantFull`.  The

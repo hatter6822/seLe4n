@@ -92,12 +92,10 @@ theorem receiveCallDonatingTake_delivered (st : SystemState) (endpointId : SeLe4
           (donateSchedContextInPlace (receiveCallTakeState st endpointId s sTcb receiver rid)
             s receiver ⟨sTcb.scBindingScCode - 1⟩) ⟨sTcb.scBindingScCode - 1⟩
           (determineTargetCore st s) (determineTargetCore st receiver)) receiver core) ∧
-      Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion
-          (applyReceiverPipHandoff (migrateSchedContextReplenishment
+      Architecture.stageDeliveredMessage (applyReceiverPipHandoff (migrateSchedContextReplenishment
             (donateSchedContextInPlace (receiveCallTakeState st endpointId s sTcb receiver rid)
               s receiver ⟨sTcb.scBindingScCode - 1⟩) ⟨sTcb.scBindingScCode - 1⟩
-            (determineTargetCore st s) (determineTargetCore st receiver)) receiver core)
-          (some s)) receiver 0 =
+            (determineTargetCore st s) (determineTargetCore st receiver)) receiver core) receiver 0 =
         performReceiveCallDonatingDelivered st endpointId s sTcb.queueNextCode receiver rid
           ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s) (determineTargetCore st receiver)
           core sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge)
@@ -257,8 +255,6 @@ theorem receiveCallDonatingTake_delivered (st : SystemState) (endpointId : SeLe4
     obtain ⟨x', hx', hxI'⟩ := propagatePipChainCrossCore_ipcStateCarried _ receiver core hNoD s x1
       hx2
     unfold applyReceiverPipHandoff
-    rw [Architecture.stageWokenSendCompletion_id_when_not_ready _ s x' hx'
-      (by rw [hxI', e1, hxI]; simp)]
     rw [← hT', receiveCallTakeState_eq_hold _ _ _ _ _ _ hNo,
       donateSchedContextInPlace_msg _ _ _ _ _ _ _ _ hNoS hRS,
       migrateSchedContextReplenishment_mapTcbInPlace]

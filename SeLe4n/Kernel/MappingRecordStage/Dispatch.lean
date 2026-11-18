@@ -648,8 +648,7 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     rename_i summ _ hRecv _ stDon hHand
     cases h
     exact (MappingStage.of_fst_eq endpointReceiveDualWithCapsOnCore_mappingStage hRecv).trans
-      (((applyReceiveRendezvousHandoff_mappingStage hHand).trans
-        (stageWokenSendCompletion_mappingStage _ _)).trans
+      ((applyReceiveRendezvousHandoff_mappingStage hHand).trans
         (stageDeliveredMessage_mappingStage _ _ _))
   case none.call.object epId =>
     split at h
@@ -732,8 +731,7 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
       rename_i summ _ hRecv _ stDon hHand
       cases h
       exact (MappingStage.of_fst_eq endpointReceiveDualWithCapsOnCore_mappingStage hRecv).trans
-        (((applyReceiveRendezvousHandoff_mappingStage hHand).trans
-          (stageWokenSendCompletion_mappingStage _ _)).trans
+        ((applyReceiveRendezvousHandoff_mappingStage hHand).trans
           (stageDeliveredMessage_mappingStage _ _ _))
     split at h
     · cases h

@@ -211,27 +211,6 @@ theorem sendFrame_of_routed (st : SystemState) (s : SeLe4n.ThreadId) (tcb : TCB)
       simp only [hE, ↓reduceIte]
       split <;> rfl
 
-/-- A woken sender's completion frame commutes with a message-slot write at
-another thread. -/
-theorem stageWokenSendCompletion_msg (Y : SystemState) (r s : SeLe4n.ThreadId)
-    (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile) (μ : Option IpcMessage → Option IpcMessage)
-    (π : Nat → Nat) (hNe : s ≠ r) (hNo : Y.objects.noResizeDue) :
-    Architecture.stageWokenSendCompletion (Y.mapTcbInPlace r (TCB.withMessageSlots ρ μ π))
-        (some s) =
-      (Architecture.stageWokenSendCompletion Y (some s)).mapTcbInPlace r
-        (TCB.withMessageSlots ρ μ π) := by
-  unfold Architecture.stageWokenSendCompletion
-  dsimp only
-  rw [SystemState.getTcb?_mapTcbInPlace, if_neg (fun h => hNe h.symm)]
-  cases Y.getTcb? s with
-  | none => rfl
-  | some t =>
-    dsimp only
-    split
-    · unfold Architecture.writeReturnFrameToTcb
-      exact updateTcb_msg _ _ _ _ _ _ _ hNo (fun h => absurd h hNe)
-    · rfl
-
 /-- **The taken sender was no caller**: under `receiveTakesInPlace` the
 dequeued sender is made ready, so the rendezvous hands off no donation. -/
 theorem receiveTake_dequeuedNoCall (st : SystemState) (endpointId : SeLe4n.ObjId)
@@ -279,7 +258,7 @@ theorem receiveTake_dequeuedNoCall (st : SystemState) (endpointId : SeLe4n.ObjId
     TCB.ipcState_setIpcState]
 
 /-- **The receive's take, delivered**: the sender popped, made ready and woken
-with its completion frame, the receiver made ready, and the six words of the
+(none of its registers written, as seL4's `receiveIPC`), the receiver made ready, and the six words of the
 delivered frame -- read from the sender's saved registers before any write --
 written into the receiver's saved registers.  No message is built. -/
 @[noinline] def performReceiveDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
@@ -287,14 +266,14 @@ written into the receiver's saved registers.  No message is built. -/
     (w0 w1 w2 w3 w4 w5 : UInt64) : SystemState :=
   let X := (wakeThread ((storePopHead st endpointId false s (ThreadId.ofOptCode nextCode)).updateTcb
     s receiverReady) s core).1
-  (Architecture.stageWokenSendCompletion (X.updateTcb receiver receiverReady) (some s)).mapTcbInPlace
+  (X.updateTcb receiver receiverReady).mapTcbInPlace
     receiver (withFrameWords w0 w1 w2 w3 w4 w5)
 
 /-- **The receive's take, delivered, is the specification's**: under
 `receiveTakesInPlace`, a blocked sender whose message is the inline words of its
 saved registers (`hMsgs`), the receive takes the in-place writes, the
-rendezvous hands off no donation, and staging the woken sender's completion and
-the receiver's message writes `performReceiveDelivered`'s state, the frame's
+rendezvous hands off no donation, and staging the receiver's message writes
+`performReceiveDelivered`'s state, the frame's
 words read from the sender's saved registers. -/
 theorem receiveTake_delivered_of_message (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
@@ -313,7 +292,7 @@ theorem receiveTake_delivered_of_message (st : SystemState) (endpointId : SeLe4n
       mi.length sTcb.ipcBadgeView
     endpointReceiveDualOnCore endpointId receiver replyId core st = (S4, .ok (s, W.2)) ∧
       applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
-      Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion S4 (some s))
+      Architecture.stageDeliveredMessage S4
           receiver 0 =
         performReceiveDelivered st endpointId s sTcb.queueNextCode receiver core
           f.x0 f.x1 f.x2 f.x3 f.x4 f.x5 := by
@@ -385,33 +364,14 @@ theorem receiveTake_delivered_of_message (st : SystemState) (endpointId : SeLe4n
       rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoW,
         SystemState.mapTcbInPlace_getTcb?_self, hW3r]
       rfl
-    have hNoZ : (Architecture.stageWokenSendCompletion (W.1.updateTcb receiver receiverReady)
-        (some s)).objects.noResizeDue := by
-      unfold Architecture.stageWokenSendCompletion
-      dsimp only
-      split
-      · split
-        · exact updateTcb_noResizeDue _ _ _ hNoY
-        · exact hNoY
-      · exact hNoY
-    have hZr : (Architecture.stageWokenSendCompletion (W.1.updateTcb receiver receiverReady)
-        (some s)).getTcb? receiver = some (receiverReady rt3) := by
-      unfold Architecture.stageWokenSendCompletion
-      dsimp only
-      split
-      · split
-        · unfold Architecture.writeReturnFrameToTcb
-          rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoY, SystemState.getTcb?_mapTcbInPlace,
-            if_neg hRS', hYr]
-        · exact hYr
-      · exact hYr
+    have hNoZ : (W.1.updateTcb receiver receiverReady).objects.noResizeDue := hNoY
+    have hZr : (W.1.updateTcb receiver receiverReady).getTcb? receiver = some (receiverReady rt3) := hYr
     have hSz : (blockedSenderMessage P s sTcb).registers.size ≤ 4 := by
       rw [hMsg]
       simp only [Architecture.regMessageBody_size, Architecture.regMessageLength]
       have : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
       omega
-    rw [hS4, stageWokenSendCompletion_msg _ receiver s _ _ _ hRS' hNoY,
-      stageDeliveredMessage_holdMessage _ _ _ hNoZ hSz, hMsg,
+    rw [hS4, stageDeliveredMessage_holdMessage _ _ _ hNoZ hSz, hMsg,
       Architecture.returnFrameOfMessage_regMessageBody]
     unfold writeDeliveredFrameIfReady performReceiveDelivered
     rw [hZr]
@@ -440,7 +400,7 @@ theorem receiveTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId) (ep
     endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
         (S4, .ok (s, { results := #[] }, W.2)) ∧
       applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
-      Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion S4 (some s))
+      Architecture.stageDeliveredMessage S4
           receiver 0 =
         performReceiveDelivered st endpointId s sTcb.queueNextCode receiver core
           f.x0 f.x1 f.x2 f.x3 f.x4 f.x5 := by

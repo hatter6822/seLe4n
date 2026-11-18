@@ -481,15 +481,6 @@ theorem replyTransferOnCoreChecked_runQueueEntryStage {ctx : LabelingContext}
         exact ((hE.trans (receiveTransferCaps_runQueueStage hX)).trans
           (stageDeliveredMessage_runQueueStage _ _ _)).entry
 
-theorem stageWokenSendCompletion_runQueueStage (st : SystemState)
-    (w? : Option SeLe4n.ThreadId) :
-    RunQueueStage st (Architecture.stageWokenSendCompletion st w?) := by
-  unfold Architecture.stageWokenSendCompletion
-  repeat' split
-  all_goals first
-    | exact RunQueueStage.refl _
-    | exact writeReturnFrameToTcb_runQueueStage _ _ _
-
 /-- WS-ZA ZA6.33: **the rendezvous donor is not suspended** — its guard reads it
 blocked on the reply (`rendezvousDequeuedCall`), and a coherent blocked thread is
 active.  seL4 donates only from a caller blocked on the endpoint. -/
@@ -872,8 +863,7 @@ theorem endpointReplyRecvOnCore_runQueueEntryStage {answer : Option Architecture
   obtain ⟨hIp, hRp⟩ := hPopS.1.links hI1 hR1
   have hRdyX := (hPH.2.2 hI2 hR2).readyOrAbsent
     (hRK hIp hRp prevCaller hNe ((hPopS.2.2 hI1 hR1).readyOrAbsent hRdy1))
-  exact hAll.trans ((hPH.entry.trans
-    (replyRecvAnswerCaller_runQueueEntryStage answer _ prevCaller _ hRdyX hNIp)).trans
-    (stageWokenSendCompletion_runQueueStage _ _).entry)
+  exact hAll.trans (hPH.entry.trans
+    (replyRecvAnswerCaller_runQueueEntryStage answer _ prevCaller _ hRdyX hNIp))
 
 end SeLe4n.Kernel

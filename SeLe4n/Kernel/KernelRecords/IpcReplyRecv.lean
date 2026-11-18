@@ -219,12 +219,10 @@ theorem endpointReplyRecvAnsweringOnCore {answer : Option Architecture.FaultRepl
   cases answer with
   | none =>
     have F5 := RecordsFrame.stageDeliveredMessage _ prevCaller xs.capInfo F4.invExt
-    exact (((A.2 (hAns rfl)).trans Mid).trans (.of_frame F5)).trans
-      (.of_frame (RecordsFrame.stageWokenSendCompletion _ _ F5.invExt))
+    exact ((A.2 (hAns rfl)).trans Mid).trans (.of_frame F5)
   | some o =>
     obtain ⟨S5, hN⟩ := faultReplyApplyOnCore _ prevCaller o F4.invExt
-    have F6 := RecordsFrame.stageWokenSendCompletion _
-      ((st1p.getEndpoint? epId).bind (·.sendQ.head)) S5.invExt
+    have F6 := RecordsFrame.refl S5.invExt
     exact ((A.1.trans (.of_step (Mid.trans S5))).trans (.of_step (.of_frame F6))).close
       (hN.frame F6)
 

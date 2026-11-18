@@ -6016,8 +6016,6 @@ def receiveResolvedArm (decoded : SyscallDecodeResult) (gate : SyscallGate)
         -- WS-SM SM6.D (#7.2 fold): reply object threaded into the per-core receive
         -- transition (the endpoint→receiver flow is gated above); the dequeued
         -- `Call` caller is linked atomically (former `linkReceivedCaller` step).
-        -- WS-RA RA.B.5b: the woken plain sender's unit frame (checked twin).
-        let wokenSender? := (st.getEndpoint? epId).bind (·.sendQ.head)
         -- PR #873 round 6: the checked twin of the unchecked arm's WithCaps
         -- routing — a send that parked before its receiver arrived delivers
         -- its capabilities here too, gated on the authority the sender
@@ -6051,7 +6049,7 @@ def receiveResolvedArm (decoded : SyscallDecodeResult) (gate : SyscallGate)
               -- same honest figure the send and call paths report — it was
               -- hardcoded to zero while the receive installed nothing.
               .ok ((), Architecture.stageDeliveredMessage
-                        (Architecture.stageWokenSendCompletion stDon wokenSender?) tid
+                        stDon tid
                         summary.capInfo)
         | (_, .error e) => .error e
 
@@ -7742,23 +7740,19 @@ theorem dispatchArm_receive_matches_returnShape
     -- register context, so the frame conclusion is unchanged.
     (hDon : applyReceiveRendezvousHandoff st' tid next executingCore
         = .ok stDon)
-    (hTcb : (Architecture.stageWokenSendCompletion stDon
-        ((st.getEndpoint? epId).bind (·.sendQ.head))).getTcb? tid = some tcb)
+    (hTcb : stDon.getTcb? tid = some tcb)
     (hReady : tcb.ipcState = .ready)
     (hMsg : tcb.pendingMessage = some msg)
-    (hObjInv : (Architecture.stageWokenSendCompletion stDon
-        ((st.getEndpoint? epId).bind (·.sendQ.head))).objects.invExt) :
+    (hObjInv : stDon.objects.invExt) :
     Architecture.syscallReturnShape .receive = .message ∧
     ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st0 = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
         = (Architecture.returnFrameOfMessage msg summary.capInfo
-            (Architecture.messageOverflowWrites (Architecture.stageWokenSendCompletion stDon
-              ((st.getEndpoint? epId).bind (·.sendQ.head))) tcb msg).length).deliveredOver
+            (Architecture.messageOverflowWrites stDon tcb msg).length).deliveredOver
             tcb.registerContext := by
   refine ⟨rfl,
     Architecture.stageDeliveredMessage
-      (Architecture.stageWokenSendCompletion stDon
-        ((st.getEndpoint? epId).bind (·.sendQ.head))) tid summary.capInfo,
+      stDon tid summary.capInfo,
     ?_, ?_⟩
   · subst hCancel
     simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget, hFlow,
@@ -9031,8 +9025,7 @@ theorem dispatchWithCapChecked_receive_delegates
             | .error e => .error e
             | .ok stDon =>
                 .ok ((), Architecture.stageDeliveredMessage
-                          (Architecture.stageWokenSendCompletion stDon
-                            ((st.getEndpoint? epId).bind (·.sendQ.head))) tid
+                          stDon tid
                           summary.capInfo))
        | (_, .error e) => .error e) := by
   by_cases hN : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId = true
@@ -9237,8 +9230,7 @@ def syscallDelegates : SyscallId → Prop
                 | .error e => .error e
                 | .ok stDon =>
                     .ok ((), Architecture.stageDeliveredMessage
-                              (Architecture.stageWokenSendCompletion stDon
-                                ((st.getEndpoint? epId).bind (·.sendQ.head))) tid
+                              stDon tid
                               summary.capInfo))
            | (_, .error e) => .error e)
   | .tcbSuspend =>

@@ -449,21 +449,19 @@ theorem blockedSender_of_routedLongTransferring (st : SystemState) (s : SeLe4n.T
     simp only [hF, Bool.false_eq_true, ↓reduceIte, senderFrameMessage]
     exact longMessageDecode_message sid st s _ capAddr mi _ (by omega) hMax
 
-/-- **A long take's last writes, with the transfer's report**: the woken
-sender's completion frame on the state the transfer left, then the receiver's
-frame carrying the report and the overflow words copied from the sender's
-buffer.  The four inline words enter as words, read from the sender's
-registers before the take: the completion rewrites those registers. -/
+/-- **A long take's last writes, with the transfer's report**: on the state the
+transfer left, the receiver's frame carrying the report and the overflow words
+copied from the sender's buffer.  The four inline words enter as words, read
+from the sender's registers before the take. -/
 @[noinline] def finishTakeCapsLong (capInfo : Nat) (Y : SystemState) (s receiver : SeLe4n.ThreadId)
     (len : Nat) (badgeWord : SeLe4n.Badge) (badged : Bool) (w0 w1 w2 w3 : UInt64) :
     SystemState :=
-  deliverLongSendFrameWords (Architecture.stageWokenSendCompletion Y (some s)) receiver len s
+  deliverLongSendFrameWords Y receiver len s
     badgeWord badged capInfo w0 w1 w2 w3
 
 /-- **The take of a blocked long send that transfers capabilities,
 delivered**: the sender popped, made ready and woken, the receiver made ready,
-the transfer in place, the sender's completion frame, then the receiver's
-frame with the transfer's report and the overflow words.  The sender and the
+the transfer in place, then the receiver's frame with the transfer's report and the overflow words.  The sender and the
 receiver enter as the words the transfer reads of them (`capTransferK`), read
 before the take. -/
 @[noinline] def performTakeCapsDeliveredLong (st : SystemState) (endpointId : SeLe4n.ObjId)

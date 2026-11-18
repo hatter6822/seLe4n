@@ -790,8 +790,7 @@ theorem replyRecvAnsweringOnCore_donated_inPlace
   refine ⟨?_, tb, hTb, hBk⟩
   unfold endpointReplyRecvAnsweringOnCore
   simp only [hRecS, Option.getD_some, hEq, hPop, hXf, hRecv, hEp1, Option.bind_some, hS]
-  simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff,
-    Architecture.stageWokenSendCompletion_none]
+  simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff]
 
 theorem replyRecvOnCore_donated_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage) (grant : Bool)

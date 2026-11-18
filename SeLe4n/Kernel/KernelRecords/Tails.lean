@@ -66,14 +66,6 @@ theorem stageWokenDelivery (st : SystemState) (w? : Option SeLe4n.ThreadId) (n :
   · exact stageDeliveredMessage st _ n hInv
   · exact refl hInv
 
-theorem stageWokenSendCompletion (st : SystemState) (w? : Option SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) : RecordsFrame st (Architecture.stageWokenSendCompletion st w?) := by
-  unfold Architecture.stageWokenSendCompletion
-  repeat' split
-  all_goals first
-    | exact refl hInv
-    | exact writeReturnFrameToTcb st _ _ hInv
-
 theorem stageCallerReturnFor (caller? : Option SeLe4n.ThreadId) (st : SystemState) (c : CoreId)
     (o : Architecture.SyscallOutcome) (hInv : st.objects.invExt) :
     RecordsFrame st (Architecture.stageCallerReturnFor caller? st c o) := by
