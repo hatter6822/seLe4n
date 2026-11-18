@@ -4125,6 +4125,15 @@ theorem abiEntryRoutedWith_eq (ctx : LabelingContext)
     | none =>
       exact errorRefusalWordsW_eq ctx executingCore syscallId opCode tid x0 (.failedLookup false lf) s
 
+/-- The words the entry answers when the executing core has no caller it may
+serve (no current thread, or the reserved idle thread): the `.illegalState`
+error frame as a `.returns` outcome.  A closed constant, so the entry's two
+no-caller branches read one statically initialised tuple and build neither the
+error frame nor the outcome (seL4 never reaches this: its idle thread runs at
+EL1 and cannot trap a system call). -/
+def noCallerReturnWords : UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 :=
+  (Architecture.SyscallOutcome.returns (Architecture.errorFrame .illegalState false)).words
+
 /-- WS-ZA ZA4: `syscallDispatchFromAbi` with its outcome as the boundary's words
 (`syscallDispatchFromAbiWords_eq`).  Inlined into the step, each branch hands
 its words on as scalars, so no outcome is built. -/
@@ -4136,10 +4145,9 @@ its words on as scalars, so no outcome is built. -/
     (elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     (UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64) × SystemState :=
     match (st.scheduler.currentOnCore executingCore) with
-    | none => ((Architecture.SyscallOutcome.returns (Architecture.errorFrame .illegalState false)).words, st)
+    | none => (noCallerReturnWords, st)
     | some tid =>
-      if SeLe4n.Kernel.isIdleThreadId tid then
-        ((Architecture.SyscallOutcome.returns (Architecture.errorFrame .illegalState false)).words, st)
+      if SeLe4n.Kernel.isIdleThreadId tid then (noCallerReturnWords, st)
       else
       let stRegs := writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
       -- the selected operation, read before the entry takes the state, so the
