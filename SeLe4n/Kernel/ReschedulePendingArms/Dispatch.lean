@@ -1621,6 +1621,18 @@ theorem receiveResolvedArm_cancelled_stepCovers (e : CoreId) {ctx : LabelingCont
   obtain ⟨hC, hCInv⟩ := cancelRecvBusyReply_stepCovers e ctx tid gate decoded e st hInv
   generalize cancelRecvBusyReply ctx tid gate decoded e st = stC at h hC hCInv
   simp only at h
+  by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC
+      epId = true
+  · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
+    cases hRes : resolveRecvReplyId gate decoded stC with
+    | error _ => rw [hRes] at h; cases h
+    | ok r =>
+    rw [hRes] at h
+    simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at h
+    subst h
+    exact stepCoversInv_trans hC (writeReturnFrameToTcb_keyFrame _ _ _ hCInv).stepCoversInv
+  simp only [Bool.not_eq_true] at hNb
+  simp only [hNb, Bool.false_eq_true, ↓reduceIte] at h
   split at h
   · cases h
   split at h
@@ -1685,6 +1697,14 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
   case none.send.object epId =>
+    by_cases hNb : sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid
+        epId = true
+    · -- WS-SX SX7.2: `NBSend` with no receiver waiting writes nothing.
+      simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at h
+      subst h
+      exact ⟨stepCovers_refl e st, hInv⟩
+    simp only [Bool.not_eq_true] at hNb
+    simp only [hNb, Bool.false_eq_true, ↓reduceIte] at h
     split at h
     · cases h
     rename_i hSend
@@ -1757,6 +1777,15 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
         (fun x hx => keyFrame_trans_stage hx) h
     · cases h
   case none.notificationWait.object notifId =>
+    by_cases hNb : waitFindsNothing ctx (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid
+        notifId = true
+    · -- WS-SX SX7.2: `NBWait` with nothing pending writes the badge register.
+      simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at h
+      subst h
+      exact stepCoversInv_trans (stepCovers_refl e st)
+        (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCoversInv
+    simp only [Bool.not_eq_true] at hNb
+    simp only [hNb, Bool.false_eq_true, ↓reduceIte] at h
     split at h
     · rename_i hW
       cases h

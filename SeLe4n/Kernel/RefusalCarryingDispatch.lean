@@ -577,6 +577,10 @@ writes the same way; every other wait takes the specification's form. -/
   fun st =>
     match cap.target with
     | .object notifId =>
+        if waitFindsNothing ctx (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid
+            notifId then
+          .ok ((), Architecture.nbRecvFailedTransfer st tid)
+        else
         if securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf tid) then
           if notificationBoundElsewhere st notifId tid then .error (.invalidCapability 0, st) else
           match st.getNotification? notifId with
@@ -630,6 +634,12 @@ theorem notificationWaitCheckedArmR_eq (ctx : LabelingContext)
   simp only [notificationWaitCheckedArmR, dispatchWithCapChecked, dispatchCapabilityOnly, hWait]
   cases cap.target with
   | object notifId =>
+    by_cases hN : waitFindsNothing ctx (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid
+        notifId = true
+    · simp only [hN, ↓reduceIte, RefusalCarrying.ofKernel]
+    simp only [Bool.not_eq_true] at hN
+    dsimp only
+    simp only [RefusalCarrying.ofKernel, hN, Bool.false_eq_true, ↓reduceIte]
     simp only [notificationWaitCrossCoreDispatchChecked]
     by_cases hFlow : securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf tid) = true
     · simp only [hFlow, ↓reduceIte]
@@ -638,7 +648,6 @@ theorem notificationWaitCheckedArmR_eq (ctx : LabelingContext)
       simp only [hBound, Bool.false_eq_true, ↓reduceIte]
       have hGen := notificationWaitArmGeneralR_eq notifId tid executingCore st
       simp only [RefusalCarrying.ofKernel] at hGen ⊢
-      simp only [hBound, Bool.false_eq_true, ↓reduceIte]
       split
       · next ntfn hN =>
         split

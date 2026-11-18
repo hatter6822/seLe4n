@@ -5962,6 +5962,20 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_faulted($|
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_invokeFault_dropped($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallDropsCapFault_recv($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n 'an NBSend at the same CPtr drops its fault' tests/FaultHandlingSuite.lean
+# WS-SX SX7.2: the non-blocking syscalls never block.  A send that only
+# `Send` or `Call` did not issue drops its message on an endpoint no receiver
+# waits on, once the flow gate admits it; NBRecv and NBWait with nothing to
+# take write 0 to x0 and return (seL4's `doNBRecvFailedTransfer`).
+run_check "INVARIANT" rg -n '^@\[inline\] def wordSendBlocks \(w : UInt64\) : Bool :=$' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem wordSendBlocks_word \(s : Syscall\) : wordSendBlocks s\.word = s\.invocationBlocks' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem wordReceiveBlocks_word($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n -U '^@\[inline\] def sendDropsMessage [^\n]*\n[^\n]*\n  !blocks &&$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^        if sendDropsMessage ctx \(Syscall\.wordSendBlocks \(callerSyscallWord st tid\)\) st tid epId then$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'if receiveFindsNothing \(Syscall\.wordReceiveBlocks \(callerSyscallWord st tid\)\) st epId then \.ok \(\(\), Architecture\.nbRecvFailedTransfer st tid\) else' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^        if waitFindsNothing ctx \(Syscall\.wordReceiveBlocks \(callerSyscallWord st tid\)\) st tid\n            notifId then$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem nbRecvFailedTransfer_eq_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n 'an NBSend to an endpoint no receiver waits on drops the message' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n 'an NBRecv on an endpoint no sender waits on returns at once, x0 = 0' tests/FaultHandlingSuite.lean
 # WS-ZA ZA6.31: the fault paths allocate nothing.  (1) A syscall's failed
 # operand resolution is delivered from the words the entry's own lookup
 # produced: the operand dispatch hands an empty slot and the resolution's

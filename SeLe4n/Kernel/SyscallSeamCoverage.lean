@@ -233,6 +233,47 @@ theorem receiveResolvedArm_coversWrites (ctx : LabelingContext)
   unfold receiveResolvedArm at hDisp
   generalize hC : cancelRecvBusyReply ctx tid gate decoded e st = stC at hDisp
   simp only at hDisp
+  by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
+  · -- WS-SX SX7.2: `NBRecv` with no sender waiting: the holder's cancel, then
+    -- the badge register written, which moves no scheduler state.
+    cases hRes : resolveRecvReplyId gate decoded stC with
+    | error _ => rw [hRes] at hDisp; exact absurd hDisp (by simp)
+    | ok r =>
+    rw [hRes] at hDisp
+    simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
+    subst hDisp
+    refine footprintCoversWrites_trans S (st₂ := stC) ?_
+      (footprintCoversWrites_of_scheduler_eq S hTable
+        (Architecture.writeReturnFrameToTcb_scheduler_eq _ _ _))
+    unfold cancelRecvBusyReply at hC
+    cases hCode : recvBusyReplyHolderCode ctx tid gate decoded st with
+    | zero =>
+      rw [hCode] at hC
+      simp only at hC
+      subst hC
+      exact footprintCoversWrites_refl S st
+    | succ k =>
+      rw [hCode] at hC
+      simp only at hC
+      subst hC
+      have hB := recvBusyReplyHolderCode_succ hCode
+      split at hOps
+      · obtain ⟨rid, hRid⟩ : ∃ rid, recvReplyLookup? gate decoded st = some rid := by
+          cases hL : recvReplyLookup? gate decoded st with
+          | none => rw [hL] at hB; exact absurd hB (by simp [busyReplyHolder?])
+          | some rid => exact ⟨rid, rfl⟩
+        simp only [hB, Option.isSome_some, ↓reduceIte, Option.some.injEq] at hOps
+        subst hOps
+        rw [hRid] at hB
+        simp only [schedLockSetForSyscall, Option.bind_some,
+          schedLockSet_receiveCancellingHolderOnCore, hRid, hB] at hSched
+        exact footprintCoversWrites_of_allCores S _ st _ (LockSet.ofList?_pairs hSched)
+          (fun d _ => cancelReplyHolder_replenishQueueOnCore st ⟨k⟩ e d)
+      · rename_i hR0
+        exact absurd (recvBusyReplyHolderCode_eq_zero_of_resolveRecvReplyId_ok hR0)
+          (by rw [hCode]; simp)
+  simp only [Bool.not_eq_true] at hNb
+  simp only [hNb, Bool.false_eq_true, ↓reduceIte] at hDisp
   split at hDisp
   · exact absurd hDisp (by simp)
   rename_i replyId? hR
@@ -637,6 +678,14 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
     simp only [schedLockSetForSyscall] at hSched
     rw [hT] at hDisp
     simp only at hDisp
+    by_cases hNb : waitFindsNothing ctx (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid nId = true
+    · -- WS-SX SX7.2: `NBWait` with nothing pending writes the badge register.
+      simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
+      subst hDisp
+      exact footprintCoversWrites_of_scheduler_eq S hTable
+        (Architecture.writeReturnFrameToTcb_scheduler_eq _ _ _)
+    simp only [Bool.not_eq_true] at hNb
+    simp only [hNb, Bool.false_eq_true, ↓reduceIte] at hDisp
     split at hDisp
     · rename_i st₁ badge hWait
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
@@ -662,6 +711,13 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
       Option.bind_some] at hSched
     rw [hT] at hDisp
     simp only at hDisp
+    by_cases hNb : sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid epId = true
+    · -- WS-SX SX7.2: `NBSend` with no receiver waiting writes nothing.
+      simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
+      subst hDisp
+      exact footprintCoversWrites_refl S st
+    simp only [Bool.not_eq_true] at hNb
+    simp only [hNb, Bool.false_eq_true, ↓reduceIte] at hDisp
     split at hDisp
     · exact absurd hDisp (by simp)
     · rename_i st₂ summary x hSend

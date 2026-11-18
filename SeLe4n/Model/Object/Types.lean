@@ -5356,6 +5356,32 @@ theorem numberDropsInvocationFault_number (s : Syscall) :
   | .recv | .wait | .replyRecv | .nbSendRecv | .nbSendWait => true
   | _ => false
 
+/-- **`sendIPC`'s `blocking`, read from the trapped syscall word**:
+`handleInvocation`'s `isBlocking`, `true` only for `Send`'s and `Call`'s words
+(`wordSendBlocks_word`), so the send of `NBSend` and the invoke phase of
+`ReplyRecv`, `NBSendRecv` and `NBSendWait` never block.  A Bool test on the
+word, so the entry builds no `Option Syscall` to ask it. -/
+@[inline] def wordSendBlocks (w : UInt64) : Bool :=
+  w == Syscall.send.word || w == Syscall.call.word
+
+/-- **`receiveIPC`'s and `receiveSignal`'s `isBlocking`, read from the
+trapped syscall word** (`handleRecv`): `false` only for `NBRecv`'s and
+`NBWait`'s words; every other syscall's receive, and a word naming no
+syscall, blocks (`wordReceiveBlocks_word`). -/
+@[inline] def wordReceiveBlocks (w : UInt64) : Bool :=
+  !(w == Syscall.nbRecv.word || w == Syscall.nbWait.word)
+
+/-- At a syscall's own word, `wordSendBlocks` is `invocationBlocks`. -/
+theorem wordSendBlocks_word (s : Syscall) : wordSendBlocks s.word = s.invocationBlocks := by
+  cases s <;> decide
+
+/-- At a receiving syscall's own word, `wordReceiveBlocks` is `receiveBlocks`. -/
+theorem wordReceiveBlocks_word (s : Syscall)
+    (h : s = .recv ∨ s = .nbRecv ∨ s = .wait ∨ s = .nbWait ∨ s = .replyRecv ∨
+      s = .nbSendRecv ∨ s = .nbSendWait) :
+    wordReceiveBlocks s.word = s.receiveBlocks := by
+  rcases h with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
+
 /-- The receives seL4 runs with `canReply` (`handleRecv(_, true)`): the reply
 capability is read from `replyRegister`. -/
 @[inline] def receiveCanReply : Syscall → Bool

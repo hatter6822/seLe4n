@@ -264,6 +264,19 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
     obtain ⟨w0, hIC, hHC⟩ := hSC
     generalize cancelRecvBusyReply ctx tid gate decoded ec st = stC at h w0 hIC hHC
     simp only at h
+    by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
+    · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the caller's
+      -- badge register.
+      cases hRes : resolveRecvReplyId gate decoded stC with
+      | error _ => rw [hRes] at h; cases h
+      | ok r =>
+      rw [hRes] at h
+      simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at h
+      subst h
+      exact hW (w0.trans (.of_kept (writeReturnFrameToTcb_savedRegsKeptExcept stC tid _ hIC)
+        fun _ e => e ▸ hFr))
+    simp only [Bool.not_eq_true] at hNb
+    simp only [hNb, Bool.false_eq_true, ↓reduceIte] at h
     split at h
     · cases h
     split at h
@@ -299,6 +312,8 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
   case none.send.object epId =>
+    split at h
+    · cases h; exact savedRegsKeptOffCore_refl ec st
     split at h
     · cases h
     rename_i hSend
@@ -367,6 +382,10 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
       exact hW (notificationSignalArm_savedRegsWrittenFree P hRT hBNR hSig hClr)
     · cases h
   case none.notificationWait.object notifId =>
+    split at h
+    · cases h
+      exact hW (.of_kept (writeReturnFrameToTcb_savedRegsKeptExcept st tid _ hInv) fun _ e =>
+        e ▸ hFr)
     split at h
     · rename_i hWt
       cases h

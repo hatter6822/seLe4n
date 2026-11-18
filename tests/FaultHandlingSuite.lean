@@ -1560,6 +1560,31 @@ private def runSyscallCapFaultChecks : IO Unit := do
      | .ok (.resumes, st) =>
          pendingFaultOf st faulter == none && ipcStateOf st faulter == ipcStateOf stRunning faulter
      | _ => false)
+  -- WS-SX SX7.2: seL4's `sendIPC` with `blocking = false` drops the message
+  -- when no receiver waits (slot 0 names the handler endpoint, which no thread
+  -- is receiving on in this state), where a `Send` blocks.
+  assertBool "an NBSend to an endpoint no receiver waits on drops the message: the caller returns, still running, nothing queued"
+    (match seamDispatchSyscall seamCtx .nbSend 0 with
+     | .ok (.returns _, st) =>
+         ipcStateOf st faulter == ipcStateOf stRunning faulter &&
+           (st.getEndpoint? epHandler).map (·.sendQ.head) == some none
+     | _ => false)
+  assertBool "control: a Send to the same endpoint blocks the caller on it"
+    (match seamDispatchSyscall seamCtx .send 0 with
+     | .ok (.blocks, st) => ipcStateOf st faulter != ipcStateOf stRunning faulter
+     | _ => false)
+  -- `receiveIPC` with `isBlocking = false` and no sender: `doNBRecvFailedTransfer`
+  -- writes 0 to the badge register (`x0`, which held the CPtr) and the caller
+  -- does not block.
+  assertBool "an NBRecv on an endpoint no sender waits on returns at once, x0 = 0, still running"
+    (match seamDispatchSyscall seamCtx .nbRecv 1 with
+     | .ok (.returns f, st) =>
+         f.x0 == 0 && ipcStateOf st faulter == ipcStateOf stRunning faulter
+     | _ => false)
+  assertBool "control: a Recv on the same endpoint blocks the caller"
+    (match seamDispatchSyscall seamCtx .recv 1 with
+     | .ok (.blocks, _) => true
+     | _ => false)
   -- `handleRecv` faults whatever the blocking flag: the receive phase of an
   -- NBRecv and of the compound syscalls is delivered.
   assertBool "an NBRecv at the same CPtr faults in the receive phase (handleRecv faults unconditionally)"

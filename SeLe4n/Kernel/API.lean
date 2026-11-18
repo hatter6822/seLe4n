@@ -5943,6 +5943,93 @@ theorem dispatchCapabilityOnlyChecked_ok {ctx : LabelingContext} {decoded : Sysc
   · exact absurd rfl hR
   · rfl
 
+/-! ### The non-blocking syscalls (WS-SX SX7.2)
+
+seL4's `handleSyscall` hands `isBlocking` down from the syscall number to
+`sendIPC`, `receiveIPC` and `receiveSignal`.  The model reads it from the word
+that named the syscall, the caller's trapped `x7`, as the arm acts: a send
+only `Send` or `Call` did not issue (`Syscall.wordSendBlocks`) to an endpoint
+with no receiver waiting drops the message, and `NBRecv` or
+`NBWait` with nothing to take returns at once with `0` in the badge register
+(`doNBRecvFailedTransfer`). -/
+
+/-- **The syscall word the caller trapped with**: its saved `x7`
+(`arm64DefaultLayout.syscallNumReg`); `0`, which names no syscall, for a
+caller with no TCB. -/
+@[inline] def callerSyscallWord (st : SystemState) (tid : SeLe4n.ThreadId) : UInt64 :=
+  match st.getTcb? tid with
+  | some t => SeLe4n.readRegWord t.registerContext SeLe4n.arm64DefaultLayout.syscallNumReg
+  | none => 0
+
+/-- **seL4's `sendIPC` with `blocking = false` on an endpoint no receiver
+waits on**: the message is dropped and nothing is written.  Asked only once
+the sender's flow to the endpoint is admitted (`endpointFlowGate`, the send's
+own gate), so a sender denied that flow is refused whatever the queue holds
+and learns nothing of it. -/
+@[inline] def sendDropsMessage (ctx : LabelingContext) (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) : Bool :=
+  !blocks &&
+  (match st.getEndpoint? epId with
+   | some ep => ep.receiveQ.head.isNone
+   | none => false) &&
+  endpointFlowGate ctx epId (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId)
+
+/-- A blocking send never drops its message. -/
+theorem sendDropsMessage_blocking (ctx : LabelingContext) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) :
+    sendDropsMessage ctx true st tid epId = false := rfl
+
+/-- **seL4's `receiveIPC` with `isBlocking = false` on an endpoint no sender
+waits on** (`doNBRecvFailedTransfer`). -/
+@[inline] def receiveFindsNothing (blocks : Bool) (st : SystemState) (epId : SeLe4n.ObjId) :
+    Bool :=
+  !blocks &&
+  (match st.getEndpoint? epId with
+   | some ep => ep.sendQ.head.isNone
+   | none => false)
+
+/-- A blocking receive never takes the non-blocking failure. -/
+theorem receiveFindsNothing_blocking (st : SystemState) (epId : SeLe4n.ObjId) :
+    receiveFindsNothing true st epId = false := rfl
+
+/-- **seL4's `receiveSignal` with `isBlocking = false` on a notification with
+no pending signal** (`doNBRecvFailedTransfer`), asked once the wait's flow and
+binding checks have admitted it. -/
+@[inline] def waitFindsNothing (ctx : LabelingContext) (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (notifId : SeLe4n.ObjId) : Bool :=
+  !blocks &&
+  (match st.getNotification? notifId with
+   | some ntfn => ntfn.pendingBadge.isNone
+   | none => false) &&
+  securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf tid) &&
+  !notificationBoundElsewhere st notifId tid
+
+/-- A blocking wait never takes the non-blocking failure. -/
+theorem waitFindsNothing_blocking (ctx : LabelingContext) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (notifId : SeLe4n.ObjId) :
+    waitFindsNothing ctx true st tid notifId = false := rfl
+
+/-- A wait that consumed a badge was not the non-blocking failure: a badge is
+consumed only from a notification holding one. -/
+theorem waitFindsNothing_of_consumed {ctx : LabelingContext} {notifId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {executingCore : Concurrency.CoreId} {st st1 : SystemState}
+    {badge : SeLe4n.Badge} (blocks : Bool)
+    (h : notificationWaitCrossCoreDispatchChecked ctx notifId tid executingCore st =
+      (st1, .ok (some badge))) :
+    waitFindsNothing ctx blocks st tid notifId = false := by
+  unfold waitFindsNothing
+  cases hN : st.getNotification? notifId with
+  | none => simp
+  | some ntfn =>
+    cases hP : ntfn.pendingBadge with
+    | some b => simp [hP]
+    | none =>
+      exfalso
+      unfold notificationWaitCrossCoreDispatchChecked notificationWaitOnCore at h
+      simp only [hN, hP] at h
+      repeat' split at h
+      all_goals simp_all
+
 /-- **The checked receive arm once its gate has passed and its busy reply is
 cancelled** (`dispatchWithCapChecked`'s `.receive` arm, WS-SX SX4): the reply
 object resolved, the per-core receive with its capabilities, the rendezvous
@@ -5956,6 +6043,11 @@ def receiveResolvedArm (decoded : SyscallDecodeResult) (gate : SyscallGate)
       match resolveRecvReplyId gate decoded st with
       | .error e => .error e
       | .ok replyIdOpt =>
+        -- WS-SX SX7.2: `NBRecv` with no sender waiting returns at once,
+        -- `0` in its badge register (seL4's `doNBRecvFailedTransfer`).
+        if receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId then
+          .ok ((), Architecture.nbRecvFailedTransfer st tid)
+        else
         -- WS-SM SM6.D (PR #822 review): route through the per-core receive
         -- transition (the endpoint→receiver flow is already gated above, so the
         -- *unchecked* `endpointReceiveDualOnCore` is correct here).  Per-core block
@@ -6045,6 +6137,11 @@ def dispatchWithCapChecked (ctx : LabelingContext)
     match cap.target with
     | .object epId =>
       fun st =>
+        -- WS-SX SX7.2: `NBSend` to an endpoint no receiver waits on drops the
+        -- message (seL4's `sendIPC` with `blocking = false`).
+        if sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid epId then
+          .ok ((), st)
+        else
         -- WS-ZA ZA4.7 (seL4 `sendIPC`): the send is handed only the badge and
         -- the grant bit of the invoked capability.  The words are read from the
         -- sender's own frame at delivery, and the extra capabilities are looked up
@@ -6292,6 +6389,13 @@ def dispatchWithCapChecked (ctx : LabelingContext)
     match cap.target with
     | .object notifId =>
       fun st =>
+        -- WS-SX SX7.2: `NBWait` (or `NBRecv`) on a notification with no pending
+        -- signal returns at once, `0` in its badge register (seL4's
+        -- `receiveSignal` with `isBlocking = false`, `doNBRecvFailedTransfer`).
+        if waitFindsNothing ctx (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid
+            notifId then
+          .ok ((), Architecture.nbRecvFailedTransfer st tid)
+        else
         -- WS-SM SM6.B: per-core checked cross-core wait (gates notification→waiter
         -- flow, then deschedules the caller on its own core).
         match notificationWaitCrossCoreDispatchChecked ctx notifId tid executingCore st with
@@ -7576,7 +7680,8 @@ theorem dispatchArm_notificationWait_matches_returnShape
   refine ⟨rfl,
     Architecture.writeReturnFrameToTcb st1 tid (Architecture.returnFrameOfBadge badge),
     ?_, ?_⟩
-  · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hDispatch]
+  · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hDispatch,
+      waitFindsNothing_of_consumed _ hDispatch]
   · exact Architecture.readReturnFrame_writeReturnFrame st1 tid _ tcb hTcb hObjInv
 
 /-- RA.B.8, `.serviceQuery` (`.word`): the arm stages the resolved
@@ -7691,6 +7796,8 @@ theorem dispatchArm_receive_matches_returnShape
     (hTarget : cap.target = .object epId)
     (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
     (hReply : resolveRecvReplyId gate decoded st = .ok replyIdOpt)
+    -- WS-SX SX7.2: the receive is not `NBRecv`'s failure with no sender waiting.
+    (hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId = false)
     -- PR #873 round 6: the arm runs the WithCaps per-core receive, so the
     -- hypothesis names that transition and the staged `extraCaps` is the
     -- transfer summary's installed count rather than a hardcoded zero.
@@ -7726,7 +7833,7 @@ theorem dispatchArm_receive_matches_returnShape
     ?_, ?_⟩
   · subst hCancel
     simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget, hFlow,
-      hReply, hDispatch, hDon]
+      hReply, hNb, hDispatch, hDon]
   · exact Architecture.blockedReturn_staged_in_waiter_frame _ tid tcb msg
       summary.capInfo hTcb hReady hMsg hObjInv
 
@@ -8985,6 +9092,8 @@ theorem dispatchWithCapChecked_receive_delegates
       (ctx.threadLabelOf tid) = true)
     (hReply : resolveRecvReplyId gate decoded st = .ok replyIdOpt) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st0 =
+      -- WS-SX SX7.2: `NBRecv` with no sender waiting returns at once.
+      if receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId then .ok ((), Architecture.nbRecvFailedTransfer st tid) else
       -- PR #873 round 6: the arm routes through the WithCaps per-core receive, so
       -- a send that parked before its receiver arrived delivers its capabilities
       -- too, and the staged `extraCaps` is the summary's installed count.
@@ -9002,9 +9111,13 @@ theorem dispatchWithCapChecked_receive_delegates
                             ((st.getEndpoint? epId).bind (·.sendQ.head))) tid
                           summary.capInfo))
        | (_, .error e) => .error e) := by
-  subst hCancel
-  simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget,
-    endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply]
+  by_cases hN : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId = true
+  · subst hCancel
+    simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget,
+      endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hN]
+  · subst hCancel
+    simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget,
+      endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hN]
 
 /-- **The live checked `.send` arm routes to `endpointSendCrossCoreDispatchChecked`.**
 The checked mirror of `dispatchWithCap_send_delegates`; the gate is inside the
@@ -9016,6 +9129,8 @@ theorem dispatchWithCapChecked_send_delegates
     (hSyscall : decoded.syscallId = .send)
     (hTarget : cap.target = .object epId) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
+      -- WS-SX SX7.2: `NBSend` with no receiver waiting drops the message.
+      if sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid epId then .ok ((), st) else
       (match endpointSendCrossCoreDispatchChecked ctx epId tid (.frame cap.badge (cap.rights.mem .grant))
               executingCore st with
        | (_, .error e) => .error e
@@ -9026,7 +9141,9 @@ theorem dispatchWithCapChecked_send_delegates
                .ok ((), Architecture.stageWokenDelivery st''
                          ((st.getEndpoint? epId).bind (·.receiveQ.head))
                          summary.capInfo)) := by
-  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget]
+  by_cases hD : sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid epId = true
+  · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hD]
+  · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hD]
 
 /-- **The live `.tcbSetPriority` arm routes to `setPriorityOnCore`.**
 
@@ -9119,6 +9236,8 @@ def syscallDelegates : SyscallId → Prop
         decoded.syscallId = .send →
         cap.target = .object epId →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
+          -- WS-SX SX7.2: `NBSend` with no receiver waiting drops the message.
+          if sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid epId then .ok ((), st) else
           (match endpointSendCrossCoreDispatchChecked ctx epId tid
                   (.frame cap.badge (cap.rights.mem .grant)) executingCore st with
            | (_, .error e) => .error e
@@ -9177,6 +9296,8 @@ def syscallDelegates : SyscallId → Prop
           (ctx.threadLabelOf tid) = true →
         resolveRecvReplyId gate decoded st = .ok replyIdOpt →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st0 =
+          -- WS-SX SX7.2: `NBRecv` with no sender waiting returns at once.
+          if receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId then .ok ((), Architecture.nbRecvFailedTransfer st tid) else
           (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with
            -- WS-RA RA.B.6: the arm stages the non-blocking consume's delivery
            -- into the caller's return frame.  PR #873 round 6: with the receive

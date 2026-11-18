@@ -648,6 +648,14 @@ private theorem receiveResolvedArm_cancelled_preserves_ipcInvariantFull
   | error e => simp only [hRid] at hStep; cases hStep
   | ok replyIdOpt =>
       simp only [hRid] at hStep
+      by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st
+          epId = true
+      · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
+        simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+        rw [← hStep]
+        exact writeReturnFrameToTcb_preserves_ipcInvariantFull st tid _ hObjInv hInv
+      simp only [Bool.not_eq_true] at hNb
+      simp only [hNb, Bool.false_eq_true, ↓reduceIte] at hStep
       obtain ⟨hCleanupStack, hRidFresh, hRecvInvExt,
           hRecvNotOwner⟩ :=
         hPack.recvStage epId replyIdOpt hSel hTgt hRid
@@ -756,6 +764,14 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
       case send =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
         case object epId =>
+          by_cases hNb : sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st
+              tid epId = true
+          · -- WS-SX SX7.2: `NBSend` with no receiver waiting writes nothing.
+            simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+            rw [← hStep]
+            exact hInv
+          simp only [Bool.not_eq_true] at hNb
+          simp only [hNb, Bool.false_eq_true, ↓reduceIte] at hStep
           by_cases hG : endpointFlowGate ctx epId (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId) = true
           · rw [show endpointSendCrossCoreDispatchChecked ctx epId tid (.frame cap.badge (cap.rights.mem .grant)) executingCore st
                 = endpointSendDualWithCapsOnCore epId tid (.frame cap.badge (cap.rights.mem .grant)) executingCore st by simp [endpointSendCrossCoreDispatchChecked, hG]] at hStep
@@ -1130,6 +1146,14 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
       case notificationWait =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
         case object notifId =>
+          by_cases hNb : waitFindsNothing ctx (Syscall.wordReceiveBlocks (callerSyscallWord st tid))
+              st tid notifId = true
+          · -- WS-SX SX7.2: `NBWait` with nothing pending writes the badge register.
+            simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+            rw [← hStep]
+            exact writeReturnFrameToTcb_preserves_ipcInvariantFull st tid _ hObjInv hInv
+          simp only [Bool.not_eq_true] at hNb
+          simp only [hNb, Bool.false_eq_true, ↓reduceIte] at hStep
           cases hFlow : securityFlowsTo (ctx.objectLabelOf notifId)
               (ctx.threadLabelOf tid) with
           | false =>

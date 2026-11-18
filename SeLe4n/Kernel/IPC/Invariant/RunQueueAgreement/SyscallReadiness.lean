@@ -1360,6 +1360,17 @@ theorem receiveResolvedArm_readyKeptStage (ctx : LabelingContext)
   generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC
     at h hS hK hHC hCurC hActC hIC hRC hDC
   simp only at h
+  by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
+  · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
+    cases hRes : resolveRecvReplyId gate decoded stC with
+    | error _ => rw [hRes] at h; cases h
+    | ok r =>
+    rw [hRes] at h
+    simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at h
+    subst h
+    exact readyKeptStage.trans hS.1 hK (.of_stage (writeReturnFrameToTcb_runQueueStage _ _ _))
+  simp only [Bool.not_eq_true] at hNb
+  simp only [hNb, Bool.false_eq_true, ↓reduceIte] at h
   split at h
   · cases h
   split at h
@@ -1426,6 +1437,8 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
   case none.send.object epId =>
+    split at h
+    · cases h; exact .refl _
     split at h
     · cases h
     rename_i hSend
@@ -1504,6 +1517,8 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
         (fun x => stageWokenDeliveryTwice_runQueueStage x _ _) h
     · cases h
   case none.notificationWait.object notifId =>
+    split at h
+    · cases h; exact .of_stage (writeReturnFrameToTcb_runQueueStage _ _ _)
     split at h
     · rename_i hW
       cases h

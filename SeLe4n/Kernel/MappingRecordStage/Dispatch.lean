@@ -632,6 +632,8 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
   all_goals first | (cases h; done) | skip
   case none.send.object epId =>
     split at h
+    · cases h; exact MappingStage.refl _
+    split at h
     · cases h
     rename_i hSend
     exact clearStashStage_mappingStage
@@ -644,6 +646,7 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     unfold receiveResolvedArm at h
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    · cases h; exact writeReturnFrameToTcb_mappingStage _ _ _
     rename_i summ _ hRecv _ stDon hHand
     cases h
     exact (MappingStage.of_fst_eq endpointReceiveDualWithCapsOnCore_mappingStage hRecv).trans
@@ -706,6 +709,8 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     · cases h
   case none.notificationWait.object notifId =>
     split at h
+    · cases h; exact writeReturnFrameToTcb_mappingStage _ _ _
+    split at h
     · rename_i hW
       cases h
       exact (MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW).trans
@@ -723,6 +728,7 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
       unfold receiveResolvedArm at h
       repeat' split at h
       all_goals first | (cases h; done) | skip
+      · cases h; exact writeReturnFrameToTcb_mappingStage _ _ _
       rename_i summ _ hRecv _ stDon hHand
       cases h
       exact (MappingStage.of_fst_eq endpointReceiveDualWithCapsOnCore_mappingStage hRecv).trans

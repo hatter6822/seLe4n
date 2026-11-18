@@ -196,6 +196,9 @@ def endpointSendCheckedArmGeneralR (ctx : LabelingContext) (tid : SeLe4n.ThreadI
   fun st =>
     match cap.target with
     | .object epId =>
+        if sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid epId then
+          .ok ((), st)
+        else
         let woken? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         match endpointSendCrossCoreDispatchChecked ctx epId tid
             (.frame cap.badge (cap.rights.mem .grant))
@@ -224,6 +227,11 @@ theorem endpointSendCheckedArmGeneralR_eq (ctx : LabelingContext)
   cases cap.target with
   | object epId =>
     simp only []
+    by_cases hD : sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid
+        epId = true
+    · simp only [hD, ↓reduceIte]
+    simp only [Bool.not_eq_true] at hD
+    simp only [hD, Bool.false_eq_true, ↓reduceIte]
     rcases hRun : endpointSendCrossCoreDispatchChecked ctx epId tid
         (.frame cap.badge (cap.rights.mem .grant)) executingCore st with
       ⟨st', _ | ⟨summary, sgi⟩⟩
@@ -1202,6 +1210,9 @@ the general arm. -/
   fun st =>
     match cap.target with
     | .object epId =>
+        if sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid epId then
+          .ok ((), st)
+        else
         match st.getEndpoint? epId with
         | some ep =>
             match ep.receiveQ.head with
@@ -1302,6 +1313,12 @@ theorem endpointSendCheckedArmR_eq_general (ctx : LabelingContext)
   unfold endpointSendCheckedArmR
   split
   · next epId hTgt =>
+    by_cases hD : sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid epId = true
+    · rw [if_pos hD]
+      unfold endpointSendCheckedArmGeneralR
+      simp only [hTgt, hD, ↓reduceIte]
+    have hD' : sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid epId = false := by simpa using hD
+    rw [if_neg hD]
     split
     · next ep hE =>
       split
@@ -1317,7 +1334,7 @@ theorem endpointSendCheckedArmR_eq_general (ctx : LabelingContext)
               simp only [sendWakesInPlace, Bool.and_eq_true] at hW
               exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.1.2
             unfold endpointSendCheckedArmGeneralR
-            simp only [hTgt, hE, Option.bind_some, hH]
+            simp only [hTgt, hE, Option.bind_some, hH, hD', Bool.false_eq_true, ↓reduceIte]
             split
             · next hShort =>
               rcases hR with hR | ⟨hR, _⟩ | ⟨mi0, hR, hMi, hUn⟩
@@ -1372,7 +1389,7 @@ theorem endpointSendCheckedArmR_eq_general (ctx : LabelingContext)
             rw [enqueuesInPlaceCode_eq,
               show SeLe4n.ThreadId.ofOptCode ep.sendTailCode = ep.sendQ.tail from rfl] at hIP
             unfold endpointSendCheckedArmGeneralR
-            simp only [hTgt, hE, Option.bind_some, hH]
+            simp only [hTgt, hE, Option.bind_some, hH, hD', Bool.false_eq_true, ↓reduceIte]
             unfold endpointSendCrossCoreDispatchChecked
             rw [if_pos hFlow,
               endpointSendDualWithCapsOnCore_no_caps _ _ _ _ _ (hReq _ _ _),
@@ -2857,6 +2874,9 @@ def endpointSendCapsGeneralR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
   fun st =>
     match cap.target with
     | .object epId =>
+        if sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid epId then
+          .ok ((), st)
+        else
         let woken? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         match endpointSendCrossCoreDispatchChecked ctx epId tid
             (.frame cap.badge (cap.rights.mem .grant))
@@ -2879,6 +2899,11 @@ theorem endpointSendCapsGeneralR_eq (ctx : LabelingContext)
   cases cap.target with
   | object epId =>
     simp only []
+    by_cases hD : sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid
+        epId = true
+    · simp only [hD, ↓reduceIte]
+    simp only [Bool.not_eq_true] at hD
+    simp only [hD, Bool.false_eq_true, ↓reduceIte]
     rcases endpointSendCrossCoreDispatchChecked ctx epId tid
         (.frame cap.badge (cap.rights.mem .grant)) executingCore st with
       ⟨st', _ | ⟨summary, sgi⟩⟩
@@ -2909,6 +2934,9 @@ into the receiver's (`performSendCapsDeliveredLong`). -/
   fun st =>
     match cap.target with
     | .object epId =>
+        if sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid epId then
+          .ok ((), st)
+        else
         match st.getEndpoint? epId with
         | some ep =>
             match ep.receiveQ.head with
@@ -2964,6 +2992,12 @@ theorem endpointSendCapsCheckedArmR_eq_general (ctx : LabelingContext)
   unfold endpointSendCapsCheckedArmR
   split
   · next epId hTgt =>
+    by_cases hD : sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid epId = true
+    · rw [if_pos hD]
+      unfold endpointSendCapsGeneralR
+      simp only [hTgt, hD, ↓reduceIte]
+    have hD' : sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid epId = false := by simpa using hD
+    rw [if_neg hD]
     split
     · next ep hE =>
       split
@@ -2990,7 +3024,7 @@ theorem endpointSendCapsCheckedArmR_eq_general (ctx : LabelingContext)
                 have hSome : (st.getTcb? tid).isSome = true := by rw [hS]; rfl
                 have hb : cap.badge = SeLe4n.Badge.opt cap.badgeWord cap.badged := rfl
                 unfold endpointSendCapsGeneralR
-                simp only [hTgt, hE, Option.bind_some, hH]
+                simp only [hTgt, hE, Option.bind_some, hH, hD', Bool.false_eq_true, ↓reduceIte]
                 rw [sendDispatchChecked_inPlace_transfer ctx st epId ep tid r rt _ _ executingCore
                   (hMsg _ _ hSome) hE hH hT hSome hW hFlow,
                   sendCapRequest_routedLong st epId tid r stcb rf capAddr mi sid _ _
@@ -3021,7 +3055,7 @@ theorem endpointSendCapsCheckedArmR_eq_general (ctx : LabelingContext)
               have hS := senderTransferInertW_isSome hSI
               have hMsg := TransferringFrameRouted.message hFrame hTr hShort
               unfold endpointSendCapsGeneralR
-              simp only [hTgt, hE, Option.bind_some, hH]
+              simp only [hTgt, hE, Option.bind_some, hH, hD', Bool.false_eq_true, ↓reduceIte]
               have hInert := capTransferInert_sendCapRequest_of_W st epId r rt tid cap.badge
                 (cap.rights.mem .grant) hT hSI
               obtain ⟨s, hC, hD⟩ := sendDispatchChecked_inPlace_inert ctx st epId ep tid r rt
@@ -3037,7 +3071,7 @@ theorem endpointSendCapsCheckedArmR_eq_general (ctx : LabelingContext)
                 have hSome : (st.getTcb? tid).isSome = true := by rw [hS]; rfl
                 have hb : cap.badge = SeLe4n.Badge.opt cap.badgeWord cap.badged := rfl
                 unfold endpointSendCapsGeneralR
-                simp only [hTgt, hE, Option.bind_some, hH]
+                simp only [hTgt, hE, Option.bind_some, hH, hD', Bool.false_eq_true, ↓reduceIte]
                 rw [sendDispatchChecked_inPlace_transfer ctx st epId ep tid r rt _ _ executingCore
                   (hMsg _ _ hSome) hE hH hT hSome hW hFlow,
                   TransferringFrameRouted.sendCapRequest (epId := epId) (r := r) _ _
@@ -3074,7 +3108,7 @@ theorem endpointSendCapsCheckedArmR_eq_general (ctx : LabelingContext)
             have hReq := sendCapRequest_of_no_receiver st epId tid
               (.frame cap.badge (cap.rights.mem .grant)) (by simp only [hE, Option.bind_some, hH])
             unfold endpointSendCapsGeneralR
-            simp only [hTgt, hE, Option.bind_some, hH]
+            simp only [hTgt, hE, Option.bind_some, hH, hD', Bool.false_eq_true, ↓reduceIte]
             unfold endpointSendCrossCoreDispatchChecked
             rw [if_pos hFlow,
               endpointSendDualWithCapsOnCore_no_caps _ _ _ _ _ hReq,
@@ -4410,6 +4444,9 @@ Inlined, so its result is matched by the caller rather than built. -/
 @[inline] def endpointReceiveResolvedR (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (replyCode : Nat) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
+    if receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId then
+      .ok ((), Architecture.nbRecvFailedTransfer st tid)
+    else
     if receiveBlocksFast st epId tid replyCode then
       .ok ((), removeRunnableOnCore
         (storeReceiveBlock st epId tid (receiveQueueTailCode st epId) replyCode) tid executingCore)
@@ -4439,6 +4476,11 @@ theorem endpointReceiveReplyResolvedR_eq (decoded : SyscallDecodeResult) (tid : 
   | error e => rfl
   | ok rid =>
   simp only [endpointReceiveResolvedR]
+  by_cases hN : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st
+      epId = true
+  · simp only [hN, ↓reduceIte]
+  simp only [Bool.not_eq_true] at hN
+  simp only [hN, Bool.false_eq_true, ↓reduceIte]
   by_cases hF : receiveBlocksFast st epId tid (SeLe4n.ReplyId.optCode rid) = true
   · rw [if_pos hF]
     unfold receiveBlocksFast at hF

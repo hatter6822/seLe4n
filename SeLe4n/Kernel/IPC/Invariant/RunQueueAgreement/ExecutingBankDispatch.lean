@@ -369,6 +369,18 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     obtain ⟨c0, w0, hIC, hHC⟩ := hSC
     generalize cancelRecvBusyReply ctx tid gate decoded ec st = stC at h c0 w0 hIC hHC
     simp only at h
+    by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
+    · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the caller's
+      -- badge register.
+      cases hRes : resolveRecvReplyId gate decoded stC with
+      | error _ => rw [hRes] at h; cases h
+      | ok r =>
+      rw [hRes] at h
+      simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at h
+      subst h
+      exact ((hW c0 w0).trans (bankFrame.writeReturnFrameToTcb_caller _ hIC)).bankAgree hA
+    simp only [Bool.not_eq_true] at hNb
+    simp only [hNb, Bool.false_eq_true, ↓reduceIte] at h
     split at h
     · cases h
     split at h
@@ -413,6 +425,8 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
   case none.send.object epId =>
+    split at h
+    · cases h; exact hA
     split at h
     · cases h
     rename_i hSend
@@ -504,6 +518,8 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
       exact (hW hCv (notificationSignalArm_savedRegsWrittenFree P hRT hBNR hSig hClr)).bankAgree hA
     · cases h
   case none.notificationWait.object notifId =>
+    split at h
+    · cases h; exact (bankFrame.writeReturnFrameToTcb_caller _ hInv).bankAgree hA
     split at h
     · rename_i hWt
       cases h

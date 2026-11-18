@@ -604,6 +604,40 @@ def readReturnFrame (st : SystemState) (tid : SeLe4n.ThreadId) :
         x5 := (tcb.registerContext.gpr ⟨5⟩).word }
   | none => .zero
 
+/-- **The frame of a receive that finds nothing to take without blocking**
+(WS-SX SX7.2): seL4's `doNBRecvFailedTransfer` writes `0` to the badge
+register (`x0`) and nothing else, so every other return register keeps the
+value it holds. -/
+@[inline] def nbRecvFailedFrame (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SyscallReturnFrame :=
+  { readReturnFrame st tid with x0 := 0 }
+
+/-- **seL4's `doNBRecvFailedTransfer`** (`NBRecv` or `NBWait` with nothing to
+take): the badge register (`x0`) of the receiver `tid` is `0`, its other
+registers and its thread state unchanged, and it does not block.  Staged as a
+return frame (`writeReturnFrameToTcb`), whose frame lemmas it reuses; compiled
+as the in-place write of the one register (`nbRecvFailedTransfer_eq_inPlace`). -/
+def nbRecvFailedTransfer (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  writeReturnFrameToTcb st tid (nbRecvFailedFrame st tid)
+
+/-- `nbRecvFailedTransfer` as compiled: `x0` written in the receiver's register
+file in place, no frame record built. -/
+@[inline] def nbRecvFailedTransferInPlace (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState :=
+  st.updateTcb tid (fun t => { t with registerContext := { t.registerContext with x0 := 0 } })
+
+@[csimp] theorem nbRecvFailedTransfer_eq_inPlace :
+    @nbRecvFailedTransfer = @nbRecvFailedTransferInPlace := by
+  funext st tid
+  unfold nbRecvFailedTransfer nbRecvFailedTransferInPlace writeReturnFrameToTcb
+    nbRecvFailedFrame readReturnFrame
+  cases h : st.getTcb? tid with
+  | none =>
+    rw [SystemState.updateTcb_eq_self_of_none h, SystemState.updateTcb_eq_self_of_none h]
+  | some t =>
+    rw [SystemState.updateTcb_eq_of_some h, SystemState.updateTcb_eq_of_some h]
+    rfl
+
 /-- WS-RA RA.B.2: the staging round trip — what `writeReturnFrameToTcb`
 stages, `readReturnFrame` reads back exactly, at full 64-bit width in
 every register (`RegValue` truncates nothing below `2^64`). -/
