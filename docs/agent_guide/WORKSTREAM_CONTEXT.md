@@ -1618,7 +1618,7 @@ zeroed RAM page — and installed by `.pageTableMap` (syscall **39**, seL4's
 `seL4_ARM_PageTable_Map`; `.pageTableUnmap` is **40**, count 41).  Five things new
 code must respect.  (1) **A table installs at the shallowest level the walk to its
 address is missing** (`VSpaceRoot.missingLevel?`), so levels arrive in order and
-none sits beneath an absent one; a fourth is `.mappingConflict`.  (2) **Both sides
+none sits beneath an absent one; a fourth is `.targetSlotOccupied` (seL4's `seL4_DeleteFirst`).  (2) **Both sides
 of an install are written together** — the table's `installedIn` and the root's
 `tables` slot — and a table installs in one place at a time.  (3) **A carved root
 maps a frame only where its walk is complete** (`Architecture.asidTranslationReady`,

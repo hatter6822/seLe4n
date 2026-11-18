@@ -1888,8 +1888,8 @@ private def runPageTableChecks : IO Unit := do
         assertBool "the third table is at level 3, and the frame maps"
           (slotsOf st3 980 == some [(1, 983), (2, 984), (3, 985)] &&
            mappedPaddr st3 one (SeLe4n.Testing.fixtureUserVAddr va) == some (carveUtBase + SeLe4n.pageBytes))
-        assertBool "a complete walk has no room for a fourth table (mappingConflict)"
-          (isErr .mappingConflict (tableMap 18 12 va st3))
+        assertBool "a complete walk has no room for a fourth table (targetSlotOccupied, seL4 DeleteFirst)"
+          (isErr .targetSlotOccupied (tableMap 18 12 va st3))
         -- WS-BP BP7.2: the user window.  Level-0 entry 0 of every user root
         -- is the kernel's own window, so neither a table nor a frame may go
         -- below `VAddr.userWindowBase`; and a mapping's virtual address is

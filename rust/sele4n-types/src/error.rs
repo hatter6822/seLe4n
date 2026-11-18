@@ -2,8 +2,8 @@
 //! Kernel error enumeration — mirrors `SeLe4n.Model.KernelError`.
 //!
 //! Lean source: `SeLe4n/Model/KernelError.lean`.
-//! Discriminants 0–60 other than the retired 35, 37 and 57 are a 1:1 mapping from
-//! the Lean inductive (58 variants after `RangeError` at 59 and `FailedLookup` at
+//! Discriminants 0–60 other than the retired 11, 35, 37 and 57 are a 1:1 mapping from
+//! the Lean inductive (57 variants after `RangeError` at 59 and `FailedLookup` at
 //! 60 — seL4's `seL4_RangeError` and `seL4_FailedLookup` for a CNode
 //! operation's address — and `TruncatedMessage` at 58 — seL4's
 //! `seL4_TruncatedMessage`, an invocation's message shorter than its decode
@@ -12,7 +12,8 @@
 //! `AuditLogCapacityExceeded` at 54 and WS-SM SM5.B's
 //! `ThreadOnDifferentCore` at 53, extending R5.E's
 //! `MissingSchedContext` at 52 and AN7-E's `PartialResolution` at 51).
-//! Discriminant 35 is retired (WS-SX SX1.3, the former `InvalidCapPtr`, which
+//! Discriminant 11 is retired (WS-SX SX7, the former `MappingConflict`: a map
+//! onto an entry already in use answers seL4's `seL4_DeleteFirst`), 35 is retired (WS-SX SX1.3, the former `InvalidCapPtr`, which
 //! no register can provoke once a register is a 64-bit word) and 37 is retired
 //! (WS-ZA ZA5.4 part 14, the former `AllocationMisaligned`), and 57 is retired
 //! (WS-SX SX4, the former `IpcCancelled`: a cancelled IPC restarts its system
@@ -26,7 +27,7 @@
 
 /// All kernel error variants, plus a Rust-only forward-compatibility sentinel.
 ///
-/// Discriminants 0–60 (35, 37 and 57 retired) match the Lean `KernelError` inductive exactly.
+/// Discriminants 0–60 (11, 35, 37 and 57 retired) match the Lean `KernelError` inductive exactly.
 /// `UnknownKernelError` (255) is a Rust-side sentinel for unrecognized codes.
 /// The discriminant values use `#[repr(u32)]` for ABI stability.
 ///
@@ -48,7 +49,8 @@ pub enum KernelError {
     EndpointQueueEmpty = 8,
     AsidNotBound = 9,
     VspaceRootInvalid = 10,
-    MappingConflict = 11,
+    // 11: retired (the former `MappingConflict`: a map onto an entry already
+    // in use answers seL4's `seL4_DeleteFirst`, `TargetSlotOccupied`); reserved.
     TranslationFault = 12,
     FlowDenied = 13,
     DeclassificationDenied = 14,
@@ -175,14 +177,16 @@ pub enum KernelError {
 }
 
 impl KernelError {
-    /// Retired discriminants, reserved and never reassigned.  `35` was
+    /// Retired discriminants, reserved and never reassigned.  `11` was
+    /// `MappingConflict`, which no map answers once a map onto an entry already
+    /// in use answers seL4's `seL4_DeleteFirst` (`TargetSlotOccupied`); `35` was
     /// `InvalidCapPtr`, a capability-pointer register past `2^64`, which no
     /// register can hold once a register is a 64-bit word; `37` was
     /// `AllocationMisaligned`, which no carve returns once the free index is
     /// rounded up to the object's boundary; `57` was `IpcCancelled`, which no
     /// thread reads once a cancelled IPC restarts its system call.  `from_u32`
     /// maps each to `None`.  Mirrors Lean's `KernelError.retiredDiscriminants`.
-    pub const RETIRED: [u32; 3] = [35, 37, 57];
+    pub const RETIRED: [u32; 4] = [11, 35, 37, 57];
 
     /// Convert from a raw `u32` discriminant. Returns `None` for out-of-range
     /// and retired values.
@@ -199,7 +203,6 @@ impl KernelError {
             8 => Some(Self::EndpointQueueEmpty),
             9 => Some(Self::AsidNotBound),
             10 => Some(Self::VspaceRootInvalid),
-            11 => Some(Self::MappingConflict),
             12 => Some(Self::TranslationFault),
             13 => Some(Self::FlowDenied),
             14 => Some(Self::DeclassificationDenied),
@@ -267,7 +270,6 @@ impl std::fmt::Display for KernelError {
             Self::EndpointQueueEmpty => write!(f, "endpoint queue empty"),
             Self::AsidNotBound => write!(f, "ASID not bound"),
             Self::VspaceRootInvalid => write!(f, "vspace root invalid"),
-            Self::MappingConflict => write!(f, "mapping conflict"),
             Self::TranslationFault => write!(f, "translation fault"),
             Self::FlowDenied => write!(f, "flow denied"),
             Self::DeclassificationDenied => write!(f, "declassification denied"),
@@ -536,7 +538,9 @@ mod tests {
         assert!(KernelError::from_u32(35).is_none());
         assert_eq!(KernelError::ObjectStoreCapacityExceeded as u32, 36);
         // 37 is retired: no variant carries it.
-        assert_eq!(KernelError::RETIRED, [35, 37, 57]);
+        assert_eq!(KernelError::RETIRED, [11, 35, 37, 57]);
+        // 11 is retired: no variant carries it.
+        assert!(KernelError::from_u32(11).is_none());
         // 57 is retired: no variant carries it.
         assert!(KernelError::from_u32(57).is_none());
         assert!(KernelError::from_u32(37).is_none());
@@ -566,12 +570,12 @@ mod tests {
 
     /// T1-H: Cross-validation — verify Lean-Rust enum correspondence
     /// The Lean KernelError inductive has these 2 variants at positions 34 and
-    /// 36, and 35, 37 and 57 are retired:
+    /// 36, and 11, 35, 37 and 57 are retired:
     ///   | resourceExhausted       (34)
     ///   | objectStoreCapacityExceeded (36)
     #[test]
     fn lean_rust_correspondence() {
-        // 61 discriminants (0-60, 35, 37 and 57 retired) — verify the range matches
+        // 61 discriminants (0-60, 11, 35, 37 and 57 retired) — verify the range matches
         // Lean's `kernelErrorEncodingBound` (FailedLookup at 60).
         let max_valid = 60u32;
         assert!(KernelError::from_u32(max_valid).is_some());

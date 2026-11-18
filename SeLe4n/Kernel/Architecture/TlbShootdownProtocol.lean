@@ -1848,7 +1848,7 @@ theorem vspaceMapPageCheckedWithShootdownFromState_fresh_inert
 
 /-- **WS-SM SM7.B.9** (model fact): a *successful* checked map is
 always a fresh map — `VSpaceRoot.mapPage` rejects an occupied `vaddr`
-with `.mappingConflict`, so replacing a live translation in one step
+with `.targetSlotOccupied` (seL4's `seL4_DeleteFirst`), so replacing a live translation in one step
 is unreachable; the kernel's remap discipline is unmap-then-map, and
 the shootdown round rides the unmap.  This is why the map wrapper's
 posting branch is dead code *today* (`…_never_posts` below) — it stays

@@ -185,7 +185,6 @@ inductive KernelError where
   | endpointQueueEmpty
   | asidNotBound
   | vspaceRootInvalid
-  | mappingConflict
   | translationFault
   | flowDenied
   | declassificationDenied  -- WS-I3/R-08: declassification policy denied downgrade

@@ -67,7 +67,7 @@ pub fn vspace_map(
 /// `vaddr` and seL4's attributes word (0).  A message naming no extra
 /// capability is `TruncatedMessage`.  The table is installed at the
 /// shallowest level the walk to `vaddr` is missing, so three calls make an
-/// address mappable; a fourth is refused with `MappingConflict`.  A carved
+/// address mappable; a fourth is refused with `TargetSlotOccupied` (seL4's `seL4_DeleteFirst`).  A carved
 /// address space maps a frame only where its walk is complete
 /// (`TranslationFault` otherwise).
 ///

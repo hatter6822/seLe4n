@@ -951,10 +951,10 @@ private def runMappingAlignmentChecks : IO Unit := do
     ([1, 63, 64, 0x800, 0xFFF].all fun off =>
       (emptyRoot.mapPage vaddrPage (SeLe4n.PAddr.ofNat (0x2000 + off)) permsExec).isNone)
   -- The transition surfaces the honest error code rather than the
-  -- `mappingConflict` the constructor's `none` would otherwise produce.
+  -- `targetSlotOccupied` the constructor's `none` would otherwise produce.
   match vspaceMapPage asid5 vaddrPage unalignedPa permsExec (cacheState []) with
   | .error e =>
-      assertBool "the transition reports `alignmentError`, not `mappingConflict`"
+      assertBool "the transition reports `alignmentError`, not `targetSlotOccupied`"
         (e == SeLe4n.Model.KernelError.alignmentError)
   | .ok _ => assertBool "an unaligned map must not succeed" false
   -- ... and the aligned map still goes through, so the guard is not vacuous.

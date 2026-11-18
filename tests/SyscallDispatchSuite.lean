@@ -106,7 +106,12 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   pin "sd001_08_endpointQueueEmpty"           .endpointQueueEmpty            8
   pin "sd001_09_asidNotBound"                 .asidNotBound                  9
   pin "sd001_10_vspaceRootInvalid"            .vspaceRootInvalid            10
-  pin "sd001_11_mappingConflict"              .mappingConflict              11
+  -- 11 is retired (the former `mappingConflict`): a map onto an entry already
+  -- in use answers seL4's `seL4_DeleteFirst`, `targetSlotOccupied` (18).
+  expect "sd001_11_retired_unassigned"
+    (SeLe4n.Model.KernelError.ofDiscriminant? 11 == none &&
+      (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 11)).isNone)
+    "discriminant 11 is retired: it must decode to no error"
   pin "sd001_12_translationFault"             .translationFault             12
   pin "sd001_13_flowDenied"                   .flowDenied                   13
   pin "sd001_14_declassificationDenied"       .declassificationDenied       14
@@ -141,7 +146,7 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   -- decodes to none, as the retired syscall number 8 does.
   expect "sd001_37_retired_unassigned"
     (SeLe4n.Model.KernelError.ofDiscriminant? 37 == none &&
-      SeLe4n.Model.KernelError.retiredDiscriminants == [35, 37, 57] &&
+      SeLe4n.Model.KernelError.retiredDiscriminants == [11, 35, 37, 57] &&
       (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 37)).isNone)
     "discriminant 37 is retired: it must decode to no error"
   pin "sd001_38_revocationRequired"           .revocationRequired           38

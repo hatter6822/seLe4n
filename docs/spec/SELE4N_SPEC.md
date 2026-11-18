@@ -7617,7 +7617,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   caller's CSpace) at the **shallowest level the walk to MR1 is missing**
   (`VSpaceRoot.missingLevel?`), writing the table's `installedIn` and the root's
   `tables` slot together; it refuses a table already installed, a boot-configured
-  root, an address past `2^48` and a complete walk (`.mappingConflict`).
+  root, an address past `2^48` and a complete walk (`.targetSlotOccupied`, seL4's `seL4_DeleteFirst`).
   `pageTableUnmap` refuses while a mapping or a deeper table passes through the
   table (`pageTableInUse`).  A carved root maps a frame only where all three
   levels are present (`asidTranslationReady`, `.translationFault`).  The reset

@@ -5435,7 +5435,7 @@ run_check "INVARIANT" rg -n 'and it leaves the mapping of a page no destroyed ca
 # shallowest missing level, writes BOTH sides of the install, and a carved root
 # maps a frame only where its walk is complete.  The reset retires a page table
 # like any carved object and refuses an install crossing its subtree boundary.
-run_check "INVARIANT" rg -n -U 'def pageTableMap \(tableId rootId[^\n]*(\n([ \t][^\n]*)?)*        match root\.missingLevel\? vaddr with\n        \| none => \.error \.mappingConflict' SeLe4n/Kernel/Architecture/PageTableInstall.lean
+run_check "INVARIANT" rg -n -U 'def pageTableMap \(tableId rootId[^\n]*(\n([ \t][^\n]*)?)*        match root\.missingLevel\? vaddr with\n        \| none => \.error \.targetSlotOccupied' SeLe4n/Kernel/Architecture/PageTableInstall.lean
 run_check "INVARIANT" rg -n -U 'def pageTableMap \(tableId rootId[^\n]*(\n([ \t][^\n]*)?)*          match storeObject tableId \(\.pageTable \(table\.installedAt rootId level index\)\) st with(\n([ \t][^\n]*)?)*            storeObject rootId \(\.vspaceRoot \(root\.withTableSlot level index tableId\)\)\n              \(recordPhysicalWrites st1\n                \(slotStore\? st1 \(root\.withTableSlot level index tableId\) level index\)\.toList\)' SeLe4n/Kernel/Architecture/PageTableInstall.lean
 run_check "INVARIANT" rg -n -U 'def pageTableUnmap \(tableId[^\n]*(\n([ \t][^\n]*)?)*          if root\.tables\.contains \(inst\.slotFor tableId\) then\n            if pageTableInUse root inst then \.error \.revocationRequired' SeLe4n/Kernel/Architecture/PageTableInstall.lean
 run_check "INVARIANT" rg -n '^theorem pageTableMap_ok_installed($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTableInstall.lean
@@ -11314,7 +11314,7 @@ run_check "INVARIANT" rg -n 'toDiscriminant e < kernelErrorEncodingBound' SeLe4n
 # Discriminants 35 (the former invalidCapPtr), 37 (the former
 # allocationMisaligned) and 57 (the former ipcCancelled) are retired and decode
 # to none.
-run_check "INVARIANT" rg -n '^def retiredDiscriminants : List Nat := \[35, 37, 57\]$' SeLe4n/Model/KernelErrorWords.lean
+run_check "INVARIANT" rg -n '^def retiredDiscriminants : List Nat := \[11, 35, 37, 57\]$' SeLe4n/Model/KernelErrorWords.lean
 run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_retired_ipcCancelled : ofDiscriminant\? 57 = none' SeLe4n/Model/KernelErrorWords.lean
 run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_retired : ofDiscriminant\? 37 = none' SeLe4n/Model/KernelErrorWords.lean
 run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_retired_capPtr : ofDiscriminant\? 35 = none' SeLe4n/Model/KernelErrorWords.lean

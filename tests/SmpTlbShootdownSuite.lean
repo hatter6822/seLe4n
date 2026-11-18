@@ -1728,10 +1728,10 @@ private def runCompletionCutChecks : IO Unit := do
           st'.tlbShootdown.pendingOnCore c == []
       | .error _ => false))
   -- The model's remap discipline: a one-step replace is a
-  -- .mappingConflict (`vspaceMapPageCheckedWithFlushFromState_ok_fresh`),
+  -- .targetSlotOccupied, seL4's DeleteFirst (`vspaceMapPageCheckedWithFlushFromState_ok_fresh`),
   -- so the round rides the unmap of the unmap-then-map sequence and the
   -- re-map is fresh again (`…_never_posts`).
-  assertBool "a one-step replace of a live translation fails with mappingConflict"
+  assertBool "a one-step replace of a live translation fails with targetSlotOccupied (seL4 DeleteFirst)"
     (match vspaceMapPageWithFlush asid5 vaddrPage (SeLe4n.PAddr.ofNat 0x2000)
         .readOnly vspaceScenarioState with
      | .error _ => false
@@ -1739,7 +1739,7 @@ private def runCompletionCutChecks : IO Unit := do
         vspaceHasTranslation stMapped asid5 vaddrPage &&
         (match vspaceMapPageCheckedWithShootdownFromState core1 asid5 vaddrPage
             (SeLe4n.PAddr.ofNat 0x6000) .readOnly stMapped with
-         | .error .mappingConflict => true | _ => false))
+         | .error .targetSlotOccupied => true | _ => false))
   assertBool "unmap-then-map: the round rides the unmap; the re-map posts nothing new"
     (match vspaceMapPageWithFlush asid5 vaddrPage (SeLe4n.PAddr.ofNat 0x2000)
         .readOnly vspaceScenarioState with

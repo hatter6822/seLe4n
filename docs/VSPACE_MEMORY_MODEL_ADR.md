@@ -19,7 +19,7 @@ proof-friendly and explicitly extensible.
    - `asid`,
    - flat `mappings : List (VAddr × PAddr)`.
 2. Add deterministic VSpace transitions:
-   - `vspaceMapPage` (fails with `.asidNotBound` or `.mappingConflict`),
+   - `vspaceMapPage` (fails with `.asidNotBound` or, onto an entry already in use, `.targetSlotOccupied` — seL4's `seL4_DeleteFirst`),
    - `vspaceUnmapPage` (fails with `.asidNotBound` or `.translationFault`),
    - `vspaceLookup` (fails with `.asidNotBound` or `.translationFault`).
    All three are total functions with typed errors — no undefined behaviour.

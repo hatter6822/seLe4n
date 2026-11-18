@@ -391,7 +391,7 @@ private def runVSpaceAndNotificationF03NegativeChecks : IO SystemState := do
 
   expectErr "vspace duplicate map conflict"
     ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asidPrimary vaddrPrimary paddrPrimary) stMapped)
-    .mappingConflict
+    .targetSlotOccupied
 
   let (_, _stAwait) ← expectOkSt "dual-queue receive enqueue seed"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 7) none baseState)
@@ -1940,7 +1940,7 @@ def runWSH11Checks : IO Unit := do
     ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 8192)) st)
   expectErr "duplicate mapping conflict"
     ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 16384)) stMapped)
-    .mappingConflict
+    .targetSlotOccupied
   IO.println "negative check passed [WS-H11 duplicate mapping correctly rejected]"
 
   -- ASID not bound: lookup on unregistered ASID
