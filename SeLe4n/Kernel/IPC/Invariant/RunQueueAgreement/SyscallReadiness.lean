@@ -1406,6 +1406,25 @@ theorem receiveResolvedArm_readyKeptStage (ctx : LabelingContext)
         (stageDeliveredMessage_runQueueStage _ _ _))))
   · cases h
 
+/-- A reply-receive whose receive completes its bound notification blocks no
+thread: the reply leg, the wait's consumption (a `.ready` mark), then the badge
+register written. -/
+theorem replyRecvCompletesSignalArm_readyKeptStage {S : SeLe4n.ThreadId → Prop}
+    {ctx : LabelingContext} {tid prevCaller : SeLe4n.ThreadId} {label : Nat}
+    {msg : IpcMessage} {grant : Bool} {c : CoreId} {st st' : SystemState}
+    (hInv : st.objects.invExt) (hD : st.currentDequeuedUnique)
+    (h : replyRecvCompletesSignalArm ctx tid prevCaller label msg grant c st = .ok ((), st')) :
+    readyKeptStage S st st' := by
+  obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases h
+  have hE := replyTransferOnCoreChecked_runQueueEntryStage hInv hD hR
+  have hK := replyTransferOnCoreChecked_readyKeptStage (S := S) hD hR
+  rcases hOr with rfl | ⟨st2, badge, _, _, hW, _, rfl⟩
+  · exact hK
+  · have hQ := notificationWaitOnCore_consumed_runQueueStage
+      (notificationWaitCrossCoreDispatchChecked_ok_inner hW)
+    exact hK.trans hE.1 ((readyKeptStage.of_stage hQ).trans hQ.entry.1
+      (.of_stage (writeReturnFrameToTcb_runQueueStage _ _ _)))
+
 /-- **Every arm `dispatchWithCapChecked` routes blocks only the caller**: the
 send, receive, call, notification-wait and reply-receive arms block it, and no
 other arm blocks a thread. -/
@@ -1558,6 +1577,7 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     · exact receiveResolvedArm_readyKeptStage ctx decoded tid executingCore gate epId st st' P h
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    · exact replyRecvCompletesSignalArm_readyKeptStage P.objInv P.dequeued h
     rename_i summ stR hRR
     cases h
     exact (endpointReplyRecvOnCore_readyKeptStage P.objInv P.refined P.dequeued P.queueHeads

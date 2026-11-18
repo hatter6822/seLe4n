@@ -275,6 +275,23 @@ theorem notificationWaitOnCore_runQueueEntryStage (notificationId : SeLe4n.ObjId
     | exact notificationWait_block_runQueueEntryStage (by assumption) (by assumption)
          (by assumption) (by assumption) (by assumption) hCur hNI
 
+/-- A wait that takes a pending badge links nothing and unlinks nothing: the
+notification's store and the waiter's `.ready` mark, whichever core it runs on
+and whoever is current there (the reply-receive's receive leg, run after its
+reply leg has answered the caller). -/
+theorem notificationWaitOnCore_consumed_runQueueStage {notificationId : SeLe4n.ObjId}
+    {waiter : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st' : SystemState}
+    {badge : SeLe4n.Badge}
+    (h : notificationWaitOnCore notificationId waiter c st = (st', .ok (some badge))) :
+    RunQueueStage st st' := by
+  unfold notificationWaitOnCore at h
+  repeat' (first | split at h | dsimp only at h)
+  all_goals first | (cases h; done) | skip
+  all_goals
+    cases h
+    exact (storeObject_notificationOver_runQueueStage (by assumption) (by assumption)).trans
+      (storeTcbIpcState_runQueueStage (by assumption) rfl)
+
 macro_rules | `(tactic| run_queue_current_nowhere_step) => `(tactic|
   refine SystemState.currentNowhere.of_scheduler_eq
     (storeTcbIpcStateAndMessage_fromTcb_scheduler_eq (by with_reducible assumption)) ?_)

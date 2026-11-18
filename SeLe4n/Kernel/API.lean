@@ -6380,6 +6380,105 @@ def receiveResolvedArm (ctx : LabelingContext) (decoded : SyscallDecodeResult) (
                         summary.capInfo)
         | (_, .error e) => .error e
 
+/-- **The receiver is ready in IPC**: a TCB whose IPC state is `.ready`, as the
+thread running a syscall is. -/
+@[inline] def receiverIpcReady (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getTcb? tid with
+  | some t => decide (t.ipcState = .ready)
+  | none => false
+
+theorem receiverIpcReady_iff (st : SystemState) (tid : SeLe4n.ThreadId) :
+    receiverIpcReady st tid = true ↔ ∃ t, st.getTcb? tid = some t ∧ t.ipcState = .ready := by
+  unfold receiverIpcReady
+  cases st.getTcb? tid with
+  | none => simp
+  | some t => simp
+
+/-- **seL4-MCS `handleReplyRecv` when its receive completes a signal.**
+`SysReplyRecv` runs `handleInvocation` on the reply capability, whose
+`doReplyTransfer` answers the caller, and then `handleRecv`, whose
+`receiveIPC` finds the receiver's bound notification active and runs
+`completeSignal` instead of touching the endpoint.  So the answer is the
+`.reply` arm's own transition (`replyTransferOnCoreChecked`: the caller woken
+with the reply or its fault answered, the donated context returned, the
+priority-inheritance boost reverted), and the receive is the wait's
+consumption with the badge register written (`completeSignalArm`).
+
+The receive tests the notification on the state the reply left, as seL4's
+does, for the replier it leaves running (`receiverIpcReady`): the arm chose
+this path on the entry state, and the reply writes no notification, not the
+replier's binding and not its IPC state, so the tests agree
+(`replyRecvCompletesSignalArm_completes`) and the last branch, which returns
+with the reply made and nothing received, is never taken.
+
+No receive leg runs, so the reply object is not re-linked and no donation is
+made: a passive server whose context the reply returned is left descheduled,
+as seL4-MCS leaves a thread with no scheduling context unschedulable. -/
+def replyRecvCompletesSignalArm (ctx : LabelingContext) (tid prevCaller : SeLe4n.ThreadId)
+    (label : Nat) (msg : IpcMessage) (grant : Bool) (executingCore : Concurrency.CoreId) :
+    Kernel Unit :=
+  fun st =>
+    match replyTransferOnCoreChecked ctx tid prevCaller (replyRecvReplyMessageInfo label msg)
+        msg.registers msg grant executingCore st with
+    | .error e => .error e
+    | .ok ((), st1) =>
+        if receiveCompletesSignal ctx st1 tid && receiverIpcReady st1 tid then
+          completeSignalArm ctx tid (receiverBoundNotification st1 tid) executingCore st1
+        else .ok ((), st1)
+
+/-- **The two halves of a reply-receive that completes a signal**: the reply
+transition, then, when the receive's test holds on the state it left, the
+receive's completion of the bound notification; otherwise the reply alone. -/
+theorem replyRecvCompletesSignalArm_split {ctx : LabelingContext}
+    {tid prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool}
+    {c : Concurrency.CoreId} {st st' : SystemState}
+    (h : replyRecvCompletesSignalArm ctx tid prevCaller label msg grant c st = .ok ((), st')) :
+    ∃ st1, replyTransferOnCoreChecked ctx tid prevCaller (replyRecvReplyMessageInfo label msg)
+        msg.registers msg grant c st = .ok ((), st1) ∧
+      (st' = st1 ∨
+        (receiveCompletesSignal ctx st1 tid = true ∧
+          (∃ t, st1.getTcb? tid = some t ∧ t.ipcState = .ready) ∧
+          completeSignalArm ctx tid (receiverBoundNotification st1 tid) c st1 = .ok ((), st'))) := by
+  unfold replyRecvCompletesSignalArm at h
+  generalize hR : replyTransferOnCoreChecked ctx tid prevCaller
+    (replyRecvReplyMessageInfo label msg) msg.registers msg grant c st = r at h
+  cases r with
+  | error e => cases h
+  | ok v =>
+    obtain ⟨⟨⟩, st1⟩ := v
+    refine ⟨st1, rfl, ?_⟩
+    dsimp only at h
+    by_cases hSig : (receiveCompletesSignal ctx st1 tid && receiverIpcReady st1 tid) = true
+    · rw [if_pos hSig] at h
+      simp only [Bool.and_eq_true] at hSig
+      exact .inr ⟨hSig.1, (receiverIpcReady_iff st1 tid).mp hSig.2, h⟩
+    · rw [if_neg hSig] at h
+      cases h
+      exact .inl rfl
+
+/-- ...and the completion, when it runs, is the wait's consumption with the badge
+register written over it, moving no scheduler state. -/
+theorem replyRecvCompletesSignalArm_cases {ctx : LabelingContext}
+    {tid prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool}
+    {c : Concurrency.CoreId} {st st' : SystemState}
+    (h : replyRecvCompletesSignalArm ctx tid prevCaller label msg grant c st = .ok ((), st')) :
+    ∃ st1, replyTransferOnCoreChecked ctx tid prevCaller (replyRecvReplyMessageInfo label msg)
+        msg.registers msg grant c st = .ok ((), st1) ∧
+      (st' = st1 ∨
+        ∃ st2 badge, receiveCompletesSignal ctx st1 tid = true ∧
+          (∃ t, st1.getTcb? tid = some t ∧ t.ipcState = .ready) ∧
+          notificationWaitCrossCoreDispatchChecked ctx (receiverBoundNotification st1 tid) tid c
+            st1 = (st2, .ok (some badge)) ∧
+          st2.scheduler = st1.scheduler ∧
+          st' = Architecture.writeReturnFrameToTcb st2 tid
+            (Architecture.badgeReturnFrame st2 tid badge)) := by
+  obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_split h
+  refine ⟨st1, hR, ?_⟩
+  rcases hOr with hEq | ⟨hSig, hRdy, hC⟩
+  · exact .inl hEq
+  · obtain ⟨st2, badge, hW, hS, hP⟩ := completeSignalArm_consumes hSig hC
+    exact .inr ⟨st2, badge, hSig, hRdy, hW, hS, hP⟩
+
 /-- T6-I/M-IF-1/U5-A: Policy-checked dispatch — replaces unchecked operations
 with their information-flow-checked equivalents. All cross-domain operations
 (IPC send/receive/call/reply, CSpace mint/copy/move, service register) are
@@ -6732,6 +6831,13 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                 { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
                   badge := replyBadge }
               if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) then
+                -- seL4-MCS `handleReplyRecv`: the reply, then `receiveIPC`, which
+                -- completes an active bound notification and leaves the endpoint
+                -- alone (the notification → receiver flow admitting it).
+                if receiveCompletesSignal ctx st tid then
+                  replyRecvCompletesSignalArm ctx tid prevCaller decoded.msgInfo.label msg
+                    replyGrant executingCore st
+                else
                 -- WS-RA RA.B.6: stage the receive leg's delivery (the checked
                 -- twin of the unchecked arm's staging; the receive leg's own
                 -- flow gate governs the consumed message).
@@ -8096,6 +8202,7 @@ theorem dispatchArm_replyRecv_matches_returnShape
     (hResolve : resolveReplyRecvReply gate decoded st =
       .ok (some (rid, prevCaller, replyBadge, replyGrant)))
     (hReplyFlow : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) = true)
+    (hSig : receiveCompletesSignal ctx st tid = false)
     (hBody : replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label
         { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
           badge := replyBadge }
@@ -8112,7 +8219,7 @@ theorem dispatchArm_replyRecv_matches_returnShape
             tcb.registerContext := by
   refine ⟨rfl, Architecture.stageDeliveredMessage stB tid summary.capInfo, ?_, ?_⟩
   · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow, hXc, hResolve,
-      hReplyFlow, hBody]
+      hReplyFlow, hSig, hBody]
   · exact Architecture.blockedReturn_staged_in_waiter_frame stB tid tcb msg
       summary.capInfo hTcb hReady hMsg hObjInv
 

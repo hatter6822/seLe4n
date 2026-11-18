@@ -423,6 +423,21 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
     · exact hRecvArm epId h
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    · -- seL4-MCS `handleReplyRecv` whose receive completes the bound
+      -- notification: the reply leg, the wait (no saved register), then the
+      -- caller's badge register.
+      obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases h
+      have w1 := replyTransferOnCoreChecked_savedRegsWrittenFree (e := ec) P.dequeued hRT hBNR
+        hInv hR
+      rcases hOr with rfl | ⟨st2, badge, _, _, hWt, _, rfl⟩
+      · exact hW w1
+      · have hI1 : st1.objects.invExt := (replyTransferOnCoreChecked_stepCovers ec hInv hR).2
+        have h1 := notificationWaitCrossCoreDispatchChecked_savedRegsUnwritten ctx
+          (receiverBoundNotification st1 tid) tid ec hI1
+        rw [hWt] at h1
+        exact hW ((w1.trans h1.writtenFree).trans
+          (.of_kept (writeReturnFrameToTcb_savedRegsKeptExcept st2 tid _ h1.2)
+            fun _ e => e ▸ hFr))
     rename_i summ stR hRR
     cases h
     obtain ⟨w, i⟩ := endpointReplyRecvOnCore_savedRegsWrittenFree P.dequeued P.queueHeads hRT

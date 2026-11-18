@@ -809,6 +809,21 @@ theorem receiveResolvedArm_recordsStage (ctx : LabelingContext)
         (RecordsStage.of_frameK fun hI => RecordsFrame.stageDeliveredMessage _ _ _ hI)))
   · cases h
 
+/-- **A reply-receive whose receive completes its bound notification keeps the
+records**: the reply leg (`RecordsStage.replyTransferOnCoreChecked`), then the
+notification's completion on the replier the reply leg left `.ready`. -/
+theorem replyRecvCompletesSignalArm_recordsStage {ctx : LabelingContext}
+    {tid prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool}
+    {c : Concurrency.CoreId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : replyRecvCompletesSignalArm ctx tid prevCaller label msg grant c st = .ok ((), st')) :
+    RecordsStage st st' := by
+  obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_split h
+  have hS := RecordsStage.replyTransferOnCoreChecked hR
+  rcases hOr with rfl | ⟨_, ⟨t, hT, hReady⟩, hC⟩
+  · exact hS
+  · exact hS.trans (completeSignalArm_recordsStage (replyTransferOnCoreChecked_stepCovers c hInv hR).2
+      ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mp hT, hReady⟩ hC)
+
 /-- **Every arm `dispatchWithCapChecked` routes keeps the records**, the
 capability-only arms it delegates, the IPC arms, the audit read and drain and
 the declassification included.  The IPC arms read the reachable state the
@@ -889,6 +904,7 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     · exact receiveResolvedArm_recordsStage ctx decoded tid executingCore gate epId st st' P hCaller h
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    · exact replyRecvCompletesSignalArm_recordsStage P.deletes.2.1.2.1 h
     rename_i hX
     cases h
     exact (RecordsStage.replyRecvTransferOnCore P.deletes.1 hCaller hX).trans

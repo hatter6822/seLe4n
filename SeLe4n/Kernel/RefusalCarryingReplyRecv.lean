@@ -162,6 +162,12 @@ def endpointReplyRecvCheckedArmGeneralR (ctx : LabelingContext) (mi : MessageInf
             let msg : IpcMessage :=
               { registers := extractMessageRegisters regs mi, badge := replyBadge }
             if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) then
+              if receiveCompletesSignal ctx st tid then
+                match replyRecvCompletesSignalArm ctx tid prevCaller mi.label msg replyGrant
+                    executingCore st with
+                | .ok r => .ok r
+                | .error e => .error (e, st)
+              else
               match replyRecvTransferOnCore epId tid rid prevCaller mi.label msg
                   replyGrant executingCore st with
               | .ok (summary, st') =>
@@ -225,8 +231,11 @@ theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
         obtain ⟨rid, prevCaller, replyBadge, replyGrant⟩ := r
         simp only [hEq, hS, Bool.false_eq_true, ↓reduceIte]
         split
-        · rcases replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label _
-            replyGrant executingCore st with _ | ⟨summary, st'⟩ <;> rfl
+        · split
+          · rcases replyRecvCompletesSignalArm ctx tid prevCaller decoded.msgInfo.label _
+              replyGrant executingCore st with _ | ⟨⟨⟩, st'⟩ <;> rfl
+          · rcases replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label _
+              replyGrant executingCore st with _ | ⟨summary, st'⟩ <;> rfl
         · rfl
   | _ =>
     simp only [endpointReplyRecvCheckedArmGeneralR, RefusalCarrying.ofKernelReporting,
@@ -1357,7 +1366,13 @@ caller carrying no fault, so the fault test runs first. -/
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
     if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) then
-      if threadHasPendingFault st c then
+      if receiveCompletesSignal ctx st tid then
+        match replyRecvCompletesSignalArm ctx tid c label
+            { registers := Architecture.regMessageBody layout rf len, badge := badge } grant
+            executingCore st with
+        | .ok r => .ok r
+        | .error e => .error (e, st)
+      else if threadHasPendingFault st c then
         replyRecvFaultArmR epId tid c rid badge grant layout rf len label executingCore st
       else if decide (Architecture.regMessageLength layout len ≤ 4) &&
           replyRecvBlocksFast st epId tid c rid && replyRecvReplyInertW st tid c grant then
@@ -1438,6 +1453,9 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
         simp only [replyRecvResolvedR]
         split
         · next hFlow =>
+          by_cases hSig : receiveCompletesSignal ctx st tid = true
+          · simp only [hSig, if_true]
+          simp only [hSig, if_false, Bool.false_eq_true]
           split
           · next hFault =>
             rw [replyRecvFaultArmR_eq epId tid c rid badge grant layout rf len label executingCore st
@@ -2246,7 +2264,13 @@ specification's path. -/
     RefusalCarrying Unit :=
   fun st =>
     if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) then
-      if threadHasPendingFault st c then
+      if receiveCompletesSignal ctx st tid then
+        match replyRecvCompletesSignalArm ctx tid c label
+            { registers := longReplyRecvRegs rf st tid len, badge := badge } grant
+            executingCore st with
+        | .ok r => .ok r
+        | .error e => .error (e, st)
+      else if threadHasPendingFault st c then
         replyRecvLongFaultArmR epId tid c rid badge grant rf len label executingCore st
       else if replyRecvBlocksFast st epId tid c rid && replyRecvReplyInertW st tid c grant then
         .ok ((), performReplyRecvBlockDeliveredLong st c tid rid epId (receiveQueueTailCode st epId)
@@ -2338,7 +2362,10 @@ theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)
         obtain ⟨rid, c, badge, grant⟩ := r
         simp only [replyRecvLongResolvedR, hExt, hM]
         split
-        · split
+        · by_cases hSig : receiveCompletesSignal ctx st tid = true
+          · simp only [hSig, if_true]
+          simp only [hSig, if_false, Bool.false_eq_true]
+          split
           · next hFlt =>
             rw [replyRecvLongFaultArmR_eq epId tid c rid badge grant rf mi.length mi.label
               executingCore st (by omega) hFlt]

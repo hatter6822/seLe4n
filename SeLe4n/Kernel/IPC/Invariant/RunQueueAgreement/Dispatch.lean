@@ -958,6 +958,23 @@ theorem notificationSignalDeclassifiedOnCore_runQueueStage (ctx : GenericLabelin
       rw [recordDeclassifiedHops_frame _ _ _ _ _ hRec]
       exact hB.trans (RunQueueStage.of_frame rfl rfl rfl)
 
+/-- A reply-receive whose receive completes its bound notification keeps the run
+queues in agreement with the threads' links: the reply leg, the wait's
+consumption, then the badge register written. -/
+theorem replyRecvCompletesSignalArm_runQueueEntryStage {ctx : LabelingContext}
+    {tid prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool}
+    {c : Concurrency.CoreId} {st st' : SystemState}
+    (hInv : st.objects.invExt) (hD : st.currentDequeuedUnique)
+    (h : replyRecvCompletesSignalArm ctx tid prevCaller label msg grant c st = .ok ((), st')) :
+    SystemState.RunQueueEntryStage st st' := by
+  obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases h
+  have hS := replyTransferOnCoreChecked_runQueueEntryStage hInv hD hR
+  rcases hOr with rfl | ⟨st2, badge, _, _, hW, _, rfl⟩
+  · exact hS
+  · exact (hS.trans (notificationWaitOnCore_consumed_runQueueStage
+      (notificationWaitCrossCoreDispatchChecked_ok_inner hW)).entry).trans
+      (writeReturnFrameToTcb_runQueueStage _ _ _).entry
+
 /-- A receive run on its busy-reply-cancelled state keeps the run queues in
 agreement with the threads' links: the `.receive` arm, and the `.replyRecv`
 arm whose reply is skipped. -/
@@ -1185,6 +1202,7 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     · exact receiveResolvedArm_runQueueEntryStage ctx decoded tid executingCore gate epId st st' P h
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    · exact replyRecvCompletesSignalArm_runQueueEntryStage P.objInv P.dequeued h
     rename_i summ stR hRR
     cases h
     exact (endpointReplyRecvOnCore_runQueueEntryStage P.objInv P.refined P.dequeued P.queueHeads

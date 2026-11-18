@@ -605,6 +605,18 @@ theorem completeSignalArm_mappingStage {ctx : LabelingContext} {tid : SeLe4n.Thr
     exact MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW
   · cases h
 
+/-- **A reply-receive whose receive completes its bound notification keeps the
+mapping records**: the reply, then the completion. -/
+theorem replyRecvCompletesSignalArm_mappingStage {ctx : LabelingContext}
+    {tid prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool}
+    {c : Concurrency.CoreId} {st st' : SystemState}
+    (h : replyRecvCompletesSignalArm ctx tid prevCaller label msg grant c st = .ok ((), st')) :
+    MappingStage st st' := by
+  obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_split h
+  rcases hOr with rfl | ⟨_, _, hC⟩
+  · exact replyTransferOnCoreChecked_mappingStage hR
+  · exact (replyTransferOnCoreChecked_mappingStage hR).trans (completeSignalArm_mappingStage hC)
+
 /-- **The receive past its gate and busy-reply cancel keeps the mapping
 records**: the bound notification completed, `NBRecv`'s failure, or the
 per-core receive with its hand-off and delivery. -/
@@ -763,6 +775,7 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     · exact hRecvLeg h
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    · exact replyRecvCompletesSignalArm_mappingStage h
     rename_i summ stR hRR
     cases h
     exact (endpointReplyRecvOnCore_mappingStage hRR).trans (stageDeliveredMessage_mappingStage _ _ _)

@@ -1989,6 +1989,74 @@ private def runReplyRecvFaultAnswerChecks : IO Unit := do
       assertBool "…with its fault record retired"
         (pendingFaultOf stAb faulter == none)
 
+/-- A notification bound to the handler, holding the word `0x66`. -/
+private def ntfnHandler : SeLe4n.ObjId := ⟨1114⟩
+
+/-- The handler's bound notification made active (holding `0x66`) on a state
+where the handler is about to answer its caller. -/
+private def withHandlerBoundSignal (st : SystemState) : SystemState :=
+  let st1 : SystemState := { st with objects := st.objects.insert ntfnHandler (.notification
+    { state := .active, hasPendingBadge := true, pendingWord := SeLe4n.Badge.ofNat 0x66,
+      boundTCBCode := SeLe4n.ThreadId.optCode (some handler) }) }
+  st1.updateTcb handler fun t =>
+    { t with boundNotificationCode := SeLe4n.ObjId.optCode (some ntfnHandler) }
+
+/-- The labelling under which the handler and its endpoint are public and its
+bound notification is kernel-trusted, so the notification's word may not flow to
+the handler while the handler's answer still flows to its caller. -/
+private def handlerSignalDeniedCtx : LabelingContext :=
+  { entryLabeling with
+    objectLabelOf := fun o =>
+      if o = ntfnHandler then SecurityLabel.kernelTrusted else entryLabeling.objectLabelOf o
+    endpointLabelOf := fun e =>
+      if e = epHandler then SecurityLabel.publicLabel else entryLabeling.endpointLabelOf e
+    threadLabelOf := fun t =>
+      if t = handler then SecurityLabel.publicLabel else entryLabeling.threadLabelOf t }
+
+/-- seL4-MCS `handleReplyRecv`: the reply (`doReplyTransfer`) answers the caller,
+then `receiveIPC` finds the handler's bound notification active and completes it
+(`completeSignal`) instead of receiving on the endpoint.  The caller is answered,
+the handler returns at once with the notification's word in x0, the notification
+goes idle and the endpoint is not touched.  A notification whose word may not
+flow to the handler is not completed: the receive blocks on the endpoint. -/
+private def runReplyRecvBoundSignalChecks : IO Unit := do
+  IO.println "--- a ReplyRecv whose receive completes its bound notification ---"
+  match queuedDeliveryE with
+  | .error e => assertBool s!"queued pipeline: {e}" false
+  | .ok q =>
+    let pre := withHandlerBoundSignal q.afterRecv
+    assertBool "pre: the handler's bound notification is active and the faulter is its caller"
+      (receiveCompletesSignal entryLabeling (withHandlerReplyCap pre) handler &&
+        (pre.getReply? replyH).bind (·.caller) == some faulter)
+    match handlerReplyRecvOnCore1 0 pre with
+    | .error e => assertBool s!"the ReplyRecv must succeed (got {repr e})" false
+    | .ok (out, st) =>
+      assertBool "the handler returns at once with the notification's word in x0"
+        (match out with | .returns f => f.x0 == 0x66 | _ => false)
+      assertBool "the handler stays ready, not blocked on its endpoint"
+        (ipcStateOf st handler == some .ready)
+      assertBool "the endpoint is not touched: no receiver queued on it"
+        ((st.getEndpoint? epHandler).map (·.receiveQ.head) == some none)
+      assertBool "the notification goes idle, its word consumed"
+        ((st.getNotification? ntfnHandler).map
+          (fun n => (n.pendingBadge.isNone, n.state == .idle)) == some (true, true))
+      assertBool "the reply leg answered the caller: its fault retired, restarted, ready"
+        (pendingFaultOf st faulter == none &&
+          savedPcOf st faulter == some dataAbortCtx.elr.toNat &&
+          ipcStateOf st faulter == some .ready)
+    assertBool "pre: under the denied labelling the word may not flow to the handler"
+      (!receiveCompletesSignal handlerSignalDeniedCtx (withHandlerReplyCap pre) handler)
+    match SeLe4n.Testing.dispatchOperationFromAbi handlerSignalDeniedCtx c1 SyscallId.replyRecv
+        handlerCPtr.toNat.toUInt64
+        (MessageInfo.encode { length := 0, extraCaps := 0, label := 0 }).toUInt64
+        0 0 0 0 replyCapCPtr.toNat.toUInt64 0 0 0 0 (withHandlerReplyCap pre) with
+    | .error e => assertBool s!"the denied ReplyRecv must succeed (got {repr e})" false
+    | .ok (out, st) =>
+      assertBool "a denied notification flow is not completed: the receive blocks on the endpoint"
+        (out == .blocks && ipcStateOf st handler == some (.blockedOnReceive epHandler))
+      assertBool "…and the word stays pending"
+        ((st.getNotification? ntfnHandler).map (·.pendingBadge.isSome) == some true)
+
 -- ============================================================================
 -- §7f  A faulted thread's reservation travels to its handler and back
 -- ============================================================================
@@ -2737,6 +2805,7 @@ def runFaultHandlingChecks : IO Unit := do
   runCancelAllFaultedWaiterChecks
   runReplySeamChecks
   runReplyRecvFaultAnswerChecks
+  runReplyRecvBoundSignalChecks
   runFaultDonationChecks
   runProgressChecks
   runTraceFixtureCheck

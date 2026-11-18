@@ -1612,6 +1612,22 @@ theorem cancelRecvBusyReply_stepCovers (e : CoreId) (ctx : LabelingContext)
   · exact ⟨stepCovers_refl e st, hInv⟩
   · exact cancelReplyHolder_stepCovers e st _ ec hInv
 
+/-- **A reply-receive whose receive completes its bound notification is
+covered**: the reply, then the wait's consumption and the badge register. -/
+theorem replyRecvCompletesSignalArm_stepCovers (e : CoreId) {ctx : LabelingContext}
+    {tid prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : replyRecvCompletesSignalArm ctx tid prevCaller label msg grant e st = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases h
+  obtain ⟨hC, hCInv⟩ := replyTransferOnCoreChecked_stepCovers e hInv hR
+  rcases hOr with rfl | ⟨st2, badge, _, _, hW, _, rfl⟩
+  · exact ⟨hC, hCInv⟩
+  · obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
+      (notificationWaitCrossCoreDispatchChecked_stepCovers e hCInv) hW
+    exact stepCoversInv_trans (stepCovers_trans hC hS)
+      (writeReturnFrameToTcb_keyFrame _ _ _ hSInv).stepCoversInv
+
 /-- A receive run on its busy-reply-cancelled state covers: the cancel, the
 dual-queue receive, the rendezvous hand-off and the two stagings.  The
 `.receive` arm, and the `.replyRecv` arm whose reply is skipped. -/
@@ -1828,6 +1844,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     · exact receiveResolvedArm_cancelled_stepCovers e hInv h
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    · exact replyRecvCompletesSignalArm_stepCovers e hInv h
     rename_i summ stR hRR
     cases h
     obtain ⟨hS, hSInv⟩ := endpointReplyRecvOnCore_stepCovers e hInv hRR

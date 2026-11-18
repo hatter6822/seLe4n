@@ -70,6 +70,42 @@ open SeLe4n.Kernel.Concurrency (CoreId
 
 open SeLe4n.Kernel.Concurrency (SyscallLockOperands)
 
+/-- **The `.replyRecv` arm's scheduler-domain footprint**: the arm runs either the
+composite (`replyRecvTransferOnCore`) or, when its receive completes the bound
+notification (seL4-MCS `receiveIPC`'s first branch), the reply leg alone
+(`replyTransferOnCoreChecked`) followed by the notification's completion, which
+writes only the object store.  Which one runs turns on the labelling context the
+footprint does not read, so it names both legs' cores: `schedFootprintOfCores` of
+the two write sets and of the two replenish-core lists.  The canonical segments
+deduplicate the shared cores. -/
+def schedLockSet_replyRecvArmOnCore (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (label : Nat) (msg : IpcMessage) (grant : Bool)
+    (executingCore : CoreId) (st : SystemState) :
+    List (LockKey × Concurrency.AccessMode) :=
+  schedFootprintOfCores
+    (replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg grant
+        executingCore st ++
+      replyTransferWriteSet receiver prevCaller (replyRecvReplyMessageInfo label msg)
+        msg.registers msg executingCore st)
+    (replyRecvHandoffReplenishCores (replyRecvCallerFaultAnswer? st prevCaller label msg)
+        endpointId receiver replyId prevCaller
+        (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
+        executingCore st ++
+      replyTransferReplenishCores receiver prevCaller msg executingCore st)
+
+/-- The composite's footprint is contained in the arm's. -/
+theorem schedLockSet_replyRecvTransferOnCore_subset_arm (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (label : Nat) (msg : IpcMessage) (grant : Bool)
+    (executingCore : CoreId) (st : SystemState) :
+    ∀ p ∈ schedLockSet_replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg
+        grant executingCore st,
+      p ∈ schedLockSet_replyRecvArmOnCore endpointId receiver replyId prevCaller label msg grant
+        executingCore st :=
+  schedFootprintOfCores_subset (fun _ h => List.mem_append_left _ h)
+    (fun _ h => List.mem_append_left _ h)
+
 /-- **WS-RR RR8.12 Cut C4: the scheduler-domain footprint the live syscall seam
 declares**, at the decoded arm and the operands that arm's capability names.
 
@@ -195,7 +231,7 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
               ops.replyMessageInfo.bind fun mi =>
                 ops.replyGrant.bind fun grant =>
                   LockSet.ofList?
-                    (schedLockSet_replyRecvTransferOnCore epId ops.caller rid prevCaller
+                    (schedLockSet_replyRecvArmOnCore epId ops.caller rid prevCaller
                       mi.label msg grant executingCore st)
   -- **WS-ZA ZA5.4 part 23**: a delete that destroys the last capability to an
   -- endpoint or a notification wakes its cancelled waiters on their own cores,
@@ -473,7 +509,7 @@ theorem schedLockSetForSyscall_replyRecv_isSome_iff
       | some rid =>
           cases hA : replyAnsweredCaller? st rid <;>
             cases ops.message <;> cases ops.replyMessageInfo <;> cases ops.replyGrant <;>
-                simp [hA, LockSet.ofList?, schedLockSet_replyRecvTransferOnCore,
+                simp [hA, LockSet.ofList?, schedLockSet_replyRecvArmOnCore,
                   schedFootprintOfCores_keys_nodup]
 
 /-- **WS-LS LS2.3**: every scheduler footprint names the object-store table
@@ -512,7 +548,7 @@ theorem schedLockSetForSyscall_contains_objStore_write (sid : SyscallId)
       schedLockSet_notificationSignalBoundOnCore, schedLockSet_notificationWaitOnCore,
       schedLockSet_endpointSendOnCore,
       schedLockSet_endpointCallOnCore, schedLockSet_replyTransferOnCore,
-      schedLockSet_replyRecvTransferOnCore, schedLockSet_yieldOnCore]
+      schedLockSet_replyRecvArmOnCore, schedLockSet_yieldOnCore]
     exact schedFootprintOfCores_contains_objStore_write _ _
 
 -- ============================================================================

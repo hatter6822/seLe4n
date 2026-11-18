@@ -118,10 +118,18 @@ def resolverExemptions : List (Name × String) :=
   , (``SeLe4n.Kernel.schedLockSet_endpointReplyRecvOnCore,
       "the COMPOSITE's footprint at an unfaulted caller.  `.replyRecv`'s live arm is \
        `replyRecvTransferOnCore`, which answers a faulted caller with the fault reply's \
-       restart or abandon (seL4's `doReplyTransfer` fault branch), so the resolver names \
-       `schedLockSet_replyRecvTransferOnCore`, the composite's write set at that answer.  \
+       restart or abandon (seL4's `doReplyTransfer` fault branch), so the composite's \
+       footprint is `schedLockSet_replyRecvTransferOnCore`, its write set at that answer.  \
        `schedLockSet_replyRecvTransferOnCore_of_no_fault` is the relation off the fault \
        branch, where the two are equal, and the coverage lemmas are stated at this one")
+  , (``SeLe4n.Kernel.schedLockSet_replyRecvTransferOnCore,
+      "the COMPOSITE's footprint.  `.replyRecv`'s live arm runs the composite or, when \
+       its receive completes the bound notification (seL4-MCS `receiveIPC`'s first \
+       branch), the reply leg alone (`replyRecvCompletesSignalArm`); which one turns on \
+       the labelling the resolver does not read, so the resolver names \
+       `schedLockSet_replyRecvArmOnCore`, the union of both legs' cores.  \
+       `schedLockSet_replyRecvTransferOnCore_subset_arm` is the relation, and \
+       `schedLockSet_replyRecvArmOnCore_coversTransfer` consumes this one's coverage")
   , (``SeLe4n.Kernel.schedLockSet_endpointReceiveOnCore,
       "the footprint of the receive with no busy reply.  `.receive`'s live arm is \
        seL4-MCS `receiveIPC`, which cancels a busy reply's holder before it receives \

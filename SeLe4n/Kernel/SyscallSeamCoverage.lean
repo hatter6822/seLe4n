@@ -214,6 +214,63 @@ theorem validThreadId_val_toValid? (v : SeLe4n.ValidThreadId) :
   unfold SeLe4n.ThreadId.toValid?
   rw [dif_neg v.property]
 
+/-- **The `.replyRecv` arm's composite is covered by the arm's footprint**: the
+composite's own footprint (`schedLockSet_replyRecvTransferOnCore_coversWrites`)
+is contained in the arm's (`schedLockSet_replyRecvTransferOnCore_subset_arm`). -/
+theorem schedLockSet_replyRecvArmOnCore_coversTransfer (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (label : Nat) (msg : IpcMessage) (grant : Bool) (e : CoreId) (st st' : SystemState)
+    (summary : CapTransferSummary) (S : LockSet) (hObjInv : st.objects.invExt)
+    (hS : LockSet.ofList? (schedLockSet_replyRecvArmOnCore endpointId receiver replyId
+      prevCaller label msg grant e st) = some S)
+    (hStep : replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg grant
+      e st = .ok (summary, st')) :
+    footprintCoversWrites S st st' := by
+  obtain ⟨S0, hS0⟩ := schedFootprintOfCores_ofList?_isSome
+    (replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg grant e st)
+    (replyRecvHandoffReplenishCores (replyRecvCallerFaultAnswer? st prevCaller label msg)
+      endpointId receiver replyId prevCaller
+      (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant e st)
+  refine footprintCoversWrites_mono S0 S st st' (fun l hl => ?_)
+    (schedLockSet_replyRecvTransferOnCore_coversWrites endpointId receiver replyId prevCaller
+      label msg grant e st st' summary S0 hObjInv hS0 hStep)
+  rw [LockSet.ofList?_pairs hS]
+  rw [LockSet.ofList?_pairs hS0] at hl
+  exact schedLockSet_replyRecvTransferOnCore_subset_arm endpointId receiver replyId prevCaller
+    label msg grant e st _ hl
+
+/-- **A reply-receive whose receive completes its bound notification is covered by
+the arm's footprint**: the reply leg is confined to its own write set and
+replenish cores, which the arm's footprint names, and the completion and the
+badge frame leave the scheduler alone. -/
+theorem replyRecvCompletesSignalArm_coversWrites (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
+    (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage) (grant : Bool)
+    (e : CoreId) (st st' : SystemState) (S : LockSet) (hObjInv : st.objects.invExt)
+    (hFlow : securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf prevCaller) = true)
+    (hS : LockSet.ofList? (schedLockSet_replyRecvArmOnCore endpointId receiver replyId
+      prevCaller label msg grant e st) = some S)
+    (hStep : replyRecvCompletesSignalArm ctx receiver prevCaller label msg grant e st
+      = .ok ((), st')) :
+    footprintCoversWrites S st st' := by
+  obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases hStep
+  rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx receiver prevCaller _ _ _ _ e
+    st hFlow] at hR
+  have hConf := replyTransferOnCore_confinedToCores receiver prevCaller _ _ msg grant e st st1
+    hObjInv hR
+  have hSched : st'.scheduler = st1.scheduler := by
+    rcases hOr with rfl | ⟨st2, badge, _, _, _, hS2, rfl⟩
+    · rfl
+    · rw [Architecture.writeReturnFrameToTcb_scheduler_eq]; exact hS2
+  refine footprintCoversWrites_of_cores S _ _ st st' (LockSet.ofList?_pairs hS)
+    (fun d hd => ?_) (fun d hd => ?_)
+  · have hd' := fun m => hd (List.mem_append_right _ m)
+    rw [hSched]
+    exact ⟨hConf.runQueue d hd', hConf.current d hd', hConf.activeDomain d hd'⟩
+  · rw [hSched]
+    exact replyTransferOnCore_replenishQueueOnCore_ne receiver prevCaller _ _ msg grant e st st1
+      d hObjInv (fun m => hd (List.mem_append_right _ m)) hR
+
 /-- **A receive run on its busy-reply-cancelled state is covered** by the
 receive's footprint (`schedLockSet_receiveCancellingHolderOnCore`) at the
 operands it declares (`receiveLockOperands`): the holder's cancel, then the
@@ -847,14 +904,18 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
         rw [hRRR] at hDisp
         simp only at hDisp
         split at hDisp
-        · split at hDisp
+        · rename_i hFlow
+          split at hDisp
+          · exact replyRecvCompletesSignalArm_coversWrites ctx epId tid rid prev _ _ _ e st st' S
+              hObjInv hFlow hSched hDisp
+          split at hDisp
           · rename_i summary st₁ hStep
             simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
             subst hDisp
             subst hGateEq
             refine footprintCoversWrites_trans S ?_ (footprintCoversWrites_of_scheduler_eq S hTable
               (Architecture.stageDeliveredMessage_scheduler_eq _ _ _))
-            exact schedLockSet_replyRecvTransferOnCore_coversWrites epId tid rid prev _ _ _
+            exact schedLockSet_replyRecvArmOnCore_coversTransfer epId tid rid prev _ _ _
               e st st₁ summary S hObjInv hSched hStep
           · exact absurd hDisp (by simp)
         · exact absurd hDisp (by simp)

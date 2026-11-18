@@ -357,6 +357,14 @@ def replyRecvPoppedDonation (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
   | .error _ => none
   | .ok (returned?, _) => returned?
 
+/-- **The `MessageInfo` a reply-receive's reply carries**: its label and its
+words (`msg.registers`, MR0 on), transferring no capability word.  The one
+reading of the reply's message both answers use: a faulted caller's fault reply
+(`replyRecvCallerFaultAnswer?`) and the reply a receive that completes a signal
+makes (`replyRecvCompletesSignalArm`). -/
+abbrev replyRecvReplyMessageInfo (label : Nat) (msg : IpcMessage) : MessageInfo :=
+  { length := msg.registers.size, extraCaps := 0, label := label }
+
 /-- **The answer a `.replyRecv` owes the caller it replies to**, read on the
 pre-state: `none` for a caller carrying no fault (its message is delivered), and
 for a faulted one the outcome `decodeFaultReply` gives the reply against the fault
@@ -371,7 +379,7 @@ def replyRecvCallerFaultAnswer? (st : SystemState) (prevCaller : SeLe4n.ThreadId
       | none => none
       | some tf =>
           some (Architecture.decodeFaultReply tf.fault tf.context
-            { length := msg.registers.size, extraCaps := 0, label := label } msg.registers)
+            (replyRecvReplyMessageInfo label msg) msg.registers)
 
 /-- The answer is `none` exactly on a caller carrying no fault — the `.reply`
 arm's own branch predicate. -/
