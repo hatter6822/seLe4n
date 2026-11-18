@@ -11079,6 +11079,40 @@ open SeLe4n.Kernel
 #check @lockSet_replyRecv_endpoint_write_mem
 #check @lockSet_notificationWait_notification_write_mem
 EOF'
+# seL4-MCS handleReplyRecv: the receive completes an active bound notification.
+# The arm, its fidelity split, the family facts every dispatch-wide theorem
+# consumes, the scheduler footprint naming both legs' cores, and the bound
+# notification's write lock.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.SyscallSeamCoverage
+import SeLe4n.Kernel.KernelRecords.Dispatch
+import SeLe4n.Kernel.MappingRecordStage.Dispatch
+import SeLe4n.Kernel.ReschedulePendingArms.Dispatch
+import SeLe4n.Kernel.IPC.Invariant.DispatchPayoff
+import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SyscallReadiness
+import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
+import SeLe4n.Kernel.RefusalCarryingReplyRecv
+open SeLe4n.Kernel
+open SeLe4n.Kernel.Concurrency
+#check @replyRecvCompletesSignalArm
+#check @replyRecvCompletesSignalArm_split
+#check @replyRecvCompletesSignalArm_cases
+#check @replyRecvCompletesSignalArm_mappingStage
+#check @replyRecvCompletesSignalArm_stepCovers
+#check @replyRecvCompletesSignalArm_recordsStage
+#check @replyRecvCompletesSignalArm_runQueueEntryStage
+#check @replyRecvCompletesSignalArm_readyKeptStage
+#check @replyRecvCompletesSignalArm_preserves_ipcInvariantFull
+#check @replyRecvCompletesSignalArm_coversWrites
+#check @replyTransferOnCore_preserves_ipcInvariantFull
+#check @notificationWaitOnCore_consumed_runQueueStage
+#check @schedLockSet_replyRecvArmOnCore
+#check @schedLockSet_replyRecvTransferOnCore_subset_arm
+#check @schedLockSet_replyRecvArmOnCore_coversTransfer
+#check @lockSetForSyscall_replyRecv_covers_boundNotification
+#check @endpointReplyRecvCheckedArmR_eq_general
+#check @endpointReplyRecvLongCheckedArmR_eq_general
+EOF'
 # The receive-side footprints carry the state-level member on the SAME flag the
 # transition branches on, so the declaration tracks the write rather than being
 # unconditionally present.

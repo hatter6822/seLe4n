@@ -5000,9 +5000,10 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   | .reply =>
       [.tcb, .cnode, .schedContext, .reply, .objStore]
   -- WS-RR RR7.11: `.objStore` for the same reason — this arm's receive leg is
-  -- the WithCaps receive.
+  -- the WithCaps receive.  `.notification` -- the receive completes the
+  -- replier's bound notification when it is active (seL4-MCS `receiveIPC`).
   | .replyRecv =>
-      [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore]
+      [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply, .objStore]
   -- Notification syscalls.  `.notificationSignal` may take the seL4 bound-delivery
   -- path (WS-SM SM6.B): a signal to a notification whose bound TCB is
   -- `BlockedOnReceive` dequeues that TCB from its endpoint and writes it, so the
