@@ -65,8 +65,8 @@ theorem writeFaultRegistersToTcb_machine (st : SystemState) (tid : SeLe4n.Thread
   SystemState.updateTcb_machine _ _ _
 
 theorem writeFfiRegistersToTcb_machine (st : SystemState) (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) :
-    (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).machine =
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64) :
+    (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).machine =
       st.machine := by
   rw [Platform.FFI.writeFfiRegistersToTcb_eq_updateTcb, SystemState.updateTcb_machine]
 
@@ -81,7 +81,7 @@ macro_rules | `(tactic| machine_chain) => `(tactic|
 macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (writeFaultRegistersToTcb_machine _ _ _).trans ?_; machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
-  (with_reducible refine (writeFfiRegistersToTcb_machine _ _ _ _ _ _ _ _ _).trans ?_;
+  (with_reducible refine (writeFfiRegistersToTcb_machine _ _ _ _ _ _ _ _ _ _).trans ?_;
    machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
   ((first
@@ -159,9 +159,9 @@ theorem faultDeliveredState_stepCovers (e : CoreId) {lctx : LabelingContext} {st
 /-- **The register spill keeps the bundle the delete carries**: it rewrites one
 thread's register file, which none of the bundle's conjuncts reads. -/
 theorem finalisingDeleteBundle_writeFfiRegistersToTcb {st : SystemState} (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (hB : finalisingDeleteBundle st) :
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64) (hB : finalisingDeleteBundle st) :
     finalisingDeleteBundle
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
   have hInv := hB.1.2.1
   unfold Platform.FFI.writeFfiRegistersToTcb
   refine ⟨⟨?_, SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv,
@@ -192,9 +192,9 @@ theorem placedThreadsHaveTcbs_updateTcb {st : SystemState} {tid : SeLe4n.ThreadI
 
 /-- The argument spill writes registers only. -/
 theorem writeFfiRegistersToTcb_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (hInv : st.objects.invExt) :
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64) (hInv : st.objects.invExt) :
     capabilityKeyFrame st
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
   unfold Platform.FFI.writeFfiRegistersToTcb
   exact updateTcb_keyFrame st tid (fun _ => rfl) hInv
 
@@ -226,13 +226,13 @@ theorem syscallDispatchFromAbi_stepCovers {ctx : LabelingContext} {e : CoreId}
   rename_i tid hCur
   split at h
   · cases h; exact ⟨stepCovers_refl e st, hInv⟩
-  have hW := writeFfiRegistersToTcb_keyFrame st tid syscallId x0 x1 x2 x3 x4 x5 hInv
+  have hW := writeFfiRegistersToTcb_keyFrame st tid syscallId x0 x1 x2 x3 x4 x5 x6 hInv
   dsimp only at h
   split at h
   · -- the refusal's reported state: the spill, or its busy reply's holder
     -- cancelled on it
     obtain ⟨hC, hCInv⟩ := cancelReceiveBusyReply_stepCovers e ctx e
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) hW.2.2
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) hW.2.2
     split at h
     · split at h
       · -- an NBSend lookup fault is dropped: the refusal's state, nothing more
@@ -262,20 +262,20 @@ theorem syscallDispatchFromAbi_stepCovers {ctx : LabelingContext} {e : CoreId}
           (Platform.FFI.recordSyscallRefusal_scheduler_eq _ _ _ _ _ _ _)
   · rename_i hE
     cases h
-    have hB' := finalisingDeleteBundle_writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 hB
+    have hB' := finalisingDeleteBundle_writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 x6 hB
     have hPl : placedThreadsHaveTcbs
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
       unfold Platform.FFI.writeFfiRegistersToTcb
       exact placedThreadsHaveTcbs_updateTcb hInv hPlaced
     -- The argument spill writes registers alone: no current slot, no queue.
-    have hAwayW : ∀ t, (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
+    have hAwayW : ∀ t, (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
         ).scheduler.currentOnCore e = some t → ∀ c,
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).queuedOn c t =
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).queuedOn c t =
           false := by
       intro t ht c
       rw [Platform.FFI.writeFfiRegistersToTcb_scheduler] at ht
       rw [Platform.FFI.writeFfiRegistersToTcb_eq_updateTcb,
-        (SystemState.RunCoresAgree.updateTcb (f := Platform.FFI.ffiRegisterSpill syscallId x0 x1 x2 x3 x4 x5)
+        (SystemState.RunCoresAgree.updateTcb (f := Platform.FFI.ffiRegisterSpill syscallId x0 x1 x2 x3 x4 x5 x6)
           hInv fun _ => rfl).queuedOn c t]
       exact hAwayCur t ht c
     exact stepCoversInv_trans hW.stepCovers

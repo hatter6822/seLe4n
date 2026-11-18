@@ -1666,14 +1666,14 @@ theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreI
   rename_i hIdle
   have hNI : isIdleThreadId tid = false := by simpa using hIdle
   have hW : SystemState.RunQueueStage st
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
     unfold Platform.FFI.writeFfiRegistersToTcb
     exact SystemState.RunQueueStage.updateTcb _ _ (fun _ _ => rfl)
-  have E1 : EntryPremises (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) :=
+  have E1 : EntryPremises (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) :=
     E.of_ipcFrame hW (by
       unfold Platform.FFI.writeFfiRegistersToTcb
       exact IpcFrame.updateTcb _ _ fun _ => rfl)
-  have hCur1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).scheduler.currentOnCore e
+  have hCur1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).scheduler.currentOnCore e
       = some tid := by rw [Platform.FFI.writeFfiRegistersToTcb_scheduler]; exact hCur
   refine readyKeptStage.mono (S := (· = tid)) (fun x hx => hx ▸ hCur) ?_
   dsimp only at h
@@ -1681,20 +1681,20 @@ theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreI
   · -- WS-SX SX4: a refused receive hands back its busy reply's cancel, which
     -- blocks no thread and keeps the endpoint heads blocked.
     have hC : SystemState.RunQueueEntryStage
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) ∧
         readyKeptStage (· = tid)
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) ∧
         queueHeadBlockedConsistent (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) ∧
         (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)).scheduler.currentOnCore e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)).scheduler.currentOnCore e
           = some tid := by
       rcases cancelReceiveBusyReply_cases_holder ctx e
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
         hEq | ⟨_, hd, -, -, hEq⟩ <;> rw [hEq]
       · exact ⟨(SystemState.RunQueueStage.refl _).entry, .refl _, E1.queueHeads, hCur1⟩
       · exact ⟨cancelReplyHolder_runQueueEntryStage _ hd e, cancelReplyHolder_readyKeptStage _ hd e,
@@ -1705,7 +1705,7 @@ theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreI
     have hDR := hS.2 E1.objInv E1.refined hRR E1.dequeued
     have hKW := readyKeptStage.trans hW.entry.1 (.of_stage hW) hK
     generalize cancelReceiveBusyReply ctx e
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) = stR
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) = stR
       at h hS hK hKW hQR hIR hRR hDR hCurR
     have hL := hW.entry.1.trans hS.1
     split at h

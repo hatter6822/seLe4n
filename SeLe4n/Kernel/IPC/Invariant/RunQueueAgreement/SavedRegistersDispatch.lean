@@ -798,11 +798,11 @@ theorem syscallDispatchFromAbi_savedRegsKeptOffCore {ctx : LabelingContext} {e :
   rename_i hIdle
   have hNI : isIdleThreadId tid = false := by simpa using hIdle
   have hFr : offCoreFree e st tid := offCoreFree_of_current hCur hU hN
-  have hEq := Platform.FFI.writeFfiRegistersToTcb_eq_updateTcb st tid syscallId x0 x1 x2 x3 x4 x5
-  have iW : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).objects.invExt
+  have hEq := Platform.FFI.writeFfiRegistersToTcb_eq_updateTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
+  have iW : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).objects.invExt
     := by rw [hEq]; exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
   have hW1 : savedRegsKeptExcept (· = tid) st
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
     rw [hEq]; exact .updateTcb_written _ _ _ hInv rfl
   dsimp only at h
   split at h
@@ -811,32 +811,32 @@ theorem syscallDispatchFromAbi_savedRegsKeptOffCore {ctx : LabelingContext} {e :
     -- core; the fault delivery then names a receive head blocked after the
     -- cancel, so blocked at the spill.
     have hS : SystemState.RunQueueStage st
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
       rw [hEq]; exact SystemState.RunQueueStage.updateTcb _ _ (fun _ _ => rfl)
     have E1 := E.of_ipcFrame hS (by rw [hEq]; exact IpcFrame.updateTcb _ _ fun _ => rfl)
-    have hRT1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
+    have hRT1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
         ).residentsHaveTcbs := by
       rw [hEq]; exact residentsHaveTcbs_updateTcb hInv hRT
-    have hBNR1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
+    have hBNR1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
         ).blockedNotResident := by
       rw [hEq]; exact blockedNotResident_updateTcb hInv (fun _ => rfl) hBNR
     have hBase : ∀ t, offCoreFree e
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) t →
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) t →
         offCoreFree e st t := fun _ =>
       offCoreFree_of_frame (fun _ => by rw [Platform.FFI.writeFfiRegistersToTcb_scheduler])
         (by rw [hEq, SystemState.updateTcb_machine])
     have hSC : savedRegsWrittenFree e st
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) ∧
         (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           ).objects.invExt ∧
         ∀ ep t, ((cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           ).getEndpoint? ep).bind (·.receiveQ.head) = some t → offCoreFree e st t := by
       rcases cancelReceiveBusyReply_cases_holder ctx e
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
         hX | ⟨_, hd, -, -, hX⟩ <;> rw [hX]
       · exact ⟨.refl _, iW, fun _ _ ht =>
           hBase _ (offCoreFree_of_receiveHead E1.dequeued E1.queueHeads hRT1 hBNR1 ht)⟩
@@ -849,7 +849,7 @@ theorem syscallDispatchFromAbi_savedRegsKeptOffCore {ctx : LabelingContext} {e :
     have w1 := (savedRegsWrittenFree.of_kept hW1 fun _ e => e ▸ hFr).trans w0
     clear hS E1 hRT1 hBNR1 hBase w0
     generalize cancelReceiveBusyReply ctx e
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) = stR
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) = stR
       at h w1 iR hHR
     split at h
     · split at h
@@ -883,26 +883,26 @@ theorem syscallDispatchFromAbi_savedRegsKeptOffCore {ctx : LabelingContext} {e :
             fun _ h => h.elim)) hC.currentKept hC.residentKept
   · rename_i hE
     cases h
-    have hB' := finalisingDeleteBundle_writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 hB
+    have hB' := finalisingDeleteBundle_writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 x6 hB
     have hPl : placedThreadsHaveTcbs
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
       rw [hEq]; exact placedThreadsHaveTcbs_updateTcb hInv hPlaced
-    have hAwayW : ∀ t, (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
+    have hAwayW : ∀ t, (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
         ).scheduler.currentOnCore e = some t → ∀ c,
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).queuedOn c t =
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).queuedOn c t =
           false := by
       intro t ht c
       rw [Platform.FFI.writeFfiRegistersToTcb_scheduler] at ht
       rw [hEq, (SystemState.RunCoresAgree.updateTcb
-        (f := Platform.FFI.ffiRegisterSpill syscallId x0 x1 x2 x3 x4 x5) hInv fun _ => rfl).queuedOn c t]
+        (f := Platform.FFI.ffiRegisterSpill syscallId x0 x1 x2 x3 x4 x5 x6) hInv fun _ => rfl).queuedOn c t]
       exact hAwayCur t ht c
     have hS : SystemState.RunQueueStage st
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
       rw [hEq]; exact SystemState.RunQueueStage.updateTcb _ _ (fun _ _ => rfl)
     have E1 := E.of_ipcFrame hS (by rw [hEq]; exact IpcFrame.updateTcb _ _ fun _ => rfl)
     have hC2 := (syscallEntryChecked_stepCovers iW hB' hPl hAwayW hE).1
     refine savedRegsKeptOffCore_trans_stepCovers
-      (writeFfiRegistersToTcb_savedRegsKeptOffCore syscallId x0 x1 x2 x3 x4 x5 hInv hCur hU hN)
+      (writeFfiRegistersToTcb_savedRegsKeptOffCore syscallId x0 x1 x2 x3 x4 x5 x6 hInv hCur hU hN)
       (syscallEntryChecked_savedRegsKeptOffCore E1 (fun t ht => ?_) ?_ ?_ hB' ?_ ?_ ?_ hPl hAwayW
         hE) hC2
     · rw [Platform.FFI.writeFfiRegistersToTcb_scheduler, hCur] at ht

@@ -1132,17 +1132,17 @@ private def bracketState : SystemState :=
   base
 
 /-- The ABI words of a `.tcbSuspend` on the capability at slot 1: a `Call`
-(`syscallId = 1`), `x0 = 1` (the CPtr), `x1` the label 12, `x2..x5 = 0`. -/
+(`syscallId = 1`), `x0 = 1` (the CPtr), `x1` the label 12, `x2..x6 = 0`. -/
 private def bracketDecl (st : SystemState) : Option Concurrency.LockSet :=
   declaredLockSetForAbiEntry harnessLabelingContext bootCoreId
     (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
-    (x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) (x6 := 0) st
 
 private def bracketPlan (st : SystemState) :
     Option (SeLe4n.ThreadId × SyscallDecodeResult × SystemState) :=
   abiEntryPlan harnessLabelingContext bootCoreId
     (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
-    (x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) (x6 := 0) st
 
 /-- The step the bracket wraps, at those same words. -/
 private def bracketStepFn (st : SystemState) :=
@@ -1177,7 +1177,7 @@ private def undeclaredBare (st : SystemState) :=
 private def undeclaredDecl (st : SystemState) : Option Concurrency.LockSet :=
   declaredLockSetForAbiEntry harnessLabelingContext bootCoreId
     (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
-    (x1 := SyscallId.cspaceMint.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (x1 := SyscallId.cspaceMint.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) (x6 := 0) st
 
 /-- **WS-OD OD3.5**: `.replyRecv`'s footprint declares for a delegated reply,
 and names the recorded server's TCB.
@@ -1294,7 +1294,7 @@ private def runDeclaredFootprintBracketChecks : IO Unit := do
     (decide (bracketSpec.declared bracketState
       = declaredUnifiedLockSetForAbiEntry harnessLabelingContext bootCoreId
           (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
-    (x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
+    (x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) (x6 := 0)
           bracketState))
   -- **The ghost bracket starts and ends all-free** (plan O3): run the proven
   -- path from the unheld table and every declared member is unheld after —
@@ -1350,13 +1350,13 @@ syscall's locks around another's transition. -/
 private def bracketSchedDecl (st : SystemState) : Option LockSet :=
   declaredSchedulerLockSetForAbiEntry harnessLabelingContext bootCoreId
     (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
-    (x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) (x6 := 0) st
 
 /-- The same entry's scheduler-domain footprint at an **undeclared** arm. -/
 private def undeclaredSchedDecl (st : SystemState) : Option LockSet :=
   declaredSchedulerLockSetForAbiEntry harnessLabelingContext bootCoreId
     (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
-    (x1 := SyscallId.cspaceMint.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (x1 := SyscallId.cspaceMint.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) (x6 := 0) st
 
 /-- The same state with the victim **active**, so the suspend arm's footprint is
 its full one rather than the `.Inactive` refusal's.  One field apart from
@@ -1452,13 +1452,13 @@ brackets that would take the object-store table lock twice. -/
 private def bracketUnifiedDecl (st : SystemState) : Option LockSet :=
   declaredUnifiedLockSetForAbiEntry harnessLabelingContext bootCoreId
     (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
-    (x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) (x6 := 0) st
 
 /-- The same entry at an **undeclared** arm. -/
 private def undeclaredUnifiedDecl (st : SystemState) : Option LockSet :=
   declaredUnifiedLockSetForAbiEntry harnessLabelingContext bootCoreId
     (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
-    (x1 := SyscallId.cspaceMint.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (x1 := SyscallId.cspaceMint.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) (x6 := 0) st
 
 /-- **Cut C6h**: every mutation of the production side here fails to ELABORATE
 rather than failing this suite — the membership theorems and the bracket's own

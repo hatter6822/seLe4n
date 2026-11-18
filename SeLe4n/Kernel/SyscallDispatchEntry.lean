@@ -505,7 +505,7 @@ step's own application and the record is never built at runtime. -/
       List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) where
   declared := declaredUnifiedLockSetForAbiEntry ctx execCore trapped.syscallId
-    trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
+    trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6
   step := syscallDispatchCrossCoreStep ctx execCore trapped.syscallId
     trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
     trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30
@@ -1180,7 +1180,7 @@ theorem saveCapturedSyscallFrame_current_saves (st : SystemState) (c : CoreId)
 
 /-- **The argument spill at the syscall entry writes what the save saved.**  The
 dispatch (`Platform.FFI.syscallDispatchFromAbi`) spills the syscall number and
-`x0`–`x5` into its caller's saved context (`writeFfiRegistersToTcb`); the entry
+`x0`–`x6` into its caller's saved context (`writeFfiRegistersToTcb`); the entry
 hands it the words of the frame it admitted and saved
 (`syscallDispatchBracket`), so the spill rewrites the caller's context with the
 words it already holds, and every TCB reads back as it did before the spill.
@@ -1199,7 +1199,7 @@ theorem syscallEntrySpill_getTcb? {frame : Option Architecture.InFlightContext}
     (Platform.FFI.writeFfiRegistersToTcb (Architecture.IpcBufferRead.syncUserWords
         (Architecture.saveCapturedSyscallFrame st e frame) bytes n) tid
         trapped.syscallId trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4
-        trapped.x5).getTcb? t =
+        trapped.x5 trapped.x6).getTcb? t =
       (Architecture.IpcBufferRead.syncUserWords
         (Architecture.saveCapturedSyscallFrame st e frame) bytes n).getTcb? t := by
   obtain ⟨rfl, hEl0, hFits⟩ := syscallEntryContextOrFaulted_ok hAdm
@@ -1218,7 +1218,7 @@ theorem syscallEntrySpill_getTcb? {frame : Option Architecture.InFlightContext}
         Architecture.saveVacatedFrameOnCore_of_current _ e _ _ tid
           (by rw [Architecture.saveTrapFrameOnCore_scheduler, hCur'])]
     exact Architecture.saveTrapFrameOnCore_preserves_objects_invExt st e _ hInv
-  refine Platform.FFI.writeFfiRegistersToTcb_getTcb?_of_held _ tid _ _ _ _ _ _ _ hInvS
+  refine Platform.FFI.writeFfiRegistersToTcb_getTcb?_of_held _ tid _ _ _ _ _ _ _ _ hInvS
     (fun tcb hT => ?_) t
   have hT' : (Architecture.saveCapturedSyscallFrame st e (some trapped)).getTcb? tid =
       some tcb := by
@@ -1242,7 +1242,7 @@ theorem syscallEntrySpill_contextMatchesCurrentOnCore_iff
     contextMatchesCurrentOnCore (Platform.FFI.writeFfiRegistersToTcb
         (Architecture.IpcBufferRead.syncUserWords
         (Architecture.saveCapturedSyscallFrame st e frame) bytes n) tid trapped.syscallId trapped.x0 trapped.x1
-        trapped.x2 trapped.x3 trapped.x4 trapped.x5) c ↔
+        trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6) c ↔
       contextMatchesCurrentOnCore (Architecture.IpcBufferRead.syncUserWords
         (Architecture.saveCapturedSyscallFrame st e frame) bytes n) c := by
   unfold contextMatchesCurrentOnCore
@@ -1305,7 +1305,7 @@ theorem syscallEntrySpill_contextMatchesCurrentOnCore
     contextMatchesCurrentOnCore (Platform.FFI.writeFfiRegistersToTcb
         (Architecture.IpcBufferRead.syncUserWords
         (Architecture.saveCapturedSyscallFrame st e frame) bytes n) tid trapped.syscallId trapped.x0 trapped.x1
-        trapped.x2 trapped.x3 trapped.x4 trapped.x5) e :=
+        trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6) e :=
   (syscallEntrySpill_contextMatchesCurrentOnCore_iff hAdm st e bytes n hInv tid hCur e).mpr
     (syscallEntrySaved_contextMatchesCurrentOnCore hAdm st e bytes n hInv)
 

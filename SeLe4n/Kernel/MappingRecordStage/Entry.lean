@@ -350,17 +350,17 @@ theorem syscallDispatchFromAbi_mappingStage {ctx : LabelingContext} {e : CoreId}
   split at h
   · cases h; exact MappingStage.refl _
   have hW : MappingStage st
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
     unfold Platform.FFI.writeFfiRegistersToTcb
     exact updateTcb_mappingStage _ _ _
   have P1 : MappingArmPremises
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
     unfold Platform.FFI.writeFfiRegistersToTcb
     exact P.updateTcb _ _
   -- the refusal's reported state: the spill, or its busy reply's holder
   -- cancelled on it
   have hC : MappingStage st (cancelReceiveBusyReply ctx e
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) :=
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) :=
     hW.trans (cancelReceiveBusyReply_mappingStage ctx e _)
   have hRec : ∀ (s : SystemState) (op : UInt32) (k : KernelError),
       MappingStage s (Platform.FFI.recordSyscallRefusal ctx e op tid k x0 s) := fun s op k =>

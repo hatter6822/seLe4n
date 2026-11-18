@@ -1009,13 +1009,13 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
     (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st : SystemState) (U : LockSet)
     (hInv : st.objects.invExt ∧ queueHeadBlockedConsistent st)
-    (hU : declaredUnifiedLockSetForAbiEntry ctx e syscallId x0 x1 x2 x3 x4 x5 st = some U) :
+    (hU : declaredUnifiedLockSetForAbiEntry ctx e syscallId x0 x1 x2 x3 x4 x5 x6 st = some U) :
     footprintCoversWrites U st
       (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr
         spEl0 x30 st).2 := by
   obtain ⟨hObjInv, hHeads⟩ := hInv
   unfold declaredUnifiedLockSetForAbiEntry at hU
-  cases hPlan : abiEntryPlan ctx e syscallId x0 x1 x2 x3 x4 x5 st with
+  cases hPlan : abiEntryPlan ctx e syscallId x0 x1 x2 x3 x4 x5 x6 st with
   | none => rw [hPlan] at hU; exact absurd hU (by simp)
   | some triple =>
   obtain ⟨tid, decoded, stSpilled⟩ := triple
@@ -1032,21 +1032,21 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
   have hRunE : (LockKey.runQueue e, AccessMode.write) ∈ U.pairs :=
     mem_unifiedLockSetForSyscall_executingCore _ _ _ _ _ hU
   obtain ⟨hCur, tcb, hTcbRegs, hDec, hFilled⟩ :=
-    abiEntryPlan_components ctx e syscallId x0 x1 x2 x3 x4 x5 st tid decoded stSpilled hPlan
-  have hRegsSch := Platform.FFI.writeFfiRegistersToTcb_scheduler st tid syscallId x0 x1 x2 x3 x4 x5
+    abiEntryPlan_components ctx e syscallId x0 x1 x2 x3 x4 x5 x6 st tid decoded stSpilled hPlan
+  have hRegsSch := Platform.FFI.writeFfiRegistersToTcb_scheduler st tid syscallId x0 x1 x2 x3 x4 x5 x6
   have hFillObj : stSpilled.objects
-      = (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).objects := by
+      = (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).objects := by
     rw [hFilled]
   have hFillSch : stSpilled.scheduler
-      = (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).scheduler := by
+      = (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).scheduler := by
     rw [hFilled]
   have hRegsObjInv :
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).objects.invExt :=
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).objects.invExt :=
     SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
   have hFillObjInv : stSpilled.objects.invExt := by rw [hFillObj]; exact hRegsObjInv
   have hRegsHeads :
       queueHeadBlockedConsistent
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) :=
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) :=
     queueHeadBlockedConsistent_updateTcb_of_ipcState_eq st tid _ hObjInv (fun _ => rfl) hHeads
   have hFillHeads : queueHeadBlockedConsistent stSpilled :=
     queueHeadBlockedConsistent_of_readViewAgreement (.of_getElem_eq (fun oid => by rw [hFillObj])) hRegsHeads
@@ -1072,14 +1072,14 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
     -- the state the refusal reports: the spill, or the spill with its busy
     -- reply's holder cancelled, which keeps every CNode and CSpace root
     have hFrameR : callerCspaceRoot (cancelReceiveBusyReply ctx e
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid
-        = callerCspaceRoot (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid
+        = callerCspaceRoot (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           tid ∧
         ∀ id, (cancelReceiveBusyReply ctx e
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)).getCNode? id
-          = (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).getCNode? id := by
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)).getCNode? id
+          = (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).getCNode? id := by
       rcases cancelReceiveBusyReply_cases_holder ctx e
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
         h | ⟨_, holder, -, -, h⟩
       · rw [h]; exact ⟨rfl, fun _ => rfl⟩
       · rw [h]
@@ -1087,12 +1087,12 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
             (cancelReplyHolder_finaliseFrameAny _ holder e hRegsObjInv).write tid,
           cancelReplyHolder_getCNode? _ holder e hRegsObjInv⟩
     have hNoFault : Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
         (cancelReceiveBusyReply ctx e
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid ke
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid ke
           = none := by
       have hTcbRegs' :
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).objects[tid.toObjId]?
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).objects[tid.toObjId]?
             = some (.tcb tcb) := hTcbRegs
       -- WS-ZA ZA4.3: a yield has no capability-fault phase.
       by_cases hY : decoded.syscallId = .yield
@@ -1115,13 +1115,13 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
           tid ke tcb decoded hTcbRegs' hDec hPhase
       | some inRecv =>
         have hRecv' : receiveGateRefuses decoded.syscallId tid
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) cap = false := by
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) cap = false := by
           rw [← hRecv]
           unfold receiveGateRefuses receiveBoundRefuses notificationBoundElsewhere
             syscallTargetAccepted objectKindIs
           simp only [SystemState.getObject?, SystemState.getNotification?, hFillObj]
         have hRoot : callerCspaceRoot
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid
               = tcb.spaceCells[0] := by
           simp only [callerCspaceRoot, hTcbRegs]
         exact Platform.FFI.syscallCapFaultAt_none_of_lookup_ok SeLe4n.arm64DefaultLayout _ _ tid

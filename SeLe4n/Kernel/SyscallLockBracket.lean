@@ -109,7 +109,7 @@ The point of naming it is `abiEntryPlan_dispatches` below: a footprint resolved
 from a decode the dispatch does not use is a footprint for a different
 operation. -/
 def abiEntryPlan (ctx : LabelingContext) (executingCore : CoreId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64) (st : SystemState) :
     Option (SeLe4n.ThreadId × SyscallDecodeResult × SystemState) :=
   if isInsecureDefaultContext ctx then none
   else
@@ -117,7 +117,7 @@ def abiEntryPlan (ctx : LabelingContext) (executingCore : CoreId)
     | none => none
     | some tid =>
       if isIdleThreadId tid then none else
-      let stRegs := Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
+      let stRegs := Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
       match lookupThreadRegisterContext tid stRegs with
       | .error _ => none
       | .ok (regs, _) =>
@@ -140,26 +140,26 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
     (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (x6 elr spsr spEl0 x30 : UInt64) (st : SystemState)
     (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (stSpilled : SystemState)
-    (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
           = some (tid, decoded, stSpilled)) :
     Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId
         x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
       = (match dispatchSyscallChecked ctx decoded tid executingCore stSpilled with
          | .error ke =>
              match Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
-                 (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+                 (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
                  (cancelReceiveBusyReply ctx executingCore
-                   (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
+                   (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
                  tid ke with
              | some fault =>
                  if Platform.FFI.syscallDropsFault syscallId fault then
                    .ok (.resumes, cancelReceiveBusyReply ctx executingCore
-                     (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
+                     (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
                  else
                  .ok (.faulted,
                       Platform.FFI.deliverSyscallCapFault ctx executingCore
                         (cancelReceiveBusyReply ctx executingCore
-                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
+                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
                         tid fault
                         (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5
                           x6 spEl0 x30) elr spsr)
@@ -167,28 +167,28 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
                  if syscallId = Syscall.call.number.toUInt32 then
                  .ok (.returns (Architecture.errorFrameFor
                         (cancelReceiveBusyReply ctx executingCore
-                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
+                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
                         tid ke),
                       Platform.FFI.recordSyscallRefusal ctx executingCore
                         (Platform.FFI.seamOperationCode
-                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid)
+                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid)
                         tid ke x0
                         (Architecture.recordErrorOverflow
                           (cancelReceiveBusyReply ctx executingCore
-                            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
+                            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
                           tid ke))
                  else
                  .ok (.resumes,
                       Platform.FFI.recordSyscallRefusal ctx executingCore
                         (Platform.FFI.seamOperationCode
-                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid)
+                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid)
                         tid ke x0
                         (cancelReceiveBusyReply ctx executingCore
-                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)))
+                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)))
          | .ok ((), st') =>
              .ok (Platform.FFI.syscallReturnOutcome
                (Platform.FFI.seamOperationCode
-                 (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid)
+                 (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid)
                st' tid, st')) := by
   unfold abiEntryPlan at h
   unfold Platform.FFI.syscallDispatchFromAbi
@@ -204,7 +204,7 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
       · rw [if_pos hI] at h; exact absurd h (by simp)
       rw [if_neg hI] at h
       cases hRegs : lookupThreadRegisterContext tid'
-          (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5) with
+          (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5 x6) with
       | error e => rw [hRegs] at h; exact absurd h (by simp)
       | ok regsPair =>
         obtain ⟨regs, _⟩ := regsPair
@@ -212,9 +212,9 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
         simp only at h
         cases hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
             (threadOperationCode
-              (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5)
+              (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5 x6)
               tid' SeLe4n.arm64DefaultLayout regs)
-            (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5)
+            (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5 x6)
             tid' SeLe4n.arm64DefaultLayout regs 32 with
         | error e => rw [hDec] at h; exact absurd h (by simp)
         | ok decoded' =>
@@ -225,7 +225,7 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
           -- `syscallEntryChecked` reads the caller off the **spilled** state;
           -- the spill frames the scheduler, so it reads the same caller.
           have hSched := Platform.FFI.writeFfiRegistersToTcb_scheduler st tid'
-            syscallId x0 x1 x2 x3 x4 x5
+            syscallId x0 x1 x2 x3 x4 x5 x6
           simp only [syscallEntryChecked, hCtx, hSched, hCur, hI, hRegs, hDec,
             Bool.false_eq_true, if_false]
           rfl
@@ -236,21 +236,21 @@ file at the spilled state, and the state the dispatch runs on is that spilled
 state.  What the seam coverage proof
 reads to carry a claim from the dispatch state back to the entry state. -/
 theorem abiEntryPlan_components (ctx : LabelingContext) (executingCore : CoreId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64) (st : SystemState)
     (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (stSpilled : SystemState)
-    (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
           = some (tid, decoded, stSpilled)) :
     st.scheduler.currentOnCore executingCore = some tid ∧
       ∃ tcb : TCB,
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).getObject?
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).getObject?
             tid.toObjId = some (.tcb tcb) ∧
         SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
           (threadOperationCode
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid
             SeLe4n.arm64DefaultLayout tcb.registerContext)
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid
           SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .ok decoded ∧
-        stSpilled = Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 := by
+        stSpilled = Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6 := by
   unfold abiEntryPlan at h
   by_cases hCtx : isInsecureDefaultContext ctx
   · rw [if_pos hCtx] at h; exact absurd h (by simp)
@@ -264,7 +264,7 @@ theorem abiEntryPlan_components (ctx : LabelingContext) (executingCore : CoreId)
       · rw [if_pos hI] at h; exact absurd h (by simp)
       rw [if_neg hI] at h
       cases hRegs : lookupThreadRegisterContext tid'
-          (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5) with
+          (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5 x6) with
       | error e => rw [hRegs] at h; exact absurd h (by simp)
       | ok regsPair =>
         obtain ⟨regs, _⟩ := regsPair
@@ -272,9 +272,9 @@ theorem abiEntryPlan_components (ctx : LabelingContext) (executingCore : CoreId)
         simp only at h
         cases hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
             (threadOperationCode
-              (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5)
+              (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5 x6)
               tid' SeLe4n.arm64DefaultLayout regs)
-            (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5)
+            (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5 x6)
             tid' SeLe4n.arm64DefaultLayout regs 32 with
         | error e => rw [hDec] at h; exact absurd h (by simp)
         | ok decoded' =>
@@ -698,9 +698,9 @@ capability names — every input derived from the entry's own resolution rather
 than supplied alongside it.  A caller cannot bracket one syscall's footprint
 around another's. -/
 def declaredLockSetForAbiEntry (ctx : LabelingContext) (executingCore : CoreId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64) (st : SystemState) :
     Option LockSet :=
-  match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
+  match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st with
   | none => none
   | some (tid, decoded, stSpilled) =>
     (abiEntryLockOperands decoded tid stSpilled).bind
@@ -714,17 +714,17 @@ dispatch runs on.
 Stated rather than left to a reader of the definition, so a future cut that
 reintroduces an independent argument has to break a proof to do it. -/
 theorem declaredLockSetForAbiEntry_binds_decode (ctx : LabelingContext)
-    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
+    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64)
     (st : SystemState) (S : LockSet)
-    (h : declaredLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    (h : declaredLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
           = some S) :
     ∃ tid decoded stSpilled ops,
-      abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+      abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
         = some (tid, decoded, stSpilled) ∧
       abiEntryLockOperands decoded tid stSpilled = some ops ∧
       lockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops stSpilled = some S := by
   unfold declaredLockSetForAbiEntry at h
-  cases hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
+  cases hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st with
   | none => rw [hPlan] at h; exact absurd h (by simp)
   | some triple =>
     obtain ⟨tid, decoded, stSpilled⟩ := triple

@@ -39,7 +39,7 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
     (hAwayCur : ∀ t, st.scheduler.currentOnCore e = some t → ∀ c, st.queuedOn c t = false)
     (hM : contextMatchesCurrentOnCore st e)
     (hSpill : ∀ tid, st.scheduler.currentOnCore e = some tid → contextMatchesCurrentOnCore
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) e)
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) e)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     contextMatchesCurrentOnCore
@@ -58,8 +58,8 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
   rename_i hIdle
   have hNI : isIdleThreadId tid = false := by simpa using hIdle
   have hSp := hSpill tid hCur
-  have hEq := Platform.FFI.writeFfiRegistersToTcb_eq_updateTcb st tid syscallId x0 x1 x2 x3 x4 x5
-  have iW : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).objects.invExt
+  have hEq := Platform.FFI.writeFfiRegistersToTcb_eq_updateTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
+  have iW : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).objects.invExt
     := by rw [hEq]; exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
   dsimp only at h
   split at h
@@ -67,26 +67,26 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
     -- writes the holder alone, never the executing core's current thread, and
     -- no bank of this core.
     have hS : SystemState.RunQueueStage st
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
       rw [hEq]; exact SystemState.RunQueueStage.updateTcb _ _ (fun _ _ => rfl)
     have E1 := E.of_ipcFrame hS (by rw [hEq]; exact IpcFrame.updateTcb _ _ fun _ => rfl)
-    have hBNR1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
+    have hBNR1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
         ).blockedNotResident := by
       rw [hEq]; exact blockedNotResident_updateTcb hInv (fun _ => rfl) hBNR
-    have hC0 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
+    have hC0 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
         ).scheduler.currentOnCore e = some tid := by
       rw [Platform.FFI.writeFfiRegistersToTcb_scheduler]; exact hCur
     have hSC : contextMatchesCurrentOnCore (cancelReceiveBusyReply ctx e
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) e ∧
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) e ∧
         stepCovers (otherCore e)
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) ∧
         (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           ).objects.invExt := by
       rcases cancelReceiveBusyReply_cases_holder ctx e
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
         hX | ⟨_, hd, -, -, hX⟩ <;> rw [hX]
       · exact ⟨hSp, stepCovers_refl _ _, iW⟩
       · obtain ⟨c1, i1⟩ := cancelReplyHolder_stepCovers (otherCore e) _ hd e iW
@@ -98,11 +98,11 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
         · exact x
         · exact absurd hC0 (x e (ne_otherCore e)).1
     obtain ⟨hMR, cR, iR⟩ := hSC
-    have hW := writeFfiRegistersToTcb_keyFrame st tid syscallId x0 x1 x2 x3 x4 x5 hInv
+    have hW := writeFfiRegistersToTcb_keyFrame st tid syscallId x0 x1 x2 x3 x4 x5 x6 hInv
     have cW := stepCovers_trans (e := otherCore e) hW.stepCovers cR
     clear hS E1 hBNR1 hC0 cR hW
     generalize cancelReceiveBusyReply ctx e
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) = stR
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) = stR
       at h hMR cW iR
     split at h
     · rename_i fault _
@@ -146,15 +146,15 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
           (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)).mpr hMR
   · rename_i hE
     cases h
-    have hB' := finalisingDeleteBundle_writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 hB
+    have hB' := finalisingDeleteBundle_writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 x6 hB
     have hPl : placedThreadsHaveTcbs
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
       rw [hEq]; exact placedThreadsHaveTcbs_updateTcb hInv hPlaced
     have hS : SystemState.RunQueueStage st
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
       rw [hEq]; exact SystemState.RunQueueStage.updateTcb _ _ (fun _ _ => rfl)
     have E1 := E.of_ipcFrame hS (by rw [hEq]; exact IpcFrame.updateTcb _ _ fun _ => rfl)
-    have hC0 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
+    have hC0 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
         ).scheduler.currentOnCore e = some tid := by
       rw [Platform.FFI.writeFfiRegistersToTcb_scheduler]; exact hCur
     have hA := syscallEntryChecked_bankAgree E1 (fun t ht => by
@@ -217,7 +217,7 @@ theorem syscallDispatchCrossCoreStep_contextMatchesCurrentOnCore {ctx : Labeling
     (hAwayCur : ∀ t, S.scheduler.currentOnCore e = some t → ∀ c, S.queuedOn c t = false)
     (hM : contextMatchesCurrentOnCore S e)
     (hSpill : ∀ tid, S.scheduler.currentOnCore e = some tid → contextMatchesCurrentOnCore
-      (Platform.FFI.writeFfiRegistersToTcb S tid syscallId x0 x1 x2 x3 x4 x5) e) :
+      (Platform.FFI.writeFfiRegistersToTcb S tid syscallId x0 x1 x2 x3 x4 x5 x6) e) :
     contextMatchesCurrentOnCore (syscallDispatchCrossCoreStep ctx e syscallId
       x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 S).2 e := by
   obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e syscallId

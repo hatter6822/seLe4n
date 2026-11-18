@@ -145,11 +145,11 @@ theorem savedRegsKeptOffCore_updateTcb {e : CoreId} {base st : SystemState}
 syscall's id and argument words into the caller's saved context, the executing
 core's current thread, which no other core holds. -/
 theorem writeFfiRegistersToTcb_savedRegsKeptOffCore {e : CoreId} {st : SystemState}
-    {tid : SeLe4n.ThreadId} (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
+    {tid : SeLe4n.ThreadId} (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64)
     (hInv : st.objects.invExt) (hCur : st.scheduler.currentOnCore e = some tid)
     (hU : currentsUnique st) (hN : st.currentNotResidentElsewhere) :
     savedRegsKeptOffCore e st
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
   unfold Platform.FFI.writeFfiRegistersToTcb
   exact savedRegsKeptOffCore_updateTcb hInv (offCoreFree_of_current hCur hU hN)
     (currentKeptOffCore_of_eq fun _ _ => by rw [SystemState.updateTcb_scheduler])
