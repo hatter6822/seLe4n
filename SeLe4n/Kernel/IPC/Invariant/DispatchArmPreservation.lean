@@ -1456,6 +1456,31 @@ theorem cspaceRecordFrameMapping_preserves_ipcInvariantFull
     (by simp only [Capability.badge, Capability.withMapping_badgeWord,
       Capability.withMapping_badged]) hStore
 
+/-- **The mapping record `Page_Unmap` drops preserves the bundle**: one CNode is
+stored back with one capability's record cleared, its badge kept. -/
+theorem cspaceClearFrameMapping_preserves_ipcInvariantFull
+    (addr : CSpaceAddr) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : cspaceClearFrameMapping addr st = .ok ((), st')) :
+    ipcInvariantFull st' ∧ st'.objects.invExt := by
+  obtain ⟨cn, cap, hCn, hLk, hStore⟩ := cspaceClearFrameMapping_ok_decompose addr st st' hStep
+  exact storeObject_capRewrite_preserves_ipcInvariantFull addr cn cap _ st st' hObjInv hInv
+    ((SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hCn) hLk
+    (by simp only [Capability.badge, Capability.withMapping_badgeWord,
+      Capability.withMapping_badged]) hStore
+
+/-- **`Page_Unmap` preserves the bundle**: a VSpace-root-only teardown, then the
+record clear. -/
+theorem vspaceUnmapFrameCap_preserves_ipcInvariantFull
+    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : vspaceUnmapFrameCap ec addr st = .ok ((), st')) :
+    ipcInvariantFull st' ∧ st'.objects.invExt := by
+  obtain ⟨st1, hU, hC⟩ := vspaceUnmapFrameCap_cases hStep
+  obtain ⟨hI1, hW1, -⟩ := unmapLivePages_ok_frame ec _ st st1 hObjInv hU
+  exact cspaceClearFrameMapping_preserves_ipcInvariantFull addr st1 st' hI1
+    (ipcInvariantFull_of_vspaceRootOnlyWrite hW1 hInv) hC
+
 /-- **A free-index write preserves the bundle** (WS-ZA ZA5.4 part 13): the
 capability rewritten keeps its badge. -/
 theorem setCapFreeIndex_preserves_ipcInvariantFull

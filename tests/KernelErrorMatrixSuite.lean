@@ -394,18 +394,18 @@ private def row_revocationRequired_retype_inUse_reply : KernelErrorRejection :=
       runUnit (SeLe4n.Kernel.lifecyclePreRetypeCleanup (default : SystemState) target inUse
         (.reply { replyId := ⟨999⟩ })) }
 
-/-- Row: `decodeVSpaceUnmapArgs` rejects ASID at or above maxASID with
+/-- Row: `decodeVSpaceUnifyInstructionArgs` rejects ASID at or above maxASID with
 `.asidNotBound`.  (WS-SX SX6.3, D6: a map names its address space as extra
 capability 0 and takes that root's own ASID, so the unmap is the decode that
 still reads an ASID word.) -/
 private def row_asidNotBound_vspaceUnmap : KernelErrorRejection :=
-  { syscall       := "decodeVSpaceUnmapArgs"
+  { syscall       := "decodeVSpaceUnifyInstructionArgs"
     expectedError := .asidNotBound
     scenarioTag   := "AN11A.3.asidNotBound.over_maxASID"
     scenarioDesc  := "U2-G/U-H08: decode of vspaceUnmap rejects ASID ≥" ++
                      " platform-configured maxASID with .asidNotBound"
     runScenario   := fun _ =>
-      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs
+      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnifyInstructionArgs
         (mkDecoded #[rv 65536, rv 0]) 65536) }
 
 /-- Row: `bootScheduleChecked` rejects when the current TCB is missing with
@@ -650,16 +650,16 @@ private def row_invalidTypeTag : KernelErrorRejection :=
 -- AN11-A.5 — Architecture / Capability / Service residual variants
 -- ============================================================================
 
-/-- Row: `decodeVSpaceUnmapArgs` rejects non-canonical VAddr (≥ 2^48) with
+/-- Row: `decodeVSpaceUnifyInstructionArgs` rejects non-canonical VAddr (≥ 2^48) with
 `.addressOutOfBounds`. -/
 private def row_addressOutOfBounds_vaddr : KernelErrorRejection :=
-  { syscall       := "decodeVSpaceUnmapArgs"
+  { syscall       := "decodeVSpaceUnifyInstructionArgs"
     expectedError := .addressOutOfBounds
     scenarioTag   := "AN11A.5.addressOutOfBounds.non_canonical_vaddr"
     scenarioDesc  := "U2-B/U-H06: vspaceUnmap rejects VAddr ≥ 2^48 (outside" ++
                      " ARM64 48-bit canonical range)"
     runScenario   := fun _ =>
-      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs
+      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnifyInstructionArgs
         (mkDecoded #[rv 0, rv (2^48)]) 65536) }
 
 /-- Row: an audit read whose opcode names no read is refused

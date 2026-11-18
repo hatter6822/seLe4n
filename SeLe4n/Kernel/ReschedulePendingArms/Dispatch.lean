@@ -330,6 +330,12 @@ theorem vspaceMapOrRemapFromFrameCap_machine_eq {tid : SeLe4n.ThreadId} {ec : Co
     (fun _ _ hU => vspaceUnmapPageWithShootdownAndIcacheBroadcast_machine_eq hU)
     (fun _ _ _ h₁ h₂ => h₂.trans h₁) h
 
+theorem vspaceUnmapFrameCap_machine_eq {ec : CoreId} {addr : CSpaceAddr} {st st' : SystemState}
+    (h : vspaceUnmapFrameCap ec addr st = .ok ((), st')) : st'.machine = st.machine := by
+  obtain ⟨st1, hU, hC⟩ := vspaceUnmapFrameCap_cases h
+  obtain ⟨_, _, -, -, hS⟩ := cspaceClearFrameMapping_ok_decompose addr st1 st' hC
+  exact (storeObject_machine_eq _ _ _ _ hS).trans (unmapLivePages_framed ec _ st st1 hU).2
+
 macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (completeYieldFrom_machine _ _).trans ?_; machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
@@ -352,8 +358,7 @@ macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (vspaceMapOrRemapFromFrameCap_machine_eq (by assumption)).trans ?_;
    machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
-  (with_reducible refine
-    (vspaceUnmapPageWithShootdownAndIcacheBroadcast_machine_eq (by assumption)).trans ?_;
+  (with_reducible refine (vspaceUnmapFrameCap_machine_eq (by assumption)).trans ?_;
    machine_chain))
 
 macro_rules | `(tactic| machine_chain) => `(tactic|
@@ -1496,8 +1501,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
     | exact (mintReplyCapWithCdt_keyFrame _ _ _ _ hInv h).stepCoversInv
         (hRes := by rw [mintReplyCapWithCdt_machine_eq h]) (hBank := banksKeptOffCore_of_eq (by rw [mintReplyCapWithCdt_machine_eq h]))
     | exact (vspaceMapOrRemapFromFrameCap_keyFrame _ _ _ _ _ hInv h).stepCoversInv
-    | exact (vspaceRootOnlyWrite_keyFrame
-        (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv h)).stepCoversInv
+    | exact (vspaceUnmapFrameCap_keyFrame _ _ _ _ hInv h).stepCoversInv
     | exact (capabilityKeyFrame_of_objects_scheduler_eq hInv
         (Architecture.vspaceUnifyInstructionPage_frame h).1
         (Architecture.vspaceUnifyInstructionPage_frame h).2.2.1).stepCoversInv

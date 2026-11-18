@@ -349,7 +349,9 @@ impl SyscallId {
             Self::TcbSetSpace => AccessRight::Write,
             // WS-BP BP7.1: installing or removing a table changes the table.
             Self::PageTableMap | Self::PageTableUnmap => AccessRight::Write,
-            Self::VSpaceMap | Self::VSpaceUnmap => AccessRight::Write,
+            // WS-SX SX6.3 (D6): `Page_Map` and `Page_Unmap` are invocations of
+            // the frame capability, held with `Read` (Lean `syscallRequiredRight`).
+            Self::VSpaceMap | Self::VSpaceUnmap => AccessRight::Read,
             Self::ServiceRegister | Self::ServiceRevoke => AccessRight::Write,
             Self::ServiceQuery => AccessRight::Read,
             Self::NotificationSignal => AccessRight::Write,
@@ -572,8 +574,8 @@ mod tests {
 
     #[test]
     fn required_right_vspace() {
-        assert_eq!(SyscallId::VSpaceMap.required_right(), AccessRight::Write);
-        assert_eq!(SyscallId::VSpaceUnmap.required_right(), AccessRight::Write);
+        assert_eq!(SyscallId::VSpaceMap.required_right(), AccessRight::Read);
+        assert_eq!(SyscallId::VSpaceUnmap.required_right(), AccessRight::Read);
     }
 
     #[test]

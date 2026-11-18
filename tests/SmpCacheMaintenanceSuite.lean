@@ -124,7 +124,6 @@ open SeLe4n.Kernel.Concurrency
 #check @icacheLineMatches_unifyPage
 #check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnifyInstruction_delegates
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnifyInstructionArgs
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnifyInstructionArgs_eq
 #check @SeLe4n.Kernel.Concurrency.lockSet_vspaceUnifyInstruction
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_vspaceUnifyInstruction
 

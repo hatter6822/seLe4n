@@ -742,6 +742,121 @@ theorem cspaceDeleteSlotFinalising_preserves_teardownWellFormed (ec : Concurrenc
     (finaliseDestroyedCapabilities_ok_wellFormed ec _ _ _ st2
       (cspaceDeleteSlot_preserves_teardownWellFormed hW hD) hF)).1
 
+/-- **`seL4_ARM_Page_Unmap`: the frame capability in `addr` takes down the
+mapping it records, and records none** (seL4's `performPageInvocationUnmap`).
+The page is the capability's own record (`slotMappedPages`, read before any
+write), removed only while it is still live (`unmapLivePages`: seL4's
+`unmapPage` writes nothing unless the entry at the recorded address still maps
+this frame), and the slot's capability then drops its record
+(`cspaceClearFrameMapping`) whether or not anything was unmapped, as seL4
+clears `capFMappedAddress` and `capFMappedASID` unconditionally.  No message
+word is read: the address space and the address are the capability's. -/
+def vspaceUnmapFrameCap (executingCore : Concurrency.CoreId) (addr : CSpaceAddr) :
+    Kernel Unit :=
+  fun st =>
+    match unmapLivePages executingCore (slotMappedPages st addr) st with
+    | .error e => .error e
+    | .ok ((), st1) => cspaceClearFrameMapping addr st1
+
+/-- What a successful `Page_Unmap` is: the teardown of the page the capability
+records, then the record's clear. -/
+theorem vspaceUnmapFrameCap_cases {ec : Concurrency.CoreId} {addr : CSpaceAddr}
+    {st st' : SystemState} (h : vspaceUnmapFrameCap ec addr st = .ok ((), st')) :
+    ∃ st1, unmapLivePages ec (slotMappedPages st addr) st = .ok ((), st1) ∧
+      cspaceClearFrameMapping addr st1 = .ok ((), st') := by
+  unfold vspaceUnmapFrameCap at h
+  rw [unmapLivePages_eq_ok_state] at h
+  exact ⟨_, unmapLivePages_eq_ok_state _ _ _, h⟩
+
+/-- **`Page_Unmap` keeps the object table's invariant**: root stores, then one
+CNode store. -/
+theorem vspaceUnmapFrameCap_objects_invExt {ec : Concurrency.CoreId} {addr : CSpaceAddr}
+    {st st' : SystemState} (hI : st.objects.invExt)
+    (h : vspaceUnmapFrameCap ec addr st = .ok ((), st')) : st'.objects.invExt := by
+  obtain ⟨st1, hU, hC⟩ := vspaceUnmapFrameCap_cases h
+  obtain ⟨hI1, -, -⟩ := unmapLivePages_ok_frame ec _ st st1 hI hU
+  obtain ⟨_, _, -, -, hS⟩ := cspaceClearFrameMapping_ok_decompose addr st1 st' hC
+  exact storeObject_preserves_objects_invExt _ _ _ _ hI1 hS
+
+/-- **`Page_Unmap`'s teardown on slot `slot` of `cnode`, on the record's words**:
+the capability's record and its frame's base are read in place and the one page
+is unmapped if it is still live (`mappedPageLiveWords`), so no list, page record
+or slot address is built (`unmapLivePagesState_slotMappedPages_eq`). -/
+@[inline] def vspaceUnmapFrameCapTeardownAt (executingCore : Concurrency.CoreId)
+    (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) (st : SystemState) : SystemState :=
+  match st.slotCapAt ⟨cnode, slot⟩ with
+  | some cap =>
+    match cap.mapping, cap.target with
+    | some m, .object frameId =>
+      match st.getFrame? frameId with
+      | some f =>
+        if mappedPageLiveWords st m.asid m.vaddr f.base m.epoch then
+          unmapPageState executingCore m.asid m.vaddr st
+        else st
+      | none => st
+    | _, _ => st
+  | none => st
+
+/-- The teardown of the pages a slot's capability records is the words form. -/
+theorem unmapLivePagesState_slotMappedPages_eq (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
+    (slot : SeLe4n.Slot) (st : SystemState) :
+    unmapLivePagesState ec (slotMappedPages st ⟨cnode, slot⟩) st =
+      vspaceUnmapFrameCapTeardownAt ec cnode slot st := by
+  unfold vspaceUnmapFrameCapTeardownAt
+  simp only [slotMappedPages]
+  cases st.slotCapAt ⟨cnode, slot⟩ with
+  | none => rfl
+  | some c =>
+    simp only [Option.bind_some, capabilityMappedPage]
+    cases c.mapping with
+    | none => rfl
+    | some m =>
+      cases c.target with
+      | object fid =>
+        dsimp only
+        cases st.getFrame? fid with
+        | none => rfl
+        | some f =>
+          simp only [Option.map_some, Option.toList, unmapLivePagesState, ← mappedPageLive_eq_words]
+      | _ => rfl
+
+/-- **`Page_Unmap` is its words form**: the teardown on the record's words, then
+the record clear as compiled. -/
+theorem vspaceUnmapFrameCap_eq_teardownAt (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
+    (slot : SeLe4n.Slot) (st : SystemState) :
+    vspaceUnmapFrameCap ec ⟨cnode, slot⟩ st =
+      cspaceClearFrameMappingImpl ⟨cnode, slot⟩ (vspaceUnmapFrameCapTeardownAt ec cnode slot st) := by
+  unfold vspaceUnmapFrameCap
+  rw [unmapLivePages_eq_ok_state, cspaceClearFrameMapping_eq_impl,
+    unmapLivePagesState_slotMappedPages_eq]
+
+/-- **A property the teardown and the record clear both keep, and that
+composes, holds across a `Page_Unmap`.** -/
+theorem vspaceUnmapFrameCap_closed {ec : Concurrency.CoreId} {addr : CSpaceAddr}
+    {st st' : SystemState} (R : SystemState → SystemState → Prop)
+    (hUnmap : ∀ s s', unmapLivePages ec (slotMappedPages st addr) s = .ok ((), s') → R s s')
+    (hClear : ∀ s s', cspaceClearFrameMapping addr s = .ok ((), s') → R s s')
+    (hTrans : ∀ a b c, R a b → R b c → R a c)
+    (h : vspaceUnmapFrameCap ec addr st = .ok ((), st')) : R st st' := by
+  obtain ⟨st1, hU, hC⟩ := vspaceUnmapFrameCap_cases h
+  exact hTrans _ _ _ (hUnmap _ _ hU) (hClear _ _ hC)
+
+/-- **The record clear keeps the teardown's state well formed**: it writes a
+CNode where a CNode stands, never an address-space root or the ASID table. -/
+theorem cspaceClearFrameMapping_preserves_teardownWellFormed {addr : CSpaceAddr}
+    {st st' : SystemState} (hW : teardownWellFormed st)
+    (h : cspaceClearFrameMapping addr st = .ok ((), st')) : teardownWellFormed st' := by
+  obtain ⟨cn, cap, hC, -, hS⟩ := cspaceClearFrameMapping_ok_decompose addr st st' h
+  have hO := (SystemState.getCNode?_eq_some_iff st addr.cnode cn).1 hC
+  refine teardownWellFormed_of_roots_eq
+    (storeObject_preserves_objects_invExt st _ _ _ hW.1 hS) ?_ (fun oid r => ?_) hW
+  · rw [storeObject_asidTable_non_vspaceRoot st _ _ _ (fun r h => by cases h) hS, hO]
+  · by_cases hK : oid = addr.cnode
+    · subst hK
+      rw [storeObject_objects_eq st _ _ _ hW.1 hS, hO]
+      simp
+    · rw [storeObject_objects_ne st _ _ oid _ hK hW.1 hS]
+
 /-- **A capability whose destruction finalises nothing**: it records no mapping
 and names no page table, so destroying it leaves every address space as it is
 (seL4's `finaliseCap` on such a capability does no work). -/

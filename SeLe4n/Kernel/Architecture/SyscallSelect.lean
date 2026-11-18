@@ -73,15 +73,16 @@ def kindTakesLabel (sid : SyscallId) : KernelObjectType → Bool
   | .cnode => sid == .cspaceMint || sid == .cspaceCopy || sid == .cspaceMove ||
       sid == .cspaceDelete || sid == .cspaceRevoke || sid == .mintReplyCap
   | .untyped => sid == .untypedRetype
-  | .vspaceRoot => sid == .vspaceUnmap || sid == .vspaceUnifyInstruction
+  | .vspaceRoot => sid == .vspaceUnifyInstruction
   | .schedContext => sid == .schedContextBind || sid == .schedContextUnbind ||
       sid == .schedContextConsumed || sid == .schedContextYieldTo
   | .tcb => sid == .tcbSuspend || sid == .tcbResume || sid == .tcbSetPriority ||
       sid == .tcbSetMCPriority || sid == .tcbSetIPCBuffer || sid == .tcbSetAffinity ||
       sid == .tcbSetSpace || sid == .tcbBindNotification || sid == .tcbUnbindNotification
   | .pageTable => sid == .pageTableMap || sid == .pageTableUnmap
-  -- seL4's `seL4_ARM_Page_Map` is invoked on the frame capability (WS-SX SX6.3).
-  | .frame => sid == .vspaceMap
+  -- seL4's `seL4_ARM_Page_Map` and `seL4_ARM_Page_Unmap` are invoked on the
+  -- frame capability (WS-SX SX6.3, `decodeARMFrameInvocation`).
+  | .frame => sid == .vspaceMap || sid == .vspaceUnmap
   | .reply => false
   -- seL4: Send or Call on an endpoint is IPC and Send on a notification
   -- signals, whatever the label; the label is the receiver's data.  No label

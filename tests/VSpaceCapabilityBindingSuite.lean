@@ -47,8 +47,9 @@ because the defect lived in dispatch and only dispatch can witness it.
 
 * §1 — surface anchors for the predicate and its fail-closed theorems.
 * §2 — the predicate's own truth table on a real page-table-backed state.
-* §3 — `.vspaceUnmap`: the original exploit, now refused, with the victim
-  mapping proven still present.
+* §3 — `.vspaceUnmap`: invoked on a frame capability, it names no address
+  space and removes only the mapping that capability records, so the exploit's
+  words reach nothing and the victim mapping is proven still present.
 * §4 — `.vspaceUnifyInstruction`: same, plus the no-maintenance-emitted check.
 * §5 — `.vspaceMap`: same, proving no mapping is installed.
 * §5b — physical-address alignment, now of a frame's own `base`.
@@ -120,7 +121,6 @@ open SeLe4n.Kernel.Architecture
 #check @SeLe4n.Kernel.vspaceCapAuthorizesAsid_false_of_unbound
 #check @SeLe4n.Kernel.vspaceCapAuthorizesAsid_false_of_not_object
 #check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceMap_unauthorized
-#check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnmap_unauthorized
 #check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnifyInstruction_unauthorized
 #check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceMap_delegates
 #check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnmap_delegates
@@ -244,8 +244,8 @@ private def scenario (cap : Capability) : Option SystemState :=
   | .ok ((), s) => some s
   | .error _    => none
 
-/-- Two-register decode (asid, vaddr) — the `.vspaceUnmap` /
-`.vspaceUnifyInstruction` operand shape. -/
+/-- Two-register decode (asid, vaddr) — the `.vspaceUnifyInstruction`
+operand shape, and the words the retired address-space unmap read. -/
 private def decode2 (sid : SeLe4n.Model.SyscallId) (asid vaddr : Nat) :
     SyscallDecodeResult :=
   { capAddr   := SeLe4n.CPtr.ofNat 0
@@ -350,38 +350,50 @@ private def runPredicateChecks : IO Unit := do
        vspaceCapAuthorizesAsid victimRootCap victimAsid st)
 
 -- ============================================================================
--- §3  `.vspaceUnmap` — the original exploit, now refused
+-- §3  `.vspaceUnmap` — invoked on a frame capability, acting on its own record
 -- ============================================================================
 
+/-- `Page_Unmap` (`.vspaceUnmap`) invoked on the capability at `capSlot`, with
+no message word and no address space named: seL4's
+`performPageInvocationUnmap` unmaps only the mapping the frame capability
+itself records, then clears that record. -/
+private def decodeFrameUnmap (capSlot : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat capSlot
+  , msgInfo   := { length := 0, extraCaps := 0, label := 0 }
+  , syscallId := .vspaceUnmap
+  , msgRegs   := #[] }
+
+/-- The mapping record on the attacker's capability at `slot`. -/
+private def attackerRecord (st : SystemState) (slot : Nat) : Option FrameMapping :=
+  (SystemState.lookupSlotCap st { cnode := attackerCn, slot := SeLe4n.Slot.ofNat slot }).bind
+    (·.mapping)
+
 private def runUnmapBindingChecks : IO Unit := do
-  IO.println "-- §3 `.vspaceUnmap` capability binding"
-  let d := decode2 .vspaceUnmap 7 0x40000
-  -- The exploit: a writable cap to the attacker's OWN TCB, naming the victim's
-  -- address space.  Before the fix this unmapped the victim's page.
-  match scenario unrelatedCap with
+  IO.println "-- §3 `.vspaceUnmap` acts only on its own frame capability's record"
+  -- The exploit named the victim's address space in two message words.  The
+  -- unmap now names none, so the words are read by nothing.
+  match scenario victimRootCap with
   | none => assertBool "the exploit scenario builds" false
   | some st => do
     assertBool "the victim's page is mapped before the attempt"
       (stillMapped st victimAsid victimVaddr)
-    let r := dispatchSyscallAsCurrent d attacker Concurrency.bootCoreId st
-    assertBool "an unrelated writable cap is REFUSED on its type (invalidCapability)"
-      (isInvalidCapability r)
-    assertBool "and the victim's mapping survives"
-      (match r with
-        | .error _ => stillMapped st victimAsid victimVaddr
-        | .ok ((), st') => stillMapped st' victimAsid victimVaddr)
-  -- Legitimate authority over the WRONG address space is equally refused.
-  match scenario ownRootCap with
-  | none => assertBool "the wrong-root scenario builds" false
-  | some st =>
-    assertBool "a cap to the caller's OWN VSpace root is refused for another ASID"
-      (isIllegalAuthority (dispatchSyscallAsCurrent d attacker Concurrency.bootCoreId st))
-  -- Fail-closed on an unbound ASID: no ASID-existence oracle.
-  match scenario victimRootCap with
-  | none => assertBool "the unbound-ASID scenario builds" false
-  | some st =>
-    assertBool "an UNBOUND ASID is refused with illegalAuthority (no oracle)"
-      (isIllegalAuthority (dispatchSyscallAsCurrent (decode2 .vspaceUnmap 9 0x40000) attacker Concurrency.bootCoreId st))
+    assertBool "even the victim's own VSpace-root capability is refused on its type (invalidCapability)"
+      (isInvalidCapability (dispatchSyscallAsCurrent (decode2 .vspaceUnmap 7 0x40000)
+        attacker Concurrency.bootCoreId st))
+    assertBool "a TCB capability is refused on its type (invalidCapability)"
+      (isInvalidCapability (dispatchSyscallAsCurrent (decodeFrameUnmap slotNotFrame)
+        attacker Concurrency.bootCoreId st))
+    -- A frame capability that records no mapping, followed by the exploit's
+    -- words: seL4 reads no word and has nothing to unmap.
+    match dispatchSyscallAsCurrent
+        { decode2 .vspaceUnmap 7 0x40000 with capAddr := SeLe4n.CPtr.ofNat slotFrameRO }
+        attacker Concurrency.bootCoreId st with
+    | .error e => assertBool s!"an unmap of a frame capability with no record succeeds (got {repr e})" false
+    | .ok ((), st') =>
+      assertBool "and removes nothing: the victim's mapping survives the words that name it"
+        (stillMapped st' victimAsid victimVaddr &&
+         holdsEpoch st' victimAsid victimVaddr == holdsEpoch st victimAsid victimVaddr &&
+         attackerRecord st' slotFrameRO == none)
 
 -- ============================================================================
 -- §4  `.vspaceUnifyInstruction` — cache maintenance cannot probe another AS
@@ -928,6 +940,10 @@ roots `setSpaceAs` stages as extra capabilities. -/
 private inductive OwnerStep where
   | call (d : SyscallDecodeResult)
   | setSpace (tcbSlot cnSlot vrSlot : Nat)
+  /-- The page-table entry at `vaddr` in the owner's address space is removed
+  by the address space's own unmap transition, leaving every capability's
+  record as it was — a record made stale without its capability. -/
+  | staleEntry (vaddr : Nat)
 
 instance : Coe SyscallDecodeResult OwnerStep := ⟨OwnerStep.call⟩
 
@@ -941,6 +957,11 @@ private def runAll (st : SystemState) :
   | [] => .ok st
   | .setSpace t cn vr :: ds =>
     match setSpaceAs t cn vr 0 st with
+    | .error e => .error e
+    | .ok ((), st') => runAll st' ds
+  | .staleEntry va :: ds =>
+    match Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast Concurrency.bootCoreId
+        carveAsid (SeLe4n.Testing.fixtureUserVAddr va) st with
     | .error e => .error e
     | .ok ((), st') => runAll st' ds
   | .call d :: ds =>
@@ -1228,13 +1249,14 @@ private def decodeDelete (slot : Nat) : SyscallDecodeResult :=
   , syscallId := .cspaceDelete
   , msgRegs   := #[SeLe4n.RegValue.ofNat slot] }
 
-/-- `.vspaceUnmap` of `vaddr` in the owner's address space, invoked on the
-owner's VSpace-root capability — the unmap that leaves a record stale. -/
-private def decodeOwnUnmap (vaddr : Nat) : SyscallDecodeResult :=
-  { capAddr   := SeLe4n.CPtr.ofNat slotOwnVsp
-  , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
+/-- `Page_Unmap` (`.vspaceUnmap`) on the owner's frame capability at
+`frameSlot`, with no message word: it removes the mapping that capability
+records and clears the record. -/
+private def decodeOwnUnmap (frameSlot : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat frameSlot
+  , msgInfo   := { length := 0, extraCaps := 0, label := 0 }
   , syscallId := .vspaceUnmap
-  , msgRegs   := #[SeLe4n.RegValue.ofNat 6, SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr)] }
+  , msgRegs   := #[] }
 
 /-- The mapping record on the capability in the owner's root at `slot`. -/
 private def recordAt (st : SystemState) (slot : Nat) : Option FrameMapping :=
@@ -1388,23 +1410,34 @@ private def runFrameFinaliseChecks : IO Unit := do
             | .ok ((), stOld) =>
                 mappedPaddr stOld carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x61000) == some carveUtBase
             | .error _ => false)
-  -- A STALE record: the address space unmaps 0x60000 through its own VSpace
-  -- capability and maps the OTHER frame there.  Deleting slot 8 — whose record
-  -- still names 0x60000 — must not remove a mapping it did not make.  (A fresh
+  -- A STALE record: the entry at 0x60000 goes without slot 8's capability
+  -- (seL4 reaches this when `Page_Map` writes another frame over the entry),
+  -- and the OTHER frame is mapped there.  Deleting slot 8 — whose record still
+  -- names 0x60000 — must not remove a mapping it did not make.  (A fresh
   -- chain, with no copy of slot 8: a deleted copy's CDT node keeps its parent
   -- a derivation parent until a revocation, as it always has.)
   match runAll carveScenario
       [decodeCarve slotUtRetype frameTag 950 slotCarved,
        decodeCarve slotUtRetype frameTag 951 9,
        decodeOwnMap 0x60000 slotCarved permsRWUC,
-       decodeOwnUnmap 0x60000,
+       .staleEntry 0x60000,
        decodeOwnMap 0x60000 9 permsRWUC] with
-  | .error e => assertBool s!"the map-unmap-remap setup succeeds (got {repr e})" false
+  | .error e => assertBool s!"the map-stale-remap setup succeeds (got {repr e})" false
   | .ok st4 => do
     assertBool "setup: 0x60000 now maps the second frame, and slot 8's record is stale"
       (mappedPaddr st4 carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000)
           == some (carveUtBase + SeLe4n.pageBytes) &&
        recordAt st4 slotCarved == some { asid := carveAsid, vaddr := SeLe4n.Testing.fixtureUserVAddr 0x60000 })
+    -- seL4's `performPageInvocationUnmap` on the stale capability: `unmapPage`
+    -- finds the entry holds another frame and leaves it; the record is cleared.
+    match dispatchSyscallAsCurrent (decodeOwnUnmap slotCarved) carveOwner Concurrency.bootCoreId st4 with
+    | .error e => assertBool s!"Page_Unmap of the stale-record capability succeeds (got {repr e})" false
+    | .ok ((), stU) =>
+      assertBool "Page_Unmap of a stale record leaves the other frame's mapping and clears the record"
+        (mappedPaddr stU carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000)
+            == some (carveUtBase + SeLe4n.pageBytes) &&
+         recordAt stU slotCarved == none &&
+         recordAt stU 9 == recordAt st4 9)
     match dispatchSyscallAsCurrent (decodeDelete slotCarved) carveOwner Concurrency.bootCoreId st4 with
     | .error e => assertBool s!"deleting the stale-record capability succeeds (got {repr e})" false
     | .ok ((), st5) =>
@@ -1420,8 +1453,8 @@ private def runFrameFinaliseChecks : IO Unit := do
           == some { asid := carveAsid, vaddr := SeLe4n.Testing.fixtureUserVAddr 0x62000,
                     epoch := 1 })
   -- PR #904 review (`v0.36.41`): the SAME frame remapped at the SAME address,
-  -- through another capability to it, after the address space unmapped the
-  -- first mapping.  A record naming only the ASID, the address and the page
+  -- through another capability to it, after the first mapping's entry went
+  -- without its capability.  A record naming only the ASID, the address and the page
   -- cannot tell the second mapping from its own; the mapping epoch can.  The
   -- copy is taken before either mapping (so it carries no record) and is the one
   -- whose record goes stale — a leaf, so it can be deleted without a revocation.
@@ -1430,7 +1463,7 @@ private def runFrameFinaliseChecks : IO Unit := do
       [decodeCarve slotUtRetype frameTag 950 slotCarved,
        decodeCopy slotCarved 15,
        decodeOwnMap 0x60000 15 permsRWUC,
-       decodeOwnUnmap 0x60000,
+       .staleEntry 0x60000,
        decodeOwnMap 0x60000 slotCarved permsRWUC] with
   | .error e => assertBool s!"the same-frame remap setup succeeds (got {repr e})" false
   | .ok st7 => do
@@ -1487,20 +1520,11 @@ private def runFrameFinaliseChecks : IO Unit := do
 
 private def runAuthorizedChecks : IO Unit := do
   IO.println "-- §6 authorized callers still succeed"
-  -- `.vspaceUnmap` with genuine authority over the victim's address space.
   match scenario victimRootCap with
   | none => assertBool "the authorized scenario builds" false
   | some st => do
-    match dispatchSyscallAsCurrent (decode2 .vspaceUnmap 7 0x40000) attacker Concurrency.bootCoreId st with
-    | .error _ => assertBool "authorized `.vspaceUnmap` succeeds" false
-    | .ok ((), st') => do
-      assertBool "authorized `.vspaceUnmap` succeeds"
-        true
-      assertBool "and the mapping is actually removed"
-        (!(stillMapped st' victimAsid victimVaddr))
-      assertBool "and its mapping-epoch entry goes with it"
-        (!(holdsEpoch st' victimAsid victimVaddr))
-    -- `.vspaceUnifyInstruction` with the same authority.
+    -- `.vspaceUnifyInstruction` with genuine authority over the victim's
+    -- address space.
     match dispatchSyscallAsCurrent (decode2 .vspaceUnifyInstruction 7 0x40000) attacker Concurrency.bootCoreId st with
     | .error _ => assertBool "authorized `.vspaceUnifyInstruction` succeeds" false
     | .ok ((), st') => do
@@ -1516,13 +1540,35 @@ private def runAuthorizedChecks : IO Unit := do
         (stillMapped st' victimAsid freshVaddr)
       assertBool "and stamps a mapping epoch for it"
         (holdsEpoch st' victimAsid freshVaddr)
-      -- Map then unmap at a fresh address leaves no entry behind, so the
-      -- epoch table stays bounded by the live mappings.
-      match dispatchSyscallAsCurrent (decode2 .vspaceUnmap 7 0x50000) attacker Concurrency.bootCoreId st' with
-      | .error _ => assertBool "unmapping the fresh address succeeds" false
-      | .ok ((), st'') =>
-        assertBool "unmapping a fresh address erases its mapping-epoch entry"
+      assertBool "and records the mapping on the frame capability that made it"
+        ((attackerRecord st' slotFrameRO).map (·.vaddr) == some freshVaddr)
+      -- Another capability to the same frame records no mapping, so its unmap
+      -- removes nothing (seL4: `capFMappedASID` is zero, `unmapPage` is skipped).
+      match dispatchSyscallAsCurrent (decodeFrameUnmap slotFrameRW) attacker Concurrency.bootCoreId st' with
+      | .error e => assertBool s!"unmapping through a capability with no record succeeds (got {repr e})" false
+      | .ok ((), sOther) =>
+        assertBool "and leaves the other capability's mapping and record in place"
+          (stillMapped sOther victimAsid freshVaddr &&
+           (attackerRecord sOther slotFrameRO).map (·.vaddr) == some freshVaddr)
+      -- Map then unmap through the mapping's own capability leaves no entry
+      -- behind, so the epoch table stays bounded by the live mappings, and the
+      -- capability's record is cleared (seL4's `performPageInvocationUnmap`).
+      match dispatchSyscallAsCurrent (decodeFrameUnmap slotFrameRO) attacker Concurrency.bootCoreId st' with
+      | .error e => assertBool s!"unmapping through the mapping's own capability succeeds (got {repr e})" false
+      | .ok ((), st'') => do
+        assertBool "unmapping removes the mapping and erases its mapping-epoch entry"
           (!(stillMapped st'' victimAsid freshVaddr) && !(holdsEpoch st'' victimAsid freshVaddr))
+        assertBool "and clears the capability's mapping record"
+          (attackerRecord st'' slotFrameRO == none)
+        assertBool "the victim's other page is untouched"
+          (stillMapped st'' victimAsid victimVaddr)
+        assertBool "a second unmap of the same capability succeeds and changes no mapping"
+          (match dispatchSyscallAsCurrent (decodeFrameUnmap slotFrameRO) attacker Concurrency.bootCoreId st'' with
+           | .ok ((), s3) => !(stillMapped s3 victimAsid freshVaddr) && stillMapped s3 victimAsid victimVaddr &&
+               attackerRecord s3 slotFrameRO == none
+           | .error _ => false)
+        assertBool "and the capability maps again once its record is cleared"
+          ((mapAs (decodeMap 0x50000 slotFrameRO) st'').isOk)
   -- A caller acting on its OWN address space with its own root capability.
   match scenario ownRootCap with
   | none => assertBool "the own-AS scenario builds" false
@@ -1770,13 +1816,6 @@ private def decodeTableUnmap (tableSlot : Nat) : SyscallDecodeResult :=
   , syscallId := .pageTableUnmap
   , msgRegs   := #[] }
 
-/-- `.vspaceUnmap` through the root capability at `rootSlot`, under `asid`. -/
-private def decodeUnmapVia (rootSlot asid vaddr : Nat) : SyscallDecodeResult :=
-  { capAddr   := SeLe4n.CPtr.ofNat rootSlot
-  , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
-  , syscallId := .vspaceUnmap
-  , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr)] }
-
 /-- Where the table at `oid` records itself installed. -/
 private def installOf (st : SystemState) (oid : Nat) : Option PageTableInstall :=
   (st.getPageTable? (SeLe4n.ObjId.ofNat oid)).bind (·.installedIn)
@@ -1936,7 +1975,7 @@ private def runPageTableChecks : IO Unit := do
             (match st3.objects[carveCn]? with
              | some (.cnode cn) => Architecture.cnodeHoldsInstalledPageTableCap st3 cn
              | _ => false)
-        match runAll st3 [decodeUnmapVia 12 1 va, decodeTableUnmap 17] with
+        match runAll st3 [decodeOwnUnmap 14, decodeTableUnmap 17] with
         | .error e => assertBool s!"unmapping the frame, then the level-3 table, succeeds (got {repr e})" false
         | .ok st4 => do
           assertBool "the level-3 slot is gone and the table is installed nowhere"
@@ -2086,7 +2125,7 @@ private def runPhysicalWriteChecks : IO Unit := do
             bit 10 ||| bit 11 ||| bit 53 ||| bit 54
           assertBool "a mapping stores its page descriptor at the frame's level-3 entry (0x70 → +0x380)"
             (recordedBy st3 st4 == [store (l3 + 0x380) desc])
-          match dispatchSyscallAsCurrent (decodeUnmapVia 12 1 va) carveOwner Concurrency.bootCoreId st4 with
+          match dispatchSyscallAsCurrent (decodeOwnUnmap 14) carveOwner Concurrency.bootCoreId st4 with
           | .error e => assertBool s!"unmapping the frame succeeds (got {repr e})" false
           | .ok ((), st5) => do
             assertBool "an unmap stores the invalid descriptor at the same entry"

@@ -4166,7 +4166,7 @@ run_check "INVARIANT" rg -n '^  \| untypedRetype\s*$' SeLe4n/Model/Object/Types.
 run_check "INVARIANT" rg -n '^  \| \.untypedRetype         => 36$' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^    UntypedRetype = 36,$' rust/sele4n-types/src/syscall.rs rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n '^  \| \.vspaceMap \| \.irqControlGet \| \.auditRead => 3$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n -U '^  \| \.mintReplyCap \| \.vspaceUnmap \| \.vspaceUnifyInstruction\n  \| \.pageTableMap \| \.tcbSetSpace => 2$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n -U '^  \| \.mintReplyCap \| \.vspaceUnifyInstruction\n  \| \.pageTableMap \| \.tcbSetSpace => 2$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^pub fn untyped_retype\($' rust/sele4n-sys/src/lifecycle.rs
 run_check "INVARIANT" rg -n -U 'def lockSet_untypedRetype[^\n]*(\n([ \t][^\n]*)?)*     carvedChildLocks childKind childObjId count\)$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n -U 'def carvedChildLocks[^\n]*\n[^\n]*\n  \(List\.range \(min count retypeFanOutLimit\)\)\.map fun i =>\n    \(carvedObjectLock childKind \(ObjId\.ofNat \(childObjId\.toNat \+ i\)\), \.write\)$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
@@ -7173,11 +7173,12 @@ run_check "INVARIANT" rg -n '^pub fn dc_cvau' rust/sele4n-hal/src/cache.rs
 # PR #845 review (P1) — VSpace capability binding (confused-deputy closure)
 #
 # `syscallLookupCap` proves only that the caller holds *a* capability carrying
-# the required right.  The three VSpace arms operate on a caller-supplied ASID,
-# so without binding the capability to that address space a holder of any
-# writable object capability could act on an arbitrary one.  These anchors pin
-# the predicate, its fail-closed theorems, the three rejection duals, and the
-# regression suite.
+# the required right.  The VSpace arms that name a caller-supplied address
+# space (map, unify) must bind the capability to it, or a holder of any
+# writable object capability could act on an arbitrary one; Page_Unmap names
+# none and acts only on its own frame capability's mapping record.  These
+# anchors pin the predicate, its fail-closed theorems, the rejection duals, and
+# the regression suite.
 # ============================================================================
 run_check "INVARIANT" rg -n '^def vspaceCapAuthorizesAsid($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_iff($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
@@ -7188,13 +7189,18 @@ run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_vspaceMap_unauthori
 run_check "INVARIANT" rg -n '^theorem resolvePageMapOperands_shadowed_root($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem resolvePageMapOperandsK_eq($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_vspaceMap_no_root($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U '  \| \.vspaceMap => some \.frame\n' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '  \| \.vspaceMap \| \.vspaceUnmap => some \.frame\n' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '              match resolvePageMapOperands tid decoded\.capAddr rootCPtr words st with' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'PagePermissions\.ofNat\?|pagePermissionsOfWord\?' SeLe4n tests
-run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_vspaceUnmap_unauthorized($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+# Page_Unmap names no ASID: it is invoked on the frame capability and unmaps
+# only the mapping that capability itself recorded (seL4's
+# `performPageInvocationUnmap`), so the caller cannot point it elsewhere.
+run_check "INVARIANT" rg -n -U '          \| \.ok \(slot, _, _\) => vspaceUnmapFrameCap executingCore slot st' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def vspaceUnmapFrameCap($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnmapFrameCap_eq_teardownAt($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_vspaceUnifyInstruction_unauthorized($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-# The gate must be present in all three live arms.  That is guaranteed by the
-# three `…_unauthorized` theorems anchored above rather than by a grep: each
+# The gate must be present in both ASID-naming arms.  That is guaranteed by the
+# `…_unauthorized` theorems anchored above rather than by a grep: each
 # asserts that its arm returns `.illegalAuthority` when authorization fails, so
 # deleting the gate from an arm makes the corresponding theorem unprovable and
 # breaks the build.  A textual occurrence count would be both weaker (it cannot
@@ -7210,7 +7216,7 @@ run_check "INVARIANT" rg -n 'paddr.toNat % pageBytes' SeLe4n/Kernel/Architecture
 run_check "INVARIANT" rg -n 'alignmentError' SeLe4n/Kernel/Architecture/VSpace.lean
 # PR #845 review (P2) — the syscall is reachable from the safe Rust API.
 run_check "INVARIANT" rg -n '^pub fn vspace_unify_instruction' rust/sele4n-sys/src/vspace.rs
-run_check "INVARIANT" rg -n '^pub type VSpaceUnifyInstructionArgs' rust/sele4n-abi/src/args/vspace.rs
+run_check "INVARIANT" rg -n '^pub struct VSpaceUnifyInstructionArgs' rust/sele4n-abi/src/args/vspace.rs
 run_check "INVARIANT" bash -c "! rg -q 'VspaceUnifyInstruction' rust/sele4n-types/src/syscall.rs rust/sele4n-hal/src/svc_dispatch.rs"
 
 # `v0.36.35`: the VSpace-root-target preservation theorems are retired — a root
@@ -9264,7 +9270,7 @@ run_prose_check "INVARIANT" rg -n 'RETIRED: without the deferral core 1 resumes 
 run_check "INVARIANT" rg -n -U '^      match p\.epoch with\n      \| none => true\n      \| some e => root\.mappingEpochs\[p\.vaddr\]\? == some e$' SeLe4n/Kernel/Architecture/PageTeardown.lean
 run_check "INVARIANT" rg -n '^            match tagFrameMapping args\.asid args\.vaddr \(frameCapObjId frameCap\) st1 with$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '^     \(pageLock frameObjId, \.write\),\n     \(stateLevelLock, \.read\)\]$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_negative_check "INVARIANT" rg -n '\(pageLock frameObjId, \.read\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_negative_check "INVARIANT" rg -n -U 'def lockSet_vspaceMap[^\n]*(\n([ \t][^\n]*)?)*\(pageLock frameObjId, \.read\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_vspaceMap_frame_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #904 (v0.36.41): the HAL validates what a descriptor says; a table store is
 # its own tag, because the walker reads 0b11 by level.
@@ -12279,7 +12285,7 @@ run_check "INVARIANT" rg -n '^theorem encode_decode_roundtrip($|[ ({:\[\]])' SeL
 run_check "INVARIANT" rg -n 'def requireMsgReg($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^structure CSpaceMintArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^structure VSpaceMapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^structure VSpaceUnmapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^structure VSpaceUnifyInstructionArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^def decodeCSpaceMintArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^def decodePageMapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_check "INVARIANT" rg -n '^theorem decodeCSpaceMintArgs_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
@@ -14145,19 +14151,19 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceMoveArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceDeleteArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceMapArgs
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceUnmapArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.VSpaceUnifyInstructionArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnifyInstructionArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMoveArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs_error_iff
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs_eq_by
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs_error_iff
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnifyInstructionArgs_error_iff
 
 -- WS-K-D: Lifecycle and VSpace dispatch helpers
 -- W3: objectOfTypeTag_type and objectOfTypeTag_error_iff removed (dead code)
@@ -14180,7 +14186,7 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceMoveArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceDeleteArgs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodePageMapArgs
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeVSpaceUnmapArgs
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeVSpaceUnifyInstructionArgs
 -- WS-K-F2: Layer 2 round-trip proofs
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs_roundtrip
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceCopyArgs_roundtrip
@@ -14188,7 +14194,7 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceDeleteArgs_roundtrip
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeUntypedRetypeArgs_roundtrip
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs_roundtrip
-#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs_roundtrip
+#check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnifyInstructionArgs_roundtrip
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.decode_layer2_roundtrip_all
 -- WS-K-F3: Layer 1 extraction round-trip
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_roundtrip

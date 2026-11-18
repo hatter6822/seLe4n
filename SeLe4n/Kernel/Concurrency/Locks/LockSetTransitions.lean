@@ -1550,13 +1550,25 @@ def lockSet_vspaceMap (callerTid : ThreadId)
      (pageLock frameObjId, .write),
      (stateLevelLock, .read)]
 
-/-- WS-SM SM3.B.3: `lockSet` for `vspaceUnmap`. -/
+/-- WS-SM SM3.B.3: `lockSet` for `vspaceUnmap`.
+
+`Page_Unmap` is invoked on the frame capability (seL4's
+`performPageInvocationUnmap`): it reads the frame the capability names (the
+mapping is removed only while the entry still holds that frame's page), writes
+the root its recorded ASID resolves to, and clears the capability's mapping
+record by rewriting the capability's CNode — link words included, read and
+written back unchanged, so the CDT subject is held in read mode exactly as the
+map's record write holds it. -/
 def lockSet_vspaceUnmap (callerTid : ThreadId)
-    (cnodeRootObjId : ObjId) (vspaceRootObjId : ObjId) : LockSet :=
+    (cnodeRootObjId : ObjId) (vspaceRootObjId : ObjId)
+    (frameCnodeObjId frameObjId : ObjId) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .read),
      (cnodeLock cnodeRootObjId, .read),
-     (vspaceRootLock vspaceRootObjId, .write)]
+     (vspaceRootLock vspaceRootObjId, .write),
+     (cnodeLock frameCnodeObjId, .write),
+     (pageLock frameObjId, .read),
+     (stateLevelLock, .read)]
 
 /-- WS-SM SM7.D: `lockSet` for `vspaceUnifyInstruction`.
 
@@ -5036,10 +5048,14 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
       [.tcb, .cnode, .untyped, .page, .vspaceRoot, .objStore,
        .endpoint, .notification, .reply, .schedContext]
   -- VSpace syscalls
-  -- `.vspaceUnifyInstruction` (SM7.D) shares the footprint but takes the
-  -- VSpaceRoot in read mode: it modifies no page table, only cache state.
-  | .vspaceUnmap | .vspaceUnifyInstruction =>
+  -- `.vspaceUnifyInstruction` (SM7.D) takes the VSpaceRoot in read mode: it
+  -- modifies no page table, only cache state.
+  | .vspaceUnifyInstruction =>
       [.tcb, .cnode, .vspaceRoot]
+  -- `Page_Unmap` reads the frame its capability names and clears that
+  -- capability's mapping record.
+  | .vspaceUnmap =>
+      [.tcb, .cnode, .vspaceRoot, .page, .objStore]
   -- **WS-BP BP7.1 (`v0.36.7`)**: the map reads the frame its capability names
   -- and writes that capability's mapping record.
   | .vspaceMap =>
@@ -6732,8 +6748,8 @@ theorem lockSet_consistent_vspaceUnifyInstruction (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.4 for `.vspaceUnmap`. -/
 theorem lockSet_consistent_vspaceUnmap (callerTid : ThreadId)
-    (cnRoot vId : ObjId) :
-    ∀ p ∈ (lockSet_vspaceUnmap callerTid cnRoot vId).pairs,
+    (cnRoot vId frameCn frameId : ObjId) :
+    ∀ p ∈ (lockSet_vspaceUnmap callerTid cnRoot vId frameCn frameId).pairs,
       p.fst.kind ∈ permittedKinds .vspaceUnmap :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
@@ -6743,6 +6759,12 @@ theorem lockSet_consistent_vspaceUnmap (callerTid : ThreadId)
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [pageLock]; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [stateLevelLock]; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.serviceRegister`.

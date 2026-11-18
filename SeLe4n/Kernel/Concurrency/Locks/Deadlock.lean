@@ -1594,8 +1594,8 @@ theorem lockSet_vspaceMap_size_le (a : ThreadId) (b c d e : ObjId) :
   unfold lockSet_vspaceMap maxLockSetSize
   exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
-theorem lockSet_vspaceUnmap_size_le (a : ThreadId) (b c : ObjId) :
-    (lockSet_vspaceUnmap a b c).size ≤ maxLockSetSize := by
+theorem lockSet_vspaceUnmap_size_le (a : ThreadId) (b c d e : ObjId) :
+    (lockSet_vspaceUnmap a b c d e).size ≤ maxLockSetSize := by
   unfold lockSet_vspaceUnmap maxLockSetSize
   exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
 
@@ -1846,7 +1846,7 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c d, (lockSet_cspaceDelete a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c d e g f n, (lockSet_untypedRetype a b c d e g f n).size ≤ maxLockSetSize) ∧
     (∀ a b c d e, (lockSet_vspaceMap a b c d e).size ≤ maxLockSetSize) ∧
-    (∀ a b c, (lockSet_vspaceUnmap a b c).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e, (lockSet_vspaceUnmap a b c d e).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_vspaceUnifyInstruction a b c).size ≤ maxLockSetSize) ∧
     (∀ a b t, (lockSet_declassify a b t).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f, (lockSet_declassifySignal a b c d e f).size ≤ maxLockSetSize) ∧

@@ -256,10 +256,8 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
           (hBank := banksKeptOffCore_of_eq (by rw [mintReplyCapWithCdt_machine_eq h])))
     | exact hF (vspaceMapOrRemapFromFrameCap_savedRegsKept hInv h)
         ((vspaceMapOrRemapFromFrameCap_keyFrame _ _ _ _ _ hInv h).stepCoversInv (e := e'))
-    | exact hF (vspaceUnmapPageWithShootdownAndIcacheBroadcast_savedRegsKept hInv h)
-        ((vspaceRootOnlyWrite_keyFrame
-          (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv h)).stepCoversInv
-          (e := e'))
+    | exact hF (vspaceUnmapFrameCap_savedRegsKept hInv h)
+        ((vspaceUnmapFrameCap_keyFrame _ _ _ _ hInv h).stepCoversInv (e := e'))
     | exact hF (vspaceUnifyInstructionPage_savedRegsKept h)
         ((capabilityKeyFrame_of_objects_scheduler_eq hInv
           (Architecture.vspaceUnifyInstructionPage_frame h).1

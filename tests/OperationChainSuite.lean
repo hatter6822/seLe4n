@@ -2684,42 +2684,75 @@ private def chain28SyscallVSpaceOps : IO Unit := do
     | .error _ => throw <| IO.userError "chain28: lookup after vspaceMap failed"
   | .error err =>
     throw <| IO.userError s!"chain28: vspaceMap dispatch failed ({toString err})"
-  -- === vspaceUnmap (syscallId=10): x2=asid(2), x3=vaddr(0x4000) ===
-  -- Build state WITH existing mapping to unmap
+  -- === vspaceUnmap (syscallId=10), seL4's `ARMPageUnmap` shape: the invoked
+  -- capability (x0, slot 0) is the frame capability that made the mapping, and
+  -- no message word follows (`performPageInvocationUnmap` reads the address
+  -- space and the address off the capability's own record).
+  let unmapFrameId : SeLe4n.ObjId := ⟨703⟩
+  let unmapVa : SeLe4n.VAddr := SeLe4n.VAddr.ofNat 0x4000
   let vsWithMapping : SeLe4n.Model.VSpaceRoot := {
     asid := chainAsid
     mappings := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      ((SeLe4n.VAddr.ofNat 0x4000), ((SeLe4n.PAddr.ofNat 0x5000), SeLe4n.Model.PagePermissions.readOnly))
+      (unmapVa, ((SeLe4n.PAddr.ofNat 0x5000), SeLe4n.Model.PagePermissions.readOnly))
     ]
+    mappingEpochs := SeLe4n.Kernel.RobinHood.RHTable.ofList [(unmapVa, 0)]
   }
-  let stUnmap := buildSyscallState .vspaceUnmap 0 vsId
-    (AccessRightSet.ofList [.read, .write])
-    [(vsId, .vspaceRoot vsWithMapping)]
-    [(2, 2), (3, 0x4000)]
-    [(vsId, .vspaceRoot)]
-  match syscallEntryOnBoot stUnmap with
+  let unmapState (invoked : Capability) (withRecord : Bool) (args : List (Nat × Nat)) :
+      SystemState :=
+    let st := buildSyscallState .vspaceUnmap 0 unmapFrameId
+      (AccessRightSet.ofList [.read])
+      [(unmapFrameId, .frame { base := SeLe4n.PAddr.ofNat 0x5000 }), (vsId, .vspaceRoot vsWithMapping)]
+      args
+      [(vsId, .vspaceRoot), (unmapFrameId, .frame)]
+      (invokedCap := some invoked)
+    -- The record `Page_Map` through this capability would have left (the boot
+    -- admits no configured record, so it is written after the build).
+    let cnId : SeLe4n.ObjId := ⟨501⟩
+    if !withRecord then st else
+    match st.objects[cnId]? with
+    | some (.cnode cn) =>
+      match storeObject cnId (.cnode (cn.insert (SeLe4n.Slot.ofNat 0)
+          (invoked.withMapping (some { asid := chainAsid, vaddr := unmapVa, epoch := 0 })))) st with
+      | .ok ((), s) => s
+      | .error _ => st
+    | _ => st
+  let frameCap : Capability :=
+    { target := .object unmapFrameId, rights := AccessRightSet.ofList [.read] }
+  let slotRecord (st : SystemState) : Option FrameMapping :=
+    (SystemState.lookupSlotCap st { cnode := ⟨501⟩, slot := SeLe4n.Slot.ofNat 0 }).bind (·.mapping)
+  match syscallEntryOnBoot (unmapState frameCap true []) with
   | .ok (_, stAfter) =>
-    match SeLe4n.Kernel.Architecture.vspaceLookup chainAsid (SeLe4n.VAddr.ofNat 0x4000) stAfter with
-    | .error _ => IO.println "operation-chain check passed [chain28: vspaceUnmap dispatch unmapped]"
+    match SeLe4n.Kernel.Architecture.vspaceLookup chainAsid unmapVa stAfter with
+    | .error _ =>
+      expect "chain28: vspaceUnmap dispatch unmapped and cleared the record"
+        (slotRecord stAfter == none)
     | .ok _ => throw <| IO.userError "chain28: mapping still exists after unmap"
   | .error err =>
     throw <| IO.userError s!"chain28: vspaceUnmap dispatch failed ({toString err})"
   -- === The PR #845 binding, end-to-end through `syscallEntryChecked`. ===
-  -- Same scenario, but naming the ASID of the *builder's own* root (`⟨1⟩` at
-  -- `⟨502⟩`) while holding a capability to `⟨700⟩`.  Before the binding this
-  -- unmapped a page in an address space the caller had no capability for.
-  let stConfused := buildSyscallState .vspaceUnmap 0 vsId
-    (AccessRightSet.ofList [.read, .write])
-    [(vsId, .vspaceRoot vsWithMapping)]
-    [(2, 1), (3, 0x4000)]
-    [(vsId, .vspaceRoot)]
-  match syscallEntryOnBoot stConfused with
-  | .error .illegalAuthority =>
-    IO.println "operation-chain check passed [chain28: cross-address-space unmap refused]"
+  -- The retired shape named an address space in x2: the builder's own root's
+  -- ASID (`⟨1⟩` at `⟨502⟩`) while holding a capability to `⟨700⟩`.  Page_Unmap
+  -- reads no word, so a frame capability that recorded no mapping, followed by
+  -- those words, unmaps nothing, and a VSpace-root capability is refused on its
+  -- kind.
+  match syscallEntryOnBoot (unmapState frameCap false [(2, 1), (3, 0x4000)]) with
+  | .ok (_, stAfter) =>
+    match SeLe4n.Kernel.Architecture.vspaceLookup chainAsid unmapVa stAfter with
+    | .ok _ => IO.println "operation-chain check passed [chain28: an unrecorded frame capability unmaps nothing]"
+    | .error _ => throw <| IO.userError "chain28: an unrecorded frame capability removed a mapping"
   | .error err =>
-    throw <| IO.userError s!"chain28: expected illegalAuthority, got {toString err}"
+    throw <| IO.userError s!"chain28: unmap through an unrecorded frame capability failed ({toString err})"
+  match syscallEntryOnBoot (unmapState
+      { target := .object vsId, rights := AccessRightSet.ofList [.read, .write] } false
+      [(2, 1), (3, 0x4000)]) with
+  -- The entry selects the invocation by the label the invoked object takes;
+  -- a VSpace root takes no Page_Unmap label (seL4: `IllegalOperation`).
+  | .error .invalidSyscallNumber =>
+    IO.println "operation-chain check passed [chain28: a VSpace-root capability is no Page_Unmap target]"
+  | .error err =>
+    throw <| IO.userError s!"chain28: expected invalidSyscallNumber, got {toString err}"
   | .ok _ =>
-    throw <| IO.userError "chain28: cross-address-space unmap was ALLOWED (capability binding regressed)"
+    throw <| IO.userError "chain28: Page_Unmap through a VSpace-root capability was ALLOWED"
 
 /-- WS-ZA ZA5.4 part 14: a carve via `syscallEntryChecked` (syscall 36), and the retired
 number 8 refused at decode.  seL4's words (WS-SX SX6.3, D9): x2 = the type

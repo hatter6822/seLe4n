@@ -2993,10 +2993,10 @@ private def runWSKGDeterminismChecks : IO Unit := do
     let vm2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs d1
     unless vm1 == vm2 do
       throw <| IO.userError "K-G-DET-01: decodePageMapArgs not deterministic"
-    let vu1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1 65536
-    let vu2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1 65536
+    let vu1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnifyInstructionArgs d1 65536
+    let vu2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnifyInstructionArgs d1 65536
     unless vu1 == vu2 do
-      throw <| IO.userError "K-G-DET-01: decodeVSpaceUnmapArgs not deterministic"
+      throw <| IO.userError "K-G-DET-01: decodeVSpaceUnifyInstructionArgs not deterministic"
     IO.println "determinism check passed [K-G-DET-01 layer 1+2 decode deterministic]"
   | .error _ =>
     throw <| IO.userError "K-G-DET-01: decodeSyscallArgs failed unexpectedly"

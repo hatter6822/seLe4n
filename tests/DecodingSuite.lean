@@ -404,13 +404,13 @@ private def sad011_vspaceMapInvalidPerms : IO Unit := do
   expect "SAD-011b read-only, cacheable, never executable"
     (q.read && !q.write && !q.execute && q.user && q.cacheable)
 
-/-- SAD-012: decodeVSpaceUnmapArgs — valid and invalid ASID. -/
+/-- SAD-012: decodeVSpaceUnifyInstructionArgs — valid and invalid ASID. -/
 private def sad012_vspaceUnmap : IO Unit := do
   let stub := mkStub #[⟨1⟩, ⟨0x1000⟩]
-  let result := decodeVSpaceUnmapArgs stub 65536
+  let result := decodeVSpaceUnifyInstructionArgs stub 65536
   expect "SAD-012a vspace unmap ok" result.isOk
   let stubBad := mkStub #[⟨65536⟩, ⟨0x1000⟩]
-  let resultBad := decodeVSpaceUnmapArgs stubBad 65536
+  let resultBad := decodeVSpaceUnifyInstructionArgs stubBad 65536
   expect "SAD-012b vspace unmap invalid ASID" (!resultBad.isOk)
 
 -- Notification family ----------------------------------------------------------

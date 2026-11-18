@@ -1781,23 +1781,26 @@ private def runCompletionCutChecks : IO Unit := do
 private def udVsp : SeLe4n.ObjId := ⟨881⟩
 private def udCn : SeLe4n.ObjId := ⟨880⟩
 private def udCaller : SeLe4n.ThreadId := ⟨882⟩
-private def udCap : Capability :=
-  { target := .object udVsp, rights := AccessRightSet.ofList [.write] }
-private def udCapRO : Capability :=
-  { target := .object udVsp, rights := AccessRightSet.ofList [.read] }
+private def udFrame : SeLe4n.ObjId := ⟨883⟩
+private def udFrameCap (rs : List AccessRight) : Capability :=
+  { target := .object udFrame, rights := AccessRightSet.ofList rs }
+private def udRootCap : Capability :=
+  { target := .object udVsp, rights := AccessRightSet.ofList [.read, .write] }
 
-/-- A `.vspaceUnmap` decode: primary cap at CPtr 0; msgRegs carry
-(asid 5, vaddr 0x1000) — the suite's scenario operand. -/
+/-- `Page_Unmap` (`.vspaceUnmap`) on the capability at CPtr 0, with no message
+word: seL4's `performPageInvocationUnmap` unmaps the mapping the frame
+capability records. -/
 private def udDecoded : SyscallDecodeResult :=
   { capAddr := SeLe4n.CPtr.ofNat 0,
-    msgInfo := { length := 2, extraCaps := 0, label := 0 },
+    msgInfo := { length := 0, extraCaps := 0, label := 0 },
     syscallId := .vspaceUnmap,
-    msgRegs := #[SeLe4n.RegValue.ofNat 5, SeLe4n.RegValue.ofNat 0x1000] }
+    msgRegs := #[] }
 
 private def udState (slots : List (SeLe4n.Slot × Capability)) :
     SeLe4n.Model.SystemState :=
   (BootstrapBuilder.empty
     |>.withObject udVsp (.vspaceRoot { asid := asid5, mappings := {} })
+    |>.withObject udFrame (.frame { base := SeLe4n.PAddr.ofNat 0x2000 })
     |>.withObject udCn (.cnode
         (CNode.ofList 4 slots))
     |>.withObject udCaller.toObjId (.tcb
@@ -1807,26 +1810,56 @@ private def udState (slots : List (SeLe4n.Slot × Capability)) :
     |>.withRunnable [udCaller]
     |>.build)
 
-/-- Map the scenario page, then dispatch the caller's `.vspaceUnmap`
-through the full public entry. -/
-private def udDispatch (slots : List (SeLe4n.Slot × Capability)) :
-    Except KernelError (Unit × SeLe4n.Model.SystemState) :=
+/-- The frame's page mapped at the scenario address, stamped with mapping
+epoch 0, and every capability to the frame in `slots` recording that mapping
+(the state `Page_Map` through that capability leaves). -/
+private def udMapped (slots : List (SeLe4n.Slot × Capability)) :
+    Except KernelError SeLe4n.Model.SystemState :=
   match vspaceMapPageWithFlush asid5 vaddrPage (SeLe4n.PAddr.ofNat 0x2000)
       .readOnly (udState slots) with
   | .error e => .error e
   | .ok ((), stMapped) =>
-      dispatchSyscallAsCurrent udDecoded udCaller bootCoreId stMapped
+    match stMapped.objects[udVsp]? with
+    | some (.vspaceRoot root) =>
+      let stamped : VSpaceRoot :=
+        { root with mappingEpochs := root.mappingEpochs.insert vaddrPage 0 }
+      let recorded := slots.map fun (sl, c) =>
+        (sl, if c.target == .object udFrame then
+               c.withMapping (some { asid := asid5, vaddr := vaddrPage, epoch := 0 })
+             else c)
+      match storeObject udVsp (.vspaceRoot stamped) stMapped with
+      | .error e => .error e
+      | .ok ((), st1) =>
+        match storeObject udCn (.cnode (CNode.ofList 4 recorded)) st1 with
+        | .error e => .error e
+        | .ok ((), st2) => .ok st2
+    | _ => .error .objectNotFound
+
+/-- Map and record the scenario page, then dispatch the caller's
+`Page_Unmap` through the full public entry. -/
+private def udDispatch (slots : List (SeLe4n.Slot × Capability)) :
+    Except KernelError (Unit × SeLe4n.Model.SystemState) :=
+  match udMapped slots with
+  | .error e => .error e
+  | .ok st => dispatchSyscallAsCurrent udDecoded udCaller bootCoreId st
+
+/-- The mapping record on the capability at slot 0. -/
+private def udRecord (st : SeLe4n.Model.SystemState) : Option FrameMapping :=
+  (SystemState.lookupSlotCap st { cnode := udCn, slot := SeLe4n.Slot.ofNat 0 }).bind
+    (·.mapping)
 
 private def runLiveDispatchChecks : IO Unit := do
   IO.println "-- §4.10 live dispatch (.vspaceUnmap: CSpace lookup + authority + round)"
-  -- AUTHORIZED: a `.write` cap at slot 0 → the unmap runs and posts.
-  match udDispatch [(SeLe4n.Slot.ofNat 0, udCap)] with
-  | .error _ => assertBool "authorized live .vspaceUnmap succeeds" false
+  -- AUTHORIZED: the frame capability that made the mapping, at slot 0.
+  match udDispatch [(SeLe4n.Slot.ofNat 0, udFrameCap [.read])] with
+  | .error e => assertBool s!"live Page_Unmap on the mapping's frame capability succeeds (got {repr e})" false
   | .ok ((), st') => do
     assertBool "the live unmap removes the translation"
       (match vspaceLookup asid5 vaddrPage st' with
         | .error _ => true
         | .ok _ => false)
+    assertBool "the live unmap clears the frame capability's mapping record"
+      (udRecord st' == none)
     assertBool "the live unmap posts the page operand to every other core"
       ([core1, core2, core3].all fun c =>
         queueHasOp (st'.tlbShootdown.pendingOnCore c) opUnmapTarget core0)
@@ -1834,13 +1867,32 @@ private def runLiveDispatchChecks : IO Unit := do
       (st'.tlbShootdown.pendingOnCore core0 == [])
     assertBool "the live unmap preserves the capacity conjunct"
       (decide (pendingBounded st'.tlbShootdown))
+  -- A frame capability that records no mapping: nothing to unmap, no round.
+  match udMapped [(SeLe4n.Slot.ofNat 1, udFrameCap [.read])] with
+  | .error e => assertBool s!"the unrecorded scenario builds (got {repr e})" false
+  | .ok st =>
+    match dispatchSyscallAsCurrent udDecoded udCaller bootCoreId
+        (match storeObject udCn (.cnode (CNode.ofList 4
+            [(SeLe4n.Slot.ofNat 0, udFrameCap [.read]),
+             (SeLe4n.Slot.ofNat 1, (udFrameCap [.read]).withMapping
+               (some { asid := asid5, vaddr := vaddrPage, epoch := 0 }))])) st with
+         | .ok ((), s) => s | .error _ => st) with
+    | .error e => assertBool s!"Page_Unmap on a capability with no record succeeds (got {repr e})" false
+    | .ok ((), st') =>
+      assertBool "a capability with no record unmaps nothing and posts no round"
+        ((match vspaceLookup asid5 vaddrPage st' with | .ok _ => true | .error _ => false) &&
+         [core1, core2, core3].all fun c => st'.tlbShootdown.pendingOnCore c == [])
   -- NO CAP: empty slot 0 → the CSpace lookup fails closed.
   assertBool "a live .vspaceUnmap with no cap fails with invalidCapability"
     (match udDispatch [] with
       | .error (.invalidCapability _) => true | _ => false)
-  -- READ-ONLY cap: the authority gate rejects (.vspaceUnmap needs .write).
-  assertBool "a live .vspaceUnmap with a read-only cap fails with illegalAuthority"
-    (match udDispatch [(SeLe4n.Slot.ofNat 0, udCapRO)] with
+  -- A VSpace-root capability is not a frame: Page_Unmap is a frame invocation.
+  assertBool "a live .vspaceUnmap on a VSpace-root capability fails with invalidCapability"
+    (match udDispatch [(SeLe4n.Slot.ofNat 0, udRootCap)] with
+      | .error (.invalidCapability _) => true | _ => false)
+  -- A frame capability without `.read`: the authority gate rejects.
+  assertBool "a live .vspaceUnmap with a write-only frame cap fails with illegalAuthority"
+    (match udDispatch [(SeLe4n.Slot.ofNat 0, udFrameCap [.write])] with
       | .error .illegalAuthority => true | _ => false)
 
 -- ----------------------------------------------------------------------------

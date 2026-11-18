@@ -310,6 +310,19 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_savedRegsKept {ec : CoreI
   savedRegsKept.of_vspaceRootOnlyWrite
     (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv hStep).2.1
 
+/-- **`Page_Unmap`**: the teardown writes VSpace roots alone, then the record
+clear stores a CNode over its CNode. -/
+theorem vspaceUnmapFrameCap_savedRegsKept {ec : CoreId} {addr : CSpaceAddr}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (hStep : vspaceUnmapFrameCap ec addr st = .ok ((), st')) : savedRegsKept st st' := by
+  obtain ⟨st1, hU, hC⟩ := vspaceUnmapFrameCap_cases hStep
+  obtain ⟨hInv1, hV, -⟩ := unmapLivePages_ok_frame ec _ st st1 hInv hU
+  obtain ⟨cn, _, hCn, -, hStore⟩ := cspaceClearFrameMapping_ok_decompose addr st1 st' hC
+  have hPre : st1.objects[addr.cnode]? = some (.cnode cn) :=
+    (SystemState.getCNode?_eq_some_iff st1 addr.cnode cn).mp hCn
+  exact (savedRegsKept.of_vspaceRootOnlyWrite hV).trans
+    (savedRegsKept.storeObject hInv1 hStore fun x hx => by rw [hPre] at hx; cases hx)
+
 /-- **The VSpace map or seL4's remap**: the unmap and the fresh map, each
 keeping every saved register file. -/
 theorem vspaceMapOrRemapFromFrameCap_savedRegsKept {tid : SeLe4n.ThreadId} {ec : CoreId}

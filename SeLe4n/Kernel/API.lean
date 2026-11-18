@@ -1307,7 +1307,9 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- same right of it); a writable mapping needs `.write` on it as well
   -- (`frameMappingAdmissible`).
   | .vspaceMap       => .read
-  | .vspaceUnmap     => .write
+  -- `seL4_ARM_Page_Unmap` is invoked on the same frame capability and asks of
+  -- it no more than the map does.
+  | .vspaceUnmap     => .read
   -- WS-SM SM7.D: publishing freshly-written code requires the **write** right
   -- on the page's capability.  seL4's `Page_Unify_Instruction` needs only the
   -- frame cap; requiring write is the least-privilege reading of the same
@@ -1402,8 +1404,8 @@ def syscallObjectKind? : SyscallId → Option KernelObjectType
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .mintReplyCap => some .cnode
   | .untypedRetype => some .untyped
-  | .vspaceMap => some .frame
-  | .vspaceUnmap | .vspaceUnifyInstruction => some .vspaceRoot
+  | .vspaceMap | .vspaceUnmap => some .frame
+  | .vspaceUnifyInstruction => some .vspaceRoot
   | .schedContextBind | .schedContextUnbind | .schedContextConsumed
   | .schedContextYieldTo => some .schedContext
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer
@@ -4770,42 +4772,22 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
               | .error e => .error e
               | .ok (_, args) => vspaceMapOrRemapFromFrameCap tid executingCore args st
     | _ => fun _ => .error (.invalidCapability 0)
+  -- `seL4_ARM_Page_Unmap` is an invocation of the frame capability and reads
+  -- no message word (seL4's `decodeARMFrameInvocation`, `ARMPageUnmap`): the
+  -- mapping taken down is the one the capability records, and the capability
+  -- then records none (`vspaceUnmapFrameCap`, seL4's
+  -- `performPageInvocationUnmap`).  The slot is the one the invoked address
+  -- resolves to in the caller's CSpace, where the record is kept.  The
+  -- teardown goes through `vspaceUnmapPageWithShootdownAndIcacheBroadcast`, so
+  -- every core's TLB entry and, for an executable mapping, every instruction
+  -- cache line for the page is retired with it (WS-SM SM7.B.9, SM7.D.1).
   | .vspaceUnmap =>
     some <| match cap.target with
     | .object _ =>
-        -- AH3-C (L-14): Pass platform-configured maxASID to decode
-        fun st => match decodeVSpaceUnmapArgs decoded st.machine.maxASID with
-        | .error e => .error e
-        | .ok args =>
-          -- PR #845 review (P1): bind the capability to the operand address
-          -- space.  Without this a holder of any writable object capability —
-          -- its own TCB, say — could tear down mappings in an arbitrary address
-          -- space, since the ASID is caller-supplied and the rights gate above
-          -- never looks at what the capability names.
-          if !vspaceCapAuthorizesAsid cap args.asid st then
-            .error .illegalAuthority
-          else
-            -- WS-SM SM7.B.9: the SMP-C4 use-after-unmap closure — local
-            -- flush + `.vae1` shootdown round to every other core.  WS-SM
-            -- SM7.F.4(b)(i): route through the initiator-atomic per-core
-            -- wrapper so the caller's own `perCoreTlb` view retires the
-            -- unmapped operand *atomically* with the transition (rather than
-            -- only in the deferred `completeShootdownRounds` catch-up),
-            -- closing the transient committed-state window where the
-            -- initiator's view would be stale-and-uncovered.  Trace-safe:
-            -- `perCoreTlb` ∉ `projectState`, and the extra drain touches no
-            -- field the SGI/round diff-recovery reads (`tlbShootdown`).
-            -- WS-SM SM7.D.1: and through the instruction-cache seam on top,
-            -- which broadcasts a targeted `IC IVAU` over the shareability
-            -- domain when the *retired mapping was executable* — otherwise a
-            -- core could keep fetching the previous owner's instructions from
-            -- its own instruction cache after the frame is re-purposed (the
-            -- instruction-side twin of the SMP-C4 stale-TLB hazard; the TLB
-            -- round does not close it, because instruction caches are tagged
-            -- by physical address, not by translation).  A non-executable
-            -- unmap owes nothing and is provably inert.
-            Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
-              executingCore args.asid args.vaddr st
+        fun st =>
+          match resolveCallerCapSlot tid decoded.capAddr (syscallRequiredRight .vspaceUnmap) st with
+          | .error e => .error e
+          | .ok (slot, _, _) => vspaceUnmapFrameCap executingCore slot st
     | _ => fun _ => .error (.invalidCapability 0)
   | .vspaceUnifyInstruction =>
     some <| match cap.target with
@@ -5440,14 +5422,12 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
       try dsimp only [] at hStep
-      cases hDec : decodeVSpaceUnmapArgs decoded st.machine.maxASID with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
-          split at hStep
-          · cases hStep
-          · exact vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_ipcInvariantFull
-              st st' _ _ _ hObjInv hInv hStep
+      cases hR : resolveCallerCapSlot tid decoded.capAddr (syscallRequiredRight .vspaceUnmap) st with
+      | error e => simp only [hR] at hStep; cases hStep
+      | ok r =>
+          obtain ⟨slot, _, _⟩ := r
+          simp only [hR] at hStep
+          exact (vspaceUnmapFrameCap_preserves_ipcInvariantFull _ _ st st' hObjInv hInv hStep).1
     all_goals try cases hStep
   case vspaceUnifyInstruction =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -7339,39 +7319,26 @@ theorem dispatchWithCapChecked_vspaceUnifyInstruction_delegates
       Architecture.vspaceUnifyInstructionPage args.asid args.vaddr st := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hAuth]
 
-/-- WS-K-D/S6-A / WS-SM SM7.B.9 / SM7.F.4(b)(i) / SM7.D.1: When vspaceUnmap
-dispatch succeeds, `vspaceUnmapPageWithShootdownAndIcacheBroadcast` is invoked
-with the caller's executing core and the decoded ASID and vaddr.  The layers, in
-order: the flushing + cross-core-shootdown variant prevents use-after-unmap on
-every core (SM7.B.9); the `…PerCore` layer additionally retires the operand on
-the initiator's own `perCoreTlb` view atomically with the transition
-(SM7.F.4(b)(i)); and the SM7.D.1 layer broadcasts a targeted `IC IVAU` across
-the shareability domain when the *retired mapping was executable*, so no core
-keeps an instruction line fetched through it (the instruction-side twin of the
-stale-TLB hazard — the shootdown retires translations, while instruction caches
-are tagged by physical address).  A non-executable unmap owes nothing and is
-provably inert
-(`vspaceUnmapPageWithShootdownAndIcacheBroadcast_non_executable_inert`).  Both
-added layers are projection-invisible — `perCoreTlb`, `perCoreICache ∉
-projectState` — so the delegation stays trace-equivalent to the plain
-`vspaceUnmapPageWithShootdown` on every observable field (`tlbShootdown`
-posting, page-table erasure, scalar flush all unchanged). -/
+/-- `seL4_ARM_Page_Unmap`: when the `.vspaceUnmap` dispatch runs, it is
+`vspaceUnmapFrameCap` on the slot the invoked frame capability sits in — the
+mapping the capability records taken down (through
+`vspaceUnmapPageWithShootdownAndIcacheBroadcast`, so every core's TLB entry
+and, for an executable mapping, the instruction-cache lines for the page are
+retired with it: WS-SM SM7.B.9, SM7.F.4(b)(i), SM7.D.1), then the record
+cleared.  No message word names an address space or an address, so no caller
+can name one its capability does not record (the confused deputy PR #845
+closed is closed by construction). -/
 theorem dispatchWithCapChecked_vspaceUnmap_delegates
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (cap : Capability) (objId : SeLe4n.ObjId)
-    (args : Architecture.SyscallArgDecode.VSpaceUnmapArgs)
-    (st : SystemState)
+    (cap : Capability) (objId : SeLe4n.ObjId) (slot : CSpaceAddr) (slotCap : Capability)
+    (slotObj : SeLe4n.ObjId) (st : SystemState)
     (hSyscall : decoded.syscallId = .vspaceUnmap)
     (hTarget : cap.target = .object objId)
-    -- AH3-C: decode now takes st.machine.maxASID from the platform config
-    (hDecode : decodeVSpaceUnmapArgs decoded st.machine.maxASID = .ok args)
-    -- PR #845 review (P1): the capability must name the operand ASID's VSpace
-    -- root; an unauthorized caller is rejected with `.illegalAuthority`.
-    (hAuth : vspaceCapAuthorizesAsid cap args.asid st = true) :
+    (hRes : resolveCallerCapSlot tid decoded.capAddr (syscallRequiredRight .vspaceUnmap) st =
+      .ok (slot, slotCap, slotObj)) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-      Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
-        executingCore args.asid args.vaddr st := by
-  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hAuth]
+      vspaceUnmapFrameCap executingCore slot st := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hRes]
 
 /-- WS-ZA ZA5.4 part 14: the live `.untypedRetype` arm *is* the carve — every
 kernel object is made this way — at the invoking thread's executing core, whose
@@ -7518,23 +7485,6 @@ theorem dispatchWithCapChecked_vspaceMap_maps_frame_base
     exact ⟨st, a, b, c, d, .inl rfl, e⟩
   · obtain ⟨a, b, c, d, e⟩ := hFresh st0 hM
     exact ⟨st0, a, b, c, d, .inr hU, e⟩
-
-/-- **Fail-closed**: `.vspaceUnmap` dispatch rejects a capability that does not
-name the operand ASID's VSpace root, leaving the address space intact.  This is
-the theorem that would have failed before the binding landed: a caller holding a
-writable capability to *any* object could unmap pages in an address space it had
-no capability for. -/
-theorem dispatchWithCapChecked_vspaceUnmap_unauthorized
-    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-    (cap : Capability) (objId : SeLe4n.ObjId)
-    (args : Architecture.SyscallArgDecode.VSpaceUnmapArgs)
-    (st : SystemState)
-    (hSyscall : decoded.syscallId = .vspaceUnmap)
-    (hTarget : cap.target = .object objId)
-    (hDecode : decodeVSpaceUnmapArgs decoded st.machine.maxASID = .ok args)
-    (hAuth : vspaceCapAuthorizesAsid cap args.asid st = false) :
-    dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .illegalAuthority := by
-  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hAuth]
 
 /-- **Fail-closed**: `.vspaceUnifyInstruction` dispatch rejects a capability that
 does not name the operand ASID's VSpace root, so the cache-maintenance path
@@ -8053,12 +8003,12 @@ theorem dispatchWithCapChecked_layer2_decode_pure
     (decodeCSpaceDeleteArgs d₁ = decodeCSpaceDeleteArgs d₂) ∧
     (decodePageMapArgs d₁ = decodePageMapArgs d₂) ∧
     -- AH3-C: a function equality (parameterized by maxASID)
-    (decodeVSpaceUnmapArgs d₁ = decodeVSpaceUnmapArgs d₂) := by
+    (decodeVSpaceUnifyInstructionArgs d₁ = decodeVSpaceUnifyInstructionArgs d₂) := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
     (try simp only [decodeCSpaceMintArgs, decodeCSpaceCopyArgs, decodeCSpaceMoveArgs,
       decodeCSpaceDeleteArgs, decodePageMapArgs, requireMessageLength, requireMsgReg, hRegs,
       hLen]) <;>
-    (try funext maxASID; simp only [decodeVSpaceUnmapArgs,
+    (try funext maxASID; simp only [decodeVSpaceUnifyInstructionArgs,
       requireMessageLength, requireMsgReg, hRegs, hLen])
 
 -- ============================================================================
@@ -9353,15 +9303,14 @@ def syscallDelegates : SyscallId → Prop
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st = vspaceMapOrRemapFromFrameCap tid executingCore args st
   | .vspaceUnmap =>
       ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
-        (cap : Capability) (objId : SeLe4n.ObjId)
-        (args : Architecture.SyscallArgDecode.VSpaceUnmapArgs) (st : SystemState),
+        (cap : Capability) (objId : SeLe4n.ObjId) (slot : CSpaceAddr) (slotCap : Capability)
+        (slotObj : SeLe4n.ObjId) (st : SystemState),
         decoded.syscallId = .vspaceUnmap →
         cap.target = .object objId →
-        decodeVSpaceUnmapArgs decoded st.machine.maxASID = .ok args →
-        vspaceCapAuthorizesAsid cap args.asid st = true →
+        resolveCallerCapSlot tid decoded.capAddr (syscallRequiredRight .vspaceUnmap) st =
+          .ok (slot, slotCap, slotObj) →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-          Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
-            executingCore args.asid args.vaddr st
+          vspaceUnmapFrameCap executingCore slot st
   -- Every other syscall: no delegation theorem exists yet.  `False` rather than
   -- `True` so the absence is unforgeable — an inventory entry claiming
   -- delegation evidence for one of these cannot be constructed.
@@ -9672,9 +9621,9 @@ theorem syscallDelegates_auditDrain : syscallDelegates .auditDrain := by
 
 /-- WS-SM SM8.B: the `.vspaceUnmap` obligation, discharged. -/
 theorem syscallDelegates_vspaceUnmap : syscallDelegates .vspaceUnmap := by
-  intro ctx decoded tid executingCore gate cap objId args st hSyscall hTarget hDecode hAuth
-  exact dispatchWithCapChecked_vspaceUnmap_delegates ctx decoded tid executingCore gate cap objId args st
-    hSyscall hTarget hDecode hAuth
+  intro ctx decoded tid executingCore gate cap objId slot slotCap slotObj st hSyscall hTarget hRes
+  exact dispatchWithCapChecked_vspaceUnmap_delegates ctx decoded tid executingCore gate cap objId
+    slot slotCap slotObj st hSyscall hTarget hRes
 
 /-- WS-ZA ZA5.4 part 14: the `.untypedRetype` obligation, discharged — the
 carve's cross-core inventory entry rests on it. -/

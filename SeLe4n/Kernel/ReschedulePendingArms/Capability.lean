@@ -314,6 +314,23 @@ theorem cspaceRecordFrameMapping_keyFrame (addr : CSpaceAddr) (m : FrameMapping)
     (SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hCn
   exact storeObject_inert_keyFrame hObjInv hStore (by rw [hPre]; rfl) rfl
 
+theorem cspaceClearFrameMapping_keyFrame (addr : CSpaceAddr) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hStep : cspaceClearFrameMapping addr st = .ok ((), st')) :
+    capabilityKeyFrame st st' := by
+  obtain ⟨cn, cap, hCn, -, hStore⟩ := cspaceClearFrameMapping_ok_decompose addr st st' hStep
+  have hPre : st.objects[addr.cnode]? = some (.cnode cn) :=
+    (SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hCn
+  exact storeObject_inert_keyFrame hObjInv hStore (by rw [hPre]; rfl) rfl
+
+/-- `Page_Unmap`: the teardown writes VSpace roots alone, then the record clear
+one CNode. -/
+theorem vspaceUnmapFrameCap_keyFrame (ec : CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hStep : vspaceUnmapFrameCap ec addr st = .ok ((), st')) :
+    capabilityKeyFrame st st' := by
+  obtain ⟨st1, hU, hC⟩ := vspaceUnmapFrameCap_cases hStep
+  have k1 := vspaceRootOnlyWrite_keyFrame (unmapLivePages_ok_frame ec _ st st1 hObjInv hU)
+  exact k1.trans (cspaceClearFrameMapping_keyFrame _ st1 st' k1.2.2 hC)
+
 theorem vspaceMapFromFrameCap_keyFrame (tid : SeLe4n.ThreadId) (ec : CoreId)
     (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st st' : SystemState) (hObjInv : st.objects.invExt)
     (hStep : vspaceMapFromFrameCap tid ec args st = .ok ((), st')) :

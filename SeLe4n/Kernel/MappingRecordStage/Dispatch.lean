@@ -165,13 +165,12 @@ theorem dispatchCapabilityOnly_mappingStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
       try dsimp only [] at hStep
-      cases hDec : decodeVSpaceUnmapArgs decoded st.machine.maxASID with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
-          split at hStep
-          · cases hStep
-          · exact vspaceUnmapPageWithShootdownAndIcacheBroadcast_mappingStage P.teardown hStep
+      cases hR : resolveCallerCapSlot tid decoded.capAddr (syscallRequiredRight .vspaceUnmap) st with
+      | error e => simp only [hR] at hStep; cases hStep
+      | ok r =>
+          obtain ⟨slot, _, _⟩ := r
+          simp only [hR] at hStep
+          exact vspaceUnmapFrameCap_mappingStage P.teardown hStep
     all_goals try cases hStep
   case vspaceUnifyInstruction =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

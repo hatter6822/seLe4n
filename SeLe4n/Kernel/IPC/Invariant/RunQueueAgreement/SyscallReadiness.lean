@@ -894,14 +894,13 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
       try dsimp only [] at hStep
-      cases hDec : decodeVSpaceUnmapArgs decoded st.machine.maxASID with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
-          split at hStep
-          · cases hStep
-          · refine readyKeptStage.of_stage ?_
-            exact vspaceUnmapPageWithShootdownAndIcacheBroadcast_runQueueStage hStep
+      cases hR : resolveCallerCapSlot tid decoded.capAddr (syscallRequiredRight .vspaceUnmap) st with
+      | error e => simp only [hR] at hStep; cases hStep
+      | ok r =>
+          obtain ⟨slot, _, _⟩ := r
+          simp only [hR] at hStep
+          refine readyKeptStage.of_stage ?_
+          exact vspaceUnmapFrameCap_runQueueStage hStep
     all_goals try cases hStep
   case vspaceUnifyInstruction =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

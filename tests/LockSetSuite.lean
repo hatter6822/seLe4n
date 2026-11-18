@@ -463,7 +463,7 @@ example : permittedKinds .untypedRetype =
 -- WS-BP BP7.1 (v0.36.7): the map reads the frame its capability names; PR #956
 -- review: and declares the derivation tree's subject, since it rewrites a CNode.
 example : permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot, .page, .objStore] := by decide
-example : permittedKinds .vspaceUnmap = [.tcb, .cnode, .vspaceRoot] := by decide
+example : permittedKinds .vspaceUnmap = [.tcb, .cnode, .vspaceRoot, .page, .objStore] := by decide
 -- WS-RR RR7.23: `.objStore` on all three — the register reads the
 -- `SystemState`-level interface registry and `stateLevelLock` is the only member
 -- that can name it (since WS-ZA ZA5.9 the service registry is the endpoints'

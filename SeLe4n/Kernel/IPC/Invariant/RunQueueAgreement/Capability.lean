@@ -393,6 +393,25 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_runQueueStage {ec : Concu
     (congrArg MachineState.residentCode
       (vspaceUnmapPageWithShootdownAndIcacheBroadcast_framed ec asid vaddr st st' h).2)
 
+theorem cspaceClearFrameMapping_runQueueStage {addr : CSpaceAddr}
+    {st st' : SystemState} (h : cspaceClearFrameMapping addr st = .ok ((), st')) :
+    RunQueueStage st st' := by
+  obtain ⟨cn, cap, hCn, -, hStore⟩ := cspaceClearFrameMapping_ok_decompose addr st st' h
+  exact storeObject_inert_runQueueStage hStore
+    ((SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hCn) (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)
+
+/-- `Page_Unmap`: the teardown writes roots alone and the record clear one
+CNode, so each keeps the stage. -/
+theorem vspaceUnmapFrameCap_runQueueStage {ec : Concurrency.CoreId} {addr : CSpaceAddr}
+    {st st' : SystemState} (h : vspaceUnmapFrameCap ec addr st = .ok ((), st')) :
+    RunQueueStage st st' :=
+  vspaceUnmapFrameCap_closed RunQueueStage
+    (fun _ _ hU => vspaceRootOnlyWrite_runQueueStage
+      (fun hInv => unmapLivePages_ok_frame ec _ _ _ hInv hU)
+      (congrArg MachineState.residentCode (unmapLivePages_framed ec _ _ _ hU).2))
+    (fun _ _ hC => cspaceClearFrameMapping_runQueueStage hC)
+    (fun _ _ _ h₁ h₂ => h₁.trans h₂) h
+
 /-- A map or seL4's remap of a frame capability: the unmap and the fresh map
 each keep the stage. -/
 theorem vspaceMapOrRemapFromFrameCap_runQueueStage {tid : SeLe4n.ThreadId}

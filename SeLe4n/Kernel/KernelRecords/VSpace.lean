@@ -343,6 +343,25 @@ theorem vspaceMapFromFrameCap {tid : SeLe4n.ThreadId} {ec : Concurrency.CoreId}
   exact (RecordsFrame.storeObject (KernelRecords.objects_invExt hK) hS
     (by rw [(SystemState.getCNode?_eq_some_iff _ _ _).1 hC]; rfl) (fun _ => by simp)).preserves hK
 
+/-- **`Page_Unmap`**: the teardown of the page the frame capability records,
+roots alone, then the record clear, one CNode. -/
+theorem vspaceUnmapFrameCap {ec : Concurrency.CoreId} {addr : CSpaceAddr} {st st' : SystemState}
+    (h : _root_.SeLe4n.Kernel.vspaceUnmapFrameCap ec addr st = .ok ((), st')) :
+    RecordsStage st st' := by
+  obtain ⟨st1, hU, hC⟩ := vspaceUnmapFrameCap_cases h
+  obtain ⟨cn, _, hCn, -, hS⟩ := cspaceClearFrameMapping_ok_decompose _ st1 st' hC
+  have hEq : st1 = unmapLivePagesState ec (slotMappedPages st addr) st := by
+    have hU' := hU
+    rw [unmapLivePages_eq_ok_state] at hU'
+    cases hU'; rfl
+  refine RecordsStage.trans (b := st1) (fun hK => ?_) (fun hK => ?_)
+  · obtain ⟨-, hV, -⟩ := unmapLivePages_ok_frame ec _ st st1 (KernelRecords.objects_invExt hK) hU
+    exact of_vspaceRootOnlyWrite hV
+      (fun hK => by rw [hEq]; exact (unmapLivePagesState_clears ec _ st hK.1).1)
+      (by rw [(unmapLivePages_framed ec _ st st1 hU).2]) hK
+  · exact (RecordsFrame.storeObject (KernelRecords.objects_invExt hK) hS
+      (by rw [(SystemState.getCNode?_eq_some_iff _ _ _).1 hCn]; rfl) (fun _ => by simp)).preserves hK
+
 /-- **The VSpace map or remap**: a fresh map, or the unmap of the address the
 frame capability records followed by a fresh map from the state it leaves. -/
 theorem vspaceMapOrRemapFromFrameCap {tid : SeLe4n.ThreadId} {ec : Concurrency.CoreId}

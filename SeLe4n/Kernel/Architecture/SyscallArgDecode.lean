@@ -91,7 +91,8 @@ counterparts, and their checks:
   the rights word and the attributes word; the frame is the invoked capability
   and the address space is extra capability 0, a missing one refused
   `.truncatedMessage` in the same check),
-  `vspaceUnmap` `vspaceUnifyInstruction` 2 (Unify `length < 2`);
+  `vspaceUnifyInstruction` 2 (Unify `length < 2`); `vspaceUnmap` reads no
+  word (`ARMPageUnmap`: the mapping is the frame capability's own record);
 * `pageTableMap` 2 (`decodeARMPageTableInvocation`, `length < 2`: the address
   and the attributes word; the address space is extra capability 0, a missing
   one refused `.truncatedMessage` in the same check);
@@ -125,7 +126,7 @@ def truncationMinimum : SyscallId → Nat
   | .untypedRetype => 7
   | .cspaceMove => 4
   | .vspaceMap | .irqControlGet | .auditRead => 3
-  | .mintReplyCap | .vspaceUnmap | .vspaceUnifyInstruction
+  | .mintReplyCap | .vspaceUnifyInstruction
   | .pageTableMap | .tcbSetSpace => 2
   | .cspaceDelete | .cspaceRevoke
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer | .tcbSetAffinity
@@ -398,19 +399,12 @@ def pagePermissionsOfWords (rights attr : UInt64) : PagePermissions :=
              frame := frame
              perms := pagePermissionsOfWords words.rights words.attr }
 
-/-- Per-syscall argument structure for `vspaceUnmap`.
-    Register mapping: x2=asid, x3=vaddr. -/
-structure VSpaceUnmapArgs where
+/-- **WS-SM SM7.D**: arguments of `.vspaceUnifyInstruction` — an address space
+and a virtual page.  Register mapping: x2=asid, x3=vaddr. -/
+structure VSpaceUnifyInstructionArgs where
   asid  : ASID
   vaddr : VAddr
   deriving Repr, DecidableEq
-
-/-- **WS-SM SM7.D**: arguments of `.vspaceUnifyInstruction` — an address space
-and a virtual page, exactly the operand shape `.vspaceUnmap` takes.  Aliased
-rather than duplicated so the two share one decoder and one set of decode
-theorems; the distinct name keeps the *semantics* legible at the dispatch
-site. -/
-abbrev VSpaceUnifyInstructionArgs := VSpaceUnmapArgs
 
 -- ============================================================================
 -- CSpace decode functions
@@ -527,11 +521,11 @@ def decodePageMapArgs (decoded : SyscallDecodeResult)
   let r2 ← requireMsgReg decoded.msgRegs 2
   pure { vaddr := r0.word, rights := r1.word, attr := r2.word }
 
-/-- Decode VSpace unmap arguments from message registers.
-    Requires 2 message registers (asid, vaddr). -/
-def decodeVSpaceUnmapArgs (decoded : SyscallDecodeResult) (maxASID : Nat)
-    : Except KernelError VSpaceUnmapArgs := do
-  requireMessageLength decoded (truncationMinimum .vspaceUnmap)
+/-- **WS-SM SM7.D**: decode `.vspaceUnifyInstruction` arguments from message
+    registers.  Requires 2 message registers (asid, vaddr). -/
+def decodeVSpaceUnifyInstructionArgs (decoded : SyscallDecodeResult) (maxASID : Nat)
+    : Except KernelError VSpaceUnifyInstructionArgs := do
+  requireMessageLength decoded (truncationMinimum .vspaceUnifyInstruction)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   -- U2-G/U-H08: Validate ASID within platform-configured range
@@ -547,23 +541,6 @@ def decodeVSpaceUnmapArgs (decoded : SyscallDecodeResult) (maxASID : Nat)
   else
   pure { asid  := asid
          vaddr := vaddr }
-
-/-- **WS-SM SM7.D**: decode `.vspaceUnifyInstruction` arguments.
-
-Shares `decodeVSpaceUnmapArgs`'s parse and validation — the operand shape is
-identical (an ASID validated against the platform's `maxASID`, plus a canonical
-virtual address) — so it inherits every decode theorem rather than duplicating
-them.  The alias exists so the dispatch arm and its delegation theorem name the
-operation they are actually performing. -/
-@[inline] def decodeVSpaceUnifyInstructionArgs (decoded : SyscallDecodeResult)
-    (maxASID : Nat) : Except KernelError VSpaceUnifyInstructionArgs :=
-  decodeVSpaceUnmapArgs decoded maxASID
-
-/-- **WS-SM SM7.D**: the unify decoder is definitionally the unmap decoder. -/
-theorem decodeVSpaceUnifyInstructionArgs_eq (decoded : SyscallDecodeResult)
-    (maxASID : Nat) :
-    decodeVSpaceUnifyInstructionArgs decoded maxASID =
-      decodeVSpaceUnmapArgs decoded maxASID := rfl
 
 -- ============================================================================
 -- V4-F/M-HW-5: MemoryKind cross-check for VSpace permissions
@@ -691,9 +668,9 @@ theorem validateVSpaceMapPermsForMemoryKind_ok_eq
   #[⟨args.vaddr⟩, ⟨args.rights⟩, ⟨args.attr⟩]
 
 
-/-- Encode VSpace unmap arguments into message registers.
-    Inverse of `decodeVSpaceUnmapArgs`. -/
-@[inline] def encodeVSpaceUnmapArgs (args : VSpaceUnmapArgs) : Array RegValue :=
+/-- Encode `.vspaceUnifyInstruction` arguments into message registers.
+    Inverse of `decodeVSpaceUnifyInstructionArgs`. -/
+@[inline] def encodeVSpaceUnifyInstructionArgs (args : VSpaceUnifyInstructionArgs) : Array RegValue :=
   #[RegValue.ofNat (args.asid.toNat), RegValue.ofNat (args.vaddr.toNat)]
 
 -- ============================================================================
@@ -790,8 +767,8 @@ theorem decodeUntypedRetypeArgs_error_of_insufficient_regs (d : SyscallDecodeRes
 
 /-- AE4-B: VSpace unmap decode fails iff fewer than 2 message registers,
     ASID invalid, or VAddr non-canonical. -/
-theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) (maxASID : Nat) (hLen : truncationMinimum .vspaceUnmap ≤ d.msgInfo.length) :
-    (∃ e, decodeVSpaceUnmapArgs d maxASID = .error e) ↔
+theorem decodeVSpaceUnifyInstructionArgs_error_iff (d : SyscallDecodeResult) (maxASID : Nat) (hLen : truncationMinimum .vspaceUnifyInstruction ≤ d.msgInfo.length) :
+    (∃ e, decodeVSpaceUnifyInstructionArgs d maxASID = .error e) ↔
     (d.msgRegs.size < 2 ∨
      (∃ (h : 1 < d.msgRegs.size), (ASID.ofNat (d.msgRegs[0]'(by omega)).val).isValidForConfig maxASID = false) ∨
      (∃ (h : 1 < d.msgRegs.size),
@@ -803,7 +780,7 @@ theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) (maxASID : Nat
     by_cases hlt : d.msgRegs.size < 2
     · exact .inl hlt
     · have h1 : 1 < d.msgRegs.size := by omega
-      simp only [decodeVSpaceUnmapArgs, hL, bind, Except.bind,
+      simp only [decodeVSpaceUnifyInstructionArgs, hL, bind, Except.bind,
         requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
         dif_pos (show 1 < d.msgRegs.size by omega)] at he
       -- Branch on ASID validity
@@ -835,14 +812,14 @@ theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) (maxASID : Nat
     match h with
     | .inl hLt =>
       refine ⟨.invalidMessageInfo, ?_⟩
-      simp only [decodeVSpaceUnmapArgs, hL, bind, Except.bind]
+      simp only [decodeVSpaceUnifyInstructionArgs, hL, bind, Except.bind]
       by_cases h0 : 0 < d.msgRegs.size
       · rw [requireMsgReg_unfold_ok _ _ h0]; simp
         rw [requireMsgReg_unfold_err _ _ (by omega)]
       · rw [requireMsgReg_unfold_err _ _ h0]
     | .inr (.inl ⟨h1, hAsid⟩) =>
       exact ⟨.asidNotBound, by
-        simp only [decodeVSpaceUnmapArgs, hL, bind, Except.bind,
+        simp only [decodeVSpaceUnifyInstructionArgs, hL, bind, Except.bind,
           requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
           dif_pos (show 1 < d.msgRegs.size by omega)]
         have : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig maxASID) = true := by
@@ -850,7 +827,7 @@ theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) (maxASID : Nat
         simp [this]⟩
     | .inr (.inr ⟨h1, hAsidOk, hVAddr⟩) =>
       exact ⟨.addressOutOfBounds, by
-        simp only [decodeVSpaceUnmapArgs, hL, bind, Except.bind,
+        simp only [decodeVSpaceUnifyInstructionArgs, hL, bind, Except.bind,
           requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
           dif_pos (show 1 < d.msgRegs.size by omega)]
         have hAsidTrue : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig maxASID) = false := by
@@ -1012,18 +989,18 @@ theorem decodePageMapArgs_roundtrip (args : PageMapArgs) :
   simp [requireMessageLength, truncationMinimum, decodePageMapArgs, encodePageMapArgs,
     stubDecoded, requireMsgReg, bind, Except.bind, pure, Except.pure]
 
-/-- Round-trip: encoding then decoding VSpaceUnmapArgs recovers the original.
+/-- Round-trip: encoding then decoding VSpaceUnifyInstructionArgs recovers the original.
     U2-G: Requires ASID is valid for the platform-configured maxASID.
     AE4-B: Requires VAddr is canonical. -/
-theorem decodeVSpaceUnmapArgs_roundtrip (args : VSpaceUnmapArgs) (maxASID : Nat)
+theorem decodeVSpaceUnifyInstructionArgs_roundtrip (args : VSpaceUnifyInstructionArgs) (maxASID : Nat)
     (hAsid : args.asid.isValidForConfig maxASID = true)
     (hVAddr : args.vaddr.isCanonical = true) (hAsidWord : args.asid.toNat < 2 ^ 64) :
-    decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) maxASID = .ok args := by
+    decodeVSpaceUnifyInstructionArgs (stubDecoded (encodeVSpaceUnifyInstructionArgs args)) maxASID = .ok args := by
   rcases args with ⟨a, v⟩
   have hVW : v.toNat < 2 ^ 64 :=
     Nat.lt_trans (show v.toNat < VAddr.canonicalBound from of_decide_eq_true hVAddr) (by decide)
   simp only at hAsidWord
-  simp [RegValue.val_ofNat_of_lt hAsidWord, RegValue.val_ofNat_of_lt hVW, requireMessageLength, truncationMinimum, decodeVSpaceUnmapArgs, encodeVSpaceUnmapArgs, stubDecoded,
+  simp [RegValue.val_ofNat_of_lt hAsidWord, RegValue.val_ofNat_of_lt hVW, requireMessageLength, truncationMinimum, decodeVSpaceUnifyInstructionArgs, encodeVSpaceUnifyInstructionArgs, stubDecoded,
     bind, Except.bind, requireMsgReg, ASID.ofNat_toNat, VAddr.ofNat_toNat,
     pure, Except.pure, hAsid, hVAddr]
 
@@ -1460,7 +1437,7 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
     (∀ args, decodePageMapArgs (stubDecoded (encodePageMapArgs args)) = .ok args) ∧
     (∀ args, args.asid.isValidForConfig maxASID = true → args.vaddr.isCanonical = true →
       args.asid.toNat < 2 ^ 64 →
-      decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) maxASID = .ok args) ∧
+      decodeVSpaceUnifyInstructionArgs (stubDecoded (encodeVSpaceUnifyInstructionArgs args)) maxASID = .ok args) ∧
     (∀ args,
       args.methodCount ≤ serviceMaxMethodCount →
       args.maxMessageSize ≤ serviceMaxMessageSize →
@@ -1477,7 +1454,7 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
    decodeCSpaceDeleteArgs_roundtrip,
    decodeUntypedRetypeArgs_roundtrip,
    decodePageMapArgs_roundtrip,
-   fun args hA hV hW => decodeVSpaceUnmapArgs_roundtrip args maxASID hA hV hW,
+   fun args hA hV hW => decodeVSpaceUnifyInstructionArgs_roundtrip args maxASID hA hV hW,
    fun args hMc hMms hMrs hI => decodeServiceRegisterArgs_roundtrip args hMc hMms hMrs hI,
    decodeNotificationWaitArgs_roundtrip,
    decodeSchedContextConfigureArgs_roundtrip,
@@ -2093,8 +2070,8 @@ theorem decodePageMapArgs_eq_by (layout : SyscallRegisterLayout) (regs : Registe
   cases g 0 <;> cases g 1 <;> cases g 2 <;>
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map]
 
-@[inline] def decodeVSpaceUnmapArgsBy (get : MsgRegReader) (maxASID : Nat)
-    : Except KernelError VSpaceUnmapArgs := do
+@[inline] def decodeVSpaceUnifyInstructionArgsBy (get : MsgRegReader) (maxASID : Nat)
+    : Except KernelError VSpaceUnifyInstructionArgs := do
   let r0 ← get 0
   let r1 ← get 1
   if !wordLtNat r0 maxASID then .error .asidNotBound
@@ -2106,12 +2083,12 @@ theorem decodePageMapArgs_eq_by (layout : SyscallRegisterLayout) (regs : Registe
   pure { asid  := asid
          vaddr := vaddr }
 
-theorem decodeVSpaceUnmapArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+theorem decodeVSpaceUnifyInstructionArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult) (maxASID : Nat)
     (h : MsgRegsAgreeBelow decoded.msgRegs (layout.msgRegs.map (readReg regs)) 4)
-    (hLen : truncationMinimum .vspaceUnmap ≤ decoded.msgInfo.length) :
-    decodeVSpaceUnmapArgs decoded maxASID = decodeVSpaceUnmapArgsBy (msgRegOfFile layout regs) maxASID := by
-  unfold decodeVSpaceUnmapArgs decodeVSpaceUnmapArgsBy
+    (hLen : truncationMinimum .vspaceUnifyInstruction ≤ decoded.msgInfo.length) :
+    decodeVSpaceUnifyInstructionArgs decoded maxASID = decodeVSpaceUnifyInstructionArgsBy (msgRegOfFile layout regs) maxASID := by
+  unfold decodeVSpaceUnifyInstructionArgs decodeVSpaceUnifyInstructionArgsBy
   rw [requireMessageLength_of_le hLen]
   unfold MsgRegsAgreeBelow at h
   simp (disch := decide) only [h]

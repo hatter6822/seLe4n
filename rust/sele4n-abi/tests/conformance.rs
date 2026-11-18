@@ -356,26 +356,23 @@ fn xval_010_vspace_map() {
     );
 }
 
-/// RUST-XVAL-011: VSpace unmap register layout.
+/// RUST-XVAL-011: VSpace unmap register layout — seL4's `Page_Unmap` is
+/// invoked on the frame capability (x0) and carries no message word.
 #[test]
 fn xval_011_vspace_unmap() {
-    let args = vspace::VSpaceUnmapArgs {
-        asid: Asid::from(2u64),
-        vaddr: VAddr::from(0x3000u64),
-    };
-    let encoded = args.encode();
     let req = SyscallRequest {
         cap_addr: CPtr::from(1100u64),
-        msg_info: MessageInfo::new(2, 0, 0).unwrap(),
-        msg_regs: [encoded[0], encoded[1], 0, 0],
+        msg_info: MessageInfo::new(0, 0, 0).unwrap(),
+        msg_regs: [0, 0, 0, 0],
         syscall_id: SyscallId::VSpaceUnmap,
         reply_cap: CPtr::NULL,
     };
     verify_regs(
         &req,
         &[
-            (2, 2, "x2=asid"),
-            (3, 0x3000, "x3=vaddr"),
+            (0, 1100, "x0=frame capability"),
+            (2, 0, "x2=no message word"),
+            (3, 0, "x3=no message word"),
             (
                 7,
                 SyscallId::VSpaceUnmap.syscall().word(),
@@ -2835,7 +2832,7 @@ fn wrappers_name_their_syscalls() {
         &mut buf,
     );
     assert_names("vspace_map", SyscallId::VSpaceMap);
-    let _ = sele4n_sys::vspace::vspace_unmap(cap, Asid::from(1u64), VAddr::from(0x1000u64));
+    let _ = sele4n_sys::vspace::vspace_unmap(cap);
     assert_names("vspace_unmap", SyscallId::VSpaceUnmap);
     let _ =
         sele4n_sys::vspace::vspace_unify_instruction(cap, Asid::from(1u64), VAddr::from(0x1000u64));

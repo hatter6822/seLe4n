@@ -212,19 +212,14 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
   | .vspaceUnmap =>
     match cap.target with
     | .object _ =>
-        match decodeVSpaceUnmapArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
+        match resolveCallerCapSlot tid capAddr (syscallRequiredRight .vspaceUnmap) st with
         | .error e => .error e
-        | .ok args =>
-          if !vspaceCapAuthorizesAsid cap args.asid st then
-            .error .illegalAuthority
-          else
-            Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast
-              executingCore args.asid args.vaddr st
+        | .ok (slot, _, _) => vspaceUnmapFrameCap executingCore slot st
     | _ => .error (.invalidCapability 0)
   | .vspaceUnifyInstruction =>
     match cap.target with
     | .object _ =>
-        match decodeVSpaceUnmapArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
+        match decodeVSpaceUnifyInstructionArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
         | .error e => .error e
         | .ok args =>
           if !vspaceCapAuthorizesAsid cap args.asid st then
@@ -495,7 +490,7 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
   have hReply := decodeMintReplyCapArgs_eq_by layout regs decoded hRegs
   have hDelete := decodeCSpaceDeleteArgs_eq_by layout regs decoded hRegs
   have hMap := decodePageMapArgs_eq_by layout regs decoded hRegs
-  have hUnmap := decodeVSpaceUnmapArgs_eq_by layout regs decoded st.machine.maxASID hRegs
+  have hUnify := decodeVSpaceUnifyInstructionArgs_eq_by layout regs decoded st.machine.maxASID hRegs
   have hPrio := decodeSetPriorityArgs_eq_by layout regs decoded hRegs
   have hMcp := decodeSetMCPriorityArgs_eq_by layout regs decoded hRegs
   have hIpcBuf := decodeSetIPCBufferArgs_eq_by layout regs decoded hRegs
@@ -510,9 +505,9 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
     simp only [truncationMinimum] at hLen <;>
     cases target <;>
     simp only [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchInvocationBy, hLen,
-      hMove, hReply, hDelete, hMap, hUnmap,
+      hMove, hReply, hDelete, hMap, hUnify,
       hPrio, hMcp, hIpcBuf, hAff,
-      hSpace, hPt, hIrqGet, decodeVSpaceUnifyInstructionArgs,
+      hSpace, hPt, hIrqGet,
       dispatchCapabilityOnlyChecked]
   all_goals first | rfl | (split <;> rfl)
 
@@ -983,24 +978,22 @@ refusal is read where it is, never rebuilt. -/
     | _ => .error (.invalidCapability 0, st)
   | .vspaceUnmap =>
     match cap.target with
-    | .object rootId =>
-      match decodeVSpaceUnmapArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
-      | .error e => .error (e, st)
-      | .ok args =>
-        if !vspaceCapAuthorizesAsid cap args.asid st then .error (.illegalAuthority, st)
-        -- An address nothing is mapped at is refused on the root's words
-        -- (`vspaceUnmapUnmappedAt`), before the unmap's wrappers run.
-        else if vspaceUnmapUnmappedAt st args.asid args.vaddr rootId then
-          .error (.translationFault, st)
-        else
-          RefusalCarrying.ofChecked (vspaceUnmapAdmittedAt st args.asid args.vaddr rootId)
-            (fun st => vspaceUnmapPerformAt executingCore args.asid args.vaddr rootId st)
-            (dispatchInvocationBy ctx sid capAddr xc layout regs tid executingCore cap) st
+    | .object _ =>
+      -- `Page_Unmap`: the invoked capability's slot resolved on its words
+      -- (`resolveCallerCapSlotK`), the page its record names taken down on the
+      -- record's words (`vspaceUnmapFrameCapTeardownAt`), then the record
+      -- dropped where it lies (`vspaceUnmapFrameCap_eq_teardownAt`).
+      resolveCallerCapSlotK tid capAddr (syscallRequiredRight .vspaceUnmap) st
+        (fun e => .error (e, st)) fun cnode slot _ _ =>
+          match cspaceClearFrameMappingImpl ⟨cnode, slot⟩
+              (vspaceUnmapFrameCapTeardownAt executingCore cnode slot st) with
+          | .error e => .error (e, st)
+          | .ok r => .ok r
     | _ => .error (.invalidCapability 0, st)
   | .vspaceUnifyInstruction =>
     match cap.target with
     | .object _ =>
-      match decodeVSpaceUnmapArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
+      match decodeVSpaceUnifyInstructionArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
       | .error e => .error (e, st)
       | .ok args =>
         if !vspaceCapAuthorizesAsid cap args.asid st then .error (.illegalAuthority, st)
@@ -1664,31 +1657,23 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
     all_goals rfl
   case vspaceUnmap =>
     cases target
-    case object rootId =>
+    case object _ =>
       dsimp only
-      cases hD : decodeVSpaceUnmapArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
-      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
-      | ok args =>
-        dsimp only
-        split
-        · next hAu => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu]
-        · next hAu =>
-          split
-          · next hU =>
-            simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hAu, Bool.false_eq_true,
-              ↓reduceIte, vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_unmappedAt executingCore
-                args.asid args.vaddr rootId st hU]
-          · apply RefusalCarrying.ofChecked_eq
-            intro hA
-            simp only [dispatchInvocationBy, hD, hAu, Bool.false_eq_true, ↓reduceIte,
-              vspaceUnmapPageWithShootdownAndIcacheBroadcast_of_admitted executingCore args.asid
-                args.vaddr rootId st hA]
+      rw [resolveCallerCapSlotK_eq]
+      cases hR : resolveCallerCapSlot tid capAddr (syscallRequiredRight .vspaceUnmap) st with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hR]
+      | ok triple =>
+        obtain ⟨⟨cnode, slot⟩, _, _⟩ := triple
+        simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hR,
+          vspaceUnmapFrameCap_eq_teardownAt]
+        cases cspaceClearFrameMappingImpl { cnode := cnode, slot := slot }
+          (vspaceUnmapFrameCapTeardownAt executingCore cnode slot st) <;> rfl
     all_goals rfl
   case vspaceUnifyInstruction =>
     cases target
     case object rootId =>
       dsimp only
-      cases hD : decodeVSpaceUnmapArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
+      cases hD : decodeVSpaceUnifyInstructionArgsBy (msgRegOfFile layout regs) st.machine.maxASID with
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
       | ok args =>
         dsimp only
