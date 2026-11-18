@@ -401,19 +401,30 @@ private def dispatchReplyRecvOn (core : SeLe4n.Kernel.Concurrency.CoreId)
 -- §4  INVERTED witness A — a successful Unit syscall decodes as a VALUE
 -- ============================================================================
 
-/-- `.notificationSignal` (a `Unit`-returning syscall) through the live
+/-- `.notificationSignal` issued with seL4's word `w` (its label in `x1`):
+the seam alone, as `dispatchFromAbi` but naming the syscall. -/
+private def dispatchSignalWith (w : Syscall) (msgInfoRaw x2 : UInt64) (st : SystemState) :
+    Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
+  SeLe4n.Testing.dispatchFromAbi trustedLabeling SeLe4n.Kernel.Concurrency.bootCoreId
+    w.number.toUInt32 capPtrValue.toUInt64
+    (SyscallId.notificationSignal.msgInfoWithLabel msgInfoRaw) x2 0 0 0
+    0 0 0 0 0 st
+
+/-- `.notificationSignal` (a `Unit`-returning invocation) through the live
 checked dispatch.  Pre-flip this returned the caller's capability pointer
-(5), which the old decoder read as `KernelError` discriminant 5.  Now:
-the boundary composes the **zero frame** — `x0 = 0`, success label —
-whatever the staged registers hold (`frameForShape`'s constructed read),
-and the decoder reads a value. -/
+(5), which the old decoder read as `KernelError` discriminant 5.  Now, issued
+as a `Call` (seL4 signals and answers `replyFromKernel_success_empty`), the
+boundary **constructs** `x0 = 0` and the success `x1` whatever the staged
+registers hold (`frameForShape`'s constructed read) and passes `x2`-`x5`
+through as the caller left them, and the decoder reads a value.  Issued as a
+`Send` (seL4's `seL4_Signal`), the signal writes no register at all: the frame
+is the caller's own registers. -/
 private def runUnitReturnWitness : IO Unit := do
   IO.println "-- §4 inverted witness A: successful Unit syscall decodes as a value"
   -- MessageInfo {length := 1, extraCaps := 0, label := 0} encodes to 1;
   -- x2 carries the badge argument for the signal.
   let msgInfoRaw : UInt64 := 1
-  match dispatchFromAbi SyscallId.notificationSignal msgInfoRaw
-      forgedBadge.toUInt64 witnessState with
+  match dispatchSignalWith .call msgInfoRaw forgedBadge.toUInt64 witnessState with
   | .error e =>
       assertBool s!"the signal dispatch reaches the FFI seam (got .error {reprStr e})" false
   | .ok (outcome, st') => do
@@ -430,10 +441,40 @@ private def runUnitReturnWitness : IO Unit := do
       | .resumes =>
           assertBool "a committed signal never takes the refused-resume path" false
       | .returns frame => do
-          assertBool "FLIPPED: the Unit frame is the zero frame, not the cap pointer"
-            (frame == .zero && frame.x0 != capPtrValue.toUInt64)
+          assertBool "FLIPPED: a Call's Unit reply is x0 = 0 and x1 = 0, not the cap pointer"
+            (frame.x0 == 0 && frame.x1 == 0 && frame.x0 != capPtrValue.toUInt64)
+          assertBool "a Call's Unit reply leaves x2-x5 as the caller trapped them"
+            (frame.x2 == forgedBadge.toUInt64 && frame.x3 == 0 && frame.x4 == 0 &&
+              frame.x5 == 0)
           assertBool "FLIPPED: userspace decodes the success as a VALUE (0)"
-            (rustDecodeResponse (postTrapRegs frame) == .ok 0 #[0, 0, 0, 0])
+            (rustDecodeResponse (postTrapRegs frame) == .ok 0 #[forgedBadge.toUInt64, 0, 0, 0])
+  -- seL4's `Send` on a notification (`seL4_Signal`): no register written.
+  match dispatchSignalWith .send msgInfoRaw forgedBadge.toUInt64 witnessState with
+  | .error e =>
+      assertBool s!"the sent signal reaches the FFI seam (got .error {reprStr e})" false
+  | .ok (.returns frame, st') =>
+      assertBool "a Send's signal hands back the caller's own registers, written by none"
+        (frame.x0 == capPtrValue.toUInt64 &&
+          frame.x1 == SyscallId.notificationSignal.msgInfoWithLabel msgInfoRaw &&
+          frame.x2 == forgedBadge.toUInt64 && frame.x3 == 0 && frame.x4 == 0 && frame.x5 == 0 &&
+          (match st'.getNotification? ntfnId with
+            | some n => n.pendingBadge == some (Badge.ofNatMasked signalledBadge)
+            | none => false))
+  | .ok (_, _) => assertBool "a committed Send returns the caller's own registers" false
+  -- seL4's `receiveSignal` on the now-active notification writes the badge
+  -- register alone: a Wait issued with words in x2-x3 keeps them.
+  match dispatchSignalWith .send msgInfoRaw forgedBadge.toUInt64 witnessState with
+  | .ok (_, stS) =>
+      match SeLe4n.Testing.dispatchOperationFromAbi trustedLabeling
+          SeLe4n.Kernel.Concurrency.bootCoreId SyscallId.notificationWait
+          capPtrValue.toUInt64 0 0x77 0x78 0 0 0 0 0 0 0 stS with
+      | .ok (.returns frame, _) =>
+          assertBool "a consuming Wait writes x0 (the badge) and leaves x1-x5 as trapped"
+            (frame.x0 == signalledBadge.toUInt64 &&
+              frame.x1 == SyscallId.notificationWait.msgInfoWithLabel 0 &&
+              frame.x2 == 0x77 && frame.x3 == 0x78 && frame.x4 == 0 && frame.x5 == 0)
+      | _ => assertBool "a Wait on an active notification returns a frame" false
+  | _ => assertBool "the sent signal reaches the FFI seam" false
 
 -- ============================================================================
 -- §5  INVERTED witness B — signal-before-wait DELIVERS the badge (SM9.C.0)
@@ -907,7 +948,9 @@ private def returnAbiTraceLines : List String :=
       SeLe4n.Model.KernelError.kernelErrorEncodingBound).isNone
   let errorCount := SeLe4n.Model.KernelError.kernelErrorEncodingBound
   [ s!"[ret-abi] abi-version: {Kernel.Architecture.syscallAbiVersion}"
-  , outcomeLine "unit signal (cap ptr 5)" signalled
+  , outcomeLine "unit signal by Call (cap ptr 5)"
+      (dispatchSignalWith .call signalMsgInfo forgedBadge.toUInt64 witnessState)
+  , outcomeLine "signal by Send (cap ptr 5, no register written)" signalled
   , outcomeLine "badge wait after signal 42" waitAfterSignal
   , outcomeLine "blocking wait (idle notification)"
       (dispatchFromAbi SyscallId.notificationWait 0 0 witnessState)
@@ -1086,8 +1129,10 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
   match serviceRegisterScenario with
   | .error e => assertBool s!"9f' dispatches (got .error {reprStr e})" false
   | .ok (out, st') => do
-      assertBool s!"9f': the register returns the unit frame (got {reprStr out})"
-        (out == .returns .zero)
+      -- A Call to a Unit invocation: seL4's `replyFromKernel_success_empty`
+      -- writes x0 and x1; x2-x5 keep the message words the caller trapped with.
+      assertBool s!"9f': the register returns the empty reply (got {reprStr out})"
+        (out == .returns { x0 := 0, x1 := 0, x2 := 910, x3 := 1, x4 := 64, x5 := 64 })
       assertBool "9f': the endpoint now holds the registration"
         (st'.serviceRegistry[ServiceId.ofNat epId.toNat]?).isSome
   -- 9f'' — the same register through the cross-core step the hardware runs
@@ -1104,8 +1149,8 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
         registryCapPtr.toUInt64
         (({ length := 5, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64)
         910 1 64 64 0 0 0 0 0 st1
-      assertBool s!"9f'': the cross-core register returns the unit frame (got {reprStr r.1})"
-        (r.1 == .returns .zero)
+      assertBool s!"9f'': the cross-core register returns the empty reply (got {reprStr r.1})"
+        (r.1 == .returns { x0 := 0, x1 := 0, x2 := 910, x3 := 1, x4 := 64, x5 := 64 })
       assertBool "9f'': the endpoint now holds the registration"
         (stC.serviceRegistry[ServiceId.ofNat epId.toNat]?).isSome
   -- 9g — the self-suspend returns-unit split (§3.5's parenthetical)
@@ -1563,8 +1608,12 @@ private def runDeclassifiedBadgeDeliveryWitnesses : IO Unit := do
   let (wait, signal, sgis, trail, delivered) := declassifiedBadgeRun declassLabeling
   assertBool "11: the waiter's own wait blocked — no frame of its own to read the badge from"
     (wait == .blocks)
+  -- Issued as a Call: the empty reply writes x0 and x1, x2-x5 as trapped.
   assertBool "11: the declassifying signal succeeded as a unit syscall"
-    (match signal with | .returns f => f == .zero | _ => false)
+    (match signal with
+     | .returns f => f.x0 == 0 && f.x1 == 0 && f.x2 == forgedBadge.toUInt64 && f.x3 == 0 &&
+         f.x4 == 0 && f.x5 == 0
+     | _ => false)
   assertBool "11: the fixture is a genuine downgrade — the base lattice denies high → low"
     (securityFlowsTo declassHigh declassLow == false)
   assertBool "11: the signal posted a .reschedule to the waiter's core, and only that"

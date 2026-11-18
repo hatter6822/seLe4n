@@ -6384,7 +6384,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
             -- unchecked arm's staging; the flow gate already admitted
             -- notification → waiter, which is the authority for the value).
             .ok ((), Architecture.writeReturnFrameToTcb st' tid
-              (Architecture.returnFrameOfBadge badge))
+              (Architecture.badgeReturnFrame st' tid badge))
         | (st', .ok none) => .ok ((), st')
         | (_, .error e) => .error e
     | _ => fun _ => .error (.invalidCapability 0)
@@ -7661,9 +7661,9 @@ theorem dispatchArm_notificationWait_matches_returnShape
     Architecture.syscallReturnShape .notificationWait = .badge ∧
     ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
-        = Architecture.returnFrameOfBadge badge := by
+        = Architecture.badgeReturnFrame st1 tid badge := by
   refine ⟨rfl,
-    Architecture.writeReturnFrameToTcb st1 tid (Architecture.returnFrameOfBadge badge),
+    Architecture.writeReturnFrameToTcb st1 tid (Architecture.badgeReturnFrame st1 tid badge),
     ?_, ?_⟩
   · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hDispatch,
       waitFindsNothing_of_consumed _ hDispatch]

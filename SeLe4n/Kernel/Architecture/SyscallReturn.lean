@@ -54,9 +54,12 @@ inhabiting syscall would be a hand-maintained fiction.  `message` carries no
 static arity: a receive's length is dynamic (0..4 inline) and rides the
 returned `MessageInfo` where seL4 puts it. -/
 inductive ReturnShape where
-  /-- `x0 = 0`, no message — 26 of the 31 syscalls. -/
+  /-- `x0 = 0` and the empty `MessageInfo` in `x1`, `x2`-`x5` untouched
+  (seL4's `replyFromKernel_success_empty`, written only for a `Call`) — 26 of
+  the 31 syscalls. -/
   | unit
-  /-- `x0` = full-width badge, no message registers (`.notificationWait`). -/
+  /-- `x0` = full-width badge, `x1`-`x5` untouched (`.notificationWait`;
+  seL4's `receiveSignal` writes `badgeRegister` alone). -/
   | badge
   /-- `x0` = a queried scalar (`.serviceQuery`; SM9.A's audit reads join
   here).  Distinct from `.badge` because the Rust conformance layer types
@@ -369,8 +372,11 @@ staging site, so the synthesis cannot drift between sites.
     x4 := ((msg.registers[2]?.map RegValue.word).getD 0)
     x5 := ((msg.registers[3]?.map RegValue.word).getD 0) }
 
-/-- A badge-only frame — `.notificationWait`'s shape: the badge in `x0`,
-success `MessageInfo` (all-zero word) in `x1`, no message registers. -/
+/-- A badge message's frame — what a signal's badge message
+(`IpcMessage.empty` with the badge) stages for the waiter it wakes
+(`returnFrameOfMessage_badge`): the badge in `x0`, the all-zero
+`MessageInfo` in `x1`, no message words.  A wait that consumes a pending
+badge itself writes `x0` alone (`badgeReturnFrame`). -/
 @[inline] def returnFrameOfBadge (b : Badge) : SyscallReturnFrame :=
   { x0 := b.word }
 
@@ -626,6 +632,14 @@ file in place, no frame record built. -/
     SystemState :=
   st.updateTcb tid (fun t => { t with registerContext := { t.registerContext with x0 := 0 } })
 
+/-- **The frame of a wait that consumes a notification's badge** (seL4's
+`receiveSignal` on an active notification, `setRegister(thread, badgeRegister,
+...)`): the badge in `x0`, every other return register keeping the value it
+holds. -/
+@[inline] def badgeReturnFrame (st : SystemState) (tid : SeLe4n.ThreadId) (b : Badge) :
+    SyscallReturnFrame :=
+  { readReturnFrame st tid with x0 := b.word }
+
 @[csimp] theorem nbRecvFailedTransfer_eq_inPlace :
     @nbRecvFailedTransfer = @nbRecvFailedTransferInPlace := by
   funext st tid
@@ -658,6 +672,28 @@ theorem readReturnFrame_writeReturnFrame
   have hReads := (tcb.registerContext).stageReturnFrame_reads_back frame
   obtain ⟨h0, h1, h2, h3, h4, h5⟩ := hReads
   simp only [SeLe4n.Model.TCB.withReturnFrame_registerContext, h0, h1, h2, h3, h4, h5]
+
+/-- **Staging the registers a thread holds writes nothing**: the frame read
+back from `tid`'s context, staged into it, leaves every TCB as it was.  This
+is what a completed `Send`, `NBSend` or `Yield` is handed
+(`Platform.FFI.syscallSuccessOutcome`): seL4 writes no register of its caller. -/
+theorem writeReturnFrameToTcb_readReturnFrame_getTcb?
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (t : SeLe4n.ThreadId) :
+    (writeReturnFrameToTcb st tid (readReturnFrame st tid)).getTcb? t = st.getTcb? t := by
+  unfold writeReturnFrameToTcb
+  by_cases hk : tid.toObjId = t.toObjId
+  · have hSame : ∀ s : SystemState, s.getTcb? t = s.getTcb? tid := fun s => by
+      unfold SystemState.getTcb?; rw [hk]
+    rw [hSame, hSame st, SystemState.updateTcb_getTcb?_self _ _ _ hObjInv]
+    cases hT : st.getTcb? tid with
+    | none => rfl
+    | some tcb =>
+      unfold readReturnFrame
+      rw [hT]
+      simp only [Option.map_some]
+      congr 1
+  · exact SystemState.updateTcb_getTcb?_ne _ _ _ hObjInv t hk
 
 /-- **WS-ZA ZA4.7**: the delivery write reads back the same frame. -/
 theorem readReturnFrame_writeDeliveredFrame
@@ -1717,22 +1753,31 @@ theorem tcbBlocksReturn_eq (tcb : TCB) :
   generalize tcb.ipcStateCode = c
   rcases c with _ | _ | _ | _ | c <;> rcases o with _ | o <;> rfl
 
-/-- §3.3's shape-driven boundary read: a `.unit` syscall's frame is
-**constructed**, never read from the staged registers — reading them back
-would return the caller's own staged arguments, which is the §1.2 defect.
-Value shapes read what the arm staged (`dispatchArm_matches_returnShape`
-is what makes that read safe). -/
+/-- **seL4's `replyFromKernel_success_empty`** over the caller's registers:
+the badge register `x0` is `0` and the message-info register `x1` the empty
+`MessageInfo` (the all-zero word), and `x2`-`x5` keep what the caller holds —
+seL4 writes those two registers and no message register. -/
+@[inline] def emptyReplyFrame (staged : SyscallReturnFrame) : SyscallReturnFrame :=
+  { staged with x0 := 0, x1 := 0 }
+
+/-- §3.3's shape-driven boundary read: a `.unit` invocation's reply is
+**constructed** in the two registers seL4 writes (`emptyReplyFrame`), never
+read from the staged `x0`/`x1` — reading them back would return the caller's
+own capability pointer and request label, which is the §1.2 defect — and
+`x2`-`x5` are the caller's own, as seL4 leaves them.  Value shapes read what
+the arm staged (`dispatchArm_matches_returnShape` is what makes that read
+safe). -/
 def frameForShape (shape : ReturnShape) (staged : SyscallReturnFrame) :
     SyscallReturnFrame :=
   match shape with
-  | .unit => .zero
+  | .unit => emptyReplyFrame staged
   | _     => staged
 
-/-- The unit shape ignores the staged registers entirely — however corrupt
-or stale they are, a `Unit`-returning syscall reports `x0 = 0` and a
-success `x1`. -/
+/-- The unit shape ignores the staged `x0` and `x1` — however corrupt or stale
+they are, a `Unit`-returning invocation reports `x0 = 0` and a success `x1` —
+and passes `x2`-`x5` through. -/
 theorem frameForShape_unit (staged : SyscallReturnFrame) :
-    frameForShape .unit staged = .zero := rfl
+    frameForShape .unit staged = emptyReplyFrame staged := rfl
 
 /-- Value shapes pass the staged frame through unchanged. -/
 theorem frameForShape_value (shape : ReturnShape) (staged : SyscallReturnFrame)

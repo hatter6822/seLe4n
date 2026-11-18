@@ -186,7 +186,7 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
                         (cancelReceiveBusyReply ctx executingCore
                           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)))
          | .ok ((), st') =>
-             .ok (Platform.FFI.syscallReturnOutcome
+             .ok (Platform.FFI.syscallSuccessOutcome syscallId
                (Platform.FFI.seamOperationCode
                  (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid)
                st' tid, st')) := by

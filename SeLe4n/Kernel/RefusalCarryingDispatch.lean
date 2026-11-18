@@ -539,20 +539,29 @@ theorem notificationWaitOnCore_error_state (notificationId : SeLe4n.ObjId)
   repeat' split at h <;> (try simp only [] at h ⊢) <;> (try split) <;> (try rfl) <;>
     (try simp_all)
 
-/-- The wait's consumed badge staged into the caller's return registers:
-`writeReturnFrameToTcb` of `returnFrameOfBadge` (`stageBadgeReturn_eq`), with
-the frame's words written straight into the register file, so no frame record
-is built and an exclusively held TCB is rewritten in its slot. -/
+/-- The wait's consumed badge staged into the caller's badge register (seL4's
+`receiveSignal`, `setRegister(thread, badgeRegister, ...)`):
+`writeReturnFrameToTcb` of `badgeReturnFrame` (`stageBadgeReturn_eq`), with
+`x0` written straight into the register file, so no frame record is built,
+`x1`-`x5` keep what they hold, and an exclusively held TCB is rewritten in its
+slot. -/
 @[inline] def stageBadgeReturn (st : SystemState) (tid : SeLe4n.ThreadId)
     (badge : SeLe4n.Badge) : SystemState :=
   st.updateTcb tid (fun t => { t with registerContext :=
-    { t.registerContext with
-      x0 := badge.word, x1 := 0, x2 := 0, x3 := 0, x4 := 0, x5 := 0 } })
+    { t.registerContext with x0 := badge.word } })
 
 theorem stageBadgeReturn_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (badge : SeLe4n.Badge) :
     stageBadgeReturn st tid badge =
-      Architecture.writeReturnFrameToTcb st tid (Architecture.returnFrameOfBadge badge) := rfl
+      Architecture.writeReturnFrameToTcb st tid (Architecture.badgeReturnFrame st tid badge) := by
+  unfold stageBadgeReturn Architecture.writeReturnFrameToTcb Architecture.badgeReturnFrame
+    Architecture.readReturnFrame
+  cases h : st.getTcb? tid with
+  | none =>
+    rw [SystemState.updateTcb_eq_self_of_none h, SystemState.updateTcb_eq_self_of_none h]
+  | some t =>
+    rw [SystemState.updateTcb_eq_of_some h, SystemState.updateTcb_eq_of_some h]
+    rfl
 
 /-- The wait arm's specification form, refusing in the state it was handed
 (`notificationWaitOnCore_error_state`): the path every wait takes that does
@@ -562,7 +571,8 @@ def notificationWaitArmGeneralR (notifId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
   fun st =>
     match notificationWaitOnCore notifId tid executingCore st with
     | (st', .ok (some badge)) =>
-        .ok ((), Architecture.writeReturnFrameToTcb st' tid (Architecture.returnFrameOfBadge badge))
+        .ok ((), Architecture.writeReturnFrameToTcb st' tid
+          (Architecture.badgeReturnFrame st' tid badge))
     | (st', .ok none) => .ok ((), st')
     | (st', .error e) => .error (e, st')
 
@@ -611,7 +621,7 @@ theorem notificationWaitArmGeneralR_eq (notifId : SeLe4n.ObjId) (tid : SeLe4n.Th
         match notificationWaitOnCore notifId tid executingCore st with
         | (st', .ok (some badge)) =>
             .ok ((), Architecture.writeReturnFrameToTcb st' tid
-              (Architecture.returnFrameOfBadge badge))
+              (Architecture.badgeReturnFrame st' tid badge))
         | (st', .ok none) => .ok ((), st')
         | (_, .error e) => .error e) st := by
   simp only [notificationWaitArmGeneralR, RefusalCarrying.ofKernel]

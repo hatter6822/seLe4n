@@ -5351,6 +5351,25 @@ theorem numberDropsInvocationFault_number (s : Syscall) :
     numberDropsInvocationFault s.number.toUInt32 = s.dropsInvocationFault := by
   cases s <;> decide
 
+/-- **The syscalls whose success writes no register of the caller**: `Send`
+and `NBSend` (seL4's `handleInvocation` answers a completed invocation with
+`replyFromKernel_success_empty` only `if (isCall)`, and an invocation that
+returns a value writes it only for a `Call`, as `invokeTCB_ReadRegisters` and
+`setConsumed` do), and `Yield` (`handleYield` writes no register).  Every other
+syscall either replies to a `Call` or receives. -/
+@[inline] def returnsNothing : Syscall → Bool
+  | .send | .nbSend | .yield => true
+  | _ => false
+
+/-- `returnsNothing` of the syscall the seam's number names, tested on the
+number itself; `false` for a number naming no syscall. -/
+@[inline] def numberReturnsNothing (n : UInt32) : Bool :=
+  n == 5 || n == 6 || n == 11
+
+theorem numberReturnsNothing_number (s : Syscall) :
+    numberReturnsNothing s.number.toUInt32 = s.returnsNothing := by
+  cases s <;> decide
+
 /-- The receives seL4 runs with `isBlocking` (`handleRecv`). -/
 @[inline] def receiveBlocks : Syscall → Bool
   | .recv | .wait | .replyRecv | .nbSendRecv | .nbSendWait => true

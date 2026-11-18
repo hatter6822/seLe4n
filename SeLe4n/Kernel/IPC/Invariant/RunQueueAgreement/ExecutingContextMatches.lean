@@ -171,13 +171,15 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
     intro hNot hCurT
     cases hT : st'.getTcb? tid with
     | none =>
-      exact hNot _ (by unfold Platform.FFI.syscallReturnOutcome; simp only [hT]; rfl)
+      obtain ⟨f, hf⟩ := Platform.FFI.syscallSuccessOutcome_returns_of_not_ipcBlocked
+        syscallId _ st' tid (fun _ h => by rw [hT] at h; cases h)
+      exact hNot f hf
     | some tcb =>
       cases hb : Architecture.ipcStateBlocksReturn tcb.ipcState with
       | false =>
-        exact hNot _ (by
-          unfold Platform.FFI.syscallReturnOutcome
-          simp only [hT, hb, Bool.false_eq_true, ↓reduceIte]; rfl)
+        obtain ⟨f, hf⟩ := Platform.FFI.syscallSuccessOutcome_returns_of_not_ipcBlocked
+          syscallId _ st' tid (fun t h => by rw [hT] at h; cases h; exact hb)
+        exact hNot f hf
       | true =>
         have hNe : tcb.ipcState ≠ .ready := fun hr => by
           rw [hr, Architecture.ipcStateBlocksReturn_ready] at hb; cases hb

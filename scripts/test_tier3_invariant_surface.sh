@@ -11276,6 +11276,15 @@ run_check "INVARIANT" rg -n '^theorem syscallReturnOutcome_blocks_iff($|[ ({:\[\
 run_check "INVARIANT" rg -n '^theorem syscallReturnOutcome_blocked_independent_of_id($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallReturnOutcome_blocked_ignores_staged_registers($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallReturnOutcome_ne_faulted($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+# A completed Send/NBSend/Yield writes no register of its caller (seL4's
+# handleInvocation replies only `if (isCall)`; handleYield writes none), and a
+# Call's Unit reply writes x0 and x1 alone (replyFromKernel_success_empty).
+run_check "INVARIANT" rg -n '^def syscallSuccessOutcome($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallSuccessOutcome_of_returnsNothing($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem writeReturnFrameToTcb_readReturnFrame_getTcb\?($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def emptyReplyFrame \(staged : SyscallReturnFrame\) : SyscallReturnFrame :=\n  \{ staged with x0 := 0, x1 := 0 \}$" SeLe4n/Kernel/Architecture/SyscallReturn.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frameForShape[^\n]*\n[^\n]*\n  match shape with\n  \| \.unit => emptyReplyFrame staged$" SeLe4n/Kernel/Architecture/SyscallReturn.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def stageBadgeReturn[^\n]*\n[^\n]*\n[^\n]*\n    \{ t\.registerContext with x0 := badge\.word \} \}\)$" SeLe4n/Kernel/RefusalCarryingDispatch.lean'
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_blocked_returns_no_frame($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 # (b) the Rust `ReturnShape` mirror.  NEGATIVE first: the wildcard arm is what
 # made the mirror silently total, so a new syscall would have read `Unit` on the
