@@ -1077,7 +1077,7 @@ theorem finaliseReplyUnstash_closed (P : SystemState → Prop) (hSt : FinaliseUn
     · rename_i t hT
       split
       · rename_i hC
-        exact hSt st _ x _ t h hT (by simpa using hC) rfl
+        exact hSt st _ x _ t h hT (by simpa using (Bool.and_eq_true _ _).mp hC |>.2) rfl
       · exact h
     · exact h
 
@@ -1099,12 +1099,17 @@ theorem finaliseReplyUnstash_eq_of_stasher {st : SystemState}
     have e := congrArg SeLe4n.ReplyId.optCode hP
     simp only [TCB.pendingReceiveReply, SeLe4n.ReplyId.optCode_ofOptCode] at e
     exact e
+  have hState : tcb.ipcStateCode = 1 := by
+    obtain ⟨ep, hEp⟩ := (h.1 tid tcb rid hT hP).1
+    have hs : tcb.ipcStateCode = tcb.ipcState.stateCode := by
+      unfold TCB.ipcState; rw [ThreadIpcState.stateCode_ofCodes]
+    rw [hs, hEp]; rfl
   unfold finaliseReplyUnstash
   rw [hS]
   dsimp only
   rw [show (⟨tid.val⟩ : SeLe4n.ThreadId) = tid from rfl, hT]
   dsimp only
-  rw [if_pos (by rw [hCode]; exact beq_self_eq_true _)]
+  rw [if_pos (by rw [hCode, hState]; simp; rfl)]
 
 /-- **…and leaves the state when no thread stashes the reply**, as the scan
 finding no stasher would. -/
@@ -1124,7 +1129,7 @@ theorem finaliseReplyUnstash_eq_self_of_no_stasher {st : SystemState}
         exfalso
         apply hNone ⟨k⟩ t hT
         have e : t.pendingReceiveReplyCode = rid.val + 1 := by
-          have := beq_iff_eq.mp hC
+          have := beq_iff_eq.mp ((Bool.and_eq_true _ _).mp hC).2
           rw [this]; rfl
         simp only [TCB.pendingReceiveReply, e]
         rfl

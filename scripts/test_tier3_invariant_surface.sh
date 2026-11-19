@@ -5008,8 +5008,15 @@ run_check "INVARIANT" rg -n -U 'def replyCallerFinalisable [^\n]*(\n([ \t][^\n]*
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem finaliseReply_eq_impl : @finaliseReply = @finaliseReplyImpl' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^theorem finaliseSchedContextDeschedule_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
 # A stashed reply is unlinked from its receiver in the receiver's slot
-# (reply_unlink), the stash re-checked before the write.
-run_check "INVARIANT" rg -n -U 'def finaliseReplyUnstash [^\n]*\n  match r\.stasherCode with\n  \| 0 => st\n  \| k \+ 1 =>\n    match st\.getTcb\? ⟨k⟩ with\n    \| some t =>\n      if t\.pendingReceiveReplyCode == x\.val \+ 1 then st\.updateTcb ⟨k⟩ TCB\.stashCleared' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# (reply_unlink), the stash re-checked before the write: the receiver is still
+# blocked on receive holding this reply (replyStashedAt).
+run_check "INVARIANT" rg -n -U 'def finaliseReplyUnstash [^\n]*\n  match r\.stasherCode with\n  \| 0 => st\n  \| k \+ 1 =>\n    match st\.getTcb\? ⟨k⟩ with\n    \| some t =>\n      if t\.ipcStateCode == 1 && t\.pendingReceiveReplyCode == x\.val \+ 1 then\n        st\.updateTcb ⟨k⟩ TCB\.stashCleared' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# The lazily cleared stasher record is read only through replyStashedAt, so
+# every reader sees seL4's eagerly cleared replyTCB.
+run_check "INVARIANT" rg -n '^theorem finaliseReplyUnstash_eq_stashedAt ' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^theorem finaliseReplyUnstash_eq_stasherSeen ' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def replyStasherSeen [^\n]*\n  if st\.replyStashedAt rid r then r\.stasherCode else 0' SeLe4n/Kernel/IPC/BusyReplyHolder.lean
+run_check "INVARIANT" rg -n '^theorem busyReplyHolderCode_eq_stasherSeen ' SeLe4n/Kernel/IPC/BusyReplyHolder.lean
 # The stasher is read off the Reply's record, not found by a table walk.
 run_negative_check "INVARIANT" rg -n 'replyStasherCode|objectStashesReply' SeLe4n
 # A Reply records the thread that stashed it (seL4 MCS's reply->replyTCB), a

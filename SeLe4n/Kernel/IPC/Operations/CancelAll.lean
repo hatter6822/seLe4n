@@ -8,6 +8,7 @@ import SeLe4n.Kernel.IPC.DualQueue.RemoveInPlace
 import SeLe4n.Kernel.IPC.Operations.NotificationBind
 import SeLe4n.Kernel.IPC.Operations.DonationPopInPlace
 import SeLe4n.Kernel.IPC.Operations.UnheldContextPopInPlace
+import SeLe4n.Kernel.IPC.BusyReplyHolder
 
 /-!
 # Cancelling every waiter of an endpoint or a notification
@@ -1450,16 +1451,58 @@ stashed** (`reply_unlink` on the `BlockedOnReceive` thread the reply's
 (`updateTcb`, compiled as the in-place rewrite), and it keeps waiting on its
 endpoint, now for a call it receives with no reply.  The record is cleared
 lazily, so the named receiver's own stash is checked before the write; a reply
-whose record names no thread that still stashes it is left as it is. -/
+whose record names no thread that still stashes it is left as it is.  The
+test is `SystemState.replyStashedAt`'s, the one answer every reader of the
+record gives to whether the reply is stashed (`finaliseReplyUnstash_eq_stashedAt`):
+the named thread blocked receiving (seL4's `thread_state(replyTCB) ==
+ThreadState_BlockedOnReceive`) with this reply as its stash. -/
 def finaliseReplyUnstash (st : SystemState) (x : SeLe4n.ObjId) (r : Reply) : SystemState :=
   match r.stasherCode with
   | 0 => st
   | k + 1 =>
     match st.getTcb? ⟨k⟩ with
     | some t =>
-      if t.pendingReceiveReplyCode == x.val + 1 then st.updateTcb ⟨k⟩ TCB.stashCleared
+      if t.ipcStateCode == 1 && t.pendingReceiveReplyCode == x.val + 1 then
+        st.updateTcb ⟨k⟩ TCB.stashCleared
       else st
     | none => st
+
+/-- **The unstash asks `replyStashedAt`**: it clears the recorded stasher's
+stash exactly when the record is live. -/
+theorem finaliseReplyUnstash_eq_stashedAt (st : SystemState) (rid : SeLe4n.ReplyId) (r : Reply) :
+    finaliseReplyUnstash st rid.toObjId r =
+      if st.replyStashedAt rid r then st.updateTcb ⟨r.stasherCode - 1⟩ TCB.stashCleared
+      else st := by
+  unfold finaliseReplyUnstash SystemState.replyStashedAt
+  rcases r.stasherCode with _ | k
+  · rfl
+  · simp only [Nat.add_sub_cancel]
+    cases st.getTcb? ⟨k⟩ with
+    | none => rfl
+    | some t => rfl
+
+/-- **The unstash reads the stash record only as seL4's eager clear leaves
+it** (`replyStasherSeen`): it clears the stash of the thread that
+value names, and nothing when it names none. -/
+theorem finaliseReplyUnstash_eq_stasherSeen (st : SystemState) (rid : SeLe4n.ReplyId)
+    (r : Reply) :
+    finaliseReplyUnstash st rid.toObjId r =
+      match replyStasherSeen st rid r with
+      | 0 => st
+      | k + 1 => st.updateTcb ⟨k⟩ TCB.stashCleared := by
+  rw [finaliseReplyUnstash_eq_stashedAt]
+  unfold replyStasherSeen
+  by_cases h : st.replyStashedAt rid r = true
+  · simp only [h, ↓reduceIte]
+    have hNz : r.stasherCode ≠ 0 := by
+      intro h0
+      unfold SystemState.replyStashedAt at h
+      rw [h0] at h
+      cases h
+    obtain ⟨k, hk⟩ := Nat.exists_eq_succ_of_ne_zero hNz
+    rw [hk]
+    rfl
+  · simp only [h, Bool.false_eq_true, ↓reduceIte]
 
 /-- **Whether a final delete may pop the reply at `x` off a context no thread
 holds**, its caller `c` (TCB `t`) waiting on it, read on the pre-state before any

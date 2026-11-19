@@ -1763,7 +1763,8 @@ theorem finaliseReplyUnstash_hidden (ctx : LabelingContext) (observer : IfObserv
     · next t hT =>
       split
       · next hC =>
-        exact (hiddenObjectsWrite.updateTcb st _ _ hInv (hH _ t hT (by simpa using hC))).projection
+        exact (hiddenObjectsWrite.updateTcb st _ _ hInv
+          (hH _ t hT (by simpa using ((Bool.and_eq_true _ _).mp hC).2))).projection
       · rfl
     · rfl
 
