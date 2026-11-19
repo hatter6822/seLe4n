@@ -665,6 +665,8 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
         Option.bind_some] at hSched
       rw [hT] at hDisp
       simp only at hDisp
+      rw [resolveSchedContextBindNotificationCode_eq_zero_of_thread hRes] at hDisp
+      simp only at hDisp
       rw [hRes] at hDisp
       simp only at hDisp
       split at hDisp

@@ -285,6 +285,11 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
         (schedContextBind_stepCovers _ _ _ _ _ hInv hBi h)
     | exact hX (bindNotification_savedRegsKeptExcept hInv h)
         ((bindNotification_keyFrame _ _ _ _ hInv h).stepCoversInv (e := e'))
+    | exact hF (savedRegsKept.of_unchangedOrNoTcb fun oid =>
+          (schedContextBindNotification_slots hInv h oid).imp id (·.1))
+        ((schedContextBindNotification_keyFrame hInv h).stepCoversInv (e := e')
+          (hRes := by rw [schedContextBindNotification_machine h])
+          (hBank := banksKeptOffCore_of_eq (by rw [schedContextBindNotification_machine h])))
     | exact hF (untypedRetypeFromCap_savedRegsKept hInv h)
          (untypedRetypeFromCap_stepCovers e' hInv hBi hPlaced h)
     | (cases h; rename_i hS

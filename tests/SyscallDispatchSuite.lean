@@ -1718,6 +1718,72 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
      | _ => false)
     "a primary capability that is not an `.object` must be refused"
 
+/-- **`.schedContextBind` on a notification capability binds the context to
+the notification** — seL4-MCS's `decodeSchedContext_Bind` switches on extra
+capability 0's type, and a notification capability takes
+`schedContext_bindNtfn`: the context names the notification
+(`scNotification`) and the notification names the context
+(`ntfnSchedContext`).  A context already bound to a notification, and a
+notification already bound to a context, are refused `illegalState` (seL4's
+two `IllegalOperation` checks).
+
+The caller's CNode holds the context capability at slot 0, a writable
+capability to notification 80 at slot 1, one to notification 81 at slot 2 and a
+capability to a second context at slot 3. -/
+private def schedContextBind_notification_capability : IO Unit := do
+  let caller : SeLe4n.ThreadId := ⟨1⟩
+  let cnId   : SeLe4n.ObjId := ⟨50⟩
+  let scObj  : SeLe4n.ObjId := ⟨60⟩
+  let scId   : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofObjId scObj
+  let scObj2 : SeLe4n.ObjId := ⟨61⟩
+  let scId2  : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofObjId scObj2
+  let nA     : SeLe4n.ObjId := ⟨80⟩
+  let nB     : SeLe4n.ObjId := ⟨81⟩
+  let w := AccessRightSet.ofList [.write]
+  let ntfn0 : Notification :=
+    { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
+  let st : SystemState :=
+    mkState [
+      (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
+      (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with }),
+      (scObj2, .schedContext { SeLe4n.Kernel.SchedContext.empty scId2 with }),
+      (nA, .notification ntfn0), (nB, .notification ntfn0),
+      (cnId, .cnode (CNode.ofList 4 [(SeLe4n.Slot.ofNat 0, { target := .object scObj, rights := w }),
+             (SeLe4n.Slot.ofNat 1, { target := .object nA, rights := w }),
+             (SeLe4n.Slot.ofNat 2, { target := .object nB, rights := w }),
+             (SeLe4n.Slot.ofNat 3, { target := .object scObj2, rights := w })]))
+    ]
+  let decodedAt (scSlot : Nat) : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat scSlot,
+      msgInfo := { length := 0, extraCaps := 1, label := 0 },
+      syscallId := .schedContextBind,
+      msgRegs := #[], inlineCount := 0, overflowCount := 0 }
+  let bindSt (s : SystemState) (cptr : Nat) : SystemState :=
+    withSenderCapAddrs s caller #[SeLe4n.CPtr.ofNat cptr]
+  expect "scbind_ntfn_resolver_answers_the_notification"
+    (resolveSchedContextBindNotificationCode caller
+      (schedContextBindArgsOf (bindSt st 1) caller 1) (bindSt st 1) == nA.val + 1)
+    "extra capability 0 = 1 names notification 80, so the code is its id plus one"
+  match dispatchSyscallAsCurrent (decodedAt 0) caller bootCoreId (bindSt st 1) with
+  | .ok ((), st') =>
+      expect "scbind_ntfn_links_both_ends"
+        ((st'.getSchedContext? scId).any (fun sc => decide (sc.notification = some nA)) &&
+         (st'.getNotification? nA).any (fun n => decide (n.schedContext = some scId)) &&
+         (st'.getSchedContext? scId).any (fun sc => decide (sc.boundThread = none)))
+        "a bind through a notification capability links the context and the notification, and no thread"
+      expect "scbind_ntfn_context_already_bound_refused"
+        (match dispatchSyscallAsCurrent (decodedAt 0) caller bootCoreId (bindSt st' 2) with
+         | .error .illegalState => true
+         | _ => false)
+        "a context bound to a notification binds no second one (seL4 IllegalOperation)"
+      expect "scbind_ntfn_notification_already_bound_refused"
+        (match dispatchSyscallAsCurrent (decodedAt 3) caller bootCoreId (bindSt st' 1) with
+         | .error .illegalState => true
+         | _ => false)
+        "a notification bound to a context takes no second one (seL4 IllegalOperation)"
+  | .error e =>
+      failLine "scbind_ntfn_links_both_ends" s!"unexpected refusal: {repr e}"
+
 /-- SD-060 (`v0.35.204`): **`.schedContextBind` binds only a thread the caller
 holds a WRITABLE TCB capability to.**
 
@@ -2870,6 +2936,8 @@ def main : IO Unit := do
   sd059_cspaceRevokeThroughTheSyscallGate
   IO.println "--- v0.35.204: .schedContextBind takes a TCB capability, not a thread id ---"
   sd060_schedContextBind_requires_tcb_capability
+  IO.println "--- .schedContextBind on a notification capability binds the notification ---"
+  schedContextBind_notification_capability
   IO.println "--- WS-ZA ZA6.4: a configure takes a core's scheduling control ---"
   sd063_schedContextConfigure_requires_sched_control
   IO.println "--- WS-BP BP7.1: an in-place retype never mints or destroys memory authority ---"

@@ -43,6 +43,20 @@ open SeLe4n.Model
 open Architecture.RegisterDecode
 open Architecture.SyscallArgDecode
 
+/-- **The bind keeps the records**: neither word is in a record view. -/
+theorem RecordsFrame.schedContextBindNotification {vScId : SeLe4n.ValidObjId}
+    {n : SeLe4n.ObjId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.schedContextBindNotification vScId n st = .ok ((), st')) :
+    RecordsFrame st st' := by
+  obtain ⟨hA, rfl⟩ := schedContextBindNotification_ok_admitted h
+  obtain ⟨_, _, hS, -, hN, -⟩ := schedContextBindNotificationAdmitted_facts hA
+  obtain ⟨h1, hEq⟩ := bindNotificationSchedLink_eq hS hN hInv
+  rw [hEq]
+  have F := RecordsFrame.updateSchedContext st (SeLe4n.SchedContextId.ofObjId vScId.val)
+    (fun sc => { sc with notificationCode := n.val + 1 }) hInv
+  exact F.trans (RecordsFrame.insert F.invExt (by rw [h1]; rfl))
+
+
 /-- A stage onto a transition's state is a stage onto the state it returns. -/
 theorem RecordsStage.of_fst_eq {α : Type} {st st' : SystemState} {p : SystemState × α} {r : α}
     (s : RecordsStage st p.1) (h : p = (st', r)) : RecordsStage st st' := by
@@ -341,15 +355,26 @@ theorem dispatchCapabilityOnly_recordsStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>
       try dsimp only [] at hStep
-      cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
-      | error e => simp only [hRes] at hStep; cases hStep
-      | ok vThreadId =>
-          simp only [hRes] at hStep
+      cases hN : resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | succ k =>
+          simp only [hN] at hStep
           cases hVal : validateObjIdArg scId with
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              exact .of_frameK fun hI => RecordsFrame.schedContextBind hI hStep
+              exact .of_frameK fun hI => RecordsFrame.schedContextBindNotification hI hStep
+      | zero =>
+          simp only [hN] at hStep
+          cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok vThreadId =>
+              simp only [hRes] at hStep
+              cases hVal : validateObjIdArg scId with
+              | error e => simp only [hVal] at hStep; cases hStep
+              | ok vScId =>
+                  simp only [hVal] at hStep
+                  exact .of_frameK fun hI => RecordsFrame.schedContextBind hI hStep
     all_goals try cases hStep
   case schedContextUnbind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

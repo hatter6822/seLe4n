@@ -240,6 +240,12 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
   | .schedContextBind =>
     match cap.target with
     | .object scId =>
+      match resolveSchedContextBindNotificationCode tid (schedContextBindArgsOf st tid xc) st with
+      | k + 1 =>
+        match validateObjIdArg scId with
+        | .error e => .error e
+        | .ok vScId => schedContextBindNotification vScId ⟨k⟩ st
+      | 0 =>
       match resolveSchedContextBindThread tid (schedContextBindArgsOf st tid xc) st with
       | .error e => .error e
       | .ok vThreadId =>
@@ -725,6 +731,19 @@ refusal is read where it is, never rebuilt. -/
                 else if tcbCap.hasRight .write then
                   match tcbCap.target with
                   | .object tcbObjId =>
+                    -- seL4-MCS's `decodeSchedContext_Bind` on a notification
+                    -- capability (`resolveSchedContextBindNotificationCode`).
+                    match st.getNotification? tcbObjId with
+                    | some _ =>
+                      match validateObjIdArg scObjId with
+                      | .error e => .error (e, st)
+                      | .ok vScId =>
+                        RefusalCarrying.ofChecked
+                          (schedContextBindNotificationAdmitted st vScId tcbObjId)
+                          (fun st => bindNotificationSchedLink st
+                            (SeLe4n.SchedContextId.ofObjId vScId.val) tcbObjId)
+                          (dispatchInvocationBy ctx sid capAddr xc layout regs tid executingCore cap) st
+                    | none =>
                     match st.getTcb? (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
                     | none => .error (.invalidCapability bindThreadCapNumber, st)
                     | some _ =>
@@ -1284,7 +1303,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       rw [callerExtraCapAddrK_eq]
       cases hX : callerExtraCapAddr? st tid xc 0 with
       | none =>
-        simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindThread,
+        simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindNotificationCode, resolveSchedContextBindThread,
           schedContextBindArgsOf, hX]
       | some tcbCPtr =>
         have hD : schedContextBindArgsOf st tid xc = .ok { tcbCPtr := tcbCPtr } := by
@@ -1292,62 +1311,78 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         dsimp only
         cases hC : st.getTcb? tid with
         | none =>
-          simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindThread,
+          simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindNotificationCode, resolveSchedContextBindThread,
             hD, hC]
         | some callerTcb =>
           dsimp only
           rw [lookupSlotK_eq]
           cases hRes : lookupSlot callerTcb tcbCPtr st with
           | error e =>
-            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindThread,
+            simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindNotificationCode, resolveSchedContextBindThread,
               hD, hC, syscallLookupCap, syscallResolveCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap, hRes]
           | ok ref =>
             obtain ⟨cnode, slot⟩ := ref
             dsimp only
             cases hL : SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
             | none =>
-              simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindThread,
+              simp [RefusalCarrying.ofKernel, dispatchInvocationBy, resolveSchedContextBindNotificationCode, resolveSchedContextBindThread,
                 hD, hC, syscallLookupCap, syscallResolveCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap, hRes, hL]
             | some tcbCap =>
               dsimp only
               by_cases hIdle : SeLe4n.Kernel.capTargetsReservedKernelObject tcbCap = true
               · simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                  resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
+                  resolveSchedContextBindNotificationCode, resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
                   syscallResolveCap, hRes, hL, hIdle]
               · by_cases hRight : tcbCap.hasRight .write = true
                 · cases hTg : tcbCap.target with
                   | object tcbObjId =>
-                    cases hT : st.getTcb? (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
-                    | none =>
-                      simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                        resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
-                        syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hT]
-                    | some _ =>
-                      cases hV : validateThreadIdArg (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
+                    cases hNt : st.getNotification? tcbObjId with
+                    | some ntfn =>
+                      cases hS : validateObjIdArg objId with
                       | error e =>
                         simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                          resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
-                          syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hT, hV]
-                      | ok vThreadId =>
-                        cases hS : validateObjIdArg objId with
+                          resolveSchedContextBindNotificationCode, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
+                          syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hNt, hS]
+                      | ok vScId =>
+                        simp only [hIdle, hRight, hTg, hNt, hS, Bool.false_eq_true, ↓reduceIte]
+                        apply RefusalCarrying.ofChecked_eq
+                        intro hA
+                        simp only [dispatchInvocationBy, resolveSchedContextBindNotificationCode, hD, hC,
+                          syscallResolveCap, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap, hRes, hL, hIdle, hRight,
+                          hTg, hNt, hS, Bool.false_eq_true, ↓reduceIte,
+                          schedContextBindNotification_of_admitted _ _ _ hA]
+                    | none =>
+                      cases hT : st.getTcb? (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
+                      | none =>
+                        simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
+                          resolveSchedContextBindNotificationCode, resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
+                          syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hNt, hT]
+                      | some _ =>
+                        cases hV : validateThreadIdArg (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
                         | error e =>
                           simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                            resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
-                            syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hT, hV, hS]
-                        | ok vScId =>
-                          simp only [hIdle, hRight, hTg, hT, hV, hS, Bool.false_eq_true,
-                            ↓reduceIte]
-                          apply RefusalCarrying.ofChecked_eq
-                          intro hA
-                          simp only [dispatchInvocationBy, resolveSchedContextBindThread, hD, hC,
-                            syscallLookupCap, syscallResolveCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap, hRes, hL, hIdle, hRight,
-                            hTg, hT, hV, hS, Bool.false_eq_true, ↓reduceIte,
-                            SchedContextOps.schedContextBind_of_admitted _ _ _ hA]
+                            resolveSchedContextBindNotificationCode, resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
+                            syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hNt, hT, hV]
+                        | ok vThreadId =>
+                          cases hS : validateObjIdArg objId with
+                          | error e =>
+                            simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
+                              resolveSchedContextBindNotificationCode, resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
+                              syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hNt, hT, hV, hS]
+                          | ok vScId =>
+                            simp only [hIdle, hRight, hTg, hNt, hT, hV, hS, Bool.false_eq_true,
+                              ↓reduceIte]
+                            apply RefusalCarrying.ofChecked_eq
+                            intro hA
+                            simp only [dispatchInvocationBy, resolveSchedContextBindNotificationCode, resolveSchedContextBindThread, hD, hC,
+                              syscallLookupCap, syscallResolveCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap, hRes, hL, hIdle, hRight,
+                              hTg, hNt, hT, hV, hS, Bool.false_eq_true, ↓reduceIte,
+                              SchedContextOps.schedContextBind_of_admitted _ _ _ hA]
                   | _ => simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                    resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
+                    resolveSchedContextBindNotificationCode, resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
                     syscallResolveCap, hRes, hL, hIdle, hRight, hTg]
                 · simp [RefusalCarrying.ofKernel, dispatchInvocationBy,
-                    resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
+                    resolveSchedContextBindNotificationCode, resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
                     syscallResolveCap, hRes, hL, hIdle, hRight]
     all_goals rfl
   case schedContextUnbind =>

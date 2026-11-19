@@ -32,6 +32,22 @@ open SeLe4n.Model.SystemState (MappingStage)
 open Architecture.RegisterDecode
 open Architecture.SyscallArgDecode
 
+/-- **The bind keeps the mappings recorded**: a context and a notification,
+each rewritten as the kind it was, neither holding a mapping fact. -/
+theorem schedContextBindNotification_mappingStage {vScId : SeLe4n.ValidObjId}
+    {n : SeLe4n.ObjId} {st st' : SystemState}
+    (h : schedContextBindNotification vScId n st = .ok ((), st')) :
+    SystemState.MappingStage st st' := by
+  obtain ⟨hA, rfl⟩ := schedContextBindNotification_ok_admitted h
+  obtain ⟨_, ntfn, hS, -, hN, -⟩ := schedContextBindNotificationAdmitted_facts hA
+  refine SystemState.MappingStage.of_invExt fun hInv => ?_
+  obtain ⟨h1, hEq⟩ := bindNotificationSchedLink_eq hS hN hInv
+  rw [hEq]
+  exact (updateSchedContext_mappingStage st _ _).trans
+    (SystemState.MappingStage.insert (pre := .notification ntfn) rfl h1 rfl
+      (by simp [KernelObject.objectType]))
+
+
 /-- WS-ZA ZA6.32: **the handler issue keeps the mappings recorded**: it writes
 the line's state, which no object holds, then installs a handler capability,
 which records no mapping, and its derivation edge. -/
@@ -234,15 +250,26 @@ theorem dispatchCapabilityOnly_mappingStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>
       try dsimp only [] at hStep
-      cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
-      | error e => simp only [hRes] at hStep; cases hStep
-      | ok vThreadId =>
-          simp only [hRes] at hStep
+      cases hN : resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | succ k =>
+          simp only [hN] at hStep
           cases hVal : validateObjIdArg scId with
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              exact schedContextBind_mappingStage hStep
+              exact schedContextBindNotification_mappingStage hStep
+      | zero =>
+          simp only [hN] at hStep
+          cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok vThreadId =>
+              simp only [hRes] at hStep
+              cases hVal : validateObjIdArg scId with
+              | error e => simp only [hVal] at hStep; cases hStep
+              | ok vScId =>
+                  simp only [hVal] at hStep
+                  exact schedContextBind_mappingStage hStep
     all_goals try cases hStep
   case schedContextUnbind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

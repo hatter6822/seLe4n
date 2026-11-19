@@ -6,6 +6,7 @@ import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Scheduling
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SuspendHolders
 import SeLe4n.Kernel.ReschedulePendingArms.Dispatch
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.ReplyHolderCancel
+import SeLe4n.Kernel.SchedContext.Invariant.NotificationLinkStages
 
 /-!
 # Every kernel entry keeps the run-queue link agreement
@@ -513,16 +514,28 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>
       try dsimp only [] at hStep
-      cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
-      | error e => simp only [hRes] at hStep; cases hStep
-      | ok vThreadId =>
-          simp only [hRes] at hStep
+      cases hN : resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | succ k =>
+          simp only [hN] at hStep
           cases hVal : validateObjIdArg scId with
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
               refine RunQueueStage.entry ?_
-              exact schedContextBind_runQueueStage hStep
+              exact schedContextBindNotification_runQueueStage hStep
+      | zero =>
+          simp only [hN] at hStep
+          cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok vThreadId =>
+              simp only [hRes] at hStep
+              cases hVal : validateObjIdArg scId with
+              | error e => simp only [hVal] at hStep; cases hStep
+              | ok vScId =>
+                  simp only [hVal] at hStep
+                  refine RunQueueStage.entry ?_
+                  exact schedContextBind_runQueueStage hStep
     all_goals try cases hStep
   case schedContextUnbind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

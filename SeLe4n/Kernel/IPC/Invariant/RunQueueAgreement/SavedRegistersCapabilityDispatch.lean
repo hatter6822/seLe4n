@@ -3,6 +3,7 @@ Copyright (c) 2026 seLe4n contributors. All rights reserved.
 Released under GPL-3.0-or-later license as described in the file LICENSE.
 -/
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SavedRegistersFinalise
+import SeLe4n.Kernel.SchedContext.Invariant.NotificationLinkStages
 
 /-!
 # The saved-register census over the capability-only dispatch
@@ -1661,6 +1662,8 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
     | exact hF (revokeServiceByRecordedRegistration_savedRegsKept hInv h)
     | exact hX (schedControlConfigure_savedRegsKeptExcept hInv h)
     | exact hX (schedContextBind_savedRegsKeptExcept hInv h)
+    | exact hF (savedRegsKept.of_unchangedOrNoTcb fun oid =>
+        (schedContextBindNotification_slots hInv h oid).imp id (·.1))
     | exact hX (bindNotification_savedRegsKeptExcept hInv h)
     | (cases h; rename_i hS
        first

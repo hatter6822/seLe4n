@@ -453,7 +453,13 @@ def chainNeutralConstructors : List (Name × String) :=
   , (privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt3,
       "stores the bound TCB and SchedContext; `scReply` is in neither assignment list")
   , (privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt4,
-      "stores `{ replyId := witnessReplyId }` — a fresh Reply, every link `none`") ]
+      "stores `{ replyId := witnessReplyId }` — a fresh Reply, every link `none`")
+    -- The notification link of a scheduling context (seL4-MCS's
+    -- `sc->scNotification` / `ntfn->ntfnSchedContext`): `{ sc with
+    -- notificationCode := _ }` and the notification's `schedContextCode`;
+    -- `scReply` is in neither assignment list.
+  , (`SeLe4n.Kernel.bindNotificationSchedLink,
+      "`{ sc with notificationCode := _ }` on the context, then the notification's `schedContextCode`; `scReply` is untouched") ]
 
 /-- Where the derived frontier and the primitive list disagree.
 

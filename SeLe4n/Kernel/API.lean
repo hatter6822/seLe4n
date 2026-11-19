@@ -68,6 +68,7 @@ import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.SchedContext.PriorityManagement
 import SeLe4n.Kernel.SchedContext.PriorityManagementPerCore
 import SeLe4n.Kernel.SchedContext.OperationsPerCore
+import SeLe4n.Kernel.SchedContext.NotificationLink
 import SeLe4n.Kernel.IPC.Operations.Donation
 import SeLe4n.Kernel.IPC.Invariant.DispatchArmPreservation
 import SeLe4n.Kernel.IPC.Invariant.YieldPreservation
@@ -83,6 +84,7 @@ import SeLe4n.Kernel.Architecture.IpcBufferValidation
 -- `.vspaceMap` / `.vspaceUnmap` arms dispatch through (initiator-atomic
 -- `perCoreTlb` retirement + translation-walk fill; projection-invisible).
 import SeLe4n.Kernel.Architecture.PerCoreTlbModel
+import SeLe4n.Kernel.SchedContext.Invariant.NotificationLinkIpc
 
 /-!
 # L-01/WS-E6: Unified Public Kernel API
@@ -2475,6 +2477,63 @@ theorem resolveSchedContextBindThread_ok_authorised
               | exact hTgt
               | exact congrArg CapTarget.object rfl
         all_goals (rw [hTgt] at h; cases h)
+
+/-- **seL4-MCS's `decodeSchedContext_Bind` on a notification capability**: the
+notification a `.schedContextBind` binds when its extra capability 0 is a
+notification capability, as a code — `0` when it is not one, the
+notification's id plus one when it is.
+
+The capability is resolved on the gate `resolveSchedContextBindThread` resolves
+it on (the caller's own CSpace, extra capability 0, `.write`), so the two
+readings of one operand are one lookup: a code of `0` leaves every refusal —
+the truncated message, the lookup fault, the missing right, the capability to
+an object of another kind — to the thread resolver, which answers them as it
+always has.  A nonzero code is a capability the caller holds, through the
+chokepoint's own reserved-object refusal, to a notification the store holds.
+The resolution reads the state and changes nothing, and builds no value but a
+number. -/
+def resolveSchedContextBindNotificationCode (callerTid : SeLe4n.ThreadId)
+    (args? : Except KernelError SchedContextBindArgs) (st : SystemState) : Nat :=
+  match args? with
+  | .error _ => 0
+  | .ok args =>
+    match st.getTcb? callerTid with
+    | none => 0
+    | some callerTcb =>
+      let gate : SyscallGate := {
+        callerId      := callerTid
+        cspaceRootCap := callerTcb.spaceCells[0]
+        capAddr       := args.tcbCPtr
+        requiredRight := .write
+      }
+      match syscallLookupArgumentCap bindThreadCapNumber gate st with
+      | .error _ => 0
+      | .ok (c, _) =>
+        match c.target with
+        | .object o =>
+          match st.getNotification? o with
+          | some _ => o.val + 1
+          | none => 0
+        | _ => 0
+
+/-- **The two readings of extra capability 0 are exclusive**: a capability the
+thread resolver answers is a TCB capability, so it is no notification's. -/
+theorem resolveSchedContextBindNotificationCode_eq_zero_of_thread
+    {callerTid : SeLe4n.ThreadId} {args? : Except KernelError SchedContextBindArgs}
+    {st : SystemState} {v : SeLe4n.ValidThreadId}
+    (h : resolveSchedContextBindThread callerTid args? st = .ok v) :
+    resolveSchedContextBindNotificationCode callerTid args? st = 0 := by
+  obtain ⟨args, callerTcb, tcbCap, hA, hC, hLk, -, hT, tcb, hTcb⟩ :=
+    resolveSchedContextBindThread_ok_authorised callerTid args? st v h
+  have hN : st.getNotification? v.val.toObjId = none := by
+    cases e : st.getNotification? v.val.toObjId with
+    | none => rfl
+    | some n =>
+      have a := (SystemState.getNotification?_eq_some_iff _ _ _).mp e
+      have b := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTcb
+      rw [a] at b; cases b
+  unfold resolveSchedContextBindNotificationCode syscallLookupArgumentCap
+  simp only [hA, hC, hLk, hT, hN]
 
 /-- **WS-ZA ZA6.4**: the scheduling context a configure through core `core`'s
 scheduling control names: seL4-MCS's `decodeSchedControl_ConfigureFlags` takes the
@@ -4887,7 +4946,17 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   | .schedContextBind =>
     some <| match cap.target with
     | .object scId =>
-      fun st => match resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      -- seL4-MCS's `decodeSchedContext_Bind` switches on extra capability 0's
+      -- type: a notification capability binds the context to the notification
+      -- (`schedContext_bindNtfn`); every other capability is the thread path.
+      fun st => match resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | k + 1 =>
+        match validateObjIdArg scId with
+        | .error e => .error e
+        | .ok vScId => schedContextBindNotification vScId ⟨k⟩ st
+      | 0 =>
+      match resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
       | .error e => .error e
       | .ok vThreadId =>
           -- AL7-H / WS-AL AL8 (cascades AK7-E): type-level sentinel rejection
@@ -5488,18 +5557,29 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>
       try dsimp only [] at hStep
-      cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
-      | error e => simp only [hRes] at hStep; cases hStep
-      | ok vThreadId =>
-          simp only [hRes] at hStep
+      cases hN : resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | succ k =>
+          simp only [hN] at hStep
           cases hVal : validateObjIdArg scId with
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              exact schedContextBind_preserves_ipcInvariantFull st st' vScId vThreadId
-                hObjInv hInv (schedContextBindingBidirectional_of_consistent
-                  hPack.schedContextLinks.binding hInv.donationOwnerValid)
-                (hPack.boundThreadNotDonationOwner tid vThreadId hSy hRes) hStep
+              exact schedContextBindNotification_preserves_ipcInvariantFull st st' vScId _ hObjInv hInv hStep
+      | zero =>
+          simp only [hN] at hStep
+          cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok vThreadId =>
+              simp only [hRes] at hStep
+              cases hVal : validateObjIdArg scId with
+              | error e => simp only [hVal] at hStep; cases hStep
+              | ok vScId =>
+                  simp only [hVal] at hStep
+                  exact schedContextBind_preserves_ipcInvariantFull st st' vScId vThreadId
+                    hObjInv hInv (schedContextBindingBidirectional_of_consistent
+                      hPack.schedContextLinks.binding hInv.donationOwnerValid)
+                    (hPack.boundThreadNotDonationOwner tid vThreadId hSy hRes) hStep
     all_goals try cases hStep
   case schedContextUnbind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -6058,8 +6138,10 @@ flow does not complete the signal: it receives on the endpoint as if the
 notification were idle, so the receiver learns nothing of the notification
 (`receiveCompletesSignal_lowEquivalent`).  seL4-MCS's
 `maybeDonateSchedContext` / `maybeReturnSchedContext` move a context bound to
-the notification; a notification holds no scheduling context in the model, so
-both are the identity here. -/
+the notification (`Notification.schedContext`, which `.schedContextBind` on a
+notification capability sets).  The receive does not move it yet: the donation
+and its return are the next cut of WS-SX SX7, and until it lands a receive that
+completes a signal leaves the notification's context where it is. -/
 
 /-- **The notification bound to `tid`** (`TCB.boundNotification`), as the id
 its code names; `⟨0⟩` for a thread with none, which a receive never reads
@@ -10145,11 +10227,33 @@ theorem dispatchCapabilityOnly_schedContextBind_eq
       = some (SchedContextOps.schedContextBind vScId vThreadId st) := by
   unfold dispatchCapabilityOnly
   rw [hSyscall, hTarget]
-  simp only [Option.map_some, hRes, hSc]
+  simp only [Option.map_some, resolveSchedContextBindNotificationCode_eq_zero_of_thread hRes, hRes,
+    hSc]
+
+/-- **The bind arm on a notification capability IS the notification bind**
+(seL4-MCS's `decodeSchedContext_Bind`, `cap_notification_cap`): under a
+SchedContext capability and extra capability 0 resolving to notification `n`,
+the arm's answer is `schedContextBindNotification` of the context and `n`. -/
+theorem dispatchCapabilityOnly_schedContextBind_notification_eq
+    (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (st : SystemState) (scId : SeLe4n.ObjId) (vScId : SeLe4n.ValidObjId) (k : Nat)
+    (hSyscall : decoded.syscallId = .schedContextBind)
+    (hTarget : cap.target = .object scId)
+    (hN : resolveSchedContextBindNotificationCode tid
+      (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st = k + 1)
+    (hSc : validateObjIdArg scId = .ok vScId) :
+    (dispatchCapabilityOnly decoded cap tid executingCore).map (fun f => f st)
+      = some (schedContextBindNotification vScId ⟨k⟩ st) := by
+  unfold dispatchCapabilityOnly
+  rw [hSyscall, hTarget]
+  simp only [Option.map_some, hN, hSc]
 
 /-- **`v0.35.204`**: the dispatch-level consequence of the resolver's refusal —
-a `.schedContextBind` whose TCB capability the resolver refuses commits nothing
-and answers that refusal, whatever SchedContext capability the caller holds.
+a `.schedContextBind` whose extra capability 0 is no notification capability
+(a notification capability is the notification bind's,
+`dispatchCapabilityOnly_schedContextBind_notification_eq`) and whose TCB
+capability the resolver refuses commits nothing and answers that refusal,
+whatever SchedContext capability the caller holds.
 With `resolveSchedContextBindThread_refuses_idle_capability` this is the successor
 of PR #889 review round 11's `dispatchCapabilityOnly_schedContextBind_idle_operand_refused`:
 the idle TCB is unreachable through the bind because the chokepoint refuses the
@@ -10159,10 +10263,12 @@ theorem dispatchCapabilityOnly_schedContextBind_idle_capability_refused
     (st : SystemState) (scId : SeLe4n.ObjId) (e : KernelError)
     (hSyscall : decoded.syscallId = .schedContextBind)
     (hTarget : cap.target = .object scId)
+    (hN : resolveSchedContextBindNotificationCode tid
+      (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st = 0)
     (hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st = .error e) :
     (dispatchCapabilityOnly decoded cap tid executingCore).map (fun f => f st) = some (.error e) := by
   unfold dispatchCapabilityOnly
   rw [hSyscall, hTarget]
-  simp only [Option.map_some, hRes]
+  simp only [Option.map_some, hN, hRes]
 
 end SeLe4n.Kernel

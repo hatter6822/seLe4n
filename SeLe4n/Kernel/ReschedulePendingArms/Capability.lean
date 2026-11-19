@@ -592,4 +592,41 @@ theorem pageTableUnmap_keyFrame (tableId : SeLe4n.ObjId) (st st' : SystemState)
         · exact storeObject_inert_keyFrame hObjInv hStep (by rw [hT']; rfl) rfl
 
 
+/-- The bind writes no machine state. -/
+theorem schedContextBindNotification_machine {vScId : SeLe4n.ValidObjId}
+    {n : SeLe4n.ObjId} {st st' : SystemState}
+    (h : schedContextBindNotification vScId n st = .ok ((), st')) : st'.machine = st.machine := by
+  obtain ⟨-, rfl⟩ := schedContextBindNotification_ok_admitted h
+  unfold bindNotificationSchedLink SystemState.modifyObject
+  exact SystemState.updateSchedContext_machine _ _ _
+
+/-- A raw insert that keeps its slot's scheduling-key inputs keeps the
+capability key frame. -/
+theorem capabilityKeyFrame_insert {st : SystemState} {k : SeLe4n.ObjId} {obj : KernelObject}
+    (hInv : st.objects.invExt) (hK : keyInputsOf (some obj) = keyInputsOf st.objects[k]?) :
+    capabilityKeyFrame st { st with objects := st.objects.insert k obj } := by
+  refine ⟨fun oid => ?_, rfl, RHTable_insert_preserves_invExt _ _ _ hInv⟩
+  show keyInputsOf (st.objects.insert k obj)[oid]? = _
+  simp only [RHTable_getElem?_eq_get?] at hK ⊢
+  by_cases hx : k = oid
+  · subst hx; rw [RobinHood.RHTable.getElem?_insert_self _ _ _ hInv]; exact hK
+  · rw [RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hx (eq_of_beq hb)) hInv]
+
+/-- **The bind keeps every scheduling key**: a context's key input is the sign of
+its budget, and a notification has none. -/
+theorem schedContextBindNotification_keyFrame {vScId : SeLe4n.ValidObjId}
+    {n : SeLe4n.ObjId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : schedContextBindNotification vScId n st = .ok ((), st')) : capabilityKeyFrame st st' := by
+  obtain ⟨hA, rfl⟩ := schedContextBindNotification_ok_admitted h
+  obtain ⟨sc, ntfn, hS, -, hN, -⟩ := schedContextBindNotificationAdmitted_facts hA
+  obtain ⟨h1, hEq⟩ := bindNotificationSchedLink_eq hS hN hInv
+  have hSraw := (SystemState.getSchedContext?_eq_some_iff st _ sc).mp hS
+  rw [hEq]
+  have k1 : capabilityKeyFrame st
+      (st.updateSchedContext (SeLe4n.SchedContextId.ofObjId vScId.val)
+        (fun sc => { sc with notificationCode := n.val + 1 })) := by
+    rw [SystemState.updateSchedContext_eq_of_some hS]
+    exact capabilityKeyFrame_insert hInv (by rw [hSraw]; rfl)
+  exact k1.trans (capabilityKeyFrame_insert k1.2.2 (by rw [h1]; rfl))
+
 end SeLe4n.Kernel
