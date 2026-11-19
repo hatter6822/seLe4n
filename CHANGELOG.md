@@ -178,7 +178,26 @@ split", 2026-11-19); its remainder is new rows SX8–SX12.
   row's families (2) and (7) move from SX7.1 to SX8.1.
 
 ### Heap readings
-HEAP_READINGS_PLACEHOLDER
+Measured on a fresh untraced archive at `9da2f80a0`
+(`test_qemu_heap_allocations_per_syscall.sh --lean-kernel`, PASS on the
+rpi5_machine `raspi5b` lane and on QEMU `virt`, twice; every reading line
+identical between the two runs and between the two lanes): 1,275 scenarios,
+2,558 readings. 2,382 read 0, among them `root-ipc-buffer-cap-unmap` and
+`vspace-unmap-first` (Page_Unmap on the frame capability), the
+`call-no-reply-*` and `no-reply-receive-*` resumes, the four
+`*-wrong-kind-refused` refusals, every `overflowed-*` step (now with
+`overflowed-service-register` measured as a round trip), and every IPC round
+trip. The other 176 are carves and read their objects' own pins: endpoint,
+notification and their child and window carves 248 bytes (6 cells; the
+windows 744 and 6448 for three and 26 objects), scheduling context 440 (8),
+reply 256 (10), TCB 2368 (25), CNode 1136 (23), page table 232 (8), frame 152
+(6), untyped 184 (7) and VSpace root 3568 (101). The notification and
+scheduling-context pins are 8 bytes above v0.37.32's because each record
+gains one boxed field (the `ntfnSchedContext` / `scNotification` link): the
+notification cell is now 128 bytes (was 120) and the scheduling-context cell
+288 (was 280); the cell counts are unchanged. The boot heap after the install
+is 110420 live allocations in 1356 of 16069 pages on `raspi5b` and 110064 in
+1351 on `virt`.
 
 ## v0.37.32 — capability arguments are extra capabilities, as seL4's
 
