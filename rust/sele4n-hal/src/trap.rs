@@ -670,7 +670,7 @@ pub fn restore_commit(
 
 /// **WS-BP BP7.4**: take the executing PE's restored flag.  The trap arms
 /// consult it once the context-restore seam is live (BP7.6): a replaced frame
-/// is resumed as it stands, never overwritten by a return frame or a poison.
+/// is resumed as it stands, never overwritten by a return frame or preempted by a halt.
 #[must_use]
 pub fn take_restored() -> bool {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
@@ -1322,6 +1322,19 @@ fn halt_after_delivered_syscall_fault(frame: &TrapFrame) -> ! {
     crate::cpu::fatal_halt()
 }
 
+/// The SVC fallback for a caller that blocked, or that its syscall left not
+/// runnable, when the dispatch installed no context: the hardware would
+/// otherwise `eret` into a thread the committed state does not run.  Its
+/// unblocking delivery is what resumes it, so the core stops instead.
+fn halt_after_unrestored_block(frame: &TrapFrame) -> ! {
+    crate::kprintln!(
+        "syscall left its caller blocked and no context restored; halting (x7=0x{:x} ELR=0x{:016x})",
+        frame.x7(),
+        frame.elr_el1
+    );
+    crate::cpu::fatal_halt()
+}
+
 #[cfg_attr(not(feature = "hw_target"), allow(dead_code))]
 fn halt_abort_before_lean_ready(core_id: u64, esr: u64, elr: u64) -> ! {
     crate::kprintln!(
@@ -1551,25 +1564,26 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                 // seam (a failed capability lookup delivered to its handler,
                 // or the fail-closed suspend).  No frame exists, and the
                 // model restarts the caller AT the `SVC` on its handler's
-                // reply — the `Blocked` sentinel would `eret` it past the
-                // `SVC` instead.  Reached only when the dispatch installed no
-                // context (the restore returns above), so this arm halts, as
-                // the delivered unknown-syscall and abort paths do.
+                // reply, so resuming it past the `SVC` would run a thread the
+                // model has waiting on a fault.  Reached only when the
+                // dispatch installed no context (the restore returns above),
+                // so this arm halts, as the delivered unknown-syscall and
+                // abort paths do.
                 Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {
                     halt_after_delivered_syscall_fault(frame);
                 }
+                // The caller blocked, or its syscall left it not runnable:
+                // no frame exists for it, and the delivery that unblocks it
+                // is the only thing that resumes it (seL4 never returns into
+                // a blocked thread).  Reached only when the dispatch
+                // installed no context (WS-BP BP7.6's restore returns above),
+                // where `trap.S` would `eret` through the caller's own saved
+                // frame into a thread the committed state does not run, so
+                // this arm halts.  It writes no frame: no `x1` label is
+                // reserved to mark a resume, so every label a receive
+                // returns is data (PR #1092 review).
                 Ok(crate::svc_dispatch::SvcOutcome::Blocked) => {
-                    // Reached only when the dispatch installed no context
-                    // (WS-BP BP7.6's restore returns above).  `trap.S` would
-                    // then `eret` through the blocked caller's own saved
-                    // frame, so poison it: left untouched, the caller's request
-                    // registers (an `x1` label of `0`) decode as a false
-                    // success carrying the caller's own capability
-                    // pointer as the "badge" (PR #866 review).  The
-                    // sentinel makes the premature resume fail closed —
-                    // its label decodes as `UnknownKernelError`, never as
-                    // success and never as a kernel-emitted error.
-                    frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());
+                    halt_after_unrestored_block(frame);
                 }
                 // PR #887 review: a word that names no `Syscall` is
                 // seL4's `UnknownSyscall` fault — delivered to the thread's
@@ -2778,6 +2792,18 @@ mod tests {
         frame.esr_el1 = ec::SVC_AARCH64 << 26;
         frame.gprs[7] = 2;
         halt_after_delivered_syscall_fault(&frame);
+    }
+
+    /// A caller left blocked with no context restored is never resumed with
+    /// a frame: the fallback halts.  On the host lane `fatal_halt` panics,
+    /// which is the observable.
+    #[test]
+    #[should_panic]
+    fn unrestored_block_halts() {
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::SVC_AARCH64 << 26;
+        frame.gprs[7] = 1;
+        halt_after_unrestored_block(&frame);
     }
 
     /// **PR #887 review**: a current-EL abort syndrome halts on its own class,

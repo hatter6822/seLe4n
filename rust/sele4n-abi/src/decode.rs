@@ -25,7 +25,6 @@
 //! The pre-WS-RA convention — `regs[0] != 0` *is* the error discriminant,
 //! everything else the caller's own stale registers — is retired.
 
-use crate::message_info::MAX_LABEL;
 use crate::MessageInfo;
 use sele4n_types::{Badge, KernelError, KernelResult, Syscall, SyscallError, ERROR_LABEL_BASE};
 
@@ -109,23 +108,22 @@ pub fn decode_issued(issued: Syscall, regs: [u64; 7]) -> KernelResult<SyscallRes
 
 /// Decode a receive's frame as the message it received: `x0` the badge, `x1`
 /// the message info, `x2`-`x5` the message registers.  Its label is data — a
-/// receive returns no kernel status, so a label in the status range is not
-/// read as an error.
+/// receive returns no kernel status, so a label anywhere in the field,
+/// `MAX_LABEL` included, is not read as an error.  That is libsel4's
+/// `seL4_Recv`: the frame is whatever the kernel wrote or left, returned as
+/// is.  A notification completing a `ReplyRecv` writes only `x0`
+/// (`badgeReturnFrame`), so its `x1` is the caller's own outgoing message
+/// info, whose label is the caller's to choose.
 ///
-/// Two words still fail closed.  An `x1` that does not decode as a
+/// One word still fails closed: an `x1` that does not decode as a
 /// well-formed `MessageInfo` is `InvalidMessageInfo`, as in
-/// [`decode_response`].  And `x1`'s label equal to [`MAX_LABEL`] is the trap
-/// layer's blocked-resume sentinel (`sele4n-hal`'s
-/// `BLOCKED_RESUME_SENTINEL_LABEL`, pinned to `MAX_LABEL` there): the frame of
-/// a caller resumed while still blocked, which no delivery writes (a delivered
-/// label is below `ERROR_LABEL_BASE`), so it is `UnknownKernelError` and never
-/// a received message.
+/// [`decode_response`].  No label is reserved: a caller the kernel left
+/// blocked is never resumed with a frame — the trap layer resumes the
+/// thread the committed state runs, and halts when the dispatch installed
+/// none (`sele4n-hal`'s `halt_after_unrestored_block`).
 #[inline]
 pub fn decode_received(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
     let msg_info = MessageInfo::decode(regs[1]).map_err(|_| KernelError::InvalidMessageInfo)?;
-    if msg_info.label() == MAX_LABEL {
-        return Err(KernelError::UnknownKernelError);
-    }
     Ok(SyscallResponse {
         x0: regs[0],
         msg_info,
@@ -292,8 +290,8 @@ mod tests {
         // fail-closed.
         let regs = [0, error_x1(61), 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
-        // The top of the range — the blocked-resume sentinel's label,
-        // discriminant 255 — is the same fail-closed answer.
+        // The top of the range — `MAX_LABEL`, discriminant 255, which no
+        // error has — is the same fail-closed answer to a `Call`.
         let regs = [0, error_x1(255), 0, 0, 0, 0, 0];
         assert_eq!(error_x1(255) >> 12, (1 << 52) - 1);
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
@@ -470,25 +468,39 @@ mod tests {
         }
     }
 
-    /// A receive resumed while still blocked gets the trap layer's sentinel
-    /// frame (label `MAX_LABEL`), which no delivery writes: it fails closed,
-    /// as it does for a `Call`, and is never a received message.
+    /// A notification completing a receive writes only `x0`, so the frame's
+    /// `x1` is the caller's own outgoing message info, and its label may be
+    /// any value `MessageInfo::new` accepts — `MAX_LABEL`, the top of the
+    /// status range, included.  Every receive reads that frame as the data it
+    /// is, and only a `Call` reads the same label as a status.
     #[test]
-    fn decode_received_fails_closed_on_the_blocked_resume_sentinel() {
-        let sentinel = [0, MAX_LABEL << 12, 0, 0, 0, 0, 0];
+    fn decode_received_reads_a_top_label_notification_completion_as_data() {
+        use crate::message_info::MAX_LABEL;
+        let outgoing = MessageInfo::new(2, 0, MAX_LABEL).expect("a user label at the field's top");
+        assert_eq!(outgoing.label(), MAX_LABEL);
+        // `badgeReturnFrame`: the badge in `x0`, every other register the
+        // caller's own.
+        let completed = [0x55, outgoing.encode().expect("in-field"), 11, 12, 0, 0, 0];
+        for issued in [
+            Syscall::ReplyRecv,
+            Syscall::Recv,
+            Syscall::NBRecv,
+            Syscall::Wait,
+        ] {
+            let resp = decode_issued(issued, completed)
+                .unwrap_or_else(|e| panic!("{issued:?} read a completion as status {e:?}"));
+            assert_eq!(resp.badge(), Badge::from(0x55u64));
+            assert_eq!(resp.msg_info(), outgoing);
+            assert_eq!(resp.msg_regs, [11, 12, 0, 0]);
+        }
         assert_eq!(
-            decode_received(sentinel),
-            Err(KernelError::UnknownKernelError)
+            decode_received(completed).map(|r| r.msg_info()),
+            Ok(outgoing)
         );
+        // The same frame answering a `Call` is the status it names.
         assert_eq!(
-            decode_response(sentinel),
+            decode_issued(Syscall::Call, completed),
             Err(KernelError::UnknownKernelError)
-        );
-        // One label below it is data.
-        let below = [0, (MAX_LABEL - 1) << 12, 0, 0, 0, 0, 0];
-        assert_eq!(
-            decode_received(below).map(|r| r.msg_info().label()),
-            Ok(MAX_LABEL - 1)
         );
     }
 }
