@@ -649,6 +649,27 @@ theorem schedContextUnbindOnCore_confinedToCores (vScId : SeLe4n.ValidObjId)
       (schedContextUnbind_confinedToCores vScId st stMid hUnbind)
       (priorityRescheduleOnCore_confinedToCores stMid st' _ executingCore true sgi hStep)
 
+/-- **The live `.schedContextUnbind` bound**: seL4-MCS's `SchedContext_Unbind`
+writes the thread unbind's cores, and the notification unbind writes no
+scheduler slot or machine state. -/
+theorem schedContextUnbindAllOnCore_confinedToCores (vScId : SeLe4n.ValidObjId)
+    (executingCore : CoreId) (st st' : SystemState)
+    (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hStep : SchedContextOps.schedContextUnbindAllOnCore vScId executingCore st
+      = .ok (st', sgi)) :
+    observableSlotsConfinedToCores st st'
+      (schedContextUnbindOnCoreWriteSet st vScId.val executingCore) := by
+  have hN : ∀ X : SystemState, observableSlotsConfinedToCores X
+      (unbindSchedContextNotification X (SeLe4n.SchedContextId.ofObjId vScId.val)) [] :=
+    fun X => observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+      (unbindSchedContextNotification_scheduler _ _) (unbindSchedContextNotification_machine _ _)
+  obtain ⟨stU, hU | ⟨-, hU, -⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok hStep
+  · obtain ⟨rfl, -⟩ := hU
+    exact observableSlotsConfinedToCores_mono (fun _ h => by simp at h) (hN _)
+  · exact observableSlotsConfinedToCores_mono (fun _ h => by simpa using h)
+      (observableSlotsConfinedToCores_trans
+        (schedContextUnbindOnCore_confinedToCores vScId executingCore st stU sgi hU) (hN stU))
+
 /-- WS-ZA ZA6.9 (**the live `.schedContextConsumed` bound**): the Consumed
 invocation writes no core's observable slot — `setConsumed` writes a context's
 count and its caller's saved registers, both in the object store. -/

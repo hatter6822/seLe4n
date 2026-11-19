@@ -260,7 +260,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
           match validateObjIdArg scId with
           | .error e => .error e
           | .ok vScId =>
-              match SchedContextOps.schedContextUnbindOnCore vScId
+              match SchedContextOps.schedContextUnbindAllOnCore vScId
                   executingCore st with
               | .ok (st', _) => .ok ((), st')
               | .error e => .error e
@@ -767,14 +767,11 @@ refusal is read where it is, never rebuilt. -/
       match validateObjIdArg scObjId with
       | .error e => .error (e, st)
       | .ok vScId =>
-        RefusalCarrying.ofCheckedThen (SchedContextOps.schedContextUnbindAdmitted st vScId)
-          (fun st => SchedContextOps.schedContextUnbindOnCorePerform st vScId executingCore)
-          (SchedContextOps.schedContextUnbind vScId)
-          (fun r =>
-            match SchedContext.PriorityManagement.priorityRescheduleOnCore r.2
-                (SchedContextOps.schedContextRunningCore? st vScId.val) executingCore true with
-            | .ok (st', _) => .ok ((), st')
-            | .error e => .error e) st
+        RefusalCarrying.ofCheckedThen
+          (SchedContextOps.schedContextUnbindAllAdmitted st vScId executingCore)
+          (fun st => SchedContextOps.schedContextUnbindAllPerform st vScId)
+          (SchedContextOps.schedContextUnbindAllOnCore vScId executingCore)
+          (fun r => .ok ((), r.1)) st
     | _ => .error (.invalidCapability 0, st)
   | .schedContextConsumed =>
     match cap.target with
@@ -1394,10 +1391,11 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       | ok vScId =>
         dsimp only
         refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
-        · simp only [dispatchInvocationBy, hS, SchedContextOps.schedContextUnbindOnCore]
-          rcases SchedContextOps.schedContextUnbind vScId st with _ | ⟨⟨⟩, st'⟩ <;> rfl
+        · simp only [dispatchInvocationBy, hS]
+          rcases SchedContextOps.schedContextUnbindAllOnCore vScId executingCore st with
+            _ | ⟨st', _⟩ <;> rfl
         intro hA
-        obtain ⟨sgi, hU⟩ := SchedContextOps.schedContextUnbindOnCore_of_admitted st vScId
+        obtain ⟨sgi, hU⟩ := SchedContextOps.schedContextUnbindAllOnCore_of_admitted st vScId
           executingCore hA
         simp only [dispatchInvocationBy, hS, hU]
     all_goals rfl

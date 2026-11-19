@@ -549,14 +549,14 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              cases hUn : SchedContextOps.schedContextUnbindOnCore vScId
+              cases hUn : SchedContextOps.schedContextUnbindAllOnCore vScId
                   executingCore st with
               | error e => simp only [hUn] at hStep; cases hStep
               | ok pair =>
                   obtain ⟨stU, sgiU⟩ := pair
                   simp only [hUn] at hStep
                   cases hStep
-                  exact schedContextUnbindOnCore_runQueueEntryStage hUn
+                  exact schedContextUnbindAllOnCore_runQueueEntryStage hUn
     all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

@@ -629,4 +629,19 @@ theorem schedContextBindNotification_keyFrame {vScId : SeLe4n.ValidObjId}
     exact capabilityKeyFrame_insert hInv (by rw [hSraw]; rfl)
   exact k1.trans (capabilityKeyFrame_insert k1.2.2 (by rw [h1]; rfl))
 
+/-- **The notification unbind keeps every scheduling key**: a context's key
+input is the sign of its budget, and a notification has none. -/
+theorem unbindSchedContextNotification_keyFrame (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) : capabilityKeyFrame st (unbindSchedContextNotification st s) := by
+  rcases unbindSchedContextNotification_shape st s hInv with h | ⟨sc, hS, h | ⟨n, ntfn, h1, h⟩⟩
+  · rw [h]; exact capabilityKeyFrame_of_objects_scheduler_eq hInv rfl rfl
+  all_goals
+    have hSraw := (SystemState.getSchedContext?_eq_some_iff st _ sc).mp hS
+    have k1 : capabilityKeyFrame st
+        (st.updateSchedContext s (fun c => { c with notificationCode := 0 })) := by
+      rw [SystemState.updateSchedContext_eq_of_some hS]
+      exact capabilityKeyFrame_insert hInv (by rw [hSraw]; rfl)
+  · rw [h]; exact k1
+  · rw [h]; exact k1.trans (capabilityKeyFrame_insert k1.2.2 (by rw [h1]; rfl))
+
 end SeLe4n.Kernel

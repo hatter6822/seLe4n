@@ -441,18 +441,6 @@ theorem schedControlConfigure_readyKeptStage {S : SeLe4n.ThreadId → Prop} {cor
       (setThreadCpuAffinityWithMigration_runQueueEntryStage hM).1
       (.of_stage (schedContextConfigure_runQueueStage h))
 
-theorem schedContextUnbindOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
-    {vScId : SeLe4n.ValidObjId} {ec : CoreId} {st st' : SystemState}
-    {sgi? : Option (CoreId × Concurrency.SgiKind)} (hD : st.currentDequeuedUnique)
-    (h : SchedContextOps.schedContextUnbindOnCore vScId ec st = .ok (st', sgi?)) :
-    readyKeptStage S st st' := by
-  unfold SchedContextOps.schedContextUnbindOnCore at h
-  split at h
-  · cases h
-  · rename_i stU hU
-    have A := SchedContextOps.schedContextUnbind_runQueueStage_of_dequeued vScId st stU hD hU
-    exact (readyKeptStage.of_stage A).trans A.1 (priorityRescheduleOnCore_readyKeptStage h)
-
 theorem schedContextConsumedOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     {s : SeLe4n.SchedContextId} {c : CoreId} {st st' : SystemState}
     (h : schedContextConsumedOnCore s c st = .ok st') : readyKeptStage S st st' := by
@@ -1001,14 +989,14 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              cases hUn : SchedContextOps.schedContextUnbindOnCore vScId
+              cases hUn : SchedContextOps.schedContextUnbindAllOnCore vScId
                   executingCore st with
               | error e => simp only [hUn] at hStep; cases hStep
               | ok pair =>
                   obtain ⟨stU, sgiU⟩ := pair
                   simp only [hUn] at hStep
                   cases hStep
-                  exact schedContextUnbindOnCore_readyKeptStage hD hUn
+                  exact schedContextUnbindAllOnCore_readyKeptStage hD hUn
     all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

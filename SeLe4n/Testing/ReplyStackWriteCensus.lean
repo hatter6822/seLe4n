@@ -459,7 +459,9 @@ def chainNeutralConstructors : List (Name × String) :=
     -- notificationCode := _ }` and the notification's `schedContextCode`;
     -- `scReply` is in neither assignment list.
   , (`SeLe4n.Kernel.bindNotificationSchedLink,
-      "`{ sc with notificationCode := _ }` on the context, then the notification's `schedContextCode`; `scReply` is untouched") ]
+      "`{ sc with notificationCode := _ }` on the context, then the notification's `schedContextCode`; `scReply` is untouched")
+  , (`SeLe4n.Kernel.unbindSchedContextNotification,
+      "`{ c with notificationCode := 0 }` on the context, then the notification's `schedContextCode`; `scReply` is untouched") ]
 
 /-- Where the derived frontier and the primitive list disagree.
 

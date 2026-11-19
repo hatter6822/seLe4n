@@ -1784,6 +1784,61 @@ private def schedContextBind_notification_capability : IO Unit := do
   | .error e =>
       failLine "scbind_ntfn_links_both_ends" s!"unexpected refusal: {repr e}"
 
+/-- **`.schedContextUnbind` is seL4-MCS's `SchedContext_Unbind`**: the
+context's thread and its notification are unbound (`schedContext_unbindAllTCBs`,
+`schedContext_unbindNtfn`); a context bound to no thread is unbound from its
+notification alone and the invocation succeeds; and a context bound to the
+invoking core's current thread is refused `illegalState` (seL4's
+`IllegalOperation`, `sc->scTcb == ksCurThread`).
+
+The caller's CNode holds a writable capability to context 60 at slot 0. -/
+private def schedContextUnbind_seL4_semantics : IO Unit := do
+  let caller : SeLe4n.ThreadId := ⟨1⟩
+  let other  : SeLe4n.ThreadId := ⟨2⟩
+  let cnId   : SeLe4n.ObjId := ⟨50⟩
+  let scObj  : SeLe4n.ObjId := ⟨60⟩
+  let scId   : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofObjId scObj
+  let nA     : SeLe4n.ObjId := ⟨80⟩
+  let w := AccessRightSet.ofList [.write]
+  let ntfnLinked : Notification :=
+    { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
+      schedContextCode := scId.val + 1 }
+  let mkSt (thread : Nat) (ntfnCode : Nat) : SystemState :=
+    mkState [
+      (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
+      (other.toObjId, .tcb (mkTcb 2)),
+      (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with
+        boundThreadCode := thread, notificationCode := ntfnCode }),
+      (nA, .notification ntfnLinked),
+      (cnId, .cnode (CNode.ofList 4 [(SeLe4n.Slot.ofNat 0, { target := .object scObj, rights := w })]))
+    ]
+  let decoded : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 0,
+      msgInfo := { length := 0, extraCaps := 0, label := 0 },
+      syscallId := .schedContextUnbind,
+      msgRegs := #[], inlineCount := 0, overflowCount := 0 }
+  let unlinked (st' : SystemState) : Bool :=
+    (st'.getSchedContext? scId).any (fun sc => decide (sc.notification = none)) &&
+      (st'.getNotification? nA).any (fun n => decide (n.schedContext = none)) &&
+      (st'.getSchedContext? scId).any (fun sc => decide (sc.boundThread = none))
+  match dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt 0 (nA.val + 1)) with
+  | .ok ((), st') =>
+      expect "scunbind_no_thread_unbinds_the_notification" (unlinked st')
+        "a context bound to no thread is unbound from its notification, both ends"
+  | .error e =>
+      failLine "scunbind_no_thread_unbinds_the_notification" s!"unexpected refusal: {repr e}"
+  match dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt (other.val + 1) (nA.val + 1)) with
+  | .ok ((), st') =>
+      expect "scunbind_thread_and_notification" (unlinked st')
+        "the context's thread and its notification are both unbound"
+  | .error e =>
+      failLine "scunbind_thread_and_notification" s!"unexpected refusal: {repr e}"
+  expect "scunbind_current_thread_context_refused"
+    (match dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt (caller.val + 1) 0) with
+     | .error .illegalState => true
+     | _ => false)
+    "the invoking core's current thread's context is not unbound (seL4 IllegalOperation)"
+
 /-- SD-060 (`v0.35.204`): **`.schedContextBind` binds only a thread the caller
 holds a WRITABLE TCB capability to.**
 
@@ -2938,6 +2993,7 @@ def main : IO Unit := do
   sd060_schedContextBind_requires_tcb_capability
   IO.println "--- .schedContextBind on a notification capability binds the notification ---"
   schedContextBind_notification_capability
+  schedContextUnbind_seL4_semantics
   IO.println "--- WS-ZA ZA6.4: a configure takes a core's scheduling control ---"
   sd063_schedContextConfigure_requires_sched_control
   IO.println "--- WS-BP BP7.1: an in-place retype never mints or destroys memory authority ---"

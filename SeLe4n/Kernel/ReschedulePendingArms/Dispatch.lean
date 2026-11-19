@@ -419,6 +419,25 @@ theorem capabilityKeyFrame.stepCoversInv {e : CoreId} {st st' : SystemState}
     SeLe4n.Kernel.stepCovers e st st' ∧ st'.objects.invExt :=
   ⟨h.stepCovers hRes hBank, h.2.2⟩
 
+/-- **`SchedContext_Unbind`**: the single-core thread unbind (the per-core
+form's seam writes nothing once the current thread's context is refused), then
+the notification unbind, which keeps every scheduling key. -/
+theorem schedContextUnbindAllOnCore_stepCovers (st st' : SystemState) (vScId : SeLe4n.ValidObjId)
+    (e : CoreId) (sgi? : Option (CoreId × SgiKind)) {ec : CoreId} (hObjInv : st.objects.invExt)
+    (hStep : SchedContextOps.schedContextUnbindAllOnCore vScId ec st = .ok (st', sgi?)) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  obtain ⟨stU, hU | ⟨-, -, hU⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok hStep
+  · obtain ⟨rfl, -⟩ := hU
+    exact (unbindSchedContextNotification_keyFrame _ _ hObjInv).stepCoversInv
+      (hRes := by rw [unbindSchedContextNotification_machine])
+      (hBank := banksKeptOffCore_of_eq (by rw [unbindSchedContextNotification_machine]))
+  · obtain ⟨C, hI⟩ := schedContextUnbind_stepCovers st stU vScId e hObjInv hU
+    obtain ⟨C2, hI2⟩ := (unbindSchedContextNotification_keyFrame _
+        (SeLe4n.SchedContextId.ofObjId vScId.val) hI).stepCoversInv (e := e)
+      (hRes := by rw [unbindSchedContextNotification_machine])
+      (hBank := banksKeptOffCore_of_eq (by rw [unbindSchedContextNotification_machine]))
+    exact ⟨stepCovers_trans C C2, hI2⟩
+
 /-- The `Call`-gated reply write keeps the capability key frame: it is a
 return-frame write or the identity (`Architecture.writeCallReturnWord_of_frame`). -/
 theorem writeCallReturnWord_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId) (w : UInt64)
@@ -1528,7 +1547,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
         | (rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hU]
            exact (writeCallReturnWord_keyFrame _ _ _ hInv).stepCoversInv
              (hRes := by rw [Architecture.writeCallReturnWord_machine]) (hBank := banksKeptOffCore_of_eq (by rw [Architecture.writeCallReturnWord_machine])))
-        | exact (schedContextUnbindOnCore_stepCovers _ _ _ _ _ hInv hU)
+        | exact (schedContextUnbindAllOnCore_stepCovers _ _ _ _ _ hInv hU)
         | exact (schedContextConsumedOnCore_stepCovers _ hInv hU)
         | exact (schedContextYieldToOnCore_stepCovers hInv hU)
         | exact (unbindNotification_keyFrame _ _ _ hInv hU).stepCoversInv

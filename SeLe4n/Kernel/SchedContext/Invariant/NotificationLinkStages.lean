@@ -29,6 +29,33 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Model.SystemState (RunQueueStage objStateMono_nonTcb)
 
+/-- **A context's notification link rewritten is a run-queue stage**: no view
+the stage reads reads the link. -/
+theorem notificationCodeWrite_runQueueStage {st : SystemState} {s : SeLe4n.SchedContextId}
+    {sc : SchedContext} (hS : st.getSchedContext? s = some sc) (c : Nat) :
+    RunQueueStage st (st.updateSchedContext s (fun sc => { sc with notificationCode := c })) := by
+  have hSraw := (SystemState.getSchedContext?_eq_some_iff st s sc).mp hS
+  have hU := SystemState.updateSchedContext_scheduler st s
+    (fun sc => { sc with notificationCode := c })
+  have hM := SystemState.updateSchedContext_machine st s
+    (fun sc => { sc with notificationCode := c })
+  exact RunQueueStage.insert (k := s.toObjId)
+    (obj := .schedContext { sc with notificationCode := c })
+    (congrArg SystemState.objects (SystemState.updateSchedContext_eq_of_some hS _))
+    (by rw [hU]) (by rw [hU]) (fun c => by rw [hSraw]; rfl)
+    (objStateMono_nonTcb (by rw [hSraw]; rfl) rfl) (by rw [hU])
+    (fun c => by rw [hSraw]; rfl) (by rw [hSraw]; rfl) (by rw [hSraw]; rfl) (by rw [hU])
+    (by rw [hM])
+
+/-- **A notification's scheduling-context link rewritten is a run-queue stage**. -/
+theorem notificationLinkInsert_runQueueStage {st : SystemState} {n : SeLe4n.ObjId}
+    {ntfn : Notification} (h1 : st.objects[n]? = some (.notification ntfn)) (c : Nat) :
+    RunQueueStage st
+      { st with objects := st.objects.insert n (.notification { ntfn with schedContextCode := c }) } :=
+  RunQueueStage.insert (k := n) (obj := .notification { ntfn with schedContextCode := c })
+    rfl rfl rfl (fun c => by rw [h1]; rfl) (objStateMono_nonTcb (by rw [h1]; rfl) rfl) rfl
+    (fun c => by rw [h1]; rfl) (by rw [h1]; rfl) (by rw [h1]; rfl) rfl rfl
+
 /-- **The bind is a run-queue stage**: two one-object writes, each giving every
 view the run-queue stage reads the value the replaced object gave. -/
 theorem bindNotificationSchedLink_runQueueStage {st : SystemState}
@@ -37,22 +64,18 @@ theorem bindNotificationSchedLink_runQueueStage {st : SystemState}
     RunQueueStage st (bindNotificationSchedLink st s n) := by
   refine RunQueueStage.of_invExt fun hInv => ?_
   obtain ⟨h1, hEq⟩ := bindNotificationSchedLink_eq hS hN hInv
-  have hSraw := (SystemState.getSchedContext?_eq_some_iff st s sc).mp hS
-  have hU := SystemState.updateSchedContext_scheduler st s
-    (fun sc => { sc with notificationCode := n.val + 1 })
-  have hM := SystemState.updateSchedContext_machine st s
-    (fun sc => { sc with notificationCode := n.val + 1 })
   rw [hEq]
-  refine (RunQueueStage.insert (k := s.toObjId)
-    (obj := .schedContext { sc with notificationCode := n.val + 1 })
-    (congrArg SystemState.objects (SystemState.updateSchedContext_eq_of_some hS _))
-    (by rw [hU]) (by rw [hU]) (fun c => by rw [hSraw]; rfl)
-    (objStateMono_nonTcb (by rw [hSraw]; rfl) rfl) (by rw [hU])
-    (fun c => by rw [hSraw]; rfl) (by rw [hSraw]; rfl) (by rw [hSraw]; rfl) (by rw [hU])
-    (by rw [hM])).trans ?_
-  exact RunQueueStage.insert (k := n) (obj := .notification { ntfn with schedContextCode := s.val + 1 })
-    rfl rfl rfl (fun c => by rw [h1]; rfl) (objStateMono_nonTcb (by rw [h1]; rfl) rfl) rfl
-    (fun c => by rw [h1]; rfl) (by rw [h1]; rfl) (by rw [h1]; rfl) rfl rfl
+  exact (notificationCodeWrite_runQueueStage hS _).trans (notificationLinkInsert_runQueueStage h1 _)
+
+/-- **The notification unbind read from the context's end is a run-queue
+stage.** -/
+theorem unbindSchedContextNotification_runQueueStage (st : SystemState)
+    (s : SeLe4n.SchedContextId) : RunQueueStage st (unbindSchedContextNotification st s) := by
+  refine RunQueueStage.of_invExt fun hInv => ?_
+  rcases unbindSchedContextNotification_shape st s hInv with h | ⟨sc, hS, h | ⟨n, ntfn, h1, h⟩⟩
+  · rw [h]; exact .refl st
+  · rw [h]; exact notificationCodeWrite_runQueueStage hS 0
+  · rw [h]; exact (notificationCodeWrite_runQueueStage hS 0).trans (notificationLinkInsert_runQueueStage h1 0)
 
 theorem schedContextBindNotification_runQueueStage {vScId : SeLe4n.ValidObjId}
     {n : SeLe4n.ObjId} {st st' : SystemState}
@@ -93,5 +116,71 @@ theorem schedContextBindNotification_slots {vScId : SeLe4n.ValidObjId}
       rw [SystemState.updateSchedContext_eq_of_some hS] at e
       rw [insertObjects_getElem_self _ _ _ hInv] at e; cases e
     · left; exact SystemState.updateSchedContext_objects_ne _ _ _ _ hs hInv
+
+/-- **`SchedContext_Unbind` is a kernel-entry stage**: the thread unbind's, then
+the notification unbind's stage. -/
+theorem schedContextUnbindAllOnCore_runQueueEntryStage {vScId : SeLe4n.ValidObjId}
+    {ec : Concurrency.CoreId} {st st' : SystemState}
+    {sgi : Option (Concurrency.CoreId × Concurrency.SgiKind)}
+    (h : SchedContextOps.schedContextUnbindAllOnCore vScId ec st = .ok (st', sgi)) :
+    SystemState.RunQueueEntryStage st st' := by
+  obtain ⟨stU, hU | ⟨-, hU, -⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok h
+  · obtain ⟨rfl, -⟩ := hU
+    exact (unbindSchedContextNotification_runQueueStage _ _).entry
+  · exact (schedContextUnbindOnCore_runQueueEntryStage hU).trans
+      (unbindSchedContextNotification_runQueueStage _ _).entry
+
+/-- **`SchedContext_Unbind` blocks no thread.** -/
+theorem schedContextUnbindAllOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
+    {vScId : SeLe4n.ValidObjId} {ec : Concurrency.CoreId} {st st' : SystemState}
+    {sgi : Option (Concurrency.CoreId × Concurrency.SgiKind)} (hD : st.currentDequeuedUnique)
+    (h : SchedContextOps.schedContextUnbindAllOnCore vScId ec st = .ok (st', sgi)) :
+    readyKeptStage S st st' := by
+  obtain ⟨stU, hU | ⟨-, -, hU⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok h
+  · obtain ⟨rfl, -⟩ := hU
+    exact .of_stage (unbindSchedContextNotification_runQueueStage _ _)
+  · have A := SchedContextOps.schedContextUnbind_runQueueStage_of_dequeued vScId st stU hD hU
+    exact (readyKeptStage.of_stage A).trans A.1
+      (.of_stage (unbindSchedContextNotification_runQueueStage _ _))
+
+/-- **The notification unbind read from the context's end writes a context's
+slot and a notification's alone**: every other slot is as it was, and neither
+written slot is or becomes a thread. -/
+theorem unbindSchedContextNotification_slots (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) :
+    ∀ oid : SeLe4n.ObjId, (unbindSchedContextNotification st s).objects[oid]? = st.objects[oid]? ∨
+      ((∀ x : TCB, st.objects[oid]? ≠ some (.tcb x)) ∧
+        (∀ x : TCB, (unbindSchedContextNotification st s).objects[oid]? ≠ some (.tcb x))) := by
+  intro oid
+  have hI1 := SystemState.updateSchedContext_preserves_objects_invExt st s
+    (fun c => { c with notificationCode := 0 }) hInv
+  have hSc : ∀ sc, st.getSchedContext? s = some sc →
+      (st.updateSchedContext s (fun c => { c with notificationCode := 0 })).objects[oid]? =
+        st.objects[oid]? ∨
+      ((∀ x : TCB, st.objects[oid]? ≠ some (.tcb x)) ∧
+        (∀ x : TCB, (st.updateSchedContext s
+          (fun c => { c with notificationCode := 0 })).objects[oid]? ≠ some (.tcb x))) := by
+    intro sc hS
+    have hSraw := (SystemState.getSchedContext?_eq_some_iff st s sc).mp hS
+    by_cases hs : s.toObjId = oid
+    · subst hs
+      right
+      refine ⟨fun x e => (by rw [hSraw] at e; cases e), fun x e => ?_⟩
+      rw [SystemState.updateSchedContext_eq_of_some hS] at e
+      rw [insertObjects_getElem_self _ _ _ hInv] at e; cases e
+    · left; exact SystemState.updateSchedContext_objects_ne _ _ _ _ hs hInv
+  rcases unbindSchedContextNotification_shape st s hInv with h | ⟨sc, hS, h | ⟨n, ntfn, h1, h⟩⟩
+  · rw [h]; exact Or.inl rfl
+  · rw [h]; exact hSc sc hS
+  · rw [h]
+    by_cases hn : oid = n
+    · subst hn
+      right
+      rcases hSc sc hS with e0 | ⟨e0, -⟩
+      · refine ⟨fun x e => (by rw [← e0, h1] at e; cases e), fun x e => ?_⟩
+        rw [insertObjects_getElem_self _ _ _ hI1] at e; cases e
+      · refine ⟨e0, fun x e => ?_⟩
+        rw [insertObjects_getElem_self _ _ _ hI1] at e; cases e
+    · rw [insertObjects_getElem_ne _ _ _ _ hn hI1]; exact hSc sc hS
 
 end SeLe4n.Kernel

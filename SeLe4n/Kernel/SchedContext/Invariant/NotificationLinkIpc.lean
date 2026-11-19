@@ -65,4 +65,35 @@ theorem schedContextBindNotification_preserves_ipcInvariantFull (st st' : System
     (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hObjInv)
     (updateSchedContext_boundKept_preserves_ipcInvariantFull _ _ _ hObjInv hInv (fun _ => rfl)) h1
 
+/-- **The notification unbind read from the context's end keeps the IPC
+bundle**: the context keeps its bound thread and the notification its read view
+and binding codes. -/
+theorem unbindSchedContextNotification_preserves_ipcInvariantFull (st : SystemState)
+    (s : SeLe4n.SchedContextId) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (unbindSchedContextNotification st s) := by
+  have hSc := updateSchedContext_boundKept_preserves_ipcInvariantFull st s
+    (fun c => { c with notificationCode := 0 }) hObjInv hInv (fun _ => rfl)
+  rcases unbindSchedContextNotification_shape st s hObjInv with h | ⟨sc, hS, h | ⟨n, ntfn, h1, h⟩⟩
+  · rw [h]; exact hInv
+  · rw [h]; exact hSc
+  · rw [h]
+    exact insertObjects_notificationSchedLink_preserves_ipcInvariantFull _ n ntfn 0
+      (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hObjInv) hSc h1
+
+/-- **`SchedContext_Unbind` keeps the IPC bundle**: the thread unbind (the
+current thread's context is refused, so the per-core form's seam writes nothing
+and the step is the single-core unbind), then the notification unbind. -/
+theorem schedContextUnbindAllOnCore_preserves_ipcInvariantFull
+    (st st' : SystemState) (vScId : SeLe4n.ValidObjId) (ec : Concurrency.CoreId)
+    (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) (hR : st.runQueueRefined)
+    (hStep : SchedContextOps.schedContextUnbindAllOnCore vScId ec st = .ok (st', sgi)) :
+    ipcInvariantFull st' := by
+  obtain ⟨stU, hU | ⟨-, -, hU⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok hStep
+  · obtain ⟨rfl, -⟩ := hU
+    exact unbindSchedContextNotification_preserves_ipcInvariantFull _ _ hObjInv hInv
+  · exact unbindSchedContextNotification_preserves_ipcInvariantFull _ _
+      ((SchedContextOps.schedContextUnbind_runQueueEntryStage vScId st stU hU).1 hObjInv hR).1
+      (schedContextUnbind_preserves_ipcInvariantFull st stU vScId hObjInv hInv hU)
+
 end SeLe4n.Kernel

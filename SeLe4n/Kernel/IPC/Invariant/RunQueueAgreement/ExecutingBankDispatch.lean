@@ -296,7 +296,8 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
        first
         | (rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hS]
            exact (bankFrame.writeCallReturnWord_caller _ hInv).bankAgree hA)
-        | exact hP (schedContextUnbindOnCore_schedPointPrefix hInv hS)
+        | exact hX (schedContextUnbindAllOnCore_savedRegsKeptExcept hInv hS)
+            (schedContextUnbindAllOnCore_stepCovers _ _ _ e' _ hInv hS)
         | exact schedContextConsumedOnCore_bankAgree hne hInv P.current hA hS
         | exact schedContextYieldToOnCore_bankAgree hne hInv hYA hYN P.current hA hS
         | exact hX (unbindNotification_savedRegsKeptExcept hInv hS)

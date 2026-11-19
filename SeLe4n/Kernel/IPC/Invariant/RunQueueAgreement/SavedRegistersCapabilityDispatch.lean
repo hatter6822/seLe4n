@@ -710,31 +710,44 @@ theorem SchedPointPrefix.currentFreeOrMatched {e : CoreId} {base st s st' : Syst
   · exact handleRescheduleSgiOnCore_currentFreeOrMatched P.inv
       (hQ.of_frame P.current P.bank (P.writes e)) h
 
-/-- WS-ZA ZA6.28: **the unbind on the executing core** writes no saved register,
-slot or bank before its scheduling point. -/
-theorem schedContextUnbindOnCore_schedPointPrefix {e : CoreId} {base st st' : SystemState}
-    {vScId : SeLe4n.ValidObjId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
-    (hInv : st.objects.invExt)
-    (h : SchedContextOps.schedContextUnbindOnCore vScId e st = .ok (st', sgi?)) :
-    ∃ s, SchedPointPrefix e base st s st' := by
-  unfold SchedContextOps.schedContextUnbindOnCore at h
-  split at h
-  · cases h
-  · rename_i stU hUn
-    have C := fun e' => schedContextUnbind_stepCovers st stU vScId e' hInv hUn
-    exact ⟨stU, .of_kept (schedContextUnbind_savedRegsKeptExcept hInv hUn)
-      (.of_stepCovers fun e' => (C e').1) ((C (otherCore e)).1.banksKept e (ne_otherCore e))
-      (C e).2 (SchedContext.PriorityManagement.priorityRescheduleOnCore_state_cases _ _ _ _ _ _ h)⟩
+/-- **The notification unbind writes no saved register**: it writes a context's
+slot and a notification's. -/
+theorem unbindSchedContextNotification_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
+    (st : SystemState) (s : SeLe4n.SchedContextId) (hInv : st.objects.invExt) :
+    savedRegsKeptExcept W st (unbindSchedContextNotification st s) := .of_eq fun t => by
+  have n1 : ∀ X : SystemState, (∀ x : TCB, X.objects[t.toObjId]? ≠ some (.tcb x)) →
+      X.savedRegs t = none := fun X hX => by
+    cases hr : X.savedRegs t with
+    | none => rfl
+    | some r => obtain ⟨x, hx, -⟩ := savedRegs_eq_some_iff.mp hr; exact absurd hx (hX x)
+  rcases unbindSchedContextNotification_slots st s hInv t.toObjId with e | ⟨h1, h2⟩
+  · cases hr : st.savedRegs t with
+    | none =>
+      cases hr' : (unbindSchedContextNotification st s).savedRegs t with
+      | none => rfl
+      | some r =>
+        obtain ⟨x, hx, rfl⟩ := savedRegs_eq_some_iff.mp hr'
+        rw [e] at hx
+        rw [savedRegs_eq_some_iff.mpr ⟨x, hx, rfl⟩] at hr; cases hr
+    | some r =>
+      obtain ⟨x, hx, rfl⟩ := savedRegs_eq_some_iff.mp hr
+      exact savedRegs_eq_some_iff.mpr ⟨x, e.trans hx, rfl⟩
+  · rw [n1 _ h2, n1 _ h1]
 
-/-- WS-ZA ZA6.25: **the unbind on the executing core** writes no saved register
-but its scheduling point's. -/
-theorem schedContextUnbindOnCore_savedRegsWrittenFree {e : CoreId} {st st' : SystemState}
-    {vScId : SeLe4n.ValidObjId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
-    (hInv : st.objects.invExt) (hU : currentsUnique st) (hN : st.currentNotResidentElsewhere)
-    (h : SchedContextOps.schedContextUnbindOnCore vScId e st = .ok (st', sgi?)) :
-    savedRegsWrittenFree e st st st' := by
-  obtain ⟨_, P⟩ := schedContextUnbindOnCore_schedPointPrefix (base := st) hInv h
-  exact P.writtenFree (offCoreFree_of_currentOn hU hN)
+/-- **`SchedContext_Unbind` writes no saved register**: the thread unbind (the
+current thread's context is refused, so no scheduling point runs), then the
+notification unbind. -/
+theorem schedContextUnbindAllOnCore_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
+    {vScId : SeLe4n.ValidObjId} {ec : CoreId} {st st' : SystemState}
+    {sgi? : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedContextUnbindAllOnCore vScId ec st = .ok (st', sgi?)) :
+    savedRegsKeptExcept W st st' := by
+  obtain ⟨stU, hU | ⟨-, -, hU⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok h
+  · obtain ⟨rfl, -⟩ := hU
+    exact unbindSchedContextNotification_savedRegsKeptExcept _ _ hInv
+  · exact (schedContextUnbind_savedRegsKeptExcept hInv hU).trans
+      (unbindSchedContextNotification_savedRegsKeptExcept _ _
+        (schedContextUnbind_stepCovers st stU vScId ec hInv hU).2)
 
 /-! ### The priority arms -/
 
@@ -1669,7 +1682,7 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
        first
         | (rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hS]
            exact writeCallReturnWord_savedRegsKeptOffCore _ hInv P.current hU hN)
-        | exact hW (schedContextUnbindOnCore_savedRegsWrittenFree hInv hU hN hS)
+        | exact hX (schedContextUnbindAllOnCore_savedRegsKeptExcept hInv hS)
         | exact hW (schedContextConsumedOnCore_savedRegsWrittenFree hInv hU hN hS)
         | exact hW (schedContextYieldToOnCore_savedRegsWrittenFree hInv hU hN hYA hYN hS)
         | exact hX (unbindNotification_savedRegsKeptExcept hInv hS)

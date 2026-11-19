@@ -12749,6 +12749,12 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def resolveSchedContextBindThread[^\n
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind =>\n    some <\| match cap\.target with\n    \| \.object scId =>(\n[ \t]*(--[^\n]*)?)*\n      fun st => match resolveSchedContextBindNotificationCode tid\n          \(schedContextBindArgsOf st tid decoded\.msgInfo\.extraCaps\) st with\n      \| k \+ 1 =>\n        match validateObjIdArg scId with\n        \| \.error e => \.error e\n        \| \.ok vScId => schedContextBindNotification vScId ⟨k⟩ st\n      \| 0 =>\n      match resolveSchedContextBindThread tid \(schedContextBindArgsOf st tid decoded\.msgInfo\.extraCaps\) st with" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def resolveSchedContextBindNotificationCode[^\n]*(\n([ \t][^\n]*)?)*        requiredRight := \.write(\n([ \t][^\n]*)?)*      match syscallLookupArgumentCap bindThreadCapNumber gate st with" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" rg -n '^theorem resolveSchedContextBindNotificationCode_eq_zero_of_thread($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+# seL4-MCS SchedContext_Unbind: the live arm runs the unbind that refuses the
+# invoking core's current thread's context before the thread unbind, then
+# unbinds the notification.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextUnbind =>(\n([ \t][^\n]*)?)*              match SchedContextOps\.schedContextUnbindAllOnCore vScId\n                  executingCore st with" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbindAllOnCore[^\n]*(\n([ \t][^\n]*)?)*      if schedContextRunningCore\? st vScId\.val == some executingCore then \.error \.illegalState\n      else\n        match schedContextUnbindOnCore vScId executingCore st with(\n([ \t][^\n]*)?)*unbindSchedContextNotification st. \(SeLe4n\.SchedContextId\.ofObjId vScId\.val\), sgi\)" SeLe4n/Kernel/SchedContext/OperationsPerCore.lean'
+run_check "INVARIANT" rg -n '^theorem schedContextUnbindAllOnCore_refuses_current($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/OperationsPerCore.lean
 run_check "INVARIANT" rg -n '^theorem resolveSchedContextBindThread_ok_authorised($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_schedContextBind_eq($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  tcbCPtr : SeLe4n\.CPtr$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean

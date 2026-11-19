@@ -1106,6 +1106,13 @@ def nonExecutedTransitionsPlain : List Name :=
   -- siblings equate it with what the entries commit.
   , `SeLe4n.Kernel.PriorityInheritance.settleResidencyAt
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.migrateRunQueueBucket
+  -- The preemption seam's state, which the `_of_admitted` proofs read
+  -- (`priorityRescheduleOnCore_eq_state`).  Its one compiled caller was the
+  -- per-core unbind's perform; seL4-MCS refuses the unbind of the invoking
+  -- core's current thread's context before the thread unbind, so that perform
+  -- is the single-core one (`schedContextUnbindAllPerform`) and no seam runs
+  -- this.
+  , `SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCoreState
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOp
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.setPriorityOp
   -- WS-ZA ZA6.31: the raw-id form of a per-core step, which no entry runs

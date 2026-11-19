@@ -4979,19 +4979,14 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
           match validateObjIdArg scId with
           | .error e => .error e
           | .ok vScId =>
-              -- WS-SM SM8.B (PR #861 review round 15): route through the
-              -- **per-core** unbind.  Revoking a SchedContext demotes its bound
-              -- thread to the legacy TCB priority, and the single-core form
-              -- cleared that thread's `current` slot without any scheduling
-              -- point — nothing in `syscallDispatchCrossCoreEntry` reschedules
-              -- locally, and `crossCoreSgiBody` deliberately emits nothing for
-              -- the executing core — so a thread that unbound its own
-              -- SchedContext kept running while the model said its core had no
-              -- current thread, so its next syscall is refused outright
-              -- (`vacatedCore_next_syscall_rejected`; round 43 corrected this
-              -- note, which claimed a boot-core misroute — that fallback sits
-              -- behind caller resolution and is never reached).
-              match SchedContextOps.schedContextUnbindOnCore vScId
+              -- seL4-MCS's `SchedContext_Unbind` (`invokeSchedContext_Unbind`):
+              -- refused `IllegalOperation` when the context's thread is the
+              -- executing core's current one; otherwise the thread unbind
+              -- (the **per-core** form, WS-SM SM8.B: a thread running on a
+              -- remote core is rescheduled there through its `.reschedule`
+              -- SGI) and then the notification unbind.  A context bound to no
+              -- thread is unbound from its notification alone.
+              match SchedContextOps.schedContextUnbindAllOnCore vScId
                   executingCore st with
               | .ok (st', _) => .ok ((), st')
               | .error e => .error e
@@ -5593,14 +5588,14 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              cases hUn : SchedContextOps.schedContextUnbindOnCore vScId
+              cases hUn : SchedContextOps.schedContextUnbindAllOnCore vScId
                   executingCore st with
               | error e => simp only [hUn] at hStep; cases hStep
               | ok pair =>
                   obtain ⟨stU, sgiU⟩ := pair
                   simp only [hUn] at hStep
                   cases hStep
-                  exact schedContextUnbindOnCore_preserves_ipcInvariantFull st st' vScId _
+                  exact schedContextUnbindAllOnCore_preserves_ipcInvariantFull st st' vScId _
                     sgiU hObjInv hInv
                     hR hUn
     all_goals try cases hStep
@@ -9635,16 +9630,16 @@ theorem dispatchWithCapChecked_tcbSetPriority_delegates
        | .error e => .error e) := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hDecode, hCaller, hValid]
 
-/-- **The live `.schedContextUnbind` arm routes to `schedContextUnbindOnCore`.**
+/-- **The live `.schedContextUnbind` arm routes to `schedContextUnbindAllOnCore`**,
+seL4-MCS's `SchedContext_Unbind`: the current thread's context refused, then the
+per-core thread unbind and the notification unbind.
 
 Round 15 of the PR #861 review found the arm calling the single-core
-`schedContextUnbind`, which clears the demoted thread's `current` slot and stops
-there.  No scheduling point follows it — `syscallDispatchCrossCoreEntry` only
-commits and fires the diff-recovered SGIs, and `crossCoreSgiBody` emits nothing
-for the executing core — so the thread returned to userspace still running while
-the model recorded its core as having no current thread, and its next syscall is
-refused (`vacatedCore_next_syscall_rejected`; round 43 corrected the earlier
-claim of a boot-core misroute, which caller resolution rules out). -/
+`schedContextUnbind`, whose cleared `current` slot no scheduling point followed,
+so a thread that unbound its own context kept running on a core the model
+recorded as idle (`vacatedCore_next_syscall_rejected`).  seL4 refuses that
+invocation, and so does this arm; a thread running on a remote core is
+rescheduled there through the per-core form's `.reschedule` SGI. -/
 theorem dispatchWithCapChecked_schedContextUnbind_delegates
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (scId : SeLe4n.ObjId) (vScId : SeLe4n.ValidObjId)
@@ -9654,7 +9649,7 @@ theorem dispatchWithCapChecked_schedContextUnbind_delegates
     (hDecode : ∃ a, decodeSchedContextUnbindArgs decoded = .ok a)
     (hValid : validateObjIdArg scId = .ok vScId) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-      (match SchedContextOps.schedContextUnbindOnCore vScId
+      (match SchedContextOps.schedContextUnbindAllOnCore vScId
               executingCore st with
        | .ok (st', _) => .ok ((), st')
        | .error e => .error e) := by
@@ -9819,7 +9814,7 @@ def syscallDelegates : SyscallId → Prop
         (∃ a, decodeSchedContextUnbindArgs decoded = .ok a) →
         validateObjIdArg scId = .ok vScId →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-          (match SchedContextOps.schedContextUnbindOnCore vScId
+          (match SchedContextOps.schedContextUnbindAllOnCore vScId
                   executingCore st with
            | .ok (st', _) => .ok ((), st')
            | .error e => .error e)

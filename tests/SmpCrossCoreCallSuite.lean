@@ -580,7 +580,7 @@ private def runRendezvousChecks : IO Unit := do
 #check @revokeService_preserves_ipcInvariantFull
 #check @schedContextConfigure_preserves_ipcInvariantFull
 #check @schedContextBind_preserves_ipcInvariantFull
-#check @schedContextUnbindOnCore_preserves_ipcInvariantFull
+#check @schedContextUnbindAllOnCore_preserves_ipcInvariantFull
 #check @setPriorityOnCore_preserves_ipcInvariantFull
 #check @setIPCBufferOp_preserves_ipcInvariantFull
 #check @writeReturnFrameToTcb_preserves_ipcInvariantFull

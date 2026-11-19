@@ -32,6 +32,31 @@ open SeLe4n.Model.SystemState (MappingStage)
 open Architecture.RegisterDecode
 open Architecture.SyscallArgDecode
 
+/-- **The notification unbind keeps the mappings recorded**: a context and a
+notification, each rewritten as the kind it was. -/
+theorem unbindSchedContextNotification_mappingStage (st : SystemState)
+    (s : SeLe4n.SchedContextId) : SystemState.MappingStage st (unbindSchedContextNotification st s) := by
+  refine SystemState.MappingStage.of_invExt fun hInv => ?_
+  rcases unbindSchedContextNotification_shape st s hInv with h | ⟨sc, hS, h | ⟨n, ntfn, h1, h⟩⟩
+  · rw [h]; exact SystemState.MappingStage.refl st
+  · rw [h]; exact updateSchedContext_mappingStage st _ _
+  · rw [h]
+    exact (updateSchedContext_mappingStage st _ _).trans
+      (SystemState.MappingStage.insert (pre := .notification ntfn) rfl h1 rfl
+        (by simp [KernelObject.objectType]))
+
+/-- **`SchedContext_Unbind` keeps the mappings recorded.** -/
+theorem schedContextUnbindAllOnCore_mappingStage {vScId : SeLe4n.ValidObjId}
+    {ec : Concurrency.CoreId} {st st' : SystemState}
+    {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)}
+    (h : SchedContextOps.schedContextUnbindAllOnCore vScId ec st = .ok (st', sgi?)) :
+    SystemState.MappingStage st st' := by
+  obtain ⟨stU, hU | ⟨-, hU, -⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok h
+  · obtain ⟨rfl, -⟩ := hU
+    exact unbindSchedContextNotification_mappingStage _ _
+  · exact (schedContextUnbindOnCore_mappingStage hU).trans
+      (unbindSchedContextNotification_mappingStage _ _)
+
 /-- **The bind keeps the mappings recorded**: a context and a notification,
 each rewritten as the kind it was, neither holding a mapping fact. -/
 theorem schedContextBindNotification_mappingStage {vScId : SeLe4n.ValidObjId}
@@ -283,14 +308,14 @@ theorem dispatchCapabilityOnly_mappingStage
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              cases hUn : SchedContextOps.schedContextUnbindOnCore vScId
+              cases hUn : SchedContextOps.schedContextUnbindAllOnCore vScId
                   executingCore st with
               | error e => simp only [hUn] at hStep; cases hStep
               | ok pair =>
                   obtain ⟨stU, sgiU⟩ := pair
                   simp only [hUn] at hStep
                   cases hStep
-                  exact schedContextUnbindOnCore_mappingStage hUn
+                  exact schedContextUnbindAllOnCore_mappingStage hUn
     all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

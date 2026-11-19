@@ -2560,26 +2560,6 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
         · rfl
   · contradiction
 
-/-- `.schedContextUnbind` (dispatch arm): the per-core wrapper adds the
-preemption seam, which §12 covers. -/
-theorem schedContextUnbindOnCore_preserves_ipcInvariantFull
-    (st st' : SystemState) (vScId : SeLe4n.ValidObjId) (ec : CoreId)
-    (sgi : Option (CoreId × Concurrency.SgiKind))
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hR : st.runQueueRefined)
-    (hStep : SchedContextOps.schedContextUnbindOnCore vScId ec st = .ok (st', sgi)) :
-    ipcInvariantFull st' := by
-  unfold SchedContextOps.schedContextUnbindOnCore at hStep
-  dsimp only [] at hStep
-  split at hStep
-  · contradiction
-  · rename_i stMid hUnbind
-    have hStage := (SchedContextOps.schedContextUnbind_runQueueEntryStage vScId st stMid hUnbind).1 hObjInv hR
-    exact priorityRescheduleOnCore_preserves_ipcInvariantFull stMid _ ec true st' sgi
-      hStage.1
-      (schedContextUnbind_preserves_ipcInvariantFull st stMid vScId hObjInv hInv hUnbind)
-      hStep
-
 -- ============================================================================
 -- §13  VSpace page-table arms (`.vspaceMap`, `.vspaceUnmap`)
 -- ============================================================================

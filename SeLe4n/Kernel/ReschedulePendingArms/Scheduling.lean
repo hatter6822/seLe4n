@@ -1517,20 +1517,6 @@ theorem schedContextUnbind_stepCovers (st st' : SystemState) (vScId : SeLe4n.Val
           exact SchedContextOps.purgeReplenishment_objects_invExt _ _ hInv1
   · contradiction
 
-/-- The dispatched unbind: the single-core unbind, then the running core's
-scheduling point. -/
-theorem schedContextUnbindOnCore_stepCovers (st st' : SystemState) (vScId : SeLe4n.ValidObjId)
-    (e : CoreId) (sgi? : Option (CoreId × SgiKind)) (hObjInv : st.objects.invExt)
-    (hStep : SchedContextOps.schedContextUnbindOnCore vScId e st = .ok (st', sgi?)) :
-    stepCovers e st st' ∧ st'.objects.invExt := by
-  unfold SchedContextOps.schedContextUnbindOnCore at hStep
-  split at hStep
-  · contradiction
-  · rename_i stMid hUnbind
-    obtain ⟨h1, hInvMid⟩ := schedContextUnbind_stepCovers st stMid vScId e hObjInv hUnbind
-    exact ⟨stepCovers_trans h1 (priorityRescheduleOnCore_stepCovers e _ _ _ _ _ hInvMid hStep),
-      priorityRescheduleOnCore_invExt e _ _ _ _ _ hInvMid hStep⟩
-
 /-! ### Priority inheritance and priority control -/
 
 theorem applyPriorityChangeOnCore_stepCovers (st st' : SystemState) (tid : SeLe4n.ThreadId)

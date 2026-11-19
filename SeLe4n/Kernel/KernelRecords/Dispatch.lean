@@ -57,6 +57,31 @@ theorem RecordsFrame.schedContextBindNotification {vScId : SeLe4n.ValidObjId}
   exact F.trans (RecordsFrame.insert F.invExt (by rw [h1]; rfl))
 
 
+/-- **The notification unbind keeps the records**: neither link word is in a
+record view. -/
+theorem RecordsFrame.unbindSchedContextNotification (st : SystemState)
+    (s : SeLe4n.SchedContextId) (hInv : st.objects.invExt) :
+    RecordsFrame st (_root_.SeLe4n.Kernel.unbindSchedContextNotification st s) := by
+  rcases unbindSchedContextNotification_shape st s hInv with h | ⟨sc, hS, h | ⟨n, ntfn, h1, h⟩⟩
+  · rw [h]; exact RecordsFrame.refl hInv
+  · rw [h]; exact RecordsFrame.updateSchedContext st s _ hInv
+  · rw [h]
+    have F := RecordsFrame.updateSchedContext st s (fun c => { c with notificationCode := 0 }) hInv
+    exact F.trans (RecordsFrame.insert F.invExt (by rw [h1]; rfl))
+
+/-- **`SchedContext_Unbind` keeps the records**: the thread unbind's frame,
+then the notification unbind's. -/
+theorem RecordsFrame.schedContextUnbindAllOnCore {vScId : SeLe4n.ValidObjId}
+    {ec : Concurrency.CoreId} {st st' : SystemState}
+    {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedContextUnbindAllOnCore vScId ec st = .ok (st', sgi?)) :
+    RecordsFrame st st' := by
+  obtain ⟨stU, hU | ⟨-, hU, -⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok h
+  · obtain ⟨rfl, -⟩ := hU
+    exact RecordsFrame.unbindSchedContextNotification _ _ hInv
+  · have F := RecordsFrame.schedContextUnbindOnCore hInv hU
+    exact F.trans (RecordsFrame.unbindSchedContextNotification _ _ F.invExt)
+
 /-- A stage onto a transition's state is a stage onto the state it returns. -/
 theorem RecordsStage.of_fst_eq {α : Type} {st st' : SystemState} {p : SystemState × α} {r : α}
     (s : RecordsStage st p.1) (h : p = (st', r)) : RecordsStage st st' := by
@@ -388,14 +413,14 @@ theorem dispatchCapabilityOnly_recordsStage
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              cases hUn : SchedContextOps.schedContextUnbindOnCore vScId
+              cases hUn : SchedContextOps.schedContextUnbindAllOnCore vScId
                   executingCore st with
               | error e => simp only [hUn] at hStep; cases hStep
               | ok pair =>
                   obtain ⟨stU, sgiU⟩ := pair
                   simp only [hUn] at hStep
                   cases hStep
-                  exact .of_frameK fun hI => RecordsFrame.schedContextUnbindOnCore hI hUn
+                  exact .of_frameK fun hI => RecordsFrame.schedContextUnbindAllOnCore hI hUn
     all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

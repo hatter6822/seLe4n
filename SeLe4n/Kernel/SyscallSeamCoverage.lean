@@ -692,7 +692,7 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
         · rename_i st₁ sgi hStep
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
           subst hDisp
-          exact schedLockSet_schedContextUnbindOnCore_coversWrites st st₁ vScId e sgi S hObjInv
+          exact schedLockSet_schedContextUnbindAllOnCore_coversWrites st st₁ vScId e sgi S hObjInv
             hStep hSched
         · exact absurd hDisp (by simp)
   -- ---- `.schedContextYieldTo` (WS-ZA ZA6.29) -------------------------------

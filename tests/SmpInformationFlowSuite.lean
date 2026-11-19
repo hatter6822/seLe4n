@@ -699,9 +699,12 @@ set_option maxRecDepth 8192
 #check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore_no_running_core
 #check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore_sgi_shape
 #check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore_local_reschedules
+#check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindAllOnCore
+#check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindAllOnCore_refuses_current
 #check @schedContextUnbindOnCoreWriteSet
 #check @schedContextUnbindOnCore_confinedToCores
-#check @schedContextUnbindOnCore_crossCoreNonInterference
+#check @schedContextUnbindAllOnCore_crossCoreNonInterference
+#check @schedContextUnbindAllOnCore_confinedToCores
 -- Round 15: the priority-control arms, and the shared effect they now name.
 #check @SeLe4n.Kernel.SchedContext.PriorityManagement.applyPriorityChangeOnCore
 #check @SeLe4n.Kernel.SchedContext.PriorityManagement.applyPriorityChangeOnCore_no_preempt

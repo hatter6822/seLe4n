@@ -41,6 +41,34 @@ def bindNotificationSchedLink (st : SystemState) (s : SeLe4n.SchedContextId)
   (st.updateSchedContext s (fun sc => { sc with notificationCode := n.val + 1 })).modifyObject n
     (mapNotificationSchedContext (s.val + 1))
 
+/-- **Whether context `s`'s clear reaches notification `n`**: the notification
+present and naming `s` back.  A clear read from the context's end clears the
+notification's end only then, so it never removes a link some other context
+holds. -/
+@[inline] def notificationNamesSchedContext (st : SystemState) (n : SeLe4n.ObjId)
+    (s : SeLe4n.SchedContextId) : Bool :=
+  match st.getNotification? n with
+  | some ntfn => ntfn.schedContextCode == s.val + 1
+  | none => false
+
+/-- **seL4-MCS's `schedContext_unbindNtfn`**, read from the context's end: the
+context's notification link cleared, and the notification's link to it.  The
+identity on a context bound to no notification and on an absent one.
+
+Whether the notification's end is cleared is read before either write, so the
+state is handed to the writes alone and each is made in place. -/
+def unbindSchedContextNotification (st : SystemState) (s : SeLe4n.SchedContextId) :
+    SystemState :=
+  match st.getSchedContext? s with
+  | none => st
+  | some sc =>
+    match sc.notificationCode with
+    | 0 => st
+    | k + 1 =>
+      let clearN := notificationNamesSchedContext st ⟨k⟩ s
+      let st1 := st.updateSchedContext s (fun c => { c with notificationCode := 0 })
+      if clearN then st1.modifyObject ⟨k⟩ (mapNotificationSchedContext 0) else st1
+
 /-- **seL4-MCS's `decodeSchedContext_Bind` and `invokeSchedContext_Bind` on a
 notification capability**: refused `illegalState` (seL4's `IllegalOperation`)
 when the context is already bound to a notification or the notification to a
@@ -167,5 +195,77 @@ theorem bindNotificationSchedLink_eq {st : SystemState} {s : SeLe4n.SchedContext
   have h1 : st1.objects[n]? = some (.notification ntfn) := by
     rw [SystemState.updateSchedContext_objects_ne _ _ _ _ hNe hInv]; exact hNraw
   exact ⟨h1, modifyObject_mapNotificationSchedContext_eq h1 _⟩
+
+/-- **The unbind's writes**: the identity, or the context's link cleared in its
+slot, or that and the notification's link cleared in its slot, which the first
+write leaves where it was. -/
+theorem unbindSchedContextNotification_shape (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) :
+    unbindSchedContextNotification st s = st ∨
+      ∃ sc, st.getSchedContext? s = some sc ∧
+        (unbindSchedContextNotification st s =
+            st.updateSchedContext s (fun c => { c with notificationCode := 0 }) ∨
+          ∃ (n : SeLe4n.ObjId) (ntfn : Notification),
+            (st.updateSchedContext s (fun c => { c with notificationCode := 0 })).objects[n]? =
+              some (.notification ntfn) ∧
+            unbindSchedContextNotification st s =
+              { st.updateSchedContext s (fun c => { c with notificationCode := 0 }) with
+                objects := (st.updateSchedContext s
+                  (fun c => { c with notificationCode := 0 })).objects.insert n
+                  (.notification { ntfn with schedContextCode := 0 }) }) := by
+  unfold unbindSchedContextNotification
+  cases hS : st.getSchedContext? s with
+  | none => exact Or.inl rfl
+  | some sc =>
+    simp only []
+    cases hC : sc.notificationCode with
+    | zero => exact Or.inl rfl
+    | succ k =>
+      refine Or.inr ⟨sc, rfl, ?_⟩
+      simp only []
+      cases hN : notificationNamesSchedContext st ⟨k⟩ s with
+      | false => exact Or.inl rfl
+      | true =>
+        right
+        unfold notificationNamesSchedContext at hN
+        cases hG : st.getNotification? ⟨k⟩ with
+        | none => rw [hG] at hN; cases hN
+        | some ntfn =>
+          have hSraw := (SystemState.getSchedContext?_eq_some_iff st s sc).mp hS
+          have hNraw := (SystemState.getNotification?_eq_some_iff st ⟨k⟩ ntfn).mp hG
+          have hNe : s.toObjId ≠ ⟨k⟩ := by
+            intro e; rw [e, hNraw] at hSraw; cases hSraw
+          have h1 : (st.updateSchedContext s (fun c => { c with notificationCode := 0 })).objects[(⟨k⟩ : SeLe4n.ObjId)]? =
+              some (.notification ntfn) := by
+            rw [SystemState.updateSchedContext_objects_ne _ _ _ _ hNe hInv]; exact hNraw
+          exact ⟨⟨k⟩, ntfn, h1, by
+            simp only [↓reduceIte]
+            exact modifyObject_mapNotificationSchedContext_eq h1 0⟩
+
+/-- The notification unbind read from the context's end writes the object
+store alone. -/
+theorem unbindSchedContextNotification_frame (st : SystemState) (s : SeLe4n.SchedContextId) :
+    (unbindSchedContextNotification st s).machine = st.machine ∧
+      (unbindSchedContextNotification st s).scheduler = st.scheduler := by
+  unfold unbindSchedContextNotification
+  split
+  · exact ⟨rfl, rfl⟩
+  · split
+    · exact ⟨rfl, rfl⟩
+    · dsimp only []
+      split
+      · unfold SystemState.modifyObject
+        exact ⟨SystemState.updateSchedContext_machine _ _ _,
+          SystemState.updateSchedContext_scheduler _ _ _⟩
+      · exact ⟨SystemState.updateSchedContext_machine _ _ _,
+          SystemState.updateSchedContext_scheduler _ _ _⟩
+
+theorem unbindSchedContextNotification_machine (st : SystemState) (s : SeLe4n.SchedContextId) :
+    (unbindSchedContextNotification st s).machine = st.machine :=
+  (unbindSchedContextNotification_frame st s).1
+
+theorem unbindSchedContextNotification_scheduler (st : SystemState) (s : SeLe4n.SchedContextId) :
+    (unbindSchedContextNotification st s).scheduler = st.scheduler :=
+  (unbindSchedContextNotification_frame st s).2
 
 end SeLe4n.Kernel
