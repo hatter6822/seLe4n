@@ -178,6 +178,33 @@ theorem sendSideQueueStructureNeighbor?_block (st : SystemState)
       = (st.getEndpoint? endpointId).bind (·.sendQ.tail) := by
   unfold sendSideQueueStructureNeighbor?; rw [hNone]; rfl
 
+/-- **Whether a call that finds `receiver` waiting is linked to its reply
+object**: seL4's `reply != NULL && (canGrant || canGrantReply)` in `sendIPC`
+-- the receiver stashed a reply object on its receive
+(`TCB.pendingReceiveReplyCode`, read in the pre-state, which the pop does not
+change) and the payload may link one (`SendPayload.canLinkReply`).  A call that
+is not linked delivers its message and leaves its caller `Inactive`, with no
+reply and no donation. -/
+@[inline] def callRendezvousLinks (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (payload : SendPayload) : Bool :=
+  payload.canLinkReply &&
+    match st.getTcb? receiver with
+    | some rt => rt.pendingReceiveReplyCode != 0
+    | none => false
+
+/-- Where the receiver stashed a reply object, the call links exactly when its
+capability had `Grant` or `GrantReply`. -/
+theorem callRendezvousLinks_of_stash {st : SystemState} {receiver : SeLe4n.ThreadId}
+    {rt : TCB} {rid : SeLe4n.ReplyId} (payload : SendPayload)
+    (hT : st.getTcb? receiver = some rt) (hRid : rt.pendingReceiveReply = some rid) :
+    callRendezvousLinks st receiver payload = payload.canLinkReply := by
+  unfold callRendezvousLinks
+  rw [hT]
+  have hNz : rt.pendingReceiveReplyCode ≠ 0 := by
+    intro h0
+    simp [TCB.pendingReceiveReply, h0, SeLe4n.ReplyId.ofOptCode] at hRid
+  simp [hNz]
+
 /-- WS-SM SM6.A.5: the SchedContext the caller would donate on this call — the
 context it *effectively holds*, bound or donated, if any.  Only an `.unbound`
 caller donates nothing, so the SC write lock is in the footprint exactly when the
@@ -208,6 +235,21 @@ def endpointCallServerFirstReply? (st : SystemState) (endpointId : SeLe4n.ObjId)
   (endpointCallReceiver? st endpointId).bind fun receiver =>
     (st.getTcb? receiver).bind (·.pendingReceiveReply)
 
+/-- **Whether the call this footprint is for links a reply**: the receiver the
+call meets (`endpointCallReceiver?`) is one it is linked to
+(`callRendezvousLinks`, read from the same pre-state the transition reads).
+Only a linking call donates, links the stashed Reply and joins the receiver's
+reply waiters, so the footprint declares those writes only for it. -/
+def endpointCallLinksReply (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (payload : SendPayload) : Bool :=
+  match endpointCallReceiver? st endpointId with
+  | some receiver => callRendezvousLinks st receiver payload
+  | none => false
+
+/-- A resolved member the call writes only when it links a reply. -/
+@[inline] def ifCallLinks {α : Type} (links : Bool) (member : Option α) : Option α :=
+  if links then member else none
+
 /-- WS-SM SM6.A.1: the concrete lock-set a cross-core `endpointCallOnCore` on
 state `st` acquires — `lockSet_endpointCall` with the receiver, donated
 SchedContext, and (SM6.D, PR #822 review) the server-first stashed reply object
@@ -224,11 +266,18 @@ def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- whether it installs capabilities depends on its grant right (WS-ZA
     -- ZA4.7: and on what its frame asks for, `sendCapRequest`). Defaulted to
     -- an ungranted frame, which transfers nothing, so every capless call site
-    -- reduces definitionally to the pre-RR7.8 footprint.
-    (payload : SendPayload := .frame none false false) : LockSet :=
+    -- reduces definitionally to the pre-RR7.8 footprint; the default carries
+    -- `GrantReply`, so it is a call that links the reply a receiver stashed
+    -- (`endpointCallLinksReply`), seL4's ordinary call.
+    (payload : SendPayload := .frame none false true) : LockSet :=
   lockSet_endpointCall caller cnodeRootObjId endpointId
-    (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st endpointId caller)
-    (endpointCallServerFirstReply? st endpointId)
+    (endpointCallReceiver? st endpointId)
+    -- seL4's `sendIPC`: a call that links no reply donates nothing and links
+    -- no Reply (`endpointCallLinksReply`), so neither is declared for it.
+    (ifCallLinks (endpointCallLinksReply st endpointId payload)
+      (endpointCallDonatedSc? st endpointId caller))
+    (ifCallLinks (endpointCallLinksReply st endpointId payload)
+      (endpointCallServerFirstReply? st endpointId))
     -- **WS-RR RR7.8**: the capability-transfer destination, resolved from the
     -- same pre-state expression `endpointCallWithCaps` reads
     -- (`rendezvousCapsDestination?`), so the declared footprint and the
@@ -242,30 +291,38 @@ def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- frame the push rewrites below the one it adds -- read off the very
     -- context `endpointCallDonatedSc?` resolves, so the footprint and the push
     -- cannot disagree about which stack is extended.
-    ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st))
+    (ifCallLinks (endpointCallLinksReply st endpointId payload)
+      ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st)))
     -- **WS-ZA ZA4.6**: and the receiver's old reply-waiter head, which the
     -- rendezvous's `linkReplyWaiter caller receiver` relinks -- read off the
     -- receiver `endpointCallReceiver?` resolves.
-    ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st))
+    (ifCallLinks (endpointCallLinksReply st endpointId payload)
+      ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st)))
 
 /-- **WS-RR RR7.8**: the capless resolved call footprint is the pre-RR7.8 one
-(an ungranted frame names no destination, `rendezvousCapsDestination?_ungranted`), so every statement and fixture taken over the four-argument form
-survives unchanged. -/
+(an ungranted frame names no destination, `rendezvousCapsDestination?_ungranted`),
+its link-dependent members declared exactly when the call links a reply. -/
 theorem lockSet_endpointCallOnCore_capless (st : SystemState)
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) :
+    (cnodeRootObjId : SeLe4n.ObjId) (badge : Option SeLe4n.Badge) (grantReply : Bool) :
     lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId
+        (.frame badge false grantReply)
       = lockSet_endpointCall caller cnodeRootObjId endpointId
-          (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st endpointId caller)
-          (endpointCallServerFirstReply? st endpointId) none
+          (endpointCallReceiver? st endpointId)
+          (ifCallLinks (endpointCallLinksReply st endpointId (.frame badge false grantReply))
+            (endpointCallDonatedSc? st endpointId caller))
+          (ifCallLinks (endpointCallLinksReply st endpointId (.frame badge false grantReply))
+            (endpointCallServerFirstReply? st endpointId)) none
           -- **WS-OD OD3.11**: "capless" is about the *message*, not about the
           -- queue.  A call that carries no capabilities still pops or enqueues,
           -- so the neighbour member is resolved here rather than `none`.
           (sendSideQueueStructureNeighbor? st endpointId)
           -- **WS-OD (`v0.35.4`)**: and the old head, for the same reason.
-          ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st))
+          (ifCallLinks (endpointCallLinksReply st endpointId (.frame badge false grantReply))
+            ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st)))
           -- **WS-ZA ZA4.6**: and the reply-waiter head, for the same reason.
-          ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st)) := by
+          (ifCallLinks (endpointCallLinksReply st endpointId (.frame badge false grantReply))
+            ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st))) := by
   simp only [lockSet_endpointCallOnCore, rendezvousCapsDestination?_ungranted]
 
 /-- **WS-RR RR7.8**: the concrete lock-set a cross-core caps-carrying `.send`
@@ -347,33 +404,6 @@ theorem lockSet_endpointCallWithCaps_eq_call_some (callerTid : SeLe4n.ThreadId)
 -- ============================================================================
 -- §4 The cross-core endpoint-call transition (plan §3.2)
 -- ============================================================================
-
-/-- **Whether a call that finds `receiver` waiting is linked to its reply
-object**: seL4's `reply != NULL && (canGrant || canGrantReply)` in `sendIPC`
--- the receiver stashed a reply object on its receive
-(`TCB.pendingReceiveReplyCode`, read in the pre-state, which the pop does not
-change) and the payload may link one (`SendPayload.canLinkReply`).  A call that
-is not linked delivers its message and leaves its caller `Inactive`, with no
-reply and no donation. -/
-@[inline] def callRendezvousLinks (st : SystemState) (receiver : SeLe4n.ThreadId)
-    (payload : SendPayload) : Bool :=
-  payload.canLinkReply &&
-    match st.getTcb? receiver with
-    | some rt => rt.pendingReceiveReplyCode != 0
-    | none => false
-
-/-- Where the receiver stashed a reply object, the call links exactly when its
-capability had `Grant` or `GrantReply`. -/
-theorem callRendezvousLinks_of_stash {st : SystemState} {receiver : SeLe4n.ThreadId}
-    {rt : TCB} {rid : SeLe4n.ReplyId} (payload : SendPayload)
-    (hT : st.getTcb? receiver = some rt) (hRid : rt.pendingReceiveReply = some rid) :
-    callRendezvousLinks st receiver payload = payload.canLinkReply := by
-  unfold callRendezvousLinks
-  rw [hT]
-  have hNz : rt.pendingReceiveReplyCode ≠ 0 := by
-    intro h0
-    simp [TCB.pendingReceiveReply, h0, SeLe4n.ReplyId.ofOptCode] at hRid
-  simp [hNz]
 
 /-- WS-SM SM6.A.1 (plan §3.2): endpoint call across cores.
 
@@ -718,16 +748,21 @@ kind permitted for `.call`. This is the form the runtime acquisition consumes,
 so its correctness is a corollary of the parametric `lockSet_consistent_call`. -/
 theorem lockSet_endpointCallOnCore_correct
     (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload := .frame none false false) :
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload := .frame none false true) :
     ∀ p ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs,
       p.fst.kind ∈ permittedKinds .call :=
   lockSet_consistent_call caller cnodeRootObjId endpointId
-    (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st endpointId caller)
-    (endpointCallServerFirstReply? st endpointId)
+    (endpointCallReceiver? st endpointId)
+    (ifCallLinks (endpointCallLinksReply st endpointId payload)
+      (endpointCallDonatedSc? st endpointId caller))
+    (ifCallLinks (endpointCallLinksReply st endpointId payload)
+      (endpointCallServerFirstReply? st endpointId))
     (rendezvousCapsDestination? st endpointId caller payload)
     (sendSideQueueStructureNeighbor? st endpointId)
-    ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st))
-    ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st))
+    (ifCallLinks (endpointCallLinksReply st endpointId payload)
+      ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st)))
+    (ifCallLinks (endpointCallLinksReply st endpointId payload)
+      ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st)))
 
 /-- **WS-RR RR7.8**: the send footprint's kinds are permitted too, over every
 message — the send side's first resolved-footprint correctness statement. -/
@@ -842,9 +877,11 @@ gets its links.  OD4.7 found the push's four keys were declared members already:
   one at every chain depth.  The old head the push reads is read out of that same
   object, under that same write lock.
 * the Reply, by `endpointCallServerFirstReply?` -- declared since SM6.D for the
-  rendezvous's own `linkServerStashedReply` write.  `endpointCall`'s rendezvous
-  arm fails closed unless the woken server stashed a Reply and links it to *this*
-  caller, so the Reply the push then finds in `TCB.replyObject` is that one.
+  rendezvous's own `linkServerStashedReply` write.  The rendezvous donates only
+  on a call that links a reply (`endpointCallLinksReply`: the woken server
+  stashed one and the capability had `Grant` or `GrantReply`), and it links that
+  Reply to *this* caller, so the Reply the push then finds in `TCB.replyObject`
+  is that one.
 * the caller's TCB and the receiver's TCB, which the rendezvous writes anyway.
 
 OD4.7 concluded that a push adds no member.  That was true of the singly linked
@@ -862,7 +899,8 @@ theorem lockSet_endpointCallOnCore_covers_donationPush
     (scId : SeLe4n.SchedContextId) (rid : SeLe4n.ReplyId) (receiver : SeLe4n.ThreadId)
     (hSc : endpointCallDonatedSc? st endpointId caller = some scId)
     (hRid : endpointCallServerFirstReply? st endpointId = some rid)
-    (hRecv : endpointCallReceiver? st endpointId = some receiver) :
+    (hRecv : endpointCallReceiver? st endpointId = some receiver)
+    (hLinks : endpointCallLinksReply st endpointId payload = true) :
     (schedContextLock scId, AccessMode.write)
         ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs ∧
     (replyLock rid, AccessMode.write)
@@ -872,6 +910,7 @@ theorem lockSet_endpointCallOnCore_covers_donationPush
     (tcbLock receiver, AccessMode.write)
         ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs := by
   unfold lockSet_endpointCallOnCore
+  simp only [ifCallLinks, hLinks, ↓reduceIte]
   rw [hSc, hRid, hRecv]
   exact ⟨lockSet_endpointCall_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _,
     lockSet_endpointCall_reply_write_mem _ _ _ _ _ _ _ _ _ _,
@@ -888,10 +927,12 @@ theorem lockSet_endpointCallOnCore_covers_donationOldHead
     (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload)
     (scId : SeLe4n.SchedContextId) (oldHead : SeLe4n.ReplyId)
     (hSc : endpointCallDonatedSc? st endpointId caller = some scId)
-    (hOld : replyStackHead? st scId = some oldHead) :
+    (hOld : replyStackHead? st scId = some oldHead)
+    (hLinks : endpointCallLinksReply st endpointId payload = true) :
     (replyLock oldHead, AccessMode.write)
         ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs := by
   unfold lockSet_endpointCallOnCore
+  simp only [ifCallLinks, hLinks, ↓reduceIte]
   rw [hSc]
   have h2 : Option.bind (some scId) (replyStackHead? st) = some oldHead := hOld
   rw [h2]
@@ -906,15 +947,45 @@ theorem lockSet_endpointCallOnCore_covers_replyWaiterOldHead
     (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload)
     (receiver oldHead : SeLe4n.ThreadId)
     (hRecv : endpointCallReceiver? st endpointId = some receiver)
-    (hHead : st.replyWaitersHead? receiver = some oldHead) :
+    (hHead : st.replyWaitersHead? receiver = some oldHead)
+    (hLinks : endpointCallLinksReply st endpointId payload = true) :
     (tcbLock oldHead, AccessMode.write)
         ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs := by
   unfold lockSet_endpointCallOnCore
+  simp only [ifCallLinks, hLinks, ↓reduceIte]
   rw [hRecv]
   have h2 : Option.bind (some receiver) (SystemState.replyWaitersHead? st) = some oldHead :=
     hHead
   rw [h2]
   exact lockSet_endpointCall_replyWaiterOldHead_write_mem _ _ _ _ _ _ _ _ _ _
+
+
+/-- **The footprint's link decision is the transition's**: on the endpoint the
+call meets a receiver at, `endpointCallLinksReply` is the `callRendezvousLinks`
+the rendezvous branches on, read from the same pre-state, so the members the
+footprint gates on it are declared exactly when the transition writes them. -/
+theorem endpointCallLinksReply_eq_of_head {st : SystemState} {endpointId : SeLe4n.ObjId}
+    {ep : Endpoint} {receiver : SeLe4n.ThreadId} (payload : SendPayload)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.receiveQ.head = some receiver) :
+    endpointCallLinksReply st endpointId payload = callRendezvousLinks st receiver payload := by
+  unfold endpointCallLinksReply endpointCallReceiver?
+  rw [hEp]
+  simp only [hHead]
+
+/-- **A call that links no reply declares none of the link's members**: no
+SchedContext, no Reply, no donation old head and no reply-waiter head — the
+writes its transition does not make (`endpointCallOnCore`'s no-link branch:
+the receive completion, the wake and the caller's deschedule and state). -/
+theorem lockSet_endpointCallOnCore_of_noLink (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload)
+    (hNo : endpointCallLinksReply st endpointId payload = false) :
+    lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload
+      = lockSet_endpointCall caller cnodeRootObjId endpointId
+          (endpointCallReceiver? st endpointId) none none
+          (rendezvousCapsDestination? st endpointId caller payload)
+          (sendSideQueueStructureNeighbor? st endpointId) none none := by
+  simp only [lockSet_endpointCallOnCore, ifCallLinks, hNo, Bool.false_eq_true, ↓reduceIte]
 
 /-- **WS-RR RR8.16 (`v0.35.189`)**: the member is `none` on the arm that donates
 nothing because there is nobody to donate to.
