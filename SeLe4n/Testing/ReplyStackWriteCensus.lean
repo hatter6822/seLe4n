@@ -270,6 +270,8 @@ def chainNeutralConstructors : List (Name × String) :=
     -- surface this census could not see before `v0.35.12`.
   , (`SeLe4n.Kernel.FrozenOps.frozenLinkCallerReply,
       "writes `Reply.caller` only, gated on `Reply.isFree` — no link in either direction; the frozen twin of `Model.linkReply`, and reading the same guard since `v0.35.12` (it read `caller` alone, so a frame still on a live stack was linkable here while the live kernel refuses it)")
+  , (`SeLe4n.Kernel.FrozenOps.frozenLinkServerStashedReply,
+      "the frozen twin of `linkServerStashedReply`: `frozenLinkCallerReply` plus the server TCB's `pendingReceiveReplyCode`; no chain field")
   , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextConfigure,
       "rebuilds a SchedContext for its CBS parameters; `scReply` is not in the assignment list, so the stored record carries the value it read")
   , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextBind,
@@ -435,6 +437,8 @@ def chainNeutralConstructors : List (Name × String) :=
       "composes `consumeReplyLink`, which is registered; writes no chain field in its own body (its direct store is `updateTcb`, which the frontier reaches since v0.35.66 — the entry left this list at v0.35.64, when the frontier did not, and that gap was the fail-open direction)")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendThreadOnCore,
       "composes `consumeReplyLink`, which is registered; writes no chain field in its own body")
+  , (`SeLe4n.Kernel.endpointCall,
+      "the single-core call: its one direct store is the `updateTcb` that writes a caller linking no reply `Inactive` (`threadState` alone, seL4's `sendIPC` without `Grant`/`GrantReply`); the reply it links on the other path is written by `linkServerStashedReply`, a registered write site that answers for its own update")
   , (`SeLe4n.Kernel.endpointCallOnCore,
       "the per-core call: its one direct store is the `updateTcb` that writes a caller linking no reply `Inactive` (`threadState` alone, seL4's `sendIPC` without `Grant`/`GrantReply`); the reply it links on the other path is written by `linkServerStashedReply`, a registered write site that answers for its own update")
   , (`SeLe4n.Kernel.Liveness.stepPost,

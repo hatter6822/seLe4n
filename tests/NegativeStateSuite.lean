@@ -1759,15 +1759,21 @@ private def runAuditCoverageChecks : IO Unit := do
       else
         throw <| IO.userError s!"replyRecv: expected caller ready, got {toString unblocked.ipcState}"
   | _ => throw <| IO.userError "replyRecv: expected caller TCB after reply"
-  -- WS-SM SM6.D (#7.4/#7.5): a Call rendezvous with a server holding NO reply object
-  -- fails closed — the #7 fold makes `endpointCall` atomic, so no raw transition can
-  -- strand a caller `.blockedOnReply` with no Reply to answer it (the transition-level
-  -- `blockedOnReply ⇒ replyObject` guarantee, negative direction).
+  -- A Call rendezvous with a server holding NO reply object links nothing (seL4
+  -- `sendIPC`: no reply to push, so the caller is left `Inactive`).  No raw
+  -- transition strands a caller `.blockedOnReply` with no Reply to answer it (the
+  -- transition-level `blockedOnReply ⇒ replyObject` guarantee, negative direction).
   let (_, stNoStashRecv) ← expectOkSt "no-reply receive setup (server blocks, no stash)"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 8) none baseState)
-  expectErr "Call with no server reply object fails closed (no unanswerable blockedOnReply)"
+  let (_, stNoLinkCall) ← expectOkSt "Call with no server reply object links nothing"
     (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) stNoStashRecv)
-    .replyCapInvalid
+  match stNoLinkCall.getTcb? (SeLe4n.ThreadId.ofNat 7) with
+  | some t =>
+      if t.ipcState = .ready && t.threadState == .Inactive && t.replyObject.isNone then
+        IO.println "positive check passed [no-link Call: caller Inactive, no unanswerable blockedOnReply]"
+      else
+        throw <| IO.userError s!"no-link Call: expected caller ready/Inactive with no reply, got {toString t.ipcState}"
+  | none => throw <| IO.userError "no-link Call: expected caller TCB"
   IO.println "endpointReplyRecv coverage checks passed"
 
   -- ── Audit: cspaceMutate coverage ─────────────────────────────────────

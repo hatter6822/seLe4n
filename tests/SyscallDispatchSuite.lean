@@ -2505,10 +2505,11 @@ private def sd053_serverFirstLink : IO Unit := do
         ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
         "a plain (no-reply) receive must clear any stale pendingReceiveReply"
   | .error _ => failLine "sd053c" "plain receive (clear stash) should succeed"
-  -- (d) PR #822 review / #7.3a fold: a Call that rendezvouses with a waiting server
-  -- holding NO reply object (plain Recv) is rejected fail-closed (cannot answer a
-  -- Call).  The fold makes `endpointCall` *itself* fail closed — no intermediate state
-  -- strands the caller `.blockedOnReply` with no linked Reply.
+  -- (d) A Call that rendezvouses with a waiting server holding NO reply object
+  -- (plain Recv) links nothing: seL4's `sendIPC` delivers the message and, with no
+  -- reply to push, leaves the caller `Inactive` (`setThreadState(thread,
+  -- ThreadState_Inactive)`).  No state strands the caller `.blockedOnReply` with no
+  -- linked Reply.
   let stDBase : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
@@ -2520,14 +2521,15 @@ private def sd053_serverFirstLink : IO Unit := do
   | .error _ => failLine "sd053d" "plain receive (no-reply) setup should succeed"
   | .ok (_, stRecv) =>
     match SeLe4n.Kernel.endpointCall epId caller (.frame none false true) stRecv with
-    | .error e =>
-        expect "sd053d_server_first_call_without_reply_rejected"
-          (e == .replyCapInvalid)
-          "a server-first Call with no stashed reply object must be rejected"
-        expect "sd053d_caller_not_stranded"
-          ((stRecv.getTcb? caller).any (fun t => decide (t.ipcState = .ready)))
-          "the rejected call must not strand the caller in blockedOnReply (fail-closed, no state change)"
-    | .ok _ => failLine "sd053d" "server-first Call without a reply object must be rejected"
+    | .ok ((), stCalled) =>
+        expect "sd053d_server_first_call_without_reply_links_nothing"
+          ((stCalled.getTcb? caller).any (fun t =>
+            decide (t.ipcState = .ready) && t.threadState == .Inactive && t.replyObject.isNone))
+          "a server-first Call with no stashed reply object leaves the caller Inactive, linked to no reply"
+        expect "sd053d_server_receives_message"
+          ((stCalled.getTcb? server).any (fun t => decide (t.ipcState = .ready) && t.pendingMessage.isSome))
+          "the server is woken holding the call's message"
+    | .error _ => failLine "sd053d" "server-first Call without a reply object completes as seL4's sendIPC"
   -- (e) PR #822 review: a plain `Send` that wakes a server-first receiver clears the
   -- server's reply stash — the server left `.blockedOnReceive` for `.ready`, so the
   -- stash (which lives only on a blocked receiver) must not survive, and a future

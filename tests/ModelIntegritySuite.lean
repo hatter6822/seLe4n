@@ -972,12 +972,12 @@ def direct_reply_consumes_caller_link_single_use : IO Unit := do
            | _ => false)
 
 /-- WS-SM SM6.D (#7.4 / #7.5): a Call that rendezvouses with a server holding **no**
-reply object fails closed (`.replyCapInvalid`) and leaves **no** unanswerable
-`.blockedOnReply` caller — the fold makes the whole `endpointCall` atomic, so the
-fail-closed path returns the pre-state unchanged (the caller stays `.ready`). This is
-the negative dual of the transition-boundary invariant: no raw transition can reach a
+reply object links nothing, as seL4's `sendIPC` with no reply to push: the message
+is delivered and the caller is left `Inactive`, `.ready` in IPC, with no
+`replyObject` — **no** unanswerable `.blockedOnReply` caller.  This is the negative
+dual of the transition-boundary invariant: no raw transition can reach a
 `.blockedOnReply` caller without a linked Reply. -/
-def call_without_reply_object_fails_closed_no_unanswerable_block : IO Unit := do
+def call_without_reply_object_links_nothing_no_unanswerable_block : IO Unit := do
   let server : SeLe4n.ThreadId := ⟨1⟩
   let caller : SeLe4n.ThreadId := ⟨2⟩
   let epId   : SeLe4n.ObjId := ⟨10⟩
@@ -995,13 +995,13 @@ def call_without_reply_object_fails_closed_no_unanswerable_block : IO Unit := do
   | .error _ => throw <| IO.userError "plain (no-reply) receive setup should succeed"
   | .ok (_, stRecv) =>
     match SeLe4n.Kernel.endpointCall epId caller (.frame none false true) stRecv with
-    | .error e =>
-        expect "Call with no server reply object fails closed (replyCapInvalid)"
-          (e == .replyCapInvalid)
-        -- the fail-closed path strands no caller: it is still `.ready` in the pre-state.
-        expect "fail-closed Call leaves no unanswerable blockedOnReply caller"
-          ((stRecv.getTcb? caller).any (fun t => decide (t.ipcState = .ready)))
-    | .ok _ => throw <| IO.userError "Call with no server reply object must be rejected"
+    | .ok ((), stCalled) =>
+        expect "Call with no server reply object links nothing: the caller is Inactive"
+          ((stCalled.getTcb? caller).any (fun t => t.threadState == .Inactive))
+        expect "no-link Call leaves no unanswerable blockedOnReply caller"
+          ((stCalled.getTcb? caller).any (fun t =>
+            decide (t.ipcState = .ready) && t.replyObject.isNone))
+    | .error e => throw <| IO.userError s!"Call with no server reply object must complete as seL4's sendIPC: {toString e}"
 
 /-- WS-SM SM6.D (PR #822 review, Phase H #1.a): runtime witness for
 `replyCapPointsToValidReply`, the reply half of `capTargetKindBacked` (the 6th conjunct of
@@ -2383,7 +2383,7 @@ def main : IO Unit := do
   -- WS-SM SM6.D (#7.4/#7.5): transition-boundary `blockedOnReply ⇒ replyObject`
   replyCallerLinkage_holds_at_call_rendezvous_boundary
   direct_reply_consumes_caller_link_single_use
-  call_without_reply_object_fails_closed_no_unanswerable_block
+  call_without_reply_object_links_nothing_no_unanswerable_block
   replyCapPointsToValidReply_distinguishes_backed_and_dangling
   reply_cap_end_to_end_carve_mint_link
   -- `lifecycle_reply_cap_metadata_backed` retired at v0.35.78 with the
