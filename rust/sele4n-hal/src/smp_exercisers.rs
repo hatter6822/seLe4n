@@ -3225,7 +3225,7 @@ const fn wrong_ipc_kind(name: &'static str, syscall: u64) -> RoundTrip {
 }
 
 /// A message length past the most message registers a message has (120),
-/// which the message-info decode refuses.
+/// which the message-info decode clamps to 120 (seL4's `messageInfoFromWord`).
 #[cfg(feature = "hw_target")]
 const BAD_MESSAGE_LENGTH: u64 = 127;
 
@@ -3662,8 +3662,12 @@ const WIDE_TABLE_CHILD_ID: u64 = 70;
 ///   then deleted, which retires it and leaves the untyped childless.
 /// - The suspended partner's IPC buffer set at a wide address 8 bytes past a
 ///   1 KiB boundary: seL4's `checkValidIPCBuffer`, `AlignmentError`.
+/// - A reply capability minted from a wide source slot: a slot no CNode
+///   addresses, `InvalidCapability 0` (WS-SX SX8.1).
+/// - A service registered under a wide interface id: `InvalidArgument 0`
+///   (WS-SX SX8.1).
 #[cfg(feature = "hw_target")]
-const WIDE_WORD_SCENARIO: [RoundTrip; 6] = [
+const WIDE_WORD_SCENARIO: [RoundTrip; 8] = [
     RoundTrip {
         returns: refused(ADDRESS_OUT_OF_BOUNDS),
         ..retype(
@@ -3715,6 +3719,30 @@ const WIDE_WORD_SCENARIO: [RoundTrip; 6] = [
             PARTNER_TCB_CAP,
             WIDE_WORD | 8,
             ROOT_IPC_BUFFER_FRAME_CAP,
+            ROOT_IPC_BUFFER,
+        )
+    },
+    // WS-SX SX8.1: the reply-capability mint's source slot read on its word
+    // (`windowWordOf`): a slot no CNode addresses, its lookup refused as the
+    // word's would be.
+    RoundTrip {
+        returns: refused_with(INVALID_CAPABILITY, 1, [Some(0), None, None, None]),
+        ..invocation(
+            "mint-reply-cap-wide-slot",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [WIDE_WORD, REPLY_CAP_SLOT, 0, 0],
+        )
+    },
+    // WS-SX SX8.1: the service register's interface id tested on its word,
+    // refused `InvalidArgument 0` before any number is made of it.
+    RoundTrip {
+        returns: refused_with(INVALID_ARGUMENT, 1, [Some(0), None, None, None]),
+        overflow: Some((ROOT_IPC_BUFFER, [0, 0, 0])),
+        ..service_register(
+            "service-register-wide-interface",
+            ENDPOINT_CAP,
+            [WIDE_WORD, 1, 4, 4],
             ROOT_IPC_BUFFER,
         )
     },
@@ -4564,9 +4592,9 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // invocations' are measured where their capabilities exist,
         // `interrupt_handlers_issued`); a configure one word long; a signal
         // and a wait one word long, the wait taking the badge the signal
-        // left; an invocation one word long; a message-info word whose length
-        // no message has, refused; one whose top bit is set, refused; and a
-        // yield one word long.
+        // left; an invocation one word long; a signal whose message-info
+        // length no message has, clamped to 120 (seL4's `messageInfoFromWord`);
+        // one whose top bit is set; and a yield one word long.
         truncated(
             "service-register-short",
             SERVICE_REGISTER,
@@ -4875,9 +4903,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
                 FRAME_VADDR,
             )
         },
-        // A refused Signal is not a Call, so it is answered with no frame: it
-        // resumes with its trapped registers (seL4's `handleInvocation`
-        // replies an error only `if (isCall)`).
+        // A message-info length past 120 is clamped to 120 (seL4's
+        // `messageInfoFromWord`), so the Signal signals; a Signal is not a
+        // Call, so it is answered with no frame and resumes with its trapped
+        // registers (seL4's `handleInvocation` replies only `if (isCall)`).
         resuming(RoundTrip {
             caps_or_badges: None,
             overflow: None,

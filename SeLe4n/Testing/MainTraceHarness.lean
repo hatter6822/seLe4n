@@ -772,9 +772,13 @@ private def runIpcMessageBoundsTrace (counter : IO.Ref Nat) (st1 : SystemState) 
 
   -- H12d-01: a send's words come from the sender's frame (WS-ZA ZA4.7), so the
   -- register bound lives in the message-info decode: a word declaring 121
-  -- registers does not decode.
+  -- registers decodes as 120, the length clamped as seL4's
+  -- `messageInfoFromWord` clamps it (WS-SX SX8.1).
   let oversizedRegsInfo : Nat := (MessageInfo.mk 121 0 0 0).encode
-  IO.println s!"[IMB-001] H12d oversized registers rejected: {(MessageInfo.decode oversizedRegsInfo).isNone}"
+  let regsClamped : Bool := match MessageInfo.decode oversizedRegsInfo with
+    | some mi => mi.length == maxMessageRegisters
+    | none => false
+  IO.println s!"[IMB-001] H12d oversized registers clamped to 120: {regsClamped}"
 
   -- H12d-02: and the word's two-bit extra-caps field names at most three
   -- capabilities, whatever a word asking for four decodes to.

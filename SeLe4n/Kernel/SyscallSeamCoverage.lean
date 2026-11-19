@@ -750,6 +750,7 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
         (Architecture.writeReturnFrameToTcb_scheduler_eq _ _ _)
     simp only [Bool.not_eq_true] at hNb
     simp only [hNb, Bool.false_eq_true, ↓reduceIte] at hDisp
+    unfold completeSignalArm at hDisp
     split at hDisp
     · rename_i st₁ badge hWait
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp

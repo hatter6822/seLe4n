@@ -661,9 +661,11 @@ private def runErrorPathChecks : IO Unit := do
      | .error (.invalidCapability _) => true | _ => false)
   -- Oversized payload: a call reads its words from the caller's frame, so the
   -- bound is the message-info decode's — a word declaring one register too many
-  -- does not decode, and the call never sees it.
-  assertBool "a message-info word declaring an oversized payload does not decode"
-    (MessageInfo.decode (MessageInfo.mk (maxMessageRegisters + 1) 0 0 0).encode).isNone
+  -- decodes at the bound (seL4's `messageInfoFromWord` clamp, WS-SX SX8.1).
+  assertBool "a message-info word declaring an oversized payload is clamped to the bound"
+    (match MessageInfo.decode (MessageInfo.mk (maxMessageRegisters + 1) 0 0 0).encode with
+     | some mi => mi.length == maxMessageRegisters
+     | none => false)
   -- Receive-side duals.
   assertBool "receive on an absent endpoint fails with objectNotFound"
     (match (endpointReceiveDualOnCore ⟨899⟩ serverB (some replyB) c1 stFourCore).2 with

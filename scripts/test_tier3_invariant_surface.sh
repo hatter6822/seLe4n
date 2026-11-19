@@ -12222,7 +12222,7 @@ run_check "INVARIANT" rg -n '^\s*\| ipcMessageTooLarge' SeLe4n/Model/KernelError
 run_check "INVARIANT" rg -n '^\s*\| ipcMessageTooManyCaps' SeLe4n/Model/KernelError.lean
 # WS-H12d: Trace harness and fixture anchors.
 run_check "INVARIANT" rg -n '^private def runIpcMessageBoundsTrace($|[ ({:\[\]])' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'H12d oversized registers rejected' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'H12d oversized registers clamped to 120' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'H12d oversized caps rejected' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'H12d boundary message accepted' tests/fixtures/main_trace_smoke.expected
 

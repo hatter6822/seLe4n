@@ -97,9 +97,7 @@ theorem routedExtraCaps_eq_of_replyRecv {rf : SeLe4n.RegisterFile} {capAddr : Se
       all_goals done
     subst hm
     unfold Architecture.RegisterDecode.decodeMsgInfoWord at hD
-    split at hD
-    · cases hD; rfl
-    · cases hD
+    cases hD; rfl
 
 /-- **The request a routed reply-receive makes**: under the grant right, the
 replier's frame asks for the count its message-info word names. -/

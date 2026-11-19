@@ -5723,18 +5723,21 @@ theorem mkChecked_wellFormed {length extraCaps label : Nat} {mi : MessageInfo}
 @[inline] def encode (mi : MessageInfo) : Nat :=
   mi.length ||| (mi.extraCaps <<< 7) ||| (mi.capsUnwrapped <<< 9) ||| (mi.label <<< 12)
 
-/-- Decode a raw word into MessageInfo fields by extracting bit fields.
-    Returns `none` if the length or extraCaps fields exceed their bounds,
-    or if the label exceeds the 52-bit maximum (only a word past 64 bits
-    can).  The
-    `capsUnwrapped` field is read as seL4 reads it; a send ignores it, since
-    the transfer that delivers a message sets it. -/
+/-- Decode a raw word into MessageInfo fields by extracting bit fields, as
+    seL4's `messageInfoFromWord` (`include/api/types.h`) does: **a length
+    field past `seL4_MsgMaxLength` (120) is clamped to 120**, never refused
+    (WS-SX SX8.1, the conformance table's `messageInfoFromWord` row).  The
+    two-bit extra-capability field cannot exceed 3.  Returns `none` only when
+    the label exceeds the 52-bit maximum, which only a number past 64 bits
+    can; every register word decodes.  The `capsUnwrapped` field is read as
+    seL4 reads it; a send ignores it, since the transfer that delivers a
+    message sets it. -/
 @[inline] def decode (w : Nat) : Option MessageInfo :=
-  let length    := w &&& 0x7F          -- bits 0..6
+  let length    := min (w &&& 0x7F) maxMessageRegisters  -- bits 0..6, clamped
   let extraCaps := (w >>> 7) &&& 0x3   -- bits 7..8
   let capsUnwrapped := (w >>> 9) &&& 0x7 -- bits 9..11
   let label     := w >>> 12            -- bits 12+
-  if length ≤ maxMessageRegisters && extraCaps ≤ Model.maxExtraCaps && label ≤ maxLabel then
+  if label ≤ maxLabel then
     some { length, extraCaps, label, capsUnwrapped }
   else
     none
@@ -5762,9 +5765,10 @@ theorem decode_wellFormed {w : Nat} {mi : MessageInfo}
   simp only at h
   split at h
   · rename_i hAll
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at hAll
     cases h
-    refine ⟨hAll.1.1, hAll.1.2, hAll.2, ?_⟩
+    refine ⟨Nat.min_le_right _ _, ?_, hAll, ?_⟩
+    · show (w >>> 7) &&& 0x3 ≤ Model.maxExtraCaps
+      rw [(decode_fields w).2.1]; unfold Model.maxExtraCaps; omega
     show (w >>> 9) &&& 0x7 ≤ maxCapsUnwrapped
     rw [(decode_fields w).2.2.1]; unfold maxCapsUnwrapped; omega
   · cases h
@@ -5808,12 +5812,7 @@ theorem encode_decode_roundtrip (mi : MessageInfo)
       = mi.capsUnwrapped := by omega
   have e4 : (mi.length + mi.extraCaps * 128 + mi.capsUnwrapped * 512 + mi.label * 4096) / 4096
       = mi.label := by omega
-  rw [e1, e2, e3, e4]
-  have hCond : (decide (mi.length ≤ maxMessageRegisters) && decide (mi.extraCaps ≤ maxExtraCaps)
-      && decide (mi.label ≤ maxLabel)) = true := by
-    simp only [Bool.and_eq_true, decide_eq_true_eq]
-    exact ⟨⟨hLen, hCaps⟩, hLabel⟩
-  rw [if_pos hCond]
+  rw [e1, e2, e3, e4, Nat.min_eq_left hLen, if_pos hLabel]
 
 end MessageInfo
 

@@ -58,7 +58,7 @@
 [IMT-019] H1 caller not ready after dequeue: true
 [IMT-021] H1 caller ready after reply: true
 [IMT-024] H1 unauthorized reply rejected: true
-[IMB-001] H12d oversized registers rejected: true
+[IMB-001] H12d oversized registers clamped to 120: true
 [IMB-004] H12d oversized caps rejected: true
 [IMB-008] H12d boundary message accepted: true
 [IMB-009] H12d call oversized rejected: true

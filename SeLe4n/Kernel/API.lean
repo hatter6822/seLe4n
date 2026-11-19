@@ -6850,16 +6850,10 @@ def dispatchWithCapChecked (ctx : LabelingContext)
           .ok ((), Architecture.nbRecvFailedTransfer st tid)
         else
         -- WS-SM SM6.B: per-core checked cross-core wait (gates notification→waiter
-        -- flow, then deschedules the caller on its own core).
-        match notificationWaitCrossCoreDispatchChecked ctx notifId tid executingCore st with
-        | (st', .ok (some badge)) =>
-            -- WS-RA RA.B.5: stage the consumed badge (the checked twin of the
-            -- unchecked arm's staging; the flow gate already admitted
-            -- notification → waiter, which is the authority for the value).
-            .ok ((), Architecture.writeReturnFrameToTcb st' tid
-              (Architecture.badgeReturnFrame st' tid badge))
-        | (st', .ok none) => .ok ((), st')
-        | (_, .error e) => .error e
+        -- flow, then deschedules the caller on its own core); the consumed badge
+        -- is staged by `completeSignalArm`, the one body the wait and the receive
+        -- that completes its bound notification share (WS-SX SX8.2).
+        completeSignalArm ctx tid notifId executingCore st
     | _ => fun _ => .error (.invalidCapability 0)
   -- V2-C/T6-I: ReplyRecv — checked for both reply and receive legs
   | .replyRecv =>
@@ -8102,7 +8096,7 @@ theorem dispatchArm_notificationWait_matches_returnShape
   refine ⟨rfl,
     Architecture.writeReturnFrameToTcb st1 tid (Architecture.badgeReturnFrame st1 tid badge),
     ?_, ?_⟩
-  · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hDispatch,
+  · simp [dispatchWithCapChecked, dispatchCapabilityOnly, completeSignalArm, hSyscall, hTarget, hDispatch,
       waitFindsNothing_of_consumed _ hDispatch]
   · exact Architecture.readReturnFrame_writeReturnFrame st1 tid _ tcb hTcb hObjInv
 

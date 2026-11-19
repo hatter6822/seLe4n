@@ -77,8 +77,10 @@ open SeLe4n.Kernel.Architecture.SyscallArgDecode (truncationMinimum)
   .ok (CPtr.ofWord rv.word)
 
 /-- Decode a raw register value into a message info word.
-    Extracts length, extra caps count, and label from bit fields.
-    Returns `invalidMessageInfo` if length or extraCaps exceed bounds. -/
+    Extracts length, extra caps, and label from bit fields, a length past 120
+    clamped to 120 as seL4's `messageInfoFromWord` clamps it (WS-SX SX8.1).
+    Returns `invalidMessageInfo` only for a label past 52 bits, which no
+    register word holds (`decodeMsgInfoWord_ok`). -/
 @[inline] def decodeMsgInfo (rv : RegValue) : Except KernelError MessageInfo :=
   match MessageInfo.decode rv.val with
   | some mi => .ok mi
@@ -88,10 +90,12 @@ open SeLe4n.Kernel.Architecture.SyscallArgDecode (truncationMinimum)
     operations, each small enough to be a scalar, so a word `≥ 2^63` builds no
     heap number (`decodeMsgInfoWord_eq`). -/
 @[inline] def decodeMsgInfoWord (w : UInt64) : Except KernelError MessageInfo :=
-  if (w &&& 0x7F) ≤ 120 && ((w >>> 7) &&& 3) ≤ 3 && (w >>> 12) ≤ 0xFFFFFFFFFFFFF then
-    .ok { length := (w &&& 0x7F).toNat, extraCaps := ((w >>> 7) &&& 3).toNat,
-          label := (w >>> 12).toNat, capsUnwrapped := ((w >>> 9) &&& 7).toNat }
-  else .error .invalidMessageInfo
+  .ok { length := (if (w &&& 0x7F) ≤ 120 then w &&& 0x7F else 120).toNat,
+        extraCaps := ((w >>> 7) &&& 3).toNat,
+        label := (w >>> 12).toNat, capsUnwrapped := ((w >>> 9) &&& 7).toNat }
+
+/-- Every register word decodes: seL4's `messageInfoFromWord` refuses nothing. -/
+theorem decodeMsgInfoWord_ok (w : UInt64) : ∃ mi, decodeMsgInfoWord w = .ok mi := ⟨_, rfl⟩
 
 theorem decodeMsgInfoWord_eq (w : UInt64) :
     decodeMsgInfoWord w = decodeMsgInfo ⟨w⟩ := by
@@ -103,13 +107,18 @@ theorem decodeMsgInfoWord_eq (w : UInt64) :
   have h3 : (w >>> 12).toNat = w.toNat >>> 12 := by simp [UInt64.toNat_shiftRight]
   have h4 : ((w >>> 9) &&& 7).toNat = (w.toNat >>> 9) &&& 0x7 := by
     simp [UInt64.toNat_and, UInt64.toNat_shiftRight]
-  simp only [UInt64.le_iff_toNat_le, h1, h2, h3, h4]
-  simp only [maxMessageRegisters, Model.maxExtraCaps, MessageInfo.maxLabel]
-  by_cases hc : ((w.toNat &&& 127 ≤ 120 ∧ w.toNat >>> 7 &&& 3 ≤ 3) ∧ w.toNat >>> 12 ≤ 4503599627370495)
-  · simp only [Bool.and_eq_true, decide_eq_true_eq] at *
-    simp [hc]
-  · simp only [Bool.and_eq_true, decide_eq_true_eq] at *
-    simp [hc]
+  have hLen : (if (w &&& 0x7F) ≤ 120 then w &&& 0x7F else 120).toNat =
+      min (w.toNat &&& 0x7F) maxMessageRegisters := by
+    unfold maxMessageRegisters
+    by_cases hc : (w &&& 0x7F) ≤ 120
+    · have := UInt64.le_iff_toNat_le.mp hc
+      rw [if_pos hc]; simp only [UInt64.toNat_ofNat] at this; omega
+    · have := UInt64.lt_iff_toNat_lt.mp (UInt64.not_le.mp hc)
+      rw [if_neg hc]; simp only [UInt64.toNat_ofNat] at this; show 120 = _; omega
+  have hLab : w.toNat >>> 12 ≤ MessageInfo.maxLabel := by
+    rw [Nat.shiftRight_eq_div_pow]; unfold MessageInfo.maxLabel
+    have := UInt64.toNat_lt_size w; simp [UInt64.size] at this; omega
+  rw [hLen, h2, h3, h4, if_pos hLab]
 
 /-- `decodeMsgInfo` as compiled: read off the register's word
 (`decodeMsgInfoWord`), so no heap number is built (WS-SX SX1.3). -/
@@ -1330,10 +1339,12 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 /-- The message length a register-routed frame names: bits 0–6 of its
-message-info word (`decodeMsgInfoWord`), read as a word so an arm that reads
-it builds no message info. -/
+message-info word (`decodeMsgInfoWord`), clamped to 120 as seL4's
+`messageInfoFromWord` clamps it, read as a word so an arm that reads it builds
+no message info. -/
 @[inline] def routedLength (rf : SeLe4n.RegisterFile) : Nat :=
-  (SeLe4n.readRegWord rf SeLe4n.arm64DefaultLayout.msgInfoReg &&& 0x7F).toNat
+  let w := SeLe4n.readRegWord rf SeLe4n.arm64DefaultLayout.msgInfoReg &&& 0x7F
+  (if w ≤ 120 then w else 120).toNat
 
 /-- The length a decoded message info carries is the frame's `routedLength`. -/
 theorem routedLength_of_decodeWord {rf : SeLe4n.RegisterFile} {mi : MessageInfo}
@@ -1341,9 +1352,7 @@ theorem routedLength_of_decodeWord {rf : SeLe4n.RegisterFile} {mi : MessageInfo}
       (SeLe4n.readRegWord rf SeLe4n.arm64DefaultLayout.msgInfoReg) = .ok mi) :
     routedLength rf = mi.length := by
   unfold Architecture.RegisterDecode.decodeMsgInfoWord at h
-  split at h
-  · cases h; rfl
-  · cases h
+  cases h; rfl
 
 theorem routedLength_of_decode {rf : SeLe4n.RegisterFile} {mi : MessageInfo}
     (h : Architecture.RegisterDecode.decodeMsgInfo

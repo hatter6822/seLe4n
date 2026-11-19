@@ -307,7 +307,7 @@ scenarios:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runIpcMessageBoundsTrace
     subsystem: IPC
-    description: "H12d oversized registers rejected: true"
+    description: "H12d oversized registers clamped to 120: true"
   IMB-004:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runIpcMessageBoundsTrace

@@ -1,3 +1,52 @@
+## v0.37.34 — the seL4 conformance table
+
+WS-SX SX8 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`), first part: SX8.1 and
+the refactor SX8.2 lands first. Stacks on SX7 (`v0.37.33`). The owner's
+decision D22 ("Match seL4", 2026-11-19) for SX8.3 is recorded in the plan.
+
+### The conformance table (SX8.1)
+- `SeLe4n/Testing/Sel4ConformanceTable.lean`: one row per seL4-MCS syscall
+  (11) and per invocation label (seL4's 56 for aarch64 MCS SMP, then the
+  model's 57–66), sourced from seL4 release 17.0.0 (commit `62e345c2`): the
+  decode function with file and line, the registers or message words and
+  extra capabilities read, the success return, the seL4 errors with their
+  payload words, whether it blocks, and seLe4n's status (implemented, a
+  seLe4n hardening, a deviation a later row owns, absent, or model-only).
+- `sel4LabelRows_agree` and `sel4SyscallRows_agree` decide every row against
+  the label round trip, `Syscall.selectOperation` (Call, Send, NBSend),
+  `truncationMinimum`, `syscallReturnShape` and the `Syscall` predicates;
+  `sel4LabelRows_cover` proves every labelled operation has its row.
+- `tests/Sel4ConformanceSuite.lean` (`sel4_conformance_suite`, Tier 2): the
+  same rows at run time, the register reads of `decodeSyscallArgs`
+  (x0, x1, x2–x5, x6, `canReply` from x7), each seL4 error's payload and error
+  frame, the message-info clamp and the two word-first decodes.
+
+### seL4 behaviour the table exposed, fixed here
+- A message-info length past 120 is clamped to 120, as seL4's
+  `messageInfoFromWord` (`include/api/types.h:83`) clamps it; it was refused
+  `invalidMessageInfo`. `MessageInfo.decode`, `decodeMsgInfoWord` (now always
+  `.ok`, `decodeMsgInfoWord_ok`), `overflowStopImpl` and `routedLength` clamp.
+  A Signal with such a word now signals (`bad-message-info`).
+
+### Word-first decodes (raw-slot debt families (2) and (7), closed)
+- `mintReplyCap`'s two slots are read through `windowWordOf`; the service
+  register's interface id is tested on its word and refused
+  `invalidArgument 0` at or past `2 ^ 62`. Round trips below the bound.
+- QEMU scenarios `mint-reply-cap-wide-slot` and
+  `service-register-wide-interface` pass a word `≥ 2^63`.
+
+### SX8.2 refactor
+- `dispatchWithCapChecked`'s `.notificationWait` arm calls `completeSignalArm`
+  instead of inlining its body, so the wait and the receive that completes
+  its bound notification share one body (no behaviour change).
+
+### Tests and fixtures
+- `main_trace_smoke.expected`: `[IMB-001]` now reads "oversized registers
+  clamped to 120: true" (rationale: the clamp above); checksum regenerated.
+- NegativeStateSuite J1-NEG-07/08/16, SmpIpcSuite and the kernel-error
+  matrix's `invalidMessageInfo` row (now `requireMsgReg` past the message)
+  follow the clamp.
+
 ## v0.37.33 — seL4's syscall set and invocation labels
 
 WS-SX SX7 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`). A user thread now

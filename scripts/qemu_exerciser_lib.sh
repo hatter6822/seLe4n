@@ -908,6 +908,9 @@ for driver in drivers:
             "untyped-retype-wide-table", "page-table-map-wide-vaddr",
             "wide-table-delete",
             "tcb-set-ipc-buffer-wide-unaligned",
+            # WS-SX SX8.1: the reply-capability mint's slot and the service
+            # register's interface id read on the word, each refused.
+            "mint-reply-cap-wide-slot", "service-register-wide-interface",
             # WS-SX SX7: a scheduling context bound to a notification and
             # unbound; a receive and a reply-receive completing on a bound
             # notification's signal; a non-Call's refusal resumed and an

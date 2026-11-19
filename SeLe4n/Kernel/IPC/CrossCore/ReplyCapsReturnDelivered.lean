@@ -481,9 +481,7 @@ theorem routedExtraCaps_eq_of_routedReplyLong {rf : SeLe4n.RegisterFile} {capAdd
         all_goals done
       subst hm
       unfold decodeMsgInfoWord at hD
-      split at hD
-      · cases hD; rfl
-      · cases hD
+      cases hD; rfl
   · cases hR
 
 /-- The extra-capability count a routed long reply-receive frame names is the count its
@@ -515,9 +513,7 @@ theorem routedExtraCaps_eq_of_routedReplyRecvLong {rf : SeLe4n.RegisterFile} {ca
         all_goals done
       subst hm
       unfold decodeMsgInfoWord at hD
-      split at hD
-      · cases hD; rfl
-      · cases hD
+      cases hD; rfl
   · cases hR
 
 /-- **The request a routed long reply makes**: under the grant right, the
