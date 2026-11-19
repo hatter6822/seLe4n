@@ -161,11 +161,11 @@ private def rd005_decodeMsgInfoOverflow : IO Unit := do
   let encodedBoundary := encodeMsgInfo miBoundary
   let decodedBoundary := decodeMsgInfo encodedBoundary
   expect "boundary length=120 ok" (isOkEq decodedBoundary miBoundary)
-  -- Overflow: length=121 should fail
-  -- length field is bits 0..6 (7 bits), extraCaps bits 7..8 (2 bits), label bits 9+
-  let rawWithLength121 := 121  -- bits 0-6 = 121
-  let result := decodeMsgInfo ⟨rawWithLength121⟩
-  expect "overflow length" (!result.isOk)
+  -- Overflow: length=121 clamps to 120, as seL4's `messageInfoFromWord` does
+  -- (length field is bits 0..6, so 121 and 127 are the over-length values).
+  let result := decodeMsgInfo ⟨121⟩
+  expect "overflow length clamps to 120" (isOkEq result miBoundary)
+  expect "length 127 clamps to 120" (isOkEq (decodeMsgInfo ⟨127⟩) miBoundary)
 
 /-- RD-006: decodeCapPtr — valid and boundary values. -/
 private def rd006_decodeCapPtrValid : IO Unit := do

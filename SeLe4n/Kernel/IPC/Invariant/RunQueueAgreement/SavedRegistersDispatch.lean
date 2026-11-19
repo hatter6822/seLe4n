@@ -401,6 +401,7 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
     · cases h
       exact hW (.of_kept (writeReturnFrameToTcb_savedRegsKeptExcept st tid _ hInv) fun _ e =>
         e ▸ hFr)
+    unfold completeSignalArm at h
     split at h
     · rename_i hWt
       cases h

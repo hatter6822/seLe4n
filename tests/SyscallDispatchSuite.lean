@@ -608,11 +608,12 @@ private def sd037_entryWordPairs : IO Unit := do
       syncedWordAt mem bytes 0 (pa 0x1000) == 0x1111111111111111)
     "pairs past the entry's count must not be read"
   expect "sd037g_a_high_bit_message_info_asks_its_overflow"
-    (overflowStop 7 == 3 && overflowStop 4 == 0 && overflowStop 121 == 0 &&
+    (overflowStop 7 == 3 && overflowStop 4 == 0 &&
+      overflowStop 121 == maxOverflowSlots && overflowStop 120 == maxOverflowSlots &&
       overflowStop ((7 : UInt64) ||| ((1 : UInt64) <<< 63)) == 3 &&
-      overflowStop ((0x7F : UInt64) ||| ((1 : UInt64) <<< 63)) == 0 &&
+      overflowStop ((0x7F : UInt64) ||| ((1 : UInt64) <<< 63)) == maxOverflowSlots &&
       overflowStop ((7 : UInt64) ||| ((5 : UInt64) <<< 12)) == 3)
-    "the overflow count must follow the MessageInfo decode, label bits included"
+    "the overflow count must follow the MessageInfo decode (length clamped to 120), label bits included"
 
 /-- SD-035: Sequential dispatches — the IO.Ref state evolves
     correctly across multiple syscall invocations.

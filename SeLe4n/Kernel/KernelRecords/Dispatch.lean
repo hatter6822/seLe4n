@@ -993,6 +993,7 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
   case none.notificationWait.object notifId =>
     split at h
     · cases h; exact writeReturnFrameToTcb_recordsStage _ _ _
+    unfold completeSignalArm at h
     split at h
     · rename_i hW
       cases h

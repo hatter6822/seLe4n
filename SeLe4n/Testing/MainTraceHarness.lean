@@ -807,7 +807,8 @@ private def runIpcMessageBoundsTrace (counter : IO.Ref Nat) (st1 : SystemState) 
       IO.println s!"[IMB-008] H12d boundary message accepted: true"
 
   -- H12d-04: a call reads the same frame, so a caller whose frame declares an
-  -- oversized message delivers no words rather than an unbounded message.
+  -- oversized message has its length clamped to 120 (seL4's
+  -- `messageInfoFromWord`) rather than delivering an unbounded message.
   let stOversized : SystemState :=
     match st1.getTcb? senderId with
     | none => st1
@@ -815,7 +816,7 @@ private def runIpcMessageBoundsTrace (counter : IO.Ref Nat) (st1 : SystemState) 
         let regs := SeLe4n.writeReg tcb.registerContext ⟨1⟩ oversizedRegsInfo.toUInt64
         st1.withObjectStored senderId.toObjId (.tcb { tcb with registerContext := regs })
   let callMsg := SeLe4n.Kernel.sendPayloadMessage stOversized senderId (.frame none false true)
-  IO.println s!"[IMB-009] H12d call oversized rejected: {callMsg.registers.size == 0}"
+  IO.println s!"[IMB-009] H12d call oversized clamped to 120: {decide (callMsg.registers.size ≤ maxMessageRegisters) && callMsg.registers.size != 0}"
 
   -- H12d-05: endpointReply with oversized message should be rejected
   let oversizedRegs : IpcMessage := {
@@ -1311,10 +1312,11 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
   | .ok _ =>
       IO.println "[RDT-007] unexpected syscallEntryChecked success with invalid syscall"
 
-  -- RDT-008: syscallEntryChecked with malformed msgInfo → decode error.
+  -- RDT-008: syscallEntryChecked with an over-length msgInfo: seL4's
+  -- `messageInfoFromWord` clamps the length to 120, so the send proceeds.
   let malformedMsgInfoRegs : SeLe4n.RegisterFile :=
     SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
-        if r == 1 then 127  -- length=127 > 120 → invalid
+        if r == 1 then 127  -- length=127 > 120 → clamped to 120
         else if r == 7 then Syscall.send.word  -- valid syscall (seL4's `Send`)
         else 0)
   let stMalformedMsgInfo : SystemState :=
@@ -1339,9 +1341,9 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
   match SeLe4n.Kernel.syscallEntryChecked SeLe4n.Kernel.harnessLabelingContext
       SeLe4n.arm64DefaultLayout bootCoreId 32 stMalformedMsgInfo with
   | .error err =>
-      IO.println s!"[RDT-008] syscallEntryChecked malformed msgInfo decode error: {reprStr err}"
+      IO.println s!"[RDT-009] unexpected syscallEntryChecked error with over-length msgInfo: {reprStr err}"
   | .ok _ =>
-      IO.println "[RDT-009] unexpected syscallEntryChecked success with malformed msgInfo"
+      IO.println "[RDT-008] syscallEntryChecked over-length msgInfo clamped, send accepted: true"
 
   -- RDT-010: Register decode with namespace mismatch — out-of-bounds layout
   let outOfBoundsLayout : SeLe4n.SyscallRegisterLayout := {

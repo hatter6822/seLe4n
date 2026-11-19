@@ -1251,6 +1251,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
             exact writeReturnFrameToTcb_preserves_ipcInvariantFull st tid _ hObjInv hInv
           simp only [Bool.not_eq_true] at hNb
           simp only [hNb, Bool.false_eq_true, ↓reduceIte] at hStep
+          unfold completeSignalArm at hStep
           cases hFlow : securityFlowsTo (ctx.objectLabelOf notifId)
               (ctx.threadLabelOf tid) with
           | false =>

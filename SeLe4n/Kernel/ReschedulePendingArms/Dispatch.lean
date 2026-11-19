@@ -1846,6 +1846,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
         (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCoversInv
     simp only [Bool.not_eq_true] at hNb
     simp only [hNb, Bool.false_eq_true, ↓reduceIte] at h
+    unfold completeSignalArm at h
     split at h
     · rename_i hW
       cases h

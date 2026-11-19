@@ -61,7 +61,7 @@
 [IMB-001] H12d oversized registers clamped to 120: true
 [IMB-004] H12d oversized caps rejected: true
 [IMB-008] H12d boundary message accepted: true
-[IMB-009] H12d call oversized rejected: true
+[IMB-009] H12d call oversized clamped to 120: true
 [IMB-012] H12d reply oversized rejected: true
 [DDT-002] H12f dequeue-on-dispatch current: some 1
 [DDT-003] H12f dispatched thread absent from runQueue: true
@@ -106,7 +106,7 @@
 [RDT-002] register decode success: syscall=SeLe4n.Model.SyscallId.send, capAddr=0, msgRegs=4
 [RDT-003] syscallEntryChecked send success, endpoint has sender: true
 [RDT-006] syscallEntryChecked invalid syscall decode error: SeLe4n.Model.KernelError.invalidSyscallNumber
-[RDT-008] syscallEntryChecked malformed msgInfo decode error: SeLe4n.Model.KernelError.invalidMessageInfo
+[RDT-008] syscallEntryChecked over-length msgInfo clamped, send accepted: true
 [RDT-010] syscallEntryChecked out-of-bounds layout error: SeLe4n.Model.KernelError.invalidRegister
 [KSD-001] cspaceMint via decoded regs destination populated: true
 [KSD-002] cspaceCopy via decoded regs target matches: true

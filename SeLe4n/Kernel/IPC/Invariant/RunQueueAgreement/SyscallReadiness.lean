@@ -1642,6 +1642,7 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
   case none.notificationWait.object notifId =>
     split at h
     · cases h; exact .of_stage (writeReturnFrameToTcb_runQueueStage _ _ _)
+    unfold completeSignalArm at h
     split at h
     · rename_i hW
       cases h

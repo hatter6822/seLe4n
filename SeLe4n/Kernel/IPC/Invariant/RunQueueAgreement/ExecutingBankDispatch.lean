@@ -536,6 +536,7 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
   case none.notificationWait.object notifId =>
     split at h
     · cases h; exact (bankFrame.writeReturnFrameToTcb_caller _ hInv).bankAgree hA
+    unfold completeSignalArm at h
     split at h
     · rename_i hWt
       cases h
