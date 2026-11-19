@@ -684,13 +684,19 @@ private def runErrorPathChecks : IO Unit := do
     (match endpointReplyRecvOnCore epAB serverB replyB clientA replyMsgB
         false c1 stFourCore with
      | .error .replyCapInvalid => true | _ => false)
-  -- No-stash rendezvous: a server that supplied NO reply object cannot answer a Call.
+  -- No-stash rendezvous: a server that supplied NO reply object takes a Call as
+  -- seL4's `sendIPC` does (`do_call` with no reply to link): the message is
+  -- delivered and the caller goes `Inactive`, linked to no reply.
   match okPair (endpointReceiveDualOnCore epAB serverB none c1 stFourCore) with
   | none => assertBool "no-stash receive setup succeeded" false
   | some (stNoStash, _) =>
-    assertBool "a Call rendezvous with a no-stash server fails closed with replyCapInvalid"
-      (match (endpointCallOnCore epAB clientA (.frame callMsgA.badge false true) c0 stNoStash).2 with
-       | .error .replyCapInvalid => true | _ => false)
+    let (stC, resC) := endpointCallOnCore epAB clientA (.frame callMsgA.badge false true) c0 stNoStash
+    assertBool "a Call rendezvous with a no-stash server succeeds (seL4 delivers the message)"
+      (match resC with | .ok _ => true | _ => false)
+    assertBool "a Call rendezvous with a no-stash server leaves the caller Inactive, linked to no reply"
+      ((stC.getTcb? clientA).any fun t => decide (t.threadState = .Inactive ∧ t.replyObject = none))
+    assertBool "a Call rendezvous with a no-stash server wakes the server holding the message"
+      ((stC.getTcb? serverB).any fun t => decide (t.ipcState = .ready) && t.pendingMessage.isSome)
 
 -- ============================================================================
 -- §3.7 2PL lock-set discipline on the live pipeline states
@@ -1439,7 +1445,13 @@ private def apiEp : SeLe4n.ObjId := ⟨861⟩
 private def apiCaller : SeLe4n.ThreadId := ⟨862⟩
 private def apiServer : SeLe4n.ThreadId := ⟨863⟩ -- home core 1
 private def apiReply : SeLe4n.ReplyId := ⟨864⟩
-private def apiEpCap : Capability := { target := .object apiEp, rights := AccessRightSet.ofList [.write] }
+/-- A call capability: `Write`, and `GrantReply` so the call links the server's
+reply (seL4's `sendIPC` links a caller only through `Grant` or `GrantReply`). -/
+private def apiEpCap : Capability :=
+  { target := .object apiEp, rights := AccessRightSet.ofList [.write, .grantReply] }
+/-- `Write` alone: a call through it links no reply. -/
+private def apiEpCapWriteOnly : Capability :=
+  { target := .object apiEp, rights := AccessRightSet.ofList [.write] }
 private def apiEpCapRO : Capability := { target := .object apiEp, rights := AccessRightSet.ofList [.read] }
 /-- A cap whose target is a TCB, not an endpoint — resolves, but the `.call` arm
 rejects it (the transition finds a wrong-kinded object). -/
@@ -1483,6 +1495,18 @@ private def runLiveApiChecks : IO Unit := do
       (ipcStateIs st' apiCaller (.blockedOnReply apiEp (some apiServer)))
     assertBool "authorized live .call wakes the server on its home core 1"
       ((st'.queuedOn c1 apiServer))
+  -- WRITE ONLY (no `Grant`, no `GrantReply`): seL4's `sendIPC` delivers the
+  -- message, drops the server's stash and sets the caller `Inactive`.
+  match apiDispatch [(SeLe4n.Slot.ofNat 0, apiEpCapWriteOnly)] 0 with
+  | .error _ => assertBool "write-only live .call succeeds" false
+  | .ok ((), st') =>
+    assertBool "write-only live .call delivers: server B receives (.ready)"
+      (ipcStateIs st' apiServer .ready)
+    assertBool "write-only live .call leaves the caller Inactive, linked to no reply"
+      ((st'.getTcb? apiCaller).any fun t =>
+        decide (t.threadState = .Inactive ∧ t.replyObject = none ∧ t.ipcState = .ready))
+    assertBool "write-only live .call drops the server's stash"
+      ((st'.getTcb? apiServer).any fun t => t.pendingReceiveReply.isNone)
   -- NO CAP (empty slot 0): the CSpace lookup fails closed.
   assertBool "live .call with no cap at the CPtr fails with invalidCapability"
     (match apiDispatch [] 0 with | .error (.invalidCapability 0) => true | _ => false)
