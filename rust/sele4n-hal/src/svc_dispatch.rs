@@ -285,9 +285,13 @@ pub enum SvcOutcome {
     /// never decodes them (userspace's `decode_response` is the single
     /// decode point, plan §3.2).
     Frame([u64; 6]),
-    /// The caller blocked: **no return frame exists for it** (its stale
-    /// registers are not a return value; the real frame is staged by the
-    /// unblocking arm and delivered by the context restore).  Since WS-BP
+    /// The caller is answered nothing: **no return frame exists for it**
+    /// (its stale registers are not a return value).  It blocked in IPC —
+    /// the real frame is staged by the unblocking arm and delivered by the
+    /// context restore — or its syscall left it not runnable: suspended (a
+    /// self-suspend, a `Call` that links no reply) or destroyed (its own
+    /// last capability deleted), which seL4's `handleInvocation` answers
+    /// nothing either (it replies only to a caller left `Restart`).  Since WS-BP
     /// BP7.6 the dispatch installs this core's successor and the trap layer
     /// returns through it; this variant is reached only when it installed
     /// nothing, where the hardware would `eret` back INTO the blocked
@@ -404,8 +408,9 @@ pub fn blocked_resume_sentinel_regs() -> [u64; 6] {
 ///
 /// Returns:
 ///   `Ok(SvcOutcome::Frame(regs))` — write `regs` into the trap frame.
-///   `Ok(SvcOutcome::Blocked)`     — the caller blocked; no return frame
-///                                   exists (the trap layer poisons the
+///   `Ok(SvcOutcome::Blocked)`     — the caller blocked, or its syscall
+///                                   left it suspended or destroyed; no
+///                                   return frame exists (the trap layer poisons the
 ///                                   frame with the fail-closed
 ///                                   [`blocked_resume_sentinel_regs`]
 ///                                   when the context restore installed no

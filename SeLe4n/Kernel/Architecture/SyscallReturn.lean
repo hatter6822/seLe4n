@@ -1726,10 +1726,11 @@ theorem ofWords_words (o : SyscallOutcome) : ofWords o.words = o := by
 end SyscallOutcome
 
 /-- Does the caller's post-state IPC state mean the syscall **blocked**?
-Everything except `.ready` is an IPC-blocked state; a descheduled but
-IPC-`.ready` caller (a self-`.tcbSuspend`) still counts as returning, since
-the unit frame is exactly what it should observe when later resumed
-(plan §3.5).
+Everything except `.ready` is an IPC-blocked state.  It is one half of the
+reply decision (`tcbWithholdsReply`): a caller left IPC-`.ready` but
+`Inactive` — a self-`.tcbSuspend`, a `Call` that links no reply — is not
+blocked in IPC and is still answered nothing, as seL4's `handleInvocation`
+answers only a caller left `Restart`.
 
 **Exhaustive match, no wildcard** — the §3.4 discipline `ReturnShape`
 established, applied here for the same reason: a wildcard would silently
@@ -1765,6 +1766,41 @@ theorem tcbBlocksReturn_eq (tcb : TCB) :
   generalize tcb.ipcObjectCode = o
   generalize tcb.ipcStateCode = c
   rcases c with _ | _ | _ | _ | c <;> rcases o with _ | o <;> rfl
+
+/-- **Does the syscall leave its caller with no reply?**  seL4's
+`handleInvocation` writes the reply (`replyFromKernel_success_empty`, or the
+staged values of a receive) and sets the caller `Running` only
+`if (thread_state_get_tsType(thread->tcbState) == ThreadState_Restart)`: a
+caller the syscall blocked in IPC, or left `Inactive` — a self-suspend, a `Call`
+that links no reply, a fault suspend — is answered nothing, and `schedule` runs
+whichever thread is then current.  So a caller is answered exactly when it is
+runnable (`tcbWithholdsReply_eq`), whichever thread its core runs next: a
+caller its own syscall preempted keeps its answer in its saved context.
+
+Read off the TCB's codes and its `threadState` scalar, so the compiled return
+path builds no IPC state to match on (WS-ZA ZA4.7). -/
+@[inline] def tcbWithholdsReply (tcb : TCB) : Bool :=
+  tcbBlocksReturn tcb || tcb.threadState == .Inactive
+
+/-- Every IPC state but `.ready` blocks the return. -/
+theorem ipcStateBlocksReturn_of_ne_ready {s : ThreadIpcState} (h : s ≠ .ready) :
+    ipcStateBlocksReturn s = true := by
+  cases s <;> simp_all [ipcStateBlocksReturn]
+
+/-- The reply is withheld exactly from a caller that is not runnable. -/
+theorem tcbWithholdsReply_eq (tcb : TCB) : tcbWithholdsReply tcb = !tcb.isRunnable := by
+  unfold tcbWithholdsReply TCB.isRunnable
+  rw [tcbBlocksReturn_eq]
+  by_cases hR : tcb.ipcState = .ready
+  · simp only [hR, ipcStateBlocksReturn_ready, decide_true, Bool.true_and, Bool.false_or]
+    cases tcb.threadState <;> rfl
+  · rw [ipcStateBlocksReturn_of_ne_ready hR]
+    simp [hR]
+
+/-- The executable test is the property (`TCB.Runnable`), both ways. -/
+theorem isRunnable_eq_true_iff (tcb : TCB) :
+    tcb.isRunnable = true ↔ tcb.ipcState = .ready ∧ tcb.threadState ≠ .Inactive := by
+  unfold TCB.isRunnable; simp
 
 /-- **seL4's `replyFromKernel_success_empty`** over the caller's registers:
 the badge register `x0` is `0` and the message-info register `x1` the empty

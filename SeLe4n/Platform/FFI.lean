@@ -2217,51 +2217,58 @@ theorem readReturnValue_eq_readReturnFrame_x0
 
 /-- WS-RA RA.B.5a: the outcome a completed dispatch hands the boundary,
 decided from the caller's **post-state** (plan §3.5 — outcome is
-state-dependent, not id-dependent): a caller left IPC-blocked has no frame
-yet (`.blocks`); a returning caller's frame is composed per
-`syscallReturnShape` — constructed for `.unit` shapes, read from the
-staged registers for value shapes (§3.3's shape-driven read).  An
-unresolvable syscall id or a vanished caller TCB fail closed to the unit
-frame. -/
+state-dependent, not id-dependent): a caller the syscall left with no reply has
+no frame (`.blocks`); an answered caller's frame is composed per
+`syscallReturnShape` — constructed for `.unit` shapes, read from the staged
+registers for value shapes (§3.3's shape-driven read).
+
+**Who is answered is seL4's `handleInvocation` test**: the reply is written
+only to a caller still `Restart` after the invocation, which is a caller that
+is runnable (`TCB.isRunnable`: IPC-`.ready` and not `Inactive`).  A caller
+blocked in IPC, a caller the syscall suspended — a self-`.tcbSuspend`, a `Call`
+that links no reply (a receiver with no reply object, a capability without
+Grant or GrantReply), a fault suspend — and a caller whose TCB the syscall
+destroyed (its own last capability deleted) are all answered nothing: there is
+no frame, nothing is staged into their saved context, and the core resumes
+whichever thread the committed state runs on it, or the idle loop
+(`Architecture.restoreTargetOnCore`).  An unresolvable syscall id fails closed
+to the unit frame. -/
 def syscallReturnOutcome (syscallId : UInt32) (st : SystemState)
     (tid : SeLe4n.ThreadId) : Architecture.SyscallOutcome :=
-  let blocked :=
+  let withheld :=
     match st.getTcb? tid with
-    | some tcb => Architecture.ipcStateBlocksReturn tcb.ipcState
-    | none => false
-  if blocked then
+    | some tcb => !tcb.isRunnable
+    | none => true
+  if withheld then
     .blocks
   else
     let shape :=
       ((SyscallId.ofNat? syscallId.toNat).map Architecture.syscallReturnShape).getD .unit
     .returns (Architecture.frameForShape shape (Architecture.readReturnFrame st tid))
 
-/-! ### WS-RA RA.B.5a — the blocking arm returns no frame (plan §10)
+/-! ### WS-RA RA.B.5a — an unanswered caller gets no frame (plan §10)
 
 `syscallReturnOutcome`'s body is one `if`, so each direction below is close to
-definitional.  What the family asserts is not the `if` but the three properties
-the rest of the system reads off it, each of which a plausible alternative
+definitional.  What the family asserts is not the `if` but the properties the
+rest of the system reads off it, each of which a plausible alternative
 definition would break:
 
-* the decision is **state-dependent, not id-dependent** (§3.5).  The pre-WS-RA
-  design chose the shape from the syscall number, and a `.send` that found a
-  waiting receiver returns while a `.send` that parked does not — so the
-  characterisation is stated `∀ syscallId`, which is what pins that no id can
-  resurrect a frame for a parked caller;
-* a blocked caller's outcome carries **no frame at all** — not a zero frame, not
-  a stale one.  That is what the interim trap layer relies on when it poisons
-  `x0`-`x5` with `blocked_resume_sentinel_regs()` rather than delivering
-  anything, and what the context restore (WS-BP BP7.6) supersedes with a
-  successor install wherever one is staged;
-* the staged registers are **not read** on that arm, so a blocked caller's own
-  argument spill can never reach the boundary as a return value — the §1.2
-  defect, in the one place that would reintroduce it silently.
+* the decision is **state-dependent, not id-dependent** (§3.5): a `.send` that
+  found a waiting receiver returns while a `.send` that parked does not, so
+  the characterisation is stated `∀ syscallId`;
+* it reads the caller's **whole run state**, not its IPC state alone: a caller
+  left IPC-`.ready` but `Inactive` is answered nothing, as in seL4, so a frame
+  never reaches a thread the model has taken off its core;
+* an unanswered caller's outcome carries **no frame at all** — not a zero
+  frame, not a stale one;
+* the staged registers are **not read** on that arm, so an unanswered caller's
+  own argument spill can never reach the boundary as a return value.
 
 `.faulted` is deliberately outside this function's range: a seam fault is
 raised by `syscallDispatchFromAbi`'s cap-fault arm, which never reaches the
 outcome composition (PR #887 review round 5). -/
 
-/-- The frame a *returning* caller gets: the shape `syscallReturnShape` assigns
+/-- The frame an *answered* caller gets: the shape `syscallReturnShape` assigns
 the id, applied to the staged registers (`.unit` discards them, §3.3).  Named so
 the reductions below and their callers read one expression rather than three
 copies of it. -/
@@ -2277,113 +2284,117 @@ theorem syscallReturnOutcome_of_getTcb?
     (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) :
     syscallReturnOutcome syscallId st tid =
-      if Architecture.ipcStateBlocksReturn tcb.ipcState then .blocks
-      else .returns (syscallReturnOutcomeFrame syscallId st tid) := by
+      if tcb.isRunnable then .returns (syscallReturnOutcomeFrame syscallId st tid)
+      else .blocks := by
   unfold syscallReturnOutcome syscallReturnOutcomeFrame
   rw [hTcb]
+  dsimp only
+  generalize tcb.isRunnable = b
+  cases b <;> rfl
 
-/-- …and at a caller whose TCB the dispatch destroyed: fail closed to a frame,
-never to `.blocks`.  A vanished thread is not waiting for anything. -/
+/-- …and at a caller whose TCB the dispatch destroyed (its own last capability
+deleted): **no frame**.  There is no saved context left to take one, the thread
+is current on no core, and the core resumes the successor or the idle loop. -/
 theorem syscallReturnOutcome_of_getTcb?_none
     (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId)
     (hTcb : st.getTcb? tid = none) :
-    syscallReturnOutcome syscallId st tid
-      = .returns (syscallReturnOutcomeFrame syscallId st tid) := by
-  unfold syscallReturnOutcome syscallReturnOutcomeFrame
+    syscallReturnOutcome syscallId st tid = .blocks := by
+  unfold syscallReturnOutcome
   rw [hTcb]
   rfl
 
 /-- **WS-RA RA.B.5a (`blockingArm_returns_no_frame`, plan §10) — the forward
-direction.**  A caller left in a blocking IPC state by the dispatch gets
-`.blocks`, whatever syscall it issued. -/
-theorem syscallReturnOutcome_blocks_of_ipcBlocked
+direction.**  A caller the dispatch left not runnable — blocked in IPC or
+suspended — gets `.blocks`, whatever syscall it issued. -/
+theorem syscallReturnOutcome_blocks_of_not_runnable
     (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb)
-    (hBlocked : Architecture.ipcStateBlocksReturn tcb.ipcState = true) :
+    (hTcb : st.getTcb? tid = some tcb) (hStop : tcb.isRunnable = false) :
     syscallReturnOutcome syscallId st tid = .blocks := by
-  rw [syscallReturnOutcome_of_getTcb? syscallId st tid tcb hTcb, hBlocked, if_pos rfl]
+  rw [syscallReturnOutcome_of_getTcb? syscallId st tid tcb hTcb, hStop]
+  rfl
 
-/-- **…and the converse.**  A caller the dispatch left runnable — or one whose
-TCB the dispatch destroyed, which fails closed to a frame — gets a frame.
-Stated as the `.returns` witness rather than as `≠ .blocks`, so it cannot be
-satisfied by a third outcome. -/
-theorem syscallReturnOutcome_returns_of_not_ipcBlocked
-    (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hNotBlocked : ∀ tcb : TCB, st.getTcb? tid = some tcb →
-      Architecture.ipcStateBlocksReturn tcb.ipcState = false) :
+/-- **…and the converse.**  A runnable caller is answered.  Stated as the
+`.returns` witness rather than as `≠ .blocks`, so it cannot be satisfied by a
+third outcome. -/
+theorem syscallReturnOutcome_returns_of_runnable
+    (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) (hRun : tcb.isRunnable = true) :
     syscallReturnOutcome syscallId st tid
       = .returns (syscallReturnOutcomeFrame syscallId st tid) := by
-  cases hTcb : st.getTcb? tid with
-  | none => exact syscallReturnOutcome_of_getTcb?_none syscallId st tid hTcb
-  | some tcb =>
-      rw [syscallReturnOutcome_of_getTcb? syscallId st tid tcb hTcb,
-          hNotBlocked tcb hTcb, if_neg (by simp)]
+  rw [syscallReturnOutcome_of_getTcb? syscallId st tid tcb hTcb, hRun]
+  rfl
 
 /-- **The characterisation, both directions at once.**  `.blocks` happens
-exactly when the caller's **post-state** says it is blocked — so a reader of
-the seam may use either direction, and neither the syscall id nor the staged
-registers enter the decision. -/
+exactly when the caller's **post-state** leaves it unanswered — no TCB, or a
+TCB that is not runnable — so neither the syscall id nor the staged registers
+enter the decision. -/
 theorem syscallReturnOutcome_blocks_iff
     (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) :
     syscallReturnOutcome syscallId st tid = .blocks
-      ↔ ∃ tcb : TCB, st.getTcb? tid = some tcb
-          ∧ Architecture.ipcStateBlocksReturn tcb.ipcState = true := by
+      ↔ ∀ tcb : TCB, st.getTcb? tid = some tcb → tcb.isRunnable = false := by
   constructor
+  · intro h tcb hTcb
+    cases hR : tcb.isRunnable with
+    | false => rfl
+    | true =>
+        rw [syscallReturnOutcome_returns_of_runnable syscallId st tid tcb hTcb hR] at h
+        cases h
   · intro h
     cases hTcb : st.getTcb? tid with
-    | none =>
-        rw [syscallReturnOutcome_of_getTcb?_none syscallId st tid hTcb] at h
-        exact absurd h (by simp)
+    | none => exact syscallReturnOutcome_of_getTcb?_none syscallId st tid hTcb
     | some tcb =>
-        cases hB : Architecture.ipcStateBlocksReturn tcb.ipcState with
-        | false =>
-            rw [syscallReturnOutcome_of_getTcb? syscallId st tid tcb hTcb, hB,
-                if_neg (by simp)] at h
-            exact absurd h (by simp)
-        | true => exact ⟨tcb, rfl, hB⟩
-  · rintro ⟨tcb, hTcb, hB⟩
-    exact syscallReturnOutcome_blocks_of_ipcBlocked syscallId st tid tcb hTcb hB
+        exact syscallReturnOutcome_blocks_of_not_runnable syscallId st tid tcb hTcb (h tcb hTcb)
 
-/-- **The plan's headline, stated as the negative it names**: a blocking arm
-returns **no frame**.  Not a zero frame and not a stale one — there is no
-`SyscallReturnFrame` the boundary hands back, which is what makes the interim
-`blocked_resume_sentinel_regs()` poisoning the only thing a blocked caller's
-registers can hold on a core where the context restore (WS-BP BP7.6) staged no
-successor. -/
+/-- **An answered caller is runnable**: a `.returns` outcome names a caller
+with a TCB that is IPC-`.ready` and not `Inactive` (`TCB.Runnable`).  So a
+frame never reaches a thread the syscall blocked, suspended or destroyed — the
+caller seL4's `handleInvocation` leaves unanswered. -/
+theorem syscallReturnOutcome_returns_runnable
+    (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId)
+    (f : Architecture.SyscallReturnFrame)
+    (h : syscallReturnOutcome syscallId st tid = .returns f) :
+    ∃ tcb : TCB, st.getTcb? tid = some tcb ∧
+      tcb.ipcState = .ready ∧ tcb.threadState ≠ .Inactive := by
+  cases hTcb : st.getTcb? tid with
+  | none =>
+      rw [syscallReturnOutcome_of_getTcb?_none syscallId st tid hTcb] at h; cases h
+  | some tcb =>
+      cases hR : tcb.isRunnable with
+      | false =>
+          rw [syscallReturnOutcome_blocks_of_not_runnable syscallId st tid tcb hTcb hR] at h
+          cases h
+      | true => exact ⟨tcb, rfl, (Architecture.isRunnable_eq_true_iff tcb).mp hR⟩
+
+/-- **The plan's headline, stated as the negative it names**: an unanswered
+caller is handed **no frame**.  Not a zero frame and not a stale one — there is
+no `SyscallReturnFrame` the boundary hands back. -/
 theorem blockingArm_returns_no_frame
     (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb)
-    (hBlocked : Architecture.ipcStateBlocksReturn tcb.ipcState = true) :
+    (hTcb : st.getTcb? tid = some tcb) (hStop : tcb.isRunnable = false) :
     ∀ frame : Architecture.SyscallReturnFrame,
       syscallReturnOutcome syscallId st tid ≠ .returns frame := by
   intro frame h
-  rw [syscallReturnOutcome_blocks_of_ipcBlocked syscallId st tid tcb hTcb hBlocked] at h
+  rw [syscallReturnOutcome_blocks_of_not_runnable syscallId st tid tcb hTcb hStop] at h
   exact absurd h (by simp)
 
 /-- **The id-independence half, stated on its own** (§3.5): two *different*
-syscalls whose callers end blocked get the same outcome.  This is the property
-the pre-WS-RA id-driven design lacked, and the reason `.send` — which returns
-at a rendezvous and blocks when it parks — cannot be classified from its
-number. -/
+syscalls whose callers end unanswered get the same outcome. -/
 theorem syscallReturnOutcome_blocked_independent_of_id
     (sid₁ sid₂ : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb)
-    (hBlocked : Architecture.ipcStateBlocksReturn tcb.ipcState = true) :
+    (hTcb : st.getTcb? tid = some tcb) (hStop : tcb.isRunnable = false) :
     syscallReturnOutcome sid₁ st tid = syscallReturnOutcome sid₂ st tid := by
-  rw [syscallReturnOutcome_blocks_of_ipcBlocked sid₁ st tid tcb hTcb hBlocked,
-      syscallReturnOutcome_blocks_of_ipcBlocked sid₂ st tid tcb hTcb hBlocked]
+  rw [syscallReturnOutcome_blocks_of_not_runnable sid₁ st tid tcb hTcb hStop,
+      syscallReturnOutcome_blocks_of_not_runnable sid₂ st tid tcb hTcb hStop]
 
-/-- **The staged registers are not consulted on the blocking arm.**  Whatever
-the caller's saved `x0`-`x5` hold — its own argument spill, in every blocking
-case — the outcome is the same, so the §1.2 defect cannot re-enter through this
-seam.  Stated by *varying the register context* and fixing everything else,
+/-- **The staged registers are not consulted on the unanswered arm.**  Whatever
+the caller's saved `x0`-`x5` hold — its own argument spill — the outcome is the
+same.  Stated by *varying the register context* and fixing everything else,
 which is the token-preserving mutation: a definition that read the registers on
 this arm keeps every identifier and fails this. -/
 theorem syscallReturnOutcome_blocked_ignores_staged_registers
     (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (frame : Architecture.SyscallReturnFrame)
-    (hTcb : st.getTcb? tid = some tcb)
-    (hBlocked : Architecture.ipcStateBlocksReturn tcb.ipcState = true)
+    (hTcb : st.getTcb? tid = some tcb) (hStop : tcb.isRunnable = false)
     (hObjInv : st.objects.invExt) :
     syscallReturnOutcome syscallId (Architecture.writeReturnFrameToTcb st tid frame) tid
       = syscallReturnOutcome syscallId st tid := by
@@ -2392,13 +2403,13 @@ theorem syscallReturnOutcome_blocked_ignores_staged_registers
     unfold Architecture.writeReturnFrameToTcb
     rw [SystemState.updateTcb_getTcb?_self st tid _ hObjInv, hTcb]
     rfl
-  rw [syscallReturnOutcome_blocks_of_ipcBlocked syscallId _ tid _ hTcb' hBlocked,
-      syscallReturnOutcome_blocks_of_ipcBlocked syscallId st tid tcb hTcb hBlocked]
+  rw [syscallReturnOutcome_blocks_of_not_runnable syscallId _ tid _ hTcb' hStop,
+      syscallReturnOutcome_blocks_of_not_runnable syscallId st tid tcb hTcb hStop]
 
 /-- **`.faulted` is outside this function's range.**  A seam fault is raised by
 `syscallDispatchFromAbi`'s cap-fault arm, which returns before the outcome is
 composed; a reader that sees `.faulted` therefore knows it came from there and
-not from a blocked or returning caller. -/
+not from an unanswered or returning caller. -/
 theorem syscallReturnOutcome_ne_faulted
     (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) :
     syscallReturnOutcome syscallId st tid ≠ .faulted := by
@@ -2416,8 +2427,8 @@ seL4's syscall number as well as the operation (WS-SX SX7.2).  A `Send`,
 an invocation's value is written only for a `Call`, and `handleYield` writes
 none), so a caller it left runnable is handed back the registers its context
 holds, unchanged (`readReturnFrame`; staging them writes nothing,
-`writeReturnFrameToTcb_readReturnFrame`), and one it left blocked has no frame
-(`.blocks`).  Every other syscall replies to a `Call` or receives, and its
+`writeReturnFrameToTcb_readReturnFrame`), and one it left blocked or suspended
+has no frame (`.blocks`).  Every other syscall replies to a `Call` or receives, and its
 outcome is the operation's shape (`syscallReturnOutcome`): a `Call` to an
 invocation with no value writes `x0` and `x1` alone (`frameForShape_unit`,
 seL4's `replyFromKernel_success_empty`), a receive what it staged. -/
@@ -2450,28 +2461,58 @@ theorem syscallSuccessOutcome_of_returnsNothing (syscallNum opCode : UInt32)
 /-- **A caller the dispatch left runnable gets a frame**, whatever it issued —
 its own registers, the empty reply or what the arm staged — never `.blocks`,
 `.faulted` or `.resumes`. -/
-theorem syscallSuccessOutcome_returns_of_not_ipcBlocked
-    (syscallNum opCode : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hNotBlocked : ∀ tcb : TCB, st.getTcb? tid = some tcb →
-      Architecture.ipcStateBlocksReturn tcb.ipcState = false) :
+theorem syscallSuccessOutcome_returns_of_runnable
+    (syscallNum opCode : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) (hRun : tcb.isRunnable = true) :
     ∃ f, syscallSuccessOutcome syscallNum opCode st tid = .returns f := by
-  have hR := syscallReturnOutcome_returns_of_not_ipcBlocked opCode st tid hNotBlocked
+  have hR := syscallReturnOutcome_returns_of_runnable opCode st tid tcb hTcb hRun
   unfold syscallSuccessOutcome
   rw [hR]
   split
   · exact ⟨_, rfl⟩
   · exact ⟨_, rfl⟩
 
-/-- The blocked direction holds of every syscall: a caller the dispatch left
-blocked gets `.blocks`, whatever it issued. -/
-theorem syscallSuccessOutcome_blocks_of_ipcBlocked
+/-- The unanswered direction holds of every syscall: a caller the dispatch left
+blocked or suspended gets `.blocks`, whatever it issued. -/
+theorem syscallSuccessOutcome_blocks_of_not_runnable
     (syscallNum opCode : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb)
-    (hBlocked : Architecture.ipcStateBlocksReturn tcb.ipcState = true) :
+    (hTcb : st.getTcb? tid = some tcb) (hStop : tcb.isRunnable = false) :
     syscallSuccessOutcome syscallNum opCode st tid = .blocks := by
   unfold syscallSuccessOutcome
-  rw [syscallReturnOutcome_blocks_of_ipcBlocked opCode st tid tcb hTcb hBlocked]
+  rw [syscallReturnOutcome_blocks_of_not_runnable opCode st tid tcb hTcb hStop]
   split <;> rfl
+
+/-- …and a caller whose TCB the dispatch destroyed gets `.blocks` too. -/
+theorem syscallSuccessOutcome_blocks_of_getTcb?_none
+    (syscallNum opCode : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hTcb : st.getTcb? tid = none) :
+    syscallSuccessOutcome syscallNum opCode st tid = .blocks := by
+  unfold syscallSuccessOutcome
+  rw [syscallReturnOutcome_of_getTcb?_none opCode st tid hTcb]
+  split <;> rfl
+
+/-- **The boundary hands a frame only to a runnable caller**, whatever it
+issued: a `.returns` outcome names a caller with a TCB that is IPC-`.ready` and
+not `Inactive`.  A caller the syscall blocked, suspended or destroyed is never
+resumed with a frame; its core resumes the thread the committed state runs
+there (`Architecture.restoreTargetOnCore`). -/
+theorem syscallSuccessOutcome_returns_runnable
+    (syscallNum opCode : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId)
+    (f : Architecture.SyscallReturnFrame)
+    (h : syscallSuccessOutcome syscallNum opCode st tid = .returns f) :
+    ∃ tcb : TCB, st.getTcb? tid = some tcb ∧
+      tcb.ipcState = .ready ∧ tcb.threadState ≠ .Inactive := by
+  cases hTcb : st.getTcb? tid with
+  | none =>
+      rw [syscallSuccessOutcome_blocks_of_getTcb?_none syscallNum opCode st tid hTcb] at h
+      cases h
+  | some tcb =>
+      cases hR : tcb.isRunnable with
+      | false =>
+          rw [syscallSuccessOutcome_blocks_of_not_runnable syscallNum opCode st tid tcb hTcb hR]
+            at h
+          cases h
+      | true => exact ⟨tcb, rfl, (Architecture.isRunnable_eq_true_iff tcb).mp hR⟩
 
 /-- …and the outcome is `.blocks` only for a blocked caller. -/
 theorem syscallSuccessOutcome_blocks_iff
@@ -3974,7 +4015,7 @@ built.  A `Send`, `NBSend` or `Yield` answers the caller's own `x0`-`x5`, a
     (tid : SeLe4n.ThreadId) : UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 :=
   match st.getTcb? tid with
   | some tcb =>
-      if Architecture.tcbBlocksReturn tcb then (1, 0, 0, 0, 0, 0, 0)
+      if Architecture.tcbWithholdsReply tcb then (1, 0, 0, 0, 0, 0, 0)
       else if Syscall.numberReturnsNothing syscallNum then
         (0, tcb.registerContext.x0, tcb.registerContext.x1, tcb.registerContext.x2,
          tcb.registerContext.x3, tcb.registerContext.x4, tcb.registerContext.x5)
@@ -3987,31 +4028,29 @@ built.  A `Send`, `NBSend` or `Yield` answers the caller's own `x0`-`x5`, a
         | _ =>
             (0, tcb.registerContext.x0, tcb.registerContext.x1, tcb.registerContext.x2,
              tcb.registerContext.x3, tcb.registerContext.x4, tcb.registerContext.x5)
-  | none => (0, 0, 0, 0, 0, 0, 0)
+  | none => (1, 0, 0, 0, 0, 0, 0)
 
 theorem returnOutcomeWords_eq (syscallNum syscallId : UInt32) (st : SystemState)
     (tid : SeLe4n.ThreadId) :
     (syscallSuccessOutcome syscallNum syscallId st tid).words =
       returnOutcomeWords syscallNum syscallId st tid := by
   unfold syscallSuccessOutcome syscallReturnOutcome returnOutcomeWords
-  simp only [Architecture.tcbBlocksReturn_eq]
+  simp only [Architecture.tcbWithholdsReply_eq]
   generalize ((SyscallId.ofNat? syscallId.toNat).map Architecture.syscallReturnShape).getD
     .unit = shape
   cases hT : st.getTcb? tid with
   | none =>
     cases hN : Syscall.numberReturnsNothing syscallNum <;>
-      cases shape <;>
-      simp [hN, hT, Architecture.SyscallOutcome.words, Architecture.SyscallOutcome.tagWord,
-        Architecture.SyscallOutcome.mailboxFrame, Architecture.readReturnFrame,
-        Architecture.frameForShape, Architecture.emptyReplyFrame,
-        Architecture.SyscallReturnFrame.zero]
+      simp [hN, Architecture.SyscallOutcome.words, Architecture.SyscallOutcome.tagWord,
+        Architecture.SyscallOutcome.mailboxFrame, Architecture.SyscallReturnFrame.zero]
   | some tcb =>
-    by_cases hB : Architecture.ipcStateBlocksReturn tcb.ipcState = true
+    cases hR : tcb.isRunnable
     · cases hN : Syscall.numberReturnsNothing syscallNum <;>
-        simp [hB, Architecture.SyscallOutcome.words, Architecture.SyscallOutcome.tagWord,
+        simp [hR, Architecture.SyscallOutcome.words, Architecture.SyscallOutcome.tagWord,
           Architecture.SyscallOutcome.mailboxFrame, Architecture.SyscallReturnFrame.zero]
     · cases hN : Syscall.numberReturnsNothing syscallNum
-      · simp only [hB, hN, Bool.false_eq_true, ↓reduceIte, Architecture.SyscallOutcome.words,
+      · simp only [hR, hN, Bool.not_true, Bool.false_eq_true, ↓reduceIte,
+          Architecture.SyscallOutcome.words,
           Architecture.SyscallOutcome.tagWord, Architecture.SyscallOutcome.mailboxFrame,
           Architecture.readReturnFrame, hT]
         cases shape <;>
@@ -4019,7 +4058,7 @@ theorem returnOutcomeWords_eq (syscallNum syscallId : UInt32) (st : SystemState)
             SeLe4n.RegisterFile.gpr, SeLe4n.RegisterFile.word, SeLe4n.RegisterFile.wordOfByte,
             Architecture.trapFrameWordCount]
       · cases shape <;>
-          simp [hB, hN, hT, Architecture.SyscallOutcome.words, Architecture.SyscallOutcome.tagWord,
+          simp [hR, hN, hT, Architecture.SyscallOutcome.words, Architecture.SyscallOutcome.tagWord,
             Architecture.SyscallOutcome.mailboxFrame, Architecture.readReturnFrame,
             SeLe4n.RegisterFile.gpr, SeLe4n.RegisterFile.word, SeLe4n.RegisterFile.wordOfByte,
             Architecture.trapFrameWordCount]
@@ -4950,7 +4989,7 @@ theorem syscallDispatchFromAbi_ne_error
     succeeds on the register-spilled state, `syscallDispatchFromAbi`
     returns `(syscallSuccessOutcome syscallId opCode st' tid, st')`, `opCode`
     the operation the spilled frame selects (`seamOperationCode`) — the
-    outcome decided from the caller's post-state (blocked ⇒ `.blocks`; a
+    outcome decided from the caller's post-state (blocked or suspended ⇒ `.blocks`; a
     `Send`, `NBSend` or `Yield` ⇒ `.resumes`; otherwise the shape-driven
     frame composition).
 
@@ -4978,15 +5017,17 @@ theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok
 
 
 /-- **WS-RA RA.B.5a at the live seam (`blockingArm_returns_no_frame`, plan
-§10)**: when the checked entry leaves the caller in a blocking IPC state, the
-**exported boundary** returns `.blocks` — no frame reaches the trap layer.
+§10)**: when the checked entry leaves the caller not runnable — blocked in IPC,
+or suspended by its own syscall (a self-suspend, a `Call` that links no reply)
+— the **exported boundary** returns `.blocks`: no frame reaches the trap layer,
+and the core resumes the thread the committed state runs on it.
 
 The family above is about `syscallReturnOutcome`; this is the composition that
 makes it a statement about `lean_syscall_dispatch_cross_core`'s own result, and
 it is where the property is actually load-bearing: `dispatch_svc` reads the
 outcome tag, and tag 1 is what sends it down the poison-and-park path rather
 than writing a return frame into a thread that has not been answered. -/
-theorem syscallDispatchFromAbi_blocks_of_ipcBlocked
+theorem syscallDispatchFromAbi_blocks_of_not_runnable
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
@@ -4998,14 +5039,13 @@ theorem syscallDispatchFromAbi_blocks_of_ipcBlocked
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
         = Except.ok ((), st'))
-    (hTcb : st'.getTcb? tid = some tcb)
-    (hBlocked : Architecture.ipcStateBlocksReturn tcb.ipcState = true) :
+    (hTcb : st'.getTcb? tid = some tcb) (hStop : tcb.isRunnable = false) :
     syscallDispatchFromAbi ctx executingCore syscallId
         x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
       = Except.ok (.blocks, st') := by
   rw [syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok ctx executingCore syscallId
         x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st tid st' hCur hNI hSyscall,
-      syscallSuccessOutcome_blocks_of_ipcBlocked _ _ st' tid tcb hTcb hBlocked]
+      syscallSuccessOutcome_blocks_of_not_runnable _ _ st' tid tcb hTcb hStop]
 
 /-- …and the negative form the trap layer relies on: **no frame** crosses the
 boundary for such a caller. -/
@@ -5021,16 +5061,15 @@ theorem syscallDispatchFromAbi_blocked_returns_no_frame
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
         = Except.ok ((), st'))
-    (hTcb : st'.getTcb? tid = some tcb)
-    (hBlocked : Architecture.ipcStateBlocksReturn tcb.ipcState = true) :
+    (hTcb : st'.getTcb? tid = some tcb) (hStop : tcb.isRunnable = false) :
     ∀ (frame : Architecture.SyscallReturnFrame) (stAny : SystemState),
       syscallDispatchFromAbi ctx executingCore syscallId
           x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
         ≠ Except.ok (.returns frame, stAny) := by
   intro frame stAny h
-  rw [syscallDispatchFromAbi_blocks_of_ipcBlocked ctx executingCore syscallId
+  rw [syscallDispatchFromAbi_blocks_of_not_runnable ctx executingCore syscallId
         x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st tid st' tcb
-        hCur hNI hSyscall hTcb hBlocked] at h
+        hCur hNI hSyscall hTcb hStop] at h
   exact absurd h (by simp)
 
 /-- **WS-RR RR7.3**: the capability guarantee at the **exported seam**.

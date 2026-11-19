@@ -232,10 +232,10 @@ private def replyCapability : Capability :=
 
 private def selfTcbCapPtr : Nat := 8
 
-/-- A capability to the caller's own TCB — the 9g self-suspend witness for
-plan §3.5's parenthetical: a self-`.tcbSuspend` deschedules without
-IPC-blocking, so its outcome is `returns` with the constructed unit frame
-(the value the thread should observe when later resumed). -/
+/-- A capability to the caller's own TCB — the 9g self-suspend witness: a
+self-`.tcbSuspend` deschedules the caller without IPC-blocking it, and, as
+seL4's `handleInvocation` answers only a caller left `Restart`, the caller
+is answered nothing (`.blocks`). -/
 private def selfTcbCap : Capability :=
   { target := .object callerTid.toObjId,
     rights := AccessRightSet.ofList [.read, .write] }
@@ -801,14 +801,31 @@ private def serviceRegisterScenario :
     (({ length := 5, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64)
     910 1 64 64 0 0 0 0 0 st1
 
-/-- 9g: a **self**-`.tcbSuspend` — §3.5's parenthetical, witnessed: the
-caller deschedules itself but does not IPC-block (`ipcState` stays
-`.ready`), so the outcome is `returns` with the **constructed** unit
-frame — which is also the value it should observe when later resumed. -/
+/-- 9g: a **self**-`.tcbSuspend`: the caller deschedules itself but does not
+IPC-block (`ipcState` stays `.ready`).  It is `Inactive`, so it is answered
+nothing — seL4's `handleInvocation` writes the reply only to a caller left
+`Restart` — and the core resumes the thread it runs next, never the caller. -/
 private def selfSuspendScenario :
     Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
   dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
     SyscallId.tcbSuspend 0 selfTcbCapPtr.toUInt64 0 0 0 twoThreadState
+
+/-- 9g': a `Call` that **delivers and links no reply**: the boot-core thread
+waits on the endpoint, then the peer calls it on core 1 through the capability
+without Grant (seL4-MCS `sendIPC`: no `canGrant`/`canGrantReply`, so no reply
+is pushed and the caller is set `Inactive`).  Returns (the peer's outcome, the
+peer's frame before and after the call, the committed state). -/
+private def callNoReplyDeliversScenario :
+    Except KernelError (Kernel.Architecture.SyscallOutcome ×
+      Kernel.Architecture.SyscallReturnFrame × Kernel.Architecture.SyscallReturnFrame ×
+      SystemState) := do
+  let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    endpointWait 0 epCapPtr.toUInt64 0 0 0 twoThreadState
+  if out1 != .blocks then throw .illegalState
+  let preFrame := stagedFrame st1 peerTid
+  let (out2, st2) ← dispatchFromAbiOn core1
+    SyscallId.call 2 epCapNoGrantPtr.toUInt64 7 8 0 st1
+  pure (out2, preFrame, stagedFrame st2 peerTid, st2)
 
 /-- 9h: capability-transfer honesty (PR #866 round-2).  The caller blocks
 in `.receive`; the peer sends body `[7]` plus ONE extra capability
@@ -1260,8 +1277,33 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
         (match st'.getTcb? callerTid with
           | some tcb => tcb.ipcState == .ready
           | none => false)
-      assertBool "9g: a self-suspend RETURNS the constructed unit frame (not .blocks)"
-        (out == .returns .zero)
+      assertBool "9g control: the caller is Inactive"
+        ((st'.getTcb? callerTid).any fun t => decide (t.threadState = .Inactive))
+      assertBool "9g: a self-suspend is answered nothing (.blocks, no frame)"
+        (out == .blocks)
+      assertBool "9g: nothing is staged into the suspended caller's context (x0 keeps its capability pointer)"
+        ((stagedFrame st' callerTid).x0 == selfTcbCapPtr.toUInt64)
+  -- 9g'' — a caller whose TCB its own syscall destroyed (its last capability
+  -- deleted) has no context to answer: no frame, whatever it issued
+  assertBool "9g'': a caller with no TCB left is answered nothing (.blocks, no frame)"
+    (SeLe4n.Platform.FFI.syscallSuccessOutcome Syscall.call.number.toUInt32
+        SyscallId.cspaceDelete.toNat.toUInt32 twoThreadState ⟨999⟩ == .blocks)
+  -- 9g' — a Call that delivers and links no reply is answered nothing
+  match callNoReplyDeliversScenario with
+  | .error e => assertBool s!"9g' dispatches (got .error {reprStr e})" false
+  | .ok (out, preFrame, postFrame, st') => do
+      assertBool "9g' control: the receiver took the message (x2 = 7, x3 = 8)"
+        ((stagedFrame st' callerTid).x2 == 7 && (stagedFrame st' callerTid).x3 == 8)
+      assertBool "9g' control: the caller is Inactive and `.ready`, linked to no reply"
+        ((st'.getTcb? peerTid).any fun t =>
+          decide (t.threadState = .Inactive ∧ t.ipcState = .ready ∧ t.replyObject = none))
+      assertBool "9g': the caller is answered nothing (.blocks, no frame)"
+        (out == .blocks)
+      assertBool "9g': the caller's core runs another thread or none, never the caller"
+        ((st'.scheduler.currentOnCore core1) != some peerTid)
+      assertBool "9g': the caller's registers are the ones it trapped with (no write)"
+        (postFrame.x0 == epCapNoGrantPtr.toUInt64 && postFrame.x2 == 7 && postFrame.x3 == 8 &&
+          postFrame != preFrame)
   -- 9h — capability-transfer honesty (PR #866 round-2): the staged
   -- extraCaps is the INSTALLED count, never the requested one
   match capsSendScenario epCapNoGrantPtr with

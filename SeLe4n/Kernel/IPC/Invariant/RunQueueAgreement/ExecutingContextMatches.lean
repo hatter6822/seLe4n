@@ -173,21 +173,13 @@ theorem syscallDispatchFromAbi_stagedContextMatches {ctx : LabelingContext} {e :
       hPl hC0 hE (bankAgree_of_match hSp)
     refine contextMatchesCurrentOnCore_stageCallerReturnFor_of_bankAgree _ hDInv hA ?_
     intro hNot hCurT
-    cases hT : st'.getTcb? tid with
-    | none =>
-      obtain ⟨f, hf⟩ := Platform.FFI.syscallSuccessOutcome_returns_of_not_ipcBlocked
-        syscallId _ st' tid (fun _ h => by rw [hT] at h; cases h)
-      exact hNot f hf
-    | some tcb =>
-      cases hb : Architecture.ipcStateBlocksReturn tcb.ipcState with
-      | false =>
-        obtain ⟨f, hf⟩ := Platform.FFI.syscallSuccessOutcome_returns_of_not_ipcBlocked
-          syscallId _ st' tid (fun t h => by rw [hT] at h; cases h; exact hb)
-        exact hNot f hf
-      | true =>
-        have hNe : tcb.ipcState ≠ .ready := fun hr => by
-          rw [hr, Architecture.ipcStateBlocksReturn_ready] at hb; cases hb
-        exact blockedCurrentNowhere_of_currentDequeuedUnique hDU tid tcb hT hNe e hCurT
+    -- A thread current on the core is runnable (`currentDequeuedUnique`), and a
+    -- runnable caller is answered with a frame, so an unanswered one is current
+    -- on the core no longer.
+    obtain ⟨x, hx, hr⟩ := hDU.runnable hCurT
+    obtain ⟨f, hf⟩ := Platform.FFI.syscallSuccessOutcome_returns_of_runnable
+      syscallId _ st' tid x hx ((Architecture.isRunnable_eq_true_iff x).mpr hr)
+    exact hNot f hf
 
 /-- **The local scheduling point keeps the executing core's bank match**: it is
 the reschedule handler or nothing. -/
