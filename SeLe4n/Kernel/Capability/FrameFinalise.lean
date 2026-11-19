@@ -837,9 +837,9 @@ root where it lies and leaves every other object's lookup, the CNode's among
 them, as it was (`vspaceUnmapFrameCapTeardownAt_objects_ne`). -/
 @[inline] def vspaceUnmapFrameCapAdmittedAt (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     (st : SystemState) : Bool :=
-  (match st.objects[cnode]? with
-   | some (.cnode cn) => (cn.lookup slot).isSome
-   | _ => false) &&
+  (match st.getCNode? cnode with
+   | some cn => (cn.lookup slot).isSome
+   | none => false) &&
   !decide (st.objects.size * 4 ≥ st.objects.capacity * 3)
 
 /-- **`Page_Unmap` in place**: the teardown on the record's words, then the
@@ -900,7 +900,8 @@ theorem vspaceUnmapFrameCap_eq_performAt (ec : Concurrency.CoreId) (cnode : SeLe
   simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not] at hA
   obtain ⟨hC, hNo⟩ := hA
   split at hC
-  · next cn hO =>
+  · next cn hG0 =>
+    have hO := (SystemState.getCNode?_eq_some_iff st cnode cn).1 hG0
     have hT := vspaceUnmapFrameCapTeardownAt_objects_ne ec cnode slot st cnode hNo
       (fun r h => by rw [hO] at h; cases h)
     rw [hO] at hT

@@ -139,7 +139,31 @@ split", 2026-11-19); its remainder is new rows SX8–SX12.
   for refused non-Calls. `cap-fault-to-handler-without-reply` holds seL4's
   delivery of a fault to a handler with no reply object (the handler woken
   with the fault, the faulter `Inactive`). New heap scenarios:
-  HEAP_SCENARIOS_PLACEHOLDER.
+  the bound-notification completions (`bound-signal-bind-root`,
+  `bound-signal-signal`, `bound-signal-receive`, `bound-signal-reply-recv`,
+  `bound-signal-reply-recv-signal`, `bound-signal-unbind-root`), the
+  context-notification links (`sched-context-bind-notification`,
+  `sched-context-unbind-notification`,
+  `bind-carved-sched-context-notification`,
+  `bind-sched-context-carved-notification`, `linked-notification-delete`,
+  `linked-sched-context-delete`, `untyped-retype-linked-notification`,
+  `untyped-retype-linked-sched-context`), the no-reply Call on each side
+  (`no-reply-receiver-waits`, `call-no-reply-delivers`,
+  `call-no-reply-resume-root`, `call-no-reply-resume-partner`,
+  `call-no-reply-blocks`, `no-reply-receive-takes-call`,
+  `no-reply-receive-resume-root`, `no-reply-receive-resume-partner`), the
+  partner unbinding the root's context (`refill-resume-partner`,
+  `refill-root-waits`, `refill-partner-wakes-root`,
+  `refill-partner-suspends`, and the `suspend-donated-*` four), the
+  non-blocking IPC (`nb-recv-empty-returns`, `nb-send-bad-cap-silent`),
+  `send-invocation-error-discarded` and
+  `vspace-unify-instruction-wide-vaddr` (was `vspace-unmap-wide-vaddr`).
+  Removed: `vspace-unmap-short` (Page_Unmap reads no word) and the eight
+  untyped-reset scenarios (`untyped-reset`, `lifecycle-untyped-reset`,
+  `child-untyped-reset-refused`, `owned-cnode-untyped-reset`,
+  `overflowed-untyped-reset`, `wide-table-untyped-reset`,
+  `window-full-untyped-reset`, `window-three-untyped-reset`), with the
+  retired `untypedReset`.
 
 ### Plan, debt and docs
 - `SEL4_ABI_FIDELITY_PLAN.md`: SX7 landed; new rows SX8 (notification
