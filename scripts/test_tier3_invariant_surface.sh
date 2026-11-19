@@ -12763,7 +12763,8 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbindAllOnCore[^\n]*
 # The refusal is the thread unbind's own and precedes the revocation, so the
 # per-core unbind runs no local scheduling point.  Mutation: move the refusal
 # after the `schedContextUnbind` call, or restore the preemption seam.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbindOnCore [^\n]*(\n([ \t][^\n]*)?)*  if running\? == some executingCore then \.error \.illegalState\n  else\n    match schedContextUnbind vScId st with" SeLe4n/Kernel/SchedContext/OperationsPerCore.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbindOnCore [^\n]*(\n([ \t][^\n]*)?)*  if schedContextRunsOn st vScId\.val executingCore then \.error \.illegalState\n  else\n    match schedContextUnbind vScId st with" SeLe4n/Kernel/SchedContext/OperationsPerCore.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def schedContextUnbindAllAdmitted [^\n]*(\n([ \t][^\n]*)?)*      !schedContextRunsOn st vScId\.val executingCore &&" SeLe4n/Kernel/SchedContext/OperationsPerCore.lean'
 run_negative_check "INVARIANT" rg -n 'priorityRescheduleOnCore|handleRescheduleSgiOnCore' SeLe4n/Kernel/SchedContext/OperationsPerCore.lean
 run_check "INVARIANT" rg -n '^theorem schedContextUnbindAllOnCore_refuses_current($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/OperationsPerCore.lean
 run_check "INVARIANT" rg -n '^theorem resolveSchedContextBindThread_ok_authorised($|[ ({:\[\]])' SeLe4n/Kernel/API.lean

@@ -91,6 +91,21 @@ read from the context's code, so no `Option` is built for it. -/
     simp only [hB]
     cases sc.boundThreadCode <;> rfl
 
+/-- **Whether the context's bound thread is the current thread of `core`**:
+`schedContextRunningCore? st scObjId = some core`, asked without building the
+`some core` the comparison would otherwise box (a kernel entry allocates
+nothing; the unbind's decode check asks this on every call). -/
+@[inline] def schedContextRunsOn (st : SystemState) (scObjId : SeLe4n.ObjId)
+    (core : CoreId) : Bool :=
+  match schedContextRunningCore? st scObjId with
+  | some rc => rc == core
+  | none => false
+
+theorem schedContextRunsOn_iff {st : SystemState} {scObjId : SeLe4n.ObjId} {core : CoreId} :
+    schedContextRunsOn st scObjId core = true ↔ schedContextRunningCore? st scObjId = some core := by
+  unfold schedContextRunsOn
+  cases schedContextRunningCore? st scObjId <;> simp
+
 /-- WS-SM SM8.B (operation): **unbind a SchedContext's thread, across cores.**
 
 `schedContextUnbind`'s per-core form, seL4-MCS's thread half of
@@ -106,13 +121,12 @@ The running core is resolved from the **pre-state**, before the demotion, so the
 transition acts on the placement it observed. -/
 def schedContextUnbindOnCore (vScId : SeLe4n.ValidObjId) (executingCore : CoreId)
     (st : SystemState) : Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
-  let running? := schedContextRunningCore? st vScId.val
-  if running? == some executingCore then .error .illegalState
+  if schedContextRunsOn st vScId.val executingCore then .error .illegalState
   else
     match schedContextUnbind vScId st with
     | .error e      => .error e
     | .ok ((), st') =>
-        match running? with
+        match schedContextRunningCore? st vScId.val with
         | some rc => .ok (st', some (rc, SgiKind.reschedule))
         | none => .ok (st', none)
 
@@ -128,11 +142,10 @@ theorem schedContextUnbindOnCore_ok {vScId : SeLe4n.ValidObjId} {executingCore :
         | some rc => some (rc, SgiKind.reschedule)
         | none => none) := by
   unfold schedContextUnbindOnCore at h
-  simp only [] at h
-  by_cases hR : (schedContextRunningCore? st vScId.val == some executingCore) = true
+  by_cases hR : schedContextRunsOn st vScId.val executingCore = true
   · simp [hR] at h
   · simp only [hR, Bool.false_eq_true, ↓reduceIte] at h
-    refine ⟨fun e => hR (by rw [e]; exact beq_self_eq_true _), ?_⟩
+    refine ⟨fun e => hR (schedContextRunsOn_iff.mpr e), ?_⟩
     cases hU : schedContextUnbind vScId st with
     | error e => rw [hU] at h; cases h
     | ok p =>
@@ -154,7 +167,6 @@ theorem schedContextUnbindOnCore_error (vScId : SeLe4n.ValidObjId)
     (hStep : schedContextUnbind vScId st = .error e) :
     ∃ e', schedContextUnbindOnCore vScId executingCore st = .error e' := by
   unfold schedContextUnbindOnCore
-  simp only []
   split
   · exact ⟨_, rfl⟩
   · rw [hStep]; exact ⟨e, rfl⟩
@@ -169,7 +181,7 @@ theorem schedContextUnbindOnCore_no_running_core (vScId : SeLe4n.ValidObjId)
     (hRunning : schedContextRunningCore? st vScId.val = none)
     (hStep : schedContextUnbind vScId st = .ok ((), st')) :
     schedContextUnbindOnCore vScId executingCore st = .ok (st', none) := by
-  simp [schedContextUnbindOnCore, hRunning, hStep]
+  simp [schedContextUnbindOnCore, schedContextRunsOn, hRunning, hStep]
 
 /-- WS-SM SM8.B: **every SGI this operation surfaces is a `.reschedule` for a
 core other than the executing one**, and that core is genuinely the one running
@@ -196,7 +208,7 @@ theorem schedContextUnbindOnCore_refuses_current (vScId : SeLe4n.ValidObjId)
     (executingCore : CoreId) (st : SystemState)
     (hRunning : schedContextRunningCore? st vScId.val = some executingCore) :
     schedContextUnbindOnCore vScId executingCore st = .error .illegalState := by
-  simp [schedContextUnbindOnCore, hRunning]
+  simp [schedContextUnbindOnCore, schedContextRunsOn_iff.mpr hRunning]
 
 /-! ## `SchedContext_Unbind` (seL4-MCS `invokeSchedContext_Unbind`)
 
@@ -239,7 +251,7 @@ def schedContextUnbindAllOnCore (vScId : SeLe4n.ValidObjId) (executingCore : Cor
     match sc.boundThreadCode with
     | 0 => true
     | _ + 1 =>
-      !(schedContextRunningCore? st vScId.val == some executingCore) &&
+      !schedContextRunsOn st vScId.val executingCore &&
         schedContextUnbindAdmitted st vScId
 
 /-- **The admitted unbind's state**: the single-core unbind (the identity on a
