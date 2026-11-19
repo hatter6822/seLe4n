@@ -41,7 +41,7 @@ does not carry it; and the two destroying arms are composites here:
 * `cspaceRevokeCdtFinalising` — seL4's `cteRevoke`: the source's first child
   deleted by `cspaceDeleteSlotFinalising` until it has none.
 
-Both remove pages through `unmapLivePages`, the untyped reset's own teardown, so
+Both remove pages through `unmapLivePages`, the page teardown, so
 a page is removed only while its address space still maps the address to that
 frame: a record gone stale removes nothing that is not its own.  Neither
 refuses after its writes: on a well-formed state (`teardownWellFormed` — every

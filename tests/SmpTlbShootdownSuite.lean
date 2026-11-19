@@ -2900,8 +2900,8 @@ private def runRoundWindowWidthChecks : IO Unit := do
   -- would strand the first round's descriptors on every remote core, the model
   -- reporting quiescence with a translation still cached.
   --
-  -- The commit is the page teardown the untyped reset and the finalising
-  -- revocation share (`unmapLivePages`) over two live mappings: each removal is
+  -- The commit is the page teardown the finalising delete and revocation
+  -- share (`unmapLivePages`) over two live mappings: each removal is
   -- a round.  Until `v0.36.9` this group retyped a live `.vspaceRoot` into a
   -- *different* `.vspaceRoot` (two ASIDs, two rounds); that in-place retype is
   -- retired (WS-ZA ZA5.4 part 14), and a VSpace root is made only by the carve.

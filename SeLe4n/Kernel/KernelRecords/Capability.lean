@@ -12,7 +12,7 @@ import SeLe4n.Kernel.KernelRecords.Thread
 /-!
 # The slot-writing capability arms keep the records
 
-WS-ZA ZA6.37.  The mint, copy, move, reply-capability mint and untyped reset
+WS-ZA ZA6.37.  The mint, copy, move and reply-capability mint
 write CNode slots, a thread's space slots, the derivation tree and slot links:
 none of them a record view reads, so each is a `RecordsFrame`.
 -/
