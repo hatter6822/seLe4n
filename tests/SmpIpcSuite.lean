@@ -3893,7 +3893,8 @@ private def senderKeyedReplenishCores (st : SystemState) (endpointId : SeLe4n.Ob
 its own, where the donation step is the identity. -/
 private def callKeyedReplenishCores (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) : List CoreId :=
-  match receiveRendezvousCallSender? st endpointId with
+  match (receiveRendezvousSender? st endpointId).bind
+      (fun s => if rendezvousSenderIsCall st s then some s else none) with
   | some sender => [determineTargetCore st sender, determineTargetCore st receiver]
   | none        => []
 
@@ -3908,20 +3909,20 @@ private def runReceiveReplenishSegmentChecks : IO Unit := do
     assertBool "the pre-state Call guard fires on a queued Call"
       (decide (rendezvousSenderIsCall stCall donClient = true))
     assertBool "...so the `Call`-narrowed resolver names the queued caller"
-      (decide (receiveRendezvousCallSender? stCall donEp = some donClient))
+      (decide (receiveRendezvousLinkedCaller? stCall donEp true = some donClient))
     assertBool "...the donation resolver would hand the caller's context to the passive server"
       (decide (callDonationSchedContext? stCall donClient donServer = some scClient))
     assertBool "...so the donation-keyed resolver names the caller too"
-      (decide (receiveRendezvousDonatingSender? stCall donEp donServer = some donClient))
+      (decide (receiveRendezvousDonatingSender? stCall donEp donServer true = some donClient))
     assertBool "...and the segment declares the donor's and the receiver's homes"
-      (decide (endpointReceiveHandoffReplenishCores stCall donEp donServer
+      (decide (endpointReceiveHandoffReplenishCores stCall donEp donServer true
                  = [determineTargetCore stCall donClient,
                     determineTargetCore stCall donServer]))
     assertBool "CONTROL: both retired readings agree here — each names two cores"
       (decide (senderKeyedReplenishCores stCall donEp donServer
-                 = endpointReceiveHandoffReplenishCores stCall donEp donServer
+                 = endpointReceiveHandoffReplenishCores stCall donEp donServer true
                ∧ callKeyedReplenishCores stCall donEp donServer
-                 = endpointReceiveHandoffReplenishCores stCall donEp donServer))
+                 = endpointReceiveHandoffReplenishCores stCall donEp donServer true))
     -- ...and the reason both cores are needed: at the state the donation runs on the
     -- resolver still answers `some` (the binding frame, measured) and the step donates.
     match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stCall) with
@@ -3947,7 +3948,7 @@ private def runReceiveReplenishSegmentChecks : IO Unit := do
       match applyReceiveRendezvousDonation stRecv donServer donClient with
       | .error e => assertBool s!"(C6f) the donation must succeed (got {reprStr e})" false
       | .ok stDon =>
-        let recvSeg := endpointReceiveHandoffReplenishCores stCall donEp donServer
+        let recvSeg := endpointReceiveHandoffReplenishCores stCall donEp donServer true
         assertBool "C6f: EVERY core outside the `.receive` segment keeps its replenish queue across leg+donation"
           (Concurrency.allCores.all (fun d =>
             recvSeg.contains d || (stDon.releaseEntriesOn d) == (stCall.releaseEntriesOn d)))
@@ -3963,11 +3964,11 @@ private def runReceiveReplenishSegmentChecks : IO Unit := do
     assertBool "the pre-state guard is false on a queued plain Send"
       (decide (rendezvousSenderIsCall stSend donClient = false))
     assertBool "...so the `Call`-narrowed resolver names nobody"
-      (decide (receiveRendezvousCallSender? stSend donEp = none))
+      (decide (receiveRendezvousLinkedCaller? stSend donEp true = none))
     assertBool "...and so does the donation-keyed one"
-      (decide (receiveRendezvousDonatingSender? stSend donEp donServer = none))
+      (decide (receiveRendezvousDonatingSender? stSend donEp donServer true = none))
     assertBool "PAYOFF: the segment declares NO replenish-queue lock"
-      (decide (endpointReceiveHandoffReplenishCores stSend donEp donServer = []))
+      (decide (endpointReceiveHandoffReplenishCores stSend donEp donServer true = []))
     -- The decisive comparison: same state, same endpoint, same receiver; the
     -- sender-keyed reading declares two cores for a migration that does not happen.
     assertBool "NEGATIVE (the defect): the sender-keyed retired reading declared TWO cores here"
@@ -4007,13 +4008,13 @@ private def runReceiveReplenishSegmentChecks : IO Unit := do
     assertBool "the pre-state Call guard fires"
       (decide (rendezvousSenderIsCall stCallActive donClient = true))
     assertBool "CONTROL: the `Call`-narrowed resolver admits this shape — the decline is the donation resolver's"
-      (decide (receiveRendezvousCallSender? stCallActive donEp = some donClient))
+      (decide (receiveRendezvousLinkedCaller? stCallActive donEp true = some donClient))
     assertBool "...but the donation resolver declines: the receiver holds a context of its own"
       (decide (callDonationSchedContext? stCallActive donClient donServer = none))
     assertBool "...so the donation-keyed resolver names nobody"
-      (decide (receiveRendezvousDonatingSender? stCallActive donEp donServer = none))
+      (decide (receiveRendezvousDonatingSender? stCallActive donEp donServer true = none))
     assertBool "PAYOFF: the segment declares NO replenish-queue lock"
-      (decide (endpointReceiveHandoffReplenishCores stCallActive donEp donServer = []))
+      (decide (endpointReceiveHandoffReplenishCores stCallActive donEp donServer true = []))
     assertBool "NEGATIVE (the defect): the `Call`-keyed retired reading declared TWO cores here"
       (decide ((callKeyedReplenishCores stCallActive donEp donServer).length = 2))
     match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stCallActive) with
@@ -4310,7 +4311,7 @@ private def runPreReceiveReturnMigrationChecks : IO Unit := do
     -- (v) the footprint the object domain and the scheduler domain both read: on this
     --     block the segment names the receiver's home and the owner's, in that order.
     assertBool "the block path's replenish segment names the receiver's home and the owner's"
-      (decide (endpointReceiveHandoffReplenishCores stDon donEp donServer
+      (decide (endpointReceiveHandoffReplenishCores stDon donEp donServer true
                  = [determineTargetCore stDon donServer, determineTargetCore stDon donClient]))
     assertBool "...which are two different cores"
       (decide (determineTargetCore stDon donServer ≠ determineTargetCore stDon donClient))
@@ -4325,7 +4326,7 @@ private def runPreReceiveReturnMigrationChecks : IO Unit := do
            (stOut.releaseEntriesOn c) == (stDonBase.releaseEntriesOn c)
      | none => false)
   assertBool "CONTROL: ...and a block there declares no replenish-queue lock"
-    (decide (endpointReceiveHandoffReplenishCores stDonBase donEp donServer = []))
+    (decide (endpointReceiveHandoffReplenishCores stDonBase donEp donServer true = []))
   -- (vii) CONTROL: an owner homed on the receiver's own core — the migration is
   --       the identity, so the fix is keyed on the two homes and not on the pop.
   match preReturnHandoffState stPreReturnSameCore with
@@ -4548,7 +4549,7 @@ private def runReplyRecvFootprintChecks : IO Unit := do
       assertBool "(a) CONTROL: the pop hands the loaned context back, naming the holder"
         (returned? == some (scClient, donServer))
       assertBool "(a) CONTROL: the `.receive` arm's pre-state segment at the pop's post-state agrees here"
-        (decide (endpointReceiveHandoffReplenishCores st1p donEp donServer = [c2, c1]))
+        (decide (endpointReceiveHandoffReplenishCores st1p donEp donServer true = [c2, c1]))
   -- (b) a first client that never donated: the pop hands nothing back, and the
   --     receive leg's dequeued `Call` donates the second client's context to the
   --     passive server exactly as `.receive` does (seL4-MCS `receiveIPC` ->
@@ -4587,7 +4588,7 @@ private def runReplyRecvFootprintChecks : IO Unit := do
       -- The two receiving arms agree: the `.receive` arm's reading on the pop's
       -- post-state names the same pair the `.replyRecv` segment does.
       assertBool "(b) AGREEMENT: the `.receive` arm's pre-state segment declares the same two cores"
-        (decide (endpointReceiveHandoffReplenishCores st1p donEp donServer = seg))
+        (decide (endpointReceiveHandoffReplenishCores st1p donEp donServer true = seg))
       let st2 := (endpointReceiveDualWithCapsOnCore donEp donServer (some donReply) c1 st1p).1
       assertBool "(b) the receive leg dequeues the second client's Call"
         (decide (rendezvousDequeuedCall st2 fpClient2 = true))
@@ -5228,7 +5229,7 @@ private def runObjectDomainDonationMemberChecks : IO Unit := do
   | none => assertBool "RR8.16 setup (c): the no-receiver call parks the caller" false
   | some (stCallQ, _) =>
     assertBool "(c) CONTROL: the live receive-side member names the context"
-      (decide (receiveRendezvousDonatedSc? stCallQ donEp donServer = some scClient))
+      (decide (receiveRendezvousDonatedSc? stCallQ donEp donServer true = some scClient))
     assertBool "(c) CONTROL: the retired sender-keyed reading agrees here"
       (decide (senderKeyedDonatedSc? stCallQ donEp = some scClient))
     assertBool "(c) ...and the resolved `.receive` footprint declares the SchedContext write lock"
@@ -5240,7 +5241,7 @@ private def runObjectDomainDonationMemberChecks : IO Unit := do
   | none => assertBool "RR8.16 setup (d): the no-receiver send parks the sender" false
   | some (stSendQ, _) =>
     assertBool "(d) PAYOFF: the live receive-side member names nothing"
-      (decide (receiveRendezvousDonatedSc? stSendQ donEp donServer = none))
+      (decide (receiveRendezvousDonatedSc? stSendQ donEp donServer true = none))
     assertBool "(d) NEGATIVE (the defect): the retired sender-keyed reading named the context"
       (decide (senderKeyedDonatedSc? stSendQ donEp = some scClient))
     assertBool "(d) PAYOFF: the resolved `.receive` footprint declares NO SchedContext write lock"
@@ -5251,15 +5252,74 @@ private def runObjectDomainDonationMemberChecks : IO Unit := do
   | none => assertBool "RR8.16 setup (e): the no-receiver call parks the caller" false
   | some (stCallQActive, _) =>
     assertBool "(e) the `Call`-narrowed sender resolver still names the caller"
-      (decide (receiveRendezvousCallSender? stCallQActive donEp = some donClient))
+      (decide (receiveRendezvousLinkedCaller? stCallQActive donEp true = some donClient))
     assertBool "(e) PAYOFF: the live receive-side member names nothing"
-      (decide (receiveRendezvousDonatedSc? stCallQActive donEp donServer = none))
+      (decide (receiveRendezvousDonatedSc? stCallQActive donEp donServer true = none))
     assertBool "(e) NEGATIVE (the defect): the retired sender-keyed reading named the context"
       (decide (senderKeyedDonatedSc? stCallQActive donEp = some scClient))
     assertBool "(e) PAYOFF: the resolved `.replyRecv` footprint declares NO SchedContext write lock"
       (decide ((Concurrency.schedContextLock scClient, AccessMode.write)
         ∉ (lockSet_endpointReplyRecvOnCore stCallQActive donServer cnRoot donClient
              donEp).pairs))
+
+/-- **seL4 `receiveIPC`'s link rule, on the receive-side lock set.**  A dequeued
+`Call` is linked to the reply -- and only then donated to and queued on the
+receiver's reply waiters -- when its cap grants (`Grant` or `GrantReply`) and the
+receive supplies a reply object; otherwise it is delivered and left `Inactive`.
+The receive-side members key on that same test, so the no-link shapes declare no
+SchedContext lock and no reply-waiter head, and the live transition is measured
+writing neither. -/
+private def runReceiveLinkRuleLockChecks : IO Unit := do
+  IO.println "--- seL4 receiveIPC link rule: the receive lock set follows the link ---"
+  -- (f) a queued `Call` whose cap grants no reply, to a passive server.
+  match okPair (endpointCallOnCore donEp donClient (.frame none false false) c0 stDonBase) with
+  | none => assertBool "link rule setup (f): the no-receiver call parks the caller" false
+  | some (stNoGrant, _) =>
+    assertBool "(f) the caller parks `.blockedOnCall`"
+      (ipcStateIs stNoGrant donClient (.blockedOnCall donEp))
+    assertBool "(f) CONTROL: the donation guard alone would fire (passive server, bound caller)"
+      (decide (callDonationSchedContext? stNoGrant donClient donServer = some scClient))
+    assertBool "(f) the linked-caller resolver names nobody: the cap grants no reply"
+      (decide (receiveRendezvousLinkedCaller? stNoGrant donEp true = none))
+    assertBool "(f) PAYOFF: the `.receive` footprint declares NO SchedContext write lock"
+      (decide ((Concurrency.schedContextLock scClient, AccessMode.write)
+        ∉ (lockSet_endpointReceiveOnCore stNoGrant donEp donServer cnRoot (some donReply)).pairs))
+    assertBool "(f) ...and resolves no reply-waiter head"
+      (decide (receiveRendezvousReplyWaiterHead? stNoGrant donEp donServer true = none))
+    match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stNoGrant) with
+    | none => assertBool "(f) the receive completes the rendezvous" false
+    | some (stRecv, (sender, _)) =>
+      assertBool "(f) the receive dequeues the caller" (sender == donClient)
+      assertBool "(f) the caller is delivered `.ready` and left Inactive, linked to nothing"
+        (ipcStateIs stRecv donClient .ready &&
+          (match stRecv.getTcb? donClient with
+           | some t => t.threadState == .Inactive | none => false))
+      assertBool "(f) EXACT: the transition donates nothing -- the server stays unbound"
+        (match stRecv.getTcb? donServer with
+         | some t => t.schedContextBinding == SchedContextBinding.unbound | none => false)
+  -- (g) a granting `Call`, received with no reply object.
+  match okPair (endpointCallOnCore donEp donClient (.frame none false true) c0 stDonBase) with
+  | none => assertBool "link rule setup (g): the no-receiver call parks the caller" false
+  | some (stCallQ, _) =>
+    assertBool "(g) CONTROL: with a reply object the linked-caller resolver names the caller"
+      (decide (receiveRendezvousLinkedCaller? stCallQ donEp true = some donClient))
+    assertBool "(g) ...and without one names nobody"
+      (decide (receiveRendezvousLinkedCaller? stCallQ donEp false = none))
+    assertBool "(g) CONTROL: the `.receive` footprint WITH a reply declares the SchedContext lock"
+      (decide ((Concurrency.schedContextLock scClient, AccessMode.write)
+        ∈ (lockSet_endpointReceiveOnCore stCallQ donEp donServer cnRoot (some donReply)).pairs))
+    assertBool "(g) PAYOFF: WITHOUT a reply it declares none"
+      (decide ((Concurrency.schedContextLock scClient, AccessMode.write)
+        ∉ (lockSet_endpointReceiveOnCore stCallQ donEp donServer cnRoot none).pairs))
+    assertBool "(g) PAYOFF: ...and the scheduler footprint declares no replenish-queue core"
+      (decide (endpointReceiveHandoffReplenishCores stCallQ donEp donServer false = []))
+    match okPair (endpointReceiveDualOnCore donEp donServer none c1 stCallQ) with
+    | none => assertBool "(g) the reply-less receive completes the rendezvous" false
+    | some (stRecv, (sender, _)) =>
+      assertBool "(g) the receive dequeues the caller" (sender == donClient)
+      assertBool "(g) EXACT: the transition donates nothing -- the server stays unbound"
+        (match stRecv.getTcb? donServer with
+         | some t => t.schedContextBinding == SchedContextBinding.unbound | none => false)
 
 
 def runSmpIpcChecks : IO Unit := do
@@ -5301,6 +5361,7 @@ def runSmpIpcChecks : IO Unit := do
   runRetypeSchedContextChecks
   runCarveIdentityChecks
   runObjectDomainDonationMemberChecks
+  runReceiveLinkRuleLockChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."

@@ -513,14 +513,14 @@ theorem schedLockSet_endpointReceiveOnCore_coversWrites (endpointId : SeLe4n.Obj
     rw [hLeg] at h
     exact h
   have hDonConf := applyReceiveRendezvousDonation_confinedToCores st1 stDon receiver dequeued hDon
-  have hReplDon : ∀ d : CoreId, d ∉ endpointReceiveHandoffReplenishCores st endpointId receiver →
+  have hReplDon : ∀ d : CoreId, d ∉ endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome →
       stDon.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d :=
     fun d hd => endpointReceiveLegAndDonation_replenishQueueOnCore_ne endpointId receiver replyId executingCore st st1 stDon dequeued summary sgi d
       hObjInv hHeads hd hLeg hDon
   refine footprintCoversWrites_of_confined S
     (endpointReceiveDualWriteSet st endpointId executingCore
       ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore)
-    (endpointReceiveHandoffReplenishCores st endpointId receiver) st st'
+    (endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome) st st'
     (LockSet.ofList?_pairs hS) ?_ ?_
   · rw [hChain]
     subst hEq

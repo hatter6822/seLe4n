@@ -1123,7 +1123,7 @@ theorem lockSetForSyscall_replyRecv_covers_redonation
     (hEp : ops.targetObject = some endpointId)
     (hRid : ops.targetReply = some rid)
     (hAns : replyAnsweredCaller? st rid = some prevCaller)
-    (hNew : receiveRendezvousDonatedSc? st endpointId ops.caller = some newSc)
+    (hNew : receiveRendezvousDonatedSc? st endpointId ops.caller true = some newSc)
     (hDecl : lockSetForSyscall .replyRecv ops st = some S) :
     (schedContextLock newSc, AccessMode.write) ∈ S.pairs ∧
     (stateLevelLock, AccessMode.write) ∈ S.pairs := by
