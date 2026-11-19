@@ -3169,16 +3169,6 @@ const fn guarded_index(first: u64, second: u64) -> u64 {
 #[cfg(feature = "hw_target")]
 const LONG_SEND_LENGTH: u64 = 6;
 
-/// `KernelError.invalidMessageInfo`'s discriminant (`sele4n-types`'
-/// `InvalidMessageInfo`), and the refusal frame's `x1` that carries it.
-#[cfg(feature = "hw_target")]
-const INVALID_MESSAGE_INFO: u64 = 32;
-#[cfg(feature = "hw_target")]
-const REFUSED_MESSAGE_INFO: Option<(u64, [Option<u64>; 4])> = Some((
-    (crate::svc_dispatch::ERROR_LABEL_BASE + INVALID_MESSAGE_INFO) << 12,
-    [None; 4],
-));
-
 /// `KernelError.truncatedMessage`'s discriminant (`sele4n-types`'
 /// `TruncatedMessage`, seL4's `seL4_TruncatedMessage`).
 #[cfg(feature = "hw_target")]
@@ -4897,17 +4887,23 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
                 FRAME_VADDR,
             )
         },
-        RoundTrip {
+        // A refused Signal is not a Call, so it is answered with no frame: it
+        // resumes with its trapped registers (seL4's `handleInvocation`
+        // replies an error only `if (isCall)`).
+        resuming(RoundTrip {
             caps_or_badges: None,
             overflow: None,
-            returns: REFUSED_MESSAGE_INFO,
             msg_len: BAD_MESSAGE_LENGTH,
             ..signal("bad-message-info")
-        },
+        }),
+        // A Signal writes no register (seL4's `handleInvocation` replies only
+        // to a Call), so the caller resumes with its own message-info word,
+        // the top label bit still set.
         RoundTrip {
             caps_or_badges: None,
             overflow: None,
             msg_len: HIGH_MESSAGE_INFO,
+            returns: Some((HIGH_MESSAGE_INFO, [None; 4])),
             ..signal("high-message-info")
         },
         RoundTrip {
@@ -7388,8 +7384,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // call donates the context to the root task: the suspend's reply arm takes
         // the reply off the context's reply stack and leaves the context with the
         // server, now its bound holder (seL4 returns no loan on a suspend).  The
-        // context's real unbind then takes it from the root task.  The timer is
-        // masked across the sequence, so no tick switches the threads between steps.
+        // context's real unbind then takes it from the root task, issued by the
+        // partner, resumed, while the root task waits on the notification
+        // (seL4-MCS refuses the unbind of the current thread's own context);
+        // the partner then wakes the root task and suspends itself.  The timer
+        // is masked across the sequence, so no tick switches the threads
+        // between steps.
         kernel_step("mask-ticks", MASK_TICKS_STEP),
         configure(
             "suspend-donated-configure",
@@ -7437,11 +7437,32 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [0; 4],
         ),
         invocation(
+            "suspend-donated-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "suspend-donated-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
             "suspend-donated-unbind",
             SCHED_CONTEXT_UNBIND,
             SCHED_CONTEXT_CAP,
             [0; 4],
         ),
+        signal("suspend-donated-partner-wakes-root"),
+        self_suspend(invocation(
+            "suspend-donated-partner-suspends",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        )),
         // A granting reply on a donated reply object that installs: the
         // partner, holding the image's scheduling context, calls and lends it
         // to the root task; the root task's reply, naming the notification
@@ -9437,14 +9458,15 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             false,
         ),
         // The context back with the third thread and the root task off its
-        // core again: the third thread suspends the partner, restarts the root
-        // task and suspends itself.
-        invocation(
+        // core again.  The partner runs first and suspends itself, which
+        // answers it no frame (seL4 replies only to a caller left `Restart`);
+        // the third thread then restarts the root task and suspends itself.
+        self_suspend(invocation(
             "queued-caller-suspend-partner",
             TCB_SUSPEND,
             PARTNER_TCB_CAP,
             [0; 4],
-        ),
+        )),
         invocation(
             "queued-caller-suspend-root-again",
             TCB_SUSPEND,
@@ -12474,10 +12496,18 @@ const YIELD_TO_RAISE: RoundTrip = set_priority(
     PARTNER_PRIORITY,
     ROOT_IPC_BUFFER,
 );
+/// The YieldTo caller's own message-info word: its label (`op_encoding`'s)
+/// in bits 12 and up, length 0.
+#[cfg(feature = "hw_target")]
+const YIELD_TO_OWN_INFO_WORD: u64 = match op_encoding(SCHED_CONTEXT_YIELD_TO) {
+    Some((_, label)) => label << 12,
+    None => panic!("YieldTo has an encoding"),
+};
 /// The linked branch's first half: the partner ranks with the caller on the
 /// caller's core, so the yield is linked and core 0 switches to the partner.
 /// The caller's frame is staged now and its consumed time is not: `x1` is the
-/// caller's own spill, never the consumed-info word.
+/// caller's own spill, its message-info word (the YieldTo label, length 0),
+/// never the consumed-info word.
 #[cfg(feature = "hw_target")]
 const YIELD_TO_LINK: RoundTrip = RoundTrip {
     name: "sched-context-yield-to-linked",
@@ -12493,7 +12523,7 @@ const YIELD_TO_LINK: RoundTrip = RoundTrip {
     resumes: false,
     caps_or_badges: None,
     overflow: None,
-    returns: None,
+    returns: Some((YIELD_TO_OWN_INFO_WORD, [None; 4])),
 };
 /// ...and its second: the partner, now current, blocks on the notification,
 /// so core 0 switches back to the root task, whose activation completes the
@@ -14729,21 +14759,28 @@ const fn fault_restart(kind: usize) -> FaultRestart {
     } else {
         trip.elr
     };
+    // An `SVC`'s `x1` is restarted as it trapped, the label beside the
+    // length ([`op_frame_words`]).
+    let restart_x1 = if kind == 2 || kind == 3 {
+        op_frame_words(trip.x7, trip.x1).1
+    } else {
+        trip.x1
+    };
     match kind {
         3 => FaultRestart {
             pc: restart_pc,
             x0: FAULT_REPLY_WORD,
-            x1: trip.x1,
+            x1: restart_x1,
         },
         4 => FaultRestart {
             pc: FAULT_REPLY_WORD,
             x0: trip.x0,
-            x1: trip.x1,
+            x1: restart_x1,
         },
         _ => FaultRestart {
             pc: restart_pc,
             x0: trip.x0,
-            x1: trip.x1,
+            x1: restart_x1,
         },
     }
 }
@@ -15118,7 +15155,7 @@ fn extra_cap_guard_mismatch(
     let restart = FaultRestart {
         pc: FAULT_PC,
         x0: trip.x0,
-        x1: trip.x1,
+        x1: trap_trip_words(&invoke).1,
     };
     restarted_as(name, &resumed, restart)
         && unmeasured(wake_handler, "the waiting handler was not woken")
@@ -15277,7 +15314,7 @@ fn receive_side_faults(
             let restart = FaultRestart {
                 pc: fault.trip.elr - 4,
                 x0: fault.trip.x0,
-                x1: fault.trip.x1,
+                x1: trap_trip_words(&fault.trip).1,
             };
             if !restarted_as(name, &resumed, restart)
                 || !unmeasured(wake_handler, "the waiting handler was not woken")
@@ -15371,9 +15408,10 @@ fn partner_restarts_send(name: &str, cptr: u64, handler_waits_again: &RoundTrip)
 ///   cancels the send and sets the partner to restart; the partner, switched
 ///   in, resumes at its `SVC` with its own arguments and re-issues the send
 ///   (measured): its slot now empty, the lookup finds a null capability,
-///   which `decodeInvocation` refuses with `seL4_InvalidCapability` (an
-///   error frame back to the partner, no fault); the partner then wakes the
-///   root task still waiting on the exerciser endpoint;
+///   which `decodeInvocation` refuses with `seL4_InvalidCapability`, answered
+///   to no one since a Send is not a Call (the partner resumes with its own
+///   registers, no fault); the partner then wakes the root task still
+///   waiting on the exerciser endpoint;
 /// - `suspend-resume-restarts`: the partner blocked sending on the exerciser
 ///   endpoint; suspended, which leaves it `Inactive`, then resumed (measured),
 ///   which sets it to restart; switched in, it resumes at its `SVC` with its
@@ -15422,10 +15460,11 @@ fn cancelled_ipc_restarts(
         {
             return false;
         }
-        let label = TRAP_RESTORED_X1.load(Ordering::SeqCst) >> 12;
-        if label != crate::svc_dispatch::ERROR_LABEL_BASE + INVALID_CAPABILITY {
+        let x1 = TRAP_RESTORED_X1.load(Ordering::SeqCst);
+        let trapped = trap_trip_words(&partner_send_trap(name, carved)).1;
+        if x1 != trapped {
             crate::kprintln!(
-                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the re-issued send returned label {label:#x}, not the invalid-capability error"
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the re-issued send resumed with x1 {x1:#x}, not its own {trapped:#x}"
             );
             return false;
         }
@@ -16754,15 +16793,19 @@ fn affinity_move_running() -> Option<bool> {
 
 /// The moved thread's own delete of its only capability, issued as that
 /// thread while it runs on core 0: the delete finalises the caller itself
-/// (its context still bound), so the dispatch restores the root task, whose
-/// receive the thread's send completed.
+/// (its context still bound), so the caller gets no frame (it has no TCB to
+/// answer) and the dispatch restores the root task, whose receive the
+/// thread's send completed.
 #[cfg(feature = "hw_target")]
-const SELF_TCB_DELETE: RoundTrip = invocation(
-    "self-tcb-delete",
-    CSPACE_DELETE,
-    CNODE_CAP,
-    [CHAIN_TCB_SLOT, 0, 0, 0],
-);
+const SELF_TCB_DELETE: RoundTrip = RoundTrip {
+    blocks: true,
+    ..invocation(
+        "self-tcb-delete",
+        CSPACE_DELETE,
+        CNODE_CAP,
+        [CHAIN_TCB_SLOT, 0, 0, 0],
+    )
+};
 /// The root task's delete of the moved thread's only capability while the
 /// thread runs on core 1: the finalisation takes it off that core
 /// (`finaliseThreadReleaseCores`) with its context still bound.
@@ -16773,10 +16816,11 @@ const REMOTE_TCB_DELETE: RoundTrip = invocation(
     CNODE_CAP,
     [CHAIN_TCB_SLOT, 0, 0, 0],
 );
-/// [`SELF_TCB_DELETE`] measured: the dispatch answers the success it computed
-/// for the caller, but the context it installed is the root task's, its
-/// receive's frame carrying the thread's marker (the trap layer returns through
-/// that context and drops the answer, `trap.rs`'s `take_restored`).
+/// [`SELF_TCB_DELETE`] measured: the dispatch answers the destroyed caller no
+/// frame (seL4 replies only to a caller left `Restart`), and the context it
+/// installed is the root task's, its receive's frame carrying the thread's
+/// marker (the trap layer returns through that context, `trap.rs`'s
+/// `take_restored`).
 #[cfg(feature = "hw_target")]
 fn heap_allocations_self_delete(which: &str) -> Option<bool> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
@@ -16789,8 +16833,10 @@ fn heap_allocations_self_delete(which: &str) -> Option<bool> {
         );
         return Some(false);
     };
-    let Dispatched::Returned(regs) = outcome else {
-        crate::kprintln!("[smp-test] FAIL: heap-allocations-per-syscall: {name}: did not return");
+    let Dispatched::Blocked = outcome else {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the destroyed caller was answered"
+        );
         return Some(false);
     };
     if resumed.regs[2] != MOVE_MARKER {
@@ -16800,9 +16846,7 @@ fn heap_allocations_self_delete(which: &str) -> Option<bool> {
         return Some(false);
     }
     crate::kprintln!(
-        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: returned x0={:#x} x1={:#x}",
-        regs[0],
-        regs[1]
+        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: blocked, the other thread restored"
     );
     crate::kprintln!(
         "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: deleted {:#x}/{}",
@@ -16895,14 +16939,16 @@ fn running_thread_delete(remote: bool, which: &str) -> Option<bool> {
 /// page's start: an FP/SIMD instruction (its first trap on core 1 makes core 1
 /// its FP owner), then a wait for the stage word at [`REMOTE_STAGE_OFFSET`] to
 /// reach 1, a `TCB_Suspend` of the root task's TCB, a wait for stage 2, a
-/// `TCB_Resume` of it, and a spin.
+/// `TCB_Resume` of it, and a spin.  Each invocation is a seL4 `Call` (x7 =
+/// -1) with the label in x1's bits 12 and up (`TCBSuspend` 12, `TCBResume`
+/// 13).
 ///
 /// ```text
 ///   0: fmov d0, xzr
 ///   4: ldr x9, stage ; cmp x9, #1 ; b.lo 4
-///  10: mov x0, #1 ; movk x0, #0x8000, lsl #48 ; mov x1, #4 ; mov x7, #20 ; svc #0
+///  10: mov x0, #1 ; movk x0, #0x8000, lsl #48 ; mov x1, #0xc004 ; mov x7, #-1 ; svc #0
 ///  24: ldr x9, stage ; cmp x9, #2 ; b.lo 24
-///  30: mov x0, #1 ; movk x0, #0x8000, lsl #48 ; mov x1, #4 ; mov x7, #21 ; svc #0
+///  30: mov x0, #1 ; movk x0, #0x8000, lsl #48 ; mov x1, #0xd004 ; mov x7, #-1 ; svc #0
 ///  44: b .
 /// ```
 #[cfg(feature = "hw_target")]
@@ -16913,16 +16959,16 @@ const REMOTE_PROGRAM: [u32; 18] = [
     0x54ff_ffc3,
     0xd280_0020,
     0xf2f0_0000,
-    0xd280_0081,
-    0xd280_0287,
+    0xd298_0081,
+    0x9280_0007,
     0xd400_0001,
     0x5800_3ee9,
     0xf100_093f,
     0x54ff_ffc3,
     0xd280_0020,
     0xf2f0_0000,
-    0xd280_0081,
-    0xd280_02a7,
+    0xd29a_0081,
+    0x9280_0007,
     0xd400_0001,
     0x1400_0000,
 ];
