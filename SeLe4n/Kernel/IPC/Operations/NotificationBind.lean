@@ -251,6 +251,30 @@ bound-thread code, then the thread's bound-notification code. -/
       (mapNotificationObject fun n => { n with boundTCBCode := tcbId.val + 1 })).updateTcb
     tcbId (fun t => { t with boundNotificationCode := notificationId.val + 1 })
 
+/-- The notification object with its bound-thread code set to `code`; any
+other object as it is: `mapNotificationObject` of that write, as a mapper of
+the code alone, so the compiled store specialises `modifyObject` on it and
+builds no closure. -/
+@[inline] def mapNotificationBoundTcb (code : Nat) : KernelObject → KernelObject
+  | .notification n => .notification { n with boundTCBCode := code }
+  | o => o
+
+/-- **`storeBindNotification` as compiled**: the notification's write through
+`mapNotificationBoundTcb`, out of line, so no closure is allocated for it. -/
+def storeBindNotificationImpl (st : SystemState) (notificationId : SeLe4n.ObjId)
+    (tcbId : SeLe4n.ThreadId) : SystemState :=
+  (st.modifyObject notificationId (mapNotificationBoundTcb (tcbId.val + 1))).updateTcb
+    tcbId (fun t => { t with boundNotificationCode := notificationId.val + 1 })
+
+@[csimp] theorem storeBindNotification_eq_impl :
+    @storeBindNotification = @storeBindNotificationImpl := by
+  funext st notificationId tcbId
+  have e : mapNotificationObject (fun n => { n with boundTCBCode := tcbId.val + 1 }) =
+      mapNotificationBoundTcb (tcbId.val + 1) := by
+    funext o; cases o <;> rfl
+  unfold storeBindNotification storeBindNotificationImpl
+  rw [e]
+
 /-- WS-ZA ZA5.2: **a bind that writes only its slots**: both ends present and
 unbound (`bindNotification`'s own checks), the thread unreserved, both stores
 changing only `objects` (`storeLeavesIndexAndTypes`), and the notification
