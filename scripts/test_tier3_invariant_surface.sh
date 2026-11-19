@@ -4945,13 +4945,14 @@ run_check "INVARIANT" rg -n '^    \(\(E\.of_ipcFrame hF \(IpcFrame\.of_frame rfl
 run_check "INVARIANT" rg -n '^          hBase _ \(offCoreFree_of_receiveHead E1\.dequeued E1\.queueHeads hRT1 hBNR1 ht\)⟩$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n -U '^    \(h : Platform\.FFI\.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5\n      x6 elr spsr spEl0 x30 st = \.ok \(outcome, st.\)\) :\n    savedRegsKeptOffCore e st st. :=' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 # WS-ZA ZA6.27: the syscall's number and arguments are read from the frame the
-# entry saves.  The entry admits only a frame taken from EL0 whose x7 is a u32,
+# entry saves.  The entry admits only a frame taken from EL0 whose x7 names one
+# of seL4-MCS's syscalls,
 # the bracket derives the syscall number from the frame, the export takes no
 # argument, and the argument spill at the entry rewrites the caller's context
 # with the words it already holds, so the bank match needs no premise about a
 # word the HAL passes.
 run_check "INVARIANT" rg -n '^@\[inline\] def syscallId \(c : @& InFlightContext\) : UInt32 :=$' SeLe4n/Kernel/Architecture/InFlightContext.lean
-run_check "INVARIANT" rg -n '^  c\.x7\.toUInt32\.toUInt64 == c\.x7$' SeLe4n/Kernel/Architecture/InFlightContext.lean
+run_check "INVARIANT" rg -n '^  \(SeLe4n\.Model\.Syscall\.ofWord\? c\.x7\)\.isSome$' SeLe4n/Kernel/Architecture/InFlightContext.lean
 run_check "INVARIANT" rg -n '^theorem syscallId_toUInt64($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/InFlightContext.lean
 run_check "INVARIANT" rg -n -U '^  \| some trapped =>\n    if trapped\.fromEl0 && trapped\.syscallNumberFits then \.ok trapped\n    else \.error Architecture\.SyscallOutcome\.faulted\.tagWord$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryContextOrFaulted_ok($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean

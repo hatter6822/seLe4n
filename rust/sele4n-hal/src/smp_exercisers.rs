@@ -2611,6 +2611,18 @@ const fn resuming(trip: RoundTrip) -> RoundTrip {
     }
 }
 
+/// `trip`, a thread's TCB_Suspend of itself: seL4 replies only to a caller
+/// left `Restart` (`handleInvocation`), so the suspended caller gets no frame
+/// and the round trip blocks (`RoundTrip::blocks`).
+#[cfg(feature = "hw_target")]
+const fn self_suspend(trip: RoundTrip) -> RoundTrip {
+    RoundTrip {
+        blocks: true,
+        returns: None,
+        ..trip
+    }
+}
+
 /// `trip`, receiving with the reply capability at `reply` in `x6`
 /// (`RoundTrip::reply`).
 #[cfg(feature = "hw_target")]
@@ -4481,12 +4493,39 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         kernel_step("exhaust-tick", TIMER_TICK_STEP),
         kernel_step("exhaust-drain-tick", TIMER_TICK_STEP),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
+        // seL4-MCS refuses SchedContext_Unbind of the current thread's own
+        // context (D18), so the root task's context is unbound by the partner:
+        // resumed, it runs while the root task waits on the notification, its
+        // unbind takes the context off the blocked root task, its signal wakes
+        // the root task, and its suspend of itself leaves the root task
+        // current again.
+        invocation(
+            "refill-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "refill-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
         invocation(
             "refill-unbind-root",
             SCHED_CONTEXT_UNBIND,
             SCHED_CONTEXT_CAP,
             [0; 4],
         ),
+        signal("refill-partner-wakes-root"),
+        self_suspend(invocation(
+            "refill-partner-suspends",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        )),
         configure(
             "sched-context-configure",
             FRAME_VADDR,
@@ -5775,12 +5814,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             ROOT_TCB_CAP,
             [0; 4],
         ),
-        invocation(
+        self_suspend(invocation(
             "caps-send-blocks-suspend",
             TCB_SUSPEND,
             PARTNER_TCB_CAP,
             [0; 4],
-        ),
+        )),
         invocation(
             "caps-long-send-blocks-resume",
             TCB_RESUME,
@@ -5811,12 +5850,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             ROOT_TCB_CAP,
             [0; 4],
         ),
-        invocation(
+        self_suspend(invocation(
             "caps-long-send-blocks-suspend",
             TCB_SUSPEND,
             PARTNER_TCB_CAP,
             [0; 4],
-        ),
+        )),
         invocation(
             "caps-call-blocks-resume",
             TCB_RESUME,
@@ -5847,12 +5886,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             ROOT_TCB_CAP,
             [0; 4],
         ),
-        invocation(
+        self_suspend(invocation(
             "caps-call-blocks-suspend",
             TCB_SUSPEND,
             PARTNER_TCB_CAP,
             [0; 4],
-        ),
+        )),
         invocation(
             "caps-long-call-blocks-resume",
             TCB_RESUME,
@@ -5883,12 +5922,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             ROOT_TCB_CAP,
             [0; 4],
         ),
-        invocation(
+        self_suspend(invocation(
             "caps-long-call-blocks-suspend",
             TCB_SUSPEND,
             PARTNER_TCB_CAP,
             [0; 4],
-        ),
+        )),
         // A send carrying one capability (a notification, named in the
         // sender's `caps_or_badges[0]`) to a waiting receiver whose IPC buffer
         // names no receive slot (its `receive_depth` word is 0): seL4's
@@ -7509,12 +7548,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             ROOT_TCB_CAP,
             [0; 4],
         ),
-        invocation(
+        self_suspend(invocation(
             "donated-reply-caps-suspend",
             TCB_SUSPEND,
             PARTNER_TCB_CAP,
             [0; 4],
-        ),
+        )),
         invocation(
             "donated-reply-caps-unbind",
             SCHED_CONTEXT_UNBIND,
@@ -7812,12 +7851,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // before suspending itself: the root task runs the teardown.
         invocation("chain-suspend-root", TCB_SUSPEND, ROOT_TCB_CAP, [0; 4]),
         invocation("chain-resume-root", TCB_RESUME, ROOT_TCB_CAP, [0; 4]),
-        invocation(
+        self_suspend(invocation(
             "chain-suspend-partner",
             TCB_SUSPEND,
             PARTNER_TCB_CAP,
             [0; 4],
-        ),
+        )),
         invocation(
             "chain-unbind",
             SCHED_CONTEXT_UNBIND,
@@ -9269,12 +9308,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             ROOT_TCB_CAP,
             [0; 4],
         ),
-        invocation(
+        self_suspend(invocation(
             "queued-caller-suspend-caller",
             TCB_SUSPEND,
             CHAIN_TCB_CAP,
             [0; 4],
-        ),
+        )),
         // The root task, serving no one, lowers its own priority below the
         // ready third thread: rescheduled at once (seL4's `setPriority` of the
         // current thread), its own result staged as it is switched out
@@ -9418,12 +9457,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             ROOT_TCB_CAP,
             [0; 4],
         ),
-        invocation(
+        self_suspend(invocation(
             "queued-caller-suspend-caller-again",
             TCB_SUSPEND,
             CHAIN_TCB_CAP,
             [0; 4],
-        ),
+        )),
         invocation(
             "queued-caller-unbind",
             SCHED_CONTEXT_UNBIND,
@@ -15740,12 +15779,12 @@ fn fault_entries() -> Option<bool> {
             ROOT_TCB_CAP,
             [0; 4],
         ),
-        invocation(
+        self_suspend(invocation(
             "fault-donating-suspend",
             TCB_SUSPEND,
             PARTNER_TCB_CAP,
             [0; 4],
-        ),
+        )),
         invocation(
             "fault-donating-unbind",
             SCHED_CONTEXT_UNBIND,
