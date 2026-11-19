@@ -268,4 +268,54 @@ theorem stageWokenDelivery_performCallRendezvous_long (st : SystemState)
       (propagatePipChainCrossCore_noResizeDue _ _ _ hNoS)
       (ipcBufferReadsAgree_callWoken st endpointId caller r _ rid core hNo).words hSize hLen]
 
+/-- The no-reply call's writes keep every read: the send rendezvous's and the
+wake's (`ipcBufferReadsAgree_sendWoken`), the caller's deschedule and its
+`Inactive` write, never a VSpace root, a buffer address or the machine. -/
+theorem ipcBufferReadsAgree_storeCallNoReplyReady (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (caller r : SeLe4n.ThreadId) (nextCode : Nat)
+    (core : Concurrency.CoreId) (hNo : st.objects.noResizeDue) :
+    ipcBufferReadsAgree (storeCallNoReplyReady st endpointId caller r nextCode core) st := by
+  unfold storeCallNoReplyReady descheduleInactive
+  have a1 := ipcBufferReadsAgree_sendWoken st endpointId r nextCode core hNo
+  have h0 : (storeSendRendezvousReady st endpointId r nextCode).objects.noResizeDue :=
+    storeSendRendezvousWith_noResizeDue st endpointId r (ThreadId.ofOptCode nextCode)
+      receiveReadyTcb hNo
+  have h1 := wakeThread_noResizeDue _ r core h0
+  exact (ipcBufferReadsAgree_updateTcb _ caller callerInactiveTcb (fun _ => ⟨rfl, rfl⟩)
+    (removeRunnableOnCore_noResizeDue _ _ _ h1)).trans
+    ((ipcBufferReadsAgree_removeRunnableOnCore _ caller core).trans a1)
+
+/-- **The long no-reply call, delivered**: the receiver woken without the
+message, the caller descheduled and `Inactive`, then the inline words written
+into the receiver's saved registers and the overflow words copied from the
+caller's buffer into its own (`deliverLongSendFrame`). -/
+@[noinline] def performCallNoReplyDeliveredLong (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller r : SeLe4n.ThreadId) (nextCode : Nat)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId) : SystemState :=
+  deliverLongSendFrame (storeCallNoReplyReady st endpointId caller r nextCode core) r
+    layout rf len caller badgeWord badged 0
+
+/-- **The staged long no-reply call is the delivered one**, its inline words
+read in the caller's registers and the rest in its IPC buffer. -/
+theorem stageWokenDelivery_callNoReply_long (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (caller r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+    (len : Nat) (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId)
+    (hNo : st.objects.noResizeDue) (hSize : layout.msgRegs.size = 4) (hLen : 4 ≤ len) :
+    Architecture.stageWokenDelivery
+        (descheduleInactive (wakeThread (storeSendRendezvous st endpointId r next
+          (longSendMessage layout rf st caller len (SeLe4n.Badge.opt badgeWord badged))) r
+          core).1 caller core)
+        (some r) 0 =
+      performCallNoReplyDeliveredLong st endpointId caller r (ThreadId.optCode next) layout rf len
+        badgeWord badged core := by
+  have hNoS := storeCallNoReplyReady_noResizeDue st endpointId caller r
+    (ThreadId.optCode next) core hNo
+  unfold performCallNoReplyDeliveredLong
+  rw [storeCallNoReply_eq_hold _ _ _ _ _ _ _ hNo, Architecture.stageWokenDelivery_some,
+    deliverLongSendFrame_eq _ st r caller layout rf len badgeWord badged 0 hNoS
+      (ipcBufferReadsAgree_storeCallNoReplyReady st endpointId caller r _ core hNo).words
+      hSize hLen]
+
 end SeLe4n.Kernel

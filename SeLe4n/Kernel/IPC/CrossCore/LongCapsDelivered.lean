@@ -416,6 +416,66 @@ theorem callRendezvousCaps_eq_deliveredLong (st : SystemState) (endpointId : SeL
     ((ipcBufferReadsAgree_propagatePipChainCrossCore Y1 r core hNo1).words.trans hAY1)
     hSize hLen).symm
 
+/-- **The long call that links no reply and transfers capabilities,
+delivered**: the receiver woken without the message and the caller descheduled
+and `Inactive`, the transfer in place, then the long frame with the transfer's
+report and the caller's overflow words. -/
+@[noinline] def performCallNoReplyCapsDeliveredLong (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (caller r : SeLe4n.ThreadId) (nextCode : Nat)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId)
+    (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
+  let X := storeCallNoReplyReady st endpointId caller r nextCode core
+  capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
+    deliverLongCapsFrame
+      (capStepsInfo endpointId true x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+      (capStepsApply endpointId true rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
+      r layout rf len caller badgeWord badged
+
+/-- **The staged long no-reply call that transfers capabilities is the
+delivered one.** -/
+theorem callNoReplyCaps_eq_deliveredLong (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId) (ctcb rt : TCB)
+    (count : Nat) (hNo : st.objects.noResizeDue)
+    (hSize : layout.msgRegs.size = 4) (hLen : 4 ≤ len) :
+    (match receiveTransferCaps (frameCapRequestOf st ctcb count) (some endpointId)
+        (capTargetOf st rt)
+        (descheduleInactive (wakeThread (storeSendRendezvous st endpointId r next
+          (longSendMessage layout rf st caller len (SeLe4n.Badge.opt badgeWord badged))) r
+          core).1 caller core) with
+      | .ok (s, st'') => Architecture.stageWokenDelivery st'' (some r) s.capInfo
+      | .error _ => st) =
+      performCallNoReplyCapsDeliveredLong st endpointId caller r (ThreadId.optCode next) layout rf
+        len badgeWord badged core ctcb.spaceCells[2] ctcb.ipcBuffer ctcb.spaceCells[0] count
+        rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0] := by
+  have hNoX := storeCallNoReplyReady_noResizeDue st endpointId caller r
+    (ThreadId.optCode next) core hNo
+  have hA := ipcBufferReadsAgree_storeCallNoReplyReady st endpointId caller r
+    (ThreadId.optCode next) core hNo
+  unfold performCallNoReplyCapsDeliveredLong
+  have hK := capTransferK_eq
+    (storeCallNoReplyReady st endpointId caller r (ThreadId.optCode next) core)
+    endpointId ctcb count rt
+    (fun i Y => deliverLongCapsFrame i Y r layout rf len caller badgeWord badged)
+  simp only at hK
+  rw [hK, hA.frameCapRequestOf, hA.capTargetOf, storeCallNoReply_eq_hold _ _ _ _ _ _ _ hNo]
+  generalize storeCallNoReplyReady st endpointId caller r (ThreadId.optCode next) core = X
+    at hNoX hA
+  rw [receiveTransferCaps_mapTcbInPlace (LinkBlindWrite.withMessageSlots _ _ _) r _ _ _ X hNoX]
+  obtain ⟨s, Y1, hT⟩ := receiveTransferCaps_ok (frameCapRequestOf st ctcb count)
+    (some endpointId) (capTargetOf st rt) X
+  have hNo1 := receiveTransferCaps_noResizeDue _ _ _ X Y1 s hNoX hT
+  have hAY1 : ipcWordReadsAgree Y1 st :=
+    (ipcWordReadsAgree_receiveTransferCaps _ _ _ hNoX hT).trans hA.words
+  rw [hT]
+  simp only [mapStepState]
+  rw [Architecture.stageWokenDelivery_some]
+  exact (deliverLongCapsFrame_eq Y1 st r caller layout rf len badgeWord badged s.capInfo hNo1
+    hAY1 hSize hLen).symm
+
 /-! ## The take of a blocked long sender -/
 
 /-- **What a thread blocked by a long capability-carrying send or call holds**:

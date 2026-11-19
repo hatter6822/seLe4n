@@ -408,6 +408,107 @@ theorem callDispatchChecked_inPlace_transfer (ctx : LabelingContext) (st : Syste
     rw [applyCallDonation_eq_ok_self_of_no_donation _ _ _ (by rw [hcv', hrv']; exact hDon')]
     simp only [hcv', hrv', hDon']
 
+/-! ## The call that links no reply, with a transfer -/
+
+/-- **The call that links no reply and transfers capabilities, delivered**:
+the receiver woken without the message and the caller descheduled and
+`Inactive`, the transfer in place, then the frame with the transfer's report.
+The caller and the receiver enter as the words the transfer reads of them
+(`capTransferK`), read before the rendezvous. -/
+@[noinline] def performCallNoReplyCapsDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller r : SeLe4n.ThreadId) (nextCode : Nat)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId)
+    (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
+  let X := storeCallNoReplyReady st endpointId caller r nextCode core
+  capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
+    deliverCapsFrame (capStepsInfo endpointId true x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+      (capStepsApply endpointId true rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
+      r layout rf len badgeWord badged
+
+/-- **The staged no-reply call that transfers capabilities is the delivered
+one**, for a message of at most four words read in the caller's registers. -/
+theorem callNoReplyCaps_eq_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId) (ctcb rt : TCB)
+    (count : Nat) (hNo : st.objects.noResizeDue)
+    (hSz : Architecture.regMessageLength layout len ≤ 4) :
+    (match receiveTransferCaps (frameCapRequestOf st ctcb count) (some endpointId)
+        (capTargetOf st rt)
+        (descheduleInactive (wakeThread (storeSendRendezvous st endpointId r next
+          { registers := Architecture.regMessageBody layout rf len,
+            badge := SeLe4n.Badge.opt badgeWord badged }) r core).1 caller core) with
+      | .ok (s, st'') => Architecture.stageWokenDelivery st'' (some r) s.capInfo
+      | .error _ => st) =
+      performCallNoReplyCapsDelivered st endpointId caller r (ThreadId.optCode next) layout rf len
+        badgeWord badged core ctcb.spaceCells[2] ctcb.ipcBuffer ctcb.spaceCells[0] count
+        rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0] := by
+  have hNoX := storeCallNoReplyReady_noResizeDue st endpointId caller r
+    (ThreadId.optCode next) core hNo
+  have hA := ipcBufferReadsAgree_storeCallNoReplyReady st endpointId caller r
+    (ThreadId.optCode next) core hNo
+  unfold performCallNoReplyCapsDelivered
+  have hK := capTransferK_eq
+    (storeCallNoReplyReady st endpointId caller r (ThreadId.optCode next) core)
+    endpointId ctcb count rt (fun i Y => deliverCapsFrame i Y r layout rf len badgeWord badged)
+  simp only at hK
+  rw [hK, hA.frameCapRequestOf, hA.capTargetOf, storeCallNoReply_eq_hold _ _ _ _ _ _ _ hNo]
+  generalize storeCallNoReplyReady st endpointId caller r (ThreadId.optCode next) core = X
+    at hNoX
+  rw [receiveTransferCaps_mapTcbInPlace (LinkBlindWrite.withMessageSlots _ _ _) r _ _ _ X hNoX]
+  obtain ⟨s, Y1, hT⟩ := receiveTransferCaps_ok (frameCapRequestOf st ctcb count)
+    (some endpointId) (capTargetOf st rt) X
+  have hNo1 := receiveTransferCaps_noResizeDue _ _ _ X Y1 s hNoX hT
+  rw [hT]
+  simp only [mapStepState]
+  rw [Architecture.stageWokenDelivery_some,
+    stageDeliveredMessage_holdMessage_caps _ _ _ _ hNo1
+      (by rw [Architecture.regMessageBody_size]; exact hSz),
+    returnFrameOfMessage_regMessageBody_caps]
+  rfl
+
+/-- **A checked call that links no reply, in place up to its transfer**: the
+in-place no-reply call, then the specification's transfer of the caller's
+request to the receiver's side, both read before the rendezvous; no donation
+and no priority walk follow. -/
+theorem callDispatchChecked_noReply_inPlace_transfer (ctx : LabelingContext) (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (ep : Endpoint) (caller r : SeLe4n.ThreadId) (rt : TCB)
+    (payload : SendPayload) (msg : IpcMessage) (core : Concurrency.CoreId)
+    (hM : sendPayloadMessage st caller payload = msg)
+    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
+    (hT : st.objects[r.toObjId]? = some (.tcb rt))
+    (hLinks : callRendezvousLinks st r payload = false)
+    (hG : sendWakesInPlace st endpointId r rt.queueNext = true)
+    (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
+      (ctx.endpointLabelOf endpointId) = true) :
+    endpointCallCrossCoreDispatchChecked ctx endpointId caller payload core st =
+      match receiveTransferCaps (sendCapRequest st endpointId caller payload) (some endpointId)
+          (receiverCapTarget? st r)
+          (descheduleInactive (wakeThread (storeSendRendezvous st endpointId r rt.queueNext msg) r
+            core).1 caller core) with
+      | .ok (s, st'') => (st'', .ok (s, (wakeThread (storeSendRendezvous st endpointId r
+          rt.queueNext msg) r core).2))
+      | .error e => (descheduleInactive (wakeThread (storeSendRendezvous st endpointId r
+          rt.queueNext msg) r core).1 caller core, .error e) := by
+  have hEp : st.getEndpoint? endpointId = some ep :=
+    (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE
+  unfold endpointCallCrossCoreDispatchChecked
+  rw [if_pos hFlow]
+  unfold endpointCallCrossCoreDispatch endpointCallWithCapsOnCore
+  rw [callNoReply_inPlace st endpointId ep caller r rt payload msg core hM hE hH hT hLinks hG]
+  simp only [hEp, hH, Option.bind_some]
+  cases hReq : sendCapRequest st endpointId caller payload with
+  | none =>
+    simp only [Option.isNone_none, ↓reduceIte, receiveTransferCaps, hLinks, Bool.false_eq_true]
+  | some q =>
+    simp only [Option.isNone_some, Bool.false_eq_true, ↓reduceIte]
+    rcases receiveTransferCaps (some q) (some endpointId) (receiverCapTarget? st r) _ with
+      e | ⟨s, st''⟩
+    · rfl
+    · simp only [hLinks, Bool.false_eq_true, ↓reduceIte]
+
 /-! ## The take of a blocked send, delivered -/
 
 /-- **A take's last write, with the transfer's report**: the receiver's frame

@@ -1614,6 +1614,16 @@ does; any other call takes the general arm. -/
             | some r =>
                 match st.getTcb? r with
                 | some rt =>
+                    if callLinksNoReply cap.canLinkReply rt then
+                      if (st.getTcb? tid).isSome &&
+                          endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                            (ctx.endpointLabelOf epId) &&
+                          sendWakesInPlaceCode st epId r rt.queueNextCode &&
+                          decide (Architecture.regMessageLength layout len ≤ 4) then
+                        .ok ((), performCallNoReplyDelivered st epId tid r rt.queueNextCode
+                          layout rf len cap.badgeWord cap.badged executingCore)
+                      else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
+                    else
                     match rt.pendingReceiveReply with
                     | some rid =>
                         if (st.getTcb? tid).isSome &&
@@ -1666,6 +1676,27 @@ theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
       · next r hH =>
         split
         · next rt hT =>
+          split
+          · next hNL =>
+            split
+            · next hG =>
+              simp only [Bool.and_eq_true, decide_eq_true_eq] at hG
+              obtain ⟨⟨⟨hS, hFlow⟩, hW⟩, hSz⟩ := hG
+              rw [sendWakesInPlaceCode_eq, TCB.ofOptCode_queueNextCode] at hW
+              have hNo : st.objects.noResizeDue := by
+                simp only [sendWakesInPlace, Bool.and_eq_true] at hW
+                exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.1.2
+              have hD := callDispatchChecked_noReply_inPlace ctx st epId ep tid r rt
+                (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _
+                executingCore (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hS)
+                (hReq epId _ _ _) ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
+                (callRendezvousLinks_false_of hT hNL) hW hFlow
+              simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD]
+              rw [← TCB.optCode_queueNext,
+                ← stageWokenDelivery_callNoReply _ _ _ _ _ _ _ _ _ _ _ hNo hSz]
+              rfl
+            · rfl
           split
           · next rid hRid =>
             split
@@ -1859,6 +1890,15 @@ as seL4's `copyMRs` does; any other call takes the general arm. -/
             | some r =>
                 match st.getTcb? r with
                 | some rt =>
+                    if callLinksNoReply cap.canLinkReply rt then
+                      if (st.getTcb? tid).isSome &&
+                          endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                            (ctx.endpointLabelOf epId) &&
+                          sendWakesInPlaceCode st epId r rt.queueNextCode then
+                        .ok ((), performCallNoReplyDeliveredLong st epId tid r rt.queueNextCode
+                          layout rf len cap.badgeWord cap.badged executingCore)
+                      else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
+                    else
                     match rt.pendingReceiveReply with
                     | some rid =>
                         if (st.getTcb? tid).isSome &&
@@ -1913,6 +1953,30 @@ theorem endpointCallLongCheckedArmR_eq_general (ctx : LabelingContext)
       · next r hH =>
         split
         · next rt hT =>
+          split
+          · next hNL =>
+            split
+            · next hG =>
+              simp only [Bool.and_eq_true] at hG
+              obtain ⟨⟨hS, hFlow⟩, hW⟩ := hG
+              rw [sendWakesInPlaceCode_eq, TCB.ofOptCode_queueNextCode] at hW
+              have hNo : st.objects.noResizeDue := by
+                have hW' := hW
+                simp only [sendWakesInPlace, Bool.and_eq_true] at hW'
+                exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW'.1.1.1.2
+              have hD := callDispatchChecked_noReply_inPlace ctx st epId ep tid r rt
+                (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _
+                executingCore (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hS)
+                (hReq epId _ _ _) ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
+                (callRendezvousLinks_false_of hT hNL) hW hFlow
+              simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD]
+              rw [← TCB.optCode_queueNext]
+              rw [← stageWokenDelivery_callNoReply_long st epId tid r rt.queueNext
+                SeLe4n.arm64DefaultLayout rf mi.length cap.badgeWord cap.badged executingCore
+                hNo hSz (by omega)]
+              rfl
+            · rfl
           split
           · next rid hRid =>
             split
@@ -3147,6 +3211,29 @@ write. -/
             | some r =>
                 match st.getTcb? r with
                 | some rt =>
+                    if callLinksNoReply cap.canLinkReply rt then
+                      if endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                            (ctx.endpointLabelOf epId) &&
+                          sendWakesInPlaceCode st epId r rt.queueNextCode then
+                        match st.getTcb? tid with
+                        | some ctcb =>
+                          if decide (len ≤ 4) then
+                            .ok ((), performCallNoReplyCapsDelivered st epId tid r
+                              rt.queueNextCode SeLe4n.arm64DefaultLayout rf len cap.badgeWord
+                              cap.badged executingCore ctcb.spaceCells[2] ctcb.ipcBuffer
+                              ctcb.spaceCells[0]
+                              (if cap.rights.mem .grant then routedExtraCaps rf else 0)
+                              rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0])
+                          else
+                            .ok ((), performCallNoReplyCapsDeliveredLong st epId tid r
+                              rt.queueNextCode SeLe4n.arm64DefaultLayout rf len cap.badgeWord
+                              cap.badged executingCore ctcb.spaceCells[2] ctcb.ipcBuffer
+                              ctcb.spaceCells[0]
+                              (if cap.rights.mem .grant then routedExtraCaps rf else 0)
+                              rt.spaceCells[2] rt.ipcBuffer rt.spaceCells[0])
+                        | none => endpointCallCheckedArmGeneralR ctx tid executingCore cap st
+                      else endpointCallCheckedArmGeneralR ctx tid executingCore cap st
+                    else
                     match rt.pendingReceiveReply with
                     | some rid =>
                         if endpointFlowGate ctx epId (ctx.threadLabelOf tid)
@@ -3206,6 +3293,90 @@ theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
       · next r hH =>
         split
         · next rt hT =>
+          split
+          · next hNL =>
+            have hLk := callRendezvousLinks_false_of
+              (payload := .frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply))
+              hT hNL
+            split
+            · next hG =>
+              simp only [Bool.and_eq_true] at hG
+              obtain ⟨hFlow, hW⟩ := hG
+              rw [sendWakesInPlaceCode_eq, TCB.ofOptCode_queueNextCode] at hW
+              have hNo : st.objects.noResizeDue := by
+                have hW' := hW
+                simp only [sendWakesInPlace, Bool.and_eq_true] at hW'
+                exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW'.1.1.1.2
+              have hb : cap.badge = SeLe4n.Badge.opt cap.badgeWord cap.badged := rfl
+              split
+              · next ctcb hS =>
+                have hSome : (st.getTcb? tid).isSome = true := by rw [hS]; rfl
+                split
+                · next hShort =>
+                  simp only [decide_eq_true_eq] at hShort
+                  have hSz : Architecture.regMessageLength SeLe4n.arm64DefaultLayout mi.length ≤ 4 := by
+                    unfold Architecture.regMessageLength; omega
+                  have hMsg := TransferringFrameRouted.message hFrame hTr hShort
+                  have hD := callDispatchChecked_noReply_inPlace_transfer ctx st epId ep tid r rt
+                    (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _
+                    executingCore
+                    (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hSome)
+                    ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hLk hW hFlow
+                  simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH]
+                  rw [hD, TransferringFrameRouted.sendCapRequest (epId := epId) (r := r) _ _ _
+                      (by simp only [hE, Option.bind_some, hH]) hS (hFrame ctcb hS) hTr hShort,
+                    receiverCapTarget?_eq_capTargetOf hT, hb]
+                  have hEq := callNoReplyCaps_eq_delivered st epId tid r rt.queueNext
+                    SeLe4n.arm64DefaultLayout rf mi.length cap.badgeWord cap.badged executingCore
+                    ctcb rt (if cap.rights.mem .grant then routedExtraCaps rf else 0) hNo hSz
+                  rw [TCB.optCode_queueNext] at hEq
+                  obtain ⟨s, st'', hOk⟩ := receiveTransferCaps_ok
+                    (frameCapRequestOf st ctcb
+                      (if cap.rights.mem .grant then routedExtraCaps rf else 0))
+                    (some epId) (capTargetOf st rt)
+                    (descheduleInactive (wakeThread (storeSendRendezvous st epId r rt.queueNext
+                      { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout rf
+                          mi.length,
+                        badge := SeLe4n.Badge.opt cap.badgeWord cap.badged }) r
+                      executingCore).1 tid executingCore)
+                  rw [hOk] at hEq ⊢
+                  dsimp only at hEq ⊢
+                  rw [hEq]
+                · next hLong =>
+                  have hGt : 4 < mi.length := by simp only [decide_eq_true_eq] at hLong; omega
+                  obtain ⟨hR, hRead⟩ := hTr.long hGt
+                  have hMsg := routedLongTransferringMessage st tid rf capAddr mi sid hFrame hR hGt
+                    (hRead hGt)
+                  have hD := callDispatchChecked_noReply_inPlace_transfer ctx st epId ep tid r rt
+                    (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _
+                    executingCore
+                    (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hSome)
+                    ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hLk hW hFlow
+                  simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH]
+                  rw [hD, sendCapRequest_routedLong st epId tid r ctcb rf capAddr mi sid _ _ _
+                      (by simp only [hE, Option.bind_some, hH]) hS (hFrame ctcb hS) hR hGt
+                      (hRead hGt),
+                    receiverCapTarget?_eq_capTargetOf hT, hb]
+                  have hEq := callNoReplyCaps_eq_deliveredLong st epId tid r rt.queueNext
+                    SeLe4n.arm64DefaultLayout rf mi.length cap.badgeWord cap.badged executingCore
+                    ctcb rt (if cap.rights.mem .grant then routedExtraCaps rf else 0) hNo rfl
+                    (by omega)
+                  rw [TCB.optCode_queueNext] at hEq
+                  obtain ⟨s, st'', hOk⟩ := receiveTransferCaps_ok
+                    (frameCapRequestOf st ctcb
+                      (if cap.rights.mem .grant then routedExtraCaps rf else 0))
+                    (some epId) (capTargetOf st rt)
+                    (descheduleInactive (wakeThread (storeSendRendezvous st epId r rt.queueNext
+                      (longSendMessage SeLe4n.arm64DefaultLayout rf st tid mi.length
+                        (SeLe4n.Badge.opt cap.badgeWord cap.badged))) r executingCore).1 tid
+                      executingCore)
+                  rw [hOk] at hEq ⊢
+                  dsimp only at hEq ⊢
+                  rw [hEq]
+              · rfl
+            · rfl
           split
           · next rid hRid =>
             split
