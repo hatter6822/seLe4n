@@ -1286,6 +1286,11 @@ def nonExecutedTransitionsPlain : List Name :=
   -- `receiveCallTakeState_eq_hold`, run as `storeReceiveCallReady`).
   , `SeLe4n.Kernel.faultDeliverCheckedOf
   , `SeLe4n.Kernel.receiveCallTakeState
+  -- A receive's take of a queued caller that links no reply (seL4
+  -- `receiveIPC` without Grant/GrantReply or without a reply object): the
+  -- specification state of `receiveCallNoLinkTake_inPlace`, run as
+  -- `performReceiveCallNoLinkDelivered` (`receiveCallNoLinkTake_delivered`).
+  , `SeLe4n.Kernel.receiveCallNoLinkTakeState
   , `SeLe4n.Kernel.faultSuspend
   -- WS-ZA ZA5.4 part 26: names for the states a thread's finalisation reaches
   -- part way (`FinaliseRetirable.lean`), which the carriage of its admission is
