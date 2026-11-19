@@ -3909,7 +3909,7 @@ theorem passiveObjectQuiescent_bindingCodes {st : SystemState} {x : SeLe4n.ObjId
     cases o with
     | notification n =>
       simp only [Bool.and_eq_true, beq_iff_eq] at hQ
-      simp [notificationBindingCodes, KernelObject.bindingCodes, hQ.2]
+      simp [notificationBindingCodes, KernelObject.bindingCodes, hQ.1.2]
     | tcb _ => exact absurd hP id
     | _ => rfl
 

@@ -619,35 +619,26 @@ theorem schedControlConfigure_confinedToCores (core : CoreId) (vScId : SeLe4n.Va
       · exact List.mem_append.mpr (.inr (e ▸ List.mem_cons_self ..))
       · exact List.mem_append.mpr (.inr (List.mem_cons_of_mem _ e))
 
--- WS-RR RR8.12 Cut C3b-ii (`v0.35.168`): `schedContextUnbindOnCoreWriteSet` moved to
+-- WS-RR RR8.12 Cut C3b-ii (`v0.35.168`): `schedContextUnbindWriteSet` moved to
 -- the production `SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean` (via
 -- `SyscallSchedFootprint.lean` until WS-LS LS2.5), beside
 -- `schedLockSet_schedContextUnbindOnCore`, whose run segment IS it.  Same name,
 -- same namespace; the confinement theorem below stays here.
 
 /-- SM8.B.2 (**the live `.schedContextUnbind` bound**): the per-core unbind
-writes no core outside the demoted thread's home and the executing core.
+writes no core outside the demoted thread's home and the core running it.
 
-Two legs, composed by `observableSlotsConfinedToCores_trans` — which is why the
-write set is literally the concatenation the transition performs: the revocation
-(bounded by `schedContextUnbind_confinedToCores`) and the preemption seam
-(bounded by `priorityRescheduleOnCore_confinedToCores`). A rejected unbind never
-reaches the seam. -/
+Its state is the revocation's (`schedContextUnbindOnCore_ok`), bounded by
+`schedContextUnbind_confinedToCores`: the executing core's own current thread
+is refused, so no local scheduling point runs. -/
 theorem schedContextUnbindOnCore_confinedToCores (vScId : SeLe4n.ValidObjId)
     (executingCore : CoreId) (st st' : SystemState)
     (sgi : Option (CoreId × Concurrency.SgiKind))
     (hStep : SchedContextOps.schedContextUnbindOnCore vScId executingCore st
       = .ok (st', sgi)) :
-    observableSlotsConfinedToCores st st'
-      (schedContextUnbindOnCoreWriteSet st vScId.val executingCore) := by
-  unfold SchedContextOps.schedContextUnbindOnCore schedContextUnbindOnCoreWriteSet at *
-  simp only [] at hStep
-  split at hStep
-  · exact absurd hStep (by simp)
-  · next stMid hUnbind =>
-    exact observableSlotsConfinedToCores_trans
-      (schedContextUnbind_confinedToCores vScId st stMid hUnbind)
-      (priorityRescheduleOnCore_confinedToCores stMid st' _ executingCore true sgi hStep)
+    observableSlotsConfinedToCores st st' (schedContextUnbindWriteSet st vScId.val) :=
+  schedContextUnbind_confinedToCores vScId st st'
+    (SchedContextOps.schedContextUnbindOnCore_ok hStep).2.1
 
 /-- **The live `.schedContextUnbind` bound**: seL4-MCS's `SchedContext_Unbind`
 writes the thread unbind's cores, and the notification unbind writes no
@@ -657,8 +648,7 @@ theorem schedContextUnbindAllOnCore_confinedToCores (vScId : SeLe4n.ValidObjId)
     (sgi : Option (CoreId × Concurrency.SgiKind))
     (hStep : SchedContextOps.schedContextUnbindAllOnCore vScId executingCore st
       = .ok (st', sgi)) :
-    observableSlotsConfinedToCores st st'
-      (schedContextUnbindOnCoreWriteSet st vScId.val executingCore) := by
+    observableSlotsConfinedToCores st st' (schedContextUnbindWriteSet st vScId.val) := by
   have hN : ∀ X : SystemState, observableSlotsConfinedToCores X
       (unbindSchedContextNotification X (SeLe4n.SchedContextId.ofObjId vScId.val)) [] :=
     fun X => observableSlotsConfinedToCores_nil_of_scheduler_machine_eq

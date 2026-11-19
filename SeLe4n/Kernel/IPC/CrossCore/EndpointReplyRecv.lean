@@ -1030,4 +1030,40 @@ theorem schedLockSet_replyRecvTransferOnCore_of_no_fault (endpointId : SeLe4n.Ob
 -- footprint's own arguments, so a consumer reaches for the shared lemma directly.
 
 
+/-- **The `.replyRecv` arm's scheduler-domain footprint**: the arm runs either the
+composite (`replyRecvTransferOnCore`) or, when its receive completes the bound
+notification (seL4-MCS `receiveIPC`'s first branch), the reply leg alone
+(`replyTransferOnCoreChecked`) followed by the notification's completion, which
+writes only the object store.  Which one runs turns on the labelling context the
+footprint does not read, so it names both legs' cores: `schedFootprintOfCores` of
+the two write sets and of the two replenish-core lists.  The canonical segments
+deduplicate the shared cores. -/
+def schedLockSet_replyRecvArmOnCore (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (label : Nat) (msg : IpcMessage) (grant : Bool)
+    (executingCore : Concurrency.CoreId) (st : SystemState) :
+    List (LockKey × Concurrency.AccessMode) :=
+  schedFootprintOfCores
+    (replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg grant
+        executingCore st ++
+      replyTransferWriteSet receiver prevCaller (replyRecvReplyMessageInfo label msg)
+        msg.registers msg executingCore st)
+    (replyRecvHandoffReplenishCores (replyRecvCallerFaultAnswer? st prevCaller label msg)
+        endpointId receiver replyId prevCaller
+        (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
+        executingCore st ++
+      replyTransferReplenishCores receiver prevCaller msg executingCore st)
+
+/-- The composite's footprint is contained in the arm's. -/
+theorem schedLockSet_replyRecvTransferOnCore_subset_arm (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (label : Nat) (msg : IpcMessage) (grant : Bool)
+    (executingCore : Concurrency.CoreId) (st : SystemState) :
+    ∀ p ∈ schedLockSet_replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg
+        grant executingCore st,
+      p ∈ schedLockSet_replyRecvArmOnCore endpointId receiver replyId prevCaller label msg grant
+        executingCore st :=
+  schedFootprintOfCores_subset (fun _ h => List.mem_append_left _ h)
+    (fun _ h => List.mem_append_left _ h)
+
 end SeLe4n.Kernel

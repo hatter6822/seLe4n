@@ -1918,18 +1918,15 @@ theorem untypedRetypeFromCap_runQueueStage {tid : SeLe4n.ThreadId}
     (fun h1 h2 => h1.trans h2) (fun _ _ => trivial)
     (fun _ hC => untypedRetypeObject_runQueueStage hC) trivial
 
-/-- The per-core context unbind: the unbind, then the preemption seam. -/
+/-- The per-core context unbind: the single-core unbind's state
+(`schedContextUnbindOnCore_ok`). -/
 theorem schedContextUnbindOnCore_runQueueEntryStage {vScId : SeLe4n.ValidObjId}
     {ec : Concurrency.CoreId} {st st' : SystemState}
     {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)}
     (h : SchedContextOps.schedContextUnbindOnCore vScId ec st = .ok (st', sgi?)) :
-    SystemState.RunQueueEntryStage st st' := by
-  unfold SchedContextOps.schedContextUnbindOnCore at h
-  split at h
-  · cases h
-  · rename_i stU hU
-    exact (SchedContextOps.schedContextUnbind_runQueueEntryStage vScId st stU hU).trans
-      (priorityRescheduleOnCore_runQueueEntryStage h)
+    SystemState.RunQueueEntryStage st st' :=
+  SchedContextOps.schedContextUnbind_runQueueEntryStage vScId st st'
+    (SchedContextOps.schedContextUnbindOnCore_ok h).2.1
 
 
 /-! ## The yieldTo invocation (WS-ZA ZA6.29) -/

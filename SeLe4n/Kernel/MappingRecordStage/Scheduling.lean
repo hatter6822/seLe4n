@@ -710,16 +710,13 @@ theorem schedContextUnbind_mappingStage {vScId : SeLe4n.ValidObjId} {st st' : Sy
         exact MappingStage.rewriteObject_schedContext hSc _ _
   · cases hStep
 
-/-- The per-core context unbind: the unbind, then the preemption seam. -/
+/-- The per-core context unbind: the single-core unbind's state
+(`schedContextUnbindOnCore_ok`). -/
 theorem schedContextUnbindOnCore_mappingStage {vScId : SeLe4n.ValidObjId} {ec : CoreId}
     {st st' : SystemState} {sgi? : Option (CoreId × Concurrency.SgiKind)}
     (h : SchedContextOps.schedContextUnbindOnCore vScId ec st = .ok (st', sgi?)) :
-    MappingStage st st' := by
-  unfold SchedContextOps.schedContextUnbindOnCore at h
-  split at h
-  · cases h
-  · rename_i stU hU
-    exact (schedContextUnbind_mappingStage hU).trans (priorityRescheduleOnCore_mappingStage h)
+    MappingStage st st' :=
+  schedContextUnbind_mappingStage (SchedContextOps.schedContextUnbindOnCore_ok h).2.1
 
 /-- The affinity op: the vacate (the scheduler alone), the affinity field
 written in place, the replenishment move (replenish queues only), the run-queue

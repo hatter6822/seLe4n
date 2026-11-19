@@ -176,20 +176,6 @@ def schedContextUnbindWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId) :
   | some tid => determineTargetCore st tid :: (runningCoreOf? st tid).toList
   | none => []
 
-/-- **The cores the live `.schedContextUnbind` may write** — the demoted
-thread's home core, where the revocation re-buckets it, the core running it,
-and the executing core, which runs the demotion's scheduling point inline.
-
-When the running core is remote the seam only *posts* its SGI, so the declared
-set over-approximates by one core on that path; over-approximating is the safe
-direction, and it is the shape `resumeThreadOnCoreWriteSet` already uses.
-
-SM8.B.2's write set, moved here from the staged non-interference module at
-`v0.35.168`. -/
-def schedContextUnbindOnCoreWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId)
-    (executingCore : CoreId) : List CoreId :=
-  schedContextUnbindWriteSet st scObjId ++ [executingCore]
-
 /-- **`v0.35.168`: the core a `.schedContextUnbind` moves a RESERVATION on.**
 
 The unbind purges the SC's eligibility entry on both of its arms — the bound TCB
@@ -207,60 +193,52 @@ def schedContextUnbindReplenishCores (st : SystemState) (scObjId : SeLe4n.ObjId)
 
 /-- **`v0.35.168`: the live `.schedContextUnbind` arm's scheduler-domain
 footprint.** -/
-def schedLockSet_schedContextUnbindOnCore (st : SystemState) (scObjId : SeLe4n.ObjId)
-    (executingCore : CoreId) : List (LockKey × Concurrency.AccessMode) :=
-  schedFootprintOfCores (schedContextUnbindOnCoreWriteSet st scObjId executingCore)
+def schedLockSet_schedContextUnbindOnCore (st : SystemState) (scObjId : SeLe4n.ObjId) :
+    List (LockKey × Concurrency.AccessMode) :=
+  schedFootprintOfCores (schedContextUnbindWriteSet st scObjId)
     (schedContextUnbindReplenishCores st scObjId)
 
 /-- `v0.35.168`: the footprint holds the demoted thread's home core's run-queue
 write lock — the re-bucket's own. -/
 theorem schedLockSet_schedContextUnbindOnCore_contains_home_runQueue_write (st : SystemState)
-    (scObjId : SeLe4n.ObjId) (executingCore : CoreId) (tid : SeLe4n.ThreadId)
+    (scObjId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (h : SchedContextOps.schedContextBoundThread? st scObjId = some tid) :
     (LockKey.runQueue (determineTargetCore st tid), Concurrency.AccessMode.write)
-      ∈ schedLockSet_schedContextUnbindOnCore st scObjId executingCore :=
+      ∈ schedLockSet_schedContextUnbindOnCore st scObjId :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr
-    (by unfold schedContextUnbindOnCoreWriteSet schedContextUnbindWriteSet; rw [h]; simp)
+    (by unfold schedContextUnbindWriteSet; rw [h]; simp)
 
 /-- `v0.35.168`: ...the core actually running it, whose `current` slot the
 preemption guard clears... -/
 theorem schedLockSet_schedContextUnbindOnCore_contains_running_runQueue_write
-    (st : SystemState) (scObjId : SeLe4n.ObjId) (executingCore : CoreId)
+    (st : SystemState) (scObjId : SeLe4n.ObjId)
     (tid : SeLe4n.ThreadId) (runCore : CoreId)
     (h : SchedContextOps.schedContextBoundThread? st scObjId = some tid)
     (hRun : runningCoreOf? st tid = some runCore) :
     (LockKey.runQueue runCore, Concurrency.AccessMode.write)
-      ∈ schedLockSet_schedContextUnbindOnCore st scObjId executingCore :=
+      ∈ schedLockSet_schedContextUnbindOnCore st scObjId :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr
-    (by simp [schedContextUnbindOnCoreWriteSet, schedContextUnbindWriteSet, h, hRun])
-
-/-- `v0.35.168`: ...and the executing core's, which the scheduling point writes. -/
-theorem schedLockSet_schedContextUnbindOnCore_contains_executing_runQueue_write
-    (st : SystemState) (scObjId : SeLe4n.ObjId) (executingCore : CoreId) :
-    (LockKey.runQueue executingCore, Concurrency.AccessMode.write)
-      ∈ schedLockSet_schedContextUnbindOnCore st scObjId executingCore :=
-  (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr
-    (by unfold schedContextUnbindOnCoreWriteSet; simp)
+    (by simp [schedContextUnbindWriteSet, h, hRun])
 
 /-- `v0.35.168`: the footprint holds the replenish-queue write lock of the core
 the SC's release link names, which is the purge's, on either arm. -/
 theorem schedLockSet_schedContextUnbindOnCore_contains_replenishQueue_write
-    (st : SystemState) (scObjId : SeLe4n.ObjId) (executingCore : CoreId)
+    (st : SystemState) (scObjId : SeLe4n.ObjId)
     (tid : SeLe4n.ThreadId) (d : CoreId)
     (h : SchedContextOps.schedContextBoundThread? st scObjId = some tid)
     (hC : st.releaseCoreOf (SeLe4n.SchedContextId.ofObjId scObjId) = some d) :
     (LockKey.replenishQueue d, Concurrency.AccessMode.write)
-      ∈ schedLockSet_schedContextUnbindOnCore st scObjId executingCore :=
+      ∈ schedLockSet_schedContextUnbindOnCore st scObjId :=
   (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr
     (by simp [schedContextUnbindReplenishCores, SchedContextOps.purgeReplenishCores, h, hC])
 
 /-- `v0.35.168`: and no replenish lock where the SC has no bound thread — the
 arm refuses `.illegalState` there and writes nothing. -/
 theorem schedLockSet_schedContextUnbindOnCore_no_replenishQueue_of_unbound
-    (st : SystemState) (scObjId : SeLe4n.ObjId) (executingCore : CoreId) (c : CoreId)
+    (st : SystemState) (scObjId : SeLe4n.ObjId) (c : CoreId)
     (h : SchedContextOps.schedContextBoundThread? st scObjId = none) :
     (LockKey.replenishQueue c, Concurrency.AccessMode.write)
-      ∉ schedLockSet_schedContextUnbindOnCore st scObjId executingCore := by
+      ∉ schedLockSet_schedContextUnbindOnCore st scObjId := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mp hMem
   unfold schedContextUnbindReplenishCores at this
@@ -460,26 +438,16 @@ theorem schedContextUnbind_replenishQueueOnCore_ne_of_link (st st' : SystemState
           (hLink _ rfl { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
             rfl _), SystemState.rewriteObject_scheduler]
 
-/-- **`v0.35.168`: ...and the live per-core arm writes the same one**, the
-scheduling point it composes moving no replenishment
-(`priorityRescheduleOnCore_replenishQueueOnCore`). -/
+/-- **`v0.35.168`: ...and the live per-core arm writes the same one**: its state
+is the single-core unbind's (`schedContextUnbindOnCore_ok`). -/
 theorem schedContextUnbindOnCore_replenishQueueOnCore_ne_of_link (st st' : SystemState)
     (vScId : SeLe4n.ValidObjId) (executingCore : CoreId)
     (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId) (hObjInv : st.objects.invExt)
     (hne : st.releaseCoreOf (SeLe4n.SchedContextId.ofObjId vScId.val) ≠ some c)
     (h : SchedContextOps.schedContextUnbindOnCore vScId executingCore st = .ok (st', sgi)) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
-  unfold SchedContextOps.schedContextUnbindOnCore at h
-  dsimp only at h
-  cases hU : SchedContextOps.schedContextUnbind vScId st with
-  | error e => rw [hU] at h; exact absurd h (by simp)
-  | ok r =>
-      obtain ⟨u, stU⟩ := r
-      rw [hU] at h
-      dsimp only at h
-      rw [priorityRescheduleOnCore_replenishQueueOnCore _ _ _ _ _ _ c h]
-      exact schedContextUnbind_replenishQueueOnCore_ne_of_link st stU vScId c hObjInv hne
-        (by cases u; exact hU)
+  obtain ⟨_, hU, _⟩ := SchedContextOps.schedContextUnbindOnCore_ok h
+  exact schedContextUnbind_replenishQueueOnCore_ne_of_link st st' vScId c hObjInv hne hU
 
 /-- **WS-RR RR8.12 Cut C6b: the `.schedContextUnbind` arm's exactness frame.**
 
@@ -502,21 +470,17 @@ theorem schedContextUnbindOnCore_replenishQueueOnCore_ne (st st' : SystemState)
           unfold SchedContextOps.purgeReplenishCores; rw [e]; exact List.mem_singleton_self c)) h
   | none =>
       exfalso
-      unfold SchedContextOps.schedContextUnbindOnCore at h
-      dsimp only at h
-      cases hU : SchedContextOps.schedContextUnbind vScId st with
-      | error e => rw [hU] at h; exact absurd h (by simp)
-      | ok r =>
-          unfold SchedContextOps.schedContextUnbind at hU
-          unfold SchedContextOps.schedContextBoundThread? at hBT
-          cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
-          | none => rw [SystemState.getSchedContextWitnessed?_eq_none hSc] at hU; cases hU
-          | some sc =>
-              rw [hSc] at hBT
-              rw [SystemState.getSchedContextWitnessed?_eq_some hSc] at hU
-              dsimp only at hU
-              simp only [hBT] at hU
-              cases hU
+      obtain ⟨_, hU, _⟩ := SchedContextOps.schedContextUnbindOnCore_ok h
+      unfold SchedContextOps.schedContextUnbind at hU
+      unfold SchedContextOps.schedContextBoundThread? at hBT
+      cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
+      | none => rw [SystemState.getSchedContextWitnessed?_eq_none hSc] at hU; cases hU
+      | some sc =>
+          rw [hSc] at hBT
+          rw [SystemState.getSchedContextWitnessed?_eq_some hSc] at hU
+          dsimp only at hU
+          simp only [hBT] at hU
+          cases hU
 
 -- ============================================================================
 -- §8  The `.schedContextYieldTo` arm

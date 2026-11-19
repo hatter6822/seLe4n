@@ -5205,7 +5205,11 @@ run_negative_check "INVARIANT" rg -n 'storeNamesNone|storeNamesThreadNone' SeLe4
 # scTCB and scReply), with no walk of the object table or the replenishment
 # queues; the scheduling links that make those the whole truth are carried along
 # the whole delete chain, and an admitted context is proven named by none.
-run_check "INVARIANT" rg -n -U '  \| some \(\.schedContext sc\) =>\n    sc\.boundThreadCode == 0 && sc\.donationOrigin\.isNone && sc\.scReply\.isNone &&\n      sc\.releaseCoreCode == 0 && sc\.yieldFromCode == 0\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U '  \| some \(\.schedContext sc\) =>\n    sc\.boundThreadCode == 0 && sc\.donationOrigin\.isNone && sc\.scReply\.isNone &&\n      sc\.releaseCoreCode == 0 && sc\.yieldFromCode == 0 && sc\.notificationCode == 0\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
+# A notification or a context still bound to the other is not retired: the
+# finalisation clears both link words first (seL4-MCS `schedContext_unbindNtfn`).
+# Mutation: drop the notification arm's `schedContextCode` conjunct.
+run_check "INVARIANT" rg -n -U '  \| some \(\.notification n\) =>\n    n\.waitHeadCode == 0 && n\.boundTCBCode == 0 && n\.schedContextCode == 0\n' SeLe4n/Kernel/Capability/FinalRetire.lean
 run_negative_check "INVARIANT" rg -n 'storeNamesSchedContextNone|replenishQueuesNameNone|replenishQueuesOnNameNone|replenishEntriesNameNone|schedContextRetirable_false_of_named' SeLe4n
 run_check "INVARIANT" rg -n '^structure schedContextLinkInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
 run_check "INVARIANT" rg -n '^theorem finaliseFinalObject_preserves_schedContextLinkInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
@@ -12755,7 +12759,12 @@ run_check "INVARIANT" rg -n '^theorem resolveSchedContextBindNotificationCode_eq
 # invoking core's current thread's context before the thread unbind, then
 # unbinds the notification.
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextUnbind =>(\n([ \t][^\n]*)?)*              match SchedContextOps\.schedContextUnbindAllOnCore vScId\n                  executingCore st with" SeLe4n/Kernel/API.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbindAllOnCore[^\n]*(\n([ \t][^\n]*)?)*      if schedContextRunningCore\? st vScId\.val == some executingCore then \.error \.illegalState\n      else\n        match schedContextUnbindOnCore vScId executingCore st with(\n([ \t][^\n]*)?)*unbindSchedContextNotification st. \(SeLe4n\.SchedContextId\.ofObjId vScId\.val\), sgi\)" SeLe4n/Kernel/SchedContext/OperationsPerCore.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbindAllOnCore[^\n]*(\n([ \t][^\n]*)?)*    \| _ \+ 1 =>\n      match schedContextUnbindOnCore vScId executingCore st with(\n([ \t][^\n]*)?)*unbindSchedContextNotification st. \(SeLe4n\.SchedContextId\.ofObjId vScId\.val\), sgi\)" SeLe4n/Kernel/SchedContext/OperationsPerCore.lean'
+# The refusal is the thread unbind's own and precedes the revocation, so the
+# per-core unbind runs no local scheduling point.  Mutation: move the refusal
+# after the `schedContextUnbind` call, or restore the preemption seam.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbindOnCore [^\n]*(\n([ \t][^\n]*)?)*  if running\? == some executingCore then \.error \.illegalState\n  else\n    match schedContextUnbind vScId st with" SeLe4n/Kernel/SchedContext/OperationsPerCore.lean'
+run_negative_check "INVARIANT" rg -n 'priorityRescheduleOnCore|handleRescheduleSgiOnCore' SeLe4n/Kernel/SchedContext/OperationsPerCore.lean
 run_check "INVARIANT" rg -n '^theorem schedContextUnbindAllOnCore_refuses_current($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/OperationsPerCore.lean
 run_check "INVARIANT" rg -n '^theorem resolveSchedContextBindThread_ok_authorised($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_schedContextBind_eq($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
@@ -14130,14 +14139,13 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^private def runAffinityFootprintScena
 # WS-RR RR8.12 Cut C3b-ii (`v0.35.168`): the three SchedContext arms' resolved
 # scheduler-domain footprints, in the same module and for the same reason.
 # ---------------------------------------------------------------------------
-# The four write sets, out of the staged non-interference module.
+# The three write sets, out of the staged non-interference module.
 run_check "INVARIANT" rg -n '^def schedContextWriteSet \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 run_check "INVARIANT" rg -n '^def schedContextBindWriteSet \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 run_check "INVARIANT" rg -n '^def schedContextUnbindWriteSet \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
-run_check "INVARIANT" rg -n '^def schedContextUnbindOnCoreWriteSet \(' SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean
 # NEGATIVE: and none of them in the staged module they left.  Mutation: restore
-# any one of the four definitions there as code.
-run_negative_check "INVARIANT" rg -n '^def (schedContextWriteSet|schedContextBindWriteSet|schedContextUnbindWriteSet|schedContextUnbindOnCoreWriteSet) ' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# any one of the three definitions there as code.
+run_negative_check "INVARIANT" rg -n '^def (schedContextWriteSet|schedContextBindWriteSet|schedContextUnbindWriteSet) ' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # NEGATIVE: the duplicate resolver is DELETED, not relocated.  It was a second
 # copy of `SchedContextOps.schedContextBoundThread?`, clause for clause, under a
 # docstring on THAT one claiming it is single-sourced -- so a re-introduction
@@ -14161,7 +14169,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedControlConfigur
 # pre-state.  Mutation: drop the control's core, which the moved thread lands on.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedControlConfigureWriteSet[^\n]*(\n([ \t][^\n]*)?)*\| some t => setThreadCpuAffinityWriteSet st t \(some core\) \+\+\n *core :: schedContextConfigureWriteSet st scObjId" SeLe4n/Kernel/SchedContext/SchedControlFootprint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedContextBindOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(schedContextBindWriteSet st tid\) \(schedContextBindWriteSet st tid\)" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedContextUnbindOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(schedContextUnbindOnCoreWriteSet st scObjId executingCore\)(\n([ \t][^\n]*)?)*\(schedContextUnbindReplenishCores st scObjId\)" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_schedContextUnbindOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(schedContextUnbindWriteSet st scObjId\)(\n([ \t][^\n]*)?)*\(schedContextUnbindReplenishCores st scObjId\)" SeLe4n/Kernel/SchedContext/SchedContextFootprint.lean'
 # RELATION: the unbind's replenish segment is the purge's own resolver -- the
 # core the context's release link names, or none -- whether or not the bound
 # TCB still resolves (WS-ZA ZA6.3 retired the every-core sweep arm).  Mutation:
@@ -22559,7 +22567,7 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem declaredSchedulerLockSetForAbiEn
 # re-derives neither the gate nor the capability lookup.  The negative is scoped
 # to this declaration because the file legitimately names both elsewhere (the
 # `.replyRecv` CSpace-root agreement is stated over them).
-run_check "INVARIANT" bash -lc 'rg -U -n "match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with(\n {2,}[^\n]*)*\n {4,}\(abiEntryLockOperands decoded tid stSpilled\)\.bind" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st with(\n {2,}[^\n]*)*\n {4,}\(abiEntryLockOperands decoded tid stSpilled\)\.bind" SeLe4n/Kernel/SyscallSchedFootprint.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def declaredSchedulerLockSetForAbiEntry[^\n]*(\n([ \t][^\n]*)?)*(abiEntryGate|syscallLookupCap)" SeLe4n/Kernel/SyscallSchedFootprint.lean'
 # One record, two domains: the object resolver must be blind to the five fields
 # the scheduler footprints read, or a field added for one domain silently moves

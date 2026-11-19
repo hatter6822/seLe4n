@@ -698,10 +698,9 @@ set_option maxRecDepth 8192
 #check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore_error
 #check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore_no_running_core
 #check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore_sgi_shape
-#check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore_local_reschedules
+#check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore_refuses_current
 #check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindAllOnCore
 #check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindAllOnCore_refuses_current
-#check @schedContextUnbindOnCoreWriteSet
 #check @schedContextUnbindOnCore_confinedToCores
 #check @schedContextUnbindAllOnCore_crossCoreNonInterference
 #check @schedContextUnbindAllOnCore_confinedToCores

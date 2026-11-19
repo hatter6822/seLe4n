@@ -1172,9 +1172,8 @@ Four things this measures that no theorem states of a *state*.
 private def runSchedContextFootprintScenarios : IO Unit := do
   IO.println "--- §4.6 Cut C3b-ii: the three SchedContext arms' scheduler footprints ---"
   -- ── (1) the unbind, on both arms ──
-  let fpUnbindBound := schedLockSet_schedContextUnbindOnCore stCbs scId0.toObjId bootCoreId
+  let fpUnbindBound := schedLockSet_schedContextUnbindOnCore stCbs scId0.toObjId
   let fpUnbindDeadTcb := schedLockSet_schedContextUnbindOnCore stDangling scIdDangling.toObjId
-    bootCoreId
   assertBool "pre: scId0's bound thread resolves and is homed on core 1"
     ((SchedContextOps.schedContextBoundThread? stCbs scId0.toObjId == some tid0)
       && determineTargetCore stCbs tid0 == core1
@@ -1280,7 +1279,7 @@ private def runSyscallSchedResolverScenarios : IO Unit := do
     (match schedLockSetForSyscall .schedContextUnbind opsObject bootCoreId st with
      | some fp =>
          decide (fp.pairs
-           = schedLockSet_schedContextUnbindOnCore st scId0.toObjId bootCoreId)
+           = schedLockSet_schedContextUnbindOnCore st scId0.toObjId)
      | none => false)
   assertBool "...and .notificationWait answers the executing core's alone"
     (match schedLockSetForSyscall .notificationWait opsThread bootCoreId st with

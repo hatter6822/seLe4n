@@ -571,8 +571,9 @@ notification, a reply or a CNode. -/
 
 /-- **Whether the passive object at `x` is quiescent**, so seL4's `finaliseCap`
 on its last capability has nothing to cancel: an endpoint whose two queues are
-empty (`cancelAllIPC` wakes nobody); a notification with no waiter and no bound
-thread (`unbindMaybeNotification` and `cancelAllSignals` do nothing); a reply
+empty (`cancelAllIPC` wakes nobody); a notification with no waiter, no bound
+thread and no bound scheduling context (`unbindMaybeNotification`,
+`cancelAllSignals` and seL4-MCS's `schedContext_unbindNtfn` do nothing); a reply
 with no caller, stashed by no receiver and with no stack link (`reply_remove`
 does nothing; seL4 clears a reply's `replyTCB` before it frees it, and a
 stashed reply's stasher is read through the reply's own record,
@@ -584,7 +585,8 @@ passive object (`passiveObjectQuiescent.namedByNone`). -/
 @[inline] def passiveObjectQuiescent (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   match st.getObject? x with
   | some (.endpoint ep) => ep.sendHeadCode == 0 && ep.recvHeadCode == 0
-  | some (.notification n) => n.waitHeadCode == 0 && n.boundTCBCode == 0
+  | some (.notification n) =>
+    n.waitHeadCode == 0 && n.boundTCBCode == 0 && n.schedContextCode == 0
   | some (.reply r) =>
     r.callerCode == 0 && !st.replyStashedAt ⟨x.val⟩ r && r.prev.isNone && r.next.isNone
   | some (.cnode cn) => cn.occHead == 0
@@ -705,7 +707,10 @@ context through (`scTCB`, `scReply`): bound to no thread, lent from none and
 heading no reply stack — and (WS-ZA ZA6.3) linked into no core's release queue,
 so the erase never cuts a queue's chain; and (WS-ZA ZA6.6) recording no yielder,
 its yield completed as seL4's context `finaliseCap` completes it, so the erase
-never leaves a thread yielded to a context that is gone.  Nothing outside the context is walked.  What makes these the whole
+never leaves a thread yielded to a context that is gone; and bound to no
+notification, its notification link cleared as seL4-MCS's
+`schedContext_unbindNtfn` clears it, so the erase never leaves a notification
+naming a context that is gone.  Nothing outside the context is walked.  What makes these the whole
 truth is the scheduling links the delete chain carries
 (`schedContextLinkInvariant`): a thread bound to a context, as its own or on
 loan, is named by it back, no thread holds a timeout budget, and every context a
@@ -716,7 +721,7 @@ replenishment queue holds is bound — so no object names an admitted context
   match st.getObject? x with
   | some (.schedContext sc) =>
     sc.boundThreadCode == 0 && sc.donationOrigin.isNone && sc.scReply.isNone &&
-      sc.releaseCoreCode == 0 && sc.yieldFromCode == 0
+      sc.releaseCoreCode == 0 && sc.yieldFromCode == 0 && sc.notificationCode == 0
   | _ => false
 
 /-- **Whether a final delete retires the thread or the scheduling context at
@@ -1991,16 +1996,17 @@ theorem passiveObjectQuiescent_endpoint {st : SystemState} {x : SeLe4n.ObjId} {e
   simp only [Endpoint.sendQ, Endpoint.receiveQ, h.1, h.2]
   exact ⟨rfl, rfl⟩
 
-/-- **A quiescent notification's own links**: no waiter and no bound thread. -/
+/-- **A quiescent notification's own links**: no waiter, no bound thread and no
+bound scheduling context. -/
 theorem passiveObjectQuiescent_notification {st : SystemState} {x : SeLe4n.ObjId}
     {n : Notification} (h : passiveObjectQuiescent st x = true)
     (hN : st.objects[x]? = some (.notification n)) :
-    n.waitHead = none ∧ n.boundTCBCode = 0 := by
+    n.waitHead = none ∧ n.boundTCBCode = 0 ∧ n.schedContextCode = 0 := by
   unfold passiveObjectQuiescent at h
   rw [SystemState.getObject?_eq_getElem, hN] at h
   simp only [Bool.and_eq_true, beq_iff_eq] at h
-  simp only [Notification.waitHead, h.1]
-  exact ⟨rfl, h.2⟩
+  simp only [Notification.waitHead, h.1.1]
+  exact ⟨rfl, h.1.2, h.2⟩
 
 /-- **A quiescent reply's own links**: no caller, no live stash (the receiver it
 records stashes it no more), and no stack link. -/
@@ -2054,7 +2060,7 @@ theorem schedContextRetirable_parts {st : SystemState} {x : SeLe4n.ObjId}
     (h : schedContextRetirable st x = true) :
     ∃ sc, st.objects[x]? = some (.schedContext sc) ∧ sc.boundThreadCode = 0 ∧
       sc.donationOrigin = none ∧ sc.scReply = none ∧ sc.releaseCoreCode = 0 ∧
-      sc.yieldFromCode = 0 := by
+      sc.yieldFromCode = 0 ∧ sc.notificationCode = 0 := by
   unfold schedContextRetirable SystemState.getObject? at h
   cases hO : st.objects[x]? with
   | none => rw [hO] at h; cases h
@@ -2063,7 +2069,7 @@ theorem schedContextRetirable_parts {st : SystemState} {x : SeLe4n.ObjId}
     cases o with
     | schedContext sc =>
       simp only [Bool.and_eq_true, beq_iff_eq, Option.isNone_iff_eq_none] at h
-      exact ⟨sc, rfl, h.1.1.1.1, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
+      exact ⟨sc, rfl, h.1.1.1.1.1, h.1.1.1.1.2, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
     | _ => cases h
 
 /-- A thread the scan admits is the one `threadRetirable` reads. -/

@@ -305,7 +305,7 @@ theorem schedContextUnbindAllOnCore_crossCoreNonInterference (ctx : LabelingCont
     (sgi : Option (CoreId × Concurrency.SgiKind))
     (hStep : SchedContextOps.schedContextUnbindAllOnCore vScId executingCore st
       = .ok (st', sgi))
-    (hne : c ∉ schedContextUnbindOnCoreWriteSet st vScId.val executingCore)
+    (hne : c ∉ schedContextUnbindWriteSet st vScId.val)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne

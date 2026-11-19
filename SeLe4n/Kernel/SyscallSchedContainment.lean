@@ -685,10 +685,10 @@ theorem schedLockSet_schedContextUnbindOnCore_coversWrites (st st' : SystemState
     (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet) (hObjInv : st.objects.invExt)
     (hStep : SchedContextOps.schedContextUnbindOnCore vScId executingCore st = .ok (st', sgi))
     (hS : LockSet.ofList?
-      (schedLockSet_schedContextUnbindOnCore st vScId.val executingCore) = some S) :
+      (schedLockSet_schedContextUnbindOnCore st vScId.val) = some S) :
     footprintCoversWrites S st st' :=
   footprintCoversWrites_of_confined S
-    (schedContextUnbindOnCoreWriteSet st vScId.val executingCore)
+    (schedContextUnbindWriteSet st vScId.val)
     (schedContextUnbindReplenishCores st vScId.val) st st'
     (LockSet.ofList?_pairs hS)
     (schedContextUnbindOnCore_confinedToCores vScId executingCore st st' sgi hStep)
@@ -703,7 +703,7 @@ theorem schedLockSet_schedContextUnbindAllOnCore_coversWrites (st st' : SystemSt
     (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet) (hObjInv : st.objects.invExt)
     (hStep : SchedContextOps.schedContextUnbindAllOnCore vScId executingCore st = .ok (st', sgi))
     (hS : LockSet.ofList?
-      (schedLockSet_schedContextUnbindOnCore st vScId.val executingCore) = some S) :
+      (schedLockSet_schedContextUnbindOnCore st vScId.val) = some S) :
     footprintCoversWrites S st st' := by
   have hTable : (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs := by
     rw [LockSet.ofList?_pairs hS]
