@@ -1512,6 +1512,17 @@ struct RoundTrip {
     /// `Wait`, as `seL4_Wait` does: `Recv` always names a reply object, so a
     /// receive without one is a `Wait` on the endpoint ([`frame_words`]).
     reply: Option<u64>,
+    /// The seL4 syscall the trip traps with when it is not the one the
+    /// operation's own encoding names ([`op_encoding`]): an `NBSend` or an
+    /// `NBRecv`, or a labelled invocation issued as a `Send`.  `syscall` stays
+    /// the operation the kernel selects from it, the capability's type and the
+    /// label.
+    issued: Option<crate::svc_dispatch::Syscall>,
+    /// The operation code the kernel selects when it is not `syscall`:
+    /// [`NO_OPERATION`] for a label the invoked capability's type does not
+    /// take, which the selection refuses before any operation's arm runs.
+    /// The routed evidence names the selected code ([`print_routed`]).
+    selects: Option<u64>,
     /// `x1`'s `MessageInfo`: its length at most 4, except for the
     /// scheduling-context configure, the service register, the copy and the
     /// mint, whose fifth word (and a mint's sixth) the kernel reads from the
@@ -1636,14 +1647,36 @@ const fn op_frame_words(op: u64, msg_info: u64) -> (u64, u64) {
 /// The `x7` and `x1` words `trip` traps with ([`op_frame_words`]): a receive
 /// with no reply capability is issued as `Wait`, which seL4 runs on an
 /// endpoint as a receive that takes no reply object (`handleRecv`'s
-/// `isBlocking` receive with `canDonate` and no reply).
+/// `isBlocking` receive with `canDonate` and no reply), and a trip that names
+/// the syscall it is issued as ([`RoundTrip::issued`]) traps with that
+/// syscall's word and the operation's label.
 #[cfg(feature = "hw_target")]
 const fn frame_words(trip: &RoundTrip) -> (u64, u64) {
     let op = match (trip.syscall, trip.reply) {
         (RECEIVE, None) => WAIT,
         (op, _) => op,
     };
-    op_frame_words(op, trip.msg_len)
+    let (word, info) = op_frame_words(op, trip.msg_len);
+    match trip.issued {
+        Some(syscall) => (syscall.word(), info),
+        None => (word, info),
+    }
+}
+
+/// The code past the last operation (`SyscallId.encodingBound`): the one the
+/// kernel's selection answers when the label names no operation of the invoked
+/// capability's type, refused `IllegalOperation` (the model's
+/// `invalidSyscallNumber`).
+#[cfg(feature = "hw_target")]
+const NO_OPERATION: u64 = 48;
+
+/// `trip`, trapping as `syscall` ([`RoundTrip::issued`]).
+#[cfg(feature = "hw_target")]
+const fn issued_as(trip: RoundTrip, syscall: crate::svc_dispatch::Syscall) -> RoundTrip {
+    RoundTrip {
+        issued: Some(syscall),
+        ..trip
+    }
 }
 
 /// `Send` (`SyscallId` 0).
@@ -1849,6 +1882,8 @@ const fn kernel_step(name: &'static str, syscall: u64) -> RoundTrip {
         syscall,
         cptr: 0,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 0,
         msg: [0, 0, 0, 0],
         primed: None,
@@ -2086,6 +2121,18 @@ const fn page_map(
     let rights = ((perms & 1) << 1) | ((perms >> 1) & 1);
     let attr = ((perms >> 4) & 1) | (if perms & 4 == 0 { 4 } else { 0 });
     page_map_words(name, frame, root, [vaddr, rights, attr], buffer)
+}
+
+/// **The page unmap** (seL4's `seL4_ARM_Page_Unmap`) on the frame capability
+/// `frame`: no message word, as the mapping it removes is the one the
+/// capability itself records (`performPageInvocationUnmap`), which the unmap
+/// then clears.
+#[cfg(feature = "hw_target")]
+const fn page_unmap(name: &'static str, frame: u64) -> RoundTrip {
+    RoundTrip {
+        msg_len: 0,
+        ..invocation(name, VSPACE_UNMAP, frame, [0; 4])
+    }
 }
 
 /// **The handler issue** (seL4's `seL4_IRQControl_Get`) on the interrupt
@@ -2359,6 +2406,8 @@ const fn signal(name: &'static str) -> RoundTrip {
         syscall: SIGNAL,
         cptr: NOTIFICATION_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 0,
         msg: [0, 0, 0, 0],
         primed: None,
@@ -2453,12 +2502,7 @@ const ROOT_IPC_BUFFER_AT_BOOT: RoundTrip = mint(
 const ROOT_IPC_BUFFER_CAP: [RoundTrip; 3] = [
     RoundTrip {
         caps_or_badges: Some((ROOT_IPC_BUFFER, [VSPACE_CAP, 0, 0], None)),
-        ..invocation(
-            "root-ipc-buffer-cap-unmap",
-            VSPACE_UNMAP,
-            VSPACE_CAP,
-            [ROOT_ASID, ROOT_IPC_BUFFER, 0, 0],
-        )
+        ..page_unmap("root-ipc-buffer-cap-unmap", ROOT_IPC_BUFFER_FRAME_CAP)
     },
     RoundTrip {
         caps_or_badges: None,
@@ -2498,6 +2542,8 @@ const ROUND_TRIPS: [RoundTrip; 4] = [
         syscall: WAIT,
         cptr: NOTIFICATION_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 1,
         msg: [0, 0, 0, 0],
         primed: Some(NOTIFICATION_CAP),
@@ -2512,6 +2558,8 @@ const ROUND_TRIPS: [RoundTrip; 4] = [
         syscall: YIELD,
         cptr: 0,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 0,
         msg: [0, 0, 0, 0],
         primed: None,
@@ -2539,6 +2587,8 @@ const fn partner_step(
         syscall,
         cptr,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len,
         msg: [msg[0], msg[1], 0, 0],
         primed: None,
@@ -2660,12 +2710,16 @@ const RECEIVE_PATH_WORD: u64 = 125;
 /// - the same of a notification and a wait (`cancelAllSignals`);
 /// - a notification carved, bound to the partner thread, and its only
 ///   capability deleted, which unbinds it (`unbindMaybeNotification`) and
-///   retires it.
+///   retires it;
+/// - a Call to a receiver that presents no reply object, and a receive with
+///   none that takes a blocked Call: the message is delivered and the caller
+///   left `Inactive` (seL4-MCS `sendIPC` / `receiveIPC`), then both threads
+///   resumed.
 ///
 /// Each carve's object is its own id ([`FINALISED_CHILD_IDS`]) in the frame
 /// slot, which the invocation scenarios fill only later; the delete empties it.
 #[cfg(feature = "hw_target")]
-const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
+const PARTNER_SCENARIOS: [&[RoundTrip]; 14] = [
     &[
         partner_step("receive-blocks", RECEIVE, ENDPOINT_CAP, 0, [0, 0], true),
         partner_step("send-to-receiver", SEND, ENDPOINT_CAP, 1, [0x55, 0], false),
@@ -2866,6 +2920,71 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
             [FRAME_SLOT, 0, 0, 0],
         ),
     ],
+    // WS-SX SX7: a Call that links no reply (seL4-MCS `sendIPC` /
+    // `receiveIPC`: the receiver presents no reply object), on each side.
+    // The message is delivered and the caller left `Inactive`, then both
+    // threads resumed (a resume leaves a thread that is not stopped as it
+    // is), so the sequence ends as it began.
+    &[
+        partner_step(
+            "no-reply-receiver-waits",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        partner_step(
+            "call-no-reply-delivers",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x5b, 0],
+            true,
+        ),
+        invocation(
+            "call-no-reply-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "call-no-reply-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+    ],
+    &[
+        partner_step(
+            "call-no-reply-blocks",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x5c, 0],
+            true,
+        ),
+        partner_step(
+            "no-reply-receive-takes-call",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            false,
+        ),
+        invocation(
+            "no-reply-receive-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "no-reply-receive-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+    ],
 ];
 
 /// A capability invocation with all four message registers inline, which
@@ -2877,6 +2996,8 @@ const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) 
         syscall,
         cptr,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 4,
         msg,
         primed: None,
@@ -2935,9 +3056,9 @@ const INVALID_TYPE_TAG: u64 = 33;
 /// words with the root task's IPC buffer mapped: only a five-word invocation
 /// reads the overflow words (the `overflowed` route), every other syscall
 /// here its inline words alone (its short route).  Each is on a capability
-/// whose type the syscall does not take (or, for the untyped calls, with an argument
-/// the decode or the object refuses), so the gate or the arm refuses with
-/// `code` and changes nothing.
+/// whose type takes no operation at its label, so the selection refuses it
+/// with `code` before any operation's arm runs ([`NO_OPERATION`]) and changes
+/// nothing.
 #[cfg(feature = "hw_target")]
 const fn overflowed(
     name: &'static str,
@@ -2951,6 +3072,8 @@ const fn overflowed(
         syscall,
         cptr,
         reply: None,
+        issued: None,
+        selects: Some(NO_OPERATION),
         msg_len,
         msg: [0; 4],
         primed: None,
@@ -3060,6 +3183,8 @@ const fn truncated(name: &'static str, syscall: u64, cptr: u64, msg_len: u64) ->
         syscall,
         cptr,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len,
         msg: [0; 4],
         primed: None,
@@ -3071,9 +3196,12 @@ const fn truncated(name: &'static str, syscall: u64, cptr: u64, msg_len: u64) ->
     }
 }
 
-/// An IPC syscall on a capability of no IPC kind (the root CNode's), refused
-/// `InvalidCapability` in the state it was handed: each IPC route's refusal,
-/// measured.
+/// An IPC syscall on a capability of no IPC kind (the root CNode's), label 0,
+/// refused in the state it was handed: each IPC route's refusal, measured.
+/// No CNode operation has label 0, so the selection refuses it
+/// `IllegalOperation` (the model's `invalidSyscallNumber`), answered only to a
+/// `Call`; any other syscall resumes with its trapped registers
+/// ([`resuming`]).
 #[cfg(feature = "hw_target")]
 const fn wrong_ipc_kind(name: &'static str, syscall: u64) -> RoundTrip {
     RoundTrip {
@@ -3081,6 +3209,8 @@ const fn wrong_ipc_kind(name: &'static str, syscall: u64) -> RoundTrip {
         syscall,
         cptr: CNODE_CAP,
         reply: None,
+        issued: None,
+        selects: Some(NO_OPERATION),
         msg_len: 1,
         msg: [0; 4],
         primed: None,
@@ -3088,7 +3218,7 @@ const fn wrong_ipc_kind(name: &'static str, syscall: u64) -> RoundTrip {
         resumes: false,
         caps_or_badges: None,
         overflow: None,
-        returns: refused(INVALID_CAPABILITY),
+        returns: refused(INVALID_SYSCALL_NUMBER),
     }
 }
 
@@ -3117,6 +3247,8 @@ const fn consumed(name: &'static str, reading: Option<u64>) -> RoundTrip {
         syscall: SCHED_CONTEXT_CONSUMED,
         cptr: SCHED_CONTEXT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 0,
         msg: [0; 4],
         primed: None,
@@ -3138,6 +3270,8 @@ const fn yield_to(name: &'static str) -> RoundTrip {
         syscall: SCHED_CONTEXT_YIELD_TO,
         cptr: SCHED_CONTEXT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 0,
         msg: [0; 4],
         primed: None,
@@ -3169,6 +3303,8 @@ const fn configure(
         syscall: SCHED_CONTEXT_CONFIGURE,
         cptr: SCHED_CONTROL_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: ONE_EXTRA_CAP | 5,
         msg: [budget, period, 0, 0],
         primed: None,
@@ -3198,6 +3334,8 @@ const fn service_register(
         syscall: SERVICE_REGISTER,
         cptr: SERVICE_REGISTRY_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 5 | ONE_EXTRA_CAP,
         msg,
         primed: None,
@@ -3238,7 +3376,8 @@ const FINALISED_CHILD_IDS: [u64; 3] = [24, 25, 26];
 #[cfg(feature = "hw_target")]
 const THREAD_CHILD_IDS: [u64; 6] = [27, 28, 29, 30, 31, 32];
 /// The ids a VSpace root and a child untyped are carved at, each retired by
-/// its only capability's delete before the untyped's reset.
+/// its only capability's delete, which leaves the untyped childless for its
+/// next carve to reset.
 #[cfg(feature = "hw_target")]
 const VSPACE_ROOT_CHILD_ID: u64 = 38;
 #[cfg(feature = "hw_target")]
@@ -3600,8 +3739,8 @@ const WIDE_WORD_SCENARIO: [RoundTrip; 6] = [
 ///   deleted; the interrupt-control capability copied, and minted with its
 ///   own rights, with none and with a badge, into the frame's slot, each
 ///   deleted; an endpoint, a notification, a reply and a CNode each carved
-///   and its only capability deleted, which retires it; and the untyped
-///   reset.  While the frame is mapped it is also the
+///   and its only capability deleted, which retires it, leaving the untyped
+///   childless for the next carve to reset.  While the frame is mapped it is also the
 ///   root task's IPC buffer, and the image's scheduling context is first
 ///   configured to a one-tick budget every two ticks and bound to the root
 ///   task, which yields its budget away and is refilled by the second of two
@@ -3615,7 +3754,8 @@ const WIDE_WORD_SCENARIO: [RoundTrip; 6] = [
 /// - a retype window one past the fan-out limit refused, three endpoints
 ///   carved in one retype and each deleted ([`WINDOW_THREE_SCENARIO`]), and
 ///   a full window of the limit's endpoints carved and each deleted
-///   ([`WINDOW_FULL_SCENARIO`]), each group ending in the untyped's reset;
+///   ([`WINDOW_FULL_SCENARIO`]), each group leaving the untyped childless,
+///   so the next carve resets it;
 /// - argument words at or above `2 ^ 63`, each refused as seL4 refuses it
 ///   ([`WIDE_WORD_SCENARIO`]).
 #[cfg(feature = "hw_target")]
@@ -3930,6 +4070,55 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             CNODE_CAP,
             [FRAME_SLOT, 0, 0, 0],
         ),
+        // WS-SX SX7: the notification link cleared by finalisation, at both
+        // ends.  A carved context bound to the boot notification, then its
+        // only capability deleted, which unbinds the notification
+        // (`schedContext_unbindNtfn` in `finaliseCap`); a carved notification
+        // bound to the boot context, then its only capability deleted, which
+        // unbinds the context (`unbindMaybeNotification`'s MCS half).
+        retype(
+            "untyped-retype-linked-sched-context",
+            UNTYPED_CAP,
+            [
+                SCHED_CONTEXT_TYPE,
+                THREAD_CHILD_IDS[2],
+                CNODE_CAP,
+                MINT_SLOT,
+            ],
+            ROOT_IPC_BUFFER,
+        ),
+        cap_argument(
+            "bind-carved-sched-context-notification",
+            SCHED_CONTEXT_BIND,
+            MINT_CAP,
+            NOTIFICATION_CAP,
+            ROOT_IPC_BUFFER,
+        ),
+        invocation(
+            "linked-sched-context-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MINT_SLOT, 0, 0, 0],
+        ),
+        retype(
+            "untyped-retype-linked-notification",
+            UNTYPED_CAP,
+            [NOTIFICATION_TYPE, THREAD_CHILD_IDS[2], CNODE_CAP, MINT_SLOT],
+            ROOT_IPC_BUFFER,
+        ),
+        cap_argument(
+            "bind-sched-context-carved-notification",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            MINT_CAP,
+            ROOT_IPC_BUFFER,
+        ),
+        invocation(
+            "linked-notification-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MINT_SLOT, 0, 0, 0],
+        ),
         // Two carved threads resumed, so queued one behind the other where
         // their placement puts them; the first suspended, which takes it off
         // that queue and leaves it no run link, then its last capability
@@ -4171,12 +4360,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // The first page unmap after boot, before any teardown has retired a
         // shootdown round: the round writes over the spares the boot seeded.
         // Then the frame mapped again over the cells that unmap took out.
-        invocation(
-            "vspace-unmap-first",
-            VSPACE_UNMAP,
-            VSPACE_CAP,
-            [ROOT_ASID, FRAME_VADDR, 0, 0],
-        ),
+        page_unmap("vspace-unmap-first", FRAME_CAP),
         page_map(
             "vspace-map-again",
             FRAME_CAP,
@@ -4274,6 +4458,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             syscall: YIELD,
             cptr: 0,
             reply: None,
+            issued: None,
+            selects: None,
             msg_len: 0,
             msg: [0, 0, 0, 0],
             primed: None,
@@ -4539,8 +4725,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         RoundTrip {
             returns: refused(ADDRESS_OUT_OF_BOUNDS),
             ..invocation(
-                "vspace-unmap-wide-vaddr",
-                VSPACE_UNMAP,
+                "vspace-unify-instruction-wide-vaddr",
+                VSPACE_UNIFY_INSTRUCTION,
                 VSPACE_CAP,
                 [ROOT_ASID, WIDE_WORD, 0, 0],
             )
@@ -4569,7 +4755,6 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // (seven words long, it reads three), still short of its seven.
         truncated("untyped-retype-five-words", UNTYPED_RETYPE, UNTYPED_CAP, 5),
         truncated("vspace-map-short", VSPACE_MAP, FRAME_CAP, 2),
-        truncated("vspace-unmap-short", VSPACE_UNMAP, VSPACE_CAP, 1),
         truncated(
             "vspace-unify-instruction-short",
             VSPACE_UNIFY_INSTRUCTION,
@@ -4652,6 +4837,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
             reply: None,
+            issued: None,
+            selects: None,
             msg_len: 5,
             msg: [0, 0, 0, 0],
             primed: None,
@@ -4689,6 +4876,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             syscall: YIELD,
             cptr: 0,
             reply: None,
+            issued: None,
+            selects: None,
             msg_len: 5,
             msg: [0, 0, 0, 0],
             primed: None,
@@ -4701,244 +4890,246 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // Every other syscall with a message past its inline words, five
         // words (six for the service register, whose fifth is its own
         // argument, routed `overflowed`; the rest read their inline words
-        // alone), each on a capability of a type it does
-        // not take, so the gate refuses it `InvalidCapability` before any
-        // right and changes nothing (the receive's, a fault, is queued with
-        // the other capability faults, `overflow_cap_faults`): the untyped reset
-        // on the untyped while its frame child lives, the declassifications on
-        // the boot endpoint, whose flow the base lattice already permits.
+        // alone), each a `Call` whose label the invoked capability's type
+        // does not take — the interrupt control's, or for its own Get the
+        // service registry's — so the selection refuses it
+        // `IllegalOperation` (the model's `invalidSyscallNumber`) and changes
+        // nothing (the receive's, a fault, is queued with the other
+        // capability faults, `overflow_cap_faults`).  None is on an endpoint
+        // or a notification: a `Call` there is IPC or a signal whatever its
+        // label.
         overflowed(
             "overflowed-cspace-mint",
             CSPACE_MINT,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             6,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-cspace-copy",
             CSPACE_COPY,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-cspace-move",
             CSPACE_MOVE,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-cspace-delete",
             CSPACE_DELETE,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-cspace-revoke",
             CSPACE_REVOKE,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-vspace-map",
             VSPACE_MAP,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-vspace-unmap",
             VSPACE_UNMAP,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-vspace-unify-instruction",
             VSPACE_UNIFY_INSTRUCTION,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-service-revoke",
             SERVICE_REVOKE,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-service-query",
             SERVICE_QUERY,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-sched-context-bind",
             SCHED_CONTEXT_BIND,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-sched-context-unbind",
             SCHED_CONTEXT_UNBIND,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-sched-context-consumed",
             SCHED_CONTEXT_CONSUMED,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-sched-context-yield-to",
             SCHED_CONTEXT_YIELD_TO,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-tcb-suspend",
             TCB_SUSPEND,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-tcb-resume",
             TCB_RESUME,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-tcb-set-priority",
             TCB_SET_PRIORITY,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-tcb-set-ipc-buffer",
             TCB_SET_IPC_BUFFER,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-tcb-set-affinity",
             TCB_SET_AFFINITY,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-tcb-bind-notification",
             TCB_BIND_NOTIFICATION,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-tcb-unbind-notification",
             TCB_UNBIND_NOTIFICATION,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-tcb-set-space",
             TCB_SET_SPACE,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-mint-reply-cap",
             MINT_REPLY_CAP,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-irq-handler-ack",
             IRQ_HANDLER_ACK,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-irq-control-get",
             IRQ_CONTROL_GET,
-            NOTIFICATION_CAP,
+            SERVICE_REGISTRY_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-irq-handler-set-notification",
             IRQ_HANDLER_SET_NOTIFICATION,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-irq-handler-clear",
             IRQ_HANDLER_CLEAR,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-page-table-map",
             PAGE_TABLE_MAP,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-page-table-unmap",
             PAGE_TABLE_UNMAP,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-audit-read",
             AUDIT_READ,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-audit-drain",
             AUDIT_DRAIN,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         overflowed(
             "overflowed-service-register",
             SERVICE_REGISTER,
-            NOTIFICATION_CAP,
+            IRQ_CONTROL_CAP,
             6,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         // A declassify invokes the audit-trail capability (its target is
-        // extra capability 0), so on an endpoint the type gate refuses it.
+        // extra capability 0), so the interrupt control does not take it.
         overflowed(
             "overflowed-declassify",
             DECLASSIFY,
-            ENDPOINT_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         // A declassified signal reads no word past its inline registers
         // (seL4's `seL4_Signal` reads no message), so a long one takes the
@@ -4946,9 +5137,9 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         overflowed(
             "long-declassify-signal",
             DECLASSIFY_SIGNAL,
-            ENDPOINT_CAP,
+            IRQ_CONTROL_CAP,
             5,
-            INVALID_CAPABILITY,
+            INVALID_SYSCALL_NUMBER,
         ),
         // The untyped retype at its full seven words, read past its inline
         // words on the overflowed route, its type tag one no object kind
@@ -5004,6 +5195,96 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             SCHED_CONTEXT_CAP,
             [0; 4],
         ),
+        // WS-SX SX7: the context bound to a notification (seL4-MCS
+        // `schedContext_bindNtfn`), then unbound while it is bound to no
+        // thread, which unbinds only the notification
+        // (`invokeSchedContext_Unbind`'s `schedContext_unbindNtfn`).
+        cap_argument(
+            "sched-context-bind-notification",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            NOTIFICATION_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "sched-context-unbind-notification",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        // A receive that completes its thread's active bound notification
+        // (seL4-MCS `receiveIPC`: `completeSignal` before the endpoint is
+        // looked at): the notification bound to the root task and signalled,
+        // then a receive on the endpoint returns the badge without blocking;
+        // the same through a ReplyRecv, whose reply half finds no caller to
+        // answer and is skipped.
+        cap_argument(
+            "bound-signal-bind-root",
+            TCB_BIND_NOTIFICATION,
+            ROOT_TCB_CAP,
+            NOTIFICATION_CAP,
+            FRAME_VADDR,
+        ),
+        signal("bound-signal-signal"),
+        partner_step(
+            "bound-signal-receive",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            false,
+        ),
+        signal("bound-signal-reply-recv-signal"),
+        with_reply(
+            partner_step(
+                "bound-signal-reply-recv",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                false,
+            ),
+            REPLY_CAP,
+        ),
+        invocation(
+            "bound-signal-unbind-root",
+            TCB_UNBIND_NOTIFICATION,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        // SX7's acceptance: an NBSend whose capability does not resolve drops
+        // the fault and resumes (`handleInvocation` with `isBlocking = false`);
+        // an NBRecv with nothing to receive returns at once with badge 0
+        // (`doNBRecvFailedTransfer`); an invocation issued as a Send whose
+        // decode refuses it resumes, its error answered to no one (seL4
+        // replies an error only `if (isCall)`).
+        resuming(issued_as(
+            invocation("nb-send-bad-cap-silent", SEND, UNRESOLVED_ADDRESS, [0; 4]),
+            crate::svc_dispatch::Syscall::NBSend,
+        )),
+        issued_as(
+            with_reply(
+                partner_step(
+                    "nb-recv-empty-returns",
+                    RECEIVE,
+                    ENDPOINT_CAP,
+                    0,
+                    [0, 0],
+                    false,
+                ),
+                REPLY_CAP,
+            ),
+            crate::svc_dispatch::Syscall::NBRecv,
+        ),
+        resuming(issued_as(
+            truncated(
+                "send-invocation-error-discarded",
+                CSPACE_DELETE,
+                CNODE_CAP,
+                0,
+            ),
+            crate::svc_dispatch::Syscall::Send,
+        )),
         // WS-ZA ZA6.33: the release-queued and donated suspends run here, where
         // both threads' IPC buffers are set (a configure reads its fifth word
         // from the root task's) and the context is configured and unbound.  The
@@ -5173,6 +5454,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
             reply: None,
+            issued: None,
+            selects: None,
             msg_len: TAIL_MESSAGE_LENGTH,
             msg: [0, 0, 0, 0],
             primed: None,
@@ -6763,6 +7046,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
             reply: None,
+            issued: None,
+            selects: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
@@ -6821,6 +7106,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
             reply: None,
+            issued: None,
+            selects: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
@@ -6888,6 +7175,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
             reply: None,
+            issued: None,
+            selects: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
@@ -6962,6 +7251,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
             reply: None,
+            issued: None,
+            selects: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
@@ -7186,6 +7477,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
             reply: None,
+            issued: None,
+            selects: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
@@ -7416,6 +7709,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
             reply: None,
+            issued: None,
+            selects: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
@@ -7492,6 +7787,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
             reply: None,
+            issued: None,
+            selects: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
@@ -7851,6 +8148,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
             reply: None,
+            issued: None,
+            selects: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
@@ -8162,6 +8461,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
             reply: None,
+            issued: None,
+            selects: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
@@ -8472,6 +8773,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
             reply: None,
+            issued: None,
+            selects: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
@@ -8710,6 +9013,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
             reply: None,
+            issued: None,
+            selects: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
@@ -9728,12 +10033,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             FRAME_CAP,
             ROOT_IPC_BUFFER,
         ),
-        invocation(
-            "vspace-unmap",
-            VSPACE_UNMAP,
-            VSPACE_CAP,
-            [ROOT_ASID, FRAME_VADDR, 0, 0],
-        ),
+        page_unmap("vspace-unmap", FRAME_CAP),
         // The frame mapped again at an address the unmap did not free (the
         // copy's page, which the revoke unmapped), so the map writes over the
         // translation and epoch cells the unmap took out rather than over an
@@ -9746,12 +10046,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             FRAME_PERMS,
             ROOT_IPC_BUFFER,
         ),
-        invocation(
-            "vspace-unmap-moved",
-            VSPACE_UNMAP,
-            VSPACE_CAP,
-            [ROOT_ASID, FRAME_COPY_VADDR, 0, 0],
-        ),
+        page_unmap("vspace-unmap-moved", FRAME_CAP),
         invocation(
             "frame-delete",
             CSPACE_DELETE,
@@ -10042,8 +10337,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
 /// once every slot is empty) and the carved capability deleted, which retires
 /// the CNode.  After the window the escaped copy is moved (refused with no
 /// capability in its slot, so its success shows the copy outlived the
-/// retire) and deleted, and the boot untyped reset, so the next run carves
-/// where this one did.  Each step is a measured reading; across the first
+/// retire) and deleted, leaving the boot untyped childless, so the next run's
+/// carve resets it and carves where this one did.  Each step is a measured reading; across the first
 /// five, [`carved_cnode_retire`] also reads this core's frees, and the
 /// host-side gate holds both the cells allocated and the cells freed to the
 /// CNode's carve pin: every cell the carve made comes back, the escaped copy
@@ -10182,8 +10477,7 @@ fn carved_cnode_retire(which: &str) -> Option<bool> {
 #[cfg(feature = "hw_target")]
 static LIFECYCLE_SCENARIO: [RoundTrip; 80] = [
     // A child untyped carved, and an endpoint carved from it (its recorder a
-    // carved untyped, not the boot one); its reset refused while the
-    // endpoint's capability is its derivation child; its revoke, which deletes
+    // carved untyped, not the boot one); its revoke, which deletes
     // that capability, the endpoint's last, so finalises and retires it; a
     // notification carved from it; a revoke of that notification's capability,
     // which has no child; then the untyped's last capability deleted while the
@@ -10575,12 +10869,11 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 80] = [
         VSPACE_CAP,
         [ROOT_ASID, FRAME_VADDR, 0, 0],
     ),
-    invocation(
-        "mapped-frame-unmap-code",
-        VSPACE_UNMAP,
-        VSPACE_CAP,
-        [ROOT_ASID, FRAME_VADDR, 0, 0],
-    ),
+    page_unmap("mapped-frame-unmap-code", MOVE_CAP),
+    // The capability's record was cleared by the unmap, so a second unmap
+    // through it removes nothing and succeeds (seL4's `unmapPage` runs only
+    // while the capability records a mapping).
+    page_unmap("unmap-nothing", MOVE_CAP),
     page_map(
         "mapped-frame-map-again",
         MOVE_CAP,
@@ -10589,15 +10882,6 @@ static LIFECYCLE_SCENARIO: [RoundTrip; 80] = [
         FRAME_PERMS,
         ROOT_IPC_BUFFER,
     ),
-    RoundTrip {
-        returns: refused(TRANSLATION_FAULT),
-        ..invocation(
-            "unmap-nothing",
-            VSPACE_UNMAP,
-            VSPACE_CAP,
-            [ROOT_ASID, FRAME_COPY_VADDR, 0, 0],
-        )
-    },
     invocation(
         "mapped-frame-delete",
         CSPACE_DELETE,
@@ -10842,15 +11126,17 @@ const WIDE_WORD: u64 = 1 << 63;
 const ADDRESS_OUT_OF_BOUNDS: u64 = 26;
 #[cfg(feature = "hw_target")]
 const INVALID_SYSCALL_ARGUMENT: u64 = 41;
+/// `KernelError.invalidSyscallNumber`'s discriminant (`sele4n-types`): seL4's
+/// `IllegalOperation`, a label the invoked capability's type does not take.
+#[cfg(feature = "hw_target")]
+const INVALID_SYSCALL_NUMBER: u64 = 31;
 /// `KernelError.policyDenied`'s discriminant (`sele4n-types`).
 #[cfg(feature = "hw_target")]
 const POLICY_DENIED: u64 = 4;
-/// `KernelError.invalidCapability`, `.translationFault`, `.revocationRequired`
-/// and `.invalidArgument`'s discriminants (`sele4n-types`).
+/// `KernelError.invalidCapability`, `.revocationRequired` and
+/// `.invalidArgument`'s discriminants (`sele4n-types`).
 #[cfg(feature = "hw_target")]
 const INVALID_CAPABILITY: u64 = 0;
-#[cfg(feature = "hw_target")]
-const TRANSLATION_FAULT: u64 = 12;
 #[cfg(feature = "hw_target")]
 const TARGET_SLOT_OCCUPIED: u64 = 18;
 #[cfg(feature = "hw_target")]
@@ -11130,6 +11416,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_DRAIN,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 1,
         msg: [1, 0, 0, 0],
         primed: None,
@@ -11145,6 +11433,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [0, 0, 0, 0],
         primed: None,
@@ -11160,6 +11450,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [7, 0, 0, 0],
         primed: None,
@@ -11175,6 +11467,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [10, 0, 0, 0],
         primed: None,
@@ -11190,6 +11484,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [11, 0, 1, 0],
         primed: None,
@@ -11205,6 +11501,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [12, 0, 0, 0],
         primed: None,
@@ -11220,6 +11518,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [13, 0, 0, 0],
         primed: None,
@@ -11235,6 +11535,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [14, 0, 0, 0],
         primed: None,
@@ -11250,6 +11552,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [15, 0, 0, 0],
         primed: None,
@@ -11265,6 +11569,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [16, 0, 0, 0],
         primed: None,
@@ -11280,6 +11586,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [17, 0, 0, 0],
         primed: None,
@@ -11295,6 +11603,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [18, 0, 0, 0],
         primed: None,
@@ -11310,6 +11620,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [19, 0, 0, 0],
         primed: None,
@@ -11325,6 +11637,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [20, 0, 0, 0],
         primed: None,
@@ -11340,6 +11654,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [25, 0, 0, 0],
         primed: None,
@@ -11355,6 +11671,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [27, 1, 0, 0],
         primed: None,
@@ -11370,6 +11688,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [28, 1, 0, 0],
         primed: None,
@@ -11385,6 +11705,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [29, 0, 0, 0],
         primed: None,
@@ -11402,6 +11724,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [7, 0, 99, 0],
         primed: None,
@@ -11417,6 +11741,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [9, 1000, 0, 0],
         primed: None,
@@ -11432,6 +11758,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [14, 1000, 0, 0],
         primed: None,
@@ -11447,6 +11775,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [30, 0, 0, 0],
         primed: None,
@@ -11464,6 +11794,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [7, WIDE_WORD, 0, 0],
         primed: None,
@@ -11479,6 +11811,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [7, 0, WIDE_WORD, 0],
         primed: None,
@@ -11494,6 +11828,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [14, WIDE_WORD, 0, 0],
         primed: None,
@@ -11510,6 +11846,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [28, WIDE_WORD + 1, WIDE_WORD, 0],
         primed: None,
@@ -11525,6 +11863,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [29, 0, WIDE_WORD, 0],
         primed: None,
@@ -11543,6 +11883,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_DRAIN,
         cptr: cap_address(READ_ONLY_AUDIT_SLOT),
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 1,
         msg: [256, 0, 0, 0],
         primed: None,
@@ -11559,6 +11901,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_DRAIN,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 1,
         msg: [WIDE_WORD, 0, 0, 0],
         primed: None,
@@ -11573,6 +11917,8 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         syscall: AUDIT_DRAIN,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 1,
         msg: [256, 0, 0, 0],
         primed: None,
@@ -11808,6 +12154,8 @@ const DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER: RoundTrip = RoundTrip {
     syscall: DECLASSIFY_SIGNAL,
     cptr: AUDIT_CAP,
     reply: None,
+    issued: None,
+    selects: None,
     msg_len: ONE_EXTRA_CAP,
     msg: [0, 0, 0, 0],
     primed: None,
@@ -11827,6 +12175,8 @@ const BOUND_REFUSAL_STATUS: RoundTrip = RoundTrip {
     syscall: AUDIT_READ,
     cptr: AUDIT_CAP,
     reply: None,
+    issued: None,
+    selects: None,
     msg_len: 3,
     msg: [12, 0, 0, 0],
     primed: None,
@@ -12005,6 +12355,8 @@ fn bound_declassified_signals(which: &str) -> bool {
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 3,
         msg: [26, slot, 0, 0],
         primed: None,
@@ -12088,6 +12440,8 @@ const YIELD_TO_LINK: RoundTrip = RoundTrip {
     syscall: SCHED_CONTEXT_YIELD_TO,
     cptr: SCHED_CONTEXT_CAP,
     reply: None,
+    issued: None,
+    selects: None,
     msg_len: 0,
     msg: [0; 4],
     primed: None,
@@ -12380,16 +12734,23 @@ impl core::fmt::Display for ReadingBytes {
 /// words are the operation's and routes them with the kernel's own router to
 /// tell which syscall arm the reading measured
 /// (`scripts/exerciser_route_coverage.lean`), and the label word it was answered
-/// with (`x1`), or `blocked` for a trip that blocked.
+/// with (`x1`), `blocked` for a trip that blocked, or `resumed` for one that
+/// resumed with no frame.
 #[cfg(feature = "hw_target")]
 fn print_routed(trip: &RoundTrip, core: usize, which: &str, outcome: &Dispatched) {
-    let op = trip.syscall;
-    let (x7, x1) = op_frame_words(op, trip.msg_len);
+    let op = match trip.selects {
+        Some(code) => code,
+        None => trip.syscall,
+    };
+    let (x7, x1) = frame_words(trip);
     let name = trip.name;
     match outcome {
         Dispatched::Returned(regs) => crate::kprintln!(
             "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: routed op={op} x7={x7:#x} x1={x1:#x} answered {:#x}",
             regs[1]
+        ),
+        Dispatched::Resumed => crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: routed op={op} x7={x7:#x} x1={x1:#x} answered resumed"
         ),
         _ => crate::kprintln!(
             "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: routed op={op} x7={x7:#x} x1={x1:#x} answered blocked"
@@ -12488,6 +12849,8 @@ fn minted_badge_delivered(name: &str, badge: u64) -> bool {
         syscall: WAIT,
         cptr: NOTIFICATION_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 1,
         msg: [0; 4],
         primed: None,
@@ -13180,6 +13543,8 @@ const fn irq_handler_ack(name: &'static str, slot: u64) -> RoundTrip {
         syscall: IRQ_HANDLER_ACK,
         cptr: cap_address(slot),
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 0,
         msg: [0; 4],
         primed: None,
@@ -13442,6 +13807,8 @@ fn interrupt_entries(which: &str) -> bool {
         syscall: WAIT,
         cptr: NOTIFICATION_CAP,
         reply: None,
+        issued: None,
+        selects: None,
         msg_len: 1,
         msg: [0; 4],
         primed: None,
@@ -13841,6 +14208,8 @@ fn queued_overflow_cap_fault(
         syscall: RECEIVE,
         cptr: ENDPOINT_CAP,
         reply: Some(REPLY_CAP),
+        issued: None,
+        selects: None,
         msg_len: 0,
         msg: [0, 0, 0, 0],
         primed: None,
@@ -15172,6 +15541,8 @@ fn fault_entries() -> Option<bool> {
         syscall: RECEIVE,
         cptr: ENDPOINT_CAP,
         reply: Some(REPLY_CAP),
+        issued: None,
+        selects: None,
         msg_len: 0,
         msg: [0, 0, 0, 0],
         primed: None,
@@ -16102,12 +16473,7 @@ const MOVE_TEARDOWN: [RoundTrip; 12] = [
         CNODE_CAP,
         [CHAIN_TCB_SLOT, 0, 0, 0],
     ),
-    invocation(
-        "move-unmap-code",
-        VSPACE_UNMAP,
-        VSPACE_CAP,
-        [ROOT_ASID, FRAME_VADDR, 0, 0],
-    ),
+    page_unmap("move-unmap-code", FRAME_CAP),
     invocation(
         "move-frame-delete",
         CSPACE_DELETE,
@@ -16557,12 +16923,7 @@ const REMOTE_MAP: RoundTrip = page_map(
     ROOT_IPC_BUFFER,
 );
 #[cfg(feature = "hw_target")]
-const REMOTE_UNMAP: RoundTrip = invocation(
-    "remote-asid-unmap",
-    VSPACE_UNMAP,
-    VSPACE_CAP,
-    [ROOT_ASID, FRAME_COPY_VADDR, 0, 0],
-);
+const REMOTE_UNMAP: RoundTrip = page_unmap("remote-asid-unmap", MOVE_CAP);
 #[cfg(feature = "hw_target")]
 const REMOTE_COPY_DELETE: RoundTrip = invocation(
     "remote-asid-frame-copy-delete",

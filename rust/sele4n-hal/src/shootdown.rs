@@ -904,8 +904,8 @@ pub const fn translation_retired_by(ttbr0: u64, retired: u16) -> bool {
 /// **An `.aside1` round retires its ASID on the executing PE** (`v0.36.37`).
 ///
 /// Every `.aside1` round this kernel posts names an ASID no thread may run under
-/// any more: a VSpace root the untyped reset retired
-/// (`untypedResetRetiredRootAsids`), an address space a retype destroyed or
+/// any more: a VSpace root its final delete retired, an address space a
+/// retype destroyed or
 /// rebound, or an ASID the pool is handing to a new owner.  The model decides
 /// that from which thread is *current*, but a PE's `TTBR0_EL1` changes only at
 /// its own next context restore, so a PE whose thread another core descheduled

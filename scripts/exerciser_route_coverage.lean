@@ -28,17 +28,20 @@ declassifying syscalls, whose refusals the seam records
 
 The evidence is the exerciser's: one line per measured round trip with the
 operation it issued, the syscall word and the message-info word it loaded
-(`x7`, `x1`), and the label word it was answered with or `blocked`.  The
-operation is the one the kernel selects from the syscall, the invoked
-capability's type and the label (`selectedOperationCode`); the words must be
-the ones a user issues it with (`SyscallId.syscall`, `SyscallId.label?`), and
-the router routes the operation at those words.
+(`x7`, `x1`), and the label word it was answered with, `blocked`, or
+`resumed` (a non-Call refused, which answers no frame).  The operation is the
+one the kernel selects from the syscall, the invoked capability's type and the
+label (`selectedOperationCode`); the words must select it: the syscall `x7`
+names, at `x1`'s label, selects the operation on some capability type
+(`Syscall.selectOperation`), so a receive issued as `Wait` or an invocation
+issued as `Send` or `NBSend` is evidence for the operation the kernel ran.
+The router routes the operation at those words.
 The tool exits 1 when an arm has no measured round trip, when a round trip
 routes to an arm the enumeration did not find (the enumeration would then be
 incomplete: fail closed), when a round trip's words are not its operation's,
 or when a line cannot be read.
 
-Input on standard input, one round trip per line: `<name> <op> <x7> <x1> <label|blocked>`,
+Input on standard input, one round trip per line: `<name> <op> <x7> <x1> <label|blocked|resumed>`,
 numbers in decimal or `0x` hexadecimal.
 -/
 
@@ -86,18 +89,27 @@ def trapFile (x7 x1 : UInt64) : RegisterFile :=
 def armOf (op : Nat) (x7 x1 : UInt64) : String × Option SyscallId :=
   routeArm (registerRoutedSyscall op arm64DefaultLayout (trapFile x7 x1) 32)
 
-/-- Are `x7` and `x1` the words a user issues operation `op` with: its
-syscall's word, and its label when a label selects it?  The code past the last
-operation (`SyscallId.encodingBound`, no operation selected) is issued as a
-`Call`. -/
+/-- Every capability type the selection distinguishes, and no capability
+(`none`, an address that resolves nothing): the object kinds are the ones
+`KernelObjectType.ofNat?` names, the rest `CapType`'s other constructors. -/
+def capTypes : List (Option CapType) :=
+  none :: (([CapType.object none] ++
+    ((List.range 64).filterMap KernelObjectType.ofNat?).map (CapType.object ∘ some) ++
+    [CapType.replyCap, CapType.auditTrail, CapType.schedControl, CapType.irqControl,
+     CapType.irqHandler, CapType.serviceRegistry, CapType.cnodeSlot]).map some)
+
+/-- Do `x7` and `x1` select operation `op`: does the syscall `x7` names, at
+`x1`'s label, select `op` on some capability type (`Syscall.selectOperation`)?
+The code past the last operation (`SyscallId.encodingBound`, no operation
+selected) is a syscall whose selection is `none` on some capability type. -/
 def wordsMatch (op : Nat) (x7 x1 : UInt64) : Bool :=
-  match SyscallId.ofNat? op with
-  | some sid =>
-      x7 == sid.syscall.word &&
-        (match sid.label? with
-         | some l => msgInfoWordLabel x1 == l
-         | none => true)
-  | none => op == SyscallId.encodingBound && x7 == Syscall.call.word
+  match Syscall.ofWord? x7 with
+  | none => false
+  | some sys =>
+      let selected := capTypes.map fun ty => sys.selectOperation ty (msgInfoWordLabel x1)
+      match SyscallId.ofNat? op with
+      | some sid => selected.contains (some sid)
+      | none => op == SyscallId.encodingBound && selected.contains none
 
 /-- The message-info words the enumeration routes: every length and
 capability-count field value (the low nine bits), the capabilities-unwrapped
@@ -123,7 +135,8 @@ structure Trip where
   op : Nat
   x7 : UInt64
   x1 : UInt64
-  /-- The answer's label word, or `none` for a round trip that blocked. -/
+  /-- The answer's label word, or `none` for a round trip that blocked or
+  resumed with no frame. -/
   label : Option UInt64
 
 /-- A number in decimal or `0x` hexadecimal. -/
@@ -141,7 +154,8 @@ def parseTrip (line : String) : Option Trip :=
     let op ← op.toNat?
     let x7 ← parseWord x7
     let x1 ← parseWord x1
-    let label ← if label == "blocked" then some none else (parseWord label).map some
+    let label ← if label == "blocked" || label == "resumed" then some none
+      else (parseWord label).map some
     pure { name, op, x7, x1, label }
   | _ => none
 

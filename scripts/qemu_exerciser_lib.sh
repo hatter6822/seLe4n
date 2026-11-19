@@ -254,7 +254,7 @@ for driver in drivers:
         unparsed = [m for m in matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: before=.*$") if m.group(1) != "secondary-entry" and not re.fullmatch(r".*: before=\d+ after=\d+ delta=\d+ bytes=(\d+|unrecorded) sizes=(none|unrecorded|\d+x\d+(?:,\d+x\d+)*)", m.group(0))]
         for m in unparsed:
             failures.append(f"heap-allocations-per-syscall: a reading whose bytes could not be read: {m.group(0)!r}")
-        returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored|entered, a thread restored)$")
+        returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored|resumed with its trapped registers|entered, a thread restored)$")
         carves = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+/\d+) x(\d+) at (\d+) into (0x[0-9a-f]+/\d+)$")
         names = [m.group(1) for m in readings]
         # The cells of the object a carve makes, by kind and size bits, and
@@ -397,7 +397,7 @@ for driver in drivers:
             # Argument words at or above 2^63, each read as a word, and
             # the measured mint of a badge at 2^63.
             "vspace-map-wide-rights", "vspace-map-wide-vaddr", "vspace-map-wide-attr",
-            "vspace-unmap-wide-vaddr", "tcb-set-affinity-wide",
+            "vspace-unify-instruction-wide-vaddr", "tcb-set-affinity-wide",
             "mint-wide-badged-notification",
             "receive-tainted", "receive-with-carved-reply", "refill-bind-root",
             "refill-configure", "refill-drain-tick", "refill-unbind-root", "refill-wait-tick",
@@ -866,7 +866,7 @@ for driver in drivers:
             # its arguments: refused TruncatedMessage before any argument read.
             "cspace-mint-short", "cspace-copy-short", "cspace-move-short",
             "cspace-delete-short", "cspace-revoke-short", "mint-reply-cap-short",
-            "untyped-retype-short", "untyped-retype-five-words", "vspace-map-short", "vspace-unmap-short",
+            "untyped-retype-short", "untyped-retype-five-words", "vspace-map-short",
             "vspace-unify-instruction-short", "page-table-map-short",
             "sched-context-configure-short", "sched-context-bind-short",
             "tcb-bind-notification-short", "tcb-set-priority-short",
@@ -875,7 +875,8 @@ for driver in drivers:
             "irq-control-get-short", "irq-handler-set-notification-short",
             "audit-drain-short", "audit-read-short",
             # Each IPC route's refusal: a send, call, reply and signal on the
-            # root CNode's capability, refused InvalidCapability in place.
+            # root CNode's capability, label 0, which no CNode operation
+            # takes; the call answered IllegalOperation, the rest resumed.
             "send-wrong-kind-refused", "call-wrong-kind-refused",
             "reply-wrong-kind-refused", "signal-wrong-kind-refused",
             # WS-UC UC4: a capability copied into a carved CNode and out of
@@ -898,6 +899,24 @@ for driver in drivers:
             "untyped-retype-wide-table", "page-table-map-wide-vaddr",
             "wide-table-delete",
             "tcb-set-ipc-buffer-wide-unaligned",
+            # WS-SX SX7: a scheduling context bound to a notification and
+            # unbound; a receive and a reply-receive completing on a bound
+            # notification's signal; a non-Call's refusal resumed and an
+            # NBRecv on an empty endpoint returned; a Call that links no
+            # reply, on both sides; and finalisation of either end of a
+            # notification-scheduling-context link clearing it.
+            "sched-context-bind-notification", "sched-context-unbind-notification",
+            "bound-signal-bind-root", "bound-signal-signal", "bound-signal-receive",
+            "bound-signal-reply-recv-signal", "bound-signal-reply-recv",
+            "bound-signal-unbind-root",
+            "nb-send-bad-cap-silent", "nb-recv-empty-returns", "send-invocation-error-discarded",
+            "no-reply-receiver-waits", "call-no-reply-delivers", "call-no-reply-resume-root",
+            "call-no-reply-resume-partner", "call-no-reply-blocks",
+            "no-reply-receive-takes-call", "no-reply-receive-resume-root",
+            "no-reply-receive-resume-partner",
+            "untyped-retype-linked-sched-context", "bind-carved-sched-context-notification",
+            "linked-sched-context-delete", "untyped-retype-linked-notification",
+            "bind-sched-context-carved-notification", "linked-notification-delete",
         } | {f"window-full-delete-{i}" for i in range(26)}
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
@@ -914,7 +933,7 @@ for driver in drivers:
             for first in (True, False):
                 which = "first call" if first else "steady state"
                 if runs.count((name, first)) != 1 or trips.count((name, first)) != 1:
-                    failures.append(f"heap-allocations-per-syscall: {name} ({which}): expected one reading and one returned or blocked round trip on core 0")
+                    failures.append(f"heap-allocations-per-syscall: {name} ({which}): expected one reading and one returned, blocked or resumed round trip on core 0")
         for key in carved:
             if key not in trips:
                 failures.append(f"heap-allocations-per-syscall: {key[0]}: a carve named with no returned round trip")
@@ -925,7 +944,7 @@ for driver in drivers:
         # evidence is each pinned scenario's operation, routed words and answer, as the
         # exerciser printed them beside its reading, routed by the same
         # router.  A tool that cannot run, or answers nonzero, fails the gate.
-        routed_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: routed op=([0-9]+) x7=(0x[0-9a-f]+) x1=(0x[0-9a-f]+) answered (0x[0-9a-f]+|blocked)")
+        routed_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: routed op=([0-9]+) x7=(0x[0-9a-f]+) x1=(0x[0-9a-f]+) answered (0x[0-9a-f]+|blocked|resumed)")
         # A round trip is evidence for its arm only if its reading's window
         # entered the kernel through the syscall entry: a trip the HAL refused
         # before the kernel ran measured no arm.
