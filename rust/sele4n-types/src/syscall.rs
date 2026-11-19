@@ -481,6 +481,17 @@ impl Syscall {
         0u64.wrapping_sub(self.number() as u64)
     }
 
+    /// **The syscalls that return nothing**: `Send`, `NBSend` and `Yield`
+    /// (libsel4's `seL4_Send`, `seL4_NBSend` and `seL4_Yield` return `void`).
+    /// The kernel writes no register for them, whether they succeed or are
+    /// refused, so the registers their caller gets back are its own.  Every
+    /// other syscall but `Call` returns a received message, and only `Call`
+    /// returns a kernel error (seL4's `handleInvocation` replies only
+    /// `if (isCall)`).  Lean: `Syscall.returnsNothing`.
+    pub const fn returns_nothing(self) -> bool {
+        matches!(self, Self::Send | Self::NBSend | Self::Yield)
+    }
+
     /// The syscall a number names.  Lean: `Syscall.ofNumber?`.
     pub const fn from_number(n: u32) -> Option<Self> {
         match n {
@@ -765,5 +776,18 @@ mod tests {
             SyscallId::TcbSetAffinity.required_right(),
             AccessRight::Write
         );
+    }
+
+    /// The three that return nothing are seL4's numbers 5, 6 and 11, the
+    /// numbers Lean's `Syscall.numberReturnsNothing` tests.
+    #[test]
+    fn returns_nothing_is_send_nbsend_yield() {
+        for s in Syscall::ALL {
+            assert_eq!(
+                s.returns_nothing(),
+                matches!(s.number(), 5 | 6 | 11),
+                "{s:?}"
+            );
+        }
     }
 }

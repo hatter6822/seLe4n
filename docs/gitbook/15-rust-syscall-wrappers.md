@@ -127,6 +127,15 @@ x1  ← MessageInfo; label 0 = success,
 x2–x5 ← Message registers [0..3] of a delivered message
 ```
 
+Only a `Call` gets an error frame (seL4's `handleInvocation` replies only
+`if (isCall)`), so `invoke_syscall` reads the frame by the seL4 syscall its
+`x7` word names (`decode_issued`): a `Call`'s through `decode_response`; a
+receive's as the message received, its label data (`decode_received`); and
+nothing for a `Send`, `NBSend` or `Yield`, whose registers the kernel leaves
+as the caller trapped with them. `endpoint_send`, `endpoint_reply`,
+`notification_signal` and `yield_now` return `KernelResult<()>`, as their
+libsel4 counterparts return `void`.
+
 `decode_response` decodes the label fail-closed (a malformed `x1` is
 `InvalidMessageInfo`; a status-range label naming an unknown discriminant is
 `UnknownKernelError`), `badge()` reads `x0`, and the retired bit-63 status
