@@ -193,6 +193,37 @@ theorem updateSchedContext (s : SystemState) (c : SeLe4n.SchedContextId)
       exact congrArg some (hf x)
   · rw [SystemState.updateSchedContext_objects_ne _ _ _ _ e hInv]
 
+/-- The notification unbind read from a context's end: both link words are
+erased by the projection (`projectKernelObject` clears a context's
+`notificationCode` and a notification's `schedContextCode`). -/
+theorem unbindSchedContextNotification (s : SystemState) (c : SeLe4n.SchedContextId)
+    (hInv : s.objects.invExt) :
+    projectedObjectsWrite ctx observer s (SeLe4n.Kernel.unbindSchedContextNotification s c) := by
+  have h1 := updateSchedContext (ctx := ctx) (observer := observer) s c
+    (fun c => { c with notificationCode := 0 }) hInv (fun _ => rfl)
+  have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt s c
+    (fun c => { c with notificationCode := 0 }) hInv
+  rcases unbindSchedContextNotification_shape s c hInv with e | ⟨-, -, e | ⟨n, ntfn, hN, e⟩⟩
+  · rw [e]; exact refl s
+  · rw [e]; exact h1
+  · rw [e]
+    generalize s.updateSchedContext c (fun c => { c with notificationCode := 0 }) = s1
+      at h1 hInv1 hN
+    refine h1.trans ⟨rfl, fun k _ => ?_⟩
+    show ((s1.objects.insert n
+      (KernelObject.notification { ntfn with schedContextCode := 0 }))[k]?).map _ = _
+    by_cases hk : n = k
+    · subst hk
+      have e2 : (s1.objects.insert n
+          (KernelObject.notification { ntfn with schedContextCode := 0 }))[n]? =
+          some (KernelObject.notification { ntfn with schedContextCode := 0 }) :=
+        RobinHood.RHTable.getElem?_insert_self _ _ _ hInv1
+      rw [e2, hN]; rfl
+    · have e2 : (s1.objects.insert n
+          (KernelObject.notification { ntfn with schedContextCode := 0 }))[k]? = s1.objects[k]? :=
+        RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun h => hk (eq_of_beq h)) hInv1
+      rw [e2]
+
 /-- The thread's yield link cancelled: both ends are erased by the projection. -/
 theorem cancelYieldTo (s : SystemState) (t : SeLe4n.ThreadId) (hInv : s.objects.invExt) :
     projectedObjectsWrite ctx observer s (SeLe4n.Kernel.cancelYieldTo s t) := by
@@ -1726,8 +1757,11 @@ theorem finaliseSchedContext_hidden (ctx : LabelingContext) (observer : IfObserv
       refine finaliseSchedContextUnbind_closed (FinaliseFrame st) ?_ _ x hD
       exact FinaliseFrame.releaseStep st
     rename_i hA
-    have hU := (finaliseSchedContextUnstack_closed (FinaliseFrameAny st)
-      (FinaliseFrameAny.unstackStep st) x st (.refl hInv) hA _ rfl hF.any).invExt
+    have hFU := finaliseSchedContextUnstack_closed (FinaliseFrameAny st)
+      (FinaliseFrameAny.unstackStep st) x st (.refl hInv) hA _ rfl hF.any
+    have hU := hFU.invExt
+    refine ((projectedObjectsWrite.unbindSchedContextNotification _ _
+      ((FinaliseFrameAny.yieldStep st).schedContextCleanup _ x hFU).invExt).projection).trans ?_
     refine (finaliseSchedContextCleanupImpl_hidden ctx observer hU hX).trans
       ((finaliseSchedContextUnstack_hidden ctx observer hF.invExt hX).trans
         ((finaliseSchedContextUnbind_hidden ctx observer hD.invExt hX hH.deschedule).trans
@@ -2092,7 +2126,34 @@ theorem finaliseFinalObject_preserves_projection (ctx : LabelingContext) (observ
   split
   · split
     · exact (hEp true _ _ (hEp false _ _ hP0)).2.2
-    · refine (hNt _ _ ?_).2.2
+    · have hLk : ∀ s c, P s → P (unbindSchedContextNotification s c) := fun s c hP =>
+        ⟨(hP.1.notificationLink c).1, (fun t tcb ht hw => by
+          obtain ⟨o0, h0', r | ⟨_, rfl, r⟩ | ⟨_, rfl, r⟩⟩ :=
+            unbindSchedContextNotification_objects_back s c hP.1.2.1 _ _ ht
+          · exact hP.2.1 t tcb (by rw [r]; exact h0') hw
+          · cases r
+          · cases r),
+         ((projectedObjectsWrite.unbindSchedContextNotification s c hP.1.2.1).projection).trans
+           hP.2.2⟩
+      have hP1 : P (unbindNotificationSchedContext st x) :=
+        unbindNotificationSchedContext_closed P hLk st x hP0
+      have hBd1 : ∀ (n : Notification) (t : SeLe4n.ThreadId),
+          (unbindNotificationSchedContext st x).getNotification? x = some n →
+          n.boundTCB = some t → objectObservable ctx observer t.toObjId = false := by
+        intro n t hN hB
+        rcases unbindNotificationSchedContext_cases st x with e | ⟨c, e⟩
+        · rw [e] at hN; exact hBd h0 n t hN hB
+        · rw [e] at hN
+          have hNraw := (SystemState.getNotification?_eq_some_iff _ _ _).mp hN
+          obtain ⟨o0, h0', r | ⟨_, rfl, r⟩ | ⟨n0, rfl, r⟩⟩ :=
+            unbindSchedContextNotification_objects_back st c h.2.1 _ _ hNraw
+          · exact hBd h0 n t ((SystemState.getNotification?_eq_some_iff _ _ _).mpr
+              (by rw [r]; exact h0')) hB
+          · cases r
+          · cases r
+            exact hBd h0 n0 t ((SystemState.getNotification?_eq_some_iff _ _ _).mpr h0') hB
+      generalize unbindNotificationSchedContext st x = s0 at hP1 hBd1
+      refine (hNt _ _ ?_).2.2
       unfold unbindMaybeNotification
       split
       · next n hN =>
@@ -2101,13 +2162,13 @@ theorem finaliseFinalObject_preserves_projection (ctx : LabelingContext) (observ
           split
           · next hC =>
             simp only [Bool.and_eq_true, beq_iff_eq] at hC
-            have r := hP0.1.unbind hN hC.1 hC.2
-            have p := storeUnbindNotification_hidden ctx observer st x n t h.2.1 hN hX
-              (hBd h0 n t hN hB)
-            exact ⟨r.1, p.2.waitersHidden hP0.2.1, p.1⟩
-          · exact hP0
-        · exact hP0
-      · exact hP0
+            have r := hP1.1.unbind hN hC.1 hC.2
+            have p := storeUnbindNotification_hidden ctx observer s0 x n t hP1.1.2.1 hN hX
+              (hBd1 n t hN hB)
+            exact ⟨r.1, p.2.waitersHidden hP1.2.1, p.1.trans hP1.2.2⟩
+          · exact hP1
+        · exact hP1
+      · exact hP1
     · exact finaliseThread_hidden ctx observer h.2.1 hValid hIdx hSet hBlockingChainHigh hX
         (hTF h0)
     · exact finaliseSchedContext_hidden ctx observer h.2.1 hX (hSF h0)

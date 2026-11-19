@@ -1839,6 +1839,38 @@ private def schedContextUnbind_seL4_semantics : IO Unit := do
      | _ => false)
     "the invoking core's current thread's context is not unbound (seL4 IllegalOperation)"
 
+/-- seL4-MCS `finaliseCap`: **the final delete of a notification or of a
+scheduling context bound to each other unbinds both ends**
+(`schedContext_maybeUnbindNtfn` from the notification's end,
+`schedContext_unbindNtfn` from the context's).  A notification whose context does
+not name it back leaves that context's own link alone. -/
+private def finalise_clears_notification_link : IO Unit := do
+  let scObj : SeLe4n.ObjId := ⟨60⟩
+  let scId := SeLe4n.SchedContextId.ofObjId scObj
+  let nA : SeLe4n.ObjId := ⟨80⟩
+  let nB : SeLe4n.ObjId := ⟨81⟩
+  let ntfn (code : Nat) : Notification :=
+    { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
+      schedContextCode := code }
+  let st : SystemState := mkState [
+      (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with
+        notificationCode := nA.val + 1 }),
+      (nA, .notification (ntfn (scId.val + 1))),
+      (nB, .notification (ntfn (scId.val + 1)))]
+  let scCode (s : SystemState) : Nat :=
+    ((s.getSchedContext? scId).map (·.notificationCode)).getD 999
+  let ntCode (s : SystemState) (n : SeLe4n.ObjId) : Nat :=
+    ((s.getNotification? n).map (·.schedContextCode)).getD 999
+  let stN := SeLe4n.Kernel.finaliseFinalObject (nA.val + 1) st
+  expect "finalise_notification_unbinds_its_context" (scCode stN == 0 && ntCode stN nA == 0)
+    "a notification's final delete clears its context's link and its own"
+  let stS := SeLe4n.Kernel.finaliseFinalObject (scObj.val + 1) st
+  expect "finalise_context_unbinds_its_notification" (scCode stS == 0 && ntCode stS nA == 0)
+    "a context's final delete clears its notification's link and its own"
+  let stB := SeLe4n.Kernel.finaliseFinalObject (nB.val + 1) st
+  expect "finalise_unnamed_notification_keeps_the_context_link" (scCode stB == nA.val + 1)
+    "a notification its context does not name back leaves the context's link"
+
 /-- SD-060 (`v0.35.204`): **`.schedContextBind` binds only a thread the caller
 holds a WRITABLE TCB capability to.**
 
@@ -2994,6 +3026,7 @@ def main : IO Unit := do
   IO.println "--- .schedContextBind on a notification capability binds the notification ---"
   schedContextBind_notification_capability
   schedContextUnbind_seL4_semantics
+  finalise_clears_notification_link
   IO.println "--- WS-ZA ZA6.4: a configure takes a core's scheduling control ---"
   sd063_schedContextConfigure_requires_sched_control
   IO.println "--- WS-BP BP7.1: an in-place retype never mints or destroys memory authority ---"

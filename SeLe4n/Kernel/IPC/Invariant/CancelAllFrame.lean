@@ -246,6 +246,14 @@ structure FinaliseYieldStep (P : SystemState → Prop) : Prop where
   cancel : ∀ (s : SystemState) (t : SeLe4n.ThreadId), P s → P (cancelYieldTo s t)
   complete : ∀ (s : SystemState) (c : SeLe4n.SchedContextId), P s → P (completeYieldFrom s c)
 
+/-- **The notification unbind a notification's and a scheduling context's
+finalisation take** (seL4-MCS's `schedContext_unbindNtfn`): a context's
+notification link cleared, and the notification's link back
+(`unbindSchedContextNotification`; the notification's end is this or nothing,
+`unbindNotificationSchedContext_cases`). -/
+def FinaliseNotificationLinkStep (P : SystemState → Prop) : Prop :=
+  ∀ (s : SystemState) (c : SeLe4n.SchedContextId), P s → P (unbindSchedContextNotification s c)
+
 /-- A held context's completion keeps what the completion keeps. -/
 theorem FinaliseYieldStep.completeHeldYield {P : SystemState → Prop} (h : FinaliseYieldStep P)
     (s : SystemState) (held : Nat) (hs : P s) : P (completeHeldYield s held) := by
@@ -747,12 +755,14 @@ theorem finaliseSchedContextUnbind_unbound {st : SystemState} {x : SeLe4n.ObjId}
 the scheduling-context finalisation.** -/
 theorem finaliseSchedContext_closed (P : SystemState → Prop) (hDes : FinaliseScDescheduleStep P)
     (hRel : FinaliseScReleaseStep P)
-    (hUn : FinaliseUnstackStep P) (hYield : FinaliseYieldStep P) (x : SeLe4n.ObjId)
+    (hUn : FinaliseUnstackStep P) (hYield : FinaliseYieldStep P)
+    (hLink : FinaliseNotificationLinkStep P) (x : SeLe4n.ObjId)
     (st : SystemState) (h : P st) :
     P (finaliseSchedContext x st) := by
   rw [finaliseSchedContext_eq]
   split
   · rename_i hA
+    refine hLink _ _ ?_
     exact hYield.schedContextCleanup _ x
       (finaliseSchedContextUnstack_closed P hUn x st h hA _ rfl (finaliseSchedContextUnbind_closed P hRel _ x
         (finaliseSchedContextDeschedule_closed P hDes st x hA h)))
@@ -1201,6 +1211,7 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
     (hRelease : FinaliseReleaseStep P) (hUn : FinaliseUnstackStep P) (hRep : FinaliseReplyStep P)
     (hSt : FinaliseUnstashStep P) (hYield : FinaliseYieldStep P) (hOrph : FinaliseOrphanStep P)
     (hUnheld : FinaliseUnheldStep P) (hCut : FinaliseCutStep P)
+    (hLink : FinaliseNotificationLinkStep P)
     (target : Nat) (st : SystemState) (h : P st) : P (finaliseFinalObject target st) := by
   unfold finaliseFinalObject
   split
@@ -1211,10 +1222,11 @@ theorem finaliseFinalObject_closed (P : SystemState → Prop)
     · exact cancelEndpointQueue_closed P _ true (hEp _ true) _ _
         (cancelEndpointQueue_closed P _ false (hEp _ false) _ _ h)
     · exact cancelNotificationQueue_closed P _ (hNtfn _) _ _
-        (unbindMaybeNotification_closed P _ (hUnbind _) st h)
+        (unbindMaybeNotification_closed P _ (hUnbind _) _
+          (unbindNotificationSchedContext_closed P hLink st _ h))
     · exact finaliseThread_closed P hUnbind hRel hCancel hEndpoint hSuspend hRelease hRep
         hYield hOrph hCut _ st h
-    · exact finaliseSchedContext_closed P hDes hRel hUn hYield _ st h
+    · exact finaliseSchedContext_closed P hDes hRel hUn hYield hLink _ st h
     · exact finaliseReply_closed P hRep hSuspend hSt hUnheld _ st h
     · exact h
   · exact h
@@ -2129,6 +2141,27 @@ theorem completeYieldFrom (st : SystemState) (s : SeLe4n.SchedContextId)
       have h1 := setConsumed (callOnly := false) st s ⟨k⟩ hInv
       exact h1.trans (cancelYieldFrom _ s h1.invExt)
   · exact .refl hInv
+
+/-- The notification unbind read from a context's end: the context's link, then
+the notification's, each rewritten in its own slot. -/
+theorem unbindSchedContextNotification (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) :
+    FinaliseFrame st (SeLe4n.Kernel.unbindSchedContextNotification st s) := by
+  unfold SeLe4n.Kernel.unbindSchedContextNotification
+  split
+  · exact .refl hInv
+  · split
+    · exact .refl hInv
+    · dsimp only []
+      have h1 := updateSchedContext st s (fun c => { c with notificationCode := 0 }) hInv
+        (fun _ => rfl)
+      split
+      · refine h1.trans (modifyObject _ _ _ h1.invExt fun o => ?_)
+        cases o with
+        | notification n =>
+          exact Or.inr ⟨rfl, rfl, rfl, Or.inr (Or.inr (Or.inl rfl)), by simp [KernelObject.objectType]⟩
+        | _ => exact Or.inl rfl
+      · exact h1
 end FinaliseFrame
 
 namespace FinaliseFrameAny
@@ -2490,6 +2523,11 @@ theorem yieldStep (st : SystemState) : FinaliseYieldStep (FinaliseFrameAny st) :
   ⟨fun s t h => h.trans (FinaliseFrame.cancelYieldTo s t h.invExt).any,
    fun s c h => h.trans (FinaliseFrame.completeYieldFrom s c h.invExt).any⟩
 
+/-- The notification unbind, as the closure asks it. -/
+theorem notificationLinkStep (st : SystemState) :
+    FinaliseNotificationLinkStep (FinaliseFrameAny st) :=
+  fun s c h => h.trans (FinaliseFrame.unbindSchedContextNotification s c h.invExt).any
+
 /-- The pop of a context no thread holds, as the closure asks it. -/
 theorem unheldStep (st : SystemState) : FinaliseUnheldStep (FinaliseFrameAny st) :=
   fun s _ r c _ h _ _ _ _ => h.trans (finaliseReplyUnheldPop s r c h.invExt)
@@ -2514,6 +2552,7 @@ theorem finaliseFinalObject_frame (target : Nat) (st : SystemState) (hInv : st.o
     (FinaliseFrameAny.yieldStep st)
     (fun s w x _ h _ _ _ => h.trans (FinaliseFrame.orphanReplyWaiter s w x h.invExt).any)
     (FinaliseFrameAny.unheldStep st) (FinaliseFrameAny.cutStep st)
+    (FinaliseFrameAny.notificationLinkStep st)
     target st (.refl hInv)
 
 /-- **The finalisation keeps the derivation tree**, on any state. -/
@@ -2614,6 +2653,16 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
           show (markKeyChangeFrom _ _ _).cdt = _
           rw [markKeyChangeFrom_cdt]; exact (hC (hU s0 holder _)).trans h0)
         s t h)
+    (fun s c h => by
+      unfold unbindSchedContextNotification
+      split
+      · exact h
+      · split
+        · exact h
+        · dsimp only []
+          split
+          · exact (hC ((hM _ _ _).trans (hS _ _ _))).trans h
+          · exact (hC (hS _ _ _)).trans h)
     target st rfl
   · unfold storeEndpointWaiterCancelled
     split

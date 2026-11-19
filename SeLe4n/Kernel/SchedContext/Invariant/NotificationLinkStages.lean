@@ -29,33 +29,6 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Model.SystemState (RunQueueStage objStateMono_nonTcb)
 
-/-- **A context's notification link rewritten is a run-queue stage**: no view
-the stage reads reads the link. -/
-theorem notificationCodeWrite_runQueueStage {st : SystemState} {s : SeLe4n.SchedContextId}
-    {sc : SchedContext} (hS : st.getSchedContext? s = some sc) (c : Nat) :
-    RunQueueStage st (st.updateSchedContext s (fun sc => { sc with notificationCode := c })) := by
-  have hSraw := (SystemState.getSchedContext?_eq_some_iff st s sc).mp hS
-  have hU := SystemState.updateSchedContext_scheduler st s
-    (fun sc => { sc with notificationCode := c })
-  have hM := SystemState.updateSchedContext_machine st s
-    (fun sc => { sc with notificationCode := c })
-  exact RunQueueStage.insert (k := s.toObjId)
-    (obj := .schedContext { sc with notificationCode := c })
-    (congrArg SystemState.objects (SystemState.updateSchedContext_eq_of_some hS _))
-    (by rw [hU]) (by rw [hU]) (fun c => by rw [hSraw]; rfl)
-    (objStateMono_nonTcb (by rw [hSraw]; rfl) rfl) (by rw [hU])
-    (fun c => by rw [hSraw]; rfl) (by rw [hSraw]; rfl) (by rw [hSraw]; rfl) (by rw [hU])
-    (by rw [hM])
-
-/-- **A notification's scheduling-context link rewritten is a run-queue stage**. -/
-theorem notificationLinkInsert_runQueueStage {st : SystemState} {n : SeLe4n.ObjId}
-    {ntfn : Notification} (h1 : st.objects[n]? = some (.notification ntfn)) (c : Nat) :
-    RunQueueStage st
-      { st with objects := st.objects.insert n (.notification { ntfn with schedContextCode := c }) } :=
-  RunQueueStage.insert (k := n) (obj := .notification { ntfn with schedContextCode := c })
-    rfl rfl rfl (fun c => by rw [h1]; rfl) (objStateMono_nonTcb (by rw [h1]; rfl) rfl) rfl
-    (fun c => by rw [h1]; rfl) (by rw [h1]; rfl) (by rw [h1]; rfl) rfl rfl
-
 /-- **The bind is a run-queue stage**: two one-object writes, each giving every
 view the run-queue stage reads the value the replaced object gave. -/
 theorem bindNotificationSchedLink_runQueueStage {st : SystemState}
@@ -66,16 +39,6 @@ theorem bindNotificationSchedLink_runQueueStage {st : SystemState}
   obtain ⟨h1, hEq⟩ := bindNotificationSchedLink_eq hS hN hInv
   rw [hEq]
   exact (notificationCodeWrite_runQueueStage hS _).trans (notificationLinkInsert_runQueueStage h1 _)
-
-/-- **The notification unbind read from the context's end is a run-queue
-stage.** -/
-theorem unbindSchedContextNotification_runQueueStage (st : SystemState)
-    (s : SeLe4n.SchedContextId) : RunQueueStage st (unbindSchedContextNotification st s) := by
-  refine RunQueueStage.of_invExt fun hInv => ?_
-  rcases unbindSchedContextNotification_shape st s hInv with h | ⟨sc, hS, h | ⟨n, ntfn, h1, h⟩⟩
-  · rw [h]; exact .refl st
-  · rw [h]; exact notificationCodeWrite_runQueueStage hS 0
-  · rw [h]; exact (notificationCodeWrite_runQueueStage hS 0).trans (notificationLinkInsert_runQueueStage h1 0)
 
 theorem schedContextBindNotification_runQueueStage {vScId : SeLe4n.ValidObjId}
     {n : SeLe4n.ObjId} {st st' : SystemState}

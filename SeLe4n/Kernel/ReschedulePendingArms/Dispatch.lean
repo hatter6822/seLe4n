@@ -1116,6 +1116,9 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
           (SystemState.mapTcbInPlace_objects_invExt _ _ _ h.2)⟩)
     (fun s _ r c _ h _ _ _ _ => stepCoversInv_trans h.1 (finaliseReplyUnheldPop_stepCovers e s r c h.2))
     (fun s _ _ _ t h _ _ _ _ => stepCoversInv_trans h.1 (cutCancelledCallerHead_stepCovers e s t h.2))
+    (fun s c h => stepCoversInv_trans h.1 ((unbindSchedContextNotification_keyFrame s c h.2).stepCoversInv
+      (e := e) (hRes := by rw [unbindSchedContextNotification_machine])
+      (hBank := banksKeptOffCore_of_eq (by rw [unbindSchedContextNotification_machine]))))
     target st ⟨stepCovers_refl e st, hInv⟩
 
 /-- WS-ZA ZA6.32: a node's retire writes the tree's issued lines and the mask

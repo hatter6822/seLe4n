@@ -659,6 +659,28 @@ theorem modifyObject_notification (st : SystemState) (k : SeLe4n.ObjId)
         exact ⟨fun _ e => KernelObject.noConfusion e, fun _ e => KernelObject.noConfusion e⟩
       · rw [hO o (fun n hn => h ⟨n, hn⟩)]; exact ⟨n1, n2⟩)
 
+/-- The notification unbind read from a context's end: the context's
+notification link and the notification's link back, neither a scheduling link. -/
+theorem unbindSchedContextNotification (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) :
+    SchedLinkFrame st (SeLe4n.Kernel.unbindSchedContextNotification st s) := by
+  unfold SeLe4n.Kernel.unbindSchedContextNotification
+  split
+  · exact .refl st
+  · split
+    · exact .refl st
+    · dsimp only []
+      have h1 := updateSchedContext st s (fun c => { c with notificationCode := 0 }) hInv
+        (fun _ => rfl)
+      split
+      · exact h1.trans (modifyObject_notification _ _ _
+          (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv)
+          (fun _ => ⟨_, rfl⟩) (fun o h => by
+            cases o with
+            | notification n => exact absurd rfl (h n)
+            | _ => rfl))
+      · exact h1
+
 /-- The pop of an endpoint queue's head. -/
 theorem storePopHead (st : SystemState) (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (hInv : st.objects.invExt) :
@@ -1614,7 +1636,7 @@ theorem finaliseFinalObject_closed_linked (P : SystemState → Prop)
       P s → s.objects.invExt → schedContextLinkInvariant s →
       s.getObject? x = some (.reply r) → r.callerCode = c.val + 1 → s.getTcb? c = some t →
       replyUnheldPopAdmitted s x r c t = true → P (finaliseReplyUnheldPop s r c))
-    (hCut : FinaliseCutStep P)
+    (hCut : FinaliseCutStep P) (hLink : FinaliseNotificationLinkStep P)
     (target : Nat) (st : SystemState) (h : P st) (hInv : st.objects.invExt)
     (hL : schedContextLinkInvariant st) :
     P (finaliseFinalObject target st) ∧ (finaliseFinalObject target st).objects.invExt ∧
@@ -1686,6 +1708,9 @@ theorem finaliseFinalObject_closed_linked (P : SystemState → Prop)
       ⟨hCut s x r c t h.1 a b d e,
         (FinaliseFrameAny.cutStep s s x r c t (.refl h.2.1) a b d e).invExt,
         cutCancelledCallerHead_preserves_schedContextLinkInvariant s t h.2.1 h.2.2⟩)
+    (fun s c h =>
+      ⟨hLink s c h.1, (FinaliseFrame.unbindSchedContextNotification s c h.2.1).invExt,
+        (SchedLinkFrame.unbindSchedContextNotification s c h.2.1).preserves h.2.2⟩)
     target st ⟨h, hInv, hL⟩
 
 /-- **The finalisation keeps every scheduling-link invariant**
@@ -1702,7 +1727,7 @@ theorem finaliseFinalObject_preserves_schedContextLinkInvariant (target : Nat) (
     (fun _ _ _ _ _ _ _ _ _ _ => trivial) (fun _ _ _ _ _ _ _ _ _ => trivial)
     ⟨fun _ _ _ => trivial, fun _ _ _ => trivial⟩ (fun _ _ _ _ _ _ _ _ => trivial)
     (fun _ _ _ _ _ _ _ _ _ _ _ _ => trivial) (fun _ _ _ _ _ _ _ _ _ _ => trivial)
-    target st trivial hInv h).2.2
+    (fun _ _ _ => trivial) target st trivial hInv h).2.2
 
 -- ============================================================================
 -- §9  The retire

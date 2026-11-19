@@ -4358,11 +4358,12 @@ run_check "INVARIANT" rg -n -U 'def cspaceDeleteSlotFinalising[^\n]*\n[^\n]*\n  
 run_check "INVARIANT" rg -n -U 'def cspaceDeleteThenFinalise[^\n]*(\n([ \t][^\n]*)?){0,9}\n      \| \.ok \(\(\), st2\) => \.ok \(\(\), retireFinalisedObject executingCore target recorder st2\)' SeLe4n/Kernel/Capability/FrameFinalise.lean
 # v0.36.134: the final delete FINALISES before it retires (seL4's finaliseCap):
 # an endpoint's waiters are cancelled (cancelAllIPC), a notification is unbound
-# and then its waiters cancelled (unbindMaybeNotification, cancelAllSignals),
+# from its scheduling context (schedContext_maybeUnbindNtfn), then from its
+# thread, and then its waiters cancelled (unbindMaybeNotification, cancelAllSignals),
 # and only then is the object retired.  The anchors pin the kind dispatch, the
 # order (unbind before cancel; finalise before retire) and that both finalising
 # capability paths route through the finalised retire.
-run_check "INVARIANT" rg -n -U 'def finaliseFinalObject [^\n]*(\n([ \t][^\n]*)?){0,5}\n      \| some \.endpoint => cancelAllIpc x st\n      \| some \.notification => cancelAllSignals x \(unbindMaybeNotification x st\)\n      \| some \.tcb => finaliseThread x st\n      \| some \.schedContext => finaliseSchedContext x st\n      \| some \.reply => finaliseReply x st\n      \| _ => st' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseFinalObject [^\n]*(\n([ \t][^\n]*)?){0,5}\n      \| some \.endpoint => cancelAllIpc x st\n      \| some \.notification =>\n        cancelAllSignals x \(unbindMaybeNotification x \(unbindNotificationSchedContext st x\)\)\n      \| some \.tcb => finaliseThread x st\n      \| some \.schedContext => finaliseSchedContext x st\n      \| some \.reply => finaliseReply x st\n      \| _ => st' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # Since v0.36.155 the final delete first drops an endpoint's service
 # registration (releaseFinalRegistration), then finalises, then retires.
 run_check "INVARIANT" rg -n -U 'def retireFinalisedObject [^\n]*\n[^\n]*\n  if retireTargetsIrqNode target then retireIrqNode st \(SeLe4n\.ObjId\.ofNat \(target - 1\)\)\n  else\n    retireFinalObject executingCore target recorder\n      \(finaliseFinalObject target \(releaseFinalRegistration target st\)\)' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
@@ -5011,11 +5012,12 @@ run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \
 # v0.36.136: a scheduling context is finalised as seL4's finaliseCap finalises
 # it: its ready holder taken off the scheduler (schedContext_unbindTCB's
 # tcbSchedDequeue), the holder unbound (schedContext_unbindAllTCBs), the reply
-# stack's head unlinked (schedContext_unbindReply), then the destroy cleanup.
+# stack's head unlinked (schedContext_unbindReply), then the destroy cleanup,
+# then its notification unbound (schedContext_unbindNtfn).
 # The admission no longer refuses a queued or current ready holder.  A busy
 # reply is finalised as reply_remove: its caller's wait cancelled, the boost it
 # lent reverted, the caller suspended.
-run_check "INVARIANT" rg -n -U 'def finaliseSchedContext \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if schedContextFinaliseAdmitted st x then\n    finaliseSchedContextCleanup \(finaliseSchedContextUnstack\n      \(finaliseSchedContextUnbind \(finaliseSchedContextDeschedule st x\) x\) x\) x' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseSchedContext \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if schedContextFinaliseAdmitted st x then\n    unbindSchedContextNotification \(finaliseSchedContextCleanup \(finaliseSchedContextUnstack\n      \(finaliseSchedContextUnbind \(finaliseSchedContextDeschedule st x\) x\) x\) x\) ⟨x\.val⟩' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # The deschedule runs first, on the state the admission reads, so it reads only
 # whether the holder is ready: the admission reads the binding back and the idle check.
 run_check "INVARIANT" rg -n -U 'def finaliseSchedContextDeschedule [^\n]*(\n([ \t][^\n]*)?){0,9}\n        if t\.ipcStateCode == 0 && t\.ipcObjectCode == 0 then descheduleAtPlacement st tid$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean

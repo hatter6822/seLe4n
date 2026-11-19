@@ -57,18 +57,6 @@ theorem RecordsFrame.schedContextBindNotification {vScId : SeLe4n.ValidObjId}
   exact F.trans (RecordsFrame.insert F.invExt (by rw [h1]; rfl))
 
 
-/-- **The notification unbind keeps the records**: neither link word is in a
-record view. -/
-theorem RecordsFrame.unbindSchedContextNotification (st : SystemState)
-    (s : SeLe4n.SchedContextId) (hInv : st.objects.invExt) :
-    RecordsFrame st (_root_.SeLe4n.Kernel.unbindSchedContextNotification st s) := by
-  rcases unbindSchedContextNotification_shape st s hInv with h | ⟨sc, hS, h | ⟨n, ntfn, h1, h⟩⟩
-  · rw [h]; exact RecordsFrame.refl hInv
-  · rw [h]; exact RecordsFrame.updateSchedContext st s _ hInv
-  · rw [h]
-    have F := RecordsFrame.updateSchedContext st s (fun c => { c with notificationCode := 0 }) hInv
-    exact F.trans (RecordsFrame.insert F.invExt (by rw [h1]; rfl))
-
 /-- **`SchedContext_Unbind` keeps the records**: the thread unbind's frame,
 then the notification unbind's. -/
 theorem RecordsFrame.schedContextUnbindAllOnCore {vScId : SeLe4n.ValidObjId}

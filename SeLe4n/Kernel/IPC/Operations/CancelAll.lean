@@ -9,6 +9,7 @@ import SeLe4n.Kernel.IPC.Operations.NotificationBind
 import SeLe4n.Kernel.IPC.Operations.DonationPopInPlace
 import SeLe4n.Kernel.IPC.Operations.UnheldContextPopInPlace
 import SeLe4n.Kernel.IPC.BusyReplyHolder
+import SeLe4n.Kernel.SchedContext.NotificationLink
 
 /-!
 # Cancelling every waiter of an endpoint or a notification
@@ -1403,12 +1404,17 @@ its ready holder taken off the scheduler and unbound from it
 (`schedContext_unbindReply`), then the destroy cleanup, which completes the yield
 the context records (`schedContext_completeYieldTo` of its `scYieldFrom`,
 `completeYieldFrom`), when the pre-state admits it
-(`schedContextFinaliseAdmitted`).  seL4's `schedContext_unbindNtfn` has nothing
-to do here: this model's context is bound to no notification. -/
+(`schedContextFinaliseAdmitted`), and the notification it is bound to unbound
+from it (`schedContext_unbindNtfn`, `unbindSchedContextNotification`, both ends'
+links cleared).  seL4 unbinds the notification after the holders and before the
+reply stack; the cut unbinds it last.  The notification unbind writes the
+context's notification link and the notification's link back, which no other
+step reads or writes, so the order changes nothing: the whole finalisation is
+one kernel step. -/
 def finaliseSchedContext (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
   if schedContextFinaliseAdmitted st x then
-    finaliseSchedContextCleanup (finaliseSchedContextUnstack
-      (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x) x) x
+    unbindSchedContextNotification (finaliseSchedContextCleanup (finaliseSchedContextUnstack
+      (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x) x) x) ⟨x.val⟩
   else st
 
 /-- **The scheduling-context finalisation, with its cleanup read as what it
@@ -1416,8 +1422,8 @@ is.** -/
 theorem finaliseSchedContext_eq (x : SeLe4n.ObjId) (st : SystemState) :
     finaliseSchedContext x st =
       if schedContextFinaliseAdmitted st x then
-        finaliseSchedContextCleanupImpl (finaliseSchedContextUnstack
-          (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x) x) x
+        unbindSchedContextNotification (finaliseSchedContextCleanupImpl (finaliseSchedContextUnstack
+          (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x) x) x) ⟨x.val⟩
       else st := by
   unfold finaliseSchedContext; rw [finaliseSchedContextCleanup_eq]
 
@@ -1740,10 +1746,12 @@ def finaliseReplyImpl (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
 /-- **seL4's `finaliseCap` on the final capability to an endpoint, a
 notification, a thread, a scheduling context or a reply** (`target`, a word as
 `slotRetireTarget` reads it: `x + 1`, or `0` for none): an endpoint's waiters
-are cancelled (`cancelAllIpc`); a notification is unbound from its thread and
-its waiters are cancelled (`unbindMaybeNotification`, `cancelAllSignals`); a
-thread is suspended and unbound (`finaliseThread`); a scheduling context is
-unbound and its reply stack let go (`finaliseSchedContext`); a reply's waiting
+are cancelled (`cancelAllIpc`); a notification is unbound from the scheduling
+context bound to it (`schedContext_maybeUnbindNtfn`,
+`unbindNotificationSchedContext`) and from its thread, and its waiters are
+cancelled (`unbindMaybeNotification`, `cancelAllSignals`); a thread is suspended
+and unbound (`finaliseThread`); a scheduling context is unbound from its thread
+and its notification and its reply stack let go (`finaliseSchedContext`); a reply's waiting
 caller is cancelled and made inactive (`finaliseReply`).  Nothing when no object is
 targeted, for any other kind, or when the object is still named by a table
 outside every slot — an interrupt's notification, or an endpoint whose
@@ -1758,7 +1766,8 @@ def finaliseFinalObject (target : Nat) (st : SystemState) : SystemState :=
     if st.tableBackLinksClear x then
       match st.getObjectType? x with
       | some .endpoint => cancelAllIpc x st
-      | some .notification => cancelAllSignals x (unbindMaybeNotification x st)
+      | some .notification =>
+        cancelAllSignals x (unbindMaybeNotification x (unbindNotificationSchedContext st x))
       | some .tcb => finaliseThread x st
       | some .schedContext => finaliseSchedContext x st
       | some .reply => finaliseReply x st

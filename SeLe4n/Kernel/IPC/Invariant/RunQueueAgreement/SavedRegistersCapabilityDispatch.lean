@@ -710,30 +710,6 @@ theorem SchedPointPrefix.currentFreeOrMatched {e : CoreId} {base st s st' : Syst
   · exact handleRescheduleSgiOnCore_currentFreeOrMatched P.inv
       (hQ.of_frame P.current P.bank (P.writes e)) h
 
-/-- **The notification unbind writes no saved register**: it writes a context's
-slot and a notification's. -/
-theorem unbindSchedContextNotification_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
-    (st : SystemState) (s : SeLe4n.SchedContextId) (hInv : st.objects.invExt) :
-    savedRegsKeptExcept W st (unbindSchedContextNotification st s) := .of_eq fun t => by
-  have n1 : ∀ X : SystemState, (∀ x : TCB, X.objects[t.toObjId]? ≠ some (.tcb x)) →
-      X.savedRegs t = none := fun X hX => by
-    cases hr : X.savedRegs t with
-    | none => rfl
-    | some r => obtain ⟨x, hx, -⟩ := savedRegs_eq_some_iff.mp hr; exact absurd hx (hX x)
-  rcases unbindSchedContextNotification_slots st s hInv t.toObjId with e | ⟨h1, h2⟩
-  · cases hr : st.savedRegs t with
-    | none =>
-      cases hr' : (unbindSchedContextNotification st s).savedRegs t with
-      | none => rfl
-      | some r =>
-        obtain ⟨x, hx, rfl⟩ := savedRegs_eq_some_iff.mp hr'
-        rw [e] at hx
-        rw [savedRegs_eq_some_iff.mpr ⟨x, hx, rfl⟩] at hr; cases hr
-    | some r =>
-      obtain ⟨x, hx, rfl⟩ := savedRegs_eq_some_iff.mp hr
-      exact savedRegs_eq_some_iff.mpr ⟨x, e.trans hx, rfl⟩
-  · rw [n1 _ h2, n1 _ h1]
-
 /-- **`SchedContext_Unbind` writes no saved register**: the thread unbind (the
 current thread's context is refused, so no scheduling point runs), then the
 notification unbind. -/

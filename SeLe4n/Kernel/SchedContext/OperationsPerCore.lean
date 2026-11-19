@@ -19,47 +19,28 @@ import SeLe4n.Kernel.SchedContext.NotificationLink
 # WS-SM SM8.B — per-core SchedContext operations
 
 `schedContextUnbind` (`SchedContext/Operations.lean`) revokes a thread's
-SchedContext, which **demotes it** to its legacy TCB priority.  Its Z5-H1
-preemption guard cleared the thread's `current` slot "to force rescheduling",
-and PR #861 review round 14 added the requeue that clearing `current` had been
-missing.  Neither is a scheduling point:
-
-* `syscallDispatchCrossCoreEntry` performs no local scheduling — it commits the
-  verified post-state and fires the *diff-recovered* SGIs;
-* `crossCoreSgiBody` deliberately emits nothing for the **executing** core,
-  because a local reschedule is supposed to have run inline.
-
-So a thread that unbound its own SchedContext returned to userspace still
-executing while the model said its core had no current thread.  Found by
-PR #861 review round 15.
-
-The consequence is a **fail-closed rejection**, not misrouting (round 43
-corrected this note, which claimed the latter).  The executing core is
-threaded from the entry, never re-derived with a `bootCoreId` fallback (the
-state-scanning resolver that had one was deleted at `v0.36.46`), and
-resolution runs first — `syscallDispatchFromAbi`
-reads `currentOnCore` for the *issuing* core and returns `.illegalState` with
-the state unmodified when it is empty
-(`Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current`, mounted at
-the entry as `SyscallDispatchEntry.vacatedCore_next_syscall_rejected`).  So the
-defect is that the core is stranded and its thread's next syscall is refused,
-which is bad enough on its own terms and needs no overstating.
+SchedContext, which **demotes it** to its legacy TCB priority, and its Z5-H1
+preemption guard clears the thread's `current` slot.  Neither is a scheduling
+point: `syscallDispatchCrossCoreEntry` performs no local scheduling, and
+`crossCoreSgiBody` emits nothing for the executing core (PR #861 review rounds
+14, 15 and 43 traced the stranded core this once left; the executing core is
+threaded from the entry, never re-derived).
 
 `schedContextUnbindOnCore` is the per-core form, built like its siblings
 `suspendThreadOnCore` (SM6.E) and `setPriorityOnCore`: it resolves the core
 **actually running** the demoted thread from the pre-state (`runningCoreOf?`,
-not the queue home — the two agree on committed states only through the
-placement invariant, WS-ZA ZA6.3, and SM6.E introduced it when they did not) and
-runs the shared preemption seam `priorityRescheduleOnCore`, rescheduling inline
-when that core is the executing one and surfacing its `.reschedule` SGI when it
-is remote.
+not the queue home) and runs the shared preemption seam
+`priorityRescheduleOnCore`, surfacing a `.reschedule` SGI when that core is
+remote.
 
-Delegating to the scheduler rather than hand-editing `current` is what makes
-this correct: `handleRescheduleSgiOnCore` re-selects against the **post-unbind**
-priority and switches only if a candidate outranks it (`switchToThreadOnCore`
-requeues the outgoing thread through `preemptCurrentOnCore`), so the demoted
-thread either keeps its core legitimately or is preempted and queued — never
-stranded, and never running a thread the model has forgotten.
+The live `.schedContextUnbind` arm runs `schedContextUnbindAllOnCore`, seL4-MCS's
+`invokeSchedContext_Unbind`: it refuses the context of the executing core's own
+current thread (`.illegalState`, seL4's `IllegalOperation` for
+`sc->scTcb == ksCurThread`), so the thread unbind it runs never reschedules
+locally and its compiled perform is the single-core unbind; it then unbinds the
+context's notification (`schedContext_unbindNtfn`,
+`unbindSchedContextNotification`).  A context bound to no thread has only its
+notification unbound.
 -/
 
 namespace SeLe4n.Kernel.SchedContextOps

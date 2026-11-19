@@ -2235,6 +2235,47 @@ theorem yieldStep {s s' : SystemState} (h : finaliseStepInvariant s)
   ⟨⟨hI, F.invExt, q.1, SystemState.replyWaitersConsistent.of_views q.2.2 h.2.2.2.1,
     h.chain_of_frame F, h.loan_of_frame F⟩, q.2.1⟩
 
+/-- The notification unbind read from a context's end carries it, and frames
+every budget: the context's write is a reach-field frame, and the
+notification's keeps its queue ends and is no thread. -/
+theorem notificationLink {s : SystemState} (h : finaliseStepInvariant s)
+    (c : SeLe4n.SchedContextId) :
+    finaliseStepInvariant (unbindSchedContextNotification s c) ∧
+      timeoutBudgetFrame s (unbindSchedContextNotification s c) := by
+  have F := FinaliseFrame.unbindSchedContextNotification s c h.2.1
+  have hI := unbindSchedContextNotification_preserves_ipcInvariantFull s c h.2.1 h.1
+  have R1 := ReachFieldFrame.updateSchedContext s c (fun c => { c with notificationCode := 0 }) h.2.1
+  have q := R1.parts h.2.2.1
+  suffices hP : notificationWaiterConsistent (unbindSchedContextNotification s c) ∧
+      timeoutBudgetFrame s (unbindSchedContextNotification s c) ∧
+      (unbindSchedContextNotification s c).replyViews = s.replyViews from
+    ⟨⟨hI, F.invExt, hP.1, SystemState.replyWaitersConsistent.of_views hP.2.2 h.2.2.2.1,
+      h.chain_of_frame F, h.loan_of_frame F⟩, hP.2.1⟩
+  rcases unbindSchedContextNotification_shape s c h.2.1 with e | ⟨sc, -, e | ⟨n, ntfn, h1, e⟩⟩
+  · rw [e]; exact ⟨h.2.2.1, fun _ tcb' hx => ⟨tcb', hx, rfl⟩, rfl⟩
+  · rw [e]; exact q
+  · rw [e]
+    have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt s c
+      (fun c => { c with notificationCode := 0 }) h.2.1
+    generalize s.updateSchedContext c (fun c => { c with notificationCode := 0 }) = s1 at hInv1 h1 q
+    have hSelf : (s1.objects.insert n (.notification { ntfn with schedContextCode := 0 }))[n]? =
+        some (.notification { ntfn with schedContextCode := 0 }) :=
+      RobinHood.RHTable.getElem?_insert_self _ _ _ hInv1
+    have hNe : ∀ x, x ≠ n →
+        (s1.objects.insert n (.notification { ntfn with schedContextCode := 0 }))[x]? = s1.objects[x]? :=
+      fun x hx => RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun h => hx (eq_of_beq h).symm) hInv1
+    refine ⟨notificationWaiterConsistent_of_queueEnds_write q.1 h1 hSelf rfl rfl hNe,
+      fun tid tcb' hx => ?_, ?_⟩
+    · by_cases hk : tid.toObjId = n
+      · rw [hk, hSelf] at hx; cases hx
+      · rw [hNe _ hk] at hx; exact q.2.1 tid tcb' hx
+    · refine Eq.trans (funext fun k => ?_) q.2.2
+      unfold SystemState.replyViews SystemState.getObject?
+      show objReplyView (s1.objects.insert n _)[k]? = objReplyView s1.objects[k]?
+      by_cases hk : k = n
+      · subst hk; rw [hSelf, h1]; rfl
+      · rw [hNe _ hk]
+
 end finaliseStepInvariant
 
 /-- **The finalisation's timeout-budget checks refuse no reachable thread**: no
@@ -2310,6 +2351,9 @@ theorem finaliseFinalObject_preserves_ipcReachable (target : Nat) {st : SystemSt
       ⟨r.1, h.2.trans r.2⟩)
     (fun _ _ _ _ t h _ _ _ _ =>
       have r := h.1.cut t
+      ⟨r.1, h.2.trans r.2⟩)
+    (fun _ c h =>
+      have r := h.1.notificationLink c
       ⟨r.1, h.2.trans r.2⟩)
     target st ⟨.of_ipcReachable h hW, .refl st⟩ h.2.1 hL
   exact ⟨hFull', hInv', allTimeoutBudgetsNone_of_frame hB' h.2.2.1, hNC', hCh',

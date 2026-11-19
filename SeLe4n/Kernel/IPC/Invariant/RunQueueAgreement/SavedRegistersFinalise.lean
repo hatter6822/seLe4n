@@ -670,6 +670,30 @@ theorem endpointWaiter_notReady {s : SystemState} {e : SeLe4n.ObjId} {ep : Endpo
   · simp only [↓reduceIte] at hH
     rw [h.1 hH]; exact fun y => by cases y
 
+/-- **The notification unbind writes no saved register**: it writes a context's
+slot and a notification's. -/
+theorem unbindSchedContextNotification_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
+    (st : SystemState) (s : SeLe4n.SchedContextId) (hInv : st.objects.invExt) :
+    savedRegsKeptExcept W st (unbindSchedContextNotification st s) := .of_eq fun t => by
+  have n1 : ∀ X : SystemState, (∀ x : TCB, X.objects[t.toObjId]? ≠ some (.tcb x)) →
+      X.savedRegs t = none := fun X hX => by
+    cases hr : X.savedRegs t with
+    | none => rfl
+    | some r => obtain ⟨x, hx, -⟩ := savedRegs_eq_some_iff.mp hr; exact absurd hx (hX x)
+  rcases unbindSchedContextNotification_slots st s hInv t.toObjId with e | ⟨h1, h2⟩
+  · cases hr : st.savedRegs t with
+    | none =>
+      cases hr' : (unbindSchedContextNotification st s).savedRegs t with
+      | none => rfl
+      | some r =>
+        obtain ⟨x, hx, rfl⟩ := savedRegs_eq_some_iff.mp hr'
+        rw [e] at hx
+        rw [savedRegs_eq_some_iff.mpr ⟨x, hx, rfl⟩] at hr; cases hr
+    | some r =>
+      obtain ⟨x, hx, rfl⟩ := savedRegs_eq_some_iff.mp hr
+      exact savedRegs_eq_some_iff.mpr ⟨x, e.trans hx, rfl⟩
+  · rw [n1 _ h2, n1 _ h1]
+
 /-! ### The finalisation's census -/
 
 section
@@ -701,7 +725,7 @@ theorem finaliseFinalObject_savedRegsWrittenFree {e : CoreId} {st s : SystemStat
   have blocked : ∀ {a : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB}, P a → a.getTcb? t = some tcb →
       tcb.ipcState ≠ .ready → ∀ u, u = t → offCoreFree e st u := fun h hT hS u hu => by
     subst hu; exact offCoreFree_of_blockedSince B h.1.2 hT hS
-  refine (finaliseFinalObject_closed_linked P ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ target s
+  refine (finaliseFinalObject_closed_linked P ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ target s
     ⟨hR, hL.1, .refl s⟩ hL.1.2.1 hL.2).1.2.2
   · intro en q s ep t tcb h hE hH hT hC
     have R := h.1; have L := h.2.1
@@ -841,6 +865,12 @@ theorem finaliseFinalObject_savedRegsWrittenFree {e : CoreId} {st s : SystemStat
       (cutCancelledCallerHead_preserves_finaliseLoanBundle s t L)
       (savedRegsKeptExcept.of_map
         (cutCancelledCallerHead_getTcb?_map s t TCB.registerContext (fun _ => rfl) L.2.1)) none
+  · intro s c h
+    have R := h.1; have L := h.2.1
+    exact step h (readyEntry_stage R (unbindSchedContextNotification_runQueueStage s c))
+      (L.of_frame (unbindSchedContextNotification_preserves_ipcInvariantFull s c L.2.1 L.1)
+        (FinaliseFrame.unbindSchedContextNotification s c L.2.1))
+      (unbindSchedContextNotification_savedRegsKeptExcept s c L.2.1) none
 
 end
 
