@@ -4489,20 +4489,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // unbind takes the context off the blocked root task, its signal wakes
         // the root task, and its suspend of itself leaves the root task
         // current again.
-        invocation(
-            "refill-resume-partner",
-            TCB_RESUME,
-            PARTNER_TCB_CAP,
-            [0; 4],
-        ),
-        partner_step(
-            "refill-root-waits",
-            WAIT,
-            NOTIFICATION_CAP,
-            0,
-            [0, 0],
-            true,
-        ),
+        invocation("refill-resume-partner", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        partner_step("refill-root-waits", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
         invocation(
             "refill-unbind-root",
             SCHED_CONTEXT_UNBIND,
