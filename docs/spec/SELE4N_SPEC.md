@@ -1256,6 +1256,80 @@ the tables that map it). seLe4n's boot does the same on every deployment.
   word from the boot-built buffer. `root-ipc-buffer-cap` unmaps the buffer
   through the frame capability and maps it back.
 
+### 6.2.21 seL4's syscall numbers and invocation labels (WS-SX SX7, v0.37.33)
+
+A user thread traps as it does on seL4-MCS. The model's operation codes are
+internal; nothing a thread writes names one.
+
+- **The words.** `x7` holds seL4's syscall word, `0 - n` for Call (1) to
+  Yield (11) (`Syscall.ofWord?`). The label is `x1`'s `MessageInfo` label, bits
+  12 and up (`msgInfoWordLabel`). The reply capability is read from `x6`, seL4's
+  `replyRegister`. Recv takes a reply capability there; Wait takes none.
+- **The selection.** The kernel picks the operation from the syscall, the
+  invoked capability's type and the label (`Syscall.selectOperation`,
+  `invocationOperation`, `selectedOperationCode`), as seL4's `decodeInvocation`
+  does.
+  - On an endpoint, Send, NBSend and Call are IPC whatever the label
+    (`invocationOperation_endpoint`). On a notification they signal it
+    (`invocationOperation_notification`). Through a reply capability they reply.
+  - On any other type the label selects the operation, and only on a type that
+    takes it (`labelledOperationTakes`).
+  - A label the type does not take is refused `invalidSyscallNumber`, seL4's
+    `IllegalOperation`.
+  - The compiled entry runs `selectedOperationCodeK`, which allocates nothing.
+  - The untyped reset is retired, and its code 37 is reserved beside 8 and 34
+    (`SyscallId.retiredNumbers`). A retype through a capability with no
+    derivation child resets the untyped (§8.6).
+- **The answer.** Only a Call is answered with an error frame. Any other
+  refused syscall resumes with the registers it trapped with
+  (`SyscallOutcome.resumes`). The HAL's `SvcOutcome::Resumed` restores them.
+  - A syscall writes only the registers seL4 writes. A Send, NBSend or Yield
+    returns the caller's own words. Message delivery writes only `copyMRs`'s
+    registers, and a signal wake only the badge register. The value-returning
+    invocations reply only on Call.
+  - A caller its syscall leaves unanswered has no frame
+    (`SyscallOutcome.blocks`). seL4's `handleInvocation` replies only to a
+    caller still `Restart` after the invocation, so the reply goes to a
+    runnable caller (`TCB.isRunnable`), whichever thread its core runs next.
+    A caller blocked in IPC, suspended by its own syscall (a self-suspend, a
+    Call that links no reply) or destroyed (its own last capability deleted)
+    is answered nothing, and nothing is staged into its saved context
+    (`syscallReturnOutcome`, `syscallSuccessOutcome_returns_runnable`). The
+    core resumes the thread the committed state runs on it
+    (`restoreTargetOnCore`). Where a caller stopped inside its own syscall
+    resumes is WS-SX SX11.1.
+  - NBSend, NBRecv and NBWait do not block. An NBSend to an endpoint with no
+    receiver drops the message, and its drop decision is non-interfering
+    (`sendDropsMessage_lowEquivalent`).
+  - A capability fault is dropped by seL4's phase rule (`syscallDropsFault`),
+    and the drop is recorded in the refusal ledger.
+- **Page_Unmap and Page_Map.** Page_Unmap is invoked on the frame capability
+  and reads no message word (`vspaceUnmapFrameCap`). It unmaps the mapping the
+  capability records, then clears that record. A capability that records no
+  mapping unmaps nothing. Page_Map onto an entry in use answers
+  `seL4_DeleteFirst`, and `mappingConflict` is retired. Unify takes the
+  `(asid, vaddr)` decode that Unmap used to take.
+- **IPC as seL4 runs it.**
+  - A receive, and ReplyRecv's receive, first complete the thread's active
+    bound notification (`receiveIPC`).
+  - A Call that links no reply delivers its message and leaves the caller
+    `Inactive` (`sendIPC`, `receiveIPC`). This happens when no reply object
+    waits, or when the sender holds neither Grant nor GrantReply. It runs in
+    place on every arm, the long, capability-carrying and fault arms included.
+  - A Call whose caller has no TCB is refused `objectNotFound` on every arm.
+- **Scheduling contexts and notifications.**
+  - A notification and a scheduling context carry each other's link
+    (`Notification.schedContextCode`, `SchedContext.notificationCode`).
+  - SchedContext_Bind takes a notification capability
+    (`schedContext_bindNtfn`).
+  - SchedContext_Unbind refuses the context of the executing core's current
+    thread (`schedContextRunsOn`, seL4's check of `sc_tcb` against
+    `ksCurThread`) and unbinds the notification.
+  - Finalisation of either end clears the link at both ends, and the retire
+    guards read it.
+  - A notification's donation of its context on a wait is not built yet. It is
+    WS-SX SX8 (§10, `docs/planning/SEL4_ABI_FIDELITY_PLAN.md`).
+
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering
 assumptions for the initial single-core RPi5 target:
@@ -5164,9 +5238,9 @@ Every object is made by the untyped carve (`.untypedRetype`, syscall 36,
 in-place retype (`.lifecycleRetype`, syscall 8, whose number stays reserved —
 `SyscallId.retiredNumbers`), together with its abstract-extent scrub
 (`scrubObjectMemory`, `scrubExtent`).  Memory returns to its untyped through
-the untyped reset (a rewind of the capability's free index, once every carved
-object has left the store by its final delete), and is zeroed when it is carved
-again:
+the retype's reset (a carve through a capability with no derivation child
+starts at free index 0, once every carved object has left the store by its
+final delete), and is zeroed when it is carved again:
 
 - **`carveZeroFrame`** (`ScrubAndUntyped.lean`): a RAM frame, page table or
   VSpace root is zeroed at the page the allocator hands out — the untyped's own
@@ -7388,37 +7462,11 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   it holds `stateLevelLock` in write mode.  Copy and mint declare the source
   CNode in write mode, and the carve declares its authority CNode in write
   mode.
-- **The untyped reset** (`v0.36.6`, `.untypedReset`, syscall 37, `.retype`,
-  no message registers): seL4's `resetUntypedCap` behind `ensureNoChildren`,
-  since `v0.36.149`.  The arm resolves the invoked capability to its slot
-  (`untypedResetFromCap`, `untypedResetFromCap_ok`) and runs
-  `untypedResetSlot`: it refuses (`.revocationRequired`) while that slot has a
-  derivation child (`hasCdtChildren`), and while the untyped's child list still
-  records a carved object — an object a final delete could not retire outlives
-  its last capability there, and its memory is not handed out again; an empty
-  slot or a capability naming no object is `.invalidCapability`, and one naming
-  an object that is not an untyped `.untypedTypeMismatch`.  Otherwise it writes 0
-  to the invoked capability's free index in place (`setCapFreeIndex`): O(1), no
-  scan of the store, no erase and no unmap.  Every refusal precedes the write
-  (`untypedResetAdmittedAt`, `untypedResetPerformAt`,
-  `untypedResetSlot_of_admitted`), so the refusal-carrying dispatch runs it
-  through `RefusalCarrying.ofChecked` and keeps no pre-state.  The carved
-  objects leave the store earlier, each when its final capability is deleted
-  (`retireFinalObject`, §8.6), which is what makes the child list empty after a
-  revocation of the untyped's capability.  Nothing is zeroed here: the carve
-  zeroes a RAM page before any capability to it exists.  Payoff:
-  `untypedResetSlot_ok` (the refusals' negations and the write),
-  `untypedResetSlot_ok_freeIndex` (the capability holds index 0),
-  `untypedResetSlot_ok_uncarved` (nothing carved remains below its index) and
-  `untypedResetSlot_ok_frame` (only the slot's capability changes); bundles:
-  `untypedResetSlot_preserves_capabilityInvariantBundle`,
-  `untypedResetSlot_preserves_untypedMemoryInvariant`,
-  `untypedResetSlot_preserves_ipcInvariantFull`; cross-core confinement:
-  `untypedResetSlot_confinedToCores`.  It declares a static lock footprint
-  (`lockSet_untypedReset`: the caller's TCB and CSpace root read, the invoked
-  CNode written, the untyped read, the state-level lock read) and writes no
-  scheduler slot.  The reset removes no id, so it has no declassification
-  provenance to clear (witness: §5p recarves after a reset and reads no tag).
+- **The untyped reset** (`v0.36.6` to `v0.37.32`, `.untypedReset`, syscall
+  37) is retired at `v0.37.33` (WS-SX SX7.1). seL4 has no separate reset
+  invocation: `Untyped_Retype` through a capability with no derivation child
+  resets the untyped (`resetUntypedCap`), as the carve below does. Code 37 is
+  reserved (`SyscallId.retiredNumbers`).
 - **The retype resets a childless capability** (`v0.36.154`, WS-ZA ZA5.4
   part 41): seL4's `decodeUntypedInvocation`, where a capability whose
   `ensureNoChildren` succeeds is carved from free index 0.  The carve starts at
@@ -8452,7 +8500,7 @@ seLe4n extension: it sits after the type and before the length.
 | `replyRecv` | MCS `handleSyscall` `SysReplyRecv`: `handleInvocation` on the reply, then `handleRecv` | lookup, type, CanReceive on the endpoint | capability fault, receive phase, as `receive` |
 | `reply` | no MCS counterpart (MCS replies through the reply object) | lookup, type, right (extension) | `.illegalAuthority` |
 | `cspaceMint`, `cspaceCopy`, `cspaceMove`, `cspaceDelete`, `cspaceRevoke`, `mintReplyCap` | `decodeCNodeInvocation` | lookup, type, right (extension), length | `.illegalAuthority` |
-| `untypedRetype`, `untypedReset` | `decodeUntypedInvocation` | lookup, type, right (extension), length | `.illegalAuthority` |
+| `untypedRetype` | `decodeUntypedInvocation` | lookup, type, right (extension), length | `.illegalAuthority` |
 | `vspaceMap`, `vspaceUnmap`, `vspaceUnifyInstruction` | `decodeARMFrameInvocation` (seL4 masks the frame's rights instead of refusing) | lookup, type, right (extension), length | `.illegalAuthority` |
 | `pageTableMap`, `pageTableUnmap` | `decodeARMPageTableInvocation` | lookup, type, right (extension), length | `.illegalAuthority` |
 | `tcbSuspend`, `tcbResume`, `tcbSet*`, `tcbBindNotification`, `tcbUnbindNotification` | `decodeTCBInvocation` | lookup, type, right (extension), length | `.illegalAuthority` |

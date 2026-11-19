@@ -1,3 +1,128 @@
+## v0.37.33 — seL4's syscall set and invocation labels
+
+WS-SX SX7 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`). A user thread now
+traps with seL4-MCS's ABI: x7 names one of its 11 syscalls and the kernel
+selects the operation from the invoked capability's type and the message
+label, as seL4's `decodeInvocation` and `handleRecv` do. Before, x7 carried
+seLe4n's own operation number, one per kernel operation, and an error frame
+answered every syscall. SX7 closes here by the owner's decision ("Close and
+split", 2026-11-19); its remainder is new rows SX8–SX12.
+
+### Syscalls and labels (SX7.1, SX7.2)
+- `Syscall` is seL4-MCS's 11 (Call −1 … Yield −11, `syscall.xml`); x7 holds
+  the syscall's word. `Syscall.selectOperation` maps (syscall, capability
+  type, label) to the operation after the lookup, compiled allocation-free
+  as `selectedOperationCode` over `lookupSlotK`. Signal is Send on a
+  notification, a reply is Send on a reply capability, Wait on an endpoint
+  is a receive with no reply. No label selects an operation on an endpoint
+  or a notification.
+- Labels are seL4's generated `invocation_label` for aarch64 MCS; the
+  model-only calls take labels after seL4's last (56). `tcbSetAffinity`
+  keeps label 66 by the owner's decision.
+- **Retired with the numbers:** `untypedReset` (seL4 resets inside
+  `Untyped_Retype`, as the carve does with `retypeFreeIndex`), its slot
+  module, lock sets, NI arm and Rust wrappers; the per-operation syscall
+  numbers (`decodeSyscallId`, `encodeSyscallId`, the HAL's `SyscallId`
+  mirror).
+- **Errors only to Call.** A refused Send, NBSend or Reply-by-Send resumes
+  with its trapped registers (`SyscallOutcome.resumes`, the HAL's
+  `SvcOutcome::Resumed`), as `handleInvocation` answers only `if (isCall)`.
+  A capability fault is dropped by seL4's phase rule
+  (`syscallDropsFault`): a send-phase fault of a non-blocking invocation is
+  dropped (and recorded in the refusal ledger), a receive-phase fault is
+  always delivered.
+- **NBSend, NBRecv and NBWait do not block**: NBSend to an endpoint with no
+  receiver drops the message after the flow gate; NBRecv and NBWait with
+  nothing pending write badge 0 (`nbRecvFailedTransfer`, seL4's
+  `doNBRecvFailedTransfer`).
+- **ReplyRecv with no caller** replies to no one and still receives.
+
+### The reply register (SX7.3)
+- Recv and ReplyRecv read the reply capability from x6
+  (`API.receiveReplyAddr?`); the seam spills x6
+  (`writeFfiRegistersToTcb`, `ffiRegisterSpill`); the reply's payload is the
+  whole message. `abi_layout.expected` gains `register reply x6`.
+
+### Beyond the rows (each a seL4 behaviour the ABI exposed)
+- **Return registers:** a syscall writes only what seL4 writes. Send,
+  NBSend and Yield return the caller's own words; message delivery writes
+  only `copyMRs`'s registers; a signal wake writes the badge register alone;
+  Consumed, YieldTo, service query and the audit reads reply only on Call.
+- **Page_Unmap** is invoked on the frame capability with no message words
+  (`vspaceUnmapFrameCap`, `cspaceClearFrameMapping`); Page_Map onto an
+  entry in use answers `seL4_DeleteFirst` and `mappingConflict` retires.
+- **Bound notifications:** a receive, and ReplyRecv's receive, complete the
+  thread's active bound notification first (`receiveIPC`), in place and
+  with the notification write-locked.
+- **A Call that links no reply** (no reply object waiting, or a sender
+  without Grant and GrantReply) delivers its message and leaves the caller
+  `Inactive`, on the send side and the receive side, single-core, frozen
+  and in place; a Call whose caller has no TCB is refused `objectNotFound`
+  on every arm.
+- **A scheduling context and a notification** (seL4-MCS
+  `ntfnSchedContext` / `scNotification`): the link fields; SchedContext_Bind
+  on a notification capability (`schedContext_bindNtfn`); SchedContext_Unbind
+  as seL4-MCS runs it: it unbinds the notification, succeeds on a context
+  bound to no thread, and refuses the executing core's current thread's
+  context `illegalState` (owner's decision "Match seL4"; the
+  unbind-and-reschedule path, `schedContextUnbindOnCoreWriteSet` and
+  `schedLockSet_schedContextUnbindOnCore`'s executing-core argument are
+  deleted); finalisation clears the link at both ends, and the retire guards
+  read it.
+- **Allocation:** the unbind's running-core question is asked without
+  boxing the executing core (`schedContextRunsOn`); the notification bind's
+  store compiles without a closure (`storeBindNotificationImpl`); the fault
+  spill and the decode bound test take no closure.
+
+### The return outcome answers only a runnable caller
+- `syscallReturnOutcome` decided "blocks" from the caller's IPC state alone,
+  so a caller its syscall left IPC-ready but `Inactive` (a self-TCB_Suspend,
+  a Call that links no reply) or destroyed (its own last capability deleted)
+  was handed a frame, and the frame was staged into its saved context. The
+  trap layer always resumed the committed state's current thread (the
+  restore is committed before the outcome tag is read), so no stopped thread
+  kept running; a later TCB_Resume ran the stopped thread past its SVC with
+  a reply seL4 never writes. `origin/main` has the same decision (its
+  self-suspend witness pinned `.returns .zero`).
+- Now the reply goes to a caller that is runnable (`TCB.isRunnable`),
+  seL4's `handleInvocation` test (the caller still `Restart`); a caller
+  with no TCB gets no frame. The compiled words read `tcbWithholdsReply`
+  off the TCB's codes and its thread-state scalar (`tcbWithholdsReply_eq`),
+  allocating nothing. `syscallReturnOutcome_returns_runnable` and
+  `syscallSuccessOutcome_returns_runnable`: a returned frame names a
+  runnable caller. A runnable caller its own syscall preempted keeps its
+  answer in its saved context, as seL4 writes the reply before
+  `schedule()`. The `_ipcBlocked` lemmas became `_not_runnable`.
+- `SyscallReturnAbiSuite`: 9g (self-suspend) expects no frame and an
+  untouched context; 9g' (a no-reply Call that delivers) and 9g'' (a
+  destroyed caller) are new.
+
+### Rust
+- `sele4n-types` / `sele4n-abi` / `sele4n-sys` encode the seL4 word in x7,
+  the label in x1 and the reply capability in x6; the HAL prefilter decodes
+  `Syscall::from_word`.
+- The Tier-4 exerciser traps with the SX7 ABI: `RoundTrip::reply` (x6; a
+  receive without one is a Wait), `TrapTrip::x6`, `Dispatched::Resumed`
+  for refused non-Calls. `cap-fault-to-handler-without-reply` holds seL4's
+  delivery of a fault to a handler with no reply object (the handler woken
+  with the fault, the faulter `Inactive`). New heap scenarios:
+  HEAP_SCENARIOS_PLACEHOLDER.
+
+### Plan, debt and docs
+- `SEL4_ABI_FIDELITY_PLAN.md`: SX7 landed; new rows SX8 (notification
+  context donation and return, with the seL4 conformance table), SX9
+  (PageTable_Unmap teardown and per-frame W^X), SX10 (per-invocation rights
+  as `Option AccessRight`), SX11 (the Running state per core), SX12 (the
+  compound syscalls' invoke phase); the old SX8–SX11 are SX13–SX16, WS-CV's
+  folded rows with them (CV1.2 = SX16.1, CV5.2 = SX16.2). Owner decisions
+  D18–D21.
+- `REGISTERED_DEBT.md`: a new row after WS-CB for a capability right to map
+  uncached RAM for non-coherent DMA (the default stays refused); the raw-slot
+  row's families (2) and (7) move from SX7.1 to SX8.1.
+
+### Heap readings
+HEAP_READINGS_PLACEHOLDER
+
 ## v0.37.32 — capability arguments are extra capabilities, as seL4's
 
 WS-SX SX6 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`, D6–D12). Every
