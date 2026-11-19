@@ -966,6 +966,16 @@ run_check "INVARIANT" rg -n '\| \.blockedOnCall _ => !\(\(sTcb\.ipcCanGrant \|\|
 run_check "INVARIANT" rg -n '^theorem receiveCallNoLinkTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReceiveInPlace.lean
 # A call whose caller has no TCB is refused by every arm with the state unchanged:
 # the arm linking no reply asks for the caller where the linking arm stores it.
+# A receive taking a long caller, a capability-carrying caller or a queued fault
+# that it links to no reply runs in place too, the caller left `Inactive`.
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReceiveTakeR[^\n]*(\n([ \t][^\n]*)?)*\.ok \(\(\), performReceiveCallNoLinkDeliveredLong " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReceiveTakeR[^\n]*(\n([ \t][^\n]*)?)*\.ok \(\(\), performCallNoLinkTakeCapsDelivered " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReceiveTakeR[^\n]*(\n([ \t][^\n]*)?)*\.ok \(\(\), performCallNoLinkTakeCapsDeliveredLong " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReceiveTakeR[^\n]*(\n([ \t][^\n]*)?)*\.ok \(\(\), performFaultReceiveNoLinkDelivered " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" rg -n '^theorem receiveCallNoLinkTakeLong_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReceiveInPlace.lean
+run_check "INVARIANT" rg -n '^theorem receiveFaultNoLinkTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReceiveInPlace.lean
+run_check "INVARIANT" rg -n '^theorem receiveCallNoLinkTakeCapsTransfer_delivered($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n '^theorem receiveCallNoLinkTakeCapsTransferLong_delivered($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_refuses_missingCaller($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_noLink_missingCaller($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_link_missingCaller($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean

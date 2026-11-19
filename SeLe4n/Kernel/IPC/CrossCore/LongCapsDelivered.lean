@@ -554,4 +554,58 @@ which the take leaves unwritten (the caller stays blocked). -/
       (capStepsApply endpointId true rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
       receiver core layout rf len s badgeWord badged
 
+/-! ## The take of a capability-carrying call that links no reply -/
+
+/-- **The no-link take of a call that transfers capabilities, delivered**: the
+caller popped, stored `.ready` and made `Inactive` (none of its registers
+written, as seL4's `receiveIPC`), the receiver made ready, the transfer in
+place, then the receiver's frame with the transfer's report, its words read
+from the caller's saved registers before the take.  No thread is woken. -/
+@[noinline] def performCallNoLinkTakeCapsDelivered (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (s : SeLe4n.ThreadId) (nextCode : Nat)
+    (receiver : SeLe4n.ThreadId) (layout : SeLe4n.SyscallRegisterLayout) (len : Nat)
+    (w0 w2 w3 w4 w5 : UInt64)
+    (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
+  let X := (((storePopHead st endpointId false s (ThreadId.ofOptCode nextCode)).updateTcb
+    s receiverReady).updateTcb s callerInactive).updateTcb receiver receiverReady
+  capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
+    finishTakeCaps (capStepsInfo endpointId true x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+      (capStepsApply endpointId true rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
+      s receiver layout len w0 w2 w3 w4 w5
+
+/-- **The no-link take of a long call that transfers capabilities,
+delivered**: as `performCallNoLinkTakeCapsDelivered`, the receiver's frame
+carrying the transfer's report and the caller's overflow words copied after
+it. -/
+@[noinline] def performCallNoLinkTakeCapsDeliveredLong (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (s : SeLe4n.ThreadId) (nextCode : Nat)
+    (receiver : SeLe4n.ThreadId) (len : Nat) (badgeWord : SeLe4n.Badge) (badged : Bool)
+    (w0 w1 w2 w3 : UInt64)
+    (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
+  let X := (((storePopHead st endpointId false s (ThreadId.ofOptCode nextCode)).updateTcb
+    s receiverReady).updateTcb s callerInactive).updateTcb receiver receiverReady
+  capTransferK X endpointId sv sb sroot count rv rb rroot fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
+    finishTakeCapsLong (capStepsInfo endpointId true x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+      (capStepsApply endpointId true rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
+      s receiver len badgeWord badged w0 w1 w2 w3
+
+/-- The no-link take's state before its transfer reads every buffer and CNode
+where the receive found it. -/
+theorem ipcBufferReadsAgree_callNoLinkTakeReady (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (s : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (receiver : SeLe4n.ThreadId)
+    (hNo : st.objects.noResizeDue) :
+    ipcBufferReadsAgree ((((storePopHead st endpointId false s next).updateTcb
+      s receiverReady).updateTcb s callerInactive).updateTcb receiver receiverReady) st := by
+  have hR : ∀ t : TCB, (receiverReady t).spaceCells[2] = t.spaceCells[2] ∧
+      (receiverReady t).ipcBuffer = t.ipcBuffer := fun _ => ⟨rfl, rfl⟩
+  have h1 := storePopHead_noResizeDue st endpointId false s next hNo
+  have h2 := updateTcb_noResizeDue _ s receiverReady h1
+  have h3 := updateTcb_noResizeDue _ s callerInactive h2
+  exact (ipcBufferReadsAgree_updateTcb _ receiver receiverReady hR h3).trans
+    ((ipcBufferReadsAgree_updateTcb _ s callerInactive (fun _ => ⟨rfl, rfl⟩) h2).trans
+      ((ipcBufferReadsAgree_updateTcb _ s receiverReady hR h1).trans
+        (ipcBufferReadsAgree_storePopHead st endpointId false s next hNo)))
+
 end SeLe4n.Kernel
