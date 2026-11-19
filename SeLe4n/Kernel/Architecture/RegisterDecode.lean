@@ -446,12 +446,17 @@ theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
   if layout.capPtrReg.val < regCount ∧ layout.msgInfoReg.val < regCount ∧
       layout.syscallNumReg.val < regCount ∧ regsBelow layout.msgRegs regCount = true then
     let capAddr := CPtr.ofWord (readRegWord regs layout.capPtrReg)
+    -- The code is asked first and the message info's refusal still answers
+    -- first: a code naming no operation builds no message info.
+    match decodeSyscallCode opCode with
+    | .error e =>
+      match decodeMsgInfoWord (readRegWord regs layout.msgInfoReg) with
+      | .error e' => .error e'
+      | .ok _ => .error e
+    | .ok syscallId =>
     match decodeMsgInfoWord (readRegWord regs layout.msgInfoReg) with
     | .error e => .error e
     | .ok msgInfo =>
-    match decodeSyscallCode opCode with
-    | .error e => .error e
-    | .ok syscallId =>
       let base : SyscallDecodeResult :=
         { capAddr, msgInfo, syscallId, msgRegs := layout.msgRegs.map (readReg regs),
           inlineCount := layout.msgRegs.size, overflowCount := 0,
@@ -475,7 +480,7 @@ theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
   try rfl
   rw [decodeCapPtr_readReg, decodeMsgInfoWord_readReg]
   rcases decodeMsgInfo (readReg regs layout.msgInfoReg) with e | msgInfo
-  · rfl
+  · rcases decodeSyscallCode opCode with e' | syscallId <;> rfl
   rcases decodeSyscallCode opCode with e | syscallId
   · rfl
   simp only [Array.size_map]

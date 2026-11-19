@@ -4911,10 +4911,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             returns: None,
         },
         // Every other syscall with a message past its inline words, five
-        // words (six for the service register, whose fifth is its own
-        // argument, routed `overflowed`; the rest read their inline words
-        // alone), each a `Call` whose label the invoked capability's type
-        // does not take — the interrupt control's, or for its own Get the
+        // words (the rest read their inline words alone; the service
+        // register's, six words on its own capability, is the one that
+        // reaches its arm, below), each a `Call` whose label the invoked
+        // capability's type does not take — the interrupt control's, or for its own Get the
         // service registry's — so the selection refuses it
         // `IllegalOperation` (the model's `invalidSyscallNumber`) and changes
         // nothing (the receive's, a fault, is queued with the other
@@ -5138,13 +5138,21 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             5,
             INVALID_SYSCALL_NUMBER,
         ),
-        overflowed(
-            "overflowed-service-register",
-            SERVICE_REGISTER,
-            IRQ_CONTROL_CAP,
-            6,
-            INVALID_SYSCALL_NUMBER,
-        ),
+        // The service register on its own capability, six words and no
+        // extra capability: the `overflowed` route reads its fifth word from
+        // the root task's IPC buffer (zero, so no grant), the decode admits
+        // it, and the missing endpoint refuses it `TruncatedMessage` before
+        // any write (`resolveServiceEndpointK`).
+        RoundTrip {
+            selects: None,
+            ..overflowed(
+                "overflowed-service-register",
+                SERVICE_REGISTER,
+                SERVICE_REGISTRY_CAP,
+                6,
+                TRUNCATED_MESSAGE,
+            )
+        },
         // A declassify invokes the audit-trail capability (its target is
         // extra capability 0), so the interrupt control does not take it.
         overflowed(

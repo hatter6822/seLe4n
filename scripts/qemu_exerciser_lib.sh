@@ -274,9 +274,14 @@ for driver in drivers:
         # boxed fields) and gained seL4's badge (a UInt64 scalar), sporadic flag
         # (a Bool scalar) and refill limit `refillMax` (a boxed Nat): the cell
         # count is unchanged and the bytes move by that one size class.
+        # WS-SX SX7 gave each a link word to the other (a boxed Nat field):
+        # the notification's record is `lean_alloc_ctor(0, 5, 75)`, 8 + 5 * 8 +
+        # 75 = 123 bytes, the 128-byte cell (was 4 boxed fields, 115 bytes, the
+        # 120-byte cell), and the context's `lean_alloc_ctor(0, 33, 11)`, 283
+        # bytes, the 288-byte cell (was 280).  Cell counts are unchanged.
         carve_cells = {
-            "endpoint/0": (6, 248), "notification/0": (6, 240), "reply/0": (10, 256),
-            "tcb/0": (25, 2368), "sched-context/7": (8, 432), "cnode/2": (23, 1136),
+            "endpoint/0": (6, 248), "notification/0": (6, 248), "reply/0": (10, 256),
+            "tcb/0": (25, 2368), "sched-context/7": (8, 440), "cnode/2": (23, 1136),
             "frame/0": (6, 152), "page-table/0": (8, 232), "vspace-root/0": (101, 3568),
             "untyped/12": (7, 184),
         }

@@ -7254,6 +7254,14 @@ run_negative_check "INVARIANT" rg -n 'PagePermissions\.ofNat\?|pagePermissionsOf
 run_check "INVARIANT" rg -n -U '          \| \.ok \(slot, _, _\) => vspaceUnmapFrameCap executingCore slot st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^def vspaceUnmapFrameCap($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
 run_check "INVARIANT" rg -n '^theorem vspaceUnmapFrameCap_eq_teardownAt($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# Page_Unmap's live arm answers the clear's questions before the teardown and
+# hands the state to the in-place form alone, joined by a proof.
+run_check "INVARIANT" rg -n -U '^          if vspaceUnmapFrameCapAdmittedAt cnode slot st then\n            \.ok \(\(\), vspaceUnmapFrameCapPerformAt executingCore cnode slot st\)$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnmapFrameCap_eq_performAt($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def vspaceUnmapFrameCapPerformAt($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FrameFinalise.lean
+# A resume of a thread that is not stopped hands the state back whole.
+run_check "INVARIANT" rg -n '^        if Lifecycle\.Suspend\.restartLeavesAsIs st vtid\.val then \.ok \(\(\), st\) else$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^theorem restartThreadOnCore_of_leavesAsIs($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Restart.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_vspaceUnifyInstruction_unauthorized($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # The gate must be present in both ASID-naming arms.  That is guaranteed by the
 # `…_unauthorized` theorems anchored above rather than by a grep: each

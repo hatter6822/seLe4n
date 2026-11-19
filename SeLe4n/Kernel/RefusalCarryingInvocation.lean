@@ -688,6 +688,9 @@ refusal is read where it is, never rebuilt. -/
       match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
       | .error e => .error (e, st)
       | .ok vtid =>
+        -- A thread that is not stopped is left as it is
+        -- (`restartThreadOnCore_of_leavesAsIs`): the state handed back whole.
+        if Lifecycle.Suspend.restartLeavesAsIs st vtid.val then .ok ((), st) else
         RefusalCarrying.ofCheckedThen (Lifecycle.Suspend.resumeAdmitted st vtid.val)
           (fun st => Lifecycle.Suspend.resumePerform
             (retirePendingFaultForResume st vtid.val) vtid.val executingCore)
@@ -998,13 +1001,19 @@ refusal is read where it is, never rebuilt. -/
       -- `Page_Unmap`: the invoked capability's slot resolved on its words
       -- (`resolveCallerCapSlotK`), the page its record names taken down on the
       -- record's words (`vspaceUnmapFrameCapTeardownAt`), then the record
-      -- dropped where it lies (`vspaceUnmapFrameCap_eq_teardownAt`).
+      -- dropped where it lies (`vspaceUnmapFrameCap_eq_teardownAt`).  Admitted
+      -- (`vspaceUnmapFrameCapAdmittedAt`), the clear's questions are answered
+      -- before the teardown, so the state is not held for a refusal and both
+      -- writes land in place (`vspaceUnmapFrameCap_eq_performAt`).
       resolveCallerCapSlotK tid capAddr (syscallRequiredRight .vspaceUnmap) st
         (fun e => .error (e, st)) fun cnode slot _ _ =>
-          match cspaceClearFrameMappingImpl ⟨cnode, slot⟩
-              (vspaceUnmapFrameCapTeardownAt executingCore cnode slot st) with
-          | .error e => .error (e, st)
-          | .ok r => .ok r
+          if vspaceUnmapFrameCapAdmittedAt cnode slot st then
+            .ok ((), vspaceUnmapFrameCapPerformAt executingCore cnode slot st)
+          else
+            match cspaceClearFrameMappingImpl ⟨cnode, slot⟩
+                (vspaceUnmapFrameCapTeardownAt executingCore cnode slot st) with
+            | .error e => .error (e, st)
+            | .ok r => .ok r
     | _ => .error (.invalidCapability 0, st)
   | .vspaceUnifyInstruction =>
     match cap.target with
@@ -1262,6 +1271,10 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hT]
       | ok vT =>
         dsimp only
+        split
+        · next hL =>
+          simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hT,
+            Lifecycle.Suspend.restartThreadOnCore_of_leavesAsIs (executingCore := executingCore) hL]
         refine RefusalCarrying.ofCheckedThen_eq _ _ _ _ _ _ ?_ ?_
         · simp only [dispatchInvocationBy, hT]
           split <;> simp_all
@@ -1698,8 +1711,10 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
         obtain ⟨⟨cnode, slot⟩, _, _⟩ := triple
         simp only [RefusalCarrying.ofKernel, dispatchInvocationBy, hR,
           vspaceUnmapFrameCap_eq_teardownAt]
-        cases cspaceClearFrameMappingImpl { cnode := cnode, slot := slot }
-          (vspaceUnmapFrameCapTeardownAt executingCore cnode slot st) <;> rfl
+        split
+        · next hA => rw [vspaceUnmapFrameCap_eq_performAt executingCore cnode slot st hA]
+        · cases cspaceClearFrameMappingImpl { cnode := cnode, slot := slot }
+            (vspaceUnmapFrameCapTeardownAt executingCore cnode slot st) <;> rfl
     all_goals rfl
   case vspaceUnifyInstruction =>
     cases target

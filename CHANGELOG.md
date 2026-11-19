@@ -97,6 +97,39 @@ split", 2026-11-19); its remainder is new rows SX8–SX12.
   untouched context; 9g' (a no-reply Call that delivers) and 9g'' (a
   destroyed caller) are new.
 
+### A kernel entry allocates nothing (heap-gate regressions on this branch)
+- **Page_Unmap copied the object table on every call.** The live arm held
+  the state for the record clear's refusal across the teardown, so the
+  in-place root store copied the object table (a 1052672-byte block) and
+  the CNode it then wrote (its 8192-byte slot array), about 1 MiB of kernel
+  heap per call, and built a closure for the clear (21-26 cells per call).
+  Now the clear's two questions and the object table's no-resize test are
+  asked before any write (`vspaceUnmapFrameCapAdmittedAt`) and the state is
+  handed to the in-place form alone (`vspaceUnmapFrameCapPerformAt`, out of
+  line so the CNode store is specialised); `vspaceUnmapFrameCap_eq_performAt`
+  joins it to the specification, through
+  `vspaceUnmapFrameCapTeardownAt_objects_ne` (the root's store over a
+  present key rewrites it in place and leaves every other object's lookup
+  as it was, on every table, `RHTable.get?_insert_ne_of_findsInPlace`). The
+  specification is unchanged. Not on `origin/main`, whose unmap is the
+  VSpace-capability form.
+- **TCB_Resume of a thread that is not stopped** built the restart's
+  `.ok (st, none)` (2 cells); the dispatch now asks `restartLeavesAsIs`
+  first and hands the state back whole (`restartThreadOnCore_of_leavesAsIs`).
+- **A label that selects no operation** (a Send, Call, Reply or Signal on a
+  capability whose type takes no operation at its label) built a
+  `MessageInfo` (one 40-byte cell) in the fault classifier's decode before
+  the code was refused; the compiled decode asks the code first and keeps
+  the message-info refusal's priority (`decodeSyscallArgsFromState_eq_impl`).
+- **Retype carve pins:** the notification's record is
+  `lean_alloc_ctor(0, 5, 75)` (123 bytes, the 128-byte cell; was 120) and the
+  scheduling context's `lean_alloc_ctor(0, 33, 11)` (283 bytes, the 288-byte
+  cell; was 280), each grown by its link word; the cell counts are
+  unchanged, and the gate's byte pins move to 248 and 440.
+- `overflowed-service-register` runs on the service-registry capability, so
+  the `overflowed/serviceRegister` route has a measured round trip (refused
+  `TruncatedMessage`: no endpoint extra capability).
+
 ### Rust
 - `sele4n-types` / `sele4n-abi` / `sele4n-sys` encode the seL4 word in x7,
   the label in x1 and the reply capability in x6; the HAL prefilter decodes

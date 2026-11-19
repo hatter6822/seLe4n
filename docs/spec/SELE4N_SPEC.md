@@ -1277,6 +1277,9 @@ internal; nothing a thread writes names one.
   - A label the type does not take is refused `invalidSyscallNumber`, seL4's
     `IllegalOperation`.
   - The compiled entry runs `selectedOperationCodeK`, which allocates nothing.
+    The compiled frame decode asks the operation code before it builds the
+    message info, so a label that selects no operation allocates nothing
+    either; the message info's refusal still answers first.
   - The untyped reset is retired, and its code 37 is reserved beside 8 and 34
     (`SyscallId.retiredNumbers`). A retype through a capability with no
     derivation child resets the untyped (§8.6).
@@ -1306,7 +1309,11 @@ internal; nothing a thread writes names one.
 - **Page_Unmap and Page_Map.** Page_Unmap is invoked on the frame capability
   and reads no message word (`vspaceUnmapFrameCap`). It unmaps the mapping the
   capability records, then clears that record. A capability that records no
-  mapping unmaps nothing. Page_Map onto an entry in use answers
+  mapping unmaps nothing. It allocates nothing: the record clear's questions
+  and the object table's no-resize test are asked before any write
+  (`vspaceUnmapFrameCapAdmittedAt`), and the teardown and the clear then write
+  the state in place (`vspaceUnmapFrameCapPerformAt`,
+  `vspaceUnmapFrameCap_eq_performAt`). Page_Map onto an entry in use answers
   `seL4_DeleteFirst`, and `mappingConflict` is retired. Unify takes the
   `(asid, vaddr)` decode that Unmap used to take.
 - **IPC as seL4 runs it.**

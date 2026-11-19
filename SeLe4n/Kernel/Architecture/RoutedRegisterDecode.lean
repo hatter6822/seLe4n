@@ -1077,6 +1077,7 @@ theorem decodeSyscallArgsFromState_of_routedRefused
       simp only [decodeMsgInfoWord_readReg]
       rw [if_pos hB]
       simp only [hM]
+      split <;> rfl
     · simp only [hM] at h
       by_cases hLen : mi.length ≤ layout.msgRegs.size ∨
           syscallNumberReadsOverflow opCode = false <;>
@@ -1209,7 +1210,7 @@ theorem decodeSyscallArgsFromState_code_swap
       layout.syscallNumReg.val < regCount ∧ layout.msgRegs.all (·.val < regCount) = true
   · rw [if_pos hB] at h ⊢
     cases hM : decodeMsgInfoWord (readRegWord regs layout.msgInfoReg) with
-    | error e => simp only [hM] at h; cases h
+    | error e => simp only [hM] at h; split at h <;> cases h
     | ok mi =>
     simp only [hM] at h ⊢
     unfold decodeSyscallCode at h ⊢
