@@ -1133,7 +1133,7 @@ is the specification's (`faultDeliverHandledWords_eq`). -/
       match st.getTcb? r with
       | some rt =>
         if callLinksNoReply cap.canLinkReply rt &&
-            sendWakesInPlaceCode st epId r rt.queueNextCode then
+            sendWakesInPlaceCode st epId r rt.queueNextCode && !tid.isReserved then
           recordFaultWords
             (performFaultCallNoReplyDelivered st epId tid r rt.queueNextCode cap k flag w0 w1 lk
               ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 c) tid
@@ -1212,8 +1212,14 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
         split
         · next hNR =>
           simp only [Bool.and_eq_true] at hNR
-          obtain ⟨hNL, hW⟩ := hNR
+          obtain ⟨⟨hNL, hW⟩, hRsv⟩ := hNR
           rw [sendWakesInPlaceCode_eq, TCB.ofOptCode_queueNextCode] at hW
+          have hC : (lookupTcb st tid).isSome = true := by
+            refine lookupTcb_isSome_of (by simpa using hRsv) ?_
+            unfold resolveFaultHandler at hRes
+            split at hRes
+            · cases hRes
+            · next t hT0 => rw [hT0]; rfl
           have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
           have hT' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
           have hNo : st.objects.noResizeDue := by
@@ -1225,7 +1231,7 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
             (.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) (faultMessage f ctx tgt.cap.badge)
             c rfl
             (by unfold sendCapRequest; split <;> (try rfl); split <;> rfl)
-            hE hH hT' (callRendezvousLinks_false_of hT hNL) hW
+            hE hH hT' (callRendezvousLinks_false_of hT hNL) hW hC
           unfold faultDeliverOnCore
           simp only [hRes, hEp, Option.bind_some, hH, hD]
           rw [recordPendingFault_eq_words]

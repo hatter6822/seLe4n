@@ -833,6 +833,9 @@ theorem endpointCall_preserves_dualQueueSystemInvariant
             | error e => simp [hStore1] at hStep
             | ok st2 =>
               simp only [hStore1, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               have hObjInvSt2 := storeTcbReceiveComplete_preserves_objects_invExt
                 pair.2.2 st2 pair.1 _ hObjInvPop1 hStore1
@@ -2819,6 +2822,9 @@ theorem endpointCall_preserves_allPendingMessagesBounded
             | error e => simp [hStore] at hStep
             | ok st2 =>
               simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               have hObjInv2 := storeTcbReceiveComplete_preserves_objects_invExt stPop st2 receiver _ hObjInv1 hStore
               exact allPendingMessagesBounded_of_readViewAgreement
@@ -2924,6 +2930,9 @@ theorem endpointCall_preserves_badgeWellFormed
             | error e => simp [hStore] at hStep
             | ok st2 =>
               simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               have hObjInv2 := storeTcbReceiveComplete_preserves_objects_invExt stPop st2 receiver _ hObjInv1 hStore
               exact badgeWellFormed_of_updateTcb_threadState caller .Inactive

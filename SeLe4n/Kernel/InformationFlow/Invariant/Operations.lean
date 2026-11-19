@@ -2283,6 +2283,9 @@ theorem endpointCall_preserves_projection
             | error e => simp [hTcbStore] at hStep
             | ok st2 =>
               simp only [hTcbStore, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hStEq⟩ := hStep; subst hStEq
               have hObjInv2 := storeTcbReceiveComplete_preserves_objects_invExt st1 st2 receiver _ hObjInv1 hTcbStore
               have hProjTcb := storeTcbReceiveComplete_preserves_projection ctx observer

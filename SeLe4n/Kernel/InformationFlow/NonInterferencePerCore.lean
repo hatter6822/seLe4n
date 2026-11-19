@@ -1271,6 +1271,8 @@ theorem endpointCall_confinedToBootCore (st st' : SystemState)
             split at hStep
             · simp at hStep
             · next st2 hStore =>
+              split at hStep
+              · simp at hStep
               simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep
               subst hEq

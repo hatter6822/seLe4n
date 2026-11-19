@@ -2753,6 +2753,11 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                     (some (sendPayloadMessage st caller payload)) with
                 | .error e => .error e
                 | .ok st'' =>
+                    -- The caller's TCB is asked for where the linking arm stores
+                    -- it: a missing caller refuses here as it does there.
+                    match lookupTcb st caller with
+                    | none => .error .objectNotFound
+                    | some _ =>
                     .ok ((), (removeRunnable (ensureRunnable st'' receiver) caller).updateTcb caller
                       fun t => { t with threadState := .Inactive })
         | none =>

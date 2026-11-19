@@ -1615,7 +1615,7 @@ does; any other call takes the general arm. -/
                 match st.getTcb? r with
                 | some rt =>
                     if callLinksNoReply cap.canLinkReply rt then
-                      if (st.getTcb? tid).isSome &&
+                      if (lookupTcb st tid).isSome &&
                           endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                             (ctx.endpointLabelOf epId) &&
                           sendWakesInPlaceCode st epId r rt.queueNextCode &&
@@ -1688,10 +1688,11 @@ theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
                 exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.1.2
               have hD := callDispatchChecked_noReply_inPlace ctx st epId ep tid r rt
                 (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _
-                executingCore (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hS)
+                executingCore (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)
+                  (getTcb?_isSome_of_lookupTcb hS))
                 (hReq epId _ _ _) ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
                 ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
-                (callRendezvousLinks_false_of hT hNL) hW hFlow
+                (callRendezvousLinks_false_of hT hNL) hW hS hFlow
               simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD]
               rw [← TCB.optCode_queueNext,
                 ← stageWokenDelivery_callNoReply _ _ _ _ _ _ _ _ _ _ _ hNo hSz]
@@ -1891,7 +1892,7 @@ as seL4's `copyMRs` does; any other call takes the general arm. -/
                 match st.getTcb? r with
                 | some rt =>
                     if callLinksNoReply cap.canLinkReply rt then
-                      if (st.getTcb? tid).isSome &&
+                      if (lookupTcb st tid).isSome &&
                           endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                             (ctx.endpointLabelOf epId) &&
                           sendWakesInPlaceCode st epId r rt.queueNextCode then
@@ -1966,10 +1967,11 @@ theorem endpointCallLongCheckedArmR_eq_general (ctx : LabelingContext)
                 exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW'.1.1.1.2
               have hD := callDispatchChecked_noReply_inPlace ctx st epId ep tid r rt
                 (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _
-                executingCore (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hS)
+                executingCore (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)
+                  (getTcb?_isSome_of_lookupTcb hS))
                 (hReq epId _ _ _) ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
                 ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
-                (callRendezvousLinks_false_of hT hNL) hW hFlow
+                (callRendezvousLinks_false_of hT hNL) hW hS hFlow
               simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD]
               rw [← TCB.optCode_queueNext]
               rw [← stageWokenDelivery_callNoReply_long st epId tid r rt.queueNext
@@ -3212,7 +3214,7 @@ write. -/
                 match st.getTcb? r with
                 | some rt =>
                     if callLinksNoReply cap.canLinkReply rt then
-                      if endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                      if !tid.isReserved && endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                             (ctx.endpointLabelOf epId) &&
                           sendWakesInPlaceCode st epId r rt.queueNextCode then
                         match st.getTcb? tid with
@@ -3301,7 +3303,7 @@ theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
             split
             · next hG =>
               simp only [Bool.and_eq_true] at hG
-              obtain ⟨hFlow, hW⟩ := hG
+              obtain ⟨⟨hRsv, hFlow⟩, hW⟩ := hG
               rw [sendWakesInPlaceCode_eq, TCB.ofOptCode_queueNextCode] at hW
               have hNo : st.objects.noResizeDue := by
                 have hW' := hW
@@ -3311,6 +3313,7 @@ theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
               split
               · next ctcb hS =>
                 have hSome : (st.getTcb? tid).isSome = true := by rw [hS]; rfl
+                have hC := lookupTcb_isSome_of (by simpa using hRsv) hSome
                 split
                 · next hShort =>
                   simp only [decide_eq_true_eq] at hShort
@@ -3322,7 +3325,7 @@ theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
                     executingCore
                     (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hSome)
                     ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
-                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hLk hW hFlow
+                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hLk hW hC hFlow
                   simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH]
                   rw [hD, TransferringFrameRouted.sendCapRequest (epId := epId) (r := r) _ _ _
                       (by simp only [hE, Option.bind_some, hH]) hS (hFrame ctcb hS) hTr hShort,
@@ -3353,7 +3356,7 @@ theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
                     executingCore
                     (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hSome)
                     ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
-                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hLk hW hFlow
+                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hLk hW hC hFlow
                   simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH]
                   rw [hD, sendCapRequest_routedLong st epId tid r ctcb rf capAddr mi sid _ _ _
                       (by simp only [hE, Option.bind_some, hH]) hS (hFrame ctcb hS) hR hGt

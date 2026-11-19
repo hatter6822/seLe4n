@@ -964,6 +964,12 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReceiveTakeR[^\n]*(\n([ \t
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReceiveTakeR[^\n]*(\n([ \t][^\n]*)?)*\.ok \(\(\), performReceiveCallNoLinkDelivered " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
 run_check "INVARIANT" rg -n '\| \.blockedOnCall _ => !\(\(sTcb\.ipcCanGrant \|\| sTcb\.ipcCanGrantReply\) && suppliesReply\)' SeLe4n/Kernel/IPC/CrossCore/LongReceiveInPlace.lean
 run_check "INVARIANT" rg -n '^theorem receiveCallNoLinkTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReceiveInPlace.lean
+# A call whose caller has no TCB is refused by every arm with the state unchanged:
+# the arm linking no reply asks for the caller where the linking arm stores it.
+run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_refuses_missingCaller($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_noLink_missingCaller($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_link_missingCaller($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointCallOnCore[^\n]*(\n([ \t][^\n]*)?)*storeTcbReceiveComplete st. receiver(\n([ \t][^\n]*)?)*match lookupTcb st caller with\n *\| none => \(st, \.error \.objectNotFound\)" SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReplyDonatedCapsArmR[^\n]*(\n([ \t][^\n]*)?)*\.ok \(\(\), performReplyDonatedCapsDelivered " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReplyUnheldCapsArmR[^\n]*(\n([ \t][^\n]*)?)*\.ok \(\(\), performReplyUnheldCapsDelivered " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReplyLongCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*\.ok \(\(\), performReplyCapsDeliveredLong " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'

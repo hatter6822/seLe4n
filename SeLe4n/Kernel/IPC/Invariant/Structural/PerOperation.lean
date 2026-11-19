@@ -2457,6 +2457,9 @@ theorem endpointCall_preserves_blockedThreadsPendingMessageConsistent
             | error e => simp [hMsg] at hStep
             | ok st1 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               have hObjInv1 := storeTcbReceiveComplete_preserves_objects_invExt pair.2.2 st1 pair.1 _ hObjInvPop hMsg
               exact blockedThreadsPendingMessageConsistent_of_readViewAgreement

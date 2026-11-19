@@ -562,6 +562,9 @@ theorem endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint
           | error e => exact hPre
           | ok st2 =>
             simp only []
+            rcases hCl : lookupTcb st caller with _ | _
+            · exact hPre
+            simp only
             have hPre2 : blockedSenderFlowsToEndpoint ctx st2 :=
               blockedSenderFlowsToEndpoint_of_shrinks hPre1
                 (storeTcbReceiveComplete_blockedSenderShrinks st1 st2 receiver

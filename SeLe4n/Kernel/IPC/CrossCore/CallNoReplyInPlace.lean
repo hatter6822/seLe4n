@@ -48,6 +48,22 @@ theorem callRendezvousLinks_false_of {st : SystemState} {r : SeLe4n.ThreadId} {r
   rw [hT]
   simpa only [Bool.not_eq_true', Bool.not_eq_eq_eq_not, Bool.not_true] using h
 
+/-- The caller's TCB as the call's arms ask for it (`lookupTcb`), read from the
+in-place guard's two scalar tests: the id is not the reserved one and the store
+holds a TCB there. -/
+theorem lookupTcb_isSome_of {st : SystemState} {tid : SeLe4n.ThreadId}
+    (hR : tid.isReserved = false) (h : (st.getTcb? tid).isSome = true) :
+    (lookupTcb st tid).isSome = true := by
+  unfold lookupTcb
+  simp only [hR, Bool.false_eq_true, ↓reduceIte, h]
+
+theorem getTcb?_isSome_of_lookupTcb {st : SystemState} {tid : SeLe4n.ThreadId}
+    (h : (lookupTcb st tid).isSome = true) : (st.getTcb? tid).isSome = true := by
+  unfold lookupTcb at h
+  split at h
+  · cases h
+  · exact h
+
 /-- The caller's deschedule on its own core and its `Inactive` write: the last
 two writes of a call that links no reply. -/
 @[inline] def descheduleInactive (X : SystemState) (caller : SeLe4n.ThreadId) (core : CoreId) :
@@ -115,7 +131,8 @@ theorem callNoReply_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (ep :
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
     (hT : st.objects[r.toObjId]? = some (.tcb rt))
     (hLinks : callRendezvousLinks st r payload = false)
-    (hG : sendWakesInPlace st endpointId r rt.queueNext = true) :
+    (hG : sendWakesInPlace st endpointId r rt.queueNext = true)
+    (hC : (lookupTcb st caller).isSome = true) :
     endpointCallOnCore endpointId caller payload core st =
       (descheduleInactive (wakeThread (storeSendRendezvous st endpointId r rt.queueNext msg) r
           core).1 caller core,
@@ -132,8 +149,9 @@ theorem callNoReply_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (ep :
     · rw [hSt] at h
       simp only [Option.some.injEq, Prod.mk.injEq] at h
       obtain ⟨rfl, rfl⟩ := h
+      obtain ⟨ct, hct⟩ := Option.isSome_iff_exists.mp hC
       exact endpointCallOnCore_noReply_eq endpointId caller payload core st ep r' t0 st' _ hE hH
-        hLinks hPop hSt
+        hLinks hPop hSt ct hct
 
 /-- **The call dispatch that links no reply, in place**: with no capability to
 transfer, the dispatch is the in-place no-reply call with an empty transfer
@@ -147,7 +165,8 @@ theorem callDispatch_noReply_inPlace (st : SystemState) (endpointId : SeLe4n.Obj
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
     (hT : st.objects[r.toObjId]? = some (.tcb rt))
     (hLinks : callRendezvousLinks st r payload = false)
-    (hG : sendWakesInPlace st endpointId r rt.queueNext = true) :
+    (hG : sendWakesInPlace st endpointId r rt.queueNext = true)
+    (hC : (lookupTcb st caller).isSome = true) :
     endpointCallCrossCoreDispatch endpointId caller payload core st =
       (descheduleInactive (wakeThread (storeSendRendezvous st endpointId r rt.queueNext msg) r
           core).1 caller core,
@@ -157,7 +176,7 @@ theorem callDispatch_noReply_inPlace (st : SystemState) (endpointId : SeLe4n.Obj
     (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE
   unfold endpointCallCrossCoreDispatch
   rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _ hReq,
-    callNoReply_inPlace st endpointId ep caller r rt payload msg core hM hE hH hT hLinks hG]
+    callNoReply_inPlace st endpointId ep caller r rt payload msg core hM hE hH hT hLinks hG hC]
   simp only [hEp, hH, hLinks, Except.map, Bool.false_eq_true, ↓reduceIte]
 
 /-- The checked form: under the flow gate, the in-place no-reply call. -/
@@ -170,6 +189,7 @@ theorem callDispatchChecked_noReply_inPlace (ctx : LabelingContext) (st : System
     (hT : st.objects[r.toObjId]? = some (.tcb rt))
     (hLinks : callRendezvousLinks st r payload = false)
     (hG : sendWakesInPlace st endpointId r rt.queueNext = true)
+    (hC : (lookupTcb st caller).isSome = true)
     (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true) :
     endpointCallCrossCoreDispatchChecked ctx endpointId caller payload core st =
@@ -180,7 +200,7 @@ theorem callDispatchChecked_noReply_inPlace (ctx : LabelingContext) (st : System
   unfold endpointCallCrossCoreDispatchChecked
   rw [if_pos hFlow]
   exact callDispatch_noReply_inPlace st endpointId ep caller r rt payload msg core hM hReq hE hH
-    hT hLinks hG
+    hT hLinks hG hC
 
 /-- **The no-reply call, delivered**: the receiver woken holding no message,
 the caller descheduled and `Inactive`, then the message's frame written into

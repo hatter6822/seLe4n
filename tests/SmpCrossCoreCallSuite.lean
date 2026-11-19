@@ -436,6 +436,23 @@ private def runRendezvousChecks : IO Unit := do
       assertBool "no-grant call links no caller into the reply object"
         ((st'.getReply? replyId).all (fun r => decide (r.caller = none)))
   | none => assertBool "rendezvous setup (no-grant call) succeeded" false
+  -- A caller with no TCB is refused with `objectNotFound` by every arm, the
+  -- state left as it was (`endpointCallOnCore_refuses_missingCaller`): the arm
+  -- linking no reply asks for it where the linking arm stores it.
+  let ghostTid : SeLe4n.ThreadId := ⟨499⟩
+  match stWithReceiverNoReply recvRemoteTid, stWithReceiver recvRemoteTid with
+  | some stNo, some stLk =>
+      assertBool "fixture: the missing caller has no TCB"
+        ((stNo.getTcb? ghostTid).isNone && (stLk.getTcb? ghostTid).isNone)
+      let (stA, resA) := endpointCallOnCore epId ghostTid (.frame none false true) bootCoreId stNo
+      assertBool "no-link call of a missing caller refuses with objectNotFound"
+        (match resA with | .error .objectNotFound => true | _ => false)
+      assertBool "no-link call of a missing caller leaves the receiver waiting"
+        ((stA.getTcb? recvRemoteTid).any (fun t => t.ipcState != .ready))
+      let (_, resB) := endpointCallOnCore epId ghostTid (.frame none false true) bootCoreId stLk
+      assertBool "linking call of a missing caller refuses with objectNotFound"
+        (match resB with | .error .objectNotFound => true | _ => false)
+  | _, _ => assertBool "rendezvous setup (missing caller) succeeded" false
 
 -- ============================================================================
 -- §SM6.D Per-core IPC invariant bundle (surface anchors + witnesses)

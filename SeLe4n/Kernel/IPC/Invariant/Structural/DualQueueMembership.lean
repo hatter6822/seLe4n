@@ -1093,6 +1093,9 @@ theorem endpointCall_preserves_endpointQueueNoDup
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               have hNoDup1 := endpointQueuePopHead_preserves_endpointQueueNoDup endpointId true st pair.2.2 pair.1 pair.2.1 hInv hDQSI hDQSI1 hObjInv hPop
               exact endpointQueueNoDup_of_readViewAgreement
@@ -1776,6 +1779,9 @@ theorem endpointCall_preserves_ipcStateQueueMembershipConsistent
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               exact ipcStateQueueMembershipConsistent_of_readViewAgreement
                 (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
@@ -3965,6 +3971,9 @@ theorem endpointCall_preserves_ipcStateQueueConsistent
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               have hObjInvPop : stPop.objects.invExt :=
                 endpointQueuePopHead_preserves_objects_invExt endpointId true st stPop receiver _tcb hObjInv hPop
@@ -6017,6 +6026,9 @@ theorem endpointCall_establishes_blockedOnReplyHasReplyObject
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               have hP2 := storeTcbReceiveComplete_nonBlocked_preserves_blockedOnReplyHasReplyObject
                 pair.2.2 st2 pair.1 (some (sendPayloadMessage st caller payload)) hObjInv1 hP1 hMsg
@@ -10396,6 +10408,9 @@ theorem endpointCall_sameSchedContextBindings
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               exact ((((hS1.trans (storeTcbReceiveComplete_sameSchedContextBindings pair.2.2 st2 pair.1 (some (sendPayloadMessage st caller payload)) hObjInv1 hMsg)).trans
                 (sameSchedContextBindings.of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st2 pair.1))).trans
@@ -10484,6 +10499,9 @@ theorem endpointCall_kindPreservingWrite
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               exact ((((hS1.trans (storeTcbReceiveComplete_kindPreservingWrite hObjInv1 hMsg)).trans
                 ((SystemState.objectsAgreeOffRunLinks.kindPreserving (ensureRunnable_objectsAgreeOffRunLinks st2 pair.1)))).trans
@@ -10581,6 +10599,9 @@ theorem endpointCall_donationOwnerFrame
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               refine ((((hF1.trans (storeTcbReceiveComplete_donationOwnerFrame pair.2.2 st2 pair.1 (some (sendPayloadMessage st caller payload))
                 (fun tcb hTcb_pair ep' rt => ?_) hObjInv1 hMsg)).trans
@@ -10717,6 +10738,9 @@ theorem endpointCall_timeoutBudgetFrame
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               exact ((((hF1.trans (storeTcbReceiveComplete_timeoutBudgetFrame pair.2.2 st2 pair.1 (some (sendPayloadMessage st caller payload)) hObjInv1 hMsg)).trans
                 (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st2 pair.1))).trans
@@ -11790,6 +11814,9 @@ theorem endpointCall_preserves_replyCallerLinkageReciprocal
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               have hObjInv2 := storeTcbReceiveComplete_preserves_objects_invExt pair.2.2 st2 pair.1 _ hObjInv1 hMsg
               have hF2 := hF1.trans (storeTcbReceiveComplete_replyLinkageFrame_of_unlinked pair.2.2 st2
@@ -14381,6 +14408,9 @@ theorem endpointCall_preserves_pendingReceiveReplyWellFormed
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               have hP2 := storeTcbReceiveComplete_preserves_pendingReceiveReplyWellFormed
                 pair.2.2 st2 pair.1 (some (sendPayloadMessage st caller payload)) hObjInv1 hP1 hMsg
@@ -16505,6 +16535,9 @@ theorem endpointCall_preserves_queueNextBlockingConsistent
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               exact queueNextBlockingConsistent_of_readViewAgreement
                 (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
@@ -16631,6 +16664,9 @@ theorem endpointCall_preserves_endpointQueueTailBlockedConsistent
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               exact endpointQueueTailBlockedConsistent_of_readViewAgreement
                 (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
@@ -20839,6 +20875,9 @@ theorem endpointCall_preserves_queueHeadBlockedConsistent
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               exact queueHeadBlockedConsistent_of_readViewAgreement
                 (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
@@ -21041,6 +21080,9 @@ theorem endpointCall_preserves_queueNextTargetBlocked
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               exact queueNextTargetBlocked_of_readViewAgreement
                 (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
@@ -21207,6 +21249,9 @@ theorem endpointCall_preserves_endpointQueueLinksOnlyBlocked
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               exact endpointQueueLinksOnlyBlocked_of_readViewAgreement
                 (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive

@@ -639,6 +639,8 @@ theorem endpointCallOnCore_readyKeptStage (endpointId : SeLe4n.ObjId)
           split
           · exact .refl _
           · rename_i st2 hS2
+            split
+            · exact .refl _
             have hN : st2.currentNowhere receiver := (hHeads.popped hPop).of_scheduler_eq
               (storeTcbReceiveComplete_scheduler_eq _ _ _ _ hS2)
             have P := ((endpointQueuePopHead_runQueueStage hPop).trans

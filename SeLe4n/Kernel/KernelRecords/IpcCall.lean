@@ -102,6 +102,8 @@ theorem endpointCallOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId
           split
           · exact refl hInv
           · rename_i st2 hRC
+            split
+            · exact refl hInv
             have S2 := storeTcbReceiveComplete F1.invExt hRC
               (fun x hx => F1.notParked (receiveHead_notParked hQ hEpO hHead) x hx)
             obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hRC

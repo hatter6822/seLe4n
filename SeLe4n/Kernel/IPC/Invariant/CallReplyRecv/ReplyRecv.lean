@@ -619,6 +619,9 @@ theorem endpointCall_preserves_objects_invExt
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               exact SystemState.updateTcb_preserves_objects_invExt _ caller _
                 (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt st2 pair.1

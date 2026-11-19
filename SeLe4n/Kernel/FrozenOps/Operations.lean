@@ -970,6 +970,10 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                     match frozenStoreTcb receiver recvTcb' st' with
                     | .error e => .error e
                     | .ok ((), st'') =>
+                        -- A missing caller refuses where the linking arm looks it up.
+                        match frozenLookupTcb st caller with
+                        | none => .error .objectNotFound
+                        | some _ =>
                         match frozenEnsureRunnable st'' receiver with
                         | .error e => .error e
                         | .ok st3 =>

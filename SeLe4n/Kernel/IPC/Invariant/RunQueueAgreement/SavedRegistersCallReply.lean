@@ -227,6 +227,8 @@ theorem endpointCallOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
           split
           · exact .refl hInv
           · rename_i st2 hRC
+            split
+            · exact .refl hInv
             have h2 := h1.trans (savedRegsUnwritten.of_storeTcbReceiveComplete h1.2 hRC)
             have hW := h2.trans (savedRegsUnwritten.of_wakeThread st2 receiver c h2.2)
             have h3 := hW.trans (savedRegsUnwritten.of_removeRunnableOnCore _ caller c hW.2)

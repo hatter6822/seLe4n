@@ -908,6 +908,8 @@ theorem endpointCallOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
           split
           · exact hRefl
           · rename_i st2 hRC
+            split
+            · exact hRefl
             have hF2 := hF1.trans (storeTcbReceiveComplete_keyFrame hF1.2.2 hRC)
             obtain ⟨hW, hWInv⟩ := wakeThread_stepCovers e st2 receiver executingCore hF2.2.2
             have hF := updateTcb_keyFrame (removeRunnableOnCore _ caller executingCore) caller

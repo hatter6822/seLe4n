@@ -774,6 +774,8 @@ theorem endpointCallOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
           split
           · exact observableSlotsConfinedToCores_of_eq _ rfl
           · next st2 hRC =>
+            split
+            · exact observableSlotsConfinedToCores_of_eq _ rfl
             have hEpObj : st.objects[endpointId]? = some (.endpoint ep) :=
               (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
             have hPopHead : ep.receiveQ.head = some recvTid := by

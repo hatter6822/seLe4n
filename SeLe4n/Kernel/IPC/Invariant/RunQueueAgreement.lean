@@ -812,6 +812,8 @@ theorem endpointCallOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
           split
           · exact (RunQueueStage.refl _).entry
           · rename_i st2 hS2
+            split
+            · exact (RunQueueStage.refl _).entry
             have hN : st2.currentNowhere receiver := (hHeads.popped hPop).of_scheduler_eq
               (storeTcbReceiveComplete_scheduler_eq _ _ _ _ hS2)
             have hC2 : st2.scheduler.currentOnCore c = some caller :=

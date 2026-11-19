@@ -134,6 +134,8 @@ theorem endpointCallOnCore_callerParked {endpointId : SeLe4n.ObjId} {caller : Se
           split
           · intro _ h; cases h
           · rename_i st2 hRC
+            split
+            · intro _ h; cases h
             have S2 := RecordsStep.storeTcbReceiveComplete F1.invExt hRC
               (fun x hx => F1.notParked (receiveHead_notParked hQ hEpO hHead) x hx)
             obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hRC

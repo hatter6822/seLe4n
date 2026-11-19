@@ -157,6 +157,9 @@ theorem endpointCallOnCore_preserves_ipcInvariant
           | error e => simp only; exact hInv
           | ok st2 =>
             simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact hInv
+            simp only
             have hAgNR := endpointCallOnCore_noReply_readView pair.2.2 st2 pair.1 _ caller executingCore hObj1 hMsg
             exact ipcInvariant_of_readViewAgreement hAgNR (storeTcbReceiveComplete_preserves_ipcInvariant _ st2 pair.1 _ hInv1 hObj1 hMsg)
       rw [if_pos hLk]
@@ -263,6 +266,9 @@ theorem endpointCallOnCore_establishes_blockedOnReplyHasReplyObject
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
           | error e => simp only; exact hInv
           | ok st2 =>
+            simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact hInv
             simp only
             have hAgNR := endpointCallOnCore_noReply_readView pair.2.2 st2 pair.1 _ caller executingCore hObj1 hMsg
             exact blockedOnReplyHasReplyObject_of_readViewAgreement hAgNR (storeTcbReceiveComplete_nonBlocked_preserves_blockedOnReplyHasReplyObject _ st2 pair.1 _ hObj1 hP1 hMsg)
@@ -419,6 +425,9 @@ theorem endpointCallOnCore_timeoutBudgetFrame
           | error e => simp only; exact timeoutBudgetFrame.refl st
           | ok st2 =>
             simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact timeoutBudgetFrame.refl st
+            simp only
             have hAgNR := endpointCallOnCore_noReply_readView pair.2.2 st2 pair.1 _ caller executingCore hObj1 hMsg
             exact (hS1.trans (storeTcbReceiveComplete_timeoutBudgetFrame _ st2 pair.1 _ hObj1 hMsg)).trans (timeoutBudgetFrame.of_readViewAgreement hAgNR)
       rw [if_pos hLk]
@@ -528,6 +537,9 @@ theorem endpointCallOnCore_preserves_blockedThreadsPendingMessageConsistent
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
           | error e => simp only; exact hInv
           | ok st2 =>
+            simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact hInv
             simp only
             have hAgNR := endpointCallOnCore_noReply_readView pair.2.2 st2 pair.1 _ caller executingCore hObj1 hMsg
             exact blockedThreadsPendingMessageConsistent_of_readViewAgreement hAgNR (storeTcbReceiveComplete_preserves_blockedThreadsPendingMessageConsistent _ st2 pair.1 _ hObj1 hMsg hInv1)
@@ -655,6 +667,9 @@ theorem endpointCallOnCore_preserves_replyCallerLinkageReciprocal
           | error e => simp only; exact hInv
           | ok st2 =>
             simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact hInv
+            simp only
             have hAgNR := endpointCallOnCore_noReply_readView pair.2.2 st2 pair.1 _ caller executingCore hObj1 hMsg
             exact replyCallerLinkageReciprocal_of_frame ((hF1.trans (storeTcbReceiveComplete_replyLinkageFrame_of_unlinked _ st2 pair.1 _ (hF1.unlinked_forward hRecvUnlinked) hObj1 hMsg)).trans (replyLinkageFrame.of_readViewAgreement hAgNR)) hInv
       rw [if_pos hLk]
@@ -775,6 +790,9 @@ theorem endpointCallOnCore_donationOwnerFrame
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
           | error e => simp only; exact donationOwnerFrame.refl st
           | ok st2 =>
+            simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact donationOwnerFrame.refl st
             simp only
             have hAgNR := endpointCallOnCore_noReply_readView pair.2.2 st2 pair.1 _ caller executingCore hObj1 hMsg
             exact (hF1.trans (storeTcbReceiveComplete_donationOwnerFrame _ st2 pair.1 _
@@ -987,6 +1005,9 @@ theorem endpointCallOnCore_preserves_dualQueueSystemInvariant
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
           | error e => simp only; exact hInv
           | ok st2 =>
+            simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact hInv
             simp only
             have hAgNR := endpointCallOnCore_noReply_readView pair.2.2 st2 pair.1 _ caller executingCore hObj1 hMsg
             exact dualQueueSystemInvariant_of_readViewAgreement hAgNR (storeTcbReceiveComplete_preserves_dualQueueSystemInvariant _ st2 pair.1 _ hObj1 hMsg hInv1)
@@ -1348,6 +1369,9 @@ theorem endpointCallOnCore_preserves_endpointQueueNoDup
           | error e => simp only; exact hInv
           | ok st2 =>
             simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact hInv
+            simp only
             have hAgNR := endpointCallOnCore_noReply_readView pair.2.2 st2 pair.1 _ caller executingCore hObj1 hMsg
             exact endpointQueueNoDup_of_readViewAgreement hAgNR (storeTcbReceiveComplete_preserves_endpointQueueNoDup _ st2 pair.1 _ hND1 hObj1 hMsg)
       rw [if_pos hLk]
@@ -1472,6 +1496,9 @@ theorem endpointCallOnCore_preserves_ipcStateQueueMembershipConsistent
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
           | error e => simp only; exact hInv
           | ok st2 =>
+            simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact hInv
             simp only
             have hAgNR := endpointCallOnCore_noReply_readView pair.2.2 st2 pair.1 _ caller executingCore hObjInv1 hMsg
             exact ipcStateQueueMembershipConsistent_of_readViewAgreement hAgNR (storeTcbReceiveComplete_partial_preserves_ipcStateQueueMembershipConsistent _ st2 pair.1 _ hPartialV3J hObjInv1 hMsg)
@@ -1752,6 +1779,9 @@ theorem endpointCallOnCore_preserves_queueNextBlockingConsistent
           | error e => simp only; exact hInv
           | ok st2 =>
             simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact hInv
+            simp only
             have hAgNR := endpointCallOnCore_noReply_readView pair.2.2 st2 pair.1 _ caller executingCore hObj1 hMsg
             exact queueNextBlockingConsistent_of_readViewAgreement hAgNR (storeTcbReceiveComplete_preserves_queueNextBlockingConsistent _ st2 pair.1 _ hInv1 hObj1 hMsg)
       rw [if_pos hLk]
@@ -1886,6 +1916,9 @@ theorem endpointCallOnCore_preserves_queueNextTargetBlocked
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
           | error e => simp only; exact hQNTB
           | ok st2 =>
+            simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact hQNTB
             simp only
             have hAgNR := endpointCallOnCore_noReply_readView pair.2.2 st2 pair.1 _ caller executingCore hObj1 hMsg
             exact queueNextTargetBlocked_of_readViewAgreement hAgNR (storeTcbReceiveComplete_preserves_queueNextTargetBlocked _ st2 pair.1 _ hQNTB1 hObj1 hMsg hNoIncPop)
@@ -2058,6 +2091,9 @@ theorem endpointCallOnCore_preserves_endpointQueueLinksOnlyBlocked
           | error e => simp only; exact hQNTB
           | ok st2 =>
             simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact hQNTB
+            simp only
             have hAgNR := endpointCallOnCore_noReply_readView pair.2.2 st2 pair.1 _ caller executingCore hObj1 hMsg
             exact endpointQueueLinksOnlyBlocked_of_readViewAgreement hAgNR (storeTcbReceiveComplete_preserves_endpointQueueLinksOnlyBlocked _ st2 pair.1 _ hQNTB1 hObj1 hMsg hNoIncPop)
       rw [if_pos hLk]
@@ -2207,6 +2243,9 @@ theorem endpointCallOnCore_preserves_queueHeadBlockedConsistent
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
           | error e => simp only; exact hQHBC
           | ok st2 =>
+            simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact hQHBC
             simp only
             have hAgNR := endpointCallOnCore_noReply_readView pair.2.2 st2 pair.1 _ caller executingCore hObj1 hMsg
             exact queueHeadBlockedConsistent_of_readViewAgreement hAgNR (storeTcbReceiveComplete_preserves_queueHeadBlockedConsistent _ st2 pair.1 _ hQHBC1 hObj1 hMsg hNotHeadPop)
@@ -2409,6 +2448,9 @@ theorem endpointCallOnCore_preserves_endpointQueueTailBlockedConsistent
           | error e => simp only; exact hTail
           | ok st2 =>
             simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact hTail
+            simp only
             have hAgNR := endpointCallOnCore_noReply_readView pair.2.2 st2 pair.1 _ caller executingCore hObjInv1 hMsg
             exact endpointQueueTailBlockedConsistent_of_readViewAgreement hAgNR (storeTcbReceiveComplete_preserves_endpointQueueTailBlockedConsistent _ st2 pair.1 _ hTail1 hObjInv1 hMsg hRecvNotTail)
       rw [if_pos hLk]
@@ -2565,6 +2607,9 @@ theorem endpointCallOnCore_preserves_badgeWellFormed
           | error e => simp only; exact hInv
           | ok st2 =>
             simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact hInv
+            simp only
             have hAgNR := endpointCallOnCore_noReply_objectsAgree pair.2.2 st2 pair.1 _ caller executingCore hObj1 hMsg
             exact badgeWellFormed_of_updateTcb_threadState caller .Inactive
               (removeRunnableOnCore_objects_invExt _ _ _
@@ -2663,6 +2708,9 @@ theorem endpointCallOnCore_preserves_allPendingMessagesBounded
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
           | error e => simp only; exact hInv
           | ok st2 =>
+            simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact hInv
             simp only
             have hAgNR := endpointCallOnCore_noReply_readView pair.2.2 st2 pair.1 _ caller executingCore hObj1 hMsg
             exact allPendingMessagesBounded_of_readViewAgreement hAgNR (storeTcbReceiveComplete_preserves_allPendingMessagesBounded _ st2 pair.1 _ (fun m hm => by cases hm; exact hMsgBounded) hObj1 hMsg hInv1)
@@ -2779,6 +2827,9 @@ theorem endpointCallOnCore_preserves_pendingReceiveReplyWellFormed
           cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
           | error e => simp only; exact hInv
           | ok st2 =>
+            simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact hInv
             simp only
             have hAgNR := endpointCallOnCore_noReply_readView pair.2.2 st2 pair.1 _ caller executingCore hObjInv1 hMsg
             exact pendingReceiveReplyWellFormed_of_readViewAgreement hAgNR (storeTcbReceiveComplete_preserves_pendingReceiveReplyWellFormed _ st2 pair.1 _ hObjInv1 hP1 hMsg)

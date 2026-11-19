@@ -481,6 +481,7 @@ theorem callDispatchChecked_noReply_inPlace_transfer (ctx : LabelingContext) (st
     (hT : st.objects[r.toObjId]? = some (.tcb rt))
     (hLinks : callRendezvousLinks st r payload = false)
     (hG : sendWakesInPlace st endpointId r rt.queueNext = true)
+    (hC : (lookupTcb st caller).isSome = true)
     (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true) :
     endpointCallCrossCoreDispatchChecked ctx endpointId caller payload core st =
@@ -497,7 +498,7 @@ theorem callDispatchChecked_noReply_inPlace_transfer (ctx : LabelingContext) (st
   unfold endpointCallCrossCoreDispatchChecked
   rw [if_pos hFlow]
   unfold endpointCallCrossCoreDispatch endpointCallWithCapsOnCore
-  rw [callNoReply_inPlace st endpointId ep caller r rt payload msg core hM hE hH hT hLinks hG]
+  rw [callNoReply_inPlace st endpointId ep caller r rt payload msg core hM hE hH hT hLinks hG hC]
   simp only [hEp, hH, Option.bind_some]
   cases hReq : sendCapRequest st endpointId caller payload with
   | none =>

@@ -145,6 +145,8 @@ theorem endpointCallOnCore_preserves_replyWaitersConsistent (endpointId : SeLe4n
           split
           · exact hC
           · rename_i st'' hStore
+            split
+            · exact hC
             have hI2 := storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ hI1 hStore
             have hV2 : st''.replyViews = st.replyViews := by
               rw [replyViews_storeTcbReceiveComplete hI1 hStore, hV1]

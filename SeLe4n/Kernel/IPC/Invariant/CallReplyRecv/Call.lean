@@ -73,6 +73,9 @@ theorem endpointCall_preserves_ipcInvariant
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               have hObjInv2 := storeTcbReceiveComplete_preserves_objects_invExt pair.2.2 st2 pair.1 _ hObjInv1 hMsg
               have hInv2 := storeTcbReceiveComplete_preserves_ipcInvariant pair.2.2 st2 pair.1 _ hInv1 hObjInv1 hMsg
@@ -167,6 +170,9 @@ theorem endpointCall_preserves_schedulerInvariantBundle
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               have hSchedMsg := storeTcbReceiveComplete_scheduler_eq pair.2.2 st2 pair.1 _ hMsg
               have hObjInvMsg := storeTcbReceiveComplete_preserves_objects_invExt pair.2.2 st2 pair.1 _ hObjInvPop hMsg
@@ -417,6 +423,9 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               have hObjInv2 := storeTcbReceiveComplete_preserves_objects_invExt pair.2.2 st2 pair.1 _ hObjInv1 hMsg
               exact ipcSchedulerContractPredicates_of_readViewAgreement
@@ -702,6 +711,9 @@ theorem endpointCall_blocked_stays_blocked
             | error e => simp [hMsg] at hStep
             | ok st2 =>
               simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               rw [SystemState.updateTcb_scheduler]
               exact removeRunnable_not_mem_self _ caller
