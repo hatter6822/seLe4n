@@ -93,9 +93,13 @@ impl IpcMessage {
 
 /// Send a message to an endpoint.
 ///
+/// Returns nothing, as libsel4's `seL4_Send` returns `void`: the syscall is
+/// seL4's `Send`, for which the kernel writes no register, refused or not.
+/// The only error is a message info that does not encode.
+///
 /// Lean: `apiEndpointSend` (API.lean) — requires `.write` right.
 #[inline]
-pub fn endpoint_send(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallResponse> {
+pub fn endpoint_send(dest: CPtr, msg: &IpcMessage) -> KernelResult<()> {
     let msg_info = MessageInfo::new(msg.length(), 0, msg.label)
         .map_err(|_| sele4n_types::KernelError::InvalidMessageInfo)?;
     invoke_syscall(SyscallRequest {
@@ -105,6 +109,7 @@ pub fn endpoint_send(dest: CPtr, msg: &IpcMessage) -> KernelResult<SyscallRespon
         syscall_id: SyscallId::Send,
         reply_cap: CPtr::NULL,
     })
+    .map(|_| ())
 }
 
 /// Receive a message from an endpoint. Blocks until a message arrives.
@@ -193,9 +198,13 @@ pub fn endpoint_call(dest: CPtr, msg: &IpcMessage) -> KernelResult<(Badge, Sysca
 
 /// Reply to a caller (one-shot reply capability).
 ///
+/// Returns nothing: a reply is seL4's `Send` on the reply capability, for
+/// which the kernel writes no register, refused or not.  The only error is a
+/// message info that does not encode.
+///
 /// Lean: `apiEndpointReply` (API.lean) — requires `.write` right.
 #[inline]
-pub fn endpoint_reply(reply_cap: CPtr, msg: &IpcMessage) -> KernelResult<SyscallResponse> {
+pub fn endpoint_reply(reply_cap: CPtr, msg: &IpcMessage) -> KernelResult<()> {
     let msg_info = MessageInfo::new(msg.length(), 0, msg.label)
         .map_err(|_| sele4n_types::KernelError::InvalidMessageInfo)?;
     invoke_syscall(SyscallRequest {
@@ -205,6 +214,7 @@ pub fn endpoint_reply(reply_cap: CPtr, msg: &IpcMessage) -> KernelResult<Syscall
         syscall_id: SyscallId::Reply,
         reply_cap: CPtr::NULL,
     })
+    .map(|_| ())
 }
 
 /// Signal a notification object (badge OR accumulation), as seL4's
@@ -222,8 +232,10 @@ pub fn endpoint_reply(reply_cap: CPtr, msg: &IpcMessage) -> KernelResult<Syscall
 /// (API.lean), which ORs in `Capability.signalBadge`;
 /// `dispatchWithCapChecked_notificationSignal_badge_of_cap` proves no word of the
 /// decoded message reaches it.  Requires the **write** right.
+///
+/// Returns nothing, as libsel4's `seL4_Signal` (a `seL4_Send`) returns `void`.
 #[inline]
-pub fn notification_signal(ntfn: CPtr) -> KernelResult<SyscallResponse> {
+pub fn notification_signal(ntfn: CPtr) -> KernelResult<()> {
     let msg_info = MessageInfo::new_const(0, 0, 0);
     invoke_syscall(SyscallRequest {
         cap_addr: ntfn,
@@ -232,6 +244,7 @@ pub fn notification_signal(ntfn: CPtr) -> KernelResult<SyscallResponse> {
         syscall_id: SyscallId::NotificationSignal,
         reply_cap: CPtr::NULL,
     })
+    .map(|_| ())
 }
 
 /// Wait on a notification object. Blocks until signaled.

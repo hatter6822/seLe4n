@@ -80,6 +80,14 @@ split", 2026-11-19); its remainder is new rows SX8–SX12.
   (`syscallDropsFault`): a send-phase fault of a non-blocking invocation is
   dropped (and recorded in the refusal ledger), a receive-phase fault is
   always delivered.
+- **Userspace reads the frame by the syscall issued.** `invoke_syscall`
+  decodes a status only for a `Call` (`decode_issued`, branching on the x7
+  word the encoder wrote); a receive's frame is its message, label included;
+  a Send, NBSend or Yield reads no register (`Syscall::returns_nothing`), so
+  a delivered Send with label `ERROR_LABEL_BASE + 1` no longer reads as
+  `ObjectNotFound`. `endpoint_send`, `endpoint_reply`, `notification_signal`
+  and `yield_now` return `()`. The host mock writes its error frame only to a
+  Call.
 - **NBSend, NBRecv and NBWait do not block**: NBSend to an endpoint with no
   receiver drops the message after the flow gate; NBRecv and NBWait with
   nothing pending write badge 0 (`nbRecvFailedTransfer`, seL4's

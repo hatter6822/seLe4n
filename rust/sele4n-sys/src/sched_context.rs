@@ -161,9 +161,12 @@ pub fn sched_context_yield_to(sc_cap: CPtr) -> KernelResult<u64> {
 /// core.  Invokes no capability: the capability address and message registers
 /// are ignored.
 ///
+/// Returns nothing, as libsel4's `seL4_Yield` returns `void`: the kernel writes
+/// no register for a `Yield`.
+///
 /// Lean: `yieldOnCore` (Scheduler/Operations/Core.lean), WS-ZA ZA4.3.
 #[inline]
-pub fn yield_now() -> KernelResult<SyscallResponse> {
+pub fn yield_now() -> KernelResult<()> {
     invoke_syscall(SyscallRequest {
         cap_addr: CPtr::from(0u64),
         msg_info: MessageInfo::new_const(0, 0, 0),
@@ -171,6 +174,7 @@ pub fn yield_now() -> KernelResult<SyscallResponse> {
         syscall_id: SyscallId::Yield,
         reply_cap: CPtr::NULL,
     })
+    .map(|_| ())
 }
 
 #[cfg(test)]
