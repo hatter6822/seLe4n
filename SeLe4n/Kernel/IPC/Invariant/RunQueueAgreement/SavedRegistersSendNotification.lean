@@ -100,6 +100,19 @@ theorem of_modifyTcb {st st' : SystemState} {tid : SeLe4n.ThreadId} {f : TCB →
   exact ⟨.storeObject_tcb hInv (lookupTcb_some_objects _ _ _ hL) hS (hf tcb),
     storeObject_preserves_objects_invExt _ _ _ _ hInv hS⟩
 
+/-- A typed TCB rewrite, in its total form, that keeps the thread's saved
+registers. -/
+theorem of_updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) (hf : ∀ x, (f x).registerContext = x.registerContext) :
+    savedRegsUnwritten st (st.updateTcb tid f) := by
+  refine ⟨fun t _ => ?_, SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv⟩
+  by_cases e : t = tid
+  · subst e
+    unfold SystemState.savedRegs
+    rw [SystemState.updateTcb_getTcb?_self st t f hInv]
+    cases st.getTcb? t <;> simp [hf]
+  · exact savedRegs_updateTcb_ne hInv e
+
 /-- A store of an object that is no thread over a slot that held none at `st`,
 after a step from `st` that writes no saved register. -/
 theorem of_storeObject_after {st s s' : SystemState} {oid : SeLe4n.ObjId} {obj : KernelObject}

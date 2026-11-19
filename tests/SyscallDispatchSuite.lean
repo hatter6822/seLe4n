@@ -2161,8 +2161,9 @@ private def sd062_carve_checks_authority_before_child : IO Unit := do
     After `endpointReceiveDual` rendezvouses a `Call` (moving the caller to
     `.blockedOnReply`), the transition links that caller to the server-supplied reply
     object so the server's later `.reply` resolves authority through `reply.caller`. A
-    `Call` rendezvous carrying NO reply object is rejected fail-closed
-    (`.replyCapInvalid`) — the post-state is discarded, so the caller is not stranded.
+    `Call` rendezvous carrying NO reply object, or a `Call` through a cap granting
+    neither `Grant` nor `GrantReply`, links nothing: the message is delivered and the
+    caller is completed `Inactive`, off every run queue (seL4 `receiveIPC`).
     A non-`Call` (`Send`) rendezvous links nothing. -/
 private def sd051_receiveLinkCaller : IO Unit := do
   let server : SeLe4n.ThreadId := ⟨1⟩
@@ -2193,12 +2194,38 @@ private def sd051_receiveLinkCaller : IO Unit := do
             (st'.getTcb? caller).any (fun t => decide (t.replyObject = some rid))
          | .error _ => false)
         "Call caller should be linked to the server-supplied reply object"
-      -- (b) a Call rendezvous carrying NO reply object is rejected fail-closed (the
-      -- post-state is discarded, so the caller is not stranded `.blockedOnReply`).
-      expect "sd051b_call_without_reply_rejected"
+      -- (b) a Call rendezvous carrying NO reply object links nothing: the message
+      -- is delivered and the caller completed `Inactive`, off every run queue
+      -- (seL4 `receiveIPC`; formerly refused `.replyCapInvalid`).
+      expect "sd051b_call_without_reply_completes_caller_inactive"
         (match SeLe4n.Kernel.endpointReceiveDual epId server none stCalled with
-         | .error .replyCapInvalid => true | _ => false)
-        "a Call rendezvous without a reply object must be rejected (.replyCapInvalid)"
+         | .ok (s, st') =>
+            s == caller &&
+            (st'.getTcb? server).any (fun t => t.pendingMessage.isSome) &&
+            (st'.getTcb? caller).any (fun t =>
+              decide (t.ipcState = .ready) && decide (t.threadState = .Inactive) &&
+              decide (t.replyObject = none)) &&
+            !SeLe4n.Kernel.runnableOnSomeCore st' caller &&
+            (st'.getReply? rid).all (fun r => decide (r.caller = none))
+         | .error _ => false)
+        "a Call rendezvous without a reply object delivers and leaves the caller Inactive"
+  -- (b') a Call through a cap granting neither Grant nor GrantReply links nothing,
+  -- even with a reply object supplied.
+  match SeLe4n.Kernel.endpointCall epId caller (.frame none false false) stReady with
+  | .error _ => failLine "sd051b_nogrant_setup" "endpointCall setup should succeed"
+  | .ok (_, stCalledNoGrant) =>
+      expect "sd051b_call_without_grant_completes_caller_inactive"
+        (match SeLe4n.Kernel.endpointReceiveDual epId server (some rid) stCalledNoGrant with
+         | .ok (s, st') =>
+            s == caller &&
+            (st'.getTcb? server).any (fun t => t.pendingMessage.isSome) &&
+            (st'.getTcb? caller).any (fun t =>
+              decide (t.ipcState = .ready) && decide (t.threadState = .Inactive) &&
+              decide (t.replyObject = none)) &&
+            !SeLe4n.Kernel.runnableOnSomeCore st' caller &&
+            (st'.getReply? rid).all (fun r => decide (r.caller = none))
+         | .error _ => false)
+        "a Call through a cap without a grant right delivers and leaves the caller Inactive"
   -- (c) a non-Call (`Send`) rendezvous links nothing (the dequeued sender → `.ready`).
   match SeLe4n.Kernel.endpointSendDual epId caller (.frame none false true) stReady with
   | .error _ => failLine "sd051c_setup" "endpointSendDual setup should succeed"

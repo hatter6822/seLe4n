@@ -958,28 +958,47 @@ theorem endpointReceiveDualOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
         have hPopConf := endpointQueuePopHead_confinedToCores endpointId false st st1
           sender hPop
         split
-        · -- `blockedOnCall` sender: recorded as `.blockedOnReply`, never woken.
+        · -- `blockedOnCall` sender: recorded as `.blockedOnReply` when it links
+          -- a reply, completed `Inactive` when it links none; never woken.
           rw [if_pos rfl]
           split
-          · exact observableSlotsConfinedToCores_of_eq _ rfl
-          · next st2 hIpc =>
-            split
+          · split
             · exact observableSlotsConfinedToCores_of_eq _ rfl
-            · next rid =>
+            · next st2 hIpc =>
               split
               · exact observableSlotsConfinedToCores_of_eq _ rfl
-              · next st3 hLink =>
+              · next rid _ =>
                 split
-                · next st4 hMsg =>
-                  exact observableSlotsConfinedToCores_widen_any
-                    (observableSlotsConfinedToCores_then_linkReplyWaiter sender receiver
-                    (observableSlotsConfinedToCores_trans
-                      (observableSlotsConfinedToCores_trans hPopConf
-                        (storeTcbIpcStateAndMessage_confinedToCores st1 st2 sender _ _ hIpc))
-                      (observableSlotsConfinedToCores_trans
-                        (linkCallerReply_confinedToCores sender rid st2 st3 hLink)
-                        (storeTcbIpcStateAndMessage_confinedToCores st3 st4 receiver _ _ hMsg))))
                 · exact observableSlotsConfinedToCores_of_eq _ rfl
+                · next st3 hLink =>
+                  split
+                  · next st4 hMsg =>
+                    exact observableSlotsConfinedToCores_widen_any
+                      (observableSlotsConfinedToCores_then_linkReplyWaiter sender receiver
+                      (observableSlotsConfinedToCores_trans
+                        (observableSlotsConfinedToCores_trans hPopConf
+                          (storeTcbIpcStateAndMessage_confinedToCores st1 st2 sender _ _ hIpc))
+                        (observableSlotsConfinedToCores_trans
+                          (linkCallerReply_confinedToCores sender rid st2 st3 hLink)
+                          (storeTcbIpcStateAndMessage_confinedToCores st3 st4 receiver _ _ hMsg))))
+                  · exact observableSlotsConfinedToCores_of_eq _ rfl
+          · split
+            · exact observableSlotsConfinedToCores_of_eq _ rfl
+            · next st2 hIpc =>
+              split
+              · next st4 hMsg =>
+                exact observableSlotsConfinedToCores_widen_any
+                  (observableSlotsConfinedToCores_trans
+                    (observableSlotsConfinedToCores_trans hPopConf
+                      (storeTcbIpcStateAndMessage_confinedToCores st1 st2 sender _ _ hIpc))
+                    (observableSlotsConfinedToCores_trans
+                      (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+                        (SystemState.updateTcb_scheduler st2 sender
+                          (fun t => { t with threadState := .Inactive }))
+                        (SystemState.updateTcb_machine st2 sender
+                          (fun t => { t with threadState := .Inactive })))
+                      (storeTcbIpcStateAndMessage_confinedToCores _ st4 receiver _ _ hMsg)))
+              · exact observableSlotsConfinedToCores_of_eq _ rfl
         · -- `blockedOnSend` sender: woken on its own home core.
           rw [if_neg (by simp)]
           split

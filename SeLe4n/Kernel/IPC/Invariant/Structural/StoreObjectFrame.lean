@@ -14,6 +14,7 @@ import SeLe4n.Kernel.IPC.Invariant.QueueMembership
 import SeLe4n.Kernel.IPC.Invariant.QueueNextBlocking
 import SeLe4n.Kernel.IPC.Invariant.WaitingThreadHelpers
 import SeLe4n.Kernel.IPC.Invariant.Structural.QueueNextTransport
+import SeLe4n.Kernel.IPC.Invariant.ReadViewAgreement
 
 /-! # IPC Structural Preservation — Part 2 (StoreObjectFrame)
 
@@ -455,6 +456,32 @@ theorem endpointReceiveDual_preserves_dualQueueSystemInvariant
           | blockedOnCall epCall =>
             -- Call path: senderWasCall = true
             simp only [hSenderIpc, ite_true] at hStep
+            by_cases hLk :
+              ((pair.2.1.ipcCanGrant || pair.2.1.ipcCanGrantReply) && replyId.isSome) = true
+            case neg =>
+              -- A `Call` that links no reply: the caller is completed `Inactive`.
+              rw [if_neg hLk] at hStep
+              cases hStore : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
+              | error e => simp [hStore] at hStep
+              | ok st2 =>
+                simp only [hStore] at hStep
+                have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+                  pair.2.2 st2 pair.1 .ready none hObjInv1 hStore
+                have hInv2 := storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
+                  pair.2.2 st2 pair.1 .ready none hObjInv1 hStore hInv1
+                have hInv3 := dualQueueSystemInvariant_of_readViewAgreement
+                  (ipcReadViewAgreement.of_updateTcb_threadState st2 pair.1 .Inactive hObjInv2) hInv2
+                have hObjInv3 := SystemState.updateTcb_preserves_objects_invExt st2 pair.1
+                  (fun t => { t with threadState := .Inactive }) hObjInv2
+                cases hMsg : storeTcbIpcStateAndMessage
+                    (st2.updateTcb pair.1 fun t => { t with threadState := .Inactive }) receiver .ready
+                    (some (blockedSenderMessage pair.2.2 pair.1 pair.2.1)) with
+                | error e => simp [hMsg] at hStep
+                | ok st3 =>
+                  simp only [hMsg] at hStep; rcases hStep with ⟨-, rfl⟩
+                  exact storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
+                    _ _ receiver .ready _ hObjInv3 hMsg hInv3
+            rw [if_pos hLk] at hStep
             cases hStore : storeTcbIpcStateAndMessage pair.2.2 pair.1
                 (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hStore] at hStep
@@ -2395,6 +2422,32 @@ theorem endpointReceiveDual_preserves_pendingMessagesSatisfy
           -- Now trace through the Call/Send path split
           split at hStep
           · -- Call path: storeTcbIpcStateAndMessage(sender, none) + reply-link + storeTcbIpcStateAndMessage(receiver, senderMsg)
+            by_cases hLk :
+              ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) = true
+            case neg =>
+              -- A `Call` that links no reply: the caller is completed `Inactive`.
+              rw [if_neg hLk] at hStep
+              cases hStore : storeTcbIpcStateAndMessage stPop sender .ready none with
+              | error e => simp [hStore] at hStep
+              | ok st2 =>
+                simp only [hStore] at hStep
+                have hInv2 := storeTcbIpcStateAndMessage_preserves_pendingMessagesSatisfy
+                  stPop st2 sender _ _ (by intro m hm; cases hm) hObjInv1 hStore hInv1
+                have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt stPop st2 sender _ _ hObjInv1 hStore
+                have hInv3 := pendingMessagesSatisfy_of_readViewAgreement
+                  (ipcReadViewAgreement.of_updateTcb_threadState st2 sender .Inactive hObjInv2) hInv2
+                have hObjInv3 := SystemState.updateTcb_preserves_objects_invExt st2 sender
+                  (fun t => { t with threadState := .Inactive }) hObjInv2
+                cases hPend : storeTcbIpcStateAndMessage
+                    (st2.updateTcb sender fun t => { t with threadState := .Inactive }) receiver .ready
+                    (some (blockedSenderMessage stPop sender senderTcb)) with
+                | error e => simp [hPend] at hStep
+                | ok st4 =>
+                  simp [hPend] at hStep
+                  obtain ⟨_, hEq⟩ := hStep; subst hEq
+                  exact storeTcbIpcStateAndMessage_preserves_pendingMessagesSatisfy
+                    _ st4 receiver .ready _ hSenderMsgP hObjInv3 hPend hInv3
+            rw [if_pos hLk] at hStep
             cases hStore : storeTcbIpcStateAndMessage stPop sender (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hStore] at hStep
             | ok st2 =>
@@ -2558,6 +2611,30 @@ theorem endpointReceiveDual_preserves_badgeWellFormed
             endpointId false st stPop sender senderTcb hObjInv hPop
           split at hStep
           · -- Call path
+            by_cases hLk :
+              ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) = true
+            case neg =>
+              -- A `Call` that links no reply: the caller is completed `Inactive`.
+              rw [if_neg hLk] at hStep
+              cases hStore : storeTcbIpcStateAndMessage stPop sender .ready none with
+              | error e => simp [hStore] at hStep
+              | ok st2 =>
+                simp only [hStore] at hStep
+                have hInv2 := storeTcbIpcStateAndMessage_preserves_badgeWellFormed
+                  stPop st2 sender _ _ hInv1 hObjInv1 hStore
+                have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt stPop st2 sender _ _ hObjInv1 hStore
+                have hInv3 := badgeWellFormed_of_updateTcb_threadState sender .Inactive hObjInv2 hInv2
+                have hObjInv3 := SystemState.updateTcb_preserves_objects_invExt st2 sender
+                  (fun t => { t with threadState := .Inactive }) hObjInv2
+                cases hPend : storeTcbIpcStateAndMessage
+                    (st2.updateTcb sender fun t => { t with threadState := .Inactive }) receiver .ready
+                    (some (blockedSenderMessage stPop sender senderTcb)) with
+                | error e => simp [hPend] at hStep
+                | ok st4 =>
+                  simp [hPend] at hStep
+                  obtain ⟨_, hEq⟩ := hStep; subst hEq
+                  exact storeTcbIpcStateAndMessage_preserves_badgeWellFormed _ st4 receiver .ready _ hInv3 hObjInv3 hPend
+            rw [if_pos hLk] at hStep
             cases hStore : storeTcbIpcStateAndMessage stPop sender (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hStore] at hStep
             | ok st2 =>

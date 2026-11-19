@@ -723,6 +723,24 @@ theorem storeTcbSignalWoken_preserves_projection
       · -- R5-C.1: memory
         exact storeObject_preserves_projectMemory ctx observer st pair.2 tid.toObjId _ hStore
 
+/-- A kernel state whose object store is `st`'s with one extra insert at a
+**non-observable** id has the same observable object projection as `st`. -/
+theorem projectObjects_insert_high (ctx : LabelingContext) (observer : IfObserver)
+    (st s' : SystemState) (tid : SeLe4n.ThreadId) (v : KernelObject)
+    (hObjEq : s'.objects = st.objects.insert tid.toObjId v)
+    (hHighObj : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt) :
+    projectObjects ctx observer s' = projectObjects ctx observer st := by
+  funext oid
+  by_cases hObs : objectObservable ctx observer oid
+  · by_cases hEq : oid = tid.toObjId
+    · subst hEq; rw [hHighObj] at hObs; exact absurd hObs (by simp)
+    · simp only [projectObjects, hObs, if_true, hObjEq, SystemState.getObject?]
+      congr 1
+      exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid v
+        (by simp only [beq_iff_eq]; exact fun h => hEq h.symm) hObjInv
+  · simp [projectObjects, hObs]
+
 /-- storeObject at a non-observable object preserves projection (single-state). -/
 theorem storeObject_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)

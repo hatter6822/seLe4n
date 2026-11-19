@@ -57,7 +57,7 @@ carries the rest and proves that one). -/
   st.objects.findsInPlace receiver.toObjId &&
   sTcb.replyObject.isNone &&
   (match sTcb.ipcState with
-   | .blockedOnCall _ => true
+   | .blockedOnCall _ => sTcb.ipcCanGrant || sTcb.ipcCanGrantReply
    | _ => false) &&
   (match st.getTcb? receiver with
    | some rt => callDonationReady st s receiver sTcb rt rid
@@ -74,7 +74,7 @@ asked of its link code. -/
   st.objects.findsInPlace receiver.toObjId &&
   sTcb.replyObject.isNone &&
   (match sTcb.ipcState with
-   | .blockedOnCall _ => true
+   | .blockedOnCall _ => sTcb.ipcCanGrant || sTcb.ipcCanGrantReply
    | _ => false) &&
   (match st.getTcb? receiver with
    | some rt => callDonationReady st s receiver sTcb rt rid
@@ -253,7 +253,7 @@ theorem storeReplyRendezvous_callDonationGuard (st : SystemState) (c tid : SeLe4
   unfold receiveCallDonatesInPlace receiveCallTakesReplyInPlace
   rw [hRtG, hRpG, hQ, hRO', hKept.ipcState]
   simp only [callDonationReady_eq_callerContextReady, callerContextReady, hBind, hk, hkT, hB2,
-    hFree, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq, Option.isSome_some]
+    hFree, hKept.canGrant, hKept.canGrantReply, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq, Option.isSome_some]
   and_intros
   all_goals (first | assumption | trivial | skip)
   · exact hScM.1

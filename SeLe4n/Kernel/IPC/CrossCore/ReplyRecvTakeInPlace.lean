@@ -32,13 +32,13 @@ in-place performers equal to the specification
 
 namespace SeLe4n.Model
 
-/-- The four words a blocked sender's capability fills in (`TCB.setSendCap`),
+/-- The five words a blocked sender's capability fills in (`TCB.setSendCap`),
 the ones `TCB.withoutRunLinks` erases. -/
-@[inline] def TCB.sendCapWords (t : TCB) : UInt64 × Bool × Bool × Bool :=
-  (t.ipcBadge, t.ipcBadged, t.ipcCanGrant, t.ipcFaultSend)
+@[inline] def TCB.sendCapWords (t : TCB) : UInt64 × Bool × Bool × Bool × Bool :=
+  (t.ipcBadge, t.ipcBadged, t.ipcCanGrant, t.ipcFaultSend, t.ipcCanGrantReply)
 
 /-- A thread's send-capability words; none for any other object. -/
-def KernelObject.sendCapWords : KernelObject → Option (UInt64 × Bool × Bool × Bool)
+def KernelObject.sendCapWords : KernelObject → Option (UInt64 × Bool × Bool × Bool × Bool)
   | .tcb t => some t.sendCapWords
   | _ => none
 
@@ -189,11 +189,12 @@ structure SenderWordsKept (t' t : TCB) : Prop where
   badged : t'.ipcBadged = t.ipcBadged
   faultSend : t'.ipcFaultSend = t.ipcFaultSend
   canGrant : t'.ipcCanGrant = t.ipcCanGrant
+  canGrantReply : t'.ipcCanGrantReply = t.ipcCanGrantReply
 
 theorem SenderWordsKept.trans {a b c : TCB} (h₂ : SenderWordsKept c b) (h₁ : SenderWordsKept b a) :
     SenderWordsKept c a :=
   ⟨h₂.1.trans h₁.1, h₂.2.trans h₁.2, h₂.3.trans h₁.3, h₂.4.trans h₁.4, h₂.5.trans h₁.5,
-    h₂.6.trans h₁.6, h₂.7.trans h₁.7⟩
+    h₂.6.trans h₁.6, h₂.7.trans h₁.7, h₂.8.trans h₁.8⟩
 
 /-- Two TCBs that agree off the run-queue links and on their send-capability
 words keep every word a take reads. -/
@@ -202,9 +203,9 @@ theorem SenderWordsKept.of_withoutRunLinks {t t' : TCB}
     SenderWordsKept t' t := by
   have e := TCB.eq_withRunLinks_of_withoutRunLinks_eq h
   simp only [TCB.sendCapWords, Prod.mk.injEq] at hw
-  obtain ⟨h1, h2, h3, h4⟩ := hw
+  obtain ⟨h1, h2, h3, h4, h5⟩ := hw
   rw [e]
-  exact ⟨rfl, rfl, rfl, h1, h2, h4, h3⟩
+  exact ⟨rfl, rfl, rfl, h1, h2, h4, h3, h5⟩
 
 /-- Two TCBs that agree off their derivation links keep every word a take
 reads. -/
@@ -215,7 +216,7 @@ theorem SenderWordsKept.of_withoutLinks {t t' : TCB} (h : t'.withoutLinks = t.wi
   exact ⟨f TCB.queueNextCode (fun _ => rfl), f TCB.ipcState (fun _ => rfl),
     f TCB.registerContext (fun _ => rfl), f TCB.ipcBadge (fun _ => rfl),
     f TCB.ipcBadged (fun _ => rfl), f TCB.ipcFaultSend (fun _ => rfl),
-    f TCB.ipcCanGrant (fun _ => rfl)⟩
+    f TCB.ipcCanGrant (fun _ => rfl), f TCB.ipcCanGrantReply (fun _ => rfl)⟩
 
 /-! ### The take's guard across a frame -/
 

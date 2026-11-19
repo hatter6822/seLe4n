@@ -212,20 +212,37 @@ theorem endpointReceiveDualOnCore_readyKeptStage (endpointId : SeLe4n.ObjId)
           have hB : senderTcb.ipcState ≠ .ready := by rw [hCall]; exact fun h => by cases h
           simp only [↓reduceIte]
           split
-          · exact .refl _
-          · rename_i st2 hS2
+          · split
+            · exact .refl _
+            · rename_i st2 hS2
+              split
+              · exact .refl _
+              · split
+                · exact .refl _
+                · rename_i st3 hL
+                  split
+                  · rename_i st4 hS4
+                    exact .of_stage ((endpointQueuePopHead_then_blockedStore_runQueueStage hPop hS2
+                      hB).trans ((linkCallerReply_runQueueStage hL).trans
+                        ((storeTcbIpcStateAndMessage_runQueueStage hS4 rfl).trans
+                          (SystemState.linkReplyWaiter_runQueueStage _ _ _))))
+                  · exact .refl _
+          · -- A `Call` that links no reply: the caller's `Inactive` mark keeps its
+            -- IPC state `.ready`.
             split
             · exact .refl _
-            · split
+            · rename_i st2 hS2
+              split
+              · rename_i st4 hS4
+                have P := (endpointQueuePopHead_runQueueStage hPop).trans
+                  (storeTcbIpcStateAndMessage_runQueueStage hS2 rfl)
+                have W := SystemState.RunQueueLinkStage.updateTcb st2 sender
+                  (f := fun t => { t with threadState := .Inactive }) (fun _ _ => rfl)
+                exact readyKeptStage.trans (P.1.trans W)
+                  (readyKeptStage.trans P.1 (.of_stage P)
+                    (fun hI _ => readyKeptExcept_updateTcb st2 sender _ hI (fun _ h => h)))
+                  (.of_stage (storeTcbIpcStateAndMessage_runQueueStage hS4 rfl))
               · exact .refl _
-              · rename_i st3 hL
-                split
-                · rename_i st4 hS4
-                  exact .of_stage ((endpointQueuePopHead_then_blockedStore_runQueueStage hPop hS2
-                    hB).trans ((linkCallerReply_runQueueStage hL).trans
-                      ((storeTcbIpcStateAndMessage_runQueueStage hS4 rfl).trans
-                        (SystemState.linkReplyWaiter_runQueueStage _ _ _))))
-                · exact .refl _
         · simp only [Bool.false_eq_true, ↓reduceIte]
           split
           · exact .refl _

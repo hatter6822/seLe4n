@@ -176,7 +176,7 @@ unbound, are not asked here: on the pre-state neither holds
   st.objects.findsInPlace receiver.toObjId &&
   sTcb.replyObject.isNone &&
   (match sTcb.ipcState with
-   | .blockedOnCall _ => true
+   | .blockedOnCall _ => sTcb.ipcCanGrant || sTcb.ipcCanGrantReply
    | _ => false) &&
   sTcb.scBindingScCode != popCode &&
   callerContextReady st s sTcb rid
@@ -192,7 +192,7 @@ of its link code. -/
   st.objects.findsInPlace receiver.toObjId &&
   sTcb.replyObject.isNone &&
   (match sTcb.ipcState with
-   | .blockedOnCall _ => true
+   | .blockedOnCall _ => sTcb.ipcCanGrant || sTcb.ipcCanGrantReply
    | _ => false) &&
   sTcb.scBindingScCode != popCode &&
   callerContextReady st s sTcb rid
@@ -455,7 +455,7 @@ theorem popDonationSettled_callDonationGuard (st : SystemState) (c tid : SeLe4n.
   unfold receiveCallDonatesInPlace receiveCallTakesReplyInPlace
   rw [hPtG, hPrG, hQ, hRO', hKept.ipcState]
   simp only [callDonationReady_eq_callerContextReady, callerContextReady, hBind, hk, hkPG, hBT,
-    hSRp, hB0, hFree, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq, beq_self_eq_true,
+    hSRp, hB0, hFree, hKept.canGrant, hKept.canGrantReply, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq, beq_self_eq_true,
     Option.isSome_some, Bool.true_and]
   and_intros
   all_goals (first | assumption | trivial | skip)

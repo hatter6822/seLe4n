@@ -208,6 +208,55 @@ macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
   refine RunQueueStage.trans ?_
     (storeObject_tcbOver_runQueueStage (by with_reducible assumption) (by with_reducible assumption) (by intro; rfl)))
 
+/-- **A head pop, then the popped caller completed `Inactive`** — the receive
+of a `Call` that links no reply (seL4 `receiveIPC` with no grant right or no
+reply object): the caller was blocked, so it is current nowhere, on no run queue
+and no idle thread; its `.ready` store and its `Inactive` mark land on a thread
+placed nowhere and leave it coherent (`.ready`).  No stage, since the caller was
+active before and is not after. -/
+theorem endpointQueuePopHead_then_inactiveStore_runQueueEntryStage {st st1 st2 : SystemState}
+    {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool} {r : SeLe4n.ThreadId} {rTcb : TCB}
+    (hPop : endpointQueuePopHead endpointId isReceiveQ st = .ok (r, rTcb, st1))
+    (hS : storeTcbIpcStateAndMessage st1 r .ready none = .ok st2) (hB : rTcb.ipcState ≠ .ready) :
+    SystemState.RunQueueEntryStage st
+      (st2.updateTcb r fun t => { t with threadState := .Inactive }) := by
+  have P := endpointQueuePopHead_runQueueStage hPop
+  have S := storeTcbIpcStateAndMessage_runQueueStage hS rfl
+  have W := SystemState.RunQueueLinkStage.updateTcb st2 r
+    (f := fun t => { t with threadState := .Inactive }) (fun _ _ => rfl)
+  refine SystemState.RunQueueEntryStage.of_inv (P.1.trans (S.1.trans W)) fun h0 _ _ => ?_
+  have hE : ∃ ep, st.objects[endpointId]? = some (.endpoint ep) := by
+    unfold endpointQueuePopHead SystemState.getObject? at hPop
+    split at hPop
+    · exact ⟨_, ‹_›⟩
+    all_goals cases hPop
+  obtain ⟨ep, hObj⟩ := hE
+  have hPre := endpointQueuePopHead_returns_pre_tcb _ _ _ ep r rTcb st1 hObj hPop
+  refine P.entry.trans ⟨S.1.trans W, fun h1 r1 _ d1 => ?_⟩
+  obtain ⟨h2, r2⟩ := S.1 h1 r1
+  have d2 := S.2.1 none h1 r1 r2 d1
+  have hSch := storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS
+  have hNR : ¬ st1.runnable r := fun ⟨x, hx, hr⟩ => by
+    obtain ⟨y, hy, he⟩ := endpointQueuePopHead_tcb_ipcState_backward _ _ _ _ r r x h0 hPop
+      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hx)
+    rw [hPre] at hy; cases hy; exact hB (he.trans hr.1)
+  refine SystemState.currentDequeuedUniqueExcept_updateTcb_offWrite h2 d2 (fun c hc => ?_)
+    (fun c => ?_) ?_ (fun _ _ => rfl) (fun x hx => .inl ?_)
+  · rw [hSch] at hc
+    rcases (d1.current c r hc).2.2 with h | h
+    · cases h
+    · exact hNR h
+  · rw [SystemState.queuedOn_congr_of_refined r1 r2 c r (by rw [hSch])]
+    cases hq : st1.queuedOn c r
+    · rfl
+    · exact absurd (d1.queuedRunnable c r hq) hNR
+  · cases hI : isIdleThreadId r
+    · rfl
+    · obtain ⟨c, rfl⟩ := (isIdleThreadId_iff r).mp hI
+      exact absurd (d1.idleRunnable c) hNR
+  · obtain ⟨t, ht, hti⟩ := storeTcbIpcStateAndMessage_getTcb?_ipcState _ _ _ _ _ h1 hS
+    rw [ht] at hx; cases hx; exact hti
+
 /-- **The receive** of core `c`'s current thread: a rendezvous with a calling
 sender hands it to `.blockedOnReply` (it was blocked, so the store moves no
 thread off the steady state); with any other sender it wakes the send-queue
@@ -232,20 +281,29 @@ theorem endpointReceiveDualOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
           have hB : senderTcb.ipcState ≠ .ready := by rw [hCall]; exact fun h => by cases h
           simp only [↓reduceIte]
           split
-          · exact (RunQueueStage.refl _).entry
-          · rename_i st2 hS2
-            split
+          · split
             · exact (RunQueueStage.refl _).entry
-            · split
+            · rename_i st2 hS2
+              split
               · exact (RunQueueStage.refl _).entry
-              · rename_i st3 hL
-                split
-                · rename_i st4 hS4
-                  exact ((endpointQueuePopHead_then_blockedStore_runQueueStage hPop hS2 hB).trans
-                    ((linkCallerReply_runQueueStage hL).trans
-                      ((storeTcbIpcStateAndMessage_runQueueStage hS4 rfl).trans
-                        (SystemState.linkReplyWaiter_runQueueStage _ _ _)))).entry
+              · split
                 · exact (RunQueueStage.refl _).entry
+                · rename_i st3 hL
+                  split
+                  · rename_i st4 hS4
+                    exact ((endpointQueuePopHead_then_blockedStore_runQueueStage hPop hS2 hB).trans
+                      ((linkCallerReply_runQueueStage hL).trans
+                        ((storeTcbIpcStateAndMessage_runQueueStage hS4 rfl).trans
+                          (SystemState.linkReplyWaiter_runQueueStage _ _ _)))).entry
+                  · exact (RunQueueStage.refl _).entry
+          · split
+            · exact (RunQueueStage.refl _).entry
+            · rename_i st2 hS2
+              split
+              · rename_i st4 hS4
+                exact (endpointQueuePopHead_then_inactiveStore_runQueueEntryStage hPop hS2 hB).trans
+                  (storeTcbIpcStateAndMessage_runQueueStage hS4 rfl).entry
+              · exact (RunQueueStage.refl _).entry
         · simp only [Bool.false_eq_true, ↓reduceIte]
           split
           · exact (RunQueueStage.refl _).entry

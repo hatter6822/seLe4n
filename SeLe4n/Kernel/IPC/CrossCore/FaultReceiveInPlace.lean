@@ -36,7 +36,9 @@ open SeLe4n.Model SeLe4n.Kernel.RobinHood SeLe4n.Kernel.Concurrency
 (`sendWakesInPlace`, on the send queue), the receiver an unreserved thread
 other than the caller and its successor, rewritten where it stands, the reply
 object rewritten where it stands and free, the caller holding no reply object
-and blocked on a call, and no SchedContext donated. -/
+and blocked on a call through a cap that grants (seL4 `receiveIPC` links a
+caller to the reply only under `canGrant || canGrantReply`), and no
+SchedContext donated. -/
 @[inline] def receiveCallTakesInPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver s : SeLe4n.ThreadId) (sTcb : TCB) (rid : SeLe4n.ReplyId) : Bool :=
   sendWakesInPlace st endpointId s sTcb.queueNext &&
@@ -56,7 +58,7 @@ and blocked on a call, and no SchedContext donated. -/
    | some rp => rp.isFree
    | none => false) &&
   (match sTcb.ipcState with
-   | .blockedOnCall _ => true
+   | .blockedOnCall _ => sTcb.ipcCanGrant || sTcb.ipcCanGrantReply
    | _ => false)
 
 /-- `receiveCallTakesInPlace` as it is compiled: the caller's successor asked
@@ -79,7 +81,7 @@ of its link code, so no `some` cell is built for a caller with a successor
    | some rp => rp.isFree
    | none => false) &&
   (match sTcb.ipcState with
-   | .blockedOnCall _ => true
+   | .blockedOnCall _ => sTcb.ipcCanGrant || sTcb.ipcCanGrantReply
    | _ => false)
 
 @[csimp] theorem receiveCallTakesInPlace_eq_impl :
@@ -110,7 +112,7 @@ asked the same of its slots (`receiveCallTake_inPlace_facts`). -/
    | some rp => rp.isFree
    | none => false) &&
   (match sTcb.ipcState with
-   | .blockedOnCall _ => true
+   | .blockedOnCall _ => sTcb.ipcCanGrant || sTcb.ipcCanGrantReply
    | _ => false)
 
 /-- `receiveCallTakesReplyInPlace` as it is compiled: the caller's successor
@@ -130,7 +132,7 @@ asked of its link code (`receiveCallTakesReplyInPlace_eq_impl`). -/
    | some rp => rp.isFree
    | none => false) &&
   (match sTcb.ipcState with
-   | .blockedOnCall _ => true
+   | .blockedOnCall _ => sTcb.ipcCanGrant || sTcb.ipcCanGrantReply
    | _ => false)
 
 @[csimp] theorem receiveCallTakesReplyInPlace_eq_impl :
@@ -280,6 +282,7 @@ theorem receiveCallTake_inPlace_facts (st : SystemState) (endpointId : SeLe4n.Ob
     modifyTcb_eq_updateTcb (callCallerTcb endpointId receiver) hSRes hFr.head_tcb (hFr.leaves hLH)
   unfold endpointReceiveDualOnCore
   simp only [hEp, hH, hPop]
+  rw [if_pos (by revert hCall; cases sTcb.ipcState <;> simp)]
   rw [if_pos (by revert hCall; cases sTcb.ipcState <;> simp)]
   rw [hM2]
   simp only []

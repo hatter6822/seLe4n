@@ -6249,6 +6249,32 @@ theorem objectStoreAgrees.symm {st st' : SystemState}
     (h : objectStoreAgrees st st') : objectStoreAgrees st' st :=
   fun k => (h k).symm
 
+/-- A `threadState` store keeps every badge well formed: notifications are
+untouched and a thread's slot capabilities are not its scheduler state. -/
+theorem badgeWellFormed_of_updateTcb_threadState {s : SystemState} (tid : SeLe4n.ThreadId)
+    (ts : ThreadState) (hInv : s.objects.invExt) (h : badgeWellFormed s) :
+    badgeWellFormed (s.updateTcb tid fun t => { t with threadState := ts }) := by
+  have hBack : ∀ (oid : SeLe4n.ObjId) (o' : KernelObject),
+      (s.updateTcb tid fun t => { t with threadState := ts }).objects[oid]? = some o' →
+      ∃ o, s.objects[oid]? = some o ∧ o'.slotCap = o.slotCap ∧
+        (∀ n, o' = .notification n → o = .notification n) := by
+    intro oid o' hO
+    by_cases hk : tid.toObjId = oid
+    · subst hk
+      cases hT : s.getTcb? tid with
+      | none => rw [SystemState.updateTcb_eq_self_of_none hT] at hO; exact ⟨o', hO, rfl, fun _ e => e⟩
+      | some t =>
+        have hRaw := (SystemState.getTcb?_eq_some_iff s tid t).mp hT
+        rw [updateTcb_objects_self_of_tcb _ hInv hRaw] at hO
+        cases Option.some.inj hO
+        exact ⟨.tcb t, hRaw, rfl, fun _ e => KernelObject.noConfusion e⟩
+    · rw [SystemState.updateTcb_objects_ne s tid _ oid hk hInv] at hO
+      exact ⟨o', hO, rfl, fun _ e => e⟩
+  refine ⟨fun oid n b hO hb => ?_, capabilityBadgesWellFormed_of_slotCap_back h.2 fun oid o' hO =>
+    let ⟨o, ho, hs, _⟩ := hBack oid o' hO; ⟨o, ho, hs⟩⟩
+  obtain ⟨o, ho, _, hn⟩ := hBack oid _ hO
+  exact h.1 oid n b (hn n rfl ▸ ho) hb
+
 theorem objectStoreAgrees.trans {st st' st'' : SystemState}
     (h : objectStoreAgrees st st') (h' : objectStoreAgrees st' st'') :
     objectStoreAgrees st st'' :=

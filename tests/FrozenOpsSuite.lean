@@ -2084,21 +2084,25 @@ round 17).
 `.blockedOnSend` one, and the frozen receive woke both -- `.ready`, back in the
 run queue.  A caller does not become runnable at rendezvous: the live
 `endpointReceiveDual` moves it to `.blockedOnReply` and links it to the
-server-supplied reply object.  The branch was unreachable from the suite because
-FO-029's queued sender is `.blockedOnSend`, and the coverage row said `.receive`
-was checked.
+server-supplied reply object when the caller's cap grants and the receive
+supplied one.  The branch was unreachable from the suite because FO-029's queued
+sender is `.blockedOnSend`, and the coverage row said `.receive` was checked.
 
 The control asserts both sides succeed, so the agreement is about a completed
-rendezvous rather than a shared refusal. -/
+rendezvous rather than a shared refusal.  The no-link halves (seL4
+`receiveIPC`): a receive that supplies no reply object, and a caller whose cap
+grants neither `Grant` nor `GrantReply`, each deliver the message and complete
+the caller `Inactive` on both sides. -/
 private def differentialReceiveFromBlockedCallerAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨21⟩], badge := none }
   let rid : SeLe4n.ReplyId := ⟨506⟩
   let ep : Endpoint := (Endpoint.ofQueues { head := some diffA, tail := some diffA } {})
-  let parkedCaller : TCB := (TCB.setIpcState (SeLe4n.Testing.tcbWithSenderFrame { diffTcb 62 with queuePPrevCode := 1 } msg) (.blockedOnCall diffEpId))
-  let ist := diffAddReply (diffAddTcb (diffAddTcb
+  let parkedWith (grant : Bool) : TCB := (TCB.setIpcState (SeLe4n.Testing.tcbWithSenderFrame { diffTcb 62 with queuePPrevCode := 1, ipcCanGrant := grant } msg) (.blockedOnCall diffEpId))
+  let istWith (grant : Bool) := diffAddReply (diffAddTcb (diffAddTcb
     (diffAddEndpoint (diffAddCSpace (mkEmptyIntermediateState ())
-      [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parkedCaller) (diffTcb 63))
+      [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) (parkedWith grant)) (diffTcb 63))
     rid { replyId := rid, callerCode := 0 }
+  let ist := istWith true
   expect "FO-035 control: the live receive completes the call rendezvous"
     (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB (some rid) ist.state).toOption.isSome
   expect "FO-035 control: and so does the frozen one"
@@ -2108,13 +2112,34 @@ private def differentialReceiveFromBlockedCallerAgrees : IO Unit := do
       (frozenEndpointReceive diffEpId diffB (some rid) (freeze ist))
       (liveWithTaint .receive diffB (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB (some rid)) ist.state))
-  -- And the fail-closed half: a call rendezvous with no reply object must be
-  -- refused on both sides rather than stranding the caller `.blockedOnReply`.
-  expect "FO-035: both refuse a call rendezvous carrying no reply object"
+  -- The no-link halves: no reply object supplied, and a cap without a grant
+  -- right.  Both sides complete the rendezvous and agree on the caller.
+  let callerInactive (r : Except KernelError (SeLe4n.ThreadId × FrozenSystemState)) : Bool :=
+    match r with
+    | .ok (_, fs) =>
+        match frozenLookupTcb fs diffA with
+        | some t => t.ipcState == .ready && t.threadState == .Inactive
+        | none => false
+    | .error _ => false
+  expect "FO-035 control: a receive supplying no reply object completes the call"
+    (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB none ist.state).toOption.isSome
+  expect "FO-035: with no reply object the caller is completed Inactive"
+    (callerInactive (frozenEndpointReceive diffEpId diffB none (freeze ist)))
+  expect "FO-035: both agree on a call rendezvous carrying no reply object"
     (frozenRunAgrees (fun a b => a == b)
       (frozenEndpointReceive diffEpId diffB none (freeze ist))
       (liveWithTaint .receive diffB (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB none) ist.state))
+  let istNoGrant := istWith false
+  expect "FO-035 control: a call through a cap without a grant right completes"
+    (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB (some rid) istNoGrant.state).toOption.isSome
+  expect "FO-035: without a grant right the caller is completed Inactive"
+    (callerInactive (frozenEndpointReceive diffEpId diffB (some rid) (freeze istNoGrant)))
+  expect "FO-035: both agree on a call through a cap without a grant right"
+    (frozenRunAgrees (fun a b => a == b)
+      (frozenEndpointReceive diffEpId diffB (some rid) (freeze istNoGrant))
+      (liveWithTaint .receive diffB (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB (some rid)) istNoGrant.state))
 
 /-- The same signal, from an actor that **carries provenance**.
 

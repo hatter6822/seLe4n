@@ -1764,6 +1764,23 @@ theorem endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt
                         hInv2 hS2 hC2 hFinal,
                       storeTcbQueueLinks_preserves_objectIndexSet_invExt _ _ headTid _ _ _ hS2 hFinal⟩
 
+/-- A rewrite of one non-observable thread's TCB is invisible to the
+observer: only that thread's object changes. -/
+theorem updateTcb_high_preserves_projection (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hHighObj : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (st.updateTcb tid f) = projectState ctx observer st := by
+  cases hT : st.getTcb? tid with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]
+  | some tcb =>
+      rw [SystemState.updateTcb_eq_of_some hT]
+      have hProj := projectObjects_insert_high ctx observer st
+        ({ st with objects := st.objects.insert tid.toObjId (KernelObject.tcb (f tcb)) } : SystemState)
+        tid (KernelObject.tcb (f tcb)) rfl hHighObj hObjInv
+      simp only [projectState]
+      congr 1
+
 /-- U4-B: endpointReceiveDual at a non-observable endpoint preserves projection.
 
     Two paths:
@@ -1833,7 +1850,36 @@ theorem endpointReceiveDual_preserves_projection
           split at hStep
           · -- Call path: sender → blockedOnReply, then (#7.1 fold) link the
             -- dequeued caller to the server-supplied reply object, then deliver
-            -- the message to the receiver.
+            -- the message to the receiver; a call that links no reply leaves
+            -- the caller `.ready` but `Inactive`.
+            by_cases hLk :
+              ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) = true
+            case neg =>
+              -- A `Call` that links no reply: the caller is completed `Inactive`.
+              rw [if_neg hLk] at hStep
+              cases hIpc : storeTcbIpcStateAndMessage st1 sender .ready none with
+              | error e => simp [hIpc] at hStep
+              | ok st2 =>
+                simp only [hIpc] at hStep
+                have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2
+                    sender _ _ hObjInv1 hIpc
+                have hProjIpc := storeTcbIpcStateAndMessage_preserves_projection ctx observer
+                    st1 st2 sender _ _ hSenderObjHigh hObjInv1 hIpc
+                have hProjEns := updateTcb_high_preserves_projection ctx observer st2 sender
+                  (fun t => { t with threadState := .Inactive }) hSenderObjHigh hObjInv2
+                have hObjInvEns : (st2.updateTcb sender fun t => { t with threadState := .Inactive }).objects.invExt := by
+                  exact SystemState.updateTcb_preserves_objects_invExt st2 sender (fun t => { t with threadState := .Inactive }) hObjInv2
+                -- AK1-D: atomic (.ready, senderMsg) receiver update
+                cases hPend : storeTcbIpcStateAndMessage (st2.updateTcb sender fun t => { t with threadState := .Inactive }) receiver .ready
+                    (some (blockedSenderMessage st1 sender senderTcb)) with
+                | error e => simp [hPend] at hStep
+                | ok st3 =>
+                  simp only [hPend] at hStep
+                  have hStEq := (Prod.mk.inj (Except.ok.inj hStep)).2; subst hStEq
+                  rw [storeTcbIpcStateAndMessage_preserves_projection ctx observer
+                      (st2.updateTcb sender fun t => { t with threadState := .Inactive }) st3 receiver .ready _ hReceiverObjHigh hObjInvEns hPend,
+                      hProjEns, hProjIpc, hProjPop]
+            rw [if_pos hLk] at hStep
             cases hIpc : storeTcbIpcStateAndMessage st1 sender
                 (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hIpc] at hStep

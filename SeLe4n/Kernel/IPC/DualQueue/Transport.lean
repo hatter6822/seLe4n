@@ -2544,30 +2544,41 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                 -- is `.ready` (ipcState is unconstrained by
                 -- `blockedThreadsPendingMessageConsistent`). Fail-closed by
                 -- construction.
+                -- seL4 `receiveIPC`: a dequeued caller is linked to the reply only
+                -- when its cap grants (`canGrant || canGrantReply`) and the receive
+                -- supplied a reply object; otherwise it is left Inactive, unwoken.
                 if senderWasCall then
-                  -- Call path: sender transitions to blockedOnReply, NOT ready
-                  match storeTcbIpcStateAndMessage st' sender
-                      (.blockedOnReply endpointId (some receiver)) none with
-                  | .error e => .error e
-                  | .ok st'' =>
-                      -- WS-SM SM6.D (#7.1 fold): link the dequeued caller (now
-                      -- `.blockedOnReply`) to the server-supplied reply object in the
-                      -- same transition.  A Call rendezvous carrying no reply object
-                      -- fails closed (`.replyCapInvalid`); the post-state is discarded,
-                      -- so the caller is never stranded `.blockedOnReply` with no reply.
-                      match replyId with
-                      | none => .error .replyCapInvalid
-                      | some rid =>
-                          match SystemState.linkCallerReply sender rid st'' with
-                          | .error e => .error e
-                          | .ok ((), stLinked) =>
-                              -- AK1-D: Atomic (ipcState := .ready, pendingMessage := senderMsg).
-                              -- WS-ZA ZA6.37: the caller now waits on the receiver, so it
-                              -- joins the receiver's reply-waiter queue, as the per-core
-                              -- receive links it (`linkReplyWaiter`).
-                              match storeTcbIpcStateAndMessage stLinked receiver .ready senderMsg with
-                              | .ok st''' => .ok (sender, st'''.linkReplyWaiter sender receiver)
-                              | .error e => .error e
+                  if (senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome then
+                    -- Call path: sender transitions to blockedOnReply, NOT ready
+                    match storeTcbIpcStateAndMessage st' sender
+                        (.blockedOnReply endpointId (some receiver)) none with
+                    | .error e => .error e
+                    | .ok st'' =>
+                        -- WS-SM SM6.D (#7.1 fold): link the dequeued caller (now
+                        -- `.blockedOnReply`) to the server-supplied reply object in the
+                        -- same transition.  The guard above makes `replyId` present.
+                        match replyId with
+                        | none => .error .replyCapInvalid
+                        | some rid =>
+                            match SystemState.linkCallerReply sender rid st'' with
+                            | .error e => .error e
+                            | .ok ((), stLinked) =>
+                                -- AK1-D: Atomic (ipcState := .ready, pendingMessage := senderMsg).
+                                -- WS-ZA ZA6.37: the caller now waits on the receiver, so it
+                                -- joins the receiver's reply-waiter queue, as the per-core
+                                -- receive links it (`linkReplyWaiter`).
+                                match storeTcbIpcStateAndMessage stLinked receiver .ready senderMsg with
+                                | .ok st''' => .ok (sender, st'''.linkReplyWaiter sender receiver)
+                                | .error e => .error e
+                  else
+                    match storeTcbIpcStateAndMessage st' sender .ready none with
+                    | .error e => .error e
+                    | .ok st'' =>
+                        match storeTcbIpcStateAndMessage
+                            (st''.updateTcb sender (fun t => { t with threadState := .Inactive }))
+                            receiver .ready senderMsg with
+                        | .ok st4 => .ok (sender, st4)
+                        | .error e => .error e
                 else
                   -- Send path: sender transitions to ready as before
                   match storeTcbIpcStateAndMessage st' sender .ready none with

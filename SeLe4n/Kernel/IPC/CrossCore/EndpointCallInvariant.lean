@@ -58,66 +58,6 @@ open SeLe4n.Kernel.Concurrency
 -- §0  The call that links no reply: its frame
 -- ============================================================================
 
-/-- The IPC read view frames the timeout budget: it is inside the view. -/
-theorem timeoutBudgetFrame.of_readViewAgreement {s1 s2 : SystemState}
-    (h : ipcReadViewAgreement s1 s2) : timeoutBudgetFrame s1 s2 := fun tid tcb' hT => by
-  obtain ⟨t, ht, e⟩ := h.tcb tid.toObjId tcb' hT
-  exact ⟨t, ht, (congrArg TCB.timeoutBudget e).symm⟩
-
-/-- …and the reply links: a reply's caller and a thread's `replyObject` and IPC
-state are inside the view. -/
-theorem replyLinkageFrame.of_readViewAgreement {s1 s2 : SystemState}
-    (h : ipcReadViewAgreement s1 s2) : replyLinkageFrame s1 s2 := by
-  refine ⟨fun rid _ => ?_, fun tid tcb' hT => ?_, fun tid tcb _ hT _ => ?_⟩
-  · exact ⟨fun ⟨r, hr, hc⟩ => ⟨r, (h.reply _ r).mp hr, hc⟩,
-      fun ⟨r, hr, hc⟩ => ⟨r, (h.reply _ r).mpr hr, hc⟩⟩
-  · obtain ⟨t, ht, e⟩ := h.tcb tid.toObjId tcb' hT
-    have eR : tcb'.ipcReadView.replyObject = t.ipcReadView.replyObject := congrArg TCB.replyObject e
-    exact ⟨t, ht, eR⟩
-  · obtain ⟨t', ht, e⟩ := h.tcbFwd tid.toObjId tcb hT
-    have eI : t'.ipcReadView.ipcState = tcb.ipcReadView.ipcState := congrArg TCB.ipcState e
-    have eR : t'.ipcReadView.replyObject = tcb.ipcReadView.replyObject :=
-      congrArg TCB.replyObject e
-    exact ⟨t', ht, eR, fun ep rt hb => ⟨ep, rt, eI.trans hb⟩⟩
-
-/-- …and every donation owner: a context's `boundThread` and a thread's binding
-and IPC state are inside the view. -/
-theorem donationOwnerFrame.of_readViewAgreement {s1 s2 : SystemState}
-    (h : ipcReadViewAgreement s1 s2) : donationOwnerFrame s1 s2 := by
-  refine ⟨fun scId sc hSc => h.schedContext _ sc hSc, fun owner ownerTcb hT hU hR => ?_⟩
-  obtain ⟨t', ht, e⟩ := h.tcbFwd owner.toObjId ownerTcb hT
-  have eB : t'.ipcReadView.schedContextBinding = ownerTcb.ipcReadView.schedContextBinding :=
-    congrArg TCB.schedContextBinding e
-  have eI : t'.ipcReadView.ipcState = ownerTcb.ipcReadView.ipcState := congrArg TCB.ipcState e
-  obtain ⟨ep, rt, hb⟩ := hR
-  exact ⟨t', ht, eB.trans hU, ep, rt, eI.trans hb⟩
-
-/-- A `threadState` store keeps every badge well formed: notifications are
-untouched and a thread's slot capabilities are not its scheduler state. -/
-theorem badgeWellFormed_of_updateTcb_threadState {s : SystemState} (tid : SeLe4n.ThreadId)
-    (ts : ThreadState) (hInv : s.objects.invExt) (h : badgeWellFormed s) :
-    badgeWellFormed (s.updateTcb tid fun t => { t with threadState := ts }) := by
-  have hBack : ∀ (oid : SeLe4n.ObjId) (o' : KernelObject),
-      (s.updateTcb tid fun t => { t with threadState := ts }).objects[oid]? = some o' →
-      ∃ o, s.objects[oid]? = some o ∧ o'.slotCap = o.slotCap ∧
-        (∀ n, o' = .notification n → o = .notification n) := by
-    intro oid o' hO
-    by_cases hk : tid.toObjId = oid
-    · subst hk
-      cases hT : s.getTcb? tid with
-      | none => rw [SystemState.updateTcb_eq_self_of_none hT] at hO; exact ⟨o', hO, rfl, fun _ e => e⟩
-      | some t =>
-        have hRaw := (SystemState.getTcb?_eq_some_iff s tid t).mp hT
-        rw [updateTcb_objects_self_of_tcb _ hInv hRaw] at hO
-        cases Option.some.inj hO
-        exact ⟨.tcb t, hRaw, rfl, fun _ e => KernelObject.noConfusion e⟩
-    · rw [SystemState.updateTcb_objects_ne s tid _ oid hk hInv] at hO
-      exact ⟨o', hO, rfl, fun _ e => e⟩
-  refine ⟨fun oid n b hO hb => ?_, capabilityBadgesWellFormed_of_slotCap_back h.2 fun oid o' hO =>
-    let ⟨o, ho, hs, _⟩ := hBack oid o' hO; ⟨o, ho, hs⟩⟩
-  obtain ⟨o, ho, _, hn⟩ := hBack oid _ hO
-  exact h.1 oid n b (hn n rfl ▸ ho) hb
-
 /-- **The no-reply call's post-state is read-view agreement with its receive's
 store**: the wake and the deschedule write run links only, and the caller's
 `Inactive` store writes its scheduler state, outside the view. -/
@@ -1143,6 +1083,32 @@ theorem endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant
         cases hSenderIpc : pair.2.1.ipcState with
         | blockedOnCall epCall =>
           simp only [hSenderIpc, ite_true]
+          by_cases hLk :
+            ((pair.2.1.ipcCanGrant || pair.2.1.ipcCanGrantReply) && replyId.isSome) = true
+          case neg =>
+            -- A `Call` that links no reply: the caller is completed `Inactive`.
+            rw [if_neg hLk]
+            cases hStore : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
+            | error e => simp only [hStore]; exact hInv
+            | ok st2 =>
+              simp only [hStore]
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+                pair.2.2 st2 pair.1 .ready none hObjInv1 hStore
+              have hInv2 := storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
+                pair.2.2 st2 pair.1 .ready none hObjInv1 hStore hInv1
+              have hInv3 := dualQueueSystemInvariant_of_readViewAgreement
+                (ipcReadViewAgreement.of_updateTcb_threadState st2 pair.1 .Inactive hObjInv2) hInv2
+              have hObjInv3 := SystemState.updateTcb_preserves_objects_invExt st2 pair.1
+                (fun t => { t with threadState := .Inactive }) hObjInv2
+              cases hMsg : storeTcbIpcStateAndMessage
+                  (st2.updateTcb pair.1 fun t => { t with threadState := .Inactive }) receiver .ready
+                  (some (blockedSenderMessage pair.2.2 pair.1 pair.2.1)) with
+              | error e => simp only [hMsg]; exact hInv
+              | ok st3 =>
+                simp only [hMsg]
+                exact storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
+                  _ _ receiver .ready _ hObjInv3 hMsg hInv3
+          rw [if_pos hLk]
           cases hStore : storeTcbIpcStateAndMessage pair.2.2 pair.1
               (.blockedOnReply endpointId (some receiver)) none with
           | error e => simp only [hStore]; exact hInv

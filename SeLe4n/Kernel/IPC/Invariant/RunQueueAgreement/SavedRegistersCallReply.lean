@@ -447,20 +447,32 @@ theorem endpointReceiveDualOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
         dsimp only
         split <;> simp only [↓reduceIte, Bool.false_eq_true]
         · split
-          · exact .refl hInv
-          · rename_i st2 hBlk
-            have h2 := h1.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h1.2 hBlk)
+          · split
+            · exact .refl hInv
+            · rename_i st2 hBlk
+              have h2 := h1.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h1.2 hBlk)
+              split
+              · exact .refl hInv
+              · split
+                · exact .refl hInv
+                · rename_i stL hL
+                  have h3 := h2.trans (savedRegsUnwritten.of_linkCallerReply h2.2 hL)
+                  split
+                  · rename_i st4 hRdy
+                    have h4 := h3.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h3.2 hRdy)
+                    exact h4.trans (savedRegsUnwritten.of_linkReplyWaiter _ _ _ h4.2)
+                  · exact .refl hInv
+          · -- a `Call` that links no reply: the caller's `Inactive` mark writes no register
             split
             · exact .refl hInv
-            · split
+            · rename_i st2 hRdy
+              have h2 := h1.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h1.2 hRdy)
+              have h3 := h2.trans (savedRegsUnwritten.of_updateTcb st2 sender
+                (fun t => { t with threadState := .Inactive }) h2.2 (fun _ => rfl))
+              split
+              · rename_i st4 hRcv
+                exact h3.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h3.2 hRcv)
               · exact .refl hInv
-              · rename_i stL hL
-                have h3 := h2.trans (savedRegsUnwritten.of_linkCallerReply h2.2 hL)
-                split
-                · rename_i st4 hRdy
-                  have h4 := h3.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h3.2 hRdy)
-                  exact h4.trans (savedRegsUnwritten.of_linkReplyWaiter _ _ _ h4.2)
-                · exact .refl hInv
         · split
           · exact .refl hInv
           · rename_i st2 hRdy

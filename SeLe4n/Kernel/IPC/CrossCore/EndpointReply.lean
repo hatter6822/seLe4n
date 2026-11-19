@@ -597,28 +597,40 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
                 (some (blockedSenderMessage st' sender senderTcb), match senderTcb.ipcState with
                   | .blockedOnCall _ => true
                   | _ => false)
+              -- seL4 `receiveIPC`: a dequeued caller is linked to the reply only
+              -- when its cap grants (`canGrant || canGrantReply`) and the receive
+              -- supplied a reply object; otherwise the caller is left Inactive, its
+              -- Call answered by nothing (`callRendezvousLinks` on the send side).
               if senderWasCall then
-                match storeTcbIpcStateAndMessage st' sender
-                    (.blockedOnReply endpointId (some receiver)) none with
-                | .error e => (st, .error e)
-                | .ok st'' =>
-                    -- WS-SM SM6.D (#7.2 fold): link the dequeued caller (now
-                    -- `.blockedOnReply`) to the server-supplied reply object in the
-                    -- same transition (the former `linkReceivedCaller` dispatch step).
-                    -- A Call rendezvous carrying no reply object fails closed
-                    -- (`.replyCapInvalid`); the pre-state is returned, so the caller is
-                    -- never stranded `.blockedOnReply` with no reply.
-                    match replyId with
-                    | none => (st, .error .replyCapInvalid)
-                    | some rid =>
-                        match SystemState.linkCallerReply sender rid st'' with
-                        | .error e => (st, .error e)
-                        | .ok ((), stLinked) =>
-                            match storeTcbIpcStateAndMessage stLinked receiver .ready senderMsg with
-                            -- WS-ZA ZA4.6: the caller joins the receiver's reply-waiter
-                            -- queue, last, off every other field.
-                            | .ok st''' => (st'''.linkReplyWaiter sender receiver, .ok (sender, none))
-                            | .error e => (st, .error e)
+                if (senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome then
+                  match storeTcbIpcStateAndMessage st' sender
+                      (.blockedOnReply endpointId (some receiver)) none with
+                  | .error e => (st, .error e)
+                  | .ok st'' =>
+                      -- WS-SM SM6.D (#7.2 fold): link the dequeued caller (now
+                      -- `.blockedOnReply`) to the server-supplied reply object in the
+                      -- same transition (the former `linkReceivedCaller` dispatch step).
+                      -- The guard above makes `replyId` present here.
+                      match replyId with
+                      | none => (st, .error .replyCapInvalid)
+                      | some rid =>
+                          match SystemState.linkCallerReply sender rid st'' with
+                          | .error e => (st, .error e)
+                          | .ok ((), stLinked) =>
+                              match storeTcbIpcStateAndMessage stLinked receiver .ready senderMsg with
+                              -- WS-ZA ZA4.6: the caller joins the receiver's reply-waiter
+                              -- queue, last, off every other field.
+                              | .ok st''' => (st'''.linkReplyWaiter sender receiver, .ok (sender, none))
+                              | .error e => (st, .error e)
+                else
+                  match storeTcbIpcStateAndMessage st' sender .ready none with
+                  | .error e => (st, .error e)
+                  | .ok st'' =>
+                      match storeTcbIpcStateAndMessage
+                          (st''.updateTcb sender (fun t => { t with threadState := .Inactive }))
+                          receiver .ready senderMsg with
+                      | .ok st4 => (st4, .ok (sender, none))
+                      | .error e => (st, .error e)
               else
                 match storeTcbIpcStateAndMessage st' sender .ready none with
                 | .error e => (st, .error e)
@@ -3916,6 +3928,20 @@ theorem endpointReceiveDualWriteSet_of_blocked (st : SystemState)
   rw [hEp]
   simp only [hHead]
 
+/-- The no-link receive's `Inactive` store moves no thread's home core:
+`determineTargetCore` reads only `cpuAffinity`. -/
+theorem updateTcb_threadState_determineTargetCore_eq (st : SystemState)
+    (tid x : SeLe4n.ThreadId) (s : ThreadState) (hInv : st.objects.invExt) :
+    determineTargetCore (st.updateTcb tid (fun t => { t with threadState := s })) x
+      = determineTargetCore st x := by
+  refine determineTargetCore_congr _ _ x ?_
+  by_cases h : tid = x
+  · subst h
+    rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv, Option.map_map]
+    rfl
+  · rw [SystemState.updateTcb_getTcb?_ne _ _ _ hInv _
+      (fun e => h (SeLe4n.ThreadId.toObjId_injective _ _ e))]
+
 /-- WS-RR RR2 (closure audit): the bare per-core receive preserves the
 object-store invariant — the definition walk, mirroring
 `endpointSendDualOnCore_preserves_objects_invExt`. -/
@@ -3940,32 +3966,51 @@ theorem endpointReceiveDualOnCore_preserves_objects_invExt
         have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId false
           st st' sender senderTcb hObjInv hPop
         split
-        · -- The dequeued sender was a `Call`: re-block it on reply, link, deliver.
-          cases hS1 : storeTcbIpcStateAndMessage st' sender
-              (.blockedOnReply endpointId (some receiver)) none with
-          | error e => simp only; exact hObjInv
-          | ok st'' =>
-            simp only
-            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
-              sender _ _ hObjInv1 hS1
-            cases replyId with
-            | none => exact hObjInv
-            | some rid =>
+        · by_cases hLk : ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) = true
+          · rw [if_pos hLk]
+            -- The dequeued sender was a `Call`: re-block it on reply, link, deliver.
+            cases hS1 : storeTcbIpcStateAndMessage st' sender
+                (.blockedOnReply endpointId (some receiver)) none with
+            | error e => simp only; exact hObjInv
+            | ok st'' =>
               simp only
-              cases hLink : SystemState.linkCallerReply sender rid st'' with
-              | error e => simp only; exact hObjInv
-              | ok pLink =>
-                obtain ⟨⟨⟩, stLinked⟩ := pLink
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
+                sender _ _ hObjInv1 hS1
+              cases replyId with
+              | none => exact hObjInv
+              | some rid =>
                 simp only
-                have hObjInv3 := linkCallerReply_preserves_objects_invExt st'' stLinked
-                  sender rid hObjInv2 hLink
-                cases hS2 : storeTcbIpcStateAndMessage stLinked receiver .ready
-                    (some (blockedSenderMessage st' sender senderTcb)) with
-                | ok st3 =>
-                    exact SystemState.linkReplyWaiter_objects_invExt _ _ _
-                      (storeTcbIpcStateAndMessage_preserves_objects_invExt stLinked st3
-                        receiver _ _ hObjInv3 hS2)
+                cases hLink : SystemState.linkCallerReply sender rid st'' with
                 | error e => simp only; exact hObjInv
+                | ok pLink =>
+                  obtain ⟨⟨⟩, stLinked⟩ := pLink
+                  simp only
+                  have hObjInv3 := linkCallerReply_preserves_objects_invExt st'' stLinked
+                    sender rid hObjInv2 hLink
+                  cases hS2 : storeTcbIpcStateAndMessage stLinked receiver .ready
+                      (some (blockedSenderMessage st' sender senderTcb)) with
+                  | ok st3 =>
+                      exact SystemState.linkReplyWaiter_objects_invExt _ _ _
+                        (storeTcbIpcStateAndMessage_preserves_objects_invExt stLinked st3
+                          receiver _ _ hObjInv3 hS2)
+                  | error e => simp only; exact hObjInv
+          · rw [if_neg hLk]
+            -- A `Call` that links no reply: the caller is completed `Inactive`, not woken.
+            cases hS1 : storeTcbIpcStateAndMessage st' sender .ready none with
+            | error e => simp only; exact hObjInv
+            | ok st'' =>
+              simp only
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
+                sender _ _ hObjInv1 hS1
+              have hObjInvU := SystemState.updateTcb_preserves_objects_invExt st'' sender
+                (fun t => { t with threadState := .Inactive }) hObjInv2
+              cases hS2 : storeTcbIpcStateAndMessage
+                  (st''.updateTcb sender (fun t => { t with threadState := .Inactive }))
+                  receiver .ready (some (blockedSenderMessage st' sender senderTcb)) with
+              | ok st4 =>
+                  exact storeTcbIpcStateAndMessage_preserves_objects_invExt _ st4 receiver _ _
+                    hObjInvU hS2
+              | error e => simp only; exact hObjInv
         · -- A plain `Send`: complete the sender, wake it on its home core, deliver.
           cases hS1 : storeTcbIpcStateAndMessage st' sender .ready none with
           | error e => simp only; exact hObjInv
@@ -4044,34 +4089,55 @@ theorem endpointReceiveDualOnCore_objects_capacity_le
         have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId false
           st st' sender senderTcb hObjInv hPop
         split
-        · cases hS1 : storeTcbIpcStateAndMessage st' sender
-              (.blockedOnReply endpointId (some receiver)) none with
-          | error e => simp only; exact Nat.le_refl _
-          | ok st'' =>
-            simp only
-            have hC2 := (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv1 hS1).ghosts.objectsCapacity
-            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
-              sender _ _ hObjInv1 hS1
-            cases replyId with
-            | none => exact Nat.le_refl _
-            | some rid =>
+        · by_cases hLk : ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) = true
+          · rw [if_pos hLk]
+            cases hS1 : storeTcbIpcStateAndMessage st' sender
+                (.blockedOnReply endpointId (some receiver)) none with
+            | error e => simp only; exact Nat.le_refl _
+            | ok st'' =>
               simp only
-              cases hLink : SystemState.linkCallerReply sender rid st'' with
-              | error e => simp only; exact Nat.le_refl _
-              | ok pLink =>
-                obtain ⟨⟨⟩, stLinked⟩ := pLink
+              have hC2 := (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv1 hS1).ghosts.objectsCapacity
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
+                sender _ _ hObjInv1 hS1
+              cases replyId with
+              | none => exact Nat.le_refl _
+              | some rid =>
                 simp only
-                have hC3 := (SystemState.linkCallerReply_kindPreservingWrite st'' stLinked sender rid hObjInv2
-                  hLink).ghosts.objectsCapacity
-                have hObjInv3 := linkCallerReply_preserves_objects_invExt st'' stLinked
-                  sender rid hObjInv2 hLink
-                cases hS2 : storeTcbIpcStateAndMessage stLinked receiver .ready
-                    (some (blockedSenderMessage st' sender senderTcb)) with
-                | ok st3 =>
-                    have hC4 := (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv3
-                      hS2).ghosts.objectsCapacity
-                    simpa using Nat.le_trans (Nat.le_trans (Nat.le_trans hC1 hC2) hC3) hC4
+                cases hLink : SystemState.linkCallerReply sender rid st'' with
                 | error e => simp only; exact Nat.le_refl _
+                | ok pLink =>
+                  obtain ⟨⟨⟩, stLinked⟩ := pLink
+                  simp only
+                  have hC3 := (SystemState.linkCallerReply_kindPreservingWrite st'' stLinked sender rid hObjInv2
+                    hLink).ghosts.objectsCapacity
+                  have hObjInv3 := linkCallerReply_preserves_objects_invExt st'' stLinked
+                    sender rid hObjInv2 hLink
+                  cases hS2 : storeTcbIpcStateAndMessage stLinked receiver .ready
+                      (some (blockedSenderMessage st' sender senderTcb)) with
+                  | ok st3 =>
+                      have hC4 := (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv3
+                        hS2).ghosts.objectsCapacity
+                      simpa using Nat.le_trans (Nat.le_trans (Nat.le_trans hC1 hC2) hC3) hC4
+                  | error e => simp only; exact Nat.le_refl _
+          · rw [if_neg hLk]
+            cases hS1 : storeTcbIpcStateAndMessage st' sender .ready none with
+            | error e => simp only; exact Nat.le_refl _
+            | ok st'' =>
+              simp only
+              have hC2 := (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv1 hS1).ghosts.objectsCapacity
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
+                sender _ _ hObjInv1 hS1
+              have hC3 := (SystemState.updateTcb_kindPreservingWrite st'' sender
+                (fun t => { t with threadState := .Inactive }) hObjInv2).ghosts.objectsCapacity
+              have hObjInvU := SystemState.updateTcb_preserves_objects_invExt st'' sender
+                (fun t => { t with threadState := .Inactive }) hObjInv2
+              cases hS2 : storeTcbIpcStateAndMessage
+                  (st''.updateTcb sender (fun t => { t with threadState := .Inactive }))
+                  receiver .ready (some (blockedSenderMessage st' sender senderTcb)) with
+              | ok st4 =>
+                  exact Nat.le_trans (Nat.le_trans (Nat.le_trans hC1 hC2) hC3)
+                    (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInvU hS2).ghosts.objectsCapacity
+              | error e => simp only; exact Nat.le_refl _
         · cases hS1 : storeTcbIpcStateAndMessage st' sender .ready none with
           | error e => simp only; exact Nat.le_refl _
           | ok st'' =>
@@ -4172,40 +4238,64 @@ theorem endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous
         endpointQueuePopHead_preserves_objects_invExt endpointId false st st1 popTid popTcb
           hObjInv hPop
       split
-      · -- `Call` rendezvous: the caller is parked `.blockedOnReply` and linked.
-        cases hS2 : storeTcbIpcStateAndMessage st1 popTid
-            (.blockedOnReply endpointId (some receiver)) none with
-        | error e => rfl
-        | ok st2 =>
-            dsimp only
-            have hF2 : determineTargetCore st2 x = determineTargetCore st x := by
-              rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st1 st2 popTid _ none x
-                hI1 hS2, hF1]
-            have hI2 : st2.objects.invExt :=
-              storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid _ none hI1 hS2
-            cases hRid : replyId with
-            | none => rfl
-            | some rid =>
-                dsimp only
-                cases hLink : SystemState.linkCallerReply popTid rid st2 with
-                | error e => rfl
-                | ok pair =>
-                    obtain ⟨_, st3⟩ := pair
-                    dsimp only
-                    have hF3 : determineTargetCore st3 x = determineTargetCore st x := by
-                      rw [linkCallerReply_determineTargetCore_eq st2 st3 popTid rid x hI2 hLink,
-                        hF2]
-                    have hI3 : st3.objects.invExt :=
-                      linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
-                    cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
-                        (some (blockedSenderMessage st1 popTid popTcb)) with
-                    | error e => rfl
-                    | ok st4 =>
-                        dsimp only
-                        exact (determineTargetCore_of_objectsAgreeOffRunLinks
-                          (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) x).trans
-                          ((storeTcbIpcStateAndMessage_determineTargetCore_eq st3 st4 receiver
-                          .ready (some (blockedSenderMessage st1 popTid popTcb)) x hI3 hS4).trans hF3)
+      · by_cases hLk : ((popTcb.ipcCanGrant || popTcb.ipcCanGrantReply) && replyId.isSome) = true
+        · rw [if_pos hLk]
+          -- `Call` rendezvous: the caller is parked `.blockedOnReply` and linked.
+          cases hS2 : storeTcbIpcStateAndMessage st1 popTid
+              (.blockedOnReply endpointId (some receiver)) none with
+          | error e => rfl
+          | ok st2 =>
+              dsimp only
+              have hF2 : determineTargetCore st2 x = determineTargetCore st x := by
+                rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st1 st2 popTid _ none x
+                  hI1 hS2, hF1]
+              have hI2 : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid _ none hI1 hS2
+              cases hRid : replyId with
+              | none => rfl
+              | some rid =>
+                  dsimp only
+                  cases hLink : SystemState.linkCallerReply popTid rid st2 with
+                  | error e => rfl
+                  | ok pair =>
+                      obtain ⟨_, st3⟩ := pair
+                      dsimp only
+                      have hF3 : determineTargetCore st3 x = determineTargetCore st x := by
+                        rw [linkCallerReply_determineTargetCore_eq st2 st3 popTid rid x hI2 hLink,
+                          hF2]
+                      have hI3 : st3.objects.invExt :=
+                        linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
+                      cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
+                          (some (blockedSenderMessage st1 popTid popTcb)) with
+                      | error e => rfl
+                      | ok st4 =>
+                          dsimp only
+                          exact (determineTargetCore_of_objectsAgreeOffRunLinks
+                            (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) x).trans
+                            ((storeTcbIpcStateAndMessage_determineTargetCore_eq st3 st4 receiver
+                            .ready (some (blockedSenderMessage st1 popTid popTcb)) x hI3 hS4).trans hF3)
+        · rw [if_neg hLk]
+          -- `Call` rendezvous that links no reply: the caller is completed `Inactive`.
+          cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
+          | error e => rfl
+          | ok st2 =>
+              dsimp only
+              have hF2 : determineTargetCore st2 x = determineTargetCore st x := by
+                rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st1 st2 popTid .ready none x
+                  hI1 hS2, hF1]
+              have hI2 : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid .ready none hI1 hS2
+              have hFU := (updateTcb_threadState_determineTargetCore_eq st2 popTid x .Inactive hI2).trans hF2
+              have hIU := SystemState.updateTcb_preserves_objects_invExt st2 popTid
+                (fun t => { t with threadState := .Inactive }) hI2
+              cases hS3 : storeTcbIpcStateAndMessage
+                  (st2.updateTcb popTid (fun t => { t with threadState := .Inactive }))
+                  receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) with
+              | error e => rfl
+              | ok st3 =>
+                  dsimp only
+                  exact (storeTcbIpcStateAndMessage_determineTargetCore_eq _ st3 receiver .ready
+                    (some (blockedSenderMessage st1 popTid popTcb)) x hIU hS3).trans hFU
       · -- plain `Send` rendezvous: the sender is made `.ready` and woken.
         cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
         | error e => rfl
@@ -4299,39 +4389,64 @@ theorem endpointReceiveDualOnCore_getSchedContext?_eq_of_rendezvous
         endpointQueuePopHead_preserves_objects_invExt endpointId false st st1 popTid popTcb
           hObjInv hPop
       split
-      · -- `Call` rendezvous: the caller is parked `.blockedOnReply` and linked.
-        cases hS2 : storeTcbIpcStateAndMessage st1 popTid
-            (.blockedOnReply endpointId (some receiver)) none with
-        | error e => rfl
-        | ok st2 =>
-            dsimp only
-            have hF2 : st2.getSchedContext? scId = st.getSchedContext? scId := by
-              rw [storeTcbIpcStateAndMessage_getSchedContext?_eq st1 st2 popTid _ none scId
-                hI1 hS2, hF1]
-            have hI2 : st2.objects.invExt :=
-              storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid _ none hI1 hS2
-            cases hRid : replyId with
-            | none => rfl
-            | some rid =>
-                dsimp only
-                cases hLink : SystemState.linkCallerReply popTid rid st2 with
-                | error e => rfl
-                | ok pair =>
-                    obtain ⟨_, st3⟩ := pair
-                    dsimp only
-                    have hF3 : st3.getSchedContext? scId = st.getSchedContext? scId := by
-                      rw [linkCallerReply_getSchedContext?_eq st2 st3 popTid rid scId hI2 hLink,
-                        hF2]
-                    have hI3 : st3.objects.invExt :=
-                      linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
-                    cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
-                        (some (blockedSenderMessage st1 popTid popTcb)) with
-                    | error e => rfl
-                    | ok st4 =>
-                        dsimp only
-                        exact ((SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _).getSchedContext?
-                          scId).trans ((storeTcbIpcStateAndMessage_getSchedContext?_eq st3 st4 receiver
-                          .ready (some (blockedSenderMessage st1 popTid popTcb)) scId hI3 hS4).trans hF3)
+      · by_cases hLk : ((popTcb.ipcCanGrant || popTcb.ipcCanGrantReply) && replyId.isSome) = true
+        · rw [if_pos hLk]
+          -- `Call` rendezvous: the caller is parked `.blockedOnReply` and linked.
+          cases hS2 : storeTcbIpcStateAndMessage st1 popTid
+              (.blockedOnReply endpointId (some receiver)) none with
+          | error e => rfl
+          | ok st2 =>
+              dsimp only
+              have hF2 : st2.getSchedContext? scId = st.getSchedContext? scId := by
+                rw [storeTcbIpcStateAndMessage_getSchedContext?_eq st1 st2 popTid _ none scId
+                  hI1 hS2, hF1]
+              have hI2 : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid _ none hI1 hS2
+              cases hRid : replyId with
+              | none => rfl
+              | some rid =>
+                  dsimp only
+                  cases hLink : SystemState.linkCallerReply popTid rid st2 with
+                  | error e => rfl
+                  | ok pair =>
+                      obtain ⟨_, st3⟩ := pair
+                      dsimp only
+                      have hF3 : st3.getSchedContext? scId = st.getSchedContext? scId := by
+                        rw [linkCallerReply_getSchedContext?_eq st2 st3 popTid rid scId hI2 hLink,
+                          hF2]
+                      have hI3 : st3.objects.invExt :=
+                        linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
+                      cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
+                          (some (blockedSenderMessage st1 popTid popTcb)) with
+                      | error e => rfl
+                      | ok st4 =>
+                          dsimp only
+                          exact ((SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _).getSchedContext?
+                            scId).trans ((storeTcbIpcStateAndMessage_getSchedContext?_eq st3 st4 receiver
+                            .ready (some (blockedSenderMessage st1 popTid popTcb)) scId hI3 hS4).trans hF3)
+        · rw [if_neg hLk]
+          -- `Call` rendezvous that links no reply: the caller is completed `Inactive`.
+          cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
+          | error e => rfl
+          | ok st2 =>
+              dsimp only
+              have hF2 : st2.getSchedContext? scId = st.getSchedContext? scId := by
+                rw [storeTcbIpcStateAndMessage_getSchedContext?_eq st1 st2 popTid .ready none scId
+                  hI1 hS2, hF1]
+              have hI2 : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid .ready none hI1 hS2
+              have hFU := (SystemState.updateTcb_getSchedContext? st2 popTid
+                (fun t => { t with threadState := .Inactive }) hI2 scId).trans hF2
+              have hIU := SystemState.updateTcb_preserves_objects_invExt st2 popTid
+                (fun t => { t with threadState := .Inactive }) hI2
+              cases hS3 : storeTcbIpcStateAndMessage
+                  (st2.updateTcb popTid (fun t => { t with threadState := .Inactive }))
+                  receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) with
+              | error e => rfl
+              | ok st3 =>
+                  dsimp only
+                  exact (storeTcbIpcStateAndMessage_getSchedContext?_eq _ st3 receiver .ready
+                    (some (blockedSenderMessage st1 popTid popTcb)) scId hIU hS3).trans hFU
       · -- plain `Send` rendezvous: the sender is made `.ready` and woken.
         cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
         | error e => rfl
@@ -4430,40 +4545,66 @@ theorem endpointReceiveDualOnCore_sameSchedContextBindings_of_rendezvous
         endpointQueuePopHead_preserves_objects_invExt endpointId false st st1 popTid popTcb
           hObjInv hPop
       split
-      · -- `Call` rendezvous: the caller is parked `.blockedOnReply` and linked.
-        cases hS2 : storeTcbIpcStateAndMessage st1 popTid
-            (.blockedOnReply endpointId (some receiver)) none with
-        | error e => exact sameSchedContextBindings.refl st
-        | ok st2 =>
-            dsimp only
-            have hF2 : sameSchedContextBindings st st2 :=
-              hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 popTid _
-                none hI1 hS2)
-            have hI2 : st2.objects.invExt :=
-              storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid _ none hI1 hS2
-            cases hRid : replyId with
-            | none => exact sameSchedContextBindings.refl st
-            | some rid =>
-                dsimp only
-                cases hLink : SystemState.linkCallerReply popTid rid st2 with
-                | error e => exact sameSchedContextBindings.refl st
-                | ok pair =>
-                    obtain ⟨_, st3⟩ := pair
-                    dsimp only
-                    have hF3 : sameSchedContextBindings st st3 :=
-                      hF2.trans (linkCallerReply_sameSchedContextBindings st2 st3 popTid rid hI2
-                        hLink)
-                    have hI3 : st3.objects.invExt :=
-                      linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
-                    cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
-                        (some (blockedSenderMessage st1 popTid popTcb)) with
-                    | error e => exact sameSchedContextBindings.refl st
-                    | ok st4 =>
-                        dsimp only
-                        exact (hF3.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st3
-                          st4 receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) hI3 hS4)).trans
-                          (sameSchedContextBindings.of_objectsAgreeOffRunLinks
-                            (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))
+      · by_cases hLk : ((popTcb.ipcCanGrant || popTcb.ipcCanGrantReply) && replyId.isSome) = true
+        · rw [if_pos hLk]
+          -- `Call` rendezvous: the caller is parked `.blockedOnReply` and linked.
+          cases hS2 : storeTcbIpcStateAndMessage st1 popTid
+              (.blockedOnReply endpointId (some receiver)) none with
+          | error e => exact sameSchedContextBindings.refl st
+          | ok st2 =>
+              dsimp only
+              have hF2 : sameSchedContextBindings st st2 :=
+                hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 popTid _
+                  none hI1 hS2)
+              have hI2 : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid _ none hI1 hS2
+              cases hRid : replyId with
+              | none => exact sameSchedContextBindings.refl st
+              | some rid =>
+                  dsimp only
+                  cases hLink : SystemState.linkCallerReply popTid rid st2 with
+                  | error e => exact sameSchedContextBindings.refl st
+                  | ok pair =>
+                      obtain ⟨_, st3⟩ := pair
+                      dsimp only
+                      have hF3 : sameSchedContextBindings st st3 :=
+                        hF2.trans (linkCallerReply_sameSchedContextBindings st2 st3 popTid rid hI2
+                          hLink)
+                      have hI3 : st3.objects.invExt :=
+                        linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
+                      cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
+                          (some (blockedSenderMessage st1 popTid popTcb)) with
+                      | error e => exact sameSchedContextBindings.refl st
+                      | ok st4 =>
+                          dsimp only
+                          exact (hF3.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st3
+                            st4 receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) hI3 hS4)).trans
+                            (sameSchedContextBindings.of_objectsAgreeOffRunLinks
+                              (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))
+        · rw [if_neg hLk]
+          -- `Call` rendezvous that links no reply: the caller is completed `Inactive`.
+          cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
+          | error e => exact sameSchedContextBindings.refl st
+          | ok st2 =>
+              dsimp only
+              have hF2 : sameSchedContextBindings st st2 :=
+                hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 popTid
+                  .ready none hI1 hS2)
+              have hI2 : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid .ready none hI1 hS2
+              have hFU : sameSchedContextBindings st
+                  (st2.updateTcb popTid (fun t => { t with threadState := .Inactive })) :=
+                hF2.trans (sameSchedContextBindings.of_updateTcb popTid _ (fun _ => rfl) hI2)
+              have hIU := SystemState.updateTcb_preserves_objects_invExt st2 popTid
+                (fun t => { t with threadState := .Inactive }) hI2
+              cases hS3 : storeTcbIpcStateAndMessage
+                  (st2.updateTcb popTid (fun t => { t with threadState := .Inactive }))
+                  receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) with
+              | error e => exact sameSchedContextBindings.refl st
+              | ok st3 =>
+                  dsimp only
+                  exact hFU.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings _ st3
+                    receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) hIU hS3)
       · -- plain `Send` rendezvous: the sender is made `.ready` and woken.
         cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
         | error e => exact sameSchedContextBindings.refl st
@@ -4621,22 +4762,35 @@ theorem endpointReceiveDualOnCore_replenishQueueOnCore_of_rendezvous (epId : SeL
     split
     · -- `blockedOnCall` sender: recorded `.blockedOnReply`, never woken.
       rw [if_pos rfl]
-      split
-      · rfl
-      · next st2 hIpc =>
+      by_cases hLk : ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) = true
+      · rw [if_pos hLk]
         split
         · rfl
-        · next rid =>
+        · next st2 hIpc =>
           split
           · rfl
-          · next st3 hLink =>
+          · next rid =>
             split
-            · next st4 hMsg =>
-              simp only [SystemState.linkReplyWaiter_scheduler,
-                storeTcbIpcStateAndMessage_scheduler_eq st3 st4 _ _ _ hMsg,
-                linkCallerReply_scheduler_eq st2 st3 sender' rid hLink,
-                storeTcbIpcStateAndMessage_scheduler_eq st1 st2 _ _ _ hIpc, hPopSched]
             · rfl
+            · next st3 hLink =>
+              split
+              · next st4 hMsg =>
+                simp only [SystemState.linkReplyWaiter_scheduler,
+                  storeTcbIpcStateAndMessage_scheduler_eq st3 st4 _ _ _ hMsg,
+                  linkCallerReply_scheduler_eq st2 st3 sender' rid hLink,
+                  storeTcbIpcStateAndMessage_scheduler_eq st1 st2 _ _ _ hIpc, hPopSched]
+              · rfl
+      · -- no reply linked: the caller is completed `Inactive`, never woken.
+        rw [if_neg hLk]
+        split
+        · rfl
+        · next st2 hReady =>
+          split
+          · next st3 hMsg =>
+            simp only [storeTcbIpcStateAndMessage_scheduler_eq _ st3 _ _ _ hMsg,
+              SystemState.updateTcb_scheduler,
+              storeTcbIpcStateAndMessage_scheduler_eq st1 st2 _ _ _ hReady, hPopSched]
+          · rfl
     · -- `blockedOnSend` sender: woken on its own home core.
       rw [if_neg (by simp)]
       split

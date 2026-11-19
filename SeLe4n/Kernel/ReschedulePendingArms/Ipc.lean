@@ -58,6 +58,14 @@ theorem modifyTcb_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId} {f : T
   exact storeObject_tcbKeyKeeping_keyFrame hInv (lookupTcb_some_objects _ _ _ hL) hS (hF tcb)
     (hR tcb)
 
+/-- A TCB rewrite that keeps the key fields, in its total form. -/
+theorem updateTcb_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
+    (hF : ∀ t, tcbKeyFields (f t) = tcbKeyFields t) (hInv : st.objects.invExt)
+    (hR : ∀ t, (f t).runCoreCode = t.runCoreCode := by intro _; rfl) :
+    capabilityKeyFrame st (st.updateTcb tid f) :=
+  ⟨keyInputsEq_updateTcb hInv hF hR, SystemState.updateTcb_scheduler _ _ _,
+   SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv⟩
+
 theorem storeTcbQueueLinks_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {prev : Option SeLe4n.ThreadId} {pprev : Option QueuePPrev} {next : Option SeLe4n.ThreadId}
     (hInv : st.objects.invExt) (h : storeTcbQueueLinks st tid prev pprev next = .ok st') :
@@ -567,21 +575,34 @@ theorem endpointReceiveDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.O
         split <;> simp only [↓reduceIte, Bool.false_eq_true]
         · -- the sender called: no wake
           split
-          · exact hRefl
-          · rename_i st2 hBlk
-            have hF2 := hF1.trans (storeTcbIpcStateAndMessage_keyFrame hF1.2.2 hBlk)
+          · split
+            · exact hRefl
+            · rename_i st2 hBlk
+              have hF2 := hF1.trans (storeTcbIpcStateAndMessage_keyFrame hF1.2.2 hBlk)
+              split
+              · exact hRefl
+              · split
+                · exact hRefl
+                · rename_i stL hL
+                  have hF3 := hF2.trans (linkCallerReply_keyFrame hF2.2.2 hL)
+                  split
+                  · rename_i st4 hRdy
+                    have hF4 := hF3.trans (storeTcbIpcStateAndMessage_keyFrame hF3.2.2 hRdy)
+                    exact ⟨stepCovers_trans hF4.stepCovers (linkReplyWaiter_stepCovers e _ _ _),
+                      SystemState.linkReplyWaiter_objects_invExt _ _ _ hF4.2.2⟩
+                  · exact hRefl
+          · -- a Call that links no reply: the caller completed `Inactive`
             split
             · exact hRefl
-            · split
+            · rename_i st2 hRdy
+              have hF2 := hF1.trans (storeTcbIpcStateAndMessage_keyFrame hF1.2.2 hRdy)
+              have hF3 := hF2.trans (updateTcb_keyFrame st2 sender
+                (f := fun t => { t with threadState := .Inactive }) (fun _ => rfl) hF2.2.2)
+              split
+              · rename_i st4 hRcv
+                have hF4 := hF3.trans (storeTcbIpcStateAndMessage_keyFrame hF3.2.2 hRcv)
+                exact ⟨hF4.stepCovers, hF4.2.2⟩
               · exact hRefl
-              · rename_i stL hL
-                have hF3 := hF2.trans (linkCallerReply_keyFrame hF2.2.2 hL)
-                split
-                · rename_i st4 hRdy
-                  have hF4 := hF3.trans (storeTcbIpcStateAndMessage_keyFrame hF3.2.2 hRdy)
-                  exact ⟨stepCovers_trans hF4.stepCovers (linkReplyWaiter_stepCovers e _ _ _),
-                    SystemState.linkReplyWaiter_objects_invExt _ _ _ hF4.2.2⟩
-                · exact hRefl
         · split
           · exact hRefl
           · rename_i st2 hRdy
@@ -846,14 +867,6 @@ theorem linkServerStashedReply_keyFrame {caller server : SeLe4n.ThreadId}
       · rename_i sTcb hT
         exact hF1.trans (storeObject_tcbKeyKeeping_keyFrame hF1.2.2
           ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) h rfl)
-
-/-- A TCB rewrite that keeps the key fields, in its total form. -/
-theorem updateTcb_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
-    (hF : ∀ t, tcbKeyFields (f t) = tcbKeyFields t) (hInv : st.objects.invExt)
-    (hR : ∀ t, (f t).runCoreCode = t.runCoreCode := by intro _; rfl) :
-    capabilityKeyFrame st (st.updateTcb tid f) :=
-  ⟨keyInputsEq_updateTcb hInv hF hR, SystemState.updateTcb_scheduler _ _ _,
-   SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv⟩
 
 /-- The per-core call covers on every outcome. -/
 theorem endpointCallOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}

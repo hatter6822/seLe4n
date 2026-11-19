@@ -15,6 +15,7 @@ import SeLe4n.Kernel.IPC.Invariant.QueueNextBlocking
 import SeLe4n.Kernel.IPC.Invariant.WaitingThreadHelpers
 import SeLe4n.Kernel.IPC.Invariant.Structural.QueueNextTransport
 import SeLe4n.Kernel.IPC.Invariant.Structural.StoreObjectFrame
+import SeLe4n.Kernel.IPC.Invariant.ReadViewAgreement
 
 /-! # IPC Structural Preservation — Part 4 (PerOperation)
 
@@ -2263,6 +2264,31 @@ theorem endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent
           cases hSenderIpc : pair.2.1.ipcState with
           | blockedOnCall _ =>
             simp only [hSenderIpc, ite_true] at hStep
+            by_cases hLk :
+              ((pair.2.1.ipcCanGrant || pair.2.1.ipcCanGrantReply) && replyId.isSome) = true
+            case neg =>
+              -- A `Call` that links no reply: the caller is completed `Inactive`.
+              rw [if_neg hLk] at hStep
+              cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
+              | error e => simp [hMsg] at hStep
+              | ok st2 =>
+                simp only [hMsg] at hStep
+                have hObjInvMsg := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
+                have hInvMsg := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
+                  pair.2.2 st2 pair.1 .ready none hObjInvPop hMsg hInvPop trivial
+                have hInv3 := blockedThreadsPendingMessageConsistent_of_readViewAgreement
+                  (ipcReadViewAgreement.of_updateTcb_threadState st2 pair.1 .Inactive hObjInvMsg) hInvMsg
+                have hObjInv3 := SystemState.updateTcb_preserves_objects_invExt st2 pair.1
+                  (fun t => { t with threadState := .Inactive }) hObjInvMsg
+                revert hStep
+                cases hPend : storeTcbIpcStateAndMessage
+                    (st2.updateTcb pair.1 fun t => { t with threadState := .Inactive }) receiver .ready _ with
+                | ok st4 =>
+                  exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸
+                    storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
+                      _ st4 receiver .ready _ hObjInv3 hPend hInv3 trivial
+                | error _ => simp
+            rw [if_pos hLk] at hStep
             cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hMsg] at hStep
             | ok st2 =>

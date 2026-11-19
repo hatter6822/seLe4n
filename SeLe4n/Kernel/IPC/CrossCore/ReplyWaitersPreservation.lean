@@ -211,35 +211,59 @@ theorem endpointReceiveDualOnCore_preserves_replyWaitersConsistent (endpointId :
         dsimp only
         split
         · rw [if_pos rfl]
-          split
-          · exact hC
-          · rename_i st'' hStore
-            have hI2 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hI1 hStore
-            obtain ⟨vw0, hW0⟩ := replyViews_some_of_modifyTcb hStore
-            rw [hV1] at hW0
-            have hV2 : st''.replyViews = ReplyViews.setServer st.replyViews sender (some receiver) := by
-              rw [replyViews_storeTcbIpcStateAndMessage hI1 hStore, hV1]; rfl
+          by_cases hLk : ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) = true
+          · rw [if_pos hLk]
             split
             · exact hC
-            · rename_i rid
+            · rename_i st'' hStore
+              have hI2 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hI1 hStore
+              obtain ⟨vw0, hW0⟩ := replyViews_some_of_modifyTcb hStore
+              rw [hV1] at hW0
+              have hV2 : st''.replyViews = ReplyViews.setServer st.replyViews sender (some receiver) := by
+                rw [replyViews_storeTcbIpcStateAndMessage hI1 hStore, hV1]; rfl
               split
               · exact hC
-              · rename_i stL hL
-                have hIL := linkCallerReply_objects_invExt hI2 hL
-                have hVL := (linkCallerReply_replyViews_eq hI2 hL).trans hV2
+              · rename_i rid
                 split
-                · rename_i st3 hR
-                  obtain ⟨vs0, hS0⟩ := replyViews_some_of_modifyTcb hR
-                  rw [hVL, ReplyViews.setServer_apply_ne (Ne.symm hne)] at hS0
-                  show ReplyViews.consistent _
-                  rw [replyViews_linkReplyWaiter, replyViews_storeTcbIpcStateAndMessage hIL hR, hVL]
-                  show ReplyViews.consistent
-                    (ReplyViews.link (ReplyViews.setServer _ receiver none) sender receiver)
-                  rw [ReplyViews.setServer_of_server
-                    (ReplyViews.serverFree_setServer_ne (Ne.symm hne) hRecv)]
-                  exact (ReplyViews.linkStep_of_link hC hW0 (hSF _ hW0) hS0 (hRecv _ hS0)
-                    hne).consistent hC
                 · exact hC
+                · rename_i stL hL
+                  have hIL := linkCallerReply_objects_invExt hI2 hL
+                  have hVL := (linkCallerReply_replyViews_eq hI2 hL).trans hV2
+                  split
+                  · rename_i st3 hR
+                    obtain ⟨vs0, hS0⟩ := replyViews_some_of_modifyTcb hR
+                    rw [hVL, ReplyViews.setServer_apply_ne (Ne.symm hne)] at hS0
+                    show ReplyViews.consistent _
+                    rw [replyViews_linkReplyWaiter, replyViews_storeTcbIpcStateAndMessage hIL hR, hVL]
+                    show ReplyViews.consistent
+                      (ReplyViews.link (ReplyViews.setServer _ receiver none) sender receiver)
+                    rw [ReplyViews.setServer_of_server
+                      (ReplyViews.serverFree_setServer_ne (Ne.symm hne) hRecv)]
+                    exact (ReplyViews.linkStep_of_link hC hW0 (hSF _ hW0) hS0 (hRecv _ hS0)
+                      hne).consistent hC
+                  · exact hC
+          · -- A `Call` that links no reply: the caller is readied and made
+            -- `Inactive`, waiting on no server, and the receiver readied.
+            rw [if_neg hLk]
+            split
+            · exact hC
+            · rename_i st'' hStore
+              have hI2 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hI1 hStore
+              have hV2 : st''.replyViews = st.replyViews := by
+                rw [replyViews_storeTcbIpcStateAndMessage hI1 hStore, hV1]
+                exact ReplyViews.setServer_of_server hSF
+              have hIU := SystemState.updateTcb_preserves_objects_invExt st'' sender
+                (fun t => { t with threadState := .Inactive }) hI2
+              have hV3 : (st''.updateTcb sender (fun t => { t with threadState := .Inactive })).replyViews
+                  = st.replyViews := by
+                rw [replyViews_updateTcb_eq _ _ (f := fun t => { t with threadState := .Inactive })
+                  hI2 (fun _ => rfl), hV2]
+              split
+              · rename_i st4 hR
+                refine replyWaitersConsistent.of_views ?_ hC
+                rw [replyViews_storeTcbIpcStateAndMessage hIU hR, hV3]
+                exact ReplyViews.setServer_of_server hRecv
+              · exact hC
         · rw [if_neg Bool.false_ne_true]
           split
           · exact hC

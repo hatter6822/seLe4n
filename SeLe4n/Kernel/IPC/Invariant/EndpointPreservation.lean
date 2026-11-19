@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.Invariant.Defs
+import SeLe4n.Kernel.IPC.Invariant.ReadViewAgreement
 
 /-! # AN3-F (IPC LOW #3) — endpoint field-preservation scope note.
 
@@ -920,6 +921,30 @@ theorem endpointReceiveDual_preserves_ipcInvariant
           | blockedOnCall _ =>
             -- senderWasCall = true, call path
             simp only [hSenderIpc, ite_true] at hStep
+            by_cases hLk :
+              ((pair.2.1.ipcCanGrant || pair.2.1.ipcCanGrantReply) && replyId.isSome) = true
+            case neg =>
+              -- A `Call` that links no reply: the caller is completed `Inactive`.
+              rw [if_neg hLk] at hStep
+              cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
+              | error e => simp [hMsg] at hStep
+              | ok st2 =>
+                simp only [hMsg] at hStep
+                have hObjInvMsg : st2.objects.invExt :=
+                  storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
+                have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcInvariant pair.2.2 st2 pair.1 .ready none hInv1 hObjInvPop hMsg
+                have hInv3 := ipcInvariant_of_readViewAgreement
+                  (ipcReadViewAgreement.of_updateTcb_threadState st2 pair.1 .Inactive hObjInvMsg) hInv2
+                have hObjInv3 := SystemState.updateTcb_preserves_objects_invExt st2 pair.1
+                  (fun t => { t with threadState := .Inactive }) hObjInvMsg
+                revert hStep
+                cases hPend : storeTcbIpcStateAndMessage
+                    (st2.updateTcb pair.1 fun t => { t with threadState := .Inactive }) receiver .ready _ with
+                | ok st4 =>
+                  exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸
+                    storeTcbIpcStateAndMessage_preserves_ipcInvariant _ _ receiver _ _ hInv3 hObjInv3 hPend
+                | error _ => simp
+            rw [if_pos hLk] at hStep
             cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hMsg] at hStep
             | ok st2 =>
@@ -1337,6 +1362,57 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
           | blockedOnCall _ =>
             -- senderWasCall = true, call path
             simp only [hSenderIpc, ite_true] at hStep
+            by_cases hLk :
+              ((pair.2.1.ipcCanGrant || pair.2.1.ipcCanGrantReply) && replyId.isSome) = true
+            case neg =>
+              -- A `Call` that links no reply: the caller is completed `Inactive`;
+              -- the scheduler is untouched.
+              rw [if_neg hLk] at hStep
+              cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
+              | error e => simp [hMsg] at hStep
+              | ok st2 =>
+                simp only [hMsg] at hStep
+                have hObjInvMsg : st2.objects.invExt :=
+                  storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInv1 hMsg
+                have hSchedEq : st2.scheduler = st.scheduler :=
+                  (storeTcbIpcStateAndMessage_scheduler_eq pair.2.2 st2 pair.1 .ready none hMsg).trans hSchedPop
+                have hObjInv3 := SystemState.updateTcb_preserves_objects_invExt st2 pair.1
+                  (fun t => { t with threadState := .Inactive }) hObjInvMsg
+                revert hStep
+                cases hPend : storeTcbIpcStateAndMessage
+                    (st2.updateTcb pair.1 fun t => { t with threadState := .Inactive }) receiver .ready _ with
+                | ok st4 =>
+                  intro h; have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
+                  have hSchedPend : st4.scheduler = st.scheduler :=
+                    (storeTcbIpcStateAndMessage_scheduler_eq _ _ receiver _ _ hPend).trans
+                      ((SystemState.updateTcb_scheduler _ _ _).trans hSchedEq)
+                  refine ⟨?_, ?_, ?_⟩
+                  · rw [queueCurrentConsistent]; rw [queueCurrentConsistent] at hQCC; rwa [hSchedPend]
+                  · show st4.scheduler.runnable.Nodup
+                    rw [hSchedPend]; exact hRQU
+                  · unfold currentThreadValid; rw [hSchedPend]
+                    cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
+                    | none => simp
+                    | some x =>
+                      simp only []
+                      have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
+                        simp [currentThreadValid, hCurr] at hCTV; exact hCTV
+                      rcases hCTV' with ⟨tcbX, hTcbX⟩
+                      obtain ⟨tcb1, hTcb1⟩ := endpointQueuePopHead_tcb_forward endpointId false st
+                        pair.2.2 pair.1 x.toObjId tcbX hObjInv hPop hTcbX
+                      have hTcbSt2 : ∃ t, st2.objects[x.toObjId]? = some (.tcb t) := by
+                        by_cases hNeTid : x.toObjId = pair.1.toObjId
+                        · exact (storeTcbIpcStateAndMessage_tcb_exists_at_target pair.2.2 st2 pair.1 .ready none
+                            hObjInv1 hMsg (hNeTid ▸ ⟨tcb1, hTcb1⟩)).imp fun _ h => by rwa [← hNeTid] at h
+                        · exact ⟨tcb1, (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 .ready
+                            none x.toObjId hNeTid hObjInv1 hMsg) ▸ hTcb1⟩
+                      obtain ⟨tcbSt2, hTcbSt2'⟩ := hTcbSt2
+                      obtain ⟨tcb3, hTcb3, -⟩ := (ipcReadViewAgreement.of_updateTcb_threadState st2 pair.1
+                        .Inactive hObjInvMsg).tcbFwd x.toObjId tcbSt2 hTcbSt2'
+                      exact storeTcbIpcStateAndMessage_tcb_forward _ _ receiver _ _ x.toObjId tcb3
+                        hObjInv3 hPend hTcb3
+                | error _ => simp
+            rw [if_pos hLk] at hStep
             cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hMsg] at hStep
             | ok st2 =>
@@ -1678,6 +1754,38 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
           | blockedOnCall _ =>
             -- senderWasCall = true, call path
             simp only [hSenderIpc, ite_true] at hStep
+            by_cases hLk :
+              ((pair.2.1.ipcCanGrant || pair.2.1.ipcCanGrantReply) && replyId.isSome) = true
+            case neg =>
+              -- A `Call` that links no reply: the caller is `.ready` but completed
+              -- `Inactive`, off every run queue; the scheduler is untouched.
+              rw [if_neg hLk] at hStep
+              cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
+              | error e => simp [hMsg] at hStep
+              | ok st2 =>
+                simp only [hMsg] at hStep
+                have hObjInvMsg : st2.objects.invExt :=
+                  storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInv1 hMsg
+                have hC2 := storeTcbIpcStateAndMessage_ready_preserves_ipcSchedulerContractPredicates
+                  _ _ pair.1 none hObjInv1 hMsg hContractPop
+                have hC3 : ipcSchedulerContractPredicates
+                    (st2.updateTcb pair.1 fun t => { t with threadState := .Inactive }) :=
+                  contracts_of_same_scheduler_ipcState st2 _ (SystemState.updateTcb_scheduler _ _ _)
+                    (fun tid tcb' h =>
+                      let ⟨t0, h0, e⟩ := (ipcReadViewAgreement.of_updateTcb_threadState st2 pair.1
+                        .Inactive hObjInvMsg).tcb _ tcb' h
+                      ⟨t0, h0, (congrArg TCB.ipcState e).symm⟩) hC2
+                have hObjInv3 := SystemState.updateTcb_preserves_objects_invExt st2 pair.1
+                  (fun t => { t with threadState := .Inactive }) hObjInvMsg
+                revert hStep
+                cases hPend : storeTcbIpcStateAndMessage
+                    (st2.updateTcb pair.1 fun t => { t with threadState := .Inactive }) receiver .ready _ with
+                | ok st4 =>
+                  intro h; have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
+                  exact storeTcbIpcStateAndMessage_ready_preserves_ipcSchedulerContractPredicates
+                    _ _ receiver _ hObjInv3 hPend hC3
+                | error _ => simp
+            rw [if_pos hLk] at hStep
             rcases hContractPop with ⟨hReady', hBlockSend', hBlockRecv', hBlockCall', hBlockReply', hBlockNotif'⟩
             -- Establish post-state TCB for pair.1 and its ipcState relation
             obtain ⟨postTcb, hPostTcb⟩ := endpointQueuePopHead_tcb_forward endpointId false st pair.2.2 pair.1 pair.1.toObjId pair.2.1 hObjInv hPop hPreTcb
@@ -2146,6 +2254,27 @@ theorem endpointReceiveDual_preserves_objects_invExt
           cases hSenderIpc : pair.2.1.ipcState with
           | blockedOnCall _ =>
             simp only [hSenderIpc, ite_true] at hStep
+            by_cases hLk :
+              ((pair.2.1.ipcCanGrant || pair.2.1.ipcCanGrantReply) && replyId.isSome) = true
+            case neg =>
+              rw [if_neg hLk] at hStep
+              cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
+              | error e => simp [hMsg] at hStep
+              | ok st2 =>
+                simp only [hMsg] at hStep
+                have hObjInvMsg : st2.objects.invExt :=
+                  storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
+                have hObjInv3 := SystemState.updateTcb_preserves_objects_invExt st2 pair.1
+                  (fun t => { t with threadState := .Inactive }) hObjInvMsg
+                revert hStep
+                cases hPend : storeTcbIpcStateAndMessage
+                    (st2.updateTcb pair.1 fun t => { t with threadState := .Inactive }) receiver .ready _ with
+                | ok st4 =>
+                  intro h
+                  have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
+                  exact storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ receiver _ _ hObjInv3 hPend
+                | error _ => simp
+            rw [if_pos hLk] at hStep
             cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hMsg] at hStep
             | ok st2 =>

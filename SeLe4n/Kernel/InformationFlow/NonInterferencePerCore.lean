@@ -1079,6 +1079,36 @@ theorem endpointReceiveDual_confinedToBootCore (st st' : SystemState)
             -- object, then complete the receiver.  `hIpc` reduces the `if`'s
             -- condition (which *is* the `ipcState` match) to `True`.
             simp only [hIpc, ↓reduceIte] at hStep
+            by_cases hLk :
+              ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) = true
+            case neg =>
+              -- A `Call` that links no reply: the caller is readied, made
+              -- `Inactive` (a TCB write, no scheduler or machine step), and the
+              -- receiver completed.
+              rw [if_neg hLk] at hStep
+              cases hStore : storeTcbIpcStateAndMessage st1 sender .ready none with
+              | error e => simp [hStore] at hStep
+              | ok st2 =>
+                simp only [hStore] at hStep
+                cases hStore2 : storeTcbIpcStateAndMessage
+                    (st2.updateTcb sender fun t => { t with threadState := .Inactive }) receiver
+                    .ready (some (blockedSenderMessage st1 sender senderTcb)) with
+                | error e => simp [hStore2] at hStep
+                | ok st3 =>
+                  simp only [hStore2, Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨_, hEq⟩ := hStep
+                  subst hEq
+                  refine observableSlotsConfinedToCore_trans hPopC ?_
+                  refine observableSlotsConfinedToCore_trans
+                    (storeTcbIpcStateAndMessage_confinedToCore st1 st2 sender _ _ bootCoreId
+                      hStore) ?_
+                  refine observableSlotsConfinedToCore_trans
+                    (observableSlotsConfinedToCore_of_scheduler_machine_eq _
+                      (SystemState.updateTcb_scheduler st2 sender (fun t => { t with threadState := .Inactive }))
+                      (SystemState.updateTcb_machine st2 sender (fun t => { t with threadState := .Inactive }))) ?_
+                  exact storeTcbIpcStateAndMessage_confinedToCore _ st3 receiver _ _ bootCoreId
+                    hStore2
+            rw [if_pos hLk] at hStep
             cases hStore : storeTcbIpcStateAndMessage st1 sender
                 (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hStore] at hStep
