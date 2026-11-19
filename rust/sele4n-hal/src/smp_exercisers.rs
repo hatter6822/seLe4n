@@ -12277,11 +12277,12 @@ fn bound_declassified_signals(which: &str) -> bool {
     // thread's fault endpoint is the boot endpoint (installed by its SetSpace
     // in the setup, seL4-MCS's `TCB_SetSpace` extra capability 0), the root task's
     // receive on it (no reply object, message length 0) blocks it, and the
-    // low thread's fault finds the handler holding no reply to link it to, so
-    // it is suspended with the fault recorded (seL4's `sendFaultIPC` failing
-    // into `handleDoubleFault`), the handler left waiting.  The bound line's
-    // interrupt wakes the root task through its bound notification, and the
-    // low thread is resumed.
+    // low thread's fault finds the handler holding no reply to link it to.
+    // seL4-MCS's `sendIPC` (do_call, a waiting receiver, no reply pushed)
+    // delivers the fault message and leaves the faulter `Inactive`, so the
+    // handler is woken with the fault.  The handler receives again and blocks,
+    // the bound line's interrupt wakes it through its bound notification, and
+    // the low thread is resumed.
     let irq_wakes_handler = KernelEntry {
         name: "irq-wakes-handler-without-reply",
         enter: irq_bound_line_entry,
@@ -12299,7 +12300,11 @@ fn bound_declassified_signals(which: &str) -> bool {
         )
         || heap_allocations_trap(&cap_fault("cap-fault-to-handler-without-reply"), which)
             != Some(true)
-        || !fault_not_delivered("cap-fault-to-handler-without-reply")
+        || !fault_delivered("cap-fault-to-handler-without-reply")
+        || !unmeasured(
+            &BOUND_ROOT_RECEIVES,
+            "the handler's receive after the fault did not block",
+        )
         || !heap_allocations_interrupt(&irq_wakes_handler, which)
         || !unmeasured(&BOUND_IRQ_ACK, "the bound line was not acknowledged")
         || !unmeasured(&resume_low, "the low thread was not resumed")
