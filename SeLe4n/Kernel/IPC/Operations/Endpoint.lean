@@ -9710,7 +9710,7 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
             let ntfn' : Notification := {
               state := .active
               hasPendingBadge := true, pendingWord := mergedBadge
-              boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated
+              boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated, schedContextCode := ntfn.schedContextCode
             }
             storeObject notificationId (.notification ntfn') st
     | some _ => .error (.invalidCapability 0)
@@ -9743,7 +9743,7 @@ def notificationWaitPark
         | some badge =>
             let ntfn' : Notification :=
               { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-                boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
+                boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated, schedContextCode := ntfn.schedContextCode }
             match storeObject notificationId (.notification ntfn') st with
             | .error e => .error e
             | .ok ((), st') =>
@@ -10333,7 +10333,7 @@ theorem notificationWaitPark_badge_path_notification
         simp only [hBadge] at hStep
         let newNtfn : Notification :=
           { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-            boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
+            boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated, schedContextCode := ntfn.schedContextCode }
         revert hStep
         cases hStore : storeObject notifId (.notification newNtfn) st with
         | error e => simp
@@ -10720,7 +10720,7 @@ theorem notificationWaitPark_badge_objects {st st' : SystemState} {nid : SeLe4n.
               exact hW1
             let n' : Notification :=
               { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-                boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
+                boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated, schedContextCode := ntfn.schedContextCode }
             exact ⟨ntfn, n', tcb, st1, rfl, hBadge, rfl, rfl, hW0, hN1,
               fun x hx => storeObject_objects_ne st st1 nid x _ hx hObjInv hStore, hW2, hO2⟩
 

@@ -2455,7 +2455,7 @@ theorem notificationSignal_result_wellFormed_merge
     (mergedBadge : SeLe4n.Badge) (b : Nat) (n : Notification) :
     notificationQueueWellFormed
       { state := .active,
-        hasPendingBadge := true, pendingWord := mergedBadge, boundTCBCode := b,         taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated } := by
+        hasPendingBadge := true, pendingWord := mergedBadge, boundTCBCode := b,         taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated, schedContextCode := n.schedContextCode } := by
   unfold notificationQueueWellFormed; simp
 
 /-- notificationWait result notification is well-formed (badge-consume path):
@@ -2464,7 +2464,7 @@ theorem notificationWait_result_wellFormed_badge (b : Nat) (n : Notification) :
     notificationQueueWellFormed
       { state := NotificationState.idle,
         hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := b,
-        taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated } := by
+        taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated, schedContextCode := n.schedContextCode } := by
   unfold notificationQueueWellFormed; simp
 
 /-- WS-G7/F-P11, WS-ZA ZA4.4: notificationWait result notification is

@@ -906,7 +906,8 @@ def notificationReferencesReservedIdleSlot (notif : Notification) : Bool :=
   match notif with
   | ⟨_state, waitHeadCode, waitTailCode, _hasPendingBadge, _pendingWord, _cleared, boundTCBCode,
       -- The taint words name no object.
-      _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated⟩ =>
+      _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated,
+      _schedContextCode⟩ =>
     (SeLe4n.ThreadId.ofOptCode waitHeadCode).any SeLe4n.Kernel.isIdleThreadId ||
     (SeLe4n.ThreadId.ofOptCode waitTailCode).any SeLe4n.Kernel.isIdleThreadId ||
     (SeLe4n.ThreadId.ofOptCode boundTCBCode).any SeLe4n.Kernel.isIdleThreadId
@@ -1088,7 +1089,8 @@ def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
      _refillSlot5Amount, _refillSlot5EligibleAt, _refillSlot6Amount, _refillSlot6EligibleAt,
      _refillSlot7Amount, _refillSlot7EligibleAt,
      boundThreadCode, scReply, donationOrigin, _isActive,
-     releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode, _headLinkCell, _hHeadLinkCell⟩ =>
+     releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode,
+     _notificationCode, _headLinkCell, _hHeadLinkCell⟩ =>
     SeLe4n.Kernel.isIdleObjId scId.toObjId ||
     -- **WS-ZA ZA6.3**: and its release-queue successor, which names a scheduling
     -- context by its code (`0` is none, `s + 1` is `s`).
@@ -2211,14 +2213,19 @@ def bootSafeNotificationCheck (notif : Notification) : Bool :=
   match notif with
   | ⟨_state, _waitHeadCode, _waitTailCode, _hasPendingBadge, _pendingWord, _cleared, _boundTCBCode,
       -- The taint words name no object.
-      _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated⟩ =>
+      _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated,
+      _schedContextCode⟩ =>
     decide (notif.state = .idle) && notif.waitHead.isNone && notif.waitTail.isNone &&
-    notif.pendingBadge.isNone && decide (notif.taintWords = {})
+    notif.pendingBadge.isNone && decide (notif.taintWords = {}) &&
+    -- Bound to no scheduling context: a boot state has run no
+    -- `SchedContext_Bind`, and a boot context names no notification.
+    notif.schedContextCode == 0
 
 @[simp] theorem bootSafeNotificationCheck_def (notif : Notification) :
     bootSafeNotificationCheck notif =
       (decide (notif.state = .idle) && notif.waitHead.isNone && notif.waitTail.isNone &&
-       notif.pendingBadge.isNone && decide (notif.taintWords = {})) := rfl
+       notif.pendingBadge.isNone && decide (notif.taintWords = {}) &&
+       notif.schedContextCode == 0) := rfl
 
 /-- **WS-BP BP3.5**: a boot **capability** carries a valid badge if it carries
     one, and is not a reply capability.
@@ -2481,7 +2488,8 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
      _refillSlot5Amount, _refillSlot5EligibleAt, _refillSlot6Amount, _refillSlot6EligibleAt,
      _refillSlot7Amount, _refillSlot7EligibleAt,
      _boundThread, _scReply, _donationOrigin, _isActive,
-     _releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode, _headLinkCell, _hHeadLinkCell⟩ =>
+     _releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode,
+     _notificationCode, _headLinkCell, _hHeadLinkCell⟩ =>
     sc.period.isPositive &&
     decide (sc.budget.val ≤ sc.period.val) &&
     decide (sc.budgetRemaining.val ≤ sc.budget.val) &&
@@ -2510,7 +2518,11 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
     sc.consumed == 0 &&
     -- **WS-ZA ZA6.6**: and no yielder.  A boot state has run no yieldTo, so a
     -- config-supplied yielder could only name a link no thread holds.
-    sc.yieldFromCode == 0
+    sc.yieldFromCode == 0 &&
+    -- And bound to no notification.  A boot state has run no
+    -- `SchedContext_Bind`, so a config-supplied link could only name a binding
+    -- the notification does not hold.
+    sc.notificationCode == 0
 
 @[simp] theorem bootSafeSchedContextCheck_def (sc : SchedContext) :
     bootSafeSchedContextCheck sc =
@@ -2527,7 +2539,8 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
        decide (sc.refillTotal = sc.budget.val) &&
        decide (sc.refillSize ≤ sc.refillLimit) &&
        sc.consumed == 0 &&
-       sc.yieldFromCode == 0) := rfl
+       sc.yieldFromCode == 0 &&
+       sc.notificationCode == 0) := rfl
 
 /-- WS-SM SM6.D: a boot **Reply** is inert — no blocked caller, no donated SC,
     no `prev` link.  `replyId` is pinned to the slot by
@@ -2670,7 +2683,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   | notification notif =>
     simp only [bootSafeObjectCheck, bootSafeNotificationCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨h1, h2⟩, h2t⟩, h3⟩, -⟩ := h
+    obtain ⟨⟨⟨⟨⟨h1, h2⟩, h2t⟩, h3⟩, -⟩, -⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he; subst_vars; exact ⟨h1, Option.eq_none_of_isNone h2, Option.eq_none_of_isNone h2t, Option.eq_none_of_isNone h3⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
@@ -2732,8 +2745,8 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   | schedContext sc =>
     simp only [bootSafeObjectCheck, bootSafeSchedContextCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩,
-      hUnbound⟩, hNoReplyStack⟩, hNoOrigin⟩, hNoRelease⟩, hTot⟩, hFit⟩, hNoConsumed⟩, hNoYield⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩,
+      hUnbound⟩, hNoReplyStack⟩, hNoOrigin⟩, hNoRelease⟩, hTot⟩, hFit⟩, hNoConsumed⟩, hNoYield⟩, -⟩ := h
     refine ⟨fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun s hs => ?_,
@@ -8165,7 +8178,7 @@ theorem bootSafeObjectCheck_taintWords {obj : KernelObject}
   | notification n =>
     simp only [bootSafeObjectCheck, bootSafeNotificationCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    exact h.2
+    exact h.1.2
   | tcb t =>
     simp only [bootSafeObjectCheck, bootSafeTcbCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h

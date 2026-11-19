@@ -4222,7 +4222,26 @@ structure Notification where
   taintCount : Nat := 0
   /-- Tainted by everything. -/
   taintSaturated : Bool := false
+  /-- **The scheduling context bound to this notification** (seL4-MCS's
+      `ntfnSchedContext`), as its code (`SeLe4n.SchedContextId.optCode`; `0`
+      is none), read through `Notification.schedContext`.  The context names
+      the notification back (`SchedContext.notificationCode`, seL4-MCS's
+      `scNotification`).  `SchedContext_Bind` on a notification capability sets
+      both ends and `SchedContext_Unbind` (or finalising either object) clears
+      both.  A thread with no scheduling context that takes the notification's
+      word is lent the context (`maybeDonateSchedContext`), and a thread that
+      blocks on it while running on that context hands it back
+      (`maybeReturnSchedContext`), so a passive server bound to the
+      notification runs on the context exactly while it handles a signal. -/
+  schedContextCode : Nat := 0
   deriving Repr, DecidableEq
+
+/-- The scheduling context bound to the notification, read from its code.
+Reducible, so a record update that leaves the code alone reads the old value by
+`rfl`.  Written as `schedContextCode := SeLe4n.SchedContextId.optCode s`. -/
+@[reducible, inline] def Notification.schedContext (n : Notification) :
+    Option SeLe4n.SchedContextId :=
+  SeLe4n.SchedContextId.ofOptCode n.schedContextCode
 
 /-- WS-ZA ZA5.11: the notification's taint words. -/
 @[inline] def Notification.taintWords (n : Notification) : SeLe4n.Kernel.TaintWords :=
@@ -4256,14 +4275,14 @@ update that leaves the code alone reads the old value by `rfl`.  Written as
 @[inline] def Notification.pendingBadge (n : Notification) : Option SeLe4n.Badge :=
   if n.hasPendingBadge then some n.pendingWord else none
 
-@[simp] theorem Notification.pendingBadge_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = if h then some p else none := rfl
+@[simp] theorem Notification.pendingBadge_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc) :
+    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc).pendingBadge = if h then some p else none := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_true (s hd tl p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl true p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = some p := rfl
+@[simp] theorem Notification.pendingBadge_mk_true (s hd tl p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc) :
+    (Notification.mk s hd tl true p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc).pendingBadge = some p := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_false (s hd tl p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl false p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = none := rfl
+@[simp] theorem Notification.pendingBadge_mk_false (s hd tl p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc) :
+    (Notification.mk s hd tl false p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc).pendingBadge = none := rfl
 
 /-- The first waiter, read from its scalar code. -/
 @[inline] def Notification.waitHead (n : Notification) : Option SeLe4n.ThreadId :=
@@ -4273,11 +4292,11 @@ update that leaves the code alone reads the old value by `rfl`.  Written as
 @[inline] def Notification.waitTail (n : Notification) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode n.waitTailCode
 
-@[simp] theorem Notification.waitHead_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).waitHead = SeLe4n.ThreadId.ofOptCode hd := rfl
+@[simp] theorem Notification.waitHead_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc) :
+    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc).waitHead = SeLe4n.ThreadId.ofOptCode hd := rfl
 
-@[simp] theorem Notification.waitTail_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).waitTail = SeLe4n.ThreadId.ofOptCode tl := rfl
+@[simp] theorem Notification.waitTail_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc) :
+    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc).waitTail = SeLe4n.ThreadId.ofOptCode tl := rfl
 
 @[simp] theorem Notification.ofOptCode_waitHeadCode (n : Notification) :
     SeLe4n.ThreadId.ofOptCode n.waitHeadCode = n.waitHead := rfl
@@ -4314,7 +4333,7 @@ notification with waiters holds none — and the binding is carried. -/
     waitHeadCode := SeLe4n.ThreadId.optCode next
     waitTailCode := if next.isSome then n.waitTailCode else 0
     hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-    boundTCBCode := n.boundTCBCode, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated }
+    boundTCBCode := n.boundTCBCode, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated, schedContextCode := n.schedContextCode }
 
 /-- `Notification.withHeadPopped` with the successor given as its code
 (`ThreadId.optCode`): the compiled wake reads the successor off the woken
@@ -4326,7 +4345,7 @@ head's `ntfnNextCode`, and taking the code keeps the `some` cell an
     waitHeadCode := nextCode
     waitTailCode := if nextCode != 0 then n.waitTailCode else 0
     hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-    boundTCBCode := n.boundTCBCode, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated }
+    boundTCBCode := n.boundTCBCode, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated, schedContextCode := n.schedContextCode }
 
 /-- The code-taking pop is the pop. -/
 theorem Notification.withHeadPopped_eq_code (n : Notification)
@@ -4343,7 +4362,7 @@ waiter is the new tail, and the head too when the queue was empty. -/
       else n.waitHeadCode
     waitTailCode := SeLe4n.ThreadId.optCode (some waiter)
     hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-    boundTCBCode := n.boundTCBCode, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated }
+    boundTCBCode := n.boundTCBCode, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated, schedContextCode := n.schedContextCode }
 
 @[simp] theorem Notification.withHeadPopped_waitHead (n : Notification)
     (next : Option SeLe4n.ThreadId) : (n.withHeadPopped next).waitHead = next := by

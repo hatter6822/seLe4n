@@ -240,7 +240,7 @@ theorem notificationWaitPark_preserves_ipcInvariant
         cases hStore : storeObject notificationId
             (.notification
               { state := .idle, 
-                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }) st with
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated, schedContextCode := ntfn.schedContextCode }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -314,7 +314,7 @@ theorem notificationWaitPark_preserves_schedulerInvariantBundle
         cases hStore : storeObject notificationId
             (.notification
               { state := .idle, 
-                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }) st with
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated, schedContextCode := ntfn.schedContextCode }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -621,7 +621,7 @@ theorem notificationWaitPark_preserves_ipcSchedulerContractPredicates
         cases hStore : storeObject notificationId
             (.notification
               { state := .idle, 
-                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }) st with
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated, schedContextCode := ntfn.schedContextCode }) st with
         | error e => simp
         | ok pair =>
           simp only []

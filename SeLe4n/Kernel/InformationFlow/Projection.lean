@@ -305,6 +305,10 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       .schedContext { sc with boundThreadCode := 0, scReply := none,
                               donationOrigin := none,
                               releaseNextCode := 0,
+                              -- The notification link (seL4-MCS's
+                              -- `scNotification`) names a notification of any
+                              -- domain; erased with the notification's own end.
+                              notificationCode := 0,
                               -- WS-ZA ZA6.6: the yield link's context end
                               -- (seL4-MCS's `scYieldFrom`) names the thread that
                               -- yielded to this context — a possibly-high
@@ -361,7 +365,10 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
   -- so an observer sees exactly the registrations of visible endpoints.
   | .endpoint e => .endpoint e
   -- WS-ZA ZA5.11: a notification's taint words are erased as a thread's are.
-  | .notification n => .notification (n.withTaintWords {})
+  -- Its scheduling-context link (seL4-MCS's `ntfnSchedContext`) names a context
+  -- of any domain, and the context's thread end is erased (`boundThreadCode`
+  -- above), so the link is erased with the context's own end.
+  | .notification n => .notification { n.withTaintWords {} with schedContextCode := 0 }
   | .vspaceRoot v => .vspaceRoot v
   | .untyped u => .untyped u
   | .frame f => .frame f
