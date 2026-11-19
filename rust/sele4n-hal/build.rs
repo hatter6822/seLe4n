@@ -9536,12 +9536,15 @@ fn halt_abort_before_lean_ready(core_id: u64, esr: u64, elr: u64) -> ! {
 ///
 /// The Lean dispatch answers a capability fault it delivered with outcome
 /// tag 2 (`SyscallOutcome.faulted`), distinct from a block (tag 1): the
-/// model restarts that caller *at* the `SVC` on its handler's reply, so the
-/// `Blocked` arm's sentinel — which resumes the caller past the `SVC` —
-/// would run a thread the model has waiting on a fault.  Two relations, on
-/// the statement-level view: `dispatch_svc` decodes tag 2 to
-/// `SvcOutcome::Faulted`, and the handler's `Faulted` arm is exactly one
-/// unconditional statement, the diverging `halt_after_delivered_syscall_fault(`.
+/// model restarts that caller *at* the `SVC` on its handler's reply, so
+/// resuming it past the `SVC` would run a thread the model has waiting on a
+/// fault.  Two relations, on the statement-level view: `dispatch_svc` decodes
+/// tag 2 to `SvcOutcome::Faulted`, and the handler's `Faulted` arm is exactly
+/// one unconditional statement, the diverging
+/// `halt_after_delivered_syscall_fault(`.  PR #1092 review: the `Blocked` arm
+/// is held the same way to the diverging `halt_after_unrestored_block(` — a
+/// caller left blocked is resumed only by the delivery that unblocks it, so
+/// no frame, and no reserved `x1` label, is written for it.
 fn scan_trap_rs_faulted_outcome_halts() {
     let trap = std::fs::read_to_string("src/trap.rs")
         .unwrap_or_else(|e| panic!("build.rs: cannot read `src/trap.rs`: {e}"));
@@ -10019,7 +10022,7 @@ fn handler_faulted_arm_halts(trap: &str) -> Result<(), String> {
         return Err(
             "the statement before the SVC arm's `match dispatched` is not the unconditional \
              `if crate::trap::take_restored() { return; }` (WS-BP BP7.6): a return frame, \
-             the blocked-caller poison or the fault halt would overwrite the context the \
+             or a fallback halt would preempt the context the \
              Lean dispatch installed"
                 .to_string(),
         );
@@ -10034,64 +10037,75 @@ fn handler_faulted_arm_halts(trap: &str) -> Result<(), String> {
     }
     let dispatched_arms = match_arm_spans(last)
         .ok_or_else(|| "the `match dispatched` arms could not be parsed".to_string())?;
-    let faulted: Vec<&MatchArm> = dispatched_arms
-        .iter()
-        .filter(|arm| {
-            last[arm.pattern.0..arm.pattern.1].trim()
-                == "Ok(crate::svc_dispatch::SvcOutcome::Faulted)"
-        })
-        .collect();
-    if faulted.len() != 1 {
-        return Err(format!(
-            "`match dispatched` has {} `Ok(crate::svc_dispatch::SvcOutcome::Faulted)` arms; \
-             a delivered syscall fault must be routed by exactly one",
-            faulted.len()
-        ));
-    }
-    let (arm_open, arm_end) = (last_at + faulted[0].body.0, last_at + faulted[0].body.1);
-    if trap.as_bytes().get(arm_open) != Some(&b'{') {
-        return Err(
-            "the `Faulted` arm is an expression, not a block ending in the halt".to_string(),
-        );
-    }
-    let arm_statements = top_level_statements(trap, arm_open, arm_end - 1);
-    let sole_halt = arm_statements.len() == 1
-        && text(&arm_statements[0]) == "halt_after_delivered_syscall_fault(frame);";
-    if !sole_halt {
-        return Err(
-            "the `Faulted` arm of `handle_synchronous_exception` is not exactly one \
-             unconditional `halt_after_delivered_syscall_fault(frame);` statement — the \
-             caller would be resumed past the `SVC` its handler restarts it at"
-                .to_string(),
-        );
-    }
-    let mentions = word_occurrences(&trap[body_open..=body_close], "Faulted");
-    if mentions != 1 {
-        return Err(format!(
-            "`Faulted` occurs {mentions} times in `handle_synchronous_exception`; a second \
-             arm — a decoy under a condition, or a second routing — is a second answer to \
-             a delivered fault"
-        ));
-    }
-    let helper = trap
-        .find("fn halt_after_delivered_syscall_fault(")
-        .ok_or_else(|| "no `fn halt_after_delivered_syscall_fault(`".to_string())?;
-    let helper_open = block_open_after(trap, helper)
-        .ok_or_else(|| "`halt_after_delivered_syscall_fault` has no body".to_string())?;
-    let helper_close = matching_close_brace(trap, helper_open)
-        .ok_or_else(|| "`halt_after_delivered_syscall_fault`'s body is unbalanced".to_string())?;
-    if !trap[helper..helper_open].contains("-> !") {
-        return Err("`halt_after_delivered_syscall_fault` does not diverge (`-> !`)".to_string());
-    }
-    let helper_statements = top_level_statements(trap, helper_open, helper_close);
-    let helper_last = helper_statements
-        .last()
-        .map(|&(lo, hi)| trap[lo..hi].trim())
-        .unwrap_or("");
-    if !(statement_diverges(helper_last) && helper_last.contains("fatal_halt(")) {
-        return Err(
-            "`halt_after_delivered_syscall_fault` does not END in `fatal_halt(`".to_string(),
-        );
+    // A delivered fault (tag 2) and a caller left blocked or not runnable
+    // (tag 1) both have no frame, and the restore returned above, so both
+    // arms halt: neither may `eret` into a thread the committed state does
+    // not run, and the blocked one writes no frame a receive could mistake
+    // for data (PR #1092 review).
+    for (variant, helper, why) in [
+        (
+            "Faulted",
+            "halt_after_delivered_syscall_fault",
+            "the caller would be resumed past the `SVC` its handler restarts it at",
+        ),
+        (
+            "Blocked",
+            "halt_after_unrestored_block",
+            "a caller the committed state does not run would be resumed",
+        ),
+    ] {
+        let pattern = format!("Ok(crate::svc_dispatch::SvcOutcome::{variant})");
+        let routed: Vec<&MatchArm> = dispatched_arms
+            .iter()
+            .filter(|arm| last[arm.pattern.0..arm.pattern.1].trim() == pattern)
+            .collect();
+        if routed.len() != 1 {
+            return Err(format!(
+                "`match dispatched` has {} `{pattern}` arms; the outcome must be routed by \
+                 exactly one",
+                routed.len()
+            ));
+        }
+        let (arm_open, arm_end) = (last_at + routed[0].body.0, last_at + routed[0].body.1);
+        if trap.as_bytes().get(arm_open) != Some(&b'{') {
+            return Err(format!(
+                "the `{variant}` arm is an expression, not a block ending in the halt"
+            ));
+        }
+        let arm_statements = top_level_statements(trap, arm_open, arm_end - 1);
+        let call = format!("{helper}(frame);");
+        let sole_halt = arm_statements.len() == 1 && text(&arm_statements[0]) == call;
+        if !sole_halt {
+            return Err(format!(
+                "the `{variant}` arm of `handle_synchronous_exception` is not exactly one \
+                 unconditional `{call}` statement — {why}"
+            ));
+        }
+        let mentions = word_occurrences(&trap[body_open..=body_close], variant);
+        if mentions != 1 {
+            return Err(format!(
+                "`{variant}` occurs {mentions} times in `handle_synchronous_exception`; a \
+                 second arm — a decoy under a condition, or a second routing — is a second \
+                 answer to the outcome"
+            ));
+        }
+        let needle = format!("fn {helper}(");
+        let at = trap.find(&needle).ok_or_else(|| format!("no `{needle}`"))?;
+        let helper_open =
+            block_open_after(trap, at).ok_or_else(|| format!("`{helper}` has no body"))?;
+        let helper_close = matching_close_brace(trap, helper_open)
+            .ok_or_else(|| format!("`{helper}`'s body is unbalanced"))?;
+        if !trap[at..helper_open].contains("-> !") {
+            return Err(format!("`{helper}` does not diverge (`-> !`)"));
+        }
+        let helper_statements = top_level_statements(trap, helper_open, helper_close);
+        let helper_last = helper_statements
+            .last()
+            .map(|&(lo, hi)| trap[lo..hi].trim())
+            .unwrap_or("");
+        if !(statement_diverges(helper_last) && helper_last.contains("fatal_halt(")) {
+            return Err(format!("`{helper}` does not END in `fatal_halt(`"));
+        }
     }
     Ok(())
 }
@@ -10152,7 +10166,7 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
                     halt_after_delivered_syscall_fault(frame);
                 }
                 Ok(crate::svc_dispatch::SvcOutcome::Blocked) => {
-                    frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());
+                    halt_after_unrestored_block(frame);
                 }
                 Err(crate::svc_dispatch::DispatchError::InvalidSyscallId) => {
                     deliver_unknown_syscall(frame);
@@ -10174,6 +10188,11 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
 
 fn halt_after_delivered_syscall_fault(frame: &TrapFrame) -> ! {
     crate::kprintln!("syscall fault delivered; halting (x7=0x{:x})", frame.x7());
+    crate::cpu::fatal_halt()
+}
+
+fn halt_after_unrestored_block(frame: &TrapFrame) -> ! {
+    crate::kprintln!("caller left blocked; halting (x7=0x{:x})", frame.x7());
     crate::cpu::fatal_halt()
 }
 "#;
@@ -10229,9 +10248,29 @@ pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> 
             "            match dispatched {\n",
         ),
         (
-            "the Faulted arm resuming behind the sentinel (helper token kept in a comment)",
+            "the Faulted arm resuming with a frame (helper token kept in a comment)",
             "                Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {\n                    halt_after_delivered_syscall_fault(frame);\n                }\n",
-            "                Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {\n                    // halt_after_delivered_syscall_fault(frame);\n                    frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());\n                }\n",
+            "                Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {\n                    // halt_after_delivered_syscall_fault(frame);\n                    frame.set_return_frame([0; 6]);\n                }\n",
+        ),
+        (
+            "the Blocked arm resuming with a frame (helper token kept in a comment)",
+            "                Ok(crate::svc_dispatch::SvcOutcome::Blocked) => {\n                    halt_after_unrestored_block(frame);\n                }\n",
+            "                Ok(crate::svc_dispatch::SvcOutcome::Blocked) => {\n                    // halt_after_unrestored_block(frame);\n                    frame.set_return_frame([0, u64::MAX << 12, 0, 0, 0, 0]);\n                }\n",
+        ),
+        (
+            "the Blocked arm resuming with nothing written",
+            "                Ok(crate::svc_dispatch::SvcOutcome::Blocked) => {\n                    halt_after_unrestored_block(frame);\n                }\n",
+            "                Ok(crate::svc_dispatch::SvcOutcome::Blocked) => {}\n",
+        ),
+        (
+            "the Blocked halt nested under a condition",
+            "                    halt_after_unrestored_block(frame);\n",
+            "                    if frame.x0() == 0 {\n                        halt_after_unrestored_block(frame);\n                    }\n",
+        ),
+        (
+            "the Blocked helper no longer ending in the halt",
+            "    crate::kprintln!(\"caller left blocked; halting (x7=0x{:x})\", frame.x7());\n    crate::cpu::fatal_halt()\n",
+            "    crate::cpu::fatal_halt();\n    crate::kprintln!(\"caller left blocked; halting (x7=0x{:x})\", frame.x7());\n    loop {}\n",
         ),
         (
             "the halt nested under a condition",
@@ -10256,9 +10295,9 @@ pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> 
         // PR #887 review round 7: the arm is located in the live routing, not
         // found first in the text.
         (
-            "a decoy Faulted arm under a condition, the live arm resuming behind the sentinel",
+            "a decoy Faulted arm under a condition, the live arm resuming with a frame",
             "            match dispatched {\n                Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => frame.set_return_frame(regs),\n                // The caller took a fault at the seam: halt pending the successor install.\n                Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {\n                    halt_after_delivered_syscall_fault(frame);\n                }\n",
-            "            if frame.x0() == 0 {\n                match dispatched {\n                    Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {\n                        halt_after_delivered_syscall_fault(frame);\n                    }\n                    _ => {}\n                }\n            }\n            match dispatched {\n                Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => frame.set_return_frame(regs),\n                Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {\n                    frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());\n                }\n",
+            "            if frame.x0() == 0 {\n                match dispatched {\n                    Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {\n                        halt_after_delivered_syscall_fault(frame);\n                    }\n                    _ => {}\n                }\n            }\n            match dispatched {\n                Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => frame.set_return_frame(regs),\n                Ok(crate::svc_dispatch::SvcOutcome::Faulted) => {\n                    frame.set_return_frame([0; 6]);\n                }\n",
         ),
         (
             "the SVC arm widened to another class",
@@ -10268,7 +10307,7 @@ pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> 
         (
             "a frame written after the dispatch routing",
             "                    deliver_unknown_syscall(frame);\n                }\n            }\n        }\n        sync_class::KERNEL_ABORT => {\n",
-            "                    deliver_unknown_syscall(frame);\n                }\n            }\n            frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());\n        }\n        sync_class::KERNEL_ABORT => {\n",
+            "                    deliver_unknown_syscall(frame);\n                }\n            }\n            frame.set_return_frame([0; 6]);\n        }\n        sync_class::KERNEL_ABORT => {\n",
         ),
         (
             "the dispatch result shadowed before the routing",
@@ -10315,7 +10354,7 @@ pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> 
         (
             "the readiness gate ending in a frame write instead of the halt",
             "                crate::svc_dispatch::halt_syscall_before_lean_ready(\n                    crate::per_cpu::current_core_id_from_tpidr() as usize,\n                    frame.x7(),\n                );\n            }\n            let dispatched",
-            "                let _ = \"crate::svc_dispatch::halt_syscall_before_lean_ready\";\n                frame.set_return_frame(crate::svc_dispatch::blocked_resume_sentinel_regs());\n            }\n            let dispatched",
+            "                let _ = \"crate::svc_dispatch::halt_syscall_before_lean_ready\";\n                frame.set_return_frame([0; 6]);\n            }\n            let dispatched",
         ),
     ];
     for (what, from, to) in trap_mutations {

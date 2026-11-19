@@ -3638,8 +3638,11 @@ endpoint to `lockSet_tcbSetFaultHandler`, and registered the interior of a
 multi-level CSpace walk as `UncoveredLockDomain.cspaceWalkInteriorCnodes`.
 A fault raised at the SVC seam is a distinct outcome (`SyscallOutcome.faulted`,
 tag 2; review round 5) on which the trap layer halts pending SM10.1, as it
-does after every other delivered fault — never the blocked-resume sentinel,
-which would `eret` the caller past the `SVC` its handler restarts it at.
+does after every other delivered fault — never a resume, which would `eret`
+the caller past the `SVC` its handler restarts it at.  A caller left blocked
+or not runnable with no context restored halts the same way
+(`halt_after_unrestored_block`): no frame is written for it, so no `x1` label
+is reserved and a receive returns every label as data.
 Review rounds 6 and 7 bound the build-time scanners that pin these
 relations to the statements they stand for: the readiness guard's argument
 must name the executing PE, an aliased upcall fails the build, exemptions
@@ -7975,7 +7978,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   `priorityRescheduleOnCore`) and hands `Platform.FFI.restoreTrapFrame` the target
   BP7.4 stages.  The SVC arm, the fault delivery and the unknown-syscall delivery
   each return through the restore (`trap::take_restored`) before any mailbox
-  write, sentinel poison or halt, which now answer only on a core where no
+  write or fallback halt, which now answer only on a core where no
   restore was staged; `build.rs` pins the order (`is_restored_frame_return`).
   Since `v0.36.40` a core another core has vacated (a remote deschedule cleared
   its slot while its thread still ran there) is always staged one: the fault,

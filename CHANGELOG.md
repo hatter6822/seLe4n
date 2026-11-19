@@ -142,6 +142,19 @@ split", 2026-11-19); its remainder is new rows SX8–SX12.
 - `sele4n-types` / `sele4n-abi` / `sele4n-sys` encode the seL4 word in x7,
   the label in x1 and the reply capability in x6; the HAL prefilter decodes
   `Syscall::from_word`.
+- **No label is reserved in a receive's frame** (PR #1092 review).
+  `decode_received` refused label `MAX_LABEL` as the trap layer's
+  blocked-resume sentinel, but a notification completing a ReplyRecv, or
+  waking a blocked bound receiver, writes only x0 and leaves the caller's
+  outgoing x1, so a valid completion carrying that user label read as
+  `UnknownKernelError`. The sentinel was written only when a blocked caller's
+  dispatch installed no context, a state where the committed current thread
+  names no TCB. Now that arm halts (`halt_after_unrestored_block`, held by
+  `build.rs`'s `scan_trap_rs_faulted_outcome_halts` like the fault halt), so
+  a blocked thread is resumed only by the delivery that unblocks it, as in
+  seL4. `BLOCKED_RESUME_SENTINEL_LABEL`, `blocked_resume_sentinel_regs` and
+  the receive-side check are deleted, and a receive returns every label as
+  data, as libsel4's `seL4_Recv` does.
 - The Tier-4 exerciser traps with the SX7 ABI: `RoundTrip::reply` (x6; a
   receive without one is a Wait), `TrapTrip::x6`, `Dispatched::Resumed`
   for refused non-Calls. `cap-fault-to-handler-without-reply` holds seL4's

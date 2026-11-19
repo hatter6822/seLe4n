@@ -218,10 +218,10 @@ private def sd002_errorLabelCarriage : IO Unit := do
     expect s!"sd002h_delivery_label_{tag}_not_an_error"
       ((Kernel.Architecture.ofErrorLabel? tag).isNone)
       s!"label {tag} is below the status range and must decode as no error"
-  expect "sd002i_sentinel_is_top_of_range"
+  expect "sd002i_top_label_names_no_error"
     (Kernel.Architecture.errorLabelBase + 255 == MessageInfo.maxLabel &&
       (Kernel.Architecture.ofErrorLabel? MessageInfo.maxLabel).isNone)
-    "the blocked-resume sentinel names discriminant 255, which no error has"
+    "the top label names discriminant 255, which no error has"
 
 /-- SD-003 (WS-RA shape): the label round trip and its non-aliasing — no
 error's label is the success label `0`, every label decodes back to its

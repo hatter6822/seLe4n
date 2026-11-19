@@ -5698,7 +5698,7 @@ run_negative_check "INVARIANT" rg -n 'ffiInstallTranslation (tableBase asid|0 0)
 run_negative_check "INVARIANT" rg -n 'contextRestoreSeamLive|restoreTrapFrameLive|scheduleLocalSuccessorLive|resumeThreadOnCoreLive|resumeThreadEnqueueOnly|priorityRescheduleOnCoreLive|priorityRescheduleEnqueueOnly|contextRestoreWired|contextSwitchSites_restore_pending' SeLe4n tests
 run_negative_check "INVARIANT" test -e SeLe4n/Kernel/Concurrency/ContextRestoreSeam.lean
 # ...and every trap arm returns through the frame the kernel installed before
-# it falls back to a return frame, the poison or a halt.
+# it falls back to a return frame or a halt.
 run_check "INVARIANT" rg -n -U 'let dispatched = crate::svc_dispatch::dispatch_svc\(frame\.x7\(\)\);\n(\s+//[^\n]*\n)*\s+if crate::trap::take_restored\(\) \{\n\s+return;\n\s+\}\n(\s+//[^\n]*\n)*\s+match dispatched \{' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n -U 'discharge_base_io\(res, "lean_handle_fault"\) \};\n(\s+//[^\n]*\n)*\s+if crate::trap::take_restored\(\) \{\n\s+return;' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n -U 'discharge_base_io\(res, "lean_handle_unknown_syscall"\) \};\n(\s+//[^\n]*\n)*\s+if crate::trap::take_restored\(\) \{\n\s+return;' rust/sele4n-hal/src/trap.rs
@@ -6098,8 +6098,8 @@ run_check "INVARIANT" rg -n '^theorem deliverFaultFrame_eq($|[ ({:\[\]])' SeLe4n
 run_check "INVARIANT" rg -n '^theorem storeFaultReplyRendezvous_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
 run_check "INVARIANT" rg -n '^  let s1 := st\.updateTcb c faultReplyReceiverTcb$' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
 # PR #887 review round 5: a delivered syscall fault is a DISTINCT outcome
-# (tag 2) on which the trap layer halts — never the blocked-resume sentinel,
-# which would `eret` the caller past the `SVC` its handler restarts it at.
+# (tag 2) on which the trap layer halts — never a resume, which would `eret`
+# the caller past the `SVC` its handler restarts it at.
 run_check "INVARIANT" rg -n '^  \| faulted$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^  \| \.faulted   => 2$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem tagWord_faulted_ne_blocks($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
@@ -12891,14 +12891,14 @@ run_check "INVARIANT" rg -n '^theorem stageDeliveredMessage_preserves_projection
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_error_stages_no_frame($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n 'ffi_syscall_return_frame' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n 'pub const SYSCALL_ABI_VERSION: u64 = 5' rust/sele4n-types/src/lib.rs
-# PR #866 review: the Blocked trap arm must poison the frame with the
-# fail-closed blocked-resume sentinel until the context-restore seam
-# installs a successor — a silent revert to the no-op arm re-opens the
-# false-success decode of the caller's own stale request registers.
-run_check "INVARIANT" rg -n 'pub const BLOCKED_RESUME_SENTINEL_LABEL' rust/sele4n-hal/src/svc_dispatch.rs
-run_check "INVARIANT" rg -n 'pub fn blocked_resume_sentinel_regs' rust/sele4n-hal/src/svc_dispatch.rs
-run_check "INVARIANT" rg -n 'blocked_resume_sentinel_regs' rust/sele4n-hal/src/trap.rs
-run_check "INVARIANT" rg -n 'fn blocked_resume_sentinel_decodes_fail_closed' rust/sele4n-hal/src/svc_dispatch.rs
+# PR #1092 review: a caller left blocked with no context restored is never
+# resumed with a frame — the Blocked trap arm halts (its relation is held by
+# build.rs's `scan_trap_rs_faulted_outcome_halts`), and no x1 label is
+# reserved as a resume sentinel, so a receive reads every label as data.
+run_check "INVARIANT" rg -n '^fn halt_after_unrestored_block\(frame: &TrapFrame\) -> ! \{$' rust/sele4n-hal/src/trap.rs
+run_check "INVARIANT" rg -n '^    fn unrestored_block_halts\(\) \{$' rust/sele4n-hal/src/trap.rs
+run_negative_check "INVARIANT" rg -n 'blocked_resume_sentinel|BLOCKED_RESUME_SENTINEL' rust/sele4n-hal/src rust/sele4n-abi/src
+run_check "INVARIANT" rg -n '^    fn decode_received_reads_a_top_label_notification_completion_as_data\(\) \{$' rust/sele4n-abi/src/decode.rs
 # PR #866 round-2: the return-frame mailbox and the kernel-entry bracket key
 # on the TPIDR-derived LOGICAL core index (the boot-validated slot space the
 # Lean dispatch's executingCore lives in) — the packed MPIDR value must not

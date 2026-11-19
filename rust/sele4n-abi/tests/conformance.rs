@@ -1084,12 +1084,12 @@ fn unknown_kernel_error_fallback() {
     let regs = [0, (base + 100) << 12, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
-    // Discriminant 254 — just below the sentinel
+    // Discriminant 254 — just below the top of the range
     let regs = [0, (base + 254) << 12, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
-    // Discriminant 255 — the blocked-resume sentinel (MAX_LABEL) resolves to
-    // UnknownKernelError directly: it is the last label of the status range.
+    // Discriminant 255 — `MAX_LABEL`, the last label of the status range —
+    // resolves to UnknownKernelError directly: no error has it.
     let regs = [0, (base + 255) << 12, 0, 0, 0, 0, 0];
     assert_eq!(base + 255, sele4n_abi::message_info::MAX_LABEL);
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));

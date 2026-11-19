@@ -349,8 +349,9 @@ three prerequisites its docstring named (register finding 19) are here, in
 the order they had to land.  Until it flipped, a blocked caller's frame was
 poisoned with the fail-closed `blocked_resume_sentinel_regs()` and a
 delivered fault halted the core; BP7.6 (`v0.36.19`) deleted the flag with
-its prerequisites met, and both artefacts now answer only on a core where no
-restore was staged.
+its prerequisites met, and both artefacts then answered only on a core where
+no restore was staged.  The sentinel is deleted since `v0.37.33` (PR #1092
+review): that fallback now halts, as the fault one does.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
