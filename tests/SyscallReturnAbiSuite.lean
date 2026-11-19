@@ -638,6 +638,29 @@ private def sendThenReceiveScenario :
     endpointWait 0 epCapPtr.toUInt64 0 0 0 st1
   pure (preFrame, out2, stagedFrame st2 peerTid)
 
+/-- 9c': a blocked caller the receive links to no reply.  The peer's `Call`
+parks through a cap granting neither `Grant` nor `GrantReply` (core 1); the
+caller's `Wait` (no reply object) takes it (core 0).  seL4's `receiveIPC`
+delivers the message and leaves the caller `Inactive`: no reply link, no wake,
+none of its registers written.  The take is the in-place no-link route
+(`receiveCallNoLinkTakesInPlace`), so the scenario also returns that route's
+guard read on the parked state.  Returns (the guard, the pre-receive caller
+frame, the receive outcome, the post-receive caller frame, the post state). -/
+private def callNoLinkThenReceiveScenario :
+    Except KernelError (Bool × Kernel.Architecture.SyscallReturnFrame ×
+      Kernel.Architecture.SyscallOutcome × Kernel.Architecture.SyscallReturnFrame ×
+      SystemState) := do
+  let (out1, st1) ← dispatchFromAbiOn core1
+    SyscallId.call 2 epCapNoGrantPtr.toUInt64 7 8 0 twoThreadState
+  if out1 != .blocks then throw .illegalState
+  let guard := match st1.getTcb? peerTid with
+    | some t => Kernel.receiveCallNoLinkTakesInPlace st1 epId callerTid peerTid t false
+    | none => false
+  let preFrame := stagedFrame st1 peerTid
+  let (out2, st2) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    endpointWait 0 epCapPtr.toUInt64 0 0 0 st1
+  pure (guard, preFrame, out2, stagedFrame st2 peerTid, st2)
+
 /-- 9d: the reply delivery — `.call`'s `.message` frame.  The caller is
 already `.blockedOnReply` linked to the reply object; the peer replies
 `[21, 22]` through the badge-3 reply cap (core 1); the caller's staged
@@ -1134,6 +1157,23 @@ private def runBlockedWaiterStagingWitnesses : IO Unit := do
           | .blocks | .faulted | .resumes => false)
       assertBool "9c: the completed sender's registers are the ones it trapped with (no write)"
         (senderFrame == preFrame && senderFrame.x0 == epCapPtr.toUInt64)
+  -- 9c' — a blocked caller the receive links to no reply (seL4 `receiveIPC`)
+  match callNoLinkThenReceiveScenario with
+  | .error e => assertBool s!"9c' dispatches (got .error {reprStr e})" false
+  | .ok (guard, preFrame, out2, callerFrame, st2) => do
+      assertBool "9c' control: the parked no-grant caller satisfies the in-place no-link take's guard"
+        guard
+      assertBool "9c': the receive's own outcome is the caller's message (x0 = badge 9, x2 = 7, x3 = 8)"
+        (match out2 with
+          | .returns f => f.x0 == epBadgeVal.toUInt64 && f.x2 == 7 && f.x3 == 8
+          | .blocks | .faulted | .resumes => false)
+      assertBool "9c': the caller is left Inactive and `.ready`, linked to no reply"
+        ((st2.getTcb? peerTid).any fun t =>
+          decide (t.threadState = .Inactive ∧ t.ipcState = .ready ∧ t.replyObject = none))
+      assertBool "9c': the caller is on no run queue (not woken)"
+        (!SeLe4n.Kernel.runnableOnSomeCore st2 peerTid)
+      assertBool "9c': the caller's registers are the ones it trapped with (no write)"
+        (callerFrame == preFrame)
   -- 9d — the reply delivers `.call`'s frame
   match replyDeliveryScenario with
   | .error e => assertBool s!"9d dispatches (got .error {reprStr e})" false

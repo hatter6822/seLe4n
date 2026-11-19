@@ -669,6 +669,266 @@ theorem receiveCallTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     unfold performReceiveCallDelivered
     rw [Architecture.regMessageFrameW_eq]
 
+/-! ## A receive taking a caller it links to no reply -/
+
+/-- The caller a receive delivers without linking it to a reply: seL4
+`receiveIPC`'s `setThreadState(sender, Inactive)` -- the Call is answered by
+nothing, so the thread runs again only when something restarts it. -/
+@[inline] def callerInactive (t : TCB) : TCB := { t with threadState := .Inactive }
+
+/-- **A receive taking a caller it links to no reply writes only its slots**:
+`receiveTakesInPlace`'s slots (the pop's, and the receiver an unreserved thread
+other than the caller and its successor, rewritten where it stands), the sender
+blocked on a call, and the link refused -- the cap grants neither `Grant` nor
+`GrantReply`, or the receive supplies no reply object (`suppliesReply`).  seL4
+then delivers the message and leaves the caller `Inactive`; no reply object, no
+SchedContext and no reply-waiter queue is written, and nobody is woken. -/
+@[inline] def receiveCallNoLinkTakesInPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver s : SeLe4n.ThreadId) (sTcb : TCB) (suppliesReply : Bool) : Bool :=
+  sendWakesInPlace st endpointId s sTcb.queueNext &&
+  !receiver.isReserved && receiver != s &&
+  (match sTcb.queueNext with
+   | none => true
+   | some n => receiver != n) &&
+  storeLeavesIndexAndTypes st receiver.toObjId .tcb &&
+  st.objects.findsInPlace receiver.toObjId &&
+  (st.getTcb? receiver).isSome &&
+  (match sTcb.ipcState with
+   | .blockedOnCall _ => !((sTcb.ipcCanGrant || sTcb.ipcCanGrantReply) && suppliesReply)
+   | _ => false)
+
+/-- `receiveCallNoLinkTakesInPlace` as it is compiled: the caller's successor
+asked of its link code, so no `some` cell is built for a caller with a successor
+(`receiveCallNoLinkTakesInPlace_eq_impl`). -/
+@[inline] def receiveCallNoLinkTakesInPlaceImpl (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver s : SeLe4n.ThreadId) (sTcb : TCB) (suppliesReply : Bool) : Bool :=
+  sendWakesInPlaceCode st endpointId s sTcb.queueNextCode &&
+  !receiver.isReserved && receiver != s &&
+  queueSuccessorDiffers receiver sTcb.queueNextCode &&
+  storeLeavesIndexAndTypes st receiver.toObjId .tcb &&
+  st.objects.findsInPlace receiver.toObjId &&
+  (st.getTcb? receiver).isSome &&
+  (match sTcb.ipcState with
+   | .blockedOnCall _ => !((sTcb.ipcCanGrant || sTcb.ipcCanGrantReply) && suppliesReply)
+   | _ => false)
+
+@[csimp] theorem receiveCallNoLinkTakesInPlace_eq_impl :
+    @receiveCallNoLinkTakesInPlace = @receiveCallNoLinkTakesInPlaceImpl := by
+  funext st endpointId receiver s sTcb suppliesReply
+  unfold receiveCallNoLinkTakesInPlace receiveCallNoLinkTakesInPlaceImpl
+  rw [sendWakesInPlaceCode_eq, queueSuccessorDiffers_eq, TCB.ofOptCode_queueNextCode]
+  rfl
+
+/-- The state a no-link take commits: the caller popped, stored `.ready` and
+made `Inactive`, the receiver made ready holding the caller's message. -/
+def receiveCallNoLinkTakeState (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (s : SeLe4n.ThreadId) (sTcb : TCB) (receiver : SeLe4n.ThreadId) : SystemState :=
+  (((storePopHead st endpointId false s sTcb.queueNext).updateTcb s receiverReady).updateTcb s
+      callerInactive).updateTcb receiver
+    (callReceiverTcb (blockedSenderMessage (storePopHead st endpointId false s sTcb.queueNext)
+      s sTcb))
+
+/-- **The receive's no-link take, in place**: under
+`receiveCallNoLinkTakesInPlace`, the specification's receive pops the caller in
+place, stores it `.ready`, makes it `Inactive` and hands the receiver its
+message -- the no-link arm of `endpointReceiveDualOnCore`, written in its
+slots. -/
+theorem receiveCallNoLinkTake_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
+    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
+    (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
+    (hG : receiveCallNoLinkTakesInPlace st endpointId receiver s sTcb replyId.isSome = true) :
+    endpointReceiveDualOnCore endpointId receiver replyId core st =
+      (receiveCallNoLinkTakeState st endpointId s sTcb receiver, .ok (s, none)) := by
+  simp only [receiveCallNoLinkTakesInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne,
+    ne_eq] at hG
+  obtain ⟨⟨⟨⟨⟨⟨⟨hSG, hRRes⟩, hRS⟩, hRN⟩, hLR⟩, hFR⟩, hRT⟩, hNC⟩ := hG
+  obtain ⟨callEp, hCallSt, hNoLink⟩ : ∃ c, sTcb.ipcState = .blockedOnCall c ∧
+      ((sTcb.ipcCanGrant || sTcb.ipcCanGrantReply) && replyId.isSome) = false := by
+    split at hNC
+    · next c hc =>
+      refine ⟨c, hc, ?_⟩
+      revert hNC
+      cases sTcb.ipcCanGrant <;> cases sTcb.ipcCanGrantReply <;> cases replyId <;> simp
+    · cases hNC
+  have hSG' := hSG
+  simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hSG'
+  obtain ⟨⟨⟨⟨⟨hSRes, _⟩, _⟩, hLH⟩, hFH⟩, _⟩ := hSG'
+  obtain ⟨rt, hRTo⟩ := Option.isSome_iff_exists.mp hRT
+  have hRo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hRTo
+  have hNeER : endpointId ≠ receiver.toObjId := fun h => by rw [h, hRo] at hE; cases hE
+  have hNeSR : s.toObjId ≠ receiver.toObjId := fun h =>
+    hRS (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
+  have hNxR : ∀ n, sTcb.queueNext = some n → n.toObjId ≠ receiver.toObjId := fun n hn h => by
+    rw [hn] at hRN
+    simp only [bne_iff_ne, ne_eq] at hRN
+    exact hRN (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
+  obtain ⟨hPop, hFr⟩ := popHead_inPlace st endpointId false ep s sTcb hE
+    (by simp only [Bool.false_eq_true, ↓reduceIte]; exact hH) hT hSG
+  have hFH1 := (hFr.keepsFinds s.toObjId).trans hFH
+  have hO1r := (hFr.other _ hNeER hNeSR hNxR).trans hRo
+  unfold endpointReceiveDualOnCore receiveCallNoLinkTakeState
+  simp only [(SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE, hH, hPop]
+  rw [if_pos (by rw [hCallSt]), if_neg (by rw [hNoLink]; simp)]
+  have hM2 : storeTcbIpcStateAndMessage (storePopHead st endpointId false s sTcb.queueNext) s
+      .ready none = .ok ((storePopHead st endpointId false s sTcb.queueNext).updateTcb s
+        receiverReady) :=
+    modifyTcb_eq_updateTcb receiverReady hSRes hFr.head_tcb (hFr.leaves hLH)
+  rw [hM2]
+  simp only []
+  generalize blockedSenderMessage (storePopHead st endpointId false s sTcb.queueNext) s sTcb
+    = msg
+  generalize hS1 : storePopHead st endpointId false s sTcb.queueNext = S1 at *
+  have hT2s := updateTcb_getTcb?_self_of_findsInPlace receiverReady hFr.head_tcb hFH1
+  have hO2r := (updateTcb_get?_ne_of_findsInPlace receiverReady hFr.head_tcb hFH1
+    hNeSR).trans hO1r
+  have hFH2 : (S1.updateTcb s receiverReady).objects.findsInPlace s.toObjId = true :=
+    (updateTcb_findsInPlace _ hFr.head_tcb hFH1 _).trans hFH1
+  have hO3r := (updateTcb_get?_ne_of_findsInPlace callerInactive hT2s hFH2 hNeSR).trans hO2r
+  have hL3 : storeLeavesIndexAndTypes ((S1.updateTcb s receiverReady).updateTcb s callerInactive)
+      receiver.toObjId .tcb = true :=
+    updateTcb_storeLeaves _ hT2s hFH2
+      (updateTcb_storeLeaves _ hFr.head_tcb hFH1 (hFr.leaves hLR))
+  have hM4 : storeTcbIpcStateAndMessage
+      ((S1.updateTcb s receiverReady).updateTcb s callerInactive) receiver .ready (some msg) =
+      .ok (((S1.updateTcb s receiverReady).updateTcb s callerInactive).updateTcb receiver
+        (callReceiverTcb msg)) :=
+    modifyTcb_eq_updateTcb _ hRRes ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hO3r) hL3
+  rw [show (fun t : TCB => { t with threadState := .Inactive }) = callerInactive from rfl, hM4]
+
+/-- **The receive's no-link take, delivered**: the caller popped, stored `.ready`
+and made `Inactive` (none of its registers written, as seL4's `receiveIPC`), the
+receiver made ready, and the six words of the delivered frame -- read from the
+caller's saved registers before any write -- written into the receiver's saved
+registers.  No message is built, no thread is woken. -/
+@[noinline] def performReceiveCallNoLinkDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (s : SeLe4n.ThreadId) (nextCode : Nat) (receiver : SeLe4n.ThreadId)
+    (w0 w1 w2 w3 w4 w5 : UInt64) : SystemState :=
+  let X := ((storePopHead st endpointId false s (ThreadId.ofOptCode nextCode)).updateTcb
+    s receiverReady).updateTcb s callerInactive
+  (X.updateTcb receiver receiverReady).mapTcbInPlace
+    receiver (withFrameWords w0 w1 w2 w3 w4 w5)
+
+/-- **The receive's no-link take, delivered, is the specification's**: under
+`receiveCallNoLinkTakesInPlace`, for a caller blocked by a routed
+capability-free call of at most four words, the WithCaps receive installs
+nothing and commits the take, the rendezvous hands off nothing (the caller is
+`.ready`, not blocked on a reply), and staging the receiver's message writes
+`performReceiveCallNoLinkDelivered`'s state. -/
+theorem receiveCallNoLinkTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
+    (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
+    (hG : receiveCallNoLinkTakesInPlace st endpointId receiver s sTcb replyId.isSome = true)
+    (hF : sTcb.ipcFaultSend = false)
+    (hR : registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
+      .call capAddr mi) :
+    let S4 := receiveCallNoLinkTakeState st endpointId s sTcb receiver
+    let f := Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext
+      mi.length sTcb.ipcBadgeView
+    endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
+        (S4, .ok (s, { results := #[] }, none)) ∧
+      applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
+      Architecture.stageDeliveredMessage S4 receiver 0 =
+        performReceiveCallNoLinkDelivered st endpointId s sTcb.queueNextCode receiver
+          f.x0 f.x1 f.x2 f.x3 f.x4 f.x5 := by
+  intro S4 f
+  have hTake := receiveCallNoLinkTake_inPlace st endpointId ep receiver replyId core s sTcb
+    hE hH hT hG
+  have hG' := hG
+  simp only [receiveCallNoLinkTakesInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne,
+    ne_eq] at hG'
+  obtain ⟨⟨⟨⟨⟨⟨⟨hSG, hRRes⟩, hRS⟩, hRN⟩, hLR⟩, hFR⟩, hRT⟩, _⟩ := hG'
+  have hSG' := hSG
+  simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hSG'
+  obtain ⟨⟨⟨⟨⟨hSRes, _⟩, hFE⟩, _⟩, hFH⟩, _⟩ := hSG'
+  have hNo : st.objects.noResizeDue := RHTable.noResizeDue_of_findsInPlace hFE
+  obtain ⟨rt, hRTo⟩ := Option.isSome_iff_exists.mp hRT
+  have hRo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hRTo
+  have hNeER : endpointId ≠ receiver.toObjId := fun h => by rw [h, hRo] at hE; cases hE
+  have hNeSR : s.toObjId ≠ receiver.toObjId := fun h =>
+    hRS (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
+  have hNxR : ∀ n, sTcb.queueNext = some n → n.toObjId ≠ receiver.toObjId := fun n hn h => by
+    rw [hn] at hRN
+    simp only [bne_iff_ne, ne_eq] at hRN
+    exact hRN (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
+  obtain ⟨_, hFr⟩ := popHead_inPlace st endpointId false ep s sTcb hE
+    (by simp only [Bool.false_eq_true, ↓reduceIte]; exact hH) hT hSG
+  have hFH1 := (hFr.keepsFinds s.toObjId).trans hFH
+  have hO1r := (hFr.other _ hNeER hNeSR hNxR).trans hRo
+  have hMsg := (blockedSender_of_routedCall (storePopHead st endpointId false s sTcb.queueNext)
+    s sTcb capAddr mi hR hF).2
+  generalize hP : storePopHead st endpointId false s sTcb.queueNext = P at hFr hFH1 hO1r hMsg
+  have hNoP : P.objects.noResizeDue := hP ▸ storePopHead_noResizeDue _ _ _ _ _ hNo
+  have hT2s := updateTcb_getTcb?_self_of_findsInPlace receiverReady hFr.head_tcb hFH1
+  have hO2r := (updateTcb_get?_ne_of_findsInPlace receiverReady hFr.head_tcb hFH1
+    hNeSR).trans hO1r
+  have hFH2 : (P.updateTcb s receiverReady).objects.findsInPlace s.toObjId = true :=
+    (updateTcb_findsInPlace _ hFr.head_tcb hFH1 _).trans hFH1
+  have hT3s := updateTcb_getTcb?_self_of_findsInPlace callerInactive hT2s hFH2
+  have hO3r := (updateTcb_get?_ne_of_findsInPlace callerInactive hT2s hFH2 hNeSR).trans hO2r
+  generalize hX : (P.updateTcb s receiverReady).updateTcb s callerInactive = X at hT3s hO3r
+  have hNoX : X.objects.noResizeDue := hX ▸ updateTcb_noResizeDue _ _ _
+    (updateTcb_noResizeDue _ _ _ hNoP)
+  have hXr : X.getTcb? receiver = some rt := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO3r
+  have hS4 : S4 = X.updateTcb receiver (callReceiverTcb (blockedSenderMessage P s sTcb)) := by
+    show receiveCallNoLinkTakeState st endpointId s sTcb receiver = _
+    unfold receiveCallNoLinkTakeState
+    rw [hP, hX]
+  refine ⟨?_, ?_, ?_⟩
+  · have hSnd : receiveRendezvousSender? st endpointId = some s := by
+      simp only [receiveRendezvousSender?, (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE,
+        Option.bind_some, hH]
+    have hReq : receiveCapRequest st endpointId = none := by
+      unfold receiveCapRequest
+      rw [hSnd]
+      simp only [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hT]
+      exact (blockedSender_of_routedCall st s sTcb capAddr mi hR hF).1
+    unfold endpointReceiveDualWithCapsOnCore
+    rw [hTake]
+    simp only [hSnd, hReq, Option.isNone_some, Bool.false_eq_true, ↓reduceIte]
+    rfl
+  · -- the dequeued caller is `.ready`, not blocked on a reply: no hand-off
+    apply applyReceiveRendezvousHandoff_of_no_call
+    have hL : lookupTcb S4 s = lookupTcb X s := by
+      rw [hS4]
+      unfold lookupTcb
+      split
+      · rfl
+      · rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoX, SystemState.getTcb?_mapTcbInPlace,
+          if_neg hRS]
+    unfold rendezvousDequeuedCall
+    rw [hL]
+    simp only [lookupTcb, hSRes, Bool.false_eq_true, ↓reduceIte, hT3s]
+    rfl
+  · -- staging: the held message is the frame read from the caller's registers
+    have hS4' : S4 = (X.updateTcb receiver receiverReady).mapTcbInPlace receiver
+        (holdMessage (blockedSenderMessage P s sTcb)) := by
+      rw [hS4, SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoX,
+        SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoX, SystemState.mapTcbInPlace_mapTcbInPlace,
+        holdMessage_receiverReady]
+    have hNoY : (X.updateTcb receiver receiverReady).objects.noResizeDue :=
+      updateTcb_noResizeDue _ _ _ hNoX
+    have hYr : (X.updateTcb receiver receiverReady).getTcb? receiver =
+        some (receiverReady rt) := by
+      rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoX,
+        SystemState.mapTcbInPlace_getTcb?_self, hXr]
+      rfl
+    have hSz : (blockedSenderMessage P s sTcb).registers.size ≤ 4 := by
+      rw [hMsg]
+      simp only [Architecture.regMessageBody_size, Architecture.regMessageLength]
+      have : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
+      omega
+    rw [hS4', stageDeliveredMessage_holdMessage _ _ _ hNoY hSz, hMsg,
+      Architecture.returnFrameOfMessage_regMessageBody]
+    unfold writeDeliveredFrameIfReady performReceiveCallNoLinkDelivered
+    rw [hYr]
+    simp only [receiverReady, TCB.ipcState_setIpcState, ↓reduceIte]
+    rw [← TCB.optCode_queueNext, SeLe4n.ThreadId.ofOptCode_optCode, hP, hX]
+
 /-! ## A receive taking a blocked long sender -/
 
 /-- **A long delivery to a ready receiver, from words**: `deliverLongSendFrame`

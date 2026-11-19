@@ -4219,7 +4219,11 @@ into the receiver's (`performReceiveDelivered`, `receiveTake_delivered`).  A
 caller blocked by a capability-free call whose SchedContext the take donates to
 a passive receiver (`receiveCallDonatesInPlace`) is taken, donated and
 delivered in place, both home cores read off the pre-state
-(`performReceiveCallDonatingDelivered`, `receiveCallDonatingTake_delivered`).  Any
+(`performReceiveCallDonatingDelivered`, `receiveCallDonatingTake_delivered`).  A
+caller the receive links to no reply -- its cap grants neither `Grant` nor
+`GrantReply`, or the receive supplies no reply object -- is delivered and left
+`Inactive` in place, as seL4's `receiveIPC` (`receiveCallNoLinkTakesInPlace`,
+`performReceiveCallNoLinkDelivered`, `receiveCallNoLinkTake_delivered`).  Any
 other rendezvous goes through the specification
 (`endpointReceiveTakeR_eq`). -/
 @[inline] def endpointReceiveTakeR (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
@@ -4286,8 +4290,19 @@ other rendezvous goes through the specification
                   ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s)
                   (determineTargetCore st tid) executingCore sTcb.registerContext mi.length
                   (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged)
+              else if !sTcb.ipcFaultSend && receiveCallNoLinkTakesInPlace st epId tid s sTcb true then
+                let f := Architecture.regMessageFrameW SeLe4n.arm64DefaultLayout sTcb.registerContext
+                  mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
+                .ok ((), performReceiveCallNoLinkDelivered st epId s sTcb.queueNextCode tid
+                  f.x0 f.x1 f.x2 f.x3 f.x4 f.x5)
               else endpointReceiveRendezvousR epId tid replyCode executingCore st
-            | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
+            | none =>
+              if !sTcb.ipcFaultSend && receiveCallNoLinkTakesInPlace st epId tid s sTcb false then
+                let f := Architecture.regMessageFrameW SeLe4n.arm64DefaultLayout sTcb.registerContext
+                  mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
+                .ok ((), performReceiveCallNoLinkDelivered st epId s sTcb.queueNextCode tid
+                  f.x0 f.x1 f.x2 f.x3 f.x4 f.x5)
+              else endpointReceiveRendezvousR epId tid replyCode executingCore st
           | .transferring .send _ _ =>
             let len := routedLength sTcb.registerContext
             if !sTcb.ipcFaultSend && receiveTakesInPlace st epId tid s sTcb then
@@ -4486,8 +4501,33 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
                 simp only [hEp, Option.bind_some, hH, hRid, h1, h2,
                   CapTransferSummary.capInfo_empty]
                 rw [h3]
-              · rfl
-          · rfl
+              · split
+                · next hG =>
+                  simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
+                  obtain ⟨hF, hG⟩ := hG
+                  obtain ⟨h1, h2, h3⟩ := receiveCallNoLinkTake_delivered st epId ep tid
+                    (SeLe4n.ReplyId.ofOptCode replyCode) executingCore s sTcb capAddr mi
+                    ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH
+                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) (by rw [hRid]; exact hG) hF hR
+                  rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
+                  unfold endpointReceiveRendezvousR
+                  simp only [hEp, Option.bind_some, hH, h1, h2, CapTransferSummary.capInfo_empty]
+                  rw [h3]
+                · rfl
+          · next hRid =>
+            split
+            · next hG =>
+              simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
+              obtain ⟨hF, hG⟩ := hG
+              obtain ⟨h1, h2, h3⟩ := receiveCallNoLinkTake_delivered st epId ep tid
+                (SeLe4n.ReplyId.ofOptCode replyCode) executingCore s sTcb capAddr mi
+                ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) (by rw [hRid]; exact hG) hF hR
+              rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
+              unfold endpointReceiveRendezvousR
+              simp only [hEp, Option.bind_some, hH, h1, h2, CapTransferSummary.capInfo_empty]
+              rw [h3]
+            · rfl
         · next capAddr mi hR =>
           simp only [routedLength_eq hR]
           split
