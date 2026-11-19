@@ -690,6 +690,118 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
                   have hNeTid : x.toObjId ≠ sender.toObjId := fun h => hEq' (threadId_toObjId_injective h)
                   exact ⟨tcb1, (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 sender (.blockedOnSend endpointId) none x.toObjId hNeTid hObjInv1 hMsg) ▸ hTcb1⟩
 
+/-- **A receiver completed by a delivered message and woken keeps the
+IPC/scheduler contract** (`storeTcbReceiveComplete`, then `ensureRunnable`):
+the woken receiver is `.ready`, and every other thread keeps its `ipcState` and
+its run-queue membership.  The rendezvous of a send and of a call that links no
+reply both end here. -/
+theorem receiveComplete_ensureRunnable_preserves_ipcSchedulerContractPredicates
+    (s st2 : SystemState) (r : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (hObjInv : s.objects.invExt)
+    (hMsg : storeTcbReceiveComplete s r msg = .ok st2)
+    (hContractPop : ipcSchedulerContractPredicates s) :
+    ipcSchedulerContractPredicates (ensureRunnable st2 r) := by
+  rcases hContractPop with ⟨hReady', hBlockSend', hBlockRecv', hBlockCall', hBlockReply', hBlockNotif'⟩
+  have hSchedMsg := storeTcbReceiveComplete_scheduler_eq s st2 r msg hMsg
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · -- runnableThreadIpcReady
+    intro tid tcb' hTcb' hRun'
+    run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
+    by_cases hNe : tid.toObjId = r.toObjId
+    · exact storeTcbReceiveComplete_ipcState_eq s st2 r msg hObjInv hMsg tcb' (hNe ▸ hTcb')
+    · have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne s st2 r msg tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
+      have hNeTid : tid ≠ r := fun h => hNe (congrArg ThreadId.toObjId h)
+      rcases ensureRunnable_mem_reverse st2 r tid hRun' with hOld | hEq
+      · exact hReady' tid tcb' hTcbPre (show tid ∈ s.scheduler.runnable by rwa [← hSchedMsg])
+      · exact absurd hEq hNeTid
+  · -- blockedOnSendNotRunnable
+    intro tid tcb' eid hTcb' hIpcState'
+    run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
+    by_cases hNe : tid.toObjId = r.toObjId
+    · have := storeTcbReceiveComplete_ipcState_eq s st2 r msg hObjInv hMsg tcb' (hNe ▸ hTcb')
+      rw [this] at hIpcState'; cases hIpcState'
+    · have hNeTid : tid ≠ r := fun h => hNe (congrArg ThreadId.toObjId h)
+      have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne s st2 r msg tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
+      intro hRun'
+      rcases ensureRunnable_mem_reverse st2 r tid hRun' with hOld | hEq
+      · exact hBlockSend' tid tcb' eid hTcbPre hIpcState' (show tid ∈ s.scheduler.runnable by rwa [← hSchedMsg])
+      · exact absurd hEq hNeTid
+  · -- blockedOnReceiveNotRunnable
+    intro tid tcb' eid hTcb' hIpcState'
+    run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
+    by_cases hNe : tid.toObjId = r.toObjId
+    · have := storeTcbReceiveComplete_ipcState_eq s st2 r msg hObjInv hMsg tcb' (hNe ▸ hTcb')
+      rw [this] at hIpcState'; cases hIpcState'
+    · have hNeTid : tid ≠ r := fun h => hNe (congrArg ThreadId.toObjId h)
+      have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne s st2 r msg tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
+      intro hRun'
+      rcases ensureRunnable_mem_reverse st2 r tid hRun' with hOld | hEq
+      · exact hBlockRecv' tid tcb' eid hTcbPre hIpcState' (show tid ∈ s.scheduler.runnable by rwa [← hSchedMsg])
+      · exact absurd hEq hNeTid
+  · -- blockedOnCallNotRunnable
+    intro tid tcb' eid hTcb' hIpcState'
+    run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
+    by_cases hNe : tid.toObjId = r.toObjId
+    · have := storeTcbReceiveComplete_ipcState_eq s st2 r msg hObjInv hMsg tcb' (hNe ▸ hTcb')
+      rw [this] at hIpcState'; cases hIpcState'
+    · have hNeTid : tid ≠ r := fun h => hNe (congrArg ThreadId.toObjId h)
+      have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne s st2 r msg tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
+      intro hRun'
+      rcases ensureRunnable_mem_reverse st2 r tid hRun' with hOld | hEq
+      · exact hBlockCall' tid tcb' eid hTcbPre hIpcState' (show tid ∈ s.scheduler.runnable by rwa [← hSchedMsg])
+      · exact absurd hEq hNeTid
+  · -- blockedOnReplyNotRunnable
+    intro tid tcb' eid rt hTcb' hIpcState'
+    run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
+    by_cases hNe : tid.toObjId = r.toObjId
+    · have := storeTcbReceiveComplete_ipcState_eq s st2 r msg hObjInv hMsg tcb' (hNe ▸ hTcb')
+      rw [this] at hIpcState'; cases hIpcState'
+    · have hNeTid : tid ≠ r := fun h => hNe (congrArg ThreadId.toObjId h)
+      have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne s st2 r msg tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
+      intro hRun'
+      rcases ensureRunnable_mem_reverse st2 r tid hRun' with hOld | hEq
+      · exact hBlockReply' tid tcb' eid rt hTcbPre hIpcState' (show tid ∈ s.scheduler.runnable by rwa [← hSchedMsg])
+      · exact absurd hEq hNeTid
+  · -- blockedOnNotificationNotRunnable (WS-F6/D2)
+    intro tid tcb' nid hTcb' hIpcState'
+    run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
+    by_cases hNe : tid.toObjId = r.toObjId
+    · have := storeTcbReceiveComplete_ipcState_eq s st2 r msg hObjInv hMsg tcb' (hNe ▸ hTcb')
+      rw [this] at hIpcState'; cases hIpcState'
+    · have hNeTid : tid ≠ r := fun h => hNe (congrArg ThreadId.toObjId h)
+      have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne s st2 r msg tid.toObjId hNe hObjInv hMsg).symm.trans hTcb'
+      intro hRun'
+      rcases ensureRunnable_mem_reverse st2 r tid hRun' with hOld | hEq
+      · exact hBlockNotif' tid tcb' nid hTcbPre hIpcState' (show tid ∈ s.scheduler.runnable by rwa [← hSchedMsg])
+      · exact absurd hEq hNeTid
+
+/-- Taking a thread off the run queue keeps the IPC/scheduler contract: no
+object changes off its run-queue links, and the run queue only shrinks. -/
+theorem removeRunnable_preserves_ipcSchedulerContractPredicates
+    (s : SystemState) (c : SeLe4n.ThreadId)
+    (h : ipcSchedulerContractPredicates s) :
+    ipcSchedulerContractPredicates (removeRunnable s c) := by
+  rcases h with ⟨h1, h2, h3, h4, h5, h6⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro tid tcb' hT hRun
+    run_links_back (removeRunnable_objectsAgreeOffRunLinks _ _) at tcb' hT
+    exact h1 tid tcb' hT ((removeRunnable_runnable_mem s c tid).mp hRun).1
+  · intro tid tcb' e hT hI hRun
+    run_links_back (removeRunnable_objectsAgreeOffRunLinks _ _) at tcb' hT
+    exact h2 tid tcb' e hT hI ((removeRunnable_runnable_mem s c tid).mp hRun).1
+  · intro tid tcb' e hT hI hRun
+    run_links_back (removeRunnable_objectsAgreeOffRunLinks _ _) at tcb' hT
+    exact h3 tid tcb' e hT hI ((removeRunnable_runnable_mem s c tid).mp hRun).1
+  · intro tid tcb' e hT hI hRun
+    run_links_back (removeRunnable_objectsAgreeOffRunLinks _ _) at tcb' hT
+    exact h4 tid tcb' e hT hI ((removeRunnable_runnable_mem s c tid).mp hRun).1
+  · intro tid tcb' e rt hT hI hRun
+    run_links_back (removeRunnable_objectsAgreeOffRunLinks _ _) at tcb' hT
+    exact h5 tid tcb' e rt hT hI ((removeRunnable_runnable_mem s c tid).mp hRun).1
+  · intro tid tcb' e hT hI hRun
+    run_links_back (removeRunnable_objectsAgreeOffRunLinks _ _) at tcb' hT
+    exact h6 tid tcb' e hT hI ((removeRunnable_runnable_mem s c tid).mp hRun).1
+
 /-- WS-F1/TPI-D08: endpointSendDual preserves ipcSchedulerContractPredicates. -/
 theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
@@ -736,79 +848,8 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            rcases hContractPop with ⟨hReady', hBlockSend', hBlockRecv', hBlockCall', hBlockReply', hBlockNotif'⟩
-            have hSchedMsg := storeTcbReceiveComplete_scheduler_eq pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) hMsg
-            refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
-            · -- runnableThreadIpcReady
-              intro tid tcb' hTcb' hRun'
-              run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
-              by_cases hNe : tid.toObjId = pair.1.toObjId
-              · exact storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
-              · have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
-                have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
-                rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
-                · exact hReady' tid tcb' hTcbPre (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
-                · exact absurd hEq hNeTid
-            · -- blockedOnSendNotRunnable
-              intro tid tcb' eid hTcb' hIpcState'
-              run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
-              by_cases hNe : tid.toObjId = pair.1.toObjId
-              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
-                rw [this] at hIpcState'; cases hIpcState'
-              · have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
-                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
-                intro hRun'
-                rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
-                · exact hBlockSend' tid tcb' eid hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
-                · exact absurd hEq hNeTid
-            · -- blockedOnReceiveNotRunnable
-              intro tid tcb' eid hTcb' hIpcState'
-              run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
-              by_cases hNe : tid.toObjId = pair.1.toObjId
-              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
-                rw [this] at hIpcState'; cases hIpcState'
-              · have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
-                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
-                intro hRun'
-                rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
-                · exact hBlockRecv' tid tcb' eid hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
-                · exact absurd hEq hNeTid
-            · -- blockedOnCallNotRunnable
-              intro tid tcb' eid hTcb' hIpcState'
-              run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
-              by_cases hNe : tid.toObjId = pair.1.toObjId
-              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
-                rw [this] at hIpcState'; cases hIpcState'
-              · have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
-                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
-                intro hRun'
-                rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
-                · exact hBlockCall' tid tcb' eid hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
-                · exact absurd hEq hNeTid
-            · -- blockedOnReplyNotRunnable
-              intro tid tcb' eid rt hTcb' hIpcState'
-              run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
-              by_cases hNe : tid.toObjId = pair.1.toObjId
-              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
-                rw [this] at hIpcState'; cases hIpcState'
-              · have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
-                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
-                intro hRun'
-                rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
-                · exact hBlockReply' tid tcb' eid rt hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
-                · exact absurd hEq hNeTid
-            · -- blockedOnNotificationNotRunnable (WS-F6/D2)
-              intro tid tcb' nid hTcb' hIpcState'
-              run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
-              by_cases hNe : tid.toObjId = pair.1.toObjId
-              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
-                rw [this] at hIpcState'; cases hIpcState'
-              · have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
-                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
-                intro hRun'
-                rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
-                · exact hBlockNotif' tid tcb' nid hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
-                · exact absurd hEq hNeTid
+            exact receiveComplete_ensureRunnable_preserves_ipcSchedulerContractPredicates
+              pair.2.2 st2 pair.1 _ hObjInv1 hMsg hContractPop
       | none =>
         -- Blocking: Enqueue → storeTcbIpcStateAndMessage(.blockedOnSend) → removeRunnable
         cases hEnq : endpointQueueEnqueue endpointId false sender st with

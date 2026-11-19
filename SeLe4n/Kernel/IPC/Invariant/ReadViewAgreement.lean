@@ -1105,4 +1105,38 @@ theorem replyLinkageFrame.of_readViewAgreement {s1 s2 : SystemState}
       congrArg TCB.replyObject e
     exact ⟨t', ht, eR, fun ep rt hb => ⟨ep, rt, eI.trans hb⟩⟩
 
+/-- Read-view transport of the scheduler bundle, across a step that leaves the
+scheduler alone: the bundle reads the scheduler and whether the current thread's
+TCB exists, and a read-view write keeps every TCB a TCB. -/
+theorem schedulerInvariantBundle_of_readViewAgreement {s1 s2 : SystemState}
+    (hView : ipcReadViewAgreement s1 s2) (hS : s2.scheduler = s1.scheduler)
+    (h : schedulerInvariantBundle s1) : schedulerInvariantBundle s2 := by
+  obtain ⟨h1, h2, h3⟩ := h
+  refine ⟨hS ▸ h1, hS ▸ h2, ?_⟩
+  unfold currentThreadValid at h3 ⊢
+  rw [hS]
+  cases hC : s1.scheduler.currentOnCore bootCoreId with
+  | none => trivial
+  | some x =>
+    rw [hC] at h3
+    obtain ⟨t₀, ht₀⟩ := h3
+    obtain ⟨t, ht, -⟩ := hView.tcbFwd x.toObjId t₀ ht₀
+    exact ⟨t, ht⟩
+
+/-- Read-view transport of the IPC/scheduler contract, across a step that
+leaves the scheduler alone: each clause reads a thread's `ipcState`, which is
+inside the read view, and the run queue (a thread made `Inactive` by a call
+that links no reply stays inside the frame). -/
+theorem ipcSchedulerContractPredicates_of_readViewAgreement {s1 s2 : SystemState}
+    (hView : ipcReadViewAgreement s1 s2) (hS : s2.scheduler = s1.scheduler)
+    (h : ipcSchedulerContractPredicates s1) : ipcSchedulerContractPredicates s2 := by
+  obtain ⟨h1, h2, h3, h4, h5, h6⟩ := h
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro tid tcb hT; run_links_back hView at tcb hT; rw [hS]; exact h1 tid tcb hT
+  · intro tid tcb e hT; run_links_back hView at tcb hT; rw [hS]; exact h2 tid tcb e hT
+  · intro tid tcb e hT; run_links_back hView at tcb hT; rw [hS]; exact h3 tid tcb e hT
+  · intro tid tcb e hT; run_links_back hView at tcb hT; rw [hS]; exact h4 tid tcb e hT
+  · intro tid tcb e r hT; run_links_back hView at tcb hT; rw [hS]; exact h5 tid tcb e r hT
+  · intro tid tcb e hT; run_links_back hView at tcb hT; rw [hS]; exact h6 tid tcb e hT
+
 end SeLe4n.Kernel

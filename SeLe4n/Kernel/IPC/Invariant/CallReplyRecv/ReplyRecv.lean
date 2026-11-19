@@ -603,7 +603,27 @@ theorem endpointCall_preserves_objects_invExt
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              exact SystemState.updateTcb_preserves_objects_invExt _ caller _
+                (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt st2 pair.1
+                  (storeTcbReceiveComplete_preserves_objects_invExt pair.2.2 st2 pair.1 _ hObjInv1 hMsg)))
+        rw [if_pos hLk] at hStep
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
         | ok pair =>

@@ -2665,6 +2665,10 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
 If a receiver is queued: handshake with receiver (deliver the caller's message, read from
 its frame as `endpointSendDual` reads it), then block caller for reply.
 WS-H1/M-02: The caller's `blockedOnReply` records the receiver's ThreadId as `replyTarget`.
+The block for reply happens only when the call links the receiver's stashed reply
+object (seL4 `sendIPC`, `do_call`, `reply != NULL && (canGrant || canGrantReply)`,
+`callRendezvousLinks`); a call that links none delivers its message as a send's,
+drops the receiver's stash and leaves the caller `Inactive` with no reply.
 If no receiver queued: enqueue caller as sender; its words stay in its frame.
 WS-H1/C-01: The caller is enqueued with `blockedOnCall` (not `blockedOnSend`) so that
 when a receiver later dequeues, the caller transitions to `blockedOnReply` instead of `.ready`.
@@ -2694,7 +2698,13 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     match st.getObject? endpointId with
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
-        | some _ =>
+        | some r =>
+          -- seL4 `sendIPC` (`do_call`): the call is linked to the receiver's reply
+          -- object only when the receiver stashed one and the capability grants
+          -- (`canGrant || canGrantReply`); otherwise the message is delivered as a
+          -- send's and the caller is left `Inactive`, off the run queue, with no
+          -- reply (`callRendezvousLinks`, as the per-core call decides it).
+          if callRendezvousLinks st r payload then
             -- WS-L1/L1-A: PopHead now returns (ThreadId × TCB × SystemState)
             -- Note: _tcb has stale queue links (WS-L1/L1-A); use st' for current state
             match endpointQueuePopHead endpointId true st with
@@ -2732,6 +2742,19 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                         | .error e => .error e
                         | .ok ((), st5) =>
                             .ok ((), (removeRunnable st5 caller).linkReplyWaiter caller receiver)
+          else
+            match endpointQueuePopHead endpointId true st with
+            | .error e => .error e
+            | .ok (receiver, _tcb, st') =>
+                -- `storeTcbReceiveComplete` drops whatever the receiver stashed
+                -- (seL4 `reply_unlink`), as the per-core call's no-link arm does;
+                -- the caller keeps `.ready` in IPC, queued nowhere: `Inactive`.
+                match storeTcbReceiveComplete st' receiver
+                    (some (sendPayloadMessage st caller payload)) with
+                | .error e => .error e
+                | .ok st'' =>
+                    .ok ((), (removeRunnable (ensureRunnable st'' receiver) caller).updateTcb caller
+                      fun t => { t with threadState := .Inactive })
         | none =>
             match endpointQueueEnqueue endpointId false caller st with
             | .error e => .error e

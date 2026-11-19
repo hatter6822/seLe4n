@@ -799,6 +799,46 @@ def frozenLinkCallerReply (st : FrozenSystemState) (caller : SeLe4n.ThreadId)
       else .error .replyCapInvalid
   | _ => .error .replyCapInvalid
 
+/-- **Link a call's caller to the reply object its server stashed**, mirroring
+`SystemState.linkServerStashedReply` write for write: the server's stash names
+the reply (`TCB.pendingReceiveReply`), the caller is linked to it through both
+single-use barriers (`frozenLinkCallerReply`), and the stash is cleared.  A
+server that stashed none refuses with `.replyCapInvalid`, as live; the call
+that reaches it has already asked `frozenCallRendezvousLinks`, so on the
+operation that link test decides which arm runs. -/
+def frozenLinkServerStashedReply (st : FrozenSystemState)
+    (caller server : SeLe4n.ThreadId) : Except KernelError FrozenSystemState :=
+  match (frozenLookupTcb st server).bind (·.pendingReceiveReply) with
+  | none => .error .replyCapInvalid
+  | some rid =>
+      match frozenLinkCallerReply st caller rid with
+      | .error e => .error e
+      | .ok st1 =>
+          match frozenLookupTcb st1 server with
+          | none => .ok st1
+          | some sTcb =>
+              frozenWithObjectStored st1 server.toObjId
+                (.tcb { sTcb with pendingReceiveReplyCode := 0 })
+
+/-- **Whether a frozen call that finds `receiver` waiting links its reply
+object** -- the frozen reading of `callRendezvousLinks`, clause for clause:
+the receiver stashed a reply object and the payload grants (`canGrant ||
+canGrantReply`, seL4's `sendIPC`). -/
+@[inline] def frozenCallRendezvousLinks (st : FrozenSystemState)
+    (receiver : SeLe4n.ThreadId) (payload : SendPayload) : Bool :=
+  payload.canLinkReply &&
+    match frozenLookupTcb st receiver with
+    | some rt => rt.pendingReceiveReplyCode != 0
+    | none => false
+
+/-- A TCB field write at `t` that writes nothing when `t` names no TCB, as the
+live `SystemState.updateTcb` and `mapTcbInPlace` write nothing there. -/
+def frozenMapTcbAt (st : FrozenSystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB) :
+    FrozenSystemState :=
+  match st.getTcb? t with
+  | some tcb => frozenRewriteObject st t.toObjId (.tcb (g tcb))
+  | none => st
+
 /-- **WS-HP HP8.1, frozen mirror**: the frame *below* the cut, when there is one
 that reciprocates.
 

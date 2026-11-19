@@ -894,14 +894,25 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
     | none => .error .objectNotFound
 
 /-- Q7-C2: Frozen endpoint call — send then block for reply.
-Mirrors `endpointCall` using intrusive queue management. -/
+Mirrors `endpointCall` using intrusive queue management.
+
+**The call links its reply only where the live call does** (seL4 `sendIPC`,
+`do_call`): the receiver stashed a reply object and the capability grants
+(`frozenCallRendezvousLinks`, the frozen reading of `callRendezvousLinks`).  A
+linked call parks the caller `.blockedOnReply`, its message slot cleared, and
+links it to the stashed reply, clearing the stash
+(`frozenLinkServerStashedReply`); a call that links none completes the receive
+as a send's -- the stash dropped -- and leaves the caller `Inactive`, off the
+run queue, with no reply.  The reply-waiter queue links the live call writes
+are outside the frozen comparison (`TCB.withoutRunLinks`). -/
 def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload) : FrozenKernel Unit :=
   fun st =>
     match st.getObject? endpointId with
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
-        | some _receiver =>
+        | some r =>
+          if frozenCallRendezvousLinks st r payload then
             -- Receiver waiting: pop head, transfer message, block caller for reply
             match frozenQueuePopHead endpointId true st with
             | .error e => .error e
@@ -916,18 +927,26 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                     match frozenStoreTcb receiver recvTcb' st' with
                     | .error e => .error e
                     | .ok ((), st'') =>
-                        -- Block caller waiting for reply
+                        -- Block caller waiting for reply, its message slot
+                        -- cleared as the live `storeTcbIpcStateAndMessage _ _ _
+                        -- none` clears it.
                         match frozenLookupTcb st'' caller with
                         | some callerTcb =>
-                            let callerTcb' := (callerTcb.setIpcState (.blockedOnReply endpointId (some receiver)))
+                            let callerTcb' := (TCB.setIpcState { callerTcb with pendingMessage := none }
+                              (.blockedOnReply endpointId (some receiver)))
                             match frozenStoreTcb caller callerTcb' st'' with
                             | .error e => .error e
                             | .ok ((), st''') =>
+                              -- The caller is linked to the reply object the
+                              -- receiver stashed, and the stash is cleared.
+                              match frozenLinkServerStashedReply st''' caller receiver with
+                              | .error e => .error e
+                              | .ok stLinked =>
                               -- PR #873 round 15: the run queue moves both ways
                               -- here, as the live `endpointCall` does -- the woken
                               -- receiver enters it, the caller blocking for its
                               -- reply leaves it.
-                              match frozenEnsureRunnable st''' receiver with
+                              match frozenEnsureRunnable stLinked receiver with
                               | .error e => .error e
                               | .ok st4 =>
                                 -- Same content move as the send half of a call:
@@ -935,6 +954,28 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                                 .ok ((), frozenTaintFlow (frozenRemoveRunnable st4 caller)
                                           receiver.toObjId caller.toObjId)
                         | none => .error .objectNotFound
+                | none => .error .objectNotFound
+          else
+            -- Linking no reply: the receive completes as a send's (the stash
+            -- dropped, as `frozenEndpointSend` writes it), the receiver is woken,
+            -- and the caller is `Inactive` and off the run queue.
+            match frozenQueuePopHead endpointId true st with
+            | .error e => .error e
+            | .ok (receiver, _tcb, st') =>
+                match frozenLookupTcb st' receiver with
+                | some recvTcb =>
+                    let recvTcb' := (TCB.setIpcState { recvTcb with
+                      pendingMessage := some (frozenSendPayloadMessage st caller payload),
+                      pendingReceiveReplyCode := 0 } ThreadIpcState.ready)
+                    match frozenStoreTcb receiver recvTcb' st' with
+                    | .error e => .error e
+                    | .ok ((), st'') =>
+                        match frozenEnsureRunnable st'' receiver with
+                        | .error e => .error e
+                        | .ok st3 =>
+                            let st4 := frozenMapTcbAt (frozenRemoveRunnable st3 caller) caller
+                              fun t => { t with threadState := .Inactive }
+                            .ok ((), frozenTaintFlow st4 receiver.toObjId caller.toObjId)
                 | none => .error .objectNotFound
         | none =>
             -- No receiver: block caller, then enqueue into sendQ (T1-D/M-FRZ-3); the
@@ -1720,14 +1761,6 @@ def frozenTimerTickBudget : FrozenKernel Unit :=
 -- ============================================================================
 -- D1: Frozen thread suspension and resumption
 -- ============================================================================
-
-/-- A TCB field write at `t` that writes nothing when `t` names no TCB, as the
-live `SystemState.updateTcb` and `mapTcbInPlace` write nothing there. -/
-def frozenMapTcbAt (st : FrozenSystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB) :
-    FrozenSystemState :=
-  match st.getTcb? t with
-  | some tcb => frozenRewriteObject st t.toObjId (.tcb (g tcb))
-  | none => st
 
 /-- WS-SX SX4: **`w` leaves server `s`'s reply-waiter queue** — the frozen
 mirror of `SystemState.unlinkReplyWaiter`, write for write: the predecessor and

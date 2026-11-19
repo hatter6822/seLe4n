@@ -1419,6 +1419,74 @@ private def differentialEndpointCallAgrees : IO Unit := do
       (liveWithTaint .call diffA (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.endpointCall diffEpId diffA (.frame msg.badge false true)) ist.state))
 
+/-- FO-067: **a call that finds its receiver waiting**, against `endpointCall`
+(seL4 `sendIPC`, `do_call`).
+
+Three shapes, each run on both surfaces with a control that the rendezvous
+completed: the receiver stashed a reply object and the capability grants
+`GrantReply` (the caller is linked, `.blockedOnReply`, and the stash cleared);
+the receiver stashed none (the call links no reply: the message is delivered as
+a send's and the caller completed `Inactive`); and the receiver stashed one but
+the capability grants neither `Grant` nor `GrantReply` (the same, and the
+receiver's stash dropped). -/
+private def differentialEndpointCallRendezvousAgrees : IO Unit := do
+  let msg : IpcMessage := { registers := #[⟨17⟩], badge := none }
+  let rid : SeLe4n.ReplyId := ⟨507⟩
+  let ep : Endpoint := (Endpoint.ofQueues {} { head := some diffB, tail := some diffB })
+  let stashCode (stash : Bool) : Nat := if stash then SeLe4n.ReplyId.optCode (some rid) else 0
+  let istWith (stash : Bool) := diffAddReply (diffAddTcb (diffAddTcb
+    (diffAddEndpoint (diffAddCSpace (mkEmptyIntermediateState ())
+      [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) (diffTcb 62))
+    (TCB.setIpcState { diffTcb 63 with queuePPrevCode := 1, pendingReceiveReplyCode := stashCode stash }
+      (.blockedOnReceive diffEpId)))
+    rid { replyId := rid, callerCode := 0 }
+  let grantReply : SeLe4n.Kernel.SendPayload := .frame msg.badge false true
+  let noGrant : SeLe4n.Kernel.SendPayload := .frame msg.badge false false
+  let callerIs (p : TCB → Bool) (r : Except KernelError (Unit × FrozenSystemState)) : Bool :=
+    match r with
+    | .ok (_, fs) => match frozenLookupTcb fs diffA with
+      | some t => p t
+      | none => false
+    | .error _ => false
+  let receiverStash (r : Except KernelError (Unit × FrozenSystemState)) : Nat :=
+    match r with
+    | .ok (_, fs) => match frozenLookupTcb fs diffB with
+      | some t => t.pendingReceiveReplyCode
+      | none => 1000
+    | .error _ => 1000
+  let agree (ist : IntermediateState) (pl : SeLe4n.Kernel.SendPayload) : Bool :=
+    frozenRunAgrees unitResultAgrees
+      (frozenEndpointCall diffEpId diffA pl (freeze ist))
+      (liveWithTaint .call diffA (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.endpointCall diffEpId diffA pl) ist.state)
+  -- Linked: a stash and a `GrantReply` capability.
+  let linked := istWith true
+  expect "FO-067 control: the live linked call completes"
+    (SeLe4n.Kernel.endpointCall diffEpId diffA grantReply linked.state).toOption.isSome
+  expect "FO-067: the linked caller is parked for its reply, the stash cleared"
+    (callerIs (fun t => t.ipcState == .blockedOnReply diffEpId (some diffB)
+        && t.replyObject == some rid)
+      (frozenEndpointCall diffEpId diffA grantReply (freeze linked))
+     && receiverStash (frozenEndpointCall diffEpId diffA grantReply (freeze linked)) == 0)
+  expect "FO-067: both agree on the linked call" (agree linked grantReply)
+  -- No stash: the call links no reply.
+  let unstashed := istWith false
+  expect "FO-067 control: the live call to a receiver with no stash completes"
+    (SeLe4n.Kernel.endpointCall diffEpId diffA grantReply unstashed.state).toOption.isSome
+  expect "FO-067: with no stash the caller is completed Inactive"
+    (callerIs (fun t => t.ipcState == .ready && t.threadState == .Inactive
+        && t.replyObject == none)
+      (frozenEndpointCall diffEpId diffA grantReply (freeze unstashed)))
+  expect "FO-067: both agree on a call to a receiver with no stash" (agree unstashed grantReply)
+  -- A stash, but neither grant right: no link, and the stash dropped.
+  expect "FO-067 control: the live call without a grant right completes"
+    (SeLe4n.Kernel.endpointCall diffEpId diffA noGrant linked.state).toOption.isSome
+  expect "FO-067: without a grant right the caller is completed Inactive, the stash dropped"
+    (callerIs (fun t => t.ipcState == .ready && t.threadState == .Inactive)
+      (frozenEndpointCall diffEpId diffA noGrant (freeze linked))
+     && receiverStash (frozenEndpointCall diffEpId diffA noGrant (freeze linked)) == 0)
+  expect "FO-067: both agree on a call without a grant right" (agree linked noGrant)
+
 /-- FO-031: the reply LEG, against `endpointReplyOnCore` — the leg the live
 `.reply` arm dispatches — delivering to a caller parked in `.blockedOnReply`.
 
@@ -3528,6 +3596,7 @@ private def differentialScenarios :
     (.endpointReceiveFromBlockedSender, differentialEndpointReceiveAgrees),
     (.endpointReceiveFromBlockedCaller, differentialReceiveFromBlockedCallerAgrees),
     (.endpointCallParks,                differentialEndpointCallAgrees),
+    (.endpointCallToWaitingReceiver,    differentialEndpointCallRendezvousAgrees),
     (.endpointReplyToBlockedCaller,     differentialEndpointReplyAgrees),
     (.threadSuspendCancelsBlocking,     frozenSuspendOfQueuedSenderLeavesQueue),
     (.threadSuspendCancelsBlocking,     frozenResumeOfNotificationWaiterLeavesQueue),

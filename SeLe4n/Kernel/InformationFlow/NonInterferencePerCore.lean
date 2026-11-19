@@ -1232,36 +1232,59 @@ theorem endpointCall_confinedToBootCore (st st' : SystemState)
       | some _ =>
         simp only [hHead] at hStep
         split at hStep
-        · simp at hStep
-        · next receiver recvTcb st1 hPop =>
-          split at hStep
+        · split at hStep
           · simp at hStep
-          · next st2 hStore =>
+          · next receiver recvTcb st1 hPop =>
             split at hStep
             · simp at hStep
-            · next st4 hStore2 =>
+            · next st2 hStore =>
               split at hStep
               · simp at hStep
-              · next st5 hLink =>
-                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-                obtain ⟨_, hEq⟩ := hStep
-                subst hEq
-                refine observableSlotsConfinedToCore_trans
-                  (endpointQueuePopHead_confinedToCore endpointId true st st1 receiver
-                    (headTcb := recvTcb) bootCoreId hPop) ?_
-                refine observableSlotsConfinedToCore_trans
-                  (storeTcbIpcStateAndMessage_confinedToCore st1 st2 receiver _ _ bootCoreId
-                    hStore) ?_
-                refine observableSlotsConfinedToCore_trans
-                  (ensureRunnable_confinedToBootCore st2 receiver) ?_
-                refine observableSlotsConfinedToCore_trans
-                  (storeTcbIpcStateAndMessage_confinedToCore _ st4 caller _ _ bootCoreId
-                    hStore2) ?_
-                refine observableSlotsConfinedToCore_trans
-                  (linkServerStashedReply_confinedToCore st4 st5 caller receiver bootCoreId
-                    hLink) ?_
-                refine observableSlotsConfinedToCore_trans ?_ (observableSlotsConfinedToCore_of_scheduler_machine_eq _ (SystemState.linkReplyWaiter_scheduler _ _ _) (SystemState.linkReplyWaiter_machine _ _ _))
-                exact removeRunnable_confinedToBootCore st5 caller
+              · next st4 hStore2 =>
+                split at hStep
+                · simp at hStep
+                · next st5 hLink =>
+                  simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨_, hEq⟩ := hStep
+                  subst hEq
+                  refine observableSlotsConfinedToCore_trans
+                    (endpointQueuePopHead_confinedToCore endpointId true st st1 receiver
+                      (headTcb := recvTcb) bootCoreId hPop) ?_
+                  refine observableSlotsConfinedToCore_trans
+                    (storeTcbIpcStateAndMessage_confinedToCore st1 st2 receiver _ _ bootCoreId
+                      hStore) ?_
+                  refine observableSlotsConfinedToCore_trans
+                    (ensureRunnable_confinedToBootCore st2 receiver) ?_
+                  refine observableSlotsConfinedToCore_trans
+                    (storeTcbIpcStateAndMessage_confinedToCore _ st4 caller _ _ bootCoreId
+                      hStore2) ?_
+                  refine observableSlotsConfinedToCore_trans
+                    (linkServerStashedReply_confinedToCore st4 st5 caller receiver bootCoreId
+                      hLink) ?_
+                  refine observableSlotsConfinedToCore_trans ?_ (observableSlotsConfinedToCore_of_scheduler_machine_eq _ (SystemState.linkReplyWaiter_scheduler _ _ _) (SystemState.linkReplyWaiter_machine _ _ _))
+                  exact removeRunnable_confinedToBootCore st5 caller
+        · -- seL4 `sendIPC`: a call that links no reply delivers as a send's and
+          -- leaves the caller `Inactive` (`callRendezvousLinks`).
+          split at hStep
+          · simp at hStep
+          · next receiver headTcb st1 hPop =>
+            split at hStep
+            · simp at hStep
+            · next st2 hStore =>
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep
+              subst hEq
+              refine observableSlotsConfinedToCore_trans
+                (endpointQueuePopHead_confinedToCore endpointId true st st1 receiver
+                  (headTcb := headTcb) bootCoreId hPop) ?_
+              refine observableSlotsConfinedToCore_trans
+                (storeTcbReceiveComplete_confinedToCore st1 st2 receiver (some (sendPayloadMessage st caller payload))
+                  bootCoreId hStore) ?_
+              refine observableSlotsConfinedToCore_trans
+                (ensureRunnable_confinedToBootCore st2 receiver) ?_
+              exact observableSlotsConfinedToCore_trans (removeRunnable_confinedToBootCore _ caller)
+                (observableSlotsConfinedToCore_of_scheduler_machine_eq _
+                  (SystemState.updateTcb_scheduler _ _ _) (SystemState.updateTcb_machine _ _ _))
       | none =>
         simp only [hHead] at hStep
         split at hStep

@@ -2252,10 +2252,48 @@ theorem endpointCall_preserves_projection
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hRecvHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hRecvHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok triple =>
+            obtain ⟨receiver, _recvTcb, st1⟩ := triple
+            simp only [hPop] at hStep
+            have hHeadEq : ep.receiveQ.head = some receiver :=
+              endpointQueuePopHead_returns_head endpointId true st ep receiver st1 hObj hPop
+            have hRecvHigh := hRecvQueueHeadHigh ep receiver hObj hHeadEq
+            have hRecvObjHigh := hCoherent receiver hRecvHigh
+            have hPreTcb := endpointQueuePopHead_returns_pre_tcb endpointId true st ep
+                receiver _recvTcb st1 hObj hPop
+            have hNextHighForPop : ∀ nextTid, _recvTcb.queueNext = some nextTid →
+                objectObservable ctx observer nextTid.toObjId = false :=
+              fun nextTid hQN => hRecvQueueNextHigh ep receiver _recvTcb nextTid hObj
+                hHeadEq hPreTcb hQN
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true
+                st st1 receiver _recvTcb hObjInv hPop
+            have hProjPop := endpointQueuePopHead_preserves_projection ctx observer
+                endpointId true st st1 receiver _recvTcb hEndpointHigh hRecvObjHigh
+                hNextHighForPop hObjInv hPop
+            cases hTcbStore : storeTcbReceiveComplete st1 receiver (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hTcbStore] at hStep
+            | ok st2 =>
+              simp only [hTcbStore, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+              have hObjInv2 := storeTcbReceiveComplete_preserves_objects_invExt st1 st2 receiver _ hObjInv1 hTcbStore
+              have hProjTcb := storeTcbReceiveComplete_preserves_projection ctx observer
+                  st1 st2 receiver _ hRecvObjHigh hObjInv1 hTcbStore
+              rw [updateTcb_high_preserves_projection ctx observer _ caller _ hCallerObjHigh
+                    (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt _ _ hObjInv2)),
+                  removeRunnable_preserves_projection ctx observer _ caller hCallerHigh,
+                  ensureRunnable_preserves_projection ctx observer st2 receiver hRecvHigh, hProjTcb, hProjPop]
+        rw [if_pos hLk] at hStep
         -- Path 1: Receiver waiting — PopHead + storeTcbIpcStateAndMessage(receiver) +
         -- ensureRunnable(receiver) + storeTcbIpcState(caller) + removeRunnable(caller)
-        simp only [hRecvHead] at hStep
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hPop] at hStep
         | ok triple =>

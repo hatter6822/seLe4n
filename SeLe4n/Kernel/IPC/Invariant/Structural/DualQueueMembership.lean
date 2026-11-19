@@ -1076,7 +1076,33 @@ theorem endpointCall_preserves_endpointQueueNoDup
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
+            have hDQSI1 := endpointQueuePopHead_preserves_dualQueueSystemInvariant endpointId true st pair.2.2 pair.1 hObjInv hPop hDQSI
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              have hNoDup1 := endpointQueuePopHead_preserves_endpointQueueNoDup endpointId true st pair.2.2 pair.1 pair.2.1 hInv hDQSI hDQSI1 hObjInv hPop
+              exact endpointQueueNoDup_of_readViewAgreement
+                (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                  (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt _ _
+                    (storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ (by assumption) hMsg))))
+                (removeRunnable_preserves_endpointQueueNoDup _ caller (
+                  ensureRunnable_preserves_endpointQueueNoDup _ _ <|
+                  storeTcbReceiveComplete_preserves_endpointQueueNoDup pair.2.2 st2 pair.1 (some (sendPayloadMessage st caller payload)) hNoDup1 hObjInv1 hMsg))
+        rw [if_pos hLk] at hStep
         -- Rendezvous path: PopHead + storeMsg + ensureRunnable + storeIpcState + removeRunnable
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
@@ -1722,7 +1748,44 @@ theorem endpointCall_preserves_ipcStateQueueMembershipConsistent
       simp only [hObj] at hStep
       have hDQWF : dualQueueEndpointWellFormed endpointId st := hDQSI.1 endpointId ep hObj
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok triple =>
+            simp only [hPop] at hStep
+            obtain ⟨receiver, headTcb, st1⟩ := triple
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt
+              endpointId true st st1 receiver headTcb hObjInv hPop
+            -- Derive hHeadBlocked from queueHeadBlockedConsistent
+            have hHeadBlocked : headTcb.ipcState = .blockedOnReceive endpointId := by
+              have hRetH := endpointQueuePopHead_returns_head endpointId true st ep receiver st1 hObj hPop
+              simp only [↓reduceIte] at hRetH
+              have hPreTcb := endpointQueuePopHead_returns_pre_tcb endpointId true st ep receiver headTcb st1 hObj hPop
+              exact (hQHBC endpointId ep receiver headTcb hObj hPreTcb).1 hRetH
+            have hPartialV3J :=
+              endpointQueuePopHead_preserves_ipcStateQueueMembershipConsistent_except_head
+                endpointId true st st1 receiver headTcb ep hInv hObjInv hQNBC hObj
+                (by simp only [↓reduceIte]; exact hHeadBlocked) hPop
+            cases hMsg : storeTcbReceiveComplete st1 receiver (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              exact ipcStateQueueMembershipConsistent_of_readViewAgreement
+                (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                  (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt _ _
+                    (storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ (by assumption) hMsg))))
+                (removeRunnable_preserves_ipcStateQueueMembershipConsistent _ caller (
+                  ensureRunnable_preserves_ipcStateQueueMembershipConsistent st2 receiver <|
+                  storeTcbReceiveComplete_partial_preserves_ipcStateQueueMembershipConsistent
+                    st1 st2 receiver (some (sendPayloadMessage st caller payload)) hPartialV3J hObjInv1 hMsg))
+        rw [if_pos hLk] at hStep
         -- RENDEZVOUS: PopHead(receiveQ) + storeTcb(.ready) + ensureRunnable + storeTcbIpcState(.blockedOnReply) + removeRunnable
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
@@ -3886,7 +3949,35 @@ theorem endpointCall_preserves_ipcStateQueueConsistent
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok triple =>
+            simp only [hPop] at hStep
+            obtain ⟨receiver, _tcb, stPop⟩ := triple
+            cases hMsg : storeTcbReceiveComplete stPop receiver (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              have hObjInvPop : stPop.objects.invExt :=
+                endpointQueuePopHead_preserves_objects_invExt endpointId true st stPop receiver _tcb hObjInv hPop
+              exact ipcStateQueueConsistent_of_readViewAgreement
+                (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                  (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt _ _
+                    (storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ (by assumption) hMsg))))
+                (removeRunnable_preserves_ipcStateQueueConsistent _ caller (
+                  ensureRunnable_preserves_ipcStateQueueConsistent _ _ <|
+                  storeTcbReceiveComplete_preserves_ipcStateQueueConsistent _ _ _ _ hObjInvPop hMsg
+                    (endpointQueuePopHead_preserves_ipcStateQueueConsistent endpointId true st stPop receiver _tcb
+                      hObjInv hPop hInv)))
+        rw [if_pos hLk] at hStep
         -- Handshake path: PopHead → storeTcbIpcStateAndMessage(receiver, .ready) → ensureRunnable →
         -- storeTcbIpcState(caller, .blockedOnReply) → removeRunnable
         cases hPop : endpointQueuePopHead endpointId true st with
@@ -5909,7 +6000,34 @@ theorem endpointCall_establishes_blockedOnReplyHasReplyObject
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+            have hP1 := endpointQueuePopHead_preserves_blockedOnReplyHasReplyObject endpointId true st pair.2.2 pair.1 _ hObjInv hInv hPop
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              have hP2 := storeTcbReceiveComplete_nonBlocked_preserves_blockedOnReplyHasReplyObject
+                pair.2.2 st2 pair.1 (some (sendPayloadMessage st caller payload)) hObjInv1 hP1 hMsg
+              exact blockedOnReplyHasReplyObject_of_readViewAgreement
+                (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                  (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt _ _
+                    (storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ (by assumption) hMsg))))
+                (blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks
+                  ((removeRunnable_objectsAgreeOffRunLinks _ caller).trans
+                    (ensureRunnable_objectsAgreeOffRunLinks st2 pair.1)) hP2)
+        rw [if_pos hLk] at hStep
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
         | ok pair =>
@@ -10261,7 +10379,31 @@ theorem endpointCall_sameSchedContextBindings
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+            have hS1 := endpointQueuePopHead_sameSchedContextBindings endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              exact ((((hS1.trans (storeTcbReceiveComplete_sameSchedContextBindings pair.2.2 st2 pair.1 (some (sendPayloadMessage st caller payload)) hObjInv1 hMsg)).trans
+                (sameSchedContextBindings.of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st2 pair.1))).trans
+                (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks _ caller))).trans
+                (sameSchedContextBindings.of_updateTcb caller (fun t => { t with threadState := .Inactive }) (fun _ => rfl)
+                    (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt _ _
+                      (storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ hObjInv1 hMsg)))))
+        rw [if_pos hLk] at hStep
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
         | ok pair =>
@@ -10325,7 +10467,31 @@ theorem endpointCall_kindPreservingWrite
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+            have hS1 := endpointQueuePopHead_kindPreservingWrite hObjInv hPop
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              exact ((((hS1.trans (storeTcbReceiveComplete_kindPreservingWrite hObjInv1 hMsg)).trans
+                ((SystemState.objectsAgreeOffRunLinks.kindPreserving (ensureRunnable_objectsAgreeOffRunLinks st2 pair.1)))).trans
+                (SystemState.objectsAgreeOffRunLinks.kindPreserving (removeRunnable_objectsAgreeOffRunLinks _ caller))).trans
+                (SystemState.updateTcb_kindPreservingWrite _ caller _
+                    (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt _ _
+                      (storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ hObjInv1 hMsg)))))
+        rw [if_pos hLk] at hStep
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
         | ok pair =>
@@ -10397,7 +10563,39 @@ theorem endpointCall_donationOwnerFrame
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+            have hF1 := endpointQueuePopHead_donationOwnerFrame endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+            have hHeadEq := endpointQueuePopHead_returns_head endpointId true st ep pair.1 pair.2.2 hObj hPop
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              refine ((((hF1.trans (storeTcbReceiveComplete_donationOwnerFrame pair.2.2 st2 pair.1 (some (sendPayloadMessage st caller payload))
+                (fun tcb hTcb_pair ep' rt => ?_) hObjInv1 hMsg)).trans
+                (donationOwnerFrame.of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st2 pair.1))).trans
+                (donationOwnerFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks _ caller))).trans
+                (donationOwnerFrame.of_readViewAgreement (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                    (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt _ _
+                      (storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ hObjInv1 hMsg))))))
+              obtain ⟨tcb0, hTcb0, hIpc0⟩ := endpointQueuePopHead_tcb_ipcState_backward endpointId true st
+                pair.2.2 pair.1 pair.1 tcb hObjInv hPop hTcb_pair
+              have hBlk := (hQHBC endpointId ep pair.1 tcb0 hObj hTcb0).1 (by simpa using hHeadEq)
+              intro hc
+              have hRecv : tcb.ipcState = .blockedOnReceive endpointId := hIpc0 ▸ hBlk
+              rw [hc] at hRecv; cases hRecv
+        rw [if_pos hLk] at hStep
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
         | ok pair =>
@@ -10502,7 +10700,31 @@ theorem endpointCall_timeoutBudgetFrame
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+            have hF1 := endpointQueuePopHead_timeoutBudgetFrame endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              exact ((((hF1.trans (storeTcbReceiveComplete_timeoutBudgetFrame pair.2.2 st2 pair.1 (some (sendPayloadMessage st caller payload)) hObjInv1 hMsg)).trans
+                (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st2 pair.1))).trans
+                (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks _ caller))).trans
+                (timeoutBudgetFrame.of_readViewAgreement (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                    (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt _ _
+                      (storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ hObjInv1 hMsg))))))
+        rw [if_pos hLk] at hStep
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
         | ok pair =>
@@ -11543,7 +11765,42 @@ theorem endpointCall_preserves_replyCallerLinkageReciprocal
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+            have hF1 := endpointQueuePopHead_replyLinkageFrame endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+            have hIsHead : ep.receiveQ.head = some pair.1 :=
+              endpointQueuePopHead_returns_head endpointId true st ep pair.1 pair.2.2 hObj hPop
+            have hRecvUnlinked : ∀ tcb, st.objects[pair.1.toObjId]? = some (.tcb tcb) →
+                tcb.replyObject = none := by
+              intro tcb hTcb
+              refine hInv.unlinkedOfNotBlockedOnReply hTcb (fun epx rtx hb => ?_)
+              have := (hQHBC endpointId ep pair.1 tcb hObj hTcb).1 hIsHead
+              rw [this] at hb; cases hb
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              have hObjInv2 := storeTcbReceiveComplete_preserves_objects_invExt pair.2.2 st2 pair.1 _ hObjInv1 hMsg
+              have hF2 := hF1.trans (storeTcbReceiveComplete_replyLinkageFrame_of_unlinked pair.2.2 st2
+                pair.1 (some (sendPayloadMessage st caller payload)) (hF1.unlinked_forward hRecvUnlinked) hObjInv1 hMsg)
+              have hF3 := (hF2.trans (replyLinkageFrame.of_objectsAgreeOffRunLinks
+                ((removeRunnable_objectsAgreeOffRunLinks _ caller).trans
+                  (ensureRunnable_objectsAgreeOffRunLinks st2 pair.1)))).trans
+                (replyLinkageFrame.of_readViewAgreement (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                  (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt _ _ hObjInv2))))
+              exact replyCallerLinkageReciprocal_of_frame hF3 hInv
+        rw [if_pos hLk] at hStep
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
         | ok pair =>
@@ -14107,7 +14364,34 @@ theorem endpointCall_preserves_pendingReceiveReplyWellFormed
                 endpointId false caller st st1 caller tcb' hObjInv hEnq
                 ((getTcb?_eq_some_iff st1 caller tcb').mp hTcb')
               exact hCallerNotRecv tcb0 ((getTcb?_eq_some_iff st caller tcb0).mpr hTcb0) ep' (hIpcEq.trans h)
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+            have hP1 := endpointQueuePopHead_preserves_pendingReceiveReplyWellFormed endpointId true st pair.2.2 pair.1 _ hObjInv hInv hPop
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              have hP2 := storeTcbReceiveComplete_preserves_pendingReceiveReplyWellFormed
+                pair.2.2 st2 pair.1 (some (sendPayloadMessage st caller payload)) hObjInv1 hP1 hMsg
+              exact pendingReceiveReplyWellFormed_of_readViewAgreement
+                (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                  (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt _ _
+                    (storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ (by assumption) hMsg))))
+                (pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks
+                  ((removeRunnable_objectsAgreeOffRunLinks _ caller).trans
+                    (ensureRunnable_objectsAgreeOffRunLinks st2 pair.1)) hP2)
+        rw [if_pos hLk] at hStep
         -- Server-waiting branch.
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
@@ -16202,7 +16486,35 @@ theorem endpointCall_preserves_queueNextBlockingConsistent
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2
+              pair.1 pair.2.1 hObjInv hPop
+            have hQNBC1 := endpointQueuePopHead_preserves_queueNextBlockingConsistent endpointId true st
+              pair.2.2 pair.1 pair.2.1 hObjInv hInv hPop
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              exact queueNextBlockingConsistent_of_readViewAgreement
+                (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                  (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt _ _
+                    (storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ (by assumption) hMsg))))
+                (removeRunnable_preserves_queueNextBlockingConsistent _ caller (
+                  ensureRunnable_preserves_queueNextBlockingConsistent _ _ <|
+                  storeTcbReceiveComplete_preserves_queueNextBlockingConsistent pair.2.2 st2 pair.1
+                    (some (sendPayloadMessage st caller payload)) hQNBC1 hObjInv1 hMsg))
+        rw [if_pos hLk] at hStep
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
         | ok pair =>
@@ -16298,7 +16610,37 @@ theorem endpointCall_preserves_endpointQueueTailBlockedConsistent
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2
+              pair.1 pair.2.1 hObjInv hPop
+            have hTail1 := endpointQueuePopHead_preserves_endpointQueueTailBlockedConsistent endpointId true st
+              pair.2.2 pair.1 pair.2.1 hObjInv hInv hPop
+            have hNotTail := endpointQueuePopHead_popped_not_tail endpointId true st pair.2.2 pair.1
+              pair.2.1 ep hObjInv hObj hDQSI hQHBC hInv hPop
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              exact endpointQueueTailBlockedConsistent_of_readViewAgreement
+                (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                  (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt _ _
+                    (storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ (by assumption) hMsg))))
+                (removeRunnable_preserves_endpointQueueTailBlockedConsistent _ caller (
+                  ensureRunnable_preserves_endpointQueueTailBlockedConsistent _ _ <|
+                  storeTcbReceiveComplete_preserves_endpointQueueTailBlockedConsistent pair.2.2 st2 pair.1
+                    (some (sendPayloadMessage st caller payload)) hTail1 hObjInv1 hMsg hNotTail))
+        rw [if_pos hLk] at hStep
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
         | ok pair =>
@@ -20476,7 +20818,37 @@ theorem endpointCall_preserves_queueHeadBlockedConsistent
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st
+              pair.2.2 pair.1 pair.2.1 hObjInv hPop
+            have hQHBC1 := endpointQueuePopHead_preserves_queueHeadBlockedConsistent endpointId true st
+              pair.2.2 pair.1 pair.2.1 ep hObjInv hObj hQHBC hQNTB hPop
+            have hNotHead := endpointQueuePopHead_popped_not_head endpointId true st pair.2.2 pair.1
+              pair.2.1 ep hObjInv hObj hDQSI hQHBC hPop
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              exact queueHeadBlockedConsistent_of_readViewAgreement
+                (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                  (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt _ _
+                    (storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ (by assumption) hMsg))))
+                (removeRunnable_preserves_queueHeadBlockedConsistent _ caller (
+                  ensureRunnable_preserves_queueHeadBlockedConsistent _ _ <|
+                  storeTcbReceiveComplete_preserves_queueHeadBlockedConsistent pair.2.2 st2 pair.1
+                    (some (sendPayloadMessage st caller payload)) hQHBC1 hObjInv1 hMsg hNotHead))
+        rw [if_pos hLk] at hStep
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
         | ok pair =>
@@ -20648,7 +21020,37 @@ theorem endpointCall_preserves_queueNextTargetBlocked
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2
+              pair.1 pair.2.1 hObjInv hPop
+            have hQNTB1 := endpointQueuePopHead_preserves_queueNextTargetBlocked endpointId true st
+              pair.2.2 pair.1 pair.2.1 hObjInv hQNTB hPop
+            have hNoInc := endpointQueuePopHead_popped_no_incoming endpointId true st pair.2.2 pair.1
+              pair.2.1 hObjInv hDQSI hPop
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              exact queueNextTargetBlocked_of_readViewAgreement
+                (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                  (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt _ _
+                    (storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ (by assumption) hMsg))))
+                (removeRunnable_preserves_queueNextTargetBlocked _ caller (
+                  ensureRunnable_preserves_queueNextTargetBlocked _ _ <|
+                  storeTcbReceiveComplete_preserves_queueNextTargetBlocked pair.2.2 st2 pair.1
+                    (some (sendPayloadMessage st caller payload)) hQNTB1 hObjInv1 hMsg hNoInc))
+        rw [if_pos hLk] at hStep
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
         | ok pair =>
@@ -20784,7 +21186,37 @@ theorem endpointCall_preserves_endpointQueueLinksOnlyBlocked
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2
+              pair.1 pair.2.1 hObjInv hPop
+            have hQNTB1 := endpointQueuePopHead_preserves_endpointQueueLinksOnlyBlocked endpointId true st
+              pair.2.2 pair.1 pair.2.1 hObjInv hQNTB hPop
+            have hNoInc := endpointQueuePopHead_popped_next_none endpointId true st pair.2.2 pair.1
+              pair.2.1 hObjInv hPop
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              exact endpointQueueLinksOnlyBlocked_of_readViewAgreement
+                (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                  (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt _ _
+                    (storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ (by assumption) hMsg))))
+                (removeRunnable_preserves_endpointQueueLinksOnlyBlocked _ caller (
+                  ensureRunnable_preserves_endpointQueueLinksOnlyBlocked _ _ <|
+                  storeTcbReceiveComplete_preserves_endpointQueueLinksOnlyBlocked pair.2.2 st2 pair.1
+                    (some (sendPayloadMessage st caller payload)) hQNTB1 hObjInv1 hMsg hNoInc))
+        rw [if_pos hLk] at hStep
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
         | ok pair =>

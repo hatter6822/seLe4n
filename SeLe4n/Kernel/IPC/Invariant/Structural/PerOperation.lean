@@ -2438,7 +2438,35 @@ theorem endpointCall_preserves_blockedThreadsPendingMessageConsistent
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hObjInvPop := endpointQueuePopHead_preserves_objects_invExt
+              endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
+            have hInvPop := endpointQueuePopHead_preserves_blockedThreadsPendingMessageConsistent
+              endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hInv hPop
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st1 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              have hObjInv1 := storeTcbReceiveComplete_preserves_objects_invExt pair.2.2 st1 pair.1 _ hObjInvPop hMsg
+              exact blockedThreadsPendingMessageConsistent_of_readViewAgreement
+                (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                  (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt st1 pair.1 hObjInv1)))
+                (removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _
+                  (ensureRunnable_preserves_blockedThreadsPendingMessageConsistent st1 pair.1
+                    (storeTcbReceiveComplete_preserves_blockedThreadsPendingMessageConsistent
+                      pair.2.2 st1 pair.1 _ hObjInvPop hMsg hInvPop)))
+        rw [if_pos hLk] at hStep
         -- Handshake path: popHead + storeTcbIpcStateAndMessage(.ready) + ensureRunnable
         -- + storeTcbIpcState(.blockedOnReply) + removeRunnable
         cases hPop : endpointQueuePopHead endpointId true st with

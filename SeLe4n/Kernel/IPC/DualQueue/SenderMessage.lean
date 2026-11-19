@@ -708,6 +708,33 @@ and receives no reply. -/
 @[inline] def SendPayload.canLinkReply (p : SendPayload) : Bool :=
   p.grant || p.grantReply
 
+/-- **Whether a call that finds `receiver` waiting is linked to its reply
+object**: seL4's `reply != NULL && (canGrant || canGrantReply)` in `sendIPC`
+-- the receiver stashed a reply object on its receive
+(`TCB.pendingReceiveReplyCode`, read in the pre-state, which the pop does not
+change) and the payload may link one (`SendPayload.canLinkReply`).  A call that
+is not linked delivers its message and leaves its caller `Inactive`, with no
+reply and no donation. -/
+@[inline] def callRendezvousLinks (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (payload : SendPayload) : Bool :=
+  payload.canLinkReply &&
+    match st.getTcb? receiver with
+    | some rt => rt.pendingReceiveReplyCode != 0
+    | none => false
+
+/-- Where the receiver stashed a reply object, the call links exactly when its
+capability had `Grant` or `GrantReply`. -/
+theorem callRendezvousLinks_of_stash {st : SystemState} {receiver : SeLe4n.ThreadId}
+    {rt : TCB} {rid : SeLe4n.ReplyId} (payload : SendPayload)
+    (hT : st.getTcb? receiver = some rt) (hRid : rt.pendingReceiveReply = some rid) :
+    callRendezvousLinks st receiver payload = payload.canLinkReply := by
+  unfold callRendezvousLinks
+  rw [hT]
+  have hNz : rt.pendingReceiveReplyCode ≠ 0 := by
+    intro h0
+    simp [TCB.pendingReceiveReply, h0, SeLe4n.ReplyId.ofOptCode] at hRid
+  simp [hNz]
+
 /-- **Whether a fault sent through this handler capability is linked to the
 handler's reply object**: the capability's `Grant` or `GrantReply` right, the
 two rights seL4's `sendFaultIPC` hands `sendIPC` (`capCanGrant`,
