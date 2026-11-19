@@ -1505,6 +1505,13 @@ struct RoundTrip {
     syscall: u64,
     /// The capability address in `x0`.
     cptr: u64,
+    /// The reply capability's address in `x6`, seL4-MCS's `replyRegister`:
+    /// a receive that takes one traps as `Recv` (a reply-receive as
+    /// `ReplyRecv`, its reply half answering through it), as libsel4's
+    /// `seL4_Recv(src, &badge, reply)` does.  A receive with none traps as
+    /// `Wait`, as `seL4_Wait` does: `Recv` always names a reply object, so a
+    /// receive without one is a `Wait` on the endpoint ([`frame_words`]).
+    reply: Option<u64>,
     /// `x1`'s `MessageInfo`: its length at most 4, except for the
     /// scheduling-context configure, the service register, the copy and the
     /// mint, whose fifth word (and a mint's sixth) the kernel reads from the
@@ -1522,6 +1529,11 @@ struct RoundTrip {
     /// Whether the caller blocks: the dispatch answers `Blocked` and restores
     /// the other thread, instead of a frame to the caller.
     blocks: bool,
+    /// Whether the caller resumes with the registers it trapped with and no
+    /// frame: an invocation refused when issued as other than a `Call`
+    /// (seL4's `handleInvocation` answers an error only `if (isCall)`), whose
+    /// refusal is then seen by no register.
+    resumes: bool,
     /// The frame's `x1` and, where known, its `x2`-`x5` that the round trip
     /// must return (a refusal's payload, seL4's MR0-MR3); `None` checks only
     /// that the call succeeded.
@@ -1619,6 +1631,19 @@ const fn op_frame_words(op: u64, msg_info: u64) -> (u64, u64) {
         Some((syscall, label)) => (syscall.word(), (msg_info & 0xFFF) | (label << 12)),
         None => (op, msg_info),
     }
+}
+
+/// The `x7` and `x1` words `trip` traps with ([`op_frame_words`]): a receive
+/// with no reply capability is issued as `Wait`, which seL4 runs on an
+/// endpoint as a receive that takes no reply object (`handleRecv`'s
+/// `isBlocking` receive with `canDonate` and no reply).
+#[cfg(feature = "hw_target")]
+const fn frame_words(trip: &RoundTrip) -> (u64, u64) {
+    let op = match (trip.syscall, trip.reply) {
+        (RECEIVE, None) => WAIT,
+        (op, _) => op,
+    };
+    op_frame_words(op, trip.msg_len)
 }
 
 /// `Send` (`SyscallId` 0).
@@ -1823,10 +1848,12 @@ const fn kernel_step(name: &'static str, syscall: u64) -> RoundTrip {
         name,
         syscall,
         cptr: 0,
+        reply: None,
         msg_len: 0,
         msg: [0, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -2331,10 +2358,12 @@ const fn signal(name: &'static str) -> RoundTrip {
         name,
         syscall: SIGNAL,
         cptr: NOTIFICATION_CAP,
+        reply: None,
         msg_len: 0,
         msg: [0, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -2468,10 +2497,12 @@ const ROUND_TRIPS: [RoundTrip; 4] = [
         name: "wait-pending",
         syscall: WAIT,
         cptr: NOTIFICATION_CAP,
+        reply: None,
         msg_len: 1,
         msg: [0, 0, 0, 0],
         primed: Some(NOTIFICATION_CAP),
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -2480,10 +2511,12 @@ const ROUND_TRIPS: [RoundTrip; 4] = [
         name: "yield",
         syscall: YIELD,
         cptr: 0,
+        reply: None,
         msg_len: 0,
         msg: [0, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -2505,13 +2538,36 @@ const fn partner_step(
         name,
         syscall,
         cptr,
+        reply: None,
         msg_len,
         msg: [msg[0], msg[1], 0, 0],
         primed: None,
         blocks,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
+    }
+}
+
+/// `trip`, issued as other than a `Call` and refused, so it resumes with its
+/// trapped registers (`RoundTrip::resumes`).
+#[cfg(feature = "hw_target")]
+const fn resuming(trip: RoundTrip) -> RoundTrip {
+    RoundTrip {
+        resumes: true,
+        returns: None,
+        ..trip
+    }
+}
+
+/// `trip`, receiving with the reply capability at `reply` in `x6`
+/// (`RoundTrip::reply`).
+#[cfg(feature = "hw_target")]
+const fn with_reply(trip: RoundTrip, reply: u64) -> RoundTrip {
+    RoundTrip {
+        reply: Some(reply),
+        ..trip
     }
 }
 
@@ -2626,22 +2682,14 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
         ),
     ],
     &[
-        partner_step(
-            "receive-for-call",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step("receive-for-call", RECEIVE, ENDPOINT_CAP, 0, [0, 0], true),
+            REPLY_CAP,
         ),
         partner_step("call", CALL, ENDPOINT_CAP, 1, [0x66, 0], true),
-        partner_step(
-            "reply-recv",
-            REPLY_RECV,
-            ENDPOINT_CAP,
-            2,
-            [REPLY_CAP, 0x99],
-            true,
+        with_reply(
+            partner_step("reply-recv", REPLY_RECV, ENDPOINT_CAP, 1, [0x99, 0], true),
+            REPLY_CAP,
         ),
         partner_step(
             "call-to-reply-receiver",
@@ -2701,13 +2749,16 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 12] = [
         ),
     ],
     &[
-        partner_step(
-            "receive-for-badged-call",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "receive-for-badged-call",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         partner_step("badged-call", CALL, BADGED_ENDPOINT_CAP, 1, [0x66, 0], true),
         partner_step(
@@ -2825,10 +2876,12 @@ const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) 
         name,
         syscall,
         cptr,
+        reply: None,
         msg_len: 4,
         msg,
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -2897,10 +2950,12 @@ const fn overflowed(
         name,
         syscall,
         cptr,
+        reply: None,
         msg_len,
         msg: [0; 4],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: refused(code),
@@ -3004,10 +3059,12 @@ const fn truncated(name: &'static str, syscall: u64, cptr: u64, msg_len: u64) ->
         name,
         syscall,
         cptr,
+        reply: None,
         msg_len,
         msg: [0; 4],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: refused(TRUNCATED_MESSAGE),
@@ -3023,10 +3080,12 @@ const fn wrong_ipc_kind(name: &'static str, syscall: u64) -> RoundTrip {
         name,
         syscall,
         cptr: CNODE_CAP,
+        reply: None,
         msg_len: 1,
         msg: [0; 4],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: refused(INVALID_CAPABILITY),
@@ -3057,10 +3116,12 @@ const fn consumed(name: &'static str, reading: Option<u64>) -> RoundTrip {
         name,
         syscall: SCHED_CONTEXT_CONSUMED,
         cptr: SCHED_CONTEXT_CAP,
+        reply: None,
         msg_len: 0,
         msg: [0; 4],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: Some((CONSUMED_INFO_WORD, [reading, None, None, None])),
@@ -3076,10 +3137,12 @@ const fn yield_to(name: &'static str) -> RoundTrip {
         name,
         syscall: SCHED_CONTEXT_YIELD_TO,
         cptr: SCHED_CONTEXT_CAP,
+        reply: None,
         msg_len: 0,
         msg: [0; 4],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: Some((CONSUMED_INFO_WORD, [None; 4])),
@@ -3105,10 +3168,12 @@ const fn configure(
         name,
         syscall: SCHED_CONTEXT_CONFIGURE,
         cptr: SCHED_CONTROL_CAP,
+        reply: None,
         msg_len: ONE_EXTRA_CAP | 5,
         msg: [budget, period, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: Some((buffer, [sc_cap, 0, 0], None)),
         overflow: None,
         returns: None,
@@ -3132,10 +3197,12 @@ const fn service_register(
         name,
         syscall: SERVICE_REGISTER,
         cptr: SERVICE_REGISTRY_CAP,
+        reply: None,
         msg_len: 5 | ONE_EXTRA_CAP,
         msg,
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: Some((buffer, [endpoint, 0, 0], None)),
         overflow: None,
         returns: None,
@@ -4008,13 +4075,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // the reply capability: the suspend's reply arm is seL4's
         // `reply_remove_tcb`, which unlinks the reply from the caller.
         invocation("suspend-reply-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
-        partner_step(
-            "suspend-reply-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "suspend-reply-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "suspend-reply-partner-calls",
@@ -4203,10 +4273,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             name: "refill-yield",
             syscall: YIELD,
             cptr: 0,
+            reply: None,
             msg_len: 0,
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            resumes: false,
             caps_or_badges: None,
             overflow: None,
             returns: None,
@@ -4484,10 +4556,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         },
         truncated("cspace-mint-short", CSPACE_MINT, CNODE_CAP, 4),
         truncated("cspace-copy-short", CSPACE_COPY, CNODE_CAP, 1),
-        wrong_ipc_kind("send-wrong-kind-refused", SEND),
+        resuming(wrong_ipc_kind("send-wrong-kind-refused", SEND)),
         wrong_ipc_kind("call-wrong-kind-refused", CALL),
-        wrong_ipc_kind("reply-wrong-kind-refused", REPLY),
-        wrong_ipc_kind("signal-wrong-kind-refused", SIGNAL),
+        resuming(wrong_ipc_kind("reply-wrong-kind-refused", REPLY)),
+        resuming(wrong_ipc_kind("signal-wrong-kind-refused", SIGNAL)),
         truncated("cspace-move-short", CSPACE_MOVE, CNODE_CAP, 1),
         truncated("cspace-delete-short", CSPACE_DELETE, CNODE_CAP, 0),
         truncated("cspace-revoke-short", CSPACE_REVOKE, CNODE_CAP, 0),
@@ -4579,10 +4651,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             name: "wait-long-message",
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
+            reply: None,
             msg_len: 5,
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            resumes: false,
             caps_or_badges: None,
             overflow: None,
             returns: None,
@@ -4614,10 +4688,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             name: "yield-long-message",
             syscall: YIELD,
             cptr: 0,
+            reply: None,
             msg_len: 5,
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            resumes: false,
             caps_or_badges: None,
             overflow: None,
             returns: None,
@@ -5096,10 +5172,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             name: "wait-tail-buffer",
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
+            reply: None,
             msg_len: TAIL_MESSAGE_LENGTH,
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            resumes: false,
             caps_or_badges: None,
             overflow: None,
             returns: None,
@@ -5113,13 +5191,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // and the full-length reply that answers it, copying the partner's
         // overflow words into the caller's buffer in place.
         invocation("tail-call-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
-        partner_step(
-            "tail-call-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "tail-call-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "tail-call-to-receiver",
@@ -5144,13 +5225,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [0x68, 0x69],
             true,
         ),
-        partner_step(
-            "tail-call-partner-takes",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            false,
+        with_reply(
+            partner_step(
+                "tail-call-partner-takes",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                false,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "tail-call-partner-replies",
@@ -5184,13 +5268,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [0x71, 0x72],
             true,
         ),
-        partner_step(
-            "short-call-partner-takes",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            false,
+        with_reply(
+            partner_step(
+                "short-call-partner-takes",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                false,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "short-call-partner-replies",
@@ -5289,21 +5376,27 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [0x6a, 0x6b],
             true,
         ),
-        partner_step(
-            "tail-reply-recv-takes",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            false,
+        with_reply(
+            partner_step(
+                "tail-reply-recv-takes",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                false,
+            ),
+            REPLY_CAP,
         ),
-        partner_step(
-            "tail-reply-recv-blocks",
-            REPLY_RECV,
-            ENDPOINT_CAP,
-            TAIL_MESSAGE_LENGTH,
-            [REPLY_CAP, 0x7a],
-            true,
+        with_reply(
+            partner_step(
+                "tail-reply-recv-blocks",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                TAIL_MESSAGE_LENGTH,
+                [0x7a, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         invocation(
             "tail-reply-recv-suspend",
@@ -5325,13 +5418,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [0; 4],
         ),
         with_caps(
-            partner_step(
-                "reply-recv-extra-cap-skips-reply",
-                REPLY_RECV,
-                ENDPOINT_CAP,
-                ONE_EXTRA_CAP | 2,
-                [REPLY_CAP, 0x7b],
-                true,
+            with_reply(
+                partner_step(
+                    "reply-recv-extra-cap-skips-reply",
+                    REPLY_RECV,
+                    ENDPOINT_CAP,
+                    ONE_EXTRA_CAP | 1,
+                    [0x7b, 0],
+                    true,
+                ),
+                REPLY_CAP,
             ),
             TAIL_IPC_BUFFER,
             [EMPTY_SOURCE_SLOT, 0, 0],
@@ -5520,13 +5616,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-send-rendezvous-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "caps-send-rendezvous-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         with_caps(
             partner_step(
@@ -5557,13 +5656,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-three-send-rendezvous-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "caps-three-send-rendezvous-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         with_caps(
             partner_step(
@@ -5593,13 +5695,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-call-rendezvous-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "caps-call-rendezvous-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         with_caps(
             partner_step(
@@ -5626,13 +5731,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-three-call-rendezvous-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "caps-three-call-rendezvous-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         with_caps(
             partner_step(
@@ -5662,13 +5770,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-install-send-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "caps-install-send-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         with_caps_receiving(
             partner_step(
@@ -5705,13 +5816,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-unwrap-send-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "caps-unwrap-send-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         with_caps_receiving(
             partner_step(
@@ -5741,13 +5855,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-three-install-send-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "caps-three-install-send-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         with_caps_receiving(
             partner_step(
@@ -5784,13 +5901,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-occupied-slot-send-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "caps-occupied-slot-send-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         with_caps_receiving(
             partner_step(
@@ -5818,13 +5938,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-invalid-path-send-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "caps-invalid-path-send-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         with_caps_receiving(
             partner_step(
@@ -5862,13 +5985,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-no-grant-send-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "caps-no-grant-send-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         with_caps_receiving(
             partner_step(
@@ -5905,13 +6031,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-install-call-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "caps-install-call-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         with_caps_receiving(
             partner_step(
@@ -5945,13 +6074,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-unwrap-call-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "caps-unwrap-call-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         with_caps_receiving(
             partner_step(
@@ -5979,13 +6111,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-occupied-slot-call-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "caps-occupied-slot-call-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         with_caps_receiving(
             partner_step(
@@ -6106,13 +6241,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [NOTIFICATION_CAP, 0, 0],
             receive_slot_path(TRANSFER_RECEIVE_SLOT),
         ),
-        partner_step(
-            "caps-install-call-take-partner-takes",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            false,
+        with_reply(
+            partner_step(
+                "caps-install-call-take-partner-takes",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                false,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "caps-install-call-take-partner-replies",
@@ -6155,13 +6293,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [ENDPOINT_CAP, 0, 0],
             receive_slot_path(TRANSFER_RECEIVE_SLOT),
         ),
-        partner_step(
-            "caps-unwrap-call-take-partner-takes",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            false,
+        with_reply(
+            partner_step(
+                "caps-unwrap-call-take-partner-takes",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                false,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "caps-unwrap-call-take-partner-replies",
@@ -6190,13 +6331,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-long-install-send-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "caps-long-install-send-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         with_caps_receiving(
             partner_step(
@@ -6230,13 +6374,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-long-unwrap-send-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "caps-long-unwrap-send-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         with_caps_receiving(
             partner_step(
@@ -6264,13 +6411,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-long-install-call-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "caps-long-install-call-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         with_caps_receiving(
             partner_step(
@@ -6303,13 +6453,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "caps-long-unwrap-call-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "caps-long-unwrap-call-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         with_caps_receiving(
             partner_step(
@@ -6423,13 +6576,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [NOTIFICATION_CAP, 0, 0],
             receive_slot_path(TRANSFER_RECEIVE_SLOT),
         ),
-        partner_step(
-            "caps-long-install-call-take-partner-takes",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            false,
+        with_reply(
+            partner_step(
+                "caps-long-install-call-take-partner-takes",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                false,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "caps-long-install-call-take-partner-replies",
@@ -6471,13 +6627,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [ENDPOINT_CAP, 0, 0],
             receive_slot_path(TRANSFER_RECEIVE_SLOT),
         ),
-        partner_step(
-            "caps-long-unwrap-call-take-partner-takes",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            false,
+        with_reply(
+            partner_step(
+                "caps-long-unwrap-call-take-partner-takes",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                false,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "caps-long-unwrap-call-take-partner-replies",
@@ -6536,13 +6695,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [CNODE_CAP, cap_address(EMPTY_SLOT), 64],
         ),
         invocation("grant-reply-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
-        partner_step(
-            "grant-reply-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "grant-reply-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "grant-reply-partner-calls",
@@ -6552,13 +6714,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [0x7b, 0],
             true,
         ),
-        partner_step(
-            "grant-reply-recv",
-            REPLY_RECV,
-            ENDPOINT_CAP,
-            2,
-            [REPLY_CAP, 0x7c],
-            true,
+        with_reply(
+            partner_step(
+                "grant-reply-recv",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                1,
+                [0x7c, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "grant-reply-partner-calls-again",
@@ -6569,13 +6734,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             true,
         ),
         partner_step("grant-reply", REPLY, REPLY_CAP, 1, [0x7e, 0], false),
-        partner_step(
-            "grant-reply-cap-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "grant-reply-cap-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "grant-reply-cap-partner-calls",
@@ -6594,10 +6762,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             name: "grant-reply-installed-wait",
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
+            reply: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            resumes: false,
             caps_or_badges: None,
             overflow: None,
             returns: None,
@@ -6611,13 +6781,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // The same granting reply at the longest message, 120 words: the
         // transfer runs in place before the long frame copies the overflow
         // words (`performReplyCapsDeliveredLong`).
-        partner_step(
-            "grant-long-reply-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "grant-long-reply-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "grant-long-reply-partner-calls",
@@ -6647,10 +6820,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             name: "grant-long-reply-installed-wait",
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
+            reply: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            resumes: false,
             caps_or_badges: None,
             overflow: None,
             returns: None,
@@ -6670,13 +6845,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // badge, and the copy is deleted; its second call wakes the root task,
         // which replies.  Then the same at the longest message, 120 words
         // (`performReplyRecvBlockCapsDeliveredLong`).
-        partner_step(
-            "grant-reply-recv-cap-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "grant-reply-recv-cap-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "grant-reply-recv-cap-partner-calls",
@@ -6687,13 +6865,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             true,
         ),
         with_caps_keeping_path(
-            partner_step(
-                "grant-reply-recv-cap-installs-cap",
-                REPLY_RECV,
-                ENDPOINT_CAP,
-                ONE_EXTRA_CAP | 2,
-                [REPLY_CAP, 0x84],
-                true,
+            with_reply(
+                partner_step(
+                    "grant-reply-recv-cap-installs-cap",
+                    REPLY_RECV,
+                    ENDPOINT_CAP,
+                    ONE_EXTRA_CAP | 1,
+                    [0x84, 0],
+                    true,
+                ),
+                REPLY_CAP,
             ),
             TAIL_IPC_BUFFER,
             [NOTIFICATION_CAP, 0, 0],
@@ -6706,10 +6887,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             name: "grant-reply-recv-cap-installed-wait",
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
+            reply: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            resumes: false,
             caps_or_badges: None,
             overflow: None,
             returns: None,
@@ -6736,13 +6919,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [0x86, 0],
             false,
         ),
-        partner_step(
-            "grant-long-reply-recv-cap-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "grant-long-reply-recv-cap-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "grant-long-reply-recv-cap-partner-calls",
@@ -6753,13 +6939,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             true,
         ),
         with_caps_keeping_path(
-            partner_step(
-                "grant-long-reply-recv-cap-installs-cap",
-                REPLY_RECV,
-                ENDPOINT_CAP,
-                ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
-                [REPLY_CAP, 0x88],
-                true,
+            with_reply(
+                partner_step(
+                    "grant-long-reply-recv-cap-installs-cap",
+                    REPLY_RECV,
+                    ENDPOINT_CAP,
+                    ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
+                    [0x88, 0],
+                    true,
+                ),
+                REPLY_CAP,
             ),
             TAIL_IPC_BUFFER,
             [NOTIFICATION_CAP, 0, 0],
@@ -6772,10 +6961,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             name: "grant-long-reply-recv-cap-installed-wait",
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
+            reply: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            resumes: false,
             caps_or_badges: None,
             overflow: None,
             returns: None,
@@ -6890,13 +7081,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "suspend-donated-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "suspend-donated-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "suspend-donated-partner-calls",
@@ -6952,13 +7146,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "donated-reply-caps-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "donated-reply-caps-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "donated-reply-caps-partner-calls",
@@ -6988,10 +7185,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             name: "donated-reply-installed-wait",
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
+            reply: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            resumes: false,
             caps_or_badges: None,
             overflow: None,
             returns: None,
@@ -7102,13 +7301,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         ),
         invocation("chain-resume-partner", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
         invocation("chain-resume-server", TCB_RESUME, CHAIN_TCB_CAP, [0; 4]),
-        partner_step(
-            "chain-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "chain-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         kernel_step("hold-second-core", HOLD_SECOND_CORE_STEP),
         invocation(
@@ -7132,13 +7334,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [AFFINITY_UNBIND, 0, 0, 0],
         ),
         kernel_step("release-second-core", RELEASE_SECOND_CORE_STEP),
-        partner_step(
-            "chain-server-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [CHAIN_REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "chain-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
         ),
         partner_step(
             "chain-root-calls-server",
@@ -7148,13 +7353,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [0x67, 0],
             true,
         ),
-        partner_step(
-            "chain-server-reply-recv",
-            REPLY_RECV,
-            ENDPOINT_CAP,
-            2,
-            [CHAIN_REPLY_CAP, 0x98],
-            true,
+        with_reply(
+            partner_step(
+                "chain-server-reply-recv",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                1,
+                [0x98, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
         ),
         // The same donated reply-receive whose reply leg installs: the server
         // is given the root task's IPC buffer, the root task's buffer names
@@ -7185,13 +7393,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             true,
         ),
         with_caps_keeping_path(
-            partner_step(
-                "chain-server-reply-recv-installs-cap",
-                REPLY_RECV,
-                ENDPOINT_CAP,
-                ONE_EXTRA_CAP | 2,
-                [CHAIN_REPLY_CAP, 0x9b],
-                true,
+            with_reply(
+                partner_step(
+                    "chain-server-reply-recv-installs-cap",
+                    REPLY_RECV,
+                    ENDPOINT_CAP,
+                    ONE_EXTRA_CAP | 1,
+                    [0x9b, 0],
+                    true,
+                ),
+                CHAIN_REPLY_CAP,
             ),
             FRAME_VADDR,
             [NOTIFICATION_CAP, 0, 0],
@@ -7204,10 +7415,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             name: "chain-reply-recv-installed-wait",
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
+            reply: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            resumes: false,
             caps_or_badges: None,
             overflow: None,
             returns: None,
@@ -7231,13 +7444,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [0xb0, 0],
             true,
         ),
-        partner_step(
-            "chain-server-long-reply-recv",
-            REPLY_RECV,
-            ENDPOINT_CAP,
-            TAIL_MESSAGE_LENGTH,
-            [CHAIN_REPLY_CAP, 0xb1],
-            true,
+        with_reply(
+            partner_step(
+                "chain-server-long-reply-recv",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                TAIL_MESSAGE_LENGTH,
+                [0xb1, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
         ),
         receive_path(
             "chain-long-caps-receive-path",
@@ -7253,13 +7469,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             true,
         ),
         with_caps_keeping_path(
-            partner_step(
-                "chain-server-long-reply-recv-installs-cap",
-                REPLY_RECV,
-                ENDPOINT_CAP,
-                ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
-                [CHAIN_REPLY_CAP, 0xb3],
-                true,
+            with_reply(
+                partner_step(
+                    "chain-server-long-reply-recv-installs-cap",
+                    REPLY_RECV,
+                    ENDPOINT_CAP,
+                    ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
+                    [0xb3, 0],
+                    true,
+                ),
+                CHAIN_REPLY_CAP,
             ),
             FRAME_VADDR,
             [NOTIFICATION_CAP, 0, 0],
@@ -7272,10 +7491,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             name: "chain-long-reply-recv-installed-wait",
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
+            reply: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            resumes: false,
             caps_or_badges: None,
             overflow: None,
             returns: None,
@@ -7398,13 +7619,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "head-server-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [CHAIN_REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "head-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
         ),
         partner_step("head-partner-calls", CALL, ENDPOINT_CAP, 1, [0x68, 0], true),
         signal("head-server-wakes-root"),
@@ -7448,13 +7672,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "waited-server-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [CHAIN_REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "waited-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
         ),
         partner_step(
             "waited-partner-calls",
@@ -7564,13 +7791,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "unheld-caps-server-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [CHAIN_REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "unheld-caps-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
         ),
         partner_step(
             "unheld-caps-partner-calls",
@@ -7620,10 +7850,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             name: "unheld-reply-installed-wait",
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
+            reply: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            resumes: false,
             caps_or_badges: None,
             overflow: None,
             returns: None,
@@ -7722,13 +7954,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "orphan-recv-server-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [CHAIN_REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "orphan-recv-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
         ),
         partner_step(
             "orphan-recv-partner-calls",
@@ -7753,13 +7988,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             CNODE_CAP,
             [CHAIN_TCB_SLOT, 0, 0, 0],
         ),
-        partner_step(
-            "orphan-reply-recv",
-            REPLY_RECV,
-            ENDPOINT_CAP,
-            2,
-            [CHAIN_REPLY_CAP, 0x73],
-            true,
+        with_reply(
+            partner_step(
+                "orphan-reply-recv",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                1,
+                [0x73, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
         ),
         partner_step(
             "orphan-recv-partner-wakes-root",
@@ -7861,13 +8099,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "unheld-recv-caps-server-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [CHAIN_REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "unheld-recv-caps-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
         ),
         partner_step(
             "unheld-recv-caps-partner-calls",
@@ -7898,13 +8139,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [CNODE_CAP, cap_address(EMPTY_SLOT), 64],
         ),
         with_caps_keeping_path(
-            partner_step(
-                "unheld-reply-recv-installs-cap",
-                REPLY_RECV,
-                ENDPOINT_CAP,
-                ONE_EXTRA_CAP | 2,
-                [CHAIN_REPLY_CAP, 0x9d],
-                true,
+            with_reply(
+                partner_step(
+                    "unheld-reply-recv-installs-cap",
+                    REPLY_RECV,
+                    ENDPOINT_CAP,
+                    ONE_EXTRA_CAP | 1,
+                    [0x9d, 0],
+                    true,
+                ),
+                CHAIN_REPLY_CAP,
             ),
             FRAME_VADDR,
             [NOTIFICATION_CAP, 0, 0],
@@ -7917,10 +8161,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             name: "unheld-reply-recv-installed-wait",
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
+            reply: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            resumes: false,
             caps_or_badges: None,
             overflow: None,
             returns: None,
@@ -8027,13 +8273,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "unheld-long-recv-server-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [CHAIN_REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "unheld-long-recv-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
         ),
         partner_step(
             "unheld-long-recv-partner-calls",
@@ -8058,13 +8307,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             CNODE_CAP,
             [CHAIN_TCB_SLOT, 0, 0, 0],
         ),
-        partner_step(
-            "unheld-long-reply-recv",
-            REPLY_RECV,
-            ENDPOINT_CAP,
-            TAIL_MESSAGE_LENGTH,
-            [CHAIN_REPLY_CAP, 0xb8],
-            true,
+        with_reply(
+            partner_step(
+                "unheld-long-reply-recv",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                TAIL_MESSAGE_LENGTH,
+                [0xb8, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
         ),
         partner_step(
             "unheld-long-recv-partner-wakes-root",
@@ -8157,13 +8409,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "unheld-long-recv-caps-server-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [CHAIN_REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "unheld-long-recv-caps-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
         ),
         partner_step(
             "unheld-long-recv-caps-partner-calls",
@@ -8194,13 +8449,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [CNODE_CAP, cap_address(EMPTY_SLOT), 64],
         ),
         with_caps_keeping_path(
-            partner_step(
-                "unheld-long-reply-recv-installs-cap",
-                REPLY_RECV,
-                ENDPOINT_CAP,
-                ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
-                [CHAIN_REPLY_CAP, 0xb5],
-                true,
+            with_reply(
+                partner_step(
+                    "unheld-long-reply-recv-installs-cap",
+                    REPLY_RECV,
+                    ENDPOINT_CAP,
+                    ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
+                    [0xb5, 0],
+                    true,
+                ),
+                CHAIN_REPLY_CAP,
             ),
             FRAME_VADDR,
             [NOTIFICATION_CAP, 0, 0],
@@ -8213,10 +8471,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             name: "unheld-long-recv-caps-installed-wait",
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
+            reply: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            resumes: false,
             caps_or_badges: None,
             overflow: None,
             returns: None,
@@ -8308,13 +8568,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "queued-sender-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "queued-sender-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "queued-sender-partner-calls",
@@ -8347,13 +8610,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [0xa2, 0],
             true,
         ),
-        partner_step(
-            "queued-sender-reply-recv",
-            REPLY_RECV,
-            ENDPOINT_CAP,
-            2,
-            [REPLY_CAP, 0xa3],
-            false,
+        with_reply(
+            partner_step(
+                "queued-sender-reply-recv",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                1,
+                [0xa3, 0],
+                false,
+            ),
+            REPLY_CAP,
         ),
         invocation(
             "queued-sender-suspend-sender",
@@ -8373,13 +8639,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "queued-sender-caps-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "queued-sender-caps-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "queued-sender-caps-partner-calls",
@@ -8418,13 +8687,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [CNODE_CAP, cap_address(EMPTY_SLOT), 64],
         ),
         with_caps_keeping_path(
-            partner_step(
-                "queued-sender-caps-reply-recv-installs-cap",
-                REPLY_RECV,
-                ENDPOINT_CAP,
-                ONE_EXTRA_CAP | 2,
-                [REPLY_CAP, 0xa7],
-                false,
+            with_reply(
+                partner_step(
+                    "queued-sender-caps-reply-recv-installs-cap",
+                    REPLY_RECV,
+                    ENDPOINT_CAP,
+                    ONE_EXTRA_CAP | 1,
+                    [0xa7, 0],
+                    false,
+                ),
+                REPLY_CAP,
             ),
             FRAME_VADDR,
             [NOTIFICATION_CAP, 0, 0],
@@ -8437,10 +8709,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             name: "queued-sender-caps-installed-wait",
             syscall: WAIT,
             cptr: NOTIFICATION_CAP,
+            reply: None,
             msg_len: 1,
             msg: [0, 0, 0, 0],
             primed: None,
             blocks: false,
+            resumes: false,
             caps_or_badges: None,
             overflow: None,
             returns: None,
@@ -8509,13 +8783,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "busy-reply-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "busy-reply-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "busy-reply-partner-calls",
@@ -8548,13 +8825,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [0xc2, 0],
             true,
         ),
-        partner_step(
-            "receive-busy-reply-cancels-caller",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            false,
+        with_reply(
+            partner_step(
+                "receive-busy-reply-cancels-caller",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                false,
+            ),
+            REPLY_CAP,
         ),
         invocation(
             "busy-reply-suspend-sender",
@@ -8649,13 +8929,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [0xb2, 0],
             true,
         ),
-        partner_step(
-            "queued-caller-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            false,
+        with_reply(
+            partner_step(
+                "queued-caller-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                false,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "queued-caller-root-replies",
@@ -8734,13 +9017,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "queued-caller-root-takes-partner",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "queued-caller-root-takes-partner",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "queued-caller-partner-calls",
@@ -8787,13 +9073,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [0xb5, 0],
             true,
         ),
-        partner_step(
-            "queued-caller-reply-recv",
-            REPLY_RECV,
-            ENDPOINT_CAP,
-            2,
-            [REPLY_CAP, 0xb6],
-            false,
+        with_reply(
+            partner_step(
+                "queued-caller-reply-recv",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                1,
+                [0xb6, 0],
+                false,
+            ),
+            REPLY_CAP,
         ),
         partner_step(
             "queued-caller-root-replies-again",
@@ -8949,13 +9238,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             FRAME_VADDR,
         ),
         invocation("stack-resume-server", TCB_RESUME, CHAIN_TCB_CAP, [0; 4]),
-        partner_step(
-            "stack-root-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "stack-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         invocation(
             "stack-server-resumes-top",
@@ -8963,13 +9255,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             STACK_TOP_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "stack-server-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [CHAIN_REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "stack-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
         ),
         invocation(
             "stack-top-resumes-partner",
@@ -8977,13 +9272,9 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "stack-top-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [STACK_TOP_REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step("stack-top-receives", RECEIVE, ENDPOINT_CAP, 0, [0, 0], true),
+            STACK_TOP_REPLY_CAP,
         ),
         partner_step(
             "stack-partner-calls",
@@ -9073,13 +9364,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             STACK_TOP_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "contextless-server-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "contextless-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
         ),
         invocation(
             "contextless-top-resumes-partner",
@@ -9087,13 +9381,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "contextless-top-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [STACK_TOP_REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "contextless-top-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            STACK_TOP_REPLY_CAP,
         ),
         partner_step(
             "contextless-partner-calls",
@@ -9264,13 +9561,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             STACK_TOP_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "orphan-server-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [CHAIN_REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "orphan-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
         ),
         invocation(
             "orphan-top-resumes-partner",
@@ -9278,13 +9578,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         ),
-        partner_step(
-            "orphan-top-receives",
-            RECEIVE,
-            ENDPOINT_CAP,
-            1,
-            [STACK_TOP_REPLY_CAP, 0],
-            true,
+        with_reply(
+            partner_step(
+                "orphan-top-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            STACK_TOP_REPLY_CAP,
         ),
         partner_step(
             "orphan-partner-calls",
@@ -10579,13 +10882,16 @@ const BUSY_REPLY_SCENARIO: [RoundTrip; 6] = [
         [FRAME_SLOT, MINT_SLOT],
         false,
     ),
-    partner_step(
-        "receive-with-carved-reply",
-        RECEIVE,
-        ENDPOINT_CAP,
-        1,
-        [MINT_CAP, 0],
-        true,
+    with_reply(
+        partner_step(
+            "receive-with-carved-reply",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        MINT_CAP,
     ),
     partner_step(
         "call-to-carved-reply",
@@ -10633,13 +10939,16 @@ const STASHED_REPLY_SCENARIO: [RoundTrip; 6] = [
         [FRAME_SLOT, MINT_SLOT],
         false,
     ),
-    partner_step(
-        "receive-stashing-reply",
-        RECEIVE,
-        ENDPOINT_CAP,
-        1,
-        [MINT_CAP, 0],
-        true,
+    with_reply(
+        partner_step(
+            "receive-stashing-reply",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        MINT_CAP,
     ),
     invocation(
         "stashed-reply-cap-delete",
@@ -10820,10 +11129,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-drain-first",
         syscall: AUDIT_DRAIN,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 1,
         msg: [1, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -10833,10 +11144,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-status",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [0, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -10846,10 +11159,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-entry",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [7, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -10859,10 +11174,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-basis-count",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [10, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -10872,10 +11189,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-basis-chunk",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [11, 0, 1, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -10885,10 +11204,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-refusal-status",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [12, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -10898,10 +11219,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-refusal-counters",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [13, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -10911,10 +11234,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-refusal-tags",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [14, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -10924,10 +11249,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-refusal-subject-count",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [15, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -10937,10 +11264,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-refusal-domain-count",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [16, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -10950,10 +11279,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-refusal-target-count",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [17, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -10963,10 +11294,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-refusal-subject",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [18, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -10976,10 +11309,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-refusal-domain",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [19, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -10989,10 +11324,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-refusal-target",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [20, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -11002,10 +11339,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-refusal-receiver-count",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [25, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -11015,10 +11354,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-chain-predecessor",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [27, 1, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -11028,10 +11369,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-chain-entry",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [28, 1, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -11041,10 +11384,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-chain-archived",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [29, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -11056,10 +11401,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-entry-chunk-past",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [7, 0, 99, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: refused_with(INVALID_ARGUMENT, 1, [Some(2), None, None, None]),
@@ -11069,10 +11416,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-entry-index-past",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [9, 1000, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
@@ -11082,10 +11431,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-refusal-slot-past",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [14, 1000, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
@@ -11095,10 +11446,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-unknown-op",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [30, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: refused(INVALID_SYSCALL_ARGUMENT),
@@ -11110,10 +11463,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-entry-index-wide",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [7, WIDE_WORD, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
@@ -11123,10 +11478,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-entry-chunk-wide",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [7, 0, WIDE_WORD, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: refused_with(INVALID_ARGUMENT, 1, [Some(2), None, None, None]),
@@ -11136,10 +11493,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-refusal-slot-wide",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [14, WIDE_WORD, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
@@ -11150,10 +11509,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-chain-wide",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [28, WIDE_WORD + 1, WIDE_WORD, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: refused_with(INVALID_ARGUMENT, 1, [Some(1), None, None, None]),
@@ -11163,10 +11524,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-read-archived-chunk-wide",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [29, 0, WIDE_WORD, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: refused_with(INVALID_ARGUMENT, 1, [Some(2), None, None, None]),
@@ -11179,10 +11542,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-drain-read-only-refused",
         syscall: AUDIT_DRAIN,
         cptr: cap_address(READ_ONLY_AUDIT_SLOT),
+        reply: None,
         msg_len: 1,
         msg: [256, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: refused(ILLEGAL_AUTHORITY),
@@ -11193,10 +11558,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-drain-wide-count",
         syscall: AUDIT_DRAIN,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 1,
         msg: [WIDE_WORD, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -11205,10 +11572,12 @@ const AUDIT_SCENARIO: [RoundTrip; 33] = [
         name: "audit-drain",
         syscall: AUDIT_DRAIN,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 1,
         msg: [256, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -11438,10 +11807,12 @@ const DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER: RoundTrip = RoundTrip {
     name: "declassified-signal-refused-at-receiver",
     syscall: DECLASSIFY_SIGNAL,
     cptr: AUDIT_CAP,
+    reply: None,
     msg_len: ONE_EXTRA_CAP,
     msg: [0, 0, 0, 0],
     primed: None,
     blocks: false,
+    resumes: false,
     caps_or_badges: Some((ROOT_IPC_BUFFER, [MOVE_CAP, 0, 0], None)),
     overflow: None,
     returns: Some((
@@ -11455,10 +11826,12 @@ const BOUND_REFUSAL_STATUS: RoundTrip = RoundTrip {
     name: "bound-refusal-status",
     syscall: AUDIT_READ,
     cptr: AUDIT_CAP,
+    reply: None,
     msg_len: 3,
     msg: [12, 0, 0, 0],
     primed: None,
     blocks: false,
+    resumes: false,
     caps_or_badges: None,
     overflow: None,
     returns: None,
@@ -11631,10 +12004,12 @@ fn bound_declassified_signals(which: &str) -> bool {
         name: "audit-read-refusal-receiver",
         syscall: AUDIT_READ,
         cptr: AUDIT_CAP,
+        reply: None,
         msg_len: 3,
         msg: [26, slot, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -11712,10 +12087,12 @@ const YIELD_TO_LINK: RoundTrip = RoundTrip {
     name: "sched-context-yield-to-linked",
     syscall: SCHED_CONTEXT_YIELD_TO,
     cptr: SCHED_CONTEXT_CAP,
+    reply: None,
     msg_len: 0,
     msg: [0; 4],
     primed: None,
     blocks: false,
+    resumes: false,
     caps_or_badges: None,
     overflow: None,
     returns: None,
@@ -12059,6 +12436,9 @@ enum Dispatched {
     Returned([u64; 6]),
     /// The caller blocked and the other thread was restored.
     Blocked,
+    /// The caller resumed with the registers it trapped with
+    /// (`SvcOutcome::Resumed`): a non-`Call` invocation's refusal.
+    Resumed,
     /// Anything else (printed where it was found).
     Failed,
 }
@@ -12077,8 +12457,9 @@ struct Resumed {
 #[cfg(feature = "hw_target")]
 fn unmeasured(trip: &RoundTrip, why: &str) -> bool {
     let ok = match dispatch_round_trip(trip).0 {
-        Dispatched::Returned(_) => !trip.blocks,
+        Dispatched::Returned(_) => !trip.blocks && !trip.resumes,
         Dispatched::Blocked => trip.blocks,
+        Dispatched::Resumed => trip.resumes,
         Dispatched::Failed => false,
     };
     if !ok {
@@ -12106,10 +12487,12 @@ fn minted_badge_delivered(name: &str, badge: u64) -> bool {
         name: "root-ipc-buffer-badge-wait",
         syscall: WAIT,
         cptr: NOTIFICATION_CAP,
+        reply: None,
         msg_len: 1,
         msg: [0; 4],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -12796,10 +13179,12 @@ const fn irq_handler_ack(name: &'static str, slot: u64) -> RoundTrip {
         name,
         syscall: IRQ_HANDLER_ACK,
         cptr: cap_address(slot),
+        reply: None,
         msg_len: 0,
         msg: [0; 4],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -13056,10 +13441,12 @@ fn interrupt_entries(which: &str) -> bool {
         name: "irq-wait-pending",
         syscall: WAIT,
         cptr: NOTIFICATION_CAP,
+        reply: None,
         msg_len: 1,
         msg: [0; 4],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: None,
@@ -13166,8 +13553,8 @@ fn heap_allocations_kernel_entry(entry: &KernelEntry, which: &str) -> Option<boo
 /// (`trap::handle_synchronous_exception`), as an EL0 thread raises it: the
 /// syndrome and fault-address words, the PC it trapped at, and `x0`, `x1` and
 /// `x7` (the capability address, the message info and the syscall number of
-/// an `SVC`), with `x2` the first message register (a receive's reply
-/// capability address).
+/// an `SVC`), with `x2` the first message register and `x6` a receive's reply
+/// capability address (seL4-MCS's `replyRegister`).
 #[cfg(feature = "hw_target")]
 struct TrapTrip {
     name: &'static str,
@@ -13177,6 +13564,7 @@ struct TrapTrip {
     x0: u64,
     x1: u64,
     x2: u64,
+    x6: u64,
     x7: u64,
 }
 
@@ -13215,6 +13603,7 @@ const fn data_abort(name: &'static str) -> TrapTrip {
         x0: 0,
         x1: 0,
         x2: 0,
+        x6: 0,
         x7: 0,
     }
 }
@@ -13230,6 +13619,7 @@ const fn instruction_abort(name: &'static str) -> TrapTrip {
         x0: 0,
         x1: 0,
         x2: 0,
+        x6: 0,
         x7: 0,
     }
 }
@@ -13245,6 +13635,7 @@ const fn pc_alignment(name: &'static str) -> TrapTrip {
         x0: 0,
         x1: 0,
         x2: 0,
+        x6: 0,
         x7: 0,
     }
 }
@@ -13263,6 +13654,7 @@ const fn unknown_syscall(name: &'static str) -> TrapTrip {
         x0: 0,
         x1: 0,
         x2: 0,
+        x6: 0,
         x7: UNKNOWN_SYSCALL_NUMBER,
     }
 }
@@ -13292,6 +13684,7 @@ const fn cap_fault(name: &'static str) -> TrapTrip {
         x0: UNRESOLVED_ADDRESS,
         x1: 0,
         x2: 0,
+        x6: 0,
         x7: SEND,
     }
 }
@@ -13307,6 +13700,7 @@ const fn fp_access(name: &'static str) -> TrapTrip {
         x0: 0,
         x1: 0,
         x2: 0,
+        x6: 0,
         x7: 0,
     }
 }
@@ -13446,10 +13840,12 @@ fn queued_overflow_cap_fault(
         name: receive,
         syscall: RECEIVE,
         cptr: ENDPOINT_CAP,
-        msg_len: 1,
-        msg: [REPLY_CAP, 0, 0, 0],
+        reply: Some(REPLY_CAP),
+        msg_len: 0,
+        msg: [0, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: Some((info, [None; 4])),
@@ -14035,6 +14431,7 @@ fn heap_allocations_trap(trip: &TrapTrip, which: &str) -> Option<bool> {
     frame.gprs[0] = trip.x0;
     frame.gprs[1] = x1;
     frame.gprs[2] = trip.x2;
+    frame.gprs[6] = trip.x6;
     frame.gprs[7] = x7;
     let saved_daif = crate::interrupts::disable_interrupts();
     let before = own_heap_allocations(core as usize);
@@ -14101,6 +14498,7 @@ fn unmeasured_trap(trip: &TrapTrip) {
     frame.gprs[0] = trip.x0;
     frame.gprs[1] = x1;
     frame.gprs[2] = trip.x2;
+    frame.gprs[6] = trip.x6;
     frame.gprs[7] = x7;
     let saved_daif = crate::interrupts::disable_interrupts();
     crate::trap::handle_synchronous_exception(&mut frame);
@@ -14166,18 +14564,20 @@ struct ReceiveFault {
     info: u64,
 }
 
-/// A receive trap of the partner: syscall `x7` on capability `x0`, its message
-/// info `x1` and first message register `x2`.
+/// A receive trap of the partner: syscall `x7` on capability `x0`, with no
+/// message and the reply capability address `x6` (0 for a wait, which takes
+/// none).
 #[cfg(feature = "hw_target")]
-const fn receive_trap(name: &'static str, x7: u64, x0: u64, x1: u64, x2: u64) -> TrapTrip {
+const fn receive_trap(name: &'static str, x7: u64, x0: u64, x6: u64) -> TrapTrip {
     TrapTrip {
         name,
         esr: ROUND_TRIP_ESR,
         far: 0,
         elr: FAULT_PC + 4,
         x0,
-        x1,
-        x2,
+        x1: 0,
+        x2: 0,
+        x6,
         x7,
     }
 }
@@ -14333,7 +14733,6 @@ fn receive_side_faults(
                 "receive-reply-cap-guard-mismatch",
                 RECEIVE,
                 ENDPOINT_CAP,
-                1,
                 REPLY_CAP_SLOT,
             ),
             addr: REPLY_CAP_SLOT,
@@ -14345,7 +14744,6 @@ fn receive_side_faults(
                 "reply-recv-reply-cap-guard-mismatch",
                 REPLY_RECV,
                 ENDPOINT_CAP,
-                2,
                 REPLY_CAP_SLOT,
             ),
             addr: REPLY_CAP_SLOT,
@@ -14357,7 +14755,6 @@ fn receive_side_faults(
                 "receive-reply-cap-wrong-kind",
                 RECEIVE,
                 ENDPOINT_CAP,
-                1,
                 CNODE_CAP,
             ),
             addr: CNODE_CAP,
@@ -14369,7 +14766,6 @@ fn receive_side_faults(
                 "reply-recv-reply-cap-wrong-kind",
                 REPLY_RECV,
                 ENDPOINT_CAP,
-                1,
                 CNODE_CAP,
             ),
             addr: CNODE_CAP,
@@ -14381,7 +14777,6 @@ fn receive_side_faults(
                 "wait-notification-bound-elsewhere",
                 WAIT,
                 NOTIFICATION_CAP,
-                0,
                 0,
             ),
             addr: NOTIFICATION_CAP,
@@ -14497,6 +14892,7 @@ const fn partner_send_trap(name: &'static str, cptr: u64) -> TrapTrip {
         x0: cptr,
         x1: 1,
         x2: 0x88,
+        x6: 0,
         x7: SEND,
     }
 }
@@ -14775,10 +15171,12 @@ fn fault_entries() -> Option<bool> {
         name: "receive-queued-fault",
         syscall: RECEIVE,
         cptr: ENDPOINT_CAP,
-        msg_len: 1,
-        msg: [REPLY_CAP, 0, 0, 0],
+        reply: Some(REPLY_CAP),
+        msg_len: 0,
+        msg: [0, 0, 0, 0],
         primed: None,
         blocks: false,
+        resumes: false,
         caps_or_badges: None,
         overflow: None,
         returns: Some((VM_FAULT_MESSAGE_INFO, [None; 4])),
@@ -14830,13 +15228,9 @@ fn fault_entries() -> Option<bool> {
     // The handler waits first: the root task's receive blocks it, and the
     // partner, current in its place, faults to it (the root task is chosen
     // over the partner whenever both are runnable).
-    let handler_waits = partner_step(
-        "handler-waits",
-        RECEIVE,
-        ENDPOINT_CAP,
-        1,
-        [REPLY_CAP, 0],
-        true,
+    let handler_waits = with_reply(
+        partner_step("handler-waits", RECEIVE, ENDPOINT_CAP, 0, [0, 0], true),
+        REPLY_CAP,
     );
     let wake_handler = partner_step("wake-handler", SEND, ENDPOINT_CAP, 1, [0x55, 0], false);
     for first in [true, false] {
@@ -14847,13 +15241,16 @@ fn fault_entries() -> Option<bool> {
             return Some(false);
         }
         for kind in 0..FAULT_KINDS.len() {
-            let reply = partner_step(
-                FAULT_REPLIES[kind],
-                REPLY_RECV,
-                ENDPOINT_CAP,
-                2,
-                [REPLY_CAP, FAULT_REPLY_WORD],
-                true,
+            let reply = with_reply(
+                partner_step(
+                    FAULT_REPLIES[kind],
+                    REPLY_RECV,
+                    ENDPOINT_CAP,
+                    1,
+                    [FAULT_REPLY_WORD, 0],
+                    true,
+                ),
+                REPLY_CAP,
             );
             if heap_allocations_trap(&fault_trip(kind, FAULT_DELIVERED[kind]), which) != Some(true)
                 || heap_allocations_round_trip_resuming(&reply, which, Some(fault_restart(kind)))
@@ -14869,13 +15266,16 @@ fn fault_entries() -> Option<bool> {
     // The handler answers with `Reply` instead: it returns, the faulted
     // thread restarted behind it, and its next receive blocks it and resumes
     // that thread as its restart says.
-    let handler_waits_again = partner_step(
-        "handler-waits-again",
-        RECEIVE,
-        ENDPOINT_CAP,
-        1,
-        [REPLY_CAP, 0],
-        true,
+    let handler_waits_again = with_reply(
+        partner_step(
+            "handler-waits-again",
+            RECEIVE,
+            ENDPOINT_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        REPLY_CAP,
     );
     for first in [true, false] {
         let which = if first { " (first call)" } else { "" };
@@ -15079,13 +15479,16 @@ fn fault_entries() -> Option<bool> {
         [FAULT_REPLY_WORD, 0],
         false,
     );
-    let long_reply_recv = partner_step(
-        "cap-fault-long-reply-recv",
-        REPLY_RECV,
-        ENDPOINT_CAP,
-        TAIL_MESSAGE_LENGTH,
-        [REPLY_CAP, FAULT_REPLY_WORD],
-        true,
+    let long_reply_recv = with_reply(
+        partner_step(
+            "cap-fault-long-reply-recv",
+            REPLY_RECV,
+            ENDPOINT_CAP,
+            TAIL_MESSAGE_LENGTH,
+            [FAULT_REPLY_WORD, 0],
+            true,
+        ),
+        REPLY_CAP,
     );
     for first in [true, false] {
         let which = if first { " (first call)" } else { "" };
@@ -15297,13 +15700,14 @@ fn dispatch_round_trip_at(
         tpidr_el0: 0,
         reserved: 0,
     };
-    let (syscall_word, msg_info) = op_frame_words(trip.syscall, trip.msg_len);
+    let (syscall_word, msg_info) = frame_words(trip);
     frame.gprs[0] = trip.cptr;
     frame.gprs[1] = msg_info;
     frame.gprs[2] = trip.msg[0];
     frame.gprs[3] = trip.msg[1];
     frame.gprs[4] = trip.msg[2];
     frame.gprs[5] = trip.msg[3];
+    frame.gprs[6] = trip.reply.unwrap_or(0);
     frame.gprs[7] = syscall_word;
     if let Some((buffer, words)) = trip.caps_or_badges.map(|(b, w, _)| (b, w)) {
         // The extra capabilities' addresses: written here, before every
@@ -15406,6 +15810,7 @@ fn dispatch_round_trip_at(
             Dispatched::Failed
         }
         Ok(crate::svc_dispatch::SvcOutcome::Blocked) => Dispatched::Blocked,
+        Ok(crate::svc_dispatch::SvcOutcome::Resumed) => Dispatched::Resumed,
         Ok(other) => {
             crate::kprintln!(
                 "[smp-test] FAIL: heap-allocations-per-syscall: {name}: did not return: {other:?}"
@@ -16400,6 +16805,12 @@ fn heap_allocations_yield_to_linked(which: &str) -> Option<bool> {
             );
             return Some(false);
         }
+        Dispatched::Resumed => {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the yieldTo was refused"
+            );
+            return Some(false);
+        }
         Dispatched::Failed => return Some(false),
     }
     print_routed(&YIELD_TO_LINK, core, which, &linked);
@@ -16497,7 +16908,7 @@ fn heap_allocations_round_trip_resuming(
     }
     print_routed(trip, core, which, &outcome);
     match outcome {
-        Dispatched::Returned(regs) if !trip.blocks => {
+        Dispatched::Returned(regs) if !trip.blocks && !trip.resumes => {
             crate::kprintln!(
                 "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: returned x0={:#x} x1={:#x}",
                 regs[0],
@@ -16540,7 +16951,16 @@ fn heap_allocations_round_trip_resuming(
         Dispatched::Blocked if trip.blocks => crate::kprintln!(
             "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: blocked, the other thread restored"
         ),
+        Dispatched::Resumed if trip.resumes => crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: resumed with its trapped registers"
+        ),
         Dispatched::Failed => return Some(false),
+        Dispatched::Resumed => {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: resumed with no frame"
+            );
+            return Some(false);
+        }
         Dispatched::Returned(regs) => {
             crate::kprintln!(
                 "[smp-test] FAIL: heap-allocations-per-syscall: {name}: did not block, returned x0={:#x} x1={:#x}",
