@@ -69,6 +69,7 @@ import SeLe4n.Kernel.SchedContext.PriorityManagement
 import SeLe4n.Kernel.SchedContext.PriorityManagementPerCore
 import SeLe4n.Kernel.SchedContext.OperationsPerCore
 import SeLe4n.Kernel.SchedContext.NotificationLink
+import SeLe4n.Kernel.SchedContext.NotificationDonation
 import SeLe4n.Kernel.IPC.Operations.Donation
 import SeLe4n.Kernel.IPC.Invariant.DispatchArmPreservation
 import SeLe4n.Kernel.IPC.Invariant.YieldPreservation
@@ -6132,11 +6133,10 @@ passes (`notificationWaitCrossCoreDispatchChecked`).  A receive denied that
 flow does not complete the signal: it receives on the endpoint as if the
 notification were idle, so the receiver learns nothing of the notification
 (`receiveCompletesSignal_lowEquivalent`).  seL4-MCS's
-`maybeDonateSchedContext` / `maybeReturnSchedContext` move a context bound to
-the notification (`Notification.schedContext`, which `.schedContextBind` on a
-notification capability sets).  The receive does not move it yet: the donation
-and its return are the next cut of WS-SX SX7, and until it lands a receive that
-completes a signal leaves the notification's context where it is. -/
+`maybeDonateSchedContext` moves a context bound to the notification
+(`Notification.schedContext`, which `.schedContextBind` on a notification
+capability sets) to a receiver that holds none: `completeSignalArm` donates it
+after the word is taken (WS-SX SX8.2). -/
 
 /-- **The notification bound to `tid`** (`TCB.boundNotification`), as the id
 its code names; `⟨0⟩` for a thread with none, which a receive never reads
@@ -6163,7 +6163,11 @@ and the notification's label flows to the receiver's. -/
 
 /-- **seL4's `completeSignal` on the receiver**: the bound notification's word
 consumed and written to the badge register (`x0`), every other register as it
-was.  The consumption is the one a `Wait` on an active notification performs
+was, and then seL4-MCS's `maybeDonateSchedContext`: a context bound to the
+notification and to no thread is donated to a receiver holding none
+(`maybeDonateSchedContext`, the bind's ok-state, the receiver's `.bound`
+binding with the notification link kept).  The consumption is the one a
+`Wait` on an active notification performs
 (`notificationWaitCrossCoreDispatchChecked`), so a receive and a wait that
 take a notification's word ask one transition. -/
 @[inline] def completeSignalArm (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
@@ -6171,8 +6175,8 @@ take a notification's word ask one transition. -/
   fun st =>
     match notificationWaitCrossCoreDispatchChecked ctx notifId tid executingCore st with
     | (st', .ok (some badge)) =>
-        .ok ((), Architecture.writeReturnFrameToTcb st' tid
-          (Architecture.badgeReturnFrame st' tid badge))
+        .ok ((), maybeDonateSchedContext (Architecture.writeReturnFrameToTcb st' tid
+          (Architecture.badgeReturnFrame st' tid badge)) notifId tid)
     | (st', .ok none) => .ok ((), st')
     | (_, .error e) => .error e
 
@@ -6258,7 +6262,9 @@ theorem completeSignalArm_consumes {ctx : LabelingContext} {tid : SeLe4n.ThreadI
       notificationWaitCrossCoreDispatchChecked ctx (receiverBoundNotification st tid) tid c st =
         (st1, .ok (some badge)) ∧
       st1.scheduler = st.scheduler ∧
-      st' = Architecture.writeReturnFrameToTcb st1 tid (Architecture.badgeReturnFrame st1 tid badge) := by
+      st' = maybeDonateSchedContext
+        (Architecture.writeReturnFrameToTcb st1 tid (Architecture.badgeReturnFrame st1 tid badge))
+        (receiverBoundNotification st tid) tid := by
   unfold completeSignalArm at h
   generalize hW : notificationWaitCrossCoreDispatchChecked ctx (receiverBoundNotification st tid) tid c st = w at h
   obtain ⟨st1, r⟩ := w
@@ -6547,8 +6553,8 @@ theorem replyRecvCompletesSignalArm_cases {ctx : LabelingContext}
           notificationWaitCrossCoreDispatchChecked ctx (receiverBoundNotification st1 tid) tid c
             st1 = (st2, .ok (some badge)) ∧
           st2.scheduler = st1.scheduler ∧
-          st' = Architecture.writeReturnFrameToTcb st2 tid
-            (Architecture.badgeReturnFrame st2 tid badge)) := by
+          st' = maybeDonateSchedContext (Architecture.writeReturnFrameToTcb st2 tid
+            (Architecture.badgeReturnFrame st2 tid badge)) (receiverBoundNotification st1 tid) tid) := by
   obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_split h
   refine ⟨st1, hR, ?_⟩
   rcases hOr with hEq | ⟨hSig, hRdy, hC⟩
@@ -8077,6 +8083,29 @@ theorem dispatchWithCapChecked_reply_populates_msg
 -- the point: a reader that computes the right word and does not stage it hands
 -- back the caller's own preloaded `x0`.
 
+/-- **A donation leaves every return frame**: it writes no register
+(`maybeDonateSchedContext_registersAgree`). -/
+theorem readReturnFrame_maybeDonateSchedContext (st : SystemState) (n : SeLe4n.ObjId)
+    (tid t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    Architecture.readReturnFrame (maybeDonateSchedContext st n tid) t =
+      Architecture.readReturnFrame st t := by
+  have h := maybeDonateSchedContext_registersAgree st n tid hInv t
+  unfold Architecture.readReturnFrame
+  cases h1 : (maybeDonateSchedContext st n tid).getTcb? t with
+  | none =>
+    rw [h1] at h
+    cases h2 : st.getTcb? t with
+    | none => rfl
+    | some _ => rw [h2] at h; cases h
+  | some a =>
+    rw [h1] at h
+    cases h2 : st.getTcb? t with
+    | none => rw [h2] at h; cases h
+    | some b =>
+      rw [h2] at h
+      simp only [Option.map_some, Option.some.injEq] at h
+      simp only [h]
+
 /-- RA.B.8, `.notificationWait` (`.badge`): the arm's badge-consume path
 stages exactly the consumed badge, and the boundary read recovers it. -/
 theorem dispatchArm_notificationWait_matches_returnShape
@@ -8093,12 +8122,14 @@ theorem dispatchArm_notificationWait_matches_returnShape
     ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
         = Architecture.badgeReturnFrame st1 tid badge := by
-  refine ⟨rfl,
-    Architecture.writeReturnFrameToTcb st1 tid (Architecture.badgeReturnFrame st1 tid badge),
-    ?_, ?_⟩
+  refine ⟨rfl, maybeDonateSchedContext
+    (Architecture.writeReturnFrameToTcb st1 tid (Architecture.badgeReturnFrame st1 tid badge))
+    notifId tid, ?_, ?_⟩
   · simp [dispatchWithCapChecked, dispatchCapabilityOnly, completeSignalArm, hSyscall, hTarget, hDispatch,
       waitFindsNothing_of_consumed _ hDispatch]
-  · exact Architecture.readReturnFrame_writeReturnFrame st1 tid _ tcb hTcb hObjInv
+  · rw [readReturnFrame_maybeDonateSchedContext _ _ _ _
+      (writeReturnFrameToTcb_preserves_objects_invExt _ _ _ hObjInv)]
+    exact Architecture.readReturnFrame_writeReturnFrame st1 tid _ tcb hTcb hObjInv
 
 /-- RA.B.8, `.serviceQuery` (`.word`): the arm stages the resolved
 registration's `ServiceId` — the answer it used to discard — and, the caller
@@ -8331,15 +8362,17 @@ theorem dispatchArm_replyRecv_signal_matches_returnShape
     Architecture.syscallReturnShape .replyRecv = .message ∧
     ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid = Architecture.badgeReturnFrame st2 tid badge := by
-  refine ⟨rfl,
-    Architecture.writeReturnFrameToTcb st2 tid (Architecture.badgeReturnFrame st2 tid badge),
-    ?_, ?_⟩
+  refine ⟨rfl, maybeDonateSchedContext
+    (Architecture.writeReturnFrameToTcb st2 tid (Architecture.badgeReturnFrame st2 tid badge))
+    (receiverBoundNotification st1 tid) tid, ?_, ?_⟩
   · simp only [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow,
       Bool.not_true, Bool.false_eq_true, ↓reduceIte, hXc, hResolve, hReplyFlow, hSig]
     unfold replyRecvCompletesSignalArm
     rw [hReply]
     simp only [hSig1, hReady1, Bool.and_self, ↓reduceIte, completeSignalArm, hWait]
-  · exact Architecture.readReturnFrame_writeReturnFrame st2 tid _ tcb hTcb hObjInv
+  · rw [readReturnFrame_maybeDonateSchedContext _ _ _ _
+      (writeReturnFrameToTcb_preserves_objects_invExt _ _ _ hObjInv)]
+    exact Architecture.readReturnFrame_writeReturnFrame st2 tid _ tcb hTcb hObjInv
 
 /-- RA.B.8, `.call` (`.message`) — **through the reply arm**, per §3.5: a
 successful call leaves the caller `blockedOnReply` in every ordering, so

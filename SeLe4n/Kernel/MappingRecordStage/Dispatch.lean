@@ -641,6 +641,13 @@ theorem cancelRecvBusyReply_mappingStage (ctx : LabelingContext) (tid : SeLe4n.T
   · exact MappingStage.refl st
   · exact cancelReplyHolder_mappingStage _ _ _
 
+/-- **A donation through a notification keeps the mapping records**: it is the
+identity or a bind (`schedContextBind_mappingStage`). -/
+theorem maybeDonateSchedContext_mappingStage (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) : MappingStage st (maybeDonateSchedContext st n tid) :=
+  maybeDonateSchedContext_induct MappingStage st n tid (MappingStage.refl _)
+    (fun _ _ _ _ h => schedContextBind_mappingStage h)
+
 /-- **A receive that completes its bound notification keeps the mapping
 records**: the checked wait's consumption and the badge register. -/
 theorem completeSignalArm_mappingStage {ctx : LabelingContext} {tid : SeLe4n.ThreadId}
@@ -650,8 +657,8 @@ theorem completeSignalArm_mappingStage {ctx : LabelingContext} {tid : SeLe4n.Thr
   split at h
   · rename_i hW
     cases h
-    exact (MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW).trans
-      (writeReturnFrameToTcb_mappingStage _ _ _)
+    exact ((MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW).trans
+      (writeReturnFrameToTcb_mappingStage _ _ _)).trans (maybeDonateSchedContext_mappingStage _ _ _)
   · rename_i hW
     cases h
     exact MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW
@@ -800,16 +807,7 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
   case none.notificationWait.object notifId =>
     split at h
     · cases h; exact writeReturnFrameToTcb_mappingStage _ _ _
-    unfold completeSignalArm at h
-    split at h
-    · rename_i hW
-      cases h
-      exact (MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW).trans
-        (writeReturnFrameToTcb_mappingStage _ _ _)
-    · rename_i hW
-      cases h
-      exact MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW
-    · cases h
+    exact completeSignalArm_mappingStage h
   case none.replyRecv.object epId =>
     -- the reply skipped (an extra capability fails, or the reply answers no
     -- caller): the receive runs on the busy reply's cancel

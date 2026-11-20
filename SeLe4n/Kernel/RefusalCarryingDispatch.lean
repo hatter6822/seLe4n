@@ -516,8 +516,8 @@ def notificationWaitArmGeneralR (notifId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
   fun st =>
     match notificationWaitOnCore notifId tid executingCore st with
     | (st', .ok (some badge)) =>
-        .ok ((), Architecture.writeReturnFrameToTcb st' tid
-          (Architecture.badgeReturnFrame st' tid badge))
+        .ok ((), maybeDonateSchedContextFast (Architecture.writeReturnFrameToTcb st' tid
+          (Architecture.badgeReturnFrame st' tid badge)) notifId.val tid.val)
     | (st', .ok none) => .ok ((), st')
     | (st', .error e) => .error (e, st')
 
@@ -538,7 +538,9 @@ writes the same way; every other wait takes the specification's form. -/
               match ntfn.pendingBadge with
               | some badge =>
                   if waitConsumesInPlace st notifId tid then
-                    .ok ((), stageBadgeReturn (storeWaitConsumed st notifId tid) tid badge)
+                    .ok ((), maybeDonateSchedContextFast
+                      (stageBadgeReturn (storeWaitConsumed st notifId tid) tid badge)
+                      notifId.val tid.val)
                   else notificationWaitArmGeneralR notifId tid executingCore st
               | none =>
                   match lookupTcb st tid with
@@ -573,11 +575,11 @@ theorem notificationWaitArmGeneralR_eq (notifId : SeLe4n.ObjId) (tid : SeLe4n.Th
       RefusalCarrying.ofKernel (fun st =>
         match notificationWaitOnCore notifId tid executingCore st with
         | (st', .ok (some badge)) =>
-            .ok ((), Architecture.writeReturnFrameToTcb st' tid
-              (Architecture.badgeReturnFrame st' tid badge))
+            .ok ((), maybeDonateSchedContext (Architecture.writeReturnFrameToTcb st' tid
+              (Architecture.badgeReturnFrame st' tid badge)) notifId tid)
         | (st', .ok none) => .ok ((), st')
         | (_, .error e) => .error e) st := by
-  simp only [notificationWaitArmGeneralR, RefusalCarrying.ofKernel]
+  simp only [notificationWaitArmGeneralR, RefusalCarrying.ofKernel, maybeDonateSchedContextFast_eq]
   rcases hRun : notificationWaitOnCore notifId tid executingCore st with ⟨st', _ | _ | badge⟩
   · have hst := notificationWaitOnCore_error_state notifId tid executingCore st _
       (by rw [hRun])
@@ -609,7 +611,7 @@ theorem notificationWaitGatedR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId
         · next hG =>
           rw [notificationWaitOnCore_eq_impl]
           simp only [notificationWaitOnCoreImpl, hN, hB, hG, ↓reduceIte,
-            stageBadgeReturn_eq]
+            stageBadgeReturn_eq, maybeDonateSchedContextFast_eq]
         · exact hGen
       · next hB =>
         split
