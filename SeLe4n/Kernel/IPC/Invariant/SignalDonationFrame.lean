@@ -123,19 +123,18 @@ theorem notificationWaitCrossCoreDispatchChecked_consumed_schedLinkFrame
 
 /-- **The state `completeSignalArm` donates on keeps every scheduling link of
 the state it was handed**: the consumption, then the badge register. -/
-theorem completeSignalArm_donationPre_schedLinkFrame {ctx : LabelingContext}
-    {notifId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId}
-    {st st1 : SystemState} {badge : SeLe4n.Badge} (hInv : st.objects.invExt)
-    (h : notificationWaitCrossCoreDispatchChecked ctx notifId tid c st =
-      (st1, .ok (some badge))) :
+theorem completeSignalArm_donationPre_schedLinkFrame {notifId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st1 : SystemState}
+    {badge : SeLe4n.Badge} (hInv : st.objects.invExt)
+    (h : notificationWaitOnCore notifId tid c st = (st1, .ok (some badge))) :
     SchedLinkFrame st (Architecture.writeReturnFrameToTcb st1 tid
       (Architecture.badgeReturnFrame st1 tid badge)) :=
-  (notificationWaitCrossCoreDispatchChecked_consumed_schedLinkFrame hInv h).trans
+  (notificationWaitOnCore_consumed_schedLinkFrame hInv h).trans
     (SchedLinkFrame.writeReturnFrameToTcb _ _ _
       (by
         have := notificationWaitCrossCoreDispatch_preserves_objects_invExt notifId tid c st hInv
         unfold notificationWaitCrossCoreDispatch at this
-        rw [notificationWaitCrossCoreDispatchChecked_ok_inner h] at this
+        rw [h] at this
         exact this))
 
 /-- **The donation keeps the IPC bundle** on a state where the binding pair
@@ -153,28 +152,25 @@ theorem maybeDonateSchedContext_preserves_ipcInvariantFull (st : SystemState)
 
 /-- The state the consumption and the badge register leave keeps the object
 store's integrity. -/
-theorem completeSignalArm_donationPre_objects_invExt {ctx : LabelingContext}
-    {notifId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId}
-    {st st1 : SystemState} {badge : SeLe4n.Badge} (hInv : st.objects.invExt)
-    (h : notificationWaitCrossCoreDispatchChecked ctx notifId tid c st =
-      (st1, .ok (some badge))) :
+theorem completeSignalArm_donationPre_objects_invExt {notifId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st1 : SystemState}
+    {badge : SeLe4n.Badge} (hInv : st.objects.invExt)
+    (h : notificationWaitOnCore notifId tid c st = (st1, .ok (some badge))) :
     (Architecture.writeReturnFrameToTcb st1 tid
       (Architecture.badgeReturnFrame st1 tid badge)).objects.invExt := by
   have := notificationWaitCrossCoreDispatch_preserves_objects_invExt notifId tid c st hInv
   unfold notificationWaitCrossCoreDispatch at this
-  rw [notificationWaitCrossCoreDispatchChecked_ok_inner h] at this
+  rw [h] at this
   exact writeReturnFrameToTcb_preserves_objects_invExt _ _ _ this
 
 /-- **The completion's donation keeps the IPC bundle**, on the dispatch's
 pre-state facts: the bundle holds on the state the consumption and the badge
 register leave, the binding pair and the loan record hold on the state handed
 to the completion, and the receiver is not blocked on a reply there. -/
-theorem completeSignalArm_donation_preserves_ipcInvariantFull {ctx : LabelingContext}
-    {notifId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId}
-    {st st1 : SystemState} {badge : SeLe4n.Badge} (n : SeLe4n.ObjId)
-    (hObjInv : st.objects.invExt)
-    (h : notificationWaitCrossCoreDispatchChecked ctx notifId tid c st =
-      (st1, .ok (some badge)))
+theorem completeSignalArm_donation_preserves_ipcInvariantFull {notifId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st1 : SystemState}
+    {badge : SeLe4n.Badge} (n : SeLe4n.ObjId) (hObjInv : st.objects.invExt)
+    (h : notificationWaitOnCore notifId tid c st = (st1, .ok (some badge)))
     (hInv2 : ipcInvariantFull (Architecture.writeReturnFrameToTcb st1 tid
       (Architecture.badgeReturnFrame st1 tid badge)))
     (hBi : schedContextBindingBidirectional st) (hD : donationOwnerValid st)
