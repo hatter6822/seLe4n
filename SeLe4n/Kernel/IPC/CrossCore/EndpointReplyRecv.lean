@@ -1030,23 +1030,25 @@ theorem schedLockSet_replyRecvTransferOnCore_of_no_fault (endpointId : SeLe4n.Ob
 -- footprint's own arguments, so a consumer reaches for the shared lemma directly.
 
 
-/-- **The cores a reply-receive's signal completion may donate on**, read on the
-entry state: every core, when the receiver holds a bound notification; none
-otherwise.
+/-- **The core a reply-receive's signal completion may donate on**, read on the
+entry state: the receiver's home core, when it holds a bound notification;
+none otherwise.
 
-This is the one over-approximation in the arms' footprints, and it is forced:
 seL4-MCS `handleReplyRecv` runs `completeSignal`'s `maybeDonateSchedContext` on
-the state the reply left, and the reply may return the receiver's donated
-context (so the guard's "the receiver holds no context" turns true only after
-it) and may migrate the receiver back to the caller's core (so the home core
-the donation writes is the post-reply one).  The reply keeps the receiver's
-bound-notification code (`notificationsAndBindingsKept`), so a donation is only
-possible where this names every core
-(`replyRecvDonationCores_eq_allCores_of_completes`). -/
+the state the reply left, and the donation writes the receiver's home core
+(`schedContextBindWriteSet`).  The reply writes no thread's affinity — its
+donation return rewrites bindings and its migration moves a context's
+reservation, never a thread (`replyTransferOnCoreChecked_homeCoresKept`) — so
+the home core is read here, on the entry state, exactly.  The reply also keeps
+the receiver's bound-notification code (`notificationsAndBindingsKept`).  What
+the entry state does not settle without running the reply is the guard itself
+(the reply may return the receiver's donated context, turning "the receiver
+holds no context" true), so the core is named whenever a donation is possible
+(`replyRecvDonationCores_eq_home_of_completes`): one core, never more. -/
 def replyRecvDonationCores (st : SystemState) (receiver : SeLe4n.ThreadId) :
     List Concurrency.CoreId :=
   match st.getTcb? receiver with
-  | some t => if t.boundNotificationCode = 0 then [] else Concurrency.allCores
+  | some t => if t.boundNotificationCode = 0 then [] else [determineTargetCore st receiver]
   | none => []
 
 /-- **The `.replyRecv` arm's scheduler-domain footprint**: the arm runs either the

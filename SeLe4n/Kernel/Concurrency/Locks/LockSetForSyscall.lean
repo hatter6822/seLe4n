@@ -929,6 +929,22 @@ theorem lockSetForSyscall_receive_covers_boundNotification
   rw [hBound]
   exact LockSet.mem_insertOrMerge_write_self _ _
 
+/-- seL4-MCS `completeSignal`'s `maybeDonateSchedContext`: and the context a
+receive's completion donates (`receiveDonationContext?`). -/
+theorem lockSetForSyscall_receive_covers_donationContext
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (endpointId : ObjId) (S : LockSet) (s : SchedContextId)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hEp : ops.targetObject = some endpointId)
+    (hCtx : receiveDonationContext? st ops.caller ops.targetReply = some s)
+    (hDecl : lockSetForSyscall .receive ops st = some S) :
+    (schedContextLock s, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_receive_eq ops st caller endpointId hTcb hEp] at hDecl
+  cases hDecl
+  unfold lockSet_receiveCancellingHolder
+  rw [hCtx]
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
 /-- **WS-OD OD3.12**: and the queue-structure neighbour.
 
 A `.receive` either pops the endpoint's send queue -- relinking the popped
@@ -1046,6 +1062,27 @@ theorem lockSetForSyscall_replyRecv_eq
           ((boundSignalDonationContext? st ops.caller true).map fun s =>
             (schedContextLock s, .write))) := by
   simp only [lockSetForSyscall, hTcb, hEp, hRid, Option.bind_some, hAns, Option.map_some]
+
+/-- seL4-MCS `handleReplyRecv`'s `completeSignal`: and the context its
+completion donates, its guard read after the reply
+(`boundSignalDonationContext?` with `afterEarlierStep`; the superset is
+`replyRecvDonationContext_superset`). -/
+theorem lockSetForSyscall_replyRecv_covers_donationContext
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (endpointId : ObjId) (rid : ReplyId) (prevCaller : ThreadId) (S : LockSet)
+    (s : SchedContextId)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hEp : ops.targetObject = some endpointId)
+    (hRid : ops.targetReply = some rid)
+    (hAns : replyAnsweredCaller? st rid = some prevCaller)
+    (hCtx : boundSignalDonationContext? st ops.caller true = some s)
+    (hDecl : lockSetForSyscall .replyRecv ops st = some S) :
+    (schedContextLock s, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_replyRecv_eq ops st caller endpointId rid prevCaller
+    hTcb hEp hRid hAns] at hDecl
+  cases hDecl
+  rw [hCtx]
+  exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-RR RR7.11**: `.replyRecv`'s three unconditional writes — its own TCB
 (it replies, then receives), the answered caller's, and the endpoint. -/

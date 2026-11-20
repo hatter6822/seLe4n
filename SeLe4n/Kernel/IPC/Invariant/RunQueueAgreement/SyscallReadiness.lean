@@ -1449,7 +1449,7 @@ theorem replyTransferOnCoreChecked_keeps_receiveCompletesSignal {ctx : LabelingC
   obtain ⟨t, hT, hReady⟩ := (receiverIpcReady_iff st tid).mp hRdy
   have hTo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
   -- the replier's TCB survives with its bound-notification code
-  have hB := K.2 tid.toObjId
+  have hB := K.2.1 tid.toObjId
   rw [hTo] at hB
   unfold receiveCompletesSignal at hSig
   rw [hT] at hSig

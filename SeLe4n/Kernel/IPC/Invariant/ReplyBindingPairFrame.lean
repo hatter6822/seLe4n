@@ -436,4 +436,361 @@ theorem replyTransferOnCoreChecked_bindingPair {ctx : LabelingContext}
         exact (hE.of_scIdLinksAgree (replyTransferCaps_scIdLinksAgree st replier callerTid grant
           hI hX)).of_scIdLinksAgree (stageDeliveredMessage_scIdLinksAgree _ _ _ hIX)
 
+/-! ### The home cores across a reply
+
+seL4-MCS `handleReplyRecv`'s donation writes the receiver's home core: the core
+its affinity names (`determineTargetCore`).  No leg of the reply writes a
+thread's affinity — the return arms rewrite bindings and the migration moves a
+context's reservation, never a thread — so the home core read on the entry
+state is the one the donation writes (`replyTransferOnCoreChecked_homeCoresKept`). -/
+
+/-- **Every thread keeps its home core.** -/
+def homeCoresKept (st st' : SystemState) : Prop :=
+  ∀ x : SeLe4n.ThreadId, determineTargetCore st' x = determineTargetCore st x
+
+namespace homeCoresKept
+
+theorem refl (st : SystemState) : homeCoresKept st st := fun _ => rfl
+
+theorem trans {a b c : SystemState} (h₁ : homeCoresKept a b) (h₂ : homeCoresKept b c) :
+    homeCoresKept a c := fun x => (h₂ x).trans (h₁ x)
+
+theorem of_schedAuxAgree {st st' : SystemState} (h : schedAuxAgree st st') :
+    homeCoresKept st st' := h.determineTargetCore_eq
+
+theorem of_schedLinkFrame {st st' : SystemState} (h : SchedLinkFrame st st') :
+    homeCoresKept st st' := of_schedAuxAgree h.aux
+
+theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
+    homeCoresKept st st' := of_schedAuxAgree (schedAuxAgree.of_objects_eq h)
+
+theorem of_offRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st) :
+    homeCoresKept st st' := determineTargetCore_of_objectsAgreeOffRunLinks h
+
+theorem of_offSchedulerLinks {st st' : SystemState} (h : st'.objectsAgreeOffSchedulerLinks st) :
+    homeCoresKept st st' :=
+  of_schedAuxAgree fun o => proj_eq_of_map_eq _ _ (fun x => by cases x <;> rfl) (h o)
+
+/-- A step keeping every thread's placement keeps every home core. -/
+theorem of_placement {st st' : SystemState}
+    (h : ∀ x, (st'.getTcb? x).map TCB.placement = (st.getTcb? x).map TCB.placement) :
+    homeCoresKept st st' := fun x =>
+  determineTargetCore_congr st st' x (TCB.map_cpuAffinity_of_placement (h x))
+
+/-- A thread rewritten in its slot keeping its budget and affinity. -/
+theorem updateTcb (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt)
+    (hf : ∀ x, (f x).timeoutBudget = x.timeoutBudget ∧ (f x).cpuAffinity = x.cpuAffinity) :
+    homeCoresKept st (st.updateTcb t f) :=
+  of_schedAuxAgree (schedAuxAgree.updateTcb st t f hInv hf)
+
+end homeCoresKept
+
+/-- **The single-core reply keeps every home core**: the delivery store, a
+link-only wake and the reply-frame removal. -/
+theorem endpointReply_homeCoresKept
+    (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    homeCoresKept st st' := by
+  unfold endpointReply at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st target with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+    cases hIpc : tcb.ipcState with
+    | ready => simp [hIpc] at hStep
+    | blockedOnSend _ => simp [hIpc] at hStep
+    | blockedOnReceive _ => simp [hIpc] at hStep
+    | blockedOnNotification _ => simp [hIpc] at hStep
+    | blockedOnCall _ => simp [hIpc] at hStep
+    | blockedOnReply epId replyTarget =>
+      simp only [hIpc] at hStep
+      split at hStep
+      · cases hMsg : storeTcbIpcStateAndMessage st target .ready (some msg) with
+        | error e => simp [hMsg] at hStep
+        | ok st'' =>
+          simp only [hMsg] at hStep
+          have h2 : homeCoresKept st (ensureRunnable st'' target) :=
+            (homeCoresKept.of_schedLinkFrame
+              (SchedLinkFrame.storeTcbIpcStateAndMessage hObjInv hMsg)).trans
+              (homeCoresKept.of_offRunLinks (ensureRunnable_objectsAgreeOffRunLinks st'' target))
+          have hObjInvMid : (ensureRunnable st'' target).objects.invExt := by
+            apply ensureRunnable_objects_invExt
+            exact storeTcbIpcStateAndMessage_preserves_objects_invExt st st'' target .ready
+              (some msg) hObjInv hMsg
+          cases hRO : tcb.replyObject with
+          | none =>
+            simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+            rw [← hStep]
+            exact h2.trans (homeCoresKept.of_offRunLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _))
+          | some rid =>
+            simp only [hRO] at hStep
+            obtain ⟨st2, hRm, rfl⟩ := removeCallerReplyFrame_unlink_ok hStep
+            exact (h2.trans (homeCoresKept.of_schedLinkFrame
+              (SchedLinkFrame.removeCallerReplyFrame hObjInvMid hRm))).trans
+              (homeCoresKept.of_offRunLinks
+                (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ _ _))
+      · simp at hStep
+
+theorem endpointReplyOnCore_homeCoresKept
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (c : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    homeCoresKept st (endpointReplyOnCore replier target msg c st).1 := by
+  rcases endpointReplyOnCore_post_agrees replier target msg c st hObjInv with
+    hEq | ⟨expected, r1, hR, hA⟩
+  · exact homeCoresKept.of_objects_eq (by rw [hEq])
+  · exact (endpointReply_homeCoresKept st r1 expected target msg hObjInv hR).trans
+      (homeCoresKept.of_offSchedulerLinks hA.objects)
+
+/-- **The donated context's return keeps every home core**, on each of its four
+arms: the returns rewrite bindings, never an affinity. -/
+theorem applyReplyDonationOnCore_homeCoresKept (st st' : SystemState) (rid : SeLe4n.ReplyId)
+    (targetVtid : SeLe4n.ValidThreadId) (ownerHome : CoreId) (hObjInv : st.objects.invExt)
+    (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
+    homeCoresKept st st' := by
+  rcases applyReplyDonationOnCore_objects_frame st st' rid targetVtid ownerHome h with
+    ⟨-, hEq⟩ | ⟨scId, n, s1, -, -, -, hRet, hA⟩ | ⟨scId, holder, n, s1, hRet, hA⟩ |
+    ⟨scId, n, -, -, -, hSev⟩
+  · exact homeCoresKept.of_objects_eq hEq
+  · exact (homeCoresKept.of_placement fun x =>
+      returnUnheldSchedContext_getTcb?_placement_eq hObjInv hRet x).trans
+      (homeCoresKept.of_offSchedulerLinks hA)
+  · exact (homeCoresKept.of_placement fun x =>
+      returnDonatedSchedContext_getTcb?_placement_eq _ _ _ _ _ hObjInv _ hRet x).trans
+      (homeCoresKept.of_offSchedulerLinks hA)
+  · exact homeCoresKept.of_schedLinkFrame (SchedLinkFrame.severUnheldSchedContext hObjInv hSev)
+
+/-- **The cross-core reply dispatch keeps every home core**: the reply leg, the
+donation return and the priority-inheritance revert. -/
+theorem endpointReplyCrossCoreDispatch_homeCoresKept
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (c : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    homeCoresKept st (endpointReplyCrossCoreDispatch replier target msg c st).1 := by
+  have hRep := endpointReplyOnCore_homeCoresKept replier target msg c st hObjInv
+  have hInv1 := endpointReplyOnCore_preserves_objects_invExt replier target msg c st hObjInv
+  unfold endpointReplyCrossCoreDispatch
+  cases hRepEq : endpointReplyOnCore replier target msg c st with
+  | mk st1 res1 =>
+      rw [hRepEq] at hRep hInv1
+      simp only at hRep hInv1 ⊢
+      cases res1 with
+      | error e => exact .refl st
+      | ok replySgi? =>
+          simp only
+          split
+          · split
+            · split
+              · exact hRep.trans (homeCoresKept.of_schedLinkFrame
+                  (SchedLinkFrame.propagatePip _ _ _ _ hInv1))
+              · split
+                · exact .refl st
+                · split
+                  · exact .refl st
+                  · rename_i st2 hRet
+                    exact (hRep.trans (applyReplyDonationOnCore_homeCoresKept _ _ _ _ _ hInv1
+                      hRet)).trans (homeCoresKept.of_schedLinkFrame (SchedLinkFrame.propagatePip _ _ _ _
+                        (applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ hInv1 hRet)))
+            · exact .refl st
+          · split
+            · exact hRep
+            · split
+              · exact .refl st
+              · split
+                · exact .refl st
+                · rename_i st2 hRet
+                  exact hRep.trans (applyReplyDonationOnCore_homeCoresKept _ _ _ _ _ hInv1 hRet)
+
+theorem endpointReplyCrossCoreDispatchChecked_homeCoresKept (ctx : LabelingContext)
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (c : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    homeCoresKept st (endpointReplyCrossCoreDispatchChecked ctx replier target msg c st).1 := by
+  unfold endpointReplyCrossCoreDispatchChecked
+  split
+  · exact endpointReplyCrossCoreDispatch_homeCoresKept replier target msg c st hObjInv
+  · exact .refl st
+
+/-- The reply's capability transfer writes CNodes alone. -/
+theorem replyTransferCaps_homeCoresKept (pre : SystemState) (replier caller : SeLe4n.ThreadId)
+    (grant : Bool) {st st' : SystemState} {summary : CapTransferSummary}
+    (hObjInv : st.objects.invExt)
+    (h : replyTransferCaps pre replier caller grant st = .ok (summary, st')) :
+    homeCoresKept st st' := fun x => by
+  unfold replyTransferCaps at h
+  exact receiveTransferCaps_determineTargetCore_eq x hObjInv h
+
+/-- The delivered message's frame is a write of the answered thread's registers. -/
+theorem stageDeliveredMessage_homeCoresKept (st : SystemState) (tid : SeLe4n.ThreadId)
+    (capInfo : Nat) (hObjInv : st.objects.invExt) :
+    homeCoresKept st (Architecture.stageDeliveredMessage st tid capInfo) := by
+  unfold Architecture.stageDeliveredMessage
+  cases st.getTcb? tid with
+  | none => exact .refl st
+  | some tcb =>
+    by_cases hReady : tcb.ipcState = .ready
+    · simp only [hReady, if_pos]
+      cases tcb.pendingMessage with
+      | none => exact .refl st
+      | some msg => exact homeCoresKept.updateTcb st tid _ hObjInv (fun _ => ⟨rfl, rfl⟩)
+    · simp only [hReady, if_false]; exact .refl st
+
+theorem faultReplyApplyOnCore_homeCoresKept (st : SystemState) (faulted : SeLe4n.ThreadId)
+    (o : Architecture.FaultReplyOutcome) (hObjInv : st.objects.invExt) :
+    homeCoresKept st (faultReplyApplyOnCore st faulted o) := by
+  cases o with
+  | restart frame => exact homeCoresKept.updateTcb st faulted _ hObjInv (fun _ => ⟨rfl, rfl⟩)
+  | abandon =>
+    show homeCoresKept st (faultAbandonOnCore st faulted _)
+    unfold faultAbandonOnCore
+    exact (homeCoresKept.of_offRunLinks
+      (removeRunnableOnCore_objectsAgreeOffRunLinks st faulted _)).trans
+      (homeCoresKept.updateTcb _ faulted _
+        (removeRunnableOnCore_objects_invExt st faulted _ hObjInv) (fun _ => ⟨rfl, rfl⟩))
+
+theorem faultReplyOnCore_homeCoresKept (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
+    (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)
+    (hObjInv : st.objects.invExt) :
+    homeCoresKept st (faultReplyOnCore replier faulted mi regs c st).1 := by
+  have hE := endpointReplyCrossCoreDispatch_homeCoresKept replier faulted IpcMessage.empty c st
+    hObjInv
+  have hI := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier faulted
+    IpcMessage.empty c st hObjInv
+  unfold faultReplyOnCore
+  split
+  · exact .refl st
+  split
+  · exact .refl st
+  dsimp only
+  split
+  · exact .refl st
+  · rename_i stR sgi hR
+    rw [hR] at hE hI
+    exact hE.trans (faultReplyApplyOnCore_homeCoresKept _ _ _ hI)
+
+/-- **The checked reply transfer keeps every home core**, on both of its
+branches. -/
+theorem replyTransferOnCoreChecked_homeCoresKept {ctx : LabelingContext}
+    {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo}
+    {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool} {c : CoreId}
+    {st st' : SystemState} (hObjInv : st.objects.invExt)
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st = .ok ((), st')) :
+    homeCoresKept st st' := by
+  unfold replyTransferOnCoreChecked at h
+  split at h
+  · have hF := faultReplyOnCore_homeCoresKept replier callerTid mi regs c st hObjInv
+    revert h hF
+    generalize faultReplyOnCore replier callerTid mi regs c st = r
+    obtain ⟨s, res⟩ := r
+    cases res with
+    | error _ => intro h _; cases h
+    | ok _ => intro h hF; cases h; exact hF
+  · have hE := endpointReplyCrossCoreDispatchChecked_homeCoresKept ctx replier callerTid msg c st
+      hObjInv
+    have hI : (endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st).1.objects.invExt := by
+      unfold endpointReplyCrossCoreDispatchChecked
+      split
+      · exact endpointReplyCrossCoreDispatch_preserves_objects_invExt _ _ _ _ _ hObjInv
+      · exact hObjInv
+    revert h hE hI
+    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st = r
+    obtain ⟨s, res⟩ := r
+    cases res with
+    | error _ => intro h _ _; cases h
+    | ok _ =>
+      intro h hE hI
+      simp only [] at h
+      cases hX : replyTransferCaps st replier callerTid grant s with
+      | error _ => rw [hX] at h; cases h
+      | ok p =>
+        obtain ⟨summary, sX⟩ := p
+        rw [hX] at h
+        cases h
+        have hIX : sX.objects.invExt := by
+          unfold replyTransferCaps at hX
+          obtain ⟨stR, caps, hO, -, -, hOr⟩ := receiveTransferCaps_frame hX
+          rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
+          · exact hO ▸ hI
+          · exact ipcUnwrapCaps_preserves_objects_invExt caps none rtcb slot? stR sX summary
+              (hO ▸ hI) hU
+        exact (hE.trans (replyTransferCaps_homeCoresKept st replier callerTid grant hI hX)).trans
+          (stageDeliveredMessage_homeCoresKept _ _ _ hIX)
+
+/-! ### The notifications' context words across a reply -/
+
+/-- **A step that keeps, and creates, no notification keeps every context
+word.** -/
+theorem ntfnContextsAgree.of_notificationsAndBindingsKept {st st' : SystemState}
+    (h : notificationsAndBindingsKept st st') : ntfnContextsAgree st st' := by
+  intro oid
+  by_cases hN : ∃ n, st'.objects[oid]? = some (.notification n)
+  · obtain ⟨n, hn⟩ := hN
+    rw [hn, h.2.2 oid n hn]
+  · have hN' : ¬ ∃ m, st.objects[oid]? = some (.notification m) :=
+      fun ⟨m, hm⟩ => hN ⟨m, h.1 oid m hm⟩
+    have e : ∀ (o : Option KernelObject), (¬ ∃ m, o = some (.notification m)) →
+        ntfnContextOf o = none := by
+      intro o ho
+      cases o with
+      | none => rfl
+      | some o => cases o <;> first | rfl | exact absurd ⟨_, rfl⟩ ho
+    rw [e _ hN, e _ hN']
+
+/-- States agreeing on every context word name the same context for every
+notification. -/
+theorem notificationContext?_congr {st st' : SystemState} (h : ntfnContextsAgree st st')
+    (n : SeLe4n.ObjId) : notificationContext? st' n = notificationContext? st n := by
+  have e := h.getNotification?_schedContext n
+  unfold notificationContext?
+  cases h1 : st'.getNotification? n <;> cases h2 : st.getNotification? n <;>
+    rw [h1, h2] at e <;> simp_all
+
+/-- **The checked reply transfer keeps the object store's extension invariant**,
+on both of its branches. -/
+theorem replyTransferOnCoreChecked_objects_invExt {ctx : LabelingContext}
+    {replier callerTid : SeLe4n.ThreadId} {mi : MessageInfo}
+    {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool} {c : CoreId}
+    {st st' : SystemState} (hObjInv : st.objects.invExt)
+    (h : replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c st = .ok ((), st')) :
+    st'.objects.invExt := by
+  unfold replyTransferOnCoreChecked at h
+  split at h
+  · have hF := faultReplyOnCore_preserves_objects_invExt replier callerTid mi regs c st hObjInv
+    revert h hF
+    generalize faultReplyOnCore replier callerTid mi regs c st = r
+    obtain ⟨s, res⟩ := r
+    cases res with
+    | error _ => intro h _; cases h
+    | ok _ => intro h hF; cases h; exact hF
+  · have hI : (endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st).1.objects.invExt := by
+      unfold endpointReplyCrossCoreDispatchChecked
+      split
+      · exact endpointReplyCrossCoreDispatch_preserves_objects_invExt _ _ _ _ _ hObjInv
+      · exact hObjInv
+    revert h hI
+    generalize endpointReplyCrossCoreDispatchChecked ctx replier callerTid msg c st = r
+    obtain ⟨s, res⟩ := r
+    cases res with
+    | error _ => intro h _; cases h
+    | ok _ =>
+      intro h hI
+      simp only [] at h
+      cases hX : replyTransferCaps st replier callerTid grant s with
+      | error _ => rw [hX] at h; cases h
+      | ok p =>
+        obtain ⟨summary, sX⟩ := p
+        rw [hX] at h
+        cases h
+        have hIX : sX.objects.invExt := by
+          unfold replyTransferCaps at hX
+          obtain ⟨stR, caps, hO, -, -, hOr⟩ := receiveTransferCaps_frame hX
+          rcases hOr with rfl | ⟨rtcb, slot?, hU⟩
+          · exact hO ▸ hI
+          · exact ipcUnwrapCaps_preserves_objects_invExt caps none rtcb slot? stR sX summary
+              (hO ▸ hI) hU
+        exact stageDeliveredMessage_objects_invExt _ _ _ hIX
+
 end SeLe4n.Kernel

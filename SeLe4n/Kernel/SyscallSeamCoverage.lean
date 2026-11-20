@@ -27,6 +27,7 @@ import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
 import SeLe4n.Kernel.InterruptEntry
 import SeLe4n.Kernel.IPC.Invariant.SignalDonationFrame
 import SeLe4n.Kernel.IPC.Invariant.ReplySignalFrame
+import SeLe4n.Kernel.IPC.Invariant.ReplyBindingPairFrame
 
 namespace SeLe4n.Kernel
 
@@ -277,16 +278,16 @@ theorem replyTransferOnCore_objects_invExt {replier callerTid : SeLe4n.ThreadId}
         exact stageDeliveredMessage_objects_invExt sX callerTid summary.capInfo
           (receiveTransferCaps_objects_invExt hE hU)
 
-/-- **The reply-receive's donation cores are a superset of the donation's**: a
-reply that leaves the receive's test true (`receiveCompletesSignal`) found the
-receiver bound to a notification on the entry state too, since the reply keeps
-every binding code (`notificationsAndBindingsKept`), so the footprint names
-every core (`replyRecvDonationCores`). -/
-theorem replyRecvDonationCores_eq_allCores_of_completes {ctx : LabelingContext}
+/-- **A reply that leaves the receive's test true kept the receiver's binding**:
+the receiver's TCB on the entry state names the notification it names after
+the reply, since the reply keeps every binding code
+(`notificationsAndBindingsKept`). -/
+theorem replyRecv_boundCode_of_completes {ctx : LabelingContext}
     {st st1 : SystemState} {tid : SeLe4n.ThreadId}
     (hK : notificationsAndBindingsKept st st1)
     (hSig : receiveCompletesSignal ctx st1 tid = true) :
-    replyRecvDonationCores st tid = Concurrency.allCores := by
+    ∃ t t1, st.getTcb? tid = some t ∧ st1.getTcb? tid = some t1 ∧
+      t.boundNotificationCode = t1.boundNotificationCode ∧ t1.boundNotificationCode ≠ 0 := by
   unfold receiveCompletesSignal at hSig
   cases hT1 : st1.getTcb? tid with
   | none => rw [hT1] at hSig; cases hSig
@@ -294,9 +295,8 @@ theorem replyRecvDonationCores_eq_allCores_of_completes {ctx : LabelingContext}
     rw [hT1] at hSig
     simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hSig
     have hc := hSig.1.1
-    have hB := hK.2 tid.toObjId
+    have hB := hK.2.1 tid.toObjId
     rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hT1] at hB
-    unfold replyRecvDonationCores
     cases hO : st.objects[tid.toObjId]? with
     | none =>
       rw [hO] at hB
@@ -310,15 +310,64 @@ theorem replyRecvDonationCores_eq_allCores_of_completes {ctx : LabelingContext}
         | exact absurd hB.1 hc
         | skip
       rename_i t
-      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hO]
-      simp only [← hB.1, hc, ↓reduceIte]
+      exact ⟨t, t1, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO, rfl, hB.1.symm, hc⟩
+
+/-- **The reply-receive's donation core is the receiver's home core** whenever
+the receive completes a signal (`replyRecv_boundCode_of_completes`). -/
+theorem replyRecvDonationCores_eq_home_of_completes {ctx : LabelingContext}
+    {st st1 : SystemState} {tid : SeLe4n.ThreadId}
+    (hK : notificationsAndBindingsKept st st1)
+    (hSig : receiveCompletesSignal ctx st1 tid = true) :
+    replyRecvDonationCores st tid = [determineTargetCore st tid] := by
+  obtain ⟨t, t1, hT, -, hE, hc⟩ := replyRecv_boundCode_of_completes hK hSig
+  unfold replyRecvDonationCores
+  rw [hT]
+  simp only [hE, hc, ↓reduceIte]
+
+/-- **The reply-receive's donated context is in its object-domain footprint**:
+the context the completion's donation writes (`signalDonationContext?`, read on
+the state the completion hands it) is the context the receiver's bound
+notification names on the entry state (`boundSignalDonationContext?` with its
+guard read after the reply), which the footprint locks.  The reply creates,
+deletes and rewrites no notification (`notificationsAndBindingsKept`), and the
+consumption and the badge frame keep every notification's context word
+(`completeSignalArm_donationPre_ntfnContexts`). -/
+theorem replyRecvDonationContext_superset {ctx : LabelingContext}
+    {tid prevCaller : SeLe4n.ThreadId} {mi : MessageInfo} {regs : Array SeLe4n.RegValue}
+    {msg : IpcMessage} {grant : Bool} {c : CoreId} {st st1 st2 : SystemState}
+    {badge : SeLe4n.Badge} {s : SeLe4n.SchedContextId} (hObjInv : st.objects.invExt)
+    (hR : replyTransferOnCoreChecked ctx tid prevCaller mi regs msg grant c st = .ok ((), st1))
+    (hSig : receiveCompletesSignal ctx st1 tid = true)
+    (hW : notificationWaitCrossCoreDispatchChecked ctx (receiverBoundNotification st1 tid) tid c
+      st1 = (st2, .ok (some badge)))
+    (hD : signalDonationContext? (Architecture.writeReturnFrameToTcb st2 tid
+      (Architecture.badgeReturnFrame st2 tid badge)) (receiverBoundNotification st1 tid) tid
+        = some s) :
+    Concurrency.boundSignalDonationContext? st tid true = some s := by
+  have hK := notificationsAndBindingsKept.of_replyTransferOnCoreChecked hObjInv hR
+  have hObj1 := replyTransferOnCoreChecked_objects_invExt hObjInv hR
+  have hA := (ntfnContextsAgree.of_notificationsAndBindingsKept hK).trans
+    (completeSignalArm_donationPre_ntfnContexts hObj1
+      (notificationWaitCrossCoreDispatchChecked_ok_inner hW))
+  have hN := notificationContext?_of_signalDonationContext? hD
+  rw [notificationContext?_congr hA] at hN
+  obtain ⟨t, t1, hT, hT1, hE, hc⟩ := replyRecv_boundCode_of_completes hK hSig
+  unfold Concurrency.boundSignalDonationContext? Concurrency.receiverBoundNotification?
+  rw [hT]
+  unfold receiverBoundNotification at hN
+  rw [hT1] at hN
+  obtain ⟨k, hk⟩ := Nat.exists_eq_succ_of_ne_zero hc
+  simp only [Option.bind_some, TCB.boundNotification, hE, hk, SeLe4n.ObjId.ofOptCode,
+    ↓reduceIte, Nat.add_sub_cancel] at hN ⊢
+  exact hN
 
 /-- **A reply-receive whose receive completes its bound notification is covered by
 the arm's footprint**: the reply leg is confined to its own write set and
 replenish cores, which the arm's footprint names, the completion and the badge
 frame leave the scheduler alone, and the completion's donation
-(`maybeDonateSchedContext`) writes cores the arm names on every core
-(`replyRecvDonationCores_eq_allCores_of_completes`). -/
+(`maybeDonateSchedContext`) writes the receiver's home core, which no step
+before it moves (`replyTransferOnCoreChecked_homeCoresKept`) and the arm names
+(`replyRecvDonationCores_eq_home_of_completes`). -/
 theorem replyRecvCompletesSignalArm_coversWrites (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage) (grant : Bool)
@@ -331,6 +380,7 @@ theorem replyRecvCompletesSignalArm_coversWrites (ctx : LabelingContext)
     footprintCoversWrites S st st' := by
   obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases hStep
   have hK := notificationsAndBindingsKept.of_replyTransferOnCoreChecked hObjInv hR
+  have hHK := replyTransferOnCoreChecked_homeCoresKept hObjInv hR
   have hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs :=
     LockSet.ofList?_pairs hS ▸ schedFootprintOfCores_contains_objStore_write _ _
   rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx receiver prevCaller _ _ _ _ e
@@ -352,10 +402,22 @@ theorem replyRecvCompletesSignalArm_coversWrites (ctx : LabelingContext)
     (footprintCoversWrites_of_scheduler_eq S hTable
       (by rw [Architecture.writeReturnFrameToTcb_scheduler_eq]; exact hS2))
     (maybeDonateSchedContext_coversWrites S _ _ receiver
-      (completeSignalArm_donationPre_objects_invExt hObj1 hW') hTable fun d _ => ?_))
+      (completeSignalArm_donationPre_objects_invExt hObj1 hW') hTable fun d hd => ?_))
+  -- The donation writes the receiver's home core on the state the completion
+  -- hands it, which is its home core on the entry state: neither the reply
+  -- nor the consumption nor the badge frame writes an affinity.
+  have hHome : determineTargetCore (Architecture.writeReturnFrameToTcb st2 receiver
+      (Architecture.badgeReturnFrame st2 receiver badge)) receiver
+        = determineTargetCore st receiver :=
+    (hHK.trans
+      (homeCoresKept.of_schedLinkFrame
+        (completeSignalArm_donationPre_schedLinkFrame hObj1 hW'))) receiver
   have hAll : d ∈ replyRecvDonationCores st receiver := by
-    rw [replyRecvDonationCores_eq_allCores_of_completes hK hSig1]
-    exact Concurrency.mem_allCores d
+    rw [replyRecvDonationCores_eq_home_of_completes hK hSig1, ← hHome]
+    unfold signalDonationCores at hd
+    split at hd
+    · exact hd
+    · cases hd
   rw [LockSet.ofList?_pairs hS]
   unfold schedLockSet_replyRecvArmOnCore
   exact ⟨(mem_schedFootprintOfCores_runQueue_iff _ _ d).mpr

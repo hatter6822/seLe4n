@@ -11157,6 +11157,16 @@ open SeLe4n.Kernel.Concurrency
 #check @schedLockSet_replyRecvTransferOnCore_subset_arm
 #check @schedLockSet_replyRecvArmOnCore_coversTransfer
 #check @lockSetForSyscall_replyRecv_covers_boundNotification
+#check @lockSetForSyscall_replyRecv_covers_donationContext
+#check @lockSetForSyscall_receive_covers_donationContext
+#check @replyTransferOnCoreChecked_homeCoresKept
+#check @replyTransferOnCoreChecked_objects_invExt
+#check @replyRecv_boundCode_of_completes
+#check @replyRecvDonationCores_eq_home_of_completes
+#check @replyRecvDonationContext_superset
+#check @ntfnContextsAgree.of_notificationsAndBindingsKept
+#check @notificationContext?_congr
+#check @notificationsBackward_of_kindPreservingAt
 #check @endpointReplyRecvCheckedArmR_eq_general
 #check @endpointReplyRecvLongCheckedArmR_eq_general
 #check @replyRecvSignalArmR
