@@ -1285,18 +1285,6 @@ theorem receiveReturnSchedContext_of_fires_false {blocks : Bool} {st : SystemSta
           simpa [h0] using h
         exact maybeReturnSchedContextRunning_of_guard_false hG
 
-/-- **A receiver with no bound notification returns nothing**: the receive's
-return is the identity on it (the in-place forms' premise). -/
-theorem receiveReturnSchedContext_of_unbound {blocks : Bool} {st : SystemState}
-    {tid : SeLe4n.ThreadId} {t : TCB} (hT : st.objects[tid.toObjId]? = some (.tcb t))
-    (h0 : t.boundNotificationCode = 0) :
-    receiveReturnSchedContext blocks st tid = st := by
-  unfold receiveReturnSchedContext
-  cases blocks with
-  | false => rfl
-  | true =>
-    have hT' : st.getTcb? tid = some t := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
-    simp only [↓reduceIte, hT', h0]
 
 /-- **Every TCB the receive's return was handed is still there**, its binding
 codes cleared or not. -/

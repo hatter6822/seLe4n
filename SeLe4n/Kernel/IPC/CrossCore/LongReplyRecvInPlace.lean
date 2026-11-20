@@ -151,18 +151,33 @@ theorem ipcBufferReadsAgree_storeReceiveBlock (st : SystemState) (epId : SeLe4n.
     (fun _ => ⟨rfl, rfl⟩) h3).trans
     (a3.trans (a2.trans a1))
 
+/-- **The receive's context return keeps every read**: it clears a thread's
+binding codes and rewrites a context, never a VSpace root, a buffer address, a
+frame, a CNode or the machine. -/
+theorem ipcBufferReadsAgree_receiveReturnSchedContext (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hNo : st.objects.noResizeDue) :
+    ipcBufferReadsAgree (receiveReturnSchedContext blocks st tid) st := by
+  refine ⟨fun x => ?_, receiveReturnSchedContext_machine blocks st tid⟩
+  rcases receiveReturnSchedContext_returnAgree blocks st tid hNo x with e | ⟨o, o', h0, h1, r⟩
+  · rw [e]
+  · rw [h0, h1]
+    rcases r with rfl | ⟨t, rfl, rfl⟩ | ⟨_, _, rfl, rfl⟩ <;> rfl
+
 theorem ipcBufferReadsAgree_storeReplyRecvBlockReady (st : SystemState) (c tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (tailCode : Nat) (core : CoreId)
     (hNo : st.objects.noResizeDue) :
     ipcBufferReadsAgree (storeReplyRecvBlockReady st c tid rid epId tailCode core) st := by
   unfold storeReplyRecvBlockReady
-  have h1 := storeReplyRendezvousReady_noResizeDue st c tid rid hNo
+  rw [receiveReturnSchedContextFast_eq]
+  have h0 := storeReplyRendezvousReady_noResizeDue st c tid rid hNo
+  have h1 := receiveReturnSchedContext_noResizeDue true _ tid h0
   have h2 := storeReceiveBlock_noResizeDue _ epId tid tailCode (rid.val + 1) h1
   have h3 := removeRunnableOnCore_noResizeDue _ tid core h2
   exact (ipcBufferReadsAgree_propagatePipChainCrossCore _ tid core h3).trans
     ((ipcBufferReadsAgree_removeRunnableOnCore _ tid core).trans
       ((ipcBufferReadsAgree_storeReceiveBlock _ epId tid tailCode _ h1).trans
-        (ipcBufferReadsAgree_storeReplyRendezvousReady st c tid rid hNo)))
+        ((ipcBufferReadsAgree_receiveReturnSchedContext true _ tid h0).trans
+          (ipcBufferReadsAgree_storeReplyRendezvousReady st c tid rid hNo))))
 
 /-- **The blocking long reply-receive, delivered from the registers and the
 replier's buffer**: the reply's writes, the server's block and priority walk,
@@ -196,8 +211,9 @@ theorem replyRecvOnCore_blocks_deliveredLong (st : SystemState) (epId : SeLe4n.O
     (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
     Architecture.stageDeliveredMessage (Architecture.stageDeliveredMessage
         (PriorityInheritance.propagatePipChainCrossCore
-          (removeRunnableOnCore (storeReceiveBlock (storeReplyRendezvous st c tid rid
-            { registers := longReplyRecvRegs rf st tid len, badge := badge }) epId tid
+          (removeRunnableOnCore (storeReceiveBlock (receiveReturnSchedContext true
+            (storeReplyRendezvous st c tid rid
+              { registers := longReplyRecvRegs rf st tid len, badge := badge }) tid) epId tid
             ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1 c 0) tid 0 =
       performReplyRecvBlockDeliveredLong st c tid rid epId ep.recvTailCode rf len badge core := by
   have hNo := replyWakesInPlace_noResizeDue hG
@@ -205,19 +221,36 @@ theorem replyRecvOnCore_blocks_deliveredLong (st : SystemState) (epId : SeLe4n.O
     simp only [replyWakesInPlace, Bool.and_eq_true] at hG
     exact hG.1.1.1.2
   have hCT : c.toObjId ≠ tid.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e).symm
-  have h1 := storeReplyRendezvousReady_noResizeDue st c tid rid hNo
+  have h0 := storeReplyRendezvousReady_noResizeDue st c tid rid hNo
+  have h1 := receiveReturnSchedContext_noResizeDue true _ tid h0
   have h3 := removeRunnableOnCore_noResizeDue _ tid core
     (storeReceiveBlock_noResizeDue _ epId tid ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid)) h1)
-  obtain ⟨hE1, ⟨rt1, hR1, hA1, hB1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid
+  obtain ⟨hE0, ⟨rt0, hR0, hA0, -⟩, hG0⟩ := storeReplyRendezvous_receiveGuard st c tid rid
     { registers := longReplyRecvRegs rf st tid len, badge := badge } ct rp
     epId ep rt hNo hT hFC hRp hNe hE hR hA hEnq hFree hStash hRec
+  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := receiveReturnSchedContext_receiveGuard true _ tid
+    (storeReplyRendezvous_noResizeDue _ _ _ _ _ hNo) hE0 hR0 hA0 hG0
   obtain ⟨t, hT1, hB⟩ := receiveBlock_receiver_blocked _ epId ep tid rt1 (some rid) core hE1 hR1
     hA1 hG1
-  rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo, storeReceiveBlock_msg _ _ _ _ _ _ _ h1 hNe,
+  rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo,
+    receiveReturnSchedContext_msg c id _ id true _ tid h0 hNe.symm,
+    storeReceiveBlock_msg _ _ _ _ _ _ _ h1 hNe,
     removeRunnableOnCore_msg, SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _ hCT] at hT1
   obtain ⟨x, hX, hEq⟩ := propagatePipChainCrossCore_ipcStateCarried _ tid core h3 tid t hT1
-  rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo, storeReceiveBlock_msg _ _ _ _ _ _ _ h1 hNe,
+  rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo,
+    receiveReturnSchedContext_msg c id _ id true _ tid h0 hNe.symm,
+    storeReceiveBlock_msg _ _ _ _ _ _ _ h1 hNe,
     removeRunnableOnCore_msg, propagatePipChainCrossCore_msg _ _ _ _ _ _ _ h3]
+  have hX' : (storeReplyRecvBlockReady st c tid rid epId ep.recvTailCode core).getTcb? tid =
+      some x := by
+    unfold storeReplyRecvBlockReady
+    rw [receiveReturnSchedContextFast_eq]
+    exact hX
+  rw [show (PriorityInheritance.propagatePipChainCrossCore (removeRunnableOnCore (storeReceiveBlock
+      (receiveReturnSchedContext true (storeReplyRendezvousReady st c tid rid) tid) epId tid
+        ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1 =
+      storeReplyRecvBlockReady st c tid rid epId ep.recvTailCode core by
+    unfold storeReplyRecvBlockReady; rw [receiveReturnSchedContextFast_eq]; rfl]
   change Architecture.stageDeliveredMessage (Architecture.stageDeliveredMessage
       ((storeReplyRecvBlockReady st c tid rid epId ep.recvTailCode core).mapTcbInPlace c
         (holdMessage { registers := longReplyRecvRegs rf st tid len, badge := badge })) c 0) tid 0 = _
@@ -226,7 +259,7 @@ theorem replyRecvOnCore_blocks_deliveredLong (st : SystemState) (epId : SeLe4n.O
     (ipcBufferReadsAgree_storeReplyRecvBlockReady st c tid rid epId ep.recvTailCode core hNo).words
     (by omega)]
   exact Architecture.stageDeliveredMessage_id_when_blocked _ tid 0 x
-    (by rw [deliverLongReplyRecvFrame_getTcb?_ne _ _ _ _ _ _ _ _ hCT]; exact hX)
+    (by rw [deliverLongReplyRecvFrame_getTcb?_ne _ _ _ _ _ _ _ _ hCT]; exact hX')
     (by rw [hEq, hB]; exact fun h => by cases h)
 
 end SeLe4n.Kernel

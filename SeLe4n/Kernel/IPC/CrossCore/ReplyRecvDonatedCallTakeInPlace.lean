@@ -229,6 +229,25 @@ theorem sendWakesInPlace_of_frame {s s' : SystemState} (epId : SeLe4n.ObjId)
     rintro ⟨⟨⟨⟨c1, c2⟩, c3⟩, c4⟩, c5⟩
     exact ⟨⟨⟨⟨c1, c2⟩, hS c3⟩, (hK _).trans c4⟩, hTcb _ c5⟩
 
+/-- **A receive taking a donating caller in place returns nothing**: its guard
+asks the receiver hold no context (`callDonationReady`), and seL4's return asks
+the context be the receiver's own binding, so the receive's return is the
+identity there (`receiveReturnSchedContext_of_scUnbound`). -/
+theorem receiveCallDonatesInPlace_returnsNothing {st : SystemState} {epId : SeLe4n.ObjId}
+    {r s : SeLe4n.ThreadId} {sTcb : TCB} {rid : SeLe4n.ReplyId}
+    (h : receiveCallDonatesInPlace st epId r s sTcb rid = true) :
+    receiveReturnSchedContext true st r = st := by
+  unfold receiveCallDonatesInPlace at h
+  simp only [Bool.and_eq_true] at h
+  obtain ⟨-, h2⟩ := h
+  cases hT : st.getTcb? r with
+  | none => rw [hT] at h2; cases h2
+  | some rt =>
+    rw [hT] at h2
+    simp only [callDonationReady, Bool.and_eq_true, beq_iff_eq] at h2
+    exact receiveReturnSchedContext_of_scUnbound ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
+      h2.1
+
 end PastPopGuard
 
 section PastPopTransport
@@ -690,9 +709,7 @@ theorem replyRecvOnCore_donatedCallTake_delivered (st : SystemState) (epId : SeL
     (hGt : receiveCallDonatesPastPop st epId tid s sTcb rid (replyHeadContextCode st rid) = true)
     (hR : registerRoutedSyscall
       (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
-      .call capAddr mi)
-    {rt : TCB} (hRt : st.objects[tid.toObjId]? = some (.tcb rt))
-    (hUB : rt.boundNotificationCode = 0) :
+      .call capAddr mi) :
     (match endpointReplyRecvOnCore epId tid rid c
         { registers := Architecture.regMessageBody layout rf len, badge := badge } grant core st with
       | .ok (summary, st') =>
@@ -733,9 +750,7 @@ theorem replyRecvOnCore_donatedCallTake_delivered (st : SystemState) (epId : SeL
     simp only [recordedReplyServer?, hTc, hIpc]
   rw [← storeReplyRendezvous_eq_hold _ _ _ _ _ hNo] at hPop
   have hEp1 := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hEP
-  obtain ⟨_, hRt1, eRt1⟩ := popDonationSettled_boundNotificationCode st c tid rid msg ct rp rt
-    scId sc (determineTargetCore st c) hNo hT hFC hRp hN hScO hHead hBelow hNe hRt
-  have hRet := receiveReturnSchedContext_of_unbound (blocks := true) hRt1 (eRt1.trans hUB)
+  have hRet := receiveCallDonatesInPlace_returnsNothing hGP
   unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
   simp only [hRecS, Option.getD_some, hEq, hPop, hXf, hRet, hRecv, hEp1, Option.bind_some, hH]
   simp only [replyRecvPostReceiveDonation, hCallT, ↓reduceIte, replyRecvHolderDeschedule, hDonE,

@@ -35,6 +35,13 @@ theorem storeReplyLegReady_noResizeDue (st : SystemState) (c : SeLe4n.ThreadId)
   exact updateTcb_noResizeDue _ _ _ (modifyObject_noResizeDue _ _ _
     (enqueueRunnableOnCore_noResizeDue _ _ _ (updateTcb_noResizeDue _ _ _ hNo)))
 
+/-- The reply leg's writes, the message held, leave room. -/
+theorem storeReplyLeg_noResizeDue (st : SystemState) (c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (msg : IpcMessage) (hNo : st.objects.noResizeDue) :
+    (storeReplyLeg st c rid msg).objects.noResizeDue := by
+  rw [storeReplyLeg_eq_hold _ _ _ _ hNo]
+  exact (SystemState.mapTcbInPlace_noResizeDue _ _ _).mpr (storeReplyLegReady_noResizeDue st c rid hNo)
+
 /-- **Off the answered caller and its reply object, the reply leg's writes
 touch only links.** -/
 theorem storeReplyLegReady_agree (st : SystemState) (c : SeLe4n.ThreadId)

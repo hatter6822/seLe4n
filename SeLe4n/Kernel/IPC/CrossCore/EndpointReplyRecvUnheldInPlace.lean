@@ -388,7 +388,6 @@ theorem replyRecvAnsweringOnCore_unheld_inPlace
     (hNe : tid ≠ c)
     (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
     (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
-    (hUB : rt.boundNotificationCode = 0)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hStash : st.replyStashedAt rid rp = false)
@@ -399,14 +398,16 @@ theorem replyRecvAnsweringOnCore_unheld_inPlace
       .ok ({ results := #[] }, replyRecvAnswerCaller answer
         (PriorityInheritance.propagatePipChainCrossCore
           (removeRunnableOnCore (storeReceiveBlock
-            (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
-              (storeReplyLeg st c rid msg) c ⟨replyHeadContextCode st rid - 1⟩)
-              (determineTargetCore st c) ⟨replyHeadContextCode st rid - 1⟩) epId tid
+            (receiveReturnSchedContext true
+              (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
+                (storeReplyLeg st c rid msg) c ⟨replyHeadContextCode st rid - 1⟩)
+                (determineTargetCore st c) ⟨replyHeadContextCode st rid - 1⟩) tid) epId tid
             ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1 c 0) ∧
       ∃ x, (removeRunnableOnCore (storeReceiveBlock
-            (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
-              (storeReplyLeg st c rid msg) c ⟨replyHeadContextCode st rid - 1⟩)
-              (determineTargetCore st c) ⟨replyHeadContextCode st rid - 1⟩) epId tid
+            (receiveReturnSchedContext true
+              (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
+                (storeReplyLeg st c rid msg) c ⟨replyHeadContextCode st rid - 1⟩)
+                (determineTargetCore st c) ⟨replyHeadContextCode st rid - 1⟩) tid) epId tid
             ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core).getTcb? tid = some x ∧
         x.ipcState = .blockedOnReceive epId := by
   obtain ⟨rp', scId, hRp', hN, hCode, hCRes, hNo, hLC, hFC, hLR, hFR, hPopR, hAppl⟩ :=
@@ -432,31 +433,34 @@ theorem replyRecvAnsweringOnCore_unheld_inPlace
   have hXf := replyRecvReplyTransfer_of_inert answer st tid c grant ct hTc hInert
   have hRecS : recordedReplyServer? st c = none := by
     simp only [recordedReplyServer?, hTc, hIpc]
+  have hNoP := settleReturnedContext_noResizeDue _ (determineTargetCore st c) scId
+    (returnUnheldSchedContextInPlace_noResizeDue _ c scId (storeReplyLeg_noResizeDue st c rid msg hNo))
   rw [← storeReplyLeg_eq_hold _ _ _ _ hNo] at hPopR
   simp only [SystemState.unlinkReplyWaiterOpt] at hEq
-  generalize hS1 : storeReplyLeg st c rid msg = S1 at hEq hPopR hE1 hR1 hG1
+  generalize hS1 : storeReplyLeg st c rid msg = S1 at hEq hPopR hE1 hR1 hG1 hNoP
   generalize hP : SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace S1 c scId)
-    (determineTargetCore st c) scId = P at hPopR hE1 hR1 hG1
-  have hEp1 : P.getEndpoint? epId = some ep := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE1
-  have hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) core P =
-      (removeRunnableOnCore (storeReceiveBlock P epId tid ep.recvTailCode
+    (determineTargetCore st c) scId = P at hPopR hE1 hR1 hG1 hNoP
+  obtain ⟨hE2, ⟨rt2, hR2, hA2⟩, hG2⟩ := receiveReturnSchedContext_receiveGuard true P tid hNoP
+    hE1 hR1 hA1 hG1
+  generalize hQ : receiveReturnSchedContext true P tid = Q at hE2 hR2 hG2
+  have hEp1 : Q.getEndpoint? epId = some ep := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE2
+  have hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) core Q =
+      (removeRunnableOnCore (storeReceiveBlock Q epId tid ep.recvTailCode
         (SeLe4n.ReplyId.optCode (some rid))) tid core, .ok (tid, { results := #[] }, none)) := by
     unfold endpointReceiveDualWithCapsOnCore
-    rw [receiveBlock_inPlace_eq P epId ep tid rt1 (some rid) core hE1 hS hR1 hA1 hG1]
-    have hSnd : (receiveRendezvousSender? P epId).isNone = true := by
+    rw [receiveBlock_inPlace_eq Q epId ep tid rt2 (some rid) core hE2 hS hR2 hA2 hG2]
+    have hSnd : (receiveRendezvousSender? Q epId).isNone = true := by
       simp [receiveRendezvousSender?, hEp1, hS]
     simp only [hSnd, ↓reduceIte]
-  obtain ⟨tb, hTb, hBk⟩ := receiveBlock_receiver_blocked P epId ep tid rt1 (some rid) core hE1 hR1
-    hA1 hG1
+  obtain ⟨tb, hTb, hBk⟩ := receiveBlock_receiver_blocked Q epId ep tid rt2 (some rid) core hE2 hR2
+    hA2 hG2
   refine ⟨?_, tb, hTb, hBk⟩
   have hRes : tid.isReserved = false := by
-    have h := hG1
+    have h := hG2
     simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at h
     exact h.1.1.1.1.1.1.1
-  have hRet : receiveReturnSchedContext true P tid = P :=
-    receiveReturnSchedContext_of_unbound hR1 (hB1.trans hUB)
   unfold endpointReplyRecvAnsweringOnCore
-  simp only [hRecS, Option.getD_none, hEq, hPopR, hXf, hRet, hRecv, hEp1, Option.bind_some, hS,
+  simp only [hRecS, Option.getD_none, hEq, hPopR, hXf, hQ, hRecv, hEp1, Option.bind_some, hS,
     replyRecvPostReceiveDonation_none_self _ _ _ _ hRes]
   simp [applyReceiveLegPipHandoff]
 
@@ -472,7 +476,6 @@ theorem replyRecvOnCore_unheld_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     (hNe : tid ≠ c)
     (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
     (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
-    (hUB : rt.boundNotificationCode = 0)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hStash : st.replyStashedAt rid rp = false)
@@ -482,17 +485,19 @@ theorem replyRecvOnCore_unheld_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
       .ok ({ results := #[] }, Architecture.stageDeliveredMessage
         (PriorityInheritance.propagatePipChainCrossCore
           (removeRunnableOnCore (storeReceiveBlock
-            (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
-              (storeReplyLeg st c rid msg) c ⟨replyHeadContextCode st rid - 1⟩)
-              (determineTargetCore st c) ⟨replyHeadContextCode st rid - 1⟩) epId tid
+            (receiveReturnSchedContext true
+              (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
+                (storeReplyLeg st c rid msg) c ⟨replyHeadContextCode st rid - 1⟩)
+                (determineTargetCore st c) ⟨replyHeadContextCode st rid - 1⟩) tid) epId tid
             ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1 c 0) ∧
       ∃ x, (removeRunnableOnCore (storeReceiveBlock
-            (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
-              (storeReplyLeg st c rid msg) c ⟨replyHeadContextCode st rid - 1⟩)
-              (determineTargetCore st c) ⟨replyHeadContextCode st rid - 1⟩) epId tid
+            (receiveReturnSchedContext true
+              (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
+                (storeReplyLeg st c rid msg) c ⟨replyHeadContextCode st rid - 1⟩)
+                (determineTargetCore st c) ⟨replyHeadContextCode st rid - 1⟩) tid) epId tid
             ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core).getTcb? tid = some x ∧
         x.ipcState = .blockedOnReceive epId :=
-  replyRecvAnsweringOnCore_unheld_inPlace none st epId tid c rid msg grant core ct ep0 rt ep rp hSz hT hIpc hRO hG hNe hE hS hR hA hUB hEnq
+  replyRecvAnsweringOnCore_unheld_inPlace none st epId tid c rid msg grant core ct ep0 rt ep rp hSz hT hIpc hRO hG hNe hE hS hR hA hEnq
     hRp hStash hRec (fun _ => hInert)
 
 end UnheldReplyRecv
@@ -501,15 +506,15 @@ section UnheldReplyRecvDelivered
 
 /-- The reply-receive answering a caller recording no server, its caller woken
 holding no message: the reply leg's writes, the unheld pop and its settle, the
-replier's block on the endpoint, then its priority walk. -/
+replier's context return (`receiveReturnSchedContextFast`), the replier's block on the endpoint, then its priority walk. -/
 @[noinline] def storeReplyRecvUnheldReady (st : SystemState) (c tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (home : CoreId) (epId : SeLe4n.ObjId)
     (tailCode : Nat) (core : CoreId) : SystemState :=
   (PriorityInheritance.propagatePipChainCrossCore
     (removeRunnableOnCore (storeReceiveBlock
-      (SchedContextOps.settleReturnedContext
-        (returnUnheldSchedContextInPlace (storeReplyLegReady st c rid) c scId) home scId) epId tid
-      tailCode (rid.val + 1)) tid core) tid core).1
+      (receiveReturnSchedContextFast true (SchedContextOps.settleReturnedContext
+        (returnUnheldSchedContextInPlace (storeReplyLegReady st c rid) c scId) home scId) tid.val)
+      epId tid tailCode (rid.val + 1)) tid core) tid core).1
 
 /-- **The reply-receive answering a caller recording no server, delivered**:
 under the guard of `replyRecvOnCore_unheld_inPlace` and a reply of at most four
@@ -528,7 +533,6 @@ theorem replyRecvOnCore_unheld_delivered (st : SystemState) (epId : SeLe4n.ObjId
     (hNe : tid ≠ c)
     (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
     (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
-    (hUB : rt.boundNotificationCode = 0)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hStash : st.replyStashedAt rid rp = false)
@@ -549,20 +553,22 @@ theorem replyRecvOnCore_unheld_delivered (st : SystemState) (epId : SeLe4n.ObjId
   obtain ⟨_, _, _, _, _, _, hNo, _⟩ := replyUnheldPopsInPlace_pop st c rid msg ct hT hG
   have hCT : c.toObjId ≠ tid.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e).symm
   obtain ⟨hEq, x, hX, hB⟩ := replyRecvOnCore_unheld_inPlace st epId tid c rid msg grant core
-    ct ep0 rt ep rp hSz hT hIpc hRO hG hNe hE hS hR hA hUB hEnq hRp hStash hRec hInert
+    ct ep0 rt ep rp hSz hT hIpc hRO hG hNe hE hS hR hA hEnq hRp hStash hRec hInert
   rw [hEq]
   simp only [CapTransferSummary.capInfo_empty]
   revert hX
   generalize (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId
   intro hX
   have h1 := storeReplyLegReady_noResizeDue st c rid hNo
-  have h2 := settleReturnedContext_noResizeDue _ (determineTargetCore st c) scId
+  have h2' := settleReturnedContext_noResizeDue _ (determineTargetCore st c) scId
     (returnUnheldSchedContextInPlace_noResizeDue _ c scId h1)
+  have h2 := receiveReturnSchedContext_noResizeDue true _ tid h2'
   have h3 := storeReceiveBlock_noResizeDue _ epId tid ep.recvTailCode
     (SeLe4n.ReplyId.optCode (some rid)) h2
   have h4 := removeRunnableOnCore_noResizeDue _ tid core h3
   rw [storeReplyLeg_eq_hold _ _ _ _ hNo, returnUnheldSchedContextInPlace_msg c id _ id _ c scId h1,
-    settleReturnedContext_msg, storeReceiveBlock_msg _ _ _ _ _ _ _ h2 hNe,
+    settleReturnedContext_msg, receiveReturnSchedContext_msg c id _ id true _ tid h2' hNe.symm,
+    storeReceiveBlock_msg _ _ _ _ _ _ _ h2 hNe,
     removeRunnableOnCore_msg] at hX ⊢
   rw [SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _ hCT] at hX
   rw [propagatePipChainCrossCore_msg _ _ _ _ _ _ _ h4,
@@ -570,6 +576,8 @@ theorem replyRecvOnCore_unheld_delivered (st : SystemState) (epId : SeLe4n.ObjId
   obtain ⟨x2, hX2, e2⟩ := propagatePipChainCrossCore_ipcStateCarried _ tid core h4 tid x hX
   rw [stageDeliveredMessage_writeDeliveredFrameIfReady_blocked _ c tid _ _ 0 hCT x2 hX2
     (by rw [e2, hB]; exact fun h => by cases h)]
+  unfold storeReplyRecvUnheldReady
+  rw [receiveReturnSchedContextFast_eq]
   rfl
 
 end UnheldReplyRecvDelivered
