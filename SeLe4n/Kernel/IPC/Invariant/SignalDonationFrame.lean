@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.API
+import SeLe4n.Kernel.IPC.Invariant.SignalWakeLinkFrame
 
 /-!
 # The state a notification donation runs on
@@ -507,5 +508,29 @@ theorem completeSignalArm_signalDonationCores_eq {notifId : SeLe4n.ObjId}
     A.2 (A.1 tid)
   unfold signalDonationCores
   rw [hG, (show schedAuxAgree st _ from F.aux).determineTargetCore_eq]
+
+/-! ### seL4's `sendSignal`: the wake, then the donation
+
+The wake writes no scheduling link (`notificationSignalBoundOnCore_schedLinkFrame`),
+so the donation after it finds the binding pair the signal was handed, and the
+thread it donates to was blocked on a receive or a notification, never on a
+reply, so it owns no donation. -/
+
+/-- **seL4's `sendSignal` keeps the IPC bundle**: the wake's lemma, then the
+donation's on the state the wake leaves. -/
+theorem sendSignalOnCore_preserves_ipcInvariantFull (n : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (c : Concurrency.CoreId) (st : SystemState) (hObjInv : st.objects.invExt)
+    (hWake : ipcInvariantFull (notificationSignalBoundOnCore n badge c st).1)
+    (hBi : schedContextBindingBidirectional st) (hInv : ipcInvariantFull st)
+    (hNWC : notificationWaiterConsistent st) :
+    ipcInvariantFull (sendSignalOnCore n badge c st).1 := by
+  have F := notificationSignalBoundOnCore_schedLinkFrame n badge c st hObjInv
+  refine sendSignalOnCore_induct (fun s => ipcInvariantFull s) n badge c st hWake
+    (fun t _ hT _ => ?_)
+  exact maybeDonateSchedContext_preserves_ipcInvariantFull _ n t
+    (notificationSignalBoundOnCore_preserves_objects_invExt n badge c st hObjInv) hWake
+    (schedContextBindingBidirectional.of_bindingLinksAgree F.binding hBi)
+    (notDonationOwner_of_bindingLinksAgree F.binding hInv.donationOwnerValid
+      (signalWokenThread?_not_blockedOnReply hNWC hT))
 
 end SeLe4n.Kernel
