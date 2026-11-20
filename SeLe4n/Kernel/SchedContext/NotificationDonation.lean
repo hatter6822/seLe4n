@@ -833,6 +833,50 @@ one core, queued on none — they flag at most the core already flagged. -/
       markKeyChangeFor (markCandidacyGainFor st3 tid (hasSufficientBudget st tcb)) tid
         (effectiveSchedParams st tcb)
 
+/-- **seL4's three writes, as compiled**: every word the flag hooks compare is
+read before the first write, and the context and the thread are each rewritten
+in their slot (`updateSchedContext`, `updateTcb`, whose compiled forms modify
+the slot), so a kernel entry running the return builds no object. -/
+@[inline] def schedContextReturnLinksImpl (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) : SystemState :=
+  match st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vS.val) with
+  | none => st
+  | some _ =>
+    match st.getTcb? tid with
+    | none => st
+    | some tcb =>
+      let p := tcb.boostedPriority
+      let d := tcb.deadline
+      let dom := tcb.domain
+      let e := hasSufficientBudget st tcb
+      let rc := runningCoreOf? st tid
+      let st1 := st.updateSchedContext (SeLe4n.SchedContextId.ofObjId vS.val)
+        fun sc => { sc with boundThreadCode := 0 }
+      let st2 := st1.updateTcb tid fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 }
+      let st3 := match rc with
+        | some c => st2.markReschedulePendingOnCore c
+        | none => st2
+      markKeyChangeParts (markCandidacyGainFor st3 tid e) tid p d dom
+
+@[csimp] theorem schedContextReturnLinks_eq_impl :
+    @schedContextReturnLinks = @schedContextReturnLinksImpl := by
+  funext st vS tid
+  unfold schedContextReturnLinks schedContextReturnLinksImpl
+  split
+  · next hW =>
+    cases hS : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vS.val) with
+    | none => rfl
+    | some sc => rw [SystemState.getSchedContextWitnessed?_eq_some hS] at hW; cases hW
+  · next sc hS _ =>
+    rw [hS]
+    dsimp only
+    cases st.getTcb? tid with
+    | none => rfl
+    | some tcb =>
+      dsimp only
+      rw [SystemState.updateSchedContext_eq_of_some hS, markKeyChangeFor_eq_parts]
+      rfl
+
 /-- **What seL4's return writes, object by object**: a slot keeps its object,
 or holds a TCB whose two binding codes are cleared, or a context whose thread
 link is cleared.  Every other field of every object — IPC states, queues,
