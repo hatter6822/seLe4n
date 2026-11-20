@@ -47,7 +47,7 @@ theorem replyRecvAnswerCaller_preserves_objects_invExt
     (prevCaller : SeLe4n.ThreadId) (capInfo : Nat) (hObjInv : st.objects.invExt) :
     (replyRecvAnswerCaller answer st prevCaller capInfo).objects.invExt := by
   cases answer with
-  | none => exact stageDeliveredMessage_preserves_objects_invExt _ _ _ hObjInv
+  | none => exact stageDeliveredMessage_objects_invExt _ _ _ hObjInv
   | some outcome =>
     cases outcome with
     | restart frame => exact applyFaultRestart_preserves_objects_invExt _ _ _ hObjInv

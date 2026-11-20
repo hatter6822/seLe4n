@@ -11172,6 +11172,11 @@ open SeLe4n.Kernel.Concurrency
 #check @cancelRecvBusyReply_signalDonationContext?
 #check @signalDonationContext?_congr
 #check @receiveCompletion_signalDonationContext?_eq
+#check @cancelRecvBusyReply_boundNotificationCode
+#check @cancelRecvBusyReply_receiverBoundNotification
+#check @cancelRecvBusyReply_receiverBoundNotification?
+#check @receiveCompletion_receiverBoundNotification?_eq
+#check @lockSetForSyscall_receive_covers_completedNotification
 #check @endpointReplyRecvCheckedArmR_eq_general
 #check @endpointReplyRecvLongCheckedArmR_eq_general
 #check @replyRecvSignalArmR

@@ -242,41 +242,60 @@ theorem schedLockSet_replyRecvArmOnCore_coversTransfer (endpointId : SeLe4n.ObjI
   exact schedLockSet_replyRecvTransferOnCore_subset_arm endpointId receiver replyId prevCaller
     label msg grant e st _ hl
 
-/-- **The reply transfer keeps the object store's extension invariant**, on both
-of its branches (the fault answer, and the reply with its capability transfer
-and frame staging). -/
-theorem replyTransferOnCore_objects_invExt {replier callerTid : SeLe4n.ThreadId}
-    {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool}
-    {c : CoreId} {st st' : SystemState} (hInv : st.objects.invExt)
-    (h : replyTransferOnCore replier callerTid mi regs msg grant c st = .ok ((), st')) :
-    st'.objects.invExt := by
-  unfold replyTransferOnCore at h
-  split at h
-  · have hF := faultReplyOnCore_preserves_objects_invExt replier callerTid mi regs c st hInv
-    revert h hF
-    generalize faultReplyOnCore replier callerTid mi regs c st = r
-    obtain ⟨s, res⟩ := r
-    cases res with
-    | error _ => intro h; cases h
-    | ok _ => intro h hF; cases h; exact hF
-  · have hE := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier callerTid msg c
-      st hInv
-    revert h hE
-    generalize endpointReplyCrossCoreDispatch replier callerTid msg c st = r
-    obtain ⟨s, res⟩ := r
-    cases res with
-    | error _ => intro h; cases h
-    | ok _ =>
-      intro h hE
-      simp only [] at h
-      cases hU : replyTransferCaps st replier callerTid grant s with
-      | error _ => rw [hU] at h; cases h
-      | ok p =>
-        obtain ⟨summary, sX⟩ := p
-        rw [hU] at h
-        cases h
-        exact stageDeliveredMessage_objects_invExt sX callerTid summary.capInfo
-          (receiveTransferCaps_objects_invExt hE hU)
+/-- ...and so is the notification the receive's lock operands name. -/
+theorem cancelRecvBusyReply_receiverBoundNotification? (ctx : LabelingContext)
+    (tid : SeLe4n.ThreadId) (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (ec : Concurrency.CoreId) (st : SystemState) (hInv : st.objects.invExt) :
+    Concurrency.receiverBoundNotification? (cancelRecvBusyReply ctx tid gate decoded ec st) tid =
+      Concurrency.receiverBoundNotification? st tid := by
+  have e := cancelRecvBusyReply_boundNotificationCode ctx tid gate decoded ec st hInv
+  unfold Concurrency.receiverBoundNotification?
+  cases h1 : (cancelRecvBusyReply ctx tid gate decoded ec st).getTcb? tid <;>
+    cases h0 : st.getTcb? tid <;> rw [h1, h0] at e <;> simp only [Option.map] at e
+  all_goals first
+    | rfl
+    | cases e
+    | (simp only [Option.bind_some, TCB.boundNotification]
+       rw [Option.some.inj e])
+
+/-- **A receive that completes a signal after its cancel completes the
+notification its entry state names.** -/
+theorem receiveCompletion_receiverBoundNotification?_eq {ctx : LabelingContext}
+    {tid : SeLe4n.ThreadId} {gate : SyscallGate} {decoded : SyscallDecodeResult}
+    {ec : Concurrency.CoreId} {st : SystemState} (hInv : st.objects.invExt)
+    (hSig : receiveCompletesSignal ctx (cancelRecvBusyReply ctx tid gate decoded ec st) tid = true) :
+    Concurrency.receiverBoundNotification? st tid =
+      some (receiverBoundNotification (cancelRecvBusyReply ctx tid gate decoded ec st) tid) := by
+  rw [← cancelRecvBusyReply_receiverBoundNotification? ctx tid gate decoded ec st hInv]
+  unfold receiveCompletesSignal at hSig
+  unfold Concurrency.receiverBoundNotification? receiverBoundNotification
+  cases hT : (cancelRecvBusyReply ctx tid gate decoded ec st).getTcb? tid with
+  | none => rw [hT] at hSig; cases hSig
+  | some t =>
+    rw [hT] at hSig
+    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hSig
+    obtain ⟨k, hk⟩ := Nat.exists_eq_succ_of_ne_zero hSig.1.1
+    simp only [Option.bind_some, TCB.boundNotification, hk, SeLe4n.ObjId.ofOptCode]
+    rfl
+
+/-- **seL4-MCS `receiveIPC`'s `completeSignal` writes a notification the
+receive locks**: the one the completion reads after the busy-reply cancel is the
+one the footprint names on the entry state
+(`receiveCompletion_receiverBoundNotification?_eq`). -/
+theorem lockSetForSyscall_receive_covers_completedNotification
+    (ops : Concurrency.SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (endpointId : SeLe4n.ObjId) (S : LockSet) {ctx : LabelingContext} {gate : SyscallGate}
+    {decoded : SyscallDecodeResult} {ec : CoreId} (hInv : st.objects.invExt)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hEp : ops.targetObject = some endpointId)
+    (hSig : receiveCompletesSignal ctx (cancelRecvBusyReply ctx ops.caller gate decoded ec st)
+      ops.caller = true)
+    (hDecl : Concurrency.lockSetForSyscall .receive ops st = some S) :
+    (Concurrency.notificationLock
+        (receiverBoundNotification (cancelRecvBusyReply ctx ops.caller gate decoded ec st) ops.caller),
+      AccessMode.write) ∈ S.pairs :=
+  Concurrency.lockSetForSyscall_receive_covers_boundNotification ops st caller endpointId S _ hTcb hEp
+    (receiveCompletion_receiverBoundNotification?_eq hInv hSig) hDecl
 
 /-- **A reply that leaves the receive's test true kept the receiver's binding**:
 the receiver's TCB on the entry state names the notification it names after
@@ -381,13 +400,13 @@ theorem replyRecvCompletesSignalArm_coversWrites (ctx : LabelingContext)
   obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases hStep
   have hK := notificationsAndBindingsKept.of_replyTransferOnCoreChecked hObjInv hR
   have hHK := replyTransferOnCoreChecked_homeCoresKept hObjInv hR
+  have hObj1 := replyTransferOnCoreChecked_objects_invExt hObjInv hR
   have hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs :=
     LockSet.ofList?_pairs hS ▸ schedFootprintOfCores_contains_objStore_write _ _
   rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx receiver prevCaller _ _ _ _ e
     st hFlow] at hR
   have hConf := replyTransferOnCore_confinedToCores receiver prevCaller _ _ msg grant e st st1
     hObjInv hR
-  have hObj1 := replyTransferOnCore_objects_invExt hObjInv hR
   have hRep : footprintCoversWrites S st st1 := by
     refine footprintCoversWrites_of_cores S _ _ st st1 (LockSet.ofList?_pairs hS)
       (fun d hd => ?_) (fun d hd => ?_)

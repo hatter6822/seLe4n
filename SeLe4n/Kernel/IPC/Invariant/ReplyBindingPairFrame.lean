@@ -11,6 +11,7 @@ import SeLe4n.Kernel.IPC.Invariant.SignalDonationFrame
 import SeLe4n.Kernel.IPC.Invariant.ReplySignalFrame
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SuspendHolders
 import SeLe4n.Kernel.IPC.Invariant.ReplyHolderCancelFrame
+import SeLe4n.Kernel.IPC.Invariant.ReplyHolderCancelHeads
 
 /-!
 # The binding pair across a reply
@@ -1049,5 +1050,49 @@ theorem receiveCompletion_signalDonationContext?_eq {ctx : LabelingContext}
   exact (signalDonationContext?_congr (completeSignalArm_donationPre_ntfnContexts hIC hW)
     (scIdLinksAgree.of_schedLinkFrame (completeSignalArm_donationPre_schedLinkFrame hIC hW)) n x).trans
     (cancelRecvBusyReply_signalDonationContext? ctx tid gate decoded ec st hInv n x)
+
+/-! ### The notification a receive completes is the entry state's
+
+The busy-reply cancel writes no thread's bound-notification code: on every
+thread but the holder it writes queue, reply and run links, the binding's owner
+code and the boost (`cancelReplyHolder_tcbReadingKeptExcept`), and the holder is
+never the receiver (`busyReplyHolder?_ne`).  So the notification the receive's
+completion reads after the cancel is the one its lock operands read on the
+entry state (`receiverBoundNotification?`). -/
+
+/-- The bound-notification code is a reading the cancel cannot move on another
+thread. -/
+theorem boundNotificationCode_cancelBlind : TcbReadingCancelBlind TCB.boundNotificationCode :=
+  ⟨fun _ _ _ _ _ _ => rfl, fun _ => rfl, fun _ => rfl, fun _ => rfl, fun _ _ => rfl⟩
+
+/-- **A receive's busy-reply cancel keeps the receiver's bound-notification
+code.** -/
+theorem cancelRecvBusyReply_boundNotificationCode (ctx : LabelingContext)
+    (tid : SeLe4n.ThreadId) (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (ec : Concurrency.CoreId) (st : SystemState) (hInv : st.objects.invExt) :
+    ((cancelRecvBusyReply ctx tid gate decoded ec st).getTcb? tid).map (·.boundNotificationCode) =
+      (st.getTcb? tid).map (·.boundNotificationCode) := by
+  unfold cancelRecvBusyReply
+  cases hk : recvBusyReplyHolderCode ctx tid gate decoded st with
+  | zero => rfl
+  | succ k =>
+    exact cancelReplyHolder_tcbReadingKeptExcept boundNotificationCode_cancelBlind st ⟨k⟩ ec hInv
+      tid (fun h => busyReplyHolder?_ne (recvBusyReplyHolderCode_succ hk) h.symm)
+
+/-- **The notification a receive's completion names is the entry state's.** -/
+theorem cancelRecvBusyReply_receiverBoundNotification (ctx : LabelingContext)
+    (tid : SeLe4n.ThreadId) (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (ec : Concurrency.CoreId) (st : SystemState) (hInv : st.objects.invExt) :
+    receiverBoundNotification (cancelRecvBusyReply ctx tid gate decoded ec st) tid =
+      receiverBoundNotification st tid := by
+  have e := cancelRecvBusyReply_boundNotificationCode ctx tid gate decoded ec st hInv
+  unfold receiverBoundNotification
+  cases h1 : (cancelRecvBusyReply ctx tid gate decoded ec st).getTcb? tid <;>
+    cases h0 : st.getTcb? tid <;> rw [h1, h0] at e <;> simp only [Option.map] at e
+  · cases e
+  · cases e
+  · rename_i t1 t0
+    dsimp only
+    rw [Option.some.inj e]
 
 end SeLe4n.Kernel

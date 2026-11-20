@@ -5682,7 +5682,7 @@ theorem stageWokenDelivery_preserves_ipcInvariantFull
 /-- Review round (PR #887): the delivered-message staging is a single
 `writeReturnFrameToTcb` insert or the identity, so it preserves the
 object-store invariant. -/
-theorem stageDeliveredMessage_preserves_objects_invExt
+theorem stageDeliveredMessage_objects_invExt
     (st : SystemState) (tid : SeLe4n.ThreadId) (capInfo : Nat)
     (hObjInv : st.objects.invExt) :
     (Architecture.stageDeliveredMessage st tid capInfo).objects.invExt := by
@@ -5706,25 +5706,7 @@ theorem stageWokenDelivery_preserves_objects_invExt
   | none => exact hObjInv
   | some tid =>
       rw [Architecture.stageWokenDelivery_some]
-      exact stageDeliveredMessage_preserves_objects_invExt st tid capInfo hObjInv
-
-/-- Staging never disturbs the object-store invariant: every arm is one TCB
-insert or the identity. -/
-theorem stageDeliveredMessage_objects_invExt
-    (st : SystemState) (tid : SeLe4n.ThreadId) (capInfo : Nat)
-    (hObjInv : st.objects.invExt) :
-    (Architecture.stageDeliveredMessage st tid capInfo).objects.invExt := by
-  unfold Architecture.stageDeliveredMessage
-  cases hLk : st.getTcb? tid with
-  | none => exact hObjInv
-  | some tcb =>
-      dsimp only []
-      split
-      · cases tcb.pendingMessage with
-        | none => exact hObjInv
-        | some msg =>
-            exact writeDeliveredFrameToTcb_preserves_objects_invExt st tid _ hObjInv
-      · exact hObjInv
+      exact stageDeliveredMessage_objects_invExt st tid capInfo hObjInv
 
 /-- **WS-RM (`v0.35.6`)**: a return-frame writeback carries no chain data.  Its
 one write is a `.tcb` at a key that already held one (`getTcb?` is what selects
