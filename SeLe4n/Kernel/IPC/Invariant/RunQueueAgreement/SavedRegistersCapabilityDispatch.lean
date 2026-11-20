@@ -664,6 +664,24 @@ theorem savedRegsWrittenFree.giveBack {e : CoreId} {base pre post : SystemState}
   rw [maybeReturnSchedContext_savedRegsKeptExcept (W := fun _ => False) n tid hInv t id]
   exact h t
 
+/-- **seL4 `receiveIPC`'s return writes no saved registers**: it clears two
+binding codes and a context's thread link. -/
+theorem receiveReturnSchedContext_savedRegs (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (t : SeLe4n.ThreadId) :
+    (receiveReturnSchedContext blocks st tid).savedRegs t = st.savedRegs t := by
+  unfold SystemState.savedRegs SystemState.getTcb?
+  rcases receiveReturnSchedContext_objects blocks st tid hInv t.toObjId with
+    e | ⟨y, hy, e⟩ | ⟨sc, sc', hs, e⟩
+  · rw [e]
+  · rw [e, hy] <;> rfl
+  · rw [e, hs]
+
+/-- …so a census survives the return before the receive. -/
+theorem savedRegsWrittenFree.receiveReturn {e : CoreId} {base : SystemState} (blocks : Bool)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    savedRegsWrittenFree e base st (receiveReturnSchedContext blocks st tid) := fun t =>
+  .inl (receiveReturnSchedContext_savedRegs blocks st tid hInv t)
+
 /-- **A prefix the executing core's scheduling point ends**: the prefix writes
 only threads free at `base` and keeps or clears the core's slot, so the outgoing
 thread the point saves was the core's current thread at the prefix's start. -/

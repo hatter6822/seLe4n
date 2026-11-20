@@ -696,6 +696,32 @@ theorem endpointReceiveDualWithCapsOnCore_crossCoreNonInterference (ctx : Labeli
     (endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver replyId executingCore st hObjInv)
     hShared
 
+/-- **The receive with seL4-MCS `receiveIPC`'s return before its leg**: the
+return writes no observable slot of any core
+(`receiveReturnSchedContext_confinedToCores`), so the receive is invisible to
+any core outside its leg's write set, read on the state the return leaves.
+The frame the live `.receive` arm's leg runs on (`receiveLegState`). -/
+theorem receiveWithReturn_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId) (blocks : Bool)
+    (st : SystemState) (c : CoreId) (hObjInv : st.objects.invExt)
+    (hne : c ∉ endpointReceiveDualWriteSet (receiveReturnSchedContext blocks st receiver)
+      endpointId executingCore)
+    (hShared : sharedViewUnchanged ctx observer st
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore
+        (receiveReturnSchedContext blocks st receiver)).1) :
+    projectStateOnCore ctx observer
+        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore
+          (receiveReturnSchedContext blocks st receiver)).1 c
+      = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (cs := [] ++ _)
+    (by simpa only [List.nil_append] using hne)
+    (observableSlotsConfinedToCores_trans
+      (receiveReturnSchedContext_confinedToCores blocks st receiver)
+      (endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver replyId executingCore
+        _ (receiveReturnSchedContext_objects_invExt blocks st receiver hObjInv)))
+    hShared
+
 /-- SM8.B.2 (SM6.B, **the live `.signal` bound-delivery arm**): a bound-aware
 signal is invisible to any core that is neither the bound TCB's home core (when
 the badge is delivered directly) nor the plain signal's waiter home core. -/

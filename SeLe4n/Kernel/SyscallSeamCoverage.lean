@@ -597,9 +597,16 @@ theorem receiveResolvedArm_coversWrites (ctx : LabelingContext)
       simp only [schedLockSetForSyscall, Option.bind_some,
         schedLockSet_receiveCancellingHolderOnCore,
         busyReplyHolder?_of_resolveRecvReplyId_ok tid hR] at hSched
-      exact footprintCoversWrites_of_cores_append S _ _ _ _ st stDon (LockSet.ofList?_pairs hSched)
-        fun S0 hS0 => schedLockSet_endpointReceiveOnCore_coversWrites epId tid replyId? e st st₁
-          stDon dequeued summary sgi S0 hObjInv hHeads hS0 hLeg hHand
+      exact footprintCoversWrites_trans S
+        (footprintCoversWrites_receiveLegState S st tid _ _ hObjInv (LockSet.ofList?_pairs hSched)
+          fun _ h => List.mem_append_left _ (List.mem_append_right _ h))
+        (footprintCoversWrites_of_cores_subset S _ _ _ _ _ stDon (LockSet.ofList?_pairs hSched)
+          (fun _ h => List.mem_append_left _ h)
+          (fun _ h => List.mem_append_left _ (List.mem_append_left _ h))
+          fun S0 hS0 => schedLockSet_endpointReceiveOnCore_coversWrites epId tid replyId? e _ st₁
+            stDon dequeued summary sgi S0 (receiveLegState_objects_invExt st tid hObjInv)
+            (receiveReturnSchedContext_queueHeadBlockedConsistent _ st tid hObjInv hHeads)
+            hS0 hLeg hHand)
     | succ k =>
       -- the holder `⟨k⟩` is cancelled first; the operands name its reply
       rw [hCode] at hC

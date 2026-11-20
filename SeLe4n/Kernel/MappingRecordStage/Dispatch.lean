@@ -655,6 +655,40 @@ theorem maybeReturnSchedContext_mappingStage (st : SystemState) (n : SeLe4n.ObjI
   maybeReturnSchedContext_induct MappingStage st n tid (MappingStage.refl _)
     (fun _ _ _ _ _ h => schedContextUnbind_mappingStage h)
 
+/-- **seL4's return on a running receiver keeps the mapping records**: the
+context's thread link and the thread's binding written in place, then
+reschedule flags. -/
+theorem schedContextReturnLinks_mappingStage (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) : MappingStage st (schedContextReturnLinks st vS tid) := by
+  unfold schedContextReturnLinks
+  split
+  · exact MappingStage.refl _
+  rename_i sc hSc _
+  split
+  · exact MappingStage.refl _
+  dsimp only
+  refine MappingStage.trans ?_ (markKeyChangeFor_mappingStage _ _ _)
+  refine MappingStage.trans ?_ (markCandidacyGainFor_mappingStage _ _ _)
+  split
+  · refine MappingStage.trans ?_ (MappingStage.of_objects_eq
+      (SystemState.markReschedulePendingOnCore_objects _ _))
+    exact (MappingStage.rewriteObject_schedContext hSc _ _).trans
+      (updateTcb_mappingStage _ _ _)
+  · exact (MappingStage.rewriteObject_schedContext hSc _ _).trans
+      (updateTcb_mappingStage _ _ _)
+
+/-- **The return keeps the mapping records**: seL4's three writes, then the
+purge. -/
+theorem schedContextReturnPerform_mappingStage (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) : MappingStage st (schedContextReturnPerform st vS tid) :=
+  (schedContextReturnLinks_mappingStage st vS tid).trans (purgeReplenishment_mappingStage _ _)
+
+/-- **seL4 `receiveIPC`'s return keeps the mapping records.** -/
+theorem receiveReturnSchedContext_mappingStage (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) : MappingStage st (receiveReturnSchedContext blocks st tid) :=
+  receiveReturnSchedContext_induct MappingStage blocks st tid (MappingStage.refl _)
+    (fun vS _ _ _ => schedContextReturnPerform_mappingStage st vS tid)
+
 /-- **seL4's `sendSignal` keeps the mapping records**: the wake's writes, then
 the donation's. -/
 theorem sendSignalOnCore_mappingStage {n : SeLe4n.ObjId} {badge : SeLe4n.Badge}
@@ -731,9 +765,10 @@ theorem receiveResolvedArm_mappingStage {ctx : LabelingContext} {decoded : Sysca
   · cases h; exact writeReturnFrameToTcb_mappingStage _ _ _
   rename_i summ _ hRecv _ stDon hHand
   cases h
-  exact (MappingStage.of_fst_eq endpointReceiveDualWithCapsOnCore_mappingStage hRecv).trans
+  exact (receiveReturnSchedContext_mappingStage _ _ _).trans
+    ((MappingStage.of_fst_eq endpointReceiveDualWithCapsOnCore_mappingStage hRecv).trans
     ((applyReceiveRendezvousHandoff_mappingStage hHand).trans
-      (stageDeliveredMessage_mappingStage _ _ _))
+      (stageDeliveredMessage_mappingStage _ _ _)))
 
 /-- **Every arm `dispatchWithCapChecked` routes keeps the mappings recorded**,
 the capability-only arms it delegates, the IPC arms, the audit read and drain

@@ -786,4 +786,776 @@ def waitCompletionContext? (st : SystemState) (n : SeLe4n.ObjId) (tid : SeLe4n.T
   if notificationPending st n then signalDonationContext? st n tid
   else signalReturnContext? st n tid
 
+/-! ### seL4-MCS `maybeReturnSchedContext` on a running receiver
+
+`receiveIPC` (`endpoint.c`) returns the bound notification's context from a
+receiver that is still running, before it looks at the endpoint.  seL4's code
+writes exactly three things: the thread's context pointer, the context's thread
+pointer, and — the thread being the current one — `rescheduleRequired()`.  The
+thread keeps its current slot until that reschedule runs, so this return is not
+the unbind's ok-state (`schedContextUnbindPerform` clears the running core's
+current slot): it is those writes, and the release-queue purge seLe4n's
+unbind runs (`schedContextReturnPerform`).
+
+**The purge is a model obligation, not a seL4 write.**  seLe4n's refill
+invariant (`refillsSound`: `releaseQueuedBound`, every replenish-queue entry's
+context is bound) has no counterpart in seL4, whose release queue holds threads.
+A running receiver's context with a pending future refill sits on a replenish
+queue; returning it by the three pointer writes alone would leave an unbound
+context queued.  So the return, like seLe4n's unbind, takes the context off
+whichever replenish queue holds it (`purgeReplenishment`, a no-op when it is on
+none).  What a program sees is seL4's: an unbound context is never released in
+seL4 either, and its refills, budget and `isActive` are left as they were. -/
+
+/-- **seL4's three writes**: the context's thread link cleared, the thread's
+binding cleared, and the core the thread is current on (`runningCoreOf?`)
+flagged to reschedule (seL4's `rescheduleRequired()`).  The thread's current
+slot, its queues and the context's budget and release link are untouched.  The
+two flag hooks every binding writer runs (`markCandidacyGainFor`,
+`markKeyChangeFor`) follow: they raise only reschedule flags, of the cores whose
+queue or current slot holds the thread, so on a running receiver — current on
+one core, queued on none — they flag at most the core already flagged. -/
+@[inline] def schedContextReturnLinks (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) : SystemState :=
+  match st.getSchedContextWitnessed? (SeLe4n.SchedContextId.ofObjId vS.val) with
+  | none => st
+  | some ⟨sc, hSc⟩ =>
+    match st.getTcb? tid with
+    | none => st
+    | some tcb =>
+      let updatedSc := { sc with boundThreadCode := 0 }
+      let st1 := st.rewriteObject vS.val (KernelObject.schedContext updatedSc)
+        (SystemState.rewriteAdmissible_schedContext hSc updatedSc)
+      let st2 := st1.updateTcb tid fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 }
+      let st3 := match runningCoreOf? st tid with
+        | some c => st2.markReschedulePendingOnCore c
+        | none => st2
+      markKeyChangeFor (markCandidacyGainFor st3 tid (hasSufficientBudget st tcb)) tid
+        (effectiveSchedParams st tcb)
+
+/-- **What seL4's return writes, object by object**: a slot keeps its object,
+or holds a TCB whose two binding codes are cleared, or a context whose thread
+link is cleared.  Every other field of every object — IPC states, queues,
+budgets, notifications, endpoints — is the pre-state's. -/
+theorem schedContextReturnLinks_objects (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) :
+    (schedContextReturnLinks st vS tid).objects[oid]? = st.objects[oid]? ∨
+      (∃ tcb, st.objects[oid]? = some (.tcb tcb) ∧
+        (schedContextReturnLinks st vS tid).objects[oid]? =
+          some (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 })) ∨
+      (∃ sc, st.objects[oid]? = some (.schedContext sc) ∧
+        (schedContextReturnLinks st vS tid).objects[oid]? =
+          some (.schedContext { sc with boundThreadCode := 0 })) := by
+  unfold schedContextReturnLinks
+  split
+  · exact Or.inl rfl
+  rename_i sc hSc _
+  split
+  · exact Or.inl rfl
+  rename_i tcb hT
+  dsimp only
+  have hFlag : ∀ (S : SystemState), (match runningCoreOf? st tid with
+      | some c => S.markReschedulePendingOnCore c
+      | none => S).objects = S.objects := fun S => by split <;> rfl
+  rw [markKeyChangeFor_objects, markCandidacyGainFor_objects, hFlag,
+    SystemState.updateTcb_after_rewriteObject_schedContext_objects st _ _ _ tid tcb _ hInv hT]
+  have hScRaw := (SystemState.getSchedContext?_eq_some_iff st _ sc).mp hSc
+  have hTRaw := (SystemState.getTcb?_eq_some_iff st _ tcb).mp hT
+  have hInv1 := RobinHood.RHTable.insert_preserves_invExt st.objects vS.val
+    (.schedContext { sc with boundThreadCode := 0 }) hInv
+  simp only [RHTable_getElem?_eq_get?] at hScRaw hTRaw ⊢
+  by_cases hT0 : tid.toObjId = oid
+  · subst hT0
+    exact Or.inr (Or.inl ⟨tcb, hTRaw, RobinHood.RHTable.getElem?_insert_self _ _ _ hInv1⟩)
+  rw [RobinHood.RHTable.getElem?_insert_ne _ tid.toObjId oid _
+    (by simp only [beq_iff_eq]; exact hT0) hInv1]
+  by_cases hS0 : vS.val = oid
+  · subst hS0
+    exact Or.inr (Or.inr ⟨sc, hScRaw, RobinHood.RHTable.getElem?_insert_self _ _ _ hInv⟩)
+  rw [RobinHood.RHTable.getElem?_insert_ne _ vS.val oid _
+    (by simp only [beq_iff_eq]; exact hS0) hInv]
+  exact Or.inl rfl
+
+/-- **seL4's three writes store the context with its thread link cleared.** -/
+theorem schedContextReturnLinks_getSchedContext?_self (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (sc : SchedContext) (tcb : TCB) (hInv : st.objects.invExt)
+    (hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vS.val) = some sc)
+    (hT : st.getTcb? tid = some tcb) :
+    (schedContextReturnLinks st vS tid).getSchedContext? (SeLe4n.SchedContextId.ofObjId vS.val) =
+      some { sc with boundThreadCode := 0 } := by
+  have key : ∀ (A B : SystemState), A.objects = B.objects → ∀ s,
+      A.getSchedContext? s = B.getSchedContext? s := fun A B h s => by
+    unfold SystemState.getSchedContext?; rw [h]
+  unfold schedContextReturnLinks
+  rw [SystemState.getSchedContextWitnessed?_eq_some hSc]
+  dsimp only
+  rw [hT]
+  dsimp only
+  have hInv1 := SystemState.rewriteObject_preserves_objects_invExt st vS.val
+    (.schedContext { sc with boundThreadCode := 0 })
+    (SystemState.rewriteAdmissible_schedContext hSc _) hInv
+  refine (key _ (SystemState.updateTcb (st.rewriteObject vS.val
+    (.schedContext { sc with boundThreadCode := 0 })
+    (SystemState.rewriteAdmissible_schedContext hSc _)) tid
+    fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 }) ?_ _).trans ?_
+  · rw [markKeyChangeFor_objects, markCandidacyGainFor_objects]
+    cases runningCoreOf? st tid <;> rfl
+  · rw [SystemState.updateTcb_getSchedContext? _ _ _ hInv1]
+    exact SystemState.rewriteObject_schedContext_getSchedContext?_self st _ _ _ hInv
+
+/-- **seL4's three writes keep every release link**: they clear a context's
+thread link and a TCB's binding codes, no release field. -/
+theorem schedContextReturnLinks_releaseLinksAgree (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    SystemState.ReleaseLinksAgree (schedContextReturnLinks st vS tid) st := by
+  intro c s
+  rw [SystemState.releaseLinkOn_eq_obj, SystemState.releaseLinkOn_eq_obj]
+  rcases schedContextReturnLinks_objects st vS tid hInv s.toObjId with e | ⟨y, hy, e⟩ | ⟨sc, hs, e⟩
+  · rw [e]
+  · rw [e, hy]; rfl
+  · rw [e, hs]; rfl
+
+/-- **seL4-MCS `maybeReturnSchedContext`'s writes on a running receiver, as
+seLe4n runs them**: seL4's three writes (`schedContextReturnLinks`), then the
+context off whichever replenish queue holds it (`purgeReplenishment`, seLe4n's
+unbind's purge; a no-op when it is queued nowhere).  The context's refills,
+budget, `isActive` and donation origin are untouched, as in seL4. -/
+@[inline] def schedContextReturnPerform (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) : SystemState :=
+  SchedContextOps.purgeReplenishment (schedContextReturnLinks st vS tid)
+    (SeLe4n.SchedContextId.ofObjId vS.val)
+
+/-- **What the return writes, object by object**: a slot keeps its object, or
+holds a TCB whose two binding codes are cleared, or holds a context in both
+states (its thread link cleared, its release fields re-linked by the purge).
+Every other field of every object — IPC states, queues, budgets,
+notifications, endpoints — is the pre-state's. -/
+theorem schedContextReturnPerform_objects (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) :
+    (schedContextReturnPerform st vS tid).objects[oid]? = st.objects[oid]? ∨
+      (∃ tcb, st.objects[oid]? = some (.tcb tcb) ∧
+        (schedContextReturnPerform st vS tid).objects[oid]? =
+          some (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 })) ∨
+      (∃ sc sc', st.objects[oid]? = some (.schedContext sc) ∧
+        (schedContextReturnPerform st vS tid).objects[oid]? = some (.schedContext sc')) := by
+  have hA := SchedContextOps.purgeReplenishment_agree (schedContextReturnLinks st vS tid)
+    (SeLe4n.SchedContextId.ofObjId vS.val)
+  unfold schedContextReturnPerform
+  rcases hA.pointwise oid with e | ⟨sc0, sc1, h0, h1, _⟩
+  · rw [e]
+    rcases schedContextReturnLinks_objects st vS tid hInv oid with e' | ⟨y, hy, e'⟩ | ⟨sc, hs, e'⟩
+    · exact Or.inl e'
+    · exact Or.inr (Or.inl ⟨y, hy, e'⟩)
+    · exact Or.inr (Or.inr ⟨sc, _, hs, e'⟩)
+  · rcases schedContextReturnLinks_objects st vS tid hInv oid with e' | ⟨y, hy, e'⟩ | ⟨sc, hs, _⟩
+    · exact Or.inr (Or.inr ⟨sc0, sc1, by rw [← e']; exact h0, h1⟩)
+    · rw [e'] at h0; cases h0
+    · exact Or.inr (Or.inr ⟨sc, sc1, hs, h1⟩)
+
+/-- **seL4's return keeps every TCB's IPC state** (and every field but the two
+binding codes). -/
+theorem schedContextReturnPerform_tcb (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) (x : TCB)
+    (h : (schedContextReturnPerform st vS tid).objects[oid]? = some (.tcb x)) :
+    ∃ y, st.objects[oid]? = some (.tcb y) ∧
+      (x = y ∨ x = { y with scBindingScCode := 0, scBindingOwnerCode := 0 }) := by
+  rcases schedContextReturnPerform_objects st vS tid hInv oid with e | ⟨y, hy, e⟩ | ⟨sc, sc', _, e⟩
+  · rw [e] at h; exact ⟨x, h, Or.inl rfl⟩
+  · rw [e] at h; cases h; exact ⟨y, hy, Or.inr rfl⟩
+  · rw [e] at h; cases h
+
+/-- **seL4's return keeps every object that is neither a TCB nor a context.** -/
+theorem schedContextReturnPerform_other (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (oid : SeLe4n.ObjId)
+    (hNT : ∀ t, st.objects[oid]? ≠ some (.tcb t))
+    (hNS : ∀ sc, st.objects[oid]? ≠ some (.schedContext sc)) :
+    (schedContextReturnPerform st vS tid).objects[oid]? = st.objects[oid]? := by
+  rcases schedContextReturnPerform_objects st vS tid hInv oid with e | ⟨y, hy, _⟩ | ⟨sc, _, hs, _⟩
+  · exact e
+  · exact absurd hy (hNT y)
+  · exact absurd hs (hNS sc)
+
+/-- **seL4-MCS `maybeReturnSchedContext` on a receiver that may be running**:
+seL4's guard (`schedContextReturnAdmitted`), then seL4's three writes
+(`schedContextReturnPerform`); else the state unchanged. -/
+def maybeReturnSchedContextRunning (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) : SystemState :=
+  match st.getNotification? n with
+  | none => st
+  | some ntfn =>
+    match ntfn.schedContext with
+    | none => st
+    | some s =>
+      match s.toObjId.toValid?, tid.toValid? with
+      | some vS, some vT =>
+        if schedContextReturnAdmitted st vS vT then schedContextReturnPerform st vS tid
+        else st
+      | _, _ => st
+
+/-- **The running return is the identity or seL4's writes under seL4's guard.** -/
+theorem maybeReturnSchedContextRunning_cases (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) :
+    maybeReturnSchedContextRunning st n tid = st ∨
+      ∃ (vS : SeLe4n.ValidObjId) (vT : SeLe4n.ValidThreadId), vT.val = tid ∧
+        (∃ ntfn s, st.getNotification? n = some ntfn ∧ ntfn.schedContext = some s ∧
+          s.toObjId = vS.val) ∧
+        schedContextReturnAdmitted st vS vT = true ∧
+        maybeReturnSchedContextRunning st n tid = schedContextReturnPerform st vS tid := by
+  unfold maybeReturnSchedContextRunning
+  split
+  · exact Or.inl rfl
+  rename_i ntfn hN
+  split
+  · exact Or.inl rfl
+  rename_i s hS
+  split
+  · rename_i vS vT hSv hT
+    split
+    · rename_i hA
+      refine Or.inr ⟨vS, vT, ?_, ⟨ntfn, s, hN, hS, ?_⟩, hA, rfl⟩
+      · unfold SeLe4n.ThreadId.toValid? at hT
+        split at hT
+        · cases hT
+        · cases hT; rfl
+      · unfold SeLe4n.ObjId.toValid? at hSv
+        split at hSv
+        · cases hSv
+        · cases hSv; rfl
+    · exact Or.inl rfl
+  · exact Or.inl rfl
+
+/-- **A property the identity and seL4's writes under the guard carry, the
+running return carries.** -/
+theorem maybeReturnSchedContextRunning_induct (P : SystemState → SystemState → Prop)
+    (st : SystemState) (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (hId : P st st)
+    (hRet : ∀ (vS : SeLe4n.ValidObjId) (vT : SeLe4n.ValidThreadId), vT.val = tid →
+      schedContextReturnAdmitted st vS vT = true → P st (schedContextReturnPerform st vS tid)) :
+    P st (maybeReturnSchedContextRunning st n tid) := by
+  rcases maybeReturnSchedContextRunning_cases st n tid with h | ⟨vS, vT, hT, _, hA, h⟩
+  · rw [h]; exact hId
+  · rw [h]; exact hRet vS vT hT hA
+
+/-- **Where the guard fails the running return writes nothing.** -/
+theorem maybeReturnSchedContextRunning_of_guard_false {st : SystemState} {n : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} (h : signalReturnGuard st n tid = false) :
+    maybeReturnSchedContextRunning st n tid = st := by
+  unfold signalReturnGuard at h
+  unfold maybeReturnSchedContextRunning
+  cases hN : st.getNotification? n with
+  | none => rfl
+  | some ntfn =>
+    rw [hN] at h
+    simp only at h ⊢
+    cases hS : ntfn.schedContext with
+    | none => rfl
+    | some s =>
+      rw [hS] at h
+      simp only at h ⊢
+      cases hV : s.toObjId.toValid? <;> cases hT : tid.toValid? <;> simp_all
+
+/-- **The compiled running return**, the ids passed as their codes: seL4's
+guard asked before any write, then seL4's three writes in place.  A context code
+at or past `2 ^ 62` — which no object store holds — takes the specification. -/
+@[noinline] def maybeReturnSchedContextRunningFast (st : SystemState) (nCode tCode : Nat) :
+    SystemState :=
+  match st.getNotification? ⟨nCode⟩ with
+  | none => st
+  | some ntfn =>
+    let sCode := ntfn.schedContextCode
+    if sCode = 0 then st
+    else if sCode < 2 ^ 62 then
+      if hS : (⟨sCode - 1⟩ : SeLe4n.ObjId) = SeLe4n.ObjId.sentinel then st
+      else if hT : (⟨tCode⟩ : SeLe4n.ThreadId) = SeLe4n.ThreadId.sentinel then st
+      else if schedContextReturnAdmitted st ⟨⟨sCode - 1⟩, hS⟩ ⟨⟨tCode⟩, hT⟩ then
+        schedContextReturnPerform st ⟨⟨sCode - 1⟩, hS⟩ ⟨tCode⟩
+      else st
+    else maybeReturnSchedContextRunning st ⟨nCode⟩ ⟨tCode⟩
+
+/-- **The compiled running return is the running return.** -/
+theorem maybeReturnSchedContextRunningFast_eq (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) :
+    maybeReturnSchedContextRunningFast st n.val tid.val = maybeReturnSchedContextRunning st n tid := by
+  unfold maybeReturnSchedContextRunningFast
+  cases hN : st.getNotification? ⟨n.val⟩ with
+  | none =>
+    unfold maybeReturnSchedContextRunning
+    rw [show (⟨n.val⟩ : SeLe4n.ObjId) = n from rfl] at hN
+    rw [hN]
+  | some ntfn =>
+    have hN' : st.getNotification? n = some ntfn := hN
+    simp only
+    by_cases h0 : ntfn.schedContextCode = 0
+    · unfold maybeReturnSchedContextRunning
+      simp only [h0, ↓reduceIte, hN', Notification.schedContext, SeLe4n.SchedContextId.ofOptCode]
+    by_cases hW : ntfn.schedContextCode < 2 ^ 62
+    · simp only [h0, hW, ↓reduceIte]
+      unfold maybeReturnSchedContextRunning
+      obtain ⟨k, hk⟩ : ∃ k, ntfn.schedContextCode = k + 1 :=
+        ⟨ntfn.schedContextCode - 1, by omega⟩
+      simp only [hN', Notification.schedContext, hk, SeLe4n.SchedContextId.ofOptCode, Nat.add_sub_cancel,
+        SeLe4n.SchedContextId.toObjId, SeLe4n.SchedContextId.toNat, SeLe4n.ObjId.ofNat,
+        SeLe4n.ObjId.toValid?, SeLe4n.ThreadId.toValid?]
+      by_cases hS : (⟨k⟩ : SeLe4n.ObjId) = SeLe4n.ObjId.sentinel
+      · simp only [hS, ↓reduceDIte]
+      by_cases hT : (⟨tid.val⟩ : SeLe4n.ThreadId) = SeLe4n.ThreadId.sentinel
+      · have hT' : tid = SeLe4n.ThreadId.sentinel := hT
+        simp only [hS, hT', ↓reduceDIte]
+      have hT' : ¬ tid = SeLe4n.ThreadId.sentinel := hT
+      simp only [hS, hT, ↓reduceDIte]
+    · simp only [h0, hW, ↓reduceIte]
+
+/-- **seL4 `receiveIPC`'s return, as the receive runs it**: a blocking receive
+by a thread with a bound notification returns that notification's context
+(`maybeReturnSchedContextRunning`) when the receive did not complete the
+notification; a non-blocking receive, or a thread with no bound notification,
+writes nothing. -/
+def receiveReturnSchedContext (blocks : Bool) (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState :=
+  if blocks then
+    match st.getTcb? tid with
+    | some t =>
+      if t.boundNotificationCode = 0 then st
+      else maybeReturnSchedContextRunning st ⟨t.boundNotificationCode - 1⟩ tid
+    | none => st
+  else st
+
+/-- **A property the identity and seL4's writes carry, the receive's return
+carries.** -/
+theorem receiveReturnSchedContext_induct (P : SystemState → SystemState → Prop)
+    (blocks : Bool) (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hId : P st st)
+    (hRet : ∀ (vS : SeLe4n.ValidObjId) (vT : SeLe4n.ValidThreadId), vT.val = tid →
+      schedContextReturnAdmitted st vS vT = true → P st (schedContextReturnPerform st vS tid)) :
+    P st (receiveReturnSchedContext blocks st tid) := by
+  unfold receiveReturnSchedContext
+  split
+  · split
+    · split
+      · exact hId
+      · exact maybeReturnSchedContextRunning_induct P st _ tid hId hRet
+    · exact hId
+  · exact hId
+
+/-- **The receive's return keeps every TCB but for its two binding codes.** -/
+theorem receiveReturnSchedContext_tcb (blocks : Bool) (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) (x : TCB)
+    (h : (receiveReturnSchedContext blocks st tid).objects[oid]? = some (.tcb x)) :
+    ∃ y, st.objects[oid]? = some (.tcb y) ∧
+      (x = y ∨ x = { y with scBindingScCode := 0, scBindingOwnerCode := 0 }) :=
+  receiveReturnSchedContext_induct (fun a b => ∀ x, b.objects[oid]? = some (.tcb x) →
+      ∃ y, a.objects[oid]? = some (.tcb y) ∧
+        (x = y ∨ x = { y with scBindingScCode := 0, scBindingOwnerCode := 0 }))
+    blocks st tid (fun x h => ⟨x, h, Or.inl rfl⟩)
+    (fun vS _ _ _ => schedContextReturnPerform_tcb st vS tid hInv oid) x h
+
+/-- **The receive's return keeps every object that is neither a TCB nor a
+context.** -/
+theorem receiveReturnSchedContext_other (blocks : Bool) (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (oid : SeLe4n.ObjId)
+    (hNT : ∀ t, st.objects[oid]? ≠ some (.tcb t))
+    (hNS : ∀ sc, st.objects[oid]? ≠ some (.schedContext sc)) :
+    (receiveReturnSchedContext blocks st tid).objects[oid]? = st.objects[oid]? :=
+  receiveReturnSchedContext_induct (fun a b => b.objects[oid]? = a.objects[oid]?)
+    blocks st tid rfl (fun vS _ _ _ => schedContextReturnPerform_other st vS tid hInv oid hNT hNS)
+
+/-- **The receive's return keeps every slot's kind**: a slot holds an object
+after it exactly when it did before, and of the same kind. -/
+theorem receiveReturnSchedContext_objects (blocks : Bool) (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) :
+    (receiveReturnSchedContext blocks st tid).objects[oid]? = st.objects[oid]? ∨
+      (∃ tcb, st.objects[oid]? = some (.tcb tcb) ∧
+        (receiveReturnSchedContext blocks st tid).objects[oid]? =
+          some (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 })) ∨
+      (∃ sc sc', st.objects[oid]? = some (.schedContext sc) ∧
+        (receiveReturnSchedContext blocks st tid).objects[oid]? = some (.schedContext sc')) :=
+  receiveReturnSchedContext_induct (fun a b => b.objects[oid]? = a.objects[oid]? ∨
+      (∃ tcb, a.objects[oid]? = some (.tcb tcb) ∧
+        b.objects[oid]? = some (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 })) ∨
+      (∃ sc sc', a.objects[oid]? = some (.schedContext sc) ∧
+        b.objects[oid]? = some (.schedContext sc')))
+    blocks st tid (Or.inl rfl) (fun vS _ _ _ => schedContextReturnPerform_objects st vS tid hInv oid)
+
+/-- **seL4's return on a running receiver keeps the object store's integrity.** -/
+theorem schedContextReturnLinks_preserves_objects_invExt (st : SystemState)
+    (vS : SeLe4n.ValidObjId) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
+    (schedContextReturnLinks st vS tid).objects.invExt := by
+  unfold schedContextReturnLinks
+  split
+  · exact hObjInv
+  split
+  · exact hObjInv
+  dsimp only
+  have hFlag : ∀ (S : SystemState), (match runningCoreOf? st tid with
+      | some c => S.markReschedulePendingOnCore c
+      | none => S).objects = S.objects := fun S => by split <;> rfl
+  rw [markKeyChangeFor_objects, markCandidacyGainFor_objects, hFlag]
+  exact SystemState.updateTcb_preserves_objects_invExt _ tid _
+    (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hObjInv)
+
+/-- **The return keeps the object store's integrity**: seL4's three writes,
+then the purge. -/
+theorem schedContextReturnPerform_preserves_objects_invExt (st : SystemState)
+    (vS : SeLe4n.ValidObjId) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
+    (schedContextReturnPerform st vS tid).objects.invExt :=
+  SchedContextOps.purgeReplenishment_objects_invExt _ _
+    (schedContextReturnLinks_preserves_objects_invExt st vS tid hObjInv)
+
+/-- **The receive's return keeps the object store's integrity.** -/
+theorem receiveReturnSchedContext_objects_invExt (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
+    (receiveReturnSchedContext blocks st tid).objects.invExt :=
+  receiveReturnSchedContext_induct (fun _ b => b.objects.invExt) blocks st tid hObjInv
+    (fun vS _ _ _ => schedContextReturnPerform_preserves_objects_invExt st vS tid hObjInv)
+
+/-- **Whether the receive's return writes**: a blocking receive by a thread
+whose bound notification's context is its own (`signalReturnGuard`). -/
+@[inline] def receiveReturnFires (blocks : Bool) (st : SystemState) (tid : SeLe4n.ThreadId) :
+    Bool :=
+  blocks &&
+    (match st.getTcb? tid with
+     | some t => t.boundNotificationCode != 0 &&
+         signalReturnGuard st ⟨t.boundNotificationCode - 1⟩ tid
+     | none => false)
+
+/-- **Where it does not fire the receive's return writes nothing.** -/
+theorem receiveReturnSchedContext_of_fires_false {blocks : Bool} {st : SystemState}
+    {tid : SeLe4n.ThreadId} (h : receiveReturnFires blocks st tid = false) :
+    receiveReturnSchedContext blocks st tid = st := by
+  unfold receiveReturnFires at h
+  unfold receiveReturnSchedContext
+  cases blocks with
+  | false => rfl
+  | true =>
+    simp only [Bool.true_and] at h
+    simp only [↓reduceIte]
+    cases hT : st.getTcb? tid with
+    | none => rfl
+    | some t =>
+      rw [hT] at h
+      simp only at h ⊢
+      by_cases h0 : t.boundNotificationCode = 0
+      · simp only [h0, ↓reduceIte]
+      · simp only [h0, ↓reduceIte]
+        have hG : signalReturnGuard st ⟨t.boundNotificationCode - 1⟩ tid = false := by
+          simpa [h0] using h
+        exact maybeReturnSchedContextRunning_of_guard_false hG
+
+/-- **Every TCB the receive's return was handed is still there**, its binding
+codes cleared or not. -/
+theorem receiveReturnSchedContext_tcb_fwd (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) (y : TCB)
+    (h : st.objects[oid]? = some (.tcb y)) :
+    ∃ x, (receiveReturnSchedContext blocks st tid).objects[oid]? = some (.tcb x) ∧
+      (x = y ∨ x = { y with scBindingScCode := 0, scBindingOwnerCode := 0 }) := by
+  rcases receiveReturnSchedContext_objects blocks st tid hInv oid with e | ⟨y', hy, e⟩ | ⟨_, _, hs, _⟩
+  · exact ⟨y, by rw [e]; exact h, Or.inl rfl⟩
+  · rw [h] at hy; cases hy; exact ⟨_, e, Or.inr rfl⟩
+  · rw [h] at hs; cases hs
+
+/-- **seL4's return keeps every core's current slot**: it raises flags only. -/
+theorem schedContextReturnLinks_currentOnCore (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (c : Concurrency.CoreId) :
+    (schedContextReturnLinks st vS tid).scheduler.currentOnCore c =
+      st.scheduler.currentOnCore c := by
+  unfold schedContextReturnLinks
+  split
+  · rfl
+  split
+  · rfl
+  dsimp only
+  rw [markKeyChangeFor_extract_frame (fun s => s.scheduler.currentOnCore c) _ _ _
+      (fun _ _ => by simp [SystemState.markReschedulePendingOnCore]),
+    markCandidacyGainFor_extract_frame (fun s => s.scheduler.currentOnCore c) _ _ _
+      (fun _ _ => by simp [SystemState.markReschedulePendingOnCore])]
+  split <;> simp [SystemState.markReschedulePendingOnCore, SystemState.updateTcb_scheduler,
+    SystemState.rewriteObject_scheduler]
+
+/-- **The return keeps every core's current slot**: the purge writes release
+links and replenish queues only. -/
+theorem schedContextReturnPerform_currentOnCore (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (c : Concurrency.CoreId) :
+    (schedContextReturnPerform st vS tid).scheduler.currentOnCore c =
+      st.scheduler.currentOnCore c := by
+  unfold schedContextReturnPerform
+  rw [SchedContextOps.purgeReplenishment_currentOnCore, schedContextReturnLinks_currentOnCore]
+
+/-- **The receive's return keeps every core's current slot.** -/
+theorem receiveReturnSchedContext_currentOnCore (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : Concurrency.CoreId) :
+    (receiveReturnSchedContext blocks st tid).scheduler.currentOnCore c =
+      st.scheduler.currentOnCore c :=
+  receiveReturnSchedContext_induct
+    (fun a b => b.scheduler.currentOnCore c = a.scheduler.currentOnCore c) blocks st tid rfl
+    (fun vS _ _ _ => schedContextReturnPerform_currentOnCore st vS tid c)
+
+/-- **The syscall word the caller trapped with**: its saved `x7`
+(`arm64DefaultLayout.syscallNumReg`); `0`, which names no syscall, for a
+caller with no TCB.  Stated here, beside the receive's return, because the
+receive's lock sets read it to resolve whether the receive blocks
+(`receiveLegState`). -/
+@[inline] def callerSyscallWord (st : SystemState) (tid : SeLe4n.ThreadId) : UInt64 :=
+  match st.getTcb? tid with
+  | some t => SeLe4n.readRegWord t.registerContext SeLe4n.arm64DefaultLayout.syscallNumReg
+  | none => 0
+
+/-- **The state a receive's endpoint leg runs on**: seL4-MCS `receiveIPC`'s
+`maybeReturnSchedContext`, for a blocking receive, applied to the state the leg
+is handed.  One owner for the dispatch and for the footprints that re-run the
+leg. -/
+def receiveLegState (st : SystemState) (receiver : SeLe4n.ThreadId) : SystemState :=
+  receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st receiver)) st receiver
+
+/-- **The context a blocking receive returns**, read on the state the return
+runs on: the bound notification's context where the receive blocks and seL4's
+guard holds (`receiveReturnFires`), `none` otherwise. -/
+def receiveReturnContext? (st : SystemState) (receiver : SeLe4n.ThreadId) :
+    Option SeLe4n.SchedContextId :=
+  if Syscall.wordReceiveBlocks (callerSyscallWord st receiver) then
+    match st.getTcb? receiver with
+    | some t => if t.boundNotificationCode = 0 then none
+        else signalReturnContext? st ⟨t.boundNotificationCode - 1⟩ receiver
+    | none => none
+  else none
+
+/-- **The notification context a blocking receive may return**: its bound
+notification's context where the receive blocks, read without seL4's guard —
+the guard's superset, which a footprint locks where an earlier step of the same
+syscall (the busy-reply cancel) may change what the guard reads. -/
+def receiveReturnNotificationContext? (st : SystemState) (receiver : SeLe4n.ThreadId) :
+    Option SeLe4n.SchedContextId :=
+  if Syscall.wordReceiveBlocks (callerSyscallWord st receiver) then
+    match st.getTcb? receiver with
+    | some t => if t.boundNotificationCode = 0 then none
+        else notificationContext? st ⟨t.boundNotificationCode - 1⟩
+    | none => none
+  else none
+
+/-- The context a return writes is the notification context it may return. -/
+theorem receiveReturnNotificationContext?_of_receiveReturnContext? {st : SystemState}
+    {receiver : SeLe4n.ThreadId} {s : SeLe4n.SchedContextId}
+    (h : receiveReturnContext? st receiver = some s) :
+    receiveReturnNotificationContext? st receiver = some s := by
+  unfold receiveReturnContext? at h
+  unfold receiveReturnNotificationContext?
+  split at h
+  · rename_i hB
+    simp only [hB, ↓reduceIte]
+    split at h
+    · split at h
+      · cases h
+      · rename_i h0
+        simp only [h0, ↓reduceIte]
+        unfold signalReturnContext? at h
+        split at h
+        · exact h
+        · cases h
+    · cases h
+  · cases h
+
+/-- **The return writes no scheduler field but a reschedule flag**: any
+projection of the scheduler that the flag write leaves alone, the return leaves
+alone. -/
+theorem schedContextReturnLinks_scheduler_frame {F : Type} (f : SchedulerState → F)
+    (st : SystemState) (vS : SeLe4n.ValidObjId) (tid : SeLe4n.ThreadId)
+    (h : ∀ (s : SystemState) c, f (s.markReschedulePendingOnCore c).scheduler = f s.scheduler) :
+    f (schedContextReturnLinks st vS tid).scheduler = f st.scheduler := by
+  unfold schedContextReturnLinks
+  split
+  · rfl
+  split
+  · rfl
+  dsimp only
+  rw [markKeyChangeFor_extract_frame (fun s => f s.scheduler) _ _ _ h,
+    markCandidacyGainFor_extract_frame (fun s => f s.scheduler) _ _ _ h]
+  split
+  · rw [h]; simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
+  · simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
+
+/-- **The return writes no scheduler field but a reschedule flag and the purged
+replenish queue**: any projection of the scheduler that the flag write and the
+purge leave alone, the return leaves alone. -/
+theorem schedContextReturnPerform_scheduler_frame {F : Type} (f : SchedulerState → F)
+    (st : SystemState) (vS : SeLe4n.ValidObjId) (tid : SeLe4n.ThreadId)
+    (h : ∀ (s : SystemState) c, f (s.markReschedulePendingOnCore c).scheduler = f s.scheduler)
+    (hP : ∀ (s : SystemState) x, f (SchedContextOps.purgeReplenishment s x).scheduler =
+      f s.scheduler) :
+    f (schedContextReturnPerform st vS tid).scheduler = f st.scheduler := by
+  unfold schedContextReturnPerform
+  rw [hP, schedContextReturnLinks_scheduler_frame f st vS tid h]
+
+/-- **The return moves the replenish queue of the purge's core and no other**:
+the core the context's own release link names on the pre-state
+(`purgeReplenishCores`); seL4's three writes keep every release link. -/
+theorem schedContextReturnPerform_replenishQueueOnCore_ne (st : SystemState)
+    (vS : SeLe4n.ValidObjId) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (d : Concurrency.CoreId)
+    (h : d ∉ SchedContextOps.purgeReplenishCores st (SeLe4n.SchedContextId.ofObjId vS.val)) :
+    (schedContextReturnPerform st vS tid).scheduler.replenishQueueOnCore d =
+      st.scheduler.replenishQueueOnCore d := by
+  unfold schedContextReturnPerform
+  rw [SchedContextOps.purgeReplenishment_replenishQueueOnCore_ne _ _ _ ?_]
+  · exact schedContextReturnLinks_scheduler_frame (fun s => s.replenishQueueOnCore d) st vS tid
+      (fun _ _ => by simp [SystemState.markReschedulePendingOnCore])
+  · rw [SystemState.releaseCoreOf_of_linksAgree
+      (schedContextReturnLinks_releaseLinksAgree st vS tid hInv)]
+    intro hc
+    apply h
+    unfold SchedContextOps.purgeReplenishCores
+    rw [hc]
+    exact List.mem_singleton_self d
+
+/-- ...and so does the receive's return. -/
+theorem receiveReturnSchedContext_scheduler_frame {F : Type} (f : SchedulerState → F)
+    (blocks : Bool) (st : SystemState) (tid : SeLe4n.ThreadId)
+    (h : ∀ (s : SystemState) c, f (s.markReschedulePendingOnCore c).scheduler = f s.scheduler)
+    (hP : ∀ (s : SystemState) x, f (SchedContextOps.purgeReplenishment s x).scheduler =
+      f s.scheduler) :
+    f (receiveReturnSchedContext blocks st tid).scheduler = f st.scheduler :=
+  receiveReturnSchedContext_induct (fun a b => f b.scheduler = f a.scheduler) blocks st tid rfl
+    (fun vS _ _ _ => schedContextReturnPerform_scheduler_frame f st vS tid h hP)
+
+/-- **The receive's return moves no run queue or active domain.** -/
+theorem receiveReturnSchedContext_queues (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (d : Concurrency.CoreId) :
+    (receiveReturnSchedContext blocks st tid).scheduler.runQueueOnCore d =
+        st.scheduler.runQueueOnCore d ∧
+      (receiveReturnSchedContext blocks st tid).scheduler.activeDomainOnCore d =
+        st.scheduler.activeDomainOnCore d :=
+  ⟨receiveReturnSchedContext_scheduler_frame (fun s => s.runQueueOnCore d) blocks st tid
+      (fun _ _ => by simp [SystemState.markReschedulePendingOnCore])
+      (fun _ _ => SchedContextOps.purgeReplenishment_runQueueOnCore _ _ _),
+    receiveReturnSchedContext_scheduler_frame (fun s => s.activeDomainOnCore d) blocks st tid
+      (fun _ _ => by simp [SystemState.markReschedulePendingOnCore])
+      (fun _ _ => SchedContextOps.purgeReplenishment_activeDomainOnCore _ _ _)⟩
+
+/-- **The cores whose replenish queue a receive's return writes**: the purge's
+core (`purgeReplenishCores`) of the context it returns
+(`receiveReturnContext?`), read on the state the return runs on; none where the
+return does not fire. -/
+def receiveReturnReplenishCores (st : SystemState) (receiver : SeLe4n.ThreadId) :
+    List Concurrency.CoreId :=
+  ((receiveReturnContext? st receiver).map (SchedContextOps.purgeReplenishCores st)).getD []
+
+/-- **The running return moves the replenish queue of the returned context's
+purge core and no other.** -/
+theorem maybeReturnSchedContextRunning_replenishQueueOnCore_ne (st : SystemState)
+    (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (d : Concurrency.CoreId)
+    (h : d ∉ ((signalReturnContext? st n tid).map (SchedContextOps.purgeReplenishCores st)).getD []) :
+    (maybeReturnSchedContextRunning st n tid).scheduler.replenishQueueOnCore d =
+      st.scheduler.replenishQueueOnCore d := by
+  unfold signalReturnContext? signalReturnGuard notificationContext? at h
+  unfold maybeReturnSchedContextRunning
+  cases hN : st.getNotification? n with
+  | none => rfl
+  | some ntfn =>
+    rw [hN] at h
+    dsimp only
+    cases hS : ntfn.schedContext with
+    | none => rfl
+    | some s =>
+      simp only [hS, Option.bind_some] at h ⊢
+      cases hV : s.toObjId.toValid? with
+      | none => rfl
+      | some vS =>
+        cases hT : tid.toValid? with
+        | none => simp only
+        | some vT =>
+          simp only [hV, hT] at h ⊢
+          by_cases hA : schedContextReturnAdmitted st vS vT = true
+          · simp only [hA, ↓reduceIte, Option.map_some, Option.getD_some] at h ⊢
+            have hsv : SeLe4n.SchedContextId.ofObjId vS.val = s := by
+              unfold SeLe4n.ObjId.toValid? at hV
+              split at hV
+              · cases hV
+              · cases hV; rfl
+            exact schedContextReturnPerform_replenishQueueOnCore_ne st vS tid hInv d (by rw [hsv]; exact h)
+          · simp only [hA, Bool.false_eq_true, ↓reduceIte]
+
+/-- The leg's state keeps the object-store invariant. -/
+theorem receiveLegState_objects_invExt (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) : (receiveLegState st receiver).objects.invExt :=
+  receiveReturnSchedContext_objects_invExt _ st receiver hObjInv
+
+/-- The leg's state has every queue, current slot and active domain of the
+state it is read from. -/
+theorem receiveLegState_queues (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (d : Concurrency.CoreId) :
+    (receiveLegState st receiver).scheduler.runQueueOnCore d = st.scheduler.runQueueOnCore d ∧
+      (receiveLegState st receiver).scheduler.activeDomainOnCore d =
+        st.scheduler.activeDomainOnCore d ∧
+      (receiveLegState st receiver).scheduler.currentOnCore d = st.scheduler.currentOnCore d :=
+  let h := receiveReturnSchedContext_queues
+    (Syscall.wordReceiveBlocks (callerSyscallWord st receiver)) st receiver d
+  ⟨h.1, h.2, receiveReturnSchedContext_currentOnCore _ st receiver d⟩
+
+/-- **The leg's state moves the replenish queue of the returned context's purge
+core and no other** (`receiveReturnReplenishCores`). -/
+theorem receiveLegState_replenishQueueOnCore_ne (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (d : Concurrency.CoreId)
+    (h : d ∉ receiveReturnReplenishCores st receiver) :
+    (receiveLegState st receiver).scheduler.replenishQueueOnCore d =
+      st.scheduler.replenishQueueOnCore d := by
+  unfold receiveReturnReplenishCores receiveReturnContext? at h
+  unfold receiveLegState receiveReturnSchedContext
+  split
+  · rename_i hB
+    simp only [hB, ↓reduceIte] at h
+    split
+    · rename_i t hT
+      rw [hT] at h
+      split
+      · rfl
+      · rename_i h0
+        simp only [h0, ↓reduceIte] at h
+        exact maybeReturnSchedContextRunning_replenishQueueOnCore_ne st _ receiver hInv d h
+    · rfl
+  · rfl
+
+/-- A slot the receive's return finds a TCB in still holds a TCB. -/
+theorem receiveReturnSchedContext_objects_eq_of_tcb (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) {oid : SeLe4n.ObjId} {y : TCB}
+    (h : st.objects[oid]? = some (.tcb y)) :
+    ∃ x, (receiveReturnSchedContext blocks st tid).objects[oid]? = some (.tcb x) :=
+  let ⟨x, hx, _⟩ := receiveReturnSchedContext_tcb_fwd blocks st tid hInv oid y h
+  ⟨x, hx⟩
+
+/-- **The receive's return keeps every endpoint.** -/
+theorem receiveReturnSchedContext_getEndpoint? (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (epId : SeLe4n.ObjId) :
+    (receiveReturnSchedContext blocks st tid).getEndpoint? epId = st.getEndpoint? epId := by
+  unfold SystemState.getEndpoint?
+  rcases receiveReturnSchedContext_objects blocks st tid hInv epId with e | ⟨y, hy, e⟩ | ⟨sc, _, hs, e⟩
+  · rw [e]
+  · rw [e, hy]
+  · rw [e, hs]
+
+/-- **The compiled receive return.** -/
+@[noinline] def receiveReturnSchedContextFast (blocks : Bool) (st : SystemState) (tCode : Nat) :
+    SystemState :=
+  if blocks then
+    match st.getTcb? ⟨tCode⟩ with
+    | some t =>
+      if t.boundNotificationCode = 0 then st
+      else maybeReturnSchedContextRunningFast st (t.boundNotificationCode - 1) tCode
+    | none => st
+  else st
+
+/-- **The compiled receive return is the receive return.** -/
+theorem receiveReturnSchedContextFast_eq (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    receiveReturnSchedContextFast blocks st tid.val = receiveReturnSchedContext blocks st tid := by
+  unfold receiveReturnSchedContextFast receiveReturnSchedContext
+  split
+  · show (match st.getTcb? tid with
+      | some t => if t.boundNotificationCode = 0 then st
+        else maybeReturnSchedContextRunningFast st (t.boundNotificationCode - 1) tid.val
+      | none => st) = _
+    split
+    · split
+      · rfl
+      · exact maybeReturnSchedContextRunningFast_eq st ⟨_⟩ tid
+    · rfl
+  · rfl
+
 end SeLe4n.Kernel

@@ -1872,6 +1872,88 @@ private def finalise_clears_notification_link : IO Unit := do
   expect "finalise_unnamed_notification_keeps_the_context_link" (scCode stB == nA.val + 1)
     "a notification its context does not name back leaves the context's link"
 
+/-- seL4-MCS notification scheduling-context donation and return
+(`maybeDonateSchedContext`, `maybeReturnSchedContext`, `receiveIPC`'s
+`maybeReturnSchedContext`).  Notification 80 is bound to context 60; thread 2's
+bound notification is 80.
+
+* **Donation** (the step `completeSignal`, `receiveSignal`'s active case and
+  `sendSignal`'s wake each run): a thread with no context and a context with no
+  thread are bound both ways; seL4's guard false (the thread already holds a
+  context, or the context already serves a thread) writes nothing.
+* **Return on a blocking `Wait`**: the context bound to the waiter is unbound
+  both ways (the unbind's ok-state).
+* **Return on a blocking receive** (`receiveReturnSchedContext`): both links
+  cleared, the receiver keeps its current slot; a non-blocking receive, or a
+  thread whose context is not the notification's, writes nothing.
+* **The purge**: a returned context queued on a replenish queue is taken off
+  it, as seLe4n's unbind does. -/
+private def notificationDonation_seL4_semantics : IO Unit := do
+  let waiter : SeLe4n.ThreadId := ⟨2⟩
+  let scObj : SeLe4n.ObjId := ⟨60⟩
+  let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofObjId scObj
+  let otherSc : SeLe4n.ObjId := ⟨61⟩
+  let nA : SeLe4n.ObjId := ⟨80⟩
+  let ntfn : Notification :=
+    { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
+      schedContextCode := scId.val + 1 }
+  let mkSt (scThread : Nat) (tcbSc : Nat) (current : Option SeLe4n.ThreadId := none) :
+      SystemState :=
+    mkState [
+      (waiter.toObjId,
+        .tcb { mkTcb 2 with boundNotificationCode := nA.val + 1, scBindingScCode := tcbSc }),
+      (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with
+        boundThreadCode := scThread, notificationCode := nA.val + 1 }),
+      (otherSc, .schedContext (SeLe4n.Kernel.SchedContext.empty
+        (SeLe4n.SchedContextId.ofObjId otherSc))),
+      (nA, .notification ntfn)] current
+  let bound (st : SystemState) : Bool :=
+    (st.getTcb? waiter).any (fun t => decide (t.schedContextBinding = .bound scId)) &&
+      (st.getSchedContext? scId).any (fun sc => decide (sc.boundThread = some waiter))
+  let unbound (st : SystemState) : Bool :=
+    (st.getTcb? waiter).any (fun t => t.scBindingScCode == 0 && t.scBindingOwnerCode == 0) &&
+      (st.getSchedContext? scId).any (fun sc => decide (sc.boundThread = none))
+  -- Donation.
+  expect "ntfn_donate_binds_both_ways" (bound (maybeDonateSchedContext (mkSt 0 0) nA waiter))
+    "a thread with no context takes the notification's unbound context, both links written"
+  expect "ntfn_donate_guard_thread_has_context"
+    (!bound (maybeDonateSchedContext (mkSt 0 (otherSc.val + 1)) nA waiter) &&
+      (((maybeDonateSchedContext (mkSt 0 (otherSc.val + 1)) nA waiter).getSchedContext? scId).any
+        fun sc => decide (sc.boundThread = none)))
+    "a thread already holding a context takes none (seL4's guard false)"
+  expect "ntfn_donate_guard_context_serves_a_thread"
+    (((maybeDonateSchedContext (mkSt 7 0) nA waiter).getTcb? waiter).any
+      fun t => t.scBindingScCode == 0)
+    "a context already serving a thread is not donated (seL4's guard false)"
+  -- Return on a blocking Wait.
+  expect "ntfn_return_on_wait_unbinds"
+    (unbound (maybeReturnSchedContext (mkSt (waiter.val + 1) (scId.val + 1)) nA waiter))
+    "a waiter holding its notification's context returns it, both links cleared"
+  expect "ntfn_return_on_wait_guard_false"
+    (((maybeReturnSchedContext (mkSt 0 (otherSc.val + 1)) nA waiter).getTcb? waiter).any
+      fun t => t.scBindingScCode == otherSc.val + 1)
+    "a waiter holding another context keeps it (seL4's guard false)"
+  -- Return on a blocking receive: the receiver is current and stays so.
+  let stR := mkSt (waiter.val + 1) (scId.val + 1) (some waiter)
+  let stR' := receiveReturnSchedContext true stR waiter
+  expect "ntfn_return_on_receive_unbinds_keeps_current"
+    (unbound stR' && stR'.scheduler.currentOnCore bootCoreId == stR.scheduler.currentOnCore bootCoreId)
+    "a blocking receiver returns its notification's context and keeps its current slot"
+  expect "ntfn_return_on_receive_nonblocking_writes_nothing"
+    (bound (receiveReturnSchedContext false stR waiter))
+    "a non-blocking receive returns nothing"
+  -- The purge: the context queued on a replenish queue is taken off it.
+  let stQ := stR.releaseInsertOn bootCoreId scId 100
+  expect "ntfn_return_purge_precondition_queued" (stQ.releaseCoreOf scId == some bootCoreId)
+    "the test context is queued on the boot core's replenish queue"
+  let stQ' := receiveReturnSchedContext true stQ waiter
+  expect "ntfn_return_purges_replenish_entry"
+    (unbound stQ' && stQ'.releaseCoreOf scId == none)
+    "a returned context is taken off the replenish queue that held it"
+  expect "ntfn_return_wait_purges_replenish_entry"
+    ((maybeReturnSchedContext stQ nA waiter).releaseCoreOf scId == none)
+    "the Wait's return, the unbind's ok-state, purges it too"
+
 /-- SD-060 (`v0.35.204`): **`.schedContextBind` binds only a thread the caller
 holds a WRITABLE TCB capability to.**
 
@@ -3027,6 +3109,7 @@ def main : IO Unit := do
   IO.println "--- .schedContextBind on a notification capability binds the notification ---"
   schedContextBind_notification_capability
   schedContextUnbind_seL4_semantics
+  notificationDonation_seL4_semantics
   finalise_clears_notification_link
   IO.println "--- WS-ZA ZA6.4: a configure takes a core's scheduling control ---"
   sd063_schedContextConfigure_requires_sched_control

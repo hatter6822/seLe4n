@@ -1214,6 +1214,66 @@ theorem cancelRecvBusyReply_boundNotificationCode (ctx : LabelingContext)
     exact cancelReplyHolder_tcbReadingKeptExcept boundNotificationCode_cancelBlind st ⟨k⟩ ec hInv
       tid (fun h => busyReplyHolder?_ne (recvBusyReplyHolderCode_succ hk) h.symm)
 
+/-- The syscall word a thread trapped with is a reading the cancel cannot move
+on another thread. -/
+theorem syscallWord_cancelBlind : TcbReadingCancelBlind
+    (fun t : TCB => SeLe4n.readRegWord t.registerContext SeLe4n.arm64DefaultLayout.syscallNumReg) :=
+  ⟨fun _ _ _ _ _ _ => rfl, fun _ => rfl, fun _ => rfl, fun _ => rfl, fun _ _ => rfl⟩
+
+/-- **A receive's busy-reply cancel keeps the receiver's syscall word.** -/
+theorem cancelRecvBusyReply_callerSyscallWord (ctx : LabelingContext)
+    (tid : SeLe4n.ThreadId) (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (ec : Concurrency.CoreId) (st : SystemState) (hInv : st.objects.invExt) :
+    callerSyscallWord (cancelRecvBusyReply ctx tid gate decoded ec st) tid =
+      callerSyscallWord st tid := by
+  have h : ((cancelRecvBusyReply ctx tid gate decoded ec st).getTcb? tid).map
+      (fun t : TCB => SeLe4n.readRegWord t.registerContext SeLe4n.arm64DefaultLayout.syscallNumReg) =
+      (st.getTcb? tid).map
+      (fun t : TCB => SeLe4n.readRegWord t.registerContext SeLe4n.arm64DefaultLayout.syscallNumReg) := by
+    unfold cancelRecvBusyReply
+    cases hk : recvBusyReplyHolderCode ctx tid gate decoded st with
+    | zero => rfl
+    | succ k =>
+      exact cancelReplyHolder_tcbReadingKeptExcept syscallWord_cancelBlind st ⟨k⟩ ec hInv
+        tid (fun h => busyReplyHolder?_ne (recvBusyReplyHolderCode_succ hk) h.symm)
+  unfold callerSyscallWord
+  cases h1 : (cancelRecvBusyReply ctx tid gate decoded ec st).getTcb? tid <;>
+    cases h2 : st.getTcb? tid <;> rw [h1, h2] at h <;> simp_all
+
+/-- **The notification context a blocking receive may return is read exactly on
+its entry state**: the busy-reply cancel keeps the receiver's syscall word, its
+bound notification and every notification's context word
+(`receiveReturnNotificationContext?`).  seL4's guard itself is not kept: the
+cancel may rewrite the receiver's binding (a context donated by the holder), so
+the busy arm's footprint locks this context, the guard's superset. -/
+theorem cancelRecvBusyReply_receiveReturnNotificationContext? (ctx : LabelingContext)
+    (tid : SeLe4n.ThreadId) (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (ec : Concurrency.CoreId) (st : SystemState) (hInv : st.objects.invExt) :
+    receiveReturnNotificationContext? (cancelRecvBusyReply ctx tid gate decoded ec st) tid =
+      receiveReturnNotificationContext? st tid := by
+  have hB := cancelRecvBusyReply_boundNotificationCode ctx tid gate decoded ec st hInv
+  have hN := cancelRecvBusyReply_ntfnContextsAgree ctx tid gate decoded ec st hInv
+  unfold receiveReturnNotificationContext?
+  rw [cancelRecvBusyReply_callerSyscallWord ctx tid gate decoded ec st hInv]
+  split
+  · cases h1 : (cancelRecvBusyReply ctx tid gate decoded ec st).getTcb? tid <;>
+      cases h2 : st.getTcb? tid <;> rw [h1, h2] at hB <;> simp only [Option.map_none,
+        Option.map_some, reduceCtorEq, Option.some.injEq] at hB <;>
+      first | rfl | simp only [hB, notificationContext?_congr hN]
+  · rfl
+
+/-- **The context the busy arm's return writes is the one its footprint
+locks**: a return the cancelled state fires names the entry state's
+notification context. -/
+theorem cancelRecvBusyReply_receiveReturnContext?_locked (ctx : LabelingContext)
+    (tid : SeLe4n.ThreadId) (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (ec : Concurrency.CoreId) (st : SystemState) (hInv : st.objects.invExt)
+    {s : SeLe4n.SchedContextId}
+    (h : receiveReturnContext? (cancelRecvBusyReply ctx tid gate decoded ec st) tid = some s) :
+    receiveReturnNotificationContext? st tid = some s := by
+  rw [← cancelRecvBusyReply_receiveReturnNotificationContext? ctx tid gate decoded ec st hInv]
+  exact receiveReturnNotificationContext?_of_receiveReturnContext? h
+
 /-- **The notification a receive's completion names is the entry state's.** -/
 theorem cancelRecvBusyReply_receiverBoundNotification (ctx : LabelingContext)
     (tid : SeLe4n.ThreadId) (gate : SyscallGate) (decoded : SyscallDecodeResult)

@@ -664,26 +664,47 @@ theorem footprintCoversWrites_of_allCores (S : LockSet) (replenishCores : List C
   footprintCoversWrites_of_cores S _ _ st st' hS
     (fun d hd => absurd (Concurrency.mem_allCores d) hd) hRepl
 
+/-- **A receive's return is covered by a cores footprint naming its purge
+core**: it writes objects, a reschedule flag and the replenish queue its
+context's release link names (`receiveReturnReplenishCores`), and moves no run
+queue, current slot or active domain (`receiveLegState_queues`). -/
+theorem footprintCoversWrites_receiveLegState (S : LockSet) (st : SystemState)
+    (receiver : SeLe4n.ThreadId) (run repl : List CoreId) (hObjInv : st.objects.invExt)
+    (hS : S.pairs = schedFootprintOfCores run repl)
+    (hRet : ∀ d, d ∈ receiveReturnReplenishCores st receiver → d ∈ repl) :
+    footprintCoversWrites S st (receiveLegState st receiver) :=
+  footprintCoversWrites_of_cores S run repl _ _ hS
+    (fun d _ => let h := receiveLegState_queues st receiver d; ⟨h.1, h.2.2, h.2.1⟩)
+    (fun d hd => receiveLegState_replenishQueueOnCore_ne st receiver hObjInv d
+      (fun hm => hd (hRet d hm)))
+
 /-- **The busy-reply receive's footprint covers its writes**
 (`schedLockSet_receiveCancellingHolderOnCore`'s busy arm): the holder's cancel,
-which moves no reservation, then the receive's leg and hand-off on the cancelled
-state, which move the ones the leg re-run there names. -/
+which moves no reservation, then the receive's return (`receiveLegState`), which
+moves the one its purge names, then the receive's leg and hand-off on the state
+it leaves, which move the ones the leg re-run there names. -/
 theorem schedLockSet_receiveCancellingHolder_coversWrites (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
     (holder : SeLe4n.ThreadId) (st st1 st' : SystemState) (dequeued : SeLe4n.ThreadId)
     (summary : CapTransferSummary) (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet)
     (hObjInv : st.objects.invExt)
     (hS : S.pairs = schedFootprintOfCores Concurrency.allCores
-      (endpointReceiveLegReplenishCores (cancelReplyHolder st holder executingCore) endpointId
-        receiver replyId executingCore))
+      (endpointReceiveLegReplenishCores
+        (receiveLegState (cancelReplyHolder st holder executingCore) receiver) endpointId
+        receiver replyId executingCore ++
+        receiveReturnReplenishCores (cancelReplyHolder st holder executingCore) receiver))
     (hLeg : endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore
-      (cancelReplyHolder st holder executingCore) = (st1, .ok (dequeued, summary, sgi)))
+      (receiveLegState (cancelReplyHolder st holder executingCore) receiver) =
+        (st1, .ok (dequeued, summary, sgi)))
     (hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore = .ok st') :
     footprintCoversWrites S st st' :=
   footprintCoversWrites_of_allCores S _ st st' hS fun d hd => by
+    simp only [List.mem_append, not_or] at hd
+    have hIC := cancelReplyHolder_objects_invExt st holder executingCore hObjInv
     rw [endpointReceiveLegAndHandoff_replenishQueueOnCore_ne endpointId receiver replyId
       executingCore _ st1 st' dequeued summary sgi d
-      (cancelReplyHolder_objects_invExt st holder executingCore hObjInv) hd hLeg hHand,
+      (receiveLegState_objects_invExt _ receiver hIC) hd.1 hLeg hHand,
+      receiveLegState_replenishQueueOnCore_ne _ receiver hIC d hd.2,
       cancelReplyHolder_replenishQueueOnCore]
 
 -- ============================================================================

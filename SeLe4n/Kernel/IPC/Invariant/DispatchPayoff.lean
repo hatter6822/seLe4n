@@ -467,9 +467,15 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     -- receiver abandoned, and the pop resolves its new owner off that context's
     -- own reply stack; this is the obligation that resolution carries.  Vacuous
     -- unless the receiver holds a `.donated` binding whose context heads a stack.
-    cleanupDonationStackValid st tid ∧
-    (∀ rid, replyIdOpt = some rid → replyIdEstablishFresh st rid) ∧
-    (∀ st1 res, endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st = (st1, res) →
+    -- **WS-SX SX8.2**: stated at the state seL4-MCS's `maybeReturnSchedContext`
+    -- leaves, which the receive runs on (`receiveReturnSchedContext`).
+    cleanupDonationStackValid
+      (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid) tid ∧
+    (∀ rid, replyIdOpt = some rid → replyIdEstablishFresh
+      (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid) rid) ∧
+    (∀ st1 res, endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore
+      (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid)
+        = (st1, res) →
       st1.objects.invExt) ∧
     -- **WS-OD OD3.6**: the arm's rendezvous donation makes the receiver hold a
     -- `.donated` binding, and `donationOwnerValid` demands that a donation's
@@ -479,7 +485,9 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     -- reply leg: over the receive stage's committed state, which is a
     -- pre-state-computable expression, so the pack stays pre-state.
     (∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
-      (endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st).1.getTcb? s = some sTcb →
+      (endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore
+        (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid)
+        ).1.getTcb? s = some sTcb →
       sTcb.schedContextBinding ≠ .donated sc0 tid)
   replyStage : ∀ rid (r : Reply) (callerTid : SeLe4n.ThreadId),
     decoded.syscallId = .reply → cap.target = .replyCap rid →
@@ -810,15 +818,31 @@ private theorem receiveResolvedArm_cancelled_preserves_ipcInvariantFull
       obtain ⟨hCleanupStack, hRidFresh, hRecvInvExt,
           hRecvNotOwner⟩ :=
         hPack.recvStage epId replyIdOpt hSel hTgt hRid
-      obtain ⟨tcbC, hTC, hReadyC, hBoundC⟩ := hPack.callerShape
-      have hFresh := readyThread_endpointQueueFresh st tid tcbC
-        hInv.queueHeadBlockedConsistent hInv.endpointQueueTailBlockedConsistent
-        ((SystemState.getTcb?_eq_some_iff st tid tcbC).mp hTC) hReadyC
-      have hTailR := recvTailCrossQueueFresh st epId
-        hInv.dualQueueSystemInvariant hInv.endpointQueueTailBlockedConsistent
+      obtain ⟨tcbC0, hTC0, hReadyC0, -⟩ := hPack.callerShape
+      -- **WS-SX SX8.2**: seL4-MCS `receiveIPC`'s `maybeReturnSchedContext` runs
+      -- first; it writes two binding codes and a context's thread link, so the
+      -- receive's premises hold of the state it leaves.
+      obtain ⟨hInvR, hObjInvR⟩ := receiveReturnSchedContext_preserves_ipcInvariantFull
+        (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid hObjInv hInv
+      have hBudgetsR : allTimeoutBudgetsNone
+          (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid) := by
+        intro t x hx
+        obtain ⟨y, hy, hxy⟩ := receiveReturnSchedContext_tcb _ st tid hObjInv _ x hx
+        rcases hxy with h | h <;> rw [h] <;> exact hBudgets t y hy
+      obtain ⟨tcbC, hTCRaw, hTC0'⟩ := receiveReturnSchedContext_tcb_fwd
+        (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid hObjInv _ tcbC0
+        ((SystemState.getTcb?_eq_some_iff st tid tcbC0).mp hTC0)
+      have hReadyC : tcbC.ipcState = .ready := by rcases hTC0' with rfl | rfl <;> exact hReadyC0
+      generalize receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid
+        = stR at hStep hCleanupStack hRidFresh hRecvInvExt hRecvNotOwner hInvR hObjInvR hBudgetsR hTCRaw
+      have hTC : stR.getTcb? tid = some tcbC := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hTCRaw
+      have hFresh := readyThread_endpointQueueFresh stR tid tcbC
+        hInvR.queueHeadBlockedConsistent hInvR.endpointQueueTailBlockedConsistent hTCRaw hReadyC
+      have hTailR := recvTailCrossQueueFresh stR epId
+        hInvR.dualQueueSystemInvariant hInvR.endpointQueueTailBlockedConsistent
       have hRecvInv := endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
         epId tid replyIdOpt
-        executingCore st hInv hObjInv hCleanupStack hBudgets
+        executingCore stR hInvR hObjInvR hCleanupStack hBudgetsR
         hFresh hTailR hRidFresh
         (fun tcb hTcb => by
           rw [hTC] at hTcb
@@ -829,7 +853,7 @@ private theorem receiveResolvedArm_cancelled_preserves_ipcInvariantFull
           obtain rfl := Option.some.inj hTcb
           exact hReadyC)
       cases hRecv : endpointReceiveDualWithCapsOnCore epId tid replyIdOpt
-          executingCore st with
+          executingCore stR with
       | mk st1 res1 =>
           rw [hRecv] at hStep hRecvInv
           cases res1 with
@@ -2361,6 +2385,14 @@ theorem syscallDispatchQuiescence_inhabited_receive :
     simp only [resolveRecvReplyId, witnessDecodedRecv] at hRes
     injection hRes with hOpt
     subst hOpt
+    -- **WS-SX SX8.2**: the witness thread has no bound notification, so seL4's
+    -- return writes nothing.
+    have hRet : ∀ b, receiveReturnSchedContext b witnessSt3 witnessTid = witnessSt3 := by
+      intro b
+      unfold receiveReturnSchedContext
+      rw [witnessSt3_getTcb]
+      cases b <;> simp [witnessTcbBound, witnessTcbFresh]
+    rw [hRet]
     -- **WS-OD OD4.4**: the witness store heads no reply stack, so the pre-receive
     -- cleanup's outer-caller obligation is discharged outright.
     refine ⟨cleanupDonationStackValid_of_no_stacks witnessSt3 witnessSt3_noStacks witnessTid,

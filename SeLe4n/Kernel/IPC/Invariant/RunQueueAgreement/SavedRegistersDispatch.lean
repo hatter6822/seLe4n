@@ -307,7 +307,18 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
       · cases h
       rename_i stDon hHand
       cases h
-      exact hW (w0.trans (receiveArm_savedRegsWrittenFree _ hIC hHC hFr hRecv hHand))
+      -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext` first: it writes no
+      -- saved register and no endpoint.
+      have hIR := receiveReturnSchedContext_objects_invExt
+        (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid hIC
+      have hHR : ∀ w, ((receiveReturnSchedContext (Syscall.wordReceiveBlocks
+          (callerSyscallWord stC tid)) stC tid).getEndpoint? epId).bind (·.sendQ.head) = some w →
+          offCoreFree ec st w := by
+        intro w hw
+        rw [receiveReturnSchedContext_getEndpoint? _ stC tid hIC] at hw
+        exact hHC w hw
+      exact hW ((w0.trans (savedRegsWrittenFree.receiveReturn _ stC tid hIC)).trans
+        (receiveArm_savedRegsWrittenFree _ hIR hHR hFr hRecv hHand))
     · cases h
   cases hId : decoded.syscallId <;> rw [hId] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip

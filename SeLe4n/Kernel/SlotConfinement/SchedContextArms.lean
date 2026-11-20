@@ -301,6 +301,44 @@ theorem maybeReturnSchedContext_confinedToCores (st : SystemState) (n : SeLe4n.O
     rw [← schedContextUnbindWriteSet_of_returnAdmitted hG hT hA]
     exact schedContextUnbind_confinedToCores vS st _ hU
 
+/-- **seL4 `receiveIPC`'s return writes no observable slot of any core**: its
+two object writes, a reschedule flag and the purge's replenish queue are none of
+the six confined slots (the receiver keeps its current slot; seL4's
+`rescheduleRequired` is a flag).  So the receive's write set is its leg's, read
+on the state the return leaves. -/
+theorem receiveReturnSchedContext_confinedToCores (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores st (receiveReturnSchedContext blocks st tid) [] := by
+  have hF := fun {F : Type} (f : SchedulerState → F)
+      (h : ∀ (s : SystemState) c, f (s.markReschedulePendingOnCore c).scheduler = f s.scheduler)
+      (hP : ∀ (s : SystemState) x,
+        f (SchedContextOps.purgeReplenishment s x).scheduler = f s.scheduler) =>
+    receiveReturnSchedContext_scheduler_frame f blocks st tid h hP
+  have hM : (receiveReturnSchedContext blocks st tid).machine = st.machine :=
+    receiveReturnSchedContext_induct (fun a b => b.machine = a.machine) blocks st tid rfl
+      (fun vS _ _ _ => by
+        show (schedContextReturnPerform st vS tid).machine = st.machine
+        unfold schedContextReturnPerform schedContextReturnLinks
+        rw [SchedContextOps.purgeReplenishment_machine]
+        split
+        · rfl
+        split
+        · rfl
+        dsimp only
+        rw [markKeyChangeFor_machine, markCandidacyGainFor_machine]
+        split <;> simp [SystemState.markReschedulePendingOnCore, SystemState.updateTcb_machine,
+          SystemState.rewriteObject_machine])
+  refine ⟨fun c _ => (receiveReturnSchedContext_queues blocks st tid c).1,
+    fun c _ => receiveReturnSchedContext_currentOnCore blocks st tid c,
+    fun c _ => (receiveReturnSchedContext_queues blocks st tid c).2,
+    fun c _ => hF (fun s => s.domainTimeRemainingOnCore c)
+      (fun _ _ => by simp [SystemState.markReschedulePendingOnCore])
+      (fun _ _ => SchedContextOps.purgeReplenishment_domainTimeRemainingOnCore _ _ _),
+    fun c _ => hF (fun s => s.domainScheduleIndexOnCore c)
+      (fun _ _ => by simp [SystemState.markReschedulePendingOnCore])
+      (fun _ _ => SchedContextOps.purgeReplenishment_domainScheduleIndexOnCore _ _ _),
+    fun c _ => by rw [hM]⟩
+
 -- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `setThreadCpuAffinityWriteSet` moved to the
 -- production `SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean` (via
 -- `SyscallSchedFootprint.lean` until WS-LS LS2.5), beside

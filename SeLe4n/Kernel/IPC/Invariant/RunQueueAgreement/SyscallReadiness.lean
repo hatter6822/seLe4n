@@ -1398,16 +1398,24 @@ theorem receiveResolvedArm_readyKeptStage (ctx : LabelingContext)
     · cases h
     rename_i stDon hHand
     cases h
+    -- **WS-SX SX8.2**: seL4-MCS `receiveIPC`'s `maybeReturnSchedContext` first.
+    have R := receiveReturnSchedContext_runQueueStage
+      (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid
+    obtain ⟨hIR, hRR⟩ := R.1.links hIC hRC
+    have hDR := R.entry.2 hIC hRC hRR hDC
+    obtain ⟨hHR, hCurR, hActR⟩ := receiveReturnSchedContext_receiveEntryFacts
+      (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) hIC hHC hCurC hActC
     have E := runQueueStage_of_pair_eq
-      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ hHC
-        hCurC P.notIdle hActC) hRecv
-    obtain ⟨_, hR2⟩ := E.1.links hIC hRC
-    exact readyKeptStage.trans hS.1 hK ((runQueueStage_of_pair_eq
-      (endpointReceiveDualWithCapsOnCore_readyKeptStage _ _ _ _ _ hHC
-        hCurC P.notIdle hActC) hRecv).trans E.1
+      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ hHR
+        hCurR P.notIdle hActR) hRecv
+    obtain ⟨_, hR2⟩ := E.1.links hIR hRR
+    exact readyKeptStage.trans hS.1 hK (readyKeptStage.trans R.1 (.of_stage R)
+      ((runQueueStage_of_pair_eq
+      (endpointReceiveDualWithCapsOnCore_readyKeptStage _ _ _ _ _ hHR
+        hCurR P.notIdle hActR) hRecv).trans E.1
       (.of_stage ((applyReceiveRendezvousHandoff_runQueueStage
-          ((E.2 hIC hRC hR2 hDC).coherent _) hHand).trans
-        (stageDeliveredMessage_runQueueStage _ _ _))))
+          ((E.2 hIR hRR hR2 hDR).coherent _) hHand).trans
+        (stageDeliveredMessage_runQueueStage _ _ _)))))
   · cases h
 
 /-- A reply-receive whose receive completes its bound notification blocks no

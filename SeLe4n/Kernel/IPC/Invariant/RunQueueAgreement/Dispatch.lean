@@ -975,6 +975,82 @@ theorem maybeReturnSchedContext_runQueueEntryStage (st : SystemState) (n : SeLe4
     (RunQueueStage.refl _).entry
     (fun vS _ st' _ _ h => SchedContextOps.schedContextUnbind_runQueueEntryStage vS st st' h)
 
+/-- **seL4's three writes are a frame stage off the returned context**: its
+thread link written in place (no run, release or yield link moves), the thread's
+binding written in place, then reschedule flags. -/
+theorem schedContextReturnLinks_runQueueFrameStage (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (sc : SchedContext)
+    (hSc : st.getSchedContext? (SchedContextId.ofObjId vS.val) = some sc) :
+    SystemState.RunQueueFrameStage (· = SchedContextId.ofObjId vS.val) st
+      (schedContextReturnLinks st vS tid) := by
+  have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
+    (SchedContextId.ofObjId vS.val) sc).mp hSc
+  unfold schedContextReturnLinks
+  rw [SystemState.getSchedContextWitnessed?_eq_some hSc]
+  dsimp only
+  split
+  · exact (RunQueueStage.refl _).toFrame _
+  try dsimp only
+  have hIns : SystemState.RunQueueFrameStage (· = SchedContextId.ofObjId vS.val) st
+      (st.rewriteObject vS.val (.schedContext { sc with boundThreadCode := 0 })
+        (SystemState.rewriteAdmissible_schedContext hSc _)) :=
+    SystemState.RunQueueFrameStage.insert rfl rfl rfl
+      (fun c => by rw [show st.objects[vS.val]? = _ from hScRaw]; rfl)
+      (SystemState.objStateMono_nonTcb (by rw [show st.objects[vS.val]? = _ from hScRaw]; rfl) rfl)
+      (hR := fun _ => by rw [show st.objects[vS.val]? = _ from hScRaw]; rfl)
+      (hY := by rw [show st.objects[vS.val]? = _ from hScRaw]; rfl)
+  refine SystemState.RunQueueFrameStage.trans ?_ ((markKeyChangeFor_runQueueStage _ _ _).toFrame _)
+  refine SystemState.RunQueueFrameStage.trans ?_
+    ((markCandidacyGainFor_runQueueStage _ _ _).toFrame _)
+  have hU : ∀ S : SystemState, RunQueueStage S
+      (S.updateTcb tid fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 }) :=
+    fun S => RunQueueStage.updateTcb _ _ (by intro _ _; rfl)
+  refine SystemState.RunQueueFrameStage.trans (hIns.trans ((hU _).toFrame _)) ?_
+  split
+  · exact (RunQueueStage.markReschedulePendingOnCore _ _).toFrame _
+  · exact (RunQueueStage.refl _).toFrame _
+
+/-- **The return on a running receiver keeps the run queues in agreement with
+the threads' links**: seL4's three writes are a frame stage off the context (its
+refill view reads the thread link), closed by the purge, which leaves the
+context unbound and on no replenish queue (`refillsSoundExcept_close_unbound`),
+as the unbind's close does. -/
+theorem schedContextReturnPerform_runQueueStage (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (vT : SeLe4n.ValidThreadId) (hTv : vT.val = tid)
+    (hA : schedContextReturnAdmitted st vS vT = true) :
+    RunQueueStage st (schedContextReturnPerform st vS tid) := by
+  unfold schedContextReturnAdmitted at hA
+  cases hSc : st.getSchedContext? (SchedContextId.ofObjId vS.val) with
+  | none => rw [hSc] at hA; cases hA
+  | some sc =>
+  rw [hSc] at hA
+  cases hTc : st.getTcb? vT.val with
+  | none => rw [hTc] at hA; cases hA
+  | some tcb =>
+  subst hTv
+  unfold schedContextReturnPerform
+  refine SystemState.RunQueueFrameStage.withRefills
+    ((schedContextReturnLinks_runQueueFrameStage st vS vT.val sc hSc).trans
+      (SchedContextOps.purgeReplenishment_runQueueFrameStage _ _))
+    fun _ hs hI _ _ _ hR4 h0 h4 => ?_
+  refine SystemState.refillsSoundExcept_close_unbound (u := { sc with boundThreadCode := 0 }) h4
+    (fun a ha => ?_) rfl (h0.1 _ sc hs hSc) (fun c e he hes => ?_)
+  · obtain ⟨b, hb, hv⟩ := (RefillViewsKept.of_agreeOffReleaseLinks
+      (SchedContextOps.purgeReplenishment_agree _ _)).getSchedContext? ha
+    rw [schedContextReturnLinks_getSchedContext?_self st vS vT.val sc tcb hI hSc hTc] at hb
+    cases Option.some.inj hb
+    exact hv.symm
+  · exact SystemState.not_mem_entries_of_not_queued hR4
+      (SystemState.releaseRemoveAnywhere_not_queued _ _) c e he hes
+
+/-- **seL4 `receiveIPC`'s return keeps the run queues in agreement with the
+threads' links.** -/
+theorem receiveReturnSchedContext_runQueueStage (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) : RunQueueStage st (receiveReturnSchedContext blocks st tid) :=
+  receiveReturnSchedContext_induct (fun a b => RunQueueStage a b) blocks st tid
+    (RunQueueStage.refl _)
+    (fun vS vT hT hA => schedContextReturnPerform_runQueueStage st vS tid vT hT hA)
+
 /-- **seL4's `sendSignal` keeps the run queues in agreement with the threads'
 links**: the wake's stage, then the donation's. -/
 theorem sendSignalOnCore_runQueueStage (n : SeLe4n.ObjId) (badge : SeLe4n.Badge)
@@ -1025,6 +1101,29 @@ theorem replyRecvCompletesSignalArm_runQueueEntryStage {ctx : LabelingContext}
       (notificationWaitCrossCoreDispatchChecked_ok_inner hW)).entry).trans
       (writeReturnFrameToTcb_runQueueStage _ _ _).entry).trans
       (maybeDonateSchedContext_runQueueStage _ _ _).entry
+
+/-- **seL4 `receiveIPC`'s return keeps what the per-core receive asks of its
+state**: every endpoint head wakeable, the receiver current where it was and
+active — it writes two binding codes, a context's thread link and flags. -/
+theorem receiveReturnSchedContext_receiveEntryFacts (blocks : Bool) {stC : SystemState}
+    {tid : SeLe4n.ThreadId} {e : Concurrency.CoreId} (hInvC : stC.objects.invExt)
+    (hHC : endpointHeadsWakeable stC) (hCurC : stC.scheduler.currentOnCore e = some tid)
+    (hActC : stC.activeAt tid) :
+    endpointHeadsWakeable (receiveReturnSchedContext blocks stC tid) ∧
+      (receiveReturnSchedContext blocks stC tid).scheduler.currentOnCore e = some tid ∧
+      (receiveReturnSchedContext blocks stC tid).activeAt tid := by
+  refine ⟨fun epId ep hE r hr => ?_, by rw [receiveReturnSchedContext_currentOnCore]; exact hCurC, ?_⟩
+  · have hE0 : stC.getEndpoint? epId = some ep := by
+      rw [← hE, receiveReturnSchedContext_getEndpoint? _ stC tid hInvC]
+    obtain ⟨hN, hB⟩ := hHC epId ep hE0 r hr
+    refine ⟨fun c => by rw [receiveReturnSchedContext_currentOnCore]; exact hN c, fun x hx => ?_⟩
+    obtain ⟨y, hy, hxy⟩ := receiveReturnSchedContext_tcb _ stC tid hInvC _ x
+      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hx)
+    rcases hxy with h | h <;> (subst x; exact hB y ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hy))
+  · obtain ⟨y, hy, hA⟩ := hActC
+    obtain ⟨x, hx, hxy⟩ := receiveReturnSchedContext_tcb_fwd blocks stC tid hInvC _ y
+      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hy)
+    exact ⟨x, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hx, by rcases hxy with h | h <;> (subst x; exact hA)⟩
 
 /-- A receive run on its busy-reply-cancelled state keeps the run queues in
 agreement with the threads' links: the `.receive` arm, and the `.replyRecv`
@@ -1095,13 +1194,22 @@ theorem receiveResolvedArm_runQueueEntryStage (ctx : LabelingContext)
     · cases h
     rename_i stDon hHand
     cases h
+    -- **WS-SX SX8.2**: seL4-MCS `receiveIPC`'s `maybeReturnSchedContext` first:
+    -- two binding codes and a context's thread link, then flags.
+    have hInvC : stC.objects.invExt := hIC
+    have R := receiveReturnSchedContext_runQueueStage
+      (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid
+    obtain ⟨hIR, hRR⟩ := R.1.links hIC hRC
+    have hDR := R.entry.2 hIC hRC hRR hDC
+    obtain ⟨hHR, hCurR, hActR⟩ := receiveReturnSchedContext_receiveEntryFacts
+      (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) hInvC hHC hCurC hActC
     have E := runQueueStage_of_pair_eq
-      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ hHC
-        hCurC P.notIdle hActC) hRecv
-    obtain ⟨_, hR2⟩ := E.1.links hIC hRC
-    exact runQueueEntryStage_trans_of_invExt hS fun _ _ => E.trans
+      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ hHR
+        hCurR P.notIdle hActR) hRecv
+    obtain ⟨_, hR2⟩ := E.1.links hIR hRR
+    exact runQueueEntryStage_trans_of_invExt (hS.trans R.entry) fun _ _ => E.trans
       ((applyReceiveRendezvousHandoff_runQueueStage
-          ((E.2 hIC hRC hR2 hDC).coherent _) hHand).trans
+          ((E.2 hIR hRR hR2 hDR).coherent _) hHand).trans
         (stageDeliveredMessage_runQueueStage _ _ _)).entry
   · cases h
 

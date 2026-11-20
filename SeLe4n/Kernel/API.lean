@@ -5989,14 +5989,6 @@ with no receiver waiting drops the message, and `NBRecv` or
 `NBWait` with nothing to take returns at once with `0` in the badge register
 (`doNBRecvFailedTransfer`). -/
 
-/-- **The syscall word the caller trapped with**: its saved `x7`
-(`arm64DefaultLayout.syscallNumReg`); `0`, which names no syscall, for a
-caller with no TCB. -/
-@[inline] def callerSyscallWord (st : SystemState) (tid : SeLe4n.ThreadId) : UInt64 :=
-  match st.getTcb? tid with
-  | some t => SeLe4n.readRegWord t.registerContext SeLe4n.arm64DefaultLayout.syscallNumReg
-  | none => 0
-
 /-- **seL4's `sendIPC` with `blocking = false` on an endpoint no receiver
 waits on**: the message is dropped and nothing is written.  Asked only once
 the sender's flow to the endpoint is admitted (`endpointFlowGate`, the send's
@@ -6440,7 +6432,13 @@ def receiveResolvedArm (ctx : LabelingContext) (decoded : SyscallDecodeResult) (
         -- recorded on the message.  The endpoint→receiver flow is gated
         -- above, so the *unchecked* per-core WithCaps receive is correct
         -- here for the same reason the bare one was.
-        match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with
+        -- seL4-MCS `receiveIPC`: a blocking receive that did not complete its
+        -- bound notification returns that notification's context first, before
+        -- the endpoint is looked at (`maybeReturnSchedContext`, WS-SX SX8.2), so
+        -- a passive server can then be donated a caller's context.
+        match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore
+            (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid)
+            with
         | (st', .ok (dequeued, summary, _sgi)) =>
             -- **WS-OD OD3.6**: the checked twin of the unchecked arm's
             -- `maybeDonateSchedContext` step, and the *same* definition.  No
@@ -8262,7 +8260,9 @@ theorem dispatchArm_receive_matches_returnShape
     -- PR #873 round 6: the arm runs the WithCaps per-core receive, so the
     -- hypothesis names that transition and the staged `extraCaps` is the
     -- transfer summary's installed count rather than a hardcoded zero.
-    (hDispatch : endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st
+    -- WS-SX SX8.2: the receive runs on the state seL4's return leaves.
+    (hDispatch : endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore
+        (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid)
         = (st', .ok (next, summary, sgi)))
     -- WS-OD OD3.6: the arm's `maybeDonateSchedContext` step runs between the
     -- receive and the staging, so the boundary read is of the state it leaves.
@@ -9594,7 +9594,11 @@ theorem dispatchWithCapChecked_receive_delegates
       -- WS-OD OD3.6: including the rendezvous donation, which the checked arm
       -- performs with the *same* definition and behind no extra gate -- the
       -- delegation claim is about the whole arm, so it names every step of it.
-      (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with
+      -- WS-SX SX8.2: seL4-MCS's `maybeReturnSchedContext` first, on a blocking
+      -- receive with a bound notification.
+      (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore
+          (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid)
+          with
        | (st', .ok (dequeued, summary, _)) =>
            (match applyReceiveRendezvousHandoff st' tid dequeued
                     executingCore with
@@ -9798,7 +9802,10 @@ def syscallDelegates : SyscallId → Prop
             completeSignalArm ctx tid (receiverBoundNotification st tid) executingCore st else
           -- WS-SX SX7.2: `NBRecv` with no sender waiting returns at once.
           if receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId then .ok ((), Architecture.nbRecvFailedTransfer st tid) else
-          (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with
+          -- WS-SX SX8.2: seL4-MCS's `maybeReturnSchedContext` first.
+          (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore
+              (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid)
+              with
            -- WS-RA RA.B.6: the arm stages the non-blocking consume's delivery
            -- into the caller's return frame.  PR #873 round 6: with the receive
            -- routed through the WithCaps transition, the staged `extraCaps` is

@@ -166,6 +166,74 @@ theorem maybeReturnSchedContext_preserves_objects_invExt (st : SystemState)
   maybeReturnSchedContext_induct (fun _ s' => s'.objects.invExt) st n tid hObjInv
     (fun vS _ st' _ _ h => schedContextUnbind_preserves_objects_invExt vS st st' hObjInv h)
 
+/-- **seL4's return on a running receiver keeps the IPC bundle**: the binding
+pair cleared in the unbind direction (`schedContextUnbindTail_preserves_ipcInvariantFull`,
+the context written with its thread link alone cleared), then reschedule flags. -/
+theorem schedContextReturnLinks_preserves_ipcInvariantFull (st : SystemState)
+    (vS : SeLe4n.ValidObjId) (vT : SeLe4n.ValidThreadId) (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st) (hA : schedContextReturnAdmitted st vS vT = true) :
+    ipcInvariantFull (schedContextReturnLinks st vS vT.val) := by
+  unfold schedContextReturnLinks
+  split
+  · exact hInv
+  rename_i sc hSc _
+  split
+  · exact hInv
+  rename_i tcb hT
+  have hScRaw := (SystemState.getSchedContext?_eq_some_iff st _ sc).mp hSc
+  have hTRaw := (SystemState.getTcb?_eq_some_iff st _ tcb).mp hT
+  have hBound : sc.boundThread = some vT.val := by
+    unfold schedContextReturnAdmitted at hA
+    rw [hSc, hT] at hA
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hA
+    exact hA.1
+  dsimp only
+  refine markKeyChangeFor_preserves_ipcInvariantFull _ _ _
+    (markCandidacyGainFor_preserves_ipcInvariantFull _ _ _ ?_)
+  have hTail := schedContextUnbindTail_preserves_ipcInvariantFull st vS.val vT.val sc
+    { sc with boundThreadCode := 0 } tcb
+    (SystemState.rewriteAdmissible_schedContext hSc _) rfl hObjInv hInv hScRaw hTRaw hBound
+  split
+  · exact markReschedulePendingOnCore_preserves_ipcInvariantFull _ _ hTail
+  · exact hTail
+
+/-- **The return keeps the IPC bundle**: seL4's three writes, then the purge,
+which moves release links alone. -/
+theorem schedContextReturnPerform_preserves_ipcInvariantFull (st : SystemState)
+    (vS : SeLe4n.ValidObjId) (vT : SeLe4n.ValidThreadId) (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st) (hA : schedContextReturnAdmitted st vS vT = true) :
+    ipcInvariantFull (schedContextReturnPerform st vS vT.val) :=
+  purgeReplenishment_preserves_ipcInvariantFull _ _
+    (schedContextReturnLinks_preserves_ipcInvariantFull st vS vT hObjInv hInv hA)
+
+/-- **The receive's return keeps every endpoint queue head's blocking**: it
+writes no endpoint, and the TCBs it writes keep their IPC state. -/
+theorem receiveReturnSchedContext_queueHeadBlockedConsistent (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hI : st.objects.invExt) (hQ : queueHeadBlockedConsistent st) :
+    queueHeadBlockedConsistent (receiveReturnSchedContext blocks st tid) := by
+  intro epId ep hd tcb hEp hT
+  have hEp0 : st.objects[epId]? = some (.endpoint ep) := by
+    rcases receiveReturnSchedContext_objects blocks st tid hI epId with e | ⟨_, _, e⟩ | ⟨_, _, _, e⟩ <;>
+      rw [e] at hEp
+    · exact hEp
+    · cases hEp
+    · cases hEp
+  obtain ⟨y, hy, hxy⟩ := receiveReturnSchedContext_tcb blocks st tid hI _ tcb hT
+  have h := hQ epId ep hd y hEp0 hy
+  rcases hxy with h' | h' <;> subst h' <;> exact h
+
+/-- **seL4 `receiveIPC`'s return keeps the IPC bundle and the store's integrity.** -/
+theorem receiveReturnSchedContext_preserves_ipcInvariantFull (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (receiveReturnSchedContext blocks st tid) ∧
+      (receiveReturnSchedContext blocks st tid).objects.invExt :=
+  receiveReturnSchedContext_induct
+    (fun _ s' => ipcInvariantFull s' ∧ s'.objects.invExt) blocks st tid ⟨hInv, hObjInv⟩
+    (fun vS vT hT hA => by
+      subst hT
+      exact ⟨schedContextReturnPerform_preserves_ipcInvariantFull st vS vT hObjInv hInv hA,
+        schedContextReturnPerform_preserves_objects_invExt st vS vT.val hObjInv⟩)
+
 /-- The state the consumption and the badge register leave keeps the object
 store's integrity. -/
 theorem completeSignalArm_donationPre_objects_invExt {notifId : SeLe4n.ObjId}

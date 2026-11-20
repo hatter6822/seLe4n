@@ -68,7 +68,14 @@ refusal after the cancel hands the cancelled state back from the entry's spilled
 state rather than the dispatch's, so the run segment names every core's run
 queue.  The replenish segment is exact: the cancel moves no reservation
 (`cancelReplyHolder_replenishQueueOnCore`), and the receive's leg and donation
-move the ones they name on the cancelled state, the leg re-run from it.  Both
+move the ones they name on the cancelled state, the leg re-run from it.  Either
+way the leg is re-run on the state it runs on (`receiveLegState`): a blocking
+receive first returns the bound notification's context (seL4-MCS `receiveIPC`'s
+`maybeReturnSchedContext`), which moves no run queue but changes whether the
+rendezvous donates, so the leg's reads are taken after it; the return takes the
+context off the replenish queue that holds it, so the replenish segment names
+that one core (`receiveReturnReplenishCores`, read on the state the return runs
+on).  Both
 segments also name the cores a completion of the receiver's bound notification
 donates on (`receiveDonationCores`, seL4-MCS `maybeDonateSchedContext`). -/
 def schedLockSet_receiveCancellingHolderOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
@@ -80,13 +87,17 @@ def schedLockSet_receiveCancellingHolderOnCore (st : SystemState) (endpointId : 
   -- cores appended.
   schedFootprintOfCores
     ((match busyReplyHolder? st receiver replyId with
-      | none => endpointReceiveDualWriteSet st endpointId executingCore
-          ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore
+      | none => endpointReceiveDualWriteSet (receiveLegState st receiver) endpointId executingCore
+          ++ endpointReceiveHandoffChainWriteSet (receiveLegState st receiver) endpointId receiver
+            replyId executingCore
       | some _ => Concurrency.allCores) ++ receiveDonationCores st receiver replyId executingCore)
     ((match busyReplyHolder? st receiver replyId with
-      | none => endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome
-      | some holder => endpointReceiveLegReplenishCores (cancelReplyHolder st holder executingCore)
-          endpointId receiver replyId executingCore) ++
+      | none => endpointReceiveHandoffReplenishCores (receiveLegState st receiver) endpointId
+          receiver replyId.isSome ++ receiveReturnReplenishCores st receiver
+      | some holder => endpointReceiveLegReplenishCores
+          (receiveLegState (cancelReplyHolder st holder executingCore) receiver)
+          endpointId receiver replyId executingCore ++
+          receiveReturnReplenishCores (cancelReplyHolder st holder executingCore) receiver) ++
       receiveDonationCores st receiver replyId executingCore)
 
 /-- The receive's footprint, busy reply or not, is a cores footprint. -/

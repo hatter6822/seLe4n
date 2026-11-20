@@ -245,14 +245,19 @@ def boundSignalDonationContext? (st : SystemState) (receiver : ThreadId)
 `receiveIPC`'s `cancelIPC(replyTCB)`): the receive's own footprint and, when the
 reply it names is busy with another thread (`busyReplyHolder?`), the footprint of
 that thread's IPC cancel (`lockSet_cancelIpcBlockingOnCore`, the suspend's
-cancellation root), each resolved from the state the receive is handed. -/
+cancellation root), each resolved from the state the receive is handed.  The
+receive's own footprint is resolved on the state its leg runs on
+(`receiveLegState`): a blocking receive first returns its bound notification's
+context, which decides whether a `Call` it rendezvouses with donates. -/
 def lockSet_receiveCancellingHolder (st : SystemState) (endpointId : ObjId)
     (receiver : ThreadId) (cnodeRootObjId : ObjId) (replyId : Option ReplyId) : LockSet :=
   lockSetExtendOpt (lockSetExtendOpt
     (match SeLe4n.Kernel.busyReplyHolder? st receiver replyId with
-     | none => lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId
+     | none => lockSet_endpointReceiveOnCore (SeLe4n.Kernel.receiveLegState st receiver)
+         endpointId receiver cnodeRootObjId replyId
      | some holder =>
-        (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).union
+        (lockSet_endpointReceiveOnCore (SeLe4n.Kernel.receiveLegState st receiver) endpointId
+          receiver cnodeRootObjId replyId).union
           (SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore st holder))
     -- seL4-MCS `receiveIPC`: the receiver's bound notification, which a receive
     -- that finds it active completes (`completeSignalArm`), writing it.
@@ -260,7 +265,21 @@ def lockSet_receiveCancellingHolder (st : SystemState) (endpointId : ObjId)
   -- and `completeSignal`'s `maybeDonateSchedContext`: the context it donates.
   -- seL4's guard read on the entry state: the busy reply's cancel keeps what it
   -- reads (`receiveCompletion_signalDonationContext?_eq`).
-  ((boundSignalDonationContext? st receiver false).map fun s => (schedContextLock s, .write))
+  -- Where no donation's guard holds, `receiveIPC`'s `maybeReturnSchedContext`:
+  -- the context a blocking receive returns, seL4's guard read on the entry
+  -- state (`receiveReturnContext?`).  With a busy reply the guard is read after
+  -- the cancel, which may rewrite the receiver's binding, so that arm locks the
+  -- notification's context without the guard (`receiveReturnNotificationContext?`,
+  -- the superset: `cancelRecvBusyReply_receiveReturnContext?_locked`).  Each is
+  -- the bound notification's context, so one member serves all and the
+  -- footprint keeps its size.
+  ((match boundSignalDonationContext? st receiver false with
+    | some s => some s
+    | none =>
+      match SeLe4n.Kernel.busyReplyHolder? st receiver replyId with
+      | none => SeLe4n.Kernel.receiveReturnContext? st receiver
+      | some _ => SeLe4n.Kernel.receiveReturnNotificationContext? st receiver).map fun s =>
+      (schedContextLock s, .write))
 
 /-- **WS-SM SM3.C.9**: the declared lock-set footprint of a syscall, or
 `none` where one has not been established yet.
@@ -890,7 +909,8 @@ included declares. -/
 theorem mem_write_lockSet_receiveCancellingHolder (st : SystemState) (endpointId : ObjId)
     (receiver : ThreadId) (cnodeRootObjId : ObjId) (replyId : Option ReplyId) (l : LockKey)
     (h : (l, AccessMode.write) ∈
-      (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs) :
+      (lockSet_endpointReceiveOnCore (SeLe4n.Kernel.receiveLegState st receiver) endpointId
+        receiver cnodeRootObjId replyId).pairs) :
     (l, AccessMode.write) ∈
       (lockSet_receiveCancellingHolder st endpointId receiver cnodeRootObjId replyId).pairs := by
   unfold lockSet_receiveCancellingHolder
@@ -951,6 +971,30 @@ theorem lockSetForSyscall_receive_covers_donationContext
   rw [hCtx]
   exact LockSet.mem_insertOrMerge_write_self _ _
 
+/-- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`: and the context a
+blocking receive returns, seL4's guard read on the entry state
+(`receiveReturnContext?`). -/
+theorem lockSetForSyscall_receive_covers_returnContext
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (endpointId : ObjId) (S : LockSet) (s : SchedContextId)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hEp : ops.targetObject = some endpointId)
+    (hNoDon : boundSignalDonationContext? st ops.caller false = none)
+    (hCtx : SeLe4n.Kernel.receiveReturnContext? st ops.caller = some s)
+    (hDecl : lockSetForSyscall .receive ops st = some S) :
+    (schedContextLock s, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_receive_eq ops st caller endpointId hTcb hEp] at hDecl
+  cases hDecl
+  unfold lockSet_receiveCancellingHolder
+  rw [hNoDon]
+  simp only
+  cases SeLe4n.Kernel.busyReplyHolder? st ops.caller ops.targetReply with
+  | none => simp only; rw [hCtx]; exact LockSet.mem_insertOrMerge_write_self _ _
+  | some _ =>
+    simp only
+    rw [SeLe4n.Kernel.receiveReturnNotificationContext?_of_receiveReturnContext? hCtx]
+    exact LockSet.mem_insertOrMerge_write_self _ _
+
 /-- **WS-OD OD3.12**: and the queue-structure neighbour.
 
 A `.receive` either pops the endpoint's send queue -- relinking the popped
@@ -962,7 +1006,8 @@ theorem lockSetForSyscall_receive_covers_queueNeighbour
     (endpointId : ObjId) (S : LockSet) (q : ThreadId)
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId)
-    (hq : receiveSideQueueStructureNeighbor? st endpointId = some q)
+    (hq : receiveSideQueueStructureNeighbor? (SeLe4n.Kernel.receiveLegState st ops.caller)
+      endpointId = some q)
     (hDecl : lockSetForSyscall .receive ops st = some S) :
     (tcbLock q, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_receive_eq ops st caller endpointId hTcb hEp] at hDecl
@@ -981,7 +1026,7 @@ theorem lockSetForSyscall_receive_covers_capsWrites
     (endpointId : ObjId) (S : LockSet)
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId)
-    (hCaps : receiveInstallsCaps st endpointId = true)
+    (hCaps : receiveInstallsCaps (SeLe4n.Kernel.receiveLegState st ops.caller) endpointId = true)
     (hDecl : lockSetForSyscall .receive ops st = some S) :
     (cnodeLock caller.cspaceRoot, AccessMode.write) ∈ S.pairs ∧
     (stateLevelLock, AccessMode.write) ∈ S.pairs := by

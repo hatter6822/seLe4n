@@ -759,6 +759,68 @@ theorem maybeDonateSchedContext_recordsStage (x : SystemState) (n : SeLe4n.ObjId
   .of_frameK fun hI => maybeDonateSchedContext_induct (fun a b => RecordsFrame a b) x n t
     (RecordsFrame.refl hI) (fun vS vT _ _ => RecordsFrame.schedContextBindPerform x vS vT hI)
 
+/-- **seL4's return on a running receiver keeps the records**: the context's
+thread link and the thread's binding written in place, then reschedule flags. -/
+theorem RecordsFrame.schedContextReturnLinks {st : SystemState} (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    RecordsFrame st (SeLe4n.Kernel.schedContextReturnLinks st vS tid) := by
+  have hU : ∀ S : SystemState, S.objects.invExt → RecordsFrame S
+      (S.updateTcb tid fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 }) :=
+    fun S h => RecordsFrame.updateTcb _ _ h fun _ => rfl
+  unfold SeLe4n.Kernel.schedContextReturnLinks
+  split
+  · exact RecordsFrame.refl hInv
+  rename_i sc hSc _
+  split
+  · exact RecordsFrame.refl hInv
+  dsimp only
+  refine RecordsFrame.chain ?_ (RecordsFrame.markKeyChangeFor _ _ _) hInv
+  refine RecordsFrame.chain ?_ (RecordsFrame.markCandidacyGainFor _ _ _)
+  split
+  · exact RecordsFrame.chain (RecordsFrame.chain (RecordsFrame.rewriteObject_schedContext hSc _ _)
+      fun h => hU _ h) (RecordsFrame.markReschedulePendingOnCore _ _)
+  · exact RecordsFrame.chain (RecordsFrame.rewriteObject_schedContext hSc _ _) fun h => hU _ h
+
+/-- **The return keeps the records**: seL4's three writes, then the purge. -/
+theorem RecordsFrame.schedContextReturnPerform {st : SystemState} (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    RecordsFrame st (SeLe4n.Kernel.schedContextReturnPerform st vS tid) :=
+  let F1 := RecordsFrame.schedContextReturnLinks vS tid hInv
+  F1.trans (RecordsFrame.purgeReplenishment _ _ F1.invExt)
+
+/-- **seL4 `receiveIPC`'s return keeps what the receive needs of its state**:
+the store's integrity, the queue heads' blocking states and the caller ready —
+it writes two binding codes and a context's thread link, no IPC state and no
+endpoint. -/
+theorem receiveReturnSchedContext_receivePremises (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hI : st.objects.invExt) (hQ : queueHeadBlockedConsistent st)
+    (hC : CallerReady st tid) :
+    (receiveReturnSchedContext blocks st tid).objects.invExt ∧
+      queueHeadBlockedConsistent (receiveReturnSchedContext blocks st tid) ∧
+      CallerReady (receiveReturnSchedContext blocks st tid) tid := by
+  refine ⟨receiveReturnSchedContext_objects_invExt blocks st tid hI, ?_, ?_⟩
+  · intro epId ep hd tcb hEp hT
+    have hEp0 : st.objects[epId]? = some (.endpoint ep) := by
+      rcases receiveReturnSchedContext_objects blocks st tid hI epId with e | ⟨_, _, e⟩ | ⟨_, _, _, e⟩ <;>
+        rw [e] at hEp
+      · exact hEp
+      · cases hEp
+      · cases hEp
+    obtain ⟨y, hy, hxy⟩ := receiveReturnSchedContext_tcb blocks st tid hI _ tcb hT
+    have h := hQ epId ep hd y hEp0 hy
+    rcases hxy with h' | h' <;> (subst tcb; exact h)
+  · obtain ⟨t, hT, hR⟩ := hC
+    rcases receiveReturnSchedContext_objects blocks st tid hI tid.toObjId with e | ⟨y, hy, e⟩ | ⟨_, _, hs, _⟩
+    · exact ⟨t, by rw [e]; exact hT, hR⟩
+    · rw [hT] at hy; cases hy; exact ⟨_, e, hR⟩
+    · rw [hT] at hs; cases hs
+
+/-- **seL4 `receiveIPC`'s return keeps the records.** -/
+theorem receiveReturnSchedContext_recordsStage (blocks : Bool) (x : SystemState)
+    (t : SeLe4n.ThreadId) : RecordsStage x (receiveReturnSchedContext blocks x t) :=
+  .of_frameK fun hI => receiveReturnSchedContext_induct (fun a b => RecordsFrame a b) blocks x t
+    (RecordsFrame.refl hI) (fun vS _ _ _ => RecordsFrame.schedContextReturnPerform vS t hI)
+
 /-- **seL4-MCS `maybeReturnSchedContext` keeps the kernel records**: the
 identity, or the unbind (`RecordsFrame.schedContextUnbind`). -/
 theorem maybeReturnSchedContext_recordsStage (x : SystemState) (n : SeLe4n.ObjId)
@@ -886,10 +948,14 @@ theorem receiveResolvedArm_recordsStage (ctx : LabelingContext)
     · cases h
     rename_i stDon hHand
     cases h
-    exact hS.trans ((RecordsStage.of_fst_eq
-      (RecordsStage.endpointReceiveDualWithCapsOnCore hIC hQC hCC) hRecv).trans
+    -- seL4-MCS `receiveIPC`'s return, before the endpoint: it writes no IPC
+    -- state, so the receive's premises carry over it.
+    obtain ⟨hIR, hQR, hCR⟩ := receiveReturnSchedContext_receivePremises
+      (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid hIC hQC hCC
+    exact hS.trans ((receiveReturnSchedContext_recordsStage _ _ _).trans ((RecordsStage.of_fst_eq
+      (RecordsStage.endpointReceiveDualWithCapsOnCore hIR hQR hCR) hRecv).trans
       ((RecordsStage.of_frameK fun hI => RecordsFrame.applyReceiveRendezvousHandoff hI hHand).trans
-        (RecordsStage.of_frameK fun hI => RecordsFrame.stageDeliveredMessage _ _ _ hI)))
+        (RecordsStage.of_frameK fun hI => RecordsFrame.stageDeliveredMessage _ _ _ hI))))
   · cases h
 
 /-- **A reply-receive whose receive completes its bound notification keeps the

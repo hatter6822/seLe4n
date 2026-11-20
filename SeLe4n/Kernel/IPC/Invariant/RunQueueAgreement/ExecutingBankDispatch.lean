@@ -435,12 +435,17 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
       · cases h
       rename_i stDon hHand
       cases h
+      -- **WS-SX SX8.2**: seL4-MCS `receiveIPC`'s `maybeReturnSchedContext` first.
+      obtain ⟨hRt, hRtInv⟩ := receiveReturnSchedContext_stepCovers e'
+        (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid hIC
       obtain ⟨hV, hVInv⟩ := stepCovers_of_pair_eq
-        (endpointReceiveDualWithCapsOnCore_stepCovers e' hIC) hRecv
+        (endpointReceiveDualWithCapsOnCore_stepCovers e' hRtInv) hRecv
       obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e' hVInv hHand
       obtain ⟨w1, i1⟩ := receiveArmCompletion_savedRegsWrittenFree (e := e') (base := st)
-        hIC hHC hRecv hHand
-      exact ((hW (stepCovers_trans c0 (stepCovers_trans hV hD)) (w0.trans w1)).trans
+        hRtInv (fun w hw => hHC w (by
+          rw [← receiveReturnSchedContext_getEndpoint? _ stC tid hIC]; exact hw)) hRecv hHand
+      exact ((hW (stepCovers_trans c0 (stepCovers_trans hRt (stepCovers_trans hV hD)))
+        (w0.trans ((savedRegsWrittenFree.receiveReturn _ stC tid hIC).trans w1))).trans
         (bankFrame.stageDeliveredMessage_caller _ i1)).bankAgree hA
     · cases h
   cases hId : decoded.syscallId <;> rw [hId] at h <;> dsimp only at h

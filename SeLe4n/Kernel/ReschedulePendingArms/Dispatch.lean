@@ -1648,6 +1648,111 @@ theorem maybeReturnSchedContext_stepCovers (e : CoreId) (st : SystemState) (n : 
     ⟨stepCovers_refl e st, hInv⟩
     (fun vS _ st' _ _ h => schedContextUnbind_stepCovers st st' vS e hInv h)
 
+/-- **seL4's return on a running receiver covers**: the two object writes move
+only the receiver's key, the flag on its running core only rises, and the key
+hook flags every core the key change stales (`markKeyChangeFrom_covers`). -/
+theorem schedContextReturnLinks_stepCovers (e : CoreId) (st : SystemState)
+    (vS : SeLe4n.ValidObjId) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    stepCovers e st (schedContextReturnLinks st vS tid) ∧
+      (schedContextReturnLinks st vS tid).objects.invExt := by
+  unfold schedContextReturnLinks
+  split
+  · exact ⟨stepCovers_refl e st, hInv⟩
+  rename_i sc hSc hW
+  have hScRaw : st.objects[vS.val]? = some (.schedContext sc) :=
+    (SystemState.getSchedContext?_eq_some_iff st _ sc).mp hSc
+  have hScRaw' : st.objects[(SeLe4n.SchedContextId.ofObjId vS.val).toObjId]? =
+      some (.schedContext sc) := hScRaw
+  split
+  · exact ⟨stepCovers_refl e st, hInv⟩
+  rename_i tcb hT
+  dsimp only
+  rw [markKeyChangeFor_markCandidacyGainFor_eq hT]
+  generalize hAdm : SystemState.rewriteAdmissible_schedContext hSc { sc with boundThreadCode := 0 }
+    = adm
+  have hK1 : keyInputsEq st (st.rewriteObject vS.val _ adm) :=
+    keyInputsEq_rewriteObject adm hInv (by rw [hScRaw']; rfl)
+  have hInv1 := SystemState.rewriteObject_preserves_objects_invExt st _ _ adm hInv
+  have hT1 : (st.rewriteObject vS.val _ adm).getTcb? tid = some tcb :=
+    (SystemState.rewriteObject_schedContext_getTcb? st _ _ adm hInv _).trans hT
+  have hInv2 := SystemState.updateTcb_preserves_objects_invExt
+    (st.rewriteObject vS.val _ adm) tid
+    (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 }) hInv1
+  have hK2 := keyInputsEq.trans_keyInputsEqExcept hK1
+    (keyInputsEqExcept_updateTcb (f := fun t => { t with
+      scBindingScCode := 0, scBindingOwnerCode := 0 }) hInv1 (by rw [hT1]; rfl))
+  have hA2 : SystemState.RunCoresAgree ((st.rewriteObject vS.val _ adm).updateTcb tid
+      fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 }) st :=
+    SystemState.RunCoresAgree.trans (SystemState.RunCoresAgree.updateTcb hInv1 fun _ => rfl)
+      (SystemState.RunCoresAgree.rewriteObject_not_tcb adm hInv
+        (fun t h => by rw [hScRaw'] at h; cases h) (fun t h => by cases h))
+  generalize hS2 : (st.rewriteObject vS.val _ adm).updateTcb tid
+      (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 }) = S2 at hK2 hA2 hInv2
+  have hSch2 : S2.scheduler = st.scheduler := by
+    rw [← hS2]; simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
+  have hMach2 : S2.machine = st.machine := by
+    rw [← hS2]; simp only [SystemState.updateTcb_machine, SystemState.rewriteObject_machine]
+  -- The flag on the running core: the objects of `S2`, its scheduler but a flag.
+  suffices key : ∀ S3 : SystemState, S3.objects = S2.objects →
+      (∀ c, S3.scheduler.currentOnCore c = st.scheduler.currentOnCore c) →
+      SystemState.RunCoresAgree S3 st →
+      (∀ c, S2.scheduler.reschedulePendingOnCore c = true →
+        S3.scheduler.reschedulePendingOnCore c = true) →
+      S3.machine = st.machine →
+      stepCovers e st (markKeyChangeFrom st S3 tid) ∧
+        (markKeyChangeFrom st S3 tid).objects.invExt by
+    split
+    · rename_i c0 _
+      refine key _ rfl (fun c => by simp [SystemState.markReschedulePendingOnCore, hSch2])
+        ((SystemState.RunCoresAgree.of_objects rfl).trans hA2) (fun c hF => ?_) ?_
+      simp only [SystemState.markReschedulePendingOnCore]
+      by_cases hc : c0 = c
+      · subst hc; simp
+      · simpa [hc] using hF
+      · simp only [SystemState.markReschedulePendingOnCore]; exact hMach2
+    · exact key _ rfl (fun c => by rw [hSch2]) hA2 (fun _ h => h) hMach2
+  intro S3 hObj3 hCur3 hRq3 hMono3 hMach3
+  have hM : (markKeyChangeFrom st S3 tid).machine = st.machine :=
+    (markKeyChangeFrom_extract_frame (fun s => s.machine) st S3 tid fun _ _ => rfl).trans hMach3
+  have hK3 : keyInputsEqExcept tid st S3 :=
+    hK2.trans_keyInputsEq (keyInputsEq_of_objects_eq hObj3)
+  refine ⟨⟨markKeyChangeFrom_covers (fun t ht => ⟨schedKeyView_eq_of_keyInputsEqExcept hK3 ht,
+      budgetEligibleView_eq_of_keyInputsEqExcept hK3 ht⟩)
+      (fun c _ => Or.inr ⟨fun t ht => by rw [← hRq3.queuedOn]; exact ht, hCur3 c⟩),
+    fun c _ hF => markKeyChangeFrom_reschedulePendingOnCore_mono _ _ _ _
+      (hMono3 c (by rw [hSch2]; exact hF)),
+    currentKeptOffCore_of_eq fun c _ => by rw [markKeyChangeFrom_currentOnCore, hCur3],
+    residentKeptOffCore_of_eq (by rw [hM]), banksKeptOffCore_of_eq (by rw [hM]), ?_⟩, ?_⟩
+  · refine ((tcbsKept.of_getTcb? (post := st.rewriteObject vS.val _ adm) fun t =>
+        SystemState.rewriteObject_schedContext_getTcb? _ _ _ _ hInv t).trans ?_).residentTcbKept
+    rw [← hS2] at hObj3
+    exact (tcbsKept.updateTcb _ _ _ hInv1).trans
+      ((tcbsKept.of_objects_eq hObj3).trans
+        (tcbsKept.of_objects_eq (markKeyChangeFrom_objects _ _ _)))
+  · rw [markKeyChangeFrom_objects, hObj3]; exact hInv2
+
+/-- **The return covers**: seL4's three writes, then the purge, a write to the
+release links alone. -/
+theorem schedContextReturnPerform_stepCovers (e : CoreId) (st : SystemState)
+    (vS : SeLe4n.ValidObjId) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    stepCovers e st (schedContextReturnPerform st vS tid) ∧
+      (schedContextReturnPerform st vS tid).objects.invExt :=
+  let h := schedContextReturnLinks_stepCovers e st vS tid hInv
+  ⟨stepCovers_trans h.1 (stepCovers_of_releaseOnlyWrite e
+      (SchedContextOps.purgeReplenishment_releaseOnlyWrite _ _)
+      (SchedContextOps.purgeReplenishment_agree _ _)),
+    SchedContextOps.purgeReplenishment_objects_invExt _ _ h.2⟩
+
+/-- **seL4's return from a running receiver covers**: the identity, or seL4's
+writes (`schedContextReturnPerform_stepCovers`). -/
+theorem receiveReturnSchedContext_stepCovers (e : CoreId) (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    stepCovers e st (receiveReturnSchedContext blocks st tid) ∧
+      (receiveReturnSchedContext blocks st tid).objects.invExt :=
+  receiveReturnSchedContext_induct (fun a b => stepCovers e a b ∧ b.objects.invExt) blocks st tid
+    ⟨stepCovers_refl e st, hInv⟩
+    (fun vS _ _ _ => schedContextReturnPerform_stepCovers e st vS tid hInv)
+
 /-- **seL4's `sendSignal` covers**, on a state where the binding pair holds: the
 wake (`notificationSignalBoundOnCore_stepCovers`), then the donation to the thread
 it woke, whose binding pair the wake left as it found it (the wake moves no
@@ -1801,12 +1906,15 @@ theorem receiveResolvedArm_cancelled_stepCovers (e : CoreId) {ctx : LabelingCont
     · cases h
     rename_i stDon hHand
     cases h
+    -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, before the endpoint.
+    obtain ⟨hRt, hRtInv⟩ := receiveReturnSchedContext_stepCovers e
+      (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid hCInv
     obtain ⟨hV, hVInv⟩ := stepCovers_of_pair_eq
-      (endpointReceiveDualWithCapsOnCore_stepCovers e hCInv) hRecv
+      (endpointReceiveDualWithCapsOnCore_stepCovers e hRtInv) hRecv
     obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e hVInv hHand
     have hS2 := stageDeliveredMessage_keyFrame _ tid summ.capInfo hDInv
     exact stepCoversInv_trans
-      (stepCovers_trans (stepCovers_trans hC hV) hD)
+      (stepCovers_trans (stepCovers_trans (stepCovers_trans hC hRt) hV) hD)
       hS2.stepCoversInv
   · cases h
 

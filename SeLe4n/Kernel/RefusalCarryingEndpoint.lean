@@ -5137,60 +5137,30 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     · rfl
   · rfl
 
-/-- The checked receive arm once its reply object is resolved, given as its
-code: the blocking receive written in place when it may be
-(`receiveBlocksFast`), the rendezvous otherwise (`endpointReceiveTakeR`).
-Inlined, so its result is matched by the caller rather than built. -/
-@[inline] def endpointReceiveResolvedR (ctx : LabelingContext) (epId : SeLe4n.ObjId)
-    (tid : SeLe4n.ThreadId) (replyCode : Nat) (executingCore : Concurrency.CoreId) :
-    RefusalCarrying Unit :=
+/-- **The receive's endpoint leg, compiled**: the blocking receive written in
+place when it may be (`receiveBlocksFast`), the rendezvous otherwise
+(`endpointReceiveTakeR`), every refusal carrying the state it was handed. -/
+@[inline] def endpointReceiveLegR (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (replyCode : Nat)
+    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
-    -- seL4-MCS `receiveIPC`: an active bound notification is completed, as a
-    -- `Wait` on it consumes it (`notificationWaitGatedR`).
-    if receiveCompletesSignal ctx st tid then
-      notificationWaitGatedR ctx tid (receiverBoundNotification st tid) executingCore st
-    else
-    if receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId then
-      .ok ((), Architecture.nbRecvFailedTransfer st tid)
-    else
     if receiveBlocksFast st epId tid replyCode then
       .ok ((), removeRunnableOnCore
         (storeReceiveBlock st epId tid (receiveQueueTailCode st epId) replyCode) tid executingCore)
     else endpointReceiveTakeR epId tid replyCode executingCore st
 
-/-- The checked receive arm once its gate has passed and its busy reply is
-cancelled (`receiveResolvedArm`): the reply object resolved at the CSpace root
-`root?` read before the cancel, the blocking receive written in place when it
-may be, the rendezvous otherwise, every refusal carrying the state it was
-handed (`endpointReceiveReplyResolvedR_eq`). -/
-@[inline] def endpointReceiveReplyResolvedR (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (canReply : Bool)
-    (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId) (epId : SeLe4n.ObjId)
-    (root? : Option Capability) : RefusalCarrying Unit :=
-  fun st =>
-    let resolved := fun replyCode => endpointReceiveResolvedR ctx epId tid replyCode executingCore st
-    resolveRecvReplyRootK st root? canReply replyAddr (fun e => .error (e, st)) resolved
-
-theorem endpointReceiveReplyResolvedR_eq (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (epId : SeLe4n.ObjId)
-    (st : SystemState) (root? : Option Capability) (canReply : Bool) (replyAddr : SeLe4n.CPtr)
-    (hRid : resolveRecvReplyIdRootR st tid root? canReply replyAddr = resolveRecvReplyId gate decoded st) :
-    endpointReceiveReplyResolvedR ctx tid canReply replyAddr executingCore epId root? st =
-      RefusalCarrying.ofKernel (receiveResolvedArm ctx decoded gate tid epId executingCore) st := by
-  simp only [endpointReceiveReplyResolvedR, RefusalCarrying.ofKernel, receiveResolvedArm]
-  rw [resolveRecvReplyRootK_eq st tid, hRid]
-  cases resolveRecvReplyId gate decoded st with
-  | error e => rfl
-  | ok rid =>
-  simp only [endpointReceiveResolvedR]
-  by_cases hSig : receiveCompletesSignal ctx st tid = true
-  · simp only [hSig, ↓reduceIte, notificationWaitGatedR_eq, RefusalCarrying.ofKernel]
-  simp only [Bool.not_eq_true] at hSig
-  simp only [hSig, Bool.false_eq_true, ↓reduceIte]
-  by_cases hN : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st
-      epId = true
-  · simp only [hN, ↓reduceIte]
-  simp only [Bool.not_eq_true] at hN
-  simp only [hN, Bool.false_eq_true, ↓reduceIte]
+/-- **The compiled leg is the leg**: the endpoint receive and its hand-off, on
+any state. -/
+theorem endpointReceiveLegR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (rid : Option SeLe4n.ReplyId) (executingCore : Concurrency.CoreId) (st : SystemState) :
+    endpointReceiveLegR epId tid (SeLe4n.ReplyId.optCode rid) executingCore st =
+      RefusalCarrying.ofKernel (fun s =>
+        match endpointReceiveDualWithCapsOnCore epId tid rid executingCore s with
+        | (st', .ok (dequeued, summary, _sgi)) =>
+            match applyReceiveRendezvousHandoff st' tid dequeued executingCore with
+            | .error e => .error e
+            | .ok stDon => .ok ((), Architecture.stageDeliveredMessage stDon tid summary.capInfo)
+        | (_, .error e) => .error e) st := by
+  simp only [endpointReceiveLegR, RefusalCarrying.ofKernel]
   by_cases hF : receiveBlocksFast st epId tid (SeLe4n.ReplyId.optCode rid) = true
   · rw [if_pos hF]
     unfold receiveBlocksFast at hF
@@ -5246,6 +5216,81 @@ theorem endpointReceiveReplyResolvedR_eq (ctx : LabelingContext) (decoded : Sysc
     · rfl
     · simp only []
       cases applyReceiveRendezvousHandoff st' tid dq executingCore <;> rfl
+
+/-- The checked receive arm once its reply object is resolved, given as its
+code: the blocking receive written in place when it may be
+(`receiveBlocksFast`), the rendezvous otherwise (`endpointReceiveTakeR`).
+Inlined, so its result is matched by the caller rather than built. -/
+@[inline] def endpointReceiveResolvedR (ctx : LabelingContext) (epId : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (replyCode : Nat) (executingCore : Concurrency.CoreId) :
+    RefusalCarrying Unit :=
+  fun st =>
+    -- seL4-MCS `receiveIPC`: an active bound notification is completed, as a
+    -- `Wait` on it consumes it (`notificationWaitGatedR`).
+    if receiveCompletesSignal ctx st tid then
+      notificationWaitGatedR ctx tid (receiverBoundNotification st tid) executingCore st
+    else
+    if receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId then
+      .ok ((), Architecture.nbRecvFailedTransfer st tid)
+    else
+    -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`: where it writes, the
+    -- return is written in place (`receiveReturnSchedContextFast`) and the leg
+    -- runs on the state it leaves; a refusal there carries the state the arm was
+    -- handed, so the return is not committed.
+    if receiveReturnFires (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid then
+      match endpointReceiveLegR epId tid replyCode executingCore
+          (receiveReturnSchedContextFast (Syscall.wordReceiveBlocks (callerSyscallWord st tid))
+            st tid.val) with
+      | .error (e, _) => .error (e, st)
+      | r => r
+    else endpointReceiveLegR epId tid replyCode executingCore st
+
+/-- The checked receive arm once its gate has passed and its busy reply is
+cancelled (`receiveResolvedArm`): the reply object resolved at the CSpace root
+`root?` read before the cancel, the blocking receive written in place when it
+may be, the rendezvous otherwise, every refusal carrying the state it was
+handed (`endpointReceiveReplyResolvedR_eq`). -/
+@[inline] def endpointReceiveReplyResolvedR (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (canReply : Bool)
+    (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId) (epId : SeLe4n.ObjId)
+    (root? : Option Capability) : RefusalCarrying Unit :=
+  fun st =>
+    let resolved := fun replyCode => endpointReceiveResolvedR ctx epId tid replyCode executingCore st
+    resolveRecvReplyRootK st root? canReply replyAddr (fun e => .error (e, st)) resolved
+
+theorem endpointReceiveReplyResolvedR_eq (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (epId : SeLe4n.ObjId)
+    (st : SystemState) (root? : Option Capability) (canReply : Bool) (replyAddr : SeLe4n.CPtr)
+    (hRid : resolveRecvReplyIdRootR st tid root? canReply replyAddr = resolveRecvReplyId gate decoded st) :
+    endpointReceiveReplyResolvedR ctx tid canReply replyAddr executingCore epId root? st =
+      RefusalCarrying.ofKernel (receiveResolvedArm ctx decoded gate tid epId executingCore) st := by
+  simp only [endpointReceiveReplyResolvedR, RefusalCarrying.ofKernel, receiveResolvedArm]
+  rw [resolveRecvReplyRootK_eq st tid, hRid]
+  cases resolveRecvReplyId gate decoded st with
+  | error e => rfl
+  | ok rid =>
+  simp only [endpointReceiveResolvedR]
+  by_cases hSig : receiveCompletesSignal ctx st tid = true
+  · simp only [hSig, ↓reduceIte, notificationWaitGatedR_eq, RefusalCarrying.ofKernel]
+  simp only [Bool.not_eq_true] at hSig
+  simp only [hSig, Bool.false_eq_true, ↓reduceIte]
+  by_cases hN : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st
+      epId = true
+  · simp only [hN, ↓reduceIte]
+  simp only [Bool.not_eq_true] at hN
+  simp only [hN, Bool.false_eq_true, ↓reduceIte]
+  by_cases hRF : receiveReturnFires (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid
+      = true
+  · simp only [hRF, ↓reduceIte, receiveReturnSchedContextFast_eq, endpointReceiveLegR_eq,
+      RefusalCarrying.ofKernel, SeLe4n.ReplyId.ofOptCode_optCode]
+    rcases endpointReceiveDualWithCapsOnCore epId tid rid executingCore
+        (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid)
+      with ⟨st', _ | ⟨dq, summary, sgi⟩⟩
+    · rfl
+    · simp only []
+      cases applyReceiveRendezvousHandoff st' tid dq executingCore <;> rfl
+  simp only [Bool.not_eq_true] at hRF
+  simp only [hRF, Bool.false_eq_true, ↓reduceIte, receiveReturnSchedContext_of_fires_false hRF]
+  exact endpointReceiveLegR_eq epId tid rid executingCore st
 
 /-- The busy holder of the reply capability in slot `cnode`/`slot`, as
 `recvReplyCapK` reads the slot: present, not a reserved object's, carrying the
