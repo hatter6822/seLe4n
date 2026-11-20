@@ -9,10 +9,10 @@
 > **Rows**: SX1–SX17, numbered in the order they are implemented, one PR each.
 > Each row consumes only lower-numbered rows. A row that changes a transition
 > carries the proofs that cover it. No two rows run in parallel.
-> **Decisions**: D1–D23 (§3). D1–D17 are each **default taken; owner card open**;
+> **Decisions**: D1–D24 (§3). D1–D17 are each **default taken; owner card open**;
 > D7 follows the owner's standing rule (implement seL4's behaviour, never defer
 > it). D18–D21 were decided by the owner when SX7 closed; D22 when SX8 started;
-> D23 during SX8.
+> D23 and D24 during SX8.
 > **Supersedes**: the "Next PR" scope in
 > `docs/agent_guide/WORKSTREAM_CONTEXT.md` (the root task's boot IPC buffer
 > and the guard in the capability with `CNode_Mutate`). Both are rows here
@@ -108,7 +108,7 @@ facts it rests on are restated here.
 
 ## 3. Owner decisions
 
-D1–D17 are each **default taken; owner card open**; D18–D23 are the owner's.
+D1–D17 are each **default taken; owner card open**; D18–D24 are the owner's.
 A different answer changes only the rows that cite it.
 
 - **D1. The error label.** *Default:* **seL4's error codes (1–10) in the
@@ -205,6 +205,11 @@ A different answer changes only the rows that cite it.
   (2026-11-20, "New row"):* every invocation label SX8.1's table marks absent
   that no earlier row owns gets one new row, SX16, landed before the closure
   (now SX17). `ARM_SMC_Call` stays absent, as in seL4's default build.
+- **D24. A thread with no scheduling context.** *Decided by the owner
+  (2026-11-20, "Match in SX11"):* in SX11 a thread with no scheduling context
+  (`.unbound`, including one whose context SX8.2's `maybeReturnSchedContext`
+  returned) becomes unschedulable, as in seL4-MCS, which never runs a thread
+  without one. SX8 leaves the scheduler's run rule unchanged (SX11.1).
 
 ## 4. Rows
 
@@ -412,7 +417,7 @@ and return path above measured at 0; `sched-context-unbind-object`.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX11.1 | The thread state seL4 calls Running, held per core, including self-suspend by Call: seL4's `suspend` leaves the caller `Inactive`, so `handleInvocation` writes no reply and the restart PC stays at the `SVC`. The no-reply half landed with SX7 at `v0.37.33` (`syscallReturnOutcome` answers only a runnable caller); this row makes a thread stopped inside its own syscall (a self-suspend, a Call that links no reply) resume at its `SVC`, where it now resumes past it with its request registers. Open gap, pending decision card D24: a thread whose context SX8.2 returned (`.unbound`) is still scheduled at its legacy priority, where seL4 never runs a thread with no scheduling context; the scheduler's run rule is not changed in SX8. | The thread-state invariants and the scheduler's per-core current-thread theorems over the new state. | `smp_4core_scheduler.expected`; QEMU: `tcb-suspend-self-by-call` |
+| SX11.1 | The thread state seL4 calls Running, held per core, including self-suspend by Call: seL4's `suspend` leaves the caller `Inactive`, so `handleInvocation` writes no reply and the restart PC stays at the `SVC`. The no-reply half landed with SX7 at `v0.37.33` (`syscallReturnOutcome` answers only a runnable caller); this row makes a thread stopped inside its own syscall (a self-suspend, a Call that links no reply) resume at its `SVC`, where it now resumes past it with its request registers. Gap closed here (D24, "Match in SX11"): until this row, a thread whose context SX8.2 returned (`.unbound`) is still scheduled at its legacy priority, where seL4 never runs a thread with no scheduling context; this row makes a thread with no scheduling context unschedulable, as in seL4-MCS. The scheduler's run rule is not changed in SX8. | The thread-state invariants and the scheduler's per-core current-thread theorems over the new state. | `smp_4core_scheduler.expected`; QEMU: `tcb-suspend-self-by-call` |
 
 ### SX12 — The invoke phase of NBSendRecv, NBSendWait and ReplyRecv
 

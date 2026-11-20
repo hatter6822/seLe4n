@@ -1753,6 +1753,77 @@ theorem receiveReturnSchedContext_stepCovers (e : CoreId) (blocks : Bool) (st : 
     ⟨stepCovers_refl e st, hInv⟩
     (fun vS _ _ _ => schedContextReturnPerform_stepCovers e st vS tid hInv)
 
+
+/-- The per-core reply-and-receive covers on its `.ok`: the reply leg, the
+donation pop, the reply leg's capability transfer, seL4-MCS `receiveIPC`'s return,
+the receive leg, the post-receive donation, the chain walk and the
+staging. -/
+theorem endpointReplyRecvOnCore_stepCovers (e : CoreId)
+    {answer : Option Architecture.FaultReplyOutcome} {epId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
+    {msg : IpcMessage} {grant : Bool}
+    {executingCore : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
+    (hInv : st.objects.invExt)
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant executingCore st = .ok (summary, st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  unfold endpointReplyRecvAnsweringOnCore at h
+  dsimp only at h
+  obtain ⟨hR, hRInv⟩ := endpointReplyOnCore_stepCovers e (replier := tid) (target := prevCaller)
+    (msg := msg) (executingCore := executingCore) hInv
+  revert h hR hRInv
+  generalize endpointReplyOnCore tid prevCaller msg executingCore st = r1
+  obtain ⟨st1, res1⟩ := r1
+  cases res1 with
+  | error _ => intro h; cases h
+  | ok _ =>
+  intro h hR hRInv
+  dsimp only at h hR hRInv
+  split at h
+  · cases h
+  rename_i ret st1q hPop
+  obtain ⟨hP0, hP0Inv⟩ := replyRecvPopDonation_stepCovers e hRInv hPop
+  -- The reply leg's capability transfer: a capability-key frame.
+  obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st tid prevCaller grant st1q
+  rw [hX] at h
+  dsimp only at h
+  have hXU := hX
+  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hXU
+  have hXK := receiveTransferCaps_keyFrame hP0Inv hXU
+  have hP := stepCovers_trans hP0 (hXK.stepCovers (congrArg MachineState.residentCode
+    (receiveTransferCaps_preserves_machine hXU)) (banksKeptOffCore_of_eq
+      (congrArg MachineState.coreRegs (receiveTransferCaps_preserves_machine hXU))))
+  have hPInv : st1p.objects.invExt := hXK.2.2
+  obtain ⟨hRt, hRtInv⟩ := receiveReturnSchedContext_stepCovers e true st1p tid hPInv
+  obtain ⟨hV, hVInv⟩ := endpointReceiveDualWithCapsOnCore_stepCovers e (endpointId := epId)
+    (receiver := tid) (replyId := some rid)
+    (executingCore := executingCore) hRtInv
+  revert h hV hVInv
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore
+    (receiveReturnSchedContext true st1p tid) = r2
+  obtain ⟨st2, res2⟩ := r2
+  cases res2 with
+  | error _ => intro h; cases h
+  | ok q =>
+  obtain ⟨nextThread, summ, _⟩ := q
+  intro h hV hVInv
+  dsimp only at h hV hVInv
+  split at h
+  · cases h
+  rename_i st3 hPost
+  cases h
+  obtain ⟨hD, hDInv⟩ := replyRecvPostReceiveDonation_stepCovers e hVInv hPost
+  obtain ⟨hW, hWInv⟩ := applyReceiveLegPipHandoff_stepCovers e st3 tid nextThread
+    ((recordedReplyServer? st prevCaller).getD tid) executingCore hDInv
+  obtain ⟨hS1, hS1Inv⟩ : stepCovers e _ (replyRecvAnswerCaller answer _ prevCaller _) ∧
+      (replyRecvAnswerCaller answer _ prevCaller _).objects.invExt := by
+    cases answer with
+    | none =>
+      have hK := stageDeliveredMessage_keyFrame _ prevCaller xs.capInfo hWInv
+      exact ⟨hK.stepCovers, hK.2.2⟩
+    | some o => exact faultReplyApplyOnCore_stepCovers e _ prevCaller o hWInv
+  exact ⟨stepCovers_trans (stepCovers_trans (stepCovers_trans (stepCovers_trans
+    (stepCovers_trans (stepCovers_trans hR hP) hRt) hV) hD) hW) hS1, hS1Inv⟩
+
 /-- **seL4's `sendSignal` covers**, on a state where the binding pair holds: the
 wake (`notificationSignalBoundOnCore_stepCovers`), then the donation to the thread
 it woke, whose binding pair the wake left as it found it (the wake moves no

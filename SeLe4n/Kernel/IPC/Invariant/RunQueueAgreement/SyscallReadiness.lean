@@ -305,11 +305,17 @@ theorem endpointReplyRecvOnCore_readyKeptStage {answer : Option Architecture.Fau
   have hAp : st1p.activeAt tid :=
     let ⟨hI1, hR1⟩ := hE.1.links hInv hRf
     activeKeptStage.of_stage hPopS hI1 hR1 tid hA1
+  -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, before the receive leg.
+  have RR := receiveReturnSchedContext_runQueueStage true st1p tid
+  obtain ⟨hHR, hCurR, hActR⟩ := receiveReturnSchedContext_receiveEntryFacts true
+    (let ⟨hI1, hR1⟩ := hE.1.links hInv hRf; (hPopS.1.links hI1 hR1).1) hH2
+    ((hPC c).trans hC1) hAp
   have hR := endpointReceiveDualWithCapsOnCore_runQueueEntryStage epId tid (some rid) c
-    st1p hH2 ((hPC c).trans hC1) hNI hAp
+    (receiveReturnSchedContext true st1p tid) hHR hCurR hNI hActR
   have rR := endpointReceiveDualWithCapsOnCore_readyKeptStage epId tid (some rid) c
-    st1p hH2 ((hPC c).trans hC1) hNI hAp
-  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) c st1p = q at hR rR h
+    (receiveReturnSchedContext true st1p tid) hHR hCurR hNI hActR
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) c
+    (receiveReturnSchedContext true st1p tid) = q at hR rR h
   obtain ⟨st2, r2⟩ := q
   dsimp only at hR rR
   rcases r2 with _ | ⟨nt, sm, _⟩ <;> dsimp only at h
@@ -318,7 +324,7 @@ theorem endpointReplyRecvOnCore_readyKeptStage {answer : Option Architecture.Fau
   · cases h
   rename_i st3 hPost
   cases h
-  have A := hE.trans hPopS
+  have A := (hE.trans hPopS).trans RR
   -- The post-receive donor is blocked on its reply and every thread stays
   -- coherent, so it is not suspended.
   have hAll := A.entry.trans hR

@@ -164,6 +164,7 @@ theorem replyRecvOnCore_donated_deliveredLong (st : SystemState) (epId : SeLe4n.
     (hG : replyPopsInPlace st c ct.scBindingScCode tid rid = true)
     (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
     (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : enqueueAdmits rt = true)
+    (hUB : rt.boundNotificationCode = 0)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hStash : st.replyStashedAt rid rp = false)
@@ -182,7 +183,7 @@ theorem replyRecvOnCore_donated_deliveredLong (st : SystemState) (epId : SeLe4n.
   have hNe : tid ≠ c := fun e => hNe' e.symm
   obtain ⟨hEq, x, hX, hB⟩ := replyRecvOnCore_donated_inPlace st epId tid c rid
     { registers := longReplyRecvRegs rf st tid len, badge := badge } grant core
-    ct ep0 rt ep rp hSz hT hIpc hRO hSRes hG hE hS hR hA hEnq hRp hStash hRec hInert
+    ct ep0 rt ep rp hSz hT hIpc hRO hSRes hG hE hS hR hA hUB hEnq hRp hStash hRec hInert
   rw [hEq]
   simp only [CapTransferSummary.capInfo_empty]
   revert hX
@@ -229,6 +230,7 @@ theorem replyRecvOnCore_unheld_deliveredLong (st : SystemState) (epId : SeLe4n.O
     (hNe : tid ≠ c)
     (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
     (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hUB : rt.boundNotificationCode = 0)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hStash : st.replyStashedAt rid rp = false)
@@ -246,7 +248,7 @@ theorem replyRecvOnCore_unheld_deliveredLong (st : SystemState) (epId : SeLe4n.O
     { registers := longReplyRecvRegs rf st tid len, badge := badge } ct hT hG
   obtain ⟨hEq, x, hX, hB⟩ := replyRecvOnCore_unheld_inPlace st epId tid c rid
     { registers := longReplyRecvRegs rf st tid len, badge := badge } grant core
-    ct ep0 rt ep rp hSz hT hIpc hRO hG hNe hE hS hR hA hEnq hRp hStash hRec hInert
+    ct ep0 rt ep rp hSz hT hIpc hRO hG hNe hE hS hR hA hUB hEnq hRp hStash hRec hInert
   rw [hEq]
   simp only [CapTransferSummary.capInfo_empty]
   revert hX
@@ -298,6 +300,7 @@ theorem replyRecvOnCore_donated_capsDeliveredLong (st : SystemState) (epId : SeL
     (hG : replyPopsInPlace st c ct.scBindingScCode tid rid = true)
     (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
     (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : enqueueAdmits rt = true)
+    (hUB : rt.boundNotificationCode = 0)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hStash : st.replyStashedAt rid rp = false)
@@ -324,7 +327,7 @@ theorem replyRecvOnCore_donated_capsDeliveredLong (st : SystemState) (epId : SeL
   have hNe : tid ≠ c := fun e => hNe' e.symm
   have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by
     rw [hCode]; rfl
-  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := popDonationSettled_receiveGuard st c tid rid msg ct rp
+  obtain ⟨hE1, ⟨rt1, hR1, hA1, hB1⟩, hG1⟩ := popDonationSettled_receiveGuard st c tid rid msg ct rp
     epId ep rt scId sc (determineTargetCore st c) hNo hT hFC hRp hN hScO hHead hBelow
     hNe hE hR hA hEnq hStash hRec
   have hNoX := storeReplyRendezvousReady_noResizeDue st c tid rid hNo
@@ -355,7 +358,7 @@ theorem replyRecvOnCore_donated_capsDeliveredLong (st : SystemState) (epId : SeL
   have hFr := (receiveTransferCaps_reply_transferFrame (S := X.mapTcbInPlace c (holdMessage msg))
     ((ipcBufferReadsAgree_mapTcbInPlace X c (holdMessage msg) (fun _ => ⟨rfl, rfl⟩)).trans hAX')
     ((RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoP) c.toObjId stcb ct count hHT).1
-  obtain ⟨hE2, ⟨rt2, hR2, hA2⟩, hG2⟩ := receiveGuard_of_transferFrame hFr hE1 hR1 hA1 hG1
+  obtain ⟨hE2, ⟨rt2, hR2, hA2, hB2⟩, hG2⟩ := receiveGuard_of_transferFrame hFr hE1 hR1 hA1 hG1
   have hXf : replyTransferCaps st tid c true
       (popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid
         ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)) =
@@ -363,7 +366,7 @@ theorem replyRecvOnCore_donated_capsDeliveredLong (st : SystemState) (epId : SeL
     unfold replyTransferCaps
     rw [hReq, hTgt, hSc, hP1, hHT]
   rw [replyRecvOnCore_donated_transfer st epId tid c rid msg true core ct ep0 ep rp (hMsg ▸ hSz) hT
-    hIpc hRO hSRes hG hS hRp hXf hE2 hR2 hA2 hG2]
+    hIpc hRO hSRes hG hS hRp hXf hE2 hR2 hA2 (hB2.trans (hB1.trans hUB)) hG2]
   dsimp only
   subst hMsg
   simp only [CapTransferSummary.capInfo_empty]
@@ -417,6 +420,7 @@ theorem replyRecvOnCore_unheld_capsDeliveredLong (st : SystemState) (epId : SeLe
     (hNe : tid ≠ c)
     (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
     (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hUB : rt.boundNotificationCode = 0)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hStash : st.replyStashedAt rid rp = false)
@@ -449,7 +453,7 @@ theorem replyRecvOnCore_unheld_capsDeliveredLong (st : SystemState) (epId : SeLe
   subst hN2
   have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by
     rw [hCode]; rfl
-  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := popUnheldSettled_receiveGuard st c tid rid msg ct rp
+  obtain ⟨hE1, ⟨rt1, hR1, hA1, hB1⟩, hG1⟩ := popUnheldSettled_receiveGuard st c tid rid msg ct rp
     epId ep rt scId sc (determineTargetCore st c) hNo hT hFC hRp hN hScO hHead hBelow hNe hE hR
     hA hEnq hStash hRec
   have hNoX := storeReplyLegReady_noResizeDue st c rid hNo
@@ -481,7 +485,7 @@ theorem replyRecvOnCore_unheld_capsDeliveredLong (st : SystemState) (epId : SeLe
   have hFr := (receiveTransferCaps_reply_transferFrame (S := X.mapTcbInPlace c (holdMessage msg))
     ((ipcBufferReadsAgree_mapTcbInPlace X c (holdMessage msg) (fun _ => ⟨rfl, rfl⟩)).trans hAX')
     ((RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoP) c.toObjId stcb ct count hHT).1
-  obtain ⟨hE2, ⟨rt2, hR2, hA2⟩, hG2⟩ := receiveGuard_of_transferFrame hFr hE1 hR1 hA1 hG1
+  obtain ⟨hE2, ⟨rt2, hR2, hA2, hB2⟩, hG2⟩ := receiveGuard_of_transferFrame hFr hE1 hR1 hA1 hG1
   have hXf : replyTransferCaps st tid c true
       (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
         (storeReplyLeg st c rid msg) c ⟨replyHeadContextCode st rid - 1⟩)
@@ -490,7 +494,7 @@ theorem replyRecvOnCore_unheld_capsDeliveredLong (st : SystemState) (epId : SeLe
     unfold replyTransferCaps
     rw [hReq, hTgt, hSc, hP1, hHT]
   rw [replyRecvOnCore_unheld_transfer st epId tid c rid msg true core ct ep0 ep rp (hMsg ▸ hSz) hT
-    hIpc hRO hG hS hRp hXf hE2 hR2 hA2 hG2]
+    hIpc hRO hG hS hRp hXf hE2 hR2 hA2 (hB2.trans (hB1.trans hUB)) hG2]
   dsimp only
   subst hMsg
   simp only [CapTransferSummary.capInfo_empty]

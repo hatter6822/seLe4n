@@ -307,7 +307,7 @@ theorem storeReplyRendezvous_receiveGuard (st : SystemState) (c tid : SeLe4n.Thr
     (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
     (storeReplyRendezvous st c tid rid msg).objects[epId]? = some (.endpoint ep) ∧
       (∃ rt1, (storeReplyRendezvous st c tid rid msg).objects[tid.toObjId]? = some (.tcb rt1) ∧
-        receiveBlockAdmits rt1 = true) ∧
+        receiveBlockAdmits rt1 = true ∧ rt1.boundNotificationCode = rt.boundNotificationCode) ∧
       receiveBlocksInPlace (storeReplyRendezvous st c tid rid msg) epId tid ep.receiveQ.tail
         (some rid) = true := by
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
@@ -325,9 +325,11 @@ theorem storeReplyRendezvous_receiveGuard (st : SystemState) (c tid : SeLe4n.Thr
   refine ⟨?_, ?_, ?_⟩
   · rw [hHold _ hEc]; exact agreeAt_of_not_tcb (hAg _ hEc hEr) (fun _ e => by cases e) hE
   · obtain ⟨rt1, h1, e1⟩ := agreeAt_tcb (hAg _ hTc' hTr) hR
-    refine ⟨rt1, by rw [hHold _ hTc']; exact h1, ?_⟩
-    have : receiveBlockAdmits rt1 = receiveBlockAdmits rt1.withoutRunLinks := rfl
-    rw [this, e1]; exact hA
+    refine ⟨rt1, by rw [hHold _ hTc']; exact h1, ?_, ?_⟩
+    · have : receiveBlockAdmits rt1 = receiveBlockAdmits rt1.withoutRunLinks := rfl
+      rw [this, e1]; exact hA
+    · show rt1.withoutRunLinks.boundNotificationCode = rt.withoutRunLinks.boundNotificationCode
+      rw [e1]
   · unfold receiveBlocksInPlace
     rw [Bool.and_eq_true, Bool.and_eq_true]
     have hK : S1.objectsKeepFinds st := hS1 ▸ storeReplyRendezvousReady_keepsFinds st c tid rid hNo hFC
@@ -396,6 +398,32 @@ theorem storeReplyRendezvous_receiveGuard (st : SystemState) (c tid : SeLe4n.Thr
       exact ⟨(hKF _).trans hRec.1, storeLeavesIndexAndTypes_of_frame
         (s' := S1.mapTcbInPlace c (holdMessage msg)) hV hRec.2⟩
 
+/-- **The reply leg keeps every other thread's bound-notification code**: a
+thread that is neither the caller nor the reply object holds, after the reply's
+writes, a TCB with the code it held (the in-place forms read seL4-MCS
+`receiveIPC`'s return guard through it). -/
+theorem storeReplyRendezvous_boundNotificationCode (st : SystemState) (c tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (msg : IpcMessage) (ct : TCB) (rp : Reply) (rt : TCB)
+    (hNo : st.objects.noResizeDue)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hFC : st.objects.findsInPlace c.toObjId = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hNe : tid ≠ c)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) :
+    ∃ rt1, (storeReplyRendezvous st c tid rid msg).objects[tid.toObjId]? = some (.tcb rt1) ∧
+      rt1.boundNotificationCode = rt.boundNotificationCode := by
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hTc' : tid.toObjId ≠ c.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e)
+  have hTr : tid.toObjId ≠ rid.toObjId := fun e => by rw [e, hRp] at hR; cases hR
+  rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo]
+  obtain ⟨rt1, h1, e1⟩ := agreeAt_tcb
+    (storeReplyRendezvousReady_agree st c tid rid ct hNo hTc hFC _ hTc' hTr) hR
+  refine ⟨rt1, ?_, ?_⟩
+  · rw [SystemState.objects_mapTcbInPlace, if_neg (fun h => hTc' (beq_iff_eq.mp h).symm)]
+    exact h1
+  · show rt1.withoutRunLinks.boundNotificationCode = rt.withoutRunLinks.boundNotificationCode
+    rw [e1]
+
 /-- **The reply-receive that blocks, in place, on either answer**: under the reply's guard
 (`replyWakesInPlace`), with the receiver the server the caller recorded, no
 sender waiting and the receive's block admissible (read on the pre-state and
@@ -416,6 +444,7 @@ theorem replyRecvAnsweringOnCore_blocks_inPlace
     (hNe : tid ≠ c)
     (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
     (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hUB : rt.boundNotificationCode = 0)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hFree : rp.consumed.isFree = true) (hStash : st.replyStashedAt rid rp = false)
@@ -433,7 +462,7 @@ theorem replyRecvAnsweringOnCore_blocks_inPlace
     exact hG.1.1.1.2
   obtain ⟨hEq, hHead⟩ := replyOnCore_inPlace st tid c tid ct ep0 rid msg core hSz
     hT hIpc hRO hG
-  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid msg ct rp
+  obtain ⟨hE1, ⟨rt1, hR1, hA1, hB1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid msg ct rp
     epId ep rt hNo hT hFC hRp hNe hE hR hA hEnq hFree hStash hRec
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hXf := replyRecvReplyTransfer_of_inert answer st tid c grant ct hTc hInert
@@ -457,8 +486,10 @@ theorem replyRecvAnsweringOnCore_blocks_inPlace
     have h := hG1
     simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at h
     exact h.1.1.1.1.1.1.1
+  have hRet : receiveReturnSchedContext true S1 tid = S1 :=
+    receiveReturnSchedContext_of_unbound hR1 (hB1.trans hUB)
   unfold endpointReplyRecvAnsweringOnCore
-  simp only [hRec, Option.getD_some, hEq, hPop, hXf, hRecv, hEp1, Option.bind_some, hS,
+  simp only [hRec, Option.getD_some, hEq, hPop, hXf, hRet, hRecv, Option.bind_some, hS,
     replyRecvPostReceiveDonation_none_self _ _ _ _ hRes]
   simp [applyReceiveLegPipHandoff]
 
@@ -478,6 +509,7 @@ theorem replyRecvOnCore_blocks_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     (hNe : tid ≠ c)
     (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
     (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hUB : rt.boundNotificationCode = 0)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hFree : rp.consumed.isFree = true) (hStash : st.replyStashedAt rid rp = false)
@@ -489,7 +521,7 @@ theorem replyRecvOnCore_blocks_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
           (removeRunnableOnCore (storeReceiveBlock (storeReplyRendezvous st c tid rid msg) epId tid
             ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1 c 0) :=
   replyRecvAnsweringOnCore_blocks_inPlace none st epId tid c rid msg grant core ct ep0 rt ep
-    rp hSz hT hIpc hRO hG hNe hE hS hR hA hEnq hRp hFree hStash hRec (fun _ => hInert)
+    rp hSz hT hIpc hRO hG hNe hE hS hR hA hUB hEnq hRp hFree hStash hRec (fun _ => hInert)
 
 end ReplyRecvInPlace
 
@@ -724,6 +756,7 @@ theorem replyRecvOnCore_blocks_delivered (st : SystemState) (epId : SeLe4n.ObjId
     (hNe : tid ≠ c)
     (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
     (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hUB : rt.boundNotificationCode = 0)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hFree : rp.consumed.isFree = true) (hStash : st.replyStashedAt rid rp = false)
@@ -745,10 +778,10 @@ theorem replyRecvOnCore_blocks_delivered (st : SystemState) (epId : SeLe4n.ObjId
     exact hG.1.1.1.2
   have hCT : c.toObjId ≠ tid.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e).symm
   rw [replyRecvOnCore_blocks_inPlace st epId tid c rid msg grant core ct ep0 rt ep rp hSz
-    hT hIpc hRO hG hNe hE hS hR hA hEnq hRp hFree hStash hRec hInert]
+    hT hIpc hRO hG hNe hE hS hR hA hUB hEnq hRp hFree hStash hRec hInert]
   simp only [CapTransferSummary.capInfo_empty]
   rw [replyRecvBlock_staged _ _ _ _ _ _ _ _ hNo hNe hSz4]
-  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid msg ct rp
+  obtain ⟨hE1, ⟨rt1, hR1, hA1, hB1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid msg ct rp
     epId ep rt hNo hT hFC hRp hNe hE hR hA hEnq hFree hStash hRec
   obtain ⟨t, hT1, hB⟩ := receiveBlock_receiver_blocked _ epId ep tid rt1 (some rid) core hE1 hR1
     hA1 hG1

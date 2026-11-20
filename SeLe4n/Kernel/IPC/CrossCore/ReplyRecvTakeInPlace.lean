@@ -405,7 +405,8 @@ theorem replyRecvOnCore_take_transfer (st : SystemState) (epId : SeLe4n.ObjId)
     (hR : Architecture.RegisterDecode.registerRoutedSyscall
       (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb2.registerContext) SeLe4n.arm64DefaultLayout
       sTcb2.registerContext 32 = .send capAddr mi)
-    (hF : sTcb2.ipcFaultSend = false) :
+    (hF : sTcb2.ipcFaultSend = false)
+    (hRet : receiveReturnSchedContext true S2 tid = S2) :
     endpointReplyRecvOnCore epId tid rid c msg grant core st =
       .ok ({ results := #[] }, Architecture.stageDeliveredMessage
           (PriorityInheritance.propagatePipChainCrossCore
@@ -429,7 +430,7 @@ theorem replyRecvOnCore_take_transfer (st : SystemState) (epId : SeLe4n.ObjId)
   have hNoCall := receiveTake_dequeuedNoCall S2 epId ep tid core s sTcb2
     (blockedSenderMessage (storePopHead S2 epId false s sTcb2.queueNext) s sTcb2) hE2 hH hT2 hG2
   unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
-  simp only [hRec, Option.getD_some, hEq, hPop, hXf', hRecv, hEp2, Option.bind_some, hH]
+  simp only [hRec, Option.getD_some, hEq, hPop, hXf', hRet, hRecv, hEp2, Option.bind_some, hH]
   simp only [replyRecvPostReceiveDonation, hNoCall, Bool.false_eq_true, ↓reduceIte]
   simp [replyRecvAnswerCaller]
 
@@ -665,7 +666,9 @@ theorem replyRecvOnCore_take_delivered (st : SystemState) (epId : SeLe4n.ObjId)
     (hR : Architecture.RegisterDecode.registerRoutedSyscall
       (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout
       sTcb.registerContext 32 = .send capAddr mi)
-    (hF : sTcb.ipcFaultSend = false) :
+    (hF : sTcb.ipcFaultSend = false)
+    {rt : TCB} (hRt : st.objects[tid.toObjId]? = some (.tcb rt))
+    (hUB : rt.boundNotificationCode = 0) :
     (match endpointReplyRecvOnCore epId tid rid c
         { registers := Architecture.regMessageBody layout rf len, badge := badge } grant core st with
       | .ok (summary, st') =>
@@ -703,7 +706,10 @@ theorem replyRecvOnCore_take_delivered (st : SystemState) (epId : SeLe4n.ObjId)
       (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb1.registerContext) SeLe4n.arm64DefaultLayout
       sTcb1.registerContext 32 = .send capAddr mi := by rw [hK.regs]; exact hR
   rw [replyRecvOnCore_take_transfer st epId tid c rid _ grant core ct ep0 ep s capAddr mi hSz hT
-    hIpc hRO hG hH hXf hE1 hS1 hG1 hR1 (by rw [hK.faultSend]; exact hF)]
+    hIpc hRO hG hH hXf hE1 hS1 hG1 hR1 (by rw [hK.faultSend]; exact hF)
+    (let ⟨_, h1, e1⟩ := storeReplyRendezvous_boundNotificationCode st c tid rid _ ct rp rt hNo hT
+      hFC hRp hNe hRt
+     receiveReturnSchedContext_of_unbound h1 (e1.trans hUB))]
   dsimp only
   rw [CapTransferSummary.capInfo_empty]
   rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo] at hE1 hS1 hG1 ⊢
@@ -789,7 +795,9 @@ theorem replyRecvOnCore_take_capsDelivered (st : SystemState) (epId : SeLe4n.Obj
       (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout
       sTcb.registerContext 32 = .send capAddr mi)
     (hF : sTcb.ipcFaultSend = false)
-    (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count) :
+    (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count)
+    {rt : TCB} (hRt : st.objects[tid.toObjId]? = some (.tcb rt))
+    (hUB : rt.boundNotificationCode = 0) :
     (match endpointReplyRecvOnCore epId tid rid c
         { registers := Architecture.regMessageBody layout rf len, badge := badge } true core st with
       | .ok (summary, st') =>
@@ -840,7 +848,9 @@ theorem replyRecvOnCore_take_capsDelivered (st : SystemState) (epId : SeLe4n.Obj
     rw [hReq, hTgt, hS1, receiveTransferCaps_mapTcbInPlace (LinkBlindWrite.withMessageSlots _ _ _)
       c _ _ _ X hNoX, hT1]
     rfl
-  rw [hS1] at hE1 hS1o hG1
+  obtain ⟨rt1, hRt1, eB1⟩ := storeReplyRendezvous_boundNotificationCode st c tid rid msg ct rp rt
+    hNo hT hFC hRp hNe hRt
+  rw [hS1] at hE1 hS1o hG1 hRt1
   have hFr := (receiveTransferCaps_reply_transferFrame (S := X.mapTcbInPlace c (holdMessage msg))
     ((ipcBufferReadsAgree_mapTcbInPlace X c (holdMessage msg) (fun _ => ⟨rfl, rfl⟩)).trans hAX)
     ((RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoX) c.toObjId stcb ct count
@@ -853,7 +863,10 @@ theorem replyRecvOnCore_take_capsDelivered (st : SystemState) (epId : SeLe4n.Obj
       sTcb2.registerContext 32 = .send capAddr mi := by rw [hK.regs]; exact hR
   have hF2 : sTcb2.ipcFaultSend = false := by rw [hK.faultSend]; exact hF
   rw [replyRecvOnCore_take_transfer st epId tid c rid msg true core ct ep0 ep s capAddr mi
-    (hMsg ▸ hSz) hT hIpc hRO hG hH hXf hE2 hS2o hG2 hR2 hF2]
+    (hMsg ▸ hSz) hT hIpc hRO hG hH hXf hE2 hS2o hG2 hR2 hF2
+    (let ⟨_, h2, e2⟩ := hFr.tcb hRt1
+     receiveReturnSchedContext_of_unbound h2
+      ((show _ = _ from congrArg TCB.boundNotificationCode e2).trans (eB1.trans hUB)))]
   dsimp only
   subst hMsg
   rw [CapTransferSummary.capInfo_empty]

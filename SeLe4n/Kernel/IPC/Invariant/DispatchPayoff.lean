@@ -368,20 +368,24 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
               replyRecvPopDonation_preserves_objects_invExt
                 rid prevCaller st1 st1q returnedSc?
                 hObjInv1 hPop
-            have hInv1p : ipcInvariantFull st1p := by
+            have hInv1p0 : ipcInvariantFull st1p := by
               rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
               exact receiveTransferCaps_preserves_ipcInvariantFull hInv1q hObjInv1q hX
-            have hObjInv1p : st1p.objects.invExt :=
+            have hObjInv1p0 : st1p.objects.invExt :=
               replyRecvReplyTransfer_objects_invExt hObjInv1q hX
+            -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, before the
+            -- receive leg; the leg's obligations are stated at its post-state.
+            obtain ⟨hInv1p, hObjInv1p⟩ :=
+              receiveReturnSchedContext_preserves_ipcInvariantFull true st1p tid hObjInv1p0 hInv1p0
             obtain ⟨tcbR, hT1, hReadyR⟩ := hReceiverReady1
-            have hT1obj := (SystemState.getTcb?_eq_some_iff st1p tid tcbR).mp hT1
-            have hFresh1 := readyThread_endpointQueueFresh st1p tid tcbR
+            have hT1obj := (SystemState.getTcb?_eq_some_iff _ tid tcbR).mp hT1
+            have hFresh1 := readyThread_endpointQueueFresh _ tid tcbR
               hInv1p.queueHeadBlockedConsistent hInv1p.endpointQueueTailBlockedConsistent
               hT1obj hReadyR
-            have hTail1 := recvTailCrossQueueFresh st1p epId
+            have hTail1 := recvTailCrossQueueFresh _ epId
               hInv1p.dualQueueSystemInvariant hInv1p.endpointQueueTailBlockedConsistent
             have hInv2 := endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
-              epId tid (some rid) ec st1p
+              epId tid (some rid) ec (receiveReturnSchedContext true st1p tid)
               hInv1p hObjInv1p hCleanupStack1 hBudgets1 hFresh1 hTail1
               (fun r hr => by obtain rfl := Option.some.inj hr; exact hReplyIdValid1)
               (fun tcb hTcb => by
@@ -392,7 +396,8 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
                 rw [hT1] at hTcb
                 obtain rfl := Option.some.inj hTcb
                 exact hReadyR)
-            cases hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) ec st1p with
+            cases hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
+                (receiveReturnSchedContext true st1p tid) with
             | mk st2 res2 =>
                 rw [hRecv] at hStep hInv2
                 cases res2 with

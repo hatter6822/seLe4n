@@ -821,6 +821,208 @@ theorem receiveReturnSchedContext_recordsStage (blocks : Bool) (x : SystemState)
   .of_frameK fun hI => receiveReturnSchedContext_induct (fun a b => RecordsFrame a b) blocks x t
     (RecordsFrame.refl hI) (fun vS _ _ _ => RecordsFrame.schedContextReturnPerform vS t hI)
 
+/-- **seL4 `receiveIPC`'s return keeps the receive leg's facts**: the queue
+heads' blocking states, the receiver ready, and every endpoint as it was — it
+writes two binding codes and a context's thread link, no IPC state and no
+endpoint. -/
+theorem receiveReturnSchedContext_receiveLegFacts (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hI : st.objects.invExt) (hQ : queueHeadBlockedConsistent st)
+    (hReady : ∀ x, st.getTcb? tid = some x → x.ipcState = .ready) :
+    queueHeadBlockedConsistent (receiveReturnSchedContext blocks st tid) ∧
+      (∀ x, (receiveReturnSchedContext blocks st tid).getTcb? tid = some x →
+        x.ipcState = .ready) ∧
+      (∀ (e : SeLe4n.ObjId) (ep : Endpoint),
+        (receiveReturnSchedContext blocks st tid).objects[e]? = some (.endpoint ep) →
+          st.objects[e]? = some (.endpoint ep)) := by
+  have hEB : ∀ (e : SeLe4n.ObjId) (ep : Endpoint),
+      (receiveReturnSchedContext blocks st tid).objects[e]? = some (.endpoint ep) →
+        st.objects[e]? = some (.endpoint ep) := fun e ep hEp => by
+    rcases receiveReturnSchedContext_objects blocks st tid hI e with h | ⟨_, _, h⟩ | ⟨_, _, _, h⟩ <;>
+      rw [h] at hEp
+    · exact hEp
+    · cases hEp
+    · cases hEp
+  refine ⟨fun epId ep hd tcb hEp hT => ?_, fun x hx => ?_, hEB⟩
+  · obtain ⟨y, hy, hxy⟩ := receiveReturnSchedContext_tcb blocks st tid hI _ tcb hT
+    have h := hQ epId ep hd y (hEB epId ep hEp) hy
+    rcases hxy with h' | h' <;> (subst tcb; exact h)
+  · obtain ⟨y, hy, hxy⟩ := receiveReturnSchedContext_tcb blocks st tid hI _ x
+      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hx)
+    rcases hxy with h' | h' <;> (subst x; exact hReady y ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hy))
+
+section ReplyRecvRecords
+
+open SeLe4n.Kernel.Concurrency (CoreId)
+
+namespace RecordsStep
+
+/-- **The reply-receive keeps the address-space records and every fault record
+parked**: the reply leg unparks its caller, every step after it keeps the
+records, and the answer either finds the caller carrying no fault record or
+clears the one it answers. -/
+theorem endpointReplyRecvAnsweringOnCore {answer : Option Architecture.FaultReplyOutcome}
+    {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
+    {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool}
+    {c : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
+    (hInv : st.objects.invExt) (hQ : queueHeadBlockedConsistent st)
+    (hReady : ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
+    (hAns : answer = none → NoFaultAt st prevCaller)
+    (h : _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg
+      grant c st = .ok (summary, st')) :
+    RecordsStep st st' := by
+  unfold _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore at h
+  dsimp only at h
+  have A := ReplyLegStep.endpointReplyOnCore (replier := tid) (target := prevCaller) (msg := msg)
+    (c := c) hInv
+  revert h A
+  cases hR : _root_.SeLe4n.Kernel.endpointReplyOnCore tid prevCaller msg c st with
+  | mk st1 res1 =>
+  cases res1 with
+  | error _ => intro h; cases h
+  | ok sgi =>
+  intro h A
+  dsimp only at h A
+  split at h
+  · cases h
+  rename_i ret st1q hPop
+  obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st tid prevCaller grant st1q
+  rw [hX] at h
+  dsimp only at h
+  obtain ⟨hQp, hRp, -⟩ := replyRecvReceiveLegFacts hInv hQ hR hPop hX hReady
+  have F0 := RecordsFrame.replyRecvPopDonation A.1.invExt hPop
+  have F1 := F0.trans (RecordsFrame.receiveTransferCaps F0.invExt
+    (by rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX; exact hX))
+  -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, before the receive leg.
+  have FR : RecordsFrame st1p (receiveReturnSchedContext true st1p tid) :=
+    receiveReturnSchedContext_induct (fun a b => RecordsFrame a b) true st1p tid
+      (RecordsFrame.refl F1.invExt)
+      (fun vS _ _ _ => RecordsFrame.schedContextReturnPerform vS tid F1.invExt)
+  obtain ⟨hQr, hRr, -⟩ := receiveReturnSchedContext_receiveLegFacts true st1p tid F1.invExt
+    hQp hRp
+  have S2 := endpointReceiveDualWithCapsOnCore (endpointId := epId) (replyId := some rid)
+    (c := c) FR.invExt hQr
+    (fun x hx => by rw [hRr x hx]; exact ipcParked_ready)
+  revert h S2
+  generalize _root_.SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId tid (some rid)
+    c (receiveReturnSchedContext true st1p tid) = r2
+  obtain ⟨st2, res2⟩ := r2
+  cases res2 with
+  | error _ => intro h; cases h
+  | ok q =>
+  obtain ⟨nextThread, summ, _⟩ := q
+  intro h S2
+  dsimp only at h S2
+  split at h
+  · cases h
+  rename_i st3 hPost
+  cases h
+  have F3 := RecordsFrame.replyRecvPostReceiveDonation S2.invExt hPost
+  have F4 := RecordsFrame.applyReceiveLegPipHandoff st3 tid nextThread
+    ((recordedReplyServer? st prevCaller).getD tid) c F3.invExt
+  have Mid : RecordsStep st1 _ :=
+    ((((RecordsStep.of_frame (F1.trans FR)).trans S2).trans (.of_frame F3)).trans (.of_frame F4))
+  cases answer with
+  | none =>
+    have F5 := RecordsFrame.stageDeliveredMessage _ prevCaller xs.capInfo F4.invExt
+    exact ((A.2 (hAns rfl)).trans Mid).trans (.of_frame F5)
+  | some o =>
+    obtain ⟨S5, hN⟩ := faultReplyApplyOnCore _ prevCaller o F4.invExt
+    have F6 := RecordsFrame.refl S5.invExt
+    exact ((A.1.trans (.of_step (Mid.trans S5))).trans (.of_step (.of_frame F6))).close
+      (hN.frame F6)
+
+end RecordsStep
+
+namespace CallerReady
+
+theorem ready {st : SystemState} {t : SeLe4n.ThreadId} (h : CallerReady st t) :
+    ∀ x, st.getTcb? t = some x → x.ipcState = .ready := fun x hx => by
+  obtain ⟨tcb, hT, hR⟩ := h
+  have hE := hT.symm.trans ((SystemState.getTcb?_eq_some_iff _ _ _).mp hx)
+  simp only [Option.some.injEq, KernelObject.tcb.injEq] at hE
+  subst hE; exact hR
+
+end CallerReady
+
+open SeLe4n.Model.SystemState in
+/-- **The reply-receive keeps the records**, its server the running thread: an
+answer to a faulted caller clears its fault record, any other answer finds none. -/
+theorem RecordsStage.endpointReplyRecvAnsweringOnCore
+    {answer : Option Architecture.FaultReplyOutcome} {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool}
+    {c : CoreId} {st st' : SystemState}
+    {summary : CapTransferSummary} (hR : ipcReachable st) (hC : CallerReady st tid)
+    (hAns : answer = none → NoFaultAt st prevCaller)
+    (h : _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg
+      grant c st = .ok (summary, st')) : RecordsStage st st' :=
+  have hQ := hR.ipcInvariantFull.queueHeadBlockedConsistent
+  RecordsStage.of_step (RecordsStep.endpointReplyRecvAnsweringOnCore hR.objects_invExt hQ hC.ready hAns h)
+    fun hW => by
+      have hOk := h
+      unfold _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore at hOk
+      dsimp only at hOk
+      cases hRl : _root_.SeLe4n.Kernel.endpointReplyOnCore tid prevCaller msg c st with
+      | mk st1 res1 =>
+      rw [hRl] at hOk
+      cases res1 with
+      | error _ => cases hOk
+      | ok sgi =>
+      dsimp only at hOk
+      cases hP : _root_.SeLe4n.Kernel.replyRecvPopDonation rid prevCaller st1 with
+      | error _ => rw [hP] at hOk; cases hOk
+      | ok p =>
+      obtain ⟨ret, st1q⟩ := p
+      obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st tid prevCaller grant st1q
+      obtain ⟨hQp0, hRp0, hEp0⟩ :=
+        replyRecvReceiveLegFacts hR.objects_invExt hQ hRl hP hX hC.ready
+      have hInvP : st1p.objects.invExt :=
+        replyRecvReplyTransfer_objects_invExt
+          (replyRecvPopDonation_preserves_objects_invExt rid prevCaller st1 st1q ret
+            (by have := endpointReplyOnCore_preserves_objects_invExt tid prevCaller msg c st
+                  hR.objects_invExt
+                rw [hRl] at this; exact this) hP) hX
+      obtain ⟨hQp, hRp, hEpR⟩ := receiveReturnSchedContext_receiveLegFacts true st1p tid hInvP
+        hQp0 hRp0
+      have hEp : ∀ (e : SeLe4n.ObjId) (ep : Endpoint),
+          (receiveReturnSchedContext true st1p tid).objects[e]? = some (.endpoint ep) →
+          st.objects[e]? = some (.endpoint ep) := fun e ep h => hEp0 e ep (hEpR e ep h)
+      have hPost : replyRecvReceiveLegState answer st tid grant rid prevCaller
+          (_root_.SeLe4n.Kernel.endpointReplyOnCore tid prevCaller msg c st).1 =
+            receiveReturnSchedContext true st1p tid := by
+        rw [hRl]; exact replyRecvReceiveLegState_eq_of_ok _ _ _ _ _ _ _ _ _ _ _ hP hX
+      refine endpointReplyRecvOnCore_preserves_replyWaitersConsistent epId tid rid prevCaller msg
+        grant c st st' summary hR.objects_invExt hW ?_ ?_ h
+      · rw [hPost]
+        intro v hv
+        obtain ⟨t, hT, rfl⟩ := tcb_of_replyViews hv
+        have hS := hRp t ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT)
+        simp only [TCB.replyView, TCB.blockingServer?, hS]
+      · rw [hPost]
+        intro ep s hE hH
+        refine ⟨fun hs => ?_, sendHead_serverFree hQp hE hH⟩
+        subst hs
+        obtain ⟨tcb, hT, hRd⟩ := hC
+        rcases (hQ epId ep s tcb (hEp epId ep hE) hT).2 hH with hS | hS <;> rw [hRd] at hS <;>
+          cases hS
+
+/-- **The `.replyRecv` arm's transition keeps the records**: the answer the
+caller's own fault record selects, so a caller answered with its message
+carries no fault record. -/
+theorem RecordsStage.replyRecvTransferOnCore {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage}
+    {grant : Bool} {c : CoreId} {st st' : SystemState}
+    {summary : CapTransferSummary} (hR : ipcReachable st) (hC : CallerReady st tid)
+    (h : _root_.SeLe4n.Kernel.replyRecvTransferOnCore epId tid rid prevCaller label msg
+      grant c st = .ok (summary, st')) : RecordsStage st st' := by
+  unfold _root_.SeLe4n.Kernel.replyRecvTransferOnCore at h
+  refine RecordsStage.endpointReplyRecvAnsweringOnCore hR hC (fun hA x hx => ?_) h
+  cases hF : x.pendingFault with
+  | none => rfl
+  | some _ => simp only [replyRecvCallerFaultAnswer?, hx, hF] at hA; cases hA
+
+end ReplyRecvRecords
+
+
 /-- **seL4-MCS `maybeReturnSchedContext` keeps the kernel records**: the
 identity, or the unbind (`RecordsFrame.schedContextUnbind`). -/
 theorem maybeReturnSchedContext_recordsStage (x : SystemState) (n : SeLe4n.ObjId)

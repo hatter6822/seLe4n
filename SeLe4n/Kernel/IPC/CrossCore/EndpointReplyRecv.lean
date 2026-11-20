@@ -11,6 +11,7 @@ import SeLe4n.Kernel.IPC.CrossCore.Fault
 import SeLe4n.Kernel.IPC.Operations.Donation
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Scheduler.Operations
+import SeLe4n.Kernel.SchedContext.NotificationDonation
 
 /-!
 # The ReplyRecv transition, `endpointReplyRecvOnCore`
@@ -480,7 +481,9 @@ theorem replyRecvReplyTransfer_of_inert (answer : Option Architecture.FaultReply
 /-- **WS-RM RM5.2**: the state `.replyRecv`'s receive leg runs on — the reply
 leg's committed state `st1` with the donation pop applied and then the reply
 leg's capability transfer (`replyRecvReplyTransfer`, read off the entry's state
-`pre`).
+`pre`), and then seL4-MCS `receiveIPC`'s return of the replier's bound
+notification's context (`receiveReturnSchedContext`, blocking: `handleReplyRecv`
+always blocks).
 
 A *total* accessor over the two steps, so a hypothesis about the receive
 leg's pre-state is a flat pre-state-computable expression rather than a
@@ -502,7 +505,7 @@ def replyRecvReceiveLegState (answer : Option Architecture.FaultReplyOutcome)
   | .ok (_, st1q) =>
       match replyRecvReplyTransfer answer pre replier target grant st1q with
       | .error _ => st1q
-      | .ok (_, st1p) => st1p
+      | .ok (_, st1p) => receiveReturnSchedContext true st1p replier
 
 
 /-- The cores answering the caller may write: none for the staging (a register
@@ -610,7 +613,13 @@ def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOut
         -- taken off its reply stack by the pop above — WS-RM) to the next `Call`
         -- caller atomically — faithful one-object reuse, formerly the separate
         -- `linkReceivedCaller nextThread (some rid)` dispatch step.
-        match endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore st1p with
+        -- seL4-MCS `receiveIPC` (always blocking under `handleReplyRecv`): a
+        -- receiver that did not complete its bound notification returns that
+        -- notification's context before the endpoint is looked at
+        -- (`maybeReturnSchedContext`, `receiveReturnSchedContext`), as the
+        -- `.receive` arm's leg does.
+        match endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore
+            (receiveReturnSchedContext true st1p tid) with
         | (_, .error e) => .error e
         | (st2, .ok (nextThread, summary, _)) =>
             -- The return donation's chain walk is told the core THIS syscall
@@ -814,8 +823,12 @@ def endpointReplyRecvAnsweringWriteSet (answer : Option Architecture.FaultReplyO
           match replyRecvReplyTransfer answer st receiver prevCaller grant st1q with
           | .error _ => []
           | .ok (_, st1p) =>
-            endpointReceiveDualWriteSet st1p endpointId executingCore ++
-              (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore st1p with
+            -- The return before the receive leg moves no run queue
+            -- (`receiveReturnSchedContext_queues`); the leg runs on its post-state.
+            endpointReceiveDualWriteSet (receiveReturnSchedContext true st1p receiver) endpointId
+                executingCore ++
+              (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore
+                  (receiveReturnSchedContext true st1p receiver) with
                | (_, .error _) => []
                | (st2, .ok (nextThread, _, _)) =>
                   replyRecvPostReceiveDonationWriteSet receiver
@@ -934,7 +947,9 @@ def replyRecvPostReceiveReplenishCores (tid nextThread : SeLe4n.ThreadId)
 
 /-- **WS-RR RR8.12 Cut C2**: the replenish-queue cores the live `.replyRecv` may
 write, mirroring the arm's own control flow -- the pop's pair at the reply leg's
-post-state, the receive leg's block-path return at the pop's post-state, and the
+post-state, the purge core of seL4-MCS `receiveIPC`'s return of the bound
+notification's context (`receiveReturnReplenishCoresAt`, at the reply transfer's
+post-state), the receive leg's block-path return at the return's post-state, and the
 post-receive half's re-donation at the receive leg's post-state.  Each leg is read
 at the state that leg actually runs at, which is the discipline
 `endpointReplyRecvWriteSet` established for the run segment: reading a later leg at
@@ -958,11 +973,14 @@ def replyRecvHandoffReplenishCores (answer : Option Architecture.FaultReplyOutco
         | .error _ => []
         | .ok (_, st1p) =>
           replyDonationReturnReplenishCores st1 replyId prevCaller ++
-            (receivePreReturnReplenishCores st1p endpointId receiver ++
-              (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore st1p with
+            (receiveReturnReplenishCoresAt true st1p receiver ++
+            (receivePreReturnReplenishCores (receiveReturnSchedContext true st1p receiver) endpointId
+                receiver ++
+              (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore
+                  (receiveReturnSchedContext true st1p receiver) with
                | (_, .error _) => []
                | (st2, .ok (nextThread, _, _)) =>
-                  replyRecvPostReceiveReplenishCores receiver nextThread returnedSc? st2))
+                  replyRecvPostReceiveReplenishCores receiver nextThread returnedSc? st2)))
 
 /-- **WS-RR RR8.12 Cut C2**: the scheduler-domain footprint of the live `.replyRecv`
 arm -- the object-store table write lock, the run-queue write locks of

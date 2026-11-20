@@ -1241,6 +1241,19 @@ theorem receiveReturnSchedContext_of_fires_false {blocks : Bool} {st : SystemSta
           simpa [h0] using h
         exact maybeReturnSchedContextRunning_of_guard_false hG
 
+/-- **A receiver with no bound notification returns nothing**: the receive's
+return is the identity on it (the in-place forms' premise). -/
+theorem receiveReturnSchedContext_of_unbound {blocks : Bool} {st : SystemState}
+    {tid : SeLe4n.ThreadId} {t : TCB} (hT : st.objects[tid.toObjId]? = some (.tcb t))
+    (h0 : t.boundNotificationCode = 0) :
+    receiveReturnSchedContext blocks st tid = st := by
+  unfold receiveReturnSchedContext
+  cases blocks with
+  | false => rfl
+  | true =>
+    have hT' : st.getTcb? tid = some t := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+    simp only [↓reduceIte, hT', h0]
+
 /-- **Every TCB the receive's return was handed is still there**, its binding
 codes cleared or not. -/
 theorem receiveReturnSchedContext_tcb_fwd (blocks : Bool) (st : SystemState)
@@ -1309,14 +1322,20 @@ def receiveLegState (st : SystemState) (receiver : SeLe4n.ThreadId) : SystemStat
 /-- **The context a blocking receive returns**, read on the state the return
 runs on: the bound notification's context where the receive blocks and seL4's
 guard holds (`receiveReturnFires`), `none` otherwise. -/
-def receiveReturnContext? (st : SystemState) (receiver : SeLe4n.ThreadId) :
+def receiveReturnContextAt? (blocks : Bool) (st : SystemState) (receiver : SeLe4n.ThreadId) :
     Option SeLe4n.SchedContextId :=
-  if Syscall.wordReceiveBlocks (callerSyscallWord st receiver) then
+  if blocks then
     match st.getTcb? receiver with
     | some t => if t.boundNotificationCode = 0 then none
         else signalReturnContext? st ⟨t.boundNotificationCode - 1⟩ receiver
     | none => none
   else none
+
+/-- The context the `.receive` arm's return returns: `receiveReturnContextAt?`
+at the blocking flag of the caller's syscall word. -/
+def receiveReturnContext? (st : SystemState) (receiver : SeLe4n.ThreadId) :
+    Option SeLe4n.SchedContextId :=
+  receiveReturnContextAt? (Syscall.wordReceiveBlocks (callerSyscallWord st receiver)) st receiver
 
 /-- **The notification context a blocking receive may return**: its bound
 notification's context where the receive blocks, read without seL4's guard —
@@ -1336,7 +1355,7 @@ theorem receiveReturnNotificationContext?_of_receiveReturnContext? {st : SystemS
     {receiver : SeLe4n.ThreadId} {s : SeLe4n.SchedContextId}
     (h : receiveReturnContext? st receiver = some s) :
     receiveReturnNotificationContext? st receiver = some s := by
-  unfold receiveReturnContext? at h
+  unfold receiveReturnContext? receiveReturnContextAt? at h
   unfold receiveReturnNotificationContext?
   split at h
   · rename_i hB
@@ -1433,9 +1452,16 @@ theorem receiveReturnSchedContext_queues (blocks : Bool) (st : SystemState)
 core (`purgeReplenishCores`) of the context it returns
 (`receiveReturnContext?`), read on the state the return runs on; none where the
 return does not fire. -/
+def receiveReturnReplenishCoresAt (blocks : Bool) (st : SystemState)
+    (receiver : SeLe4n.ThreadId) : List Concurrency.CoreId :=
+  ((receiveReturnContextAt? blocks st receiver).map (SchedContextOps.purgeReplenishCores st)).getD []
+
+/-- The `.receive` arm's: `receiveReturnReplenishCoresAt` at the blocking flag of
+the caller's syscall word. -/
 def receiveReturnReplenishCores (st : SystemState) (receiver : SeLe4n.ThreadId) :
     List Concurrency.CoreId :=
-  ((receiveReturnContext? st receiver).map (SchedContextOps.purgeReplenishCores st)).getD []
+  receiveReturnReplenishCoresAt (Syscall.wordReceiveBlocks (callerSyscallWord st receiver)) st
+    receiver
 
 /-- **The running return moves the replenish queue of the returned context's
 purge core and no other.** -/
@@ -1489,15 +1515,15 @@ theorem receiveLegState_queues (st : SystemState) (receiver : SeLe4n.ThreadId)
     (Syscall.wordReceiveBlocks (callerSyscallWord st receiver)) st receiver d
   ⟨h.1, h.2, receiveReturnSchedContext_currentOnCore _ st receiver d⟩
 
-/-- **The leg's state moves the replenish queue of the returned context's purge
-core and no other** (`receiveReturnReplenishCores`). -/
-theorem receiveLegState_replenishQueueOnCore_ne (st : SystemState) (receiver : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) (d : Concurrency.CoreId)
-    (h : d ∉ receiveReturnReplenishCores st receiver) :
-    (receiveLegState st receiver).scheduler.replenishQueueOnCore d =
+/-- **The receive's return moves the replenish queue of the returned context's
+purge core and no other** (`receiveReturnReplenishCoresAt`). -/
+theorem receiveReturnSchedContext_replenishQueueOnCore_ne (blocks : Bool) (st : SystemState)
+    (receiver : SeLe4n.ThreadId) (hInv : st.objects.invExt) (d : Concurrency.CoreId)
+    (h : d ∉ receiveReturnReplenishCoresAt blocks st receiver) :
+    (receiveReturnSchedContext blocks st receiver).scheduler.replenishQueueOnCore d =
       st.scheduler.replenishQueueOnCore d := by
-  unfold receiveReturnReplenishCores receiveReturnContext? at h
-  unfold receiveLegState receiveReturnSchedContext
+  unfold receiveReturnReplenishCoresAt receiveReturnContextAt? at h
+  unfold receiveReturnSchedContext
   split
   · rename_i hB
     simp only [hB, ↓reduceIte] at h
@@ -1511,6 +1537,15 @@ theorem receiveLegState_replenishQueueOnCore_ne (st : SystemState) (receiver : S
         exact maybeReturnSchedContextRunning_replenishQueueOnCore_ne st _ receiver hInv d h
     · rfl
   · rfl
+
+/-- **The leg's state moves the replenish queue of the returned context's purge
+core and no other** (`receiveReturnReplenishCores`). -/
+theorem receiveLegState_replenishQueueOnCore_ne (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (d : Concurrency.CoreId)
+    (h : d ∉ receiveReturnReplenishCores st receiver) :
+    (receiveLegState st receiver).scheduler.replenishQueueOnCore d =
+      st.scheduler.replenishQueueOnCore d :=
+  receiveReturnSchedContext_replenishQueueOnCore_ne _ st receiver hInv d h
 
 /-- A slot the receive's return finds a TCB in still holds a TCB. -/
 theorem receiveReturnSchedContext_objects_eq_of_tcb (blocks : Bool) (st : SystemState)

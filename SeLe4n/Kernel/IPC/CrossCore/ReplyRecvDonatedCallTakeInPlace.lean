@@ -690,7 +690,9 @@ theorem replyRecvOnCore_donatedCallTake_delivered (st : SystemState) (epId : SeL
     (hGt : receiveCallDonatesPastPop st epId tid s sTcb rid (replyHeadContextCode st rid) = true)
     (hR : registerRoutedSyscall
       (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
-      .call capAddr mi) :
+      .call capAddr mi)
+    {rt : TCB} (hRt : st.objects[tid.toObjId]? = some (.tcb rt))
+    (hUB : rt.boundNotificationCode = 0) :
     (match endpointReplyRecvOnCore epId tid rid c
         { registers := Architecture.regMessageBody layout rf len, badge := badge } grant core st with
       | .ok (summary, st') =>
@@ -731,8 +733,11 @@ theorem replyRecvOnCore_donatedCallTake_delivered (st : SystemState) (epId : SeL
     simp only [recordedReplyServer?, hTc, hIpc]
   rw [← storeReplyRendezvous_eq_hold _ _ _ _ _ hNo] at hPop
   have hEp1 := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hEP
+  obtain ⟨_, hRt1, eRt1⟩ := popDonationSettled_boundNotificationCode st c tid rid msg ct rp rt
+    scId sc (determineTargetCore st c) hNo hT hFC hRp hN hScO hHead hBelow hNe hRt
+  have hRet := receiveReturnSchedContext_of_unbound (blocks := true) hRt1 (eRt1.trans hUB)
   unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
-  simp only [hRecS, Option.getD_some, hEq, hPop, hXf, hRecv, hEp1, Option.bind_some, hH]
+  simp only [hRecS, Option.getD_some, hEq, hPop, hXf, hRet, hRecv, hEp1, Option.bind_some, hH]
   simp only [replyRecvPostReceiveDonation, hCallT, ↓reduceIte, replyRecvHolderDeschedule, hDonE,
     applyReceiveLegPipHandoff, beq_self_eq_true, replyRecvAnswerCaller,
     CapTransferSummary.capInfo_empty]

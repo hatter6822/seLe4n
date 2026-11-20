@@ -689,6 +689,61 @@ theorem receiveReturnSchedContext_mappingStage (blocks : Bool) (st : SystemState
   receiveReturnSchedContext_induct MappingStage blocks st tid (MappingStage.refl _)
     (fun vS _ _ _ => schedContextReturnPerform_mappingStage st vS tid)
 
+/-- **The `.replyRecv` composite keeps the mapping records**: the reply leg, the
+pop, the reply's capability transfer, seL4-MCS `receiveIPC`'s return, the
+receive leg, the post-receive donation, the priority hand-off and the answered
+caller, each a mapping stage. -/
+theorem endpointReplyRecvOnCore_mappingStage {answer : Option Architecture.FaultReplyOutcome}
+    {epId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
+    {msg : IpcMessage} {grant : Bool}
+    {executingCore : Concurrency.CoreId} {st st' : SystemState} {summary : CapTransferSummary}
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant executingCore st
+      = .ok (summary, st')) : MappingStage st st' := by
+  unfold endpointReplyRecvAnsweringOnCore at h
+  dsimp only at h
+  have hR := endpointReplyOnCore_mappingStage (replier := tid) (target := prevCaller)
+    (msg := msg) (executingCore := executingCore) (st := st)
+  revert h hR
+  generalize endpointReplyOnCore tid prevCaller msg executingCore st = r1
+  obtain ⟨st1, res1⟩ := r1
+  cases res1 with
+  | error _ => intro h; cases h
+  | ok _ =>
+  intro h hR
+  dsimp only at h hR
+  split at h
+  · cases h
+  rename_i ret st1q hPop
+  have hP := replyRecvPopDonation_mappingStage hPop
+  split at h
+  · cases h
+  rename_i xs st1p hX
+  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
+  have hXs := receiveTransferCaps_mappingStage hX
+  have hRet := receiveReturnSchedContext_mappingStage true st1p tid
+  have hV := endpointReceiveDualWithCapsOnCore_mappingStage (endpointId := epId)
+    (receiver := tid) (replyId := some rid)
+    (executingCore := executingCore) (st := receiveReturnSchedContext true st1p tid)
+  revert h hV
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore
+    (receiveReturnSchedContext true st1p tid) = r2
+  obtain ⟨st2, res2⟩ := r2
+  cases res2 with
+  | error _ => intro h; cases h
+  | ok q =>
+  obtain ⟨nextThread, summ, _⟩ := q
+  intro h hV
+  dsimp only at h hV
+  split at h
+  · cases h
+  rename_i st3 hPost
+  cases h
+  exact ((((((hR.trans hP).trans hXs).trans hRet).trans hV).trans
+    (replyRecvPostReceiveDonation_mappingStage hPost)).trans
+    (applyReceiveLegPipHandoff_mappingStage _ _ _ _ _)).trans
+    (replyRecvAnswerCaller_mappingStage answer _ prevCaller _)
+
 /-- **seL4's `sendSignal` keeps the mapping records**: the wake's writes, then
 the donation's. -/
 theorem sendSignalOnCore_mappingStage {n : SeLe4n.ObjId} {badge : SeLe4n.Badge}

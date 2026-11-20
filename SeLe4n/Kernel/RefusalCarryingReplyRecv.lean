@@ -328,6 +328,33 @@ theorem resolveReplyRecvK_eq_of {α : Type} (st : SystemState) (tid : SeLe4n.Thr
           | some c => exact hOk cap rid c hT hA
         · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_false] <;> rfl
 
+/-- **The replier has no bound notification**, read on the pre-state: then
+seL4-MCS `receiveIPC`'s return of the bound notification's context
+(`receiveReturnSchedContext`) is the identity on every state the reply leg leaves
+(the reply's writes keep the replier's bound-notification code), so the in-place
+forms, which do not run the return, are the specification's.  A replier holding
+a bound notification takes the specification's path (`replyRecvRendezvousR`). -/
+@[inline] def replyRecvReceiverUnbound (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getTcb? tid with
+  | some t => t.boundNotificationCode == 0
+  | none => false
+
+theorem replyRecvReceiverUnbound_spec {st : SystemState} {tid : SeLe4n.ThreadId}
+    (h : replyRecvReceiverUnbound st tid = true) :
+    ∃ rt, st.objects[tid.toObjId]? = some (.tcb rt) ∧ rt.boundNotificationCode = 0 := by
+  unfold replyRecvReceiverUnbound at h
+  cases hT : st.getTcb? tid with
+  | none => rw [hT] at h; cases h
+  | some t =>
+    rw [hT] at h
+    exact ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mp hT, by simpa using h⟩
+
+theorem replyRecvReceiverUnbound_code {st : SystemState} {tid : SeLe4n.ThreadId} {rt : TCB}
+    (h : replyRecvReceiverUnbound st tid = true)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) : rt.boundNotificationCode = 0 := by
+  obtain ⟨t, hT, h0⟩ := replyRecvReceiverUnbound_spec h
+  rw [hR] at hT; cases hT; exact h0
+
 /-- WS-ZA ZA4.7: a reply-receive answers a caller blocked on this server and
 then blocks, every write in its slot: the caller's reply leg may write in place
 (`replyWakesInPlace`), no sender waits on the endpoint, the server may block
@@ -598,6 +625,7 @@ theorem replyRecvCapsArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
     (executingCore : Concurrency.CoreId) (st : SystemState)
+    (hUB : replyRecvReceiverUnbound st tid = true)
     (hNoF : threadHasPendingFault st c = false) :
     replyRecvCapsArmR epId tid c rid badge grant layout rf len label executingCore st =
       replyRecvRendezvousR epId tid c rid badge grant layout rf len label executingCore st := by
@@ -623,7 +651,7 @@ theorem replyRecvCapsArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
               hFree, hStash, hRecR, hTail⟩ := replyRecvBlocksFast_spec hF
             obtain rfl : ct = ct0 := by rw [hT] at hTc0'; cases hTc0'; rfl
             rw [hTail]
-            have h := replyRecvOnCore_blocks_capsDelivered st epId tid c rid layout rf len badge executingCore ct ep0 rt ep rp stcb _ hSz hT hIpc hRO hWk hNe hE hS' hR' hA hEnq hRp hFree hStash hRecR hReq
+            have h := replyRecvOnCore_blocks_capsDelivered st epId tid c rid layout rf len badge executingCore ct ep0 rt ep rp stcb _ hSz hT hIpc hRO hWk hNe hE hS' hR' hA (replyRecvReceiverUnbound_code hUB hR') hEnq hRp hFree hStash hRecR hReq
             generalize endpointReplyRecvOnCore epId tid rid c
               { registers := Architecture.regMessageBody layout rf len, badge := badge } true
               executingCore st = r at h ⊢
@@ -639,7 +667,7 @@ theorem replyRecvCapsArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
               have hTail : receiveQueueTailCode st epId = ep.recvTailCode := by
                 simp only [receiveQueueTailCode, (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE]
               rw [hTail]
-              have h := replyRecvOnCore_donated_capsDelivered st epId tid c rid layout rf len badge executingCore ct ep0 rt ep rp stcb _ hSz hT hIpc hRO hSRes hP hE hS' hR' hA hEnq hRp hStash hRecR hReq
+              have h := replyRecvOnCore_donated_capsDelivered st epId tid c rid layout rf len badge executingCore ct ep0 rt ep rp stcb _ hSz hT hIpc hRO hSRes hP hE hS' hR' hA (replyRecvReceiverUnbound_code hUB hR') hEnq hRp hStash hRecR hReq
               generalize endpointReplyRecvOnCore epId tid rid c
                 { registers := Architecture.regMessageBody layout rf len, badge := badge } true
                 executingCore st = r at h ⊢
@@ -653,7 +681,7 @@ theorem replyRecvCapsArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
                   hStash, hRecR, hTail⟩ := replyRecvUnheldBlocks_spec hF
                 obtain rfl : ct = ct0 := by rw [hT] at hTc0'; cases hTc0'; rfl
                 rw [hTail]
-                have h := replyRecvOnCore_unheld_capsDelivered st epId tid c rid layout rf len badge executingCore ct ep0 rt ep rp stcb _ hSz hT hIpc hRO hU hNe hE hS' hR' hA hEnq hRp hStash hRecR hReq
+                have h := replyRecvOnCore_unheld_capsDelivered st epId tid c rid layout rf len badge executingCore ct ep0 rt ep rp stcb _ hSz hT hIpc hRO hU hNe hE hS' hR' hA (replyRecvReceiverUnbound_code hUB hR') hEnq hRp hStash hRecR hReq
                 generalize endpointReplyRecvOnCore epId tid rid c
                   { registers := Architecture.regMessageBody layout rf len, badge := badge } true
                   executingCore st = r at h ⊢
@@ -911,6 +939,7 @@ theorem replyRecvCallTakeArmR_of_admits (epId : SeLe4n.ObjId) (tid c : SeLe4n.Th
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
     (executingCore : Concurrency.CoreId) (st : SystemState)
+    (hUB : replyRecvReceiverUnbound st tid = true)
     (hNoF : threadHasPendingFault st c = false)
     (hA : replyRecvCallTakeAdmits epId tid c rid grant layout len st = true) :
     replyRecvCallTakeArmR epId tid c rid badge grant layout rf len label executingCore st =
@@ -933,6 +962,7 @@ theorem replyRecvCallTakeArmR_of_admits (epId : SeLe4n.ObjId) (tid c : SeLe4n.Th
       executingCore ct ep0 rp ep s sTcb capAddr mi hSz4 hT hIpc hRO hW hNe hRp
       (replyRecvReplyInertW_spec hI hT) hE hH hS hSC hF hGt
       ((Architecture.RegisterDecode.registerRoutedSyscall_default _).trans hR)
+      (replyRecvReceiverUnbound_spec hUB).choose_spec.1 (replyRecvReceiverUnbound_spec hUB).choose_spec.2
     unfold replyRecvRendezvousR
     rw [replyRecvTransferOnCore_of_no_fault (h := hNoF)]
     generalize endpointReplyRecvOnCore epId tid rid c
@@ -953,13 +983,15 @@ theorem replyRecvCallTakeArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
     (executingCore : Concurrency.CoreId) (st : SystemState)
+    (hUB : replyRecvReceiverUnbound st tid = true)
     (hNoF : threadHasPendingFault st c = false) :
     replyRecvCallTakeArmR epId tid c rid badge grant layout rf len label executingCore st =
       replyRecvRendezvousR epId tid c rid badge grant layout rf len label executingCore st := by
   cases hA : replyRecvCallTakeAdmits epId tid c rid grant layout len st
   · rw [replyRecvCallTakeArmR_of_not_admits _ _ _ _ _ _ _ _ _ _ _ _ hA]
-    exact replyRecvCapsArmR_eq epId tid c rid badge grant layout rf len label executingCore st hNoF
-  · exact replyRecvCallTakeArmR_of_admits _ _ _ _ _ _ _ _ _ _ _ _ hNoF hA
+    exact replyRecvCapsArmR_eq epId tid c rid badge grant layout rf len label executingCore st hUB
+      hNoF
+  · exact replyRecvCallTakeArmR_of_admits _ _ _ _ _ _ _ _ _ _ _ _ hUB hNoF hA
 
 /-- Whether a reply-receive of at most four words answering a caller blocked on
 this server takes a waiting sender in place (`replyRecvTakes`).  Out of line, so
@@ -1043,6 +1075,7 @@ theorem replyRecvTakeArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
     (executingCore : Concurrency.CoreId) (st : SystemState)
+    (hUB : replyRecvReceiverUnbound st tid = true)
     (hNoF : threadHasPendingFault st c = false) :
     replyRecvTakeArmR epId tid c rid badge grant layout rf len label executingCore st =
       replyRecvRendezvousR epId tid c rid badge grant layout rf len label executingCore st := by
@@ -1065,6 +1098,7 @@ theorem replyRecvTakeArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
           executingCore ct ep0 rp ep s sTcb capAddr mi hSz4 hT hIpc hRO hW hNe hRp
           (replyRecvReplyInertW_spec hI hT) hE hH hS hSC hG
           ((Architecture.RegisterDecode.registerRoutedSyscall_default _).trans hR) hF
+          (replyRecvReceiverUnbound_spec hUB).choose_spec.1 (replyRecvReceiverUnbound_spec hUB).choose_spec.2
         rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
         unfold replyRecvRendezvousR
         rw [replyRecvTransferOnCore_of_no_fault (h := hNoF)]
@@ -1090,7 +1124,8 @@ theorem replyRecvTakeArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
                 have h := replyRecvOnCore_take_capsDelivered st epId tid c rid layout rf len badge
                   executingCore ct ep0 rp ep s sTcb capAddr mi stcb _ hSz4 hT hIpc hRO hW hNe hRp
                   hE hH hS hSC hG ((Architecture.RegisterDecode.registerRoutedSyscall_default _).trans hR)
-                  hF hReq
+                  hF hReq (replyRecvReceiverUnbound_spec hUB).choose_spec.1
+                  (replyRecvReceiverUnbound_spec hUB).choose_spec.2
                 rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
                 unfold replyRecvRendezvousR
                 rw [replyRecvTransferOnCore_of_no_fault (h := hNoF)]
@@ -1107,7 +1142,7 @@ theorem replyRecvTakeArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
         · rfl
     · rfl
   · exact replyRecvCallTakeArmR_eq epId tid c rid badge grant layout rf len label executingCore
-      st hNoF
+      st hUB hNoF
 
 /-- WS-ZA ZA6.34: whether a reply-receive of at most four words answering a
 caller recording no server may block in place (`replyRecvUnheldBlocks`), its
@@ -1199,6 +1234,7 @@ theorem replyRecvDonatedCallTakeArmR_of_admits (epId : SeLe4n.ObjId) (tid c : Se
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
     (executingCore : Concurrency.CoreId) (st : SystemState)
+    (hUB : replyRecvReceiverUnbound st tid = true)
     (hNoF : threadHasPendingFault st c = false)
     (hA : replyRecvDonatedCallTakeAdmits epId tid c rid grant layout len st = true) :
     replyRecvDonatedCallTakeArmR epId tid c rid badge grant layout rf len label executingCore st =
@@ -1221,6 +1257,7 @@ theorem replyRecvDonatedCallTakeArmR_of_admits (epId : SeLe4n.ObjId) (tid c : Se
       executingCore ct ep0 ep s sTcb capAddr mi hSz4 hT hIpc hRO hSRes hP
       (replyRecvReplyInertW_spec hI hT) hE hH hS hSC hF hGt
       ((Architecture.RegisterDecode.registerRoutedSyscall_default _).trans hR)
+      (replyRecvReceiverUnbound_spec hUB).choose_spec.1 (replyRecvReceiverUnbound_spec hUB).choose_spec.2
     unfold replyRecvRendezvousR
     rw [replyRecvTransferOnCore_of_no_fault (h := hNoF)]
     generalize endpointReplyRecvOnCore epId tid rid c
@@ -1306,6 +1343,7 @@ theorem replyRecvFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
     (executingCore : Concurrency.CoreId) (st : SystemState)
+    (hUB : replyRecvReceiverUnbound st tid = true)
     (hF : threadHasPendingFault st c = true) :
     replyRecvFaultArmR epId tid c rid badge grant layout rf len label executingCore st =
       replyRecvRendezvousR epId tid c rid badge grant layout rf len label executingCore st := by
@@ -1325,7 +1363,7 @@ theorem replyRecvFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
         rw [hT] at hTc0'; cases hTc0'; rfl
       unfold replyRecvRendezvousR
       rw [replyRecvTransferOnCore_fault_blocks_inPlace st epId tid c rid label layout rf len badge
-        grant executingCore ct ep0 rt ep rp tf hPF hT hIpc hRO hW hNe hE hS hR hA hEnq hRp hFree
+        grant executingCore ct ep0 rt ep rp tf hPF hT hIpc hRO hW hNe hE hS hR hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hFree
         hStash hRecR]
       simp only [CapTransferSummary.capInfo_empty]
       rw [hTail, performReplyRecvFaultAnswer_staged st epId tid c rid executingCore _ _ _ _ _ _ _
@@ -1341,7 +1379,7 @@ theorem replyRecvFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
           simp only [receiveQueueTailCode, (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE]
         obtain ⟨hEq, hStg⟩ := replyRecvTransferOnCore_fault_donated_inPlace st epId tid c rid label
           layout rf len badge grant executingCore ct ep0
-          rt ep rp tf hPF hT hIpc hRO hSRes hP hE hS hR hA hEnq hRp hStash hRecR
+          rt ep rp tf hPF hT hIpc hRO hSRes hP hE hS hR hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hStash hRecR
         unfold replyRecvRendezvousR
         rw [hEq]
         simp only [CapTransferSummary.capInfo_empty]
@@ -1354,7 +1392,7 @@ theorem replyRecvFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
             rw [hT] at hTc0'; cases hTc0'; rfl
           obtain ⟨hEq, hStg⟩ := replyRecvTransferOnCore_fault_unheld_inPlace st epId tid c rid label
             layout rf len badge grant executingCore ct ep0
-            rt ep rp tf hPF hT hIpc hRO hU hNe hE hS hR hA hEnq hRp hStash hRecR
+            rt ep rp tf hPF hT hIpc hRO hU hNe hE hS hR hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hStash hRecR
           unfold replyRecvRendezvousR
           rw [hEq]
           simp only [CapTransferSummary.capInfo_empty]
@@ -1489,6 +1527,8 @@ completes the replier's bound notification (`receiveCompletesSignal`) runs
   fun st =>
     if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) then
       if receiveCompletesSignal ctx st tid then signalArm st
+      else if !replyRecvReceiverUnbound st tid then
+        replyRecvRendezvousR epId tid c rid badge grant layout rf len label executingCore st
       else if threadHasPendingFault st c then
         replyRecvFaultArmR epId tid c rid badge grant layout rf len label executingCore st
       else if decide (Architecture.regMessageLength layout len ≤ 4) &&
@@ -1587,10 +1627,13 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
           by_cases hSig : receiveCompletesSignal ctx st tid = true
           · simp only [hSig, if_true]
           simp only [hSig, if_false, Bool.false_eq_true]
+          cases hUB : replyRecvReceiverUnbound st tid
+          · simp only [Bool.not_false, ↓reduceIte, replyRecvRendezvousR]
+          simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
           split
           · next hFault =>
             rw [replyRecvFaultArmR_eq epId tid c rid badge grant layout rf len label executingCore st
-              hFault]
+              hUB hFault]
             simp only [replyRecvRendezvousR]
           rename_i hNoFault
           rw [replyRecvTransferOnCore_of_no_fault (h := by simpa using hNoFault)]
@@ -1607,14 +1650,14 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
               { registers := Architecture.regMessageBody layout rf len,
                 badge := badge } grant executingCore
               ct ep0 rt ep rp (by simp only; unfold maxMessageRegisters; omega) hSz4 hT hIpc
-              hRO hW hNe hE hS hR hA hEnq hRp hFree hStash hRecR hInert
+              hRO hW hNe hE hS hR hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hFree hStash hRecR hInert
             rw [Architecture.returnFrameOfMessage_regMessageBody,
               replyRecvOnCore_blocks_inPlace st epId tid c rid _ _ _ ct ep0 rt ep rp
                 (by simp only; unfold maxMessageRegisters; omega) hT hIpc hRO hW hNe hE hS hR
-                hA hEnq hRp hFree hStash hRecR hInert] at h
+                hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hFree hStash hRecR hInert] at h
             simp only [CapTransferSummary.capInfo_empty] at h
             rw [hTail, replyRecvOnCore_blocks_inPlace st epId tid c rid _ _ _ ct ep0 rt ep rp
-                ?_ hT hIpc hRO hW hNe hE hS hR hA hEnq hRp hFree hStash hRecR hInert]
+                ?_ hT hIpc hRO hW hNe hE hS hR hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hFree hStash hRecR hInert]
             · simp only [CapTransferSummary.capInfo_empty]
               have h2 := congrArg Prod.snd (Except.ok.inj h)
               dsimp only at h2
@@ -1639,14 +1682,14 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
                 { registers := Architecture.regMessageBody layout rf len,
                   badge := badge } grant executingCore
                 ct ep0 rt ep rp (by simp only; unfold maxMessageRegisters; omega) hSz4 hT hIpc
-                hRO hSRes hP hE hS hR hA hEnq hRp hStash hRecR hInert
+                hRO hSRes hP hE hS hR hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hStash hRecR hInert
               rw [Architecture.returnFrameOfMessage_regMessageBody,
                 (replyRecvOnCore_donated_inPlace st epId tid c rid _ _ _ ct ep0 rt ep rp
                   (by simp only; unfold maxMessageRegisters; omega) hT hIpc hRO hSRes hP hE hS hR
-                  hA hEnq hRp hStash hRecR hInert).1] at h
+                  hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hStash hRecR hInert).1] at h
               simp only [CapTransferSummary.capInfo_empty] at h
               rw [hTail, (replyRecvOnCore_donated_inPlace st epId tid c rid _ _ _ ct ep0 rt ep rp
-                  ?_ hT hIpc hRO hSRes hP hE hS hR hA hEnq hRp hStash hRecR hInert).1]
+                  ?_ hT hIpc hRO hSRes hP hE hS hR hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hStash hRecR hInert).1]
               · simp only [CapTransferSummary.capInfo_empty]
                 have h2 := congrArg Prod.snd (Except.ok.inj h)
                 dsimp only at h2
@@ -1656,7 +1699,7 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
                 unfold maxMessageRegisters; omega
             · by_cases hDT : replyRecvDonatedCallTakeAdmits epId tid c rid grant layout len st
               · rw [replyRecvDonatedCallTakeArmR_of_admits epId tid c rid badge grant layout rf len
-                  label executingCore st (by simpa using hNoFault) hDT]
+                  label executingCore st hUB (by simpa using hNoFault) hDT]
                 simp only [replyRecvRendezvousR]
                 rw [replyRecvTransferOnCore_of_no_fault (h := by simpa using hNoFault)]
               rw [replyRecvDonatedCallTakeArmR_of_not_admits epId tid c rid badge grant layout rf len
@@ -1676,14 +1719,14 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
                   { registers := Architecture.regMessageBody layout rf len,
                     badge := badge } grant executingCore
                   ct ep0 rt ep rp (by simp only; unfold maxMessageRegisters; omega) hSz4 hT hIpc
-                  hRO hU hNe hE hS hR hA hEnq hRp hStash hRecR hInert
+                  hRO hU hNe hE hS hR hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hStash hRecR hInert
                 rw [Architecture.returnFrameOfMessage_regMessageBody,
                   (replyRecvOnCore_unheld_inPlace st epId tid c rid _ _ _ ct ep0 rt ep rp
                     (by simp only; unfold maxMessageRegisters; omega) hT hIpc hRO hU hNe hE hS hR
-                    hA hEnq hRp hStash hRecR hInert).1] at h
+                    hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hStash hRecR hInert).1] at h
                 simp only [CapTransferSummary.capInfo_empty] at h
                 rw [hTail, (replyRecvOnCore_unheld_inPlace st epId tid c rid _ _ _ ct ep0 rt ep rp
-                    ?_ hT hIpc hRO hU hNe hE hS hR hA hEnq hRp hStash hRecR hInert).1]
+                    ?_ hT hIpc hRO hU hNe hE hS hR hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hStash hRecR hInert).1]
                 · simp only [CapTransferSummary.capInfo_empty]
                   have h2 := congrArg Prod.snd (Except.ok.inj h)
                   dsimp only at h2
@@ -1692,7 +1735,7 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
                 · show ¬ (Architecture.regMessageBody layout rf len).size > maxMessageRegisters
                   unfold maxMessageRegisters; omega
               · rw [replyRecvTakeArmR_eq epId tid c rid badge grant layout rf len label executingCore
-                  st (by simpa using hNoFault)]
+                  st hUB (by simpa using hNoFault)]
                 simp only [replyRecvRendezvousR]
                 rw [replyRecvTransferOnCore_of_no_fault (h := by simpa using hNoFault)]
         · rfl
@@ -2135,6 +2178,7 @@ theorem replyRecvLongCapsR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (rf : SeLe4n.RegisterFile) (len label : Nat) (executingCore : Concurrency.CoreId)
     (st : SystemState) (hLen : 5 ≤ len)
+    (hUB : replyRecvReceiverUnbound st tid = true)
     (hSzL : ¬ (longReplyRecvRegs rf st tid len).size > maxMessageRegisters)
     (hReqOf : ∀ stcb, st.getTcb? tid = some stcb →
       replyCapRequest st tid true = frameCapRequestOf st stcb (routedExtraCaps rf)) :
@@ -2159,7 +2203,7 @@ theorem replyRecvLongCapsR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
         rw [replyRecvTransferOnCore_of_no_fault (h := hNoFault)]
         have h := replyRecvOnCore_blocks_capsDeliveredLong st epId tid c rid rf len
           badge executingCore ct ep0 rt ep rp stcb _ hLen hSzL hT hIpc hRO hW hNe
-          hE hS hR' hA hEnq hRp hFree hStash hRecR (hReqOf stcb hS')
+          hE hS hR' hA (replyRecvReceiverUnbound_code hUB hR') hEnq hRp hFree hStash hRecR (hReqOf stcb hS')
         rw [hTail]
         generalize endpointReplyRecvOnCore epId tid rid c
           { registers := longReplyRecvRegs rf st tid len, badge := badge } true
@@ -2189,7 +2233,7 @@ theorem replyRecvLongCapsR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
           unfold replyRecvLongRendezvousR
           rw [replyRecvTransferOnCore_of_no_fault (h := hNoFault)]
           have h := replyRecvOnCore_donated_capsDeliveredLong st epId tid c rid rf len badge
-            executingCore ct ep0 rt ep rp stcb _ hLen hSzL hT hIpc hRO hSRes hP hE hS hR' hA
+            executingCore ct ep0 rt ep rp stcb _ hLen hSzL hT hIpc hRO hSRes hP hE hS hR' hA (replyRecvReceiverUnbound_code hUB hR')
             hEnq hRp hStash hRecR (hReqOf stcb hS')
           rw [hTail]
           generalize endpointReplyRecvOnCore epId tid rid c
@@ -2218,7 +2262,7 @@ theorem replyRecvLongCapsR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
             unfold replyRecvLongRendezvousR
             rw [replyRecvTransferOnCore_of_no_fault (h := hNoFault)]
             have h := replyRecvOnCore_unheld_capsDeliveredLong st epId tid c rid rf len badge
-              executingCore ct ep0 rt ep rp stcb _ hLen hSzL hT hIpc hRO hU hNe hE hS hR' hA
+              executingCore ct ep0 rt ep rp stcb _ hLen hSzL hT hIpc hRO hU hNe hE hS hR' hA (replyRecvReceiverUnbound_code hUB hR')
               hEnq hRp hStash hRecR (hReqOf stcb hS')
             rw [hTail]
             generalize endpointReplyRecvOnCore epId tid rid c
@@ -2237,6 +2281,7 @@ theorem replyRecvLongPopR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (rf : SeLe4n.RegisterFile) (len label : Nat) (executingCore : Concurrency.CoreId)
     (st : SystemState) (hLen : 5 ≤ len)
+    (hUB : replyRecvReceiverUnbound st tid = true)
     (hSzL : ¬ (longReplyRecvRegs rf st tid len).size > maxMessageRegisters)
     (hReqOf : ∀ stcb, st.getTcb? tid = some stcb →
       replyCapRequest st tid true = frameCapRequestOf st stcb (routedExtraCaps rf)) :
@@ -2255,7 +2300,7 @@ theorem replyRecvLongPopR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     unfold replyRecvLongRendezvousR
     rw [replyRecvTransferOnCore_of_no_fault (h := hNoFault), hTail]
     have h := replyRecvOnCore_donated_deliveredLong st epId tid c rid rf len badge grant
-      executingCore ct ep0 rt ep rp hLen hSzL hT hIpc hRO hSRes hP hE hS hR hA hEnq hRp hStash
+      executingCore ct ep0 rt ep rp hLen hSzL hT hIpc hRO hSRes hP hE hS hR hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hStash
       hRecR (replyRecvReplyInertW_spec hI hT)
     generalize endpointReplyRecvOnCore epId tid rid c
       { registers := longReplyRecvRegs rf st tid len, badge := badge } grant
@@ -2274,7 +2319,7 @@ theorem replyRecvLongPopR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
       unfold replyRecvLongRendezvousR
       rw [replyRecvTransferOnCore_of_no_fault (h := hNoFault), hTail]
       have h := replyRecvOnCore_unheld_deliveredLong st epId tid c rid rf len badge grant
-        executingCore ct ep0 rt ep rp hLen hSzL hT hIpc hRO hU hNe hE hS hR hA hEnq hRp hStash
+        executingCore ct ep0 rt ep rp hLen hSzL hT hIpc hRO hU hNe hE hS hR hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hStash
         hRecR (replyRecvReplyInertW_spec hI hT)
       generalize endpointReplyRecvOnCore epId tid rid c
         { registers := longReplyRecvRegs rf st tid len, badge := badge } grant
@@ -2284,7 +2329,7 @@ theorem replyRecvLongPopR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
       · simp only [Except.ok.injEq] at h ⊢
         exact h.symm
     · exact replyRecvLongCapsR_eq epId tid c rid badge grant rf len label executingCore st hLen
-        hSzL hReqOf
+        hUB hSzL hReqOf
 
 /-- The long reply-receive answering a caller carrying a fault: the long fault
 answer (`performFaultAnswerLong`, the reply's words past MR0 read in the
@@ -2324,7 +2369,8 @@ and its TCB is not held across them. -/
 theorem replyRecvLongFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (rf : SeLe4n.RegisterFile) (len label : Nat) (executingCore : Concurrency.CoreId)
-    (st : SystemState) (hLen : 4 ≤ len) (hF : threadHasPendingFault st c = true) :
+    (st : SystemState) (hLen : 4 ≤ len) (hF : threadHasPendingFault st c = true)
+    (hUB : replyRecvReceiverUnbound st tid = true) :
     replyRecvLongFaultArmR epId tid c rid badge grant rf len label executingCore st =
       replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st := by
   unfold replyRecvLongFaultArmR
@@ -2343,7 +2389,7 @@ theorem replyRecvLongFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId
         rw [hT] at hTc0'; cases hTc0'; rfl
       obtain ⟨hEq, hStg⟩ := replyRecvTransferOnCore_fault_blocks_inPlaceLong st epId tid c rid
         label rf len badge grant executingCore ct ep0 rt ep rp tf hLen hPF hT hIpc hRO hW hNe hE
-        hS hR hA hEnq hRp hFree hStash hRecR
+        hS hR hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hFree hStash hRecR
       unfold replyRecvLongRendezvousR
       rw [hEq]
       simp only [CapTransferSummary.capInfo_empty]
@@ -2358,7 +2404,7 @@ theorem replyRecvLongFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId
           simp only [receiveQueueTailCode, (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE]
         obtain ⟨hEq, hStg⟩ := replyRecvTransferOnCore_fault_donated_inPlaceLong st epId tid c rid
           label rf len badge grant executingCore ct ep0 rt ep rp tf hLen hPF hT hIpc hRO hSRes hP
-          hE hS hR hA hEnq hRp hStash hRecR
+          hE hS hR hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hStash hRecR
         unfold replyRecvLongRendezvousR
         rw [hEq]
         simp only [CapTransferSummary.capInfo_empty]
@@ -2371,7 +2417,7 @@ theorem replyRecvLongFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId
             rw [hT] at hTc0'; cases hTc0'; rfl
           obtain ⟨hEq, hStg⟩ := replyRecvTransferOnCore_fault_unheld_inPlaceLong st epId tid c
             rid label rf len badge grant executingCore ct ep0 rt ep rp tf hLen hPF hT hIpc hRO hU
-            hNe hE hS hR hA hEnq hRp hStash hRecR
+            hNe hE hS hR hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hStash hRecR
           unfold replyRecvLongRendezvousR
           rw [hEq]
           simp only [CapTransferSummary.capInfo_empty]
@@ -2489,6 +2535,8 @@ specification's path. -/
   fun st =>
     if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) then
       if receiveCompletesSignal ctx st tid then signalArm st
+      else if !replyRecvReceiverUnbound st tid then
+        replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st
       else if threadHasPendingFault st c then
         replyRecvLongFaultArmR epId tid c rid badge grant rf len label executingCore st
       else if replyRecvBlocksFast st epId tid c rid && replyRecvReplyInertW st tid c grant then
@@ -2598,10 +2646,13 @@ theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)
         · by_cases hSig : receiveCompletesSignal ctx st tid = true
           · simp only [hSig, if_true]
           simp only [hSig, if_false, Bool.false_eq_true]
+          cases hUB : replyRecvReceiverUnbound st tid
+          · simp only [Bool.not_false, ↓reduceIte, replyRecvLongRendezvousR]
+          simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
           split
           · next hFlt =>
             rw [replyRecvLongFaultArmR_eq epId tid c rid badge grant rf mi.length mi.label
-              executingCore st (by omega) hFlt]
+              executingCore st (by omega) hFlt hUB]
             rfl
           · next hFlt =>
             have hNoFault : threadHasPendingFault st c = false := Bool.eq_false_iff.mpr hFlt
@@ -2614,7 +2665,8 @@ theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)
               have hInert := replyRecvReplyInertW_spec hI hT
               rw [replyRecvTransferOnCore_of_no_fault (h := hNoFault),
                 replyRecvOnCore_blocks_inPlace st epId tid c rid _ _ _ ct ep0 rt ep rp ?_ hT hIpc
-                  hRO hW hNe hE hS hR hA hEnq hRp hFree hStash hRecR hInert]
+                  hRO hW hNe hE hS hR hA (replyRecvReceiverUnbound_code hUB hR) hEnq hRp hFree hStash
+                  hRecR hInert]
               · simp only [CapTransferSummary.capInfo_empty]
                 rw [hTail, replyRecvOnCore_blocks_deliveredLong st epId tid c rid rf mi.length badge
                   executingCore ct ep0 rt ep rp (by omega) hT hIpc hW hNe hE hR hA hEnq hRp hFree
@@ -2624,7 +2676,7 @@ theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)
             · have hSzL : ¬ (longReplyRecvRegs rf st tid mi.length).size > maxMessageRegisters := by
                 rw [longReplyRecvRegs_size rf st tid mi.length (by omega)]; omega
               rw [replyRecvLongPopR_eq epId tid c rid badge grant rf mi.length mi.label executingCore
-                st (by omega) hSzL (fun stcb hS' => by
+                st (by omega) hUB hSzL (fun stcb hS' => by
                   have hReq := replyCapRequest_of_routedReplyLong st tid stcb rf capAddr mi .replyRecv
                     true hS' (hRf stcb hS') (.inr ⟨hR, rfl⟩) hRead
                   simp only [↓reduceIte] at hReq

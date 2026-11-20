@@ -345,6 +345,122 @@ theorem receiveReturnSchedContext_confinedToCores (blocks : Bool) (st : SystemSt
 -- `schedLockSet_setThreadCpuAffinityOnCore`, for the reason the `.tcbResume`
 -- tombstone above gives.  Same name, same namespace.
 
+/-- SM8.B.2 (**the live `.replyRecv` bound**): `endpointReplyRecvOnCore` — the function
+`API.dispatchWithCapChecked`'s `.replyRecv` arm routes through — writes no core outside
+`endpointReplyRecvWriteSet`.
+
+The reply leg, the donation pop, the receive leg and the post-receive
+donation, at the states they really run at. The receive leg's
+`objects.invExt` premise is discharged from the reply leg's own preservation
+theorem rather than assumed, exactly as in §4a. -/
+theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
+    {answer : Option Architecture.FaultReplyOutcome}
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (grant : Bool)
+    (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg
+      grant executingCore st = .ok (summary, st')) :
+    observableSlotsConfinedToCores st st'
+      (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg grant
+        executingCore st) := by
+  have hReply := endpointReplyOnCore_confinedToCores receiver prevCaller msg executingCore st
+    hObjInv
+  have hInv1 : (endpointReplyOnCore receiver prevCaller msg executingCore st).1.objects.invExt :=
+    endpointReplyOnCore_preserves_objects_invExt receiver prevCaller msg executingCore st hObjInv
+  unfold endpointReplyRecvAnsweringOnCore endpointReplyRecvAnsweringWriteSet at *
+  simp only [] at hStep
+  cases hRep : endpointReplyOnCore receiver prevCaller msg executingCore st with
+  | mk st1 res =>
+    rw [hRep] at hReply hInv1 hStep
+    cases res with
+    | error e => simp only [] at hStep; exact absurd hStep (by simp)
+    | ok replySgi =>
+      simp only [] at hStep ⊢
+      -- **WS-RM (`v0.35.6`)**: the pop, between the legs.
+      cases hPop : replyRecvPopDonation replyId prevCaller st1 with
+      | error e => rw [hPop] at hStep; exact absurd hStep (by simp)
+      | ok popPair =>
+        obtain ⟨returnedSc?, st1q⟩ := popPair
+        rw [hPop] at hStep
+        simp only [] at hStep ⊢
+        -- The reply leg's capability transfer, between the pop and the receive
+        -- leg: it writes a CNode and the derivation tree, no core.
+        obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st receiver prevCaller grant st1q
+        rw [hX] at hStep ⊢
+        simp only [] at hStep ⊢
+        have hPopConf : observableSlotsConfinedToCores st1 st1p [] := by
+          have hQ := replyRecvPopDonation_confinedToCores replyId prevCaller st1 st1q returnedSc? hPop
+          rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
+          have hXc : observableSlotsConfinedToCores st1q st1p [] :=
+            observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+              (receiveTransferCaps_scheduler_eq hX) (receiveTransferCaps_preserves_machine hX)
+          simpa using observableSlotsConfinedToCores_trans hQ hXc
+        have hInv1p : st1p.objects.invExt :=
+          replyRecvReplyTransfer_objects_invExt
+            (replyRecvPopDonation_preserves_objects_invExt
+              replyId prevCaller st1 st1q returnedSc? hInv1 hPop) hX
+        -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, between the reply
+        -- transfer and the receive leg: it writes no confined slot.
+        have hRetConf := receiveReturnSchedContext_confinedToCores true st1p receiver
+        have hInv1r : (receiveReturnSchedContext true st1p receiver).objects.invExt :=
+          receiveReturnSchedContext_objects_invExt true st1p receiver hInv1p
+        have hRecv := endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver
+          (some replyId) executingCore (receiveReturnSchedContext true st1p receiver) hInv1r
+        cases hRcv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
+            executingCore (receiveReturnSchedContext true st1p receiver) with
+        | mk st2 res2 =>
+          rw [hRcv] at hRecv hStep
+          cases res2 with
+          | error e => simp only [] at hStep; exact absurd hStep (by simp)
+          | ok pair =>
+            rcases pair with ⟨nextThread, recvSummary, recvSgi⟩
+            simp only [] at hStep ⊢
+            -- WS-RA RA.B.5b: the body stages the woken caller's reply frame and
+            -- the completed plain sender's unit frame after the donation; both
+            -- stagers frame the scheduler and the machine, so the donation's
+            -- confinement transports across them unchanged.
+            cases hDon : replyRecvPostReceiveDonation receiver
+                ((recordedReplyServer? st prevCaller).getD receiver) nextThread
+                executingCore
+                returnedSc? st2 with
+            | error e =>
+                rw [hDon] at hStep
+                exact absurd hStep (by simp)
+            | ok pair2 =>
+              rcases pair2 with ⟨u2, st3⟩
+              rw [hDon] at hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              have hConf := replyRecvPostReceiveDonation_confinedToCores receiver
+                ((recordedReplyServer? st prevCaller).getD receiver) nextThread
+                executingCore
+                returnedSc? st2 st3 u2 hDon
+              -- WS-OD OD3.14: the receive leg's priority hand-off is the fourth
+              -- leg, read at the state it runs at.  On a non-delegated reply it is
+              -- the identity and its declared set is empty.
+              have hPip := applyReceiveLegPipHandoff_confinedToCores st3 receiver nextThread
+                ((recordedReplyServer? st prevCaller).getD receiver) executingCore
+              have hStaged : observableSlotsConfinedToCores st2 st'
+                  (replyRecvPostReceiveDonationWriteSet receiver
+                    ((recordedReplyServer? st prevCaller).getD receiver) nextThread
+                    executingCore returnedSc? st2 ++
+                    (receiveLegPipHandoffWriteSet st3 receiver nextThread
+                      ((recordedReplyServer? st prevCaller).getD receiver) executingCore ++
+                    replyRecvAnswerCores answer
+                      (applyReceiveLegPipHandoff st3 receiver nextThread
+                        ((recordedReplyServer? st prevCaller).getD receiver) executingCore)
+                      prevCaller)) := by
+                rw [← hStep.2]
+                exact observableSlotsConfinedToCores_trans hConf
+                    (observableSlotsConfinedToCores_trans hPip
+                      (replyRecvAnswerCaller_confinedToCores answer _ prevCaller _))
+              have hRetRecv := observableSlotsConfinedToCores_trans hRetConf hRecv
+              simp only [List.nil_append] at hRetRecv
+              have hPopRecv := observableSlotsConfinedToCores_trans hPopConf hRetRecv
+              simp only [List.nil_append] at hPopRecv
+              exact observableSlotsConfinedToCores_trans hReply
+                (observableSlotsConfinedToCores_trans hPopRecv hStaged)
+
 /-- SM8.B.2: the affinity write touches the object store only. -/
 theorem setThreadCpuAffinity_scheduler_machine_eq (st stSet : SystemState)
     (tid : SeLe4n.ThreadId) (affinity : Option CoreId)

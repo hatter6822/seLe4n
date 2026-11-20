@@ -125,6 +125,7 @@ theorem replyRecvTransferOnCore_fault_blocks_inPlace (st : SystemState) (epId : 
     (hNe : tid ≠ c)
     (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
     (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hUB : rt.boundNotificationCode = 0)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hFree : rp.consumed.isFree = true) (hStash : st.replyStashedAt rid rp = false)
@@ -140,7 +141,7 @@ theorem replyRecvTransferOnCore_fault_blocks_inPlace (st : SystemState) (epId : 
   rw [replyRecvCallerFaultAnswer?_of_fault st c ct tf label _ hTc hPF]
   simp only [replyRecvLegMessage]
   rw [replyRecvAnsweringOnCore_blocks_inPlace _ st epId tid c rid IpcMessage.empty grant core
-    ct ep0 rt ep rp (by simp [IpcMessage.empty]) hT hIpc hRO hG hNe hE hS hR hA hEnq hRp hFree
+    ct ep0 rt ep rp (by simp [IpcMessage.empty]) hT hIpc hRO hG hNe hE hS hR hA hUB hEnq hRp hFree
     hStash hRec (fun h => by cases h)]
   unfold performReplyRecvFaultAnswer replyRecvAnswerCaller
   dsimp only
@@ -177,7 +178,7 @@ theorem performReplyRecvFaultAnswer_staged (st : SystemState) (epId : SeLe4n.Obj
     simp only [replyWakesInPlace, Bool.and_eq_true] at hG
     exact hG.1.1.1.2
   have hCT : c.toObjId ≠ tid.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e).symm
-  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid
+  obtain ⟨hE1, ⟨rt1, hR1, hA1, hB1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid
     IpcMessage.empty ct rp epId ep rt hNo hT hFC hRp hNe hE hR hA hEnq hFree hStash hRec
   obtain ⟨t, hT1, hB⟩ := receiveBlock_receiver_blocked _ epId ep tid rt1 (some rid) core hE1 hR1
     hA1 hG1
@@ -253,6 +254,7 @@ theorem replyRecvTransferOnCore_fault_donated_inPlace (st : SystemState) (epId :
     (hG : replyPopsInPlace st c ct.scBindingScCode tid rid = true)
     (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
     (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : enqueueAdmits rt = true)
+    (hUB : rt.boundNotificationCode = 0)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hStash : st.replyStashedAt rid rp = false)
@@ -280,7 +282,7 @@ theorem replyRecvTransferOnCore_fault_donated_inPlace (st : SystemState) (epId :
     (replyRecvCallerFaultAnswer? st c label
       { registers := Architecture.regMessageBody layout rf len, badge := badge })
     st epId tid c rid IpcMessage.empty grant core ct ep0 rt ep rp (by simp [IpcMessage.empty])
-    hT hIpc hRO hSRes hG hE hS hR hA hEnq hRp hStash hRec
+    hT hIpc hRO hSRes hG hE hS hR hA hUB hEnq hRp hStash hRec
     (fun h => by rw [replyRecvCallerFaultAnswer?_of_fault st c ct tf label _ hTc hPF] at h; cases h)
   have hAns := replyRecvCallerFaultAnswer?_of_fault st c ct tf label
     { registers := Architecture.regMessageBody layout rf len, badge := badge } hTc hPF
@@ -354,6 +356,7 @@ theorem replyRecvTransferOnCore_fault_unheld_inPlace (st : SystemState) (epId : 
     (hNe : tid ≠ c)
     (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
     (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hUB : rt.boundNotificationCode = 0)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
     (hStash : st.replyStashedAt rid rp = false)
@@ -380,7 +383,7 @@ theorem replyRecvTransferOnCore_fault_unheld_inPlace (st : SystemState) (epId : 
     (replyRecvCallerFaultAnswer? st c label
       { registers := Architecture.regMessageBody layout rf len, badge := badge })
     st epId tid c rid IpcMessage.empty grant core ct ep0 rt ep rp (by simp [IpcMessage.empty])
-    hT hIpc hRO hG hNe hE hS hR hA hEnq hRp hStash hRec
+    hT hIpc hRO hG hNe hE hS hR hA hUB hEnq hRp hStash hRec
     (fun h => by rw [replyRecvCallerFaultAnswer?_of_fault st c ct tf label _ hTc hPF] at h; cases h)
   have hAns := replyRecvCallerFaultAnswer?_of_fault st c ct tf label
     { registers := Architecture.regMessageBody layout rf len, badge := badge } hTc hPF
