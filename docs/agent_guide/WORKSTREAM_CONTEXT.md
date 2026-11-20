@@ -27,7 +27,7 @@ When a cut lands, update the row's status/version here and write the detail in
 `CHANGELOG.md` and `docs/REGISTERED_DEBT.md`.  A row that grows past one line
 of summary is a sign the narrative belongs in those files instead.
 
-### WS-CV The register context by value — IN FLIGHT (registered v0.36.50; CV0 landed v0.36.59; CV1.1 v0.36.61; CV2.1 v0.36.73; CV3.1–CV3.4 and the save-and-stage half of CV4.3 v0.36.74; the rest recorded landed at the v0.36.205 re-read, which deleted two rows and renumbered; open: CV1.2 and the closure CV5.2, folded into WS-SX as SX16.1 and SX16.2 — WS-CV closes alongside WS-SX at v0.38.0; opens before WS-CB)
+### WS-CV The register context by value — IN FLIGHT (registered v0.36.50; CV0 landed v0.36.59; CV1.1 v0.36.61; CV2.1 v0.36.73; CV3.1–CV3.4 and the save-and-stage half of CV4.3 v0.36.74; the rest recorded landed at the v0.36.205 re-read, which deleted two rows and renumbered; open: CV1.2 and the closure CV5.2, folded into WS-SX as SX17.1 and SX17.2 — WS-CV closes alongside WS-SX at v0.38.0; opens before WS-CB)
 
 The TCB's `registerContext`, the per-core register banks and the Lean boundary
 become one structure: `SeLe4n.RegisterFile` takes `Architecture.TrapContext`'s
@@ -138,8 +138,9 @@ conformance table (SX8), page-table teardown and per-frame W^X (SX9),
 per-invocation rights as `Option AccessRight` (SX10), the Running state per
 core (SX11), the compound syscalls' invoke phase (SX12), timeout faults with
 SetTimeoutEndpoint and SetSchedParams (SX13), the full CNode invocation set
-(SX14), seL4's error codes in the label (SX15) and closure (SX16). Rows and
-decisions D1–D21 (D1–D17 each default taken, owner card open; D18–D21 the
+(SX14), seL4's error codes in the label (SX15), seL4's remaining
+invocations (SX16) and closure (SX17). Rows and
+decisions D1–D23 (D1–D17 each default taken, owner card open; D18–D23 the
 owner's) are in
 [`SEL4_ABI_FIDELITY_PLAN.md`](../planning/SEL4_ABI_FIDELITY_PLAN.md). It
 supersedes WS-UC's "next PR" scope.

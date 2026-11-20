@@ -106,7 +106,8 @@ inductive Status where
   | deviation (op : SyscallId) (owner : String) (minLength : Option Nat) (note : String)
   /-- No seLe4n operation: the label selects nothing, and seLe4n answers it as
   an unknown label (`invalidSyscallNumber`, seL4's `IllegalOperation`).  The
-  owner is the WS-SX row that adds it, or `unowned`. -/
+  owner is the WS-SX row that adds it, or names why seL4's default build has
+  none (`ARM_SMC_Call`, compiled only with `CONFIG_ALLOW_SMC_CALLS`). -/
   | absent (owner : String)
   /-- A seLe4n operation with no seL4 counterpart (a label after seL4's last). -/
   | modelOnly (op : SyscallId)
@@ -262,19 +263,19 @@ def sel4LabelRowsCore : List LabelRow := [
   unitRow 1 "UntypedRetype" (src "decodeUntypedInvocation" "object/untyped.c" 26) (obj .untyped)
     6 1 [illegalOperation, truncatedMessage, invalidArgument, rangeError, failedLookup,
       deleteFirst, notEnoughMemory]
-    (.deviation .untypedRetype "unowned" (some 7)
+    (.deviation .untypedRetype "SX16.1" (some 7)
       "seLe4n reads a seventh word, the carved object's id (MR6); seL4 places the object at the untyped's free index"),
   { label := 2, name := "TCBReadRegisters",
     decode := src "decodeReadRegisters" "object/tcb.c" 1001, capType := obj .tcb,
     minLength := 2, extraCaps := 0, returns := .message,
     errors := [truncatedMessage, invalidArgument, rangeError, illegalOperation], blocks := false,
-    status := .absent "unowned" },
+    status := .absent "SX16.1" },
   unitRow 3 "TCBWriteRegisters" (src "decodeWriteRegisters" "object/tcb.c" 1046) (obj .tcb)
-    2 0 [truncatedMessage, invalidArgument, illegalOperation] (.absent "unowned"),
+    2 0 [truncatedMessage, invalidArgument, illegalOperation] (.absent "SX16.1"),
   unitRow 4 "TCBCopyRegisters" (src "decodeCopyRegisters" "object/tcb.c" 958) (obj .tcb)
-    1 1 [truncatedMessage, invalidArgument, invalidCapability] (.absent "unowned"),
+    1 1 [truncatedMessage, invalidArgument, invalidCapability] (.absent "SX16.1"),
   unitRow 5 "TCBConfigure" (src "decodeTCBConfigure" "object/tcb.c" 1101) (obj .tcb)
-    3 3 [truncatedMessage, illegalOperation, invalidCapability, alignmentError] (.absent "unowned"),
+    3 3 [truncatedMessage, illegalOperation, invalidCapability, alignmentError] (.absent "SX16.1"),
   unitRow 6 "TCBSetPriority" (src "decodeSetPriority" "object/tcb.c" 1217) (obj .tcb)
     1 1 [truncatedMessage, invalidCapability, rangeError] (.implemented .tcbSetPriority),
   unitRow 7 "TCBSetMCPriority" (src "decodeSetMCPriority" "object/tcb.c" 1261) (obj .tcb)
@@ -297,10 +298,10 @@ def sel4LabelRowsCore : List LabelRow := [
   unitRow 15 "TCBUnbindNotification" (src "decodeUnbindNotification" "object/tcb.c" 1675)
     (obj .tcb) 0 0 [illegalOperation] (.implemented .tcbUnbindNotification),
   unitRow 16 "TCBSetTLSBase" (src "decodeSetTLSBase" "object/tcb.c" 785) (obj .tcb)
-    1 0 [truncatedMessage] (.absent "unowned"),
+    1 0 [truncatedMessage] (.absent "SX16.1"),
   { label := 17, name := "TCBSetFlags", decode := src "decodeSetFlags" "object/tcb.c" 829,
     capType := obj .tcb, minLength := 2, extraCaps := 0, returns := .message,
-    errors := [truncatedMessage], blocks := false, status := .absent "unowned" },
+    errors := [truncatedMessage], blocks := false, status := .absent "SX16.1" },
   unitRow 18 "CNodeRevoke" (src "decodeCNodeInvocation" "object/cnode.c" 195) (obj .cnode)
     2 0 [truncatedMessage, failedLookup] (.deviation .cspaceRevoke "SX14.1" (some 1)
       "seLe4n names the target by a slot word; seL4 by index and depth"),
@@ -334,11 +335,11 @@ open Sel4Error in
 /-- Labels 30–56: domains, scheduling, the VSpace and the ARM objects. -/
 def sel4LabelRowsArch : List LabelRow := [
   unitRow 30 "DomainSetSet" (src "decodeDomainSetSetInvocation" "object/domain.c" 24) none
-    1 1 [truncatedMessage, invalidArgument] (.absent "unowned"),
+    1 1 [truncatedMessage, invalidArgument] (.absent "SX16.1"),
   unitRow 31 "DomainScheduleConfigure" (src "decodeDomainScheduleConfigure" "object/domain.c" 67)
-    none 3 0 [truncatedMessage, invalidArgument, rangeError] (.absent "unowned"),
+    none 3 0 [truncatedMessage, invalidArgument, rangeError] (.absent "SX16.1"),
   unitRow 32 "DomainScheduleSetStart" (src "decodeDomainScheduleSetStart" "object/domain.c" 130)
-    none 1 0 [truncatedMessage, rangeError] (.absent "unowned"),
+    none 1 0 [truncatedMessage, rangeError] (.absent "SX16.1"),
   unitRow 33 "SchedControlConfigureFlags"
     (src "decodeSchedControl_ConfigureFlags" "object/schedcontrol.c" 80) (some .schedControl)
     5 1 [truncatedMessage, rangeError, invalidCapability] (.implemented .schedContextConfigure),
@@ -361,22 +362,23 @@ def sel4LabelRowsArch : List LabelRow := [
   unitRow 39 "ARMVSpaceClean_Data"
     (src "decodeARMVSpaceRootInvocation" "arch/arm/64/kernel/vspace.c" 1420) (obj .vspaceRoot)
     2 0 [truncatedMessage, invalidArgument, illegalOperation, failedLookup, rangeError]
-    (.absent "unowned"),
+    (.absent "SX16.1"),
   unitRow 40 "ARMVSpaceInvalidate_Data"
     (src "decodeARMVSpaceRootInvocation" "arch/arm/64/kernel/vspace.c" 1421) (obj .vspaceRoot)
     2 0 [truncatedMessage, invalidArgument, illegalOperation, failedLookup, rangeError]
-    (.absent "unowned"),
+    (.absent "SX16.1"),
   unitRow 41 "ARMVSpaceCleanInvalidate_Data"
     (src "decodeARMVSpaceRootInvocation" "arch/arm/64/kernel/vspace.c" 1422) (obj .vspaceRoot)
     2 0 [truncatedMessage, invalidArgument, illegalOperation, failedLookup, rangeError]
-    (.absent "unowned"),
+    (.absent "SX16.1"),
   unitRow 42 "ARMVSpaceUnify_Instruction"
     (src "decodeARMVSpaceRootInvocation" "arch/arm/64/kernel/vspace.c" 1423) (obj .vspaceRoot)
     2 0 [truncatedMessage, invalidArgument, illegalOperation, failedLookup, rangeError]
     (.implemented .vspaceUnifyInstruction),
   { label := 43, name := "ARMSMCCall", decode := src "decodeARMSMCInvocation" "arch/arm/object/smc.c" 67,
     capType := none, minLength := 8, extraCaps := 0, returns := .message,
-    errors := [truncatedMessage, invalidArgument], blocks := false, status := .absent "unowned" },
+    errors := [truncatedMessage, invalidArgument], blocks := false,
+    status := .absent "not in seL4's default build" },
   unitRow 44 "ARMPageTableMap"
     (src "decodeARMPageTableInvocation" "arch/arm/64/kernel/vspace.c" 1558) (obj .pageTable)
     2 1 [truncatedMessage, invalidCapability, invalidArgument, failedLookup, deleteFirst]
@@ -394,35 +396,35 @@ def sel4LabelRowsArch : List LabelRow := [
     (obj .frame) 0 0 [] (.implemented .vspaceUnmap),
   unitRow 48 "ARMPageClean_Data" (src "decodeARMFrameInvocation" "arch/arm/64/kernel/vspace.c" 1725)
     (obj .frame) 2 0 [truncatedMessage, illegalOperation, failedLookup, invalidArgument]
-    (.absent "unowned"),
+    (.absent "SX16.1"),
   unitRow 49 "ARMPageInvalidate_Data"
     (src "decodeARMFrameInvocation" "arch/arm/64/kernel/vspace.c" 1726)
     (obj .frame) 2 0 [truncatedMessage, illegalOperation, failedLookup, invalidArgument]
-    (.absent "unowned"),
+    (.absent "SX16.1"),
   unitRow 50 "ARMPageCleanInvalidate_Data"
     (src "decodeARMFrameInvocation" "arch/arm/64/kernel/vspace.c" 1727)
     (obj .frame) 2 0 [truncatedMessage, illegalOperation, failedLookup, invalidArgument]
-    (.absent "unowned"),
+    (.absent "SX16.1"),
   unitRow 51 "ARMPageUnify_Instruction"
     (src "decodeARMFrameInvocation" "arch/arm/64/kernel/vspace.c" 1728)
     (obj .frame) 2 0 [truncatedMessage, illegalOperation, failedLookup, invalidArgument]
-    (.absent "unowned"),
+    (.absent "SX16.1"),
   { label := 52, name := "ARMPageGetAddress",
     decode := src "decodeARMFrameInvocation" "arch/arm/64/kernel/vspace.c" 1813,
     capType := obj .frame, minLength := 0, extraCaps := 0, returns := .message, errors := [],
-    blocks := false, status := .absent "unowned" },
+    blocks := false, status := .absent "SX16.1" },
   unitRow 53 "ARMASIDControlMakePool"
     (src "decodeARMMMUInvocation" "arch/arm/64/kernel/vspace.c" 1851) none 2 2
     [truncatedMessage, invalidCapability, failedLookup, deleteFirst, illegalOperation]
-    (.absent "unowned"),
+    (.absent "SX16.1"),
   unitRow 54 "ARMASIDPoolAssign" (src "decodeARMMMUInvocation" "arch/arm/64/kernel/vspace.c" 1823)
-    none 0 1 [truncatedMessage, invalidCapability, deleteFirst] (.absent "unowned"),
+    none 0 1 [truncatedMessage, invalidCapability, deleteFirst] (.absent "SX16.1"),
   unitRow 55 "ARMIRQIssueIRQHandlerTrigger"
     (src "Arch_decodeIRQControlInvocation" "arch/arm/object/interrupt.c" 36) (some .irqControl)
-    4 1 [truncatedMessage, rangeError, failedLookup, deleteFirst, revokeFirst] (.absent "unowned"),
+    4 1 [truncatedMessage, rangeError, failedLookup, deleteFirst, revokeFirst] (.absent "SX16.1"),
   unitRow 56 "ARMIRQIssueIRQHandlerTriggerCore"
     (src "Arch_decodeIRQControlInvocation" "arch/arm/object/interrupt.c" 150) (some .irqControl)
-    0 1 [rangeError, failedLookup, deleteFirst, revokeFirst, invalidArgument] (.absent "unowned") ]
+    0 1 [rangeError, failedLookup, deleteFirst, revokeFirst, invalidArgument] (.absent "SX16.1") ]
 
 /-- A model-only label: no seL4 source. -/
 def modelRow (label : Nat) (name : String) (capType : CapType) (minLength : Nat)
