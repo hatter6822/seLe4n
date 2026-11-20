@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.37.34-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.37.35-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -49,31 +49,102 @@
 
 ## seLe4n とは
 
-seLe4n は Lean 4 で一から構築されたマイクロカーネルです。すべてのカーネル遷移は実行可能な純粋関数として定義されています。すべての不変条件は Lean の型検査器によって機械検証されています――`sorry` ゼロ、`axiom` ゼロ。証明面全体が、admit された証明を一切含まずにネイティブコードへコンパイルされます。
+seLe4n は Lean 4 でゼロから構築されたマイクロカーネルです。カーネルのすべての
+遷移は実行可能な純粋関数であり、すべての不変条件は Lean のカーネルが検査しま
+す。本番の証明面には `sorry` も `axiom` もありません。同じ Lean コードがネイティ
+ブコードにコンパイルされ、小さな Rust のハードウェア層とともに、ターゲット上で
+起動するカーネルイメージにリンクされます。
 
-本プロジェクトは seL4 のケイパビリティベースのセキュリティモデルを継承しつつ、Lean 4 の証明フレームワークによって可能になったアーキテクチャ改善を導入しています：
+本プロジェクトは seL4 のケイパビリティベースのセキュリティモデルと、ますます
+seL4 のユーザーから見える ABI そのものを保ちながら、Lean を使ってより多くを証明
+し、seL4 が隙間を残す箇所を強化します。完全な仕様は
+[`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) です。以下の項目はその
+仕様への入口です。
 
-### スケジューリングとリアルタイム保証
+### seL4 の ABI
 
-- **合成可能なパフォーマンスオブジェクト** ―― CPU 時間はファーストクラスのカーネルオブジェクトです。`SchedContext` はバジェット、周期、優先度、デッドライン、ドメインを再利用可能なスケジューリングコンテキストにカプセル化し、スレッドはケイパビリティを通じてバインドします。CBS（Constant Bandwidth Server）スケジューリングにより、証明済みの帯域幅分離を提供します（`cbs_bandwidth_bounded` 定理）
-- **パッシブサーバー** ―― アイドル状態のサーバーは IPC 中にクライアントの `SchedContext` を借用し、サービス提供時以外は CPU を消費しません。`donationChainAcyclic` 不変条件により循環ドネーションチェーンを防止します
-- **バジェット駆動型 IPC タイムアウト** ―― ブロッキング操作は呼び出し元のバジェットによって制限されます。期限切れ時、スレッドはエンドポイントキューから取り出され再エンキューされます
-- **優先度継承プロトコル** ―― 推移的な優先度伝搬と、機械検証されたデッドロックフリー保証（`blockingAcyclic`）および有界チェーン深度を備え、無制限の優先度逆転を防止します
-- **有界レイテンシ定理** ―― 機械検証された WCRT 上界：`WCRT = D × L_max + N × (B + P)`。8 つの活性モジュールにわたって証明され、バジェット単調性、補充タイミング、yield セマンティクス、バンド枯渇、ドメインローテーションを網羅します
+- **seL4-MCS のシステムコール** — MCS の 11 個のシステムコール（`Call` …
+  `Yield`）を、seL4 と同じ番号で `x7` に置きます。操作は、システムコール、呼び出
+  したケイパビリティの型、メッセージラベルから選ばれます
+  （`Syscall.selectOperation`）。seL4 と同じです
+- **seL4 のエラーとフォールトのペイロード** — `LookupFault`、seL4 のメッセージ
+  レジスタ順のエラーフレーム、受信側のケイパビリティフォールト、`Restart` 状態、
+  追加ケイパビリティとして渡されるケイパビリティ引数、そしてケイパビリティ内に
+  保持されるガードと単一の `resolveAddressBits`
+- seL4 ABI の残りの作業（残りの呼び出し、タイムアウトフォールト、呼び出しごとの
+  権限、コアごとの Running 状態）は進行中のワークストリーム WS-SX です。その行は
+  [`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`](../../../docs/planning/SEL4_ABI_FIDELITY_PLAN.md)
+  にあります
 
-### データ構造と IPC
+### スケジューリングとリアルタイム
 
-- **O(1) ハッシュベースのホットパス** ―― すべてのオブジェクトストア、ランキュー、CNode スロット、VSpace マッピング、IPC キューは、`distCorrect`、`noDupKeys`、`probeChainDominant` 不変条件を備えた形式検証済み Robin Hood ハッシュテーブルを使用
-- **侵入型デュアルキュー IPC** ―― スレッドごとのバックポインタにより O(1) のエンキュー、デキュー、キュー途中削除を実現
-- **スロットを通じて連結されたケイパビリティ派生ツリー** ―― 各スロットが親・最初の子・兄弟へのリンクを保持し（seL4 のマッピングデータベース）、ツリーとの一致を証明。スロット転送、失効、子孫走査はリンクをたどる
+- **ケイパビリティとしてのスケジューリングコンテキスト** — CPU 時間はカーネル
+  オブジェクトです。`SchedContext` は seL4-MCS の予算、周期、リフィルを持ち、コア
+  の `SchedControl` 権限を通じて設定され、ケイパビリティでスレッドに結び付けら
+  れます。その不変条件（`budgetWithinBounds`、`refillsConserved`）は最上位の束に
+  含まれます。帯域の隔離は `refill_window_bound` です。コンテキストは一周期のど
+  の窓でも予算を超えて実行されません。これは seL4-MCS のスライディングウィンド
+  ウ保証です。逆方向（受け入れられたサーバーは毎窓その予算を受け取る）を加える、
+  EDF ルートを持つ階層型定帯域スケジューラは、計画中のワークストリーム WS-CB で
+  す（[`docs/planning/HIERARCHICAL_CBS_PLAN.md`](../../../docs/planning/HIERARCHICAL_CBS_PLAN.md)）
+- **パッシブサーバー** — サーバーは IPC 中にクライアントが提供するスケジューリン
+  グコンテキストで動作します。`donationChainAcyclic` が循環的な提供を排除します
+- **予算に基づく IPC タイムアウト** — 予算を使い切ったブロック中のスレッドは、
+  そのエンドポイントのキューから取り除かれます（`timeoutThread`）
+- **優先度継承** — 推移的な伝播と、機械検査されたブロッキング循環の不在
+  （`blockingAcyclic`）、そして有界な逆転の定理（`pip_bounded_inversion`）
+- **有界な遅延** — 最悪応答時間のパラメトリックな上界
+  `wcrtBound D L_max N B P = D × L_max + N × (B + P)`
+  （`bounded_scheduling_latency_exists`、コアごとの形もあり）。
+  `SeLe4n/Kernel/Scheduler/Liveness/` のモジュール上で証明されています
+
+### カーネルオブジェクトとメモリ
+
+- **untyped メモリから切り出されるオブジェクト** — retype は untyped ケイパビリ
+  ティの領域からオブジェクトを切り出し、untyped のリセットは seL4 と同じです。切
+  り出した各オブジェクトのセルをその untyped 自身のメモリへ移すことは、進行中の
+  ワークストリーム WS-UC です
+- **カーネルエントリは何も割り当てない** — コンパイルされたシステムコール、フォ
+  ールト、割り込みのエントリはヒープ割り当てを行いません。retype の切り出しが割
+  り当てるのは新しいオブジェクト自身のセルだけです。QEMU のヒープゲート
+  （`scripts/test_qemu_heap_allocations_per_syscall.sh`）は起動したイメージ上で全
+  エントリを計測し、それ以外の値で失敗します
+- **データ構造** — オブジェクトストアと VSpace のマッピングは検証済みの Robin
+  Hood ハッシュテーブル（`RHTable`。`distCorrect`、`noDupKeys`、
+  `probeChainDominant` 付き）です。CNode は seL4 と同じく `2^radix` 個のスロット
+  の平坦な配列です。実行キュー、エンドポイントと通知のキュー、応答待ちは TCB を
+  通じて連結され、それぞれに、リンクとの一致が証明されたゴーストの抽象キューがあ
+  ります
+- **スロットで連結されたケイパビリティ導出木** — 各スロットは親、最初の子、兄弟
+  へのリンク（seL4 のマッピングデータベース）を持ち、木との一致が証明されていま
+  す。削除、取り消し（seL4 の `cteRevoke` ループ）、スロットの転送はリンクをたど
+  ります
+- **VSpace** — フレームごとに W^X を強制する ARMv8 ページテーブルと、RAM の非キ
+  ャッシュエイリアスを拒否するメモリタイプ検査
 
 ### セキュリティと検証
 
-- **N ドメイン情報フロー** ―― パラメータ化されたフローポリシーにより seL4 の二値パーティションを一般化。44 エントリのエンフォースメント境界と、操作ごとの非干渉証明（35 コンストラクタの `NonInterferenceStep` 帰納型）、および有界かつフェイルクローズドな機密解除監査証跡（ケイパビリティでゲートされたリーダー付き）
-- **合成証明レイヤー** ―― `proofLayerInvariantBundle` が 16 のサブシステム不変条件バンドル（スケジューラコア + CBS 拡張、ケイパビリティ、IPC + IPC–スケジューラ結合、ライフサイクル、サービス、VSpace、クロスサブシステム、TLB 一貫性、通知ウェイター一貫性、TLB シュートダウンの pending/ack 上界、コアごとの TLB 無効化と I キャッシュコヒーレンス、および機密解除監査ログ上界）を単一のトップレベル義務に合成し、ブートからすべての操作まで検証
-- **三段階状態アーキテクチャ** ―― 不変条件ウィットネス付きビルダーフェーズからフリーズされた不変表現へ遷移し、証明済みのルックアップ等価性を保証。24 のフリーズ操作がライブ API をミラー
-- **完全な操作セット** ―― すべての seL4 操作が不変条件保存付きで実装済み。スレッドの suspend/resume、優先度管理（setPriority/setMCPriority）、IPC バッファ設定まで網羅
-- **サービスレジストリ** ―― エンドポイントを介したカーネルレベルのサービス登録と検索。登録はエンドポイント自体に記録されます（seLe4n 拡張、seL4 には存在しません）。依存関係のポリシーは seL4 と同様にユーザー空間のサービスマネージャーが担います
+- **N ドメインの情報フロー** — seL4 の 2 ドメイン分割を一般化した、パラメータ化
+  されたフローポリシー。長さが `enforcementBoundaryExtended_count`（コアごとの境
+  界は `enforcementBoundaryPerCore_count`）で固定される強制境界。
+  `NonInterferenceStep` の各コンストラクタに対する非干渉定理。そして
+  `auditTrail` ケイパビリティを通じて読む、有界でフェイルクローズドな機密解除の
+  監査証跡
+- **合成された証明層** — `proofLayerInvariantBundle`
+  （`SeLe4n/Kernel/Architecture/Invariant.lean`）は、各サブシステムの不変条件の束
+  （スケジューラ、ケイパビリティ、IPC とそのスケジューラとの結合、ライフサイク
+  ル、サービスレジストリ、VSpace、サブシステム横断、TLB と命令キャッシュの一貫
+  性、TLB シュートダウン、機密解除の監査ログ、そして連結構造それぞれとそのゴース
+  トの一致）を一つの義務にまとめ、起動からすべての操作を通じて保ちます
+- **マルチコア** — コアごとのスケジューリング、コア間 IPC と起床、TLB シュート
+  ダウンを備えた 4 コア。SMP 完成のワークストリーム（WS-SM）は進行中です
+- **3 段階の状態** — 不変条件の証拠を持つビルダー段階が、検索の同値性が証明され
+  た不変の表現へ凍結されます。凍結された操作は `frozenOpCoverage` が列挙するシス
+  テムコールをカバーし、`frozenOpCoverage_count` で固定されます
+- **サービスレジストリ** — seL4 にはない seLe4n の拡張です。サービスは
+  `serviceRegistry` ケイパビリティを通じて登録・検索され、提供するエンドポイント
+  に記録されます。依存関係のポリシーは、seL4 と同じくユーザー空間のサービスマネ
+  ージャーに任されます
 
 ## 現在の状態
 
@@ -81,145 +152,170 @@ seLe4n は Lean 4 で一から構築されたマイクロカーネルです。�
      Regenerate with: ./scripts/generate_codebase_map.py --pretty
      Source of truth: docs/codebase_map.json (readme_sync) -->
 
-<!-- MAINTAINERS/TRANSLATORS: the three metric rows below (production LoC,
-     test LoC, proved declarations) are WRITTEN by
-     scripts/sync_translated_metrics.py from docs/codebase_map.json.  A hand
-     edit is overwritten on the next sync.  To reword a label, a preposition
-     or an inflected noun, edit that script's TARGETS table in the same
-     commit: it matches the surrounding literals verbatim and fails loudly
-     when they change, so it can never quietly stop syncing this file. -->
-
-| 属性 | 値 |
+| 項目 | 値 |
 |------|-----|
-| **バージョン** | `0.37.34` |
+| **バージョン** | `0.37.35` |
 | **Lean ツールチェーン** | `v4.28.0` |
 | **本番 Lean コード行数** | 646 ファイルにわたる 652,027 行 |
 | **テスト Lean コード行数** | 70 テストスイートにわたる 91,310 行 |
 | **証明済み宣言数** | 24,838 件の定理/補題宣言（sorry/axiom ゼロ） |
-| **Rust クレート** | 4 個（`sele4n-types`、`sele4n-abi`、`sele4n-sys`、`sele4n-hal`）、ソースファイル 80 個 |
-| **ターゲットハードウェア** | Raspberry Pi 5（BCM2712 / ARM Cortex-A76 / ARMv8-A） |
-| **ハードウェアバインディング** | **H3 完了**（WS-AG AG1–AG10）：HAL、GIC-400、タイマー、ARMv8 ページテーブル、FFI ブリッジ、QEMU ブート |
-| **標準監査** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) ―― 1.0 前の包括的監査（202 件の指摘事項；WS-AK AK1–AK10 で修正済み；アーカイブ済み） |
-| **最新監査** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) ―― WS-AN 完了後に実施された 1.0 前レディネス監査（WS-AN AN0–AN12 で修正され現在アーカイブ済みの [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) を引き継ぐ）。WS-RC R0..R5 は v0.31.2 で完了；WS-RC R6..R14 は SM0.Q.1 吸収マッピングに従って WS-SM に吸収（[`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md) を参照）。アクティブなワークストリーム計画：[`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)。 |
-| **コードベースマップ** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) ―― 機械可読な宣言インベントリ |
+| **Rust クレート** | `sele4n-types`、`sele4n-abi`、`sele4n-sys`（ユーザー空間ラッパー）、`sele4n-hal`（カーネルのハードウェア層）、およびホストテスト `sele4n-lean-boundary` |
+| **ターゲットハードウェア** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
+| **起動レーン** | すべての QEMU レーンは、まず [rpi5_machine](https://github.com/hatter6822/rpi5_machine) の `raspi5b` マシンで Raspberry Pi 5 イメージを起動し、次に QEMU の `virt` で `virt` イメージを起動します |
+| **ワークストリーム** | 開いている各ワークストリームの状態：[`docs/agent_guide/WORKSTREAM_CONTEXT.md`](../../../docs/agent_guide/WORKSTREAM_CONTEXT.md)。索引と負債台帳：[`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) |
+| **監査** | [`docs/audits/`](../../../docs/audits/README.md) — 現在の監査の成果物。以前の監査はアーカイブ済み |
+| **コードベースマップ** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — 機械可読な宣言インベントリ |
 
-メトリクスは `./scripts/generate_codebase_map.py` によってコードベースから導出され、
-[`docs/codebase_map.json`](../../../docs/codebase_map.json) の `readme_sync` キーに格納されています。
-すべてのドキュメントは `./scripts/sync_documentation_metrics.sh`（検証のみ：`--check`）でまとめて更新してください。`./scripts/report_current_state.py` は引き続き手動のクロスチェックとして使用します。
+メトリクスは `./scripts/generate_codebase_map.py` がコードから導出し、
+[`docs/codebase_map.json`](../../../docs/codebase_map.json) の `readme_sync` キーに保存
+されます。ドキュメント全体は `./scripts/sync_documentation_metrics.sh`
+（検証のみ：`--check`）でまとめて更新してください。
 
 ## クイックスタート
 
 ```bash
-./scripts/setup_lean_env.sh   # Lean ツールチェーンのインストール
-lake build                     # 全モジュールのコンパイル
-lake exe sele4n                # トレースハーネスの実行
-./scripts/test_smoke.sh        # 検証（衛生チェック + ビルド + トレース + ネガティブステート）
+./scripts/setup_lean_env.sh    # install the Lean toolchain and test dependencies
+source ~/.elan/env
+lake build                     # build the default targets
+lake exe sele4n                # run the trace harness
+./scripts/test_smoke.sh        # hygiene + build + trace + negative-state
 ```
+
+`lake build` がビルドするのは `Main.lean` とテスト実行ファイルから到達できるもの
+だけです。`.lean` ファイルをコミットする前に、そのモジュールを名前でビルドしてく
+ださい（`lake build <Module.Path>`）。作業手順の全体は
+[`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md)、すべての貢献者が従う規則は
+[`CLAUDE.md`](../../../CLAUDE.md) にあります。
 
 ## ドキュメント
 
-| まずはここから | 次に読む |
-|-------------|---------|
-| [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) ―― ワークフロー、検証、PR チェックリスト | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) ―― 仕様とマイルストーン |
-| [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) ―― 完全なハンドブック | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) ―― seL4 リファレンスセマンティクス |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) ―― 機械可読インベントリ | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) ―― 繰り延べられたすべての項目とその担当者 |
-| [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) ―― コントリビューション手順 | [`CHANGELOG.md`](../../../CHANGELOG.md) ―― バージョン履歴 |
-
-[`docs/codebase_map.json`](../../../docs/codebase_map.json) はプロジェクトメトリクスの信頼できるソースであり、
-[seLe4n.org](https://github.com/hatter6822/hatter6822.github.io) にデータを提供し、
-マージ時に CI で自動更新されます。`./scripts/generate_codebase_map.py --pretty` で再生成できます。
+| まずここから | 次に |
+|--------------|------|
+| [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — 作業手順、検証、PR チェックリスト | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — 仕様とマイルストーン |
+| [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — ハンドブック全体 | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — seL4 の参照意味論 |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — 機械可読なインベントリ | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — 担当者付きの、すべての先送り項目 |
+| [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — 貢献の手順 | [`CHANGELOG.md`](../../../CHANGELOG.md) — バージョン履歴 |
 
 ## 検証コマンド
 
 ```bash
-./scripts/test_fast.sh      # Tier 0+1：衛生チェック + ビルド
-./scripts/test_smoke.sh     # + Tier 2：トレース + ネガティブステート
-./scripts/test_full.sh      # + Tier 3：不変条件サーフェスアンカー + Lean #check
-NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4：ナイトリー決定性検証
+./scripts/test_fast.sh      # Tier 0+1: hygiene + build
+./scripts/test_smoke.sh     # + Tier 2: trace + negative-state
+./scripts/test_full.sh      # + Tier 3: invariant surface anchors + Lean #check
+NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4: nightly determinism
 
-./scripts/test_rust.sh                 # ホスト Rust：ビルド、テスト、fmt、clippy
-./scripts/test_aarch64_cross_build.sh  # カーネル HAL の実際のターゲット
+./scripts/test_rust.sh                 # host Rust: build, tests, fmt, clippy
+./scripts/test_aarch64_cross_build.sh  # the kernel HAL's real target
+
+./scripts/test_qemu.sh                 # boot the image on raspi5b, then on virt
+./scripts/test_qemu.sh --lean-kernel   # the Lean-linked images, on four cores
 ```
 
-PR を提出する前に最低限 `test_smoke.sh` を実行してください。定理、不変条件、またはドキュメントアンカーを変更した場合は `test_full.sh` を実行してください。
+PR の前には少なくとも `test_smoke.sh` を、定理・不変条件・Tier 3 アンカーを変更
+したときは `test_full.sh` を実行してください。各ティアは最初に失敗した検査で止ま
+ります。`--continue` を渡すと、すべての失敗を一度に集められます。
 
-`rust/` 配下を変更した後は、Rust の**両方の**レーンを実行してください。2 つのレーンは同じクレートの互いに重ならない半分ずつをカバーします。ホストでは、すべての `#[cfg(target_arch = "aarch64")]` ブロックが rustc や clippy に渡る前に除去されるため、ホストレーンからは HAL の大部分を占める 67 個の cfg ゲート付きブロック、57 箇所の `asm!`、4 つの `.S` ソースが見えません。クロスレーンは `sele4n-hal` を `aarch64-unknown-none-softfloat` 向けに両方のプロファイルでビルドし、アセンブリソースが実際にアセンブルされたことを検証し、クロスターゲットに対して lint を実行し、リリースオブジェクトを逆アセンブルして FP/SIMD レジスタを一切使用していないことを証明します（カーネルは FP を使用せず、最初の命令から EL1 で FP/SIMD をトラップします）。また、これは `cargo check` ではなく実際のビルドです。`check` はコード生成の前に停止し、アセンブラに到達しないためです。
+`rust/` 以下を変更したら、Rust の **両方の** レーンを実行してください。両者は同
+じクレートの互いに素な半分を扱います。ホストでは
+`#[cfg(target_arch = "aarch64")]` ブロックがすべて rustc や clippy に見える前に
+取り除かれるため、ホストのレーンは HAL の大部分を占める条件付きブロック、`asm!`
+箇所、`.S` ソースを見られません。クロスレーンは `sele4n-hal` を
+`aarch64-unknown-none-softfloat` 向けに両プロファイルでビルドし、アセンブリソー
+スが実際にアセンブルされたことを確かめ、クロスターゲットを lint し、release オ
+ブジェクトを逆アセンブルして FP/SIMD レジスタを使っていないことを証明します。
+QEMU レーンは初回に `scripts/setup_rpi5_machine.sh` で固定されたコミットの
+rpi5_machine をビルドします。前提条件が欠けたレーンは成功ではなく NOT RUN と報告
+されます。完全な一覧は [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) にあります。
 
 ## アーキテクチャ
 
-seLe4n は階層化されたコントラクトとして構成されており、各層は実行可能な遷移と機械検証済みの不変条件保存証明を備えています：
+seLe4n は層状の契約として構成され、それぞれが実行可能な遷移と、機械検査された
+不変条件保存の証明を持ちます。
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
+│   Kernel entries  (syscall, fault, interrupt, per-core timer tick)   │
 │                 Kernel API  (SeLe4n/Kernel/API.lean)                 │
 ├──────────────┬─────────────┬────────────┬───────────┬────────────────┤
 │  Scheduler   │  Capability │    IPC     │ Lifecycle │  Service (ext) │
-│   RunQueue   │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
-│ SchedContext │             │  Donation  │           │                │
+│   RunQueue   │  CSpace/CDT │  DualQueue │  Untyped  │    Registry    │
+│ SchedContext │             │  Donation  │  Retype   │                │
 ├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
 │         Information Flow  (Policy, Projection, Enforcement)          │
 ├──────────────────────────────────────────────────────────────────────┤
-│     Architecture  (VSpace, VSpaceBackend, Adapter, Assumptions)      │
+│  Architecture  (VSpace, page tables, TLB/cache, decode, trap frame)  │
+├──────────────────────────────────────────────────────────────────────┤
+│         Concurrency  (locks, memory model, per-core state)           │
 ├──────────────────────────────────────────────────────────────────────┤
 │                     Model  (Object, State, CDT)                      │
 ├──────────────────────────────────────────────────────────────────────┤
 │             Foundations  (Prelude, Machine, MachineConfig)           │
 ├──────────────────────────────────────────────────────────────────────┤
-│        Platform  (Contract, Sim, RPi5)  ← production bindings        │
+│    Platform  (Contract, Boot, Sim, RPi5, QemuVirt)  ← bindings       │
+├──────────────────────────────────────────────────────────────────────┤
+│        Rust HAL  (rust/sele4n-hal: boot, traps, GIC, MMU, SMP)       │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-## ソースレイアウト
+## ソースの構成
 
 ```
 SeLe4n/
 ├── Prelude.lean                 Typed identifiers, KernelM monad
 ├── Machine.lean                 Register file, memory, timer
-├── Model/                       Object types, SystemState, builder/freeze phases
+├── Model/                       Object types, SystemState, slot links, builder/freeze phases
 ├── Kernel/
 │   ├── API.lean                 Unified public API + apiInvariantBundle
-│   ├── Scheduler/               RunQueue, EDF selection, PriorityInheritance, Liveness (WCRT)
-│   ├── Capability/              CSpace ops + CDT tracking, authority/preservation proofs
-│   ├── IPC/                     Dual-queue endpoints, donation, timeouts, structural invariants
-│   ├── Lifecycle/               Object retype, thread suspend/resume
+│   ├── *Entry.lean              Compiled syscall, fault, interrupt and per-core timer entries
+│   ├── Scheduler/               Run queues, selection, priority inheritance, liveness (WCRT)
+│   ├── SchedContext/            Scheduling contexts, seL4-MCS refills, SchedControl
+│   ├── Capability/              CSpace operations, derivation tree, authority proofs
+│   ├── IPC/                     Dual-queue endpoints, donation, timeouts, cross-core IPC
+│   ├── Lifecycle/               Untyped retype and reset, thread suspend/resume
 │   ├── Service/                 Service registry and its invariants
-│   ├── Architecture/            VSpace (W^X), TLB model, register/syscall decode
+│   ├── Architecture/            VSpace (W^X), page tables, TLB/cache models, decode, trap frame
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
+│   ├── Concurrency/             Lock model, memory model, per-core runtime
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
-│   ├── RadixTree/               CNode radix tree (O(1) flat array)
-│   ├── SchedContext/            CBS budget engine, replenishment queue, priority management
+│   ├── RadixTree/               CNode radix view and its bridge to the slot array
 │   ├── FrozenOps/               Frozen-state operations + commutativity proofs
 │   └── CrossSubsystem.lean      Cross-subsystem invariant composition
 ├── Platform/
-│   ├── Contract.lean            PlatformBinding typeclass + BootVSpaceRootEntry
-│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState).
-│   │                            installBootVSpaceRoot threads canonical boot VSpace
-│   │                            through bootFromPlatformChecked (WS-RC R3).
+│   ├── Contract.lean            PlatformBinding typeclass and boundary contracts
+│   ├── Boot.lean, Boot/         Boot sequence: root server, initial threads, IRQ nodes
+│   ├── FFI.lean                 The Lean side of the HAL boundary
 │   ├── Sim/                     Simulation platform (permissive contracts for testing)
-│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO).
-│                                VSpaceBoot.lean holds the canonical W^X-compliant
-│                                boot VSpaceRoot (production-wired since WS-RC R3).
-├── Testing/                     Test harness, state builder, invariant checks
+│   ├── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO, boot VSpace)
+│   └── QemuVirt/                QEMU `virt` binding and boot entry
+├── Testing/                     Test harness, state builder, invariant checks, censuses
 Main.lean                        Executable entry point
 tests/                           Executable test suites + fixtures
+rust/                            sele4n-types, sele4n-abi, sele4n-sys, sele4n-hal, sele4n-lean-boundary
 ```
 
-各サブシステムは **Operations/Invariant 分離**パターンに従います：遷移は `Operations.lean` に、証明は `Invariant.lean` に記述されます。統合された `apiInvariantBundle` がすべてのサブシステムの不変条件を単一の証明義務に集約します。ファイルごとの完全なインベントリは [`docs/codebase_map.json`](../../../docs/codebase_map.json) を参照してください。
+各サブシステムは **Operations/Invariant 分離** に従います。遷移は
+`Operations.lean`、証明は `Invariant.lean` にあります。統一された
+`apiInvariantBundle` が、すべてのサブシステムの不変条件を一つの証明義務にまとめ
+ます。サブシステムの地図は [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) §5、
+ファイル単位の完全なインベントリは
+[`docs/codebase_map.json`](../../../docs/codebase_map.json) を参照してください。
 
 ## seL4 との比較
 
 | 機能 | seL4 | seLe4n |
 |------|------|--------|
-| **スケジューリング** | C 実装の散発サーバー（MCS） | CBS スケジューリング、機械検証済み `cbs_bandwidth_bounded` 定理付き。`SchedContext` をケイパビリティ制御のカーネルオブジェクトとして提供 |
-| **パッシブサーバー** | C による SchedContext ドネーション | `donationChainAcyclic` 不変条件付きの検証済みドネーション |
-| **IPC** | 単一リンクリストのエンドポイントキュー | 侵入型デュアルキューによる O(1) キュー途中削除、バジェット駆動型タイムアウト |
-| **情報フロー** | 二値 high/low パーティション | N ドメイン設定可能ポリシー、44 エントリのエンフォースメント境界（エントリ数は `enforcementBoundaryExtended_count` で固定）、操作ごとの NI 証明、およびすべての承認済み機密解除に対するケイパビリティゲート付き監査証跡 |
-| **優先度継承** | C 実装の PIP（MCS ブランチ） | 機械検証済みの推移的 PIP、デッドロックフリー保証とパラメトリック WCRT 上界付き |
-| **有界レイテンシ** | 形式的な WCRT 上界なし | `WCRT = D × L_max + N × (B + P)` を 8 つの活性モジュールで証明 |
-| **オブジェクトストア** | リンクリストと配列 | 検証済み Robin Hood ハッシュテーブル（`RHTable`/`RHSet`）による O(1) ホットパス |
-| **サービス管理** | カーネル外 | エンドポイントに紐づくサービスレジストリ。依存関係のポリシーはユーザー空間 |
-| **証明手法** | Isabelle/HOL、事後検証 | Lean 4 型検査器、遷移と共存配置――sorry/axiom ゼロ（証明済み宣言数は[現在の状態](#現在の状態)の表を参照） |
-| **プラットフォーム抽象化** | C レベル HAL | `PlatformBinding` 型クラスと型付き境界コントラクト |
+| **システムコール ABI** | MCS のシステムコール、呼び出しラベル、エラーとフォールトのペイロード | 同じです。seL4-MCS の 11 個のシステムコールとその番号、ラベルで選ぶ呼び出し、seL4 のエラーペイロード。残りの呼び出しは WS-SX の行です |
+| **スケジューリング** | 散発サーバーのリフィルを持つ MCS スケジューリングコンテキスト | 同じリフィル機構。保存の不変条件と、一窓あたり一予算の上界（`refill_window_bound`）が証明済み。EDF ルートを持つ階層型 CBS を計画中（WS-CB） |
+| **パッシブサーバー** | SchedContext の提供 | 不変条件 `donationChainAcyclic` を持つ検証済みの提供 |
+| **IPC** | エンドポイントごとに 1 本のキュー、TCB を通じて連結 | エンドポイントごとに送信キューと受信キュー。どちらも TCB を通じて連結され、任意の位置から O(1) で除去可能。予算に基づくタイムアウト |
+| **情報フロー** | 二値の high/low 分割 | 設定可能な N ドメインポリシー、`enforcementBoundaryExtended_count` で固定される強制境界、ステップごとの非干渉定理、承認された各機密解除に対するケイパビリティ制御の監査証跡 |
+| **優先度継承** | カーネルにはない | ブロッキング循環のない、機械検査された推移的 PIP と有界な逆転の定理 |
+| **有界な遅延** | 形式的な WCRT 上界はない | `wcrtBound D L_max N B P = D × L_max + N × (B + P)`。活性モジュール上で証明 |
+| **オブジェクトストア** | 物理アドレス上のオブジェクト | 検証済みの Robin Hood ハッシュテーブル（`RHTable`/`RHSet`）。CNode は seL4 と同じく平坦なスロット配列 |
+| **メモリマッピング** | カーネルは W^X を強制しない | フレームごとの W^X を不変条件として強制。メモリタイプ検査が RAM の非キャッシュエイリアスを拒否 |
+| **サービス管理** | カーネル外 | エンドポイント上のケイパビリティ制御のサービスレジストリ。依存関係ポリシーはユーザー空間 |
+| **証明** | Isabelle/HOL、C に対する詳細化 | Lean 4、実行可能な遷移と同じ場所。sorry/axiom ゼロ（件数は上の表） |
+| **プラットフォーム** | C レベルの HAL | 型付き境界契約を持つ `PlatformBinding` 型クラスと Rust の HAL |
 
 ## ライセンスとサードパーティの帰属表示
 

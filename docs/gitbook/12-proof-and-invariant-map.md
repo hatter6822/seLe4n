@@ -661,8 +661,8 @@ architecture layer with the scheduler bundle for the boot path.
 ### 3.8 Information flow — `SeLe4n/Kernel/InformationFlow/`
 
 The security layer is its own stack: labels and a lattice (`Policy.lean`),
-state projection (`Projection.lean`), non-interference over a 35-constructor
-`KernelOperation` surface, taint propagation, declassification with a causal
+state projection (`Projection.lean`), non-interference over every
+`NonInterferenceStep` constructor, taint propagation, declassification with a causal
 provenance trail, and the per-core (SMP) lift of all of it.
 
 Accepted covert channels are **enumerated rather than assumed away**:
