@@ -13,6 +13,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatchInvariant
 import SeLe4n.Kernel.IPC.Invariant.FaultPreservation
 import SeLe4n.Kernel.IPC.Invariant.Reachability
 import SeLe4n.Kernel.IPC.Invariant.YieldPreservation
+import SeLe4n.Kernel.IPC.Invariant.ReplyBindingPairFrame
 
 /-!
 # The dispatch-tier `ipcInvariantFull` payoffs
@@ -784,7 +785,18 @@ private theorem receiveResolvedArm_cancelled_preserves_ipcInvariantFull
         unfold notificationWaitCrossCoreDispatch at hWaitInv hObjInv1
         rw [hFst] at hWaitInv hObjInv1
         rw [hPost]
-        exact writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _ hObjInv1 hWaitInv
+        -- seL4-MCS `completeSignal`'s `maybeDonateSchedContext`, on the binding
+        -- pair and the loan record of the state the receive was handed.
+        exact completeSignalArm_donation_preserves_ipcInvariantFull _ hObjInv
+          (notificationWaitCrossCoreDispatchChecked_ok_inner hW)
+          (writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _ hObjInv1 hWaitInv)
+          (schedContextBindingBidirectional_of_consistent hPack.capOnly.schedContextLinks.binding
+            hInv.donationOwnerValid)
+          hInv.donationOwnerValid
+          (fun tcb hTcb => by
+            rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hTcb] at hTC
+            obtain rfl := Option.some.inj hTC
+            exact readyThread_notBlockedOnReply _ hReadyC)
       simp only [Bool.not_eq_true] at hSig
       by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st
           epId = true
@@ -871,7 +883,7 @@ theorem replyRecvCompletesSignalArm_preserves_ipcInvariantFull (ctx : LabelingCo
     (tid prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage) (grant : Bool)
     (c : CoreId) (st st' : SystemState)
     (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
-    (hBudgets : allTimeoutBudgetsNone st)
+    (hBudgets : allTimeoutBudgetsNone st) (hP : schedContextBindingPair st)
     (hFlow : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) = true)
     (hFaultP : threadHasPendingFault st prevCaller = true →
       ReplyLegPremises tid prevCaller IpcMessage.empty c st)
@@ -883,6 +895,7 @@ theorem replyRecvCompletesSignalArm_preserves_ipcInvariantFull (ctx : LabelingCo
       = .ok ((), st')) :
     ipcInvariantFull st' := by
   obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases hStep
+  have hP1 := replyTransferOnCoreChecked_bindingPair hObjInv hP hR
   rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx tid prevCaller _ _ _ _ c st
     hFlow] at hR
   obtain ⟨hInv1, hObj1⟩ := replyTransferOnCore_preserves_ipcInvariantFull tid prevCaller _ _
@@ -909,7 +922,16 @@ theorem replyRecvCompletesSignalArm_preserves_ipcInvariantFull (ctx : LabelingCo
       (receiverBoundNotification st1 tid) tid c st1 hObj1
     unfold notificationWaitCrossCoreDispatch at hWaitInv hObjInv2
     rw [hFst] at hWaitInv hObjInv2
-    exact writeReturnFrameToTcb_preserves_ipcInvariantFull st2 tid _ hObjInv2 hWaitInv
+    -- seL4-MCS: the reply returned a donated context first; the receive's
+    -- `completeSignal` donates on the binding pair the reply left.
+    exact completeSignalArm_donation_preserves_ipcInvariantFull _ hObj1
+      (notificationWaitCrossCoreDispatchChecked_ok_inner hW)
+      (writeReturnFrameToTcb_preserves_ipcInvariantFull st2 tid _ hObjInv2 hWaitInv)
+      hP1.1 hInv1.donationOwnerValid
+      (fun tcb hTcb => by
+        rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hTcb] at hTC
+        obtain rfl := Option.some.inj hTC
+        exact readyThread_notBlockedOnReply _ hReadyC)
 
 /-- WS-RR RR3.24 (**the dispatch payoff**): every syscall
 `dispatchWithCapChecked` routes preserves `ipcInvariantFull`.  The
@@ -1296,8 +1318,17 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                                 notifId tid executingCore st hObjInv
                               rw [hWait] at h; exact h
                             rw [← hStep]
-                            exact writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _
-                              hObjInv1 hWaitInv
+                            exact completeSignalArm_donation_preserves_ipcInvariantFull _ hObjInv
+                              hWait
+                              (writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _
+                                hObjInv1 hWaitInv)
+                              (schedContextBindingBidirectional_of_consistent
+                                hPack.capOnly.schedContextLinks.binding hInv.donationOwnerValid)
+                              hInv.donationOwnerValid
+                              (fun tcb hTcb => by
+                                rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hTcb] at hTC
+                                obtain rfl := Option.some.inj hTC
+                                exact readyThread_notBlockedOnReply _ hReadyC)
               · simp only [notificationWaitCrossCoreDispatchChecked, hFlow, hBound,
                   ↓reduceIte] at hStep
                 cases hStep
@@ -1337,7 +1368,9 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                   obtain ⟨hFP, hRP, hB1⟩ :=
                     hPack.replyRecvSignalStage rid prevCaller replyBadge replyGrant epId hSy hTgt hRR
                   exact replyRecvCompletesSignalArm_preserves_ipcInvariantFull ctx tid prevCaller
-                    _ _ replyGrant executingCore st st' hInv hObjInv hBudgets hRF hFP hRP hB1 hStep
+                    _ _ replyGrant executingCore st st' hInv hObjInv hBudgets
+                    (schedContextBindingPair_of_consistent hPack.capOnly.schedContextLinks.binding
+                      hInv.donationOwnerValid) hRF hFP hRP hB1 hStep
                 rw [if_neg hSigR] at hStep
                 obtain ⟨hNoEdge1, hHolderDon1, hStackValid1, hOriginCoh1, hUnheldB1,
                     hCleanupStack1, hReady1, hBudgets1, hRidFresh1, hRetStage⟩ :=

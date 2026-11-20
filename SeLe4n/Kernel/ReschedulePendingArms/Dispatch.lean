@@ -11,6 +11,7 @@ import SeLe4n.Kernel.ReschedulePendingArms.Ipc
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.Lifecycle.Invariant.CleanupReservation
 import SeLe4n.Kernel.SlotConfinement.MemoryArms
+import SeLe4n.Kernel.IPC.Invariant.ReplyBindingPairFrame
 
 /-!
 # The checked dispatcher's own arms cover
@@ -1626,6 +1627,44 @@ theorem cancelReplyHolder_stepCovers (e : CoreId) (st : SystemState)
         (SystemState.updateTcb_scheduler _ _ _)),
       SystemState.updateTcb_preserves_objects_invExt _ holder _ h1Inv⟩
 
+/-- **seL4-MCS `maybeDonateSchedContext` covers**, on a state where the binding
+pair holds: the identity, or the bind's writes under seL4's guard
+(`schedContextBindPerform_stepCovers`). -/
+theorem maybeDonateSchedContext_stepCovers (e : CoreId) (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st) :
+    stepCovers e st (maybeDonateSchedContext st n tid) ∧
+      (maybeDonateSchedContext st n tid).objects.invExt :=
+  maybeDonateSchedContext_induct (fun a b => stepCovers e a b ∧ b.objects.invExt) st n tid
+    ⟨stepCovers_refl e st, hInv⟩
+    (fun vS vT _ hA => schedContextBindPerform_stepCovers st vS vT e hInv hBi hA)
+
+/-- **A completion's consumption, badge register and donation cover**, on a state
+where the binding pair holds: neither the consumption nor the register write
+moves a scheduling link, so the donation finds the pair as the completion was
+handed it. -/
+theorem completeSignalArm_consumed_stepCovers (e : CoreId) {ctx : LabelingContext}
+    {notifId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId} (n : SeLe4n.ObjId)
+    {st st1 : SystemState} {badge : SeLe4n.Badge} (hInv : st.objects.invExt)
+    (hBi : schedContextBindingBidirectional st)
+    (hW : notificationWaitCrossCoreDispatchChecked ctx notifId tid e st = (st1, .ok (some badge))) :
+    stepCovers e st (maybeDonateSchedContext (Architecture.writeReturnFrameToTcb st1 tid
+      (Architecture.badgeReturnFrame st1 tid badge)) n tid) ∧
+      (maybeDonateSchedContext (Architecture.writeReturnFrameToTcb st1 tid
+        (Architecture.badgeReturnFrame st1 tid badge)) n tid).objects.invExt := by
+  have hW' := notificationWaitCrossCoreDispatchChecked_ok_inner hW
+  obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
+    (notificationWaitCrossCoreDispatchChecked_stepCovers e hInv) hW
+  have hF : stepCovers e st1 (Architecture.writeReturnFrameToTcb st1 tid
+      (Architecture.badgeReturnFrame st1 tid badge)) ∧
+      (Architecture.writeReturnFrameToTcb st1 tid
+        (Architecture.badgeReturnFrame st1 tid badge)).objects.invExt :=
+    (writeReturnFrameToTcb_keyFrame st1 tid
+      (Architecture.badgeReturnFrame st1 tid badge) hSInv).stepCoversInv
+  refine stepCoversInv_trans (stepCovers_trans hS hF.1)
+    (maybeDonateSchedContext_stepCovers e _ n tid hF.2 ?_)
+  exact schedContextBindingBidirectional.of_bindingLinksAgree
+    (completeSignalArm_donationPre_schedLinkFrame hInv hW').binding hBi
+
 /-- A receive's busy-reply cancel covers. -/
 theorem cancelRecvBusyReply_stepCovers (e : CoreId) (ctx : LabelingContext)
     (tid : SeLe4n.ThreadId) (gate : SyscallGate) (decoded : SyscallDecodeResult)
@@ -1641,17 +1680,17 @@ theorem cancelRecvBusyReply_stepCovers (e : CoreId) (ctx : LabelingContext)
 covered**: the reply, then the wait's consumption and the badge register. -/
 theorem replyRecvCompletesSignalArm_stepCovers (e : CoreId) {ctx : LabelingContext}
     {tid prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool}
-    {st st' : SystemState} (hInv : st.objects.invExt)
+    {st st' : SystemState} (hInv : st.objects.invExt) (hP : schedContextBindingPair st)
     (h : replyRecvCompletesSignalArm ctx tid prevCaller label msg grant e st = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases h
   obtain ⟨hC, hCInv⟩ := replyTransferOnCoreChecked_stepCovers e hInv hR
   rcases hOr with rfl | ⟨st2, badge, _, _, hW, _, rfl⟩
   · exact ⟨hC, hCInv⟩
-  · obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
-      (notificationWaitCrossCoreDispatchChecked_stepCovers e hCInv) hW
-    exact stepCoversInv_trans (stepCovers_trans hC hS)
-      (writeReturnFrameToTcb_keyFrame _ _ _ hSInv).stepCoversInv
+  · -- seL4-MCS: the reply returns a donated context first, so the receive's
+    -- donation finds the binding pair the reply left.
+    exact stepCoversInv_trans hC (completeSignalArm_consumed_stepCovers e _ hCInv
+      (replyTransferOnCoreChecked_bindingPair hInv hP hR).1 hW)
 
 /-- A receive run on its busy-reply-cancelled state covers: the cancel, the
 dual-queue receive, the rendezvous hand-off and the two stagings.  The
@@ -1659,12 +1698,15 @@ dual-queue receive, the rendezvous hand-off and the two stagings.  The
 theorem receiveResolvedArm_cancelled_stepCovers (e : CoreId) {ctx : LabelingContext}
     {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {gate : SyscallGate}
     {epId : SeLe4n.ObjId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (hBi : schedContextBindingBidirectional st)
     (h : receiveResolvedArm ctx decoded gate tid epId e
       (cancelRecvBusyReply ctx tid gate decoded e st) = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold receiveResolvedArm at h
   obtain ⟨hC, hCInv⟩ := cancelRecvBusyReply_stepCovers e ctx tid gate decoded e st hInv
-  generalize cancelRecvBusyReply ctx tid gate decoded e st = stC at h hC hCInv
+  have hBiC := cancelRecvBusyReply_bidirectional (ctx := ctx) (tid := tid) (gate := gate)
+    (decoded := decoded) (ec := e) hInv hBi
+  generalize cancelRecvBusyReply ctx tid gate decoded e st = stC at h hC hCInv hBiC
   by_cases hSig : receiveCompletesSignal ctx stC tid = true
   · -- seL4-MCS `receiveIPC`: the bound notification is active, so the receive
     -- completes it -- the wait's consumption, then the badge register written.
@@ -1675,10 +1717,7 @@ theorem receiveResolvedArm_cancelled_stepCovers (e : CoreId) {ctx : LabelingCont
     simp only [hSig, ↓reduceIte] at h
     obtain ⟨st1, badge, hW, _, hPost⟩ := completeSignalArm_consumes hSig h
     subst hPost
-    obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
-      (notificationWaitCrossCoreDispatchChecked_stepCovers e hCInv) hW
-    exact stepCoversInv_trans (stepCovers_trans hC hS)
-      (writeReturnFrameToTcb_keyFrame _ _ _ hSInv).stepCoversInv
+    exact stepCoversInv_trans hC (completeSignalArm_consumed_stepCovers e _ hCInv hBiC hW)
   simp only [Bool.not_eq_true] at hSig
   by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC
       epId = true
@@ -1775,7 +1814,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
   case none.receive.object epId =>
     split at h
     · cases h
-    exact receiveResolvedArm_cancelled_stepCovers e hInv h
+    exact receiveResolvedArm_cancelled_stepCovers e hInv hB.bidirectional h
   case none.call.object epId =>
     split at h
     · rename_i hCall
@@ -1850,9 +1889,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     split at h
     · rename_i hW
       cases h
-      obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
-        (notificationWaitCrossCoreDispatchChecked_stepCovers e hInv) hW
-      exact stepCoversInv_trans hS (writeReturnFrameToTcb_keyFrame _ _ _ hSInv).stepCoversInv
+      exact completeSignalArm_consumed_stepCovers e _ hInv hB.bidirectional hW
     · rename_i hW
       cases h
       exact stepCovers_of_pair_eq
@@ -1862,15 +1899,16 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     split at h
     · cases h
     split at h
-    · exact receiveResolvedArm_cancelled_stepCovers e hInv h
+    · exact receiveResolvedArm_cancelled_stepCovers e hInv hB.bidirectional h
     -- the reply's resolution: refused, a reply with no caller (the receive
     -- runs, as on a skipped reply), or a caller to answer
     split at h
     · cases h
-    · exact receiveResolvedArm_cancelled_stepCovers e hInv h
+    · exact receiveResolvedArm_cancelled_stepCovers e hInv hB.bidirectional h
     repeat' split at h
     all_goals first | (cases h; done) | skip
-    · exact replyRecvCompletesSignalArm_stepCovers e hInv h
+    · exact replyRecvCompletesSignalArm_stepCovers e hInv
+        (schedContextBindingPair_of_consistent hB.2.binding hB.1.1.donationOwnerValid) h
     rename_i summ stR hRR
     cases h
     obtain ⟨hS, hSInv⟩ := endpointReplyRecvOnCore_stepCovers e hInv hRR
