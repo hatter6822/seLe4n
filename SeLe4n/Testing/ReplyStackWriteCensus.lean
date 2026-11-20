@@ -467,7 +467,11 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.bindNotificationSchedLink,
       "`{ sc with notificationCode := _ }` on the context, then the notification's `schedContextCode`; `scReply` is untouched")
   , (`SeLe4n.Kernel.unbindSchedContextNotification,
-      "`{ c with notificationCode := 0 }` on the context, then the notification's `schedContextCode`; `scReply` is untouched") ]
+      "`{ c with notificationCode := 0 }` on the context, then the notification's `schedContextCode`; `scReply` is untouched")
+  , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextBindNotification,
+      "frozen `{ sc with notificationCode := _ }` on the context, then the notification's `schedContextCode`; `scReply` is untouched")
+  , (`SeLe4n.Kernel.FrozenOps.frozenUnbindSchedContextNotification,
+      "frozen `{ sc with notificationCode := 0 }` on the context, then the notification's `schedContextCode`; `scReply` is untouched") ]
 
 /-- Where the derived frontier and the primitive list disagree.
 
