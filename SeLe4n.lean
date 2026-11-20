@@ -143,6 +143,10 @@ import SeLe4n.Kernel.Lifecycle.Invariant.CleanupReservation
 -- so without this line it would be outside every Tier 1 census's environment —
 -- the `v0.35.76` finding one file smaller.
 import SeLe4n.Kernel.SyscallSchedFootprint
+-- WS-SX SX8.3: the notification link's two-way agreement and its preservation by
+-- each writer of either word; no transition module imports it, so it is rooted
+-- here to sit inside every Tier 1 census's environment.
+import SeLe4n.Kernel.SchedContext.Invariant.NotificationLinkAgree
 -- WS-LS LS2.5: the per-transition scheduler footprints, each beside its
 -- transition, and the constructor every one of them is an instance of.
 import SeLe4n.Kernel.Scheduler.SchedFootprint

@@ -1641,11 +1641,61 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
         | _ => .error .objectNotFound
     | _ => .error .objectNotFound
 
+/-- WS-SX SX8.3: **frozen `SchedContext_Bind` on a notification capability**,
+the mirror of `schedContextBindNotification` (seL4-MCS's `schedContext_bindNtfn`):
+refused `objectNotFound` for an absent context or notification and
+`illegalState` when the context is already bound to a notification or the
+notification to a context, in the live order; otherwise each end names the
+other in its own slot. -/
+def frozenSchedContextBindNotification (scId ntfnId : SeLe4n.ObjId) : FrozenKernel Unit :=
+  fun st =>
+    match st.getObject? scId with
+    | some (.schedContext sc) =>
+      if sc.notificationCode != 0 then .error .illegalState else
+      match st.getObject? ntfnId with
+      | some (.notification n) =>
+        if n.schedContextCode != 0 then .error .illegalState else
+        match frozenWithObjectStored st scId
+            (.schedContext { sc with notificationCode := ntfnId.toNat + 1 }) with
+        | .error e => .error e
+        | .ok st1 =>
+          match frozenWithObjectStored st1 ntfnId
+              (.notification { n with schedContextCode := scId.toNat + 1 }) with
+          | .ok st2 => .ok ((), st2)
+          | .error e => .error e
+      | _ => .error .objectNotFound
+    | _ => .error .objectNotFound
+
+/-- WS-SX SX8.3: **frozen `schedContext_unbindNtfn`**, the mirror of
+`unbindSchedContextNotification`: the context's notification link cleared, and
+the notification's link to it when the notification names the context back
+(read before either write); the identity on a context bound to no
+notification. -/
+def frozenUnbindSchedContextNotification (st : FrozenSystemState) (scId : SeLe4n.ObjId) :
+    Except KernelError FrozenSystemState :=
+  match st.getObject? scId with
+  | some (.schedContext sc) =>
+    match sc.notificationCode with
+    | 0 => .ok st
+    | k + 1 =>
+      let ntfnId : SeLe4n.ObjId := ⟨k⟩
+      let ntfn? := match st.getObject? ntfnId with
+        | some (.notification n) => if n.schedContextCode == scId.toNat + 1 then some n else none
+        | _ => none
+      match frozenWithObjectStored st scId (.schedContext { sc with notificationCode := 0 }) with
+      | .error e => .error e
+      | .ok st1 =>
+        match ntfn? with
+        | some n => frozenWithObjectStored st1 ntfnId (.notification { n with schedContextCode := 0 })
+        | none => .ok st1
+  | _ => .ok st
+
 /-- Z8-H: Frozen SchedContext unbind — unbind a thread from a SchedContext.
 Mirrors `schedContextUnbind` in frozen state. No RunQueue or replenish queue
 manipulation (frozen phase uses fixed membership set). Clears bidirectional
-binding and, if the bound thread is current, clears current to force
-rescheduling.
+binding, then the context's notification link; the context of the current
+thread is refused `illegalState` (D18), and a context bound to no thread has
+its notification link cleared alone (WS-SX SX8.3).
 
 **AK8-H (WS-AK / DS-M02) — Transactional two-phase rewrite:** the previous
 implementation was non-transactional — on a failed TCB lookup AFTER the SC
@@ -1664,8 +1714,19 @@ def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
     match st.getObject? scId with
     | some (.schedContext sc) =>
       match sc.boundThread with
-      | none => .error .illegalState
+      -- WS-SX SX8.3: a context bound to no thread has its notification
+      -- unbound alone, and the invocation succeeds (seL4-MCS's
+      -- `invokeSchedContext_Unbind`, the live `schedContextUnbindAllOnCore`).
+      | none =>
+        match frozenUnbindSchedContextNotification st scId with
+        | .ok st' => .ok ((), st')
+        | .error e => .error e
       | some tid =>
+        -- WS-SX SX8.3 (D18's frozen sweep): seL4-MCS refuses the context of
+        -- the current thread (`sc->scTcb == ksCurThread`, `IllegalOperation`),
+        -- as the live `schedContextUnbindOnCore` does; the frozen
+        -- unbind-and-reschedule of that case is gone with the live one.
+        if st.scheduler.current == some tid then .error .illegalState else
         -- AK8-H Phase 1: Validate TCB lookup BEFORE any state mutation.
         match st.getTcb? tid with
         | some tcb =>
@@ -1681,9 +1742,6 @@ def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
           -- shape reaches here intact; one question must not have two answers.
           if tcb.schedContextBinding.isDonated then .error .illegalState else
           -- AK8-H Phase 2: Both lookups succeeded; apply all writes atomically.
-          let st0 := if (st.scheduler.current) == some tid then
-            { st with scheduler := { st.scheduler with current := none } }
-          else st
           -- **WS-HP HP10.4, frozen mirror (PR #897 review)**: and the origin,
           -- for the bind's reason in the other direction — the reservation stops
           -- being owned at all, so a recorded departure from ownership has no
@@ -1694,11 +1752,16 @@ def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
                                      donationOrigin := none }
           let updatedTcb := { tcb with
             scBindingScCode := 0, scBindingOwnerCode := 0 }
-          match frozenWithObjectStored st0 scId (.schedContext updatedSc) with
+          match frozenWithObjectStored st scId (.schedContext updatedSc) with
           | .error e => .error e
           | .ok st1 =>
             match frozenWithObjectStored st1 tid.toObjId (.tcb updatedTcb) with
-            | .ok st2 => .ok ((), st2)
+            | .ok st2 =>
+              -- WS-SX SX8.3: then the context's notification, as the live
+              -- `schedContextUnbindAllOnCore` unbinds it after the thread.
+              match frozenUnbindSchedContextNotification st2 scId with
+              | .ok st3 => .ok ((), st3)
+              | .error e => .error e
             | .error e => .error e
         | _ =>
           -- AK8-H: TCB missing or wrong variant — fail closed, no SC mutation.
