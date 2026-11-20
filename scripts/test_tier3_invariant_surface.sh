@@ -10439,6 +10439,8 @@ run_check "INVARIANT" rg -n '^        if schedContextReturnAdmitted st vS vT the
 run_check "INVARIANT" rg -n '^        schedContextReturnPerform st ⟨⟨sCode - 1⟩, hS⟩ ⟨tCode⟩$' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
 run_negative_check "INVARIANT" rg -n 'schedContextUnbindPerform' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
 run_check "INVARIANT" rg -n '^theorem maybeReturnSchedContext_runSlots($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+# The return's guard compiles on the link codes, so asking it allocates nothing.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem schedContextReturnAdmitted_eq_codes($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
 run_check "INVARIANT" rg -n '^theorem maybeReturnSchedContext_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/SchedContextArms.lean
 run_check "INVARIANT" rg -n '^theorem completeSignalArm_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem completeSignalArm_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -11299,6 +11301,8 @@ open SeLe4n.Kernel.Concurrency
 #check @maybeReturnSchedContext_objects_invExt
 #check @maybeReturnSchedContext_scheduler_frame
 #check @maybeReturnSchedContext_runSlots
+#check @schedContextReturnAdmittedCodes
+#check @schedContextReturnAdmitted_eq_codes
 #check @signalReturnContext?_purgeCores
 #check @signalReturnGuard_congr
 #check @signalReturnReplenishCores

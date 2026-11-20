@@ -489,6 +489,67 @@ conjunct, so this is seL4's guard on every reachable state. -/
       decide (sc.boundThread = some vT.val) &&
         decide (tcb.schedContextBinding = .bound (SeLe4n.SchedContextId.ofObjId vS.val))
 
+/-- A decided equality of naturals is their `==`. -/
+theorem nat_decide_eq_beq (a b : Nat) : decide (a = b) = (a == b) := by
+  cases h : (a == b) <;> simp_all
+
+/-- Whether a thread code names `t`, read on the code. -/
+theorem decide_ofOptCode_eq_some (c : Nat) (t : SeLe4n.ThreadId) :
+    decide (SeLe4n.ThreadId.ofOptCode c = some t) = (c == t.val + 1) := by
+  cases c with
+  | zero => simp [SeLe4n.ThreadId.ofOptCode]
+  | succ k =>
+    cases t with
+    | mk v =>
+      simp only [SeLe4n.ThreadId.ofOptCode, Option.some.injEq, SeLe4n.ThreadId.mk.injEq,
+        nat_decide_eq_beq]
+      cases h : (k == v) <;> simp_all
+
+/-- Whether a binding's codes stand for `.bound s`, read on the codes. -/
+theorem decide_ofCodes_eq_bound (a b : Nat) (s : SeLe4n.SchedContextId) :
+    decide (SchedContextBinding.ofCodes a b = .bound s) = (a == s.val + 1 && b == 0) := by
+  cases s
+  cases a with
+  | zero => simp [SchedContextBinding.ofCodes]
+  | succ k =>
+    cases b with
+    | succ o => simp [SchedContextBinding.ofCodes]
+    | zero =>
+      simp only [SchedContextBinding.ofCodes, SchedContextBinding.bound.injEq,
+        SeLe4n.SchedContextId.mk.injEq, nat_decide_eq_beq]
+      simp
+
+/-- **seL4's return guard, as compiled**: the same test read on the codes the
+two links are stored as (`boundThreadCode`, `scBindingScCode`,
+`scBindingOwnerCode`), so asking it builds no `Option` and no binding.  The
+guard as stated compares an `Option` and a `SchedContextBinding`, each built
+from its code, which allocates on every return that reaches it. -/
+@[inline] def schedContextReturnAdmittedCodes (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (vT : SeLe4n.ValidThreadId) : Bool :=
+  match st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vS.val) with
+  | none => false
+  | some sc =>
+    match st.getTcb? vT.val with
+    | none => false
+    | some tcb =>
+      sc.boundThreadCode == vT.val.val + 1 &&
+        (tcb.scBindingScCode == (SeLe4n.SchedContextId.ofObjId vS.val).val + 1 &&
+          tcb.scBindingOwnerCode == 0)
+
+/-- **The compiled guard is seL4's guard.** -/
+@[csimp] theorem schedContextReturnAdmitted_eq_codes :
+    @schedContextReturnAdmitted = @schedContextReturnAdmittedCodes := by
+  funext st vS vT
+  unfold schedContextReturnAdmitted schedContextReturnAdmittedCodes
+  cases st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vS.val) with
+  | none => rfl
+  | some sc =>
+    cases st.getTcb? vT.val with
+    | none => rfl
+    | some tcb =>
+      simp only [SchedContext.boundThread, TCB.schedContextBinding, decide_ofOptCode_eq_some,
+        decide_ofCodes_eq_bound]
+
 /-- **seL4's return guard, as the footprints read it**: the notification is
 bound to a context, the context names the thread and the thread holds it as its
 own binding (`schedContextReturnAdmitted`). -/
