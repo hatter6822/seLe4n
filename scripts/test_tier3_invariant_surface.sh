@@ -11207,6 +11207,7 @@ open SeLe4n.Kernel.Concurrency
 #check @footprintCoversWrites_of_cores_subset
 #check @interruptReplenishCores
 #check @schedContextBindPerform_lowEquivalent
+#check @schedContextBind_lowEquivalent
 #check @maybeDonateSchedContext_lowEquivalent
 #check @boundSignalHidden.woken
 #check @sendSignalOnCore_lowEquivalent

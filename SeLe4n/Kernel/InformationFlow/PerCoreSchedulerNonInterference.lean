@@ -1920,6 +1920,20 @@ theorem schedContextBindPerform_lowEquivalent (st : SystemState) (vS : SeLe4n.Va
           (runEnqueueOnCore_lowEquivalent _ _ vT.val _ hT)) hL2
       · exact hL2
 
+/-- **A successful `schedContextBind` is invisible on every core** when the
+context and the thread are hidden: its state is the perform's
+(`schedContextBind_ok_iff`), whose writes all land in hidden state
+(`schedContextBindPerform_lowEquivalent`). -/
+theorem schedContextBind_lowEquivalent {st st' : SystemState} {vS : SeLe4n.ValidObjId}
+    {vT : SeLe4n.ValidThreadId} (hInv : st.objects.invExt)
+    (hS : objectObservable ctx observer vS.val = false)
+    (hT : threadObservable ctx observer vT.val = false)
+    (hTo : objectObservable ctx observer vT.val.toObjId = false)
+    (h : SchedContextOps.schedContextBind vS vT st = .ok ((), st')) :
+    lowEquivalent_smp ctx observer st' st := by
+  obtain ⟨-, rfl⟩ := (SchedContextOps.schedContextBind_ok_iff st st' vS vT).mp h
+  exact schedContextBindPerform_lowEquivalent st vS vT hInv hS hT hTo
+
 /-- **seL4-MCS `maybeDonateSchedContext` is invisible on every core** when the
 receiver and the notification's bound context are hidden: the identity, or the
 bind's writes (`schedContextBindPerform_lowEquivalent`). -/
@@ -1958,15 +1972,13 @@ theorem boundSignalHidden.woken {st : SystemState} {n : SeLe4n.ObjId} {t : SeLe4
       obtain ⟨a, b, -⟩ := h.waiter ntfn t hN hW
       exact ⟨a, b⟩
 
-/-- **seL4-MCS `sendSignal` is invisible on every core** when what the
-bound-aware signal writes is hidden (`boundSignalHidden`) and so is the context
-bound to the notification: the wake (`notificationSignalBoundOnCore_lowEquivalent`),
-then the donation to the thread it woke, which `boundSignalHidden` hides, of
-the notification's context, which the wake keeps
-(`notificationSignalBoundOnCore_ntfnContextsAgree`). -/
+/-- **seL4-MCS `sendSignal` is invisible on every core** when what it writes
+is hidden (`boundSignalHidden`): the wake (`notificationSignalBoundOnCore_lowEquivalent`),
+then the donation to the thread it woke of the notification's context, both
+of which `boundSignalHidden` hides, the context read through the wake, which
+keeps it (`notificationSignalBoundOnCore_ntfnContextsAgree`). -/
 theorem sendSignalOnCore_lowEquivalent (n : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
-    (st : SystemState) (hInv : st.objects.invExt) (h : boundSignalHidden ctx observer st n)
-    (hS : ∀ s, notificationContext? st n = some s → objectObservable ctx observer s.toObjId = false) :
+    (st : SystemState) (hInv : st.objects.invExt) (h : boundSignalHidden ctx observer st n) :
     lowEquivalent_smp ctx observer (sendSignalOnCore n badge c st).1 st := by
   have hW := notificationSignalBoundOnCore_lowEquivalent ctx observer n badge c st hInv h
   refine sendSignalOnCore_induct (fun s => lowEquivalent_smp ctx observer s st) n badge c st hW
@@ -1977,7 +1989,7 @@ theorem sendSignalOnCore_lowEquivalent (n : SeLe4n.ObjId) (badge : SeLe4n.Badge)
   intro s hs
   rw [notificationContext?_congr (notificationSignalBoundOnCore_ntfnContextsAgree n badge c st hInv)]
     at hs
-  exact hS s hs
+  exact h.context s hs
 
 /-! ### WS-ZA ZA6.32: the interrupt entry -/
 
@@ -1989,14 +2001,11 @@ theorem setInterruptLineMask_lowEquivalent (st : SystemState) (line : Nat) (mask
 
 /-- **What the interrupt step writes, hidden**: at a line bound to a
 notification (`Architecture.irqBinding?`, read off the line's interrupt node
-slot), what the bound-aware signal to that notification writes, and the
-scheduling context bound to the notification, which seL4's `sendSignal`
-donates to the thread the signal wakes. -/
+slot), what seL4's `sendSignal` to that notification writes. -/
 def interruptStepHidden (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (line : Nat) : Prop :=
   ∀ ntfn badge, Architecture.irqBinding? st line = some (ntfn, badge) →
-    boundSignalHidden ctx observer st ntfn ∧
-      ∀ s, notificationContext? st ntfn = some s → objectObservable ctx observer s.toObjId = false
+    boundSignalHidden ctx observer st ntfn
 
 /-- **seL4's `handleInterrupt` is invisible on every core** when the signal it
 sends writes only hidden state: seL4's `sendSignal`
@@ -2011,8 +2020,7 @@ theorem handleInterruptOnCore_lowEquivalent (st : SystemState) (c : CoreId) (lin
     (fun s hs => lowEquivalent_smp_trans (setInterruptLineMask_lowEquivalent s line true) hs)
     (lowEquivalent_smp_refl st)
     (fun ntfn badge hN =>
-      sendSignalOnCore_lowEquivalent ntfn badge c st hInv (h ntfn badge hN).1
-        (h ntfn badge hN).2)
+      sendSignalOnCore_lowEquivalent ntfn badge c st hInv (h ntfn badge hN))
 
 /-- …and so is the raw step. -/
 theorem interruptEntryStep_lowEquivalent (st : SystemState) (coreId intId : UInt64)
