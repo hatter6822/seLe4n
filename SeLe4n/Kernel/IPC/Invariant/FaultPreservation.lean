@@ -19,6 +19,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInvariant
 import SeLe4n.Kernel.IPC.CrossCore.DispatchInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatchInvariant
 import SeLe4n.Kernel.IPC.Invariant.DispatchArmPreservation
+import SeLe4n.Kernel.IPC.Invariant.ReplySignalFrame
 
 /-!
 # WS-RR RR4.17/RR4.18 — the fault path preserves the IPC bundle
@@ -447,37 +448,6 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
                   simpa only [hOut] using
                     faultAbandonOnCore_preserves_ipcInvariantFull stR faulted
                       (faultAbandonCore stR faulted) hRepObj hRep
-
-/-- WS-RR RR4.18: and the reply preserves the object-store invariant. -/
-theorem faultReplyOnCore_preserves_objects_invExt
-    (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
-    (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)
-    (hObjInv : st.objects.invExt) :
-    (faultReplyOnCore replier faulted mi regs c st).1.objects.invExt := by
-  cases hTcb : st.getTcb? faulted with
-  | none => simpa only [faultReplyOnCore, hTcb] using hObjInv
-  | some tcb =>
-      cases hFault : tcb.pendingFault with
-      | none => simpa only [faultReplyOnCore, hTcb, hFault] using hObjInv
-      | some tf =>
-          have hRepObj := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier
-            faulted IpcMessage.empty c st hObjInv
-          rcases hStep : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st
-            with ⟨stR, res⟩
-          rw [hStep] at hRepObj
-          simp only at hRepObj
-          cases res with
-          | error e => simpa only [faultReplyOnCore, hTcb, hFault, hStep] using hObjInv
-          | ok sgi? =>
-              simp only [faultReplyOnCore, hTcb, hFault, hStep, faultReplyApplyOnCore]
-              cases hOut : decodeFaultReply tf.fault tf.context mi regs with
-              | restart frame =>
-                  simpa only [hOut] using
-                    applyFaultRestart_preserves_objects_invExt stR faulted frame hRepObj
-              | abandon =>
-                  simpa only [hOut] using
-                    faultAbandonOnCore_preserves_objects_invExt stR faulted
-                      (faultAbandonCore stR faulted) hRepObj
 
 -- ============================================================================
 -- WS-RM RM5.2 — the fault reply frames the donation chain

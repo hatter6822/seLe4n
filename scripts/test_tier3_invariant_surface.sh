@@ -4938,7 +4938,7 @@ run_check "INVARIANT" rg -n '^      exact hW \(callArm_savedRegsWrittenFree _ P 
 run_check "INVARIANT" rg -n '^    exact hW \(replyTransferOnCoreChecked_savedRegsWrittenFree P\.dequeued hRT hBNR hInv h\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      exact hW \(notificationSignalArm_savedRegsWrittenFree P hRT hBNR hSig\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      exact hW \(declassifySignalArm_savedRegsWrittenFree P hRT hBNR hSig\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
-run_check "INVARIANT" rg -n '^      exact hW \(notificationWaitArm_savedRegsWrittenFree _ P hN hWt\)\.2$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^      exact hW \(\(notificationWaitArm_savedRegsWrittenFree _ P hN hWt\)\.2\.donate _ _$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^  rw \[yieldChargeOnCore_currentOnCore hCharge, hCur\] at ht$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      \(applySyscallTaint_objectsAgreeOffTaint _ _ _\)\) t id\)\.trans$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^    \(\(E\.of_ipcFrame hF \(IpcFrame\.of_frame rfl fun _ => rfl\)\)\.arm hCur \(hNI tid hCur\)\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean

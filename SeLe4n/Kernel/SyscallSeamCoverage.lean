@@ -27,7 +27,6 @@ import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
 import SeLe4n.Kernel.InterruptEntry
 import SeLe4n.Kernel.IPC.Invariant.SignalDonationFrame
 import SeLe4n.Kernel.IPC.Invariant.ReplySignalFrame
-import SeLe4n.Kernel.ReschedulePendingArms.Ipc
 
 namespace SeLe4n.Kernel
 
@@ -242,6 +241,42 @@ theorem schedLockSet_replyRecvArmOnCore_coversTransfer (endpointId : SeLe4n.ObjI
   exact schedLockSet_replyRecvTransferOnCore_subset_arm endpointId receiver replyId prevCaller
     label msg grant e st _ hl
 
+/-- **The reply transfer keeps the object store's extension invariant**, on both
+of its branches (the fault answer, and the reply with its capability transfer
+and frame staging). -/
+theorem replyTransferOnCore_objects_invExt {replier callerTid : SeLe4n.ThreadId}
+    {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool}
+    {c : CoreId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : replyTransferOnCore replier callerTid mi regs msg grant c st = .ok ((), st')) :
+    st'.objects.invExt := by
+  unfold replyTransferOnCore at h
+  split at h
+  · have hF := faultReplyOnCore_preserves_objects_invExt replier callerTid mi regs c st hInv
+    revert h hF
+    generalize faultReplyOnCore replier callerTid mi regs c st = r
+    obtain ⟨s, res⟩ := r
+    cases res with
+    | error _ => intro h; cases h
+    | ok _ => intro h hF; cases h; exact hF
+  · have hE := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier callerTid msg c
+      st hInv
+    revert h hE
+    generalize endpointReplyCrossCoreDispatch replier callerTid msg c st = r
+    obtain ⟨s, res⟩ := r
+    cases res with
+    | error _ => intro h; cases h
+    | ok _ =>
+      intro h hE
+      simp only [] at h
+      cases hU : replyTransferCaps st replier callerTid grant s with
+      | error _ => rw [hU] at h; cases h
+      | ok p =>
+        obtain ⟨summary, sX⟩ := p
+        rw [hU] at h
+        cases h
+        exact stageDeliveredMessage_objects_invExt sX callerTid summary.capInfo
+          (receiveTransferCaps_objects_invExt hE hU)
+
 /-- **The reply-receive's donation cores are a superset of the donation's**: a
 reply that leaves the receive's test true (`receiveCompletesSignal`) found the
 receiver bound to a notification on the entry state too, since the reply keeps
@@ -296,13 +331,13 @@ theorem replyRecvCompletesSignalArm_coversWrites (ctx : LabelingContext)
     footprintCoversWrites S st st' := by
   obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases hStep
   have hK := notificationsAndBindingsKept.of_replyTransferOnCoreChecked hObjInv hR
-  have hObj1 := (replyTransferOnCoreChecked_stepCovers e hObjInv hR).2
   have hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs :=
     LockSet.ofList?_pairs hS ▸ schedFootprintOfCores_contains_objStore_write _ _
   rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx receiver prevCaller _ _ _ _ e
     st hFlow] at hR
   have hConf := replyTransferOnCore_confinedToCores receiver prevCaller _ _ msg grant e st st1
     hObjInv hR
+  have hObj1 := replyTransferOnCore_objects_invExt hObjInv hR
   have hRep : footprintCoversWrites S st st1 := by
     refine footprintCoversWrites_of_cores S _ _ st st1 (LockSet.ofList?_pairs hS)
       (fun d hd => ?_) (fun d hd => ?_)

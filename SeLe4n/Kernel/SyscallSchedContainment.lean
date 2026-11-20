@@ -261,11 +261,12 @@ theorem maybeDonateSchedContext_coversWrites (S : LockSet) (st : SystemState)
     footprintCoversWrites S st (maybeDonateSchedContext st n tid) := by
   cases hG : signalDonationGuard st n tid with
   | false =>
-    rw [maybeDonateSchedContext_of_guard_false hG]; exact footprintCoversWrites_refl S st
+    rw [maybeDonateSchedContext_of_guard_false hG]
+    exact footprintCoversWrites_of_scheduler_eq S hTable rfl
   | true =>
     have hHome := hCores (determineTargetCore st tid) (by simp [signalDonationCores, hG])
     rcases maybeDonateSchedContext_cases st n tid with e | ⟨vS, vT, rfl, -, hA, e⟩
-    · rw [e]; exact footprintCoversWrites_refl S st
+    · rw [e]; exact footprintCoversWrites_of_scheduler_eq S hTable rfl
     rw [e]
     have hConf := schedContextBindPerform_confinedToCores vS vT st hObjInv hA
     refine ⟨fun hAbsent => absurd hTable hAbsent, fun d hd => ?_, fun d hd => ?_⟩

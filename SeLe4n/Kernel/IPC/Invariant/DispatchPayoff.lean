@@ -792,7 +792,7 @@ private theorem receiveResolvedArm_cancelled_preserves_ipcInvariantFull
           (writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _ hObjInv1 hWaitInv)
           (schedContextBindingBidirectional_of_consistent hPack.capOnly.schedContextLinks.binding
             hInv.donationOwnerValid)
-          hInv.donationOwnerValid
+          hInv
           (fun tcb hTcb => by
             rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hTcb] at hTC
             obtain rfl := Option.some.inj hTC
@@ -927,7 +927,7 @@ theorem replyRecvCompletesSignalArm_preserves_ipcInvariantFull (ctx : LabelingCo
     exact completeSignalArm_donation_preserves_ipcInvariantFull _ hObj1
       (notificationWaitCrossCoreDispatchChecked_ok_inner hW)
       (writeReturnFrameToTcb_preserves_ipcInvariantFull st2 tid _ hObjInv2 hWaitInv)
-      hP1.1 hInv1.donationOwnerValid
+      hP1.1 hInv1
       (fun tcb hTcb => by
         rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hTcb] at hTC
         obtain rfl := Option.some.inj hTC
@@ -1324,7 +1324,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                                 hObjInv1 hWaitInv)
                               (schedContextBindingBidirectional_of_consistent
                                 hPack.capOnly.schedContextLinks.binding hInv.donationOwnerValid)
-                              hInv.donationOwnerValid
+                              hInv
                               (fun tcb hTcb => by
                                 rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hTcb] at hTC
                                 obtain rfl := Option.some.inj hTC

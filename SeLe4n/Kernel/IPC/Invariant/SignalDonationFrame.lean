@@ -165,15 +165,15 @@ theorem completeSignalArm_donationPre_objects_invExt {notifId : SeLe4n.ObjId}
 
 /-- **The completion's donation keeps the IPC bundle**, on the dispatch's
 pre-state facts: the bundle holds on the state the consumption and the badge
-register leave, the binding pair and the loan record hold on the state handed
-to the completion, and the receiver is not blocked on a reply there. -/
+register leave and on the state handed to the completion, where the binding
+pair holds and the receiver is not blocked on a reply. -/
 theorem completeSignalArm_donation_preserves_ipcInvariantFull {notifId : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st1 : SystemState}
     {badge : SeLe4n.Badge} (n : SeLe4n.ObjId) (hObjInv : st.objects.invExt)
     (h : notificationWaitOnCore notifId tid c st = (st1, .ok (some badge)))
     (hInv2 : ipcInvariantFull (Architecture.writeReturnFrameToTcb st1 tid
       (Architecture.badgeReturnFrame st1 tid badge)))
-    (hBi : schedContextBindingBidirectional st) (hD : donationOwnerValid st)
+    (hBi : schedContextBindingBidirectional st) (hInv : ipcInvariantFull st)
     (hNotReply : ∀ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) →
       ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt) :
     ipcInvariantFull (maybeDonateSchedContext (Architecture.writeReturnFrameToTcb st1 tid
@@ -182,7 +182,7 @@ theorem completeSignalArm_donation_preserves_ipcInvariantFull {notifId : SeLe4n.
   exact maybeDonateSchedContext_preserves_ipcInvariantFull _ n tid
     (completeSignalArm_donationPre_objects_invExt hObjInv h) hInv2
     (schedContextBindingBidirectional.of_bindingLinksAgree F.binding hBi)
-    (notDonationOwner_of_bindingLinksAgree F.binding hD hNotReply)
+    (notDonationOwner_of_bindingLinksAgree F.binding hInv.donationOwnerValid hNotReply)
 
 /-! ### The context each thread runs on and each context's thread
 
