@@ -103,8 +103,8 @@ inventory was written:
   error; a not-ready core that takes an EL0 abort halts
   (`halt_abort_before_lean_ready`) rather than returning a frame into the
   faulting instruction.
-- `SeLe4n/Kernel/FrozenOps/` — the 24 frozen operations mirroring the
-  live API; `SeLe4n/Kernel/CrossSubsystem.lean` +
+- `SeLe4n/Kernel/FrozenOps/` — the frozen operations, covering the
+  syscalls `frozenOpCoverage` lists (pinned by `frozenOpCoverage_count`); `SeLe4n/Kernel/CrossSubsystem.lean` +
   `CrossSubsystemPerCore*.lean` — cross-subsystem invariants.
 - `SeLe4n/Platform/` — `FFI.lean` (66 `@[extern]` declarations counted on the comment-free code view, the Lean ↔
   Rust bridge), `DeviceTree.lean` (FDT parsing), `Boot.lean`,
@@ -583,7 +583,7 @@ and its non-interference status are in
   - `Invariant/Helpers.lean` — shared NI proof infrastructure.
   - `Invariant/Operations.lean` — 80 NI preservation theorems covering >80% of
     kernel operations (WS-H9/H10 and subsequent workstreams).
-  - `Invariant/Composition.lean` — 35-constructor `NonInterferenceStep` inductive
+  - `Invariant/Composition.lean` — the `NonInterferenceStep` inductive
     (WS-J1-D: `syscallDecodeError`, `syscallDispatchHigh`;
     WS-K-G: `lifecycleRevokeDeleteRetype`);
     `composedNonInterference_trace`; `declassifyStore_NI`;

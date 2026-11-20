@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Segurança" /></a>
-  <img src="https://img.shields.io/badge/version-0.37.33-blue" alt="Versão" />
+  <img src="https://img.shields.io/badge/version-0.37.34-blue" alt="Versão" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licença" /></a>
 </p>
@@ -48,79 +48,153 @@
 
 ## O que é o seLe4n?
 
-O seLe4n é um microkernel construído do zero em Lean 4. Cada transição do kernel
-é uma função pura executável. Cada invariante é verificado por máquina pelo
-type-checker do Lean — zero `sorry`, zero `axiom`. Toda a superfície de provas
-compila para código nativo sem nenhuma prova admitida.
+O seLe4n é um micronúcleo construído do zero em Lean 4. Cada transição do
+núcleo é uma função pura executável, e cada invariante é verificado pelo núcleo
+do Lean: a superfície de provas de produção tem zero `sorry` e zero `axiom`. O
+mesmo código Lean é compilado para código nativo e ligado, com uma pequena
+camada de hardware em Rust, à imagem do núcleo que inicializa no alvo.
 
-O projeto preserva o modelo de segurança baseado em capabilities do seL4, ao mesmo
-tempo em que introduz melhorias arquiteturais possibilitadas pelo framework de
-provas do Lean 4:
+O projeto mantém o modelo de segurança baseado em capacidades do seL4 e, cada
+vez mais, a ABI do seL4 visível ao usuário, usando o Lean para provar mais
+sobre ela e endurecê-la onde o seL4 deixa uma lacuna. A especificação completa
+é [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md); os itens abaixo
+apontam para ela.
 
-### Escalonamento e garantias de tempo real
+### A ABI do seL4
 
-- **Objetos de desempenho composicionais** — tempo de CPU é um objeto de kernel de primeira classe. `SchedContext` encapsula budget, período, prioridade, deadline e domínio em um contexto de escalonamento reutilizável ao qual threads se vinculam via capabilities. O escalonamento CBS (Constant Bandwidth Server) oferece isolamento de banda comprovado (teorema `cbs_bandwidth_bounded`)
-- **Servidores passivos** — servidores ociosos emprestam o `SchedContext` do cliente durante IPC, consumindo zero CPU quando não estão atendendo. O invariante `donationChainAcyclic` impede cadeias de doação circulares
-- **Timeouts de IPC orientados por budget** — operações bloqueantes são limitadas pelo budget do chamador. Ao expirar, threads são removidas da fila do endpoint e reenfileiradas
-- **Protocolo de Herança de Prioridade** — propagação transitiva de prioridade com ausência de deadlock verificada por máquina (`blockingAcyclic`) e profundidade de cadeia limitada. Previne inversão de prioridade ilimitada
-- **Teorema de latência limitada** — limite WCRT verificado por máquina: `WCRT = D × L_max + N × (B + P)`, provado em 8 módulos de liveness cobrindo monotonicidade de budget, temporização de reabastecimento, semântica de yield, exaustão de banda e rotação de domínio
+- **As chamadas de sistema do seL4-MCS** — as onze chamadas MCS (`Call` …
+  `Yield`), numeradas em `x7` como o seL4 as numera; a operação é escolhida a
+  partir da chamada, do tipo da capacidade invocada e do rótulo da mensagem
+  (`Syscall.selectOperation`), como no seL4
+- **As cargas de erro e de falta do seL4** — `LookupFault`, o quadro de erro na
+  ordem de registradores de mensagem do seL4, faltas de capacidade no lado
+  receptor, o estado `Restart`, argumentos de capacidade passados como
+  capacidades extras, e a guarda mantida na capacidade com um único
+  `resolveAddressBits`
+- O restante do trabalho na ABI do seL4 (as invocações restantes, faltas de
+  timeout, direitos por invocação, o estado Running por núcleo) é o fluxo de
+  trabalho ativo WS-SX; suas linhas estão em
+  [`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`](../../../docs/planning/SEL4_ABI_FIDELITY_PLAN.md)
 
-### Estruturas de dados e IPC
+### Escalonamento e tempo real
 
-- **Caminhos críticos O(1) baseados em hash** — todos os armazenamentos de objetos, filas de execução, slots de CNode, mapeamentos de VSpace e filas de IPC utilizam tabelas hash Robin Hood formalmente verificadas com invariantes `distCorrect`, `noDupKeys` e `probeChainDominant`
-- **IPC intrusivo com fila dupla** — back-pointers por thread para enfileiramento, desenfileiramento e remoção no meio da fila em O(1)
-- **Árvore de derivação de capabilities encadeada pelos slots** — cada slot guarda os links para o pai, o primeiro filho e os irmãos (o banco de mapeamento do seL4), com prova de que concordam com a árvore; transferência de slots, revogação e travessia de descendentes seguem os links
+- **Contextos de escalonamento como capacidades** — o tempo de CPU é um objeto
+  do núcleo. Um `SchedContext` guarda o orçamento, o período e as recargas do
+  seL4-MCS, é configurado pela autoridade `SchedControl` do núcleo de CPU e
+  vinculado a threads por capacidades; seus invariantes (`budgetWithinBounds`,
+  `refillsConserved`) fazem parte do pacote de nível superior. O isolamento de
+  largura de banda é `refill_window_bound`: um contexto não executa mais que
+  seu orçamento em nenhuma janela de um período, a garantia de janela
+  deslizante do seL4-MCS. Um escalonador hierárquico de largura de banda
+  constante com raiz EDF, que acrescenta a recíproca (um servidor admitido
+  recebe seu orçamento a cada janela), é o fluxo de trabalho planejado WS-CB
+  ([`docs/planning/HIERARCHICAL_CBS_PLAN.md`](../../../docs/planning/HIERARCHICAL_CBS_PLAN.md))
+- **Servidores passivos** — um servidor executa no contexto de escalonamento
+  que seu cliente doa durante o IPC; `donationChainAcyclic` exclui doações
+  circulares
+- **Timeouts de IPC guiados pelo orçamento** — uma thread bloqueada cujo
+  orçamento se esgota é removida da fila do seu endpoint (`timeoutThread`)
+- **Herança de prioridade** — propagação transitiva com ausência de ciclos de
+  bloqueio verificada por máquina (`blockingAcyclic`) e um teorema de inversão
+  limitada (`pip_bounded_inversion`)
+- **Latência limitada** — um limite paramétrico do tempo de resposta no pior
+  caso, `wcrtBound D L_max N B P = D × L_max + N × (B + P)`
+  (`bounded_scheduling_latency_exists`, com uma forma por núcleo), provado
+  sobre os módulos de `SeLe4n/Kernel/Scheduler/Liveness/`
+
+### Objetos do núcleo e memória
+
+- **Objetos talhados em memória untyped** — o retype talha um objeto na região
+  de uma capacidade untyped, e o reset de um untyped é o do seL4. Mover as
+  células de cada objeto talhado para a própria memória do seu untyped é o
+  fluxo de trabalho ativo WS-UC
+- **Uma entrada do núcleo não aloca nada** — as entradas compiladas de chamada
+  de sistema, falta e interrupção não fazem alocação no heap; o talho de um
+  retype aloca apenas as células do novo objeto. O portão de heap do QEMU
+  (`scripts/test_qemu_heap_allocations_per_syscall.sh`) mede cada entrada na
+  imagem inicializada e falha em qualquer outra contagem
+- **Estruturas de dados** — o armazém de objetos e os mapeamentos de VSpace são
+  tabelas hash Robin Hood verificadas (`RHTable`, com `distCorrect`,
+  `noDupKeys` e `probeChainDominant`); um CNode é um vetor plano de `2^radix`
+  slots, como no seL4; filas de execução, filas de endpoint e de notificação e
+  esperas de resposta são encadeadas pelos TCBs, cada uma com uma fila
+  abstrata fantasma cuja concordância com os elos é provada
+- **Árvore de derivação de capacidades encadeada pelos slots** — cada slot
+  guarda seus elos de pai, primeiro filho e irmão (o banco de mapeamento do
+  seL4), com concordância com a árvore provada; remoção, revogação (o laço
+  `cteRevoke` do seL4) e transferência de slot percorrem os elos
+- **VSpace** — tabelas de páginas ARMv8 com W^X imposto por quadro e
+  verificações de tipo de memória que recusam um alias sem cache da RAM
 
 ### Segurança e verificação
 
-- **Fluxo de informação com N domínios** — políticas de fluxo parametrizadas que generalizam a partição binária do seL4. Fronteira de enforcement com 44 entradas e provas de não-interferência por operação (indutivo `NonInterferenceStep` com 35 construtores), além de uma trilha de auditoria de desclassificação limitada e fail-closed, com um leitor controlado por capability
-- **Camada de provas compostas** — `proofLayerInvariantBundle` compõe 16 pacotes de invariantes de subsistema (núcleo do escalonador + extensões CBS, capabilities, IPC + acoplamento IPC–escalonador, ciclo de vida, serviço, VSpace, inter-subsistema, consistência de TLB, consistência de waiters de notificação, limites de pending/ack do TLB shootdown, invalidação de TLB por núcleo e coerência de I-cache, e o limite do log de auditoria de desclassificação) em uma única obrigação de nível superior verificada desde o boot até todas as operações
-- **Arquitetura de estado em três fases** — fase de construção com testemunhas de invariante flui para uma representação imutável congelada com equivalência de lookup provada. 24 operações congeladas espelham a API ativa
-- **Conjunto completo de operações** — todas as operações do seL4 implementadas com preservação de invariantes, incluindo suspensão/retomada de threads, gerenciamento de prioridades (setPriority/setMCPriority) e configuração do buffer de IPC
-- **Registro de serviços** — registro e consulta de serviços no nível do kernel por meio do seu endpoint, anotados no próprio endpoint (extensão seLe4n, não presente no seL4); a política de dependências fica, como no seL4, com um gerenciador de serviços em espaço de usuário
+- **Fluxo de informação com N domínios** — políticas de fluxo parametrizadas
+  que generalizam a partição de dois domínios do seL4; uma fronteira de
+  aplicação cujo tamanho é fixado por `enforcementBoundaryExtended_count` (e
+  por `enforcementBoundaryPerCore_count` para a fronteira por núcleo); um
+  teorema de não interferência para cada construtor de `NonInterferenceStep`; e
+  uma trilha de auditoria de desclassificação limitada e fail-closed, lida por
+  uma capacidade `auditTrail`
+- **Camada de provas composta** — `proofLayerInvariantBundle`
+  (`SeLe4n/Kernel/Architecture/Invariant.lean`) une o pacote de invariantes de
+  cada subsistema (escalonador, capacidades, IPC e seu acoplamento com o
+  escalonador, ciclo de vida, registro de serviços, VSpace, entre subsistemas,
+  coerência de TLB e de cache de instruções, shootdown de TLB, log de auditoria
+  de desclassificação, e a concordância de cada estrutura encadeada com seu
+  fantasma) em uma única obrigação mantida desde a inicialização em cada
+  operação
+- **Multinúcleo** — quatro núcleos com escalonamento por núcleo, IPC e
+  despertar entre núcleos, e shootdown de TLB; o fluxo de trabalho de
+  conclusão de SMP (WS-SM) está em andamento
+- **Estado em três fases** — uma fase de construção com testemunhas de
+  invariantes congela numa representação imutável com equivalência de busca
+  provada; as operações congeladas cobrem as chamadas que `frozenOpCoverage`
+  lista, fixadas por `frozenOpCoverage_count`
+- **Registro de serviços** — uma extensão do seLe4n, ausente no seL4: serviços
+  são registrados e consultados por uma capacidade `serviceRegistry` e
+  anotados no endpoint que os atende; a política de dependências fica, como no
+  seL4, a cargo de um gerenciador de serviços em espaço de usuário
 
 ## Estado atual
 
-<!-- As métricas abaixo são sincronizadas de docs/codebase_map.json → seção readme_sync.
-     Regenere com: ./scripts/generate_codebase_map.py --pretty
-     Fonte da verdade: docs/codebase_map.json (readme_sync) -->
-
-<!-- MAINTAINERS/TRANSLATORS: the three metric rows below (production LoC,
-     test LoC, proved declarations) are WRITTEN by
-     scripts/sync_translated_metrics.py from docs/codebase_map.json.  A hand
-     edit is overwritten on the next sync.  To reword a label, a preposition
-     or an inflected noun, edit that script's TARGETS table in the same
-     commit: it matches the surrounding literals verbatim and fails loudly
-     when they change, so it can never quietly stop syncing this file. -->
+<!-- Metrics below are synced from docs/codebase_map.json → readme_sync section.
+     Regenerate with: ./scripts/generate_codebase_map.py --pretty
+     Source of truth: docs/codebase_map.json (readme_sync) -->
 
 | Atributo | Valor |
 |----------|-------|
-| **Versão** | `0.37.33` |
+| **Versão** | `0.37.34` |
 | **Toolchain Lean** | `v4.28.0` |
 | **LoC Lean de produção** | 652.027 em 646 arquivos |
 | **LoC Lean de testes** | 91.310 em 70 suítes de testes |
 | **Declarações provadas** | 24.838 declarações de teorema/lema (zero sorry/axiom) |
-| **Crates Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) em 80 arquivos-fonte |
+| **Crates Rust** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (wrappers em espaço de usuário), `sele4n-hal` (a camada de hardware do núcleo) e o teste de host `sele4n-lean-boundary` |
 | **Hardware alvo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Integração com o hardware** | **H3 CONCLUÍDO** (WS-AG AG1–AG10): HAL, GIC-400, temporizador, tabelas de páginas ARMv8, ponte FFI, boot no QEMU |
-| **Auditoria canônica** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — auditoria abrangente pré-1.0 (202 achados; remediados por WS-AK AK1–AK10; arquivada) |
-| **Auditoria mais recente** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — auditoria de prontidão pré-1.0 realizada após o encerramento do WS-AN (sucede a agora arquivada [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md), remediada por WS-AN AN0–AN12). WS-RC R0..R5 LANDED em v0.31.2; WS-RC R6..R14 absorvidos no WS-SM conforme o mapeamento de absorção SM0.Q.1 (ver [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Plano de workstream ativo: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |
-| **Mapa do codebase** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventário de declarações legível por máquina |
+| **Trilhas de boot** | Cada trilha QEMU inicializa primeiro a imagem do Raspberry Pi 5 na máquina `raspi5b` do [rpi5_machine](https://github.com/hatter6822/rpi5_machine) e depois a imagem `virt` na máquina `virt` do QEMU |
+| **Fluxos de trabalho** | Estado de cada fluxo de trabalho aberto: [`docs/agent_guide/WORKSTREAM_CONTEXT.md`](../../../docs/agent_guide/WORKSTREAM_CONTEXT.md); índice e registro de dívidas: [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) |
+| **Auditorias** | [`docs/audits/`](../../../docs/audits/README.md) — os artefatos da auditoria ativa; as anteriores estão arquivadas |
+| **Mapa do código** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventário de declarações legível por máquina |
 
-As métricas são derivadas do código por `./scripts/generate_codebase_map.py`
-e armazenadas em [`docs/codebase_map.json`](../../../docs/codebase_map.json) sob a
-chave `readme_sync`. Atualize toda a documentação de uma só vez com
-`./scripts/sync_documentation_metrics.sh` (somente verificação: `--check`);
-`./scripts/report_current_state.py` continua sendo uma verificação cruzada manual.
+As métricas são derivadas do código por `./scripts/generate_codebase_map.py` e
+guardadas em [`docs/codebase_map.json`](../../../docs/codebase_map.json) na chave
+`readme_sync`. Atualize toda a documentação junto com
+`./scripts/sync_documentation_metrics.sh` (apenas verificação: `--check`).
 
 ## Início rápido
 
 ```bash
-./scripts/setup_lean_env.sh   # instalar o toolchain do Lean
-lake build                     # compilar todos os módulos
-lake exe sele4n                # executar o harness de rastreamento
-./scripts/test_smoke.sh        # validar (higiene + build + trace + estado negativo)
+./scripts/setup_lean_env.sh    # install the Lean toolchain and test dependencies
+source ~/.elan/env
+lake build                     # build the default targets
+lake exe sele4n                # run the trace harness
+./scripts/test_smoke.sh        # hygiene + build + trace + negative-state
 ```
+
+`lake build` constrói apenas o que `Main.lean` e os executáveis de teste
+alcançam; antes de fazer commit de um arquivo `.lean`, construa seu módulo pelo
+nome (`lake build <Module.Path>`). O fluxo completo está em
+[`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md), e as regras que todo
+colaborador segue estão em [`CLAUDE.md`](../../../CLAUDE.md).
 
 ## Documentação
 
@@ -131,118 +205,128 @@ lake exe sele4n                # executar o harness de rastreamento
 | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventário legível por máquina | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — cada item adiado, com um responsável |
 | [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — mecânica de contribuição | [`CHANGELOG.md`](../../../CHANGELOG.md) — histórico de versões |
 
-[`docs/codebase_map.json`](../../../docs/codebase_map.json) é a fonte da verdade
-para métricas do projeto. Alimenta o [seLe4n.org](https://github.com/hatter6822/hatter6822.github.io)
-e é atualizado automaticamente no merge via CI. Regenere com
-`./scripts/generate_codebase_map.py --pretty`.
-
 ## Comandos de validação
 
 ```bash
-./scripts/test_fast.sh      # Tier 0+1: higiene + build
-./scripts/test_smoke.sh     # + Tier 2: trace + estado negativo
-./scripts/test_full.sh      # + Tier 3: âncoras de superfície de invariantes + Lean #check
-NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4: determinismo noturno
+./scripts/test_fast.sh      # Tier 0+1: hygiene + build
+./scripts/test_smoke.sh     # + Tier 2: trace + negative-state
+./scripts/test_full.sh      # + Tier 3: invariant surface anchors + Lean #check
+NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4: nightly determinism
 
-./scripts/test_rust.sh                 # Rust no host: build, testes, fmt, clippy
-./scripts/test_aarch64_cross_build.sh  # o alvo real do HAL do kernel
+./scripts/test_rust.sh                 # host Rust: build, tests, fmt, clippy
+./scripts/test_aarch64_cross_build.sh  # the kernel HAL's real target
+
+./scripts/test_qemu.sh                 # boot the image on raspi5b, then on virt
+./scripts/test_qemu.sh --lean-kernel   # the Lean-linked images, on four cores
 ```
 
-Execute pelo menos `test_smoke.sh` antes de qualquer PR. Execute `test_full.sh`
-ao alterar teoremas, invariantes ou âncoras de documentação.
+Execute pelo menos `test_smoke.sh` antes de qualquer PR, e `test_full.sh` ao
+alterar teoremas, invariantes ou âncoras de Tier 3. Um tier para na primeira
+verificação que falha; passe `--continue` para coletar todas as falhas de uma
+vez.
 
-Após qualquer alteração em `rust/`, execute **as duas** trilhas de Rust. Elas
-cobrem metades disjuntas do mesmo crate: no host, todo bloco
-`#[cfg(target_arch = "aarch64")]` é removido antes que o rustc ou o clippy o
-vejam, então a trilha do host não enxerga os 67 blocos condicionados por cfg,
-os 57 pontos de `asm!` nem as quatro fontes `.S` que compõem a maior parte do
-HAL. A trilha cruzada compila `sele4n-hal` para
-`aarch64-unknown-none-softfloat` nos dois perfis, verifica se as fontes em
-assembly foram de fato montadas, executa o lint no alvo cruzado e desmonta os
-objetos de release para provar que eles não usam nenhum registrador FP/SIMD —
-o kernel não usa ponto flutuante e intercepta FP/SIMD em EL1 desde a sua
-primeira instrução — e é uma compilação, não um `cargo check`, porque o
-`check` para antes da geração de código e nunca chega a um montador.
+Depois de qualquer mudança em `rust/`, execute **as duas** trilhas Rust. Elas
+cobrem metades disjuntas da mesma crate: no host, cada bloco
+`#[cfg(target_arch = "aarch64")]` é removido antes que rustc ou clippy o vejam,
+então a trilha de host não vê os blocos condicionais, os sítios `asm!` nem as
+fontes `.S` que formam a maior parte do HAL. A trilha cruzada constrói
+`sele4n-hal` para `aarch64-unknown-none-softfloat` nos dois perfis, verifica
+que as fontes assembly foram montadas, analisa o alvo cruzado e desmonta os
+objetos de release para provar que não usam nenhum registrador FP/SIMD. As
+trilhas QEMU constroem o rpi5_machine no commit fixado em
+`scripts/setup_rpi5_machine.sh` no primeiro uso; uma trilha sem um
+pré-requisito é reportada como NOT RUN em vez de aprovada. A lista completa
+está em [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md).
 
 ## Arquitetura
 
-O seLe4n é organizado como contratos em camadas, cada um com transições executáveis
-e provas de preservação de invariantes verificadas por máquina:
+O seLe4n é organizado em contratos em camadas, cada um com transições
+executáveis e provas de preservação de invariantes verificadas por máquina:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
+│   Kernel entries  (syscall, fault, interrupt, per-core timer tick)   │
 │                 Kernel API  (SeLe4n/Kernel/API.lean)                 │
 ├──────────────┬─────────────┬────────────┬───────────┬────────────────┤
 │  Scheduler   │  Capability │    IPC     │ Lifecycle │  Service (ext) │
-│   RunQueue   │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
-│ SchedContext │             │  Donation  │           │                │
+│   RunQueue   │  CSpace/CDT │  DualQueue │  Untyped  │    Registry    │
+│ SchedContext │             │  Donation  │  Retype   │                │
 ├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
 │         Information Flow  (Policy, Projection, Enforcement)          │
 ├──────────────────────────────────────────────────────────────────────┤
-│     Architecture  (VSpace, VSpaceBackend, Adapter, Assumptions)      │
+│  Architecture  (VSpace, page tables, TLB/cache, decode, trap frame)  │
+├──────────────────────────────────────────────────────────────────────┤
+│         Concurrency  (locks, memory model, per-core state)           │
 ├──────────────────────────────────────────────────────────────────────┤
 │                     Model  (Object, State, CDT)                      │
 ├──────────────────────────────────────────────────────────────────────┤
 │             Foundations  (Prelude, Machine, MachineConfig)           │
 ├──────────────────────────────────────────────────────────────────────┤
-│        Platform  (Contract, Sim, RPi5)  ← production bindings        │
+│    Platform  (Contract, Boot, Sim, RPi5, QemuVirt)  ← bindings       │
+├──────────────────────────────────────────────────────────────────────┤
+│        Rust HAL  (rust/sele4n-hal: boot, traps, GIC, MMU, SMP)       │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-## Layout dos fontes
+## Estrutura do código-fonte
 
 ```
 SeLe4n/
 ├── Prelude.lean                 Typed identifiers, KernelM monad
 ├── Machine.lean                 Register file, memory, timer
-├── Model/                       Object types, SystemState, builder/freeze phases
+├── Model/                       Object types, SystemState, slot links, builder/freeze phases
 ├── Kernel/
 │   ├── API.lean                 Unified public API + apiInvariantBundle
-│   ├── Scheduler/               RunQueue, EDF selection, PriorityInheritance, Liveness (WCRT)
-│   ├── Capability/              CSpace ops + CDT tracking, authority/preservation proofs
-│   ├── IPC/                     Dual-queue endpoints, donation, timeouts, structural invariants
-│   ├── Lifecycle/               Object retype, thread suspend/resume
+│   ├── *Entry.lean              Compiled syscall, fault, interrupt and per-core timer entries
+│   ├── Scheduler/               Run queues, selection, priority inheritance, liveness (WCRT)
+│   ├── SchedContext/            Scheduling contexts, seL4-MCS refills, SchedControl
+│   ├── Capability/              CSpace operations, derivation tree, authority proofs
+│   ├── IPC/                     Dual-queue endpoints, donation, timeouts, cross-core IPC
+│   ├── Lifecycle/               Untyped retype and reset, thread suspend/resume
 │   ├── Service/                 Service registry and its invariants
-│   ├── Architecture/            VSpace (W^X), TLB model, register/syscall decode
+│   ├── Architecture/            VSpace (W^X), page tables, TLB/cache models, decode, trap frame
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
+│   ├── Concurrency/             Lock model, memory model, per-core runtime
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
-│   ├── RadixTree/               CNode radix tree (O(1) flat array)
-│   ├── SchedContext/            CBS budget engine, replenishment queue, priority management
+│   ├── RadixTree/               CNode radix view and its bridge to the slot array
 │   ├── FrozenOps/               Frozen-state operations + commutativity proofs
 │   └── CrossSubsystem.lean      Cross-subsystem invariant composition
 ├── Platform/
-│   ├── Contract.lean            PlatformBinding typeclass + BootVSpaceRootEntry
-│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState).
-│   │                            installBootVSpaceRoot threads canonical boot VSpace
-│   │                            through bootFromPlatformChecked (WS-RC R3).
+│   ├── Contract.lean            PlatformBinding typeclass and boundary contracts
+│   ├── Boot.lean, Boot/         Boot sequence: root server, initial threads, IRQ nodes
+│   ├── FFI.lean                 The Lean side of the HAL boundary
 │   ├── Sim/                     Simulation platform (permissive contracts for testing)
-│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO).
-│                                VSpaceBoot.lean holds the canonical W^X-compliant
-│                                boot VSpaceRoot (production-wired since WS-RC R3).
-├── Testing/                     Test harness, state builder, invariant checks
+│   ├── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO, boot VSpace)
+│   └── QemuVirt/                QEMU `virt` binding and boot entry
+├── Testing/                     Test harness, state builder, invariant checks, censuses
 Main.lean                        Executable entry point
-tests/                           Suítes de testes executáveis + fixtures
+tests/                           Executable test suites + fixtures
+rust/                            sele4n-types, sele4n-abi, sele4n-sys, sele4n-hal, sele4n-lean-boundary
 ```
 
 Cada subsistema segue a **separação Operations/Invariant**: transições em
-`Operations.lean`, provas em `Invariant.lean`. O `apiInvariantBundle` unificado
-agrega todos os invariantes de subsistema em uma única obrigação de prova. Para o
-inventário completo por arquivo, consulte [`docs/codebase_map.json`](../../../docs/codebase_map.json).
+`Operations.lean`, provas em `Invariant.lean`. O `apiInvariantBundle`
+unificado agrega todos os invariantes dos subsistemas numa única obrigação de
+prova. O mapa de subsistemas é [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md)
+§5; para o inventário completo por arquivo, veja
+[`docs/codebase_map.json`](../../../docs/codebase_map.json).
 
 ## Comparação com o seL4
 
 | Característica | seL4 | seLe4n |
 |----------------|------|--------|
-| **Escalonamento** | Servidor esporádico em C (MCS) | CBS com teorema `cbs_bandwidth_bounded` verificado por máquina; `SchedContext` como objeto de kernel controlado por capabilities |
-| **Servidores passivos** | Doação de SchedContext via C | Doação verificada com invariante `donationChainAcyclic` |
-| **IPC** | Fila de endpoint com lista encadeada simples | Fila dupla intrusiva com remoção no meio da fila em O(1); timeouts orientados por budget |
-| **Fluxo de informação** | Partição binária alto/baixo | Política configurável com N domínios, fronteira de enforcement com 44 entradas (contagem fixada por `enforcementBoundaryExtended_count`), provas de NI por operação e trilha de auditoria controlada por capability para cada desclassificação autorizada |
-| **Herança de prioridade** | PIP em C (branch MCS) | PIP transitivo verificado por máquina com ausência de deadlock e limite WCRT paramétrico |
-| **Latência limitada** | Sem limite WCRT formal | `WCRT = D × L_max + N × (B + P)` provado em 8 módulos de liveness |
-| **Armazenamento de objetos** | Listas encadeadas e arrays | Tabelas hash Robin Hood verificadas (`RHTable`/`RHSet`) com caminhos críticos O(1) |
-| **Gerenciamento de serviços** | Ausente no kernel | Registro de serviços vinculado a endpoints; política de dependências em espaço de usuário |
-| **Provas** | Isabelle/HOL, pós-hoc | Type-checker do Lean 4, co-localizadas com transições — zero sorry/axiom (contagem de declarações provadas na tabela [Estado atual](#estado-atual)) |
-| **Plataforma** | HAL em nível C | Typeclass `PlatformBinding` com contratos de fronteira tipados |
+| **ABI de chamadas de sistema** | Chamadas MCS, rótulos de invocação, cargas de erro e de falta | As mesmas: as onze chamadas do seL4-MCS com sua numeração, invocações escolhidas por rótulo e as cargas de erro do seL4; as invocações restantes são linhas do WS-SX |
+| **Escalonamento** | Contextos de escalonamento MCS com recargas de servidor esporádico | O mesmo motor de recargas, com seu invariante de conservação e o limite de um orçamento por janela (`refill_window_bound`) provados; um CBS hierárquico com raiz EDF está planejado (WS-CB) |
+| **Servidores passivos** | Doação de SchedContext | Doação verificada com o invariante `donationChainAcyclic` |
+| **IPC** | Uma fila por endpoint, encadeada pelos TCBs | Uma fila de envio e uma de recepção por endpoint, ambas encadeadas pelos TCBs com remoção em O(1) de qualquer posição; timeouts guiados pelo orçamento |
+| **Fluxo de informação** | Partição binária alto/baixo | Política configurável de N domínios, fronteira de aplicação fixada por `enforcementBoundaryExtended_count`, um teorema de não interferência por passo, e uma trilha de auditoria controlada por capacidade para cada desclassificação autorizada |
+| **Herança de prioridade** | Fora do núcleo | PIP transitivo verificado por máquina, sem ciclos de bloqueio, com um teorema de inversão limitada |
+| **Latência limitada** | Sem limite WCRT formal | `wcrtBound D L_max N B P = D × L_max + N × (B + P)`, provado sobre os módulos de vivacidade |
+| **Armazém de objetos** | Objetos em endereços físicos | Tabelas hash Robin Hood verificadas (`RHTable`/`RHSet`); CNodes são vetores planos de slots como no seL4 |
+| **Mapeamento de memória** | W^X não imposto pelo núcleo | W^X imposto por quadro como invariante; verificações de tipo de memória recusam um alias sem cache da RAM |
+| **Gerenciamento de serviços** | Fora do núcleo | Registro de serviços controlado por capacidade no endpoint; política de dependências em espaço de usuário |
+| **Provas** | Isabelle/HOL, sobre o C por refinamento | Lean 4, junto às transições executáveis; zero sorry/axiom (contagem na tabela acima) |
+| **Plataforma** | HAL em nível de C | Typeclass `PlatformBinding` com contratos de fronteira tipados e um HAL em Rust |
 
 ## Licença e atribuições de terceiros
 
