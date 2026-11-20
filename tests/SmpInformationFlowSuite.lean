@@ -4791,8 +4791,8 @@ private def runCoreSetAlgebraChecks : IO Unit := do
   -- made it a live arm.  Neither half holds now — both receive-shaped arms reach
   -- the WithCaps form — so the live-arm claim moved to that entry and the bare
   -- transition became a below-API one, like `.endpointReply` beside it.
-  assertBool "the bound signal and the WithCaps receive are both live arms"
-    (decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .notificationSignalBound = true) &&
+  assertBool "seL4's sendSignal and the WithCaps receive are both live arms"
+    (decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .sendSignalDispatch = true) &&
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReceiveDualWithCaps = true))
   -- NEGATIVE: and the bare receive cannot carry the claim as well, which is what
   -- would happen if a later cut added the WithCaps entry without demoting it.
