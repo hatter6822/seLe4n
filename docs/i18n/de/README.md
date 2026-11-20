@@ -48,203 +48,286 @@
 
 ## Was ist seLe4n?
 
-seLe4n ist ein Mikrokernel, der von Grund auf in Lean 4 entwickelt wurde. Jeder
-Kernel-Übergang ist eine ausführbare reine Funktion. Jede Invariante wird
-maschinell durch den Lean-Typprüfer verifiziert — null `sorry`, null `axiom`.
-Die gesamte Beweisoberfläche kompiliert zu nativem Code ohne zugelassene Beweise.
+seLe4n ist ein Mikrokernel, der von Grund auf in Lean 4 gebaut ist. Jeder
+Kernel-Übergang ist eine ausführbare reine Funktion, und jede Invariante wird
+vom Lean-Kernel geprüft: Die produktive Beweisoberfläche enthält null `sorry`
+und null `axiom`. Derselbe Lean-Code wird zu nativem Code kompiliert und
+zusammen mit einer kleinen Hardwareschicht in Rust zum Kernel-Image gelinkt,
+das auf dem Zielsystem bootet.
 
-Das Projekt bewahrt das fähigkeitsbasierte Sicherheitsmodell von seL4 und
-führt zugleich architektonische Verbesserungen ein, die durch das
-Lean-4-Beweissystem ermöglicht werden:
+Das Projekt behält das capability-basierte Sicherheitsmodell von seL4 und
+zunehmend auch dessen für Nutzer sichtbare ABI bei, beweist mit Lean mehr
+darüber und härtet es dort, wo seL4 eine Lücke lässt. Die vollständige
+Spezifikation ist [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md); die
+folgenden Punkte verweisen darauf.
 
-### Scheduling und Echtzeitgarantien
+### Die ABI von seL4
 
-- **Komponierbare Leistungsobjekte** — CPU-Zeit ist ein erstklassiges Kernel-Objekt. `SchedContext` kapselt Budget, Periode, Priorität, Deadline und Domäne in einen wiederverwendbaren Scheduling-Kontext, an den sich Threads über Capabilities binden. CBS-Scheduling (Constant Bandwidth Server) bietet bewiesene Bandbreitenisolation (Theorem `cbs_bandwidth_bounded`)
-- **Passive Server** — untätige Server leihen sich den `SchedContext` des Clients während IPC, verbrauchen null CPU-Zeit wenn sie nicht aktiv bedienen. Die Invariante `donationChainAcyclic` verhindert zirkuläre Spendenketten
-- **Budgetgesteuerte IPC-Timeouts** — blockierende Operationen sind durch das Budget des Aufrufers begrenzt. Bei Ablauf werden Threads aus der Endpoint-Queue herausgelöst und erneut eingereiht
-- **Priority-Inheritance-Protokoll** — transitive Prioritätspropagation mit maschinengeprüfter Deadlock-Freiheit (`blockingAcyclic`) und beschränkter Kettentiefe. Verhindert unbegrenzte Prioritätsinversion
-- **Theorem für beschränkte Latenz** — maschinengeprüfte WCRT-Schranke: `WCRT = D × L_max + N × (B + P)`, bewiesen über 8 Liveness-Module zu Budgetmonotonie, Replenishment-Timing, Yield-Semantik, Banderschöpfung und Domänenrotation
+- **Die Systemaufrufe von seL4-MCS** — die elf MCS-Aufrufe (`Call` … `Yield`),
+  in `x7` so nummeriert wie in seL4; die Operation wird aus dem Aufruf, dem Typ
+  der aufgerufenen Capability und dem Nachrichtenlabel gewählt
+  (`Syscall.selectOperation`), wie in seL4
+- **Die Fehler- und Fault-Nutzlasten von seL4** — `LookupFault`, der
+  Fehlerrahmen in der Message-Register-Reihenfolge von seL4,
+  Capability-Faults auf der Empfangsseite, der Zustand `Restart`,
+  Capability-Argumente als zusätzliche Capabilities und der Guard in der
+  Capability mit einem einzigen `resolveAddressBits`
+- Der Rest der seL4-ABI-Arbeit (die verbleibenden Invocations,
+  Timeout-Faults, Rechte pro Invocation, der Running-Zustand pro Kern) ist der
+  aktive Workstream WS-SX; seine Zeilen stehen in
+  [`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`](../../../docs/planning/SEL4_ABI_FIDELITY_PLAN.md)
 
-### Datenstrukturen und IPC
+### Scheduling und Echtzeit
 
-- **O(1)-hashbasierte Hotpaths** — alle Object Stores, Run Queues, CNode Slots, VSpace-Mappings und IPC-Queues verwenden formal verifizierte Robin-Hood-Hashtabellen mit `distCorrect`-, `noDupKeys`- und `probeChainDominant`-Invarianten
-- **Intrusive Dual-Queue-IPC** — Rückzeiger pro Thread für O(1)-Einreihung, -Entnahme und -Entfernung aus der Warteschlangenmitte
-- **Durch die Slots verketteter Capability-Ableitungsbaum** — jeder Slot hält Eltern-, Erstkind- und Geschwister-Links (die Mapping-Datenbank von seL4), bewiesen übereinstimmend mit dem Baum; Slot-Transfer, Widerruf und Nachfahrendurchlauf folgen den Links
+- **Scheduling-Kontexte als Capabilities** — CPU-Zeit ist ein Kernel-Objekt.
+  Ein `SchedContext` hält Budget, Periode und Refills von seL4-MCS, wird über
+  die `SchedControl`-Autorität des Kerns konfiguriert und über Capabilities an
+  Threads gebunden; seine Invarianten (`budgetWithinBounds`,
+  `refillsConserved`) gehören zum obersten Bündel. Die Bandbreitenisolation
+  ist `refill_window_bound`: Ein Kontext läuft in keinem Fenster einer Periode
+  länger als sein Budget, die Sliding-Window-Garantie von seL4-MCS. Ein
+  hierarchischer Constant-Bandwidth-Scheduler mit EDF-Wurzel, der die
+  Umkehrung ergänzt (ein zugelassener Server erhält sein Budget in jedem
+  Fenster), ist der geplante Workstream WS-CB
+  ([`docs/planning/HIERARCHICAL_CBS_PLAN.md`](../../../docs/planning/HIERARCHICAL_CBS_PLAN.md))
+- **Passive Server** — ein Server läuft auf dem Scheduling-Kontext, den sein
+  Client während der IPC spendet; `donationChainAcyclic` schließt zirkuläre
+  Spenden aus
+- **Budgetgesteuerte IPC-Timeouts** — ein blockierter Thread mit erschöpftem
+  Budget wird aus der Warteschlange seines Endpoints entfernt (`timeoutThread`)
+- **Prioritätsvererbung** — transitive Weitergabe mit maschinell geprüfter
+  Freiheit von Blockierungszyklen (`blockingAcyclic`) und einem Theorem zur
+  beschränkten Inversion (`pip_bounded_inversion`)
+- **Beschränkte Latenz** — eine parametrische Schranke für die
+  Worst-Case-Antwortzeit, `wcrtBound D L_max N B P = D × L_max + N × (B + P)`
+  (`bounded_scheduling_latency_exists`, mit einer Form pro Kern), bewiesen über
+  die Module in `SeLe4n/Kernel/Scheduler/Liveness/`
+
+### Kernel-Objekte und Speicher
+
+- **Objekte aus Untyped-Speicher geschnitten** — Retype schneidet ein Objekt
+  aus der Region einer Untyped-Capability, und das Zurücksetzen eines Untyped
+  ist das von seL4. Die Zellen jedes geschnittenen Objekts in den eigenen
+  Speicher seines Untyped zu verlegen, ist der aktive Workstream WS-UC
+- **Ein Kernel-Eintritt alloziert nichts** — die kompilierten Systemaufruf-,
+  Fault- und Interrupt-Einträge machen keine Heap-Allokation; das Schneiden
+  eines Retype alloziert nur die Zellen des neuen Objekts. Das QEMU-Heap-Gate
+  (`scripts/test_qemu_heap_allocations_per_syscall.sh`) misst jeden Eintrag
+  auf dem gebooteten Image und schlägt bei jeder anderen Zahl fehl
+- **Datenstrukturen** — Objektspeicher und VSpace-Mappings sind verifizierte
+  Robin-Hood-Hashtabellen (`RHTable`, mit `distCorrect`, `noDupKeys` und
+  `probeChainDominant`); ein CNode ist ein flaches Array aus `2^radix` Slots,
+  wie in seL4; Run-Queues, Endpoint- und Notification-Warteschlangen und
+  Reply-Wartende sind über die TCBs verkettet, jeweils mit einer abstrakten
+  Geister-Warteschlange, deren Übereinstimmung mit den Verweisen bewiesen ist
+- **Über die Slots verketteter Capability-Ableitungsbaum** — jeder Slot hält
+  seine Verweise auf Eltern, erstes Kind und Geschwister (die Mapping-Datenbank
+  von seL4), bewiesen übereinstimmend mit dem Baum; Löschen, Widerruf (die
+  `cteRevoke`-Schleife von seL4) und Slot-Transfer laufen über die Verweise
+- **VSpace** — ARMv8-Seitentabellen mit W^X pro Frame und
+  Speichertyp-Prüfungen, die einen ungecachten Alias von RAM ablehnen
 
 ### Sicherheit und Verifikation
 
-- **N-Domänen-Informationsfluss** — parametrisierte Flussrichtlinien, die seL4s binäre Partitionierung verallgemeinern. 44-Einträge-Durchsetzungsgrenze mit Nichteinmischungsbeweisen pro Operation (35-Konstruktor-Induktive `NonInterferenceStep`) sowie ein beschränkter, fail-closed Deklassifizierungs-Audit-Trail mit Capability-gesichertem Leser
-- **Komponierte Beweisschicht** — `proofLayerInvariantBundle` komponiert 16 Subsystem-Invariantenbündel (Scheduler-Kern + CBS-Erweiterungen, Capability, IPC + IPC-Scheduler-Kopplung, Lifecycle, Service, VSpace, Cross-Subsystem, TLB-Konsistenz, Notification-Waiter-Konsistenz, Pending/Ack-Schranken des TLB-Shootdowns, TLB-Invalidierung pro Kern und I-Cache-Kohärenz sowie die Schranke des Deklassifizierungs-Audit-Logs) zu einer einzigen übergeordneten Beweisverpflichtung, verifiziert vom Boot durch alle Operationen
-- **Dreiphasen-Zustandsarchitektur** — Builder-Phase mit Invariantenzeugen fließt in eine eingefrorene unveränderliche Darstellung mit bewiesener Lookup-Äquivalenz. 24 eingefrorene Operationen spiegeln die Live-API wider
-- **Vollständiger Operationssatz** — alle seL4-Operationen implementiert mit Invariantenerhaltung, bis hin zu Thread-Suspend/-Resume, Prioritätsverwaltung (setPriority/setMCPriority) und Konfiguration des IPC-Puffers
-- **Service-Registry** — Kernel-seitige Registrierung und Suche von Diensten über ihren Endpunkt, auf dem Endpunkt selbst vermerkt (seLe4n-Erweiterung, nicht in seL4); Abhängigkeitsrichtlinien liegen wie in seL4 bei einem Dienstmanager im Userspace
+- **Informationsfluss mit N Domänen** — parametrisierte Flussrichtlinien, die
+  die Zwei-Domänen-Partition von seL4 verallgemeinern; eine
+  Durchsetzungsgrenze, deren Länge `enforcementBoundaryExtended_count` festlegt
+  (und `enforcementBoundaryPerCore_count` für die Grenze pro Kern); ein
+  Nichtinterferenz-Theorem für jeden Konstruktor von `NonInterferenceStep`;
+  und ein beschränkter, fail-closed Audit-Pfad für Deklassifizierungen, gelesen
+  über eine `auditTrail`-Capability
+- **Zusammengesetzte Beweisschicht** — `proofLayerInvariantBundle`
+  (`SeLe4n/Kernel/Architecture/Invariant.lean`) verbindet das
+  Invariantenbündel jedes Subsystems (Scheduler, Capabilities, IPC und seine
+  Kopplung an den Scheduler, Lebenszyklus, Service-Registry, VSpace,
+  subsystemübergreifend, TLB- und Instruktionscache-Kohärenz, TLB-Shootdown,
+  Deklassifizierungs-Auditlog und die Übereinstimmung jeder verketteten
+  Struktur mit ihrem Geist) zu einer einzigen Verpflichtung, die vom Boot an
+  durch jede Operation getragen wird
+- **Mehrkern** — vier Kerne mit Scheduling pro Kern, kernübergreifender IPC und
+  Aufwecken sowie TLB-Shootdown; der SMP-Abschluss-Workstream (WS-SM) läuft
+- **Dreiphasiger Zustand** — eine Builder-Phase mit Invariantenzeugen friert
+  in eine unveränderliche Darstellung mit bewiesener Lookup-Äquivalenz ein; die
+  eingefrorenen Operationen decken die Systemaufrufe ab, die
+  `frozenOpCoverage` aufführt, festgelegt durch `frozenOpCoverage_count`
+- **Service-Registry** — eine Erweiterung von seLe4n, nicht in seL4: Dienste
+  werden über eine `serviceRegistry`-Capability registriert und gesucht und am
+  bedienenden Endpoint vermerkt; die Abhängigkeitsrichtlinie bleibt, wie in
+  seL4, einem Service-Manager im Userspace überlassen
 
 ## Aktueller Stand
 
-<!-- Metriken sind synchronisiert aus docs/codebase_map.json → readme_sync.
-     Regenerieren mit: ./scripts/generate_codebase_map.py --pretty
-     Primärquelle: docs/codebase_map.json (readme_sync) -->
+<!-- Metrics below are synced from docs/codebase_map.json → readme_sync section.
+     Regenerate with: ./scripts/generate_codebase_map.py --pretty
+     Source of truth: docs/codebase_map.json (readme_sync) -->
 
-<!-- MAINTAINERS/TRANSLATORS: the three metric rows below (production LoC,
-     test LoC, proved declarations) are WRITTEN by
-     scripts/sync_translated_metrics.py from docs/codebase_map.json.  A hand
-     edit is overwritten on the next sync.  To reword a label, a preposition
-     or an inflected noun, edit that script's TARGETS table in the same
-     commit: it matches the surrounding literals verbatim and fails loudly
-     when they change, so it can never quietly stop syncing this file. -->
-
-| Eigenschaft | Wert |
-|-------------|------|
+| Attribut | Wert |
+|----------|------|
 | **Version** | `0.37.34` |
 | **Lean-Toolchain** | `v4.28.0` |
 | **Produktions-LoC (Lean)** | 652.027 über 646 Dateien |
 | **Test-LoC (Lean)** | 91.310 über 70 Testsuiten |
 | **Bewiesene Deklarationen** | 24.838 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
-| **Rust-Crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) über 80 Quelldateien |
+| **Rust-Crates** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (Userspace-Wrapper), `sele4n-hal` (die Hardwareschicht des Kernels) und der Host-Test `sele4n-lean-boundary` |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Hardware-Anbindung** | **H3 ABGESCHLOSSEN** (WS-AG AG1–AG10): HAL, GIC-400, Timer, ARMv8-Seitentabellen, FFI-Brücke, QEMU-Boot |
-| **Kanonisches Audit** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — umfassendes Pre-1.0-Audit (202 Befunde; behoben durch WS-AK AK1–AK10; archiviert) |
-| **Letztes Audit** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — Pre-1.0-Bereitschaftsaudit nach dem WS-AN-Abschluss (Nachfolger des inzwischen archivierten [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md), behoben durch WS-AN AN0–AN12). WS-RC R0..R5 LANDED bei v0.31.2; WS-RC R6..R14 gemäß der SM0.Q.1-Absorptionszuordnung in WS-SM aufgegangen (siehe [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Aktiver Workstream-Plan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |
-| **Codebase-Karte** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — maschinenlesbare Deklarationsinventur |
+| **Boot-Lanes** | Jede QEMU-Lane bootet zuerst das Raspberry-Pi-5-Image auf der Maschine `raspi5b` von [rpi5_machine](https://github.com/hatter6822/rpi5_machine), dann das `virt`-Image auf QEMUs `virt` |
+| **Workstreams** | Stand jedes offenen Workstreams: [`docs/agent_guide/WORKSTREAM_CONTEXT.md`](../../../docs/agent_guide/WORKSTREAM_CONTEXT.md); Index und Schuldenregister: [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) |
+| **Audits** | [`docs/audits/`](../../../docs/audits/README.md) — die Artefakte des aktiven Audits; frühere Audits sind archiviert |
+| **Codebase-Karte** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — maschinenlesbares Deklarationsinventar |
 
-Die Metriken werden durch `./scripts/generate_codebase_map.py` aus der Codebasis
-abgeleitet und unter dem `readme_sync`-Schlüssel in
-[`docs/codebase_map.json`](../../../docs/codebase_map.json) gespeichert.
-Aktualisieren Sie die gesamte Dokumentation gemeinsam mit
-`./scripts/sync_documentation_metrics.sh` (nur Prüfung: `--check`);
-`./scripts/report_current_state.py` bleibt eine manuelle Gegenprüfung.
+Die Metriken werden von `./scripts/generate_codebase_map.py` aus dem Code
+abgeleitet und in [`docs/codebase_map.json`](../../../docs/codebase_map.json) unter dem
+Schlüssel `readme_sync` gespeichert. Aktualisieren Sie die gesamte
+Dokumentation gemeinsam mit `./scripts/sync_documentation_metrics.sh` (nur
+prüfen: `--check`).
 
 ## Schnellstart
 
 ```bash
-./scripts/setup_lean_env.sh   # Lean-Toolchain installieren
-lake build                     # alle Module kompilieren
-lake exe sele4n                # Trace-Harness ausführen
-./scripts/test_smoke.sh        # validieren (Hygiene + Build + Trace + Negative-State)
+./scripts/setup_lean_env.sh    # install the Lean toolchain and test dependencies
+source ~/.elan/env
+lake build                     # build the default targets
+lake exe sele4n                # run the trace harness
+./scripts/test_smoke.sh        # hygiene + build + trace + negative-state
 ```
+
+`lake build` baut nur, was `Main.lean` und die Test-Executables erreichen; bauen
+Sie vor dem Commit einer `.lean`-Datei ihr Modul namentlich
+(`lake build <Module.Path>`). Der vollständige Ablauf steht in
+[`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md), die Regeln für alle Mitwirkenden
+in [`CLAUDE.md`](../../../CLAUDE.md).
 
 ## Dokumentation
 
-| Einstieg | Dann |
-|----------|------|
-| [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — Arbeitsablauf, Validierung, PR-Checkliste | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — Spezifikation und Meilensteine |
-| [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — vollständiges Handbuch | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — seL4-Referenzsemantik |
-| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — maschinenlesbare Inventur | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — jeder zurückgestellte Punkt, mit einem Verantwortlichen |
-| [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — Beitragsmechanismen | [`CHANGELOG.md`](../../../CHANGELOG.md) — Versionshistorie |
-
-[`docs/codebase_map.json`](../../../docs/codebase_map.json) ist die Primärquelle
-für Projektmetriken. Sie speist [seLe4n.org](https://github.com/hatter6822/hatter6822.github.io)
-und wird bei Merge automatisch via CI aktualisiert. Regenerieren mit
-`./scripts/generate_codebase_map.py --pretty`.
+| Hier beginnen | Danach |
+|---------------|--------|
+| [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) — Ablauf, Validierung, PR-Checkliste | [`docs/spec/SELE4N_SPEC.md`](../../../docs/spec/SELE4N_SPEC.md) — Spezifikation und Meilensteine |
+| [`docs/gitbook/README.md`](../../../docs/gitbook/README.md) — vollständiges Handbuch | [`docs/spec/SEL4_SPEC.md`](../../../docs/spec/SEL4_SPEC.md) — Referenzsemantik von seL4 |
+| [`docs/codebase_map.json`](../../../docs/codebase_map.json) — maschinenlesbares Inventar | [`docs/REGISTERED_DEBT.md`](../../../docs/REGISTERED_DEBT.md) — jeder aufgeschobene Punkt, mit Verantwortlichem |
+| [`CONTRIBUTING.md`](../../../CONTRIBUTING.md) — Ablauf von Beiträgen | [`CHANGELOG.md`](../../../CHANGELOG.md) — Versionsgeschichte |
 
 ## Validierungsbefehle
 
 ```bash
-./scripts/test_fast.sh      # Tier 0+1: Hygiene + Build
-./scripts/test_smoke.sh     # + Tier 2: Trace + Negative-State
-./scripts/test_full.sh      # + Tier 3: Invariantenoberflächenanker + Lean #check
-NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4: nächtlicher Determinismus
+./scripts/test_fast.sh      # Tier 0+1: hygiene + build
+./scripts/test_smoke.sh     # + Tier 2: trace + negative-state
+./scripts/test_full.sh      # + Tier 3: invariant surface anchors + Lean #check
+NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # + Tier 4: nightly determinism
 
-./scripts/test_rust.sh                 # Host-Rust: Build, Tests, fmt, clippy
-./scripts/test_aarch64_cross_build.sh  # das eigentliche Ziel des Kernel-HAL
+./scripts/test_rust.sh                 # host Rust: build, tests, fmt, clippy
+./scripts/test_aarch64_cross_build.sh  # the kernel HAL's real target
+
+./scripts/test_qemu.sh                 # boot the image on raspi5b, then on virt
+./scripts/test_qemu.sh --lean-kernel   # the Lean-linked images, on four cores
 ```
 
-Führen Sie mindestens `test_smoke.sh` vor jedem PR aus. Führen Sie `test_full.sh`
-aus, wenn Sie Theoreme, Invarianten oder Dokumentationsanker ändern.
+Führen Sie vor jedem PR mindestens `test_smoke.sh` aus und `test_full.sh`, wenn
+Sie Theoreme, Invarianten oder Tier-3-Anker ändern. Ein Tier stoppt bei seiner
+ersten fehlschlagenden Prüfung; mit `--continue` sammeln Sie alle Fehler in
+einem Durchlauf.
 
-Führen Sie nach jeder Änderung unter `rust/` **beide** Rust-Lanes aus. Sie
-decken disjunkte Hälften desselben Crates ab: Auf dem Host wird jeder
+Nach jeder Änderung unter `rust/` führen Sie **beide** Rust-Lanes aus. Sie
+decken disjunkte Hälften derselben Crate ab: Auf dem Host wird jeder
 `#[cfg(target_arch = "aarch64")]`-Block entfernt, bevor rustc oder clippy ihn
-sieht, sodass die Host-Lane die 67 cfg-geschützten Blöcke, 57 `asm!`-Stellen
-und vier `.S`-Quellen nicht sehen kann, die den Großteil des HAL ausmachen. Die
-Cross-Lane baut `sele4n-hal` für `aarch64-unknown-none-softfloat` in beiden
-Profilen, prüft, dass die Assembly-Quellen tatsächlich assembliert wurden,
-lintet das Cross-Target und disassembliert die Release-Objekte, um zu beweisen,
-dass sie kein FP/SIMD-Register verwenden — der Kernel ist FP-frei und fängt
-FP/SIMD ab seiner ersten Instruktion auf EL1 ab —, und sie ist ein Build statt
-eines `cargo check`, weil `check` vor der Codegenerierung anhält und nie einen
-Assembler erreicht.
+sehen, sodass die Host-Lane die bedingten Blöcke, `asm!`-Stellen und
+`.S`-Quellen nicht sieht, die den Großteil der HAL ausmachen. Die Cross-Lane
+baut `sele4n-hal` für `aarch64-unknown-none-softfloat` in beiden Profilen,
+prüft, dass die Assembler-Quellen wirklich assembliert wurden, lintet das
+Cross-Ziel und disassembliert die Release-Objekte, um zu beweisen, dass sie
+kein FP/SIMD-Register verwenden. Die QEMU-Lanes bauen rpi5_machine beim ersten
+Einsatz an dem in `scripts/setup_rpi5_machine.sh` festgelegten Commit; eine
+Lane, der eine Voraussetzung fehlt, meldet NOT RUN statt eines Erfolgs. Die
+vollständige Liste steht in [`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md).
 
 ## Architektur
 
-seLe4n ist als geschichtete Verträge organisiert, jeweils mit ausführbaren
-Übergängen und maschinengeprüften Invariantenerhaltungsbeweisen:
+seLe4n ist als geschichtete Verträge organisiert, jeder mit ausführbaren
+Übergängen und maschinell geprüften Beweisen der Invariantenerhaltung:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
+│   Kernel entries  (syscall, fault, interrupt, per-core timer tick)   │
 │                 Kernel API  (SeLe4n/Kernel/API.lean)                 │
 ├──────────────┬─────────────┬────────────┬───────────┬────────────────┤
 │  Scheduler   │  Capability │    IPC     │ Lifecycle │  Service (ext) │
-│   RunQueue   │  CSpace/CDT │  DualQueue │  Retype   │  Orchestration │
-│ SchedContext │             │  Donation  │           │                │
+│   RunQueue   │  CSpace/CDT │  DualQueue │  Untyped  │    Registry    │
+│ SchedContext │             │  Donation  │  Retype   │                │
 ├──────────────┴─────────────┴────────────┴───────────┴────────────────┤
 │         Information Flow  (Policy, Projection, Enforcement)          │
 ├──────────────────────────────────────────────────────────────────────┤
-│     Architecture  (VSpace, VSpaceBackend, Adapter, Assumptions)      │
+│  Architecture  (VSpace, page tables, TLB/cache, decode, trap frame)  │
+├──────────────────────────────────────────────────────────────────────┤
+│         Concurrency  (locks, memory model, per-core state)           │
 ├──────────────────────────────────────────────────────────────────────┤
 │                     Model  (Object, State, CDT)                      │
 ├──────────────────────────────────────────────────────────────────────┤
 │             Foundations  (Prelude, Machine, MachineConfig)           │
 ├──────────────────────────────────────────────────────────────────────┤
-│        Platform  (Contract, Sim, RPi5)  ← production bindings        │
+│    Platform  (Contract, Boot, Sim, RPi5, QemuVirt)  ← bindings       │
+├──────────────────────────────────────────────────────────────────────┤
+│        Rust HAL  (rust/sele4n-hal: boot, traps, GIC, MMU, SMP)       │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-## Quelltextstruktur
+## Quellcode-Struktur
 
 ```
 SeLe4n/
 ├── Prelude.lean                 Typed identifiers, KernelM monad
 ├── Machine.lean                 Register file, memory, timer
-├── Model/                       Object types, SystemState, builder/freeze phases
+├── Model/                       Object types, SystemState, slot links, builder/freeze phases
 ├── Kernel/
 │   ├── API.lean                 Unified public API + apiInvariantBundle
-│   ├── Scheduler/               RunQueue, EDF selection, PriorityInheritance, Liveness (WCRT)
-│   ├── Capability/              CSpace ops + CDT tracking, authority/preservation proofs
-│   ├── IPC/                     Dual-queue endpoints, donation, timeouts, structural invariants
-│   ├── Lifecycle/               Object retype, thread suspend/resume
+│   ├── *Entry.lean              Compiled syscall, fault, interrupt and per-core timer entries
+│   ├── Scheduler/               Run queues, selection, priority inheritance, liveness (WCRT)
+│   ├── SchedContext/            Scheduling contexts, seL4-MCS refills, SchedControl
+│   ├── Capability/              CSpace operations, derivation tree, authority proofs
+│   ├── IPC/                     Dual-queue endpoints, donation, timeouts, cross-core IPC
+│   ├── Lifecycle/               Untyped retype and reset, thread suspend/resume
 │   ├── Service/                 Service registry and its invariants
-│   ├── Architecture/            VSpace (W^X), TLB model, register/syscall decode
+│   ├── Architecture/            VSpace (W^X), page tables, TLB/cache models, decode, trap frame
 │   ├── InformationFlow/         N-domain policy, projection, enforcement, NI proofs
+│   ├── Concurrency/             Lock model, memory model, per-core runtime
 │   ├── RobinHood/               Verified Robin Hood hash table (RHTable/RHSet)
-│   ├── RadixTree/               CNode radix tree (O(1) flat array)
-│   ├── SchedContext/            CBS budget engine, replenishment queue, priority management
+│   ├── RadixTree/               CNode radix view and its bridge to the slot array
 │   ├── FrozenOps/               Frozen-state operations + commutativity proofs
 │   └── CrossSubsystem.lean      Cross-subsystem invariant composition
 ├── Platform/
-│   ├── Contract.lean            PlatformBinding typeclass + BootVSpaceRootEntry
-│   ├── Boot.lean                Boot sequence (PlatformConfig → IntermediateState).
-│   │                            installBootVSpaceRoot threads canonical boot VSpace
-│   │                            through bootFromPlatformChecked (WS-RC R3).
+│   ├── Contract.lean            PlatformBinding typeclass and boundary contracts
+│   ├── Boot.lean, Boot/         Boot sequence: root server, initial threads, IRQ nodes
+│   ├── FFI.lean                 The Lean side of the HAL boundary
 │   ├── Sim/                     Simulation platform (permissive contracts for testing)
-│   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO).
-│                                VSpaceBoot.lean holds the canonical W^X-compliant
-│                                boot VSpaceRoot (production-wired since WS-RC R3).
-├── Testing/                     Test harness, state builder, invariant checks
+│   ├── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO, boot VSpace)
+│   └── QemuVirt/                QEMU `virt` binding and boot entry
+├── Testing/                     Test harness, state builder, invariant checks, censuses
 Main.lean                        Executable entry point
-tests/                           Ausführbare Testsuiten + Fixtures
+tests/                           Executable test suites + fixtures
+rust/                            sele4n-types, sele4n-abi, sele4n-sys, sele4n-hal, sele4n-lean-boundary
 ```
 
-Jedes Subsystem folgt der **Operations/Invariant-Aufteilung**: Übergänge in
+Jedes Subsystem folgt der **Operations/Invariant-Trennung**: Übergänge in
 `Operations.lean`, Beweise in `Invariant.lean`. Das vereinheitlichte
-`apiInvariantBundle` aggregiert alle Subsystem-Invarianten zu einer einzigen
-Beweisverpflichtung. Für die vollständige Dateiinventur siehe
-[`docs/codebase_map.json`](../../../docs/codebase_map.json).
+`apiInvariantBundle` fasst alle Subsystem-Invarianten zu einer einzigen
+Beweisverpflichtung zusammen. Die Subsystemkarte ist
+[`docs/DEVELOPMENT.md`](../../../docs/DEVELOPMENT.md) §5; das vollständige Inventar pro
+Datei steht in [`docs/codebase_map.json`](../../../docs/codebase_map.json).
 
 ## Vergleich mit seL4
 
 | Merkmal | seL4 | seLe4n |
 |---------|------|--------|
-| **Scheduling** | In C implementierter Sporadic Server (MCS) | CBS mit maschinengeprüftem Theorem `cbs_bandwidth_bounded`; `SchedContext` als Capability-gesteuertes Kernel-Objekt |
-| **Passive Server** | SchedContext-Donation via C | Verifizierte Donation mit Invariante `donationChainAcyclic` |
-| **IPC** | Einfach verkettete Endpoint-Queue | Intrusive Dual-Queue mit O(1)-Entfernung aus der Warteschlangenmitte; budgetgesteuerte Timeouts |
-| **Informationsfluss** | Binäre High/Low-Partitionierung | N-Domänen-konfigurierbare Richtlinie mit 44-Einträge-Durchsetzungsgrenze (Anzahl fixiert durch `enforcementBoundaryExtended_count`), Nichteinmischungsbeweisen pro Operation und einem Capability-gesicherten Audit-Trail für jede autorisierte Deklassifizierung |
-| **Priority Inheritance** | In C implementiertes PIP (MCS-Branch) | Maschinengeprüftes transitives PIP mit Deadlock-Freiheit und parametrischer WCRT-Schranke |
-| **Beschränkte Latenz** | Keine formale WCRT-Schranke | `WCRT = D × L_max + N × (B + P)` bewiesen über 8 Liveness-Module |
-| **Object Stores** | Verkettete Listen und Arrays | Verifizierte Robin-Hood-Hashtabellen (`RHTable`/`RHSet`) mit O(1)-Hotpaths |
-| **Dienstverwaltung** | Nicht im Kernel | Endpunktgebundene Service-Registry; Abhängigkeitsrichtlinien im Userspace |
-| **Beweise** | Isabelle/HOL, nachträglich | Lean-4-Typprüfer, direkt bei Übergängen platziert — null sorry/axiom (Anzahl bewiesener Deklarationen in der Tabelle [Aktueller Stand](#aktueller-stand)) |
-| **Plattform** | HAL auf C-Ebene | `PlatformBinding`-Typklasse mit typisierten Schnittstellenverträgen |
+| **Systemaufruf-ABI** | MCS-Aufrufe, Invocation-Labels, Fehler- und Fault-Nutzlasten | Dieselbe: die elf Aufrufe von seL4-MCS mit ihrer Nummerierung, per Label gewählte Invocations und die Fehlernutzlasten von seL4; die verbleibenden Invocations sind Zeilen von WS-SX |
+| **Scheduling** | MCS-Scheduling-Kontexte mit Sporadic-Server-Refills | Dieselbe Refill-Engine, mit bewiesener Erhaltungsinvariante und der Schranke von einem Budget pro Fenster (`refill_window_bound`); ein hierarchischer CBS mit EDF-Wurzel ist geplant (WS-CB) |
+| **Passive Server** | SchedContext-Spende | Verifizierte Spende mit der Invariante `donationChainAcyclic` |
+| **IPC** | Eine Warteschlange pro Endpoint, über die TCBs verkettet | Eine Sende- und eine Empfangswarteschlange pro Endpoint, beide über die TCBs verkettet, mit Entfernen in O(1) an jeder Position; budgetgesteuerte Timeouts |
+| **Informationsfluss** | Binäre High/Low-Partition | Konfigurierbare Richtlinie mit N Domänen, eine durch `enforcementBoundaryExtended_count` festgelegte Durchsetzungsgrenze, ein Nichtinterferenz-Theorem pro Schritt und ein capability-gesteuerter Audit-Pfad für jede genehmigte Deklassifizierung |
+| **Prioritätsvererbung** | Nicht im Kernel | Maschinell geprüfte transitive PIP ohne Blockierungszyklen, mit einem Theorem zur beschränkten Inversion |
+| **Beschränkte Latenz** | Keine formale WCRT-Schranke | `wcrtBound D L_max N B P = D × L_max + N × (B + P)`, bewiesen über die Liveness-Module |
+| **Objektspeicher** | Objekte an physischen Adressen | Verifizierte Robin-Hood-Hashtabellen (`RHTable`/`RHSet`); CNodes sind flache Slot-Arrays wie in seL4 |
+| **Speicher-Mapping** | W^X vom Kernel nicht erzwungen | W^X pro Frame als Invariante erzwungen; Speichertyp-Prüfungen lehnen einen ungecachten Alias von RAM ab |
+| **Dienstverwaltung** | Nicht im Kernel | Capability-gesteuerte Service-Registry am Endpoint; Abhängigkeitsrichtlinie im Userspace |
+| **Beweise** | Isabelle/HOL, über den C-Code per Verfeinerung | Lean 4, neben den ausführbaren Übergängen; null sorry/axiom (Anzahl in der Tabelle oben) |
+| **Plattform** | HAL auf C-Ebene | Typklasse `PlatformBinding` mit typisierten Grenzverträgen und einer HAL in Rust |
 
 ## Lizenz und Drittanbieter-Attributionen
 

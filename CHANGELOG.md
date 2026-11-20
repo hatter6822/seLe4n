@@ -5,9 +5,9 @@ described the tree of several workstreams ago. Every claim it makes was
 re-read against the tree at v0.37.33 and corrected or removed:
 
 - **Theorems and names that no longer exist.** `cbs_bandwidth_bounded` is not
-  in the tree; the scheduling bullets now cite the invariants that are
-  (`budgetWithinBounds`, `refillsConserved`) and name the bandwidth guarantee
-  as WS-CB's. `SchedContext` no longer holds priority, deadline or domain
+  in the tree; the scheduling bullets now cite what replaced it at WS-ZA
+  ZA6.4: the invariants `budgetWithinBounds` and `refillsConserved`, and
+  `refill_window_bound` (at most one budget in any window of one period). `SchedContext` no longer holds priority, deadline or domain
   (seL4-MCS budget, period and refills, configured through `SchedControl`).
 - **Hand-written counts that had drifted.** The enforcement boundary (44 →
   53 entries), the `NonInterferenceStep` constructor count, the composed
@@ -34,8 +34,15 @@ re-read against the tree at v0.37.33 and corrected or removed:
   corrected (seL4 has no in-kernel priority inheritance; the IPC row compares
   like with like) and gains ABI and memory-mapping rows.
 
-The eleven translated READMEs under `docs/i18n/` still carry the earlier text
-apart from their synced metric rows.
+The eleven translated READMEs under `docs/i18n/` are rewritten to the same
+structure and claims (their synced metric rows untouched).
+`docs/spec/SELE4N_SPEC.md` §8.12.1 and the RPi5 bandwidth witness now cite
+`refill_window_bound`, `rpi5_cbs_window_budget_bounded`, the five-conjunct
+`schedContextWellFormed` and its preservation theorems in place of four
+theorem names the tree no longer has; two hard-coded bundle conjunct counts
+in the spec and the stale frozen-operation, enforcement-boundary and
+`NonInterferenceStep` counts in GitBook chapters 03, 11 and 12 are replaced
+by the theorems that pin them.
 
 ## v0.37.33 — seL4's syscall set and invocation labels
 

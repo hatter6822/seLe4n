@@ -3194,7 +3194,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `crossSubsystemInvariant` (12 predicates) and `proofLayerInvariantBundle`
    were formulated for single-core state. WS-SM has since delivered the
    per-core state partitioning and cross-core invariant composition this
-   item anticipated: the bundle now has 16 conjuncts, two of them per-core
+   item anticipated: the bundle now carries per-core conjuncts
    (`tlbInvalidationConsistent_perCore`, `icacheCoherent_perCore`), and
    per-core invariant families are proven across subsystems
    (`schedulerInvariant_perCore` suite, `ipcInvariantFull_perCore`, the SM4
@@ -9114,15 +9114,20 @@ Invariants (`Kernel/SchedContext/Invariant/Defs.lean`):
 - `budgetWithinBounds`: `budgetRemaining ≤ budget ≤ period`
 - `replenishmentListWellFormed`: bounded length, no zero-amount entries
 - `replenishmentAmountsBounded`: each entry's amount ≤ configured budget
-- `schedContextWellFormed`: 4-conjunct bundle (`wellFormed ∧ budgetWithinBounds ∧
-  replenishmentListWellFormed ∧ replenishmentAmountsBounded`)
+- `refillsConserved`: the head refill and every pending refill sum to the
+  configured budget and fit the context's storage (`maxReplenishments`)
+- `schedContextWellFormed`: 5-conjunct bundle (`wellFormed ∧ budgetWithinBounds ∧
+  replenishmentListWellFormed ∧ replenishmentAmountsBounded ∧ refillsConserved`)
 
-16 preservation theorems (4 operations × 4 sub-invariants) prove that all CBS
-operations maintain the invariant bundle, composed into
-`cbsBudgetCheck_preserves_schedContextWellFormed` (bundled) and
-`cbsBudgetCheck_preserves_replenishmentAmountsBounded` (standalone).
-Bandwidth isolation theorems (`cbs_single_period_bound`, `cbs_bandwidth_bounded`)
-bound total consumption by `maxReplenishments × budget`.
+Each charging step preserves the bundle (`chargeBudget_preserves_schedContextWellFormed`,
+`releaseReadyHead_preserves_schedContextWellFormed`,
+`refillUnblockCheck_preserves_schedContextWellFormed`, and the state-level
+`chargeBudget_preserves_schedContextWellFormed_full`).
+Bandwidth isolation is `refill_window_bound` (`Kernel/SchedContext/Budget.lean`):
+from a context whose refills total its budget, over any time-ordered sequence of
+runs, forfeits and releases, the units it runs in any window `[w, w + period)`
+number at most its budget — seL4-MCS's sliding-window guarantee for sporadic
+servers.
 
 #### 8.12.2 Replenishment Queue
 The system-wide `ReplenishQueue` (`Kernel/SchedContext/ReplenishQueue.lean`)
@@ -11609,12 +11614,11 @@ The RPi5 canonical deployment (v1.0.0 release target) ships with the
 hypothesis discharged via the `CanonicalDeploymentProgress` witness.
 
 **CBS bandwidth witness** (AN5-D / SC-M01): alongside the WCRT closure,
-`rpi5_cbs_window_replenishments_bounded` instantiates the
-`cbs_bandwidth_bounded_tight` (AK6-I) conditional for any SchedContext
-whose period matches `rpi5CanonicalConfig.cbsPeriodTicks = 10 000`. This
-gives deployments a tight `budget × ⌈window / 10 000⌉` consumption bound
-once they pass admission control, replacing the conservative 8× loose
-bound in `cbs_bandwidth_bounded`.
+`rpi5_cbs_window_budget_bounded` (and `_concrete`, with the period written as
+`10 000`) instantiates `refill_window_bound` for any SchedContext whose period
+matches `rpi5CanonicalConfig.cbsPeriodTicks = 10 000`: such a context runs at
+most its budget in any window of `10 000` ticks, with no scheduling-discipline
+hypothesis left.
 
 **Source**: `Scheduler/Liveness/RPi5CanonicalConfig.lean`; 13 surface
 anchors + 5 runtime witnesses in `tests/LivenessSuite.lean`.
@@ -11622,7 +11626,7 @@ anchors + 5 runtime witnesses in `tests/LivenessSuite.lean`.
 ### 8.14.2 Boot Invariant Bridge Scope (AI6 / M-07)
 
 `bootToRuntime_invariantBridge_empty` (Boot.lean) proves that the full
-`proofLayerInvariantBundle` (16 conjuncts) holds after booting with an empty
+`proofLayerInvariantBundle` (every conjunct, `Architecture/Invariant.lean`) holds after booting with an empty
 `PlatformConfig`. For non-empty configs (real hardware with IRQ tables,
 pre-allocated objects) **the production boot's bundle is unconditional**:
 `bootFromPlatformCheckedStartedFor_proofLayerInvariantBundle` proves the

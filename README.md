@@ -81,9 +81,11 @@ pointers into it.
   A `SchedContext` holds seL4-MCS's budget, period and refills, is configured
   through the core's `SchedControl` authority, and is bound to threads through
   capabilities; its invariants (`budgetWithinBounds`, `refillsConserved`) are
-  part of the top-level bundle. A hierarchical constant-bandwidth scheduler
-  with an EDF root, and the bandwidth guarantee that comes with it, is the
-  planned WS-CB workstream
+  part of the top-level bundle. Bandwidth isolation is `refill_window_bound`:
+  a context runs at most its budget in any window of one period, seL4-MCS's
+  sliding-window guarantee. A hierarchical constant-bandwidth scheduler with
+  an EDF root, which adds the converse (an admitted server receives its
+  budget every window), is the planned WS-CB workstream
   ([`docs/planning/HIERARCHICAL_CBS_PLAN.md`](docs/planning/HIERARCHICAL_CBS_PLAN.md))
 - **Passive servers** — a server runs on the scheduling context its client
   donates during IPC; `donationChainAcyclic` rules out circular donation
@@ -316,7 +318,7 @@ per-file inventory, see [`docs/codebase_map.json`](docs/codebase_map.json).
 | Feature | seL4 | seLe4n |
 |---------|------|--------|
 | **Syscall ABI** | MCS syscall set, invocation labels, error and fault payloads | The same: seL4-MCS's eleven syscalls and seL4's numbering, label-selected invocations and seL4's error payloads; the remaining invocations are WS-SX rows |
-| **Scheduling** | MCS scheduling contexts with sporadic-server refills | The same refill engine, with its conservation invariant proven; a hierarchical CBS with an EDF root is planned (WS-CB) |
+| **Scheduling** | MCS scheduling contexts with sporadic-server refills | The same refill engine, with its conservation invariant and the one-budget-per-window bound (`refill_window_bound`) proven; a hierarchical CBS with an EDF root is planned (WS-CB) |
 | **Passive servers** | SchedContext donation | Verified donation with the `donationChainAcyclic` invariant |
 | **IPC** | One queue per endpoint, linked through the TCBs | A send queue and a receive queue per endpoint, both linked through the TCBs with O(1) removal from any position; budget-driven timeouts |
 | **Information flow** | Binary high/low partition | N-domain configurable policy, an enforcement boundary pinned by `enforcementBoundaryExtended_count`, a non-interference theorem per step, and a capability-gated audit trail for every authorized declassification |
