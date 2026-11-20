@@ -28,10 +28,22 @@ Every check the receive leg's in-place take and donation make
 (`storeReplyRendezvous_callDonationGuard`): the reply leg writes the caller,
 its reply object and the server's reply-waiter links, so the queued caller, its
 context, the context's reply stack and the server read as they did, while the
-reply object comes out free, which is what the take asks of it.  The composite
-is then the reply's writes, the take, the donation and its replenishment's
-migration, the server's priority walk, the caller's frame and the server's
-frame (`replyRecvOnCore_callTake_delivered`), with nothing built.
+reply object comes out free, which is what the take asks of it.
+
+Before the take, `receiveIPC` returns the server's bound notification's context
+(`maybeReturnSchedContext`).  A passive server bound to the context its
+notification lent it holds that context here, so on the pre-state the guard
+reads the server as the return leaves it: holding no context, or holding the
+one the return takes back (`receiveReturnFires`, which the reply leg leaves as
+it was).  The return then clears the server's binding and touches no context
+but its own, which is not the queued caller's (that one is bound to the
+caller), so the take's guard holds after it
+(`receiveReturnSchedContext_callDonationGuard`) and the caller's context is
+donated to the server, as seL4's `reply_push (canDonate)` does once the server
+has no context.  The composite is then the reply's writes, the return in place
+(`receiveReturnSchedContextFast`), the take, the donation and its
+replenishment's migration, the server's priority walk, the caller's frame and
+the server's frame (`replyRecvOnCore_callTake_delivered`), with nothing built.
 -/
 
 namespace SeLe4n.Kernel
@@ -43,9 +55,12 @@ section CallTakeGuard
 
 /-- **The receive leg's take of a donating caller, checked before the reply
 leg**: every check of `receiveCallDonatesInPlace` but the reply object's being
-free, read on the pre-state.  On the pre-state the reply object still links the
+free, read on the pre-state, with the receiver read as the receive's context
+return leaves it: holding no context, or holding the one the return takes back
+(`receiveReturnFires`).  On the pre-state the reply object still links the
 answered caller; the reply leg frees it (`storeReplyRendezvous_callDonationGuard`
-carries the rest and proves that one). -/
+carries the rest and proves that one), and the return clears the receiver's
+binding (`receiveReturnSchedContext_callDonationGuard`). -/
 @[inline] def receiveCallDonatesPastReply (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver s : SeLe4n.ThreadId) (sTcb : TCB) (rid : SeLe4n.ReplyId) : Bool :=
   sendWakesInPlace st endpointId s sTcb.queueNext &&
@@ -60,7 +75,8 @@ carries the rest and proves that one). -/
    | .blockedOnCall _ => sTcb.ipcCanGrant || sTcb.ipcCanGrantReply
    | _ => false) &&
   (match st.getTcb? receiver with
-   | some rt => callDonationReady st s receiver sTcb rt rid
+   | some rt => (rt.scBindingScCode == 0 || receiveReturnFires true st receiver) &&
+       callerContextReady st s sTcb rid
    | none => false)
 
 /-- `receiveCallDonatesPastReply` as it is compiled: the caller's successor
@@ -77,7 +93,8 @@ asked of its link code. -/
    | .blockedOnCall _ => sTcb.ipcCanGrant || sTcb.ipcCanGrantReply
    | _ => false) &&
   (match st.getTcb? receiver with
-   | some rt => callDonationReady st s receiver sTcb rt rid
+   | some rt => (rt.scBindingScCode == 0 || receiveReturnFires true st receiver) &&
+       callerContextReady st s sTcb rid
    | none => false)
 
 @[csimp] theorem receiveCallDonatesPastReply_eq_impl :
@@ -91,10 +108,12 @@ asked of its link code. -/
 reply leg leaves (the caller `c` woken holding `msg`, its reply object
 consumed), the endpoint is as it was, the queued caller `s` is a thread keeping
 every word the take reads, its binding and its home, the server keeps its home,
-and the take's and the donation's in-place guard (`receiveCallDonatesInPlace`)
-holds, each check read on the pre-state (`receiveCallDonatesPastReply`): the
-reply object, linking no stack, comes out free, and the reply leg writes nothing
-else the guard reads. -/
+the take's in-place guard and the caller's context hold, and the server holds no
+context or the one the receive's return takes back, each check read on the
+pre-state (`receiveCallDonatesPastReply`): the reply object, linking no stack,
+comes out free, and the reply leg writes nothing else the guard reads, nor
+anything the return's guard reads (the server's binding, its notification's
+context, that context's thread). -/
 theorem storeReplyRendezvous_callDonationGuard (st : SystemState) (c tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (msg : IpcMessage) (ct : TCB) (rp : Reply)
     (epId : SeLe4n.ObjId) (ep : Endpoint) (s : SeLe4n.ThreadId) (sTcb : TCB)
@@ -116,8 +135,12 @@ theorem storeReplyRendezvous_callDonationGuard (st : SystemState) (c tid : SeLe4
           determineTargetCore st s ∧
         determineTargetCore (storeReplyRendezvous st c tid rid msg) tid =
           determineTargetCore st tid ∧
-        receiveCallDonatesInPlace (storeReplyRendezvous st c tid rid msg) epId tid s sTcb1 rid =
-          true := by
+        receiveCallTakesReplyInPlace (storeReplyRendezvous st c tid rid msg) epId tid s sTcb1 rid =
+          true ∧
+        callerContextReady (storeReplyRendezvous st c tid rid msg) s sTcb1 rid = true ∧
+        ∃ rt1, (storeReplyRendezvous st c tid rid msg).getTcb? tid = some rt1 ∧
+          (rt1.scBindingScCode = 0 ∨
+            receiveReturnFires true (storeReplyRendezvous st c tid rid msg) tid = true) := by
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hRc : rid.toObjId ≠ c.toObjId := fun e => by rw [e, hT] at hRp; cases hRp
   have hEc : epId ≠ c.toObjId := fun e => by rw [e, hT] at hE; cases hE
@@ -133,7 +156,7 @@ theorem storeReplyRendezvous_callDonationGuard (st : SystemState) (c tid : SeLe4
     | none => rw [h] at hRT; cases hRT
     | some rt => exact ⟨rt, rfl⟩
   rw [hRtT] at hRT
-  simp only [callDonationReady_eq_callerContextReady, Bool.and_eq_true] at hRT
+  simp only [Bool.and_eq_true] at hRT
   obtain ⟨hRt0, hCtx⟩ := hRT
   have hRtO : st.objects[tid.toObjId]? = some (.tcb rt) :=
     (SystemState.getTcb?_eq_some_iff _ _ _).mp hRtT
@@ -232,8 +255,6 @@ theorem storeReplyRendezvous_callDonationGuard (st : SystemState) (c tid : SeLe4
     rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hRt1, hRtT]
     dsimp only
     rw [hA2]
-  refine ⟨agreeAt_of_not_tcb (hView _ hEc hEr) (fun _ e => by cases e) hE, sTcb1, hsT, hKept,
-    hBind, hDs, hDt, ?_⟩
   have hFree : rp.consumed.isFree = true := by
     rw [Reply.isFree_iff]
     refine ⟨Reply.consumed_caller _, ?_, ?_⟩ <;> simp [Reply.consumed, hNx]
@@ -249,27 +270,224 @@ theorem storeReplyRendezvous_callDonationGuard (st : SystemState) (c tid : SeLe4
   have hFRT := (hKF _).trans hFR
   have hLscT := hSL hLsc
   have hFscT := (hKF _).trans hFsc
-  simp only [Bool.not_eq_true', bne_iff_ne, ne_eq] at hRS hRN hRRes
-  unfold receiveCallDonatesInPlace receiveCallTakesReplyInPlace
-  rw [hRtG, hRpG, hQ, hRO', hKept.ipcState]
-  simp only [callDonationReady_eq_callerContextReady, callerContextReady, hBind, hk, hkT, hB2,
-    hFree, hKept.canGrant, hKept.canGrantReply, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq, Option.isSome_some]
-  and_intros
-  all_goals (first | assumption | trivial | skip)
-  · exact hScM.1
-  · have hM := hScM.2
-    revert hM
-    cases scs.scReply with
-    | none => intro _; rfl
-    | some old =>
-      simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, Option.isSome_iff_exists]
-      rintro ⟨⟨⟨hOR, hOL⟩, hOF⟩, oR, hoR⟩
-      have hoRo := (SystemState.getReply?_eq_some_iff _ _ _).mp hoR
-      have hoc : old.toObjId ≠ c.toObjId := fun e => by rw [e, hT] at hoRo; cases hoRo
-      have hor : old.toObjId ≠ rid.toObjId := fun e =>
-        hOR (SeLe4n.ReplyId.toObjId_injective _ _ e)
-      exact ⟨⟨⟨hOR, hSL hOL⟩, (hKF _).trans hOF⟩, oR, (SystemState.getReply?_eq_some_iff _ _ _).mpr
-        (agreeAt_of_not_tcb (hView _ hoc hor) (fun _ e => by cases e) hoRo)⟩
+  -- the receive's return reads the receiver's binding, its notification's
+  -- context and that context's thread, none of which the reply leg writes
+  have hObjBind : ∀ {α : Type} (g : KernelObject → Option α),
+      (∀ o, g o.withoutRunLinks = g o) → (∀ t, g (.tcb t) = none) → (∀ r, g (.reply r) = none) →
+      ∀ x : SeLe4n.ObjId, (T.objects[x]?).bind g = (st.objects[x]?).bind g := by
+    intro α g hg ht hr x
+    by_cases hxc : x = c.toObjId
+    · subst hxc
+      obtain ⟨t', h⟩ := hTC
+      rw [h, hT]; simp [ht]
+    by_cases hxr : x = rid.toObjId
+    · subst hxr
+      rw [hTR, hRp]; simp [hr]
+    have e := congrArg (fun o => Option.bind o g) (hView x hxc hxr)
+    simpa [Option.bind_map, Function.comp_def, hg] using e
+  have hNt : ∀ n, T.getNotification? n = st.getNotification? n := by
+    intro n
+    have gN : ∀ (S : SystemState), S.getNotification? n = (S.objects[n]?).bind
+        (fun o => match o with | .notification m => some m | _ => none) := by
+      intro S; unfold SystemState.getNotification?
+      cases S.objects[n]? with
+      | none => rfl
+      | some o => cases o <;> rfl
+    rw [gN, gN]
+    exact hObjBind _ (fun o => by cases o <;> rfl) (fun _ => rfl) (fun _ => rfl) n
+  have hSct : ∀ q, T.getSchedContext? q = st.getSchedContext? q := by
+    intro q
+    have gS : ∀ (S : SystemState), S.getSchedContext? q = (S.objects[q.toObjId]?).bind
+        (fun o => match o with | .schedContext m => some m | _ => none) := by
+      intro S; unfold SystemState.getSchedContext?
+      cases S.objects[q.toObjId]? with
+      | none => rfl
+      | some o => cases o <;> rfl
+    rw [gS, gS]
+    exact hObjBind _ (fun o => by cases o <;> rfl) (fun _ => rfl) (fun _ => rfl) _
+  have hFires : receiveReturnFires true T tid = receiveReturnFires true st tid := by
+    have hBN : rt1.boundNotificationCode = rt.boundNotificationCode := by
+      have := congrArg TCB.boundNotificationCode e2; exact this
+    have hO2 : rt1.scBindingOwnerCode = rt.scBindingOwnerCode := by
+      have := congrArg TCB.scBindingOwnerCode e2; exact this
+    unfold receiveReturnFires
+    rw [hRtG, hRtT]
+    dsimp only
+    rw [hBN, signalReturnGuard_congr (st := st) (st' := T)
+      (by rw [hNt]) (fun q => by rw [hSct]) (by rw [hRtG, hRtT]; simp only [Option.map_some,
+        TCB.schedContextBinding, hB2, hO2])]
+  refine ⟨agreeAt_of_not_tcb (hView _ hEc hEr) (fun _ e => by cases e) hE, sTcb1, hsT, hKept,
+    hBind, hDs, hDt, ?_, ?_, rt1, hRtG, ?_⟩
+  · simp only [Bool.not_eq_true', bne_iff_ne, ne_eq] at hRS hRN hRRes
+    unfold receiveCallTakesReplyInPlace
+    rw [hRpG, hQ, hRO', hKept.ipcState]
+    simp only [hRtG, hFree, hKept.canGrant, hKept.canGrantReply, Bool.and_eq_true,
+      Bool.not_eq_true', bne_iff_ne, ne_eq, Option.isSome_some]
+    and_intros
+    all_goals (first | assumption | trivial)
+  · simp only [callerContextReady, hBind, hk, hkT, Bool.and_eq_true]
+    and_intros
+    all_goals (first | assumption | trivial | skip)
+    · exact hScM.1
+    · have hM := hScM.2
+      revert hM
+      cases scs.scReply with
+      | none => intro _; rfl
+      | some old =>
+        simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, Option.isSome_iff_exists]
+        rintro ⟨⟨⟨hOR, hOL⟩, hOF⟩, oR, hoR⟩
+        have hoRo := (SystemState.getReply?_eq_some_iff _ _ _).mp hoR
+        have hoc : old.toObjId ≠ c.toObjId := fun e => by rw [e, hT] at hoRo; cases hoRo
+        have hor : old.toObjId ≠ rid.toObjId := fun e =>
+          hOR (SeLe4n.ReplyId.toObjId_injective _ _ e)
+        exact ⟨⟨⟨hOR, hSL hOL⟩, (hKF _).trans hOF⟩, oR, (SystemState.getReply?_eq_some_iff _ _ _).mpr
+          (agreeAt_of_not_tcb (hView _ hoc hor) (fun _ e => by cases e) hoRo)⟩
+  · simp only [Bool.or_eq_true, beq_iff_eq] at hRt0
+    rcases hRt0 with h0 | hf
+    · exact Or.inl (hB2.trans h0)
+    · exact Or.inr (hFires.trans hf)
+
+/-- **The receive's return carries the receive leg's donating take** (seL4-MCS
+`receiveIPC`: `maybeReturnSchedContext`, then `reply_push`'s donation).  On a
+state where the take's checks and the caller's context hold, and the receiver
+either holds no context or holds the one its bound notification names (the
+return fires), the state the return leaves has the endpoint and the queued
+caller as they were, both threads homed where they were, and the take's and
+the donation's in-place guard holds there: the return clears only the
+receiver's binding, so the receiver comes out holding no context, and it
+rewrites only the returned context, which is bound to the receiver while the
+caller's is bound to the caller. -/
+theorem receiveReturnSchedContext_callDonationGuard (T : SystemState) (epId : SeLe4n.ObjId)
+    (ep : Endpoint) (tid s : SeLe4n.ThreadId) (sTcb : TCB) (rid : SeLe4n.ReplyId) (rt : TCB)
+    (hNo : T.objects.noResizeDue)
+    (hE : T.objects[epId]? = some (.endpoint ep))
+    (hS : T.objects[s.toObjId]? = some (.tcb sTcb))
+    (hTk : receiveCallTakesReplyInPlace T epId tid s sTcb rid = true)
+    (hCx : callerContextReady T s sTcb rid = true)
+    (hRt : T.getTcb? tid = some rt)
+    (hOr : rt.scBindingScCode = 0 ∨ receiveReturnFires true T tid = true) :
+    (receiveReturnSchedContext true T tid).objects[epId]? = some (.endpoint ep) ∧
+      (receiveReturnSchedContext true T tid).objects[s.toObjId]? = some (.tcb sTcb) ∧
+      determineTargetCore (receiveReturnSchedContext true T tid) s = determineTargetCore T s ∧
+      determineTargetCore (receiveReturnSchedContext true T tid) tid =
+        determineTargetCore T tid ∧
+      receiveCallDonatesInPlace (receiveReturnSchedContext true T tid) epId tid s sTcb rid =
+        true := by
+  have hRtO : T.objects[tid.toObjId]? = some (.tcb rt) :=
+    (SystemState.getTcb?_eq_some_iff _ _ _).mp hRt
+  rcases hOr with h0 | hF
+  · rw [receiveReturnSchedContext_of_scUnbound hRtO h0]
+    refine ⟨hE, hS, rfl, rfl, ?_⟩
+    unfold receiveCallDonatesInPlace
+    rw [hTk, hRt]
+    simp only [callDonationReady_eq_callerContextReady, h0, hCx]
+    rfl
+  have hst : s ≠ tid := by
+    have h := hTk
+    simp only [receiveCallTakesReplyInPlace, Bool.and_eq_true, bne_iff_ne, ne_eq] at h
+    exact fun e => h.1.1.1.1.1.1.1.1.1.2 e.symm
+  have hsT : s.toObjId ≠ tid.toObjId := fun e => hst (SeLe4n.ThreadId.toObjId_injective _ _ e)
+  obtain ⟨rt', hRt', hRtR⟩ := receiveReturnSchedContext_getTcb?_self_of_fires hNo hF
+  rw [hRt] at hRt'
+  cases hRt'
+  -- the caller's context, bound to the caller
+  obtain ⟨k, hk⟩ : ∃ k, sTcb.scBindingScCode = k + 1 := by
+    cases h : sTcb.scBindingScCode with
+    | zero => simp only [callerContextReady, h, Bool.false_eq_true] at hCx
+    | succ k => exact ⟨k, rfl⟩
+  obtain ⟨sc, hScT, hBTs⟩ : ∃ sc, T.getSchedContext? ⟨k⟩ = some sc ∧
+      sc.boundThreadCode = s.val + 1 := by
+    have h := hCx
+    unfold callerContextReady at h
+    rw [hk] at h
+    simp only [Bool.and_eq_true] at h
+    obtain ⟨-, hM⟩ := h
+    cases e : T.getSchedContext? ⟨k⟩ with
+    | none => rw [e] at hM; cases hM
+    | some sc =>
+      rw [e] at hM
+      simp only [Bool.and_eq_true, beq_iff_eq] at hM
+      exact ⟨sc, rfl, hM.1⟩
+  have hScO := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hScT
+  have hkT : (SeLe4n.SchedContextId.toObjId ⟨k⟩) ≠ tid.toObjId := fun e => by
+    rw [e, hRtO] at hScO; cases hScO
+  have hAgK := receiveReturnSchedContext_agreeOff true T tid hNo _ hkT (fun sc0 h => by
+    rw [hScO] at h; cases h
+    simp only [SchedContext.boundThread, hBTs, SeLe4n.ThreadId.ofOptCode, ne_eq,
+      Option.some.injEq]
+    exact fun e => hst e)
+  obtain ⟨sc', hScO', hW⟩ := withoutRelease_map_eq_sc hAgK hScO
+  have hScR : (receiveReturnSchedContext true T tid).getSchedContext? ⟨k⟩ = some sc' :=
+    (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hScO'
+  have hBT : sc'.boundThreadCode = sc.boundThreadCode := by
+    have := congrArg SchedContext.boundThreadCode hW; exact this
+  have hRP : sc'.scReply = sc.scReply := by
+    have := congrArg SchedContext.scReply hW; exact this
+  -- the queued caller and the endpoint, as they were
+  have hsR : (receiveReturnSchedContext true T tid).objects[s.toObjId]? = some (.tcb sTcb) :=
+    withoutRelease_map_eq_of_not_sc
+      (receiveReturnSchedContext_agreeOff true T tid hNo _ hsT
+        (fun _ h => by rw [hS] at h; cases h)) hS (fun _ e => by cases e)
+  have hAg := receiveReturnSchedContext_returnAgree true T tid hNo
+  have hER : (receiveReturnSchedContext true T tid).objects[epId]? = some (.endpoint ep) := by
+    rcases hAg epId with e | ⟨o0, o', h0, h1, r⟩
+    · rw [e, hE]
+    · rw [hE] at h0; cases h0
+      rcases r with rfl | ⟨_, e1, _⟩ | ⟨_, _, e1, _⟩
+      · exact h1
+      · cases e1
+      · cases e1
+  -- every reply as it was
+  have hRpR : ∀ r, (receiveReturnSchedContext true T tid).getReply? r = T.getReply? r := by
+    intro r
+    unfold SystemState.getReply?
+    rcases hAg r.toObjId with e | ⟨o, o', h0, h1, rr⟩
+    · rw [e]
+    · rw [h0, h1]
+      rcases rr with rfl | ⟨t, rfl, rfl⟩ | ⟨_, _, rfl, rfl⟩ <;> rfl
+  have hKF := receiveReturnSchedContext_keepsFinds true T tid hNo
+  generalize receiveReturnSchedContext true T tid = R at hAg hKF hRtR hScR hsR hER hRpR ⊢
+  have hV : ∀ x, R.getObjectType? x = T.getObjectType? x := by
+    intro x
+    unfold SystemState.getObjectType?
+    rcases hAg x with e | ⟨o, o', h0, h1, r⟩
+    · rw [e]
+    · rw [h0, h1]
+      rcases r with rfl | ⟨t, rfl, rfl⟩ | ⟨_, _, rfl, rfl⟩ <;> rfl
+  have hTcb : ∀ p : SeLe4n.ThreadId, (R.getTcb? p).isSome = (T.getTcb? p).isSome := by
+    intro p
+    unfold SystemState.getTcb?
+    rcases hAg p.toObjId with e | ⟨o, o', h0, h1, r⟩
+    · rw [e]
+    · rw [h0, h1]
+      rcases r with rfl | ⟨t, rfl, rfl⟩ | ⟨_, _, rfl, rfl⟩ <;> rfl
+  have hSL : ∀ id ty, storeLeavesIndexAndTypes R id ty = storeLeavesIndexAndTypes T id ty :=
+    fun _ _ => Bool.eq_iff_iff.mpr ⟨fun h => storeLeavesIndexAndTypes_of_frame (fun x => (hV x).symm) h,
+      fun h => storeLeavesIndexAndTypes_of_frame hV h⟩
+  have hSW : ∀ n, sendWakesInPlace R epId s n = sendWakesInPlace T epId s n :=
+    fun n => Bool.eq_iff_iff.mpr
+      ⟨fun h => sendWakesInPlace_of_frame epId s n (fun k => (hKF k).symm) (fun x => (hV x).symm)
+          (fun p hp => (hTcb p).symm.trans hp) h,
+        fun h => sendWakesInPlace_of_frame epId s n hKF hV (fun p hp => (hTcb p).trans hp) h⟩
+  have hKF' : ∀ k, R.objects.findsInPlace k = T.objects.findsInPlace k := hKF
+  refine ⟨hER, hsR, ?_, ?_, ?_⟩
+  · unfold determineTargetCore
+    rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hsR, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hS]
+  · unfold determineTargetCore
+    rw [hRtR, hRt]
+  · unfold receiveCallDonatesInPlace
+    rw [hRtR]
+    have hTk' : receiveCallTakesReplyInPlace R epId tid s sTcb rid = true := by
+      rw [← hTk]
+      unfold receiveCallTakesReplyInPlace
+      simp only [hSW, hSL, hKF', hTcb, hRpR]
+    have hCx' : callerContextReady R s sTcb rid = true := by
+      rw [← hCx]
+      unfold callerContextReady
+      rw [hk]
+      simp only [hSL, hKF', hScR, hScT, hBT, hRP, hRpR]
+    simp only [hTk', callDonationReady_eq_callerContextReady, hCx']
+    rfl
 
 end CallTakeGuard
 
@@ -363,7 +581,8 @@ theorem replyRecvCallTakes_spec {st : SystemState} {epId : SeLe4n.ObjId}
     hNe', (SystemState.getReply?_eq_some_iff _ _ _).mp hR, rfl, hH, hTs, hSC', hF, hG⟩
   simp only [TCB.replyObject, beq_iff_eq.mp hRO, SeLe4n.ReplyId.ofOptCode]
 
-/-- The reply leg's writes, the receive leg's take of the queued caller `s`,
+/-- The reply leg's writes, the receive's context return in place, the
+receive leg's take of the queued caller `s`,
 the donation of `s`'s context `scS` to the server, its replenishment migrated
 from `donorHome` to `doneeHome`, the server's priority walk, then the answered
 caller's frame, read from the server's saved registers `rf`.  Out of line from
@@ -378,7 +597,8 @@ unshared. -/
   let Y := (PriorityInheritance.propagatePipChainCrossCore
       (migrateSchedContextReplenishment
         (donateSchedContextInPlace (storeReceiveCallReady
-          (storeReplyRendezvousReady st c tid rid) epId s nextCode tid rid) s tid scS)
+          (receiveReturnSchedContextFast true (storeReplyRendezvousReady st c tid rid) tid.val)
+          epId s nextCode tid rid) s tid scS)
         scS donorHome doneeHome) tid core).1
   writeDeliveredFrameIfReady Y c (Architecture.regMessageFrame layout rf len badge)
     (fun _ => holdReplyRecvBody Y c layout rf len badge)
@@ -452,14 +672,18 @@ theorem replyRecvOnCore_callTake_delivered (st : SystemState) (epId : SeLe4n.Obj
   rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr hRp] at hRpG
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hRpG
   obtain ⟨hNx, -⟩ := hRpG
-  obtain ⟨hE1, sTcbP, hSP, hKept, hBind, hDs, hDt, hGP⟩ := storeReplyRendezvous_callDonationGuard
-    st c tid rid msg ct rp epId ep s sTcb hNo hT hFC hRp hNx hLR hFR hE hS hSC hNe hGt
+  obtain ⟨hE1, sTcbP, hSP, hKept, hBind, hDs, hDt, hTkP, hCxP, rtP, hRtP, hOrP⟩ :=
+    storeReplyRendezvous_callDonationGuard
+      st c tid rid msg ct rp epId ep s sTcb hNo hT hFC hRp hNx hLR hFR hE hS hSC hNe hGt
+  have hNoP := storeReplyRendezvous_noResizeDue st c tid rid msg hNo
+  obtain ⟨hE2, hSP2, hDsR, hDtR, hGP⟩ := receiveReturnSchedContext_callDonationGuard _ epId ep tid s
+    sTcbP rid rtP hNoP hE1 hSP hTkP hCxP hRtP hOrP
   have hR' : registerRoutedSyscall
       (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcbP.registerContext) SeLe4n.arm64DefaultLayout sTcbP.registerContext 32 =
       .call capAddr mi := by rw [hKept.regs]; exact hR
   have hF' : sTcbP.ipcFaultSend = false := by rw [hKept.faultSend]; exact hF
   obtain ⟨hRecv, -, -, hCallT, hDonE⟩ := receiveCallDonatingTake_delivered _ epId ep tid rid core s
-    sTcbP capAddr mi hE1 hH hSP hGP hF' hR'
+    sTcbP capAddr mi hE2 hH hSP2 hGP hF' hR'
   obtain ⟨hEq, hHead⟩ := replyOnCore_inPlace st tid c tid ct ep0 rid msg core hSz hT hIpc hRO hG
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hXf := replyRecvReplyTransfer_of_inert none st tid c grant ct hTc (fun _ => hInert)
@@ -470,21 +694,22 @@ theorem replyRecvOnCore_callTake_delivered (st : SystemState) (epId : SeLe4n.Obj
     unfold replyRecvPopDonation
     rw [replyFrameHeadHolder?_of_no_head _ _ hHead]
     simp only [popUnheldReplyHead_of_no_head _ _ _ _ hHead]
-  have hEp1 := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE1
-  have hRet := receiveCallDonatesInPlace_returnsNothing hGP
+  have hEp1 := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE2
   unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
-  simp only [hRecS, Option.getD_some, hEq, hPop, hXf, hRet, hRecv, hEp1, Option.bind_some, hH]
+  simp only [hRecS, Option.getD_some, hEq, hPop, hXf, hRecv, hEp1, Option.bind_some, hH]
   simp only [replyRecvPostReceiveDonation, hCallT, ↓reduceIte, hDonE,
     applyReceiveLegPipHandoff, beq_self_eq_true, replyRecvAnswerCaller,
     CapTransferSummary.capInfo_empty]
   unfold performReplyRecvCallTakeDelivered writeReceiverMessageFrame replyRecvCallTakeLegs
     holdReplyRecvBody
   dsimp only
+  rw [receiveReturnSchedContextFast_eq]
   -- the queued caller, blocked on the reply after the take
-  have hTRP : receiveCallTakesReplyInPlace (storeReplyRendezvous st c tid rid msg) epId tid s
+  have hTRP : receiveCallTakesReplyInPlace
+      (receiveReturnSchedContext true (storeReplyRendezvous st c tid rid msg) tid) epId tid s
       sTcbP rid = true := by
     simp only [receiveCallDonatesInPlace, Bool.and_eq_true] at hGP; exact hGP.1
-  obtain ⟨-, hIpcS, -⟩ := receiveCallTake_inPlace_facts _ epId ep tid rid core s sTcbP hE1 hH hSP
+  obtain ⟨-, hIpcS, -⟩ := receiveCallTake_inPlace_facts _ epId ep tid rid core s sTcbP hE2 hH hSP2
     hTRP
   obtain ⟨x, hx, hxI⟩ := Option.map_eq_some_iff.mp hIpcS
   have hcs : c ≠ s := fun e => hSC e.symm
@@ -492,14 +717,14 @@ theorem replyRecvOnCore_callTake_delivered (st : SystemState) (epId : SeLe4n.Obj
   have hst : s ≠ tid := fun e => by
     simp only [receiveCallTakesReplyInPlace, Bool.and_eq_true, bne_iff_ne, ne_eq] at hTRP
     exact hTRP.1.1.1.1.1.1.1.1.1.2 e.symm
-  have h1 := storeReplyRendezvousReady_noResizeDue st c tid rid hNo
-  have hNoP : (storeReplyRendezvous st c tid rid msg).objects.noResizeDue := by
-    rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo]
-    exact (RHTable.noResizeDue_mapValueAt _ _ _).mpr h1
-  rw [hDs, hDt, hBind]
-  rw [receiveCallTakeState_eq_hold _ _ _ _ _ _ hNoP, hKept.queueNext] at hx ⊢
+  have h0 := storeReplyRendezvousReady_noResizeDue st c tid rid hNo
+  have h1 := receiveReturnSchedContext_noResizeDue true _ tid h0
+  have hNoR0 := receiveReturnSchedContext_noResizeDue true _ tid hNoP
+  rw [hDsR, hDtR, hDs, hDt, hBind]
+  rw [receiveCallTakeState_eq_hold _ _ _ _ _ _ hNoR0, hKept.queueNext] at hx ⊢
   rw [(blockedSender_of_routedCall _ s sTcbP capAddr mi hR' hF').2]
   rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo,
+    receiveReturnSchedContext_msg c id _ id true _ tid h0 hct,
     storeReceiveCallReady_msg c id _ id _ epId s _ tid rid h1 hcs hct] at hx ⊢
   rw [SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _
       (fun e => hst (SeLe4n.ThreadId.toObjId_injective _ _ e).symm),
@@ -507,7 +732,8 @@ theorem replyRecvOnCore_callTake_delivered (st : SystemState) (epId : SeLe4n.Obj
       (fun e => hcs (SeLe4n.ThreadId.toObjId_injective _ _ e))] at hx
   generalize hScS : (⟨sTcb.scBindingScCode - 1⟩ : SeLe4n.SchedContextId) = scS
   have hNoR := storeReceiveCallReady_noResizeDue _ epId s sTcb.queueNextCode tid rid h1
-  generalize hRdef : storeReceiveCallReady (storeReplyRendezvousReady st c tid rid) epId s
+  generalize hRdef : storeReceiveCallReady
+    (receiveReturnSchedContext true (storeReplyRendezvousReady st c tid rid) tid) epId s
     sTcb.queueNextCode tid rid = R at hx hNoR ⊢
   have hNoRc : (R.mapTcbInPlace c (holdMessage msg)).objects.noResizeDue :=
     (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoR

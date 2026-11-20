@@ -377,4 +377,199 @@ theorem receiveReturnSchedContext_msg (blocks : Bool) (st : SystemState) (tid : 
 
 end ReturnMessageSlots
 
+section ReturnFrame
+
+/-- seL4's three writes, slot by slot, on a state that has room: the receiver's
+slot holds the receiver with its binding codes cleared, and every slot but the
+returned context's and the receiver's is as it was. -/
+theorem schedContextReturnLinks_objects_off (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (hNo : st.objects.noResizeDue) (oid : SeLe4n.ObjId)
+    (hS0 : vS.val ≠ oid) :
+    (schedContextReturnLinks st vS tid).objects[oid]? =
+      if tid.toObjId == oid ∧ (st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vS.val)).isSome
+        then (st.objects[oid]?).map
+          (KernelObject.mapTcb fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
+        else st.objects[oid]? := by
+  have hC : ∀ (S : SystemState), S.objects.noResizeDue →
+      (S.updateSchedContext (SeLe4n.SchedContextId.ofObjId vS.val)
+        fun sc => { sc with boundThreadCode := 0 }).objects[oid]? = S.objects[oid]? := by
+    intro S hS
+    rw [SystemState.updateSchedContext_eq_impl]
+    unfold SystemState.updateSchedContextImpl
+    split
+    · rw [SystemState.modifyObject_eq_mapValueAt _ _ _ hS]
+      show (S.objects.mapValueAt _ _)[oid]? = _
+      simp only [RHTable_getElem?_eq_get?]
+      rw [RHTable.get?_mapValueAt, if_neg (by simpa using hS0)]
+    · rfl
+  rw [schedContextReturnLinks_eq_impl]
+  unfold schedContextReturnLinksImpl
+  cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vS.val) with
+  | none => simp
+  | some sc =>
+  dsimp only
+  cases hT : st.getTcb? tid with
+  | none =>
+    dsimp only
+    by_cases h : tid.toObjId = oid
+    · subst h
+      have : ∀ t, st.objects[tid.toObjId]? ≠ some (.tcb t) := fun t e => by
+        rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr e] at hT; cases hT
+      cases e : st.objects[tid.toObjId]? with
+      | none => simp
+      | some o =>
+        cases o <;> simp [KernelObject.mapTcb]
+        exact absurd e (this _)
+    · simp [h]
+  | some t =>
+  dsimp only
+  have hNo1 := updateSchedContext_noResizeDue st (SeLe4n.SchedContextId.ofObjId vS.val)
+    (fun sc => { sc with boundThreadCode := 0 }) hNo
+  rw [markKeyChangeParts_objects, markCandidacyGainFor_objects]
+  have hU : (SystemState.updateTcb (st.updateSchedContext (SeLe4n.SchedContextId.ofObjId vS.val)
+      fun sc => { sc with boundThreadCode := 0 }) tid
+      fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 }).objects[oid]? =
+      if tid.toObjId == oid ∧ (some sc).isSome = true
+        then (st.objects[oid]?).map
+          (KernelObject.mapTcb fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
+        else st.objects[oid]? := by
+    rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo1, SystemState.objects_mapTcbInPlace,
+      hC _ hNo]
+    simp
+  cases runningCoreOf? st tid <;> exact hU
+
+/-- **Off the receiver and the returned context, the receive's return moves
+release links only**: a slot other than the receiver's, holding no context
+bound to the receiver, reads as it did up to the contexts' release fields.  The
+context seL4's return takes back is bound to the receiver
+(`schedContextReturnAdmitted`), so a context bound to another thread is not it. -/
+theorem receiveReturnSchedContext_agreeOff (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hNo : st.objects.noResizeDue) (x : SeLe4n.ObjId)
+    (hx : x ≠ tid.toObjId)
+    (hxS : ∀ sc, st.objects[x]? = some (.schedContext sc) → sc.boundThread ≠ some tid) :
+    ((receiveReturnSchedContext blocks st tid).objects[x]?).map KernelObject.withoutRelease =
+      (st.objects[x]?).map KernelObject.withoutRelease :=
+  receiveReturnSchedContext_induct
+    (fun a b => (b.objects[x]?).map KernelObject.withoutRelease =
+      (a.objects[x]?).map KernelObject.withoutRelease) blocks st tid rfl
+    (fun vS vT hV hA => by
+      have hS0 : vS.val ≠ x := by
+        intro e
+        unfold schedContextReturnAdmitted at hA
+        cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vS.val) with
+        | none => rw [hSc] at hA; cases hA
+        | some sc =>
+          rw [hSc] at hA
+          cases hT : st.getTcb? vT.val with
+          | none => rw [hT] at hA; cases hA
+          | some t =>
+            rw [hT] at hA
+            simp only [Bool.and_eq_true, decide_eq_true_eq] at hA
+            have hO := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc
+            rw [SeLe4n.SchedContextId.toObjId_ofObjId, e] at hO
+            exact hxS sc hO (hV ▸ hA.1)
+      show ((SchedContextOps.purgeReplenishment (schedContextReturnLinks st vS tid)
+        (SeLe4n.SchedContextId.ofObjId vS.val)).objects[x]?).map KernelObject.withoutRelease = _
+      rw [SchedContextOps.purgeReplenishment_agree _ _ x,
+        schedContextReturnLinks_objects_off st vS tid hNo x hS0]
+      have : ¬ (tid.toObjId == x) = true := by simpa using fun e => hx e.symm
+      simp [this])
+
+/-- **seL4's return clears the receiver's two binding codes.** -/
+theorem schedContextReturnPerform_getTcb?_self (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (t : TCB) (hNo : st.objects.noResizeDue)
+    (hS : (st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vS.val)).isSome = true)
+    (hT : st.getTcb? tid = some t) :
+    (schedContextReturnPerform st vS tid).getTcb? tid =
+      some { t with scBindingScCode := 0, scBindingOwnerCode := 0 } := by
+  unfold schedContextReturnPerform
+  rw [(SchedContextOps.purgeReplenishment_agree _ _).getTcb? tid]
+  have hTO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+  have hS0 : vS.val ≠ tid.toObjId := by
+    intro e
+    obtain ⟨sc, hSc⟩ := Option.isSome_iff_exists.mp hS
+    have hO := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc
+    rw [SeLe4n.SchedContextId.toObjId_ofObjId, e, hTO] at hO
+    cases hO
+  apply (SystemState.getTcb?_eq_some_iff _ _ _).mpr
+  rw [schedContextReturnLinks_objects_off st vS tid hNo _ hS0, hTO]
+  simp [hS, KernelObject.mapTcb]
+
+/-- **Where it fires, the receive's return leaves the receiver holding no
+context**: both binding codes cleared, every other word as it was. -/
+theorem receiveReturnSchedContext_getTcb?_self_of_fires {st : SystemState}
+    {tid : SeLe4n.ThreadId} (hNo : st.objects.noResizeDue)
+    (h : receiveReturnFires true st tid = true) :
+    ∃ rt, st.getTcb? tid = some rt ∧
+      (receiveReturnSchedContext true st tid).getTcb? tid =
+        some { rt with scBindingScCode := 0, scBindingOwnerCode := 0 } := by
+  unfold receiveReturnFires at h
+  cases hT : st.getTcb? tid with
+  | none => rw [hT] at h; simp at h
+  | some t =>
+    rw [hT] at h
+    simp only [Bool.true_and, Bool.and_eq_true, bne_iff_ne, ne_eq] at h
+    obtain ⟨h0, hG⟩ := h
+    refine ⟨t, rfl, ?_⟩
+    unfold receiveReturnSchedContext
+    simp only [↓reduceIte, hT, h0]
+    unfold signalReturnGuard at hG
+    unfold maybeReturnSchedContextRunning
+    revert hG
+    cases st.getNotification? ⟨t.boundNotificationCode - 1⟩ with
+    | none => intro hG; cases hG
+    | some ntfn =>
+      dsimp only
+      cases ntfn.schedContext with
+      | none => intro hG; cases hG
+      | some s =>
+        dsimp only
+        cases s.toObjId.toValid? with
+        | none => intro hG; cases hG
+        | some vS =>
+          cases hV : tid.toValid? with
+          | none => intro hG; cases hG
+          | some vT =>
+            intro hA
+            dsimp only
+            rw [if_pos hA]
+            have hSome : (st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vS.val)).isSome =
+                true := by
+              cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vS.val) with
+              | none => simp [schedContextReturnAdmitted, hSc] at hA
+              | some _ => rfl
+            exact schedContextReturnPerform_getTcb?_self st vS tid t hNo hSome hT
+
+/-- An object read up to the contexts' release fields: a non-context reads as
+it was. -/
+theorem withoutRelease_map_eq_of_not_sc {a b : Option KernelObject} {o : KernelObject}
+    (h : a.map KernelObject.withoutRelease = b.map KernelObject.withoutRelease)
+    (hb : b = some o) (hNot : ∀ sc, o ≠ .schedContext sc) : a = some o := by
+  subst hb
+  cases a with
+  | none => cases h
+  | some o' =>
+    simp only [Option.map_some, Option.some.injEq] at h
+    cases o with
+    | schedContext sc => exact absurd rfl (hNot sc)
+    | _ => cases o' <;> first | (simp only [KernelObject.withoutRelease] at h; rw [h]) | cases h
+
+/-- ...and a context reads as a context agreeing off its release fields. -/
+theorem withoutRelease_map_eq_sc {a b : Option KernelObject} {sc : SchedContext}
+    (h : a.map KernelObject.withoutRelease = b.map KernelObject.withoutRelease)
+    (hb : b = some (.schedContext sc)) :
+    ∃ sc', a = some (.schedContext sc') ∧ sc'.withoutRelease = sc.withoutRelease := by
+  subst hb
+  cases a with
+  | none => cases h
+  | some o' =>
+    simp only [Option.map_some, Option.some.injEq] at h
+    cases o' with
+    | schedContext sc' =>
+      simp only [KernelObject.withoutRelease] at h
+      exact ⟨sc', rfl, KernelObject.schedContext.inj h⟩
+    | _ => simp [KernelObject.withoutRelease] at h
+
+end ReturnFrame
+
 end SeLe4n.Kernel

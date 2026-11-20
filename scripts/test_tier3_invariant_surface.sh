@@ -4574,6 +4574,9 @@ run_check "INVARIANT" rg -n '^theorem storeReplyRendezvous_callDonationGuard($|[
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem receiveCallDonatesPastReply_eq_impl' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvCallTakes_spec($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_callTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem receiveReturnSchedContext_callDonationGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem receiveReturnSchedContext_agreeOff($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReceiveReturnInPlace.lean
+run_check "INVARIANT" rg -n '^theorem receiveReturnSchedContext_getTcb\?_self_of_fires($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReceiveReturnInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvCallTakeArmR_of_admits($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvCallTakeArmR_of_not_admits($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvCallTakeArmR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
@@ -11217,6 +11220,11 @@ open SeLe4n.Kernel.Concurrency
 #check @replyRecv_boundCode_of_completes
 #check @replyRecvDonationCores_eq_home_of_completes
 #check @replyRecvDonationContext_superset
+#check @notificationsAndBindingsKept.of_replyRecvPopDonation
+#check @notificationsAndBindingsKept.of_replyRecvBeforeReceive
+#check @replyRecvReturnContext_superset
+#check @lockSetForSyscall_replyRecv_covers_returnContext
+#check @receiveReturnSchedContext_callDonationGuard
 #check @ntfnContextsAgree.of_notificationsAndBindingsKept
 #check @notificationContext?_congr
 #check @notificationsBackward_of_kindPreservingAt
