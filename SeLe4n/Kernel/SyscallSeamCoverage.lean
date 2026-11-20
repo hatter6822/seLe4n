@@ -998,14 +998,43 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
           (completeSignalArm_donationPre_objects_invExt hObjInv hW') hTable fun d hd => ?_))
       rw [completeSignalArm_signalDonationCores_eq nId hObjInv hW'] at hd
       rw [LockSet.ofList?_pairs hSched]
+      have hPend := notificationWaitOnCore_notificationPending hW'
+      simp only [Option.isSome_some] at hPend
       exact schedLockSet_notificationWaitOnCore_contains_donation_writes st (some nId) tid e d
-        (by simpa only [waitDonationCores, Option.map_some, Option.getD_some] using hd)
+        (by simpa only [waitDonationCores, Option.map_some, Option.getD_some, hPend,
+          ↓reduceIte] using hd)
     · rename_i st₁ hWait
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
       subst hDisp
       have h₁ := notificationWaitCrossCoreDispatchChecked_fst_of_ok ctx nId tid e st st₁ _ hWait
-      rw [← h₁]
-      exact schedLockSet_notificationWaitOnCore_coversWrites nId tid e st S _ hSched
+      have hW' := notificationWaitCrossCoreDispatchChecked_ok_inner hWait
+      have hWaitCov : footprintCoversWrites S st st₁ := by
+        rw [← h₁]
+        exact schedLockSet_notificationWaitOnCore_coversWrites nId tid e st S _ hSched
+      have hObjInv1 : st₁.objects.invExt := by
+        have := notificationWaitCrossCoreDispatch_preserves_objects_invExt nId tid e st hObjInv
+        unfold notificationWaitCrossCoreDispatch at this
+        rw [hW'] at this
+        exact this
+      -- seL4-MCS `receiveSignal`'s `maybeReturnSchedContext` after the block: on
+      -- the cores the footprint read off the wait's entry state, which the
+      -- block keeps but for the executing core's current slot.
+      obtain ⟨-, hRC, hRR, -⟩ := notificationWaitOnCore_blocked_signalReturnCores_eq nId hObjInv hW'
+      have hPend := notificationWaitOnCore_notificationPending hW'
+      simp only [Option.isSome_none] at hPend
+      have hRet := schedLockSet_notificationWaitOnCore_contains_return_writes st (some nId) tid e
+      refine footprintCoversWrites_trans S hWaitCov
+        (maybeReturnSchedContext_coversWrites S st₁ nId tid hObjInv1 hTable
+          (fun d hd => ?_) (fun d hd => ?_))
+      · rw [hRC] at hd
+        rw [LockSet.ofList?_pairs hSched]
+        exact hRet.1 d (by simpa only [waitReturnCores, Option.map_some, Option.getD_some, hPend,
+          Bool.false_eq_true, ↓reduceIte] using hd)
+      · rw [hRR] at hd
+        rw [LockSet.ofList?_pairs hSched]
+        exact hRet.2 d
+          (by simpa only [waitReturnReplenishCores, Option.map_some, Option.getD_some, hPend,
+            Bool.false_eq_true, ↓reduceIte] using hd)
     · exact absurd hDisp (by simp)
   -- ---- `.send` ------------------------------------------------------------
   case send =>

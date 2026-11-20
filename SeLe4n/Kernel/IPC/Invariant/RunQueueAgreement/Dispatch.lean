@@ -967,6 +967,14 @@ theorem maybeDonateSchedContext_runQueueStage (st : SystemState) (n : SeLe4n.Obj
   maybeDonateSchedContext_induct (fun a b => RunQueueStage a b) st n tid (RunQueueStage.refl _)
     (fun vS vT _ hA => schedContextBindPerform_runQueueStage st vS vT hA)
 
+/-- **seL4-MCS `maybeReturnSchedContext` is a kernel-entry stage**: the identity,
+or the unbind's (`schedContextUnbind_runQueueEntryStage`). -/
+theorem maybeReturnSchedContext_runQueueEntryStage (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) : SystemState.RunQueueEntryStage st (maybeReturnSchedContext st n tid) :=
+  maybeReturnSchedContext_induct (fun a b => SystemState.RunQueueEntryStage a b) st n tid
+    (RunQueueStage.refl _).entry
+    (fun vS _ st' _ _ h => SchedContextOps.schedContextUnbind_runQueueEntryStage vS st st' h)
+
 /-- **seL4's `sendSignal` keeps the run queues in agreement with the threads'
 links**: the wake's stage, then the donation's. -/
 theorem sendSignalOnCore_runQueueStage (n : SeLe4n.ObjId) (badge : SeLe4n.Badge)
@@ -1231,8 +1239,9 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
         (maybeDonateSchedContext_runQueueStage _ _ _).entry
     · rename_i hW
       cases h
-      exact runQueueStage_of_pair_eq
-        (notificationWaitCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ P) hW
+      exact (runQueueStage_of_pair_eq
+        (notificationWaitCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ P) hW).trans
+        (maybeReturnSchedContext_runQueueEntryStage _ _ _)
     · cases h
   case none.replyRecv.object epId =>
     split at h

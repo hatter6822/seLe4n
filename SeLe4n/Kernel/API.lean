@@ -6168,7 +6168,7 @@ take a notification's word ask one transition. -/
     | (st', .ok (some badge)) =>
         .ok ((), maybeDonateSchedContext (Architecture.writeReturnFrameToTcb st' tid
           (Architecture.badgeReturnFrame st' tid badge)) notifId tid)
-    | (st', .ok none) => .ok ((), st')
+    | (st', .ok none) => .ok ((), maybeReturnSchedContext st' notifId tid)
     | (_, .error e) => .error e
 
 /-- A wait that consumed a badge moved no scheduler state: the consumption is a

@@ -759,6 +759,13 @@ theorem maybeDonateSchedContext_recordsStage (x : SystemState) (n : SeLe4n.ObjId
   .of_frameK fun hI => maybeDonateSchedContext_induct (fun a b => RecordsFrame a b) x n t
     (RecordsFrame.refl hI) (fun vS vT _ _ => RecordsFrame.schedContextBindPerform x vS vT hI)
 
+/-- **seL4-MCS `maybeReturnSchedContext` keeps the kernel records**: the
+identity, or the unbind (`RecordsFrame.schedContextUnbind`). -/
+theorem maybeReturnSchedContext_recordsStage (x : SystemState) (n : SeLe4n.ObjId)
+    (t : SeLe4n.ThreadId) : RecordsStage x (maybeReturnSchedContext x n t) :=
+  .of_frameK fun hI => maybeReturnSchedContext_induct (fun a b => RecordsFrame a b) x n t
+    (RecordsFrame.refl hI) (fun _ _ _ _ _ h => RecordsFrame.schedContextUnbind hI h)
+
 /-- **seL4's `sendSignal` keeps the records**: the wake's step, then the
 donation's. -/
 theorem sendSignalOnCore_recordsStage {n : SeLe4n.ObjId} {badge : SeLe4n.Badge}
@@ -821,7 +828,7 @@ theorem completeSignalArm_recordsStage {ctx : LabelingContext} {tid : SeLe4n.Thr
       (maybeDonateSchedContext_recordsStage _ _ _)
   · rename_i hR
     cases h
-    exact RecordsStage.of_fst_eq hW hR
+    exact (RecordsStage.of_fst_eq hW hR).trans (maybeReturnSchedContext_recordsStage _ _ _)
   · cases h
 
 /-- A receive run on its busy-reply-cancelled state keeps the records: the
@@ -1041,8 +1048,9 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
         (maybeDonateSchedContext_recordsStage _ _ _)
     · rename_i hW
       cases h
-      exact RecordsStage.of_fst_eq
-        (RecordsStage.notificationWaitCrossCoreDispatchChecked P.deletes.1 hCaller) hW
+      exact (RecordsStage.of_fst_eq
+        (RecordsStage.notificationWaitCrossCoreDispatchChecked P.deletes.1 hCaller) hW).trans
+        (maybeReturnSchedContext_recordsStage _ _ _)
     · cases h
   case none.declassify.auditTrail code =>
     split at h

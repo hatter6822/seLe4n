@@ -1519,6 +1519,17 @@ theorem replyRecvCompletesSignalArm_completes {ctx : LabelingContext}
       hInv hRf hD hSig hRdy hR
     simp only [h1, h2, Bool.and_self, ↓reduceIte, h3]
 
+/-- **seL4's `maybeReturnSchedContext` blocks no thread** on a state whose
+current threads are dequeued: the identity's frame, or the unbind's stage
+(`schedContextUnbind_runQueueStage_of_dequeued`). -/
+theorem maybeReturnSchedContext_readyKeptStage {S : SeLe4n.ThreadId → Prop} {st : SystemState}
+    (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hD : st.currentDequeuedUnique) :
+    readyKeptStage S st (maybeReturnSchedContext st n tid) :=
+  maybeReturnSchedContext_induct (fun a b => readyKeptStage S a b) st n tid
+    (readyKeptStage.refl _)
+    (fun vS _ st' _ _ h => .of_stage
+      (SchedContextOps.schedContextUnbind_runQueueStage_of_dequeued vS st st' hD h))
+
 /-- **Every arm `dispatchWithCapChecked` routes blocks only the caller**: the
 send, receive, call, notification-wait and reply-receive arms block it, and no
 other arm blocks a thread. -/
@@ -1656,8 +1667,15 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
           (maybeDonateSchedContext_runQueueStage _ _ _)))
     · rename_i hW
       cases h
-      exact runQueueStage_of_pair_eq
-        (notificationWaitCrossCoreDispatchChecked_readyKeptStage _ _ _ _ _ P) hW
+      -- seL4's `maybeReturnSchedContext` after the block: the unbind blocks no
+      -- thread on a state whose current threads are dequeued, which the wait
+      -- keeps from the entry state.
+      have E := runQueueStage_of_pair_eq
+        (notificationWaitCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ P) hW
+      exact (runQueueStage_of_pair_eq
+        (notificationWaitCrossCoreDispatchChecked_readyKeptStage _ _ _ _ _ P) hW).trans E.1
+        (fun hI1 hR1 => maybeReturnSchedContext_readyKeptStage _ _
+          (E.2 P.objInv P.refined hR1 P.dequeued) hI1 hR1)
     · cases h
   case none.replyRecv.object epId =>
     split at h

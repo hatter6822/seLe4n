@@ -535,7 +535,7 @@ def notificationWaitArmGeneralR (notifId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     | (st', .ok (some badge)) =>
         .ok ((), maybeDonateSchedContextFast (Architecture.writeReturnFrameToTcb st' tid
           (Architecture.badgeReturnFrame st' tid badge)) notifId.val tid.val)
-    | (st', .ok none) => .ok ((), st')
+    | (st', .ok none) => .ok ((), maybeReturnSchedContextFast st' notifId.val tid.val)
     | (st', .error e) => .error (e, st')
 
 /-- **The checked wait past its non-blocking test** (`completeSignalArm`), refusing
@@ -565,8 +565,9 @@ writes the same way; every other wait takes the specification's form. -/
                       if tcb.ipcState = .blockedOnNotification notifId then
                         notificationWaitArmGeneralR notifId tid executingCore st
                       else if waitBlocksInPlace st notifId tid ntfn.waitTailCode then
-                        .ok ((), removeRunnableOnCore
+                        .ok ((), maybeReturnSchedContextFast (removeRunnableOnCore
                           (storeWaitBlocked st notifId tid ntfn.waitTailCode) tid executingCore)
+                          notifId.val tid.val)
                       else notificationWaitArmGeneralR notifId tid executingCore st
                   | none => notificationWaitArmGeneralR notifId tid executingCore st
           | none => notificationWaitArmGeneralR notifId tid executingCore st
@@ -594,9 +595,10 @@ theorem notificationWaitArmGeneralR_eq (notifId : SeLe4n.ObjId) (tid : SeLe4n.Th
         | (st', .ok (some badge)) =>
             .ok ((), maybeDonateSchedContext (Architecture.writeReturnFrameToTcb st' tid
               (Architecture.badgeReturnFrame st' tid badge)) notifId tid)
-        | (st', .ok none) => .ok ((), st')
+        | (st', .ok none) => .ok ((), maybeReturnSchedContext st' notifId tid)
         | (_, .error e) => .error e) st := by
-  simp only [notificationWaitArmGeneralR, RefusalCarrying.ofKernel, maybeDonateSchedContextFast_eq]
+  simp only [notificationWaitArmGeneralR, RefusalCarrying.ofKernel, maybeDonateSchedContextFast_eq,
+    maybeReturnSchedContextFast_eq]
   rcases hRun : notificationWaitOnCore notifId tid executingCore st with ⟨st', _ | _ | badge⟩
   · have hst := notificationWaitOnCore_error_state notifId tid executingCore st _
       (by rw [hRun])
@@ -639,7 +641,8 @@ theorem notificationWaitGatedR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId
             split
             · next hG =>
               rw [notificationWaitOnCore_eq_impl]
-              simp only [notificationWaitOnCoreImpl, hN, hB, hLk, hNotW, hG, ↓reduceIte]
+              simp only [notificationWaitOnCoreImpl, hN, hB, hLk, hNotW, hG, ↓reduceIte,
+                maybeReturnSchedContextFast_eq]
             · exact hGen
         · exact hGen
     · exact hGen

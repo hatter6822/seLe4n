@@ -1314,8 +1314,13 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                         cases badge? with
                         | none =>
                             simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                            have hObjInv1 : st1.objects.invExt := by
+                              have h := notificationWaitCrossCoreDispatch_preserves_objects_invExt
+                                notifId tid executingCore st hObjInv
+                              rw [hWait] at h; exact h
                             rw [← hStep]
-                            exact hWaitInv
+                            exact maybeReturnSchedContext_preserves_ipcInvariantFull _ _ _ hObjInv1
+                              hWaitInv
                         | some badge =>
                             simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
                             have hObjInv1 : st1.objects.invExt := by

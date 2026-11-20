@@ -151,6 +151,21 @@ theorem maybeDonateSchedContext_preserves_ipcInvariantFull (st : SystemState)
     (fun vS vT hT hA => schedContextBindPerform_preserves_ipcInvariantFull st vS vT hObjInv hInv
       hBidir (by subst hT; exact hNotOwner) hA)
 
+/-- **seL4-MCS `maybeReturnSchedContext` keeps the IPC invariant**: the
+identity, or the unbind's ok-state (`schedContextUnbind_preserves_ipcInvariantFull`). -/
+theorem maybeReturnSchedContext_preserves_ipcInvariantFull (st : SystemState)
+    (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st) : ipcInvariantFull (maybeReturnSchedContext st n tid) :=
+  maybeReturnSchedContext_induct (fun _ s' => ipcInvariantFull s') st n tid hInv
+    (fun vS _ st' _ _ h => schedContextUnbind_preserves_ipcInvariantFull st st' vS hObjInv hInv h)
+
+/-- …and the object store's integrity. -/
+theorem maybeReturnSchedContext_preserves_objects_invExt (st : SystemState)
+    (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
+    (maybeReturnSchedContext st n tid).objects.invExt :=
+  maybeReturnSchedContext_induct (fun _ s' => s'.objects.invExt) st n tid hObjInv
+    (fun vS _ st' _ _ h => schedContextUnbind_preserves_objects_invExt vS st st' hObjInv h)
+
 /-- The state the consumption and the badge register leave keeps the object
 store's integrity. -/
 theorem completeSignalArm_donationPre_objects_invExt {notifId : SeLe4n.ObjId}

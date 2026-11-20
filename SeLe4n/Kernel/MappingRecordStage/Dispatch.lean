@@ -648,6 +648,13 @@ theorem maybeDonateSchedContext_mappingStage (st : SystemState) (n : SeLe4n.ObjI
   maybeDonateSchedContext_induct MappingStage st n tid (MappingStage.refl _)
     (fun _ _ _ _ => schedContextBindPerform_mappingStage _ _ _)
 
+/-- **seL4-MCS `maybeReturnSchedContext` is a mapping stage**: the identity, or
+the unbind (`schedContextUnbind_mappingStage`). -/
+theorem maybeReturnSchedContext_mappingStage (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) : MappingStage st (maybeReturnSchedContext st n tid) :=
+  maybeReturnSchedContext_induct MappingStage st n tid (MappingStage.refl _)
+    (fun _ _ _ _ _ h => schedContextUnbind_mappingStage h)
+
 /-- **seL4's `sendSignal` keeps the mapping records**: the wake's writes, then
 the donation's. -/
 theorem sendSignalOnCore_mappingStage {n : SeLe4n.ObjId} {badge : SeLe4n.Badge}
@@ -690,7 +697,8 @@ theorem completeSignalArm_mappingStage {ctx : LabelingContext} {tid : SeLe4n.Thr
       (writeReturnFrameToTcb_mappingStage _ _ _)).trans (maybeDonateSchedContext_mappingStage _ _ _)
   · rename_i hW
     cases h
-    exact MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW
+    exact (MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW).trans
+      (maybeReturnSchedContext_mappingStage _ _ _)
   · cases h
 
 /-- **A reply-receive whose receive completes its bound notification keeps the

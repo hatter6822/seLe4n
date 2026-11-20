@@ -1638,6 +1638,16 @@ theorem maybeDonateSchedContext_stepCovers (e : CoreId) (st : SystemState) (n : 
     ⟨stepCovers_refl e st, hInv⟩
     (fun vS vT _ hA => schedContextBindPerform_stepCovers st vS vT e hInv hBi hA)
 
+/-- **seL4-MCS `maybeReturnSchedContext` covers its reschedule writes**: the
+identity, or the unbind (`schedContextUnbind_stepCovers`). -/
+theorem maybeReturnSchedContext_stepCovers (e : CoreId) (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    stepCovers e st (maybeReturnSchedContext st n tid) ∧
+      (maybeReturnSchedContext st n tid).objects.invExt :=
+  maybeReturnSchedContext_induct (fun a b => stepCovers e a b ∧ b.objects.invExt) st n tid
+    ⟨stepCovers_refl e st, hInv⟩
+    (fun vS _ st' _ _ h => schedContextUnbind_stepCovers st st' vS e hInv h)
+
 /-- **seL4's `sendSignal` covers**, on a state where the binding pair holds: the
 wake (`notificationSignalBoundOnCore_stepCovers`), then the donation to the thread
 it woke, whose binding pair the wake left as it found it (the wake moves no
@@ -1943,8 +1953,8 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
       exact completeSignalArm_consumed_stepCovers e _ hInv hB.bidirectional hW
     · rename_i hW
       cases h
-      exact stepCovers_of_pair_eq
-        (notificationWaitCrossCoreDispatchChecked_stepCovers e hInv) hW
+      have hC := stepCovers_of_pair_eq (notificationWaitCrossCoreDispatchChecked_stepCovers e hInv) hW
+      exact stepCoversInv_trans hC.1 (maybeReturnSchedContext_stepCovers e _ _ _ hC.2)
     · cases h
   case none.replyRecv.object epId =>
     split at h

@@ -414,7 +414,11 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
           (notificationWaitCrossCoreDispatchChecked_ok_inner hWt)))
     · rename_i hWt
       cases h
-      exact hW (notificationWaitArm_savedRegsWrittenFree default P hN hWt).1
+      exact hW ((notificationWaitArm_savedRegsWrittenFree default P hN hWt).1.giveBack _ _
+        (by
+          have := notificationWaitOnCore_preserves_objects_invExt notifId tid ec st hInv
+          rw [notificationWaitCrossCoreDispatchChecked_ok_inner hWt] at this
+          exact this))
     · cases h
   case none.replyRecv.object epId =>
     split at h

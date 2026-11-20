@@ -379,11 +379,13 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .notificationWait =>
       (st.getTcb? ops.caller).bind fun caller =>
         ops.targetObject.map fun notificationId =>
-          -- seL4-MCS `completeSignal`'s `maybeDonateSchedContext`: the context
-          -- the wait's completion donates, seL4's guard on the entry state.
+          -- seL4-MCS `completeSignal`'s `maybeDonateSchedContext` where the
+          -- notification holds a word, `receiveSignal`'s `maybeReturnSchedContext`
+          -- where the wait blocks: the context either writes, read on the entry
+          -- state.
           lockSetExtendOpt
             (lockSet_notificationWaitOnCore st notificationId ops.caller caller.cspaceRoot)
-            ((SeLe4n.Kernel.signalDonationContext? st notificationId ops.caller).map fun s =>
+            ((SeLe4n.Kernel.waitCompletionContext? st notificationId ops.caller).map fun s =>
               (schedContextLock s, .write))
   -- Undeclared: the caller keeps its existing serialisation. Each of
   -- these becomes a `some` in a later cut, paired with the coverage
@@ -691,7 +693,7 @@ ZA4.4). -/
           ops.targetObject.map fun notificationId =>
             lockSetExtendOpt
               (lockSet_notificationWaitOnCore st notificationId ops.caller caller.cspaceRoot)
-              ((SeLe4n.Kernel.signalDonationContext? st notificationId ops.caller).map fun s =>
+              ((SeLe4n.Kernel.waitCompletionContext? st notificationId ops.caller).map fun s =>
                 (schedContextLock s, .write)) := rfl
 
 /-- **WS-RR RR7.11**: and it declares under the same two conditions. -/
@@ -1346,10 +1348,27 @@ theorem lockSetForSyscall_notificationWait_eq
     lockSetForSyscall .notificationWait ops st
       = some (lockSetExtendOpt
           (lockSet_notificationWaitOnCore st notificationId ops.caller caller.cspaceRoot)
-          ((SeLe4n.Kernel.signalDonationContext? st notificationId ops.caller).map fun s =>
+          ((SeLe4n.Kernel.waitCompletionContext? st notificationId ops.caller).map fun s =>
             (schedContextLock s, .write))) := by
   unfold lockSetForSyscall
   rw [hTcb, hNtfn]; rfl
+
+/-- WS-SX SX8.2: **and the context the wait's completion writes**: the
+context seL4's `completeSignal` donates where the notification holds a word, or
+the context seL4's `maybeReturnSchedContext` takes back where the wait blocks,
+each where its guard holds on the entry state (`waitCompletionContext?`). -/
+theorem lockSetForSyscall_notificationWait_covers_completionContext
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (notificationId : ObjId) (S : LockSet) (s : SeLe4n.SchedContextId)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hNtfn : ops.targetObject = some notificationId)
+    (hCtx : SeLe4n.Kernel.waitCompletionContext? st notificationId ops.caller = some s)
+    (hDecl : lockSetForSyscall .notificationWait ops st = some S) :
+    (schedContextLock s, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_notificationWait_eq ops st caller notificationId hTcb hNtfn] at hDecl
+  cases hDecl
+  rw [hCtx]
+  exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-RR RR7.11**: the wait's writes — the caller's own TCB (it blocks,
 or consumes a pending badge into its message field), the notification, and

@@ -1230,4 +1230,239 @@ theorem cancelRecvBusyReply_receiverBoundNotification (ctx : LabelingContext)
     dsimp only
     rw [Option.some.inj e]
 
+/-! ### seL4's return, read on the blocking wait's entry state
+
+The block stores the notification over itself with the waiter appended, writes
+the waiter's IPC state, links it into the notification's queue and dequeues it
+from its own core.  None of these writes a scheduling link, a notification's
+context word or a current slot other than the executing core's, so the return
+guard, the home core and the release core read after the block are the ones the
+wait's footprint reads before it. -/
+
+/-- **The wait's block, decomposed**: what a wait that answered `.ok none` ran. -/
+theorem notificationWaitOnCore_blocked_cases {notifId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st1 : SystemState}
+    (h : notificationWaitOnCore notifId tid c st = (st1, .ok none)) :
+    ∃ ntfn tcb stA stB stC, st.objects[notifId]? = some (.notification ntfn) ∧
+      lookupTcb st tid = some tcb ∧
+      storeObject notifId (.notification (ntfn.withWaiterAppended tid)) st = .ok ((), stA) ∧
+      storeTcbIpcStateAndMessage_fromTcb stA tid tcb (.blockedOnNotification notifId) none =
+        .ok stB ∧
+      linkNtfnWaiter stB tid ntfn.waitTail = .ok stC ∧
+      st1 = removeRunnableOnCore stC tid c := by
+  unfold notificationWaitOnCore at h
+  cases hN : st.getNotification? notifId with
+  | none =>
+    rw [hN] at h
+    by_cases hO : (st.getObject? notifId).isSome = true
+    · simp only [hO, ↓reduceIte] at h; cases h
+    · simp only [hO, Bool.false_eq_true, ↓reduceIte] at h; cases h
+  | some ntfn =>
+    rw [hN] at h
+    have hPre := (SystemState.getNotification?_eq_some_iff _ _ _).mp hN
+    cases hB : ntfn.pendingBadge with
+    | some b =>
+      simp only [hB] at h
+      repeat' split at h
+      all_goals simp_all
+    | none =>
+      simp only [hB] at h
+      cases hL : lookupTcb st tid with
+      | none => simp only [hL] at h; cases h
+      | some tcb =>
+        simp only [hL] at h
+        by_cases hW : tcb.ipcState = .blockedOnNotification notifId
+        · simp only [hW, ↓reduceIte] at h; cases h
+        · simp only [hW, ↓reduceIte] at h
+          cases hS : storeObject notifId (.notification (ntfn.withWaiterAppended tid)) st with
+          | error e => simp only [hS] at h; cases h
+          | ok v =>
+            obtain ⟨⟨⟩, stA⟩ := v
+            simp only [hS] at h
+            cases hT : storeTcbIpcStateAndMessage_fromTcb stA tid tcb
+                (.blockedOnNotification notifId) none with
+            | error e => simp only [hT] at h; cases h
+            | ok stB =>
+              simp only [hT] at h
+              cases hK : linkNtfnWaiter stB tid ntfn.waitTail with
+              | error e => simp only [hK] at h; cases h
+              | ok stC =>
+                simp only [hK, Prod.mk.injEq] at h
+                exact ⟨ntfn, tcb, stA, stB, stC, hPre, rfl, hS, hT, hK, h.1.symm⟩
+
+/-- **A wait answers a word exactly when its notification held one**: what the
+footprint reads on the entry state (`notificationPending`) is which of the
+completion and the block the wait ran. -/
+theorem notificationWaitOnCore_notificationPending {notifId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st1 : SystemState}
+    {r : Option SeLe4n.Badge}
+    (h : notificationWaitOnCore notifId tid c st = (st1, .ok r)) :
+    notificationPending st notifId = r.isSome := by
+  unfold notificationWaitOnCore at h
+  unfold notificationPending
+  cases hN : st.getNotification? notifId with
+  | none =>
+    rw [hN] at h
+    by_cases hO : (st.getObject? notifId).isSome = true
+    · simp only [hO, ↓reduceIte] at h; cases h
+    · simp only [hO, Bool.false_eq_true, ↓reduceIte] at h; cases h
+  | some ntfn =>
+    rw [hN] at h
+    simp only
+    cases hB : ntfn.pendingBadge with
+    | some b =>
+      simp only [hB] at h
+      repeat' split at h
+      all_goals simp_all
+    | none =>
+      simp only [hB] at h
+      repeat' split at h
+      all_goals simp_all
+
+/-- A notification-queue link-in keeps every scheduling link and every
+notification's context word. -/
+theorem linkNtfnWaiter_schedFrames {st st' : SystemState} {w : SeLe4n.ThreadId}
+    {tail : Option SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (h : linkNtfnWaiter st w tail = .ok st') :
+    SchedLinkFrame st st' ∧ ntfnContextsAgree st st' := by
+  obtain ⟨st3, h3, h4⟩ := linkNtfnWaiter_ok_cases h
+  unfold storeTcbNtfnLinks at h3
+  have hInv3 := modifyTcb_preserves_objects_invExt hInv h3
+  have A : SchedLinkFrame st st3 ∧ ntfnContextsAgree st st3 :=
+    ⟨SchedLinkFrame.modifyTcb hInv h3, ntfnContextsAgree.modifyTcb hInv h3⟩
+  cases tail with
+  | none =>
+    simp only [relinkNtfnNext, modifyTcbOpt, Except.ok.injEq] at h4
+    subst h4; exact A
+  | some t =>
+    simp only [relinkNtfnNext, modifyTcbOpt] at h4
+    exact ⟨A.1.trans (SchedLinkFrame.modifyTcb hInv3 h4),
+      A.2.trans (ntfnContextsAgree.modifyTcb hInv3 h4)⟩
+
+/-- **The wait's block keeps every scheduling link and every notification's
+context word, and the waiter's running core is the one off the executing core
+before it.** -/
+theorem notificationWaitOnCore_blocked_frames {notifId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st1 : SystemState}
+    (hInv : st.objects.invExt)
+    (h : notificationWaitOnCore notifId tid c st = (st1, .ok none)) :
+    SchedLinkFrame st st1 ∧ ntfnContextsAgree st st1 ∧
+      runningCoreOf? st1 tid = runningCoreOffCore? st tid c := by
+  obtain ⟨ntfn, tcb, stA, stB, stC, hPre, hL, hS, hT, hK, rfl⟩ :=
+    notificationWaitOnCore_blocked_cases h
+  have hInvA := storeObject_preserves_objects_invExt st stA notifId _ hInv hS
+  have hTcb0 := lookupTcb_some_objects st tid tcb hL
+  have hNe : tid.toObjId ≠ notifId := by
+    intro e; rw [← e, hTcb0] at hPre; cases hPre
+  have hTcbA : stA.objects[tid.toObjId]? = some (.tcb tcb) := by
+    rw [storeObject_objects_ne st stA notifId tid.toObjId _ hNe hInv hS]; exact hTcb0
+  unfold storeTcbIpcStateAndMessage_fromTcb at hT
+  cases hS2 : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := none }
+      (.blockedOnNotification notifId))) stA with
+  | error e => rw [hS2] at hT; cases hT
+  | ok v =>
+    obtain ⟨⟨⟩, stB'⟩ := v
+    rw [hS2] at hT
+    cases hT
+    have hInvB := storeObject_preserves_objects_invExt _ _ _ _ hInvA hS2
+    obtain ⟨LC, NC⟩ := linkNtfnWaiter_schedFrames hInvB hK
+    have hSchedC : stC.scheduler = st.scheduler := by
+      rw [linkNtfnWaiter_scheduler_eq hK, storeObject_scheduler_eq _ _ _ _ hS2,
+        storeObject_scheduler_eq _ _ _ _ hS]
+    refine ⟨?_, ?_, ?_⟩
+    · exact (SchedLinkFrame.storeObject_notification hInv hPre hS).trans
+        ((SchedLinkFrame.storeObject hInvA hS2 (by rw [hTcbA]; rfl) (by rw [hTcbA]; rfl)
+          (by rw [hTcbA]; rfl)).trans
+          (LC.trans (SchedLinkFrame.of_agreeOffRunLinks
+            (removeRunnableOnCore_objectsAgreeOffRunLinks stC tid c)
+            (removeRunnableOnCore_releaseSlots stC tid c))))
+    · exact (ntfnContextsAgree.storeObject hInv hS (by rw [hPre]; rfl)).trans
+        ((ntfnContextsAgree.storeObject hInvA hS2 (by rw [hTcbA]; rfl)).trans
+          (NC.trans (ntfnContextsAgree.of_offRunLinks
+            (removeRunnableOnCore_objectsAgreeOffRunLinks stC tid c))))
+    · rw [runningCoreOf?_removeRunnableOnCore]
+      unfold runningCoreOffCore?
+      rw [hSchedC]
+
+/-- A step keeping every binding link keeps every thread's binding. -/
+theorem bindingLinksAgree.getTcb?_binding {st st' : SystemState} (h : bindingLinksAgree st st')
+    (t : SeLe4n.ThreadId) :
+    (st'.getTcb? t).map (·.schedContextBinding) = (st.getTcb? t).map (·.schedContextBinding) := by
+  cases h1 : st'.getTcb? t with
+  | none =>
+    cases h0 : st.getTcb? t with
+    | none => rfl
+    | some u =>
+      obtain ⟨u', hu', -⟩ := h.getTcb?_fwd h0
+      rw [h1] at hu'; cases hu'
+  | some t' =>
+    obtain ⟨u, hu, e1, e2⟩ := h.getTcb?_back h1
+    rw [hu]
+    simp only [Option.map_some, Option.some.injEq]
+    unfold TCB.schedContextBinding
+    rw [e1, e2]
+
+/-- **The return's cores, read on the blocking wait's entry state**: the guard,
+the home core and the release core are the entry state's, and the running core
+is the one off the executing core there. -/
+theorem notificationWaitOnCore_blocked_signalReturnCores_eq {notifId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st1 : SystemState}
+    (n : SeLe4n.ObjId) (hInv : st.objects.invExt)
+    (h : notificationWaitOnCore notifId tid c st = (st1, .ok none)) :
+    signalReturnGuard st1 n tid = signalReturnGuard st n tid ∧
+      signalReturnCores st1 n tid =
+        (if signalReturnGuard st n tid then
+          determineTargetCore st tid :: (runningCoreOffCore? st tid c).toList else []) ∧
+      signalReturnReplenishCores st1 n tid = signalReturnReplenishCores st n tid ∧
+      signalReturnContext? st1 n tid = signalReturnContext? st n tid := by
+  obtain ⟨F, N, R⟩ := notificationWaitOnCore_blocked_frames hInv h
+  have hG := signalReturnGuard_congr (n := n) (tid := tid)
+    (N.getNotification?_schedContext n) (scIdLinksAgree.of_schedLinkFrame F).2
+    (bindingLinksAgree.getTcb?_binding F.binding tid)
+  have hC := notificationContext?_congr N n
+  refine ⟨hG, ?_, ?_, ?_⟩
+  · unfold signalReturnCores
+    rw [hG, R, (show schedAuxAgree st _ from F.aux).determineTargetCore_eq]
+  · unfold signalReturnReplenishCores
+    rw [hG, hC]
+    cases notificationContext? st n with
+    | none => rfl
+    | some s =>
+      simp only [Option.map_some, Option.getD_some]
+      rw [SchedContextOps.purgeReplenishCores_of_linksAgree F.releaseState.1]
+  · unfold signalReturnContext?
+    rw [hG, hC]
+
+/-- **The context a consumed wait's completion donates is the one its footprint
+locks**: the wait consumed a word, so the entry state's `waitCompletionContext?`
+is the donation's, which the consumption and the badge frame keep. -/
+theorem completeSignalArm_consumed_waitCompletionContext?_eq {notifId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st1 : SystemState}
+    {badge : SeLe4n.Badge} (hInv : st.objects.invExt)
+    (h : notificationWaitOnCore notifId tid c st = (st1, .ok (some badge))) :
+    signalDonationContext? (Architecture.writeReturnFrameToTcb st1 tid
+      (Architecture.badgeReturnFrame st1 tid badge)) notifId tid =
+        waitCompletionContext? st notifId tid := by
+  have hPend := notificationWaitOnCore_notificationPending h
+  simp only [Option.isSome_some] at hPend
+  unfold waitCompletionContext?
+  rw [hPend, if_pos rfl]
+  exact signalDonationContext?_congr (completeSignalArm_donationPre_ntfnContexts hInv h)
+    (scIdLinksAgree.of_schedLinkFrame (completeSignalArm_donationPre_schedLinkFrame hInv h))
+    notifId tid
+
+/-- **...and the context a blocked wait's return takes back is the one its
+footprint locks**: the wait blocked, so the entry state's
+`waitCompletionContext?` is the return's, which the block keeps. -/
+theorem notificationWaitOnCore_blocked_waitCompletionContext?_eq {notifId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st1 : SystemState}
+    (hInv : st.objects.invExt)
+    (h : notificationWaitOnCore notifId tid c st = (st1, .ok none)) :
+    signalReturnContext? st1 notifId tid = waitCompletionContext? st notifId tid := by
+  have hPend := notificationWaitOnCore_notificationPending h
+  simp only [Option.isSome_none] at hPend
+  unfold waitCompletionContext?
+  rw [hPend]
+  exact (notificationWaitOnCore_blocked_signalReturnCores_eq notifId hInv h).2.2.2
+
 end SeLe4n.Kernel

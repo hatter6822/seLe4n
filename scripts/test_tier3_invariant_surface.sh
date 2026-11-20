@@ -10427,6 +10427,17 @@ run_check "INVARIANT" rg -n '^theorem sendSignalOnCore_crossCoreNonInterference(
 run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContext_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/SchedContextArms.lean
 run_check "INVARIANT" rg -n '^theorem schedContextBind_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem completeSignalArm_scheduler_of_donation($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+# WS-SX SX8.2: seL4's `maybeReturnSchedContext` after a blocking Wait — the
+# return, the lock set's return cores, and the wait arm wired through it.
+run_check "INVARIANT" rg -n '^def maybeReturnSchedContext($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+run_check "INVARIANT" rg -n '^theorem maybeReturnSchedContext_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem maybeReturnSchedContext_savedRegsKeptExcept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_check "INVARIANT" rg -n '^theorem savedRegsWrittenFree.giveBack($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_check "INVARIANT" rg -n '\| \(st'"'"', \.ok none\) => \.ok \(\(\), maybeReturnSchedContext st'"'"' notifId tid\)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'waitReturnCores st notificationId\? waiter executingCore\)\)' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+# The wait's object footprint locks the completion's context, keyed on the word.
+run_check "INVARIANT" rg -n 'waitCompletionContext\? st notificationId ops.caller\)\.map' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_negative_check "INVARIANT" rg -n 'signalDonationContext\? st notificationId ops.caller' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 # NEGATIVE: the footprint must take no policy — that is what makes
 # `footprint_does_not_authorize` provable rather than merely plausible.
 run_negative_check "INVARIANT" rg -n 'def declassifiedSignalEffectFootprint.*DeclassificationPolicy' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -11231,6 +11242,40 @@ open SeLe4n.Kernel.Concurrency
 #check @maybeDonateSchedContext_declassificationAuditLog_eq
 #check @donateToSignalled_declassificationAuditLog_eq
 #check @maybeDonateSchedContextFast_eq_code
+#check @maybeReturnSchedContext
+#check @maybeReturnSchedContextFast_eq
+#check @maybeReturnSchedContext_cases
+#check @maybeReturnSchedContext_induct
+#check @maybeReturnSchedContext_of_guard_false
+#check @schedContextUnbindAdmitted_of_returnAdmitted
+#check @signalReturnGuard_congr
+#check @signalReturnCores
+#check @signalReturnReplenishCores
+#check @signalReturnContext?
+#check @runningCoreOffCore?
+#check @runningCoreOf?_removeRunnableOnCore
+#check @notificationWaitOnCore_blocked_cases
+#check @notificationWaitOnCore_blocked_frames
+#check @notificationWaitOnCore_blocked_signalReturnCores_eq
+#check @linkNtfnWaiter_schedFrames
+#check @bindingLinksAgree.getTcb?_binding
+#check @maybeReturnSchedContext_coversWrites
+#check @waitReturnCores
+#check @waitReturnReplenishCores
+#check @schedLockSet_notificationWaitOnCore_contains_return_writes
+#check @maybeReturnSchedContext_preserves_ipcInvariantFull
+#check @maybeReturnSchedContext_preserves_objects_invExt
+#check @maybeReturnSchedContext_stepCovers
+#check @maybeReturnSchedContext_runQueueEntryStage
+#check @maybeReturnSchedContext_mappingStage
+#check @maybeReturnSchedContext_recordsStage
+#check @maybeReturnSchedContext_readyKeptStage
+#check @notificationPending
+#check @waitCompletionContext?
+#check @notificationWaitOnCore_notificationPending
+#check @completeSignalArm_consumed_waitCompletionContext?_eq
+#check @notificationWaitOnCore_blocked_waitCompletionContext?_eq
+#check @lockSetForSyscall_notificationWait_covers_completionContext
 #check @endpointReplyRecvCheckedArmR_eq_general
 #check @endpointReplyRecvLongCheckedArmR_eq_general
 #check @replyRecvSignalArmR

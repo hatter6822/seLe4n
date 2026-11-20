@@ -576,8 +576,13 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
       have h1 := notificationWaitCrossCoreDispatchChecked_savedRegsUnwritten ctx notifId tid ec
         P.objInv
       rw [hWt] at h1
-      exact (bankFrame.of_unwritten hne (stepCovers_of_pair_eq
-        (notificationWaitCrossCoreDispatchChecked_stepCovers e' hInv) hWt).1 h1).bankAgree hA
+      have hI1 : (notificationWaitOnCore notifId tid ec st).1.objects.invExt :=
+        notificationWaitOnCore_preserves_objects_invExt notifId tid ec st hInv
+      rw [notificationWaitCrossCoreDispatchChecked_ok_inner hWt] at hI1
+      exact ((bankFrame.of_unwritten hne (stepCovers_of_pair_eq
+        (notificationWaitCrossCoreDispatchChecked_stepCovers e' hInv) hWt).1 h1).trans
+        (bankFrame.of_kept hne (maybeReturnSchedContext_stepCovers e' _ notifId tid hI1).1
+          (maybeReturnSchedContext_savedRegsKeptExcept notifId tid hI1))).bankAgree hA
     · cases h
   case none.replyRecv.object epId =>
     split at h

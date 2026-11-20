@@ -648,6 +648,22 @@ theorem schedContextUnbind_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
           (fun x hx => by cases hx)
   · cases h
 
+/-- **seL4's `maybeReturnSchedContext` writes no saved register**: the
+identity, or the unbind. -/
+theorem maybeReturnSchedContext_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
+    {st : SystemState} (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    savedRegsKeptExcept W st (maybeReturnSchedContext st n tid) :=
+  maybeReturnSchedContext_induct (fun a b => savedRegsKeptExcept W a b) st n tid
+    (fun _ _ => rfl) (fun _ _ _ _ _ h => schedContextUnbind_savedRegsKeptExcept hInv h)
+
+/-- …so a census survives a return after it. -/
+theorem savedRegsWrittenFree.giveBack {e : CoreId} {base pre post : SystemState}
+    (h : savedRegsWrittenFree e base pre post) (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (hInv : post.objects.invExt) :
+    savedRegsWrittenFree e base pre (maybeReturnSchedContext post n tid) := fun t => by
+  rw [maybeReturnSchedContext_savedRegsKeptExcept (W := fun _ => False) n tid hInv t id]
+  exact h t
+
 /-- **A prefix the executing core's scheduling point ends**: the prefix writes
 only threads free at `base` and keeps or clears the core's slot, so the outgoing
 thread the point saves was the core's current thread at the prefix's start. -/
