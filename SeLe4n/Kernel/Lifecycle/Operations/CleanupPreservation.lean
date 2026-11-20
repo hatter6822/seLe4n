@@ -453,17 +453,19 @@ def ntfnUnlinkSlotRel (o o' : Option KernelObject) : Prop :=
   o' = o ∨
   (∃ n n', o = some (.notification n) ∧ o' = some (.notification n') ∧
     n'.pendingBadge = n.pendingBadge ∧ n'.boundTCB = n.boundTCB ∧
-    (notificationQueueWellFormed n → notificationQueueWellFormed n')) ∨
+    (notificationQueueWellFormed n → notificationQueueWellFormed n') ∧
+    n'.schedContextCode = n.schedContextCode) ∨
   (∃ t t', o = some (.tcb t) ∧ o' = some (.tcb t') ∧ tcbNtfnLinkRewrite t' t)
 
 theorem ntfnUnlinkSlotRel.trans {a b c : Option KernelObject}
     (h1 : ntfnUnlinkSlotRel a b) (h2 : ntfnUnlinkSlotRel b c) : ntfnUnlinkSlotRel a c := by
-  rcases h1 with rfl | ⟨n, n', rfl, rfl, hB, hT, hW⟩ | ⟨t, t', rfl, rfl, hR⟩
+  rcases h1 with rfl | ⟨n, n', rfl, rfl, hB, hT, hW, hS⟩ | ⟨t, t', rfl, rfl, hR⟩
   · exact h2
-  · rcases h2 with rfl | ⟨m, m', hm, rfl, hB2, hT2, hW2⟩ | ⟨u, u', hu, _, _⟩
-    · exact Or.inr (Or.inl ⟨n, n', rfl, rfl, hB, hT, hW⟩)
+  · rcases h2 with rfl | ⟨m, m', hm, rfl, hB2, hT2, hW2, hS2⟩ | ⟨u, u', hu, _, _⟩
+    · exact Or.inr (Or.inl ⟨n, n', rfl, rfl, hB, hT, hW, hS⟩)
     · cases hm
-      exact Or.inr (Or.inl ⟨n, m', rfl, rfl, hB2.trans hB, hT2.trans hT, hW2 ∘ hW⟩)
+      exact Or.inr (Or.inl ⟨n, m', rfl, rfl, hB2.trans hB, hT2.trans hT, hW2 ∘ hW,
+        hS2.trans hS⟩)
     · cases hu
   · rcases h2 with rfl | ⟨m, m', hm, _, _, _, _⟩ | ⟨u, u', hu, rfl, hR2⟩
     · exact Or.inr (Or.inr ⟨t, t', rfl, rfl, hR⟩)
@@ -501,13 +503,14 @@ theorem ntfnUnlinkReach_rewriteNotification {st : SystemState} (hInv : st.object
     (hN : st.objects[oid]? = some (.notification n))
     (hB : n'.pendingBadge = n.pendingBadge) (hT : n'.boundTCB = n.boundTCB)
     (hW : notificationQueueWellFormed n → notificationQueueWellFormed n')
+    (hS : n'.schedContextCode = n.schedContextCode)
     (hAdm : st.rewriteAdmissible oid (.notification n')) :
     ntfnUnlinkReach st (st.rewriteObject oid (.notification n') hAdm) := by
   refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv, fun k => ?_⟩
   by_cases hk : oid = k
   · subst hk
     rw [SystemState.rewriteObject_objects_self _ _ _ _ hInv, hN]
-    exact Or.inr (Or.inl ⟨n, n', rfl, rfl, hB, hT, hW⟩)
+    exact Or.inr (Or.inl ⟨n, n', rfl, rfl, hB, hT, hW, hS⟩)
   · rw [SystemState.rewriteObject_objects_ne _ _ _ _ _ hk hInv]
     exact Or.inl rfl
 
@@ -552,7 +555,7 @@ theorem removeFromNotificationWaitQueue_reach (st : SystemState) (tid : SeLe4n.T
             else if notif.waitHead = some tid then none else tcb.ntfnPrev)
           (fun h => by simp [h])
         have h1 := ntfnUnlinkReach_rewriteNotification hInv oid notif _ hN'
-          (by rfl) (by rfl) hW (SystemState.rewriteAdmissible_notification hN _)
+          (by rfl) (by rfl) hW (by rfl) (SystemState.rewriteAdmissible_notification hN _)
         exact ntfnUnlinkReach_unlinkNtfnNeighbours
           (ntfnUnlinkReach_updateTcb h1 tid _ (fun _ => ⟨_, _, rfl⟩)) _ _
       · exact hRefl
@@ -1162,7 +1165,7 @@ theorem removeFromNotificationWaitQueue_preserves_ipcInvariant
     ipcInvariant (removeFromNotificationWaitQueue st tid) := by
   intro oid ntfn hL
   rcases (removeFromNotificationWaitQueue_reach st tid hInv).2 oid with
-    h | ⟨n, n', hn, hn', _, _, hW⟩ | ⟨t, t', _, ht', _⟩
+    h | ⟨n, n', hn, hn', _, _, hW, -⟩ | ⟨t, t', _, ht', _⟩
   · exact hIpc oid ntfn (h ▸ hL)
   · rw [hL] at hn'; cases hn'; exact hW (hIpc oid n hn)
   · rw [hL] at ht'; cases ht'

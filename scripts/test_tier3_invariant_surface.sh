@@ -11167,6 +11167,11 @@ open SeLe4n.Kernel.Concurrency
 #check @ntfnContextsAgree.of_notificationsAndBindingsKept
 #check @notificationContext?_congr
 #check @notificationsBackward_of_kindPreservingAt
+#check @cancelReplyHolder_ntfnContextsAgree
+#check @cancelRecvBusyReply_ntfnContextsAgree
+#check @cancelRecvBusyReply_signalDonationContext?
+#check @signalDonationContext?_congr
+#check @receiveCompletion_signalDonationContext?_eq
 #check @endpointReplyRecvCheckedArmR_eq_general
 #check @endpointReplyRecvLongCheckedArmR_eq_general
 #check @replyRecvSignalArmR

@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.IPC.Invariant.SignalDonationFrame
 import SeLe4n.Kernel.IPC.Invariant.ReplySignalFrame
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SuspendHolders
+import SeLe4n.Kernel.IPC.Invariant.ReplyHolderCancelFrame
 
 /-!
 # The binding pair across a reply
@@ -792,5 +793,261 @@ theorem replyTransferOnCoreChecked_objects_invExt {ctx : LabelingContext}
           · exact ipcUnwrapCaps_preserves_objects_invExt caps none rtcb slot? stR sX summary
               (hO ▸ hI) hU
         exact stageDeliveredMessage_objects_invExt _ _ _ hIX
+
+/-! ### The notifications' context words across a receive's busy-reply cancel
+
+seL4-MCS `receiveIPC` cancels the busy reply's holder before it reads the bound
+notification; the cancel unlinks the holder from whatever it waits on and
+reverts the boost it lent, and writes no notification's context word.  So the
+donation guard read on the receive's entry state reads the same notification
+context as the guard read after the cancel. -/
+
+namespace ntfnContextsAgree
+
+theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
+    ntfnContextsAgree st st' := fun _ => by rw [h]
+
+theorem updateSchedContext (st : SystemState) (s : SeLe4n.SchedContextId)
+    (f : SchedContext → SchedContext) (hInv : st.objects.invExt) :
+    ntfnContextsAgree st (st.updateSchedContext s f) := by
+  cases hG : st.getSchedContext? s with
+  | none => rw [SystemState.updateSchedContext_eq_self_of_none hG]; exact refl st
+  | some x =>
+    rw [SystemState.updateSchedContext_eq_of_some hG]
+    have hPre := (SystemState.getSchedContext?_eq_some_iff st s x).mp hG
+    exact proj_insert_eq ntfnContextOf hInv (by rw [hPre]; rfl)
+
+/-- A step holding every notification both ways keeps every context word. -/
+theorem of_notification_iff {st st' : SystemState}
+    (h : ∀ (oid : SeLe4n.ObjId) (n : Notification),
+      st'.objects[oid]? = some (.notification n) ↔ st.objects[oid]? = some (.notification n)) :
+    ntfnContextsAgree st st' := by
+  intro oid
+  by_cases hN : ∃ n, st'.objects[oid]? = some (.notification n)
+  · obtain ⟨n, hn⟩ := hN
+    rw [hn, (h oid n).mp hn]
+  · have hN' : ¬ ∃ m, st.objects[oid]? = some (.notification m) :=
+      fun ⟨m, hm⟩ => hN ⟨m, (h oid m).mpr hm⟩
+    have e : ∀ (o : Option KernelObject), (¬ ∃ m, o = some (.notification m)) →
+        ntfnContextOf o = none := by
+      intro o ho
+      cases o with
+      | none => rfl
+      | some o => cases o <;> first | rfl | exact absurd ⟨_, rfl⟩ ho
+    rw [e _ hN, e _ hN']
+
+/-- A key-wise kind-preserving write that creates no notification keeps every
+notification, so every context word. -/
+theorem of_kindPreserving_backward {st st' : SystemState}
+    (hK : ∀ oid, kindPreservingWriteAt st st' oid)
+    (hB : ∀ (oid : SeLe4n.ObjId) (n : Notification),
+      st'.objects[oid]? = some (.notification n) → st.objects[oid]? = some (.notification n)) :
+    ntfnContextsAgree st st' := by
+  refine of_notification_iff fun oid n => ⟨hB oid n, fun hn => ?_⟩
+  rcases hK oid with e | ⟨pre, post, hp, hq, ht, -, -, -, -, -, -⟩
+  · rw [e]; exact hn
+  · rw [hn] at hp
+    cases hp
+    cases post <;> simp [KernelObject.objectType] at ht
+    rename_i n'
+    have := hB oid n' hq
+    rw [hn] at this
+    cases this
+    exact hq
+
+theorem of_offRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st) :
+    ntfnContextsAgree st st' :=
+  fun o => proj_eq_of_map_eq _ _ (fun x => by cases x <;> rfl) (h o)
+
+end ntfnContextsAgree
+
+/-- **The head cut keeps every context word**: a reply stored over itself, a
+context's head and origin cleared, a holder's loan made its own. -/
+theorem cutCancelledCallerHead_ntfnContextsAgree (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) :
+    ntfnContextsAgree st (Lifecycle.Suspend.cutCancelledCallerHead st tcb) ∧
+      (Lifecycle.Suspend.cutCancelledCallerHead st tcb).objects.invExt := by
+  refine (Lifecycle.Suspend.cutCancelledCallerHead_closed
+    (fun s => ntfnContextsAgree st s ∧ s.objects.invExt)
+    (fun s s1 rid r scId ⟨hA, hI⟩ _ hR hS => ?_)
+    (fun s scId holder ht o ⟨hA, hI⟩ _ _ _ => ?_) st tcb ⟨.refl st, hInv⟩).imp id id
+  · have hPre := (SystemState.getReply?_eq_some_iff _ _ _).mp hR
+    have F1 := ntfnContextsAgree.storeObject hI hS (by rw [hPre]; rfl)
+    have hI1 := storeObject_preserves_objects_invExt s s1 _ _ hI hS
+    exact ⟨hA.trans (F1.trans (ntfnContextsAgree.updateSchedContext s1 scId _ hI1)),
+      SystemState.updateSchedContext_preserves_objects_invExt _ scId _ hI1⟩
+  · refine ⟨hA.trans ((ntfnContextsAgree.updateTcb s holder _ hI).trans
+      (ntfnContextsAgree.of_objects_eq (markKeyChangeFrom_objects _ _ _))), ?_⟩
+    rw [markKeyChangeFrom_objects]
+    exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hI
+
+/-- **A reply-blocked caller's cancel tail keeps every context word**: the
+splice, the restore, the consume and the unlink write replies and threads. -/
+theorem replyCancelTail_ntfnContextsAgree (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
+    (hInv : st.objects.invExt) :
+    ntfnContextsAgree st (SystemState.unlinkReplyWaiterOpt
+        (Lifecycle.Suspend.consumeReplyLink
+          (Lifecycle.Suspend.restoreToReadyCancelled (SeLe4n.Kernel.cutThreadReplyFrameOut st t)
+            c) c t)
+        c t.blockingServer?) := by
+  have g1 := cutThreadReplyFrameOut_preserves_objects_invExt st t hInv
+  have f1 : ntfnContextsAgree st (SeLe4n.Kernel.cutThreadReplyFrameOut st t) := by
+    unfold SeLe4n.Kernel.cutThreadReplyFrameOut
+    split
+    · exact .refl st
+    · rename_i rid _
+      exact ntfnContextsAgree.of_kindPreserving_backward
+        (cutReplyFrameOutOrSelf_kindPreservingWrite st rid hInv).objectsAt
+        (fun oid n h => cutReplyFrameOutOrSelf_notification_backward st rid hInv oid n h)
+  have f2 : ntfnContextsAgree st (Lifecycle.Suspend.restoreToReadyCancelled
+      (SeLe4n.Kernel.cutThreadReplyFrameOut st t) c) := by
+    unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
+    exact f1.trans (ntfnContextsAgree.updateTcb _ c _ g1)
+  have g2 : (Lifecycle.Suspend.restoreToReadyCancelled
+      (SeLe4n.Kernel.cutThreadReplyFrameOut st t) c).objects.invExt := by
+    unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
+    exact SystemState.updateTcb_preserves_objects_invExt _ _ _ g1
+  have f3 : ntfnContextsAgree st (Lifecycle.Suspend.consumeReplyLink
+      (Lifecycle.Suspend.restoreToReadyCancelled (SeLe4n.Kernel.cutThreadReplyFrameOut st t) c)
+      c t) := by
+    refine f2.trans ?_
+    unfold Lifecycle.Suspend.consumeReplyLink
+    split
+    · exact .refl _
+    · rename_i rid _
+      have hC := SystemState.consumeCallerReply_eq_link
+        (Lifecycle.Suspend.restoreToReadyCancelled (SeLe4n.Kernel.cutThreadReplyFrameOut st t) c)
+        c rid
+      exact ntfnContextsAgree.of_notification_iff fun oid n =>
+        SystemState.consumeCallerReply_nonTcbNonReply_agree _ _ c rid g2 hC oid (.notification n)
+          (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)
+  exact f3.trans (ntfnContextsAgree.of_offRunLinks
+    (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ c _))
+
+/-- **The suspend's IPC cancel keeps every context word**, on each of its arms. -/
+theorem cancelIpcKeepingContexts_ntfnContextsAgree (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (hInv : st.objects.invExt) :
+    ntfnContextsAgree st (Lifecycle.Suspend.cancelIpcKeepingContexts st tid tcb) := by
+  cases hI : tcb.ipcState with
+  | blockedOnReply ep rt =>
+    rw [Lifecycle.Suspend.cancelIpcKeepingContexts_reply_arm st tid tcb ep rt hI hInv]
+    have hC : Lifecycle.Suspend.cutCancelledCallerHead st tcb =
+        Lifecycle.Suspend.cutThreadHeadFrameKeepingContext st tcb := by
+      unfold Lifecycle.Suspend.cutCancelledCallerHead; rw [hI]
+    obtain ⟨hA, hI1⟩ := cutCancelledCallerHead_ntfnContextsAgree st tcb hInv
+    rw [hC] at hA hI1
+    exact hA.trans (replyCancelTail_ntfnContextsAgree _ tid tcb hI1)
+  | blockedOnNotification n =>
+    rw [Lifecycle.Suspend.cancelIpcKeepingContexts_of_not_reply st tid tcb
+      (by intro ep rt h; rw [hI] at h; cases h)]
+    unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hI]
+    have hR := removeFromNotificationWaitQueue_reach st tid hInv
+    have h1 : ntfnContextsAgree st (removeFromNotificationWaitQueue st tid) := fun oid => by
+      rcases hR.2 oid with e | ⟨n0, n', h0, h1, -, -, -, hS⟩ | ⟨t0, t', h0, h1, -⟩
+      · rw [e]
+      · rw [h0, h1]; simp only [ntfnContextOf, hS]
+      · rw [h0, h1]; rfl
+    unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
+    exact h1.trans (ntfnContextsAgree.updateTcb _ _ _ hR.1)
+  | ready =>
+    rw [Lifecycle.Suspend.cancelIpcKeepingContexts_of_not_reply st tid tcb
+      (by intro ep rt h; rw [hI] at h; cases h)]
+    unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hI]
+    exact .refl st
+  | blockedOnSend ep | blockedOnReceive ep | blockedOnCall ep =>
+    rw [Lifecycle.Suspend.cancelIpcKeepingContexts_of_not_reply st tid tcb
+      (by intro ep rt h; rw [hI] at h; cases h)]
+    unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hI]
+    dsimp only
+    have hS := spliceOutMidQueueNode_preserves_objects_invExt st tid hInv
+    have hR : ntfnContextsAgree st (removeFromBlockingEndpoint st tid ep) :=
+      ntfnContextsAgree.of_notification_iff fun oid n =>
+        (removeFromBlockingEndpoint_nonEndpoint st tid ep hS oid (.notification n)
+          (fun _ h => KernelObject.noConfusion h)).trans
+        (spliceOutMidQueueNode_nonTcb st tid hInv oid (.notification n)
+          (fun _ h => KernelObject.noConfusion h))
+    have hRI := removeFromBlockingEndpoint_preserves_objects_invExt st tid ep hInv
+    unfold Lifecycle.Suspend.restoreToReadyCancelled Lifecycle.Suspend.restoreToReadyStaging
+    exact hR.trans (ntfnContextsAgree.updateTcb _ _ _ hRI)
+
+/-- **A receive's busy-reply cancel keeps every context word**: the holder's IPC
+cancel, the boost it lent reverted, and its `Inactive` write. -/
+theorem cancelReplyHolder_ntfnContextsAgree (st : SystemState) (holder : SeLe4n.ThreadId)
+    (ec : Concurrency.CoreId) (hInv : st.objects.invExt) :
+    ntfnContextsAgree st (cancelReplyHolder st holder ec) := by
+  rcases cancelReplyHolder_cases st holder ec with h | ⟨tcb, -, -, h⟩
+  · rw [h]; exact .refl st
+  rw [h]
+  have hK := cancelIpcKeepingContexts_ntfnContextsAgree st holder tcb hInv
+  have hKI := Lifecycle.Suspend.cancelIpcKeepingContexts_preserves_objects_invExt st holder tcb hInv
+  have hR : ntfnContextsAgree st (Lifecycle.Suspend.suspendCancelRevert st holder tcb ec) ∧
+      (Lifecycle.Suspend.suspendCancelRevert st holder tcb ec).objects.invExt := by
+    unfold Lifecycle.Suspend.suspendCancelRevert; dsimp only; split
+    · exact ⟨hK.trans (ntfnContextsAgree.of_kindPreserving_backward
+          (propagatePipChainCrossCore_kindPreservingWrite _ _ ec _ hKI).objectsAt
+          (fun oid n h => PriorityInheritance.propagatePipChainCrossCore_notification_backward
+            _ _ ec _ hKI oid n h)),
+        PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt _ _ _ _ hKI⟩
+    · exact ⟨hK, hKI⟩
+  exact hR.1.trans (ntfnContextsAgree.updateTcb _ _ _ hR.2)
+
+/-- ...and so does the receive's cancel, whichever holder it names. -/
+theorem cancelRecvBusyReply_ntfnContextsAgree (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (decoded : SyscallDecodeResult) (ec : Concurrency.CoreId)
+    (st : SystemState) (hInv : st.objects.invExt) :
+    ntfnContextsAgree st (cancelRecvBusyReply ctx tid gate decoded ec st) := by
+  unfold cancelRecvBusyReply
+  split
+  · exact .refl st
+  · exact cancelReplyHolder_ntfnContextsAgree st _ ec hInv
+
+/-- **States agreeing on every thread's context, every context's thread and every
+notification's context word name the same donated context.** -/
+theorem signalDonationContext?_congr {st st' : SystemState} (N : ntfnContextsAgree st st')
+    (A : scIdLinksAgree st st') (n : SeLe4n.ObjId) (x : SeLe4n.ThreadId) :
+    signalDonationContext? st' n x = signalDonationContext? st n x := by
+  unfold signalDonationContext?
+  rw [signalDonationGuard_congr (n := n) (tid := x) (N.getNotification?_schedContext n) A.2 (A.1 x),
+    notificationContext?_congr N n]
+
+/-- **The guard a receive's donation reads is the entry state's**: the busy-reply
+cancel keeps every thread's context, every context's thread and every
+notification's context word. -/
+theorem cancelRecvBusyReply_signalDonationContext? (ctx : LabelingContext)
+    (tid : SeLe4n.ThreadId) (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (ec : Concurrency.CoreId) (st : SystemState) (hInv : st.objects.invExt)
+    (n : SeLe4n.ObjId) (x : SeLe4n.ThreadId) :
+    signalDonationContext? (cancelRecvBusyReply ctx tid gate decoded ec st) n x =
+      signalDonationContext? st n x :=
+  signalDonationContext?_congr (cancelRecvBusyReply_ntfnContextsAgree ctx tid gate decoded ec st hInv)
+    (cancelRecvBusyReply_scIdLinksAgree ctx tid gate decoded ec st hInv) n x
+
+theorem cancelRecvBusyReply_objects_invExt (ctx : LabelingContext)
+    (tid : SeLe4n.ThreadId) (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (ec : Concurrency.CoreId) (st : SystemState) (hInv : st.objects.invExt) :
+    (cancelRecvBusyReply ctx tid gate decoded ec st).objects.invExt := by
+  unfold cancelRecvBusyReply
+  split
+  · exact hInv
+  · exact cancelReplyHolder_objects_invExt st _ ec hInv
+
+/-- **A receive's donated context is read exactly on its entry state**: the
+busy-reply cancel, the completion's consumption and its badge frame each keep
+the guard and the context it names, so the context the donation writes is
+`signalDonationContext?` of the entry state, which the receive's footprint locks
+(`lockSetForSyscall_receive_covers_donationContext`). -/
+theorem receiveCompletion_signalDonationContext?_eq {ctx : LabelingContext}
+    {tid : SeLe4n.ThreadId} {gate : SyscallGate} {decoded : SyscallDecodeResult}
+    {ec c : Concurrency.CoreId} {st st1 : SystemState} {notifId : SeLe4n.ObjId}
+    {badge : SeLe4n.Badge} (hInv : st.objects.invExt)
+    (hW : notificationWaitOnCore notifId tid c (cancelRecvBusyReply ctx tid gate decoded ec st)
+      = (st1, .ok (some badge)))
+    (n : SeLe4n.ObjId) (x : SeLe4n.ThreadId) :
+    signalDonationContext? (Architecture.writeReturnFrameToTcb st1 tid
+      (Architecture.badgeReturnFrame st1 tid badge)) n x = signalDonationContext? st n x := by
+  have hIC := cancelRecvBusyReply_objects_invExt ctx tid gate decoded ec st hInv
+  exact (signalDonationContext?_congr (completeSignalArm_donationPre_ntfnContexts hIC hW)
+    (scIdLinksAgree.of_schedLinkFrame (completeSignalArm_donationPre_schedLinkFrame hIC hW)) n x).trans
+    (cancelRecvBusyReply_signalDonationContext? ctx tid gate decoded ec st hInv n x)
 
 end SeLe4n.Kernel

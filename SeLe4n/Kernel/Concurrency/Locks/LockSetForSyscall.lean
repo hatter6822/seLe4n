@@ -229,24 +229,17 @@ def receiverBoundNotification? (st : SystemState) (receiver : ThreadId) : Option
 
 /-- **The context a completed signal donates, as a lock operand**, for a thread
 bound to a notification: seL4's guard read on the entry state
-(`signalDonationContext?`, exact).  `afterEarlierStep` says the guard is instead read
-after an earlier step of the same syscall (a reply-receive's reply, a receive's
-busy-reply cancel), which may return the receiver's context; those name the
-notification's bound context whenever it has one (`notificationContext?`), a
-superset (`notificationContext?_of_signalDonationContext?`). -/
+(`signalDonationContext?`, exact; a receive's busy-reply cancel keeps everything
+the guard reads, `receiveCompletion_signalDonationContext?_eq`).
+`afterEarlierStep` says the guard is instead read after a reply-receive's reply,
+which may return the receiver's donated context; that names the notification's
+bound context whenever it has one (`notificationContext?`), a superset
+(`replyRecvDonationContext_superset`). -/
 def boundSignalDonationContext? (st : SystemState) (receiver : ThreadId)
     (afterEarlierStep : Bool) : Option SchedContextId :=
   (receiverBoundNotification? st receiver).bind fun n =>
     if afterEarlierStep then SeLe4n.Kernel.notificationContext? st n
     else SeLe4n.Kernel.signalDonationContext? st n receiver
-
-/-- **A receive's donated context**: exact where no busy reply is cancelled
-first, and the notification's bound context where one is (the cancel runs
-before the completion reads the guard). -/
-def receiveDonationContext? (st : SystemState) (receiver : ThreadId)
-    (replyId : Option ReplyId) : Option SchedContextId :=
-  boundSignalDonationContext? st receiver
-    (SeLe4n.Kernel.busyReplyHolder? st receiver replyId).isSome
 
 /-- **A receive's footprint with its busy reply's holder cancelled** (seL4-MCS
 `receiveIPC`'s `cancelIPC(replyTCB)`): the receive's own footprint and, when the
@@ -265,7 +258,9 @@ def lockSet_receiveCancellingHolder (st : SystemState) (endpointId : ObjId)
     -- that finds it active completes (`completeSignalArm`), writing it.
     ((receiverBoundNotification? st receiver).map fun n => (notificationLock n, .write)))
   -- and `completeSignal`'s `maybeDonateSchedContext`: the context it donates.
-  ((receiveDonationContext? st receiver replyId).map fun s => (schedContextLock s, .write))
+  -- seL4's guard read on the entry state: the busy reply's cancel keeps what it
+  -- reads (`receiveCompletion_signalDonationContext?_eq`).
+  ((boundSignalDonationContext? st receiver false).map fun s => (schedContextLock s, .write))
 
 /-- **WS-SM SM3.C.9**: the declared lock-set footprint of a syscall, or
 `none` where one has not been established yet.
@@ -930,13 +925,15 @@ theorem lockSetForSyscall_receive_covers_boundNotification
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- seL4-MCS `completeSignal`'s `maybeDonateSchedContext`: and the context a
-receive's completion donates (`receiveDonationContext?`). -/
+receive's completion donates, seL4's guard read on the entry state
+(`boundSignalDonationContext?`; exact by
+`receiveCompletion_signalDonationContext?_eq`). -/
 theorem lockSetForSyscall_receive_covers_donationContext
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
     (endpointId : ObjId) (S : LockSet) (s : SchedContextId)
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId)
-    (hCtx : receiveDonationContext? st ops.caller ops.targetReply = some s)
+    (hCtx : boundSignalDonationContext? st ops.caller false = some s)
     (hDecl : lockSetForSyscall .receive ops st = some S) :
     (schedContextLock s, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_receive_eq ops st caller endpointId hTcb hEp] at hDecl
