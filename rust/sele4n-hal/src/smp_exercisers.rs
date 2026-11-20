@@ -4904,15 +4904,16 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             )
         },
         // A message-info length past 120 is clamped to 120 (seL4's
-        // `messageInfoFromWord`), so the Signal signals; a Signal is not a
-        // Call, so it is answered with no frame and resumes with its trapped
-        // registers (seL4's `handleInvocation` replies only `if (isCall)`).
-        resuming(RoundTrip {
+        // `messageInfoFromWord`), so the Signal signals and continues its
+        // caller as every signal does; it writes no register, so the caller
+        // keeps its own message-info word.
+        RoundTrip {
             caps_or_badges: None,
             overflow: None,
             msg_len: BAD_MESSAGE_LENGTH,
+            returns: Some((BAD_MESSAGE_LENGTH, [None; 4])),
             ..signal("bad-message-info")
-        }),
+        },
         // A Signal writes no register (seL4's `handleInvocation` replies only
         // to a Call), so the caller resumes with its own message-info word,
         // the top label bit still set.

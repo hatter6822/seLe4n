@@ -64,6 +64,35 @@ def sendSignalOnCore (n : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : 
   | (st', .ok sgi) => (donateToSignalled st st' n, .ok sgi)
   | (st', .error e) => (st', .error e)
 
+/-- **The compiled `sendSignalOnCore`**: the thread the signal wakes is read
+before the signal, so the state is handed to the signal alone and its writes
+are made in place.  The specification reads that thread on the pre-state after
+the signal has run, which keeps the pre-state alive across the signal's writes
+and so copies the object store on every compiled signal; the read moves no
+write (`sendSignalOnCore_eq_impl`).  A signal that wakes nothing is the signal
+itself; the donation runs in its compiled form
+(`maybeDonateSchedContextFast_eq`). -/
+@[inline] def sendSignalOnCoreImpl (n : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (executingCore : CoreId) (st : SystemState) :
+    SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
+  match signalWokenThread? st n with
+  | none => notificationSignalBoundOnCore n badge executingCore st
+  | some t =>
+    match notificationSignalBoundOnCore n badge executingCore st with
+    | (st', .ok sgi) => (maybeDonateSchedContextFast st' n.val t.val, .ok sgi)
+    | (st', .error e) => (st', .error e)
+
+@[csimp] theorem sendSignalOnCore_eq_impl : @sendSignalOnCore = @sendSignalOnCoreImpl := by
+  funext n badge c st
+  unfold sendSignalOnCore sendSignalOnCoreImpl donateToSignalled
+  cases hW : signalWokenThread? st n with
+  | none =>
+    simp only []
+    rcases notificationSignalBoundOnCore n badge c st with ⟨st', r⟩
+    cases r <;> rfl
+  | some t =>
+    simp only [maybeDonateSchedContextFast_eq]
+
 /-- The signal's answer is the wake's: the donation writes state alone. -/
 theorem sendSignalOnCore_snd (n : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
     (st : SystemState) :
