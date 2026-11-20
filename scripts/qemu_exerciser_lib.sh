@@ -921,6 +921,16 @@ for driver in drivers:
             "bound-signal-bind-root", "bound-signal-signal", "bound-signal-receive",
             "bound-signal-reply-recv-signal", "bound-signal-reply-recv",
             "bound-signal-unbind-root",
+            # WS-SX SX8.2: donation on a completed receive, on a woken waiter
+            # and on a woken bound receiver; return at a blocking Wait,
+            # receive and reply-receive.
+            "donation-bind-notification-context", "donation-resume-partner-wait",
+            "donation-root-wait-returns", "donation-partner-signals-waiter",
+            "donation-partner-suspends-wait", "donation-resume-partner-receive",
+            "donation-root-receive-returns", "donation-partner-signals-bound-receiver",
+            "donation-partner-suspends-receive", "donation-resume-partner-reply-recv",
+            "donation-root-reply-recv-returns", "donation-partner-unbinds-context",
+            "donation-partner-signals-unbound", "donation-partner-suspends-reply-recv",
             "nb-send-bad-cap-silent", "nb-recv-empty-returns", "send-invocation-error-discarded",
             "no-reply-receiver-waits", "call-no-reply-delivers", "call-no-reply-resume-root",
             "call-no-reply-resume-partner", "call-no-reply-blocks",

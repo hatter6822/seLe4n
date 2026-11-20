@@ -5285,6 +5285,21 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             NOTIFICATION_CAP,
             FRAME_VADDR,
         ),
+        // WS-SX SX8.2: the notification carries the scheduling context
+        // (`schedContext_bindNtfn`), so the receive that completes its signal
+        // donates it to the root task, which holds none
+        // (`maybeDonateSchedContext` in `completeSignal`); the reply-receive's
+        // completion then finds the root task holding a context and donates
+        // nothing.  No tick may charge the donated context, so the timer is
+        // masked until the context is unbound again.
+        kernel_step("donation-mask-ticks", MASK_TICKS_STEP),
+        cap_argument(
+            "donation-bind-notification-context",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            NOTIFICATION_CAP,
+            FRAME_VADDR,
+        ),
         signal("bound-signal-signal"),
         partner_step(
             "bound-signal-receive",
@@ -5306,6 +5321,96 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             ),
             REPLY_CAP,
         ),
+        // WS-SX SX8.2: each of seL4's return sites, then the donation that
+        // wakes the root task.  The root task is the only thread that blocks
+        // here, so the sequence does not depend on which thread core 0 runs:
+        // the partner, resumed, is the only other runnable thread, runs while
+        // the root task is blocked, and suspends itself, which leaves the root
+        // task current.  The root task, holding the notification's context,
+        // blocks in a Wait (`receiveSignal`'s `maybeReturnSchedContext`); the
+        // partner's signal wakes the waiter and donates the context back
+        // (`sendSignal`'s waiting-queue wake).  It blocks in a receive with
+        // its bound notification (`receiveIPC`'s return); the partner's
+        // signal wakes the bound receiver and donates (the bound-thread wake).
+        // It blocks in a reply-receive, whose reply half finds no caller (the
+        // receive leg's return); the partner unbinds the context, now bound
+        // to no thread, from the notification, so its signal donates nothing.
+        invocation(
+            "donation-resume-partner-wait",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "donation-root-wait-returns",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("donation-partner-signals-waiter"),
+        self_suspend(invocation(
+            "donation-partner-suspends-wait",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        )),
+        invocation(
+            "donation-resume-partner-receive",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "donation-root-receive-returns",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
+        ),
+        signal("donation-partner-signals-bound-receiver"),
+        self_suspend(invocation(
+            "donation-partner-suspends-receive",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        )),
+        invocation(
+            "donation-resume-partner-reply-recv",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "donation-root-reply-recv-returns",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
+        ),
+        invocation(
+            "donation-partner-unbinds-context",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        signal("donation-partner-signals-unbound"),
+        self_suspend(invocation(
+            "donation-partner-suspends-reply-recv",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        )),
+        kernel_step("donation-unmask-ticks", UNMASK_TICKS_STEP),
         invocation(
             "bound-signal-unbind-root",
             TCB_UNBIND_NOTIFICATION,
