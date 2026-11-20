@@ -256,11 +256,13 @@ theorem footprintCoversWrites_of_cores (S : LockSet)
     exact hd
       (hS ▸ (mem_schedFootprintOfCores_replenishQueue_iff runCores replenishCores d).mpr hMem)
 
-/-- **A cores footprint widened by more cores covers what the narrower one
-covers**: every member of the narrower ladder is a member of the wider one. -/
-theorem footprintCoversWrites_of_cores_append (S : LockSet)
-    (runCores replenishCores moreRun moreReplenish : List CoreId) (st st' : SystemState)
-    (hS : S.pairs = schedFootprintOfCores (runCores ++ moreRun) (replenishCores ++ moreReplenish))
+/-- **A cores footprint over wider cores covers what the narrower one covers**:
+every member of the narrower ladder is a member of the wider one. -/
+theorem footprintCoversWrites_of_cores_subset (S : LockSet)
+    (runCores replenishCores wideRun wideReplenish : List CoreId) (st st' : SystemState)
+    (hS : S.pairs = schedFootprintOfCores wideRun wideReplenish)
+    (hRun : ∀ d, d ∈ runCores → d ∈ wideRun)
+    (hRepl : ∀ d, d ∈ replenishCores → d ∈ wideReplenish)
     (h : ∀ S0 : LockSet, LockSet.ofList? (schedFootprintOfCores runCores replenishCores)
       = some S0 → footprintCoversWrites S0 st st') :
     footprintCoversWrites S st st' := by
@@ -272,10 +274,19 @@ theorem footprintCoversWrites_of_cores_append (S : LockSet)
   rw [hS]
   rcases (mem_schedFootprintOfCores_iff _ _ _).mp hl with e | ⟨c, hc, e⟩ | ⟨c, hc, e⟩
   · exact (mem_schedFootprintOfCores_iff _ _ _).mpr (Or.inl e)
-  · exact (mem_schedFootprintOfCores_iff _ _ _).mpr
-      (Or.inr (Or.inl ⟨c, List.mem_append_left _ hc, e⟩))
-  · exact (mem_schedFootprintOfCores_iff _ _ _).mpr
-      (Or.inr (Or.inr ⟨c, List.mem_append_left _ hc, e⟩))
+  · exact (mem_schedFootprintOfCores_iff _ _ _).mpr (Or.inr (Or.inl ⟨c, hRun c hc, e⟩))
+  · exact (mem_schedFootprintOfCores_iff _ _ _).mpr (Or.inr (Or.inr ⟨c, hRepl c hc, e⟩))
+
+/-- **A cores footprint widened by more cores covers what the narrower one
+covers** (`footprintCoversWrites_of_cores_subset`, the cores appended). -/
+theorem footprintCoversWrites_of_cores_append (S : LockSet)
+    (runCores replenishCores moreRun moreReplenish : List CoreId) (st st' : SystemState)
+    (hS : S.pairs = schedFootprintOfCores (runCores ++ moreRun) (replenishCores ++ moreReplenish))
+    (h : ∀ S0 : LockSet, LockSet.ofList? (schedFootprintOfCores runCores replenishCores)
+      = some S0 → footprintCoversWrites S0 st st') :
+    footprintCoversWrites S st st' :=
+  footprintCoversWrites_of_cores_subset S runCores replenishCores _ _ st st' hS
+    (fun _ h => List.mem_append_left _ h) (fun _ h => List.mem_append_left _ h) h
 
 -- ============================================================================
 -- §4  The reschedule step's writes are inside its footprint

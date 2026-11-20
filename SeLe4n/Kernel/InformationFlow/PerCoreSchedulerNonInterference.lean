@@ -1879,6 +1879,106 @@ theorem secondaryKernelMain_commits (coreId : UInt64) :
         Concurrency.recordCommittedCurrentThreadHw (some (c, SeLe4n.ThreadId.ofOptCode code))) :=
   (secondaryKernelMain_eq_perCoreRescheduleEntry coreId).trans (perCoreRescheduleEntry_commits coreId)
 
+/-! ### seL4-MCS `sendSignal`'s donation -/
+
+/-- **The bind's writes are invisible on every core** when the context and the
+thread are hidden: the context rewritten in its slot, the thread's binding
+words, the thread placed on its home core's run queue (a hidden thread the
+filtered queue drops) with that core's reschedule flag, and the context placed
+on the home core's release queue. -/
+theorem schedContextBindPerform_lowEquivalent (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (vT : SeLe4n.ValidThreadId) (hInv : st.objects.invExt)
+    (hS : objectObservable ctx observer vS.val = false)
+    (hT : threadObservable ctx observer vT.val = false)
+    (hTo : objectObservable ctx observer vT.val.toObjId = false) :
+    lowEquivalent_smp ctx observer (SchedContextOps.schedContextBindPerform st vS vT) st := by
+  unfold SchedContextOps.schedContextBindPerform
+  split
+  · exact lowEquivalent_smp_refl st
+  · next sc hSc _ =>
+    split
+    · exact lowEquivalent_smp_refl st
+    · dsimp only
+      have hAdm := SystemState.rewriteAdmissible_schedContext hSc
+        { sc.releaseReadyHead st.machine.timer with
+          boundThreadCode := SeLe4n.ThreadId.optCode (some vT.val), donationOrigin := none }
+      have hL1 := rewriteObject_lowEquivalent (ctx := ctx) (observer := observer) st vS.val _
+        hAdm hInv hS
+      have hI1 := SystemState.rewriteObject_preserves_objects_invExt st vS.val _ hAdm hInv
+      generalize hSt1 : st.rewriteObject vS.val _ hAdm = st1 at hL1 hI1
+      have hL2 := lowEquivalent_smp_trans (lowEquivalent_smp_of_projectedObjectsWrite
+        (ctx := ctx) (observer := observer) (projectedObjectsWrite.of_hidden
+          (hiddenObjectsWrite.updateTcb st1 vT.val (fun t => { t with
+            scBindingScCode := SchedContextBinding.scCode
+              (SchedContextBinding.bound ⟨vS.val.toNat⟩), scBindingOwnerCode := 0 })
+            hI1 hTo))) hL1
+      generalize st1.updateTcb vT.val _ = st2 at hL2
+      refine lowEquivalent_smp_trans (releasePlace_lowEquivalent _ _ _ hS) ?_
+      split
+      · exact lowEquivalent_smp_trans (lowEquivalent_smp_trans
+          (markReschedulePendingOnCore_lowEquivalent _ _)
+          (runEnqueueOnCore_lowEquivalent _ _ vT.val _ hT)) hL2
+      · exact hL2
+
+/-- **seL4-MCS `maybeDonateSchedContext` is invisible on every core** when the
+receiver and the notification's bound context are hidden: the identity, or the
+bind's writes (`schedContextBindPerform_lowEquivalent`). -/
+theorem maybeDonateSchedContext_lowEquivalent (st : SystemState) (n : SeLe4n.ObjId)
+    (t : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (hT : threadObservable ctx observer t = false)
+    (hTo : objectObservable ctx observer t.toObjId = false)
+    (hS : ∀ s, notificationContext? st n = some s → objectObservable ctx observer s.toObjId = false) :
+    lowEquivalent_smp ctx observer (maybeDonateSchedContext st n t) st := by
+  rcases maybeDonateSchedContext_cases st n t with h | ⟨vS, vT, hV, ⟨ntfn, s, hN, hSc, hEq⟩, -, h⟩
+  · rw [h]; exact lowEquivalent_smp_refl st
+  · rw [h]
+    subst hV
+    refine schedContextBindPerform_lowEquivalent st vS vT hInv ?_ hT hTo
+    rw [← hEq]
+    exact hS s (by simp only [notificationContext?, hN, Option.bind_some, hSc])
+
+/-- The thread a bound-aware signal wakes is one `boundSignalHidden` hides: the
+bound receiver, or the notification's head waiter. -/
+theorem boundSignalHidden.woken {st : SystemState} {n : SeLe4n.ObjId} {t : SeLe4n.ThreadId}
+    (h : boundSignalHidden ctx observer st n) (hW : signalWokenThread? st n = some t) :
+    threadObservable ctx observer t = false ∧ objectObservable ctx observer t.toObjId = false := by
+  unfold signalWokenThread? at hW
+  cases hB : boundDeliveryTarget? st n with
+  | some p =>
+    obtain ⟨u, ep⟩ := p
+    rw [hB] at hW
+    cases hW
+    exact ⟨(h.bound _ _ hB).2.1, (h.bound _ _ hB).2.2⟩
+  | none =>
+    rw [hB] at hW
+    cases hN : st.getNotification? n with
+    | none => rw [hN] at hW; cases hW
+    | some ntfn =>
+      rw [hN] at hW
+      obtain ⟨a, b, -⟩ := h.waiter ntfn t hN hW
+      exact ⟨a, b⟩
+
+/-- **seL4-MCS `sendSignal` is invisible on every core** when what the
+bound-aware signal writes is hidden (`boundSignalHidden`) and so is the context
+bound to the notification: the wake (`notificationSignalBoundOnCore_lowEquivalent`),
+then the donation to the thread it woke, which `boundSignalHidden` hides, of
+the notification's context, which the wake keeps
+(`notificationSignalBoundOnCore_ntfnContextsAgree`). -/
+theorem sendSignalOnCore_lowEquivalent (n : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
+    (st : SystemState) (hInv : st.objects.invExt) (h : boundSignalHidden ctx observer st n)
+    (hS : ∀ s, notificationContext? st n = some s → objectObservable ctx observer s.toObjId = false) :
+    lowEquivalent_smp ctx observer (sendSignalOnCore n badge c st).1 st := by
+  have hW := notificationSignalBoundOnCore_lowEquivalent ctx observer n badge c st hInv h
+  refine sendSignalOnCore_induct (fun s => lowEquivalent_smp ctx observer s st) n badge c st hW
+    (fun t _ hT _ => ?_)
+  obtain ⟨hTh, hTo⟩ := h.woken hT
+  refine lowEquivalent_smp_trans (maybeDonateSchedContext_lowEquivalent _ n t
+    (notificationSignalBoundOnCore_preserves_objects_invExt _ _ _ st hInv) hTh hTo ?_) hW
+  intro s hs
+  rw [notificationContext?_congr (notificationSignalBoundOnCore_ntfnContextsAgree n badge c st hInv)]
+    at hs
+  exact hS s hs
+
 /-! ### WS-ZA ZA6.32: the interrupt entry -/
 
 /-- The interrupt line's mask is no view's: the controller's mask words and the
@@ -1889,17 +1989,21 @@ theorem setInterruptLineMask_lowEquivalent (st : SystemState) (line : Nat) (mask
 
 /-- **What the interrupt step writes, hidden**: at a line bound to a
 notification (`Architecture.irqBinding?`, read off the line's interrupt node
-slot), what the bound-aware signal to that notification writes. -/
+slot), what the bound-aware signal to that notification writes, and the
+scheduling context bound to the notification, which seL4's `sendSignal`
+donates to the thread the signal wakes. -/
 def interruptStepHidden (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (line : Nat) : Prop :=
   ∀ ntfn badge, Architecture.irqBinding? st line = some (ntfn, badge) →
-    boundSignalHidden ctx observer st ntfn
+    boundSignalHidden ctx observer st ntfn ∧
+      ∀ s, notificationContext? st ntfn = some s → objectObservable ctx observer s.toObjId = false
 
 /-- **seL4's `handleInterrupt` is invisible on every core** when the signal it
-sends writes only hidden state: the signal
-(`notificationSignalBoundOnCore_lowEquivalent`, whose badge-register write and
-stash clear land in a register context and a TCB no projection shows), and the
-mask. -/
+sends writes only hidden state: seL4's `sendSignal`
+(`sendSignalOnCore_lowEquivalent`: the wake, whose badge-register write and
+stash clear land in a register context and a TCB no projection shows, and the
+donation of the notification's hidden context to the hidden thread it woke),
+and the mask. -/
 theorem handleInterruptOnCore_lowEquivalent (st : SystemState) (c : CoreId) (line : Nat)
     (hInv : st.objects.invExt) (h : interruptStepHidden ctx observer st line) :
     lowEquivalent_smp ctx observer (handleInterruptOnCore st c line) st :=
@@ -1907,8 +2011,8 @@ theorem handleInterruptOnCore_lowEquivalent (st : SystemState) (c : CoreId) (lin
     (fun s hs => lowEquivalent_smp_trans (setInterruptLineMask_lowEquivalent s line true) hs)
     (lowEquivalent_smp_refl st)
     (fun ntfn badge hN =>
-      notificationSignalBoundOnCore_lowEquivalent ctx observer ntfn badge c st hInv
-        (h ntfn badge hN))
+      sendSignalOnCore_lowEquivalent ntfn badge c st hInv (h ntfn badge hN).1
+        (h ntfn badge hN).2)
 
 /-- …and so is the raw step. -/
 theorem interruptEntryStep_lowEquivalent (st : SystemState) (coreId intId : UInt64)

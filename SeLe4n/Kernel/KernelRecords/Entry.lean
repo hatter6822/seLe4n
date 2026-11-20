@@ -183,15 +183,15 @@ theorem fpAccessEntryState_recordsStage (coreId : UInt64)
 
 /-! ### The interrupt entry -/
 
-/-- WS-ZA ZA6.32: the interrupt step: the bound signal and the stash clear, then
-the mask, which writes no object.  The signal reads
+/-- WS-ZA ZA6.32: the interrupt step: seL4's `sendSignal` (the bound signal, the
+stash clear and the donation), then the mask, which writes no object.  The signal reads
 the reachable state the step runs from. -/
 theorem RecordsStage.interruptEntryStep (st : SystemState) (coreId intId : UInt64)
     (hR : ipcReachable st) : RecordsStage st (_root_.SeLe4n.Kernel.interruptEntryStep st coreId intId) :=
   interruptEntryStep_of (P := RecordsStage st) st coreId intId (.refl st) fun c _ _ =>
     handleInterruptOnCore_of (P := RecordsStage st) st c _
       (fun _ h => h.trans (.of_frameK fun hI => RecordsFrame.of_objects_eq hI rfl rfl)) (.refl st)
-      (fun ntfn _ _ => (RecordsStage.notificationSignalBoundOnCore hR))
+      (fun ntfn _ _ => sendSignalOnCore_recordsStage hR)
 
 /-- WS-ZA ZA6.32: **the interrupt entry's committed state keeps the records**,
 from the reachable state the step runs from: the trap-frame save writes one

@@ -11136,6 +11136,7 @@ import SeLe4n.Kernel.IPC.Invariant.DispatchPayoff
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SyscallReadiness
 import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
 import SeLe4n.Kernel.RefusalCarryingReplyRecv
+import SeLe4n.Kernel.InformationFlow.PerCoreSchedulerNonInterference
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency
 #check @replyRecvCompletesSignalArm
@@ -11203,6 +11204,12 @@ open SeLe4n.Kernel.Concurrency
 #check @signalWakeDonationCores
 #check @signalWakeDonationContext?
 #check @schedLockSet_sendSignalOnCore_coversWrites
+#check @footprintCoversWrites_of_cores_subset
+#check @interruptReplenishCores
+#check @schedContextBindPerform_lowEquivalent
+#check @maybeDonateSchedContext_lowEquivalent
+#check @boundSignalHidden.woken
+#check @sendSignalOnCore_lowEquivalent
 #check @lockSetForSyscall_notificationSignal_covers_donationContext
 #check @notificationSignalDeclassifiedCrossCoreDispatch_induct
 #check @notificationSignalDeclassifiedCrossCoreDispatch_snd

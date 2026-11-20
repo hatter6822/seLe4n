@@ -935,7 +935,7 @@ theorem declassifySignalArm_savedRegsWrittenFree {ctx : GenericLabelingContext}
 wakes**: seL4's `handleInterrupt` signals the bound notification
 (`interruptSignal`), whose signal writes the badge register of the bound thread
 blocked on receive or of the notification's head waiter, both blocked at the
-entry's start, and whose stash clear writes no saved register; the mask writes
+entry's start, and whose stash clear and donation write no saved register; the mask writes
 the machine's mask words and the physical-write ledger only. -/
 theorem handleInterruptOnCore_savedRegsWrittenFree {e : CoreId} (st : SystemState) (c : CoreId)
     (line : Nat) (E : EntryPremises st) (hRT : st.residentsHaveTcbs)
@@ -944,7 +944,7 @@ theorem handleInterruptOnCore_savedRegsWrittenFree {e : CoreId} (st : SystemStat
   have hM : ∀ s, savedRegsWrittenFree e st st s →
       savedRegsWrittenFree e st st (Architecture.setInterruptLineMask s line true) :=
     fun _ hs t => hs t
-  have h1 := fun ntfn badge => notificationSignalBoundOnCore_savedRegsKept ntfn badge c E.objInv
+  have h1 := fun ntfn badge => sendSignalOnCore_savedRegsKept ntfn badge c E.objInv
   unfold handleInterruptOnCore
   split
   · exact hM _ ((.of_kept (h1 _ _).1 fun _ h => offCoreFree_of_signalWritten E hRT hBNR h))

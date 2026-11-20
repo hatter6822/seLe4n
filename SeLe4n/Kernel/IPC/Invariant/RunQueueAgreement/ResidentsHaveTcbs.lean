@@ -287,6 +287,7 @@ theorem perCoreRescheduleEntryState_preserves_residentsHaveTcbs (coreId : UInt64
 step moves no residency and removes no thread. -/
 theorem interruptEntryState_preserves_residentsHaveTcbs (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
+    (hBi : schedContextBindingBidirectional (Concurrency.saveCapturedTrapFrameAt st coreId frame))
     (hInv0 : st.objects.invExt) (hR0 : st.runQueueRefined) (hD0 : st.currentDequeuedUnique)
     (hT : st.residentsHaveTcbs) :
     (Architecture.clearIcacheMaintenance
@@ -306,7 +307,7 @@ theorem interruptEntryState_preserves_residentsHaveTcbs (coreId intId : UInt64)
   · intro c hc
     exact residentTcbKeptOffCore_of_save_stepCovers
       (saveCapturedTrapFrameAt_residentCode st coreId frame) hSv
-      (interruptEntryStep_stepCovers c _ coreId intId hInvS)
+      (interruptEntryStep_stepCovers c _ coreId intId hInvS hBi)
   · intro hc
     rw [interruptEntryStep_invalid_core _ coreId intId hc]
     exact ⟨saveCapturedTrapFrameAt_residentCode st coreId frame, hSv⟩

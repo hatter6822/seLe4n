@@ -270,6 +270,7 @@ nowhere**: it links no thread, and its step moves no core's slot off the
 executing core. -/
 theorem interruptEntryState_preserves_yieldLinkedNotResident (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
+    (hBi : schedContextBindingBidirectional (Concurrency.saveCapturedTrapFrameAt st coreId frame))
     (hInv0 : st.objects.invExt) (hR0 : st.runQueueRefined) (hY : st.yieldLinkedNotResident) :
     (Architecture.clearIcacheMaintenance
       (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
@@ -285,7 +286,7 @@ theorem interruptEntryState_preserves_yieldLinkedNotResident (coreId intId : UIn
   · intro c hc
     exact currentKeptOffCore_trans (b := Concurrency.saveCapturedTrapFrameAt st coreId frame)
       (currentKeptOffCore_of_eq fun _ _ => by rw [saveCapturedTrapFrameAt_scheduler])
-      (interruptEntryStep_stepCovers c _ coreId intId hSv.1).currentKept
+      (interruptEntryStep_stepCovers c _ coreId intId hSv.1 hBi).currentKept
   · intro hc
     rw [interruptEntryStep_invalid_core _ coreId intId hc, saveCapturedTrapFrameAt_scheduler]
 

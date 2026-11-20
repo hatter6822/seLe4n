@@ -210,34 +210,6 @@ theorem syscallCommitTail_coversWrites (S : LockSet) (e : CoreId)
 -- §2  The checked dispatcher, arm by arm
 -- ============================================================================
 
-/-- **seL4's `sendSignal` is covered by the signal's footprint**: the wake
-(`schedLockSet_notificationSignalBoundOnCore_coversWrites`), then the donation
-to the woken thread, on the cores the footprint read off the entry state
-(`signalWakeDonationCores`), which the wake keeps
-(`notificationSignalBoundOnCore_signalDonationCores_eq`). -/
-theorem schedLockSet_sendSignalOnCore_coversWrites (notificationId : SeLe4n.ObjId)
-    (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState) (S : LockSet)
-    (hObjInv : st.objects.invExt)
-    (hS : LockSet.ofList? (schedLockSet_notificationSignalBoundOnCore st notificationId)
-      = some S) :
-    footprintCoversWrites S st (sendSignalOnCore notificationId badge executingCore st).1 := by
-  have hWake := schedLockSet_notificationSignalBoundOnCore_coversWrites notificationId badge
-    executingCore st S hObjInv hS
-  have hP := LockSet.ofList?_pairs hS
-  have hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs := by
-    rw [hP]; exact schedFootprintOfCores_contains_objStore_write _ _
-  refine sendSignalOnCore_induct (fun s => footprintCoversWrites S st s) notificationId badge
-    executingCore st hWake (fun t _ hT _ => footprintCoversWrites_trans S hWake
-      (maybeDonateSchedContext_coversWrites S _ notificationId t
-        (notificationSignalBoundOnCore_preserves_objects_invExt _ _ _ st hObjInv) hTable
-        fun d hd => ?_))
-  rw [notificationSignalBoundOnCore_signalDonationCores_eq _ _ _ st hObjInv] at hd
-  have hd' : d ∈ signalWakeDonationCores st notificationId := by
-    simp only [signalWakeDonationCores, hT]; exact hd
-  rw [hP]
-  exact ⟨(mem_schedFootprintOfCores_runQueue_iff _ _ d).mpr (List.mem_append_right _ hd'),
-    (mem_schedFootprintOfCores_replenishQueue_iff _ _ d).mpr hd'⟩
-
 /-- A promoted thread id promotes back to itself — what ties `.tcbSuspend`'s
 operand, carried as the promoted id's value, to the resolver's re-promotion. -/
 theorem validThreadId_val_toValid? (v : SeLe4n.ValidThreadId) :

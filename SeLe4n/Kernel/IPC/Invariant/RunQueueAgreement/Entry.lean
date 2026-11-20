@@ -1008,14 +1008,15 @@ theorem setInterruptLineMask_runQueueStage (st : SystemState) (line : Nat) (mask
   RunQueueStage.of_frame rfl rfl rfl
 
 /-- **seL4's `handleInterrupt` on a core keeps the run queues in agreement**:
-the bound-aware signal's stage and the stash clear, then the mask. -/
+seL4's `sendSignal` (the bound-aware signal's stage and the stash clear, then
+the donation to the thread it woke), then the mask. -/
 theorem handleInterruptOnCore_runQueueStage (st : SystemState) (c : CoreId) (line : Nat)
     (hHeads : notificationHeadsWakeable st) (hBlk : blockedCurrentNowhere st) :
     RunQueueStage st (handleInterruptOnCore st c line) := by
   unfold handleInterruptOnCore
   split
   · rename_i ntfn badge _
-    have hB := notificationSignalBoundOnCore_runQueueStage ntfn badge c st hHeads hBlk
+    have hB := sendSignalOnCore_runQueueStage ntfn badge c st hHeads hBlk
     exact (hB).trans
       (setInterruptLineMask_runQueueStage _ _ _)
   · exact setInterruptLineMask_runQueueStage _ _ _
