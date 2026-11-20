@@ -648,13 +648,6 @@ theorem maybeDonateSchedContext_mappingStage (st : SystemState) (n : SeLe4n.ObjI
   maybeDonateSchedContext_induct MappingStage st n tid (MappingStage.refl _)
     (fun _ _ _ _ => schedContextBindPerform_mappingStage _ _ _)
 
-/-- **seL4-MCS `maybeReturnSchedContext` is a mapping stage**: the identity, or
-the unbind (`schedContextUnbind_mappingStage`). -/
-theorem maybeReturnSchedContext_mappingStage (st : SystemState) (n : SeLe4n.ObjId)
-    (tid : SeLe4n.ThreadId) : MappingStage st (maybeReturnSchedContext st n tid) :=
-  maybeReturnSchedContext_induct MappingStage st n tid (MappingStage.refl _)
-    (fun _ _ _ _ _ h => schedContextUnbind_mappingStage h)
-
 /-- **seL4's return on a running receiver keeps the mapping records**: the
 context's thread link and the thread's binding written in place, then
 reschedule flags. -/
@@ -682,6 +675,13 @@ purge. -/
 theorem schedContextReturnPerform_mappingStage (st : SystemState) (vS : SeLe4n.ValidObjId)
     (tid : SeLe4n.ThreadId) : MappingStage st (schedContextReturnPerform st vS tid) :=
   (schedContextReturnLinks_mappingStage st vS tid).trans (purgeReplenishment_mappingStage _ _)
+
+/-- **seL4-MCS `maybeReturnSchedContext` is a mapping stage**: the identity, or
+seL4's writes and the purge (`schedContextReturnPerform_mappingStage`). -/
+theorem maybeReturnSchedContext_mappingStage (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) : MappingStage st (maybeReturnSchedContext st n tid) :=
+  maybeReturnSchedContext_induct MappingStage st n tid (MappingStage.refl _)
+    (fun vS _ _ _ => schedContextReturnPerform_mappingStage st vS tid)
 
 /-- **seL4 `receiveIPC`'s return keeps the mapping records.** -/
 theorem receiveReturnSchedContext_mappingStage (blocks : Bool) (st : SystemState)

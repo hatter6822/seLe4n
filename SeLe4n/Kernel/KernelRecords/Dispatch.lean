@@ -1024,11 +1024,11 @@ end ReplyRecvRecords
 
 
 /-- **seL4-MCS `maybeReturnSchedContext` keeps the kernel records**: the
-identity, or the unbind (`RecordsFrame.schedContextUnbind`). -/
+identity, or seL4's writes and the purge (`RecordsFrame.schedContextReturnPerform`). -/
 theorem maybeReturnSchedContext_recordsStage (x : SystemState) (n : SeLe4n.ObjId)
     (t : SeLe4n.ThreadId) : RecordsStage x (maybeReturnSchedContext x n t) :=
   .of_frameK fun hI => maybeReturnSchedContext_induct (fun a b => RecordsFrame a b) x n t
-    (RecordsFrame.refl hI) (fun _ _ _ _ _ h => RecordsFrame.schedContextUnbind hI h)
+    (RecordsFrame.refl hI) (fun vS _ _ _ => RecordsFrame.schedContextReturnPerform vS t hI)
 
 /-- **seL4's `sendSignal` keeps the records**: the wake's step, then the
 donation's. -/

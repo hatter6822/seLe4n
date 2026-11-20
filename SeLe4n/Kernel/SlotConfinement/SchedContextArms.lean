@@ -260,62 +260,20 @@ theorem maybeDonateSchedContext_confinedToCores (st : SystemState) (n : SeLe4n.O
     subst hT
     exact schedContextBindPerform_confinedToCores vS vT st hObjInv hA
 
-/-- WS-SX SX8.2: **seL4-MCS `maybeReturnSchedContext`'s cores are the unbind's**:
-where seL4's guard holds the context names the thread, so the unbind's write set
-(`schedContextUnbindWriteSet`) is the return's (`signalReturnCores`). -/
-theorem schedContextUnbindWriteSet_of_returnAdmitted {st : SystemState} {n : SeLe4n.ObjId}
-    {tid : SeLe4n.ThreadId} {vS : SeLe4n.ValidObjId} {vT : SeLe4n.ValidThreadId}
-    (hG : signalReturnGuard st n tid = true) (hT : vT.val = tid)
-    (hA : schedContextReturnAdmitted st vS vT = true) :
-    schedContextUnbindWriteSet st vS.val = signalReturnCores st n tid := by
-  have hBT : SchedContextOps.schedContextBoundThread? st vS.val = some tid := by
-    unfold schedContextReturnAdmitted at hA
-    unfold SchedContextOps.schedContextBoundThread?
-    cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vS.val) with
-    | none => rw [hSc] at hA; cases hA
-    | some sc =>
-      rw [hSc] at hA
-      cases hTc : st.getTcb? vT.val with
-      | none => rw [hTc] at hA; cases hA
-      | some tcb =>
-        rw [hTc] at hA
-        simp only [Bool.and_eq_true, decide_eq_true_eq] at hA
-        simp only [hA.1, hT]
-  unfold schedContextUnbindWriteSet signalReturnCores
-  rw [hBT, hG]; simp only [if_true]
-
-/-- WS-SX SX8.2: **seL4-MCS `maybeReturnSchedContext` writes the unbind's cores**
-where seL4's guard holds (`signalReturnCores`: the thread's home core and its
-running core), and none where it fails. -/
+/-- WS-SX SX8.2: **seL4-MCS `maybeReturnSchedContext` writes no observable slot
+of any core**: its two object writes, a reschedule flag and the purge's replenish
+queue are none of the six confined slots (the thread keeps its current slot and
+its queues; seL4's `rescheduleRequired` is a flag). -/
 theorem maybeReturnSchedContext_confinedToCores (st : SystemState) (n : SeLe4n.ObjId)
     (tid : SeLe4n.ThreadId) :
-    observableSlotsConfinedToCores st (maybeReturnSchedContext st n tid)
-      (signalReturnCores st n tid) := by
-  cases hG : signalReturnGuard st n tid with
-  | false =>
-    rw [maybeReturnSchedContext_of_guard_false hG]
-    exact observableSlotsConfinedToCores_refl st _
-  | true =>
-    rcases maybeReturnSchedContext_cases st n tid with e | ⟨vS, vT, hT, -, hA, hU⟩
-    · rw [e]; exact observableSlotsConfinedToCores_refl st _
-    rw [← schedContextUnbindWriteSet_of_returnAdmitted hG hT hA]
-    exact schedContextUnbind_confinedToCores vS st _ hU
-
-/-- **seL4 `receiveIPC`'s return writes no observable slot of any core**: its
-two object writes, a reschedule flag and the purge's replenish queue are none of
-the six confined slots (the receiver keeps its current slot; seL4's
-`rescheduleRequired` is a flag).  So the receive's write set is its leg's, read
-on the state the return leaves. -/
-theorem receiveReturnSchedContext_confinedToCores (blocks : Bool) (st : SystemState)
-    (tid : SeLe4n.ThreadId) :
-    observableSlotsConfinedToCores st (receiveReturnSchedContext blocks st tid) [] := by
+    observableSlotsConfinedToCores st (maybeReturnSchedContext st n tid) [] := by
   have hF := fun {F : Type} (f : SchedulerState → F)
       (h : ∀ (s : SystemState) c, f (s.markReschedulePendingOnCore c).scheduler = f s.scheduler)
       (hP : ∀ (s : SystemState) x,
         f (SchedContextOps.purgeReplenishment s x).scheduler = f s.scheduler) =>
-    receiveReturnSchedContext_scheduler_frame f blocks st tid h hP
-  have hM : (receiveReturnSchedContext blocks st tid).machine = st.machine :=
-    receiveReturnSchedContext_induct (fun a b => b.machine = a.machine) blocks st tid rfl
+    maybeReturnSchedContext_scheduler_frame f st n tid h hP
+  have hM : (maybeReturnSchedContext st n tid).machine = st.machine :=
+    maybeReturnSchedContext_induct (fun a b => b.machine = a.machine) st n tid rfl
       (fun vS _ _ _ => by
         show (schedContextReturnPerform st vS tid).machine = st.machine
         unfold schedContextReturnPerform schedContextReturnLinks
@@ -328,9 +286,9 @@ theorem receiveReturnSchedContext_confinedToCores (blocks : Bool) (st : SystemSt
         rw [markKeyChangeFor_machine, markCandidacyGainFor_machine]
         split <;> simp [SystemState.markReschedulePendingOnCore, SystemState.updateTcb_machine,
           SystemState.rewriteObject_machine])
-  refine ⟨fun c _ => (receiveReturnSchedContext_queues blocks st tid c).1,
-    fun c _ => receiveReturnSchedContext_currentOnCore blocks st tid c,
-    fun c _ => (receiveReturnSchedContext_queues blocks st tid c).2,
+  refine ⟨fun c _ => (maybeReturnSchedContext_runSlots st n tid c).1,
+    fun c _ => (maybeReturnSchedContext_runSlots st n tid c).2.1,
+    fun c _ => (maybeReturnSchedContext_runSlots st n tid c).2.2,
     fun c _ => hF (fun s => s.domainTimeRemainingOnCore c)
       (fun _ _ => by simp [SystemState.markReschedulePendingOnCore])
       (fun _ _ => SchedContextOps.purgeReplenishment_domainTimeRemainingOnCore _ _ _),
@@ -338,6 +296,22 @@ theorem receiveReturnSchedContext_confinedToCores (blocks : Bool) (st : SystemSt
       (fun _ _ => by simp [SystemState.markReschedulePendingOnCore])
       (fun _ _ => SchedContextOps.purgeReplenishment_domainScheduleIndexOnCore _ _ _),
     fun c _ => by rw [hM]⟩
+
+/-- **seL4 `receiveIPC`'s return writes no observable slot of any core**: it is
+the identity or seL4's `maybeReturnSchedContext`
+(`maybeReturnSchedContext_confinedToCores`).  So the receive's write set is its
+leg's, read on the state the return leaves. -/
+theorem receiveReturnSchedContext_confinedToCores (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores st (receiveReturnSchedContext blocks st tid) [] := by
+  unfold receiveReturnSchedContext
+  split
+  · split
+    · split
+      · exact observableSlotsConfinedToCores_refl st _
+      · exact maybeReturnSchedContext_confinedToCores st _ tid
+    · exact observableSlotsConfinedToCores_refl st _
+  · exact observableSlotsConfinedToCores_refl st _
 
 -- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `setThreadCpuAffinityWriteSet` moved to the
 -- production `SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean` (via

@@ -1175,23 +1175,18 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
         unfold notificationWaitCrossCoreDispatch at this
         rw [hW'] at this
         exact this
-      -- seL4-MCS `receiveSignal`'s `maybeReturnSchedContext` after the block: on
-      -- the cores the footprint read off the wait's entry state, which the
-      -- block keeps but for the executing core's current slot.
-      obtain ⟨-, hRC, hRR, -⟩ := notificationWaitOnCore_blocked_signalReturnCores_eq nId hObjInv hW'
+      -- seL4-MCS `receiveSignal`'s `maybeReturnSchedContext` after the block: no
+      -- run queue, and the purge's replenish queue the footprint read off the
+      -- wait's entry state, which the block keeps.
+      obtain ⟨-, hRR, -⟩ := notificationWaitOnCore_blocked_signalReturn_eq nId hObjInv hW'
       have hPend := notificationWaitOnCore_notificationPending hW'
       simp only [Option.isSome_none] at hPend
       have hRet := schedLockSet_notificationWaitOnCore_contains_return_writes st (some nId) tid e
       refine footprintCoversWrites_trans S hWaitCov
-        (maybeReturnSchedContext_coversWrites S st₁ nId tid hObjInv1 hTable
-          (fun d hd => ?_) (fun d hd => ?_))
-      · rw [hRC] at hd
-        rw [LockSet.ofList?_pairs hSched]
-        exact hRet.1 d (by simpa only [waitReturnCores, Option.map_some, Option.getD_some, hPend,
-          Bool.false_eq_true, ↓reduceIte] using hd)
+        (maybeReturnSchedContext_coversWrites S st₁ nId tid hObjInv1 hTable (fun d hd => ?_))
       · rw [hRR] at hd
         rw [LockSet.ofList?_pairs hSched]
-        exact hRet.2 d
+        exact hRet d
           (by simpa only [waitReturnReplenishCores, Option.map_some, Option.getD_some, hPend,
             Bool.false_eq_true, ↓reduceIte] using hd)
     · exact absurd hDisp (by simp)

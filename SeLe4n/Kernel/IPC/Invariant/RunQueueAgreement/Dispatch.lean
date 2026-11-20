@@ -967,14 +967,6 @@ theorem maybeDonateSchedContext_runQueueStage (st : SystemState) (n : SeLe4n.Obj
   maybeDonateSchedContext_induct (fun a b => RunQueueStage a b) st n tid (RunQueueStage.refl _)
     (fun vS vT _ hA => schedContextBindPerform_runQueueStage st vS vT hA)
 
-/-- **seL4-MCS `maybeReturnSchedContext` is a kernel-entry stage**: the identity,
-or the unbind's (`schedContextUnbind_runQueueEntryStage`). -/
-theorem maybeReturnSchedContext_runQueueEntryStage (st : SystemState) (n : SeLe4n.ObjId)
-    (tid : SeLe4n.ThreadId) : SystemState.RunQueueEntryStage st (maybeReturnSchedContext st n tid) :=
-  maybeReturnSchedContext_induct (fun a b => SystemState.RunQueueEntryStage a b) st n tid
-    (RunQueueStage.refl _).entry
-    (fun vS _ st' _ _ h => SchedContextOps.schedContextUnbind_runQueueEntryStage vS st st' h)
-
 /-- **seL4's three writes are a frame stage off the returned context**: its
 thread link written in place (no run, release or yield link moves), the thread's
 binding written in place, then reschedule flags. -/
@@ -1050,6 +1042,14 @@ theorem receiveReturnSchedContext_runQueueStage (blocks : Bool) (st : SystemStat
   receiveReturnSchedContext_induct (fun a b => RunQueueStage a b) blocks st tid
     (RunQueueStage.refl _)
     (fun vS vT hT hA => schedContextReturnPerform_runQueueStage st vS tid vT hT hA)
+
+/-- **seL4-MCS `maybeReturnSchedContext` is a kernel-entry stage**: the identity,
+or seL4's writes and the purge (`schedContextReturnPerform_runQueueStage`). -/
+theorem maybeReturnSchedContext_runQueueEntryStage (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) : SystemState.RunQueueEntryStage st (maybeReturnSchedContext st n tid) :=
+  (maybeReturnSchedContext_induct (fun a b => RunQueueStage a b) st n tid
+    (RunQueueStage.refl _)
+    (fun vS vT hT hA => schedContextReturnPerform_runQueueStage st vS tid vT hT hA)).entry
 
 /-- **seL4's `sendSignal` keeps the run queues in agreement with the threads'
 links**: the wake's stage, then the donation's. -/

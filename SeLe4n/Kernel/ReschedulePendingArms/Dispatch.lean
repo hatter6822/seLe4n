@@ -1638,16 +1638,6 @@ theorem maybeDonateSchedContext_stepCovers (e : CoreId) (st : SystemState) (n : 
     ⟨stepCovers_refl e st, hInv⟩
     (fun vS vT _ hA => schedContextBindPerform_stepCovers st vS vT e hInv hBi hA)
 
-/-- **seL4-MCS `maybeReturnSchedContext` covers its reschedule writes**: the
-identity, or the unbind (`schedContextUnbind_stepCovers`). -/
-theorem maybeReturnSchedContext_stepCovers (e : CoreId) (st : SystemState) (n : SeLe4n.ObjId)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    stepCovers e st (maybeReturnSchedContext st n tid) ∧
-      (maybeReturnSchedContext st n tid).objects.invExt :=
-  maybeReturnSchedContext_induct (fun a b => stepCovers e a b ∧ b.objects.invExt) st n tid
-    ⟨stepCovers_refl e st, hInv⟩
-    (fun vS _ st' _ _ h => schedContextUnbind_stepCovers st st' vS e hInv h)
-
 /-- **seL4's return on a running receiver covers**: the two object writes move
 only the receiver's key, the flag on its running core only rises, and the key
 hook flags every core the key change stales (`markKeyChangeFrom_covers`). -/
@@ -1742,6 +1732,16 @@ theorem schedContextReturnPerform_stepCovers (e : CoreId) (st : SystemState)
       (SchedContextOps.purgeReplenishment_releaseOnlyWrite _ _)
       (SchedContextOps.purgeReplenishment_agree _ _)),
     SchedContextOps.purgeReplenishment_objects_invExt _ _ h.2⟩
+
+/-- **seL4-MCS `maybeReturnSchedContext` covers its reschedule writes**: the
+identity, or seL4's writes and the purge (`schedContextReturnPerform_stepCovers`). -/
+theorem maybeReturnSchedContext_stepCovers (e : CoreId) (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    stepCovers e st (maybeReturnSchedContext st n tid) ∧
+      (maybeReturnSchedContext st n tid).objects.invExt :=
+  maybeReturnSchedContext_induct (fun a b => stepCovers e a b ∧ b.objects.invExt) st n tid
+    ⟨stepCovers_refl e st, hInv⟩
+    (fun vS _ _ _ => schedContextReturnPerform_stepCovers e st vS tid hInv)
 
 /-- **seL4's return from a running receiver covers**: the identity, or seL4's
 writes (`schedContextReturnPerform_stepCovers`). -/

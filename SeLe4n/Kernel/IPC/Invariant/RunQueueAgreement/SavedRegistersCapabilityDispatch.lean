@@ -648,13 +648,17 @@ theorem schedContextUnbind_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
           (fun x hx => by cases hx)
   · cases h
 
-/-- **seL4's `maybeReturnSchedContext` writes no saved register**: the
-identity, or the unbind. -/
+/-- **seL4's `maybeReturnSchedContext` writes no saved register**: it clears
+two binding codes and a context's thread link. -/
 theorem maybeReturnSchedContext_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
     {st : SystemState} (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    savedRegsKeptExcept W st (maybeReturnSchedContext st n tid) :=
-  maybeReturnSchedContext_induct (fun a b => savedRegsKeptExcept W a b) st n tid
-    (fun _ _ => rfl) (fun _ _ _ _ _ h => schedContextUnbind_savedRegsKeptExcept hInv h)
+    savedRegsKeptExcept W st (maybeReturnSchedContext st n tid) := fun t _ => by
+  unfold SystemState.savedRegs SystemState.getTcb?
+  rcases maybeReturnSchedContext_objects st n tid hInv t.toObjId with
+    e | ⟨y, hy, e⟩ | ⟨sc, sc', hs, e⟩
+  · rw [e]
+  · rw [e, hy] <;> rfl
+  · rw [e, hs]
 
 /-- …so a census survives a return after it. -/
 theorem savedRegsWrittenFree.giveBack {e : CoreId} {base pre post : SystemState}

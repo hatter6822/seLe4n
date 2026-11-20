@@ -1123,18 +1123,19 @@ theorem sendSignalOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (sendSignalOnCore_confinedToCores notificationId badge executingCore st hObjInv) hShared
 
 /-- WS-SX SX8.2: **the cores the live `.wait` arm writes**, read on its entry
-state: the executing core the wait blocks on, the donation's where the
-notification holds a word (`waitDonationCores`), the return's where it holds
-none (`waitReturnCores`) — the run segment of the arm's scheduler footprint. -/
+state: the executing core the wait blocks on and the donation's where the
+notification holds a word (`waitDonationCores`) — the run segment of the arm's
+scheduler footprint.  A blocked wait's return writes no observable slot
+(`maybeReturnSchedContext_confinedToCores`), so it adds no core. -/
 def waitArmWriteSet (st : SystemState) (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (executingCore : CoreId) : List CoreId :=
-  executingCore :: (waitDonationCores st (some n) tid ++ waitReturnCores st (some n) tid executingCore)
+  executingCore :: waitDonationCores st (some n) tid
 
 /-- WS-SX SX8.2: **the live `.wait` arm writes only its write set**: the wait
 writes the executing core; a consumed wait's badge frame writes no core and its
-donation the donation's; a blocked wait's return the return's, each read on the
-entry state (`completeSignalArm_signalDonationCores_eq`,
-`notificationWaitOnCore_blocked_signalReturnCores_eq`). -/
+donation the donation's, read on the entry state
+(`completeSignalArm_signalDonationCores_eq`); a blocked wait's return writes no
+observable slot. -/
 theorem completeSignalArm_confinedToCores (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
     (n : SeLe4n.ObjId) (executingCore : CoreId) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
@@ -1167,8 +1168,8 @@ theorem completeSignalArm_confinedToCores (ctx : LabelingContext) (tid : SeLe4n.
       (observableSlotsConfinedToCores_mono (fun x hx => ?_) hD))
     · rw [List.mem_singleton] at hx; subst hx; exact hE
     · simp only [waitArmWriteSet, waitDonationCores, Option.map_some, Option.getD_some, hPend,
-        ↓reduceIte, List.mem_cons, List.mem_append]
-      exact Or.inr (Or.inl hx)
+        ↓reduceIte, List.mem_cons]
+      exact Or.inr hx
   · rename_i st1 hW
     simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
     subst h
@@ -1176,16 +1177,11 @@ theorem completeSignalArm_confinedToCores (ctx : LabelingContext) (tid : SeLe4n.
     have hWait := notificationWaitOnCore_confinedToCores n tid executingCore st
     simp only [hW'] at hWait
     have hR := maybeReturnSchedContext_confinedToCores st1 n tid
-    rw [(notificationWaitOnCore_blocked_signalReturnCores_eq n hObjInv hW').2.1] at hR
-    have hPend := notificationWaitOnCore_notificationPending hW'
-    simp only [Option.isSome_none] at hPend
     refine hJoin (observableSlotsConfinedToCores_trans
       (observableSlotsConfinedToCores_mono (fun x hx => ?_) hWait)
       (observableSlotsConfinedToCores_mono (fun x hx => ?_) hR))
     · rw [List.mem_singleton] at hx; subst hx; exact hE
-    · simp only [waitArmWriteSet, waitReturnCores, Option.map_some, Option.getD_some, hPend,
-        Bool.false_eq_true, ↓reduceIte, List.mem_cons, List.mem_append]
-      exact Or.inr (Or.inr hx)
+    · cases hx
   · cases h
 
 /-- WS-SX SX8.2 (**the inventory's citation for the live `.wait` arm**): the arm

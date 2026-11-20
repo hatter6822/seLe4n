@@ -1881,8 +1881,9 @@ bound notification is 80.
   `sendSignal`'s wake each run): a thread with no context and a context with no
   thread are bound both ways; seL4's guard false (the thread already holds a
   context, or the context already serves a thread) writes nothing.
-* **Return on a blocking `Wait`**: the context bound to the waiter is unbound
-  both ways (the unbind's ok-state).
+* **Return on a blocking `Wait`**: the receive's return (seL4 runs one
+  `maybeReturnSchedContext`): both links cleared, the context's `isActive` and
+  donation origin kept — it is not an unbind.
 * **Return on a blocking receive** (`receiveReturnSchedContext`): both links
   cleared, the receiver keeps its current slot; a non-blocking receive, or a
   thread whose context is not the notification's, writes nothing.
@@ -1933,6 +1934,18 @@ private def notificationDonation_seL4_semantics : IO Unit := do
     (((maybeReturnSchedContext (mkSt 0 (otherSc.val + 1)) nA waiter).getTcb? waiter).any
       fun t => t.scBindingScCode == otherSc.val + 1)
     "a waiter holding another context keeps it (seL4's guard false)"
+  let stA := mkState [
+      (waiter.toObjId,
+        .tcb { mkTcb 2 with boundNotificationCode := nA.val + 1, scBindingScCode := scId.val + 1 }),
+      (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with
+        boundThreadCode := waiter.val + 1, notificationCode := nA.val + 1, isActive := true,
+        donationOrigin := some ⟨9⟩ }),
+      (nA, .notification ntfn)] none
+  let stA' := maybeReturnSchedContext stA nA waiter
+  expect "ntfn_return_on_wait_keeps_isActive_and_origin"
+    (unbound stA' && (stA'.getSchedContext? scId).any
+      (fun sc => sc.isActive && sc.donationOrigin == some ⟨9⟩))
+    "the Wait's return clears the two links and keeps isActive and the donation origin"
   -- Return on a blocking receive: the receiver is current and stays so.
   let stR := mkSt (waiter.val + 1) (scId.val + 1) (some waiter)
   let stR' := receiveReturnSchedContext true stR waiter
@@ -1952,7 +1965,7 @@ private def notificationDonation_seL4_semantics : IO Unit := do
     "a returned context is taken off the replenish queue that held it"
   expect "ntfn_return_wait_purges_replenish_entry"
     ((maybeReturnSchedContext stQ nA waiter).releaseCoreOf scId == none)
-    "the Wait's return, the unbind's ok-state, purges it too"
+    "the Wait's return, the receive's return, purges it too"
 
 /-- SD-060 (`v0.35.204`): **`.schedContextBind` binds only a thread the caller
 holds a WRITABLE TCB capability to.**

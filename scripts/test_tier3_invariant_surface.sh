@@ -10431,8 +10431,14 @@ run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContext_confinedToCores($|
 run_check "INVARIANT" rg -n '^theorem schedContextBind_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem completeSignalArm_scheduler_of_donation($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # WS-SX SX8.2: seL4's `maybeReturnSchedContext` after a blocking Wait — the
-# return, the lock set's return cores, and the wait arm wired through it.
+# return, the lock set's return replenish cores, and the wait arm wired through
+# it.  One return: the Wait's and the receive's are seL4's writes and the purge,
+# never the unbind's (which would clear `isActive` and the donation origin).
 run_check "INVARIANT" rg -n '^def maybeReturnSchedContext($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+run_check "INVARIANT" rg -n '^        if schedContextReturnAdmitted st vS vT then schedContextReturnPerform st vS tid$' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+run_check "INVARIANT" rg -n '^        schedContextReturnPerform st ⟨⟨sCode - 1⟩, hS⟩ ⟨tCode⟩$' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+run_negative_check "INVARIANT" rg -n 'schedContextUnbindPerform' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+run_check "INVARIANT" rg -n '^theorem maybeReturnSchedContext_runSlots($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
 run_check "INVARIANT" rg -n '^theorem maybeReturnSchedContext_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/SchedContextArms.lean
 run_check "INVARIANT" rg -n '^theorem completeSignalArm_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem completeSignalArm_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -10441,7 +10447,8 @@ run_check "INVARIANT" rg -n '^theorem maybeReturnSchedContext_coversWrites($|[ (
 run_check "INVARIANT" rg -n '^theorem maybeReturnSchedContext_savedRegsKeptExcept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
 run_check "INVARIANT" rg -n '^theorem savedRegsWrittenFree.giveBack($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
 run_check "INVARIANT" rg -n '\| \(st'"'"', \.ok none\) => \.ok \(\(\), maybeReturnSchedContext st'"'"' notifId tid\)' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n 'waitReturnCores st notificationId\? waiter executingCore\)\)' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^    \(executingCore :: waitDonationCores st notificationId\? waiter\)$' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^      waitReturnReplenishCores st notificationId\? waiter\)$' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
 # The wait's object footprint locks the completion's context, keyed on the word.
 run_check "INVARIANT" rg -n 'waitCompletionContext\? st notificationId ops.caller\)\.map' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 run_negative_check "INVARIANT" rg -n 'signalDonationContext\? st notificationId ops.caller' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
@@ -11213,7 +11220,7 @@ open SeLe4n.Kernel.Concurrency
 #check @receiveReturnContext?
 #check @receiveLegState_queues
 #check @receiveReturnSchedContext_scheduler_frame
-#check @maybeReturnSchedContextRunningFast_eq
+#check @maybeReturnSchedContextFast_eq
 #check @receiveReturnSchedContextFast_eq
 #check @replyTransferOnCoreChecked_homeCoresKept
 #check @replyTransferOnCoreChecked_objects_invExt
@@ -11288,24 +11295,23 @@ open SeLe4n.Kernel.Concurrency
 #check @maybeReturnSchedContext_cases
 #check @maybeReturnSchedContext_induct
 #check @maybeReturnSchedContext_of_guard_false
-#check @schedContextUnbindAdmitted_of_returnAdmitted
+#check @maybeReturnSchedContext_objects
+#check @maybeReturnSchedContext_objects_invExt
+#check @maybeReturnSchedContext_scheduler_frame
+#check @maybeReturnSchedContext_runSlots
+#check @signalReturnContext?_purgeCores
 #check @signalReturnGuard_congr
-#check @signalReturnCores
 #check @signalReturnReplenishCores
 #check @signalReturnContext?
-#check @runningCoreOffCore?
-#check @runningCoreOf?_removeRunnableOnCore
 #check @notificationWaitOnCore_blocked_cases
 #check @notificationWaitOnCore_blocked_frames
-#check @notificationWaitOnCore_blocked_signalReturnCores_eq
+#check @notificationWaitOnCore_blocked_signalReturn_eq
 #check @linkNtfnWaiter_schedFrames
 #check @bindingLinksAgree.getTcb?_binding
 #check @maybeReturnSchedContext_coversWrites
-#check @waitReturnCores
 #check @waitReturnReplenishCores
 #check @schedLockSet_notificationWaitOnCore_contains_return_writes
 #check @maybeReturnSchedContext_preserves_ipcInvariantFull
-#check @maybeReturnSchedContext_preserves_objects_invExt
 #check @maybeReturnSchedContext_stepCovers
 #check @maybeReturnSchedContext_runQueueEntryStage
 #check @maybeReturnSchedContext_mappingStage

@@ -151,21 +151,6 @@ theorem maybeDonateSchedContext_preserves_ipcInvariantFull (st : SystemState)
     (fun vS vT hT hA => schedContextBindPerform_preserves_ipcInvariantFull st vS vT hObjInv hInv
       hBidir (by subst hT; exact hNotOwner) hA)
 
-/-- **seL4-MCS `maybeReturnSchedContext` keeps the IPC invariant**: the
-identity, or the unbind's ok-state (`schedContextUnbind_preserves_ipcInvariantFull`). -/
-theorem maybeReturnSchedContext_preserves_ipcInvariantFull (st : SystemState)
-    (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
-    (hInv : ipcInvariantFull st) : ipcInvariantFull (maybeReturnSchedContext st n tid) :=
-  maybeReturnSchedContext_induct (fun _ s' => ipcInvariantFull s') st n tid hInv
-    (fun vS _ st' _ _ h => schedContextUnbind_preserves_ipcInvariantFull st st' vS hObjInv hInv h)
-
-/-- …and the object store's integrity. -/
-theorem maybeReturnSchedContext_preserves_objects_invExt (st : SystemState)
-    (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
-    (maybeReturnSchedContext st n tid).objects.invExt :=
-  maybeReturnSchedContext_induct (fun _ s' => s'.objects.invExt) st n tid hObjInv
-    (fun vS _ st' _ _ h => schedContextUnbind_preserves_objects_invExt vS st st' hObjInv h)
-
 /-- **seL4's return on a running receiver keeps the IPC bundle**: the binding
 pair cleared in the unbind direction (`schedContextUnbindTail_preserves_ipcInvariantFull`,
 the context written with its thread link alone cleared), then reschedule flags. -/
@@ -205,6 +190,17 @@ theorem schedContextReturnPerform_preserves_ipcInvariantFull (st : SystemState)
     ipcInvariantFull (schedContextReturnPerform st vS vT.val) :=
   purgeReplenishment_preserves_ipcInvariantFull _ _
     (schedContextReturnLinks_preserves_ipcInvariantFull st vS vT hObjInv hInv hA)
+
+/-- **seL4-MCS `maybeReturnSchedContext` keeps the IPC invariant**: the
+identity, or seL4's writes and the purge
+(`schedContextReturnPerform_preserves_ipcInvariantFull`). -/
+theorem maybeReturnSchedContext_preserves_ipcInvariantFull (st : SystemState)
+    (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st) : ipcInvariantFull (maybeReturnSchedContext st n tid) :=
+  maybeReturnSchedContext_induct (fun _ s' => ipcInvariantFull s') st n tid hInv
+    (fun vS vT hT hA => by
+      subst hT
+      exact schedContextReturnPerform_preserves_ipcInvariantFull st vS vT hObjInv hInv hA)
 
 /-- **The receive's return keeps every endpoint queue head's blocking**: it
 writes no endpoint, and the TCBs it writes keep their IPC state. -/

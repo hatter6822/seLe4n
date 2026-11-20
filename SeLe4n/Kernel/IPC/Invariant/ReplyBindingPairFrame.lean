@@ -1400,14 +1400,12 @@ theorem linkNtfnWaiter_schedFrames {st st' : SystemState} {w : SeLe4n.ThreadId}
       A.2.trans (ntfnContextsAgree.modifyTcb hInv3 h4)⟩
 
 /-- **The wait's block keeps every scheduling link and every notification's
-context word, and the waiter's running core is the one off the executing core
-before it.** -/
+context word.** -/
 theorem notificationWaitOnCore_blocked_frames {notifId : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st1 : SystemState}
     (hInv : st.objects.invExt)
     (h : notificationWaitOnCore notifId tid c st = (st1, .ok none)) :
-    SchedLinkFrame st st1 ∧ ntfnContextsAgree st st1 ∧
-      runningCoreOf? st1 tid = runningCoreOffCore? st tid c := by
+    SchedLinkFrame st st1 ∧ ntfnContextsAgree st st1 := by
   obtain ⟨ntfn, tcb, stA, stB, stC, hPre, hL, hS, hT, hK, rfl⟩ :=
     notificationWaitOnCore_blocked_cases h
   have hInvA := storeObject_preserves_objects_invExt st stA notifId _ hInv hS
@@ -1426,10 +1424,7 @@ theorem notificationWaitOnCore_blocked_frames {notifId : SeLe4n.ObjId}
     cases hT
     have hInvB := storeObject_preserves_objects_invExt _ _ _ _ hInvA hS2
     obtain ⟨LC, NC⟩ := linkNtfnWaiter_schedFrames hInvB hK
-    have hSchedC : stC.scheduler = st.scheduler := by
-      rw [linkNtfnWaiter_scheduler_eq hK, storeObject_scheduler_eq _ _ _ _ hS2,
-        storeObject_scheduler_eq _ _ _ _ hS]
-    refine ⟨?_, ?_, ?_⟩
+    refine ⟨?_, ?_⟩
     · exact (SchedLinkFrame.storeObject_notification hInv hPre hS).trans
         ((SchedLinkFrame.storeObject hInvA hS2 (by rw [hTcbA]; rfl) (by rw [hTcbA]; rfl)
           (by rw [hTcbA]; rfl)).trans
@@ -1440,9 +1435,6 @@ theorem notificationWaitOnCore_blocked_frames {notifId : SeLe4n.ObjId}
         ((ntfnContextsAgree.storeObject hInvA hS2 (by rw [hTcbA]; rfl)).trans
           (NC.trans (ntfnContextsAgree.of_offRunLinks
             (removeRunnableOnCore_objectsAgreeOffRunLinks stC tid c))))
-    · rw [runningCoreOf?_removeRunnableOnCore]
-      unfold runningCoreOffCore?
-      rw [hSchedC]
 
 /-- A step keeping every binding link keeps every thread's binding. -/
 theorem bindingLinksAgree.getTcb?_binding {st st' : SystemState} (h : bindingLinksAgree st st')
@@ -1462,27 +1454,21 @@ theorem bindingLinksAgree.getTcb?_binding {st st' : SystemState} (h : bindingLin
     unfold TCB.schedContextBinding
     rw [e1, e2]
 
-/-- **The return's cores, read on the blocking wait's entry state**: the guard,
-the home core and the release core are the entry state's, and the running core
-is the one off the executing core there. -/
-theorem notificationWaitOnCore_blocked_signalReturnCores_eq {notifId : SeLe4n.ObjId}
+/-- **The return's reads, on the blocking wait's entry state**: the guard, the
+release core and the context are the entry state's. -/
+theorem notificationWaitOnCore_blocked_signalReturn_eq {notifId : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st1 : SystemState}
     (n : SeLe4n.ObjId) (hInv : st.objects.invExt)
     (h : notificationWaitOnCore notifId tid c st = (st1, .ok none)) :
     signalReturnGuard st1 n tid = signalReturnGuard st n tid ∧
-      signalReturnCores st1 n tid =
-        (if signalReturnGuard st n tid then
-          determineTargetCore st tid :: (runningCoreOffCore? st tid c).toList else []) ∧
       signalReturnReplenishCores st1 n tid = signalReturnReplenishCores st n tid ∧
       signalReturnContext? st1 n tid = signalReturnContext? st n tid := by
-  obtain ⟨F, N, R⟩ := notificationWaitOnCore_blocked_frames hInv h
+  obtain ⟨F, N⟩ := notificationWaitOnCore_blocked_frames hInv h
   have hG := signalReturnGuard_congr (n := n) (tid := tid)
     (N.getNotification?_schedContext n) (scIdLinksAgree.of_schedLinkFrame F).2
     (bindingLinksAgree.getTcb?_binding F.binding tid)
   have hC := notificationContext?_congr N n
-  refine ⟨hG, ?_, ?_, ?_⟩
-  · unfold signalReturnCores
-    rw [hG, R, (show schedAuxAgree st _ from F.aux).determineTargetCore_eq]
+  refine ⟨hG, ?_, ?_⟩
   · unfold signalReturnReplenishCores
     rw [hG, hC]
     cases notificationContext? st n with
@@ -1523,6 +1509,6 @@ theorem notificationWaitOnCore_blocked_waitCompletionContext?_eq {notifId : SeLe
   simp only [Option.isSome_none] at hPend
   unfold waitCompletionContext?
   rw [hPend]
-  exact (notificationWaitOnCore_blocked_signalReturnCores_eq notifId hInv h).2.2.2
+  exact (notificationWaitOnCore_blocked_signalReturn_eq notifId hInv h).2.2
 
 end SeLe4n.Kernel

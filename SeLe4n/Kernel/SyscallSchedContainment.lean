@@ -283,42 +283,21 @@ theorem maybeDonateSchedContext_coversWrites (S : LockSet) (st : SystemState)
         (fun h => hd (h ▸ hHome.2)) hA
 
 /-- **seL4-MCS `maybeReturnSchedContext` covers its writes** under any lock set
-holding the table write lock and, where seL4's guard holds, the unbind's run
-queues (`signalReturnCores`: the thread's home core and its running core) and
-the purge's replenish queue (`signalReturnReplenishCores`); where the guard fails
-it writes nothing. -/
+holding the table write lock and, where seL4's guard holds, the purge's replenish
+queue (`signalReturnReplenishCores`).  It moves no run queue, current slot or
+active domain (`maybeReturnSchedContext_runSlots`), so it needs no run-queue
+lock. -/
 theorem maybeReturnSchedContext_coversWrites (S : LockSet) (st : SystemState)
     (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
     (hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs)
-    (hRun : ∀ d ∈ signalReturnCores st n tid,
-      (LockKey.runQueue d, AccessMode.write) ∈ S.pairs)
     (hRepl : ∀ d ∈ signalReturnReplenishCores st n tid,
       (LockKey.replenishQueue d, AccessMode.write) ∈ S.pairs) :
     footprintCoversWrites S st (maybeReturnSchedContext st n tid) := by
-  cases hG : signalReturnGuard st n tid with
-  | false =>
-    rw [maybeReturnSchedContext_of_guard_false hG]
-    exact footprintCoversWrites_of_scheduler_eq S hTable rfl
-  | true =>
-    rcases maybeReturnSchedContext_cases st n tid with e | ⟨vS, vT, hT, ⟨ntfn, s, hN, hS, hSv⟩, hA, hU⟩
-    · rw [e]; exact footprintCoversWrites_of_scheduler_eq S hTable rfl
-    have hConf := schedContextUnbind_confinedToCores vS st _ hU
-    have hWrites := schedContextUnbindWriteSet_of_returnAdmitted hG hT hA
-    have hNC : notificationContext? st n = some (SeLe4n.SchedContextId.ofObjId vS.val) := by
-      unfold notificationContext?
-      rw [hN, Option.bind_some, hS, ← hSv]
-      rfl
-    refine ⟨fun hAbsent => absurd hTable hAbsent, fun d hd => ?_, fun d hd => ?_⟩
-    · have hd' : d ∉ schedContextUnbindWriteSet st vS.val := by
-        rw [hWrites]; exact fun hm => hd (hRun d hm)
-      exact ⟨hConf.runQueue d hd', hConf.current d hd', hConf.activeDomain d hd'⟩
-    · refine schedContextUnbind_replenishQueueOnCore_ne_of_link st _ vS d hObjInv
-        (fun hL => hd (hRepl d ?_)) hU
-      unfold signalReturnReplenishCores
-      rw [hG, hNC]
-      simp only [if_true, Option.map_some, Option.getD_some]
-      unfold SchedContextOps.purgeReplenishCores
-      rw [hL]; exact List.mem_singleton_self d
+  refine ⟨fun hAbsent => absurd hTable hAbsent,
+    fun d _ => maybeReturnSchedContext_runSlots st n tid d, fun d hd => ?_⟩
+  refine maybeReturnSchedContext_replenishQueueOnCore_ne st n tid hObjInv d ?_
+  rw [signalReturnContext?_purgeCores]
+  exact fun hm => hd (hRepl d hm)
 
 -- ============================================================================
 -- §6  The suspend arm

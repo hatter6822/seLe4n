@@ -352,7 +352,7 @@ theorem receiveReturnSchedContext_msg (blocks : Bool) (st : SystemState) (tid : 
       dsimp only
       split
       · rfl
-      unfold maybeReturnSchedContextRunning
+      unfold maybeReturnSchedContext
       rw [SystemState.getNotification?_mapTcbInPlace]
       cases st.getNotification? _ with
       | none => rfl
@@ -514,7 +514,7 @@ theorem receiveReturnSchedContext_getTcb?_self_of_fires {st : SystemState}
     unfold receiveReturnSchedContext
     simp only [↓reduceIte, hT, h0]
     unfold signalReturnGuard at hG
-    unfold maybeReturnSchedContextRunning
+    unfold maybeReturnSchedContext
     revert hG
     cases st.getNotification? ⟨t.boundNotificationCode - 1⟩ with
     | none => intro hG; cases hG
