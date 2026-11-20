@@ -1,3 +1,42 @@
+## v0.37.34 — README brought up to date
+
+Documentation only; no Lean, Rust or script changes. The root `README.md`
+described the tree of several workstreams ago. Every claim it makes was
+re-read against the tree at v0.37.33 and corrected or removed:
+
+- **Theorems and names that no longer exist.** `cbs_bandwidth_bounded` is not
+  in the tree; the scheduling bullets now cite the invariants that are
+  (`budgetWithinBounds`, `refillsConserved`) and name the bandwidth guarantee
+  as WS-CB's. `SchedContext` no longer holds priority, deadline or domain
+  (seL4-MCS budget, period and refills, configured through `SchedControl`).
+- **Hand-written counts that had drifted.** The enforcement boundary (44 →
+  53 entries), the `NonInterferenceStep` constructor count, the composed
+  bundle's conjunct count (16 → 22), the frozen operation count (24 → 17) and
+  the Rust file count are no longer restated; the README names the theorem
+  that pins each one instead.
+- **Stale structure claims.** CNode slots are a flat array as in seL4, not a
+  hash table; run, endpoint and notification queues are linked through the
+  TCBs; five Rust crates, not four (`sele4n-lean-boundary`); the service
+  registry is reached through a `serviceRegistry` capability. "All seL4
+  operations implemented" is replaced by what WS-SX has landed (seL4-MCS's
+  eleven syscalls, invocation labels, seL4's error payloads) and a link to
+  its plan for the rest.
+- **Status rows.** The H3/WS-AG hardware row and the v0.30.11 audit row are
+  replaced by the boot lanes (rpi5_machine's `raspi5b` first, then `virt`,
+  per WS-RB), and links to `docs/agent_guide/WORKSTREAM_CONTEXT.md`,
+  `docs/REGISTERED_DEBT.md` and `docs/audits/`, which own workstream and
+  audit status.
+- **New sections.** seL4 ABI, kernel objects and memory (untyped carving, the
+  no-allocation entry rule and its QEMU heap gate, per-frame W^X), multi-core;
+  the QEMU lanes in the validation commands; the architecture diagram and
+  source layout gain the kernel entries, `Concurrency/`, `Platform/Boot/`,
+  `Platform/QemuVirt/` and the Rust HAL; the seL4 comparison table is
+  corrected (seL4 has no in-kernel priority inheritance; the IPC row compares
+  like with like) and gains ABI and memory-mapping rows.
+
+The eleven translated READMEs under `docs/i18n/` still carry the earlier text
+apart from their synced metric rows.
+
 ## v0.37.33 — seL4's syscall set and invocation labels
 
 WS-SX SX7 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`). A user thread now
