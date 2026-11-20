@@ -583,6 +583,14 @@ def signalWakeDonationCores (st : SystemState) (n : SeLe4n.ObjId) : List CoreId 
   | some t => signalDonationCores st n t
   | none => []
 
+/-- **The cores seL4's `sendSignal` writes**: the wake's
+(`notificationSignalBoundWriteSet`) and the donation's to the thread it woke
+(`signalWakeDonationCores`), both read on the state the signal is handed.  The
+write set of the live `.notificationSignal` arm and of the declassifying
+signal's dispatch. -/
+def sendSignalWriteSet (st : SystemState) (n : SeLe4n.ObjId) : List CoreId :=
+  notificationSignalBoundWriteSet st n ++ signalWakeDonationCores st n
+
 /-- **The context seL4's `sendSignal` donation writes**, read on the state the
 signal is handed: the notification's context where seL4's guard holds for the
 thread the signal wakes (`signalDonationContext?`), none otherwise.  Exact, as

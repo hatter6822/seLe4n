@@ -6284,6 +6284,20 @@ theorem completeSignalArm_consumes {ctx : LabelingContext} {tid : SeLe4n.ThreadI
           rw [hN] at hPend
           exact notificationWaitOnCore_not_blocked_of_pending hN hPend hI
 
+/-- **The completion's scheduler change is the donation's**: the wait's
+consumption keeps the scheduler (`notificationWaitOnCore_consumed_scheduler_eq`,
+which stays the wait's own statement) and so does the badge frame, so the arm's
+state is `maybeDonateSchedContext` over a state whose scheduler is the entry
+state's.  Every scheduler write the arm makes is the bind's. -/
+theorem completeSignalArm_scheduler_of_donation {ctx : LabelingContext} {tid : SeLe4n.ThreadId}
+    {c : Concurrency.CoreId} {st st' : SystemState}
+    (hSig : receiveCompletesSignal ctx st tid = true)
+    (h : completeSignalArm ctx tid (receiverBoundNotification st tid) c st = .ok ((), st')) :
+    ∃ stD, stD.scheduler = st.scheduler ∧
+      st' = maybeDonateSchedContext stD (receiverBoundNotification st tid) tid := by
+  obtain ⟨st1, badge, -, hS, rfl⟩ := completeSignalArm_consumes hSig h
+  exact ⟨_, (Architecture.writeReturnFrameToTcb_scheduler_eq _ _ _).trans hS, rfl⟩
+
 /-- A receive whose notification → receiver flow is denied does not complete
 the signal, whatever the notification holds. -/
 theorem receiveCompletesSignal_false_of_flowDenied (ctx : LabelingContext)
@@ -8594,9 +8608,13 @@ theorem dispatchWithCapChecked_layer2_decode_pure
     that the caller can directly reference. The 14 arms fall into THREE
     substantiveness tiers:
 
-    **Fully substantive (6/14)** — proof uses only observability
+    **Fully substantive (7/14)** — proof uses only observability
     hypotheses, store invariants and pre-proven frame lemmas; NO abstract
     closures:
+    - `.schedContextBind` → `schedContextBind_preserves_projection` (AK6F.14,
+       `InformationFlow/PerCoreSchedulerNonInterference.lean`): the bind's
+       per-core frame `schedContextBind_lowEquivalent` read at the boot core,
+       whose view is the single-core projection.
     - `.cspaceDelete` → `cspaceDeleteSlot_preserves_projection`
     - `.serviceRevoke` → `revokeServiceChecked_preserves_projection`; the
        admitted revoke removes the registration the invoked endpoint records
@@ -8628,14 +8646,11 @@ theorem dispatchWithCapChecked_layer2_decode_pure
     - `.tcbSetMCPriority` → `setMCPriorityOnCore_preserves_projection` (WS-SM
       SM8.B; same reroute) mirror structure to setPriorityOnCore.
 
-    **Closure-form (6/14)** — theorem takes `hProjEq` abstract closure;
+    **Closure-form (5/14)** — theorem takes `hProjEq` abstract closure;
     body is `hProjEq st' hStep`. NOT tautological for callers — each has
     DOCUMENTED FRAME LEMMAS letting a caller discharge `hProjEq` in
     ≈25-60 LOC using substantively-proven building blocks. Listed here
     WITH their discharge recipes:
-    - `.schedContextBind` → `schedContextBind_preserves_projection` (AK6F.14);
-      discharge via `objects_insert_preserves_projection_high` × 2 +
-      `schedContextBind_frame_runQueue_rebucket`.
     - `.schedContextUnbind` → `schedContextUnbind_preserves_projection` (AK6F.15);
       discharge via `projectState_scheduler_current_cleared_when_high` +
       `removeRunnable_preserves_projection` + `objects_insert_preserves_projection_high` × 2 +
@@ -8657,12 +8672,10 @@ theorem dispatchWithCapChecked_layer2_decode_pure
     `objects_insert_preserves_projection_high`, `.donated` via
     `returnDonatedSchedContext` preservation).
 
-    Substantive closure of the 6 closure-form theorems is estimated at
+    Substantive closure of the 5 closure-form theorems is estimated at
     ≈300 LOC aggregate, tracked as continuation work AK6F.20b. Lean
     4.28.0's `split`/`split_ifs` interaction with `Except.ok` on
-    deeply-nested `match`-based Bool conditions (e.g., `schedContextBind`
-    has 5 nested matches before the first success-arm mutation)
-    currently prevents clean destructuring; the frame lemmas above are
+    deeply-nested `match`-based Bool conditions currently prevents clean destructuring; the frame lemmas above are
     the building blocks that a future patch will compose once a stable
     destructuring idiom is available.
 
@@ -8675,7 +8688,8 @@ theorem dispatchWithCapChecked_layer2_decode_pure
     | `.vspaceUnmap` | `vspaceUnmapPage_preserves_projection` (Operations.lean:797) |
     | `.serviceRevoke` | reduces to `cspaceRevoke_preserves_projection` (Operations.lean:1000) through the orchestrator |
     | `.serviceQuery` | read-only (`lookupServiceByRecordedRegistration` does not mutate state) |
-    | `.schedContextConfigure/Bind/Unbind` | `storeObject_preserves_projection` / `objects_insert_preserves_projection_high` (Operations.lean) at non-observable SchedContext target + TCB/RunQueue field preservation |
+    | `.schedContextBind` | **`schedContextBind_preserves_projection`** (PerCoreSchedulerNonInterference.lean), at a hidden context and thread |
+    | `.schedContextConfigure/Unbind` | `storeObject_preserves_projection` / `objects_insert_preserves_projection_high` (Operations.lean) at non-observable SchedContext target + TCB/RunQueue field preservation |
     | `.tcbSetIPCBuffer` | **`setIPCBufferOp_preserves_projection`** (Operations.lean — AK6-F.2b, v0.29.10) |
     | `.tcbSetPriority/SetMCPriority` | `objects_insert_preserves_projection_high` at non-observable TCB/SC — uses the universal direct-insert frame lemma (Operations.lean — AK6-F Step A, v0.29.10) |
     | `.tcbSetAffinity` | **`setThreadCpuAffinityOnCore_preserves_projection`** (Operations.lean — WS-SM SM8.B, review round 42) at non-observable target — the **live** wrapper, which round 37 rerouted this arm to; the boot-core `setThreadCpuAffinityOp_preserves_projection` (SM5.H.4) is its `bootCoreId` instance, reachable through `setThreadCpuAffinityOp_eq_onCore_state` but not needed here.  The affinity write is `cpuAffinity`-erased (invisible); the run-queue migration's write, at the executing core rather than a pinned boot core, preserves the filtered `projectRunnable` for a high thread (`migrateRunQueueOnAffinityChange_preserves_projection`); the replenishment migration is invisible when the target's bound context is non-observable (`migrateSchedContextReplenishment_preserves_projection`; the projection keeps each context's release core, WS-ZA ZA6.30). |

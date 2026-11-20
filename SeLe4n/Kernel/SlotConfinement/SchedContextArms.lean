@@ -11,6 +11,7 @@ import SeLe4n.Kernel.SlotConfinement.IpcArms
 import SeLe4n.Kernel.SchedContext.SchedContextFootprint
 import SeLe4n.Kernel.Scheduler.Operations.AffinityFootprint
 import SeLe4n.Kernel.SchedContext.SchedControlFootprint
+import SeLe4n.Kernel.SchedContext.NotificationDonation
 
 /-!
 # Per-core slot confinement — the live SchedContext arms
@@ -235,6 +236,29 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
     observableSlotsConfinedToCores st st' (schedContextBindWriteSet st vThreadId.val) := by
   obtain ⟨hA, rfl⟩ := SchedContextOps.schedContextBind_ok_donate hStep
   exact schedContextBindPerform_confinedToCores vScId vThreadId st hObjInv hA
+
+/-- **seL4-MCS `maybeDonateSchedContext` writes no core but the receiver's
+home core, and that one only where seL4's guard holds** (`signalDonationCores`):
+the identity where it fails, the bind's writes (on the home core,
+`schedContextBindPerform_confinedToCores`) where it holds. -/
+theorem maybeDonateSchedContext_confinedToCores (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
+    observableSlotsConfinedToCores st (maybeDonateSchedContext st n tid)
+      (signalDonationCores st n tid) := by
+  cases hG : signalDonationGuard st n tid with
+  | false =>
+    rw [maybeDonateSchedContext_of_guard_false hG]
+    exact observableSlotsConfinedToCores_refl st _
+  | true =>
+    have hC : signalDonationCores st n tid = schedContextBindWriteSet st tid := by
+      simp [signalDonationCores, hG, schedContextBindWriteSet]
+    rw [hC]
+    refine maybeDonateSchedContext_induct
+      (fun st s => observableSlotsConfinedToCores st s (schedContextBindWriteSet st tid))
+      st n tid (observableSlotsConfinedToCores_refl st _) ?_
+    intro vS vT hT hA
+    subst hT
+    exact schedContextBindPerform_confinedToCores vS vT st hObjInv hA
 
 -- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `setThreadCpuAffinityWriteSet` moved to the
 -- production `SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean` (via

@@ -1934,6 +1934,22 @@ theorem schedContextBind_lowEquivalent {st st' : SystemState} {vS : SeLe4n.Valid
   obtain ⟨-, rfl⟩ := (SchedContextOps.schedContextBind_ok_iff st st' vS vT).mp h
   exact schedContextBindPerform_lowEquivalent st vS vT hInv hS hT hTo
 
+/-- AK6-F.14: **a successful `schedContextBind` keeps the single-core view**
+when the context and the thread are hidden.  The single-core projection is the
+per-core one at the boot core (`projectStateOnCore_bootCore`, by `rfl`), so the
+bind's per-core frame (`schedContextBind_lowEquivalent`) read at the boot core is
+this statement: the rewritten context and the thread's binding words are hidden
+objects, the placement enqueues a hidden thread the filtered run queue drops,
+and neither the reschedule flag nor the release queue is projected. -/
+theorem schedContextBind_preserves_projection {st st' : SystemState}
+    {vS : SeLe4n.ValidObjId} {vT : SeLe4n.ValidThreadId} (hInv : st.objects.invExt)
+    (hS : objectObservable ctx observer vS.val = false)
+    (hT : threadObservable ctx observer vT.val = false)
+    (hTo : objectObservable ctx observer vT.val.toObjId = false)
+    (h : SchedContextOps.schedContextBind vS vT st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st :=
+  schedContextBind_lowEquivalent hInv hS hT hTo h bootCoreId
+
 /-- **seL4-MCS `maybeDonateSchedContext` is invisible on every core** when the
 receiver and the notification's bound context are hidden: the identity, or the
 bind's writes (`schedContextBindPerform_lowEquivalent`). -/
