@@ -7765,7 +7765,7 @@ run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterferenc
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # SM9.A.4b took the inventory 26 -> 28 with the two audit readers, both of
 # which take an executing core and carry an EMPTY write set.
-run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 39' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 40' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # PR #861 review round 34: the context-restore gate lives in WRAPPERS, never
 # inside the transitions.  An in-transition `if contextRestoreSeamLive` reduces
@@ -8055,7 +8055,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 # Audit IPC-2 (`v0.36.49`): the two-leg ReplyRecv composite these three named is
 # deleted; the live transition took its name and its entries are anchored above.
 run_negative_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 39' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 40' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # WS-ZA ZA5.4 part 22: the space change takes the executing core for its retire,
 # so it is a cross-core inventory entry, delegation-backed; part 26: through the
 # zombie delete, which may write every core.
@@ -10430,6 +10430,10 @@ run_check "INVARIANT" rg -n '^theorem completeSignalArm_scheduler_of_donation($|
 # WS-SX SX8.2: seL4's `maybeReturnSchedContext` after a blocking Wait — the
 # return, the lock set's return cores, and the wait arm wired through it.
 run_check "INVARIANT" rg -n '^def maybeReturnSchedContext($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+run_check "INVARIANT" rg -n '^theorem maybeReturnSchedContext_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/SchedContextArms.lean
+run_check "INVARIANT" rg -n '^theorem completeSignalArm_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem completeSignalArm_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '\| \.waitDispatch => niName! completeSignalArm_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem maybeReturnSchedContext_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 run_check "INVARIANT" rg -n '^theorem maybeReturnSchedContext_savedRegsKeptExcept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
 run_check "INVARIANT" rg -n '^theorem savedRegsWrittenFree.giveBack($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean

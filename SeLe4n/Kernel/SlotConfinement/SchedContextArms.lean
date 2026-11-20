@@ -260,6 +260,47 @@ theorem maybeDonateSchedContext_confinedToCores (st : SystemState) (n : SeLe4n.O
     subst hT
     exact schedContextBindPerform_confinedToCores vS vT st hObjInv hA
 
+/-- WS-SX SX8.2: **seL4-MCS `maybeReturnSchedContext`'s cores are the unbind's**:
+where seL4's guard holds the context names the thread, so the unbind's write set
+(`schedContextUnbindWriteSet`) is the return's (`signalReturnCores`). -/
+theorem schedContextUnbindWriteSet_of_returnAdmitted {st : SystemState} {n : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {vS : SeLe4n.ValidObjId} {vT : SeLe4n.ValidThreadId}
+    (hG : signalReturnGuard st n tid = true) (hT : vT.val = tid)
+    (hA : schedContextReturnAdmitted st vS vT = true) :
+    schedContextUnbindWriteSet st vS.val = signalReturnCores st n tid := by
+  have hBT : SchedContextOps.schedContextBoundThread? st vS.val = some tid := by
+    unfold schedContextReturnAdmitted at hA
+    unfold SchedContextOps.schedContextBoundThread?
+    cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vS.val) with
+    | none => rw [hSc] at hA; cases hA
+    | some sc =>
+      rw [hSc] at hA
+      cases hTc : st.getTcb? vT.val with
+      | none => rw [hTc] at hA; cases hA
+      | some tcb =>
+        rw [hTc] at hA
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at hA
+        simp only [hA.1, hT]
+  unfold schedContextUnbindWriteSet signalReturnCores
+  rw [hBT, hG]; simp only [if_true]
+
+/-- WS-SX SX8.2: **seL4-MCS `maybeReturnSchedContext` writes the unbind's cores**
+where seL4's guard holds (`signalReturnCores`: the thread's home core and its
+running core), and none where it fails. -/
+theorem maybeReturnSchedContext_confinedToCores (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores st (maybeReturnSchedContext st n tid)
+      (signalReturnCores st n tid) := by
+  cases hG : signalReturnGuard st n tid with
+  | false =>
+    rw [maybeReturnSchedContext_of_guard_false hG]
+    exact observableSlotsConfinedToCores_refl st _
+  | true =>
+    rcases maybeReturnSchedContext_cases st n tid with e | ⟨vS, vT, hT, -, hA, hU⟩
+    · rw [e]; exact observableSlotsConfinedToCores_refl st _
+    rw [← schedContextUnbindWriteSet_of_returnAdmitted hG hT hA]
+    exact schedContextUnbind_confinedToCores vS st _ hU
+
 -- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `setThreadCpuAffinityWriteSet` moved to the
 -- production `SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean` (via
 -- `SyscallSchedFootprint.lean` until WS-LS LS2.5), beside

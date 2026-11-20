@@ -1119,6 +1119,87 @@ theorem sendSignalOnCore_crossCoreNonInterference (ctx : LabelingContext)
   crossCoreNonInterference_ofCores ctx observer hne
     (sendSignalOnCore_confinedToCores notificationId badge executingCore st hObjInv) hShared
 
+/-- WS-SX SX8.2: **the cores the live `.wait` arm writes**, read on its entry
+state: the executing core the wait blocks on, the donation's where the
+notification holds a word (`waitDonationCores`), the return's where it holds
+none (`waitReturnCores`) — the run segment of the arm's scheduler footprint. -/
+def waitArmWriteSet (st : SystemState) (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (executingCore : CoreId) : List CoreId :=
+  executingCore :: (waitDonationCores st (some n) tid ++ waitReturnCores st (some n) tid executingCore)
+
+/-- WS-SX SX8.2: **the live `.wait` arm writes only its write set**: the wait
+writes the executing core; a consumed wait's badge frame writes no core and its
+donation the donation's; a blocked wait's return the return's, each read on the
+entry state (`completeSignalArm_signalDonationCores_eq`,
+`notificationWaitOnCore_blocked_signalReturnCores_eq`). -/
+theorem completeSignalArm_confinedToCores (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (n : SeLe4n.ObjId) (executingCore : CoreId) (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (h : completeSignalArm ctx tid n executingCore st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' (waitArmWriteSet st n tid executingCore) := by
+  have hJoin : ∀ {a b : SystemState}, observableSlotsConfinedToCores a b
+      (waitArmWriteSet st n tid executingCore ++ waitArmWriteSet st n tid executingCore) →
+      observableSlotsConfinedToCores a b (waitArmWriteSet st n tid executingCore) :=
+    observableSlotsConfinedToCores_mono fun x hx => by
+      rcases List.mem_append.mp hx with h | h <;> exact h
+  have hE : executingCore ∈ waitArmWriteSet st n tid executingCore := List.mem_cons_self
+  unfold completeSignalArm at h
+  split at h
+  · rename_i st1 badge hW
+    simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+    subst h
+    have hW' := notificationWaitCrossCoreDispatchChecked_ok_inner hW
+    have hWait := notificationWaitOnCore_confinedToCores n tid executingCore st
+    simp only [hW'] at hWait
+    have hFr := observableSlotsConfinedToCores_of_framed_suffix
+      (Architecture.writeReturnFrameToTcb_scheduler_eq _ tid (Architecture.badgeReturnFrame st1 tid badge))
+      (Architecture.writeReturnFrameToTcb_machine_eq _ tid _) hWait
+    have hD := maybeDonateSchedContext_confinedToCores _ n tid
+      (completeSignalArm_donationPre_objects_invExt hObjInv hW')
+    rw [completeSignalArm_signalDonationCores_eq n hObjInv hW'] at hD
+    have hPend := notificationWaitOnCore_notificationPending hW'
+    simp only [Option.isSome_some] at hPend
+    refine hJoin (observableSlotsConfinedToCores_trans
+      (observableSlotsConfinedToCores_mono (fun x hx => ?_) hFr)
+      (observableSlotsConfinedToCores_mono (fun x hx => ?_) hD))
+    · rw [List.mem_singleton] at hx; subst hx; exact hE
+    · simp only [waitArmWriteSet, waitDonationCores, Option.map_some, Option.getD_some, hPend,
+        ↓reduceIte, List.mem_cons, List.mem_append]
+      exact Or.inr (Or.inl hx)
+  · rename_i st1 hW
+    simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+    subst h
+    have hW' := notificationWaitCrossCoreDispatchChecked_ok_inner hW
+    have hWait := notificationWaitOnCore_confinedToCores n tid executingCore st
+    simp only [hW'] at hWait
+    have hR := maybeReturnSchedContext_confinedToCores st1 n tid
+    rw [(notificationWaitOnCore_blocked_signalReturnCores_eq n hObjInv hW').2.1] at hR
+    have hPend := notificationWaitOnCore_notificationPending hW'
+    simp only [Option.isSome_none] at hPend
+    refine hJoin (observableSlotsConfinedToCores_trans
+      (observableSlotsConfinedToCores_mono (fun x hx => ?_) hWait)
+      (observableSlotsConfinedToCores_mono (fun x hx => ?_) hR))
+    · rw [List.mem_singleton] at hx; subst hx; exact hE
+    · simp only [waitArmWriteSet, waitReturnCores, Option.map_some, Option.getD_some, hPend,
+        Bool.false_eq_true, ↓reduceIte, List.mem_cons, List.mem_append]
+      exact Or.inr (Or.inr hx)
+  · cases h
+
+/-- WS-SX SX8.2 (**the inventory's citation for the live `.wait` arm**): the arm
+(`completeSignalArm`: the checked wait, then seL4-MCS's `completeSignal`
+donation or `receiveSignal` return) is invisible to any core outside its write
+set. -/
+theorem completeSignalArm_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (tid : SeLe4n.ThreadId) (n : SeLe4n.ObjId)
+    (executingCore : CoreId) (st st' : SystemState) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (h : completeSignalArm ctx tid n executingCore st = .ok ((), st'))
+    (hne : c ∉ waitArmWriteSet st n tid executingCore)
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (completeSignalArm_confinedToCores ctx tid n executingCore st st' hObjInv h) hShared
+
 -- ============================================================================
 -- §7 Coverage
 -- ============================================================================
@@ -1376,8 +1457,13 @@ inductive CrossCoreTransition where
   bound-aware wake then the donation of the notification's context to the
   thread it woke (`sendSignalOnCore`). -/
   | sendSignalDispatch
-  /-- SM6.B — the notification wait. -/
+  /-- SM6.B — the notification wait: the wait alone, a below-API leg of the
+  live `.wait` arm since WS-SX SX8.2. -/
   | notificationWait
+  /-- WS-SX SX8.2 — the **live** `.wait` arm: the checked wait, then seL4-MCS's
+  `completeSignal` donation where it consumed a word or `receiveSignal`'s
+  `maybeReturnSchedContext` where it blocked (`completeSignalArm`). -/
+  | waitDispatch
   /-- SM6.C — the reply. -/
   | endpointReply
   /-- SM6.C — the **live** `.reply` arm: reply, donation return, PIP reversion. -/
@@ -1489,7 +1575,7 @@ def CrossCoreTransition.all : List CrossCoreTransition :=
   [.wake, .endpointCall, .endpointCallDispatch, .endpointSendDispatch,
    .schedContextUnbindDispatch, .schedContextBindDispatch, .schedContextConfigureDispatch,
    .setThreadCpuAffinityDispatch,
-   .notificationSignal, .notificationSignalBound, .sendSignalDispatch,
+   .notificationSignal, .notificationSignalBound, .sendSignalDispatch, .waitDispatch,
    .notificationWait, .endpointReply, .endpointReplyDispatch, .endpointReceiveDual,
    .endpointReceiveDualWithCaps,
    .endpointReplyRecvDispatch, .deschedule, .cancelIpcBlocking,
@@ -1541,6 +1627,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
   | .notificationSignal => niName! notificationSignalOnCore_crossCoreNonInterference
   | .notificationSignalBound => niName! notificationSignalBoundOnCore_crossCoreNonInterference
   | .sendSignalDispatch => niName! sendSignalOnCore_crossCoreNonInterference
+  | .waitDispatch => niName! completeSignalArm_crossCoreNonInterference
   | .notificationWait => niName! notificationWaitOnCore_crossCoreNonInterference
   | .endpointReply => niName! endpointReplyOnCore_crossCoreNonInterference
   | .endpointReplyDispatch =>
@@ -1591,7 +1678,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
       niName! irqHandlerSetNotificationFromCap_crossCoreNonInterference
   | .irqHandlerClearDispatch => niName! irqHandlerClear_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 39 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 40 := by rfl
 
 /-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
 reaches**, as opposed to the below-API transitions they are built from.
@@ -1612,18 +1699,20 @@ and `.tcbSuspend` to
 and a scheduling point). Each does strictly more per-core writing than the
 below-API transition it wraps, so the narrower theorem never bounded it.
 
-Two entries are a different case and are *not* re-pointed, because their live arm
+One entry is a different case and is *not* re-pointed, because its live arm
 calls the `…OnCore` transition **directly**:
 `notificationSignalBoundCrossCoreDispatch` is definitionally `sendSignalOnCore …
 executingCore st` (seL4-MCS `sendSignal`: the bound-aware wake, then the
-donation, WS-SX SX8.2), and `notificationWaitCrossCoreDispatch` is definitionally
-`notificationWaitOnCore … executingCore st`. For those the `…OnCore` theorem is a
-statement about the live arm already; the bound-aware wake on its own
-(`.notificationSignalBound`) is a below-API leg.
+donation, WS-SX SX8.2). For it the `…OnCore` theorem is a statement about the
+live arm already; the bound-aware wake on its own (`.notificationSignalBound`) is
+a below-API leg.  The `.wait` arm runs `completeSignalArm` — the checked wait,
+then seL4-MCS's `completeSignal` donation or `receiveSignal`'s
+`maybeReturnSchedContext` — so its live entry is `.waitDispatch`, and the wait
+alone (`.notificationWait`) is a below-API leg (WS-SX SX8.2).
 
 **Being a leg does not stop something being a live arm** (PR #861 review round
 8) — but it does not make something one either. `endpointReceiveDualOnCore` was
-a third entry of that kind while the `.receive` arm invoked it directly; it is
+a second entry of that kind while the `.receive` arm invoked it directly; it is
 not any more. Both receive-shaped live arms now reach
 `endpointReceiveDualWithCapsOnCore` (`.receive` since PR #873 round 6,
 `endpointReplyRecvOnCore`'s second leg since round 7), which installs a parked send's
@@ -1646,7 +1735,9 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   -- WS-SX SX8.2: the bound-aware wake is a leg of `sendSignalOnCore` now
   | .notificationSignalBound => false
   | .sendSignalDispatch => true
-  | .notificationWait => true
+  -- WS-SX SX8.2: the wait is a leg of `completeSignalArm` now
+  | .notificationWait => false
+  | .waitDispatch => true
   | .endpointReply => false
   | .endpointReplyDispatch => true
   -- PR #873 round 7: the bare receive is a below-API transition now — both
@@ -1754,7 +1845,8 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .notificationSignal => none
   | .notificationSignalBound => none
   | .sendSignalDispatch => some .notificationSignal
-  | .notificationWait => some .notificationWait
+  | .notificationWait => none
+  | .waitDispatch => some .notificationWait
   | .endpointReply => none
   | .endpointReplyDispatch => some .reply
   | .endpointReceiveDual => none
@@ -1802,8 +1894,9 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
   | .notificationSignalBound => .readOffTheArm "below-API transition; live arm is .sendSignalDispatch"
   | .sendSignalDispatch =>
       .readOffTheArm "checked `.signal` arm; wrapper definitionally sendSignalOnCore; delegation theorem pending"
-  | .notificationWait =>
-      .readOffTheArm "checked `.wait` arm; wrapper definitionally the OnCore call; delegation theorem pending"
+  | .notificationWait => .readOffTheArm "below-API transition; live arm is .waitDispatch"
+  | .waitDispatch =>
+      .readOffTheArm "checked `.wait` arm calls completeSignalArm; delegation theorem pending"
   | .endpointReply => .readOffTheArm "below-API transition; live arm is .endpointReplyDispatch"
   | .endpointReplyDispatch =>
       .readOffTheArm "checked `.reply` arm calls endpointReplyCrossCoreDispatch; delegation theorem pending"
@@ -1907,6 +2000,7 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .notificationSignalBound => true
   | .sendSignalDispatch => true
   | .notificationWait => false
+  | .waitDispatch => true
   | .endpointReply => true
   | .endpointReplyDispatch => true
   | .endpointReceiveDual => true
@@ -1959,6 +2053,6 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .irqHandlerClearDispatch => true
 
 theorem crossCoreTransitionWritesRemote_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 29 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 30 := by decide
 
 end SeLe4n.Kernel

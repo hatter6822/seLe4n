@@ -303,22 +303,7 @@ theorem maybeReturnSchedContext_coversWrites (S : LockSet) (st : SystemState)
     rcases maybeReturnSchedContext_cases st n tid with e | ⟨vS, vT, hT, ⟨ntfn, s, hN, hS, hSv⟩, hA, hU⟩
     · rw [e]; exact footprintCoversWrites_of_scheduler_eq S hTable rfl
     have hConf := schedContextUnbind_confinedToCores vS st _ hU
-    have hBT : SchedContextOps.schedContextBoundThread? st vS.val = some tid := by
-      unfold schedContextReturnAdmitted at hA
-      unfold SchedContextOps.schedContextBoundThread?
-      cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vS.val) with
-      | none => rw [hSc] at hA; cases hA
-      | some sc =>
-        rw [hSc] at hA
-        cases hTc : st.getTcb? vT.val with
-        | none => rw [hTc] at hA; cases hA
-        | some tcb =>
-          rw [hTc] at hA
-          simp only [Bool.and_eq_true, decide_eq_true_eq] at hA
-          simp only [hA.1, hT]
-    have hWrites : schedContextUnbindWriteSet st vS.val = signalReturnCores st n tid := by
-      unfold schedContextUnbindWriteSet signalReturnCores
-      rw [hBT, hG]; simp only [if_true]
+    have hWrites := schedContextUnbindWriteSet_of_returnAdmitted hG hT hA
     have hNC : notificationContext? st n = some (SeLe4n.SchedContextId.ofObjId vS.val) := by
       unfold notificationContext?
       rw [hN, Option.bind_some, hS, ← hSv]

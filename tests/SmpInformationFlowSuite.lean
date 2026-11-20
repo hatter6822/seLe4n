@@ -434,6 +434,9 @@ set_option maxRecDepth 8192
 #check @cancellationCrossCore_confinedToCores
 #check @notificationSignalOnCore_crossCoreNonInterference
 #check @notificationWaitOnCore_crossCoreNonInterference
+#check @completeSignalArm_confinedToCores
+#check @completeSignalArm_crossCoreNonInterference
+#check @maybeReturnSchedContext_confinedToCores
 #check @endpointCallOnCore_crossCoreNonInterference
 #check @endpointReplyOnCore_crossCoreNonInterference
 #check @descheduleThread_crossCoreNonInterference
@@ -4640,11 +4643,11 @@ private def runRunQueueComparisonChecks : IO Unit := do
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "thirty-nine cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 39))
-  assertBool "twenty-nine of the thirty-nine can name a core other than the executing one"
+  assertBool "forty cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 40))
+  assertBool "thirty of the forty can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 29))
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 30))
   assertBool "…and the wait, the two VSpace arms, the carve, the declassification, the two audit readers, the yield, the Consumed invocation and the buffer change are the ten that cannot"
     ([SeLe4n.Kernel.CrossCoreTransition.notificationWait,
       .vspaceMapDispatch, .vspaceUnmapDispatch,
@@ -4652,7 +4655,7 @@ private def runCoreSetAlgebraChecks : IO Unit := do
       .auditReadDispatch, .auditDrainDispatch, .yieldDispatch,
       .schedContextConsumedDispatch].all (fun t =>
         decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote t = false)))
-  assertBool "thirty-one of the thirty-nine are the arms the live syscall dispatch reaches"
+  assertBool "thirty-one of the forty are the arms the live syscall dispatch reaches"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
       SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 31))
   -- WS-SX SX8.2: the live `.signal` arm is seL4-MCS `sendSignal` (the wake,
@@ -4663,6 +4666,15 @@ private def runCoreSetAlgebraChecks : IO Unit := do
       && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .sendSignalDispatch
                    = some SeLe4n.Model.SyscallId.notificationSignal)
       && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .notificationSignalBound = none))
+  -- WS-SX SX8.2: the live `.wait` arm is `completeSignalArm` (the checked wait,
+  -- then seL4-MCS's donation or return); the wait alone is its below-API leg.
+  assertBool "the live wait arm is completeSignalArm and the bare wait is a below-API leg"
+    (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .waitDispatch
+      && !SeLe4n.Kernel.crossCoreTransitionIsLiveArm .notificationWait
+      && SeLe4n.Kernel.crossCoreTransitionWritesRemote .waitDispatch
+      && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .waitDispatch
+                   = some SeLe4n.Model.SyscallId.notificationWait)
+      && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .notificationWait = none))
   -- WS-ZA ZA6.32: the interrupt handler's bind and clear empty the line's node
   -- slot by the zombie delete, so they are live, delegation-backed arms naming
   -- their own syscalls that may write remote cores, as the delete does.
