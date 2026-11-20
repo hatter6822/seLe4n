@@ -6,6 +6,7 @@ import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Endpoint
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.IPC.Invariant.DispatchArmPreservation
 import SeLe4n.Kernel.SlotConfinement.MemoryArms
+import SeLe4n.Kernel.SchedContext.NotificationLink
 
 /-!
 # Capability, VSpace, untyped and service arms keep the run-queue link agreement
@@ -393,6 +394,25 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_runQueueStage {ec : Concu
     (congrArg MachineState.residentCode
       (vspaceUnmapPageWithShootdownAndIcacheBroadcast_framed ec asid vaddr st st' h).2)
 
+theorem cspaceClearFrameMapping_runQueueStage {addr : CSpaceAddr}
+    {st st' : SystemState} (h : cspaceClearFrameMapping addr st = .ok ((), st')) :
+    RunQueueStage st st' := by
+  obtain ⟨cn, cap, hCn, -, hStore⟩ := cspaceClearFrameMapping_ok_decompose addr st st' h
+  exact storeObject_inert_runQueueStage hStore
+    ((SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hCn) (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)
+
+/-- `Page_Unmap`: the teardown writes roots alone and the record clear one
+CNode, so each keeps the stage. -/
+theorem vspaceUnmapFrameCap_runQueueStage {ec : Concurrency.CoreId} {addr : CSpaceAddr}
+    {st st' : SystemState} (h : vspaceUnmapFrameCap ec addr st = .ok ((), st')) :
+    RunQueueStage st st' :=
+  vspaceUnmapFrameCap_closed RunQueueStage
+    (fun _ _ hU => vspaceRootOnlyWrite_runQueueStage
+      (fun hInv => unmapLivePages_ok_frame ec _ _ _ hInv hU)
+      (congrArg MachineState.residentCode (unmapLivePages_framed ec _ _ _ hU).2))
+    (fun _ _ hC => cspaceClearFrameMapping_runQueueStage hC)
+    (fun _ _ _ h₁ h₂ => h₁.trans h₂) h
+
 /-- A map or seL4's remap of a frame capability: the unmap and the fresh map
 each keep the stage. -/
 theorem vspaceMapOrRemapFromFrameCap_runQueueStage {tid : SeLe4n.ThreadId}
@@ -409,13 +429,6 @@ theorem vspaceUnifyInstructionPage_runQueueStage {asid : SeLe4n.ASID} {vaddr : S
     RunQueueStage st st' :=
   have hF := Architecture.vspaceUnifyInstructionPage_frame h
   RunQueueStage.of_frame hF.1 (by rw [hF.2.2.1]) (by rw [hF.2.2.1]) (by rw [hF.2.2.1])
-
-/-- WS-ZA ZA5.4: the untyped reset is one free-index write
-(`untypedResetSlot_ok_frame`). -/
-theorem untypedResetSlot_runQueueStage {srcCnode : SeLe4n.ObjId} {srcSlot : SeLe4n.Slot}
-    {st st' : SystemState} (h : untypedResetSlot srcCnode srcSlot st = .ok ((), st')) :
-    RunQueueStage st st' := by
-  rw [untypedResetSlot_ok_frame h]; exact setCapFreeIndex_runQueueStage _ _ _
 
 /-- The registry's one object write — an endpoint's `serviceRegistered` — moves no
 run-queue link: the endpoint holds none, before or after. -/
@@ -935,6 +948,43 @@ theorem cutCancelledCallerHead_runQueueStage (st : SystemState) (tcb : TCB) :
         (markKeyChangeFrom_runQueueStage _ _ holder))
     st tcb (RunQueueStage.refl st)
 
+/-- **A context's notification link rewritten is a run-queue stage**: no view
+the stage reads reads the link. -/
+theorem notificationCodeWrite_runQueueStage {st : SystemState} {s : SeLe4n.SchedContextId}
+    {sc : SchedContext} (hS : st.getSchedContext? s = some sc) (c : Nat) :
+    SystemState.RunQueueStage st (st.updateSchedContext s (fun sc => { sc with notificationCode := c })) := by
+  have hSraw := (SystemState.getSchedContext?_eq_some_iff st s sc).mp hS
+  have hU := SystemState.updateSchedContext_scheduler st s
+    (fun sc => { sc with notificationCode := c })
+  have hM := SystemState.updateSchedContext_machine st s
+    (fun sc => { sc with notificationCode := c })
+  exact SystemState.RunQueueStage.insert (k := s.toObjId)
+    (obj := .schedContext { sc with notificationCode := c })
+    (congrArg SystemState.objects (SystemState.updateSchedContext_eq_of_some hS _))
+    (by rw [hU]) (by rw [hU]) (fun c => by rw [hSraw]; rfl)
+    (SystemState.objStateMono_nonTcb (by rw [hSraw]; rfl) rfl) (by rw [hU])
+    (fun c => by rw [hSraw]; rfl) (by rw [hSraw]; rfl) (by rw [hSraw]; rfl) (by rw [hU])
+    (by rw [hM])
+
+/-- **A notification's scheduling-context link rewritten is a run-queue stage**. -/
+theorem notificationLinkInsert_runQueueStage {st : SystemState} {n : SeLe4n.ObjId}
+    {ntfn : Notification} (h1 : st.objects[n]? = some (.notification ntfn)) (c : Nat) :
+    SystemState.RunQueueStage st
+      { st with objects := st.objects.insert n (.notification { ntfn with schedContextCode := c }) } :=
+  SystemState.RunQueueStage.insert (k := n) (obj := .notification { ntfn with schedContextCode := c })
+    rfl rfl rfl (fun c => by rw [h1]; rfl) (SystemState.objStateMono_nonTcb (by rw [h1]; rfl) rfl) rfl
+    (fun c => by rw [h1]; rfl) (by rw [h1]; rfl) (by rw [h1]; rfl) rfl rfl
+
+/-- **The notification unbind read from the context's end is a run-queue
+stage.** -/
+theorem unbindSchedContextNotification_runQueueStage (st : SystemState)
+    (s : SeLe4n.SchedContextId) : SystemState.RunQueueStage st (unbindSchedContextNotification st s) := by
+  refine SystemState.RunQueueStage.of_invExt fun hInv => ?_
+  rcases unbindSchedContextNotification_shape st s hInv with h | ⟨sc, hS, h | ⟨n, ntfn, h1, h⟩⟩
+  · rw [h]; exact SystemState.RunQueueStage.refl st
+  · rw [h]; exact notificationCodeWrite_runQueueStage hS 0
+  · rw [h]; exact (notificationCodeWrite_runQueueStage hS 0).trans (notificationLinkInsert_runQueueStage h1 0)
+
 /-- **The finalisation is a kernel entry's worth of run-queue steps**, every
 step of it (`finaliseFinalObject_closed`): each cancel's and each unbind's
 stage, a context's dequeue of its holder (`descheduleAt_runQueueStage`), a
@@ -947,7 +997,9 @@ reverted, a stashed reply's unlink (a stash
 field rewritten, off the run links), the yield steps (the yield-link
 codes, a context's consumed count and a yielder's return registers), and a
 reply's pop off an unheld context with its settle
-(`finaliseReplyUnheldPop_runQueueStage`). -/
+(`finaliseReplyUnheldPop_runQueueStage`), and the notification unbind, two
+link words off every run-queue view
+(`unbindSchedContextNotification_runQueueStage`). -/
 theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState) :
     SystemState.RunQueueEntryStage st (finaliseFinalObject target st) :=
   finaliseFinalObject_closed (SystemState.RunQueueEntryStage st)
@@ -973,6 +1025,7 @@ theorem finaliseFinalObject_runQueueEntryStage (target : Nat) (st : SystemState)
     (fun _ _ _ _ h hT _ hS => h.trans (orphanReplyWaiter_runQueueStage hT hS).entry)
     (fun s _ r c _ h _ _ _ _ => h.trans (finaliseReplyUnheldPop_runQueueStage s r c).entry)
     (fun s _ _ _ t h _ _ _ _ => h.trans (cutCancelledCallerHead_runQueueStage s t).entry)
+    (fun s c h => h.trans (unbindSchedContextNotification_runQueueStage s c).entry)
     target st ⟨SystemState.RunQueueLinkStage.refl st, fun _ _ _ d => d⟩
 
 /-- A line's state change writes the tree's issued lines and the mask alone. -/

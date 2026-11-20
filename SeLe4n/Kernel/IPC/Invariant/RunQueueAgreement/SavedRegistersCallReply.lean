@@ -19,9 +19,7 @@ WS-ZA ZA6.26.  The `.call`, `.receive`, `.reply` and `.replyRecv` arms of
   completion are pending messages and IPC states.
 * **The woken receiver's delivery names the receive queue's head** at the
   entry's start, blocked there (`offCoreFree_of_receiveHead`); **the send's
-  completion names the send queue's head** (`offCoreFree_of_sendHead`), which
-  the reply-and-receive's reply leg and donation pop leave as it was, since they
-  write no endpoint (`sendHead_backward`).
+  completion names the send queue's head** (`offCoreFree_of_sendHead`).
 * **The reply's staging names the answered caller**, whom the reply leg refuses
   unless it is blocked on its reply (`endpointReplyCrossCoreDispatch_ok_target_notReady`);
   the fault reply's restart frame likewise.  The receive's delivered message is
@@ -190,7 +188,8 @@ end savedRegsUnwritten
 /-- The per-core call writes no saved register: the rendezvous hands the
 receiver the message as a pending message, wakes it, blocks the caller on its
 reply, links the reply objects, deschedules the caller and queues it on the
-server's reply waiters; the block appends the caller, stores its state,
+server's reply waiters; a call that links no reply hands the message over,
+wakes the receiver, deschedules the caller and writes it `Inactive`; the block appends the caller, stores its state,
 deschedules it and records its capability's bits. -/
 theorem endpointCallOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload) (c : CoreId) {st : SystemState}
@@ -200,24 +199,41 @@ theorem endpointCallOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
   split
   · split
     · split
-      · exact .refl hInv
-      · rename_i receiver _tcb st1 hPop
-        have h1 := endpointQueuePopHead_savedRegsUnwritten hInv hPop
-        split
+      · split
         · exact .refl hInv
-        · rename_i st2 hRdy
-          have h2 := h1.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h1.2 hRdy)
-          have hW := h2.trans (savedRegsUnwritten.of_wakeThread st2 receiver c h2.2)
+        · rename_i receiver _tcb st1 hPop
+          have h1 := endpointQueuePopHead_savedRegsUnwritten hInv hPop
           split
           · exact .refl hInv
-          · rename_i st4 hBlk
-            have h4 := hW.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage hW.2 hBlk)
+          · rename_i st2 hRdy
+            have h2 := h1.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h1.2 hRdy)
+            have hW := h2.trans (savedRegsUnwritten.of_wakeThread st2 receiver c h2.2)
             split
             · exact .refl hInv
-            · rename_i st5 hLink
-              have h5 := h4.trans (savedRegsUnwritten.of_linkServerStashedReply h4.2 hLink)
-              have h6 := h5.trans (savedRegsUnwritten.of_removeRunnableOnCore st5 caller c h5.2)
-              exact h6.trans (savedRegsUnwritten.of_linkReplyWaiter _ _ _ h6.2)
+            · rename_i st4 hBlk
+              have h4 := hW.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage hW.2 hBlk)
+              split
+              · exact .refl hInv
+              · rename_i st5 hLink
+                have h5 := h4.trans (savedRegsUnwritten.of_linkServerStashedReply h4.2 hLink)
+                have h6 := h5.trans (savedRegsUnwritten.of_removeRunnableOnCore st5 caller c h5.2)
+                exact h6.trans (savedRegsUnwritten.of_linkReplyWaiter _ _ _ h6.2)
+      · -- A call that links no reply: the receiver's delivery and wake, the
+        -- caller's deschedule, and its `Inactive` write, none a saved register.
+        split
+        · exact .refl hInv
+        · rename_i receiver _tcb st1 hPop
+          have h1 := endpointQueuePopHead_savedRegsUnwritten hInv hPop
+          split
+          · exact .refl hInv
+          · rename_i st2 hRC
+            split
+            · exact .refl hInv
+            have h2 := h1.trans (savedRegsUnwritten.of_storeTcbReceiveComplete h1.2 hRC)
+            have hW := h2.trans (savedRegsUnwritten.of_wakeThread st2 receiver c h2.2)
+            have h3 := hW.trans (savedRegsUnwritten.of_removeRunnableOnCore _ caller c hW.2)
+            exact ⟨h3.kept.trans (.updateTcb _ _ _ h3.2 fun _ => rfl),
+              SystemState.updateTcb_preserves_objects_invExt _ _ _ h3.2⟩
     · split
       · exact .refl hInv
       · rename_i st1 hEnq
@@ -227,7 +243,7 @@ theorem endpointCallOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
         · rename_i st2 hBlk
           have h2 := h1.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h1.2 hBlk)
           have h3 := h2.trans (savedRegsUnwritten.of_removeRunnableOnCore st2 caller c h2.2)
-          exact h3.trans (savedRegsUnwritten.of_recordSendCap _ caller _ _ h3.2)
+          exact h3.trans (savedRegsUnwritten.of_recordSendCap _ caller _ _ _ h3.2)
   · split <;> exact .refl hInv
 
 theorem endpointCallWithCapsOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
@@ -433,20 +449,32 @@ theorem endpointReceiveDualOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
         dsimp only
         split <;> simp only [↓reduceIte, Bool.false_eq_true]
         · split
-          · exact .refl hInv
-          · rename_i st2 hBlk
-            have h2 := h1.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h1.2 hBlk)
+          · split
+            · exact .refl hInv
+            · rename_i st2 hBlk
+              have h2 := h1.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h1.2 hBlk)
+              split
+              · exact .refl hInv
+              · split
+                · exact .refl hInv
+                · rename_i stL hL
+                  have h3 := h2.trans (savedRegsUnwritten.of_linkCallerReply h2.2 hL)
+                  split
+                  · rename_i st4 hRdy
+                    have h4 := h3.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h3.2 hRdy)
+                    exact h4.trans (savedRegsUnwritten.of_linkReplyWaiter _ _ _ h4.2)
+                  · exact .refl hInv
+          · -- a `Call` that links no reply: the caller's `Inactive` mark writes no register
             split
             · exact .refl hInv
-            · split
+            · rename_i st2 hRdy
+              have h2 := h1.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h1.2 hRdy)
+              have h3 := h2.trans (savedRegsUnwritten.of_updateTcb st2 sender
+                (fun t => { t with threadState := .Inactive }) h2.2 (fun _ => rfl))
+              split
+              · rename_i st4 hRcv
+                exact h3.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h3.2 hRcv)
               · exact .refl hInv
-              · rename_i stL hL
-                have h3 := h2.trans (savedRegsUnwritten.of_linkCallerReply h2.2 hL)
-                split
-                · rename_i st4 hRdy
-                  have h4 := h3.trans (savedRegsUnwritten.of_storeTcbIpcStateAndMessage h3.2 hRdy)
-                  exact h4.trans (savedRegsUnwritten.of_linkReplyWaiter _ _ _ h4.2)
-                · exact .refl hInv
         · split
           · exact .refl hInv
           · rename_i st2 hRdy
@@ -686,41 +714,6 @@ theorem offCoreFree_of_sendHead {e : CoreId} {st : SystemState} {epId : SeLe4n.O
     exact offCoreFree_of_notReady hD hRT hBNR fun x hx =>
       endpointWaiter_notReady (q := false) hQ hE (by simpa [endpointWaitQueue] using h) hx
 
-/-- A send queue's head read after a step that wrote no endpoint is the head the
-step began from. -/
-theorem sendHead_backward {st s : SystemState} {epId : SeLe4n.ObjId} {t : SeLe4n.ThreadId}
-    (hB : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint), s.objects[oid]? = some (.endpoint ep) →
-      st.objects[oid]? = some (.endpoint ep))
-    (h : (s.getEndpoint? epId).bind (·.sendQ.head) = some t) :
-    (st.getEndpoint? epId).bind (·.sendQ.head) = some t := by
-  cases hE : s.getEndpoint? epId with
-  | none => rw [hE] at h; cases h
-  | some ep =>
-    rw [hE] at h
-    rw [(SystemState.getEndpoint?_eq_some_iff st epId ep).mpr
-      (hB _ _ ((SystemState.getEndpoint?_eq_some_iff s epId ep).mp hE))]
-    exact h
-
-/-- **A send's completion staging writes the woken sender alone**, so it writes
-only threads free at `base` when the sender it names is. -/
-theorem stageWokenSendCompletion_savedRegsWrittenFree {e : CoreId} {base s : SystemState}
-    {w : Option SeLe4n.ThreadId} (hInv : s.objects.invExt)
-    (hF : ∀ t, w = some t → offCoreFree e base t) :
-    savedRegsWrittenFree e base s (Architecture.stageWokenSendCompletion s w) ∧
-      (Architecture.stageWokenSendCompletion s w).objects.invExt := by
-  refine ⟨?_, stageWokenSendCompletion_objects_invExt s w hInv⟩
-  cases w with
-  | none => exact .refl _
-  | some t =>
-    unfold Architecture.stageWokenSendCompletion
-    try dsimp only
-    split
-    · split
-      · exact .of_kept (writeReturnFrameToTcb_savedRegsKeptExcept s t _ hInv) fun _ h =>
-          h ▸ hF t rfl
-      · exact .refl _
-    · exact .refl _
-
 /-- **A successful reply leg names a thread blocked on its reply**: the leg
 refuses any other. -/
 theorem endpointReplyOnCore_ok_target_notReady {replier target : SeLe4n.ThreadId}
@@ -786,15 +779,12 @@ theorem receiveArmCompletion_savedRegsWrittenFree {epId : SeLe4n.ObjId} {tid : S
       = (s1, .ok (dequeued, summary, sgi)))
     (hHand : applyReceiveRendezvousHandoff s1 tid dequeued ec = .ok stDon) :
     savedRegsWrittenFree e base st
-      (Architecture.stageWokenSendCompletion stDon ((st.getEndpoint? epId).bind (·.sendQ.head))) ∧
-    (Architecture.stageWokenSendCompletion stDon
-      ((st.getEndpoint? epId).bind (·.sendQ.head))).objects.invExt := by
+      stDon ∧
+    stDon.objects.invExt := by
   have h1 := endpointReceiveDualWithCapsOnCore_savedRegsUnwritten epId tid replyId ec hInv
   rw [hRecv] at h1
   have h2 := h1.trans (applyReceiveRendezvousHandoff_savedRegsUnwritten h1.2 hHand)
-  obtain ⟨w1, i1⟩ := stageWokenSendCompletion_savedRegsWrittenFree (e := e) (base := base) h2.2
-    hHead
-  exact ⟨h2.writtenFree.trans w1, i1⟩
+  exact ⟨h2.writtenFree, h2.2⟩
 
 /-- WS-ZA ZA6.26: **the receive arm writes only the woken sender and the
 caller**: up to the caller's staging it writes only the woken sender
@@ -810,7 +800,7 @@ theorem receiveArm_savedRegsWrittenFree {epId : SeLe4n.ObjId} {tid : SeLe4n.Thre
       = (s1, .ok (dequeued, summary, sgi)))
     (hHand : applyReceiveRendezvousHandoff s1 tid dequeued ec = .ok stDon) :
     savedRegsWrittenFree ec base st (Architecture.stageDeliveredMessage
-      (Architecture.stageWokenSendCompletion stDon ((st.getEndpoint? epId).bind (·.sendQ.head)))
+      stDon
       tid n) := by
   obtain ⟨w1, i1⟩ := receiveArmCompletion_savedRegsWrittenFree (e := ec) hInv hHead hRecv hHand
   obtain ⟨k, -⟩ := stageDeliveredMessage_savedRegsKeptExcept _ tid n i1
@@ -974,11 +964,7 @@ theorem endpointReplyRecvOnCore_savedRegsWrittenFree {epId : SeLe4n.ObjId}
   have h4 := h3.trans (applyReceiveLegPipHandoff_savedRegsUnwritten st3 tid nextThread
     ((recordedReplyServer? st prevCaller).getD tid) ec h3.2)
   obtain ⟨k5, i5⟩ := replyRecvAnswerCaller_savedRegsKeptExcept answer _ prevCaller _ h4.2
-  obtain ⟨w6, i6⟩ := stageWokenSendCompletion_savedRegsWrittenFree (e := e) (base := st)
-    (w := (st1p.getEndpoint? epId).bind (·.sendQ.head)) i5 fun _ ht =>
-      offCoreFree_of_sendHead hD hQ hRT hBNR
-        (sendHead_backward (fun o ep hx => hB0 o ep (hB1 o ep hx)) ht)
-  exact ⟨(h4.writtenFree.trans (.of_kept k5 fun _ e =>
-    e ▸ offCoreFree_of_notReady hD hRT hBNR hPC)).trans w6, i6⟩
+  exact ⟨h4.writtenFree.trans (.of_kept k5 fun _ e =>
+    e ▸ offCoreFree_of_notReady hD hRT hBNR hPC), i5⟩
 
 end SeLe4n.Kernel

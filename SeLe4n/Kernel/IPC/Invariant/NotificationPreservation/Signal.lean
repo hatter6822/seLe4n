@@ -84,16 +84,15 @@ theorem notificationSignal_preserves_ipcInvariant
           have hObjInv1 : pair.2.objects.invExt :=
             storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
           -- R3-A/M-16: Badge now delivered via storeTcbIpcStateAndMessage
-          cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
-              (some { IpcMessage.empty with badge := some badge }) with
+          cases hTcb : storeTcbSignalWoken pair.2 waiter badge with
           | error e => simp
           | ok st'' =>
             simp only [Except.ok.injEq, Prod.mk.injEq]
             intro ⟨_, hEq⟩; subst hEq
-            have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcInvariant pair.2 st'' waiter .ready _ hInv1 hObjInv1 hTcb
+            have hInv2 := storeTcbSignalWoken_preserves_ipcInvariant pair.2 st'' waiter _ hInv1 hObjInv1 hTcb
             -- WS-ZA ZA4.4: the pop's link writes touch no notification.
             have hD := detachNtfnHead_linksRewritten st'' waiter (ntfnSuccessor? st waiter)
-              (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hTcb)
+              (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hTcb)
             exact fun oid ntfn' h => hInv2 oid ntfn' ((hD.obj_iff _ _ (fun _ => KernelObject.noConfusion)).mp
               ((ensureRunnable_objectsAgreeOffRunLinks _ _).get_notification_iff.mp h))
       | none =>
@@ -133,18 +132,17 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
         | ok pair =>
           simp only []
           -- R3-A/M-16: storeTcbIpcStateAndMessage replaces storeTcbIpcState
-          cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
-              (some { IpcMessage.empty with badge := some badge }) with
+          cases hTcb : storeTcbSignalWoken pair.2 waiter badge with
           | error e => simp
           | ok st'' =>
             simp only [Except.ok.injEq, Prod.mk.injEq]
             intro ⟨_, hEq⟩; subst hEq
             have hSchedEq0 : st''.scheduler = st.scheduler := by
-              rw [storeTcbIpcStateAndMessage_scheduler_eq pair.2 st'' waiter .ready _ hTcb,
+              rw [storeTcbSignalWoken_scheduler_eq pair.2 st'' waiter _ hTcb,
                   storeObject_scheduler_eq st pair.2 notificationId _ hStore]
             -- WS-ZA ZA4.4: the pop's link writes rewrite notification links only.
             have hD := detachNtfnHead_linksRewritten st'' waiter (ntfnSuccessor? st waiter)
-              (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _
+              (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _
                 (storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore) hTcb)
             have hSchedEq : (detachNtfnHead st'' waiter (ntfnSuccessor? st waiter)).scheduler =
                 st.scheduler := hD.scheduler_eq.trans hSchedEq0
@@ -186,9 +184,9 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
                   rw [storeObject_objects_ne st pair.2 notificationId x.toObjId _ hNeNotif hObjInv hStore]; exact hTcbX
                 by_cases hNeTid : x.toObjId = waiter.toObjId
                 · have hTargetTcb : ∃ t, pair.2.objects[waiter.toObjId]? = some (.tcb t) := hNeTid ▸ ⟨tcbX, hTcb1⟩
-                  have h := storeTcbIpcStateAndMessage_tcb_exists_at_target pair.2 st'' waiter .ready _ hObjInv1 hTcb hTargetTcb
+                  have h := storeTcbSignalWoken_tcb_exists_at_target pair.2 st'' waiter _ hObjInv1 hTcb hTargetTcb
                   rwa [← hNeTid] at h
-                · exact ⟨tcbX, (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st'' waiter .ready _ x.toObjId hNeTid hObjInv1 hTcb) ▸ hTcb1⟩
+                · exact ⟨tcbX, (storeTcbSignalWoken_preserves_objects_ne pair.2 st'' waiter _ x.toObjId hNeTid hObjInv1 hTcb) ▸ hTcb1⟩
       | none =>
         -- Merge path: storeObject only (scheduler unchanged)
         simp only [hWaiters] at hStep
@@ -242,7 +240,7 @@ theorem notificationWaitPark_preserves_ipcInvariant
         cases hStore : storeObject notificationId
             (.notification
               { state := .idle, 
-                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }) st with
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated, schedContextCode := ntfn.schedContextCode }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -316,7 +314,7 @@ theorem notificationWaitPark_preserves_schedulerInvariantBundle
         cases hStore : storeObject notificationId
             (.notification
               { state := .idle, 
-                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }) st with
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated, schedContextCode := ntfn.schedContextCode }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -450,20 +448,19 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
         | ok pair =>
           simp only []
           -- R3-A/M-16: storeTcbIpcStateAndMessage replaces storeTcbIpcState
-          cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
-              (some { IpcMessage.empty with badge := some badge }) with
+          cases hTcb : storeTcbSignalWoken pair.2 waiter badge with
           | error e => simp
           | ok st'' =>
             simp only [Except.ok.injEq, Prod.mk.injEq]
             intro ⟨_, hEq⟩; subst hEq
             have hSchedEq : st''.scheduler = st.scheduler := by
-              rw [storeTcbIpcStateAndMessage_scheduler_eq pair.2 st'' waiter .ready _ hTcb,
+              rw [storeTcbSignalWoken_scheduler_eq pair.2 st'' waiter _ hTcb,
                   storeObject_scheduler_eq st pair.2 notificationId _ hStore]
             have hObjInv1 : pair.2.objects.invExt :=
               storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
             -- WS-ZA ZA4.4: the pop's link writes rewrite notification links only.
             have hD := detachNtfnHead_linksRewritten st'' waiter (ntfnSuccessor? st waiter)
-              (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hTcb)
+              (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hTcb)
             generalize detachNtfnHead st'' waiter (ntfnSuccessor? st waiter) = st3 at hD ⊢
             have hSchedEq3 : st3.scheduler = st.scheduler := hD.scheduler_eq.trans hSchedEq
             refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -472,9 +469,8 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
               run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
               ntfn_links_back hD at tcb' hTcb'
               by_cases hNe : tid.toObjId = waiter.toObjId
-              · exact storeTcbIpcStateAndMessage_ipcState_eq pair.2 st'' waiter .ready _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
-              · have hTcbMid := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st'' waiter
-                    .ready _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
+              · exact storeTcbSignalWoken_ipcState_eq pair.2 st'' waiter _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
+              · have hTcbMid := (storeTcbSignalWoken_preserves_objects_ne pair.2 st'' waiter _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
                 have hNeNotif : tid.toObjId ≠ notificationId := by
                   intro h; rw [h] at hTcbMid
                   rw [storeObject_objects_eq st pair.2 notificationId _ hObjInv hStore] at hTcbMid
@@ -490,10 +486,9 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
               run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
               ntfn_links_back hD at tcb' hTcb'
               by_cases hNe : tid.toObjId = waiter.toObjId
-              · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2 st'' waiter .ready _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
+              · have := storeTcbSignalWoken_ipcState_eq pair.2 st'' waiter _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
-              · have hTcbMid := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st'' waiter
-                    .ready _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
+              · have hTcbMid := (storeTcbSignalWoken_preserves_objects_ne pair.2 st'' waiter _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
                 have hNeNotif : tid.toObjId ≠ notificationId := by
                   intro h; rw [h] at hTcbMid
                   rw [storeObject_objects_eq st pair.2 notificationId _ hObjInv hStore] at hTcbMid
@@ -511,10 +506,9 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
               run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
               ntfn_links_back hD at tcb' hTcb'
               by_cases hNe : tid.toObjId = waiter.toObjId
-              · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2 st'' waiter .ready _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
+              · have := storeTcbSignalWoken_ipcState_eq pair.2 st'' waiter _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
-              · have hTcbMid := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st'' waiter
-                    .ready _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
+              · have hTcbMid := (storeTcbSignalWoken_preserves_objects_ne pair.2 st'' waiter _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
                 have hNeNotif : tid.toObjId ≠ notificationId := by
                   intro h; rw [h] at hTcbMid
                   rw [storeObject_objects_eq st pair.2 notificationId _ hObjInv hStore] at hTcbMid
@@ -532,10 +526,9 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
               run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
               ntfn_links_back hD at tcb' hTcb'
               by_cases hNe : tid.toObjId = waiter.toObjId
-              · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2 st'' waiter .ready _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
+              · have := storeTcbSignalWoken_ipcState_eq pair.2 st'' waiter _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
-              · have hTcbMid := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st'' waiter
-                    .ready _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
+              · have hTcbMid := (storeTcbSignalWoken_preserves_objects_ne pair.2 st'' waiter _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
                 have hNeNotif : tid.toObjId ≠ notificationId := by
                   intro h; rw [h] at hTcbMid
                   rw [storeObject_objects_eq st pair.2 notificationId _ hObjInv hStore] at hTcbMid
@@ -553,10 +546,9 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
               run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
               ntfn_links_back hD at tcb' hTcb'
               by_cases hNe : tid.toObjId = waiter.toObjId
-              · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2 st'' waiter .ready _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
+              · have := storeTcbSignalWoken_ipcState_eq pair.2 st'' waiter _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
-              · have hTcbMid := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st'' waiter
-                    .ready _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
+              · have hTcbMid := (storeTcbSignalWoken_preserves_objects_ne pair.2 st'' waiter _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
                 have hNeNotif : tid.toObjId ≠ notificationId := by
                   intro h; rw [h] at hTcbMid
                   rw [storeObject_objects_eq st pair.2 notificationId _ hObjInv hStore] at hTcbMid
@@ -574,10 +566,9 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
               run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
               ntfn_links_back hD at tcb' hTcb'
               by_cases hNe : tid.toObjId = waiter.toObjId
-              · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2 st'' waiter .ready _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
+              · have := storeTcbSignalWoken_ipcState_eq pair.2 st'' waiter _ hObjInv1 hTcb tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
-              · have hTcbMid := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2 st'' waiter
-                    .ready _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
+              · have hTcbMid := (storeTcbSignalWoken_preserves_objects_ne pair.2 st'' waiter _ tid.toObjId hNe hObjInv1 hTcb).symm.trans hTcb'
                 have hNeNotif : tid.toObjId ≠ notificationId := by
                   intro h; rw [h] at hTcbMid
                   rw [storeObject_objects_eq st pair.2 notificationId _ hObjInv hStore] at hTcbMid
@@ -630,7 +621,7 @@ theorem notificationWaitPark_preserves_ipcSchedulerContractPredicates
         cases hStore : storeObject notificationId
             (.notification
               { state := .idle, 
-                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }) st with
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated, schedContextCode := ntfn.schedContextCode }) st with
         | error e => simp
         | ok pair =>
           simp only []

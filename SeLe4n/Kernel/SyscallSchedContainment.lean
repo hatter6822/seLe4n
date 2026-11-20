@@ -513,14 +513,14 @@ theorem schedLockSet_endpointReceiveOnCore_coversWrites (endpointId : SeLe4n.Obj
     rw [hLeg] at h
     exact h
   have hDonConf := applyReceiveRendezvousDonation_confinedToCores st1 stDon receiver dequeued hDon
-  have hReplDon : ∀ d : CoreId, d ∉ endpointReceiveHandoffReplenishCores st endpointId receiver →
+  have hReplDon : ∀ d : CoreId, d ∉ endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome →
       stDon.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d :=
     fun d hd => endpointReceiveLegAndDonation_replenishQueueOnCore_ne endpointId receiver replyId executingCore st st1 stDon dequeued summary sgi d
       hObjInv hHeads hd hLeg hDon
   refine footprintCoversWrites_of_confined S
     (endpointReceiveDualWriteSet st endpointId executingCore
       ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore)
-    (endpointReceiveHandoffReplenishCores st endpointId receiver) st st'
+    (endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome) st st'
     (LockSet.ofList?_pairs hS) ?_ ?_
   · rw [hChain]
     subst hEq
@@ -685,15 +685,38 @@ theorem schedLockSet_schedContextUnbindOnCore_coversWrites (st st' : SystemState
     (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet) (hObjInv : st.objects.invExt)
     (hStep : SchedContextOps.schedContextUnbindOnCore vScId executingCore st = .ok (st', sgi))
     (hS : LockSet.ofList?
-      (schedLockSet_schedContextUnbindOnCore st vScId.val executingCore) = some S) :
+      (schedLockSet_schedContextUnbindOnCore st vScId.val) = some S) :
     footprintCoversWrites S st st' :=
   footprintCoversWrites_of_confined S
-    (schedContextUnbindOnCoreWriteSet st vScId.val executingCore)
+    (schedContextUnbindWriteSet st vScId.val)
     (schedContextUnbindReplenishCores st vScId.val) st st'
     (LockSet.ofList?_pairs hS)
     (schedContextUnbindOnCore_confinedToCores vScId executingCore st st' sgi hStep)
     (fun d hd => schedContextUnbindOnCore_replenishQueueOnCore_ne st st' vScId executingCore
       sgi d hObjInv hd hStep)
+
+/-- **`SchedContext_Unbind`'s footprint covers its writes**: the thread
+unbind's, then the notification unbind, which writes the object store alone
+under the footprint's table write lock. -/
+theorem schedLockSet_schedContextUnbindAllOnCore_coversWrites (st st' : SystemState)
+    (vScId : SeLe4n.ValidObjId) (executingCore : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet) (hObjInv : st.objects.invExt)
+    (hStep : SchedContextOps.schedContextUnbindAllOnCore vScId executingCore st = .ok (st', sgi))
+    (hS : LockSet.ofList?
+      (schedLockSet_schedContextUnbindOnCore st vScId.val) = some S) :
+    footprintCoversWrites S st st' := by
+  have hTable : (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs := by
+    rw [LockSet.ofList?_pairs hS]
+    exact schedFootprintOfCores_contains_objStore_write _ _
+  obtain ⟨stU, hU | ⟨-, hU, -⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok hStep
+  · obtain ⟨rfl, -⟩ := hU
+    exact footprintCoversWrites_of_scheduler_eq S hTable
+      (unbindSchedContextNotification_scheduler _ _)
+  · exact footprintCoversWrites_trans S
+      (schedLockSet_schedContextUnbindOnCore_coversWrites st stU vScId executingCore sgi S
+        hObjInv hU hS)
+      (footprintCoversWrites_of_scheduler_eq S hTable
+        (unbindSchedContextNotification_scheduler _ _))
 
 /-- WS-ZA ZA6.29: **the requeue moves no reservation**: it writes a run queue
 and a flag. -/
@@ -755,7 +778,7 @@ theorem schedContextYieldToOnCore_replenishQueueOnCore_ne (scObjId : SeLe4n.ObjI
     s = st2 at h2 ⊢
   have hSet : ∀ X : SystemState, X.scheduler.replenishQueueOnCore d =
       st.scheduler.replenishQueueOnCore d →
-      (setConsumed X s caller).scheduler.replenishQueueOnCore d =
+      (setConsumed X s caller true).scheduler.replenishQueueOnCore d =
         st.scheduler.replenishQueueOnCore d := fun X hX => by
     rw [SystemState.setConsumed_scheduler]; exact hX
   split

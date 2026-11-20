@@ -1456,6 +1456,31 @@ theorem cspaceRecordFrameMapping_preserves_ipcInvariantFull
     (by simp only [Capability.badge, Capability.withMapping_badgeWord,
       Capability.withMapping_badged]) hStore
 
+/-- **The mapping record `Page_Unmap` drops preserves the bundle**: one CNode is
+stored back with one capability's record cleared, its badge kept. -/
+theorem cspaceClearFrameMapping_preserves_ipcInvariantFull
+    (addr : CSpaceAddr) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : cspaceClearFrameMapping addr st = .ok ((), st')) :
+    ipcInvariantFull st' ∧ st'.objects.invExt := by
+  obtain ⟨cn, cap, hCn, hLk, hStore⟩ := cspaceClearFrameMapping_ok_decompose addr st st' hStep
+  exact storeObject_capRewrite_preserves_ipcInvariantFull addr cn cap _ st st' hObjInv hInv
+    ((SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hCn) hLk
+    (by simp only [Capability.badge, Capability.withMapping_badgeWord,
+      Capability.withMapping_badged]) hStore
+
+/-- **`Page_Unmap` preserves the bundle**: a VSpace-root-only teardown, then the
+record clear. -/
+theorem vspaceUnmapFrameCap_preserves_ipcInvariantFull
+    (ec : Concurrency.CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : vspaceUnmapFrameCap ec addr st = .ok ((), st')) :
+    ipcInvariantFull st' ∧ st'.objects.invExt := by
+  obtain ⟨st1, hU, hC⟩ := vspaceUnmapFrameCap_cases hStep
+  obtain ⟨hI1, hW1, -⟩ := unmapLivePages_ok_frame ec _ st st1 hObjInv hU
+  exact cspaceClearFrameMapping_preserves_ipcInvariantFull addr st1 st' hI1
+    (ipcInvariantFull_of_vspaceRootOnlyWrite hW1 hInv) hC
+
 /-- **A free-index write preserves the bundle** (WS-ZA ZA5.4 part 13): the
 capability rewritten keeps its badge. -/
 theorem setCapFreeIndex_preserves_ipcInvariantFull
@@ -1467,18 +1492,6 @@ theorem setCapFreeIndex_preserves_ipcInvariantFull
   rw [CNode.setFreeIndex_of_lookup hLk] at hS
   exact storeObject_capRewrite_preserves_ipcInvariantFull addr cn cap _ st _ hObjInv hInv hPre hLk
     (Capability.withFreeIndex_badge _ _) hS
-
-/-- WS-ZA ZA5.4: **the `.untypedReset` arm preserves `ipcInvariantFull`.**  The
-reset rewinds the invoked slot's free index, a capability rewrite that keeps the
-badge (`setCapFreeIndex_preserves_ipcInvariantFull`), and writes nothing else. -/
-theorem untypedResetSlot_preserves_ipcInvariantFull {srcCnode : SeLe4n.ObjId}
-    {srcSlot : SeLe4n.Slot} {st st' : SystemState}
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hStep : untypedResetSlot srcCnode srcSlot st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  obtain ⟨cap, -, -, -, hL, -, -, -, rfl⟩ := untypedResetSlot_ok hStep
-  obtain ⟨cn, hO, hLk⟩ := SystemState.lookupSlotCap_cnode hL
-  exact (setCapFreeIndex_preserves_ipcInvariantFull _ cn cap 0 st hObjInv hInv hO hLk).1
 
 /-- WS-ZA ZA5.4: **setting a derivation's untyped source full preserves the
 bundle**, given the source still holds a capability. -/
@@ -2546,26 +2559,6 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
         refine ipcInvariantFull_of_objects_eq ?_ hInv2
         · rfl
   · contradiction
-
-/-- `.schedContextUnbind` (dispatch arm): the per-core wrapper adds the
-preemption seam, which §12 covers. -/
-theorem schedContextUnbindOnCore_preserves_ipcInvariantFull
-    (st st' : SystemState) (vScId : SeLe4n.ValidObjId) (ec : CoreId)
-    (sgi : Option (CoreId × Concurrency.SgiKind))
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hR : st.runQueueRefined)
-    (hStep : SchedContextOps.schedContextUnbindOnCore vScId ec st = .ok (st', sgi)) :
-    ipcInvariantFull st' := by
-  unfold SchedContextOps.schedContextUnbindOnCore at hStep
-  dsimp only [] at hStep
-  split at hStep
-  · contradiction
-  · rename_i stMid hUnbind
-    have hStage := (SchedContextOps.schedContextUnbind_runQueueEntryStage vScId st stMid hUnbind).1 hObjInv hR
-    exact priorityRescheduleOnCore_preserves_ipcInvariantFull stMid _ ec true st' sgi
-      hStage.1
-      (schedContextUnbind_preserves_ipcInvariantFull st stMid vScId hObjInv hInv hUnbind)
-      hStep
 
 -- ============================================================================
 -- §13  VSpace page-table arms (`.vspaceMap`, `.vspaceUnmap`)
@@ -3916,7 +3909,7 @@ theorem passiveObjectQuiescent_bindingCodes {st : SystemState} {x : SeLe4n.ObjId
     cases o with
     | notification n =>
       simp only [Bool.and_eq_true, beq_iff_eq] at hQ
-      simp [notificationBindingCodes, KernelObject.bindingCodes, hQ.2]
+      simp [notificationBindingCodes, KernelObject.bindingCodes, hQ.1.2]
     | tcb _ => exact absurd hP id
     | _ => rfl
 
@@ -5481,10 +5474,10 @@ theorem updateSchedContext_boundKept_preserves_ipcInvariantFull (st : SystemStat
     exact insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull st s sc _
       hObjInv hInv ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS) (hf sc)
 
-/-- `setConsumed` keeps the bundle: a count and two registers. -/
-theorem setConsumed_preserves_ipcInvariantFull (st : SystemState) (s : SeLe4n.SchedContextId)
+/-- `setConsumed` keeps the bundle: a count and three registers. -/
+theorem setConsumed_preserves_ipcInvariantFull {callOnly : Bool} (st : SystemState) (s : SeLe4n.SchedContextId)
     (t : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (setConsumed st s t) := by
+    ipcInvariantFull (setConsumed st s t callOnly) := by
   unfold setConsumed
   split
   · exact updateTcb_yieldWrite_preserves_ipcInvariantFull _ t _
@@ -5567,7 +5560,7 @@ theorem schedContextYieldToOnCore_preserves_ipcInvariantFull {s : SeLe4n.SchedCo
   generalize (completeYieldFrom st s).releasePlace (determineTargetCore (completeYieldFrom st s) t) s
     = st2 at hO2 hI2 ⊢
   have hC : ∀ X : SystemState, X.objects.invExt → ipcInvariantFull X →
-      ipcInvariantFull (setConsumed X s caller) := fun X hX hI =>
+      ipcInvariantFull (setConsumed X s caller true) := fun X hX hI =>
     setConsumed_preserves_ipcInvariantFull X s caller hX hI
   split
   · exact hC _ hO2 hI2
@@ -5728,24 +5721,6 @@ theorem stageWokenDelivery_preserves_objects_invExt
       rw [Architecture.stageWokenDelivery_some]
       exact stageDeliveredMessage_preserves_objects_invExt st tid capInfo hObjInv
 
-/-- Send-completion staging: the unit success frame or the identity. -/
-theorem stageWokenSendCompletion_preserves_ipcInvariantFull
-    (st : SystemState) (woken? : Option SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (Architecture.stageWokenSendCompletion st woken?) := by
-  unfold Architecture.stageWokenSendCompletion
-  cases woken? with
-  | none => exact hInv
-  | some tid =>
-      dsimp only []
-      cases st.getTcb? tid with
-      | none => exact hInv
-      | some tcb =>
-          dsimp only []
-          split
-          · exact writeReturnFrameToTcb_preserves_ipcInvariantFull st tid _ hObjInv hInv
-          · exact hInv
-
 /-- Staging never disturbs the object-store invariant: every arm is one TCB
 insert or the identity. -/
 theorem stageDeliveredMessage_objects_invExt
@@ -5763,23 +5738,6 @@ theorem stageDeliveredMessage_objects_invExt
         | some msg =>
             exact writeDeliveredFrameToTcb_preserves_objects_invExt st tid _ hObjInv
       · exact hObjInv
-
-theorem stageWokenSendCompletion_objects_invExt
-    (st : SystemState) (woken? : Option SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt) :
-    (Architecture.stageWokenSendCompletion st woken?).objects.invExt := by
-  unfold Architecture.stageWokenSendCompletion
-  cases woken? with
-  | none => exact hObjInv
-  | some tid =>
-      dsimp only []
-      cases st.getTcb? tid with
-      | none => exact hObjInv
-      | some tcb =>
-          dsimp only []
-          split
-          · exact writeReturnFrameToTcb_preserves_objects_invExt st tid _ hObjInv
-          · exact hObjInv
 
 /-- **WS-RM (`v0.35.6`)**: a return-frame writeback carries no chain data.  Its
 one write is a `.tcb` at a key that already held one (`getTcb?` is what selects
@@ -5837,25 +5795,6 @@ theorem stageDeliveredMessage_donationChainFrame
             exact recordPhysicalWrites_donationChainFrame st _ _
               (writeDeliveredFrameToTcb_donationChainFrame st tid _ hObjInv)
       · exact donationChainFrame.refl st
-
-/-- **WS-RM (`v0.35.6`)**: and so does the woken sender's completion frame. -/
-theorem stageWokenSendCompletion_donationChainFrame
-    (st : SystemState) (woken? : Option SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt) :
-    donationChainFrame st (Architecture.stageWokenSendCompletion st woken?) := by
-  unfold Architecture.stageWokenSendCompletion
-  cases woken? with
-  | none => exact donationChainFrame.refl st
-  | some tid =>
-      dsimp only []
-      cases hLk : st.getTcb? tid with
-      | none => simp only []; exact donationChainFrame.refl st
-      | some tcb =>
-          simp only []
-          split
-          · exact writeReturnFrameToTcb_donationChainFrame st tid _ hObjInv
-          · exact donationChainFrame.refl st
-
 
 /-! ### WS-ZA ZA6.32: the interrupt-control and interrupt-handler invocations -/
 

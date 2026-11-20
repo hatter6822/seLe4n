@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Machine
+import SeLe4n.Model.Object.Types
 
 /-!
 # The context of the trap in flight
@@ -153,24 +154,35 @@ def ofRegisterFile (rf : SeLe4n.RegisterFile) : InFlightContext :=
     (ofRegisterFile rf).snapshot = rf := by
   cases rf; rfl
 
-/-- **The syscall number the trap carries**: `x7`, the ABI's syscall-number
-register (`arm64DefaultLayout.syscallNumReg`), as the `u32` the HAL dispatches
-on.  Exact only for a word that is a `u32` (`syscallNumberFits`); the syscall
-entry admits no other (`syscallEntryContextOrFaulted`), since the HAL routes
-every other word to the unknown-syscall entry with the full word. -/
+/-- **The syscall number the trap carries**: seL4-MCS's number of the syscall
+`x7` names (`Syscall.number`, `Call` 1 … `Yield` 11; the register holds its
+negation), as the `u32` the HAL dispatches on.  Exact only for a word that
+names one of the eleven syscalls (`syscallNumberFits`); the syscall entry
+admits no other (`syscallEntryContextOrFaulted`), since the HAL routes every
+other word to the unknown-syscall entry with the full word (WS-SX SX7.2). -/
 @[inline] def syscallId (c : @& InFlightContext) : UInt32 :=
-  c.x7.toUInt32
+  SeLe4n.Model.Syscall.numberOfWord c.x7
 
-/-- **Is `x7` a `u32`?**  The HAL's `u32::try_from(frame.x7())`
-(`rust/sele4n-hal/src/trap.rs`): a word the ABI cannot name as a `u32` is not
-narrowed into one. -/
+/-- **Does `x7` name a syscall?**  The HAL's `Syscall::from_word(frame.x7())`
+(`rust/sele4n-hal/src/trap.rs`): a word that names none of seL4-MCS's eleven
+syscalls is not dispatched as one. -/
 @[inline] def syscallNumberFits (c : @& InFlightContext) : Bool :=
-  c.x7.toUInt32.toUInt64 == c.x7
+  (SeLe4n.Model.Syscall.ofWord? c.x7).isSome
 
-/-- A fitting `x7` is the syscall number, widened back: nothing is lost. -/
+/-- A fitting `x7` is the syscall number's word: nothing is lost. -/
 theorem syscallId_toUInt64 (c : InFlightContext) (h : c.syscallNumberFits = true) :
-    c.syscallId.toUInt64 = c.x7 := by
-  simpa [syscallNumberFits, syscallId] using h
+    SeLe4n.Model.Syscall.wordOfNumber c.syscallId = c.x7 := by
+  simp only [syscallNumberFits, SeLe4n.Model.Syscall.ofWord?] at h
+  split at h
+  · rename_i hlt
+    have hw : (0 - c.x7).toUInt32.toUInt64 = 0 - c.x7 := by
+      apply UInt64.toNat_inj.mp
+      simp only [UInt32.toNat_toUInt64, UInt64.toNat_toUInt32]
+      have : (0 - c.x7).toNat < 4294967296 := by simpa [UInt64.lt_iff_toNat_lt] using hlt
+      omega
+    simp only [syscallId, SeLe4n.Model.Syscall.wordOfNumber, SeLe4n.Model.Syscall.numberOfWord, hw]
+    simp
+  · simp at h
 
 end InFlightContext
 

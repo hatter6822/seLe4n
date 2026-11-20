@@ -285,7 +285,7 @@ MACHINERY_PINS = {
     ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "macro"): 4,
     ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "macro_rules"): 23,
     ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "syntax"): 3,
-    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Ipc.lean", "macro_rules"): 11,
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Ipc.lean", "macro_rules"): 13,
     # The `run_queue_current_nowhere` / `run_queue_slot_same` tactics carrying
     # the scheduler's placement invariant across a step, and the
     # `tcb_state_mono` / `current_frame` / `obj_state_mono` tactics that
@@ -344,7 +344,7 @@ MACHINERY_PINS = {
     ("SeLe4n/Kernel/ReschedulePendingArms/Cancellation.lean", "macro_rules"): 2,
     ("SeLe4n/Kernel/ReschedulePendingArms/Dispatch.lean", "macro_rules"): 16,
     ("SeLe4n/Kernel/ReschedulePendingArms/Entry.lean", "macro_rules"): 5,
-    ("SeLe4n/Kernel/ReschedulePendingArms/Ipc.lean", "macro_rules"): 30,
+    ("SeLe4n/Kernel/ReschedulePendingArms/Ipc.lean", "macro_rules"): 31,
     ("SeLe4n/Kernel/ReschedulePendingArms/Lifecycle.lean", "macro_rules"): 2,
     ("SeLe4n/Platform/FFI.lean", "initialize"): 2,
     # PR #889 review round 17: the boot entry's contract, decided over the

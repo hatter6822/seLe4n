@@ -10,7 +10,7 @@ import SeLe4n.Kernel.Scheduler.ReplyWaitersOps
 /-! # The yield link's writes as frames
 
 WS-ZA ZA6.6.  `cancelYieldTo` writes the two link ends and nothing else, and
-`setConsumed` writes a thread's two return registers and a context's consumed
+`setConsumed` writes a thread's three return registers and a context's consumed
 count.  This module states both as frames — the objects agreeing off the yield
 codes (`objectsAgreeOffYield`), and the thread and context updates — and derives
 the run-queue stage of each operation (`cancelYieldTo_runQueueStage`,
@@ -22,12 +22,13 @@ namespace SeLe4n.Model
 open SeLe4n.Kernel
 
 /-- A thread with what the yield operations write cleared: its yield-to code and
-the two return registers `setConsumed` writes. -/
+the three return registers `setConsumed` writes. -/
 @[reducible] def TCB.withoutYieldWrites (t : TCB) : TCB :=
-  { t with yieldToCode := 0, registerContext := { t.registerContext with x1 := 0, x2 := 0 } }
+  let rf := { t.registerContext with x0 := 0, x1 := 0, x2 := 0 }
+  { t with yieldToCode := 0, registerContext := rf }
 
 /-- An object with what the yield operations write cleared: a thread's yield-to
-code and the two return registers `setConsumed` writes (`x1`, `x2`), a
+code and the three return registers `setConsumed` writes (`x0`-`x2`), a
 context's yield-from code and its consumed count; every other object as it
 is. -/
 def KernelObject.withoutYield : KernelObject → KernelObject
@@ -177,13 +178,13 @@ theorem cancelYieldFrom_objectsAgreeOffYield (st : SystemState) (s : SeLe4n.Sche
         (updateSchedContext_objectsAgreeOffYield _ _ SchedContext.yieldCleared hInv (fun _ => rfl))
   · exact .refl st
 
-/-- **`setConsumed` writes the consumed count and two return registers alone.** -/
-theorem setConsumed_objectsAgreeOffYield (st : SystemState) (s : SeLe4n.SchedContextId)
+/-- **`setConsumed` writes the consumed count and three return registers alone.** -/
+theorem setConsumed_objectsAgreeOffYield {callOnly : Bool} (st : SystemState) (s : SeLe4n.SchedContextId)
     (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    objectsAgreeOffYield (setConsumed st s t) st := by
+    objectsAgreeOffYield (setConsumed st s t callOnly) st := by
   unfold setConsumed
   split
-  · exact (updateTcb_objectsAgreeOffYield _ t (TCB.withConsumed · _)
+  · exact (updateTcb_objectsAgreeOffYield _ t (TCB.withConsumedMsg · _ callOnly)
       (updateSchedContext_preserves_objects_invExt _ s _ hInv) (fun _ => rfl)).trans
       (updateSchedContext_objectsAgreeOffYield _ s SchedContext.updateConsumed hInv (fun _ => rfl))
   · exact .refl st
@@ -327,9 +328,9 @@ theorem updateConsumed_runQueueStage (st : SystemState) (s : SeLe4n.SchedContext
   · exact congrArg MachineState.residentCode (updateSchedContext_machine st s _)
 
 /-- **`setConsumed` is a run-queue stage**: the count read off the context, then
-the thread's two return registers. -/
-theorem setConsumed_runQueueStage (st : SystemState) (s : SeLe4n.SchedContextId)
-    (t : SeLe4n.ThreadId) : RunQueueStage st (setConsumed st s t) := by
+the thread's three return registers. -/
+theorem setConsumed_runQueueStage {callOnly : Bool} (st : SystemState) (s : SeLe4n.SchedContextId)
+    (t : SeLe4n.ThreadId) : RunQueueStage st (setConsumed st s t callOnly) := by
   unfold setConsumed
   split
   · exact (updateConsumed_runQueueStage st s).trans (RunQueueStage.updateTcb _ t (fun _ _ => rfl))
@@ -453,8 +454,8 @@ theorem cancelYieldTo_writesTcbScOnly (st : SystemState) (tid : SeLe4n.ThreadId)
         (updateSchedContext_writesTcbScOnly _ _ _ hInv)
   · exact .refl st
 
-theorem setConsumed_writesTcbScOnly (st : SystemState) (s : SeLe4n.SchedContextId)
-    (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) : writesTcbScOnly (setConsumed st s t) st := by
+theorem setConsumed_writesTcbScOnly {callOnly : Bool} (st : SystemState) (s : SeLe4n.SchedContextId)
+    (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) : writesTcbScOnly (setConsumed st s t callOnly) st := by
   unfold setConsumed
   split
   · exact (updateTcb_writesTcbScOnly _ _ _

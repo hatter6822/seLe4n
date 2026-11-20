@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Architecture.RegisterDecode
 import SeLe4n.Kernel.Architecture.SyscallReturn
+import SeLe4n.Kernel.Architecture.SyscallSelect
 import SeLe4n.Kernel.InformationFlow.RefusalRecord
 
 /-!
@@ -26,13 +27,21 @@ declassifying syscalls, whose refusals the seam records
 (`refusalSeamClass = .records`), each need a measured refusal too.
 
 The evidence is the exerciser's: one line per measured round trip with the
-syscall number and the message-info word it loaded (`x7`, `x1`), and the label
-word it was answered with or `blocked`.  Each is routed by the same router.
+operation it issued, the syscall word and the message-info word it loaded
+(`x7`, `x1`), and the label word it was answered with, `blocked`, or
+`resumed` (a non-Call refused, which answers no frame).  The operation is the
+one the kernel selects from the syscall, the invoked capability's type and the
+label (`selectedOperationCode`); the words must select it: the syscall `x7`
+names, at `x1`'s label, selects the operation on some capability type
+(`Syscall.selectOperation`), so a receive issued as `Wait` or an invocation
+issued as `Send` or `NBSend` is evidence for the operation the kernel ran.
+The router routes the operation at those words.
 The tool exits 1 when an arm has no measured round trip, when a round trip
 routes to an arm the enumeration did not find (the enumeration would then be
-incomplete: fail closed), or when a line cannot be read.
+incomplete: fail closed), when a round trip's words are not its operation's,
+or when a line cannot be read.
 
-Input on standard input, one round trip per line: `<name> <x7> <x1> <label|blocked>`,
+Input on standard input, one round trip per line: `<name> <op> <x7> <x1> <label|blocked|resumed>`,
 numbers in decimal or `0x` hexadecimal.
 -/
 
@@ -70,15 +79,37 @@ def armName : String × Option SyscallId → String
   | (k, none) => k
   | (k, some sid) => s!"{k}/{toString sid}"
 
-/-- The register file a round trip traps with: `x7` the syscall number, `x1`
+/-- The register file a round trip traps with: `x7` the syscall word, `x1`
 the message-info word, every other register zero (the router reads no other
 register to choose an arm). -/
 def trapFile (x7 x1 : UInt64) : RegisterFile :=
   RegisterFile.ofWords fun i => if i = 7 then x7 else if i = 1 then x1 else 0
 
-/-- The arm the routed entry takes for a round trip's `x7` and `x1`. -/
-def armOf (x7 x1 : UInt64) : String × Option SyscallId :=
-  routeArm (registerRoutedSyscall arm64DefaultLayout (trapFile x7 x1) 32)
+/-- The arm the routed entry takes for a round trip's operation, `x7` and `x1`. -/
+def armOf (op : Nat) (x7 x1 : UInt64) : String × Option SyscallId :=
+  routeArm (registerRoutedSyscall op arm64DefaultLayout (trapFile x7 x1) 32)
+
+/-- Every capability type the selection distinguishes, and no capability
+(`none`, an address that resolves nothing): the object kinds are the ones
+`KernelObjectType.ofNat?` names, the rest `CapType`'s other constructors. -/
+def capTypes : List (Option CapType) :=
+  none :: (([CapType.object none] ++
+    ((List.range 64).filterMap KernelObjectType.ofNat?).map (CapType.object ∘ some) ++
+    [CapType.replyCap, CapType.auditTrail, CapType.schedControl, CapType.irqControl,
+     CapType.irqHandler, CapType.serviceRegistry, CapType.cnodeSlot]).map some)
+
+/-- Do `x7` and `x1` select operation `op`: does the syscall `x7` names, at
+`x1`'s label, select `op` on some capability type (`Syscall.selectOperation`)?
+The code past the last operation (`SyscallId.encodingBound`, no operation
+selected) is a syscall whose selection is `none` on some capability type. -/
+def wordsMatch (op : Nat) (x7 x1 : UInt64) : Bool :=
+  match Syscall.ofWord? x7 with
+  | none => false
+  | some sys =>
+      let selected := capTypes.map fun ty => sys.selectOperation ty (msgInfoWordLabel x1)
+      match SyscallId.ofNat? op with
+      | some sid => selected.contains (some sid)
+      | none => op == SyscallId.encodingBound && selected.contains none
 
 /-- The message-info words the enumeration routes: every length and
 capability-count field value (the low nine bits), the capabilities-unwrapped
@@ -86,11 +117,13 @@ bits set, and a label past the decode's bound. -/
 def infoWords : List UInt64 :=
   (List.range 512).map UInt64.ofNat ++ [0xE00, 0xFFFFFFFFFFFFF000, 0xFFFFFFFFFFFFFFFF]
 
-/-- **The arms**: every syscall number the ABI decodes, and one past the last,
-routed with every message-info word of the enumeration. -/
+/-- **The arms**: every operation the kernel selects, and the code past the
+last (no operation), routed at the words a user issues it with and every
+message-info word of the enumeration. -/
 def requiredArms : List (String × Option SyscallId) :=
-  let numbers := (SyscallId.all.map fun s => s.toNat.toUInt64) ++ [SyscallId.encodingBound.toUInt64]
-  (numbers.flatMap fun n => infoWords.map (armOf n)).eraseDups
+  let ops := (SyscallId.all.map fun s => (s.toNat, s.syscall.word, s.msgInfoWithLabel)) ++
+    [(SyscallId.encodingBound, Syscall.call.word, id)]
+  (ops.flatMap fun (op, x7, info) => infoWords.map fun w => armOf op x7 (info w)).eraseDups
 
 /-- The syscalls whose refusals the seam records. -/
 def recordingSyscalls : List SyscallId :=
@@ -99,9 +132,11 @@ def recordingSyscalls : List SyscallId :=
 /-- One round trip of the evidence. -/
 structure Trip where
   name : String
+  op : Nat
   x7 : UInt64
   x1 : UInt64
-  /-- The answer's label word, or `none` for a round trip that blocked. -/
+  /-- The answer's label word, or `none` for a round trip that blocked or
+  resumed with no frame. -/
   label : Option UInt64
 
 /-- A number in decimal or `0x` hexadecimal. -/
@@ -115,11 +150,13 @@ def parseWord (s : String) : Option UInt64 :=
 
 def parseTrip (line : String) : Option Trip :=
   match line.splitOn " " |>.filter (· ≠ "") with
-  | [name, x7, x1, label] => do
+  | [name, op, x7, x1, label] => do
+    let op ← op.toNat?
     let x7 ← parseWord x7
     let x1 ← parseWord x1
-    let label ← if label == "blocked" then some none else (parseWord label).map some
-    pure { name, x7, x1, label }
+    let label ← if label == "blocked" || label == "resumed" then some none
+      else (parseWord label).map some
+    pure { name, op, x7, x1, label }
   | _ => none
 
 /-- Is a label word an error frame's? (`errorLabelWord`: the error label in
@@ -142,15 +179,18 @@ def main : IO UInt32 := do
     failures := failures.push "no measured round trip in the evidence"
   let required := requiredArms
   for t in trips do
-    let arm := armOf t.x7 t.x1
+    if !wordsMatch t.op t.x7 t.x1 then
+      failures := failures.push
+        s!"{t.name}: x7 {t.x7} and x1 {t.x1} are not the words operation {t.op} is issued with"
+    let arm := armOf t.op t.x7 t.x1
     if !required.contains arm then
       failures := failures.push
         s!"{t.name}: routes to {armName arm}, an arm the enumeration did not find"
   for arm in required do
-    if !trips.any (fun t => armOf t.x7 t.x1 == arm) then
+    if !trips.any (fun t => armOf t.op t.x7 t.x1 == arm) then
       failures := failures.push s!"the arm {armName arm} has no measured round trip"
   for sid in recordingSyscalls do
-    if !trips.any (fun t => t.x7 == sid.toNat.toUInt64 &&
+    if !trips.any (fun t => t.op == sid.toNat &&
         (t.label.map isErrorLabel).getD false) then
       failures := failures.push
         s!"{toString sid}: its refusal is recorded by the seam, and no measured round trip is refused"

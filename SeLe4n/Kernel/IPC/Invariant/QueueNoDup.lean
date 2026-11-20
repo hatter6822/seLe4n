@@ -190,6 +190,41 @@ theorem storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup
           exact hK1 tid' tcb' hTcb'
       · exact hK2
 
+/-- `storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_preserves_endpointQueueNoDup
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hInv : endpointQueueNoDup st)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbSignalWoken st tid badge = .ok st') :
+    endpointQueueNoDup st' := by
+  unfold storeTcbSignalWoken modifyTcb at hStore
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStore
+  | some tcb =>
+    simp only [hLookup] at hStore
+    cases hSt : storeObject tid.toObjId (.tcb (TCB.signalWoken badge tcb)) st with
+    | error e => simp [hSt] at hStore
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStore; subst hStore
+      have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
+      intro oid ep hEp
+      have hNe : oid ≠ tid.toObjId := by
+        intro h; subst h
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt] at hEp; cases hEp
+      rw [storeObject_objects_ne st pair.2 tid.toObjId oid _ hNe hObjInv hSt] at hEp
+      have ⟨hK1, hK2⟩ := hInv oid ep hEp
+      constructor
+      · intro tid' tcb' hTcb'
+        by_cases hEq : tid'.toObjId = tid.toObjId
+        · rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt] at hTcb'
+          cases hTcb'
+          -- queueNext preserved: show tcb.queueNext ≠ some tid'
+          exact hK1 tid' tcb (hEq ▸ hTcbObj)
+        · rw [storeObject_objects_ne st pair.2 tid.toObjId tid'.toObjId _ hEq hObjInv hSt] at hTcb'
+          exact hK1 tid' tcb' hTcb'
+      · exact hK2
+
 /-- Finding F-1: `storeTcbReceiveComplete` preserves endpointQueueNoDup.
 Endpoint objects are unchanged by the TCB store, and the additional
 `pendingReceiveReply := none` leaves `queueNext` untouched.  Mirror of
@@ -207,6 +242,40 @@ theorem storeTcbReceiveComplete_preserves_endpointQueueNoDup
   | some tcb =>
     simp only [hLookup] at hStore
     cases hSt : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
+    | error e => simp [hSt] at hStore
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStore; subst hStore
+      have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
+      intro oid ep hEp
+      have hNe : oid ≠ tid.toObjId := by
+        intro h; subst h
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt] at hEp; cases hEp
+      rw [storeObject_objects_ne st pair.2 tid.toObjId oid _ hNe hObjInv hSt] at hEp
+      have ⟨hK1, hK2⟩ := hInv oid ep hEp
+      constructor
+      · intro tid' tcb' hTcb'
+        by_cases hEq : tid'.toObjId = tid.toObjId
+        · rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt] at hTcb'
+          cases hTcb'
+          exact hK1 tid' tcb (hEq ▸ hTcbObj)
+        · rw [storeObject_objects_ne st pair.2 tid.toObjId tid'.toObjId _ hEq hObjInv hSt] at hTcb'
+          exact hK1 tid' tcb' hTcb'
+      · exact hK2
+
+/-- `storeTcbReceiveComplete_preserves_endpointQueueNoDup` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_preserves_endpointQueueNoDup
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hInv : endpointQueueNoDup st)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    endpointQueueNoDup st' := by
+  unfold storeTcbSignalBoundWoken modifyTcb at hStore
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStore
+  | some tcb =>
+    simp only [hLookup] at hStore
+    cases hSt : storeObject tid.toObjId (.tcb (TCB.signalBoundWoken badge tcb)) st with
     | error e => simp [hSt] at hStore
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStore; subst hStore
@@ -342,7 +411,7 @@ theorem notificationSignal_preserves_endpointQueueNoDup
       -- WS-ZA ZA4.4: `notificationSignal` wakes the queue head.
       cases hWaiters : ntfn.waitHead with
       | some waiter =>
-        -- Wake path: storeObject notification → storeTcbIpcStateAndMessage → ensureRunnable
+        -- Wake path: storeObject notification → storeTcbSignalWoken → ensureRunnable
         simp only [hWaiters] at hStep
         generalize hStore1 : storeObject notificationId _ st = r1 at hStep
         cases r1 with
@@ -353,7 +422,7 @@ theorem notificationSignal_preserves_endpointQueueNoDup
           have hInv1 := storeObject_non_ep_non_tcb_preserves_endpointQueueNoDup
             st pair1.2 notificationId _ hInv hObjInv
             (fun ep => by intro h; cases h) (fun tcb => by intro h; cases h) hStore1
-          generalize hMsg : storeTcbIpcStateAndMessage pair1.2 waiter .ready _ = rMsg at hStep
+          generalize hMsg : storeTcbSignalWoken pair1.2 waiter badge = rMsg at hStep
           cases rMsg with
           | error e => simp at hStep
           | ok st2 =>
@@ -361,8 +430,8 @@ theorem notificationSignal_preserves_endpointQueueNoDup
             obtain ⟨_, rfl⟩ := hStep
             exact ensureRunnable_preserves_endpointQueueNoDup _ _ <|
               endpointQueueNoDup_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _
-                (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hMsg)) <|
-              storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup _ _ _ _ _ hInv1 hObjInv1 hMsg
+                (modifyTcb_preserves_objects_invExt hObjInv1 hMsg)) <|
+              storeTcbSignalWoken_preserves_endpointQueueNoDup _ _ _ _ hInv1 hObjInv1 hMsg
       | none =>
         -- Accumulate path: storeObject notification only
         simp only [hWaiters] at hStep

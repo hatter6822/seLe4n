@@ -208,6 +208,21 @@ def endpointCallServerFirstReply? (st : SystemState) (endpointId : SeLe4n.ObjId)
   (endpointCallReceiver? st endpointId).bind fun receiver =>
     (st.getTcb? receiver).bind (·.pendingReceiveReply)
 
+/-- **Whether the call this footprint is for links a reply**: the receiver the
+call meets (`endpointCallReceiver?`) is one it is linked to
+(`callRendezvousLinks`, read from the same pre-state the transition reads).
+Only a linking call donates, links the stashed Reply and joins the receiver's
+reply waiters, so the footprint declares those writes only for it. -/
+def endpointCallLinksReply (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (payload : SendPayload) : Bool :=
+  match endpointCallReceiver? st endpointId with
+  | some receiver => callRendezvousLinks st receiver payload
+  | none => false
+
+/-- A resolved member the call writes only when it links a reply. -/
+@[inline] def ifCallLinks {α : Type} (links : Bool) (member : Option α) : Option α :=
+  if links then member else none
+
 /-- WS-SM SM6.A.1: the concrete lock-set a cross-core `endpointCallOnCore` on
 state `st` acquires — `lockSet_endpointCall` with the receiver, donated
 SchedContext, and (SM6.D, PR #822 review) the server-first stashed reply object
@@ -224,11 +239,18 @@ def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- whether it installs capabilities depends on its grant right (WS-ZA
     -- ZA4.7: and on what its frame asks for, `sendCapRequest`). Defaulted to
     -- an ungranted frame, which transfers nothing, so every capless call site
-    -- reduces definitionally to the pre-RR7.8 footprint.
-    (payload : SendPayload := .frame none false) : LockSet :=
+    -- reduces definitionally to the pre-RR7.8 footprint; the default carries
+    -- `GrantReply`, so it is a call that links the reply a receiver stashed
+    -- (`endpointCallLinksReply`), seL4's ordinary call.
+    (payload : SendPayload := .frame none false true) : LockSet :=
   lockSet_endpointCall caller cnodeRootObjId endpointId
-    (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st endpointId caller)
-    (endpointCallServerFirstReply? st endpointId)
+    (endpointCallReceiver? st endpointId)
+    -- seL4's `sendIPC`: a call that links no reply donates nothing and links
+    -- no Reply (`endpointCallLinksReply`), so neither is declared for it.
+    (ifCallLinks (endpointCallLinksReply st endpointId payload)
+      (endpointCallDonatedSc? st endpointId caller))
+    (ifCallLinks (endpointCallLinksReply st endpointId payload)
+      (endpointCallServerFirstReply? st endpointId))
     -- **WS-RR RR7.8**: the capability-transfer destination, resolved from the
     -- same pre-state expression `endpointCallWithCaps` reads
     -- (`rendezvousCapsDestination?`), so the declared footprint and the
@@ -242,30 +264,38 @@ def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- frame the push rewrites below the one it adds -- read off the very
     -- context `endpointCallDonatedSc?` resolves, so the footprint and the push
     -- cannot disagree about which stack is extended.
-    ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st))
+    (ifCallLinks (endpointCallLinksReply st endpointId payload)
+      ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st)))
     -- **WS-ZA ZA4.6**: and the receiver's old reply-waiter head, which the
     -- rendezvous's `linkReplyWaiter caller receiver` relinks -- read off the
     -- receiver `endpointCallReceiver?` resolves.
-    ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st))
+    (ifCallLinks (endpointCallLinksReply st endpointId payload)
+      ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st)))
 
 /-- **WS-RR RR7.8**: the capless resolved call footprint is the pre-RR7.8 one
-(an ungranted frame names no destination, `rendezvousCapsDestination?_ungranted`), so every statement and fixture taken over the four-argument form
-survives unchanged. -/
+(an ungranted frame names no destination, `rendezvousCapsDestination?_ungranted`),
+its link-dependent members declared exactly when the call links a reply. -/
 theorem lockSet_endpointCallOnCore_capless (st : SystemState)
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) :
+    (cnodeRootObjId : SeLe4n.ObjId) (badge : Option SeLe4n.Badge) (grantReply : Bool) :
     lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId
+        (.frame badge false grantReply)
       = lockSet_endpointCall caller cnodeRootObjId endpointId
-          (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st endpointId caller)
-          (endpointCallServerFirstReply? st endpointId) none
+          (endpointCallReceiver? st endpointId)
+          (ifCallLinks (endpointCallLinksReply st endpointId (.frame badge false grantReply))
+            (endpointCallDonatedSc? st endpointId caller))
+          (ifCallLinks (endpointCallLinksReply st endpointId (.frame badge false grantReply))
+            (endpointCallServerFirstReply? st endpointId)) none
           -- **WS-OD OD3.11**: "capless" is about the *message*, not about the
           -- queue.  A call that carries no capabilities still pops or enqueues,
           -- so the neighbour member is resolved here rather than `none`.
           (sendSideQueueStructureNeighbor? st endpointId)
           -- **WS-OD (`v0.35.4`)**: and the old head, for the same reason.
-          ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st))
+          (ifCallLinks (endpointCallLinksReply st endpointId (.frame badge false grantReply))
+            ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st)))
           -- **WS-ZA ZA4.6**: and the reply-waiter head, for the same reason.
-          ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st)) := by
+          (ifCallLinks (endpointCallLinksReply st endpointId (.frame badge false grantReply))
+            ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st))) := by
   simp only [lockSet_endpointCallOnCore, rendezvousCapsDestination?_ungranted]
 
 /-- **WS-RR RR7.8**: the concrete lock-set a cross-core caps-carrying `.send`
@@ -278,7 +308,7 @@ destination is `rendezvousCapsDestination?`, the expression
 `endpointSendDualWithCaps` itself evaluates. -/
 def lockSet_endpointSendOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
-    (payload : SendPayload := .frame none false) : LockSet :=
+    (payload : SendPayload := .frame none false false) : LockSet :=
   lockSet_endpointSend sender cnodeRootObjId endpointId
     (endpointCallReceiver? st endpointId)
     (rendezvousCapsDestination? st endpointId sender payload)
@@ -370,7 +400,13 @@ def endpointCallOnCore (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
   match st.getEndpoint? endpointId with
   | some ep =>
       match ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        -- seL4's `sendIPC`, `EPState_Recv`, `do_call`: the caller is linked
+        -- to the receiver's reply object only when the receiver stashed one and
+        -- the capability had `Grant` or `GrantReply` (`callRendezvousLinks`);
+        -- otherwise the message is delivered as a send's, the receiver's stash
+        -- is dropped (`reply_unlink`), and the caller goes `Inactive`.
+        if callRendezvousLinks st r payload then
           match endpointQueuePopHead endpointId true st with
           | .error e => (st, .error e)
           | .ok (receiver, _tcb, st') =>
@@ -399,6 +435,27 @@ def endpointCallOnCore (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                           ((removeRunnableOnCore st5 caller executingCore).linkReplyWaiter
                               caller receiver,
                            .ok (wakeThread st'' receiver executingCore).2)
+        else
+          match endpointQueuePopHead endpointId true st with
+          | .error e => (st, .error e)
+          | .ok (receiver, _tcb, st') =>
+              match storeTcbReceiveComplete st' receiver
+                  (some (sendPayloadMessage st caller payload)) with
+              | .error e => (st, .error e)
+              | .ok st'' =>
+                  -- The caller's TCB is asked for where the linking arm stores
+                  -- it, so a missing caller refuses here as it does there and
+                  -- on the blocking arm (`endpointCallOnCore_refuses_missingCaller`).
+                  match lookupTcb st caller with
+                  | none => (st, .error .objectNotFound)
+                  | some _ =>
+                  -- The receiver woken on its home core, as a send's; the
+                  -- caller off its core and `Inactive` (seL4's
+                  -- `setThreadState(thread, ThreadState_Inactive)`; a fault
+                  -- sender keeps its `pendingFault`, as `faultSuspendOnCore`).
+                  let w := wakeThread st'' receiver executingCore
+                  ((removeRunnableOnCore w.1 caller executingCore).updateTcb caller
+                      fun t => { t with threadState := .Inactive }, .ok w.2)
       | none =>
           match endpointQueueEnqueue endpointId false caller st with
           | .error e => (st, .error e)
@@ -407,7 +464,7 @@ def endpointCallOnCore (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
               | .error e => (st, .error e)
               | .ok st'' =>
                   (recordSendCap (removeRunnableOnCore st'' caller executingCore) caller
-                    payload.badge payload.grant, .ok none)
+                    payload.badge payload.grant payload.grantReply, .ok none)
   | none =>
       -- Typed-accessor dispatch (AK7 cascade discipline): `getEndpoint?` is
       -- `none` for both an absent object and a wrong-kinded one, so the
@@ -439,14 +496,40 @@ theorem endpointCallOnCore_rendezvous_eq
     -- WS-SM SM6.D (#7.3b fold): the server-first reply link is folded into the
     -- transition; the rendezvous reduces only when the link succeeds (a server
     -- with a stashed reply object — the production dispatch always provides one).
-    (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5)) :
+    (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
+    (hLinks : callRendezvousLinks st receiver payload = true) :
     endpointCallOnCore endpointId caller payload executingCore st
       = ((removeRunnableOnCore st5 caller executingCore).linkReplyWaiter caller receiver,
          .ok (wakeThread st'' receiver executingCore).2) := by
   unfold endpointCallOnCore
   have hObjE : st.getEndpoint? endpointId = some ep :=
     (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mpr hObj
-  simp only [hObjE, hHead, hPop, hStore, hCallerStore, hLink]
+  simp only [hObjE, hHead, hLinks, ↓reduceIte, hPop, hStore, hCallerStore, hLink]
+
+/-- **The rendezvous that links no reply** (seL4's `sendIPC`, `do_call`, with
+no reply object or neither grant right): the receiver completes its receive as
+a send's does -- its stash dropped (`storeTcbReceiveComplete`, seL4's
+`reply_unlink`) and woken on its home core -- and the caller is taken off its
+core, `.ready` in IPC and queued nowhere, so `Inactive`. -/
+theorem endpointCallOnCore_noReply_eq
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
+    (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
+    (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' : SystemState)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hHead : ep.receiveQ.head = some receiver)
+    (hLinks : callRendezvousLinks st receiver payload = false)
+    (hPop : endpointQueuePopHead endpointId true st = .ok (receiver, recvTcb0, st'))
+    (hStore : storeTcbReceiveComplete st' receiver (some (sendPayloadMessage st caller payload))
+      = .ok st'')
+    (callerTcb : TCB) (hCaller : lookupTcb st caller = some callerTcb) :
+    endpointCallOnCore endpointId caller payload executingCore st
+      = ((removeRunnableOnCore (wakeThread st'' receiver executingCore).1 caller
+            executingCore).updateTcb caller fun t => { t with threadState := .Inactive },
+         .ok (wakeThread st'' receiver executingCore).2) := by
+  unfold endpointCallOnCore
+  have hObjE : st.getEndpoint? endpointId = some ep :=
+    (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mpr hObj
+  simp only [hObjE, hHead, hLinks, Bool.false_eq_true, ↓reduceIte, hPop, hStore, hCaller]
 
 /-- WS-SM SM6.A.1: full reduction of the **no-receiver** path (the caller
 enqueues on the endpoint's send queue as `blockedOnCall`). No wake occurs, so
@@ -461,7 +544,7 @@ theorem endpointCallOnCore_noReceiver_eq
         = .ok st'') :
     endpointCallOnCore endpointId caller payload executingCore st
       = (recordSendCap (removeRunnableOnCore st'' caller executingCore) caller
-          payload.badge payload.grant, .ok none) := by
+          payload.badge payload.grant payload.grantReply, .ok none) := by
   unfold endpointCallOnCore
   have hObjE : st.getEndpoint? endpointId = some ep :=
     (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mpr hObj
@@ -502,8 +585,27 @@ theorem endpointCallOnCore_replenishQueueOnCore (endpointId : SeLe4n.ObjId)
           simp only [recordSendCap_scheduler, removeRunnableOnCore_replenishQueueOnCore]
           rw [storeTcbIpcStateAndMessage_scheduler_eq st' st'' caller _ _ hStore,
             endpointQueueEnqueue_scheduler_eq endpointId false caller st st' hEnq]
-    | some _ =>
+    | some rHd =>
       simp only []
+      by_cases hLk : callRendezvousLinks st rHd payload = true
+      rotate_left
+      · rw [if_neg hLk]
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => rfl
+        | ok pair =>
+          simp only
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+          | error e => rfl
+          | ok st2 =>
+            simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · rfl
+            simp only
+            rw [SystemState.updateTcb_scheduler,
+              removeRunnableOnCore_replenishQueueOnCore, wakeThread_replenishQueueOnCore,
+              storeTcbReceiveComplete_scheduler_eq _ st2 pair.1 _ hMsg,
+              endpointQueuePopHead_scheduler_eq endpointId true st _ pair.1 hPop]
+      rw [if_pos hLk]
       cases hPop : endpointQueuePopHead endpointId true st with
       | error e => rfl
       | ok triple =>
@@ -552,12 +654,13 @@ theorem endpointCallOnCore_emits_sgi_if_remote_receiver
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
+    (hLinks : callRendezvousLinks st receiver payload = true)
     (hTcb'' : st''.getTcb? receiver = some recvTcb'')
     (hRemote : determineTargetCore st'' receiver ≠ executingCore) :
     (endpointCallOnCore endpointId caller payload executingCore st).2
       = .ok (some (determineTargetCore st'' receiver, SgiKind.reschedule)) := by
   rw [endpointCallOnCore_rendezvous_eq endpointId caller payload executingCore st ep receiver
-        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink]
+        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink hLinks]
   show Except.ok (wakeThread st'' receiver executingCore).2
       = Except.ok (some (determineTargetCore st'' receiver, SgiKind.reschedule))
   rw [wakeThread_emits_sgi_if_remote st'' receiver executingCore recvTcb'' hTcb'' hRemote]
@@ -576,10 +679,11 @@ theorem endpointCallOnCore_no_sgi_if_local_receiver
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
+    (hLinks : callRendezvousLinks st receiver payload = true)
     (hLocal : determineTargetCore st'' receiver = executingCore) :
     (endpointCallOnCore endpointId caller payload executingCore st).2 = .ok none := by
   rw [endpointCallOnCore_rendezvous_eq endpointId caller payload executingCore st ep receiver
-        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink]
+        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink hLinks]
   show Except.ok (wakeThread st'' receiver executingCore).2 = Except.ok none
   rw [wakeThread_no_sgi_if_local st'' receiver executingCore hLocal]
 
@@ -627,22 +731,27 @@ kind permitted for `.call`. This is the form the runtime acquisition consumes,
 so its correctness is a corollary of the parametric `lockSet_consistent_call`. -/
 theorem lockSet_endpointCallOnCore_correct
     (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload := .frame none false) :
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload := .frame none false true) :
     ∀ p ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs,
       p.fst.kind ∈ permittedKinds .call :=
   lockSet_consistent_call caller cnodeRootObjId endpointId
-    (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st endpointId caller)
-    (endpointCallServerFirstReply? st endpointId)
+    (endpointCallReceiver? st endpointId)
+    (ifCallLinks (endpointCallLinksReply st endpointId payload)
+      (endpointCallDonatedSc? st endpointId caller))
+    (ifCallLinks (endpointCallLinksReply st endpointId payload)
+      (endpointCallServerFirstReply? st endpointId))
     (rendezvousCapsDestination? st endpointId caller payload)
     (sendSideQueueStructureNeighbor? st endpointId)
-    ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st))
-    ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st))
+    (ifCallLinks (endpointCallLinksReply st endpointId payload)
+      ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st)))
+    (ifCallLinks (endpointCallLinksReply st endpointId payload)
+      ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st)))
 
 /-- **WS-RR RR7.8**: the send footprint's kinds are permitted too, over every
 message — the send side's first resolved-footprint correctness statement. -/
 theorem lockSet_endpointSendOnCore_correct
     (st : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload := .frame none false) :
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload := .frame none false false) :
     ∀ p ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId payload).pairs,
       p.fst.kind ∈ permittedKinds .send :=
   lockSet_consistent_send sender cnodeRootObjId endpointId
@@ -751,9 +860,11 @@ gets its links.  OD4.7 found the push's four keys were declared members already:
   one at every chain depth.  The old head the push reads is read out of that same
   object, under that same write lock.
 * the Reply, by `endpointCallServerFirstReply?` -- declared since SM6.D for the
-  rendezvous's own `linkServerStashedReply` write.  `endpointCall`'s rendezvous
-  arm fails closed unless the woken server stashed a Reply and links it to *this*
-  caller, so the Reply the push then finds in `TCB.replyObject` is that one.
+  rendezvous's own `linkServerStashedReply` write.  The rendezvous donates only
+  on a call that links a reply (`endpointCallLinksReply`: the woken server
+  stashed one and the capability had `Grant` or `GrantReply`), and it links that
+  Reply to *this* caller, so the Reply the push then finds in `TCB.replyObject`
+  is that one.
 * the caller's TCB and the receiver's TCB, which the rendezvous writes anyway.
 
 OD4.7 concluded that a push adds no member.  That was true of the singly linked
@@ -771,7 +882,8 @@ theorem lockSet_endpointCallOnCore_covers_donationPush
     (scId : SeLe4n.SchedContextId) (rid : SeLe4n.ReplyId) (receiver : SeLe4n.ThreadId)
     (hSc : endpointCallDonatedSc? st endpointId caller = some scId)
     (hRid : endpointCallServerFirstReply? st endpointId = some rid)
-    (hRecv : endpointCallReceiver? st endpointId = some receiver) :
+    (hRecv : endpointCallReceiver? st endpointId = some receiver)
+    (hLinks : endpointCallLinksReply st endpointId payload = true) :
     (schedContextLock scId, AccessMode.write)
         ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs ∧
     (replyLock rid, AccessMode.write)
@@ -781,6 +893,7 @@ theorem lockSet_endpointCallOnCore_covers_donationPush
     (tcbLock receiver, AccessMode.write)
         ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs := by
   unfold lockSet_endpointCallOnCore
+  simp only [ifCallLinks, hLinks, ↓reduceIte]
   rw [hSc, hRid, hRecv]
   exact ⟨lockSet_endpointCall_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _,
     lockSet_endpointCall_reply_write_mem _ _ _ _ _ _ _ _ _ _,
@@ -797,10 +910,12 @@ theorem lockSet_endpointCallOnCore_covers_donationOldHead
     (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload)
     (scId : SeLe4n.SchedContextId) (oldHead : SeLe4n.ReplyId)
     (hSc : endpointCallDonatedSc? st endpointId caller = some scId)
-    (hOld : replyStackHead? st scId = some oldHead) :
+    (hOld : replyStackHead? st scId = some oldHead)
+    (hLinks : endpointCallLinksReply st endpointId payload = true) :
     (replyLock oldHead, AccessMode.write)
         ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs := by
   unfold lockSet_endpointCallOnCore
+  simp only [ifCallLinks, hLinks, ↓reduceIte]
   rw [hSc]
   have h2 : Option.bind (some scId) (replyStackHead? st) = some oldHead := hOld
   rw [h2]
@@ -815,15 +930,45 @@ theorem lockSet_endpointCallOnCore_covers_replyWaiterOldHead
     (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload)
     (receiver oldHead : SeLe4n.ThreadId)
     (hRecv : endpointCallReceiver? st endpointId = some receiver)
-    (hHead : st.replyWaitersHead? receiver = some oldHead) :
+    (hHead : st.replyWaitersHead? receiver = some oldHead)
+    (hLinks : endpointCallLinksReply st endpointId payload = true) :
     (tcbLock oldHead, AccessMode.write)
         ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs := by
   unfold lockSet_endpointCallOnCore
+  simp only [ifCallLinks, hLinks, ↓reduceIte]
   rw [hRecv]
   have h2 : Option.bind (some receiver) (SystemState.replyWaitersHead? st) = some oldHead :=
     hHead
   rw [h2]
   exact lockSet_endpointCall_replyWaiterOldHead_write_mem _ _ _ _ _ _ _ _ _ _
+
+
+/-- **The footprint's link decision is the transition's**: on the endpoint the
+call meets a receiver at, `endpointCallLinksReply` is the `callRendezvousLinks`
+the rendezvous branches on, read from the same pre-state, so the members the
+footprint gates on it are declared exactly when the transition writes them. -/
+theorem endpointCallLinksReply_eq_of_head {st : SystemState} {endpointId : SeLe4n.ObjId}
+    {ep : Endpoint} {receiver : SeLe4n.ThreadId} (payload : SendPayload)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.receiveQ.head = some receiver) :
+    endpointCallLinksReply st endpointId payload = callRendezvousLinks st receiver payload := by
+  unfold endpointCallLinksReply endpointCallReceiver?
+  rw [hEp]
+  simp only [hHead]
+
+/-- **A call that links no reply declares none of the link's members**: no
+SchedContext, no Reply, no donation old head and no reply-waiter head — the
+writes its transition does not make (`endpointCallOnCore`'s no-link branch:
+the receive completion, the wake and the caller's deschedule and state). -/
+theorem lockSet_endpointCallOnCore_of_noLink (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload)
+    (hNo : endpointCallLinksReply st endpointId payload = false) :
+    lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload
+      = lockSet_endpointCall caller cnodeRootObjId endpointId
+          (endpointCallReceiver? st endpointId) none none
+          (rendezvousCapsDestination? st endpointId caller payload)
+          (sendSideQueueStructureNeighbor? st endpointId) none none := by
+  simp only [lockSet_endpointCallOnCore, ifCallLinks, hNo, Bool.false_eq_true, ↓reduceIte]
 
 /-- **WS-RR RR8.16 (`v0.35.189`)**: the member is `none` on the arm that donates
 nothing because there is nobody to donate to.
@@ -1275,6 +1420,27 @@ theorem storeTcbReceiveComplete_determineTargetCore_eq (st st' : SystemState)
         ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr
           (lookupTcb_some_objects st tid tcb hTcb)) rfl hObjInv hStore
 
+/-- `storeTcbReceiveComplete_determineTargetCore_eq` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_determineTargetCore_eq (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge) (x : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    determineTargetCore st' x = determineTargetCore st x := by
+  unfold storeTcbSignalBoundWoken modifyTcb at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.signalBoundWoken badge tcb)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      exact storeObject_tcb_determineTargetCore_eq st pair.2 tid tcb
+        (TCB.signalBoundWoken badge tcb) x
+        ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr
+          (lookupTcb_some_objects st tid tcb hTcb)) rfl hObjInv hStore
+
 /-- SM8.B.2: `endpointQueuePopHead` is not a migration either — it rewrites the
 endpoint's queue and two threads' link fields, and nothing's affinity. -/
 theorem endpointQueuePopHead_determineTargetCore_eq (endpointId : SeLe4n.ObjId)
@@ -1483,6 +1649,30 @@ theorem storeTcbIpcStateAndMessage_determineTargetCore_eq
       by_cases hEq2 : x.toObjId = tid.toObjId
       · rw [hEq2]
         simp [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hSO,
+              lookupTcb_some_objects st tid tcb hLk]
+      · rw [storeObject_objects_ne' st tid.toObjId x.toObjId _ pair hEq2 hObjInv hSO]
+
+/-- `storeTcbIpcStateAndMessage_determineTargetCore_eq` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_determineTargetCore_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge) (x : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    determineTargetCore st' x = determineTargetCore st x := by
+  refine determineTargetCore_congr st st' x ?_
+  unfold storeTcbSignalWoken modifyTcb at hStep
+  cases hLk : lookupTcb st tid with
+  | none => simp [hLk] at hStep
+  | some tcb =>
+    simp only [hLk] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.signalWoken badge tcb)) st with
+    | error e => simp [hSO] at hStep
+    | ok pair =>
+      simp only [hSO] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      simp only [SystemState.getTcb?]
+      by_cases hEq2 : x.toObjId = tid.toObjId
+      · rw [hEq2]
+        simp [TCB.signalWoken, storeObject_objects_eq' st tid.toObjId _ pair hObjInv hSO,
               lookupTcb_some_objects st tid tcb hLk]
       · rw [storeObject_objects_ne' st tid.toObjId x.toObjId _ pair hEq2 hObjInv hSO]
 
@@ -1906,12 +2096,13 @@ theorem endpointCallOnCore_perCore_blocking
     (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some (sendPayloadMessage st caller payload)) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
-    (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5)) :
+    (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
+    (hLinks : callRendezvousLinks st receiver payload = true) :
     caller ∉ (endpointCallOnCore endpointId caller payload executingCore st).1.scheduler.runQueueOnCore executingCore ∧
     (endpointCallOnCore endpointId caller payload executingCore st).1.scheduler.currentOnCore executingCore
       ≠ some caller := by
   rw [endpointCallOnCore_rendezvous_eq endpointId caller payload executingCore st ep receiver
-        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink]
+        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink hLinks]
   simp only [SystemState.linkReplyWaiter_scheduler]
   exact ⟨removeRunnableOnCore_not_mem_self st5 caller executingCore,
          removeRunnableOnCore_currentOnCore_ne_self st5 caller executingCore⟩
@@ -1940,6 +2131,24 @@ theorem storeTcbIpcStateAndMessage_getTcb?_ipcState
   exact ⟨tcb', (SystemState.getTcb?_eq_some_iff st' tid tcb').mpr hTcb',
          storeTcbIpcStateAndMessage_ipcState_eq st st' tid ipc msg hObjInv hStep tcb' hTcb'⟩
 
+
+/-- The thread a signal wakes is ready after its store (`TCB.signalWoken`). -/
+theorem storeTcbSignalWoken_getTcb?_ipcState
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    ∃ t, st'.getTcb? tid = some t ∧ t.ipcState = .ready := by
+  obtain ⟨tcb, _, _, hAt, _⟩ := modifyTcb_objects hObjInv hStep
+  exact ⟨_, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hAt, rfl⟩
+
+/-- The thread a signal wakes is ready after its store (`TCB.signalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_getTcb?_ipcState
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    ∃ t, st'.getTcb? tid = some t ∧ t.ipcState = .ready := by
+  obtain ⟨tcb, _, _, hAt, _⟩ := modifyTcb_objects hObjInv hStep
+  exact ⟨_, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hAt, rfl⟩
 /-- WS-SM SM6.A.1: the cross-core endpoint call preserves object-store
 integrity (`invExt`).  On every control path the post-state's object store is
 either `st`'s (an error / no-op leaf) or the result of the
@@ -1968,9 +2177,29 @@ theorem endpointCallOnCore_preserves_objects_invExt
         | ok st'' =>
           simp only
           have h2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st'' caller _ _ h1 hMsg
-          exact recordSendCap_objects_invExt _ _ _ _ (removeRunnableOnCore_objects_invExt _ _ _ h2)
-    | some _ =>
+          exact recordSendCap_objects_invExt _ _ _ _ _ (removeRunnableOnCore_objects_invExt _ _ _ h2)
+    | some rHd =>
       simp only
+      by_cases hLk : callRendezvousLinks st rHd payload = true
+      rotate_left
+      · rw [if_neg hLk]
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp only; exact hObjInv
+        | ok pair =>
+          simp only
+          have h1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+          | error e => simp only; exact hObjInv
+          | ok st2 =>
+            simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact hObjInv
+            simp only
+            exact SystemState.updateTcb_preserves_objects_invExt _ _ _
+              (removeRunnableOnCore_objects_invExt _ _ _
+                (wakeThread_preserves_objects_invExt st2 pair.1 executingCore
+                  (storeTcbReceiveComplete_preserves_objects_invExt _ st2 pair.1 _ h1 hMsg)))
+      rw [if_pos hLk]
       cases hPop : endpointQueuePopHead endpointId true st with
       | error e => simp only; exact hObjInv
       | ok pair =>
@@ -2036,9 +2265,38 @@ theorem endpointCallOnCore_kindPreservingWrite
           exact ((w1.trans w2).trans
             ((removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _).kindPreserving
               (removeRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _).ghostsKept)).trans
-            (recordSendCap_objectsAgreeOffRunLinks _ _ _ _).kindPreserving
-    | some _ =>
+            (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _).kindPreserving
+    | some rHd =>
       simp only
+      by_cases hLk : callRendezvousLinks st rHd payload = true
+      rotate_left
+      · rw [if_neg hLk]
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp only; exact kindPreservingWrite.refl st
+        | ok pair =>
+          simp only
+          have w1 := endpointQueuePopHead_kindPreservingWrite hObjInv
+            (show endpointQueuePopHead endpointId true st = .ok (pair.1, pair.2.1, pair.2.2) by
+              rw [hPop])
+          have h1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2
+            pair.1 _ hObjInv hPop
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+          | error e => simp only; exact kindPreservingWrite.refl st
+          | ok st2 =>
+            simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact kindPreservingWrite.refl st
+            simp only
+            have w2 := storeTcbReceiveComplete_kindPreservingWrite h1 hMsg
+            have h2 := storeTcbReceiveComplete_preserves_objects_invExt _ st2 pair.1 _ h1 hMsg
+            have w3 := wakeThread_kindPreservingWrite st2 pair.1 executingCore h2
+            exact (((w1.trans w2).trans w3).trans
+              ((removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _).kindPreserving
+                (removeRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _).ghostsKept)).trans
+              (SystemState.updateTcb_kindPreservingWrite _ caller _
+                (removeRunnableOnCore_objects_invExt _ _ _
+                  (wakeThread_preserves_objects_invExt st2 pair.1 executingCore h2)))
+      rw [if_pos hLk]
       cases hPop : endpointQueuePopHead endpointId true st with
       | error e => simp only; exact kindPreservingWrite.refl st
       | ok pair =>
@@ -2077,6 +2335,150 @@ theorem endpointCallOnCore_kindPreservingWrite
               (removeRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _).ghostsKept)).trans
                 (SystemState.linkReplyWaiter_kindPreservingWrite _ _ _)
 
+/-- A kind-preserving write creates no thread: a key holding no TCB before holds
+none after. -/
+theorem lookupTcb_none_of_kindPreservingWrite {st st' : SystemState}
+    (h : kindPreservingWrite st st') {tid : SeLe4n.ThreadId} (hN : lookupTcb st tid = none) :
+    lookupTcb st' tid = none := by
+  unfold lookupTcb at hN ⊢
+  by_cases hR : tid.isReserved = true
+  · simp only [hR, ↓reduceIte]
+  · simp only [hR, Bool.false_eq_true, ↓reduceIte] at hN ⊢
+    cases hT' : st'.getTcb? tid with
+    | none => rfl
+    | some t' =>
+      exfalso
+      have hO' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT'
+      rcases h tid.toObjId with e | ⟨pre, post, hp, hq, ht, _⟩
+      · rw [hO'] at e
+        rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr e.symm] at hN
+        cases hN
+      · rw [hO'] at hq
+        cases hq
+        cases pre with
+        | tcb t =>
+          rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hp] at hN
+          cases hN
+        | _ => simp [KernelObject.objectType] at ht
+
+/-- **The linking arm refuses a missing caller with `objectNotFound`**: the
+caller's store, after the receiver's, finds no TCB. -/
+theorem endpointCallOnCore_link_missingCaller
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
+    (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
+    (receiver r : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hObj : st.getEndpoint? endpointId = some ep) (hHead : ep.receiveQ.head = some r)
+    (hLinks : callRendezvousLinks st r payload = true)
+    (hPop : endpointQueuePopHead endpointId true st = .ok (receiver, recvTcb0, st'))
+    (hStore : storeTcbIpcStateAndMessage st' receiver .ready
+      (some (sendPayloadMessage st caller payload)) = .ok st'')
+    (hC : lookupTcb st caller = none) :
+    endpointCallOnCore endpointId caller payload executingCore st
+      = (st, .error .objectNotFound) := by
+  have h1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st st' receiver _
+    hObjInv hPop
+  have h2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st'' receiver _ _ h1 hStore
+  have hW : lookupTcb (wakeThread st'' receiver executingCore).1 caller = none :=
+    lookupTcb_none_of_kindPreservingWrite
+      (((endpointQueuePopHead_kindPreservingWrite hObjInv hPop).trans
+        (storeTcbIpcStateAndMessage_kindPreservingWrite h1 hStore)).trans
+        (wakeThread_kindPreservingWrite st'' receiver executingCore h2)) hC
+  have hCS : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1 caller
+      (.blockedOnReply endpointId (some receiver)) none = .error .objectNotFound := by
+    unfold storeTcbIpcStateAndMessage modifyTcb
+    rw [hW]
+  unfold endpointCallOnCore
+  simp only [hObj, hHead, hLinks, ↓reduceIte, hPop, hStore, hCS]
+
+/-- **The arm linking no reply refuses a missing caller with `objectNotFound`**,
+at the point the linking arm does. -/
+theorem endpointCallOnCore_noLink_missingCaller
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
+    (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
+    (receiver r : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' : SystemState)
+    (hObj : st.getEndpoint? endpointId = some ep) (hHead : ep.receiveQ.head = some r)
+    (hLinks : callRendezvousLinks st r payload = false)
+    (hPop : endpointQueuePopHead endpointId true st = .ok (receiver, recvTcb0, st'))
+    (hStore : storeTcbReceiveComplete st' receiver
+      (some (sendPayloadMessage st caller payload)) = .ok st'')
+    (hC : lookupTcb st caller = none) :
+    endpointCallOnCore endpointId caller payload executingCore st
+      = (st, .error .objectNotFound) := by
+  unfold endpointCallOnCore
+  simp only [hObj, hHead, hLinks, Bool.false_eq_true, ↓reduceIte, hPop, hStore, hC]
+
+/-- **The blocking arm refuses a missing caller with `objectNotFound`**: the
+enqueue asks for the caller's TCB first. -/
+theorem endpointCallOnCore_block_missingCaller
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
+    (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
+    (hObj : st.getEndpoint? endpointId = some ep) (hHead : ep.receiveQ.head = none)
+    (hC : lookupTcb st caller = none) :
+    endpointCallOnCore endpointId caller payload executingCore st
+      = (st, .error .objectNotFound) := by
+  have hO : st.getObject? endpointId = some (.endpoint ep) := by
+    unfold SystemState.getObject?
+    rw [(SystemState.getEndpoint?_eq_some_iff _ _ _).mp hObj]
+  have hEnq : endpointQueueEnqueue endpointId false caller st = .error .objectNotFound := by
+    unfold endpointQueueEnqueue
+    rw [hO]
+    simp only [hC]
+  unfold endpointCallOnCore
+  simp only [hObj, hHead, hEnq]
+
+/-- **Every arm of the call refuses a missing caller, and none succeeds**: the
+blocking arm, the linking arm and the arm linking no reply leave the state as
+they found it and answer an error (`objectNotFound` once the steps before the
+caller's write pass, by the three lemmas above).  seL4 has no such case (the
+current thread always exists), so the refusal is the one the other arms give. -/
+theorem endpointCallOnCore_refuses_missingCaller
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
+    (executingCore : CoreId) (st : SystemState)
+    (hObjInv : st.objects.invExt) (hC : lookupTcb st caller = none) :
+    ∃ e, endpointCallOnCore endpointId caller payload executingCore st = (st, .error e) := by
+  cases hEp : st.getEndpoint? endpointId with
+  | none =>
+    unfold endpointCallOnCore
+    simp only [hEp]
+    split
+    · exact ⟨_, rfl⟩
+    · exact ⟨_, rfl⟩
+  | some ep =>
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      exact ⟨_, endpointCallOnCore_block_missingCaller endpointId caller payload executingCore
+        st ep hEp hHead hC⟩
+    | some r =>
+      cases hPop : endpointQueuePopHead endpointId true st with
+      | error e =>
+        refine ⟨e, ?_⟩
+        unfold endpointCallOnCore
+        simp only [hEp, hHead, hPop]
+        split <;> rfl
+      | ok pair =>
+        obtain ⟨receiver, t0, st'⟩ := pair
+        by_cases hLk : callRendezvousLinks st r payload = true
+        · cases hS : storeTcbIpcStateAndMessage st' receiver .ready
+              (some (sendPayloadMessage st caller payload)) with
+          | error e =>
+            refine ⟨e, ?_⟩
+            unfold endpointCallOnCore
+            simp only [hEp, hHead, hLk, ↓reduceIte, hPop, hS]
+          | ok st'' =>
+            exact ⟨_, endpointCallOnCore_link_missingCaller endpointId caller payload
+              executingCore st ep receiver r t0 st' st'' hObjInv hEp hHead hLk hPop hS hC⟩
+        · have hLk' : callRendezvousLinks st r payload = false := by simpa using hLk
+          cases hS : storeTcbReceiveComplete st' receiver
+              (some (sendPayloadMessage st caller payload)) with
+          | error e =>
+            refine ⟨e, ?_⟩
+            unfold endpointCallOnCore
+            simp only [hEp, hHead, hLk', Bool.false_eq_true, ↓reduceIte, hPop, hS]
+          | ok st'' =>
+            exact ⟨_, endpointCallOnCore_noLink_missingCaller endpointId caller payload
+              executingCore st ep receiver r t0 st' st'' hEp hHead hLk' hPop hS hC⟩
+
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and the Call leg writes neither CDT table
 on any path. -/
 theorem endpointCallOnCore_cdt_eq
@@ -2102,8 +2504,31 @@ theorem endpointCallOnCore_cdt_eq
           simp only
           have e2 := storeTcbIpcStateAndMessage_cdt_eq hMsg
           exact (removeRunnableOnCore_cdt st'' caller executingCore).trans (e2.trans e1)
-    | some _ =>
+    | some rHd =>
       simp only
+      by_cases hLk : callRendezvousLinks st rHd payload = true
+      rotate_left
+      · rw [if_neg hLk]
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp only
+        | ok pair =>
+          simp only
+          have e1 := endpointQueuePopHead_cdt_eq
+            (show endpointQueuePopHead endpointId true st = .ok (pair.1, pair.2.1, pair.2.2) by
+              rw [hPop])
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+          | error e => simp only
+          | ok st2 =>
+            simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only
+            simp only
+            have e2 := storeTcbReceiveComplete_cdt_eq hMsg
+            have e3 := enqueueRunnableOnCore_cdt st2 (determineTargetCore st2 pair.1) pair.1
+            have eW : (wakeThread st2 pair.1 executingCore).1.cdt = st2.cdt := by
+              rw [wakeThread_state_eq_enqueue]; exact e3
+            rw [SystemState.updateTcb_cdt, removeRunnableOnCore_cdt, eW, e2, e1]
+      rw [if_pos hLk]
       cases hPop : endpointQueuePopHead endpointId true st with
       | error e => simp only
       | ok pair =>
@@ -2157,6 +2582,42 @@ before the transition runs, and a binding frame is what makes those one answer
 (`endpointCallDonatedSc?_some_of_post`). -/
 
 open SeLe4n.Model.SystemState in
+/-- Finding F-1: a `storeTcbReceiveComplete` that succeeds resolves the target TCB
+and sets its `ipcState` to `.ready`. Mirror of
+`storeTcbIpcStateAndMessage_getTcb?_ipcState`. -/
+theorem storeTcbReceiveComplete_getTcb?_ipcState
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    ∃ t, st'.getTcb? tid = some t ∧ t.ipcState = .ready := by
+  obtain ⟨tcb', hTcb'⟩ :=
+    storeTcbReceiveComplete_tcb_exists_at_target st st' tid msg hObjInv hStep
+      (by cases hL : lookupTcb st tid with
+          | none => simp [storeTcbReceiveComplete, modifyTcb, hL] at hStep
+          | some tcb => exact ⟨tcb, lookupTcb_some_objects st tid tcb hL⟩)
+  exact ⟨tcb', (SystemState.getTcb?_eq_some_iff st' tid tcb').mpr hTcb',
+         storeTcbReceiveComplete_ipcState_eq st st' tid msg hObjInv hStep tcb' hTcb'⟩
+
+/-- **The rendezvous that links no reply is invisible off run-queue links past
+its message store.**  After `storeTcbReceiveComplete` the receiver is `.ready`,
+so its wake writes only run-queue links, and the caller's deschedule writes no
+object at all: every lookup-only invariant the store leaves holding holds of the
+post-state. -/
+theorem endpointCallOnCore_noReply_objectsAgree
+    (st1 st2 : SystemState) (receiver : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (caller : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hObjInv : st1.objects.invExt)
+    (hStep : storeTcbReceiveComplete st1 receiver msg = .ok st2) :
+    (removeRunnableOnCore (wakeThread st2 receiver executingCore).1 caller
+      executingCore).objectsAgreeOffRunLinks st2 := by
+  obtain ⟨tr, hTrGet, hTrReady⟩ :=
+    storeTcbReceiveComplete_getTcb?_ipcState st1 st2 receiver msg hObjInv hStep
+  exact SystemState.objectsAgreeOffRunLinks.trans
+    (removeRunnableOnCore_objectsAgreeOffRunLinks _ caller executingCore)
+    (wakeThread_objectsAgreeOffRunLinks_of_ready st2 receiver executingCore tr hTrGet hTrReady
+      (storeTcbReceiveComplete_preserves_objects_invExt st1 st2 receiver msg hObjInv hStep))
+
 /-- D6 (per-core): `endpointCallOnCore` preserves every TCB's `schedContextBinding` (the cross-core
 mirror of `endpointCall_sameSchedContextBindings`; `wakeThread`/`removeRunnableOnCore` are
 scheduler-only, the store/link ops never write a binding). -/
@@ -2185,9 +2646,36 @@ theorem endpointCallOnCore_sameSchedContextBindings
           simp only
           have hS2 := hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st' st'' caller (.blockedOnCall endpointId) none hObj1 hMsg)
           exact (hS2.trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st'' caller executingCore))).trans
-            (sameSchedContextBindings.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _))
-    | some _ =>
+            (sameSchedContextBindings.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _))
+    | some rHd =>
       simp only
+      by_cases hLk : callRendezvousLinks st rHd payload = true
+      rotate_left
+      · rw [if_neg hLk]
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp only; exact sameSchedContextBindings.refl st
+        | ok pair =>
+          simp only
+          have hS1 := endpointQueuePopHead_sameSchedContextBindings endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          have hObj1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+          | error e => simp only; exact sameSchedContextBindings.refl st
+          | ok st2 =>
+            simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact sameSchedContextBindings.refl st
+            simp only
+            have hS2 := hS1.trans (storeTcbReceiveComplete_sameSchedContextBindings _ st2 pair.1 _ hObj1 hMsg)
+            have hObj2 := storeTcbReceiveComplete_preserves_objects_invExt _ st2 pair.1 _ hObj1 hMsg
+            obtain ⟨tr, hTrGet, hTrReady⟩ :=
+              storeTcbReceiveComplete_getTcb?_ipcState _ st2 pair.1 _ hObj1 hMsg
+            have hS3 := hS2.trans (wakeThread_sameSchedContextBindings_of_ready st2 pair.1 executingCore tr hTrGet hTrReady hObj2)
+            exact (hS3.trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks
+              (removeRunnableOnCore_objectsAgreeOffRunLinks _ caller executingCore))).trans
+              (sameSchedContextBindings.of_updateTcb caller _ (fun _ => rfl)
+                (removeRunnableOnCore_objects_invExt _ _ _
+                  (wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObj2)))
+      rw [if_pos hLk]
       cases hPop : endpointQueuePopHead endpointId true st with
       | error e => simp only; exact sameSchedContextBindings.refl st
       | ok pair =>
@@ -2222,23 +2710,6 @@ theorem endpointCallOnCore_sameSchedContextBindings
                 (sameSchedContextBindings.of_objectsAgreeOffRunLinks
                   (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))
 
-/-- Finding F-1: a `storeTcbReceiveComplete` that succeeds resolves the target TCB
-and sets its `ipcState` to `.ready`. Mirror of
-`storeTcbIpcStateAndMessage_getTcb?_ipcState`. -/
-theorem storeTcbReceiveComplete_getTcb?_ipcState
-    (st st' : SystemState) (tid : SeLe4n.ThreadId)
-    (msg : Option IpcMessage)
-    (hObjInv : st.objects.invExt)
-    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
-    ∃ t, st'.getTcb? tid = some t ∧ t.ipcState = .ready := by
-  obtain ⟨tcb', hTcb'⟩ :=
-    storeTcbReceiveComplete_tcb_exists_at_target st st' tid msg hObjInv hStep
-      (by cases hL : lookupTcb st tid with
-          | none => simp [storeTcbReceiveComplete, modifyTcb, hL] at hStep
-          | some tcb => exact ⟨tcb, lookupTcb_some_objects st tid tcb hL⟩)
-  exact ⟨tcb', (SystemState.getTcb?_eq_some_iff st' tid tcb').mpr hTcb',
-         storeTcbReceiveComplete_ipcState_eq st st' tid msg hObjInv hStep tcb' hTcb'⟩
-
 /-- WS-SM SM6.A.6 (`reply allocation under lock-set`): on a rendezvous call the
 caller's **reply linkage** is established — its TCB transitions to
 `blockedOnReply endpointId (some receiver)`, recording the authorised replier
@@ -2259,6 +2730,7 @@ theorem endpointCallOnCore_reply_linkage_under_lockSet
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
+    (hLinks : callRendezvousLinks st receiver payload = true)
     (hObjInv : st.objects.invExt) :
     ∃ t, (endpointCallOnCore endpointId caller payload executingCore st).1.getTcb? caller = some t
       ∧ t.ipcState = .blockedOnReply endpointId (some receiver) := by
@@ -2278,7 +2750,7 @@ theorem endpointCallOnCore_reply_linkage_under_lockSet
   -- WS-SM SM6.D (#7.3b fold): the server-first reply link sets the caller's
   -- `replyObject` but leaves its `ipcState` (`.blockedOnReply`) intact.
   rw [endpointCallOnCore_rendezvous_eq endpointId caller payload executingCore st ep receiver
-        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink]
+        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink hLinks]
   obtain ⟨t', hT5⟩ :=
     linkServerStashedReply_tcb_forward st4 st5 caller receiver caller.toObjId t hObjInv4 hLink hT4
   obtain ⟨tb, hTb, hIpcEq⟩ :=
@@ -2553,11 +3025,62 @@ theorem endpointCallOnCore_preserves_schedulerInvariantBase_smp
               (storeTcbIpcStateAndMessage_kindPreservingWrite hInv1 hMsg)
           exact schedulerInvariantBase_smp_of_kindPreserving
             (removeRunnableOnCore_preserves_schedulerInvariantBase_smp caller executingCore h2)
-            (recordSendCap_scheduler _ _ _ _)
-            (recordSendCap_objectsAgreeOffRunLinks _ _ _ _).kindPreserving
+            (recordSendCap_scheduler _ _ _ _ _)
+            (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _).kindPreserving
     | some headTid =>
       -- The rendezvous branch: the queued receiver is popped, delivered and woken.
       simp only
+      by_cases hLk : callRendezvousLinks st headTid payload = true
+      rotate_left
+      · rw [if_neg hLk]
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp only; exact h
+        | ok pair =>
+          simp only
+          have hPop' : endpointQueuePopHead endpointId true st
+              = .ok (pair.1, pair.2.1, pair.2.2) := by rw [hPop]
+          have hIsHead : pair.1 = headTid :=
+            endpointQueuePopHead_popped_eq_head endpointId true st pair.2.2 ep pair.1 headTid
+              pair.2.1 ((SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp)
+              (by simpa using hHead) hPop'
+          have h1 : schedulerInvariantBase_smp pair.2.2 :=
+            schedulerInvariantBase_smp_of_kindPreserving h
+              (endpointQueuePopHead_scheduler_eq endpointId true st pair.2.2 pair.1 hPop')
+              (endpointQueuePopHead_kindPreservingWrite hObjInv hPop')
+          have hInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2
+            pair.1 _ hObjInv hPop
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+          | error e => simp only; exact h
+          | ok st2 =>
+            simp only
+            rcases hCl : lookupTcb st caller with _ | _
+            · simp only; exact h
+            simp only
+            have h2 : schedulerInvariantBase_smp st2 :=
+              schedulerInvariantBase_smp_of_kindPreserving h1
+                (storeTcbReceiveComplete_scheduler_eq pair.2.2 st2 pair.1 _ hMsg)
+                (storeTcbReceiveComplete_kindPreservingWrite hInv1 hMsg)
+            have hInv2 := storeTcbReceiveComplete_preserves_objects_invExt pair.2.2 st2 pair.1
+              _ hInv1 hMsg
+            have hNotCur2 :
+                st2.scheduler.currentOnCore (determineTargetCore st2 pair.1) ≠ some pair.1 := by
+              rw [storeTcbReceiveComplete_determineTargetCore_eq pair.2.2 st2 pair.1 _ pair.1
+                hInv1 hMsg,
+                endpointQueuePopHead_determineTargetCore_eq endpointId true st pair.2.2 pair.1
+                  pair.2.1 pair.1 hObjInv hPop',
+                storeTcbReceiveComplete_scheduler_eq pair.2.2 st2 pair.1 _ hMsg,
+                endpointQueuePopHead_scheduler_eq endpointId true st pair.2.2 pair.1 hPop',
+                hIsHead]
+              exact hNotCur ep hEp headTid hHead
+            exact schedulerInvariantBase_smp_of_kindPreserving
+              (removeRunnableOnCore_preserves_schedulerInvariantBase_smp caller executingCore
+                (wakeThread_preserves_schedulerInvariantBase_smp st2 pair.1 executingCore hInv2
+                  hNotCur2 h2))
+              (SystemState.updateTcb_scheduler _ _ _)
+              (SystemState.updateTcb_kindPreservingWrite _ caller _
+                (removeRunnableOnCore_objects_invExt _ _ _
+                  (wakeThread_preserves_objects_invExt st2 pair.1 executingCore hInv2)))
+      rw [if_pos hLk]
       cases hPop : endpointQueuePopHead endpointId true st with
       | error e => simp only; exact h
       | ok pair =>

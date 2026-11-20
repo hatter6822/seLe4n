@@ -595,6 +595,20 @@ theorem writeReturnFrameToTcb_preserves_projection
             · simp [hEq]
           · rfl)
 
+
+/-- The `Call`-gated reply write (`Architecture.writeCallReturnWord`) is a
+return-frame write or the identity, so it is invisible to every observer. -/
+theorem writeCallReturnWord_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (w : UInt64) (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Architecture.writeCallReturnWord st tid w)
+      = projectState ctx observer st := by
+  cases hTcb : st.getTcb? tid with
+  | none => rw [Architecture.writeCallReturnWord_id_when_not_tcb st tid w hTcb]
+  | some t =>
+      rw [Architecture.writeCallReturnWord_eq_frame st tid w t hTcb]
+      exact writeReturnFrameToTcb_preserves_projection ctx observer st tid _ hObjInv
+
 /-- **WS-ZA ZA4.7**: so is the delivery write: the projection strips both the
 saved registers and the pending message it drops. -/
 theorem writeDeliveredFrameToTcb_preserves_projection
@@ -666,26 +680,6 @@ theorem stageWokenDelivery_preserves_projection
   | some tid =>
       exact stageDeliveredMessage_preserves_projection ctx observer st tid
         capInfo hObjInv
-
-/-- WS-RA RA.B.5b: the completion stager (a woken plain sender's unit
-frame) is projection-invisible for every observer — its only write is
-`writeReturnFrameToTcb`, covered by the blanket. -/
-theorem stageWokenSendCompletion_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (woken? : Option SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
-    projectState ctx observer (Architecture.stageWokenSendCompletion st woken?)
-      = projectState ctx observer st := by
-  cases woken? with
-  | none => rfl
-  | some tid =>
-      simp only [Architecture.stageWokenSendCompletion]
-      cases st.getTcb? tid with
-      | none => rfl
-      | some tcb =>
-          by_cases hGuard : tcb.ipcState = .ready ∧ tcb.pendingMessage = none
-          · simp only [hGuard]
-            exact writeReturnFrameToTcb_preserves_projection ctx observer st tid _ hObjInv
-          · simp [hGuard]
 
 /-- WS-H12c: restoreIncomingContext preserves the information-flow projection
 when the current thread is non-observable. -/
@@ -1770,6 +1764,23 @@ theorem endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt
                         hInv2 hS2 hC2 hFinal,
                       storeTcbQueueLinks_preserves_objectIndexSet_invExt _ _ headTid _ _ _ hS2 hFinal⟩
 
+/-- A rewrite of one non-observable thread's TCB is invisible to the
+observer: only that thread's object changes. -/
+theorem updateTcb_high_preserves_projection (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hHighObj : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (st.updateTcb tid f) = projectState ctx observer st := by
+  cases hT : st.getTcb? tid with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]
+  | some tcb =>
+      rw [SystemState.updateTcb_eq_of_some hT]
+      have hProj := projectObjects_insert_high ctx observer st
+        ({ st with objects := st.objects.insert tid.toObjId (KernelObject.tcb (f tcb)) } : SystemState)
+        tid (KernelObject.tcb (f tcb)) rfl hHighObj hObjInv
+      simp only [projectState]
+      congr 1
+
 /-- U4-B: endpointReceiveDual at a non-observable endpoint preserves projection.
 
     Two paths:
@@ -1839,7 +1850,36 @@ theorem endpointReceiveDual_preserves_projection
           split at hStep
           · -- Call path: sender → blockedOnReply, then (#7.1 fold) link the
             -- dequeued caller to the server-supplied reply object, then deliver
-            -- the message to the receiver.
+            -- the message to the receiver; a call that links no reply leaves
+            -- the caller `.ready` but `Inactive`.
+            by_cases hLk :
+              ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) = true
+            case neg =>
+              -- A `Call` that links no reply: the caller is completed `Inactive`.
+              rw [if_neg hLk] at hStep
+              cases hIpc : storeTcbIpcStateAndMessage st1 sender .ready none with
+              | error e => simp [hIpc] at hStep
+              | ok st2 =>
+                simp only [hIpc] at hStep
+                have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2
+                    sender _ _ hObjInv1 hIpc
+                have hProjIpc := storeTcbIpcStateAndMessage_preserves_projection ctx observer
+                    st1 st2 sender _ _ hSenderObjHigh hObjInv1 hIpc
+                have hProjEns := updateTcb_high_preserves_projection ctx observer st2 sender
+                  (fun t => { t with threadState := .Inactive }) hSenderObjHigh hObjInv2
+                have hObjInvEns : (st2.updateTcb sender fun t => { t with threadState := .Inactive }).objects.invExt := by
+                  exact SystemState.updateTcb_preserves_objects_invExt st2 sender (fun t => { t with threadState := .Inactive }) hObjInv2
+                -- AK1-D: atomic (.ready, senderMsg) receiver update
+                cases hPend : storeTcbIpcStateAndMessage (st2.updateTcb sender fun t => { t with threadState := .Inactive }) receiver .ready
+                    (some (blockedSenderMessage st1 sender senderTcb)) with
+                | error e => simp [hPend] at hStep
+                | ok st3 =>
+                  simp only [hPend] at hStep
+                  have hStEq := (Prod.mk.inj (Except.ok.inj hStep)).2; subst hStEq
+                  rw [storeTcbIpcStateAndMessage_preserves_projection ctx observer
+                      (st2.updateTcb sender fun t => { t with threadState := .Inactive }) st3 receiver .ready _ hReceiverObjHigh hObjInvEns hPend,
+                      hProjEns, hProjIpc, hProjPop]
+            rw [if_pos hLk] at hStep
             cases hIpc : storeTcbIpcStateAndMessage st1 sender
                 (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hIpc] at hStep
@@ -2212,10 +2252,51 @@ theorem endpointCall_preserves_projection
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hRecvHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hRecvHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok triple =>
+            obtain ⟨receiver, _recvTcb, st1⟩ := triple
+            simp only [hPop] at hStep
+            have hHeadEq : ep.receiveQ.head = some receiver :=
+              endpointQueuePopHead_returns_head endpointId true st ep receiver st1 hObj hPop
+            have hRecvHigh := hRecvQueueHeadHigh ep receiver hObj hHeadEq
+            have hRecvObjHigh := hCoherent receiver hRecvHigh
+            have hPreTcb := endpointQueuePopHead_returns_pre_tcb endpointId true st ep
+                receiver _recvTcb st1 hObj hPop
+            have hNextHighForPop : ∀ nextTid, _recvTcb.queueNext = some nextTid →
+                objectObservable ctx observer nextTid.toObjId = false :=
+              fun nextTid hQN => hRecvQueueNextHigh ep receiver _recvTcb nextTid hObj
+                hHeadEq hPreTcb hQN
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true
+                st st1 receiver _recvTcb hObjInv hPop
+            have hProjPop := endpointQueuePopHead_preserves_projection ctx observer
+                endpointId true st st1 receiver _recvTcb hEndpointHigh hRecvObjHigh
+                hNextHighForPop hObjInv hPop
+            cases hTcbStore : storeTcbReceiveComplete st1 receiver (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hTcbStore] at hStep
+            | ok st2 =>
+              simp only [hTcbStore, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+              have hObjInv2 := storeTcbReceiveComplete_preserves_objects_invExt st1 st2 receiver _ hObjInv1 hTcbStore
+              have hProjTcb := storeTcbReceiveComplete_preserves_projection ctx observer
+                  st1 st2 receiver _ hRecvObjHigh hObjInv1 hTcbStore
+              rw [updateTcb_high_preserves_projection ctx observer _ caller _ hCallerObjHigh
+                    (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt _ _ hObjInv2)),
+                  removeRunnable_preserves_projection ctx observer _ caller hCallerHigh,
+                  ensureRunnable_preserves_projection ctx observer st2 receiver hRecvHigh, hProjTcb, hProjPop]
+        rw [if_pos hLk] at hStep
         -- Path 1: Receiver waiting — PopHead + storeTcbIpcStateAndMessage(receiver) +
         -- ensureRunnable(receiver) + storeTcbIpcState(caller) + removeRunnable(caller)
-        simp only [hRecvHead] at hStep
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hPop] at hStep
         | ok triple =>
@@ -5045,7 +5126,7 @@ theorem serviceQueryStaged_preserves_projection
     unfold lookupServiceChecked at hU
     split at hU
     · rw [lookupServiceByRecordedRegistration_preserves_state epId st reg st₁ hU]
-      exact writeReturnFrameToTcb_preserves_projection ctx observer st caller _ hObjInv
+      exact writeCallReturnWord_preserves_projection ctx observer st caller _ hObjInv
     · cases hU
   · cases hStep
 
@@ -5163,10 +5244,8 @@ theorem serviceQueryStaged_answer_lowEquivalent
     (∃ e, serviceQueryStaged ctx caller epId s₁ = .error e ∧
         serviceQueryStaged ctx caller epId s₂ = .error e) ∨
     (∃ w : UInt64,
-      serviceQueryStaged ctx caller epId s₁ = .ok ((), Architecture.writeReturnFrameToTcb s₁ caller
-        (Architecture.returnFrameOfWord w)) ∧
-      serviceQueryStaged ctx caller epId s₂ = .ok ((), Architecture.writeReturnFrameToTcb s₂ caller
-        (Architecture.returnFrameOfWord w))) := by
+      serviceQueryStaged ctx caller epId s₁ = .ok ((), Architecture.writeCallReturnWord s₁ caller w) ∧
+      serviceQueryStaged ctx caller epId s₂ = .ok ((), Architecture.writeCallReturnWord s₂ caller w)) := by
   have hA := lookupServiceChecked_answer_lowEquivalent ctx observer caller epId s₁ s₂ hCallerLow
     hLow
   have hState : ∀ s reg s', lookupServiceChecked ctx caller epId s = .ok (reg, s') → s' = s := by

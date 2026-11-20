@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.IPC.CrossCore.Fault
 import SeLe4n.Kernel.IPC.CrossCore.DeliveredInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInPlace
+import SeLe4n.Kernel.IPC.CrossCore.CallNoReplyInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDonatingInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvInPlace
 
@@ -243,6 +244,7 @@ theorem callDispatch_inPlace (st : SystemState)
     (hReq : sendCapRequest st endpointId caller payload = none)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
     (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
+    (hGr : payload.canLinkReply = true)
     (hG : callWakesInPlace st endpointId caller r rt rid = true) :
     ∃ sgi, endpointCallCrossCoreDispatch endpointId caller payload core st =
       (performCallRendezvous st endpointId caller r rt.queueNext rid msg core,
@@ -254,7 +256,7 @@ theorem callDispatch_inPlace (st : SystemState)
   have hEp : st.getEndpoint? endpointId = some ep :=
     (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE
   obtain ⟨hEq, hDon⟩ := callRendezvous_inPlace st endpointId ep caller r rt rid payload msg core hM
-    hE hH hT hRid hG
+    hE hH hT hRid hGr hG
   obtain ⟨cv, hcv⟩ := Option.isSome_iff_exists.mp
     ((SeLe4n.ThreadId.toValid?_isSome_iff caller).mpr hCRes)
   obtain ⟨rv, hrv⟩ := Option.isSome_iff_exists.mp
@@ -265,7 +267,10 @@ theorem callDispatch_inPlace (st : SystemState)
     (callReceiverTcb msg)) r core).2, ?_⟩
   unfold endpointCallCrossCoreDispatch
   rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _ hReq, hEq]
-  simp only [Except.map, hEp, hH, hcv, hrv]
+  have hLk : callRendezvousLinks st r payload = true := by
+    rw [callRendezvousLinks_of_stash payload ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT) hRid]
+    exact hGr
+  simp only [Except.map, hEp, hH, hLk, ↓reduceIte, hcv, hrv]
   unfold applyCallDonationOnCore
   rw [applyCallDonation_eq_ok_self_of_no_donation _ _ _ (by rw [hcv', hrv']; exact hDon)]
   simp only [hcv', hrv', hDon]
@@ -817,6 +822,89 @@ theorem storeCallRendezvousReady_ready (st : SystemState) (endpointId : SeLe4n.O
   exact ipcStateHolds.of_carried
     (ipcStateCarried_of_agree (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ caller r)) h8
 
+/-- **The call that links no reply leaves its receiver ready**: under
+`sendWakesInPlace` the receiver, made ready in its slot, stays ready through
+the wake and the caller's `Inactive` deschedule (a threadState write, which
+leaves every IPC state as it was). -/
+theorem storeCallNoReplyReady_ready (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (ep : Endpoint) (caller r : SeLe4n.ThreadId) (rt : TCB) (core : CoreId)
+    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
+    (hT : st.objects[r.toObjId]? = some (.tcb rt))
+    (hG : sendWakesInPlace st endpointId r rt.queueNext = true) :
+    ipcStateHolds (storeCallNoReplyReady st endpointId caller r rt.queueNextCode core) r
+      (· = .ready) := by
+  have hG' := hG
+  simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG'
+  obtain ⟨⟨⟨⟨⟨-, -⟩, hFE⟩, -⟩, hFH⟩, -⟩ := hG'
+  have hNo : st.objects.noResizeDue := RobinHood.RHTable.noResizeDue_of_findsInPlace hFE
+  obtain ⟨-, hFr⟩ := popHead_inPlace st endpointId true ep r rt hE hH hT hG
+  unfold storeCallNoReplyReady descheduleInactive storeSendRendezvousReady
+  rw [TCB.ofOptCode_queueNextCode,
+    show storeSendRendezvousWith st endpointId r rt.queueNext receiveReadyTcb =
+      (storePopHead st endpointId true r rt.queueNext).updateTcb r receiveReadyTcb from rfl]
+  have hNo1 := storePopHead_noResizeDue st endpointId true r rt.queueNext hNo
+  generalize storePopHead st endpointId true r rt.queueNext = S1 at hFr hNo1
+  have hFH1 : S1.objects.findsInPlace r.toObjId = true := (hFr.keepsFinds _).trans hFH
+  have hT2 := updateTcb_getTcb?_self_of_findsInPlace receiveReadyTcb hFr.head_tcb hFH1
+  have hF2 := (updateTcb_findsInPlace receiveReadyTcb hFr.head_tcb hFH1 r.toObjId).trans hFH1
+  have hR2 : (receiveReadyTcb (tcbOffQueue rt)).ipcState = .ready := by
+    simp only [receiveReadyTcb, TCB.ipcState_setIpcState]
+  have hNo2 := updateTcb_noResizeDue S1 r receiveReadyTcb hNo1
+  have hA3 := enqueueRunnableOnCore_agree_of_findsInPlace _
+    (determineTargetCore (S1.updateTcb r receiveReadyTcb) r) r _ hT2 hR2 hF2
+  have h3 : ipcStateHolds (wakeThread (S1.updateTcb r receiveReadyTcb) r core).1 r
+      (· = .ready) :=
+    ipcStateHolds.of_carried (ipcStateCarried_of_agree hA3) ⟨_, hT2, hR2⟩
+  have hNo3 := wakeThread_noResizeDue _ r core hNo2
+  generalize (wakeThread (S1.updateTcb r receiveReadyTcb) r core).1 = S3 at h3 hNo3
+  have h4 := ipcStateHolds.of_carried
+    (ipcStateCarried_of_agree (removeRunnableOnCore_objectsAgreeOffRunLinks _ caller core)) h3
+  exact ipcStateHolds.of_carried (ipcStateCarried_updateTcb _ caller callerInactiveTcb
+    (removeRunnableOnCore_noResizeDue _ _ _ hNo3) (fun _ => rfl)) h4
+
+/-- **The fault's call that links no reply, delivered**: the handler woken
+without the message, the faulting thread descheduled and `Inactive` (keeping
+its `pendingFault`), then the fault delivered in place (`deliverFaultFrame`,
+`performFaultCallNoReplyDelivered_eq`).  seL4's `sendFaultIPC` through a
+handler capability with neither `Grant` nor `GrantReply`, or to a handler that
+stashed no reply object. -/
+@[noinline] def performFaultCallNoReplyDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller r : SeLe4n.ThreadId) (nextCode : Nat) (cap : Capability)
+    (k : Nat) (flag : Bool) (w0 w1 : UInt64) (lk : UInt64)
+    (ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (core : CoreId) : SystemState :=
+  deliverFaultFrame (storeCallNoReplyReady st endpointId caller r nextCode core) r
+    cap.badgeWord cap.badged k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7
+
+/-- **The delivered no-reply fault is the specification's delivery** of the
+message the fault and its context encode. -/
+theorem performFaultCallNoReplyDelivered_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
+    (cap : Capability) (f : Fault) (ctx : FaultContext) (core : CoreId)
+    (hNo : st.objects.noResizeDue)
+    (hReady : ipcStateHolds (storeCallNoReplyReady st endpointId caller r
+      (ThreadId.optCode next) core) r (· = .ready)) :
+    performFaultCallNoReplyDelivered st endpointId caller r (ThreadId.optCode next) cap
+        (ThreadFaultWords.ofFault f ctx).kind (ThreadFaultWords.ofFault f ctx).flag
+        (ThreadFaultWords.ofFault f ctx).word0 (ThreadFaultWords.ofFault f ctx).word1
+        (ThreadFaultWords.ofFault f ctx).lookup (ThreadFaultWords.ofFault f ctx).ip
+        (ThreadFaultWords.ofFault f ctx).sp (ThreadFaultWords.ofFault f ctx).lr
+        (ThreadFaultWords.ofFault f ctx).spsr (ThreadFaultWords.ofFault f ctx).x0
+        (ThreadFaultWords.ofFault f ctx).x1 (ThreadFaultWords.ofFault f ctx).x2
+        (ThreadFaultWords.ofFault f ctx).x3 (ThreadFaultWords.ofFault f ctx).x4
+        (ThreadFaultWords.ofFault f ctx).x5 (ThreadFaultWords.ofFault f ctx).x6
+        (ThreadFaultWords.ofFault f ctx).x7 core =
+      Architecture.stageWokenDelivery
+        (descheduleInactive (wakeThread (storeSendRendezvous st endpointId r next
+          (faultMessage f ctx cap.badge)) r core).1 caller core) (some r) 0 := by
+  rw [storeCallNoReply_eq_hold _ _ _ _ _ _ _ hNo, Architecture.stageWokenDelivery_some]
+  have hNoS := storeCallNoReplyReady_noResizeDue st endpointId caller r (ThreadId.optCode next)
+    core hNo
+  unfold performFaultCallNoReplyDelivered
+  have h := deliverFaultFrame_eq _ r (ThreadFaultWords.ofFault f ctx) f
+    (ThreadFaultWords.fault?_ofFault f ctx) cap.badgeWord cap.badged hNoS hReady
+  rw [ThreadFaultWords.context_ofFault] at h
+  exact h
+
 /-- **The fault's call rendezvous, delivered**: the handler woken without the
 message, the priority walk, then the fault delivered in place
 (`deliverFaultFrame`).  Each step reads the words it needs before it writes
@@ -967,127 +1055,6 @@ theorem performFaultCallDonatingDelivered_eq (st : SystemState) (endpointId : Se
   rw [ThreadFaultWords.context_ofFault] at h
   exact h
 
-/-- **A call to a receiver holding no reply object, read in place**: the send
-rendezvous's pop in its slots (`sendWakesInPlace`) and the caller a third
-unreserved thread whose block stays in its slot.  Under it the specification's
-call refuses (`callOnCore_noReply_refused`): the woken receiver stashed no reply
-object to link the caller to (`linkServerStashedReply`). -/
-@[inline] def callRefusesNoReplyInPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller r : SeLe4n.ThreadId) (rt : TCB) : Bool :=
-  sendWakesInPlace st endpointId r rt.queueNext &&
-  !caller.isReserved && caller != r &&
-  (match rt.queueNext with
-   | none => true
-   | some n => caller != n) &&
-  storeLeavesIndexAndTypes st caller.toObjId .tcb &&
-  st.objects.findsInPlace caller.toObjId &&
-  (match st.getTcb? caller with
-   | some _ => true
-   | none => false)
-
-/-- `callRefusesNoReplyInPlace` as it is compiled: the receiver's successor
-asked of its link code, so no `some` cell is built for it
-(`callRefusesNoReplyInPlace_eq_impl`). -/
-@[inline] def callRefusesNoReplyInPlaceImpl (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller r : SeLe4n.ThreadId) (rt : TCB) : Bool :=
-  sendWakesInPlaceCode st endpointId r rt.queueNextCode &&
-  !caller.isReserved && caller != r &&
-  queueSuccessorDiffers caller rt.queueNextCode &&
-  storeLeavesIndexAndTypes st caller.toObjId .tcb &&
-  st.objects.findsInPlace caller.toObjId &&
-  (match st.getTcb? caller with
-   | some _ => true
-   | none => false)
-
-@[csimp] theorem callRefusesNoReplyInPlace_eq_impl :
-    @callRefusesNoReplyInPlace = @callRefusesNoReplyInPlaceImpl := by
-  funext st endpointId caller r rt
-  unfold callRefusesNoReplyInPlace callRefusesNoReplyInPlaceImpl
-  rw [sendWakesInPlaceCode_eq, queueSuccessorDiffers_eq, TCB.ofOptCode_queueNextCode]
-  rfl
-
-/-- **A call to a receiver holding no reply object refuses**: under
-`callRefusesNoReplyInPlace` the specification's call pops the receiver, wakes
-it and blocks the caller, each in its slot, then finds no reply object stashed
-in the receiver (`linkServerStashedReply`) and refuses, handing back the state
-it was given. -/
-theorem callOnCore_noReply_refused (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (ep : Endpoint) (caller r : SeLe4n.ThreadId) (rt : TCB) (payload : SendPayload)
-    (core : CoreId)
-    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
-    (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = none)
-    (hG : callRefusesNoReplyInPlace st endpointId caller r rt = true) :
-    endpointCallOnCore endpointId caller payload core st = (st, .error .replyCapInvalid) := by
-  simp only [callRefusesNoReplyInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne,
-    ne_eq] at hG
-  obtain ⟨⟨⟨⟨⟨⟨hSG, hCRes⟩, hCR⟩, hCN⟩, hLC⟩, hFC⟩, hCT⟩ := hG
-  have hSG' := hSG
-  simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hSG'
-  obtain ⟨⟨⟨⟨⟨hRRes, -⟩, -⟩, hLH⟩, hFH⟩, -⟩ := hSG'
-  obtain ⟨ct, hCo⟩ : ∃ ct, st.objects[caller.toObjId]? = some (.tcb ct) := by
-    split at hCT
-    · next ct h => exact ⟨ct, (SystemState.getTcb?_eq_some_iff _ _ _).mp h⟩
-    · cases hCT
-  have hNeEC : endpointId ≠ caller.toObjId := fun h => by rw [h, hCo] at hE; cases hE
-  have hNeRC : r.toObjId ≠ caller.toObjId := fun h =>
-    hCR (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
-  have hNeCR : caller.toObjId ≠ r.toObjId := fun h => hNeRC h.symm
-  have hNxC : ∀ n, rt.queueNext = some n → n.toObjId ≠ caller.toObjId := fun n hn h => by
-    rw [hn] at hCN
-    simp only [bne_iff_ne, ne_eq] at hCN
-    exact hCN (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
-  obtain ⟨hPop, hFr⟩ := popHead_inPlace st endpointId true ep r rt hE hH hT hSG
-  have hEp : st.getEndpoint? endpointId = some ep :=
-    (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE
-  unfold endpointCallOnCore
-  simp only [hEp, hH, hPop]
-  generalize hMsg : sendPayloadMessage st caller payload = msg
-  have hFH1 := (hFr.keepsFinds r.toObjId).trans hFH
-  have hO1c := (hFr.other _ hNeEC hNeRC hNxC).trans hCo
-  have hM2 : storeTcbIpcStateAndMessage (storePopHead st endpointId true r rt.queueNext) r .ready
-      (some msg) = .ok ((storePopHead st endpointId true r rt.queueNext).updateTcb r
-        (callReceiverTcb msg)) :=
-    modifyTcb_eq_updateTcb (callReceiverTcb msg) hRRes hFr.head_tcb (hFr.leaves hLH)
-  simp only [hM2]
-  generalize storePopHead st endpointId true r rt.queueNext = S1 at hFr hFH1 hO1c
-  have hT2r := updateTcb_getTcb?_self_of_findsInPlace (callReceiverTcb msg) hFr.head_tcb hFH1
-  have hO2c := (updateTcb_get?_ne_of_findsInPlace (callReceiverTcb msg) hFr.head_tcb hFH1
-    hNeRC).trans hO1c
-  have hK2 : ∀ k, (S1.updateTcb r (callReceiverTcb msg)).objects.findsInPlace k =
-      st.objects.findsInPlace k := fun k =>
-    (updateTcb_findsInPlace _ hFr.head_tcb hFH1 k).trans (hFr.keepsFinds k)
-  have hL2 : storeLeavesIndexAndTypes (S1.updateTcb r (callReceiverTcb msg)) caller.toObjId .tcb
-      = true := updateTcb_storeLeaves _ hFr.head_tcb hFH1 (hFr.leaves hLC)
-  generalize S1.updateTcb r (callReceiverTcb msg) = S2 at hT2r hO2c hK2 hL2
-  have hA3 := enqueueRunnableOnCore_agree_of_findsInPlace S2 (determineTargetCore S2 r) r _ hT2r
-    rfl ((hK2 _).trans hFH)
-  have hK3 : ∀ k, (enqueueRunnableOnCore S2 (determineTargetCore S2 r) r).objects.findsInPlace k
-      = st.objects.findsInPlace k := fun k =>
-    (enqueueRunnableOnCore_keepsFinds S2 _ r ((hK2 _).trans hFH) k).trans (hK2 k)
-  have hL3 := storeLeaves_of_agree hA3 hL2
-  obtain ⟨ct3, hO3c, -⟩ := hA3.get_tcb hO2c
-  obtain ⟨rt3, hO3r, hrt3⟩ := hA3.get_tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT2r)
-  have hW : (wakeThread S2 r core).1 = enqueueRunnableOnCore S2 (determineTargetCore S2 r) r :=
-    rfl
-  simp only [hW]
-  generalize enqueueRunnableOnCore S2 (determineTargetCore S2 r) r = S3 at hK3 hL3 hO3c hO3r
-  have hT3c : S3.getTcb? caller = some ct3 := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO3c
-  have hFC3 := (hK3 _).trans hFC
-  have hM4 : storeTcbIpcStateAndMessage S3 caller (.blockedOnReply endpointId (some r)) none =
-      .ok (S3.updateTcb caller (callCallerTcb endpointId r)) :=
-    modifyTcb_eq_updateTcb (callCallerTcb endpointId r) hCRes hT3c hL3
-  have hT4r : (S3.updateTcb caller (callCallerTcb endpointId r)).getTcb? r = some rt3 :=
-    (SystemState.getTcb?_eq_some_iff _ _ _).mpr
-      ((updateTcb_get?_ne_of_findsInPlace _ hT3c hFC3 hNeCR).trans hO3r)
-  have hP : rt3.pendingReceiveReply = none := by
-    rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingReceiveReply hrt3]
-    exact hRid
-  have hL : SystemState.linkServerStashedReply caller r
-      (S3.updateTcb caller (callCallerTcb endpointId r)) = .error .replyCapInvalid := by
-    unfold SystemState.linkServerStashedReply
-    simp only [hT4r, Option.bind_some, hP]
-  simp only [hM4, hL]
-
 /-- A delivery whose handler resolved and whose flow the policy admits, handed
 the fault as words: the specification's delivery of the fault the words name
 (`faultDeliverOnCore`).  Out of line, the fallback of `faultDeliverHandledWords`. -/
@@ -1121,7 +1088,7 @@ theorem callBlock_inPlace_eq (endpointId : SeLe4n.ObjId) (caller : SeLe4n.Thread
     (hG : enqueuesInPlace st endpointId caller ep.sendQ.tail = true) :
     endpointCallOnCore endpointId caller payload executingCore st =
       (recordSendCap (removeRunnableOnCore (storeCallBlock st endpointId caller ep.sendTailCode)
-        caller executingCore) caller payload.badge payload.grant, .ok none) := by
+        caller executingCore) caller payload.badge payload.grant payload.grantReply, .ok none) := by
   obtain ⟨hEnq, hT, _, hL⟩ :=
     endpointEnqueue_inPlace_eq st endpointId ep false caller t ep.sendQ.tail hE rfl hR hA hG
   have hRes : caller.isReserved = false := by
@@ -1146,7 +1113,7 @@ as the specification's delivery does. -/
     (caller : SeLe4n.ThreadId) (tailCode : Nat) (cap : Capability) (core : CoreId) :
     SystemState :=
   recordSendCapWords (removeRunnableOnCore (storeCallBlock st endpointId caller tailCode)
-    caller core) caller cap.badgeWord cap.badged false
+    caller core) caller cap.badgeWord cap.badged false cap.canLinkReply
 
 /-- **The admitted delivery, handed words**: a fault whose handler is already
 waiting with a reply object, every write of the call rendezvous staying in its
@@ -1165,14 +1132,21 @@ is the specification's (`faultDeliverHandledWords_eq`). -/
     | some r =>
       match st.getTcb? r with
       | some rt =>
+        if callLinksNoReply cap.canLinkReply rt &&
+            sendWakesInPlaceCode st epId r rt.queueNextCode && !tid.isReserved then
+          recordFaultWords
+            (performFaultCallNoReplyDelivered st epId tid r rt.queueNextCode cap k flag w0 w1 lk
+              ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 c) tid
+            (faultWordsOf k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7)
+        else
         match rt.pendingReceiveReply with
         | some rid =>
-          if callWakesInPlace st epId tid r rt rid then
+          if cap.canLinkReply && callWakesInPlace st epId tid r rt rid then
             recordFaultWords
               (performFaultCallDelivered st epId tid r rt.queueNextCode rid cap k flag w0 w1 lk
                 ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 c) tid
               (faultWordsOf k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7)
-          else if callDonatesInPlace st epId tid r rt rid then
+          else if cap.canLinkReply && callDonatesInPlace st epId tid r rt rid then
             recordFaultWords
               (performFaultCallDonatingDelivered st epId tid r rt.queueNextCode rid
                 (callerScId st tid) (determineTargetCore st tid) (determineTargetCore st r) cap
@@ -1180,12 +1154,8 @@ is the specification's (`faultDeliverHandledWords_eq`). -/
               (faultWordsOf k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7)
           else faultDeliverHandledSpec st tid c k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5
               x6 x7
-        | none =>
-          if callRefusesNoReplyInPlace st epId tid r rt then
-            recordFaultWords (faultSuspendOnCore st tid c) tid
-              (faultWordsOf k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7)
-          else faultDeliverHandledSpec st tid c k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5
-              x6 x7
+        | none => faultDeliverHandledSpec st tid c k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3
+              x4 x5 x6 x7
       | none => faultDeliverHandledSpec st tid c k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5
               x6 x7
     | none =>
@@ -1240,17 +1210,50 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
       split
       · next rt hT =>
         split
+        · next hNR =>
+          simp only [Bool.and_eq_true] at hNR
+          obtain ⟨⟨hNL, hW⟩, hRsv⟩ := hNR
+          rw [sendWakesInPlaceCode_eq, TCB.ofOptCode_queueNextCode] at hW
+          have hC : (lookupTcb st tid).isSome = true := by
+            refine lookupTcb_isSome_of (by simpa using hRsv) ?_
+            unfold resolveFaultHandler at hRes
+            split at hRes
+            · cases hRes
+            · next t hT0 => rw [hT0]; rfl
+          have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
+          have hT' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+          have hNo : st.objects.noResizeDue := by
+            have hW' := hW
+            simp only [sendWakesInPlace, Bool.and_eq_true] at hW'
+            exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW'.1.1.1.2
+          subst hw
+          have hD := callDispatch_noReply_inPlace st tgt.endpoint ep tid r rt
+            (.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) (faultMessage f ctx tgt.cap.badge)
+            c rfl
+            (by unfold sendCapRequest; split <;> (try rfl); split <;> rfl)
+            hE hH hT' (callRendezvousLinks_false_of hT hNL) hW hC
+          unfold faultDeliverOnCore
+          simp only [hRes, hEp, Option.bind_some, hH, hD]
+          rw [recordPendingFault_eq_words]
+          have hIC : CapTransferSummary.capInfo { results := #[] } = 0 := rfl
+          have hRdy := storeCallNoReplyReady_ready st tgt.endpoint ep tid r rt c hE hH hT' hW
+          rw [← TCB.optCode_queueNext] at hRdy
+          rw [hIC, ← performFaultCallNoReplyDelivered_eq st tgt.endpoint tid r rt.queueNext tgt.cap
+            f ctx c hNo hRdy, faultWordsOf_fields, TCB.optCode_queueNext]
+        split
         · next rid hRid =>
           split
-          · next hIn =>
+          · next hInGuard =>
+            simp only [Bool.and_eq_true] at hInGuard
+            obtain ⟨hGr, hIn⟩ := hInGuard
             have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
             have hT' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
             subst hw
             obtain ⟨sgi, hD⟩ := callDispatch_inPlace st tgt.endpoint ep tid r rt rid
-              (.fault f ctx tgt.cap.badge) (faultMessage f ctx tgt.cap.badge)
+              (.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) (faultMessage f ctx tgt.cap.badge)
               c rfl
               (by unfold sendCapRequest; split <;> (try rfl); split <;> rfl)
-              hE hH hT' hRid hIn
+              hE hH hT' hRid (by simpa [SendPayload.canLinkReply, SendPayload.grant, SendPayload.grantReply] using hGr) hIn
             unfold faultDeliverOnCore
             simp only [hRes, hEp, Option.bind_some, hH, hD]
             rw [recordPendingFault_eq_words, ← TCB.optCode_queueNext]
@@ -1262,7 +1265,9 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
               f ctx c (callWakesInPlace_noResizeDue hIn) (callWakesInPlace_ne hIn) hRdy,
               faultWordsOf_fields]
           · split
-            · next hDon =>
+            · next hDonGuard =>
+              simp only [Bool.and_eq_true] at hDonGuard
+              obtain ⟨hGr, hDon⟩ := hDonGuard
               have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
               have hT' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
               have hTR : callTakesReplyInPlace st tgt.endpoint tid r rt rid = true := by
@@ -1271,10 +1276,10 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
                 exact h.1
               subst hw
               obtain ⟨sgi, hD⟩ := callDispatch_donating_inPlace st tgt.endpoint ep tid r rt rid
-                (.fault f ctx tgt.cap.badge) (faultMessage f ctx tgt.cap.badge)
+                (.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) (faultMessage f ctx tgt.cap.badge)
                 c rfl
                 (by unfold sendCapRequest; split <;> (try rfl); split <;> rfl)
-                hE hH hT' hRid hDon
+                hE hH hT' hRid (by simpa [SendPayload.canLinkReply, SendPayload.grant, SendPayload.grantReply] using hGr) hDon
               unfold faultDeliverOnCore
               simp only [hRes, hEp, Option.bind_some, hH, hD]
               rw [recordPendingFault_eq_words, ← TCB.optCode_queueNext]
@@ -1287,22 +1292,7 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
                 (callTakesReplyInPlace_ne hTR) hRdy,
                 faultWordsOf_fields]
             · exact hSpec
-        · next hRid =>
-          split
-          · next hNR =>
-            have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
-            have hT' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
-            subst hw
-            have hC := callOnCore_noReply_refused st tgt.endpoint ep tid r rt
-              (.fault f ctx tgt.cap.badge) c hE hH hT' hRid hNR
-            unfold faultDeliverOnCore
-            simp only [hRes]
-            unfold endpointCallCrossCoreDispatch
-            rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _
-              (by unfold sendCapRequest; split <;> (try rfl); split <;> rfl), hC]
-            simp only [Except.map]
-            rw [recordPendingFault_eq_words, faultWordsOf_fields]
-          · exact hSpec
+        · exact hSpec
       · exact hSpec
     · next hH =>
       split
@@ -1315,7 +1305,7 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
           have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
           have hT' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
           subst hw
-          have hBlk := callBlock_inPlace_eq tgt.endpoint tid (.fault f ctx tgt.cap.badge) c st ep t
+          have hBlk := callBlock_inPlace_eq tgt.endpoint tid (.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st ep t
             hE hH hT' hA hIn
           have hNoR : (match st.getEndpoint? tgt.endpoint with
               | some ep => ep.receiveQ.head | none => none) = none := by

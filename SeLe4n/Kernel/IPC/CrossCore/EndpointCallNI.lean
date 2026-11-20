@@ -36,28 +36,6 @@ open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 
 -- ============================================================================
--- §1  `projectObjects` is preserved by a high-object insert
--- ============================================================================
-
-/-- A kernel state whose object store is `st`'s with one extra insert at a
-**non-observable** id has the same observable object projection as `st`. -/
-theorem projectObjects_insert_high (ctx : LabelingContext) (observer : IfObserver)
-    (st s' : SystemState) (tid : SeLe4n.ThreadId) (v : KernelObject)
-    (hObjEq : s'.objects = st.objects.insert tid.toObjId v)
-    (hHighObj : objectObservable ctx observer tid.toObjId = false)
-    (hObjInv : st.objects.invExt) :
-    projectObjects ctx observer s' = projectObjects ctx observer st := by
-  funext oid
-  by_cases hObs : objectObservable ctx observer oid
-  · by_cases hEq : oid = tid.toObjId
-    · subst hEq; rw [hHighObj] at hObs; exact absurd hObs (by simp)
-    · simp only [projectObjects, hObs, if_true, hObjEq, SystemState.getObject?]
-      congr 1
-      exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid v
-        (by simp only [beq_iff_eq]; exact fun h => hEq h.symm) hObjInv
-  · simp [projectObjects, hObs]
-
--- ============================================================================
 -- §2  Cross-core scheduler steps preserve `projectState` for a high thread
 -- ============================================================================
 
@@ -200,6 +178,7 @@ theorem endpointCallOnCore_call_path_NI
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     -- WS-SM SM6.D (#7.3b fold): the server-first reply link folds into the rendezvous.
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
+    (hLinks : callRendezvousLinks st receiver payload = true)
     (hObjInv : st.objects.invExt)
     -- WS-SM SM6.D (#7.3b): structural completeness for the link's `.reply` re-store
     -- projection-invisibility (mirrors single-core `endpointCall_preserves_projection`).
@@ -235,7 +214,7 @@ theorem endpointCallOnCore_call_path_NI
     (wakeThread st'' receiver executingCore).1 st4 caller (.blockedOnReply endpointId (some receiver))
     none hInvW hCallerStore
   rw [endpointCallOnCore_rendezvous_eq endpointId caller payload executingCore st ep receiver
-        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink]
+        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink hLinks]
   show projectState ctx observer
       ((removeRunnableOnCore st5 caller executingCore).linkReplyWaiter caller receiver)
     = projectState ctx observer st

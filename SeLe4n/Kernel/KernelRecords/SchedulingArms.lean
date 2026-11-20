@@ -175,10 +175,10 @@ theorem purgeReplenishment (st : SystemState) (s : SeLe4n.SchedContextId)
         (SchedContextOps.purgeReplenishment_releaseOnlyWrite st s).1
       exact h)
 
-/-- `setConsumed` rewrites a context and a thread's two return registers in
+/-- `setConsumed` rewrites a context and a thread's three return registers in
 place. -/
-theorem setConsumed (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) : RecordsFrame st (_root_.SeLe4n.Kernel.setConsumed st s t) := by
+theorem setConsumed (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId) {callOnly : Bool}
+    (hInv : st.objects.invExt) : RecordsFrame st (_root_.SeLe4n.Kernel.setConsumed st s t callOnly) := by
   unfold _root_.SeLe4n.Kernel.setConsumed
   split
   · exact (updateSchedContext st s _ hInv).andThen fun h => updateTcb _ t h fun _ => rfl
@@ -422,16 +422,13 @@ theorem schedContextUnbind {vScId : SeLe4n.ValidObjId} {st st' : SystemState}
         exact rewriteObject_schedContext hSc _ _
   · cases hStep
 
-/-- The per-core context unbind: the unbind, then the preemption seam. -/
+/-- The per-core context unbind: the single-core unbind's state
+(`schedContextUnbindOnCore_ok`). -/
 theorem schedContextUnbindOnCore {vScId : SeLe4n.ValidObjId} {ec : CoreId}
     {st st' : SystemState} {sgi? : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
     (h : SchedContextOps.schedContextUnbindOnCore vScId ec st = .ok (st', sgi?)) :
-    RecordsFrame st st' := by
-  unfold SchedContextOps.schedContextUnbindOnCore at h
-  split at h
-  · cases h
-  · rename_i stU hU
-    exact (schedContextUnbind hInv hU).andThen fun h' => priorityRescheduleOnCore h' h
+    RecordsFrame st st' :=
+  schedContextUnbind hInv (SchedContextOps.schedContextUnbindOnCore_ok h).2.1
 
 /-! ### Affinity -/
 

@@ -58,6 +58,7 @@ pub fn service_register(
         msg_info: MessageInfo::new_const(5, 1, 0),
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::ServiceRegister,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -83,6 +84,7 @@ pub fn service_revoke(
         msg_info: MessageInfo::new_const(0, 1, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::ServiceRevoke,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -119,6 +121,7 @@ pub fn service_query(
         msg_info: MessageInfo::new_const(0, 1, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::ServiceQuery,
+        reply_cap: CPtr::NULL,
     })?;
     Ok(ServiceId::from(resp.value()))
 }

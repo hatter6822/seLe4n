@@ -92,7 +92,7 @@ theorem endpointSendDualOnCore {endpointId : SeLe4n.ObjId} {sender : SeLe4n.Thre
           have S2 := storeTcbIpcStateAndMessage F1.invExt hBlk
             (fun x hx => .inl (F1.notParked hSnd x hx))
           have F3 := RecordsFrame.removeRunnableOnCore st2 sender c S2.invExt
-          have F4 := RecordsFrame.recordSendCap _ sender payload.badge payload.grant F3.invExt
+          have F4 := RecordsFrame.recordSendCap _ sender payload.badge payload.grant payload.grantReply F3.invExt
           exact (of_frame F1).trans (S2.trans ((of_frame F3).trans (of_frame F4)))
   · split <;> exact refl hInv
 

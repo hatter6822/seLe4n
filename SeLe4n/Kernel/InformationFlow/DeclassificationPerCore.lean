@@ -3398,7 +3398,7 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
     (ctx : LabelingContext) (observer : IfObserver)
     (monitorClearance : Option SecurityDomain) (reader : SecurityDomain)
     (executingCore : CoreId) (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (tid : SeLe4n.ThreadId) (ke : KernelError) (st : SystemState)
     (L : RefusalLedger) (r : DeclassificationRefusal)
     (trail : AuditRing) (e : DeclassificationEvent)
@@ -3410,7 +3410,7 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
     (hNI : SeLe4n.Kernel.isIdleThreadId tid = false)
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
-          (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
         = Except.error ke)
     -- PR #887 review round 3: the refusal is not a failed capability lookup
     -- the seam delivers as a fault.  Every declassifying syscall discharges
@@ -3422,10 +3422,13 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
     -- carries what it carries under the fault-flow policy (`FaultFlow`), not
     -- the ledger's.
     (hNoCapFault : SeLe4n.Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
-        (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
         (cancelReceiveBusyReply ctx executingCore
-          (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
-        tid ke = none) :
+          (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
+        tid ke = none)
+    -- only `Call` is answered with an error frame (seL4's `if (isCall)
+    -- replyFromKernel_error`); every other refused syscall resumes untouched
+    (hCall : syscallId = Syscall.call.number.toUInt32) :
     -- (1) the ledger has no capacity refusal, where the trail does
     ((recordRefusal L r).recent.get L.nextSlot = some r ∧
       recordDeclassificationChecked trail e = none) ∧
@@ -3433,10 +3436,10 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
     -- computed from `ke` and the caller's own IPC buffer — it names no
     -- component of the ledger
     ((SeLe4n.Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId
-        x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st).map (·.1)
+        x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st).map (·.1)
       = Except.ok (.returns (Architecture.errorFrameFor
           (cancelReceiveBusyReply ctx executingCore
-            (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
+            (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
           tid ke))) ∧
     -- (3) the ledger write is invisible to the projection
     (projectState ctx observer
@@ -3451,8 +3454,8 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
             { st with declassificationRefusals := L₂ } op) := by
   refine ⟨recordRefusal_never_refuses L r trail e hFullTrail, ?_, ?_, ?_, ?_⟩
   · exact SeLe4n.Platform.FFI.refusalLedger_write_is_caller_invisible ctx executingCore
-      syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke hCur hNI
-      hSyscall hNoCapFault
+      syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st tid ke hCur hNI
+      hSyscall hNoCapFault hCall
   · obtain ⟨L', hEq⟩ :=
       SeLe4n.Platform.FFI.recordSyscallRefusal_frame ctx executingCore syscallId tid ke x0 st
     rw [hEq]

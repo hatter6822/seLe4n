@@ -270,6 +270,8 @@ def chainNeutralConstructors : List (Name × String) :=
     -- surface this census could not see before `v0.35.12`.
   , (`SeLe4n.Kernel.FrozenOps.frozenLinkCallerReply,
       "writes `Reply.caller` only, gated on `Reply.isFree` — no link in either direction; the frozen twin of `Model.linkReply`, and reading the same guard since `v0.35.12` (it read `caller` alone, so a frame still on a live stack was linkable here while the live kernel refuses it)")
+  , (`SeLe4n.Kernel.FrozenOps.frozenLinkServerStashedReply,
+      "the frozen twin of `linkServerStashedReply`: `frozenLinkCallerReply` plus the server TCB's `pendingReceiveReplyCode`; no chain field")
   , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextConfigure,
       "rebuilds a SchedContext for its CBS parameters; `scReply` is not in the assignment list, so the stored record carries the value it read")
   , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextBind,
@@ -303,7 +305,7 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.cancelYieldFrom,
       "`{ sc with yieldFromCode := 0 }` on the context, then its yielder's `yieldToCode`; `scReply` is untouched")
   , (`SeLe4n.Kernel.setConsumed,
-      "`{ sc with consumed := _ }` (`SchedContext.updateConsumed`), then the thread's two return registers; `scReply` is untouched")
+      "`{ sc with consumed := _ }` (`SchedContext.updateConsumed`), then the thread's three return registers; `scReply` is untouched")
     -- WS-ZA ZA6.29: the yieldTo invocation's link (seL4-MCS's
     -- `cur->tcbYieldTo = sc; sc->scYieldFrom = cur`).
   , (`SeLe4n.Kernel.setYieldLink,
@@ -435,6 +437,10 @@ def chainNeutralConstructors : List (Name × String) :=
       "composes `consumeReplyLink`, which is registered; writes no chain field in its own body (its direct store is `updateTcb`, which the frontier reaches since v0.35.66 — the entry left this list at v0.35.64, when the frontier did not, and that gap was the fail-open direction)")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendThreadOnCore,
       "composes `consumeReplyLink`, which is registered; writes no chain field in its own body")
+  , (`SeLe4n.Kernel.endpointCall,
+      "the single-core call: its one direct store is the `updateTcb` that writes a caller linking no reply `Inactive` (`threadState` alone, seL4's `sendIPC` without `Grant`/`GrantReply`); the reply it links on the other path is written by `linkServerStashedReply`, a registered write site that answers for its own update")
+  , (`SeLe4n.Kernel.endpointCallOnCore,
+      "the per-core call: its one direct store is the `updateTcb` that writes a caller linking no reply `Inactive` (`threadState` alone, seL4's `sendIPC` without `Grant`/`GrantReply`); the reply it links on the other path is written by `linkServerStashedReply`, a registered write site that answers for its own update")
   , (`SeLe4n.Kernel.Liveness.stepPost,
       "the scheduler trace model's step: a SchedContext budget update and a replenish queue; no chain field")
     -- The dispatch payoff's pack-inhabitation witnesses.  They build a fresh
@@ -447,7 +453,15 @@ def chainNeutralConstructors : List (Name × String) :=
   , (privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt3,
       "stores the bound TCB and SchedContext; `scReply` is in neither assignment list")
   , (privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt4,
-      "stores `{ replyId := witnessReplyId }` — a fresh Reply, every link `none`") ]
+      "stores `{ replyId := witnessReplyId }` — a fresh Reply, every link `none`")
+    -- The notification link of a scheduling context (seL4-MCS's
+    -- `sc->scNotification` / `ntfn->ntfnSchedContext`): `{ sc with
+    -- notificationCode := _ }` and the notification's `schedContextCode`;
+    -- `scReply` is in neither assignment list.
+  , (`SeLe4n.Kernel.bindNotificationSchedLink,
+      "`{ sc with notificationCode := _ }` on the context, then the notification's `schedContextCode`; `scReply` is untouched")
+  , (`SeLe4n.Kernel.unbindSchedContextNotification,
+      "`{ c with notificationCode := 0 }` on the context, then the notification's `schedContextCode`; `scReply` is untouched") ]
 
 /-- Where the derived frontier and the primitive list disagree.
 

@@ -209,6 +209,21 @@ theorem storeTcbIpcStateAndMessage_preserves_projectionOnCore (ctx : LabelingCon
       hTidObjHigh hObjInv hStep)
     (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hMach])
 
+/-- `storeTcbIpcStateAndMessage_preserves_projectionOnCore` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_preserves_projectionOnCore (ctx : LabelingContext)
+    (observer : IfObserver) (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (c : CoreId)
+    (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
+  have hSched := storeTcbSignalWoken_scheduler_eq st st' tid badge hStep
+  have hMach := storeTcbSignalWoken_machine_eq st st' tid badge hStep
+  exact projectStateOnCore_congr ctx observer
+    (storeTcbSignalWoken_preserves_projection ctx observer st st' tid badge
+      hTidObjHigh hObjInv hStep)
+    (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hMach])
+
 /-- Enqueuing a high thread preserves the per-core projection (the run-queue
 insert is filter-invisible; current / domain / registers untouched). -/
 theorem enqueueRunnableOnCore_preserves_projectionOnCore (ctx : LabelingContext)
@@ -373,6 +388,7 @@ theorem endpointCallOnCore_call_path_NI_smp
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     -- WS-SM SM6.D (#7.3b fold): the server-first reply link folds into the rendezvous.
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
+    (hLinks : callRendezvousLinks st receiver payload = true)
     (hObjInv : st.objects.invExt)
     -- WS-SM SM6.D (#7.3b): structural completeness for the link's `.reply` re-store
     -- projection-invisibility (mirrors the boot-core `endpointCallOnCore_call_path_NI`).
@@ -412,7 +428,7 @@ theorem endpointCallOnCore_call_path_NI_smp
       (endpointCallOnCore endpointId caller payload executingCore st).1 c
     = projectStateOnCore ctx observer st c
   rw [endpointCallOnCore_rendezvous_eq endpointId caller payload executingCore st ep receiver
-        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink]
+        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink hLinks]
   show projectStateOnCore ctx observer
       ((removeRunnableOnCore st5 caller executingCore).linkReplyWaiter caller receiver) c
     = projectStateOnCore ctx observer st c

@@ -26,13 +26,14 @@ inductive AccessRight where
   | read
   | write
   | grant
-  -- U5-L/U-L05: `grantReply` (bit 3) is defined for spec fidelity with seL4's
-  -- `seL4_CapRights_t` but has no operational effect in the current IPC model.
-  -- The `.grant` right (bit 2) governs ALL grant operations including reply cap
-  -- grant. In real seL4, `grantReply` permits granting reply capabilities
-  -- without granting full `grant` authority. seLe4n does not yet implement this
-  -- distinction because reply cap grant is implicitly allowed by the reply
-  -- mechanism itself (single-use authority).
+  -- `grantReply` (bit 3), seL4's `seL4_CapRights_t` `GrantReply`: a call (or a
+  -- fault sent through a handler capability) is linked to the receiver's reply
+  -- object only when the capability carries `grant` or `grantReply`
+  -- (`Capability.canLinkReply`, `SendPayload.canLinkReply`, seL4's
+  -- `canGrant || canGrantReply` in `sendIPC`/`receiveIPC`).  A call through a
+  -- capability with neither still delivers its message, and its caller goes
+  -- `Inactive` with no reply (`callRendezvousLinks`).  `grantReply` grants no
+  -- capability transfer: that is `grant`'s alone.
   | grantReply
   | retype        -- WS-H15c/A-42: lifecycle retype operations
   deriving Repr, DecidableEq
@@ -2163,6 +2164,12 @@ structure TCB where
       thread's own record, as the binding codes are, so a write of the link
       allocates nothing.  A carved thread starts at `0`. -/
   yieldToCode : Nat := 0
+  /-- May a blocked caller be linked to the receiver's reply object: its
+      endpoint capability had the `GrantReply` right (seL4's
+      `blockingIPCCanGrantReply`).  A call links its reply only under `Grant`
+      or `GrantReply`; a fault sender records its handler capability's
+      `Grant || GrantReply` here. -/
+  ipcCanGrantReply : Bool := false
   /-- WS-ZA ZA6.33: `some tid`, the origin a first donation push records
       (`SchedContext.donationOrigin`), built once with the thread so the push
       shares it (`SeLe4n.reuseSome`) rather than building it on every donating
@@ -2411,19 +2418,24 @@ theorem TCB.ipcBadgeView_eq_opt (t : TCB) :
 
 /-- WS-ZA ZA4.7: record what a sender's capability contributed to the message
 it blocks with: its badge and its grant right. -/
-@[inline] def TCB.setSendCap (t : TCB) (badge : Option SeLe4n.Badge) (grant : Bool) : TCB :=
+@[inline] def TCB.setSendCap (t : TCB) (badge : Option SeLe4n.Badge) (grant grantReply : Bool) : TCB :=
   { t with ipcBadge := (match badge with | some b => b.word | none => 0),
-           ipcBadged := badge.isSome, ipcCanGrant := grant, ipcFaultSend := false }
+           ipcBadged := badge.isSome, ipcCanGrant := grant, ipcCanGrantReply := grantReply,
+           ipcFaultSend := false }
 
 @[simp] theorem TCB.setSendCap_ipcBadgeView (t : TCB) (badge : Option SeLe4n.Badge)
-    (grant : Bool) : (t.setSendCap badge grant).ipcBadgeView = badge := by
+    (grant grantReply : Bool) : (t.setSendCap badge grant grantReply).ipcBadgeView = badge := by
   cases badge <;> rfl
 
 @[simp] theorem TCB.setSendCap_ipcCanGrant (t : TCB) (badge : Option SeLe4n.Badge)
-    (grant : Bool) : (t.setSendCap badge grant).ipcCanGrant = grant := rfl
+    (grant grantReply : Bool) : (t.setSendCap badge grant grantReply).ipcCanGrant = grant := rfl
+
+@[simp] theorem TCB.setSendCap_ipcCanGrantReply (t : TCB) (badge : Option SeLe4n.Badge)
+    (grant grantReply : Bool) :
+    (t.setSendCap badge grant grantReply).ipcCanGrantReply = grantReply := rfl
 
 @[simp] theorem TCB.setSendCap_ipcFaultSend (t : TCB) (badge : Option SeLe4n.Badge)
-    (grant : Bool) : (t.setSendCap badge grant).ipcFaultSend = false := rfl
+    (grant grantReply : Bool) : (t.setSendCap badge grant grantReply).ipcFaultSend = false := rfl
 
 /-- WS-ZA ZA4.5: where a thread runs — its home core and its place in a run
 queue.  The affinity setter and the scheduler's run-queue writes are the only
@@ -2639,26 +2651,26 @@ every other field is the record's. -/
 /-- WS-ZA ZA5.2: the binding of a constructed TCB is the one its two code fields
 stand for, so a record update writing a binding's codes reads back that binding
 (`SchedContextBinding.ofCodes_codes`). -/
-@[simp] theorem TCB.schedContextBinding_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).schedContextBinding =
+@[simp] theorem TCB.schedContextBinding_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76).schedContextBinding =
       SeLe4n.Kernel.SchedContextBinding.ofCodes f17 f18 := rfl
 
 /-- The roots of a constructed TCB are the objects its first two space slots name, so a
 record update leaving the slots alone reads the old roots. -/
-@[simp] theorem TCB.cspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).cspaceRoot = TCB.spaceCellObject f4[0] := rfl
+@[simp] theorem TCB.cspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76).cspaceRoot = TCB.spaceCellObject f4[0] := rfl
 
-@[simp] theorem TCB.vspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).vspaceRoot = TCB.spaceCellObject f4[1] := rfl
+@[simp] theorem TCB.vspaceRoot_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76).vspaceRoot = TCB.spaceCellObject f4[1] := rfl
 
-@[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).ipcState = ThreadIpcState.ofCodes f7 f56 := rfl
+@[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76).ipcState = ThreadIpcState.ofCodes f7 f56 := rfl
 
-@[simp] theorem TCB.replyObject_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).replyObject = SeLe4n.ReplyId.ofOptCode f24 := rfl
+@[simp] theorem TCB.replyObject_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76).replyObject = SeLe4n.ReplyId.ofOptCode f24 := rfl
 
-@[simp] theorem TCB.pendingReceiveReply_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).pendingReceiveReply = SeLe4n.ReplyId.ofOptCode f25 := rfl
+@[simp] theorem TCB.pendingReceiveReply_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76).pendingReceiveReply = SeLe4n.ReplyId.ofOptCode f25 := rfl
 
 theorem TCB.ofCodes_ipcCodes (t : TCB) :
     ThreadIpcState.ofCodes t.ipcObjectCode t.ipcStateCode = t.ipcState := rfl
@@ -2703,14 +2715,14 @@ theorem TCB.ipcState_ext {a b : TCB} (h : a.ipcState = b.ipcState) :
 view when a code is copied from another record: together they let `simp` read
 a written link as the value written and an untouched link as the old view. -/
 
-@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
+@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
 
-@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
+@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
 
-@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
+@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
 
 /-- The notification-queue predecessor, read from its scalar code. -/
 @[inline] def TCB.ntfnPrev (t : TCB) : Option SeLe4n.ThreadId :=
@@ -2720,11 +2732,11 @@ a written link as the value written and an untouched link as the old view. -/
 @[inline] def TCB.ntfnNext (t : TCB) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode t.ntfnNextCode
 
-@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).ntfnPrev = SeLe4n.ThreadId.ofOptCode f44 := rfl
+@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76).ntfnPrev = SeLe4n.ThreadId.ofOptCode f44 := rfl
 
-@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75).ntfnNext = SeLe4n.ThreadId.ofOptCode f45 := rfl
+@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69 f70 f71 f72 f73 f74 f75 f76).ntfnNext = SeLe4n.ThreadId.ofOptCode f45 := rfl
 
 @[simp] theorem TCB.ofOptCode_ntfnPrevCode (t : TCB) :
     SeLe4n.ThreadId.ofOptCode t.ntfnPrevCode = t.ntfnPrev := rfl
@@ -3074,7 +3086,8 @@ instance : BEq TCB where
     a.replyWaitersCount == b.replyWaitersCount &&
     -- WS-ZA ZA4.7: and what a blocked sender's capability contributed.
     a.ipcBadge == b.ipcBadge && a.ipcBadged == b.ipcBadged &&
-    a.ipcCanGrant == b.ipcCanGrant && a.ipcFaultSend == b.ipcFaultSend &&
+    a.ipcCanGrant == b.ipcCanGrant && a.ipcCanGrantReply == b.ipcCanGrantReply &&
+    a.ipcFaultSend == b.ipcFaultSend &&
     -- WS-ZA ZA6.6: and the yield link, compared as its code.
     a.yieldToCode == b.yieldToCode
 
@@ -3392,7 +3405,9 @@ theorem TCB.ext {a b : TCB}
     (hWCount : a.replyWaitersCount = b.replyWaitersCount)
     -- WS-ZA ZA4.7: and what a blocked sender's capability contributed.
     (hIBadge : a.ipcBadge = b.ipcBadge) (hIBadged : a.ipcBadged = b.ipcBadged)
-    (hIGrant : a.ipcCanGrant = b.ipcCanGrant) (hIFault : a.ipcFaultSend = b.ipcFaultSend)
+    (hIGrant : a.ipcCanGrant = b.ipcCanGrant)
+    (hIGrantReply : a.ipcCanGrantReply = b.ipcCanGrantReply)
+    (hIFault : a.ipcFaultSend = b.ipcFaultSend)
     -- and the context it is the recorded donation origin of.
     (hOrigin : a.originScCode = b.originScCode)
     -- WS-ZA ZA5.11: and its taint words.
@@ -3445,7 +3460,7 @@ theorem TCB.ext {a b : TCB}
          hF10, hF11, hF12, hF13, hF14, hF15, hF16, hFp, hNPrevC, hNNextC,
          hRCore, hRPrio, hRPrev, hRNext, hRBPrev, hRBNext, hWPrev, hWNext, hWHead, hWCount,
          hIpcS, hIBadge, hIBadged, hIGrant, hIFault, hOrigin, Subsingleton.elim _ _,
-         hT0, hT1, hT2, hT3, hT4, hT5, hT6, hT7, hTC, hTS, hYield, hIdC⟩
+         hT0, hT1, hT2, hT3, hT4, hT5, hT6, hT7, hTC, hTS, hYield, hIGrantReply, hIdC⟩
 
 /-- A thread's spare space cells are logically one value (`SpareCells`). -/
 @[simp] theorem TCB.with_spaceSpare (t : TCB) (v : SpareCells) : { t with spaceSpare := v } = t := by
@@ -4207,7 +4222,26 @@ structure Notification where
   taintCount : Nat := 0
   /-- Tainted by everything. -/
   taintSaturated : Bool := false
+  /-- **The scheduling context bound to this notification** (seL4-MCS's
+      `ntfnSchedContext`), as its code (`SeLe4n.SchedContextId.optCode`; `0`
+      is none), read through `Notification.schedContext`.  The context names
+      the notification back (`SchedContext.notificationCode`, seL4-MCS's
+      `scNotification`).  `SchedContext_Bind` on a notification capability sets
+      both ends and `SchedContext_Unbind` (or finalising either object) clears
+      both.  A thread with no scheduling context that takes the notification's
+      word is lent the context (`maybeDonateSchedContext`), and a thread that
+      blocks on it while running on that context hands it back
+      (`maybeReturnSchedContext`), so a passive server bound to the
+      notification runs on the context exactly while it handles a signal. -/
+  schedContextCode : Nat := 0
   deriving Repr, DecidableEq
+
+/-- The scheduling context bound to the notification, read from its code.
+Reducible, so a record update that leaves the code alone reads the old value by
+`rfl`.  Written as `schedContextCode := SeLe4n.SchedContextId.optCode s`. -/
+@[reducible, inline] def Notification.schedContext (n : Notification) :
+    Option SeLe4n.SchedContextId :=
+  SeLe4n.SchedContextId.ofOptCode n.schedContextCode
 
 /-- WS-ZA ZA5.11: the notification's taint words. -/
 @[inline] def Notification.taintWords (n : Notification) : SeLe4n.Kernel.TaintWords :=
@@ -4241,14 +4275,14 @@ update that leaves the code alone reads the old value by `rfl`.  Written as
 @[inline] def Notification.pendingBadge (n : Notification) : Option SeLe4n.Badge :=
   if n.hasPendingBadge then some n.pendingWord else none
 
-@[simp] theorem Notification.pendingBadge_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = if h then some p else none := rfl
+@[simp] theorem Notification.pendingBadge_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc) :
+    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc).pendingBadge = if h then some p else none := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_true (s hd tl p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl true p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = some p := rfl
+@[simp] theorem Notification.pendingBadge_mk_true (s hd tl p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc) :
+    (Notification.mk s hd tl true p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc).pendingBadge = some p := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_false (s hd tl p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl false p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).pendingBadge = none := rfl
+@[simp] theorem Notification.pendingBadge_mk_false (s hd tl p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc) :
+    (Notification.mk s hd tl false p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc).pendingBadge = none := rfl
 
 /-- The first waiter, read from its scalar code. -/
 @[inline] def Notification.waitHead (n : Notification) : Option SeLe4n.ThreadId :=
@@ -4258,11 +4292,11 @@ update that leaves the code alone reads the old value by `rfl`.  Written as
 @[inline] def Notification.waitTail (n : Notification) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode n.waitTailCode
 
-@[simp] theorem Notification.waitHead_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).waitHead = SeLe4n.ThreadId.ofOptCode hd := rfl
+@[simp] theorem Notification.waitHead_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc) :
+    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc).waitHead = SeLe4n.ThreadId.ofOptCode hd := rfl
 
-@[simp] theorem Notification.waitTail_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts) :
-    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts).waitTail = SeLe4n.ThreadId.ofOptCode tl := rfl
+@[simp] theorem Notification.waitTail_mk (s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc) :
+    (Notification.mk s hd tl h p c b w0 w1 w2 w3 w4 w5 w6 w7 tc ts sc).waitTail = SeLe4n.ThreadId.ofOptCode tl := rfl
 
 @[simp] theorem Notification.ofOptCode_waitHeadCode (n : Notification) :
     SeLe4n.ThreadId.ofOptCode n.waitHeadCode = n.waitHead := rfl
@@ -4299,7 +4333,25 @@ notification with waiters holds none — and the binding is carried. -/
     waitHeadCode := SeLe4n.ThreadId.optCode next
     waitTailCode := if next.isSome then n.waitTailCode else 0
     hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-    boundTCBCode := n.boundTCBCode, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated }
+    boundTCBCode := n.boundTCBCode, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated, schedContextCode := n.schedContextCode }
+
+/-- `Notification.withHeadPopped` with the successor given as its code
+(`ThreadId.optCode`): the compiled wake reads the successor off the woken
+head's `ntfnNextCode`, and taking the code keeps the `some` cell an
+`Option ThreadId` argument would need from ever being built. -/
+@[inline] def Notification.withHeadPoppedCode (n : Notification)
+    (nextCode : Nat) : Notification :=
+  { state := if nextCode != 0 then .waiting else .idle
+    waitHeadCode := nextCode
+    waitTailCode := if nextCode != 0 then n.waitTailCode else 0
+    hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
+    boundTCBCode := n.boundTCBCode, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated, schedContextCode := n.schedContextCode }
+
+/-- The code-taking pop is the pop. -/
+theorem Notification.withHeadPopped_eq_code (n : Notification)
+    (next : Option SeLe4n.ThreadId) :
+    n.withHeadPopped next = n.withHeadPoppedCode (SeLe4n.ThreadId.optCode next) := by
+  cases next <;> rfl
 
 /-- WS-ZA ZA4.4: the notification once `waiter` joins the back of its queue: the
 waiter is the new tail, and the head too when the queue was empty. -/
@@ -4310,7 +4362,7 @@ waiter is the new tail, and the head too when the queue was empty. -/
       else n.waitHeadCode
     waitTailCode := SeLe4n.ThreadId.optCode (some waiter)
     hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-    boundTCBCode := n.boundTCBCode, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated }
+    boundTCBCode := n.boundTCBCode, taintTag0 := n.taintTag0, taintTag1 := n.taintTag1, taintTag2 := n.taintTag2, taintTag3 := n.taintTag3, taintTag4 := n.taintTag4, taintTag5 := n.taintTag5, taintTag6 := n.taintTag6, taintTag7 := n.taintTag7, taintCount := n.taintCount, taintSaturated := n.taintSaturated, schedContextCode := n.schedContextCode }
 
 @[simp] theorem Notification.withHeadPopped_waitHead (n : Notification)
     (next : Option SeLe4n.ThreadId) : (n.withHeadPopped next).waitHead = next := by
@@ -4947,10 +4999,6 @@ inductive SyscallId where
   | untypedRetype          -- WS-BP BP7.1 (`v0.36.5`): carve a frame — or since slice 4
                            -- (`v0.36.8`) a child untyped — out of an untyped the caller
                            -- holds (seL4_Untyped_Retype), through `untypedRetypeObject`
-  | untypedReset           -- WS-BP BP7.1 (`v0.36.6`): write 0 to the invoked untyped
-                           -- capability's free index once nothing carved from it
-                           -- survives (seL4's resetUntypedCap), through
-                           -- `untypedResetFromCap`
   | tcbSetSpace            -- WS-BP BP7.1 (`v0.36.11`): set a suspended thread's CSpace and
                            -- VSpace roots (seL4_TCB_SetSpace), through `copyThreadSpaces`
   | pageTableMap           -- WS-BP BP7.1 (`v0.36.12`): install an intermediate page table
@@ -4982,8 +5030,12 @@ inductive SyscallId where
 
 namespace SyscallId
 
-/-- Encode a syscall identifier to its numeric value for the syscall number
-    register. The encoding matches the canonical ordering and is injective. -/
+/-- **The operation's internal code.**  WS-SX SX7.1: no register holds it.  The
+    syscall number register holds one of seL4-MCS's eleven syscalls
+    (`Syscall`), and the kernel selects the operation from that syscall, the
+    invoked capability's type and the message label (`Syscall.selectOperation`),
+    as seL4's `handleInvocation`, `decodeInvocation` and `handleRecv` do.  The
+    code is what the entry's router branches on.  Injective. -/
 @[inline] def toNat : SyscallId → Nat
   | .send            => 0
   | .receive         => 1
@@ -5020,7 +5072,6 @@ namespace SyscallId
   | .declassifySignal      => 33
   | .cspaceRevoke          => 35
   | .untypedRetype         => 36
-  | .untypedReset          => 37
   | .tcbSetSpace           => 38
   | .pageTableMap          => 39
   | .pageTableUnmap        => 40
@@ -5033,17 +5084,18 @@ namespace SyscallId
   | .irqHandlerClear       => 47
 
 /-- Total number of modeled syscalls (variants). -/
-def count : Nat := 46
+def count : Nat := 45
 
 /-- One past the largest syscall number: every number below it is a variant's
     or a retired one. -/
 def encodingBound : Nat := 48
 
-/-- Retired syscall numbers, reserved and never reassigned: `8`, the in-place
-    lifecycle retype (WS-ZA ZA5.4 part 14), and `34`, the fault-handler
-    configuration that `tcbSetSpace` now carries as its extra capability 0
-    (WS-SX SX6.5). -/
-def retiredNumbers : List Nat := [8, 34]
+/-- Retired operation codes, never reassigned: `8`, the in-place lifecycle
+    retype (WS-ZA ZA5.4 part 14); `34`, the fault-handler configuration that
+    `tcbSetSpace` now carries as its extra capability 0 (WS-SX SX6.5); and
+    `37`, the untyped reset, which seL4 performs inside `Untyped_Retype`
+    (`resetUntypedCap`), as the carve does (`retypeFreeIndex`) (WS-SX SX7.1). -/
+def retiredNumbers : List Nat := [8, 34, 37]
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -5083,7 +5135,6 @@ def retiredNumbers : List Nat := [8, 34]
   | 33 => some .declassifySignal
   | 35 => some .cspaceRevoke
   | 36 => some .untypedRetype
-  | 37 => some .untypedReset
   | 38 => some .tcbSetSpace
   | 39 => some .pageTableMap
   | 40 => some .pageTableUnmap
@@ -5133,7 +5184,6 @@ instance : ToString SyscallId where
     | .declassifySignal      => "declassifySignal"
     | .cspaceRevoke          => "cspaceRevoke"
     | .untypedRetype         => "untypedRetype"
-    | .untypedReset          => "untypedReset"
     | .tcbSetSpace           => "tcbSetSpace"
     | .pageTableMap          => "pageTableMap"
     | .pageTableUnmap        => "pageTableUnmap"
@@ -5161,7 +5211,7 @@ def all : List SyscallId :=
   , .tcbBindNotification, .tcbUnbindNotification
   , .mintReplyCap, .vspaceUnifyInstruction, .declassify
   , .auditRead, .auditDrain, .declassifySignal
-  , .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace
+  , .cspaceRevoke, .untypedRetype, .tcbSetSpace
   , .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed
   , .schedContextYieldTo, .irqHandlerAck, .irqControlGet
   , .irqHandlerSetNotification, .irqHandlerClear ]
@@ -5225,6 +5275,339 @@ theorem ofNat?_isSome_iff (n : Nat) :
 
 /-- The retired in-place retype's number names no syscall. -/
 theorem ofNat?_retired : ofNat? 8 = none := rfl
+
+end SyscallId
+
+/-- **seL4-MCS's eleven syscalls** (`libsel4/include/api/syscall.xml`, the
+`api-mcs` set, in its order).  WS-SX SX7.2: the syscall number register (`x7`)
+holds one of these as seL4 numbers them, `-1` (`Call`) to `-11` (`Yield`) as a
+two's-complement word (`Syscall.word`).  The operation a syscall performs is
+selected from it, the invoked capability's type and the message label
+(`Syscall.selectOperation`). -/
+inductive Syscall where
+  | call
+  | replyRecv
+  | nbSendRecv
+  | nbSendWait
+  | send
+  | nbSend
+  | recv
+  | nbRecv
+  | wait
+  | nbWait
+  | yield
+  deriving Repr, DecidableEq, Inhabited
+
+namespace Syscall
+
+/-- The syscall's number negated: `Call` is 1, `Yield` 11, so the register holds
+`2 ^ 64 - number` (`word`). -/
+@[inline] def number : Syscall → Nat
+  | .call => 1
+  | .replyRecv => 2
+  | .nbSendRecv => 3
+  | .nbSendWait => 4
+  | .send => 5
+  | .nbSend => 6
+  | .recv => 7
+  | .nbRecv => 8
+  | .wait => 9
+  | .nbWait => 10
+  | .yield => 11
+
+/-- The syscall a negated number names. -/
+@[inline] def ofNumber? : Nat → Option Syscall
+  | 1 => some .call
+  | 2 => some .replyRecv
+  | 3 => some .nbSendRecv
+  | 4 => some .nbSendWait
+  | 5 => some .send
+  | 6 => some .nbSend
+  | 7 => some .recv
+  | 8 => some .nbRecv
+  | 9 => some .wait
+  | 10 => some .nbWait
+  | 11 => some .yield
+  | _ => none
+
+/-- The register word seL4 numbers the syscall with: `-number`. -/
+@[inline] def word (s : Syscall) : UInt64 := 0 - s.number.toUInt64
+
+/-- The register word of the syscall numbered `n`, the number the seam takes
+(`word` at a syscall's own number, `word_eq_wordOfNumber`). -/
+@[inline] def wordOfNumber (n : UInt32) : UInt64 := 0 - n.toUInt64
+
+/-- The number a register word carries, as the seam takes it: the word
+negated, narrowed (exact for every word `ofWord?` names a syscall by). -/
+@[inline] def numberOfWord (w : UInt64) : UInt32 := (0 - w).toUInt32
+
+/-- The syscall a register word names: the word negated, read as a number
+only below `2 ^ 32`, so a full-width word builds no heap number. -/
+@[inline] def ofWord? (w : UInt64) : Option Syscall :=
+  if (0 - w) < 0x100000000 then ofNumber? (0 - w).toNat else none
+
+theorem ofNumber?_number (s : Syscall) : ofNumber? s.number = some s := by
+  cases s <;> rfl
+
+theorem word_eq_wordOfNumber (s : Syscall) : s.word = wordOfNumber s.number.toUInt32 := by
+  cases s <;> rfl
+
+theorem numberOfWord_word (s : Syscall) : numberOfWord s.word = s.number.toUInt32 := by
+  cases s <;> rfl
+
+theorem ofWord?_word (s : Syscall) : ofWord? s.word = some s := by
+  cases s <;> decide
+
+theorem number_injective {a b : Syscall} (h : a.number = b.number) : a = b := by
+  have ha := ofNumber?_number a
+  rw [h, ofNumber?_number b] at ha
+  exact (Option.some.inj ha).symm
+
+/-- seL4's `handleInvocation` with `isCall`: only a `Call` is answered with an
+error (`syscall.c`, `if (isCall) replyFromKernel_error`). -/
+@[inline] def isCall : Syscall → Bool
+  | .call => true
+  | _ => false
+
+/-- The syscalls that invoke a capability first (`handleInvocation`). -/
+@[inline] def invokes : Syscall → Bool
+  | .call | .send | .nbSend | .replyRecv | .nbSendRecv | .nbSendWait => true
+  | _ => false
+
+/-- The invocations seL4 runs with `isBlocking`: a failed lookup of the invoked
+capability is delivered as a capability fault only on these
+(`handleInvocation`, `if (isBlocking) handleFault`). -/
+@[inline] def invocationBlocks : Syscall → Bool
+  | .call | .send => true
+  | _ => false
+
+/-- **The invocations whose failed lookup is dropped**: seL4's `handleSyscall`
+runs `handleInvocation` with `isBlocking = false` for `NBSend` and for the
+invoke phase of `ReplyRecv`, `NBSendRecv` and `NBSendWait`, so a failed lookup
+of the capability they invoke raises no fault (`if (isBlocking)
+handleFault`).  A receive-phase lookup fault is never dropped (`handleRecv`
+calls `handleFault` unconditionally). -/
+@[inline] def dropsInvocationFault (s : Syscall) : Bool := s.invokes && !s.invocationBlocks
+
+theorem dropsInvocationFault_iff (s : Syscall) :
+    s.dropsInvocationFault = true ↔
+      s = .nbSend ∨ s = .replyRecv ∨ s = .nbSendRecv ∨ s = .nbSendWait := by
+  cases s <;> decide
+
+/-- `dropsInvocationFault` of the syscall the seam's number names, tested on
+the number itself; `false` for a number naming no syscall. -/
+@[inline] def numberDropsInvocationFault (n : UInt32) : Bool :=
+  n == 2 || n == 3 || n == 4 || n == 6
+
+theorem numberDropsInvocationFault_number (s : Syscall) :
+    numberDropsInvocationFault s.number.toUInt32 = s.dropsInvocationFault := by
+  cases s <;> decide
+
+/-- **The syscalls whose success writes no register of the caller**: `Send`
+and `NBSend` (seL4's `handleInvocation` answers a completed invocation with
+`replyFromKernel_success_empty` only `if (isCall)`, and an invocation that
+returns a value writes it only for a `Call`, as `invokeTCB_ReadRegisters` and
+`setConsumed` do), and `Yield` (`handleYield` writes no register).  Every other
+syscall either replies to a `Call` or receives. -/
+@[inline] def returnsNothing : Syscall → Bool
+  | .send | .nbSend | .yield => true
+  | _ => false
+
+/-- `returnsNothing` of the syscall the seam's number names, tested on the
+number itself; `false` for a number naming no syscall. -/
+@[inline] def numberReturnsNothing (n : UInt32) : Bool :=
+  n == 5 || n == 6 || n == 11
+
+theorem numberReturnsNothing_number (s : Syscall) :
+    numberReturnsNothing s.number.toUInt32 = s.returnsNothing := by
+  cases s <;> decide
+
+/-- The receives seL4 runs with `isBlocking` (`handleRecv`). -/
+@[inline] def receiveBlocks : Syscall → Bool
+  | .recv | .wait | .replyRecv | .nbSendRecv | .nbSendWait => true
+  | _ => false
+
+/-- **`sendIPC`'s `blocking`, read from the trapped syscall word**:
+`handleInvocation`'s `isBlocking`, `true` only for `Send`'s and `Call`'s words
+(`wordSendBlocks_word`), so the send of `NBSend` and the invoke phase of
+`ReplyRecv`, `NBSendRecv` and `NBSendWait` never block.  A Bool test on the
+word, so the entry builds no `Option Syscall` to ask it. -/
+@[inline] def wordSendBlocks (w : UInt64) : Bool :=
+  w == Syscall.send.word || w == Syscall.call.word
+
+/-- **`receiveIPC`'s and `receiveSignal`'s `isBlocking`, read from the
+trapped syscall word** (`handleRecv`): `false` only for `NBRecv`'s and
+`NBWait`'s words; every other syscall's receive, and a word naming no
+syscall, blocks (`wordReceiveBlocks_word`). -/
+@[inline] def wordReceiveBlocks (w : UInt64) : Bool :=
+  !(w == Syscall.nbRecv.word || w == Syscall.nbWait.word)
+
+/-- At a syscall's own word, `wordSendBlocks` is `invocationBlocks`. -/
+theorem wordSendBlocks_word (s : Syscall) : wordSendBlocks s.word = s.invocationBlocks := by
+  cases s <;> decide
+
+/-- At a receiving syscall's own word, `wordReceiveBlocks` is `receiveBlocks`. -/
+theorem wordReceiveBlocks_word (s : Syscall)
+    (h : s = .recv ∨ s = .nbRecv ∨ s = .wait ∨ s = .nbWait ∨ s = .replyRecv ∨
+      s = .nbSendRecv ∨ s = .nbSendWait) :
+    wordReceiveBlocks s.word = s.receiveBlocks := by
+  rcases h with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
+
+/-- The receives seL4 runs with `canReply` (`handleRecv(_, true)`): the reply
+capability is read from `replyRegister`. -/
+@[inline] def receiveCanReply : Syscall → Bool
+  | .recv | .nbRecv | .replyRecv | .nbSendRecv => true
+  | _ => false
+
+/-- **`handleRecv`'s `canReply`, read from the trapped syscall word**: `true`
+for the words of `Recv`, `NBRecv`, `ReplyRecv` and `NBSendRecv`
+(`wordCanReply_word`), whose receive on an endpoint looks the reply capability
+up from `replyRegister` (seL4-MCS `lookupReply`); `false` for `Wait`, `NBWait`,
+`NBSendWait` and every other word, whose receive passes no reply capability.  A
+Bool test on the word, so the entry builds no `Option Syscall` to ask it. -/
+@[inline] def wordCanReply (w : UInt64) : Bool :=
+  w == Syscall.recv.word || w == Syscall.nbRecv.word || w == Syscall.replyRecv.word ||
+    w == Syscall.nbSendRecv.word
+
+/-- At a syscall's own word, `wordCanReply` is `receiveCanReply`. -/
+theorem wordCanReply_word (s : Syscall) : wordCanReply s.word = s.receiveCanReply := by
+  cases s <;> decide
+
+end Syscall
+
+/-- **seL4's `isCall`, read from the thread's trapped syscall word**: the word
+in the syscall-number register (`x7`) is `Call`'s.  seL4's `handleInvocation`
+writes an invocation's reply only when `isCall` (`replyFromKernel` under
+`if (isCall)`, and `setConsumed(.., call)`); a `Send` or an `NBSend` of the same
+invocation writes nothing. -/
+@[inline] def _root_.SeLe4n.Model.TCB.trappedCall (t : TCB) : Bool :=
+  SeLe4n.readRegWord t.registerContext SeLe4n.arm64DefaultLayout.syscallNumReg ==
+    SeLe4n.Model.Syscall.call.word
+
+namespace SyscallId
+
+/-- **The invocation label of an operation**, seL4's generated
+`invocation_label` for aarch64 with MCS and SMP (no hardware debug API, no
+hypervisor, no SMMU), from `object-api.xml`, `object-api-sel4-arch.xml` and
+`object-api-arch.xml` as `invocation_header_gen.py` numbers them.  The
+model-only operations take labels after seL4's last (56,
+`ARMIRQIssueIRQHandlerTriggerCore`).  `none` for the operations no label
+selects: the IPC operations, which the capability's type selects, and the
+yield, a syscall of its own.  The VSpace map is invoked on the frame
+capability (WS-SX SX6.3), under seL4's `ARMPageMap`; the unmap is invoked on
+the VSpace root, under seL4's `ARMPageUnmap`. -/
+def label? : SyscallId → Option Nat
+  | .untypedRetype => some 1
+  | .tcbSetPriority => some 6
+  | .tcbSetMCPriority => some 7
+  | .tcbSetIPCBuffer => some 10
+  | .tcbSetSpace => some 11
+  | .tcbSuspend => some 12
+  | .tcbResume => some 13
+  | .tcbBindNotification => some 14
+  | .tcbUnbindNotification => some 15
+  | .cspaceRevoke => some 18
+  | .cspaceDelete => some 19
+  | .cspaceCopy => some 21
+  | .cspaceMint => some 22
+  | .cspaceMove => some 23
+  | .irqControlGet => some 26
+  | .irqHandlerAck => some 27
+  | .irqHandlerSetNotification => some 28
+  | .irqHandlerClear => some 29
+  | .schedContextConfigure => some 33
+  | .schedContextBind => some 34
+  | .schedContextUnbind => some 35
+  | .schedContextConsumed => some 37
+  | .schedContextYieldTo => some 38
+  | .vspaceUnifyInstruction => some 42
+  | .pageTableMap => some 44
+  | .pageTableUnmap => some 45
+  | .vspaceMap => some 46
+  | .vspaceUnmap => some 47
+  | .serviceRegister => some 57
+  | .serviceRevoke => some 58
+  | .serviceQuery => some 59
+  | .mintReplyCap => some 60
+  | .declassify => some 61
+  | .auditRead => some 62
+  | .auditDrain => some 63
+  | .declassifySignal => some 64
+  | .tcbSetAffinity => some 66
+  | .send | .receive | .call | .reply | .notificationSignal | .notificationWait
+  | .replyRecv | .yield => none
+
+/-- **The syscall a user issues an operation with**, as libsel4's stubs do
+(the Rust mirror is `sele4n_types::SyscallId::syscall`): a labelled
+invocation is a `Call`, its result and its error coming back; a send, a
+signal and a reply through a reply capability are a `Send`; a wait is a
+`Wait`, a receive a `Recv`. -/
+def syscall : SyscallId → Syscall
+  | .send | .reply | .notificationSignal => .send
+  | .receive => .recv
+  | .notificationWait => .wait
+  | .replyRecv => .replyRecv
+  | .yield => .yield
+  | _ => .call
+
+/-- The message-info word an operation is issued with: `msgInfo` with the
+operation's label in seL4's label field (bits 12 and up), or unchanged for the
+operations no label selects. -/
+def msgInfoWithLabel (sid : SyscallId) (msgInfo : UInt64) : UInt64 :=
+  match sid.label? with
+  | some l => (msgInfo &&& (0xFFF : UInt64)) ||| (l.toUInt64 <<< (12 : UInt64))
+  | none => msgInfo
+
+/-- The operation an invocation label names, `label?`'s inverse. -/
+def ofLabel? : Nat → Option SyscallId
+  | 1 => some .untypedRetype
+  | 6 => some .tcbSetPriority
+  | 7 => some .tcbSetMCPriority
+  | 10 => some .tcbSetIPCBuffer
+  | 11 => some .tcbSetSpace
+  | 12 => some .tcbSuspend
+  | 13 => some .tcbResume
+  | 14 => some .tcbBindNotification
+  | 15 => some .tcbUnbindNotification
+  | 18 => some .cspaceRevoke
+  | 19 => some .cspaceDelete
+  | 21 => some .cspaceCopy
+  | 22 => some .cspaceMint
+  | 23 => some .cspaceMove
+  | 26 => some .irqControlGet
+  | 27 => some .irqHandlerAck
+  | 28 => some .irqHandlerSetNotification
+  | 29 => some .irqHandlerClear
+  | 33 => some .schedContextConfigure
+  | 34 => some .schedContextBind
+  | 35 => some .schedContextUnbind
+  | 37 => some .schedContextConsumed
+  | 38 => some .schedContextYieldTo
+  | 42 => some .vspaceUnifyInstruction
+  | 44 => some .pageTableMap
+  | 45 => some .pageTableUnmap
+  | 46 => some .vspaceMap
+  | 47 => some .vspaceUnmap
+  | 57 => some .serviceRegister
+  | 58 => some .serviceRevoke
+  | 59 => some .serviceQuery
+  | 60 => some .mintReplyCap
+  | 61 => some .declassify
+  | 62 => some .auditRead
+  | 63 => some .auditDrain
+  | 64 => some .declassifySignal
+  | 66 => some .tcbSetAffinity
+  | _ => none
+
+/-- The label round trip. -/
+theorem ofLabel?_label? {sid : SyscallId} {l : Nat} (h : sid.label? = some l) :
+    ofLabel? l = some sid := by
+  cases sid <;> simp [label?] at h <;> subst h <;> rfl
+
+theorem label?_ofLabel? {l : Nat} {sid : SyscallId} (h : ofLabel? l = some sid) :
+    sid.label? = some l := by
+  unfold ofLabel? at h
+  split at h <;> (try simp at h) <;> (subst h; rfl)
 
 end SyscallId
 
@@ -5459,6 +5842,16 @@ structure SyscallDecodeResult where
       on the `decodeSyscallArgsFromState` overflow branch (e.g., 1 for the
       5-arg syscalls `serviceRegister` and `schedContextConfigure`). -/
   overflowCount : Nat := 0
+  /-- WS-SX SX7.3: **`handleRecv`'s `canReply`**, `Syscall.wordCanReply` of
+      the trapped syscall word: a receive on an endpoint looks its reply
+      capability up at `replyCPtr` (seL4-MCS `lookupReply`) exactly when it is
+      set (`Recv`, `NBRecv`, `ReplyRecv`, `NBSendRecv`), and passes none for
+      `Wait`, `NBWait` and `NBSendWait`.  No message length decides it. -/
+  canReply     : Bool := false
+  /-- WS-SX SX7.3: **the reply capability's address**, the trapped
+      `replyRegister` (x6 on ARM64, `SyscallRegisterLayout.replyReg`): the
+      reply capability a receive passes and a reply-receive replies through. -/
+  replyCPtr    : SeLe4n.CPtr := SeLe4n.CPtr.sentinel
   deriving Repr, DecidableEq
 
 /-! ### The interrupt nodes' reserved ids

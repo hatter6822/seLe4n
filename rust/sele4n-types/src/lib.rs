@@ -85,11 +85,11 @@ pub const SYSCALL_ABI_VERSION: u64 = 5;
 /// WS-RR RR4 (ABI v3): the first kernel-status label.  A `MessageInfo`
 /// label at or above this value in `x1` is a kernel error (discriminant
 /// `label - ERROR_LABEL_BASE`); a label below it is the delivered
-/// message's own.  The range holds 256 labels, so the blocked-resume
-/// sentinel (`MAX_LABEL`, `2^52 - 1`) is its last member and names
-/// discriminant 255 — absent from the Lean `KernelError` and reserved here
-/// for the forward-compatibility sentinel `UnknownKernelError`, so the
-/// sentinel decodes to that variant by construction.  Mirrors Lean's
+/// message's own.  The range holds 256 labels, so `MAX_LABEL` (`2^52 - 1`)
+/// is its last member and names discriminant 255 — absent from the Lean
+/// `KernelError` and reserved here for the forward-compatibility variant
+/// `UnknownKernelError`, which a `Call` reading that label decodes to by
+/// construction.  Mirrors Lean's
 /// `Architecture.errorLabelBase` (`errorLabelBase_eq`) and the HAL's
 /// hand-duplicated `svc_dispatch::ERROR_LABEL_BASE`.
 pub const ERROR_LABEL_BASE: u64 = (1 << 52) - 256;
@@ -97,7 +97,7 @@ pub const ERROR_LABEL_BASE: u64 = (1 << 52) - 256;
 // The range is exactly the top of seL4's 52-bit label field.
 const _: () = assert!(ERROR_LABEL_BASE == 0xF_FFFF_FFFF_FF00);
 const _: () = assert!(ERROR_LABEL_BASE + 255 == (1 << 52) - 1);
-pub use syscall::SyscallId;
+pub use syscall::{Syscall, SyscallId};
 
 // AN8-E (R-HAL-L2): The 52-line AK4-H audit-notes block previously inlined
 // here is canonical-archived in `docs/AUDIT_NOTES.md` so this file stays

@@ -440,7 +440,7 @@ theorem enforcementSoundness_revokeServiceChecked
 abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundary
 
 /-- V6-L/Z8-M/D2/D3/AC4-D (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
-    has exactly 54 entries, matching the canonical `enforcementBoundary`.
+    has exactly 53 entries, matching the canonical `enforcementBoundary`.
 
     WS-SX SX6.5 removed the fault-handler configuration
     (`setThreadFaultHandlerOp`): seL4-MCS sets the fault endpoint in
@@ -456,8 +456,9 @@ abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundar
     part 8 (`v0.36.111`) removed with the general revocation it named; WS-BP BP7.1 (`v0.36.5`) added `untypedRetypeFromCap`,
     capability-only — the live `.untypedRetype` arm's transition, the untyped
     carve behind its two slot resolutions; and WS-BP BP7.1 (`v0.36.6`) added
-    the untyped reset, capability-only — the live `.untypedReset` arm's
-    transition, `untypedResetFromCap` since WS-ZA ZA5.4; and WS-BP BP7.1 (`v0.36.7`) added `cspaceDeleteSlotFinalising`
+    the untyped reset, capability-only, which WS-SX SX7 removed with the
+    `.untypedReset` operation (seL4 resets inside Retype, as the carve does);
+    and WS-BP BP7.1 (`v0.36.7`) added `cspaceDeleteSlotFinalising`
     and `cspaceRevokeCdtFinalising`, capability-only — the live `.cspaceDelete`
     and `.cspaceRevoke` arms' transitions, each removing the mappings the frame
     capabilities it destroys recorded.  WS-BP BP7.1 (`v0.36.11`) added
@@ -479,7 +480,7 @@ abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundar
     This theorem is the authority for the entry count; `enforcementBoundary`'s
     own docstring deliberately does not restate it. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 54 := by rfl
+    enforcementBoundaryExtended.length = 53 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

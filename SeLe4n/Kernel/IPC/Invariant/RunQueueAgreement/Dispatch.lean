@@ -6,6 +6,7 @@ import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Scheduling
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SuspendHolders
 import SeLe4n.Kernel.ReschedulePendingArms.Dispatch
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.ReplyHolderCancel
+import SeLe4n.Kernel.SchedContext.Invariant.NotificationLinkStages
 
 /-!
 # Every kernel entry keeps the run-queue link agreement
@@ -416,13 +417,6 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
       refine RunQueueStage.entry ?_
       exact untypedRetypeFromCap_runQueueStage hStep
     all_goals try cases hStep
-  case untypedReset =>
-    cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object _ =>
-      refine RunQueueStage.entry ?_
-      obtain ⟨_, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ _ _ hStep
-      exact untypedResetSlot_runQueueStage hS
-    all_goals try cases hStep
   case vspaceMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
@@ -447,14 +441,13 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
       try dsimp only [] at hStep
-      cases hDec : decodeVSpaceUnmapArgs decoded st.machine.maxASID with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
-          split at hStep
-          · cases hStep
-          · refine RunQueueStage.entry ?_
-            exact vspaceUnmapPageWithShootdownAndIcacheBroadcast_runQueueStage hStep
+      cases hR : resolveCallerCapSlot tid decoded.capAddr (syscallRequiredRight .vspaceUnmap) st with
+      | error e => simp only [hR] at hStep; cases hStep
+      | ok r =>
+          obtain ⟨slot, _, _⟩ := r
+          simp only [hR] at hStep
+          refine RunQueueStage.entry ?_
+          exact vspaceUnmapFrameCap_runQueueStage hStep
     all_goals try cases hStep
   case vspaceUnifyInstruction =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -495,7 +488,8 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
           subst hStep
           refine RunQueueStage.entry ?_
-          exact writeReturnFrameToTcb_runQueueStage _ _ _
+          exact Architecture.writeCallReturnWord_of_frame (RunQueueStage _)
+            (RunQueueStage.of_frame rfl rfl rfl) (fun _ => writeReturnFrameToTcb_runQueueStage _ _ _)
     all_goals try cases hStep
   case schedContextConfigure =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -520,16 +514,28 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>
       try dsimp only [] at hStep
-      cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
-      | error e => simp only [hRes] at hStep; cases hStep
-      | ok vThreadId =>
-          simp only [hRes] at hStep
+      cases hN : resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | succ k =>
+          simp only [hN] at hStep
           cases hVal : validateObjIdArg scId with
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
               refine RunQueueStage.entry ?_
-              exact schedContextBind_runQueueStage hStep
+              exact schedContextBindNotification_runQueueStage hStep
+      | zero =>
+          simp only [hN] at hStep
+          cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok vThreadId =>
+              simp only [hRes] at hStep
+              cases hVal : validateObjIdArg scId with
+              | error e => simp only [hVal] at hStep; cases hStep
+              | ok vScId =>
+                  simp only [hVal] at hStep
+                  refine RunQueueStage.entry ?_
+                  exact schedContextBind_runQueueStage hStep
     all_goals try cases hStep
   case schedContextUnbind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -543,14 +549,14 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              cases hUn : SchedContextOps.schedContextUnbindOnCore vScId
+              cases hUn : SchedContextOps.schedContextUnbindAllOnCore vScId
                   executingCore st with
               | error e => simp only [hUn] at hStep; cases hStep
               | ok pair =>
                   obtain ⟨stU, sgiU⟩ := pair
                   simp only [hUn] at hStep
                   cases hStep
-                  exact schedContextUnbindOnCore_runQueueEntryStage hUn
+                  exact schedContextUnbindAllOnCore_runQueueEntryStage hUn
     all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -887,12 +893,6 @@ theorem clearStashStage_runQueueEntryStage {st s st' : SystemState}
     cases h
     exact hS.trans ((clearWokenReceiverStash_runQueueStage woken? hClr).trans (hStage _)).entry
 
-/-- The two badge stagings a signal arm ends with. -/
-theorem stageWokenDeliveryTwice_runQueueStage (x : SystemState) (w p : Option SeLe4n.ThreadId) :
-    RunQueueStage x (Architecture.stageWokenDelivery
-      (Architecture.stageWokenDelivery x w 0) p 0) :=
-  (stageWokenDelivery_runQueueStage x w 0).trans (stageWokenDelivery_runQueueStage _ p 0)
-
 theorem endpointSendCrossCoreDispatchChecked_runQueueEntryStage (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (c : Concurrency.CoreId)
@@ -971,6 +971,23 @@ theorem notificationSignalDeclassifiedOnCore_runQueueStage (ctx : GenericLabelin
       rw [recordDeclassifiedHops_frame _ _ _ _ _ hRec]
       exact hB.trans (RunQueueStage.of_frame rfl rfl rfl)
 
+/-- A reply-receive whose receive completes its bound notification keeps the run
+queues in agreement with the threads' links: the reply leg, the wait's
+consumption, then the badge register written. -/
+theorem replyRecvCompletesSignalArm_runQueueEntryStage {ctx : LabelingContext}
+    {tid prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool}
+    {c : Concurrency.CoreId} {st st' : SystemState}
+    (hInv : st.objects.invExt) (hD : st.currentDequeuedUnique)
+    (h : replyRecvCompletesSignalArm ctx tid prevCaller label msg grant c st = .ok ((), st')) :
+    SystemState.RunQueueEntryStage st st' := by
+  obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases h
+  have hS := replyTransferOnCoreChecked_runQueueEntryStage hInv hD hR
+  rcases hOr with rfl | ⟨st2, badge, _, _, hW, _, rfl⟩
+  · exact hS
+  · exact (hS.trans (notificationWaitOnCore_consumed_runQueueStage
+      (notificationWaitCrossCoreDispatchChecked_ok_inner hW)).entry).trans
+      (writeReturnFrameToTcb_runQueueStage _ _ _).entry
+
 /-- A receive run on its busy-reply-cancelled state keeps the run queues in
 agreement with the threads' links: the `.receive` arm, and the `.replyRecv`
 arm whose reply is skipped. -/
@@ -979,7 +996,7 @@ theorem receiveResolvedArm_runQueueEntryStage (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (epId : SeLe4n.ObjId)
     (st st' : SystemState)
     (P : SyscallArmPremises st executingCore tid)
-    (h : receiveResolvedArm decoded gate tid epId executingCore
+    (h : receiveResolvedArm ctx decoded gate tid epId executingCore
       (cancelRecvBusyReply ctx tid gate decoded executingCore st) = .ok ((), st')) :
     SystemState.RunQueueEntryStage st st' := by
   unfold receiveResolvedArm at h
@@ -1004,9 +1021,35 @@ theorem receiveResolvedArm_runQueueEntryStage (ctx : LabelingContext)
   have hDC := hS.2 P.objInv P.refined hRC P.dequeued
   generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC
     at h hS hHC hCurC hActC hIC hRC hDC
-  simp only at h
+  by_cases hSig : receiveCompletesSignal ctx stC tid = true
+  · -- seL4-MCS `receiveIPC`: the bound notification is active, so the receive
+    -- completes it -- the wait's consumption, then the badge register written.
+    cases hRes : resolveRecvReplyId gate decoded stC with
+    | error _ => rw [hRes] at h; cases h
+    | ok r =>
+    rw [hRes] at h
+    simp only [hSig, ↓reduceIte] at h
+    obtain ⟨st1, badge, hW, _, hPost⟩ := completeSignalArm_consumes hSig h
+    subst hPost
+    exact (hS.trans (runQueueStage_of_pair_eq
+      (notificationWaitOnCore_runQueueEntryStage _ tid executingCore stC hCurC P.notIdle)
+      (notificationWaitCrossCoreDispatchChecked_ok_inner hW))).trans
+      (writeReturnFrameToTcb_runQueueStage _ _ _).entry
+  simp only [Bool.not_eq_true] at hSig
+  by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
+  · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
+    cases hRes : resolveRecvReplyId gate decoded stC with
+    | error _ => rw [hRes] at h; cases h
+    | ok r =>
+    rw [hRes] at h
+    simp only [hSig, Bool.false_eq_true, hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq,
+      true_and] at h
+    subst h
+    exact hS.trans (writeReturnFrameToTcb_runQueueStage _ _ _).entry
+  simp only [Bool.not_eq_true] at hNb
   split at h
   · cases h
+  simp only [hSig, hNb, Bool.false_eq_true, ↓reduceIte] at h
   split at h
   · rename_i st1 dequeued summ sgi hRecv
     split at h
@@ -1018,9 +1061,8 @@ theorem receiveResolvedArm_runQueueEntryStage (ctx : LabelingContext)
         hCurC P.notIdle hActC) hRecv
     obtain ⟨_, hR2⟩ := E.1.links hIC hRC
     exact runQueueEntryStage_trans_of_invExt hS fun _ _ => E.trans
-      (((applyReceiveRendezvousHandoff_runQueueStage
+      ((applyReceiveRendezvousHandoff_runQueueStage
           ((E.2 hIC hRC hR2 hDC).coherent _) hHand).trans
-        (stageWokenSendCompletion_runQueueStage _ _)).trans
         (stageDeliveredMessage_runQueueStage _ _ _)).entry
   · cases h
 
@@ -1053,7 +1095,8 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     cases h
     rw [auditReadFromCore_frame _ _ _ _ _ _ _ hA]
     refine RunQueueStage.entry ?_
-    exact writeReturnFrameToTcb_runQueueStage _ _ _
+    exact Architecture.writeCallReturnWord_of_frame (RunQueueStage _)
+      (RunQueueStage.of_frame rfl rfl rfl) (fun _ => writeReturnFrameToTcb_runQueueStage _ _ _)
   case none.auditDrain =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
@@ -1063,13 +1106,16 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     split at hA
     · cases hA
       refine RunQueueStage.entry ?_
-      refine RunQueueStage.trans ?_ (writeReturnFrameToTcb_runQueueStage _ _ _)
+      refine RunQueueStage.trans ?_ (Architecture.writeCallReturnWord_of_frame (RunQueueStage _)
+        (RunQueueStage.of_frame rfl rfl rfl) (fun _ => writeReturnFrameToTcb_runQueueStage _ _ _))
       exact RunQueueStage.of_frame rfl rfl rfl
     · cases hA
   all_goals
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
   case none.send.object epId =>
+    split at h
+    · cases h; exact (RunQueueStage.refl _).entry
     split at h
     · cases h
     rename_i hSend
@@ -1136,12 +1182,14 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     try dsimp only at h
     split at h
     · rename_i hSig
-      exact clearStashStage_runQueueEntryStage (runQueueStage_of_pair_eq
+      cases h
+      exact (runQueueStage_of_pair_eq
         (notificationSignalBoundCrossCoreDispatchChecked_runQueueStage _ _ _ _ _ _ P.ntfnHeads
           P.blocked) hSig).entry
-        (fun x => stageWokenDeliveryTwice_runQueueStage x _ _) h
     · cases h
   case none.notificationWait.object notifId =>
+    split at h
+    · cases h; exact (writeReturnFrameToTcb_runQueueStage _ _ _).entry
     split at h
     · rename_i hW
       cases h
@@ -1160,8 +1208,14 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     -- and the receive runs alone
     split at h
     · exact receiveResolvedArm_runQueueEntryStage ctx decoded tid executingCore gate epId st st' P h
+    -- the reply's resolution: refused, a reply with no caller (the receive
+    -- runs, as on a skipped reply), or a caller to answer
+    split at h
+    · cases h
+    · exact receiveResolvedArm_runQueueEntryStage ctx decoded tid executingCore gate epId st st' P h
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    · exact replyRecvCompletesSignalArm_runQueueEntryStage P.objInv P.dequeued h
     rename_i summ stR hRR
     cases h
     exact (endpointReplyRecvOnCore_runQueueEntryStage P.objInv P.refined P.dequeued P.queueHeads
@@ -1181,10 +1235,10 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     try dsimp only at h
     split at h
     · rename_i hSig
-      exact clearStashStage_runQueueEntryStage (runQueueStage_of_pair_eq
+      cases h
+      exact (runQueueStage_of_pair_eq
         (notificationSignalDeclassifiedOnCore_runQueueStage _ _ _ _ _ _ P.ntfnHeads
           P.blocked) hSig).entry
-        (fun x => stageWokenDeliveryTwice_runQueueStage x _ _) h
     · cases h
 
 /-- WS-ZA ZA6.29: **every arm `dispatchWithCapChecked` routes links only the

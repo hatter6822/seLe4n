@@ -214,14 +214,6 @@ theorem mintReplyCapWithCdt_savedRegsKept {st st' : SystemState} {src dst : CSpa
         · contradiction
     exact hM.1.trans (savedRegsKept.cdtAddChild stM src dst .mint hM.2)
 
-/-- **The untyped reset**: the invoked slot's free-index rewind. -/
-theorem untypedResetFromCap_savedRegsKept {tid : SeLe4n.ThreadId} {srcAddr : SeLe4n.CPtr}
-    {st st' : SystemState} (hInv : st.objects.invExt)
-    (hStep : untypedResetFromCap tid srcAddr st = .ok ((), st')) : savedRegsKept st st' := by
-  obtain ⟨_, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ st st' hStep
-  rw [untypedResetSlot_ok_frame hS]
-  exact savedRegsKept.setCapFreeIndex _ _ _ hInv
-
 /-- **The carve**: the untyped object's store, the child's store into a slot that
 was empty, the free-index store into the authority's CNode, the scrub (memory
 alone), the capability insert and the derivation edge.  The child may be a TCB;
@@ -317,6 +309,19 @@ theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_savedRegsKept {ec : CoreI
       = .ok ((), st')) : savedRegsKept st st' :=
   savedRegsKept.of_vspaceRootOnlyWrite
     (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv hStep).2.1
+
+/-- **`Page_Unmap`**: the teardown writes VSpace roots alone, then the record
+clear stores a CNode over its CNode. -/
+theorem vspaceUnmapFrameCap_savedRegsKept {ec : CoreId} {addr : CSpaceAddr}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (hStep : vspaceUnmapFrameCap ec addr st = .ok ((), st')) : savedRegsKept st st' := by
+  obtain ⟨st1, hU, hC⟩ := vspaceUnmapFrameCap_cases hStep
+  obtain ⟨hInv1, hV, -⟩ := unmapLivePages_ok_frame ec _ st st1 hInv hU
+  obtain ⟨cn, _, hCn, -, hStore⟩ := cspaceClearFrameMapping_ok_decompose addr st1 st' hC
+  have hPre : st1.objects[addr.cnode]? = some (.cnode cn) :=
+    (SystemState.getCNode?_eq_some_iff st1 addr.cnode cn).mp hCn
+  exact (savedRegsKept.of_vspaceRootOnlyWrite hV).trans
+    (savedRegsKept.storeObject hInv1 hStore fun x hx => by rw [hPre] at hx; cases hx)
 
 /-- **The VSpace map or seL4's remap**: the unmap and the fresh map, each
 keeping every saved register file. -/
@@ -436,6 +441,18 @@ theorem writeReturnFrameToTcb_savedRegsKeptOffCore {e : CoreId} {st : SystemStat
     (hU : currentsUnique st) (hN : st.currentNotResidentElsewhere) :
     savedRegsKeptOffCore e st (Architecture.writeReturnFrameToTcb st tid frame) := by
   unfold Architecture.writeReturnFrameToTcb
+  exact savedRegsKeptOffCore_updateTcb hInv (offCoreFree_of_current hCur hU hN)
+    (currentKeptOffCore_of_eq fun _ _ => by rw [SystemState.updateTcb_scheduler])
+    (residentKeptOffCore_of_eq (by rw [SystemState.updateTcb_machine]))
+
+/-- The `Call`-gated reply write, to the current thread, keeps every other
+core's saved registers: it is one `updateTcb` of that thread. -/
+theorem writeCallReturnWord_savedRegsKeptOffCore {e : CoreId} {st : SystemState}
+    {tid : SeLe4n.ThreadId} (w : UInt64)
+    (hInv : st.objects.invExt) (hCur : st.scheduler.currentOnCore e = some tid)
+    (hU : currentsUnique st) (hN : st.currentNotResidentElsewhere) :
+    savedRegsKeptOffCore e st (Architecture.writeCallReturnWord st tid w) := by
+  unfold Architecture.writeCallReturnWord
   exact savedRegsKeptOffCore_updateTcb hInv (offCoreFree_of_current hCur hU hN)
     (currentKeptOffCore_of_eq fun _ _ => by rw [SystemState.updateTcb_scheduler])
     (residentKeptOffCore_of_eq (by rw [SystemState.updateTcb_machine]))

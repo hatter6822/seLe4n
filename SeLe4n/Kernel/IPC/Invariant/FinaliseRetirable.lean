@@ -148,6 +148,37 @@ theorem finaliseSchedContextCleanupImpl_releases {s : SystemState} {x : SeLe4n.O
     exact ⟨sc', (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hG', e1.trans hB,
       e2.trans hD, e3.trans hR, SystemState.completeYieldFrom_yieldFromCode_self _ _ hInv hG'⟩
 
+/-- **The notification unbind keeps a released context released**: it rewrites
+a context's notification link and a notification's link back, no other field. -/
+theorem schedContextRecordReleased.unbindSchedContextNotification {s : SystemState}
+    {x : SeLe4n.ObjId} (hInv : s.objects.invExt) (h : schedContextRecordReleased s x)
+    (c : SeLe4n.SchedContextId) :
+    schedContextRecordReleased (SeLe4n.Kernel.unbindSchedContextNotification s c) x := by
+  obtain ⟨sc, hO, h1, h2, h3, h4⟩ := h
+  have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt s c
+    (fun c => { c with notificationCode := 0 }) hInv
+  have hSc : schedContextRecordReleased
+      (s.updateSchedContext c (fun c => { c with notificationCode := 0 })) x := by
+    by_cases hx : c.toObjId = x
+    · subst hx
+      cases hG : s.getSchedContext? c with
+      | none => rw [SystemState.updateSchedContext_eq_self_of_none hG]; exact ⟨sc, hO, h1, h2, h3, h4⟩
+      | some sc0 =>
+        have hSraw := (SystemState.getSchedContext?_eq_some_iff s c sc0).mp hG
+        rw [hSraw] at hO; cases hO
+        rw [SystemState.updateSchedContext_eq_of_some hG]
+        exact ⟨_, RobinHood.RHTable.getElem?_insert_self _ _ _ hInv, h1, h2, h3, h4⟩
+    · exact ⟨sc, (SystemState.updateSchedContext_objects_ne _ _ _ _ hx hInv).trans hO,
+        h1, h2, h3, h4⟩
+  rcases unbindSchedContextNotification_shape s c hInv with e | ⟨-, -, e | ⟨n, ntfn, hN, e⟩⟩
+  · rw [e]; exact ⟨sc, hO, h1, h2, h3, h4⟩
+  · rw [e]; exact hSc
+  · rw [e]
+    obtain ⟨sc', hO', a, b, c', d⟩ := hSc
+    have hne : n ≠ x := by intro hn; rw [hn, hO'] at hN; cases hN
+    exact ⟨sc', (RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun h => hne (eq_of_beq h))
+      hInv1).trans hO', a, b, c', d⟩
+
 /-- **A finalised scheduling context's own record is released**
 (WS-ZA ZA5.4 part 26): on a state its admission admits, the finalisation
 leaves the context at `x` bound to no thread and lent from no one — the
@@ -160,11 +191,14 @@ theorem finaliseSchedContext_releases (x : SeLe4n.ObjId) (st : SystemState)
     (hInv : st.objects.invExt) (hA : schedContextFinaliseAdmitted st x = true) :
     schedContextRecordReleased (finaliseSchedContext x st) x := by
   rw [finaliseSchedContext_eq, if_pos hA]
-  have hInvU := (finaliseSchedContextUnstack_closed (FinaliseFrameAny st)
+  have hFU := finaliseSchedContextUnstack_closed (FinaliseFrameAny st)
     (FinaliseFrameAny.unstackStep st) x st (.refl hInv) hA _ rfl
     (finaliseSchedContextUnbind_closed _ (FinaliseFrameAny.scReleaseStep st) _ x
       (finaliseSchedContextDeschedule_closed _ (FinaliseFrameAny.scDescheduleStep st) st x hA
-        (.refl hInv)))).invExt
+        (.refl hInv)))
+  have hInvU := hFU.invExt
+  refine schedContextRecordReleased.unbindSchedContextNotification
+    ((FinaliseFrameAny.yieldStep st).schedContextCleanup _ x hFU).invExt ?_ _
   suffices hU : ∃ sc, (finaliseSchedContextUnstack (finaliseSchedContextUnbind
       (finaliseSchedContextDeschedule st x) x) x).objects[x]? = some (.schedContext sc) ∧
       sc.boundThreadCode = 0 ∧ sc.donationOrigin = none ∧ sc.scReply = none by

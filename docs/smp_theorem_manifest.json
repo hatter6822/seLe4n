@@ -51,7 +51,7 @@
         {
           "name": "lockSetTheorems",
           "module": "SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean",
-          "count": 109
+          "count": 107
         },
         {
           "name": "deadlockTheorems",
@@ -64,8 +64,8 @@
           "count": 96
         }
       ],
-      "entryCount": 271,
-      "theoremCount": 160
+      "entryCount": 269,
+      "theoremCount": 159
     },
     {
       "phase": "SM4",
@@ -178,10 +178,10 @@
       "theoremCount": 0
     }
   ],
-  "entryTotal": 950,
-  "theoremTotal": 769,
+  "entryTotal": 948,
+  "theoremTotal": 768,
   "ledgerEntryTotal": 14,
-  "registeredEntryTotal": 964,
+  "registeredEntryTotal": 962,
   "theoremInventoryCount": 12,
   "ledgerInventoryCount": 2
 }

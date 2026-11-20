@@ -384,6 +384,7 @@ pub fn audit_read(
         msg_info: MessageInfo::new_const(3, 0, 0),
         msg_regs: [opcode.to_u64(), index, chunk, 0],
         syscall_id: SyscallId::AuditRead,
+        reply_cap: CPtr::NULL,
     })?;
     Ok(resp.value())
 }
@@ -488,6 +489,7 @@ pub fn audit_drain(audit_cap: CPtr, count: u64) -> KernelResult<u64> {
         msg_info: MessageInfo::new_const(1, 0, 0),
         msg_regs: [count, 0, 0, 0],
         syscall_id: SyscallId::AuditDrain,
+        reply_cap: CPtr::NULL,
     })?;
     Ok(resp.value())
 }
@@ -513,6 +515,7 @@ pub fn audit_read_raw(
         msg_info: MessageInfo::new_const(3, 0, 0),
         msg_regs: [opcode.to_u64(), index, chunk, 0],
         syscall_id: SyscallId::AuditRead,
+        reply_cap: CPtr::NULL,
     })
 }
 

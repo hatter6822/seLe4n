@@ -54,9 +54,12 @@ inhabiting syscall would be a hand-maintained fiction.  `message` carries no
 static arity: a receive's length is dynamic (0..4 inline) and rides the
 returned `MessageInfo` where seL4 puts it. -/
 inductive ReturnShape where
-  /-- `x0 = 0`, no message — 26 of the 31 syscalls. -/
+  /-- `x0 = 0` and the empty `MessageInfo` in `x1`, `x2`-`x5` untouched
+  (seL4's `replyFromKernel_success_empty`, written only for a `Call`) — 26 of
+  the 31 syscalls. -/
   | unit
-  /-- `x0` = full-width badge, no message registers (`.notificationWait`). -/
+  /-- `x0` = full-width badge, `x1`-`x5` untouched (`.notificationWait`;
+  seL4's `receiveSignal` writes `badgeRegister` alone). -/
   | badge
   /-- `x0` = a queried scalar (`.serviceQuery`; SM9.A's audit reads join
   here).  Distinct from `.badge` because the Rust conformance layer types
@@ -100,9 +103,6 @@ def syscallReturnShape : SyscallId → ReturnShape
   -- `seL4_Untyped_Retype` returns only an error code; what it produced is the
   -- capability it installed at the slot the caller named.
   | .untypedRetype         => .unit
-  -- **WS-BP BP7.1 (`v0.36.6`)**: a reset returns nothing — what it produced is
-  -- the untyped's memory, which the next carve hands out.
-  | .untypedReset          => .unit
   | .vspaceMap             => .unit
   | .vspaceUnmap           => .unit
   | .serviceRegister       => .unit
@@ -372,11 +372,6 @@ staging site, so the synthesis cannot drift between sites.
     x4 := ((msg.registers[2]?.map RegValue.word).getD 0)
     x5 := ((msg.registers[3]?.map RegValue.word).getD 0) }
 
-/-- A badge-only frame — `.notificationWait`'s shape: the badge in `x0`,
-success `MessageInfo` (all-zero word) in `x1`, no message registers. -/
-@[inline] def returnFrameOfBadge (b : Badge) : SyscallReturnFrame :=
-  { x0 := b.word }
-
 -- ============================================================================
 -- §4b  Staging a frame into a register context (RA.B.1's pure core)
 -- ============================================================================
@@ -498,11 +493,52 @@ them keeps downstream `simp` sets one identifier long. -/
     (tcb.withReturnFrame f).registerContext
       = tcb.registerContext.stageReturnFrame f := rfl
 
+/-- **The message registers a delivery writes** (seL4's `copyMRs`): the
+message-info word's length field (bits 0-6) counts the message words transferred,
+and the first four of them travel in `x2`-`x5`.  A delivery writes the badge
+(`x0`), the message info (`x1`) and `x(2+i)` for each `i` below that length; a
+message register past the length keeps the value it holds, as seL4 leaves it.
+The count is read off the word the receiver itself decodes, so the registers
+written and the length reported have one owner. -/
+@[inline] def deliveredWordCount (w1 : UInt64) : UInt64 := w1 &&& 0x7F
+
+/-- A delivered frame's words staged into a register file: `x0` and `x1`
+always, `x2`-`x5` only below the delivered length (`deliveredWordCount`).
+Closure-free and shared by the specification's `TCB.withDeliveredFrame` and the
+compiled writers.  A call, so the file arrives as an owned argument and an
+exclusive one is written in place: inlined, its tests put the enclosing TCB's
+update in a join point, and the compiled writer rebuilt the whole TCB. -/
+@[noinline] def _root_.SeLe4n.RegisterFile.stageDeliveredWords (rf : SeLe4n.RegisterFile)
+    (w0 w1 w2 w3 w4 w5 : UInt64) : SeLe4n.RegisterFile :=
+  let n := deliveredWordCount w1
+  { rf with x0 := w0, x1 := w1,
+            x2 := if 0 < n then w2 else rf.x2,
+            x3 := if 1 < n then w3 else rf.x3,
+            x4 := if 2 < n then w4 else rf.x4,
+            x5 := if 3 < n then w5 else rf.x5 }
+
+/-- A delivery of at least four words stages the whole frame. -/
+theorem _root_.SeLe4n.RegisterFile.stageDeliveredWords_of_four (rf : SeLe4n.RegisterFile)
+    (f : SyscallReturnFrame) (h : 3 < deliveredWordCount f.x1) :
+    rf.stageDeliveredWords f.x0 f.x1 f.x2 f.x3 f.x4 f.x5 = rf.stageReturnFrame f := by
+  have h0 : (0 : UInt64) < deliveredWordCount f.x1 := by
+    simp only [UInt64.lt_iff_toNat_lt] at h ⊢; simp at h ⊢; omega
+  have h1 : (1 : UInt64) < deliveredWordCount f.x1 := by
+    simp only [UInt64.lt_iff_toNat_lt] at h ⊢; simp at h ⊢; omega
+  have h2 : (2 : UInt64) < deliveredWordCount f.x1 := by
+    simp only [UInt64.lt_iff_toNat_lt] at h ⊢; simp at h ⊢; omega
+  simp only [SeLe4n.RegisterFile.stageDeliveredWords, SeLe4n.RegisterFile.stageReturnFrame,
+    if_pos h0, if_pos h1, if_pos h2, if_pos h]
+
 /-- **WS-ZA ZA4.7**: stage a delivered message's frame and drop the message —
 seL4 keeps a delivered message only in the receiver's registers and IPC buffer,
-never in a ready TCB.  `withReturnFrame` then `pendingMessage := none`. -/
+never in a ready TCB.  The frame is staged as seL4's transfer writes it
+(`RegisterFile.stageDeliveredWords`: `x2`-`x5` only below the delivered
+length), then `pendingMessage := none`. -/
 @[inline] def _root_.SeLe4n.Model.TCB.withDeliveredFrame (tcb : TCB) (f : SyscallReturnFrame) : TCB :=
-  { tcb with registerContext := tcb.registerContext.stageReturnFrame f, pendingMessage := none }
+  { tcb with
+      registerContext := tcb.registerContext.stageDeliveredWords f.x0 f.x1 f.x2 f.x3 f.x4 f.x5,
+      pendingMessage := none }
 
 @[simp] theorem _root_.SeLe4n.Model.TCB.withDeliveredFrame_ipcState
     (tcb : TCB) (f : SyscallReturnFrame) :
@@ -515,7 +551,7 @@ never in a ready TCB.  `withReturnFrame` then `pendingMessage := none`. -/
 @[simp] theorem _root_.SeLe4n.Model.TCB.withDeliveredFrame_registerContext
     (tcb : TCB) (f : SyscallReturnFrame) :
     (tcb.withDeliveredFrame f).registerContext
-      = tcb.registerContext.stageReturnFrame f := rfl
+      = tcb.registerContext.stageDeliveredWords f.x0 f.x1 f.x2 f.x3 f.x4 f.x5 := rfl
 
 -- ============================================================================
 -- §4c  Staging into and reading out of a SystemState (RA.B.1, RA.B.2)
@@ -607,6 +643,48 @@ def readReturnFrame (st : SystemState) (tid : SeLe4n.ThreadId) :
         x5 := (tcb.registerContext.gpr ⟨5⟩).word }
   | none => .zero
 
+/-- **The frame of a receive that finds nothing to take without blocking**
+(WS-SX SX7.2): seL4's `doNBRecvFailedTransfer` writes `0` to the badge
+register (`x0`) and nothing else, so every other return register keeps the
+value it holds. -/
+@[inline] def nbRecvFailedFrame (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SyscallReturnFrame :=
+  { readReturnFrame st tid with x0 := 0 }
+
+/-- **seL4's `doNBRecvFailedTransfer`** (`NBRecv` or `NBWait` with nothing to
+take): the badge register (`x0`) of the receiver `tid` is `0`, its other
+registers and its thread state unchanged, and it does not block.  Staged as a
+return frame (`writeReturnFrameToTcb`), whose frame lemmas it reuses; compiled
+as the in-place write of the one register (`nbRecvFailedTransfer_eq_inPlace`). -/
+def nbRecvFailedTransfer (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  writeReturnFrameToTcb st tid (nbRecvFailedFrame st tid)
+
+/-- `nbRecvFailedTransfer` as compiled: `x0` written in the receiver's register
+file in place, no frame record built. -/
+@[inline] def nbRecvFailedTransferInPlace (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState :=
+  st.updateTcb tid (fun t => { t with registerContext := { t.registerContext with x0 := 0 } })
+
+/-- **The frame of a wait that consumes a notification's badge** (seL4's
+`receiveSignal` on an active notification, `setRegister(thread, badgeRegister,
+...)`): the badge in `x0`, every other return register keeping the value it
+holds. -/
+@[inline] def badgeReturnFrame (st : SystemState) (tid : SeLe4n.ThreadId) (b : Badge) :
+    SyscallReturnFrame :=
+  { readReturnFrame st tid with x0 := b.word }
+
+@[csimp] theorem nbRecvFailedTransfer_eq_inPlace :
+    @nbRecvFailedTransfer = @nbRecvFailedTransferInPlace := by
+  funext st tid
+  unfold nbRecvFailedTransfer nbRecvFailedTransferInPlace writeReturnFrameToTcb
+    nbRecvFailedFrame readReturnFrame
+  cases h : st.getTcb? tid with
+  | none =>
+    rw [SystemState.updateTcb_eq_self_of_none h, SystemState.updateTcb_eq_self_of_none h]
+  | some t =>
+    rw [SystemState.updateTcb_eq_of_some h, SystemState.updateTcb_eq_of_some h]
+    rfl
+
 /-- WS-RA RA.B.2: the staging round trip — what `writeReturnFrameToTcb`
 stages, `readReturnFrame` reads back exactly, at full 64-bit width in
 every register (`RegValue` truncates nothing below `2^64`). -/
@@ -628,24 +706,60 @@ theorem readReturnFrame_writeReturnFrame
   obtain ⟨h0, h1, h2, h3, h4, h5⟩ := hReads
   simp only [SeLe4n.Model.TCB.withReturnFrame_registerContext, h0, h1, h2, h3, h4, h5]
 
-/-- **WS-ZA ZA4.7**: the delivery write reads back the same frame. -/
+/-- **Staging the registers a thread holds writes nothing**: the frame read
+back from `tid`'s context, staged into it, leaves every TCB as it was.  This
+is what a completed `Send`, `NBSend` or `Yield` is handed
+(`Platform.FFI.syscallSuccessOutcome`): seL4 writes no register of its caller. -/
+theorem writeReturnFrameToTcb_readReturnFrame_getTcb?
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (t : SeLe4n.ThreadId) :
+    (writeReturnFrameToTcb st tid (readReturnFrame st tid)).getTcb? t = st.getTcb? t := by
+  unfold writeReturnFrameToTcb
+  by_cases hk : tid.toObjId = t.toObjId
+  · have hSame : ∀ s : SystemState, s.getTcb? t = s.getTcb? tid := fun s => by
+      unfold SystemState.getTcb?; rw [hk]
+    rw [hSame, hSame st, SystemState.updateTcb_getTcb?_self _ _ _ hObjInv]
+    cases hT : st.getTcb? tid with
+    | none => rfl
+    | some tcb =>
+      unfold readReturnFrame
+      rw [hT]
+      simp only [Option.map_some]
+      congr 1
+  · exact SystemState.updateTcb_getTcb?_ne _ _ _ hObjInv t hk
+
+/-- **The frame a delivery leaves in a register file `rf`**: the badge and the
+message info, and each message register `x2`-`x5` the frame's word below the
+delivered length (`deliveredWordCount`) and `rf`'s own past it — what the
+boundary reads back after seL4's transfer. -/
+@[inline] def SyscallReturnFrame.deliveredOver (f : SyscallReturnFrame)
+    (rf : SeLe4n.RegisterFile) : SyscallReturnFrame :=
+  let n := deliveredWordCount f.x1
+  { x0 := f.x0, x1 := f.x1,
+    x2 := if 0 < n then f.x2 else (rf.gpr ⟨2⟩).word,
+    x3 := if 1 < n then f.x3 else (rf.gpr ⟨3⟩).word,
+    x4 := if 2 < n then f.x4 else (rf.gpr ⟨4⟩).word,
+    x5 := if 3 < n then f.x5 else (rf.gpr ⟨5⟩).word }
+
+/-- **WS-ZA ZA4.7**: the delivery write reads back the frame it delivered over
+the thread's registers (`SyscallReturnFrame.deliveredOver`). -/
 theorem readReturnFrame_writeDeliveredFrame
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : SyscallReturnFrame)
     (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
     (hObjInv : st.objects.invExt) :
-    readReturnFrame (writeDeliveredFrameToTcb st tid frame) tid = frame := by
+    readReturnFrame (writeDeliveredFrameToTcb st tid frame) tid
+      = frame.deliveredOver tcb.registerContext := by
   have hRead : (writeDeliveredFrameToTcb st tid frame).getTcb? tid
       = some (tcb.withDeliveredFrame frame) := by
     unfold writeDeliveredFrameToTcb
     rw [SystemState.updateTcb_getTcb?_self st tid _ hObjInv, hTcb]
     rfl
-  unfold readReturnFrame
+  unfold readReturnFrame SyscallReturnFrame.deliveredOver
   rw [hRead]
-  simp only
-  have hReads := (tcb.registerContext).stageReturnFrame_reads_back frame
-  obtain ⟨h0, h1, h2, h3, h4, h5⟩ := hReads
-  simp only [SeLe4n.Model.TCB.withDeliveredFrame_registerContext, h0, h1, h2, h3, h4, h5]
+  simp only [SeLe4n.Model.TCB.withDeliveredFrame_registerContext,
+    SeLe4n.RegisterFile.stageDeliveredWords]
+  split <;> split <;> split <;> split <;> rfl
 
 /-- **WS-ZA ZA4.7**: and leaves the thread holding no message. -/
 theorem writeDeliveredFrameToTcb_getTcb?_self
@@ -917,6 +1031,78 @@ theorem writeReturnFrameToTcb_ofWord_eq_words (st : SystemState) (tid : SeLe4n.T
     writeReturnFrameToTcb st tid (returnFrameOfWord w) =
       st.updateTcb tid (SeLe4n.Model.TCB.withReturnWords · w 0 0 0 0 0) := rfl
 
+/-- **A queried word's reply, written only on `Call`**: on a thread that
+trapped with `Call` the word in `x0` and the success label in `x1`, the message
+registers as the thread holds them (a reply of no message words writes none,
+as `copyMRs` writes none); on any other syscall the thread is unchanged. -/
+@[inline] def _root_.SeLe4n.Model.TCB.withCallReturnWord (t : TCB) (w : UInt64) : TCB :=
+  if t.trappedCall then
+    t.withReturnWords w 0 t.registerContext.x2 t.registerContext.x3 t.registerContext.x4
+      t.registerContext.x5
+  else t
+
+/-- **A value-returning invocation's reply** (`.serviceQuery` and the audit
+reads): the queried word staged into the caller's registers when it trapped
+with `Call` (`TCB.withCallReturnWord`), and nothing written otherwise.  One
+`updateTcb`, so every frame fact of that primitive is this write's. -/
+def writeCallReturnWord (st : SystemState) (tid : SeLe4n.ThreadId) (w : UInt64) :
+    SystemState :=
+  st.updateTcb tid (SeLe4n.Model.TCB.withCallReturnWord · w)
+
+theorem writeCallReturnWord_scheduler (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : UInt64) : (writeCallReturnWord st tid w).scheduler = st.scheduler :=
+  SystemState.updateTcb_scheduler st tid _
+
+theorem writeCallReturnWord_machine (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : UInt64) : (writeCallReturnWord st tid w).machine = st.machine :=
+  SystemState.updateTcb_machine st tid _
+
+/-- **The reply as a return-frame write**: on a thread that trapped with `Call`
+the frame of the word, the success label and the thread's own message
+registers; on any other the thread's own six words, so every frame fact of
+`writeReturnFrameToTcb` is this write's. -/
+theorem writeCallReturnWord_eq_frame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : UInt64) (t : TCB) (h : st.getTcb? tid = some t) :
+    writeCallReturnWord st tid w =
+      writeReturnFrameToTcb st tid
+        (if t.trappedCall then
+          { x0 := w, x1 := 0, x2 := t.registerContext.x2, x3 := t.registerContext.x3,
+            x4 := t.registerContext.x4, x5 := t.registerContext.x5 }
+        else
+          { x0 := t.registerContext.x0, x1 := t.registerContext.x1,
+            x2 := t.registerContext.x2, x3 := t.registerContext.x3,
+            x4 := t.registerContext.x4, x5 := t.registerContext.x5 }) := by
+  unfold writeCallReturnWord writeReturnFrameToTcb
+  rw [SystemState.updateTcb_eq_of_some h, SystemState.updateTcb_eq_of_some h]
+  unfold SeLe4n.Model.TCB.withCallReturnWord
+  split <;> rfl
+
+/-- A target that is not a TCB is left alone. -/
+theorem writeCallReturnWord_id_when_not_tcb (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : UInt64) (h : st.getTcb? tid = none) : writeCallReturnWord st tid w = st :=
+  SystemState.updateTcb_eq_self_of_none h _
+
+/-- **Every property a return-frame write keeps, the reply write keeps**: it is
+one such write or the identity (`writeCallReturnWord_eq_frame`). -/
+theorem writeCallReturnWord_of_frame (P : SystemState → Prop) {st : SystemState}
+    {tid : SeLe4n.ThreadId} {w : UInt64} (hSelf : P st)
+    (hW : ∀ f, P (writeReturnFrameToTcb st tid f)) : P (writeCallReturnWord st tid w) := by
+  cases h : st.getTcb? tid with
+  | none => rw [writeCallReturnWord_id_when_not_tcb st tid w h]; exact hSelf
+  | some t => rw [writeCallReturnWord_eq_frame st tid w t h]; exact hW _
+
+/-- On a `Call`, the reply's read-back is the word, the success label and the
+message registers the caller held. -/
+theorem readReturnFrame_writeCallReturnWord (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : UInt64) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    (hObjInv : st.objects.invExt) (hCall : tcb.trappedCall = true) :
+    readReturnFrame (writeCallReturnWord st tid w) tid =
+      { readReturnFrame st tid with x0 := w, x1 := 0 } := by
+  unfold writeCallReturnWord readReturnFrame
+  rw [SystemState.updateTcb_getTcb?_self st tid _ hObjInv, hTcb]
+  simp only [Option.map_some, SeLe4n.Model.TCB.withCallReturnWord, hCall, ↓reduceIte]
+  rfl
+
 -- ============================================================================
 -- §4d  Staging for a woken counterparty (RA.B.5b)
 -- ============================================================================
@@ -925,21 +1111,19 @@ theorem writeReturnFrameToTcb_ofWord_eq_words (st : SystemState) (tid : SeLe4n.T
 -- counterparty that was blocked in ITS OWN syscall, the woken thread's
 -- return frame must be staged now — its own boundary crossing ended in
 -- `.blocks` with no frame written, and the context restore (WS-BP BP7.6) delivers
--- whatever its `registerContext` holds.  Every wake in the tree delivers
--- through one of two shapes, and each gets a guarded Option-lifted stager
--- so the dispatch arms compose them in one call:
+-- whatever its `registerContext` holds.  A wake that delivers a payload has
+-- the payload's frame staged by a guarded Option-lifted stager the dispatch
+-- arms compose in one call:
 --
 -- * a **payload wake** — the wake wrote `.ready` + `pendingMessage := msg`
 --   (`storeTcbIpcStateAndMessage` / `storeTcbReceiveComplete`): the frame
 --   is `returnFrameOfMessage msg`, which is `stageDeliveredMessage` —
---   `stageWokenDelivery` lifts it over the arm's pre-resolved counterparty;
--- * a **completion wake** — a plain sender whose send finished at a
---   rendezvous was woken `.ready` with its `pendingMessage` *consumed*
---   (`none`): its syscall returns `Unit`, so the frame is the zero frame —
---   `stageWokenSendCompletion`, whose guard (`.ready` AND no pending
---   delivery) keeps it inert on a consumed `Call` sender (which lands
---   `.blockedOnReply` and is owed its frame by the reply path) and on a
---   payload wake (owed `returnFrameOfMessage` instead).
+--   `stageWokenDelivery` lifts it over the arm's pre-resolved counterparty.
+--
+-- A plain sender woken because its send finished at a rendezvous is owed no
+-- frame: seL4's `receiveIPC` only sets it `Running` (`setThreadState`), so it
+-- resumes with the registers it trapped with and the kernel writes none of
+-- them.
 
 /-- WS-RA RA.B.5b: stage the delivered message of an optionally-woken
 counterparty — `stageDeliveredMessage` lifted over the dispatch arm's
@@ -963,68 +1147,6 @@ delivering transfer's `capInfo`, `0` on transfer-free paths. -/
     (tid : SeLe4n.ThreadId) (capInfo : Nat) :
     stageWokenDelivery st (some tid) capInfo
       = stageDeliveredMessage st tid capInfo := rfl
-
-/-- WS-RA RA.B.5b: stage the **unit success frame** for a woken plain
-sender whose send completed at a rendezvous.  Guarded on the
-counterparty's post-state being `.ready` with **no** pending delivery: a
-consumed `Call` sender lands `.blockedOnReply` (frame owed by the reply
-path), and a `.ready` thread WITH a pending delivery is a payload wake
-owed `returnFrameOfMessage` by `stageWokenDelivery` instead — staging
-zero there would clobber a real value.
-
-`@[inline]` so a caller that names the woken thread (`some s`) builds no
-`Option` cell: the match folds at the call site (WS-ZA ZA4.7). -/
-@[inline] def stageWokenSendCompletion (st : SystemState)
-    (woken? : Option SeLe4n.ThreadId) : SystemState :=
-  match woken? with
-  | none => st
-  | some tid =>
-      match st.getTcb? tid with
-      | some tcb =>
-          if tcb.ipcState = .ready ∧ tcb.pendingMessage = none then
-            writeReturnFrameToTcb st tid .zero
-          else st
-      | none => st
-
-@[simp] theorem stageWokenSendCompletion_none (st : SystemState) :
-    stageWokenSendCompletion st none = st := rfl
-
-/-- The completion stager is inert on a counterparty the rendezvous did
-not complete — a consumed `Call` sender (`.blockedOnReply`), a still-queued
-sender, or any non-`.ready` post-state. -/
-theorem stageWokenSendCompletion_id_when_not_ready
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb)
-    (hNotReady : tcb.ipcState ≠ .ready) :
-    stageWokenSendCompletion st (some tid) = st := by
-  simp only [stageWokenSendCompletion]
-  rw [hTcb]
-  simp [hNotReady]
-
-/-- The completion stager is inert on a payload wake — a `.ready`
-counterparty still holding a pending delivery is owed
-`returnFrameOfMessage`, never the zero frame. -/
-theorem stageWokenSendCompletion_id_when_pending
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (msg : IpcMessage)
-    (hTcb : st.getTcb? tid = some tcb)
-    (hPending : tcb.pendingMessage = some msg) :
-    stageWokenSendCompletion st (some tid) = st := by
-  simp only [stageWokenSendCompletion]
-  rw [hTcb]
-  simp [hPending]
-
-/-- The completion stager's positive arm: a genuinely completed sender
-(`.ready`, delivery consumed) gets exactly the zero frame staged. -/
-theorem stageWokenSendCompletion_stages_zero
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb)
-    (hReady : tcb.ipcState = .ready)
-    (hConsumed : tcb.pendingMessage = none) :
-    stageWokenSendCompletion st (some tid)
-      = writeReturnFrameToTcb st tid .zero := by
-  simp only [stageWokenSendCompletion]
-  rw [hTcb]
-  simp [hReady, hConsumed]
 
 /-- RA.B.5b frame lemma: neither stager touches the scheduler. -/
 theorem stageWokenDelivery_scheduler_eq (st : SystemState)
@@ -1102,48 +1224,17 @@ theorem stageWokenDelivery_declassificationAuditLog_eq (st : SystemState)
   | none => rfl
   | some tid => exact stageDeliveredMessage_declassificationAuditLog_eq st tid capInfo
 
-/-- RA.B.5b frame lemma: the completion stager never touches the
-scheduler. -/
-theorem stageWokenSendCompletion_scheduler_eq (st : SystemState)
-    (woken? : Option SeLe4n.ThreadId) :
-    (stageWokenSendCompletion st woken?).scheduler = st.scheduler := by
-  cases woken? with
-  | none => rfl
-  | some tid =>
-      simp only [stageWokenSendCompletion]
-      cases st.getTcb? tid with
-      | none => rfl
-      | some tcb =>
-          by_cases hGuard : tcb.ipcState = .ready ∧ tcb.pendingMessage = none
-          · simp only [hGuard]
-            exact writeReturnFrameToTcb_scheduler_eq st tid _
-          · simp [hGuard]
-
-/-- RA.B.5b frame lemma: the completion stager never touches the
-machine. -/
-theorem stageWokenSendCompletion_machine_eq (st : SystemState)
-    (woken? : Option SeLe4n.ThreadId) :
-    (stageWokenSendCompletion st woken?).machine = st.machine := by
-  cases woken? with
-  | none => rfl
-  | some tid =>
-      simp only [stageWokenSendCompletion]
-      cases st.getTcb? tid with
-      | none => rfl
-      | some tcb =>
-          by_cases hGuard : tcb.ipcState = .ready ∧ tcb.pendingMessage = none
-          · simp only [hGuard]
-            exact writeReturnFrameToTcb_machine_eq st tid _
-          · simp [hGuard]
-
 /-- **WS-RA RA.B.5b — the plan-named theorem (§3.5, §8).**  A payload wake
 leaves the woken waiter's frame staged: whenever a wake delivered `msg`
 into a counterparty (post-state `.ready` with `pendingMessage = some msg`
 — the `storeTcbIpcStateAndMessage`/`storeTcbReceiveComplete` shape every
-wake in the tree produces), the staging step writes exactly
-`returnFrameOfMessage msg` into its saved register context — its length
-counting the overflow words written into the waiter's IPC buffer (WS-BP BP7.8)
-— and the boundary read recovers it bit for bit.  Delivery is the context restore
+wake in the tree produces), the staging step writes
+`returnFrameOfMessage msg` into its saved register context as seL4's transfer
+writes it — its length counting the overflow words written into the waiter's
+IPC buffer (WS-BP BP7.8), and only the message registers below that length
+written — and the boundary read recovers the badge, the message info and the
+delivered words bit for bit, every other message register as it was
+(`SyscallReturnFrame.deliveredOver`).  Delivery is the context restore
 (WS-BP BP7.6)'s; what this pins is that the frame is *there* to deliver. -/
 theorem blockedReturn_staged_in_waiter_frame
     (st : SystemState) (w : SeLe4n.ThreadId) (tcb : TCB) (msg : IpcMessage)
@@ -1153,28 +1244,17 @@ theorem blockedReturn_staged_in_waiter_frame
     (hMsg : tcb.pendingMessage = some msg)
     (hObjInv : st.objects.invExt) :
     readReturnFrame (stageWokenDelivery st (some w) capInfo) w
-      = returnFrameOfMessage msg capInfo (messageOverflowWrites st tcb msg).length := by
+      = (returnFrameOfMessage msg capInfo (messageOverflowWrites st tcb msg).length).deliveredOver
+          tcb.registerContext := by
   show readReturnFrame (stageDeliveredMessage st w capInfo) w
-    = returnFrameOfMessage msg capInfo (messageOverflowWrites st tcb msg).length
+    = (returnFrameOfMessage msg capInfo (messageOverflowWrites st tcb msg).length).deliveredOver
+        tcb.registerContext
   unfold stageDeliveredMessage
   rw [hTcb]
   simp only [hReady, hMsg]
   exact readReturnFrame_writeDeliveredFrame st w
     (returnFrameOfMessage msg capInfo (messageOverflowWrites st tcb msg).length)
     tcb hTcb hObjInv
-
-/-- WS-RA RA.B.5b — the completion dual: a woken plain sender's staged
-frame is the zero frame (unit success), recovered by the boundary read. -/
-theorem blockedUnitReturn_staged_in_sender_frame
-    (st : SystemState) (s : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? s = some tcb)
-    (hReady : tcb.ipcState = .ready)
-    (hConsumed : tcb.pendingMessage = none)
-    (hObjInv : st.objects.invExt) :
-    readReturnFrame (stageWokenSendCompletion st (some s)) s
-      = SyscallReturnFrame.zero := by
-  rw [stageWokenSendCompletion_stages_zero st s tcb hTcb hReady hConsumed]
-  exact readReturnFrame_writeReturnFrame st s .zero tcb hTcb hObjInv
 
 -- ============================================================================
 -- §5  Error carriage on the x1 label (RA.A.5, RA.A.6)
@@ -1558,6 +1638,14 @@ inductive SyscallOutcome where
   restore staged; the halt (`halt_after_delivered_syscall_fault`) is reached
   only on a core with no restore staged. -/
   | faulted
+  /-- WS-SX SX7.2: the caller **resumes with the registers it trapped with**.
+  seL4's `handleInvocation` answers an invocation's error with
+  `replyFromKernel_error` only when `isCall`; a `Send`, `NBSend` or the send
+  half of a compound syscall that fails writes no message register, so the
+  thread returns from its `SVC` with `x0`-`x5` exactly as it left them.  No
+  frame exists for it, nothing is staged, and the trap layer writes nothing
+  over the trapped `x0`-`x5`. -/
+  | resumes
   deriving Repr, DecidableEq
 
 namespace SyscallOutcome
@@ -1567,11 +1655,13 @@ namespace SyscallOutcome
 `0` = a frame was written, `1` = the caller blocked and no frame exists,
 `2` = the caller faulted at the seam (PR #887 review round 5) — no frame,
 and, where the context restore staged no successor, the trap layer halts
-rather than resumes it. -/
+rather than resumes it, `3` = the caller resumes with the registers it trapped
+with (WS-SX SX7.2) — no frame, and the trap layer writes none. -/
 def tagWord : SyscallOutcome → UInt64
   | .returns _ => 0
   | .blocks    => 1
   | .faulted   => 2
+  | .resumes   => 3
 
 /-- The tags are distinct — a blocked outcome cannot be mistaken for a
 frame delivery at the boundary. -/
@@ -1590,6 +1680,12 @@ restore (WS-BP BP7.6) staged no successor, and the two must never be confused at
 theorem tagWord_faulted_ne_blocks : tagWord .faulted ≠ tagWord .blocks := by
   simp [tagWord]
 
+/-- The four tags are pairwise distinct: an unchanged resume is never read as
+a frame delivery (which would write `x0`-`x5`), a block or a fault. -/
+theorem tagWord_resumes_ne {o : SyscallOutcome} (h : o ≠ .resumes) :
+    tagWord .resumes ≠ tagWord o := by
+  cases o <;> simp_all [tagWord]
+
 /-- The mailbox frame for an outcome: a blocked caller's mailbox stays
 zeroed (no return value exists for it — RA.C.9; its real frame is staged
 by the unblocking arm and delivered by the context restore (WS-BP BP7.6)).
@@ -1601,6 +1697,7 @@ def mailboxFrame : SyscallOutcome → SyscallReturnFrame
   | .returns f => f
   | .blocks    => .zero
   | .faulted   => .zero
+  | .resumes   => .zero
 
 /-- WS-ZA ZA4: **what the boundary reads of an outcome**: its tag and its
 mailbox frame's six words.  The live entry carries these words across the
@@ -1612,12 +1709,14 @@ outcome nor its frame. -/
    o.mailboxFrame.x4, o.mailboxFrame.x5)
 
 /-- **The outcome the boundary's words name**: tag `0` the frame of the six
-words, `1` a blocked caller, any other tag a faulted one. -/
+words, `1` a blocked caller, `3` an unchanged resume, any other tag a faulted
+one. -/
 @[inline] def ofWords :
     UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 → SyscallOutcome
   | (tag, w0, w1, w2, w3, w4, w5) =>
     if tag = 0 then .returns { x0 := w0, x1 := w1, x2 := w2, x3 := w3, x4 := w4, x5 := w5 }
     else if tag = 1 then .blocks
+    else if tag = 3 then .resumes
     else .faulted
 
 /-- An outcome's words name it: the boundary loses nothing of an outcome. -/
@@ -1627,10 +1726,11 @@ theorem ofWords_words (o : SyscallOutcome) : ofWords o.words = o := by
 end SyscallOutcome
 
 /-- Does the caller's post-state IPC state mean the syscall **blocked**?
-Everything except `.ready` is an IPC-blocked state; a descheduled but
-IPC-`.ready` caller (a self-`.tcbSuspend`) still counts as returning, since
-the unit frame is exactly what it should observe when later resumed
-(plan §3.5).
+Everything except `.ready` is an IPC-blocked state.  It is one half of the
+reply decision (`tcbWithholdsReply`): a caller left IPC-`.ready` but
+`Inactive` — a self-`.tcbSuspend`, a `Call` that links no reply — is not
+blocked in IPC and is still answered nothing, as seL4's `handleInvocation`
+answers only a caller left `Restart`.
 
 **Exhaustive match, no wildcard** — the §3.4 discipline `ReturnShape`
 established, applied here for the same reason: a wildcard would silently
@@ -1667,22 +1767,66 @@ theorem tcbBlocksReturn_eq (tcb : TCB) :
   generalize tcb.ipcStateCode = c
   rcases c with _ | _ | _ | _ | c <;> rcases o with _ | o <;> rfl
 
-/-- §3.3's shape-driven boundary read: a `.unit` syscall's frame is
-**constructed**, never read from the staged registers — reading them back
-would return the caller's own staged arguments, which is the §1.2 defect.
-Value shapes read what the arm staged (`dispatchArm_matches_returnShape`
-is what makes that read safe). -/
+/-- **Does the syscall leave its caller with no reply?**  seL4's
+`handleInvocation` writes the reply (`replyFromKernel_success_empty`, or the
+staged values of a receive) and sets the caller `Running` only
+`if (thread_state_get_tsType(thread->tcbState) == ThreadState_Restart)`: a
+caller the syscall blocked in IPC, or left `Inactive` — a self-suspend, a `Call`
+that links no reply, a fault suspend — is answered nothing, and `schedule` runs
+whichever thread is then current.  So a caller is answered exactly when it is
+runnable (`tcbWithholdsReply_eq`), whichever thread its core runs next: a
+caller its own syscall preempted keeps its answer in its saved context.
+
+Read off the TCB's codes and its `threadState` scalar, so the compiled return
+path builds no IPC state to match on (WS-ZA ZA4.7). -/
+@[inline] def tcbWithholdsReply (tcb : TCB) : Bool :=
+  tcbBlocksReturn tcb || tcb.threadState == .Inactive
+
+/-- Every IPC state but `.ready` blocks the return. -/
+theorem ipcStateBlocksReturn_of_ne_ready {s : ThreadIpcState} (h : s ≠ .ready) :
+    ipcStateBlocksReturn s = true := by
+  cases s <;> simp_all [ipcStateBlocksReturn]
+
+/-- The reply is withheld exactly from a caller that is not runnable. -/
+theorem tcbWithholdsReply_eq (tcb : TCB) : tcbWithholdsReply tcb = !tcb.isRunnable := by
+  unfold tcbWithholdsReply TCB.isRunnable
+  rw [tcbBlocksReturn_eq]
+  by_cases hR : tcb.ipcState = .ready
+  · simp only [hR, ipcStateBlocksReturn_ready, decide_true, Bool.true_and, Bool.false_or]
+    cases tcb.threadState <;> rfl
+  · rw [ipcStateBlocksReturn_of_ne_ready hR]
+    simp [hR]
+
+/-- The executable test is the property (`TCB.Runnable`), both ways. -/
+theorem isRunnable_eq_true_iff (tcb : TCB) :
+    tcb.isRunnable = true ↔ tcb.ipcState = .ready ∧ tcb.threadState ≠ .Inactive := by
+  unfold TCB.isRunnable; simp
+
+/-- **seL4's `replyFromKernel_success_empty`** over the caller's registers:
+the badge register `x0` is `0` and the message-info register `x1` the empty
+`MessageInfo` (the all-zero word), and `x2`-`x5` keep what the caller holds —
+seL4 writes those two registers and no message register. -/
+@[inline] def emptyReplyFrame (staged : SyscallReturnFrame) : SyscallReturnFrame :=
+  { staged with x0 := 0, x1 := 0 }
+
+/-- §3.3's shape-driven boundary read: a `.unit` invocation's reply is
+**constructed** in the two registers seL4 writes (`emptyReplyFrame`), never
+read from the staged `x0`/`x1` — reading them back would return the caller's
+own capability pointer and request label, which is the §1.2 defect — and
+`x2`-`x5` are the caller's own, as seL4 leaves them.  Value shapes read what
+the arm staged (`dispatchArm_matches_returnShape` is what makes that read
+safe). -/
 def frameForShape (shape : ReturnShape) (staged : SyscallReturnFrame) :
     SyscallReturnFrame :=
   match shape with
-  | .unit => .zero
+  | .unit => emptyReplyFrame staged
   | _     => staged
 
-/-- The unit shape ignores the staged registers entirely — however corrupt
-or stale they are, a `Unit`-returning syscall reports `x0 = 0` and a
-success `x1`. -/
+/-- The unit shape ignores the staged `x0` and `x1` — however corrupt or stale
+they are, a `Unit`-returning invocation reports `x0 = 0` and a success `x1` —
+and passes `x2`-`x5` through. -/
 theorem frameForShape_unit (staged : SyscallReturnFrame) :
-    frameForShape .unit staged = .zero := rfl
+    frameForShape .unit staged = emptyReplyFrame staged := rfl
 
 /-- Value shapes pass the staged frame through unchanged. -/
 theorem frameForShape_value (shape : ReturnShape) (staged : SyscallReturnFrame)

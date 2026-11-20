@@ -285,6 +285,78 @@ theorem cspaceInsertSlot_preserves_liveMappingsRecorded {addr : CSpaceAddr} {cap
     rw [hNone] at hc; cases hc
   · rw [cspaceInsertSlot_slotCapAt_ne hInv h r hr]; exact hc
 
+/-- **A teardown of roots alone keeps every slot's capability**: a root holds no
+slot, so a key it rewrites read no slot before or after. -/
+theorem vspaceRootOnlyWrite.slotCapAt {st st' : SystemState} (h : vspaceRootOnlyWrite st st')
+    (r : SlotRef) : st'.slotCapAt r = st.slotCapAt r := by
+  rw [SystemState.slotCapAt_eq_bind, SystemState.slotCapAt_eq_bind]
+  rcases h r.cnode with e | ⟨⟨r1, h1⟩, ⟨r2, h2⟩⟩
+  · rw [e]
+  · rw [h1, h2]; rfl
+
+/-- **Dropping a record that witnessed nothing keeps the mappings recorded**:
+the clear rewrites one CNode slot's capability, keeping every other slot, every
+root and every frame, and the record it drops witnessed no live mapping. -/
+theorem cspaceClearFrameMapping_preserves_liveMappingsRecorded {addr : CSpaceAddr}
+    {st st' : SystemState} (hInv : st.objects.invExt) (hS : st.slotWitnessesNoMapping addr)
+    (hL : st.liveMappingsRecorded) (h : cspaceClearFrameMapping addr st = .ok ((), st')) :
+    st'.liveMappingsRecorded := by
+  obtain ⟨cn, cap, hCn, -, hStore⟩ := cspaceClearFrameMapping_ok_decompose addr st st' h
+  have hO := (SystemState.getCNode?_eq_some_iff _ _ _).1 hCn
+  have hObj := storeObject_slotWriteObjects hInv hStore hO rfl rfl
+  refine ⟨fun rid r v p perms e hR hM hE => ?_,
+    hL.2.of_drawnFrom (storeObject_threadSlotsDrawnFrom hInv hStore fun _ h => by cases h)⟩
+  have hR0 : st.objects[rid]? = some (.vspaceRoot r) := by
+    rcases hObj rid with e | ⟨pre, post, -, hq, -, hv⟩
+    · rw [← e]; exact hR
+    · rw [hR] at hq; cases hq; cases hv
+  obtain ⟨w, c, fid, f, hc, ht, hf, hb, hmap⟩ := hL.1 rid r v p perms e hR0 hM hE
+  by_cases hw : w = addr
+  · subst hw; subst hb
+    exact absurd hmap (hS c fid f rid r v perms e hc ht hf hR0 hM hE)
+  · refine ⟨w, c, fid, f, ?_, ht, ?_, hb, hmap⟩
+    · exact (SystemState.slotCapAt_storeObject_ne hInv hO hStore
+        (fun s' hs => CNode.lookup_insert_ne cn addr.slot s' _ (Ne.symm hs)
+          (CNode.slotsUnique_holds _)) w hw).trans hc
+    · rcases hObj fid with e | ⟨pre, post, hp, -, hv, -⟩
+      · exact e.trans hf
+      · rw [hf] at hp; cases hp; cases hv
+
+/-- **`Page_Unmap` keeps every live mapping recorded.**  The teardown only
+shrinks roots and keeps every slot and frame; the page the capability records
+is no longer live after it (`unmapLivePagesState_clears`), so on the
+well-formed post-teardown state its record witnesses no mapping
+(`slotWitnessesNoMapping`), and dropping it loses no witness. -/
+theorem vspaceUnmapFrameCap_preserves_liveMappingsRecorded (ec : Concurrency.CoreId)
+    (addr : CSpaceAddr) (st st' : SystemState) (hW : teardownWellFormed st)
+    (hL : st.liveMappingsRecorded) (h : vspaceUnmapFrameCap ec addr st = .ok ((), st')) :
+    st'.liveMappingsRecorded := by
+  obtain ⟨st1, hU, hC⟩ := vspaceUnmapFrameCap_cases h
+  obtain ⟨-, hV, -⟩ := unmapLivePages_ok_frame ec _ st st1 hW.1 hU
+  have hEq : st1 = unmapLivePagesState ec (slotMappedPages st addr) st := by
+    rw [unmapLivePages_eq_ok_state] at hU; cases hU; rfl
+  obtain ⟨hW1, hSh, hClr⟩ := unmapLivePagesState_clears ec (slotMappedPages st addr) st hW
+  rw [← hEq] at hW1 hSh hClr
+  have hL1 : st1.liveMappingsRecorded := SystemState.liveMappingsRecorded.of_shrink
+    hSh.mappingRoots
+    (SystemState.mappingRecordsKept.of_fwd
+      (fun r cap hc _ => ⟨r, cap, (hV.slotCapAt r).trans hc, rfl, rfl⟩)
+      (fun _ f hf => ⟨f, hV.keeps_frame hf, rfl⟩))
+    hV.threadSlotsDrawnFrom hL
+  refine cspaceClearFrameMapping_preserves_liveMappingsRecorded hW1.1 ?_ hL1 hC
+  intro cap fid f rid root v perms e hc ht hf hr hm he hmap
+  have hc0 : st.slotCapAt addr = some cap := (hV.slotCapAt addr).symm.trans hc
+  have hf0 : st.objects[fid]? = some (.frame f) := by
+    rw [← hV.eq_of_not_root' (fun r h => by rw [hf] at h; cases h)]; exact hf
+  have hG : st.getFrame? fid = some f := (SystemState.getFrame?_eq_some_iff st fid f).2 hf0
+  have hP : capabilityMappedPage st cap = some ⟨root.asid, v, f.base, some e⟩ := by
+    simp [capabilityMappedPage, hmap, ht, hG]
+  have hNot := hClr ⟨root.asid, v, f.base, some e⟩ (by simp [slotMappedPages, hc0, hP])
+  have hRes := resolveAsidRoot_of_root hW1 hr
+  unfold mappedPageLive at hNot
+  simp only [hRes, VSpaceRoot.lookup, hm, he] at hNot
+  simp at hNot
+
 /-- **A free-index write keeps the mappings recorded**: it rewrites one slot's
 free index, keeping the capability's target and record. -/
 theorem setCapFreeIndex_preserves_liveMappingsRecorded {st : SystemState} {addr : CSpaceAddr}

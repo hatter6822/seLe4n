@@ -29,7 +29,7 @@ space's owner carves from an untyped and installs with
   (`.invalidCapability`, seL4's "already mapped"); a root the boot configured
   owns no page for a table to hang from (`.invalidArgument`); an address outside
   the 48-bit space has no walk (`.addressOutOfBounds`); and a walk already
-  complete has nowhere to put another table (`.mappingConflict`, seL4's
+  complete has nowhere to put another table (`.targetSlotOccupied`, seL4's
   `seL4_DeleteFirst`).
 * `pageTableUnmap tableId` removes the slot and clears the record.  It
   **refuses** (`.revocationRequired`) while anything still translates through
@@ -284,7 +284,7 @@ def pageTableMap (tableId rootId : SeLe4n.ObjId) (vaddr : SeLe4n.VAddr) : Kernel
       else if !pageTableAddressable vaddr then .error .addressOutOfBounds
       else
         match root.missingLevel? vaddr with
-        | none => .error .mappingConflict
+        | none => .error .targetSlotOccupied
         | some level =>
           let index := PageTableSlot.indexOf level vaddr
           match storeObject tableId (.pageTable (table.installedAt rootId level index)) st with

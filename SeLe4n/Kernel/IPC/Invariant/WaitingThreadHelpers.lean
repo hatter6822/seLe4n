@@ -183,6 +183,39 @@ theorem storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsist
         rw [hFrame] at hObj'
         exact hInv tid' tcb' hObj'
 
+/-- `storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_preserves_blockedThreadsPendingMessageConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbSignalWoken st tid badge = .ok st')
+    (hInv : blockedThreadsPendingMessageConsistent st) :
+    blockedThreadsPendingMessageConsistent st' := by
+  unfold storeTcbSignalWoken modifyTcb at hStore
+  cases hLk : lookupTcb st tid with
+  | none => simp [hLk] at hStore
+  | some tcb =>
+    simp only [hLk] at hStore
+    cases hSO : storeObject tid.toObjId
+        (.tcb (TCB.signalWoken badge tcb)) st with
+    | error e => simp [hSO] at hStore
+    | ok pair =>
+      simp only [hSO, Except.ok.injEq] at hStore; subst hStore
+      intro tid' tcb' hObj'
+      by_cases hEq : tid'.toObjId = tid.toObjId
+      · -- Same thread: new ipcState and pendingMessage
+        have hSelf := storeObject_objects_eq st pair.2 tid.toObjId
+          (.tcb (TCB.signalWoken badge tcb)) hObjInv hSO
+        rw [hEq] at hObj'; rw [hSelf] at hObj'
+        cases hObj'
+        trivial
+      · have hNe' : tid'.toObjId ≠ tid.toObjId := hEq
+        have hFrame := storeObject_objects_ne st pair.2 tid.toObjId tid'.toObjId
+          (.tcb (TCB.signalWoken badge tcb))
+          hNe' hObjInv hSO
+        rw [hFrame] at hObj'
+        exact hInv tid' tcb' hObj'
+
 /-- Finding F-1: `storeTcbReceiveComplete` preserves
 `blockedThreadsPendingMessageConsistent`.  The stored ipcState is `.ready` (non-waiting),
 so no `hTarget` obligation on `msg` is needed.  Mirror of
@@ -215,6 +248,39 @@ theorem storeTcbReceiveComplete_preserves_blockedThreadsPendingMessageConsistent
       · have hNe' : tid'.toObjId ≠ tid.toObjId := hEq
         have hFrame := storeObject_objects_ne st pair.2 tid.toObjId tid'.toObjId
           (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready))
+          hNe' hObjInv hSO
+        rw [hFrame] at hObj'
+        exact hInv tid' tcb' hObj'
+
+/-- `storeTcbReceiveComplete_preserves_blockedThreadsPendingMessageConsistent` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_preserves_blockedThreadsPendingMessageConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbSignalBoundWoken st tid badge = .ok st')
+    (hInv : blockedThreadsPendingMessageConsistent st) :
+    blockedThreadsPendingMessageConsistent st' := by
+  unfold storeTcbSignalBoundWoken modifyTcb at hStore
+  cases hLk : lookupTcb st tid with
+  | none => simp [hLk] at hStore
+  | some tcb =>
+    simp only [hLk] at hStore
+    cases hSO : storeObject tid.toObjId
+        (.tcb (TCB.signalBoundWoken badge tcb)) st with
+    | error e => simp [hSO] at hStore
+    | ok pair =>
+      simp only [hSO, Except.ok.injEq] at hStore; subst hStore
+      intro tid' tcb' hObj'
+      by_cases hEq : tid'.toObjId = tid.toObjId
+      · -- Same thread: new ThreadIpcState.ready `.ready` is non-waiting → trivial
+        have hSelf := storeObject_objects_eq st pair.2 tid.toObjId
+          (.tcb (TCB.signalBoundWoken badge tcb)) hObjInv hSO
+        rw [hEq] at hObj'; rw [hSelf] at hObj'
+        cases hObj'
+        trivial
+      · have hNe' : tid'.toObjId ≠ tid.toObjId := hEq
+        have hFrame := storeObject_objects_ne st pair.2 tid.toObjId tid'.toObjId
+          (.tcb (TCB.signalBoundWoken badge tcb))
           hNe' hObjInv hSO
         rw [hFrame] at hObj'
         exact hInv tid' tcb' hObj'

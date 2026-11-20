@@ -365,8 +365,8 @@ theorem removeRunnableOnCore (st : SystemState) (t : SeLe4n.ThreadId) (c : CoreI
   runDescheduleOnCore st c t hInv
 
 theorem recordSendCap (st : SystemState) (t : SeLe4n.ThreadId) (b : Option SeLe4n.Badge)
-    (g : Bool) (hInv : st.objects.invExt) :
-    RecordsFrame st (_root_.SeLe4n.Kernel.recordSendCap st t b g) :=
+    (g gr : Bool) (hInv : st.objects.invExt) :
+    RecordsFrame st (_root_.SeLe4n.Kernel.recordSendCap st t b g gr) :=
   mapTcbInPlace st t hInv fun _ => rfl
 
 end RecordsFrame
@@ -395,6 +395,21 @@ theorem storeTcbReceiveComplete {st st' : SystemState} {t : SeLe4n.ThreadId}
     (h : _root_.SeLe4n.Kernel.storeTcbReceiveComplete st t m = .ok st')
     (hP : ∀ x, st.getTcb? t = some x → ¬ ipcParked x.ipcState) : RecordsStep st st' :=
   modifyTcb hInv h fun x hx => TcbStaysParked.of_ipc rfl rfl (by simpa using hP x hx)
+
+/-- A signal's wake: the woken thread made `.ready`, with the badge in its badge
+register, out of an unparked state. -/
+theorem storeTcbSignalWoken {st st' : SystemState} {t : SeLe4n.ThreadId}
+    {b : SeLe4n.Badge} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.storeTcbSignalWoken st t b = .ok st')
+    (hP : ∀ x, st.getTcb? t = some x → ¬ ipcParked x.ipcState) : RecordsStep st st' :=
+  modifyTcb hInv h fun x hx => TcbStaysParked.of_ipc rfl rfl (.inl (hP x hx))
+
+/-- …and the bound receiver's. -/
+theorem storeTcbSignalBoundWoken {st st' : SystemState} {t : SeLe4n.ThreadId}
+    {b : SeLe4n.Badge} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.storeTcbSignalBoundWoken st t b = .ok st')
+    (hP : ∀ x, st.getTcb? t = some x → ¬ ipcParked x.ipcState) : RecordsStep st st' :=
+  modifyTcb hInv h fun x hx => TcbStaysParked.of_ipc rfl rfl (.inl (hP x hx))
 
 end RecordsStep
 

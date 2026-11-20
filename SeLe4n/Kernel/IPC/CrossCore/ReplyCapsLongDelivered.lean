@@ -94,9 +94,9 @@ long frame. -/
 theorem routedReplyLong_length (st : SystemState) (replier : SeLe4n.ThreadId)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (sid : SyscallId)
     (bw : SeLe4n.Badge) (bd : Bool)
-    (hR : (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
+    (hR : (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
         sid = .reply) ∨
-      (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
+      (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
         sid = .replyRecv)) :
     4 ≤ mi.length ∧
       ¬ (longReplyMessage st replier rf mi.length bw bd).registers.size > maxMessageRegisters := by
@@ -127,9 +127,9 @@ theorem replyTransferChecked_capsLong_inPlace (ctx : LabelingContext) (st : Syst
     (hNoF : ct.faultWords.isFault = false)
     (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true)
     (hS : st.getTcb? replier = some stcb) (hRf : stcb.registerContext = rf)
-    (hR : (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
+    (hR : (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
         sid = .reply) ∨
-      (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
+      (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
         sid = .replyRecv))
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st replier j = .ok w) :
@@ -181,9 +181,9 @@ theorem replyTransferChecked_donatedCapsLong_inPlace (ctx : LabelingContext) (st
     (hNoF : ct.faultWords.isFault = false)
     (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true)
     (hS : st.getTcb? replier = some stcb) (hRf : stcb.registerContext = rf)
-    (hR : (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
+    (hR : (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
         sid = .reply) ∨
-      (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
+      (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
         sid = .replyRecv))
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st replier j = .ok w) :
@@ -253,9 +253,9 @@ theorem replyTransferChecked_unheldCapsLong_inPlace (ctx : LabelingContext) (st 
     (hNoF : ct.faultWords.isFault = false)
     (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true)
     (hS : st.getTcb? replier = some stcb) (hRf : stcb.registerContext = rf)
-    (hR : (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
+    (hR : (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
         sid = .reply) ∨
-      (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
+      (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
         sid = .replyRecv))
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st replier j = .ok w) :

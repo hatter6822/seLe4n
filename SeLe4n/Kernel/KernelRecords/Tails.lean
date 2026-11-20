@@ -32,6 +32,12 @@ theorem writeReturnFrameToTcb (st : SystemState) (t : SeLe4n.ThreadId)
     RecordsFrame st (Architecture.writeReturnFrameToTcb st t f) :=
   updateTcb st t hInv fun _ => rfl
 
+/-- The `Call`-gated reply write: a return-frame write or the identity. -/
+theorem writeCallReturnWord (st : SystemState) (t : SeLe4n.ThreadId) (w : UInt64)
+    (hInv : st.objects.invExt) : RecordsFrame st (Architecture.writeCallReturnWord st t w) :=
+  Architecture.writeCallReturnWord_of_frame (RecordsFrame st) (refl hInv)
+    (fun f => writeReturnFrameToTcb st t f hInv)
+
 theorem writeDeliveredFrameToTcb (st : SystemState) (t : SeLe4n.ThreadId)
     (f : Architecture.SyscallReturnFrame) (hInv : st.objects.invExt) :
     RecordsFrame st (Architecture.writeDeliveredFrameToTcb st t f) :=
@@ -60,20 +66,13 @@ theorem stageWokenDelivery (st : SystemState) (w? : Option SeLe4n.ThreadId) (n :
   · exact stageDeliveredMessage st _ n hInv
   · exact refl hInv
 
-theorem stageWokenSendCompletion (st : SystemState) (w? : Option SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) : RecordsFrame st (Architecture.stageWokenSendCompletion st w?) := by
-  unfold Architecture.stageWokenSendCompletion
-  repeat' split
-  all_goals first
-    | exact refl hInv
-    | exact writeReturnFrameToTcb st _ _ hInv
-
 theorem stageCallerReturnFor (caller? : Option SeLe4n.ThreadId) (st : SystemState) (c : CoreId)
     (o : Architecture.SyscallOutcome) (hInv : st.objects.invExt) :
     RecordsFrame st (Architecture.stageCallerReturnFor caller? st c o) := by
   cases o with
   | blocks => exact refl hInv
   | faulted => exact refl hInv
+  | resumes => exact refl hInv
   | returns f =>
     cases caller? with
     | none => exact refl hInv

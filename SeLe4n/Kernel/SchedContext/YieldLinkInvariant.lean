@@ -640,8 +640,8 @@ theorem cancelYieldTo_preserves_objects_invExt (st : SystemState) (tid : SeLe4n.
         (updateSchedContext_preserves_objects_invExt _ _ _ hInv)
   · exact hInv
 
-theorem setConsumed_preserves_objects_invExt (st : SystemState) (s : SeLe4n.SchedContextId)
-    (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) : (setConsumed st s t).objects.invExt := by
+theorem setConsumed_preserves_objects_invExt {callOnly : Bool} (st : SystemState) (s : SeLe4n.SchedContextId)
+    (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) : (setConsumed st s t callOnly).objects.invExt := by
   unfold setConsumed
   split
   · exact updateTcb_preserves_objects_invExt _ _ _
@@ -708,16 +708,16 @@ theorem updateTcb_yieldToCode_zero (st : SystemState) (u : SeLe4n.ThreadId) (f :
       (fun h' => e (SeLe4n.ThreadId.toObjId_injective _ _ h'))] at h
     exact h0 _ h
 
-theorem setConsumed_yieldToCode_zero (st : SystemState) (s : SeLe4n.SchedContextId)
+theorem setConsumed_yieldToCode_zero {callOnly : Bool} (st : SystemState) (s : SeLe4n.SchedContextId)
     (y : SeLe4n.ThreadId) (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId)
     (h0 : ∀ t, st.getTcb? tid = some t → t.yieldToCode = 0) :
-    ∀ t, (setConsumed st s y).getTcb? tid = some t → t.yieldToCode = 0 := by
+    ∀ t, (setConsumed st s y callOnly).getTcb? tid = some t → t.yieldToCode = 0 := by
   intro t ht
   unfold setConsumed at ht
   split at ht
   · rename_i sc _
     refine updateTcb_yieldToCode_zero (st.updateSchedContext s SchedContext.updateConsumed) y
-      (TCB.withConsumed · sc.consumedReading.toUInt64) (fun x hx => hx)
+      (TCB.withConsumedMsg · sc.consumedReading.toUInt64 callOnly) (fun x hx => hx)
       (updateSchedContext_preserves_objects_invExt _ _ _ hInv) tid ?_ ht
     intro t2 h2
     rw [updateSchedContext_getTcb? _ _ _ hInv] at h2
@@ -802,12 +802,12 @@ theorem completeHeldYield_preserves_objects_invExt (st : SystemState) (held : Na
   · exact completeYieldFrom_preserves_objects_invExt _ _ hInv
 
 /-- `setConsumed` writes no link. -/
-theorem setConsumed_yieldLinksKept (st : SystemState) (s : SeLe4n.SchedContextId)
-    (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) : YieldLinksKept (setConsumed st s t) st := by
+theorem setConsumed_yieldLinksKept {callOnly : Bool} (st : SystemState) (s : SeLe4n.SchedContextId)
+    (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) : YieldLinksKept (setConsumed st s t callOnly) st := by
   unfold setConsumed
   split
   · rename_i sc _
-    exact (YieldLinksKept.updateTcb _ t (TCB.withConsumed · sc.consumedReading.toUInt64)
+    exact (YieldLinksKept.updateTcb _ t (TCB.withConsumedMsg · sc.consumedReading.toUInt64 callOnly)
       (updateSchedContext_preserves_objects_invExt _ s
       SchedContext.updateConsumed hInv) (fun _ => rfl)).trans
       (YieldLinksKept.updateSchedContext _ _ _ hInv fun _ => rfl)
@@ -989,7 +989,7 @@ theorem completeYieldFrom_eq_completeYieldTo (st : SystemState) (s : SeLe4n.Sche
     rw [objYieldCodes_of_getSchedContext? hS]; exact hk
   obtain ⟨t, hT, ht⟩ := getTcb?_of_objYieldCodes_fst ((h _ _).mpr hba)
   have hT' : st.getTcb? ⟨k⟩ = some t := hT
-  have hK := setConsumed_yieldLinksKept st s ⟨k⟩ hInv
+  have hK := setConsumed_yieldLinksKept (callOnly := false) st s ⟨k⟩ hInv
   have hb' : (objYieldCodes (setConsumed st s ⟨k⟩).objects[s.toObjId]?).2 = k + 1 := by
     rw [hK, objYieldCodes_of_getSchedContext? hS]; exact hk
   have ha' : (objYieldCodes (setConsumed st s ⟨k⟩).objects[(⟨k⟩ : SeLe4n.ThreadId).toObjId]?).1 =

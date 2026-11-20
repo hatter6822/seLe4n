@@ -121,8 +121,7 @@ theorem notificationSignalOnCore_signal_path_NI
     (hWaiters : ntfn.waitHead = some waiter)
     (hStore : storeObject notificationId (.notification
         (ntfn.withHeadPopped (ntfnSuccessor? st waiter))) st = .ok ((), st'))
-    (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
-        (some { IpcMessage.empty with badge := some badge }) = .ok st'')
+    (hMsg : storeTcbSignalWoken st' waiter badge = .ok st'')
     (hObjInv : st.objects.invExt)
     (hNtfnHigh : objectObservable ctx observer notificationId = false)
     (hWaiterHigh : threadObservable ctx observer waiter = false)
@@ -134,7 +133,7 @@ theorem notificationSignalOnCore_signal_path_NI
   have hInv' : st'.objects.invExt :=
     storeObject_preserves_objects_invExt st st' notificationId _ hObjInv hStore
   have hInv'' : st''.objects.invExt :=
-    storeTcbIpcStateAndMessage_preserves_objects_invExt st' st'' waiter _ _ hInv' hMsg
+    storeTcbSignalWoken_preserves_objects_invExt st' st'' waiter _ hInv' hMsg
   rw [notificationSignalOnCore_waiter_eq notificationId badge executingCore st ntfn
         waiter st' st'' hObj hWaiters hStore hMsg]
   have hInvD := (detachNtfnHead_linksRewritten st'' waiter (ntfnSuccessor? st waiter) hInv'').2.1
@@ -145,7 +144,7 @@ theorem notificationSignalOnCore_signal_path_NI
         hWaiterHigh hWaiterObjHigh hInvD,
       detachNtfnHead_preserves_projection ctx observer st'' waiter _ hWaiterObjHigh hSuccHigh
         hInv'',
-      storeTcbIpcStateAndMessage_preserves_projection ctx observer st' st'' waiter _ _
+      storeTcbSignalWoken_preserves_projection ctx observer st' st'' waiter _
         hWaiterObjHigh hInv' hMsg,
       storeObject_preserves_projection ctx observer st st' notificationId _ hNtfnHigh hObjInv hStore]
 
@@ -173,8 +172,7 @@ theorem notificationSignalOnCore_signal_path_NI_smp
     (hWaiters : ntfn.waitHead = some waiter)
     (hStore : storeObject notificationId (.notification
         (ntfn.withHeadPopped (ntfnSuccessor? st waiter))) st = .ok ((), st'))
-    (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
-        (some { IpcMessage.empty with badge := some badge }) = .ok st'')
+    (hMsg : storeTcbSignalWoken st' waiter badge = .ok st'')
     (hObjInv : st.objects.invExt)
     (hNtfnHigh : objectObservable ctx observer notificationId = false)
     (hWaiterHigh : threadObservable ctx observer waiter = false)
@@ -187,7 +185,7 @@ theorem notificationSignalOnCore_signal_path_NI_smp
   have hInv' : st'.objects.invExt :=
     storeObject_preserves_objects_invExt st st' notificationId _ hObjInv hStore
   have hInv'' : st''.objects.invExt :=
-    storeTcbIpcStateAndMessage_preserves_objects_invExt st' st'' waiter _ _ hInv' hMsg
+    storeTcbSignalWoken_preserves_objects_invExt st' st'' waiter _ hInv' hMsg
   show projectStateOnCore ctx observer
       (notificationSignalOnCore notificationId badge executingCore st).1 c
     = projectStateOnCore ctx observer st c
@@ -201,7 +199,7 @@ theorem notificationSignalOnCore_signal_path_NI_smp
         hWaiterHigh hWaiterObjHigh hInvD,
       detachNtfnHead_preserves_projectionOnCore ctx observer c st'' waiter _ hWaiterObjHigh
         hSuccHigh hInv'',
-      storeTcbIpcStateAndMessage_preserves_projectionOnCore ctx observer st' st'' waiter .ready _ c
+      storeTcbSignalWoken_preserves_projectionOnCore ctx observer st' st'' waiter _ c
         hWaiterObjHigh hInv' hMsg,
       storeObject_preserves_projectionOnCore ctx observer st st' notificationId _ c
         hNtfnHigh hObjInv hStore]
@@ -548,8 +546,7 @@ theorem notificationSignalBoundOnCore_bound_path_NI
     (st st1 st2 : SystemState) (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
     (hTarget : boundDeliveryTarget? st notificationId = some (t, epId))
     (hRemove : endpointQueueRemoveDual epId true t st = .ok ((), st1))
-    (hRecv : storeTcbReceiveComplete st1 t
-        (some { IpcMessage.empty with badge := some badge }) = .ok st2)
+    (hRecv : storeTcbSignalBoundWoken st1 t badge = .ok st2)
     (hSplice : endpointSpliceHigh ctx observer st epId t)
     (hObjInv : st.objects.invExt)
     (hBoundHigh : threadObservable ctx observer t = false)
@@ -561,9 +558,9 @@ theorem notificationSignalBoundOnCore_bound_path_NI
     endpointQueueRemoveDual_preserves_projection_and_invExt ctx observer st st1
       epId true t hSplice hObjInv hRemove
   have iRecv : st2.objects.invExt :=
-    storeTcbReceiveComplete_preserves_objects_invExt st1 st2 t _ iSplice hRecv
+    storeTcbSignalBoundWoken_preserves_objects_invExt st1 st2 t _ iSplice hRecv
   have eRecv : projectState ctx observer st2 = projectState ctx observer st1 :=
-    storeTcbReceiveComplete_preserves_projection ctx observer st1 st2 t _
+    storeTcbSignalBoundWoken_preserves_projection ctx observer st1 st2 t _
       hBoundObjHigh iSplice hRecv
   show projectState ctx observer
       (notificationSignalBoundOnCore notificationId badge executingCore st).1
@@ -610,6 +607,22 @@ theorem storeTcbReceiveComplete_preserves_projectionOnCore
     (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched])
     (by rw [hMach])
 
+/-- `storeTcbReceiveComplete_preserves_projectionOnCore` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_preserves_projectionOnCore
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge) (c : CoreId)
+    (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
+  have hSched := storeTcbSignalBoundWoken_scheduler_eq st st' tid badge hStep
+  have hMach := storeTcbSignalBoundWoken_machine_eq st st' tid badge hStep
+  exact projectStateOnCore_congr ctx observer
+    (storeTcbSignalBoundWoken_preserves_projection ctx observer st st' tid badge
+      hTidObjHigh hObjInv hStep)
+    (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched])
+    (by rw [hMach])
+
 /-- **WS-RR RR7.22 — `notificationSignalBound_perCore_NI`, the ∀-core form.**
 
 The SMP-faithful strengthening of the boot-core theorem above: the bound
@@ -623,8 +636,7 @@ theorem notificationSignalBoundOnCore_bound_path_NI_smp
     (st st1 st2 : SystemState) (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
     (hTarget : boundDeliveryTarget? st notificationId = some (t, epId))
     (hRemove : endpointQueueRemoveDual epId true t st = .ok ((), st1))
-    (hRecv : storeTcbReceiveComplete st1 t
-        (some { IpcMessage.empty with badge := some badge }) = .ok st2)
+    (hRecv : storeTcbSignalBoundWoken st1 t badge = .ok st2)
     (hSplice : endpointSpliceHigh ctx observer st epId t)
     (hObjInv : st.objects.invExt)
     (hBoundHigh : threadObservable ctx observer t = false)
@@ -636,7 +648,7 @@ theorem notificationSignalBoundOnCore_bound_path_NI_smp
     (endpointQueueRemoveDual_preserves_projection_and_invExt ctx observer st st1
       epId true t hSplice hObjInv hRemove).2
   have iRecv : st2.objects.invExt :=
-    storeTcbReceiveComplete_preserves_objects_invExt st1 st2 t _ iSplice hRecv
+    storeTcbSignalBoundWoken_preserves_objects_invExt st1 st2 t _ iSplice hRecv
   show projectStateOnCore ctx observer
       (notificationSignalBoundOnCore notificationId badge executingCore st).1 c
     = projectStateOnCore ctx observer st c
@@ -645,7 +657,7 @@ theorem notificationSignalBoundOnCore_bound_path_NI_smp
   simp only [hRemove, hRecv]
   rw [wakeThread_preserves_projectionOnCore ctx observer st2 t executingCore c
         hBoundHigh hBoundObjHigh iRecv,
-      storeTcbReceiveComplete_preserves_projectionOnCore ctx observer st1 st2 t _ c
+      storeTcbSignalBoundWoken_preserves_projectionOnCore ctx observer st1 st2 t _ c
         hBoundObjHigh iSplice hRecv,
       endpointQueueRemoveDual_preserves_projectionOnCore ctx observer st st1 epId true t c
         hSplice hObjInv hRemove]
@@ -690,8 +702,7 @@ theorem notificationSignalBoundOnCore_lowEquivalent (ctx : LabelingContext)
       rw [hE]; exact fun _ => rfl
     | ok u =>
       obtain ⟨⟨⟩, st1⟩ := u
-      cases hRc : storeTcbReceiveComplete st1 t
-          (some { IpcMessage.empty with badge := some badge }) with
+      cases hRc : storeTcbSignalBoundWoken st1 t badge with
       | error e =>
         have hE : (notificationSignalBoundOnCore notificationId badge executingCore st).1 = st := by
           simp [notificationSignalBoundOnCore, hT, hR, hRc]
@@ -717,8 +728,7 @@ theorem notificationSignalBoundOnCore_lowEquivalent (ctx : LabelingContext)
         | ok u =>
           obtain ⟨⟨⟩, st'⟩ := u
           simp only []
-          cases hM : storeTcbIpcStateAndMessage st' w .ready
-              (some { IpcMessage.empty with badge := some badge }) with
+          cases hM : storeTcbSignalWoken st' w badge with
           | error e => simp only []; exact fun _ => rfl
           | ok st'' =>
             have := notificationSignalOnCore_signal_path_NI_smp ctx observer notificationId badge

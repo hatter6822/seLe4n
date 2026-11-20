@@ -53,11 +53,9 @@ This module states that discipline as an invariant and closes the gap:
   link (WS-ZA ZA6.3); bind preserves both, with orphan-freedom supplying the
   no-entries fact its affinity proof turns on.
 
-* §5 — `schedContextUnbindOnCore`, the live dispatch arm: the wrapper's
-  scheduling point (`priorityRescheduleOnCore`) either changes nothing or runs
-  the `.reschedule` receiver, whose replenish-queue frame and home-core /
-  `boundThread` congruences are production
-  (`PerCoreWake.lean` / `PerCoreSwitchToThread.lean`).
+* §5 — `schedContextUnbindOnCore`, the live dispatch arm: the wrapper
+  refuses the executing core's own current thread, so its state is the
+  single-core unbind's (`schedContextUnbindOnCore_ok`).
 -/
 
 namespace SeLe4n.Kernel
@@ -828,69 +826,29 @@ theorem schedContextUnbind_preserves_replenishQueueEntriesBound_smp
 -- ============================================================================
 
 /-- **The live `.schedContextUnbind` dispatch arm preserves
-affinity-consistency** — the second registered theorem.  The wrapper adds a
-scheduling point to the unbind; `priorityRescheduleOnCore_state_cases` reduces
-it to two outcomes, and the reschedule receiver's queue / `boundThread` /
-home-core frames carry the invariant through the one that changes state. -/
+affinity-consistency** — the second registered theorem.  The wrapper's state is
+the single-core unbind's (`schedContextUnbindOnCore_ok`): it refuses the
+executing core's own current thread, so it runs no local reschedule. -/
 theorem schedContextUnbindOnCore_preserves_replenishQueueAffinityConsistent_smp
     (vScId : ValidObjId) (executingCore : CoreId) (st st' : SystemState)
     (sgi? : Option (CoreId × SgiKind))
     (hObjInv : st.objects.invExt)
     (hCons : replenishQueueAffinityConsistent_smp st)
     (h : schedContextUnbindOnCore vScId executingCore st = .ok (st', sgi?)) :
-    replenishQueueAffinityConsistent_smp st' := by
-  unfold schedContextUnbindOnCore at h
-  simp only [] at h
-  split at h
-  · exact absurd h (by simp)
-  · next u stU hUnbind =>
-    have hCU : replenishQueueAffinityConsistent_smp stU :=
-      schedContextUnbind_preserves_replenishQueueAffinityConsistent_smp vScId st stU
-        hObjInv hCons hUnbind
-    have hInvU : stU.objects.invExt :=
-      schedContextUnbind_preserves_objects_invExt vScId st stU hObjInv hUnbind
-    rcases SchedContext.PriorityManagement.priorityRescheduleOnCore_state_cases stU st'
-        (schedContextRunningCore? st vScId.val) executingCore true sgi? h with hEq | hSgi
-    · rw [hEq]; exact hCU
-    · intro c
-      exact replenishQueueAffinityConsistentOnCore_transfer stU st' c
-        (fun e hMem => by
-          rw [handleRescheduleSgiOnCore_replenishQueueOnCore stU executingCore st' c hSgi]
-            at hMem
-          exact hMem)
-        (fun scId => handleRescheduleSgiOnCore_boundThread stU executingCore st' hInvU hSgi scId)
-        (fun t => handleRescheduleSgiOnCore_determineTargetCore stU executingCore st' hInvU hSgi t)
-        (hCU c)
+    replenishQueueAffinityConsistent_smp st' :=
+  schedContextUnbind_preserves_replenishQueueAffinityConsistent_smp vScId st st'
+    hObjInv hCons (schedContextUnbindOnCore_ok h).2.1
 
 /-- **The live `.schedContextUnbind` dispatch arm preserves orphan-freedom** —
-same decomposition, through the orphan-freedom transfer. -/
+through the single-core unbind's state. -/
 theorem schedContextUnbindOnCore_preserves_replenishQueueEntriesBound_smp
     (vScId : ValidObjId) (executingCore : CoreId) (st st' : SystemState)
     (sgi? : Option (CoreId × SgiKind))
     (hObjInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
     (hOrphan : replenishQueueEntriesBound_smp st)
     (h : schedContextUnbindOnCore vScId executingCore st = .ok (st', sgi?)) :
-    replenishQueueEntriesBound_smp st' := by
-  unfold schedContextUnbindOnCore at h
-  simp only [] at h
-  split at h
-  · exact absurd h (by simp)
-  · next u stU hUnbind =>
-    have hOU : replenishQueueEntriesBound_smp stU :=
-      schedContextUnbind_preserves_replenishQueueEntriesBound_smp vScId st stU
-        hObjInv hRef hOrphan hUnbind
-    have hInvU : stU.objects.invExt :=
-      schedContextUnbind_preserves_objects_invExt vScId st stU hObjInv hUnbind
-    rcases SchedContext.PriorityManagement.priorityRescheduleOnCore_state_cases stU st'
-        (schedContextRunningCore? st vScId.val) executingCore true sgi? h with hEq | hSgi
-    · rw [hEq]; exact hOU
-    · intro c
-      exact replenishQueueEntriesBoundOnCore_transfer stU st' c
-        (fun e hMem => by
-          rw [handleRescheduleSgiOnCore_replenishQueueOnCore stU executingCore st' c hSgi]
-            at hMem
-          exact hMem)
-        (fun scId => handleRescheduleSgiOnCore_boundThread stU executingCore st' hInvU hSgi scId)
-        (hOU c)
+    replenishQueueEntriesBound_smp st' :=
+  schedContextUnbind_preserves_replenishQueueEntriesBound_smp vScId st st'
+    hObjInv hRef hOrphan (schedContextUnbindOnCore_ok h).2.1
 
 end SeLe4n.Kernel

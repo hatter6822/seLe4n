@@ -1489,7 +1489,8 @@ Returns `true` if the slot has any children in the tree, read off its first-chil
 link (`SystemState.linkHasChild`, equal to the tree's read under the links'
 agreement: `hasCdtChildren_eq_tree`).  It is seL4's `ensureNoChildren`: since
 WS-ZA ZA5.4 part 13 a derivation of an untyped capability
-(`untypedDeriveRefused`) and the reset (`untypedResetSlot`) refuse on it.  A
+(`untypedDeriveRefused`) refuses on it, and the carve resets only a capability
+without one (`retypeFreeIndex`).  A
 delete does not: it splices the slot's node out and its children are re-derived
 from its parent (`spliceDeletedCdtNode`).  Inlined, so a caller that names the
 slot by its two words builds no slot reference. -/
@@ -3242,6 +3243,70 @@ theorem cspaceRecordFrameMapping_ok_decompose (addr : CSpaceAddr) (m : FrameMapp
       rw [hLk] at h
       refine ⟨cn, cap, rfl, hLk, ?_⟩
       simpa [CNode.recordMapping, hLk] using h
+
+/-- **Drop the mapping record of the capability in `addr`**, in place — the
+write `seL4_ARM_Page_Unmap` makes to the slot of the frame capability it was
+invoked through (seL4's `performPageInvocationUnmap`: `capFMappedAddress := 0`,
+`capFMappedASID := asidInvalid`), the twin of `cspaceRecordFrameMapping`.  The
+slot must hold a capability; every other field of it is kept. -/
+def cspaceClearFrameMapping (addr : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    match st.getCNode? addr.cnode with
+    | none => .error .objectNotFound
+    | some cn =>
+      match cn.lookup addr.slot with
+      | none => .error (.invalidCapability 0)
+      | some _ => storeObject addr.cnode (.cnode (cn.clearMapping addr.slot)) st
+
+/-- `cspaceClearFrameMapping` as compiled: the record dropped where the CNode
+lies (`storeCNodeWith`), in the slot's own capability (`CNode.clearMappingCells`). -/
+@[inline] def cspaceClearFrameMappingImpl (addr : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    match st.getCNode? addr.cnode with
+    | none => .error .objectNotFound
+    | some cn =>
+      match cn.lookup addr.slot with
+      | none => .error (.invalidCapability 0)
+      | some _ =>
+          .ok ((), st.storeCNodeWith addr.cnode (·.clearMappingCells addr.slot))
+
+@[csimp] theorem cspaceClearFrameMapping_eq_impl :
+    @cspaceClearFrameMapping = @cspaceClearFrameMappingImpl := by
+  funext addr st
+  unfold cspaceClearFrameMapping cspaceClearFrameMappingImpl
+  cases hC : st.getCNode? addr.cnode with
+  | none => rfl
+  | some cn =>
+    dsimp only
+    cases cn.lookup addr.slot with
+    | none => rfl
+    | some cap =>
+      have hF : (fun c : CNode => c.clearMappingCells addr.slot) = (·.clearMapping addr.slot) :=
+        funext fun c => CNode.clearMappingCells_eq _ _
+      rw [hF]
+      exact SystemState.storeObject_cnode_eq_storeCNodeWith
+        ((SystemState.getCNode?_eq_some_iff st addr.cnode cn).1 hC)
+        (·.clearMapping addr.slot)
+
+/-- **What a successful record clear is**: the slot held a capability, and the
+CNode was stored back with that capability recording no mapping. -/
+theorem cspaceClearFrameMapping_ok_decompose (addr : CSpaceAddr)
+    (st st' : SystemState) (h : cspaceClearFrameMapping addr st = .ok ((), st')) :
+    ∃ cn cap, st.getCNode? addr.cnode = some cn ∧ cn.lookup addr.slot = some cap ∧
+      storeObject addr.cnode (.cnode (cn.insert addr.slot (cap.withMapping none))) st
+        = .ok ((), st') := by
+  unfold cspaceClearFrameMapping at h
+  cases hCn : st.getCNode? addr.cnode with
+  | none => rw [hCn] at h; cases h
+  | some cn =>
+    rw [hCn] at h
+    simp only at h
+    cases hLk : cn.lookup addr.slot with
+    | none => rw [hLk] at h; cases h
+    | some cap =>
+      rw [hLk] at h
+      refine ⟨cn, cap, rfl, hLk, ?_⟩
+      simpa [CNode.clearMapping, hLk] using h
 
 /-- A free-index write keeps an admitted destination admitted: it rewrites one
 slot's capability, and an admitted destination is empty. -/

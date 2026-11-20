@@ -1111,29 +1111,39 @@ backed by a thread that is in fact descheduled, never one left runnable at the
 theorem syscallDispatchFromAbi_capFault_not_dispatchable
     (ctx : LabelingContext) (executingCore : CoreId)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (fault : Fault)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hNI : isIdleThreadId tid = false)
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
         = Except.error ke)
     (hCap : Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
         (cancelReceiveBusyReply ctx executingCore
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid ke
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid ke
         = some fault)
     (hCommit : Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId
-        x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st = Except.ok (.faulted, st')) :
+        x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st = Except.ok (.faulted, st')) :
     ¬ dispatchableOnCore st' tid executingCore := by
+  -- WS-SX SX7.2: a faulted outcome never carries a dropped fault, an
+  -- invoke-phase fault of a non-blocking invocation
+  -- (`syscallDispatchFromAbi_invokeFault_dropped`)
+  have hDelivered : Platform.FFI.syscallDropsFault syscallId fault = false := by
+    cases hD : Platform.FFI.syscallDropsFault syscallId fault
+    · rfl
+    · rw [Platform.FFI.syscallDispatchFromAbi_invokeFault_dropped ctx executingCore syscallId
+        x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st tid ke fault hCur hNI hSyscall hCap
+        hD] at hCommit
+      simp at hCommit
   rw [Platform.FFI.syscallDispatchFromAbi_capFault_faulted ctx executingCore syscallId
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke fault hCur hNI hSyscall hCap]
-    at hCommit
+    x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st tid ke fault hCur hNI hSyscall hCap
+    hDelivered] at hCommit
   have hSt : st' = Platform.FFI.deliverSyscallCapFault ctx executingCore
       (cancelReceiveBusyReply ctx executingCore
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid fault
-      (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid fault
+      (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)
       elr spsr := by
     have := Except.ok.inj hCommit
     exact (Prod.mk.inj this).2.symm

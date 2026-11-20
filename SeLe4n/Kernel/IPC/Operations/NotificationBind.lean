@@ -251,6 +251,30 @@ bound-thread code, then the thread's bound-notification code. -/
       (mapNotificationObject fun n => { n with boundTCBCode := tcbId.val + 1 })).updateTcb
     tcbId (fun t => { t with boundNotificationCode := notificationId.val + 1 })
 
+/-- The notification object with its bound-thread code set to `code`; any
+other object as it is: `mapNotificationObject` of that write, as a mapper of
+the code alone, so the compiled store specialises `modifyObject` on it and
+builds no closure. -/
+@[inline] def mapNotificationBoundTcb (code : Nat) : KernelObject → KernelObject
+  | .notification n => .notification { n with boundTCBCode := code }
+  | o => o
+
+/-- **`storeBindNotification` as compiled**: the notification's write through
+`mapNotificationBoundTcb`, out of line, so no closure is allocated for it. -/
+def storeBindNotificationImpl (st : SystemState) (notificationId : SeLe4n.ObjId)
+    (tcbId : SeLe4n.ThreadId) : SystemState :=
+  (st.modifyObject notificationId (mapNotificationBoundTcb (tcbId.val + 1))).updateTcb
+    tcbId (fun t => { t with boundNotificationCode := notificationId.val + 1 })
+
+@[csimp] theorem storeBindNotification_eq_impl :
+    @storeBindNotification = @storeBindNotificationImpl := by
+  funext st notificationId tcbId
+  have e : mapNotificationObject (fun n => { n with boundTCBCode := tcbId.val + 1 }) =
+      mapNotificationBoundTcb (tcbId.val + 1) := by
+    funext o; cases o <;> rfl
+  unfold storeBindNotification storeBindNotificationImpl
+  rw [e]
+
 /-- WS-ZA ZA5.2: **a bind that writes only its slots**: both ends present and
 unbound (`bindNotification`'s own checks), the thread unreserved, both stores
 changing only `objects` (`storeLeavesIndexAndTypes`), and the notification
@@ -447,8 +471,9 @@ theorem boundDeliveryTarget?_some (st : SystemState) (notificationId : SeLe4n.Ob
 
 /-- WS-SM SM6.B: the canonical notification signal.  When `boundDeliveryTarget?`
 applies, deliver the badge directly to the bound TCB — dequeue it from its
-endpoint receive queue (`endpointQueueRemoveDual`), store the badge into its
-`pendingMessage` and mark it `.ready`, then make it runnable.  Otherwise fall
+endpoint receive queue (`endpointQueueRemoveDual`), write the badge into its
+badge register and mark it `.ready` (`storeTcbSignalBoundWoken`, seL4's
+`sendSignal`), then make it runnable.  Otherwise fall
 through to the unchanged single-core `notificationSignal` (so every existing
 `notificationSignal` proof carries over verbatim). -/
 def notificationSignalBound (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) :
@@ -456,14 +481,13 @@ def notificationSignalBound (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badg
   fun st =>
     match boundDeliveryTarget? st notificationId with
     | some (t, epId) =>
-        let badgeMsg : IpcMessage := { IpcMessage.empty with badge := some badge }
         match endpointQueueRemoveDual epId true t st with
         | .error e => .error e
         | .ok ((), st1) =>
             -- IPC de-threading D3 (Finding F-1): the bound TCB was
             -- `.blockedOnReceive`; a non-`Call` badge delivery clears its
             -- server-first `pendingReceiveReply` stash (no `Call` arrived).
-            match storeTcbReceiveComplete st1 t (some badgeMsg) with
+            match storeTcbSignalBoundWoken st1 t badge with
             | .error e => .error e
             | .ok st2 => .ok ((), ensureRunnable st2 t)
     | none => notificationSignal notificationId badge st

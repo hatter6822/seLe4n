@@ -50,14 +50,14 @@ theorem messageOverflowWrites_of_size_le (st : SystemState) (tcb : TCB) (msg : I
   rw [List.drop_eq_nil_of_le (by simpa using h)]
   rfl
 
-/-- The delivered frame's six words written into a thread's saved registers,
-the held message dropped: `TCB.withDeliveredFrame` with the frame's words as
-arguments, so the write captures six machine words and no frame record. -/
+/-- The delivered frame's six words written into a thread's saved registers as
+seL4's transfer writes them (`RegisterFile.stageDeliveredWords`: the message
+registers only below the delivered length), the held message dropped:
+`TCB.withDeliveredFrame` with the frame's words as arguments, so the write
+captures six machine words and no frame record. -/
 @[inline] def withFrameWords (w0 w1 w2 w3 w4 w5 : UInt64) (t : TCB) : TCB :=
-  let rf := t.registerContext
-  let rf' : SeLe4n.RegisterFile :=
-    { rf with x0 := w0, x1 := w1, x2 := w2, x3 := w3, x4 := w4, x5 := w5 }
-  { t with registerContext := rf', pendingMessage := none }
+  { t with registerContext := t.registerContext.stageDeliveredWords w0 w1 w2 w3 w4 w5,
+           pendingMessage := none }
 
 /-- **The delivered frame, written into a ready thread's saved registers**; a
 thread that is not ready is handed to `otherwise`, and a key holding no thread
@@ -508,6 +508,20 @@ theorem replyWakesInPlace_noResizeDue {st : SystemState} {c : SeLe4n.ThreadId} {
   simp only [replyWakesInPlace, Bool.and_eq_true] at h
   exact RHTable.noResizeDue_of_findsInPlace h.1.1.1.2
 
+/-- The rendezvous of a reply longer than four words, its message read from the
+registers where it runs.  Out of line: the read (`Architecture.regMessageBody`)
+is a closure over the register file, and an inlined copy lets the compiler
+build that closure at the entry of every arm that inlines the rendezvous, on
+its in-place paths too. -/
+@[noinline] def performReplyRendezvousRegs (st : SystemState) (c server : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badgeWord : SeLe4n.Badge) (badged : Bool)
+    (core : Concurrency.CoreId) : SystemState :=
+  performReplyRendezvous st c server rid
+    { registers := Architecture.regMessageBody layout rf len,
+      badge := SeLe4n.Badge.opt badgeWord badged } core
+
 /-- The checked reply arm's rendezvous: a reply of at most four words is
 delivered straight into the caller's registers (`performReplyDelivered`). -/
 @[inline] def replyRendezvousDelivered (st : SystemState) (c server : SeLe4n.ThreadId)
@@ -517,9 +531,7 @@ delivered straight into the caller's registers (`performReplyDelivered`). -/
     (core : Concurrency.CoreId) : SystemState :=
   if Architecture.regMessageLength layout len ≤ 4 then
     performReplyDelivered st c server rid layout rf len badgeWord badged core
-  else performReplyRendezvous st c server rid
-    { registers := Architecture.regMessageBody layout rf len,
-      badge := SeLe4n.Badge.opt badgeWord badged } core
+  else performReplyRendezvousRegs st c server rid layout rf len badgeWord badged core
 
 theorem replyRendezvousDelivered_eq (st : SystemState) (c server : SeLe4n.ThreadId) (ct : TCB)
     (rid : SeLe4n.ReplyId)
@@ -648,125 +660,29 @@ theorem wakeThread_noResizeDue (st : SystemState) (t : SeLe4n.ThreadId) (core : 
     (hNo : st.objects.noResizeDue) : (wakeThread st t core).1.objects.noResizeDue :=
   enqueueRunnableOnCore_noResizeDue _ _ _ hNo
 
-/-! ### A signal waking a waiter, delivered
+/-! ### A signal waking a waiter
 
-WS-ZA ZA4.7: a signal that wakes a notification's head waiter holds the badge
-message in the waiter's TCB, and the signal arm stages it straight into the
-waiter's registers.  The compiled arm writes the frame instead of holding the
-message (`signalWoken_eq_delivered`), so the badge message is built only on the
-unreachable path where the woken waiter is not ready. -/
+seL4's `sendSignal` writes the badge into the woken waiter's badge register and
+transfers no message (`TCB.signalWoken`), so the wake's in-place writes
+(`storeSignalWoken`) are the whole delivery: nothing is staged after it. -/
 
-/-- `storeSignalWoken` with the waiter's write given as `g`. -/
-@[inline] def storeSignalWokenWith (st : SystemState) (notificationId : SeLe4n.ObjId)
-    (waiter : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (g : TCB → TCB) : SystemState :=
-  detachNtfnHead ((st.modifyObject notificationId (signalPoppedObject next)).updateTcb waiter g)
-    waiter next
-
-theorem storeSignalWoken_eq_with (st : SystemState) (notificationId : SeLe4n.ObjId)
-    (waiter : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (msg : IpcMessage) :
-    storeSignalWoken st notificationId waiter next msg =
-      storeSignalWokenWith st notificationId waiter next (callReceiverTcb msg) := rfl
-
-theorem detachNtfnHead_noResizeDue (st : SystemState) (head : SeLe4n.ThreadId)
-    (next : Option SeLe4n.ThreadId) (hNo : st.objects.noResizeDue) :
-    (detachNtfnHead st head next).objects.noResizeDue := by
-  unfold detachNtfnHead unlinkNtfnNeighbours clearNtfnLinks
-  dsimp only
-  have h1 := updateTcb_noResizeDue st head (fun t => { t with
-    ntfnPrevCode := SeLe4n.ThreadId.optCode none,
-    ntfnNextCode := SeLe4n.ThreadId.optCode none }) hNo
-  cases next with
-  | none => exact h1
-  | some n => exact updateTcb_noResizeDue _ _ _ h1
-
-/-- A wake's link writes commute with a message-slot write. -/
-theorem detachNtfnHead_msg (r : SeLe4n.ThreadId) (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile)
-    (μ : Option IpcMessage → Option IpcMessage) (π : Nat → Nat)
-    (st : SystemState) (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
-    (hNo : st.objects.noResizeDue) :
-    detachNtfnHead (st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)) head next =
-      (detachNtfnHead st head next).mapTcbInPlace r (TCB.withMessageSlots ρ μ π) := by
-  unfold detachNtfnHead unlinkNtfnNeighbours clearNtfnLinks
-  dsimp only
-  rw [updateTcb_msg _ _ _ _ _ _ _ hNo ?hc]
-  case hc => intros; rfl
-  have h1 := updateTcb_noResizeDue st head (fun t => { t with
-    ntfnPrevCode := SeLe4n.ThreadId.optCode none,
-    ntfnNextCode := SeLe4n.ThreadId.optCode none }) hNo
-  cases next with
-  | none => rfl
-  | some n =>
-    dsimp only
-    rw [updateTcb_msg _ _ _ _ _ _ _ h1 ?hc2]
-    case hc2 => intros; rfl
-
-theorem storeSignalWokenWith_noResizeDue (st : SystemState) (notificationId : SeLe4n.ObjId)
-    (waiter : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (g : TCB → TCB)
-    (hNo : st.objects.noResizeDue) :
-    (storeSignalWokenWith st notificationId waiter next g).objects.noResizeDue :=
-  detachNtfnHead_noResizeDue _ _ _ (updateTcb_noResizeDue _ waiter g
-    (modifyObject_noResizeDue _ notificationId (signalPoppedObject next) hNo))
-
-/-- **The wake holds its message in one write**: the waiter woken with the
-message is the waiter woken without it, the message written in afterwards. -/
-theorem storeSignalWoken_eq_hold (st : SystemState) (notificationId : SeLe4n.ObjId)
-    (waiter : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (msg : IpcMessage)
-    (hNo : st.objects.noResizeDue) :
-    storeSignalWoken st notificationId waiter next msg =
-      (storeSignalWokenWith st notificationId waiter next receiverReady).mapTcbInPlace waiter
-        (holdMessage msg) := by
-  have hNo1 := modifyObject_noResizeDue st notificationId (signalPoppedObject next) hNo
-  rw [storeSignalWoken_eq_with]
-  unfold storeSignalWokenWith
-  generalize st.modifyObject notificationId (signalPoppedObject next) = s1 at hNo1
-  have hHold : s1.updateTcb waiter (callReceiverTcb msg) =
-      (s1.updateTcb waiter receiverReady).mapTcbInPlace waiter (holdMessage msg) := by
-    rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo1,
-      SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo1, SystemState.mapTcbInPlace_mapTcbInPlace,
-      holdMessage_receiverReady]
-  rw [hHold, detachNtfnHead_msg _ _ _ _ _ _ _ (updateTcb_noResizeDue s1 waiter receiverReady hNo1)]
-
-/-- A signal's badge message stages the badge-only frame: the badge in `x0`, a
-zero message-info word and no message words. -/
-theorem returnFrameOfMessage_badge (badge : SeLe4n.Badge) :
-    Architecture.returnFrameOfMessage { IpcMessage.empty with badge := some badge } 0 0 =
-      Architecture.returnFrameOfBadge badge := by
-  simp only [Architecture.returnFrameOfMessage, Architecture.returnMessageInfo,
-    Architecture.returnFrameOfBadge, IpcMessage.empty, Option.map_some, Option.getD_some]
-  rfl
-
-/-- The fallback of a signal's delivery: the badge message built and held, as
-the specification holds it.  Kept out of line so the message record is built
-only on this path. -/
-@[noinline] def holdSignalBody (X : SystemState) (waiter : SeLe4n.ThreadId)
-    (badge : SeLe4n.Badge) : SystemState :=
-  X.mapTcbInPlace waiter (holdMessage { IpcMessage.empty with badge := some badge })
-
-/-- **A signal's wake, delivered**: the waiter woken without the badge message,
-then the badge frame written into its saved registers.  The message is built
-only where the waiter is, unexpectedly, not ready. -/
-@[noinline] def performSignalWokenDelivered (st : SystemState) (notificationId : SeLe4n.ObjId)
+/-- **A signal's wake, out of line**: the head waiter popped, woken with the
+badge in its badge register (`storeSignalWoken`), and made runnable.  The
+successor arrives as its code, so no `Option` is built. -/
+@[noinline] def performSignalWoken (st : SystemState) (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) (nextCode : Nat) (badge : SeLe4n.Badge) (core : CoreId) :
     SystemState :=
-  let X := (wakeThread (storeSignalWokenWith st notificationId waiter
-    (ThreadId.ofOptCode nextCode) receiverReady) waiter core).1
-  writeDeliveredFrameIfReady X waiter (Architecture.returnFrameOfBadge badge)
-    (fun _ => holdSignalBody X waiter badge)
+  (wakeThread (detachNtfnHeadCode
+    ((st.modifyObject notificationId (signalPoppedObjectCode nextCode)).updateTcb waiter
+      (TCB.signalWoken badge)) waiter nextCode) waiter core).1
 
-/-- WS-ZA ZA4.7: **the staged signal wake is the delivered one.** -/
-theorem signalWoken_eq_delivered (st : SystemState) (notificationId : SeLe4n.ObjId)
+/-- WS-ZA ZA4.7: **the out-of-line signal wake is the specification's.** -/
+theorem signalWoken_eq_perform (st : SystemState) (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (badge : SeLe4n.Badge)
-    (core : CoreId) (hNo : st.objects.noResizeDue) :
-    Architecture.stageWokenDelivery
-        (wakeThread (storeSignalWoken st notificationId waiter next
-          { IpcMessage.empty with badge := some badge }) waiter core).1
-        (some waiter) 0 =
-      performSignalWokenDelivered st notificationId waiter (ThreadId.optCode next) badge core := by
-  have hNo0 := storeSignalWokenWith_noResizeDue st notificationId waiter next receiverReady hNo
-  unfold performSignalWokenDelivered holdSignalBody
-  rw [SeLe4n.ThreadId.ofOptCode_optCode, storeSignalWoken_eq_hold _ _ _ _ _ hNo,
-    wakeThread_msg _ _ _ _ _ _ _ hNo0, Architecture.stageWokenDelivery_some,
-    stageDeliveredMessage_holdMessage _ _ _ (wakeThread_noResizeDue _ _ _ hNo0) (by simp [IpcMessage.empty]),
-    returnFrameOfMessage_badge]
+    (core : CoreId) :
+    (wakeThread (storeSignalWoken st notificationId waiter next badge) waiter core).1 =
+      performSignalWoken st notificationId waiter (ThreadId.optCode next) badge core := by
+  unfold performSignalWoken
+  rw [storeSignalWoken, detachNtfnHead_eq_code, signalPoppedObject_eq_code]
 
 end SeLe4n.Kernel

@@ -9,6 +9,7 @@ import SeLe4n.Kernel.IPC.Invariant.FinaliseLoanCoherence
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
 import SeLe4n.Kernel.IPC.Invariant.CancellationBundle
 import SeLe4n.Kernel.IPC.Invariant.SchedLinkFrame
+import SeLe4n.Kernel.SchedContext.Invariant.NotificationLinkIpc
 
 /-!
 # The finalisation keeps the IPC invariants
@@ -1162,6 +1163,8 @@ theorem finaliseFinalObject_preserves_finaliseLoanBundle (target : Nat) (st : Sy
         (FinaliseFrame.orphanReplyWaiter s w x h.2.1))
     (fun s x r c t h _ hL hX _ hT hA => finaliseUnheldStep_keepsFinaliseLoanBundle s x r c t h hL hX hT hA)
     finaliseCutStep_keepsFinaliseLoanBundle
+    (fun s c h => h.of_frame (unbindSchedContextNotification_preserves_ipcInvariantFull s c h.2.1 h.1)
+      (FinaliseFrame.unbindSchedContextNotification s c h.2.1))
     target st h h.2.1 hL).1
 
 /-- **The finalisation keeps the IPC bundle**, on a state where every lent

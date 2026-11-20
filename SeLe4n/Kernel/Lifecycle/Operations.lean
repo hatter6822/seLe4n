@@ -9,7 +9,6 @@
 
 import SeLe4n.Kernel.Lifecycle.Operations.RetypeWrappers
 import SeLe4n.Kernel.Lifecycle.Operations.CarvedObjectErase
-import SeLe4n.Kernel.Lifecycle.Operations.UntypedReset
 import SeLe4n.Kernel.Lifecycle.Operations.RetypePerform
 import SeLe4n.Kernel.Lifecycle.Operations.RetypeWindow
 import SeLe4n.Kernel.Lifecycle.Operations.RetypeWindowAdmission
@@ -27,7 +26,7 @@ A thin re-export hub over the lifecycle child modules:
 | `Operations.ScrubAndUntyped`                 | the object-identifier address-space guard, the carve (`CarveRequest`, `retypeFromUntyped`) + capacity / alignment / freshness / atomicity / error-path theorems |
 | `Operations.RetypeWrappers`                  | A released ASID's shootdown round, and the carve-scrub discharge |
 | `Operations.CarvedObjectErase`               | The store's erase of a carved object (`retireCarvedObject`), which the final-delete retire runs |
-| `Operations.UntypedReset`, `RetypePerform`, `SetSpace` | The reset (seL4's `resetUntypedCap`), the carve's dispatch-level entry, and the space-slot write |
+| `Operations.RetypePerform`, `SetSpace`       | The carve's dispatch-level entry (which resets a childless untyped first, as seL4's `resetUntypedCap` does), and the space-slot write |
 | `Operations.RetypeWindow`                    | A retype of `count` objects: every check before any write, then one carve per object |
 | `Operations.RetypeWindowAdmission`           | An admitted window admits every carve (`untypedRetypeWindow_admitsEveryCarve`) |
 

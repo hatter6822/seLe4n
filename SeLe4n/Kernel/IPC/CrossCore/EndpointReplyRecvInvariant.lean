@@ -1628,8 +1628,7 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation
   unfold endpointReplyRecvAnsweringOnCore at hBody
   simp only [hReply, hPop, hX, hRecv, hPost] at hBody
   have hOut := (Prod.mk.inj (Except.ok.inj hBody)).2
-  rw [← hOut, Architecture.stageWokenSendCompletion_scheduler_eq,
-    replyRecvAnswerCaller_replenishQueueOnCore]
+  rw [← hOut, replyRecvAnswerCaller_replenishQueueOnCore]
   rcases applyReceiveLegPipHandoff_cases st3 receiver nextThread
       ((recordedReplyServer? st prevCaller).getD receiver) executingCore with hH | hH
   · rw [hH, hR3, hR2, hR1]
@@ -1743,8 +1742,7 @@ theorem endpointReplyRecvOnCore_replenishQueueOnCore_ne
                   executingCore
                   returned? st2 st3 u hInv2 hPost
               have hOut := (Prod.mk.inj (Except.ok.inj hBody)).2
-              rw [← hOut, Architecture.stageWokenSendCompletion_scheduler_eq,
-                replyRecvAnswerCaller_replenishQueueOnCore]
+              rw [← hOut, replyRecvAnswerCaller_replenishQueueOnCore]
               rcases applyReceiveLegPipHandoff_cases st3 receiver nextThread
                   ((recordedReplyServer? st prevCaller).getD receiver) executingCore with hH | hH
               · rw [hH, hR3, hR2, hR1p, hR1]
@@ -1777,7 +1775,7 @@ theorem endpointReceiveLegAndDonation_replenishQueueOnCore_ne (endpointId : SeLe
     (executingCore : Concurrency.CoreId) (st st1 stDon : SystemState) (dequeued : SeLe4n.ThreadId)
     (summary : CapTransferSummary) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind)) (c : Concurrency.CoreId)
     (hObjInv : st.objects.invExt) (hHeads : queueHeadBlockedConsistent st)
-    (hne : c ∉ endpointReceiveHandoffReplenishCores st endpointId receiver)
+    (hne : c ∉ endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome)
     (hLeg : endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st = (st1, .ok (dequeued, summary, sgi)))
     (hDon : applyReceiveRendezvousDonation st1 receiver dequeued = .ok stDon) :
     stDon.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
@@ -1790,14 +1788,15 @@ theorem endpointReceiveLegAndDonation_replenishQueueOnCore_ne (endpointId : SeLe
         replyId executingCore st st1 dequeued summary sgi
         hSender hLeg
     subst hDq
-    have hCallSender : receiveRendezvousCallSender? st endpointId = none := by
-      unfold receiveRendezvousCallSender?
+    have hCallSender : receiveRendezvousLinkedCaller? st endpointId replyId.isSome = none := by
+      unfold receiveRendezvousLinkedCaller?
       rw [hSender]
       rfl
-    have hDonating : receiveRendezvousDonatingSender? st endpointId dequeued = none :=
-      receiveRendezvousDonatingSender?_of_no_callSender st endpointId dequeued hCallSender
+    have hDonating : receiveRendezvousDonatingSender? st endpointId dequeued replyId.isSome = none :=
+      receiveRendezvousDonatingSender?_of_no_callSender st endpointId dequeued replyId.isSome
+        hCallSender
     have hLegNe : c ∉ receivePreReturnReplenishCores st endpointId dequeued := by
-      rw [show endpointReceiveHandoffReplenishCores st endpointId dequeued
+      rw [show endpointReceiveHandoffReplenishCores st endpointId dequeued replyId.isSome
             = receivePreReturnReplenishCores st endpointId dequeued by
           unfold endpointReceiveHandoffReplenishCores; rw [hDonating]] at hne
       exact hne
@@ -1843,14 +1842,14 @@ theorem endpointReceiveLegAndDonation_replenishQueueOnCore_ne (endpointId : SeLe
       have hDonPre : callDonationSchedContext? st dequeued receiver = some scId :=
         callDonationSchedContext?_some_of_sameSchedContextBindings hBindFrame dequeued receiver
           scId hDonPost
-      by_cases hIsCall : rendezvousSenderIsCall st dequeued
-      · -- A donating `Call` rendezvous: the segment names the pair, at the pre-state,
-        -- and the leg moves no thread's home core.
-        have hDonating : receiveRendezvousDonatingSender? st endpointId receiver = some dequeued :=
-          receiveRendezvousDonatingSender?_of_donation st endpointId receiver dequeued scId
-            (by unfold receiveRendezvousCallSender?; rw [hSender]; simp only [Option.bind_some,
-              if_pos hIsCall]) hDonPre
-        rw [show endpointReceiveHandoffReplenishCores st endpointId receiver
+      by_cases hLinked : receiveRendezvousLinkedCaller? st endpointId replyId.isSome = some dequeued
+      · -- A donating `Call` rendezvous the receive LINKS: the segment names the pair,
+        -- at the pre-state, and the leg moves no thread's home core.
+        have hDonating : receiveRendezvousDonatingSender? st endpointId receiver replyId.isSome
+            = some dequeued :=
+          receiveRendezvousDonatingSender?_of_donation st endpointId receiver replyId.isSome
+            dequeued scId hLinked hDonPre
+        rw [show endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome
               = [determineTargetCore st dequeued, determineTargetCore st receiver] by
             unfold endpointReceiveHandoffReplenishCores; rw [hDonating]] at hne
         have hHome : ∀ x, determineTargetCore st1 x = determineTargetCore st x := fun x => by
@@ -1865,8 +1864,10 @@ theorem endpointReceiveLegAndDonation_replenishQueueOnCore_ne (endpointId : SeLe
           rw [hDonPost, hHome dequeued, hHome receiver]
         exact applyReceiveRendezvousDonation_replenishQueueOnCore_ne st1 stDon receiver dequeued c
           (by rw [hSeg]; exact hne) hDon
-      · -- A rendezvous whose sender is not a `Call`: the post-state guard is false,
-        -- so the donation is the identity however the resolver answers.
+      · -- A rendezvous the receive links to no reply -- a plain `Send`, or a `Call`
+        -- whose cap grants no reply or whose receive supplied none: the leg leaves the
+        -- dequeued thread `.ready`, so the post-state guard is false and the donation
+        -- is the identity however the resolver answers.
         -- The donation resolver answered `some`, so it resolved the caller too.
         obtain ⟨senderTcb, hTcb⟩ : ∃ t, lookupTcb st dequeued = some t := by
           cases hT : lookupTcb st dequeued with
@@ -1885,13 +1886,23 @@ theorem endpointReceiveLegAndDonation_replenishQueueOnCore_ne (endpointId : SeLe
         have hEpObj : st.objects[endpointId]? = some (.endpoint ep) :=
           (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
         have hShape := (hHeads endpointId ep dequeued senderTcb hEpObj hTcbObj).2 hHead
-        have hSend : senderTcb.ipcState = .blockedOnSend endpointId := by
-          rcases hShape with h | h
-          · exact h
-          · exact absurd (by unfold rendezvousSenderIsCall; rw [hTcb]; simp only [h]) hIsCall
-        have hGuard := endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend
-          endpointId receiver replyId executingCore st ep
-          dequeued senderTcb endpointId hObjInv hEp hHead hTcb hSend
+        have hGuard : rendezvousDequeuedCall
+            (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1
+              dequeued = false := by
+          rcases hShape with hSend | hCall
+          · exact endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend
+              endpointId receiver replyId executingCore st ep
+              dequeued senderTcb endpointId hObjInv hEp hHead hTcb hSend
+          · cases hLk : ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) with
+            | false =>
+              exact endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_noLink
+                endpointId receiver replyId executingCore st ep
+                dequeued senderTcb endpointId hObjInv hEp hHead hTcb hCall hLk
+            | true =>
+              rw [Bool.and_eq_true] at hLk
+              exact absurd (receiveRendezvousLinkedCaller?_of_blockedOnCall st endpointId
+                replyId.isSome ep dequeued senderTcb endpointId hEp hHead hTcb hCall hLk.1 hLk.2)
+                hLinked
         rw [hLeg] at hGuard
         unfold applyReceiveRendezvousDonation at hDon
         rw [hGuard] at hDon
@@ -1967,9 +1978,8 @@ theorem endpointReplyRecvOnCore_preserves_objects_invExt
               have hInv3 := replyRecvPostReceiveDonation_preserves_objects_invExt receiver
                 ((recordedReplyServer? st prevCaller).getD receiver) nextThread executingCore
                 returnedSc? st2 st3 u2 hInv2 hDon
-              exact stageWokenSendCompletion_objects_invExt _ _
-                (replyRecvAnswerCaller_preserves_objects_invExt _ _ _ _
-                  (applyReceiveLegPipHandoff_preserves_objects_invExt _ _ _ _ _ hInv3))
+              exact replyRecvAnswerCaller_preserves_objects_invExt _ _ _ _
+                  (applyReceiveLegPipHandoff_preserves_objects_invExt _ _ _ _ _ hInv3)
 
 open SeLe4n.Kernel.Concurrency in
 /-- **Audit IPC-2** (**WS-LS LS2.1**: over the pair, hypothesis-free): under the

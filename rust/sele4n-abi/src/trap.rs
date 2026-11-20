@@ -7,8 +7,10 @@
 //! of them exists in any given compilation, which is what lets `invoke_syscall`
 //! have a single, target-independent call site.
 
-use crate::{decode_response, encode_syscall, SyscallRequest, SyscallResponse};
-use sele4n_types::{KernelError, KernelResult};
+use crate::decode::decode_issued;
+use crate::encode::REG_SYSCALL_NUM;
+use crate::{encode_syscall, SyscallRequest, SyscallResponse};
+use sele4n_types::{KernelError, KernelResult, Syscall};
 
 /// Invoke a raw syscall by writing registers and executing `svc #0`.
 ///
@@ -19,8 +21,9 @@ use sele4n_types::{KernelError, KernelResult};
 /// This is the only `unsafe fn` in the entire `libsele4n` library, and the
 /// `asm!` below is its only unsafe operation.
 ///
-/// On non-AArch64 targets, this returns an `InvalidSyscallNumber` error
-/// response (use `invoke_syscall` with the `std` feature for testing).
+/// On non-AArch64 targets, a mock answers instead: a `Call` gets an
+/// `InvalidSyscallNumber` error frame, and every other syscall its own
+/// registers back.
 ///
 /// # Register clobbers (U3-A / U-H11)
 ///
@@ -33,8 +36,9 @@ use sele4n_types::{KernelError, KernelResult};
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
 #[allow(unsafe_code)]
-pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
-    // ARM64 ABI: x0=cap_addr, x1=msg_info, x2-x5=msg_regs, x7=syscall_num
+pub unsafe fn raw_syscall(regs: &mut [u64; 8]) {
+    // ARM64 ABI: x0=cap_addr, x1=msg_info, x2-x5=msg_regs, x6=reply register
+    // (seL4-MCS `replyRegister`), x7=syscall_num.
     // The kernel writes results back into x0-x5.
     //
     // U3-A: `clobber_abi("C")` tells the compiler that all caller-saved
@@ -42,19 +46,14 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
     // kernel during the exception. This includes x8-x18, x29, x30, NZCV,
     // and all SIMD/FP registers. The explicit `inout`/`in`/`lateout`
     // operands for x0-x7 take precedence over the clobber set.
-    // AK4-H (R-ABI-L5): `lateout("x6") _` is redundant here — `clobber_abi("C")`
-    // already declares x0..x18 as caller-saved per AAPCS64, so x6 is implicitly
-    // clobbered. We keep the explicit annotation for readability: it makes the
-    // kernel's use of x6 as a scratch register visible at the call site. Removing
-    // it is a no-op codegen-wise.
     //
     // The `unsafe` block is explicit rather than inherited from the `unsafe fn`
     // signature: the crate denies `unsafe_op_in_unsafe_fn`, so an unsafe
     // operation anywhere in this library has to say so at its own site.
     //
     // SAFETY: the operands describe the register effect of the trap exactly —
-    // x0-x5 are read and written by the kernel (`inout`), x7 is read (`in`),
-    // x6 is written (`lateout`), and `clobber_abi("C")` covers every other
+    // x0-x5 are read and written by the kernel (`inout`), x6 and x7 are read
+    // (`in`), and `clobber_abi("C")` covers every other
     // AAPCS64 caller-saved register the kernel may touch. `nostack` is sound
     // because the instruction pushes nothing: AAPCS64 has no red zone, and the
     // kernel switches to its own stack on the exception. The trap's *effect* on
@@ -68,8 +67,8 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
             inout("x3") regs[3],
             inout("x4") regs[4],
             inout("x5") regs[5],
-            in("x7") regs[6],
-            lateout("x6") _,
+            in("x6") regs[6],
+            in("x7") regs[7],
             clobber_abi("C"),
             options(nostack),
         );
@@ -91,9 +90,10 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
 pub mod host_capture {
     use core::sync::atomic::{AtomicU64, Ordering};
 
-    /// The last request's raw registers `[x0, x1, x2, x3, x4, x5, x7]`,
+    /// The last request's raw registers `[x0, x1, x2, x3, x4, x5, x6, x7]`,
     /// exactly as `encode_syscall` produced them.
-    pub static LAST_REQUEST: [AtomicU64; 7] = [
+    pub static LAST_REQUEST: [AtomicU64; 8] = [
+        AtomicU64::new(0),
         AtomicU64::new(0),
         AtomicU64::new(0),
         AtomicU64::new(0),
@@ -104,15 +104,15 @@ pub mod host_capture {
     ];
 
     /// Snapshot the captured registers.
-    pub fn last_request() -> [u64; 7] {
-        let mut out = [0u64; 7];
+    pub fn last_request() -> [u64; 8] {
+        let mut out = [0u64; 8];
         for (slot, value) in LAST_REQUEST.iter().zip(out.iter_mut()) {
             *value = slot.load(Ordering::Relaxed);
         }
         out
     }
 
-    pub(super) fn record(regs: &[u64; 7]) {
+    pub(super) fn record(regs: &[u64; 8]) {
         for (slot, value) in LAST_REQUEST.iter().zip(regs.iter()) {
             slot.store(*value, Ordering::Relaxed);
         }
@@ -151,8 +151,11 @@ const MOCK_ERROR_FRAME_X1: u64 = {
 ///
 /// Records the request registers into [`host_capture`] (so conformance
 /// tests can drive the real wrappers and inspect what they encoded), then
-/// returns an error response (InvalidSyscallNumber) since there is no
-/// kernel to handle the syscall.
+/// answers as the kernel answers a refusal, since there is no kernel to
+/// handle the syscall: a `Call` gets the InvalidSyscallNumber error frame,
+/// and every other syscall resumes with the registers it trapped with —
+/// seL4 writes an error only to a `Call` (`handleInvocation` replies only
+/// `if (isCall)`; the kernel's `SyscallOutcome.resumes`).
 ///
 /// # Safety
 ///
@@ -177,8 +180,12 @@ const MOCK_ERROR_FRAME_X1: u64 = {
 #[cfg(not(target_arch = "aarch64"))]
 #[inline(always)]
 #[allow(unsafe_code)]
-pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
+pub unsafe fn raw_syscall(regs: &mut [u64; 8]) {
     host_capture::record(regs);
+    // A refused non-`Call` resumes with its trapped registers: write nothing.
+    if Syscall::from_word(regs[REG_SYSCALL_NUM]) != Some(Syscall::Call) {
+        return;
+    }
     // Mock (WS-RA shape, ABI v3): an error rides the x1 label in the top of
     // the label range (label ERROR_LABEL_BASE + d = discriminant d), with
     // x0 = 0 — exactly the frame the kernel's `errorFrame` would publish
@@ -197,17 +204,33 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
 /// decodes the response. This is the primary entry point for all
 /// high-level wrappers in `sele4n-sys`.
 ///
+/// The response is read by the **seL4 syscall issued** — the one the `x7`
+/// word [`encode_syscall`] produced names — through
+/// [`decode_issued`]: only a `Call` returns a kernel error; a receive returns
+/// the message it received; a `Send`, `NBSend` or `Yield` returns nothing,
+/// and its registers, which the kernel leaves as the caller trapped with
+/// them, are not read.
+///
 /// Returns `InvalidMessageInfo` if the MessageInfo label exceeds seL4's
 /// 52-bit field (detected during encode).
 #[inline]
 #[allow(unsafe_code)]
 pub fn invoke_syscall(req: SyscallRequest) -> KernelResult<SyscallResponse> {
     let mut regs = encode_syscall(&req)?;
+    // The syscall the trap issues, read from the word it carries.  The
+    // encoder writes a `Syscall::word`, so this names one; a word that named
+    // none would be refused before trapping rather than decoded.
+    let issued =
+        Syscall::from_word(regs[REG_SYSCALL_NUM]).ok_or(KernelError::InvalidSyscallNumber)?;
     // SAFETY: `encode_syscall` produces a valid register array from a typed
     // `SyscallRequest`. The kernel validates all parameters on entry. This is
     // the single syscall boundary in the entire library.
     unsafe { raw_syscall(&mut regs) };
-    decode_response(regs)
+    // The response frame is `x0`-`x5`; x6 and x7 carry nothing back.
+    decode_issued(
+        issued,
+        [regs[0], regs[1], regs[2], regs[3], regs[4], regs[5], 0],
+    )
 }
 
 #[cfg(test)]
@@ -216,52 +239,125 @@ mod tests {
     use crate::message_info::MessageInfo;
     use sele4n_types::{CPtr, SyscallId};
 
-    /// The mock publishes the **InvalidSyscallNumber** frame, and
-    /// `decode_response` reads back exactly that error.
-    ///
-    /// This asserted only `result.is_err()`, which any error whatsoever
-    /// satisfies — a presence check standing in for the relation "the mock
-    /// publishes the frame the kernel's `errorFrame` would".  A wrong
-    /// discriminant, a wrong label base, or a shifted layout all passed it.
-    /// Naming the error closes the encode/decode round trip.
-    #[test]
-    #[cfg(not(target_arch = "aarch64"))]
-    fn mock_syscall_returns_invalid_syscall_number() {
-        let req = SyscallRequest {
-            cap_addr: CPtr::from(0u64),
-            msg_info: MessageInfo::new(0, 0, 0).unwrap(),
-            msg_regs: [0; 4],
-            syscall_id: SyscallId::Send,
-        };
-        assert_eq!(invoke_syscall(req), Err(KernelError::InvalidSyscallNumber));
+    fn request(syscall_id: SyscallId, label: u64) -> SyscallRequest {
+        SyscallRequest {
+            cap_addr: CPtr::from(9u64),
+            msg_info: MessageInfo::new(1, 0, label).unwrap(),
+            msg_regs: [11, 0, 0, 0],
+            syscall_id,
+            reply_cap: CPtr::NULL,
+        }
     }
 
-    /// The mock's `x1` carries the status in the **top** of the 52-bit label
-    /// range (ABI v3), and `x0` and the message registers are zero — the shape
-    /// `Architecture.errorFrame` publishes.  Read back through
-    /// `MessageInfo::decode`, so this pins the label *value* independently of
-    /// the bit layout the constant was built with.
+    /// The label `ERROR_LABEL_BASE + 1`: `ObjectNotFound`'s status label on
+    /// a `Call`, and an ordinary message label everywhere else.
+    const STATUS_RANGE_LABEL: u64 = sele4n_types::ERROR_LABEL_BASE + 1;
+
+    /// A `Call` gets the mock's **InvalidSyscallNumber** frame, and the
+    /// decode reads back exactly that error — for an IPC call and for a
+    /// labelled invocation, both of which the encoder issues as `Call`.
+    #[test]
+    #[cfg(not(target_arch = "aarch64"))]
+    fn mock_call_returns_invalid_syscall_number() {
+        for sid in [SyscallId::Call, SyscallId::CSpaceMint] {
+            assert_eq!(sid.syscall(), Syscall::Call);
+            assert_eq!(
+                invoke_syscall(request(sid, 0)),
+                Err(KernelError::InvalidSyscallNumber),
+                "{sid:?}"
+            );
+        }
+    }
+
+    /// **A `Send` whose own label lies in the status range succeeds.**  The
+    /// kernel writes no register for a `Send`, `NBSend` or `Yield`, so the
+    /// caller's `x1` comes back as it went out; read as a status it would be
+    /// `ObjectNotFound` (the second assertion pins that the frame really is
+    /// the one a status decode misreads).  Every operation the encoder issues
+    /// as a syscall that returns nothing is driven: send, reply, signal and
+    /// yield.
+    #[test]
+    #[cfg(not(target_arch = "aarch64"))]
+    fn send_with_a_status_range_label_returns_ok() {
+        for sid in [
+            SyscallId::Send,
+            SyscallId::Reply,
+            SyscallId::NotificationSignal,
+            SyscallId::Yield,
+        ] {
+            assert!(sid.syscall().returns_nothing(), "{sid:?}");
+            let req = request(sid, STATUS_RANGE_LABEL);
+            let regs = encode_syscall(&req).unwrap();
+            assert_eq!(
+                crate::decode_response([regs[0], regs[1], regs[2], regs[3], regs[4], regs[5], 0]),
+                Err(KernelError::ObjectNotFound),
+                "{sid:?}: the untouched frame reads as a status"
+            );
+            assert_eq!(
+                invoke_syscall(req),
+                Ok(SyscallResponse::NOTHING),
+                "{sid:?}: a syscall that returns nothing succeeds"
+            );
+        }
+    }
+
+    /// **A receive returns its frame as the message received**, a
+    /// status-range label included.  Under the mock a receive resumes with its
+    /// trapped registers, so the frame is the request's own: badge `x0`, the
+    /// label and the first message register come back as data.
+    #[test]
+    #[cfg(not(target_arch = "aarch64"))]
+    fn receive_returns_a_status_range_label_as_data() {
+        for sid in [
+            SyscallId::Receive,
+            SyscallId::NotificationWait,
+            SyscallId::ReplyRecv,
+        ] {
+            let issued = sid.syscall();
+            assert!(issued != Syscall::Call && !issued.returns_nothing());
+            let resp = invoke_syscall(request(sid, STATUS_RANGE_LABEL))
+                .unwrap_or_else(|e| panic!("{sid:?}: a receive returns no status, got {e:?}"));
+            assert_eq!(resp.badge(), sele4n_types::Badge::from(9u64), "{sid:?}");
+            assert_eq!(resp.msg_info().label(), STATUS_RANGE_LABEL, "{sid:?}");
+            assert_eq!(resp.msg_regs[0], 11, "{sid:?}");
+        }
+    }
+
+    /// The mock's `Call` frame: `x1` carries the status in the **top** of the
+    /// 52-bit label range (ABI v3), and `x0` and the message registers are
+    /// zero — the shape `Architecture.errorFrame` publishes.  Read back
+    /// through `MessageInfo::decode`, so this pins the label *value*
+    /// independently of the bit layout the constant was built with.  Every
+    /// other syscall gets its registers back untouched.
     #[test]
     #[cfg(not(target_arch = "aarch64"))]
     // The crate is `#![deny(unsafe_code)]`; calling the trap directly needs the
     // same targeted allow the three production sites carry.
     #[allow(unsafe_code)]
-    fn mock_error_frame_matches_the_kernel_shape() {
-        let mut regs = [1u64; 7];
-        // SAFETY: the host mock writes only this register array (see its
-        // `# Safety` note — it is `unsafe fn` for signature parity alone).
-        unsafe { raw_syscall(&mut regs) };
-        assert_eq!(regs[0], 0, "x0 must be 0 on an error frame");
-        assert_eq!(
-            MessageInfo::decode(regs[1]).unwrap().label(),
-            sele4n_types::ERROR_LABEL_BASE + (KernelError::InvalidSyscallNumber as u64),
-            "x1 must carry ERROR_LABEL_BASE + discriminant in its label"
-        );
-        assert_eq!(
-            &regs[2..6],
-            &[0, 0, 0, 0],
-            "no message registers on an error"
-        );
+    fn mock_writes_an_error_frame_only_to_call() {
+        for issued in Syscall::ALL {
+            let mut regs = [1u64; 8];
+            regs[REG_SYSCALL_NUM] = issued.word();
+            let trapped = regs;
+            // SAFETY: the host mock writes only this register array (see its
+            // `# Safety` note — it is `unsafe fn` for signature parity alone).
+            unsafe { raw_syscall(&mut regs) };
+            if issued != Syscall::Call {
+                assert_eq!(regs, trapped, "{issued:?} must resume untouched");
+                continue;
+            }
+            assert_eq!(regs[0], 0, "x0 must be 0 on an error frame");
+            assert_eq!(
+                MessageInfo::decode(regs[1]).unwrap().label(),
+                sele4n_types::ERROR_LABEL_BASE + (KernelError::InvalidSyscallNumber as u64),
+                "x1 must carry ERROR_LABEL_BASE + discriminant in its label"
+            );
+            assert_eq!(
+                &regs[2..6],
+                &[0, 0, 0, 0],
+                "no message registers on an error"
+            );
+        }
     }
 
     /// A label at the very top of the range still fits the 52-bit field, so

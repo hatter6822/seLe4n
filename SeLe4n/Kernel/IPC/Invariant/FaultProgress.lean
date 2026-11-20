@@ -97,7 +97,8 @@ theorem endpointCallOnCore_deschedules_caller
   all_goals (obtain ⟨h1, -⟩ := hStep; subst h1
              first
                | exact ⟨_, SystemState.linkReplyWaiter_scheduler _ _ _⟩
-               | exact ⟨_, recordSendCap_scheduler _ _ _ _⟩)
+               | exact ⟨_, recordSendCap_scheduler _ _ _ _ _⟩
+               | exact ⟨_, SystemState.updateTcb_scheduler _ _ _⟩)
 
 /-- WS-RR RR4.19: a caller that completed a cross-core `endpointCallOnCore`
 is neither queued on nor current on the core it called from. -/
@@ -177,23 +178,26 @@ theorem endpointCallCrossCoreDispatch_caller_not_runnable
           · -- a receiver was waiting: the donation + PIP legs run
             rename_i receiverTid _
             split at hStep
-            · rename_i callerV receiverV _ _
-              split at hStep
+            · split at hStep
+              · rename_i callerV receiverV _ _
+                split at hStep
+                · exact absurd (congrArg Prod.snd hStep) (by simp)
+                · rename_i stD hDon
+                  have hDonSched := applyCallDonationOnCore_runQueue_current_eq stW stD
+                    callerV receiverV _ _ executingCore hDon
+                  have hEq : (PriorityInheritance.propagatePipChainCrossCore stD receiverTid
+                      executingCore).1 = st' := congrArg Prod.fst hStep
+                  subst hEq
+                  refine ⟨?_, ?_⟩
+                  · rw [PriorityInheritance.propagatePipChainCrossCore_mem_runQueueOnCore _ stD
+                      receiverTid caller executingCore executingCore, hDonSched.1]
+                    exact hW.1
+                  · rw [PriorityInheritance.propagatePipChainCrossCore_currentOnCore _ stD receiverTid
+                      executingCore executingCore, hDonSched.2]
+                    exact hW.2
               · exact absurd (congrArg Prod.snd hStep) (by simp)
-              · rename_i stD hDon
-                have hDonSched := applyCallDonationOnCore_runQueue_current_eq stW stD
-                  callerV receiverV _ _ executingCore hDon
-                have hEq : (PriorityInheritance.propagatePipChainCrossCore stD receiverTid
-                    executingCore).1 = st' := congrArg Prod.fst hStep
-                subst hEq
-                refine ⟨?_, ?_⟩
-                · rw [PriorityInheritance.propagatePipChainCrossCore_mem_runQueueOnCore _ stD
-                    receiverTid caller executingCore executingCore, hDonSched.1]
-                  exact hW.1
-                · rw [PriorityInheritance.propagatePipChainCrossCore_currentOnCore _ stD receiverTid
-                    executingCore executingCore, hDonSched.2]
-                  exact hW.2
-            · exact absurd (congrArg Prod.snd hStep) (by simp)
+            · have hEq : stW = st' := congrArg Prod.fst hStep
+              exact hEq ▸ hW
           · -- no receiver was waiting: the caller queued, and the tail is the
             -- WithCaps post-state unchanged
             have hEq : stW = st' := congrArg Prod.fst hStep
@@ -228,7 +232,7 @@ theorem faultDeliverOnCore_not_dispatchable (st : SystemState)
     · simp only [faultDeliverOnCore, hRes, recordPendingFault_scheduler_eq]
       exact faultSuspendOnCore_not_runnable _ tid c
     · rcases hCall : endpointCallCrossCoreDispatch tgt.endpoint tid
-          (SendPayload.fault f ctx tgt.cap.badge) c st with ⟨stC, res⟩
+          (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st with ⟨stC, res⟩
       cases res with
       | error e =>
           simp only [faultDeliverOnCore, hRes, hCall, recordPendingFault_scheduler_eq]
@@ -239,7 +243,7 @@ theorem faultDeliverOnCore_not_dispatchable (st : SystemState)
             Architecture.stageWokenDelivery_scheduler_eq]
           exact endpointCallCrossCoreDispatch_caller_not_runnable tgt.endpoint tid _
             c st stC summary sgi?
-            (sendCapRequest_fault _ _ _ _ _ _) hCall
+            (sendCapRequest_fault _ _ _ _ _ _ _) hCall
   rintro (hQ | hC)
   · exact hNot.1 hQ
   · exact hNot.2 hC

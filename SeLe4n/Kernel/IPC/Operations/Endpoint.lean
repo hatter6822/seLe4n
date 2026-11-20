@@ -922,58 +922,88 @@ def storeTcbIpcStateAndMessage (st : SystemState) (tid : SeLe4n.ThreadId)
     (ipcState : ThreadIpcState) (msg : Option IpcMessage) : Except KernelError SystemState :=
   modifyTcb st tid (fun tcb => (TCB.setIpcState { tcb with pendingMessage := msg } ipcState))
 
+/-- **A thread a signal wakes** (seL4's `sendSignal`: `setThreadState(tcb,
+Running)` then `setRegister(tcb, badgeRegister, badge)`): ready, the badge
+written into its badge register `x0` and nothing else.  A signal transfers no
+message, so no message is held and no message-info word is written.  WS-SX SX7. -/
+@[inline] def TCB.signalWoken (badge : SeLe4n.Badge) (tcb : TCB) : TCB :=
+  TCB.setIpcState { tcb with
+    pendingMessage := none
+    registerContext := { tcb.registerContext with x0 := badge.word } } .ready
+
+/-- The store of a thread a signal wakes (`TCB.signalWoken`). -/
+def storeTcbSignalWoken (st : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge) :
+    Except KernelError SystemState :=
+  modifyTcb st tid (TCB.signalWoken badge)
+
+/-- **A bound thread a signal wakes off its endpoint receive** (seL4's
+`sendSignal`, a bound TCB in `BlockedOnReceive`: `cancelIPC`, then
+`setThreadState(Running)` and `setRegister(badgeRegister, badge)`): as
+`TCB.signalWoken`, the receive's stashed reply dropped as `cancelIPC` unlinks
+it. -/
+@[inline] def TCB.signalBoundWoken (badge : SeLe4n.Badge) (tcb : TCB) : TCB :=
+  TCB.setIpcState { tcb with
+    pendingMessage := none
+    pendingReceiveReplyCode := 0
+    registerContext := { tcb.registerContext with x0 := badge.word } } .ready
+
+/-- The store of a bound thread a signal wakes (`TCB.signalBoundWoken`). -/
+def storeTcbSignalBoundWoken (st : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) : Except KernelError SystemState :=
+  modifyTcb st tid (TCB.signalBoundWoken badge)
+
 /-- WS-ZA ZA4.7: **what a blocked sender's capability contributed** — its badge
-and grant right (`TCB.setSendCap`), as seL4 keeps `blockingIPCBadge` and
-`blockingIPCCanGrant` in the blocked thread's state.  The message's words stay
+and grant rights (`TCB.setSendCap`), as seL4 keeps `blockingIPCBadge`,
+`blockingIPCCanGrant` and `blockingIPCCanGrantReply` in the blocked thread's state.  The message's words stay
 in the sender's saved registers and IPC buffer, and the receive that takes it
 reads them there (`blockedSenderMessage`).  Written last on a send or call that
 blocks, to fields no invariant reads.  Total: a non-TCB target is unchanged. -/
 def recordSendCap (st : SystemState) (tid : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool) : SystemState :=
-  st.mapTcbInPlace tid fun tcb => tcb.setSendCap badge grant
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) : SystemState :=
+  st.mapTcbInPlace tid fun tcb => tcb.setSendCap badge grant grantReply
 
 /-- `recordSendCap` of the badge a capability's word and flag stand for, written
 from the two (`recordSendCapWords_eq`), so a badged send builds no `Option`
 (WS-ZA ZA5.3 part 6). -/
 @[inline] def recordSendCapWords (st : SystemState) (tid : SeLe4n.ThreadId)
-    (badgeWord : SeLe4n.Badge) (badged : Bool) (grant : Bool) : SystemState :=
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (grant grantReply : Bool) : SystemState :=
   st.mapTcbInPlace tid fun tcb =>
     { tcb with ipcBadge := (if badged then badgeWord.word else 0), ipcBadged := badged,
-               ipcCanGrant := grant, ipcFaultSend := false }
+               ipcCanGrant := grant, ipcCanGrantReply := grantReply, ipcFaultSend := false }
 
 theorem recordSendCapWords_eq (st : SystemState) (tid : SeLe4n.ThreadId)
-    (badgeWord : SeLe4n.Badge) (badged : Bool) (grant : Bool) :
-    recordSendCapWords st tid badgeWord badged grant =
-      recordSendCap st tid (SeLe4n.Badge.opt badgeWord badged) grant := by
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (grant grantReply : Bool) :
+    recordSendCapWords st tid badgeWord badged grant grantReply =
+      recordSendCap st tid (SeLe4n.Badge.opt badgeWord badged) grant grantReply := by
   cases badged <;> rfl
 
 /-- The send-cap record changes only fields every reader outside the receive
 skips (`TCB.withoutRunLinks`). -/
 theorem recordSendCap_objectsAgreeOffRunLinks (st : SystemState) (tid : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool) :
-    SystemState.objectsAgreeOffRunLinks (recordSendCap st tid badge grant) st :=
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
+    SystemState.objectsAgreeOffRunLinks (recordSendCap st tid badge grant grantReply) st :=
   SystemState.mapTcbInPlace_objectsAgreeOffRunLinks st tid (fun _ => rfl)
 
 @[simp] theorem recordSendCap_lifecycle (st : SystemState) (tid : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool) :
-    (recordSendCap st tid badge grant).lifecycle = st.lifecycle := rfl
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
+    (recordSendCap st tid badge grant grantReply).lifecycle = st.lifecycle := rfl
 @[simp] theorem recordSendCap_objectIndex (st : SystemState) (tid : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool) :
-    (recordSendCap st tid badge grant).objectIndex = st.objectIndex := rfl
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
+    (recordSendCap st tid badge grant grantReply).objectIndex = st.objectIndex := rfl
 @[simp] theorem recordSendCap_objectIndexSet (st : SystemState) (tid : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool) :
-    (recordSendCap st tid badge grant).objectIndexSet = st.objectIndexSet := rfl
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
+    (recordSendCap st tid badge grant grantReply).objectIndexSet = st.objectIndexSet := rfl
 @[simp] theorem recordSendCap_asidTable (st : SystemState) (tid : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool) :
-    (recordSendCap st tid badge grant).asidTable = st.asidTable := rfl
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
+    (recordSendCap st tid badge grant grantReply).asidTable = st.asidTable := rfl
 
 @[simp] theorem recordSendCap_scheduler (st : SystemState) (tid : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool) :
-    (recordSendCap st tid badge grant).scheduler = st.scheduler := rfl
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
+    (recordSendCap st tid badge grant grantReply).scheduler = st.scheduler := rfl
 
 theorem recordSendCap_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool) (h : st.objects.invExt) :
-    (recordSendCap st tid badge grant).objects.invExt :=
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) (h : st.objects.invExt) :
+    (recordSendCap st tid badge grant grantReply).objects.invExt :=
   SystemState.mapTcbInPlace_objects_invExt st tid _ h
 
 /-- WS-L1/L1-B: Variant of `storeTcbIpcStateAndMessage` that accepts a
@@ -1054,6 +1084,21 @@ its slot (`SystemState.updateTcb`). -/
 def detachNtfnHead (st : SystemState) (head : SeLe4n.ThreadId)
     (next : Option SeLe4n.ThreadId) : SystemState :=
   unlinkNtfnNeighbours (clearNtfnLinks st head) none next
+
+/-- `detachNtfnHead` with the successor given as its code
+(`ThreadId.optCode`), so the compiled wake builds no `some` cell for it. -/
+def detachNtfnHeadCode (st : SystemState) (head : SeLe4n.ThreadId) (nextCode : Nat) :
+    SystemState :=
+  match nextCode with
+  | 0 => clearNtfnLinks st head
+  | k + 1 => (clearNtfnLinks st head).updateTcb ⟨k⟩ (fun t => { t with
+      ntfnPrevCode := SeLe4n.ThreadId.optCode none })
+
+/-- The code-taking detach is the detach. -/
+theorem detachNtfnHead_eq_code (st : SystemState) (head : SeLe4n.ThreadId)
+    (next : Option SeLe4n.ThreadId) :
+    detachNtfnHead st head next = detachNtfnHeadCode st head (SeLe4n.ThreadId.optCode next) := by
+  cases next <;> rfl
 
 /-- WS-UC UC3: the notification-link writes never shrink the object store. -/
 @[simp] theorem le_unlinkNtfnNeighbours_objects_capacity {n : Nat} (st : SystemState)
@@ -1559,6 +1604,88 @@ theorem storeTcbIpcStateAndMessage_kindPreservingWrite
     kindPreservingWrite st st' :=
   modifyTcb_kindPreservingWrite hObjInv hStore
 
+/-- The store of a thread a signal wakes is a `kindPreservingWrite`, and leaves
+the scheduler, the machine, the derivation tree and every other object as they
+were: it is `modifyTcb` (`TCB.signalWoken`). -/
+theorem storeTcbSignalWoken_kindPreservingWrite {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {badge : SeLe4n.Badge} (hObjInv : st.objects.invExt)
+    (hStore : storeTcbSignalWoken st tid badge = .ok st') : kindPreservingWrite st st' :=
+  modifyTcb_kindPreservingWrite hObjInv hStore
+
+theorem storeTcbSignalWoken_preserves_objects_invExt (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (hObjInv : st.objects.invExt)
+    (hStore : storeTcbSignalWoken st tid badge = .ok st') : st'.objects.invExt :=
+  modifyTcb_preserves_objects_invExt hObjInv hStore
+
+theorem storeTcbSignalWoken_scheduler_eq (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (hStore : storeTcbSignalWoken st tid badge = .ok st') :
+    st'.scheduler = st.scheduler :=
+  modifyTcb_scheduler_eq hStore
+
+theorem storeTcbSignalWoken_machine_eq (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (hStore : storeTcbSignalWoken st tid badge = .ok st') :
+    st'.machine = st.machine :=
+  modifyTcb_machine_eq hStore
+
+theorem storeTcbSignalWoken_cdt_eq (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (hStore : storeTcbSignalWoken st tid badge = .ok st') :
+    st'.cdt = st.cdt :=
+  modifyTcb_cdt_eq hStore
+
+theorem storeTcbSignalWoken_preserves_objects_ne (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
+    (hObjInv : st.objects.invExt) (hStore : storeTcbSignalWoken st tid badge = .ok st') :
+    st'.objects[oid]? = st.objects[oid]? :=
+  modifyTcb_preserves_objects_ne oid hNe hObjInv hStore
+
+theorem storeTcbSignalWoken_notification_backward (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hObjInv : st.objects.invExt) (hStore : storeTcbSignalWoken st tid badge = .ok st')
+    (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) :=
+  modifyTcb_notification_backward oid ntfn hObjInv hStore hNtfn
+
+/-- The store of a thread a signal wakes is a `kindPreservingWrite`, and leaves
+the scheduler, the machine, the derivation tree and every other object as they
+were: it is `modifyTcb` (`TCB.signalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_kindPreservingWrite {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {badge : SeLe4n.Badge} (hObjInv : st.objects.invExt)
+    (hStore : storeTcbSignalBoundWoken st tid badge = .ok st') : kindPreservingWrite st st' :=
+  modifyTcb_kindPreservingWrite hObjInv hStore
+
+theorem storeTcbSignalBoundWoken_preserves_objects_invExt (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (hObjInv : st.objects.invExt)
+    (hStore : storeTcbSignalBoundWoken st tid badge = .ok st') : st'.objects.invExt :=
+  modifyTcb_preserves_objects_invExt hObjInv hStore
+
+theorem storeTcbSignalBoundWoken_scheduler_eq (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (hStore : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    st'.scheduler = st.scheduler :=
+  modifyTcb_scheduler_eq hStore
+
+theorem storeTcbSignalBoundWoken_machine_eq (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (hStore : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    st'.machine = st.machine :=
+  modifyTcb_machine_eq hStore
+
+theorem storeTcbSignalBoundWoken_cdt_eq (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (hStore : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    st'.cdt = st.cdt :=
+  modifyTcb_cdt_eq hStore
+
+theorem storeTcbSignalBoundWoken_preserves_objects_ne (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
+    (hObjInv : st.objects.invExt) (hStore : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    st'.objects[oid]? = st.objects[oid]? :=
+  modifyTcb_preserves_objects_ne oid hNe hObjInv hStore
+
+theorem storeTcbSignalBoundWoken_notification_backward (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hObjInv : st.objects.invExt) (hStore : storeTcbSignalBoundWoken st tid badge = .ok st')
+    (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) :=
+  modifyTcb_notification_backward oid ntfn hObjInv hStore hNtfn
+
 /-- The `ipcState` store is a `kindPreservingWrite`. -/
 theorem storeTcbIpcState_kindPreservingWrite
     {st st' : SystemState} {tid : SeLe4n.ThreadId} {ipcState : ThreadIpcState}
@@ -1644,6 +1771,13 @@ def storeTcbReceiveComplete (st : SystemState) (tid : SeLe4n.ThreadId)
     (msg : Option IpcMessage) : Except KernelError SystemState :=
   modifyTcb st tid
     (fun tcb => (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready))
+
+/-- The receive-completing store writes no CDT. -/
+theorem storeTcbReceiveComplete_cdt_eq
+    {st st' : SystemState} {tid : SeLe4n.ThreadId} {msg : Option IpcMessage}
+    (hStore : storeTcbReceiveComplete st tid msg = .ok st') :
+    st'.cdt = st.cdt :=
+  modifyTcb_cdt_eq hStore
 
 /-- The receive-completing store is a `kindPreservingWrite`. -/
 theorem storeTcbReceiveComplete_kindPreservingWrite
@@ -2283,6 +2417,23 @@ theorem of_ntfnLinksRewritten {st st' : SystemState} (h : ntfnLinksRewritten st 
   intro tid tcb' hObj
   ntfn_links_back h at tcb' hObj
   exact ⟨tcb', hObj, rfl⟩
+
+/-- A TCB rewrite that keeps the binding (a `threadState` store, say) preserves
+all bindings. -/
+theorem of_updateTcb {st : SystemState} (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hf : ∀ x, (f x).schedContextBinding = x.schedContextBinding)
+    (hInv : st.objects.invExt) : sameSchedContextBindings st (st.updateTcb tid f) := by
+  intro w tcb' h
+  by_cases hk : tid.toObjId = w.toObjId
+  · cases hT : st.getTcb? tid with
+    | none => rw [SystemState.updateTcb_eq_self_of_none hT] at h; exact ⟨tcb', h, rfl⟩
+    | some t =>
+      have hRaw := (SystemState.getTcb?_eq_some_iff st tid t).mp hT
+      rw [← hk, updateTcb_objects_self_of_tcb f hInv hRaw] at h
+      have e := KernelObject.tcb.inj (Option.some.inj h)
+      subst e
+      exact ⟨t, hk ▸ hRaw, (hf t).symm⟩
+  · rw [SystemState.updateTcb_objects_ne st tid f _ hk hInv] at h; exact ⟨tcb', h, rfl⟩
 
 /-- **WS-RR RR8.12 Cut C1**: a post-state `lookupTcb` pulls back to a pre-state
 `lookupTcb` at the same thread with an equal binding — the frame read through the
@@ -9540,10 +9691,9 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
             match storeObject notificationId (.notification (ntfn.withHeadPopped next)) st with
             | .error e => .error e
             | .ok ((), st') =>
-                -- R3-A/M-16: Deliver signaled badge to woken waiter via pendingMessage.
-                -- In seL4, the badge from Signal is returned as the Wait syscall's result.
-                let badgeMsg : IpcMessage := { IpcMessage.empty with badge := some badge }
-                match storeTcbIpcStateAndMessage st' waiter .ready (some badgeMsg) with
+                -- WS-SX SX7: seL4's `sendSignal` writes the badge into the
+                -- woken waiter's badge register and transfers no message.
+                match storeTcbSignalWoken st' waiter badge with
                 | .error e => .error e
                 | .ok st'' => .ok ((), ensureRunnable (detachNtfnHead st'' waiter next) waiter)
         | none =>
@@ -9560,7 +9710,7 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
             let ntfn' : Notification := {
               state := .active
               hasPendingBadge := true, pendingWord := mergedBadge
-              boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated
+              boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated, schedContextCode := ntfn.schedContextCode
             }
             storeObject notificationId (.notification ntfn') st
     | some _ => .error (.invalidCapability 0)
@@ -9593,7 +9743,7 @@ def notificationWaitPark
         | some badge =>
             let ntfn' : Notification :=
               { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-                boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
+                boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated, schedContextCode := ntfn.schedContextCode }
             match storeObject notificationId (.notification ntfn') st with
             | .error e => .error e
             | .ok ((), st') =>
@@ -9629,9 +9779,9 @@ def notificationWaitPark
                       -- message, then Wait on an idle notification.
                       --
                       -- Nothing owes the parked waiter that payload: the wake
-                      -- (`notificationSignal`) overwrites `pendingMessage` with the
-                      -- badge message it delivers, so the cleared field is dead
-                      -- from the block to the wake.
+                      -- (`notificationSignal`) writes the badge into the badge
+                      -- register and clears `pendingMessage`, so the cleared field
+                      -- is dead from the block to the wake.
                       match storeTcbIpcStateAndMessage_fromTcb st1 waiter tcb
                           (.blockedOnNotification notificationId) none with
                       | .error e => .error e
@@ -9672,21 +9822,6 @@ matches the head where it reads it and the `some` is never built. -/
   match st.getNotification? notificationId with
   | some ntfn => ntfn.waitHead
   | none => none
-
-/-- WS-ZA ZA4.7: `notificationSignalWaiter?` as its code (`ThreadId.optCode`),
-so a caller that holds the waiter across the signal holds a word. -/
-@[inline] def notificationSignalWaiterCode (st : SystemState) (notificationId : SeLe4n.ObjId) :
-    Nat :=
-  match st.getNotification? notificationId with
-  | some ntfn => ntfn.waitHeadCode
-  | none => 0
-
-@[simp] theorem ofOptCode_notificationSignalWaiterCode (st : SystemState)
-    (notificationId : SeLe4n.ObjId) :
-    SeLe4n.ThreadId.ofOptCode (notificationSignalWaiterCode st notificationId) =
-      notificationSignalWaiter? st notificationId := by
-  unfold notificationSignalWaiterCode notificationSignalWaiter?
-  split <;> rfl
 
 /-- WS-ZA ZA4.4: the waiter that heads the queue once a signal has woken its
 head -- the head's successor, read from the head's own link, exactly as the
@@ -10198,7 +10333,7 @@ theorem notificationWaitPark_badge_path_notification
         simp only [hBadge] at hStep
         let newNtfn : Notification :=
           { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-            boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
+            boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated, schedContextCode := ntfn.schedContextCode }
         revert hStep
         cases hStore : storeObject notifId (.notification newNtfn) st with
         | error e => simp
@@ -10585,7 +10720,7 @@ theorem notificationWaitPark_badge_objects {st st' : SystemState} {nid : SeLe4n.
               exact hW1
             let n' : Notification :=
               { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-                boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
+                boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated, schedContextCode := ntfn.schedContextCode }
             exact ⟨ntfn, n', tcb, st1, rfl, hBadge, rfl, rfl, hW0, hN1,
               fun x hx => storeObject_objects_ne st st1 nid x _ hx hObjInv hStore, hW2, hO2⟩
 

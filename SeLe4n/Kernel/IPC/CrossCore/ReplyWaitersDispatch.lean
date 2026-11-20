@@ -58,23 +58,6 @@ theorem replyViews_eq_of_getTcb_map {st st' : SystemState}
   | some o' => cases o' <;> cases st.objects[k]? <;>
       (try rename_i o; try cases o) <;> simp [objReplyView]
 
-/-- A TCB update that keeps every reply-view field keeps the views. -/
-theorem replyViews_updateTcb_eq (st : SystemState) (t : SeLe4n.ThreadId) {f : TCB → TCB}
-    (hInv : st.objects.invExt) (hf : ∀ x, (f x).replyView = x.replyView) :
-    (st.updateTcb t f).replyViews = st.replyViews := by
-  cases hT : st.getTcb? t with
-  | none =>
-    unfold SystemState.updateTcb; rw [SystemState.getTcbWitnessed?_eq_none hT]
-  | some tcb =>
-    unfold SystemState.updateTcb; rw [SystemState.getTcbWitnessed?_eq_some hT]
-    have hO := (getTcb?_eq_some_iff st t tcb).1 hT
-    funext x
-    rw [replyViews_rewriteObject _ _ _ _ hInv]
-    split
-    · rename_i hx; subst hx
-      rw [replyViews_of_tcb hO, objReplyView_tcb, hf]
-    · rfl
-
 end SeLe4n.Kernel
 
 namespace SeLe4n.Kernel
@@ -115,18 +98,6 @@ theorem stageWokenDelivery_replyViews_eq (st : SystemState) (w? : Option SeLe4n.
   split
   · exact stageDeliveredMessage_replyViews_eq _ _ _ hInv
   · rfl
-
-theorem stageWokenSendCompletion_replyViews_eq (st : SystemState) (w? : Option SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) :
-    (Architecture.stageWokenSendCompletion st w?).replyViews = st.replyViews := by
-  unfold Architecture.stageWokenSendCompletion
-  split
-  · rfl
-  · split
-    · split
-      · exact writeReturnFrameToTcb_replyViews_eq _ _ _ hInv
-      · rfl
-    · rfl
 
 theorem recordPendingFault_replyViews_eq (st : SystemState) (t : SeLe4n.ThreadId)
     (tf : ThreadFault) (hInv : st.objects.invExt) :
@@ -453,11 +424,11 @@ theorem faultDeliverOnCore_preserves_replyWaitersConsistent (st : SystemState)
   · exact hSus
   · rename_i tgt _
     have hB := endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent tgt.endpoint tid
-      (SendPayload.fault f ctx tgt.cap.badge) c st hInv hC
+      (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st hInv hC
       hFaulted (hHead tgt.endpoint)
     have hI := endpointCallCrossCoreDispatch_preserves_objects_invExt tgt.endpoint tid
-      (SendPayload.fault f ctx tgt.cap.badge) c st hInv
-    cases hR : endpointCallCrossCoreDispatch tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge)
+      (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st hInv
+    cases hR : endpointCallCrossCoreDispatch tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply)
         c st with
     | mk s1 res =>
       rw [hR] at hB hI
@@ -643,9 +614,7 @@ theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
             have hI4 := applyReceiveLegPipHandoff_preserves_objects_invExt st3 tid nxt
               ((recordedReplyServer? st prevCaller).getD tid) ec hI3
             refine replyWaitersConsistent.of_views ?_ hB2
-            rw [stageWokenSendCompletion_replyViews_eq _ _
-                (replyRecvAnswerCaller_preserves_objects_invExt _ _ _ _ hI4),
-              replyRecvAnswerCaller_replyViews_eq _ _ _ _ hI4,
+            rw [replyRecvAnswerCaller_replyViews_eq _ _ _ _ hI4,
               applyReceiveLegPipHandoff_replyViews_eq _ _ _ _ _ hI3,
               replyRecvPostReceiveDonation_replyViews_eq hI2 hD]
 
@@ -655,6 +624,11 @@ theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
 
 theorem replyViews_storeTcbReceiveComplete {st st' : SystemState} {t : SeLe4n.ThreadId}
     {m : Option IpcMessage} (hInv : st.objects.invExt) (h : storeTcbReceiveComplete st t m = .ok st') :
+    st'.replyViews = ReplyViews.setServer st.replyViews t none :=
+  replyViews_modifyTcb hInv h (fun _ => rfl)
+
+theorem replyViews_storeTcbSignalBoundWoken {st st' : SystemState} {t : SeLe4n.ThreadId}
+    {b : SeLe4n.Badge} (hInv : st.objects.invExt) (h : storeTcbSignalBoundWoken st t b = .ok st') :
     st'.replyViews = ReplyViews.setServer st.replyViews t none :=
   replyViews_modifyTcb hInv h (fun _ => rfl)
 
@@ -797,9 +771,9 @@ theorem notificationSignalOnCore_preserves_replyWaitersConsistent (nid : SeLe4n.
         split
         · exact hC
         · rename_i st'' hStore
-          have hI2 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hI1 hStore
+          have hI2 := storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hI1 hStore
           have hV2 : st''.replyViews = st.replyViews := by
-            rw [replyViews_storeTcbIpcStateAndMessage hI1 hStore, hV1]
+            rw [replyViews_storeTcbSignalWoken hI1 hStore, hV1]
             exact ReplyViews.setServer_of_server hSF
           have hV3 := (detachNtfnHead_replyViews_eq st'' w (ntfnSuccessor? st w) hI2).trans hV2
           refine replyWaitersConsistent.of_views ?_ hC

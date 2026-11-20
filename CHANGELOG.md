@@ -1,3 +1,225 @@
+## v0.37.33 — seL4's syscall set and invocation labels
+
+WS-SX SX7 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`). A user thread now
+traps with seL4-MCS's ABI: x7 names one of its 11 syscalls and the kernel
+selects the operation from the invoked capability's type and the message
+label, as seL4's `decodeInvocation` and `handleRecv` do. Before, x7 carried
+seLe4n's own operation number, one per kernel operation, and an error frame
+answered every syscall. SX7 closes here by the owner's decision ("Close and
+split", 2026-11-19); its remainder is new rows SX8–SX12.
+
+### Syscalls and labels (SX7.1, SX7.2)
+- `Syscall` is seL4-MCS's 11 (Call −1 … Yield −11, `syscall.xml`); x7 holds
+  the syscall's word. `Syscall.selectOperation` maps (syscall, capability
+  type, label) to the operation after the lookup, compiled allocation-free
+  as `selectedOperationCode` over `lookupSlotK`. Signal is Send on a
+  notification, a reply is Send on a reply capability, Wait on an endpoint
+  is a receive with no reply. No label selects an operation on an endpoint
+  or a notification.
+- Labels are seL4's generated `invocation_label` for aarch64 MCS; the
+  model-only calls take labels after seL4's last (56). `tcbSetAffinity`
+  keeps label 66 by the owner's decision.
+- **Retired with the numbers:** `untypedReset` (seL4 resets inside
+  `Untyped_Retype`, as the carve does with `retypeFreeIndex`), its slot
+  module, lock sets, NI arm and Rust wrappers; the per-operation syscall
+  numbers (`decodeSyscallId`, `encodeSyscallId`, the HAL's `SyscallId`
+  mirror).
+- **Errors only to Call.** A refused Send, NBSend or Reply-by-Send resumes
+  with its trapped registers (`SyscallOutcome.resumes`, the HAL's
+  `SvcOutcome::Resumed`), as `handleInvocation` answers only `if (isCall)`.
+  A capability fault is dropped by seL4's phase rule
+  (`syscallDropsFault`): a send-phase fault of a non-blocking invocation is
+  dropped (and recorded in the refusal ledger), a receive-phase fault is
+  always delivered.
+- **Userspace reads the frame by the syscall issued.** `invoke_syscall`
+  decodes a status only for a `Call` (`decode_issued`, branching on the x7
+  word the encoder wrote); a receive's frame is its message, label included;
+  a Send, NBSend or Yield reads no register (`Syscall::returns_nothing`), so
+  a delivered Send with label `ERROR_LABEL_BASE + 1` no longer reads as
+  `ObjectNotFound`. `endpoint_send`, `endpoint_reply`, `notification_signal`
+  and `yield_now` return `()`. The host mock writes its error frame only to a
+  Call.
+- **NBSend, NBRecv and NBWait do not block**: NBSend to an endpoint with no
+  receiver drops the message after the flow gate; NBRecv and NBWait with
+  nothing pending write badge 0 (`nbRecvFailedTransfer`, seL4's
+  `doNBRecvFailedTransfer`).
+- **ReplyRecv with no caller** replies to no one and still receives.
+
+### The reply register (SX7.3)
+- Recv and ReplyRecv read the reply capability from x6
+  (`API.receiveReplyAddr?`); the seam spills x6
+  (`writeFfiRegistersToTcb`, `ffiRegisterSpill`); the reply's payload is the
+  whole message. `abi_layout.expected` gains `register reply x6`.
+
+### Beyond the rows (each a seL4 behaviour the ABI exposed)
+- **Return registers:** a syscall writes only what seL4 writes. Send,
+  NBSend and Yield return the caller's own words; message delivery writes
+  only `copyMRs`'s registers; a signal wake writes the badge register alone;
+  Consumed, YieldTo, service query and the audit reads reply only on Call.
+- **Page_Unmap** is invoked on the frame capability with no message words
+  (`vspaceUnmapFrameCap`, `cspaceClearFrameMapping`); Page_Map onto an
+  entry in use answers `seL4_DeleteFirst` and `mappingConflict` retires.
+- **Bound notifications:** a receive, and ReplyRecv's receive, complete the
+  thread's active bound notification first (`receiveIPC`), in place and
+  with the notification write-locked.
+- **A Call that links no reply** (no reply object waiting, or a sender
+  without Grant and GrantReply) delivers its message and leaves the caller
+  `Inactive`, on the send side and the receive side, single-core, frozen
+  and in place; a Call whose caller has no TCB is refused `objectNotFound`
+  on every arm.
+- **A scheduling context and a notification** (seL4-MCS
+  `ntfnSchedContext` / `scNotification`): the link fields; SchedContext_Bind
+  on a notification capability (`schedContext_bindNtfn`); SchedContext_Unbind
+  as seL4-MCS runs it: it unbinds the notification, succeeds on a context
+  bound to no thread, and refuses the executing core's current thread's
+  context `illegalState` (owner's decision "Match seL4"; the
+  unbind-and-reschedule path, `schedContextUnbindOnCoreWriteSet` and
+  `schedLockSet_schedContextUnbindOnCore`'s executing-core argument are
+  deleted); finalisation clears the link at both ends, and the retire guards
+  read it.
+- **Allocation:** the unbind's running-core question is asked without
+  boxing the executing core (`schedContextRunsOn`); the notification bind's
+  store compiles without a closure (`storeBindNotificationImpl`); the fault
+  spill and the decode bound test take no closure.
+
+### The return outcome answers only a runnable caller
+- `syscallReturnOutcome` decided "blocks" from the caller's IPC state alone,
+  so a caller its syscall left IPC-ready but `Inactive` (a self-TCB_Suspend,
+  a Call that links no reply) or destroyed (its own last capability deleted)
+  was handed a frame, and the frame was staged into its saved context. The
+  trap layer always resumed the committed state's current thread (the
+  restore is committed before the outcome tag is read), so no stopped thread
+  kept running; a later TCB_Resume ran the stopped thread past its SVC with
+  a reply seL4 never writes. `origin/main` has the same decision (its
+  self-suspend witness pinned `.returns .zero`).
+- Now the reply goes to a caller that is runnable (`TCB.isRunnable`),
+  seL4's `handleInvocation` test (the caller still `Restart`); a caller
+  with no TCB gets no frame. The compiled words read `tcbWithholdsReply`
+  off the TCB's codes and its thread-state scalar (`tcbWithholdsReply_eq`),
+  allocating nothing. `syscallReturnOutcome_returns_runnable` and
+  `syscallSuccessOutcome_returns_runnable`: a returned frame names a
+  runnable caller. A runnable caller its own syscall preempted keeps its
+  answer in its saved context, as seL4 writes the reply before
+  `schedule()`. The `_ipcBlocked` lemmas became `_not_runnable`.
+- `SyscallReturnAbiSuite`: 9g (self-suspend) expects no frame and an
+  untouched context; 9g' (a no-reply Call that delivers) and 9g'' (a
+  destroyed caller) are new.
+
+### A kernel entry allocates nothing (heap-gate regressions on this branch)
+- **Page_Unmap copied the object table on every call.** The live arm held
+  the state for the record clear's refusal across the teardown, so the
+  in-place root store copied the object table (a 1052672-byte block) and
+  the CNode it then wrote (its 8192-byte slot array), about 1 MiB of kernel
+  heap per call, and built a closure for the clear (21-26 cells per call).
+  Now the clear's two questions and the object table's no-resize test are
+  asked before any write (`vspaceUnmapFrameCapAdmittedAt`) and the state is
+  handed to the in-place form alone (`vspaceUnmapFrameCapPerformAt`, out of
+  line so the CNode store is specialised); `vspaceUnmapFrameCap_eq_performAt`
+  joins it to the specification, through
+  `vspaceUnmapFrameCapTeardownAt_objects_ne` (the root's store over a
+  present key rewrites it in place and leaves every other object's lookup
+  as it was, on every table, `RHTable.get?_insert_ne_of_findsInPlace`). The
+  specification is unchanged. Not on `origin/main`, whose unmap is the
+  VSpace-capability form.
+- **TCB_Resume of a thread that is not stopped** built the restart's
+  `.ok (st, none)` (2 cells); the dispatch now asks `restartLeavesAsIs`
+  first and hands the state back whole (`restartThreadOnCore_of_leavesAsIs`).
+- **A label that selects no operation** (a Send, Call, Reply or Signal on a
+  capability whose type takes no operation at its label) built a
+  `MessageInfo` (one 40-byte cell) in the fault classifier's decode before
+  the code was refused; the compiled decode asks the code first and keeps
+  the message-info refusal's priority (`decodeSyscallArgsFromState_eq_impl`).
+- **Retype carve pins:** the notification's record is
+  `lean_alloc_ctor(0, 5, 75)` (123 bytes, the 128-byte cell; was 120) and the
+  scheduling context's `lean_alloc_ctor(0, 33, 11)` (283 bytes, the 288-byte
+  cell; was 280), each grown by its link word; the cell counts are
+  unchanged, and the gate's byte pins move to 248 and 440.
+- `overflowed-service-register` runs on the service-registry capability, so
+  the `overflowed/serviceRegister` route has a measured round trip (refused
+  `TruncatedMessage`: no endpoint extra capability).
+
+### Rust
+- `sele4n-types` / `sele4n-abi` / `sele4n-sys` encode the seL4 word in x7,
+  the label in x1 and the reply capability in x6; the HAL prefilter decodes
+  `Syscall::from_word`.
+- **No label is reserved in a receive's frame** (PR #1092 review).
+  `decode_received` refused label `MAX_LABEL` as the trap layer's
+  blocked-resume sentinel, but a notification completing a ReplyRecv, or
+  waking a blocked bound receiver, writes only x0 and leaves the caller's
+  outgoing x1, so a valid completion carrying that user label read as
+  `UnknownKernelError`. The sentinel was written only when a blocked caller's
+  dispatch installed no context, a state where the committed current thread
+  names no TCB. Now that arm halts (`halt_after_unrestored_block`, held by
+  `build.rs`'s `scan_trap_rs_faulted_outcome_halts` like the fault halt), so
+  a blocked thread is resumed only by the delivery that unblocks it, as in
+  seL4. `BLOCKED_RESUME_SENTINEL_LABEL`, `blocked_resume_sentinel_regs` and
+  the receive-side check are deleted, and a receive returns every label as
+  data, as libsel4's `seL4_Recv` does.
+- The Tier-4 exerciser traps with the SX7 ABI: `RoundTrip::reply` (x6; a
+  receive without one is a Wait), `TrapTrip::x6`, `Dispatched::Resumed`
+  for refused non-Calls. `cap-fault-to-handler-without-reply` holds seL4's
+  delivery of a fault to a handler with no reply object (the handler woken
+  with the fault, the faulter `Inactive`). New heap scenarios:
+  the bound-notification completions (`bound-signal-bind-root`,
+  `bound-signal-signal`, `bound-signal-receive`, `bound-signal-reply-recv`,
+  `bound-signal-reply-recv-signal`, `bound-signal-unbind-root`), the
+  context-notification links (`sched-context-bind-notification`,
+  `sched-context-unbind-notification`,
+  `bind-carved-sched-context-notification`,
+  `bind-sched-context-carved-notification`, `linked-notification-delete`,
+  `linked-sched-context-delete`, `untyped-retype-linked-notification`,
+  `untyped-retype-linked-sched-context`), the no-reply Call on each side
+  (`no-reply-receiver-waits`, `call-no-reply-delivers`,
+  `call-no-reply-resume-root`, `call-no-reply-resume-partner`,
+  `call-no-reply-blocks`, `no-reply-receive-takes-call`,
+  `no-reply-receive-resume-root`, `no-reply-receive-resume-partner`), the
+  partner unbinding the root's context (`refill-resume-partner`,
+  `refill-root-waits`, `refill-partner-wakes-root`,
+  `refill-partner-suspends`, and the `suspend-donated-*` four), the
+  non-blocking IPC (`nb-recv-empty-returns`, `nb-send-bad-cap-silent`),
+  `send-invocation-error-discarded` and
+  `vspace-unify-instruction-wide-vaddr` (was `vspace-unmap-wide-vaddr`).
+  Removed: `vspace-unmap-short` (Page_Unmap reads no word) and the eight
+  untyped-reset scenarios (`untyped-reset`, `lifecycle-untyped-reset`,
+  `child-untyped-reset-refused`, `owned-cnode-untyped-reset`,
+  `overflowed-untyped-reset`, `wide-table-untyped-reset`,
+  `window-full-untyped-reset`, `window-three-untyped-reset`), with the
+  retired `untypedReset`.
+
+### Plan, debt and docs
+- `SEL4_ABI_FIDELITY_PLAN.md`: SX7 landed; new rows SX8 (notification
+  context donation and return, with the seL4 conformance table), SX9
+  (PageTable_Unmap teardown and per-frame W^X), SX10 (per-invocation rights
+  as `Option AccessRight`), SX11 (the Running state per core), SX12 (the
+  compound syscalls' invoke phase); the old SX8–SX11 are SX13–SX16, WS-CV's
+  folded rows with them (CV1.2 = SX16.1, CV5.2 = SX16.2). Owner decisions
+  D18–D21.
+- `REGISTERED_DEBT.md`: a new row after WS-CB for a capability right to map
+  uncached RAM for non-coherent DMA (the default stays refused); the raw-slot
+  row's families (2) and (7) move from SX7.1 to SX8.1.
+
+### Heap readings
+Measured on a fresh untraced archive at `9da2f80a0`
+(`test_qemu_heap_allocations_per_syscall.sh --lean-kernel`, PASS on the
+rpi5_machine `raspi5b` lane and on QEMU `virt`, twice; every reading line
+identical between the two runs and between the two lanes): 1,275 scenarios,
+2,558 readings. 2,382 read 0, among them `root-ipc-buffer-cap-unmap` and
+`vspace-unmap-first` (Page_Unmap on the frame capability), the
+`call-no-reply-*` and `no-reply-receive-*` resumes, the four
+`*-wrong-kind-refused` refusals, every `overflowed-*` step (now with
+`overflowed-service-register` measured as a round trip), and every IPC round
+trip. The other 176 are carves and read their objects' own pins: endpoint,
+notification and their child and window carves 248 bytes (6 cells; the
+windows 744 and 6448 for three and 26 objects), scheduling context 440 (8),
+reply 256 (10), TCB 2368 (25), CNode 1136 (23), page table 232 (8), frame 152
+(6), untyped 184 (7) and VSpace root 3568 (101). The notification and
+scheduling-context pins are 8 bytes above v0.37.32's because each record
+gains one boxed field (the `ntfnSchedContext` / `scNotification` link): the
+notification cell is now 128 bytes (was 120) and the scheduling-context cell
+288 (was 280); the cell counts are unchanged. The boot heap after the install
+is 110420 live allocations in 1356 of 16069 pages on `raspi5b` and 110064 in
+1351 on `virt`.
+
 ## v0.37.32 — capability arguments are extra capabilities, as seL4's
 
 WS-SX SX6 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`, D6–D12). Every

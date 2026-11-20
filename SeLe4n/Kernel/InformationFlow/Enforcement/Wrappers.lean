@@ -228,15 +228,6 @@ def enforcementBoundary : List EnforcementClass :=
   -- carved memory is fresh and a RAM page is zeroed before any capability to it
   -- exists.
   , .capabilityOnly "untypedRetypeFromCap"
-  -- **WS-BP BP7.1 (`v0.36.6`)**: the untyped reset, the transition the live
-  -- `.untypedReset` arm calls.  Capability-only: the authority is the untyped
-  -- capability's `.retype` right — authority over the memory it hands back.
-  -- Since WS-ZA ZA5.4 the reset is seL4's: `untypedResetFromCap` resolves the
-  -- invoked slot, refuses while that slot has a derivation child or the
-  -- untyped records a carved object, and writes `0` to the slot's free index —
-  -- a word of the caller's own capability.  It removes no object, mapping or
-  -- capability, so no principal loses anything it holds.
-  , .capabilityOnly "untypedResetFromCap"
   -- Read-only: no state mutation
   , .readOnly "chooseThread"
   , .readOnly "cspaceResolvePath"
@@ -407,7 +398,6 @@ def syscallIdToEnforcementName : SyscallId → String
   | .cspaceDelete => "cspaceDeleteSlotZombie"
   | .cspaceRevoke => "cspaceRevokeCdtFinalising"
   | .untypedRetype => "untypedRetypeFromCap"
-  | .untypedReset => "untypedResetFromCap"
   | .vspaceMap => "vspaceMapPageCheckedWithShootdownFromState"
   | .vspaceUnmap => "vspaceUnmapPageWithShootdown"
   | .serviceRegister => "registerServiceChecked"
@@ -716,16 +706,18 @@ def lookupServiceChecked
 
 /-- **The checked service query as the dispatcher runs it**: the policy-checked
 lookup, its answer staged as the caller's return word (`x0` = the
-registration's `ServiceId`, success in `x1`, no message registers).  The lookup
-leaves the state, so the only write is the caller's return frame. -/
+registration's `ServiceId`, success in `x1`, no message registers) when the
+caller trapped with `Call`, and nothing written under any other syscall, as
+seL4 writes an invocation's reply only on `Call`
+(`Architecture.writeCallReturnWord`).  The lookup leaves the state, so the only
+write is the caller's return registers. -/
 def serviceQueryStaged
     (ctx : LabelingContext)
     (caller : SeLe4n.ThreadId)
     (epId : SeLe4n.ObjId) : Kernel Unit :=
   fun st =>
     match lookupServiceChecked ctx caller epId st with
-    | .ok (reg, st') => .ok ((), Architecture.writeReturnFrameToTcb st' caller
-        (Architecture.returnFrameOfWord reg.sid.val.toUInt64))
+    | .ok (reg, st') => .ok ((), Architecture.writeCallReturnWord st' caller reg.sid.val.toUInt64)
     | .error e => .error e
 
 /-- Policy-checked service revocation: the caller's label must flow to the
@@ -756,10 +748,10 @@ A state with no recorded registration is returned unchanged;
     match ep.serviceRegistered with
     | false => st
     | true =>
-      -- The frame's words written in place, no frame record built
-      -- (`writeReturnFrameToTcb_ofWord_eq_words`).
+      -- The word written in place on a `Call`, nothing otherwise
+      -- (`Architecture.writeCallReturnWord`).
       st.updateTcb caller
-        (TCB.withReturnWords · (ServiceId.ofNat epId.toNat).val.toUInt64 0 0 0 0 0)
+        (TCB.withCallReturnWord · (ServiceId.ofNat epId.toNat).val.toUInt64)
   | _ => st
 
 /-- An admitted checked query — the read flow and the recorded registration —
@@ -777,7 +769,7 @@ theorem serviceQueryStaged_of_admitted (ctx : LabelingContext) (caller : SeLe4n.
   split at hP
   · next ep hObj =>
     simp only [hObj, hP, EndpointService.registrationAt_sid,
-      Architecture.writeReturnFrameToTcb_ofWord_eq_words]
+      Architecture.writeCallReturnWord]
   · cases hP
 
 /-- An admitted checked revoke — the write flow and the recorded registration —

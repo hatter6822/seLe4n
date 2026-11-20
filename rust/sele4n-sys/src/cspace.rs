@@ -41,6 +41,7 @@ pub fn cspace_mint(
         msg_info: MessageInfo::new_const(6, 1, 0),
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::CSpaceMint,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -69,6 +70,7 @@ pub fn cspace_copy(
         msg_info: MessageInfo::new_const(5, 1, 0),
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::CSpaceCopy,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -91,6 +93,7 @@ pub fn cspace_move(
         msg_info: MessageInfo::new_const(4, 1, 0),
         msg_regs: slots.encode(),
         syscall_id: SyscallId::CSpaceMove,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -116,6 +119,7 @@ pub fn cspace_delete(cnode_cap: CPtr, target_slot: Slot) -> KernelResult<Syscall
         msg_info: MessageInfo::new_const(1, 0, 0),
         msg_regs: [encoded[0], 0, 0, 0],
         syscall_id: SyscallId::CSpaceDelete,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -141,6 +145,7 @@ pub fn cspace_revoke(cnode_cap: CPtr, target_slot: Slot) -> KernelResult<Syscall
         msg_info: MessageInfo::new_const(1, 0, 0),
         msg_regs: [encoded[0], 0, 0, 0],
         syscall_id: SyscallId::CspaceRevoke,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -167,5 +172,6 @@ pub fn mint_reply_cap(
         msg_info: MessageInfo::new_const(2, 0, 0),
         msg_regs: [encoded[0], encoded[1], 0, 0],
         syscall_id: SyscallId::MintReplyCap,
+        reply_cap: CPtr::NULL,
     })
 }

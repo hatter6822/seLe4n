@@ -335,16 +335,12 @@ theorem resolveRecvReplyId_cancelRecvBusyReply (ctx : LabelingContext) (tid : Se
   rw [hC]
   unfold recvBusyReplyHolderCode at hk
   unfold resolveRecvReplyId
-  by_cases h0 : (decoded.msgInfo.length == 0) = true
-  · simp [h0] at hk
-  simp only [h0, Bool.false_eq_true, ↓reduceIte] at hk ⊢
-  cases hA : Architecture.SyscallArgDecode.decodeRecvArgs decoded with
-  | error e => rw [hA] at hk; simp at hk
-  | ok rargs =>
-  rw [hA] at hk
-  simp only at hk ⊢
+  cases hA : receiveReplyAddr? decoded with
+  | none => simp [hA] at hk
+  | some replyAddr =>
+  simp only [hA] at hk ⊢
   rw [lookupReplyCap_congr_getCNode? _ _ st (cancelReplyHolder_getCNode? st ⟨k⟩ ec hObjInv)]
-  cases hLk : lookupReplyCap { gate with capAddr := rargs.replyCPtr } st with
+  cases hLk : lookupReplyCap { gate with capAddr := replyAddr } st with
   | error e => rw [hLk] at hk; simp at hk
   | ok p =>
   obtain ⟨cap, rid⟩ := p

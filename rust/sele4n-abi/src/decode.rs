@@ -3,7 +3,12 @@
 //!
 //! WS-RA: this is **the single decode point** for the seL4 return
 //! convention (plan §3.2) — every `sele4n-sys` wrapper funnels through
-//! [`decode_response`] via `invoke_syscall`:
+//! [`decode_issued`] via `invoke_syscall`, which reads the frame by the seL4
+//! syscall the wrapper issued (WS-SX SX7): only a `Call` can carry a kernel
+//! error, so only a `Call`'s frame goes through [`decode_response`]; a
+//! receive's frame is the message it received ([`decode_received`]); and a
+//! `Send`, `NBSend` or `Yield` returns nothing, its registers unread.  A
+//! `Call`'s frame:
 //!
 //! * `x0` — the primary return value: a full-width badge, a queried word,
 //!   or `0` for `Unit`-returning syscalls.
@@ -13,15 +18,15 @@
 //!   `d`, and every label *below* `ERROR_LABEL_BASE` is the delivered
 //!   message's own label — a fault handler's `seL4_Fault_tag`, for one.
 //!   (v2 carried `d + 1`, which made every delivered fault message decode
-//!   as a kernel error; the top-range carriage keeps one syscall-agnostic
-//!   decoder and separates the two by range.)
+//!   as a kernel error; the top-range carriage separates the two by
+//!   range.)
 //! * `x2`-`x5` — message registers.
 //!
 //! The pre-WS-RA convention — `regs[0] != 0` *is* the error discriminant,
 //! everything else the caller's own stale registers — is retired.
 
 use crate::MessageInfo;
-use sele4n_types::{Badge, KernelError, KernelResult, SyscallError, ERROR_LABEL_BASE};
+use sele4n_types::{Badge, KernelError, KernelResult, Syscall, SyscallError, ERROR_LABEL_BASE};
 
 /// A decoded successful syscall response.
 ///
@@ -76,6 +81,56 @@ pub fn decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
     })
 }
 
+/// Decode the registers a syscall's caller gets back, by the **seL4 syscall
+/// it issued** — the one its `x7` word names, [`crate::encode_syscall`]'s
+/// `SyscallId::syscall`.  seL4 answers a kernel error only to a `Call`
+/// (`handleInvocation` replies only `if (isCall)`), so only a `Call`'s frame
+/// can carry a status:
+///
+/// * **`Call`** — [`decode_response`]: a status-range label is the error.
+/// * **`Send`, `NBSend`, `Yield`** ([`Syscall::returns_nothing`]) — `Ok` of the
+///   empty response, read from no register.  The kernel writes none for them,
+///   refused or not, so `x1` is the caller's own outgoing message info, whose
+///   label may lie anywhere in the field (`MessageInfo::new` accepts it, and
+///   delivery clamps it below the status range).  libsel4's `seL4_Send`,
+///   `seL4_NBSend` and `seL4_Yield` return `void`.
+/// * **Every receive** (`Recv`, `NBRecv`, `Wait`, `NBWait`, `ReplyRecv`,
+///   `NBSendRecv`, `NBSendWait`) — [`decode_received`]: the frame is the
+///   received message, never a status, as libsel4's `seL4_Recv` returns it.
+#[inline]
+pub fn decode_issued(issued: Syscall, regs: [u64; 7]) -> KernelResult<SyscallResponse> {
+    match issued {
+        Syscall::Call => decode_response(regs),
+        _ if issued.returns_nothing() => Ok(SyscallResponse::NOTHING),
+        _ => decode_received(regs),
+    }
+}
+
+/// Decode a receive's frame as the message it received: `x0` the badge, `x1`
+/// the message info, `x2`-`x5` the message registers.  Its label is data — a
+/// receive returns no kernel status, so a label anywhere in the field,
+/// `MAX_LABEL` included, is not read as an error.  That is libsel4's
+/// `seL4_Recv`: the frame is whatever the kernel wrote or left, returned as
+/// is.  A notification completing a `ReplyRecv` writes only `x0`
+/// (`badgeReturnFrame`), so its `x1` is the caller's own outgoing message
+/// info, whose label is the caller's to choose.
+///
+/// One word still fails closed: an `x1` that does not decode as a
+/// well-formed `MessageInfo` is `InvalidMessageInfo`, as in
+/// [`decode_response`].  No label is reserved: a caller the kernel left
+/// blocked is never resumed with a frame — the trap layer resumes the
+/// thread the committed state runs, and halts when the dispatch installed
+/// none (`sele4n-hal`'s `halt_after_unrestored_block`).
+#[inline]
+pub fn decode_received(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
+    let msg_info = MessageInfo::decode(regs[1]).map_err(|_| KernelError::InvalidMessageInfo)?;
+    Ok(SyscallResponse {
+        x0: regs[0],
+        msg_info,
+        msg_regs: [regs[2], regs[3], regs[4], regs[5]],
+    })
+}
+
 /// Decode an error frame with its payload (ABI v5): the code from `x1`'s
 /// label, the payload from `x2`-`x5` and, for a fifth word, `mr4` — the
 /// caller's IPC buffer `msg[4]`, read by the caller (seL4's `seL4_GetMR(4)`),
@@ -94,6 +149,14 @@ pub fn decode_error(regs: [u64; 7], mr4: u64) -> Option<SyscallError> {
 }
 
 impl SyscallResponse {
+    /// The response of a syscall that returns nothing (`Send`, `NBSend`,
+    /// `Yield`): every word zero, read from no register.
+    pub const NOTHING: Self = Self {
+        x0: 0,
+        msg_info: MessageInfo::new_const(0, 0, 0),
+        msg_regs: [0; 4],
+    };
+
     /// The returned badge — read from **`x0`** (`.notificationWait`,
     /// `.receive`, `.call`, `.replyRecv`).  Pre-WS-RA this read `x1`,
     /// which the kernel never wrote back.
@@ -227,8 +290,8 @@ mod tests {
         // fail-closed.
         let regs = [0, error_x1(61), 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
-        // The top of the range — the blocked-resume sentinel's label,
-        // discriminant 255 — is the same fail-closed answer.
+        // The top of the range — `MAX_LABEL`, discriminant 255, which no
+        // error has — is the same fail-closed answer to a `Call`.
         let regs = [0, error_x1(255), 0, 0, 0, 0, 0];
         assert_eq!(error_x1(255) >> 12, (1 << 52) - 1);
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
@@ -368,5 +431,76 @@ mod tests {
         let resp = decode_response(regs).unwrap();
         assert_eq!(resp.badge(), Badge::from(0xBEEFu64));
         assert_eq!(resp.value(), 0xBEEF);
+    }
+
+    /// The decode follows the syscall issued.  One frame — `x1` carrying
+    /// label `ERROR_LABEL_BASE + 1` — is `ObjectNotFound` to a `Call`, the
+    /// received message to every receive, and nothing to a `Send`, `NBSend`
+    /// or `Yield`.  A word that is no `MessageInfo` at all still succeeds for
+    /// a syscall that returns nothing, since none of its registers is read.
+    #[test]
+    fn decode_issued_follows_the_syscall() {
+        let frame = [5, error_x1(1), 6, 7, 8, 9, 0];
+        let malformed = [5, u64::MAX, 0, 0, 0, 0, 0];
+        for issued in Syscall::ALL {
+            if issued == Syscall::Call {
+                assert_eq!(
+                    decode_issued(issued, frame),
+                    Err(KernelError::ObjectNotFound)
+                );
+            } else if issued.returns_nothing() {
+                assert_eq!(decode_issued(issued, frame), Ok(SyscallResponse::NOTHING));
+                assert_eq!(
+                    decode_issued(issued, malformed),
+                    Ok(SyscallResponse::NOTHING)
+                );
+            } else {
+                let resp = decode_issued(issued, frame)
+                    .unwrap_or_else(|e| panic!("{issued:?} returned status {e:?}"));
+                assert_eq!(resp.badge(), Badge::from(5u64));
+                assert_eq!(resp.msg_info().label(), ERROR_LABEL_BASE + 1);
+                assert_eq!(resp.msg_regs, [6, 7, 8, 9]);
+                assert_eq!(
+                    decode_issued(issued, malformed),
+                    Err(KernelError::InvalidMessageInfo)
+                );
+            }
+        }
+    }
+
+    /// A notification completing a receive writes only `x0`, so the frame's
+    /// `x1` is the caller's own outgoing message info, and its label may be
+    /// any value `MessageInfo::new` accepts — `MAX_LABEL`, the top of the
+    /// status range, included.  Every receive reads that frame as the data it
+    /// is, and only a `Call` reads the same label as a status.
+    #[test]
+    fn decode_received_reads_a_top_label_notification_completion_as_data() {
+        use crate::message_info::MAX_LABEL;
+        let outgoing = MessageInfo::new(2, 0, MAX_LABEL).expect("a user label at the field's top");
+        assert_eq!(outgoing.label(), MAX_LABEL);
+        // `badgeReturnFrame`: the badge in `x0`, every other register the
+        // caller's own.
+        let completed = [0x55, outgoing.encode().expect("in-field"), 11, 12, 0, 0, 0];
+        for issued in [
+            Syscall::ReplyRecv,
+            Syscall::Recv,
+            Syscall::NBRecv,
+            Syscall::Wait,
+        ] {
+            let resp = decode_issued(issued, completed)
+                .unwrap_or_else(|e| panic!("{issued:?} read a completion as status {e:?}"));
+            assert_eq!(resp.badge(), Badge::from(0x55u64));
+            assert_eq!(resp.msg_info(), outgoing);
+            assert_eq!(resp.msg_regs, [11, 12, 0, 0]);
+        }
+        assert_eq!(
+            decode_received(completed).map(|r| r.msg_info()),
+            Ok(outgoing)
+        );
+        // The same frame answering a `Call` is the status it names.
+        assert_eq!(
+            decode_issued(Syscall::Call, completed),
+            Err(KernelError::UnknownKernelError)
+        );
     }
 }

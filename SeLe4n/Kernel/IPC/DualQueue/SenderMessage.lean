@@ -129,8 +129,9 @@ decoder (`decodeSyscallArgsFromState`) on the registers the entry saved
 (`registerContext`), with the overflow words read from its IPC buffer. -/
 def blockedSenderDecode (st : SystemState) (sender : SeLe4n.ThreadId) (tcb : TCB) :
     Except KernelError SyscallDecodeResult :=
-  Architecture.RegisterDecode.decodeSyscallArgsFromState st sender
-    SeLe4n.arm64DefaultLayout tcb.registerContext 32
+  Architecture.RegisterDecode.decodeSyscallArgsFromState
+    (Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout tcb.registerContext)
+    st sender SeLe4n.arm64DefaultLayout tcb.registerContext 32
 
 /-- WS-ZA ZA4.7: **the message a sender's frame holds**, given the decode of
 its saved registers and what its capability contributes: the body cut to the
@@ -514,16 +515,6 @@ theorem callerExtraCapAddr?_zero (st : SystemState) (tid : SeLe4n.ThreadId) (i :
   unfold callerExtraCapAddr?
   rw [Nat.zero_min, if_neg (Nat.not_lt_zero i)]
 
-/-- **The dispatch runs the receive arm with no reply leg**: a `.receive`, or
-a `.replyRecv` whose message names an extra capability that does not look up
-(seL4-MCS `SysReplyRecv`: `handleInvocation` with `isBlocking = false` skips the
-reply with no fault, and `handleRecv` still runs). -/
-def receivesWithoutReply (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (st : SystemState) : Prop :=
-  decoded.syscallId = .receive ∨
-    (decoded.syscallId = .replyRecv ∧
-      (callerExtraCapsFault? st tid decoded.msgInfo.extraCaps).isSome)
-
 /-- **Whether a caller's extra capabilities fail, in continuation form**
 (`callerExtraCapsFault?`, `callerExtraCapsFailK_eq`): `onFail` when one of the
 `n` the caller's message names does not look up, `onOk` otherwise, through the
@@ -584,7 +575,7 @@ theorem decodeMsgInfoWord_extraCaps {w : UInt64} {mi : MessageInfo}
 message-info register. -/
 theorem decodeSyscallArgs_msgInfo {layout : SeLe4n.SyscallRegisterLayout}
     {regs : SeLe4n.RegisterFile} {n : Nat} {d : SyscallDecodeResult}
-    (h : Architecture.RegisterDecode.decodeSyscallArgs layout regs n = .ok d) :
+    (h : Architecture.RegisterDecode.decodeSyscallArgs opCode layout regs n = .ok d) :
     Architecture.RegisterDecode.decodeMsgInfo (SeLe4n.readReg regs layout.msgInfoReg)
       = .ok d.msgInfo := by
   unfold Architecture.RegisterDecode.decodeSyscallArgs at h
@@ -604,11 +595,11 @@ kept. -/
 theorem decodeSyscallArgsFromState_msgInfo {st : SystemState} {tid : SeLe4n.ThreadId}
     {layout : SeLe4n.SyscallRegisterLayout} {regs : SeLe4n.RegisterFile}
     {n : Nat} {d : SyscallDecodeResult}
-    (h : Architecture.RegisterDecode.decodeSyscallArgsFromState st tid layout regs n = .ok d) :
+    (h : Architecture.RegisterDecode.decodeSyscallArgsFromState opCode st tid layout regs n = .ok d) :
     ∃ mi, Architecture.RegisterDecode.decodeMsgInfo (SeLe4n.readReg regs layout.msgInfoReg)
       = .ok mi ∧ d.msgInfo.extraCaps = mi.extraCaps ∧ d.msgInfo.label = mi.label := by
   unfold Architecture.RegisterDecode.decodeSyscallArgsFromState at h
-  cases hB : Architecture.RegisterDecode.decodeSyscallArgs layout regs n with
+  cases hB : Architecture.RegisterDecode.decodeSyscallArgs opCode layout regs n with
   | error e => simp only [hB, bind, Except.bind] at h; cases h
   | ok base =>
     have hb := decodeSyscallArgs_msgInfo hB
@@ -680,25 +671,76 @@ and IPC buffer, and whichever arm delivers them reads them there
 (`sendPayloadMessage`), so a send that meets a waiting receiver and one that
 blocks until a receive takes it deliver the same words.
 
-* `frame badge grant` -- an ordinary send: the message is the sender's frame
-  (`senderFrameMessage`) under its capability's badge; the grant right decides
-  only the capability request (`sendPayloadCapRequest`).
-* `fault f ctx badge` -- the one message the kernel writes: a fault, delivered
-  under the handler capability's badge (`faultMessage`). -/
+* `frame badge grant grantReply` -- an ordinary send: the message is the
+  sender's frame (`senderFrameMessage`) under its capability's badge; the grant
+  right decides the capability request (`sendPayloadCapRequest`), and the grant
+  and grant-reply rights together decide whether a call is linked to the
+  receiver's reply object (`SendPayload.canLinkReply`).
+* `fault f ctx badge linkReply` -- the one message the kernel writes: a fault,
+  delivered under the handler capability's badge (`faultMessage`); `linkReply`
+  is the handler capability's `Grant || GrantReply` (seL4's `sendFaultIPC`
+  hands `sendIPC` both rights of the handler capability). -/
 inductive SendPayload where
-  | frame (badge : Option SeLe4n.Badge) (grant : Bool)
-  | fault (f : Fault) (ctx : FaultContext) (badge : Option SeLe4n.Badge)
+  | frame (badge : Option SeLe4n.Badge) (grant grantReply : Bool)
+  | fault (f : Fault) (ctx : FaultContext) (badge : Option SeLe4n.Badge) (linkReply : Bool)
 
 /-- The badge a send's capability carries. -/
 @[inline] def SendPayload.badge : SendPayload → Option SeLe4n.Badge
-  | .frame b _ => b
-  | .fault _ _ b => b
+  | .frame b _ _ => b
+  | .fault _ _ b _ => b
 
 /-- Whether a send may transfer capabilities: an ordinary send whose capability
 had the grant right; a fault never transfers authority. -/
 @[inline] def SendPayload.grant : SendPayload → Bool
-  | .frame _ g => g
-  | .fault _ _ _ => false
+  | .frame _ g _ => g
+  | .fault _ _ _ _ => false
+
+/-- The capability's `GrantReply` right (seL4's `canGrantReply`); for a fault,
+whether the handler capability had `Grant` or `GrantReply`. -/
+@[inline] def SendPayload.grantReply : SendPayload → Bool
+  | .frame _ _ gr => gr
+  | .fault _ _ _ l => l
+
+/-- **Whether a call through this payload is linked to the receiver's reply
+object**: seL4's `canGrant || canGrantReply` in `sendIPC` / `receiveIPC`.  A
+call that may not link still delivers its message; its caller goes `Inactive`
+and receives no reply. -/
+@[inline] def SendPayload.canLinkReply (p : SendPayload) : Bool :=
+  p.grant || p.grantReply
+
+/-- **Whether a call that finds `receiver` waiting is linked to its reply
+object**: seL4's `reply != NULL && (canGrant || canGrantReply)` in `sendIPC`
+-- the receiver stashed a reply object on its receive
+(`TCB.pendingReceiveReplyCode`, read in the pre-state, which the pop does not
+change) and the payload may link one (`SendPayload.canLinkReply`).  A call that
+is not linked delivers its message and leaves its caller `Inactive`, with no
+reply and no donation. -/
+@[inline] def callRendezvousLinks (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (payload : SendPayload) : Bool :=
+  payload.canLinkReply &&
+    match st.getTcb? receiver with
+    | some rt => rt.pendingReceiveReplyCode != 0
+    | none => false
+
+/-- Where the receiver stashed a reply object, the call links exactly when its
+capability had `Grant` or `GrantReply`. -/
+theorem callRendezvousLinks_of_stash {st : SystemState} {receiver : SeLe4n.ThreadId}
+    {rt : TCB} {rid : SeLe4n.ReplyId} (payload : SendPayload)
+    (hT : st.getTcb? receiver = some rt) (hRid : rt.pendingReceiveReply = some rid) :
+    callRendezvousLinks st receiver payload = payload.canLinkReply := by
+  unfold callRendezvousLinks
+  rw [hT]
+  have hNz : rt.pendingReceiveReplyCode ≠ 0 := by
+    intro h0
+    simp [TCB.pendingReceiveReply, h0, SeLe4n.ReplyId.ofOptCode] at hRid
+  simp [hNz]
+
+/-- **Whether a fault sent through this handler capability is linked to the
+handler's reply object**: the capability's `Grant` or `GrantReply` right, the
+two rights seL4's `sendFaultIPC` hands `sendIPC` (`capCanGrant`,
+`capCanGrantReply`), carried by the fault payload (`SendPayload.fault`). -/
+@[inline] def _root_.SeLe4n.Model.Capability.canLinkReply (cap : Capability) : Bool :=
+  cap.rights.mem .grant || cap.rights.mem .grantReply
 
 /-- WS-ZA ZA4.7: the decode of a sender's saved frame, looked up by its id: a
 thread that does not exist has no frame, and its decode is a refusal. -/
@@ -714,37 +756,37 @@ badge -- the same read the receive that takes a blocked sender
 makes (`sendPayloadMessage_frame_eq_blockedSenderMessage`). -/
 @[inline] def sendPayloadMessage (st : SystemState) (sender : SeLe4n.ThreadId) :
     SendPayload → IpcMessage
-  | .frame b _ => senderFrameMessage (senderFrameDecode st sender) b
-  | .fault f ctx b => faultMessage f ctx b
+  | .frame b _ _ => senderFrameMessage (senderFrameDecode st sender) b
+  | .fault f ctx b _ => faultMessage f ctx b
 
 /-- WS-ZA ZA4.7: **the capabilities a send transfers** to a waiting receiver:
 the frame's request (`senderFrameCapRequest`) under the capability's grant
 right, none for a fault. -/
 def sendPayloadCapRequest (st : SystemState) (sender : SeLe4n.ThreadId) (tcb : TCB) :
     SendPayload → Option (Capability × Array SeLe4n.CPtr)
-  | .frame _ g => senderFrameCapRequest st sender tcb g
-  | .fault _ _ _ => none
+  | .frame _ g _ => senderFrameCapRequest st sender tcb g
+  | .fault _ _ _ _ => none
 
 /-- WS-ZA ZA4.7: **both arrival orders deliver one message**: an ordinary send
 that blocks records its capability's badge and grant right (`TCB.setSendCap`),
 and the receive that takes it reads what the send to a waiting receiver
 delivers. -/
 theorem sendPayloadMessage_frame_eq_blockedSenderMessage (st : SystemState)
-    (sender : SeLe4n.ThreadId) (tcb : TCB) (badge : Option SeLe4n.Badge) (grant : Bool)
+    (sender : SeLe4n.ThreadId) (tcb : TCB) (badge : Option SeLe4n.Badge) (grant grantReply : Bool)
     (hT : st.getTcb? sender = some tcb) :
-    blockedSenderMessageOf (tcb.setSendCap badge grant) (blockedSenderDecode st sender tcb) =
-      sendPayloadMessage st sender (.frame badge grant) := by
+    blockedSenderMessageOf (tcb.setSendCap badge grant grantReply) (blockedSenderDecode st sender tcb) =
+      sendPayloadMessage st sender (.frame badge grant grantReply) := by
   simp [blockedSenderMessageOf, sendPayloadMessage, senderFrameDecode, hT]
 
 /-- WS-ZA ZA4.7: and it is within the payload bound. -/
 theorem sendPayloadMessage_bounded (st : SystemState) (sender : SeLe4n.ThreadId)
     (p : SendPayload) : (sendPayloadMessage st sender p).bounded := by
   cases p with
-  | frame b g =>
+  | frame b g gr =>
     simp only [sendPayloadMessage, senderFrameMessage]
     split
     · simp [IpcMessage.empty, IpcMessage.bounded]
     · exact Architecture.RegisterDecode.extractMessageRegisters_length _ _
-  | fault f ctx b => exact faultMessage_bounded f ctx b
+  | fault f ctx b _ => exact faultMessage_bounded f ctx b
 
 end SeLe4n.Kernel

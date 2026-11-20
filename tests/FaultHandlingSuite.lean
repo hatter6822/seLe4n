@@ -1447,7 +1447,13 @@ private def svcX30 : UInt64 := 0xBEEF
 CPtr and an empty message, through the typed ABI entry the hardware calls. -/
 private def seamDispatch (ctx : LabelingContext) (sid : SyscallId) (cptr : UInt64) :
     Except KernelError (SyscallOutcome × SystemState) :=
-  SeLe4n.Testing.dispatchFromAbi ctx c0 sid.toNat.toUInt32 cptr 0 0 0 0 0 0
+  SeLe4n.Testing.dispatchOperationFromAbi ctx c0 sid cptr 0 0 0 0 0 0
+    svcElr svcSpsr svcSpEl0 svcX30 stRunning
+
+/-- The seam at seL4 syscall `sys` itself, the message-info word unlabelled. -/
+private def seamDispatchSyscall (ctx : LabelingContext) (sys : Syscall) (cptr : UInt64) :
+    Except KernelError (SyscallOutcome × SystemState) :=
+  SeLe4n.Testing.dispatchFromAbi ctx c0 sys.number.toUInt32 cptr 0 0 0 0 0 0
     svcElr svcSpsr svcSpEl0 svcX30 stRunning
 
 /-- An address that misses the root CNode's guard (its 62 guard bits are 0, and
@@ -1507,7 +1513,7 @@ private def runSyscallCapFaultChecks : IO Unit := do
   | .error e => assertBool s!"seam capFault pipeline: {e}" false
   | .ok s =>
       assertBool "a Call whose endpoint CPtr resolves to nothing FAULTS the caller — no error frame"
-        (match s.outcome with | .faulted => true | .blocks => false | .returns _ => false)
+        (match s.outcome with | .faulted => true | .blocks | .resumes => false | .returns _ => false)
       assertBool "the faulted outcome's tag is 2 — distinct from a frame (0) and a block (1), so the trap layer halts instead of resuming"
         (s.outcome.tagWord == 2 && SyscallOutcome.tagWord .blocks == 1 &&
           SyscallOutcome.tagWord (.returns .zero) == 0)
@@ -1520,10 +1526,10 @@ private def runSyscallCapFaultChecks : IO Unit := do
       assertBool "the context carries SP_EL0 and x30 from the trap frame, not from the mirror"
         ((pendingFaultOf s.afterFault faulter).map (fun tf => (tf.context.sp, tf.context.lr))
           == some (svcSpEl0, svcX30))
-      assertBool "the context's argument window is the syscall's own: x0 = CPtr, x7 = the id"
+      assertBool "the context's argument window is the syscall's own: x0 = CPtr, x7 = seL4's Call word"
         ((pendingFaultOf s.afterFault faulter).map
             (fun tf => (tf.context.gprAt 0, tf.context.gprAt 7))
-          == some (unresolvedCPtr, SyscallId.call.toNat.toUInt64))
+          == some (unresolvedCPtr, Syscall.call.word))
       assertBool "the caller is not dispatchable on the core it trapped on"
         (!dispatchableOn s.afterFault faulter c0)
       assertBool "the handler's receive dequeues a message labelled seL4_Fault_CapFault"
@@ -1547,6 +1553,45 @@ private def runSyscallCapFaultChecks : IO Unit := do
     (seamCapFault (seamDispatch seamCtx .receive unresolvedCPtr) (unresolvedFault true))
   assertBool "a Signal at the same CPtr faults in the send phase — seL4_Signal is seL4_Send"
     (seamCapFault (seamDispatch seamCtx .notificationSignal unresolvedCPtr) (unresolvedFault false))
+  -- seL4's `handleInvocation` without `isBlocking` (NBSend): the invoke-phase
+  -- fault is dropped, no fault is recorded on the caller, and the caller resumes as it trapped.
+  assertBool "an NBSend at the same CPtr drops its fault: the caller resumes, no fault recorded, still running"
+    (match seamDispatchSyscall seamCtx .nbSend unresolvedCPtr with
+     | .ok (.resumes, st) =>
+         pendingFaultOf st faulter == none && ipcStateOf st faulter == ipcStateOf stRunning faulter
+     | _ => false)
+  -- WS-SX SX7.2: seL4's `sendIPC` with `blocking = false` drops the message
+  -- when no receiver waits (slot 0 names the handler endpoint, which no thread
+  -- is receiving on in this state), where a `Send` blocks.
+  assertBool "an NBSend to an endpoint no receiver waits on drops the message: the caller returns, still running, nothing queued"
+    (match seamDispatchSyscall seamCtx .nbSend 0 with
+     | .ok (.returns _, st) =>
+         ipcStateOf st faulter == ipcStateOf stRunning faulter &&
+           (st.getEndpoint? epHandler).map (·.sendQ.head) == some none
+     | _ => false)
+  assertBool "control: a Send to the same endpoint blocks the caller on it"
+    (match seamDispatchSyscall seamCtx .send 0 with
+     | .ok (.blocks, st) => ipcStateOf st faulter != ipcStateOf stRunning faulter
+     | _ => false)
+  -- `receiveIPC` with `isBlocking = false` and no sender: `doNBRecvFailedTransfer`
+  -- writes 0 to the badge register (`x0`, which held the CPtr) and the caller
+  -- does not block.  `NBWait` names no reply capability (`canReply` false); an
+  -- `NBRecv` would look one up in x6, which this caller leaves empty.
+  assertBool "an NBWait on an endpoint no sender waits on returns at once, x0 = 0, still running"
+    (match seamDispatchSyscall seamCtx .nbWait 1 with
+     | .ok (.returns f, st) =>
+         f.x0 == 0 && ipcStateOf st faulter == ipcStateOf stRunning faulter
+     | _ => false)
+  assertBool "control: a Wait on the same endpoint blocks the caller"
+    (match seamDispatchSyscall seamCtx .wait 1 with
+     | .ok (.blocks, _) => true
+     | _ => false)
+  -- `handleRecv` faults whatever the blocking flag: the receive phase of an
+  -- NBRecv and of the compound syscalls is delivered.
+  assertBool "an NBRecv at the same CPtr faults in the receive phase (handleRecv faults unconditionally)"
+    (seamCapFault (seamDispatchSyscall seamCtx .nbRecv unresolvedCPtr) (unresolvedFault true))
+  assertBool "an NBSendRecv whose receive capability does not resolve faults in the receive phase"
+    (seamCapFault (seamDispatchSyscall seamCtx .nbSendRecv unresolvedCPtr) (unresolvedFault true))
   assertBool "a TCB invocation at the same CPtr faults too — handleInvocation raises CapFault for every blocking invocation"
     (seamCapFault (seamDispatch seamCtx .tcbSuspend unresolvedCPtr) (unresolvedFault false))
   -- An empty slot (CPtr 3) resolves: seL4's `lookupCapAndSlot` hands the null
@@ -1569,7 +1614,7 @@ private def runSyscallCapFaultChecks : IO Unit := do
     let cn : KernelObject := .cnode (rootCnode.insert (SeLe4n.Slot.ofNat 3) cap)
     { stRunning with objects := stRunning.objects.insert cnRoot cn }
   let deleteAt3 (st : SystemState) :=
-    SeLe4n.Testing.dispatchFromAbi seamCtx c0 SyscallId.cspaceDelete.toNat.toUInt32 3 0 0 0 0 0 0
+    SeLe4n.Testing.dispatchOperationFromAbi seamCtx c0 SyscallId.cspaceDelete 3 0 0 0 0 0 0
       svcElr svcSpsr svcSpEl0 svcX30 st
   assertBool "a delete whose message is shorter than its argument, through a CNode capability that carries its right, is refused truncatedMessage"
     (seamErrorFrame (deleteAt3 (cnodeCapAt3 [.read, .write])) .truncatedMessage)
@@ -1582,14 +1627,47 @@ private def runSyscallCapFaultChecks : IO Unit := do
     (seamErrorFrame (seamDispatch seamCtx .call 1) (.invalidCapability 0))
   assertBool "a refusal raised BEFORE the lookup (the insecure default context) is never delivered as a fault, even at an unresolvable CPtr"
     (seamErrorFrame (seamDispatch permissiveCtx .call unresolvedCPtr) .policyDenied)
+  -- A declassification is selected by its label on the audit-trail capability
+  -- (an empty slot selects the syscall's own IPC operation, as seL4's null
+  -- capability decodes no label), so the audit-trail capability is parked at
+  -- slot 3 without the right the declassification needs: the arm refuses it
+  -- `illegalAuthority`.
+  let auditCapAt3 : SystemState :=
+    let cap : Capability :=
+      { target := .auditTrail CapTarget.authorityCode, rights := AccessRightSet.ofList [] }
+    let cn : KernelObject := .cnode (rootCnode.insert (SeLe4n.Slot.ofNat 3) cap)
+    { stRunning with objects := stRunning.objects.insert cnRoot cn }
+  let declassifyAt3 := SeLe4n.Testing.dispatchOperationFromAbi seamCtx c0 SyscallId.declassify 3
+      0 0 0 0 0 0 svcElr svcSpsr svcSpEl0 svcX30 auditCapAt3
   assertBool "a declassifying syscall at the same CPtr returns the error AND records it — the refusal ledger's partition, not the handler's"
-    (match seamDispatch seamCtx .declassify 3 with
+    (match declassifyAt3 with
      | .ok (.returns f, st) =>
-         decide (f = errorFrame (KernelError.invalidCapability 0) false) &&
+         decide (f = errorFrame KernelError.illegalAuthority false) &&
            pendingFaultOf st faulter == none &&
            (match st.declassificationRefusals.recent.get
                stRunning.declassificationRefusals.nextSlot with
-            | some r => decide (r.reason = (KernelError.invalidCapability 0)) &&
+            | some r => decide (r.reason = KernelError.illegalAuthority) &&
+                        decide (r.syscall = SyscallId.declassify)
+            | none => false)
+     | _ => false)
+  -- seL4 drops an NBSend's invoke-phase lookup fault (`handleInvocation`
+  -- without `isBlocking`), and the refusal ledger still records the refusal a
+  -- recording operation met: a declassification on the audit-trail capability
+  -- whose one extra capability (`lookupExtraCaps`) does not resolve.
+  let nbDeclassifyBadExtra := SeLe4n.Testing.dispatchFromAbi seamCtx c0
+      Syscall.nbSend.number.toUInt32 3
+      (SyscallId.declassify.msgInfoWithLabel
+        (MessageInfo.encode { length := 0, extraCaps := 1, label := 0 }).toUInt64)
+      0 0 0 0 0 svcElr svcSpsr svcSpEl0 svcX30
+      (SeLe4n.Testing.withSenderCapAddrs auditCapAt3 faulter
+        #[SeLe4n.CPtr.ofNat unresolvedCPtr.toNat])
+  assertBool "an NBSend declassification whose extra capability does not resolve drops its fault, resumes, and records the failed lookup in the ledger"
+    (match nbDeclassifyBadExtra with
+     | .ok (.resumes, st) =>
+         pendingFaultOf st faulter == none &&
+           (match st.declassificationRefusals.recent.get
+               stRunning.declassificationRefusals.nextSlot with
+            | some r => decide (r.reason = KernelError.failedLookup false (.guardMismatch 64 0 62)) &&
                         decide (r.syscall = SyscallId.declassify)
             | none => false)
      | _ => false)
@@ -1813,15 +1891,16 @@ private def entryLabeling : LabelingContext :=
     SecurityLabel.kernelTrusted SecurityLabel.publicLabel (by decide)
 
 /-- The handler's `ReplyRecv` on core 1 through the compiled syscall entry: the
-endpoint capability in `x0`, a one-word `MessageInfo` carrying the handler's
-label in `x1`, and the reply capability's CPtr as MR0 in `x2`.  The reply
-payload (MR1..) is empty, so the answer is the label alone. -/
+endpoint capability in `x0`, an empty `MessageInfo` carrying the handler's
+label in `x1`, and the reply capability's CPtr in the reply register (`x6`,
+seL4-MCS `replyRegister`).  The reply payload is empty, so the answer is the
+label alone. -/
 private def handlerReplyRecvOnCore1 (label : Nat) (st : SystemState) :
     Except KernelError (SyscallOutcome × SystemState) :=
-  SeLe4n.Testing.dispatchFromAbi entryLabeling c1 SyscallId.replyRecv.toNat.toUInt32
+  SeLe4n.Testing.dispatchOperationFromAbi entryLabeling c1 SyscallId.replyRecv
     handlerCPtr.toNat.toUInt64
-    (MessageInfo.encode { length := 1, extraCaps := 0, label := label }).toUInt64
-    replyCapCPtr.toNat.toUInt64 0 0 0 0 0 0 0 0 (withHandlerReplyCap st)
+    (MessageInfo.encode { length := 0, extraCaps := 0, label := label }).toUInt64
+    0 0 0 0 replyCapCPtr.toNat.toUInt64 0 0 0 0 (withHandlerReplyCap st)
 
 /-- The second server's ordinary `.reply`: one payload word, label 0.  Read as a
 fault reply this would be a vmFault resume, which restarts at the fault's PC. -/
@@ -1877,7 +1956,7 @@ private def runReplyRecvFaultAnswerChecks : IO Unit := do
         match endpointReceiveDualOnCore epServer orphan (some replyS) c2 stRun with
         | (_, .error e) => assertBool s!"the second server's receive must succeed (got {repr e})" false
         | (stS, .ok _) =>
-          match endpointCallCrossCoreDispatch epServer faulter (.frame none false)
+          match endpointCallCrossCoreDispatch epServer faulter (.frame none false true)
               c0 stS with
           | (_, .error e) => assertBool s!"the faulter's Call must succeed (got {repr e})" false
           | (stC, .ok _) =>
@@ -1909,6 +1988,74 @@ private def runReplyRecvFaultAnswerChecks : IO Unit := do
         (threadStateOf stAb faulter == some .Inactive && !dispatchableOn stAb faulter c0)
       assertBool "…with its fault record retired"
         (pendingFaultOf stAb faulter == none)
+
+/-- A notification bound to the handler, holding the word `0x66`. -/
+private def ntfnHandler : SeLe4n.ObjId := ⟨1114⟩
+
+/-- The handler's bound notification made active (holding `0x66`) on a state
+where the handler is about to answer its caller. -/
+private def withHandlerBoundSignal (st : SystemState) : SystemState :=
+  let st1 : SystemState := { st with objects := st.objects.insert ntfnHandler (.notification
+    { state := .active, hasPendingBadge := true, pendingWord := SeLe4n.Badge.ofNat 0x66,
+      boundTCBCode := SeLe4n.ThreadId.optCode (some handler) }) }
+  st1.updateTcb handler fun t =>
+    { t with boundNotificationCode := SeLe4n.ObjId.optCode (some ntfnHandler) }
+
+/-- The labelling under which the handler and its endpoint are public and its
+bound notification is kernel-trusted, so the notification's word may not flow to
+the handler while the handler's answer still flows to its caller. -/
+private def handlerSignalDeniedCtx : LabelingContext :=
+  { entryLabeling with
+    objectLabelOf := fun o =>
+      if o = ntfnHandler then SecurityLabel.kernelTrusted else entryLabeling.objectLabelOf o
+    endpointLabelOf := fun e =>
+      if e = epHandler then SecurityLabel.publicLabel else entryLabeling.endpointLabelOf e
+    threadLabelOf := fun t =>
+      if t = handler then SecurityLabel.publicLabel else entryLabeling.threadLabelOf t }
+
+/-- seL4-MCS `handleReplyRecv`: the reply (`doReplyTransfer`) answers the caller,
+then `receiveIPC` finds the handler's bound notification active and completes it
+(`completeSignal`) instead of receiving on the endpoint.  The caller is answered,
+the handler returns at once with the notification's word in x0, the notification
+goes idle and the endpoint is not touched.  A notification whose word may not
+flow to the handler is not completed: the receive blocks on the endpoint. -/
+private def runReplyRecvBoundSignalChecks : IO Unit := do
+  IO.println "--- a ReplyRecv whose receive completes its bound notification ---"
+  match queuedDeliveryE with
+  | .error e => assertBool s!"queued pipeline: {e}" false
+  | .ok q =>
+    let pre := withHandlerBoundSignal q.afterRecv
+    assertBool "pre: the handler's bound notification is active and the faulter is its caller"
+      (receiveCompletesSignal entryLabeling (withHandlerReplyCap pre) handler &&
+        (pre.getReply? replyH).bind (·.caller) == some faulter)
+    match handlerReplyRecvOnCore1 0 pre with
+    | .error e => assertBool s!"the ReplyRecv must succeed (got {repr e})" false
+    | .ok (out, st) =>
+      assertBool "the handler returns at once with the notification's word in x0"
+        (match out with | .returns f => f.x0 == 0x66 | _ => false)
+      assertBool "the handler stays ready, not blocked on its endpoint"
+        (ipcStateOf st handler == some .ready)
+      assertBool "the endpoint is not touched: no receiver queued on it"
+        ((st.getEndpoint? epHandler).map (·.receiveQ.head) == some none)
+      assertBool "the notification goes idle, its word consumed"
+        ((st.getNotification? ntfnHandler).map
+          (fun n => (n.pendingBadge.isNone, n.state == .idle)) == some (true, true))
+      assertBool "the reply leg answered the caller: its fault retired, restarted, ready"
+        (pendingFaultOf st faulter == none &&
+          savedPcOf st faulter == some dataAbortCtx.elr.toNat &&
+          ipcStateOf st faulter == some .ready)
+    assertBool "pre: under the denied labelling the word may not flow to the handler"
+      (!receiveCompletesSignal handlerSignalDeniedCtx (withHandlerReplyCap pre) handler)
+    match SeLe4n.Testing.dispatchOperationFromAbi handlerSignalDeniedCtx c1 SyscallId.replyRecv
+        handlerCPtr.toNat.toUInt64
+        (MessageInfo.encode { length := 0, extraCaps := 0, label := 0 }).toUInt64
+        0 0 0 0 replyCapCPtr.toNat.toUInt64 0 0 0 0 (withHandlerReplyCap pre) with
+    | .error e => assertBool s!"the denied ReplyRecv must succeed (got {repr e})" false
+    | .ok (out, st) =>
+      assertBool "a denied notification flow is not completed: the receive blocks on the endpoint"
+        (out == .blocks && ipcStateOf st handler == some (.blockedOnReceive epHandler))
+      assertBool "…and the word stays pending"
+        ((st.getNotification? ntfnHandler).map (·.pendingBadge.isSome) == some true)
 
 -- ============================================================================
 -- §7f  A faulted thread's reservation travels to its handler and back
@@ -2484,6 +2631,75 @@ private def runAffinityRehomeResidencyChecks : IO Unit := do
           stRun.machine.residentOnCore c3 == some faulter &&
           savedPcOf stRun faulter == some 0x9104)
 
+/-- A notification bound to the faulter, holding the word `0x55`. -/
+private def ntfnBound : SeLe4n.ObjId := ⟨1113⟩
+
+/-- Core 0 running the faulter, whose bound notification `ntfnBound` is active
+(holds a word) while no sender waits on the endpoint `epHandler`. -/
+private def stBoundSignal : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject cnRoot (.cnode rootCnode)
+      |>.withObject epHandler (.endpoint {})
+      |>.withObject vsRoot (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
+      |>.withObject ntfnBound (.notification
+          { state := .active, hasPendingBadge := true, pendingWord := SeLe4n.Badge.ofNat 0x55,
+            boundTCBCode := SeLe4n.ThreadId.optCode (some faulter) })
+      |>.withObject faulter.toObjId (.tcb { mkTcb 1121 40 none none with
+          boundNotificationCode := SeLe4n.ObjId.optCode (some ntfnBound) })
+      |>.build)
+  let s := enqueueAllOnCore base c0 [(faulter, ⟨40⟩)]
+  { s with scheduler := s.scheduler.setCurrentOnCore c0 (some faulter) }
+
+/-- A `Wait` from the faulter on slot 1 (the endpoint, read right): seL4's
+`handleRecv` with `canReply` false, so the receive names no reply object (a
+`Recv` would look one up in `x6` and fault on an empty slot). -/
+private def boundSignalWait (ctx : LabelingContext) :
+    Except KernelError (SyscallOutcome × SystemState) :=
+  SeLe4n.Testing.dispatchFromAbi ctx c0 Syscall.wait.number.toUInt32 1 0 0 0 0 0 0
+    svcElr svcSpsr svcSpEl0 svcX30 stBoundSignal
+
+/-- The labelling under which the bound notification is above the faulter, so
+its word may not flow to it. -/
+private def boundSignalDeniedCtx : LabelingContext :=
+  { SeLe4n.Kernel.harnessLabelingContext with
+    objectLabelOf := fun o =>
+      if o = ntfnBound then SecurityLabel.kernelTrusted
+      else SeLe4n.Kernel.harnessLabelingContext.objectLabelOf o }
+
+/-- seL4-MCS `receiveIPC`: a receive whose thread's bound notification is
+active completes the notification (`completeSignal`) instead of receiving on the
+endpoint: the word is returned in the badge register, the notification goes
+idle, and the endpoint is not touched.  A notification whose word may not flow
+to the receiver is not completed: the receive runs on the endpoint as if the
+notification were idle, so the receiver learns nothing of it. -/
+private def runBoundSignalReceiveChecks : IO Unit := do
+  IO.println "--- a receive completes its active bound notification ---"
+  match boundSignalWait SeLe4n.Kernel.harnessLabelingContext with
+  | .ok (.returns f, st) =>
+      assertBool "a Wait on the endpoint returns the bound notification's word in x0"
+        (f.x0 == 0x55)
+      assertBool "the notification goes idle, its word consumed"
+        ((st.getNotification? ntfnBound).map (fun n => (n.pendingBadge.isNone, n.state == .idle))
+          == some (true, true))
+      assertBool "the endpoint is not touched: no thread queued on it"
+        ((st.getEndpoint? epHandler).map (fun e => (e.receiveQ.head, e.sendQ.head))
+          == some (none, none))
+      assertBool "the receiver stays ready"
+        (ipcStateOf st faulter == some .ready)
+  | .ok (o, st) =>
+      assertBool s!"the Wait must return at once (got {repr o}, fault {repr (pendingFaultOf st faulter)})" false
+  | .error e => assertBool s!"the Wait must succeed (got {repr e})" false
+  match boundSignalWait boundSignalDeniedCtx with
+  | .ok (.blocks, st) =>
+      assertBool "a denied notification flow is not completed: the word stays pending"
+        ((st.getNotification? ntfnBound).map (·.pendingBadge.isSome) == some true)
+      assertBool "…and the receive blocks on the endpoint"
+        ((st.getEndpoint? epHandler).map (·.receiveQ.head) == some (some faulter))
+  | .ok (o, st) =>
+      assertBool s!"the denied Wait must block on the endpoint (got {repr o}, fault {repr (pendingFaultOf st faulter)})" false
+  | .error e => assertBool s!"the denied Wait must succeed (got {repr e})" false
+
 /-- An abandon deschedules the faulted thread where it is placed.  `orphan` is
 queued on core 2; its affinity is then pointed at core 3 without moving it, so
 its home core (`determineTargetCore`) and its placement disagree.  The abandon
@@ -2581,6 +2797,7 @@ def runFaultHandlingChecks : IO Unit := do
   runAffinityRehomeResidencyChecks
   runConfigureAndResumeChecks
   runSyscallCapFaultChecks
+  runBoundSignalReceiveChecks
   runResumeChecks
   runRestartChecks
   runAbandonPlacementChecks
@@ -2588,6 +2805,7 @@ def runFaultHandlingChecks : IO Unit := do
   runCancelAllFaultedWaiterChecks
   runReplySeamChecks
   runReplyRecvFaultAnswerChecks
+  runReplyRecvBoundSignalChecks
   runFaultDonationChecks
   runProgressChecks
   runTraceFixtureCheck

@@ -125,7 +125,7 @@ example (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : 
         { state := .active, 
           hasPendingBadge := true, pendingWord := (match ntfn.pendingBadge with
             | some existing => SeLe4n.Badge.bor existing badge
-            | none => SeLe4n.Badge.ofNatMasked badge.toNat), boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }) st = .ok ((), st')) :
+            | none => SeLe4n.Badge.ofNatMasked badge.toNat), boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated, schedContextCode := ntfn.schedContextCode }) st = .ok ((), st')) :
     notificationSignalOnCore notificationId badge executingCore st = (st', .ok none) :=
   notificationSignalOnCore_noWaiter_eq notificationId badge executingCore st ntfn st'
     hObj hWaiters hStore
@@ -141,8 +141,7 @@ example (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : 
     (hWaiters : ntfn.waitHead = some waiter)
     (hStore : storeObject notificationId (.notification
         (ntfn.withHeadPopped (ntfnSuccessor? st waiter))) st = .ok ((), st'))
-    (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
-        (some { IpcMessage.empty with badge := some badge }) = .ok st'') :
+    (hMsg : storeTcbSignalWoken st' waiter badge = .ok st'') :
     notificationSignalOnCore notificationId badge executingCore st
       = ((wakeThread (detachNtfnHead st'' waiter (ntfnSuccessor? st waiter)) waiter
             executingCore).1,
@@ -236,11 +235,12 @@ private def ipcStateIs (st : SystemState) (tid : SeLe4n.ThreadId)
   | some t => decide (t.ipcState = expected)
   | none => false
 
-/-- Decidable predicate: `tid`'s delivered badge in `st` equals `expected`. -/
+/-- Decidable predicate: `tid`'s badge register in `st` holds `expected`, with no
+message held (seL4's `sendSignal` writes the badge register alone). -/
 private def deliveredBadgeIs (st : SystemState) (tid : SeLe4n.ThreadId)
     (expected : SeLe4n.Badge) : Bool :=
   match st.getTcb? tid with
-  | some t => t.pendingMessage.bind (·.badge) == some expected
+  | some t => t.registerContext.x0 == expected.word && t.pendingMessage.isNone
   | none => false
 
 /-- The full wait/signal/handle round-trip pipeline (every intermediate state +

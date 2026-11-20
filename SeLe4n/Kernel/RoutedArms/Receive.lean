@@ -13,8 +13,8 @@ import SeLe4n.Kernel.RoutedArms.Report
 # The receive route's arm, out of line
 
 The routed entry's `.receive` arm (`syscallEntryCheckedK`) as its own
-function: the operand's address, the message length and the reply object's
-address cross as words, the state owned, and the result is the state with its
+function: the operand's address and the reply object's address cross as
+words, `handleRecv`'s `canReply` as a flag, the state owned, and the result is the state with its
 report pushed (`RoutedArms.Report`).
 -/
 
@@ -27,13 +27,13 @@ receive's arm and taint step (`receiveOperandArmThenTaintR`), its results
 reported; its reply capability's failed lookup is reported with the reply
 capability's address (`replyLookupRefusalW`), the receive's capability fault. -/
 @[noinline] def receiveRoutedArm (ctx : LabelingContext) (executingCore : Concurrency.CoreId)
-    (tid : SeLe4n.ThreadId) (capWord : UInt64) (xc : Nat) (length : Nat) (replyWord : UInt64)
+    (tid : SeLe4n.ThreadId) (capWord : UInt64) (xc : Nat) (canReply : Bool) (replyWord : UInt64)
     (st : SystemState) : SystemState :=
   dispatchOperandCheckedKW .receive (SeLe4n.CPtr.ofWord capWord) tid executingCore xc
-    (receiveOperandArmThenTaintR ctx tid length (SeLe4n.CPtr.ofWord replyWord) executingCore
+    (receiveOperandArmThenTaintR ctx tid canReply (SeLe4n.CPtr.ofWord replyWord) executingCore
       (syscallRequiredRight .receive))
     st entryReportGeneral (entryReportPushOk 1)
-    (replyLookupRefusalW (length != 0) tid (SeLe4n.CPtr.ofWord replyWord) (entryReportPushErrorW 1) (entryReportPushLookupAtW replyWord))
+    (replyLookupRefusalW canReply tid (SeLe4n.CPtr.ofWord replyWord) (entryReportPushErrorW 1) (entryReportPushLookupAtW replyWord))
     entryReportLookup entryReportLookupAtW
 
 end SeLe4n.Kernel

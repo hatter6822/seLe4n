@@ -470,11 +470,11 @@ theorem syscallEntryChecked_runQueueEntryStage {ctx : LabelingContext}
 /-- **The ABI dispatch keeps the agreement**: the argument spill, then the
 checked entry, a capability-fault delivery, or a refusal record. -/
 theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (E : EntryPremises st)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
+      x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st e) st st' := by
   unfold Platform.FFI.syscallDispatchFromAbi at h
   split at h
@@ -485,30 +485,30 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
   rename_i hIdle
   have hNI : isIdleThreadId tid = false := by simpa using hIdle
   have hW : RunQueueStage st
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
     unfold Platform.FFI.writeFfiRegistersToTcb
     exact RunQueueStage.updateTcb _ _ (fun _ _ => rfl)
-  have E1 : EntryPremises (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) :=
+  have E1 : EntryPremises (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) :=
     E.of_ipcFrame hW (by
       unfold Platform.FFI.writeFfiRegistersToTcb
       exact IpcFrame.updateTcb _ _ fun _ => rfl)
-  have hCur1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).scheduler.currentOnCore e
+  have hCur1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).scheduler.currentOnCore e
       = some tid := by rw [Platform.FFI.writeFfiRegistersToTcb_scheduler]; exact hCur
   dsimp only at h
   split at h
   · -- WS-SX SX4: a refused receive hands back its busy reply's cancel, a
     -- kernel-entry stage that keeps the endpoint heads blocked.
     have hC : SystemState.RunQueueEntryStage
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) ∧
         queueHeadBlockedConsistent (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) ∧
         (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)).scheduler.currentOnCore e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)).scheduler.currentOnCore e
           = some tid := by
       rcases cancelReceiveBusyReply_cases_holder ctx e
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
         hEq | ⟨_, hd, -, -, hEq⟩ <;> rw [hEq]
       · exact ⟨(RunQueueStage.refl _).entry, E1.queueHeads, hCur1⟩
       · exact ⟨cancelReplyHolder_runQueueEntryStage _ hd e,
@@ -518,41 +518,60 @@ theorem syscallDispatchFromAbi_runQueueEntryStage {ctx : LabelingContext} {e : C
     obtain ⟨hIR, hRR⟩ := hS.1.links E1.objInv E1.refined
     have hDR := hS.2 E1.objInv E1.refined hRR E1.dequeued
     generalize cancelReceiveBusyReply ctx e
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) = stR
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) = stR
       at h hS hQR hIR hRR hDR hCurR
     split at h
-    · cases h
-      unfold Platform.FFI.deliverSyscallCapFault
-      have hW2 := writeFaultRegistersToTcb_runQueueStage stR tid
-        (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
-      obtain ⟨hI2, hR2⟩ := hW2.1.links hIR hRR
-      have hD2 : SystemState.currentDequeuedUnique _ := hW2.2.1 none hIR hRR hR2 hDR
-      have hQ2 : queueHeadBlockedConsistent (writeFaultRegistersToTcb stR tid
-          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)) := by
-        unfold writeFaultRegistersToTcb
-        exact queueHeadBlockedConsistent_updateTcb_of_ipcState_eq _ _ _ hIR (fun _ => rfl) hQR
-      have hCur2 : (writeFaultRegistersToTcb stR tid
-          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)).scheduler.currentOnCore e
-          = some tid := by rw [writeFaultRegistersToTcb_scheduler]; exact hCurR
-      exact ((hW.entry.trans hS).trans (hW2.entry.trans
-        (faultDeliverOnCoreChecked_runQueueEntryStage _ _ tid _ _ e
-          (endpointHeadsWakeable_of hD2 hQ2) hCur2 hNI hI2 hR2
-          (hD2.runnable hCur2).activeAt))).toOn _
-    · cases h
-      exact ((hW.entry.trans hS).trans (RunQueueStage.of_frame
-        ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
-          (Architecture.recordErrorOverflow_objects _ _ _))
-        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
-        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
-        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
-        (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
-        (hRes := by
-          unfold Platform.FFI.recordSyscallRefusal Architecture.recordErrorOverflow
-          split <;> (try split) <;> (try split) <;> rfl)).entry).toOn _
+    · split at h
+      · -- a dropped fault: the refusal's state and its ledger record
+        cases h
+        obtain ⟨L, hL⟩ := Platform.FFI.recordDroppedFault_frame ctx e _ tid x0 _ stR
+        rw [hL]
+        exact ((hW.entry.trans hS).trans ((RunQueueStage.of_frame rfl rfl rfl rfl
+          (hS := rfl) (hRes := rfl) :
+            RunQueueStage stR { stR with declassificationRefusals := L })).entry).toOn _
+      · cases h
+        unfold Platform.FFI.deliverSyscallCapFault
+        have hW2 := writeFaultRegistersToTcb_runQueueStage stR tid
+          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)
+        obtain ⟨hI2, hR2⟩ := hW2.1.links hIR hRR
+        have hD2 : SystemState.currentDequeuedUnique _ := hW2.2.1 none hIR hRR hR2 hDR
+        have hQ2 : queueHeadBlockedConsistent (writeFaultRegistersToTcb stR tid
+            (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)) := by
+          unfold writeFaultRegistersToTcb
+          exact queueHeadBlockedConsistent_updateTcb_of_ipcState_eq _ _ _ hIR (fun _ => rfl) hQR
+        have hCur2 : (writeFaultRegistersToTcb stR tid
+            (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)).scheduler.currentOnCore e
+            = some tid := by rw [writeFaultRegistersToTcb_scheduler]; exact hCurR
+        exact ((hW.entry.trans hS).trans (hW2.entry.trans
+          (faultDeliverOnCoreChecked_runQueueEntryStage _ _ tid _ _ e
+            (endpointHeadsWakeable_of hD2 hQ2) hCur2 hNI hI2 hR2
+            (hD2.runnable hCur2).activeAt))).toOn _
+    · split at h
+      · cases h
+        exact ((hW.entry.trans hS).trans (RunQueueStage.of_frame
+          ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
+            (Architecture.recordErrorOverflow_objects _ _ _))
+          (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
+          (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
+          (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
+          (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
+          (hRes := by
+            unfold Platform.FFI.recordSyscallRefusal Architecture.recordErrorOverflow
+            split <;> (try split) <;> (try split) <;> rfl)).entry).toOn _
+      · cases h
+        exact ((hW.entry.trans hS).trans (RunQueueStage.of_frame
+          (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
+          (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
+          (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
+          (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
+          (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
+          (hRes := by
+            unfold Platform.FFI.recordSyscallRefusal
+            split <;> (try split) <;> rfl)).entry).toOn _
   · rename_i hE
     cases h
     rw [← SystemState.currentObjOn_congr (st' := Platform.FFI.writeFfiRegistersToTcb st tid syscallId
-      x0 x1 x2 x3 x4 x5) (by rw [Platform.FFI.writeFfiRegistersToTcb_scheduler])]
+      x0 x1 x2 x3 x4 x5 x6) (by rw [Platform.FFI.writeFfiRegistersToTcb_scheduler])]
     exact (hW.entry.toOn _).trans (syscallEntryChecked_runQueueEntryStage E1
       (fun t ht => by rw [hCur1] at ht; cases ht; exact hNI) hE)
 
@@ -574,19 +593,20 @@ theorem stageCallerReturnFor_runQueueStage (caller? : Option SeLe4n.ThreadId)
       · exact writeReturnFrameToTcb_runQueueStage post tid f
   | blocks => exact RunQueueStage.refl _
   | faulted => exact RunQueueStage.refl _
+  | resumes => exact RunQueueStage.refl _
 
 /-- **The syscall step keeps the agreement**: the ABI dispatch, the caller's
 return staging, the local scheduling point, the residency settlement and the
 ledger drains. -/
 theorem syscallDispatchCrossCoreStep_runQueueEntryStage {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st : SystemState}
     (E : EntryPremises st) :
     SystemState.RunQueueEntryStageOn (SystemState.currentObjOn st e) st
       (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st).2 := by
+        x6 elr spsr spEl0 x30 st).2 := by
   obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e syscallId
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
   rw [syscallDispatchCrossCoreStep_of_ok hD]
   exact (syscallDispatchFromAbi_runQueueEntryStage E hD).trans
     (((((stageCallerReturnFor_runQueueStage _ _ e outcome).entry.trans
@@ -988,8 +1008,7 @@ theorem setInterruptLineMask_runQueueStage (st : SystemState) (line : Nat) (mask
   RunQueueStage.of_frame rfl rfl rfl
 
 /-- **seL4's `handleInterrupt` on a core keeps the run queues in agreement**:
-the bound-aware signal's stage, the stash clear and the stagings, then the
-mask. -/
+the bound-aware signal's stage and the stash clear, then the mask. -/
 theorem handleInterruptOnCore_runQueueStage (st : SystemState) (c : CoreId) (line : Nat)
     (hHeads : notificationHeadsWakeable st) (hBlk : blockedCurrentNowhere st) :
     RunQueueStage st (handleInterruptOnCore st c line) := by
@@ -997,10 +1016,7 @@ theorem handleInterruptOnCore_runQueueStage (st : SystemState) (c : CoreId) (lin
   split
   · rename_i ntfn badge _
     have hB := notificationSignalBoundOnCore_runQueueStage ntfn badge c st hHeads hBlk
-    exact (interruptSignal_of (P := RunQueueStage st) ntfn badge c st hB
-      (fun _ _ _ hC => ((hB.trans (clearWokenReceiverStash_runQueueStage _ hC)).trans
-        (stageWokenDelivery_runQueueStage _ _ 0)).trans
-        (stageWokenDelivery_runQueueStage _ _ 0))).trans
+    exact (hB).trans
       (setInterruptLineMask_runQueueStage _ _ _)
   · exact setInterruptLineMask_runQueueStage _ _ _
 

@@ -491,7 +491,7 @@ footprint is a proof obligation, not a runtime branch.
 `execCore` is the core the syscall executes on.  `trapped` is the context the
 caller trapped with, whole (`v0.36.47` audit): the step reads the syscall
 number (`x7`, `InFlightContext.syscallId`; WS-ZA ZA6.27), the six message
-registers, the IPC buffer (`x6`) and the fault window (`pc`, `pstate`, `sp`,
+registers, the reply register (`x6`) and the fault window (`pc`, `pstate`, `sp`,
 `x30`) off it here, so no word the HAL passes beside the frame can disagree
 with the frame the entry saves, so the closure the entry hands
 `Platform.FFI.modifyGetKernelState` captures one object rather than eleven
@@ -505,7 +505,7 @@ step's own application and the record is never built at runtime. -/
       List Architecture.ICacheInvalidation × Architecture.PhysicalWriteLedger ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) where
   declared := declaredUnifiedLockSetForAbiEntry ctx execCore trapped.syscallId
-    trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
+    trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6
   step := syscallDispatchCrossCoreStep ctx execCore trapped.syscallId
     trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
     trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30
@@ -602,8 +602,8 @@ state the step runs on; a capability that does not resolve or names no
 endpoint with a sender names none, and one the step then refuses only reads
 words the step never uses.  A code, so the entry builds no `Option`. -/
 @[inline] def rendezvousSenderCode (st : SystemState) (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (capWord : UInt64) : Nat :=
-  if syscallId.toNat = SyscallId.receive.toNat ∨ syscallId.toNat = SyscallId.replyRecv.toNat then
+    (opCode : UInt32) (capWord : UInt64) : Nat :=
+  if opCode.toNat = SyscallId.receive.toNat ∨ opCode.toNat = SyscallId.replyRecv.toNat then
     match st.getTcb? tid with
     | some tcb =>
       lookupSlotK tcb (SeLe4n.CPtr.ofWord capWord) st
@@ -636,10 +636,10 @@ invoked reply capability answers (`replyAnsweredCaller?`, the receiver of
 seL4's `doReplyTransfer` capability transfer).  A thread the step then takes no
 capability for only has three words read that the step never uses. -/
 @[inline] def transferReceiverCode (st : SystemState) (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (capWord : UInt64) : Nat :=
-  if syscallId.toNat = SyscallId.receive.toNat ∨ syscallId.toNat = SyscallId.replyRecv.toNat then
+    (opCode : UInt32) (capWord : UInt64) : Nat :=
+  if opCode.toNat = SyscallId.receive.toNat ∨ opCode.toNat = SyscallId.replyRecv.toNat then
     tid.toNat + 1
-  else if syscallId.toNat = SyscallId.send.toNat ∨ syscallId.toNat = SyscallId.call.toNat then
+  else if opCode.toNat = SyscallId.send.toNat ∨ opCode.toNat = SyscallId.call.toNat then
     match st.getTcb? tid with
     | some tcb =>
       lookupSlotK tcb (SeLe4n.CPtr.ofWord capWord) st
@@ -658,7 +658,7 @@ capability for only has three words read that the step never uses. -/
             | _ => 0
           | none => 0)
     | none => 0
-  else if syscallId.toNat = SyscallId.reply.toNat then
+  else if opCode.toNat = SyscallId.reply.toNat then
     match st.getTcb? tid with
     | some tcb =>
       lookupSlotK tcb (SeLe4n.CPtr.ofWord capWord) st
@@ -677,16 +677,16 @@ capability for only has three words read that the step never uses. -/
   else 0
 
 /-- **The second thread whose receive path a reply-receive's transfers read**:
-on a reply-receive, the caller the reply capability in `MR0` (`x2`,
-`decodeReplyRecvArgs`'s `replyCPtr`) answers (`replyAnsweredCaller?`, the
+on a reply-receive, the caller the reply capability in the reply register
+(`x6`, seL4-MCS `replyRegister`; the decode's `replyCPtr`) answers (`replyAnsweredCaller?`, the
 receiver of the reply leg's `doReplyTransfer` capability transfer), as a code
 (`tid + 1`, 0 for none), resolved as `transferReceiverCode` resolves a reply's.
 The reply-receive's other receive path, its receive leg's, is the caller's own
 (`transferReceiverCode`).  A thread the step then takes no capability for only
 has three words read that the step never uses. -/
 @[inline] def replyRecvAnsweredCallerCode (st : SystemState) (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (replyWord : UInt64) : Nat :=
-  if syscallId.toNat = SyscallId.replyRecv.toNat then
+    (opCode : UInt32) (replyWord : UInt64) : Nat :=
+  if opCode.toNat = SyscallId.replyRecv.toNat then
     match st.getTcb? tid with
     | some tcb =>
       lookupSlotK tcb (SeLe4n.CPtr.ofWord replyWord) st
@@ -739,8 +739,8 @@ free pair is answered.  A sender whose buffer does not resolve has none read. -/
 message info.  The entry's capture reads exactly these (its second
 `captureOverflowRuns`); this list states them for the host suites. -/
 def rendezvousSenderOverflowAddrs (st : SystemState) (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (capWord : UInt64) : List SeLe4n.PAddr :=
-  match rendezvousSenderCode st tid syscallId capWord with
+    (opCode : UInt32) (capWord : UInt64) : List SeLe4n.PAddr :=
+  match rendezvousSenderCode st tid opCode capWord with
   | 0 => []
   | k + 1 =>
     match st.getTcb? ⟨k⟩ with
@@ -786,7 +786,7 @@ sender, that sender's (`rendezvousSenderOverflowAddrs`) — the extra-capability
 addresses of each (`captureSenderCapAddrs`), and the receive-path words a
 capability transfer reads (`transferReceiverCode`, `captureReceivePath`; on a
 reply-receive also the answered caller's, `replyRecvAnsweredCallerCode`, whose
-reply leg transfers into it; `replyWord` is the reply-receive's `MR0`) from
+reply leg transfers into it; `replyWord` is the reply register, `x6`) from
 RAM into the
 executing core's entry-word buffer, and answers how many pairs it read; the
 atomic step hands the buffer to the state before the decode
@@ -809,10 +809,16 @@ word is built: the entry allocates nothing for its overflow words. -/
     match st.getTcb? tid with
     | none => pure 0
     | some tcb =>
+      -- WS-SX SX7.2: the operation the trapped words select (seL4's
+      -- `handleSyscall` then `decodeInvocation` / `handleRecv`), read from the
+      -- frame before it is saved, on the state the step runs on; the captures
+      -- below are keyed on it, as the step's decode is
+      let opCode := (operationCodeOfWords st tcb (Syscall.wordOfNumber syscallId) capWord
+        msgInfo).toUInt32
       let stop := Architecture.IpcBufferRead.overflowStop msgInfo
       let n0 ← captureOverflowRuns st tcb stop stop 0 0
       let n1 ← captureSenderCapAddrs st tcb msgInfo n0
-      let n ← match rendezvousSenderCode st tid syscallId capWord with
+      let n ← match rendezvousSenderCode st tid opCode capWord with
         | 0 => pure n1
         | k + 1 =>
           match st.getTcb? ⟨k⟩ with
@@ -822,7 +828,7 @@ word is built: the entry allocates nothing for its overflow words. -/
             let n2 ← captureOverflowRuns st stcb sstop sstop 0 n1
             captureSenderCapAddrs st stcb sInfo n2
           | none => pure n1
-      let n3 ← match transferReceiverCode st tid syscallId capWord with
+      let n3 ← match transferReceiverCode st tid opCode capWord with
         | 0 => pure n
         | k + 1 =>
           match st.getTcb? ⟨k⟩ with
@@ -830,7 +836,7 @@ word is built: the entry allocates nothing for its overflow words. -/
           | none => pure n
       -- A reply-receive's reply leg transfers into the caller it answers: that
       -- caller's receive path, the entry's second.
-      match replyRecvAnsweredCallerCode st tid syscallId replyWord with
+      match replyRecvAnsweredCallerCode st tid opCode replyWord with
       | 0 => pure n3
       | k + 1 =>
         match st.getTcb? ⟨k⟩ with
@@ -951,7 +957,7 @@ def syscallDispatchCrossCoreEntry : BaseIO UInt64 := do
   -- The frame is also where the syscall's number and arguments are read,
   -- once: the syscall number (`x7`, WS-ZA ZA6.27, as seL4's `handleSyscall`
   -- reads them from the registers the thread trapped with), the message info
-  -- (`x1`), the six message registers, the IPC buffer (`x6`) and the fault
+  -- (`x1`), the six message registers, the reply register (`x6`) and the fault
   -- window (`ELR_EL1`, `SPSR_EL1`, `SP_EL0`, `x30`), so the HAL passes no word
   -- beside the frame that could disagree with it.  An `SVC` handler always
   -- publishes its frame before it dispatches, so an entry with none — or with
@@ -968,7 +974,7 @@ def syscallDispatchCrossCoreEntry : BaseIO UInt64 := do
   -- into this core's entry-word buffer and handed to the model in the atomic
   -- step, so the decode reads what the thread wrote; the committed state drops
   -- the buffer (WS-ZA ZA5.2).
-  let wordCount ← captureEntryWords execCore trapped.syscallId trapped.x0 msgInfo trapped.x2
+  let wordCount ← captureEntryWords execCore trapped.syscallId trapped.x0 msgInfo trapped.x6
   let wordBytes ← Platform.FFI.ffiEntryWordBuffer
   -- The kernel heap's free bytes, read as a word before the atomic step and
   -- written into the state right after the words (`withKernelHeapFreeBytes`),
@@ -1072,7 +1078,7 @@ theorem syscallDispatchCrossCoreEntry_def :
           | .ok trapped => pure trapped
           | .error tag => return tag
         let msgInfo := trapped.x1
-        let wordCount ← captureEntryWords execCore trapped.syscallId trapped.x0 msgInfo trapped.x2
+        let wordCount ← captureEntryWords execCore trapped.syscallId trapped.x0 msgInfo trapped.x6
         let wordBytes ← Platform.FFI.ffiEntryWordBuffer
         let heapFree ← Platform.FFI.ffiKernelHeapFreeBytes
         let ((tag, w0, w1, w2, w3, w4, w5, rest), restoreKind, restoreContext,
@@ -1124,17 +1130,17 @@ theorem vacatedCore_next_syscall_rejected
     (ctx : LabelingContext) (execCore : CoreId)
     (pre post : SystemState)
     (syscallId : UInt32)
-    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64)
     (hVacated :
       (PriorityInheritance.scheduleLocalSuccessor pre post execCore).scheduler.currentOnCore
         execCore = none) :
     Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30
+        x6 elr spsr spEl0 x30
         (PriorityInheritance.scheduleLocalSuccessor pre post execCore)
       = Except.ok (.returns (Architecture.errorFrame .illegalState false),
                    PriorityInheritance.scheduleLocalSuccessor pre post execCore) :=
   Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current ctx execCore syscallId
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 _ hVacated
+    x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 _ hVacated
 
 -- ============================================================================
 -- WS-ZA ZA6.27 — the syscall's number and arguments are the saved frame's
@@ -1174,7 +1180,7 @@ theorem saveCapturedSyscallFrame_current_saves (st : SystemState) (c : CoreId)
 
 /-- **The argument spill at the syscall entry writes what the save saved.**  The
 dispatch (`Platform.FFI.syscallDispatchFromAbi`) spills the syscall number and
-`x0`–`x5` into its caller's saved context (`writeFfiRegistersToTcb`); the entry
+`x0`–`x6` into its caller's saved context (`writeFfiRegistersToTcb`); the entry
 hands it the words of the frame it admitted and saved
 (`syscallDispatchBracket`), so the spill rewrites the caller's context with the
 words it already holds, and every TCB reads back as it did before the spill.
@@ -1193,7 +1199,7 @@ theorem syscallEntrySpill_getTcb? {frame : Option Architecture.InFlightContext}
     (Platform.FFI.writeFfiRegistersToTcb (Architecture.IpcBufferRead.syncUserWords
         (Architecture.saveCapturedSyscallFrame st e frame) bytes n) tid
         trapped.syscallId trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4
-        trapped.x5).getTcb? t =
+        trapped.x5 trapped.x6).getTcb? t =
       (Architecture.IpcBufferRead.syncUserWords
         (Architecture.saveCapturedSyscallFrame st e frame) bytes n).getTcb? t := by
   obtain ⟨rfl, hEl0, hFits⟩ := syscallEntryContextOrFaulted_ok hAdm
@@ -1212,7 +1218,7 @@ theorem syscallEntrySpill_getTcb? {frame : Option Architecture.InFlightContext}
         Architecture.saveVacatedFrameOnCore_of_current _ e _ _ tid
           (by rw [Architecture.saveTrapFrameOnCore_scheduler, hCur'])]
     exact Architecture.saveTrapFrameOnCore_preserves_objects_invExt st e _ hInv
-  refine Platform.FFI.writeFfiRegistersToTcb_getTcb?_of_held _ tid _ _ _ _ _ _ _ hInvS
+  refine Platform.FFI.writeFfiRegistersToTcb_getTcb?_of_held _ tid _ _ _ _ _ _ _ _ hInvS
     (fun tcb hT => ?_) t
   have hT' : (Architecture.saveCapturedSyscallFrame st e (some trapped)).getTcb? tid =
       some tcb := by
@@ -1236,7 +1242,7 @@ theorem syscallEntrySpill_contextMatchesCurrentOnCore_iff
     contextMatchesCurrentOnCore (Platform.FFI.writeFfiRegistersToTcb
         (Architecture.IpcBufferRead.syncUserWords
         (Architecture.saveCapturedSyscallFrame st e frame) bytes n) tid trapped.syscallId trapped.x0 trapped.x1
-        trapped.x2 trapped.x3 trapped.x4 trapped.x5) c ↔
+        trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6) c ↔
       contextMatchesCurrentOnCore (Architecture.IpcBufferRead.syncUserWords
         (Architecture.saveCapturedSyscallFrame st e frame) bytes n) c := by
   unfold contextMatchesCurrentOnCore
@@ -1299,7 +1305,7 @@ theorem syscallEntrySpill_contextMatchesCurrentOnCore
     contextMatchesCurrentOnCore (Platform.FFI.writeFfiRegistersToTcb
         (Architecture.IpcBufferRead.syncUserWords
         (Architecture.saveCapturedSyscallFrame st e frame) bytes n) tid trapped.syscallId trapped.x0 trapped.x1
-        trapped.x2 trapped.x3 trapped.x4 trapped.x5) e :=
+        trapped.x2 trapped.x3 trapped.x4 trapped.x5 trapped.x6) e :=
   (syscallEntrySpill_contextMatchesCurrentOnCore_iff hAdm st e bytes n hInv tid hCur e).mpr
     (syscallEntrySaved_contextMatchesCurrentOnCore hAdm st e bytes n hInv)
 

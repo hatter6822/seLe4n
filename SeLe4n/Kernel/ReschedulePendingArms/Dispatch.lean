@@ -118,8 +118,8 @@ theorem setIPCBufferOp_machine_eq {ec : CoreId} {st st' : SystemState}
   rw [SystemState.updateTcb_machine, (retireFinalObject_fields ec _ _ _).2.2,
     threadSlotCopied_machine]
 
-theorem setConsumed_machine (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId) :
-    (setConsumed st s t).machine = st.machine := by
+theorem setConsumed_machine {callOnly : Bool} (st : SystemState) (s : SeLe4n.SchedContextId) (t : SeLe4n.ThreadId) :
+    (setConsumed st s t callOnly).machine = st.machine := by
   unfold setConsumed
   split <;> simp [SystemState.updateTcb_machine, SystemState.updateSchedContext_machine]
 
@@ -243,12 +243,6 @@ theorem mintReplyCapWithCdt_machine_eq {st st' : SystemState} {src dst : CSpaceA
         · contradiction
       · contradiction
 
-theorem untypedResetFromCap_machine_eq {tid : SeLe4n.ThreadId} {srcAddr : SeLe4n.CPtr}
-    {st st' : SystemState} (hStep : untypedResetFromCap tid srcAddr st = .ok ((), st')) :
-    st'.machine = st.machine := by
-  obtain ⟨_, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ st st' hStep
-  rw [untypedResetSlot_ok_frame hS, setCapFreeIndex_machine]
-
 theorem releaseFinalRegistration_machine (target : Nat) (st : SystemState) :
     (releaseFinalRegistration target st).machine = st.machine := by
   unfold releaseFinalRegistration
@@ -336,6 +330,12 @@ theorem vspaceMapOrRemapFromFrameCap_machine_eq {tid : SeLe4n.ThreadId} {ec : Co
     (fun _ _ hU => vspaceUnmapPageWithShootdownAndIcacheBroadcast_machine_eq hU)
     (fun _ _ _ h₁ h₂ => h₂.trans h₁) h
 
+theorem vspaceUnmapFrameCap_machine_eq {ec : CoreId} {addr : CSpaceAddr} {st st' : SystemState}
+    (h : vspaceUnmapFrameCap ec addr st = .ok ((), st')) : st'.machine = st.machine := by
+  obtain ⟨st1, hU, hC⟩ := vspaceUnmapFrameCap_cases h
+  obtain ⟨_, _, -, -, hS⟩ := cspaceClearFrameMapping_ok_decompose addr st1 st' hC
+  exact (storeObject_machine_eq _ _ _ _ hS).trans (unmapLivePages_framed ec _ st st1 hU).2
+
 macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (completeYieldFrom_machine _ _).trans ?_; machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
@@ -358,8 +358,7 @@ macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (vspaceMapOrRemapFromFrameCap_machine_eq (by assumption)).trans ?_;
    machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
-  (with_reducible refine
-    (vspaceUnmapPageWithShootdownAndIcacheBroadcast_machine_eq (by assumption)).trans ?_;
+  (with_reducible refine (vspaceUnmapFrameCap_machine_eq (by assumption)).trans ?_;
    machine_chain))
 
 macro_rules | `(tactic| machine_chain) => `(tactic|
@@ -419,6 +418,33 @@ theorem capabilityKeyFrame.stepCoversInv {e : CoreId} {st st' : SystemState}
     (hBank : banksKeptOffCore e st st' := by bank_kept) :
     SeLe4n.Kernel.stepCovers e st st' ∧ st'.objects.invExt :=
   ⟨h.stepCovers hRes hBank, h.2.2⟩
+
+/-- **`SchedContext_Unbind`**: the single-core thread unbind (the per-core
+form's seam writes nothing once the current thread's context is refused), then
+the notification unbind, which keeps every scheduling key. -/
+theorem schedContextUnbindAllOnCore_stepCovers (st st' : SystemState) (vScId : SeLe4n.ValidObjId)
+    (e : CoreId) (sgi? : Option (CoreId × SgiKind)) {ec : CoreId} (hObjInv : st.objects.invExt)
+    (hStep : SchedContextOps.schedContextUnbindAllOnCore vScId ec st = .ok (st', sgi?)) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  obtain ⟨stU, hU | ⟨-, -, hU⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok hStep
+  · obtain ⟨rfl, -⟩ := hU
+    exact (unbindSchedContextNotification_keyFrame _ _ hObjInv).stepCoversInv
+      (hRes := by rw [unbindSchedContextNotification_machine])
+      (hBank := banksKeptOffCore_of_eq (by rw [unbindSchedContextNotification_machine]))
+  · obtain ⟨C, hI⟩ := schedContextUnbind_stepCovers st stU vScId e hObjInv hU
+    obtain ⟨C2, hI2⟩ := (unbindSchedContextNotification_keyFrame _
+        (SeLe4n.SchedContextId.ofObjId vScId.val) hI).stepCoversInv (e := e)
+      (hRes := by rw [unbindSchedContextNotification_machine])
+      (hBank := banksKeptOffCore_of_eq (by rw [unbindSchedContextNotification_machine]))
+    exact ⟨stepCovers_trans C C2, hI2⟩
+
+/-- The `Call`-gated reply write keeps the capability key frame: it is a
+return-frame write or the identity (`Architecture.writeCallReturnWord_of_frame`). -/
+theorem writeCallReturnWord_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId) (w : UInt64)
+    (hInv : st.objects.invExt) :
+    capabilityKeyFrame st (Architecture.writeCallReturnWord st tid w) :=
+  Architecture.writeCallReturnWord_of_frame (capabilityKeyFrame st) (capabilityKeyFrame_refl hInv)
+    (fun _ => writeReturnFrameToTcb_keyFrame _ _ _ hInv)
 
 /-- Coverage composes, the invariant read off the second leg. -/
 theorem stepCoversInv_trans {e : CoreId} {a b d : SystemState} (h₁ : stepCovers e a b)
@@ -1090,6 +1116,9 @@ theorem finaliseFinalObject_stepCovers (e : CoreId) (target : Nat) (st : SystemS
           (SystemState.mapTcbInPlace_objects_invExt _ _ _ h.2)⟩)
     (fun s _ r c _ h _ _ _ _ => stepCoversInv_trans h.1 (finaliseReplyUnheldPop_stepCovers e s r c h.2))
     (fun s _ _ _ t h _ _ _ _ => stepCoversInv_trans h.1 (cutCancelledCallerHead_stepCovers e s t h.2))
+    (fun s c h => stepCoversInv_trans h.1 ((unbindSchedContextNotification_keyFrame s c h.2).stepCoversInv
+      (e := e) (hRes := by rw [unbindSchedContextNotification_machine])
+      (hBank := banksKeptOffCore_of_eq (by rw [unbindSchedContextNotification_machine]))))
     target st ⟨stepCovers_refl e st, hInv⟩
 
 /-- WS-ZA ZA6.32: a node's retire writes the tree's issued lines and the mask
@@ -1363,7 +1392,7 @@ theorem schedContextYieldToOnCore_stepCovers {e : CoreId} {s : SeLe4n.SchedConte
   have hInv2 := SystemState.releasePlace_objects_invExt _
     (determineTargetCore (completeYieldFrom st s) t) s hInv1
   have hSet : ∀ X : SystemState, X.objects.invExt →
-      stepCovers e X (setConsumed X s caller) ∧ (setConsumed X s caller).objects.invExt :=
+      stepCovers e X (setConsumed X s caller true) ∧ (setConsumed X s caller true).objects.invExt :=
     fun X hX => ⟨stepCovers_of_keys_sched
       (keyInputsEq_of_objectsAgreeOffYield (SystemState.setConsumed_objectsAgreeOffYield X s caller hX))
       (SystemState.setConsumed_scheduler X s caller),
@@ -1501,11 +1530,8 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
     | exact cspaceRevokeCdtFinalising_stepCovers _ _ _ _ _ hB h
     | exact (mintReplyCapWithCdt_keyFrame _ _ _ _ hInv h).stepCoversInv
         (hRes := by rw [mintReplyCapWithCdt_machine_eq h]) (hBank := banksKeptOffCore_of_eq (by rw [mintReplyCapWithCdt_machine_eq h]))
-    | exact (untypedResetFromCap_keyFrame _ _ _ _ hInv h).stepCoversInv
-        (hRes := by rw [untypedResetFromCap_machine_eq h]) (hBank := banksKeptOffCore_of_eq (by rw [untypedResetFromCap_machine_eq h]))
     | exact (vspaceMapOrRemapFromFrameCap_keyFrame _ _ _ _ _ hInv h).stepCoversInv
-    | exact (vspaceRootOnlyWrite_keyFrame
-        (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv h)).stepCoversInv
+    | exact (vspaceUnmapFrameCap_keyFrame _ _ _ _ hInv h).stepCoversInv
     | exact (capabilityKeyFrame_of_objects_scheduler_eq hInv
         (Architecture.vspaceUnifyInstructionPage_frame h).1
         (Architecture.vspaceUnifyInstructionPage_frame h).2.2.1).stepCoversInv
@@ -1513,15 +1539,18 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
     | exact (revokeServiceByRecordedRegistration_keyFrame hInv h).stepCoversInv
     | exact (schedControlConfigure_stepCovers _ _ _ _ _ _ _ _ _ _ hInv hBi h)
     | exact (schedContextBind_stepCovers _ _ _ _ _ hInv hBi h)
+    | exact (schedContextBindNotification_keyFrame hInv h).stepCoversInv
+        (hRes := by rw [schedContextBindNotification_machine h])
+        (hBank := banksKeptOffCore_of_eq (by rw [schedContextBindNotification_machine h]))
     | exact (bindNotification_keyFrame _ _ _ _ hInv h).stepCoversInv
     | exact (pageTableMap_keyFrame _ _ _ _ _ hInv h).stepCoversInv
     | exact (pageTableUnmap_keyFrame _ _ _ hInv h).stepCoversInv
     | (cases h; rename_i hU
        first
         | (rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hU]
-           exact (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCoversInv
-             (hRes := by rw [Architecture.writeReturnFrameToTcb_machine_eq]) (hBank := banksKeptOffCore_of_eq (by rw [Architecture.writeReturnFrameToTcb_machine_eq])))
-        | exact (schedContextUnbindOnCore_stepCovers _ _ _ _ _ hInv hU)
+           exact (writeCallReturnWord_keyFrame _ _ _ hInv).stepCoversInv
+             (hRes := by rw [Architecture.writeCallReturnWord_machine]) (hBank := banksKeptOffCore_of_eq (by rw [Architecture.writeCallReturnWord_machine])))
+        | exact (schedContextUnbindAllOnCore_stepCovers _ _ _ _ _ hInv hU)
         | exact (schedContextConsumedOnCore_stepCovers _ hInv hU)
         | exact (schedContextYieldToOnCore_stepCovers hInv hU)
         | exact (unbindNotification_keyFrame _ _ _ hInv hU).stepCoversInv
@@ -1569,14 +1598,6 @@ theorem stepCovers_clearStash_stage {e : CoreId} {st s st' : SystemState}
       ((hStage _ hF.2.2).stepCoversInv (hRes := hStageM _)
         (hBank := banksKeptOffCore_of_eq (hStageB _)))
 
-/-- The two badge stagings a signal arm ends with. -/
-theorem keyFrame_trans_stage {x : SystemState} {w p : Option SeLe4n.ThreadId}
-    (hx : x.objects.invExt) :
-    capabilityKeyFrame x (Architecture.stageWokenDelivery
-      (Architecture.stageWokenDelivery x w 0) p 0) := by
-  have h1 := stageWokenDelivery_keyFrame x w 0 hx
-  exact h1.trans (stageWokenDelivery_keyFrame _ p 0 h1.2.2)
-
 /-- **A reply holder's cancel covers** (seL4-MCS `cancelIPC` on the reply's
 holder): the suspend's IPC cancel, the chain revert and the key-free
 `Inactive` write. -/
@@ -1616,21 +1637,64 @@ theorem cancelRecvBusyReply_stepCovers (e : CoreId) (ctx : LabelingContext)
   · exact ⟨stepCovers_refl e st, hInv⟩
   · exact cancelReplyHolder_stepCovers e st _ ec hInv
 
+/-- **A reply-receive whose receive completes its bound notification is
+covered**: the reply, then the wait's consumption and the badge register. -/
+theorem replyRecvCompletesSignalArm_stepCovers (e : CoreId) {ctx : LabelingContext}
+    {tid prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : replyRecvCompletesSignalArm ctx tid prevCaller label msg grant e st = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases h
+  obtain ⟨hC, hCInv⟩ := replyTransferOnCoreChecked_stepCovers e hInv hR
+  rcases hOr with rfl | ⟨st2, badge, _, _, hW, _, rfl⟩
+  · exact ⟨hC, hCInv⟩
+  · obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
+      (notificationWaitCrossCoreDispatchChecked_stepCovers e hCInv) hW
+    exact stepCoversInv_trans (stepCovers_trans hC hS)
+      (writeReturnFrameToTcb_keyFrame _ _ _ hSInv).stepCoversInv
+
 /-- A receive run on its busy-reply-cancelled state covers: the cancel, the
 dual-queue receive, the rendezvous hand-off and the two stagings.  The
 `.receive` arm, and the `.replyRecv` arm whose reply is skipped. -/
 theorem receiveResolvedArm_cancelled_stepCovers (e : CoreId) {ctx : LabelingContext}
     {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {gate : SyscallGate}
     {epId : SeLe4n.ObjId} {st st' : SystemState} (hInv : st.objects.invExt)
-    (h : receiveResolvedArm decoded gate tid epId e
+    (h : receiveResolvedArm ctx decoded gate tid epId e
       (cancelRecvBusyReply ctx tid gate decoded e st) = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold receiveResolvedArm at h
   obtain ⟨hC, hCInv⟩ := cancelRecvBusyReply_stepCovers e ctx tid gate decoded e st hInv
   generalize cancelRecvBusyReply ctx tid gate decoded e st = stC at h hC hCInv
-  simp only at h
+  by_cases hSig : receiveCompletesSignal ctx stC tid = true
+  · -- seL4-MCS `receiveIPC`: the bound notification is active, so the receive
+    -- completes it -- the wait's consumption, then the badge register written.
+    cases hRes : resolveRecvReplyId gate decoded stC with
+    | error _ => rw [hRes] at h; cases h
+    | ok r =>
+    rw [hRes] at h
+    simp only [hSig, ↓reduceIte] at h
+    obtain ⟨st1, badge, hW, _, hPost⟩ := completeSignalArm_consumes hSig h
+    subst hPost
+    obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
+      (notificationWaitCrossCoreDispatchChecked_stepCovers e hCInv) hW
+    exact stepCoversInv_trans (stepCovers_trans hC hS)
+      (writeReturnFrameToTcb_keyFrame _ _ _ hSInv).stepCoversInv
+  simp only [Bool.not_eq_true] at hSig
+  by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC
+      epId = true
+  · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
+    cases hRes : resolveRecvReplyId gate decoded stC with
+    | error _ => rw [hRes] at h; cases h
+    | ok r =>
+    rw [hRes] at h
+    simp only [hSig, Bool.false_eq_true, hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq,
+      true_and] at h
+    subst h
+    exact stepCoversInv_trans hC (writeReturnFrameToTcb_keyFrame _ _ _ hCInv).stepCoversInv
+  simp only [Bool.not_eq_true] at hNb
   split at h
   · cases h
+  simp only [hSig, hNb, Bool.false_eq_true, ↓reduceIte] at h
   split at h
   · rename_i st1 dequeued summ sgi hRecv
     split at h
@@ -1640,11 +1704,9 @@ theorem receiveResolvedArm_cancelled_stepCovers (e : CoreId) {ctx : LabelingCont
     obtain ⟨hV, hVInv⟩ := stepCovers_of_pair_eq
       (endpointReceiveDualWithCapsOnCore_stepCovers e hCInv) hRecv
     obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e hVInv hHand
-    have hS1 := stageWokenSendCompletion_keyFrame stDon
-      ((stC.getEndpoint? epId).bind (·.sendQ.head)) hDInv
-    have hS2 := stageDeliveredMessage_keyFrame _ tid summ.capInfo hS1.2.2
+    have hS2 := stageDeliveredMessage_keyFrame _ tid summ.capInfo hDInv
     exact stepCoversInv_trans
-      (stepCovers_trans (stepCovers_trans (stepCovers_trans hC hV) hD) hS1.stepCovers)
+      (stepCovers_trans (stepCovers_trans hC hV) hD)
       hS2.stepCoversInv
   · cases h
 
@@ -1673,7 +1735,9 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     rename_i hA
     cases h
     rw [auditReadFromCore_frame _ _ _ _ _ _ _ hA]
-    exact (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCoversInv
+    exact (writeCallReturnWord_keyFrame _ _ _ hInv).stepCoversInv
+      (hRes := by rw [Architecture.writeCallReturnWord_machine])
+      (hBank := banksKeptOffCore_of_eq (by rw [Architecture.writeCallReturnWord_machine]))
   case none.auditDrain =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
@@ -1685,14 +1749,22 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
       refine stepCoversInv_trans (stepCovers_of_scheduler_eq (keyInputsEq_of_objects_eq rfl) rfl) ?_
       apply capabilityKeyFrame.stepCoversInv
       all_goals first
-        | exact writeReturnFrameToTcb_keyFrame _ _ _ (by exact hInv)
-        | rw [Architecture.writeReturnFrameToTcb_machine_eq]
-        | exact banksKeptOffCore_of_eq (by rw [Architecture.writeReturnFrameToTcb_machine_eq])
+        | exact writeCallReturnWord_keyFrame _ _ _ (by exact hInv)
+        | rw [Architecture.writeCallReturnWord_machine]
+        | exact banksKeptOffCore_of_eq (by rw [Architecture.writeCallReturnWord_machine])
     · cases hA
   all_goals
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
   case none.send.object epId =>
+    by_cases hNb : sendDropsMessage ctx (Syscall.wordSendBlocks (callerSyscallWord st tid)) st tid
+        epId = true
+    · -- WS-SX SX7.2: `NBSend` with no receiver waiting writes nothing.
+      simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at h
+      subst h
+      exact ⟨stepCovers_refl e st, hInv⟩
+    simp only [Bool.not_eq_true] at hNb
+    simp only [hNb, Bool.false_eq_true, ↓reduceIte] at h
     split at h
     · cases h
     rename_i hSend
@@ -1761,10 +1833,19 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     · rename_i hSig
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
         (notificationSignalBoundCrossCoreDispatchChecked_stepCovers e hInv) hSig
-      exact stepCovers_clearStash_stage hS hSInv
-        (fun x hx => keyFrame_trans_stage hx) h
+      cases h
+      exact ⟨hS, hSInv⟩
     · cases h
   case none.notificationWait.object notifId =>
+    by_cases hNb : waitFindsNothing ctx (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid
+        notifId = true
+    · -- WS-SX SX7.2: `NBWait` with nothing pending writes the badge register.
+      simp only [hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq, true_and] at h
+      subst h
+      exact stepCoversInv_trans (stepCovers_refl e st)
+        (writeReturnFrameToTcb_keyFrame _ _ _ hInv).stepCoversInv
+    simp only [Bool.not_eq_true] at hNb
+    simp only [hNb, Bool.false_eq_true, ↓reduceIte] at h
     split at h
     · rename_i hW
       cases h
@@ -1781,8 +1862,14 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     · cases h
     split at h
     · exact receiveResolvedArm_cancelled_stepCovers e hInv h
+    -- the reply's resolution: refused, a reply with no caller (the receive
+    -- runs, as on a skipped reply), or a caller to answer
+    split at h
+    · cases h
+    · exact receiveResolvedArm_cancelled_stepCovers e hInv h
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    · exact replyRecvCompletesSignalArm_stepCovers e hInv h
     rename_i summ stR hRR
     cases h
     obtain ⟨hS, hSInv⟩ := endpointReplyRecvOnCore_stepCovers e hInv hRR
@@ -1803,8 +1890,8 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     · rename_i hSig
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
         (notificationSignalDeclassifiedOnCore_stepCovers e hInv) hSig
-      exact stepCovers_clearStash_stage hS hSInv
-        (fun x hx => keyFrame_trans_stage hx) h
+      cases h
+      exact ⟨hS, hSInv⟩
     · cases h
 
 /-! ### The checked syscall dispatch -/

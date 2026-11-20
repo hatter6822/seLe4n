@@ -143,7 +143,10 @@ def crossCoreEnforcementEntries : List EnforcementClass :=
   -- wrapper (and, for a remap of the address the capability records, the
   -- unmap), which the routing walk reaches from it.
   , .capabilityOnly "vspaceMapOrRemapFromFrameCap"
-  , .capabilityOnly "vspaceUnmapPageWithShootdownAndIcacheBroadcast"
+  -- `.vspaceUnmap` (seL4's `Page_Unmap`) reaches `vspaceUnmapFrameCap` — the
+  -- unmap of the frame capability's own record (`unmapLivePages`, which calls
+  -- the per-core shootdown and I-cache wrapper) and the record's clear.
+  , .capabilityOnly "vspaceUnmapFrameCap"
   -- PR #861 review round 12: the priority-control arms were boot-pinned twice
   -- over — the run-queue re-bucket tested membership in the BOOT core's queue
   -- (a silent no-op for a thread queued anywhere else, so a demotion never took
@@ -169,11 +172,11 @@ classified. -/
 def enforcementBoundaryPerCore : List EnforcementClass :=
   enforcementBoundaryExtended ++ crossCoreEnforcementEntries
 
-/-- SM8.B.6: the per-core boundary has 68 entries — the live canonical 54 (39
+/-- SM8.B.6: the per-core boundary has 67 entries — the live canonical 53 (39
 plus the 2PL bracket SM8.E.3 promoted into it, plus WS-SM SM9.A.11's two
 audit-trail entries, plus WS-SM SM9.C.8's data-carrying declassification, plus
 WS-BP
-BP7.1's untyped carve `untypedRetypeFromCap`, its reset `untypedResetFromCap`, and the
+BP7.1's untyped carve `untypedRetypeFromCap`, and the
 two finalising destroyers `cspaceDeleteSlotFinalising` /
 `cspaceRevokeCdtFinalising`, its space change `copyThreadSpaces`, and the two
 page-table operations `pageTableMap` / `pageTableUnmap`, plus WS-ZA ZA4.3's
@@ -183,7 +186,8 @@ yield `yieldOnCore`, WS-ZA ZA6.9's Consumed invocation
 `irqHandlerAck`, handler issue `irqControlGetFromCap`, handler bind
 `irqHandlerSetNotificationFromCap` and handler clear `irqHandlerClear`, less WS-ZA ZA5.4 part 14's two retired in-place retype
 entries `lifecycleRetypeObject` / `lifecycleRevokeDeleteRetype` and the
-read-only `lookupObject`, which nothing called) and the
+read-only `lookupObject`, which nothing called, and WS-SX SX7's retired reset
+`untypedResetFromCap`) and the
 fourteen cross-core wrappers (the in-place retype's left with it).  Re-anchored at the
 SM8.A cut, in the fourth review round, again in rounds 10 and 12 as the `.send`,
 resume and architecture arms joined the cross-core surface, in round 37 as the
@@ -193,7 +197,8 @@ WS-ZA ZA4.3, at WS-ZA ZA5.3 part 8, which removed WS-RR RR8.16's
 `cspaceRevokeCdt` with the general revocation it named, and at WS-ZA ZA5.4
 part 14, which removed the in-place retype, and at WS-SX SX6.5, which retired
 the PR #887 fault-handler configuration `setThreadFaultHandlerOp` into the
-space change's fault slot.
+space change's fault slot, and at WS-SX SX7.1, which removed the untyped
+reset.
 `enforcementBoundaryExtended_count` is the authority for the base figure and
 this theorem for the total; the sentence above is worth what they are worth, and
 round 38 caught it stale at 53 one commit after the theorem moved.
@@ -201,7 +206,7 @@ round 38 caught it stale at 53 one commit after the theorem moved.
 The SM8.E.3 promotion left the total **unchanged**, which is the point of
 appending the bracket last in the canonical list; SM9.A.11 moves it, because the
 two audit entries are genuinely new operations rather than a reclassification. -/
-theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 68 := by rfl
+theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 67 := by rfl
 
 /-- SM8.B.7 (completeness, part 1): the per-core boundary **extends** the
 canonical one — it is the canonical list followed by the fourteen live cross-core
@@ -267,7 +272,7 @@ def syscallIdToEnforcementNamePerCore : SyscallId → String
   | .send                => "endpointSendCrossCoreDispatchChecked"
   | .tcbResume           => "restartThreadOnCore"
   | .vspaceMap           => "vspaceMapOrRemapFromFrameCap"
-  | .vspaceUnmap         => "vspaceUnmapPageWithShootdownAndIcacheBroadcast"
+  | .vspaceUnmap         => "vspaceUnmapFrameCap"
   | .tcbSetPriority      => "setPriorityOnCore"
   | .tcbSetMCPriority    => "setMCPriorityOnCore"
   | .tcbSetAffinity      => "setThreadCpuAffinityOnCore"

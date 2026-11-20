@@ -172,6 +172,22 @@ theorem storeTcbIpcStateAndMessage_preserves_badgeWellFormed
     badgeWellFormed st' :=
   modifyTcb_preserves_badgeWellFormed st st' tid _ hInv hObjInv hStep
 
+/-- The store of a thread a signal wakes preserves `badgeWellFormed`. -/
+theorem storeTcbSignalWoken_preserves_badgeWellFormed
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hInv : badgeWellFormed st) (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    badgeWellFormed st' :=
+  modifyTcb_preserves_badgeWellFormed st st' tid _ hInv hObjInv hStep
+
+/-- The store of a bound thread a signal wakes preserves `badgeWellFormed`. -/
+theorem storeTcbSignalBoundWoken_preserves_badgeWellFormed
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hInv : badgeWellFormed st) (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    badgeWellFormed st' :=
+  modifyTcb_preserves_badgeWellFormed st st' tid _ hInv hObjInv hStep
+
 /-- Finding F-1: `storeTcbReceiveComplete` preserves `badgeWellFormed`.
 Stores a `.tcb` object (not notification, not CNode).  Mirror of
 `storeTcbIpcStateAndMessage_preserves_badgeWellFormed`. -/
@@ -246,15 +262,14 @@ theorem notificationSignal_preserves_badgeWellFormed
         | ok pair1 =>
           simp only []; intro hStep; revert hStep
           -- R3-A/M-16: storeTcbIpcStateAndMessage replaces storeTcbIpcState
-          cases hStoreTcb : storeTcbIpcStateAndMessage pair1.2 waiter .ready
-              (some { IpcMessage.empty with badge := some badge }) with
+          cases hStoreTcb : storeTcbSignalWoken pair1.2 waiter badge with
           | error e => simp
           | ok st2 => simp only []; intro hEq; cases hEq
                       apply ensureRunnable_preserves_badgeWellFormed
                       have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair1 hObjInv hStore1
                       refine badgeWellFormed_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _
-                        (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hStoreTcb)) ?_
-                      exact storeTcbIpcStateAndMessage_preserves_badgeWellFormed pair1.2 st2 waiter .ready _
+                        (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hStoreTcb)) ?_
+                      exact storeTcbSignalWoken_preserves_badgeWellFormed pair1.2 st2 waiter _
                         ⟨storeObject_notification_preserves_notificationBadgesWellFormed
                           st pair1.2 notificationId _ hNtfn hObjInv hStore1 (fun b hb => by cases hb),
                          storeObject_preserves_capabilityBadgesWellFormed
@@ -390,8 +405,7 @@ theorem notificationSignal_preserves_notificationWaiterConsistent
         | error e => simp
         | ok pair =>
           simp only []
-          cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
-              (some { IpcMessage.empty with badge := some badge }) with
+          cases hTcb : storeTcbSignalWoken pair.2 waiter badge with
           | error e => simp
           | ok st'' =>
             simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -402,8 +416,8 @@ theorem notificationSignal_preserves_notificationWaiterConsistent
             have hObjInv1 :=
               storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
             have hObjInv2 :=
-              storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hTcb
-            unfold storeTcbIpcStateAndMessage at hTcb
+              storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hTcb
+            unfold storeTcbSignalWoken at hTcb
             obtain ⟨t1, hLk1, _, hT1, hO1⟩ := modifyTcb_objects hObjInv1 hTcb
             have hSucc : ntfnSuccessor? st waiter = htcb.ntfnNext := by
               unfold ntfnSuccessor?
@@ -568,12 +582,12 @@ theorem notificationSignal_preserves_blockedThreadsPendingMessageConsistent
         next st2 hSM =>
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, rfl⟩ := hStep
-          have hInv2 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
-            st1 st2 waiter .ready _ hObjInv1 hSM hInv1 (by trivial)
+          have hInv2 := storeTcbSignalWoken_preserves_blockedThreadsPendingMessageConsistent
+            st1 st2 waiter _ hObjInv1 hSM hInv1
           exact ensureRunnable_preserves_blockedThreadsPendingMessageConsistent _ waiter
             (blockedThreadsPendingMessageConsistent_of_ntfnLinksRewritten
               (detachNtfnHead_linksRewritten _ _ _
-                (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM)) hInv2)
+                (storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hObjInv1 hSM)) hInv2)
     | none =>
       -- Merge path: storeObject only
       simp only [hWaiters] at hStep

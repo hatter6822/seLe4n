@@ -169,13 +169,14 @@ example (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPa
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
+    (hLinks : callRendezvousLinks st receiver payload = true)
     (hTcb'' : st''.getTcb? receiver = some recvTcb'')
     (hRemote : determineTargetCore st'' receiver ≠ executingCore) :
     (endpointCallOnCore endpointId caller payload executingCore st).2
       = .ok (some (determineTargetCore st'' receiver, SgiKind.reschedule)) :=
   endpointCallOnCore_emits_sgi_if_remote_receiver endpointId caller payload executingCore st ep
     receiver recvTcb0 recvTcb'' st' st'' st4 st5 hObj hHead hPop hStore hCallerStore
-    hLink hTcb'' hRemote
+    hLink hLinks hTcb'' hRemote
 
 /-- SM6.A.9 (WS-LS LS2.1: over the pair): the call is a single 2PL-atomic step
 under its lock-set — the ghost bracket's value is the bare transition's. -/
@@ -200,6 +201,7 @@ example (ctx : LabelingContext) (observer : IfObserver)
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
+    (hLinks : callRendezvousLinks st receiver payload = true)
     (hObjInv : st.objects.invExt)
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hIdxComplete : objectIndexSetComplete st)
@@ -213,7 +215,7 @@ example (ctx : LabelingContext) (observer : IfObserver)
     projectState ctx observer (endpointCallOnCore endpointId caller payload executingCore st).1
       = projectState ctx observer st :=
   endpointCallOnCore_call_path_NI ctx observer endpointId caller payload executingCore st ep receiver
-    recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink hObjInv
+    recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink hLinks hObjInv
     hObjSetInv hIdxComplete hEndpointHigh
     hReceiverHigh hReceiverObjHigh hCallerHigh hCallerObjHigh hNextHigh
 
@@ -263,7 +265,8 @@ private def stWithReceiver (recv : SeLe4n.ThreadId) : Option SystemState :=
   | .error _ => none
 
 /-- Like `stWithReceiver` but the server supplies NO Reply object (a plain `Recv`):
-a later `Call` rendezvous has no stash to link and must fail closed. -/
+a later `Call` rendezvous has no stash to link, so it delivers the message and
+leaves its caller `Inactive` (seL4's `sendIPC`). -/
 private def stWithReceiverNoReply (recv : SeLe4n.ThreadId) : Option SystemState :=
   match endpointReceiveDual epId recv none stBase with
   | .ok (_, st) => some st
@@ -271,7 +274,7 @@ private def stWithReceiverNoReply (recv : SeLe4n.ThreadId) : Option SystemState 
 
 /-- The optional SGI surfaced by a cross-core call (`none` on a kernel error). -/
 private def callSgi (st : SystemState) (ec : CoreId) : Option (CoreId × SgiKind) :=
-  match (endpointCallOnCore epId callerTid (.frame none false) ec st).2 with
+  match (endpointCallOnCore epId callerTid (.frame none false true) ec st).2 with
   | .ok sgi => sgi
   | .error _ => none
 
@@ -343,7 +346,7 @@ private def runBlockingChecks : IO Unit := do
 
 private def runNoReceiverChecks : IO Unit := do
   IO.println "--- §3.3 SM6.A.1 no-receiver path (blockedOnCall) ---"
-  let (st', res) := endpointCallOnCore epId callerTid (.frame none false) bootCoreId stBase
+  let (st', res) := endpointCallOnCore epId callerTid (.frame none false true) bootCoreId stBase
   -- No receiver waiting ⇒ no cross-core wake ⇒ no SGI.
   assertBool "no-receiver call surfaces no SGI"
     (match res with | .ok none => true | _ => false)
@@ -357,11 +360,11 @@ private def runNoReceiverChecks : IO Unit := do
   -- SM6.A.5/.8: WithCaps + the full cross-core dispatch agree with the bare call
   -- on the no-receiver path (no caps to transfer; no donation without a server).
   assertBool "no-receiver WithCaps cross-core call also surfaces no SGI"
-    (match (endpointCallWithCapsOnCore epId callerTid (.frame none false)
+    (match (endpointCallWithCapsOnCore epId callerTid (.frame none false true)
         bootCoreId stBase).2 with
      | .ok (_, none) => true | _ => false)
   assertBool "no-receiver cross-core dispatch performs no donation (= WithCaps)"
-    (match (endpointCallCrossCoreDispatch epId callerTid (.frame none false)
+    (match (endpointCallCrossCoreDispatch epId callerTid (.frame none false true)
         bootCoreId stBase).2 with
      | .ok (_, none) => true | _ => false)
 
@@ -385,7 +388,7 @@ private def runRendezvousChecks : IO Unit := do
          | some (tgt, kind) => decide (tgt = core1 ∧ kind = SgiKind.reschedule)
          | none => false)
       -- The caller blocks on its own core awaiting the reply.
-      let (st', _) := endpointCallOnCore epId callerTid (.frame none false) bootCoreId st
+      let (st', _) := endpointCallOnCore epId callerTid (.frame none false true) bootCoreId st
       assertBool "rendezvous blocks the caller as blockedOnReply (reply linkage)"
         (match st'.getTcb? callerTid with
          | some t => decide (t.ipcState = .blockedOnReply epId (some recvRemoteTid))
@@ -399,19 +402,57 @@ private def runRendezvousChecks : IO Unit := do
       assertBool "rendezvous clears the server's reply stash (one-shot)"
         ((st'.getTcb? recvRemoteTid).all (fun t => decide (t.pendingReceiveReply = none)))
   | none => assertBool "rendezvous setup (remote receiver) succeeded" false
-  -- #7.3b fold (fail-closed): a Call rendezvous with a server that supplied NO Reply
-  -- object (plain Recv) cannot be answered — the fold makes `endpointCallOnCore`
-  -- itself fail closed, with no intermediate `.blockedOnReply` caller and no SGI.
+  -- seL4's `sendIPC` (`do_call`, `EPState_Recv`): the caller is linked only when
+  -- the receiver holds a reply object and the capability has `Grant` or
+  -- `GrantReply`; otherwise the message is delivered and the caller goes
+  -- `Inactive`, with no reply.  First: a server that supplied NO Reply object.
   match stWithReceiverNoReply recvRemoteTid with
   | some st =>
-      let (st', res) := endpointCallOnCore epId callerTid (.frame none false) bootCoreId st
-      assertBool "no-stash rendezvous fails closed with replyCapInvalid"
-        (match res with | .error .replyCapInvalid => true | _ => false)
-      assertBool "no-stash rendezvous leaves the caller unblocked (no green intermediate)"
-        ((st'.getTcb? callerTid).any (fun t => decide (t.ipcState = .ready)))
-      assertBool "no-stash rendezvous surfaces no SGI"
-        (match res with | .error _ => true | _ => false)
+      let (st', res) := endpointCallOnCore epId callerTid (.frame none false true) bootCoreId st
+      assertBool "no-stash rendezvous succeeds (seL4 delivers the message)"
+        (match res with | .ok _ => true | _ => false)
+      assertBool "no-stash rendezvous leaves the caller Inactive, linked to no reply"
+        ((st'.getTcb? callerTid).any (fun t => decide (t.ipcState = .ready ∧
+          t.threadState = .Inactive ∧ t.replyObject = none)))
+      assertBool "no-stash rendezvous takes the caller off its core's run queue"
+        (!st'.queuedOn bootCoreId callerTid)
+      assertBool "no-stash rendezvous wakes the receiver holding the message"
+        ((st'.getTcb? recvRemoteTid).any (fun t => decide (t.ipcState = .ready) && t.pendingMessage.isSome))
   | none => assertBool "rendezvous setup (no-reply receiver) succeeded" false
+  -- Second: a server that stashed a Reply object, called through a capability with
+  -- neither `Grant` nor `GrantReply`: delivered, caller `Inactive`, the stash
+  -- dropped (seL4's `reply_unlink`), the reply left unlinked.
+  match stWithReceiver recvRemoteTid with
+  | some st =>
+      let (st', res) := endpointCallOnCore epId callerTid (.frame none false false) bootCoreId st
+      assertBool "no-grant call succeeds (seL4 delivers the message)"
+        (match res with | .ok _ => true | _ => false)
+      assertBool "no-grant call leaves the caller Inactive, linked to no reply"
+        ((st'.getTcb? callerTid).any (fun t => decide (t.ipcState = .ready ∧
+          t.threadState = .Inactive ∧ t.replyObject = none)))
+      assertBool "no-grant call wakes the receiver holding the message, its stash dropped"
+        ((st'.getTcb? recvRemoteTid).any (fun t => decide (t.ipcState = .ready ∧
+          t.pendingReceiveReply = none) && t.pendingMessage.isSome))
+      assertBool "no-grant call links no caller into the reply object"
+        ((st'.getReply? replyId).all (fun r => decide (r.caller = none)))
+  | none => assertBool "rendezvous setup (no-grant call) succeeded" false
+  -- A caller with no TCB is refused with `objectNotFound` by every arm, the
+  -- state left as it was (`endpointCallOnCore_refuses_missingCaller`): the arm
+  -- linking no reply asks for it where the linking arm stores it.
+  let ghostTid : SeLe4n.ThreadId := ⟨499⟩
+  match stWithReceiverNoReply recvRemoteTid, stWithReceiver recvRemoteTid with
+  | some stNo, some stLk =>
+      assertBool "fixture: the missing caller has no TCB"
+        ((stNo.getTcb? ghostTid).isNone && (stLk.getTcb? ghostTid).isNone)
+      let (stA, resA) := endpointCallOnCore epId ghostTid (.frame none false true) bootCoreId stNo
+      assertBool "no-link call of a missing caller refuses with objectNotFound"
+        (match resA with | .error .objectNotFound => true | _ => false)
+      assertBool "no-link call of a missing caller leaves the receiver waiting"
+        ((stA.getTcb? recvRemoteTid).any (fun t => t.ipcState != .ready))
+      let (_, resB) := endpointCallOnCore epId ghostTid (.frame none false true) bootCoreId stLk
+      assertBool "linking call of a missing caller refuses with objectNotFound"
+        (match resB with | .error .objectNotFound => true | _ => false)
+  | _, _ => assertBool "rendezvous setup (missing caller) succeeded" false
 
 -- ============================================================================
 -- §SM6.D Per-core IPC invariant bundle (surface anchors + witnesses)
@@ -539,7 +580,7 @@ private def runRendezvousChecks : IO Unit := do
 #check @revokeService_preserves_ipcInvariantFull
 #check @schedContextConfigure_preserves_ipcInvariantFull
 #check @schedContextBind_preserves_ipcInvariantFull
-#check @schedContextUnbindOnCore_preserves_ipcInvariantFull
+#check @schedContextUnbindAllOnCore_preserves_ipcInvariantFull
 #check @setPriorityOnCore_preserves_ipcInvariantFull
 #check @setIPCBufferOp_preserves_ipcInvariantFull
 #check @writeReturnFrameToTcb_preserves_ipcInvariantFull
@@ -549,7 +590,6 @@ private def runRendezvousChecks : IO Unit := do
 -- the replyRecv three-stage composite:
 #check @stageDeliveredMessage_preserves_ipcInvariantFull
 #check @stageWokenDelivery_preserves_ipcInvariantFull
-#check @stageWokenSendCompletion_preserves_ipcInvariantFull
 #check @endpointReplyRecvOnCore_preserves_ipcInvariantFull
 -- WS-RR RR3.23–RR3.25 — the dispatch payoffs and their pre-state packs
 -- (the capability tier production in `API.lean`; the two dispatch tiers
@@ -981,7 +1021,7 @@ private def stTwoReceivers? : Option SystemState :=
 /-- **WS-OD OD3.11** fixture (blocking branch): one sender already parked, so a
 second `.call` enqueues behind it and writes *its* TCB as the old tail. -/
 private def stOneParkedSender? : Option SystemState :=
-  match endpointCallOnCore epId recvLocalTid (.frame none false) bootCoreId stBase with
+  match endpointCallOnCore epId recvLocalTid (.frame none false true) bootCoreId stBase with
   | (st1, .ok _) => some st1
   | _ => none
 
@@ -1010,7 +1050,7 @@ private def runQueueNeighbourFootprintChecks : IO Unit := do
       let ls := lockSet_endpointCallOnCore st epId callerTid cnRoot
       assertBool "the successor's TCB write lock is declared (rendezvous)"
         (decide ((tcbLock recvRemoteTid, AccessMode.write) ∈ ls.pairs))
-      let (st', _) := endpointCallOnCore epId callerTid (.frame none false) bootCoreId st
+      let (st', _) := endpointCallOnCore epId callerTid (.frame none false true) bootCoreId st
       assertBool "the call rewrites the promoted head's links"
         (match st'.getTcb? recvRemoteTid with
          | some t => decide (t.queuePrev = none ∧ t.queuePPrev = some .endpointHead)
@@ -1029,7 +1069,7 @@ private def runQueueNeighbourFootprintChecks : IO Unit := do
       let ls := lockSet_endpointCallOnCore st epId callerTid cnRoot
       assertBool "the old tail's TCB write lock is declared (blocking)"
         (decide ((tcbLock recvLocalTid, AccessMode.write) ∈ ls.pairs))
-      let (st', _) := endpointCallOnCore epId callerTid (.frame none false) bootCoreId st
+      let (st', _) := endpointCallOnCore epId callerTid (.frame none false true) bootCoreId st
       assertBool "the call rewrites the old tail's queueNext"
         (match st'.getTcb? recvLocalTid with
          | some t => decide (t.queueNext = some callerTid)
@@ -1113,10 +1153,12 @@ the leaf **is** this root — the single-level shape `abiEntryGate` requires. -/
 private def bracketCNodeValue : CNode :=
   (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [(bracketSlot, bracketSlotCap)]))
 
-/-- A caller whose registers really decode to `.tcbSuspend` (`x7 = 20`) on the
-capability at slot 1 (`x0 = 1`). -/
+/-- A caller whose registers really decode to `.tcbSuspend` (a `Call`, label 12
+in `x1`) on the capability at slot 1 (`x0 = 1`). -/
 private def bracketCaller : TCB :=
-  { ((mkTcb 401 40 none).withCSpaceRoot bracketCNode) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 1 else if r == 7 then 20 else 0) }
+  { ((mkTcb 401 40 none).withCSpaceRoot bracketCNode) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 1
+      else if r == 1 then SyscallId.tcbSuspend.msgInfoWithLabel 0
+      else if r == 7 then Syscall.call.word else 0) }
 
 private def bracketState : SystemState :=
   let base :=
@@ -1129,45 +1171,53 @@ private def bracketState : SystemState :=
       |>.build)
   base
 
-/-- The ABI words of a `.tcbSuspend` on the capability at slot 1:
-`syscallId = 20`, `x0 = 1` (the CPtr), `x1..x5 = 0`. -/
+/-- The ABI words of a `.tcbSuspend` on the capability at slot 1: a `Call`
+(`syscallId = 1`), `x0 = 1` (the CPtr), `x1` the label 12, `x2..x6 = 0`. -/
 private def bracketDecl (st : SystemState) : Option Concurrency.LockSet :=
   declaredLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
+    (x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) (x6 := 0) st
 
 private def bracketPlan (st : SystemState) :
     Option (SeLe4n.ThreadId × SyscallDecodeResult × SystemState) :=
   abiEntryPlan harnessLabelingContext bootCoreId
-    (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
+    (x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) (x6 := 0) st
 
 /-- The step the bracket wraps, at those same words. -/
 private def bracketStepFn (st : SystemState) :=
   SeLe4n.Testing.dispatchCrossCoreStep harnessLabelingContext bootCoreId
-    (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
-    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+    (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
+    (x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
+    (x6 := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
 
 /-- The seam's bracket at those same words (WS-LS LS2.4). -/
 private def bracketSpec :=
   SeLe4n.Testing.dispatchBracket harnessLabelingContext bootCoreId
-    (trapped := .ofRegisterFile { (default : RegisterFile) with x0 := 1, x7 := 20 })
+    (trapped := .ofRegisterFile { (default : RegisterFile) with
+      x0 := 1, x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0, x7 := Syscall.call.word })
 
 private def bracketRun (st : SystemState) :=
   SeLe4n.Testing.dispatchCrossCoreBracketedStep harnessLabelingContext bootCoreId
-    (trapped := .ofRegisterFile { (default : RegisterFile) with x0 := 1, x7 := 20 }) st
+    (trapped := .ofRegisterFile { (default : RegisterFile) with
+      x0 := 1, x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0, x7 := Syscall.call.word }) st
 
-/-- `.cspaceMint` (id 4) — an arm this cut leaves undeclared, for the fallback. -/
+/-- `.cspaceMint` (a `Call`, label 22) — an arm this cut leaves undeclared, for the fallback. -/
 private def undeclaredRun (st : SystemState) :=
   SeLe4n.Testing.dispatchCrossCoreBracketedStep harnessLabelingContext bootCoreId
-    (trapped := .ofRegisterFile { (default : RegisterFile) with x0 := 1, x7 := 4 }) st
+    (trapped := .ofRegisterFile { (default : RegisterFile) with
+      x0 := 1, x1 := SyscallId.cspaceMint.msgInfoWithLabel 0, x7 := Syscall.call.word }) st
 
 private def undeclaredBare (st : SystemState) :=
   SeLe4n.Testing.dispatchCrossCoreStep harnessLabelingContext bootCoreId
-    (syscallId := 4) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
-    (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
+    (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
+    (x1 := SyscallId.cspaceMint.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
+    (x6 := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
 
 private def undeclaredDecl (st : SystemState) : Option Concurrency.LockSet :=
   declaredLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 4) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
+    (x1 := SyscallId.cspaceMint.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) (x6 := 0) st
 
 /-- **WS-OD OD3.5**: `.replyRecv`'s footprint declares for a delegated reply,
 and names the recorded server's TCB.
@@ -1283,7 +1333,8 @@ private def runDeclaredFootprintBracketChecks : IO Unit := do
   assertBool "the seam's bracket declares the decode's unified footprint"
     (decide (bracketSpec.declared bracketState
       = declaredUnifiedLockSetForAbiEntry harnessLabelingContext bootCoreId
-          (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
+          (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
+    (x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) (x6 := 0)
           bracketState))
   -- **The ghost bracket starts and ends all-free** (plan O3): run the proven
   -- path from the unheld table and every declared member is unheld after —
@@ -1338,12 +1389,14 @@ footprints are functions of are one decode, so neither domain can bracket one
 syscall's locks around another's transition. -/
 private def bracketSchedDecl (st : SystemState) : Option LockSet :=
   declaredSchedulerLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
+    (x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) (x6 := 0) st
 
 /-- The same entry's scheduler-domain footprint at an **undeclared** arm. -/
 private def undeclaredSchedDecl (st : SystemState) : Option LockSet :=
   declaredSchedulerLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 4) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
+    (x1 := SyscallId.cspaceMint.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) (x6 := 0) st
 
 /-- The same state with the victim **active**, so the suspend arm's footprint is
 its full one rather than the `.Inactive` refusal's.  One field apart from
@@ -1438,12 +1491,14 @@ lock *words* — `acquireLock`'s `.object` arm calls SM3.C's own
 brackets that would take the object-store table lock twice. -/
 private def bracketUnifiedDecl (st : SystemState) : Option LockSet :=
   declaredUnifiedLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
+    (x1 := SyscallId.tcbSuspend.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) (x6 := 0) st
 
 /-- The same entry at an **undeclared** arm. -/
 private def undeclaredUnifiedDecl (st : SystemState) : Option LockSet :=
   declaredUnifiedLockSetForAbiEntry harnessLabelingContext bootCoreId
-    (syscallId := 4) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+    (syscallId := Syscall.call.number.toUInt32) (x0 := 1)
+    (x1 := SyscallId.cspaceMint.msgInfoWithLabel 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) (x6 := 0) st
 
 /-- **Cut C6h**: every mutation of the production side here fails to ELABORATE
 rather than failing this suite — the membership theorems and the bracket's own

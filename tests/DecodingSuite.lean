@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Architecture.RegisterDecode
 import SeLe4n.Kernel.Architecture.SyscallArgDecode
 import SeLe4n.Kernel.Architecture.IpcBufferRead
+import SeLe4n.Kernel.API
 import SeLe4n.Testing.Helpers
 import SeLe4n.Testing.StateBuilder
 
@@ -19,7 +20,7 @@ Standalone test coverage for `RegisterDecode.lean` (Layer 1) and
 `SyscallArgDecode.lean` (Layer 2). Previously, decode tests were
 dispersed across NegativeStateSuite and OperationChainSuite.
 
-**Layer 1** (RegisterDecode): `decodeSyscallId`, `decodeMsgInfo`,
+**Layer 1** (RegisterDecode): `decodeSyscallCode`, `decodeMsgInfo`,
 `decodeCapPtr`, `validateRegBound`, `decodeSyscallArgs`.
 
 **Layer 2** (SyscallArgDecode): 20 per-syscall decode functions
@@ -56,84 +57,84 @@ private def isErrEq [DecidableEq ε] (r : Except ε α) (expected : ε) : Bool :
 -- Layer 1: RegisterDecode tests
 -- ============================================================================
 
-/-- RD-001: decodeSyscallId — valid syscall IDs. -/
-private def rd001_decodeSyscallIdValid : IO Unit := do
+/-- RD-001: decodeSyscallCode — valid syscall IDs. -/
+private def rd001_decodeSyscallCodeValid : IO Unit := do
   -- First valid: .send (0)
-  let r0 := decodeSyscallId ⟨0⟩
+  let r0 := decodeSyscallCode 0
   expect "send=0" (isOkEq r0 .send)
   -- Middle: .serviceRegister (11)
-  let r11 := decodeSyscallId ⟨11⟩
+  let r11 := decodeSyscallCode 11
   expect "serviceRegister=11" (isOkEq r11 .serviceRegister)
   -- Last valid: .tcbSetIPCBuffer (24)
-  let r24 := decodeSyscallId ⟨24⟩
+  let r24 := decodeSyscallCode 24
   expect "tcbSetIPCBuffer=24" (isOkEq r24 .tcbSetIPCBuffer)
   -- WS-SM SM5.H.4: tcbSetAffinity=25
-  let r25 := decodeSyscallId ⟨25⟩
+  let r25 := decodeSyscallCode 25
   expect "tcbSetAffinity=25" (isOkEq r25 .tcbSetAffinity)
   -- WS-SX SX6.5: 34 (the retired tcbSetFaultHandler) decodes to nothing —
   -- seL4-MCS's `TCB_SetSpace` installs the fault endpoint
-  let r34 := decodeSyscallId ⟨34⟩
+  let r34 := decodeSyscallCode 34
   expect "retired=34" (isErrEq r34 .invalidSyscallNumber)
   -- WS-RR RR8.16: cspaceRevoke=35 (`seL4_CNode_Revoke`)
-  let r35 := decodeSyscallId ⟨35⟩
+  let r35 := decodeSyscallCode 35
   expect "cspaceRevoke=35" (isOkEq r35 .cspaceRevoke)
   -- WS-BP BP7.1: untypedRetype=36 (`seL4_Untyped_Retype`, frames)
-  let r36 := decodeSyscallId ⟨36⟩
+  let r36 := decodeSyscallCode 36
   expect "untypedRetype=36" (isOkEq r36 .untypedRetype)
-  -- WS-BP BP7.1: untypedReset=37 (seL4's `resetUntypedCap`)
-  let r37 := decodeSyscallId ⟨37⟩
-  expect "untypedReset=37" (isOkEq r37 .untypedReset)
+  -- WS-SX SX7.1: 37, the untyped reset, is retired (seL4 resets inside Retype)
+  let r37 := decodeSyscallCode 37
+  expect "retired=37" (isErrEq r37 .invalidSyscallNumber)
   -- WS-BP BP7.1: tcbSetSpace=38 (seL4's `TCB_SetSpace`)
-  let r38 := decodeSyscallId ⟨38⟩
+  let r38 := decodeSyscallCode 38
   expect "tcbSetSpace=38" (isOkEq r38 .tcbSetSpace)
   -- WS-SM SM7.D: vspaceUnifyInstruction=29 (the code-publication path)
-  let r29 := decodeSyscallId ⟨29⟩
+  let r29 := decodeSyscallCode 29
   expect "vspaceUnifyInstruction=29" (isOkEq r29 .vspaceUnifyInstruction)
   -- WS-SM SM8.C: declassify=30 (the live declassification entry point)
-  let r30 := decodeSyscallId ⟨30⟩
+  let r30 := decodeSyscallCode 30
   expect "declassify=30" (isOkEq r30 .declassify)
   -- WS-SM SM9.A: auditRead=31 / auditDrain=32 (the audit trail's reader and
   -- drain — the read side of the trail SM8.C mounted write-only)
-  let r31 := decodeSyscallId ⟨31⟩
+  let r31 := decodeSyscallCode 31
   expect "auditRead=31" (isOkEq r31 .auditRead)
-  let r32 := decodeSyscallId ⟨32⟩
+  let r32 := decodeSyscallCode 32
   expect "auditDrain=32" (isOkEq r32 .auditDrain)
-  let r33 := decodeSyscallId ⟨33⟩
+  let r33 := decodeSyscallCode 33
   expect "declassifySignal=33" (isOkEq r33 .declassifySignal)
 
-/-- RD-002: decodeSyscallId — invalid values. -/
-private def rd002_decodeSyscallIdInvalid : IO Unit := do
+/-- RD-002: decodeSyscallCode — invalid values. -/
+private def rd002_decodeSyscallCodeInvalid : IO Unit := do
   -- First invalid: 48 (WS-ZA ZA6.32 added irqHandlerAck at 44 and
   -- irqControlGet, irqHandlerSetNotification and irqHandlerClear at 45 to 47, ZA6.29
   -- schedContextYieldTo at 43, ZA6.9
   -- schedContextConsumed at 42, ZA4.3 yield at 41, WS-BP BP7.1 added
-  -- pageTableMap at 39 and pageTableUnmap at 40, tcbSetSpace at 38, untypedReset at 37
+  -- pageTableMap at 39 and pageTableUnmap at 40, tcbSetSpace at 38 (37, the untyped reset, retired at WS-SX SX7.1)
   -- and untypedRetype at 36, on top of
   -- WS-RR RR8.16's cspaceRevoke at 35, the
   -- PR #887 review round's tcbSetFaultHandler at 34 (retired by WS-SX SX6.5), WS-SM SM9.C's
   -- declassifySignal at 33, SM9.A's auditRead at 31 and auditDrain at 32,
   -- SM8.C's declassify at 30, SM7.D's vspaceUnifyInstruction at 29 and
   -- PR #822 Phase H's mintReplyCap at 28)
-  let r48 := decodeSyscallId ⟨48⟩
+  let r48 := decodeSyscallCode 48
   expect "invalid=48" (isErrEq r48 .invalidSyscallNumber)
   -- Large value
-  let rLarge := decodeSyscallId ⟨999999⟩
+  let rLarge := decodeSyscallCode 999999
   expect "invalid=999999" (isErrEq rLarge .invalidSyscallNumber)
 
-/-- RD-003: decodeSyscallId — boundary edge 47/48 (WS-ZA ZA6.32:
+/-- RD-003: decodeSyscallCode — boundary edge 47/48 (WS-ZA ZA6.32:
 irqHandlerClear=47 is the last valid). -/
-private def rd003_decodeSyscallIdBoundary : IO Unit := do
-  let r38 := decodeSyscallId ⟨38⟩
-  let r39 := decodeSyscallId ⟨39⟩
-  let r40 := decodeSyscallId ⟨40⟩
-  let r41 := decodeSyscallId ⟨41⟩
-  let r42 := decodeSyscallId ⟨42⟩
-  let r43 := decodeSyscallId ⟨43⟩
-  let r44 := decodeSyscallId ⟨44⟩
-  let r45 := decodeSyscallId ⟨45⟩
-  let r46 := decodeSyscallId ⟨46⟩
-  let r47 := decodeSyscallId ⟨47⟩
-  let r48 := decodeSyscallId ⟨48⟩
+private def rd003_decodeSyscallCodeBoundary : IO Unit := do
+  let r38 := decodeSyscallCode 38
+  let r39 := decodeSyscallCode 39
+  let r40 := decodeSyscallCode 40
+  let r41 := decodeSyscallCode 41
+  let r42 := decodeSyscallCode 42
+  let r43 := decodeSyscallCode 43
+  let r44 := decodeSyscallCode 44
+  let r45 := decodeSyscallCode 45
+  let r46 := decodeSyscallCode 46
+  let r47 := decodeSyscallCode 47
+  let r48 := decodeSyscallCode 48
   expect "tcbSetSpace=38" (isOkEq r38 .tcbSetSpace)
   expect "pageTableMap=39" (isOkEq r39 .pageTableMap)
   expect "pageTableUnmap=40" (isOkEq r40 .pageTableUnmap)
@@ -213,8 +214,8 @@ private def rd009_decodeSyscallArgsIntegration : IO Unit := do
     |> (writeReg · ⟨3⟩ 200)                                    -- x3 = msgReg1
     |> (writeReg · ⟨4⟩ 300)                                    -- x4 = msgReg2
     |> (writeReg · ⟨5⟩ 400)                                    -- x5 = msgReg3
-    |> (writeReg · ⟨7⟩ (encodeSyscallId syscallVal).val.toUInt64)             -- x7 = syscallNum
-  let result := decodeSyscallArgs arm64DefaultLayout rf 32
+    |> (writeReg · ⟨7⟩ Syscall.send.word)                      -- x7 = seL4's Send
+  let result := decodeSyscallArgs syscallVal.toNat arm64DefaultLayout rf 32
   expect "integration ok" result.isOk
   match result with
   | .ok dr =>
@@ -231,7 +232,7 @@ private def rd009_decodeSyscallArgsIntegration : IO Unit := do
 private def rd010_decodeSyscallArgsInsufficientRegs : IO Unit := do
   let rf := (default : RegisterFile)
   -- regCount=5 means registers 0..4 are valid, but arm64DefaultLayout needs x7
-  let result := decodeSyscallArgs arm64DefaultLayout rf 5
+  let result := decodeSyscallArgs SyscallId.send.toNat arm64DefaultLayout rf 5
   expect "insufficient regs" (!result.isOk)
 
 /-- RD-011: extractMessageRegisters — boundary and truncation behavior. -/
@@ -253,9 +254,9 @@ private def rd011_extractMessageRegisters : IO Unit := do
 
 private def runRegisterDecodeTests : IO Unit := do
   IO.println "--- Layer 1: RegisterDecode ---"
-  rd001_decodeSyscallIdValid
-  rd002_decodeSyscallIdInvalid
-  rd003_decodeSyscallIdBoundary
+  rd001_decodeSyscallCodeValid
+  rd002_decodeSyscallCodeInvalid
+  rd003_decodeSyscallCodeBoundary
   rd004_decodeMsgInfoValid
   rd005_decodeMsgInfoOverflow
   rd006_decodeCapPtrValid
@@ -403,13 +404,13 @@ private def sad011_vspaceMapInvalidPerms : IO Unit := do
   expect "SAD-011b read-only, cacheable, never executable"
     (q.read && !q.write && !q.execute && q.user && q.cacheable)
 
-/-- SAD-012: decodeVSpaceUnmapArgs — valid and invalid ASID. -/
+/-- SAD-012: decodeVSpaceUnifyInstructionArgs — valid and invalid ASID. -/
 private def sad012_vspaceUnmap : IO Unit := do
   let stub := mkStub #[⟨1⟩, ⟨0x1000⟩]
-  let result := decodeVSpaceUnmapArgs stub 65536
+  let result := decodeVSpaceUnifyInstructionArgs stub 65536
   expect "SAD-012a vspace unmap ok" result.isOk
   let stubBad := mkStub #[⟨65536⟩, ⟨0x1000⟩]
-  let resultBad := decodeVSpaceUnmapArgs stubBad 65536
+  let resultBad := decodeVSpaceUnifyInstructionArgs stubBad 65536
   expect "SAD-012b vspace unmap invalid ASID" (!resultBad.isOk)
 
 -- Notification family ----------------------------------------------------------
@@ -435,14 +436,24 @@ private def sad014_notificationWait : IO Unit := do
   let result := decodeNotificationWaitArgs stub
   expect "SAD-014a notification wait ok" result.isOk
 
-/-- SAD-015: decodeReplyRecvArgs — valid and insufficient. -/
-private def sad015_replyRecv : IO Unit := do
-  let stub := mkStub #[⟨42⟩]
-  let result := decodeReplyRecvArgs stub
-  expect "SAD-015a replyRecv ok" result.isOk
-  let stubEmpty := mkStub #[]
-  let resultEmpty := decodeReplyRecvArgs stubEmpty
-  expect "SAD-015b replyRecv empty err" (!resultEmpty.isOk)
+/-- SAD-015: the reply register (seL4-MCS `replyRegister`, x6): `canReply`
+follows the syscall word, and a receive that can reply names the reply
+register's capability whatever its message length. -/
+private def sad015_replyRegister : IO Unit := do
+  expect "SAD-015a Recv can reply" (Syscall.wordCanReply Syscall.recv.word)
+  expect "SAD-015b ReplyRecv can reply" (Syscall.wordCanReply Syscall.replyRecv.word)
+  expect "SAD-015c NBSendRecv can reply" (Syscall.wordCanReply Syscall.nbSendRecv.word)
+  expect "SAD-015d Wait cannot reply" (!Syscall.wordCanReply Syscall.wait.word)
+  expect "SAD-015e NBSendWait cannot reply" (!Syscall.wordCanReply Syscall.nbSendWait.word)
+  let rr : SyscallDecodeResult :=
+    { mkStub #[] with syscallId := .replyRecv, replyCPtr := CPtr.ofNat 42 }
+  expect "SAD-015f empty ReplyRecv names x6"
+    (SeLe4n.Kernel.receiveReplyAddr? rr == some (CPtr.ofNat 42))
+  let recv : SyscallDecodeResult := { rr with syscallId := .receive, canReply := true }
+  expect "SAD-015g empty Recv names x6"
+    (SeLe4n.Kernel.receiveReplyAddr? recv == some (CPtr.ofNat 42))
+  let wait : SyscallDecodeResult := { recv with canReply := false }
+  expect "SAD-015h Wait names none" (SeLe4n.Kernel.receiveReplyAddr? wait).isNone
 
 -- SchedContext family ----------------------------------------------------------
 
@@ -668,7 +679,7 @@ private def ak4a01_shortPathNoOverflow : IO Unit := do
     match st.objects[tid.toObjId]? with
     | some (.tcb tcb) => tcb.registerContext
     | _ => default
-  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+  match decodeSyscallArgsFromState (21) st tid SeLe4n.arm64DefaultLayout
           regs 32 with
   | .ok decoded =>
     expect "ok" true
@@ -687,7 +698,7 @@ private def ak4a02_serviceRegisterOverflow : IO Unit := do
     match st.objects[tid.toObjId]? with
     | some (.tcb tcb) => tcb.registerContext
     | _ => default
-  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+  match decodeSyscallArgsFromState (11) st tid SeLe4n.arm64DefaultLayout
           regs 32 with
   | .ok decoded =>
     expect "decoded ok" true
@@ -711,7 +722,7 @@ private def ak4a03_scConfigureUnmappedFails : IO Unit := do
     match st.objects[tid.toObjId]? with
     | some (.tcb tcb) => tcb.registerContext
     | _ => default
-  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+  match decodeSyscallArgsFromState (17) st tid SeLe4n.arm64DefaultLayout
           regs 32 with
   | .ok decoded =>
     expect "clamped length=4" (decoded.msgInfo.length == 4)
@@ -733,7 +744,7 @@ private def ak4a04_lengthZeroIgnoresIpcBuffer : IO Unit := do
     match st.objects[tid.toObjId]? with
     | some (.tcb tcb) => tcb.registerContext
     | _ => default
-  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+  match decodeSyscallArgsFromState (11) st tid SeLe4n.arm64DefaultLayout
           regs 32 with
   | .ok decoded =>
     expect "ok" true
@@ -753,12 +764,12 @@ private def signalLongReadsNoIpcBuffer : IO Unit := do
       match st.objects[tid.toObjId]? with
       | some (.tcb tcb) => tcb.registerContext
       | _ => default
-    match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout regs 32 with
+    match decodeSyscallArgsFromState sid.toNat st tid SeLe4n.arm64DefaultLayout regs 32 with
     | .ok decoded =>
       expect s!"{sid}: a long message reads no overflow word" (decoded.overflowCount == 0)
       expect s!"{sid}: the inline registers alone" (decoded.msgRegs.size == 4)
     | .error _ => expect s!"{sid}: a long message decodes with no IPC buffer" false
-    match registerRoutedSyscall SeLe4n.arm64DefaultLayout regs 32, sid with
+    match registerRoutedSyscall sid.toNat SeLe4n.arm64DefaultLayout regs 32, sid with
     | .signal _, .notificationSignal => expect "a long signal routes as a signal" true
     | .audited s' _, .declassifySignal =>
       expect "a long declassified signal routes as audited" (s' == .declassifySignal)
@@ -778,12 +789,12 @@ private def shortReadersLongReadNoIpcBuffer : IO Unit := do
       match st.objects[tid.toObjId]? with
       | some (.tcb tcb) => tcb.registerContext
       | _ => default
-    match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout regs 32 with
+    match decodeSyscallArgsFromState sid.toNat st tid SeLe4n.arm64DefaultLayout regs 32 with
     | .ok decoded =>
       expect s!"{sid}: a long message reads no overflow word" (decoded.overflowCount == 0)
       expect s!"{sid}: the inline registers alone" (decoded.msgRegs.size == 4)
     | .error _ => expect s!"{sid}: a long message decodes with no IPC buffer" false
-    match registerRoutedSyscall SeLe4n.arm64DefaultLayout regs 32, sid with
+    match registerRoutedSyscall sid.toNat SeLe4n.arm64DefaultLayout regs 32, sid with
     | .receive .., .receive => expect "a long receive routes as a receive" true
     | .wait _, .notificationWait => expect "a long wait routes as a wait" true
     | .yield, .yield => expect "a long yield routes as a yield" true
@@ -801,7 +812,7 @@ private def longSendUnmappedClamps : IO Unit := do
     match st.objects[tid.toObjId]? with
     | some (.tcb tcb) => tcb.registerContext
     | _ => default
-  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout regs 32 with
+  match decodeSyscallArgsFromState SyscallId.send.toNat st tid SeLe4n.arm64DefaultLayout regs 32 with
   | .ok decoded =>
     expect "long send clamped to length 4" (decoded.msgInfo.length == 4)
     expect "long send clamped: no overflow word" (decoded.overflowCount == 0)
@@ -828,7 +839,7 @@ private def ak4a06_sizeInvariant : IO Unit := do
     match st.objects[tid.toObjId]? with
     | some (.tcb tcb) => tcb.registerContext
     | _ => default
-  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+  match decodeSyscallArgsFromState (11) st tid SeLe4n.arm64DefaultLayout
           regs 32 with
   | .ok decoded =>
     expect "size invariant"
@@ -841,7 +852,7 @@ private def ak4a07_legacyBackwardCompat : IO Unit := do
   let regFile : SeLe4n.RegName → SeLe4n.RegValue := fun r =>
     if r.val == 7 then ⟨4⟩ else ⟨0⟩  -- syscallId=4 (cspaceMint)
   let rf : SeLe4n.RegisterFile := SeLe4n.RegisterFile.withGprs 0 0 (fun i => (regFile ⟨i⟩).val.toUInt64)
-  match decodeSyscallArgs SeLe4n.arm64DefaultLayout rf 32 with
+  match decodeSyscallArgs SyscallId.send.toNat SeLe4n.arm64DefaultLayout rf 32 with
   | .ok decoded =>
     expect "legacy ok" true
     expect "legacy inlineCount=4" (decoded.inlineCount == 4)
@@ -865,7 +876,7 @@ private def ipcBufferDecodeTwoOverflowSlots : IO Unit := do
     match st.objects[tid.toObjId]? with
     | some (.tcb tcb) => tcb.registerContext
     | _ => default
-  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout regs 32 with
+  match decodeSyscallArgsFromState (11) st tid SeLe4n.arm64DefaultLayout regs 32 with
   | .ok decoded =>
     expect "two overflow slots decode" true
     expect "overflowCount=2" (decoded.overflowCount == 2)
@@ -954,7 +965,7 @@ private def runSyscallArgDecodeTests : IO Unit := do
   -- Notification
   sad013_notificationSignal
   sad014_notificationWait
-  sad015_replyRecv
+  sad015_replyRegister
   -- SchedContext
   sad016_schedContextConfigure
   sad017_schedContextConfigureInsufficient

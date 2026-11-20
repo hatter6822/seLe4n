@@ -1,24 +1,26 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! AN9-F (DEF-R-HAL-L14 / RESOLVED): Typed SVC argument marshalling.
 //!
-//! This module owns the SVC trap's syscall-id decode.  The `handle_svc`
-//! entry in `trap.rs` reads the syscall id from the raw `TrapFrame` and
-//! dispatches to the Lean kernel via [`dispatch_svc`].
+//! This module owns the SVC trap's syscall decode.  The `handle_svc`
+//! entry in `trap.rs` hands seL4's syscall word, the raw `TrapFrame`'s full
+//! `x7`, to [`dispatch_svc`], whose prefilter names the syscall with
+//! [`Syscall::from_word`] before it dispatches to the Lean kernel.  A word
+//! that names none of seL4-MCS's eleven syscalls is seL4's `UnknownSyscall`
+//! fault.
 //!
 //! ## Mirror discipline
 //!
-//! `SyscallId` here mirrors the 41-variant enum in
-//! `sele4n-types/src/syscall.rs`.  We do NOT depend on `sele4n-types`
-//! in the runtime build (the HAL crate is the lowest-level workspace
-//! member with zero runtime dependencies, by design — see
-//! `rust/sele4n-hal/Cargo.toml`), so the discriminants are duplicated
-//! here.  The unit test `syscall_id_discriminants_match_lean_abi`
-//! cross-checks this mirror against the canonical
-//! `sele4n-types::SyscallId` (a dev-dependency, available only under
-//! `#[cfg(test)]`) so any drift in the discriminants / `COUNT` /
-//! `from_u32` decode fails the build — the previous self-referential
-//! form (comparing the mirror to its own `COUNT`) could not catch a
-//! missing variant.
+//! [`Syscall`] here mirrors the eleven-variant enum in
+//! `sele4n-types/src/syscall.rs` (seL4's `syscall.xml`, `api-mcs`).  We do
+//! NOT depend on `sele4n-types` in the runtime build (the HAL crate is the
+//! lowest-level workspace member with zero runtime dependencies, by design
+//! — see `rust/sele4n-hal/Cargo.toml`), so the numbers are duplicated here.
+//! The unit test `syscall_mirror_matches_sele4n_types` cross-checks this
+//! mirror against the canonical `sele4n-types::Syscall` (a dev-dependency,
+//! available only under `#[cfg(test)]`), so any drift in the numbers, the
+//! words or the decode fails the test build.  No operation is named in a
+//! register: the kernel selects it from the syscall, the invoked
+//! capability's type and the message label (WS-SX SX7).
 //!
 //! ## Argument layout
 //!
@@ -27,8 +29,9 @@
 //!
 //! ```text
 //! x0..x5 : inline message registers
-//! x6     : ipc_buffer_addr     (caller's TPIDRRO_EL0; optional)
-//! x7     : syscall_id          (SyscallId enum discriminant)
+//! x6     : reply register      (seL4-MCS `replyRegister`: the reply cap a
+//!          Recv / NBRecv / ReplyRecv names)
+//! x7     : syscall word        (seL4's syscall number, negated)
 //! ```
 //!
 //! `MessageInfo` is packed into `x1` per AK4 ABI conventions (length,
@@ -62,10 +65,10 @@
 /// in *shape* from a kernel rejection and collides with nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DispatchError {
-    /// Caller passed a syscall id that names no syscall: one at or past
-    /// `SyscallId::ENCODING_BOUND`, or a retired number
-    /// (`SyscallId::RETIRED`).  Surfaced to userspace as `KernelError::InvalidSyscallNumber`
-    /// on the `x1` label.
+    /// The trap's `x7` names none of seL4-MCS's eleven syscalls
+    /// ([`Syscall::from_word`] answers `None`): seL4's `UnknownSyscall`,
+    /// delivered to the thread's fault handler, or, with no handler,
+    /// surfaced as `KernelError::InvalidSyscallNumber` on the `x1` label.
     InvalidSyscallId,
 }
 
@@ -82,182 +85,102 @@ impl DispatchError {
     }
 }
 
-/// AN9-F: 41-variant syscall ID enum mirroring
-/// `sele4n-types::SyscallId`.  Discriminants align with the Lean
-/// `SyscallId.toNat` encoding so a `u64` syscall id read from the
-/// trap frame's `x7` register decodes identically on both sides.
+/// **seL4's system calls** (`syscall.xml`, `api-mcs`), mirroring
+/// `sele4n-types::Syscall` and the Lean `Syscall`: the trap carries the
+/// number negated in `x7`.  An operation is not a syscall; the kernel selects
+/// it from the syscall, the invoked capability's type and the message label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u32)]
-pub enum SyscallId {
-    Send = 0,
-    Receive = 1,
-    Call = 2,
-    Reply = 3,
-    CSpaceMint = 4,
-    CSpaceCopy = 5,
-    CSpaceMove = 6,
-    CSpaceDelete = 7,
-    // 8: retired (the in-place lifecycle retype, WS-ZA ZA5.4 part 14).
-    VSpaceMap = 9,
-    VSpaceUnmap = 10,
-    ServiceRegister = 11,
-    ServiceRevoke = 12,
-    ServiceQuery = 13,
-    NotificationSignal = 14,
-    NotificationWait = 15,
-    ReplyRecv = 16,
-    SchedContextConfigure = 17,
-    SchedContextBind = 18,
-    SchedContextUnbind = 19,
-    TcbSuspend = 20,
-    TcbResume = 21,
-    TcbSetPriority = 22,
-    TcbSetMCPriority = 23,
-    TcbSetIPCBuffer = 24,
-    // WS-SM SM5.H.4: CPU-affinity configuration (+ run-queue/replenish migration).
-    TcbSetAffinity = 25,
-    // WS-SM SM6.B: notification binding (bind/unbind a notification to a TCB).
-    TcbBindNotification = 26,
-    TcbUnbindNotification = 27,
-    // WS-SM SM6.D / PR #822 Phase H: derive a `.replyCap` from an `.object` cap to a
-    // retyped Reply object.
-    MintReplyCap = 28,
-    /// WS-SM SM7.D: instruction/data unification of one mapped page.
-    VSpaceUnifyInstruction = 29,
-    /// WS-SM SM8.C.9: authorize and audit a cross-domain downgrade.
-    Declassify = 30,
-    /// WS-SM SM9.A.6: read one word of the declassification audit trail,
-    /// through a view filtered by the caller's own clearance.
-    AuditRead = 31,
-    /// WS-SM SM9.A.6: drain a prefix of the declassification audit trail.
-    /// Gated on the deployment's configured audit-monitor clearance, which is
-    /// what makes the fail-closed 256-entry capacity bound survivable.
-    AuditDrain = 32,
-    /// WS-SM SM9.C.8: signal a notification whose badge may cross a boundary
-    /// the base lattice denies.  Two gated hops — the signaller into the
-    /// notification, and the notification onward into the resolved receiver —
-    /// with the real delivery performed in between.
-    DeclassifySignal = 33,
-    // 34: retired (`tcbSetFaultHandler`; seL4-MCS's `TCB_SetSpace` installs
-    // the fault endpoint as its extra cap 0).
-    /// WS-RR RR8.16 (`v0.35.190`): revoke every capability derived from the one
-    /// in the named slot (seL4's `seL4_CNode_Revoke`).  The source slot itself
-    /// survives — revocation destroys derivations, not the capability.
-    CspaceRevoke = 35,
-    /// WS-BP BP7.1 (`v0.36.5`): carve a frame out of an untyped the caller
-    /// holds (seL4's `seL4_Untyped_Retype`); invoked on the untyped
-    /// capability, x2..x5 = type tag, child object id, destination CNode
-    /// capability address, destination slot.
-    UntypedRetype = 36,
-    /// WS-BP BP7.1 (`v0.36.6`): hand an untyped's memory back to it once no
-    /// capability names a carved child (seL4's `resetUntypedCap`); invoked on
-    /// the untyped capability, with no message registers.
-    UntypedReset = 37,
-    /// WS-BP BP7.1 (`v0.36.11`): set a suspended thread's CSpace and VSpace
-    /// roots (seL4's `TCB_SetSpace`); x2/x3 = capability addresses of the two
-    /// roots in the caller's CSpace, x4 = the CSpace root data word.
-    TcbSetSpace = 38,
-    /// WS-BP BP7.1 (`v0.36.12`): install an intermediate page table (seL4's
-    /// `seL4_ARM_PageTable_Map`); x2 = the address-space capability address,
-    /// x3 = the virtual address.
-    PageTableMap = 39,
-    /// WS-BP BP7.1 (`v0.36.12`): take one out (`seL4_ARM_PageTable_Unmap`); no
-    /// message registers.
-    PageTableUnmap = 40,
-    /// WS-ZA ZA4.3: give up the rest of the caller's budget or time slice
-    /// (`seL4_Yield`); invokes no capability, no message registers.
-    Yield = 41,
-    /// WS-ZA ZA6.9: read and reset a scheduling context's consumed time
-    /// (`seL4_SchedContext_Consumed`); no message registers.
-    SchedContextConsumed = 42,
-    /// WS-ZA ZA6.29: yield to the thread bound to a scheduling context
-    /// (`seL4_SchedContext_YieldTo`); no message registers.
-    SchedContextYieldTo = 43,
-    /// WS-ZA ZA6.32: acknowledge an interrupt line (`seL4_IRQHandler_Ack`);
-    /// no message registers.
-    IrqHandlerAck = 44,
-    /// WS-ZA ZA6.32: issue an interrupt-handler capability
-    /// (`seL4_IRQControl_Get`); x2 the line, x3 the destination CNode, x4 the
-    /// slot.
-    IrqControlGet = 45,
-    /// WS-ZA ZA6.32: bind a notification to an interrupt line
-    /// (`seL4_IRQHandler_SetNotification`); x2 the notification capability.
-    IrqHandlerSetNotification = 46,
-    /// WS-ZA ZA6.32: unbind an interrupt line's notification
-    /// (`seL4_IRQHandler_Clear`); no message registers.
-    IrqHandlerClear = 47,
+pub enum Syscall {
+    /// `seL4_SysCall`, -1.
+    Call,
+    /// `seL4_SysReplyRecv`, -2.
+    ReplyRecv,
+    /// `seL4_SysNBSendRecv`, -3.
+    NBSendRecv,
+    /// `seL4_SysNBSendWait`, -4.
+    NBSendWait,
+    /// `seL4_SysSend`, -5.
+    Send,
+    /// `seL4_SysNBSend`, -6.
+    NBSend,
+    /// `seL4_SysRecv`, -7.
+    Recv,
+    /// `seL4_SysNBRecv`, -8.
+    NBRecv,
+    /// `seL4_SysWait`, -9.
+    Wait,
+    /// `seL4_SysNBWait`, -10.
+    NBWait,
+    /// `seL4_SysYield`, -11.
+    Yield,
 }
 
-impl SyscallId {
-    /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 46;
+impl Syscall {
+    /// Every syscall, in seL4's numbering order.
+    pub const ALL: [Syscall; 11] = [
+        Self::Call,
+        Self::ReplyRecv,
+        Self::NBSendRecv,
+        Self::NBSendWait,
+        Self::Send,
+        Self::NBSend,
+        Self::Recv,
+        Self::NBRecv,
+        Self::Wait,
+        Self::NBWait,
+        Self::Yield,
+    ];
 
-    /// One past the largest syscall number (must match `sele4n-types`).
-    pub const ENCODING_BOUND: u32 = 48;
+    /// The syscall's number, the negation of the word in `x7` (1 to 11).
+    pub const fn number(self) -> u32 {
+        match self {
+            Self::Call => 1,
+            Self::ReplyRecv => 2,
+            Self::NBSendRecv => 3,
+            Self::NBSendWait => 4,
+            Self::Send => 5,
+            Self::NBSend => 6,
+            Self::Recv => 7,
+            Self::NBRecv => 8,
+            Self::Wait => 9,
+            Self::NBWait => 10,
+            Self::Yield => 11,
+        }
+    }
 
-    /// Retired syscall numbers, reserved and never reassigned (must match
-    /// `sele4n-types`): `8`, the in-place lifecycle retype, and `34`, the
-    /// standalone fault-handler install `TCB_SetSpace` now performs.
-    pub const RETIRED: [u32; 2] = [8, 34];
+    /// The word the trap carries in `x7`: the number negated.
+    pub const fn word(self) -> u64 {
+        0u64.wrapping_sub(self.number() as u64)
+    }
 
-    /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
-    /// at or past `ENCODING_BOUND` and the retired numbers with `None`.
-    pub const fn from_u32(v: u32) -> Option<Self> {
-        match v {
-            0 => Some(Self::Send),
-            1 => Some(Self::Receive),
-            2 => Some(Self::Call),
-            3 => Some(Self::Reply),
-            4 => Some(Self::CSpaceMint),
-            5 => Some(Self::CSpaceCopy),
-            6 => Some(Self::CSpaceMove),
-            7 => Some(Self::CSpaceDelete),
-            9 => Some(Self::VSpaceMap),
-            10 => Some(Self::VSpaceUnmap),
-            11 => Some(Self::ServiceRegister),
-            12 => Some(Self::ServiceRevoke),
-            13 => Some(Self::ServiceQuery),
-            14 => Some(Self::NotificationSignal),
-            15 => Some(Self::NotificationWait),
-            16 => Some(Self::ReplyRecv),
-            17 => Some(Self::SchedContextConfigure),
-            18 => Some(Self::SchedContextBind),
-            19 => Some(Self::SchedContextUnbind),
-            20 => Some(Self::TcbSuspend),
-            21 => Some(Self::TcbResume),
-            22 => Some(Self::TcbSetPriority),
-            23 => Some(Self::TcbSetMCPriority),
-            24 => Some(Self::TcbSetIPCBuffer),
-            25 => Some(Self::TcbSetAffinity),
-            26 => Some(Self::TcbBindNotification),
-            27 => Some(Self::TcbUnbindNotification),
-            28 => Some(Self::MintReplyCap),
-            29 => Some(Self::VSpaceUnifyInstruction),
-            30 => Some(Self::Declassify),
-            31 => Some(Self::AuditRead),
-            32 => Some(Self::AuditDrain),
-            33 => Some(Self::DeclassifySignal),
-            35 => Some(Self::CspaceRevoke),
-            36 => Some(Self::UntypedRetype),
-            37 => Some(Self::UntypedReset),
-            38 => Some(Self::TcbSetSpace),
-            39 => Some(Self::PageTableMap),
-            40 => Some(Self::PageTableUnmap),
-            41 => Some(Self::Yield),
-            42 => Some(Self::SchedContextConsumed),
-            43 => Some(Self::SchedContextYieldTo),
-            44 => Some(Self::IrqHandlerAck),
-            45 => Some(Self::IrqControlGet),
-            46 => Some(Self::IrqHandlerSetNotification),
-            47 => Some(Self::IrqHandlerClear),
+    /// The syscall a number names.
+    pub const fn from_number(n: u32) -> Option<Self> {
+        match n {
+            1 => Some(Self::Call),
+            2 => Some(Self::ReplyRecv),
+            3 => Some(Self::NBSendRecv),
+            4 => Some(Self::NBSendWait),
+            5 => Some(Self::Send),
+            6 => Some(Self::NBSend),
+            7 => Some(Self::Recv),
+            8 => Some(Self::NBRecv),
+            9 => Some(Self::Wait),
+            10 => Some(Self::NBWait),
+            11 => Some(Self::Yield),
             _ => None,
         }
     }
 
-    /// AN9-F.1.b: raw discriminant.
-    #[inline]
-    pub const fn to_u32(self) -> u32 {
-        self as u32
+    /// The syscall an `x7` word names, the trap's prefilter: the word's
+    /// negation, when that fits 32 bits, read as a number.  Every other
+    /// word is an unknown syscall.
+    pub const fn from_word(w: u64) -> Option<Self> {
+        let n = w.wrapping_neg();
+        if n < (1u64 << 32) {
+            Self::from_number(n as u32)
+        } else {
+            None
+        }
     }
 }
 
@@ -362,30 +285,40 @@ pub enum SvcOutcome {
     /// never decodes them (userspace's `decode_response` is the single
     /// decode point, plan §3.2).
     Frame([u64; 6]),
-    /// The caller blocked: **no return frame exists for it** (its stale
-    /// registers are not a return value; the real frame is staged by the
-    /// unblocking arm and delivered by the context restore).  Since WS-BP
+    /// The caller is answered nothing: **no return frame exists for it**
+    /// (its stale registers are not a return value).  It blocked in IPC —
+    /// the real frame is staged by the unblocking arm and delivered by the
+    /// context restore — or its syscall left it not runnable: suspended (a
+    /// self-suspend, a `Call` that links no reply) or destroyed (its own
+    /// last capability deleted), which seL4's `handleInvocation` answers
+    /// nothing either (it replies only to a caller left `Restart`).  Since WS-BP
     /// BP7.6 the dispatch installs this core's successor and the trap layer
     /// returns through it; this variant is reached only when it installed
-    /// nothing, where the hardware would `eret` back INTO the blocked
-    /// caller, so the trap layer poisons its frame with
-    /// [`blocked_resume_sentinel_regs`]: without the sentinel the
-    /// caller's own request registers (an `x1` whose label is typically
-    /// `0`) decode as a **false success** — the same fail-open class the
-    /// retired pre-WS-RA protocol had (PR #866 review).
+    /// nothing, where the hardware would `eret` back INTO a caller the
+    /// committed state does not run, so the trap layer halts the core
+    /// (`halt_after_unrestored_block`).  As in seL4, a blocked thread is
+    /// resumed only by the delivery that unblocks it: no frame is written
+    /// for it here, so no `x1` label is reserved to mark one, and every label
+    /// a receive returns is the data the kernel wrote or left.
     Blocked,
     /// PR #887 review round 5: the caller **took a fault at the seam** — a
     /// failed capability lookup delivered to its fault handler, or the
     /// fail-closed suspend when no handler could take it (outcome tag 2,
-    /// `SyscallOutcome.faulted`).  No frame exists, as for `Blocked`; but
+    /// `SyscallOutcome.faulted`).  No frame exists, as for `Blocked`, and
     /// the model restarts this caller *at* the `SVC` on its handler's
-    /// reply, so the `Blocked` sentinel — which `eret`s the caller past the
-    /// `SVC` — would resume a thread the model has waiting on a fault.  The
-    /// trap layer returns through the successor the dispatch installed, and
-    /// halts on this variant only when it installed nothing, exactly as it
-    /// does after a delivered unknown-syscall or abort fault
-    /// (`halt_after_delivered_syscall_fault`).
+    /// reply, so resuming it past the `SVC` would run a thread the model has
+    /// waiting on a fault.  The trap layer returns through the successor the
+    /// dispatch installed, and halts on this variant only when it installed
+    /// nothing, exactly as it does after a delivered unknown-syscall or abort
+    /// fault (`halt_after_delivered_syscall_fault`).
     Faulted,
+    /// WS-SX SX7.2: the caller **resumes with the registers it trapped
+    /// with** (outcome tag 3, `SyscallOutcome.resumes`).  seL4 answers an
+    /// invocation's error only on a `Call` (`handleInvocation`, `if (isCall)
+    /// replyFromKernel_error`); a `Send` or `NBSend` that fails, and an
+    /// `NBSend` whose capability lookup fails, write no message register.
+    /// The trap layer writes nothing over the trapped `x0`-`x5`.
+    Resumed,
 }
 
 /// WS-RA: the label-encoded error frame for a prefilter rejection —
@@ -406,57 +339,10 @@ pub fn error_frame_regs(kernel_error_discriminant: u32) -> [u64; 6] {
     ]
 }
 
-/// The `x1` label of the blocked-resume sentinel: the maximum value the
-/// 52-bit `MessageInfo` label field can carry (`sele4n-abi`'s
-/// `MAX_LABEL`, hand-duplicated here per this crate's zero-runtime-deps
-/// discipline; the cross-crate agreement is pinned under `#[cfg(test)]`).
-///
-/// Three properties make it the right sentinel, each pinned by a test:
-/// in-field (so `MessageInfo::decode` accepts the word and the failure
-/// surfaces at the error mapping, not as a malformed-word artifact),
-/// nonzero (never a success), and the **last** label of the status range
-/// — `ERROR_LABEL_BASE + 255`, naming discriminant 255, which the Lean
-/// `KernelError` does not have and the Rust enumeration reserves for its
-/// forward-compatibility sentinel `UnknownKernelError` — so
-/// `decode_response` reads it as that variant by construction: an error the
-/// verified kernel never emits, hence unambiguously "this is not a completed
-/// syscall's frame".
-pub const BLOCKED_RESUME_SENTINEL_LABEL: u64 = (1 << 52) - 1;
-
-// Compile-time: the sentinel is the top of the status range and names a
-// discriminant (255) beyond the kernel-emittable set `0..=56` (the test
-// suite grounds that bound against the canonical `KernelError` space and
-// pins 255 to the Rust-only sentinel variant).
-const _: () = assert!(BLOCKED_RESUME_SENTINEL_LABEL == ERROR_LABEL_BASE + 255);
-const _: () = assert!(BLOCKED_RESUME_SENTINEL_LABEL - ERROR_LABEL_BASE > 56);
-
-/// The poison frame the trap layer writes for a blocked caller that the
-/// hardware is about to resume anyway (PR #866 review).
-///
-/// A blocked caller has **no** return value — its real frame is staged
-/// into its TCB by the unblocking arm (plan §4d) and delivered by the
-/// context restore (WS-BP BP7.6).  When a dispatch installs no successor,
-/// `trap.S` restores and `eret`s through the blocked caller's own saved
-/// frame; left
-/// untouched, those registers are the caller's request (`x1` typically
-/// a label-`0` `MessageInfo`), which `decode_response` reads as a
-/// **false success** whose `x0` "badge" is the caller's own capability
-/// pointer — the exact fail-open class WS-RA exists to close.  This
-/// frame makes that premature resume fail closed instead: label
-/// [`BLOCKED_RESUME_SENTINEL_LABEL`] decodes as `UnknownKernelError`,
-/// never as success and never as any kernel-emitted error.
-///
-/// The context restore replaces the whole frame with the successor's
-/// before this write could run; the sentinel is the fallback when nothing
-/// was installed, not part of the verified return convention (the Lean model stages
-/// real frames only — `SyscallOutcome.mailboxFrame .blocks = .zero`).
-pub fn blocked_resume_sentinel_regs() -> [u64; 6] {
-    [0, BLOCKED_RESUME_SENTINEL_LABEL << 12, 0, 0, 0, 0]
-}
-
 /// AN9-F.2 / AN9-F.3 (restated by WS-RA): top-level SVC dispatcher.
 ///
-/// Routes the trap through [`SyscallId::from_u32`] before delegating to
+/// Routes the trap's full `x7` word through [`Syscall::from_word`] (the
+/// prefilter) before delegating to
 /// the Lean kernel via the
 /// `lean_syscall_dispatch_cross_core` extern symbol (Lean-emitted via
 /// `@[export lean_syscall_dispatch_cross_core]` in
@@ -473,22 +359,24 @@ pub fn blocked_resume_sentinel_regs() -> [u64; 6] {
 ///
 /// Returns:
 ///   `Ok(SvcOutcome::Frame(regs))` — write `regs` into the trap frame.
-///   `Ok(SvcOutcome::Blocked)`     — the caller blocked; no return frame
-///                                   exists (the trap layer poisons the
-///                                   frame with the fail-closed
-///                                   [`blocked_resume_sentinel_regs`]
-///                                   when the context restore installed no
-///                                   successor).
+///   `Ok(SvcOutcome::Blocked)`     — the caller blocked, or its syscall
+///                                   left it suspended or destroyed; no
+///                                   return frame exists (the trap layer
+///                                   halts when the context restore
+///                                   installed no successor).
+///   `Ok(SvcOutcome::Resumed)`     — the caller resumes with the registers
+///                                   it trapped with (tag 3): a non-`Call`
+///                                   whose error seL4 discards.
 ///   `Ok(SvcOutcome::Faulted)`     — the caller took a fault at the seam
 ///                                   (tag 2); no frame exists and the trap
 ///                                   layer halts if no successor was
 ///                                   installed rather than resume the caller past the `SVC`
 ///                                   its handler's reply restarts it at.
-///   `Err(error)`                  — prefilter rejection (invalid syscall
-///                                   id); the trap layer
-///                                   surfaces it as a label-encoded error
-///                                   frame ([`error_frame_regs`]).
-pub fn dispatch_svc(syscall_id: u32) -> Result<SvcOutcome, DispatchError> {
+///   `Err(error)`                  — prefilter rejection (a word that names
+///                                   none of the eleven syscalls); the trap
+///                                   layer delivers it as seL4's
+///                                   `UnknownSyscall` fault.
+pub fn dispatch_svc(syscall_word: u64) -> Result<SvcOutcome, DispatchError> {
     // PR #866 round-2 review: the core index is the TPIDR-derived
     // *logical* id — the same source `ffi_syscall_return_frame` (the
     // mailbox writer) and `ffi_current_core_id` (the Lean dispatch's own
@@ -520,10 +408,12 @@ pub fn dispatch_svc(syscall_id: u32) -> Result<SvcOutcome, DispatchError> {
     // Consulting readiness after the prefilter left its rejection as a
     // resumable frame on a not-ready core.
     let (tag, regs) = if crate::lean_ready::lean_ready(core) {
-        // AN9-F.1.b: reject ids outside the mirror enum's range.  The
-        // message length is the Lean kernel's to check, after the capability
-        // lookup, as seL4's decode checks it (`truncationMinimum`).
-        if SyscallId::from_u32(syscall_id).is_none() {
+        // WS-SX SX7.2: reject a word that names none of seL4-MCS's eleven
+        // syscalls.  The operation is the kernel's to select (from the
+        // syscall, the invoked capability's type and the label), and the
+        // message length the kernel's to check, after the capability lookup,
+        // as seL4's decode checks it (`truncationMinimum`).
+        if Syscall::from_word(syscall_word).is_none() {
             return Err(DispatchError::InvalidSyscallId);
         }
 
@@ -560,14 +450,15 @@ pub fn dispatch_svc(syscall_id: u32) -> Result<SvcOutcome, DispatchError> {
             (tag, return_frame_read_in(&RETURN_FRAMES, core))
         })
     } else {
-        halt_syscall_before_lean_ready(core, u64::from(syscall_id))
+        halt_syscall_before_lean_ready(core, syscall_word)
     };
 
     match tag {
         0 => Ok(SvcOutcome::Frame(regs)),
         1 => Ok(SvcOutcome::Blocked),
         2 => Ok(SvcOutcome::Faulted),
-        // `SyscallOutcome.tagWord` is total over {0, 1, 2}; anything else
+        3 => Ok(SvcOutcome::Resumed),
+        // `SyscallOutcome.tagWord` is total over {0, 1, 2, 3}; anything else
         // means the FFI boundary itself is broken.  Fail closed and loud,
         // like every impossible-input arm in this crate.
         other => panic!("lean_syscall_dispatch_cross_core returned unknown outcome tag {other}"),
@@ -715,80 +606,40 @@ mod tests {
     #[test]
     #[should_panic(expected = "fail-closed halt reached")]
     fn syscall_before_lean_ready_halts() {
-        halt_syscall_before_lean_ready(3, u64::from(SyscallId::Send.to_u32()));
+        halt_syscall_before_lean_ready(3, Syscall::Send.word());
     }
 
+    /// The HAL's prefilter names exactly seL4-MCS's eleven syscalls, by the
+    /// same numbers and words as the canonical `sele4n-types::Syscall` (the
+    /// source the verified Lean kernel and the user ABI use): a drift — a
+    /// renumbered syscall, a word the HAL decodes differently — fails here.
     #[test]
-    fn syscall_id_discriminants_match_lean_abi() {
-        // Round-trip every variant.  If a new syscall lands in Lean,
-        // this test must be extended in lockstep.
-        let mut variants = 0;
-        for i in 0..SyscallId::ENCODING_BOUND {
-            if SyscallId::RETIRED.contains(&i) {
-                assert!(SyscallId::from_u32(i).is_none(), "retired id {} decodes", i);
-                continue;
-            }
-            let sid = SyscallId::from_u32(i).unwrap();
-            assert_eq!(sid.to_u32(), i, "round-trip failed at id {}", i);
-            variants += 1;
+    fn syscall_mirror_matches_sele4n_types() {
+        assert_eq!(Syscall::ALL.len(), sele4n_types::Syscall::ALL.len());
+        for (hal, canonical) in Syscall::ALL.iter().zip(sele4n_types::Syscall::ALL.iter()) {
+            assert_eq!(hal.number(), canonical.number(), "{hal:?} number drifted");
+            assert_eq!(hal.word(), canonical.word(), "{hal:?} word drifted");
+            assert_eq!(Syscall::from_word(hal.word()), Some(*hal));
+            assert_eq!(Syscall::from_number(hal.number()), Some(*hal));
         }
-        assert_eq!(variants, SyscallId::COUNT);
-        assert!(SyscallId::from_u32(SyscallId::ENCODING_BOUND).is_none());
-        assert!(SyscallId::from_u32(255).is_none());
-    }
-
-    /// WS-SM SM5.H.4 audit: cross-check the hand-mirrored HAL `SyscallId`
-    /// against the canonical `sele4n-types::SyscallId` (the same source the
-    /// verified Lean kernel and the `sele4n-abi`/`sele4n-sys` user ABI use).
-    /// This catches the exact drift the audit found — a syscall added to Lean
-    /// and `sele4n-types` but NOT to this HAL trap-dispatcher mirror, which
-    /// would reject the syscall at the trap boundary before it reaches the kernel.
-    /// The previous self-referential round-trip (against this enum's own COUNT)
-    /// could not detect a missing variant.
-    #[test]
-    fn syscall_id_mirror_matches_sele4n_types() {
-        // Counts, bounds and retired numbers agree.
-        assert_eq!(
-            SyscallId::COUNT as usize,
-            sele4n_types::SyscallId::COUNT,
-            "HAL SyscallId::COUNT drifted from sele4n-types"
-        );
-        assert_eq!(
-            u64::from(SyscallId::ENCODING_BOUND),
-            sele4n_types::SyscallId::ENCODING_BOUND
-        );
-        assert_eq!(
-            SyscallId::RETIRED.map(u64::from),
-            sele4n_types::SyscallId::RETIRED
-        );
-        // Every canonical discriminant decodes to a HAL variant with the same
-        // raw u32, and vice-versa (the boundary is exactly [0, ENCODING_BOUND)
-        // less the retired numbers, which neither decodes).
-        for i in 0..SyscallId::ENCODING_BOUND {
-            let Some(canonical) = sele4n_types::SyscallId::from_u64(u64::from(i)) else {
-                assert!(
-                    SyscallId::from_u32(i).is_none(),
-                    "HAL decodes id {i} the canonical set lacks"
-                );
-                continue;
-            };
-            assert_eq!(
-                canonical.to_u64(),
-                u64::from(i),
-                "sele4n-types round-trip failed at id {i}"
-            );
-            let hal =
-                SyscallId::from_u32(i).expect("HAL mirror must decode every canonical syscall id");
-            assert_eq!(
-                hal.to_u32(),
-                i,
-                "HAL mirror discriminant drifted from sele4n-types at id {i}"
-            );
+        // The words around the eleven, and the retired internal codes the
+        // pre-SX7 ABI put in `x7`, name no syscall.
+        for w in [
+            0u64,
+            1,
+            2,
+            16,
+            41,
+            47,
+            48,
+            u64::from(u32::MAX),
+            0u64.wrapping_sub(12),
+        ] {
+            assert_eq!(Syscall::from_word(w), None, "word {w:#x}");
+            assert_eq!(sele4n_types::Syscall::from_word(w), None, "word {w:#x}");
         }
-        // The first out-of-range id is rejected by BOTH.
-        let oob = SyscallId::ENCODING_BOUND;
-        assert!(SyscallId::from_u32(oob).is_none());
-        assert!(sele4n_types::SyscallId::from_u64(u64::from(oob)).is_none());
+        // A negated number past 32 bits is not narrowed into one.
+        assert_eq!(Syscall::from_word(0u64.wrapping_sub((1 << 32) + 1)), None);
     }
 
     // PR #889 review: `dispatch_svc_rejects_invalid_syscall_id` moved out of
@@ -876,7 +727,7 @@ mod tests {
                 "no error may fall into the delivery label range"
             );
             assert!(
-                regs[1] >> 12 <= BLOCKED_RESUME_SENTINEL_LABEL,
+                regs[1] >> 12 <= sele4n_abi::message_info::MAX_LABEL,
                 "label must stay in-field"
             );
             assert_eq!(regs[1] & 0x1FF, 0, "length/extraCaps must be zero");
@@ -897,98 +748,5 @@ mod tests {
                 .expect("a fault tag label is a delivery");
             assert_eq!(resp.msg_info().label(), tag);
         }
-    }
-
-    /// WS-RA (PR #866 review): the blocked-resume sentinel's raw shape —
-    /// `x0 = 0`, `x1` = the maximum in-field label, no message registers —
-    /// and the three properties that make the label the right sentinel.
-    #[test]
-    fn blocked_resume_sentinel_shape() {
-        let regs = blocked_resume_sentinel_regs();
-        assert_eq!(regs[1] >> 12, BLOCKED_RESUME_SENTINEL_LABEL);
-        assert_eq!(regs[1] & 0x1FF, 0, "length/extraCaps must be zero");
-        assert_eq!([regs[0], regs[2], regs[3], regs[4], regs[5]], [0; 5]);
-        // In-field: the hand-duplicated label equals the canonical
-        // `sele4n-abi` MAX_LABEL, so `MessageInfo::decode` accepts the
-        // word and the failure surfaces at the error mapping — the
-        // sentinel is "no kernel emitted this", not "malformed word".
-        assert_eq!(
-            BLOCKED_RESUME_SENTINEL_LABEL,
-            sele4n_abi::message_info::MAX_LABEL,
-        );
-        let mi = sele4n_abi::MessageInfo::decode(regs[1]).expect("sentinel x1 must be in-field");
-        assert_eq!(mi.label(), BLOCKED_RESUME_SENTINEL_LABEL);
-        // Nonzero (never success) and the last label of the status range,
-        // naming discriminant 255 — beyond the kernel-emittable set
-        // 0..=60, and exactly the Rust-only `UnknownKernelError` sentinel.
-        // The range position is a compile-time assert at the constant's
-        // definition; these GROUND the 60 against the canonical KernelError
-        // space (`FailedLookup` is the last real discriminant, 61 the
-        // first unknown) and the 255 against the sentinel variant.
-        assert_ne!(BLOCKED_RESUME_SENTINEL_LABEL, 0);
-        assert_eq!(BLOCKED_RESUME_SENTINEL_LABEL - ERROR_LABEL_BASE, 255);
-        assert!(sele4n_types::KernelError::from_u32(60).is_some());
-        assert!(sele4n_types::KernelError::from_u32(61).is_none());
-        assert_eq!(
-            sele4n_types::KernelError::from_u32(255),
-            Some(sele4n_types::KernelError::UnknownKernelError)
-        );
-        for disc in 0..=60u32 {
-            assert_ne!(
-                error_frame_regs(disc)[1],
-                regs[1],
-                "sentinel must not collide with the discriminant-{disc} error frame",
-            );
-        }
-    }
-
-    /// WS-RA (PR #866 review): the cross-crate pin — the canonical
-    /// userspace decoder reads the sentinel as `UnknownKernelError`, an
-    /// error the verified kernel never emits.  This is the property the
-    /// trap-layer write exists for: a blocked caller that the hardware
-    /// resumes with no context restored
-    /// observes a fail-closed error, never a false success built from its
-    /// own stale request registers.
-    #[test]
-    fn blocked_resume_sentinel_decodes_fail_closed() {
-        let s = blocked_resume_sentinel_regs();
-        let decoded = sele4n_abi::decode_response([s[0], s[1], s[2], s[3], s[4], s[5], 0]);
-        assert_eq!(decoded, Err(sele4n_types::KernelError::UnknownKernelError));
-        // The load-bearing negative: WITHOUT the sentinel the resumed
-        // caller's frame is its own request — x1 a label-0 MessageInfo,
-        // x0 its capability pointer — which decodes as a SUCCESS whose
-        // "badge" is the cap pointer.  This is the fail-open path the
-        // sentinel closes.
-        let stale_request = [7u64, 0, 0, 0, 0, 0, 0];
-        let stale = sele4n_abi::decode_response(stale_request).expect("stale request decodes Ok");
-        assert_eq!(stale.value(), 7, "the false 'badge' is the cap pointer");
-    }
-
-    #[test]
-    fn syscall_id_from_u32_names_the_late_ids() {
-        assert_eq!(SyscallId::from_u32(34), None);
-        assert_eq!(SyscallId::from_u32(35), Some(SyscallId::CspaceRevoke));
-        assert_eq!(SyscallId::from_u32(36), Some(SyscallId::UntypedRetype));
-        assert_eq!(SyscallId::from_u32(37), Some(SyscallId::UntypedReset));
-        assert_eq!(SyscallId::from_u32(38), Some(SyscallId::TcbSetSpace));
-        assert_eq!(SyscallId::from_u32(39), Some(SyscallId::PageTableMap));
-        assert_eq!(SyscallId::from_u32(40), Some(SyscallId::PageTableUnmap));
-        assert_eq!(SyscallId::from_u32(41), Some(SyscallId::Yield));
-        assert_eq!(SyscallId::from_u32(44), Some(SyscallId::IrqHandlerAck));
-        assert_eq!(SyscallId::from_u32(45), Some(SyscallId::IrqControlGet));
-        assert_eq!(SyscallId::from_u32(47), Some(SyscallId::IrqHandlerClear));
-        assert_eq!(SyscallId::from_u32(48), None);
-        assert_eq!(
-            SyscallId::from_u32(42),
-            Some(SyscallId::SchedContextConsumed)
-        );
-        assert_eq!(
-            SyscallId::from_u32(43),
-            Some(SyscallId::SchedContextYieldTo)
-        );
-        assert_eq!(
-            SyscallId::from_u32(46),
-            Some(SyscallId::IrqHandlerSetNotification)
-        );
     }
 }

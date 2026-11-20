@@ -168,13 +168,11 @@ reads the object's own back-links (`SystemState.tableBackLinksClear`) instead of
 walking those tables, the service lookup reading the endpoint's registration flag
 (`lookupServiceByRecordedRegistration`); since `v0.36.147` a thread's finalisation
 checks before it writes, its pre-state admission carried to the state each
-later step runs on (`finaliseThread_admissionCarried`); since `v0.36.149` the
-untyped reset is seL4's — refused while the invoked slot has a derivation child
-or the untyped records a carved object, otherwise a rewind of the capability's
-free index — and keeps the bundle and the untyped invariants, which the boot
-establishes (`untypedResetSlot_preserves_capabilityInvariantBundle`,
-`untypedResetSlot_preserves_untypedMemoryInvariant`,
-`bootFromPlatformCheckedStartedFor_untypedMemoryInvariant`); since `v0.36.150`
+later step runs on (`finaliseThread_admissionCarried`); the untyped
+invariants hold from boot (`bootFromPlatformCheckedStartedFor_untypedMemoryInvariant`),
+and since `v0.37.33` the untyped reset is the retype's, as seL4's: a carve
+through a capability with no derivation child starts at free index 0, and the
+separate reset invocation is retired; since `v0.36.150`
 every live mapping is recorded on a capability to its frame
 (`SystemState.liveMappingsRecorded`, the proof-layer bundle's 18th conjunct),
 which the boot establishes and the address-space, capability-write, reset and
@@ -861,6 +859,13 @@ platform rather than with the lock.
 > the outcome tag. The Rust `ReturnShape` mirror lost its wildcard and gained a
 > cross-check: both sides render the same `id → shape` table against one
 > fixture, so two total functions cannot disagree silently.
+>
+> Since `v0.37.33` (WS-SX SX7) the arm covers every caller its syscall leaves
+> not runnable, as seL4's `handleInvocation` answers only a caller still
+> `Restart`: a self-suspend, a Call that links no reply and a caller that
+> deleted its own last capability get no frame either
+> (`syscallSuccessOutcome_returns_runnable`). See
+> [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §6.2.21.
 
 > **The answer a forcibly unblocked thread gets** (WS-RR RR7.14, `v0.34.67`;
 > WS-SX SX4, `v0.37.27`).  `timeoutThread` stages `Architecture.timeoutFrame`

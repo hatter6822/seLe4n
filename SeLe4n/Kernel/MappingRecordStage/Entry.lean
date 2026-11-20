@@ -102,18 +102,14 @@ theorem perCoreRescheduleStep_mappingStage (st : SystemState) (coreId : UInt64) 
     · exact MappingStage.refl _
   · exact MappingStage.refl _
 
-/-- WS-ZA ZA6.32: the interrupt step: the bound signal, the stash clear and the
-woken thread's staging, then the mask, which writes no object. -/
+/-- WS-ZA ZA6.32: the interrupt step: the bound signal and the stash clear,
+then the mask, which writes no object. -/
 theorem interruptEntryStep_mappingStage (st : SystemState) (coreId intId : UInt64) :
     MappingStage st (interruptEntryStep st coreId intId) :=
   interruptEntryStep_of (P := MappingStage st) st coreId intId (.refl st) fun c _ _ =>
     handleInterruptOnCore_of (P := MappingStage st) st c _
       (fun _ h => h.trans (.of_objects_eq rfl)) (.refl st)
-      (fun ntfn _ _ => interruptSignal_of (P := MappingStage st) ntfn _ c st
-        notificationSignalBoundOnCore_mappingStage
-        (fun _ _ _ hC => ((notificationSignalBoundOnCore_mappingStage.trans
-          (clearWokenReceiverStash_mappingStage _ hC)).trans
-          (stageWokenDelivery_mappingStage _ _ 0)).trans (stageWokenDelivery_mappingStage _ _ 0)))
+      (fun ntfn _ _ => notificationSignalBoundOnCore_mappingStage)
 
 
 theorem dispatchVacatedCore_mappingStage (st : SystemState) (c : CoreId) :
@@ -338,10 +334,10 @@ theorem cancelReceiveBusyReply_mappingStage (ctx : LabelingContext) (e : CoreId)
 register write, which keeps the premises), then the checked entry, a
 capability-fault delivery, or a refusal record. -/
 theorem syscallDispatchFromAbi_mappingStage {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome} (P : MappingArmPremises st)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
+      x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     MappingStage st st' := by
   unfold Platform.FFI.syscallDispatchFromAbi at h
   split at h
@@ -350,36 +346,52 @@ theorem syscallDispatchFromAbi_mappingStage {ctx : LabelingContext} {e : CoreId}
   split at h
   · cases h; exact MappingStage.refl _
   have hW : MappingStage st
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
     unfold Platform.FFI.writeFfiRegistersToTcb
     exact updateTcb_mappingStage _ _ _
   have P1 : MappingArmPremises
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
     unfold Platform.FFI.writeFfiRegistersToTcb
     exact P.updateTcb _ _
   -- the refusal's reported state: the spill, or its busy reply's holder
   -- cancelled on it
   have hC : MappingStage st (cancelReceiveBusyReply ctx e
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) :=
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) :=
     hW.trans (cancelReceiveBusyReply_mappingStage ctx e _)
+  have hRec : ∀ (s : SystemState) (op : UInt32) (k : KernelError),
+      MappingStage s (Platform.FFI.recordSyscallRefusal ctx e op tid k x0 s) := fun s op k =>
+    MappingStage.of_objects_eq
+      (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
+      (by unfold Platform.FFI.recordSyscallRefusal; split
+          · exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩
+          · split <;> exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
+  have hDrop : ∀ (s : SystemState) (op : UInt32) (f : Fault),
+      MappingStage s (Platform.FFI.recordDroppedFault ctx e op tid x0 f s) := fun s op f => by
+    cases f with
+    | capFault a r lf => rw [Platform.FFI.recordDroppedFault_capFault]; exact hRec _ _ _
+    | _ => exact MappingStage.refl _
   dsimp only at h
   split at h
   · split at h
-    · cases h
-      unfold Platform.FFI.deliverSyscallCapFault
-      exact (hC.trans (writeFaultRegistersToTcb_mappingStage _ tid _)).trans
-        (faultDeliverOnCoreChecked_mappingStage _ _ tid _ _ e)
-    · cases h
-      have hOv : ∀ (s : SystemState) (t : SeLe4n.ThreadId) (k : KernelError),
-          MappingStage s (Architecture.recordErrorOverflow s t k) := fun s t k =>
-        MappingStage.of_objects_eq (Architecture.recordErrorOverflow_objects s t k)
-          (by unfold Architecture.recordErrorOverflow; split <;>
-                exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
-      exact (hC.trans (hOv _ _ _)).trans (MappingStage.of_objects_eq
-        (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
-        (by unfold Platform.FFI.recordSyscallRefusal; split
-            · exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩
-            · split <;> exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩))
+    · -- WS-SX SX7.2: an `NBSend`'s dropped fault resumes, the refusal
+      -- recorded in the ledger and nothing else written
+      split at h
+      · cases h
+        exact hC.trans (hDrop _ _ _)
+      · cases h
+        unfold Platform.FFI.deliverSyscallCapFault
+        exact (hC.trans (writeFaultRegistersToTcb_mappingStage _ tid _)).trans
+          (faultDeliverOnCoreChecked_mappingStage _ _ tid _ _ e)
+    · split at h
+      · cases h
+        have hOv : ∀ (s : SystemState) (t : SeLe4n.ThreadId) (k : KernelError),
+            MappingStage s (Architecture.recordErrorOverflow s t k) := fun s t k =>
+          MappingStage.of_objects_eq (Architecture.recordErrorOverflow_objects s t k)
+            (by unfold Architecture.recordErrorOverflow; split <;>
+                  exact ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩)
+        exact (hC.trans (hOv _ _ _)).trans (hRec _ _ _)
+      · cases h
+        exact hC.trans (hRec _ _ _)
   · rename_i hE
     cases h
     exact hW.trans (syscallEntryChecked_mappingStage P1 hE)
@@ -401,17 +413,18 @@ theorem stageCallerReturnFor_mappingStage (caller? : Option SeLe4n.ThreadId)
       · exact writeReturnFrameToTcb_mappingStage post tid f
   | blocks => exact MappingStage.refl _
   | faulted => exact MappingStage.refl _
+  | resumes => exact MappingStage.refl _
 
 /-- **The syscall step keeps the mappings recorded**: the ABI dispatch, the
 caller's return staging, the local scheduling point, the residency settlement
 and the ledger drains. -/
 theorem syscallDispatchCrossCoreStep_mappingStage {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st : SystemState} (P : MappingArmPremises st) :
     MappingStage st (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st).2 := by
+      x6 elr spsr spEl0 x30 st).2 := by
   obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e syscallId
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
   rw [syscallDispatchCrossCoreStep_of_ok hD]
   exact (syscallDispatchFromAbi_mappingStage P hD).trans
     ((((stageCallerReturnFor_mappingStage _ _ e outcome).trans

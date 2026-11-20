@@ -109,8 +109,8 @@ private def chain2SendSendReceiveFifo : IO Unit := do
       |>.buildChecked)
   let msg1 : IpcMessage := .empty
   let msg2 : IpcMessage := .empty
-  let (_, st1) ← expectOkSt "chain2: send msg1" (SeLe4n.Kernel.endpointSendDual epId tid1 (.frame msg1.badge false) st0)
-  let (_, st2) ← expectOkSt "chain2: send msg2" (SeLe4n.Kernel.endpointSendDual epId tid2 (.frame msg2.badge false) st1)
+  let (_, st1) ← expectOkSt "chain2: send msg1" (SeLe4n.Kernel.endpointSendDual epId tid1 (.frame msg1.badge false true) st0)
+  let (_, st2) ← expectOkSt "chain2: send msg2" (SeLe4n.Kernel.endpointSendDual epId tid2 (.frame msg2.badge false true) st1)
   let (sender, st3) ← expectOkSt "chain2: receive" (SeLe4n.Kernel.endpointReceiveDual epId tid3 none st2)
   expect "chain2: FIFO sender order" (sender = tid1)
   assertInvariants "chain2: send→send→receive" st3
@@ -339,9 +339,9 @@ private def chain8IpcInterleavedSendOrdering : IO Unit := do
       |>.withRunnable [tidA, tidB, tidC, tidD]
       |>.buildChecked)
 
-  let (_, st1) ← expectOkSt "chain8: sender A enqueue" (SeLe4n.Kernel.endpointSendDual epId tidA (.frame none false) st0)
-  let (_, st2) ← expectOkSt "chain8: sender B enqueue" (SeLe4n.Kernel.endpointSendDual epId tidB (.frame none false) st1)
-  let (_, st3) ← expectOkSt "chain8: sender C enqueue" (SeLe4n.Kernel.endpointSendDual epId tidC (.frame none false) st2)
+  let (_, st1) ← expectOkSt "chain8: sender A enqueue" (SeLe4n.Kernel.endpointSendDual epId tidA (.frame none false true) st0)
+  let (_, st2) ← expectOkSt "chain8: sender B enqueue" (SeLe4n.Kernel.endpointSendDual epId tidB (.frame none false true) st1)
+  let (_, st3) ← expectOkSt "chain8: sender C enqueue" (SeLe4n.Kernel.endpointSendDual epId tidC (.frame none false true) st2)
   let (firstSender, st4) ← expectOkSt "chain8: receiver D dequeues first" (SeLe4n.Kernel.endpointReceiveDual epId tidD none st3)
   let (secondSender, st5) ← expectOkSt "chain8: receiver D dequeues second" (SeLe4n.Kernel.endpointReceiveDual epId tidD none st4)
   let (thirdSender, st6) ← expectOkSt "chain8: receiver D dequeues third" (SeLe4n.Kernel.endpointReceiveDual epId tidD none st5)
@@ -355,9 +355,9 @@ private def chain8IpcInterleavedSendOrdering : IO Unit := do
      | _ => false)
   assertInvariants "chain8: three-sender FIFO ordering" st6
 
-  let (_, st7) ← expectOkSt "chain8: interleave sender A" (SeLe4n.Kernel.endpointSendDual epId tidA (.frame none false) st6)
+  let (_, st7) ← expectOkSt "chain8: interleave sender A" (SeLe4n.Kernel.endpointSendDual epId tidA (.frame none false true) st6)
   let (interleaveFirst, st8) ← expectOkSt "chain8: interleave receiver gets A" (SeLe4n.Kernel.endpointReceiveDual epId tidD none st7)
-  let (_, st9) ← expectOkSt "chain8: interleave sender B" (SeLe4n.Kernel.endpointSendDual epId tidB (.frame none false) st8)
+  let (_, st9) ← expectOkSt "chain8: interleave sender B" (SeLe4n.Kernel.endpointSendDual epId tidB (.frame none false true) st8)
   let (interleaveSecond, st10) ← expectOkSt "chain8: interleave receiver gets B" (SeLe4n.Kernel.endpointReceiveDual epId tidD none st9)
   expect "chain8: interleaved receive #1 sender A" (interleaveFirst = tidA)
   expect "chain8: interleaved receive #2 sender B" (interleaveSecond = tidB)
@@ -577,8 +577,9 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
         domain := ⟨0⟩
         spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
-        -- x0=0 (capPtr for slot 0), x1=0 (msgInfo), x7=0 (send)
-        registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun _ => 0)  -- send syscall, capAddr=0
+        -- x0=0 (capPtr for slot 0), x1=0 (msgInfo), x7=seL4's `Send` word
+        registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
+            if r == 7 then Syscall.send.word else 0)
       })
       |>.withObject receiverId (.tcb {
         tid := ⟨301⟩
@@ -586,10 +587,11 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
         domain := ⟨0⟩
         spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 8192)
-        -- x0=1 (capPtr for slot 1), x1=0 (msgInfo), x7=1 (receive)
+        -- x0=1 (capPtr for slot 1), x1=0 (msgInfo), x7=seL4's `Wait` word: a
+        -- receive naming no reply capability (a `Recv` names one in x6)
         registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
             if r == 0 then 1       -- capAddr = CPtr 1 (receive cap)
-            else if r == 7 then 1  -- syscallId = receive (1)
+            else if r == 7 then Syscall.wait.word
             else 0)
       })
       |>.withObject epId (.endpoint {})
@@ -656,8 +658,9 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
         domain := ⟨0⟩
         spaceCells := SeLe4n.Model.TCB.spaceCellsOf cnodeId ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
-        -- x0=0 (capPtr), x1=0 (msgInfo), x7=0 (send)
-        registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun _ => 0)
+        -- x0=0 (capPtr), x1=0 (msgInfo), x7=seL4's `Send` word
+        registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
+            if r == 7 then Syscall.send.word else 0)
       })
       |>.withObject epId (.endpoint {})
       |>.withObject cnodeId (.cnode (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [
@@ -747,7 +750,7 @@ private def chain12IpcCapTransfer : IO Unit := do
   let capAddrs : Array SeLe4n.CPtr :=
     #[SeLe4n.CPtr.ofNat 0, SeLe4n.CPtr.ofNat 1, SeLe4n.CPtr.ofNat 2]
   let (summary, st2) ← expectOkSt "chain12: send with caps"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame st1 sender msg capAddrs))
 
   -- Verify: one install into the receive slot, then the transfer stops.
@@ -822,7 +825,7 @@ private def ipcCapTransferRevocable : IO Unit := do
   let msg : IpcMessage :=
     { registers := #[], badge := none }
   let (_, st2) ← expectOkSt "chain12b: send with caps"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame st1 sender msg #[SeLe4n.CPtr.ofNat srcSlot.toNat]))
 
   let receiverSlotFilled (st : SystemState) : Bool :=
@@ -867,7 +870,7 @@ private def ipcCapTransferRevocable : IO Unit := do
         { st1 with objects := st1.objects.insert senderCNode (.cnode (cn.insert srcSlot unrelatedCap)) }
     | _ => st1
   let (_, stStale) ← expectOkSt "chain12b: send after the source slot was rewritten"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame stOverwritten sender msg #[SeLe4n.CPtr.ofNat srcSlot.toNat]))
   let (_, stStaleRevoke) ← expectOkSt "chain12b: revoke the rewritten slot"
     (SeLe4n.Kernel.cspaceRevokeCdtFinalising bootCoreId { cnode := senderCNode, slot := srcSlot } stStale)
@@ -880,7 +883,7 @@ private def ipcCapTransferRevocable : IO Unit := do
   -- and a receive after the delete finds nothing at the address.
   let srcPtr : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 5
   let (_, stParked) ← expectOkSt "chain12b: send blocks with no receiver"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame st0 sender msg #[srcPtr]))
   expect "chain12b: the parked sender holds no message, only its frame"
     ((stParked.getTcb? sender).any (fun t => t.pendingMessage.isNone))
@@ -1064,12 +1067,12 @@ private def ipcCapTransferArrivalOrder : IO Unit := do
   let (_, stA1) ← expectOkSt "chain12c: A — receiver blocks first"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none stBase)
   let (summaryA, stA2) ← expectOkSt "chain12c: A — sender rendezvouses with caps"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame stA1 sender msg #[SeLe4n.CPtr.ofNat 5]))
 
   -- Ordering B: sender first (the send parks; the receive must install).
   let (summaryPark, stB1) ← expectOkSt "chain12c: B — sender parks with caps"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame stBase sender msg #[SeLe4n.CPtr.ofNat 5]))
   expect "chain12c: B — a parked send installs nothing yet"
     (summaryPark.results.isEmpty && !receiverSlotFilled stB1)
@@ -1095,10 +1098,10 @@ private def ipcCapTransferArrivalOrder : IO Unit := do
   let (_, stC1) ← expectOkSt "chain12c: C — receiver blocks first (no grant)"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none stBase)
   let (summaryC, stC2) ← expectOkSt "chain12c: C — non-granting sender rendezvouses"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (noGrantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (noGrantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame stC1 sender msg #[SeLe4n.CPtr.ofNat 5]))
   let (_, stD1) ← expectOkSt "chain12c: D — non-granting sender parks"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (noGrantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (noGrantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame stBase sender msg #[SeLe4n.CPtr.ofNat 5]))
   let ((_, summaryD), stD2) ← expectOkSt "chain12c: D — receiver dequeues the parked sender"
     (SeLe4n.Kernel.endpointReceiveDualWithCaps epId receiver none
@@ -1193,7 +1196,7 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
   -- with `.replyRecv` and dequeues it.  This is the ordering that dropped the
   -- capabilities.
   let (stA1, sendResA) :=
-    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId nextSender (.frame requestMsg.badge (grantRights.mem .grant))
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId nextSender (.frame requestMsg.badge (grantRights.mem .grant) true)
       bootCoreId
       (SeLe4n.Testing.withSenderFrame stBase nextSender requestMsg #[SeLe4n.CPtr.ofNat 5])
   expect "chain12d: A — the request parks (no server waiting yet)"
@@ -1212,7 +1215,7 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
   expect "chain12d: B — a blocked receive leg installs nothing yet"
     (summaryB0.results.isEmpty && !serverSlotFilled stB1)
   let (stB2, sendResB) :=
-    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId nextSender (.frame requestMsg.badge (grantRights.mem .grant))
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId nextSender (.frame requestMsg.badge (grantRights.mem .grant) true)
       bootCoreId
       (SeLe4n.Testing.withSenderFrame stB1 nextSender requestMsg #[SeLe4n.CPtr.ofNat 5])
 
@@ -1235,7 +1238,7 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
   -- transfer rather than the mere presence of a slot.
   let (stC1, _) :=
     SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId nextSender
-      (.frame requestMsg.badge ((AccessRightSet.ofList [.read, .write]).mem .grant)) bootCoreId
+      (.frame requestMsg.badge ((AccessRightSet.ofList [.read, .write]).mem .grant) true) bootCoreId
       (SeLe4n.Testing.withSenderFrame stBase nextSender requestMsg #[SeLe4n.CPtr.ofNat 5])
   let (summaryC, stC2) ← expectOkSt "chain12d: C — .replyRecv collects a non-granting request"
     (SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid prevCaller replyMsg
@@ -1311,7 +1314,7 @@ private def receiveWithoutSenderInstallsNothing : IO Unit := do
 
   -- A legitimate transfer: the sender parks, the receiver collects it.
   let (st1, _) :=
-    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (grantRights.mem .grant))
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (grantRights.mem .grant) true)
       bootCoreId (SeLe4n.Testing.withSenderFrame stBase sender msg #[SeLe4n.CPtr.ofNat 5])
   let (st2, res2) :=
     SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId receiver none
@@ -1371,7 +1374,7 @@ private def receiveTakesParkedSenderRegisters : IO Unit := do
 
   -- No receiver is waiting, so the sender blocks `.blockedOnSend`.
   let (stParked, _) :=
-    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (plainRights.mem .grant))
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (plainRights.mem .grant) true)
       bootCoreId (SeLe4n.Testing.withSenderFrame st0 sender msg)
   expect "chain12f: the sender parked holding no message"
     ((stParked.getTcb? sender).any (fun t =>
@@ -1467,7 +1470,7 @@ private def revokeWhileParkedTransfersNothing : IO Unit := do
 
   -- The sender parks with the source's address in its frame.
   let (stParked, _) :=
-    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (grantRights.mem .grant))
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (grantRights.mem .grant) true)
       bootCoreId (SeLe4n.Testing.withSenderFrame stBase sender msg #[SeLe4n.CPtr.ofNat 5])
   expect "revoke-parked: the parked sender holds no message"
     ((stParked.getTcb? sender).any (fun t => t.pendingMessage.isNone))
@@ -1556,7 +1559,7 @@ private def revokeLeavesIndependentSibling : IO Unit := do
     { registers := #[], badge := none }
 
   let (stParked, _) :=
-    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (grantRights.mem .grant))
+    SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId sender (.frame msg.badge (grantRights.mem .grant) true)
       bootCoreId (SeLe4n.Testing.withSenderFrame stBase sender msg #[SeLe4n.CPtr.ofNat 6])
 
   let slotFilled (st : SystemState) (cn : SeLe4n.ObjId) (s : SeLe4n.Slot) : Bool :=
@@ -1664,12 +1667,12 @@ private def endpointGrantDecidesBothOrderings : IO Unit := do
   let (_, stA1) ← expectOkSt "chain12h: A — receiver blocks first"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none stBase)
   let (summaryA, stA2) ← expectOkSt "chain12h: A — granting sender rendezvouses"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame stA1 sender msg #[SeLe4n.CPtr.ofNat 5]))
 
   -- Ordering B: sender first (the send parks; the receive must install).
   let (_, stB1) ← expectOkSt "chain12h: B — granting sender parks"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame stBase sender msg #[SeLe4n.CPtr.ofNat 5]))
   let ((_, summaryB), stB2) ← expectOkSt "chain12h: B — receiver dequeues the parked sender"
     (SeLe4n.Kernel.endpointReceiveDualWithCaps epId receiver none
@@ -1692,7 +1695,7 @@ private def endpointGrantDecidesBothOrderings : IO Unit := do
   -- NEGATIVE, load-bearing: the grant right comes only from the endpoint
   -- capability (the payload's one grant bit, WS-ZA ZA4.7), so a frame naming a
   -- capability on a non-granting endpoint transfers nothing on either ordering.
-  let noGrantPayload : SeLe4n.Kernel.SendPayload := .frame msg.badge (noGrantRights.mem .grant)
+  let noGrantPayload : SeLe4n.Kernel.SendPayload := .frame msg.badge (noGrantRights.mem .grant) true
   let (_, stC1) ← expectOkSt "chain12h: C — receiver blocks first (endpoint denies)"
     (SeLe4n.Kernel.endpointReceiveDual epId receiver none stBase)
   let (summaryC, stC2) ← expectOkSt "chain12h: C — sender names a capability the endpoint cannot grant"
@@ -1744,7 +1747,7 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
 
   let msg : IpcMessage := { registers := #[⟨99⟩], badge := none }
   let (summary, st2) ← expectOkSt "chain13: send without grant right"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (noGrantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (noGrantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame st1 sender msg #[SeLe4n.CPtr.ofNat 0]))
 
   -- Without the grant right nothing is transferred (seL4's `doNormalTransfer`
@@ -1808,7 +1811,7 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
   let badgeVal : SeLe4n.Badge := SeLe4n.Badge.ofNatMasked 0xCAFE
   let msg : IpcMessage := { registers := #[⟨77⟩], badge := some badgeVal }
   let (summary, st2) ← expectOkSt "chain14: send with badge + caps"
-    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant))
+    (SeLe4n.Kernel.endpointSendDualWithCaps epId sender (.frame msg.badge (grantRights.mem .grant) true)
       (SeLe4n.Testing.withSenderFrame st1 sender msg #[SeLe4n.CPtr.ofNat 0, SeLe4n.CPtr.ofNat 1]))
 
   -- Verify: the endpoint cap is unwrapped, the notification cap installed.
@@ -2135,7 +2138,9 @@ private def revokeFinalisingTakesPlainLoop : IO Unit := do
   assertInvariants "plain delete: invariants after the step" stDeleted
 
 /-- R3-A.3: Badge delivery test — verifies that notificationSignal delivers
-the badge to the woken waiter's pendingMessage when waking a blocked thread.
+the badge to the woken waiter's badge register (`x0`) when waking a blocked
+thread, and holds no message (seL4's `sendSignal` writes the badge register
+alone).
 Steps: wait (blocks waiter) → signal (wakes waiter with badge) → verify badge. -/
 private def chain22NotificationBadgeDelivery : IO Unit := do
   let ntfnId : SeLe4n.ObjId := ⟨260⟩
@@ -2160,15 +2165,13 @@ private def chain22NotificationBadgeDelivery : IO Unit := do
   -- Step 2: signal with badge 0xCAFE — should wake the waiter
   let (_, st2) ← expectOkSt "chain22: signal wakes waiter"
     (SeLe4n.Kernel.notificationSignal ntfnId badge st1)
-  -- Step 3: Verify badge was delivered to waiter's pendingMessage
+  -- Step 3: Verify badge was delivered to the waiter's badge register
   match st2.objects[waiter.toObjId]? with
   | some (.tcb tcb) =>
     expect "chain22: waiter ipcState is ready after wake" (tcb.ipcState = .ready)
-    match tcb.pendingMessage with
-    | some msg =>
-      expect "chain22: badge delivered via pendingMessage"
-        (msg.badge = some (SeLe4n.Badge.ofNatMasked 0xCAFE))
-    | none => throw (IO.userError "chain22: FAIL — waiter pendingMessage is none after signal wake")
+    expect "chain22: badge delivered in the badge register (x0)"
+      (tcb.registerContext.x0 = badge.word)
+    expect "chain22: the wake holds no message" (tcb.pendingMessage = none)
   | _ => throw (IO.userError "chain22: FAIL — waiter TCB not found after signal wake")
   -- Step 4: Verify waiter is runnable again
   expect "chain22: waiter is runnable after wake" (st2.queuedOn bootCoreId waiter)
@@ -2418,10 +2421,14 @@ private def chain26BootSequence : IO Unit := do
 -- Each test exercises the full syscallEntryChecked → decode → dispatchWithCapChecked path
 -- ============================================================================
 
-/-- Helper: build a state with a single current thread whose registers encode
-the given syscallId, capAddr, and per-syscall arguments in x2-x5.
+/-- Helper: build a state with a single current thread whose registers issue
+operation `op` as a user does (`x7` the word of the seL4 syscall it is issued
+with, its invocation label in `x1`'s label field, `SyscallId.syscall` /
+`SyscallId.msgInfoWithLabel`), capAddr, and per-syscall arguments in x2-x5.
+`msgLabel` replaces the operation's label in `x1` (an invocation under a label
+the capability's type does not take).
 The CNode at cnodeId contains a cap at slot `capAddr` targeting `targetId`. -/
-private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
+private def buildSyscallState (op : SyscallId) (capAddr : Nat)
     (targetId : SeLe4n.ObjId) (capRights : AccessRightSet)
     (extraObjects : List (SeLe4n.ObjId × SeLe4n.Model.KernelObject))
     (args : List (Nat × Nat))  -- (register index, value) for x2-x5
@@ -2442,6 +2449,7 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
     -- `targetId` (WS-SX SX6.7: the service calls invoke the service-registry
     -- capability, the endpoint their extra capability 0).
     (invokedCap : Option Capability := none)
+    (msgLabel : Option Nat := none)
     : SeLe4n.Model.SystemState := Id.run do
   let tid : SeLe4n.ThreadId := ⟨500⟩
   let cnodeId : SeLe4n.ObjId := ⟨501⟩
@@ -2466,12 +2474,16 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
       match bufferWord (off / 8) with
       | some w => some (UInt8.ofNat ((w >>> (8 * (off % 8))) % 256))
       | none => none
+  let labelled (info : Nat) : Nat :=
+    match msgLabel with
+    | some l => (info % 4096) + l * 4096
+    | none => (op.msgInfoWithLabel (UInt64.ofNat info)).toNat
   let regFile : SeLe4n.RegName → SeLe4n.RegValue := fun r =>
     let v := if r.val == 0 then capAddr
-             else if r.val == 7 then syscallNum
+             else if r.val == 7 then op.syscall.word.toNat
              else match args.find? (fun (idx, _) => idx == r.val) with
-                  | some (_, val) => val
-                  | none => if r.val == 1 then msgLen + extraCapWords.length * 128 else 0
+                  | some (_, val) => if r.val == 1 then labelled val else val
+                  | none => if r.val == 1 then labelled (msgLen + extraCapWords.length * 128) else 0
     SeLe4n.RegValue.ofNat v
   let mapsBuffer := !overflowWords.isEmpty || !extraCapWords.isEmpty
   let bufferMappings : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr
@@ -2527,7 +2539,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   -- depth 4, x4=srcIndex(0), x5=its depth 4, then rights 3 (read|write) and
   -- the badge (42) in the IPC buffer's overflow slots 0 and 1; the source root
   -- is extra capability 0, the caller's address 0 ===
-  let stMint := buildSyscallState 4 0 cnodeTarget
+  let stMint := buildSyscallState .cspaceMint 0 cnodeTarget
     (AccessRightSet.ofList [.read, .write, .grant])  -- cap to the target CNode
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
     [(2, 1), (3, 4), (4, 0), (5, 4)]
@@ -2551,7 +2563,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
     | _ => throw <| IO.userError "chain27: target CNode not found after mint"
   | .error err => throw <| IO.userError s!"chain27: cspaceMint syscall failed: {toString err}"
   -- === cspaceDelete (syscallId=7): x2=targetSlot(0) ===
-  let stDel := buildSyscallState 7 0 cnodeTarget
+  let stDel := buildSyscallState .cspaceDelete 0 cnodeTarget
     (AccessRightSet.ofList [.read, .write, .grant])
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
     [(2, 0)]  -- targetSlot=0
@@ -2567,7 +2579,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   -- 4 (the CNode's 4-bit radix, no guard), x4=srcIndex(0), x5=its depth 4, the
   -- rights 7 in overflow slot 0; the source root is extra capability 0, the
   -- caller's address 0, its capability to the target CNode ===
-  let stCopy := buildSyscallState 5 0 cnodeTarget
+  let stCopy := buildSyscallState .cspaceCopy 0 cnodeTarget
     (AccessRightSet.ofList [.read, .write, .grant])
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
     [(2, 2), (3, 4), (4, 0), (5, 4)]
@@ -2582,7 +2594,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   | .error err => throw <| IO.userError s!"chain27: cspaceCopy syscall failed: {toString err}"
   -- === cspaceMove (syscallId=6), seL4's words: x2=destIndex(3), x3=its depth
   -- 4, x4=srcIndex(0), x5=its depth 4; the source root is extra capability 0 ===
-  let stMove := buildSyscallState 6 0 cnodeTarget
+  let stMove := buildSyscallState .cspaceMove 0 cnodeTarget
     (AccessRightSet.ofList [.read, .write, .grant])
     [(cnodeTarget, .cnode cnode), (epId, .endpoint {})]
     [(2, 3), (3, 4), (4, 0), (5, 4)]
@@ -2602,7 +2614,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   -- capability 0 at `srcRoot`, or none
   let copyRefusal (label : String) (dI dD sI sD : Nat) (srcRoot : List Nat)
       (want : KernelError) : IO Unit := do
-    let stBad := buildSyscallState 5 0 cnodeTarget
+    let stBad := buildSyscallState .cspaceCopy 0 cnodeTarget
       (AccessRightSet.ofList [.read, .write, .grant])
       [(cnodeTarget, .cnode cnode), (epId, .endpoint {})] [(2, dI), (3, dD), (4, sI), (5, sD)]
       [(cnodeTarget, .cnode), (epId, .endpoint)]
@@ -2657,7 +2669,7 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   let frameId : SeLe4n.ObjId := ⟨701⟩
   let rootCap : Capability :=
     { target := .object vsId, rights := AccessRightSet.ofList [.read, .write] }
-  let stMap := buildSyscallState 9 0 frameId
+  let stMap := buildSyscallState .vspaceMap 0 frameId
     (AccessRightSet.ofList [.read])
     [(frameId, .frame { base := SeLe4n.PAddr.ofNat 0x3000 }), (vsId, .vspaceRoot vsRoot)]
     [(2, (fixtureUserVAddr 0x2000).toNat), (3, 2), (4, 5)]
@@ -2672,42 +2684,75 @@ private def chain28SyscallVSpaceOps : IO Unit := do
     | .error _ => throw <| IO.userError "chain28: lookup after vspaceMap failed"
   | .error err =>
     throw <| IO.userError s!"chain28: vspaceMap dispatch failed ({toString err})"
-  -- === vspaceUnmap (syscallId=10): x2=asid(2), x3=vaddr(0x4000) ===
-  -- Build state WITH existing mapping to unmap
+  -- === vspaceUnmap (syscallId=10), seL4's `ARMPageUnmap` shape: the invoked
+  -- capability (x0, slot 0) is the frame capability that made the mapping, and
+  -- no message word follows (`performPageInvocationUnmap` reads the address
+  -- space and the address off the capability's own record).
+  let unmapFrameId : SeLe4n.ObjId := ⟨703⟩
+  let unmapVa : SeLe4n.VAddr := SeLe4n.VAddr.ofNat 0x4000
   let vsWithMapping : SeLe4n.Model.VSpaceRoot := {
     asid := chainAsid
     mappings := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      ((SeLe4n.VAddr.ofNat 0x4000), ((SeLe4n.PAddr.ofNat 0x5000), SeLe4n.Model.PagePermissions.readOnly))
+      (unmapVa, ((SeLe4n.PAddr.ofNat 0x5000), SeLe4n.Model.PagePermissions.readOnly))
     ]
+    mappingEpochs := SeLe4n.Kernel.RobinHood.RHTable.ofList [(unmapVa, 0)]
   }
-  let stUnmap := buildSyscallState 10 0 vsId
-    (AccessRightSet.ofList [.read, .write])
-    [(vsId, .vspaceRoot vsWithMapping)]
-    [(2, 2), (3, 0x4000)]
-    [(vsId, .vspaceRoot)]
-  match syscallEntryOnBoot stUnmap with
+  let unmapState (invoked : Capability) (withRecord : Bool) (args : List (Nat × Nat)) :
+      SystemState :=
+    let st := buildSyscallState .vspaceUnmap 0 unmapFrameId
+      (AccessRightSet.ofList [.read])
+      [(unmapFrameId, .frame { base := SeLe4n.PAddr.ofNat 0x5000 }), (vsId, .vspaceRoot vsWithMapping)]
+      args
+      [(vsId, .vspaceRoot), (unmapFrameId, .frame)]
+      (invokedCap := some invoked)
+    -- The record `Page_Map` through this capability would have left (the boot
+    -- admits no configured record, so it is written after the build).
+    let cnId : SeLe4n.ObjId := ⟨501⟩
+    if !withRecord then st else
+    match st.objects[cnId]? with
+    | some (.cnode cn) =>
+      match storeObject cnId (.cnode (cn.insert (SeLe4n.Slot.ofNat 0)
+          (invoked.withMapping (some { asid := chainAsid, vaddr := unmapVa, epoch := 0 })))) st with
+      | .ok ((), s) => s
+      | .error _ => st
+    | _ => st
+  let frameCap : Capability :=
+    { target := .object unmapFrameId, rights := AccessRightSet.ofList [.read] }
+  let slotRecord (st : SystemState) : Option FrameMapping :=
+    (SystemState.lookupSlotCap st { cnode := ⟨501⟩, slot := SeLe4n.Slot.ofNat 0 }).bind (·.mapping)
+  match syscallEntryOnBoot (unmapState frameCap true []) with
   | .ok (_, stAfter) =>
-    match SeLe4n.Kernel.Architecture.vspaceLookup chainAsid (SeLe4n.VAddr.ofNat 0x4000) stAfter with
-    | .error _ => IO.println "operation-chain check passed [chain28: vspaceUnmap dispatch unmapped]"
+    match SeLe4n.Kernel.Architecture.vspaceLookup chainAsid unmapVa stAfter with
+    | .error _ =>
+      expect "chain28: vspaceUnmap dispatch unmapped and cleared the record"
+        (slotRecord stAfter == none)
     | .ok _ => throw <| IO.userError "chain28: mapping still exists after unmap"
   | .error err =>
     throw <| IO.userError s!"chain28: vspaceUnmap dispatch failed ({toString err})"
   -- === The PR #845 binding, end-to-end through `syscallEntryChecked`. ===
-  -- Same scenario, but naming the ASID of the *builder's own* root (`⟨1⟩` at
-  -- `⟨502⟩`) while holding a capability to `⟨700⟩`.  Before the binding this
-  -- unmapped a page in an address space the caller had no capability for.
-  let stConfused := buildSyscallState 10 0 vsId
-    (AccessRightSet.ofList [.read, .write])
-    [(vsId, .vspaceRoot vsWithMapping)]
-    [(2, 1), (3, 0x4000)]
-    [(vsId, .vspaceRoot)]
-  match syscallEntryOnBoot stConfused with
-  | .error .illegalAuthority =>
-    IO.println "operation-chain check passed [chain28: cross-address-space unmap refused]"
+  -- The retired shape named an address space in x2: the builder's own root's
+  -- ASID (`⟨1⟩` at `⟨502⟩`) while holding a capability to `⟨700⟩`.  Page_Unmap
+  -- reads no word, so a frame capability that recorded no mapping, followed by
+  -- those words, unmaps nothing, and a VSpace-root capability is refused on its
+  -- kind.
+  match syscallEntryOnBoot (unmapState frameCap false [(2, 1), (3, 0x4000)]) with
+  | .ok (_, stAfter) =>
+    match SeLe4n.Kernel.Architecture.vspaceLookup chainAsid unmapVa stAfter with
+    | .ok _ => IO.println "operation-chain check passed [chain28: an unrecorded frame capability unmaps nothing]"
+    | .error _ => throw <| IO.userError "chain28: an unrecorded frame capability removed a mapping"
   | .error err =>
-    throw <| IO.userError s!"chain28: expected illegalAuthority, got {toString err}"
+    throw <| IO.userError s!"chain28: unmap through an unrecorded frame capability failed ({toString err})"
+  match syscallEntryOnBoot (unmapState
+      { target := .object vsId, rights := AccessRightSet.ofList [.read, .write] } false
+      [(2, 1), (3, 0x4000)]) with
+  -- The entry selects the invocation by the label the invoked object takes;
+  -- a VSpace root takes no Page_Unmap label (seL4: `IllegalOperation`).
+  | .error .invalidSyscallNumber =>
+    IO.println "operation-chain check passed [chain28: a VSpace-root capability is no Page_Unmap target]"
+  | .error err =>
+    throw <| IO.userError s!"chain28: expected invalidSyscallNumber, got {toString err}"
   | .ok _ =>
-    throw <| IO.userError "chain28: cross-address-space unmap was ALLOWED (capability binding regressed)"
+    throw <| IO.userError "chain28: Page_Unmap through a VSpace-root capability was ALLOWED"
 
 /-- WS-ZA ZA5.4 part 14: a carve via `syscallEntryChecked` (syscall 36), and the retired
 number 8 refused at decode.  seL4's words (WS-SX SX6.3, D9): x2 = the type
@@ -2720,7 +2765,7 @@ private def chain29SyscallCarve : IO Unit := do
   let child : SeLe4n.ObjId := ⟨801⟩
   let rootCap : Capability :=
     { target := .object ⟨501⟩, rights := AccessRightSet.ofList [.read, .write] }
-  let st0 := buildSyscallState 36 0 utId
+  let st0 := buildSyscallState .untypedRetype 0 utId
     (AccessRightSet.ofList [.read, .write, .retype])
     [(utId, .untyped { regionBase := SeLe4n.PAddr.ofNat 0x100000, regionSize := 0x1000 })]
     [(2, 2), (3, 0), (4, 0), (5, 0)]
@@ -2736,15 +2781,16 @@ private def chain29SyscallCarve : IO Unit := do
     | _ => throw <| IO.userError "chain29: no notification at the child id after the carve"
   | .error err =>
     throw <| IO.userError s!"chain29: untypedRetype dispatch failed ({toString err})"
-  let stRetired := buildSyscallState 8 0 utId
+  let stRetired := buildSyscallState .untypedRetype 0 utId
     (AccessRightSet.ofList [.read, .write, .retype])
     [(utId, .untyped { regionBase := SeLe4n.PAddr.ofNat 0x100000, regionSize := 0x1000 })]
     [(2, 2), (3, 801), (4, 1), (5, 2)]
     [(utId, .untyped)]
     [(1, rootCap)]
+    (msgLabel := some 8)
   match syscallEntryOnBoot stRetired with
-  | .error _ => IO.println "operation-chain check passed [chain29: retired syscall 8 refused]"
-  | .ok _ => throw <| IO.userError "chain29: the retired syscall number 8 dispatched"
+  | .error _ => IO.println "operation-chain check passed [chain29: untyped invoked under a label other than Retype refused]"
+  | .ok _ => throw <| IO.userError "chain29: an untyped capability invoked under label 8 dispatched"
 
 /-- T7-C: Service syscall dispatch — serviceRegister, serviceQuery and
 serviceRevoke through `syscallEntryChecked`, each invoked on the
@@ -2763,9 +2809,9 @@ private def chain30SyscallServiceOps : IO Unit := do
   -- The caller's state for one service call: the registry capability invoked,
   -- the endpoint (`ep`, as the previous leg left it) extra capability 0, and
   -- the interface registered.
-  let stateFor (syscallNum : Nat) (ep : SeLe4n.Model.KernelObject)
+  let stateFor (op : SyscallId) (ep : SeLe4n.Model.KernelObject)
       (args : List (Nat × Nat)) (overflow : List Nat) : IO SystemState := do
-    let st := buildSyscallState syscallNum 1 epId (AccessRightSet.ofList [.read, .write])
+    let st := buildSyscallState op 1 epId (AccessRightSet.ofList [.read, .write])
       [(epId, ep)] args [(epId, .endpoint)]
       (extraSlots := [(2, epCap)]) (overflowWords := overflow) (extraCapWords := [2])
       (invokedCap := some Capability.serviceRegistry)
@@ -2778,7 +2824,7 @@ private def chain30SyscallServiceOps : IO Unit := do
     | _ => throw <| IO.userError "chain30: the endpoint is gone"
   -- === serviceRegister (11): x2..x5 = interface 1, 3 methods, 64, 32; the
   -- fifth word (no grant) is the IPC buffer's overflow word 0.
-  let stRegister ← stateFor 11 (.endpoint {}) [(2, 1), (3, 3), (4, 64), (5, 32)] [0]
+  let stRegister ← stateFor .serviceRegister (.endpoint {}) [(2, 1), (3, 3), (4, 64), (5, 32)] [0]
   let stAfter ← match syscallEntryOnBoot stRegister with
     | .ok (_, st) => pure st
     | .error e => throw <| IO.userError s!"chain30: serviceRegister failed ({toString e})"
@@ -2789,7 +2835,7 @@ private def chain30SyscallServiceOps : IO Unit := do
   IO.println "operation-chain check passed [chain30: serviceRegister recorded the registration]"
   let registered ← endpointOf stAfter
   -- === serviceQuery (13): no words; the registration's ServiceId is staged as x0.
-  let stQuery ← stateFor 13 registered [] []
+  let stQuery ← stateFor .serviceQuery registered [] []
   match syscallEntryOnBoot stQuery with
   | .ok (_, stQ) =>
     let x0 := (SeLe4n.Kernel.Architecture.readReturnFrame stQ ⟨500⟩).x0
@@ -2798,7 +2844,7 @@ private def chain30SyscallServiceOps : IO Unit := do
     IO.println "operation-chain check passed [chain30: serviceQuery returned the ServiceId]"
   | .error e => throw <| IO.userError s!"chain30: serviceQuery failed ({toString e})"
   -- === serviceRevoke (12): no words; the endpoint's record is cleared.
-  let stRevoke ← stateFor 12 registered [] []
+  let stRevoke ← stateFor .serviceRevoke registered [] []
   match syscallEntryOnBoot stRevoke with
   | .ok (_, stR) =>
     match SeLe4n.Kernel.lookupServiceByRecordedRegistration epId stR with
@@ -2819,7 +2865,7 @@ private def chain31SyscallReply : IO Unit := do
   -- The reply cap targets the blocked sender via .replyCap
   let regFile : SeLe4n.RegName → SeLe4n.RegValue := fun r =>
     if r.val == 0 then ⟨0⟩       -- capAddr: slot 0 (reply cap)
-    else if r.val == 7 then ⟨3⟩  -- syscallId: reply
+    else if r.val == 7 then SeLe4n.RegValue.ofNat Syscall.send.word.toNat  -- a reply is a `Send` on the reply cap
     else ⟨0⟩
   let st0 :=
     (BootstrapBuilder.empty
@@ -2873,7 +2919,7 @@ Call is like send but marks the caller as blockedOnCall for reply. -/
 private def chain32SyscallCall : IO Unit := do
   let epId : SeLe4n.ObjId := ⟨950⟩
   -- call (syscallId=2): targets an endpoint, no receiver → caller should block
-  let st0 := buildSyscallState 2 0 epId
+  let st0 := buildSyscallState .call 0 epId
     (AccessRightSet.ofList [.read, .write])
     [(epId, .endpoint {})]
     []  -- no extra message registers needed for call

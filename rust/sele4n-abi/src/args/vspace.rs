@@ -65,17 +65,21 @@ impl VSpaceMapArgs {
     }
 }
 
-/// Arguments for `vspaceUnmap` (syscall 10).
+/// **WS-SM SM7.D**: arguments for `vspaceUnifyInstruction` (syscall 29) — an
+/// address space and a virtual page.
 /// Register mapping: x2=asid, x3=vaddr.
 ///
-/// Lean: `VSpaceUnmapArgs` (SyscallArgDecode.lean:128)
+/// `vspaceUnmap` (seL4's `Page_Unmap`) takes no arguments: it is invoked on the
+/// frame capability and unmaps the mapping that capability records.
+///
+/// Lean: `VSpaceUnifyInstructionArgs` (SyscallArgDecode.lean)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VSpaceUnmapArgs {
+pub struct VSpaceUnifyInstructionArgs {
     pub asid: Asid,
     pub vaddr: VAddr,
 }
 
-impl VSpaceUnmapArgs {
+impl VSpaceUnifyInstructionArgs {
     pub const fn encode(&self) -> [u64; 2] {
         [self.asid.raw(), self.vaddr.raw()]
     }
@@ -90,17 +94,6 @@ impl VSpaceUnmapArgs {
         })
     }
 }
-
-/// **WS-SM SM7.D**: arguments for `vspaceUnifyInstruction` (syscall 29) — an
-/// address space and a virtual page, exactly the operand shape `vspaceUnmap`
-/// takes.
-///
-/// Aliased rather than duplicated so the two share one encoder/decoder and one
-/// set of round-trip tests; the distinct name keeps the *semantics* legible at
-/// the call site.  This mirrors the Lean side, where
-/// `VSpaceUnifyInstructionArgs` is an `abbrev` for `VSpaceUnmapArgs`
-/// (`SyscallArgDecode.lean`).
-pub type VSpaceUnifyInstructionArgs = VSpaceUnmapArgs;
 
 /// Arguments for `pageTableMap` (syscall 39) — seL4's `seL4_ARM_PageTable_Map`.
 /// Register mapping: x2 = a virtual address whose walk the table serves; x3 =
@@ -157,15 +150,6 @@ mod tests {
         // a device page: read only, uncached, never executable
         let dev = VSpaceMapArgs::from_perms(VAddr::from(0x1000u64), PagePerms::READ);
         assert_eq!((dev.rights, dev.attr), (2, 4));
-    }
-
-    #[test]
-    fn unmap_roundtrip() {
-        let args = VSpaceUnmapArgs {
-            asid: Asid::from(1u64),
-            vaddr: VAddr::from(0x3000u64),
-        };
-        assert_eq!(VSpaceUnmapArgs::decode(&args.encode()).unwrap(), args);
     }
 
     #[test]

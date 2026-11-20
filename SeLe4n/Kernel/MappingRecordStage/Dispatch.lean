@@ -32,6 +32,47 @@ open SeLe4n.Model.SystemState (MappingStage)
 open Architecture.RegisterDecode
 open Architecture.SyscallArgDecode
 
+/-- **The notification unbind keeps the mappings recorded**: a context and a
+notification, each rewritten as the kind it was. -/
+theorem unbindSchedContextNotification_mappingStage (st : SystemState)
+    (s : SeLe4n.SchedContextId) : SystemState.MappingStage st (unbindSchedContextNotification st s) := by
+  refine SystemState.MappingStage.of_invExt fun hInv => ?_
+  rcases unbindSchedContextNotification_shape st s hInv with h | ⟨sc, hS, h | ⟨n, ntfn, h1, h⟩⟩
+  · rw [h]; exact SystemState.MappingStage.refl st
+  · rw [h]; exact updateSchedContext_mappingStage st _ _
+  · rw [h]
+    exact (updateSchedContext_mappingStage st _ _).trans
+      (SystemState.MappingStage.insert (pre := .notification ntfn) rfl h1 rfl
+        (by simp [KernelObject.objectType]))
+
+/-- **`SchedContext_Unbind` keeps the mappings recorded.** -/
+theorem schedContextUnbindAllOnCore_mappingStage {vScId : SeLe4n.ValidObjId}
+    {ec : Concurrency.CoreId} {st st' : SystemState}
+    {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)}
+    (h : SchedContextOps.schedContextUnbindAllOnCore vScId ec st = .ok (st', sgi?)) :
+    SystemState.MappingStage st st' := by
+  obtain ⟨stU, hU | ⟨-, hU, -⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok h
+  · obtain ⟨rfl, -⟩ := hU
+    exact unbindSchedContextNotification_mappingStage _ _
+  · exact (schedContextUnbindOnCore_mappingStage hU).trans
+      (unbindSchedContextNotification_mappingStage _ _)
+
+/-- **The bind keeps the mappings recorded**: a context and a notification,
+each rewritten as the kind it was, neither holding a mapping fact. -/
+theorem schedContextBindNotification_mappingStage {vScId : SeLe4n.ValidObjId}
+    {n : SeLe4n.ObjId} {st st' : SystemState}
+    (h : schedContextBindNotification vScId n st = .ok ((), st')) :
+    SystemState.MappingStage st st' := by
+  obtain ⟨hA, rfl⟩ := schedContextBindNotification_ok_admitted h
+  obtain ⟨_, ntfn, hS, -, hN, -⟩ := schedContextBindNotificationAdmitted_facts hA
+  refine SystemState.MappingStage.of_invExt fun hInv => ?_
+  obtain ⟨h1, hEq⟩ := bindNotificationSchedLink_eq hS hN hInv
+  rw [hEq]
+  exact (updateSchedContext_mappingStage st _ _).trans
+    (SystemState.MappingStage.insert (pre := .notification ntfn) rfl h1 rfl
+      (by simp [KernelObject.objectType]))
+
+
 /-- WS-ZA ZA6.32: **the handler issue keeps the mappings recorded**: it writes
 the line's state, which no object holds, then installs a handler capability,
 which records no mapping, and its derivation edge. -/
@@ -142,11 +183,6 @@ theorem dispatchCapabilityOnly_mappingStage
     case object _ =>
       exact untypedRetypeFromCap_mappingStage hStep
     all_goals try cases hStep
-  case untypedReset =>
-    cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object _ =>
-      exact untypedResetFromCap_mappingStage hStep
-    all_goals try cases hStep
   case vspaceMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
@@ -170,13 +206,12 @@ theorem dispatchCapabilityOnly_mappingStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
       try dsimp only [] at hStep
-      cases hDec : decodeVSpaceUnmapArgs decoded st.machine.maxASID with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
-          split at hStep
-          · cases hStep
-          · exact vspaceUnmapPageWithShootdownAndIcacheBroadcast_mappingStage P.teardown hStep
+      cases hR : resolveCallerCapSlot tid decoded.capAddr (syscallRequiredRight .vspaceUnmap) st with
+      | error e => simp only [hR] at hStep; cases hStep
+      | ok r =>
+          obtain ⟨slot, _, _⟩ := r
+          simp only [hR] at hStep
+          exact vspaceUnmapFrameCap_mappingStage P.teardown hStep
     all_goals try cases hStep
   case vspaceUnifyInstruction =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -214,7 +249,8 @@ theorem dispatchCapabilityOnly_mappingStage
           subst hStEq
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
           subst hStep
-          exact writeReturnFrameToTcb_mappingStage _ _ _
+          exact Architecture.writeCallReturnWord_of_frame (MappingStage _) (MappingStage.refl _)
+            (fun _ => writeReturnFrameToTcb_mappingStage _ _ _)
     all_goals try cases hStep
   case schedContextConfigure =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -239,15 +275,26 @@ theorem dispatchCapabilityOnly_mappingStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>
       try dsimp only [] at hStep
-      cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
-      | error e => simp only [hRes] at hStep; cases hStep
-      | ok vThreadId =>
-          simp only [hRes] at hStep
+      cases hN : resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | succ k =>
+          simp only [hN] at hStep
           cases hVal : validateObjIdArg scId with
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              exact schedContextBind_mappingStage hStep
+              exact schedContextBindNotification_mappingStage hStep
+      | zero =>
+          simp only [hN] at hStep
+          cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok vThreadId =>
+              simp only [hRes] at hStep
+              cases hVal : validateObjIdArg scId with
+              | error e => simp only [hVal] at hStep; cases hStep
+              | ok vScId =>
+                  simp only [hVal] at hStep
+                  exact schedContextBind_mappingStage hStep
     all_goals try cases hStep
   case schedContextUnbind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -261,14 +308,14 @@ theorem dispatchCapabilityOnly_mappingStage
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              cases hUn : SchedContextOps.schedContextUnbindOnCore vScId
+              cases hUn : SchedContextOps.schedContextUnbindAllOnCore vScId
                   executingCore st with
               | error e => simp only [hUn] at hStep; cases hStep
               | ok pair =>
                   obtain ⟨stU, sgiU⟩ := pair
                   simp only [hUn] at hStep
                   cases hStep
-                  exact schedContextUnbindOnCore_mappingStage hUn
+                  exact schedContextUnbindAllOnCore_mappingStage hUn
     all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -568,12 +615,6 @@ theorem clearStashStage_mappingStage {st s st' : SystemState}
     cases h
     exact hS.trans ((clearWokenReceiverStash_mappingStage woken? hClr).trans (hStage _))
 
-/-- The two badge stagings a signal arm ends with. -/
-theorem stageWokenDeliveryTwice_mappingStage (x : SystemState) (w p : Option SeLe4n.ThreadId) :
-    MappingStage x (Architecture.stageWokenDelivery
-      (Architecture.stageWokenDelivery x w 0) p 0) :=
-  (stageWokenDelivery_mappingStage x w 0).trans (stageWokenDelivery_mappingStage _ p 0)
-
 /-- **A reply holder's cancel keeps the mappings recorded**: the suspend's IPC
 cancel, the chain revert and the `Inactive` write. -/
 theorem cancelReplyHolder_mappingStage (st : SystemState) (holder : SeLe4n.ThreadId)
@@ -600,6 +641,56 @@ theorem cancelRecvBusyReply_mappingStage (ctx : LabelingContext) (tid : SeLe4n.T
   · exact MappingStage.refl st
   · exact cancelReplyHolder_mappingStage _ _ _
 
+/-- **A receive that completes its bound notification keeps the mapping
+records**: the checked wait's consumption and the badge register. -/
+theorem completeSignalArm_mappingStage {ctx : LabelingContext} {tid : SeLe4n.ThreadId}
+    {nid : SeLe4n.ObjId} {c : Concurrency.CoreId} {st st' : SystemState}
+    (h : completeSignalArm ctx tid nid c st = .ok ((), st')) : MappingStage st st' := by
+  unfold completeSignalArm at h
+  split at h
+  · rename_i hW
+    cases h
+    exact (MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW).trans
+      (writeReturnFrameToTcb_mappingStage _ _ _)
+  · rename_i hW
+    cases h
+    exact MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW
+  · cases h
+
+/-- **A reply-receive whose receive completes its bound notification keeps the
+mapping records**: the reply, then the completion. -/
+theorem replyRecvCompletesSignalArm_mappingStage {ctx : LabelingContext}
+    {tid prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool}
+    {c : Concurrency.CoreId} {st st' : SystemState}
+    (h : replyRecvCompletesSignalArm ctx tid prevCaller label msg grant c st = .ok ((), st')) :
+    MappingStage st st' := by
+  obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_split h
+  rcases hOr with rfl | ⟨_, _, hC⟩
+  · exact replyTransferOnCoreChecked_mappingStage hR
+  · exact (replyTransferOnCoreChecked_mappingStage hR).trans (completeSignalArm_mappingStage hC)
+
+/-- **The receive past its gate and busy-reply cancel keeps the mapping
+records**: the bound notification completed, `NBRecv`'s failure, or the
+per-core receive with its hand-off and delivery. -/
+theorem receiveResolvedArm_mappingStage {ctx : LabelingContext} {decoded : SyscallDecodeResult}
+    {gate : SyscallGate} {tid : SeLe4n.ThreadId} {epId : SeLe4n.ObjId}
+    {c : Concurrency.CoreId} {st st' : SystemState}
+    (h : receiveResolvedArm ctx decoded gate tid epId c st = .ok ((), st')) :
+    MappingStage st st' := by
+  unfold receiveResolvedArm at h
+  split at h
+  · cases h
+  split at h
+  · exact completeSignalArm_mappingStage h
+  repeat' split at h
+  all_goals first | (cases h; done) | skip
+  · cases h; exact writeReturnFrameToTcb_mappingStage _ _ _
+  rename_i summ _ hRecv _ stDon hHand
+  cases h
+  exact (MappingStage.of_fst_eq endpointReceiveDualWithCapsOnCore_mappingStage hRecv).trans
+    ((applyReceiveRendezvousHandoff_mappingStage hHand).trans
+      (stageDeliveredMessage_mappingStage _ _ _))
+
 /-- **Every arm `dispatchWithCapChecked` routes keeps the mappings recorded**,
 the capability-only arms it delegates, the IPC arms, the audit read and drain
 and the declassification included. -/
@@ -625,17 +716,23 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     all_goals first | (cases h; done) | skip
     rename_i hA
     cases h
-    exact (auditReadFromCore_mappingStage hA).trans (writeReturnFrameToTcb_mappingStage _ _ _)
+    exact (auditReadFromCore_mappingStage hA).trans
+      (Architecture.writeCallReturnWord_of_frame (MappingStage _) (MappingStage.refl _)
+        (fun _ => writeReturnFrameToTcb_mappingStage _ _ _))
   case none.auditDrain =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i hA
     cases h
-    exact (auditDrainVisiblePrefix_mappingStage hA).trans (writeReturnFrameToTcb_mappingStage _ _ _)
+    exact (auditDrainVisiblePrefix_mappingStage hA).trans
+      (Architecture.writeCallReturnWord_of_frame (MappingStage _) (MappingStage.refl _)
+        (fun _ => writeReturnFrameToTcb_mappingStage _ _ _))
   all_goals
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
   case none.send.object epId =>
+    split at h
+    · cases h; exact MappingStage.refl _
     split at h
     · cases h
     rename_i hSend
@@ -645,16 +742,8 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
   case none.receive.object epId =>
     split at h
     · cases h
-    refine (cancelRecvBusyReply_mappingStage ctx tid gate decoded executingCore st).trans ?_
-    unfold receiveResolvedArm at h
-    repeat' split at h
-    all_goals first | (cases h; done) | skip
-    rename_i summ _ hRecv _ stDon hHand
-    cases h
-    exact (MappingStage.of_fst_eq endpointReceiveDualWithCapsOnCore_mappingStage hRecv).trans
-      (((applyReceiveRendezvousHandoff_mappingStage hHand).trans
-        (stageWokenSendCompletion_mappingStage _ _)).trans
-        (stageDeliveredMessage_mappingStage _ _ _))
+    exact (cancelRecvBusyReply_mappingStage ctx tid gate decoded executingCore st).trans
+      (receiveResolvedArm_mappingStage h)
   case none.call.object epId =>
     split at h
     · rename_i hCall
@@ -705,11 +794,12 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     try dsimp only at h
     split at h
     · rename_i hSig
-      exact clearStashStage_mappingStage
-        (MappingStage.of_fst_eq notificationSignalBoundCrossCoreDispatchChecked_mappingStage hSig)
-        (fun x => stageWokenDeliveryTwice_mappingStage x _ _) h
+      cases h
+      exact (MappingStage.of_fst_eq notificationSignalBoundCrossCoreDispatchChecked_mappingStage hSig)
     · cases h
   case none.notificationWait.object notifId =>
+    split at h
+    · cases h; exact writeReturnFrameToTcb_mappingStage _ _ _
     split at h
     · rename_i hW
       cases h
@@ -720,22 +810,24 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
       exact MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW
     · cases h
   case none.replyRecv.object epId =>
+    -- the reply skipped (an extra capability fails, or the reply answers no
+    -- caller): the receive runs on the busy reply's cancel
+    have hRecvLeg : ∀ {st'}, receiveResolvedArm ctx decoded gate tid epId executingCore
+        (cancelRecvBusyReply ctx tid gate decoded executingCore st) = .ok ((), st') →
+        MappingStage st st' := by
+      intro st' h
+      exact (cancelRecvBusyReply_mappingStage ctx tid gate decoded executingCore st).trans
+        (receiveResolvedArm_mappingStage h)
     split at h
     · cases h
     split at h
-    · -- an extra capability fails: the reply is skipped and the receive runs
-      refine (cancelRecvBusyReply_mappingStage ctx tid gate decoded executingCore st).trans ?_
-      unfold receiveResolvedArm at h
-      repeat' split at h
-      all_goals first | (cases h; done) | skip
-      rename_i summ _ hRecv _ stDon hHand
-      cases h
-      exact (MappingStage.of_fst_eq endpointReceiveDualWithCapsOnCore_mappingStage hRecv).trans
-        (((applyReceiveRendezvousHandoff_mappingStage hHand).trans
-          (stageWokenSendCompletion_mappingStage _ _)).trans
-          (stageDeliveredMessage_mappingStage _ _ _))
+    · exact hRecvLeg h
+    split at h
+    · cases h
+    · exact hRecvLeg h
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    · exact replyRecvCompletesSignalArm_mappingStage h
     rename_i summ stR hRR
     cases h
     exact (endpointReplyRecvOnCore_mappingStage hRR).trans (stageDeliveredMessage_mappingStage _ _ _)
@@ -749,9 +841,8 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     try dsimp only at h
     split at h
     · rename_i hSig
-      exact clearStashStage_mappingStage
-        (MappingStage.of_fst_eq (notificationSignalDeclassifiedOnCore_mappingStage _ _ _ _ _ _) hSig)
-        (fun x => stageWokenDeliveryTwice_mappingStage x _ _) h
+      cases h
+      exact (MappingStage.of_fst_eq (notificationSignalDeclassifiedOnCore_mappingStage _ _ _ _ _ _) hSig)
     · cases h
 
 /-- **The checked syscall dispatch keeps the mappings recorded**: the yield, the

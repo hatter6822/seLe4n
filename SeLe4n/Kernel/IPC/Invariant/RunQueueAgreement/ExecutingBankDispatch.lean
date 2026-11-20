@@ -119,7 +119,7 @@ theorem schedContextYieldToOnCore_bankAgree {e e' : CoreId} {c0 : SeLe4n.ThreadI
   generalize (completeYieldFrom st s).releasePlace (determineTargetCore (completeYieldFrom st s) t)
     s = st2 at hA2 hInv2 ⊢
   have hSet : ∀ X : SystemState, X.objects.invExt → bankAgree e c0 X →
-      bankAgree e c0 (setConsumed X s c0) := fun X hX hAX =>
+      bankAgree e c0 (setConsumed X s c0 true) := fun X hX hAX =>
     (bankFrame.mk (by rw [SystemState.setConsumed_eq_objects])
       (.of_eq (by rw [SystemState.setConsumed_scheduler])) fun u _ => (by
         unfold setConsumed
@@ -127,7 +127,7 @@ theorem schedContextYieldToOnCore_bankAgree {e e' : CoreId} {c0 : SeLe4n.ThreadI
         · exact (regsMaskKept.of_kept (savedRegsKeptExcept.updateSchedContext (W := fun _ => False)
             X _ _ hX)).trans (regsMaskKept.updateTcb_caller _
               (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hX) fun _ => rfl)
-        · exact .refl _ : regsMaskKept c0 X (setConsumed X s c0)) u).bankAgree hAX
+        · exact .refl _ : regsMaskKept c0 X (setConsumed X s c0 true)) u).bankAgree hAX
   have hLink : ∀ pC pT, bankAgree e c0 (SchedContextOps.yieldToLink st2 e s c0 t pC pT) :=
     fun pC pT => bankAgree_schedPoint
       (SchedContextOps.yieldToLinkPrefix_objects_invExt st2 e s c0 t pC pT hInv2)
@@ -254,16 +254,10 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
         ((mintReplyCapWithCdt_keyFrame _ _ _ _ hInv h).stepCoversInv (e := e')
           (hRes := by rw [mintReplyCapWithCdt_machine_eq h])
           (hBank := banksKeptOffCore_of_eq (by rw [mintReplyCapWithCdt_machine_eq h])))
-    | exact hF (untypedResetFromCap_savedRegsKept hInv h)
-        ((untypedResetFromCap_keyFrame _ _ _ _ hInv h).stepCoversInv (e := e')
-          (hRes := by rw [untypedResetFromCap_machine_eq h])
-          (hBank := banksKeptOffCore_of_eq (by rw [untypedResetFromCap_machine_eq h])))
     | exact hF (vspaceMapOrRemapFromFrameCap_savedRegsKept hInv h)
         ((vspaceMapOrRemapFromFrameCap_keyFrame _ _ _ _ _ hInv h).stepCoversInv (e := e'))
-    | exact hF (vspaceUnmapPageWithShootdownAndIcacheBroadcast_savedRegsKept hInv h)
-        ((vspaceRootOnlyWrite_keyFrame
-          (vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame _ _ _ _ _ hInv h)).stepCoversInv
-          (e := e'))
+    | exact hF (vspaceUnmapFrameCap_savedRegsKept hInv h)
+        ((vspaceUnmapFrameCap_keyFrame _ _ _ _ hInv h).stepCoversInv (e := e'))
     | exact hF (vspaceUnifyInstructionPage_savedRegsKept h)
         ((capabilityKeyFrame_of_objects_scheduler_eq hInv
           (Architecture.vspaceUnifyInstructionPage_frame h).1
@@ -291,13 +285,19 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
         (schedContextBind_stepCovers _ _ _ _ _ hInv hBi h)
     | exact hX (bindNotification_savedRegsKeptExcept hInv h)
         ((bindNotification_keyFrame _ _ _ _ hInv h).stepCoversInv (e := e'))
+    | exact hF (savedRegsKept.of_unchangedOrNoTcb fun oid =>
+          (schedContextBindNotification_slots hInv h oid).imp id (·.1))
+        ((schedContextBindNotification_keyFrame hInv h).stepCoversInv (e := e')
+          (hRes := by rw [schedContextBindNotification_machine h])
+          (hBank := banksKeptOffCore_of_eq (by rw [schedContextBindNotification_machine h])))
     | exact hF (untypedRetypeFromCap_savedRegsKept hInv h)
          (untypedRetypeFromCap_stepCovers e' hInv hBi hPlaced h)
     | (cases h; rename_i hS
        first
         | (rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hS]
-           exact (bankFrame.writeReturnFrameToTcb_caller _ hInv).bankAgree hA)
-        | exact hP (schedContextUnbindOnCore_schedPointPrefix hInv hS)
+           exact (bankFrame.writeCallReturnWord_caller _ hInv).bankAgree hA)
+        | exact hX (schedContextUnbindAllOnCore_savedRegsKeptExcept hInv hS)
+            (schedContextUnbindAllOnCore_stepCovers _ _ _ e' _ hInv hS)
         | exact schedContextConsumedOnCore_bankAgree hne hInv P.current hA hS
         | exact schedContextYieldToOnCore_bankAgree hne hInv hYA hYN P.current hA hS
         | exact hX (unbindNotification_savedRegsKeptExcept hInv hS)
@@ -350,7 +350,7 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
       hC.1.currentKept hC.1.residentKept)).bankAgree hA
   -- the receive arm on its busy-reply-cancelled state: `.receive`, and the
   -- `.replyRecv` whose reply is skipped
-  have hRecvArm : ∀ epId, receiveResolvedArm decoded gate tid epId ec
+  have hRecvArm : ∀ epId, receiveResolvedArm ctx decoded gate tid epId ec
       (cancelRecvBusyReply ctx tid gate decoded ec st) = .ok ((), st') →
       bankAgree ec tid st' := by
     intro epId h
@@ -372,9 +372,40 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
             P.toEntryPremises.queueHeadCancelFacts h⟩
     obtain ⟨c0, w0, hIC, hHC⟩ := hSC
     generalize cancelRecvBusyReply ctx tid gate decoded ec st = stC at h c0 w0 hIC hHC
-    simp only at h
+    by_cases hSig : receiveCompletesSignal ctx stC tid = true
+    · -- seL4-MCS `receiveIPC`: the bound notification is active, so the
+      -- receive completes it -- the wait writes no saved register, then the
+      -- caller's badge register.
+      cases hRes : resolveRecvReplyId gate decoded stC with
+      | error _ => rw [hRes] at h; cases h
+      | ok r =>
+      rw [hRes] at h
+      simp only [hSig, ↓reduceIte] at h
+      obtain ⟨st1, badge, hWt, _, hPost⟩ := completeSignalArm_consumes hSig h
+      subst hPost
+      obtain ⟨hS, -⟩ := stepCovers_of_pair_eq
+        (notificationWaitCrossCoreDispatchChecked_stepCovers e' hIC) hWt
+      have h1 := notificationWaitCrossCoreDispatchChecked_savedRegsUnwritten ctx
+        (receiverBoundNotification stC tid) tid ec hIC
+      rw [hWt] at h1
+      exact ((hW (stepCovers_trans c0 hS) (w0.trans h1.writtenFree)).trans
+        (bankFrame.writeReturnFrameToTcb_caller _ h1.2)).bankAgree hA
+    simp only [Bool.not_eq_true] at hSig
+    by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
+    · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the caller's
+      -- badge register.
+      cases hRes : resolveRecvReplyId gate decoded stC with
+      | error _ => rw [hRes] at h; cases h
+      | ok r =>
+      rw [hRes] at h
+      simp only [hSig, Bool.false_eq_true, hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq,
+        true_and] at h
+      subst h
+      exact ((hW c0 w0).trans (bankFrame.writeReturnFrameToTcb_caller _ hIC)).bankAgree hA
+    simp only [Bool.not_eq_true] at hNb
     split at h
     · cases h
+    simp only [hSig, hNb, Bool.false_eq_true, ↓reduceIte] at h
     split at h
     · rename_i st1 dequeued summ sgi hRecv
       split at h
@@ -384,12 +415,9 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
       obtain ⟨hV, hVInv⟩ := stepCovers_of_pair_eq
         (endpointReceiveDualWithCapsOnCore_stepCovers e' hIC) hRecv
       obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e' hVInv hHand
-      have hS1 := stageWokenSendCompletion_keyFrame stDon
-        ((stC.getEndpoint? epId).bind (·.sendQ.head)) hDInv
       obtain ⟨w1, i1⟩ := receiveArmCompletion_savedRegsWrittenFree (e := e') (base := st)
         hIC hHC hRecv hHand
-      exact ((hW (stepCovers_trans c0 (stepCovers_trans (stepCovers_trans hV hD)
-        hS1.stepCovers)) (w0.trans w1)).trans
+      exact ((hW (stepCovers_trans c0 (stepCovers_trans hV hD)) (w0.trans w1)).trans
         (bankFrame.stageDeliveredMessage_caller _ i1)).bankAgree hA
     · cases h
   cases hId : decoded.syscallId <;> rw [hId] at h <;> dsimp only at h
@@ -400,7 +428,7 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     rename_i hA'
     cases h
     rw [auditReadFromCore_frame _ _ _ _ _ _ _ hA']
-    exact (bankFrame.writeReturnFrameToTcb_caller _ hInv).bankAgree hA
+    exact (bankFrame.writeCallReturnWord_caller _ hInv).bankAgree hA
   case none.auditDrain =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
@@ -409,7 +437,7 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     unfold auditDrainVisiblePrefix at hA'
     split at hA'
     · cases hA'
-      refine (bankFrame.trans ?_ (bankFrame.writeReturnFrameToTcb_caller _ ?_)).bankAgree hA
+      refine (bankFrame.trans ?_ (bankFrame.writeCallReturnWord_caller _ ?_)).bankAgree hA
       · exact bankFrame.of_frame rfl rfl rfl
       · exact hInv
     · cases hA'
@@ -417,6 +445,8 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
   case none.send.object epId =>
+    split at h
+    · cases h; exact hA
     split at h
     · cases h
     rename_i hSend
@@ -500,14 +530,12 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     · rename_i hSig
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
         (notificationSignalBoundCrossCoreDispatchChecked_stepCovers e' hInv) hSig
-      have hCv := (stepCovers_clearStash_stage hS hSInv (fun x hx => keyFrame_trans_stage hx) h).1
-      split at h
-      · cases h
-      rename_i hClr
       cases h
-      exact (hW hCv (notificationSignalArm_savedRegsWrittenFree P hRT hBNR hSig hClr)).bankAgree hA
+      exact (hW hS (notificationSignalArm_savedRegsWrittenFree P hRT hBNR hSig)).bankAgree hA
     · cases h
   case none.notificationWait.object notifId =>
+    split at h
+    · cases h; exact (bankFrame.writeReturnFrameToTcb_caller _ hInv).bankAgree hA
     split at h
     · rename_i hWt
       cases h
@@ -533,8 +561,28 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     -- and the receive runs alone
     split at h
     · exact hRecvArm epId h
+    -- the reply's resolution: refused, a reply with no caller (the receive
+    -- runs, as on a skipped reply), or a caller to answer
+    split at h
+    · cases h
+    · exact hRecvArm epId h
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    · -- seL4-MCS `handleReplyRecv` whose receive completes the bound
+      -- notification: the reply leg, the wait, then the caller's badge register.
+      obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases h
+      obtain ⟨hC1, hI1⟩ := replyTransferOnCoreChecked_stepCovers e' hInv hR
+      have w1 := replyTransferOnCoreChecked_savedRegsWrittenFree (e := e') P.dequeued hRT hBNR
+        hInv hR
+      rcases hOr with rfl | ⟨st2, badge, _, _, hWt, _, rfl⟩
+      · exact (hW hC1 w1).bankAgree hA
+      · obtain ⟨hS, -⟩ := stepCovers_of_pair_eq
+          (notificationWaitCrossCoreDispatchChecked_stepCovers e' hI1) hWt
+        have h1 := notificationWaitCrossCoreDispatchChecked_savedRegsUnwritten ctx
+          (receiverBoundNotification st1 tid) tid ec hI1
+        rw [hWt] at h1
+        exact ((hW (stepCovers_trans hC1 hS) (w1.trans h1.writtenFree)).trans
+          (bankFrame.writeReturnFrameToTcb_caller _ h1.2)).bankAgree hA
     rename_i summ stR hRR
     cases h
     obtain ⟨hS, hSInv⟩ := endpointReplyRecvOnCore_stepCovers e' hInv hRR
@@ -557,12 +605,8 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     · rename_i hSig
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
         (notificationSignalDeclassifiedOnCore_stepCovers e' hInv) hSig
-      have hCv := (stepCovers_clearStash_stage hS hSInv (fun x hx => keyFrame_trans_stage hx) h).1
-      split at h
-      · cases h
-      rename_i hClr
       cases h
-      exact (hW hCv (declassifySignalArm_savedRegsWrittenFree P hRT hBNR hSig hClr)).bankAgree hA
+      exact (hW hS (declassifySignalArm_savedRegsWrittenFree P hRT hBNR hSig)).bankAgree hA
     · cases h
 
 /-! ### The yield, the taint pass and the checked dispatch -/

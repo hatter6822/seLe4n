@@ -1064,6 +1064,16 @@ private def sr040_liveFrozenSuspendAgree : IO Unit := do
   | .error e, _ => throw <| IO.userError s!"SR-040 live suspend should succeed, got {repr e}"
   | _, .error e => throw <| IO.userError s!"SR-040 frozen suspend should succeed, got {repr e}"
 
+/-- `st` with thread `tid`'s saved syscall-number register (`x7`) holding `w`:
+the word the thread trapped with, which seL4's `isCall` reads. -/
+private def withTrappedWord (st : SystemState) (tid : SeLe4n.ThreadId) (w : UInt64) :
+    SystemState :=
+  match st.objects[tid.toObjId]? with
+  | some (.tcb t) =>
+    let rf := { t.registerContext with x7 := w }
+    { st with objects := st.objects.insert tid.toObjId (.tcb { t with registerContext := rf }) }
+  | _ => st
+
 /-- A yielder (thread 1) current on the boot core and linked to context 50,
 which has consumed 7 units; thread 2 unlinked. -/
 private def yieldLinkedCurrentState (current : SeLe4n.ThreadId) : SystemState :=
@@ -1198,17 +1208,31 @@ context, it refuses before any write. -/
 private def sr045_consumedInvocationReadsAndResets : IO Unit := do
   let core := SeLe4n.Kernel.Concurrency.bootCoreId
   let st := yieldLinkedCurrentState ⟨2⟩
-  match SeLe4n.Kernel.schedContextConsumedOnCore (SeLe4n.SchedContextId.ofNat 50) core st with
+  match SeLe4n.Kernel.schedContextConsumedOnCore (SeLe4n.SchedContextId.ofNat 50) core
+      (withTrappedWord st ⟨2⟩ Syscall.call.word) with
   | .ok st' =>
     match st'.objects[(⟨2⟩ : ObjId)]?, st'.objects[(⟨50⟩ : ObjId)]? with
     | some (.tcb t), some (.schedContext sc) =>
       expect "SR-045 the caller's MR0 holds the consumed time" (t.registerContext.x2 == 7)
-      expect "SR-045 ...with a one-register message info"
-        (t.registerContext.x1 == SeLe4n.Kernel.consumedInfoWord)
+      expect "SR-045 ...with a one-register message info and badge register zero"
+        (t.registerContext.x1 == SeLe4n.Kernel.consumedInfoWord && t.registerContext.x0 == 0)
       expect "SR-045 the count is taken off and the yield link kept"
         (sc.consumed == 0 && sc.yieldFromCode == 2)
     | _, _ => throw <| IO.userError "SR-045 objects not found after the invocation"
   | .error e => throw <| IO.userError s!"SR-045 Consumed should succeed, got {repr e}"
+  -- seL4-MCS `setConsumed(sc, ksCurThread, call)`: a `Send` of the invocation
+  -- takes the count off and writes no register.
+  let stS := withTrappedWord st ⟨2⟩ Syscall.send.word
+  match SeLe4n.Kernel.schedContextConsumedOnCore (SeLe4n.SchedContextId.ofNat 50) core stS,
+      stS.objects[(⟨2⟩ : ObjId)]? with
+  | .ok st', some (.tcb t0) =>
+    match st'.objects[(⟨2⟩ : ObjId)]?, st'.objects[(⟨50⟩ : ObjId)]? with
+    | some (.tcb t), some (.schedContext sc) =>
+      expect "SR-045 a Send writes no register of the caller"
+        (t.registerContext == t0.registerContext)
+      expect "SR-045 ...and still takes the count off" (sc.consumed == 0)
+    | _, _ => throw <| IO.userError "SR-045 objects not found after the Send"
+  | _, _ => throw <| IO.userError "SR-045 Consumed by Send should succeed"
   expect "SR-045 an object that is no context is refused"
     (match SeLe4n.Kernel.schedContextConsumedOnCore (SeLe4n.SchedContextId.ofNat 2) core st with
      | .error (.invalidCapability _) => true | _ => false)
@@ -1519,8 +1543,20 @@ is left alone; either way the caller keeps running, gets the consumed time now
 and is not linked. -/
 private def sr054_yieldToReturnsNow : IO Unit := do
   let core := SeLe4n.Kernel.Concurrency.bootCoreId
-  for (label, st) in [("lower-priority", yieldToState 1 (targetPrio := 5)),
+  for (label, st0) in [("lower-priority", yieldToState 1 (targetPrio := 5)),
       ("unschedulable", yieldToState 1 (targetState := .Inactive))] do
+    let st := withTrappedWord st0 ⟨1⟩ Syscall.call.word
+    -- seL4-MCS `setConsumed(sc, ksCurThread, call)`: a `Send` of the
+    -- invocation takes the count off and writes no register.
+    let stS := withTrappedWord st0 ⟨1⟩ Syscall.send.word
+    match yieldToOn stS, stS.objects[(⟨1⟩ : ObjId)]? with
+    | .ok sS, some (.tcb t0) =>
+      match sS.objects[(⟨1⟩ : ObjId)]?, sS.objects[(⟨50⟩ : ObjId)]? with
+      | some (.tcb t), some (.schedContext sc) =>
+        expect s!"SR-054 {label}: a Send writes no register of the caller"
+          (t.registerContext == t0.registerContext && sc.consumed == 0)
+      | _, _ => throw <| IO.userError s!"SR-054 {label}: objects not found after the Send"
+    | _, _ => throw <| IO.userError s!"SR-054 {label}: yieldTo by Send should succeed"
     match yieldToOn st with
     | .ok st' =>
       match st'.objects[(⟨1⟩ : ObjId)]?, st'.objects[(⟨50⟩ : ObjId)]? with

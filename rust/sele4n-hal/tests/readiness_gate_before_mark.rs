@@ -21,17 +21,17 @@
 //! other way round.  The halt exists because a thread on a not-ready core is
 //! never preempted again, so *any* frame returned to it is the CPU forever —
 //! an `invalidSyscallNumber` frame from the prefilter as much as a dispatched
-//! one.  The second case pins that an out-of-range id halts on a not-ready
-//! core rather than being refused as a frame.
+//! one.  The second case pins that a word naming no syscall halts on a
+//! not-ready core rather than being refused as a frame.
 
-use sele4n_hal::svc_dispatch::{dispatch_svc, SyscallId};
+use sele4n_hal::svc_dispatch::{dispatch_svc, Syscall};
 
 #[test]
 fn svc_seam_halts_before_any_core_is_ready() {
     // `cpu::fatal_halt` panics on the host lane; catch it so this assertion is
     // an observation rather than an abort.  `catch_unwind` is sound here: the
     // seam commits nothing before the gate, so no state is left torn.
-    let outcome = std::panic::catch_unwind(|| dispatch_svc(SyscallId::Send.to_u32()));
+    let outcome = std::panic::catch_unwind(|| dispatch_svc(Syscall::Send.word()));
     assert!(
         outcome.is_err(),
         "an SVC on a core whose Lean runtime is not initialized must halt the \
@@ -40,14 +40,15 @@ fn svc_seam_halts_before_any_core_is_ready() {
 }
 
 #[test]
-fn svc_out_of_range_id_halts_before_the_prefilter() {
-    // PR #889 review: the readiness gate is consulted before the id prefilter,
-    // so an out-of-range id on a not-ready core halts rather than being handed
-    // back as an `InvalidSyscallId` the thread would resume on.
-    let outcome = std::panic::catch_unwind(|| dispatch_svc(SyscallId::ENCODING_BOUND));
+fn svc_unknown_word_halts_before_the_prefilter() {
+    // PR #889 review: the readiness gate is consulted before the prefilter
+    // (WS-SX SX7.2: `Syscall::from_word`), so a word that names no syscall on
+    // a not-ready core halts rather than being handed back as an
+    // `InvalidSyscallId` the thread would resume on.
+    let outcome = std::panic::catch_unwind(|| dispatch_svc(0));
     assert!(
         outcome.is_err(),
-        "an out-of-range syscall id on a not-ready core must halt, not be refused \
+        "a word naming no syscall on a not-ready core must halt, not be refused \
          by the prefilter — a refusal is a frame the thread resumes on"
     );
 }

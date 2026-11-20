@@ -55,6 +55,7 @@ theorem endpointCallOnCore_ok_rendezvous_decompose
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint) (receiver : SeLe4n.ThreadId)
     (hEp : st.getEndpoint? endpointId = some ep)
     (hHead : ep.receiveQ.head = some receiver)
+    (hLinks : callRendezvousLinks st receiver payload = true)
     (sgi : Option (CoreId × SgiKind))
     (hOk : (endpointCallOnCore endpointId caller payload executingCore st).2 = .ok sgi) :
     ∃ (recvTcb0 : TCB) (st' st'' st4 st5 : SystemState),
@@ -71,6 +72,7 @@ theorem endpointCallOnCore_ok_rendezvous_decompose
   simp only []
   rw [hHead]
   simp only []
+  rw [if_pos hLinks]
   cases hPop : endpointQueuePopHead endpointId true st with
   | error e => intro hOk; cases hOk
   | ok triple =>
@@ -125,6 +127,7 @@ theorem endpointCallOnCore_rendezvous_post_ipcState
     (hEp : st.getEndpoint? endpointId = some ep)
     (hHead : ep.receiveQ.head = some receiver)
     (hNe : caller ≠ receiver)
+    (hLinks : callRendezvousLinks st receiver payload = true)
     (sgi : Option (CoreId × SgiKind))
     (hOk : (endpointCallOnCore endpointId caller payload executingCore st).2 = .ok sgi) :
     (∀ tcb, (endpointCallOnCore endpointId caller payload executingCore st).1.getTcb? caller
@@ -133,7 +136,7 @@ theorem endpointCallOnCore_rendezvous_post_ipcState
         = some tcb → tcb.ipcState = .ready) := by
   obtain ⟨recvTcb0, st', st'', st4, st5, hPop, hStore, hCallerStore, hLink, hEq⟩ :=
     endpointCallOnCore_ok_rendezvous_decompose endpointId caller payload executingCore st ep
-      receiver hEp hHead sgi hOk
+      receiver hEp hHead hLinks sgi hOk
   -- Object-store invariants along the chain.
   have hInv' : st'.objects.invExt :=
     endpointQueuePopHead_preserves_objects_invExt endpointId true st st' receiver recvTcb0
@@ -415,6 +418,10 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
         | none => simp only; exact hWithCaps
         | some receiverTid =>
           simp only
+          by_cases hLk : callRendezvousLinks st receiverTid payload = true
+          rotate_left
+          · rw [if_neg hLk]; exact hWithCaps
+          rw [if_pos hLk]
           cases hCV : SeLe4n.ThreadId.toValid? caller with
           | none => simp only; exact hWithCaps
           | some callerV =>
@@ -433,7 +440,8 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
               obtain ⟨hCallerBlk, hRecvReady⟩ :=
                 endpointCallOnCore_rendezvous_post_ipcState endpointId caller
                   payload executingCore
-                  st ep receiverTid hObjInv hEp hHead (hNe ep receiverTid hEp hHead) sgi' hCallOk
+                  st ep receiverTid hObjInv hEp hHead (hNe ep receiverTid hEp hHead) hLk sgi'
+                  hCallOk
               have hCallerV : callerV.val = caller :=
                 SeLe4n.ThreadId.toValid?_some_val_eq caller callerV hCV
               have hReceiverV : receiverV.val = receiverTid :=

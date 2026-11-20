@@ -314,6 +314,23 @@ theorem cspaceRecordFrameMapping_keyFrame (addr : CSpaceAddr) (m : FrameMapping)
     (SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hCn
   exact storeObject_inert_keyFrame hObjInv hStore (by rw [hPre]; rfl) rfl
 
+theorem cspaceClearFrameMapping_keyFrame (addr : CSpaceAddr) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hStep : cspaceClearFrameMapping addr st = .ok ((), st')) :
+    capabilityKeyFrame st st' := by
+  obtain ⟨cn, cap, hCn, -, hStore⟩ := cspaceClearFrameMapping_ok_decompose addr st st' hStep
+  have hPre : st.objects[addr.cnode]? = some (.cnode cn) :=
+    (SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hCn
+  exact storeObject_inert_keyFrame hObjInv hStore (by rw [hPre]; rfl) rfl
+
+/-- `Page_Unmap`: the teardown writes VSpace roots alone, then the record clear
+one CNode. -/
+theorem vspaceUnmapFrameCap_keyFrame (ec : CoreId) (addr : CSpaceAddr) (st st' : SystemState)
+    (hObjInv : st.objects.invExt) (hStep : vspaceUnmapFrameCap ec addr st = .ok ((), st')) :
+    capabilityKeyFrame st st' := by
+  obtain ⟨st1, hU, hC⟩ := vspaceUnmapFrameCap_cases hStep
+  have k1 := vspaceRootOnlyWrite_keyFrame (unmapLivePages_ok_frame ec _ st st1 hObjInv hU)
+  exact k1.trans (cspaceClearFrameMapping_keyFrame _ st1 st' k1.2.2 hC)
+
 theorem vspaceMapFromFrameCap_keyFrame (tid : SeLe4n.ThreadId) (ec : CoreId)
     (args : Architecture.SyscallArgDecode.VSpaceMapArgs) (st st' : SystemState) (hObjInv : st.objects.invExt)
     (hStep : vspaceMapFromFrameCap tid ec args st = .ok ((), st')) :
@@ -376,16 +393,6 @@ theorem untypedRetypeObject_keyFrameOffChild (src dst : CSpaceAddr) (childId : S
     rw [ht, storeObject_objects_eq _ _ _ _ k1.2.2 hStCh]
     cases req <;> simp [CarveRequest.object, carvedTcb]
   · rw [kR.2.1, storeObject_scheduler_eq _ _ _ _ hStCh, k1.2.1]
-
-/-- WS-ZA ZA5.4: the `.untypedReset` arm — the invoked slot's free-index rewind,
-a CNode store, which feeds no key, and nothing else. -/
-theorem untypedResetFromCap_keyFrame (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
-    (st st' : SystemState) (hObjInv : st.objects.invExt)
-    (hStep : untypedResetFromCap tid srcAddr st = .ok ((), st')) :
-    capabilityKeyFrame st st' := by
-  obtain ⟨_, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ st st' hStep
-  rw [untypedResetSlot_ok_frame hS]
-  exact setCapFreeIndex_keyFrame _ _ _ hObjInv
 
 /-! ### One-field TCB rewrites and registry writes -/
 
@@ -584,5 +591,57 @@ theorem pageTableUnmap_keyFrame (tableId : SeLe4n.ObjId) (st st' : SystemState)
                 (by simp only [Architecture.recordPhysicalWrites_objects, hR1]; rfl) rfl)
         · exact storeObject_inert_keyFrame hObjInv hStep (by rw [hT']; rfl) rfl
 
+
+/-- The bind writes no machine state. -/
+theorem schedContextBindNotification_machine {vScId : SeLe4n.ValidObjId}
+    {n : SeLe4n.ObjId} {st st' : SystemState}
+    (h : schedContextBindNotification vScId n st = .ok ((), st')) : st'.machine = st.machine := by
+  obtain ⟨-, rfl⟩ := schedContextBindNotification_ok_admitted h
+  unfold bindNotificationSchedLink SystemState.modifyObject
+  exact SystemState.updateSchedContext_machine _ _ _
+
+/-- A raw insert that keeps its slot's scheduling-key inputs keeps the
+capability key frame. -/
+theorem capabilityKeyFrame_insert {st : SystemState} {k : SeLe4n.ObjId} {obj : KernelObject}
+    (hInv : st.objects.invExt) (hK : keyInputsOf (some obj) = keyInputsOf st.objects[k]?) :
+    capabilityKeyFrame st { st with objects := st.objects.insert k obj } := by
+  refine ⟨fun oid => ?_, rfl, RHTable_insert_preserves_invExt _ _ _ hInv⟩
+  show keyInputsOf (st.objects.insert k obj)[oid]? = _
+  simp only [RHTable_getElem?_eq_get?] at hK ⊢
+  by_cases hx : k = oid
+  · subst hx; rw [RobinHood.RHTable.getElem?_insert_self _ _ _ hInv]; exact hK
+  · rw [RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hx (eq_of_beq hb)) hInv]
+
+/-- **The bind keeps every scheduling key**: a context's key input is the sign of
+its budget, and a notification has none. -/
+theorem schedContextBindNotification_keyFrame {vScId : SeLe4n.ValidObjId}
+    {n : SeLe4n.ObjId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : schedContextBindNotification vScId n st = .ok ((), st')) : capabilityKeyFrame st st' := by
+  obtain ⟨hA, rfl⟩ := schedContextBindNotification_ok_admitted h
+  obtain ⟨sc, ntfn, hS, -, hN, -⟩ := schedContextBindNotificationAdmitted_facts hA
+  obtain ⟨h1, hEq⟩ := bindNotificationSchedLink_eq hS hN hInv
+  have hSraw := (SystemState.getSchedContext?_eq_some_iff st _ sc).mp hS
+  rw [hEq]
+  have k1 : capabilityKeyFrame st
+      (st.updateSchedContext (SeLe4n.SchedContextId.ofObjId vScId.val)
+        (fun sc => { sc with notificationCode := n.val + 1 })) := by
+    rw [SystemState.updateSchedContext_eq_of_some hS]
+    exact capabilityKeyFrame_insert hInv (by rw [hSraw]; rfl)
+  exact k1.trans (capabilityKeyFrame_insert k1.2.2 (by rw [h1]; rfl))
+
+/-- **The notification unbind keeps every scheduling key**: a context's key
+input is the sign of its budget, and a notification has none. -/
+theorem unbindSchedContextNotification_keyFrame (st : SystemState) (s : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) : capabilityKeyFrame st (unbindSchedContextNotification st s) := by
+  rcases unbindSchedContextNotification_shape st s hInv with h | ⟨sc, hS, h | ⟨n, ntfn, h1, h⟩⟩
+  · rw [h]; exact capabilityKeyFrame_of_objects_scheduler_eq hInv rfl rfl
+  all_goals
+    have hSraw := (SystemState.getSchedContext?_eq_some_iff st _ sc).mp hS
+    have k1 : capabilityKeyFrame st
+        (st.updateSchedContext s (fun c => { c with notificationCode := 0 })) := by
+      rw [SystemState.updateSchedContext_eq_of_some hS]
+      exact capabilityKeyFrame_insert hInv (by rw [hSraw]; rfl)
+  · rw [h]; exact k1
+  · rw [h]; exact k1.trans (capabilityKeyFrame_insert k1.2.2 (by rw [h1]; rfl))
 
 end SeLe4n.Kernel

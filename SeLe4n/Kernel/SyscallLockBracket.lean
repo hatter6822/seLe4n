@@ -109,7 +109,7 @@ The point of naming it is `abiEntryPlan_dispatches` below: a footprint resolved
 from a decode the dispatch does not use is a footprint for a different
 operation. -/
 def abiEntryPlan (ctx : LabelingContext) (executingCore : CoreId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64) (st : SystemState) :
     Option (SeLe4n.ThreadId × SyscallDecodeResult × SystemState) :=
   if isInsecureDefaultContext ctx then none
   else
@@ -117,11 +117,12 @@ def abiEntryPlan (ctx : LabelingContext) (executingCore : CoreId)
     | none => none
     | some tid =>
       if isIdleThreadId tid then none else
-      let stRegs := Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
+      let stRegs := Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
       match lookupThreadRegisterContext tid stRegs with
       | .error _ => none
       | .ok (regs, _) =>
         match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+                (threadOperationCode stRegs tid SeLe4n.arm64DefaultLayout regs)
                 stRegs tid SeLe4n.arm64DefaultLayout regs 32 with
         | .error _ => none
         | .ok decoded =>
@@ -137,39 +138,62 @@ normalisation applied to the decode, stops this elaborating rather than silently
 leaving the bracket around a different syscall. -/
 theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
     (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
-    (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState)
+    (x6 elr spsr spEl0 x30 : UInt64) (st : SystemState)
     (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (stSpilled : SystemState)
-    (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
           = some (tid, decoded, stSpilled)) :
     Platform.FFI.syscallDispatchFromAbi ctx executingCore syscallId
-        x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+        x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
       = (match dispatchSyscallChecked ctx decoded tid executingCore stSpilled with
          | .error ke =>
              match Platform.FFI.syscallCapFaultAt SeLe4n.arm64DefaultLayout
-                 (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+                 (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
                  (cancelReceiveBusyReply ctx executingCore
-                   (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
+                   (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
                  tid ke with
              | some fault =>
+                 if Platform.FFI.syscallDropsFault syscallId fault then
+                   .ok (.resumes, Platform.FFI.recordDroppedFault ctx executingCore
+                     (Platform.FFI.seamOperationCode
+                       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid)
+                     tid x0 fault
+                     (cancelReceiveBusyReply ctx executingCore
+                       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)))
+                 else
                  .ok (.faulted,
                       Platform.FFI.deliverSyscallCapFault ctx executingCore
                         (cancelReceiveBusyReply ctx executingCore
-                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
+                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
                         tid fault
                         (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5
-                          ipcBufferAddr spEl0 x30) elr spsr)
+                          x6 spEl0 x30) elr spsr)
              | none =>
+                 if syscallId = Syscall.call.number.toUInt32 then
                  .ok (.returns (Architecture.errorFrameFor
                         (cancelReceiveBusyReply ctx executingCore
-                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
+                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
                         tid ke),
-                      Platform.FFI.recordSyscallRefusal ctx executingCore syscallId tid ke x0
+                      Platform.FFI.recordSyscallRefusal ctx executingCore
+                        (Platform.FFI.seamOperationCode
+                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid)
+                        tid ke x0
                         (Architecture.recordErrorOverflow
                           (cancelReceiveBusyReply ctx executingCore
-                            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5))
+                            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
                           tid ke))
+                 else
+                 .ok (.resumes,
+                      Platform.FFI.recordSyscallRefusal ctx executingCore
+                        (Platform.FFI.seamOperationCode
+                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid)
+                        tid ke x0
+                        (cancelReceiveBusyReply ctx executingCore
+                          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)))
          | .ok ((), st') =>
-             .ok (Platform.FFI.syscallReturnOutcome syscallId st' tid, st')) := by
+             .ok (Platform.FFI.syscallSuccessOutcome syscallId
+               (Platform.FFI.seamOperationCode
+                 (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid)
+               st' tid, st')) := by
   unfold abiEntryPlan at h
   unfold Platform.FFI.syscallDispatchFromAbi
   by_cases hCtx : isInsecureDefaultContext ctx
@@ -184,14 +208,17 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
       · rw [if_pos hI] at h; exact absurd h (by simp)
       rw [if_neg hI] at h
       cases hRegs : lookupThreadRegisterContext tid'
-          (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5) with
+          (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5 x6) with
       | error e => rw [hRegs] at h; exact absurd h (by simp)
       | ok regsPair =>
         obtain ⟨regs, _⟩ := regsPair
         rw [hRegs] at h
         simp only at h
         cases hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
-            (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5)
+            (threadOperationCode
+              (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5 x6)
+              tid' SeLe4n.arm64DefaultLayout regs)
+            (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5 x6)
             tid' SeLe4n.arm64DefaultLayout regs 32 with
         | error e => rw [hDec] at h; exact absurd h (by simp)
         | ok decoded' =>
@@ -202,7 +229,7 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
           -- `syscallEntryChecked` reads the caller off the **spilled** state;
           -- the spill frames the scheduler, so it reads the same caller.
           have hSched := Platform.FFI.writeFfiRegistersToTcb_scheduler st tid'
-            syscallId x0 x1 x2 x3 x4 x5
+            syscallId x0 x1 x2 x3 x4 x5 x6
           simp only [syscallEntryChecked, hCtx, hSched, hCur, hI, hRegs, hDec,
             Bool.false_eq_true, if_false]
           rfl
@@ -213,18 +240,21 @@ file at the spilled state, and the state the dispatch runs on is that spilled
 state.  What the seam coverage proof
 reads to carry a claim from the dispatch state back to the entry state. -/
 theorem abiEntryPlan_components (ctx : LabelingContext) (executingCore : CoreId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64) (st : SystemState)
     (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (stSpilled : SystemState)
-    (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
           = some (tid, decoded, stSpilled)) :
     st.scheduler.currentOnCore executingCore = some tid ∧
       ∃ tcb : TCB,
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).getObject?
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).getObject?
             tid.toObjId = some (.tcb tcb) ∧
         SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid
+          (threadOperationCode
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid
+            SeLe4n.arm64DefaultLayout tcb.registerContext)
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid
           SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .ok decoded ∧
-        stSpilled = Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 := by
+        stSpilled = Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6 := by
   unfold abiEntryPlan at h
   by_cases hCtx : isInsecureDefaultContext ctx
   · rw [if_pos hCtx] at h; exact absurd h (by simp)
@@ -238,14 +268,17 @@ theorem abiEntryPlan_components (ctx : LabelingContext) (executingCore : CoreId)
       · rw [if_pos hI] at h; exact absurd h (by simp)
       rw [if_neg hI] at h
       cases hRegs : lookupThreadRegisterContext tid'
-          (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5) with
+          (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5 x6) with
       | error e => rw [hRegs] at h; exact absurd h (by simp)
       | ok regsPair =>
         obtain ⟨regs, _⟩ := regsPair
         rw [hRegs] at h
         simp only at h
         cases hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
-            (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5)
+            (threadOperationCode
+              (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5 x6)
+              tid' SeLe4n.arm64DefaultLayout regs)
+            (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5 x6)
             tid' SeLe4n.arm64DefaultLayout regs 32 with
         | error e => rw [hDec] at h; exact absurd h (by simp)
         | ok decoded' =>
@@ -426,7 +459,7 @@ where they land is read from the sender's frame at the state the footprint is
 resolved in (`sendCapRequest`, `rendezvousCapsDestination?`), so nothing is
 resolved, and no derivation node minted, before the bracket holds its locks. -/
 def abiEntryPayload (cap : Capability) : SendPayload :=
-  .frame cap.badge (cap.rights.mem .grant)
+  .frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)
 
 /-- **The operands a receive declares** on the endpoint `epId`: the reply the
 receive resolves, or, when the reply is busy with another thread, the reply its
@@ -448,13 +481,13 @@ def receiveLockOperands (gate : SyscallGate) (decoded : SyscallDecodeResult)
 
 /-- **The syscall whose footprint an entry declares**: the decoded syscall,
 except a `.replyRecv` whose reply is skipped (an extra capability of its message
-does not look up: seL4-MCS `handleInvocation` with `isBlocking = false`), which
-runs the receive alone and so declares the receive's footprint, the busy
-reply's holder included (`receivesWithoutReply`). -/
+does not look up: seL4-MCS `handleInvocation` with `isBlocking = false`; or its
+reply answers no caller: `doReplyTransfer` returns), which runs the receive
+alone and so declares the receive's footprint, the busy reply's holder included
+(`receivesWithoutReply`, `replyRecvSkipsReply`). -/
 def abiEntryFootprintId (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (s : SystemState) : SyscallId :=
-  if decoded.syscallId = .replyRecv ∧
-      (callerExtraCapsFault? s tid decoded.msgInfo.extraCaps).isSome = true then .receive
+  if decoded.syscallId = .replyRecv ∧ replyRecvSkipsReply decoded tid s = true then .receive
   else decoded.syscallId
 
 /-- The footprint is the receive's exactly when the dispatch runs the receive
@@ -463,8 +496,7 @@ theorem abiEntryFootprintId_eq_receive_iff (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (s : SystemState) :
     abiEntryFootprintId decoded tid s = .receive ↔ receivesWithoutReply decoded tid s := by
   unfold abiEntryFootprintId receivesWithoutReply
-  by_cases h : decoded.syscallId = .replyRecv ∧
-      (callerExtraCapsFault? s tid decoded.msgInfo.extraCaps).isSome = true
+  by_cases h : decoded.syscallId = .replyRecv ∧ replyRecvSkipsReply decoded tid s = true
   · simp only [h, and_self, ↓reduceIte, or_true]
   · rw [if_neg h]
     constructor
@@ -574,28 +606,29 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                      badge := cap.badge },
                  replyMessageInfo := some decoded.msgInfo,
                  replyRegisters := some decoded.msgRegs }
-      -- **Cut C4b**: `.replyRecv` carries the reply *payload* — MR1.. , the
-      -- leading control register stripped exactly as the live arm strips it —
-      -- badged with the REPLY cap's badge rather than the endpoint receive
-      -- cap's, and the `MessageInfo` whose label a faulted caller's answer
-      -- decodes.
+      -- **Cut C4b**: `.replyRecv` carries the reply *payload* — the whole
+      -- message, MR0 on, as the live arm sends it (WS-SX SX7.3: the reply
+      -- capability is named by the reply register) — badged with the REPLY
+      -- cap's badge rather than the endpoint receive cap's, and the
+      -- `MessageInfo` whose label a faulted caller's answer decodes.
       | .replyRecv, .object epId =>
-          -- an extra capability whose lookup fails skips the reply (seL4-MCS
-          -- `handleInvocation` with `isBlocking = false`) and the receive runs
-          -- alone, so the operands are the receive's, the busy reply's holder
-          -- named as `.receive` names it; the footprint is the receive's
-          -- (`abiEntryFootprintId`)
+          -- an extra capability whose lookup fails, or a reply that answers no
+          -- caller, skips the reply (seL4-MCS `handleInvocation` with
+          -- `isBlocking = false`; `doReplyTransfer` returning) and the receive
+          -- runs alone, so the operands are the receive's, the busy reply's
+          -- holder named as `.receive` names it; the footprint is the
+          -- receive's (`abiEntryFootprintId`)
           if (callerExtraCapsFault? s tid decoded.msgInfo.extraCaps).isSome then
             receiveLockOperands gate decoded tid epId s
           else
           match resolveReplyRecvReply gate decoded s with
           | .error _ => none
-          | .ok (rid, _, replyBadge, replyGrant) =>
-              let full :=
-                Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs decoded.msgInfo
+          | .ok none => receiveLockOperands gate decoded tid epId s
+          | .ok (some (rid, _, replyBadge, replyGrant)) =>
               some { caller := tid, targetObject := some epId, targetReply := some rid,
                      message := some
-                       { registers := full.extract 1 full.size,
+                       { registers := Architecture.RegisterDecode.extractMessageRegisters
+                           decoded.msgRegs decoded.msgInfo,
                          badge := replyBadge },
                      replyMessageInfo := some decoded.msgInfo,
                      replyGrant := some replyGrant }
@@ -669,9 +702,9 @@ capability names — every input derived from the entry's own resolution rather
 than supplied alongside it.  A caller cannot bracket one syscall's footprint
 around another's. -/
 def declaredLockSetForAbiEntry (ctx : LabelingContext) (executingCore : CoreId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64) (st : SystemState) :
     Option LockSet :=
-  match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
+  match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st with
   | none => none
   | some (tid, decoded, stSpilled) =>
     (abiEntryLockOperands decoded tid stSpilled).bind
@@ -685,17 +718,17 @@ dispatch runs on.
 Stated rather than left to a reader of the definition, so a future cut that
 reintroduces an independent argument has to break a proof to do it. -/
 theorem declaredLockSetForAbiEntry_binds_decode (ctx : LabelingContext)
-    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
+    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64)
     (st : SystemState) (S : LockSet)
-    (h : declaredLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    (h : declaredLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
           = some S) :
     ∃ tid decoded stSpilled ops,
-      abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+      abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
         = some (tid, decoded, stSpilled) ∧
       abiEntryLockOperands decoded tid stSpilled = some ops ∧
       lockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops stSpilled = some S := by
   unfold declaredLockSetForAbiEntry at h
-  cases hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
+  cases hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st with
   | none => rw [hPlan] at h; exact absurd h (by simp)
   | some triple =>
     obtain ⟨tid, decoded, stSpilled⟩ := triple
@@ -808,17 +841,24 @@ theorem abiEntryLockOperands_caller (decoded : SyscallDecodeResult)
           | exact absurd h (by simp)
           | simp_all
 
-/-- A reply-receive names its reply capability's address as a receive does:
-both decodes read MR0 (`decodeReplyRecvArgs`, `decodeRecvArgs`). -/
+/-- A receive's declared operands read only the reply its decode names
+(`receiveReplyAddr?`). -/
+theorem receiveLockOperands_congr_names (gate : SyscallGate) {d d' : SyscallDecodeResult}
+    (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) (s : SystemState)
+    (h : receiveReplyAddr? d = receiveReplyAddr? d') :
+    receiveLockOperands gate d tid epId s = receiveLockOperands gate d' tid epId s := by
+  unfold receiveLockOperands resolveRecvReplyId recvReplyLookup?
+  rw [h]
+
+/-- A reply-receive names its reply capability's address as a receive that
+can reply does: both read the reply register (`receiveReplyAddr?`). -/
 theorem receiveReplyFault?_replyRecv (gate : SyscallGate) (decoded : SyscallDecodeResult)
     (s : SystemState) (hS : decoded.syscallId = .replyRecv) :
     receiveReplyFault? gate decoded s =
-      receiveReplyFault? gate { decoded with syscallId := .receive } s := by
+      receiveReplyFault? gate { decoded with syscallId := .receive, canReply := true } s := by
   unfold receiveReplyFault? receiveReplyAddr?
   rw [hS]
-  simp only [Architecture.SyscallArgDecode.decodeReplyRecvArgs,
-    Architecture.SyscallArgDecode.decodeRecvArgs]
-  cases Architecture.SyscallArgDecode.requireMsgReg decoded.msgRegs 0 <;> rfl
+  rfl
 
 /-- A receive's declared operands mean its reply capability raises no fault:
 the reply resolved, or looked up and is busy. -/
@@ -880,12 +920,19 @@ theorem abiEntryLockOperands_gate_lookup (decoded : SyscallDecodeResult)
           rcases hS with hS | hS <;> rw [hS] at h <;> cases hT : cap.target <;>
             simp only [hT] at h <;> (try (simp at h; done))
           · exact receiveLockOperands_receiveReplyFault? gate decoded tid _ s ops hS h
-          · split at h
-            · rw [receiveReplyFault?_replyRecv gate decoded s hS]
-              exact receiveLockOperands_receiveReplyFault? gate { decoded with syscallId := .receive }
-                tid _ s ops rfl h
+          · have hAsRecv : ∀ epId,
+                receiveLockOperands gate decoded tid epId s = some ops →
+                  receiveReplyFault? gate decoded s = none := fun epId h => by
+              rw [receiveReplyFault?_replyRecv gate decoded s hS]
+              rw [receiveLockOperands_congr_names gate tid epId s
+                (d' := { decoded with syscallId := .receive, canReply := true })
+                (by rw [receiveReplyAddr?_of_replyRecv' hS]; rfl)] at h
+              exact receiveLockOperands_receiveReplyFault? gate _ tid _ s ops rfl h
+            split at h
+            · exact hAsRecv _ h
             · split at h
               · simp at h
+              · exact hAsRecv _ h
               · exact receiveReplyFault?_of_resolveReplyRecvReply_ok gate decoded s _ hS
                   (by assumption)
       · rw [hG] at h; exact absurd h (by simp)
@@ -949,7 +996,23 @@ theorem abiEntryLockOperands_receive_busy (decoded : SyscallDecodeResult)
     rcases hRecv with hS | ⟨hS, hX⟩ <;> rw [hS] at h <;> cases hT : cap.target <;>
       simp only [hT] at h <;> (try (simp at h; done))
     · exact hOps _ h
-    · rw [if_pos hX] at h
-      exact hOps _ h
+    · have hGc : resolveReplyRecvReply gate decoded s =
+          resolveReplyRecvReply (callerReplyGate s tid decoded) decoded s := by
+        obtain ⟨hTcb, -, -, hGe⟩ := abiEntryGate_components decoded tid s _ _ hGate
+        subst hGe
+        have hO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTcb
+        exact resolveReplyRecvReply_congr _ _ decoded rfl
+          (by simp only [callerReplyGate, callerCspaceRoot, SystemState.getObject?_eq_getElem, hO])
+      unfold replyRecvSkipsReply at hX
+      by_cases hXc : (callerExtraCapsFault? s tid decoded.msgInfo.extraCaps).isSome = true
+      · rw [if_pos hXc] at h
+        exact hOps _ h
+      · rw [if_neg hXc, hGc] at h
+        cases hR : resolveReplyRecvReply (callerReplyGate s tid decoded) decoded s with
+        | error e => rw [hR] at hX; simp [hXc] at hX
+        | ok r =>
+          cases r with
+          | none => rw [hR] at h; exact hOps _ h
+          | some r => rw [hR] at hX; simp [hXc] at hX
 
 end SeLe4n.Kernel

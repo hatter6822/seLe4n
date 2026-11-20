@@ -128,13 +128,13 @@ theorem removeRunnableOnCore_confinedToCores (st : SystemState)
 /-- WS-ZA ZA4.7: a blocking sender's deschedule, then its send-cap record (a TCB
 write of a badge word and two flags): core `cc`'s slots alone. -/
 theorem removeRunnableOnCoreThenRecordSendCap_confinedToCores (st : SystemState)
-    (tid : SeLe4n.ThreadId) (cc : CoreId) (badge : Option SeLe4n.Badge) (grant : Bool) :
+    (tid : SeLe4n.ThreadId) (cc : CoreId) (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
     observableSlotsConfinedToCores st
-      (recordSendCap (removeRunnableOnCore st tid cc) tid badge grant) [cc] := by
+      (recordSendCap (removeRunnableOnCore st tid cc) tid badge grant grantReply) [cc] := by
   have h := observableSlotsConfinedToCores_trans (removeRunnableOnCore_confinedToCores st tid cc)
     (observableSlotsConfinedToCores_nil_of_scheduler_regs_eq
       (st := removeRunnableOnCore st tid cc)
-      (st' := recordSendCap (removeRunnableOnCore st tid cc) tid badge grant)
+      (st' := recordSendCap (removeRunnableOnCore st tid cc) tid badge grant grantReply)
       (by rw [recordSendCap_scheduler]) (fun _ => rfl))
   simpa using h
 
@@ -209,6 +209,14 @@ theorem storeTcbIpcStateAndMessage_confinedToCores (st st' : SystemState)
   observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
     (storeTcbIpcStateAndMessage_scheduler_eq st st' tid ipc msg hStep)
     (storeTcbIpcStateAndMessage_machine_eq st st' tid ipc msg hStep)
+
+theorem storeTcbSignalWoken_confinedToCores (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st') :
+    observableSlotsConfinedToCores st st' [] :=
+  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+    (storeTcbSignalWoken_scheduler_eq st st' tid badge hStep)
+    (storeTcbSignalWoken_machine_eq st st' tid badge hStep)
 
 theorem storeTcbIpcState_confinedToCores (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
@@ -326,6 +334,15 @@ theorem storeTcbReceiveComplete_confinedToCores (st st' : SystemState)
   observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
     (storeTcbReceiveComplete_scheduler_eq st st' tid msg hStep)
     (storeTcbReceiveComplete_machine_eq st st' tid msg hStep)
+
+/-- `storeTcbReceiveComplete_confinedToCores` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_confinedToCores (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st') :
+    observableSlotsConfinedToCores st st' [] :=
+  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+    (storeTcbSignalBoundWoken_scheduler_eq st st' tid badge hStep)
+    (storeTcbSignalBoundWoken_machine_eq st st' tid badge hStep)
 
 /-- SM8.B.2: a replenishment migration is per-core silent — it moves a
 SchedContext's replenishments between two cores' **replenishment** queues, and
@@ -504,16 +521,16 @@ theorem notificationSignalOnCore_confinedToCores (notificationId : SeLe4n.ObjId)
             storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hStore
           have hNtfn' := storeObject_objects_eq st st1 notificationId _ hObjInv hStore
           have hNe : notificationId ≠ w.toObjId :=
-            notification_ne_waiter_of_store st1 st2 notificationId w _ .ready _
+            notification_ne_waiter_of_store st1 st2 notificationId w _ _
               hNtfn' hMsg
           have hTarget : determineTargetCore st2 w = determineTargetCore st w := by
-            rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st1 st2 w .ready _
+            rw [storeTcbSignalWoken_determineTargetCore_eq st1 st2 w _
                   w hInv' hMsg,
                 storeObject_determineTargetCore_eq st st1 notificationId _ w hNe
                   hObjInv hStore]
           -- The pop's link rewrite writes TCB links only: no scheduler slot.
           have hInv2 : st2.objects.invExt :=
-            storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hInv' hMsg
+            storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ hInv' hMsg
           have hDetach : observableSlotsConfinedToCores st2
               (detachNtfnHead st2 w (ntfnSuccessor? st w)) [] :=
             observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
@@ -522,7 +539,7 @@ theorem notificationSignalOnCore_confinedToCores (notificationId : SeLe4n.ObjId)
             (observableSlotsConfinedToCores_trans
               (observableSlotsConfinedToCores_trans
                 (storeObject_confinedToCores st st1 _ _ hStore)
-                (storeTcbIpcStateAndMessage_confinedToCores st1 st2 w .ready _ hMsg))
+                (storeTcbSignalWoken_confinedToCores st1 st2 w _ hMsg))
               hDetach)
             (wakeThread_confinedToCores (detachNtfnHead st2 w (ntfnSuccessor? st w)) w
               executingCore)
@@ -628,16 +645,15 @@ theorem notificationSignalBoundOnCore_confinedToCores (notificationId : SeLe4n.O
         endpointQueueRemoveDual_preserves_objects_invExt st st1 epId true t hObjInv hRemove
       have hT1 : determineTargetCore st1 t = determineTargetCore st t :=
         endpointQueueRemoveDual_determineTargetCore_eq st st1 epId true t t hObjInv hRemove
-      cases hStore : storeTcbReceiveComplete st1 t
-          (some { IpcMessage.empty with badge := some badge }) with
+      cases hStore : storeTcbSignalBoundWoken st1 t badge with
       | error e => exact observableSlotsConfinedToCores_of_eq _ rfl
       | ok st2 =>
         have hT2 : determineTargetCore st2 t = determineTargetCore st1 t :=
-          storeTcbReceiveComplete_determineTargetCore_eq st1 st2 t _ t hInv1 hStore
+          storeTcbSignalBoundWoken_determineTargetCore_eq st1 st2 t _ t hInv1 hStore
         have hChain := observableSlotsConfinedToCores_widen_cons
           (observableSlotsConfinedToCores_trans
             (endpointQueueRemoveDual_confinedToCores epId true t st st1 hRemove)
-            (storeTcbReceiveComplete_confinedToCores st1 st2 t _ hStore))
+            (storeTcbSignalBoundWoken_confinedToCores st1 st2 t _ hStore))
           (wakeThread_confinedToCores st2 t executingCore)
         rw [hT2, hT1] at hChain
         exact hChain
@@ -662,6 +678,11 @@ blocked state, link the stashed reply, **deschedule the caller on its own core**
 `§1a` frame layer is what lets `receiverHome` be named at the *pre-state*: the
 pop and the two stores rewrite queue links, an endpoint and IPC fields, never a
 `cpuAffinity`, so none of them is a migration.
+
+A call that links no reply (seL4's `sendIPC` without `Grant`/`GrantReply`, or
+with no stashed reply) pops, delivers the message as a send's, wakes the
+receiver on `receiverHome` and takes the caller off `executingCore` before
+writing it `Inactive` — the same two cores.
 
 The blocking path enqueues the caller and deschedules it, writing only
 `executingCore`; every fail-closed arm writes nothing. -/
@@ -694,56 +715,99 @@ theorem endpointCallOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
               (endpointQueueEnqueue_confinedToCores endpointId false caller st st1 hEnq)
               (storeTcbIpcStateAndMessage_confinedToCores st1 st2 caller _ _ hMsg))
             (removeRunnableOnCoreThenRecordSendCap_confinedToCores st2 caller executingCore
-              payload.badge payload.grant)
+              payload.badge payload.grant payload.grantReply)
     | some headRecv =>
       -- Rendezvous path: wake the receiver on its home core, block the caller.
       simp only []
       split
-      · exact observableSlotsConfinedToCores_of_eq _ rfl
-      · next recvTid recvTcb st1 hPop =>
-        split
+      · split
         · exact observableSlotsConfinedToCores_of_eq _ rfl
-        · next st2 hMsgR =>
+        · next recvTid recvTcb st1 hPop =>
           split
           · exact observableSlotsConfinedToCores_of_eq _ rfl
-          · next st4 hMsgC =>
+          · next st2 hMsgR =>
             split
             · exact observableSlotsConfinedToCores_of_eq _ rfl
-            · next st5 hLink =>
-              have hEpObj : st.objects[endpointId]? = some (.endpoint ep) :=
-                (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
-              have hPopHead : ep.receiveQ.head = some recvTid := by
-                have h := endpointQueuePopHead_returns_head endpointId true st ep recvTid
-                  st1 hEpObj hPop
-                simpa using h
-              have hRecv : recvTid = headRecv := by
-                rw [hHead] at hPopHead; simpa using hPopHead.symm
-              have hInv1 : st1.objects.invExt :=
-                endpointQueuePopHead_preserves_objects_invExt endpointId true st st1
-                  recvTid recvTcb hObjInv hPop
-              have hT1 : determineTargetCore st1 recvTid = determineTargetCore st recvTid :=
-                endpointQueuePopHead_determineTargetCore_eq endpointId true st st1
-                  recvTid recvTcb recvTid hObjInv hPop
-              have hT2 : determineTargetCore st2 recvTid = determineTargetCore st1 recvTid :=
-                storeTcbIpcStateAndMessage_determineTargetCore_eq st1 st2 recvTid
-                  .ready (some (sendPayloadMessage st caller payload)) recvTid hInv1 hMsgR
-              have hChain := observableSlotsConfinedToCores_trans
-                (observableSlotsConfinedToCores_trans
+            · next st4 hMsgC =>
+              split
+              · exact observableSlotsConfinedToCores_of_eq _ rfl
+              · next st5 hLink =>
+                have hEpObj : st.objects[endpointId]? = some (.endpoint ep) :=
+                  (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
+                have hPopHead : ep.receiveQ.head = some recvTid := by
+                  have h := endpointQueuePopHead_returns_head endpointId true st ep recvTid
+                    st1 hEpObj hPop
+                  simpa using h
+                have hRecv : recvTid = headRecv := by
+                  rw [hHead] at hPopHead; simpa using hPopHead.symm
+                have hInv1 : st1.objects.invExt :=
+                  endpointQueuePopHead_preserves_objects_invExt endpointId true st st1
+                    recvTid recvTcb hObjInv hPop
+                have hT1 : determineTargetCore st1 recvTid = determineTargetCore st recvTid :=
+                  endpointQueuePopHead_determineTargetCore_eq endpointId true st st1
+                    recvTid recvTcb recvTid hObjInv hPop
+                have hT2 : determineTargetCore st2 recvTid = determineTargetCore st1 recvTid :=
+                  storeTcbIpcStateAndMessage_determineTargetCore_eq st1 st2 recvTid
+                    .ready (some (sendPayloadMessage st caller payload)) recvTid hInv1 hMsgR
+                have hChain := observableSlotsConfinedToCores_trans
                   (observableSlotsConfinedToCores_trans
-                    (endpointQueuePopHead_confinedToCores endpointId true st st1
-                      recvTid hPop)
-                    (storeTcbIpcStateAndMessage_confinedToCores st1 st2 recvTid
-                      .ready (some (sendPayloadMessage st caller payload)) hMsgR))
-                  (wakeThread_confinedToCores st2 recvTid executingCore))
-                (observableSlotsConfinedToCores_trans
+                    (observableSlotsConfinedToCores_trans
+                      (endpointQueuePopHead_confinedToCores endpointId true st st1
+                        recvTid hPop)
+                      (storeTcbIpcStateAndMessage_confinedToCores st1 st2 recvTid
+                        .ready (some (sendPayloadMessage st caller payload)) hMsgR))
+                    (wakeThread_confinedToCores st2 recvTid executingCore))
                   (observableSlotsConfinedToCores_trans
-                    (storeTcbIpcStateAndMessage_confinedToCores
-                      (wakeThread st2 recvTid executingCore).1 st4 caller _ _ hMsgC)
-                    (linkServerStashedReply_confinedToCores caller recvTid st4 st5 hLink))
-                  (removeRunnableOnCore_confinedToCores st5 caller executingCore))
-              rw [hT2, hT1, hRecv] at hChain
-              exact observableSlotsConfinedToCores_then_linkReplyWaiter caller recvTid
-                (observableSlotsConfinedToCores_mono (by intro c hc; simpa using hc) hChain)
+                    (observableSlotsConfinedToCores_trans
+                      (storeTcbIpcStateAndMessage_confinedToCores
+                        (wakeThread st2 recvTid executingCore).1 st4 caller _ _ hMsgC)
+                      (linkServerStashedReply_confinedToCores caller recvTid st4 st5 hLink))
+                    (removeRunnableOnCore_confinedToCores st5 caller executingCore))
+                rw [hT2, hT1, hRecv] at hChain
+                exact observableSlotsConfinedToCores_then_linkReplyWaiter caller recvTid
+                  (observableSlotsConfinedToCores_mono (by intro c hc; simpa using hc) hChain)
+      · -- No-reply rendezvous: pop, deliver as a send's, wake the receiver on its
+        -- home core, take the caller off its own core and write it `Inactive`.
+        split
+        · exact observableSlotsConfinedToCores_of_eq _ rfl
+        · next recvTid recvTcb st1 hPop =>
+          split
+          · exact observableSlotsConfinedToCores_of_eq _ rfl
+          · next st2 hRC =>
+            split
+            · exact observableSlotsConfinedToCores_of_eq _ rfl
+            have hEpObj : st.objects[endpointId]? = some (.endpoint ep) :=
+              (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
+            have hPopHead : ep.receiveQ.head = some recvTid := by
+              have h := endpointQueuePopHead_returns_head endpointId true st ep recvTid
+                st1 hEpObj hPop
+              simpa using h
+            have hRecv : recvTid = headRecv := by
+              rw [hHead] at hPopHead; simpa using hPopHead.symm
+            have hInv1 : st1.objects.invExt :=
+              endpointQueuePopHead_preserves_objects_invExt endpointId true st st1
+                recvTid recvTcb hObjInv hPop
+            have hT1 : determineTargetCore st1 recvTid = determineTargetCore st recvTid :=
+              endpointQueuePopHead_determineTargetCore_eq endpointId true st st1
+                recvTid recvTcb recvTid hObjInv hPop
+            have hT2 : determineTargetCore st2 recvTid = determineTargetCore st1 recvTid :=
+              storeTcbReceiveComplete_determineTargetCore_eq st1 st2 recvTid _ recvTid hInv1 hRC
+            have hChain := observableSlotsConfinedToCores_trans
+              (observableSlotsConfinedToCores_trans
+                (observableSlotsConfinedToCores_trans
+                  (endpointQueuePopHead_confinedToCores endpointId true st st1 recvTid hPop)
+                  (storeTcbReceiveComplete_confinedToCores st1 st2 recvTid _ hRC))
+                (wakeThread_confinedToCores st2 recvTid executingCore))
+              (observableSlotsConfinedToCores_trans
+                (removeRunnableOnCore_confinedToCores (wakeThread st2 recvTid executingCore).1
+                  caller executingCore)
+                (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+                  (SystemState.updateTcb_scheduler _ caller
+                    (fun t => { t with threadState := .Inactive }))
+                  (SystemState.updateTcb_machine _ caller
+                    (fun t => { t with threadState := .Inactive }))))
+            rw [hT2, hT1] at hChain; subst hRecv
+            exact observableSlotsConfinedToCores_mono (by intro c hc; simpa using hc) hChain
 
 -- ============================================================================
 -- §4 SM6.C — the reply transition
@@ -896,28 +960,47 @@ theorem endpointReceiveDualOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
         have hPopConf := endpointQueuePopHead_confinedToCores endpointId false st st1
           sender hPop
         split
-        · -- `blockedOnCall` sender: recorded as `.blockedOnReply`, never woken.
+        · -- `blockedOnCall` sender: recorded as `.blockedOnReply` when it links
+          -- a reply, completed `Inactive` when it links none; never woken.
           rw [if_pos rfl]
           split
-          · exact observableSlotsConfinedToCores_of_eq _ rfl
-          · next st2 hIpc =>
-            split
+          · split
             · exact observableSlotsConfinedToCores_of_eq _ rfl
-            · next rid =>
+            · next st2 hIpc =>
               split
               · exact observableSlotsConfinedToCores_of_eq _ rfl
-              · next st3 hLink =>
+              · next rid _ =>
                 split
-                · next st4 hMsg =>
-                  exact observableSlotsConfinedToCores_widen_any
-                    (observableSlotsConfinedToCores_then_linkReplyWaiter sender receiver
-                    (observableSlotsConfinedToCores_trans
-                      (observableSlotsConfinedToCores_trans hPopConf
-                        (storeTcbIpcStateAndMessage_confinedToCores st1 st2 sender _ _ hIpc))
-                      (observableSlotsConfinedToCores_trans
-                        (linkCallerReply_confinedToCores sender rid st2 st3 hLink)
-                        (storeTcbIpcStateAndMessage_confinedToCores st3 st4 receiver _ _ hMsg))))
                 · exact observableSlotsConfinedToCores_of_eq _ rfl
+                · next st3 hLink =>
+                  split
+                  · next st4 hMsg =>
+                    exact observableSlotsConfinedToCores_widen_any
+                      (observableSlotsConfinedToCores_then_linkReplyWaiter sender receiver
+                      (observableSlotsConfinedToCores_trans
+                        (observableSlotsConfinedToCores_trans hPopConf
+                          (storeTcbIpcStateAndMessage_confinedToCores st1 st2 sender _ _ hIpc))
+                        (observableSlotsConfinedToCores_trans
+                          (linkCallerReply_confinedToCores sender rid st2 st3 hLink)
+                          (storeTcbIpcStateAndMessage_confinedToCores st3 st4 receiver _ _ hMsg))))
+                  · exact observableSlotsConfinedToCores_of_eq _ rfl
+          · split
+            · exact observableSlotsConfinedToCores_of_eq _ rfl
+            · next st2 hIpc =>
+              split
+              · next st4 hMsg =>
+                exact observableSlotsConfinedToCores_widen_any
+                  (observableSlotsConfinedToCores_trans
+                    (observableSlotsConfinedToCores_trans hPopConf
+                      (storeTcbIpcStateAndMessage_confinedToCores st1 st2 sender _ _ hIpc))
+                    (observableSlotsConfinedToCores_trans
+                      (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+                        (SystemState.updateTcb_scheduler st2 sender
+                          (fun t => { t with threadState := .Inactive }))
+                        (SystemState.updateTcb_machine st2 sender
+                          (fun t => { t with threadState := .Inactive })))
+                      (storeTcbIpcStateAndMessage_confinedToCores _ st4 receiver _ _ hMsg)))
+              · exact observableSlotsConfinedToCores_of_eq _ rfl
         · -- `blockedOnSend` sender: woken on its own home core.
           rw [if_neg (by simp)]
           split

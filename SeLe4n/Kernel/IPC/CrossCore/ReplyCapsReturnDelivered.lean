@@ -303,7 +303,7 @@ theorem replyTransferChecked_donatedCaps_inPlace (ctx : LabelingContext) (st : S
     (hNoF : ct.faultWords.isFault = false)
     (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true)
     (hS : st.getTcb? replier = some stcb)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscallOf SeLe4n.arm64DefaultLayout
+    (hR : Architecture.RegisterDecode.registerRoutedSyscallOf opCode SeLe4n.arm64DefaultLayout
       stcb.registerContext = .reply capAddr mi) :
     replyTransferOnCoreChecked ctx replier c mi' regs msg true core st =
       .ok ((), performReplyDonatedCapsDelivered st c server rid
@@ -400,7 +400,7 @@ theorem replyTransferChecked_unheldCaps_inPlace (ctx : LabelingContext) (st : Sy
     (hNoF : ct.faultWords.isFault = false)
     (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true)
     (hS : st.getTcb? replier = some stcb)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscallOf SeLe4n.arm64DefaultLayout
+    (hR : Architecture.RegisterDecode.registerRoutedSyscallOf opCode SeLe4n.arm64DefaultLayout
       stcb.registerContext = .reply capAddr mi) :
     replyTransferOnCoreChecked ctx replier c mi' regs msg true core st =
       .ok ((), performReplyUnheldCapsDelivered st c rid ⟨replyHeadContextCode st rid - 1⟩
@@ -456,7 +456,7 @@ theorem replyTransferChecked_unheldCaps_inPlace (ctx : LabelingContext) (st : Sy
 message-info word holds (`routedExtraCaps`). -/
 theorem routedExtraCaps_eq_of_routedReplyLong {rf : SeLe4n.RegisterFile} {capAddr : SeLe4n.CPtr}
     {mi : MessageInfo}
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi) :
+    (hR : registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi) :
     routedExtraCaps rf = mi.extraCaps := by
   unfold registerRoutedSyscall at hR
   split at hR
@@ -470,7 +470,7 @@ theorem routedExtraCaps_eq_of_routedReplyLong {rf : SeLe4n.RegisterFile} {capAdd
         simp only [routedShortTail_eq, routedLongTail_eq] at hR
         by_cases hLen : m.length ≤ SeLe4n.arm64DefaultLayout.msgRegs.size ∨
             Architecture.RegisterDecode.syscallNumberReadsOverflow
-              (SeLe4n.readReg rf SeLe4n.arm64DefaultLayout.syscallNumReg).val = false <;>
+              opCode = false <;>
           first | rw [if_pos hLen] at hR | rw [if_neg hLen] at hR
         repeat' split at hR
         all_goals first
@@ -490,7 +490,7 @@ theorem routedExtraCaps_eq_of_routedReplyLong {rf : SeLe4n.RegisterFile} {capAdd
 message-info word holds (`routedExtraCaps`). -/
 theorem routedExtraCaps_eq_of_routedReplyRecvLong {rf : SeLe4n.RegisterFile} {capAddr : SeLe4n.CPtr}
     {mi : MessageInfo}
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi) :
+    (hR : registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi) :
     routedExtraCaps rf = mi.extraCaps := by
   unfold registerRoutedSyscall at hR
   split at hR
@@ -504,7 +504,7 @@ theorem routedExtraCaps_eq_of_routedReplyRecvLong {rf : SeLe4n.RegisterFile} {ca
         simp only [routedShortTail_eq, routedLongTail_eq] at hR
         by_cases hLen : m.length ≤ SeLe4n.arm64DefaultLayout.msgRegs.size ∨
             Architecture.RegisterDecode.syscallNumberReadsOverflow
-              (SeLe4n.readReg rf SeLe4n.arm64DefaultLayout.syscallNumReg).val = false <;>
+              opCode = false <;>
           first | rw [if_pos hLen] at hR | rw [if_neg hLen] at hR
         repeat' split at hR
         all_goals first
@@ -527,9 +527,9 @@ theorem replyCapRequest_of_routedReplyLong (st : SystemState) (replier : SeLe4n.
     (stcb : TCB) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (sid : SyscallId) (g : Bool)
     (hS : st.getTcb? replier = some stcb) (hRf : stcb.registerContext = rf)
-    (hR : (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
+    (hR : (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
         sid = .reply) ∨
-      (registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
+      (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
         sid = .replyRecv))
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st replier j = .ok w) :
@@ -539,14 +539,18 @@ theorem replyCapRequest_of_routedReplyLong (st : SystemState) (replier : SeLe4n.
     rcases hR with ⟨h, -⟩ | ⟨h, -⟩
     · exact routedExtraCaps_eq_of_routedReplyLong h
     · exact routedExtraCaps_eq_of_routedReplyRecvLong h
-  have hD : blockedSenderDecode st replier stcb = .ok (longMessageDecode sid st replier rf capAddr mi) := by
-    unfold blockedSenderDecode
-    rw [hRf]
+  have h0 : decodeSyscallArgsFromState opCode st replier SeLe4n.arm64DefaultLayout rf 32 =
+      .ok (longMessageDecode sid st replier rf capAddr mi) := by
     rcases hR with h | h
     · exact decodeSyscallArgsFromState_of_routedReplyLong_ok st replier rf capAddr mi sid (.inl h)
         hRead
     · exact decodeSyscallArgsFromState_of_routedReplyLong_ok st replier rf capAddr mi sid
         (.inr (.inl h)) hRead
+  obtain ⟨s, hD0⟩ := decodeSyscallArgsFromState_blockedSender h0
+    (by rcases hR with ⟨-, rfl⟩ | ⟨-, rfl⟩ <;> rfl)
+  have hD : blockedSenderDecode st replier stcb =
+      .ok { longMessageDecode sid st replier rf capAddr mi with syscallId := s } := by
+    unfold blockedSenderDecode; rw [hRf]; exact hD0
   unfold replyCapRequest
   rw [hS]
   unfold senderFrameCapRequest

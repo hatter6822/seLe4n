@@ -41,7 +41,7 @@ does not carry it; and the two destroying arms are composites here:
 * `cspaceRevokeCdtFinalising` — seL4's `cteRevoke`: the source's first child
   deleted by `cspaceDeleteSlotFinalising` until it has none.
 
-Both remove pages through `unmapLivePages`, the untyped reset's own teardown, so
+Both remove pages through `unmapLivePages`, the page teardown, so
 a page is removed only while its address space still maps the address to that
 frame: a record gone stale removes nothing that is not its own.  Neither
 refuses after its writes: on a well-formed state (`teardownWellFormed` — every
@@ -741,6 +741,203 @@ theorem cspaceDeleteSlotFinalising_preserves_teardownWellFormed (ec : Concurrenc
   exact (retireFinalisedObject_preserves_teardownWellFormed ec _ _ st2
     (finaliseDestroyedCapabilities_ok_wellFormed ec _ _ _ st2
       (cspaceDeleteSlot_preserves_teardownWellFormed hW hD) hF)).1
+
+/-- **`seL4_ARM_Page_Unmap`: the frame capability in `addr` takes down the
+mapping it records, and records none** (seL4's `performPageInvocationUnmap`).
+The page is the capability's own record (`slotMappedPages`, read before any
+write), removed only while it is still live (`unmapLivePages`: seL4's
+`unmapPage` writes nothing unless the entry at the recorded address still maps
+this frame), and the slot's capability then drops its record
+(`cspaceClearFrameMapping`) whether or not anything was unmapped, as seL4
+clears `capFMappedAddress` and `capFMappedASID` unconditionally.  No message
+word is read: the address space and the address are the capability's. -/
+def vspaceUnmapFrameCap (executingCore : Concurrency.CoreId) (addr : CSpaceAddr) :
+    Kernel Unit :=
+  fun st =>
+    match unmapLivePages executingCore (slotMappedPages st addr) st with
+    | .error e => .error e
+    | .ok ((), st1) => cspaceClearFrameMapping addr st1
+
+/-- What a successful `Page_Unmap` is: the teardown of the page the capability
+records, then the record's clear. -/
+theorem vspaceUnmapFrameCap_cases {ec : Concurrency.CoreId} {addr : CSpaceAddr}
+    {st st' : SystemState} (h : vspaceUnmapFrameCap ec addr st = .ok ((), st')) :
+    ∃ st1, unmapLivePages ec (slotMappedPages st addr) st = .ok ((), st1) ∧
+      cspaceClearFrameMapping addr st1 = .ok ((), st') := by
+  unfold vspaceUnmapFrameCap at h
+  rw [unmapLivePages_eq_ok_state] at h
+  exact ⟨_, unmapLivePages_eq_ok_state _ _ _, h⟩
+
+/-- **`Page_Unmap` keeps the object table's invariant**: root stores, then one
+CNode store. -/
+theorem vspaceUnmapFrameCap_objects_invExt {ec : Concurrency.CoreId} {addr : CSpaceAddr}
+    {st st' : SystemState} (hI : st.objects.invExt)
+    (h : vspaceUnmapFrameCap ec addr st = .ok ((), st')) : st'.objects.invExt := by
+  obtain ⟨st1, hU, hC⟩ := vspaceUnmapFrameCap_cases h
+  obtain ⟨hI1, -, -⟩ := unmapLivePages_ok_frame ec _ st st1 hI hU
+  obtain ⟨_, _, -, -, hS⟩ := cspaceClearFrameMapping_ok_decompose addr st1 st' hC
+  exact storeObject_preserves_objects_invExt _ _ _ _ hI1 hS
+
+/-- **`Page_Unmap`'s teardown on slot `slot` of `cnode`, on the record's words**:
+the capability's record and its frame's base are read in place and the one page
+is unmapped if it is still live (`mappedPageLiveWords`), so no list, page record
+or slot address is built (`unmapLivePagesState_slotMappedPages_eq`). -/
+@[inline] def vspaceUnmapFrameCapTeardownAt (executingCore : Concurrency.CoreId)
+    (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) (st : SystemState) : SystemState :=
+  match st.slotCapAt ⟨cnode, slot⟩ with
+  | some cap =>
+    match cap.mapping, cap.target with
+    | some m, .object frameId =>
+      match st.getFrame? frameId with
+      | some f =>
+        if mappedPageLiveWords st m.asid m.vaddr f.base m.epoch then
+          unmapPageState executingCore m.asid m.vaddr st
+        else st
+      | none => st
+    | _, _ => st
+  | none => st
+
+/-- The teardown of the pages a slot's capability records is the words form. -/
+theorem unmapLivePagesState_slotMappedPages_eq (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
+    (slot : SeLe4n.Slot) (st : SystemState) :
+    unmapLivePagesState ec (slotMappedPages st ⟨cnode, slot⟩) st =
+      vspaceUnmapFrameCapTeardownAt ec cnode slot st := by
+  unfold vspaceUnmapFrameCapTeardownAt
+  simp only [slotMappedPages]
+  cases st.slotCapAt ⟨cnode, slot⟩ with
+  | none => rfl
+  | some c =>
+    simp only [Option.bind_some, capabilityMappedPage]
+    cases c.mapping with
+    | none => rfl
+    | some m =>
+      cases c.target with
+      | object fid =>
+        dsimp only
+        cases st.getFrame? fid with
+        | none => rfl
+        | some f =>
+          simp only [Option.map_some, Option.toList, unmapLivePagesState, ← mappedPageLive_eq_words]
+      | _ => rfl
+
+/-- **`Page_Unmap` is its words form**: the teardown on the record's words, then
+the record clear as compiled. -/
+theorem vspaceUnmapFrameCap_eq_teardownAt (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
+    (slot : SeLe4n.Slot) (st : SystemState) :
+    vspaceUnmapFrameCap ec ⟨cnode, slot⟩ st =
+      cspaceClearFrameMappingImpl ⟨cnode, slot⟩ (vspaceUnmapFrameCapTeardownAt ec cnode slot st) := by
+  unfold vspaceUnmapFrameCap
+  rw [unmapLivePages_eq_ok_state, cspaceClearFrameMapping_eq_impl,
+    unmapLivePagesState_slotMappedPages_eq]
+
+/-- **`Page_Unmap` admitted in place**: the slot is a CNode's and holds a
+capability (the record clear's two questions, asked before the teardown), and
+the object table has no resize due, so the teardown's root store rewrites the
+root where it lies and leaves every other object's lookup, the CNode's among
+them, as it was (`vspaceUnmapFrameCapTeardownAt_objects_ne`). -/
+@[inline] def vspaceUnmapFrameCapAdmittedAt (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot)
+    (st : SystemState) : Bool :=
+  (match st.getCNode? cnode with
+   | some cn => (cn.lookup slot).isSome
+   | none => false) &&
+  !decide (st.objects.size * 4 ≥ st.objects.capacity * 3)
+
+/-- **`Page_Unmap` in place**: the teardown on the record's words, then the
+record dropped where the CNode lies.  Out of line, so the CNode store is
+specialised to the clear and builds no closure; on an admitted state the
+teardown consumes the state and the clear writes the state the teardown left,
+so neither copies a table (`vspaceUnmapFrameCap_eq_performAt`). -/
+@[noinline] def vspaceUnmapFrameCapPerformAt (executingCore : Concurrency.CoreId)
+    (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) (st : SystemState) : SystemState :=
+  (vspaceUnmapFrameCapTeardownAt executingCore cnode slot st).storeCNodeWith cnode
+    (·.clearMappingCells slot)
+
+/-- **The teardown leaves every object but the root it rewrites as it was** when
+no resize is due: one page's unmap stores the root over a present key, an
+in-place insert (`RHTable.get?_insert_ne_of_findsInPlace`), on every table. -/
+theorem vspaceUnmapFrameCapTeardownAt_objects_ne (ec : Concurrency.CoreId)
+    (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot) (st : SystemState) (x : SeLe4n.ObjId)
+    (hNo : st.objects.noResizeDue)
+    (hX : ∀ r, st.objects[x]? ≠ some (.vspaceRoot r)) :
+    (vspaceUnmapFrameCapTeardownAt ec cnode slot st).objects[x]? = st.objects[x]? := by
+  have hPage : ∀ (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr),
+      (unmapPageState ec asid vaddr st).objects[x]? = st.objects[x]? := by
+    intro asid vaddr
+    cases hR : Architecture.resolveAsidRoot st asid with
+    | none => unfold unmapPageState; rw [hR]
+    | some p =>
+      obtain ⟨rid, r⟩ := p
+      cases hU : r.unmapPage vaddr with
+      | none => unfold unmapPageState; rw [hR]; simp only [hU]
+      | some r' =>
+        obtain ⟨-, hObj, -⟩ := Architecture.resolveAsidRoot_some_implies_obj st asid rid r hR
+        rw [(unmapPageState_tables hR hU).1]
+        have hNe : rid ≠ x := fun h => hX r (h ▸ hObj)
+        unfold storeObjectState storeObject
+        dsimp only
+        exact RobinHood.RHTable.get?_insert_ne_of_findsInPlace x _
+          (RobinHood.RHTable.findsInPlace_of_get? hNo hObj) hNe
+  unfold vspaceUnmapFrameCapTeardownAt
+  split
+  · split
+    · split
+      · split
+        · exact hPage _ _
+        · rfl
+      · rfl
+    · rfl
+  · rfl
+
+/-- **`Page_Unmap` admitted is its in-place form**: the CNode the clear reads is
+the one the teardown left where it stood, so the clear succeeds and writes the
+torn-down state. -/
+theorem vspaceUnmapFrameCap_eq_performAt (ec : Concurrency.CoreId) (cnode : SeLe4n.ObjId)
+    (slot : SeLe4n.Slot) (st : SystemState)
+    (hA : vspaceUnmapFrameCapAdmittedAt cnode slot st = true) :
+    cspaceClearFrameMappingImpl ⟨cnode, slot⟩ (vspaceUnmapFrameCapTeardownAt ec cnode slot st) =
+      .ok ((), vspaceUnmapFrameCapPerformAt ec cnode slot st) := by
+  unfold vspaceUnmapFrameCapAdmittedAt at hA
+  simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not] at hA
+  obtain ⟨hC, hNo⟩ := hA
+  split at hC
+  · next cn hG0 =>
+    have hO := (SystemState.getCNode?_eq_some_iff st cnode cn).1 hG0
+    have hT := vspaceUnmapFrameCapTeardownAt_objects_ne ec cnode slot st cnode hNo
+      (fun r h => by rw [hO] at h; cases h)
+    rw [hO] at hT
+    have hG : (vspaceUnmapFrameCapTeardownAt ec cnode slot st).getCNode? cnode = some cn :=
+      (SystemState.getCNode?_eq_some_iff _ _ _).2 hT
+    obtain ⟨cap, hL⟩ := Option.isSome_iff_exists.1 hC
+    unfold cspaceClearFrameMappingImpl vspaceUnmapFrameCapPerformAt
+    simp only [hG, hL]
+  · cases hC
+
+/-- **A property the teardown and the record clear both keep, and that
+composes, holds across a `Page_Unmap`.** -/
+theorem vspaceUnmapFrameCap_closed {ec : Concurrency.CoreId} {addr : CSpaceAddr}
+    {st st' : SystemState} (R : SystemState → SystemState → Prop)
+    (hUnmap : ∀ s s', unmapLivePages ec (slotMappedPages st addr) s = .ok ((), s') → R s s')
+    (hClear : ∀ s s', cspaceClearFrameMapping addr s = .ok ((), s') → R s s')
+    (hTrans : ∀ a b c, R a b → R b c → R a c)
+    (h : vspaceUnmapFrameCap ec addr st = .ok ((), st')) : R st st' := by
+  obtain ⟨st1, hU, hC⟩ := vspaceUnmapFrameCap_cases h
+  exact hTrans _ _ _ (hUnmap _ _ hU) (hClear _ _ hC)
+
+/-- **The record clear keeps the teardown's state well formed**: it writes a
+CNode where a CNode stands, never an address-space root or the ASID table. -/
+theorem cspaceClearFrameMapping_preserves_teardownWellFormed {addr : CSpaceAddr}
+    {st st' : SystemState} (hW : teardownWellFormed st)
+    (h : cspaceClearFrameMapping addr st = .ok ((), st')) : teardownWellFormed st' := by
+  obtain ⟨cn, cap, hC, -, hS⟩ := cspaceClearFrameMapping_ok_decompose addr st st' h
+  have hO := (SystemState.getCNode?_eq_some_iff st addr.cnode cn).1 hC
+  refine teardownWellFormed_of_roots_eq
+    (storeObject_preserves_objects_invExt st _ _ _ hW.1 hS) ?_ (fun oid r => ?_) hW
+  · rw [storeObject_asidTable_non_vspaceRoot st _ _ _ (fun r h => by cases h) hS, hO]
+  · by_cases hK : oid = addr.cnode
+    · subst hK
+      rw [storeObject_objects_eq st _ _ _ hW.1 hS, hO]
+      simp
+    · rw [storeObject_objects_ne st _ _ oid _ hK hW.1 hS]
 
 /-- **A capability whose destruction finalises nothing**: it records no mapping
 and names no page table, so destroying it leaves every address space as it is

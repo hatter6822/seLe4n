@@ -200,8 +200,12 @@ private def deliveredInRegisters (st : SystemState) (tid : SeLe4n.ThreadId)
     (msg : IpcMessage) : Bool :=
   let got := Architecture.readReturnFrame st tid
   let want := Architecture.returnFrameOfMessage msg 0 0
-  got.x0 == want.x0 && got.x2 == want.x2 && got.x3 == want.x3 && got.x4 == want.x4 &&
-    got.x5 == want.x5 &&
+  -- seL4's `copyMRs` writes only the message registers the length covers, so a
+  -- register past it is the receiver's own and is not compared.
+  let n := msg.registers.size
+  got.x0 == want.x0 && got.x1 == want.x1 &&
+    (n ≤ 0 || got.x2 == want.x2) && (n ≤ 1 || got.x3 == want.x3) &&
+    (n ≤ 2 || got.x4 == want.x4) && (n ≤ 3 || got.x5 == want.x5) &&
     (match st.getTcb? tid with
      | some t => t.pendingMessage.isNone
      | none => false)

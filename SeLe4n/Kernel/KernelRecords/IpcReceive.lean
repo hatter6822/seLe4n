@@ -54,6 +54,40 @@ theorem NotParkedAt.modifyTcb {st st' : SystemState} {t u : SeLe4n.ThreadId} {f 
     exact hf x (hN x hx)
   · exact modifyTcb_ne hInv h hne hN
 
+/-- **A caller completed `Inactive`**: the receive of a `Call` that links no
+reply stores the caller `.ready` and then marks it `Inactive`.  The pair keeps
+every fault record parked although its first write alone would not: a caller
+carrying a fault is unparked by the `.ready` store and parked again by the
+`Inactive` mark. -/
+theorem RecordsStep.storeReadyThenInactive {st st2 : SystemState} {t : SeLe4n.ThreadId}
+    (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.storeTcbIpcStateAndMessage st t .ready none = .ok st2) :
+    RecordsStep st (st2.updateTcb t fun x => { x with threadState := .Inactive }) := by
+  unfold _root_.SeLe4n.Kernel.storeTcbIpcStateAndMessage at h
+  obtain ⟨tcb, hL, hS⟩ := modifyTcb_ok_decompose h
+  have hOld := lookupTcb_some_objects st t tcb hL
+  have hInv2 := storeObject_preserves_objects_invExt st st2 _ _ hInv hS
+  have B := RecordsStep.updateTcb st2 t (f := fun x => { x with threadState := .Inactive }) hInv2
+    (fun _ _ => TcbStaysParked.of_parked (.inl rfl))
+  refine ⟨fun k => (B.rootViews k).trans ?_, B.asid.trans ?_, B.invExt, ?_,
+    B.width.trans (by rw [storeObject_machine_eq st st2 _ _ hS])⟩
+  · by_cases hk : k = t.toObjId
+    · subst hk; rw [storeObject_objects_eq st st2 _ _ hInv hS, hOld]; rfl
+    · rw [storeObject_objects_ne st st2 _ k _ hk hInv hS]
+  · rw [storeObject_asidTable_non_vspaceRoot st st2 _ _ (fun _ => by simp) hS, hOld]
+  · intro u tcb' hT hF H
+    by_cases hu : u = t
+    · subst hu
+      rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv2] at hT
+      cases hT2 : st2.getTcb? u with
+      | none => rw [hT2] at hT; cases hT
+      | some y => rw [hT2] at hT; cases hT; exact .inl rfl
+    · rw [SystemState.updateTcb_getTcb?_ne st2 t _ hInv2 u
+        (fun h' => hu (SeLe4n.ThreadId.toObjId_injective _ _ h').symm),
+        storeObject_getTcb?_ne st st2 _ _ u
+          (fun h' => hu (SeLe4n.ThreadId.toObjId_injective _ _ h')) hInv hS] at hT
+      exact H tcb' hT hF
+
 /-- A frame keeps a thread unparked. -/
 theorem NotParkedAt.frame {st st' : SystemState} (F : RecordsFrame st st') {t : SeLe4n.ThreadId}
     (h : NotParkedAt st t) : NotParkedAt st' t := F.notParked h
@@ -91,23 +125,43 @@ theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n
               (SystemState.getTcb?_eq_some_iff _ _ _).mpr (hk ▸ hSO)
             exact hRcv _ hT (by rw [hCall]; simp)
           split
-          · exact refl hInv
-          · rename_i st2 hBlk
-            have S2 := storeTcbIpcStateAndMessage F1.invExt hBlk (fun _ _ => .inr (by simp))
-            have N2 := NotParkedAt.modifyTcb_ne F1.invExt hBlk hne (hRcv.frame F1)
+          · split
+            · exact refl hInv
+            · rename_i st2 hBlk
+              have S2 := storeTcbIpcStateAndMessage F1.invExt hBlk (fun _ _ => .inr (by simp))
+              have N2 := NotParkedAt.modifyTcb_ne F1.invExt hBlk hne (hRcv.frame F1)
+              split
+              · exact refl hInv
+              · split
+                · exact refl hInv
+                · rename_i stL hL
+                  have F3 := RecordsFrame.linkCallerReply S2.invExt hL
+                  split
+                  · rename_i st4 hRdy
+                    have S4 := storeTcbIpcStateAndMessage F3.invExt hRdy
+                      (fun x hx => .inl (N2.frame F3 x hx))
+                    exact (of_frame F1).trans (S2.trans ((of_frame F3).trans (S4.trans
+                      (linkReplyWaiter _ _ _ S4.invExt))))
+                  · exact refl hInv
+          · -- a Call that links no reply: the caller completed `Inactive`
             split
             · exact refl hInv
-            · split
+            · rename_i st2 hRdy
+              have S3 := RecordsStep.storeReadyThenInactive F1.invExt hRdy
+              have N2 := NotParkedAt.modifyTcb_ne F1.invExt hRdy hne (hRcv.frame F1)
+              have hInv2 := modifyTcb_preserves_objects_invExt F1.invExt hRdy
+              have N3 : NotParkedAt (st2.updateTcb sender
+                  fun x => { x with threadState := .Inactive }) receiver := fun x hx =>
+                N2 x (by
+                  rw [SystemState.updateTcb_getTcb?_ne st2 sender _ hInv2 receiver
+                    (fun h' => hne h')] at hx
+                  exact hx)
+              split
+              · rename_i st4 hRcvd
+                have S4 := storeTcbIpcStateAndMessage S3.invExt hRcvd
+                  (fun x hx => .inl (N3 x hx))
+                exact (of_frame F1).trans (S3.trans S4)
               · exact refl hInv
-              · rename_i stL hL
-                have F3 := RecordsFrame.linkCallerReply S2.invExt hL
-                split
-                · rename_i st4 hRdy
-                  have S4 := storeTcbIpcStateAndMessage F3.invExt hRdy
-                    (fun x hx => .inl (N2.frame F3 x hx))
-                  exact (of_frame F1).trans (S2.trans ((of_frame F3).trans (S4.trans
-                    (linkReplyWaiter _ _ _ S4.invExt))))
-                · exact refl hInv
         · -- the sender sent
           rename_i hNotCall
           simp only [Bool.false_eq_true, ↓reduceIte]

@@ -47,8 +47,9 @@ because the defect lived in dispatch and only dispatch can witness it.
 
 * §1 — surface anchors for the predicate and its fail-closed theorems.
 * §2 — the predicate's own truth table on a real page-table-backed state.
-* §3 — `.vspaceUnmap`: the original exploit, now refused, with the victim
-  mapping proven still present.
+* §3 — `.vspaceUnmap`: invoked on a frame capability, it names no address
+  space and removes only the mapping that capability records, so the exploit's
+  words reach nothing and the victim mapping is proven still present.
 * §4 — `.vspaceUnifyInstruction`: same, plus the no-maintenance-emitted check.
 * §5 — `.vspaceMap`: same, proving no mapping is installed.
 * §5b — physical-address alignment, now of a frame's own `base`.
@@ -65,14 +66,11 @@ because the defect lived in dispatch and only dispatch can witness it.
   owns is exercised, and so is seL4's derivation rule for an untyped
   capability: a copy of one with children is refused, and after a copy of a
   childless one the source is full and only the copy carves.
-* §5e — **WS-BP BP7.1 (`v0.36.6`): memory returns to its untyped.**  Since
-  WS-ZA ZA5.4 part 36 the reset is seL4's: `.untypedReset` refuses while the
-  invoked slot has a derivation child, or while the untyped records a carved
-  object — so a **duplicate** of the untyped capability with no derivation of
-  its own is refused too — and after `.cspaceRevoke`, whose final deletes remove
-  the frames' mappings and retire the frames, it writes 0 to the invoked
-  capability's free index, so the next carve reuses both the page, zeroed
-  again, and the child id.  Since WS-ZA ZA5.4 part 41 the carve itself resets a
+* §5e — **WS-BP BP7.1 (`v0.36.6`): memory returns to its untyped.**
+  `.cspaceRevoke`'s final deletes remove the frames' mappings and retire the
+  frames, and the next carve reuses both the page, zeroed again, and the child
+  id.  seL4 has no separate reset invocation (WS-SX SX7.1 retired the model's):
+  since WS-ZA ZA5.4 part 41 the carve itself resets a
   capability with no derivation child (seL4's `decodeUntypedInvocation`): it
   carves at index 0, as the reset followed by the carve does; through a
   capability with a child it carves at the free index; and over an untyped that
@@ -88,20 +86,21 @@ because the defect lived in dispatch and only dispatch can witness it.
   recording capability is refused by the destroy cleanup; and the boot refuses a
   configured record.
 * §5g — **WS-BP BP7.1 slice 4 (`v0.36.8`): an untyped carves child untypeds,
-  and a reset returns the whole subtree.**  `.untypedRetype` at the untyped tag
+  and a revocation returns the whole subtree.**  `.untypedRetype` at the untyped tag
   carves a child untyped of `2^sizeBits` bytes at the parent capability's free index, with
   its parent stamped and its memory left unwritten; the child carves a frame,
   zeroed, which maps.  A second carve at the child's id is refused.  One
   revocation of the parent capability destroys the child's capability and the
-  grandchild frame's with it, retiring both, and the parent then resets.
+  grandchild frame's with it, retiring both, and the next carve reuses the
+  region.
   Every size the decode refuses is exercised.
 * §5i — **WS-BP BP7.1 slice 4b (`v0.36.10`): an address space is carved
   memory.**  `.untypedRetype` at the VSpace-root tag carves a root on a zeroed
   page of its untyped, under the least free ASID — never `0`, never one another
   root holds — with a read/write capability; a frame maps into it; a device
   untyped cannot back one.  One revocation retires both roots and the frame and
-  releases both ASIDs; the reset then writes the free index alone, and the next
-  carve reuses the released ASID and page.
+  releases both ASIDs, and the next carve, which resets the childless
+  capability, reuses the released ASID and page.
 * §6 — the authorized positive paths still work (the gate is not a blanket
   denial).
 -/
@@ -122,7 +121,6 @@ open SeLe4n.Kernel.Architecture
 #check @SeLe4n.Kernel.vspaceCapAuthorizesAsid_false_of_unbound
 #check @SeLe4n.Kernel.vspaceCapAuthorizesAsid_false_of_not_object
 #check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceMap_unauthorized
-#check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnmap_unauthorized
 #check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnifyInstruction_unauthorized
 #check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceMap_delegates
 #check @SeLe4n.Kernel.dispatchWithCapChecked_vspaceUnmap_delegates
@@ -157,11 +155,6 @@ open SeLe4n.Kernel.Architecture
 #check @SeLe4n.Kernel.untypedRetypeFromCap_ok
 #check @SeLe4n.Kernel.carveRequestOf?_ok
 #check @SeLe4n.Kernel.untypedRetypeObject_preserves_ipcInvariantFull
-#check @SeLe4n.Kernel.untypedResetSlot
-#check @SeLe4n.Kernel.untypedResetSlot_ok
-#check @SeLe4n.Kernel.untypedResetSlot_ok_freeIndex
-#check @SeLe4n.Kernel.untypedResetSlot_ok_uncarved
-#check @SeLe4n.Kernel.untypedResetFromCap_ok
 #check @SeLe4n.Kernel.retypeFreeIndex
 #check @SeLe4n.Kernel.retypeFromUntyped_ok_resetAdmitted
 
@@ -251,8 +244,8 @@ private def scenario (cap : Capability) : Option SystemState :=
   | .ok ((), s) => some s
   | .error _    => none
 
-/-- Two-register decode (asid, vaddr) — the `.vspaceUnmap` /
-`.vspaceUnifyInstruction` operand shape. -/
+/-- Two-register decode (asid, vaddr) — the `.vspaceUnifyInstruction`
+operand shape, and the words the retired address-space unmap read. -/
 private def decode2 (sid : SeLe4n.Model.SyscallId) (asid vaddr : Nat) :
     SyscallDecodeResult :=
   { capAddr   := SeLe4n.CPtr.ofNat 0
@@ -357,38 +350,50 @@ private def runPredicateChecks : IO Unit := do
        vspaceCapAuthorizesAsid victimRootCap victimAsid st)
 
 -- ============================================================================
--- §3  `.vspaceUnmap` — the original exploit, now refused
+-- §3  `.vspaceUnmap` — invoked on a frame capability, acting on its own record
 -- ============================================================================
 
+/-- `Page_Unmap` (`.vspaceUnmap`) invoked on the capability at `capSlot`, with
+no message word and no address space named: seL4's
+`performPageInvocationUnmap` unmaps only the mapping the frame capability
+itself records, then clears that record. -/
+private def decodeFrameUnmap (capSlot : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat capSlot
+  , msgInfo   := { length := 0, extraCaps := 0, label := 0 }
+  , syscallId := .vspaceUnmap
+  , msgRegs   := #[] }
+
+/-- The mapping record on the attacker's capability at `slot`. -/
+private def attackerRecord (st : SystemState) (slot : Nat) : Option FrameMapping :=
+  (SystemState.lookupSlotCap st { cnode := attackerCn, slot := SeLe4n.Slot.ofNat slot }).bind
+    (·.mapping)
+
 private def runUnmapBindingChecks : IO Unit := do
-  IO.println "-- §3 `.vspaceUnmap` capability binding"
-  let d := decode2 .vspaceUnmap 7 0x40000
-  -- The exploit: a writable cap to the attacker's OWN TCB, naming the victim's
-  -- address space.  Before the fix this unmapped the victim's page.
-  match scenario unrelatedCap with
+  IO.println "-- §3 `.vspaceUnmap` acts only on its own frame capability's record"
+  -- The exploit named the victim's address space in two message words.  The
+  -- unmap now names none, so the words are read by nothing.
+  match scenario victimRootCap with
   | none => assertBool "the exploit scenario builds" false
   | some st => do
     assertBool "the victim's page is mapped before the attempt"
       (stillMapped st victimAsid victimVaddr)
-    let r := dispatchSyscallAsCurrent d attacker Concurrency.bootCoreId st
-    assertBool "an unrelated writable cap is REFUSED on its type (invalidCapability)"
-      (isInvalidCapability r)
-    assertBool "and the victim's mapping survives"
-      (match r with
-        | .error _ => stillMapped st victimAsid victimVaddr
-        | .ok ((), st') => stillMapped st' victimAsid victimVaddr)
-  -- Legitimate authority over the WRONG address space is equally refused.
-  match scenario ownRootCap with
-  | none => assertBool "the wrong-root scenario builds" false
-  | some st =>
-    assertBool "a cap to the caller's OWN VSpace root is refused for another ASID"
-      (isIllegalAuthority (dispatchSyscallAsCurrent d attacker Concurrency.bootCoreId st))
-  -- Fail-closed on an unbound ASID: no ASID-existence oracle.
-  match scenario victimRootCap with
-  | none => assertBool "the unbound-ASID scenario builds" false
-  | some st =>
-    assertBool "an UNBOUND ASID is refused with illegalAuthority (no oracle)"
-      (isIllegalAuthority (dispatchSyscallAsCurrent (decode2 .vspaceUnmap 9 0x40000) attacker Concurrency.bootCoreId st))
+    assertBool "even the victim's own VSpace-root capability is refused on its type (invalidCapability)"
+      (isInvalidCapability (dispatchSyscallAsCurrent (decode2 .vspaceUnmap 7 0x40000)
+        attacker Concurrency.bootCoreId st))
+    assertBool "a TCB capability is refused on its type (invalidCapability)"
+      (isInvalidCapability (dispatchSyscallAsCurrent (decodeFrameUnmap slotNotFrame)
+        attacker Concurrency.bootCoreId st))
+    -- A frame capability that records no mapping, followed by the exploit's
+    -- words: seL4 reads no word and has nothing to unmap.
+    match dispatchSyscallAsCurrent
+        { decode2 .vspaceUnmap 7 0x40000 with capAddr := SeLe4n.CPtr.ofNat slotFrameRO }
+        attacker Concurrency.bootCoreId st with
+    | .error e => assertBool s!"an unmap of a frame capability with no record succeeds (got {repr e})" false
+    | .ok ((), st') =>
+      assertBool "and removes nothing: the victim's mapping survives the words that name it"
+        (stillMapped st' victimAsid victimVaddr &&
+         holdsEpoch st' victimAsid victimVaddr == holdsEpoch st victimAsid victimVaddr &&
+         attackerRecord st' slotFrameRO == none)
 
 -- ============================================================================
 -- §4  `.vspaceUnifyInstruction` — cache maintenance cannot probe another AS
@@ -858,12 +863,21 @@ private def runCarveChecks : IO Unit := do
 -- §5e  WS-BP BP7.1 (`v0.36.6`) — memory returns to its untyped
 -- ============================================================================
 
-/-- `.untypedReset`, invoked on the capability at `utSlot`; no message registers. -/
-private def decodeReset (utSlot : Nat) : SyscallDecodeResult :=
-  { capAddr   := SeLe4n.CPtr.ofNat utSlot
-  , msgInfo   := { length := 0, extraCaps := 0, label := 0 }
-  , syscallId := .untypedReset
-  , msgRegs   := #[] }
+/-- Whether the next carve through the untyped capability at `slot` of the
+owner's CSpace root resets it, as seL4's `Untyped_Retype` resets a capability
+with no derivation child (`retypeFreeIndex`): the slot has no derivation child
+and the untyped records no carved object (`retypeResetAdmitted`). -/
+private def carveResets (st : SystemState) (slot : Nat) : Bool :=
+  let addr : CSpaceAddr := { cnode := carveCn, slot := SeLe4n.Slot.ofNat slot }
+  match SystemState.lookupSlotCap st addr with
+  | some cap =>
+    match cap.target with
+    | .object id =>
+      match st.getUntyped? id with
+      | some ut => !hasCdtChildren st addr && retypeResetAdmitted st addr ut
+      | none => false
+    | _ => false
+  | none => false
 
 /-- `.cspaceRevoke` of `slot` in the owner's CSpace root, invoked on the
 writable root capability. -/
@@ -926,6 +940,10 @@ roots `setSpaceAs` stages as extra capabilities. -/
 private inductive OwnerStep where
   | call (d : SyscallDecodeResult)
   | setSpace (tcbSlot cnSlot vrSlot : Nat)
+  /-- The page-table entry at `vaddr` in the owner's address space is removed
+  by the address space's own unmap transition, leaving every capability's
+  record as it was — a record made stale without its capability. -/
+  | staleEntry (vaddr : Nat)
 
 instance : Coe SyscallDecodeResult OwnerStep := ⟨OwnerStep.call⟩
 
@@ -939,6 +957,11 @@ private def runAll (st : SystemState) :
   | [] => .ok st
   | .setSpace t cn vr :: ds =>
     match setSpaceAs t cn vr 0 st with
+    | .error e => .error e
+    | .ok ((), st') => runAll st' ds
+  | .staleEntry va :: ds =>
+    match Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast Concurrency.bootCoreId
+        carveAsid (SeLe4n.Testing.fixtureUserVAddr va) st with
     | .error e => .error e
     | .ok ((), st') => runAll st' ds
   | .call d :: ds =>
@@ -978,12 +1001,14 @@ private def runUntypedCopyChecks : IO Unit := do
         (frameAt stCarved 953 == some { base := SeLe4n.PAddr.ofNat carveUtBase } &&
          freeIndexAt stCarved 10 == some SeLe4n.pageBytes)
 
-private def runResetChecks : IO Unit := do
-  IO.println "-- §5e `.untypedReset` hands an untyped's memory back (WS-BP BP7.1)"
-  let isErr (e : KernelError) (r : Except KernelError (Unit × SystemState)) : Bool :=
-    match r with | .error e' => e' == e | .ok _ => false
+/-- Memory returns to its untyped by revocation and the next carve: the
+revocation removes the frame capabilities and the mappings they recorded, and a
+carve through the then childless capability resets it (seL4's
+`decodeUntypedInvocation`), reusing the page, zeroed again, and the child id. -/
+private def runRevokeThenCarveChecks : IO Unit := do
+  IO.println "-- §5e revocation and the next carve hand an untyped's memory back (WS-BP BP7.1)"
   -- Carve two frames, map the first, and map a DEVICE frame from the other
-  -- untyped: the reset must remove the first mapping and keep the device one.
+  -- untyped: the revocation must remove the first mapping and keep the device one.
   match runAll carveScenario
       [decodeCarve slotUtRetype frameTag 950 slotCarved,
        decodeCarve slotUtRetype frameTag 951 9,
@@ -996,36 +1021,15 @@ private def runResetChecks : IO Unit := do
       (mappedPaddr st carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == some carveUtBase)
     assertBool "setup: the device page is mapped at 0x70000"
       (mappedPaddr st carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x70000) == some carveDevBase)
-    -- While a capability to a carved frame survives, the reset is refused.
-    assertBool "a reset while the frame capabilities survive is refused (revocationRequired)"
-      (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId st))
-    assertBool "a reset without `.retype` over the untyped is refused (illegalAuthority)"
-      (isErr .illegalAuthority (dispatchSyscallAsCurrent (decodeReset slotUtNoRetype) carveOwner Concurrency.bootCoreId st))
-    assertBool "a `.retype` capability to a non-untyped is refused on its type (invalidCapability)"
-      (isErr (.invalidCapability 0) (dispatchSyscallAsCurrent (decodeReset slotVspRetype) carveOwner Concurrency.bootCoreId st))
     -- WS-ZA ZA5.4 part 13, seL4's derivation rule: slot 0 has carved, so the
     -- frames in slots 8 and 9 are its derivation children, and a copy of it is
     -- refused (`ensureNoChildren` in `deriveCap`).
     assertBool "a copy of an untyped capability with children is refused (revocationRequired)"
-      (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeCopy slotUtRetype 10) carveOwner Concurrency.bootCoreId st))
-    -- THE DUPLICATE.  No derivation makes a second capability that can carve,
-    -- but a capability placed in slot 10 as the boot would place a configured
-    -- one (the boot refuses two capabilities to one untyped,
-    -- `untypedCapabilitiesUnique`) has no derivations of its own, so a per-slot
-    -- "no children" test on it would pass — while the frames carved through
-    -- slot 0 are still named by slots 8 and 9.  The reset asks the objects.
-    match SystemState.lookupSlotCap st { cnode := carveCn, slot := SeLe4n.Slot.ofNat slotUtRetype } with
-    | none => assertBool "the untyped capability is in slot 0" false
-    | some utCap =>
-      match SeLe4n.Kernel.cspaceInsertSlot { cnode := carveCn, slot := SeLe4n.Slot.ofNat 10 }
-          (utCap.withFreeIndex 0) st with
-      | .error e => assertBool s!"placing the duplicate succeeds (got {repr e})" false
-      | .ok ((), stDup) =>
-        assertBool "a reset through a derivation-free DUPLICATE is still refused"
-          (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset 10) carveOwner Concurrency.bootCoreId stDup))
-    -- An in-flight capability counts: a blocked sender parking a transfer
-    -- capability to a carved frame keeps the reset refused even with every
-    -- slot cleared.
+      (match dispatchSyscallAsCurrent (decodeCopy slotUtRetype 10) carveOwner Concurrency.bootCoreId st with
+       | .error .revocationRequired => true
+       | _ => false)
+    assertBool "while the frame capabilities survive the next carve does not reset"
+      (!carveResets st slotUtRetype)
     match dispatchSyscallAsCurrent (decodeRevoke slotUtRetype) carveOwner Concurrency.bootCoreId st with
     | .error e => assertBool s!"revoking the untyped capability succeeds (got {repr e})" false
     | .ok ((), stRev) => do
@@ -1035,63 +1039,33 @@ private def runResetChecks : IO Unit := do
          SystemState.lookupSlotCap stRev { cnode := carveCn, slot := SeLe4n.Slot.ofNat 9 } == none)
       -- WS-BP BP7.1 (`v0.36.7`): the revocation also REMOVES the mapping the
       -- destroyed frame capability made — seL4's `finaliseCap` → `unmapPage`.
-      -- Until then it stayed until the reset, so a thread went on reading and
-      -- writing memory whose every capability had been revoked.  The mapping is
-      -- read live in the pre-state, so the assertion is known to discriminate.
+      -- The mapping is read live in the pre-state, so the assertion is known to
+      -- discriminate.
       assertBool "before the revocation the destroyed frame capability's mapping is live"
         (mappedPaddr st carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == some carveUtBase)
       assertBool "the revocation removes the mapping the destroyed frame capability recorded"
         (mappedPaddr stRev carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == none)
       assertBool "and it leaves the mapping of a page no destroyed capability recorded alone"
         (mappedPaddr stRev carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x70000) == some carveDevBase)
+      assertBool "the revoked frames are retired from the object store"
+        ((stRev.objects[SeLe4n.ObjId.ofNat 950]?).isNone &&
+         (stRev.objects[SeLe4n.ObjId.ofNat 951]?).isNone)
       -- A thread wrote through its mapping before the revocation: the next
       -- owner of the page must not see it.
       let stDirty := { stRev with
         machine := SeLe4n.writeMem stRev.machine (SeLe4n.PAddr.ofNat carveUtBase) 0x5A }
-      match dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stDirty with
-      | .error e => assertBool s!"the reset after revocation succeeds (got {repr e})" false
-      | .ok ((), stReset) => do
-        assertBool "after the reset the region's page is mapped nowhere"
-          (mappedPaddr stReset carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == none)
-        assertBool "and leaves the mapping of a page OUTSIDE the region alone"
-          (mappedPaddr stReset carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x70000) == some carveDevBase)
-        assertBool "the carved frames are retired from the object store"
-          ((stReset.objects[SeLe4n.ObjId.ofNat 950]?).isNone &&
-           (stReset.objects[SeLe4n.ObjId.ofNat 951]?).isNone)
+      match dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 950 slotCarved)
+          carveOwner Concurrency.bootCoreId stDirty with
+      | .error e => assertBool s!"a carve after the revocation succeeds (got {repr e})" false
+      | .ok ((), stAgain) => do
+        assertBool "the next carve reuses the region's first page and the retired child id"
+          (frameAt stAgain 950 == some { base := SeLe4n.PAddr.ofNat carveUtBase })
+        assertBool "and the page is zeroed again — the previous owner's write is gone"
+          (SeLe4n.readMem stAgain.machine (SeLe4n.PAddr.ofNat carveUtBase) == 0)
         assertBool "the device frame, carved from ANOTHER untyped, is untouched"
           -- mapped once, at 0x70000, so its mapping epoch has advanced to 1
-          (frameAt stReset 952 == some { base := SeLe4n.PAddr.ofNat carveDevBase, isDevice := true,
+          (frameAt stAgain 952 == some { base := SeLe4n.PAddr.ofNat carveDevBase, isDevice := true,
                                          mapEpoch := 1 })
-        assertBool "the invoked capability's free index is rewound and the child list cleared"
-          (freeIndexAt stReset slotUtRetype == some 0 &&
-           (stReset.getUntyped? carveUt).map (·.children.length) == some 0)
-        -- The memory and the id are both reusable, and the page is scrubbed
-        -- again before any capability to it exists.
-        match dispatchSyscallAsCurrent (decodeCarve slotUtRetype frameTag 950 slotCarved)
-            carveOwner Concurrency.bootCoreId stReset with
-        | .error e => assertBool s!"a carve after the reset succeeds (got {repr e})" false
-        | .ok ((), stAgain) => do
-          assertBool "the next carve reuses the region's first page and the retired child id"
-            (frameAt stAgain 950 == some { base := SeLe4n.PAddr.ofNat carveUtBase })
-          assertBool "and the page is zeroed again — the previous owner's write is gone"
-            (SeLe4n.readMem stAgain.machine (SeLe4n.PAddr.ofNat carveUtBase) == 0)
-        -- A reset with nothing carved is a no-op success.
-        match dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stReset with
-        | .error e => assertBool s!"a second reset of an empty untyped succeeds (got {repr e})" false
-        | .ok ((), stTwice) =>
-          assertBool "a second reset leaves the untyped empty"
-            (freeIndexAt stTwice slotUtRetype == some 0 &&
-             (stTwice.getUntyped? carveUt).map (·.children.length) == some 0)
-  -- The reset asks the untyped, not only the slot: an untyped whose child list
-  -- records a carved object is refused, whatever that object is.
-  let utWithObjChild : UntypedObject :=
-    { regionBase := SeLe4n.PAddr.ofNat carveUtBase, regionSize := 0x3000,
-      children := [{ objId := carveVsp, offset := 0, size := SeLe4n.pageBytes }] }
-  match storeObject carveUt (.untyped utWithObjChild) carveScenario with
-  | .error _ => assertBool "the non-frame-child fixture stores" false
-  | .ok ((), stObj) =>
-    assertBool "a reset of an untyped recording a carved object is refused (revocationRequired)"
-      (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stObj))
 
 /-- WS-ZA ZA5.4 part 41: **the carve resets a capability with no derivation
 child**, as seL4's `decodeUntypedInvocation` does: through such a capability the
@@ -1146,16 +1120,6 @@ private def runRetypeResetChecks : IO Unit := do
         assertBool "a carve through a childless capability carves at index 0 (the region's first page)"
           (frameAt stCarved 954 == some { base := SeLe4n.PAddr.ofNat carveUtBase } &&
            freeIndexAt stCarved slotUtRetype == some SeLe4n.pageBytes)
-        -- The carve is the reset's rewind and then the carve.
-        match runAll stRev [decodeReset slotUtRetype,
-            decodeCarve slotUtRetype frameTag 954 slotCarved] with
-        | .error e => assertBool s!"the reset then the carve succeed (got {repr e})" false
-        | .ok stTwo =>
-          assertBool "and it carves what the reset followed by the carve carves"
-            (frameAt stTwo 954 == frameAt stCarved 954 &&
-             freeIndexAt stTwo slotUtRetype == freeIndexAt stCarved slotUtRetype &&
-             (stTwo.getUntyped? carveUt).map (·.children.length) ==
-               (stCarved.getUntyped? carveUt).map (·.children.length))
   -- An untyped whose child list records a carved object, under a capability
   -- with no derivation child: the carve resets, and is refused as the reset is.
   let utWithObjChild : UntypedObject :=
@@ -1175,7 +1139,7 @@ private def runRetypeResetChecks : IO Unit := do
 private def untypedTagOfSize (sizeBits : Nat) : Nat := 5 + sizeBits * 256
 
 private def runChildUntypedChecks : IO Unit := do
-  IO.println "-- §5g `.untypedRetype` carves child untypeds, and a reset returns the subtree (WS-BP BP7.1)"
+  IO.println "-- §5g `.untypedRetype` carves child untypeds, and a revocation returns the subtree (WS-BP BP7.1)"
   let st := carveScenario
   let isErr (e : KernelError) (r : Except KernelError (Unit × SystemState)) : Bool :=
     match r with | .error e' => e' == e | .ok _ => false
@@ -1230,8 +1194,6 @@ private def runChildUntypedChecks : IO Unit := do
       assertBool "the child is exhausted after one page (untypedRegionExhausted)"
         (isErr (.untypedRegionExhausted 0)
           (dispatchSyscallAsCurrent (decodeCarve 12 frameTag 972 14) carveOwner Concurrency.bootCoreId st2))
-      assertBool "a reset of the parent while the child's capability lives is refused"
-        (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId st2))
       -- One revocation of the parent capability reaches the child's capability
       -- AND the grandchild frame's, which was derived from it.
       match dispatchSyscallAsCurrent (decodeRevoke slotUtRetype) carveOwner Concurrency.bootCoreId st2 with
@@ -1251,27 +1213,18 @@ private def runChildUntypedChecks : IO Unit := do
           ((stRev.objects[SeLe4n.ObjId.ofNat 970]?).isNone &&
            (stRev.objects[SeLe4n.ObjId.ofNat 971]?).isNone &&
            (stRev.getUntyped? carveUt).map (·.children.length) == some 0)
-        match dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stRev with
-        | .error e => assertBool s!"the parent's reset succeeds (got {repr e})" false
-        | .ok ((), stReset) => do
-          assertBool "the child untyped and the grandchild frame are both retired"
-            ((stReset.objects[SeLe4n.ObjId.ofNat 970]?).isNone &&
-             (stReset.objects[SeLe4n.ObjId.ofNat 971]?).isNone)
-          assertBool "and the grandchild's page is mapped nowhere"
-            (mappedPaddr stReset carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == none)
-          assertBool "and the parent is empty again"
-            (freeIndexAt stReset slotUtRetype == some 0 &&
-             (stReset.getUntyped? carveUt).map (·.children.length) == some 0)
-          -- Both ids and the memory are reusable: carve a larger child in the same place.
-          match dispatchSyscallAsCurrent
-              (decodeCarve slotUtRetype (untypedTagOfSize 13) 971 12)
-              carveOwner Concurrency.bootCoreId stReset with
-          | .error e => assertBool s!"a carve after the subtree reset succeeds (got {repr e})" false
-          | .ok ((), stAgain) =>
-            assertBool "the next child reuses the region's start and a retired id"
-              ((stAgain.getUntyped? (SeLe4n.ObjId.ofNat 971)).map
-                  (fun u => (u.regionBase.toNat, u.regionSize))
-                == some (carveUtBase, 2 * SeLe4n.pageBytes))
+        assertBool "and the grandchild's page is mapped nowhere"
+          (mappedPaddr stRev carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000) == none)
+        -- Both ids and the memory are reusable: carve a larger child in the same place.
+        match dispatchSyscallAsCurrent
+            (decodeCarve slotUtRetype (untypedTagOfSize 13) 971 12)
+            carveOwner Concurrency.bootCoreId stRev with
+        | .error e => assertBool s!"a carve after the subtree revocation succeeds (got {repr e})" false
+        | .ok ((), stAgain) =>
+          assertBool "the next child reuses the region's start and a retired id"
+            ((stAgain.getUntyped? (SeLe4n.ObjId.ofNat 971)).map
+                (fun u => (u.regionBase.toNat, u.regionSize))
+              == some (carveUtBase, 2 * SeLe4n.pageBytes))
   -- A device untyped yields a device child, and that child a device frame.
   match runAll st
       [decodeCarve slotDevUt (untypedTagOfSize 12) 975 12,
@@ -1296,13 +1249,14 @@ private def decodeDelete (slot : Nat) : SyscallDecodeResult :=
   , syscallId := .cspaceDelete
   , msgRegs   := #[SeLe4n.RegValue.ofNat slot] }
 
-/-- `.vspaceUnmap` of `vaddr` in the owner's address space, invoked on the
-owner's VSpace-root capability — the unmap that leaves a record stale. -/
-private def decodeOwnUnmap (vaddr : Nat) : SyscallDecodeResult :=
-  { capAddr   := SeLe4n.CPtr.ofNat slotOwnVsp
-  , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
+/-- `Page_Unmap` (`.vspaceUnmap`) on the owner's frame capability at
+`frameSlot`, with no message word: it removes the mapping that capability
+records and clears the record. -/
+private def decodeOwnUnmap (frameSlot : Nat) : SyscallDecodeResult :=
+  { capAddr   := SeLe4n.CPtr.ofNat frameSlot
+  , msgInfo   := { length := 0, extraCaps := 0, label := 0 }
   , syscallId := .vspaceUnmap
-  , msgRegs   := #[SeLe4n.RegValue.ofNat 6, SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr)] }
+  , msgRegs   := #[] }
 
 /-- The mapping record on the capability in the owner's root at `slot`. -/
 private def recordAt (st : SystemState) (slot : Nat) : Option FrameMapping :=
@@ -1379,8 +1333,6 @@ private def runCarvedRootChecks : IO Unit := do
     -- one is installed (§5k), so the frame has no walk to hang from.
     assertBool "the frame is refused in a carved address space with no tables (translationFault)"
       (isErr .translationFault (mapVia 12 0x70000 14 permsRWUC st1))
-    assertBool "a reset while the roots' capabilities live is refused (revocationRequired)"
-      (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId st1))
     -- WS-ZA ZA5.4 part 21: the live revocation retires each carved object with
     -- its last capability, the roots' ASIDs with them.
     match dispatchSyscallAsCurrent (decodeRevoke slotUtRetype) carveOwner Concurrency.bootCoreId st1 with
@@ -1392,23 +1344,16 @@ private def runCarvedRootChecks : IO Unit := do
          (stLive.objects[SeLe4n.ObjId.ofNat 982]?).isNone &&
          stLive.asidTable[one]? == none && stLive.asidTable[SeLe4n.ASID.ofNat 2]? == none &&
          (Architecture.shootdownPostedOps st1 stLive).contains (Architecture.encodeAsidInvalidation one))
-      -- WS-ZA ZA5.4 part 36: the reset is seL4's.  Nothing carved survives, so
-      -- it writes 0 to the invoked capability's free index and nothing else.
-      match dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stLive with
-      | .error e => assertBool s!"the reset after the revocation succeeds (got {repr e})" false
-      | .ok ((), stReset) => do
-        assertBool "the reset rewinds the free index and leaves the boot root's ASID alone"
-          (freeIndexAt stReset slotUtRetype == some 0 &&
-           stReset.asidTable[carveAsid]? == some carveVsp)
-        assertBool "the reset posts no shootdown round: the revocation already released the ASIDs"
-          ((Architecture.shootdownPostedOps stLive stReset).isEmpty)
-        match dispatchSyscallAsCurrent (decodeCarve slotUtRetype vspaceRootTag 980 12)
-            carveOwner Concurrency.bootCoreId stReset with
-        | .error e => assertBool s!"a root carve after the reset succeeds (got {repr e})" false
-        | .ok ((), stAgain) =>
-          assertBool "the next root reuses the released ASID and the region's first page"
-            ((rootAt stAgain 980).map (fun r => (r.asid, r.tableBase))
-              == some (one, some (SeLe4n.PAddr.ofNat carveUtBase)))
+      -- Nothing carved survives, so the next carve through the childless
+      -- capability resets it (seL4 resets inside Retype).
+      match dispatchSyscallAsCurrent (decodeCarve slotUtRetype vspaceRootTag 980 12)
+          carveOwner Concurrency.bootCoreId stLive with
+      | .error e => assertBool s!"a root carve after the revocation succeeds (got {repr e})" false
+      | .ok ((), stAgain) =>
+        assertBool "the next root reuses the released ASID and the region's first page"
+          ((rootAt stAgain 980).map (fun r => (r.asid, r.tableBase))
+            == some (one, some (SeLe4n.PAddr.ofNat carveUtBase)) &&
+           stAgain.asidTable[carveAsid]? == some carveVsp)
 
 private def runFrameFinaliseChecks : IO Unit := do
   IO.println "-- §5f a frame capability owns the mapping it made (WS-BP BP7.1)"
@@ -1465,23 +1410,34 @@ private def runFrameFinaliseChecks : IO Unit := do
             | .ok ((), stOld) =>
                 mappedPaddr stOld carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x61000) == some carveUtBase
             | .error _ => false)
-  -- A STALE record: the address space unmaps 0x60000 through its own VSpace
-  -- capability and maps the OTHER frame there.  Deleting slot 8 — whose record
-  -- still names 0x60000 — must not remove a mapping it did not make.  (A fresh
+  -- A STALE record: the entry at 0x60000 goes without slot 8's capability
+  -- (seL4 reaches this when `Page_Map` writes another frame over the entry),
+  -- and the OTHER frame is mapped there.  Deleting slot 8 — whose record still
+  -- names 0x60000 — must not remove a mapping it did not make.  (A fresh
   -- chain, with no copy of slot 8: a deleted copy's CDT node keeps its parent
   -- a derivation parent until a revocation, as it always has.)
   match runAll carveScenario
       [decodeCarve slotUtRetype frameTag 950 slotCarved,
        decodeCarve slotUtRetype frameTag 951 9,
        decodeOwnMap 0x60000 slotCarved permsRWUC,
-       decodeOwnUnmap 0x60000,
+       .staleEntry 0x60000,
        decodeOwnMap 0x60000 9 permsRWUC] with
-  | .error e => assertBool s!"the map-unmap-remap setup succeeds (got {repr e})" false
+  | .error e => assertBool s!"the map-stale-remap setup succeeds (got {repr e})" false
   | .ok st4 => do
     assertBool "setup: 0x60000 now maps the second frame, and slot 8's record is stale"
       (mappedPaddr st4 carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000)
           == some (carveUtBase + SeLe4n.pageBytes) &&
        recordAt st4 slotCarved == some { asid := carveAsid, vaddr := SeLe4n.Testing.fixtureUserVAddr 0x60000 })
+    -- seL4's `performPageInvocationUnmap` on the stale capability: `unmapPage`
+    -- finds the entry holds another frame and leaves it; the record is cleared.
+    match dispatchSyscallAsCurrent (decodeOwnUnmap slotCarved) carveOwner Concurrency.bootCoreId st4 with
+    | .error e => assertBool s!"Page_Unmap of the stale-record capability succeeds (got {repr e})" false
+    | .ok ((), stU) =>
+      assertBool "Page_Unmap of a stale record leaves the other frame's mapping and clears the record"
+        (mappedPaddr stU carveAsid (SeLe4n.Testing.fixtureUserVAddr 0x60000)
+            == some (carveUtBase + SeLe4n.pageBytes) &&
+         recordAt stU slotCarved == none &&
+         recordAt stU 9 == recordAt st4 9)
     match dispatchSyscallAsCurrent (decodeDelete slotCarved) carveOwner Concurrency.bootCoreId st4 with
     | .error e => assertBool s!"deleting the stale-record capability succeeds (got {repr e})" false
     | .ok ((), st5) =>
@@ -1497,8 +1453,8 @@ private def runFrameFinaliseChecks : IO Unit := do
           == some { asid := carveAsid, vaddr := SeLe4n.Testing.fixtureUserVAddr 0x62000,
                     epoch := 1 })
   -- PR #904 review (`v0.36.41`): the SAME frame remapped at the SAME address,
-  -- through another capability to it, after the address space unmapped the
-  -- first mapping.  A record naming only the ASID, the address and the page
+  -- through another capability to it, after the first mapping's entry went
+  -- without its capability.  A record naming only the ASID, the address and the page
   -- cannot tell the second mapping from its own; the mapping epoch can.  The
   -- copy is taken before either mapping (so it carries no record) and is the one
   -- whose record goes stale — a leaf, so it can be deleted without a revocation.
@@ -1507,7 +1463,7 @@ private def runFrameFinaliseChecks : IO Unit := do
       [decodeCarve slotUtRetype frameTag 950 slotCarved,
        decodeCopy slotCarved 15,
        decodeOwnMap 0x60000 15 permsRWUC,
-       decodeOwnUnmap 0x60000,
+       .staleEntry 0x60000,
        decodeOwnMap 0x60000 slotCarved permsRWUC] with
   | .error e => assertBool s!"the same-frame remap setup succeeds (got {repr e})" false
   | .ok st7 => do
@@ -1564,20 +1520,11 @@ private def runFrameFinaliseChecks : IO Unit := do
 
 private def runAuthorizedChecks : IO Unit := do
   IO.println "-- §6 authorized callers still succeed"
-  -- `.vspaceUnmap` with genuine authority over the victim's address space.
   match scenario victimRootCap with
   | none => assertBool "the authorized scenario builds" false
   | some st => do
-    match dispatchSyscallAsCurrent (decode2 .vspaceUnmap 7 0x40000) attacker Concurrency.bootCoreId st with
-    | .error _ => assertBool "authorized `.vspaceUnmap` succeeds" false
-    | .ok ((), st') => do
-      assertBool "authorized `.vspaceUnmap` succeeds"
-        true
-      assertBool "and the mapping is actually removed"
-        (!(stillMapped st' victimAsid victimVaddr))
-      assertBool "and its mapping-epoch entry goes with it"
-        (!(holdsEpoch st' victimAsid victimVaddr))
-    -- `.vspaceUnifyInstruction` with the same authority.
+    -- `.vspaceUnifyInstruction` with genuine authority over the victim's
+    -- address space.
     match dispatchSyscallAsCurrent (decode2 .vspaceUnifyInstruction 7 0x40000) attacker Concurrency.bootCoreId st with
     | .error _ => assertBool "authorized `.vspaceUnifyInstruction` succeeds" false
     | .ok ((), st') => do
@@ -1593,13 +1540,35 @@ private def runAuthorizedChecks : IO Unit := do
         (stillMapped st' victimAsid freshVaddr)
       assertBool "and stamps a mapping epoch for it"
         (holdsEpoch st' victimAsid freshVaddr)
-      -- Map then unmap at a fresh address leaves no entry behind, so the
-      -- epoch table stays bounded by the live mappings.
-      match dispatchSyscallAsCurrent (decode2 .vspaceUnmap 7 0x50000) attacker Concurrency.bootCoreId st' with
-      | .error _ => assertBool "unmapping the fresh address succeeds" false
-      | .ok ((), st'') =>
-        assertBool "unmapping a fresh address erases its mapping-epoch entry"
+      assertBool "and records the mapping on the frame capability that made it"
+        ((attackerRecord st' slotFrameRO).map (·.vaddr) == some freshVaddr)
+      -- Another capability to the same frame records no mapping, so its unmap
+      -- removes nothing (seL4: `capFMappedASID` is zero, `unmapPage` is skipped).
+      match dispatchSyscallAsCurrent (decodeFrameUnmap slotFrameRW) attacker Concurrency.bootCoreId st' with
+      | .error e => assertBool s!"unmapping through a capability with no record succeeds (got {repr e})" false
+      | .ok ((), sOther) =>
+        assertBool "and leaves the other capability's mapping and record in place"
+          (stillMapped sOther victimAsid freshVaddr &&
+           (attackerRecord sOther slotFrameRO).map (·.vaddr) == some freshVaddr)
+      -- Map then unmap through the mapping's own capability leaves no entry
+      -- behind, so the epoch table stays bounded by the live mappings, and the
+      -- capability's record is cleared (seL4's `performPageInvocationUnmap`).
+      match dispatchSyscallAsCurrent (decodeFrameUnmap slotFrameRO) attacker Concurrency.bootCoreId st' with
+      | .error e => assertBool s!"unmapping through the mapping's own capability succeeds (got {repr e})" false
+      | .ok ((), st'') => do
+        assertBool "unmapping removes the mapping and erases its mapping-epoch entry"
           (!(stillMapped st'' victimAsid freshVaddr) && !(holdsEpoch st'' victimAsid freshVaddr))
+        assertBool "and clears the capability's mapping record"
+          (attackerRecord st'' slotFrameRO == none)
+        assertBool "the victim's other page is untouched"
+          (stillMapped st'' victimAsid victimVaddr)
+        assertBool "a second unmap of the same capability succeeds and changes no mapping"
+          (match dispatchSyscallAsCurrent (decodeFrameUnmap slotFrameRO) attacker Concurrency.bootCoreId st'' with
+           | .ok ((), s3) => !(stillMapped s3 victimAsid freshVaddr) && stillMapped s3 victimAsid victimVaddr &&
+               attackerRecord s3 slotFrameRO == none
+           | .error _ => false)
+        assertBool "and the capability maps again once its record is cleared"
+          ((mapAs (decodeMap 0x50000 slotFrameRO) st'').isOk)
   -- A caller acting on its OWN address space with its own root capability.
   match scenario ownRootCap with
   | none => assertBool "the own-AS scenario builds" false
@@ -1758,10 +1727,8 @@ private def runSetSpaceChecks : IO Unit := do
         -- capability, which derives from the untyped: the revoke reaches it.
         assertBool "revoking the untyped capability empties the worker's VSpace slot too"
           (spaceSlotEmpty stRev spaceWorker TCB.vspaceRootSlot)
-        assertBool "CONTROL: with no thread in it, the reset retires the carved root"
-          (match dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId stRev with
-           | .ok ((), s) => (s.objects[root]?).isNone
-           | .error _ => false)
+        assertBool "CONTROL: with no thread in it, the carved root is retired and the next carve resets"
+          ((stRev.objects[root]?).isNone && carveResets stRev slotUtRetype)
         match setSpaceAs slotWorkerTcb slotOwnCnGrant slotOwnVsp 0 stRev with
         | .error e => assertBool s!"moving the worker back to the boot root succeeds (got {repr e})" false
         | .ok ((), stBack) =>
@@ -1849,13 +1816,6 @@ private def decodeTableUnmap (tableSlot : Nat) : SyscallDecodeResult :=
   , syscallId := .pageTableUnmap
   , msgRegs   := #[] }
 
-/-- `.vspaceUnmap` through the root capability at `rootSlot`, under `asid`. -/
-private def decodeUnmapVia (rootSlot asid vaddr : Nat) : SyscallDecodeResult :=
-  { capAddr   := SeLe4n.CPtr.ofNat rootSlot
-  , msgInfo   := { length := 2, extraCaps := 0, label := 0 }
-  , syscallId := .vspaceUnmap
-  , msgRegs   := #[SeLe4n.RegValue.ofNat asid, SeLe4n.RegValue.ofNat (SeLe4n.VAddr.userWindowBase + vaddr)] }
-
 /-- Where the table at `oid` records itself installed. -/
 private def installOf (st : SystemState) (oid : Nat) : Option PageTableInstall :=
   (st.getPageTable? (SeLe4n.ObjId.ofNat oid)).bind (·.installedIn)
@@ -1928,8 +1888,8 @@ private def runPageTableChecks : IO Unit := do
         assertBool "the third table is at level 3, and the frame maps"
           (slotsOf st3 980 == some [(1, 983), (2, 984), (3, 985)] &&
            mappedPaddr st3 one (SeLe4n.Testing.fixtureUserVAddr va) == some (carveUtBase + SeLe4n.pageBytes))
-        assertBool "a complete walk has no room for a fourth table (mappingConflict)"
-          (isErr .mappingConflict (tableMap 18 12 va st3))
+        assertBool "a complete walk has no room for a fourth table (targetSlotOccupied, seL4 DeleteFirst)"
+          (isErr .targetSlotOccupied (tableMap 18 12 va st3))
         -- WS-BP BP7.2: the user window.  Level-0 entry 0 of every user root
         -- is the kernel's own window, so neither a table nor a frame may go
         -- below `VAddr.userWindowBase`; and a mapping's virtual address is
@@ -1962,8 +1922,8 @@ private def runPageTableChecks : IO Unit := do
           (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeTableUnmap 17) carveOwner Concurrency.bootCoreId st3))
         assertBool "nor one a deeper table is installed beneath (revocationRequired)"
           (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeTableUnmap 15) carveOwner Concurrency.bootCoreId st3))
-        assertBool "a reset while the capabilities live is refused (revocationRequired)"
-          (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner Concurrency.bootCoreId st3))
+        assertBool "while the capabilities live the next carve does not reset"
+          (!carveResets st3 slotUtRetype)
         -- Finalisation (`finaliseDestroyedCapabilities`): destroying a page
         -- table's LAST capability takes it out of its address space, with every
         -- mapping and every table beneath it; destroying one of several leaves
@@ -2015,7 +1975,7 @@ private def runPageTableChecks : IO Unit := do
             (match st3.objects[carveCn]? with
              | some (.cnode cn) => Architecture.cnodeHoldsInstalledPageTableCap st3 cn
              | _ => false)
-        match runAll st3 [decodeUnmapVia 12 1 va, decodeTableUnmap 17] with
+        match runAll st3 [decodeOwnUnmap 14, decodeTableUnmap 17] with
         | .error e => assertBool s!"unmapping the frame, then the level-3 table, succeeds (got {repr e})" false
         | .ok st4 => do
           assertBool "the level-3 slot is gone and the table is installed nowhere"
@@ -2044,11 +2004,10 @@ private def runPageTableChecks : IO Unit := do
                  (st5Live.getUntyped? (SeLe4n.ObjId.ofNat 990)).map (·.children.length) == some 0)
               assertBool "the revocation took the child's table out of the parent's root"
                 (slotsOf st5Live 980 == slotsOf st4 980)
-              match dispatchSyscallAsCurrent (decodeReset 19) carveOwner Concurrency.bootCoreId st5Live with
-              | .error e => assertBool s!"resetting the child alone succeeds (got {repr e})" false
-              | .ok ((), st5r) => do
-                assertBool "the reset rewinds the child's free index and leaves the parent's root alone"
-                  (freeIndexAt st5r 19 == some 0 && slotsOf st5r 980 == slotsOf st5Live 980)
+              assertBool "the next carve through the child resets it"
+                (carveResets st5Live 19)
+              let st5r := st5Live
+              do
                 -- An address space carved from the child holding a table carved
                 -- from the parent, whose capability survives the child's
                 -- revocation: the root goes with its last capability, the table
@@ -2059,8 +2018,8 @@ private def runPageTableChecks : IO Unit := do
                     (tableMapSt 22 21 va) with
                 | .error e => assertBool s!"carving a root from the child and installing a parent table in it succeeds (got {repr e})" false
                 | .ok st6pre => do
-                  assertBool "a reset of the child while its root's capability lives is refused (revocationRequired)"
-                    (isErr .revocationRequired (dispatchSyscallAsCurrent (decodeReset 19) carveOwner Concurrency.bootCoreId st6pre))
+                  assertBool "while its root's capability lives the next carve through the child does not reset"
+                    (!carveResets st6pre 19)
                   match dispatchSyscallAsCurrent (decodeRevoke 19) carveOwner Concurrency.bootCoreId st6pre with
                   | .error e => assertBool s!"revoking the child succeeds (got {repr e})" false
                   | .ok ((), st6) => do
@@ -2073,12 +2032,10 @@ private def runPageTableChecks : IO Unit := do
                         | none => false))
                     assertBool "the parent's table survives the root it was installed in"
                       ((st6.objects[SeLe4n.ObjId.ofNat 994]?).isSome)
-                    assertBool "so the child, with nothing carved from it surviving, resets"
-                      (match dispatchSyscallAsCurrent (decodeReset 19) carveOwner Concurrency.bootCoreId st6 with
-                       | .ok ((), r) => freeIndexAt r 19 == some 0
-                       | .error _ => false)
-                    match runAll st6 [decodeRevoke slotUtRetype, decodeReset slotUtRetype] with
-                    | .error e => assertBool s!"CONTROL: the parent's revocation and reset succeed (got {repr e})" false
+                    assertBool "so the child, with nothing carved from it surviving, resets on the next carve"
+                      (carveResets st6 19)
+                    match runAll st6 [decodeRevoke slotUtRetype] with
+                    | .error e => assertBool s!"CONTROL: the parent's revocation succeeds (got {repr e})" false
                     | .ok st7 =>
                       assertBool "CONTROL: the roots, every table, the frame and the child are retired"
                         ([980, 982, 983, 984, 985, 986, 990, 993, 994].all
@@ -2168,7 +2125,7 @@ private def runPhysicalWriteChecks : IO Unit := do
             bit 10 ||| bit 11 ||| bit 53 ||| bit 54
           assertBool "a mapping stores its page descriptor at the frame's level-3 entry (0x70 → +0x380)"
             (recordedBy st3 st4 == [store (l3 + 0x380) desc])
-          match dispatchSyscallAsCurrent (decodeUnmapVia 12 1 va) carveOwner Concurrency.bootCoreId st4 with
+          match dispatchSyscallAsCurrent (decodeOwnUnmap 14) carveOwner Concurrency.bootCoreId st4 with
           | .error e => assertBool s!"unmapping the frame succeeds (got {repr e})" false
           | .ok ((), st5) => do
             assertBool "an unmap stores the invalid descriptor at the same entry"
@@ -2403,9 +2360,8 @@ private def runPassiveRetireChecks : IO Unit := do
             (st1.serviceRegistry[sid]?.isNone)
           assertBool "...and retires the endpoint from the store and the untyped's list"
             (!storedAt st1 960 && !recordsChildAt st1 carveUt 960)
-          assertBool "...so the untyped resets"
-            ((dispatchSyscallAsCurrent (decodeReset slotUtRetype) carveOwner
-              Concurrency.bootCoreId st1).toOption.isSome)
+          assertBool "...so the next carve resets the untyped"
+            (carveResets st1 slotUtRetype)
           assertBool "the registration alone keeps the endpoint from the retirable kinds (what the release drops)"
             (!passiveObjectRetirable st (SeLe4n.ObjId.ofNat 960))
   -- A notification bound to a thread is finalised before it is retired: its
@@ -2709,9 +2665,9 @@ private def runThreadFinaliseChecks : IO Unit := do
     [("receiving", .BlockedRecv, true, .blockedOnReceive epId,
        fun t st => kernelState (SeLe4n.Kernel.endpointReceiveDual epId t none st)),
      ("sending", .BlockedSend, false, .blockedOnSend epId,
-       fun t st => kernelState (SeLe4n.Kernel.endpointSendDual epId t (.frame none false) st)),
+       fun t st => kernelState (SeLe4n.Kernel.endpointSendDual epId t (.frame none false true) st)),
      ("calling", .BlockedCall, false, .blockedOnCall epId,
-       fun t st => kernelState (SeLe4n.Kernel.endpointCall epId t (.frame none false) st))]
+       fun t st => kernelState (SeLe4n.Kernel.endpointCall epId t (.frame none false true) st))]
   for (name, ts, isRecv, blocked, block) in blocks do
     match runAll carveScenario (threeThreads ++ [OwnerStep.call <| decodeCarve slotUtRetype endpointTag 963 15]) with
     | .error e => assertBool s!"carving three threads and an endpoint succeeds (got {repr e})" false
@@ -3346,17 +3302,16 @@ private def runZombieDeleteChecks : IO Unit := do
           !recordsChildAt st1 carveUt 971 && !ownSlotHolds st1 12)
       assertBool "the retire removes the notification's declassification provenance"
         (!(st1.declassificationTaint ep).contains 3)
-      -- WS-ZA ZA5.4 part 36: the reset removes no id, so it owes no clear; the
-      -- id the retire freed is carved again after the reset with no tag.
-      match runAll st1 [decodeReset slotUtRetype] with
-      | .error e => assertBool s!"resetting the emptied untyped succeeds (got {repr e})" false
-      | .ok stR => do
-        assertBool "the reset rewinds the free index"
-          (freeIndexAt stR slotUtRetype == some 0)
+      -- The carve's reset removes no id, so it owes no clear; the id the
+      -- retire freed is carved again with no tag.
+      let stR := st1
+      do
+        assertBool "the next carve resets the emptied untyped"
+          (carveResets stR slotUtRetype)
         match runAll stR [decodeCarve slotUtRetype notificationTag 971 12] with
         | .error e => assertBool s!"carving the notification's id again after the reset succeeds (got {repr e})" false
         | .ok st2 =>
-          assertBool "a notification carved at the retired id after the reset inherits no tag"
+          assertBool "a notification carved at the retired id inherits no tag"
             (storedAt st2 971 && !(st2.declassificationTaint ep).contains 3)
   -- A carved thread holding the last capability to a carved CNode, its CSpace
   -- root: the thread's last capability's delete finalises it, then deletes its
@@ -3417,7 +3372,7 @@ def runVSpaceCapabilityBindingChecks : IO Unit := do
   runFrameCapabilityChecks
   runCarveChecks
   runUntypedCopyChecks
-  runResetChecks
+  runRevokeThenCarveChecks
   runRetypeResetChecks
   runChildUntypedChecks
   runCarvedRootChecks

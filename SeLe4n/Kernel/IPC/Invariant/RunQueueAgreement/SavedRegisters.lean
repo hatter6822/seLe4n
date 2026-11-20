@@ -145,11 +145,11 @@ theorem savedRegsKeptOffCore_updateTcb {e : CoreId} {base st : SystemState}
 syscall's id and argument words into the caller's saved context, the executing
 core's current thread, which no other core holds. -/
 theorem writeFfiRegistersToTcb_savedRegsKeptOffCore {e : CoreId} {st : SystemState}
-    {tid : SeLe4n.ThreadId} (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
+    {tid : SeLe4n.ThreadId} (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64)
     (hInv : st.objects.invExt) (hCur : st.scheduler.currentOnCore e = some tid)
     (hU : currentsUnique st) (hN : st.currentNotResidentElsewhere) :
     savedRegsKeptOffCore e st
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
   unfold Platform.FFI.writeFfiRegistersToTcb
   exact savedRegsKeptOffCore_updateTcb hInv (offCoreFree_of_current hCur hU hN)
     (currentKeptOffCore_of_eq fun _ _ => by rw [SystemState.updateTcb_scheduler])
@@ -176,6 +176,7 @@ theorem stageCallerReturnFor_savedRegsKeptOffCore {e : CoreId} {base post : Syst
   cases o with
   | blocks => exact savedRegsKeptOffCore_refl e post
   | faulted => exact savedRegsKeptOffCore_refl e post
+  | resumes => exact savedRegsKeptOffCore_refl e post
   | returns f =>
     simp only [Architecture.stageCallerReturnFor]
     split
@@ -252,21 +253,21 @@ theorem completeYieldFrom_savedRegsKeptExcept {st : SystemState} {s : SeLe4n.Sch
       unfold setConsumed cancelYieldFrom
       simp only [hS]
       have hS1 : ((st.updateSchedContext s SchedContext.updateConsumed).updateTcb ⟨k⟩
-          (TCB.withConsumed · sc.consumedReading.toUInt64)).getSchedContext? s =
+          (TCB.withConsumedMsg · sc.consumedReading.toUInt64 false)).getSchedContext? s =
           some (SchedContext.updateConsumed sc) := by
         rw [SystemState.updateTcb_getSchedContext? _ _ _ hInv1,
           SystemState.updateSchedContext_getSchedContext?_self _ _ _ hInv, hS]; rfl
       have hC1 : (SchedContext.updateConsumed sc).yieldFromCode = k + 1 := hC
       simp only [hS1, hC1]
       have hInv2 := SystemState.updateTcb_preserves_objects_invExt _ ⟨k⟩
-        (TCB.withConsumed · sc.consumedReading.toUInt64) hInv1
+        (TCB.withConsumedMsg · sc.consumedReading.toUInt64 false) hInv1
       have hInv3 := SystemState.updateSchedContext_preserves_objects_invExt _ s
         SchedContext.yieldCleared hInv2
       rw [savedRegs_updateTcb_ne hInv3 hNe]
       unfold SystemState.savedRegs
       rw [SystemState.updateSchedContext_getTcb? _ _ _ hInv2]
       rw [show ((st.updateSchedContext s SchedContext.updateConsumed).updateTcb ⟨k⟩
-          (TCB.withConsumed · sc.consumedReading.toUInt64)).getTcb? t =
+          (TCB.withConsumedMsg · sc.consumedReading.toUInt64 false)).getTcb? t =
           (st.updateSchedContext s SchedContext.updateConsumed).getTcb? t from
         SystemState.updateTcb_getTcb?_ne _ _ _ hInv1 t
           (fun h => hNe (SeLe4n.ThreadId.toObjId_injective _ _ h.symm)),

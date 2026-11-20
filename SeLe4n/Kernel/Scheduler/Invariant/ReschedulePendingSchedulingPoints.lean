@@ -340,6 +340,7 @@ theorem stageCallerReturnFor_stepCovers (e : CoreId) (caller? : Option SeLe4n.Th
   cases o with
   | blocks => exact ⟨stepCovers_refl e post, hInv⟩
   | faulted => exact ⟨stepCovers_refl e post, hInv⟩
+  | resumes => exact ⟨stepCovers_refl e post, hInv⟩
   | returns f =>
     cases caller? with
     | none => simp only [Architecture.stageCallerReturnFor]; exact ⟨stepCovers_refl e post, hInv⟩

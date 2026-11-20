@@ -90,9 +90,9 @@ grant field, the capabilities a send transfers are its request
 grant right `false`, whatever rights the handler capability holds. -/
 theorem faultMessage_transfers_no_authority (st : SystemState)
     (sender : SeLe4n.ThreadId) (tcb : TCB) (f : Fault) (fctx : FaultContext)
-    (badge : Option SeLe4n.Badge) :
-    sendPayloadCapRequest st sender tcb (.fault f fctx badge) = none ∧
-    (SendPayload.fault f fctx badge).grant = false :=
+    (badge : Option SeLe4n.Badge) (linkReply : Bool) :
+    sendPayloadCapRequest st sender tcb (.fault f fctx badge linkReply) = none ∧
+    (SendPayload.fault f fctx badge linkReply).grant = false :=
   ⟨rfl, rfl⟩
 
 -- ============================================================================

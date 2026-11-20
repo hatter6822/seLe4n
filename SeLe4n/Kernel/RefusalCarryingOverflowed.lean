@@ -84,7 +84,7 @@ theorem dispatchWithCapChecked_eq_truncated (ctx : LabelingContext)
     simp only [hS, truncationTarget, ↓reduceIte, Bool.false_eq_true, Option.some.injEq,
       decodeCSpaceMintArgs, decodeCSpaceCopyArgs, decodeCSpaceMoveArgs, decodeMintReplyCapArgs,
       decodeCSpaceDeleteArgs,
-      decodeUntypedRetypeArgs, decodePageMapArgs, decodeVSpaceUnmapArgs,
+      decodeUntypedRetypeArgs, decodePageMapArgs,
       decodeVSpaceUnifyInstructionArgs, decodeServiceRegisterArgs,
       decodeSchedContextConfigureArgsChecked, decodeSchedContextConfigureArgs,
       decodeIrqControlGetArgs, decodeSetPriorityArgs, decodeSetMCPriorityArgs,
@@ -175,7 +175,9 @@ def overflowedDecode (st : SystemState) (tid : SeLe4n.ThreadId) (rf : SeLe4n.Reg
   { capAddr, msgInfo := mi, syscallId := sid,
     msgRegs := Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
       (overflowRegsFrom st tid 0 (mi.length - 4)).toArray,
-    inlineCount := 4, overflowCount := mi.length - 4 }
+    inlineCount := 4, overflowCount := mi.length - 4 ,
+    canReply := Syscall.wordCanReply (readRegWord rf SeLe4n.arm64DefaultLayout.syscallNumReg),
+    replyCPtr := SeLe4n.CPtr.ofWord (readRegWord rf SeLe4n.arm64DefaultLayout.replyReg)}
 
 @[simp] theorem overflowedDecode_overflowCount (st : SystemState) (tid : SeLe4n.ThreadId)
     (rf : SeLe4n.RegisterFile) (sid : SyscallId) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) :
@@ -187,10 +189,10 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed_ok (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (mi : MessageInfo)
     (hMI : decodeMsgInfo (readReg rf SeLe4n.arm64DefaultLayout.msgInfoReg) = .ok mi)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .overflowed sid capAddr mi.length)
+    (hR : registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .overflowed sid capAddr mi.length)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
-    decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
+    decodeSyscallArgsFromState opCode st tid SeLe4n.arm64DefaultLayout rf 32 =
       .ok (overflowedDecode st tid rf sid capAddr mi) := by
   obtain ⟨mi', hMI', -, _, _, hOv, hDec⟩ :=
     decodeSyscallArgsFromState_of_routedOverflowed st tid _ rf 32 sid capAddr mi.length hR
@@ -210,10 +212,10 @@ theorem decodeSyscallArgsFromState_of_routedOverflowed_clamped (st : SystemState
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (sid : SyscallId) (capAddr : SeLe4n.CPtr)
     (mi : MessageInfo)
     (hMI : decodeMsgInfo (readReg rf SeLe4n.arm64DefaultLayout.msgInfoReg) = .ok mi)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .overflowed sid capAddr mi.length)
+    (hR : registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .overflowed sid capAddr mi.length)
     (j : Nat) (hj : j < mi.length - 4) (e : Architecture.IpcBufferRead.IpcBufferReadError)
     (h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .error e) :
-    decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
+    decodeSyscallArgsFromState opCode st tid SeLe4n.arm64DefaultLayout rf 32 =
       .ok (clampedFrameDecode sid rf capAddr mi) := by
   obtain ⟨mi', hMI', -, hGt, _, hOv, hDec⟩ :=
     decodeSyscallArgsFromState_of_routedOverflowed st tid _ rf 32 sid capAddr mi.length hR

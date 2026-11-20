@@ -106,6 +106,7 @@ theorem stageCallerReturn_preserves_ipcInvariantFull (pre post : SystemState) (c
   cases o with
   | blocks => exact hInv
   | faulted => exact hInv
+  | resumes => exact hInv
   | returns f =>
     cases hP : pre.scheduler.currentOnCore c with
     | none => simp only [stageCallerReturn, stageCallerReturnFor, hP]; exact hInv
@@ -124,6 +125,7 @@ theorem stageCallerReturn_preserves_objects_invExt (pre post : SystemState) (c :
   cases o with
   | blocks => exact hObjInv
   | faulted => exact hObjInv
+  | resumes => exact hObjInv
   | returns f =>
     cases hP : pre.scheduler.currentOnCore c with
     | none => simp only [stageCallerReturn, stageCallerReturnFor, hP]; exact hObjInv

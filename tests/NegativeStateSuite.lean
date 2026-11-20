@@ -391,7 +391,7 @@ private def runVSpaceAndNotificationF03NegativeChecks : IO SystemState := do
 
   expectErr "vspace duplicate map conflict"
     ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asidPrimary vaddrPrimary paddrPrimary) stMapped)
-    .mappingConflict
+    .targetSlotOccupied
 
   let (_, _stAwait) ← expectOkSt "dual-queue receive enqueue seed"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 7) none baseState)
@@ -511,7 +511,7 @@ private def runBadgeTruncationNegativeChecks : IO Unit := do
 
   expectErr "dual-queue send on missing object"
     (SeLe4n.Kernel.endpointSendDual (SeLe4n.ObjId.ofNat 9998) (SeLe4n.ThreadId.ofNat 8)
-      (.frame none false) baseState)
+      (.frame none false true) baseState)
     .objectNotFound
 
 /-- WS-H12d/A-09: IPC message payload bounds enforcement (registers > 120 / caps > 3
@@ -568,7 +568,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
   -- ==========================================================================
 
   let (_, stDualSend1) ← expectOkSt "dual queue send blocks sender"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) baseState)
   match (stDualSend1.objects[endpointId]? : Option KernelObject) with
   | some (.endpoint ep) =>
       if ep.sendQ.head = some (SeLe4n.ThreadId.ofNat 7) ∧ ep.sendQ.tail = some (SeLe4n.ThreadId.ofNat 7) then
@@ -588,9 +588,9 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
 
   -- FIFO check across two blocked senders and one receiver consuming twice.
   let (_, stDualFifo1) ← expectOkSt "dual queue fifo enqueue sender 7"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) baseState)
   let (_, stDualFifo2) ← expectOkSt "dual queue fifo enqueue sender 8"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) (.frame none false) stDualFifo1)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) (.frame none false true) stDualFifo1)
   expectThreadQueueLinks "dual queue fifo sender 7 links to sender 8"
     stDualFifo2 (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) (some (SeLe4n.ThreadId.ofNat 8))
   expectThreadQueueLinks "dual queue fifo sender 8 links from sender 7"
@@ -608,11 +608,11 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
 
   -- Arbitrary O(1) remove with queuePPrev metadata: remove middle waiter 8 from [7,8,9].
   let (_, stDualRemove1) ← expectOkSt "dual queue remove enqueue sender 7"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) baseState)
   let (_, stDualRemove2) ← expectOkSt "dual queue remove enqueue sender 8"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) (.frame none false) stDualRemove1)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) (.frame none false true) stDualRemove1)
   let (_, stDualRemove3) ← expectOkSt "dual queue remove enqueue sender 9"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 9) (.frame none false) stDualRemove2)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 9) (.frame none false true) stDualRemove2)
   let (_, stDualRemove4) ← expectOkSt "dual queue remove middle sender 8"
     (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 8) stDualRemove3)
   expectThreadQueueLinks "dual queue remove middle clears sender 8 links"
@@ -654,7 +654,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
     throw <| IO.userError s!"dual queue fifo ordering expected [7,8], got [{toString fifoFirst},{toString fifoSecond}]"
 
   expectErr "dual queue sender double-wait prevention"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) stDualFifo1)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) stDualFifo1)
     .alreadyWaiting
 
   let (_, stDualRecvWait1) ← expectOkSt "dual queue receiver wait #1"
@@ -668,7 +668,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
   expectThreadQueueLinks "dual queue receiver fifo receiver 8 links from receiver 9"
     stDualRecvWait2 (SeLe4n.ThreadId.ofNat 8) (some (SeLe4n.ThreadId.ofNat 9)) (some (.tcbNext (SeLe4n.ThreadId.ofNat 9))) none
   let (_, stDualRecvWake) ← expectOkSt "dual queue sender wakes first waiting receiver"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) stDualRecvWait2)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) stDualRecvWait2)
   expectThreadQueueLinks "dual queue sender wake clears first receiver links"
     stDualRecvWake (SeLe4n.ThreadId.ofNat 9) none none none
   expectThreadQueueLinks "dual queue sender wake keeps second receiver singleton head"
@@ -1033,11 +1033,11 @@ Four assertions the tree could not make before this cut (the fourth added at
    is where a fact about a queue's head belongs. -/
 private def runDualQueuePPrevPairingChecks : IO Unit := do
   let (_, stPair1) ← expectOkSt "pprev pairing enqueue sender 7"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) baseState)
   let (_, stPair2) ← expectOkSt "pprev pairing enqueue sender 8"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) (.frame none false) stPair1)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) (.frame none false true) stPair1)
   let (_, stPair3) ← expectOkSt "pprev pairing enqueue sender 9"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 9) (.frame none false) stPair2)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 9) (.frame none false true) stPair2)
 
   -- (1) the live queue satisfies the invariant, and the guard holds on it.
   let sendQOf (st : SystemState) : IO IntrusiveQueue :=
@@ -1135,7 +1135,7 @@ private def runDualQueuePPrevPairingChecks : IO Unit := do
   -- where it can be said: `intrusiveQueueWellFormed`'s **P2**, a fact about a
   -- queue's head, which this case is the witness for.
   let (_, stSingle) ← expectOkSt "pprev pairing enqueue a single sender"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) baseState)
   let stHeadNoBackPointer ← expectOkVal "pprev pairing clear the SOLE member's back-pointer"
     (corruptThreadQueueLinks stSingle (SeLe4n.ThreadId.ofNat 7) none none none)
   let qSingle ← sendQOf stHeadNoBackPointer
@@ -1245,9 +1245,9 @@ Four assertions.
    the third assertion would pass for a guard that refused everything. -/
 private def runDualQueueTailPairingChecks : IO Unit := do
   let (_, stTail1) ← expectOkSt "tail pairing enqueue sender 7"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) baseState)
   let (_, stTail2) ← expectOkSt "tail pairing enqueue sender 8"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) (.frame none false) stTail1)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) (.frame none false true) stTail1)
 
   let sendQOf (st : SystemState) : IO IntrusiveQueue :=
     match st.getEndpoint? endpointId with
@@ -1333,7 +1333,7 @@ private def runEndpointQueueHeadDisjointChecks : IO Unit := do
   -- links are exactly what the kernel writes; only the second endpoint's boundary
   -- is written by hand.
   let (_, stSingle) ← expectOkSt "head disjoint: enqueue the sole sender"
-    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) baseState)
   let stShared ← expectOkVal "head disjoint: a SECOND endpoint claims the same head"
     (corruptEndpointQueueHeads stSingle otherEndpointId none (some (SeLe4n.ThreadId.ofNat 7)))
 
@@ -1426,7 +1426,7 @@ private def runEndpointQueueLinksOnlyBlockedChecks : IO Unit := do
   let ready := SeLe4n.ThreadId.ofNat 7
   -- (1) the live send: thread 8 is `.blockedOnSend` and the sole sendQ member.
   let (_, stSent) ← expectOkSt "queue links: enqueue the sole sender"
-    (SeLe4n.Kernel.endpointSendDual endpointId sender (.frame none false) baseState)
+    (SeLe4n.Kernel.endpointSendDual endpointId sender (.frame none false true) baseState)
   expectBool "the live queue satisfies the check"
     (endpointQueueLinksOnlyBlockedBool stSent) true
   let stEmptied ← expectOkVal "queue links: empty the endpoint's queues"
@@ -1736,7 +1736,7 @@ private def runAuditCoverageChecks : IO Unit := do
       bootCoreId rrSetupState)
   -- Caller calls endpoint (handshakes with queued receiver, caller blocks for reply)
   let (_, stCallSetup2) ← expectOkOnCore "replyRecv setup: caller calls endpoint"
-    (SeLe4n.Kernel.endpointCallOnCore endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) bootCoreId
+    (SeLe4n.Kernel.endpointCallOnCore endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) bootCoreId
       stCallSetup1)
   -- Verify caller is now blocked on reply
   match (stCallSetup2.objects[(SeLe4n.ThreadId.ofNat 7).toObjId]? : Option KernelObject) with
@@ -1759,15 +1759,21 @@ private def runAuditCoverageChecks : IO Unit := do
       else
         throw <| IO.userError s!"replyRecv: expected caller ready, got {toString unblocked.ipcState}"
   | _ => throw <| IO.userError "replyRecv: expected caller TCB after reply"
-  -- WS-SM SM6.D (#7.4/#7.5): a Call rendezvous with a server holding NO reply object
-  -- fails closed — the #7 fold makes `endpointCall` atomic, so no raw transition can
-  -- strand a caller `.blockedOnReply` with no Reply to answer it (the transition-level
-  -- `blockedOnReply ⇒ replyObject` guarantee, negative direction).
+  -- A Call rendezvous with a server holding NO reply object links nothing (seL4
+  -- `sendIPC`: no reply to push, so the caller is left `Inactive`).  No raw
+  -- transition strands a caller `.blockedOnReply` with no Reply to answer it (the
+  -- transition-level `blockedOnReply ⇒ replyObject` guarantee, negative direction).
   let (_, stNoStashRecv) ← expectOkSt "no-reply receive setup (server blocks, no stash)"
     (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 8) none baseState)
-  expectErr "Call with no server reply object fails closed (no unanswerable blockedOnReply)"
-    (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false) stNoStashRecv)
-    .replyCapInvalid
+  let (_, stNoLinkCall) ← expectOkSt "Call with no server reply object links nothing"
+    (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 7) (.frame none false true) stNoStashRecv)
+  match stNoLinkCall.getTcb? (SeLe4n.ThreadId.ofNat 7) with
+  | some t =>
+      if t.ipcState = .ready && t.threadState == .Inactive && t.replyObject.isNone then
+        IO.println "positive check passed [no-link Call: caller Inactive, no unanswerable blockedOnReply]"
+      else
+        throw <| IO.userError s!"no-link Call: expected caller ready/Inactive with no reply, got {toString t.ipcState}"
+  | none => throw <| IO.userError "no-link Call: expected caller TCB"
   IO.println "endpointReplyRecv coverage checks passed"
 
   -- ── Audit: cspaceMutate coverage ─────────────────────────────────────
@@ -1940,7 +1946,7 @@ def runWSH11Checks : IO Unit := do
     ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 8192)) st)
   expectErr "duplicate mapping conflict"
     ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 16384)) stMapped)
-    .mappingConflict
+    .targetSlotOccupied
   IO.println "negative check passed [WS-H11 duplicate mapping correctly rejected]"
 
   -- ASID not bound: lookup on unregistered ASID
@@ -2152,7 +2158,7 @@ private def runWSH15Checks : IO Unit := do
   expectErr "H15 syscall endpoint send insufficient rights"
     (SeLe4n.Kernel.syscallInvokeTyped .send { wrongRightGate with requiredRight := .write } none (fun cap =>
       if cap.target ≠ .object epId then fun _ => .error (.invalidCapability 0)
-      else SeLe4n.Kernel.endpointSendDual epId wrongRightGate.callerId (.frame msg.badge false)) st)
+      else SeLe4n.Kernel.endpointSendDual epId wrongRightGate.callerId (.frame msg.badge false true)) st)
     (.invalidCapability 0)
 
   -- H15-NEG-06: syscallLookupCap with no CSpace root capability → invalidRoot
@@ -2604,7 +2610,7 @@ def runWSJ1DecodeChecks : IO Unit := do
   let _ ← expectOkVal "J1 validateRegBound boundary (31 < 32)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound ⟨31⟩ 32)
 
-  -- J1-NEG-04: decodeSyscallId with value beyond modeled set → invalidSyscallNumber
+  -- J1-NEG-04: decodeSyscallCode with value beyond modeled set → invalidSyscallNumber
   -- WS-RR RR8.16 (`v0.35.190`): SyscallId now covers 0..35 (count=36,
   -- +cspaceRevoke — `seL4_CNode_Revoke`, the arm the revocation family had never
   -- had — on top of PR #887's +tcbSetFaultHandler, WS-SM SM9.C.8's
@@ -2613,50 +2619,50 @@ def runWSJ1DecodeChecks : IO Unit := do
   -- 36 is the first invalid number.  The six most recent additions are each
   -- checked as VALID, so the boundary is pinned from both sides and a future
   -- off-by-one in `ofNat?` cannot pass silently.
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (30 = declassify)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨30⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (31 = auditRead)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨31⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (32 = auditDrain)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨32⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (33 = declassifySignal)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨33⟩)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (30 = declassify)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 30)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (31 = auditRead)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 31)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (32 = auditDrain)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 32)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (33 = declassifySignal)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 33)
   -- WS-SX SX6.5: 34, the retired tcbSetFaultHandler, names no syscall.
-  expectErr "J1 decodeSyscallId retired (34)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨34⟩)
+  expectErr "J1 decodeSyscallCode retired (34)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 34)
     .invalidSyscallNumber
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (35 = cspaceRevoke)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨35⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (36 = untypedRetype)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨36⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (37 = untypedReset)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨37⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (38 = tcbSetSpace)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨38⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (40 = pageTableUnmap)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨40⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (41 = yield)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨41⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (42 = schedContextConsumed)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨42⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (43 = schedContextYieldTo)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨43⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (44 = irqHandlerAck)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨44⟩)
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (47 = irqHandlerClear)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨47⟩)
-  expectErr "J1 decodeSyscallId invalid (48)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨48⟩)
-    .invalidSyscallNumber
-
-  -- J1-NEG-05: decodeSyscallId with large invalid number → invalidSyscallNumber
-  expectErr "J1 decodeSyscallId invalid (9999)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨9999⟩)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (35 = cspaceRevoke)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 35)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (36 = untypedRetype)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 36)
+  expectErr "J1 decodeSyscallCode retired code (37, the untyped reset)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 37) .invalidSyscallNumber
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (38 = tcbSetSpace)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 38)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (40 = pageTableUnmap)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 40)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (41 = yield)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 41)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (42 = schedContextConsumed)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 42)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (43 = schedContextYieldTo)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 43)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (44 = irqHandlerAck)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 44)
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (47 = irqHandlerClear)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 47)
+  expectErr "J1 decodeSyscallCode invalid (48)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 48)
     .invalidSyscallNumber
 
-  -- J1-NEG-06: decodeSyscallId with valid boundary (12 = serviceRevoke) → success
-  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (12)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨12⟩)
+  -- J1-NEG-05: decodeSyscallCode with large invalid number → invalidSyscallNumber
+  expectErr "J1 decodeSyscallCode invalid (9999)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 9999)
+    .invalidSyscallNumber
+
+  -- J1-NEG-06: decodeSyscallCode with valid boundary (12 = serviceRevoke) → success
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (12)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 12)
 
   -- J1-NEG-07: decodeMsgInfo with oversized length → invalidMessageInfo
   -- maxMessageRegisters = 120 (7-bit field max 127, but bounded to 120).
@@ -2683,9 +2689,9 @@ def runWSJ1DecodeChecks : IO Unit := do
   let _ ← expectOkVal "J1 decodeCapPtr zero-valued register"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeCapPtr ⟨0⟩)
 
-  -- J1-NEG-11: decodeSyscallId with zero → valid (SyscallId.send = 0)
-  let _ ← expectOkVal "J1 decodeSyscallId zero-valued register (send)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨0⟩)
+  -- J1-NEG-11: decodeSyscallCode with zero → valid (SyscallId.send = 0)
+  let _ ← expectOkVal "J1 decodeSyscallCode zero-valued register (send)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 0)
 
   -- J1-NEG-12: decodeMsgInfo with zero → valid (length=0, extraCaps=0, label=0)
   let _ ← expectOkVal "J1 decodeMsgInfo zero-valued register"
@@ -2697,11 +2703,12 @@ def runWSJ1DecodeChecks : IO Unit := do
     capPtrReg     := ⟨50⟩   -- exceeds 32-register bound
     msgInfoReg    := ⟨1⟩
     msgRegs       := #[⟨2⟩, ⟨3⟩, ⟨4⟩, ⟨5⟩]
+    replyReg      := ⟨6⟩
     syscallNumReg := ⟨7⟩
   }
   let defaultRegs : SeLe4n.RegisterFile := default
   expectErr "J1 decodeSyscallArgs out-of-bounds layout register"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs badLayout defaultRegs 32)
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat badLayout defaultRegs 32)
     .invalidRegister
 
   -- J1-NEG-14: decodeSyscallArgs with out-of-bounds msgReg → invalidRegister
@@ -2709,20 +2716,22 @@ def runWSJ1DecodeChecks : IO Unit := do
     capPtrReg     := ⟨0⟩
     msgInfoReg    := ⟨1⟩
     msgRegs       := #[⟨2⟩, ⟨3⟩, ⟨40⟩, ⟨5⟩]  -- index 40 exceeds bound
+    replyReg      := ⟨6⟩
     syscallNumReg := ⟨7⟩
   }
   expectErr "J1 decodeSyscallArgs out-of-bounds msgReg"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs badMsgRegLayout defaultRegs 32)
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat badMsgRegLayout defaultRegs 32)
     .invalidRegister
 
-  -- J1-NEG-15: decodeSyscallArgs with invalid syscall number in register → invalidSyscallNumber
-  -- Write syscall number 99 into x7.
+  -- J1-NEG-15: decodeSyscallArgs under a code naming no operation → invalidSyscallNumber.
+  -- x7 holds 99, a word naming none of seL4's eleven syscalls, so the selection
+  -- answers `SyscallId.encodingBound` (`selectedOperationCode`), which the decode refuses.
   let regsInvalidSyscall : SeLe4n.RegisterFile :=
     SeLe4n.RegisterFile.withGprs 0 0 (fun r =>
-        if r == 7 then 99  -- invalid syscall number
+        if r == 7 then 99  -- no seL4 syscall
         else 0)
   expectErr "J1 decodeSyscallArgs invalid syscall in register"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout regsInvalidSyscall 32)
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.encodingBound SeLe4n.arm64DefaultLayout regsInvalidSyscall 32)
     .invalidSyscallNumber
 
   -- J1-NEG-16: decodeSyscallArgs with malformed msgInfo in register → invalidMessageInfo
@@ -2733,14 +2742,14 @@ def runWSJ1DecodeChecks : IO Unit := do
         else if r == 7 then 0  -- valid syscall (send)
         else 0)
   expectErr "J1 decodeSyscallArgs malformed msgInfo in register"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout regsInvalidMsgInfo 32)
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat SeLe4n.arm64DefaultLayout regsInvalidMsgInfo 32)
     .invalidMessageInfo
 
   -- J1-NEG-17: decodeSyscallArgs with all-zero registers → valid decode
   -- Zero registers: capPtr=0, msgInfo=(len=0,caps=0,label=0), syscallId=send
   -- K-A: Also verify msgRegs are populated with correct count (4 for ARM64 layout).
   let decoded ← expectOkVal "J1 decodeSyscallArgs all-zero registers (valid)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout default 32)
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat SeLe4n.arm64DefaultLayout default 32)
   unless decoded.msgRegs.size == 4 do
     throw <| IO.userError s!"K-A: expected msgRegs.size = 4 (ARM64 layout), got {decoded.msgRegs.size}"
 
@@ -2957,8 +2966,8 @@ private def runWSKGDeterminismChecks : IO Unit := do
 
   -- K-G-DET-01: Layer 1+2 decode determinism (double invocation)
   let detRegs : SeLe4n.RegisterFile := default
-  let r1 := SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout detRegs 32
-  let r2 := SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout detRegs 32
+  let r1 := SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat SeLe4n.arm64DefaultLayout detRegs 32
+  let r2 := SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat SeLe4n.arm64DefaultLayout detRegs 32
   -- S2-A: Determinism checks use structural equality via DecidableEq.
   -- Except ε α gets DecidableEq from the instance above when both ε and α have it.
   unless r1 == r2 do
@@ -2990,10 +2999,10 @@ private def runWSKGDeterminismChecks : IO Unit := do
     let vm2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodePageMapArgs d1
     unless vm1 == vm2 do
       throw <| IO.userError "K-G-DET-01: decodePageMapArgs not deterministic"
-    let vu1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1 65536
-    let vu2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnmapArgs d1 65536
+    let vu1 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnifyInstructionArgs d1 65536
+    let vu2 := SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceUnifyInstructionArgs d1 65536
     unless vu1 == vu2 do
-      throw <| IO.userError "K-G-DET-01: decodeVSpaceUnmapArgs not deterministic"
+      throw <| IO.userError "K-G-DET-01: decodeVSpaceUnifyInstructionArgs not deterministic"
     IO.println "determinism check passed [K-G-DET-01 layer 1+2 decode deterministic]"
   | .error _ =>
     throw <| IO.userError "K-G-DET-01: decodeSyscallArgs failed unexpectedly"
@@ -3069,11 +3078,11 @@ def runWSL4BlockedThreadChecks : IO Unit := do
 
   -- Block thread 7 on send (no receiver → enqueues on sendQ)
   let (_, stSendBlocked) ← expectOkSt "setup: send blocks thread 7"
-    (SeLe4n.Kernel.endpointSendDual epId tid7 (.frame none false) blockedState)
+    (SeLe4n.Kernel.endpointSendDual epId tid7 (.frame none false true) blockedState)
 
   -- Attempt another send on same endpoint while already blocked → alreadyWaiting
   expectErr "blocked-on-send rejects second send"
-    (SeLe4n.Kernel.endpointSendDual epId tid7 (.frame none false) stSendBlocked)
+    (SeLe4n.Kernel.endpointSendDual epId tid7 (.frame none false true) stSendBlocked)
     .alreadyWaiting
 
   -- Block thread 7 on receive instead
@@ -3091,7 +3100,7 @@ def runWSL4BlockedThreadChecks : IO Unit := do
 
   -- Attempt send while blocked on notification → alreadyWaiting
   expectErr "blocked-on-notification rejects send"
-    (SeLe4n.Kernel.endpointSendDual epId tid7 (.frame none false) stNtfnBlocked)
+    (SeLe4n.Kernel.endpointSendDual epId tid7 (.frame none false true) stNtfnBlocked)
     .alreadyWaiting
 
   -- Cross-type: blocked on receive → send to DIFFERENT endpoint rejected
@@ -3101,7 +3110,7 @@ def runWSL4BlockedThreadChecks : IO Unit := do
   let stRecvBlockedWithEp2 : SystemState := { stRecvBlocked with
     objects := stRecvBlocked.objects.insert epId2 (.endpoint (Endpoint.ofQueues {} {})) }
   expectErr "blocked-on-receive rejects send to different endpoint"
-    (SeLe4n.Kernel.endpointSendDual epId2 tid7 (.frame none false) stRecvBlockedWithEp2)
+    (SeLe4n.Kernel.endpointSendDual epId2 tid7 (.frame none false true) stRecvBlockedWithEp2)
     .alreadyWaiting
 
   -- Cross-type: blocked on send → receive from DIFFERENT endpoint rejected
@@ -4305,7 +4314,7 @@ private def r1FaultyState (st : SystemState) : SystemState :=
 
 private def r1CheckHealthyState (stQueued : SystemState) : IO Unit := do
   let result := SeLe4n.Kernel.endpointCallWithCaps r1EpId r1CallerTid
-    (.frame none (r1EndpointRights.mem .grant)) (r1Framed stQueued)
+    (.frame none (r1EndpointRights.mem .grant) true) (r1Framed stQueued)
   match result with
   | .ok _ =>
       IO.println "positive check passed [R1-NEG-01 endpointCallWithCaps healthy state succeeds]"
@@ -4315,7 +4324,7 @@ private def r1CheckHealthyState (stQueued : SystemState) : IO Unit := do
 
 private def r1CheckFaultyState (stFaulty : SystemState) : IO Unit := do
   let result := SeLe4n.Kernel.endpointCallWithCaps r1EpId r1CallerTid
-    (.frame none (r1EndpointRights.mem .grant)) (r1Framed stFaulty)
+    (.frame none (r1EndpointRights.mem .grant) true) (r1Framed stFaulty)
   match result with
   | .ok _ =>
       throw <| IO.userError

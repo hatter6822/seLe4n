@@ -1106,6 +1106,13 @@ def nonExecutedTransitionsPlain : List Name :=
   -- siblings equate it with what the entries commit.
   , `SeLe4n.Kernel.PriorityInheritance.settleResidencyAt
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.migrateRunQueueBucket
+  -- The preemption seam's state, which the `_of_admitted` proofs read
+  -- (`priorityRescheduleOnCore_eq_state`).  Its one compiled caller was the
+  -- per-core unbind's perform; seL4-MCS refuses the unbind of the invoking
+  -- core's current thread's context before the thread unbind, so that perform
+  -- is the single-core one (`schedContextUnbindAllPerform`) and no seam runs
+  -- this.
+  , `SeLe4n.Kernel.SchedContext.PriorityManagement.priorityRescheduleOnCoreState
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOp
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.setPriorityOp
   -- WS-ZA ZA6.31: the raw-id form of a per-core step, which no entry runs
@@ -1257,6 +1264,14 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.dispatchReplyRecvLongCheckedR
   , `SeLe4n.Kernel.dispatchTransferringCheckedR
   , `SeLe4n.Kernel.endpointReplyRecvLongGeneralR
+  -- The reply-receive's general arm and its register-read instance, the forms
+  -- the compiled checked arm is proven equal to
+  -- (`endpointReplyRecvCheckedArmR_eq_general`,
+  -- `endpointReplyRecvCheckedArmGeneralR_eq`): the compiled arm resolves the
+  -- reply capability in the reply register in continuation form and never
+  -- calls them.
+  , `SeLe4n.Kernel.endpointReplyRecvCheckedArmGeneralR
+  , `SeLe4n.Kernel.endpointReplyRecvCheckedArmRegsR
   -- The short-argument route's specification, which the compiled entry
   -- runs as the arm proven equal to it (`shortArgsRoutedArm`).
   , `SeLe4n.Kernel.dispatchShortArgsCheckedR
@@ -1278,6 +1293,11 @@ def nonExecutedTransitionsPlain : List Name :=
   -- `receiveCallTakeState_eq_hold`, run as `storeReceiveCallReady`).
   , `SeLe4n.Kernel.faultDeliverCheckedOf
   , `SeLe4n.Kernel.receiveCallTakeState
+  -- A receive's take of a queued caller that links no reply (seL4
+  -- `receiveIPC` without Grant/GrantReply or without a reply object): the
+  -- specification state of `receiveCallNoLinkTake_inPlace`, run as
+  -- `performReceiveCallNoLinkDelivered` (`receiveCallNoLinkTake_delivered`).
+  , `SeLe4n.Kernel.receiveCallNoLinkTakeState
   , `SeLe4n.Kernel.faultSuspend
   -- WS-ZA ZA5.4 part 26: names for the states a thread's finalisation reaches
   -- part way (`FinaliseRetirable.lean`), which the carriage of its admission is

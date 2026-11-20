@@ -56,7 +56,35 @@ theorem endpointCall_preserves_ipcInvariant
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+            have hInv1 := endpointQueuePopHead_preserves_ipcInvariant endpointId true st pair.2.2 pair.1 hInv hObjInv hPop
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              have hObjInv2 := storeTcbReceiveComplete_preserves_objects_invExt pair.2.2 st2 pair.1 _ hObjInv1 hMsg
+              have hInv2 := storeTcbReceiveComplete_preserves_ipcInvariant pair.2.2 st2 pair.1 _ hInv1 hObjInv1 hMsg
+              exact ipcInvariant_of_readViewAgreement
+                (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                  (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt st2 pair.1 hObjInv2)))
+                (ipcInvariant_of_objectsAgreeOffRunLinks
+                  ((removeRunnable_objectsAgreeOffRunLinks _ _).trans (ensureRunnable_objectsAgreeOffRunLinks _ _)) hInv2)
+        rw [if_pos hLk] at hStep
         -- Handshake: PopHead → storeTcbIpcStateAndMessage → ensureRunnable → storeTcbIpcState → removeRunnable
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
@@ -103,7 +131,7 @@ theorem endpointCall_preserves_ipcInvariant
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            refine ipcInvariant_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) ?_
+            refine ipcInvariant_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) ?_
             have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcInvariant st1 st2 caller _ none hInv1 hObjInv1 hMsg
             exact fun oid ntfn h => hInv2 oid ntfn ((removeRunnable_objectsAgreeOffRunLinks _ _).get_notification_iff.mp h)
 
@@ -125,7 +153,83 @@ theorem endpointCall_preserves_schedulerInvariantBundle
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hSchedPop := endpointQueuePopHead_scheduler_eq endpointId true st pair.2.2 pair.1 hPop
+            have hObjInvPop := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              have hSchedMsg := storeTcbReceiveComplete_scheduler_eq pair.2.2 st2 pair.1 _ hMsg
+              have hObjInvMsg := storeTcbReceiveComplete_preserves_objects_invExt pair.2.2 st2 pair.1 _ hObjInvPop hMsg
+              refine schedulerInvariantBundle_of_readViewAgreement
+                (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                  (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt st2 pair.1 hObjInvMsg)))
+                (SystemState.updateTcb_scheduler _ _ _) ?_
+              have hCurrEq : (ensureRunnable st2 pair.1).scheduler.currentOnCore bootCoreId
+                  = st.scheduler.currentOnCore bootCoreId := by
+                rw [ensureRunnable_scheduler_current, hSchedMsg, hSchedPop]
+              refine ⟨?_, ?_, ?_⟩
+              · unfold queueCurrentConsistent
+                rw [removeRunnable_scheduler_current, hCurrEq]
+                cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
+                | none => simp
+                | some x =>
+                  by_cases hEq' : x = caller
+                  · subst hEq'; simp
+                  · rw [if_neg (show ¬(some x = some caller) from fun h => hEq' (Option.some.inj h))]
+                    show x ∉ (removeRunnable (ensureRunnable st2 pair.1) caller).scheduler.runnable
+                    have hNotMem : x ∉ st.scheduler.runnable := by
+                      have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
+                    have hNePair : x ≠ pair.1 := by
+                      have hHeadEq := endpointQueuePopHead_returns_head endpointId true st ep pair.1 pair.2.2 hObj hPop
+                      simp at hHeadEq
+                      intro hEq; rw [hEq] at hCurr
+                      have := hCurrNotHead; simp [currentNotEndpointQueueHead, hCurr] at this
+                      exact (this endpointId ep hObj).1 hHeadEq
+                    apply removeRunnable_not_mem_of_not_mem
+                    exact ensureRunnable_not_mem_of_not_mem _ pair.1 x
+                      (by rw [congrArg SchedulerState.runnable hSchedMsg, congrArg SchedulerState.runnable hSchedPop]; exact hNotMem)
+                      hNePair
+              · apply removeRunnable_nodup
+                apply ensureRunnable_nodup
+                rw [congrArg SchedulerState.runnable hSchedMsg, congrArg SchedulerState.runnable hSchedPop]
+                exact hRQU
+              · unfold currentThreadValid
+                rw [removeRunnable_scheduler_current, hCurrEq]
+                cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
+                | none => simp
+                | some x =>
+                  by_cases hEq' : x = caller
+                  · subst hEq'; simp
+                  · rw [if_neg (show ¬(some x = some caller) from fun h => hEq' (Option.some.inj h))]
+                    refine (removeRunnable_objectsAgreeOffRunLinks _ _).exists_tcb_iff.mpr ?_
+                    refine (ensureRunnable_objectsAgreeOffRunLinks _ _).exists_tcb_iff.mpr ?_
+                    have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
+                      simp [currentThreadValid, hCurr] at hCTV; exact hCTV
+                    rcases hCTV' with ⟨tcbX, hTcbX⟩
+                    obtain ⟨tcb1, hTcb1⟩ := endpointQueuePopHead_tcb_forward endpointId true st pair.2.2 pair.1 x.toObjId tcbX hObjInv hPop hTcbX
+                    by_cases hNeTid : x.toObjId = pair.1.toObjId
+                    · have h := storeTcbReceiveComplete_tcb_exists_at_target pair.2.2 st2 pair.1 _ hObjInvPop hMsg
+                        (hNeTid ▸ ⟨tcb1, hTcb1⟩)
+                      rwa [← hNeTid] at h
+                    · exact ⟨tcb1, (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 _ x.toObjId
+                        hNeTid hObjInvPop hMsg) ▸ hTcb1⟩
+        rw [if_pos hLk] at hStep
         -- Handshake: PopHead → storeTcbIpcStateAndMessage → ensureRunnable → storeTcbIpcState → removeRunnable
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
@@ -247,7 +351,7 @@ theorem endpointCall_preserves_schedulerInvariantBundle
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            refine schedulerInvariantBundle_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) rfl ?_
+            refine schedulerInvariantBundle_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) rfl ?_
             have hSchedMsg := storeTcbIpcStateAndMessage_scheduler_eq st1 st2 caller (.blockedOnCall endpointId) none hMsg
             have hSchedEq : st2.scheduler = st.scheduler := hSchedMsg.trans hSchedEnq
             refine ⟨?_, ?_, ?_⟩
@@ -299,7 +403,39 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hSchedPop := endpointQueuePopHead_scheduler_eq endpointId true st pair.2.2 pair.1 hPop
+            have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
+            have hContractPop := contracts_of_same_scheduler_ipcState st pair.2.2 hSchedPop
+              (fun tid tcb' h => endpointQueuePopHead_tcb_ipcState_backward endpointId true st pair.2.2 pair.1 tid tcb' hObjInv hPop h)
+              ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              have hObjInv2 := storeTcbReceiveComplete_preserves_objects_invExt pair.2.2 st2 pair.1 _ hObjInv1 hMsg
+              exact ipcSchedulerContractPredicates_of_readViewAgreement
+                (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                  (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt st2 pair.1 hObjInv2)))
+                (SystemState.updateTcb_scheduler _ _ _)
+                (removeRunnable_preserves_ipcSchedulerContractPredicates _ caller
+                  (receiveComplete_ensureRunnable_preserves_ipcSchedulerContractPredicates
+                    pair.2.2 st2 pair.1 _ hObjInv1 hMsg hContractPop))
+        rw [if_pos hLk] at hStep
         -- Handshake: PopHead → storeTcbIpcStateAndMessage(.ready) → ensureRunnable → storeTcbIpcState(.blockedOnReply) → removeRunnable
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hHead, hPop] at hStep
@@ -484,7 +620,7 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            refine ipcSchedulerContractPredicates_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) rfl ?_
+            refine ipcSchedulerContractPredicates_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) rfl ?_
             rcases hContractEnq with ⟨hReady', hBlockSend', hBlockRecv', hBlockCall', hBlockReply', hBlockNotif'⟩
             have hSchedMsg := storeTcbIpcStateAndMessage_scheduler_eq st1 st2 caller (.blockedOnCall endpointId) none hMsg
             refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -544,9 +680,9 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
                 exact hBlockNotif' tid tcb' nid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedMsg])
 
 /-- WS-H1/C-01: A Call sender that enters the endpoint call path does not
-remain runnable after the operation completes. Both execution paths
-(rendezvous and no-rendezvous) end with `removeRunnable ... caller`,
-ensuring the caller blocks until an explicit reply. -/
+remain runnable after the operation completes. Every execution path ends with
+`removeRunnable ... caller`: the caller blocks until an explicit reply, or, on
+a rendezvous that links no reply (seL4 `sendIPC`), is left `Inactive`. -/
 theorem endpointCall_blocked_stays_blocked
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
@@ -560,8 +696,28 @@ theorem endpointCall_blocked_stays_blocked
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
         simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              rw [SystemState.updateTcb_scheduler]
+              exact removeRunnable_not_mem_self _ caller
+        rw [if_pos hLk] at hStep
         cases hPop : endpointQueuePopHead endpointId true st with
         | error e => simp [hPop] at hStep
         | ok pair =>

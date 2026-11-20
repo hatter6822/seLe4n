@@ -41,7 +41,7 @@ the default heartbeats. -/
       (replyRecvOperandArmThenTaintR ctx SeLe4n.arm64DefaultLayout tcb.registerContext length
         extraCaps label tid executingCore (syscallRequiredRight .replyRecv))
       st entryReportGeneral (entryReportPushOk 1)
-      (replyLookupRefusalW (length != 0) tid (replyRecvReplyAddr tcb.registerContext)
+      (replyLookupRefusalW true tid (replyRecvReplyAddr tcb.registerContext)
         (entryReportPushErrorW 1)
         (entryReportPushLookupAtW (replyRecvReplyAddr tcb.registerContext).word))
       entryReportLookup entryReportLookupAtW

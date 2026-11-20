@@ -1504,27 +1504,6 @@ def lockSet_untypedRetype (callerTid : ThreadId)
       (stateLevelLock, .write)] ++
      carvedChildLocks childKind childObjId count)
 
-/-- **WS-ZA ZA5.4**: `lockSet` for `untypedReset` — seL4's reset, which writes
-`0` to the invoked untyped capability's free index.
-
-Caller TCB (read) and CSpace root (read) for the capability resolution; the
-CNode holding the invoked capability (write — its free index is written there;
-on a single-level CSpace it is the root, and `insertOrMerge` lubs the two modes
-to one write member); the untyped (read — the reset refuses while its child list
-records a carved object); and `stateLevelLock` (read): the reset refuses while
-the invoked slot has a derivation child, read off the slot's link words, and the
-free-index write rewrites the CNode, link words included, so a capability
-operation that relinks a slot of that CNode must conflict with it, as with
-`lockSet_vspaceMap`.  Every member is named by the operands. -/
-def lockSet_untypedReset (callerTid : ThreadId)
-    (cnodeRootObjId srcCnodeObjId untypedObjId : ObjId) : LockSet :=
-  lockSetOfList
-    [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read),
-     (cnodeLock srcCnodeObjId, .write),
-     (untypedLock untypedObjId, .read),
-     (stateLevelLock, .read)]
-
 /-! ## VSpace syscalls (2 transitions) -/
 
 /-- WS-SM SM3.B.3: `lockSet` for `vspaceMap`.
@@ -1571,13 +1550,25 @@ def lockSet_vspaceMap (callerTid : ThreadId)
      (pageLock frameObjId, .write),
      (stateLevelLock, .read)]
 
-/-- WS-SM SM3.B.3: `lockSet` for `vspaceUnmap`. -/
+/-- WS-SM SM3.B.3: `lockSet` for `vspaceUnmap`.
+
+`Page_Unmap` is invoked on the frame capability (seL4's
+`performPageInvocationUnmap`): it reads the frame the capability names (the
+mapping is removed only while the entry still holds that frame's page), writes
+the root its recorded ASID resolves to, and clears the capability's mapping
+record by rewriting the capability's CNode — link words included, read and
+written back unchanged, so the CDT subject is held in read mode exactly as the
+map's record write holds it. -/
 def lockSet_vspaceUnmap (callerTid : ThreadId)
-    (cnodeRootObjId : ObjId) (vspaceRootObjId : ObjId) : LockSet :=
+    (cnodeRootObjId : ObjId) (vspaceRootObjId : ObjId)
+    (frameCnodeObjId frameObjId : ObjId) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .read),
      (cnodeLock cnodeRootObjId, .read),
-     (vspaceRootLock vspaceRootObjId, .write)]
+     (vspaceRootLock vspaceRootObjId, .write),
+     (cnodeLock frameCnodeObjId, .write),
+     (pageLock frameObjId, .read),
+     (stateLevelLock, .read)]
 
 /-- WS-SM SM7.D: `lockSet` for `vspaceUnifyInstruction`.
 
@@ -5009,9 +5000,10 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   | .reply =>
       [.tcb, .cnode, .schedContext, .reply, .objStore]
   -- WS-RR RR7.11: `.objStore` for the same reason — this arm's receive leg is
-  -- the WithCaps receive.
+  -- the WithCaps receive.  `.notification` -- the receive completes the
+  -- replier's bound notification when it is active (seL4-MCS `receiveIPC`).
   | .replyRecv =>
-      [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore]
+      [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply, .objStore]
   -- Notification syscalls.  `.notificationSignal` may take the seL4 bound-delivery
   -- path (WS-SM SM6.B): a signal to a notification whose bound TCB is
   -- `BlockedOnReceive` dequeues that TCB from its endpoint and writes it, so the
@@ -5056,18 +5048,15 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   | .untypedRetype =>
       [.tcb, .cnode, .untyped, .page, .vspaceRoot, .objStore,
        .endpoint, .notification, .reply, .schedContext]
-  -- **WS-BP BP7.1 (`v0.36.6`)**, seL4's reset since WS-ZA ZA5.4: the reset
-  -- reads the caller and its CSpace root, writes the CNode holding the invoked
-  -- capability (its free index is written to zero), reads the untyped's child
-  -- list, and reads the slot's derivation links under `stateLevelLock`
-  -- (`lockSet_untypedReset`).
-  | .untypedReset =>
-      [.tcb, .cnode, .untyped, .objStore]
   -- VSpace syscalls
-  -- `.vspaceUnifyInstruction` (SM7.D) shares the footprint but takes the
-  -- VSpaceRoot in read mode: it modifies no page table, only cache state.
-  | .vspaceUnmap | .vspaceUnifyInstruction =>
+  -- `.vspaceUnifyInstruction` (SM7.D) takes the VSpaceRoot in read mode: it
+  -- modifies no page table, only cache state.
+  | .vspaceUnifyInstruction =>
       [.tcb, .cnode, .vspaceRoot]
+  -- `Page_Unmap` reads the frame its capability names and clears that
+  -- capability's mapping record.
+  | .vspaceUnmap =>
+      [.tcb, .cnode, .vspaceRoot, .page, .objStore]
   -- **WS-BP BP7.1 (`v0.36.7`)**: the map reads the frame its capability names
   -- and writes that capability's mapping record.
   | .vspaceMap =>
@@ -5254,7 +5243,7 @@ def declaresStaticLockFootprint : SyscallId → Bool
   | .send | .receive | .call | .reply | .replyRecv
   | .notificationSignal | .notificationWait
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .mintReplyCap
-  | .untypedRetype | .untypedReset
+  | .untypedRetype
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
@@ -5269,7 +5258,7 @@ walk — `.cspaceRevoke`'s derivation tree and `.yield`'s timeouts with the
 inheritance chains they release — so a third undeclared syscall is a decision
 somebody has to write down rather than a number that quietly moves.  The untyped
 reset left the exemption in WS-ZA ZA5.4, when it became seL4's one free-index
-write (`lockSet_untypedReset`). -/
+write, and the model in WS-SX SX7.1, when the carve took it over. -/
 theorem declaresStaticLockFootprint_false_iff (sid : SyscallId) :
     declaresStaticLockFootprint sid = false ↔
       sid = .cspaceRevoke ∨ sid = .yield := by
@@ -6722,25 +6711,6 @@ theorem lockSet_consistent_untypedRetype (callerTid : ThreadId)
             simp [carvedObjectLock, pageLock, untypedLock, vspaceRootLock, tcbLock,
               endpointLock, notificationLock, cnodeLock, replyLock, schedContextLock] <;> decide)
 
-/-- **WS-ZA ZA5.4** — WS-SM SM3.B.4 for `.untypedReset`. -/
-theorem lockSet_consistent_untypedReset (callerTid : ThreadId)
-    (cnRoot srcCn untypedId : ObjId) :
-    ∀ p ∈ (lockSet_untypedReset callerTid cnRoot srcCn untypedId).pairs,
-      p.fst.kind ∈ permittedKinds .untypedReset :=
-  lockSet_consistent_of_extended_base _ _
-    (by intro p hMem
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp [untypedLock]; decide
-        rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp [stateLevelLock]; decide
-        exact absurd hMem (by intro h; cases h))
-
 /-- WS-SM SM3.B.4 for `.vspaceMap`. -/
 theorem lockSet_consistent_vspaceMap (callerTid : ThreadId)
     (cnRoot vId frameCn frameId : ObjId) :
@@ -6779,8 +6749,8 @@ theorem lockSet_consistent_vspaceUnifyInstruction (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.4 for `.vspaceUnmap`. -/
 theorem lockSet_consistent_vspaceUnmap (callerTid : ThreadId)
-    (cnRoot vId : ObjId) :
-    ∀ p ∈ (lockSet_vspaceUnmap callerTid cnRoot vId).pairs,
+    (cnRoot vId frameCn frameId : ObjId) :
+    ∀ p ∈ (lockSet_vspaceUnmap callerTid cnRoot vId frameCn frameId).pairs,
       p.fst.kind ∈ permittedKinds .vspaceUnmap :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
@@ -6790,6 +6760,12 @@ theorem lockSet_consistent_vspaceUnmap (callerTid : ThreadId)
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [pageLock]; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp [stateLevelLock]; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.serviceRegister`.

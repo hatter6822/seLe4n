@@ -106,7 +106,12 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   pin "sd001_08_endpointQueueEmpty"           .endpointQueueEmpty            8
   pin "sd001_09_asidNotBound"                 .asidNotBound                  9
   pin "sd001_10_vspaceRootInvalid"            .vspaceRootInvalid            10
-  pin "sd001_11_mappingConflict"              .mappingConflict              11
+  -- 11 is retired (the former `mappingConflict`): a map onto an entry already
+  -- in use answers seL4's `seL4_DeleteFirst`, `targetSlotOccupied` (18).
+  expect "sd001_11_retired_unassigned"
+    (SeLe4n.Model.KernelError.ofDiscriminant? 11 == none &&
+      (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 11)).isNone)
+    "discriminant 11 is retired: it must decode to no error"
   pin "sd001_12_translationFault"             .translationFault             12
   pin "sd001_13_flowDenied"                   .flowDenied                   13
   pin "sd001_14_declassificationDenied"       .declassificationDenied       14
@@ -141,7 +146,7 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   -- decodes to none, as the retired syscall number 8 does.
   expect "sd001_37_retired_unassigned"
     (SeLe4n.Model.KernelError.ofDiscriminant? 37 == none &&
-      SeLe4n.Model.KernelError.retiredDiscriminants == [35, 37, 57] &&
+      SeLe4n.Model.KernelError.retiredDiscriminants == [11, 35, 37, 57] &&
       (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 37)).isNone)
     "discriminant 37 is retired: it must decode to no error"
   pin "sd001_38_revocationRequired"           .revocationRequired           38
@@ -213,10 +218,10 @@ private def sd002_errorLabelCarriage : IO Unit := do
     expect s!"sd002h_delivery_label_{tag}_not_an_error"
       ((Kernel.Architecture.ofErrorLabel? tag).isNone)
       s!"label {tag} is below the status range and must decode as no error"
-  expect "sd002i_sentinel_is_top_of_range"
+  expect "sd002i_top_label_names_no_error"
     (Kernel.Architecture.errorLabelBase + 255 == MessageInfo.maxLabel &&
       (Kernel.Architecture.ofErrorLabel? MessageInfo.maxLabel).isNone)
-    "the blocked-resume sentinel names discriminant 255, which no error has"
+    "the top label names discriminant 255, which no error has"
 
 /-- SD-003 (WS-RA shape): the label round trip and its non-aliasing — no
 error's label is the success label `0`, every label decodes back to its
@@ -435,15 +440,6 @@ private def isErrorFrameFor (outcome : Kernel.Architecture.SyscallOutcome)
     (e : KernelError) : Bool :=
   outcome == .returns (Kernel.Architecture.errorFrame e false)
 
-/-- Does this outcome carry *some* error on its x1 label? -/
-private def isSomeErrorFrame (outcome : Kernel.Architecture.SyscallOutcome) : Bool :=
-  match outcome with
-  | .blocks | .faulted => false
-  | .returns f =>
-      match MessageInfo.decode f.x1.toNat with
-      | some mi => (Kernel.Architecture.ofErrorLabel? mi.label).isSome
-      | none => false
-
 /-- SD-030: dispatch with no current thread yields the `.illegalState`
     error frame (WS-RA: the offset label on x1, not a bit-63 word). -/
 private def sd030_dispatch_noCurrent : IO Unit := do
@@ -479,8 +475,11 @@ private def sd031_dispatch_spillsRegs : IO Unit := do
         s!"x0 must be spilled into TCB (got {tcb.registerContext.gpr ⟨0⟩})"
   | _ => failLine "sd031_tcb_missing" "TCB missing after dispatch"
 
-/-- SD-032: an unmodeled syscall id surfaces as an error frame — some
-    error rides the x1 label; nothing decodes as success. -/
+/-- SD-032: a number that names none of seL4's eleven syscalls is no `Call`,
+    so the seam answers no error frame: the caller resumes with its registers
+    as it trapped (`.resumes`).  On hardware the HAL never hands the seam such
+    a number — it delivers seL4's `UnknownSyscall` fault instead
+    (`lean_handle_unknown_syscall`). -/
 private def sd032_dispatch_invalidSyscall : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨8⟩
   let st := mkState [(⟨8⟩, .tcb (mkTcb 8 .Ready))] (some tid)
@@ -488,9 +487,9 @@ private def sd032_dispatch_invalidSyscall : IO Unit := do
   initialiseKernelLabelingContext SeLe4n.Kernel.harnessLabelingContext
   -- syscallId 99 is outside the modeled set.
   let outcome ← dispatchViaRef 99 0 0 0 0 0 0 0
-  expect "sd032_invalid_syscall_error_frame"
-    (isSomeErrorFrame outcome)
-    "unmodeled syscall ID must surface as an error frame"
+  expect "sd032_unknown_syscall_resumes"
+    (outcome == .resumes)
+    "a number naming no syscall is no Call: no error frame, the caller resumes"
 
 /-- SD-033: `syscallDispatchFromAbi_total` — the pure function never
     returns `Except.error`.  Witnessed by direct call: the result is
@@ -547,11 +546,13 @@ private def sd036_entryWithoutContext_faults : IO Unit := do
       | .ok _ => false)
     "an entry with no published context must answer the .faulted tag (2)"
   let rf : SeLe4n.RegisterFile :=
-    { SeLe4n.RegisterFile.ofWords (fun i => 0x2000 + i.toUInt64) with pstate := 0 }
+    { SeLe4n.RegisterFile.ofWords
+        (fun i => if i = 7 then Syscall.send.word else 0x2000 + i.toUInt64) with pstate := 0 }
   let c : Kernel.Architecture.InFlightContext := .ofRegisterFile rf
   expect "sd036b_some_is_the_context_itself"
     (match syscallEntryContextOrFaulted (some c) with
-      | .ok c' => c' == c && c'.x7 == 0x2007 && c'.tpidr == 0x2022 && c'.syscallId == 0x2007
+      | .ok c' => c' == c && c'.x7 == Syscall.send.word && c'.tpidr == 0x2022 &&
+          c'.syscallId == Syscall.send.number.toUInt32
       | .error _ => false)
     "an entry with a context must dispatch on exactly that context"
   expect "sd036d_el1_frame_is_the_faulted_tag"
@@ -1717,6 +1718,159 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
      | _ => false)
     "a primary capability that is not an `.object` must be refused"
 
+/-- **`.schedContextBind` on a notification capability binds the context to
+the notification** — seL4-MCS's `decodeSchedContext_Bind` switches on extra
+capability 0's type, and a notification capability takes
+`schedContext_bindNtfn`: the context names the notification
+(`scNotification`) and the notification names the context
+(`ntfnSchedContext`).  A context already bound to a notification, and a
+notification already bound to a context, are refused `illegalState` (seL4's
+two `IllegalOperation` checks).
+
+The caller's CNode holds the context capability at slot 0, a writable
+capability to notification 80 at slot 1, one to notification 81 at slot 2 and a
+capability to a second context at slot 3. -/
+private def schedContextBind_notification_capability : IO Unit := do
+  let caller : SeLe4n.ThreadId := ⟨1⟩
+  let cnId   : SeLe4n.ObjId := ⟨50⟩
+  let scObj  : SeLe4n.ObjId := ⟨60⟩
+  let scId   : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofObjId scObj
+  let scObj2 : SeLe4n.ObjId := ⟨61⟩
+  let scId2  : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofObjId scObj2
+  let nA     : SeLe4n.ObjId := ⟨80⟩
+  let nB     : SeLe4n.ObjId := ⟨81⟩
+  let w := AccessRightSet.ofList [.write]
+  let ntfn0 : Notification :=
+    { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
+  let st : SystemState :=
+    mkState [
+      (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
+      (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with }),
+      (scObj2, .schedContext { SeLe4n.Kernel.SchedContext.empty scId2 with }),
+      (nA, .notification ntfn0), (nB, .notification ntfn0),
+      (cnId, .cnode (CNode.ofList 4 [(SeLe4n.Slot.ofNat 0, { target := .object scObj, rights := w }),
+             (SeLe4n.Slot.ofNat 1, { target := .object nA, rights := w }),
+             (SeLe4n.Slot.ofNat 2, { target := .object nB, rights := w }),
+             (SeLe4n.Slot.ofNat 3, { target := .object scObj2, rights := w })]))
+    ]
+  let decodedAt (scSlot : Nat) : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat scSlot,
+      msgInfo := { length := 0, extraCaps := 1, label := 0 },
+      syscallId := .schedContextBind,
+      msgRegs := #[], inlineCount := 0, overflowCount := 0 }
+  let bindSt (s : SystemState) (cptr : Nat) : SystemState :=
+    withSenderCapAddrs s caller #[SeLe4n.CPtr.ofNat cptr]
+  expect "scbind_ntfn_resolver_answers_the_notification"
+    (resolveSchedContextBindNotificationCode caller
+      (schedContextBindArgsOf (bindSt st 1) caller 1) (bindSt st 1) == nA.val + 1)
+    "extra capability 0 = 1 names notification 80, so the code is its id plus one"
+  match dispatchSyscallAsCurrent (decodedAt 0) caller bootCoreId (bindSt st 1) with
+  | .ok ((), st') =>
+      expect "scbind_ntfn_links_both_ends"
+        ((st'.getSchedContext? scId).any (fun sc => decide (sc.notification = some nA)) &&
+         (st'.getNotification? nA).any (fun n => decide (n.schedContext = some scId)) &&
+         (st'.getSchedContext? scId).any (fun sc => decide (sc.boundThread = none)))
+        "a bind through a notification capability links the context and the notification, and no thread"
+      expect "scbind_ntfn_context_already_bound_refused"
+        (match dispatchSyscallAsCurrent (decodedAt 0) caller bootCoreId (bindSt st' 2) with
+         | .error .illegalState => true
+         | _ => false)
+        "a context bound to a notification binds no second one (seL4 IllegalOperation)"
+      expect "scbind_ntfn_notification_already_bound_refused"
+        (match dispatchSyscallAsCurrent (decodedAt 3) caller bootCoreId (bindSt st' 1) with
+         | .error .illegalState => true
+         | _ => false)
+        "a notification bound to a context takes no second one (seL4 IllegalOperation)"
+  | .error e =>
+      failLine "scbind_ntfn_links_both_ends" s!"unexpected refusal: {repr e}"
+
+/-- **`.schedContextUnbind` is seL4-MCS's `SchedContext_Unbind`**: the
+context's thread and its notification are unbound (`schedContext_unbindAllTCBs`,
+`schedContext_unbindNtfn`); a context bound to no thread is unbound from its
+notification alone and the invocation succeeds; and a context bound to the
+invoking core's current thread is refused `illegalState` (seL4's
+`IllegalOperation`, `sc->scTcb == ksCurThread`).
+
+The caller's CNode holds a writable capability to context 60 at slot 0. -/
+private def schedContextUnbind_seL4_semantics : IO Unit := do
+  let caller : SeLe4n.ThreadId := ⟨1⟩
+  let other  : SeLe4n.ThreadId := ⟨2⟩
+  let cnId   : SeLe4n.ObjId := ⟨50⟩
+  let scObj  : SeLe4n.ObjId := ⟨60⟩
+  let scId   : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofObjId scObj
+  let nA     : SeLe4n.ObjId := ⟨80⟩
+  let w := AccessRightSet.ofList [.write]
+  let ntfnLinked : Notification :=
+    { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
+      schedContextCode := scId.val + 1 }
+  let mkSt (thread : Nat) (ntfnCode : Nat) : SystemState :=
+    mkState [
+      (caller.toObjId, .tcb ((mkTcb 1).withCSpaceRoot cnId)),
+      (other.toObjId, .tcb (mkTcb 2)),
+      (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with
+        boundThreadCode := thread, notificationCode := ntfnCode }),
+      (nA, .notification ntfnLinked),
+      (cnId, .cnode (CNode.ofList 4 [(SeLe4n.Slot.ofNat 0, { target := .object scObj, rights := w })]))
+    ]
+  let decoded : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 0,
+      msgInfo := { length := 0, extraCaps := 0, label := 0 },
+      syscallId := .schedContextUnbind,
+      msgRegs := #[], inlineCount := 0, overflowCount := 0 }
+  let unlinked (st' : SystemState) : Bool :=
+    (st'.getSchedContext? scId).any (fun sc => decide (sc.notification = none)) &&
+      (st'.getNotification? nA).any (fun n => decide (n.schedContext = none)) &&
+      (st'.getSchedContext? scId).any (fun sc => decide (sc.boundThread = none))
+  match dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt 0 (nA.val + 1)) with
+  | .ok ((), st') =>
+      expect "scunbind_no_thread_unbinds_the_notification" (unlinked st')
+        "a context bound to no thread is unbound from its notification, both ends"
+  | .error e =>
+      failLine "scunbind_no_thread_unbinds_the_notification" s!"unexpected refusal: {repr e}"
+  match dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt (other.val + 1) (nA.val + 1)) with
+  | .ok ((), st') =>
+      expect "scunbind_thread_and_notification" (unlinked st')
+        "the context's thread and its notification are both unbound"
+  | .error e =>
+      failLine "scunbind_thread_and_notification" s!"unexpected refusal: {repr e}"
+  expect "scunbind_current_thread_context_refused"
+    (match dispatchSyscallAsCurrent decoded caller bootCoreId (mkSt (caller.val + 1) 0) with
+     | .error .illegalState => true
+     | _ => false)
+    "the invoking core's current thread's context is not unbound (seL4 IllegalOperation)"
+
+/-- seL4-MCS `finaliseCap`: **the final delete of a notification or of a
+scheduling context bound to each other unbinds both ends**
+(`schedContext_maybeUnbindNtfn` from the notification's end,
+`schedContext_unbindNtfn` from the context's).  A notification whose context does
+not name it back leaves that context's own link alone. -/
+private def finalise_clears_notification_link : IO Unit := do
+  let scObj : SeLe4n.ObjId := ⟨60⟩
+  let scId := SeLe4n.SchedContextId.ofObjId scObj
+  let nA : SeLe4n.ObjId := ⟨80⟩
+  let nB : SeLe4n.ObjId := ⟨81⟩
+  let ntfn (code : Nat) : Notification :=
+    { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
+      schedContextCode := code }
+  let st : SystemState := mkState [
+      (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with
+        notificationCode := nA.val + 1 }),
+      (nA, .notification (ntfn (scId.val + 1))),
+      (nB, .notification (ntfn (scId.val + 1)))]
+  let scCode (s : SystemState) : Nat :=
+    ((s.getSchedContext? scId).map (·.notificationCode)).getD 999
+  let ntCode (s : SystemState) (n : SeLe4n.ObjId) : Nat :=
+    ((s.getNotification? n).map (·.schedContextCode)).getD 999
+  let stN := SeLe4n.Kernel.finaliseFinalObject (nA.val + 1) st
+  expect "finalise_notification_unbinds_its_context" (scCode stN == 0 && ntCode stN nA == 0)
+    "a notification's final delete clears its context's link and its own"
+  let stS := SeLe4n.Kernel.finaliseFinalObject (scObj.val + 1) st
+  expect "finalise_context_unbinds_its_notification" (scCode stS == 0 && ntCode stS nA == 0)
+    "a context's final delete clears its notification's link and its own"
+  let stB := SeLe4n.Kernel.finaliseFinalObject (nB.val + 1) st
+  expect "finalise_unnamed_notification_keeps_the_context_link" (scCode stB == nA.val + 1)
+    "a notification its context does not name back leaves the context's link"
+
 /-- SD-060 (`v0.35.204`): **`.schedContextBind` binds only a thread the caller
 holds a WRITABLE TCB capability to.**
 
@@ -2092,8 +2246,8 @@ private def sd061_every_kind_is_carved : IO Unit := do
   -- SetSpace installs the fault endpoint).
   expect "sd061_retired_number_decodes_to_none"
     (SyscallId.ofNat? 8 == none && SyscallId.ofNat? 34 == none &&
-      SyscallId.retiredNumbers == [8, 34])
-    "syscall numbers 8 and 34 must stay reserved"
+      SyscallId.ofNat? 37 == none && SyscallId.retiredNumbers == [8, 34, 37])
+    "syscall numbers 8, 34 and 37 must stay reserved"
 
 /-- SD-062 (WS-ZA ZA5.4 part 14): **the carve asks authority before it reads the
 child id.**
@@ -2160,8 +2314,9 @@ private def sd062_carve_checks_authority_before_child : IO Unit := do
     After `endpointReceiveDual` rendezvouses a `Call` (moving the caller to
     `.blockedOnReply`), the transition links that caller to the server-supplied reply
     object so the server's later `.reply` resolves authority through `reply.caller`. A
-    `Call` rendezvous carrying NO reply object is rejected fail-closed
-    (`.replyCapInvalid`) — the post-state is discarded, so the caller is not stranded.
+    `Call` rendezvous carrying NO reply object, or a `Call` through a cap granting
+    neither `Grant` nor `GrantReply`, links nothing: the message is delivered and the
+    caller is completed `Inactive`, off every run queue (seL4 `receiveIPC`).
     A non-`Call` (`Send`) rendezvous links nothing. -/
 private def sd051_receiveLinkCaller : IO Unit := do
   let server : SeLe4n.ThreadId := ⟨1⟩
@@ -2180,7 +2335,7 @@ private def sd051_receiveLinkCaller : IO Unit := do
       |>.withRunnable [server, caller]
       |>.build)
   -- Caller issues a `Call` → enqueues `.blockedOnCall` on the endpoint sendQ.
-  match SeLe4n.Kernel.endpointCall epId caller (.frame none false) stReady with
+  match SeLe4n.Kernel.endpointCall epId caller (.frame none false true) stReady with
   | .error _ => failLine "sd051_setup" "endpointCall setup should succeed"
   | .ok (_, stCalled) =>
       -- (a) the receive transition dequeues the Call caller (→ `.blockedOnReply`) and
@@ -2192,14 +2347,40 @@ private def sd051_receiveLinkCaller : IO Unit := do
             (st'.getTcb? caller).any (fun t => decide (t.replyObject = some rid))
          | .error _ => false)
         "Call caller should be linked to the server-supplied reply object"
-      -- (b) a Call rendezvous carrying NO reply object is rejected fail-closed (the
-      -- post-state is discarded, so the caller is not stranded `.blockedOnReply`).
-      expect "sd051b_call_without_reply_rejected"
+      -- (b) a Call rendezvous carrying NO reply object links nothing: the message
+      -- is delivered and the caller completed `Inactive`, off every run queue
+      -- (seL4 `receiveIPC`; formerly refused `.replyCapInvalid`).
+      expect "sd051b_call_without_reply_completes_caller_inactive"
         (match SeLe4n.Kernel.endpointReceiveDual epId server none stCalled with
-         | .error .replyCapInvalid => true | _ => false)
-        "a Call rendezvous without a reply object must be rejected (.replyCapInvalid)"
+         | .ok (s, st') =>
+            s == caller &&
+            (st'.getTcb? server).any (fun t => t.pendingMessage.isSome) &&
+            (st'.getTcb? caller).any (fun t =>
+              decide (t.ipcState = .ready) && decide (t.threadState = .Inactive) &&
+              decide (t.replyObject = none)) &&
+            !SeLe4n.Kernel.runnableOnSomeCore st' caller &&
+            (st'.getReply? rid).all (fun r => decide (r.caller = none))
+         | .error _ => false)
+        "a Call rendezvous without a reply object delivers and leaves the caller Inactive"
+  -- (b') a Call through a cap granting neither Grant nor GrantReply links nothing,
+  -- even with a reply object supplied.
+  match SeLe4n.Kernel.endpointCall epId caller (.frame none false false) stReady with
+  | .error _ => failLine "sd051b_nogrant_setup" "endpointCall setup should succeed"
+  | .ok (_, stCalledNoGrant) =>
+      expect "sd051b_call_without_grant_completes_caller_inactive"
+        (match SeLe4n.Kernel.endpointReceiveDual epId server (some rid) stCalledNoGrant with
+         | .ok (s, st') =>
+            s == caller &&
+            (st'.getTcb? server).any (fun t => t.pendingMessage.isSome) &&
+            (st'.getTcb? caller).any (fun t =>
+              decide (t.ipcState = .ready) && decide (t.threadState = .Inactive) &&
+              decide (t.replyObject = none)) &&
+            !SeLe4n.Kernel.runnableOnSomeCore st' caller &&
+            (st'.getReply? rid).all (fun r => decide (r.caller = none))
+         | .error _ => false)
+        "a Call through a cap without a grant right delivers and leaves the caller Inactive"
   -- (c) a non-Call (`Send`) rendezvous links nothing (the dequeued sender → `.ready`).
-  match SeLe4n.Kernel.endpointSendDual epId caller (.frame none false) stReady with
+  match SeLe4n.Kernel.endpointSendDual epId caller (.frame none false true) stReady with
   | .error _ => failLine "sd051c_setup" "endpointSendDual setup should succeed"
   | .ok (_, stSent) =>
       expect "sd051c_ready_rendezvous_no_link"
@@ -2301,7 +2482,7 @@ private def sd052b_replyRecv_donation_switch : IO Unit := do
     "the previous caller's Reply must head the donated context, as a real Call leaves it"
   -- clientB issues a Call while the server is busy → it enqueues `blockedOnCall`
   -- (the queued-Call path does NOT donate; the donation is deferred to rendezvous).
-  match SeLe4n.Kernel.endpointCallOnCore epId clientB (.frame none false) bootCoreId st0 with
+  match SeLe4n.Kernel.endpointCallOnCore epId clientB (.frame none false true) bootCoreId st0 with
   | (_, .error _) => failLine "sd052b" "clientB Call should enqueue (blockedOnCall)"
   | (st1, .ok _) =>
       let msg : IpcMessage :=
@@ -2430,7 +2611,7 @@ private def sd053_serverFirstLink : IO Unit := do
   match SeLe4n.Kernel.endpointReceiveDual epId server (some rid) stBBase with
   | .error _ => failLine "sd053b" "server-first receive (stash) setup should succeed"
   | .ok (_, stRecv) =>
-    match SeLe4n.Kernel.endpointCall epId caller (.frame none false) stRecv with
+    match SeLe4n.Kernel.endpointCall epId caller (.frame none false true) stRecv with
     | .ok ((), st') =>
         expect "sd053b_caller_linked"
           ((st'.getReply? rid).any (fun r => decide (r.caller = some caller)) &&
@@ -2477,10 +2658,11 @@ private def sd053_serverFirstLink : IO Unit := do
         ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
         "a plain (no-reply) receive must clear any stale pendingReceiveReply"
   | .error _ => failLine "sd053c" "plain receive (clear stash) should succeed"
-  -- (d) PR #822 review / #7.3a fold: a Call that rendezvouses with a waiting server
-  -- holding NO reply object (plain Recv) is rejected fail-closed (cannot answer a
-  -- Call).  The fold makes `endpointCall` *itself* fail closed — no intermediate state
-  -- strands the caller `.blockedOnReply` with no linked Reply.
+  -- (d) A Call that rendezvouses with a waiting server holding NO reply object
+  -- (plain Recv) links nothing: seL4's `sendIPC` delivers the message and, with no
+  -- reply to push, leaves the caller `Inactive` (`setThreadState(thread,
+  -- ThreadState_Inactive)`).  No state strands the caller `.blockedOnReply` with no
+  -- linked Reply.
   let stDBase : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
@@ -2491,15 +2673,16 @@ private def sd053_serverFirstLink : IO Unit := do
   match SeLe4n.Kernel.endpointReceiveDual epId server none stDBase with
   | .error _ => failLine "sd053d" "plain receive (no-reply) setup should succeed"
   | .ok (_, stRecv) =>
-    match SeLe4n.Kernel.endpointCall epId caller (.frame none false) stRecv with
-    | .error e =>
-        expect "sd053d_server_first_call_without_reply_rejected"
-          (e == .replyCapInvalid)
-          "a server-first Call with no stashed reply object must be rejected"
-        expect "sd053d_caller_not_stranded"
-          ((stRecv.getTcb? caller).any (fun t => decide (t.ipcState = .ready)))
-          "the rejected call must not strand the caller in blockedOnReply (fail-closed, no state change)"
-    | .ok _ => failLine "sd053d" "server-first Call without a reply object must be rejected"
+    match SeLe4n.Kernel.endpointCall epId caller (.frame none false true) stRecv with
+    | .ok ((), stCalled) =>
+        expect "sd053d_server_first_call_without_reply_links_nothing"
+          ((stCalled.getTcb? caller).any (fun t =>
+            decide (t.ipcState = .ready) && t.threadState == .Inactive && t.replyObject.isNone))
+          "a server-first Call with no stashed reply object leaves the caller Inactive, linked to no reply"
+        expect "sd053d_server_receives_message"
+          ((stCalled.getTcb? server).any (fun t => decide (t.ipcState = .ready) && t.pendingMessage.isSome))
+          "the server is woken holding the call's message"
+    | .error _ => failLine "sd053d" "server-first Call without a reply object completes as seL4's sendIPC"
   -- (e) PR #822 review: a plain `Send` that wakes a server-first receiver clears the
   -- server's reply stash — the server left `.blockedOnReceive` for `.ready`, so the
   -- stash (which lives only on a blocked receiver) must not survive, and a future
@@ -2536,48 +2719,44 @@ private def sd053_serverFirstLink : IO Unit := do
 /-- SD-053g (PR #822 review): a bound-notification wake also clears a server-first
     reply stash.  A server blocked on a server-first `Recv` (stashing a reply object)
     that is bound to a notification can be woken by a signal via the bound-delivery
-    path (`boundDeliveryTarget?` → `.ready`); the dispatch then clears its stash with
-    `clearWokenReceiverStash`, just like the plain-`Send` wake — a stash lives only on
-    a `.blockedOnReceive` TCB. -/
+    path (`boundDeliveryTarget?` → `.ready`).  As in seL4's `sendSignal`, whose
+    `cancelIPC` unlinks the receiver's reply (`reply_unlink`), the wake itself
+    clears the stash (`storeTcbSignalBoundWoken`); the dispatch adds no separate
+    clear. -/
 private def sd053g_bound_notification_wake_clears_stash : IO Unit := do
   let server    : SeLe4n.ThreadId := ⟨1⟩
-  let signaller : SeLe4n.ThreadId := ⟨2⟩
   let epId      : SeLe4n.ObjId := ⟨10⟩
   let nId       : SeLe4n.ObjId := ⟨20⟩
   let rid       : SeLe4n.ReplyId := ⟨707⟩
-  let _ := signaller
-  -- (a) capture: the `.notificationSignal` dispatch resolves the bound delivery target
-  -- (`boundDeliveryTarget?` → the `.blockedOnReceive` bound server) before the signal.
   let st0 : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
-      |>.withObject epId (.endpoint {})
+      |>.withObject epId (.endpoint
+          { recvHeadCode := SeLe4n.ThreadId.optCode (some server)
+            recvTailCode := SeLe4n.ThreadId.optCode (some server) })
       |>.withObject nId (.notification
           { state := .idle, boundTCBCode := SeLe4n.ThreadId.optCode (some server) })
       |>.withObject server.toObjId
-          (.tcb (TCB.setIpcState { mkTcb 1 with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReceive epId)))
+          (.tcb (TCB.setIpcState
+            { mkTcb 1 with
+                pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some rid)
+                queuePPrevCode := QueuePPrev.optCode (some .endpointHead) }
+            (.blockedOnReceive epId)))
       |>.withObject rid.toObjId (.reply { replyId := rid })
       |>.build)
+  -- (a) the bound BlockedOnReceive server is the wake target.
   expect "sd053g_bound_target_resolved"
     (decide ((SeLe4n.Kernel.boundDeliveryTarget? st0 nId).map (·.1) = some server))
     "the bound BlockedOnReceive server is the captured wake target"
-  -- (b) clear: after the bound delivery wakes the server (`.ready`), the dispatch
-  -- clears its stash via `clearWokenReceiverStash` (the stash lives only on a blocked
-  -- receiver) — the reply object stays free.
-  let stWoken : SystemState :=
-    (SeLe4n.Testing.BootstrapBuilder.empty
-      |>.withObject server.toObjId
-          (.tcb (TCB.setIpcState { mkTcb 1 with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some rid) } .ready))
-      |>.withObject rid.toObjId (.reply { replyId := rid })
-      |>.build)
-  match SeLe4n.Kernel.clearWokenReceiverStash (some server) stWoken with
-  | .ok ((), st') =>
+  -- (b) the signal's own wake clears the stash and leaves the reply object free.
+  match SeLe4n.Kernel.notificationSignalBoundOnCore nId (Badge.ofNatMasked 5) bootCoreId st0 with
+  | (st', .ok _) =>
       expect "sd053g_stash_cleared"
         ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
-        "the bound-woken server's stale reply stash must be cleared"
+        "the bound-woken server's stale reply stash must be cleared by the wake"
       expect "sd053g_reply_stays_free"
         ((st'.getReply? rid).any (fun r => decide (r.caller = none)))
         "clearing the stash must not consume the reply object"
-  | .error _ => failLine "sd053g" "clearWokenReceiverStash should succeed"
+  | (_, .error _) => failLine "sd053g" "the bound signal should succeed"
 
 /-- **Every argument capability's refusal names its argument.**  Under the
 payload convention the invoked capability is `invalidCapability 0` and argument
@@ -2612,6 +2791,10 @@ private def argumentCapRefusalsCarryTheirNumbers : IO Unit := do
       msgInfo := { length := ws.length, extraCaps := 0, label := 0 },
       syscallId := sid, msgRegs := (ws.map SeLe4n.RegValue.ofNat).toArray,
       inlineCount := ws.length, overflowCount := 0 }
+  -- A receive or reply-receive naming its reply capability in the reply
+  -- register (x6, seL4-MCS `replyRegister`) with an empty message.
+  let received (sid : SyscallId) (w : Nat) : SyscallDecodeResult :=
+    { decoded sid [] with canReply := true, replyCPtr := SeLe4n.CPtr.ofNat w }
   let capNum {α : Type} (r : Except KernelError α) : Option UInt64 :=
     match r with
     | .error (.invalidCapability n) => some n
@@ -2635,23 +2818,24 @@ private def argumentCapRefusalsCarryTheirNumbers : IO Unit := do
     | none => false
   -- A non-reply capability (the CNode's, slot 3) and an empty slot (9).
   for (w, what) in [(3, "wrong_kind"), (9, "empty")] do
-    -- `.receive`'s reply capability (MR0).
+    -- `.receive`'s reply capability (the reply register).
     expect s!"receive_reply_{what}_missing"
-      (isMissing (resolveRecvReplyId gate (decoded .receive [w]) st) &&
-       isMissing (resolveRecvReplyIdR st caller 1 (cptr w)) &&
-       kMissing (resolveRecvReplyK st caller 1 (cptr w) some (fun _ => none)))
+      (isMissing (resolveRecvReplyId gate (received .receive w) st) &&
+       isMissing (resolveRecvReplyIdR st caller true (cptr w)) &&
+       kMissing (resolveRecvReplyK st caller true (cptr w) some (fun _ => none)))
       "a receive's reply capability is refused MissingCapability on the spec, R and K forms"
     expect s!"receive_reply_{what}_dispatch_missing"
-      (isMissing (dispatchSyscallAsCurrent (decoded .receive [w]) caller bootCoreId st))
+      (isMissing (dispatchSyscallAsCurrent (received .receive w) caller bootCoreId st))
       "a receive through the dispatcher refuses its reply capability MissingCapability"
-    -- `.replyRecv`'s reply capability (MR0).
+    -- `.replyRecv`'s reply capability (the reply register).
     expect s!"replyRecv_reply_{what}_missing"
-      (isMissing (resolveReplyRecvReply gate (decoded .replyRecv [w]) st) &&
-       isMissing (resolveReplyRecvReplyR st caller 1 #[SeLe4n.RegValue.ofNat w]) &&
-       kMissing (resolveReplyRecvK st caller 1 (cptr w) some (fun _ _ _ _ => none)))
+      (isMissing (resolveReplyRecvReply gate (received .replyRecv w) st) &&
+       isMissing (resolveReplyRecvReplyR st caller (cptr w)) &&
+       kMissing (resolveReplyRecvK st caller (cptr w) some (fun _ => none)
+         (fun _ _ _ _ _ => none)))
       "a reply-receive's reply capability is refused MissingCapability on the spec, R and K forms"
     expect s!"replyRecv_reply_{what}_dispatch_missing"
-      (isMissing (dispatchSyscallAsCurrent (decoded .replyRecv [w]) caller bootCoreId st))
+      (isMissing (dispatchSyscallAsCurrent (received .replyRecv w) caller bootCoreId st))
       "a reply-receive through the dispatcher refuses its reply capability MissingCapability"
     -- `.schedContextBind`'s thread (extra capability 0).
     expect s!"argcap_schedContextBind_thread_{what}"
@@ -2782,7 +2966,7 @@ private def argumentCapRefusalsCarryTheirNumbers : IO Unit := do
   -- The invoked capability keeps 0: a `.receive` whose invoked slot is empty.
   expect "argcap_invoked_capability_is_zero"
     (capNum (dispatchSyscallAsCurrent
-      { decoded .receive [3] with capAddr := cptr 9 } caller bootCoreId st) == some 0)
+      { received .receive 3 with capAddr := cptr 9 } caller bootCoreId st) == some 0)
     "the invoked capability's refusal is invalidCapability 0"
 
 end SeLe4n.Testing.SyscallDispatchSuite
@@ -2839,6 +3023,10 @@ def main : IO Unit := do
   sd059_cspaceRevokeThroughTheSyscallGate
   IO.println "--- v0.35.204: .schedContextBind takes a TCB capability, not a thread id ---"
   sd060_schedContextBind_requires_tcb_capability
+  IO.println "--- .schedContextBind on a notification capability binds the notification ---"
+  schedContextBind_notification_capability
+  schedContextUnbind_seL4_semantics
+  finalise_clears_notification_link
   IO.println "--- WS-ZA ZA6.4: a configure takes a core's scheduling control ---"
   sd063_schedContextConfigure_requires_sched_control
   IO.println "--- WS-BP BP7.1: an in-place retype never mints or destroys memory authority ---"

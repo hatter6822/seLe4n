@@ -40,7 +40,9 @@ def longSendDecode (st : SystemState) (tid : SeLe4n.ThreadId) (rf : SeLe4n.Regis
   { capAddr, msgInfo := mi, syscallId := .send,
     msgRegs := Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
       (overflowRegsFrom st tid 0 (mi.length - 4)).toArray,
-    inlineCount := 4, overflowCount := mi.length - 4 }
+    inlineCount := 4, overflowCount := mi.length - 4 ,
+    canReply := Syscall.wordCanReply (readRegWord rf SeLe4n.arm64DefaultLayout.syscallNumReg),
+    replyCPtr := SeLe4n.CPtr.ofWord (readRegWord rf SeLe4n.arm64DefaultLayout.replyReg)}
 
 @[simp] theorem longSendDecode_overflowCount (st : SystemState) (tid : SeLe4n.ThreadId)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) :
@@ -51,10 +53,10 @@ to the inline words and then those slots' words, as `.send`, with no
 capabilities (`longSendDecode`). -/
 theorem decodeSyscallArgsFromState_of_routedSendLong_ok (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
+    (hR : registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
-    decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
+    decodeSyscallArgsFromState opCode st tid SeLe4n.arm64DefaultLayout rf 32 =
       .ok (longSendDecode st tid rf capAddr mi) := by
   obtain ⟨_, _, _, hDec⟩ :=
     decodeSyscallArgsFromState_of_routedSendLong st tid _ rf 32 capAddr mi hR
@@ -71,10 +73,10 @@ theorem decodeSyscallArgsFromState_of_routedSendLong_ok (st : SystemState)
 words (`clampedFrameDecode`), as seL4 clamps a message with no IPC buffer. -/
 theorem decodeSyscallArgsFromState_of_routedSendLong_clamped (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
+    (hR : registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
     (j : Nat) (hj : j < mi.length - 4) (e : Architecture.IpcBufferRead.IpcBufferReadError)
     (h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .error e) :
-    decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
+    decodeSyscallArgsFromState opCode st tid SeLe4n.arm64DefaultLayout rf 32 =
       .ok (clampedFrameDecode .send rf capAddr mi) := by
   obtain ⟨hGt, _, _, hDec⟩ :=
     decodeSyscallArgsFromState_of_routedSendLong st tid _ rf 32 capAddr mi hR
@@ -93,12 +95,13 @@ and then the words its IPC buffer holds (`longSendMessage`). -/
 theorem routedLongSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
+    (hR : registerRoutedSyscall (blockedSenderCode SeLe4n.arm64DefaultLayout rf)
+        SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
-    (∀ endpointId badge grant, sendCapRequest st endpointId tid (.frame badge grant) = none) ∧
-      ∀ badge grant, (st.getTcb? tid).isSome = true →
-        sendPayloadMessage st tid (.frame badge grant) =
+    (∀ endpointId badge grant grantReply, sendCapRequest st endpointId tid (.frame badge grant grantReply) = none) ∧
+      ∀ badge grant grantReply, (st.getTcb? tid).isSome = true →
+        sendPayloadMessage st tid (.frame badge grant grantReply) =
           longSendMessage SeLe4n.arm64DefaultLayout rf st tid mi.length badge := by
   obtain ⟨hGt, hMax, hX, -⟩ :=
     decodeSyscallArgsFromState_of_routedSendLong st tid _ rf 32 capAddr mi hR
@@ -107,7 +110,7 @@ theorem routedLongSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
   have hD := decodeSyscallArgsFromState_of_routedSendLong_ok st tid rf capAddr mi hR hRead
   cases hT : st.getTcb? tid with
   | none =>
-    refine ⟨fun endpointId _ _ => ?_, fun _ _ h => by cases h⟩
+    refine ⟨fun endpointId _ _ _ => ?_, fun _ _ _ h => by cases h⟩
     unfold sendCapRequest
     split
     · rfl
@@ -115,7 +118,7 @@ theorem routedLongSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
   | some tcb =>
     have hRf := hFrame tcb hT
     subst hRf
-    refine ⟨fun endpointId badge grant => ?_, fun badge grant _ => ?_⟩
+    refine ⟨fun endpointId badge grant grantReply => ?_, fun badge grant grantReply _ => ?_⟩
     · unfold sendCapRequest
       split
       · rfl
@@ -141,7 +144,9 @@ def longCallDecode (st : SystemState) (tid : SeLe4n.ThreadId) (rf : SeLe4n.Regis
   { capAddr, msgInfo := mi, syscallId := .call,
     msgRegs := Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
       (overflowRegsFrom st tid 0 (mi.length - 4)).toArray,
-    inlineCount := 4, overflowCount := mi.length - 4 }
+    inlineCount := 4, overflowCount := mi.length - 4 ,
+    canReply := Syscall.wordCanReply (readRegWord rf SeLe4n.arm64DefaultLayout.syscallNumReg),
+    replyCPtr := SeLe4n.CPtr.ofWord (readRegWord rf SeLe4n.arm64DefaultLayout.replyReg)}
 
 @[simp] theorem longCallDecode_overflowCount (st : SystemState) (tid : SeLe4n.ThreadId)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) :
@@ -152,10 +157,10 @@ to the inline words and then those slots' words, as `.call`, with no
 capabilities (`longCallDecode`). -/
 theorem decodeSyscallArgsFromState_of_routedCallLong_ok (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi)
+    (hR : registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
-    decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
+    decodeSyscallArgsFromState opCode st tid SeLe4n.arm64DefaultLayout rf 32 =
       .ok (longCallDecode st tid rf capAddr mi) := by
   obtain ⟨_, _, _, hDec⟩ :=
     decodeSyscallArgsFromState_of_routedCallLong st tid _ rf 32 capAddr mi hR
@@ -172,10 +177,10 @@ theorem decodeSyscallArgsFromState_of_routedCallLong_ok (st : SystemState)
 words (`clampedFrameDecode`), as seL4 clamps a message with no IPC buffer. -/
 theorem decodeSyscallArgsFromState_of_routedCallLong_clamped (st : SystemState)
     (tid : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi)
+    (hR : registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi)
     (j : Nat) (hj : j < mi.length - 4) (e : Architecture.IpcBufferRead.IpcBufferReadError)
     (h0 : Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .error e) :
-    decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
+    decodeSyscallArgsFromState opCode st tid SeLe4n.arm64DefaultLayout rf 32 =
       .ok (clampedFrameDecode .call rf capAddr mi) := by
   obtain ⟨hGt, _, _, hDec⟩ :=
     decodeSyscallArgsFromState_of_routedCallLong st tid _ rf 32 capAddr mi hR
@@ -195,17 +200,19 @@ send's of length four. -/
 theorem routedClampedSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi0 : MessageInfo)
     (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi0 ∨
-      registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi0)
+    (hR : registerRoutedSyscall (blockedSenderCode SeLe4n.arm64DefaultLayout rf)
+        SeLe4n.arm64DefaultLayout rf 32 = .sendLong capAddr mi0 ∨
+      registerRoutedSyscall (blockedSenderCode SeLe4n.arm64DefaultLayout rf)
+        SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi0)
     (hUn : ∃ j e, j < mi0.length - 4 ∧
       Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .error e) :
-    (∀ endpointId badge grant, sendCapRequest st endpointId tid (.frame badge grant) = none) ∧
-      ∀ badge grant, (st.getTcb? tid).isSome = true →
-        sendPayloadMessage st tid (.frame badge grant) =
+    (∀ endpointId badge grant grantReply, sendCapRequest st endpointId tid (.frame badge grant grantReply) = none) ∧
+      ∀ badge grant grantReply, (st.getTcb? tid).isSome = true →
+        sendPayloadMessage st tid (.frame badge grant grantReply) =
           { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout rf 4,
             badge := badge } := by
   obtain ⟨j, e, hj, h0⟩ := hUn
-  obtain ⟨sid, hD, hX⟩ : ∃ sid, decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout rf 32 =
+  obtain ⟨sid, hD, hX⟩ : ∃ sid, decodeSyscallArgsFromState (blockedSenderCode SeLe4n.arm64DefaultLayout rf) st tid SeLe4n.arm64DefaultLayout rf 32 =
       .ok (clampedFrameDecode sid rf capAddr mi0) ∧ mi0.extraCaps = 0 := by
     rcases hR with hR | hR
     · exact ⟨.send, decodeSyscallArgsFromState_of_routedSendLong_clamped st tid rf capAddr mi0 hR
@@ -214,7 +221,7 @@ theorem routedClampedSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
         j hj e h0, (decodeSyscallArgsFromState_of_routedCallLong st tid _ rf 32 capAddr mi0 hR).2.2.1⟩
   cases hT : st.getTcb? tid with
   | none =>
-    refine ⟨fun endpointId _ _ => ?_, fun _ _ h => by cases h⟩
+    refine ⟨fun endpointId _ _ _ => ?_, fun _ _ _ h => by cases h⟩
     unfold sendCapRequest
     split
     · rfl
@@ -222,7 +229,7 @@ theorem routedClampedSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId)
   | some tcb =>
     have hRf := hFrame tcb hT
     subst hRf
-    refine ⟨fun endpointId badge grant => ?_, fun badge grant _ => ?_⟩
+    refine ⟨fun endpointId badge grant grantReply => ?_, fun badge grant grantReply _ => ?_⟩
     · unfold sendCapRequest
       split
       · rfl
@@ -245,12 +252,13 @@ and then the words its IPC buffer holds (`longSendMessage`). -/
 theorem routedLongCallerFrame (st : SystemState) (tid : SeLe4n.ThreadId)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hFrame : ∀ tcb, st.getTcb? tid = some tcb → tcb.registerContext = rf)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi)
+    (hR : registerRoutedSyscall (blockedSenderCode SeLe4n.arm64DefaultLayout rf)
+        SeLe4n.arm64DefaultLayout rf 32 = .callLong capAddr mi)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st tid j = .ok w) :
-    (∀ endpointId badge grant, sendCapRequest st endpointId tid (.frame badge grant) = none) ∧
-      ∀ badge grant, (st.getTcb? tid).isSome = true →
-        sendPayloadMessage st tid (.frame badge grant) =
+    (∀ endpointId badge grant grantReply, sendCapRequest st endpointId tid (.frame badge grant grantReply) = none) ∧
+      ∀ badge grant grantReply, (st.getTcb? tid).isSome = true →
+        sendPayloadMessage st tid (.frame badge grant grantReply) =
           longSendMessage SeLe4n.arm64DefaultLayout rf st tid mi.length badge := by
   obtain ⟨hGt, hMax, hX, -⟩ :=
     decodeSyscallArgsFromState_of_routedCallLong st tid _ rf 32 capAddr mi hR
@@ -259,7 +267,7 @@ theorem routedLongCallerFrame (st : SystemState) (tid : SeLe4n.ThreadId)
   have hD := decodeSyscallArgsFromState_of_routedCallLong_ok st tid rf capAddr mi hR hRead
   cases hT : st.getTcb? tid with
   | none =>
-    refine ⟨fun endpointId _ _ => ?_, fun _ _ h => by cases h⟩
+    refine ⟨fun endpointId _ _ _ => ?_, fun _ _ _ h => by cases h⟩
     unfold sendCapRequest
     split
     · rfl
@@ -267,7 +275,7 @@ theorem routedLongCallerFrame (st : SystemState) (tid : SeLe4n.ThreadId)
   | some tcb =>
     have hRf := hFrame tcb hT
     subst hRf
-    refine ⟨fun endpointId badge grant => ?_, fun badge grant _ => ?_⟩
+    refine ⟨fun endpointId badge grant grantReply => ?_, fun badge grant grantReply _ => ?_⟩
     · unfold sendCapRequest
       split
       · rfl
@@ -299,9 +307,11 @@ its inline words and then the words its IPC buffer holds, under the badge its
 capability carried (`longSendMessage`). -/
 theorem blockedSender_of_routedLong (st : SystemState) (s : SeLe4n.ThreadId) (sTcb : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
+    (hR : registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
         .sendLong capAddr mi ∨
-      registerRoutedSyscall SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
+      registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
         .callLong capAddr mi)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st s j = .ok w)
@@ -409,8 +419,8 @@ specification's**: under `receiveCallTakesInPlace`, for a caller blocked by a
 routed capability-free call of more than four words whose overflow slots all
 read, the WithCaps receive installs nothing and commits the take, the
 rendezvous hands off no SchedContext and runs the receiver's priority walk, the
-caller left blocked on the reply is owed no completion frame, and staging the
-receiver's message writes `performReceiveCallDeliveredLong`'s state. -/
+caller is left blocked on the reply, and staging the receiver's message writes
+`performReceiveCallDeliveredLong`'s state. -/
 theorem receiveCallLongTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
@@ -418,7 +428,8 @@ theorem receiveCallLongTake_delivered (st : SystemState) (endpointId : SeLe4n.Ob
     (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
     (hG : receiveCallTakesInPlace st endpointId receiver s sTcb rid = true)
     (hF : sTcb.ipcFaultSend = false)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
+    (hR : registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
       .callLong capAddr mi)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st s j = .ok w) :
@@ -429,9 +440,8 @@ theorem receiveCallLongTake_delivered (st : SystemState) (endpointId : SeLe4n.Ob
           receiver s core =
         .ok (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
           receiver core) ∧
-      Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion
-          (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
-            receiver core) (some s)) receiver 0 =
+      Architecture.stageDeliveredMessage (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
+            receiver core) receiver 0 =
         performReceiveCallDeliveredLong st endpointId s sTcb.queueNextCode receiver rid core
           sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged := by
   obtain ⟨hTake, hIpc, hBs, hBr⟩ :=
@@ -493,8 +503,6 @@ theorem receiveCallLongTake_delivered (st : SystemState) (endpointId : SeLe4n.Ob
           (storePopHead_noResizeDue _ _ _ _ _ hNo)))))
     obtain ⟨x', hx', hxI'⟩ := propagatePipChainCrossCore_ipcStateCarried _ receiver core hNo4 s x hx
     unfold applyReceiverPipHandoff
-    rw [Architecture.stageWokenSendCompletion_id_when_not_ready _ s x' hx'
-      (by rw [hxI', hxI]; simp)]
     rw [receiveCallTakeState_eq_hold _ _ _ _ _ _ hNo, propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoS]
     have hAP := ipcBufferReadsAgree_storePopHead st endpointId false s sTcb.queueNext hNo
     have hReadP : ∀ j, j < mi.length - 4 → ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr
@@ -521,7 +529,8 @@ the inline words sends: its inline words under its capability's badge, and no
 capability (`blockedSender_of_routedSend`'s call). -/
 theorem blockedSender_of_routedCall (st : SystemState) (s : SeLe4n.ThreadId) (sTcb : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (h : registerRoutedSyscall SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
+    (h : registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
       .call capAddr mi)
     (hF : sTcb.ipcFaultSend = false) :
     blockedSenderCapRequest st s sTcb = none ∧
@@ -573,7 +582,8 @@ theorem receiveCallTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
     (hG : receiveCallTakesInPlace st endpointId receiver s sTcb rid = true)
     (hF : sTcb.ipcFaultSend = false)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
+    (hR : registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
       .call capAddr mi) :
     endpointReceiveDualWithCapsOnCore endpointId receiver (some rid) core st =
         (receiveCallTakeState st endpointId s sTcb receiver rid,
@@ -582,9 +592,8 @@ theorem receiveCallTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
           receiver s core =
         .ok (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
           receiver core) ∧
-      Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion
-          (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
-            receiver core) (some s)) receiver 0 =
+      Architecture.stageDeliveredMessage (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
+            receiver core) receiver 0 =
         performReceiveCallDelivered st endpointId s sTcb.queueNextCode receiver rid core
           sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged := by
   obtain ⟨hTake, hIpc, hBs, hBr⟩ :=
@@ -646,8 +655,6 @@ theorem receiveCallTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
           (storePopHead_noResizeDue _ _ _ _ _ hNo)))))
     obtain ⟨x', hx', hxI'⟩ := propagatePipChainCrossCore_ipcStateCarried _ receiver core hNo4 s x hx
     unfold applyReceiverPipHandoff
-    rw [Architecture.stageWokenSendCompletion_id_when_not_ready _ s x' hx'
-      (by rw [hxI', hxI]; simp)]
     rw [receiveCallTakeState_eq_hold _ _ _ _ _ _ hNo, propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoS]
     have hNoY := propagatePipChainCrossCore_noResizeDue _ receiver core hNoS
     have hSz : (blockedSenderMessage (storePopHead st endpointId false s sTcb.queueNext) s
@@ -662,20 +669,308 @@ theorem receiveCallTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     unfold performReceiveCallDelivered
     rw [Architecture.regMessageFrameW_eq]
 
-/-- A woken sender's completion frame keeps every read. -/
-theorem ipcBufferReadsAgree_stageWokenSendCompletion (Y : SystemState) (t : SeLe4n.ThreadId)
-    (hNo : Y.objects.noResizeDue) :
-    ipcBufferReadsAgree (Architecture.stageWokenSendCompletion Y (some t)) Y := by
-  unfold Architecture.stageWokenSendCompletion
-  dsimp only
-  cases Y.getTcb? t with
-  | none => exact .refl Y
-  | some tcb =>
-    dsimp only
+/-! ## A receive taking a caller it links to no reply -/
+
+/-- The caller a receive delivers without linking it to a reply: seL4
+`receiveIPC`'s `setThreadState(sender, Inactive)` -- the Call is answered by
+nothing, so the thread runs again only when something restarts it. -/
+@[inline] def callerInactive (t : TCB) : TCB := { t with threadState := .Inactive }
+
+/-- **A receive taking a caller it links to no reply writes only its slots**:
+`receiveTakesInPlace`'s slots (the pop's, and the receiver an unreserved thread
+other than the caller and its successor, rewritten where it stands), the sender
+blocked on a call, and the link refused -- the cap grants neither `Grant` nor
+`GrantReply`, or the receive supplies no reply object (`suppliesReply`).  seL4
+then delivers the message and leaves the caller `Inactive`; no reply object, no
+SchedContext and no reply-waiter queue is written, and nobody is woken. -/
+@[inline] def receiveCallNoLinkTakesInPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver s : SeLe4n.ThreadId) (sTcb : TCB) (suppliesReply : Bool) : Bool :=
+  sendWakesInPlace st endpointId s sTcb.queueNext &&
+  !receiver.isReserved && receiver != s &&
+  (match sTcb.queueNext with
+   | none => true
+   | some n => receiver != n) &&
+  storeLeavesIndexAndTypes st receiver.toObjId .tcb &&
+  st.objects.findsInPlace receiver.toObjId &&
+  (st.getTcb? receiver).isSome &&
+  (match sTcb.ipcState with
+   | .blockedOnCall _ => !((sTcb.ipcCanGrant || sTcb.ipcCanGrantReply) && suppliesReply)
+   | _ => false)
+
+/-- `receiveCallNoLinkTakesInPlace` as it is compiled: the caller's successor
+asked of its link code, so no `some` cell is built for a caller with a successor
+(`receiveCallNoLinkTakesInPlace_eq_impl`). -/
+@[inline] def receiveCallNoLinkTakesInPlaceImpl (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver s : SeLe4n.ThreadId) (sTcb : TCB) (suppliesReply : Bool) : Bool :=
+  sendWakesInPlaceCode st endpointId s sTcb.queueNextCode &&
+  !receiver.isReserved && receiver != s &&
+  queueSuccessorDiffers receiver sTcb.queueNextCode &&
+  storeLeavesIndexAndTypes st receiver.toObjId .tcb &&
+  st.objects.findsInPlace receiver.toObjId &&
+  (st.getTcb? receiver).isSome &&
+  (match sTcb.ipcState with
+   | .blockedOnCall _ => !((sTcb.ipcCanGrant || sTcb.ipcCanGrantReply) && suppliesReply)
+   | _ => false)
+
+@[csimp] theorem receiveCallNoLinkTakesInPlace_eq_impl :
+    @receiveCallNoLinkTakesInPlace = @receiveCallNoLinkTakesInPlaceImpl := by
+  funext st endpointId receiver s sTcb suppliesReply
+  unfold receiveCallNoLinkTakesInPlace receiveCallNoLinkTakesInPlaceImpl
+  rw [sendWakesInPlaceCode_eq, queueSuccessorDiffers_eq, TCB.ofOptCode_queueNextCode]
+  rfl
+
+/-- The state a no-link take commits: the caller popped, stored `.ready` and
+made `Inactive`, the receiver made ready holding the caller's message. -/
+def receiveCallNoLinkTakeState (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (s : SeLe4n.ThreadId) (sTcb : TCB) (receiver : SeLe4n.ThreadId) : SystemState :=
+  (((storePopHead st endpointId false s sTcb.queueNext).updateTcb s receiverReady).updateTcb s
+      callerInactive).updateTcb receiver
+    (callReceiverTcb (blockedSenderMessage (storePopHead st endpointId false s sTcb.queueNext)
+      s sTcb))
+
+/-- **The receive's no-link take, in place**: under
+`receiveCallNoLinkTakesInPlace`, the specification's receive pops the caller in
+place, stores it `.ready`, makes it `Inactive` and hands the receiver its
+message -- the no-link arm of `endpointReceiveDualOnCore`, written in its
+slots. -/
+theorem receiveCallNoLinkTake_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
+    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
+    (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
+    (hG : receiveCallNoLinkTakesInPlace st endpointId receiver s sTcb replyId.isSome = true) :
+    endpointReceiveDualOnCore endpointId receiver replyId core st =
+      (receiveCallNoLinkTakeState st endpointId s sTcb receiver, .ok (s, none)) := by
+  simp only [receiveCallNoLinkTakesInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne,
+    ne_eq] at hG
+  obtain ⟨⟨⟨⟨⟨⟨⟨hSG, hRRes⟩, hRS⟩, hRN⟩, hLR⟩, hFR⟩, hRT⟩, hNC⟩ := hG
+  obtain ⟨callEp, hCallSt, hNoLink⟩ : ∃ c, sTcb.ipcState = .blockedOnCall c ∧
+      ((sTcb.ipcCanGrant || sTcb.ipcCanGrantReply) && replyId.isSome) = false := by
+    split at hNC
+    · next c hc =>
+      refine ⟨c, hc, ?_⟩
+      revert hNC
+      cases sTcb.ipcCanGrant <;> cases sTcb.ipcCanGrantReply <;> cases replyId <;> simp
+    · cases hNC
+  have hSG' := hSG
+  simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hSG'
+  obtain ⟨⟨⟨⟨⟨hSRes, _⟩, _⟩, hLH⟩, hFH⟩, _⟩ := hSG'
+  obtain ⟨rt, hRTo⟩ := Option.isSome_iff_exists.mp hRT
+  have hRo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hRTo
+  have hNeER : endpointId ≠ receiver.toObjId := fun h => by rw [h, hRo] at hE; cases hE
+  have hNeSR : s.toObjId ≠ receiver.toObjId := fun h =>
+    hRS (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
+  have hNxR : ∀ n, sTcb.queueNext = some n → n.toObjId ≠ receiver.toObjId := fun n hn h => by
+    rw [hn] at hRN
+    simp only [bne_iff_ne, ne_eq] at hRN
+    exact hRN (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
+  obtain ⟨hPop, hFr⟩ := popHead_inPlace st endpointId false ep s sTcb hE
+    (by simp only [Bool.false_eq_true, ↓reduceIte]; exact hH) hT hSG
+  have hFH1 := (hFr.keepsFinds s.toObjId).trans hFH
+  have hO1r := (hFr.other _ hNeER hNeSR hNxR).trans hRo
+  unfold endpointReceiveDualOnCore receiveCallNoLinkTakeState
+  simp only [(SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE, hH, hPop]
+  rw [if_pos (by rw [hCallSt]), if_neg (by rw [hNoLink]; simp)]
+  have hM2 : storeTcbIpcStateAndMessage (storePopHead st endpointId false s sTcb.queueNext) s
+      .ready none = .ok ((storePopHead st endpointId false s sTcb.queueNext).updateTcb s
+        receiverReady) :=
+    modifyTcb_eq_updateTcb receiverReady hSRes hFr.head_tcb (hFr.leaves hLH)
+  rw [hM2]
+  simp only []
+  generalize blockedSenderMessage (storePopHead st endpointId false s sTcb.queueNext) s sTcb
+    = msg
+  generalize hS1 : storePopHead st endpointId false s sTcb.queueNext = S1 at *
+  have hT2s := updateTcb_getTcb?_self_of_findsInPlace receiverReady hFr.head_tcb hFH1
+  have hO2r := (updateTcb_get?_ne_of_findsInPlace receiverReady hFr.head_tcb hFH1
+    hNeSR).trans hO1r
+  have hFH2 : (S1.updateTcb s receiverReady).objects.findsInPlace s.toObjId = true :=
+    (updateTcb_findsInPlace _ hFr.head_tcb hFH1 _).trans hFH1
+  have hO3r := (updateTcb_get?_ne_of_findsInPlace callerInactive hT2s hFH2 hNeSR).trans hO2r
+  have hL3 : storeLeavesIndexAndTypes ((S1.updateTcb s receiverReady).updateTcb s callerInactive)
+      receiver.toObjId .tcb = true :=
+    updateTcb_storeLeaves _ hT2s hFH2
+      (updateTcb_storeLeaves _ hFr.head_tcb hFH1 (hFr.leaves hLR))
+  have hM4 : storeTcbIpcStateAndMessage
+      ((S1.updateTcb s receiverReady).updateTcb s callerInactive) receiver .ready (some msg) =
+      .ok (((S1.updateTcb s receiverReady).updateTcb s callerInactive).updateTcb receiver
+        (callReceiverTcb msg)) :=
+    modifyTcb_eq_updateTcb _ hRRes ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hO3r) hL3
+  rw [show (fun t : TCB => { t with threadState := .Inactive }) = callerInactive from rfl, hM4]
+
+/-- **The no-link take dequeues no caller for the hand-off**: the caller it
+leaves is `.ready` and `Inactive`, not blocked on a reply, so the rendezvous
+hands off nothing. -/
+theorem receiveCallNoLinkTake_dequeuedNoCall (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (s : SeLe4n.ThreadId) (sTcb : TCB)
+    (suppliesReply : Bool)
+    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
+    (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
+    (hG : receiveCallNoLinkTakesInPlace st endpointId receiver s sTcb suppliesReply = true) :
+    rendezvousDequeuedCall (receiveCallNoLinkTakeState st endpointId s sTcb receiver) s = false := by
+  have hG' := hG
+  simp only [receiveCallNoLinkTakesInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne,
+    ne_eq] at hG'
+  obtain ⟨⟨⟨⟨⟨⟨⟨hSG, _⟩, hRS⟩, _⟩, _⟩, _⟩, _⟩, _⟩ := hG'
+  have hSG' := hSG
+  simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hSG'
+  obtain ⟨⟨⟨⟨⟨hSRes, _⟩, hFE⟩, _⟩, hFH⟩, _⟩ := hSG'
+  have hNo : st.objects.noResizeDue := RHTable.noResizeDue_of_findsInPlace hFE
+  obtain ⟨_, hFr⟩ := popHead_inPlace st endpointId false ep s sTcb hE
+    (by simp only [Bool.false_eq_true, ↓reduceIte]; exact hH) hT hSG
+  have hFH1 := (hFr.keepsFinds s.toObjId).trans hFH
+  unfold receiveCallNoLinkTakeState
+  generalize hP : storePopHead st endpointId false s sTcb.queueNext = P at hFr hFH1 ⊢
+  have hNoP : P.objects.noResizeDue := hP ▸ storePopHead_noResizeDue _ _ _ _ _ hNo
+  have hT2s := updateTcb_getTcb?_self_of_findsInPlace receiverReady hFr.head_tcb hFH1
+  have hFH2 : (P.updateTcb s receiverReady).objects.findsInPlace s.toObjId = true :=
+    (updateTcb_findsInPlace _ hFr.head_tcb hFH1 _).trans hFH1
+  have hT3s := updateTcb_getTcb?_self_of_findsInPlace callerInactive hT2s hFH2
+  have hNoX : ((P.updateTcb s receiverReady).updateTcb s callerInactive).objects.noResizeDue :=
+    updateTcb_noResizeDue _ _ _ (updateTcb_noResizeDue _ _ _ hNoP)
+  unfold rendezvousDequeuedCall
+  have hL : ∀ f, lookupTcb (((P.updateTcb s receiverReady).updateTcb s callerInactive).updateTcb
+      receiver f) s = lookupTcb ((P.updateTcb s receiverReady).updateTcb s callerInactive) s := by
+    intro f
+    unfold lookupTcb
     split
-    · unfold Architecture.writeReturnFrameToTcb
-      exact ipcBufferReadsAgree_updateTcb _ t _ (fun _ => ⟨rfl, rfl⟩) hNo
-    · exact .refl Y
+    · rfl
+    · rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoX, SystemState.getTcb?_mapTcbInPlace,
+        if_neg hRS]
+  rw [hL]
+  simp only [lookupTcb, hSRes, Bool.false_eq_true, ↓reduceIte, hT3s]
+  rfl
+
+/-- **The receive's no-link take, delivered**: the caller popped, stored `.ready`
+and made `Inactive` (none of its registers written, as seL4's `receiveIPC`), the
+receiver made ready, and the six words of the delivered frame -- read from the
+caller's saved registers before any write -- written into the receiver's saved
+registers.  No message is built, no thread is woken. -/
+@[noinline] def performReceiveCallNoLinkDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (s : SeLe4n.ThreadId) (nextCode : Nat) (receiver : SeLe4n.ThreadId)
+    (w0 w1 w2 w3 w4 w5 : UInt64) : SystemState :=
+  let X := ((storePopHead st endpointId false s (ThreadId.ofOptCode nextCode)).updateTcb
+    s receiverReady).updateTcb s callerInactive
+  (X.updateTcb receiver receiverReady).mapTcbInPlace
+    receiver (withFrameWords w0 w1 w2 w3 w4 w5)
+
+/-- **The receive's no-link take, delivered, is the specification's**: under
+`receiveCallNoLinkTakesInPlace`, for a caller blocked by a routed
+capability-free call of at most four words, the WithCaps receive installs
+nothing and commits the take, the rendezvous hands off nothing (the caller is
+`.ready`, not blocked on a reply), and staging the receiver's message writes
+`performReceiveCallNoLinkDelivered`'s state. -/
+theorem receiveCallNoLinkTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
+    (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
+    (hG : receiveCallNoLinkTakesInPlace st endpointId receiver s sTcb replyId.isSome = true)
+    (hF : sTcb.ipcFaultSend = false)
+    (hR : registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
+      .call capAddr mi) :
+    let S4 := receiveCallNoLinkTakeState st endpointId s sTcb receiver
+    let f := Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext
+      mi.length sTcb.ipcBadgeView
+    endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
+        (S4, .ok (s, { results := #[] }, none)) ∧
+      applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
+      Architecture.stageDeliveredMessage S4 receiver 0 =
+        performReceiveCallNoLinkDelivered st endpointId s sTcb.queueNextCode receiver
+          f.x0 f.x1 f.x2 f.x3 f.x4 f.x5 := by
+  intro S4 f
+  have hTake := receiveCallNoLinkTake_inPlace st endpointId ep receiver replyId core s sTcb
+    hE hH hT hG
+  have hG' := hG
+  simp only [receiveCallNoLinkTakesInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne,
+    ne_eq] at hG'
+  obtain ⟨⟨⟨⟨⟨⟨⟨hSG, hRRes⟩, hRS⟩, hRN⟩, hLR⟩, hFR⟩, hRT⟩, _⟩ := hG'
+  have hSG' := hSG
+  simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hSG'
+  obtain ⟨⟨⟨⟨⟨hSRes, _⟩, hFE⟩, _⟩, hFH⟩, _⟩ := hSG'
+  have hNo : st.objects.noResizeDue := RHTable.noResizeDue_of_findsInPlace hFE
+  obtain ⟨rt, hRTo⟩ := Option.isSome_iff_exists.mp hRT
+  have hRo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hRTo
+  have hNeER : endpointId ≠ receiver.toObjId := fun h => by rw [h, hRo] at hE; cases hE
+  have hNeSR : s.toObjId ≠ receiver.toObjId := fun h =>
+    hRS (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
+  have hNxR : ∀ n, sTcb.queueNext = some n → n.toObjId ≠ receiver.toObjId := fun n hn h => by
+    rw [hn] at hRN
+    simp only [bne_iff_ne, ne_eq] at hRN
+    exact hRN (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
+  obtain ⟨_, hFr⟩ := popHead_inPlace st endpointId false ep s sTcb hE
+    (by simp only [Bool.false_eq_true, ↓reduceIte]; exact hH) hT hSG
+  have hFH1 := (hFr.keepsFinds s.toObjId).trans hFH
+  have hO1r := (hFr.other _ hNeER hNeSR hNxR).trans hRo
+  have hMsg := (blockedSender_of_routedCall (storePopHead st endpointId false s sTcb.queueNext)
+    s sTcb capAddr mi hR hF).2
+  generalize hP : storePopHead st endpointId false s sTcb.queueNext = P at hFr hFH1 hO1r hMsg
+  have hNoP : P.objects.noResizeDue := hP ▸ storePopHead_noResizeDue _ _ _ _ _ hNo
+  have hT2s := updateTcb_getTcb?_self_of_findsInPlace receiverReady hFr.head_tcb hFH1
+  have hO2r := (updateTcb_get?_ne_of_findsInPlace receiverReady hFr.head_tcb hFH1
+    hNeSR).trans hO1r
+  have hFH2 : (P.updateTcb s receiverReady).objects.findsInPlace s.toObjId = true :=
+    (updateTcb_findsInPlace _ hFr.head_tcb hFH1 _).trans hFH1
+  have hT3s := updateTcb_getTcb?_self_of_findsInPlace callerInactive hT2s hFH2
+  have hO3r := (updateTcb_get?_ne_of_findsInPlace callerInactive hT2s hFH2 hNeSR).trans hO2r
+  generalize hX : (P.updateTcb s receiverReady).updateTcb s callerInactive = X at hT3s hO3r
+  have hNoX : X.objects.noResizeDue := hX ▸ updateTcb_noResizeDue _ _ _
+    (updateTcb_noResizeDue _ _ _ hNoP)
+  have hXr : X.getTcb? receiver = some rt := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO3r
+  have hS4 : S4 = X.updateTcb receiver (callReceiverTcb (blockedSenderMessage P s sTcb)) := by
+    show receiveCallNoLinkTakeState st endpointId s sTcb receiver = _
+    unfold receiveCallNoLinkTakeState
+    rw [hP, hX]
+  refine ⟨?_, ?_, ?_⟩
+  · have hSnd : receiveRendezvousSender? st endpointId = some s := by
+      simp only [receiveRendezvousSender?, (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE,
+        Option.bind_some, hH]
+    have hReq : receiveCapRequest st endpointId = none := by
+      unfold receiveCapRequest
+      rw [hSnd]
+      simp only [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hT]
+      exact (blockedSender_of_routedCall st s sTcb capAddr mi hR hF).1
+    unfold endpointReceiveDualWithCapsOnCore
+    rw [hTake]
+    simp only [hSnd, hReq, Option.isNone_some, Bool.false_eq_true, ↓reduceIte]
+    rfl
+  · -- the dequeued caller is `.ready`, not blocked on a reply: no hand-off
+    apply applyReceiveRendezvousHandoff_of_no_call
+    have hL : lookupTcb S4 s = lookupTcb X s := by
+      rw [hS4]
+      unfold lookupTcb
+      split
+      · rfl
+      · rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoX, SystemState.getTcb?_mapTcbInPlace,
+          if_neg hRS]
+    unfold rendezvousDequeuedCall
+    rw [hL]
+    simp only [lookupTcb, hSRes, Bool.false_eq_true, ↓reduceIte, hT3s]
+    rfl
+  · -- staging: the held message is the frame read from the caller's registers
+    have hS4' : S4 = (X.updateTcb receiver receiverReady).mapTcbInPlace receiver
+        (holdMessage (blockedSenderMessage P s sTcb)) := by
+      rw [hS4, SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoX,
+        SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoX, SystemState.mapTcbInPlace_mapTcbInPlace,
+        holdMessage_receiverReady]
+    have hNoY : (X.updateTcb receiver receiverReady).objects.noResizeDue :=
+      updateTcb_noResizeDue _ _ _ hNoX
+    have hYr : (X.updateTcb receiver receiverReady).getTcb? receiver =
+        some (receiverReady rt) := by
+      rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoX,
+        SystemState.mapTcbInPlace_getTcb?_self, hXr]
+      rfl
+    have hSz : (blockedSenderMessage P s sTcb).registers.size ≤ 4 := by
+      rw [hMsg]
+      simp only [Architecture.regMessageBody_size, Architecture.regMessageLength]
+      have : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
+      omega
+    rw [hS4', stageDeliveredMessage_holdMessage _ _ _ hNoY hSz, hMsg,
+      Architecture.returnFrameOfMessage_regMessageBody]
+    unfold writeDeliveredFrameIfReady performReceiveCallNoLinkDelivered
+    rw [hYr]
+    simp only [receiverReady, TCB.ipcState_setIpcState, ↓reduceIte]
+    rw [← TCB.optCode_queueNext, SeLe4n.ThreadId.ofOptCode_optCode, hP, hX]
 
 /-! ## A receive taking a blocked long sender -/
 
@@ -710,10 +1005,9 @@ theorem deliverLongSendFrameWords_eq (X : SystemState) (r : SeLe4n.ThreadId)
   simp only [hR, ↓reduceIte]
 
 /-- **The receive's take of a blocked long sender, delivered**: the sender
-popped, made ready and woken with its completion frame, the receiver made
-ready, then the sender's four inline words (read from its saved registers
-before any write, so the completion frame's write to them copies nothing)
-written into the receiver's saved registers and its overflow words copied from
+popped, made ready and woken (none of its registers written, as seL4's
+`receiveIPC`), the receiver made ready, then the sender's four inline words
+(read from its saved registers before any write) written into the receiver's saved registers and its overflow words copied from
 its IPC buffer into the receiver's (`deliverLongSendFrameWords`).  No message
 is built. -/
 @[noinline] def performReceiveDeliveredLong (st : SystemState) (endpointId : SeLe4n.ObjId)
@@ -722,15 +1016,14 @@ is built. -/
     SystemState :=
   let X := (wakeThread ((storePopHead st endpointId false s (ThreadId.ofOptCode nextCode)).updateTcb
     s receiverReady) s core).1
-  deliverLongSendFrameWords (Architecture.stageWokenSendCompletion
-    (X.updateTcb receiver receiverReady) (some s)) receiver len s badgeWord badged 0 w0 w1 w2 w3
+  deliverLongSendFrameWords (X.updateTcb receiver receiverReady) receiver len s badgeWord badged 0 w0 w1 w2 w3
 
 /-- **The receive's take of a blocked long sender, delivered, is the
 specification's**: under `receiveTakesInPlace`, a sender blocked by a routed
 capability-free send of more than four words whose overflow slots all read and
 not delivering a fault, the WithCaps receive installs nothing and takes the
-in-place writes, the rendezvous hands off no donation, and staging the woken
-sender's completion and the receiver's message writes
+in-place writes, the rendezvous hands off no donation, and staging the
+receiver's message writes
 `performReceiveDeliveredLong`'s state. -/
 theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId) (ep : Endpoint)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
@@ -738,7 +1031,8 @@ theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
     (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
     (hG : receiveTakesInPlace st endpointId receiver s sTcb = true)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout
       sTcb.registerContext 32 = .sendLong capAddr mi)
     (hRead : ∀ j, j < mi.length - 4 →
       ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st s j = .ok w)
@@ -749,7 +1043,7 @@ theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
         (S4, .ok (s, { results := #[] }, W.2)) ∧
       applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
-      Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion S4 (some s))
+      Architecture.stageDeliveredMessage S4
           receiver 0 =
         performReceiveDeliveredLong st endpointId s sTcb.queueNextCode receiver core
           mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
@@ -843,26 +1137,8 @@ theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
       rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoW,
         SystemState.mapTcbInPlace_getTcb?_self, hW3r]
       rfl
-    have hNoZ : (Architecture.stageWokenSendCompletion (W.1.updateTcb receiver receiverReady)
-        (some s)).objects.noResizeDue := by
-      unfold Architecture.stageWokenSendCompletion
-      dsimp only
-      split
-      · split
-        · exact updateTcb_noResizeDue _ _ _ hNoY
-        · exact hNoY
-      · exact hNoY
-    have hZr : (Architecture.stageWokenSendCompletion (W.1.updateTcb receiver receiverReady)
-        (some s)).getTcb? receiver = some (receiverReady rt3) := by
-      unfold Architecture.stageWokenSendCompletion
-      dsimp only
-      split
-      · split
-        · unfold Architecture.writeReturnFrameToTcb
-          rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoY, SystemState.getTcb?_mapTcbInPlace,
-            if_neg hRS', hYr]
-        · exact hYr
-      · exact hYr
+    have hNoZ : (W.1.updateTcb receiver receiverReady).objects.noResizeDue := hNoY
+    have hZr : (W.1.updateTcb receiver receiverReady).getTcb? receiver = some (receiverReady rt3) := hYr
     have hGt := (decodeSyscallArgsFromState_of_routedSendLong st s _ _ 32 capAddr mi hR).1
     have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
     rw [hSz] at hGt
@@ -870,14 +1146,284 @@ theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
       (ipcBufferReadsAgree_updateTcb _ receiver receiverReady (fun _ => ⟨rfl, rfl⟩) hNoW).trans
         ((ipcBufferReadsAgree_wakeThread _ s core hNo2).trans
           (ipcBufferReadsAgree_updateTcb _ s receiverReady (fun _ => ⟨rfl, rfl⟩) hNoP))
-    have hAZ := (ipcBufferReadsAgree_stageWokenSendCompletion _ s hNoY).trans hAY
-    rw [hS4, stageWokenSendCompletion_msg _ receiver s _ _ _ hRS' hNoY, hMsg,
+    rw [hS4, hMsg,
       TCB.ipcBadgeView_eq_opt]
     unfold performReceiveDeliveredLong
     rw [← TCB.optCode_queueNext, SeLe4n.ThreadId.ofOptCode_optCode,
       deliverLongSendFrameWords_eq _ _ SeLe4n.arm64DefaultLayout sTcb.registerContext _ _ _ _ 0 _ hZr
         (by simp only [receiverReady, TCB.ipcState_setIpcState])]
     exact (deliverLongSendFrame_eq _ _ receiver s SeLe4n.arm64DefaultLayout sTcb.registerContext
-      mi.length _ _ 0 hNoZ hAZ.words hSz (by omega)).symm
+      mi.length _ _ 0 hNoZ hAY.words hSz (by omega)).symm
+
+/-! ## A receive taking a long caller it links to no reply -/
+
+/-- **The receive's no-link take of a long caller, delivered**: the caller
+popped, stored `.ready` and made `Inactive` (none of its registers written, as
+seL4's `receiveIPC`), the receiver made ready, then the caller's four inline
+words (read from its saved registers before any write) written into the
+receiver's saved registers and its overflow words copied from its IPC buffer
+into the receiver's (`deliverLongSendFrameWords`).  No message is built, no
+thread is woken. -/
+@[noinline] def performReceiveCallNoLinkDeliveredLong (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (s : SeLe4n.ThreadId) (nextCode : Nat)
+    (receiver : SeLe4n.ThreadId) (len : Nat) (badgeWord : SeLe4n.Badge) (badged : Bool)
+    (w0 w1 w2 w3 : UInt64) : SystemState :=
+  let X := ((storePopHead st endpointId false s (ThreadId.ofOptCode nextCode)).updateTcb
+    s receiverReady).updateTcb s callerInactive
+  deliverLongSendFrameWords (X.updateTcb receiver receiverReady) receiver len s badgeWord badged 0
+    w0 w1 w2 w3
+
+/-- **The receive's no-link take of a long caller, delivered, is the
+specification's**: under `receiveCallNoLinkTakesInPlace`, for a caller blocked
+by a routed capability-free call of more than four words whose overflow slots
+all read, the WithCaps receive installs nothing and commits the take, the
+rendezvous hands off nothing (the caller is `.ready`, not blocked on a reply),
+and staging the receiver's message writes
+`performReceiveCallNoLinkDeliveredLong`'s state. -/
+theorem receiveCallNoLinkTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
+    (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
+    (hG : receiveCallNoLinkTakesInPlace st endpointId receiver s sTcb replyId.isSome = true)
+    (hF : sTcb.ipcFaultSend = false)
+    (hR : registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout
+        sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
+      .callLong capAddr mi)
+    (hRead : ∀ j, j < mi.length - 4 →
+      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st s j = .ok w) :
+    let S4 := receiveCallNoLinkTakeState st endpointId s sTcb receiver
+    endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
+        (S4, .ok (s, { results := #[] }, none)) ∧
+      applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
+      Architecture.stageDeliveredMessage S4 receiver 0 =
+        performReceiveCallNoLinkDeliveredLong st endpointId s sTcb.queueNextCode receiver
+          mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
+          (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 0)
+          (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 1)
+          (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 2)
+          (Architecture.regMessageWord SeLe4n.arm64DefaultLayout sTcb.registerContext mi.length 3) := by
+  intro S4
+  have hTake := receiveCallNoLinkTake_inPlace st endpointId ep receiver replyId core s sTcb
+    hE hH hT hG
+  have hG' := hG
+  simp only [receiveCallNoLinkTakesInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne,
+    ne_eq] at hG'
+  obtain ⟨⟨⟨⟨⟨⟨⟨hSG, hRRes⟩, hRS⟩, hRN⟩, hLR⟩, hFR⟩, hRT⟩, _⟩ := hG'
+  have hSG' := hSG
+  simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hSG'
+  obtain ⟨⟨⟨⟨⟨hSRes, _⟩, hFE⟩, _⟩, hFH⟩, _⟩ := hSG'
+  have hNo : st.objects.noResizeDue := RHTable.noResizeDue_of_findsInPlace hFE
+  obtain ⟨rt, hRTo⟩ := Option.isSome_iff_exists.mp hRT
+  have hRo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hRTo
+  have hNeER : endpointId ≠ receiver.toObjId := fun h => by rw [h, hRo] at hE; cases hE
+  have hNeSR : s.toObjId ≠ receiver.toObjId := fun h =>
+    hRS (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
+  have hNxR : ∀ n, sTcb.queueNext = some n → n.toObjId ≠ receiver.toObjId := fun n hn h => by
+    rw [hn] at hRN
+    simp only [bne_iff_ne, ne_eq] at hRN
+    exact hRN (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
+  obtain ⟨_, hFr⟩ := popHead_inPlace st endpointId false ep s sTcb hE
+    (by simp only [Bool.false_eq_true, ↓reduceIte]; exact hH) hT hSG
+  have hFH1 := (hFr.keepsFinds s.toObjId).trans hFH
+  have hO1r := (hFr.other _ hNeER hNeSR hNxR).trans hRo
+  have hAP := ipcBufferReadsAgree_storePopHead st endpointId false s sTcb.queueNext hNo
+  have hReadP : ∀ j, j < mi.length - 4 → ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr
+      (storePopHead st endpointId false s sTcb.queueNext) s j = .ok w := fun j hj => by
+    rw [hAP.ipcBufferReadMr]; exact hRead j hj
+  have hMsg := (blockedSender_of_routedLong _ s sTcb capAddr mi (.inr hR) hReadP hF).2
+  generalize hP : storePopHead st endpointId false s sTcb.queueNext = P at hFr hFH1 hO1r hMsg hAP
+  have hNoP : P.objects.noResizeDue := hP ▸ storePopHead_noResizeDue _ _ _ _ _ hNo
+  have hT2s := updateTcb_getTcb?_self_of_findsInPlace receiverReady hFr.head_tcb hFH1
+  have hO2r := (updateTcb_get?_ne_of_findsInPlace receiverReady hFr.head_tcb hFH1
+    hNeSR).trans hO1r
+  have hFH2 : (P.updateTcb s receiverReady).objects.findsInPlace s.toObjId = true :=
+    (updateTcb_findsInPlace _ hFr.head_tcb hFH1 _).trans hFH1
+  have hT3s := updateTcb_getTcb?_self_of_findsInPlace callerInactive hT2s hFH2
+  have hO3r := (updateTcb_get?_ne_of_findsInPlace callerInactive hT2s hFH2 hNeSR).trans hO2r
+  have hNo2 : (P.updateTcb s receiverReady).objects.noResizeDue := updateTcb_noResizeDue _ _ _ hNoP
+  have hAX : ipcBufferReadsAgree ((P.updateTcb s receiverReady).updateTcb s callerInactive) P :=
+    (ipcBufferReadsAgree_updateTcb _ s callerInactive (fun _ => ⟨rfl, rfl⟩) hNo2).trans
+      (ipcBufferReadsAgree_updateTcb _ s receiverReady (fun _ => ⟨rfl, rfl⟩) hNoP)
+  generalize hX : (P.updateTcb s receiverReady).updateTcb s callerInactive = X at hT3s hO3r hAX
+  have hNoX : X.objects.noResizeDue := hX ▸ updateTcb_noResizeDue _ _ _
+    (updateTcb_noResizeDue _ _ _ hNoP)
+  have hXr : X.getTcb? receiver = some rt := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO3r
+  have hS4 : S4 = X.updateTcb receiver (callReceiverTcb (blockedSenderMessage P s sTcb)) := by
+    show receiveCallNoLinkTakeState st endpointId s sTcb receiver = _
+    unfold receiveCallNoLinkTakeState
+    rw [hP, hX]
+  refine ⟨?_, ?_, ?_⟩
+  · have hSnd : receiveRendezvousSender? st endpointId = some s := by
+      simp only [receiveRendezvousSender?, (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE,
+        Option.bind_some, hH]
+    have hReq : receiveCapRequest st endpointId = none := by
+      unfold receiveCapRequest
+      rw [hSnd]
+      simp only [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hT]
+      exact (blockedSender_of_routedLong st s sTcb capAddr mi (.inr hR) hRead hF).1
+    unfold endpointReceiveDualWithCapsOnCore
+    rw [hTake]
+    simp only [hSnd, hReq, Option.isNone_some, Bool.false_eq_true, ↓reduceIte]
+    rfl
+  · apply applyReceiveRendezvousHandoff_of_no_call
+    have hL : lookupTcb S4 s = lookupTcb X s := by
+      rw [hS4]
+      unfold lookupTcb
+      split
+      · rfl
+      · rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoX, SystemState.getTcb?_mapTcbInPlace,
+          if_neg hRS]
+    unfold rendezvousDequeuedCall
+    rw [hL]
+    simp only [lookupTcb, hSRes, Bool.false_eq_true, ↓reduceIte, hT3s]
+    rfl
+  · have hS4' : S4 = (X.updateTcb receiver receiverReady).mapTcbInPlace receiver
+        (holdMessage (blockedSenderMessage P s sTcb)) := by
+      rw [hS4, SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoX,
+        SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoX, SystemState.mapTcbInPlace_mapTcbInPlace,
+        holdMessage_receiverReady]
+    have hNoY : (X.updateTcb receiver receiverReady).objects.noResizeDue :=
+      updateTcb_noResizeDue _ _ _ hNoX
+    have hYr : (X.updateTcb receiver receiverReady).getTcb? receiver =
+        some (receiverReady rt) := by
+      rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoX,
+        SystemState.mapTcbInPlace_getTcb?_self, hXr]
+      rfl
+    have hGt := (decodeSyscallArgsFromState_of_routedCallLong st s _ _ 32 capAddr mi hR).1
+    have hSz : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
+    rw [hSz] at hGt
+    have hAY : ipcBufferReadsAgree (X.updateTcb receiver receiverReady) P :=
+      (ipcBufferReadsAgree_updateTcb _ receiver receiverReady (fun _ => ⟨rfl, rfl⟩) hNoX).trans hAX
+    rw [hS4', hMsg, TCB.ipcBadgeView_eq_opt]
+    unfold performReceiveCallNoLinkDeliveredLong
+    rw [← TCB.optCode_queueNext, SeLe4n.ThreadId.ofOptCode_optCode, hP, hX,
+      deliverLongSendFrameWords_eq _ _ SeLe4n.arm64DefaultLayout sTcb.registerContext _ _ _ _ 0 _ hYr
+        (by simp only [receiverReady, TCB.ipcState_setIpcState])]
+    exact (deliverLongSendFrame_eq _ _ receiver s SeLe4n.arm64DefaultLayout sTcb.registerContext
+      mi.length _ _ 0 hNoY hAY.words hSz (by omega)).symm
+
+/-! ## A receive taking a queued fault it links to no reply -/
+
+/-- **The receive's no-link take of a queued fault, delivered**: the faulting
+caller popped, stored `.ready` and made `Inactive`, keeping its fault (seL4's
+`receiveIPC` leaves a fault it links to no reply `Inactive`), the receiver made
+ready, then the fault delivered in place from the caller's fault words
+(`deliverFaultFrame`), read before any write.  No thread is woken. -/
+@[noinline] def performFaultReceiveNoLinkDelivered (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (s : SeLe4n.ThreadId) (nextCode : Nat)
+    (receiver : SeLe4n.ThreadId) (badgeWord : SeLe4n.Badge) (badged : Bool) (k : Nat)
+    (flag : Bool) (w0 w1 : UInt64) (lk : UInt64)
+    (ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) : SystemState :=
+  let X := ((storePopHead st endpointId false s (ThreadId.ofOptCode nextCode)).updateTcb
+    s receiverReady).updateTcb s callerInactive
+  deliverFaultFrame (X.updateTcb receiver receiverReady) receiver badgeWord badged k flag w0 w1 lk
+    ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7
+
+/-- **The receive's no-link take of a queued fault, delivered, is the
+specification's**: under `receiveCallNoLinkTakesInPlace`, for a queued caller
+holding a fault, the WithCaps receive installs nothing and commits the take,
+the rendezvous hands off nothing, and staging the receiver's message writes
+`performFaultReceiveNoLinkDelivered`'s state, the fault's words read from the
+caller's TCB. -/
+theorem receiveFaultNoLinkTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB) (f : Fault)
+    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
+    (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
+    (hG : receiveCallNoLinkTakesInPlace st endpointId receiver s sTcb replyId.isSome = true)
+    (hF : sTcb.ipcFaultSend = true) (hf : sTcb.faultWords.fault? = some f) :
+    let S4 := receiveCallNoLinkTakeState st endpointId s sTcb receiver
+    endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
+        (S4, .ok (s, { results := #[] }, none)) ∧
+      applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
+      Architecture.stageDeliveredMessage S4 receiver 0 =
+        performFaultReceiveNoLinkDelivered st endpointId s sTcb.queueNextCode receiver
+          (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.faultKind sTcb.faultFlag
+          sTcb.faultWord0 sTcb.faultWord1 sTcb.faultLookup sTcb.faultIp sTcb.faultSp sTcb.faultLr
+          sTcb.faultSpsr sTcb.faultX0 sTcb.faultX1 sTcb.faultX2 sTcb.faultX3 sTcb.faultX4
+          sTcb.faultX5 sTcb.faultX6 sTcb.faultX7 := by
+  intro S4
+  have hTake := receiveCallNoLinkTake_inPlace st endpointId ep receiver replyId core s sTcb
+    hE hH hT hG
+  have hDq := receiveCallNoLinkTake_dequeuedNoCall st endpointId ep receiver s sTcb _ hE hH hT hG
+  have hG' := hG
+  simp only [receiveCallNoLinkTakesInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne,
+    ne_eq] at hG'
+  obtain ⟨⟨⟨⟨⟨⟨⟨hSG, hRRes⟩, hRS⟩, hRN⟩, hLR⟩, hFR⟩, hRT⟩, _⟩ := hG'
+  have hSG' := hSG
+  simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hSG'
+  obtain ⟨⟨⟨⟨⟨hSRes, _⟩, hFE⟩, _⟩, hFH⟩, _⟩ := hSG'
+  have hNo : st.objects.noResizeDue := RHTable.noResizeDue_of_findsInPlace hFE
+  obtain ⟨rt, hRTo⟩ := Option.isSome_iff_exists.mp hRT
+  have hRo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hRTo
+  have hNeER : endpointId ≠ receiver.toObjId := fun h => by rw [h, hRo] at hE; cases hE
+  have hNeSR : s.toObjId ≠ receiver.toObjId := fun h =>
+    hRS (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
+  have hNxR : ∀ n, sTcb.queueNext = some n → n.toObjId ≠ receiver.toObjId := fun n hn h => by
+    rw [hn] at hRN
+    simp only [bne_iff_ne, ne_eq] at hRN
+    exact hRN (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
+  obtain ⟨_, hFr⟩ := popHead_inPlace st endpointId false ep s sTcb hE
+    (by simp only [Bool.false_eq_true, ↓reduceIte]; exact hH) hT hSG
+  have hFH1 := (hFr.keepsFinds s.toObjId).trans hFH
+  have hO1r := (hFr.other _ hNeER hNeSR hNxR).trans hRo
+  have hMsg : blockedSenderMessage (storePopHead st endpointId false s sTcb.queueNext) s sTcb =
+      faultMessage f sTcb.faultWords.context
+        (SeLe4n.Badge.opt (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged) := by
+    unfold blockedSenderMessage blockedSenderMessageOf
+    rw [if_pos hF, TCB.pendingFault]
+    unfold ThreadFaultWords.decode
+    rw [hf]
+    rfl
+  generalize hP : storePopHead st endpointId false s sTcb.queueNext = P at hFr hFH1 hO1r hMsg
+  have hNoP : P.objects.noResizeDue := hP ▸ storePopHead_noResizeDue _ _ _ _ _ hNo
+  have hT2s := updateTcb_getTcb?_self_of_findsInPlace receiverReady hFr.head_tcb hFH1
+  have hO2r := (updateTcb_get?_ne_of_findsInPlace receiverReady hFr.head_tcb hFH1
+    hNeSR).trans hO1r
+  have hFH2 : (P.updateTcb s receiverReady).objects.findsInPlace s.toObjId = true :=
+    (updateTcb_findsInPlace _ hFr.head_tcb hFH1 _).trans hFH1
+  have hO3r := (updateTcb_get?_ne_of_findsInPlace callerInactive hT2s hFH2 hNeSR).trans hO2r
+  generalize hX : (P.updateTcb s receiverReady).updateTcb s callerInactive = X at hO3r
+  have hNoX : X.objects.noResizeDue := hX ▸ updateTcb_noResizeDue _ _ _
+    (updateTcb_noResizeDue _ _ _ hNoP)
+  have hXr : X.getTcb? receiver = some rt := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO3r
+  have hS4 : S4 = X.updateTcb receiver (callReceiverTcb (blockedSenderMessage P s sTcb)) := by
+    show receiveCallNoLinkTakeState st endpointId s sTcb receiver = _
+    unfold receiveCallNoLinkTakeState
+    rw [hP, hX]
+  refine ⟨?_, ?_, ?_⟩
+  · have hSnd : receiveRendezvousSender? st endpointId = some s := by
+      simp only [receiveRendezvousSender?, (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE,
+        Option.bind_some, hH]
+    have hReq : receiveCapRequest st endpointId = none := by
+      unfold receiveCapRequest
+      rw [hSnd]
+      simp only [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hT, blockedSenderCapRequest, hF,
+        ↓reduceIte]
+    unfold endpointReceiveDualWithCapsOnCore
+    rw [hTake]
+    simp only [hSnd, hReq, Option.isNone_some, Bool.false_eq_true, ↓reduceIte]
+    rfl
+  · apply applyReceiveRendezvousHandoff_of_no_call
+    exact hDq
+  · have hS4' : S4 = (X.updateTcb receiver receiverReady).mapTcbInPlace receiver
+        (holdMessage (blockedSenderMessage P s sTcb)) := by
+      rw [hS4, SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoX,
+        SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoX, SystemState.mapTcbInPlace_mapTcbInPlace,
+        holdMessage_receiverReady]
+    have hNoY : (X.updateTcb receiver receiverReady).objects.noResizeDue :=
+      updateTcb_noResizeDue _ _ _ hNoX
+    have hYr : (X.updateTcb receiver receiverReady).getTcb? receiver =
+        some (receiverReady rt) := by
+      rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNoX,
+        SystemState.mapTcbInPlace_getTcb?_self, hXr]
+      rfl
+    rw [hS4', hMsg]
+    unfold performFaultReceiveNoLinkDelivered
+    rw [← TCB.optCode_queueNext, SeLe4n.ThreadId.ofOptCode_optCode, hP, hX]
+    exact (deliverFaultFrame_eq _ receiver sTcb.faultWords f hf _ _ hNoY
+      ⟨_, hYr, by simp only [receiverReady, TCB.ipcState_setIpcState]⟩).symm
 
 end SeLe4n.Kernel

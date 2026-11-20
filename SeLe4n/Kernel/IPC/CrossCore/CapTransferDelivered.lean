@@ -257,7 +257,9 @@ message-info word (`decodeMsgInfoWord`). -/
 
 theorem routedExtraCaps_eq {rf : SeLe4n.RegisterFile} {sid : SyscallId} {capAddr : SeLe4n.CPtr}
     {mi : MessageInfo}
-    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 =
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall
+      (Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout rf)
+      SeLe4n.arm64DefaultLayout rf 32 =
       .transferring sid capAddr mi) :
     routedExtraCaps rf = mi.extraCaps := by
   unfold Architecture.RegisterDecode.registerRoutedSyscall at hR
@@ -274,7 +276,7 @@ theorem routedExtraCaps_eq {rf : SeLe4n.RegisterFile} {sid : SyscallId} {capAddr
           Architecture.RegisterDecode.routedLongTail_eq] at hR
         by_cases hLen : m.length ≤ SeLe4n.arm64DefaultLayout.msgRegs.size ∨
             Architecture.RegisterDecode.syscallNumberReadsOverflow
-              (SeLe4n.readReg rf SeLe4n.arm64DefaultLayout.syscallNumReg).val = false <;>
+              (Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout rf) = false <;>
           first | rw [if_pos hLen] at hR | rw [if_neg hLen] at hR
         repeat' split at hR
         all_goals first
@@ -292,7 +294,9 @@ theorem routedExtraCaps_eq {rf : SeLe4n.RegisterFile} {sid : SyscallId} {capAddr
 
 theorem routedLength_eq {rf : SeLe4n.RegisterFile} {sid : SyscallId} {capAddr : SeLe4n.CPtr}
     {mi : MessageInfo}
-    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 =
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall
+      (Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout rf)
+      SeLe4n.arm64DefaultLayout rf 32 =
       .transferring sid capAddr mi) :
     routedLength rf = mi.length := by
   unfold Architecture.RegisterDecode.registerRoutedSyscall at hR
@@ -309,7 +313,7 @@ theorem routedLength_eq {rf : SeLe4n.RegisterFile} {sid : SyscallId} {capAddr : 
           Architecture.RegisterDecode.routedLongTail_eq] at hR
         by_cases hLen : m.length ≤ SeLe4n.arm64DefaultLayout.msgRegs.size ∨
             Architecture.RegisterDecode.syscallNumberReadsOverflow
-              (SeLe4n.readReg rf SeLe4n.arm64DefaultLayout.syscallNumReg).val = false <;>
+              (Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout rf) = false <;>
           first | rw [if_pos hLen] at hR | rw [if_neg hLen] at hR
         repeat' split at hR
         all_goals first
@@ -336,7 +340,9 @@ message-info word names, under its capability's grant right. -/
 theorem senderFrameCapRequest_routed (st : SystemState) (tid : SeLe4n.ThreadId) (stcb : TCB)
     (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (sid : SyscallId)
     (g : Bool) (hRf : stcb.registerContext = rf)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 =
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall
+      (Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout rf)
+      SeLe4n.arm64DefaultLayout rf 32 =
       .transferring sid capAddr mi)
     (hLen : mi.length ≤ 4) :
     senderFrameCapRequest st tid stcb g =
@@ -355,13 +361,15 @@ theorem senderFrameCapRequest_routed (st : SystemState) (tid : SeLe4n.ThreadId) 
 
 theorem sendCapRequest_routed (st : SystemState) (epId : SeLe4n.ObjId) (tid r : SeLe4n.ThreadId)
     (stcb : TCB) (rf : SeLe4n.RegisterFile) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (sid : SyscallId) (b : Option SeLe4n.Badge) (g : Bool)
+    (sid : SyscallId) (b : Option SeLe4n.Badge) (g gr : Bool)
     (hRecv : (st.getEndpoint? epId).bind (·.receiveQ.head) = some r)
     (hS : st.getTcb? tid = some stcb) (hRf : stcb.registerContext = rf)
-    (hR : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout rf 32 =
+    (hR : Architecture.RegisterDecode.registerRoutedSyscall
+      (Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout rf)
+      SeLe4n.arm64DefaultLayout rf 32 =
       .transferring sid capAddr mi)
     (hLen : mi.length ≤ 4) :
-    sendCapRequest st epId tid (.frame b g) =
+    sendCapRequest st epId tid (.frame b g gr) =
       frameCapRequestOf st stcb (if g then routedExtraCaps rf else 0) := by
   unfold sendCapRequest
   rw [hRecv]

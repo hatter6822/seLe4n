@@ -93,11 +93,11 @@ theorem inactiveQuiescent_updateTcb {st : SystemState} {tid : SeLe4n.ThreadId} {
 /-- The ABI argument spill writes one thread's registers alone, so it keeps
 the dispatch premises. -/
 theorem RecordsArmPremises.writeFfiRegistersToTcb {st : SystemState} (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (P : RecordsArmPremises st) :
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64) (P : RecordsArmPremises st) :
     RecordsArmPremises
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
   have hInv := P.deletes.2.1.2.1
-  have F := finalisingDeleteBundle_writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5
+  have F := finalisingDeleteBundle_writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 x6
     P.deletes.2
   unfold Platform.FFI.writeFfiRegistersToTcb at F ⊢
   refine ⟨⟨ipcReachable_of_bundle F ?_, F⟩,
@@ -108,9 +108,9 @@ theorem RecordsArmPremises.writeFfiRegistersToTcb {st : SystemState} (tid : SeLe
 
 /-- The spill keeps every running thread `.ready` in IPC. -/
 theorem CurrentReady.writeFfiRegistersToTcb {st : SystemState} (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (hInv : st.objects.invExt)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64) (hInv : st.objects.invExt)
     (hR : CurrentReady st) :
-    CurrentReady (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+    CurrentReady (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
   intro c t hc
   unfold Platform.FFI.writeFfiRegistersToTcb at hc ⊢
   rw [SystemState.updateTcb_scheduler] at hc
@@ -146,11 +146,11 @@ theorem syscallEntryChecked_recordsStage {ctx : LabelingContext}
 write, which keeps the premises), then the checked entry, a capability-fault
 delivery for the running caller, or a refusal record. -/
 theorem syscallDispatchFromAbi_recordsStage {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (P : RecordsArmPremises st) (hR : CurrentReady st)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
+      x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     RecordsStage st st' := by
   have hInv := P.deletes.2.1.2.1
   unfold Platform.FFI.syscallDispatchFromAbi at h
@@ -160,12 +160,12 @@ theorem syscallDispatchFromAbi_recordsStage {ctx : LabelingContext} {e : CoreId}
   split at h
   · cases h; exact RecordsStage.refl _
   have hW : RecordsStage st
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
     unfold Platform.FFI.writeFfiRegistersToTcb
     exact RecordsStage.of_frameK fun hI => RecordsFrame.updateTcb st tid hI fun _ => rfl
-  have P1 := P.writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5
-  have hR1 := hR.writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 hInv
-  have hCur1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
+  have P1 := P.writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 x6
+  have hR1 := hR.writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 x6 hInv
+  have hCur1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
       ).scheduler.currentOnCore e = some tid := by
     rw [Platform.FFI.writeFfiRegistersToTcb_scheduler]; exact hCur
   dsimp only at h
@@ -174,15 +174,15 @@ theorem syscallDispatchFromAbi_recordsStage {ctx : LabelingContext} {e : CoreId}
     -- keeps the records, the endpoint heads and the caller `.ready`.
     have hInv1 := P1.deletes.2.1.2.1
     have hIpc1 := P1.deletes.2.1.1
-    have hC : RecordsStage (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+    have hC : RecordsStage (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) ∧
         queueHeadBlockedConsistent (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) ∧
         CallerReady (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) tid := by
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid := by
       rcases cancelReceiveBusyReply_cases_holder ctx e
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
         hEq | ⟨t', hd, hC', hne, hEq⟩ <;> rw [hEq]
       · exact ⟨.refl _, hIpc1.queueHeadBlockedConsistent, hR1 e tid hCur1⟩
       · rw [hCur1] at hC'; cases hC'
@@ -191,19 +191,34 @@ theorem syscallDispatchFromAbi_recordsStage {ctx : LabelingContext} {e : CoreId}
           (hR1 e tid hCur1).cancelReplyHolder hInv1 (Ne.symm hne)⟩
     obtain ⟨hS, hQR, hCR⟩ := hC
     generalize cancelReceiveBusyReply ctx e
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) = stR at h hS hQR hCR
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) = stR at h hS hQR hCR
     split at h
-    · cases h
-      unfold Platform.FFI.deliverSyscallCapFault
-      exact (hW.trans hS).trans (RecordsStage.faultDeliverAfterSpill ctx _ _ _ _ e tid hQR hCR)
-    · cases h
-      exact (hW.trans hS).trans (RecordsStage.of_frameK fun hI => RecordsFrame.of_objects_eq hI
-        ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
-          (Architecture.recordErrorOverflow_objects _ _ _))
-        (by
-          unfold Platform.FFI.recordSyscallRefusal Architecture.recordErrorOverflow
-          split <;> (try split) <;> (try split) <;> rfl)
-        (by rw [Platform.FFI.recordSyscallRefusal_machine_eq, Architecture.recordErrorOverflow_machine]))
+    · split at h
+      · -- a dropped fault: the refusal's state and its ledger record
+        cases h
+        obtain ⟨L, hL⟩ := Platform.FFI.recordDroppedFault_frame ctx e _ tid x0 _ stR
+        rw [hL]
+        exact (hW.trans hS).trans (RecordsStage.of_frameK fun hI =>
+          RecordsFrame.of_objects_eq hI rfl rfl rfl)
+      · cases h
+        unfold Platform.FFI.deliverSyscallCapFault
+        exact (hW.trans hS).trans (RecordsStage.faultDeliverAfterSpill ctx _ _ _ _ e tid hQR hCR)
+    · split at h
+      · cases h
+        exact (hW.trans hS).trans (RecordsStage.of_frameK fun hI => RecordsFrame.of_objects_eq hI
+          ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
+            (Architecture.recordErrorOverflow_objects _ _ _))
+          (by
+            unfold Platform.FFI.recordSyscallRefusal Architecture.recordErrorOverflow
+            split <;> (try split) <;> (try split) <;> rfl)
+          (by rw [Platform.FFI.recordSyscallRefusal_machine_eq, Architecture.recordErrorOverflow_machine]))
+      · cases h
+        exact (hW.trans hS).trans (RecordsStage.of_frameK fun hI => RecordsFrame.of_objects_eq hI
+          (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
+          (by
+            unfold Platform.FFI.recordSyscallRefusal
+            split <;> (try split) <;> rfl)
+          (by rw [Platform.FFI.recordSyscallRefusal_machine_eq]))
   · rename_i hE
     cases h
     exact hW.trans (syscallEntryChecked_recordsStage P1 hR1 hE)
@@ -212,12 +227,12 @@ theorem syscallDispatchFromAbi_recordsStage {ctx : LabelingContext} {e : CoreId}
 return staging, the local scheduling point, the residency settlement, the
 activation and the ledger drains. -/
 theorem syscallDispatchCrossCoreStep_recordsStage {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st : SystemState} (P : RecordsArmPremises st) (hR : CurrentReady st) :
     RecordsStage st (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st).2 := by
+      x6 elr spsr spEl0 x30 st).2 := by
   obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e syscallId
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+    x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st
   rw [syscallDispatchCrossCoreStep_of_ok hD]
   exact (syscallDispatchFromAbi_recordsStage P hR hD).trans
     (RecordsStage.of_frameK fun hI =>

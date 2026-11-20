@@ -3,6 +3,8 @@ Copyright (c) 2026 seLe4n contributors. All rights reserved.
 Released under GPL-3.0-or-later license as described in the file LICENSE.
 -/
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.BlockedNotResident
+import SeLe4n.Kernel.IPC.Invariant.ReplySignalFrame
+import SeLe4n.Kernel.SchedContext.Invariant.NotificationLinkStages
 
 /-!
 # The syscall arms' readiness frames, and the syscall entry's carry
@@ -326,9 +328,7 @@ theorem endpointReplyRecvOnCore_readyKeptStage {answer : Option Architecture.Fau
     (applyReceiveLegPipHandoff_runQueueStage st3 tid nt
       ((recordedReplyServer? st prevCaller).getD tid) c)
   exact (readyKeptStage.of_stage A).trans A.1 (rR.trans hR.1 ((readyKeptStage.of_stage hPH).trans
-    hPH.1 ((replyRecvAnswerCaller_readyKeptStage answer _ prevCaller _).trans
-      (replyRecvAnswerCaller_runQueueLinkStage answer _ prevCaller _)
-      (.of_stage (stageWokenSendCompletion_runQueueStage _ _)))))
+    hPH.1 (replyRecvAnswerCaller_readyKeptStage answer _ prevCaller _)))
 
 /-! ### The scheduling arms -/
 
@@ -441,18 +441,6 @@ theorem schedControlConfigure_readyKeptStage {S : SeLe4n.ThreadId → Prop} {cor
       (setThreadCpuAffinityWithMigration_runQueueEntryStage hM).1
       (.of_stage (schedContextConfigure_runQueueStage h))
 
-theorem schedContextUnbindOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
-    {vScId : SeLe4n.ValidObjId} {ec : CoreId} {st st' : SystemState}
-    {sgi? : Option (CoreId × Concurrency.SgiKind)} (hD : st.currentDequeuedUnique)
-    (h : SchedContextOps.schedContextUnbindOnCore vScId ec st = .ok (st', sgi?)) :
-    readyKeptStage S st st' := by
-  unfold SchedContextOps.schedContextUnbindOnCore at h
-  split at h
-  · cases h
-  · rename_i stU hU
-    have A := SchedContextOps.schedContextUnbind_runQueueStage_of_dequeued vScId st stU hD hU
-    exact (readyKeptStage.of_stage A).trans A.1 (priorityRescheduleOnCore_readyKeptStage h)
-
 theorem schedContextConsumedOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     {s : SeLe4n.SchedContextId} {c : CoreId} {st st' : SystemState}
     (h : schedContextConsumedOnCore s c st = .ok st') : readyKeptStage S st st' := by
@@ -491,7 +479,7 @@ theorem schedContextYieldToOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
   dsimp only
   generalize (completeYieldFrom st s).releasePlace (determineTargetCore (completeYieldFrom st s) t) s
     = st2
-  have hSet : ∀ X : SystemState, readyKeptStage S X (setConsumed X s caller) := fun X =>
+  have hSet : ∀ X : SystemState, readyKeptStage S X (setConsumed X s caller true) := fun X =>
     .of_stage (SystemState.setConsumed_runQueueStage X s caller)
   have hLink : ∀ pC pT,
       readyKeptStage S st2 (SchedContextOps.yieldToLink st2 c s caller t pC pT) := fun pC pT =>
@@ -499,7 +487,7 @@ theorem schedContextYieldToOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
       (fun hI hR => .of_stateMono (yieldToLinkPrefix_links st2 c s caller t pC pT hI hR).2)
       (handleRescheduleSgiOnCore_readyKeptStage (SchedContextOps.yieldToLink_sgi st2 c s caller t pC pT))
   have hReq : ∀ home pT,
-      readyKeptStage S st2 (setConsumed (SchedContextOps.yieldToRequeue st2 home t pT) s caller) :=
+      readyKeptStage S st2 (setConsumed (SchedContextOps.yieldToRequeue st2 home t pT) s caller true) :=
     fun home pT => readyKeptStage.trans_links (yieldToRequeue_links st2 home t pT)
       (fun _ _ => .of_stateMono (yieldToRequeue_stateMono st2 home t pT)) (hSet _)
   split
@@ -729,6 +717,7 @@ theorem finaliseFinalObject_readyEntry {S : SeLe4n.ThreadId → Prop} (target : 
     (fun _ _ _ _ h hT _ hS => readyEntry_stage h (orphanReplyWaiter_runQueueStage hT hS))
     (fun s _ r c _ h _ _ _ _ => readyEntry_stage h (finaliseReplyUnheldPop_runQueueStage s r c))
     (fun s _ _ _ t h _ _ _ _ => readyEntry_stage h (cutCancelledCallerHead_runQueueStage s t))
+    (fun s c h => readyEntry_stage h (unbindSchedContextNotification_runQueueStage s c))
     target s h
 
 theorem cspaceDeleteSlotFinalising_readyEntry {S : SeLe4n.ThreadId → Prop} {ec : CoreId}
@@ -870,13 +859,6 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
       refine readyKeptStage.of_stage ?_
       exact untypedRetypeFromCap_runQueueStage hStep
     all_goals try cases hStep
-  case untypedReset =>
-    cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object _ =>
-      refine readyKeptStage.of_stage ?_
-      obtain ⟨_, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ _ _ hStep
-      exact untypedResetSlot_runQueueStage hS
-    all_goals try cases hStep
   case vspaceMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
@@ -901,14 +883,13 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
       try dsimp only [] at hStep
-      cases hDec : decodeVSpaceUnmapArgs decoded st.machine.maxASID with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
-          split at hStep
-          · cases hStep
-          · refine readyKeptStage.of_stage ?_
-            exact vspaceUnmapPageWithShootdownAndIcacheBroadcast_runQueueStage hStep
+      cases hR : resolveCallerCapSlot tid decoded.capAddr (syscallRequiredRight .vspaceUnmap) st with
+      | error e => simp only [hR] at hStep; cases hStep
+      | ok r =>
+          obtain ⟨slot, _, _⟩ := r
+          simp only [hR] at hStep
+          refine readyKeptStage.of_stage ?_
+          exact vspaceUnmapFrameCap_runQueueStage hStep
     all_goals try cases hStep
   case vspaceUnifyInstruction =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -949,7 +930,7 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
           subst hStep
           refine readyKeptStage.of_stage ?_
-          exact writeReturnFrameToTcb_runQueueStage _ _ _
+          exact writeCallReturnWord_runQueueStage _ _ _
     all_goals try cases hStep
   case schedContextConfigure =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -974,16 +955,28 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>
       try dsimp only [] at hStep
-      cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
-      | error e => simp only [hRes] at hStep; cases hStep
-      | ok vThreadId =>
-          simp only [hRes] at hStep
+      cases hN : resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | succ k =>
+          simp only [hN] at hStep
           cases hVal : validateObjIdArg scId with
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
               refine readyKeptStage.of_stage ?_
-              exact schedContextBind_runQueueStage hStep
+              exact schedContextBindNotification_runQueueStage hStep
+      | zero =>
+          simp only [hN] at hStep
+          cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok vThreadId =>
+              simp only [hRes] at hStep
+              cases hVal : validateObjIdArg scId with
+              | error e => simp only [hVal] at hStep; cases hStep
+              | ok vScId =>
+                  simp only [hVal] at hStep
+                  refine readyKeptStage.of_stage ?_
+                  exact schedContextBind_runQueueStage hStep
     all_goals try cases hStep
   case schedContextUnbind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -997,14 +990,14 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              cases hUn : SchedContextOps.schedContextUnbindOnCore vScId
+              cases hUn : SchedContextOps.schedContextUnbindAllOnCore vScId
                   executingCore st with
               | error e => simp only [hUn] at hStep; cases hStep
               | ok pair =>
                   obtain ⟨stU, sgiU⟩ := pair
                   simp only [hUn] at hStep
                   cases hStep
-                  exact schedContextUnbindOnCore_readyKeptStage hD hUn
+                  exact schedContextUnbindAllOnCore_readyKeptStage hD hUn
     all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1338,7 +1331,7 @@ theorem receiveResolvedArm_readyKeptStage (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (epId : SeLe4n.ObjId)
     (st st' : SystemState)
     (P : SyscallArmPremises st executingCore tid)
-    (h : receiveResolvedArm decoded gate tid epId executingCore
+    (h : receiveResolvedArm ctx decoded gate tid epId executingCore
       (cancelRecvBusyReply ctx tid gate decoded executingCore st) = .ok ((), st')) :
     readyKeptStage (· = tid) st st' := by
   unfold receiveResolvedArm at h
@@ -1366,9 +1359,38 @@ theorem receiveResolvedArm_readyKeptStage (ctx : LabelingContext)
   have hDC := hS.2 P.objInv P.refined hRC P.dequeued
   generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC
     at h hS hK hHC hCurC hActC hIC hRC hDC
-  simp only at h
+  by_cases hSig : receiveCompletesSignal ctx stC tid = true
+  · -- seL4-MCS `receiveIPC`: the bound notification is active, so the receive
+    -- completes it -- the wait's consumption, then the badge register written.
+    cases hRes : resolveRecvReplyId gate decoded stC with
+    | error _ => rw [hRes] at h; cases h
+    | ok r =>
+    rw [hRes] at h
+    simp only [hSig, ↓reduceIte] at h
+    obtain ⟨st1, badge, hW, _, hPost⟩ := completeSignalArm_consumes hSig h
+    subst hPost
+    have hI := notificationWaitCrossCoreDispatchChecked_ok_inner hW
+    exact readyKeptStage.trans hS.1 hK
+      ((runQueueStage_of_pair_eq
+        (notificationWaitOnCore_readyKeptStage _ tid executingCore stC hCurC P.notIdle) hI).trans
+        (runQueueStage_of_pair_eq
+          (notificationWaitOnCore_runQueueEntryStage _ tid executingCore stC hCurC P.notIdle) hI).1
+        (.of_stage (writeReturnFrameToTcb_runQueueStage _ _ _)))
+  simp only [Bool.not_eq_true] at hSig
+  by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
+  · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
+    cases hRes : resolveRecvReplyId gate decoded stC with
+    | error _ => rw [hRes] at h; cases h
+    | ok r =>
+    rw [hRes] at h
+    simp only [hSig, Bool.false_eq_true, hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq,
+      true_and] at h
+    subst h
+    exact readyKeptStage.trans hS.1 hK (.of_stage (writeReturnFrameToTcb_runQueueStage _ _ _))
+  simp only [Bool.not_eq_true] at hNb
   split at h
   · cases h
+  simp only [hSig, hNb, Bool.false_eq_true, ↓reduceIte] at h
   split at h
   · rename_i st1 dequeued summ sgi hRecv
     split at h
@@ -1382,11 +1404,118 @@ theorem receiveResolvedArm_readyKeptStage (ctx : LabelingContext)
     exact readyKeptStage.trans hS.1 hK ((runQueueStage_of_pair_eq
       (endpointReceiveDualWithCapsOnCore_readyKeptStage _ _ _ _ _ hHC
         hCurC P.notIdle hActC) hRecv).trans E.1
-      (.of_stage (((applyReceiveRendezvousHandoff_runQueueStage
+      (.of_stage ((applyReceiveRendezvousHandoff_runQueueStage
           ((E.2 hIC hRC hR2 hDC).coherent _) hHand).trans
-        (stageWokenSendCompletion_runQueueStage _ _)).trans
         (stageDeliveredMessage_runQueueStage _ _ _))))
   · cases h
+
+/-- A reply-receive whose receive completes its bound notification blocks no
+thread: the reply leg, the wait's consumption (a `.ready` mark), then the badge
+register written. -/
+theorem replyRecvCompletesSignalArm_readyKeptStage {S : SeLe4n.ThreadId → Prop}
+    {ctx : LabelingContext} {tid prevCaller : SeLe4n.ThreadId} {label : Nat}
+    {msg : IpcMessage} {grant : Bool} {c : CoreId} {st st' : SystemState}
+    (hInv : st.objects.invExt) (hD : st.currentDequeuedUnique)
+    (h : replyRecvCompletesSignalArm ctx tid prevCaller label msg grant c st = .ok ((), st')) :
+    readyKeptStage S st st' := by
+  obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases h
+  have hE := replyTransferOnCoreChecked_runQueueEntryStage hInv hD hR
+  have hK := replyTransferOnCoreChecked_readyKeptStage (S := S) hD hR
+  rcases hOr with rfl | ⟨st2, badge, _, _, hW, _, rfl⟩
+  · exact hK
+  · have hQ := notificationWaitOnCore_consumed_runQueueStage
+      (notificationWaitCrossCoreDispatchChecked_ok_inner hW)
+    exact hK.trans hE.1 ((readyKeptStage.of_stage hQ).trans hQ.entry.1
+      (.of_stage (writeReturnFrameToTcb_runQueueStage _ _ _)))
+
+/-- **The reply keeps the receive's test**: a reply that leaves the replier's
+bound notification active and the replier ready in IPC on the entry state
+leaves both so on the state it returns, naming the same notification.  The
+reply writes no notification and no binding code
+(`notificationsAndBindingsKept.of_replyTransferOnCoreChecked`) and blocks no
+thread (`replyTransferOnCoreChecked_readyKeptStage`). -/
+theorem replyTransferOnCoreChecked_keeps_receiveCompletesSignal {ctx : LabelingContext}
+    {tid prevCaller : SeLe4n.ThreadId} {mi : MessageInfo} {regs : Array SeLe4n.RegValue}
+    {msg : IpcMessage} {grant : Bool} {c : CoreId} {st st1 : SystemState}
+    (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
+    (hSig : receiveCompletesSignal ctx st tid = true) (hRdy : receiverIpcReady st tid = true)
+    (hR : replyTransferOnCoreChecked ctx tid prevCaller mi regs msg grant c st = .ok ((), st1)) :
+    receiveCompletesSignal ctx st1 tid = true ∧ receiverIpcReady st1 tid = true ∧
+      receiverBoundNotification st1 tid = receiverBoundNotification st tid := by
+  have K := notificationsAndBindingsKept.of_replyTransferOnCoreChecked hInv hR
+  have hKeep := replyTransferOnCoreChecked_readyKeptStage (S := fun _ => False) hD hR hInv hRf
+  obtain ⟨t, hT, hReady⟩ := (receiverIpcReady_iff st tid).mp hRdy
+  have hTo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+  -- the replier's TCB survives with its bound-notification code
+  have hB := K.2 tid.toObjId
+  rw [hTo] at hB
+  unfold receiveCompletesSignal at hSig
+  rw [hT] at hSig
+  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hSig
+  obtain ⟨⟨hC, hN⟩, hF⟩ := hSig
+  obtain ⟨t', hO, hCode⟩ : ∃ t', st1.objects[tid.toObjId]? = some (.tcb t') ∧
+      t'.boundNotificationCode = t.boundNotificationCode := by
+    cases hO : st1.objects[tid.toObjId]? with
+    | none =>
+      rw [hO] at hB
+      simp only [notificationBindingCodes, KernelObject.bindingCodes, Prod.mk.injEq] at hB
+      exact absurd hB.1.symm hC
+    | some o =>
+      rw [hO] at hB
+      cases o <;> simp only [notificationBindingCodes, KernelObject.bindingCodes,
+        Prod.mk.injEq] at hB
+      all_goals first
+        | exact absurd hB.1.symm hC
+        | exact ⟨_, rfl, hB.1⟩
+  have hT1 : st1.getTcb? tid = some t' := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO
+  have hReady1 : t'.ipcState = .ready :=
+    hKeep tid (fun h => h) (fun x hx => by rw [hT] at hx; cases hx; exact hReady) t' hT1
+  -- the notification survives unchanged
+  have hNt : st1.getNotification? ⟨t.boundNotificationCode - 1⟩ =
+      st.getNotification? ⟨t.boundNotificationCode - 1⟩ := by
+    cases hn : st.getNotification? ⟨t.boundNotificationCode - 1⟩ with
+    | none => rw [hn] at hN; simp at hN
+    | some n =>
+      exact (SystemState.getNotification?_eq_some_iff _ _ _).mpr
+        (K.1 _ n ((SystemState.getNotification?_eq_some_iff _ _ _).mp hn))
+  refine ⟨?_, (receiverIpcReady_iff st1 tid).mpr ⟨t', hT1, hReady1⟩, ?_⟩
+  · unfold receiveCompletesSignal
+    rw [hT1]
+    dsimp only
+    rw [hCode, hNt]
+    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq]
+    exact ⟨⟨hC, hN⟩, hF⟩
+  · unfold receiverBoundNotification
+    rw [hT1, hT]
+    dsimp only
+    rw [hCode]
+
+/-- **seL4's `handleReplyRecv` by construction**: on a reply-receive that chose
+the completion path (its receive's test holds on the entry state, the replier
+ready), the arm is the reply and then the completion of the notification the
+entry state named — the last branch, returning with nothing received, is never
+taken. -/
+theorem replyRecvCompletesSignalArm_completes {ctx : LabelingContext}
+    {tid prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool}
+    {c : CoreId} {st : SystemState}
+    (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
+    (hSig : receiveCompletesSignal ctx st tid = true) (hRdy : receiverIpcReady st tid = true) :
+    replyRecvCompletesSignalArm ctx tid prevCaller label msg grant c st =
+      match replyTransferOnCoreChecked ctx tid prevCaller (replyRecvReplyMessageInfo label msg)
+          msg.registers msg grant c st with
+      | .error e => .error e
+      | .ok ((), st1) =>
+          completeSignalArm ctx tid (receiverBoundNotification st tid) c st1 := by
+  unfold replyRecvCompletesSignalArm
+  generalize hR : replyTransferOnCoreChecked ctx tid prevCaller
+    (replyRecvReplyMessageInfo label msg) msg.registers msg grant c st = r
+  cases r with
+  | error e => rfl
+  | ok v =>
+    obtain ⟨⟨⟩, st1⟩ := v
+    obtain ⟨h1, h2, h3⟩ := replyTransferOnCoreChecked_keeps_receiveCompletesSignal
+      hInv hRf hD hSig hRdy hR
+    simp only [h1, h2, Bool.and_self, ↓reduceIte, h3]
 
 /-- **Every arm `dispatchWithCapChecked` routes blocks only the caller**: the
 send, receive, call, notification-wait and reply-receive arms block it, and no
@@ -1416,7 +1545,7 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     cases h
     rw [auditReadFromCore_frame _ _ _ _ _ _ _ hA]
     refine readyKeptStage.of_stage ?_
-    exact writeReturnFrameToTcb_runQueueStage _ _ _
+    exact writeCallReturnWord_runQueueStage _ _ _
   case none.auditDrain =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
@@ -1426,13 +1555,15 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     split at hA
     · cases hA
       refine readyKeptStage.of_stage ?_
-      refine SystemState.RunQueueStage.trans ?_ (writeReturnFrameToTcb_runQueueStage _ _ _)
+      refine SystemState.RunQueueStage.trans ?_ (writeCallReturnWord_runQueueStage _ _ _)
       exact SystemState.RunQueueStage.of_frame rfl rfl rfl
     · cases hA
   all_goals
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
   case none.send.object epId =>
+    split at h
+    · cases h; exact .refl _
     split at h
     · cases h
     rename_i hSend
@@ -1503,14 +1634,14 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     try dsimp only at h
     split at h
     · rename_i hSig
-      exact clearStashStage_readyKeptStage (runQueueStage_of_pair_eq
+      cases h
+      exact .of_stage (runQueueStage_of_pair_eq
         (notificationSignalBoundCrossCoreDispatchChecked_runQueueStage _ _ _ _ _ _ P.ntfnHeads
-          P.blocked) hSig).entry (.of_stage (runQueueStage_of_pair_eq
-        (notificationSignalBoundCrossCoreDispatchChecked_runQueueStage _ _ _ _ _ _ P.ntfnHeads
-          P.blocked) hSig))
-        (fun x => stageWokenDeliveryTwice_runQueueStage x _ _) h
+          P.blocked) hSig)
     · cases h
   case none.notificationWait.object notifId =>
+    split at h
+    · cases h; exact .of_stage (writeReturnFrameToTcb_runQueueStage _ _ _)
     split at h
     · rename_i hW
       cases h
@@ -1531,8 +1662,14 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     -- and the receive runs alone
     split at h
     · exact receiveResolvedArm_readyKeptStage ctx decoded tid executingCore gate epId st st' P h
+    -- the reply's resolution: refused, a reply with no caller (the receive
+    -- runs, as on a skipped reply), or a caller to answer
+    split at h
+    · cases h
+    · exact receiveResolvedArm_readyKeptStage ctx decoded tid executingCore gate epId st st' P h
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    · exact replyRecvCompletesSignalArm_readyKeptStage P.objInv P.dequeued h
     rename_i summ stR hRR
     cases h
     exact (endpointReplyRecvOnCore_readyKeptStage P.objInv P.refined P.dequeued P.queueHeads
@@ -1554,12 +1691,10 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     try dsimp only at h
     split at h
     · rename_i hSig
-      exact clearStashStage_readyKeptStage (runQueueStage_of_pair_eq
+      cases h
+      exact .of_stage (runQueueStage_of_pair_eq
         (notificationSignalDeclassifiedOnCore_runQueueStage _ _ _ _ _ _ P.ntfnHeads
-          P.blocked) hSig).entry (.of_stage (runQueueStage_of_pair_eq
-        (notificationSignalDeclassifiedOnCore_runQueueStage _ _ _ _ _ _ P.ntfnHeads
-          P.blocked) hSig))
-        (fun x => stageWokenDeliveryTwice_runQueueStage x _ _) h
+          P.blocked) hSig)
     · cases h
 
 
@@ -1638,11 +1773,11 @@ thread ready**: the argument spill writes the caller's registers, then the
 checked entry, the capability-fault delivery suspending the caller, or a
 refusal record. -/
 theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (E : EntryPremises st)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
+      x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     readyKeptStage (fun t => st.scheduler.currentOnCore e = some t) st st' := by
   unfold Platform.FFI.syscallDispatchFromAbi at h
   split at h
@@ -1653,14 +1788,14 @@ theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreI
   rename_i hIdle
   have hNI : isIdleThreadId tid = false := by simpa using hIdle
   have hW : SystemState.RunQueueStage st
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
     unfold Platform.FFI.writeFfiRegistersToTcb
     exact SystemState.RunQueueStage.updateTcb _ _ (fun _ _ => rfl)
-  have E1 : EntryPremises (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) :=
+  have E1 : EntryPremises (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) :=
     E.of_ipcFrame hW (by
       unfold Platform.FFI.writeFfiRegistersToTcb
       exact IpcFrame.updateTcb _ _ fun _ => rfl)
-  have hCur1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).scheduler.currentOnCore e
+  have hCur1 : (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).scheduler.currentOnCore e
       = some tid := by rw [Platform.FFI.writeFfiRegistersToTcb_scheduler]; exact hCur
   refine readyKeptStage.mono (S := (· = tid)) (fun x hx => hx ▸ hCur) ?_
   dsimp only at h
@@ -1668,20 +1803,20 @@ theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreI
   · -- WS-SX SX4: a refused receive hands back its busy reply's cancel, which
     -- blocks no thread and keeps the endpoint heads blocked.
     have hC : SystemState.RunQueueEntryStage
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) ∧
         readyKeptStage (· = tid)
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)
           (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) ∧
         queueHeadBlockedConsistent (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)) ∧
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) ∧
         (cancelReceiveBusyReply ctx e
-            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)).scheduler.currentOnCore e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)).scheduler.currentOnCore e
           = some tid := by
       rcases cancelReceiveBusyReply_cases_holder ctx e
-          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) with
         hEq | ⟨_, hd, -, -, hEq⟩ <;> rw [hEq]
       · exact ⟨(SystemState.RunQueueStage.refl _).entry, .refl _, E1.queueHeads, hCur1⟩
       · exact ⟨cancelReplyHolder_runQueueEntryStage _ hd e, cancelReplyHolder_readyKeptStage _ hd e,
@@ -1692,37 +1827,56 @@ theorem syscallDispatchFromAbi_readyKeptStage {ctx : LabelingContext} {e : CoreI
     have hDR := hS.2 E1.objInv E1.refined hRR E1.dequeued
     have hKW := readyKeptStage.trans hW.entry.1 (.of_stage hW) hK
     generalize cancelReceiveBusyReply ctx e
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) = stR
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) = stR
       at h hS hK hKW hQR hIR hRR hDR hCurR
     have hL := hW.entry.1.trans hS.1
     split at h
-    · cases h
-      unfold Platform.FFI.deliverSyscallCapFault
-      have hW2 := writeFaultRegistersToTcb_runQueueStage stR tid
-        (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
-      obtain ⟨hI2, hR2⟩ := hW2.1.links hIR hRR
-      have hD2 : SystemState.currentDequeuedUnique _ := hW2.2.1 none hIR hRR hR2 hDR
-      have hQ2 : queueHeadBlockedConsistent (writeFaultRegistersToTcb stR tid
-          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)) := by
-        unfold writeFaultRegistersToTcb
-        exact queueHeadBlockedConsistent_updateTcb_of_ipcState_eq _ _ _ hIR (fun _ => rfl) hQR
-      have hCur2 : (writeFaultRegistersToTcb stR tid
-          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)).scheduler.currentOnCore e
-          = some tid := by rw [writeFaultRegistersToTcb_scheduler]; exact hCurR
-      exact readyKeptStage.trans hL hKW (readyKeptStage.trans hW2.1 (.of_stage hW2)
-        (faultDeliverOnCoreChecked_readyKeptStage _ _ tid _ _ e (endpointHeadsWakeable_of hD2 hQ2)
-          hCur2 hNI (hD2.runnable hCur2).activeAt))
-    · cases h
-      exact readyKeptStage.trans hL hKW (.of_stage (SystemState.RunQueueStage.of_frame
-        ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
-          (Architecture.recordErrorOverflow_objects _ _ _))
-        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
-        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
-        (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
-        (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
-        (hRes := by
-          unfold Platform.FFI.recordSyscallRefusal Architecture.recordErrorOverflow
-          split <;> (try split) <;> (try split) <;> rfl)))
+    · split at h
+      · -- a dropped fault: the refusal's state and its ledger record
+        cases h
+        obtain ⟨L, hLd⟩ := Platform.FFI.recordDroppedFault_frame ctx e _ tid x0 _ stR
+        rw [hLd]
+        exact readyKeptStage.trans hL hKW (.of_stage ((SystemState.RunQueueStage.of_frame
+          rfl rfl rfl rfl (hS := rfl) (hRes := rfl) :
+            SystemState.RunQueueStage stR { stR with declassificationRefusals := L })))
+      · cases h
+        unfold Platform.FFI.deliverSyscallCapFault
+        have hW2 := writeFaultRegistersToTcb_runQueueStage stR tid
+          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)
+        obtain ⟨hI2, hR2⟩ := hW2.1.links hIR hRR
+        have hD2 : SystemState.currentDequeuedUnique _ := hW2.2.1 none hIR hRR hR2 hDR
+        have hQ2 : queueHeadBlockedConsistent (writeFaultRegistersToTcb stR tid
+            (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)) := by
+          unfold writeFaultRegistersToTcb
+          exact queueHeadBlockedConsistent_updateTcb_of_ipcState_eq _ _ _ hIR (fun _ => rfl) hQR
+        have hCur2 : (writeFaultRegistersToTcb stR tid
+            (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)).scheduler.currentOnCore e
+            = some tid := by rw [writeFaultRegistersToTcb_scheduler]; exact hCurR
+        exact readyKeptStage.trans hL hKW (readyKeptStage.trans hW2.1 (.of_stage hW2)
+          (faultDeliverOnCoreChecked_readyKeptStage _ _ tid _ _ e (endpointHeadsWakeable_of hD2 hQ2)
+            hCur2 hNI (hD2.runnable hCur2).activeAt))
+    · split at h
+      · cases h
+        exact readyKeptStage.trans hL hKW (.of_stage (SystemState.RunQueueStage.of_frame
+          ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
+            (Architecture.recordErrorOverflow_objects _ _ _))
+          (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
+          (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
+          (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
+          (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq, Architecture.recordErrorOverflow_scheduler])
+          (hRes := by
+            unfold Platform.FFI.recordSyscallRefusal Architecture.recordErrorOverflow
+            split <;> (try split) <;> (try split) <;> rfl)))
+      · cases h
+        exact readyKeptStage.trans hL hKW (.of_stage (SystemState.RunQueueStage.of_frame
+          (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
+          (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
+          (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
+          (by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
+          (hS := by rw [Platform.FFI.recordSyscallRefusal_scheduler_eq])
+          (hRes := by
+            unfold Platform.FFI.recordSyscallRefusal
+            split <;> (try split) <;> rfl)))
   · rename_i hE
     cases h
     refine readyKeptStage.trans hW.entry.1 (.of_stage hW)

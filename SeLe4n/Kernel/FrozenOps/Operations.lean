@@ -72,11 +72,10 @@ than misleading its next reader.
 |22 | `frozenSetPriority`          | `setPriorityOp`            | SchedContext |
 |23 | `frozenSetMCPriority`        | `setMCPriorityOp`          | SchedContext |
 
-**Lifecycle operations** (`untypedRetype`, `untypedReset`) are builder-only.
-The carve adds an object and a CDT node, which a frozen map's fixed key set
-cannot; the reset writes the invoked capability's free index, and its refusal
-reads the untyped's child list and the derivation tree, which the frozen
-phase has no operation for.
+**The lifecycle operation** (`untypedRetype`) is builder-only.  The carve adds
+an object and a CDT node, which a frozen map's fixed key set cannot, and its
+reset of a childless capability reads the untyped's child list and the
+derivation tree, which the frozen phase has no operation for.
 -/
 
 namespace SeLe4n.Kernel.FrozenOps
@@ -381,14 +380,11 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
                 match frozenLookupTcb st1 boundTid with
                 | none => .error .objectNotFound
                 | some boundTcb =>
-                  -- `pendingReceiveReply` is cleared with the delivery: the bound
-                  -- TCB was `.blockedOnReceive` and no `Call` arrived, which is
-                  -- what `storeTcbReceiveComplete` does on the live path.
-                  match frozenStoreTcb boundTid
-                      (TCB.setIpcState { boundTcb with
-                        pendingReceiveReplyCode := 0,
-                        pendingMessage :=
-                          some { IpcMessage.empty with badge := some badge } } .ready) st1 with
+                  -- The bound thread is made ready with the badge in its badge
+                  -- register and no message held, and its `pendingReceiveReply`
+                  -- cleared (no `Call` arrived): the live path's
+                  -- `storeTcbSignalBoundWoken`, seL4's `sendSignal`.
+                  match frozenStoreTcb boundTid (TCB.signalBoundWoken badge boundTcb) st1 with
                   | .error e => .error e
                   | .ok ((), st2) =>
                       -- PR #873 round 15: the woken thread re-enters the run
@@ -416,16 +412,14 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
             let ntfn' : Notification := ntfn.withHeadPopped next
             match frozenWithObjectStored st notificationId (.notification ntfn') with
             | .ok st' =>
-                -- **The badge is delivered, not just dropped.**  This branch
-                -- clears `pendingBadge` and woke the waiter, but stored no
-                -- message — so the badge vanished while the state claimed a
-                -- delivery had happened.  The live `notificationSignal` stores
-                -- a badge-only `IpcMessage` in the waiter's `pendingMessage`
-                -- on this path, and a frozen snapshot that does otherwise is
-                -- not a snapshot of this kernel.  Storing both fields in one
-                -- write also keeps the taint flow below honest: it says the
-                -- waiter received the signaller's content, which is only true
-                -- if the content is actually there.
+                -- **The badge is delivered, not just dropped.**  The live
+                -- `notificationSignal` writes the badge into the waiter's badge
+                -- register as it wakes it (`TCB.signalWoken`, seL4's
+                -- `sendSignal`), and a frozen snapshot that does otherwise is
+                -- not a snapshot of this kernel.  The same write keeps the
+                -- taint flow below honest: it says the waiter received the
+                -- signaller's content, which is only true if the content is
+                -- actually there.
                 match frozenLookupTcb st' waiter with
                 | none => .error .objectNotFound
                 | some waiterTcb =>
@@ -433,11 +427,9 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
                   -- links, and its successor heads it with no predecessor
                   -- (the live `detachNtfnHead`).
                   match (frozenStoreTcb waiter
-                      (TCB.setIpcState { waiterTcb with
-                        pendingMessage :=
-                          some { IpcMessage.empty with badge := some badge },
+                      (TCB.signalWoken badge { waiterTcb with
                         ntfnPrevCode := SeLe4n.ThreadId.optCode none,
-                        ntfnNextCode := SeLe4n.ThreadId.optCode none } .ready) st').bind
+                        ntfnNextCode := SeLe4n.ThreadId.optCode none }) st').bind
                       (fun r => (frozenModifyTcbOpt r.2 next
                         (fun t => { t with ntfnPrevCode := SeLe4n.ThreadId.optCode none })).map
                         (fun s => ((), s))) with
@@ -462,7 +454,7 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
               | none => SeLe4n.Badge.ofNatMasked badge.toNat
             let ntfn' : Notification := {
               state := .active, 
-              hasPendingBadge := true, pendingWord := mergedBadge, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
+              hasPendingBadge := true, pendingWord := mergedBadge, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated, schedContextCode := ntfn.schedContextCode }
             match frozenWithObjectStored st notificationId (.notification ntfn') with
             | .ok stored =>
                 -- Stored on the notification: it now holds the badge, so it
@@ -488,7 +480,7 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
         | some badge =>
             let ntfn' : Notification :=
               { state := .idle, 
-                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated }
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode, taintTag0 := ntfn.taintTag0, taintTag1 := ntfn.taintTag1, taintTag2 := ntfn.taintTag2, taintTag3 := ntfn.taintTag3, taintTag4 := ntfn.taintTag4, taintTag5 := ntfn.taintTag5, taintTag6 := ntfn.taintTag6, taintTag7 := ntfn.taintTag7, taintCount := ntfn.taintCount, taintSaturated := ntfn.taintSaturated, schedContextCode := ntfn.schedContextCode }
             match frozenWithObjectStored st notificationId (.notification ntfn') with
             | .ok st' =>
                 -- **No enqueue here** (PR #873 round 17).  The waiter on this
@@ -577,7 +569,8 @@ decoder (`decodeSyscallArgsWith`) with the overflow words read from the frozen
 IPC buffer. -/
 def frozenSenderDecode (st : FrozenSystemState) (sender : SeLe4n.ThreadId) (tcb : TCB) :
     Except KernelError SyscallDecodeResult :=
-  Architecture.RegisterDecode.decodeSyscallArgsWith (frozenReadOverflowWord st sender)
+  Architecture.RegisterDecode.decodeSyscallArgsWith
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout tcb.registerContext) (frozenReadOverflowWord st sender)
     SeLe4n.arm64DefaultLayout tcb.registerContext 32
 
 /-- WS-ZA ZA4.7: **the message a frozen blocked sender holds** — the live
@@ -595,12 +588,12 @@ blocked-sender read above makes the same read under the recorded badge, so the t
 capabilities on either. -/
 def frozenSendPayloadMessage (st : FrozenSystemState) (sender : SeLe4n.ThreadId) :
     SendPayload → IpcMessage
-  | .frame b _ =>
+  | .frame b _ _ =>
       senderFrameMessage
         (match frozenLookupTcb st sender with
          | some tcb => frozenSenderDecode st sender tcb
          | none => .error .objectNotFound) b
-  | .fault f ctx b => faultMessage f ctx b
+  | .fault f ctx b _ => faultMessage f ctx b
 
 /-- Q7-C2/V5-O: Pop head from a frozen intrusive queue.
 Follows `queueNext` link in the head TCB to advance the queue.
@@ -765,7 +758,7 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
             -- is nothing to propagate here.
             -- `senderTcb` is the one resolved above, shared with the rendezvous
             -- ordering so the two cannot disagree about what a valid sender is.
-            let senderTcb' := (TCB.setIpcState { senderTcb.setSendCap payload.badge payload.grant with
+            let senderTcb' := (TCB.setIpcState { senderTcb.setSendCap payload.badge payload.grant payload.grantReply with
               pendingMessage := none } (.blockedOnSend endpointId))
             match frozenStoreTcb sender senderTcb' st with
             | .error e => .error e
@@ -786,10 +779,12 @@ Returns sender ThreadId.
 17).  `frozenQueuePopHead` accepts a `.blockedOnCall` head as well as a
 `.blockedOnSend` one, and this woke both: it set the head `.ready` and put it
 back in the run queue.  A caller does not become runnable at rendezvous — the
-live `endpointReceiveDual` moves it to `.blockedOnReply`, links it to the
-server-supplied reply object, and fails closed with `.replyCapInvalid` when the
-receive carries none.  So the frozen operation succeeded with a runnable caller
-where its counterpart either leaves it blocked or refuses.
+live `endpointReceiveDual` moves it to `.blockedOnReply` and links it to the
+server-supplied reply object when the caller's cap grants (`canGrant ||
+canGrantReply`) and the receive supplied one; otherwise it completes the caller
+`.ready` and `Inactive`, its Call answered by nothing (seL4 `receiveIPC`).  So
+the frozen operation succeeded with a runnable caller where its counterpart
+leaves it blocked or inactive.
 
 `replyId` exists for that: the frozen operation could not previously express the
 reply path at all, which is why the divergence was invisible rather than
@@ -813,22 +808,30 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
                   match senderTcb.ipcState with
                   | .blockedOnCall _ => true
                   | _ => false
+                -- seL4 `receiveIPC`: a dequeued caller is linked to the reply
+                -- only when its cap grants (`canGrant || canGrantReply`) and the
+                -- receive supplied a reply object, as the live receive decides.
+                let senderLinks : Bool :=
+                  senderWasCall && (senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) &&
+                    replyId.isSome
                 match frozenLookupTcb st' sender with
                 | some senderTcb' =>
-                    -- The call arm parks the caller for its reply; the send arm
-                    -- wakes it.  Both then deliver the message to the receiver.
+                    -- A linked caller is parked for its reply; a caller that
+                    -- links no reply is completed `.ready` and `Inactive`, its
+                    -- Call answered by nothing; the send arm wakes the sender.
+                    -- Each then delivers the message to the receiver.
                     let senderNext : ThreadIpcState :=
-                      if senderWasCall then .blockedOnReply endpointId (some receiver)
+                      if senderLinks then .blockedOnReply endpointId (some receiver)
                       else ThreadIpcState.ready
-                    let senderTcbUpdated := (TCB.setIpcState { senderTcb' with pendingMessage := none } senderNext)
+                    let senderStored := (TCB.setIpcState { senderTcb' with pendingMessage := none } senderNext)
+                    let senderTcbUpdated :=
+                      if senderWasCall && !senderLinks then
+                        { senderStored with threadState := .Inactive }
+                      else senderStored
                     match frozenStoreTcb sender senderTcbUpdated st' with
                     | .error e => .error e
                     | .ok ((), stSender) =>
-                        -- A Call rendezvous carrying no reply object fails
-                        -- closed: the post-state is discarded, so the caller is
-                        -- never stranded `.blockedOnReply` with nothing to wake
-                        -- it.
-                        match (if senderWasCall then
+                        match (if senderLinks then
                                  match replyId with
                                  | none => (.error .replyCapInvalid :
                                      Except KernelError FrozenSystemState)
@@ -859,7 +862,8 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
                               -- PR #873 round 15: a woken sender re-enters the
                               -- run queue, as the live `endpointReceiveDual`
                               -- does with `ensureRunnable`.  Round 17: only the
-                              -- send arm wakes, so only the send arm enqueues.
+                              -- send arm wakes, so only the send arm enqueues; a
+                              -- caller completed `Inactive` is not woken either.
                               match (if senderWasCall then
                                        (.ok stDelivered :
                                          Except KernelError FrozenSystemState)
@@ -890,14 +894,25 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
     | none => .error .objectNotFound
 
 /-- Q7-C2: Frozen endpoint call — send then block for reply.
-Mirrors `endpointCall` using intrusive queue management. -/
+Mirrors `endpointCall` using intrusive queue management.
+
+**The call links its reply only where the live call does** (seL4 `sendIPC`,
+`do_call`): the receiver stashed a reply object and the capability grants
+(`frozenCallRendezvousLinks`, the frozen reading of `callRendezvousLinks`).  A
+linked call parks the caller `.blockedOnReply`, its message slot cleared, and
+links it to the stashed reply, clearing the stash
+(`frozenLinkServerStashedReply`); a call that links none completes the receive
+as a send's -- the stash dropped -- and leaves the caller `Inactive`, off the
+run queue, with no reply.  The reply-waiter queue links the live call writes
+are outside the frozen comparison (`TCB.withoutRunLinks`). -/
 def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload) : FrozenKernel Unit :=
   fun st =>
     match st.getObject? endpointId with
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
-        | some _receiver =>
+        | some r =>
+          if frozenCallRendezvousLinks st r payload then
             -- Receiver waiting: pop head, transfer message, block caller for reply
             match frozenQueuePopHead endpointId true st with
             | .error e => .error e
@@ -912,18 +927,26 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                     match frozenStoreTcb receiver recvTcb' st' with
                     | .error e => .error e
                     | .ok ((), st'') =>
-                        -- Block caller waiting for reply
+                        -- Block caller waiting for reply, its message slot
+                        -- cleared as the live `storeTcbIpcStateAndMessage _ _ _
+                        -- none` clears it.
                         match frozenLookupTcb st'' caller with
                         | some callerTcb =>
-                            let callerTcb' := (callerTcb.setIpcState (.blockedOnReply endpointId (some receiver)))
+                            let callerTcb' := (TCB.setIpcState { callerTcb with pendingMessage := none }
+                              (.blockedOnReply endpointId (some receiver)))
                             match frozenStoreTcb caller callerTcb' st'' with
                             | .error e => .error e
                             | .ok ((), st''') =>
+                              -- The caller is linked to the reply object the
+                              -- receiver stashed, and the stash is cleared.
+                              match frozenLinkServerStashedReply st''' caller receiver with
+                              | .error e => .error e
+                              | .ok stLinked =>
                               -- PR #873 round 15: the run queue moves both ways
                               -- here, as the live `endpointCall` does -- the woken
                               -- receiver enters it, the caller blocking for its
                               -- reply leaves it.
-                              match frozenEnsureRunnable st''' receiver with
+                              match frozenEnsureRunnable stLinked receiver with
                               | .error e => .error e
                               | .ok st4 =>
                                 -- Same content move as the send half of a call:
@@ -932,12 +955,38 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                                           receiver.toObjId caller.toObjId)
                         | none => .error .objectNotFound
                 | none => .error .objectNotFound
+          else
+            -- Linking no reply: the receive completes as a send's (the stash
+            -- dropped, as `frozenEndpointSend` writes it), the receiver is woken,
+            -- and the caller is `Inactive` and off the run queue.
+            match frozenQueuePopHead endpointId true st with
+            | .error e => .error e
+            | .ok (receiver, _tcb, st') =>
+                match frozenLookupTcb st' receiver with
+                | some recvTcb =>
+                    let recvTcb' := (TCB.setIpcState { recvTcb with
+                      pendingMessage := some (frozenSendPayloadMessage st caller payload),
+                      pendingReceiveReplyCode := 0 } ThreadIpcState.ready)
+                    match frozenStoreTcb receiver recvTcb' st' with
+                    | .error e => .error e
+                    | .ok ((), st'') =>
+                        -- A missing caller refuses where the linking arm looks it up.
+                        match frozenLookupTcb st caller with
+                        | none => .error .objectNotFound
+                        | some _ =>
+                        match frozenEnsureRunnable st'' receiver with
+                        | .error e => .error e
+                        | .ok st3 =>
+                            let st4 := frozenMapTcbAt (frozenRemoveRunnable st3 caller) caller
+                              fun t => { t with threadState := .Inactive }
+                            .ok ((), frozenTaintFlow st4 receiver.toObjId caller.toObjId)
+                | none => .error .objectNotFound
         | none =>
             -- No receiver: block caller, then enqueue into sendQ (T1-D/M-FRZ-3); the
             -- message stays in its frame, as for a blocked send (WS-ZA ZA4.7)
             match frozenLookupTcb st caller with
             | some callerTcb =>
-                let callerTcb' := (TCB.setIpcState { callerTcb.setSendCap payload.badge payload.grant with
+                let callerTcb' := (TCB.setIpcState { callerTcb.setSendCap payload.badge payload.grant payload.grantReply with
                   pendingMessage := none } (.blockedOnCall endpointId))
                 match frozenStoreTcb caller callerTcb' st with
                 | .error e => .error e
@@ -1717,14 +1766,6 @@ def frozenTimerTickBudget : FrozenKernel Unit :=
 -- D1: Frozen thread suspension and resumption
 -- ============================================================================
 
-/-- A TCB field write at `t` that writes nothing when `t` names no TCB, as the
-live `SystemState.updateTcb` and `mapTcbInPlace` write nothing there. -/
-def frozenMapTcbAt (st : FrozenSystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB) :
-    FrozenSystemState :=
-  match st.getTcb? t with
-  | some tcb => frozenRewriteObject st t.toObjId (.tcb (g tcb))
-  | none => st
-
 /-- WS-SX SX4: **`w` leaves server `s`'s reply-waiter queue** — the frozen
 mirror of `SystemState.unlinkReplyWaiter`, write for write: the predecessor and
 successor link past `w`, `s`'s head moves past it when it headed the queue,
@@ -2232,10 +2273,8 @@ def frozenSetMCPriority (callerTid targetTid : SeLe4n.ThreadId)
     frozen operation. The compile-time check ensures that adding a new SyscallId
     without a frozen operation (or vice versa) produces a type error.
 
-    Lifecycle operations (`untypedRetype`, `untypedReset`) are intentionally
-    excluded — the carve adds keys a frozen map's fixed key set cannot hold,
-    and the reset is its companion: it writes back the free index the carve
-    advanced. Service registration/revocation are builder-only too.  `tcbSetAffinity` (WS-SM SM5.H.4)
+    The lifecycle operation (`untypedRetype`) is intentionally excluded — the
+    carve adds keys a frozen map's fixed key set cannot hold. Service registration/revocation are builder-only too.  `tcbSetAffinity` (WS-SM SM5.H.4)
     is excluded because the operation is defined by its run-queue + replenish-queue
     *migration* (live scheduler state), which the frozen snapshot phase does not
     model — the production op is complete and verified in the non-frozen path. -/
@@ -2261,11 +2300,6 @@ def frozenOpCoverage : SyscallId → Bool
                              -- each destroyed frame's mapping; the frozen phase
                              -- has no form of it.
   | .untypedRetype => false   -- WS-BP BP7.1 (`v0.36.5`): adds a key (the carved
-                             -- object) and a CDT node, which the frozen phase's
-                             -- fixed key set cannot.
-  | .untypedReset => false    -- WS-BP BP7.1 (`v0.36.6`): the carve's companion,
-                             -- writing back the free index the carve advanced;
-                             -- the frozen phase carves nothing.
   | .vspaceMap => false       -- WS-BP BP7.1 (`v0.36.38`): a map WRITES a mapping,
                              -- a frame-capability record and a physical-write
                              -- ledger entry; the frozen phase has only

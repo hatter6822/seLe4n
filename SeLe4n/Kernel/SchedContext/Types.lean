@@ -395,6 +395,13 @@ structure SchedContext where
       (`SystemState.yieldLinksAgree`).  A plain number in the context's own
       slot, as `boundThreadCode` holds a binding.  Outside the refill view. -/
   yieldFromCode : Nat := 0
+  /-- **The notification this context is bound to** (seL4-MCS's
+      `scNotification`), as its code (`SeLe4n.ObjId.optCode`; `0` is none),
+      read through `SchedContext.notification`.  The notification names the
+      context back (`Notification.schedContextCode`, seL4-MCS's
+      `ntfnSchedContext`).  A plain number in the context's own slot, as
+      `yieldFromCode` holds the yield link.  Outside the refill view. -/
+  notificationCode : Nat := 0
   /-- WS-ZA ZA6.33: **the head link a donation push writes** into the frame it
       pushes, `some (.head scId)`, built once with the context so the push
       shares it (`SeLe4n.reuseSome`) rather than building two cells on every
@@ -410,6 +417,13 @@ Reducible, so a record update that leaves the code alone reads the old value by
 @[reducible, inline] def SchedContext.boundThread (sc : SchedContext) :
     Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode sc.boundThreadCode
+
+/-- The notification this context is bound to, read from its code.  Reducible,
+so a record update that leaves the code alone reads the old value by `rfl`.
+Written as `notificationCode := SeLe4n.ObjId.optCode n`. -/
+@[reducible, inline] def SchedContext.notification (sc : SchedContext) :
+    Option SeLe4n.ObjId :=
+  SeLe4n.ObjId.ofOptCode sc.notificationCode
 
 /-- WS-ZA ZA6.5: the context with `t` more consumed time (seL4-MCS's
 `sc->scConsumed += consumed` in `chargeBudget`).  One field written, so a
@@ -531,8 +545,8 @@ list. -/
     (scReply : Option SeLe4n.ReplyId) (donationOrigin : Option SeLe4n.ThreadId)
     (isActive : Bool) (releaseNextCode : Nat)
     (releaseCoreCode : Nat) (releaseAt : Nat) (consumed : Nat) (yieldFromCode : Nat)
-    (headLinkCell : Option ReplyStackLink) (hHead : headLinkCell = some (.head scId)) :
-    (SchedContext.mk scId budget period badge sporadic refillMax budgetRemaining periodStart sc.refillHeadPresent sc.refillHeadAmount sc.refillHeadEligibleAt sc.refillTailCount sc.refillSlot1Amount sc.refillSlot1EligibleAt sc.refillSlot2Amount sc.refillSlot2EligibleAt sc.refillSlot3Amount sc.refillSlot3EligibleAt sc.refillSlot4Amount sc.refillSlot4EligibleAt sc.refillSlot5Amount sc.refillSlot5EligibleAt sc.refillSlot6Amount sc.refillSlot6EligibleAt sc.refillSlot7Amount sc.refillSlot7EligibleAt boundThreadCode scReply donationOrigin isActive releaseNextCode releaseCoreCode releaseAt consumed yieldFromCode headLinkCell hHead).replenishments = sc.replenishments := rfl
+    (notificationCode : Nat) (headLinkCell : Option ReplyStackLink) (hHead : headLinkCell = some (.head scId)) :
+    (SchedContext.mk scId budget period badge sporadic refillMax budgetRemaining periodStart sc.refillHeadPresent sc.refillHeadAmount sc.refillHeadEligibleAt sc.refillTailCount sc.refillSlot1Amount sc.refillSlot1EligibleAt sc.refillSlot2Amount sc.refillSlot2EligibleAt sc.refillSlot3Amount sc.refillSlot3EligibleAt sc.refillSlot4Amount sc.refillSlot4EligibleAt sc.refillSlot5Amount sc.refillSlot5EligibleAt sc.refillSlot6Amount sc.refillSlot6EligibleAt sc.refillSlot7Amount sc.refillSlot7EligibleAt boundThreadCode scReply donationOrigin isActive releaseNextCode releaseCoreCode releaseAt consumed yieldFromCode notificationCode headLinkCell hHead).replenishments = sc.replenishments := rfl
 
 /-- WS-ZA ZA6.3: a context with a first entry reads it first. -/
 @[simp] theorem SchedContext.replenishments_of_present {sc : SchedContext}
@@ -1195,6 +1209,8 @@ instance : BEq SchedContext where
     -- differently on the frozen surface is a disagreement.
     a.consumed == b.consumed &&
     -- WS-ZA ZA6.6: and the yield link, compared as its code.
-    a.yieldFromCode == b.yieldFromCode
+    a.yieldFromCode == b.yieldFromCode &&
+    -- and the notification link (seL4-MCS's `scNotification`), as its code.
+    a.notificationCode == b.notificationCode
 
 end SeLe4n.Kernel

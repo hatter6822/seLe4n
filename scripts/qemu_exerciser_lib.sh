@@ -254,7 +254,7 @@ for driver in drivers:
         unparsed = [m for m in matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: before=.*$") if m.group(1) != "secondary-entry" and not re.fullmatch(r".*: before=\d+ after=\d+ delta=\d+ bytes=(\d+|unrecorded) sizes=(none|unrecorded|\d+x\d+(?:,\d+x\d+)*)", m.group(0))]
         for m in unparsed:
             failures.append(f"heap-allocations-per-syscall: a reading whose bytes could not be read: {m.group(0)!r}")
-        returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored|entered, a thread restored)$")
+        returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored|resumed with its trapped registers|entered, a thread restored)$")
         carves = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: carved ([a-z-]+/\d+) x(\d+) at (\d+) into (0x[0-9a-f]+/\d+)$")
         names = [m.group(1) for m in readings]
         # The cells of the object a carve makes, by kind and size bits, and
@@ -274,9 +274,14 @@ for driver in drivers:
         # boxed fields) and gained seL4's badge (a UInt64 scalar), sporadic flag
         # (a Bool scalar) and refill limit `refillMax` (a boxed Nat): the cell
         # count is unchanged and the bytes move by that one size class.
+        # WS-SX SX7 gave each a link word to the other (a boxed Nat field):
+        # the notification's record is `lean_alloc_ctor(0, 5, 75)`, 8 + 5 * 8 +
+        # 75 = 123 bytes, the 128-byte cell (was 4 boxed fields, 115 bytes, the
+        # 120-byte cell), and the context's `lean_alloc_ctor(0, 33, 11)`, 283
+        # bytes, the 288-byte cell (was 280).  Cell counts are unchanged.
         carve_cells = {
-            "endpoint/0": (6, 248), "notification/0": (6, 240), "reply/0": (10, 256),
-            "tcb/0": (25, 2368), "sched-context/7": (8, 432), "cnode/2": (23, 1136),
+            "endpoint/0": (6, 248), "notification/0": (6, 248), "reply/0": (10, 256),
+            "tcb/0": (25, 2368), "sched-context/7": (8, 440), "cnode/2": (23, 1136),
             "frame/0": (6, 152), "page-table/0": (8, 232), "vspace-root/0": (101, 3568),
             "untyped/12": (7, 184),
         }
@@ -397,10 +402,12 @@ for driver in drivers:
             # Argument words at or above 2^63, each read as a word, and
             # the measured mint of a badge at 2^63.
             "vspace-map-wide-rights", "vspace-map-wide-vaddr", "vspace-map-wide-attr",
-            "vspace-unmap-wide-vaddr", "tcb-set-affinity-wide",
+            "vspace-unify-instruction-wide-vaddr", "tcb-set-affinity-wide",
             "mint-wide-badged-notification",
             "receive-tainted", "receive-with-carved-reply", "refill-bind-root",
-            "refill-configure", "refill-drain-tick", "refill-unbind-root", "refill-wait-tick",
+            "refill-configure", "refill-drain-tick", "refill-partner-suspends",
+            "refill-partner-wakes-root", "refill-resume-partner", "refill-root-waits",
+            "refill-unbind-root", "refill-wait-tick",
             "refill-yield", "reply", "reply-cap-delete", "reply-cap-mint",
             "reply-cap-mint-over-copy", "reply-cap-over-copy-delete", "reply-delete",
             "reply-queued-fault", "reply-recv", "reply-to-badged-call", "reschedule-sgi",
@@ -431,7 +438,9 @@ for driver in drivers:
             "stashed-reply-delete", "suspend-donated-bind-partner",
             "suspend-donated-configure", "suspend-donated-partner-calls",
             "suspend-donated-resume", "suspend-donated-root-receives",
-            "suspend-donated-unbind", "suspend-queued-tcb", "suspend-recv-partner-receives",
+            "suspend-donated-unbind", "suspend-donated-resume-partner",
+            "suspend-donated-root-waits", "suspend-donated-partner-wakes-root",
+            "suspend-donated-partner-suspends", "suspend-queued-tcb", "suspend-recv-partner-receives",
             "suspend-recv-resume", "suspend-recv-root-receives", "suspend-recv-wake-root",
             "suspend-reply-partner-calls", "suspend-reply-resume",
             "suspend-reply-root-receives", "suspend-send-partner-sends", "suspend-send-resume",
@@ -450,7 +459,7 @@ for driver in drivers:
             "third-tcb-set-priority", "third-tcb-set-space", "third-unbind", "timer-tick",
             "unbound-tcb-delete", "unknown-syscall-delivered",
             "unknown-syscall-delivered-to-reply", "unknown-syscall-plain-reply", "unknown-syscall-reply",
-            "unknown-syscall-resume", "unknown-syscall-suspends", "untyped-reset",
+            "unknown-syscall-resume", "unknown-syscall-suspends",
             "untyped-retype-bound-notification", "untyped-retype-bound-tcb",
             "untyped-retype-busy-endpoint", "untyped-retype-busy-notification",
             "untyped-retype-busy-reply", "untyped-retype-chain-reply",
@@ -716,7 +725,7 @@ for driver in drivers:
             # callers, and notifications whose last capability is a handler's;
             # the refusals and the empty unmaps beside them.
             "untyped-retype-parent-untyped", "child-retype-endpoint",
-            "child-untyped-reset-refused", "child-untyped-revoke",
+            "child-untyped-revoke",
             "child-retype-notification", "childless-revoke", "parent-untyped-delete",
             "adopted-notification-delete", "untyped-retype-moved-parent",
             "moved-parent-copy", "parent-cap-move", "moved-parent-child-delete",
@@ -752,7 +761,7 @@ for driver in drivers:
             "tabled-root-frame-other-asid", "tabled-root-delete",
             "orphaned-table-unmap-3", "orphaned-table-delete-3",
             "orphaned-table-delete-2", "orphaned-table-delete-1",
-            "orphaned-frame-delete", "lifecycle-untyped-reset",
+            "orphaned-frame-delete",
             "untyped-retype-send-endpoint", "send-on-carved", "sender-endpoint-delete",
             "untyped-retype-call-endpoint", "call-on-carved", "caller-endpoint-delete",
             "untyped-retype-registered-endpoint", "registered-endpoint-register",
@@ -860,13 +869,13 @@ for driver in drivers:
             "overflowed-irq-control-get", "overflowed-irq-handler-set-notification",
             "overflowed-irq-handler-clear", "overflowed-page-table-map",
             "overflowed-page-table-unmap", "overflowed-audit-read", "overflowed-audit-drain",
-            "overflowed-service-register", "overflowed-untyped-reset", "overflowed-declassify",
+            "overflowed-service-register", "overflowed-declassify",
             "long-declassify-signal", "overflowed-untyped-retype",
             # Every invocation with a truncation minimum, one word short of
             # its arguments: refused TruncatedMessage before any argument read.
             "cspace-mint-short", "cspace-copy-short", "cspace-move-short",
             "cspace-delete-short", "cspace-revoke-short", "mint-reply-cap-short",
-            "untyped-retype-short", "untyped-retype-five-words", "vspace-map-short", "vspace-unmap-short",
+            "untyped-retype-short", "untyped-retype-five-words", "vspace-map-short",
             "vspace-unify-instruction-short", "page-table-map-short",
             "sched-context-configure-short", "sched-context-bind-short",
             "tcb-bind-notification-short", "tcb-set-priority-short",
@@ -875,31 +884,48 @@ for driver in drivers:
             "irq-control-get-short", "irq-handler-set-notification-short",
             "audit-drain-short", "audit-read-short",
             # Each IPC route's refusal: a send, call, reply and signal on the
-            # root CNode's capability, refused InvalidCapability in place.
+            # root CNode's capability, label 0, which no CNode operation
+            # takes; the call answered IllegalOperation, the rest resumed.
             "send-wrong-kind-refused", "call-wrong-kind-refused",
             "reply-wrong-kind-refused", "signal-wrong-kind-refused",
             # WS-UC UC4: a capability copied into a carved CNode and out of
             # it, the CNode retired while the copy lives on.
             "untyped-retype-owned-cnode", "owned-cnode-fill", "owned-cnode-copy-out",
             "owned-cnode-slot-delete", "owned-cnode-delete", "owned-cnode-escaped-move",
-            "owned-cnode-escaped-delete", "owned-cnode-untyped-reset",
+            "owned-cnode-escaped-delete",
             # WS-SX SX6.5: retype windows -- one past the fan-out limit
             # refused RangeError(1, 26), three endpoints in one retype read as
             # three endpoints' cells, and a full window of 26; each carved
-            # slot's capability deleted and the untyped reset.
+            # slot's capability deleted, leaving the untyped childless.
             "untyped-retype-window-over-limit", "untyped-retype-window-three",
             "window-three-delete-0", "window-three-delete-1", "window-three-delete-2",
-            "window-three-untyped-reset", "untyped-retype-window-full",
-            "window-full-untyped-reset",
+            "untyped-retype-window-full",
             # WS-SX SX6.3/SX6.6: argument words at or above 2^63 read on the
             # word -- a retype's object id, an interrupt line, a page table's
             # address and an IPC buffer's address -- each refused as seL4
-            # refuses it; the page table carved for the address, deleted and
-            # the untyped reset.
+            # refuses it; the page table carved for the address and deleted.
             "untyped-retype-wide-child-id", "irq-control-get-wide-line",
             "untyped-retype-wide-table", "page-table-map-wide-vaddr",
-            "wide-table-delete", "wide-table-untyped-reset",
+            "wide-table-delete",
             "tcb-set-ipc-buffer-wide-unaligned",
+            # WS-SX SX7: a scheduling context bound to a notification and
+            # unbound; a receive and a reply-receive completing on a bound
+            # notification's signal; a non-Call's refusal resumed and an
+            # NBRecv on an empty endpoint returned; a Call that links no
+            # reply, on both sides; and finalisation of either end of a
+            # notification-scheduling-context link clearing it.
+            "sched-context-bind-notification", "sched-context-unbind-notification",
+            "bound-signal-bind-root", "bound-signal-signal", "bound-signal-receive",
+            "bound-signal-reply-recv-signal", "bound-signal-reply-recv",
+            "bound-signal-unbind-root",
+            "nb-send-bad-cap-silent", "nb-recv-empty-returns", "send-invocation-error-discarded",
+            "no-reply-receiver-waits", "call-no-reply-delivers", "call-no-reply-resume-root",
+            "call-no-reply-resume-partner", "call-no-reply-blocks",
+            "no-reply-receive-takes-call", "no-reply-receive-resume-root",
+            "no-reply-receive-resume-partner",
+            "untyped-retype-linked-sched-context", "bind-carved-sched-context-notification",
+            "linked-sched-context-delete", "untyped-retype-linked-notification",
+            "bind-sched-context-carved-notification", "linked-notification-delete",
         } | {f"window-full-delete-{i}" for i in range(26)}
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
@@ -916,7 +942,7 @@ for driver in drivers:
             for first in (True, False):
                 which = "first call" if first else "steady state"
                 if runs.count((name, first)) != 1 or trips.count((name, first)) != 1:
-                    failures.append(f"heap-allocations-per-syscall: {name} ({which}): expected one reading and one returned or blocked round trip on core 0")
+                    failures.append(f"heap-allocations-per-syscall: {name} ({which}): expected one reading and one returned, blocked or resumed round trip on core 0")
         for key in carved:
             if key not in trips:
                 failures.append(f"heap-allocations-per-syscall: {key[0]}: a carve named with no returned round trip")
@@ -924,10 +950,10 @@ for driver in drivers:
         # round trip.  The arms are derived by the router itself
         # (`scripts/exerciser_route_coverage.lean`, run by Lean, which routes
         # every syscall number and message-info shape the ABI decodes); the
-        # evidence is each pinned scenario's routed words and answer, as the
+        # evidence is each pinned scenario's operation, routed words and answer, as the
         # exerciser printed them beside its reading, routed by the same
         # router.  A tool that cannot run, or answers nonzero, fails the gate.
-        routed_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: routed x7=(0x[0-9a-f]+) x1=(0x[0-9a-f]+) answered (0x[0-9a-f]+|blocked)")
+        routed_re = re.compile(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: routed op=([0-9]+) x7=(0x[0-9a-f]+) x1=(0x[0-9a-f]+) answered (0x[0-9a-f]+|blocked|resumed)")
         # A round trip is evidence for its arm only if its reading's window
         # entered the kernel through the syscall entry: a trip the HAL refused
         # before the kernel ran measured no arm.
@@ -942,7 +968,7 @@ for driver in drivers:
             m = routed_re.fullmatch(line)
             key = (m.group(1), m.group(2) is not None) if m else None
             if m and m.group(1) in expected and key in runs and key in svc_entered:
-                evidence.append(f"{m.group(1)}{'/first' if m.group(2) else ''} {m.group(3)} {m.group(4)} {m.group(5)}")
+                evidence.append(f"{m.group(1)}{'/first' if m.group(2) else ''} {m.group(3)} {m.group(4)} {m.group(5)} {m.group(6)}")
         try:
             coverage = subprocess.run(
                 ["lake", "env", "lean", "--run", "scripts/exerciser_route_coverage.lean"],

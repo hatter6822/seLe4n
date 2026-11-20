@@ -15,6 +15,7 @@ import SeLe4n.Kernel.IPC.Invariant.QueueNextBlocking
 import SeLe4n.Kernel.IPC.Invariant.WaitingThreadHelpers
 import SeLe4n.Kernel.IPC.Invariant.Structural.QueueNextTransport
 import SeLe4n.Kernel.IPC.Invariant.Structural.StoreObjectFrame
+import SeLe4n.Kernel.IPC.Invariant.ReadViewAgreement
 
 /-! # IPC Structural Preservation — Part 4 (PerOperation)
 
@@ -2116,7 +2117,7 @@ theorem endpointSendDual_preserves_blockedThreadsPendingMessageConsistent
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hInv2 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
               st1 st2 sender (.blockedOnSend endpointId) none hObjInv1 hMsg hInv1 rfl
-            exact blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv2
+            exact blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv2
 
 /-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves
 `blockedThreadsPendingMessageConsistent`. The `.reply` store inside `linkReply`
@@ -2263,6 +2264,31 @@ theorem endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent
           cases hSenderIpc : pair.2.1.ipcState with
           | blockedOnCall _ =>
             simp only [hSenderIpc, ite_true] at hStep
+            by_cases hLk :
+              ((pair.2.1.ipcCanGrant || pair.2.1.ipcCanGrantReply) && replyId.isSome) = true
+            case neg =>
+              -- A `Call` that links no reply: the caller is completed `Inactive`.
+              rw [if_neg hLk] at hStep
+              cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
+              | error e => simp [hMsg] at hStep
+              | ok st2 =>
+                simp only [hMsg] at hStep
+                have hObjInvMsg := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
+                have hInvMsg := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
+                  pair.2.2 st2 pair.1 .ready none hObjInvPop hMsg hInvPop trivial
+                have hInv3 := blockedThreadsPendingMessageConsistent_of_readViewAgreement
+                  (ipcReadViewAgreement.of_updateTcb_threadState st2 pair.1 .Inactive hObjInvMsg) hInvMsg
+                have hObjInv3 := SystemState.updateTcb_preserves_objects_invExt st2 pair.1
+                  (fun t => { t with threadState := .Inactive }) hObjInvMsg
+                revert hStep
+                cases hPend : storeTcbIpcStateAndMessage
+                    (st2.updateTcb pair.1 fun t => { t with threadState := .Inactive }) receiver .ready _ with
+                | ok st4 =>
+                  exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸
+                    storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
+                      _ st4 receiver .ready _ hObjInv3 hPend hInv3 trivial
+                | error _ => simp
+            rw [if_pos hLk] at hStep
             cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hMsg] at hStep
             | ok st2 =>
@@ -2412,7 +2438,38 @@ theorem endpointCall_preserves_blockedThreadsPendingMessageConsistent
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : ep.receiveQ.head with
-      | some _ =>
+      | some r =>
+        simp only [hHead] at hStep
+        -- seL4 `sendIPC`: a call that links no reply delivers as a send's
+        -- and leaves the caller `Inactive` (`callRendezvousLinks`).
+        by_cases hLk : callRendezvousLinks st r payload = true
+        case neg =>
+          rw [if_neg hLk] at hStep
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => simp [hPop] at hStep
+          | ok pair =>
+            simp only [hPop] at hStep
+            have hObjInvPop := endpointQueuePopHead_preserves_objects_invExt
+              endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
+            have hInvPop := endpointQueuePopHead_preserves_blockedThreadsPendingMessageConsistent
+              endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hInv hPop
+            cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st caller payload)) with
+            | error e => simp [hMsg] at hStep
+            | ok st1 =>
+              simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+              split at hStep
+              · cases hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              have hObjInv1 := storeTcbReceiveComplete_preserves_objects_invExt pair.2.2 st1 pair.1 _ hObjInvPop hMsg
+              exact blockedThreadsPendingMessageConsistent_of_readViewAgreement
+                (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                  (removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt st1 pair.1 hObjInv1)))
+                (removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _
+                  (ensureRunnable_preserves_blockedThreadsPendingMessageConsistent st1 pair.1
+                    (storeTcbReceiveComplete_preserves_blockedThreadsPendingMessageConsistent
+                      pair.2.2 st1 pair.1 _ hObjInvPop hMsg hInvPop)))
+        rw [if_pos hLk] at hStep
         -- Handshake path: popHead + storeTcbIpcStateAndMessage(.ready) + ensureRunnable
         -- + storeTcbIpcState(.blockedOnReply) + removeRunnable
         cases hPop : endpointQueuePopHead endpointId true st with
@@ -2473,7 +2530,7 @@ theorem endpointCall_preserves_blockedThreadsPendingMessageConsistent
             have hInv2 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
               st1 st2 caller (.blockedOnCall endpointId) none
               hObjInvEnq hMsg hInvEnq rfl
-            exact blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv2
+            exact blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _) <| removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv2
 
 -- ============================================================================
 -- V3-G: endpointReply preservation

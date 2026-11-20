@@ -106,52 +106,16 @@ theorem clearWokenReceiverStashPure_mapTcbInPlace (Y : SystemState) (r : SeLe4n.
   | none => rfl
   | some t => simp only [Option.map_some, h]
 
-/-- **A signal's bound delivery, delivered** (seL4's `sendSignal`, a bound TCB
-blocked on receive): the bound thread `t` taken off the receive queue of the
-endpoint `epId` it is blocked on and made ready without the badge message,
-woken, then the badge frame written into its saved registers
-(`signalBound_eq_writes`).  The message is built only where the thread is,
-unexpectedly, not ready. -/
+/-- **A signal's bound delivery** (seL4's `sendSignal`, a bound TCB blocked on
+receive): the bound thread `t` taken off the receive queue of the endpoint
+`epId` it is blocked on, made ready with the badge in its badge register
+(`TCB.signalBoundWoken`), and woken.  The wake drops its reply stash itself
+(seL4's `cancelIPC` unlinks the receiver's reply). -/
 @[inline] def signalBoundWrites (c : Concurrency.CoreId) (t : SeLe4n.ThreadId)
     (epId : SeLe4n.ObjId) (ep : Endpoint) (tcb : TCB) (badge : SeLe4n.Badge)
     (st : SystemState) : SystemState :=
-  let X := (wakeThread ((storeQueueRemove st epId true t ep tcb).updateTcb t receiveReadyTcb) t
-    c).1
-  writeDeliveredFrameIfReady X t (Architecture.returnFrameOfBadge badge)
-    (fun _ => holdSignalBody X t badge)
-
-/-- The specification's bound delivery, the stash drop and the staged badge, is
-the delivered form. -/
-theorem signalBound_eq_writes (c : Concurrency.CoreId) (t : SeLe4n.ThreadId)
-    (epId : SeLe4n.ObjId) (ep : Endpoint) (tcb : TCB) (badge : SeLe4n.Badge)
-    (st : SystemState) (hNo : st.objects.noResizeDue) :
-    Architecture.stageWokenDelivery
-        (clearWokenReceiverStashPure (some t)
-          (wakeThread ((storeQueueRemove st epId true t ep tcb).updateTcb t
-            (receiveCompleteTcb { IpcMessage.empty with badge := some badge })) t c).1)
-        (some t) 0 =
-      signalBoundWrites c t epId ep tcb badge st := by
-  have hNo1 := storeQueueRemove_noResizeDue st epId true t ep tcb hNo
-  have hNo2 : ((storeQueueRemove st epId true t ep tcb).mapTcbInPlace t
-      ipcReadyTcb).objects.noResizeDue := (SystemState.mapTcbInPlace_noResizeDue _ _ _).mpr hNo1
-  unfold signalBoundWrites holdSignalBody
-  rw [receiveCompleteTcb_eq_slots, receiveReadyTcb_eq_slots,
-    SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo1,
-    SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo1,
-    ← SystemState.mapTcbInPlace_mapTcbInPlace, ← SystemState.mapTcbInPlace_mapTcbInPlace]
-  simp only [receiveCompleteSlots, clearMessageSlots]
-  rw [wakeThread_msg _ _ _ _ _ _ _ hNo2, wakeThread_msg _ _ _ _ _ _ _ hNo2]
-  dsimp only
-  have hD : ∀ M : IpcMessage,
-      TCB.withMessageSlots id (fun _ => some M) (fun _ : Nat => 0) =
-        holdMessage M ∘ TCB.withMessageSlots id (fun _ => none) (fun _ => 0) := fun _ => rfl
-  rw [clearWokenReceiverStashPure_mapTcbInPlace _ _ _ (fun _ => rfl),
-    hD, ← SystemState.mapTcbInPlace_mapTcbInPlace,
-    Architecture.stageWokenDelivery_some,
-    stageDeliveredMessage_holdMessage _ _ _
-      ((SystemState.mapTcbInPlace_noResizeDue _ _ _).mpr (wakeThread_noResizeDue _ _ _ hNo2))
-      (by simp [IpcMessage.empty]),
-    returnFrameOfMessage_badge]
+  (wakeThread ((storeQueueRemove st epId true t ep tcb).updateTcb t
+    (TCB.signalBoundWoken badge)) t c).1
 
 /-- **An admitted bound signal's writes** (`signalBoundWrites`), out of line. -/
 @[noinline] def performSignalBoundDelivered (c : Concurrency.CoreId) (t : SeLe4n.ThreadId)
@@ -214,26 +178,19 @@ message array. -/
   fun st =>
     match cap.target with
     | .object notifId =>
-        let woken? := (boundDeliveryTarget? st notifId).map (·.1)
-        let plainWaiterCode := notificationSignalWaiterCode st notifId
         match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid cap.signalBadge
             executingCore st with
-        | (st', .ok _) =>
-            .ok ((), Architecture.stageWokenDelivery
-                      (Architecture.stageWokenDelivery
-                        (clearWokenReceiverStashPure woken? st') woken? 0)
-                      (SeLe4n.ThreadId.ofOptCode plainWaiterCode) 0)
+        | (st', .ok _) => .ok ((), st')
         | (st', .error e) => .error (e, st')
     | _ => .error (.invalidCapability 0, st)
 
 /-- WS-ZA ZA4.7: the checked signal arm.  A signal that wakes its
 notification's head waiter, with the flow gate passed, no bound receiver and
-every write in its slot (`signalWakesInPlace`), writes the badge frame straight
-into the waiter's saved registers (`performSignalWokenDelivered`,
-`signalWoken_eq_delivered`).  A signal with no waiter whose bound thread is
-blocked receiving, both flow gates passed and every write of the removal in its
-slot (`queueRemoveInPlace`), delivers the badge frame to that thread
-(`performSignalBoundDelivered`, `signalBound_eq_writes`, WS-ZA ZA6.35); any
+every write in its slot (`signalWakesInPlace`), makes the wake's writes in place
+(`performSignalWoken`, `signalWoken_eq_perform`).  A signal with no waiter whose
+bound thread is blocked receiving, both flow gates passed and every write of the
+removal in its slot (`queueRemoveInPlace`), wakes that thread with the badge
+(`performSignalBoundDelivered`, `signalBoundWrites`, WS-ZA ZA6.35); any
 other signal takes the general arm. -/
 @[inline] def notificationSignalCheckedArmR (ctx : LabelingContext)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
@@ -248,7 +205,7 @@ other signal takes the general arm. -/
               match ntfn.waitHeadCode with
               | k + 1 =>
                   if signalWakesInPlace st notifId ⟨k⟩ then
-                    .ok ((), performSignalWokenDelivered st notifId ⟨k⟩
+                    .ok ((), performSignalWoken st notifId ⟨k⟩
                       (ntfnSuccessorCode st ⟨k⟩) cap.signalBadge executingCore)
                   else notificationSignalCheckedArmGeneralR ctx tid executingCore cap st
               | 0 => notificationSignalCheckedArmGeneralR ctx tid executingCore cap st
@@ -305,11 +262,8 @@ theorem notificationSignalCheckedArmR_eq_general (ctx : LabelingContext)
                 rw [← Notification.ofOptCode_waitHeadCode, hK]; rfl
               simp only [notificationSignalBoundCrossCoreDispatchChecked, hFlow,
                 ↓reduceIte, hBound, notificationSignalBoundOnCore, notificationSignalOnCore_eq_impl,
-                notificationSignalOnCoreImpl, hN, hHead, hW, Option.map_none,
-                clearWokenReceiverStashPure, Architecture.stageWokenDelivery_none,
-                notificationSignalWaiterCode, hK]
-              rw [← optCode_ntfnSuccessor?, ← signalWoken_eq_delivered _ _ _ _ _ _ hNo]
-              rfl
+                notificationSignalOnCoreImpl, hN, hHead, hW]
+              rw [← optCode_ntfnSuccessor?, ← signalWoken_eq_perform]
             · rfl
           · rfl
         · rfl
@@ -333,19 +287,10 @@ theorem notificationSignalCheckedArmR_eq_general (ctx : LabelingContext)
                       obtain ⟨hFlow2, hG⟩ := hA
                       have hBT := boundDeliveryTarget?_of_codes st notifId ntfn k tcb hN hK0 hB
                         hTT hSt
-                      have hNo : st.objects.noResizeDue := by
-                        have hQ := hG
-                        unfold queueRemoveInPlace at hQ
-                        simp only [Bool.and_eq_true] at hQ
-                        obtain ⟨⟨⟨⟨⟨⟨-, -⟩, hFE⟩, -⟩, -⟩, -⟩, -⟩ := hQ
-                        exact RobinHood.RHTable.noResizeDue_of_findsInPlace hFE
                       have hS := notificationSignalBoundOnCore_bound_eq notifId cap.signalBadge
                         executingCore st ⟨k⟩ ⟨tcb.ipcObjectCode⟩ ep tcb hBT hE hTT hG
                       simp only [notificationSignalBoundCrossCoreDispatchChecked, hFlow, hBT,
-                        hFlow2, ↓reduceIte, hS, Option.map_some, notificationSignalWaiterCode, hN,
-                        hK0]
-                      rw [show SeLe4n.ThreadId.ofOptCode 0 = none from rfl,
-                        Architecture.stageWokenDelivery_none, signalBound_eq_writes _ _ _ _ _ _ _ hNo]
+                        hFlow2, ↓reduceIte, hS]
                       rfl
                     · rfl
                   all_goals rfl
@@ -376,7 +321,7 @@ theorem notificationSignalCheckedArmR_eq (ctx : LabelingContext)
       rw [hRun] at hst
       simp only at hst
       rw [hst]
-    · simp only [clearWokenReceiverStash_eq_pure, ofOptCode_notificationSignalWaiterCode]
+    · rfl
   | _ => rfl
 
 /-- The signal's taint plan (`syscallTaintPlan`) from its operand, resolved
@@ -539,20 +484,29 @@ theorem notificationWaitOnCore_error_state (notificationId : SeLe4n.ObjId)
   repeat' split at h <;> (try simp only [] at h ⊢) <;> (try split) <;> (try rfl) <;>
     (try simp_all)
 
-/-- The wait's consumed badge staged into the caller's return registers:
-`writeReturnFrameToTcb` of `returnFrameOfBadge` (`stageBadgeReturn_eq`), with
-the frame's words written straight into the register file, so no frame record
-is built and an exclusively held TCB is rewritten in its slot. -/
+/-- The wait's consumed badge staged into the caller's badge register (seL4's
+`receiveSignal`, `setRegister(thread, badgeRegister, ...)`):
+`writeReturnFrameToTcb` of `badgeReturnFrame` (`stageBadgeReturn_eq`), with
+`x0` written straight into the register file, so no frame record is built,
+`x1`-`x5` keep what they hold, and an exclusively held TCB is rewritten in its
+slot. -/
 @[inline] def stageBadgeReturn (st : SystemState) (tid : SeLe4n.ThreadId)
     (badge : SeLe4n.Badge) : SystemState :=
   st.updateTcb tid (fun t => { t with registerContext :=
-    { t.registerContext with
-      x0 := badge.word, x1 := 0, x2 := 0, x3 := 0, x4 := 0, x5 := 0 } })
+    { t.registerContext with x0 := badge.word } })
 
 theorem stageBadgeReturn_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (badge : SeLe4n.Badge) :
     stageBadgeReturn st tid badge =
-      Architecture.writeReturnFrameToTcb st tid (Architecture.returnFrameOfBadge badge) := rfl
+      Architecture.writeReturnFrameToTcb st tid (Architecture.badgeReturnFrame st tid badge) := by
+  unfold stageBadgeReturn Architecture.writeReturnFrameToTcb Architecture.badgeReturnFrame
+    Architecture.readReturnFrame
+  cases h : st.getTcb? tid with
+  | none =>
+    rw [SystemState.updateTcb_eq_self_of_none h, SystemState.updateTcb_eq_self_of_none h]
+  | some t =>
+    rw [SystemState.updateTcb_eq_of_some h, SystemState.updateTcb_eq_of_some h]
+    rfl
 
 /-- The wait arm's specification form, refusing in the state it was handed
 (`notificationWaitOnCore_error_state`): the path every wait takes that does
@@ -562,21 +516,21 @@ def notificationWaitArmGeneralR (notifId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
   fun st =>
     match notificationWaitOnCore notifId tid executingCore st with
     | (st', .ok (some badge)) =>
-        .ok ((), Architecture.writeReturnFrameToTcb st' tid (Architecture.returnFrameOfBadge badge))
+        .ok ((), Architecture.writeReturnFrameToTcb st' tid
+          (Architecture.badgeReturnFrame st' tid badge))
     | (st', .ok none) => .ok ((), st')
     | (st', .error e) => .error (e, st')
 
-/-- The checked wait arm (`dispatchWithCapChecked`'s `.notificationWait` case),
-refusing in the state it was handed (`notificationWaitCheckedArmR_eq`).  A wait
-that consumes a pending badge in place (`waitConsumesInPlace`) writes the
+/-- **The checked wait past its non-blocking test** (`completeSignalArm`), refusing
+in the state it was handed (`notificationWaitGatedR_eq`): a `Wait` on the
+notification, and a receive that completes its bound notification, both run it.
+A wait that consumes a pending badge in place (`waitConsumesInPlace`) writes the
 notification, the waiter's state and its return registers each in its slot and
 builds no result; a wait that blocks in place (`waitBlocksInPlace`) makes its
 writes the same way; every other wait takes the specification's form. -/
-@[inline] def notificationWaitCheckedArmR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (cap : Capability) : RefusalCarrying Unit :=
+@[inline] def notificationWaitGatedR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (notifId : SeLe4n.ObjId) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
-    match cap.target with
-    | .object notifId =>
         if securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf tid) then
           if notificationBoundElsewhere st notifId tid then .error (.invalidCapability 0, st) else
           match st.getNotification? notifId with
@@ -598,6 +552,19 @@ writes the same way; every other wait takes the specification's form. -/
                   | none => notificationWaitArmGeneralR notifId tid executingCore st
           | none => notificationWaitArmGeneralR notifId tid executingCore st
         else .error (.flowDenied, st)
+
+/-- The checked wait arm (`dispatchWithCapChecked`'s `.notificationWait` case),
+refusing in the state it was handed (`notificationWaitCheckedArmR_eq`): `NBWait`'s
+failure, else the gated wait (`notificationWaitGatedR`). -/
+@[inline] def notificationWaitCheckedArmR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (cap : Capability) : RefusalCarrying Unit :=
+  fun st =>
+    match cap.target with
+    | .object notifId =>
+        if waitFindsNothing ctx (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid
+            notifId then
+          .ok ((), Architecture.nbRecvFailedTransfer st tid)
+        else notificationWaitGatedR ctx tid notifId executingCore st
     | _ => .error (.invalidCapability 0, st)
 
 theorem notificationWaitArmGeneralR_eq (notifId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
@@ -607,7 +574,7 @@ theorem notificationWaitArmGeneralR_eq (notifId : SeLe4n.ObjId) (tid : SeLe4n.Th
         match notificationWaitOnCore notifId tid executingCore st with
         | (st', .ok (some badge)) =>
             .ok ((), Architecture.writeReturnFrameToTcb st' tid
-              (Architecture.returnFrameOfBadge badge))
+              (Architecture.badgeReturnFrame st' tid badge))
         | (st', .ok none) => .ok ((), st')
         | (_, .error e) => .error e) st := by
   simp only [notificationWaitArmGeneralR, RefusalCarrying.ofKernel]
@@ -620,6 +587,45 @@ theorem notificationWaitArmGeneralR_eq (notifId : SeLe4n.ObjId) (tid : SeLe4n.Th
   · rfl
   · rfl
 
+theorem notificationWaitGatedR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
+    (notifId : SeLe4n.ObjId) (executingCore : Concurrency.CoreId) :
+    notificationWaitGatedR ctx tid notifId executingCore =
+      RefusalCarrying.ofKernel (completeSignalArm ctx tid notifId executingCore) := by
+  funext st
+  simp only [notificationWaitGatedR, RefusalCarrying.ofKernel, completeSignalArm,
+    notificationWaitCrossCoreDispatchChecked]
+  by_cases hFlow : securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf tid) = true
+  · simp only [hFlow, ↓reduceIte]
+    by_cases hBound : notificationBoundElsewhere st notifId tid = true
+    · simp only [hBound, ↓reduceIte, RefusalCarrying.ofKernel]
+    simp only [hBound, Bool.false_eq_true, ↓reduceIte]
+    have hGen := notificationWaitArmGeneralR_eq notifId tid executingCore st
+    simp only [RefusalCarrying.ofKernel] at hGen ⊢
+    split
+    · next ntfn hN =>
+      split
+      · next badge hB =>
+        split
+        · next hG =>
+          rw [notificationWaitOnCore_eq_impl]
+          simp only [notificationWaitOnCoreImpl, hN, hB, hG, ↓reduceIte,
+            stageBadgeReturn_eq]
+        · exact hGen
+      · next hB =>
+        split
+        · next tcb hLk =>
+          split
+          · exact hGen
+          · next hNotW =>
+            split
+            · next hG =>
+              rw [notificationWaitOnCore_eq_impl]
+              simp only [notificationWaitOnCoreImpl, hN, hB, hLk, hNotW, hG, ↓reduceIte]
+            · exact hGen
+        · exact hGen
+    · exact hGen
+  · simp only [hFlow, Bool.false_eq_true, ↓reduceIte, RefusalCarrying.ofKernel]
+
 theorem notificationWaitCheckedArmR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
@@ -630,39 +636,13 @@ theorem notificationWaitCheckedArmR_eq (ctx : LabelingContext)
   simp only [notificationWaitCheckedArmR, dispatchWithCapChecked, dispatchCapabilityOnly, hWait]
   cases cap.target with
   | object notifId =>
-    simp only [notificationWaitCrossCoreDispatchChecked]
-    by_cases hFlow : securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf tid) = true
-    · simp only [hFlow, ↓reduceIte]
-      by_cases hBound : notificationBoundElsewhere st notifId tid = true
-      · simp only [hBound, ↓reduceIte, RefusalCarrying.ofKernel]
-      simp only [hBound, Bool.false_eq_true, ↓reduceIte]
-      have hGen := notificationWaitArmGeneralR_eq notifId tid executingCore st
-      simp only [RefusalCarrying.ofKernel] at hGen ⊢
-      simp only [hBound, Bool.false_eq_true, ↓reduceIte]
-      split
-      · next ntfn hN =>
-        split
-        · next badge hB =>
-          split
-          · next hG =>
-            rw [notificationWaitOnCore_eq_impl]
-            simp only [notificationWaitOnCoreImpl, hN, hB, hG, ↓reduceIte,
-              stageBadgeReturn_eq]
-          · exact hGen
-        · next hB =>
-          split
-          · next tcb hLk =>
-            split
-            · exact hGen
-            · next hNotW =>
-              split
-              · next hG =>
-                rw [notificationWaitOnCore_eq_impl]
-                simp only [notificationWaitOnCoreImpl, hN, hB, hLk, hNotW, hG, ↓reduceIte]
-              · exact hGen
-          · exact hGen
-      · exact hGen
-    · simp only [hFlow, Bool.false_eq_true, ↓reduceIte, RefusalCarrying.ofKernel]
+    by_cases hN : waitFindsNothing ctx (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid
+        notifId = true
+    · simp only [hN, ↓reduceIte, RefusalCarrying.ofKernel]
+    simp only [Bool.not_eq_true] at hN
+    dsimp only
+    simp only [hN, Bool.false_eq_true, ↓reduceIte, notificationWaitGatedR_eq]
+    simp only [RefusalCarrying.ofKernel, hN, Bool.false_eq_true, ↓reduceIte, completeSignalArm]
   | _ => rfl
 
 /-- The wait's taint step from the capability its operand resolved to: the

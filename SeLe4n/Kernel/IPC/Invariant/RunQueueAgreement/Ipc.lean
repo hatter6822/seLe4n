@@ -130,6 +130,12 @@ theorem boundTarget_blockedAt {st : SystemState} {nid : SeLe4n.ObjId} {t : SeLe4
   ⟨tcb, hT, by rw [hS]; exact fun h => by cases h⟩
 macro_rules | `(tactic| run_queue_current_nowhere_step) => `(tactic|
   refine SystemState.currentNowhere.of_scheduler_eq (detachNtfnHead_scheduler _ _ _) ?_)
+macro_rules | `(tactic| run_queue_current_nowhere_step) => `(tactic|
+  refine SystemState.currentNowhere.of_scheduler_eq
+    (storeTcbSignalWoken_scheduler_eq _ _ _ _ (by with_reducible assumption)) ?_)
+macro_rules | `(tactic| run_queue_current_nowhere_step) => `(tactic|
+  refine SystemState.currentNowhere.of_scheduler_eq
+    (storeTcbSignalBoundWoken_scheduler_eq _ _ _ _ (by with_reducible assumption)) ?_)
 
 /-- The signal: the waiter it wakes is the notification's head, which
 `hHeads` says is blocked and current nowhere. -/
@@ -142,7 +148,7 @@ theorem notificationSignalOnCore_runQueueStage (notificationId : SeLe4n.ObjId)
   all_goals first
     | exact RunQueueStage.refl _
     | (refine (((storeObject_notificationOver_runQueueStage (by assumption) (by assumption)).trans
-         (storeTcbIpcStateAndMessage_runQueueStage (by assumption) rfl)).trans
+         (storeTcbSignalWoken_runQueueStage (by assumption))).trans
          (detachNtfnHead_runQueueStage _ _ _)).then_wake _ ?_
          (notificationHeadsWakeable.blocked hHeads (by assumption) (by assumption))
        run_queue_current_nowhere; done)
@@ -159,7 +165,7 @@ theorem notificationSignalBoundOnCore_runQueueStage (notificationId : SeLe4n.Obj
     | exact RunQueueStage.refl _
     | exact notificationSignalOnCore_runQueueStage _ _ _ _ hHeads
     | (refine ((endpointQueueRemoveDual_runQueueStage (by assumption)).trans
-         (storeTcbReceiveComplete_runQueueStage (by assumption))).then_wake _ ?_
+         (storeTcbSignalBoundWoken_runQueueStage (by assumption))).then_wake _ ?_
          (boundTarget_blockedAt (by assumption))
        run_queue_current_nowhere; done)
 
@@ -268,6 +274,23 @@ theorem notificationWaitOnCore_runQueueEntryStage (notificationId : SeLe4n.ObjId
          (storeTcbIpcState_runQueueStage (by assumption) rfl)).entry
     | exact notificationWait_block_runQueueEntryStage (by assumption) (by assumption)
          (by assumption) (by assumption) (by assumption) hCur hNI
+
+/-- A wait that takes a pending badge links nothing and unlinks nothing: the
+notification's store and the waiter's `.ready` mark, whichever core it runs on
+and whoever is current there (the reply-receive's receive leg, run after its
+reply leg has answered the caller). -/
+theorem notificationWaitOnCore_consumed_runQueueStage {notificationId : SeLe4n.ObjId}
+    {waiter : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st' : SystemState}
+    {badge : SeLe4n.Badge}
+    (h : notificationWaitOnCore notificationId waiter c st = (st', .ok (some badge))) :
+    RunQueueStage st st' := by
+  unfold notificationWaitOnCore at h
+  repeat' (first | split at h | dsimp only at h)
+  all_goals first | (cases h; done) | skip
+  all_goals
+    cases h
+    exact (storeObject_notificationOver_runQueueStage (by assumption) (by assumption)).trans
+      (storeTcbIpcState_runQueueStage (by assumption) rfl)
 
 macro_rules | `(tactic| run_queue_current_nowhere_step) => `(tactic|
   refine SystemState.currentNowhere.of_scheduler_eq
@@ -474,15 +497,6 @@ theorem replyTransferOnCoreChecked_runQueueEntryStage {ctx : LabelingContext}
         cases h
         exact ((hE.trans (receiveTransferCaps_runQueueStage hX)).trans
           (stageDeliveredMessage_runQueueStage _ _ _)).entry
-
-theorem stageWokenSendCompletion_runQueueStage (st : SystemState)
-    (w? : Option SeLe4n.ThreadId) :
-    RunQueueStage st (Architecture.stageWokenSendCompletion st w?) := by
-  unfold Architecture.stageWokenSendCompletion
-  repeat' split
-  all_goals first
-    | exact RunQueueStage.refl _
-    | exact writeReturnFrameToTcb_runQueueStage _ _ _
 
 /-- WS-ZA ZA6.33: **the rendezvous donor is not suspended** — its guard reads it
 blocked on the reply (`rendezvousDequeuedCall`), and a coherent blocked thread is
@@ -866,8 +880,7 @@ theorem endpointReplyRecvOnCore_runQueueEntryStage {answer : Option Architecture
   obtain ⟨hIp, hRp⟩ := hPopS.1.links hI1 hR1
   have hRdyX := (hPH.2.2 hI2 hR2).readyOrAbsent
     (hRK hIp hRp prevCaller hNe ((hPopS.2.2 hI1 hR1).readyOrAbsent hRdy1))
-  exact hAll.trans ((hPH.entry.trans
-    (replyRecvAnswerCaller_runQueueEntryStage answer _ prevCaller _ hRdyX hNIp)).trans
-    (stageWokenSendCompletion_runQueueStage _ _).entry)
+  exact hAll.trans (hPH.entry.trans
+    (replyRecvAnswerCaller_runQueueEntryStage answer _ prevCaller _ hRdyX hNIp))
 
 end SeLe4n.Kernel

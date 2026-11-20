@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Lifecycle operations — carving objects out of an untyped, and resetting it.
+//! Lifecycle operations — carving objects out of an untyped.
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — the `.untypedRetype` arm
-//! (`untypedRetypeFromCap`) and the `.untypedReset` arm (`untypedReset`).
+//! (`untypedRetypeFromCap`).  As in seL4, a carve through a capability with
+//! no derivation child resets the untyped first, so there is no separate
+//! reset call (WS-SX SX7.1).
 //! WS-ZA ZA5.4 part 14 retired the in-place `lifecycle_retype` (syscall 8):
 //! every object is carved from an untyped.
 
@@ -92,6 +94,7 @@ pub fn untyped_retype(
         msg_info: MessageInfo::new_const(7, 1, 0),
         msg_regs: [encoded[0], encoded[1], encoded[2], encoded[3]],
         syscall_id: SyscallId::UntypedRetype,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -234,24 +237,4 @@ pub fn untyped_retype_sched_context(
         child_id,
         buf,
     )
-}
-
-/// Hand an untyped's memory back to it — seL4's `resetUntypedCap`.
-///
-/// Lean: the `.untypedReset` arm (API.lean, `untypedReset`), WS-BP BP7.1.
-/// Requires the `Retype` right on `untyped_cap`.  Refused with
-/// `RevocationRequired` while any capability anywhere still names an object
-/// carved from the untyped — at any depth, since a child untyped's own carves
-/// are the untyped's memory too — so revoke the untyped capability first.  On
-/// success every mapping of a page in the untyped's region is gone, every
-/// carved frame and child untyped no longer exists, and the next
-/// [`untyped_retype`] carves from the start of the region again.
-#[inline]
-pub fn untyped_reset(untyped_cap: CPtr) -> KernelResult<SyscallResponse> {
-    invoke_syscall(SyscallRequest {
-        cap_addr: untyped_cap,
-        msg_info: MessageInfo::new_const(0, 0, 0),
-        msg_regs: [0; 4],
-        syscall_id: SyscallId::UntypedReset,
-    })
 }

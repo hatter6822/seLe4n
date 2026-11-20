@@ -94,7 +94,8 @@ theorem physicalAddressBoundForConfig_le_default (config : MachineConfig)
 
 /-- **WS-BP BP7.2**: a page mapping names a page-aligned physical and virtual
 address.  `VSpaceRoot.mapPage` refuses anything else; `vspaceMapPage` asks this
-first so the caller is answered `.alignmentError` rather than `.mappingConflict`. -/
+first so the caller is answered `.alignmentError` rather than the
+`.targetSlotOccupied` (seL4's `seL4_DeleteFirst`) an occupied entry is answered. -/
 def pageMappingAligned (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr) : Bool :=
   paddr.toNat % pageBytes == 0 && vaddr.toNat % pageBytes == 0
 
@@ -129,7 +130,7 @@ def vspaceMapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PA
     | some (rootId, root) =>
         if !perms.wxCompliant then .error .policyDenied
         -- PR #845 review (P2): reject an unaligned physical address *here* so
-        -- the caller sees `.alignmentError` rather than the `.mappingConflict`
+        -- the caller sees `.alignmentError` rather than the `.targetSlotOccupied`
         -- that `VSpaceRoot.mapPage`'s structural guard would otherwise surface.
         -- The guard below it is the defense-in-depth layer, exactly as with
         -- `wxCompliant`; this arm exists to keep the error code honest.  WS-BP
@@ -137,7 +138,11 @@ def vspaceMapPage (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PA
         else if !pageMappingAligned vaddr paddr then .error .alignmentError
         else
           match root.mapPage vaddr paddr perms with
-          | none => .error .mappingConflict
+          -- An entry already in use: seL4's `seL4_DeleteFirst` ("Virtual
+          -- address already mapped", RISC-V `decodeRISCVFrameInvocation`).  The
+          -- model keeps every recorded mapping one the root holds, so a map
+          -- onto a live entry is refused rather than overwritten.
+          | none => .error .targetSlotOccupied
           | some root' =>
               -- WS-BP BP7.2: the descriptor store that makes memory agree,
               -- recorded for the syscall seam (`mappingStore?`).

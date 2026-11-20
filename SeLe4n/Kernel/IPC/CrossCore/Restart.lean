@@ -157,4 +157,27 @@ theorem restartThreadOnCore_of_resumeAdmitted {st : SystemState}
     simp only [Bool.and_eq_true, Bool.not_eq_true', bne_eq_false_iff_eq] at h
     exact restartThreadOnCore_of_inactive hT h.1
 
+/-- The check of the restart's third arm, asked before any write: the target is
+a TCB that is not stopped, so the restart leaves the state as it is. -/
+@[inline] def restartLeavesAsIs (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getTcb? tid with
+  | some tcb => !threadStopped tcb
+  | none => false
+
+/-- **A restart of a thread that is not stopped is the identity**, with no
+reschedule. -/
+theorem restartThreadOnCore_of_leavesAsIs {st : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {executingCore : CoreId}
+    (h : restartLeavesAsIs st vtid.val = true) :
+    restartThreadOnCore st vtid executingCore = .ok (st, none) := by
+  unfold restartLeavesAsIs at h
+  unfold restartThreadOnCore
+  cases hT : st.getTcb? vtid.val with
+  | none => rw [hT] at h; cases h
+  | some tcb =>
+    rw [hT] at h
+    simp only [threadStopped, Bool.not_or, Bool.and_eq_true, Bool.not_eq_true',
+      bne_eq_false_iff_eq] at h
+    simp only [h.1, h.2, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+
 end SeLe4n.Kernel.Lifecycle.Suspend

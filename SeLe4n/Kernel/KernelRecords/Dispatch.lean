@@ -43,6 +43,33 @@ open SeLe4n.Model
 open Architecture.RegisterDecode
 open Architecture.SyscallArgDecode
 
+/-- **The bind keeps the records**: neither word is in a record view. -/
+theorem RecordsFrame.schedContextBindNotification {vScId : SeLe4n.ValidObjId}
+    {n : SeLe4n.ObjId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.schedContextBindNotification vScId n st = .ok ((), st')) :
+    RecordsFrame st st' := by
+  obtain ⟨hA, rfl⟩ := schedContextBindNotification_ok_admitted h
+  obtain ⟨_, _, hS, -, hN, -⟩ := schedContextBindNotificationAdmitted_facts hA
+  obtain ⟨h1, hEq⟩ := bindNotificationSchedLink_eq hS hN hInv
+  rw [hEq]
+  have F := RecordsFrame.updateSchedContext st (SeLe4n.SchedContextId.ofObjId vScId.val)
+    (fun sc => { sc with notificationCode := n.val + 1 }) hInv
+  exact F.trans (RecordsFrame.insert F.invExt (by rw [h1]; rfl))
+
+
+/-- **`SchedContext_Unbind` keeps the records**: the thread unbind's frame,
+then the notification unbind's. -/
+theorem RecordsFrame.schedContextUnbindAllOnCore {vScId : SeLe4n.ValidObjId}
+    {ec : Concurrency.CoreId} {st st' : SystemState}
+    {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedContextUnbindAllOnCore vScId ec st = .ok (st', sgi?)) :
+    RecordsFrame st st' := by
+  obtain ⟨stU, hU | ⟨-, hU, -⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok h
+  · obtain ⟨rfl, -⟩ := hU
+    exact RecordsFrame.unbindSchedContextNotification _ _ hInv
+  · have F := RecordsFrame.schedContextUnbindOnCore hInv hU
+    exact F.trans (RecordsFrame.unbindSchedContextNotification _ _ F.invExt)
+
 /-- A stage onto a transition's state is a stage onto the state it returns. -/
 theorem RecordsStage.of_fst_eq {α : Type} {st st' : SystemState} {p : SystemState × α} {r : α}
     (s : RecordsStage st p.1) (h : p = (st', r)) : RecordsStage st st' := by
@@ -250,11 +277,6 @@ theorem dispatchCapabilityOnly_recordsStage
     case object _ =>
       exact RecordsStage.untypedRetypeFromCap hStep
     all_goals try cases hStep
-  case untypedReset =>
-    cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object _ =>
-      exact .of_frameK fun hI => RecordsFrame.untypedResetFromCap hI hStep
-    all_goals try cases hStep
   case vspaceMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
@@ -278,13 +300,12 @@ theorem dispatchCapabilityOnly_recordsStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object oid =>
       try dsimp only [] at hStep
-      cases hDec : decodeVSpaceUnmapArgs decoded st.machine.maxASID with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
-          split at hStep
-          · cases hStep
-          · exact RecordsStage.vspaceUnmapPageWithShootdownAndIcacheBroadcast hStep
+      cases hR : resolveCallerCapSlot tid decoded.capAddr (syscallRequiredRight .vspaceUnmap) st with
+      | error e => simp only [hR] at hStep; cases hStep
+      | ok r =>
+          obtain ⟨slot, _, _⟩ := r
+          simp only [hR] at hStep
+          exact RecordsStage.vspaceUnmapFrameCap hStep
     all_goals try cases hStep
   case vspaceUnifyInstruction =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -322,7 +343,7 @@ theorem dispatchCapabilityOnly_recordsStage
           subst hStEq
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
           subst hStep
-          exact .of_frameK fun hI => RecordsFrame.writeReturnFrameToTcb _ _ _ hI
+          exact .of_frameK fun hI => RecordsFrame.writeCallReturnWord _ _ _ hI
     all_goals try cases hStep
   case schedContextConfigure =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -347,15 +368,26 @@ theorem dispatchCapabilityOnly_recordsStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>
       try dsimp only [] at hStep
-      cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
-      | error e => simp only [hRes] at hStep; cases hStep
-      | ok vThreadId =>
-          simp only [hRes] at hStep
+      cases hN : resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | succ k =>
+          simp only [hN] at hStep
           cases hVal : validateObjIdArg scId with
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              exact .of_frameK fun hI => RecordsFrame.schedContextBind hI hStep
+              exact .of_frameK fun hI => RecordsFrame.schedContextBindNotification hI hStep
+      | zero =>
+          simp only [hN] at hStep
+          cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok vThreadId =>
+              simp only [hRes] at hStep
+              cases hVal : validateObjIdArg scId with
+              | error e => simp only [hVal] at hStep; cases hStep
+              | ok vScId =>
+                  simp only [hVal] at hStep
+                  exact .of_frameK fun hI => RecordsFrame.schedContextBind hI hStep
     all_goals try cases hStep
   case schedContextUnbind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -369,14 +401,14 @@ theorem dispatchCapabilityOnly_recordsStage
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              cases hUn : SchedContextOps.schedContextUnbindOnCore vScId
+              cases hUn : SchedContextOps.schedContextUnbindAllOnCore vScId
                   executingCore st with
               | error e => simp only [hUn] at hStep; cases hStep
               | ok pair =>
                   obtain ⟨stU, sgiU⟩ := pair
                   simp only [hUn] at hStep
                   cases hStep
-                  exact .of_frameK fun hI => RecordsFrame.schedContextUnbindOnCore hI hUn
+                  exact .of_frameK fun hI => RecordsFrame.schedContextUnbindAllOnCore hI hUn
     all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -715,16 +747,44 @@ theorem stageWokenDelivery_recordsStage (x : SystemState) (w : Option SeLe4n.Thr
     RecordsStage x (Architecture.stageWokenDelivery x w n) :=
   .of_frameK fun hI => RecordsFrame.stageWokenDelivery x w n hI
 
-/-- The two badge stagings a signal arm ends with. -/
-theorem stageWokenDeliveryTwice_recordsStage (x : SystemState) (w p : Option SeLe4n.ThreadId) :
-    RecordsStage x (Architecture.stageWokenDelivery
-      (Architecture.stageWokenDelivery x w 0) p 0) :=
-  (stageWokenDelivery_recordsStage x w 0).trans (stageWokenDelivery_recordsStage _ p 0)
-
 /-- A return-frame write. -/
 theorem writeReturnFrameToTcb_recordsStage (x : SystemState) (t : SeLe4n.ThreadId)
     (f : Architecture.SyscallReturnFrame) : RecordsStage x (Architecture.writeReturnFrameToTcb x t f) :=
   .of_frameK fun hI => RecordsFrame.writeReturnFrameToTcb x t f hI
+
+/-- The `Call`-gated reply write keeps the records. -/
+theorem writeCallReturnWord_recordsStage (x : SystemState) (t : SeLe4n.ThreadId)
+    (w : UInt64) : RecordsStage x (Architecture.writeCallReturnWord x t w) :=
+  .of_frameK fun hI => RecordsFrame.writeCallReturnWord x t w hI
+
+/-- **A receive that completes its bound notification keeps the records**: the
+checked wait's consumption, read with no reachability premise -- the reply-waiter
+consistency it needs is the one the records themselves carry -- and the badge
+register written. -/
+theorem completeSignalArm_recordsStage {ctx : LabelingContext} {tid : SeLe4n.ThreadId}
+    {nid : SeLe4n.ObjId} {c : Concurrency.CoreId} {st st' : SystemState}
+    (hInv : st.objects.invExt) (hC : CallerReady st tid)
+    (h : completeSignalArm ctx tid nid c st = .ok ((), st')) :
+    RecordsStage st st' := by
+  have hW : RecordsStage st (notificationWaitCrossCoreDispatchChecked ctx nid tid c st).1 :=
+    RecordsStage.of_step (RecordsStep.notificationWaitCrossCoreDispatchChecked hInv
+      hC.notParked) fun hRW => by
+      unfold notificationWaitCrossCoreDispatchChecked
+      split
+      · split
+        · exact hRW
+        · exact notificationWaitOnCore_preserves_replyWaitersConsistent nid tid c st
+            hInv hRW hC.serverFree
+      · exact hRW
+  unfold completeSignalArm at h
+  split at h
+  · rename_i hR
+    cases h
+    exact (RecordsStage.of_fst_eq hW hR).trans (writeReturnFrameToTcb_recordsStage _ _ _)
+  · rename_i hR
+    cases h
+    exact RecordsStage.of_fst_eq hW hR
+  · cases h
 
 /-- A receive run on its busy-reply-cancelled state keeps the records: the
 `.receive` arm, and the `.replyRecv` arm whose reply is skipped. -/
@@ -732,7 +792,7 @@ theorem receiveResolvedArm_recordsStage (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (epId : SeLe4n.ObjId)
     (st st' : SystemState) (P : RecordsArmPremises st) (hCaller : CallerReady st tid)
-    (h : receiveResolvedArm decoded gate tid epId executingCore
+    (h : receiveResolvedArm ctx decoded gate tid epId executingCore
       (cancelRecvBusyReply ctx tid gate decoded executingCore st) = .ok ((), st')) :
     RecordsStage st st' := by
   unfold receiveResolvedArm at h
@@ -752,7 +812,27 @@ theorem receiveResolvedArm_recordsStage (ctx : LabelingContext)
         hCaller.cancelReplyHolder hInv (Ne.symm hne)⟩
   obtain ⟨hS, hIC, hQC, hCC⟩ := hSC
   generalize cancelRecvBusyReply ctx tid gate decoded executingCore st = stC at h hS hIC hQC hCC
-  simp only at h
+  by_cases hSig : receiveCompletesSignal ctx stC tid = true
+  · -- seL4-MCS `receiveIPC`: the bound notification is completed.
+    cases hRes : resolveRecvReplyId gate decoded stC with
+    | error _ => rw [hRes] at h; cases h
+    | ok r =>
+    rw [hRes] at h
+    simp only [hSig, ↓reduceIte] at h
+    exact hS.trans (completeSignalArm_recordsStage hIC hCC h)
+  simp only [Bool.not_eq_true] at hSig
+  by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
+  · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
+    cases hRes : resolveRecvReplyId gate decoded stC with
+    | error _ => rw [hRes] at h; cases h
+    | ok r =>
+    rw [hRes] at h
+    simp only [hSig, Bool.false_eq_true, hNb, ↓reduceIte, Except.ok.injEq, Prod.mk.injEq,
+      true_and] at h
+    subst h
+    exact hS.trans (writeReturnFrameToTcb_recordsStage _ _ _)
+  simp only [Bool.not_eq_true] at hNb
+  simp only [hSig, hNb, Bool.false_eq_true, ↓reduceIte] at h
   split at h
   · cases h
   split at h
@@ -763,10 +843,24 @@ theorem receiveResolvedArm_recordsStage (ctx : LabelingContext)
     cases h
     exact hS.trans ((RecordsStage.of_fst_eq
       (RecordsStage.endpointReceiveDualWithCapsOnCore hIC hQC hCC) hRecv).trans
-      (((RecordsStage.of_frameK fun hI => RecordsFrame.applyReceiveRendezvousHandoff hI hHand).trans
-        (RecordsStage.of_frameK fun hI => RecordsFrame.stageWokenSendCompletion _ _ hI)).trans
+      ((RecordsStage.of_frameK fun hI => RecordsFrame.applyReceiveRendezvousHandoff hI hHand).trans
         (RecordsStage.of_frameK fun hI => RecordsFrame.stageDeliveredMessage _ _ _ hI)))
   · cases h
+
+/-- **A reply-receive whose receive completes its bound notification keeps the
+records**: the reply leg (`RecordsStage.replyTransferOnCoreChecked`), then the
+notification's completion on the replier the reply leg left `.ready`. -/
+theorem replyRecvCompletesSignalArm_recordsStage {ctx : LabelingContext}
+    {tid prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool}
+    {c : Concurrency.CoreId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : replyRecvCompletesSignalArm ctx tid prevCaller label msg grant c st = .ok ((), st')) :
+    RecordsStage st st' := by
+  obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_split h
+  have hS := RecordsStage.replyTransferOnCoreChecked hR
+  rcases hOr with rfl | ⟨_, ⟨t, hT, hReady⟩, hC⟩
+  · exact hS
+  · exact hS.trans (completeSignalArm_recordsStage (replyTransferOnCoreChecked_stepCovers c hInv hR).2
+      ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mp hT, hReady⟩ hC)
 
 /-- **Every arm `dispatchWithCapChecked` routes keeps the records**, the
 capability-only arms it delegates, the IPC arms, the audit read and drain and
@@ -797,18 +891,20 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     rename_i hA
     cases h
     exact (RecordsStage.of_frameK fun hI => RecordsFrame.auditReadFromCore hI hA).trans
-      (writeReturnFrameToTcb_recordsStage _ _ _)
+      (writeCallReturnWord_recordsStage _ _ _)
   case none.auditDrain =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
     rename_i hA
     cases h
     exact (RecordsStage.of_frameK fun hI => RecordsFrame.auditDrainVisiblePrefix hI hA).trans
-      (writeReturnFrameToTcb_recordsStage _ _ _)
+      (writeCallReturnWord_recordsStage _ _ _)
   all_goals
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
   case none.send.object epId =>
+    split at h
+    · cases h; exact RecordsStage.refl _
     split at h
     · cases h
     rename_i hSend
@@ -839,8 +935,14 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     -- and the receive runs alone
     split at h
     · exact receiveResolvedArm_recordsStage ctx decoded tid executingCore gate epId st st' P hCaller h
+    -- the reply's resolution: refused, a reply with no caller (the receive
+    -- runs, as on a skipped reply), or a caller to answer
+    split at h
+    · cases h
+    · exact receiveResolvedArm_recordsStage ctx decoded tid executingCore gate epId st st' P hCaller h
     repeat' split at h
     all_goals first | (cases h; done) | skip
+    · exact replyRecvCompletesSignalArm_recordsStage P.deletes.2.1.2.1 h
     rename_i hX
     cases h
     exact (RecordsStage.replyRecvTransferOnCore P.deletes.1 hCaller hX).trans
@@ -884,12 +986,13 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     try dsimp only at h
     split at h
     · rename_i hSig
-      exact clearStashStage_recordsStage
-        (RecordsStage.of_fst_eq
-          (RecordsStage.notificationSignalBoundCrossCoreDispatchChecked P.deletes.1) hSig)
-        (fun x => stageWokenDeliveryTwice_recordsStage x _ _) h
+      cases h
+      exact (RecordsStage.of_fst_eq
+        (RecordsStage.notificationSignalBoundCrossCoreDispatchChecked P.deletes.1) hSig)
     · cases h
   case none.notificationWait.object notifId =>
+    split at h
+    · cases h; exact writeReturnFrameToTcb_recordsStage _ _ _
     split at h
     · rename_i hW
       cases h
@@ -911,9 +1014,8 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     try dsimp only at h
     split at h
     · rename_i hSig
-      exact clearStashStage_recordsStage
-        (RecordsStage.of_fst_eq (RecordsStage.notificationSignalDeclassifiedOnCore P.deletes.1) hSig)
-        (fun x => stageWokenDeliveryTwice_recordsStage x _ _) h
+      cases h
+      exact (RecordsStage.of_fst_eq (RecordsStage.notificationSignalDeclassifiedOnCore P.deletes.1) hSig)
     · cases h
 
 /-- **The taint pass keeps the records**: it writes the taint words alone. -/

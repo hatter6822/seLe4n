@@ -99,6 +99,14 @@ theorem ipcStateFrame_of_objectsAgreeOffRunLinks {st st' : SystemState}
     (h : st'.objectsAgreeOffRunLinks st) : ipcStateFrame st st' :=
   ipcStateFrame_of_objectsAgreeOffSchedulerLinks (.of_runLinks h)
 
+/-- The IPC read view frames every `ipcState`: it is inside the view. -/
+theorem ipcStateFrame_of_readViewAgreement {st st' : SystemState}
+    (h : ipcReadViewAgreement st st') : ipcStateFrame st st' := by
+  intro t tcb' hTcb
+  obtain ⟨t0, h0, e⟩ := h.tcb t.toObjId tcb' hTcb
+  have eI : tcb'.ipcReadView.ipcState = t0.ipcReadView.ipcState := congrArg TCB.ipcState e
+  exact ⟨t0, h0, eI.symm⟩
+
 /-- WS-RR RR8.16: the donation read agreement frames every `ipcState`.
 
 Its `tcbBwd` clause already states exactly this conjunct, so every transition with
@@ -374,7 +382,7 @@ theorem endpointSendDualOnCore_preserves_blockedSenderFlowsToEndpoint
             (blockedSenderShrinks_of_ipcStateFrame
               (ipcStateFrame_of_objectsAgreeOffRunLinks
                 (SystemState.objectsAgreeOffRunLinks.trans
-                  (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
+                  (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _)
                   (removeRunnableOnCore_objectsAgreeOffRunLinks st2 sender executingCore))))
     | some _ =>
       simp only []
@@ -531,10 +539,48 @@ theorem endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint
             (blockedSenderShrinks_of_ipcStateFrame
               (ipcStateFrame_of_objectsAgreeOffRunLinks
                 (SystemState.objectsAgreeOffRunLinks.trans
-                  (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
+                  (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _)
                   (removeRunnableOnCore_objectsAgreeOffRunLinks st2 caller executingCore))))
-    | some _ =>
+    | some rHd =>
       simp only []
+      by_cases hLk : callRendezvousLinks st rHd payload = true
+      rotate_left
+      · rw [if_neg hLk]
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => exact hPre
+        | ok triple =>
+          obtain ⟨receiver, headTcb, st1⟩ := triple
+          simp only []
+          have hInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true
+            st st1 receiver headTcb hObjInv hPop
+          have hPre1 : blockedSenderFlowsToEndpoint ctx st1 :=
+            blockedSenderFlowsToEndpoint_of_shrinks hPre
+              (blockedSenderShrinks_of_ipcStateFrame
+                (endpointQueuePopHead_ipcStateFrame endpointId true st st1 receiver
+                  headTcb hObjInv hPop))
+          cases hRecv : storeTcbReceiveComplete st1 receiver (some (sendPayloadMessage st caller payload)) with
+          | error e => exact hPre
+          | ok st2 =>
+            simp only []
+            rcases hCl : lookupTcb st caller with _ | _
+            · exact hPre
+            simp only
+            have hPre2 : blockedSenderFlowsToEndpoint ctx st2 :=
+              blockedSenderFlowsToEndpoint_of_shrinks hPre1
+                (storeTcbReceiveComplete_blockedSenderShrinks st1 st2 receiver
+                  (some (sendPayloadMessage st caller payload)) hInv1 hRecv)
+            exact blockedSenderFlowsToEndpoint_of_shrinks hPre2
+              (blockedSenderShrinks_of_ipcStateFrame
+                ((ipcStateFrame_of_objectsAgreeOffRunLinks
+                  (endpointCallOnCore_noReply_objectsAgree st1 st2 receiver _ caller
+                    executingCore hInv1 hRecv)).trans
+                  (ipcStateFrame_of_readViewAgreement
+                    (ipcReadViewAgreement.of_updateTcb_threadState _ caller .Inactive
+                      (removeRunnableOnCore_objects_invExt _ _ _
+                        (wakeThread_preserves_objects_invExt _ _ _
+                          (storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ hInv1
+                            hRecv)))))))
+      rw [if_pos hLk]
       cases hPop : endpointQueuePopHead endpointId true st with
       | error e => exact hPre
       | ok triple =>
@@ -664,17 +710,19 @@ theorem endpointCallCrossCoreDispatch_preserves_blockedSenderFlowsToEndpoint
       split
       · split
         · split
-          · exact hWcPre
-          · rename_i hDon
-            have hDonInv := applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _
-              hWcInv hDon
-            refine blockedSenderFlowsToEndpoint_of_shrinks ?_
-              (blockedSenderShrinks_of_ipcStateFrame
-                (propagatePipChainCrossCore_ipcStateFrame _ _ executingCore _ hDonInv))
-            exact blockedSenderFlowsToEndpoint_of_shrinks hWcPre
-              (blockedSenderShrinks_of_ipcStateFrame
-                (applyCallDonationOnCore_ipcStateFrame _ _ _ _ _ _ hWcInv hDon))
-        all_goals exact hWcPre
+          · split
+            · exact hWcPre
+            · rename_i hDon
+              have hDonInv := applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _
+                hWcInv hDon
+              refine blockedSenderFlowsToEndpoint_of_shrinks ?_
+                (blockedSenderShrinks_of_ipcStateFrame
+                  (propagatePipChainCrossCore_ipcStateFrame _ _ executingCore _ hDonInv))
+              exact blockedSenderFlowsToEndpoint_of_shrinks hWcPre
+                (blockedSenderShrinks_of_ipcStateFrame
+                  (applyCallDonationOnCore_ipcStateFrame _ _ _ _ _ _ hWcInv hDon))
+          all_goals exact hWcPre
+        · exact hWcPre
       · exact hWcPre
 
 /-- WS-RR RR8.16: **the live `.call` arm carries the blocked-sender flow fact.**
@@ -741,7 +789,7 @@ theorem endpointSendDualOnCore_sameSchedContextBindings
             sender _ none hInv1 hIpc)).trans
             (sameSchedContextBindings.of_objectsAgreeOffRunLinks
               (SystemState.objectsAgreeOffRunLinks.trans
-                (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
+                (recordSendCap_objectsAgreeOffRunLinks _ _ _ _ _)
                 (removeRunnableOnCore_objectsAgreeOffRunLinks st2 sender executingCore)))
     | some _ =>
       simp only []
@@ -1021,41 +1069,43 @@ theorem endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder
       split
       · rename_i receiverTid hRecv
         split
-        · rename_i callerV receiverV hCV hRV
-          split
-          · exact hMid
-          · rename_i st'' hDon
-            have hDonInv := applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _
-              hWcInv hDon
-            refine donationOwnerFlowsToHolder_of_sameSchedContextBindings ?_
-              (propagatePipChainCrossCore_sameSchedContextBindings _ _ executingCore _ hDonInv)
-            refine applyCallDonationOnCore_preserves_donationOwnerFlowsToHolder ctx st' st''
-              callerV receiverV _ _ hWcInv hMid (fun scId hSc => ?_) hDon
-            -- The donation fired: both principals resolve at `st'`, so the
-            -- receiver resolves at `st` too and the queue fact applies there.
-            obtain ⟨⟨rTcb', hRLook', _⟩, _⟩ :=
-              callDonationSchedContext?_some_char st' callerV.val receiverV.val scId hSc
-            obtain ⟨rTcb, hRObj, _⟩ :=
-              hWcFrame receiverV.val rTcb' (lookupTcb_some_objects st' receiverV.val rTcb' hRLook')
-            have hRLook : lookupTcb st receiverV.val = some rTcb :=
-              lookupTcb_of_objects_of_not_reserved st receiverV.val rTcb hRObj
-                (lookupTcb_some_not_reserved st' receiverV.val rTcb' hRLook')
-            -- `maybeReceiver` is the pre-state receive-queue head, and the two
-            -- `ThreadId.toValid?` shims name the same two threads the dispatch does.
-            have hCallerEq : callerV.val = caller :=
-              SeLe4n.ThreadId.toValid?_some_val_eq caller callerV hCV
-            have hRecvEq : receiverV.val = receiverTid :=
-              SeLe4n.ThreadId.toValid?_some_val_eq receiverTid receiverV hRV
-            cases hEp : st.getEndpoint? endpointId with
-            | none => rw [hEp] at hRecv; exact absurd hRecv (by simp)
-            | some ep =>
-              rw [hEp] at hRecv
-              simp only at hRecv
-              rw [hCallerEq, hRecvEq]
-              exact rendezvousReceiverFlow hBlockedReceivers hQueueHeads hGate
-                ((SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp) hRecv
-                (by rw [← hRecvEq]; exact hRLook)
-        all_goals exact hMid
+        · split
+          · rename_i callerV receiverV hCV hRV
+            split
+            · exact hMid
+            · rename_i st'' hDon
+              have hDonInv := applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _
+                hWcInv hDon
+              refine donationOwnerFlowsToHolder_of_sameSchedContextBindings ?_
+                (propagatePipChainCrossCore_sameSchedContextBindings _ _ executingCore _ hDonInv)
+              refine applyCallDonationOnCore_preserves_donationOwnerFlowsToHolder ctx st' st''
+                callerV receiverV _ _ hWcInv hMid (fun scId hSc => ?_) hDon
+              -- The donation fired: both principals resolve at `st'`, so the
+              -- receiver resolves at `st` too and the queue fact applies there.
+              obtain ⟨⟨rTcb', hRLook', _⟩, _⟩ :=
+                callDonationSchedContext?_some_char st' callerV.val receiverV.val scId hSc
+              obtain ⟨rTcb, hRObj, _⟩ :=
+                hWcFrame receiverV.val rTcb' (lookupTcb_some_objects st' receiverV.val rTcb' hRLook')
+              have hRLook : lookupTcb st receiverV.val = some rTcb :=
+                lookupTcb_of_objects_of_not_reserved st receiverV.val rTcb hRObj
+                  (lookupTcb_some_not_reserved st' receiverV.val rTcb' hRLook')
+              -- `maybeReceiver` is the pre-state receive-queue head, and the two
+              -- `ThreadId.toValid?` shims name the same two threads the dispatch does.
+              have hCallerEq : callerV.val = caller :=
+                SeLe4n.ThreadId.toValid?_some_val_eq caller callerV hCV
+              have hRecvEq : receiverV.val = receiverTid :=
+                SeLe4n.ThreadId.toValid?_some_val_eq receiverTid receiverV hRV
+              cases hEp : st.getEndpoint? endpointId with
+              | none => rw [hEp] at hRecv; exact absurd hRecv (by simp)
+              | some ep =>
+                rw [hEp] at hRecv
+                simp only at hRecv
+                rw [hCallerEq, hRecvEq]
+                exact rendezvousReceiverFlow hBlockedReceivers hQueueHeads hGate
+                  ((SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp) hRecv
+                  (by rw [← hRecvEq]; exact hRLook)
+          all_goals exact hMid
+        · exact hMid
       · exact hMid
 
 /-- **WS-RR RR8.16 (`v0.35.196`)**: and the flow-checked arm, where the gate the

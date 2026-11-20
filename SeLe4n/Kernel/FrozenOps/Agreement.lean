@@ -85,11 +85,13 @@ def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
   -- instead; `frozenStateAgrees` compares the two queues directly.  WS-ZA
   -- ZA4.7: the erasure also clears what a blocked sender's capability filled in
   -- (`TCB.setSendCap`), which both surfaces store identically and a later
-  -- receive delivers, so those four fields are compared here.
+  -- receive delivers (and, for the two grant bits, whether the receive links
+  -- the caller's reply), so those five fields are compared here.
   | .tcb a,          .tcb b          =>
       a.withoutRunLinks == b.withoutRunLinks
         && a.ipcBadge == b.ipcBadge && a.ipcBadged == b.ipcBadged
-        && a.ipcCanGrant == b.ipcCanGrant && a.ipcFaultSend == b.ipcFaultSend
+        && a.ipcCanGrant == b.ipcCanGrant && a.ipcCanGrantReply == b.ipcCanGrantReply
+        && a.ipcFaultSend == b.ipcFaultSend
   | .endpoint a,     .endpoint b     => a == b
   | .notification a, .notification b => a == b
   | .untyped a,      .untyped b      => a == b
@@ -389,6 +391,7 @@ def frozenBranchDifferentiallyChecked : FrozenOpBranch → Bool
   | .endpointReceiveFromBlockedSender => true  -- against `endpointReceiveDual`
   | .endpointReceiveFromBlockedCaller => true  -- against `endpointReceiveDual`
   | .endpointCallParks => true                 -- against `endpointCall`
+  | .endpointCallToWaitingReceiver => true     -- against `endpointCall`
   | .endpointReplyToBlockedCaller => true      -- against the leg named in
                                                -- `frozenBranchLiveLeg` below
   | .threadSuspendCancelsBlocking => true      -- against `suspendThreadOnCore`
@@ -421,6 +424,7 @@ def frozenBranchLiveLeg : FrozenOpBranch → String
   | .endpointReceiveFromBlockedSender => "endpointReceiveDual"
   | .endpointReceiveFromBlockedCaller => "endpointReceiveDual"
   | .endpointCallParks => "endpointCall"
+  | .endpointCallToWaitingReceiver => "endpointCall"
   | .endpointReplyToBlockedCaller => "endpointReplyOnCore"
   | .threadSuspendCancelsBlocking => "suspendThreadOnCore"
   | .threadSuspendRunnable => "suspendThreadOnCore"
@@ -443,7 +447,6 @@ def frozenBranchUncheckedReason : FrozenOpBranch → String
   | .notificationSignalToWaiter => "ordinary-waiter delivery; scenario owed"
   | .notificationSignalStoresBadge => "store-only signal; scenario owed"
   | .endpointReceiveBlocks => "blocking receive; scenario owed"
-  | .endpointCallToWaitingReceiver => "call rendezvous; scenario owed"
   | _ => ""
 
 /-! ### ...and at WHICH UNIT the comparison runs
@@ -536,7 +539,7 @@ def frozenBranchOperationUncheckedReason : FrozenOpBranch → String
   | .endpointReceiveBlocks => "leg differential owed first"
   -- ...and the live `.call` rendezvous donates the caller's context
   -- (`applyCallDonation`), which `frozenEndpointCall` does not perform.
-  | .endpointCallToWaitingReceiver => "leg differential owed first"
+  | .endpointCallToWaitingReceiver => "call-rendezvous donation not mirrored"
   | .endpointCallParks => "call-rendezvous donation not mirrored"
   -- The live `.tcbSuspend` arm calls `suspendThreadOnCore` and nothing else.
   | .threadSuspendCancelsBlocking => "live operation is the leg"
@@ -665,7 +668,6 @@ def frozenOpUncheckedReason : SyscallId → String
   -- per-syscall keying used to do -- see `frozenBranchUncheckedReason` for which.
   | .notificationSignal => "branch scenarios owed; see frozenBranchUncheckedReason"
   | .receive => "branch scenarios owed; see frozenBranchUncheckedReason"
-  | .call => "branch scenarios owed; see frozenBranchUncheckedReason"
   | .cspaceMint => "capability operation; scenario owed"
   | .cspaceDelete => "capability operation; scenario owed"
   | .serviceQuery => "service lookup; scenario owed"

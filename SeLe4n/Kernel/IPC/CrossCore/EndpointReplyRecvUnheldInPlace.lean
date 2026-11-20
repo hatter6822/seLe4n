@@ -453,7 +453,7 @@ theorem replyRecvAnsweringOnCore_unheld_inPlace
   unfold endpointReplyRecvAnsweringOnCore
   simp only [hRecS, Option.getD_none, hEq, hPopR, hXf, hRecv, hEp1, Option.bind_some, hS,
     replyRecvPostReceiveDonation_none_self _ _ _ _ hRes]
-  simp [applyReceiveLegPipHandoff, Architecture.stageWokenSendCompletion_none]
+  simp [applyReceiveLegPipHandoff]
 
 theorem replyRecvOnCore_unheld_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage) (grant : Bool)
@@ -576,7 +576,7 @@ caller is, unexpectedly, not ready. -/
     (tailCode : Nat) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (core : CoreId) : SystemState :=
   let X := storeReplyRecvUnheldReady st c tid rid scId home epId tailCode core
-  writeDeliveredFrameIfReady X c (Architecture.regReplyRecvFrame layout rf len badge)
+  writeDeliveredFrameIfReady X c (Architecture.regMessageFrame layout rf len badge)
     (fun _ => holdReplyRecvBody X c layout rf len badge)
 
 end SeLe4n.Kernel

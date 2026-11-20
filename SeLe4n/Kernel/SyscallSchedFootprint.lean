@@ -142,7 +142,7 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
         LockSet.ofList? (schedLockSet_schedContextBindOnCore st target)
   | .schedContextUnbind =>
       ops.targetObject.bind fun scObjId =>
-        LockSet.ofList? (schedLockSet_schedContextUnbindOnCore st scObjId executingCore)
+        LockSet.ofList? (schedLockSet_schedContextUnbindOnCore st scObjId)
   -- WS-ZA ZA6.29: the yieldTo writes the executing core (the linked branch) and
   -- the bound thread's home core (the resume and the requeue).
   | .schedContextYieldTo =>
@@ -195,7 +195,7 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
               ops.replyMessageInfo.bind fun mi =>
                 ops.replyGrant.bind fun grant =>
                   LockSet.ofList?
-                    (schedLockSet_replyRecvTransferOnCore epId ops.caller rid prevCaller
+                    (schedLockSet_replyRecvArmOnCore epId ops.caller rid prevCaller
                       mi.label msg grant executingCore st)
   -- **WS-ZA ZA5.4 part 23**: a delete that destroys the last capability to an
   -- endpoint or a notification wakes its cancelled waiters on their own cores,
@@ -219,7 +219,7 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .irqHandlerSetNotification | .irqHandlerClear =>
       LockSet.ofList? (schedLockSet_capabilityDestroyOnCore Concurrency.allCores)
   | .cspaceMint | .cspaceCopy | .cspaceMove
-  | .untypedRetype | .untypedReset
+  | .untypedRetype
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
@@ -257,9 +257,7 @@ it unbind a destroyed thread's or scheduling context's reservation
 (`schedLockSet_capabilityDestroyOnCore`).
 `.untypedRetype` (`v0.36.5`) is
 there too: a carve writes an untyped, a fresh frame, one CNode slot, the CDT and
-a page of machine memory — no scheduler field at all.  `.untypedReset` writes
-one capability's free index and nothing else (`untypedResetSlot_ok_frame`), so
-no run-queue or replenish-queue slot on any core.  `.tcbSetSpace` (`v0.36.11`) rewrote one suspended TCB's CSpace and VSpace
+a page of machine memory — no scheduler field at all.  `.tcbSetSpace` (`v0.36.11`) rewrote one suspended TCB's CSpace and VSpace
 slots and the derivation links alone (`copyThreadSpaces_ok`) until WS-ZA ZA5.4
 part 26 deleted an old CSpace root that is the last capability to a populated
 CNode through the zombie loop (`copyThreadSpacesZombie`), whose finalisations
@@ -275,7 +273,7 @@ def declaredSchedFootprintSyscall : SyscallId → Bool
   | .cspaceDelete | .cspaceRevoke | .tcbSetSpace
   | .irqHandlerSetNotification | .irqHandlerClear => true
   | .cspaceMint | .cspaceCopy | .cspaceMove
-  | .untypedRetype | .untypedReset
+  | .untypedRetype
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
@@ -475,7 +473,7 @@ theorem schedLockSetForSyscall_replyRecv_isSome_iff
       | some rid =>
           cases hA : replyAnsweredCaller? st rid <;>
             cases ops.message <;> cases ops.replyMessageInfo <;> cases ops.replyGrant <;>
-                simp [hA, LockSet.ofList?, schedLockSet_replyRecvTransferOnCore,
+                simp [hA, LockSet.ofList?, schedLockSet_replyRecvArmOnCore,
                   schedFootprintOfCores_keys_nodup]
 
 /-- **WS-LS LS2.3**: every scheduler footprint names the object-store table
@@ -514,7 +512,7 @@ theorem schedLockSetForSyscall_contains_objStore_write (sid : SyscallId)
       schedLockSet_notificationSignalBoundOnCore, schedLockSet_notificationWaitOnCore,
       schedLockSet_endpointSendOnCore,
       schedLockSet_endpointCallOnCore, schedLockSet_replyTransferOnCore,
-      schedLockSet_replyRecvTransferOnCore, schedLockSet_yieldOnCore]
+      schedLockSet_replyRecvArmOnCore, schedLockSet_yieldOnCore]
     exact schedFootprintOfCores_contains_objStore_write _ _
 
 -- ============================================================================
@@ -540,9 +538,9 @@ operands the scheduler footprints read and the eight arms the object domain
 declares nothing for, so the two resolvers see one decode and disagree only
 about which *locks* it implies. -/
 def declaredSchedulerLockSetForAbiEntry (ctx : LabelingContext) (executingCore : CoreId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64) (st : SystemState) :
     Option LockSet :=
-  match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
+  match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st with
   | none => none
   | some (tid, decoded, stSpilled) =>
     (abiEntryLockOperands decoded tid stSpilled).bind
@@ -552,10 +550,10 @@ def declaredSchedulerLockSetForAbiEntry (ctx : LabelingContext) (executingCore :
 fail-closed direction the object domain's resolver takes for the same reason,
 and the one a bracket reads as "no exclusion established". -/
 @[simp] theorem declaredSchedulerLockSetForAbiEntry_of_no_plan (ctx : LabelingContext)
-    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
+    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64)
     (st : SystemState)
-    (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st = none) :
-    declaredSchedulerLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st = none) :
+    declaredSchedulerLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
       = none := by
   unfold declaredSchedulerLockSetForAbiEntry
   rw [h]
@@ -568,13 +566,13 @@ statement a bracket needs: the twenty-four arms this workstream has not given a
 scheduler footprint fall back to the coarse serialisation rather than acquiring
 a footprint nobody proved covers them. -/
 theorem declaredSchedulerLockSetForAbiEntry_undeclared_none (ctx : LabelingContext)
-    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
+    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
     (stSpilled : SystemState)
-    (hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    (hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
       = some (tid, decoded, stSpilled))
     (h : declaredSchedFootprintSyscall (abiEntryFootprintId decoded tid stSpilled) = false) :
-    declaredSchedulerLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    declaredSchedulerLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
       = none := by
   unfold declaredSchedulerLockSetForAbiEntry
   rw [hPlan]
@@ -593,15 +591,15 @@ the caller and the operands each domain's footprint is a function of are the sam
 three values.  A decode resolved twice is the shape that lets one domain's
 footprint be acquired around the other domain's transition. -/
 theorem declaredSchedulerLockSetForAbiEntry_shares_decode (ctx : LabelingContext)
-    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
+    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
     (stSpilled : SystemState) (ops : SyscallLockOperands)
-    (hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    (hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
       = some (tid, decoded, stSpilled))
     (hOps : abiEntryLockOperands decoded tid stSpilled = some ops) :
-    declaredLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    declaredLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
         = lockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops stSpilled ∧
-    declaredSchedulerLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    declaredSchedulerLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
         = schedLockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops executingCore stSpilled := by
   refine ⟨?_, ?_⟩
   · unfold declaredLockSetForAbiEntry
@@ -825,9 +823,9 @@ The two single-domain resolvers are **kept**, not retired: each is what its own
 domain's theorems are stated over, and the relation below is what ties them to
 what the seam acquires. -/
 def declaredUnifiedLockSetForAbiEntry (ctx : LabelingContext) (executingCore : CoreId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64) (st : SystemState) :
     Option LockSet :=
-  match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
+  match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st with
   | none => none
   | some (tid, decoded, stSpilled) =>
     (abiEntryLockOperands decoded tid stSpilled).bind
@@ -836,10 +834,10 @@ def declaredUnifiedLockSetForAbiEntry (ctx : LabelingContext) (executingCore : C
 /-- **Cut C6h**: an entry whose plan does not resolve declares nothing — the
 fail-closed direction both single-domain resolvers already take. -/
 @[simp] theorem declaredUnifiedLockSetForAbiEntry_of_no_plan (ctx : LabelingContext)
-    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
+    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64)
     (st : SystemState)
-    (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st = none) :
-    declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st = none) :
+    declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
       = none := by
   unfold declaredUnifiedLockSetForAbiEntry
   rw [h]
@@ -850,15 +848,15 @@ scheduler answer has no coverage claim to make, so the seam declares none).
 
 The seam-level fallback condition. -/
 theorem declaredUnifiedLockSetForAbiEntry_undeclared (ctx : LabelingContext)
-    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
+    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64)
     (st : SystemState)
     (hSched : declaredSchedulerLockSetForAbiEntry ctx executingCore syscallId
-      x0 x1 x2 x3 x4 x5 st = none) :
-    declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+      x0 x1 x2 x3 x4 x5 x6 st = none) :
+    declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
       = none := by
   unfold declaredUnifiedLockSetForAbiEntry
   unfold declaredSchedulerLockSetForAbiEntry at hSched
-  rcases hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
+  rcases hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st with
     _ | ⟨tid, decoded, stSpilled⟩
   · rfl
   · rw [hPlan] at hSched
@@ -878,13 +876,13 @@ the set the bracket acquires — stated rather than left to be read off three
 definitions, which is the shape that lets one domain's footprint be acquired
 around the other domain's transition. -/
 theorem declaredUnifiedLockSetForAbiEntry_shares_decode (ctx : LabelingContext)
-    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
+    (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
     (stSpilled : SystemState) (ops : Concurrency.SyscallLockOperands)
-    (hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    (hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
       = some (tid, decoded, stSpilled))
     (hOps : abiEntryLockOperands decoded tid stSpilled = some ops) :
-    declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 x6 st
       = unifiedLockSetForSyscall (abiEntryFootprintId decoded tid stSpilled) ops executingCore stSpilled := by
   unfold declaredUnifiedLockSetForAbiEntry
   rw [hPlan]

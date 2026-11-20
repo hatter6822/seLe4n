@@ -1041,6 +1041,59 @@ theorem storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
                    storeObject_tcb_preserves_intrusiveQueueWellFormed st pair.2
                      tid.toObjId tcb _ hPrev hPPrev hNext hTcbPre hObjInv hStore ep.receiveQ hWfPre.2⟩
 
+/-- `storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant` for the store of a thread a signal wakes (`storeTcbSignalWoken`). -/
+theorem storeTcbSignalWoken_preserves_dualQueueSystemInvariant
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalWoken st tid badge = .ok st')
+    (hInv : dualQueueSystemInvariant st) :
+    dualQueueSystemInvariant st' := by
+  obtain ⟨hEpInv, hLink, hAcyclic, hPP, hHD⟩ := hInv
+  unfold storeTcbSignalWoken modifyTcb at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId
+        (.tcb (TCB.signalWoken badge tcb)) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+          simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
+          have hTcbPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by
+            unfold lookupTcb SystemState.getTcb? at hLookup; split at hLookup
+            · simp at hLookup
+            · cases h : st.objects[tid.toObjId]? with
+              | none => simp [h] at hLookup
+              | some obj => cases obj with
+                | tcb t => simp only [h, Option.some.injEq] at hLookup; cases hLookup; rfl
+                | endpoint _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
+                    simp [h] at hLookup
+          have hPrev : ((TCB.signalWoken badge tcb) : TCB).queuePrev = tcb.queuePrev := rfl
+          have hNext : ((TCB.signalWoken badge tcb) : TCB).queueNext = tcb.queueNext := rfl
+          have hPPrev : ((TCB.signalWoken badge tcb) : TCB).queuePPrev = tcb.queuePPrev := rfl
+          refine ⟨?_, storeObject_tcb_preserves_tcbQueueLinkIntegrity st pair.2
+                       tid.toObjId tcb _ hPrev hNext hTcbPre hObjInv hStore hLink,
+                 storeObject_tcb_preserves_tcbQueueChainAcyclic st pair.2
+                       tid.toObjId tcb _ hNext hTcbPre hObjInv hStore hAcyclic,
+                       storeObject_tcb_preserves_queuePPrevAgreesWithPrev st pair.2 _ _
+                             (TCB.queuePPrevAgreesWithPrev_of_pairEq hPrev hPPrev (hPP _ tcb hTcbPre))
+                             hObjInv hStore hPP,
+                       storeObject_tcb_preserves_endpointQueueHeadDisjoint st pair.2 _ _
+                             hObjInv hStore hHD⟩
+          intro epId ep hObj
+          by_cases hEq : epId = tid.toObjId
+          · rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hStore] at hObj; cases hObj
+          · have hObjPre : st.objects[epId]? = some (.endpoint ep) := by
+              rwa [storeObject_objects_ne st pair.2 tid.toObjId epId _ hEq hObjInv hStore] at hObj
+            have hWfPre := hEpInv epId ep hObjPre
+            unfold dualQueueEndpointWellFormed at hWfPre ⊢
+            rw [hObjPre] at hWfPre; rw [hObj]
+            exact ⟨storeObject_tcb_preserves_intrusiveQueueWellFormed st pair.2
+                     tid.toObjId tcb _ hPrev hPPrev hNext hTcbPre hObjInv hStore ep.sendQ hWfPre.1,
+                   storeObject_tcb_preserves_intrusiveQueueWellFormed st pair.2
+                     tid.toObjId tcb _ hPrev hPPrev hNext hTcbPre hObjInv hStore ep.receiveQ hWfPre.2⟩
+
 /-- Finding F-1: `storeTcbReceiveComplete` preserves dualQueueSystemInvariant.
 Mirror of `storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant`; the
 additional `pendingReceiveReply := none` leaves the queue links untouched, so the
@@ -1075,6 +1128,59 @@ theorem storeTcbReceiveComplete_preserves_dualQueueSystemInvariant
           have hPrev : ((TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready) : TCB).queuePrev = tcb.queuePrev := rfl
           have hNext : ((TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready) : TCB).queueNext = tcb.queueNext := rfl
           have hPPrev : ((TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready) : TCB).queuePPrev = tcb.queuePPrev := rfl
+          refine ⟨?_, storeObject_tcb_preserves_tcbQueueLinkIntegrity st pair.2
+                       tid.toObjId tcb _ hPrev hNext hTcbPre hObjInv hStore hLink,
+                 storeObject_tcb_preserves_tcbQueueChainAcyclic st pair.2
+                       tid.toObjId tcb _ hNext hTcbPre hObjInv hStore hAcyclic,
+                       storeObject_tcb_preserves_queuePPrevAgreesWithPrev st pair.2 _ _
+                             (TCB.queuePPrevAgreesWithPrev_of_pairEq hPrev hPPrev (hPP _ tcb hTcbPre))
+                             hObjInv hStore hPP,
+                       storeObject_tcb_preserves_endpointQueueHeadDisjoint st pair.2 _ _
+                             hObjInv hStore hHD⟩
+          intro epId ep hObj
+          by_cases hEq : epId = tid.toObjId
+          · rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hStore] at hObj; cases hObj
+          · have hObjPre : st.objects[epId]? = some (.endpoint ep) := by
+              rwa [storeObject_objects_ne st pair.2 tid.toObjId epId _ hEq hObjInv hStore] at hObj
+            have hWfPre := hEpInv epId ep hObjPre
+            unfold dualQueueEndpointWellFormed at hWfPre ⊢
+            rw [hObjPre] at hWfPre; rw [hObj]
+            exact ⟨storeObject_tcb_preserves_intrusiveQueueWellFormed st pair.2
+                     tid.toObjId tcb _ hPrev hPPrev hNext hTcbPre hObjInv hStore ep.sendQ hWfPre.1,
+                   storeObject_tcb_preserves_intrusiveQueueWellFormed st pair.2
+                     tid.toObjId tcb _ hPrev hPPrev hNext hTcbPre hObjInv hStore ep.receiveQ hWfPre.2⟩
+
+/-- `storeTcbReceiveComplete_preserves_dualQueueSystemInvariant` for the store of a thread a signal wakes (`storeTcbSignalBoundWoken`). -/
+theorem storeTcbSignalBoundWoken_preserves_dualQueueSystemInvariant
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbSignalBoundWoken st tid badge = .ok st')
+    (hInv : dualQueueSystemInvariant st) :
+    dualQueueSystemInvariant st' := by
+  obtain ⟨hEpInv, hLink, hAcyclic, hPP, hHD⟩ := hInv
+  unfold storeTcbSignalBoundWoken modifyTcb at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId
+        (.tcb (TCB.signalBoundWoken badge tcb)) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+          simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
+          have hTcbPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by
+            unfold lookupTcb SystemState.getTcb? at hLookup; split at hLookup
+            · simp at hLookup
+            · cases h : st.objects[tid.toObjId]? with
+              | none => simp [h] at hLookup
+              | some obj => cases obj with
+                | tcb t => simp only [h, Option.some.injEq] at hLookup; cases hLookup; rfl
+                | endpoint _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
+                    simp [h] at hLookup
+          have hPrev : ((TCB.signalBoundWoken badge tcb) : TCB).queuePrev = tcb.queuePrev := rfl
+          have hNext : ((TCB.signalBoundWoken badge tcb) : TCB).queueNext = tcb.queueNext := rfl
+          have hPPrev : ((TCB.signalBoundWoken badge tcb) : TCB).queuePPrev = tcb.queuePPrev := rfl
           refine ⟨?_, storeObject_tcb_preserves_tcbQueueLinkIntegrity st pair.2
                        tid.toObjId tcb _ hPrev hNext hTcbPre hObjInv hStore hLink,
                  storeObject_tcb_preserves_tcbQueueChainAcyclic st pair.2

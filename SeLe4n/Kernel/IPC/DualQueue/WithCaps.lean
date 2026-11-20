@@ -67,8 +67,8 @@ def rendezvousCapsDestination? (st : SystemState) (endpointId : SeLe4n.ObjId)
 /-- WS-ZA ZA4.7: a frame sent without the grant right asks to transfer nothing,
 so it names no capability destination. -/
 theorem rendezvousCapsDestination?_ungranted (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (badge : Option SeLe4n.Badge) :
-    rendezvousCapsDestination? st endpointId sender (.frame badge false) = none := by
+    (sender : SeLe4n.ThreadId) (badge : Option SeLe4n.Badge) (grantReply : Bool) :
+    rendezvousCapsDestination? st endpointId sender (.frame badge false grantReply) = none := by
   unfold rendezvousCapsDestination? sendCapRequest
   split
   · rfl

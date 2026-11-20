@@ -1740,8 +1740,8 @@ theorem storeTcbQueueLinks_preservesFieldsOutside
 /-- WS-ZA ZA4.7: recording a blocking sender's badge and grant bit writes only
 its TCB. -/
 theorem recordSendCap_preservesFieldsOutside (st : SystemState) (tid : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool) :
-    preservesFieldsOutside ipcEndpointOp_modifiedFields st (recordSendCap st tid badge grant) := by
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st (recordSendCap st tid badge grant grantReply) := by
   intro f hf
   cases f <;> first
     | rfl
@@ -1950,7 +1950,7 @@ theorem endpointSendDual_preservesFieldsOutside
             (preservesFieldsOutside_trans
               (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hBlock)
               (preservesFieldsOutside_trans (removeRunnable_preservesFieldsOutside _ _)
-                (recordSendCap_preservesFieldsOutside _ _ _ _)))
+                (recordSendCap_preservesFieldsOutside _ _ _ _ _)))
   · cases hStep
   · cases hStep
 
@@ -1977,29 +1977,49 @@ theorem endpointReceiveDual_preservesFieldsOutside
           | exact absurd ‹false = true› (by decide)
           | skip
         all_goals first
-          | -- call path
+          | -- call path: the `if` on whether the call links a reply
             (split at hStep
-             · cases hStep
-             · rename_i st₂ hSender
+             · split at hStep
+               · cases hStep
+               · rename_i st₂ hSender
+                 split at hStep
+                 · cases hStep
+                 · split at hStep
+                   · cases hStep
+                   · rename_i stLinked hLink
+                     split at hStep
+                     · rename_i st₃ hRecv
+                       simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                       obtain ⟨-, hEq⟩ := hStep
+                       subst hEq
+                       exact preservesFieldsOutside_trans hPopF
+                         (preservesFieldsOutside_trans
+                           (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hSender)
+                           (preservesFieldsOutside_trans
+                             (linkCallerReply_preservesFieldsOutside _ _ _ _ hLink)
+                             (preservesFieldsOutside_trans
+                               (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hRecv)
+                               (linkReplyWaiter_preservesFieldsOutside _ _ _))))
+                     · cases hStep
+             · -- a call that links no reply: the caller is made `Inactive`
                split at hStep
                · cases hStep
-               · split at hStep
-                 · cases hStep
-                 · rename_i stLinked hLink
-                   split at hStep
-                   · rename_i st₃ hRecv
-                     simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-                     obtain ⟨-, hEq⟩ := hStep
-                     subst hEq
-                     exact preservesFieldsOutside_trans hPopF
+               · rename_i st₂ hSender
+                 split at hStep
+                 · rename_i st₄ hRecv
+                   simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                   obtain ⟨-, hEq⟩ := hStep
+                   subst hEq
+                   exact preservesFieldsOutside_trans hPopF
+                     (preservesFieldsOutside_trans
+                       (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hSender)
                        (preservesFieldsOutside_trans
-                         (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hSender)
-                         (preservesFieldsOutside_trans
-                           (linkCallerReply_preservesFieldsOutside _ _ _ _ hLink)
-                           (preservesFieldsOutside_trans
-                             (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hRecv)
-                             (linkReplyWaiter_preservesFieldsOutside _ _ _))))
-                   · cases hStep)
+                         (preservesFieldsOutside_mono (fun f hf => by
+                             simp only [rewriteObject_modifiedFields, List.mem_singleton] at hf
+                             subst hf; decide)
+                           (updateTcb_preservesFieldsOutside _ _ _))
+                         (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hRecv)))
+                 · cases hStep)
           | -- send path
             (split at hStep
              · cases hStep

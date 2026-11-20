@@ -643,7 +643,7 @@ private def fo016_sendEnqueuesSender : IO Unit := do
   let ep : Endpoint := (Endpoint.ofQueues {} {})
   let fst := mkFrozenState [(⟨3⟩, .tcb senderTcb), (⟨10⟩, .endpoint ep)]
   let msg : IpcMessage := { registers := #[⟨42⟩], badge := Badge.ofNatMasked 0 }
-  match frozenEndpointSend ⟨10⟩ ⟨3⟩ (.frame msg.badge false) fst with
+  match frozenEndpointSend ⟨10⟩ ⟨3⟩ (.frame msg.badge false true) fst with
   | .ok ((), fst') =>
       -- Verify sender TCB is now blockedOnSend
       match frozenLookupTcb fst' ⟨3⟩ with
@@ -685,7 +685,7 @@ private def fo018_callEnqueuesCaller : IO Unit := do
   let ep : Endpoint := (Endpoint.ofQueues {} {})
   let fst := mkFrozenState [(⟨5⟩, .tcb callerTcb), (⟨10⟩, .endpoint ep)]
   let msg : IpcMessage := { registers := #[⟨99⟩], badge := Badge.ofNatMasked 0 }
-  match frozenEndpointCall ⟨10⟩ ⟨5⟩ (.frame msg.badge false) fst with
+  match frozenEndpointCall ⟨10⟩ ⟨5⟩ (.frame msg.badge false true) fst with
   | .ok ((), fst') =>
       -- Verify caller TCB is now blockedOnCall
       match frozenLookupTcb fst' ⟨5⟩ with
@@ -776,7 +776,7 @@ private def fo021_popThenPushRegression : IO Unit := do
   ]
   let msg1 : IpcMessage := { registers := #[⟨42⟩], badge := Badge.ofNatMasked 0 }
   -- Round 1: sender sends (no receiver waiting → enqueued in sendQ)
-  match frozenEndpointSend ⟨10⟩ ⟨3⟩ (.frame msg1.badge false) fst with
+  match frozenEndpointSend ⟨10⟩ ⟨3⟩ (.frame msg1.badge false true) fst with
   | .error e => throw <| IO.userError s!"round1 send failed: {reprStr e}"
   | .ok ((), fst1) =>
   -- Round 1: receiver receives (pops sender from sendQ, delivers message)
@@ -792,7 +792,7 @@ private def fo021_popThenPushRegression : IO Unit := do
       expect "sender queuePPrev cleared" (tcb.queuePPrev == none)
   -- Round 2: sender sends again (re-enqueue — must not fail with illegalState)
   let msg2 : IpcMessage := { registers := #[⟨99⟩], badge := Badge.ofNatMasked 0 }
-  match frozenEndpointSend ⟨10⟩ ⟨3⟩ (.frame msg2.badge false) fst2 with
+  match frozenEndpointSend ⟨10⟩ ⟨3⟩ (.frame msg2.badge false true) fst2 with
   | .error e => throw <| IO.userError s!"round2 re-send failed (U-H01 regression): {reprStr e}"
   | .ok ((), fst3) =>
   -- Verify sender is enqueued again
@@ -830,7 +830,7 @@ private def frozenProvenanceFollowsContent : IO Unit := do
   -- A parked send followed by a receive moves the message; the provenance must
   -- move with it.
   let msg : IpcMessage := { registers := #[⟨7⟩], badge := Badge.ofNatMasked 0 }
-  match frozenEndpointSend ⟨10⟩ ⟨3⟩ (.frame msg.badge false) tagged with
+  match frozenEndpointSend ⟨10⟩ ⟨3⟩ (.frame msg.badge false true) tagged with
   | .error e => throw <| IO.userError s!"FO-022 send failed: {reprStr e}"
   | .ok ((), fstSend) =>
   expect "FO-022: a parked send leaves the message in the sender, so nothing propagates"
@@ -879,9 +879,8 @@ private def frozenDeliveryIsHonest : IO Unit := do
   | .ok (_, fstSig) =>
   expect "FO-023: the signalled waiter is handed the badge, not only woken"
     (match frozenLookupTcb fstSig ⟨4⟩ with
-     | some wt => match wt.pendingMessage with
-                  | some m => m.badge == some (Badge.ofNatMasked 42)
-                  | none => false
+     | some wt => wt.registerContext.x0 == (Badge.ofNatMasked 42).word &&
+                  wt.pendingMessage.isNone
      | none => false)
   expect "FO-023: the notification is left holding none of it"
     (match fstSig.objects.get? ⟨5⟩ with
@@ -924,7 +923,7 @@ private def frozenDeliveryIsHonest : IO Unit := do
   let sendMsg : IpcMessage :=
     { registers := #[], badge := Badge.ofNatMasked 0 }
   expect "FO-023: an absent sender is refused with no receiver waiting"
-    (match frozenEndpointSend ⟨10⟩ ⟨77⟩ (.frame sendMsg.badge false) fstNoRecv with
+    (match frozenEndpointSend ⟨10⟩ ⟨77⟩ (.frame sendMsg.badge false true) fstNoRecv with
      | .ok _ => false
      | .error e => e == .objectNotFound)
   -- Same sender, same endpoint, but now a receiver is queued — the ordering
@@ -936,7 +935,7 @@ private def frozenDeliveryIsHonest : IO Unit := do
       throw <| IO.userError "FO-023: parking a receiver should succeed"
   | .ok (_, fstWithRecv) =>
     expect "FO-023: an absent sender is refused at a rendezvous too, not only when blocking"
-      (match frozenEndpointSend ⟨10⟩ ⟨77⟩ (.frame sendMsg.badge false) fstWithRecv with
+      (match frozenEndpointSend ⟨10⟩ ⟨77⟩ (.frame sendMsg.badge false true) fstWithRecv with
        | .ok _ => false
        | .error e => e == .objectNotFound)
   IO.println "frozen-ops check passed [FO-023: a frozen delivery is honest]"
@@ -1003,9 +1002,9 @@ private def frozenBoundNotificationDelivery : IO Unit := do
   match frozenNotificationSignal notifId signaller badge fst with
   | .error _ => throw <| IO.userError "FO-025: bound delivery should succeed"
   | .ok ((), fst') =>
-    expect "FO-025: the badge is delivered into the bound thread's pendingMessage"
+    expect "FO-025: the badge is delivered into the bound thread's badge register"
       (match frozenLookupTcb fst' bound with
-       | some t => (t.pendingMessage.bind (·.badge)) == some badge
+       | some t => t.registerContext.x0 == badge.word && t.pendingMessage.isNone
        | none => false)
     expect "FO-025: the bound thread is unblocked and off the endpoint queue"
       ((match frozenLookupTcb fst' bound with
@@ -1293,27 +1292,27 @@ private def differentialEndpointSendAgrees : IO Unit := do
     (diffAddEndpoint (diffAddCSpace (mkEmptyIntermediateState ()) [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId {}) (diffTcb 62)) (diffTcb 63)
   -- Control: the send really parks on both sides.
   expect "FO-028 control: the live send succeeds (not a shared refusal)"
-    (SeLe4n.Kernel.endpointSendDual diffEpId diffA (.frame msg.badge false) ist.state).toOption.isSome
+    (SeLe4n.Kernel.endpointSendDual diffEpId diffA (.frame msg.badge false true) ist.state).toOption.isSome
   expect "FO-028 control: and so does the frozen one"
-    (frozenEndpointSend diffEpId diffA (.frame msg.badge false) (freeze ist)).toOption.isSome
+    (frozenEndpointSend diffEpId diffA (.frame msg.badge false true) (freeze ist)).toOption.isSome
   expect "FO-028: the frozen send agrees with the live send"
     (frozenRunAgrees unitResultAgrees
-      (frozenEndpointSend diffEpId diffA (.frame msg.badge false) (freeze ist))
+      (frozenEndpointSend diffEpId diffA (.frame msg.badge false true) (freeze ist))
       (liveWithTaint .send diffA (SeLe4n.CPtr.ofNat 0)
-        (SeLe4n.Kernel.endpointSendDual diffEpId diffA (.frame msg.badge false)) ist.state))
+        (SeLe4n.Kernel.endpointSendDual diffEpId diffA (.frame msg.badge false true)) ist.state))
   -- WS-ZA ZA4.7 (PR #942 review): a parked sender's badge and grant right are
   -- what a later receive delivers, so agreement compares them.  The same send
   -- with a badge agrees; a frozen send that parks a different badge does not.
   let badged : IpcMessage := { msg with badge := some (SeLe4n.Badge.ofNatMasked 7) }
   let rebadged : IpcMessage := { badged with badge := some (SeLe4n.Badge.ofNatMasked 9) }
   let liveBadged := liveWithTaint .send diffA (SeLe4n.CPtr.ofNat 0)
-    (SeLe4n.Kernel.endpointSendDual diffEpId diffA (.frame badged.badge true)) ist.state
+    (SeLe4n.Kernel.endpointSendDual diffEpId diffA (.frame badged.badge true true)) ist.state
   expect "FO-028: a badged frozen send agrees with the live send"
     (frozenRunAgrees unitResultAgrees
-      (frozenEndpointSend diffEpId diffA (.frame badged.badge true) (freeze ist)) liveBadged)
+      (frozenEndpointSend diffEpId diffA (.frame badged.badge true true) (freeze ist)) liveBadged)
   expect "FO-028: a frozen send parking another badge disagrees"
     (!frozenRunAgrees unitResultAgrees
-      (frozenEndpointSend diffEpId diffA (.frame rebadged.badge true) (freeze ist)) liveBadged)
+      (frozenEndpointSend diffEpId diffA (.frame rebadged.badge true true) (freeze ist)) liveBadged)
 
 /-- FO-038: the wait, against `notificationWait`, with nothing pending — the
 idle park.  The waiter goes in already holding a collected `pendingMessage`,
@@ -1411,14 +1410,82 @@ private def differentialEndpointCallAgrees : IO Unit := do
     (diffAddEndpoint (diffAddCSpace (mkEmptyIntermediateState ()) [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId {}) (diffTcb 62)) (diffTcb 63)
   -- Control: the call really parks on both sides.
   expect "FO-030 control: the live call succeeds (not a shared refusal)"
-    (SeLe4n.Kernel.endpointCall diffEpId diffA (.frame msg.badge false) ist.state).toOption.isSome
+    (SeLe4n.Kernel.endpointCall diffEpId diffA (.frame msg.badge false true) ist.state).toOption.isSome
   expect "FO-030 control: and so does the frozen one"
-    (frozenEndpointCall diffEpId diffA (.frame msg.badge false) (freeze ist)).toOption.isSome
+    (frozenEndpointCall diffEpId diffA (.frame msg.badge false true) (freeze ist)).toOption.isSome
   expect "FO-030: the frozen call agrees with the live call"
     (frozenRunAgrees unitResultAgrees
-      (frozenEndpointCall diffEpId diffA (.frame msg.badge false) (freeze ist))
+      (frozenEndpointCall diffEpId diffA (.frame msg.badge false true) (freeze ist))
       (liveWithTaint .call diffA (SeLe4n.CPtr.ofNat 0)
-        (SeLe4n.Kernel.endpointCall diffEpId diffA (.frame msg.badge false)) ist.state))
+        (SeLe4n.Kernel.endpointCall diffEpId diffA (.frame msg.badge false true)) ist.state))
+
+/-- FO-067: **a call that finds its receiver waiting**, against `endpointCall`
+(seL4 `sendIPC`, `do_call`).
+
+Three shapes, each run on both surfaces with a control that the rendezvous
+completed: the receiver stashed a reply object and the capability grants
+`GrantReply` (the caller is linked, `.blockedOnReply`, and the stash cleared);
+the receiver stashed none (the call links no reply: the message is delivered as
+a send's and the caller completed `Inactive`); and the receiver stashed one but
+the capability grants neither `Grant` nor `GrantReply` (the same, and the
+receiver's stash dropped). -/
+private def differentialEndpointCallRendezvousAgrees : IO Unit := do
+  let msg : IpcMessage := { registers := #[⟨17⟩], badge := none }
+  let rid : SeLe4n.ReplyId := ⟨507⟩
+  let ep : Endpoint := (Endpoint.ofQueues {} { head := some diffB, tail := some diffB })
+  let stashCode (stash : Bool) : Nat := if stash then SeLe4n.ReplyId.optCode (some rid) else 0
+  let istWith (stash : Bool) := diffAddReply (diffAddTcb (diffAddTcb
+    (diffAddEndpoint (diffAddCSpace (mkEmptyIntermediateState ())
+      [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) (diffTcb 62))
+    (TCB.setIpcState { diffTcb 63 with queuePPrevCode := 1, pendingReceiveReplyCode := stashCode stash }
+      (.blockedOnReceive diffEpId)))
+    rid { replyId := rid, callerCode := 0 }
+  let grantReply : SeLe4n.Kernel.SendPayload := .frame msg.badge false true
+  let noGrant : SeLe4n.Kernel.SendPayload := .frame msg.badge false false
+  let callerIs (p : TCB → Bool) (r : Except KernelError (Unit × FrozenSystemState)) : Bool :=
+    match r with
+    | .ok (_, fs) => match frozenLookupTcb fs diffA with
+      | some t => p t
+      | none => false
+    | .error _ => false
+  let receiverStash (r : Except KernelError (Unit × FrozenSystemState)) : Nat :=
+    match r with
+    | .ok (_, fs) => match frozenLookupTcb fs diffB with
+      | some t => t.pendingReceiveReplyCode
+      | none => 1000
+    | .error _ => 1000
+  let agree (ist : IntermediateState) (pl : SeLe4n.Kernel.SendPayload) : Bool :=
+    frozenRunAgrees unitResultAgrees
+      (frozenEndpointCall diffEpId diffA pl (freeze ist))
+      (liveWithTaint .call diffA (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.endpointCall diffEpId diffA pl) ist.state)
+  -- Linked: a stash and a `GrantReply` capability.
+  let linked := istWith true
+  expect "FO-067 control: the live linked call completes"
+    (SeLe4n.Kernel.endpointCall diffEpId diffA grantReply linked.state).toOption.isSome
+  expect "FO-067: the linked caller is parked for its reply, the stash cleared"
+    (callerIs (fun t => t.ipcState == .blockedOnReply diffEpId (some diffB)
+        && t.replyObject == some rid)
+      (frozenEndpointCall diffEpId diffA grantReply (freeze linked))
+     && receiverStash (frozenEndpointCall diffEpId diffA grantReply (freeze linked)) == 0)
+  expect "FO-067: both agree on the linked call" (agree linked grantReply)
+  -- No stash: the call links no reply.
+  let unstashed := istWith false
+  expect "FO-067 control: the live call to a receiver with no stash completes"
+    (SeLe4n.Kernel.endpointCall diffEpId diffA grantReply unstashed.state).toOption.isSome
+  expect "FO-067: with no stash the caller is completed Inactive"
+    (callerIs (fun t => t.ipcState == .ready && t.threadState == .Inactive
+        && t.replyObject == none)
+      (frozenEndpointCall diffEpId diffA grantReply (freeze unstashed)))
+  expect "FO-067: both agree on a call to a receiver with no stash" (agree unstashed grantReply)
+  -- A stash, but neither grant right: no link, and the stash dropped.
+  expect "FO-067 control: the live call without a grant right completes"
+    (SeLe4n.Kernel.endpointCall diffEpId diffA noGrant linked.state).toOption.isSome
+  expect "FO-067: without a grant right the caller is completed Inactive, the stash dropped"
+    (callerIs (fun t => t.ipcState == .ready && t.threadState == .Inactive)
+      (frozenEndpointCall diffEpId diffA noGrant (freeze linked))
+     && receiverStash (frozenEndpointCall diffEpId diffA noGrant (freeze linked)) == 0)
+  expect "FO-067: both agree on a call without a grant right" (agree linked noGrant)
 
 /-- FO-031: the reply LEG, against `endpointReplyOnCore` — the leg the live
 `.reply` arm dispatches — delivering to a caller parked in `.blockedOnReply`.
@@ -2085,21 +2152,25 @@ round 17).
 `.blockedOnSend` one, and the frozen receive woke both -- `.ready`, back in the
 run queue.  A caller does not become runnable at rendezvous: the live
 `endpointReceiveDual` moves it to `.blockedOnReply` and links it to the
-server-supplied reply object.  The branch was unreachable from the suite because
-FO-029's queued sender is `.blockedOnSend`, and the coverage row said `.receive`
-was checked.
+server-supplied reply object when the caller's cap grants and the receive
+supplied one.  The branch was unreachable from the suite because FO-029's queued
+sender is `.blockedOnSend`, and the coverage row said `.receive` was checked.
 
 The control asserts both sides succeed, so the agreement is about a completed
-rendezvous rather than a shared refusal. -/
+rendezvous rather than a shared refusal.  The no-link halves (seL4
+`receiveIPC`): a receive that supplies no reply object, and a caller whose cap
+grants neither `Grant` nor `GrantReply`, each deliver the message and complete
+the caller `Inactive` on both sides. -/
 private def differentialReceiveFromBlockedCallerAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨21⟩], badge := none }
   let rid : SeLe4n.ReplyId := ⟨506⟩
   let ep : Endpoint := (Endpoint.ofQueues { head := some diffA, tail := some diffA } {})
-  let parkedCaller : TCB := (TCB.setIpcState (SeLe4n.Testing.tcbWithSenderFrame { diffTcb 62 with queuePPrevCode := 1 } msg) (.blockedOnCall diffEpId))
-  let ist := diffAddReply (diffAddTcb (diffAddTcb
+  let parkedWith (grant : Bool) : TCB := (TCB.setIpcState (SeLe4n.Testing.tcbWithSenderFrame { diffTcb 62 with queuePPrevCode := 1, ipcCanGrant := grant } msg) (.blockedOnCall diffEpId))
+  let istWith (grant : Bool) := diffAddReply (diffAddTcb (diffAddTcb
     (diffAddEndpoint (diffAddCSpace (mkEmptyIntermediateState ())
-      [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parkedCaller) (diffTcb 63))
+      [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) (parkedWith grant)) (diffTcb 63))
     rid { replyId := rid, callerCode := 0 }
+  let ist := istWith true
   expect "FO-035 control: the live receive completes the call rendezvous"
     (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB (some rid) ist.state).toOption.isSome
   expect "FO-035 control: and so does the frozen one"
@@ -2109,13 +2180,34 @@ private def differentialReceiveFromBlockedCallerAgrees : IO Unit := do
       (frozenEndpointReceive diffEpId diffB (some rid) (freeze ist))
       (liveWithTaint .receive diffB (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB (some rid)) ist.state))
-  -- And the fail-closed half: a call rendezvous with no reply object must be
-  -- refused on both sides rather than stranding the caller `.blockedOnReply`.
-  expect "FO-035: both refuse a call rendezvous carrying no reply object"
+  -- The no-link halves: no reply object supplied, and a cap without a grant
+  -- right.  Both sides complete the rendezvous and agree on the caller.
+  let callerInactive (r : Except KernelError (SeLe4n.ThreadId × FrozenSystemState)) : Bool :=
+    match r with
+    | .ok (_, fs) =>
+        match frozenLookupTcb fs diffA with
+        | some t => t.ipcState == .ready && t.threadState == .Inactive
+        | none => false
+    | .error _ => false
+  expect "FO-035 control: a receive supplying no reply object completes the call"
+    (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB none ist.state).toOption.isSome
+  expect "FO-035: with no reply object the caller is completed Inactive"
+    (callerInactive (frozenEndpointReceive diffEpId diffB none (freeze ist)))
+  expect "FO-035: both agree on a call rendezvous carrying no reply object"
     (frozenRunAgrees (fun a b => a == b)
       (frozenEndpointReceive diffEpId diffB none (freeze ist))
       (liveWithTaint .receive diffB (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB none) ist.state))
+  let istNoGrant := istWith false
+  expect "FO-035 control: a call through a cap without a grant right completes"
+    (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB (some rid) istNoGrant.state).toOption.isSome
+  expect "FO-035: without a grant right the caller is completed Inactive"
+    (callerInactive (frozenEndpointReceive diffEpId diffB (some rid) (freeze istNoGrant)))
+  expect "FO-035: both agree on a call through a cap without a grant right"
+    (frozenRunAgrees (fun a b => a == b)
+      (frozenEndpointReceive diffEpId diffB (some rid) (freeze istNoGrant))
+      (liveWithTaint .receive diffB (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.endpointReceiveDual diffEpId diffB (some rid)) istNoGrant.state))
 
 /-- The same signal, from an actor that **carries provenance**.
 
@@ -2511,8 +2603,8 @@ private def differentialQueueNeighbourResolutionAgrees : IO Unit := do
   expect "FO-049 control: the successor names the head it sits behind, on both surfaces"
     (liveLinksOf ist.state diffB == behindTheHead
       && frozenLinksOf (freeze ist) diffB == behindTheHead)
-  let liveSent := SeLe4n.Kernel.endpointSendDual diffEpId diffDelegate (.frame msg.badge false) ist.state
-  let frozenSent := frozenEndpointSend diffEpId diffDelegate (.frame msg.badge false) (freeze ist)
+  let liveSent := SeLe4n.Kernel.endpointSendDual diffEpId diffDelegate (.frame msg.badge false true) ist.state
+  let frozenSent := frozenEndpointSend diffEpId diffDelegate (.frame msg.badge false true) (freeze ist)
   expect "FO-049 control: the rendezvous succeeds on both surfaces"
     (liveSent.toOption.isSome && frozenSent.toOption.isSome)
   expect "FO-049: the live pop PROMOTES the successor to head"
@@ -2522,7 +2614,7 @@ private def differentialQueueNeighbourResolutionAgrees : IO Unit := do
   expect "FO-049 DIFFERENTIAL: the whole post-rendezvous state agrees, links included"
     (frozenRunAgrees unitResultAgrees frozenSent
       (liveWithTaint .send diffDelegate (SeLe4n.CPtr.ofNat 0)
-        (SeLe4n.Kernel.endpointSendDual diffEpId diffDelegate (.frame msg.badge false)) ist.state))
+        (SeLe4n.Kernel.endpointSendDual diffEpId diffDelegate (.frame msg.badge false true)) ist.state))
   -- The PAYOFF: the promoted head is dequeueable.  Before the fix the frozen
   -- side answered `.illegalState` here for good, which is the consequence the
   -- link comparison above only implies.
@@ -3069,16 +3161,16 @@ private def differentialSendFromAbsentSenderAgrees : IO Unit := do
     (diffAddEndpoint (diffAddCSpace (mkEmptyIntermediateState ())
       [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parkedReceiver) (diffTcb 63)
   expect "FO-036 control: the same rendezvous delivers from a sender that exists"
-    (SeLe4n.Kernel.endpointSendDual diffEpId diffB (.frame msg.badge false) ist.state).toOption.isSome
+    (SeLe4n.Kernel.endpointSendDual diffEpId diffB (.frame msg.badge false true) ist.state).toOption.isSome
   expect "FO-036 control: and the ghost really is absent"
     ((ist.state.getTcb? ghost).isNone)
   expect "FO-036: both refuse a rendezvous send from a nonexistent sender"
     (frozenRunAgrees unitResultAgrees
-      (frozenEndpointSend diffEpId ghost (.frame msg.badge false) (freeze ist))
+      (frozenEndpointSend diffEpId ghost (.frame msg.badge false true) (freeze ist))
       (liveWithTaint .send ghost (SeLe4n.CPtr.ofNat 0)
-        (SeLe4n.Kernel.endpointSendDual diffEpId ghost (.frame msg.badge false)) ist.state))
+        (SeLe4n.Kernel.endpointSendDual diffEpId ghost (.frame msg.badge false true)) ist.state))
   expect "FO-036: and the live refusal leaves the receiver empty-handed"
-    (match SeLe4n.Kernel.endpointSendDual diffEpId ghost (.frame msg.badge false) ist.state with
+    (match SeLe4n.Kernel.endpointSendDual diffEpId ghost (.frame msg.badge false true) ist.state with
      | .error _ => true
      | .ok _ => false)
 
@@ -3113,15 +3205,15 @@ private def differentialSendRendezvousDeliversAgrees : IO Unit := do
     ((ist.state.getTcb? diffA).any (fun t => t.pendingReceiveReply.isSome))
   -- The live delivery clears the stash: the field the comparison is about.
   expect "FO-037 control: the live delivery clears the stash and hands over the message"
-    (match SeLe4n.Kernel.endpointSendDual diffEpId diffB (.frame msg.badge false) ist.state with
+    (match SeLe4n.Kernel.endpointSendDual diffEpId diffB (.frame msg.badge false true) ist.state with
      | .ok ((), st') => (st'.getTcb? diffA).any (fun t =>
          t.pendingReceiveReply.isNone && t.pendingMessage.isSome)
      | .error _ => false)
   expect "FO-037: the frozen delivery agrees with the live delivery"
     (frozenRunAgrees unitResultAgrees
-      (frozenEndpointSend diffEpId diffB (.frame msg.badge false) (freeze ist))
+      (frozenEndpointSend diffEpId diffB (.frame msg.badge false true) (freeze ist))
       (liveWithTaint .send diffB (SeLe4n.CPtr.ofNat 0)
-        (SeLe4n.Kernel.endpointSendDual diffEpId diffB (.frame msg.badge false)) ist.state))
+        (SeLe4n.Kernel.endpointSendDual diffEpId diffB (.frame msg.badge false true)) ist.state))
 
 /-- FO-034: **waking a thread whose priority has no bucket.**
 
@@ -3504,6 +3596,7 @@ private def differentialScenarios :
     (.endpointReceiveFromBlockedSender, differentialEndpointReceiveAgrees),
     (.endpointReceiveFromBlockedCaller, differentialReceiveFromBlockedCallerAgrees),
     (.endpointCallParks,                differentialEndpointCallAgrees),
+    (.endpointCallToWaitingReceiver,    differentialEndpointCallRendezvousAgrees),
     (.endpointReplyToBlockedCaller,     differentialEndpointReplyAgrees),
     (.threadSuspendCancelsBlocking,     frozenSuspendOfQueuedSenderLeavesQueue),
     (.threadSuspendCancelsBlocking,     frozenResumeOfNotificationWaiterLeavesQueue),

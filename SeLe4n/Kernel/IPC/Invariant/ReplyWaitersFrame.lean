@@ -90,6 +90,25 @@ theorem replyViews_storeTcbIpcStateAndMessage {st st' : SystemState} {t : Thread
   replyViews_modifyTcb hInv h (fun x => by
     simp only [TCB.replyView, blockingServer?_eq_ipcServer?, TCB.ipcState_setIpcState])
 
+/-- The receive-completing store sets the thread `.ready` (no server) and
+touches no reply-waiter link. -/
+theorem replyViews_storeTcbReceiveComplete {st st' : SystemState} {t : ThreadId}
+    {m : Option IpcMessage}
+    (hInv : st.objects.invExt) (h : storeTcbReceiveComplete st t m = .ok st') :
+    st'.replyViews = ReplyViews.setServer st.replyViews t (ipcServer? .ready) :=
+  replyViews_modifyTcb hInv h (fun x => by
+    simp only [TCB.replyView, blockingServer?_eq_ipcServer?, TCB.ipcState_setIpcState])
+
+/-- The store of a thread a signal wakes sets its server view to a ready
+thread's (`TCB.signalWoken`). -/
+theorem replyViews_storeTcbSignalWoken {st st' : SystemState} {t : ThreadId}
+    {b : SeLe4n.Badge}
+    (hInv : st.objects.invExt) (h : storeTcbSignalWoken st t b = .ok st') :
+    st'.replyViews = ReplyViews.setServer st.replyViews t (ipcServer? .ready) :=
+  replyViews_modifyTcb hInv h (fun x => by
+    simp only [TCB.replyView, blockingServer?_eq_ipcServer?, TCB.signalWoken,
+      TCB.ipcState_setIpcState])
+
 /-- **A store of an object with no view over a slot with none keeps the views.** -/
 theorem replyViews_storeObject_eq {st st' : SystemState} {k : ObjId} {obj : KernelObject}
     (hInv : st.objects.invExt) (h : storeObject k obj st = .ok ((), st'))
@@ -185,10 +204,10 @@ theorem removeRunnableOnCore_replyViews_eq (st : SystemState) (tid : ThreadId) (
 /-- WS-ZA ZA4.7: recording a blocking sender's badge and grant bit touches no
 reply view. -/
 theorem recordSendCap_replyViews_eq (st : SystemState) (tid : ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool) :
-    (recordSendCap st tid badge grant).replyViews = st.replyViews := by
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
+    (recordSendCap st tid badge grant grantReply).replyViews = st.replyViews := by
   unfold recordSendCap
-  rw [replyViews_mapTcbInPlace st tid (g := fun tcb => tcb.setSendCap badge grant) (gv := id)
+  rw [replyViews_mapTcbInPlace st tid (g := fun tcb => tcb.setSendCap badge grant grantReply) (gv := id)
     (fun _ => rfl)]
   funext k
   unfold ReplyViews.mapAt
@@ -559,3 +578,27 @@ theorem endpointQueueRemove_replyViews_eq {eid : ObjId} {isRecv : Bool} {tid : T
       exact ⟨t0, h0⟩)
 
 end SeLe4n.Model.SystemState
+
+namespace SeLe4n.Kernel
+
+open SeLe4n.Model
+open SeLe4n.Model.SystemState
+
+/-- A TCB update that keeps every reply-view field keeps the views. -/
+theorem replyViews_updateTcb_eq (st : SystemState) (t : SeLe4n.ThreadId) {f : TCB → TCB}
+    (hInv : st.objects.invExt) (hf : ∀ x, (f x).replyView = x.replyView) :
+    (st.updateTcb t f).replyViews = st.replyViews := by
+  cases hT : st.getTcb? t with
+  | none =>
+    unfold SystemState.updateTcb; rw [SystemState.getTcbWitnessed?_eq_none hT]
+  | some tcb =>
+    unfold SystemState.updateTcb; rw [SystemState.getTcbWitnessed?_eq_some hT]
+    have hO := (getTcb?_eq_some_iff st t tcb).1 hT
+    funext x
+    rw [replyViews_rewriteObject _ _ _ _ hInv]
+    split
+    · rename_i hx; subst hx
+      rw [replyViews_of_tcb hO, objReplyView_tcb, hf]
+    · rfl
+
+end SeLe4n.Kernel

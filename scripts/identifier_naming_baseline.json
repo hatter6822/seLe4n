@@ -588,15 +588,6 @@
  "hSm1": {
   "SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean": 2
  },
- "pm_ak2b_01_bindPropagatesPriority": {
-  "tests/PriorityManagementSuite.lean": 2
- },
- "pm_ak2b_02_configurePropagatesPriority": {
-  "tests/PriorityManagementSuite.lean": 2
- },
- "pm_ak2b_03_configureRebucketsBoundThread": {
-  "tests/PriorityManagementSuite.lean": 2
- },
  "pm_ak2e_01_utilizationCeiling": {
   "tests/PriorityManagementSuite.lean": 2
  },

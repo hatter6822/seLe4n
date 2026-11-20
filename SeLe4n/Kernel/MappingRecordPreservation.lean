@@ -548,20 +548,4 @@ theorem pageTableUnmap_preserves_liveMappingsRecorded {tableId : SeLe4n.ObjId}
 The reset writes only the free index of the invoked capability, which keeps
 its target and its record. -/
 
-/-- **The reset keeps every live mapping recorded.** -/
-theorem untypedResetSlot_preserves_liveMappingsRecorded {srcCnode : SeLe4n.ObjId}
-    {srcSlot : SeLe4n.Slot} {st st' : SystemState} (hInv : st.objects.invExt)
-    (hL : st.liveMappingsRecorded) (h : untypedResetSlot srcCnode srcSlot st = .ok ((), st')) :
-    st'.liveMappingsRecorded := by
-  obtain ⟨-, -, -, -, -, -, -, -, rfl⟩ := untypedResetSlot_ok h
-  exact setCapFreeIndex_preserves_liveMappingsRecorded hInv hL
-
-/-- **The `.untypedReset` arm keeps every live mapping recorded.** -/
-theorem untypedResetFromCap_preserves_liveMappingsRecorded (tid : SeLe4n.ThreadId)
-    (srcAddr : SeLe4n.CPtr) {st st' : SystemState} (hInv : st.objects.invExt)
-    (hL : st.liveMappingsRecorded) (h : untypedResetFromCap tid srcAddr st = .ok ((), st')) :
-    st'.liveMappingsRecorded := by
-  obtain ⟨_, _, _, _, _, hR⟩ := untypedResetFromCap_ok tid srcAddr st st' h
-  exact untypedResetSlot_preserves_liveMappingsRecorded hInv hL hR
-
 end SeLe4n.Kernel

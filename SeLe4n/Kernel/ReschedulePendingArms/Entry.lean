@@ -65,8 +65,8 @@ theorem writeFaultRegistersToTcb_machine (st : SystemState) (tid : SeLe4n.Thread
   SystemState.updateTcb_machine _ _ _
 
 theorem writeFfiRegistersToTcb_machine (st : SystemState) (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) :
-    (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).machine =
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64) :
+    (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).machine =
       st.machine := by
   rw [Platform.FFI.writeFfiRegistersToTcb_eq_updateTcb, SystemState.updateTcb_machine]
 
@@ -81,7 +81,7 @@ macro_rules | `(tactic| machine_chain) => `(tactic|
 macro_rules | `(tactic| machine_chain) => `(tactic|
   (with_reducible refine (writeFaultRegistersToTcb_machine _ _ _).trans ?_; machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
-  (with_reducible refine (writeFfiRegistersToTcb_machine _ _ _ _ _ _ _ _ _).trans ?_;
+  (with_reducible refine (writeFfiRegistersToTcb_machine _ _ _ _ _ _ _ _ _ _).trans ?_;
    machine_chain))
 macro_rules | `(tactic| machine_chain) => `(tactic|
   ((first
@@ -112,9 +112,9 @@ theorem faultDeliverOnCore_stepCovers (e : CoreId) {st : SystemState} {tid : SeL
   · rename_i tgt _
     dsimp only
     have hC := endpointCallCrossCoreDispatch_stepCovers e (endpointId := tgt.endpoint) (caller := tid)
-      (payload := SendPayload.fault f ctx tgt.cap.badge)
+      (payload := SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply)
       (executingCore := c) hInv
-    generalize endpointCallCrossCoreDispatch tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge)
+    generalize endpointCallCrossCoreDispatch tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply)
       c st = r at hC ⊢
     obtain ⟨st1, res⟩ := r
     obtain ⟨hC, hCInv⟩ := hC
@@ -159,9 +159,9 @@ theorem faultDeliveredState_stepCovers (e : CoreId) {lctx : LabelingContext} {st
 /-- **The register spill keeps the bundle the delete carries**: it rewrites one
 thread's register file, which none of the bundle's conjuncts reads. -/
 theorem finalisingDeleteBundle_writeFfiRegistersToTcb {st : SystemState} (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (hB : finalisingDeleteBundle st) :
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64) (hB : finalisingDeleteBundle st) :
     finalisingDeleteBundle
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
   have hInv := hB.1.2.1
   unfold Platform.FFI.writeFfiRegistersToTcb
   refine ⟨⟨?_, SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv,
@@ -192,9 +192,9 @@ theorem placedThreadsHaveTcbs_updateTcb {st : SystemState} {tid : SeLe4n.ThreadI
 
 /-- The argument spill writes registers only. -/
 theorem writeFfiRegistersToTcb_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (hInv : st.objects.invExt) :
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 x6 : UInt64) (hInv : st.objects.invExt) :
     capabilityKeyFrame st
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
   unfold Platform.FFI.writeFfiRegistersToTcb
   exact updateTcb_keyFrame st tid (fun _ => rfl) hInv
 
@@ -212,13 +212,13 @@ theorem cancelReceiveBusyReply_stepCovers (e : CoreId) (ctx : LabelingContext)
 no key, the checked entry covers, a capability fault is a covered delivery, and
 a refusal record touches the refusal ledger alone. -/
 theorem syscallDispatchFromAbi_stepCovers {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (hInv : st.objects.invExt) (hB : finalisingDeleteBundle st)
     (hPlaced : placedThreadsHaveTcbs st)
     (hAwayCur : ∀ t, st.scheduler.currentOnCore e = some t → ∀ c, st.queuedOn c t = false)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
+      x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold Platform.FFI.syscallDispatchFromAbi at h
   split at h
@@ -226,45 +226,65 @@ theorem syscallDispatchFromAbi_stepCovers {ctx : LabelingContext} {e : CoreId}
   rename_i tid hCur
   split at h
   · cases h; exact ⟨stepCovers_refl e st, hInv⟩
-  have hW := writeFfiRegistersToTcb_keyFrame st tid syscallId x0 x1 x2 x3 x4 x5 hInv
+  have hW := writeFfiRegistersToTcb_keyFrame st tid syscallId x0 x1 x2 x3 x4 x5 x6 hInv
   dsimp only at h
   split at h
   · -- the refusal's reported state: the spill, or its busy reply's holder
     -- cancelled on it
     obtain ⟨hC, hCInv⟩ := cancelReceiveBusyReply_stepCovers e ctx e
-      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) hW.2.2
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) hW.2.2
     split at h
-    · cases h
-      unfold Platform.FFI.deliverSyscallCapFault
-      have hF := writeFaultRegistersToTcb_keyFrame _ tid
-        (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30) hCInv
-      exact stepCoversInv_trans
-        (stepCovers_trans (stepCovers_trans hW.stepCovers hC) hF.stepCovers)
-        (faultDeliverOnCoreChecked_stepCovers e hF.2.2)
-    · cases h
-      refine stepCoversInv_trans (stepCovers_trans hW.stepCovers hC)
-        (capabilityKeyFrame.stepCoversInv ?_)
-      exact capabilityKeyFrame_of_objects_scheduler_eq hCInv
-        ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
-          (Architecture.recordErrorOverflow_objects _ _ _))
-        ((Platform.FFI.recordSyscallRefusal_scheduler_eq _ _ _ _ _ _ _).trans
-          (Architecture.recordErrorOverflow_scheduler _ _ _))
+    · split at h
+      · -- an NBSend lookup fault is dropped: the refusal's state and its
+        -- ledger record, nothing more
+        cases h
+        obtain ⟨L, hL⟩ := Platform.FFI.recordDroppedFault_frame ctx e
+          (Platform.FFI.seamOperationCode
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) tid)
+          tid x0 _ (cancelReceiveBusyReply ctx e
+            (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6))
+        rw [hL]
+        refine stepCoversInv_trans (stepCovers_trans hW.stepCovers hC)
+          (capabilityKeyFrame.stepCoversInv ?_)
+        exact capabilityKeyFrame_of_objects_scheduler_eq hCInv rfl rfl
+      · cases h
+        unfold Platform.FFI.deliverSyscallCapFault
+        have hF := writeFaultRegistersToTcb_keyFrame _ tid
+          (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30) hCInv
+        exact stepCoversInv_trans
+          (stepCovers_trans (stepCovers_trans hW.stepCovers hC) hF.stepCovers)
+          (faultDeliverOnCoreChecked_stepCovers e hF.2.2)
+    · split at h
+      · cases h
+        refine stepCoversInv_trans (stepCovers_trans hW.stepCovers hC)
+          (capabilityKeyFrame.stepCoversInv ?_)
+        exact capabilityKeyFrame_of_objects_scheduler_eq hCInv
+          ((Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _).trans
+            (Architecture.recordErrorOverflow_objects _ _ _))
+          ((Platform.FFI.recordSyscallRefusal_scheduler_eq _ _ _ _ _ _ _).trans
+            (Architecture.recordErrorOverflow_scheduler _ _ _))
+      · cases h
+        refine stepCoversInv_trans (stepCovers_trans hW.stepCovers hC)
+          (capabilityKeyFrame.stepCoversInv ?_)
+        exact capabilityKeyFrame_of_objects_scheduler_eq hCInv
+          (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)
+          (Platform.FFI.recordSyscallRefusal_scheduler_eq _ _ _ _ _ _ _)
   · rename_i hE
     cases h
-    have hB' := finalisingDeleteBundle_writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 hB
+    have hB' := finalisingDeleteBundle_writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 x6 hB
     have hPl : placedThreadsHaveTcbs
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
       unfold Platform.FFI.writeFfiRegistersToTcb
       exact placedThreadsHaveTcbs_updateTcb hInv hPlaced
     -- The argument spill writes registers alone: no current slot, no queue.
-    have hAwayW : ∀ t, (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
+    have hAwayW : ∀ t, (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6
         ).scheduler.currentOnCore e = some t → ∀ c,
-        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).queuedOn c t =
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6).queuedOn c t =
           false := by
       intro t ht c
       rw [Platform.FFI.writeFfiRegistersToTcb_scheduler] at ht
       rw [Platform.FFI.writeFfiRegistersToTcb_eq_updateTcb,
-        (SystemState.RunCoresAgree.updateTcb (f := Platform.FFI.ffiRegisterSpill syscallId x0 x1 x2 x3 x4 x5)
+        (SystemState.RunCoresAgree.updateTcb (f := Platform.FFI.ffiRegisterSpill syscallId x0 x1 x2 x3 x4 x5 x6)
           hInv fun _ => rfl).queuedOn c t]
       exact hAwayCur t ht c
     exact stepCoversInv_trans hW.stepCovers
@@ -306,13 +326,13 @@ theorem activateThreadOnCore_stepCovers (c : CoreId) (st : SystemState)
 caller's return staging, the local scheduling point, the residency settlement
 and the activation.  (A refused dispatch fires no SGI, so it owes nothing.) -/
 theorem syscallDispatchCrossCoreStep_stepCovers {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (hInv : st.objects.invExt) (hB : finalisingDeleteBundle st)
     (hPlaced : placedThreadsHaveTcbs st)
     (hAwayCur : ∀ t, st.scheduler.currentOnCore e = some t → ∀ c, st.queuedOn c t = false)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st')) :
+      x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     stepCovers e st (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
       (PriorityInheritance.scheduleLocalSuccessor st
         (Architecture.stageCallerReturn st st' e outcome) e) e) e) := by
@@ -335,8 +355,8 @@ theorem setInterruptLineMask_stepCovers (e : CoreId) (st : SystemState) (line : 
     (hRes := rfl) (hBank := banksKeptOffCore_of_eq rfl)
 
 /-- WS-ZA ZA6.32: **the interrupt step covers** on any core: the bound-aware
-signal's coverage (`notificationSignalBoundOnCore_stepCovers`), the stash
-clear and the stagings (`keyFrame_trans_stage`), then the mask. -/
+signal's coverage (`notificationSignalBoundOnCore_stepCovers`), then the
+mask. -/
 theorem handleInterruptOnCore_stepCovers (e : CoreId) (st : SystemState) (c : CoreId)
     (line : Nat) (hInv : st.objects.invExt) :
     stepCovers e st (handleInterruptOnCore st c line) ∧
@@ -346,15 +366,8 @@ theorem handleInterruptOnCore_stepCovers (e : CoreId) (st : SystemState) (c : Co
   · rename_i ntfn badge _
     obtain ⟨h1, hI⟩ := notificationSignalBoundOnCore_stepCovers e
       (notificationId := ntfn) (badge := badge) (executingCore := c) hInv
-    have hSig := interruptSignal_of
-      (P := fun s => stepCovers e st s ∧ s.objects.invExt) ntfn badge c st ⟨h1, hI⟩
-      (fun _ s2 _ hC => by
-        have hF := clearWokenReceiverStash_keyFrame _ hI hC
-        exact stepCoversInv_trans (stepCovers_trans h1 hF.stepCovers)
-          ((keyFrame_trans_stage hF.2.2).stepCoversInv
-            (hRes := by simp only [Architecture.stageWokenDelivery_machine_eq])
-            (hBank := banksKeptOffCore_of_eq (by
-              simp only [Architecture.stageWokenDelivery_machine_eq]))))
+    have hSig : stepCovers e st (interruptSignal ntfn badge c st) ∧
+        (interruptSignal ntfn badge c st).objects.invExt := ⟨h1, hI⟩
     exact stepCoversInv_trans hSig.1 (setInterruptLineMask_stepCovers e _ line true hSig.2)
   · exact setInterruptLineMask_stepCovers e st line true hInv
 
@@ -405,13 +418,13 @@ theorem faultEntryDeliver_sgis_cover_diff (lctx : LabelingContext) (st : SystemS
 outstanding: the diff is taken between the pre-state and the state the commit
 settles to. -/
 theorem syscallDispatchCrossCoreStep_sgis_cover_diff {ctx : LabelingContext} {e : CoreId}
-    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64}
+    {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome}
     (hInv : st.objects.invExt) (hB : finalisingDeleteBundle st)
     (hPlaced : placedThreadsHaveTcbs st)
     (hAwayCur : ∀ t, st.scheduler.currentOnCore e = some t → ∀ c, st.queuedOn c t = false)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
-      ipcBufferAddr elr spsr spEl0 x30 st = .ok (outcome, st'))
+      x6 elr spsr spEl0 x30 st = .ok (outcome, st'))
     (hId : ∀ oid (tcb : TCB), (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
       (PriorityInheritance.scheduleLocalSuccessor st
         (Architecture.stageCallerReturn st st' e outcome) e) e) e).getObject? oid =
@@ -422,7 +435,7 @@ theorem syscallDispatchCrossCoreStep_sgis_cover_diff {ctx : LabelingContext} {e 
         (PriorityInheritance.scheduleLocalSuccessor st
           (Architecture.stageCallerReturn st st' e outcome) e) e) e) e) :
     (c, SgiKind.reschedule) ∈ sgisOfRaised (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2
-        x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st).1.2.1 ∨
+        x3 x4 x5 x6 elr spsr spEl0 x30 st).1.2.1 ∨
       st.scheduler.reschedulePendingOnCore c = true := by
   rw [syscallDispatchCrossCoreStep_of_ok h]
   dsimp only

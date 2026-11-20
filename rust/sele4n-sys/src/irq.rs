@@ -28,6 +28,7 @@ pub fn irq_handler_ack(handler_cap: CPtr) -> KernelResult<()> {
         msg_info: MessageInfo::new_const(0, 0, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::IrqHandlerAck,
+        reply_cap: CPtr::NULL,
     })?;
     Ok(())
 }
@@ -59,6 +60,7 @@ pub fn irq_control_get(
         msg_info: MessageInfo::new_const(3, 1, 0),
         msg_regs: [line, index.raw(), depth, 0],
         syscall_id: SyscallId::IrqControlGet,
+        reply_cap: CPtr::NULL,
     })?;
     Ok(())
 }
@@ -84,6 +86,7 @@ pub fn irq_handler_set_notification(
         msg_info: MessageInfo::new_const(0, 1, 0),
         msg_regs: [0, 0, 0, 0],
         syscall_id: SyscallId::IrqHandlerSetNotification,
+        reply_cap: CPtr::NULL,
     })?;
     Ok(())
 }
@@ -97,6 +100,7 @@ pub fn irq_handler_clear(handler_cap: CPtr) -> KernelResult<()> {
         msg_info: MessageInfo::new_const(0, 0, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::IrqHandlerClear,
+        reply_cap: CPtr::NULL,
     })?;
     Ok(())
 }

@@ -2078,7 +2078,7 @@ def entryDecode (ctx : LabelingContext) (layout : SeLe4n.SyscallRegisterLayout)
       | .error _ => none
       | .ok (regs, _) =>
         match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
-                s tid layout regs regCount with
+                (threadOperationCode s tid layout regs) s tid layout regs regCount with
         | .error _ => none
         | .ok decoded => some (tid, decoded)
 
@@ -2113,7 +2113,7 @@ theorem entryDecode_none_entry_error (ctx : LabelingContext)
         rw [hRegs] at h
         simp only at h
         cases hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
-            s tid layout regs regCount with
+            (threadOperationCode s tid layout regs) s tid layout regs regCount with
         | error e => exact ⟨e, by simp [hRegs, hDec]⟩
         | ok decoded =>
           rw [hDec] at h
@@ -2175,7 +2175,7 @@ theorem entryDecode_some_entry_dispatches (ctx : LabelingContext)
         rw [hRegs] at h
         simp only at h
         cases hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
-            s tid' layout regs regCount with
+            (threadOperationCode s tid' layout regs) s tid' layout regs regCount with
         | error e => rw [hDec] at h; exact absurd h (by simp)
         | ok decoded' =>
           rw [hDec] at h

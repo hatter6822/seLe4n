@@ -698,10 +698,12 @@ set_option maxRecDepth 8192
 #check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore_error
 #check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore_no_running_core
 #check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore_sgi_shape
-#check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore_local_reschedules
-#check @schedContextUnbindOnCoreWriteSet
+#check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindOnCore_refuses_current
+#check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindAllOnCore
+#check @SeLe4n.Kernel.SchedContextOps.schedContextUnbindAllOnCore_refuses_current
 #check @schedContextUnbindOnCore_confinedToCores
-#check @schedContextUnbindOnCore_crossCoreNonInterference
+#check @schedContextUnbindAllOnCore_crossCoreNonInterference
+#check @schedContextUnbindAllOnCore_confinedToCores
 -- Round 15: the priority-control arms, and the shared effect they now name.
 #check @SeLe4n.Kernel.SchedContext.PriorityManagement.applyPriorityChangeOnCore
 #check @SeLe4n.Kernel.SchedContext.PriorityManagement.applyPriorityChangeOnCore_no_preempt
@@ -4636,21 +4638,21 @@ private def runRunQueueComparisonChecks : IO Unit := do
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "thirty-nine cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 39))
-  assertBool "twenty-eight of the thirty-nine can name a core other than the executing one"
+  assertBool "thirty-eight cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 38))
+  assertBool "twenty-eight of the thirty-eight can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
       SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 28))
-  assertBool "…and the wait, the two VSpace arms, the untyped reset, the carve, the declassification, the two audit readers, the yield, the Consumed invocation and the buffer change are the eleven that cannot"
+  assertBool "…and the wait, the two VSpace arms, the carve, the declassification, the two audit readers, the yield, the Consumed invocation and the buffer change are the ten that cannot"
     ([SeLe4n.Kernel.CrossCoreTransition.notificationWait,
-      .vspaceMapDispatch, .vspaceUnmapDispatch, .untypedResetDispatch,
+      .vspaceMapDispatch, .vspaceUnmapDispatch,
       .untypedRetypeDispatch, .declassifyDispatch, .setIPCBufferDispatch,
       .auditReadDispatch, .auditDrainDispatch, .yieldDispatch,
       .schedContextConsumedDispatch].all (fun t =>
         decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote t = false)))
-  assertBool "thirty-two of the thirty-nine are the arms the live syscall dispatch reaches"
+  assertBool "thirty-one of the thirty-eight are the arms the live syscall dispatch reaches"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 32))
+      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 31))
   -- WS-ZA ZA6.32: the interrupt handler's bind and clear empty the line's node
   -- slot by the zombie delete, so they are live, delegation-backed arms naming
   -- their own syscalls that may write remote cores, as the delete does.
@@ -4699,14 +4701,6 @@ private def runCoreSetAlgebraChecks : IO Unit := do
                    = some SeLe4n.Model.SyscallId.cspaceDelete)
       && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .cspaceRevokeDispatch
                    = some SeLe4n.Model.SyscallId.cspaceRevoke))
-  -- WS-BP BP7.1 slice 3: the untyped reset is a live arm, delegation-backed,
-  -- naming its own syscall, and writing no core — the `.vspaceUnmap` arm's shape.
-  assertBool "the untyped reset is a live, delegation-backed arm that writes no core"
-    (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .untypedResetDispatch
-      && (SeLe4n.Kernel.crossCoreLiveArmEvidence .untypedResetDispatch).isDelegationBacked
-      && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .untypedResetDispatch
-                   = some SeLe4n.Model.SyscallId.untypedReset)
-      && !SeLe4n.Kernel.crossCoreTransitionWritesRemote .untypedResetDispatch)
   -- Round 35: the entries that emptied the per-core routing allowlist, with the
   -- carve that replaced the in-place retype (WS-ZA ZA5.4 part 14).  All three
   -- are live arms, all three arrive delegation-backed, and all three carry an
@@ -4760,8 +4754,8 @@ private def runCoreSetAlgebraChecks : IO Unit := do
              ∧ SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointSendDispatch = true
              ∧ (SeLe4n.Kernel.crossCoreLiveArmEvidence .endpointSendDispatch).syscall?
                  = some SeLe4n.Model.SyscallId.send))
-  assertBool "twenty-four live arms are mechanically tied to the dispatch"
-    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 24))
+  assertBool "twenty-three live arms are mechanically tied to the dispatch"
+    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 23))
   -- The fourth review round's finding, as a checked fact: the three arms it
   -- named are in the inventory and are all classified as live.
   assertBool "the bound signal, the receive dual and replyRecv are all covered"
@@ -4872,7 +4866,7 @@ private def vacatingSendMsg : IpcMessage :=
 /-- The blocking send: `lowEndpoint` has no receiver, so `lowCurrent` parks on
 its send queue and `removeRunnableOnCore` clears core 0's `current` slot. -/
 private def vacatedPost : SystemState :=
-  (SeLe4n.Kernel.endpointSendDualOnCore lowEndpoint lowCurrent (.frame vacatingSendMsg.badge false) c0 niState).1
+  (SeLe4n.Kernel.endpointSendDualOnCore lowEndpoint lowCurrent (.frame vacatingSendMsg.badge false true) c0 niState).1
 
 /-- The same state after the entry seam's local reschedule. -/
 private def vacatedRescheduled : SystemState :=
@@ -5364,8 +5358,8 @@ private def runPerCoreCoverageChecks : IO Unit := do
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
   assertBool "68 entries: 54 canonical (the 2PL bracket, the two audit readers, the declassifying signal, WS-BP BP7.1's untyped carve and reset and the two finalising destroyers, the space change, the two page-table operations, the yield, the Consumed invocation, the yieldTo invocation and the interrupt acknowledge) + 14 cross-core wrappers"
-    (decide (enforcementBoundaryPerCore.length = 68) &&
-     decide (enforcementBoundaryExtended.length = 54) &&
+    (decide (enforcementBoundaryPerCore.length = 67) &&
+     decide (enforcementBoundaryExtended.length = 53) &&
      decide (crossCoreEnforcementEntries.length = 14))
   assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)
@@ -5760,10 +5754,11 @@ private def declassChainCNodeValue : CNode :=
 
 /-- PR #874 review — stage a syscall in a thread's registers exactly as the
 boundary would: `x0` the capability pointer, `x1` the msgInfo word, `x2`-`x4`
-the message registers, `x7` the syscall id — and re-root the thread's CSpace at
+the message registers, `x7` the word of the seL4 syscall `op` is issued with (its
+label in `x1`, `SyscallId.msgInfoWithLabel`) — and re-root the thread's CSpace at
 the chain's CNode so the pointer resolves. -/
 private def declassChainStage (tid : SeLe4n.ThreadId)
-    (sysId capPtr msgInfo m0 m1 m2 : Nat) (st : SystemState) : SystemState :=
+    (op : SyscallId) (capPtr msgInfo m0 m1 m2 : Nat) (st : SystemState) : SystemState :=
   match st.getTcb? tid with
   | none => st
   | some tcb =>
@@ -5773,11 +5768,11 @@ private def declassChainStage (tid : SeLe4n.ThreadId)
               tid.toObjId
               (.tcb { (TCB.withGuardedCSpaceRoot tcb declassChainCNode 60) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
                         if r == 0 then capPtr.toUInt64
-                        else if r == 1 then msgInfo.toUInt64
+                        else if r == 1 then op.msgInfoWithLabel msgInfo.toUInt64
                         else if r == 2 then m0.toUInt64
                         else if r == 3 then m1.toUInt64
                         else if r == 4 then m2.toUInt64
-                        else if r == 7 then sysId.toUInt64
+                        else if r == 7 then op.syscall.word
                         else 0) }) }
 
 /-- WS-SM SM9.D.8 (**the §3.6 chain's middle step**): an **ordinary,
@@ -5799,7 +5794,7 @@ private def declassDelivery : Option (DeclassificationAuditLog × SystemState) :
   | none => none
   | some (log₁, st₁) =>
       match syscallEntryChecked declassChainEntryLabeling SeLe4n.arm64DefaultLayout c0 32
-          (declassChainStage lowCurrent SyscallId.notificationWait.toNat 2 0 0 0 0 st₁) with
+          (declassChainStage lowCurrent SyscallId.notificationWait 2 0 0 0 0 st₁) with
       | .ok ((), st) => some (log₁, st)
       | .error _ => none
 
@@ -6136,7 +6131,7 @@ private def crossCoreSendUnder (ctx : LabelingContext) (epId : SeLe4n.ObjId) :
     SystemState ×
       Except KernelError (CapTransferSummary ×
         Option (CoreId × SeLe4n.Kernel.Concurrency.SgiKind)) :=
-  endpointSendCrossCoreDispatchChecked ctx epId lowCurrent (.frame none false)
+  endpointSendCrossCoreDispatchChecked ctx epId lowCurrent (.frame none false true)
     c0 niState
 
 /-- §6.8  The live per-endpoint flow policy — SM8.B's registered debt (a). -/
@@ -7322,11 +7317,12 @@ dispatch really mutates the state, and which the low observer still cannot see.
 
 The caller is the fixture's **high** thread on core 1, given a CSpace that holds
 a read capability to the **high** endpoint and registers encoding `.receive`
-(`x0` = the capability pointer, `x7` = the syscall id).  The receive finds no
+(`x0` = the capability pointer, `x7` = seL4's `Wait` word: a receive naming no
+reply capability, where a `Recv` looks one up in x6).  The receive finds no
 sender and blocks it — so the object store, the endpoint queue and core 1's
 scheduler slots all move, and every one of those movements is high. -/
 private def hiCallerTcb : TCB :=
-  { (TCB.withGuardedCSpaceRoot (mkTcb 1011 50 (some c1)) probeCNode 60) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 2 else if r == 7 then 1 else 0) }
+  { (TCB.withGuardedCSpaceRoot (mkTcb 1011 50 (some c1)) probeCNode 60) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 2 else if r == 7 then Syscall.wait.word else 0) }
 
 private def successEntryState : SystemState :=
   { niState with
@@ -7574,7 +7570,7 @@ private def distinctRootVictim : TCB :=
 -- Every other §7.9 state decodes to `.receive`, which is undeclared — so until
 -- this fixture existed the group could only ever observe the resolver saying
 -- `none`, and the *declared* path was never exercised at all.  A caller with
--- `x7 = 20` (`.tcbSuspend`) and `x0 = 1` (a slot holding a **write** capability
+-- `x7` seL4's `Call` word with `.tcbSuspend`'s label in `x1`, and `x0 = 1` (a slot holding a **write** capability
 -- to a real TCB) resolves a genuine footprint.
 -- ---------------------------------------------------------------------------
 
@@ -7593,7 +7589,7 @@ private def suspendCNodeValue : CNode :=
   (SeLe4n.Model.CNode.ofSlots 4 (SeLe4n.UniqueSlotMap.ofListWF [(suspendSlot, suspendSlotCap)]))
 
 private def suspendCallerTcb : TCB :=
-  { (TCB.withGuardedCSpaceRoot (mkTcb 1011 50 (some c1)) suspendCNode 60) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 1 else if r == 7 then 20 else 0) }
+  { (TCB.withGuardedCSpaceRoot (mkTcb 1011 50 (some c1)) suspendCNode 60) with registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r => if r == 0 then 1 else if r == 1 then SyscallId.tcbSuspend.msgInfoWithLabel 0 else if r == 7 then SyscallId.tcbSuspend.syscall.word else 0) }
 
 private def suspendEntryState : SystemState :=
   { niState with
@@ -7649,7 +7645,7 @@ still fired.  Parking it properly is what makes each of them decided by the
 private def ipcSenderTcb : TCB :=
   TCB.setIpcState
     ((SeLe4n.Testing.tcbWithSenderFrame (mkTcb 1044 40 (some c0)) ipcMessage 1).setSendCap
-      none true)
+      none true true)
     (.blockedOnCall lowEndpoint)
 
 private def ipcFootprintState : SystemState :=
@@ -7683,8 +7679,9 @@ capless message.  This is the arm OD3.6 exists for — it writes
 `SystemState.scThreadIndex` and installs no capability, so a state-level member
 conditioned on `installsCaps` alone would be absent exactly here. -/
 private def ipcDonatingCaplessSenderTcb : TCB :=
-  (TCB.setIpcState { mkTcb 1044 40 (some c0) with
-      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ipcDonatedScId), scBindingOwnerCode := 0 } (.blockedOnCall lowEndpoint))
+  (TCB.setIpcState ({ mkTcb 1044 40 (some c0) with
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ipcDonatedScId),
+      scBindingOwnerCode := 0 }.setSendCap none false true) (.blockedOnCall lowEndpoint))
 
 /-- The fixture with a donating, caps-carrying rendezvous sender. -/
 private def ipcDonatingFootprintState : SystemState :=
@@ -7696,6 +7693,20 @@ private def ipcDonatingCaplessFootprintState : SystemState :=
   { ipcFootprintState with
       objects :=
         ipcFootprintState.objects.insert ipcSender.toObjId (.tcb ipcDonatingCaplessSenderTcb) }
+
+/-- The donating sender with a cap that grants neither `Grant` nor `GrantReply`:
+seL4's receive delivers its `Call` and leaves it `Inactive`, linking no reply, so
+nothing is donated. -/
+private def ipcNoGrantDonatingFootprintState : SystemState :=
+  { ipcFootprintState with
+      objects := ipcFootprintState.objects.insert ipcSender.toObjId
+        (.tcb (ipcDonatingSenderTcb.setSendCap none false false)) }
+
+/-- The operands of a `.receive` that supplies a reply object (`seL4_Recv` with a
+reply capability), which a call rendezvous links the caller to. -/
+private def ipcReceiveWithReply : Concurrency.SyscallLockOperands :=
+  { (Concurrency.SyscallLockOperands.ofObjectTarget lowCurrent lowEndpoint) with
+      targetReply := some ipcReplyId }
 
 /-- ...and one that neither donates nor installs, for the negatives.  The sender
 is parked on the send queue as a `Call` exactly as the donating ones are, so the
@@ -7711,7 +7722,7 @@ what the capability contributes, the badge and the grant right (WS-ZA ZA4.7).
 The words and capability addresses are in the caller's frame, which
 `ipcFootprintState` stages. -/
 private def ipcSendOperands (grant : Bool) : Concurrency.SyscallLockOperands :=
-  .ofObjectTarget lowCurrent lowEndpoint (some (.frame ipcMessage.badge grant))
+  .ofObjectTarget lowCurrent lowEndpoint (some (.frame ipcMessage.badge grant true))
 
 private def ipcDeclaredMember
     (declared : Option Concurrency.LockSet)
@@ -7802,24 +7813,44 @@ private def runIpcDeclaredFootprintChecks : IO Unit := do
   -- own guard, the head must be parked as a `Call` and the receiver must be
   -- `.unbound` — both true of this fixture, the first only since that cut made
   -- the sender `.blockedOnCall` rather than `.ready`.
+  --
+  -- seL4 `receiveIPC` donates through `reply_push`, which runs only where the
+  -- receive links the caller to a reply: the caller's cap grants (`Grant` or
+  -- `GrantReply`) and the receive supplies a reply object.  So the donating
+  -- receives here supply one (`ipcReceiveWithReply`), and the controls below
+  -- show the same fixture declaring no donation without it.
   assertBool "the rendezvous resolver finds the donation on a `.bound` sender"
-    (decide (receiveRendezvousDonatedSc? ipcDonatingFootprintState lowEndpoint lowCurrent
+    (decide (receiveRendezvousDonatedSc? ipcDonatingFootprintState lowEndpoint lowCurrent true
       = some ipcDonatedScId))
   assertBool "a donating `.receive` declares the donated SchedContext write"
     (ipcDeclaredMember (Concurrency.lockSetForSyscall .receive
-      (.ofObjectTarget lowCurrent lowEndpoint) ipcDonatingFootprintState)
+      ipcReceiveWithReply ipcDonatingFootprintState)
       (Concurrency.schedContextLock ipcDonatedScId) .write)
+  assertBool "NEGATIVE: a receive with no reply object links no caller, so donates nothing"
+    (decide (receiveRendezvousDonatedSc? ipcDonatingFootprintState lowEndpoint lowCurrent false
+      = none))
+  assertBool "NEGATIVE: ...and declares no SchedContext write"
+    (decide (¬ ipcDeclaredMember (Concurrency.lockSetForSyscall .receive
+      (.ofObjectTarget lowCurrent lowEndpoint) ipcDonatingFootprintState)
+      (Concurrency.schedContextLock ipcDonatedScId) .write))
+  assertBool "NEGATIVE: a caller whose cap grants no reply is not linked, so donates nothing"
+    (decide (receiveRendezvousDonatedSc? ipcNoGrantDonatingFootprintState lowEndpoint lowCurrent
+      true = none))
+  assertBool "NEGATIVE: ...and declares no SchedContext write even with a reply object"
+    (decide (¬ ipcDeclaredMember (Concurrency.lockSetForSyscall .receive
+      ipcReceiveWithReply ipcNoGrantDonatingFootprintState)
+      (Concurrency.schedContextLock ipcDonatedScId) .write))
   -- The passive-server steady state: donates, installs nothing, and STILL
   -- declares the state-level lock — `scThreadIndex` is an `RHTable` whose insert
   -- may rehash, so no per-object member covers it.  This is the case a member
   -- conditioned on `installsCaps` alone would miss.
   assertBool "a capless donating `.receive` declares the state-level write"
     (ipcDeclaredMember (Concurrency.lockSetForSyscall .receive
-      (.ofObjectTarget lowCurrent lowEndpoint) ipcDonatingCaplessFootprintState)
+      ipcReceiveWithReply ipcDonatingCaplessFootprintState)
       Concurrency.stateLevelLock .write)
   assertBool "...and the donated SchedContext write with it"
     (ipcDeclaredMember (Concurrency.lockSetForSyscall .receive
-      (.ofObjectTarget lowCurrent lowEndpoint) ipcDonatingCaplessFootprintState)
+      ipcReceiveWithReply ipcDonatingCaplessFootprintState)
       (Concurrency.schedContextLock ipcDonatedScId) .write)
   -- NEGATIVE: a rendezvous with an `.unbound` sender carrying no capability
   -- declares neither member, so both track the write rather than being
@@ -8660,6 +8691,26 @@ private def runRefusalSeamClassChecks : IO Unit := do
      decide (refusalSeamClass .declassify = .records) &&
      decide (SyscallId.declassify ∉ emptyList))
 
+/-- The CNode the boundary checks below re-root core 1's subject at. -/
+private def refusalSeamCNode : SeLe4n.ObjId := ⟨1034⟩
+
+/-- Core 1's subject holding the audit-trail capability at slot 5: a
+declassification is the operation its label selects on that capability's type
+(seL4's `decodeInvocation` dispatches on the invoked capability's type), so the
+boundary reads a `Call` at `x0 = 5` as the declassification only here. -/
+private def withRefusalSeamAuditCap (st : SystemState) : SystemState :=
+  match st.getTcb? highCurrent with
+  | none => st
+  | some tcb =>
+      { st with
+          objects :=
+            (st.objects.insert refusalSeamCNode (.cnode (SeLe4n.Model.CNode.ofSlots 4
+                (SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 5,
+                  { target := .auditTrail CapTarget.authorityCode,
+                    rights := AccessRightSet.ofList [.read, .write] })])))).insert
+              highCurrent.toObjId
+              (.tcb (TCB.withGuardedCSpaceRoot tcb refusalSeamCNode 60)) }
+
 /-- §10.3  SM9.B.9 — the seam write, and the security theorems it rests on. -/
 private def runRefusalSeamWriteChecks : IO Unit := do
   IO.println "--- §10.3 SM9.B.9 the refusal seam ---"
@@ -8716,13 +8767,13 @@ private def runRefusalSeamWriteChecks : IO Unit := do
   -- class a monitor cannot see.  The *policy-path* refusals travel the same
   -- boundary in §13.2, under a deployment the probe serves.
   assertBool "END TO END: the boundary commits the record and returns the plain error frame"
-    (match SeLe4n.Testing.dispatchFromAbi ctx c1 declassId 5 0 0 0 0 0 0 0 0 0 0
-        niState with
+    (match SeLe4n.Testing.dispatchOperationFromAbi ctx c1 SyscallId.declassify 5 0 0 0 0 0 0 0 0 0 0
+        (withRefusalSeamAuditCap niState) with
      | .error _ => false
      | .ok (outcome, committed) =>
          (match outcome with
           | .returns f => decide (f = Architecture.errorFrame KernelError.policyDenied false)
-          | .blocks | .faulted => false) &&
+          | .blocks | .faulted | .resumes => false) &&
          (match committed.declassificationRefusals.recent.get
              niState.declassificationRefusals.nextSlot with
           | some r => decide (r.reason = KernelError.policyDenied) &&
@@ -8732,8 +8783,8 @@ private def runRefusalSeamWriteChecks : IO Unit := do
          decide (committed.declassificationRefusals.attemptCount.val = 1) &&
          decide (committed.declassificationAuditLog = niState.declassificationAuditLog))
   assertBool "NEGATIVE: the same boundary call for an EXEMPT syscall records nothing"
-    (match SeLe4n.Testing.dispatchFromAbi ctx c1 sendId 5 0 0 0 0 0 0 0 0 0 0
-        niState with
+    (match SeLe4n.Testing.dispatchOperationFromAbi ctx c1 SyscallId.send 5 0 0 0 0 0 0 0 0 0 0
+        (withRefusalSeamAuditCap niState) with
      | .error _ => false
      | .ok (_, committed) =>
          decide (committed.declassificationRefusals = niState.declassificationRefusals))
@@ -8998,8 +9049,8 @@ private def runRefusalAcceptanceChecks : IO Unit := do
   -- dispatch-level check exercises is explicit; the genuine downgrade
   -- refusals travel the same boundary in §13.2.
   assertBool "END TO END: the committed refusal reads back live, and the caller's frame is exactly its reason's"
-    (match SeLe4n.Testing.dispatchFromAbi auditMonitorLabeling c1
-        (SyscallId.declassify.toNat.toUInt32) 5 0 0 0 0 0 0 0 0 0 0 auditMixedState with
+    (match SeLe4n.Testing.dispatchOperationFromAbi auditMonitorLabeling c1
+        SyscallId.declassify 5 0 0 0 0 0 0 0 0 0 0 (withRefusalSeamAuditCap auditMixedState) with
      | .error _ => false
      | .ok (outcome, committed) =>
          match committed.declassificationRefusals.recent.get
@@ -9008,7 +9059,7 @@ private def runRefusalAcceptanceChecks : IO Unit := do
          | some recorded =>
              (match outcome with
               | .returns f => decide (f = Architecture.errorFrame recorded.reason false)
-              | .blocks | .faulted => false) &&
+              | .blocks | .faulted | .resumes => false) &&
              decide (recorded.reason = KernelError.policyDenied) &&
              decide (recorded.syscall = SyscallId.declassify) &&
              decide (recorded.subject = highCurrent) &&
@@ -9461,7 +9512,7 @@ private def runAuditLiveArmChecks : IO Unit := do
   assertBool "both audit syscalls are in the ABI, with different required rights"
     (decide (SyscallId.auditRead.toNat = 31) &&
      decide (SyscallId.auditDrain.toNat = 32) &&
-     decide (SyscallId.count = 46) &&
+     decide (SyscallId.count = 45) &&
      decide (syscallRequiredRight .auditRead = AccessRight.read) &&
      decide (syscallRequiredRight .auditDrain = AccessRight.write))
   assertBool "both return a WORD, so the boundary reads the staged frame rather than constructing"
@@ -10086,9 +10137,9 @@ private def runDeclassifiedSignalDefaultChecks : IO Unit := do
 /-- §11.6  SM9.C.8 / SM9.C.9 — the ABI, the live arm and the registries. -/
 private def runDeclassifiedSignalAbiChecks : IO Unit := do
   IO.println "--- §11.6 SM9.C.8 the syscall, end to end ---"
-  assertBool "the syscall is in the ABI at 33, count 46, requiring the notification's write right"
+  assertBool "the syscall is in the ABI at 33, count 45, requiring the notification's write right"
     (decide (SyscallId.declassifySignal.toNat = 33) &&
-     decide (SyscallId.count = 46) &&
+     decide (SyscallId.count = 45) &&
      decide (SyscallId.ofNat? 33 = some SyscallId.declassifySignal) &&
      decide (syscallRequiredRight .declassifySignal = AccessRight.write))
   -- The same right the ordinary signal needs: the declassification gates sit
@@ -10337,8 +10388,8 @@ private def runDeclassifiedSignalWaiterGateChecks : IO Unit := do
       | (st', .ok _) =>
           (match st'.getTcb? crossCoreWaiter with
            | some tcb =>
-               decide ((tcb.pendingMessage.bind (·.badge))
-                 = some (SeLe4n.Badge.ofNatMasked 0x5C)) &&
+               decide (tcb.registerContext.x0 = (SeLe4n.Badge.ofNatMasked 0x5C).word) &&
+               decide (tcb.pendingMessage = none) &&
                decide (tcb.ipcState = ThreadIpcState.ready)
            | none => false)
       | (_, .error _) => false) &&
@@ -10558,7 +10609,7 @@ private def taintedEndpointState : SystemState :=
         { base with
             objects := base.objects.insert taintedSender.toObjId
               (.tcb ((SeLe4n.Testing.tcbWithSenderFrame stcb transferMessage 1).setSendCap
-                none true)) }
+                none true true)) }
         taintedSender #[SeLe4n.CPtr.ofNat 0]
 
 /-- PR #873 round 4: the BOUND-delivery ordering.  `boundDeliveryTarget?` checks
@@ -10608,19 +10659,19 @@ private def replyLegState : SystemState :=
     highCurrent.toObjId (DeclassificationTaint.singleton 57)
 
 /-- A hand-built `replyRecv` decode: primary operand = the endpoint cap at
-slot 2, MR0 = the reply CPtr (slot 3), `msgInfo.length = 1` so the MR0-present
-guard the arm enforces is satisfied here too. -/
+slot 2, the reply CPtr (slot 3) in the reply register (x6, seL4-MCS
+`replyRegister`), and an empty message. -/
 private def replyLegDecoded : SyscallDecodeResult :=
   { syscallId := .replyRecv, capAddr := SeLe4n.CPtr.ofNat 2,
-    msgInfo := SeLe4n.Model.MessageInfo.mk 1 0 0 0,
-    msgRegs := #[⟨3⟩] }
+    msgInfo := SeLe4n.Model.MessageInfo.mk 0 0 0 0,
+    canReply := true, replyCPtr := SeLe4n.CPtr.ofNat 3 }
 
 /-- `replyLegDecoded` naming one extra capability, whose address (the IPC
 buffer's `caps_or_badges[0]` word, `replyLegSkipState`) does not look up: seL4-MCS `SysReplyRecv` runs `handleInvocation` with `isBlocking = false`,
 so the failed `lookupExtraCaps` skips the reply with no fault, and the receive
 half still runs (WS-SX SX6.1). -/
 private def replyLegSkipDecoded : SyscallDecodeResult :=
-  { replyLegDecoded with msgInfo := SeLe4n.Model.MessageInfo.mk 1 1 0 0 }
+  { replyLegDecoded with msgInfo := SeLe4n.Model.MessageInfo.mk 0 1 0 0 }
 
 /-- `replyLegState` with the server's IPC buffer naming, as its one extra
 capability, an address its CSpace does not resolve; the reply still records
@@ -11532,8 +11583,8 @@ capability is extra capability 0, slot 5).  The plan authorizes hop 1 and
 refuses hop 2, so the committed record must carry the resolved receiver. -/
 private def deniedSignalDispatchOutcome :
     Except KernelError (Architecture.SyscallOutcome × SystemState) :=
-  SeLe4n.Testing.dispatchFromAbi signalReceiverDeniedLabeling c1
-    (SyscallId.declassifySignal.toNat.toUInt32) 2
+  SeLe4n.Testing.dispatchOperationFromAbi signalReceiverDeniedLabeling c1
+    SyscallId.declassifySignal 2
     (({ length := 1, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64) 0x5C 0 0 0 0 0 0 0 0
     seamBoundaryState
 
@@ -11544,8 +11595,8 @@ notification, so the refusal is the policy gate's own `.declassificationDenied`
 rather than a resolution failure. -/
 private def deniedDeclassifyDispatchOutcome :
     Except KernelError (Architecture.SyscallOutcome × SystemState) :=
-  SeLe4n.Testing.dispatchFromAbi declassifyDenyAllLabeling c1
-    (SyscallId.declassify.toNat.toUInt32) 2
+  SeLe4n.Testing.dispatchOperationFromAbi declassifyDenyAllLabeling c1
+    SyscallId.declassify 2
     (({ length := 0, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64) 0 0 0 0 0 0 0 0 0
     (SeLe4n.Testing.withSenderCapAddrs seamBoundaryState highCurrent #[SeLe4n.CPtr.ofNat 3])
 
@@ -11910,7 +11961,7 @@ private def flowReceiverFalse : LabelingContext := flowLabeling highLabel highLa
 /-- The live checked `.call` dispatch under a labelling. -/
 private def flowCall (ctx : LabelingContext) : SystemState :=
   (endpointCallCrossCoreDispatchChecked ctx flowEp flowClient
-    (.frame none ((AccessRightSet.ofList [.read, .write, .grant]).mem .grant))
+    (.frame none ((AccessRightSet.ofList [.read, .write, .grant]).mem .grant) true)
     bootCoreId
     flowState).1
 

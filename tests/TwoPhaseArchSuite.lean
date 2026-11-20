@@ -159,7 +159,7 @@ private def tph005a_sendBlocks : IO Unit := do
   let senderTcb := mkTcb 1
   let fst := mkFrozenState [(⟨10⟩, .endpoint ep), (⟨1⟩, .tcb senderTcb)]
   let msg : IpcMessage := { registers := #[⟨42⟩], badge := Badge.ofNatMasked 0 }
-  match frozenEndpointSend ⟨10⟩ ⟨1⟩ (.frame msg.badge false) fst with
+  match frozenEndpointSend ⟨10⟩ ⟨1⟩ (.frame msg.badge false true) fst with
   | .ok ((), fst') =>
       match frozenLookupTcb fst' ⟨1⟩ with
       | some tcb =>
@@ -181,16 +181,35 @@ private def tph005b_receiveBlocks : IO Unit := do
       | none => throw <| IO.userError "receiver TCB missing"
   | .error _ => throw <| IO.userError "receive should succeed"
 
-/-- TPH-005c: Frozen endpoint call — caller sends then blocks for reply. -/
+/-- TPH-005c: Frozen endpoint call — caller sends then blocks for reply.
+
+The waiting receiver stashed a reply object and the payload grants
+`GrantReply`, the shape in which seL4's `sendIPC` links the caller
+(`reply_push`).  A receiver that stashed none takes the other arm: the
+message is delivered and the caller is left `Inactive` (TPH-005g). -/
 private def tph005c_callBlocksForReply : IO Unit := do
-  -- Set up an endpoint with a receiver already waiting
-  let recvTcb : TCB := ((mkTcb 2).setIpcState (.blockedOnReceive ⟨10⟩))
+  -- Set up an endpoint with a receiver already waiting, holding reply 11
+  let rid : SeLe4n.ReplyId := ⟨11⟩
+  let recvTcbWith (stash : Bool) : TCB :=
+    ({ mkTcb 2 with pendingReceiveReplyCode := if stash then SeLe4n.ReplyId.optCode (some rid) else 0 }
+      |>.setIpcState (.blockedOnReceive ⟨10⟩))
+  let recvTcb := recvTcbWith true
   let ep : Endpoint := (Endpoint.ofQueues {} { head := some ⟨2⟩, tail := some ⟨2⟩ })
   let callerTcb := mkTcb 3
-  let fst := mkFrozenState [
-    (⟨10⟩, .endpoint ep), (⟨2⟩, .tcb recvTcb), (⟨3⟩, .tcb callerTcb)]
+  let fstWith (r : TCB) := mkFrozenState [
+    (⟨10⟩, .endpoint ep), (⟨2⟩, .tcb r), (⟨3⟩, .tcb callerTcb),
+    (⟨11⟩, .reply { replyId := rid, callerCode := 0 })]
+  let fst := fstWith recvTcb
+  let msg0 : IpcMessage := { registers := #[⟨99⟩], badge := Badge.ofNatMasked 0 }
+  match frozenEndpointCall ⟨10⟩ ⟨3⟩ (.frame msg0.badge false true) (fstWith (recvTcbWith false)) with
+  | .ok ((), fst') =>
+      expect "TPH-005g caller linking no reply is Inactive" (
+        match frozenLookupTcb fst' ⟨3⟩ with
+        | some cTcb => cTcb.threadState == .Inactive && cTcb.ipcState == .ready
+        | none => false)
+  | .error e => throw <| IO.userError s!"no-link call should succeed: {toString e}"
   let msg : IpcMessage := { registers := #[⟨99⟩], badge := Badge.ofNatMasked 0 }
-  match frozenEndpointCall ⟨10⟩ ⟨3⟩ (.frame msg.badge false) fst with
+  match frozenEndpointCall ⟨10⟩ ⟨3⟩ (.frame msg.badge false true) fst with
   | .ok ((), fst') =>
       -- Receiver should have been unblocked with the message
       match frozenLookupTcb fst' ⟨2⟩ with

@@ -63,12 +63,24 @@ theorem of_store {st st' : SystemState} {t : SeLe4n.ThreadId} {s : ThreadIpcStat
 
 end FaultParkedAt
 
+/-- **The suspend parks the thread** `.Inactive`. -/
+theorem FaultParkedAt.faultSuspendOnCore (st : SystemState) (t : SeLe4n.ThreadId) (c : CoreId)
+    (hInv : st.objects.invExt) : FaultParkedAt (_root_.SeLe4n.Kernel.faultSuspendOnCore st t c) t :=
+  fun y hy => by
+    unfold _root_.SeLe4n.Kernel.faultSuspendOnCore at hy
+    rw [SystemState.updateTcb_getTcb?_self _ _ _
+      (RecordsFrame.removeRunnableOnCore st t c hInv).invExt] at hy
+    cases h : (_root_.SeLe4n.Kernel.removeRunnableOnCore st t c).getTcb? t with
+    | none => rw [h] at hy; cases hy
+    | some x => rw [h] at hy; cases hy; exact .inl rfl
+
 -- ============================================================================
 -- §1  The call parks its caller
 -- ============================================================================
 
 /-- **The per-core call, when it succeeds, parks its caller**: on the reply when
-it meets a receiver, on the call when it meets nobody. -/
+it meets a receiver it links to, `.Inactive` when it meets one it links no
+reply to, on the call when it meets nobody. -/
 theorem endpointCallOnCore_callerParked {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId}
     {payload : SendPayload} {c : CoreId} {st : SystemState} (hInv : st.objects.invExt)
     (hQ : queueHeadBlockedConsistent st) :
@@ -82,34 +94,55 @@ theorem endpointCallOnCore_callerParked {endpointId : SeLe4n.ObjId} {caller : Se
     split
     · rename_i hd hHead
       split
-      · intro _ h; cases h
-      · rename_i receiver _tcb st1 hPop
-        have hRh : receiver = hd := endpointQueuePopHead_popped_eq_head _ true _ _ ep _ _ _
-          hEpO (by simpa using hHead) hPop
-        subst hRh
-        have F1 := RecordsFrame.endpointQueuePopHead hInv hPop
-        split
+      · split
         · intro _ h; cases h
-        · rename_i st2 hRdy
-          have S2 := RecordsStep.storeTcbIpcStateAndMessage F1.invExt hRdy
-            (fun x hx => .inl (F1.notParked (receiveHead_notParked hQ hEpO hHead) x hx))
-          obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hRdy
-          have F3 := RecordsFrame.wakeThread st2 receiver c S2.invExt (fun y hy => by
-            rw [hx] at hy; cases hy; simp)
+        · rename_i receiver _tcb st1 hPop
+          have hRh : receiver = hd := endpointQueuePopHead_popped_eq_head _ true _ _ ep _ _ _
+            hEpO (by simpa using hHead) hPop
+          subst hRh
+          have F1 := RecordsFrame.endpointQueuePopHead hInv hPop
           split
           · intro _ h; cases h
-          · rename_i st4 hBlk
-            have S4 := RecordsStep.storeTcbIpcStateAndMessage F3.invExt hBlk
-              (fun _ _ => .inr (by simp))
-            have P4 := FaultParkedAt.of_store F3.invExt hBlk (by simp)
+          · rename_i st2 hRdy
+            have S2 := RecordsStep.storeTcbIpcStateAndMessage F1.invExt hRdy
+              (fun x hx => .inl (F1.notParked (receiveHead_notParked hQ hEpO hHead) x hx))
+            obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hRdy
+            have F3 := RecordsFrame.wakeThread st2 receiver c S2.invExt (fun y hy => by
+              rw [hx] at hy; cases hy; simp)
             split
             · intro _ h; cases h
-            · rename_i st5 hLink
-              have F5 := RecordsFrame.linkServerStashedReply S4.invExt hLink
-              have F6 := RecordsFrame.removeRunnableOnCore st5 caller c F5.invExt
-              intro _ _
-              exact ((P4.frame F5).frame F6).runLinks
-                (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)
+            · rename_i st4 hBlk
+              have S4 := RecordsStep.storeTcbIpcStateAndMessage F3.invExt hBlk
+                (fun _ _ => .inr (by simp))
+              have P4 := FaultParkedAt.of_store F3.invExt hBlk (by simp)
+              split
+              · intro _ h; cases h
+              · rename_i st5 hLink
+                have F5 := RecordsFrame.linkServerStashedReply S4.invExt hLink
+                have F6 := RecordsFrame.removeRunnableOnCore st5 caller c F5.invExt
+                intro _ _
+                exact ((P4.frame F5).frame F6).runLinks
+                  (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)
+      · -- A call that links no reply: the caller ends `.Inactive`, as the suspend.
+        split
+        · intro _ h; cases h
+        · rename_i receiver _tcb st1 hPop
+          have hRh : receiver = hd := endpointQueuePopHead_popped_eq_head _ true _ _ ep _ _ _
+            hEpO (by simpa using hHead) hPop
+          subst hRh
+          have F1 := RecordsFrame.endpointQueuePopHead hInv hPop
+          split
+          · intro _ h; cases h
+          · rename_i st2 hRC
+            split
+            · intro _ h; cases h
+            have S2 := RecordsStep.storeTcbReceiveComplete F1.invExt hRC
+              (fun x hx => F1.notParked (receiveHead_notParked hQ hEpO hHead) x hx)
+            obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hRC
+            have F3 := RecordsFrame.wakeThread st2 receiver c S2.invExt (fun y hy => by
+              rw [hx] at hy; cases hy; simp)
+            intro _ _
+            exact FaultParkedAt.faultSuspendOnCore _ caller c F3.invExt
     · split
       · intro _ h; cases h
       · rename_i st1 hEnq
@@ -122,7 +155,7 @@ theorem endpointCallOnCore_callerParked {endpointId : SeLe4n.ObjId} {caller : Se
           have F3 := RecordsFrame.removeRunnableOnCore st2 caller c S2.invExt
           intro _ _
           exact ((FaultParkedAt.of_store F1.invExt hBlk (by simp)).frame F3).frame
-            (RecordsFrame.recordSendCap _ caller payload.badge payload.grant F3.invExt)
+            (RecordsFrame.recordSendCap _ caller payload.badge payload.grant payload.grantReply F3.invExt)
   · split <;> (intro _ h; cases h)
 
 theorem endpointCallWithCapsOnCore_callerParked {endpointId : SeLe4n.ObjId}
@@ -201,20 +234,6 @@ theorem faultSuspendOnCore (st : SystemState) (t : SeLe4n.ThreadId) (c : CoreId)
     (updateTcb _ t (RecordsFrame.removeRunnableOnCore st t c hInv).invExt
       fun _ _ => TcbStaysParked.of_parked (.inl rfl))
 
-end RecordsStep
-
-theorem FaultParkedAt.faultSuspendOnCore (st : SystemState) (t : SeLe4n.ThreadId) (c : CoreId)
-    (hInv : st.objects.invExt) : FaultParkedAt (_root_.SeLe4n.Kernel.faultSuspendOnCore st t c) t :=
-  fun y hy => by
-    unfold _root_.SeLe4n.Kernel.faultSuspendOnCore at hy
-    rw [SystemState.updateTcb_getTcb?_self _ _ _
-      (RecordsFrame.removeRunnableOnCore st t c hInv).invExt] at hy
-    cases h : (_root_.SeLe4n.Kernel.removeRunnableOnCore st t c).getTcb? t with
-    | none => rw [h] at hy; cases hy
-    | some x => rw [h] at hy; cases hy; exact .inl rfl
-
-namespace RecordsStep
-
 /-- The suspend and the record. -/
 theorem faultSuspendRecord (st : SystemState) (t : SeLe4n.ThreadId) (c : CoreId)
     (tf : ThreadFault) (hInv : st.objects.invExt) :
@@ -237,13 +256,13 @@ theorem faultDeliverOnCore {st : SystemState} {t : SeLe4n.ThreadId} {f : Fault}
   · exact sus
   · rename_i tgt _
     have S := endpointCallCrossCoreDispatch (endpointId := tgt.endpoint) (caller := t)
-      (payload := .fault f fctx tgt.cap.badge)
+      (payload := .fault f fctx tgt.cap.badge tgt.cap.canLinkReply)
       (c := c) hInv hQ
     have P := endpointCallCrossCoreDispatch_callerParked (endpointId := tgt.endpoint)
-      (caller := t) (payload := .fault f fctx tgt.cap.badge)
+      (caller := t) (payload := .fault f fctx tgt.cap.badge tgt.cap.canLinkReply)
       (c := c) hInv hQ
     generalize _root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch tgt.endpoint t
-      (.fault f fctx tgt.cap.badge) c st = r at S P ⊢
+      (.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st = r at S P ⊢
     obtain ⟨st1, res⟩ := r
     dsimp only at S P ⊢
     cases res with

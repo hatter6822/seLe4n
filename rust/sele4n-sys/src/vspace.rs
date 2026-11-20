@@ -3,9 +3,7 @@
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — `apiVspaceMap`, `apiVspaceUnmap`.
 
-use sele4n_abi::args::{
-    PagePerms, PageTableMapArgs, VSpaceMapArgs, VSpaceUnifyInstructionArgs, VSpaceUnmapArgs,
-};
+use sele4n_abi::args::{PagePerms, PageTableMapArgs, VSpaceMapArgs, VSpaceUnifyInstructionArgs};
 use sele4n_abi::{invoke_syscall, IpcBuffer, MessageInfo, SyscallRequest, SyscallResponse};
 #[cfg(test)]
 use sele4n_types::KernelError;
@@ -56,6 +54,7 @@ pub fn vspace_map(
         msg_info: MessageInfo::new_const(3, 1, 0),
         msg_regs: [encoded[0], encoded[1], encoded[2], 0],
         syscall_id: SyscallId::VSpaceMap,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -68,7 +67,7 @@ pub fn vspace_map(
 /// `vaddr` and seL4's attributes word (0).  A message naming no extra
 /// capability is `TruncatedMessage`.  The table is installed at the
 /// shallowest level the walk to `vaddr` is missing, so three calls make an
-/// address mappable; a fourth is refused with `MappingConflict`.  A carved
+/// address mappable; a fourth is refused with `TargetSlotOccupied` (seL4's `seL4_DeleteFirst`).  A carved
 /// address space maps a frame only where its walk is complete
 /// (`TranslationFault` otherwise).
 ///
@@ -92,6 +91,7 @@ pub fn page_table_map(
         msg_info: MessageInfo::new_const(2, 1, 0),
         msg_regs: [encoded[0], encoded[1], 0, 0],
         syscall_id: SyscallId::PageTableMap,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -107,21 +107,27 @@ pub fn page_table_unmap(table_cap: CPtr) -> KernelResult<SyscallResponse> {
         msg_info: MessageInfo::new_const(0, 0, 0),
         msg_regs: [0, 0, 0, 0],
         syscall_id: SyscallId::PageTableUnmap,
+        reply_cap: CPtr::NULL,
     })
 }
 
-/// Unmap a page from a virtual address space.
+/// Unmap the page a frame capability mapped — seL4's `seL4_ARM_Page_Unmap`.
 ///
-/// Lean: `apiVspaceUnmap` (API.lean) — requires `.write` right on `vspace_cap`.
+/// Invoked on the frame capability with no message word: the kernel removes
+/// the mapping that capability records (only while the address still maps
+/// that frame) and clears the record.  A capability that records no mapping
+/// unmaps nothing and succeeds.
+///
+/// Lean: `vspaceUnmapFrameCap` (Capability/FrameFinalise.lean), the `.vspaceUnmap`
+/// arm of `dispatchCapabilityOnly` (API.lean) — requires `.read` on `frame_cap`.
 #[inline]
-pub fn vspace_unmap(vspace_cap: CPtr, asid: Asid, vaddr: VAddr) -> KernelResult<SyscallResponse> {
-    let args = VSpaceUnmapArgs { asid, vaddr };
-    let encoded = args.encode();
+pub fn vspace_unmap(frame_cap: CPtr) -> KernelResult<SyscallResponse> {
     invoke_syscall(SyscallRequest {
-        cap_addr: vspace_cap,
-        msg_info: MessageInfo::new_const(2, 0, 0),
-        msg_regs: [encoded[0], encoded[1], 0, 0],
+        cap_addr: frame_cap,
+        msg_info: MessageInfo::new_const(0, 0, 0),
+        msg_regs: [0, 0, 0, 0],
         syscall_id: SyscallId::VSpaceUnmap,
+        reply_cap: CPtr::NULL,
     })
 }
 
@@ -173,6 +179,7 @@ pub fn vspace_unify_instruction(
         msg_info: MessageInfo::new_const(2, 0, 0),
         msg_regs: [encoded[0], encoded[1], 0, 0],
         syscall_id: SyscallId::VSpaceUnifyInstruction,
+        reply_cap: CPtr::NULL,
     })
 }
 

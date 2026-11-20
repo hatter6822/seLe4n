@@ -333,6 +333,7 @@ theorem callRendezvous_inPlace_facts (st : SystemState) (endpointId : SeLe4n.Obj
     (hM : sendPayloadMessage st caller payload = msg)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
     (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
+    (hGr : payload.canLinkReply = true)
     (hG : callTakesReplyInPlace st endpointId caller r rt rid = true) :
     endpointCallOnCore endpointId caller payload core st =
         (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core,
@@ -539,12 +540,15 @@ theorem callRendezvous_inPlace_facts (st : SystemState) (endpointId : SeLe4n.Obj
   have hEp : st.getEndpoint? endpointId = some ep := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE
   have hRp4 : S4.getReply? rid = some rp := (SystemState.getReply?_eq_some_iff _ _ _).mpr hO4q
   refine ⟨?_, ?_⟩
-  · unfold endpointCallOnCore
+  · have hLk : callRendezvousLinks st r payload = true := by
+      rw [callRendezvousLinks_of_stash payload ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT) hRid]
+      exact hGr
+    unfold endpointCallOnCore
     rw [hM, hEp]
     dsimp only
     rw [hH]
     dsimp only
-    rw [hPop]
+    rw [if_pos hLk, hPop]
     dsimp only
     rw [hM2]
     dsimp only
@@ -642,6 +646,7 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
     (hM : sendPayloadMessage st caller payload = msg)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
     (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
+    (hGr : payload.canLinkReply = true)
     (hG : callWakesInPlace st endpointId caller r rt rid = true) :
     endpointCallOnCore endpointId caller payload core st =
         (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core,
@@ -651,7 +656,7 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
         (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core) caller r = none := by
   obtain ⟨hG', ct, hTc, hDN⟩ := callWakesInPlace_takesReply hG
   obtain ⟨hEq, -, -, -, -, hF5, rt', hTr', hbr'⟩ :=
-    callRendezvous_inPlace_facts st endpointId ep caller r rt rid payload msg core hM hE hH hT hRid hG'
+    callRendezvous_inPlace_facts st endpointId ep caller r rt rid payload msg core hM hE hH hT hRid hGr hG'
   refine ⟨hEq, ?_⟩
   obtain ⟨ct', hTc', hb', -⟩ := hF5 ct hTc
   have hG2 := hG'
@@ -685,6 +690,7 @@ theorem callDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
     (hReq : sendCapRequest st endpointId caller payload = none)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
     (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
+    (hGr : payload.canLinkReply = true)
     (hG : callWakesInPlace st endpointId caller r rt rid = true)
     (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true) :
@@ -698,7 +704,10 @@ theorem callDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
   have hEp : st.getEndpoint? endpointId = some ep :=
     (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE
   obtain ⟨hEq, hDon⟩ := callRendezvous_inPlace st endpointId ep caller r rt rid payload msg core hM
-    hE hH hT hRid hG
+    hE hH hT hRid hGr hG
+  have hLk : callRendezvousLinks st r payload = true := by
+    rw [callRendezvousLinks_of_stash payload ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT) hRid]
+    exact hGr
   obtain ⟨cv, hcv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff caller).mpr hCRes)
   obtain ⟨rv, hrv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff r).mpr hRRes)
   have hcv' := SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv
@@ -709,7 +718,7 @@ theorem callDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
   rw [if_pos hFlow]
   unfold endpointCallCrossCoreDispatch
   rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _ hReq, hEq]
-  simp only [Except.map, hEp, hH, hcv, hrv]
+  simp only [Except.map, hEp, hH, hLk, ↓reduceIte, hcv, hrv]
   unfold applyCallDonationOnCore
   rw [applyCallDonation_eq_ok_self_of_no_donation _ _ _ (by rw [hcv', hrv']; exact hDon)]
   simp only [hcv', hrv', hDon]

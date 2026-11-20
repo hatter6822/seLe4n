@@ -597,28 +597,40 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
                 (some (blockedSenderMessage st' sender senderTcb), match senderTcb.ipcState with
                   | .blockedOnCall _ => true
                   | _ => false)
+              -- seL4 `receiveIPC`: a dequeued caller is linked to the reply only
+              -- when its cap grants (`canGrant || canGrantReply`) and the receive
+              -- supplied a reply object; otherwise the caller is left Inactive, its
+              -- Call answered by nothing (`callRendezvousLinks` on the send side).
               if senderWasCall then
-                match storeTcbIpcStateAndMessage st' sender
-                    (.blockedOnReply endpointId (some receiver)) none with
-                | .error e => (st, .error e)
-                | .ok st'' =>
-                    -- WS-SM SM6.D (#7.2 fold): link the dequeued caller (now
-                    -- `.blockedOnReply`) to the server-supplied reply object in the
-                    -- same transition (the former `linkReceivedCaller` dispatch step).
-                    -- A Call rendezvous carrying no reply object fails closed
-                    -- (`.replyCapInvalid`); the pre-state is returned, so the caller is
-                    -- never stranded `.blockedOnReply` with no reply.
-                    match replyId with
-                    | none => (st, .error .replyCapInvalid)
-                    | some rid =>
-                        match SystemState.linkCallerReply sender rid st'' with
-                        | .error e => (st, .error e)
-                        | .ok ((), stLinked) =>
-                            match storeTcbIpcStateAndMessage stLinked receiver .ready senderMsg with
-                            -- WS-ZA ZA4.6: the caller joins the receiver's reply-waiter
-                            -- queue, last, off every other field.
-                            | .ok st''' => (st'''.linkReplyWaiter sender receiver, .ok (sender, none))
-                            | .error e => (st, .error e)
+                if (senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome then
+                  match storeTcbIpcStateAndMessage st' sender
+                      (.blockedOnReply endpointId (some receiver)) none with
+                  | .error e => (st, .error e)
+                  | .ok st'' =>
+                      -- WS-SM SM6.D (#7.2 fold): link the dequeued caller (now
+                      -- `.blockedOnReply`) to the server-supplied reply object in the
+                      -- same transition (the former `linkReceivedCaller` dispatch step).
+                      -- The guard above makes `replyId` present here.
+                      match replyId with
+                      | none => (st, .error .replyCapInvalid)
+                      | some rid =>
+                          match SystemState.linkCallerReply sender rid st'' with
+                          | .error e => (st, .error e)
+                          | .ok ((), stLinked) =>
+                              match storeTcbIpcStateAndMessage stLinked receiver .ready senderMsg with
+                              -- WS-ZA ZA4.6: the caller joins the receiver's reply-waiter
+                              -- queue, last, off every other field.
+                              | .ok st''' => (st'''.linkReplyWaiter sender receiver, .ok (sender, none))
+                              | .error e => (st, .error e)
+                else
+                  match storeTcbIpcStateAndMessage st' sender .ready none with
+                  | .error e => (st, .error e)
+                  | .ok st'' =>
+                      match storeTcbIpcStateAndMessage
+                          (st''.updateTcb sender (fun t => { t with threadState := .Inactive }))
+                          receiver .ready senderMsg with
+                      | .ok st4 => (st4, .ok (sender, none))
+                      | .error e => (st, .error e)
               else
                 match storeTcbIpcStateAndMessage st' sender .ready none with
                 | .error e => (st, .error e)
@@ -1476,26 +1488,49 @@ theorem rendezvousSenderIsCall_of_blockedOnSend (st : SystemState)
   unfold rendezvousSenderIsCall
   simp only [hTcb, hSend]
 
-/-- **WS-RR RR8.12 (PR #897 Codex review): the queued sender, WHEN IT CARRIES A
-`Call`.**
+/-- **Does this queued sender's capability let a receive link it to a reply?** --
+seL4 `receiveIPC`'s `canGrant || canGrantReply`, read off the sender's TCB where
+the send recorded the cap's grant bits (`ipcCanGrant`, `ipcCanGrantReply`).
+Through `lookupTcb`, the reader `rendezvousSenderIsCall` and the pop use. -/
+def rendezvousSenderGrantsReply (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  match lookupTcb st tid with
+  | some tcb => tcb.ipcCanGrant || tcb.ipcCanGrantReply
+  | none => false
+
+theorem rendezvousSenderGrantsReply_of_lookup (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : lookupTcb st tid = some tcb) :
+    rendezvousSenderGrantsReply st tid = (tcb.ipcCanGrant || tcb.ipcCanGrantReply) := by
+  unfold rendezvousSenderGrantsReply
+  rw [hTcb]
+
+/-- **The queued caller a receive LINKS to its reply** -- the queued sender, when it
+carries a `Call`, its capability grants (`rendezvousSenderGrantsReply`) and the
+receive supplies a reply object (`suppliesReply`: `replyId.isSome` for `.receive`,
+`true` for `.replyRecv`, whose receive leg always passes its reply).
+
+This is `endpointReceiveDualOnCore`'s link test, clause for clause, asked on the
+pre-state: the call rendezvous links the caller to the reply, donates to the
+receiver and relinks the receiver's reply-waiter head only on this arm; a `Call`
+that links no reply is delivered and left `Inactive`, and writes none of those.
+Every receive-side member keyed on "the rendezvous dequeues a caller" reads this
+resolver, so a no-link `Call` declares no donation, waiter or replenish lock.
 
 Derived from `receiveRendezvousSender?` -- the resolver the arm's own sender member
-and `receiveRendezvousDonatedSc?` already come from -- so the three cannot disagree
-about which thread a rendezvous dequeues, and narrowed by `rendezvousSenderIsCall`,
-which is `rendezvousDequeuedCall`'s pre-state sibling.  A `Bool` guard rather than a
-nested match, so a consumer splits an `if` rather than reducing a matcher. -/
-def receiveRendezvousCallSender? (st : SystemState) (endpointId : SeLe4n.ObjId) :
-    Option SeLe4n.ThreadId :=
+comes from -- so they cannot disagree about which thread a rendezvous dequeues.  A
+`Bool` guard rather than a nested match, so a consumer splits an `if`. -/
+def receiveRendezvousLinkedCaller? (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (suppliesReply : Bool) : Option SeLe4n.ThreadId :=
   (receiveRendezvousSender? st endpointId).bind fun sender =>
-    if rendezvousSenderIsCall st sender then some sender else none
+    if rendezvousSenderIsCall st sender && rendezvousSenderGrantsReply st sender && suppliesReply
+    then some sender else none
 
 /-- **WS-RR RR8.12**: it narrows `receiveRendezvousSender?` and never names another
 thread -- the two resolvers agree about *which* thread whenever this one answers. -/
-theorem receiveRendezvousCallSender?_eq_sender (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (h : receiveRendezvousCallSender? st endpointId = some sender) :
+theorem receiveRendezvousLinkedCaller?_eq_sender (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (suppliesReply : Bool) (sender : SeLe4n.ThreadId)
+    (h : receiveRendezvousLinkedCaller? st endpointId suppliesReply = some sender) :
     receiveRendezvousSender? st endpointId = some sender := by
-  unfold receiveRendezvousCallSender? at h
+  unfold receiveRendezvousLinkedCaller? at h
   cases hS : receiveRendezvousSender? st endpointId with
   | none => rw [hS] at h; exact absurd h (by simp)
   | some s =>
@@ -1508,25 +1543,25 @@ theorem receiveRendezvousCallSender?_eq_sender (st : SystemState)
 
 /-- **WS-RR RR8.12**: `none` when the endpoint has no queued sender at all -- the
 block path, where the arm donates nothing. -/
-theorem receiveRendezvousCallSender?_of_blocked (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (ep : Endpoint)
+theorem receiveRendezvousLinkedCaller?_of_blocked (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (suppliesReply : Bool) (ep : Endpoint)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none) :
-    receiveRendezvousCallSender? st endpointId = none := by
-  unfold receiveRendezvousCallSender? receiveRendezvousSender?
+    receiveRendezvousLinkedCaller? st endpointId suppliesReply = none := by
+  unfold receiveRendezvousLinkedCaller? receiveRendezvousSender?
   rw [hEp]
   simp only [Option.bind_some, hHead]
   rfl
 
 /-- **WS-RR RR8.12 (PR #897 Codex review)**: and `none` on a plain `Send`
 rendezvous -- the case this cut exists to close. -/
-theorem receiveRendezvousCallSender?_of_blockedOnSend (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (ep : Endpoint) (sender : SeLe4n.ThreadId)
+theorem receiveRendezvousLinkedCaller?_of_blockedOnSend (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (suppliesReply : Bool) (ep : Endpoint) (sender : SeLe4n.ThreadId)
     (senderTcb : TCB) (sendEp : SeLe4n.ObjId)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
     (hTcb : lookupTcb st sender = some senderTcb)
     (hSend : senderTcb.ipcState = .blockedOnSend sendEp) :
-    receiveRendezvousCallSender? st endpointId = none := by
-  unfold receiveRendezvousCallSender? receiveRendezvousSender?
+    receiveRendezvousLinkedCaller? st endpointId suppliesReply = none := by
+  unfold receiveRendezvousLinkedCaller? receiveRendezvousSender?
   rw [hEp]
   simp only [Option.bind_some, hHead,
     rendezvousSenderIsCall_of_blockedOnSend st sender senderTcb sendEp hTcb hSend]
@@ -1535,17 +1570,38 @@ theorem receiveRendezvousCallSender?_of_blockedOnSend (st : SystemState)
 /-- **WS-RR RR8.12 (PR #897 Codex review)**: and `some sender` on a `Call`
 rendezvous -- the one shape on which the arm's donation can migrate a
 replenishment. -/
-theorem receiveRendezvousCallSender?_of_blockedOnCall (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (ep : Endpoint) (sender : SeLe4n.ThreadId)
+theorem receiveRendezvousLinkedCaller?_of_blockedOnCall (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (suppliesReply : Bool) (ep : Endpoint) (sender : SeLe4n.ThreadId)
     (senderTcb : TCB) (callEp : SeLe4n.ObjId)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
     (hTcb : lookupTcb st sender = some senderTcb)
-    (hCall : senderTcb.ipcState = .blockedOnCall callEp) :
-    receiveRendezvousCallSender? st endpointId = some sender := by
-  unfold receiveRendezvousCallSender? receiveRendezvousSender?
+    (hCall : senderTcb.ipcState = .blockedOnCall callEp)
+    (hGrant : (senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) = true)
+    (hReply : suppliesReply = true) :
+    receiveRendezvousLinkedCaller? st endpointId suppliesReply = some sender := by
+  unfold receiveRendezvousLinkedCaller? receiveRendezvousSender?
   rw [hEp]
   simp only [Option.bind_some, hHead,
-    rendezvousSenderIsCall_of_blockedOnCall st sender senderTcb callEp hTcb hCall]
+    rendezvousSenderIsCall_of_blockedOnCall st sender senderTcb callEp hTcb hCall,
+    rendezvousSenderGrantsReply_of_lookup st sender senderTcb hTcb, hGrant, hReply]
+  rfl
+
+/-- **seL4 `receiveIPC`**: and `none` on a `Call` rendezvous that links no reply --
+the cap grants neither `Grant` nor `GrantReply`, or the receive supplied no reply
+object.  The caller is delivered and left `Inactive`: no reply link, no donation,
+no reply-waiter relink. -/
+theorem receiveRendezvousLinkedCaller?_of_noLink (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (suppliesReply : Bool) (ep : Endpoint) (sender : SeLe4n.ThreadId)
+    (senderTcb : TCB)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hTcb : lookupTcb st sender = some senderTcb)
+    (hNoLink : ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && suppliesReply) = false) :
+    receiveRendezvousLinkedCaller? st endpointId suppliesReply = none := by
+  unfold receiveRendezvousLinkedCaller? receiveRendezvousSender?
+  rw [hEp]
+  simp only [Option.bind_some, hHead,
+    rendezvousSenderGrantsReply_of_lookup st sender senderTcb hTcb]
+  rw [Bool.and_assoc, hNoLink, Bool.and_false]
   rfl
 
 
@@ -1572,32 +1628,38 @@ a declared-but-unwritten lock costs contention, never soundness.
 **WS-OD OD3.6**: named for the *rendezvous*, not for one arm, because
 `.receive` asks it too.  Both receiving arms dequeue a `Call` the same way and
 must therefore hand its scheduling context over the same way; a name carrying
-`replyRecv` invited the second copy. -/
+`replyRecv` invited the second copy.
+
+Keyed on `receiveRendezvousLinkedCaller?`: seL4 donates through `reply_push`, which
+runs only where the receive links the caller to the reply, so a `Call` whose cap
+grants no reply, or a receive with no reply object, donates nothing and declares
+no SchedContext lock. -/
 def receiveRendezvousDonatedSc? (st : SystemState) (endpointObjId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) : Option SeLe4n.SchedContextId :=
-  (receiveRendezvousCallSender? st endpointObjId).bind fun sender =>
+    (receiver : SeLe4n.ThreadId) (suppliesReply : Bool) : Option SeLe4n.SchedContextId :=
+  (receiveRendezvousLinkedCaller? st endpointObjId suppliesReply).bind fun sender =>
     callDonationSchedContext? st sender receiver
 
 /-- **WS-ZA ZA4.6**: the reply-waiter head a `.receive` relinks -- the
-receiver's own head, on the arm that dequeues a **caller** (the call
-rendezvous runs `linkReplyWaiter sender receiver`).  Resolved through
-`receiveRendezvousCallSender?`, the resolver the donation member reads, so the
+receiver's own head, on the arm that **links** a caller to the reply (the call
+rendezvous runs `linkReplyWaiter sender receiver` only there; a `Call` that links
+no reply is left `Inactive` and joins no queue).  Resolved through
+`receiveRendezvousLinkedCaller?`, the resolver the donation member reads, so the
 two cannot disagree about which branch the receive takes. -/
 def receiveRendezvousReplyWaiterHead? (st : SystemState) (endpointObjId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) : Option SeLe4n.ThreadId :=
-  (receiveRendezvousCallSender? st endpointObjId).bind fun _ =>
+    (receiver : SeLe4n.ThreadId) (suppliesReply : Bool) : Option SeLe4n.ThreadId :=
+  (receiveRendezvousLinkedCaller? st endpointObjId suppliesReply).bind fun _ =>
     st.replyWaitersHead? receiver
 
 /-- WS-OD OD3.5: an endpoint with nothing queued to send donates nothing.
 
-**WS-RR RR8.16 (`v0.35.189`)**: stated over `receiveRendezvousCallSender?`, which
+**WS-RR RR8.16 (`v0.35.189`)**: stated over `receiveRendezvousLinkedCaller?`, which
 `receiveRendezvousSender?` bounds — so the weaker hypothesis still discharges it
 (`receiveRendezvousDonatedSc?_of_no_queued_sender` below), and the seven proofs in
 `ResolvedFootprintBounds.lean` that reach for it are unchanged. -/
 @[simp] theorem receiveRendezvousDonatedSc?_of_no_sender (st : SystemState)
-    (endpointObjId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (h : receiveRendezvousCallSender? st endpointObjId = none) :
-    receiveRendezvousDonatedSc? st endpointObjId receiver = none := by
+    (endpointObjId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (suppliesReply : Bool)
+    (h : receiveRendezvousLinkedCaller? st endpointObjId suppliesReply = none) :
+    receiveRendezvousDonatedSc? st endpointObjId receiver suppliesReply = none := by
   unfold receiveRendezvousDonatedSc?
   rw [h]
   rfl
@@ -1605,19 +1667,19 @@ def receiveRendezvousReplyWaiterHead? (st : SystemState) (endpointObjId : SeLe4n
 /-- **WS-RR RR8.16 (`v0.35.189`)**: and an endpoint with nothing queued to send at
 all donates nothing, which is the shape the resolved bounds consume. -/
 @[simp] theorem receiveRendezvousDonatedSc?_of_no_queued_sender (st : SystemState)
-    (endpointObjId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (endpointObjId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (suppliesReply : Bool)
     (h : receiveRendezvousSender? st endpointObjId = none) :
-    receiveRendezvousDonatedSc? st endpointObjId receiver = none :=
-  receiveRendezvousDonatedSc?_of_no_sender st endpointObjId receiver
-    (by unfold receiveRendezvousCallSender?; rw [h]; rfl)
+    receiveRendezvousDonatedSc? st endpointObjId receiver suppliesReply = none :=
+  receiveRendezvousDonatedSc?_of_no_sender st endpointObjId receiver suppliesReply
+    (by unfold receiveRendezvousLinkedCaller?; rw [h]; rfl)
 
 /-- **WS-ZA ZA4.6**: an endpoint with nothing queued to send links no caller,
 so the receive leg relinks no reply-waiter head. -/
 @[simp] theorem receiveRendezvousReplyWaiterHead?_of_no_queued_sender (st : SystemState)
-    (endpointObjId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (endpointObjId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (suppliesReply : Bool)
     (h : receiveRendezvousSender? st endpointObjId = none) :
-    receiveRendezvousReplyWaiterHead? st endpointObjId receiver = none := by
-  unfold receiveRendezvousReplyWaiterHead? receiveRendezvousCallSender?
+    receiveRendezvousReplyWaiterHead? st endpointObjId receiver suppliesReply = none := by
+  unfold receiveRendezvousReplyWaiterHead? receiveRendezvousLinkedCaller?
   rw [h]; rfl
 
 /-- WS-OD OD3.5: and at a queued `Call` sender it is exactly what a `.call` from
@@ -1628,9 +1690,10 @@ that thread would declare — the two arms ask one question.
 member is `none` for a plain `Send` and for a `Call` to a receiver that already
 holds a context — exactly the two shapes the transition declines. -/
 @[simp] theorem receiveRendezvousDonatedSc?_of_sender (st : SystemState)
-    (endpointObjId : SeLe4n.ObjId) (receiver sender : SeLe4n.ThreadId)
-    (h : receiveRendezvousCallSender? st endpointObjId = some sender) :
-    receiveRendezvousDonatedSc? st endpointObjId receiver
+    (endpointObjId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (suppliesReply : Bool)
+    (sender : SeLe4n.ThreadId)
+    (h : receiveRendezvousLinkedCaller? st endpointObjId suppliesReply = some sender) :
+    receiveRendezvousDonatedSc? st endpointObjId receiver suppliesReply
       = callDonationSchedContext? st sender receiver := by
   unfold receiveRendezvousDonatedSc?
   rw [h]
@@ -1830,7 +1893,7 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
     ((st.getTcb? target).bind (·.replyObject))
     (receiveInstallsCaps st endpointObjId)
     (recordedReplyServer? st target)
-    (receiveRendezvousDonatedSc? st endpointObjId replier)
+    (receiveRendezvousDonatedSc? st endpointObjId replier true)
     belowHead.1 belowHead.2
     -- **WS-OD OD3.13**: and the receive leg's queue-structure neighbour, through
     -- the same resolver `.receive` uses -- it is the same transition.
@@ -1839,7 +1902,7 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
     -- the receive leg's push rewrites -- and the head of the returned context's
     -- stack, which the reply leg's pop clears.  Both resolved by
     -- `replyStackHead?` on the contexts the members above already name.
-    ((receiveRendezvousDonatedSc? st endpointObjId replier).bind (replyStackHead? st))
+    ((receiveRendezvousDonatedSc? st endpointObjId replier true).bind (replyStackHead? st))
     ((answeredFrameHeadContextId? st target).bind (replyStackHead? st))
     -- **PR #894 review — the INVOKING receiver's own pre-receive return.**  The
     -- receive leg is `.receive`'s transition, so with no sender queued it runs
@@ -1875,7 +1938,7 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
     -- recorded server and the answered caller headed its queue, the post-reply
     -- head is that caller's successor, declared beside it.
     (st.replyWaiterPrev? target) (st.replyWaiterNext? target)
-    (receiveRendezvousReplyWaiterHead? st endpointObjId replier)
+    (receiveRendezvousReplyWaiterHead? st endpointObjId replier true)
     -- **WS-ZA ZA4.7**: and the dequeued sender's CSpace root, which the receive
     -- leg reads when it looks that sender's extra capabilities up at the
     -- rendezvous -- resolved by the same `receiveCapRequest` the transition
@@ -1935,14 +1998,14 @@ def lockSet_endpointReceiveOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- **WS-OD OD3.6**: the SchedContext the rendezvous donates, resolved from
     -- the same pre-state and through the same `receiveRendezvousSender?` the two
     -- members above read.
-    (receiveRendezvousDonatedSc? st endpointId receiver)
+    (receiveRendezvousDonatedSc? st endpointId receiver replyId.isSome)
     -- **WS-OD OD3.12**: and the queue-structure neighbour, through the same
     -- resolver again.
     (receiveSideQueueStructureNeighbor? st endpointId)
     -- **WS-OD (`v0.35.4`)**: the old head the rendezvous donation's push
     -- rewrites, and the five objects of the receiver's own pre-receive return
     -- -- each through the resolver it is derived from.
-    ((receiveRendezvousDonatedSc? st endpointId receiver).bind (replyStackHead? st))
+    ((receiveRendezvousDonatedSc? st endpointId receiver replyId.isSome).bind (replyStackHead? st))
     ((receivePreReturn? st endpointId receiver).map (·.1))
     ((receivePreReturn? st endpointId receiver).map (·.2))
     (receivePreReturnStack? st endpointId receiver).1
@@ -1950,7 +2013,7 @@ def lockSet_endpointReceiveOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receivePreReturnStack? st endpointId receiver).2.2
     -- **WS-ZA ZA4.6**: and the receiver's old reply-waiter head, which the call
     -- rendezvous relinks.
-    (receiveRendezvousReplyWaiterHead? st endpointId receiver)
+    (receiveRendezvousReplyWaiterHead? st endpointId receiver replyId.isSome)
     -- **WS-ZA ZA4.7**: and the dequeued sender's CSpace root, read when its extra
     -- capabilities are looked up at the rendezvous (seL4 `lookupExtraCaps`),
     -- through the same `receiveCapRequest` the transition branches on.
@@ -2447,7 +2510,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_replyWaiters
     (∀ t, st.replyWaiterNext? target = some t →
       (tcbLock t, AccessMode.write) ∈ (lockSet_endpointReplyRecvOnCore st replier
         cnodeRootObjId target endpointObjId).pairs) ∧
-    (∀ t, receiveRendezvousReplyWaiterHead? st endpointObjId replier = some t →
+    (∀ t, receiveRendezvousReplyWaiterHead? st endpointObjId replier true = some t →
       (tcbLock t, AccessMode.write) ∈ (lockSet_endpointReplyRecvOnCore st replier
         cnodeRootObjId target endpointObjId).pairs) := by
   refine ⟨fun t h => ?_, fun t h => ?_, fun t h => ?_⟩ <;>
@@ -2881,7 +2944,7 @@ theorem lockSet_endpointReceiveOnCore_covers_cdt
   rw [hCaps]
   exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_endpointReceive_stateLevel_write_mem receiver cnodeRootObjId endpointId
     (receiveRendezvousSender? st endpointId) replyId
-    (receiveRendezvousDonatedSc? st endpointId receiver)
+    (receiveRendezvousDonatedSc? st endpointId receiver replyId.isSome)
     (receiveSideQueueStructureNeighbor? st endpointId)
     _ _ _ _ _ _ _ _
 /-- **The reply footprint declares the CNode its capability transfer
@@ -3042,7 +3105,7 @@ theorem lockSet_endpointReceiveOnCore_covers_capsDestination
   rw [hCaps]
   exact mem_write_lockSetExtendOpt _ _ _ <| lockSet_endpointReceive_capsInstall_write_mem receiver cnodeRootObjId endpointId
     (receiveRendezvousSender? st endpointId) replyId
-    (receiveRendezvousDonatedSc? st endpointId receiver)
+    (receiveRendezvousDonatedSc? st endpointId receiver replyId.isSome)
     (receiveSideQueueStructureNeighbor? st endpointId)
     _ _ _ _ _ _ _ _
 
@@ -3093,7 +3156,7 @@ theorem lockSet_endpointReceiveOnCore_covers_replyWaiterOldHead
     (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (replyId : Option SeLe4n.ReplyId)
     (oldHead : SeLe4n.ThreadId)
-    (hHead : receiveRendezvousReplyWaiterHead? st endpointId receiver = some oldHead) :
+    (hHead : receiveRendezvousReplyWaiterHead? st endpointId receiver replyId.isSome = some oldHead) :
     (tcbLock oldHead, AccessMode.write)
       ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
   unfold lockSet_endpointReceiveOnCore
@@ -3113,7 +3176,7 @@ theorem lockSet_endpointReceiveOnCore_covers_donatedSc
     (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (replyId : Option SeLe4n.ReplyId)
     (scId : SeLe4n.SchedContextId)
-    (hSc : receiveRendezvousDonatedSc? st endpointId receiver = some scId) :
+    (hSc : receiveRendezvousDonatedSc? st endpointId receiver replyId.isSome = some scId) :
     (schedContextLock scId, AccessMode.write)
       ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
   unfold lockSet_endpointReceiveOnCore
@@ -3130,7 +3193,7 @@ theorem lockSet_endpointReceiveOnCore_covers_donationIndex
     (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (replyId : Option SeLe4n.ReplyId)
     (scId : SeLe4n.SchedContextId)
-    (hSc : receiveRendezvousDonatedSc? st endpointId receiver = some scId) :
+    (hSc : receiveRendezvousDonatedSc? st endpointId receiver replyId.isSome = some scId) :
     (stateLevelLock, AccessMode.write)
       ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
   unfold lockSet_endpointReceiveOnCore
@@ -3160,7 +3223,7 @@ theorem lockSet_endpointReceiveOnCore_covers_donationOldHead
     (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (replyId : Option SeLe4n.ReplyId)
     (scId : SeLe4n.SchedContextId) (oldHead : SeLe4n.ReplyId)
-    (hSc : receiveRendezvousDonatedSc? st endpointId receiver = some scId)
+    (hSc : receiveRendezvousDonatedSc? st endpointId receiver replyId.isSome = some scId)
     (hOld : replyStackHead? st scId = some oldHead) :
     (replyLock oldHead, AccessMode.write)
       ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
@@ -3314,7 +3377,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_redonationOldHead
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
     (scId : SeLe4n.SchedContextId) (oldHead : SeLe4n.ReplyId)
-    (hSc : receiveRendezvousDonatedSc? st endpointObjId replier = some scId)
+    (hSc : receiveRendezvousDonatedSc? st endpointObjId replier true = some scId)
     (hOld : replyStackHead? st scId = some oldHead) :
     (replyLock oldHead, AccessMode.write)
       ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
@@ -3916,6 +3979,20 @@ theorem endpointReceiveDualWriteSet_of_blocked (st : SystemState)
   rw [hEp]
   simp only [hHead]
 
+/-- The no-link receive's `Inactive` store moves no thread's home core:
+`determineTargetCore` reads only `cpuAffinity`. -/
+theorem updateTcb_threadState_determineTargetCore_eq (st : SystemState)
+    (tid x : SeLe4n.ThreadId) (s : ThreadState) (hInv : st.objects.invExt) :
+    determineTargetCore (st.updateTcb tid (fun t => { t with threadState := s })) x
+      = determineTargetCore st x := by
+  refine determineTargetCore_congr _ _ x ?_
+  by_cases h : tid = x
+  · subst h
+    rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv, Option.map_map]
+    rfl
+  · rw [SystemState.updateTcb_getTcb?_ne _ _ _ hInv _
+      (fun e => h (SeLe4n.ThreadId.toObjId_injective _ _ e))]
+
 /-- WS-RR RR2 (closure audit): the bare per-core receive preserves the
 object-store invariant — the definition walk, mirroring
 `endpointSendDualOnCore_preserves_objects_invExt`. -/
@@ -3940,32 +4017,51 @@ theorem endpointReceiveDualOnCore_preserves_objects_invExt
         have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId false
           st st' sender senderTcb hObjInv hPop
         split
-        · -- The dequeued sender was a `Call`: re-block it on reply, link, deliver.
-          cases hS1 : storeTcbIpcStateAndMessage st' sender
-              (.blockedOnReply endpointId (some receiver)) none with
-          | error e => simp only; exact hObjInv
-          | ok st'' =>
-            simp only
-            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
-              sender _ _ hObjInv1 hS1
-            cases replyId with
-            | none => exact hObjInv
-            | some rid =>
+        · by_cases hLk : ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) = true
+          · rw [if_pos hLk]
+            -- The dequeued sender was a `Call`: re-block it on reply, link, deliver.
+            cases hS1 : storeTcbIpcStateAndMessage st' sender
+                (.blockedOnReply endpointId (some receiver)) none with
+            | error e => simp only; exact hObjInv
+            | ok st'' =>
               simp only
-              cases hLink : SystemState.linkCallerReply sender rid st'' with
-              | error e => simp only; exact hObjInv
-              | ok pLink =>
-                obtain ⟨⟨⟩, stLinked⟩ := pLink
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
+                sender _ _ hObjInv1 hS1
+              cases replyId with
+              | none => exact hObjInv
+              | some rid =>
                 simp only
-                have hObjInv3 := linkCallerReply_preserves_objects_invExt st'' stLinked
-                  sender rid hObjInv2 hLink
-                cases hS2 : storeTcbIpcStateAndMessage stLinked receiver .ready
-                    (some (blockedSenderMessage st' sender senderTcb)) with
-                | ok st3 =>
-                    exact SystemState.linkReplyWaiter_objects_invExt _ _ _
-                      (storeTcbIpcStateAndMessage_preserves_objects_invExt stLinked st3
-                        receiver _ _ hObjInv3 hS2)
+                cases hLink : SystemState.linkCallerReply sender rid st'' with
                 | error e => simp only; exact hObjInv
+                | ok pLink =>
+                  obtain ⟨⟨⟩, stLinked⟩ := pLink
+                  simp only
+                  have hObjInv3 := linkCallerReply_preserves_objects_invExt st'' stLinked
+                    sender rid hObjInv2 hLink
+                  cases hS2 : storeTcbIpcStateAndMessage stLinked receiver .ready
+                      (some (blockedSenderMessage st' sender senderTcb)) with
+                  | ok st3 =>
+                      exact SystemState.linkReplyWaiter_objects_invExt _ _ _
+                        (storeTcbIpcStateAndMessage_preserves_objects_invExt stLinked st3
+                          receiver _ _ hObjInv3 hS2)
+                  | error e => simp only; exact hObjInv
+          · rw [if_neg hLk]
+            -- A `Call` that links no reply: the caller is completed `Inactive`, not woken.
+            cases hS1 : storeTcbIpcStateAndMessage st' sender .ready none with
+            | error e => simp only; exact hObjInv
+            | ok st'' =>
+              simp only
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
+                sender _ _ hObjInv1 hS1
+              have hObjInvU := SystemState.updateTcb_preserves_objects_invExt st'' sender
+                (fun t => { t with threadState := .Inactive }) hObjInv2
+              cases hS2 : storeTcbIpcStateAndMessage
+                  (st''.updateTcb sender (fun t => { t with threadState := .Inactive }))
+                  receiver .ready (some (blockedSenderMessage st' sender senderTcb)) with
+              | ok st4 =>
+                  exact storeTcbIpcStateAndMessage_preserves_objects_invExt _ st4 receiver _ _
+                    hObjInvU hS2
+              | error e => simp only; exact hObjInv
         · -- A plain `Send`: complete the sender, wake it on its home core, deliver.
           cases hS1 : storeTcbIpcStateAndMessage st' sender .ready none with
           | error e => simp only; exact hObjInv
@@ -4044,34 +4140,55 @@ theorem endpointReceiveDualOnCore_objects_capacity_le
         have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId false
           st st' sender senderTcb hObjInv hPop
         split
-        · cases hS1 : storeTcbIpcStateAndMessage st' sender
-              (.blockedOnReply endpointId (some receiver)) none with
-          | error e => simp only; exact Nat.le_refl _
-          | ok st'' =>
-            simp only
-            have hC2 := (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv1 hS1).ghosts.objectsCapacity
-            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
-              sender _ _ hObjInv1 hS1
-            cases replyId with
-            | none => exact Nat.le_refl _
-            | some rid =>
+        · by_cases hLk : ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) = true
+          · rw [if_pos hLk]
+            cases hS1 : storeTcbIpcStateAndMessage st' sender
+                (.blockedOnReply endpointId (some receiver)) none with
+            | error e => simp only; exact Nat.le_refl _
+            | ok st'' =>
               simp only
-              cases hLink : SystemState.linkCallerReply sender rid st'' with
-              | error e => simp only; exact Nat.le_refl _
-              | ok pLink =>
-                obtain ⟨⟨⟩, stLinked⟩ := pLink
+              have hC2 := (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv1 hS1).ghosts.objectsCapacity
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
+                sender _ _ hObjInv1 hS1
+              cases replyId with
+              | none => exact Nat.le_refl _
+              | some rid =>
                 simp only
-                have hC3 := (SystemState.linkCallerReply_kindPreservingWrite st'' stLinked sender rid hObjInv2
-                  hLink).ghosts.objectsCapacity
-                have hObjInv3 := linkCallerReply_preserves_objects_invExt st'' stLinked
-                  sender rid hObjInv2 hLink
-                cases hS2 : storeTcbIpcStateAndMessage stLinked receiver .ready
-                    (some (blockedSenderMessage st' sender senderTcb)) with
-                | ok st3 =>
-                    have hC4 := (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv3
-                      hS2).ghosts.objectsCapacity
-                    simpa using Nat.le_trans (Nat.le_trans (Nat.le_trans hC1 hC2) hC3) hC4
+                cases hLink : SystemState.linkCallerReply sender rid st'' with
                 | error e => simp only; exact Nat.le_refl _
+                | ok pLink =>
+                  obtain ⟨⟨⟩, stLinked⟩ := pLink
+                  simp only
+                  have hC3 := (SystemState.linkCallerReply_kindPreservingWrite st'' stLinked sender rid hObjInv2
+                    hLink).ghosts.objectsCapacity
+                  have hObjInv3 := linkCallerReply_preserves_objects_invExt st'' stLinked
+                    sender rid hObjInv2 hLink
+                  cases hS2 : storeTcbIpcStateAndMessage stLinked receiver .ready
+                      (some (blockedSenderMessage st' sender senderTcb)) with
+                  | ok st3 =>
+                      have hC4 := (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv3
+                        hS2).ghosts.objectsCapacity
+                      simpa using Nat.le_trans (Nat.le_trans (Nat.le_trans hC1 hC2) hC3) hC4
+                  | error e => simp only; exact Nat.le_refl _
+          · rw [if_neg hLk]
+            cases hS1 : storeTcbIpcStateAndMessage st' sender .ready none with
+            | error e => simp only; exact Nat.le_refl _
+            | ok st'' =>
+              simp only
+              have hC2 := (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInv1 hS1).ghosts.objectsCapacity
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
+                sender _ _ hObjInv1 hS1
+              have hC3 := (SystemState.updateTcb_kindPreservingWrite st'' sender
+                (fun t => { t with threadState := .Inactive }) hObjInv2).ghosts.objectsCapacity
+              have hObjInvU := SystemState.updateTcb_preserves_objects_invExt st'' sender
+                (fun t => { t with threadState := .Inactive }) hObjInv2
+              cases hS2 : storeTcbIpcStateAndMessage
+                  (st''.updateTcb sender (fun t => { t with threadState := .Inactive }))
+                  receiver .ready (some (blockedSenderMessage st' sender senderTcb)) with
+              | ok st4 =>
+                  exact Nat.le_trans (Nat.le_trans (Nat.le_trans hC1 hC2) hC3)
+                    (storeTcbIpcStateAndMessage_kindPreservingWrite hObjInvU hS2).ghosts.objectsCapacity
+              | error e => simp only; exact Nat.le_refl _
         · cases hS1 : storeTcbIpcStateAndMessage st' sender .ready none with
           | error e => simp only; exact Nat.le_refl _
           | ok st'' =>
@@ -4172,40 +4289,64 @@ theorem endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous
         endpointQueuePopHead_preserves_objects_invExt endpointId false st st1 popTid popTcb
           hObjInv hPop
       split
-      · -- `Call` rendezvous: the caller is parked `.blockedOnReply` and linked.
-        cases hS2 : storeTcbIpcStateAndMessage st1 popTid
-            (.blockedOnReply endpointId (some receiver)) none with
-        | error e => rfl
-        | ok st2 =>
-            dsimp only
-            have hF2 : determineTargetCore st2 x = determineTargetCore st x := by
-              rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st1 st2 popTid _ none x
-                hI1 hS2, hF1]
-            have hI2 : st2.objects.invExt :=
-              storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid _ none hI1 hS2
-            cases hRid : replyId with
-            | none => rfl
-            | some rid =>
-                dsimp only
-                cases hLink : SystemState.linkCallerReply popTid rid st2 with
-                | error e => rfl
-                | ok pair =>
-                    obtain ⟨_, st3⟩ := pair
-                    dsimp only
-                    have hF3 : determineTargetCore st3 x = determineTargetCore st x := by
-                      rw [linkCallerReply_determineTargetCore_eq st2 st3 popTid rid x hI2 hLink,
-                        hF2]
-                    have hI3 : st3.objects.invExt :=
-                      linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
-                    cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
-                        (some (blockedSenderMessage st1 popTid popTcb)) with
-                    | error e => rfl
-                    | ok st4 =>
-                        dsimp only
-                        exact (determineTargetCore_of_objectsAgreeOffRunLinks
-                          (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) x).trans
-                          ((storeTcbIpcStateAndMessage_determineTargetCore_eq st3 st4 receiver
-                          .ready (some (blockedSenderMessage st1 popTid popTcb)) x hI3 hS4).trans hF3)
+      · by_cases hLk : ((popTcb.ipcCanGrant || popTcb.ipcCanGrantReply) && replyId.isSome) = true
+        · rw [if_pos hLk]
+          -- `Call` rendezvous: the caller is parked `.blockedOnReply` and linked.
+          cases hS2 : storeTcbIpcStateAndMessage st1 popTid
+              (.blockedOnReply endpointId (some receiver)) none with
+          | error e => rfl
+          | ok st2 =>
+              dsimp only
+              have hF2 : determineTargetCore st2 x = determineTargetCore st x := by
+                rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st1 st2 popTid _ none x
+                  hI1 hS2, hF1]
+              have hI2 : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid _ none hI1 hS2
+              cases hRid : replyId with
+              | none => rfl
+              | some rid =>
+                  dsimp only
+                  cases hLink : SystemState.linkCallerReply popTid rid st2 with
+                  | error e => rfl
+                  | ok pair =>
+                      obtain ⟨_, st3⟩ := pair
+                      dsimp only
+                      have hF3 : determineTargetCore st3 x = determineTargetCore st x := by
+                        rw [linkCallerReply_determineTargetCore_eq st2 st3 popTid rid x hI2 hLink,
+                          hF2]
+                      have hI3 : st3.objects.invExt :=
+                        linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
+                      cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
+                          (some (blockedSenderMessage st1 popTid popTcb)) with
+                      | error e => rfl
+                      | ok st4 =>
+                          dsimp only
+                          exact (determineTargetCore_of_objectsAgreeOffRunLinks
+                            (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) x).trans
+                            ((storeTcbIpcStateAndMessage_determineTargetCore_eq st3 st4 receiver
+                            .ready (some (blockedSenderMessage st1 popTid popTcb)) x hI3 hS4).trans hF3)
+        · rw [if_neg hLk]
+          -- `Call` rendezvous that links no reply: the caller is completed `Inactive`.
+          cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
+          | error e => rfl
+          | ok st2 =>
+              dsimp only
+              have hF2 : determineTargetCore st2 x = determineTargetCore st x := by
+                rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st1 st2 popTid .ready none x
+                  hI1 hS2, hF1]
+              have hI2 : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid .ready none hI1 hS2
+              have hFU := (updateTcb_threadState_determineTargetCore_eq st2 popTid x .Inactive hI2).trans hF2
+              have hIU := SystemState.updateTcb_preserves_objects_invExt st2 popTid
+                (fun t => { t with threadState := .Inactive }) hI2
+              cases hS3 : storeTcbIpcStateAndMessage
+                  (st2.updateTcb popTid (fun t => { t with threadState := .Inactive }))
+                  receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) with
+              | error e => rfl
+              | ok st3 =>
+                  dsimp only
+                  exact (storeTcbIpcStateAndMessage_determineTargetCore_eq _ st3 receiver .ready
+                    (some (blockedSenderMessage st1 popTid popTcb)) x hIU hS3).trans hFU
       · -- plain `Send` rendezvous: the sender is made `.ready` and woken.
         cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
         | error e => rfl
@@ -4299,39 +4440,64 @@ theorem endpointReceiveDualOnCore_getSchedContext?_eq_of_rendezvous
         endpointQueuePopHead_preserves_objects_invExt endpointId false st st1 popTid popTcb
           hObjInv hPop
       split
-      · -- `Call` rendezvous: the caller is parked `.blockedOnReply` and linked.
-        cases hS2 : storeTcbIpcStateAndMessage st1 popTid
-            (.blockedOnReply endpointId (some receiver)) none with
-        | error e => rfl
-        | ok st2 =>
-            dsimp only
-            have hF2 : st2.getSchedContext? scId = st.getSchedContext? scId := by
-              rw [storeTcbIpcStateAndMessage_getSchedContext?_eq st1 st2 popTid _ none scId
-                hI1 hS2, hF1]
-            have hI2 : st2.objects.invExt :=
-              storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid _ none hI1 hS2
-            cases hRid : replyId with
-            | none => rfl
-            | some rid =>
-                dsimp only
-                cases hLink : SystemState.linkCallerReply popTid rid st2 with
-                | error e => rfl
-                | ok pair =>
-                    obtain ⟨_, st3⟩ := pair
-                    dsimp only
-                    have hF3 : st3.getSchedContext? scId = st.getSchedContext? scId := by
-                      rw [linkCallerReply_getSchedContext?_eq st2 st3 popTid rid scId hI2 hLink,
-                        hF2]
-                    have hI3 : st3.objects.invExt :=
-                      linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
-                    cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
-                        (some (blockedSenderMessage st1 popTid popTcb)) with
-                    | error e => rfl
-                    | ok st4 =>
-                        dsimp only
-                        exact ((SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _).getSchedContext?
-                          scId).trans ((storeTcbIpcStateAndMessage_getSchedContext?_eq st3 st4 receiver
-                          .ready (some (blockedSenderMessage st1 popTid popTcb)) scId hI3 hS4).trans hF3)
+      · by_cases hLk : ((popTcb.ipcCanGrant || popTcb.ipcCanGrantReply) && replyId.isSome) = true
+        · rw [if_pos hLk]
+          -- `Call` rendezvous: the caller is parked `.blockedOnReply` and linked.
+          cases hS2 : storeTcbIpcStateAndMessage st1 popTid
+              (.blockedOnReply endpointId (some receiver)) none with
+          | error e => rfl
+          | ok st2 =>
+              dsimp only
+              have hF2 : st2.getSchedContext? scId = st.getSchedContext? scId := by
+                rw [storeTcbIpcStateAndMessage_getSchedContext?_eq st1 st2 popTid _ none scId
+                  hI1 hS2, hF1]
+              have hI2 : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid _ none hI1 hS2
+              cases hRid : replyId with
+              | none => rfl
+              | some rid =>
+                  dsimp only
+                  cases hLink : SystemState.linkCallerReply popTid rid st2 with
+                  | error e => rfl
+                  | ok pair =>
+                      obtain ⟨_, st3⟩ := pair
+                      dsimp only
+                      have hF3 : st3.getSchedContext? scId = st.getSchedContext? scId := by
+                        rw [linkCallerReply_getSchedContext?_eq st2 st3 popTid rid scId hI2 hLink,
+                          hF2]
+                      have hI3 : st3.objects.invExt :=
+                        linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
+                      cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
+                          (some (blockedSenderMessage st1 popTid popTcb)) with
+                      | error e => rfl
+                      | ok st4 =>
+                          dsimp only
+                          exact ((SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _).getSchedContext?
+                            scId).trans ((storeTcbIpcStateAndMessage_getSchedContext?_eq st3 st4 receiver
+                            .ready (some (blockedSenderMessage st1 popTid popTcb)) scId hI3 hS4).trans hF3)
+        · rw [if_neg hLk]
+          -- `Call` rendezvous that links no reply: the caller is completed `Inactive`.
+          cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
+          | error e => rfl
+          | ok st2 =>
+              dsimp only
+              have hF2 : st2.getSchedContext? scId = st.getSchedContext? scId := by
+                rw [storeTcbIpcStateAndMessage_getSchedContext?_eq st1 st2 popTid .ready none scId
+                  hI1 hS2, hF1]
+              have hI2 : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid .ready none hI1 hS2
+              have hFU := (SystemState.updateTcb_getSchedContext? st2 popTid
+                (fun t => { t with threadState := .Inactive }) hI2 scId).trans hF2
+              have hIU := SystemState.updateTcb_preserves_objects_invExt st2 popTid
+                (fun t => { t with threadState := .Inactive }) hI2
+              cases hS3 : storeTcbIpcStateAndMessage
+                  (st2.updateTcb popTid (fun t => { t with threadState := .Inactive }))
+                  receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) with
+              | error e => rfl
+              | ok st3 =>
+                  dsimp only
+                  exact (storeTcbIpcStateAndMessage_getSchedContext?_eq _ st3 receiver .ready
+                    (some (blockedSenderMessage st1 popTid popTcb)) scId hIU hS3).trans hFU
       · -- plain `Send` rendezvous: the sender is made `.ready` and woken.
         cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
         | error e => rfl
@@ -4430,40 +4596,66 @@ theorem endpointReceiveDualOnCore_sameSchedContextBindings_of_rendezvous
         endpointQueuePopHead_preserves_objects_invExt endpointId false st st1 popTid popTcb
           hObjInv hPop
       split
-      · -- `Call` rendezvous: the caller is parked `.blockedOnReply` and linked.
-        cases hS2 : storeTcbIpcStateAndMessage st1 popTid
-            (.blockedOnReply endpointId (some receiver)) none with
-        | error e => exact sameSchedContextBindings.refl st
-        | ok st2 =>
-            dsimp only
-            have hF2 : sameSchedContextBindings st st2 :=
-              hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 popTid _
-                none hI1 hS2)
-            have hI2 : st2.objects.invExt :=
-              storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid _ none hI1 hS2
-            cases hRid : replyId with
-            | none => exact sameSchedContextBindings.refl st
-            | some rid =>
-                dsimp only
-                cases hLink : SystemState.linkCallerReply popTid rid st2 with
-                | error e => exact sameSchedContextBindings.refl st
-                | ok pair =>
-                    obtain ⟨_, st3⟩ := pair
-                    dsimp only
-                    have hF3 : sameSchedContextBindings st st3 :=
-                      hF2.trans (linkCallerReply_sameSchedContextBindings st2 st3 popTid rid hI2
-                        hLink)
-                    have hI3 : st3.objects.invExt :=
-                      linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
-                    cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
-                        (some (blockedSenderMessage st1 popTid popTcb)) with
-                    | error e => exact sameSchedContextBindings.refl st
-                    | ok st4 =>
-                        dsimp only
-                        exact (hF3.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st3
-                          st4 receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) hI3 hS4)).trans
-                          (sameSchedContextBindings.of_objectsAgreeOffRunLinks
-                            (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))
+      · by_cases hLk : ((popTcb.ipcCanGrant || popTcb.ipcCanGrantReply) && replyId.isSome) = true
+        · rw [if_pos hLk]
+          -- `Call` rendezvous: the caller is parked `.blockedOnReply` and linked.
+          cases hS2 : storeTcbIpcStateAndMessage st1 popTid
+              (.blockedOnReply endpointId (some receiver)) none with
+          | error e => exact sameSchedContextBindings.refl st
+          | ok st2 =>
+              dsimp only
+              have hF2 : sameSchedContextBindings st st2 :=
+                hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 popTid _
+                  none hI1 hS2)
+              have hI2 : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid _ none hI1 hS2
+              cases hRid : replyId with
+              | none => exact sameSchedContextBindings.refl st
+              | some rid =>
+                  dsimp only
+                  cases hLink : SystemState.linkCallerReply popTid rid st2 with
+                  | error e => exact sameSchedContextBindings.refl st
+                  | ok pair =>
+                      obtain ⟨_, st3⟩ := pair
+                      dsimp only
+                      have hF3 : sameSchedContextBindings st st3 :=
+                        hF2.trans (linkCallerReply_sameSchedContextBindings st2 st3 popTid rid hI2
+                          hLink)
+                      have hI3 : st3.objects.invExt :=
+                        linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
+                      cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
+                          (some (blockedSenderMessage st1 popTid popTcb)) with
+                      | error e => exact sameSchedContextBindings.refl st
+                      | ok st4 =>
+                          dsimp only
+                          exact (hF3.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st3
+                            st4 receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) hI3 hS4)).trans
+                            (sameSchedContextBindings.of_objectsAgreeOffRunLinks
+                              (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))
+        · rw [if_neg hLk]
+          -- `Call` rendezvous that links no reply: the caller is completed `Inactive`.
+          cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
+          | error e => exact sameSchedContextBindings.refl st
+          | ok st2 =>
+              dsimp only
+              have hF2 : sameSchedContextBindings st st2 :=
+                hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 popTid
+                  .ready none hI1 hS2)
+              have hI2 : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid .ready none hI1 hS2
+              have hFU : sameSchedContextBindings st
+                  (st2.updateTcb popTid (fun t => { t with threadState := .Inactive })) :=
+                hF2.trans (sameSchedContextBindings.of_updateTcb popTid _ (fun _ => rfl) hI2)
+              have hIU := SystemState.updateTcb_preserves_objects_invExt st2 popTid
+                (fun t => { t with threadState := .Inactive }) hI2
+              cases hS3 : storeTcbIpcStateAndMessage
+                  (st2.updateTcb popTid (fun t => { t with threadState := .Inactive }))
+                  receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) with
+              | error e => exact sameSchedContextBindings.refl st
+              | ok st3 =>
+                  dsimp only
+                  exact hFU.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings _ st3
+                    receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) hIU hS3)
       · -- plain `Send` rendezvous: the sender is made `.ready` and woken.
         cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
         | error e => exact sameSchedContextBindings.refl st
@@ -4555,44 +4747,6 @@ theorem endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous
             | (rename_i hUnwrap
                exact hLeg'.trans (receiveTransferCaps_sameSchedContextBindings hLegInv hUnwrap))
 
-/-- **WS-RR RR8.16 (`v0.35.189`): the narrowed receive-side member omits no lock
-the transition takes.**
-
-The soundness half of the object-domain narrowing, and the receive-side twin of
-`endpointCallDonatedSc?_some_of_post`.  WS-OD OD3.6's donation runs at the state
-the receive leg leaves and branches on `callDonationSchedContext?` there, while
-`lockSet_endpointReceiveOnCore` / `lockSet_endpointReplyRecvOnCore` resolve on the
-state the bracket acquires at — so "the transition donates ⟹ the footprint
-declares" is *post* `some` ⟹ *pre* `some`, which is exactly the direction Cut C1's
-binding frame gives.
-
-Until `v0.35.189` the member needed no such licence because it was *wider*: it was
-the queued sender's own `scId?`, with no test that the sender carries a `Call` and
-none that the receiver is passive, so it declared a SchedContext write lock on
-every rendezvous with a bound sender.  Narrowing it to the transition's own guard
-is what makes the declaration exact, and this is the theorem that the narrowing
-lost nothing. -/
-theorem receiveRendezvousDonatedSc?_some_of_post
-    (endpointId : SeLe4n.ObjId) (receiver sender : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId)
-    (executingCore : CoreId) (st : SystemState)
-    (ep : Endpoint) (scId : SeLe4n.SchedContextId)
-    (hObjInv : st.objects.invExt)
-    (hEp : st.getEndpoint? endpointId = some ep)
-    (hSender : receiveRendezvousCallSender? st endpointId = some sender)
-    (hPost : callDonationSchedContext?
-      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 sender receiver = some scId) :
-    receiveRendezvousDonatedSc? st endpointId receiver = some scId := by
-  rw [receiveRendezvousDonatedSc?_of_sender st endpointId receiver sender hSender]
-  have hHead : ep.sendQ.head = some sender := by
-    have hS := receiveRendezvousCallSender?_eq_sender st endpointId sender hSender
-    unfold receiveRendezvousSender? at hS
-    simpa [hEp] using hS
-  exact callDonationSchedContext?_some_of_sameSchedContextBindings
-    (endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous endpointId receiver
-      replyId executingCore st ep sender hObjInv hEp hHead)
-    sender receiver scId hPost
-
 /-- **WS-RR RR8.12 (frame), restated per arm at `v0.35.161`**: a cross-core receive
 that **rendezvouses** touches no core's replenish queue.
 
@@ -4621,22 +4775,35 @@ theorem endpointReceiveDualOnCore_replenishQueueOnCore_of_rendezvous (epId : SeL
     split
     · -- `blockedOnCall` sender: recorded `.blockedOnReply`, never woken.
       rw [if_pos rfl]
-      split
-      · rfl
-      · next st2 hIpc =>
+      by_cases hLk : ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) = true
+      · rw [if_pos hLk]
         split
         · rfl
-        · next rid =>
+        · next st2 hIpc =>
           split
           · rfl
-          · next st3 hLink =>
+          · next rid =>
             split
-            · next st4 hMsg =>
-              simp only [SystemState.linkReplyWaiter_scheduler,
-                storeTcbIpcStateAndMessage_scheduler_eq st3 st4 _ _ _ hMsg,
-                linkCallerReply_scheduler_eq st2 st3 sender' rid hLink,
-                storeTcbIpcStateAndMessage_scheduler_eq st1 st2 _ _ _ hIpc, hPopSched]
             · rfl
+            · next st3 hLink =>
+              split
+              · next st4 hMsg =>
+                simp only [SystemState.linkReplyWaiter_scheduler,
+                  storeTcbIpcStateAndMessage_scheduler_eq st3 st4 _ _ _ hMsg,
+                  linkCallerReply_scheduler_eq st2 st3 sender' rid hLink,
+                  storeTcbIpcStateAndMessage_scheduler_eq st1 st2 _ _ _ hIpc, hPopSched]
+              · rfl
+      · -- no reply linked: the caller is completed `Inactive`, never woken.
+        rw [if_neg hLk]
+        split
+        · rfl
+        · next st2 hReady =>
+          split
+          · next st3 hMsg =>
+            simp only [storeTcbIpcStateAndMessage_scheduler_eq _ st3 _ _ _ hMsg,
+              SystemState.updateTcb_scheduler,
+              storeTcbIpcStateAndMessage_scheduler_eq st1 st2 _ _ _ hReady, hPopSched]
+          · rfl
     · -- `blockedOnSend` sender: woken on its own home core.
       rw [if_neg (by simp)]
       split
@@ -5106,7 +5273,7 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_replenishQueueAffinityConsis
 
 
 /-- **WS-RR RR8.12 Cut C1 (register row 55): the queued sender whose `Call` the arm's
-donation WILL transfer** — `receiveRendezvousCallSender?` narrowed once more, by the
+donation WILL transfer** — `receiveRendezvousLinkedCaller?` narrowed once more, by the
 donation's own resolver.
 
 A dequeued `Call` whose donation prerequisites fail — the receiver already holds a
@@ -5123,21 +5290,22 @@ lock contention is SM8.D's CC-5 channel.
 
 `.bind` over the `Call`-narrowed resolver and an `isSome` test, so a consumer splits
 an `if` rather than reducing a second matcher, and so that the resolvers this one
-narrows (`receiveRendezvousSender?`, `receiveRendezvousCallSender?`) cannot disagree
+narrows (`receiveRendezvousSender?`, `receiveRendezvousLinkedCaller?`) cannot disagree
 with it about *which* thread a rendezvous dequeues. -/
 def receiveRendezvousDonatingSender? (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) : Option SeLe4n.ThreadId :=
-  (receiveRendezvousCallSender? st endpointId).bind fun sender =>
+    (receiver : SeLe4n.ThreadId) (suppliesReply : Bool) : Option SeLe4n.ThreadId :=
+  (receiveRendezvousLinkedCaller? st endpointId suppliesReply).bind fun sender =>
     if (callDonationSchedContext? st sender receiver).isSome then some sender else none
 
-/-- **WS-RR RR8.12 Cut C1**: it narrows `receiveRendezvousCallSender?` and never names
+/-- **WS-RR RR8.12 Cut C1**: it narrows `receiveRendezvousLinkedCaller?` and never names
 another thread. -/
 theorem receiveRendezvousDonatingSender?_eq_callSender (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (receiver sender : SeLe4n.ThreadId)
-    (h : receiveRendezvousDonatingSender? st endpointId receiver = some sender) :
-    receiveRendezvousCallSender? st endpointId = some sender := by
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (suppliesReply : Bool)
+    (sender : SeLe4n.ThreadId)
+    (h : receiveRendezvousDonatingSender? st endpointId receiver suppliesReply = some sender) :
+    receiveRendezvousLinkedCaller? st endpointId suppliesReply = some sender := by
   unfold receiveRendezvousDonatingSender? at h
-  cases hS : receiveRendezvousCallSender? st endpointId with
+  cases hS : receiveRendezvousLinkedCaller? st endpointId suppliesReply with
   | none => rw [hS] at h; exact absurd h (by simp)
   | some s =>
     simp only [hS, Option.bind_some] at h
@@ -5148,9 +5316,9 @@ theorem receiveRendezvousDonatingSender?_eq_callSender (st : SystemState)
 /-- **WS-RR RR8.12 Cut C1**: `none` wherever the `Call`-narrowed resolver is — the
 block path and the plain-`Send` rendezvous inherit their readings. -/
 @[simp] theorem receiveRendezvousDonatingSender?_of_no_callSender (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (h : receiveRendezvousCallSender? st endpointId = none) :
-    receiveRendezvousDonatingSender? st endpointId receiver = none := by
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (suppliesReply : Bool)
+    (h : receiveRendezvousLinkedCaller? st endpointId suppliesReply = none) :
+    receiveRendezvousDonatingSender? st endpointId receiver suppliesReply = none := by
   unfold receiveRendezvousDonatingSender?
   rw [h]
   rfl
@@ -5158,10 +5326,11 @@ block path and the plain-`Send` rendezvous inherit their readings. -/
 /-- **WS-RR RR8.12 Cut C1**: and `none` on a queued `Call` whose donation the resolver
 declines — the receiver holds a context of its own, or the sender none. -/
 theorem receiveRendezvousDonatingSender?_of_no_donation (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (receiver sender : SeLe4n.ThreadId)
-    (hCall : receiveRendezvousCallSender? st endpointId = some sender)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (suppliesReply : Bool)
+    (sender : SeLe4n.ThreadId)
+    (hCall : receiveRendezvousLinkedCaller? st endpointId suppliesReply = some sender)
     (hNone : callDonationSchedContext? st sender receiver = none) :
-    receiveRendezvousDonatingSender? st endpointId receiver = none := by
+    receiveRendezvousDonatingSender? st endpointId receiver suppliesReply = none := by
   unfold receiveRendezvousDonatingSender?
   rw [hCall]
   simp only [Option.bind_some, hNone, Option.isSome_none, Bool.false_eq_true, if_false]
@@ -5170,11 +5339,12 @@ theorem receiveRendezvousDonatingSender?_of_no_donation (st : SystemState)
 would donate — the one shape on which the arm's donation can migrate a
 replenishment. -/
 theorem receiveRendezvousDonatingSender?_of_donation (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (receiver sender : SeLe4n.ThreadId)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (suppliesReply : Bool)
+    (sender : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId)
-    (hCall : receiveRendezvousCallSender? st endpointId = some sender)
+    (hCall : receiveRendezvousLinkedCaller? st endpointId suppliesReply = some sender)
     (hSome : callDonationSchedContext? st sender receiver = some scId) :
-    receiveRendezvousDonatingSender? st endpointId receiver = some sender := by
+    receiveRendezvousDonatingSender? st endpointId receiver suppliesReply = some sender := by
   unfold receiveRendezvousDonatingSender?
   rw [hCall]
   simp only [Option.bind_some, hSome, Option.isSome_some, if_true]
@@ -5187,7 +5357,7 @@ over (`receiveRendezvousDonatedSc?`, a `SchedContextId`) and the SCHEDULER
 domain's segment is keyed by the thread that hands it over
 (`receiveRendezvousDonatingSender?`, a `ThreadId`).  Two different answers to one
 question — *does this rendezvous donate?* — and this is the statement that they
-cannot disagree about it: both compose `receiveRendezvousCallSender?` with
+cannot disagree about it: both compose `receiveRendezvousLinkedCaller?` with
 `callDonationSchedContext?` at the same two threads, so neither can narrow or
 widen without the other.
 
@@ -5199,11 +5369,11 @@ that fact.  The object-domain member does **not** go through
 `callDonationSchedContext?` to decide its guard, so composing through it would
 ask the same question twice and leave two places for the answer to be read. -/
 theorem receiveRendezvousDonatedSc?_isSome_iff_donatingSender (st : SystemState)
-    (endpointObjId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) :
-    (receiveRendezvousDonatedSc? st endpointObjId receiver).isSome
-      = (receiveRendezvousDonatingSender? st endpointObjId receiver).isSome := by
+    (endpointObjId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (suppliesReply : Bool) :
+    (receiveRendezvousDonatedSc? st endpointObjId receiver suppliesReply).isSome
+      = (receiveRendezvousDonatingSender? st endpointObjId receiver suppliesReply).isSome := by
   unfold receiveRendezvousDonatedSc? receiveRendezvousDonatingSender?
-  cases hS : receiveRendezvousCallSender? st endpointObjId with
+  cases hS : receiveRendezvousLinkedCaller? st endpointObjId suppliesReply with
   | none => simp
   | some sender =>
     simp only [Option.bind_some]
@@ -5410,6 +5580,189 @@ theorem endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend
                  refine (rendezvousDequeuedCall_congr_getTcb? _ stRecv sender ?_).trans hLeg
                  exact receiveTransferCaps_getTcb?_eq sender hLegInv hUnwrap)
 
+private theorem rendezvousDequeuedCall_false_of_blockedOnCall (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (callEp : SeLe4n.ObjId)
+    (hTcb : lookupTcb st tid = some tcb) (hCall : tcb.ipcState = .blockedOnCall callEp) :
+    rendezvousDequeuedCall st tid = false := by
+  unfold rendezvousDequeuedCall
+  simp only [hTcb, hCall]
+
+/-- **seL4 `receiveIPC`: a `Call` rendezvous that links no reply leaves the dequeued
+caller `.ready` (and `Inactive`), so the post-state donation guard is FALSE.**
+
+The no-link sibling of `endpointReceiveDualOnCore_not_dequeuedCall_of_blockedOnSend`:
+the cap grants neither `Grant` nor `GrantReply`, or the receive supplied no reply
+object, so the leg stores the caller `.ready`, marks it `Inactive` (a
+`threadState` write the `ipcState` read cannot see) and hands the receiver the
+message.  Refusal branches return the pre-state, where the caller is
+`.blockedOnCall`, not `.blockedOnReply`. -/
+theorem endpointReceiveDualOnCore_not_dequeuedCall_of_noLink
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId) (st : SystemState)
+    (ep : Endpoint) (sender : SeLe4n.ThreadId) (senderTcb : TCB) (callEp : SeLe4n.ObjId)
+    (hObjInv : st.objects.invExt)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hTcb : lookupTcb st sender = some senderTcb)
+    (hCall : senderTcb.ipcState = .blockedOnCall callEp)
+    (hNoLink : ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) = false) :
+    rendezvousDequeuedCall
+        (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1 sender
+      = false := by
+  have hFail := rendezvousDequeuedCall_false_of_blockedOnCall st sender senderTcb callEp hTcb hCall
+  have hEpObj : st.objects[endpointId]? = some (.endpoint ep) :=
+    (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
+  unfold endpointReceiveDualOnCore
+  rw [hEp]
+  simp only [hHead]
+  cases hPop : endpointQueuePopHead endpointId false st with
+  | error e => simpa using hFail
+  | ok triple =>
+      obtain ⟨popTid, popTcb, st1⟩ := triple
+      simp only []
+      have hHeadQ : (if (false : Bool) then ep.receiveQ else ep.sendQ).head = some sender := by
+        simpa using hHead
+      have hPopId : popTid = sender :=
+        endpointQueuePopHead_popped_eq_head endpointId false st st1 ep popTid sender popTcb
+          hEpObj hHeadQ hPop
+      have hPopTcb : lookupTcb st sender = some popTcb :=
+        endpointQueuePopHead_popped_tcb_eq_lookup endpointId false st st1 ep popTid sender popTcb
+          hEpObj hHeadQ hPop
+      have hEqTcb : popTcb = senderTcb := Option.some.inj (hPopTcb.symm.trans hTcb)
+      have hCall' : popTcb.ipcState = .blockedOnCall callEp := by rw [hEqTcb]; exact hCall
+      have hNoLink' : ((popTcb.ipcCanGrant || popTcb.ipcCanGrantReply) && replyId.isSome) = false := by
+        rw [hEqTcb]; exact hNoLink
+      subst hPopId
+      have hI1 : st1.objects.invExt :=
+        endpointQueuePopHead_preserves_objects_invExt endpointId false st st1 popTid popTcb
+          hObjInv hPop
+      simp only [hCall', if_true, hNoLink', Bool.false_eq_true, if_false]
+      cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
+      | error e => simpa using hFail
+      | ok st2 =>
+          simp only []
+          obtain ⟨t2, hT2, hR2⟩ :=
+            storeTcbIpcStateAndMessage_getTcb?_ipcState st1 st2 popTid .ready none hI1 hS2
+          have hI2 : st2.objects.invExt :=
+            storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid .ready none hI1 hS2
+          have hTU : (st2.updateTcb popTid (fun t => { t with threadState := .Inactive })).getTcb? popTid
+              = some { t2 with threadState := .Inactive } := by
+            rw [SystemState.updateTcb_getTcb?_self st2 popTid _ hI2, hT2]; rfl
+          have hIU := SystemState.updateTcb_preserves_objects_invExt st2 popTid
+            (fun t => { t with threadState := .Inactive }) hI2
+          cases hS3 : storeTcbIpcStateAndMessage
+              (st2.updateTcb popTid (fun t => { t with threadState := .Inactive }))
+              receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) with
+          | error e => simpa using hFail
+          | ok st3 =>
+              simp only []
+              by_cases hEqId : receiver = popTid
+              · subst hEqId
+                obtain ⟨t3, hT3, hR3⟩ :=
+                  storeTcbIpcStateAndMessage_getTcb?_ipcState _ st3 receiver .ready
+                    _ hIU hS3
+                exact rendezvousDequeuedCall_false_of_getTcb?_ready st3 receiver t3 hT3 hR3
+              · have hNe : popTid.toObjId ≠ receiver.toObjId := fun h =>
+                  hEqId (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
+                have hFrame := storeTcbIpcStateAndMessage_preserves_objects_ne
+                  (st2.updateTcb popTid (fun t => { t with threadState := .Inactive })) st3 receiver
+                  .ready (some (blockedSenderMessage st1 popTid popTcb)) popTid.toObjId hNe hIU hS3
+                refine rendezvousDequeuedCall_false_of_getTcb?_ready st3 popTid
+                  { t2 with threadState := .Inactive } ?_ hR2
+                simp only [SystemState.getTcb?] at hTU ⊢
+                rw [hFrame]
+                exact hTU
+
+/-- **seL4 `receiveIPC`**: and installing the parked send's capabilities does not
+revive the guard, so the no-link leg's verdict is the whole arm's. -/
+theorem endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_noLink
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState)
+    (ep : Endpoint) (sender : SeLe4n.ThreadId) (senderTcb : TCB) (callEp : SeLe4n.ObjId)
+    (hObjInv : st.objects.invExt)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hTcb : lookupTcb st sender = some senderTcb)
+    (hCall : senderTcb.ipcState = .blockedOnCall callEp)
+    (hNoLink : ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) = false) :
+    rendezvousDequeuedCall
+        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 sender
+      = false := by
+  have hLeg := endpointReceiveDualOnCore_not_dequeuedCall_of_noLink endpointId receiver
+    replyId executingCore st ep sender senderTcb callEp hObjInv hEp hHead hTcb hCall hNoLink
+  have hLegInv :
+      ((endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1).objects.invExt :=
+    endpointReceiveDualOnCore_preserves_objects_invExt endpointId receiver replyId executingCore
+      st hObjInv
+  unfold endpointReceiveDualWithCapsOnCore
+  cases hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
+  | mk stRecv res =>
+      rw [hRecv] at hLeg hLegInv
+      cases res with
+      | error e => simpa using hLeg
+      | ok pair =>
+          obtain ⟨senderId, sgi⟩ := pair
+          simp only []
+          repeat' split
+          all_goals
+            first
+              | simpa using hLeg
+              | (rename_i hUnwrap
+                 refine (rendezvousDequeuedCall_congr_getTcb? _ stRecv sender ?_).trans hLeg
+                 exact receiveTransferCaps_getTcb?_eq sender hLegInv hUnwrap)
+
+/-- **The narrowed receive-side donation member omits no lock the transition takes.**
+
+The soundness half of the object-domain narrowing, and the receive-side twin of
+`endpointCallDonatedSc?_some_of_post`.  WS-OD OD3.6's donation runs at the state
+the receive leg leaves, gated on `rendezvousDequeuedCall` (the dequeued thread is
+`.blockedOnReply`) and branching on `callDonationSchedContext?` there, while
+`lockSet_endpointReceiveOnCore` / `lockSet_endpointReplyRecvOnCore` resolve on the
+state the bracket acquires at -- so "the transition donates ⟹ the footprint
+declares" is *post* `some` ⟹ *pre* `some`.
+
+Two narrowings stand behind the member, and this is the theorem that neither lost
+a lock.  `v0.35.189` keyed it on the donation's own guard; the binding frame of the
+leg (`endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous`)
+carries the post-state guard back.  seL4's link rule keys it on the receive LINKING
+the caller (`receiveRendezvousLinkedCaller?`): a plain `Send` and a `Call` that
+links no reply both leave the dequeued thread `.ready`
+(`endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend`,
+`…_of_noLink`), so the post-state gate is false wherever the member is `none`.
+`hShape` is `queueHeadBlockedConsistent`'s send-queue conjunct at the head. -/
+theorem receiveRendezvousDonatedSc?_some_of_post
+    (endpointId : SeLe4n.ObjId) (receiver sender : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState)
+    (ep : Endpoint) (senderTcb : TCB) (scId : SeLe4n.SchedContextId)
+    (hObjInv : st.objects.invExt)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hTcb : lookupTcb st sender = some senderTcb)
+    (hShape : senderTcb.ipcState = .blockedOnSend endpointId ∨
+      senderTcb.ipcState = .blockedOnCall endpointId)
+    (hDq : rendezvousDequeuedCall
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 sender = true)
+    (hPost : callDonationSchedContext?
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 sender receiver = some scId) :
+    receiveRendezvousDonatedSc? st endpointId receiver replyId.isSome = some scId := by
+  rcases hShape with hSend | hCall
+  · rw [endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend endpointId receiver
+      replyId executingCore st ep sender senderTcb endpointId hObjInv hEp hHead hTcb hSend] at hDq
+    exact absurd hDq (by simp)
+  · cases hLk : ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) with
+    | false =>
+      rw [endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_noLink endpointId receiver
+        replyId executingCore st ep sender senderTcb endpointId hObjInv hEp hHead hTcb hCall hLk] at hDq
+      exact absurd hDq (by simp)
+    | true =>
+      rw [Bool.and_eq_true] at hLk
+      rw [receiveRendezvousDonatedSc?_of_sender st endpointId receiver replyId.isSome sender
+        (receiveRendezvousLinkedCaller?_of_blockedOnCall st endpointId replyId.isSome ep sender
+          senderTcb endpointId hEp hHead hTcb hCall hLk.1 hLk.2)]
+      exact callDonationSchedContext?_some_of_sameSchedContextBindings
+        (endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous endpointId receiver
+          replyId executingCore st ep sender hObjInv hEp hHead)
+        sender receiver scId hPost
+
 /-- **`v0.35.161` / WS-RR RR8.12 Cut C2 (`v0.35.162`)**: the replenish-queue cores the
 receive leg's BLOCK path migrates between — the receiver's home and its loan's owner's,
 when the receiver blocks holding a `.donated` context, read through `receivePreReturn?`,
@@ -5594,8 +5947,8 @@ different owners; `endpointReceiveHandoffReplenishCores_of_blocked_returning_eq_
 is the licence that the pre-state pair **is** the migration's, and
 `…_of_blocked` keeps the empty segment for a receiver holding no loan. -/
 def endpointReceiveHandoffReplenishCores (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) : List CoreId :=
-  match receiveRendezvousDonatingSender? st endpointId receiver with
+    (receiver : SeLe4n.ThreadId) (suppliesReply : Bool) : List CoreId :=
+  match receiveRendezvousDonatingSender? st endpointId receiver suppliesReply with
   | some sender => [determineTargetCore st sender, determineTargetCore st receiver]
   | none => receivePreReturnReplenishCores st endpointId receiver
 
@@ -5657,13 +6010,13 @@ used to hold for every block; a `.donated` receiver's block now declares the two
 cores its pre-receive return migrates between
 (`endpointReceiveHandoffReplenishCores_of_blocked_returning`). -/
 theorem endpointReceiveHandoffReplenishCores_of_blocked (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (ep : Endpoint)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (suppliesReply : Bool) (ep : Endpoint)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none)
     (hNoDon : endpointReplyDonation? st receiver = none) :
-    endpointReceiveHandoffReplenishCores st endpointId receiver = [] := by
+    endpointReceiveHandoffReplenishCores st endpointId receiver suppliesReply = [] := by
   unfold endpointReceiveHandoffReplenishCores
-  rw [receiveRendezvousDonatingSender?_of_no_callSender st endpointId receiver
-    (receiveRendezvousCallSender?_of_blocked st endpointId ep hEp hHead)]
+  rw [receiveRendezvousDonatingSender?_of_no_callSender st endpointId receiver suppliesReply
+    (receiveRendezvousLinkedCaller?_of_blocked st endpointId suppliesReply ep hEp hHead)]
   exact receivePreReturnReplenishCores_of_no_sender_no_loan st endpointId receiver
     (receiveRendezvousSender?_of_blocked st endpointId ep hEp hHead) hNoDon
 
@@ -5673,15 +6026,15 @@ donation return's migration moves the reservation's replenishments between, read
 through `receivePreReturn?`, the resolver the object domain already reads this
 return through (`lockSet_endpointReplyRecvOnCore_covers_preReturn`). -/
 theorem endpointReceiveHandoffReplenishCores_of_blocked_returning (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (ep : Endpoint)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (suppliesReply : Bool) (ep : Endpoint)
     (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none)
     (hDon : endpointReplyDonation? st receiver = some (scId, owner)) :
-    endpointReceiveHandoffReplenishCores st endpointId receiver
+    endpointReceiveHandoffReplenishCores st endpointId receiver suppliesReply
       = [determineTargetCore st receiver, determineTargetCore st owner] := by
   unfold endpointReceiveHandoffReplenishCores
-  rw [receiveRendezvousDonatingSender?_of_no_callSender st endpointId receiver
-    (receiveRendezvousCallSender?_of_blocked st endpointId ep hEp hHead)]
+  rw [receiveRendezvousDonatingSender?_of_no_callSender st endpointId receiver suppliesReply
+    (receiveRendezvousLinkedCaller?_of_blocked st endpointId suppliesReply ep hEp hHead)]
   exact receivePreReturnReplenishCores_of_no_sender_returning st endpointId receiver scId owner
     (receiveRendezvousSender?_of_blocked st endpointId ep hEp hHead) hDon
 
@@ -5697,15 +6050,16 @@ then performs from naming different cores — the rendezvous arm's
 `…_of_donating_call_rendezvous`, on the other arm. -/
 theorem endpointReceiveHandoffReplenishCores_of_blocked_returning_eq_migration
     (st stClean : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (suppliesReply : Bool)
     (ep : Endpoint) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none)
     (hDon : preReceiveDonation? st receiver = some (scId, owner))
     (hClean : cleanupPreReceiveDonationChecked st receiver = .ok stClean) :
-    endpointReceiveHandoffReplenishCores st endpointId receiver
+    endpointReceiveHandoffReplenishCores st endpointId receiver suppliesReply
       = [determineTargetCore st receiver,
          replenishHomeOfSchedContext stClean scId (determineTargetCore st receiver)] := by
-  rw [endpointReceiveHandoffReplenishCores_of_blocked_returning st endpointId receiver ep scId
+  rw [endpointReceiveHandoffReplenishCores_of_blocked_returning st endpointId receiver suppliesReply ep scId
     owner hEp hHead (endpointReplyDonation?_of_preReceiveDonation? st receiver scId owner hDon),
     preReceiveReturnMigration_destination st stClean receiver scId owner hObjInv hDon hClean]
 
@@ -5718,17 +6072,17 @@ leg leaves the dequeued sender `.ready`, so `applyReceiveRendezvousDonation` is 
 identity (`applyReceiveRendezvousDonation_of_no_call`) and no replenish queue moves.
 Declaring two cores there is not conservatism but contention nobody needs. -/
 theorem endpointReceiveHandoffReplenishCores_of_blockedOnSend (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (ep : Endpoint)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (suppliesReply : Bool) (ep : Endpoint)
     (sender : SeLe4n.ThreadId) (senderTcb : TCB) (sendEp : SeLe4n.ObjId)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
     (hTcb : lookupTcb st sender = some senderTcb)
     (hSend : senderTcb.ipcState = .blockedOnSend sendEp) :
-    endpointReceiveHandoffReplenishCores st endpointId receiver = [] := by
+    endpointReceiveHandoffReplenishCores st endpointId receiver suppliesReply = [] := by
   have hSender : receiveRendezvousSender? st endpointId = some sender := by
     unfold receiveRendezvousSender?; rw [hEp]; exact hHead
   unfold endpointReceiveHandoffReplenishCores
-  rw [receiveRendezvousDonatingSender?_of_no_callSender st endpointId receiver
-    (receiveRendezvousCallSender?_of_blockedOnSend st endpointId ep sender senderTcb sendEp
+  rw [receiveRendezvousDonatingSender?_of_no_callSender st endpointId receiver suppliesReply
+    (receiveRendezvousLinkedCaller?_of_blockedOnSend st endpointId suppliesReply ep sender senderTcb sendEp
       hEp hHead hTcb hSend)]
   exact receivePreReturnReplenishCores_of_sender st endpointId receiver sender hSender
 
@@ -5740,19 +6094,47 @@ receive leg writes no binding, so the resolver's pre-state `none` is its answer 
 state the donation runs on, and `applyReceiveRendezvousDonation_eq_self_of_no_donation`
 is the donation step being the identity there. -/
 theorem endpointReceiveHandoffReplenishCores_of_no_donation (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (ep : Endpoint)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (suppliesReply : Bool) (ep : Endpoint)
     (sender : SeLe4n.ThreadId) (senderTcb : TCB) (callEp : SeLe4n.ObjId)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
     (hTcb : lookupTcb st sender = some senderTcb)
     (hCall : senderTcb.ipcState = .blockedOnCall callEp)
     (hNone : callDonationSchedContext? st sender receiver = none) :
-    endpointReceiveHandoffReplenishCores st endpointId receiver = [] := by
+    endpointReceiveHandoffReplenishCores st endpointId receiver suppliesReply = [] := by
   have hSender : receiveRendezvousSender? st endpointId = some sender := by
     unfold receiveRendezvousSender?; rw [hEp]; exact hHead
   unfold endpointReceiveHandoffReplenishCores
-  rw [receiveRendezvousDonatingSender?_of_no_donation st endpointId receiver sender
-    (receiveRendezvousCallSender?_of_blockedOnCall st endpointId ep sender senderTcb callEp
-      hEp hHead hTcb hCall) hNone]
+  cases hLk : ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && suppliesReply) with
+  | false =>
+    rw [receiveRendezvousDonatingSender?_of_no_callSender st endpointId receiver suppliesReply
+      (receiveRendezvousLinkedCaller?_of_noLink st endpointId suppliesReply ep sender senderTcb
+        hEp hHead hTcb hLk)]
+    exact receivePreReturnReplenishCores_of_sender st endpointId receiver sender hSender
+  | true =>
+    rw [Bool.and_eq_true] at hLk
+    rw [receiveRendezvousDonatingSender?_of_no_donation st endpointId receiver suppliesReply sender
+      (receiveRendezvousLinkedCaller?_of_blockedOnCall st endpointId suppliesReply ep sender
+        senderTcb callEp hEp hHead hTcb hCall hLk.1 hLk.2) hNone]
+    exact receivePreReturnReplenishCores_of_sender st endpointId receiver sender hSender
+
+/-- **seL4 `receiveIPC`**: and empty on a queued `Call` the receive links to no reply --
+the cap grants neither `Grant` nor `GrantReply`, or the receive supplied no reply
+object.  seL4 donates through `reply_push`, which only the linking arm runs, so the
+caller is left `Inactive` holding its own context and no replenish queue moves
+(`endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_noLink`). -/
+theorem endpointReceiveHandoffReplenishCores_of_noLink (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (suppliesReply : Bool) (ep : Endpoint)
+    (sender : SeLe4n.ThreadId) (senderTcb : TCB)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hTcb : lookupTcb st sender = some senderTcb)
+    (hNoLink : ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && suppliesReply) = false) :
+    endpointReceiveHandoffReplenishCores st endpointId receiver suppliesReply = [] := by
+  have hSender : receiveRendezvousSender? st endpointId = some sender := by
+    unfold receiveRendezvousSender?; rw [hEp]; exact hHead
+  unfold endpointReceiveHandoffReplenishCores
+  rw [receiveRendezvousDonatingSender?_of_no_callSender st endpointId receiver suppliesReply
+    (receiveRendezvousLinkedCaller?_of_noLink st endpointId suppliesReply ep sender senderTcb
+      hEp hHead hTcb hNoLink)]
   exact receivePreReturnReplenishCores_of_sender st endpointId receiver sender hSender
 
 /-- **WS-RR RR8.12: the licence.**  On a **`Call`** rendezvous the resolver would
@@ -5786,8 +6168,10 @@ theorem endpointReceiveHandoffReplenishCores_of_donating_call_rendezvous (st : S
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
     (hTcb : lookupTcb st sender = some senderTcb)
     (hCall : senderTcb.ipcState = .blockedOnCall callEp)
+    (hGrant : (senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) = true)
+    (hReply : replyId.isSome = true)
     (hDon : callDonationSchedContext? st sender receiver = some scId) :
-    endpointReceiveHandoffReplenishCores st endpointId receiver
+    endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome
       = [determineTargetCore
              (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 sender,
          determineTargetCore
@@ -5795,9 +6179,9 @@ theorem endpointReceiveHandoffReplenishCores_of_donating_call_rendezvous (st : S
   have hFrame := endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous
     endpointId receiver replyId executingCore st ep sender
   unfold endpointReceiveHandoffReplenishCores
-  rw [receiveRendezvousDonatingSender?_of_donation st endpointId receiver sender scId
-    (receiveRendezvousCallSender?_of_blockedOnCall st endpointId ep sender senderTcb callEp
-      hEp hHead hTcb hCall) hDon]
+  rw [receiveRendezvousDonatingSender?_of_donation st endpointId receiver replyId.isSome sender scId
+    (receiveRendezvousLinkedCaller?_of_blockedOnCall st endpointId replyId.isSome ep sender
+      senderTcb callEp hEp hHead hTcb hCall hGrant hReply) hDon]
   rw [hFrame sender hObjInv hEp hHead, hFrame receiver hObjInv hEp hHead]
 
 /-- **WS-RR RR8.12**: the scheduler-domain footprint of the live `.receive` arm —
@@ -5851,7 +6235,7 @@ def schedLockSet_endpointReceiveOnCore (st : SystemState) (endpointId : SeLe4n.O
   schedFootprintOfCores
     (endpointReceiveDualWriteSet st endpointId executingCore
       ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore)
-    (endpointReceiveHandoffReplenishCores st endpointId receiver)
+    (endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome)
 
 -- No `_write_only` / `_pairwise_le` restatement here, and that is deliberate: both
 -- are `schedFootprintOfCores_write_only` / `_pairwise_le` applied to this
@@ -5904,7 +6288,7 @@ theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blocked (st : Sy
       ∉ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId executingCore := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
-  rw [endpointReceiveHandoffReplenishCores_of_blocked st endpointId receiver ep hEp hHead
+  rw [endpointReceiveHandoffReplenishCores_of_blocked st endpointId receiver replyId.isSome ep hEp hHead
     hNoDon] at this
   simp at this
 
@@ -5983,7 +6367,7 @@ theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blockedOnSend
       ∉ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId executingCore := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
-  rw [endpointReceiveHandoffReplenishCores_of_blockedOnSend st endpointId receiver ep sender
+  rw [endpointReceiveHandoffReplenishCores_of_blockedOnSend st endpointId receiver replyId.isSome ep sender
     senderTcb sendEp hEp hHead hTcb hSend] at this
   simp at this
 
@@ -6092,7 +6476,7 @@ theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_no_donation
       ∉ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId executingCore := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
-  rw [endpointReceiveHandoffReplenishCores_of_no_donation st endpointId receiver ep sender
+  rw [endpointReceiveHandoffReplenishCores_of_no_donation st endpointId receiver replyId.isSome ep sender
     senderTcb callEp hEp hHead hTcb hCall hNone] at this
   simp at this
 
@@ -6135,6 +6519,8 @@ theorem schedLockSet_endpointReceiveOnCore_covers_donation (st : SystemState)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
     (hTcb : lookupTcb st sender = some senderTcb)
     (hCall : senderTcb.ipcState = .blockedOnCall callEp)
+    (hDq : rendezvousDequeuedCall
+        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 sender = true)
     (hDon : callDonationSchedContext?
         (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 sender receiver = some scId) :
     ∀ p ∈ applyCallDonationOnCoreLockSet
@@ -6149,11 +6535,20 @@ theorem schedLockSet_endpointReceiveOnCore_covers_donation (st : SystemState)
         receiver replyId executingCore st ep sender hObjInv
         hEp hHead)
       sender receiver scId hDon
-  refine schedFootprintOfCores_subset (fun _ h => absurd h (by simp)) (fun c hc => ?_)
-  rw [endpointReceiveHandoffReplenishCores_of_donating_call_rendezvous st endpointId receiver
-    replyId executingCore ep sender senderTcb callEp scId
-    hObjInv hEp hHead hTcb hCall hDonPre]
-  exact hc
+  -- seL4 donates only where the receive links the caller: a no-link `Call` leaves
+  -- it `.ready`, so the post-state gate `hDq` rules that arm out.
+  cases hLk : ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) with
+  | false =>
+    rw [endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_noLink endpointId receiver replyId
+      executingCore st ep sender senderTcb callEp hObjInv hEp hHead hTcb hCall hLk] at hDq
+    exact absurd hDq (by simp)
+  | true =>
+    rw [Bool.and_eq_true] at hLk
+    refine schedFootprintOfCores_subset (fun _ h => absurd h (by simp)) (fun c hc => ?_)
+    rw [endpointReceiveHandoffReplenishCores_of_donating_call_rendezvous st endpointId receiver
+      replyId executingCore ep sender senderTcb callEp scId
+      hObjInv hEp hHead hTcb hCall hLk.1 hLk.2 hDonPre]
+    exact hc
 
 /-- **`v0.35.161` (register row 57)**: on a block that returns a loan, the `.receive`
 footprint names both replenish-queue write locks the pre-receive return's migration
@@ -6170,7 +6565,7 @@ theorem schedLockSet_endpointReceiveOnCore_contains_preReturn_replenish_writes
         ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId executingCore := by
   constructor <;>
   · refine (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr ?_
-    rw [endpointReceiveHandoffReplenishCores_of_blocked_returning st endpointId receiver ep scId
+    rw [endpointReceiveHandoffReplenishCores_of_blocked_returning st endpointId receiver replyId.isSome ep scId
       owner hEp hHead hDon]
     simp
 
@@ -6204,7 +6599,7 @@ theorem schedLockSet_endpointReceiveOnCore_covers_preReturnMigration
   simp only [migrateSchedContextReplenishmentLockSet, List.mem_cons, List.not_mem_nil,
     or_false] at hp
   have hSeg := endpointReceiveHandoffReplenishCores_of_blocked_returning_eq_migration st stClean
-    endpointId receiver ep scId owner hObjInv hEp hHead hDon hClean
+    endpointId receiver replyId.isSome ep scId owner hObjInv hEp hHead hDon hClean
   rcases hp with h | h <;> subst h <;>
   · refine (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr ?_
     rw [hSeg]

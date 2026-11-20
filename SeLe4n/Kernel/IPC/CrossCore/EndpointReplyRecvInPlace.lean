@@ -460,7 +460,7 @@ theorem replyRecvAnsweringOnCore_blocks_inPlace
   unfold endpointReplyRecvAnsweringOnCore
   simp only [hRec, Option.getD_some, hEq, hPop, hXf, hRecv, hEp1, Option.bind_some, hS,
     replyRecvPostReceiveDonation_none_self _ _ _ _ hRes]
-  simp [applyReceiveLegPipHandoff, Architecture.stageWokenSendCompletion_none]
+  simp [applyReceiveLegPipHandoff]
 
 /-- **The reply-receive that blocks, in place**: the composite for a caller
 carrying no fault (`replyRecvAnsweringOnCore_blocks_inPlace` at `none`) is the
@@ -769,7 +769,7 @@ built only on this path. -/
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) : SystemState :=
   X.mapTcbInPlace c (holdMessage
-    { registers := Architecture.regReplyRecvBody layout rf len, badge := badge })
+    { registers := Architecture.regMessageBody layout rf len, badge := badge })
 
 /-- **The blocking reply-receive, delivered from the registers**: the reply's
 writes, the server's block and priority walk, then the reply's frame written
@@ -780,7 +780,7 @@ is, unexpectedly, not ready. -/
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (core : CoreId) : SystemState :=
   let X := storeReplyRecvBlockReady st c tid rid epId tailCode core
-  writeDeliveredFrameIfReady X c (Architecture.regReplyRecvFrame layout rf len badge)
+  writeDeliveredFrameIfReady X c (Architecture.regMessageFrame layout rf len badge)
     (fun _ => holdReplyRecvBody X c layout rf len badge)
 
 end ReplyRecvDelivered

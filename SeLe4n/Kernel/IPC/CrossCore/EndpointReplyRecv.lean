@@ -357,6 +357,14 @@ def replyRecvPoppedDonation (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
   | .error _ => none
   | .ok (returned?, _) => returned?
 
+/-- **The `MessageInfo` a reply-receive's reply carries**: its label and its
+words (`msg.registers`, MR0 on), transferring no capability word.  The one
+reading of the reply's message both answers use: a faulted caller's fault reply
+(`replyRecvCallerFaultAnswer?`) and the reply a receive that completes a signal
+makes (`replyRecvCompletesSignalArm`). -/
+abbrev replyRecvReplyMessageInfo (label : Nat) (msg : IpcMessage) : MessageInfo :=
+  { length := msg.registers.size, extraCaps := 0, label := label }
+
 /-- **The answer a `.replyRecv` owes the caller it replies to**, read on the
 pre-state: `none` for a caller carrying no fault (its message is delivered), and
 for a faulted one the outcome `decodeFaultReply` gives the reply against the fault
@@ -371,7 +379,7 @@ def replyRecvCallerFaultAnswer? (st : SystemState) (prevCaller : SeLe4n.ThreadId
       | none => none
       | some tf =>
           some (Architecture.decodeFaultReply tf.fault tf.context
-            { length := msg.registers.size, extraCaps := 0, label := label } msg.registers)
+            (replyRecvReplyMessageInfo label msg) msg.registers)
 
 /-- The answer is `none` exactly on a caller carrying no fault — the `.reply`
 arm's own branch predicate. -/
@@ -597,11 +605,6 @@ def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOut
         match replyRecvReplyTransfer answer st tid prevCaller grant st1q with
         | .error e => .error e
         | .ok (replySummary, st1p) =>
-        -- WS-RA RA.B.5b: capture the send-queue head the receive leg will
-        -- dequeue (from `st1p`, the state that leg runs on) — a *plain* sender
-        -- completing there is owed the unit success frame; a `Call` sender
-        -- lands `.blockedOnReply` and the completion stager's guard skips it.
-        let wokenSender? := (st1p.getEndpoint? epId).bind (·.sendQ.head)
         -- WS-SM SM6.D (#7.2 fold): the receive leg links the *same* reply object
         -- `rid` (freed by the reply leg's folded consume — PR #827 review #3, and
         -- taken off its reply stack by the pop above — WS-RM) to the next `Call`
@@ -642,12 +645,10 @@ def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOut
                 -- this one, so the non-delegated arm is unchanged.
                 -- The answered caller: its delivered message staged, or, on a
                 -- faulted caller, the fault answered (`replyRecvAnswerCaller`).
-                .ok (summary, Architecture.stageWokenSendCompletion
-                          (replyRecvAnswerCaller answer
+                .ok (summary, replyRecvAnswerCaller answer
                             (applyReceiveLegPipHandoff st3 tid nextThread recordedServer
                               executingCore)
                             prevCaller replySummary.capInfo)
-                          wokenSender?)
 
 /-- The `.replyRecv` composite for a caller carrying **no** fault: the reply leg
 delivers `msg` and its return frame is staged (`endpointReplyRecvAnsweringOnCore`
@@ -1028,5 +1029,41 @@ theorem schedLockSet_replyRecvTransferOnCore_of_no_fault (endpointId : SeLe4n.Ob
 -- are `schedFootprintOfCores_write_only` / `_pairwise_le` applied to this
 -- footprint's own arguments, so a consumer reaches for the shared lemma directly.
 
+
+/-- **The `.replyRecv` arm's scheduler-domain footprint**: the arm runs either the
+composite (`replyRecvTransferOnCore`) or, when its receive completes the bound
+notification (seL4-MCS `receiveIPC`'s first branch), the reply leg alone
+(`replyTransferOnCoreChecked`) followed by the notification's completion, which
+writes only the object store.  Which one runs turns on the labelling context the
+footprint does not read, so it names both legs' cores: `schedFootprintOfCores` of
+the two write sets and of the two replenish-core lists.  The canonical segments
+deduplicate the shared cores. -/
+def schedLockSet_replyRecvArmOnCore (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (label : Nat) (msg : IpcMessage) (grant : Bool)
+    (executingCore : Concurrency.CoreId) (st : SystemState) :
+    List (LockKey × Concurrency.AccessMode) :=
+  schedFootprintOfCores
+    (replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg grant
+        executingCore st ++
+      replyTransferWriteSet receiver prevCaller (replyRecvReplyMessageInfo label msg)
+        msg.registers msg executingCore st)
+    (replyRecvHandoffReplenishCores (replyRecvCallerFaultAnswer? st prevCaller label msg)
+        endpointId receiver replyId prevCaller
+        (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
+        executingCore st ++
+      replyTransferReplenishCores receiver prevCaller msg executingCore st)
+
+/-- The composite's footprint is contained in the arm's. -/
+theorem schedLockSet_replyRecvTransferOnCore_subset_arm (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (label : Nat) (msg : IpcMessage) (grant : Bool)
+    (executingCore : Concurrency.CoreId) (st : SystemState) :
+    ∀ p ∈ schedLockSet_replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg
+        grant executingCore st,
+      p ∈ schedLockSet_replyRecvArmOnCore endpointId receiver replyId prevCaller label msg grant
+        executingCore st :=
+  schedFootprintOfCores_subset (fun _ h => List.mem_append_left _ h)
+    (fun _ h => List.mem_append_left _ h)
 
 end SeLe4n.Kernel

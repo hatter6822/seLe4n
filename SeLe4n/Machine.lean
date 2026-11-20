@@ -2743,11 +2743,15 @@ end MachineConfig
     - capPtrReg: destination capability pointer register (x0 on ARM64)
     - msgInfoReg: message info word register (x1 on ARM64)
     - msgRegs: inline message registers (x2–x5 on ARM64)
+    - replyReg: the reply capability's address (x6 on ARM64, seL4-MCS's
+      `replyRegister`, read by Recv, NBRecv, ReplyRecv and NBSendRecv, and the
+      destination of NBSendWait)
     - syscallNumReg: syscall number register (x7 on ARM64) -/
 structure SyscallRegisterLayout where
   capPtrReg     : RegName
   msgInfoReg    : RegName
   msgRegs       : Array RegName
+  replyReg      : RegName
   syscallNumReg : RegName
   deriving Repr, DecidableEq
 
@@ -2755,11 +2759,13 @@ structure SyscallRegisterLayout where
     - x0: capability pointer (destination cap address)
     - x1: message info word (length, extra caps, label)
     - x2–x5: inline message registers
+    - x6: the reply capability's address (seL4-MCS `replyRegister`)
     - x7: syscall number -/
 def arm64DefaultLayout : SyscallRegisterLayout :=
   { capPtrReg     := ⟨0⟩    -- x0
     msgInfoReg    := ⟨1⟩    -- x1
     msgRegs       := #[⟨2⟩, ⟨3⟩, ⟨4⟩, ⟨5⟩]  -- x2–x5
+    replyReg      := ⟨6⟩    -- x6
     syscallNumReg := ⟨7⟩ }  -- x7
 
 end SeLe4n

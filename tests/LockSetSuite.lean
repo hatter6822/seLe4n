@@ -95,7 +95,6 @@ open SeLe4n.Kernel.Concurrency
 #check @lockSet_cspaceMove
 #check @lockSet_cspaceDelete
 #check @lockSet_untypedRetype
-#check @lockSet_untypedReset
 #check @lockSet_vspaceMap
 #check @lockSet_vspaceUnmap
 #check @lockSet_serviceRegister
@@ -439,8 +438,10 @@ example : permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext, .reply
 -- `scThreadIndex`, an `RHTable` whose insert may rehash the whole table.
 example : permittedKinds .reply =
     [.tcb, .cnode, .schedContext, .reply, .objStore] := by decide
+-- seL4-MCS `handleReplyRecv`: `.notification` joins `.replyRecv` -- its receive
+-- completes the replier's bound notification when it is active.
 example : permittedKinds .replyRecv =
-    [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore] := by decide
+    [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply, .objStore] := by decide
 -- WS-SM SM6.B: `.notificationSignal` gains `.endpoint` for the bound-delivery
 -- dequeue (a signal to a notification whose bound TCB is BlockedOnReceive removes
 -- it from its endpoint); `.notificationWait` is unchanged.
@@ -464,7 +465,7 @@ example : permittedKinds .untypedRetype =
 -- WS-BP BP7.1 (v0.36.7): the map reads the frame its capability names; PR #956
 -- review: and declares the derivation tree's subject, since it rewrites a CNode.
 example : permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot, .page, .objStore] := by decide
-example : permittedKinds .vspaceUnmap = [.tcb, .cnode, .vspaceRoot] := by decide
+example : permittedKinds .vspaceUnmap = [.tcb, .cnode, .vspaceRoot, .page, .objStore] := by decide
 -- WS-RR RR7.23: `.objStore` on all three — the register reads the
 -- `SystemState`-level interface registry and `stateLevelLock` is the only member
 -- that can name it (since WS-ZA ZA5.9 the service registry is the endpoints'
@@ -637,11 +638,6 @@ example :
   lockSet_consistent_untypedRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 10) (ObjId.ofNat 20)
     (ObjId.ofNat 30) (ObjId.ofNat 10) .schedContext 1
 
-example :
-    ∀ p ∈ (lockSet_untypedReset ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 20)).pairs,
-      p.fst.kind ∈ permittedKinds .untypedReset :=
-  lockSet_consistent_untypedReset ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 20)
-
 -- ============================================================================
 -- §6d — Runtime exercise of lockAcquireSequence_canonical
 -- ============================================================================
@@ -749,12 +745,12 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 109 := by decide
+example : lockSetTheorems.length = 107 := by decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 44 := by
+example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 43 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 44 := by
+example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 43 := by
   decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6 := by
@@ -898,9 +894,10 @@ private def runPermittedKindsChecks : IO Unit := do
   -- WS-OD OD3.5: `.objStore` — the donation return maintains `scThreadIndex`.
   assertBool "permittedKinds .reply (donation-return + reply-object + index kinds)"
     (decide (permittedKinds .reply = [.tcb, .cnode, .schedContext, .reply, .objStore]))
-  assertBool "permittedKinds .replyRecv (donation-return + reply-object kind)"
+  -- seL4-MCS `handleReplyRecv`: the receive completes an active bound notification.
+  assertBool "permittedKinds .replyRecv (donation-return + reply-object + bound-notification kinds)"
     (decide (permittedKinds .replyRecv =
-      [.tcb, .cnode, .endpoint, .schedContext, .reply, .objStore]))
+      [.tcb, .cnode, .endpoint, .notification, .schedContext, .reply, .objStore]))
   -- Audit-pass-6: .tcbSetPriority / .tcbSetMCPriority include .schedContext.
   -- updatePrioritySource writes the bound SC if binding is .bound/.donated.
   assertBool "permittedKinds .tcbSetPriority (audit-pass-6: includes .schedContext)"
@@ -1527,14 +1524,6 @@ private def runConsistencyRuntimeChecks : IO Unit := do
     decide (p.fst.kind ∈ permittedKinds .untypedRetype))
   assertBool "lockSet_untypedRetype: all kinds in permittedKinds .untypedRetype"
     allOk_carve
-  -- The reset: the invoked capability's CNode written, the untyped read.
-  let reset := lockSet_untypedReset ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 11) (ObjId.ofNat 20)
-  assertBool "lockSet_untypedReset: all kinds in permittedKinds .untypedReset"
-    (reset.pairs.all (fun p => decide (p.fst.kind ∈ permittedKinds .untypedReset)))
-  assertBool "lockSet_untypedReset: the invoked CNode is a write member"
-    (reset.pairs.contains (cnodeLock (ObjId.ofNat 11), .write))
-  assertBool "lockSet_untypedReset: the untyped is a read member"
-    (reset.pairs.contains (untypedLock (ObjId.ofNat 20), .read))
   -- Audit-pass-3: donation extension on .call.
   let callDon := lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
                    (some ⟨8⟩) (some ⟨100⟩)
@@ -1778,8 +1767,8 @@ private def runFstInjChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 109"
-    (decide (lockSetTheorems.length = 109))
+  assertBool "lockSetTheorems.length = 107"
+    (decide (lockSetTheorems.length = 107))
   -- WS-RR RR8.16: the figure is DERIVED from the classifier rather than
   -- written down.  `.cspaceRevoke` declares no static footprint (its CDT
   -- subtree is unbounded and a `LockSet` is capped at `maxLockSetSize`), so

@@ -36,7 +36,9 @@ open SeLe4n.Model SeLe4n.Kernel.RobinHood SeLe4n.Kernel.Concurrency
 (`sendWakesInPlace`, on the send queue), the receiver an unreserved thread
 other than the caller and its successor, rewritten where it stands, the reply
 object rewritten where it stands and free, the caller holding no reply object
-and blocked on a call, and no SchedContext donated. -/
+and blocked on a call through a cap that grants (seL4 `receiveIPC` links a
+caller to the reply only under `canGrant || canGrantReply`), and no
+SchedContext donated. -/
 @[inline] def receiveCallTakesInPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver s : SeLe4n.ThreadId) (sTcb : TCB) (rid : SeLe4n.ReplyId) : Bool :=
   sendWakesInPlace st endpointId s sTcb.queueNext &&
@@ -56,7 +58,7 @@ and blocked on a call, and no SchedContext donated. -/
    | some rp => rp.isFree
    | none => false) &&
   (match sTcb.ipcState with
-   | .blockedOnCall _ => true
+   | .blockedOnCall _ => sTcb.ipcCanGrant || sTcb.ipcCanGrantReply
    | _ => false)
 
 /-- `receiveCallTakesInPlace` as it is compiled: the caller's successor asked
@@ -79,7 +81,7 @@ of its link code, so no `some` cell is built for a caller with a successor
    | some rp => rp.isFree
    | none => false) &&
   (match sTcb.ipcState with
-   | .blockedOnCall _ => true
+   | .blockedOnCall _ => sTcb.ipcCanGrant || sTcb.ipcCanGrantReply
    | _ => false)
 
 @[csimp] theorem receiveCallTakesInPlace_eq_impl :
@@ -110,7 +112,7 @@ asked the same of its slots (`receiveCallTake_inPlace_facts`). -/
    | some rp => rp.isFree
    | none => false) &&
   (match sTcb.ipcState with
-   | .blockedOnCall _ => true
+   | .blockedOnCall _ => sTcb.ipcCanGrant || sTcb.ipcCanGrantReply
    | _ => false)
 
 /-- `receiveCallTakesReplyInPlace` as it is compiled: the caller's successor
@@ -130,7 +132,7 @@ asked of its link code (`receiveCallTakesReplyInPlace_eq_impl`). -/
    | some rp => rp.isFree
    | none => false) &&
   (match sTcb.ipcState with
-   | .blockedOnCall _ => true
+   | .blockedOnCall _ => sTcb.ipcCanGrant || sTcb.ipcCanGrantReply
    | _ => false)
 
 @[csimp] theorem receiveCallTakesReplyInPlace_eq_impl :
@@ -280,6 +282,7 @@ theorem receiveCallTake_inPlace_facts (st : SystemState) (endpointId : SeLe4n.Ob
     modifyTcb_eq_updateTcb (callCallerTcb endpointId receiver) hSRes hFr.head_tcb (hFr.leaves hLH)
   unfold endpointReceiveDualOnCore
   simp only [hEp, hH, hPop]
+  rw [if_pos (by revert hCall; cases sTcb.ipcState <;> simp)]
   rw [if_pos (by revert hCall; cases sTcb.ipcState <;> simp)]
   rw [hM2]
   simp only []
@@ -583,8 +586,7 @@ caller's fault words (`deliverFaultFrame`), read before any write. -/
 specification's**: under `receiveCallTakesInPlace`, for a queued caller holding
 a fault, the WithCaps receive installs nothing and commits the take, the
 rendezvous hands off no SchedContext and runs the receiver's priority walk, the
-caller left blocked on the reply is owed no completion frame, and staging the
-receiver's message writes `performFaultReceiveDelivered`'s state, the fault's
+caller is left blocked on the reply, and staging the receiver's message writes `performFaultReceiveDelivered`'s state, the fault's
 words read from the caller's TCB. -/
 theorem receiveFaultTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB) (f : Fault)
@@ -599,9 +601,8 @@ theorem receiveFaultTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId
           receiver s core =
         .ok (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
           receiver core) ∧
-      Architecture.stageDeliveredMessage (Architecture.stageWokenSendCompletion
-          (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
-            receiver core) (some s)) receiver 0 =
+      Architecture.stageDeliveredMessage (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
+            receiver core) receiver 0 =
         performFaultReceiveDelivered st endpointId s sTcb.queueNextCode receiver rid core
           (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.faultKind sTcb.faultFlag
           sTcb.faultWord0 sTcb.faultWord1 sTcb.faultLookup sTcb.faultIp sTcb.faultSp sTcb.faultLr
@@ -665,8 +666,6 @@ theorem receiveFaultTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId
           (storePopHead_noResizeDue _ _ _ _ _ hNo)))))
     obtain ⟨x', hx', hxI'⟩ := propagatePipChainCrossCore_ipcStateCarried _ receiver core hNo4 s x hx
     unfold applyReceiverPipHandoff
-    rw [Architecture.stageWokenSendCompletion_id_when_not_ready _ s x' hx'
-      (by rw [hxI', hxI]; simp)]
     rw [receiveCallTakeState_eq_hold _ _ _ _ _ _ hNo, propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoS]
     have hMsg : blockedSenderMessage (storePopHead st endpointId false s sTcb.queueNext) s sTcb =
         faultMessage f sTcb.faultWords.context

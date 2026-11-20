@@ -1657,6 +1657,103 @@ theorem recordMappingCells_eq (node : CNode) (slot : SeLe4n.Slot) (asid : SeLe4n
       · next e => subst e; simp [hL, cellWithMapping, Capability.setMapped_eq]
       · next e => simp [Ne.symm e]
 
+/-- **The CNode with slot `slot`'s capability recording no mapping**
+(`cspaceClearFrameMapping`'s write, seL4's `performPageInvocationUnmap`
+setting the slot capability's `capFMappedAddress` to `0` and its
+`capFMappedASID` to `asidInvalid`); a slot holding nothing is left as it is. -/
+def clearMapping (node : CNode) (slot : SeLe4n.Slot) : CNode :=
+  match node.lookup slot with
+  | some cap => node.insert slot (cap.withMapping none)
+  | none => node
+
+/-- The slot entry with its capability recording no mapping. -/
+@[inline] def cellWithoutMapping : Option Capability → Option Capability
+  | some c => some (c.withMapping none)
+  | none => none
+
+/-- The slot map with slot `slot`'s capability recording no mapping. -/
+noncomputable def slotsWithoutMapping (slot : SeLe4n.Slot)
+    (m : SeLe4n.UniqueSlotMap Capability) : SeLe4n.UniqueSlotMap Capability :=
+  match m.get? slot with
+  | some c => m.insert slot (c.withMapping none)
+  | none => m
+
+/-- **`clearMapping` as compiled** — the slot's entry rewritten where it stands
+(`Array.modify`), so a capability the CNode alone holds drops its record in its
+own cell and nothing is built. -/
+def clearMappingCells (node : CNode) (slot : SeLe4n.Slot) : CNode :=
+  { node with
+    slotsGhost := node.slotsGhost.map (slotsWithoutMapping slot)
+    cells := node.cells.modify slot.toNat cellWithoutMapping
+    cells_size := by rw [Array.size_modify]; exact node.cells_size
+    slots_agree := fun s => by
+      rw [SeLe4n.Erased.out_map, slotArrayGet_modify _ _ _ rfl, ← node.slots_agree s]
+      unfold slotsWithoutMapping
+      have hst : (s.toNat = slot.toNat) ↔ s = slot := ⟨fun h' => by
+          cases slot; cases s; simp_all [SeLe4n.Slot.toNat], fun h' => by rw [h']⟩
+      cases hg : node.slotsGhost.out.get? slot with
+      | none =>
+        by_cases hs : s = slot
+        · subst hs; simp [hg, cellWithoutMapping]
+        · simp [hs, hst]
+      | some c =>
+        rw [SeLe4n.UniqueSlotMap.get?_insert]
+        by_cases hs : s = slot
+        · subst hs; simp [hg, cellWithoutMapping]
+        · simp [hs, hst, Ne.symm hs]
+    occ_agree := by
+      obtain ⟨L, hL⟩ := node.occ_agree
+      exact ⟨L, hL.congr (occupied_modify _ _ _ (fun o => by cases o <;> rfl))⟩ }
+
+theorem clearMappingCells_eq (node : CNode) (slot : SeLe4n.Slot) :
+    node.clearMappingCells slot = node.clearMapping slot := by
+  unfold clearMapping
+  have hA := node.slots_agree slot
+  unfold slotArrayGet at hA
+  have hL' : node.lookup slot = node.slotsGhost.out.get? slot := rfl
+  cases hL : node.lookup slot with
+  | none =>
+    dsimp only
+    rw [hL', hA] at hL
+    refine ext_of_fields rfl ?_ ?_ rfl rfl rfl
+    · apply SeLe4n.Erased.ext
+      show (node.slotsGhost.map _).out = _
+      rw [SeLe4n.Erased.out_map]; unfold slotsWithoutMapping
+      rw [hA, hL]
+    · show node.cells.modify slot.toNat cellWithoutMapping = node.cells
+      apply Array.ext (by simp)
+      intro i h1 h2
+      simp only [Array.getElem_modify]
+      split
+      · next e =>
+        subst e
+        split at hL
+        · next h => simp [hL, cellWithoutMapping]
+        · omega
+      · rfl
+  | some cap =>
+    unfold insert
+    rw [hL', hA] at hL
+    have hB : slot.toNat < node.cells.size := by
+      split at hL
+      · assumption
+      · exact absurd hL (by simp)
+    simp only [hB, dite_true] at hL ⊢
+    refine ext_of_fields rfl ?_ ?_ rfl
+      (by show node.occ = fillOcc _ _ _ _; unfold fillOcc; rw [if_pos (by simp [SlotOccupancy.occupied, Array.getD_eq_getD_getElem?, hB, hL])])
+      (by show node.occHead = fillHead _ _ _; unfold fillHead; rw [if_pos (by simp [SlotOccupancy.occupied, Array.getD_eq_getD_getElem?, hB, hL])])
+    · apply SeLe4n.Erased.ext
+      show (node.slotsGhost.map _).out = (node.slotsGhost.map _).out
+      rw [SeLe4n.Erased.out_map, SeLe4n.Erased.out_map]; unfold slotsWithoutMapping
+      rw [hA]; simp only [hB, dite_true, hL]
+    · show node.cells.modify slot.toNat cellWithoutMapping = _
+      apply Array.ext (by simp)
+      intro i h1 h2
+      simp only [Array.getElem_modify, Array.getElem_set]
+      split
+      · next e => subst e; simp [hL, cellWithoutMapping]
+      · next e => simp [Ne.symm e]
+
 /-- WS-ZA ZA5.4 part 13: **the CNode with slot `slot`'s capability holding free
 index `idx`** — the write a carve makes to the capability it was invoked
 through, and the write that sets a derivation's untyped source full; a slot

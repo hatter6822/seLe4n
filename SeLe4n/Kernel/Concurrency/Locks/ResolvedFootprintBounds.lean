@@ -247,8 +247,8 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_onEveryState (st : SystemState)
               _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
             (by decide)
       | none =>
-          rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS,
-            receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS,
+          rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier true hS,
+            receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier true hS,
                 receiveCapRequest_of_no_queued_sender st endpointObjId hS]
           simp only [Option.bind_none]
           exact Nat.le_trans
@@ -269,8 +269,8 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_onEveryState (st : SystemState)
                   _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
                 (by decide)
           | none =>
-              rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS,
-                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS,
+              rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier true hS,
+                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier true hS,
                 receiveCapRequest_of_no_queued_sender st endpointObjId hS]
               simp only [Option.bind_none]
               exact Nat.le_trans
@@ -289,8 +289,8 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_onEveryState (st : SystemState)
                   _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
                 (by decide)
           | none =>
-              rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS,
-                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS,
+              rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier true hS,
+                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier true hS,
                 receiveCapRequest_of_no_queued_sender st endpointObjId hS]
               simp only [Option.bind_none]
               exact Nat.le_trans
@@ -362,8 +362,8 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_sharp (st : SystemState)
               _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
             (by decide)
       | none =>
-          rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS,
-            receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS,
+          rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier true hS,
+            receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier true hS,
                 receiveCapRequest_of_no_queued_sender st endpointObjId hS]
           simp only [Option.bind_none]
           exact Nat.le_trans
@@ -392,8 +392,8 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_sharp (st : SystemState)
                   _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
                 (by decide)
           | none =>
-              rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS,
-                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS,
+              rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier true hS,
+                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier true hS,
                 receiveCapRequest_of_no_queued_sender st endpointObjId hS]
               simp only [Option.bind_none]
               exact Nat.le_trans
@@ -415,8 +415,8 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_sharp (st : SystemState)
                   _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
                 (by decide)
           | none =>
-              rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS,
-                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS,
+              rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier true hS,
+                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier true hS,
                 receiveCapRequest_of_no_queued_sender st endpointObjId hS]
               simp only [Option.bind_none]
               exact Nat.le_trans
@@ -727,7 +727,7 @@ theorem lockSet_cancelIpcBlockingOnCore_size_le (st : SystemState)
     (by unfold maxLockSetSize; omega)
 
 /-- **The cancelling receive's footprint is inside the ceiling**: the receive's
-seventeen members and the cancel's thirteen. -/
+seventeen members, the cancel's thirteen and the receiver's bound notification. -/
 theorem Concurrency.lockSet_receiveCancellingHolder_size_le (st : SystemState) (endpointId : ObjId)
     (receiver : ThreadId) (cnodeRootObjId : ObjId) (replyId : Option ReplyId) :
     (lockSet_receiveCancellingHolder st endpointId receiver cnodeRootObjId replyId).size
@@ -735,11 +735,12 @@ theorem Concurrency.lockSet_receiveCancellingHolder_size_le (st : SystemState) (
   have hR := lockSet_endpointReceiveOnCore_size_le_seventeen st endpointId receiver
     cnodeRootObjId replyId
   unfold Concurrency.lockSet_receiveCancellingHolder maxLockSetSize
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
   split
   · omega
   · rename_i holder _
     have hC := lockSet_cancelIpcBlockingOnCore_size_le_thirteen st holder
-    exact Nat.le_trans (union_size_le _ _) (by omega)
+    exact Nat.le_trans (Nat.add_le_add_right (union_size_le _ _) 1) (by omega)
 
 /-- …and the state-resolved donation cancellation, which adds nothing beyond the
 parametric form's arguments. -/

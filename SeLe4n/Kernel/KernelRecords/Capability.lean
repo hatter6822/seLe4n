@@ -12,7 +12,7 @@ import SeLe4n.Kernel.KernelRecords.Thread
 /-!
 # The slot-writing capability arms keep the records
 
-WS-ZA ZA6.37.  The mint, copy, move, reply-capability mint and untyped reset
+WS-ZA ZA6.37.  The mint, copy, move and reply-capability mint
 write CNode slots, a thread's space slots, the derivation tree and slot links:
 none of them a record view reads, so each is a `RecordsFrame`.
 -/
@@ -110,14 +110,6 @@ theorem mintReplyCapWithCdt {src dst : CSpaceAddr} {st st' : SystemState}
           · contradiction
         · contradiction
     exact F.trans (cdtAddChild stM src dst .mint F.invExt)
-
-theorem untypedResetFromCap {tid : SeLe4n.ThreadId} {srcAddr : SeLe4n.CPtr} {st st' : SystemState}
-    (hInv : st.objects.invExt)
-    (hStep : _root_.SeLe4n.Kernel.untypedResetFromCap tid srcAddr st = .ok ((), st')) :
-    RecordsFrame st st' := by
-  obtain ⟨_, _, _, -, -, hS⟩ := untypedResetFromCap_ok _ _ st st' hStep
-  rw [untypedResetSlot_ok_frame hS]
-  exact setCapFreeIndex _ _ _ hInv
 
 end RecordsFrame
 

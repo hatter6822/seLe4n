@@ -57,7 +57,7 @@ carries the rest and proves that one). -/
   st.objects.findsInPlace receiver.toObjId &&
   sTcb.replyObject.isNone &&
   (match sTcb.ipcState with
-   | .blockedOnCall _ => true
+   | .blockedOnCall _ => sTcb.ipcCanGrant || sTcb.ipcCanGrantReply
    | _ => false) &&
   (match st.getTcb? receiver with
    | some rt => callDonationReady st s receiver sTcb rt rid
@@ -74,7 +74,7 @@ asked of its link code. -/
   st.objects.findsInPlace receiver.toObjId &&
   sTcb.replyObject.isNone &&
   (match sTcb.ipcState with
-   | .blockedOnCall _ => true
+   | .blockedOnCall _ => sTcb.ipcCanGrant || sTcb.ipcCanGrantReply
    | _ => false) &&
   (match st.getTcb? receiver with
    | some rt => callDonationReady st s receiver sTcb rt rid
@@ -253,7 +253,7 @@ theorem storeReplyRendezvous_callDonationGuard (st : SystemState) (c tid : SeLe4
   unfold receiveCallDonatesInPlace receiveCallTakesReplyInPlace
   rw [hRtG, hRpG, hQ, hRO', hKept.ipcState]
   simp only [callDonationReady_eq_callerContextReady, callerContextReady, hBind, hk, hkT, hB2,
-    hFree, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq, Option.isSome_some]
+    hFree, hKept.canGrant, hKept.canGrantReply, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq, Option.isSome_some]
   and_intros
   all_goals (first | assumption | trivial | skip)
   · exact hScM.1
@@ -380,7 +380,7 @@ unshared. -/
         (donateSchedContextInPlace (storeReceiveCallReady
           (storeReplyRendezvousReady st c tid rid) epId s nextCode tid rid) s tid scS)
         scS donorHome doneeHome) tid core).1
-  writeDeliveredFrameIfReady Y c (Architecture.regReplyRecvFrame layout rf len badge)
+  writeDeliveredFrameIfReady Y c (Architecture.regMessageFrame layout rf len badge)
     (fun _ => holdReplyRecvBody Y c layout rf len badge)
 
 /-- **The reply-receive taking a donating caller, delivered**: the legs
@@ -416,7 +416,7 @@ theorem replyRecvOnCore_callTake_delivered (st : SystemState) (epId : SeLe4n.Obj
     (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) (grant : Bool)
     (core : CoreId) (ct : TCB) (ep0 : SeLe4n.ObjId) (rp : Reply) (ep : Endpoint)
     (s : SeLe4n.ThreadId) (sTcb : TCB) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
-    (hSz4 : Architecture.regMessageLength layout len - 1 ≤ 4)
+    (hSz4 : Architecture.regMessageLength layout len ≤ 4)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hIpc : ct.ipcState = .blockedOnReply ep0 (some tid))
     (hRO : ct.replyObject = some rid)
@@ -427,10 +427,11 @@ theorem replyRecvOnCore_callTake_delivered (st : SystemState) (epId : SeLe4n.Obj
     (hS : st.objects[s.toObjId]? = some (.tcb sTcb)) (hSC : s ≠ c)
     (hF : sTcb.ipcFaultSend = false)
     (hGt : receiveCallDonatesPastReply st epId tid s sTcb rid = true)
-    (hR : registerRoutedSyscall SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
+    (hR : registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
       .call capAddr mi) :
     (match endpointReplyRecvOnCore epId tid rid c
-        { registers := Architecture.regReplyRecvBody layout rf len, badge := badge } grant core st with
+        { registers := Architecture.regMessageBody layout rf len, badge := badge } grant core st with
       | .ok (summary, st') =>
           (.ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo) :
             Except KernelError (Unit × SystemState))
@@ -439,10 +440,10 @@ theorem replyRecvOnCore_callTake_delivered (st : SystemState) (epId : SeLe4n.Obj
         ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s) (determineTargetCore st tid) core
         layout rf len badge sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge)
         sTcb.ipcBadged) := by
-  generalize hM : ({ registers := Architecture.regReplyRecvBody layout rf len, badge := badge } :
+  generalize hM : ({ registers := Architecture.regMessageBody layout rf len, badge := badge } :
     IpcMessage) = msg
   have hSzM : msg.registers.size ≤ 4 := by
-    rw [← hM, Architecture.regReplyRecvBody_size]; exact hSz4
+    rw [← hM, Architecture.regMessageBody_size]; exact hSz4
   have hSz : ¬ msg.registers.size > maxMessageRegisters := by unfold maxMessageRegisters; omega
   have hNo := replyWakesInPlace_noResizeDue hG
   have hG0 := hG
@@ -453,7 +454,8 @@ theorem replyRecvOnCore_callTake_delivered (st : SystemState) (epId : SeLe4n.Obj
   obtain ⟨hNx, -⟩ := hRpG
   obtain ⟨hE1, sTcbP, hSP, hKept, hBind, hDs, hDt, hGP⟩ := storeReplyRendezvous_callDonationGuard
     st c tid rid msg ct rp epId ep s sTcb hNo hT hFC hRp hNx hLR hFR hE hS hSC hNe hGt
-  have hR' : registerRoutedSyscall SeLe4n.arm64DefaultLayout sTcbP.registerContext 32 =
+  have hR' : registerRoutedSyscall
+      (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcbP.registerContext) SeLe4n.arm64DefaultLayout sTcbP.registerContext 32 =
       .call capAddr mi := by rw [hKept.regs]; exact hR
   have hF' : sTcbP.ipcFaultSend = false := by rw [hKept.faultSend]; exact hF
   obtain ⟨hRecv, -, -, hCallT, hDonE⟩ := receiveCallDonatingTake_delivered _ epId ep tid rid core s
@@ -537,21 +539,15 @@ theorem replyRecvOnCore_callTake_delivered (st : SystemState) (epId : SeLe4n.Obj
     (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoY
   rw [stageDeliveredMessage_holdMessage _ c _ hNoYt hSzM,
     writeDeliveredFrameIfReady_mapTcbInPlace Y0 c tid _ _ _ hct,
-    Architecture.returnFrameOfMessage_regReplyRecvBody]
+    Architecture.returnFrameOfMessage_regMessageBody]
   have hNoW := writeDeliveredFrameIfReady_noResizeDue Y0 c
-    (Architecture.regReplyRecvFrame layout rf len badge)
-    (holdMessage { registers := Architecture.regReplyRecvBody layout rf len, badge := badge }) hNoY
-  rw [stageWokenSendCompletion_msg _ tid s id _ id hst hNoW,
-    Architecture.stageWokenSendCompletion_id_when_not_ready _ s x'
-      ((writeDeliveredFrameIfReady_getTcb?_ne Y0 c s _ _ hcsO).trans hx')
-      (by rw [e', e1, hxI]; exact fun h => by cases h)]
+    (Architecture.regMessageFrame layout rf len badge)
+    (holdMessage { registers := Architecture.regMessageBody layout rf len, badge := badge }) hNoY
   have hSzS : (Architecture.regMessageBody arm64DefaultLayout sTcbP.registerContext
       mi.length).size ≤ 4 := by
     simp only [Architecture.regMessageBody_size, Architecture.regMessageLength]
     have : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
     omega
-  rw [show ∀ m : IpcMessage, TCB.withMessageSlots id (fun _ => some m) id = holdMessage m from
-    fun _ => rfl]
   rw [stageDeliveredMessage_holdMessage _ tid _ hNoW hSzS,
     Architecture.returnFrameOfMessage_regMessageBody, Architecture.regMessageFrameW_eq,
     TCB.ipcBadgeView_eq_opt, hKept.regs, hKept.badge, hKept.badged]

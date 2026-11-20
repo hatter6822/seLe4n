@@ -2328,7 +2328,7 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
                 | .error e => .error e
                 | .ok st'' =>
                     .ok ((), recordSendCap (removeRunnable st'' sender) sender payload.badge
-                      payload.grant)
+                      payload.grant payload.grantReply)
     | some _ => .error (.invalidCapability 0)
     | none => .error .objectNotFound
 
@@ -2448,8 +2448,8 @@ theorem sendCapRequest_of_no_receiver (st : SystemState) (endpointId : SeLe4n.Ob
 
 /-- WS-ZA ZA4.7: a fault transfers nothing. -/
 @[simp] theorem sendCapRequest_fault (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (b : Option SeLe4n.Badge) :
-    sendCapRequest st endpointId sender (.fault f ctx b) = none := by
+    (sender : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (b : Option SeLe4n.Badge) (l : Bool) :
+    sendCapRequest st endpointId sender (.fault f ctx b l) = none := by
   unfold sendCapRequest
   split
   · rfl
@@ -2544,30 +2544,41 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                 -- is `.ready` (ipcState is unconstrained by
                 -- `blockedThreadsPendingMessageConsistent`). Fail-closed by
                 -- construction.
+                -- seL4 `receiveIPC`: a dequeued caller is linked to the reply only
+                -- when its cap grants (`canGrant || canGrantReply`) and the receive
+                -- supplied a reply object; otherwise it is left Inactive, unwoken.
                 if senderWasCall then
-                  -- Call path: sender transitions to blockedOnReply, NOT ready
-                  match storeTcbIpcStateAndMessage st' sender
-                      (.blockedOnReply endpointId (some receiver)) none with
-                  | .error e => .error e
-                  | .ok st'' =>
-                      -- WS-SM SM6.D (#7.1 fold): link the dequeued caller (now
-                      -- `.blockedOnReply`) to the server-supplied reply object in the
-                      -- same transition.  A Call rendezvous carrying no reply object
-                      -- fails closed (`.replyCapInvalid`); the post-state is discarded,
-                      -- so the caller is never stranded `.blockedOnReply` with no reply.
-                      match replyId with
-                      | none => .error .replyCapInvalid
-                      | some rid =>
-                          match SystemState.linkCallerReply sender rid st'' with
-                          | .error e => .error e
-                          | .ok ((), stLinked) =>
-                              -- AK1-D: Atomic (ipcState := .ready, pendingMessage := senderMsg).
-                              -- WS-ZA ZA6.37: the caller now waits on the receiver, so it
-                              -- joins the receiver's reply-waiter queue, as the per-core
-                              -- receive links it (`linkReplyWaiter`).
-                              match storeTcbIpcStateAndMessage stLinked receiver .ready senderMsg with
-                              | .ok st''' => .ok (sender, st'''.linkReplyWaiter sender receiver)
-                              | .error e => .error e
+                  if (senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome then
+                    -- Call path: sender transitions to blockedOnReply, NOT ready
+                    match storeTcbIpcStateAndMessage st' sender
+                        (.blockedOnReply endpointId (some receiver)) none with
+                    | .error e => .error e
+                    | .ok st'' =>
+                        -- WS-SM SM6.D (#7.1 fold): link the dequeued caller (now
+                        -- `.blockedOnReply`) to the server-supplied reply object in the
+                        -- same transition.  The guard above makes `replyId` present.
+                        match replyId with
+                        | none => .error .replyCapInvalid
+                        | some rid =>
+                            match SystemState.linkCallerReply sender rid st'' with
+                            | .error e => .error e
+                            | .ok ((), stLinked) =>
+                                -- AK1-D: Atomic (ipcState := .ready, pendingMessage := senderMsg).
+                                -- WS-ZA ZA6.37: the caller now waits on the receiver, so it
+                                -- joins the receiver's reply-waiter queue, as the per-core
+                                -- receive links it (`linkReplyWaiter`).
+                                match storeTcbIpcStateAndMessage stLinked receiver .ready senderMsg with
+                                | .ok st''' => .ok (sender, st'''.linkReplyWaiter sender receiver)
+                                | .error e => .error e
+                  else
+                    match storeTcbIpcStateAndMessage st' sender .ready none with
+                    | .error e => .error e
+                    | .ok st'' =>
+                        match storeTcbIpcStateAndMessage
+                            (st''.updateTcb sender (fun t => { t with threadState := .Inactive }))
+                            receiver .ready senderMsg with
+                        | .ok st4 => .ok (sender, st4)
+                        | .error e => .error e
                 else
                   -- Send path: sender transitions to ready as before
                   match storeTcbIpcStateAndMessage st' sender .ready none with
@@ -2654,6 +2665,10 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
 If a receiver is queued: handshake with receiver (deliver the caller's message, read from
 its frame as `endpointSendDual` reads it), then block caller for reply.
 WS-H1/M-02: The caller's `blockedOnReply` records the receiver's ThreadId as `replyTarget`.
+The block for reply happens only when the call links the receiver's stashed reply
+object (seL4 `sendIPC`, `do_call`, `reply != NULL && (canGrant || canGrantReply)`,
+`callRendezvousLinks`); a call that links none delivers its message as a send's,
+drops the receiver's stash and leaves the caller `Inactive` with no reply.
 If no receiver queued: enqueue caller as sender; its words stay in its frame.
 WS-H1/C-01: The caller is enqueued with `blockedOnCall` (not `blockedOnSend`) so that
 when a receiver later dequeues, the caller transitions to `blockedOnReply` instead of `.ready`.
@@ -2683,7 +2698,13 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     match st.getObject? endpointId with
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
-        | some _ =>
+        | some r =>
+          -- seL4 `sendIPC` (`do_call`): the call is linked to the receiver's reply
+          -- object only when the receiver stashed one and the capability grants
+          -- (`canGrant || canGrantReply`); otherwise the message is delivered as a
+          -- send's and the caller is left `Inactive`, off the run queue, with no
+          -- reply (`callRendezvousLinks`, as the per-core call decides it).
+          if callRendezvousLinks st r payload then
             -- WS-L1/L1-A: PopHead now returns (ThreadId × TCB × SystemState)
             -- Note: _tcb has stale queue links (WS-L1/L1-A); use st' for current state
             match endpointQueuePopHead endpointId true st with
@@ -2721,6 +2742,24 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                         | .error e => .error e
                         | .ok ((), st5) =>
                             .ok ((), (removeRunnable st5 caller).linkReplyWaiter caller receiver)
+          else
+            match endpointQueuePopHead endpointId true st with
+            | .error e => .error e
+            | .ok (receiver, _tcb, st') =>
+                -- `storeTcbReceiveComplete` drops whatever the receiver stashed
+                -- (seL4 `reply_unlink`), as the per-core call's no-link arm does;
+                -- the caller keeps `.ready` in IPC, queued nowhere: `Inactive`.
+                match storeTcbReceiveComplete st' receiver
+                    (some (sendPayloadMessage st caller payload)) with
+                | .error e => .error e
+                | .ok st'' =>
+                    -- The caller's TCB is asked for where the linking arm stores
+                    -- it: a missing caller refuses here as it does there.
+                    match lookupTcb st caller with
+                    | none => .error .objectNotFound
+                    | some _ =>
+                    .ok ((), (removeRunnable (ensureRunnable st'' receiver) caller).updateTcb caller
+                      fun t => { t with threadState := .Inactive })
         | none =>
             match endpointQueueEnqueue endpointId false caller st with
             | .error e => .error e
@@ -2731,7 +2770,7 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                 | .error e => .error e
                 | .ok st'' =>
                     .ok ((), recordSendCap (removeRunnable st'' caller) caller payload.badge
-                      payload.grant)
+                      payload.grant payload.grantReply)
     | some _ => .error (.invalidCapability 0)
     | none => .error .objectNotFound
 

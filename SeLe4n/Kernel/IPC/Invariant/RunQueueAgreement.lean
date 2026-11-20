@@ -49,13 +49,26 @@ theorem storeTcbIpcStateAndMessage_runQueueStage {st st' : SystemState}
     RunQueueStage st st' := by
   subst hs; exact modifyTcb_runQueueStage h (fun _ _ => rfl)
 
+/-- A signal's wake store writes the woken thread's x0, message slot and
+thread state to `.ready`: no run link or scheduler field. -/
+theorem storeTcbSignalWoken_runQueueStage {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {badge : SeLe4n.Badge}
+    (h : storeTcbSignalWoken st tid badge = .ok st') : RunQueueStage st st' :=
+  modifyTcb_runQueueStage h (fun _ _ => rfl)
+
+/-- …and so does the bound-receiver form. -/
+theorem storeTcbSignalBoundWoken_runQueueStage {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {badge : SeLe4n.Badge}
+    (h : storeTcbSignalBoundWoken st tid badge = .ok st') : RunQueueStage st st' :=
+  modifyTcb_runQueueStage h (fun _ _ => rfl)
+
 /-- WS-ZA ZA4.7: the send-cap record of a blocking sender writes a badge word
 and two flags: no run link, thread state or scheduler field. -/
 theorem recordSendCap_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge) (grant : Bool) :
-    RunQueueStage st (recordSendCap st tid badge grant) := by
-  have hG : ∀ {β : Type} (p : TCB → β), (∀ x, p (x.setSendCap badge grant) = p x) →
-      ∀ t, ((recordSendCap st tid badge grant).getTcb? t).map p = (st.getTcb? t).map p := by
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
+    RunQueueStage st (recordSendCap st tid badge grant grantReply) := by
+  have hG : ∀ {β : Type} (p : TCB → β), (∀ x, p (x.setSendCap badge grant grantReply) = p x) →
+      ∀ t, ((recordSendCap st tid badge grant grantReply).getTcb? t).map p = (st.getTcb? t).map p := by
     intro β p hp t
     unfold recordSendCap
     by_cases h : t = tid
@@ -63,21 +76,21 @@ theorem recordSendCap_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
       cases st.getTcb? t <;> simp [hp]
     · rw [SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _
         (fun e => h (SeLe4n.ThreadId.toObjId_injective _ _ e).symm)]
-  have hL : ∀ c t, (recordSendCap st tid badge grant).runLinkOn c t = st.runLinkOn c t := by
+  have hL : ∀ c t, (recordSendCap st tid badge grant grantReply).runLinkOn c t = st.runLinkOn c t := by
     intro c t
     have e := hG (fun x => x.runLinkOn c) (fun _ => rfl) t
     unfold SystemState.runLinkOn
-    cases h1 : (recordSendCap st tid badge grant).getTcb? t <;> cases h2 : st.getTcb? t <;>
+    cases h1 : (recordSendCap st tid badge grant grantReply).getTcb? t <;> cases h2 : st.getTcb? t <;>
       rw [h1, h2] at e <;> first | rfl | cases e | exact Option.some.inj e
-  have hM : SystemState.StateMono st (recordSendCap st tid badge grant) :=
+  have hM : SystemState.StateMono st (recordSendCap st tid badge grant grantReply) :=
     SystemState.StateMono.of_stateFields (hG _ (fun _ => rfl))
-  exact ⟨.of_frames (fun h r => ⟨recordSendCap_objects_invExt st tid badge grant h,
+  exact ⟨.of_frames (fun h r => ⟨recordSendCap_objects_invExt st tid badge grant grantReply h,
       SystemState.runQueueRefined_of_frame hL rfl rfl r⟩)
       (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _)
       (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _)
       (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _ fun _ => rfl),
     fun _ _ _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (st := st)
-      (st' := recordSendCap st tid badge grant) rfl hL hM d, fun _ _ => hM⟩
+      (st' := recordSendCap st tid badge grant grantReply) rfl hL hM d, fun _ _ => hM⟩
 
 /-- **The block write** of core `c`'s current thread through `modifyTcb`. -/
 theorem modifyTcb_runQueueBlockStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
@@ -451,13 +464,13 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.blockThenDescheduleRecord
     (pre : RunQueueStage st st1) (hS : storeTcbIpcStateAndMessage st1 t s m = .ok st2)
     (post : RunQueueStage st2 st3) (hC1 : st1.scheduler.currentOnCore c = some t)
     (hC3 : st3.scheduler.currentOnCore c = some t) (hNI : isIdleThreadId t = false)
-    (badge : Option SeLe4n.Badge) (grant : Bool) :
+    (badge : Option SeLe4n.Badge) (grant grantReply : Bool) :
     SystemState.RunQueueEntryStage st
-      (recordSendCap (removeRunnableOnCore st3 t c) t badge grant) :=
+      (recordSendCap (removeRunnableOnCore st3 t c) t badge grant grantReply) :=
   (((pre.window (.block c)).trans (storeTcbIpcStateAndMessage_runQueueBlockStage hS hC1 hNI)).trans
     (post.window _)).dispatch
     ((SystemState.RunQueueDispatchStage.descheduleCurrent st3 c t hC3).trans_stage
-      (recordSendCap_runQueueStage _ t badge grant))
+      (recordSendCap_runQueueStage _ t badge grant grantReply))
 
 -- ============================================================================
 -- Call
@@ -693,6 +706,59 @@ theorem currentOnCore_of_scheduler_eq {st st' : SystemState} {c : Concurrency.Co
     (hCur : st.scheduler.currentOnCore c = some t) : st'.scheduler.currentOnCore c = some t := by
   rw [h]; exact hCur
 
+/-- The receive-completing store is a run-queue stage. -/
+theorem storeTcbReceiveComplete_runQueueStage {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {m : Option IpcMessage} (h : storeTcbReceiveComplete st tid m = .ok st') :
+    RunQueueStage st st' :=
+  modifyTcb_runQueueStage h (fun _ _ => rfl)
+
+/-- **A deschedule on core `c`, then a write to the descheduled thread that may
+mark it inactive** — the fault suspend and the fault abandon.  Between
+scheduling points the thread is queued on `c` at most and run by `c` at most,
+and is `.ready` (`hQ`, `hC`, `hRdy`); the deschedule takes it off both, so the
+write lands on a thread no core runs and no queue holds, and leaves it
+coherent. -/
+theorem descheduleThenOffWrite_runQueueEntryStage (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : Concurrency.CoreId) {f : TCB → TCB}
+    (hQ : st.currentDequeuedUnique → ∀ c', st.queuedOn c' tid = true → c' = c)
+    (hC : st.currentDequeuedUnique → ∀ c', st.scheduler.currentOnCore c' = some tid → c' = c)
+    (hRdy : st.currentDequeuedUnique → ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
+    (hNI : isIdleThreadId tid = false) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
+    (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready)
+    (hYf : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept)
+    (hAf : ∀ x, (f x).threadState ≠ .Inactive → x.threadState ≠ .Inactive := by
+      first | (intro _ h; exact h) | (intro _ h; exact absurd rfl h)) :
+    SystemState.RunQueueEntryStage st ((removeRunnableOnCore st tid c).updateTcb tid f) := by
+  have hS := SystemState.RunQueueStage.runDescheduleOnCore st c tid
+  refine ⟨hS.1.trans (SystemState.RunQueueLinkStage.updateTcb _ tid hf hYf hAf),
+    fun hInv hR _ d => ?_⟩
+  obtain ⟨hInv1, hR1⟩ := hS.1 hInv hR
+  refine SystemState.currentDequeuedUniqueExcept_updateTcb_offWrite hInv1
+    (hS.2.1 none hInv hR hR1 d) (fun c' h => ?_) (fun c' => ?_) hNI hf (fun x hx => ?_)
+  · have h' : (st.runDescheduleOnCore c tid).scheduler.currentOnCore c' = some tid := h
+    rw [SystemState.runDescheduleOnCore_currentOnCore] at h'
+    split at h'
+    · cases h'
+    · rename_i hn; have e := hC d c' h'; subst e; exact hn ⟨rfl, h'⟩
+  · show (st.runDescheduleOnCore c tid).queuedOn c' tid = false
+    rw [SystemState.runDescheduleOnCore_queuedOn]
+    split
+    · rfl
+    · rename_i hn
+      cases hq : st.queuedOn c' tid
+      · rfl
+      · exact absurd ⟨rfl, hQ d c' hq⟩ hn
+  · have e := SystemState.runDescheduleOnCore_getTcb?_ipcState st c tid tid
+    have hx' : (st.runDescheduleOnCore c tid).getTcb? tid = some x := hx
+    rw [hx'] at e
+    cases hT : st.getTcb? tid with
+    | none => rw [hT] at e; cases e
+    | some y =>
+      rw [hT] at e
+      simp only [Option.map_some, Option.some.injEq] at e
+      exact .inl (hReady x (e.trans (hRdy d y hT)))
+
+
 /-- **The cross-core call** of core `c`'s current thread: queue operations,
 IPC-state stores, the receiver's wake and the reply link, then the block of the
 caller and its deschedule — a scheduling point opened and closed.  The receiver
@@ -709,36 +775,66 @@ theorem endpointCallOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
     split
     · rename_i r hHead
       split
-      · exact (RunQueueStage.refl _).entry
-      · rename_i receiver tcb st1 hPop
-        split
+      · split
         · exact (RunQueueStage.refl _).entry
-        · rename_i st2 hS2
-          have hN : st2.currentNowhere receiver := (hHeads.popped hPop).of_scheduler_eq
-            (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2)
-          have hC2 : st2.scheduler.currentOnCore c = some caller :=
-            currentOnCore_of_scheduler_eq (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2)
-              (currentOnCore_of_scheduler_eq (endpointQueuePopHead_scheduler_eq _ _ _ _ _ hPop) hCur)
-          have hC3 : (wakeThread st2 receiver c).1.scheduler.currentOnCore c = some caller := by
-            show (enqueueRunnableOnCore st2 _ receiver).scheduler.currentOnCore c = _
-            rw [enqueueRunnableOnCore_currentOnCore]; exact hC2
+        · rename_i receiver tcb st1 hPop
           split
           · exact (RunQueueStage.refl _).entry
-          · rename_i st4 hS4
+          · rename_i st2 hS2
+            have hN : st2.currentNowhere receiver := (hHeads.popped hPop).of_scheduler_eq
+              (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2)
+            have hC2 : st2.scheduler.currentOnCore c = some caller :=
+              currentOnCore_of_scheduler_eq (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2)
+                (currentOnCore_of_scheduler_eq (endpointQueuePopHead_scheduler_eq _ _ _ _ _ hPop) hCur)
+            have hC3 : (wakeThread st2 receiver c).1.scheduler.currentOnCore c = some caller := by
+              show (enqueueRunnableOnCore st2 _ receiver).scheduler.currentOnCore c = _
+              rw [enqueueRunnableOnCore_currentOnCore]; exact hC2
             split
             · exact (RunQueueStage.refl _).entry
-            · rename_i st5 hS5
-              have hC5 : st5.scheduler.currentOnCore c = some caller :=
-                currentOnCore_of_scheduler_eq (linkServerStashedReply_scheduler_eq _ _ _ _ hS5)
-                  (currentOnCore_of_scheduler_eq
-                    (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS4) hC3)
-              exact ((((endpointQueuePopHead_runQueueStage hPop).trans
-                (storeTcbIpcStateAndMessage_runQueueStage hS2 rfl)).then_wake c hN
-                (hHeads.popped_blocked hPop)).window (.block c) |>.trans
-                ((storeTcbIpcStateAndMessage_runQueueBlockStage hS4 hC3 hNI).trans
-                ((linkServerStashedReply_runQueueStage hS5).window _))).dispatch
-                ((SystemState.RunQueueDispatchStage.descheduleCurrent st5 c caller hC5).trans_stage
-                  (SystemState.linkReplyWaiter_runQueueStage _ caller receiver))
+            · rename_i st4 hS4
+              split
+              · exact (RunQueueStage.refl _).entry
+              · rename_i st5 hS5
+                have hC5 : st5.scheduler.currentOnCore c = some caller :=
+                  currentOnCore_of_scheduler_eq (linkServerStashedReply_scheduler_eq _ _ _ _ hS5)
+                    (currentOnCore_of_scheduler_eq
+                      (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS4) hC3)
+                exact ((((endpointQueuePopHead_runQueueStage hPop).trans
+                  (storeTcbIpcStateAndMessage_runQueueStage hS2 rfl)).then_wake c hN
+                  (hHeads.popped_blocked hPop)).window (.block c) |>.trans
+                  ((storeTcbIpcStateAndMessage_runQueueBlockStage hS4 hC3 hNI).trans
+                  ((linkServerStashedReply_runQueueStage hS5).window _))).dispatch
+                  ((SystemState.RunQueueDispatchStage.descheduleCurrent st5 c caller hC5).trans_stage
+                    (SystemState.linkReplyWaiter_runQueueStage _ caller receiver))
+      · split
+        · exact (RunQueueStage.refl _).entry
+        · rename_i receiver tcb st1 hPop
+          split
+          · exact (RunQueueStage.refl _).entry
+          · rename_i st2 hS2
+            split
+            · exact (RunQueueStage.refl _).entry
+            have hN : st2.currentNowhere receiver := (hHeads.popped hPop).of_scheduler_eq
+              (storeTcbReceiveComplete_scheduler_eq _ _ _ _ hS2)
+            have hC2 : st2.scheduler.currentOnCore c = some caller :=
+              currentOnCore_of_scheduler_eq (storeTcbReceiveComplete_scheduler_eq _ _ _ _ hS2)
+                (currentOnCore_of_scheduler_eq (endpointQueuePopHead_scheduler_eq _ _ _ _ _ hPop) hCur)
+            have hC3 : (wakeThread st2 receiver c).1.scheduler.currentOnCore c = some caller := by
+              show (enqueueRunnableOnCore st2 _ receiver).scheduler.currentOnCore c = _
+              rw [enqueueRunnableOnCore_currentOnCore]; exact hC2
+            have P := ((endpointQueuePopHead_runQueueStage hPop).trans
+              (storeTcbReceiveComplete_runQueueStage hS2)).then_wake c hN (hHeads.popped_blocked hPop)
+            -- The caller goes `Inactive` off every queue: the fault
+            -- suspension's shape (`faultSuspendOnCore_runQueueEntryStage`).
+            have E := descheduleThenOffWrite_runQueueEntryStage (wakeThread st2 receiver c).1
+              caller c (f := fun t => { t with threadState := .Inactive }) (fun d c' hq => by rw [d.not_queued hC3 c'] at hq; cases hq)
+              (fun d c' h => (d.current c caller hC3).2.1 c' h)
+              (fun d x hx => by
+                obtain ⟨y, hy, hr⟩ := d.runnable hC3
+                rw [hx] at hy; cases hy; exact hr.1)
+              hNI (fun _ _ => rfl) (fun _ h => h)
+            dsimp only
+            exact P.entry.trans E
     · split
       · exact (RunQueueStage.refl _).entry
       · rename_i st1 hE
@@ -752,7 +848,7 @@ theorem endpointCallOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
             ((SystemState.RunQueueDispatchStage.descheduleCurrent st2 c caller
               (currentOnCore_of_scheduler_eq
                 (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2) hC1)).trans_stage
-              (recordSendCap_runQueueStage _ caller _ _))
+              (recordSendCap_runQueueStage _ caller _ _ _))
   · split <;> exact (RunQueueStage.refl _).entry
 
 -- ============================================================================
@@ -1030,13 +1126,36 @@ theorem storeTcbIpcStateAndMessage_activeKeptStage {st st' : SystemState}
         rw [storeObject_getTcb?_ne st st' _ _ t
           (fun h' => e (ThreadId.toObjId_injective _ _ h')) hI hS]; exact hx, hA⟩
 
-/-- **The cross-core call suspends no thread**: the receiver's hand-over and
-wake are run-queue stages, the caller's block is its IPC-state store, and the
-deschedule closing the window is a dispatch. -/
+/-- **The call keeps its caller active**: it blocks (no receiver waits) or it
+finds a receiver whose stashed reply it links (`callRendezvousLinks`).  A call
+that links no reply makes its caller `Inactive` (seL4's `sendIPC`). -/
+def callKeepsCallerActive (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (payload : SendPayload) : Prop :=
+  ∀ (ep : Endpoint) (r : SeLe4n.ThreadId), st.getEndpoint? endpointId = some ep →
+    ep.receiveQ.head = some r → callRendezvousLinks st r payload = true
+
+/-- A call whose receiver it links keeps its caller active. -/
+theorem callKeepsCallerActive_of_head {st : SystemState} {endpointId : SeLe4n.ObjId}
+    {payload : SendPayload} {rt : SeLe4n.ThreadId}
+    (hHead : (match st.getEndpoint? endpointId with
+      | some ep => ep.receiveQ.head
+      | none => none) = some rt)
+    (hLinks : callRendezvousLinks st rt payload = true) :
+    callKeepsCallerActive st endpointId payload := by
+  intro ep r hEp hHd
+  rw [hEp] at hHead
+  have e : r = rt := Option.some.inj (hHd.symm.trans hHead)
+  exact e ▸ hLinks
+
+/-- **The cross-core call that keeps its caller active suspends no thread**:
+the receiver's hand-over and wake are run-queue stages, the caller's block is
+its IPC-state store, and the deschedule closing the window is a dispatch.  (A
+call that links no reply suspends exactly its caller.) -/
 theorem endpointCallOnCore_activeKeptStage (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload) (c : Concurrency.CoreId)
     (st : SystemState) (hHeads : endpointHeadsWakeable st)
-    (hCur : st.scheduler.currentOnCore c = some caller) (hNI : isIdleThreadId caller = false) :
+    (hCur : st.scheduler.currentOnCore c = some caller) (hNI : isIdleThreadId caller = false)
+    (hKeep : callKeepsCallerActive st endpointId payload) :
     activeKeptStage st (endpointCallOnCore endpointId caller payload c st).1 := by
   unfold endpointCallOnCore
   split
@@ -1044,41 +1163,44 @@ theorem endpointCallOnCore_activeKeptStage (endpointId : SeLe4n.ObjId)
     split
     · rename_i r hHead
       split
-      · exact .refl _
-      · rename_i receiver tcb st1 hPop
-        split
+      · split
         · exact .refl _
-        · rename_i st2 hS2
-          have hN : st2.currentNowhere receiver := (hHeads.popped hPop).of_scheduler_eq
-            (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2)
-          have hC2 : st2.scheduler.currentOnCore c = some caller :=
-            currentOnCore_of_scheduler_eq (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2)
-              (currentOnCore_of_scheduler_eq (endpointQueuePopHead_scheduler_eq _ _ _ _ _ hPop) hCur)
-          have hC3 : (wakeThread st2 receiver c).1.scheduler.currentOnCore c = some caller := by
-            show (enqueueRunnableOnCore st2 _ receiver).scheduler.currentOnCore c = _
-            rw [enqueueRunnableOnCore_currentOnCore]; exact hC2
+        · rename_i receiver tcb st1 hPop
           split
           · exact .refl _
-          · rename_i st4 hS4
+          · rename_i st2 hS2
+            have hN : st2.currentNowhere receiver := (hHeads.popped hPop).of_scheduler_eq
+              (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2)
+            have hC2 : st2.scheduler.currentOnCore c = some caller :=
+              currentOnCore_of_scheduler_eq (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2)
+                (currentOnCore_of_scheduler_eq (endpointQueuePopHead_scheduler_eq _ _ _ _ _ hPop) hCur)
+            have hC3 : (wakeThread st2 receiver c).1.scheduler.currentOnCore c = some caller := by
+              show (enqueueRunnableOnCore st2 _ receiver).scheduler.currentOnCore c = _
+              rw [enqueueRunnableOnCore_currentOnCore]; exact hC2
             split
             · exact .refl _
-            · rename_i st5 hS5
-              have hC5 : st5.scheduler.currentOnCore c = some caller :=
-                currentOnCore_of_scheduler_eq (linkServerStashedReply_scheduler_eq _ _ _ _ hS5)
-                  (currentOnCore_of_scheduler_eq
-                    (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS4) hC3)
-              have P := ((endpointQueuePopHead_runQueueStage hPop).trans
-                (storeTcbIpcStateAndMessage_runQueueStage hS2 rfl)).then_wake c hN
-                (hHeads.popped_blocked hPop)
-              have W := storeTcbIpcStateAndMessage_runQueueBlockStage hS4 hC3 hNI
-              have L5 := linkServerStashedReply_runQueueStage hS5
-              have D := SystemState.RunQueueDispatchStage.descheduleCurrent st5 c caller hC5
-              exact (activeKeptStage.of_stage P).trans P.1
-                ((storeTcbIpcStateAndMessage_activeKeptStage hS4).trans W.1
-                ((activeKeptStage.of_stage L5).trans L5.1
-                ((activeKeptStage.of_dispatch D).trans D.1
-                (activeKeptStage.of_stage (SystemState.linkReplyWaiter_runQueueStage _ caller
-                  receiver)))))
+            · rename_i st4 hS4
+              split
+              · exact .refl _
+              · rename_i st5 hS5
+                have hC5 : st5.scheduler.currentOnCore c = some caller :=
+                  currentOnCore_of_scheduler_eq (linkServerStashedReply_scheduler_eq _ _ _ _ hS5)
+                    (currentOnCore_of_scheduler_eq
+                      (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS4) hC3)
+                have P := ((endpointQueuePopHead_runQueueStage hPop).trans
+                  (storeTcbIpcStateAndMessage_runQueueStage hS2 rfl)).then_wake c hN
+                  (hHeads.popped_blocked hPop)
+                have W := storeTcbIpcStateAndMessage_runQueueBlockStage hS4 hC3 hNI
+                have L5 := linkServerStashedReply_runQueueStage hS5
+                have D := SystemState.RunQueueDispatchStage.descheduleCurrent st5 c caller hC5
+                exact (activeKeptStage.of_stage P).trans P.1
+                  ((storeTcbIpcStateAndMessage_activeKeptStage hS4).trans W.1
+                  ((activeKeptStage.of_stage L5).trans L5.1
+                  ((activeKeptStage.of_dispatch D).trans D.1
+                  (activeKeptStage.of_stage (SystemState.linkReplyWaiter_runQueueStage _ caller
+                    receiver)))))
+      · rename_i hLk
+        exact absurd (hKeep ep r hEp hHead) hLk
     · split
       · exact .refl _
       · rename_i st1 hE
@@ -1095,17 +1217,19 @@ theorem endpointCallOnCore_activeKeptStage (endpointId : SeLe4n.ObjId)
           exact (activeKeptStage.of_stage E1).trans E1.1
             ((storeTcbIpcStateAndMessage_activeKeptStage hS2).trans W.1
             ((activeKeptStage.of_dispatch D).trans D.1
-            (activeKeptStage.of_stage (recordSendCap_runQueueStage _ caller _ _))))
+            (activeKeptStage.of_stage (recordSendCap_runQueueStage _ caller _ _ _))))
   · split <;> exact .refl _
 
 theorem endpointCallWithCapsOnCore_activeKeptStage (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (c : Concurrency.CoreId) (st : SystemState)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some caller)
-    (hNI : isIdleThreadId caller = false) :
+    (hNI : isIdleThreadId caller = false)
+    (hKeep : callKeepsCallerActive st endpointId payload) :
     activeKeptStage st (endpointCallWithCapsOnCore endpointId caller payload c st).1 := by
   have s0 := (endpointCallOnCore_runQueueEntryStage endpointId caller payload c st hHeads hCur hNI).1
   have r0 := endpointCallOnCore_activeKeptStage endpointId caller payload c st hHeads hCur hNI
+    hKeep
   unfold endpointCallWithCapsOnCore
   generalize endpointCallOnCore endpointId caller payload c st = r at s0 r0 ⊢
   obtain ⟨st1, r⟩ := r
@@ -1152,8 +1276,8 @@ theorem endpointCallCrossCoreDispatch_runQueueEntryStage (endpointId : SeLe4n.Ob
       (endpointCallCrossCoreDispatch endpointId caller payload c st).1 := by
   have s0 := endpointCallWithCapsOnCore_runQueueEntryStage endpointId caller payload c st
     hHeads hCur hNI
-  have a0 := endpointCallWithCapsOnCore_activeKeptStage endpointId caller payload c st
-    hHeads hCur hNI hInv hR caller hAct
+  have a0 := fun hKeep => endpointCallWithCapsOnCore_activeKeptStage endpointId caller
+    payload c st hHeads hCur hNI hKeep hInv hR caller hAct
   unfold endpointCallCrossCoreDispatch
   generalize endpointCallWithCapsOnCore endpointId caller payload c st = r at s0 a0 ⊢
   obtain ⟨st1, r⟩ := r
@@ -1165,7 +1289,9 @@ theorem endpointCallCrossCoreDispatch_runQueueEntryStage (endpointId : SeLe4n.Ob
     all_goals first
       | exact s0
       | (rename_i hD; exact s0.trans ((applyCallDonationOnCore_runQueueStage
-          (by rw [SeLe4n.ThreadId.toValid?_some_val_eq caller _ (by assumption)]; exact a0) hD).trans
+          (by
+            rw [SeLe4n.ThreadId.toValid?_some_val_eq caller _ (by assumption)]
+            exact a0 (callKeepsCallerActive_of_head (by assumption) (by assumption))) hD).trans
           (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _)).entry)
 
 -- ============================================================================
@@ -1176,6 +1302,13 @@ theorem writeReturnFrameToTcb_runQueueStage (st : SystemState) (tid : SeLe4n.Thr
     (frame : Architecture.SyscallReturnFrame) :
     RunQueueStage st (Architecture.writeReturnFrameToTcb st tid frame) :=
   RunQueueStage.updateTcb st tid (fun _ _ => rfl)
+
+/-- The `Call`-gated reply write is a run-queue stage: a return-frame write or
+the identity (`Architecture.writeCallReturnWord_of_frame`). -/
+theorem writeCallReturnWord_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : UInt64) : RunQueueStage st (Architecture.writeCallReturnWord st tid w) :=
+  Architecture.writeCallReturnWord_of_frame (RunQueueStage st) (RunQueueStage.of_frame rfl rfl rfl)
+    (fun _ => writeReturnFrameToTcb_runQueueStage _ _ _)
 
 theorem writeDeliveredFrameToTcb_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : Architecture.SyscallReturnFrame) :
@@ -1205,52 +1338,6 @@ theorem stageWokenDelivery_runQueueStage (st : SystemState) (w? : Option SeLe4n.
 theorem recordPendingFault_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
     (tf : ThreadFault) : RunQueueStage st (recordPendingFault st tid tf) :=
   RunQueueStage.updateTcb st tid (fun _ _ => rfl)
-
-/-- **A deschedule on core `c`, then a write to the descheduled thread that may
-mark it inactive** — the fault suspend and the fault abandon.  Between
-scheduling points the thread is queued on `c` at most and run by `c` at most,
-and is `.ready` (`hQ`, `hC`, `hRdy`); the deschedule takes it off both, so the
-write lands on a thread no core runs and no queue holds, and leaves it
-coherent. -/
-theorem descheduleThenOffWrite_runQueueEntryStage (st : SystemState)
-    (tid : SeLe4n.ThreadId) (c : Concurrency.CoreId) {f : TCB → TCB}
-    (hQ : st.currentDequeuedUnique → ∀ c', st.queuedOn c' tid = true → c' = c)
-    (hC : st.currentDequeuedUnique → ∀ c', st.scheduler.currentOnCore c' = some tid → c' = c)
-    (hRdy : st.currentDequeuedUnique → ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
-    (hNI : isIdleThreadId tid = false) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
-    (hReady : ∀ x, x.ipcState = .ready → (f x).ipcState = .ready)
-    (hYf : ∀ x, (f x).yieldToCode = x.yieldToCode := by yield_code_kept)
-    (hAf : ∀ x, (f x).threadState ≠ .Inactive → x.threadState ≠ .Inactive := by
-      first | (intro _ h; exact h) | (intro _ h; exact absurd rfl h)) :
-    SystemState.RunQueueEntryStage st ((removeRunnableOnCore st tid c).updateTcb tid f) := by
-  have hS := SystemState.RunQueueStage.runDescheduleOnCore st c tid
-  refine ⟨hS.1.trans (SystemState.RunQueueLinkStage.updateTcb _ tid hf hYf hAf),
-    fun hInv hR _ d => ?_⟩
-  obtain ⟨hInv1, hR1⟩ := hS.1 hInv hR
-  refine SystemState.currentDequeuedUniqueExcept_updateTcb_offWrite hInv1
-    (hS.2.1 none hInv hR hR1 d) (fun c' h => ?_) (fun c' => ?_) hNI hf (fun x hx => ?_)
-  · have h' : (st.runDescheduleOnCore c tid).scheduler.currentOnCore c' = some tid := h
-    rw [SystemState.runDescheduleOnCore_currentOnCore] at h'
-    split at h'
-    · cases h'
-    · rename_i hn; have e := hC d c' h'; subst e; exact hn ⟨rfl, h'⟩
-  · show (st.runDescheduleOnCore c tid).queuedOn c' tid = false
-    rw [SystemState.runDescheduleOnCore_queuedOn]
-    split
-    · rfl
-    · rename_i hn
-      cases hq : st.queuedOn c' tid
-      · rfl
-      · exact absurd ⟨rfl, hQ d c' hq⟩ hn
-  · have e := SystemState.runDescheduleOnCore_getTcb?_ipcState st c tid tid
-    have hx' : (st.runDescheduleOnCore c tid).getTcb? tid = some x := hx
-    rw [hx'] at e
-    cases hT : st.getTcb? tid with
-    | none => rw [hT] at e; cases e
-    | some y =>
-      rw [hT] at e
-      simp only [Option.map_some, Option.some.injEq] at e
-      exact .inl (hReady x (e.trans (hRdy d y hT)))
 
 /-- **A deschedule where the thread is placed, then an off-queue write**: the
 fault abandon.  Between scheduling points a thread is queued on one core at most
@@ -1410,9 +1497,9 @@ theorem faultDeliverOnCore_runQueueEntryStage (st : SystemState) (tid : SeLe4n.T
   · exact sus
   · rename_i tgt _
     have s0 := endpointCallCrossCoreDispatch_runQueueEntryStage tgt.endpoint tid
-      (SendPayload.fault f fctx tgt.cap.badge) c st hHeads hCur hNI hInv hR hAct
+      (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st hHeads hCur hNI hInv hR hAct
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid
-      (SendPayload.fault f fctx tgt.cap.badge) c st = r at s0 ⊢
+      (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st = r at s0 ⊢
     obtain ⟨st1, r⟩ := r
     cases r with
     | error e => exact sus

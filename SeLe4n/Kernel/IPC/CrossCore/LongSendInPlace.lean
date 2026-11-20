@@ -477,6 +477,15 @@ theorem overflowCopyStore_eq (r s : SeLe4n.ThreadId) (X : SystemState) (t : TCB)
         (fun j => by rw [(ipcBufferReadsAgree_recordPhysicalWrite S _).overflowSlotOf, hS j]) hA'
     · next hPa => rw [hPa]; exact (Architecture.recordPhysicalWrites_nil S).symm
 
+theorem overflowCopyStore_getTcb? (r s t : SeLe4n.ThreadId) :
+    ∀ (n i : Nat) (S : SystemState), (overflowCopyStore S r s i n).getTcb? t = S.getTcb? t
+  | 0, _, _ => rfl
+  | n + 1, i, S => by
+    simp only [overflowCopyStore]
+    split
+    · exact overflowCopyStore_getTcb? r s t n (i + 1) _
+    · rfl
+
 /-! ## The delivery -/
 
 /-- The message a send of `len` words delivers whose first words are the

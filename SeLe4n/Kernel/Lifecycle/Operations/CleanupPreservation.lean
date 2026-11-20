@@ -425,10 +425,10 @@ theorem notificationQueueWellFormed_unlink (notif : Notification)
           state := if notif.state = .waiting ∧ head'.isNone then .idle else notif.state } := by
   have hPB : ∀ st hc tc, (Notification.mk st hc tc notif.hasPendingBadge notif.pendingWord
       notif.pendingWord_cleared notif.boundTCBCode
-      notif.taintTag0 notif.taintTag1 notif.taintTag2 notif.taintTag3 notif.taintTag4 notif.taintTag5 notif.taintTag6 notif.taintTag7 notif.taintCount notif.taintSaturated).pendingBadge = notif.pendingBadge := fun _ _ _ => rfl
+      notif.taintTag0 notif.taintTag1 notif.taintTag2 notif.taintTag3 notif.taintTag4 notif.taintTag5 notif.taintTag6 notif.taintTag7 notif.taintCount notif.taintSaturated notif.schedContextCode).pendingBadge = notif.pendingBadge := fun _ _ _ => rfl
   have hWH : ∀ st tc, (Notification.mk st (SeLe4n.ThreadId.optCode head') tc
       notif.hasPendingBadge notif.pendingWord notif.pendingWord_cleared
-      notif.boundTCBCode notif.taintTag0 notif.taintTag1 notif.taintTag2 notif.taintTag3 notif.taintTag4 notif.taintTag5 notif.taintTag6 notif.taintTag7 notif.taintCount notif.taintSaturated).waitHead = head' :=
+      notif.boundTCBCode notif.taintTag0 notif.taintTag1 notif.taintTag2 notif.taintTag3 notif.taintTag4 notif.taintTag5 notif.taintTag6 notif.taintTag7 notif.taintCount notif.taintSaturated notif.schedContextCode).waitHead = head' :=
     fun _ _ => SeLe4n.ThreadId.ofOptCode_optCode head'
   unfold notificationQueueWellFormed at hWF ⊢
   rw [hPB, hWH]
@@ -2160,10 +2160,10 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- memory counted as carved by the untyped's capability and named by nothing.  Memory
     -- goes back where it came from, as in seL4: a frame is destroyed by the
     -- delete of its last capability, which removes the mapping it recorded and
-    -- erases the frame, and its pages return to the untyped when the untyped's
-    -- capability is reset (`untypedResetFromCap`).  `.revocationRequired` is the
-    -- error this path uses for "clear this precondition first" — here, delete
-    -- the frame's capabilities and reset the untyped's.
+    -- erases the frame, and its pages return to the untyped when the next carve
+    -- resets the untyped's childless capability (`retypeFreeIndex`).
+    -- `.revocationRequired` is the error this path uses for "clear this
+    -- precondition first" — here, delete the frame's capabilities.
     .error .revocationRequired
   | .pageTable _ =>
     -- **WS-BP BP7.1 (`v0.36.12`): nor can a page table**, for the frame's reason

@@ -435,28 +435,50 @@ theorem endpointReceiveDualOnCore_post_agrees
         cases hSIpc : senderTcb.ipcState with
         | blockedOnCall _ =>
           simp only
-          cases hStore1 : storeTcbIpcStateAndMessage st1 sender
-              (.blockedOnReply endpointId (some receiver)) none with
-          | error e => left; rfl
-          | ok st2 =>
-            simp only
-            cases hRid : replyId with
-            | none => left; rfl
-            | some rid =>
+          by_cases hLk : ((senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) && replyId.isSome) = true
+          · rw [if_pos hLk]
+            cases hStore1 : storeTcbIpcStateAndMessage st1 sender
+                (.blockedOnReply endpointId (some receiver)) none with
+            | error e => left; rfl
+            | ok st2 =>
               simp only
-              cases hLink : SystemState.linkCallerReply sender rid st2 with
-              | error e => left; rfl
-              | ok lp =>
-                obtain ⟨⟨⟩, st3⟩ := lp
+              cases hRid : replyId with
+              | none => left; rfl
+              | some rid =>
                 simp only
-                cases hStore2 : storeTcbIpcStateAndMessage st3 receiver .ready
-                    (some (blockedSenderMessage st1 sender senderTcb)) with
+                cases hLink : SystemState.linkCallerReply sender rid st2 with
                 | error e => left; rfl
-                | ok st4 =>
-                  right
-                  refine ⟨sender, st4.linkReplyWaiter sender receiver, ?_, OffSchedulerAgrees.refl _⟩
-                  unfold endpointReceiveDual SystemState.getObject?
-                  simp only [hEpRaw, hHead, hPop, hSIpc, hStore1, hLink, hStore2, ↓reduceIte]
+                | ok lp =>
+                  obtain ⟨⟨⟩, st3⟩ := lp
+                  simp only
+                  cases hStore2 : storeTcbIpcStateAndMessage st3 receiver .ready
+                      (some (blockedSenderMessage st1 sender senderTcb)) with
+                  | error e => left; rfl
+                  | ok st4 =>
+                    right
+                    refine ⟨sender, st4.linkReplyWaiter sender receiver, ?_, OffSchedulerAgrees.refl _⟩
+                    have hG : (senderTcb.ipcCanGrant || senderTcb.ipcCanGrantReply) = true := by
+                      rw [hRid] at hLk; simpa using hLk
+                    unfold endpointReceiveDual SystemState.getObject?
+                    simp only [hEpRaw, hHead, hPop, hSIpc, hStore1, hLink, hStore2, hG,
+                      Option.isSome_some, Bool.and_true, ↓reduceIte]
+          · -- A `Call` that links no reply: both spines ready the caller, make it
+            -- `Inactive` and deliver to the receiver, with no scheduler step.
+            rw [if_neg hLk]
+            cases hStore1 : storeTcbIpcStateAndMessage st1 sender .ready none with
+            | error e => left; rfl
+            | ok st2 =>
+              simp only
+              cases hStore2 : storeTcbIpcStateAndMessage
+                  (st2.updateTcb sender (fun t => { t with threadState := .Inactive }))
+                  receiver .ready (some (blockedSenderMessage st1 sender senderTcb)) with
+              | error e => left; rfl
+              | ok st4 =>
+                right
+                refine ⟨sender, st4, ?_, OffSchedulerAgrees.refl _⟩
+                unfold endpointReceiveDual SystemState.getObject?
+                simp only [hEpRaw, hHead, hPop, hSIpc, hStore1, hStore2, hLk, Bool.false_eq_true,
+                  ↓reduceIte]
         | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _
         | blockedOnReply _ _ =>
           all_goals
