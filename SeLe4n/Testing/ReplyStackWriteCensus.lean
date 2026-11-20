@@ -407,6 +407,8 @@ def chainNeutralConstructors : List (Name × String) :=
       "the compiled form of the same bind; same reason")
   , (`SeLe4n.Kernel.schedContextReturnLinks,
       "seL4-MCS `maybeReturnSchedContext`'s writes on a running receiver: `{ sc with boundThreadCode := 0 }`, the TCB's binding codes and reschedule flags; `scReply` is untouched")
+  , (`SeLe4n.Kernel.schedContextReturnLinksImpl,
+      "the compiled form of the same return; same reason")
   , (`SeLe4n.Kernel.declassifySignalBoundWrites,
       "a declassified bound delivery: the endpoint removal, the bound thread's TCB, its wake and the audit records, then seL4's `sendSignal` donation (`maybeDonateSchedContextFast`, the bind's perform above); `scReply` is untouched")
   , (`SeLe4n.Kernel.SchedContextOps.schedContextUnbindPerform,
