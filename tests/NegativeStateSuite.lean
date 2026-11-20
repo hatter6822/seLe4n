@@ -525,12 +525,14 @@ private def runIpcPayloadBoundsNegativeChecks : IO Unit := do
 
   -- Send and call read their words and capability addresses from the sender's
   -- frame (WS-ZA ZA4.7), so their bound is the message-info decode's: a word
-  -- declaring more than 120 registers does not decode, and its two-bit
-  -- extra-caps field names at most three capabilities.
-  if (MessageInfo.decode (MessageInfo.mk (maxMessageRegisters + 1) 0 0 0).encode).isNone then
-    IO.println "negative check passed [a message-info word declaring 121 registers does not decode]"
+  -- declaring more than 120 registers decodes with its length clamped to 120
+  -- (seL4's `messageInfoFromWord`), and its two-bit extra-caps field names at
+  -- most three capabilities.
+  if (MessageInfo.decode (MessageInfo.mk (maxMessageRegisters + 1) 0 0 0).encode).map
+      (·.length) == some maxMessageRegisters then
+    IO.println "negative check passed [a message-info word declaring 121 registers clamps to 120]"
   else
-    throw <| IO.userError "a message-info word declaring 121 registers decoded"
+    throw <| IO.userError "a message-info word declaring 121 registers did not clamp to 120"
   match MessageInfo.decode (MessageInfo.mk 0 (maxExtraCaps + 1) 0 0).encode with
   | some mi =>
     if mi.extraCaps ≤ maxExtraCaps then
