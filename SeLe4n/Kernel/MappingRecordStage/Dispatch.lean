@@ -648,6 +648,23 @@ theorem maybeDonateSchedContext_mappingStage (st : SystemState) (n : SeLe4n.ObjI
   maybeDonateSchedContext_induct MappingStage st n tid (MappingStage.refl _)
     (fun _ _ _ _ => schedContextBindPerform_mappingStage _ _ _)
 
+/-- **seL4's `sendSignal` keeps the mapping records**: the wake's writes, then
+the donation's. -/
+theorem sendSignalOnCore_mappingStage {n : SeLe4n.ObjId} {badge : SeLe4n.Badge}
+    {c : Concurrency.CoreId} {st : SystemState} :
+    MappingStage st (sendSignalOnCore n badge c st).1 :=
+  sendSignalOnCore_induct (MappingStage st) n badge c st notificationSignalBoundOnCore_mappingStage
+    (fun t _ _ _ => notificationSignalBoundOnCore_mappingStage.trans
+      (maybeDonateSchedContext_mappingStage _ n t))
+
+theorem notificationSignalBoundCrossCoreDispatchChecked_mappingStage {ctx : LabelingContext}
+    {notificationId : SeLe4n.ObjId} {signaler : SeLe4n.ThreadId} {badge : SeLe4n.Badge}
+    {executingCore : Concurrency.CoreId} {st : SystemState} :
+    MappingStage st (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
+      badge executingCore st).1 :=
+  notificationSignalBoundCrossCoreDispatchChecked_induct (MappingStage st) ctx notificationId
+    signaler badge executingCore st (MappingStage.refl _) sendSignalOnCore_mappingStage
+
 /-- **A receive that completes its bound notification keeps the mapping
 records**: the checked wait's consumption and the badge register. -/
 theorem completeSignalArm_mappingStage {ctx : LabelingContext} {tid : SeLe4n.ThreadId}

@@ -1240,17 +1240,22 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                   rw [notificationSignalBoundCrossCoreDispatchChecked_flow_allowed_no_delivery
                         ctx notifId tid cap.signalBadge executingCore st hFlow hNoBound] at hStep
                   have hNoBound := hPack.signalNoBoundTarget notifId hSy hTgt
-                  have hReduce : notificationSignalBoundCrossCoreDispatch notifId cap.signalBadge
-                      executingCore st = notificationSignalOnCore notifId cap.signalBadge
-                        executingCore st := by
-                    unfold notificationSignalBoundCrossCoreDispatch
-                    exact notificationSignalBoundOnCore_fallthrough_eq notifId cap.signalBadge
-                      executingCore st hNoBound
-                  rw [hReduce] at hStep
-                  have hSigInv := notificationSignalOnCore_preserves_ipcInvariantFull notifId
-                    cap.signalBadge executingCore st hInv hObjInv
-                    hPack.reachable.notificationWaiterConsistent hBudgets
-                  cases hSig : notificationSignalOnCore notifId cap.signalBadge
+                  -- seL4's `sendSignal`: the wake (no bound receiver: the
+                  -- notification's own signal), then the donation to its woken head.
+                  have hWake : ipcInvariantFull
+                      (notificationSignalBoundOnCore notifId cap.signalBadge executingCore st).1 := by
+                    rw [notificationSignalBoundOnCore_fallthrough_eq notifId cap.signalBadge
+                      executingCore st hNoBound]
+                    exact notificationSignalOnCore_preserves_ipcInvariantFull notifId
+                      cap.signalBadge executingCore st hInv hObjInv
+                      hPack.reachable.notificationWaiterConsistent hBudgets
+                  have hSigInv := sendSignalOnCore_preserves_ipcInvariantFull notifId
+                    cap.signalBadge executingCore st hObjInv hWake
+                    (schedContextBindingBidirectional_of_consistent
+                      hPack.capOnly.schedContextLinks.binding hInv.donationOwnerValid)
+                    hInv hPack.reachable.notificationWaiterConsistent
+                  unfold notificationSignalBoundCrossCoreDispatch at hStep
+                  cases hSig : sendSignalOnCore notifId cap.signalBadge
                       executingCore st with
                   | mk st1 res1 =>
                       rw [hSig] at hStep hSigInv

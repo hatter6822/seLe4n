@@ -759,6 +759,24 @@ theorem maybeDonateSchedContext_recordsStage (x : SystemState) (n : SeLe4n.ObjId
   .of_frameK fun hI => maybeDonateSchedContext_induct (fun a b => RecordsFrame a b) x n t
     (RecordsFrame.refl hI) (fun vS vT _ _ => RecordsFrame.schedContextBindPerform x vS vT hI)
 
+/-- **seL4's `sendSignal` keeps the records**: the wake's step, then the
+donation's. -/
+theorem sendSignalOnCore_recordsStage {n : SeLe4n.ObjId} {badge : SeLe4n.Badge}
+    {c : Concurrency.CoreId} {st : SystemState} (hR : ipcReachable st) :
+    RecordsStage st (sendSignalOnCore n badge c st).1 :=
+  sendSignalOnCore_induct (RecordsStage st) n badge c st
+    (RecordsStage.notificationSignalBoundOnCore hR)
+    (fun t _ _ _ => (RecordsStage.notificationSignalBoundOnCore hR).trans
+      (maybeDonateSchedContext_recordsStage _ n t))
+
+/-- **The checked bound signal keeps the records.** -/
+theorem notificationSignalBoundCrossCoreDispatchChecked_recordsStage {ctx : LabelingContext}
+    {nid : SeLe4n.ObjId} {signaler : SeLe4n.ThreadId} {badge : SeLe4n.Badge}
+    {c : Concurrency.CoreId} {st : SystemState} (hR : ipcReachable st) :
+    RecordsStage st (notificationSignalBoundCrossCoreDispatchChecked ctx nid signaler badge c st).1 :=
+  notificationSignalBoundCrossCoreDispatchChecked_induct (RecordsStage st) ctx nid signaler badge
+    c st (RecordsStage.refl _) (sendSignalOnCore_recordsStage hR)
+
 /-- The `Call`-gated reply write keeps the records. -/
 theorem writeCallReturnWord_recordsStage (x : SystemState) (t : SeLe4n.ThreadId)
     (w : UInt64) : RecordsStage x (Architecture.writeCallReturnWord x t w) :=
@@ -996,7 +1014,7 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     · rename_i hSig
       cases h
       exact (RecordsStage.of_fst_eq
-        (RecordsStage.notificationSignalBoundCrossCoreDispatchChecked P.deletes.1) hSig)
+        (notificationSignalBoundCrossCoreDispatchChecked_recordsStage P.deletes.1) hSig)
     · cases h
   case none.notificationWait.object notifId =>
     split at h

@@ -115,7 +115,8 @@ theorem schedLockSet_notificationWaitOnCore_coversWrites
     exact hd (hP ▸ schedLockSet_notificationWaitOnCore_contains_executing_runQueue_write _ _ _ _)
   exact ⟨hConf.runQueue d hd', hConf.current d hd', hConf.activeDomain d hd'⟩
 
-/-- **Cut C6a**: `.notificationSignal`'s footprint covers its writes.
+/-- **Cut C6a**: `.notificationSignal`'s footprint covers its wake's writes
+(the donation after it: `schedLockSet_sendSignalOnCore_coversWrites`).
 
 Stated of the **bound** arm, which is the one the live dispatch routes to and the
 one `schedLockSetForSyscall` names (Cut 7); the bare signal's footprint is
@@ -128,8 +129,11 @@ theorem schedLockSet_notificationSignalBoundOnCore_coversWrites
       = some S) :
     footprintCoversWrites S st
       (notificationSignalBoundOnCore notificationId badge executingCore st).1 :=
-  footprintCoversWrites_of_confined S (notificationSignalBoundWriteSet st notificationId)
-    [] st _ (LockSet.ofList?_pairs hS)
+  footprintCoversWrites_of_cores_append S (notificationSignalBoundWriteSet st notificationId) []
+    (signalWakeDonationCores st notificationId) (signalWakeDonationCores st notificationId) st _
+    (LockSet.ofList?_pairs hS) fun S0 hS0 =>
+  footprintCoversWrites_of_confined S0 (notificationSignalBoundWriteSet st notificationId)
+    [] st _ (LockSet.ofList?_pairs hS0)
     (notificationSignalBoundOnCore_confinedToCores notificationId badge executingCore st hObjInv)
     (fun d _ => notificationSignalBoundOnCore_replenishQueueOnCore notificationId badge
       executingCore st d)

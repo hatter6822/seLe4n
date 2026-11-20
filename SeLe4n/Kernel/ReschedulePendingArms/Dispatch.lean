@@ -1638,6 +1638,37 @@ theorem maybeDonateSchedContext_stepCovers (e : CoreId) (st : SystemState) (n : 
     ⟨stepCovers_refl e st, hInv⟩
     (fun vS vT _ hA => schedContextBindPerform_stepCovers st vS vT e hInv hBi hA)
 
+/-- **seL4's `sendSignal` covers**, on a state where the binding pair holds: the
+wake (`notificationSignalBoundOnCore_stepCovers`), then the donation to the thread
+it woke, whose binding pair the wake left as it found it (the wake moves no
+scheduling link: `notificationSignalBoundOnCore_schedLinkFrame`). -/
+theorem sendSignalOnCore_stepCovers (e : CoreId) {n : SeLe4n.ObjId} {badge : SeLe4n.Badge}
+    {c : CoreId} {st : SystemState} (hInv : st.objects.invExt)
+    (hBi : schedContextBindingBidirectional st) :
+    stepCovers e st (sendSignalOnCore n badge c st).1 ∧
+      (sendSignalOnCore n badge c st).1.objects.invExt := by
+  have hW := notificationSignalBoundOnCore_stepCovers e (notificationId := n) (badge := badge)
+    (executingCore := c) hInv
+  refine sendSignalOnCore_induct (fun s => stepCovers e st s ∧ s.objects.invExt) n badge c st hW
+    (fun t _ _ _ => ?_)
+  exact stepCoversInv_trans hW.1 (maybeDonateSchedContext_stepCovers e _ n t hW.2
+    (schedContextBindingBidirectional.of_bindingLinksAgree
+      (notificationSignalBoundOnCore_schedLinkFrame n badge c st hInv).binding hBi))
+
+/-- The checked signal covers: a refused gate is the identity, a passed one is
+`sendSignalOnCore`. -/
+theorem notificationSignalBoundCrossCoreDispatchChecked_stepCovers (e : CoreId)
+    {ctx : LabelingContext} {notificationId : SeLe4n.ObjId} {signaler : SeLe4n.ThreadId}
+    {badge : SeLe4n.Badge} {executingCore : CoreId} {st : SystemState}
+    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st) :
+    stepCovers e st (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
+      badge executingCore st).1 ∧
+    (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
+      badge executingCore st).1.objects.invExt :=
+  notificationSignalBoundCrossCoreDispatchChecked_induct
+    (fun s => stepCovers e st s ∧ s.objects.invExt) ctx notificationId signaler badge
+    executingCore st ⟨stepCovers_refl e st, hInv⟩ (sendSignalOnCore_stepCovers e hInv hBi)
+
 /-- **A completion's consumption, badge register and donation cover**, on a state
 where the binding pair holds: neither the consumption nor the register write
 moves a scheduling link, so the donation finds the pair as the completion was
@@ -1871,7 +1902,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     split at h
     · rename_i hSig
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
-        (notificationSignalBoundCrossCoreDispatchChecked_stepCovers e hInv) hSig
+        (notificationSignalBoundCrossCoreDispatchChecked_stepCovers e hInv hB.bidirectional) hSig
       cases h
       exact ⟨hS, hSInv⟩
     · cases h

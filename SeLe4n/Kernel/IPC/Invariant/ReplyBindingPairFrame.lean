@@ -860,6 +860,59 @@ theorem of_offRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks s
     ntfnContextsAgree st st' :=
   fun o => proj_eq_of_map_eq _ _ (fun x => by cases x <;> rfl) (h o)
 
+/-- A thread rewritten through `modifyTcb`. -/
+theorem modifyTcb {st st' : SystemState} {tid : SeLe4n.ThreadId} {f : TCB → TCB}
+    (hInv : st.objects.invExt) (h : SeLe4n.Kernel.modifyTcb st tid f = .ok st') :
+    ntfnContextsAgree st st' := by
+  obtain ⟨tcb, hL, hS⟩ := modifyTcb_ok_decompose h
+  exact storeObject hInv hS (by rw [lookupTcb_some_objects st tid tcb hL]; rfl)
+
+/-- A thread placed on its home core's run queue. -/
+theorem enqueueRunnableOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    ntfnContextsAgree st (SeLe4n.Kernel.enqueueRunnableOnCore st c t) := by
+  cases hT : st.getTcb? t with
+  | none =>
+    simp only [SeLe4n.Kernel.enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hT]
+    exact refl st
+  | some tcb =>
+    cases hD : wakeDeclines st c t with
+    | true =>
+      simp only [SeLe4n.Kernel.enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hT, hD,
+        if_true]
+      exact refl st
+    | false =>
+      have hPre := (SystemState.getTcb?_eq_some_iff st t tcb).mp hT
+      have h1 : ntfnContextsAgree st
+          { st with objects := st.objects.insert t.toObjId (.tcb (tcb.setIpcState .ready)) } :=
+        proj_insert_eq ntfnContextOf hInv (by rw [hPre]; rfl)
+      exact h1.trans (of_offRunLinks (enqueueRunnableOnCore_objectsAgree_marked st c t tcb hT hD))
+
+/-- A head leaving its notification queue. -/
+theorem detachNtfnHead (st : SystemState) (head : SeLe4n.ThreadId)
+    (next : Option SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    ntfnContextsAgree st (SeLe4n.Kernel.detachNtfnHead st head next) := by
+  unfold SeLe4n.Kernel.detachNtfnHead unlinkNtfnNeighbours clearNtfnLinks
+  have h1 := updateTcb st head (fun t => { t with
+    ntfnPrevCode := SeLe4n.ThreadId.optCode none,
+    ntfnNextCode := SeLe4n.ThreadId.optCode none }) hInv
+  have i1 := SystemState.updateTcb_preserves_objects_invExt st head (fun t => { t with
+    ntfnPrevCode := SeLe4n.ThreadId.optCode none,
+    ntfnNextCode := SeLe4n.ThreadId.optCode none }) hInv
+  dsimp only
+  cases next with
+  | none => exact h1
+  | some n => exact h1.trans (updateTcb _ n _ i1)
+
+/-- An endpoint-queue removal: endpoint stores and queue-link writes. -/
+theorem endpointQueueRemoveDual {st st' : SystemState} {endpointId : SeLe4n.ObjId}
+    {isReceiveQ : Bool} {tid : SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (h : SeLe4n.Kernel.endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
+    ntfnContextsAgree st st' :=
+  endpointQueueRemoveDual_carry (P := fun s => ntfnContextsAgree st s) endpointId isReceiveQ tid
+    st st' (fun _ _ _ _ hE hI hS _ hP => hP.trans (storeObject hI hS (by rw [hE]; rfl)))
+    (fun _ _ _ _ _ _ hI hS hP => hP.trans (modifyTcb hI hS)) hInv h (refl st)
+
 end ntfnContextsAgree
 
 /-- **The head cut keeps every context word**: a reply stored over itself, a
@@ -1010,6 +1063,88 @@ theorem signalDonationContext?_congr {st st' : SystemState} (N : ntfnContextsAgr
   unfold signalDonationContext?
   rw [signalDonationGuard_congr (n := n) (tid := x) (N.getNotification?_schedContext n) A.2 (A.1 x),
     notificationContext?_congr N n]
+
+/-- **A signal's wake of its notification's head or its word's accumulation
+keeps every notification's context word**: both notification stores copy it. -/
+theorem notificationSignalOnCore_ntfnContextsAgree (n : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (c : CoreId) (st : SystemState) (hInv : st.objects.invExt) :
+    ntfnContextsAgree st (notificationSignalOnCore n badge c st).1 := by
+  unfold notificationSignalOnCore
+  split
+  · rename_i ntfn hN
+    have hPre := (SystemState.getNotification?_eq_some_iff st n ntfn).mp hN
+    split
+    · dsimp only
+      cases hS : storeObject n _ st with
+      | error _ => exact .refl st
+      | ok p =>
+        obtain ⟨⟨⟩, st1⟩ := p
+        have F1 := ntfnContextsAgree.storeObject hInv hS (by rw [hPre]; rfl)
+        have I1 := storeObject_preserves_objects_invExt st st1 _ _ hInv hS
+        dsimp only
+        split
+        · exact .refl st
+        · rename_i st2 hT
+          rename_i waiter _ _
+          have F2 := F1.trans (ntfnContextsAgree.modifyTcb I1 hT)
+          have I2 := storeTcbSignalWoken_preserves_objects_invExt _ _ _ _ I1 hT
+          have I3 := detachNtfnHead_preserves_objects_invExt st2 waiter (ntfnSuccessor? st waiter) I2
+          have F3 := ntfnContextsAgree.detachNtfnHead st2 waiter (ntfnSuccessor? st waiter) I2
+          exact (F2.trans F3).trans (ntfnContextsAgree.enqueueRunnableOnCore _ _ _ I3)
+    · dsimp only
+      cases hS : storeObject n _ st with
+      | error _ => exact .refl st
+      | ok p =>
+        obtain ⟨⟨⟩, st1⟩ := p
+        exact ntfnContextsAgree.storeObject hInv hS (by rw [hPre]; rfl)
+  · split <;> exact .refl st
+
+/-- **A signal's wake keeps every notification's context word**: the bound
+thread taken off its endpoint and woken, or the notification's own signal. -/
+theorem notificationSignalBoundOnCore_ntfnContextsAgree (n : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (c : CoreId) (st : SystemState) (hInv : st.objects.invExt) :
+    ntfnContextsAgree st (notificationSignalBoundOnCore n badge c st).1 := by
+  unfold notificationSignalBoundOnCore
+  split
+  · split
+    · exact .refl st
+    · rename_i st1 hR
+      have F1 := ntfnContextsAgree.endpointQueueRemoveDual hInv hR
+      have I1 := endpointQueueRemoveDual_preserves_objects_invExt _ _ _ _ _ hInv hR
+      split
+      · exact .refl st
+      · rename_i st2 hT
+        have F2 := F1.trans (ntfnContextsAgree.modifyTcb I1 hT)
+        have I2 := storeTcbSignalBoundWoken_preserves_objects_invExt _ _ _ _ I1 hT
+        exact F2.trans (ntfnContextsAgree.enqueueRunnableOnCore _ _ _ I2)
+  · exact notificationSignalOnCore_ntfnContextsAgree n badge c st hInv
+
+/-- **The donation's cores, read on the signal's entry state**: the wake keeps
+the guard's three links and the woken thread's home core
+(`notificationSignalBoundOnCore_schedLinkFrame`,
+`notificationSignalBoundOnCore_ntfnContextsAgree`). -/
+theorem notificationSignalBoundOnCore_signalDonationCores_eq (n : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState) (hInv : st.objects.invExt)
+    (t : SeLe4n.ThreadId) :
+    signalDonationCores (notificationSignalBoundOnCore n badge c st).1 n t =
+      signalDonationCores st n t := by
+  have F := notificationSignalBoundOnCore_schedLinkFrame n badge c st hInv
+  have A := scIdLinksAgree.of_schedLinkFrame F
+  have hG := signalDonationGuard_congr (n := n) (tid := t)
+    ((notificationSignalBoundOnCore_ntfnContextsAgree n badge c st hInv).getNotification?_schedContext n)
+    A.2 (A.1 t)
+  unfold signalDonationCores
+  rw [hG, (show schedAuxAgree st _ from F.aux).determineTargetCore_eq]
+
+/-- …and the context it donates. -/
+theorem notificationSignalBoundOnCore_signalDonationContext?_eq (n : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState) (hInv : st.objects.invExt)
+    (t : SeLe4n.ThreadId) :
+    signalDonationContext? (notificationSignalBoundOnCore n badge c st).1 n t =
+      signalDonationContext? st n t :=
+  signalDonationContext?_congr (notificationSignalBoundOnCore_ntfnContextsAgree n badge c st hInv)
+    (scIdLinksAgree.of_schedLinkFrame
+      (notificationSignalBoundOnCore_schedLinkFrame n badge c st hInv)) n t
 
 /-- **The guard a receive's donation reads is the entry state's**: the busy-reply
 cancel keeps every thread's context, every context's thread and every

@@ -918,18 +918,6 @@ theorem endpointCallCrossCoreDispatchChecked_runQueueEntryStage (ctx : LabelingC
       P.current P.notIdle P.objInv P.refined P.currentActive
   · exact (RunQueueStage.refl _).entry
 
-theorem notificationSignalBoundCrossCoreDispatchChecked_runQueueStage (ctx : LabelingContext)
-    (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
-    (c : Concurrency.CoreId) (st : SystemState) (hHeads : notificationHeadsWakeable st)
-    (hBlk : blockedCurrentNowhere st) :
-    RunQueueStage st (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId
-      signaler badge c st).1 := by
-  unfold notificationSignalBoundCrossCoreDispatchChecked
-  repeat' split
-  all_goals first
-    | exact RunQueueStage.refl _
-    | exact notificationSignalBoundOnCore_runQueueStage _ _ _ _ hHeads hBlk
-
 theorem notificationWaitCrossCoreDispatchChecked_runQueueEntryStage (ctx : LabelingContext)
     (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (c : Concurrency.CoreId)
     (st : SystemState) (P : SyscallArmPremises st c waiter) :
@@ -978,6 +966,25 @@ theorem maybeDonateSchedContext_runQueueStage (st : SystemState) (n : SeLe4n.Obj
     (tid : SeLe4n.ThreadId) : RunQueueStage st (maybeDonateSchedContext st n tid) :=
   maybeDonateSchedContext_induct (fun a b => RunQueueStage a b) st n tid (RunQueueStage.refl _)
     (fun vS vT _ hA => schedContextBindPerform_runQueueStage st vS vT hA)
+
+/-- **seL4's `sendSignal` keeps the run queues in agreement with the threads'
+links**: the wake's stage, then the donation's. -/
+theorem sendSignalOnCore_runQueueStage (n : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (c : Concurrency.CoreId) (st : SystemState) (hHeads : notificationHeadsWakeable st)
+    (hBlk : blockedCurrentNowhere st) : RunQueueStage st (sendSignalOnCore n badge c st).1 :=
+  have hW := notificationSignalBoundOnCore_runQueueStage n badge c st hHeads hBlk
+  sendSignalOnCore_induct (fun s => RunQueueStage st s) n badge c st hW
+    (fun t _ _ _ => hW.trans (maybeDonateSchedContext_runQueueStage _ n t))
+
+theorem notificationSignalBoundCrossCoreDispatchChecked_runQueueStage (ctx : LabelingContext)
+    (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (c : Concurrency.CoreId) (st : SystemState) (hHeads : notificationHeadsWakeable st)
+    (hBlk : blockedCurrentNowhere st) :
+    RunQueueStage st (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId
+      signaler badge c st).1 :=
+  notificationSignalBoundCrossCoreDispatchChecked_induct (fun s => RunQueueStage st s) ctx
+    notificationId signaler badge c st (RunQueueStage.refl _)
+    (sendSignalOnCore_runQueueStage notificationId badge c st hHeads hBlk)
 
 /-- A reply-receive whose receive completes its bound notification keeps the run
 queues in agreement with the threads' links: the reply leg, the wait's

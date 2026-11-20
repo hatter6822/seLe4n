@@ -370,7 +370,12 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .notificationSignal =>
       (st.getTcb? ops.caller).bind fun caller =>
         ops.targetObject.map fun notificationId =>
-          lockSet_notificationSignalOnCore st notificationId ops.caller caller.cspaceRoot
+          -- seL4-MCS `sendSignal`'s `maybeDonateSchedContext`: the context the
+          -- signal donates to the thread it wakes, seL4's guard on the entry state.
+          lockSetExtendOpt
+            (lockSet_notificationSignalOnCore st notificationId ops.caller caller.cspaceRoot)
+            ((SeLe4n.Kernel.signalWakeDonationContext? st notificationId).map fun s =>
+              (schedContextLock s, .write))
   | .notificationWait =>
       (st.getTcb? ops.caller).bind fun caller =>
         ops.targetObject.map fun notificationId =>
@@ -662,8 +667,10 @@ resolved signal footprint. -/
     lockSetForSyscall .notificationSignal ops st
       = (st.getTcb? ops.caller).bind fun caller =>
           ops.targetObject.map fun notificationId =>
-            lockSet_notificationSignalOnCore st notificationId ops.caller
-              caller.cspaceRoot := rfl
+            lockSetExtendOpt
+              (lockSet_notificationSignalOnCore st notificationId ops.caller caller.cspaceRoot)
+              ((SeLe4n.Kernel.signalWakeDonationContext? st notificationId).map fun s =>
+                (schedContextLock s, .write)) := rfl
 
 /-- **WS-RR RR7.11**: and it declares whenever the caller resolves and a
 notification is named. -/
@@ -1239,8 +1246,10 @@ theorem lockSetForSyscall_notificationSignal_eq
     (hTcb : st.getTcb? ops.caller = some caller)
     (hNtfn : ops.targetObject = some notificationId) :
     lockSetForSyscall .notificationSignal ops st
-      = some (lockSet_notificationSignalOnCore st notificationId ops.caller
-                caller.cspaceRoot) := by
+      = some (lockSetExtendOpt
+          (lockSet_notificationSignalOnCore st notificationId ops.caller caller.cspaceRoot)
+          ((SeLe4n.Kernel.signalWakeDonationContext? st notificationId).map fun s =>
+            (schedContextLock s, .write))) := by
   unfold lockSetForSyscall
   rw [hTcb, hNtfn]; rfl
 
@@ -1255,10 +1264,26 @@ theorem lockSetForSyscall_notificationSignal_covers_writes
     (notificationLock notificationId, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_notificationSignal_eq ops st caller notificationId hTcb hNtfn] at hDecl
   cases hDecl
+  apply mem_write_lockSetExtendOpt
   unfold lockSet_notificationSignalOnCore
   cases boundDeliveryTarget? st notificationId with
   | none => exact lockSet_notificationSignal_notification_write_mem _ _ _ _ _ _ _
   | some _ => exact lockSet_notificationSignal_notification_write_mem _ _ _ _ _ _ _
+
+/-- WS-SX SX8.2: **and the context seL4's `sendSignal` donates**, where its
+guard holds on the entry state for the thread the signal wakes. -/
+theorem lockSetForSyscall_notificationSignal_covers_donationContext
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (notificationId : ObjId) (S : LockSet) (s : SeLe4n.SchedContextId)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hNtfn : ops.targetObject = some notificationId)
+    (hDon : SeLe4n.Kernel.signalWakeDonationContext? st notificationId = some s)
+    (hDecl : lockSetForSyscall .notificationSignal ops st = some S) :
+    (schedContextLock s, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_notificationSignal_eq ops st caller notificationId hTcb hNtfn] at hDecl
+  cases hDecl
+  rw [hDon]
+  exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-RR RR7.11**: and the bound-delivery pair, on the path that takes it —
 the bound TCB the badge is delivered to, and the endpoint it is dequeued from.
@@ -1277,8 +1302,10 @@ theorem lockSetForSyscall_notificationSignal_covers_boundDelivery
     (endpointLock epId, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_notificationSignal_eq ops st caller notificationId hTcb hNtfn] at hDecl
   cases hDecl
-  exact ⟨lockSet_notificationSignalOnCore_bound_tcb_write_mem _ _ _ _ _ _ hBound,
-         lockSet_notificationSignalOnCore_bound_endpoint_write_mem _ _ _ _ _ _ hBound⟩
+  exact ⟨mem_write_lockSetExtendOpt _ _ _
+           (lockSet_notificationSignalOnCore_bound_tcb_write_mem _ _ _ _ _ _ hBound),
+         mem_write_lockSetExtendOpt _ _ _
+           (lockSet_notificationSignalOnCore_bound_endpoint_write_mem _ _ _ _ _ _ hBound)⟩
 
 /-- **WS-OD OD3.10**: and the two queue neighbours the dequeue relinks.
 
@@ -1303,10 +1330,12 @@ theorem lockSetForSyscall_notificationSignal_covers_spliceNeighbors
     (∀ n, boundTcbObj.queueNext = some n → (tcbLock n, AccessMode.write) ∈ S.pairs) := by
   rw [lockSetForSyscall_notificationSignal_eq ops st caller notificationId hTcb hNtfn] at hDecl
   cases hDecl
-  exact ⟨fun p hp => lockSet_notificationSignalOnCore_splice_prev_write_mem
-           _ _ _ _ _ _ _ _ hBound hBoundTcb hp,
-         fun n hn => lockSet_notificationSignalOnCore_splice_next_write_mem
-           _ _ _ _ _ _ _ _ hBound hBoundTcb hn⟩
+  exact ⟨fun p hp => mem_write_lockSetExtendOpt _ _ _
+           (lockSet_notificationSignalOnCore_splice_prev_write_mem
+             _ _ _ _ _ _ _ _ hBound hBoundTcb hp),
+         fun n hn => mem_write_lockSetExtendOpt _ _ _
+           (lockSet_notificationSignalOnCore_splice_next_write_mem
+             _ _ _ _ _ _ _ _ hBound hBoundTcb hn)⟩
 
 /-- **WS-RR RR7.11**: at resolved operands, `.notificationWait` declares the
 wait footprint. -/

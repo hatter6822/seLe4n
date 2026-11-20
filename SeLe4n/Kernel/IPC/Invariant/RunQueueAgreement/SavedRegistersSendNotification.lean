@@ -620,6 +620,21 @@ theorem notificationSignalBoundOnCore_savedRegsKept (notificationId : SeLe4n.Obj
   · obtain ⟨k, i⟩ := notificationSignalOnCore_savedRegsKept notificationId badge c hInv
     exact ⟨k.mono fun _ h => .inr h, i⟩
 
+/-- **seL4's `sendSignal` writes the saved registers of the thread it wakes
+alone**: the wake's writes, and the donation writes no saved register
+(`maybeDonateSchedContext_savedRegsKeptExcept`). -/
+theorem sendSignalOnCore_savedRegsKept (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (c : CoreId) {st : SystemState} (hInv : st.objects.invExt) :
+    savedRegsKeptExcept (signalWritten st notificationId) st
+        (sendSignalOnCore notificationId badge c st).1 ∧
+      (sendSignalOnCore notificationId badge c st).1.objects.invExt :=
+  have hW := notificationSignalBoundOnCore_savedRegsKept notificationId badge c hInv
+  sendSignalOnCore_induct
+    (fun s => savedRegsKeptExcept (signalWritten st notificationId) st s ∧ s.objects.invExt)
+    notificationId badge c st hW
+    (fun t _ _ _ => ⟨hW.1.trans (maybeDonateSchedContext_savedRegsKeptExcept notificationId t hW.2),
+      maybeDonateSchedContext_preserves_objects_invExt _ notificationId t hW.2⟩)
+
 /-- The checked signal writes the saved registers of the thread it wakes alone. -/
 theorem notificationSignalBoundCrossCoreDispatchChecked_savedRegsKept
     (ctx : LabelingContext) (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId)
@@ -627,12 +642,11 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_savedRegsKept
     savedRegsKeptExcept (signalWritten st notificationId) st
         (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler badge c st).1 ∧
       (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
-        badge c st).1.objects.invExt := by
-  unfold notificationSignalBoundCrossCoreDispatchChecked
-  repeat' split
-  all_goals first
-    | exact notificationSignalBoundOnCore_savedRegsKept _ _ _ hInv
-    | exact ⟨.refl _, hInv⟩
+        badge c st).1.objects.invExt :=
+  notificationSignalBoundCrossCoreDispatchChecked_induct
+    (fun s => savedRegsKeptExcept (signalWritten st notificationId) st s ∧ s.objects.invExt)
+    ctx notificationId signaler badge c st ⟨.refl _, hInv⟩
+    (sendSignalOnCore_savedRegsKept notificationId badge c hInv)
 
 /-- The declassifying signal writes the saved registers of the thread it wakes
 alone: the bound signal, then the audit trail. -/

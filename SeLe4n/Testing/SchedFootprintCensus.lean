@@ -104,9 +104,10 @@ def resolverExemptions : List (Name × String) :=
        `.notificationSignal` through `notificationSignalBoundCrossCoreDispatch`, so the \
        resolver names `schedLockSet_notificationSignalBoundOnCore`; the two genuinely \
        differ, because on the bound-delivery path the woken thread is the BOUND TCB, \
-       whose home core the bare signal's set does not name.  \
-       `schedLockSet_notificationSignalBoundOnCore_of_no_target` is the relation off \
-       that path, where the two are definitionally equal")
+       whose home core the bare signal's set does not name, and because seL4's \
+       `sendSignal` donates the notification's context to the woken thread, whose \
+       home core's run and replenish queues the bound footprint names \
+       (`signalWakeDonationCores`) and the bare one does not")
   , (``SeLe4n.Kernel.schedLockSet_endpointReplyOnCore,
       "the DISPATCH-level reply footprint.  `.reply`'s live arm is seL4's \
        `doReplyTransfer` (`replyTransferOnCore`), whose footprint sits OVER this one: \

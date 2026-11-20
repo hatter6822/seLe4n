@@ -778,8 +778,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem storeTcbReceiveComple
 run_check "INVARIANT" rg -n '^theorem boundDeliveryTarget\?_some' SeLe4n/Kernel/IPC/Operations/NotificationBind.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull\b' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SignalDonationFrame.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SignalDonationFrame.lean
 # **WS-RR RR7.22 (residual, second consumer)**: the cancellation arm's sweep is a
 # fold over the whole object store, so its payoff is a *pointwise* fact — false
 # of the accumulator at every key not yet visited, hence not a fold invariant.
@@ -11190,6 +11190,20 @@ open SeLe4n.Kernel.Concurrency
 #check @schedContextBindPerform_preserves_objects_invExt
 #check @maybeDonateSchedContext_preserves_objects_invExt
 #check @signalWokenThread?_not_blockedOnReply
+#check @notificationSignalBoundCrossCoreDispatchChecked_induct
+#check @sendSignalOnCore_stepCovers
+#check @sendSignalOnCore_runQueueStage
+#check @sendSignalOnCore_mappingStage
+#check @sendSignalOnCore_recordsStage
+#check @sendSignalOnCore_savedRegsKept
+#check @sendSignalOnCore_error_state
+#check @notificationSignalBoundOnCore_ntfnContextsAgree
+#check @notificationSignalBoundOnCore_signalDonationCores_eq
+#check @notificationSignalBoundOnCore_signalDonationContext?_eq
+#check @signalWakeDonationCores
+#check @signalWakeDonationContext?
+#check @schedLockSet_sendSignalOnCore_coversWrites
+#check @lockSetForSyscall_notificationSignal_covers_donationContext
 #check @endpointReplyRecvCheckedArmR_eq_general
 #check @endpointReplyRecvLongCheckedArmR_eq_general
 #check @replyRecvSignalArmR
@@ -13091,7 +13105,7 @@ run_check "INVARIANT" rg -n '^def schedLockSet_endpointSendOnCore \(' SeLe4n/Ker
 # and the confinement claim cannot name different cores.  The mutation that decides
 # keeps the definition and resolves the cores a second way.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_notificationSignalOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(notificationSignalWriteSet st notificationId\) \[\]" SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_notificationSignalBoundOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(notificationSignalBoundWriteSet st notificationId\) \[\]" SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_notificationSignalBoundOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n    \(notificationSignalBoundWriteSet st notificationId \+\+ signalWakeDonationCores st notificationId\)\n    \(signalWakeDonationCores st notificationId\)" SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointSendOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(endpointSendWriteSet st endpointId executingCore\) \[\]" SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean'
 # The write sets are declared in PRODUCTION, beside the transitions they are about.
 # They were in the staged `InformationFlow/NonInterferenceCrossCore.lean`, which

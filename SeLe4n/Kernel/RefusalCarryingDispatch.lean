@@ -139,6 +139,16 @@ theorem boundDeliveryTarget?_of_codes (st : SystemState) (nid : SeLe4n.ObjId) (n
   simp only [boundDeliveryTarget?, hN, hK0, ↓reduceIte, Notification.boundTCB, hB,
     SeLe4n.ThreadId.ofOptCode, hTg, hBl]
 
+/-- seL4's `sendSignal` answers a refusal with the state it was handed: the
+wake refuses in its pre-state, and a refused wake donates nothing. -/
+theorem sendSignalOnCore_error_state (n : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (c : Concurrency.CoreId) (st : SystemState) (e : KernelError)
+    (h : (sendSignalOnCore n badge c st).2 = .error e) :
+    (sendSignalOnCore n badge c st).1 = st := by
+  rw [sendSignalOnCore_snd] at h
+  rw [sendSignalOnCore_fst_of_error h]
+  exact notificationSignalBoundOnCore_error_state _ _ _ st e h
+
 /-- The checked cross-core signal answers a refusal with the state it was
 handed: the flow gates refuse before anything is written, and the signal
 itself returns its pre-state on every error. -/
@@ -155,13 +165,13 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_error_state (ctx : Label
     cases hTarget : boundDeliveryTarget? st notificationId with
     | none =>
       simp only [hTarget] at h ⊢
-      exact notificationSignalBoundOnCore_error_state _ _ _ st e h
+      exact sendSignalOnCore_error_state _ _ _ st e h
     | some target =>
       obtain ⟨receiver, _⟩ := target
       simp only [hTarget] at h ⊢
       by_cases hRecv : securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf receiver)
       · simp only [hRecv, ↓reduceIte] at h ⊢
-        exact notificationSignalBoundOnCore_error_state _ _ _ st e h
+        exact sendSignalOnCore_error_state _ _ _ st e h
       · simp only [hRecv, Bool.false_eq_true, ↓reduceIte]
   · simp only [hFlow, Bool.false_eq_true, ↓reduceIte]
 
@@ -205,8 +215,8 @@ other signal takes the general arm. -/
               match ntfn.waitHeadCode with
               | k + 1 =>
                   if signalWakesInPlace st notifId ⟨k⟩ then
-                    .ok ((), performSignalWoken st notifId ⟨k⟩
-                      (ntfnSuccessorCode st ⟨k⟩) cap.signalBadge executingCore)
+                    .ok ((), maybeDonateSchedContextFast (performSignalWoken st notifId ⟨k⟩
+                      (ntfnSuccessorCode st ⟨k⟩) cap.signalBadge executingCore) notifId.val k)
                   else notificationSignalCheckedArmGeneralR ctx tid executingCore cap st
               | 0 => notificationSignalCheckedArmGeneralR ctx tid executingCore cap st
           | none => notificationSignalCheckedArmGeneralR ctx tid executingCore cap st
@@ -223,8 +233,9 @@ other signal takes the general arm. -/
                         | some ep =>
                             if securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf ⟨k⟩) &&
                                 queueRemoveInPlace st ⟨tcb.ipcObjectCode⟩ true ⟨k⟩ ep tcb then
-                              .ok ((), performSignalBoundDelivered executingCore ⟨k⟩
-                                ⟨tcb.ipcObjectCode⟩ ep tcb cap.signalBadge st)
+                              .ok ((), maybeDonateSchedContextFast
+                                (performSignalBoundDelivered executingCore ⟨k⟩
+                                  ⟨tcb.ipcObjectCode⟩ ep tcb cap.signalBadge st) notifId.val k)
                             else notificationSignalCheckedArmGeneralR ctx tid executingCore
                               cap st
                         | _ => notificationSignalCheckedArmGeneralR ctx tid executingCore cap st
@@ -260,10 +271,13 @@ theorem notificationSignalCheckedArmR_eq_general (ctx : LabelingContext)
                 exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.2
               have hHead : ntfn.waitHead = some ⟨k⟩ := by
                 rw [← Notification.ofOptCode_waitHeadCode, hK]; rfl
+              have hWk : signalWokenThread? st notifId = some ⟨k⟩ := by
+                simp only [signalWokenThread?, hBound, hN, Option.bind_some, hHead]
               simp only [notificationSignalBoundCrossCoreDispatchChecked, hFlow,
-                ↓reduceIte, hBound, notificationSignalBoundOnCore, notificationSignalOnCore_eq_impl,
-                notificationSignalOnCoreImpl, hN, hHead, hW]
-              rw [← optCode_ntfnSuccessor?, ← signalWoken_eq_perform]
+                ↓reduceIte, hBound, sendSignalOnCore, notificationSignalBoundOnCore,
+                notificationSignalOnCore_eq_impl, notificationSignalOnCoreImpl, hN, hHead, hW,
+                donateToSignalled, hWk]
+              rw [← optCode_ntfnSuccessor?, ← signalWoken_eq_perform, maybeDonateSchedContextFast_eq]
             · rfl
           · rfl
         · rfl
@@ -289,8 +303,11 @@ theorem notificationSignalCheckedArmR_eq_general (ctx : LabelingContext)
                         hTT hSt
                       have hS := notificationSignalBoundOnCore_bound_eq notifId cap.signalBadge
                         executingCore st ⟨k⟩ ⟨tcb.ipcObjectCode⟩ ep tcb hBT hE hTT hG
+                      have hWk : signalWokenThread? st notifId = some ⟨k⟩ := by
+                        simp only [signalWokenThread?, hBT]
                       simp only [notificationSignalBoundCrossCoreDispatchChecked, hFlow, hBT,
-                        hFlow2, ↓reduceIte, hS]
+                        hFlow2, ↓reduceIte, sendSignalOnCore, hS, donateToSignalled, hWk]
+                      rw [maybeDonateSchedContextFast_eq]
                       rfl
                     · rfl
                   all_goals rfl

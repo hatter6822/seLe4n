@@ -533,4 +533,46 @@ theorem sendSignalOnCore_preserves_ipcInvariantFull (n : SeLe4n.ObjId) (badge : 
     (notDonationOwner_of_bindingLinksAgree F.binding hInv.donationOwnerValid
       (signalWokenThread?_not_blockedOnReply hNWC hT))
 
+/-- **WS-RR RR7.22 (residual)**: the unchecked bound-signal dispatch preserves
+the whole bundle.  The dispatch is seL4's `sendSignal` (`sendSignalOnCore`) at
+the executing core: the wake's bundle lemma, then the donation's. -/
+theorem notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (executingCore : Concurrency.CoreId) (st : SystemState)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hNWC : notificationWaiterConsistent st)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hPred : ∀ (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId),
+      boundDeliveryTarget? st notificationId = some (t, epId) →
+      splicePredecessorBlocked true epId st t)
+    (hBi : schedContextBindingBidirectional st) :
+    ipcInvariantFull
+      (notificationSignalBoundCrossCoreDispatch notificationId badge executingCore st).1 :=
+  sendSignalOnCore_preserves_ipcInvariantFull notificationId badge executingCore st hObjInv
+    (notificationSignalBoundOnCore_preserves_ipcInvariantFull notificationId badge
+      executingCore st hInv hObjInv hNWC hAllBudgetsNone hPred) hBi hInv hNWC
+
+/-- **WS-RR RR7.22 (residual)**: the *flow-checked* bound-signal dispatch, the
+form the live arm runs, preserves the bundle: a refused gate returns the
+pre-state, and a passed one runs the unchecked dispatch. -/
+theorem notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFull
+    (ctx : LabelingContext) (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (executingCore : Concurrency.CoreId) (st : SystemState)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hNWC : notificationWaiterConsistent st)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hPred : ∀ (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId),
+      boundDeliveryTarget? st notificationId = some (t, epId) →
+      splicePredecessorBlocked true epId st t)
+    (hBi : schedContextBindingBidirectional st) :
+    ipcInvariantFull
+      (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler badge
+        executingCore st).1 :=
+  notificationSignalBoundCrossCoreDispatchChecked_induct (fun s => ipcInvariantFull s) ctx
+    notificationId signaler badge executingCore st hInv
+    (notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull notificationId badge
+      executingCore st hInv hObjInv hNWC hAllBudgetsNone hPred hBi)
+
 end SeLe4n.Kernel

@@ -671,20 +671,6 @@ theorem notificationSignalBoundOnCore_mappingStage {notificationId : SeLe4n.ObjI
         exact (h1.trans h2).trans (wakeThread_mappingStage _ _ executingCore)
   · exact notificationSignalOnCore_mappingStage
 
-theorem notificationSignalBoundCrossCoreDispatchChecked_mappingStage {ctx : LabelingContext}
-    {notificationId : SeLe4n.ObjId} {signaler : SeLe4n.ThreadId} {badge : SeLe4n.Badge}
-    {executingCore : CoreId} {st : SystemState} :
-    MappingStage st (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
-      badge executingCore st).1 := by
-  unfold notificationSignalBoundCrossCoreDispatchChecked
-  split
-  · split
-    · split
-      · exact notificationSignalBoundOnCore_mappingStage
-      · exact MappingStage.refl _
-    · exact notificationSignalBoundOnCore_mappingStage
-  · exact MappingStage.refl _
-
 /-- The single-core wait is a kind-preserving write: the park, then the waiter's
 queue links. -/
 theorem notificationWait_kindPreservingWrite {notifId : SeLe4n.ObjId} {waiter : SeLe4n.ThreadId}

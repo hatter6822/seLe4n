@@ -31,15 +31,6 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency
 
-/-- **The thread a signal wakes**, read on the state the signal is handed: the
-bound thread blocked on a receive, for an idle notification
-(`boundDeliveryTarget?`), else the head of the notification's wait queue; none
-when the signal accumulates its word. -/
-def signalWokenThread? (st : SystemState) (n : SeLe4n.ObjId) : Option SeLe4n.ThreadId :=
-  match boundDeliveryTarget? st n with
-  | some (t, _) => some t
-  | none => (st.getNotification? n).bind (·.waitHead)
-
 /-- **The donation after a signal**: the notification's context donated to the
 thread the signal woke (`maybeDonateSchedContext`), the state as it was when the
 signal woke none. -/

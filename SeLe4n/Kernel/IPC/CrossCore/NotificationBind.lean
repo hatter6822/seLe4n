@@ -563,6 +563,34 @@ def notificationSignalBoundWriteSet (st : SystemState) (notificationId : SeLe4n.
   | some (t, _) => [determineTargetCore st t]
   | none => notificationSignalWriteSet st notificationId
 
+/-- **The thread a signal wakes**, read on the state the signal is handed: the
+bound thread blocked on a receive, for an idle notification
+(`boundDeliveryTarget?`), else the head of the notification's wait queue; none
+when the signal accumulates its word. -/
+def signalWokenThread? (st : SystemState) (n : SeLe4n.ObjId) : Option SeLe4n.ThreadId :=
+  match boundDeliveryTarget? st n with
+  | some (t, _) => some t
+  | none => (st.getNotification? n).bind (·.waitHead)
+
+/-- **The cores seL4's `sendSignal` donation writes**, read on the state the
+signal is handed: the woken thread's home core where seL4's guard holds
+(`signalDonationCores`), none where the signal wakes nothing or the guard fails.
+The wake moves none of the links the guard reads nor the woken thread's home
+core (`notificationSignalBoundOnCore_signalDonationCores_eq`), so the entry state
+names the donation's cores exactly. -/
+def signalWakeDonationCores (st : SystemState) (n : SeLe4n.ObjId) : List CoreId :=
+  match signalWokenThread? st n with
+  | some t => signalDonationCores st n t
+  | none => []
+
+/-- **The context seL4's `sendSignal` donation writes**, read on the state the
+signal is handed: the notification's context where seL4's guard holds for the
+thread the signal wakes (`signalDonationContext?`), none otherwise.  Exact, as
+the cores are (`notificationSignalBoundOnCore_signalDonationContext?_eq`). -/
+def signalWakeDonationContext? (st : SystemState) (n : SeLe4n.ObjId) :
+    Option SeLe4n.SchedContextId :=
+  (signalWokenThread? st n).bind (signalDonationContext? st n)
+
 /-- **WS-RR RR8.12**: the scheduler-domain footprint of the **live**
 `.notificationSignal` arm.
 
@@ -575,10 +603,16 @@ the two genuinely differ: on the bound-delivery path the woken thread is the
 *bound* TCB, whose home core the plain signal's set does not name.
 
 Defined over `notificationSignalBoundWriteSet`, so the footprint and
-`notificationSignalBoundOnCore_confinedToCores` cannot name different cores. -/
+`notificationSignalBoundOnCore_confinedToCores` cannot name different cores.
+seL4's `sendSignal` then donates the notification's context to the woken thread
+(`sendSignalOnCore`), which writes that thread's home core's run and replenish
+queues exactly when seL4's guard holds: `signalWakeDonationCores`, read on the
+entry state, joins both segments. -/
 def schedLockSet_notificationSignalBoundOnCore (st : SystemState)
     (notificationId : SeLe4n.ObjId) : List (LockKey × Concurrency.AccessMode) :=
-  schedFootprintOfCores (notificationSignalBoundWriteSet st notificationId) []
+  schedFootprintOfCores
+    (notificationSignalBoundWriteSet st notificationId ++ signalWakeDonationCores st notificationId)
+    (signalWakeDonationCores st notificationId)
 
 /-- **WS-RR RR8.12**: on the bound-delivery path the footprint names the bound
 TCB's home core — the one `wakeThread` writes under.
@@ -592,21 +626,9 @@ theorem schedLockSet_notificationSignalBoundOnCore_contains_bound_runQueue_write
     (epId : SeLe4n.ObjId) (hTarget : boundDeliveryTarget? st notificationId = some (t, epId)) :
     (LockKey.runQueue (determineTargetCore st t), Concurrency.AccessMode.write)
       ∈ schedLockSet_notificationSignalBoundOnCore st notificationId := by
-  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
+  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr (List.mem_append_left _ ?_)
   unfold notificationSignalBoundWriteSet
   rw [hTarget]
   simp
-
-/-- **WS-RR RR8.12**: off the bound path the live arm's footprint **is** the bare
-signal's, definitionally — so every statement about one transfers to the other on
-the overwhelming majority of signals. -/
-@[simp] theorem schedLockSet_notificationSignalBoundOnCore_of_no_target (st : SystemState)
-    (notificationId : SeLe4n.ObjId)
-    (hNone : boundDeliveryTarget? st notificationId = none) :
-    schedLockSet_notificationSignalBoundOnCore st notificationId
-      = schedLockSet_notificationSignalOnCore st notificationId := by
-  unfold schedLockSet_notificationSignalBoundOnCore schedLockSet_notificationSignalOnCore
-    notificationSignalBoundWriteSet
-  rw [hNone]
 
 end SeLe4n.Kernel

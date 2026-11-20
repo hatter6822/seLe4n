@@ -1530,24 +1530,6 @@ theorem notificationSignalBoundOnCore_stepCovers (e : CoreId) {notificationId : 
           (stepCovers_trans hF2.stepCovers)
   · exact notificationSignalOnCore_stepCovers e hInv
 
-theorem notificationSignalBoundCrossCoreDispatchChecked_stepCovers (e : CoreId)
-    {ctx : LabelingContext} {notificationId : SeLe4n.ObjId} {signaler : SeLe4n.ThreadId}
-    {badge : SeLe4n.Badge} {executingCore : CoreId} {st : SystemState}
-    (hInv : st.objects.invExt) :
-    stepCovers e st (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
-      badge executingCore st).1 ∧
-    (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
-      badge executingCore st).1.objects.invExt := by
-  have hRefl : stepCovers e st st ∧ st.objects.invExt := ⟨stepCovers_refl e st, hInv⟩
-  unfold notificationSignalBoundCrossCoreDispatchChecked
-  split
-  · split
-    · split
-      · exact notificationSignalBoundOnCore_stepCovers e hInv
-      · exact hRefl
-    · exact notificationSignalBoundOnCore_stepCovers e hInv
-  · exact hRefl
-
 /-- The per-core wait covers on every outcome: consuming a badge keeps the
 waiter runnable, and blocking takes it off the executing core. -/
 theorem notificationWaitOnCore_stepCovers (e : CoreId) {notificationId : SeLe4n.ObjId}
