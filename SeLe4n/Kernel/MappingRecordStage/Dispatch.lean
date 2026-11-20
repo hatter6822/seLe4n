@@ -642,11 +642,11 @@ theorem cancelRecvBusyReply_mappingStage (ctx : LabelingContext) (tid : SeLe4n.T
   · exact cancelReplyHolder_mappingStage _ _ _
 
 /-- **A donation through a notification keeps the mapping records**: it is the
-identity or a bind (`schedContextBind_mappingStage`). -/
+identity or the bind's writes (`schedContextBindPerform_mappingStage`). -/
 theorem maybeDonateSchedContext_mappingStage (st : SystemState) (n : SeLe4n.ObjId)
     (tid : SeLe4n.ThreadId) : MappingStage st (maybeDonateSchedContext st n tid) :=
   maybeDonateSchedContext_induct MappingStage st n tid (MappingStage.refl _)
-    (fun _ _ _ _ h => schedContextBind_mappingStage h)
+    (fun _ _ _ _ => schedContextBindPerform_mappingStage _ _ _)
 
 /-- **A receive that completes its bound notification keeps the mapping
 records**: the checked wait's consumption and the badge register. -/

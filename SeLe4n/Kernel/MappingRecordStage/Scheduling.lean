@@ -597,36 +597,33 @@ theorem MappingStage.rewriteObject_schedContext_schedulerOnly {st : SystemState}
   MappingStage.of_objects_eq_left (st0 := { st with scheduler := s }) rfl
     (MappingStage.rewriteObject_schedContext (st := { st with scheduler := s }) h _ _)
 
-/-- The bind writes the context's bound thread and the thread's binding in
-place, then places a parked thread. -/
+/-- The bind's writes: the context's bound thread and the thread's binding in
+place, then a parked thread placed. -/
+theorem schedContextBindPerform_mappingStage (st : SystemState) (vScId : SeLe4n.ValidObjId)
+    (vTid : SeLe4n.ValidThreadId) :
+    MappingStage st (SchedContextOps.schedContextBindPerform st vScId vTid) := by
+  unfold SchedContextOps.schedContextBindPerform
+  split
+  · exact MappingStage.refl st
+  rename_i sc hSc _
+  split
+  · exact MappingStage.refl st
+  refine MappingStage.trans ?_ (releasePlace_mappingStage _ _ _)
+  split
+  · refine MappingStage.trans ?_ (MappingStage.of_objects_eq
+      (SystemState.markReschedulePendingOnCore_objects _ _))
+    refine MappingStage.trans ?_ (runEnqueueOnCore_mappingStage _ _ _ _)
+    exact (MappingStage.rewriteObject_schedContext hSc _ _).trans
+      (updateTcb_mappingStage _ _ _)
+  · exact (MappingStage.rewriteObject_schedContext hSc _ _).trans
+      (updateTcb_mappingStage _ _ _)
+
+/-- The bind is its writes (`schedContextBind_ok_donate`). -/
 theorem schedContextBind_mappingStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4n.ValidThreadId}
     {st st' : SystemState} (h : SchedContextOps.schedContextBind vScId vTid st = .ok ((), st')) :
     MappingStage st st' := by
-  unfold SchedContextOps.schedContextBind at h
-  split at h
-  · rename_i sc hSc _
-    split at h
-    · cases h
-    · split at h
-      · cases h
-      · split at h
-        · split at h
-          · cases h
-          · split at h
-            · simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
-              subst h
-              refine MappingStage.trans ?_ (releasePlace_mappingStage _ _ _)
-              split
-              · refine MappingStage.trans ?_ (MappingStage.of_objects_eq
-                  (SystemState.markReschedulePendingOnCore_objects _ _))
-                refine MappingStage.trans ?_ (runEnqueueOnCore_mappingStage _ _ _ _)
-                exact (MappingStage.rewriteObject_schedContext hSc _ _).trans
-                  (updateTcb_mappingStage _ _ _)
-              · exact (MappingStage.rewriteObject_schedContext hSc _ _).trans
-                  (updateTcb_mappingStage _ _ _)
-            all_goals cases h
-        · cases h
-  · cases h
+  rw [(SchedContextOps.schedContextBind_ok_donate h).2]
+  exact schedContextBindPerform_mappingStage _ _ _
 
 /-- The configure's resume tail writes run-queue links alone. -/
 theorem configureResumeBound_mappingStage (st : SystemState) (t : SeLe4n.ThreadId)

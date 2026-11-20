@@ -19,15 +19,20 @@ notification's context is bound to no thread, the context is donated to the
 thread (`schedContext_donate`) and resumed (`schedContext_resume`).
 
 The owner's decision D19 records the donation as the receiving thread's
-`.bound` binding, with the notification link kept on the context.  So the
-donation is `schedContextBind`'s ok-state, and a bind the checks refuse leaves
-the state as it was (`maybeDonateSchedContext_cases`): a thread that already
-holds a context, a context bound to a thread or heading a reply stack, and a
-thread owed a context by a live reply stack each keep what they hold.
+`.bound` binding, with the notification link kept on the context.  seL4's guard
+is all the donation asks (`schedContextDonateAdmitted`): the thread holds no
+context and the context is bound to no thread.  Then the bind's writes are made
+(`schedContextBindPerform`): the context names the thread, the thread is bound,
+a parked runnable thread is placed on its home core, and the context waits on
+that core's release queue for a head not yet released (`schedContext_resume`).
+When the guard fails the state is unchanged, as seL4 donates nothing.  The
+bind's further refusals (a context heading a reply stack, a thread owed a
+context by a live reply stack) are `SchedContext_Bind`'s decode, which seL4's
+donation does not ask; where they also pass the donation is the bind's ok-state
+(`maybeDonateSchedContext_eq_bind`).
 
-The compiled form (`maybeDonateSchedContextFast`) asks the bind's checks
-(`schedContextBindAdmitted`) before any write and makes the bind's writes in
-place (`schedContextBindPerform`), so a donation allocates nothing.
+The compiled form (`maybeDonateSchedContextFast`) asks the guard before any
+write and makes the writes in place, so a donation allocates nothing.
 -/
 
 namespace SeLe4n.Kernel
@@ -35,8 +40,10 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 /-- **seL4-MCS `maybeDonateSchedContext`**: the context bound to notification
-`n`, donated to `tid` as its `.bound` binding when the bind admits it, else the
-state unchanged. -/
+`n`, donated to `tid` as its `.bound` binding when seL4's guard holds — the
+thread holds no context and the context is bound to no thread
+(`schedContextDonateAdmitted`) — and the bind's writes made
+(`schedContextBindPerform`); else the state unchanged, as seL4 does nothing. -/
 def maybeDonateSchedContext (st : SystemState) (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) :
     SystemState :=
   match st.getNotification? n with
@@ -47,51 +54,72 @@ def maybeDonateSchedContext (st : SystemState) (n : SeLe4n.ObjId) (tid : SeLe4n.
     | some s =>
       match s.toObjId.toValid?, tid.toValid? with
       | some vS, some vT =>
-        match SchedContextOps.schedContextBind vS vT st with
-        | .ok ((), st') => st'
-        | .error _ => st
+        if SchedContextOps.schedContextDonateAdmitted st vS vT then
+          SchedContextOps.schedContextBindPerform st vS vT
+        else st
       | _, _ => st
 
-/-- **The donation is the identity or a bind of `tid`**: every family lemma of
-the donation is the identity's and the bind's. -/
+/-- **The donation is the identity or the bind's writes under seL4's guard**,
+the context being the notification's: every family lemma of the donation is the
+identity's and the perform's. -/
 theorem maybeDonateSchedContext_cases (st : SystemState) (n : SeLe4n.ObjId)
     (tid : SeLe4n.ThreadId) :
     maybeDonateSchedContext st n tid = st ∨
       ∃ (vS : SeLe4n.ValidObjId) (vT : SeLe4n.ValidThreadId), vT.val = tid ∧
-        SchedContextOps.schedContextBind vS vT st = .ok ((), maybeDonateSchedContext st n tid) := by
+        (∃ ntfn s, st.getNotification? n = some ntfn ∧ ntfn.schedContext = some s ∧
+          s.toObjId = vS.val) ∧
+        SchedContextOps.schedContextDonateAdmitted st vS vT = true ∧
+        maybeDonateSchedContext st n tid = SchedContextOps.schedContextBindPerform st vS vT := by
   unfold maybeDonateSchedContext
   split
   · exact Or.inl rfl
+  rename_i ntfn hN
   split
   · exact Or.inl rfl
+  rename_i s hS
   split
-  · rename_i vS vT _ hT
+  · rename_i vS vT hSv hT
     split
-    · rename_i st' hB
-      refine Or.inr ⟨vS, vT, ?_, hB⟩
-      unfold SeLe4n.ThreadId.toValid? at hT
-      split at hT
-      · cases hT
-      · cases hT; rfl
+    · rename_i hA
+      refine Or.inr ⟨vS, vT, ?_, ⟨ntfn, s, hN, hS, ?_⟩, hA, rfl⟩
+      · unfold SeLe4n.ThreadId.toValid? at hT
+        split at hT
+        · cases hT
+        · cases hT; rfl
+      · unfold SeLe4n.ObjId.toValid? at hSv
+        split at hSv
+        · cases hSv
+        · cases hSv; rfl
     · exact Or.inl rfl
   · exact Or.inl rfl
 
-/-- **A property every bind of `tid` carries, and the identity, the donation
-carries.** -/
+/-- **A property every guarded perform for `tid` carries, and the identity, the
+donation carries.** -/
 theorem maybeDonateSchedContext_induct (P : SystemState → SystemState → Prop)
     (st : SystemState) (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (hId : P st st)
-    (hBind : ∀ (vS : SeLe4n.ValidObjId) (vT : SeLe4n.ValidThreadId) st', vT.val = tid →
-      SchedContextOps.schedContextBind vS vT st = .ok ((), st') → P st st') :
+    (hDonate : ∀ (vS : SeLe4n.ValidObjId) (vT : SeLe4n.ValidThreadId), vT.val = tid →
+      SchedContextOps.schedContextDonateAdmitted st vS vT = true →
+      P st (SchedContextOps.schedContextBindPerform st vS vT)) :
     P st (maybeDonateSchedContext st n tid) := by
-  rcases maybeDonateSchedContext_cases st n tid with h | ⟨vS, vT, hT, hB⟩
+  rcases maybeDonateSchedContext_cases st n tid with h | ⟨vS, vT, hT, _, hA, h⟩
   · rw [h]; exact hId
-  · exact hBind vS vT _ hT hB
+  · rw [h]; exact hDonate vS vT hT hA
 
-/-- **The compiled donation**, the ids passed as their codes: the bind's checks
-asked before any write (`schedContextBindAdmitted`), then its writes in place
-(`schedContextBindPerform`).  A context code at or past `2 ^ 62` — which no
-object store holds — takes the specification, so no code is a heap number. -/
+/-- **Where the bind's checks also pass, the donation is the bind's ok-state**,
+so the bind's own family lemmas apply to it. -/
+theorem maybeDonateSchedContext_eq_bind {st : SystemState} {n : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {vS : SeLe4n.ValidObjId} {vT : SeLe4n.ValidThreadId}
+    (h : maybeDonateSchedContext st n tid = SchedContextOps.schedContextBindPerform st vS vT)
+    (hA : SchedContextOps.schedContextBindAdmitted st vS vT = true) :
+    SchedContextOps.schedContextBind vS vT st = .ok ((), maybeDonateSchedContext st n tid) := by
+  rw [h]; exact SchedContextOps.schedContextBind_of_admitted st vS vT hA
+
+/-- **The compiled donation**, the ids passed as their codes: seL4's guard
+(`schedContextDonateAdmitted`) asked before any write, then the bind's writes in
+place (`schedContextBindPerform`, compiled as its `Impl`).  A context code at or
+past `2 ^ 62` — which no object store holds — takes the specification, so no
+code is a heap number. -/
 @[noinline] def maybeDonateSchedContextFast (st : SystemState) (nCode tCode : Nat) :
     SystemState :=
   match st.getNotification? ⟨nCode⟩ with
@@ -102,39 +130,10 @@ object store holds — takes the specification, so no code is a heap number. -/
     else if sCode < 2 ^ 62 then
       if hS : (⟨sCode - 1⟩ : SeLe4n.ObjId) = SeLe4n.ObjId.sentinel then st
       else if hT : (⟨tCode⟩ : SeLe4n.ThreadId) = SeLe4n.ThreadId.sentinel then st
-      else if SchedContextOps.schedContextBindAdmitted st ⟨⟨sCode - 1⟩, hS⟩ ⟨⟨tCode⟩, hT⟩ then
+      else if SchedContextOps.schedContextDonateAdmitted st ⟨⟨sCode - 1⟩, hS⟩ ⟨⟨tCode⟩, hT⟩ then
         SchedContextOps.schedContextBindPerform st ⟨⟨sCode - 1⟩, hS⟩ ⟨⟨tCode⟩, hT⟩
       else st
     else maybeDonateSchedContext st ⟨nCode⟩ ⟨tCode⟩
-
-/-- A bind its checks refuse is refused. -/
-theorem schedContextBind_error_of_not_admitted (st : SystemState) (vS : SeLe4n.ValidObjId)
-    (vT : SeLe4n.ValidThreadId)
-    (h : SchedContextOps.schedContextBindAdmitted st vS vT = false) :
-    ∃ e, SchedContextOps.schedContextBind vS vT st = .error e := by
-  unfold SchedContextOps.schedContextBindAdmitted at h
-  unfold SchedContextOps.schedContextBind
-  cases hW : st.getSchedContextWitnessed? (SeLe4n.SchedContextId.ofObjId vS.val) with
-  | none => exact ⟨_, rfl⟩
-  | some w =>
-    obtain ⟨sc, hSc⟩ := w
-    simp only [hW] at h ⊢
-    by_cases hB : sc.boundThread.isSome = true
-    · simp only [hB, ↓reduceIte]; exact ⟨_, rfl⟩
-    by_cases hR : sc.scReply.isSome = true
-    · simp only [hB, hR, Bool.false_eq_true, ↓reduceIte]; exact ⟨_, rfl⟩
-    simp only [hB, hR, Bool.false_eq_true, ↓reduceIte] at h ⊢
-    cases hT : st.getTcb? vT.val with
-    | none => exact ⟨_, rfl⟩
-    | some tcb =>
-      simp only [hT] at h ⊢
-      by_cases hL : replyFrameOnLiveStack st tcb = true
-      · simp only [hL, ↓reduceIte]; exact ⟨_, rfl⟩
-      simp only [hL, Bool.false_eq_true, ↓reduceIte] at h ⊢
-      cases hBind : tcb.schedContextBinding with
-      | unbound => simp [hBind] at h
-      | bound _ => exact ⟨_, rfl⟩
-      | donated _ _ => exact ⟨_, rfl⟩
 
 /-- **The compiled donation is the donation.** -/
 theorem maybeDonateSchedContextFast_eq (st : SystemState) (n : SeLe4n.ObjId)
@@ -167,17 +166,8 @@ theorem maybeDonateSchedContextFast_eq (st : SystemState) (n : SeLe4n.ObjId)
         simp only [hS, hT, hT', ↓reduceDIte]
       have hT' : ¬ tid = SeLe4n.ThreadId.sentinel := hT
       simp only [hS, hT, hT', ↓reduceDIte]
-      cases hA : SchedContextOps.schedContextBindAdmitted st ⟨⟨k⟩, hS⟩ ⟨⟨tid.val⟩, hT⟩ with
-      | true =>
-        have := SchedContextOps.schedContextBind_of_admitted st ⟨⟨k⟩, hS⟩ ⟨⟨tid.val⟩, hT⟩ hA
-        simp only [↓reduceIte]
-        rw [show (⟨⟨tid.val⟩, hT⟩ : SeLe4n.ValidThreadId) = ⟨tid, hT'⟩ from rfl] at this ⊢
-        rw [this]
-      | false =>
-        obtain ⟨e, he⟩ := schedContextBind_error_of_not_admitted st ⟨⟨k⟩, hS⟩ ⟨⟨tid.val⟩, hT⟩ hA
-        rw [show (⟨⟨tid.val⟩, hT⟩ : SeLe4n.ValidThreadId) = ⟨tid, hT'⟩ from rfl] at he
-        simp only [Bool.false_eq_true, ↓reduceIte, he]
     · simp only [h0, hW, ↓reduceIte]
+
 
 /-! ### The donation writes no register -/
 
@@ -273,15 +263,16 @@ theorem registersAgree.updateTcb_rewriteSchedContext (st : SystemState) (id : Se
   · rw [SystemState.updateTcb_getTcb?_ne _ _ _ hI1 _ hE,
       SystemState.rewriteObject_schedContext_getTcb? _ _ _ _ hInv]
 
-/-- **A bind writes no thread's registers**: its writes are the context, the
+/-- **The bind's writes keep every register file**: they are the context, the
 thread's binding, the run-queue links and the release links. -/
-theorem schedContextBind_registersAgree {vS : SeLe4n.ValidObjId} {vT : SeLe4n.ValidThreadId}
-    {st st' : SystemState} (hInv : st.objects.invExt)
-    (h : SchedContextOps.schedContextBind vS vT st = .ok ((), st')) : registersAgree st' st := by
-  unfold SchedContextOps.schedContextBind at h
-  repeat' split at h
-  all_goals first | (cases h; done) | skip
-  cases h
+theorem schedContextBindPerform_registersAgree (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (vT : SeLe4n.ValidThreadId) (hInv : st.objects.invExt) :
+    registersAgree (SchedContextOps.schedContextBindPerform st vS vT) st := by
+  unfold SchedContextOps.schedContextBindPerform
+  split
+  · exact registersAgree.refl _
+  split
+  · exact registersAgree.refl _
   refine registersAgree.trans
     (registersAgree.of_releaseLinks (SystemState.releasePlace_agree _ _ _)) ?_
   split
@@ -295,9 +286,8 @@ theorem schedContextBind_registersAgree {vS : SeLe4n.ValidObjId} {vT : SeLe4n.Va
 /-- **The donation writes no thread's registers.** -/
 theorem maybeDonateSchedContext_registersAgree (st : SystemState) (n : SeLe4n.ObjId)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    registersAgree (maybeDonateSchedContext st n tid) st := by
-  rcases maybeDonateSchedContext_cases st n tid with h | ⟨_, _, _, hB⟩
-  · rw [h]; exact registersAgree.refl _
-  · exact schedContextBind_registersAgree hInv hB
+    registersAgree (maybeDonateSchedContext st n tid) st :=
+  maybeDonateSchedContext_induct (fun a b => registersAgree b a) st n tid
+    (registersAgree.refl _) (fun vS vT _ _ => schedContextBindPerform_registersAgree st vS vT hInv)
 
 end SeLe4n.Kernel

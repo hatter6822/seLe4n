@@ -1452,6 +1452,152 @@ placement reads the written state only (`schedContextBindPerform_eq_impl`). -/
       rw [hF]
       rfl
 
+/-- **seL4-MCS `maybeDonateSchedContext`'s guard** (`notification.c`): the
+context is stored and bound to no thread, and the thread is stored and holds no
+context.  `schedContext_donate` asks nothing more, so the donation is
+`schedContextBindPerform` under this guard alone: the bind's two further
+refusals (a context heading a reply stack, a thread owed a context by a live
+reply stack) are the decode's of `SchedContext_Bind`, not the donation's.  A
+bind the checks admit is a donation the guard admits
+(`schedContextDonateAdmitted_of_bindAdmitted`), so every family lemma stated
+over the perform under this guard covers the bind. -/
+@[inline] def schedContextDonateAdmitted (st : SystemState) (vScId : ValidObjId)
+    (vThreadId : ValidThreadId) : Bool :=
+  match st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
+  | none => false
+  | some ⟨sc, _⟩ =>
+    if sc.boundThread.isSome then false
+    else
+      match st.getTcb? vThreadId.val with
+      | none => false
+      | some tcb =>
+        match tcb.schedContextBinding with
+        | .unbound => true
+        | _ => false
+
+/-- A bind its checks admit is a donation seL4's guard admits. -/
+theorem schedContextDonateAdmitted_of_bindAdmitted (st : SystemState) (vScId : ValidObjId)
+    (vThreadId : ValidThreadId) (h : schedContextBindAdmitted st vScId vThreadId = true) :
+    schedContextDonateAdmitted st vScId vThreadId = true := by
+  unfold schedContextBindAdmitted at h
+  unfold schedContextDonateAdmitted
+  cases hW : st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
+  | none => simp [hW] at h
+  | some w =>
+    obtain ⟨sc, _⟩ := w
+    simp only [hW] at h ⊢
+    by_cases hB : sc.boundThread.isSome = true
+    · simp [hB] at h
+    by_cases hR : sc.scReply.isSome = true
+    · simp [hB, hR] at h
+    simp only [hB, hR, Bool.false_eq_true, ↓reduceIte] at h ⊢
+    cases hT : st.getTcb? vThreadId.val with
+    | none => simp [hT] at h
+    | some tcb =>
+      simp only [hT] at h ⊢
+      by_cases hL : replyFrameOnLiveStack st tcb = true
+      · simp [hL] at h
+      simp only [hL, Bool.false_eq_true, ↓reduceIte] at h
+      exact h
+
+/-- A bind its checks refuse is refused. -/
+theorem schedContextBind_error_of_not_admitted (st : SystemState) (vS : ValidObjId)
+    (vT : ValidThreadId) (h : schedContextBindAdmitted st vS vT = false) :
+    ∃ e, schedContextBind vS vT st = .error e := by
+  unfold schedContextBindAdmitted at h
+  unfold schedContextBind
+  cases hW : st.getSchedContextWitnessed? (SchedContextId.ofObjId vS.val) with
+  | none => exact ⟨_, rfl⟩
+  | some w =>
+    obtain ⟨sc, hSc⟩ := w
+    simp only [hW] at h ⊢
+    by_cases hB : sc.boundThread.isSome = true
+    · simp only [hB, ↓reduceIte]; exact ⟨_, rfl⟩
+    by_cases hR : sc.scReply.isSome = true
+    · simp only [hB, hR, Bool.false_eq_true, ↓reduceIte]; exact ⟨_, rfl⟩
+    simp only [hB, hR, Bool.false_eq_true, ↓reduceIte] at h ⊢
+    cases hT : st.getTcb? vT.val with
+    | none => exact ⟨_, rfl⟩
+    | some tcb =>
+      simp only [hT] at h ⊢
+      by_cases hL : replyFrameOnLiveStack st tcb = true
+      · simp only [hL, ↓reduceIte]; exact ⟨_, rfl⟩
+      simp only [hL, Bool.false_eq_true, ↓reduceIte] at h ⊢
+      cases hBind : tcb.schedContextBinding with
+      | unbound => simp [hBind] at h
+      | bound _ => exact ⟨_, rfl⟩
+      | donated _ _ => exact ⟨_, rfl⟩
+
+/-- **A bind succeeds exactly when its checks admit it, and its state is the
+perform's.** -/
+theorem schedContextBind_ok_iff (st st' : SystemState) (vS : ValidObjId) (vT : ValidThreadId) :
+    schedContextBind vS vT st = .ok ((), st') ↔
+      schedContextBindAdmitted st vS vT = true ∧ st' = schedContextBindPerform st vS vT := by
+  constructor
+  · intro h
+    cases hA : schedContextBindAdmitted st vS vT with
+    | true =>
+      rw [schedContextBind_of_admitted st vS vT hA] at h
+      cases h
+      exact ⟨rfl, rfl⟩
+    | false =>
+      obtain ⟨e, he⟩ := schedContextBind_error_of_not_admitted st vS vT hA
+      rw [he] at h
+      cases h
+  · rintro ⟨hA, rfl⟩
+    exact schedContextBind_of_admitted st vS vT hA
+
+/-- **A successful bind is a donation seL4's guard admits**: the corollary every
+bind family lemma is read off. -/
+theorem schedContextBind_ok_donate {st st' : SystemState} {vS : ValidObjId} {vT : ValidThreadId}
+    (h : schedContextBind vS vT st = .ok ((), st')) :
+    schedContextDonateAdmitted st vS vT = true ∧ st' = schedContextBindPerform st vS vT :=
+  let h' := (schedContextBind_ok_iff st st' vS vT).mp h
+  ⟨schedContextDonateAdmitted_of_bindAdmitted st vS vT h'.1, h'.2⟩
+
+/-- **The perform under seL4's guard, written out**: the context and the thread
+it reads, the guard's two facts, and the writes.  The prologue every family
+lemma of the donation opens with. -/
+theorem schedContextBindPerform_of_donateAdmitted (st : SystemState) (vScId : ValidObjId)
+    (vThreadId : ValidThreadId) (h : schedContextDonateAdmitted st vScId vThreadId = true) :
+    ∃ (sc : SchedContext) (hSc : st.getSchedContext? (SchedContextId.ofObjId vScId.val) = some sc)
+      (tcb : TCB),
+      ¬ sc.boundThread.isSome = true ∧ st.getTcb? vThreadId.val = some tcb ∧
+      tcb.schedContextBinding = .unbound ∧
+      schedContextBindPerform st vScId vThreadId =
+        (let scR := sc.releaseReadyHead st.machine.timer
+         let updatedSc := { scR with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val),
+                                     donationOrigin := none }
+         let st1 := st.rewriteObject vScId.val (KernelObject.schedContext updatedSc)
+           (SystemState.rewriteAdmissible_schedContext hSc updatedSc)
+         let st2 := st1.updateTcb vThreadId.val fun t =>
+           { t with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }
+         let bindHome := determineTargetCore st2 vThreadId.val
+         let st3 := if bindPlacesParkedThread st2 vThreadId.val tcb scR then
+           (st2.runEnqueueOnCore bindHome vThreadId.val
+             (resolveInsertPriority st2 vThreadId.val)).markReschedulePendingOnCore bindHome
+         else st2
+         st3.releasePlace bindHome ⟨vScId.val.toNat⟩) := by
+  unfold schedContextDonateAdmitted at h
+  unfold schedContextBindPerform
+  cases hW : st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
+  | none => simp [hW] at h
+  | some w =>
+    obtain ⟨sc, hSc⟩ := w
+    simp only [hW] at h ⊢
+    by_cases hB : sc.boundThread.isSome = true
+    · simp [hB] at h
+    simp only [hB, Bool.false_eq_true, ↓reduceIte] at h
+    cases hT : st.getTcb? vThreadId.val with
+    | none => simp [hT] at h
+    | some tcb =>
+      simp only [hT] at h
+      refine ⟨sc, hSc, tcb, hB, rfl, ?_, rfl⟩
+      cases hBind : tcb.schedContextBinding with
+      | unbound => rfl
+      | bound _ => simp [hBind] at h
+      | donated _ _ => simp [hBind] at h
+
 -- ============================================================================
 -- Z5-H1/H2/H3: schedContextUnbind
 -- ============================================================================

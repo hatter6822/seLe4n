@@ -141,113 +141,100 @@ The bridge is **transported into the disequality** rather than rewritten into th
 goal: the post-state is a structure literal far too large to restate, but
 `hHome ▸ hne` gives the setter's own frame lemma exactly the hypothesis it
 wants, and `exact` closes the rest up to definitional equality. -/
+theorem schedContextBindPerform_confinedToCores (vScId : SeLe4n.ValidObjId)
+    (vThreadId : SeLe4n.ValidThreadId) (st : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hA : SchedContextOps.schedContextDonateAdmitted st vScId vThreadId = true) :
+    observableSlotsConfinedToCores st (SchedContextOps.schedContextBindPerform st vScId vThreadId)
+      (schedContextBindWriteSet st vThreadId.val) := by
+  obtain ⟨sc, hSc, tcb, -, hTcb, hUnbound, hEq⟩ :=
+    SchedContextOps.schedContextBindPerform_of_donateAdmitted st vScId vThreadId hA
+  rw [hEq]
+  try dsimp only []
+  -- `v0.35.71`: the two typed writes over `st`, reduced to the double
+  -- insert under the pre-state's TCB witness.
+  rw [SystemState.updateTcb_after_rewriteObject_schedContext st vScId.val _ _
+    vThreadId.val tcb _ hObjInv hTcb]
+  let sc1 : SchedContext :=
+    { sc.releaseReadyHead st.machine.timer with
+      boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val)
+      donationOrigin := none }
+  let scObj : KernelObject := .schedContext sc1
+  let st1 : SystemState := { st with objects := st.objects.insert vScId.val scObj }
+  let tcb1 : TCB :=
+    { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }
+  let tcbObj : KernelObject := .tcb tcb1
+  let st2 : SystemState :=
+    { st1 with objects := st1.objects.insert vThreadId.val.toObjId tcbObj }
+  have hScRaw : st.objects.get? vScId.val = some (.schedContext sc) := by
+    simpa using (SystemState.getSchedContext?_eq_some_iff st
+      (SeLe4n.SchedContextId.ofObjId vScId.val) sc).mp hSc
+  have hT1 : ∀ x : SeLe4n.ThreadId, st1.getTcb? x = st.getTcb? x := fun x =>
+    getTcb?_insert_schedContext_eq st st1
+      (SeLe4n.SchedContextId.ofObjId vScId.val) sc sc1 hObjInv
+      (by simpa using hScRaw) rfl x
+  have hInv1 : st1.objects.invExt :=
+    SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
+  have hTcb1 : st1.objects.get? vThreadId.val.toObjId = some (.tcb tcb) := by
+    have h := hT1 vThreadId.val
+    rw [hTcb] at h
+    simpa using (SystemState.getTcb?_eq_some_iff st1 vThreadId.val tcb).mp h
+  have hHome : determineTargetCore st2 vThreadId.val
+      = determineTargetCore st vThreadId.val := by
+    refine Eq.trans (determineTargetCore_insert_tcb st1 st2 vThreadId.val tcb tcb1
+      hInv1 hTcb1 rfl rfl vThreadId.val) ?_
+    exact determineTargetCore_congr st st1 vThreadId.val (by rw [hT1 vThreadId.val])
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;>
+    simp only [schedContextBindWriteSet, List.mem_singleton] at hc
+  -- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: two arms since WS-SX SX6.4
+  -- — the placement of a parked runnable thread and the identity.  The
+  -- placement writes `setRunQueueOnCore bindHome`, the same core the
+  -- write set names, so each clause is one lemma and then `rfl`.
+  · have hne : determineTargetCore st vThreadId.val ≠ c := fun h => hc h.symm
+    -- KSC-1: the placement arm raises the home core's flag, which moves
+    -- no slot.  WS-ZA ZA4.5: it writes through the thread's TCB
+    -- run-queue links, on the home core only.
+    refine (SystemState.releaseOnlyWrite.runQueueOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
+    split
+    · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+        SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ c _ _ (hHome ▸ hne)]
+    · rfl
+  · refine (SystemState.releaseOnlyWrite.currentOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
+    split
+    · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_currentOnCore,
+        SystemState.runEnqueueOnCore_currentOnCore]
+    · rfl
+  · refine (SystemState.releaseOnlyWrite.activeDomainOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
+    split
+    · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_activeDomainOnCore,
+        SystemState.runEnqueueOnCore_activeDomainOnCore]
+    · rfl
+  · refine (SystemState.releaseOnlyWrite.domainTimeRemainingOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
+    split
+    · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore,
+        SystemState.runEnqueueOnCore_domainTimeRemainingOnCore]
+    · rfl
+  · refine (SystemState.releaseOnlyWrite.domainScheduleIndexOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
+    split
+    · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore,
+        SystemState.runEnqueueOnCore_domainScheduleIndexOnCore]
+    · rfl
+  · -- registers: untouched on both arms.
+    refine (congrArg (fun m => m.regsOnCore c)
+      (SystemState.releaseOnlyWrite.machine (SystemState.releasePlace_releaseOnlyWrite _ _ _))).trans ?_
+    split
+    · rw [SystemState.markReschedulePendingOnCore, SystemState.runEnqueueOnCore_machine]
+    · rfl
+
+/-- The bind is its writes under seL4's donation guard
+(`schedContextBind_ok_donate`). -/
 theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
     (vThreadId : SeLe4n.ValidThreadId) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
     (hStep : SchedContextOps.schedContextBind vScId vThreadId st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' (schedContextBindWriteSet st vThreadId.val) := by
-  unfold SchedContextOps.schedContextBind at hStep
-  split at hStep
-  · next sc hSc _ =>
-    split at hStep
-    · exact absurd hStep (by simp)
-    · -- `v0.35.4`: a context heading a reply stack is refused, so a successful
-      -- bind saw none.
-      have hNoHead : sc.scReply.isSome = false := by
-        cases hH : sc.scReply.isSome with
-        | false => rfl
-        | true => rw [hH] at hStep; simp at hStep
-      simp only [hNoHead, Bool.false_eq_true, if_false] at hStep
-      split at hStep
-      · next tcb hTcb =>
-        -- `v0.35.4`: and a thread whose reply frame is on a live stack is refused.
-        have hNoLive : replyFrameOnLiveStack st tcb = false := by
-          cases hL : replyFrameOnLiveStack st tcb with
-          | false => rfl
-          | true => rw [hL] at hStep; simp at hStep
-        simp only [hNoLive, Bool.false_eq_true, if_false] at hStep
-        · split at hStep
-          · next hUnbound =>
-            rw [Except.ok.injEq, Prod.mk.injEq] at hStep
-            obtain ⟨-, hs⟩ := hStep
-            subst hs
-            -- `v0.35.71`: the two typed writes over `st`, reduced to the double
-            -- insert under the pre-state's TCB witness.
-            rw [SystemState.updateTcb_after_rewriteObject_schedContext st vScId.val _ _
-              vThreadId.val tcb _ hObjInv hTcb]
-            let sc1 : SchedContext :=
-              { sc.releaseReadyHead st.machine.timer with
-                boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val)
-                donationOrigin := none }
-            let scObj : KernelObject := .schedContext sc1
-            let st1 : SystemState := { st with objects := st.objects.insert vScId.val scObj }
-            let tcb1 : TCB :=
-              { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }
-            let tcbObj : KernelObject := .tcb tcb1
-            let st2 : SystemState :=
-              { st1 with objects := st1.objects.insert vThreadId.val.toObjId tcbObj }
-            have hScRaw : st.objects.get? vScId.val = some (.schedContext sc) := by
-              simpa using (SystemState.getSchedContext?_eq_some_iff st
-                (SeLe4n.SchedContextId.ofObjId vScId.val) sc).mp hSc
-            have hT1 : ∀ x : SeLe4n.ThreadId, st1.getTcb? x = st.getTcb? x := fun x =>
-              getTcb?_insert_schedContext_eq st st1
-                (SeLe4n.SchedContextId.ofObjId vScId.val) sc sc1 hObjInv
-                (by simpa using hScRaw) rfl x
-            have hInv1 : st1.objects.invExt :=
-              SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
-            have hTcb1 : st1.objects.get? vThreadId.val.toObjId = some (.tcb tcb) := by
-              have h := hT1 vThreadId.val
-              rw [hTcb] at h
-              simpa using (SystemState.getTcb?_eq_some_iff st1 vThreadId.val tcb).mp h
-            have hHome : determineTargetCore st2 vThreadId.val
-                = determineTargetCore st vThreadId.val := by
-              refine Eq.trans (determineTargetCore_insert_tcb st1 st2 vThreadId.val tcb tcb1
-                hInv1 hTcb1 rfl rfl vThreadId.val) ?_
-              exact determineTargetCore_congr st st1 vThreadId.val (by rw [hT1 vThreadId.val])
-            refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;>
-              simp only [schedContextBindWriteSet, List.mem_singleton] at hc
-            -- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: two arms since WS-SX SX6.4
-            -- — the placement of a parked runnable thread and the identity.  The
-            -- placement writes `setRunQueueOnCore bindHome`, the same core the
-            -- write set names, so each clause is one lemma and then `rfl`.
-            · have hne : determineTargetCore st vThreadId.val ≠ c := fun h => hc h.symm
-              -- KSC-1: the placement arm raises the home core's flag, which moves
-              -- no slot.  WS-ZA ZA4.5: it writes through the thread's TCB
-              -- run-queue links, on the home core only.
-              refine (SystemState.releaseOnlyWrite.runQueueOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
-              split
-              · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-                  SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ c _ _ (hHome ▸ hne)]
-              · rfl
-            · refine (SystemState.releaseOnlyWrite.currentOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
-              split
-              · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_currentOnCore,
-                  SystemState.runEnqueueOnCore_currentOnCore]
-              · rfl
-            · refine (SystemState.releaseOnlyWrite.activeDomainOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
-              split
-              · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_activeDomainOnCore,
-                  SystemState.runEnqueueOnCore_activeDomainOnCore]
-              · rfl
-            · refine (SystemState.releaseOnlyWrite.domainTimeRemainingOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
-              split
-              · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore,
-                  SystemState.runEnqueueOnCore_domainTimeRemainingOnCore]
-              · rfl
-            · refine (SystemState.releaseOnlyWrite.domainScheduleIndexOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
-              split
-              · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore,
-                  SystemState.runEnqueueOnCore_domainScheduleIndexOnCore]
-              · rfl
-            · -- registers: untouched on both arms.
-              refine (congrArg (fun m => m.regsOnCore c)
-                (SystemState.releaseOnlyWrite.machine (SystemState.releasePlace_releaseOnlyWrite _ _ _))).trans ?_
-              split
-              · rw [SystemState.markReschedulePendingOnCore, SystemState.runEnqueueOnCore_machine]
-              · rfl
-          · exact absurd hStep (by simp)
-      · exact absurd hStep (by simp)
-  · exact absurd hStep (by simp)
+  obtain ⟨hA, rfl⟩ := SchedContextOps.schedContextBind_ok_donate hStep
+  exact schedContextBindPerform_confinedToCores vScId vThreadId st hObjInv hA
 
 -- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `setThreadCpuAffinityWriteSet` moved to the
 -- production `SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean` (via
