@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "sel4-syscall-labels",
-      "commit_sha": "b6d4f318c8128a25b85de431ebfc7520066629c8",
-      "tree_sha": "909c682e7b8193f6285c727e48a8a2832297e0c5",
-      "committed_at_utc": "2026-11-19T21:55:30+00:00"
+      "branch": "main",
+      "commit_sha": "81bc00635f878519d23179bc00b12517cde5258b",
+      "tree_sha": "e018cd283bd7e44eab2f2b291f89a66fe79db458",
+      "committed_at_utc": "2026-11-19T19:47:24-05:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "fe706d0917e790f6ea81a6bcf9a5ca424b79fa74bc6e053a1b73a7c4d98f0984"
+    "source_digest": "febedde4df8186dfb7299c51939b1dcc8c9399fa3483ab8dae3b4a12d2046f04"
   },
   "summary": {
     "module_count": 716,
