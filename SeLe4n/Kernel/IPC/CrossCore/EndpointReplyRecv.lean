@@ -1030,14 +1030,34 @@ theorem schedLockSet_replyRecvTransferOnCore_of_no_fault (endpointId : SeLe4n.Ob
 -- footprint's own arguments, so a consumer reaches for the shared lemma directly.
 
 
+/-- **The cores a reply-receive's signal completion may donate on**, read on the
+entry state: every core, when the receiver holds a bound notification; none
+otherwise.
+
+This is the one over-approximation in the arms' footprints, and it is forced:
+seL4-MCS `handleReplyRecv` runs `completeSignal`'s `maybeDonateSchedContext` on
+the state the reply left, and the reply may return the receiver's donated
+context (so the guard's "the receiver holds no context" turns true only after
+it) and may migrate the receiver back to the caller's core (so the home core
+the donation writes is the post-reply one).  The reply keeps the receiver's
+bound-notification code (`notificationsAndBindingsKept`), so a donation is only
+possible where this names every core
+(`replyRecvDonationCores_eq_allCores_of_completes`). -/
+def replyRecvDonationCores (st : SystemState) (receiver : SeLe4n.ThreadId) :
+    List Concurrency.CoreId :=
+  match st.getTcb? receiver with
+  | some t => if t.boundNotificationCode = 0 then [] else Concurrency.allCores
+  | none => []
+
 /-- **The `.replyRecv` arm's scheduler-domain footprint**: the arm runs either the
 composite (`replyRecvTransferOnCore`) or, when its receive completes the bound
 notification (seL4-MCS `receiveIPC`'s first branch), the reply leg alone
 (`replyTransferOnCoreChecked`) followed by the notification's completion, which
 writes only the object store.  Which one runs turns on the labelling context the
 footprint does not read, so it names both legs' cores: `schedFootprintOfCores` of
-the two write sets and of the two replenish-core lists.  The canonical segments
-deduplicate the shared cores. -/
+the two write sets and of the two replenish-core lists, and the cores the
+completion's donation may write (`replyRecvDonationCores`).  The canonical
+segments deduplicate the shared cores. -/
 def schedLockSet_replyRecvArmOnCore (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
     (label : Nat) (msg : IpcMessage) (grant : Bool)
@@ -1046,13 +1066,14 @@ def schedLockSet_replyRecvArmOnCore (endpointId : SeLe4n.ObjId)
   schedFootprintOfCores
     (replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg grant
         executingCore st ++
-      replyTransferWriteSet receiver prevCaller (replyRecvReplyMessageInfo label msg)
-        msg.registers msg executingCore st)
+      (replyTransferWriteSet receiver prevCaller (replyRecvReplyMessageInfo label msg)
+        msg.registers msg executingCore st ++ replyRecvDonationCores st receiver))
     (replyRecvHandoffReplenishCores (replyRecvCallerFaultAnswer? st prevCaller label msg)
         endpointId receiver replyId prevCaller
         (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
         executingCore st ++
-      replyTransferReplenishCores receiver prevCaller msg executingCore st)
+      (replyTransferReplenishCores receiver prevCaller msg executingCore st ++
+        replyRecvDonationCores st receiver))
 
 /-- The composite's footprint is contained in the arm's. -/
 theorem schedLockSet_replyRecvTransferOnCore_subset_arm (endpointId : SeLe4n.ObjId)

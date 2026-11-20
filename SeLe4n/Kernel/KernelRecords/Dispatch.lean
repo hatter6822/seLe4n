@@ -752,6 +752,13 @@ theorem writeReturnFrameToTcb_recordsStage (x : SystemState) (t : SeLe4n.ThreadI
     (f : Architecture.SyscallReturnFrame) : RecordsStage x (Architecture.writeReturnFrameToTcb x t f) :=
   .of_frameK fun hI => RecordsFrame.writeReturnFrameToTcb x t f hI
 
+/-- **seL4-MCS `maybeDonateSchedContext` keeps the records**: the identity, or
+the bind's writes under seL4's guard (`RecordsFrame.schedContextBindPerform`). -/
+theorem maybeDonateSchedContext_recordsStage (x : SystemState) (n : SeLe4n.ObjId)
+    (t : SeLe4n.ThreadId) : RecordsStage x (maybeDonateSchedContext x n t) :=
+  .of_frameK fun hI => maybeDonateSchedContext_induct (fun a b => RecordsFrame a b) x n t
+    (RecordsFrame.refl hI) (fun vS vT _ _ => RecordsFrame.schedContextBindPerform x vS vT hI)
+
 /-- The `Call`-gated reply write keeps the records. -/
 theorem writeCallReturnWord_recordsStage (x : SystemState) (t : SeLe4n.ThreadId)
     (w : UInt64) : RecordsStage x (Architecture.writeCallReturnWord x t w) :=
@@ -780,7 +787,8 @@ theorem completeSignalArm_recordsStage {ctx : LabelingContext} {tid : SeLe4n.Thr
   split at h
   · rename_i hR
     cases h
-    exact (RecordsStage.of_fst_eq hW hR).trans (writeReturnFrameToTcb_recordsStage _ _ _)
+    exact ((RecordsStage.of_fst_eq hW hR).trans (writeReturnFrameToTcb_recordsStage _ _ _)).trans
+      (maybeDonateSchedContext_recordsStage _ _ _)
   · rename_i hR
     cases h
     exact RecordsStage.of_fst_eq hW hR
@@ -997,9 +1005,10 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     split at h
     · rename_i hW
       cases h
-      exact (RecordsStage.of_fst_eq
+      exact ((RecordsStage.of_fst_eq
         (RecordsStage.notificationWaitCrossCoreDispatchChecked P.deletes.1 hCaller) hW).trans
-        (writeReturnFrameToTcb_recordsStage _ _ _)
+        (writeReturnFrameToTcb_recordsStage _ _ _)).trans
+        (maybeDonateSchedContext_recordsStage _ _ _)
     · rename_i hW
       cases h
       exact RecordsStage.of_fst_eq

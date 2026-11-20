@@ -6138,15 +6138,6 @@ notification were idle, so the receiver learns nothing of the notification
 capability sets) to a receiver that holds none: `completeSignalArm` donates it
 after the word is taken (WS-SX SX8.2). -/
 
-/-- **The notification bound to `tid`** (`TCB.boundNotification`), as the id
-its code names; `⟨0⟩` for a thread with none, which a receive never reads
-(`receiveCompletesSignal` is `false` there). -/
-@[inline] def receiverBoundNotification (st : SystemState) (tid : SeLe4n.ThreadId) :
-    SeLe4n.ObjId :=
-  match st.getTcb? tid with
-  | some t => ⟨t.boundNotificationCode - 1⟩
-  | none => ⟨0⟩
-
 /-- **seL4-MCS `receiveIPC`'s first test**: the receiver has a bound
 notification, it is active (holds a pending word, seL4's `NtfnState_Active`),
 and the notification's label flows to the receiver's. -/

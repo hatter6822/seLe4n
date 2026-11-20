@@ -971,6 +971,14 @@ theorem notificationSignalDeclassifiedOnCore_runQueueStage (ctx : GenericLabelin
       rw [recordDeclassifiedHops_frame _ _ _ _ _ hRec]
       exact hB.trans (RunQueueStage.of_frame rfl rfl rfl)
 
+/-- **seL4-MCS `maybeDonateSchedContext` keeps the run queues in agreement with
+the threads' links**: the identity, or the bind's writes under seL4's guard
+(`schedContextBindPerform_runQueueStage`). -/
+theorem maybeDonateSchedContext_runQueueStage (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) : RunQueueStage st (maybeDonateSchedContext st n tid) :=
+  maybeDonateSchedContext_induct (fun a b => RunQueueStage a b) st n tid (RunQueueStage.refl _)
+    (fun vS vT _ hA => schedContextBindPerform_runQueueStage st vS vT hA)
+
 /-- A reply-receive whose receive completes its bound notification keeps the run
 queues in agreement with the threads' links: the reply leg, the wait's
 consumption, then the badge register written. -/
@@ -984,9 +992,10 @@ theorem replyRecvCompletesSignalArm_runQueueEntryStage {ctx : LabelingContext}
   have hS := replyTransferOnCoreChecked_runQueueEntryStage hInv hD hR
   rcases hOr with rfl | ⟨st2, badge, _, _, hW, _, rfl⟩
   · exact hS
-  · exact (hS.trans (notificationWaitOnCore_consumed_runQueueStage
+  · exact ((hS.trans (notificationWaitOnCore_consumed_runQueueStage
       (notificationWaitCrossCoreDispatchChecked_ok_inner hW)).entry).trans
-      (writeReturnFrameToTcb_runQueueStage _ _ _).entry
+      (writeReturnFrameToTcb_runQueueStage _ _ _).entry).trans
+      (maybeDonateSchedContext_runQueueStage _ _ _).entry
 
 /-- A receive run on its busy-reply-cancelled state keeps the run queues in
 agreement with the threads' links: the `.receive` arm, and the `.replyRecv`
@@ -1031,10 +1040,11 @@ theorem receiveResolvedArm_runQueueEntryStage (ctx : LabelingContext)
     simp only [hSig, ↓reduceIte] at h
     obtain ⟨st1, badge, hW, _, hPost⟩ := completeSignalArm_consumes hSig h
     subst hPost
-    exact (hS.trans (runQueueStage_of_pair_eq
+    exact ((hS.trans (runQueueStage_of_pair_eq
       (notificationWaitOnCore_runQueueEntryStage _ tid executingCore stC hCurC P.notIdle)
       (notificationWaitCrossCoreDispatchChecked_ok_inner hW))).trans
-      (writeReturnFrameToTcb_runQueueStage _ _ _).entry
+      (writeReturnFrameToTcb_runQueueStage _ _ _).entry).trans
+      (maybeDonateSchedContext_runQueueStage _ _ _).entry
   simp only [Bool.not_eq_true] at hSig
   by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
   · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
@@ -1194,9 +1204,10 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     split at h
     · rename_i hW
       cases h
-      exact (runQueueStage_of_pair_eq
+      exact ((runQueueStage_of_pair_eq
         (notificationWaitCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ P) hW).trans
-        (writeReturnFrameToTcb_runQueueStage _ _ _).entry
+        (writeReturnFrameToTcb_runQueueStage _ _ _).entry).trans
+        (maybeDonateSchedContext_runQueueStage _ _ _).entry
     · rename_i hW
       cases h
       exact runQueueStage_of_pair_eq

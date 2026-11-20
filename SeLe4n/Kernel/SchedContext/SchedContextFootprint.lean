@@ -262,48 +262,43 @@ of a parked thread with its reschedule flag, and (WS-ZA ZA6.4) the release place
 the thread's home core; only the last moves a replenishment, and on that core
 alone.  The exactness half of `schedLockSet_schedContextBindOnCore`'s replenish
 segment. -/
+theorem schedContextBindPerform_replenishQueueOnCore_ne (st : SystemState)
+    (vScId : SeLe4n.ValidObjId) (vThreadId : SeLe4n.ValidThreadId) (c : CoreId)
+    (hObjInv : st.objects.invExt) (hne : c ≠ determineTargetCore st vThreadId.val)
+    (hA : SchedContextOps.schedContextDonateAdmitted st vScId vThreadId = true) :
+    (SchedContextOps.schedContextBindPerform st vScId vThreadId).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  obtain ⟨sc, hSc, tcb, -, hTcb, -, hEq⟩ :=
+    SchedContextOps.schedContextBindPerform_of_donateAdmitted st vScId vThreadId hA
+  rw [hEq]
+  dsimp only
+  rw [SystemState.releasePlace_replenishQueueOnCore_ne _ _ _ c (by
+      rw [determineTargetCore_congr st _ vThreadId.val (by
+        rw [SystemState.updateTcb_getTcb?_self _ _ _
+            (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hObjInv),
+          SystemState.rewriteObject_schedContext_getTcb? st _ _ _ hObjInv, hTcb]
+        rfl)]
+      exact hne)]
+  -- Two arms since WS-SX SX6.4: the placement of a parked runnable thread, and
+  -- the identity.  Both write a run queue (and the placement a
+  -- reschedule-pending flag) or nothing, so neither moves a replenish queue.
+  split
+  · simp only [SystemState.markReschedulePendingOnCore,
+      SchedulerState.markReschedulePendingOnCore_replenishQueueOnCore,
+      SystemState.runEnqueueOnCore_scheduler]
+    split <;> simp only [SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+      SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore,
+      SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
+  · simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
+
+/-- ...and so does the bind, whose ok-state is the perform under the guard. -/
 theorem schedContextBind_replenishQueueOnCore_ne (st st' : SystemState)
     (vScId : SeLe4n.ValidObjId) (vThreadId : SeLe4n.ValidThreadId) (c : CoreId)
     (hObjInv : st.objects.invExt) (hne : c ≠ determineTargetCore st vThreadId.val)
     (h : SchedContextOps.schedContextBind vScId vThreadId st = .ok ((), st')) :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
-  unfold SchedContextOps.schedContextBind at h
-  split at h
-  · rename_i sc hSc _
-    split at h
-    · exact absurd h (by simp)
-    · split at h
-      · exact absurd h (by simp)
-      · split at h
-        · rename_i tcb hTcb
-          split at h
-          · exact absurd h (by simp)
-          · split at h
-            · dsimp only at h
-              rw [Except.ok.injEq, Prod.mk.injEq] at h
-              rw [← h.2, SystemState.releasePlace_replenishQueueOnCore_ne _ _ _ c (by
-                  rw [determineTargetCore_congr st _ vThreadId.val (by
-                    rw [SystemState.updateTcb_getTcb?_self _ _ _
-                        (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hObjInv),
-                      SystemState.rewriteObject_schedContext_getTcb? st _ _ _ hObjInv, hTcb]
-                    rfl)]
-                  exact hne)]
-              -- Two arms since WS-SX SX6.4: the placement of a parked runnable
-              -- thread, and the identity.  Both write a run queue (and the
-              -- placement a reschedule-pending flag) or nothing, so neither
-              -- moves a replenish queue.
-              split
-              · simp only [SystemState.markReschedulePendingOnCore,
-                  SchedulerState.markReschedulePendingOnCore_replenishQueueOnCore,
-                  SystemState.runEnqueueOnCore_scheduler]
-                split <;> simp only [SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
-                  SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore,
-                  SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
-              · simp only [SystemState.updateTcb_scheduler,
-                  SystemState.rewriteObject_scheduler]
-            · exact absurd h (by simp)
-        · exact absurd h (by simp)
-  · exact absurd h (by simp)
+  obtain ⟨hA, rfl⟩ := SchedContextOps.schedContextBind_ok_donate h
+  exact schedContextBindPerform_replenishQueueOnCore_ne st vScId vThreadId c hObjInv hne hA
 
 /-- **`v0.35.168`: a `.schedContextConfigure` writes exactly one replenish
 queue** — the one the SC's own release link names, where its purge lands.

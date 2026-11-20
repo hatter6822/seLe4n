@@ -90,22 +90,30 @@ theorem footprintCoversWrites_of_confined (S : LockSet)
 -- §2  The two notification arms
 -- ============================================================================
 
-/-- **Cut C6a**: `.notificationWait`'s footprint covers its writes.
+/-- **Cut C6a**: `.notificationWait`'s footprint covers the wait's writes.
 
 The simplest arm in the family and the shape of every proof below: the run
-segment is the executing core alone, the replenish segment is empty because a
-wait moves no scheduling context, and both halves are the arm's own theorems. -/
+segment holds the executing core, and the wait moves no scheduling context.
+The donation that follows a consumed wait is covered by the footprint's
+donation cores (`maybeDonateSchedContext_coversWrites`). -/
 theorem schedLockSet_notificationWaitOnCore_coversWrites
     (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (executingCore : CoreId)
-    (st : SystemState) (S : LockSet)
-    (hS : LockSet.ofList? (schedLockSet_notificationWaitOnCore executingCore) = some S) :
+    (st : SystemState) (S : LockSet) (notificationId? : Option SeLe4n.ObjId)
+    (hS : LockSet.ofList? (schedLockSet_notificationWaitOnCore st notificationId? waiter
+      executingCore) = some S) :
     footprintCoversWrites S st
-      (notificationWaitOnCore notificationId waiter executingCore st).1 :=
-  footprintCoversWrites_of_confined S [executingCore] [] st _
-    (LockSet.ofList?_pairs hS)
-    (notificationWaitOnCore_confinedToCores notificationId waiter executingCore st)
-    (fun d _ => notificationWaitOnCore_replenishQueueOnCore notificationId waiter
-      executingCore st d)
+      (notificationWaitOnCore notificationId waiter executingCore st).1 := by
+  have hP := LockSet.ofList?_pairs hS
+  have hConf := notificationWaitOnCore_confinedToCores notificationId waiter executingCore st
+  refine ⟨fun hAbsent => absurd (hP ▸ schedFootprintOfCores_contains_objStore_write _ _)
+    hAbsent, fun d hd => ?_, fun d _ => notificationWaitOnCore_replenishQueueOnCore
+      notificationId waiter executingCore st d⟩
+  have hd' : d ∉ [executingCore] := by
+    intro hm
+    rw [List.mem_singleton] at hm
+    subst hm
+    exact hd (hP ▸ schedLockSet_notificationWaitOnCore_contains_executing_runQueue_write _ _ _ _)
+  exact ⟨hConf.runQueue d hd', hConf.current d hd', hConf.activeDomain d hd'⟩
 
 /-- **Cut C6a**: `.notificationSignal`'s footprint covers its writes.
 
@@ -239,6 +247,35 @@ theorem schedLockSet_schedContextBindOnCore_coversWrites (st st' : SystemState)
     (schedContextBind_confinedToCores vScId vThreadId st st' hObjInv hStep)
     (fun d hd => schedContextBind_replenishQueueOnCore_ne st st' vScId vThreadId d hObjInv
       (fun e => hd (by rw [e]; exact List.mem_singleton_self _)) hStep)
+
+/-- **seL4-MCS `maybeDonateSchedContext` is covered** by any footprint naming
+the table write lock and, where seL4's guard holds, the receiver's home core's
+run-queue and replenish-queue write locks: the identity where the guard fails,
+the bind's writes on the home core where it holds. -/
+theorem maybeDonateSchedContext_coversWrites (S : LockSet) (st : SystemState)
+    (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs)
+    (hCores : ∀ d ∈ signalDonationCores st n tid,
+      (LockKey.runQueue d, AccessMode.write) ∈ S.pairs ∧
+        (LockKey.replenishQueue d, AccessMode.write) ∈ S.pairs) :
+    footprintCoversWrites S st (maybeDonateSchedContext st n tid) := by
+  cases hG : signalDonationGuard st n tid with
+  | false =>
+    rw [maybeDonateSchedContext_of_guard_false hG]; exact footprintCoversWrites_refl S st
+  | true =>
+    have hHome := hCores (determineTargetCore st tid) (by simp [signalDonationCores, hG])
+    rcases maybeDonateSchedContext_cases st n tid with e | ⟨vS, vT, rfl, -, hA, e⟩
+    · rw [e]; exact footprintCoversWrites_refl S st
+    rw [e]
+    have hConf := schedContextBindPerform_confinedToCores vS vT st hObjInv hA
+    refine ⟨fun hAbsent => absurd hTable hAbsent, fun d hd => ?_, fun d hd => ?_⟩
+    · have hd' : d ∉ schedContextBindWriteSet st vT.val := by
+        intro hm
+        simp only [schedContextBindWriteSet, List.mem_singleton] at hm
+        subst hm; exact hd hHome.1
+      exact ⟨hConf.runQueue d hd', hConf.current d hd', hConf.activeDomain d hd'⟩
+    · exact schedContextBindPerform_replenishQueueOnCore_ne st vS vT d hObjInv
+        (fun h => hd (h ▸ hHome.2)) hA
 
 -- ============================================================================
 -- §6  The suspend arm

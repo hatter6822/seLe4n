@@ -9,6 +9,7 @@
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReply
 import SeLe4n.Kernel.IPC.CrossCore.ReplyHolderCancel
 import SeLe4n.Kernel.Scheduler.SchedFootprint
+import SeLe4n.Kernel.SchedContext.NotificationDonation
 
 /-!
 # The scheduler-domain footprint of a receive that cancels its busy reply
@@ -40,6 +41,21 @@ def endpointReceiveLegReplenishCores (st : SystemState) (endpointId : SeLe4n.Obj
     | (_, .error _) => []
     | (st1, .ok (dequeued, _, _)) => rendezvousCallDonationReplenishCores st1 receiver dequeued
 
+/-- **The cores a receive's signal completion donates on** (seL4-MCS
+`receiveIPC`'s `completeSignal`, then `maybeDonateSchedContext`): the receiver's
+home core where seL4's guard holds on the state the completion starts from,
+which is the busy reply's cancelled state when the reply names a holder and the
+entry's own state otherwise.  The wait's consumption and the badge register
+leave the guard's reads alone (`completeSignalArm_signalDonationCores_eq`), so
+this is exact: no over-approximation. -/
+def receiveDonationCores (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId) : List CoreId :=
+  match busyReplyHolder? st receiver replyId with
+  | none => signalDonationCores st (receiverBoundNotification st receiver) receiver
+  | some holder =>
+      signalDonationCores (cancelReplyHolder st holder executingCore)
+        (receiverBoundNotification (cancelReplyHolder st holder executingCore) receiver) receiver
+
 /-- **The `.receive` arm's scheduler-domain footprint, its busy reply's cancel
 included** (seL4-MCS `receiveIPC`'s `cancelIPC(replyTCB)`).
 
@@ -52,22 +68,26 @@ refusal after the cancel hands the cancelled state back from the entry's spilled
 state rather than the dispatch's, so the run segment names every core's run
 queue.  The replenish segment is exact: the cancel moves no reservation
 (`cancelReplyHolder_replenishQueueOnCore`), and the receive's leg and donation
-move the ones they name on the cancelled state, the leg re-run from it. -/
+move the ones they name on the cancelled state, the leg re-run from it.  Both
+segments also name the cores a completion of the receiver's bound notification
+donates on (`receiveDonationCores`, seL4-MCS `maybeDonateSchedContext`). -/
 def schedLockSet_receiveCancellingHolderOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId) :
     List (LockKey × Concurrency.AccessMode) :=
   -- The canonical ladder at the top, each segment chosen by the busy reply,
   -- so the shared `schedFootprintOfCores` lemmas apply at full arity; with no
-  -- busy reply it is `schedLockSet_endpointReceiveOnCore` by definition.
+  -- busy reply it is `schedLockSet_endpointReceiveOnCore` with the donation's
+  -- cores appended.
   schedFootprintOfCores
-    (match busyReplyHolder? st receiver replyId with
+    ((match busyReplyHolder? st receiver replyId with
       | none => endpointReceiveDualWriteSet st endpointId executingCore
           ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore
-      | some _ => Concurrency.allCores)
-    (match busyReplyHolder? st receiver replyId with
+      | some _ => Concurrency.allCores) ++ receiveDonationCores st receiver replyId executingCore)
+    ((match busyReplyHolder? st receiver replyId with
       | none => endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome
       | some holder => endpointReceiveLegReplenishCores (cancelReplyHolder st holder executingCore)
-          endpointId receiver replyId executingCore)
+          endpointId receiver replyId executingCore) ++
+      receiveDonationCores st receiver replyId executingCore)
 
 /-- The receive's footprint, busy reply or not, is a cores footprint. -/
 theorem schedLockSet_receiveCancellingHolderOnCore_ofCores (st : SystemState)

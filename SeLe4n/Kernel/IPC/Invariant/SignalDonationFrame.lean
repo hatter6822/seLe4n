@@ -386,4 +386,126 @@ theorem cancelRecvBusyReply_bidirectional {ctx : LabelingContext} {tid : SeLe4n.
   schedContextBindingBidirectional.of_scIdLinksAgree
     (cancelRecvBusyReply_scIdLinksAgree ctx tid gate decoded ec st hInv) h
 
+/-! ### The guard the donation reads, read on the completion's pre-state
+
+seL4's guard reads the notification's context, the context's thread and the
+receiver's context; the receiver's home core reads its affinity.  The
+consumption and the badge register write none of them, so a footprint built
+from the state the completion is handed names exactly the cores the donation
+writes. -/
+
+/-- **What the guard reads of an object**: a notification's context word. -/
+def ntfnContextOf : Option KernelObject → Option Nat
+  | some (.notification n) => some n.schedContextCode
+  | _ => none
+
+/-- Two states hold the same context word in every notification. -/
+def ntfnContextsAgree (st st' : SystemState) : Prop :=
+  ∀ oid : SeLe4n.ObjId, ntfnContextOf st'.objects[oid]? = ntfnContextOf st.objects[oid]?
+
+namespace ntfnContextsAgree
+
+theorem refl (st : SystemState) : ntfnContextsAgree st st := fun _ => rfl
+
+theorem trans {a b c : SystemState} (h₁ : ntfnContextsAgree a b) (h₂ : ntfnContextsAgree b c) :
+    ntfnContextsAgree a c := fun o => (h₂ o).trans (h₁ o)
+
+theorem storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
+    (hInv : st.objects.invExt) (hS : SeLe4n.Model.storeObject k o st = .ok ((), st'))
+    (hk : ntfnContextOf (some o) = ntfnContextOf st.objects[k]?) : ntfnContextsAgree st st' := by
+  intro oid
+  by_cases h : oid = k
+  · subst h; rw [storeObject_objects_eq st st' oid o hInv hS]; exact hk
+  · rw [storeObject_objects_ne st st' k oid o h hInv hS]
+
+theorem updateTcb (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) : ntfnContextsAgree st (st.updateTcb t f) := by
+  cases hG : st.getTcb? t with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hG]; exact refl st
+  | some x =>
+    rw [SystemState.updateTcb_eq_of_some hG]
+    have hPre := (SystemState.getTcb?_eq_some_iff st t x).mp hG
+    exact proj_insert_eq ntfnContextOf hInv (by rw [hPre]; rfl)
+
+/-- A notification's context is its context word, decoded. -/
+theorem getNotification?_map_schedContext (st : SystemState) (n : SeLe4n.ObjId) :
+    (st.getNotification? n).map (·.schedContext) =
+      (ntfnContextOf st.objects[n]?).map SeLe4n.SchedContextId.ofOptCode := by
+  unfold SystemState.getNotification?
+  cases st.objects[n]? with
+  | none => rfl
+  | some o => cases o <;> rfl
+
+/-- The notification's context, read through the word. -/
+theorem getNotification?_schedContext {st st' : SystemState} (h : ntfnContextsAgree st st')
+    (n : SeLe4n.ObjId) :
+    (st'.getNotification? n).map (·.schedContext) = (st.getNotification? n).map (·.schedContext) := by
+  rw [getNotification?_map_schedContext, getNotification?_map_schedContext, h n]
+
+end ntfnContextsAgree
+
+/-- **A consumed wait and its badge register keep every notification's context
+word.** -/
+theorem completeSignalArm_donationPre_ntfnContexts {notifId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st1 : SystemState}
+    {badge : SeLe4n.Badge} (hInv : st.objects.invExt)
+    (h : notificationWaitOnCore notifId tid c st = (st1, .ok (some badge))) :
+    ntfnContextsAgree st (Architecture.writeReturnFrameToTcb st1 tid
+      (Architecture.badgeReturnFrame st1 tid badge)) := by
+  have hInv1 : st1.objects.invExt := by
+    have := notificationWaitCrossCoreDispatch_preserves_objects_invExt notifId tid c st hInv
+    unfold notificationWaitCrossCoreDispatch at this
+    rw [h] at this; exact this
+  refine ntfnContextsAgree.trans ?_ (ntfnContextsAgree.updateTcb _ _ _ hInv1)
+  unfold notificationWaitOnCore at h
+  cases hN : st.getNotification? notifId with
+  | none =>
+    rw [hN] at h
+    by_cases hO : (st.getObject? notifId).isSome = true
+    · simp only [hO, ↓reduceIte] at h; cases h
+    · simp only [hO, Bool.false_eq_true, ↓reduceIte] at h; cases h
+  | some ntfn =>
+    rw [hN] at h
+    have hPre := (SystemState.getNotification?_eq_some_iff _ _ _).mp hN
+    cases hB : ntfn.pendingBadge with
+    | some b =>
+      simp only [hB] at h
+      generalize hS : storeObject notifId _ st = rS at h
+      cases rS with
+      | error e => cases h
+      | ok v =>
+        obtain ⟨⟨⟩, stA⟩ := v
+        dsimp only at h
+        have F1 := ntfnContextsAgree.storeObject hInv hS (by rw [hPre]; rfl)
+        have hInvA := storeObject_preserves_objects_invExt st stA notifId _ hInv hS
+        cases hT : storeTcbIpcState stA tid .ready with
+        | error e => rw [hT] at h; cases h
+        | ok stB =>
+          rw [hT] at h
+          cases h
+          obtain ⟨tcb, hL, hS2⟩ := modifyTcb_ok_decompose hT
+          exact F1.trans (ntfnContextsAgree.storeObject hInvA hS2
+            (by rw [lookupTcb_some_objects stA tid tcb hL]; rfl))
+    | none =>
+      simp only [hB] at h
+      repeat' split at h
+      all_goals simp_all
+
+/-- **The donation's cores, read on the completion's pre-state**: the guard and
+the receiver's home core are the same on the state the consumption and the
+badge register leave. -/
+theorem completeSignalArm_signalDonationCores_eq {notifId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st1 : SystemState}
+    {badge : SeLe4n.Badge} (n : SeLe4n.ObjId) (hInv : st.objects.invExt)
+    (h : notificationWaitOnCore notifId tid c st = (st1, .ok (some badge))) :
+    signalDonationCores (Architecture.writeReturnFrameToTcb st1 tid
+      (Architecture.badgeReturnFrame st1 tid badge)) n tid = signalDonationCores st n tid := by
+  have F := completeSignalArm_donationPre_schedLinkFrame hInv h
+  have A := scIdLinksAgree.of_schedLinkFrame F
+  have hG := signalDonationGuard_congr (n := n) (tid := tid)
+    ((completeSignalArm_donationPre_ntfnContexts hInv h).getNotification?_schedContext n)
+    A.2 (A.1 tid)
+  unfold signalDonationCores
+  rw [hG, (show schedAuxAgree st _ from F.aux).determineTargetCore_eq]
+
 end SeLe4n.Kernel

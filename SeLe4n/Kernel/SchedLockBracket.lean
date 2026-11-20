@@ -256,6 +256,27 @@ theorem footprintCoversWrites_of_cores (S : LockSet)
     exact hd
       (hS ▸ (mem_schedFootprintOfCores_replenishQueue_iff runCores replenishCores d).mpr hMem)
 
+/-- **A cores footprint widened by more cores covers what the narrower one
+covers**: every member of the narrower ladder is a member of the wider one. -/
+theorem footprintCoversWrites_of_cores_append (S : LockSet)
+    (runCores replenishCores moreRun moreReplenish : List CoreId) (st st' : SystemState)
+    (hS : S.pairs = schedFootprintOfCores (runCores ++ moreRun) (replenishCores ++ moreReplenish))
+    (h : ∀ S0 : LockSet, LockSet.ofList? (schedFootprintOfCores runCores replenishCores)
+      = some S0 → footprintCoversWrites S0 st st') :
+    footprintCoversWrites S st st' := by
+  obtain ⟨S0, hS0⟩ : ∃ S0, LockSet.ofList? (schedFootprintOfCores runCores replenishCores)
+      = some S0 := ⟨_, dif_pos (schedFootprintOfCores_keys_nodup runCores replenishCores)⟩
+  refine footprintCoversWrites_mono S0 S st st' (fun l hl => ?_)
+    (h S0 hS0)
+  rw [LockSet.ofList?_pairs hS0] at hl
+  rw [hS]
+  rcases (mem_schedFootprintOfCores_iff _ _ _).mp hl with e | ⟨c, hc, e⟩ | ⟨c, hc, e⟩
+  · exact (mem_schedFootprintOfCores_iff _ _ _).mpr (Or.inl e)
+  · exact (mem_schedFootprintOfCores_iff _ _ _).mpr
+      (Or.inr (Or.inl ⟨c, List.mem_append_left _ hc, e⟩))
+  · exact (mem_schedFootprintOfCores_iff _ _ _).mpr
+      (Or.inr (Or.inr ⟨c, List.mem_append_left _ hc, e⟩))
+
 -- ============================================================================
 -- §4  The reschedule step's writes are inside its footprint
 -- ============================================================================

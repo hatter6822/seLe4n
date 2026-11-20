@@ -1375,7 +1375,8 @@ theorem receiveResolvedArm_readyKeptStage (ctx : LabelingContext)
         (notificationWaitOnCore_readyKeptStage _ tid executingCore stC hCurC P.notIdle) hI).trans
         (runQueueStage_of_pair_eq
           (notificationWaitOnCore_runQueueEntryStage _ tid executingCore stC hCurC P.notIdle) hI).1
-        (.of_stage (writeReturnFrameToTcb_runQueueStage _ _ _)))
+        (.of_stage ((writeReturnFrameToTcb_runQueueStage _ _ _).trans
+          (maybeDonateSchedContext_runQueueStage _ _ _))))
   simp only [Bool.not_eq_true] at hSig
   by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
   · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
@@ -1426,7 +1427,8 @@ theorem replyRecvCompletesSignalArm_readyKeptStage {S : SeLe4n.ThreadId → Prop
   · have hQ := notificationWaitOnCore_consumed_runQueueStage
       (notificationWaitCrossCoreDispatchChecked_ok_inner hW)
     exact hK.trans hE.1 ((readyKeptStage.of_stage hQ).trans hQ.entry.1
-      (.of_stage (writeReturnFrameToTcb_runQueueStage _ _ _)))
+      (.of_stage ((writeReturnFrameToTcb_runQueueStage _ _ _).trans
+          (maybeDonateSchedContext_runQueueStage _ _ _))))
 
 /-- **The reply keeps the receive's test**: a reply that leaves the replier's
 bound notification active and the replier ready in IPC on the entry state
@@ -1650,7 +1652,8 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
         (notificationWaitCrossCoreDispatchChecked_readyKeptStage _ _ _ _ _ P) hW).trans
         (runQueueStage_of_pair_eq
           (notificationWaitCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ P) hW).1
-        (.of_stage (writeReturnFrameToTcb_runQueueStage _ _ _))
+        (.of_stage ((writeReturnFrameToTcb_runQueueStage _ _ _).trans
+          (maybeDonateSchedContext_runQueueStage _ _ _)))
     · rename_i hW
       cases h
       exact runQueueStage_of_pair_eq

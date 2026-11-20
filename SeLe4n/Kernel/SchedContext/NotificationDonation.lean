@@ -106,6 +106,141 @@ theorem maybeDonateSchedContext_induct (P : SystemState → SystemState → Prop
   · rw [h]; exact hId
   · rw [h]; exact hDonate vS vT hT hA
 
+/-- **seL4's donation guard, as the footprints read it**: the notification is
+bound to a context, the context to no thread, and the receiver to no context
+(`schedContextDonateAdmitted`).  The lock sets of the arms that donate name the
+context and its receiver's home core exactly when this holds. -/
+def signalDonationGuard (st : SystemState) (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getNotification? n with
+  | none => false
+  | some ntfn =>
+    match ntfn.schedContext with
+    | none => false
+    | some s =>
+      match s.toObjId.toValid?, tid.toValid? with
+      | some vS, some vT => SchedContextOps.schedContextDonateAdmitted st vS vT
+      | _, _ => false
+
+/-- **Where the guard fails the donation writes nothing.** -/
+theorem maybeDonateSchedContext_of_guard_false {st : SystemState} {n : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} (h : signalDonationGuard st n tid = false) :
+    maybeDonateSchedContext st n tid = st := by
+  unfold signalDonationGuard at h
+  unfold maybeDonateSchedContext
+  cases hN : st.getNotification? n with
+  | none => rfl
+  | some ntfn =>
+    rw [hN] at h
+    simp only at h ⊢
+    cases hS : ntfn.schedContext with
+    | none => rfl
+    | some s =>
+      rw [hS] at h
+      simp only at h ⊢
+      cases hV : s.toObjId.toValid? <;> cases hT : tid.toValid? <;> simp_all
+
+/-- seL4's guard reads, of the context, whether it names a thread, and of the
+receiver, whether its binding names a context. -/
+theorem schedContextDonateAdmitted_eq_any (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (vT : SeLe4n.ValidThreadId) :
+    SchedContextOps.schedContextDonateAdmitted st vS vT =
+      (((st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vS.val)).map
+          (·.boundThread)).any Option.isNone &&
+        ((st.getTcb? vT.val).map (·.schedContextBinding.scId?)).any Option.isNone) := by
+  unfold SchedContextOps.schedContextDonateAdmitted
+  have hV := SystemState.getSchedContextWitnessed?_val st (SeLe4n.SchedContextId.ofObjId vS.val)
+  split
+  · rename_i hW
+    rw [hW] at hV
+    rw [← hV]; rfl
+  · rename_i sc _ hW
+    rw [hW] at hV
+    rw [← hV]
+    simp only [Option.map_some, Option.any_some]
+    cases hB : sc.boundThread with
+    | some t => simp
+    | none =>
+      simp only [Option.isSome_none, Bool.false_eq_true, ↓reduceIte, Option.isNone_none,
+        Bool.true_and]
+      cases st.getTcb? vT.val with
+      | none => rfl
+      | some tcb =>
+        simp only [Option.map_some, Option.any_some]
+        cases tcb.schedContextBinding <;> rfl
+
+/-- **The guard reads three links**: the notification's context, the context's
+thread and the receiver's context.  A step keeping all three keeps the guard. -/
+theorem signalDonationGuard_congr {st st' : SystemState} {n : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId}
+    (hN : (st'.getNotification? n).map (·.schedContext) =
+      (st.getNotification? n).map (·.schedContext))
+    (hS : ∀ s, (st'.getSchedContext? s).map (·.boundThread) =
+      (st.getSchedContext? s).map (·.boundThread))
+    (hT : (st'.getTcb? tid).map (·.schedContextBinding.scId?) =
+      (st.getTcb? tid).map (·.schedContextBinding.scId?)) :
+    signalDonationGuard st' n tid = signalDonationGuard st n tid := by
+  unfold signalDonationGuard
+  cases h1 : st.getNotification? n with
+  | none =>
+    rw [h1] at hN
+    cases h2 : st'.getNotification? n with
+    | none => rfl
+    | some _ => rw [h2] at hN; cases hN
+  | some ntfn =>
+    rw [h1] at hN
+    cases h2 : st'.getNotification? n with
+    | none => rw [h2] at hN; cases hN
+    | some ntfn' =>
+      rw [h2] at hN
+      simp only [Option.map_some, Option.some.injEq] at hN
+      simp only [hN]
+      cases ntfn.schedContext with
+      | none => rfl
+      | some s =>
+        simp only
+        cases s.toObjId.toValid? with
+        | none => rfl
+        | some vS =>
+          cases hTv : tid.toValid? with
+          | none => rfl
+          | some vT =>
+            simp only
+            rw [schedContextDonateAdmitted_eq_any, schedContextDonateAdmitted_eq_any, hS,
+              SeLe4n.ThreadId.toValid?_some_val_eq tid vT hTv, hT]
+
+/-- **The cores a donation writes**: the receiver's home core where seL4's
+guard holds, and none where it does not. -/
+def signalDonationCores (st : SystemState) (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) :
+    List Concurrency.CoreId :=
+  if signalDonationGuard st n tid then [determineTargetCore st tid] else []
+
+/-- **The notification bound to `tid`** (`TCB.boundNotification`), as the id
+its code names; `⟨0⟩` for a thread with none, which a receive never reads
+(`receiveCompletesSignal` is `false` there). -/
+@[inline] def receiverBoundNotification (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SeLe4n.ObjId :=
+  match st.getTcb? tid with
+  | some t => ⟨t.boundNotificationCode - 1⟩
+  | none => ⟨0⟩
+
+/-- **The context bound to notification `n`**, if any. -/
+def notificationContext? (st : SystemState) (n : SeLe4n.ObjId) : Option SeLe4n.SchedContextId :=
+  (st.getNotification? n).bind (·.schedContext)
+
+/-- **The context a donation writes**, where seL4's guard holds. -/
+def signalDonationContext? (st : SystemState) (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) :
+    Option SeLe4n.SchedContextId :=
+  if signalDonationGuard st n tid then notificationContext? st n else none
+
+/-- The context a donation writes is the notification's bound context. -/
+theorem notificationContext?_of_signalDonationContext? {st : SystemState} {n : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {s : SeLe4n.SchedContextId}
+    (h : signalDonationContext? st n tid = some s) : notificationContext? st n = some s := by
+  unfold signalDonationContext? at h
+  split at h
+  · exact h
+  · cases h
+
 /-- **Where the bind's checks also pass, the donation is the bind's ok-state**,
 so the bind's own family lemmas apply to it. -/
 theorem maybeDonateSchedContext_eq_bind {st : SystemState} {n : SeLe4n.ObjId}
