@@ -306,6 +306,11 @@ theorem maybeDonateSchedContextFast_eq (st : SystemState) (n : SeLe4n.ObjId)
 
 /-! ### The donation writes no register -/
 
+/-- The compiled donation at a thread named by its code. -/
+theorem maybeDonateSchedContextFast_eq_code (st : SystemState) (n : SeLe4n.ObjId) (k : Nat) :
+    maybeDonateSchedContextFast st n.val k = maybeDonateSchedContext st n ⟨k⟩ :=
+  maybeDonateSchedContextFast_eq st n ⟨k⟩
+
 /-- **Every thread's register file agrees** between two states. -/
 def registersAgree (st' st : SystemState) : Prop :=
   ∀ t : SeLe4n.ThreadId, (st'.getTcb? t).map TCB.registerContext = (st.getTcb? t).map TCB.registerContext
@@ -424,5 +429,45 @@ theorem maybeDonateSchedContext_registersAgree (st : SystemState) (n : SeLe4n.Ob
     registersAgree (maybeDonateSchedContext st n tid) st :=
   maybeDonateSchedContext_induct (fun a b => registersAgree b a) st n tid
     (registersAgree.refl _) (fun vS vT _ _ => schedContextBindPerform_registersAgree st vS vT hInv)
+
+/-- **The bind's perform writes the object store and the scheduler alone.** -/
+theorem schedContextBindPerform_onlyObjectsSchedulerDiffer (st : SystemState)
+    (vScId : SeLe4n.ValidObjId) (vTid : SeLe4n.ValidThreadId) :
+    SystemState.onlyObjectsSchedulerDiffer (SchedContextOps.schedContextBindPerform st vScId vTid) st := by
+  have hU : ∀ (s : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB),
+      SystemState.onlyObjectsSchedulerDiffer (s.updateTcb t f) s := by
+    intro s t f; unfold SystemState.updateTcb; split <;> rfl
+  have hM : ∀ (s : SystemState) (c : Concurrency.CoreId),
+      SystemState.onlyObjectsSchedulerDiffer (s.markReschedulePendingOnCore c) s := fun _ _ => rfl
+  have hR : ∀ (s : SystemState) (k : SeLe4n.ObjId) (o : KernelObject) h,
+      SystemState.onlyObjectsSchedulerDiffer (s.rewriteObject k o h) s := fun _ _ _ _ => rfl
+  have hP : ∀ (s : SystemState) (c : Concurrency.CoreId) (x : SeLe4n.SchedContextId),
+      SystemState.onlyObjectsSchedulerDiffer (s.releasePlace c x) s :=
+    fun s c x => (SystemState.releasePlace_releaseOnlyWrite s c x).fields
+  unfold SchedContextOps.schedContextBindPerform
+  split
+  · exact .refl st
+  split
+  · exact .refl st
+  refine (hP _ _ _).trans ?_
+  split
+  · exact (hM _ _).trans ((SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ _ _ _).trans
+      ((hU _ _ _).trans (hR _ _ _ _)))
+  · exact (hU _ _ _).trans (hR _ _ _ _)
+
+/-- **A donation writes the object store and the scheduler alone**: the audit
+trail, the machine and every other field are the state's. -/
+theorem maybeDonateSchedContext_onlyObjectsSchedulerDiffer (st : SystemState) (n : SeLe4n.ObjId)
+    (t : SeLe4n.ThreadId) :
+    SystemState.onlyObjectsSchedulerDiffer (maybeDonateSchedContext st n t) st :=
+  maybeDonateSchedContext_induct (fun a b => SystemState.onlyObjectsSchedulerDiffer b a) st n t
+    (.refl st) (fun vS vT _ _ => schedContextBindPerform_onlyObjectsSchedulerDiffer st vS vT)
+/-- A donation keeps the declassification audit trail. -/
+theorem maybeDonateSchedContext_declassificationAuditLog_eq (st : SystemState) (n : SeLe4n.ObjId)
+    (t : SeLe4n.ThreadId) :
+    (maybeDonateSchedContext st n t).declassificationAuditLog = st.declassificationAuditLog := by
+  have h := maybeDonateSchedContext_onlyObjectsSchedulerDiffer st n t
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  rw [h]
 
 end SeLe4n.Kernel

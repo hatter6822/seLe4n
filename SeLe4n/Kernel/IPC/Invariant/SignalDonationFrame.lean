@@ -575,4 +575,67 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFu
     (notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull notificationId badge
       executingCore st hInv hObjInv hNWC hAllBudgetsNone hPred hBi)
 
+/-- **A successful declassifying signal's state agrees with the wake's on every
+object**: the record writes the audit trail alone
+(`notificationSignalDeclassifiedOnCore_frame`). -/
+theorem notificationSignalDeclassifiedOnCore_objects_eq (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (n : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (c : Concurrency.CoreId) (st s0 : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (h : notificationSignalDeclassifiedOnCore ctx declPolicy n badge c st = (s0, .ok sgi)) :
+    s0.objects = (notificationSignalBoundOnCore n badge c st).1.objects := by
+  rw [notificationSignalDeclassifiedOnCore_frame ctx declPolicy n badge c st s0 sgi h]
+
+/-- A successful declassifying signal moves no binding link: the wake's
+frame, the record writing the audit trail alone. -/
+theorem notificationSignalDeclassifiedOnCore_bindingLinksAgree {ctx : GenericLabelingContext}
+    {declPolicy : DeclassificationPolicy} {n : SeLe4n.ObjId} {badge : SeLe4n.Badge}
+    {c : Concurrency.CoreId} {st : SystemState} {sgi : Option (Concurrency.CoreId × Concurrency.SgiKind)}
+    (h : (notificationSignalDeclassifiedOnCore ctx declPolicy n badge c st).2 = .ok sgi)
+    (hObjInv : st.objects.invExt) :
+    bindingLinksAgree st (notificationSignalDeclassifiedOnCore ctx declPolicy n badge c st).1 := by
+  have hObj := notificationSignalDeclassifiedOnCore_objects_eq ctx declPolicy n badge c st _ sgi
+    (Prod.ext rfl h)
+  exact fun oid => by
+    rw [hObj]; exact (notificationSignalBoundOnCore_schedLinkFrame n badge c st hObjInv).binding oid
+
+/-- **The declassifying dispatch keeps the IPC bundle** off the bound-delivery
+path: the declassifying signal's lemma, then the donation's on its state, which
+agrees with the wake's on every object, so finds the binding pair the signal
+was handed. -/
+theorem notificationSignalDeclassifiedCrossCoreDispatch_preserves_ipcInvariantFull_fallthrough
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (n : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : Concurrency.CoreId)
+    (st st' : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (hNoBound : boundDeliveryTarget? st n = none)
+    (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
+    (hNWC : notificationWaiterConsistent st) (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hBi : schedContextBindingBidirectional st)
+    (hStep : notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy n badge c st =
+      (st', .ok sgi)) :
+    ipcInvariantFull st' := by
+  unfold notificationSignalDeclassifiedCrossCoreDispatch at hStep
+  cases hOn : notificationSignalDeclassifiedOnCore ctx declPolicy n badge c st with
+  | mk s0 r =>
+    rw [hOn] at hStep
+    cases r with
+    | error e => cases hStep
+    | ok sgi0 =>
+      simp only [Prod.mk.injEq, Except.ok.injEq] at hStep
+      obtain ⟨rfl, -⟩ := hStep
+      have hS0 := notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthrough ctx
+        declPolicy n badge c st s0 sgi0 hNoBound hInv hObjInv hNWC hAllBudgetsNone hOn
+      have hObj := notificationSignalDeclassifiedOnCore_objects_eq ctx declPolicy n badge c st s0
+        sgi0 hOn
+      have F := notificationSignalBoundOnCore_schedLinkFrame n badge c st hObjInv
+      have hB : bindingLinksAgree st s0 := fun oid => by rw [hObj]; exact F.binding oid
+      unfold donateToSignalled
+      cases hT : signalWokenThread? st n with
+      | none => exact hS0
+      | some t =>
+        exact maybeDonateSchedContext_preserves_ipcInvariantFull _ n t
+          (hObj ▸ notificationSignalBoundOnCore_preserves_objects_invExt n badge c st hObjInv) hS0
+          (schedContextBindingBidirectional.of_bindingLinksAgree hB hBi)
+          (notDonationOwner_of_bindingLinksAgree hB hInv.donationOwnerValid
+            (signalWokenThread?_not_blockedOnReply hNWC hT))
+
 end SeLe4n.Kernel

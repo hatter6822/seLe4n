@@ -657,6 +657,18 @@ theorem sendSignalOnCore_mappingStage {n : SeLe4n.ObjId} {badge : SeLe4n.Badge}
     (fun t _ _ _ => notificationSignalBoundOnCore_mappingStage.trans
       (maybeDonateSchedContext_mappingStage _ n t))
 
+/-- **The declassifying signal's dispatch keeps the mapping records**: the
+declassifying signal, then seL4's `sendSignal` donation. -/
+theorem notificationSignalDeclassifiedCrossCoreDispatch_mappingStage (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (c : Concurrency.CoreId) (st : SystemState) :
+    MappingStage st
+      (notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy notificationId badge c st).1 :=
+  have hS := notificationSignalDeclassifiedOnCore_mappingStage ctx declPolicy notificationId badge c st
+  notificationSignalDeclassifiedCrossCoreDispatch_induct (MappingStage st) ctx declPolicy
+    notificationId badge c st hS
+    (fun t _ _ _ => hS.trans (maybeDonateSchedContext_mappingStage _ notificationId t))
+
 theorem notificationSignalBoundCrossCoreDispatchChecked_mappingStage {ctx : LabelingContext}
     {notificationId : SeLe4n.ObjId} {signaler : SeLe4n.ThreadId} {badge : SeLe4n.Badge}
     {executingCore : Concurrency.CoreId} {st : SystemState} :
@@ -858,7 +870,7 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     split at h
     · rename_i hSig
       cases h
-      exact (MappingStage.of_fst_eq (notificationSignalDeclassifiedOnCore_mappingStage _ _ _ _ _ _) hSig)
+      exact (MappingStage.of_fst_eq (notificationSignalDeclassifiedCrossCoreDispatch_mappingStage _ _ _ _ _ _) hSig)
     · cases h
 
 /-- **The checked syscall dispatch keeps the mappings recorded**: the yield, the

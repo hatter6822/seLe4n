@@ -1697,7 +1697,7 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     · rename_i hSig
       cases h
       exact .of_stage (runQueueStage_of_pair_eq
-        (notificationSignalDeclassifiedOnCore_runQueueStage _ _ _ _ _ _ P.ntfnHeads
+        (notificationSignalDeclassifiedCrossCoreDispatch_runQueueStage _ _ _ _ _ _ P.ntfnHeads
           P.blocked) hSig)
     · cases h
 

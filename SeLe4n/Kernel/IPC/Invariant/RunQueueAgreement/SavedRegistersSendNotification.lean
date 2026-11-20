@@ -657,12 +657,28 @@ theorem notificationSignalDeclassifiedCrossCoreDispatch_savedRegsKept
     (h : notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy notificationId badge c st
       = (st', .ok sgi)) :
     savedRegsKeptExcept (signalWritten st notificationId) st st' ∧ st'.objects.invExt := by
-  have hF := notificationSignalDeclassifiedOnCore_frame ctx declPolicy notificationId badge c
-    st st' sgi h
-  obtain ⟨k, i⟩ := notificationSignalBoundOnCore_savedRegsKept notificationId badge c hInv
-  have hO : st'.objects = (notificationSignalBoundOnCore notificationId badge c st).1.objects := by
-    rw [hF]
-  exact ⟨k.trans (.of_objects_eq hO), by rw [hO]; exact i⟩
+  unfold notificationSignalDeclassifiedCrossCoreDispatch at h
+  cases hOn : notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st with
+  | mk s0 r =>
+    rw [hOn] at h
+    cases r with
+    | error e => cases h
+    | ok sgi0 =>
+      simp only [Prod.mk.injEq, Except.ok.injEq] at h
+      obtain ⟨rfl, -⟩ := h
+      have hF := notificationSignalDeclassifiedOnCore_frame ctx declPolicy notificationId badge c
+        st s0 sgi0 hOn
+      obtain ⟨k, i⟩ := notificationSignalBoundOnCore_savedRegsKept notificationId badge c hInv
+      have hO : s0.objects = (notificationSignalBoundOnCore notificationId badge c st).1.objects := by
+        rw [hF]
+      have hI0 : s0.objects.invExt := by rw [hO]; exact i
+      -- seL4's `sendSignal` donation writes no saved register.
+      unfold donateToSignalled
+      split
+      · exact ⟨(k.trans (.of_objects_eq hO)).trans
+          (maybeDonateSchedContext_savedRegsKeptExcept notificationId _ hI0),
+          maybeDonateSchedContext_preserves_objects_invExt _ notificationId _ hI0⟩
+      · exact ⟨k.trans (.of_objects_eq hO), hI0⟩
 
 /-- The per-core wait writes no saved register: the badge's consumption clears
 the notification and readies the caller; the block appends the caller, stores

@@ -632,7 +632,7 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     split at h
     · rename_i hSig
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
-        (notificationSignalDeclassifiedOnCore_stepCovers e' hInv) hSig
+        (notificationSignalDeclassifiedCrossCoreDispatch_stepCovers e' hInv hB.bidirectional) hSig
       cases h
       exact (hW hS (declassifySignalArm_savedRegsWrittenFree P hRT hBNR hSig)).bankAgree hA
     · cases h

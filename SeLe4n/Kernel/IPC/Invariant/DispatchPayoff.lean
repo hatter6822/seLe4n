@@ -1431,13 +1431,14 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                   | error e => simp only [] at hStep; cases hStep
                   | ok sgi1 =>
                       simp only [] at hStep
-                      rw [notificationSignalDeclassifiedCrossCoreDispatch_eq] at hDisp
                       have hSigInv : ipcInvariantFull st1 :=
-                        notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthrough
+                        notificationSignalDeclassifiedCrossCoreDispatch_preserves_ipcInvariantFull_fallthrough
                           (liftLegacyContext ctx) ctx.declassificationPolicy notifId
                           ntfnCap.signalBadge executingCore st st1 sgi1 hNoBound
                           hInv hObjInv hQ.base.reachable.notificationWaiterConsistent
-                          hQ.base.reachable.allTimeoutBudgetsNone hDisp
+                          hQ.base.reachable.allTimeoutBudgetsNone
+                          (schedContextBindingBidirectional_of_consistent
+                            hPack.capOnly.schedContextLinks.binding hInv.donationOwnerValid) hDisp
                       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
                       rw [← hStep]
                       exact hSigInv

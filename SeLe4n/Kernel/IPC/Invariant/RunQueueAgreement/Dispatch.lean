@@ -976,6 +976,20 @@ theorem sendSignalOnCore_runQueueStage (n : SeLe4n.ObjId) (badge : SeLe4n.Badge)
   sendSignalOnCore_induct (fun s => RunQueueStage st s) n badge c st hW
     (fun t _ _ _ => hW.trans (maybeDonateSchedContext_runQueueStage _ n t))
 
+/-- **The declassifying dispatch keeps the run queues in agreement with the
+threads' links**: the declassifying signal's stage, then the donation's. -/
+theorem notificationSignalDeclassifiedCrossCoreDispatch_runQueueStage (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (c : Concurrency.CoreId) (st : SystemState)
+    (hHeads : notificationHeadsWakeable st) (hBlk : blockedCurrentNowhere st) :
+    RunQueueStage st
+      (notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy notificationId badge c st).1 :=
+  have hS := notificationSignalDeclassifiedOnCore_runQueueStage ctx declPolicy notificationId
+    badge c st hHeads hBlk
+  notificationSignalDeclassifiedCrossCoreDispatch_induct (fun s => RunQueueStage st s) ctx
+    declPolicy notificationId badge c st hS
+    (fun t _ _ _ => hS.trans (maybeDonateSchedContext_runQueueStage _ notificationId t))
+
 theorem notificationSignalBoundCrossCoreDispatchChecked_runQueueStage (ctx : LabelingContext)
     (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
     (c : Concurrency.CoreId) (st : SystemState) (hHeads : notificationHeadsWakeable st)
@@ -1256,7 +1270,7 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     · rename_i hSig
       cases h
       exact (runQueueStage_of_pair_eq
-        (notificationSignalDeclassifiedOnCore_runQueueStage _ _ _ _ _ _ P.ntfnHeads
+        (notificationSignalDeclassifiedCrossCoreDispatch_runQueueStage _ _ _ _ _ _ P.ntfnHeads
           P.blocked) hSig).entry
     · cases h
 

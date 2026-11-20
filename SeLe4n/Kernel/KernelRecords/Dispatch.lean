@@ -769,6 +769,18 @@ theorem sendSignalOnCore_recordsStage {n : SeLe4n.ObjId} {badge : SeLe4n.Badge}
     (fun t _ _ _ => (RecordsStage.notificationSignalBoundOnCore hR).trans
       (maybeDonateSchedContext_recordsStage _ n t))
 
+/-- **The declassifying dispatch keeps the records**: the declassifying
+signal's stage, then the donation's. -/
+theorem notificationSignalDeclassifiedCrossCoreDispatch_recordsStage {ctx : GenericLabelingContext}
+    {declPolicy : DeclassificationPolicy} {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge}
+    {c : Concurrency.CoreId} {st : SystemState} (hR : ipcReachable st) :
+    RecordsStage st
+      (notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy nid badge c st).1 :=
+  have hS := RecordsStage.notificationSignalDeclassifiedOnCore (ctx := ctx)
+    (declPolicy := declPolicy) (badge := badge) (c := c) hR
+  notificationSignalDeclassifiedCrossCoreDispatch_induct (RecordsStage st) ctx declPolicy nid
+    badge c st hS (fun t _ _ _ => hS.trans (maybeDonateSchedContext_recordsStage _ nid t))
+
 /-- **The checked bound signal keeps the records.** -/
 theorem notificationSignalBoundCrossCoreDispatchChecked_recordsStage {ctx : LabelingContext}
     {nid : SeLe4n.ObjId} {signaler : SeLe4n.ThreadId} {badge : SeLe4n.Badge}
@@ -1043,7 +1055,7 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     split at h
     · rename_i hSig
       cases h
-      exact (RecordsStage.of_fst_eq (RecordsStage.notificationSignalDeclassifiedOnCore P.deletes.1) hSig)
+      exact (RecordsStage.of_fst_eq (notificationSignalDeclassifiedCrossCoreDispatch_recordsStage P.deletes.1) hSig)
     · cases h
 
 /-- **The taint pass keeps the records**: it writes the taint words alone. -/

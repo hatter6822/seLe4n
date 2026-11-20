@@ -405,6 +405,8 @@ def chainNeutralConstructors : List (Name × String) :=
       "`{ sc with boundThreadCode := _, donationOrigin := none }` and the TCB's binding codes; `scReply` is untouched")
   , (`SeLe4n.Kernel.SchedContextOps.schedContextBindPerformImpl,
       "the compiled form of the same bind; same reason")
+  , (`SeLe4n.Kernel.declassifySignalBoundWrites,
+      "a declassified bound delivery: the endpoint removal, the bound thread's TCB, its wake and the audit records, then seL4's `sendSignal` donation (`maybeDonateSchedContextFast`, the bind's perform above); `scReply` is untouched")
   , (`SeLe4n.Kernel.SchedContextOps.schedContextUnbindPerform,
       "`{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }` and the TCB's binding codes; `scReply` is untouched")
   , (`SeLe4n.Kernel.SchedContextOps.schedContextUnbindPerformImpl,

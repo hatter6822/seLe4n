@@ -1802,7 +1802,7 @@ set_option maxRecDepth 8192
 #check @notificationSignalDeclassifiedOnCore_preserves_trailActors
 #check @notificationSignalDeclassifiedOnCore_preserves_trailSources
 #check @notificationSignalDeclassifiedOnCore_preserves_trailDestinations
-#check @notificationSignalDeclassifiedCrossCoreDispatch_eq
+#check @notificationSignalDeclassifiedCrossCoreDispatch_induct
 
 -- SM9.C.1 — the headline properties.
 #check @declassifiedSignal_delivers_badge

@@ -1655,6 +1655,26 @@ theorem sendSignalOnCore_stepCovers (e : CoreId) {n : SeLe4n.ObjId} {badge : SeL
     (schedContextBindingBidirectional.of_bindingLinksAgree
       (notificationSignalBoundOnCore_schedLinkFrame n badge c st hInv).binding hBi))
 
+/-- **The declassifying dispatch covers**, on a state where the binding pair
+holds: the declassifying signal, then seL4's `sendSignal` donation, whose
+binding pair the signal left as it found it. -/
+theorem notificationSignalDeclassifiedCrossCoreDispatch_stepCovers (e : CoreId)
+    {ctx : GenericLabelingContext} {declPolicy : DeclassificationPolicy}
+    {notificationId : SeLe4n.ObjId} {badge : SeLe4n.Badge} {c : CoreId} {st : SystemState}
+    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st) :
+    stepCovers e st (notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy
+      notificationId badge c st).1 ∧
+    (notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy notificationId badge
+      c st).1.objects.invExt := by
+  have hS := notificationSignalDeclassifiedOnCore_stepCovers e (ctx := ctx)
+    (declPolicy := declPolicy) (notificationId := notificationId) (badge := badge) (c := c) hInv
+  refine notificationSignalDeclassifiedCrossCoreDispatch_induct
+    (fun s => stepCovers e st s ∧ s.objects.invExt) ctx declPolicy notificationId badge c st hS
+    (fun t _ _ hOk => ?_)
+  exact stepCoversInv_trans hS.1 (maybeDonateSchedContext_stepCovers e _ notificationId t hS.2
+    (schedContextBindingBidirectional.of_bindingLinksAgree
+      (notificationSignalDeclassifiedOnCore_bindingLinksAgree hOk hInv) hBi))
+
 /-- The checked signal covers: a refused gate is the identity, a passed one is
 `sendSignalOnCore`. -/
 theorem notificationSignalBoundCrossCoreDispatchChecked_stepCovers (e : CoreId)
@@ -1959,7 +1979,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     split at h
     · rename_i hSig
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
-        (notificationSignalDeclassifiedOnCore_stepCovers e hInv) hSig
+        (notificationSignalDeclassifiedCrossCoreDispatch_stepCovers e hInv hB.bidirectional) hSig
       cases h
       exact ⟨hS, hSInv⟩
     · cases h

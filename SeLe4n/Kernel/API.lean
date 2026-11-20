@@ -9032,7 +9032,8 @@ theorem dispatchWithCapChecked_declassifySignal_default_no_downgrade
       sgi hDefault hPair
     simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
     obtain ⟨-, hSt'⟩ := hStep
-    rw [← hSt']
+    -- seL4's `sendSignal` donation after the record writes no audit entry.
+    rw [← hSt', donateToSignalled_declassificationAuditLog_eq]
     exact hTrail
 
 /-- **WS-SM SM9.A.10: the live `.auditRead` arm routes to `auditReadFromCore`,

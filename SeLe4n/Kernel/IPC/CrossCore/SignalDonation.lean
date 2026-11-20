@@ -39,6 +39,22 @@ def donateToSignalled (st st' : SystemState) (n : SeLe4n.ObjId) : SystemState :=
   | some t => maybeDonateSchedContext st' n t
   | none => st'
 
+/-- The donation after a signal writes the object store and the scheduler
+alone. -/
+theorem donateToSignalled_onlyObjectsSchedulerDiffer (st st' : SystemState) (n : SeLe4n.ObjId) :
+    SystemState.onlyObjectsSchedulerDiffer (donateToSignalled st st' n) st' := by
+  unfold donateToSignalled
+  split
+  · exact maybeDonateSchedContext_onlyObjectsSchedulerDiffer _ _ _
+  · exact .refl _
+
+/-- …so it keeps the declassification audit trail. -/
+theorem donateToSignalled_declassificationAuditLog_eq (st st' : SystemState) (n : SeLe4n.ObjId) :
+    (donateToSignalled st st' n).declassificationAuditLog = st'.declassificationAuditLog := by
+  have h := donateToSignalled_onlyObjectsSchedulerDiffer st st' n
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  rw [h]
+
 /-- **seL4-MCS `sendSignal`**: the signal (`notificationSignalBoundOnCore`), and
 on success the donation to the thread it woke (`donateToSignalled`).  A refused
 signal returns its own state and error. -/
