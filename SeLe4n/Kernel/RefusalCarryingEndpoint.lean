@@ -26,6 +26,7 @@ import SeLe4n.Kernel.IPC.CrossCore.LongCapsDelivered
 import SeLe4n.Kernel.IPC.CrossCore.ReplyCapsLongDelivered
 import SeLe4n.Kernel.IPC.CrossCore.LongFaultAnswerInPlace
 import SeLe4n.Kernel.IPC.CrossCore.ReceiveCallDonatingInPlace
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvInPlace
 
 /-!
 # The endpoint syscalls, refusing in the state they were refused in
@@ -5217,6 +5218,92 @@ theorem endpointReceiveLegR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     · simp only []
       cases applyReceiveRendezvousHandoff st' tid dq executingCore <;> rfl
 
+/-- **A receive that blocks in place still does after the return**: seL4-MCS's
+`maybeReturnSchedContext` writes the receiver's binding and its context, which
+the in-place block reads neither of, and keeps the endpoint, so the guard and
+the receive queue's tail read on the state the arm is handed are the ones the
+block reads after the return. -/
+theorem receiveReturnSchedContext_receiveBlocksFast (blocks : Bool) (st : SystemState)
+    (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (replyCode : Nat)
+    (h : receiveBlocksFast st epId tid replyCode = true) :
+    receiveBlocksFast (receiveReturnSchedContext blocks st tid) epId tid replyCode = true ∧
+      receiveQueueTailCode (receiveReturnSchedContext blocks st tid) epId =
+        receiveQueueTailCode st epId := by
+  unfold receiveBlocksFast at h
+  cases hEp : st.getEndpoint? epId with
+  | none => rw [hEp] at h; cases h
+  | some ep =>
+    rw [hEp] at h
+    simp only [Bool.and_eq_true] at h
+    obtain ⟨hS, hO⟩ := h
+    cases hR : st.getTcb? tid with
+    | none => rw [hR] at hO; cases hO
+    | some rt =>
+      rw [hR] at hO
+      simp only [Bool.and_eq_true] at hO
+      obtain ⟨hA, hG⟩ := hO
+      rw [receiveBlocksInPlaceCode_eq] at hG
+      have hNo : st.objects.noResizeDue := by
+        have hG' := hG
+        simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true] at hG'
+        exact RobinHood.RHTable.noResizeDue_of_findsInPlace hG'.1.1.1.1.1.2
+      have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
+      have hRraw := (SystemState.getTcb?_eq_some_iff _ _ _).mp hR
+      obtain ⟨hE', ⟨rt', hR', hA'⟩, hG'⟩ :=
+        receiveReturnSchedContext_receiveGuard blocks st tid hNo hE hRraw hA hG
+      have hEp' := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE'
+      have hR'' := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hR'
+      refine ⟨?_, ?_⟩
+      · unfold receiveBlocksFast
+        rw [hEp', hR'']
+        simp only [receiveBlocksInPlaceCode_eq, hS, hA', hG', Bool.and_self]
+      · unfold receiveQueueTailCode
+        rw [hEp', hEp]
+
+/-- The in-place block after the return, the receive queue's tail read before
+it: out of line, so its two arguments are evaluated in order and the state is
+handed to the return alone. -/
+@[noinline] def receiveBlockAfterReturn (tailCode : Nat) (st : SystemState)
+    (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (replyCode : Nat)
+    (executingCore : Concurrency.CoreId) : SystemState :=
+  removeRunnableOnCore (storeReceiveBlock st epId tid tailCode replyCode) tid executingCore
+
+/-- **The receive leg after seL4's return**: when the receive blocks in place
+(read on the state the arm is handed, `receiveReturnSchedContext_receiveBlocksFast`)
+the return and the block are written in place, the state handed to them alone;
+otherwise the leg runs on the returned state, and a refusal there carries the
+state the arm was handed, so the return is not committed
+(`endpointReceiveReturnedLegR_eq`). -/
+@[inline] def endpointReceiveReturnedLegR (blocks : Bool) (epId : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (replyCode : Nat) (executingCore : Concurrency.CoreId) :
+    RefusalCarrying Unit :=
+  fun st =>
+    if receiveBlocksFast st epId tid replyCode then
+      .ok ((), receiveBlockAfterReturn (receiveQueueTailCode st epId)
+        (receiveReturnSchedContextFast blocks st tid.val) epId tid replyCode executingCore)
+    else
+      match endpointReceiveLegR epId tid replyCode executingCore
+          (receiveReturnSchedContextFast blocks st tid.val) with
+      | .error (e, _) => .error (e, st)
+      | r => r
+
+theorem endpointReceiveReturnedLegR_eq (blocks : Bool) (epId : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (replyCode : Nat) (executingCore : Concurrency.CoreId)
+    (st : SystemState) :
+    endpointReceiveReturnedLegR blocks epId tid replyCode executingCore st =
+      match endpointReceiveLegR epId tid replyCode executingCore
+          (receiveReturnSchedContextFast blocks st tid.val) with
+      | .error (e, _) => .error (e, st)
+      | r => r := by
+  unfold endpointReceiveReturnedLegR
+  by_cases hF : receiveBlocksFast st epId tid replyCode = true
+  · rw [if_pos hF]
+    obtain ⟨hF', hT⟩ := receiveReturnSchedContext_receiveBlocksFast blocks st epId tid replyCode hF
+    rw [receiveReturnSchedContextFast_eq]
+    unfold endpointReceiveLegR receiveBlockAfterReturn
+    rw [if_pos hF', hT]
+  · rw [if_neg hF]
+
 /-- The checked receive arm once its reply object is resolved, given as its
 code: the blocking receive written in place when it may be
 (`receiveBlocksFast`), the rendezvous otherwise (`endpointReceiveTakeR`).
@@ -5238,11 +5325,8 @@ Inlined, so its result is matched by the caller rather than built. -/
     -- runs on the state it leaves; a refusal there carries the state the arm was
     -- handed, so the return is not committed.
     if receiveReturnFires (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid then
-      match endpointReceiveLegR epId tid replyCode executingCore
-          (receiveReturnSchedContextFast (Syscall.wordReceiveBlocks (callerSyscallWord st tid))
-            st tid.val) with
-      | .error (e, _) => .error (e, st)
-      | r => r
+      endpointReceiveReturnedLegR (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) epId tid
+        replyCode executingCore st
     else endpointReceiveLegR epId tid replyCode executingCore st
 
 /-- The checked receive arm once its gate has passed and its busy reply is
@@ -5280,7 +5364,8 @@ theorem endpointReceiveReplyResolvedR_eq (ctx : LabelingContext) (decoded : Sysc
   simp only [hN, Bool.false_eq_true, ↓reduceIte]
   by_cases hRF : receiveReturnFires (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid
       = true
-  · simp only [hRF, ↓reduceIte, receiveReturnSchedContextFast_eq, endpointReceiveLegR_eq,
+  · simp only [hRF, ↓reduceIte, endpointReceiveReturnedLegR_eq, receiveReturnSchedContextFast_eq,
+      endpointReceiveLegR_eq,
       RefusalCarrying.ofKernel, SeLe4n.ReplyId.ofOptCode_optCode]
     rcases endpointReceiveDualWithCapsOnCore epId tid rid executingCore
         (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid)

@@ -953,8 +953,12 @@ refusal is read where it is, never rebuilt. -/
       match decodeMintReplyCapArgsBy (msgRegOfFile layout regs) with
       | .error e => .error (e, st)
       | .ok args =>
-        let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
-        let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+        -- A source slot that holds no capability (a slot word no CNode
+        -- addresses among them) is refused as the lookup refuses it, before
+        -- any record of the two slots is built.
+        if mintReplyCapSourceAbsent cnodeId args.srcSlot st then
+          .error (.invalidCapability 0, st)
+        else
         RefusalCarrying.ofChecked (mintReplyCapAdmittedAt cnodeId args.srcSlot args.dstSlot st)
           (fun st => mintReplyCapPerformAt cnodeId args.srcSlot args.dstSlot st)
           (dispatchInvocationBy ctx sid capAddr xc layout regs tid executingCore cap) st
@@ -1643,6 +1647,12 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
       cases hD : decodeMintReplyCapArgsBy (msgRegOfFile layout regs) with
       | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
       | ok args =>
+        by_cases hAbs : mintReplyCapSourceAbsent cnodeId args.srcSlot st = true
+        · simp only [hAbs, ↓reduceIte, RefusalCarrying.ofKernel, dispatchInvocationBy, hD,
+            cnodeInvoked_of_mintReplyCapSourceAbsent hAbs, Bool.not_true, Bool.false_eq_true,
+            mintReplyCapWithCdt_of_sourceAbsent hAbs]
+        simp only [Bool.not_eq_true] at hAbs
+        simp only [hAbs, Bool.false_eq_true, ↓reduceIte]
         dsimp only [mintReplyCapAdmittedAt, mintReplyCapPerformAt]
         apply RefusalCarrying.ofChecked_eq
         intro hA
