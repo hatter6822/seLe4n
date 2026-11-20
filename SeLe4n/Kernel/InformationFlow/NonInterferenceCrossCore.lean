@@ -669,38 +669,15 @@ theorem endpointReceiveDualOnCore_crossCoreNonInterference (ctx : LabelingContex
       hObjInv)
     hShared
 
-/-- SM8.B.2 (**the live `.receive` arm, and the `.replyRecv` receive leg**,
-PR #873 round 7): the cross-core receive that *installs* the capabilities a
-parked send was carrying is invisible to any core outside the same write set.
-
-The entry the inventory needs, and it did not exist. Both receive-shaped live
-arms route through `endpointReceiveDualWithCapsOnCore` — `.receive` since round 6,
-`.replyRecv`'s leg since round 7 — while the inventory's `.endpointReceiveDual`
-entry named the theorem about the *bare* transition, which the capability install
-is not. It is the same "a live entry must name the function the dispatch calls"
-rule three earlier rounds applied to `.reply`, `.replyRecv` and `.tcbSuspend`;
-this is the receive's turn. The bound is unchanged, because the install writes
-no core. -/
-theorem endpointReceiveDualWithCapsOnCore_crossCoreNonInterference (ctx : LabelingContext)
-    (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId)
-    (executingCore : CoreId) (st : SystemState) (c : CoreId)
-    (hObjInv : st.objects.invExt)
-    (hne : c ∉ endpointReceiveDualWriteSet st endpointId executingCore)
-    (hShared : sharedViewUnchanged ctx observer st
-      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1) :
-    projectStateOnCore ctx observer
-        (endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st).1 c
-      = projectStateOnCore ctx observer st c :=
-  crossCoreNonInterference_ofCores ctx observer hne
-    (endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver replyId executingCore st hObjInv)
-    hShared
-
 /-- **The receive with seL4-MCS `receiveIPC`'s return before its leg**: the
 return writes no observable slot of any core
 (`receiveReturnSchedContext_confinedToCores`), so the receive is invisible to
 any core outside its leg's write set, read on the state the return leaves.
-The frame the live `.receive` arm's leg runs on (`receiveLegState`). -/
+The frame the live `.receive` arm's leg runs on (`receiveLegState`), and, with
+`blocks := true`, the frame `.replyRecv`'s receive leg runs on: the inventory's
+`.endpointReceiveDualWithCaps` entry names it, because a live entry names the
+function the dispatch calls (SM8.B.2, PR #873 round 7) and since WS-SX SX8.2 both
+receive-shaped arms run the return before `endpointReceiveDualWithCapsOnCore`. -/
 theorem receiveWithReturn_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId) (blocks : Bool)
@@ -1660,7 +1637,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
       niName! endpointReplyCrossCoreDispatch_crossCoreNonInterference
   | .endpointReceiveDual => niName! endpointReceiveDualOnCore_crossCoreNonInterference
   | .endpointReceiveDualWithCaps =>
-      niName! endpointReceiveDualWithCapsOnCore_crossCoreNonInterference
+      niName! receiveWithReturn_crossCoreNonInterference
   | .endpointReplyRecvDispatch => niName! endpointReplyRecvOnCore_crossCoreNonInterference
   | .deschedule => niName! descheduleThread_crossCoreNonInterference
   | .cancelIpcBlocking => niName! cancelIpcBlockingOnCore_crossCoreNonInterference
