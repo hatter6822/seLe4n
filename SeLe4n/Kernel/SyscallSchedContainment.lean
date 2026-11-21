@@ -116,7 +116,7 @@ theorem schedLockSet_notificationWaitOnCore_coversWrites
   exact ⟨hConf.runQueue d hd', hConf.current d hd', hConf.activeDomain d hd'⟩
 
 /-- **Cut C6a**: `.notificationSignal`'s footprint covers its wake's writes
-(the donation after it: `schedLockSet_sendSignalOnCore_coversWrites`).
+(the donation after it: `schedLockSet_sendSignalOnCoreFlowing_coversWrites`).
 
 Stated of the **bound** arm, which is the one the live dispatch routes to and the
 one `schedLockSetForSyscall` names (Cut 7); the bare signal's footprint is
@@ -281,6 +281,20 @@ theorem maybeDonateSchedContext_coversWrites (S : LockSet) (st : SystemState)
       exact ⟨hConf.runQueue d hd', hConf.current d hd', hConf.activeDomain d hd'⟩
     · exact schedContextBindPerform_replenishQueueOnCore_ne st vS vT d hObjInv
         (fun h => hd (h ▸ hHome.2)) hA
+
+/-- **The checked donation covers its writes** under the donation's footprint:
+it is the donation or nothing.  Where the lender flow check refuses, the
+footprint's donation cores are an over-approximation this covers. -/
+theorem maybeDonateSchedContextFlowing_coversWrites {ctx : LabelingContext} (S : LockSet)
+    (st : SystemState) (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs)
+    (hCores : ∀ d ∈ signalDonationCores st n tid,
+      (LockKey.runQueue d, AccessMode.write) ∈ S.pairs ∧
+        (LockKey.replenishQueue d, AccessMode.write) ∈ S.pairs) :
+    footprintCoversWrites S st (maybeDonateSchedContextFlowing ctx st n tid) :=
+  maybeDonateSchedContextFlowing_induct (fun s => footprintCoversWrites S st s) ctx st n tid
+    (footprintCoversWrites_of_scheduler_eq S hTable rfl)
+    (maybeDonateSchedContext_coversWrites S st n tid hObjInv hTable hCores)
 
 /-- **seL4-MCS `maybeReturnSchedContext` covers its writes** under any lock set
 holding the table write lock and, where seL4's guard holds, the purge's replenish

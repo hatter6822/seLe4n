@@ -597,13 +597,17 @@ theorem maybeDonateSchedContext_savedRegsKeptExcept {W : SeLe4n.ThreadId → Pro
   maybeDonateSchedContext_induct (fun a b => savedRegsKeptExcept W a b) st n tid
     (fun _ _ => rfl) (fun _ _ _ hA => schedContextBindPerform_savedRegsKeptExcept hInv hA)
 
-/-- …so a census survives a donation after it. -/
-theorem savedRegsWrittenFree.donate {e : CoreId} {base pre post : SystemState}
+/-- …so a census survives a checked donation after it: the donation or
+nothing. -/
+theorem savedRegsWrittenFree.donate {ctx : LabelingContext} {e : CoreId}
+    {base pre post : SystemState}
     (h : savedRegsWrittenFree e base pre post) (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (hInv : post.objects.invExt) :
-    savedRegsWrittenFree e base pre (maybeDonateSchedContext post n tid) := fun t => by
-  rw [maybeDonateSchedContext_savedRegsKeptExcept (W := fun _ => False) n tid hInv t id]
-  exact h t
+    savedRegsWrittenFree e base pre (maybeDonateSchedContextFlowing ctx post n tid) :=
+  maybeDonateSchedContextFlowing_induct (fun s => savedRegsWrittenFree e base pre s) ctx post n tid
+    h (fun t => by
+      rw [maybeDonateSchedContext_savedRegsKeptExcept (W := fun _ => False) n tid hInv t id]
+      exact h t)
 
 /-- The bind is its writes under seL4's donation guard
 (`schedContextBind_ok_donate`). -/

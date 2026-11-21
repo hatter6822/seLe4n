@@ -51,7 +51,9 @@ TCB) — on `securityFlowsTo notification→receiver`, because bound delivery wr
 the badge **directly into the bound TCB**, a second sink beyond the notification.
 Without the receiver gate a policy permitting a high signaler → high notification
 but denying flow to a *low* bound TCB would be bypassed (codex review #3): the badge
-would leak to the low receiver.  Fail-closed with `.flowDenied` on either denial. -/
+would leak to the low receiver.  Fail-closed with `.flowDenied` on either denial.
+A passed signal is the checked `sendSignal` (`sendSignalOnCoreFlowing`): the
+donation to the woken thread runs under the lender flow check. -/
 @[inline] def notificationSignalBoundCrossCoreDispatchChecked (ctx : LabelingContext)
     (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
     (executingCore : CoreId)
@@ -60,23 +62,24 @@ would leak to the low receiver.  Fail-closed with `.flowDenied` on either denial
     match boundDeliveryTarget? st notificationId with
     | some (receiver, _) =>
         if securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf receiver) then
-          sendSignalOnCore notificationId badge executingCore st
+          sendSignalOnCoreFlowing ctx notificationId badge executingCore st
         else
           (st, .error .flowDenied)
     | none =>
-        sendSignalOnCore notificationId badge executingCore st
+        sendSignalOnCoreFlowing ctx notificationId badge executingCore st
   else
     (st, .error .flowDenied)
 
 /-- **WS-LS LS2.3**: a checked signal that succeeds committed the unchecked
 transition's state — every refusing branch returns the pre-state with an error,
-so the state a successful answer carries is `sendSignalOnCore`'s. -/
+so the state a successful answer carries is the checked signal's
+(`sendSignalOnCoreFlowing`). -/
 theorem notificationSignalBoundCrossCoreDispatchChecked_fst_of_ok (ctx : LabelingContext)
     (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
     (executingCore : CoreId) (st st' : SystemState) (r : Option (CoreId × SgiKind))
     (h : notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler badge
       executingCore st = (st', .ok r)) :
-    (sendSignalOnCore notificationId badge executingCore st).1 = st' := by
+    (sendSignalOnCoreFlowing ctx notificationId badge executingCore st).1 = st' := by
   unfold notificationSignalBoundCrossCoreDispatchChecked at h
   split at h
   · split at h
@@ -88,12 +91,14 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_fst_of_ok (ctx : Labelin
 
 /-- **A property the entry state carries and the signal carries, the checked
 signal carries**: every gate refuses in the state it was handed, and a passed gate
-runs `sendSignalOnCore`.  Each family lemma of the checked signal is this, with
-the signal's (the wake's composed with the donation's). -/
+runs the checked signal (`sendSignalOnCoreFlowing`).  Each family lemma of the
+checked signal is this, with the signal's (the wake's composed with the donation's,
+`sendSignalOnCoreFlowing_induct`). -/
 theorem notificationSignalBoundCrossCoreDispatchChecked_induct (P : SystemState → Prop)
     (ctx : LabelingContext) (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId)
     (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState)
-    (hRefl : P st) (hSig : P (sendSignalOnCore notificationId badge executingCore st).1) :
+    (hRefl : P st)
+    (hSig : P (sendSignalOnCoreFlowing ctx notificationId badge executingCore st).1) :
     P (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler badge
       executingCore st).1 := by
   unfold notificationSignalBoundCrossCoreDispatchChecked
@@ -124,19 +129,20 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_flow_denied_to_receiver
   simp [notificationSignalBoundCrossCoreDispatchChecked, hAllow, hTarget, hDenyR]
 
 /-- WS-SM SM6.B: with signaler→notification permitted and no bound-delivery target
-(the ordinary signal path), the checked dispatch is exactly the unchecked one. -/
+(the ordinary signal path), the checked dispatch is the checked signal
+(`sendSignalOnCoreFlowing`). -/
 theorem notificationSignalBoundCrossCoreDispatchChecked_flow_allowed_no_delivery
     (ctx : LabelingContext) (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId)
     (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState)
     (hAllow : securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf notificationId) = true)
     (hNone : boundDeliveryTarget? st notificationId = none) :
     notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler badge executingCore st
-      = notificationSignalBoundCrossCoreDispatch notificationId badge executingCore st := by
-  simp [notificationSignalBoundCrossCoreDispatchChecked, notificationSignalBoundCrossCoreDispatch,
-    hAllow, hNone]
+      = sendSignalOnCoreFlowing ctx notificationId badge executingCore st := by
+  simp [notificationSignalBoundCrossCoreDispatchChecked, hAllow, hNone]
 
 /-- WS-SM SM6.B: when both the signaler→notification and notification→receiver flows
-are permitted, the checked bound delivery is exactly the unchecked one. -/
+are permitted, the checked bound delivery is the checked signal
+(`sendSignalOnCoreFlowing`). -/
 theorem notificationSignalBoundCrossCoreDispatchChecked_flow_allowed_to_receiver
     (ctx : LabelingContext) (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId)
     (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState) (receiver : SeLe4n.ThreadId) (ep : SeLe4n.ObjId)
@@ -144,9 +150,8 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_flow_allowed_to_receiver
     (hTarget : boundDeliveryTarget? st notificationId = some (receiver, ep))
     (hAllowR : securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf receiver) = true) :
     notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler badge executingCore st
-      = notificationSignalBoundCrossCoreDispatch notificationId badge executingCore st := by
-  simp [notificationSignalBoundCrossCoreDispatchChecked, notificationSignalBoundCrossCoreDispatch,
-    hAllow, hTarget, hAllowR]
+      = sendSignalOnCoreFlowing ctx notificationId badge executingCore st := by
+  simp [notificationSignalBoundCrossCoreDispatchChecked, hAllow, hTarget, hAllowR]
 
 -- ============================================================================
 -- §5  Cross-core notification WAIT dispatch (per-core deschedule)

@@ -170,10 +170,10 @@ kernel's live entries do (WS-ZA ZA6.37):
       is called after exception context has already been saved.
     - The handler is total: neither arm refuses, so the dispatch's absorbing
       of handler errors (AI2-A, H-03) has nothing left to absorb. -/
-def handleInterrupt (st : SystemState) (c : Concurrency.CoreId) (intId : InterruptId) :
+def handleInterrupt (ctx : LabelingContext) (st : SystemState) (c : Concurrency.CoreId) (intId : InterruptId) :
     SystemState :=
   if intId = timerInterruptId then timerTickOnCore st c
-  else handleInterruptOnCore st c intId.val
+  else handleInterruptOnCore ctx st c intId.val
 
 -- ============================================================================
 -- AG3-D-iv: Full dispatch sequence
@@ -219,7 +219,7 @@ def handleInterrupt (st : SystemState) (c : Concurrency.CoreId) (intId : Interru
     strengthens this: `eoiPending` is already empty when the handler
     body executes, so the handler cannot observe a state in which an
     unacknowledged EOI is pending for the INTID it's servicing. -/
-def interruptDispatchSequence (st : SystemState) (c : Concurrency.CoreId) (rawIntId : Nat) :
+def interruptDispatchSequence (ctx : LabelingContext) (st : SystemState) (c : Concurrency.CoreId) (rawIntId : Nat) :
     Except KernelError (Unit × SystemState) :=
   match acknowledgeInterrupt rawIntId with
   | .ok intId =>
@@ -228,7 +228,7 @@ def interruptDispatchSequence (st : SystemState) (c : Concurrency.CoreId) (rawIn
     -- AN8-C.2 (H-19): EOI fires BEFORE the handler body so a panicking
     -- or long-running handler cannot leave the INTID active on the GIC.
     let stEoi := endOfInterrupt stAck intId
-    .ok ((), handleInterrupt stEoi c intId)
+    .ok ((), handleInterrupt ctx stEoi c intId)
   | .error .spurious =>
     -- AK3-C: spurious — no EOI per GIC-400 spec, no audit entry
     .ok ((), st)
@@ -244,18 +244,18 @@ def interruptDispatchSequence (st : SystemState) (c : Concurrency.CoreId) (rawIn
 
 /-- AG3-D / AK3-C: Spurious interrupts preserve state unchanged. No EOI
     emitted per GIC-400 spec. -/
-theorem interruptDispatchSequence_spurious (st : SystemState) (c : Concurrency.CoreId)
+theorem interruptDispatchSequence_spurious (ctx : LabelingContext) (st : SystemState) (c : Concurrency.CoreId)
     (rawIntId : Nat) (hSpurious : rawIntId ≥ spuriousInterruptThreshold) :
-    interruptDispatchSequence st c rawIntId = .ok ((), st) := by
+    interruptDispatchSequence ctx st c rawIntId = .ok ((), st) := by
   simp [interruptDispatchSequence, acknowledgeInterrupt, hSpurious]
 
 /-- AK3-C (A-H02 / HIGH): Out-of-range INTIDs preserve Lean-layer state;
     the HAL emits EOI with the raw IAR value to prevent GIC lockup. -/
-theorem interruptDispatchSequence_outOfRange (st : SystemState) (c : Concurrency.CoreId)
+theorem interruptDispatchSequence_outOfRange (ctx : LabelingContext) (st : SystemState) (c : Concurrency.CoreId)
     (rawIntId : Nat)
     (hInRange : rawIntId < spuriousInterruptThreshold)
     (hOutOfRange : ¬(rawIntId < 320)) :
-    interruptDispatchSequence st c rawIntId = .ok ((), st) := by
+    interruptDispatchSequence ctx st c rawIntId = .ok ((), st) := by
   have hNot : ¬(spuriousInterruptThreshold ≤ rawIntId) := Nat.not_le.mpr hInRange
   simp only [interruptDispatchSequence, acknowledgeInterrupt,
              if_neg hNot, dif_neg hOutOfRange]
@@ -284,21 +284,21 @@ theorem endOfInterrupt_removes_from_eoiPending
 seL4's `handleInterrupt` masks a line with no handler (WS-ZA ZA6.37: the
 reference dispatch refused it with `.invalidIrq` until the dispatch ran the
 live entry's handler). -/
-theorem handleInterrupt_unmapped (st : SystemState) (c : Concurrency.CoreId)
+theorem handleInterrupt_unmapped (ctx : LabelingContext) (st : SystemState) (c : Concurrency.CoreId)
     (intId : InterruptId)
     (hNotTimer : intId ≠ timerInterruptId)
     (hNoHandler : irqBinding? st intId.val = none) :
-    handleInterrupt st c intId = setInterruptLineMask st intId.val true := by
+    handleInterrupt ctx st c intId = setInterruptLineMask st intId.val true := by
   simp [handleInterrupt, handleInterruptOnCore, hNotTimer, hNoHandler]
 
 /-- AG3-D: a bound device line signals its handler's notification on core `c`
 and is masked until acknowledged. -/
-theorem handleInterrupt_bound (st : SystemState) (c : Concurrency.CoreId)
+theorem handleInterrupt_bound (ctx : LabelingContext) (st : SystemState) (c : Concurrency.CoreId)
     (intId : InterruptId) (ntfn : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (hNotTimer : intId ≠ timerInterruptId)
     (hHandler : irqBinding? st intId.val = some (ntfn, badge)) :
-    handleInterrupt st c intId =
-      setInterruptLineMask (interruptSignal ntfn badge c st) intId.val true := by
+    handleInterrupt ctx st c intId =
+      setInterruptLineMask (interruptSignal ctx ntfn badge c st) intId.val true := by
   simp [handleInterrupt, handleInterruptOnCore, hNotTimer, hHandler]
 
 /-- AI2-A (H-03) + AK3-C (A-H02 / HIGH) + AN8-C (H-19):
@@ -310,9 +310,9 @@ theorem handleInterrupt_bound (st : SystemState) (c : Concurrency.CoreId)
     captured by `interruptDispatchSequence_eoi_unless_spurious` below.
     AN8-C strengthens this to "EOI is emitted BEFORE the handler body
     runs unless spurious". -/
-theorem interruptDispatchSequence_always_ok (st : SystemState) (c : Concurrency.CoreId)
+theorem interruptDispatchSequence_always_ok (ctx : LabelingContext) (st : SystemState) (c : Concurrency.CoreId)
     (rawIntId : Nat) :
-    ∃ st', interruptDispatchSequence st c rawIntId = .ok ((), st') := by
+    ∃ st', interruptDispatchSequence ctx st c rawIntId = .ok ((), st') := by
   unfold interruptDispatchSequence
   cases acknowledgeInterrupt rawIntId with
   | error e =>
@@ -335,13 +335,13 @@ theorem interruptDispatchSequence_always_ok (st : SystemState) (c : Concurrency.
     2. `∃ stInner, stOut = endOfInterrupt stInner intId` — EOI was the
        last step, for some intermediate state. Matches the pre-AN8-C
        `ack → handle → EOI` ordering.
-    3. `∃ stInner, stOut = handleInterrupt (endOfInterrupt stInner intId) c
+    3. `∃ stInner, stOut = handleInterrupt ctx (endOfInterrupt stInner intId) c
        intId` — EOI happened before the handler, which produced `stOut`.
        Matches the AN8-C `ack → EOI → handle` order. -/
-def eoiEmitted (c : Concurrency.CoreId) (intId : InterruptId) (st stOut : SystemState) : Prop :=
+def eoiEmitted (ctx : LabelingContext) (c : Concurrency.CoreId) (intId : InterruptId) (st stOut : SystemState) : Prop :=
   stOut = endOfInterrupt st intId ∨
   (∃ stInner, stOut = endOfInterrupt stInner intId) ∨
-  (∃ stInner, stOut = handleInterrupt (endOfInterrupt stInner intId) c intId)
+  (∃ stInner, stOut = handleInterrupt ctx (endOfInterrupt stInner intId) c intId)
 
 /-- AK3-C.3 (A-H02 / HIGH) + AN8-C (H-19): EOI is emitted unless the
     interrupt was spurious.
@@ -353,11 +353,11 @@ def eoiEmitted (c : Concurrency.CoreId) (intId : InterruptId) (st stOut : System
     value.  Under the `ack → EOI → handle` ordering the handler observes
     the post-EOI state (the third disjunct of `eoiEmitted`). -/
 theorem interruptDispatchSequence_eoi_unless_spurious
-    (st stOut : SystemState) (c : Concurrency.CoreId) (rawIntId : Nat)
-    (hStep : interruptDispatchSequence st c rawIntId = .ok ((), stOut)) :
+    (ctx : LabelingContext) (st stOut : SystemState) (c : Concurrency.CoreId) (rawIntId : Nat)
+    (hStep : interruptDispatchSequence ctx st c rawIntId = .ok ((), stOut)) :
     acknowledgeInterrupt rawIntId = .error .spurious ∨
     acknowledgeInterrupt rawIntId = .error (.outOfRange rawIntId) ∨
-    ∃ intId, eoiEmitted c intId st stOut := by
+    ∃ intId, eoiEmitted ctx c intId st stOut := by
   unfold interruptDispatchSequence at hStep
   cases hAck : acknowledgeInterrupt rawIntId with
   | error e =>
@@ -391,10 +391,10 @@ theorem interruptDispatchSequence_eoi_unless_spurious
     §3.1 ordering that eliminates the "handler panic leaves INTID active"
     class of failure modes. -/
 theorem interruptDispatchSequence_eoi_before_handler
-    (st : SystemState) (c : Concurrency.CoreId) (rawIntId : Nat) (intId : InterruptId)
+    (ctx : LabelingContext) (st : SystemState) (c : Concurrency.CoreId) (rawIntId : Nat) (intId : InterruptId)
     (hAck : acknowledgeInterrupt rawIntId = .ok intId) :
-    ∀ stOut, interruptDispatchSequence st c rawIntId = .ok ((), stOut) →
-      stOut = handleInterrupt (endOfInterrupt (ackInterruptAudit st intId.val) intId) c intId := by
+    ∀ stOut, interruptDispatchSequence ctx st c rawIntId = .ok ((), stOut) →
+      stOut = handleInterrupt ctx (endOfInterrupt (ackInterruptAudit st intId.val) intId) c intId := by
   intro stOut hStep
   unfold interruptDispatchSequence at hStep
   rw [hAck] at hStep
@@ -424,8 +424,8 @@ theorem timerInterruptHandler_eq_timerTickOnCore (c : Concurrency.CoreId) (st : 
 
 /-- AG5-E: Timer interrupt handler dispatched via handleInterrupt
     when INTID = timerInterruptId (30). -/
-theorem handleInterrupt_timer (st : SystemState) (c : Concurrency.CoreId) :
-    handleInterrupt st c timerInterruptId = timerTickOnCore st c := by
+theorem handleInterrupt_timer (ctx : LabelingContext) (st : SystemState) (c : Concurrency.CoreId) :
+    handleInterrupt ctx st c timerInterruptId = timerTickOnCore st c := by
   simp [handleInterrupt]
 
 -- ============================================================================

@@ -1670,6 +1670,15 @@ theorem maybeDonateSchedContext_stepCovers (e : CoreId) (st : SystemState) (n : 
     ⟨stepCovers_refl e st, hInv⟩
     (fun vS vT _ hA => schedContextBindPerform_stepCovers st vS vT e hInv hBi hA)
 
+/-- …and so does the checked donation, the donation or nothing. -/
+theorem maybeDonateSchedContextFlowing_stepCovers (e : CoreId) {ctx : LabelingContext}
+    (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st) :
+    stepCovers e st (maybeDonateSchedContextFlowing ctx st n tid) ∧
+      (maybeDonateSchedContextFlowing ctx st n tid).objects.invExt :=
+  maybeDonateSchedContextFlowing_induct (fun b => stepCovers e st b ∧ b.objects.invExt) ctx st n
+    tid ⟨stepCovers_refl e st, hInv⟩ (maybeDonateSchedContext_stepCovers e st n tid hInv hBi)
+
 /-- **seL4's return on a running receiver covers**: the two object writes move
 only the receiver's key, the flag on its running core only rises, and the key
 hook flags every core the key change stales (`markKeyChangeFrom_covers`). -/
@@ -1860,14 +1869,16 @@ theorem endpointReplyRecvOnCore_stepCovers (e : CoreId)
 wake (`notificationSignalBoundOnCore_stepCovers`), then the donation to the thread
 it woke, whose binding pair the wake left as it found it (the wake moves no
 scheduling link: `notificationSignalBoundOnCore_schedLinkFrame`). -/
-theorem sendSignalOnCore_stepCovers (e : CoreId) {n : SeLe4n.ObjId} {badge : SeLe4n.Badge}
+theorem sendSignalOnCoreFlowing_stepCovers (e : CoreId) {ctx : LabelingContext}
+    {n : SeLe4n.ObjId} {badge : SeLe4n.Badge}
     {c : CoreId} {st : SystemState} (hInv : st.objects.invExt)
     (hBi : schedContextBindingBidirectional st) :
-    stepCovers e st (sendSignalOnCore n badge c st).1 ∧
-      (sendSignalOnCore n badge c st).1.objects.invExt := by
+    stepCovers e st (sendSignalOnCoreFlowing ctx n badge c st).1 ∧
+      (sendSignalOnCoreFlowing ctx n badge c st).1.objects.invExt := by
   have hW := notificationSignalBoundOnCore_stepCovers e (notificationId := n) (badge := badge)
     (executingCore := c) hInv
-  refine sendSignalOnCore_induct (fun s => stepCovers e st s ∧ s.objects.invExt) n badge c st hW
+  refine sendSignalOnCoreFlowing_induct (fun s => stepCovers e st s ∧ s.objects.invExt) ctx n
+    badge c st hW
     (fun t _ _ _ => ?_)
   exact stepCoversInv_trans hW.1 (maybeDonateSchedContext_stepCovers e _ n t hW.2
     (schedContextBindingBidirectional.of_bindingLinksAgree
@@ -1894,7 +1905,7 @@ theorem notificationSignalDeclassifiedCrossCoreDispatch_stepCovers (e : CoreId)
       (notificationSignalDeclassifiedOnCore_bindingLinksAgree hOk hInv) hBi))
 
 /-- The checked signal covers: a refused gate is the identity, a passed one is
-`sendSignalOnCore`. -/
+the checked signal (`sendSignalOnCoreFlowing`). -/
 theorem notificationSignalBoundCrossCoreDispatchChecked_stepCovers (e : CoreId)
     {ctx : LabelingContext} {notificationId : SeLe4n.ObjId} {signaler : SeLe4n.ThreadId}
     {badge : SeLe4n.Badge} {executingCore : CoreId} {st : SystemState}
@@ -1905,7 +1916,7 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_stepCovers (e : CoreId)
       badge executingCore st).1.objects.invExt :=
   notificationSignalBoundCrossCoreDispatchChecked_induct
     (fun s => stepCovers e st s ∧ s.objects.invExt) ctx notificationId signaler badge
-    executingCore st ⟨stepCovers_refl e st, hInv⟩ (sendSignalOnCore_stepCovers e hInv hBi)
+    executingCore st ⟨stepCovers_refl e st, hInv⟩ (sendSignalOnCoreFlowing_stepCovers e hInv hBi)
 
 /-- **A completion's consumption, badge register and donation cover**, on a state
 where the binding pair holds: neither the consumption nor the register write
@@ -1916,9 +1927,9 @@ theorem completeSignalArm_consumed_stepCovers (e : CoreId) {ctx : LabelingContex
     {st st1 : SystemState} {badge : SeLe4n.Badge} (hInv : st.objects.invExt)
     (hBi : schedContextBindingBidirectional st)
     (hW : notificationWaitCrossCoreDispatchChecked ctx notifId tid e st = (st1, .ok (some badge))) :
-    stepCovers e st (maybeDonateSchedContext (Architecture.writeReturnFrameToTcb st1 tid
+    stepCovers e st (maybeDonateSchedContextFlowing ctx (Architecture.writeReturnFrameToTcb st1 tid
       (Architecture.badgeReturnFrame st1 tid badge)) n tid) ∧
-      (maybeDonateSchedContext (Architecture.writeReturnFrameToTcb st1 tid
+      (maybeDonateSchedContextFlowing ctx (Architecture.writeReturnFrameToTcb st1 tid
         (Architecture.badgeReturnFrame st1 tid badge)) n tid).objects.invExt := by
   have hW' := notificationWaitCrossCoreDispatchChecked_ok_inner hW
   obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
@@ -1930,7 +1941,7 @@ theorem completeSignalArm_consumed_stepCovers (e : CoreId) {ctx : LabelingContex
     (writeReturnFrameToTcb_keyFrame st1 tid
       (Architecture.badgeReturnFrame st1 tid badge) hSInv).stepCoversInv
   refine stepCoversInv_trans (stepCovers_trans hS hF.1)
-    (maybeDonateSchedContext_stepCovers e _ n tid hF.2 ?_)
+    (maybeDonateSchedContextFlowing_stepCovers e _ n tid hF.2 ?_)
   exact schedContextBindingBidirectional.of_bindingLinksAgree
     (completeSignalArm_donationPre_schedLinkFrame hInv hW').binding hBi
 

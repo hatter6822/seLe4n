@@ -268,27 +268,27 @@ theorem perCoreRescheduleEntryState_preserves_yieldLinkedNotResident (coreId : U
 /-- WS-ZA ZA6.32: **the interrupt entry keeps a yield-linked thread resident
 nowhere**: it links no thread, and its step moves no core's slot off the
 executing core. -/
-theorem interruptEntryState_preserves_yieldLinkedNotResident (coreId intId : UInt64)
+theorem interruptEntryState_preserves_yieldLinkedNotResident (ctx : LabelingContext) (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
     (hBi : schedContextBindingBidirectional (Concurrency.saveCapturedTrapFrameAt st coreId frame))
     (hInv0 : st.objects.invExt) (hR0 : st.runQueueRefined) (hY : st.yieldLinkedNotResident) :
     (Architecture.clearIcacheMaintenance
       (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
-        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        (interruptEntryStep ctx (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
         coreId) coreId))).yieldLinkedNotResident := by
   have hSt := saveCapturedTrapFrameAt_runQueueStage st coreId frame
   have hSv := hSt.1.links hInv0 hR0
   have ES := E.of_ipcFrame hSt (saveCapturedTrapFrameAt_ipcFrame st coreId frame)
-  have hInvM := ((interruptEntryStep_runQueueStage _ coreId intId ES).1.links hSv.1 hSv.2).1
+  have hInvM := ((interruptEntryStep_runQueueStage ctx _ coreId intId ES).1.links hSv.1 hSv.2).1
   refine yieldLinkedNotResident_of_live hY
-    ((interruptEntryState_runQueueEntryStage coreId intId frame st E).1.live hInv0 hR0) ?_
+    ((interruptEntryState_runQueueEntryStage ctx coreId intId frame st E).1.live hInv0 hR0) ?_
   refine currentsRecordUnlinked.clearLedgers (settleThenActivateAt_currentsRecordUnlinked hInvM ?_ ?_)
   · intro c hc
     exact currentKeptOffCore_trans (b := Concurrency.saveCapturedTrapFrameAt st coreId frame)
       (currentKeptOffCore_of_eq fun _ _ => by rw [saveCapturedTrapFrameAt_scheduler])
-      (interruptEntryStep_stepCovers c _ coreId intId hSv.1 hBi).currentKept
+      (interruptEntryStep_stepCovers ctx c _ coreId intId hSv.1 hBi).currentKept
   · intro hc
-    rw [interruptEntryStep_invalid_core _ coreId intId hc, saveCapturedTrapFrameAt_scheduler]
+    rw [interruptEntryStep_invalid_core ctx _ coreId intId hc, saveCapturedTrapFrameAt_scheduler]
 
 /-- **The fault entry keeps no linked thread current or resident.** -/
 theorem faultEntryState_preserves_yieldLinkedNotResident (lctx : LabelingContext) (coreId : UInt64)

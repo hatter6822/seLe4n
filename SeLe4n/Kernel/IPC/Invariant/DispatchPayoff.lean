@@ -1278,13 +1278,12 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                     exact notificationSignalOnCore_preserves_ipcInvariantFull notifId
                       cap.signalBadge executingCore st hInv hObjInv
                       hPack.reachable.notificationWaiterConsistent hBudgets
-                  have hSigInv := sendSignalOnCore_preserves_ipcInvariantFull notifId
+                  have hSigInv := sendSignalOnCoreFlowing_preserves_ipcInvariantFull ctx notifId
                     cap.signalBadge executingCore st hObjInv hWake
                     (schedContextBindingBidirectional_of_consistent
                       hPack.capOnly.schedContextLinks.binding hInv.donationOwnerValid)
                     hInv hPack.reachable.notificationWaiterConsistent
-                  unfold notificationSignalBoundCrossCoreDispatch at hStep
-                  cases hSig : sendSignalOnCore notifId cap.signalBadge
+                  cases hSig : sendSignalOnCoreFlowing ctx notifId cap.signalBadge
                       executingCore st with
                   | mk st1 res1 =>
                       rw [hSig] at hStep hSigInv

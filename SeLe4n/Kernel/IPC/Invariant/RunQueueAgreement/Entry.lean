@@ -1101,66 +1101,66 @@ theorem setInterruptLineMask_runQueueStage (st : SystemState) (line : Nat) (mask
 /-- **seL4's `handleInterrupt` on a core keeps the run queues in agreement**:
 seL4's `sendSignal` (the bound-aware signal's stage and the stash clear, then
 the donation to the thread it woke), then the mask. -/
-theorem handleInterruptOnCore_runQueueStage (st : SystemState) (c : CoreId) (line : Nat)
+theorem handleInterruptOnCore_runQueueStage (ctx : LabelingContext) (st : SystemState) (c : CoreId) (line : Nat)
     (hHeads : notificationHeadsWakeable st) (hBlk : blockedCurrentNowhere st) :
-    RunQueueStage st (handleInterruptOnCore st c line) := by
+    RunQueueStage st (handleInterruptOnCore ctx st c line) := by
   unfold handleInterruptOnCore
   split
   · rename_i ntfn badge _
-    have hB := sendSignalOnCore_runQueueStage ntfn badge c st hHeads hBlk
+    have hB := sendSignalOnCoreFlowing_runQueueStage ctx ntfn badge c st hHeads hBlk
     exact (hB).trans
       (setInterruptLineMask_runQueueStage _ _ _)
   · exact setInterruptLineMask_runQueueStage _ _ _
 
-theorem interruptEntryStep_runQueueStage (st : SystemState) (coreId intId : UInt64)
-    (E : EntryPremises st) : RunQueueStage st (interruptEntryStep st coreId intId) :=
-  interruptEntryStep_of (P := RunQueueStage st) st coreId intId (RunQueueStage.refl _)
-    (fun c _ _ => handleInterruptOnCore_runQueueStage st c _ E.ntfnHeads E.blocked)
+theorem interruptEntryStep_runQueueStage (ctx : LabelingContext) (st : SystemState) (coreId intId : UInt64)
+    (E : EntryPremises st) : RunQueueStage st (interruptEntryStep ctx st coreId intId) :=
+  interruptEntryStep_of (P := RunQueueStage st) ctx st coreId intId (RunQueueStage.refl _)
+    (fun c _ _ => handleInterruptOnCore_runQueueStage ctx st c _ E.ntfnHeads E.blocked)
 
 /-- **The interrupt entry's committed state keeps the agreement**: the save,
 the step, the settle and activation, and the ledger drains. -/
-theorem interruptEntryState_runQueueEntryStage (coreId intId : UInt64)
+theorem interruptEntryState_runQueueEntryStage (ctx : LabelingContext) (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st) :
     SystemState.RunQueueEntryStage st (Architecture.clearIcacheMaintenance
       (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
-        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        (interruptEntryStep ctx (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
         coreId) coreId))) :=
   have hS := saveCapturedTrapFrameAt_runQueueStage st coreId frame
-  ((hS.entry.trans (interruptEntryStep_runQueueStage _ coreId intId
+  ((hS.entry.trans (interruptEntryStep_runQueueStage ctx _ coreId intId
     (E.of_ipcFrame hS (saveCapturedTrapFrameAt_ipcFrame st coreId _))).entry).trans
     ((settleThenActivateAt_runQueueEntryStage _ coreId).trans (clearLedgers_runQueueStage _).entry))
 
 /-- **The interrupt entry keeps the refill state sound.** -/
-theorem interruptEntryState_preserves_refillsSound (coreId intId : UInt64)
+theorem interruptEntryState_preserves_refillsSound (ctx : LabelingContext) (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
     (hRel : st.releaseQueueRefined) (hS : st.refillsSound) :
     (Architecture.clearIcacheMaintenance
       (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
-        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        (interruptEntryStep ctx (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
         coreId) coreId))).refillsSound :=
-  (interruptEntryState_runQueueEntryStage coreId intId frame st E).refillsSound
+  (interruptEntryState_runQueueEntryStage ctx coreId intId frame st E).refillsSound
     E.objInv E.refined hRel hS
 
 /-- **The interrupt entry keeps the yield link in agreement.** -/
-theorem interruptEntryState_preserves_yieldLinksAgree (coreId intId : UInt64)
+theorem interruptEntryState_preserves_yieldLinksAgree (ctx : LabelingContext) (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
     (hY : st.yieldLinksAgree) :
     (Architecture.clearIcacheMaintenance
       (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
-        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        (interruptEntryStep ctx (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
         coreId) coreId))).yieldLinksAgree :=
-  (interruptEntryState_runQueueEntryStage coreId intId frame st E).yieldLinksAgree
+  (interruptEntryState_runQueueEntryStage ctx coreId intId frame st E).yieldLinksAgree
     E.objInv E.refined hY
 
 /-- **The interrupt entry keeps the notification link in agreement.** -/
-theorem interruptEntryState_preserves_notificationLinksAgree (coreId intId : UInt64)
+theorem interruptEntryState_preserves_notificationLinksAgree (ctx : LabelingContext) (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
     (hY : notificationLinksAgree st) :
     notificationLinksAgree (Architecture.clearIcacheMaintenance
       (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
-        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        (interruptEntryStep ctx (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
         coreId) coreId))) :=
-  (interruptEntryState_runQueueEntryStage coreId intId frame st E).notificationLinksAgree
+  (interruptEntryState_runQueueEntryStage ctx coreId intId frame st E).notificationLinksAgree
     E.objInv E.refined hY
 
 end SeLe4n.Kernel

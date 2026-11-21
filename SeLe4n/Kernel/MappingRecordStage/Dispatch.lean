@@ -711,6 +711,13 @@ theorem maybeDonateSchedContext_mappingStage (st : SystemState) (n : SeLe4n.ObjI
   maybeDonateSchedContext_induct MappingStage st n tid (MappingStage.refl _)
     (fun _ _ _ _ => schedContextBindPerform_mappingStage _ _ _)
 
+/-- …and so does the checked donation. -/
+theorem maybeDonateSchedContextFlowing_mappingStage {ctx : LabelingContext} (st : SystemState)
+    (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) :
+    MappingStage st (maybeDonateSchedContextFlowing ctx st n tid) :=
+  maybeDonateSchedContextFlowing_induct (MappingStage st) ctx st n tid (MappingStage.refl _)
+    (maybeDonateSchedContext_mappingStage st n tid)
+
 /-- **seL4's return on a running receiver keeps the mapping records**: the
 context's thread link and the thread's binding written in place, then
 reschedule flags. -/
@@ -809,10 +816,11 @@ theorem endpointReplyRecvOnCore_mappingStage {answer : Option Architecture.Fault
 
 /-- **seL4's `sendSignal` keeps the mapping records**: the wake's writes, then
 the donation's. -/
-theorem sendSignalOnCore_mappingStage {n : SeLe4n.ObjId} {badge : SeLe4n.Badge}
-    {c : Concurrency.CoreId} {st : SystemState} :
-    MappingStage st (sendSignalOnCore n badge c st).1 :=
-  sendSignalOnCore_induct (MappingStage st) n badge c st notificationSignalBoundOnCore_mappingStage
+theorem sendSignalOnCoreFlowing_mappingStage {ctx : LabelingContext} {n : SeLe4n.ObjId}
+    {badge : SeLe4n.Badge} {c : Concurrency.CoreId} {st : SystemState} :
+    MappingStage st (sendSignalOnCoreFlowing ctx n badge c st).1 :=
+  sendSignalOnCoreFlowing_induct (MappingStage st) ctx n badge c st
+    notificationSignalBoundOnCore_mappingStage
     (fun t _ _ _ => notificationSignalBoundOnCore_mappingStage.trans
       (maybeDonateSchedContext_mappingStage _ n t))
 
@@ -834,7 +842,7 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_mappingStage {ctx : Labe
     MappingStage st (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
       badge executingCore st).1 :=
   notificationSignalBoundCrossCoreDispatchChecked_induct (MappingStage st) ctx notificationId
-    signaler badge executingCore st (MappingStage.refl _) sendSignalOnCore_mappingStage
+    signaler badge executingCore st (MappingStage.refl _) sendSignalOnCoreFlowing_mappingStage
 
 /-- **A receive that completes its bound notification keeps the mapping
 records**: the checked wait's consumption and the badge register. -/
@@ -846,7 +854,8 @@ theorem completeSignalArm_mappingStage {ctx : LabelingContext} {tid : SeLe4n.Thr
   · rename_i hW
     cases h
     exact ((MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW).trans
-      (writeReturnFrameToTcb_mappingStage _ _ _)).trans (maybeDonateSchedContext_mappingStage _ _ _)
+      (writeReturnFrameToTcb_mappingStage _ _ _)).trans
+      (maybeDonateSchedContextFlowing_mappingStage _ _ _)
   · rename_i hW
     cases h
     exact (MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW).trans

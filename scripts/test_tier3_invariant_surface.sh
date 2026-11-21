@@ -10493,8 +10493,8 @@ run_check "INVARIANT" rg -n 'cores := sendSignalWriteSet st notificationId' SeLe
 # WS-SX SX8.2: the live `.notificationSignal` arm is seL4's sendSignal (wake then
 # donation); its confinement and cross-core non-interference, and the write set.
 run_check "INVARIANT" rg -n '^def sendSignalWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
-run_check "INVARIANT" rg -n '^theorem sendSignalOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem sendSignalOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem sendSignalOnCoreFlowing_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem sendSignalOnCoreFlowing_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContext_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/SchedContextArms.lean
 run_check "INVARIANT" rg -n '^theorem schedContextBind_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem completeSignalArm_scheduler_of_donation($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
@@ -11318,9 +11318,19 @@ open SeLe4n.Kernel.Concurrency
 #check @sendSignalOnCore
 #check @signalWokenThread?
 #check @donateToSignalled
+#check @notificationContextHeadLender?
+#check @donationLenderFlows
+#check @maybeDonateSchedContextFlowing
+#check @maybeDonateSchedContextFlowing_induct
+#check @maybeDonateSchedContextFlowing_of_flows_false
+#check @maybeDonateSchedContextFlowingFast_eq
+#check @donationLenderFlows_lender
+#check @donateToSignalledFlowing
+#check @sendSignalOnCoreFlowing
+#check @sendSignalOnCoreFlowing_eq_impl
+#check @sendSignalOnCoreFlowing_induct
 #check @sendSignalOnCore_snd
 #check @sendSignalOnCore_induct
-#check @sendSignalOnCore_preserves_objects_invExt
 #check @sendSignalOnCore_preserves_ipcInvariantFull
 #check @notificationSignalBoundOnCore_schedLinkFrame
 #check @notificationSignalOnCore_schedLinkFrame
@@ -11329,25 +11339,24 @@ open SeLe4n.Kernel.Concurrency
 #check @maybeDonateSchedContext_preserves_objects_invExt
 #check @signalWokenThread?_not_blockedOnReply
 #check @notificationSignalBoundCrossCoreDispatchChecked_induct
-#check @sendSignalOnCore_stepCovers
-#check @sendSignalOnCore_runQueueStage
-#check @sendSignalOnCore_mappingStage
-#check @sendSignalOnCore_recordsStage
-#check @sendSignalOnCore_savedRegsKept
-#check @sendSignalOnCore_error_state
+#check @sendSignalOnCoreFlowing_stepCovers
+#check @sendSignalOnCoreFlowing_runQueueStage
+#check @sendSignalOnCoreFlowing_mappingStage
+#check @sendSignalOnCoreFlowing_recordsStage
+#check @sendSignalOnCoreFlowing_savedRegsKept
 #check @notificationSignalBoundOnCore_ntfnContextsAgree
 #check @notificationSignalBoundOnCore_signalDonationCores_eq
 #check @notificationSignalBoundOnCore_signalDonationContext?_eq
 #check @signalWakeDonationCores
 #check @signalWakeDonationContext?
-#check @schedLockSet_sendSignalOnCore_coversWrites
+#check @schedLockSet_sendSignalOnCoreFlowing_coversWrites
 #check @footprintCoversWrites_of_cores_subset
 #check @interruptReplenishCores
 #check @schedContextBindPerform_lowEquivalent
 #check @schedContextBind_lowEquivalent
 #check @maybeDonateSchedContext_lowEquivalent
 #check @boundSignalHidden.woken
-#check @sendSignalOnCore_lowEquivalent
+#check @sendSignalOnCoreFlowing_lowEquivalent
 #check @lockSetForSyscall_notificationSignal_covers_donationContext
 #check @notificationSignalDeclassifiedCrossCoreDispatch_induct
 #check @notificationSignalDeclassifiedCrossCoreDispatch_snd
@@ -11358,7 +11367,6 @@ open SeLe4n.Kernel.Concurrency
 #check @notificationSignalDeclassifiedCrossCoreDispatch_mappingStage
 #check @maybeDonateSchedContext_onlyObjectsSchedulerDiffer
 #check @maybeDonateSchedContext_declassificationAuditLog_eq
-#check @donateToSignalled_declassificationAuditLog_eq
 #check @maybeDonateSchedContextFast_eq_code
 #check @maybeReturnSchedContext
 #check @maybeReturnSchedContextFast_eq
@@ -24399,9 +24407,9 @@ run_check "INVARIANT" rg -n '^          match SchedContextOps\.schedContextYield
 # WS-ZA ZA6.37: the reference interrupt dispatch runs the live entries' handlers
 # on the executing core — the timer arm the per-core tick, every other line
 # seL4's handleInterrupt on that core — and takes no handler parameter.
-run_check "INVARIANT" rg -n -U '^def handleInterrupt \(st : SystemState\) \(c : Concurrency\.CoreId\) \(intId : InterruptId\) :\n    SystemState :=\n  if intId = timerInterruptId then timerTickOnCore st c\n  else handleInterruptOnCore st c intId\.val$' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
-run_check "INVARIANT" rg -n '^    \.ok \(\(\), handleInterrupt stEoi c intId\)$' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
-run_check "INVARIANT" rg -n '^      match interruptDispatchSequence st executingCore rawIntId with$' SeLe4n/Kernel/Architecture/ExceptionModel.lean
+run_check "INVARIANT" rg -n -U '^def handleInterrupt \(ctx : LabelingContext\) \(st : SystemState\) \(c : Concurrency\.CoreId\) \(intId : InterruptId\) :\n    SystemState :=\n  if intId = timerInterruptId then timerTickOnCore st c\n  else handleInterruptOnCore ctx st c intId\.val$' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
+run_check "INVARIANT" rg -n '^    \.ok \(\(\), handleInterrupt ctx stEoi c intId\)$' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
+run_check "INVARIANT" rg -n '^      match interruptDispatchSequence ctx st executingCore rawIntId with$' SeLe4n/Kernel/Architecture/ExceptionModel.lean
 run_check "INVARIANT" rg -n '^theorem handleInterrupt_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
 run_check "INVARIANT" rg -n '^theorem timerTickOnCore_machine_interruptsEnabled($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/ExceptionModel.lean
 run_negative_check "INVARIANT" rg -n '^(noncomputable )?def (handleInterruptWith|interruptDispatchSequenceWith|dispatchExceptionWith) ' SeLe4n/Kernel/Architecture

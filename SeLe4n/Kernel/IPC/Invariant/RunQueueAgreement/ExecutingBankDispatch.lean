@@ -331,12 +331,14 @@ theorem completeSignalArm_donation_bankFrame {e e' : CoreId} {c0 : SeLe4n.Thread
     (hW : notificationWaitCrossCoreDispatchChecked ctx notifId tid c st = (st1, .ok (some badge))) :
     bankFrame e c0 (Architecture.writeReturnFrameToTcb st1 tid
         (Architecture.badgeReturnFrame st1 tid badge))
-      (maybeDonateSchedContext (Architecture.writeReturnFrameToTcb st1 tid
+      (maybeDonateSchedContextFlowing ctx (Architecture.writeReturnFrameToTcb st1 tid
         (Architecture.badgeReturnFrame st1 tid badge)) n tid) := by
   have hW' := notificationWaitCrossCoreDispatchChecked_ok_inner hW
   have hI := completeSignalArm_donationPre_objects_invExt hInv hW'
   have hB := schedContextBindingBidirectional.of_scIdLinksAgree
     (scIdLinksAgree.of_schedLinkFrame (completeSignalArm_donationPre_schedLinkFrame hInv hW')) hBi
+  refine maybeDonateSchedContextFlowing_induct (bankFrame e c0 _) ctx _ n tid
+    (bankFrame.refl _) ?_
   exact bankFrame.of_kept hne (maybeDonateSchedContext_stepCovers e' _ n tid hI hB).1
     (maybeDonateSchedContext_savedRegsKeptExcept n tid hI)
 

@@ -186,25 +186,26 @@ theorem fpAccessEntryState_recordsStage (coreId : UInt64)
 /-- WS-ZA ZA6.32: the interrupt step: seL4's `sendSignal` (the bound signal, the
 stash clear and the donation), then the mask, which writes no object.  The signal reads
 the reachable state the step runs from. -/
-theorem RecordsStage.interruptEntryStep (st : SystemState) (coreId intId : UInt64)
-    (hR : ipcReachable st) : RecordsStage st (_root_.SeLe4n.Kernel.interruptEntryStep st coreId intId) :=
-  interruptEntryStep_of (P := RecordsStage st) st coreId intId (.refl st) fun c _ _ =>
-    handleInterruptOnCore_of (P := RecordsStage st) st c _
+theorem RecordsStage.interruptEntryStep (ctx : LabelingContext) (st : SystemState)
+    (coreId intId : UInt64) (hR : ipcReachable st) :
+    RecordsStage st (_root_.SeLe4n.Kernel.interruptEntryStep ctx st coreId intId) :=
+  interruptEntryStep_of (P := RecordsStage st) ctx st coreId intId (.refl st) fun c _ _ =>
+    handleInterruptOnCore_of (P := RecordsStage st) ctx st c _
       (fun _ h => h.trans (.of_frameK fun hI => RecordsFrame.of_objects_eq hI rfl rfl)) (.refl st)
-      (fun ntfn _ _ => sendSignalOnCore_recordsStage hR)
+      (fun ntfn _ _ => sendSignalOnCoreFlowing_recordsStage hR)
 
 /-- WS-ZA ZA6.32: **the interrupt entry's committed state keeps the records**,
 from the reachable state the step runs from: the trap-frame save writes one
 thread's registers and the core's, which the reachable state does not read. -/
-theorem interruptEntryState_recordsStage (coreId intId : UInt64)
+theorem interruptEntryState_recordsStage (ctx : LabelingContext) (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState)
     (hR : ipcReachable (Concurrency.saveCapturedTrapFrameAt st coreId frame)) :
     RecordsStage st (Architecture.clearIcacheMaintenance
       (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
-        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        (interruptEntryStep ctx (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
         coreId) coreId))) :=
   ((RecordsStage.of_frameK fun h => RecordsFrame.saveCapturedTrapFrameAt st coreId frame h).trans
-    (RecordsStage.interruptEntryStep _ coreId intId hR)).trans (RecordsStage.entryTail _ coreId)
+    (RecordsStage.interruptEntryStep ctx _ coreId intId hR)).trans (RecordsStage.entryTail _ coreId)
 
 /-! ### The fault entries -/
 

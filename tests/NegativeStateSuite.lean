@@ -4648,12 +4648,12 @@ private def runOffBoardInterruptLineChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.irqHandlerAck 250 st)
   expectCond "irq-board" "the admitted acknowledge unmasks its line"
     (stAck.machine.irqLineMasked 250 == false)
-  let stOff := SeLe4n.Kernel.interruptEntryStep st 0 300
+  let stOff := SeLe4n.Kernel.interruptEntryStep SeLe4n.Kernel.defaultLabelingContext st 0 300
   expectCond "irq-board" "an interrupt past the board's count masks nothing"
     (stOff.machine.irqLineMasked 300 == false)
   expectCond "irq-board" "an interrupt past the board's count records no physical write"
     (stOff.physicalWrites.count == st.physicalWrites.count)
-  let stOn := SeLe4n.Kernel.interruptEntryStep st 0 250
+  let stOn := SeLe4n.Kernel.interruptEntryStep SeLe4n.Kernel.defaultLabelingContext st 0 250
   expectCond "irq-board" "an interrupt on the board masks its line"
     (stOn.machine.irqLineMasked 250 == true)
   expectCond "irq-board" "the same line past a smaller board is no device line"

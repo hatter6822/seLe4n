@@ -949,11 +949,13 @@ at the core the syscall trapped on (threaded from the entry point), exactly as
 SM6.B's `notificationSignalBoundCrossCoreDispatch` does.
 
 WS-SX SX8.2: seL4-MCS `sendSignal` then donates the notification's context to
-the thread the signal woke (`donateToSignalled`, the donation
-`sendSignalOnCore` makes).  It runs once the audit record is committed, so a
+the thread the signal woke, under the checked kernel's lender flow check read
+through this context (`donateToSignalledFlowingGeneric`, the donation the
+checked `sendSignalOnCoreFlowing` makes): the declassification downgrades the
+signal's own hops, never the lending of another thread's reply stack.  It runs once the audit record is committed, so a
 refused record donates nothing and the downgrade stays fail-closed; the record
 writes the audit trail alone, which the donation neither reads nor writes, so
-the state a program sees is `sendSignalOnCore`'s followed by the record.
+the state a program sees is the checked signal's followed by the record.
 
 Deliberately **not** a boot-pinned sibling: the actor and the wake target are
 both per-core facts, and a `bootCoreId` form would be the defect the per-core
@@ -964,7 +966,7 @@ def notificationSignalDeclassifiedCrossCoreDispatch (ctx : GenericLabelingContex
     SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
   match notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge
       executingCore st with
-  | (st', .ok sgi) => (donateToSignalled st st' notificationId, .ok sgi)
+  | (st', .ok sgi) => (donateToSignalledFlowingGeneric ctx st st' notificationId, .ok sgi)
   | (st', .error e) => (st', .error e)
 
 /-- The declassifying dispatch's answer is the declassifying signal's: the
@@ -998,10 +1000,12 @@ theorem notificationSignalDeclassifiedCrossCoreDispatch_induct (P : SystemState 
   · intro hSig _; exact hSig
   · intro hSig hDonate
     dsimp only
-    unfold donateToSignalled
+    unfold donateToSignalledFlowingGeneric
     cases hW : signalWokenThread? st notificationId with
     | none => exact hSig
-    | some t => exact hDonate t sgi hW rfl
+    | some t =>
+      exact maybeDonateSchedContextFlowingGeneric_induct P ctx _ notificationId t hSig
+        (hDonate t sgi hW rfl)
 
 /-- A refused declassifying dispatch donates nothing. -/
 theorem notificationSignalDeclassifiedCrossCoreDispatch_fst_of_error

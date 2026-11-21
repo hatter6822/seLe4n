@@ -670,7 +670,7 @@ theorem notificationSignalBoundOnCore_bound_path_NI_smp
 notification; on the bound-delivery path the bound thread and the endpoint
 splice; on the waiter path the woken waiter and its successor; and the
 scheduling context bound to the notification, which seL4's `sendSignal`
-donates to the thread the signal wakes (`sendSignalOnCore_lowEquivalent`). -/
+donates to the thread the signal wakes (`sendSignalOnCoreFlowing_lowEquivalent`). -/
 structure boundSignalHidden (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (notificationId : SeLe4n.ObjId) : Prop where
   notification : objectObservable ctx observer notificationId = false

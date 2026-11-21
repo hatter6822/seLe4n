@@ -26,7 +26,10 @@ CPU interface and wrote its end of interrupt.  The entry runs seL4's
 `handleInterrupt` on the executing core (`interruptEntryStep`,
 `handleInterruptOnCore`): the bound handler's notification signalled and the
 line masked until the handler acknowledges it, or a line no handler is bound
-to masked.  The mask reaches the distributor as the physical write the step
+to masked.  The signal is the checked kernel's (`sendSignalOnCoreFlowing`), read
+under the installed labelling context (`Platform.FFI.getKernelLabelingContext`,
+as the syscall and fault entries read it): its donation lends a context heading
+another thread's reply stack only to a thread the stack's top lender flows to.  The mask reaches the distributor as the physical write the step
 records (`PhysicalWrite.setInterruptMask`), performed after the commit as
 every entry performs the writes its step owes.  A woken thread queued on any
 core wakes that core: the raised flags are fired as every entry fires them.
@@ -133,23 +136,28 @@ theorem declaredLockSetForInterrupt_some {coreId intId : UInt64} {st : SystemSta
       rw [hd] at hS
       exact ⟨c, rfl, rfl, LockSet.ofList?_pairs hS⟩
 
-/-- **seL4's `sendSignal` is covered by the signal's footprint**: the wake
+/-- **The checked `sendSignal` is covered by the footprint the signal
+declares**: the wake's coverage
 (`schedLockSet_notificationSignalBoundOnCore_coversWrites`), then the donation
 to the woken thread, on the cores the footprint read off the entry state
 (`signalWakeDonationCores`), which the wake keeps
-(`notificationSignalBoundOnCore_signalDonationCores_eq`). -/
-theorem schedLockSet_sendSignalOnCore_coversWrites (notificationId : SeLe4n.ObjId)
+(`notificationSignalBoundOnCore_signalDonationCores_eq`).  Where the lender flow
+check refuses, nothing is donated and the wake's coverage is the signal's; the
+footprint still names the woken thread's home core the donation would have
+written: an over-approximation, covered by this proof. -/
+theorem schedLockSet_sendSignalOnCoreFlowing_coversWrites (ctx : LabelingContext)
+    (notificationId : SeLe4n.ObjId)
     (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState) (S : LockSet)
     (hObjInv : st.objects.invExt)
     (hS : LockSet.ofList? (schedLockSet_notificationSignalBoundOnCore st notificationId)
       = some S) :
-    footprintCoversWrites S st (sendSignalOnCore notificationId badge executingCore st).1 := by
+    footprintCoversWrites S st (sendSignalOnCoreFlowing ctx notificationId badge executingCore st).1 := by
   have hWake := schedLockSet_notificationSignalBoundOnCore_coversWrites notificationId badge
     executingCore st S hObjInv hS
   have hP := LockSet.ofList?_pairs hS
   have hTable : (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs := by
     rw [hP]; exact schedFootprintOfCores_contains_objStore_write _ _
-  refine sendSignalOnCore_induct (fun s => footprintCoversWrites S st s) notificationId badge
+  refine sendSignalOnCoreFlowing_induct (fun s => footprintCoversWrites S st s) ctx notificationId badge
     executingCore st hWake (fun t _ hT _ => footprintCoversWrites_trans S hWake
       (maybeDonateSchedContext_coversWrites S _ notificationId t
         (notificationSignalBoundOnCore_preserves_objects_invExt _ _ _ st hObjInv) hTable
@@ -162,15 +170,16 @@ theorem schedLockSet_sendSignalOnCore_coversWrites (notificationId : SeLe4n.ObjI
     (mem_schedFootprintOfCores_replenishQueue_iff _ _ d).mpr hd'⟩
 
 /-- **The interrupt step's writes are inside the footprint it declares**: the
-signal's own coverage (`schedLockSet_sendSignalOnCore_coversWrites`, the wake
+signal's own coverage (`schedLockSet_sendSignalOnCoreFlowing_coversWrites`, the wake
 and the donation) carried through the mask, which writes no object and no
 scheduler field. -/
-theorem interruptEntryStep_coversWrites (coreId intId : UInt64) (st : SystemState)
+theorem interruptEntryStep_coversWrites (ctx : LabelingContext) (coreId intId : UInt64)
+    (st : SystemState)
     (S : LockSet) (hInv : st.objects.invExt)
     (hS : declaredLockSetForInterrupt coreId intId st = some S) :
-    footprintCoversWrites S st (interruptEntryStep st coreId intId) := by
+    footprintCoversWrites S st (interruptEntryStep ctx st coreId intId) := by
   obtain ⟨c, hc, hd, hP⟩ := declaredLockSetForInterrupt_some hS
-  rw [interruptEntryStep_device st coreId intId c hc hd]
+  rw [interruptEntryStep_device ctx st coreId intId c hc hd]
   unfold handleInterruptOnCore
   unfold interruptRunCores interruptReplenishCores at hP
   cases hH : Architecture.irqBinding? st intId.toNat with
@@ -183,7 +192,7 @@ theorem interruptEntryStep_coversWrites (coreId intId : UInt64) (st : SystemStat
     have hB := footprintCoversWrites_of_cores_subset S
       (notificationSignalBoundWriteSet st ntfn ++ signalWakeDonationCores st ntfn)
       (signalWakeDonationCores st ntfn) _ _ st _ hP (fun _ h => List.mem_cons_of_mem _ h)
-      (fun _ h => h) (fun S0 hS0 => schedLockSet_sendSignalOnCore_coversWrites ntfn badge c st S0
+      (fun _ h => h) (fun S0 hS0 => schedLockSet_sendSignalOnCoreFlowing_coversWrites ctx ntfn badge c st S0
         hInv hS0)
     exact footprintCoversWrites_of_frame hB rfl rfl
 
@@ -208,16 +217,17 @@ theorem declaredLockSetForInterrupt_runQueue {coreId intId : UInt64} {st : Syste
 `declaredLockSetForInterrupt` declares, the step, and its coverage as the
 proof field.  Inlined, with `BracketSpec.run`, so the entry runs the step's own
 application and the record is never built at runtime. -/
-@[inline] def interruptBracket (coreId intId : UInt64) : BracketSpec Unit where
+@[inline] def interruptBracket (ctx : LabelingContext) (coreId intId : UInt64) :
+    BracketSpec Unit where
   declared := declaredLockSetForInterrupt coreId intId
-  step := fun s => ((), interruptEntryStep s coreId intId)
+  step := fun s => ((), interruptEntryStep ctx s coreId intId)
   inv := fun s => s.objects.invExt
-  covers := fun st S hInv hS => interruptEntryStep_coversWrites coreId intId st S hInv hS
+  covers := fun st S hInv hS => interruptEntryStep_coversWrites ctx coreId intId st S hInv hS
 
 /-- What the entry executes is the step: `rfl`, because `BracketSpec.run` is
 the step. -/
-theorem interruptBracket_run (coreId intId : UInt64) (st : SystemState) :
-    (interruptBracket coreId intId).run st = ((), interruptEntryStep st coreId intId) := rfl
+theorem interruptBracket_run (ctx : LabelingContext) (coreId intId : UInt64) (st : SystemState) :
+    (interruptBracket ctx coreId intId).run st = ((), interruptEntryStep ctx st coreId intId) := rfl
 
 /-! ### The entry -/
 
@@ -237,11 +247,12 @@ def interruptEntry (coreId intId : UInt64) : BaseIO Unit :=
   | none => pure ()
   | some c => do
     let frame ← Platform.FFI.ffiTrapContext
+    let lctx ← Platform.FFI.getKernelLabelingContext
     let (raised, kind, context, tableBase, asid, code, writes, icache) ←
       Platform.FFI.modifyGetKernelState (fun st0 =>
         let st := Architecture.saveCapturedTrapFrame st0 c frame
         let pending0 := reschedulePendingSnapshot st
-        let mid := ((interruptBracket coreId intId).run st).2
+        let mid := ((interruptBracket lctx coreId intId).run st).2
         let pending := mid.scheduler.reschedulePending
         let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore mid c) c
         (((pending0.raised pending).union (pending.raised post.scheduler.reschedulePending),
@@ -272,11 +283,12 @@ theorem interruptEntry_def (coreId intId : UInt64) :
       | none => pure ()
       | some c => do
         let frame ← Platform.FFI.ffiTrapContext
+        let lctx ← Platform.FFI.getKernelLabelingContext
         let (raised, kind, context, tableBase, asid, code, writes, icache) ←
           Platform.FFI.modifyGetKernelState (fun st0 =>
             let st := Architecture.saveCapturedTrapFrame st0 c frame
             let pending0 := reschedulePendingSnapshot st
-            let mid := ((interruptBracket coreId intId).run st).2
+            let mid := ((interruptBracket lctx coreId intId).run st).2
             let pending := mid.scheduler.reschedulePending
             let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore mid c) c
             (((pending0.raised pending).union (pending.raised post.scheduler.reschedulePending),
@@ -298,16 +310,16 @@ stated over.**  On the core the id names, the entry's per-core save, step,
 settle and activation are the raw-id composition every carry of the entry is
 stated over (`interruptEntryState_runQueueEntryStage` and its siblings), so
 each carry holds of what the entry commits. -/
-theorem interruptEntryCommitted_eq (st0 : SystemState) (coreId intId : UInt64) (c : CoreId)
+theorem interruptEntryCommitted_eq (ctx : LabelingContext) (st0 : SystemState) (coreId intId : UInt64) (c : CoreId)
     (frame : Option Architecture.InFlightContext)
     (hc : Concurrency.coreIdOfUInt64? coreId = some c) :
     Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites
       (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
-        ((interruptBracket coreId intId).run (Architecture.saveCapturedTrapFrame st0 c frame)).2
+        ((interruptBracket ctx coreId intId).run (Architecture.saveCapturedTrapFrame st0 c frame)).2
           c) c)) =
     Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites
       (activateThreadAt (PriorityInheritance.settleResidencyAt
-        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st0 coreId frame) coreId intId)
+        (interruptEntryStep ctx (Concurrency.saveCapturedTrapFrameAt st0 coreId frame) coreId intId)
           coreId) coreId)) := by
   simp only [interruptBracket_run, Concurrency.saveCapturedTrapFrameAt,
     PriorityInheritance.settleResidencyAt, activateThreadAt, hc]
