@@ -12949,7 +12949,7 @@ run_check "INVARIANT" rg -n '^theorem resolveSchedContextBindNotificationCode_eq
 # invoking core's current thread's context before the thread unbind, then
 # unbinds the notification.
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextUnbind =>(\n([ \t][^\n]*)?)*              match SchedContextOps\.schedContextUnbindAllOnCore vScId\n                  executingCore st with" SeLe4n/Kernel/API.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbindAllOnCore[^\n]*(\n([ \t][^\n]*)?)*    \| _ \+ 1 =>\n      match schedContextUnbindOnCore vScId executingCore st with(\n([ \t][^\n]*)?)*unbindSchedContextNotification st. \(SeLe4n\.SchedContextId\.ofObjId vScId\.val\), sgi\)" SeLe4n/Kernel/SchedContext/OperationsPerCore.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbindAllOnCore[^\n]*(\n([ \t][^\n]*)?)*    \| _ \+ 1 =>\n      match schedContextUnbindOnCore vScId executingCore st with(\n([ \t][^\n]*)?)*\.ok \(schedContextUnbindReply\n[ \t]*\(unbindSchedContextNotification st. \(SeLe4n\.SchedContextId\.ofObjId vScId\.val\)\)\n[ \t]*vScId\.val, sgi\)" SeLe4n/Kernel/SchedContext/OperationsPerCore.lean'
 # The refusal is the thread unbind's own and precedes the revocation, so the
 # per-core unbind runs no local scheduling point.  Mutation: move the refusal
 # after the `schedContextUnbind` call, or restore the preemption seam.
@@ -18763,7 +18763,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyFrameOnLiveStack[^\
 # whose binding is `.donated`: the pop is keyed on the reply frame, a frame
 # heading a context bound to no thread is popped by `popUnheldReplyHead`, and
 # `SchedContext_Unbind` lets go of the stack last on both surfaces.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind [^\n]*(\n([ \t][^\n]*)?)*match frozenUnbindSchedContextNotification st2 scId with\n[ \t]*\| \.ok st3 =>\n([ \t]*--[^\n]*\n)*[ \t]*match frozenSchedContextUnbindReply st3 scId with" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind [^\n]*(\n([ \t][^\n]*)?)*match frozenUnbindSchedContextNotification st2 scId with\n[ \t]*\| \.ok st3 =>\n([ \t]*(--[^\n]*)?\n)*[ \t]*match frozenSchedContextUnbindReply st3 scId with" SeLe4n/Kernel/FrozenOps/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\\[inline\\] def schedContextUnbindAllPerform [^\n]*\n[^\n]*\n  schedContextUnbindReply \(unbindSchedContextNotification \(schedContextUnbindPerform st vScId\)" SeLe4n/Kernel/SchedContext/OperationsPerCore.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (frozenSchedContextUnbind|schedContextUnbind) [^\n]*(\n([ \t][^\n]*)?)*isDonated" SeLe4n/Kernel/FrozenOps/Operations.lean SeLe4n/Kernel/SchedContext/Operations.lean'
 #
@@ -18965,11 +18965,11 @@ run_check "INVARIANT" bash -lc 'rg -n "the RETIRED chain condition.s premise: th
 # answers, and a re-keying would then break an anchor that is not about keys.
 run_check "INVARIANT" rg -n '^def replyRecvPopDonation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 run_check "INVARIANT" rg -n '^def replyRecvPostReceiveDonation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyRecvAnsweringOnCore[^\n]*(\n([ \t][^\n]*)?)*replyRecvPopDonation [^\n]*st1 with[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveDualWithCapsOnCore epId tid \(some rid\) executingCore st1p with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyRecvAnsweringOnCore[^\n]*(\n([ \t][^\n]*)?)*replyRecvPopDonation [^\n]*st1 with[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveDualWithCapsOnCore epId tid \(some rid\) executingCore\s+\(receiveReturnSchedContext true st1p tid\) with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 # NEGATIVE: the receive leg must not run on the PRE-pop state.  Token-preserving
 # -- it keeps the pop, the receive leg and both bindings, and feeds the receive
 # leg the state the reply leg committed instead of the one the pop did.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyRecvAnsweringOnCore[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveDualWithCapsOnCore epId tid \(some rid\) executingCore st1 with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyRecvAnsweringOnCore[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveDualWithCapsOnCore epId tid \(some rid\) executingCore\s+(\(receiveReturnSchedContext true )?st1[ )]" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 # ...and the two halves' bundle theorems, each stated at the state its own step
 # runs on rather than at one two legs away.
 run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
