@@ -18600,6 +18600,69 @@ fn fault_entries() -> Option<bool> {
             return Some(false);
         }
     }
+    // WS-SX SX8: a capability fault answered by a reply-receive whose
+    // receive leg meets a sender already queued: the partner faults to the
+    // waiting root task, the third thread queues its send while the root task
+    // waits on the notification, and the root task's reply-receive restarts
+    // the partner and takes the send in place
+    // (`performReplyRecvFaultTakeDelivered`).
+    let take_resume_restorer = invocation(
+        "cap-fault-take-restorer-resume",
+        TCB_RESUME,
+        RESTORER_TCB_CAP,
+        [0; 4],
+    );
+    let take_root_waits = partner_step(
+        "cap-fault-take-root-waits",
+        WAIT,
+        NOTIFICATION_CAP,
+        0,
+        [0, 0],
+        true,
+    );
+    let take_restorer_wakes_root = signal("cap-fault-take-restorer-wakes-root");
+    let take_restorer_sends = partner_step(
+        "cap-fault-take-restorer-sends",
+        SEND,
+        ENDPOINT_CAP,
+        1,
+        [0xd8, 0],
+        true,
+    );
+    let take_reply_recv = with_reply(
+        partner_step(
+            "cap-fault-take-reply-recv",
+            REPLY_RECV,
+            ENDPOINT_CAP,
+            1,
+            [FAULT_REPLY_WORD, 0],
+            false,
+        ),
+        REPLY_CAP,
+    );
+    let take_suspend_restorer = invocation(
+        "cap-fault-take-restorer-suspend",
+        TCB_SUSPEND,
+        RESTORER_TCB_CAP,
+        [0; 4],
+    );
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+            || !unmeasured(&handler_waits, "the handler did not wait on the endpoint")
+            || heap_allocations_trap(&fault_trip(2, "cap-fault-delivered-to-take-reply-recv"), which)
+                != Some(true)
+            || !unmeasured(&take_resume_restorer, "the third thread was not resumed")
+            || !unmeasured(&take_root_waits, "the root task did not wait")
+            || !unmeasured(&take_restorer_wakes_root, "the third thread did not signal")
+            || !unmeasured(&take_restorer_sends, "the third thread's send did not queue")
+            || heap_allocations_round_trip(&take_reply_recv, which) != Some(true)
+            || !unmeasured(&take_suspend_restorer, "the third thread was not suspended")
+            || !suspend_partner()
+        {
+            return Some(false);
+        }
+    }
     // WS-SX SX8.3: the unlinked fault of the scenario above (a capability
     // fault lending the partner's context to a passive server, the context
     // let go of by SchedContext_Unbind and the server deleted, so the

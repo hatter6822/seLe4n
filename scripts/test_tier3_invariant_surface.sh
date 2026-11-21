@@ -4641,6 +4641,12 @@ run_check "INVARIANT" rg -n '^theorem replyRecvTakeFrame_stagedLong($|[ ({:\[\]]
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_take_deliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_take_capsDeliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvLongTakeArmR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+# The reply-receive answering a fault whose receive leg takes a queued sender writes in place.
+run_check "INVARIANT" rg -n '^theorem performFaultAnswer_msg($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvFaultTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_fault_take_transfer($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvFaultTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvFaultTakeFrame_staged($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvFaultTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_fault_take_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvFaultTakeInPlace.lean
+run_check "INVARIANT" rg -n -U '        else if replyRecvTakes st epId tid c rid then\n(          [^\n]*\n){1,14}                  \.ok \(\(\), performReplyRecvFaultTakeDelivered st c tid rid epId s' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '      \| none => replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st\n    else replyRecvLongTakeArmR epId tid c rid badge grant rf len label executingCore st\n' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    if replyRecvLongDonatedAdmits st epId tid c rid grant then\n      \.ok \(\(\), performReplyRecvDonatedDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    else if replyRecvLongUnheldAdmits st epId tid c rid grant then\n      \.ok \(\(\), performReplyRecvUnheldDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean

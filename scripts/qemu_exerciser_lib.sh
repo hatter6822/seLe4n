@@ -675,6 +675,7 @@ for driver in drivers:
             # by a long reply and a long reply-receive.
             "cap-fault-delivered-to-long-reply", "cap-fault-delivered-to-long-reply-recv",
             "cap-fault-long-reply", "cap-fault-long-reply-recv",
+            "cap-fault-delivered-to-take-reply-recv", "cap-fault-take-reply-recv",
             "chain-long-caps-root-calls-server", "chain-long-reply-recv-installed-delete",
             "chain-long-reply-recv-installed-signal", "chain-long-reply-recv-installed-wait",
             "chain-long-root-calls-server", "chain-server-long-reply-recv",

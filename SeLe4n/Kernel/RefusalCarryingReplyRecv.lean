@@ -18,6 +18,7 @@ import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvTakeInPlace
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvUnlinkedTakeInPlace
 import SeLe4n.Kernel.IPC.CrossCore.LongReplyRecvPopInPlace
 import SeLe4n.Kernel.IPC.CrossCore.LongReplyRecvTakeInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvFaultTakeInPlace
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvDonatedCallTakeInPlace
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvCallTakeInPlace
 
@@ -1923,6 +1924,32 @@ its TCB is not held across them. -/
             (receiveQueueTailCode st epId) executingCore ct.faultKind label ct.faultIp ct.faultSp
             ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5
             ct.faultX6 ct.faultX7 layout rf len)
+        else if replyRecvTakes st epId tid c rid then
+          match st.getEndpoint? epId with
+          | some ep =>
+            match ep.sendQ.head with
+            | some s =>
+              match st.getTcb? s with
+              | some sTcb =>
+                match Architecture.RegisterDecode.registerRoutedSyscallOf
+                    (blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext)
+                    SeLe4n.arm64DefaultLayout sTcb.registerContext with
+                | .send _ mi =>
+                  let f := Architecture.regMessageFrameW SeLe4n.arm64DefaultLayout
+                    sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge)
+                    sTcb.ipcBadged
+                  .ok ((), performReplyRecvFaultTakeDelivered st c tid rid epId s
+                    sTcb.queueNextCode executingCore ct.faultKind label ct.faultIp ct.faultSp
+                    ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5
+                    ct.faultX6 ct.faultX7 layout rf len f.x0 f.x1 f.x2 f.x3 f.x4 f.x5)
+                | _ => replyRecvRendezvousR epId tid c rid badge grant layout rf len label
+                    executingCore st
+              | none => replyRecvRendezvousR epId tid c rid badge grant layout rf len label
+                  executingCore st
+            | none => replyRecvRendezvousR epId tid c rid badge grant layout rf len label
+                executingCore st
+          | none => replyRecvRendezvousR epId tid c rid badge grant layout rf len label
+              executingCore st
         else replyRecvRendezvousR epId tid c rid badge grant layout rf len label executingCore st
     | none => replyRecvRendezvousR epId tid c rid badge grant layout rf len label executingCore st
 
@@ -1997,7 +2024,32 @@ theorem replyRecvFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
             rw [hEq]
             simp only [CapTransferSummary.capInfo_empty]
             rw [hTail, hStg]
-          · rfl
+          · split
+            · next hTk =>
+              obtain ⟨ct, ep0, rp, ep, s, sTcb, hT, hIpc, hRO, hW, hNe, hRp, hEp, hH, hTs, hSC, hFs,
+                hG⟩ := replyRecvTakes_spec hTk
+              obtain rfl : ct = ct0 := by
+                rw [hT] at hTc0'; cases hTc0'; rfl
+              have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
+              have hS := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTs
+              simp only [hEp, hH, hTs]
+              split
+              · next capAddr mi hR =>
+                have h := replyRecvTransferOnCore_fault_take_inPlace st epId tid c rid label layout
+                  rf len badge grant executingCore ct ep0 rp ep tf s sTcb capAddr mi hPF hT hIpc hRO
+                  hW hNe hRp hE hH hS hSC hG
+                  ((Architecture.RegisterDecode.registerRoutedSyscall_default _).trans hR) hFs
+                rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
+                unfold replyRecvRendezvousR
+                generalize replyRecvTransferOnCore epId tid rid c label
+                  { registers := Architecture.regMessageBody layout rf len, badge := badge } grant
+                  executingCore st = r at h ⊢
+                rcases r with e | ⟨a, st'⟩
+                · cases h
+                · simp only [Except.ok.injEq] at h ⊢
+                  exact h.symm
+              · rfl
+            · rfl
   · rfl
 
 /-- **The reply leg's words, read as the `.reply` arm reads them**: the layout's
