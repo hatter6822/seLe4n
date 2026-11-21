@@ -17260,17 +17260,17 @@ fn fault_entries() -> Option<bool> {
     // capability then answers the fault of a caller recording no server whose
     // reply object is linked to nothing (`performFaultReplyUnlinkedAnswer`):
     // the partner restarts with no context to run on, and is suspended.
-    let unlinked_fault_setup_at = |buffer: u64| {
+    let unlinked_fault_setup_at = |buffer: u64, server_slot: u64, server_child: u64| {
         [
             retype(
                 "untyped-retype-unlinked-fault-server",
                 UNTYPED_CAP,
-                [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+                [TCB_TYPE, server_child, CNODE_CAP, server_slot],
                 buffer,
             ),
             set_space(
                 "unlinked-fault-server-set-space",
-                CHAIN_TCB_CAP,
+                cap_address(server_slot),
                 [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
                 0,
                 buffer,
@@ -17278,7 +17278,7 @@ fn fault_entries() -> Option<bool> {
             set_priority(
                 "unlinked-fault-server-set-priority",
                 TCB_SET_PRIORITY,
-                CHAIN_TCB_CAP,
+                cap_address(server_slot),
                 PARTNER_PRIORITY,
                 buffer,
             ),
@@ -17316,7 +17316,7 @@ fn fault_entries() -> Option<bool> {
             invocation(
                 "unlinked-fault-resume-server",
                 TCB_RESUME,
-                CHAIN_TCB_CAP,
+                cap_address(server_slot),
                 [0; 4],
             ),
             partner_step(
@@ -17346,30 +17346,34 @@ fn fault_entries() -> Option<bool> {
             ),
         ]
     };
-    let unlinked_fault_setup = unlinked_fault_setup_at(ROOT_IPC_BUFFER);
-    let unlinked_fault_unlink = [
-        signal("unlinked-fault-server-wakes-root"),
-        partner_step(
-            "unlinked-fault-server-waits",
-            WAIT,
-            NOTIFICATION_CAP,
-            0,
-            [0, 0],
-            true,
-        ),
-        invocation(
-            "unlinked-fault-unbind",
-            SCHED_CONTEXT_UNBIND,
-            SCHED_CONTEXT_CAP,
-            [0; 4],
-        ),
-        invocation(
-            "unlinked-fault-server-delete",
-            CSPACE_DELETE,
-            CNODE_CAP,
-            [CHAIN_TCB_SLOT, 0, 0, 0],
-        ),
-    ];
+    let unlinked_fault_setup =
+        unlinked_fault_setup_at(ROOT_IPC_BUFFER, CHAIN_TCB_SLOT, CHAIN_CHILD_IDS[0]);
+    let unlinked_fault_unlink_of = |server_slot: u64| {
+        [
+            signal("unlinked-fault-server-wakes-root"),
+            partner_step(
+                "unlinked-fault-server-waits",
+                WAIT,
+                NOTIFICATION_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            invocation(
+                "unlinked-fault-unbind",
+                SCHED_CONTEXT_UNBIND,
+                SCHED_CONTEXT_CAP,
+                [0; 4],
+            ),
+            invocation(
+                "unlinked-fault-server-delete",
+                CSPACE_DELETE,
+                CNODE_CAP,
+                [server_slot, 0, 0, 0],
+            ),
+        ]
+    };
+    let unlinked_fault_unlink = unlinked_fault_unlink_of(CHAIN_TCB_SLOT);
     let unlinked_fault_reply = partner_step(
         "unlinked-fault-root-replies",
         REPLY,
@@ -17554,7 +17558,11 @@ fn fault_entries() -> Option<bool> {
     // (`performReplyRecvUnlinkedFaultAnswer`,
     // `performReplyRecvUnlinkedFaultAnswerLong`), the partner restarting as
     // the fault reply says and its send waking the root task.
-    let unlinked_long_setup = unlinked_fault_setup_at(FRAME_VADDR);
+    // The third thread holds the chain scenario's slot and id for the
+    // window (`RESTORER_TCB_SLOT`), so the server takes the stack top's.
+    let unlinked_long_setup =
+        unlinked_fault_setup_at(FRAME_VADDR, STACK_TOP_TCB_SLOT, STACK_TOP_CHILD_IDS[0]);
+    let unlinked_long_unlink = unlinked_fault_unlink_of(STACK_TOP_TCB_SLOT);
     let unlinked_fault_long_reply = partner_step(
         "unlinked-fault-root-replies-long",
         REPLY,
@@ -17610,7 +17618,7 @@ fn fault_entries() -> Option<bool> {
         if !unmeasured_all(&unlinked_long_setup, "the unlinked fault's setup failed")
             || heap_allocations_trap(&fault_trip(2, "unlinked-cap-fault-delivered-long"), which)
                 != Some(true)
-            || !unmeasured_all(&unlinked_fault_unlink, "the unlinked fault's unlink failed")
+            || !unmeasured_all(&unlinked_long_unlink, "the unlinked fault's unlink failed")
             || heap_allocations_round_trip(&unlinked_fault_long_reply, which) != Some(true)
             || !unmeasured_all(
                 &unlinked_fault_teardown,
@@ -17625,7 +17633,7 @@ fn fault_entries() -> Option<bool> {
         {
             if !unmeasured_all(&unlinked_long_setup, "the unlinked fault's setup failed")
                 || heap_allocations_trap(&fault_trip(2, delivered), which) != Some(true)
-                || !unmeasured_all(&unlinked_fault_unlink, "the unlinked fault's unlink failed")
+                || !unmeasured_all(&unlinked_long_unlink, "the unlinked fault's unlink failed")
                 || !unmeasured(&unlinked_fault_rebind, "the context was not bound again")
                 || heap_allocations_round_trip_resuming(reply_recv, which, Some(fault_restart(2)))
                     != Some(true)
