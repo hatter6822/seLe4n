@@ -156,9 +156,9 @@ seL4 のユーザーから見える ABI そのものを保ちながら、Lean �
 |------|-----|
 | **バージョン** | `0.37.35` |
 | **Lean ツールチェーン** | `v4.28.0` |
-| **本番 Lean コード行数** | 655 ファイルにわたる 663,466 行 |
+| **本番 Lean コード行数** | 655 ファイルにわたる 664,607 行 |
 | **テスト Lean コード行数** | 71 テストスイートにわたる 92,061 行 |
-| **証明済み宣言数** | 25,291 件の定理/補題宣言（sorry/axiom ゼロ） |
+| **証明済み宣言数** | 25,305 件の定理/補題宣言（sorry/axiom ゼロ） |
 | **Rust クレート** | `sele4n-types`、`sele4n-abi`、`sele4n-sys`（ユーザー空間ラッパー）、`sele4n-hal`（カーネルのハードウェア層）、およびホストテスト `sele4n-lean-boundary` |
 | **ターゲットハードウェア** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **起動レーン** | すべての QEMU レーンは、まず [rpi5_machine](https://github.com/hatter6822/rpi5_machine) の `raspi5b` マシンで Raspberry Pi 5 イメージを起動し、次に QEMU の `virt` で `virt` イメージを起動します |

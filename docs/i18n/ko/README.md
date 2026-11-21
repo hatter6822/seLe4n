@@ -143,9 +143,9 @@ Rust 하드웨어 계층과 함께 대상 기기에서 부팅되는 커널 이�
 |------|-----|
 | **버전** | `0.37.35` |
 | **Lean 툴체인** | `v4.28.0` |
-| **프로덕션 Lean LoC** | 655개 파일, 663,466줄 |
+| **프로덕션 Lean LoC** | 655개 파일, 664,607줄 |
 | **테스트 Lean LoC** | 71개 테스트 스위트, 92,061줄 |
-| **증명된 선언** | 25,291개 theorem/lemma 선언 (sorry/axiom 제로) |
+| **증명된 선언** | 25,305개 theorem/lemma 선언 (sorry/axiom 제로) |
 | **Rust 크레이트** | `sele4n-types`, `sele4n-abi`, `sele4n-sys`(사용자 공간 래퍼), `sele4n-hal`(커널의 하드웨어 계층), 호스트 테스트 `sele4n-lean-boundary` |
 | **대상 하드웨어** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **부팅 레인** | 모든 QEMU 레인은 먼저 [rpi5_machine](https://github.com/hatter6822/rpi5_machine)의 `raspi5b` 머신에서 Raspberry Pi 5 이미지를 부팅하고, 그다음 QEMU의 `virt`에서 `virt` 이미지를 부팅합니다 |
