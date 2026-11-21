@@ -840,6 +840,27 @@ theorem schedContextUnbindAllOnCore_confinedToCores (vScId : SeLe4n.ValidObjId)
       (observableSlotsConfinedToCores_trans
         (schedContextUnbindOnCore_confinedToCores vScId executingCore st stU sgi hU) (hN stU))
 
+/-- WS-SX SX8.3 (**the live `.schedContextUnbindObject` bound, thread path**):
+the per-core thread unbind's. -/
+theorem schedContextUnbindThreadObjectOnCore_confinedToCores (vScId : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (executingCore : CoreId) (st st' : SystemState)
+    (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hStep : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId tid executingCore st
+      = .ok (st', sgi)) :
+    observableSlotsConfinedToCores st st' (schedContextUnbindWriteSet st vScId.val) :=
+  schedContextUnbindOnCore_confinedToCores vScId executingCore st st' sgi
+    (SchedContextOps.schedContextUnbindThreadObjectOnCore_ok hStep)
+
+/-- WS-SX SX8.3 (**the live `.schedContextUnbindObject` bound, notification
+path**): the notification unbind writes no core's observable slot. -/
+theorem schedContextUnbindNotificationObject_confinedToCores (vScId : SeLe4n.ValidObjId)
+    (n : SeLe4n.ObjId) (st st' : SystemState)
+    (hStep : SchedContextOps.schedContextUnbindNotificationObject vScId n st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] := by
+  obtain ⟨-, rfl⟩ := SchedContextOps.schedContextUnbindNotificationObject_ok hStep
+  exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+    (unbindSchedContextNotification_scheduler _ _) (unbindSchedContextNotification_machine _ _)
+
 /-- WS-ZA ZA6.9 (**the live `.schedContextConsumed` bound**): the Consumed
 invocation writes no core's observable slot — `setConsumed` writes a context's
 count and its caller's saved registers, both in the object store. -/

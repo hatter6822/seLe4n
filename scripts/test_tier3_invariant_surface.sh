@@ -2071,7 +2071,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_schedContextBind[^\n]*(\n
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*\(stateLevelLock, \.write\)\]\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 # ...and `.schedContextConfigure` is split out rather than widened with them: it
 # writes the SchedContext and the bound thread and touches no index.
-run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind \| \.schedContextUnbind =>\n      \[\.tcb, \.cnode, \.schedContext, \.endpoint, \.notification, \.objStore\]\n  \| \.schedContextConfigure =>\n      \[\.tcb, \.cnode, \.schedContext, \.endpoint, \.notification\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind \| \.schedContextUnbind \| \.schedContextUnbindObject =>\n      \[\.tcb, \.cnode, \.schedContext, \.endpoint, \.notification, \.objStore\]\n  \| \.schedContextConfigure =>\n      \[\.tcb, \.cnode, \.schedContext, \.endpoint, \.notification\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 # The kind inventories that admit it.
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.reply =>\n      \[\.tcb, \.cnode, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.tcbSuspend =>\n      \[\.tcb, \.cnode, \.endpoint, \.notification, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
@@ -7644,7 +7644,7 @@ run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded_by_globalProjecti
 run_check "INVARIANT" rg -n '^theorem crossCoreTransition_invisible_to_every_observer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 67' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 68' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -8391,7 +8391,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: linearOrder disagrees on exactly one of t
 # SM9.A.11 took it 40 -> 42 with the two audit readers; WS-RR RR8.16
 # (`v0.35.190`) took it 44 -> 45 with `cspaceRevokeCdt`.  The anchor pins HEAD's
 # value; the arrows above are history, which is why they are not restated in it.
-run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 53' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 54' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
@@ -9064,11 +9064,11 @@ run_check "INVARIANT" rg -n '32 => some \.auditDrain' SeLe4n/Model/Object/Types.
 # `.tcbSetFaultHandler` took it to 35 and WS-RR RR8.16's `.cspaceRevoke` to 36;
 # WS-ZA ZA5.4 part 14 retired number 8 and WS-SX SX6.5 number 34, and WS-SX SX7.1 number 37, leaving 45
 # variants under a bound of 48.
-run_check "INVARIANT" rg -n '^def count : Nat := 45' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def count : Nat := 46' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'AuditRead = 31' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'AuditDrain = 32' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub const COUNT: usize = 45;' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub const ENCODING_BOUND: u64 = 48;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const COUNT: usize = 46;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const ENCODING_BOUND: u64 = 49;' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'pub const RETIRED: \[u64; 3\] = \[8, 34, 37\];' rust/sele4n-types/src/syscall.rs
 
 # WS-ZA ZA4.3: the yield syscall, both ABI halves, and the proofs that cover it:
@@ -9180,7 +9180,7 @@ run_check "INVARIANT" rg -n '^  runAuditDrainSignalChecks' tests/SmpInformationF
 run_check "INVARIANT" rg -n 'capabilityOnly "auditReadFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_negative_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 67' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 68' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditRead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditDrain($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #870 round 6 (the lock domain): a declared footprint covers the COMMITTED
@@ -10499,7 +10499,7 @@ run_negative_check "INVARIANT" rg -n 'declassifiedSignal' SeLe4n/Kernel/Informat
 # SM9.C.8: the syscall, both Rust mirrors and the seam classification the total
 # `refusalSeamClass` forced it to supply.
 run_check "INVARIANT" rg -n '^  \| declassifySignal' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n 'def count : Nat := 45' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'def count : Nat := 46' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-types/src/error.rs
 run_check "INVARIANT" rg -n '^pub fn declassify_signal' rust/sele4n-sys/src/declassify.rs

@@ -2889,7 +2889,10 @@ fn wrappers_name_their_syscalls() {
     let _ = sele4n_sys::sched_context::sched_context_unbind(cap);
     assert_names("sched_context_unbind", SyscallId::SchedContextUnbind);
     let _ = sele4n_sys::sched_context::sched_context_unbind_object(cap, CPtr::from(1u64), &mut buf);
-    assert_names("sched_context_unbind_object", SyscallId::SchedContextUnbindObject);
+    assert_names(
+        "sched_context_unbind_object",
+        SyscallId::SchedContextUnbindObject,
+    );
 
     let _ = sele4n_sys::tcb::tcb_suspend(cap);
     assert_names("tcb_suspend", SyscallId::TcbSuspend);

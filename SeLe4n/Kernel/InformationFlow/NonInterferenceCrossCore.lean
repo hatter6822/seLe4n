@@ -312,6 +312,23 @@ theorem schedContextUnbindAllOnCore_crossCoreNonInterference (ctx : LabelingCont
   crossCoreNonInterference_ofCores ctx observer hne
     (schedContextUnbindAllOnCore_confinedToCores vScId executingCore st st' sgi hStep) hShared
 
+/-- WS-SX SX8.3 (**the live `.schedContextUnbindObject` arm, cross-core**): the
+thread path is invisible on every core outside the thread unbind's write set;
+the notification path writes no core
+(`schedContextUnbindNotificationObject_confinedToCores`). -/
+theorem schedContextUnbindThreadObjectOnCore_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (vScId : SeLe4n.ValidObjId) (tid : SeLe4n.ThreadId)
+    (executingCore : CoreId) (st st' : SystemState) (c : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hStep : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId tid executingCore st
+      = .ok (st', sgi))
+    (hne : c ∉ schedContextUnbindWriteSet st vScId.val)
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer hne
+    (schedContextUnbindThreadObjectOnCore_confinedToCores vScId tid executingCore st st' sgi hStep)
+    hShared
+
 /-- SM8.B.3 (**the live `.tcbSetPriority` arm, cross-core**): a priority change is
 invisible on every core outside the target's home and the executing core. -/
 theorem setPriorityOnCore_crossCoreNonInterference (ctx : LabelingContext)
@@ -1560,6 +1577,10 @@ inductive CrossCoreTransition where
   placement and the head requeue there, or the linked branch's dequeue, head
   enqueues and scheduling point on the executing core. -/
   | schedContextYieldToDispatch
+  /-- WS-SX SX8.3 — the **live** `.schedContextUnbindObject` arm.  Its thread
+  path is the per-core thread unbind: clear-and-requeue on the bound thread's
+  home core; its notification path writes no core. -/
+  | schedContextUnbindObjectDispatch
   /-- WS-ZA ZA6.32 — the **live** `.irqHandlerSetNotification` arm.  Takes the
   executing core for the zombie delete that empties the line's node slot before
   the copy, and writes the cores that delete names: every core when the slot held
@@ -1585,7 +1606,8 @@ def CrossCoreTransition.all : List CrossCoreTransition :=
    .setIPCBufferDispatch,
    .declassifyDispatch, .declassifySignalDispatch,
    .auditReadDispatch, .auditDrainDispatch, .yieldDispatch, .schedContextConsumedDispatch,
-   .schedContextYieldToDispatch, .irqHandlerSetNotificationDispatch, .irqHandlerClearDispatch]
+   .schedContextYieldToDispatch, .irqHandlerSetNotificationDispatch, .irqHandlerClearDispatch,
+   .schedContextUnbindObjectDispatch]
 
 /-- SM8.B.2: **`all` really is all of them.**
 
@@ -1673,11 +1695,13 @@ def crossCoreNiTheorem : CrossCoreTransition → String
       niName! schedContextConsumedOnCore_crossCoreNonInterference
   | .schedContextYieldToDispatch =>
       niName! schedContextYieldToOnCore_crossCoreNonInterference
+  | .schedContextUnbindObjectDispatch =>
+      niName! schedContextUnbindThreadObjectOnCore_crossCoreNonInterference
   | .irqHandlerSetNotificationDispatch =>
       niName! irqHandlerSetNotificationFromCap_crossCoreNonInterference
   | .irqHandlerClearDispatch => niName! irqHandlerClear_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 40 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 41 := by rfl
 
 /-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
 reaches**, as opposed to the below-API transitions they are built from.
@@ -1766,9 +1790,10 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .schedContextYieldToDispatch => true
   | .irqHandlerSetNotificationDispatch => true
   | .irqHandlerClearDispatch => true
+  | .schedContextUnbindObjectDispatch => true
 
 theorem crossCoreTransitionIsLiveArm_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 31 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 32 := by decide
 
 -- The check is quadratic in the inventory and linear in each theorem name, and
 -- round 35's three entries (one of them 76 characters) pushed it past the
@@ -1871,6 +1896,7 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .yieldDispatch => some .yield
   | .schedContextConsumedDispatch => some .schedContextConsumed
   | .schedContextYieldToDispatch => some .schedContextYieldTo
+  | .schedContextUnbindObjectDispatch => some .schedContextUnbindObject
   | .irqHandlerSetNotificationDispatch => some .irqHandlerSetNotification
   | .irqHandlerClearDispatch => some .irqHandlerClear
 
@@ -1931,6 +1957,8 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
       .delegationProof .schedContextConsumed syscallDelegates_schedContextConsumed
   | .schedContextYieldToDispatch =>
       .delegationProof .schedContextYieldTo syscallDelegates_schedContextYieldTo
+  | .schedContextUnbindObjectDispatch =>
+      .delegationProof .schedContextUnbindObject syscallDelegates_schedContextUnbindObject
   | .irqHandlerSetNotificationDispatch =>
       .delegationProof .irqHandlerSetNotification syscallDelegates_irqHandlerSetNotification
   | .irqHandlerClearDispatch =>
@@ -1971,7 +1999,7 @@ def crossCoreLiveArmDelegationBacked : List CrossCoreTransition :=
     crossCoreTransitionIsLiveArm t && (crossCoreLiveArmEvidence t).isDelegationBacked)
 
 theorem crossCoreLiveArmDelegationBacked_count :
-    crossCoreLiveArmDelegationBacked.length = 23 := by decide
+    crossCoreLiveArmDelegationBacked.length = 24 := by decide
 
 /-- SM8.B.2: and the residual — the live arms still resting on a human reading
 of `API.lean`, which is the state every one of the three drifts occurred in. -/
@@ -2046,12 +2074,14 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .schedContextConsumedDispatch => false
   -- WS-ZA ZA6.29: the yieldTo invocation writes the bound thread's home core
   | .schedContextYieldToDispatch => true
+  -- WS-SX SX8.3: the unbind-object's thread path requeues on the thread's home
+  | .schedContextUnbindObjectDispatch => true
   -- WS-ZA ZA6.32: the two interrupt-handler arms empty the line's node slot by
   -- the zombie delete, whose finalisations wake waiters on their own cores
   | .irqHandlerSetNotificationDispatch => true
   | .irqHandlerClearDispatch => true
 
 theorem crossCoreTransitionWritesRemote_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 30 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 31 := by decide
 
 end SeLe4n.Kernel

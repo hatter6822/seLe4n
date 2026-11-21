@@ -10152,6 +10152,32 @@ def syscallDelegates : SyscallId → Prop
         decoded.syscallId = .irqHandlerClear →
         cap.target = .irqHandler line →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap = irqHandlerClear executingCore line
+  -- WS-SX SX8.3: the unbind-object arm IS the bind's reading of extra
+  -- capability 0, then the notification or the thread unbind-object.
+  | .schedContextUnbindObject =>
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+        (gate : SyscallGate) (cap : Capability) (scId : SeLe4n.ObjId),
+        decoded.syscallId = .schedContextUnbindObject →
+        cap.target = .object scId →
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap = fun st =>
+          match resolveSchedContextBindNotificationCode tid
+              (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | k + 1 =>
+            match validateObjIdArg scId with
+            | .error e => .error e
+            | .ok vScId => SchedContextOps.schedContextUnbindNotificationObject vScId ⟨k⟩ st
+          | 0 =>
+            match resolveSchedContextBindThread tid
+                (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+            | .error e => .error e
+            | .ok vThreadId =>
+              match validateObjIdArg scId with
+              | .error e => .error e
+              | .ok vScId =>
+                match SchedContextOps.schedContextUnbindThreadObjectOnCore vScId
+                    vThreadId.val executingCore st with
+                | .ok (st', _) => .ok ((), st')
+                | .error e => .error e
   | _ => False
 
 /-- WS-ZA ZA4.3: the `.yield` obligation, discharged. -/
@@ -10168,6 +10194,12 @@ theorem syscallDelegates_schedContextConsumed : syscallDelegates .schedContextCo
 theorem syscallDelegates_schedContextYieldTo : syscallDelegates .schedContextYieldTo := by
   intro ctx decoded tid executingCore gate cap scId vScId st hSyscall hTarget hValid
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hValid]
+
+/-- WS-SX SX8.3: the `.schedContextUnbindObject` obligation, discharged. -/
+theorem syscallDelegates_schedContextUnbindObject : syscallDelegates .schedContextUnbindObject := by
+  intro ctx decoded tid executingCore gate cap scId hSyscall hTarget
+  funext st
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget]
 
 /-- WS-ZA ZA6.32: the `.irqHandlerAck` obligation, discharged. -/
 theorem syscallDelegates_irqHandlerAck : syscallDelegates .irqHandlerAck := by

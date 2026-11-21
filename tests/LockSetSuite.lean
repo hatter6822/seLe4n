@@ -745,12 +745,12 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 107 := by decide
+example : lockSetTheorems.length = 109 := by decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 43 := by
+example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 44 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 43 := by
+example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 44 := by
   decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6 := by
