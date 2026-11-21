@@ -877,6 +877,12 @@ theorem SchedContext.yieldFromCode_of_refillsErased {sc sc' : SchedContext}
   have e := congrArg SchedContext.yieldFromCode h
   exact e
 
+/-- WS-SX SX8.3: the notification code, read through the erasure. -/
+theorem SchedContext.notificationCode_of_refillsErased {sc sc' : SchedContext}
+    (h : sc'.refillsErased = sc.refillsErased) : sc'.notificationCode = sc.notificationCode := by
+  have e := congrArg SchedContext.notificationCode h
+  exact e
+
 theorem SchedContext.scheduleUsed_refillsErased (sc : SchedContext) (a t : Nat) :
     (sc.scheduleUsed a t).refillsErased = sc.refillsErased :=
   SchedContext.refillsErased_of_pendingErased (sc.scheduleUsed_pendingErased a t)
@@ -2078,6 +2084,37 @@ end of the yield link. -/
 @[simp] theorem SchedContext.chargeBudget_yieldFromCode (sc : SchedContext) (a u now : Nat) :
     (sc.chargeBudget a u now).yieldFromCode = sc.yieldFromCode :=
   SchedContext.yieldFromCode_of_refillsErased (sc.chargeBudget_refillsErased a u now)
+
+/-! WS-SX SX8.3: the refill operations keep the context's end of the
+notification link. -/
+
+@[simp] theorem SchedContext.releaseReadyHead_notificationCode (sc : SchedContext) (now : Nat) :
+    (sc.releaseReadyHead now).notificationCode = sc.notificationCode :=
+  SchedContext.notificationCode_of_refillsErased (sc.releaseReadyHead_refillsErased now)
+
+@[simp] theorem SchedContext.releaseOne_notificationCode (sc : SchedContext) (now : Nat) :
+    (sc.releaseOne now).notificationCode = sc.notificationCode :=
+  SchedContext.notificationCode_of_refillsErased (sc.releaseOne_refillsErased now)
+
+@[simp] theorem SchedContext.refillNew_notificationCode (sc : SchedContext) (b now : Nat) :
+    (sc.refillNew b now).notificationCode = sc.notificationCode :=
+  SchedContext.notificationCode_of_refillsErased (sc.refillNew_refillsErased b now)
+
+@[simp] theorem SchedContext.refillUpdate_notificationCode (sc : SchedContext) (nb np now : Nat) :
+    (sc.refillUpdate nb np now).notificationCode = sc.notificationCode :=
+  SchedContext.notificationCode_of_refillsErased (sc.refillUpdate_refillsErased nb np now)
+
+@[simp] theorem SchedContext.refillBudgetCheck_notificationCode (sc : SchedContext) (u : Nat) :
+    (sc.refillBudgetCheck u).notificationCode = sc.notificationCode :=
+  SchedContext.notificationCode_of_refillsErased (sc.refillBudgetCheck_refillsErased u)
+
+@[simp] theorem SchedContext.refillUnblockCheck_notificationCode (sc : SchedContext) (t : Nat) :
+    (sc.refillUnblockCheck t).notificationCode = sc.notificationCode :=
+  SchedContext.notificationCode_of_refillsErased (sc.refillUnblockCheck_refillsErased t)
+
+@[simp] theorem SchedContext.chargeBudget_notificationCode (sc : SchedContext) (a u now : Nat) :
+    (sc.chargeBudget a u now).notificationCode = sc.notificationCode :=
+  SchedContext.notificationCode_of_refillsErased (sc.chargeBudget_refillsErased a u now)
 
 /-- WS-ZA ZA6.3: the budget spend's record (the charge) writes none of the
 context's release-queue fields. -/

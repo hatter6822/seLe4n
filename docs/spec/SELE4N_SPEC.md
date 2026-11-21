@@ -1327,6 +1327,12 @@ internal; nothing a thread writes names one.
 - **Scheduling contexts and notifications.**
   - A notification and a scheduling context carry each other's link
     (`Notification.schedContextCode`, `SchedContext.notificationCode`).
+  - The two ends always name each other (`notificationLinksAgree`, the
+    proof-layer bundle's 23rd conjunct). Every kernel entry keeps it through
+    its run-queue stages (`RunQueueLinkStage.notificationLinks`): the bind
+    links two unbound ends, every unbind clears both ends together, a retype
+    creates unbound objects, a retire erases only unbound ones, and the boot
+    admits no bound end.
   - SchedContext_Bind takes a notification capability
     (`schedContext_bindNtfn`).
   - SchedContext_Unbind refuses the context of the executing core's current
@@ -3982,7 +3988,7 @@ object-store size.
 
 Production `AdapterProofHooks` (`rpi5ProductionAdapterProofHooks` in
 `Platform/RPi5/ProofHooks.lean`) provides substantive preservation proofs
-for all 4 adapter paths. The `proofLayerInvariantBundle` (22 conjuncts; the 18th, `liveMappingsRecorded`, says every live mapping is recorded on a capability to its frame and no thread's space slot holds a record, and the 22nd, `bookkeepingAgrees`, that the ghost index, index set and type table agree with the object table)
+for all 4 adapter paths. The `proofLayerInvariantBundle` (23 conjuncts; the 18th, `liveMappingsRecorded`, says every live mapping is recorded on a capability to its frame and no thread's space slot holds a record, the 22nd, `bookkeepingAgrees`, that the ghost index, index set and type table agree with the object table, and the 23rd, `notificationLinksAgree`, that a notification's bound context and a context's bound notification name each other)
 and `ipcInvariantFull` (20 conjuncts; the first 15 form `ipcInvariantCore`
 after the WS-RC R4.C.7 close-out) are preserved through the FFI boundary.
 

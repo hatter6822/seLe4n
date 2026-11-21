@@ -101,6 +101,7 @@ theorem notificationWait_block_readyKeptStage {st st1 st2 st3 : SystemState}
     (hN : st.getNotification? notificationId = some ntfn)
     (hT : lookupTcb st waiter = some tcb)
     (hS1 : storeObject notificationId (.notification n') st = .ok ((), st1))
+    (hCode : n'.schedContextCode = ntfn.schedContextCode)
     (hS2 : storeTcbIpcStateAndMessage_fromTcb st1 waiter tcb s m = .ok st2)
     (hL : linkNtfnWaiter st2 waiter tail = .ok st3)
     (hCur : st.scheduler.currentOnCore c = some waiter) (hNI : isIdleThreadId waiter = false) :
@@ -110,7 +111,7 @@ theorem notificationWait_block_readyKeptStage {st st1 st2 st3 : SystemState}
   have hC3 : st3.scheduler.currentOnCore c = some waiter :=
     currentOnCore_of_scheduler_eq (linkNtfnWaiter_scheduler_eq hL)
       (currentOnCore_of_scheduler_eq (storeTcbIpcStateAndMessage_fromTcb_scheduler_eq hS2) hC1)
-  have hNs := storeObject_notificationOver_runQueueStage hN hS1
+  have hNs := storeObject_notificationOver_runQueueStage hN hS1 hCode
   have w : SystemState.RunQueueWindowStage (.block c) st st2 :=
     SystemState.RunQueueWindowStage.of_invExt fun hInv => by
       have hNo := (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mp hN
@@ -147,7 +148,7 @@ theorem notificationWaitOnCore_readyKeptStage (notificationId : SeLe4n.ObjId)
     | exact .of_stage ((storeObject_notificationOver_runQueueStage (by assumption)
          (by assumption)).trans (storeTcbIpcState_runQueueStage (by assumption) rfl))
     | exact notificationWait_block_readyKeptStage (by assumption) (by assumption)
-         (by assumption) (by assumption) (by assumption) hCur hNI
+         (by assumption) (by first | rfl | simp_all) (by assumption) (by assumption) hCur hNI
 
 /-- The fault reply's outcome blocks no thread: a restart frame, or the abandon's
 deschedule and `.Inactive` mark. -/

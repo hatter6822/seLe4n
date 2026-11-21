@@ -29,23 +29,34 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Model.SystemState (RunQueueStage objStateMono_nonTcb)
 
-/-- **The bind is a run-queue stage**: two one-object writes, each giving every
-view the run-queue stage reads the value the replaced object gave. -/
+/-- **The bind is a run-queue stage**: two link words written, a context bound
+to no notification and a notification bound to no context linked together
+(`bindNotificationSchedLink_preserves_notificationLinksAgree`). -/
 theorem bindNotificationSchedLink_runQueueStage {st : SystemState}
     {s : SeLe4n.SchedContextId} {n : SeLe4n.ObjId} {sc : SchedContext} {ntfn : Notification}
-    (hS : st.getSchedContext? s = some sc) (hN : st.getNotification? n = some ntfn) :
+    (hS : st.getSchedContext? s = some sc) (hS0 : sc.notificationCode = 0)
+    (hN : st.getNotification? n = some ntfn) (hN0 : ntfn.schedContextCode = 0) :
     RunQueueStage st (bindNotificationSchedLink st s n) := by
-  refine RunQueueStage.of_invExt fun hInv => ?_
-  obtain ⟨h1, hEq⟩ := bindNotificationSchedLink_eq hS hN hInv
-  rw [hEq]
-  exact (notificationCodeWrite_runQueueStage hS _).trans (notificationLinkInsert_runQueueStage h1 _)
+  have hI1 : st.objects.invExt → (st.updateSchedContext s
+      (fun sc => { sc with notificationCode := n.val + 1 })).objects.invExt := fun hInv =>
+    SystemState.updateSchedContext_preserves_objects_invExt st s _ hInv
+  refine runQueueStage_of_objectsAgreeOffNotificationLinks (fun hInv => ?_) (fun hInv => ?_)
+    (fun hInv => ?_) (fun hInv => ?_)
+    (fun hInv => bindNotificationSchedLink_preserves_notificationLinksAgree st s n hInv hS hS0 hN hN0)
+  all_goals obtain ⟨h1, hEq⟩ := bindNotificationSchedLink_eq hS hN hInv
+  · rw [hEq]
+    exact (objectsAgreeOffNotificationLinks.notificationLinkInsert h1 _ (hI1 hInv)).trans
+      (.notificationCodeWrite hS _ hInv)
+  · rw [hEq]; exact SystemState.updateSchedContext_scheduler st s _
+  · rw [hEq]; exact SystemState.updateSchedContext_machine st s _
+  · rw [hEq]; exact RHTable_insert_preserves_invExt _ _ _ (hI1 hInv)
 
 theorem schedContextBindNotification_runQueueStage {vScId : SeLe4n.ValidObjId}
     {n : SeLe4n.ObjId} {st st' : SystemState}
     (h : schedContextBindNotification vScId n st = .ok ((), st')) : RunQueueStage st st' := by
   obtain ⟨hA, rfl⟩ := schedContextBindNotification_ok_admitted h
-  obtain ⟨_, _, hS, -, hN, -⟩ := schedContextBindNotificationAdmitted_facts hA
-  exact bindNotificationSchedLink_runQueueStage hS hN
+  obtain ⟨_, _, hS, hS0, hN, hN0⟩ := schedContextBindNotificationAdmitted_facts hA
+  exact bindNotificationSchedLink_runQueueStage hS hS0 hN hN0
 
 
 

@@ -1000,6 +1000,97 @@ theorem fpAccessEntryState_preserves_yieldLinksAgree (coreId : UInt64)
       (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId live).2 coreId) coreId).yieldLinksAgree :=
   (fpAccessEntryState_runQueueEntryStage coreId frame live st).yieldLinksAgree hInv hR hY
 
+/-! ### The notification link across every entry -/
+
+/-- WS-SX SX8.3: **a kernel entry keeps the notification link in agreement**: its
+link half carries it (`RunQueueLinkStage.notificationLinks`) — the bind, the
+unbinds, the retype, the retire and the finalise steps among its arms. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueEntryStage.notificationLinksAgree {st st' : SystemState}
+    (h : SystemState.RunQueueEntryStage st st') (hInv : st.objects.invExt)
+    (hR : st.runQueueRefined) (hY : notificationLinksAgree st) : notificationLinksAgree st' :=
+  h.1.notificationLinks hInv hR hY
+
+/-- WS-SX SX8.3: and so does an entry that links only threads of `L`. -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueEntryStageOn.notificationLinksAgree
+    {L : SeLe4n.ObjId → Prop} {st st' : SystemState}
+    (h : SystemState.RunQueueEntryStageOn L st st') (hInv : st.objects.invExt)
+    (hR : st.runQueueRefined) (hY : notificationLinksAgree st) : notificationLinksAgree st' :=
+  h.1.notificationLinks hInv hR hY
+
+/-- **The syscall entry keeps the notification link in agreement.** -/
+theorem syscallDispatchEntryState_preserves_notificationLinksAgree (ctx : LabelingContext)
+    (e : CoreId) (trapped : Architecture.InFlightContext)
+    (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
+    (st : SystemState) (E : EntryPremises st) (hY : notificationLinksAgree st) :
+    notificationLinksAgree (Architecture.IpcBufferRead.clearUserWords
+      (syscallDispatchCrossCoreBracketedStepWords ctx e trapped
+        (Architecture.IpcBufferRead.syncUserWords
+          (Architecture.saveCapturedSyscallFrame st e frame) bytes n)).2) :=
+  (syscallDispatchEntryState_runQueueEntryStage ctx e trapped frame bytes n st E
+    ).notificationLinksAgree E.objInv E.refined hY
+
+/-- **The timer entry keeps the notification link in agreement.** -/
+theorem perCoreTimerTickEntryState_preserves_notificationLinksAgree (coreId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState)
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hY : notificationLinksAgree st)
+    (hInv' : (Concurrency.saveCapturedTrapFrameAt st coreId frame).objects.invExt)
+    (hRef' : (Concurrency.saveCapturedTrapFrameAt st coreId frame).releaseQueueRefined)
+    (hD' : (Concurrency.saveCapturedTrapFrameAt st coreId frame).currentDequeuedUnique)
+    (hBi' : schedContextBindingBidirectional (Concurrency.saveCapturedTrapFrameAt st coreId frame))
+    (hAff' : ∀ d, replenishQueueAffinityConsistentOnCore
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame) d) :
+    notificationLinksAgree (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        ((timerTickBracket coreId).run
+          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId) coreId))) :=
+  (perCoreTimerTickEntryState_runQueueEntryStage coreId frame st hInv' hRef' hD' hBi' hAff'
+    ).notificationLinksAgree hInv hR hY
+
+/-- **The reschedule entry keeps the notification link in agreement.** -/
+theorem perCoreRescheduleEntryState_preserves_notificationLinksAgree (coreId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState)
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hY : notificationLinksAgree st) :
+    notificationLinksAgree (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        ((rescheduleBracket coreId).run
+          (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2 coreId) coreId))) :=
+  (perCoreRescheduleEntryState_runQueueEntryStage coreId frame st).notificationLinksAgree hInv hR hY
+
+/-- **The fault entry keeps the notification link in agreement.** -/
+theorem faultEntryState_preserves_notificationLinksAgree (lctx : LabelingContext) (coreId : UInt64)
+    (frame : Architecture.InFlightContext) (ectx : Architecture.ExceptionContext)
+    (w : FaultRegisterWindow) (st : SystemState) (E : EntryPremises st)
+    (hY : notificationLinksAgree st) :
+    notificationLinksAgree (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (faultEntryStep lctx
+        (Concurrency.saveCapturedTrapFrameAt st coreId (some frame)) ectx w coreId).2
+        coreId) coreId))) :=
+  (faultEntryState_runQueueEntryStage lctx coreId frame ectx w st E).notificationLinksAgree
+    E.objInv E.refined hY
+
+/-- **The unknown-syscall entry keeps the notification link in agreement.** -/
+theorem unknownSyscallEntryState_preserves_notificationLinksAgree (lctx : LabelingContext)
+    (coreId : UInt64) (frame : Architecture.InFlightContext)
+    (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (st : SystemState)
+    (E : EntryPremises st) (hY : notificationLinksAgree st) :
+    notificationLinksAgree (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (unknownSyscallEntryStep lctx
+        (Concurrency.saveCapturedSyscallFrameAt st coreId (some frame)) ectx w coreId).2
+        coreId) coreId))) :=
+  (unknownSyscallEntryState_runQueueEntryStage lctx coreId frame ectx w st E).notificationLinksAgree
+    E.objInv E.refined hY
+
+/-- **The FP/SIMD entry keeps the notification link in agreement.** -/
+theorem fpAccessEntryState_preserves_notificationLinksAgree (coreId : UInt64)
+    (frame : Option Architecture.InFlightContext) (live : Option FpContext)
+    (st : SystemState) (hInv : st.objects.invExt) (hR : st.runQueueRefined)
+    (hY : notificationLinksAgree st) :
+    notificationLinksAgree (activateThreadAt (PriorityInheritance.settleResidencyAt (fpAccessEntryStep
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId live).2 coreId) coreId) :=
+  (fpAccessEntryState_runQueueEntryStage coreId frame live st).notificationLinksAgree hInv hR hY
+
 /-! ### The interrupt entry (WS-ZA ZA6.32) -/
 
 /-- The mask writes the machine's mask and the physical-write ledger alone. -/
@@ -1059,6 +1150,17 @@ theorem interruptEntryState_preserves_yieldLinksAgree (coreId intId : UInt64)
         (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
         coreId) coreId))).yieldLinksAgree :=
   (interruptEntryState_runQueueEntryStage coreId intId frame st E).yieldLinksAgree
+    E.objInv E.refined hY
+
+/-- **The interrupt entry keeps the notification link in agreement.** -/
+theorem interruptEntryState_preserves_notificationLinksAgree (coreId intId : UInt64)
+    (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
+    (hY : notificationLinksAgree st) :
+    notificationLinksAgree (Architecture.clearIcacheMaintenance
+      (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        coreId) coreId))) :=
+  (interruptEntryState_runQueueEntryStage coreId intId frame st E).notificationLinksAgree
     E.objInv E.refined hY
 
 end SeLe4n.Kernel

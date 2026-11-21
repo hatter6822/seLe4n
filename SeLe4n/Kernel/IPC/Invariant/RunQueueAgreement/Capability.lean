@@ -40,6 +40,7 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_slots {st st' : SystemS
       objRefillView st'.objects[oid]? = objRefillView st.objects[oid]?)
     (hY : st.objects.invExt → ∀ oid : SeLe4n.ObjId,
       objYieldCodes st'.objects[oid]? = objYieldCodes st.objects[oid]?)
+    (hN : st.objects.invExt → NotificationLinksKept st' st)
     (hRes : st'.machine.residentCode = st.machine.residentCode) :
     RunQueueStage st st' :=
   have hL : st.objects.invExt → ∀ c t, st'.runLinkOn c t = st.runLinkOn c t := fun hInv c t => by
@@ -49,7 +50,7 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_slots {st st' : SystemS
       SystemState.runQueueRefined_of_frame (hL hInv) (by rw [(h hInv).2.2.2])
         (by rw [(h hInv).2.2.2]) r⟩)
       (fun hInv => ⟨.of_objReleaseLinkOn (hR hInv), by rw [(h hInv).2.2.2]⟩)
-      (fun hInv => .of_eq (hV hInv)) hY hRes,
+      (fun hInv => .of_eq (hV hInv)) hY hN hRes,
     fun _ hInv _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (by rw [(h hInv).2.2.2])
       (hL hInv) (SystemState.StateMono.of_slots (h hInv).2.2.1) d,
     fun hInv _ => SystemState.StateMono.of_slots (h hInv).2.2.1⟩
@@ -71,6 +72,10 @@ theorem vspaceRootOnlyWrite_runQueueStage {st st' : SystemState}
       · exact SystemState.slotStateMono.of_obj h2
           (SystemState.objStateMono_nonTcb (by rw [h1]; rfl) rfl), hS⟩)
     (fun hInv oid c => by
+      rcases (h hInv).2.1 oid with e | ⟨⟨r, h1⟩, ⟨r', h2⟩⟩
+      · rw [e]
+      · rw [h1, h2]; rfl)
+    (fun hInv oid => by
       rcases (h hInv).2.1 oid with e | ⟨⟨r, h1⟩, ⟨r', h2⟩⟩
       · rw [e]
       · rw [h1, h2]; rfl)
@@ -266,6 +271,7 @@ theorem RunQueueStage.of_retireTouched {st st' : SystemState}
     (h : st.objects.invExt → st'.objects.invExt ∧ st'.scheduler = st.scheduler ∧
       ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
         (retireTouched st.objects[oid]? ∧ retireTouched st'.objects[oid]?))
+    (hN : st.objects.invExt → NotificationLinksKept st' st)
     (hRes : st'.machine.residentCode = st.machine.residentCode) :
     RunQueueStage st st' := by
   have hRT : ∀ o : Option KernelObject, retireTouched o → ∀ c,
@@ -288,7 +294,7 @@ theorem RunQueueStage.of_retireTouched {st st' : SystemState}
     · rw [hVT _ t1, hVT _ t2]) (fun hInv oid => by
     rcases (h hInv).2.2 oid with e | ⟨t1, t2⟩
     · rw [e]
-    · rw [objYieldCodes_of_retireTouched t1, objYieldCodes_of_retireTouched t2]) hRes
+    · rw [objYieldCodes_of_retireTouched t1, objYieldCodes_of_retireTouched t2]) hN hRes
   obtain ⟨hExt, hS1, hW⟩ := h hInv
   have hT : ∀ o : Option KernelObject, retireTouched o → ∀ c, SystemState.objRunLinkOn o c = RunQueue.RunQueueLink.none := by
     intro o h c
@@ -328,6 +334,8 @@ theorem retireFinalObject_runQueueStage (ec : Concurrency.CoreId) (target record
         ((retireFinalObject_releaseStateAgree ec target recorder st hInv).refined hR) x,
       fun hInv _ hY => SystemState.yieldLinksAgree_of_kept
         (retireFinalObject_yieldLinksKept ec target recorder st hInv) hY,
+      fun hInv _ hN => notificationLinksAgree_of_kept
+        (retireFinalObject_notificationLinksKept ec target recorder st hInv) hN,
       fun hInv _ => .of_kept (retireFinalObject_yieldLinksKept ec target recorder st hInv)
         (by rw [(retireFinalObject_fields ec target recorder st).2.2])⟩,
     fun _ hInv _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (by rw [hS]) (hL hInv)
@@ -349,9 +357,11 @@ theorem storeObject_inert_runQueueStage {st st' : SystemState} {oid : SeLe4n.Obj
     (hR : ∀ c, SystemState.objReleaseLinkOn (some obj) c =
       SystemState.objReleaseLinkOn (some old) c := by release_links)
     (hV : objRefillView (some obj) = objRefillView (some old) := by refill_view)
-    (hY : objYieldCodes (some obj) = objYieldCodes (some old) := by yield_codes) :
+    (hY : objYieldCodes (some obj) = objYieldCodes (some old) := by yield_codes)
+    (hN : objNotificationLinkCodes (some obj) = objNotificationLinkCodes (some old) := by
+      ntfn_link_codes) :
     RunQueueStage st st' :=
-  RunQueueStage.storeObject_nonTcb hStore hPre hObj hOld hR hV hY
+  RunQueueStage.storeObject_nonTcb hStore hPre hObj hOld hR hV hY hN
 
 theorem tagFrameMapping_runQueueStage {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
     {frameId : SeLe4n.ObjId} {st st' : SystemState} {e : Nat}
@@ -825,7 +835,8 @@ theorem updateSchedContext_runQueueStage (st : SystemState) (scId : SeLe4n.Sched
       (f sc).releaseCoreCode = sc.releaseCoreCode ∧ (f sc).releaseAt = sc.releaseAt := by
         intro _; exact ⟨rfl, rfl, rfl⟩)
     (hv : ∀ sc, (f sc).refillView = sc.refillView := by intro _; rfl)
-    (hy : ∀ sc, (f sc).yieldFromCode = sc.yieldFromCode := by intro _; first | rfl | simp) :
+    (hy : ∀ sc, (f sc).yieldFromCode = sc.yieldFromCode := by intro _; first | rfl | simp)
+    (hn : ∀ sc, (f sc).notificationCode = sc.notificationCode := by intro _; first | rfl | simp) :
     SystemState.RunQueueStage st (st.updateSchedContext scId f) := by
   have hU := SystemState.updateSchedContext_scheduler st scId f
   apply SystemState.RunQueueStage.of_placement
@@ -842,6 +853,7 @@ theorem updateSchedContext_runQueueStage (st : SystemState) (scId : SeLe4n.Sched
   · exact fun hInv => .updateSchedContext st scId f hInv hf
   · exact fun hInv => .updateSchedContext st scId f hInv hv
   · exact fun hInv => Kernel.YieldLinksKept.updateSchedContext st scId f hInv hy
+  · exact fun hInv => Kernel.NotificationLinksKept.updateSchedContext st scId f hInv hn
   · show (st.updateSchedContext scId _).scheduler.currentCode = _
     rw [hU]
   · exact congrArg MachineState.residentCode (SystemState.updateSchedContext_machine st scId _)
@@ -852,7 +864,8 @@ theorem updateSchedContext_runQueueFrameStage (st : SystemState) (scId : SeLe4n.
     (f : SchedContext → SchedContext)
     (hf : ∀ sc, (f sc).releaseNextCode = sc.releaseNextCode ∧
       (f sc).releaseCoreCode = sc.releaseCoreCode ∧ (f sc).releaseAt = sc.releaseAt)
-    (hy : ∀ sc, (f sc).yieldFromCode = sc.yieldFromCode := by intro _; first | rfl | simp) :
+    (hy : ∀ sc, (f sc).yieldFromCode = sc.yieldFromCode := by intro _; first | rfl | simp)
+    (hn : ∀ sc, (f sc).notificationCode = sc.notificationCode := by intro _; first | rfl | simp) :
     SystemState.RunQueueFrameStage (· = scId) st (st.updateSchedContext scId f) := by
   have hU := SystemState.updateSchedContext_scheduler st scId f
   apply SystemState.RunQueueFrameStage.of_placement
@@ -869,6 +882,7 @@ theorem updateSchedContext_runQueueFrameStage (st : SystemState) (scId : SeLe4n.
   · exact fun hInv => .updateSchedContext st scId f hInv hf
   · exact fun hInv => SystemState.RefillsKeptOff.updateSchedContext st scId f hInv
   · exact fun hInv => Kernel.YieldLinksKept.updateSchedContext st scId f hInv hy
+  · exact fun hInv => Kernel.NotificationLinksKept.updateSchedContext st scId f hInv hn
   · show (st.updateSchedContext scId _).scheduler.currentCode = _
     rw [hU]
   · exact congrArg MachineState.residentCode (SystemState.updateSchedContext_machine st scId _)
@@ -948,42 +962,135 @@ theorem cutCancelledCallerHead_runQueueStage (st : SystemState) (tcb : TCB) :
         (markKeyChangeFrom_runQueueStage _ _ holder))
     st tcb (RunQueueStage.refl st)
 
-/-- **A context's notification link rewritten is a run-queue stage**: no view
-the stage reads reads the link. -/
-theorem notificationCodeWrite_runQueueStage {st : SystemState} {s : SeLe4n.SchedContextId}
-    {sc : SchedContext} (hS : st.getSchedContext? s = some sc) (c : Nat) :
-    SystemState.RunQueueStage st (st.updateSchedContext s (fun sc => { sc with notificationCode := c })) := by
-  have hSraw := (SystemState.getSchedContext?_eq_some_iff st s sc).mp hS
-  have hU := SystemState.updateSchedContext_scheduler st s
-    (fun sc => { sc with notificationCode := c })
-  have hM := SystemState.updateSchedContext_machine st s
-    (fun sc => { sc with notificationCode := c })
-  exact SystemState.RunQueueStage.insert (k := s.toObjId)
-    (obj := .schedContext { sc with notificationCode := c })
-    (congrArg SystemState.objects (SystemState.updateSchedContext_eq_of_some hS _))
-    (by rw [hU]) (by rw [hU]) (fun c => by rw [hSraw]; rfl)
-    (SystemState.objStateMono_nonTcb (by rw [hSraw]; rfl) rfl) (by rw [hU])
-    (fun c => by rw [hSraw]; rfl) (by rw [hSraw]; rfl) (by rw [hSraw]; rfl) (by rw [hU])
-    (by rw [hM])
+/-- An object with its notification-link word cleared: a context's
+notification code and a notification's context code; every other object as it
+is. -/
+def _root_.SeLe4n.Model.KernelObject.withoutNotificationLinks : KernelObject → KernelObject
+  | .schedContext sc => .schedContext { sc with notificationCode := 0 }
+  | .notification n => .notification { n with schedContextCode := 0 }
+  | o => o
 
-/-- **A notification's scheduling-context link rewritten is a run-queue stage**. -/
-theorem notificationLinkInsert_runQueueStage {st : SystemState} {n : SeLe4n.ObjId}
-    {ntfn : Notification} (h1 : st.objects[n]? = some (.notification ntfn)) (c : Nat) :
-    SystemState.RunQueueStage st
-      { st with objects := st.objects.insert n (.notification { ntfn with schedContextCode := c }) } :=
-  SystemState.RunQueueStage.insert (k := n) (obj := .notification { ntfn with schedContextCode := c })
-    rfl rfl rfl (fun c => by rw [h1]; rfl) (SystemState.objStateMono_nonTcb (by rw [h1]; rfl) rfl) rfl
-    (fun c => by rw [h1]; rfl) (by rw [h1]; rfl) (by rw [h1]; rfl) rfl rfl
+/-- **Two stores agreeing off the notification links**: every slot holds the
+same object once its notification-link word is cleared. -/
+def objectsAgreeOffNotificationLinks (st' st : SystemState) : Prop :=
+  ∀ x : SeLe4n.ObjId, (st'.objects[x]?).map KernelObject.withoutNotificationLinks =
+    (st.objects[x]?).map KernelObject.withoutNotificationLinks
+
+namespace objectsAgreeOffNotificationLinks
+
+theorem trans {a b c : SystemState} (h₂ : objectsAgreeOffNotificationLinks c b)
+    (h₁ : objectsAgreeOffNotificationLinks b a) : objectsAgreeOffNotificationLinks c a :=
+  fun x => (h₂ x).trans (h₁ x)
+
+/-- A thread holds no notification-link word, so every thread reads as before. -/
+theorem getTcb? {st st' : SystemState} (h : objectsAgreeOffNotificationLinks st' st)
+    (t : SeLe4n.ThreadId) : st'.getTcb? t = st.getTcb? t := by
+  have e := h t.toObjId
+  unfold SystemState.getTcb?
+  revert e
+  cases st'.objects[t.toObjId]? <;> cases st.objects[t.toObjId]? <;> intro e
+  · rfl
+  · rename_i o; cases o <;> cases e
+  · rename_i o; cases o <;> cases e
+  · rename_i a b
+    simp only [Option.map_some, Option.some.injEq] at e
+    cases a <;> cases b <;>
+      simp only [KernelObject.withoutNotificationLinks, reduceCtorEq, KernelObject.tcb.injEq,
+        KernelObject.schedContext.injEq, KernelObject.notification.injEq] at e ⊢ <;>
+      first | rfl | rw [e]
+
+/-- A one-object write whose object agrees with the slot's off the link word. -/
+theorem insert {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
+    (hInv : st.objects.invExt) (hO : st'.objects = st.objects.insert k o)
+    (h : some (KernelObject.withoutNotificationLinks o) =
+      (st.objects[k]?).map KernelObject.withoutNotificationLinks) :
+    objectsAgreeOffNotificationLinks st' st := fun x => by
+  rw [hO]
+  by_cases hx : x = k
+  · subst hx
+    have e : (st.objects.insert x o)[x]? = some o :=
+      RobinHood.RHTable.getElem?_insert_self st.objects x o hInv
+    rw [e]; exact h
+  · have e : (st.objects.insert k o)[x]? = st.objects[x]? :=
+      RobinHood.RHTable.getElem?_insert_ne st.objects k x o
+        (by intro h'; exact hx (eq_of_beq h').symm) hInv
+    rw [e]
+
+/-- A context's notification code rewritten. -/
+theorem notificationCodeWrite {st : SystemState} {s : SeLe4n.SchedContextId}
+    {sc : SchedContext} (hS : st.getSchedContext? s = some sc) (c : Nat) (hInv : st.objects.invExt) :
+    objectsAgreeOffNotificationLinks
+      (st.updateSchedContext s (fun sc => { sc with notificationCode := c })) st :=
+  .insert hInv (congrArg SystemState.objects (SystemState.updateSchedContext_eq_of_some hS _))
+    (by rw [(SystemState.getSchedContext?_eq_some_iff st s sc).mp hS]; rfl)
+
+/-- A notification's context code rewritten. -/
+theorem notificationLinkInsert {st : SystemState} {n : SeLe4n.ObjId}
+    {ntfn : Notification} (h1 : st.objects[n]? = some (.notification ntfn)) (c : Nat)
+    (hInv : st.objects.invExt) :
+    objectsAgreeOffNotificationLinks
+      { st with objects := st.objects.insert n (.notification { ntfn with schedContextCode := c }) } st :=
+  .insert hInv rfl (by rw [h1]; rfl)
+
+end objectsAgreeOffNotificationLinks
+
+/-- **A step that writes only notification-link words and no scheduler field is
+a run-queue stage**: every thread, release link, refill view and yield code
+reads as before; the link agreement is the step's own (`hN`). -/
+theorem runQueueStage_of_objectsAgreeOffNotificationLinks {st st' : SystemState}
+    (hA : st.objects.invExt → objectsAgreeOffNotificationLinks st' st)
+    (hS : st.objects.invExt → st'.scheduler = st.scheduler)
+    (hM' : st.objects.invExt → st'.machine = st.machine)
+    (hI : st.objects.invExt → st'.objects.invExt)
+    (hN : st.objects.invExt → notificationLinksAgree st → notificationLinksAgree st') :
+    RunQueueStage st st' := by
+  refine RunQueueStage.of_invExt fun hInv => ?_
+  have hS := hS hInv
+  have hM' := hM' hInv
+  have hT := (hA hInv).getTcb?
+  have hL : ∀ c t, st'.runLinkOn c t = st.runLinkOn c t := by
+    intro c t; unfold SystemState.runLinkOn; rw [hT t]
+  have hM : SystemState.StateMono st st' := SystemState.StateMono.of_stateFields (fun t => by rw [hT t])
+  have hRel : SystemState.releaseStateAgree st' st :=
+    ⟨.of_map KernelObject.withoutNotificationLinks (fun o _ => by cases o <;> rfl) (hA hInv),
+      by rw [hS]⟩
+  have hV : RefillViewsKept st' st :=
+    RefillViewsKept.of_map KernelObject.withoutNotificationLinks (fun o => by cases o <;> rfl) (hA hInv)
+  have hY : YieldLinksKept st' st :=
+    YieldLinksKept.of_map KernelObject.withoutNotificationLinks (fun o => by cases o <;> rfl) (hA hInv)
+  exact ⟨⟨fun _ r => ⟨hI hInv, SystemState.runQueueRefined_of_frame hL (by rw [hS]) (by rw [hS]) r⟩,
+      fun _ _ r => hRel.refined r,
+      fun _ _ _ q s => SystemState.refillsSoundExcept_of_kept hV
+        (fun c => by rw [hRel.replenishQueueOnCore c]) (hRel.refined q) s,
+      fun _ _ y => SystemState.yieldLinksAgree_of_kept hY y,
+      fun h _ n => hN h n,
+      fun _ _ => .of_kept hY (by rw [hM'])⟩,
+    fun _ _ _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (by rw [hS]) hL hM d,
+    fun _ _ => hM⟩
 
 /-- **The notification unbind read from the context's end is a run-queue
-stage.** -/
+stage**: two link words written, both ends cleared together
+(`unbindSchedContextNotification_preserves_notificationLinksAgree`). -/
 theorem unbindSchedContextNotification_runQueueStage (st : SystemState)
     (s : SeLe4n.SchedContextId) : SystemState.RunQueueStage st (unbindSchedContextNotification st s) := by
-  refine SystemState.RunQueueStage.of_invExt fun hInv => ?_
-  rcases unbindSchedContextNotification_shape st s hInv with h | ⟨sc, hS, h | ⟨n, ntfn, h1, h⟩⟩
-  · rw [h]; exact SystemState.RunQueueStage.refl st
-  · rw [h]; exact notificationCodeWrite_runQueueStage hS 0
-  · rw [h]; exact (notificationCodeWrite_runQueueStage hS 0).trans (notificationLinkInsert_runQueueStage h1 0)
+  refine runQueueStage_of_objectsAgreeOffNotificationLinks (fun hInv => ?_)
+    (fun _ => unbindSchedContextNotification_scheduler st s)
+    (fun _ => unbindSchedContextNotification_machine st s) (fun hInv => ?_)
+    (unbindSchedContextNotification_preserves_notificationLinksAgree st s)
+  · rcases unbindSchedContextNotification_shape st s hInv with h | ⟨sc, hS, h | ⟨n, ntfn, h1, h⟩⟩
+    · rw [h]; exact fun _ => rfl
+    · rw [h]; exact .notificationCodeWrite hS 0 hInv
+    · rw [h]
+      have hI1 := SystemState.updateSchedContext_preserves_objects_invExt st s
+        (fun c => { c with notificationCode := 0 }) hInv
+      exact (objectsAgreeOffNotificationLinks.notificationLinkInsert h1 0 hI1).trans
+        (.notificationCodeWrite hS 0 hInv)
+  · have hI1 := SystemState.updateSchedContext_preserves_objects_invExt st s
+      (fun c => { c with notificationCode := 0 }) hInv
+    rcases unbindSchedContextNotification_shape st s hInv with h | ⟨sc, hS, h | ⟨n, ntfn, h1, h⟩⟩
+    · rw [h]; exact hInv
+    · rw [h]; exact hI1
+    · rw [h]; exact RHTable_insert_preserves_invExt _ _ _ hI1
 
 /-- **The finalisation is a kernel entry's worth of run-queue steps**, every
 step of it (`finaliseFinalObject_closed`): each cancel's and each unbind's

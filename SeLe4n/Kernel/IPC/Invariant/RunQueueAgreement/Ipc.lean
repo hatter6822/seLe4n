@@ -56,6 +56,7 @@ macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
 theorem storeObject_notificationOver_runQueueStage {st st' : SystemState} {k : SeLe4n.ObjId}
     {n n' : Notification} (hOld : st.getNotification? k = some n)
     (hS : storeObject k (.notification n') st = .ok ((), st'))
+    (hC : n'.schedContextCode = n.schedContextCode := by first | rfl | simp_all)
  : RunQueueStage st st' :=
   RunQueueStage.storeObject hS (fun c => by
     rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl)
@@ -64,6 +65,8 @@ theorem storeObject_notificationOver_runQueueStage {st st' : SystemState} {k : S
     (fun c => by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl)
     (by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl)
     (by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl)
+    (by rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]
+        show (n'.schedContextCode, 0) = (n.schedContextCode, 0); rw [hC])
 
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
   refine RunQueueStage.trans ?_
@@ -93,6 +96,10 @@ theorem runQueueStage_of_ntfnLinksRewritten {st s : SystemState}
           · rw [e]
           · rw [h0, h1]; rfl, by rw [hD.scheduler_eq]⟩)
         (fun _ => .of_eq fun k => by
+          rcases hD.2.2 k with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
+          · rw [e]
+          · rw [h0, h1]; rfl)
+        (fun _ k => by
           rcases hD.2.2 k with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
           · rw [e]
           · rw [h0, h1]; rfl)
@@ -177,7 +184,7 @@ theorem cutReplyFrameOutOrSelf_runQueueStage (st : SystemState) (rid : SeLe4n.Re
   · refine RunQueueStage.of_slots (fun hInv =>
       ⟨cutReplyFrameOut_preserves_objects_invExt hInv h, fun oid c => ?_, fun oid => ?_,
        cutReplyFrameOut_scheduler_eq h⟩) (fun hInv oid c => ?_) (fun hInv oid => ?_) (fun hInv oid => ?_)
-      (by rw [cutReplyFrameOut_machine_eq h])
+      (fun hInv oid => ?_) (by rw [cutReplyFrameOut_machine_eq h])
     · rcases cutReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
       · rw [e]
       · rw [h1, h2]; rfl
@@ -185,6 +192,9 @@ theorem cutReplyFrameOutOrSelf_runQueueStage (st : SystemState) (rid : SeLe4n.Re
       · exact SystemState.slotStateMono.of_eq e
       · exact SystemState.slotStateMono.of_obj h2
           (SystemState.objStateMono_nonTcb (by rw [h1]; rfl) rfl)
+    · rcases cutReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
+      · rw [e]
+      · rw [h1, h2]; rfl
     · rcases cutReplyFrameOut_objects_rewrite hInv h oid with e | ⟨_, _, h1, h2, _⟩
       · rw [e]
       · rw [h1, h2]; rfl
@@ -233,6 +243,7 @@ theorem notificationWait_block_runQueueEntryStage {st st1 st2 st3 : SystemState}
     (hN : st.getNotification? notificationId = some ntfn)
     (hT : lookupTcb st waiter = some tcb)
     (hS1 : storeObject notificationId (.notification n') st = .ok ((), st1))
+    (hCode : n'.schedContextCode = ntfn.schedContextCode)
     (hS2 : storeTcbIpcStateAndMessage_fromTcb st1 waiter tcb s m = .ok st2)
     (hL : linkNtfnWaiter st2 waiter tail = .ok st3)
     (hCur : st.scheduler.currentOnCore c = some waiter) (hNI : isIdleThreadId waiter = false) :
@@ -254,7 +265,7 @@ theorem notificationWait_block_runQueueEntryStage {st st1 st2 st3 : SystemState}
       split at hS2
       · cases hS2
       · rename_i hS; cases hS2
-        exact ((storeObject_notificationOver_runQueueStage hN hS1).window _).trans
+        exact ((storeObject_notificationOver_runQueueStage hN hS1 hCode).window _).trans
           (SystemState.RunQueueWindowStage.storeObject_block hS
             ((SystemState.getTcb?_eq_some_iff st1 waiter tcb).mpr hT1) (fun _ => rfl) rfl hC1 hNI)
   exact (w.trans ((linkNtfnWaiter_runQueueStage hL).window _)).dispatch
@@ -273,7 +284,7 @@ theorem notificationWaitOnCore_runQueueEntryStage (notificationId : SeLe4n.ObjId
     | exact ((storeObject_notificationOver_runQueueStage (by assumption) (by assumption)).trans
          (storeTcbIpcState_runQueueStage (by assumption) rfl)).entry
     | exact notificationWait_block_runQueueEntryStage (by assumption) (by assumption)
-         (by assumption) (by assumption) (by assumption) hCur hNI
+         (by assumption) (by first | rfl | simp_all) (by assumption) (by assumption) hCur hNI
 
 /-- A wait that takes a pending badge links nothing and unlinks nothing: the
 notification's store and the waiter's `.ready` mark, whichever core it runs on

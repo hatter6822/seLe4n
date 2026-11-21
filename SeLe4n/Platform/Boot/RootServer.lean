@@ -1618,7 +1618,7 @@ theorem proofLayerInvariantBundle_drainBootPhysicalWrites (ist : IntermediateSta
     proofLayerInvariantBundle (drainBootPhysicalWrites ist).state := by
   obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
           bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
-          bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield, bBook⟩ := h
+          bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield, bBook, bNtfnLinks⟩ := h
   exact ⟨bSched, bCap, ⟨bCoreIpc.1, bCoreIpc.2.1, ipcInvariantFull_clearPhysicalWrites bCoreIpc.2.2⟩,
          ⟨⟨bCoupling.1.1, bCoupling.1.2.1, ipcInvariantFull_clearPhysicalWrites bCoupling.1.2.2⟩,
            bCoupling.2.1, bCoupling.2.2.1, bCoupling.2.2.2⟩,
@@ -1626,7 +1626,7 @@ theorem proofLayerInvariantBundle_drainBootPhysicalWrites (ist : IntermediateSta
          crossSubsystemInvariant_clearPhysicalWrites bCross,
          bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := ist.state) rfl bNtfn),
          bPending, bPerCoreTlb, bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield,
-         bBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩⟩
+         bBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩, bNtfnLinks⟩
 
 /-- An object the stage neither adds nor rewrites — no thread, CNode or
     address space — is where it was. -/

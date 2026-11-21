@@ -522,6 +522,11 @@ theorem kindPreserving (hG : SystemState.ghostsKept st' st := by ghosts_kept) :
 
 end objectsAgreeOffRunLinks
 
+/-- A run-links-only rewrite keeps every slot's notification-link codes. -/
+theorem _root_.SeLe4n.Kernel.NotificationLinksKept.of_agreeOffRunLinks {st st' : SystemState}
+    (h : objectsAgreeOffRunLinks st' st) : NotificationLinksKept st' st :=
+  .of_map KernelObject.withoutRunLinks (fun o => by cases o <;> rfl) h
+
 /-- A run-links-only rewrite that writes no release-queue slot holds the
 release queues. -/
 theorem releaseStateAgree.of_agreeOffRunLinks {st st' : SystemState}
@@ -824,6 +829,7 @@ theorem RunQueueStage.runRemoveOnCore (st : SystemState) (c : CoreId) (t : SeLe4
       (fun h r => ⟨runRemoveOnCore_objects_invExt st c t h, runRemoveOnCore_refined r⟩)
       (fun _ => .of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t)
         (by rw [runRemoveOnCore_scheduler]; rfl))
+      (fun _ => .of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t))
       (fun _ => .of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t))
       fun _ => .of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t))
     (fun c' y h' => by
@@ -1300,6 +1306,7 @@ theorem RunQueueStage.runRequeueOnCore (st : SystemState) (c : CoreId) (t : SeLe
     (fun _ => .of_agreeOffRunLinks (runRequeueOnCore_objectsAgreeOffRunLinks st c t p)
       (by rw [runRequeueOnCore_scheduler]; rfl))
     (fun _ => .of_agreeOffRunLinks (runRequeueOnCore_objectsAgreeOffRunLinks st c t p))
+    (fun _ => .of_agreeOffRunLinks (runRequeueOnCore_objectsAgreeOffRunLinks st c t p))
     fun _ => .of_agreeOffRunLinks (runRequeueOnCore_objectsAgreeOffRunLinks st c t p)
   intro hInv hR
   refine ⟨runRequeueOnCore_objects_invExt st c t p hInv, ?_⟩
@@ -1348,6 +1355,7 @@ theorem RunQueueLinkStage.runEnqueueOnCore (st : SystemState) (c : CoreId) (t : 
   .of_frames (fun h r => ⟨runEnqueueOnCore_objects_invExt st c t p h, runEnqueueOnCore_refined r⟩)
     (fun _ => .of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p)
       (by rw [runEnqueueOnCore_scheduler]; split <;> rfl))
+    (fun _ => .of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p))
     (fun _ => .of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p))
     fun _ => .of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p)
 

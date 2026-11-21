@@ -3474,6 +3474,7 @@ theorem returnDonatedSchedContext_runQueueFrameStage {st st' : SystemState}
     (fun hInv => returnDonatedSchedContext_releaseStateAgree hInv h)
     (fun hInv => returnDonatedSchedContext_refillsKeptOff hInv h)
     (fun hInv => returnDonatedSchedContext_yieldLinksKept hInv h)
+    (fun hInv => returnDonatedSchedContext_notificationLinksKept hInv h)
     (by rw [hS])
     (by rw [returnDonatedSchedContext_machine_eq st st' serverTid scId originalOwner newOwner? h])
 
@@ -3624,6 +3625,7 @@ theorem cancelBoundDonationOnCore_runQueueStage {st st' : SystemState}
         · exact fun hInv => .updateSchedContext st scId _ hInv (fun _ => ⟨rfl, rfl, rfl⟩)
         · exact fun hInv => .updateSchedContext st scId _ hInv
         · exact fun hInv => Kernel.YieldLinksKept.updateSchedContext st scId _ hInv (fun _ => rfl)
+        · exact fun hInv => Kernel.NotificationLinksKept.updateSchedContext st scId _ hInv
         · show (st.updateSchedContext scId _).scheduler.currentCode = _
           rw [hU]
         · exact congrArg MachineState.residentCode (SystemState.updateSchedContext_machine st scId _)

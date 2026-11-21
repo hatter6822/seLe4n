@@ -410,6 +410,8 @@ theorem mapTcbInPlace_serverForgotten_runQueueStage {st : SystemState} {w : SeLe
       (fun _ => Kernel.RefillViewsKept.of_map (KernelObject.mapTcb TCB.serverForgotten)
         (fun o => by cases o <;> rfl) (mapTcbInPlace_serverForgotten_agree st w))
       (fun _ => Kernel.YieldLinksKept.of_map (KernelObject.mapTcb TCB.serverForgotten)
+        (fun o => by cases o <;> rfl) (mapTcbInPlace_serverForgotten_agree st w))
+      (fun _ => Kernel.NotificationLinksKept.of_map (KernelObject.mapTcb TCB.serverForgotten)
         (fun o => by cases o <;> rfl) (mapTcbInPlace_serverForgotten_agree st w)),
     fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [mapTcbInPlace_scheduler]) hL hM d, fun _ _ => hM⟩
 

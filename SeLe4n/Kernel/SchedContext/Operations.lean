@@ -346,7 +346,8 @@ theorem settleReturnedContext_runQueueStage {st X : SystemState}
   split
   · rename_i hAct
     have hT := hFP.trans (releasePlace_runQueueFrameStage' (purgeReplenishment X s) c s)
-    refine ⟨⟨hT.1.links, hT.1.release, fun S hI hR hQ hS => ?_, hT.1.yield, hT.1.live⟩, hT.2⟩
+    refine ⟨⟨hT.1.links, hT.1.release, fun S hI hR hQ hS => ?_, hT.1.yield, hT.1.notificationLinks,
+      hT.1.live⟩, hT.2⟩
     by_cases hs : S s
     · exact hT.1.refills S (fun x hx => hx ▸ hs) hI hR hQ hS
     · obtain ⟨hYR, hYS, hYs, hYn⟩ := hY S hs hI hR hQ hS
@@ -357,7 +358,8 @@ theorem settleReturnedContext_runQueueStage {st X : SystemState}
       rw [ha] at hAct
       exact SystemState.holderActive_bound hAct
   · rename_i hAct
-    refine ⟨⟨hFP.1.links, hFP.1.release, fun S hI hR hQ hS => ?_, hFP.1.yield, hFP.1.live⟩,
+    refine ⟨⟨hFP.1.links, hFP.1.release, fun S hI hR hQ hS => ?_, hFP.1.yield, hFP.1.notificationLinks,
+      hFP.1.live⟩,
       hFP.2⟩
     by_cases hs : S s
     · exact hFP.1.refills S (fun x hx => hx ▸ hs) hI hR hQ hS
@@ -685,6 +687,14 @@ branch's updates out of line. -/
     (extraRefills badge flags : UInt64) (timer : Nat) (keep : Bool) (sc : SchedContext) :
     (configuredSchedContext budget period extraRefills badge flags timer keep sc).yieldFromCode =
       sc.yieldFromCode := by
+  unfold configuredSchedContext; cases keep <;> simp
+
+/-- WS-SX SX8.3: the configure keeps the context's end of the notification
+link. -/
+@[simp] theorem configuredSchedContext_notificationCode (budget period : Nat)
+    (extraRefills badge flags : UInt64) (timer : Nat) (keep : Bool) (sc : SchedContext) :
+    (configuredSchedContext budget period extraRefills badge flags timer keep sc).notificationCode =
+      sc.notificationCode := by
   unfold configuredSchedContext; cases keep <;> simp
 
 /-- The configured context reads nothing of the stored one's release fields. -/

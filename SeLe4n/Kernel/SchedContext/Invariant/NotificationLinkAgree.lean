@@ -59,6 +59,166 @@ def NotificationLinksKept (st' st : SystemState) : Prop :=
   ∀ k : SeLe4n.ObjId,
     objNotificationLinkCodes st'.objects[k]? = objNotificationLinkCodes st.objects[k]?
 
+namespace NotificationLinksKept
+
+theorem refl (st : SystemState) : NotificationLinksKept st st := fun _ => rfl
+
+theorem trans {a b d : SystemState} (h₁ : NotificationLinksKept a b)
+    (h₂ : NotificationLinksKept b d) : NotificationLinksKept a d := fun k => (h₁ k).trans (h₂ k)
+
+theorem symm {st st' : SystemState} (h : NotificationLinksKept st' st) :
+    NotificationLinksKept st st' := fun k => (h k).symm
+
+theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
+    NotificationLinksKept st' st := fun k => by rw [h]
+
+/-- Two stores agreeing up to a rewrite that keeps every object's link codes
+keep the codes. -/
+theorem of_map {st st' : SystemState} (g : KernelObject → KernelObject)
+    (hg : ∀ o, objNotificationLinkCodes (some (g o)) = objNotificationLinkCodes (some o))
+    (h : ∀ k : SeLe4n.ObjId, (st'.objects[k]?).map g = (st.objects[k]?).map g) :
+    NotificationLinksKept st' st := fun k => by
+  have e := h k
+  revert e
+  cases st'.objects[k]? <;> cases st.objects[k]? <;> intro e
+  · rfl
+  · cases e
+  · cases e
+  · rename_i a b
+    simp only [Option.map_some, Option.some.injEq] at e
+    rw [← hg a, e, hg b]
+
+/-- An insert whose object holds its slot's link codes keeps the codes. -/
+theorem insert {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
+    (hInv : st.objects.invExt) (hO : st'.objects = st.objects.insert k o)
+    (h : objNotificationLinkCodes (some o) = objNotificationLinkCodes st.objects[k]?) :
+    NotificationLinksKept st' st := fun x => by
+  rw [hO]
+  by_cases hx : x = k
+  · subst hx
+    have e : (st.objects.insert x o)[x]? = some o :=
+      RobinHood.RHTable.getElem?_insert_self st.objects x o hInv
+    rw [e]; exact h
+  · have e : (st.objects.insert k o)[x]? = st.objects[x]? :=
+      RobinHood.RHTable.getElem?_insert_ne st.objects k x o
+        (by intro h'; exact hx (eq_of_beq h').symm) hInv
+    rw [e]
+
+/-- A store whose object holds its slot's link codes keeps the codes. -/
+theorem storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
+    (hInv : st.objects.invExt) (hS : SeLe4n.Model.storeObject k o st = .ok ((), st'))
+    (h : objNotificationLinkCodes (some o) = objNotificationLinkCodes st.objects[k]?) :
+    NotificationLinksKept st' st := by
+  unfold SeLe4n.Model.storeObject at hS; cases hS
+  exact .insert hInv rfl h
+
+/-- A thread update keeps the codes: a thread holds neither link word. -/
+theorem updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) (g : TCB → TCB)
+    (hInv : st.objects.invExt) : NotificationLinksKept (st.updateTcb tid g) st := fun k => by
+  by_cases hk : tid.toObjId = k
+  · subst hk
+    cases hT : st.getTcb? tid with
+    | none => rw [SystemState.updateTcb_eq_self_of_none hT]
+    | some t =>
+      have h' := SystemState.updateTcb_getTcb?_self st tid g hInv
+      rw [hT] at h'
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hT, (SystemState.getTcb?_eq_some_iff _ _ _).mp h']
+      rfl
+  · rw [SystemState.updateTcb_objects_ne _ _ _ _ hk hInv]
+
+/-- A context update keeping the context's notification code keeps the codes. -/
+theorem updateSchedContext (st : SystemState) (s : SeLe4n.SchedContextId)
+    (g : SchedContext → SchedContext) (hInv : st.objects.invExt)
+    (hg : ∀ sc, (g sc).notificationCode = sc.notificationCode := by intro _; rfl) :
+    NotificationLinksKept (st.updateSchedContext s g) st := fun k => by
+  by_cases hk : s.toObjId = k
+  · subst hk
+    cases hS : st.getSchedContext? s with
+    | none => rw [SystemState.updateSchedContext_eq_self_of_none hS]
+    | some sc =>
+      have h' := SystemState.updateSchedContext_getSchedContext?_self st s g hInv
+      rw [hS] at h'
+      rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS,
+        (SystemState.getSchedContext?_eq_some_iff _ _ _).mp h']
+      simp only [objNotificationLinkCodes, hg]
+  · rw [SystemState.updateSchedContext_objects_ne _ _ _ _ hk hInv]
+
+/-- **A write confined to reply objects keeps the codes**: every slot not
+holding a reply is kept, and a reply stays a reply.  A reply holds neither link
+word, so the donation stack's pushes and pops are of this shape. -/
+theorem of_replyWrite {st st' : SystemState}
+    (hNR : ∀ k : SeLe4n.ObjId, (∀ r : Reply, st.objects[k]? ≠ some (.reply r)) →
+      st'.objects[k]? = st.objects[k]?)
+    (hR : ∀ (k : SeLe4n.ObjId) (r : Reply), st.objects[k]? = some (.reply r) →
+      ∃ r', st'.objects[k]? = some (.reply r')) :
+    NotificationLinksKept st' st := fun k => by
+  by_cases h : ∃ r : Reply, st.objects[k]? = some (.reply r)
+  · obtain ⟨r, hr⟩ := h
+    obtain ⟨r', hr'⟩ := hR k r hr
+    rw [hr, hr']; rfl
+  · rw [hNR k (fun r e => h ⟨r, e⟩)]
+
+/-- A step keeping every notification and every context keeps the codes. -/
+theorem of_lookups_eq {st st' : SystemState}
+    (hN : ∀ n, st'.getNotification? n = st.getNotification? n)
+    (hS : ∀ s, st'.getSchedContext? s = st.getSchedContext? s) :
+    NotificationLinksKept st' st := fun k => by
+  have eN := hN k
+  have eS := hS (SeLe4n.SchedContextId.ofObjId k)
+  unfold SystemState.getNotification? at eN
+  unfold SystemState.getSchedContext? at eS
+  have e2 : (SeLe4n.SchedContextId.ofObjId k).toObjId = k := rfl
+  rw [e2] at eS
+  cases h1 : st'.objects[k]? with
+  | none =>
+    cases h2 : st.objects[k]? with
+    | none => rfl
+    | some o =>
+      rw [h1, h2] at eN eS
+      cases o <;> simp_all [objNotificationLinkCodes]
+  | some o' =>
+    cases h2 : st.objects[k]? with
+    | none => rw [h1, h2] at eN eS; cases o' <;> simp_all [objNotificationLinkCodes]
+    | some o =>
+      rw [h1, h2] at eN eS
+      cases o' <;> cases o <;> simp_all [objNotificationLinkCodes]
+
+/-- **The codes kept by a step that writes no notification and no context**:
+each of either state's notifications and contexts is the other's at its key. -/
+theorem of_kindFrames {st st' : SystemState}
+    (hNf : ∀ (a : SeLe4n.ObjId) (n : Notification), st.objects[a]? = some (.notification n) →
+      st'.objects[a]? = some (.notification n))
+    (hNb : ∀ (a : SeLe4n.ObjId) (n : Notification), st'.objects[a]? = some (.notification n) →
+      st.objects[a]? = some (.notification n))
+    (hSf : ∀ (a : SeLe4n.ObjId) (sc : SchedContext), st.objects[a]? = some (.schedContext sc) →
+      st'.objects[a]? = some (.schedContext sc))
+    (hSb : ∀ (a : SeLe4n.ObjId) (sc : SchedContext), st'.objects[a]? = some (.schedContext sc) →
+      st.objects[a]? = some (.schedContext sc)) :
+    NotificationLinksKept st' st := fun k => by
+  cases h2 : st'.objects[k]? with
+  | some o' =>
+    cases o' with
+    | notification n => rw [hNb k n h2]
+    | schedContext sc => rw [hSb k sc h2]
+    | _ =>
+      cases h1 : st.objects[k]? with
+      | none => rfl
+      | some o =>
+        cases o with
+        | notification n => have h3 := hNf k n h1; rw [h2] at h3; cases h3
+        | schedContext sc => have h3 := hSf k sc h1; rw [h2] at h3; cases h3
+        | _ => rfl
+  | none =>
+    cases h1 : st.objects[k]? with
+    | none => rfl
+    | some o =>
+      cases o with
+      | notification n => have h3 := hNf k n h1; rw [h2] at h3; cases h3
+      | schedContext sc => have h3 := hSf k sc h1; rw [h2] at h3; cases h3
+      | _ => rfl
+
+end NotificationLinksKept
+
 /-- A step keeping every slot's link codes keeps the agreement. -/
 theorem notificationLinksAgree_of_kept {st st' : SystemState} (hK : NotificationLinksKept st' st)
     (h : notificationLinksAgree st) : notificationLinksAgree st' := fun n s => by
