@@ -11358,6 +11358,11 @@ open SeLe4n.Kernel.Concurrency
 #check @boundSignalHidden.woken
 #check @sendSignalOnCoreFlowing_lowEquivalent
 #check @lockSetForSyscall_notificationSignal_covers_donationContext
+#check @lockSetForSyscall_notificationSignal_covers_donationHeadReply
+#check @notificationSignalBoundOnCore_donationHeadFrame
+#check @notificationSignalBoundOnCore_headReply_eq
+#check @sendSignal_donationHeadReply_locked
+#check @DonationHeadFrame.lenderFlows_eq
 #check @notificationSignalDeclassifiedCrossCoreDispatch_induct
 #check @notificationSignalDeclassifiedCrossCoreDispatch_snd
 #check @notificationSignalDeclassifiedCrossCoreDispatch_preserves_ipcInvariantFull_fallthrough
@@ -11403,6 +11408,10 @@ open SeLe4n.Kernel.Concurrency
 #check @completeSignalArm_consumed_waitCompletionContext?_eq
 #check @notificationWaitOnCore_blocked_waitCompletionContext?_eq
 #check @lockSetForSyscall_notificationWait_covers_completionContext
+#check @lockSetForSyscall_notificationWait_covers_donationHeadReply
+#check @notificationWaitOnCore_consumed_donationHeadFrame
+#check @notificationWaitOnCore_headReply_eq
+#check @completeSignal_donationHeadReply_locked
 #check @endpointReplyRecvCheckedArmR_eq_general
 #check @endpointReplyRecvLongCheckedArmR_eq_general
 #check @replyRecvSignalArmR

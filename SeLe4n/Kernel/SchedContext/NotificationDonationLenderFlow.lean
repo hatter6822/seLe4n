@@ -63,6 +63,59 @@ def notificationContextHeadLender? (st : SystemState) (n : SeLe4n.ObjId) :
           | none => none
           | some rep => rep.caller
 
+/-- **The reply the lender check reads**: the head of the reply stack the
+notification's context heads (`SchedContext.scReply`); `none` where the
+notification has no context or the context heads no stack.  The check reads
+this reply object and no other (`notificationContextHeadLender?_eq_headReply`),
+so it is the reply a footprint around the check names, read-only. -/
+def notificationContextHeadReply? (st : SystemState) (n : SeLe4n.ObjId) :
+    Option SeLe4n.ReplyId :=
+  match st.getNotification? n with
+  | none => none
+  | some ntfn =>
+    match ntfn.schedContext with
+    | none => none
+    | some s =>
+      match st.getSchedContext? s with
+      | none => none
+      | some sc => sc.scReply
+
+/-- **The top lender is the head reply's caller**: the lender the check reads is
+the caller recorded in the reply `notificationContextHeadReply?` names. -/
+theorem notificationContextHeadLender?_eq_headReply (st : SystemState) (n : SeLe4n.ObjId) :
+    notificationContextHeadLender? st n =
+      (notificationContextHeadReply? st n).bind fun r => (st.getReply? r).bind (·.caller) := by
+  unfold notificationContextHeadLender? notificationContextHeadReply?
+  cases st.getNotification? n with
+  | none => rfl
+  | some ntfn =>
+    dsimp only
+    cases ntfn.schedContext with
+    | none => rfl
+    | some s =>
+      dsimp only
+      cases st.getSchedContext? s with
+      | none => rfl
+      | some sc =>
+        dsimp only
+        cases sc.scReply with
+        | none => rfl
+        | some r =>
+          cases h : st.getReply? r <;> simp only [h, Option.bind]
+
+/-- **The check reads the head reply and its caller, nothing else of the
+stack**: two states naming the same head reply, whose callers agree, give the
+same answer. -/
+theorem notificationContextHeadLender?_congr {st st' : SystemState} {n : SeLe4n.ObjId}
+    (hR : notificationContextHeadReply? st' n = notificationContextHeadReply? st n)
+    (hC : ∀ r, notificationContextHeadReply? st n = some r →
+      (st'.getReply? r).bind (·.caller) = (st.getReply? r).bind (·.caller)) :
+    notificationContextHeadLender? st' n = notificationContextHeadLender? st n := by
+  rw [notificationContextHeadLender?_eq_headReply, notificationContextHeadLender?_eq_headReply, hR]
+  cases h : notificationContextHeadReply? st n with
+  | none => rfl
+  | some r => exact hC r h
+
 /-- **The lender flow check**: the top lender of the stack the notification's
 context heads flows to the thread the donation would lend it to; `true` where
 the context heads no stack. -/
@@ -95,6 +148,14 @@ theorem maybeDonateSchedContextFlowing_induct (P : SystemState → Prop)
     (hId : P st) (hDonate : P (maybeDonateSchedContext st n tid)) :
     P (maybeDonateSchedContextFlowing ctx st n tid) := by
   rcases maybeDonateSchedContextFlowing_cases ctx st n tid with h | h <;> rw [h] <;> assumption
+/-- **The check is a function of the top lender**: states naming the same top
+lender give the same answer. -/
+theorem donationLenderFlows_congr {ctx : LabelingContext} {st st' : SystemState}
+    {n : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+    (h : notificationContextHeadLender? st' n = notificationContextHeadLender? st n) :
+    donationLenderFlows ctx st' n tid = donationLenderFlows ctx st n tid := by
+  unfold donationLenderFlows; rw [h]
+
 /-- **The check's guarantee**: where it passes, the stack's top lender flows to
 the thread the context is lent to.  The notification-donation half of the
 invariant that every lender on a stack flows to its holder. -/
