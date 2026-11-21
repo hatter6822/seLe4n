@@ -3,7 +3,9 @@
 > **Workstream**: WS-SX (the syscall and invocation ABI made seL4's).
 > **Status**: **ACTIVE** — registered at `v0.37.19` (this plan, docs only);
 > SX1 landed at `v0.37.20`; SX5 landed at `v0.37.31`; SX6 at `v0.37.32`;
-> SX7 at `v0.37.33`, which split its remainder into SX8–SX12 (D20).
+> SX7 at `v0.37.33`, which split its remainder into SX8–SX12 (D20); SX8 at
+> `v0.37.35` (SX8.1 the conformance table, SX8.2 donation and return, SX8.3
+> label 36 and the unbind of a donated holder, D22).
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
 > **Rows**: SX1–SX17, numbered in the order they are implemented, one PR each.
@@ -390,6 +392,15 @@ capability, SchedContext_Unbind as seL4-MCS runs it (D18), the finalisation
 clears of both ends, and the retire guards that read the link words; this
 phase finishes the piece. SX8.1's table is the reference every later row
 checks its operations against.
+
+**Status: landed at `v0.37.35`.** SX8.3's restatement of `donationOwnerValid`
+turned out to be unnecessary: the invariant constrains `.donated` holders
+only, and `donationChainWellFormed` constrains stacks from the contexts that
+head them, so the state the unbind leaves (the holder unbound, its caller
+blocked on a reply no context heads) was already admitted, as context
+finalisation already reached it. Neither invariant was weakened; the unbind
+and the finalisation now share one `schedContextUnbindReply`
+(`SchedContext/ReplyLink.lean`).
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|

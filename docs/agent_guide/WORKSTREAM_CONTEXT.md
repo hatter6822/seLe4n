@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31; SX6 v0.37.32; SX7 v0.37.33, its remainder split into SX8–SX12)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31; SX6 v0.37.32; SX7 v0.37.33, its remainder split into SX8–SX12; SX8 v0.37.35)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -259,6 +259,22 @@ in x7; answer an error only to a Call; read a reply capability from x6; write
 only the registers seL4 writes for that syscall; a running-core comparison on
 the compiled path asks `schedContextRunsOn`-style Bool tests, never
 `== some core`, which boxes the core.
+
+SX8 (`v0.37.35`) finished the notification-context piece. SX8.1 is the seL4
+conformance table, a Lean table under `SeLe4n/Testing/` that a Tier 2 suite
+checks against the decode, the selection and the return. SX8.2 lends a
+notification's context to a woken waiter, a woken bound receiver or a receive
+completing a signal (`maybeDonateSchedContext`), and returns it when the
+thread blocks again (`maybeReturnSchedContext`), by binding or by donation.
+SX8.3 adds label 36 (`SchedContext_UnbindObject`) and lets SchedContext_Unbind
+take a context from a holder that has it by donation: the holder, then the
+notification, then the reply stack the context heads
+(`schedContextUnbindReply`, shared with context finalisation). **Standing
+constraints for new code:** a scheduling-context unbind that ends a context's
+use runs `schedContextUnbindReply` last, as seL4's `schedContext_unbindReply`;
+UnbindObject on a thread does not, as seL4 does not; a reply-stack writer
+registers in `SeLe4n/Testing/ReplyStackWriteCensus.lean`, and a frozen one as
+the `.mirrors` of its live twin.
 
 Beside WS-SX, `v0.37.22` retired the unchecked register-sourced entry (owner
 decision 2026-11-13): `syscallEntry`, `dispatchSyscall` and the unchecked

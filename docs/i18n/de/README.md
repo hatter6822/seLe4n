@@ -165,9 +165,9 @@ folgenden Punkte verweisen darauf.
 |----------|------|
 | **Version** | `0.37.35` |
 | **Lean-Toolchain** | `v4.28.0` |
-| **Produktions-LoC (Lean)** | 652.027 über 646 Dateien |
-| **Test-LoC (Lean)** | 91.310 über 70 Testsuiten |
-| **Bewiesene Deklarationen** | 24.838 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
+| **Produktions-LoC (Lean)** | 662.957 über 655 Dateien |
+| **Test-LoC (Lean)** | 92.061 über 71 Testsuiten |
+| **Bewiesene Deklarationen** | 25.284 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Rust-Crates** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (Userspace-Wrapper), `sele4n-hal` (die Hardwareschicht des Kernels) und der Host-Test `sele4n-lean-boundary` |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Boot-Lanes** | Jede QEMU-Lane bootet zuerst das Raspberry-Pi-5-Image auf der Maschine `raspi5b` von [rpi5_machine](https://github.com/hatter6822/rpi5_machine), dann das `virt`-Image auf QEMUs `virt` |

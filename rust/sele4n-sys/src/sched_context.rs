@@ -89,9 +89,16 @@ pub fn sched_context_bind(
     })
 }
 
-/// Unbind a scheduling context from its currently bound thread.
+/// Unbind a scheduling context — seL4-MCS's `seL4_SchedContext_Unbind`.
 ///
-/// Lean: `apiSchedContextUnbind` (API.lean) — requires `.write` right.
+/// The thread holding the context is unbound, whether it holds it by binding
+/// or by donation, then the notification bound to it, then the reply stack the
+/// context heads (seL4's `schedContext_unbindReply`): callers below keep
+/// waiting on their replies.  The context of the caller's own core's current
+/// thread is refused `IllegalOperation`.
+///
+/// Lean: `schedContextUnbindAllOnCore` (SchedContext/OperationsPerCore.lean)
+/// — requires `.write` right.
 /// Capability-only: no additional message registers needed.
 #[inline]
 pub fn sched_context_unbind(sc_cap: CPtr) -> KernelResult<SyscallResponse> {

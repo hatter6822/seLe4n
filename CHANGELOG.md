@@ -1,8 +1,9 @@
-## v0.37.35 — the seL4 conformance table
+## v0.37.35 — notification context donation and the seL4 conformance table
 
-WS-SX SX8 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`), first part: SX8.1 and
-the refactor SX8.2 lands first. Stacks on SX7 (`v0.37.33`). The owner's
-decision D22 ("Match seL4", 2026-11-19) for SX8.3 is recorded in the plan.
+WS-SX SX8 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`), the whole row: SX8.1
+(the conformance table), SX8.2 (a notification's context lent and returned)
+and SX8.3 (label 36 and the unbind of a donated holder, the owner's decision
+D22, "Match seL4", 2026-11-19). Stacks on SX7 (`v0.37.33`).
 
 ### The conformance table (SX8.1)
 - `SeLe4n/Testing/Sel4ConformanceTable.lean`: one row per seL4-MCS syscall
@@ -40,7 +41,63 @@ decision D22 ("Match seL4", 2026-11-19) for SX8.3 is recorded in the plan.
   instead of inlining its body, so the wait and the receive that completes
   its bound notification share one body (no behaviour change).
 
+### Donation and return (SX8.2)
+- seL4-MCS's `maybeDonateSchedContext`: a signal that wakes a waiter or a
+  bound receiver, and a receive that completes a signal, lend the
+  notification's context to a thread holding none, recorded as the thread's
+  `.bound` binding with the notification link kept (D19); wake first, then the
+  bind's admitted / perform pair under a word guard, allocation-free.
+- seL4-MCS's `maybeReturnSchedContext`: a blocking Wait, a blocking receive
+  and ReplyRecv's receive leg return the context the thread holds, by binding
+  or by donation, before the endpoint is looked at.
+- `notificationLinksAgree` (the two link words name each other) is the
+  proof-layer bundle's 23rd conjunct, carried by every entry's run-queue
+  stages; the boot's Prop object shapes carry the two zero codes the Bool
+  checks already required.
+- Lock sets: the donation writes the receiver's home core only, proven at the
+  call site; no over-approximation. Non-interference: the lent context is
+  read through the wake a hidden signal makes (`boundSignalHidden.woken`), and
+  the bind has a real projection frame
+  (`schedContextBind_preserves_projection`).
+
+### Label 36 and the unbind of a donated holder (SX8.3, D22)
+- `SchedContext_UnbindObject` (`SyscallId` 48, label 36): a thread or a
+  notification as extra capability 0. On a thread it unbinds that thread
+  alone, as seL4's `unbindTCB`; on a notification it clears the link.
+- SchedContext_Unbind takes the context from a holder that has it by donation
+  (seL4's `schedContext_unbindTCB`): the `isDonated` refusal is retired on the
+  live and frozen surfaces with its proofs. The unbind then lets go of the
+  reply stack the context heads: `schedContextUnbindReply`
+  (`SchedContext/ReplyLink.lean`, seL4's `schedContext_unbindReply`, with its
+  in-place `@[csimp]` form), which was the finalisation's
+  `finaliseSchedContextUnstack`; the two paths now share it.
+- `donationOwnerValid` and `donationChainWellFormed` are unchanged: both
+  already admit the state the unbind leaves (the holder unbound, its caller
+  blocked on a reply no context heads), which context finalisation already
+  reached.
+- The return guard reads the context the thread holds, by binding or by
+  donation (`SchedContextBinding.scId?`).
+- Frozen twins: `frozenSchedContextUnbind` with the notification half, the
+  reply unlink (`frozenSchedContextUnbindReply`, registered in the reply-stack
+  write census as the live one's mirror) and success on a context bound to
+  no thread.
+
+### Allocation fixes found by the heap gate
+- The compiled signal copied the object store; the blocking receive's return
+  copied it; the wide-slot mint refusal built records. Each now writes in
+  place under a proven equality, and every reading is 0.
+
 ### Tests and fixtures
+- `frozen_ops_suite`: FO-SX8.3 rows for the donated-holder unbind (live
+  against frozen, whole state) and FO-SX8.3b for UnbindObject.
+- QEMU scenarios: donation on a signal to a waiter, on a bound wake and on a
+  completed receive; return at a blocking Wait, receive and reply-receive;
+  UnbindObject on a thread and on a notification; and
+  `sched-context-unbind-donated`, the unbind of a server holding a lent
+  context, whose caller is then answered on a stack no context heads.
+- Three Tier 3 anchors restated as relation checks over the reply unlink and
+  the receive leg's return; the frozen `isDonated` anchor replaced by a
+  negative over both unbinds.
 - `main_trace_smoke.expected`: `[IMB-001]` now reads "oversized registers
   clamped to 120: true" (rationale: the clamp above); checksum regenerated.
 - NegativeStateSuite J1-NEG-07/08/16, SmpIpcSuite and the kernel-error
