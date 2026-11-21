@@ -6210,9 +6210,9 @@ consumed and written to the badge register (`x0`), every other register as it
 was, and then seL4-MCS's `maybeDonateSchedContext`: a context bound to the
 notification and to no thread is donated to a receiver holding none
 (`maybeDonateSchedContext`, the bind's ok-state, the receiver's `.bound`
-binding with the notification link kept), under the checked kernel's lender
-flow check (`maybeDonateSchedContextFlowing`): a context heading another
-thread's reply stack is lent only to a receiver its top lender flows to.  A wait that finds no word blocks,
+binding with the notification link kept), under the checked kernel's
+context-label check (`maybeDonateSchedContextFlowing`): the notification's
+context is lent only to a receiver the context's label flows to.  A wait that finds no word blocks,
 and then, as seL4-MCS's `receiveSignal` does, returns the notification's context
 where it is the waiter's own (`maybeReturnSchedContext`: seL4's writes and the
 purge under seL4's guard, the receive's return; `isActive` and the donation

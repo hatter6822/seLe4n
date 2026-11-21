@@ -59,22 +59,15 @@ D22, "Match seL4", 2026-11-19). Stacks on SX7 (`v0.37.33`).
   read through the wake a hidden signal makes (`boundSignalHidden.woken`), and
   the bind has a real projection frame
   (`schedContextBind_preserves_projection`).
-- The checked kernel lends a context heading a reply stack only where the
-  stack's top lender flows to the thread it is lent to
-  (`maybeDonateSchedContextFlowing`, `donationLenderFlows`), otherwise it
-  donates nothing (seL4's "do nothing" branch; D26). The check runs on the
-  checked signal, the wait and receive completions, the declassifying signal
-  and the interrupt entry, which now reads the labelling context.
-- The head reply that check reads is in the signal's and the wait's object
-  footprints, read-only (`signalDonationHeadReply?`,
-  `waitDonationHeadReply?`). The wake and the consumption move none of what
-  the check reads (`DonationHeadFrame`), so the reply named on the entry state
-  is the reply read (`sendSignal_donationHeadReply_locked`,
-  `completeSignal_donationHeadReply_locked`). The interrupt entry's footprint
-  and the seam's unified footprints already hold the table write lock
-  (`declaredLockSetForInterrupt_objStore`,
-  `mem_unifiedLockSetForSyscall_objStore`). The declassifying signal declares
-  no footprint.
+- The checked kernel lends a notification's context only to a thread its
+  label flows to (`maybeDonateSchedContextFlowing`, `donationContextFlows`;
+  D27), otherwise it donates nothing (seL4's "do nothing" branch). The check
+  reads static labels and the notification's context word, and no reply
+  object (`donationContextFlows_congr`). It runs on the checked signal, the
+  wait and receive completions, the declassifying signal and the interrupt
+  entry, which reads the labelling context. Where every lender on a context's
+  stack flows to its label (`contextLendersFlow`), every lender flows to the
+  thread the context is lent to (`donationContextFlows_lenders`).
 
 ### Label 36 and the unbind of a donated holder (SX8.3, D22)
 - `SchedContext_UnbindObject` (`SyscallId` 48, label 36): a thread or a

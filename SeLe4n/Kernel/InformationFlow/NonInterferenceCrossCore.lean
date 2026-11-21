@@ -1104,9 +1104,9 @@ theorem declassifiedSignalDispatch_crossCoreNonInterference
 /-- WS-SX SX8.2 (**the live `.notificationSignal` arm**): the checked seL4-MCS `sendSignal`
 (`sendSignalOnCoreFlowing`) writes no core outside its write set: the wake's
 (`notificationSignalBoundOnCore_confinedToCores`) and the donation's, the home
-core of the thread it woke where seL4's guard and the lender flow check hold
+core of the thread it woke where seL4's guard and the context-label check hold
 (`maybeDonateSchedContext_confinedToCores`), read on the entry state.  Where the
-lender flow check refuses, nothing is donated and the write set
+context-label check refuses, nothing is donated and the write set
 over-approximates the wake's. -/
 theorem sendSignalOnCoreFlowing_confinedToCores (fctx : LabelingContext)
     (notificationId : SeLe4n.ObjId)
@@ -1484,7 +1484,7 @@ inductive CrossCoreTransition where
   | notificationSignalBound
   /-- WS-SX SX8.2 — the **live** `.signal` arm: seL4-MCS `sendSignal`, the
   bound-aware wake then the donation of the notification's context to the
-  thread it woke, under the lender flow check (`sendSignalOnCoreFlowing`). -/
+  thread it woke, under the context-label check (`sendSignalOnCoreFlowing`). -/
   | sendSignalDispatch
   /-- SM6.B — the notification wait: the wait alone, a below-API leg of the
   live `.wait` arm since WS-SX SX8.2. -/
@@ -1739,7 +1739,7 @@ One entry is a different case and is *not* re-pointed, because its live arm
 calls the `…OnCore` transition **directly**:
 `notificationSignalBoundCrossCoreDispatchChecked` runs `sendSignalOnCoreFlowing
 ctx … executingCore st` once its flow gates pass (seL4-MCS `sendSignal`: the
-bound-aware wake, then the donation under the lender flow check, WS-SX SX8.2). For it the `…OnCore` theorem is a statement about the
+bound-aware wake, then the donation under the context-label check, WS-SX SX8.2). For it the `…OnCore` theorem is a statement about the
 live arm already; the bound-aware wake on its own (`.notificationSignalBound`) is
 a below-API leg.  The `.wait` arm runs `completeSignalArm` — the checked wait,
 then seL4-MCS's `completeSignal` donation or `receiveSignal`'s

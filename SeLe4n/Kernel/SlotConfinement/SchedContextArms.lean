@@ -12,7 +12,7 @@ import SeLe4n.Kernel.SchedContext.SchedContextFootprint
 import SeLe4n.Kernel.Scheduler.Operations.AffinityFootprint
 import SeLe4n.Kernel.SchedContext.SchedControlFootprint
 import SeLe4n.Kernel.SchedContext.NotificationDonation
-import SeLe4n.Kernel.SchedContext.NotificationDonationLenderFlow
+import SeLe4n.Kernel.SchedContext.NotificationDonationContextLabel
 
 /-!
 # Per-core slot confinement — the live SchedContext arms

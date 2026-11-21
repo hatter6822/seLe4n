@@ -283,7 +283,7 @@ theorem maybeDonateSchedContext_coversWrites (S : LockSet) (st : SystemState)
         (fun h => hd (h ▸ hHome.2)) hA
 
 /-- **The checked donation covers its writes** under the donation's footprint:
-it is the donation or nothing.  Where the lender flow check refuses, the
+it is the donation or nothing.  Where the context-label check refuses, the
 footprint's donation cores are an over-approximation this covers. -/
 theorem maybeDonateSchedContextFlowing_coversWrites {ctx : LabelingContext} (S : LockSet)
     (st : SystemState) (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)

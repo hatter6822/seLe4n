@@ -28,8 +28,8 @@ CPU interface and wrote its end of interrupt.  The entry runs seL4's
 line masked until the handler acknowledges it, or a line no handler is bound
 to masked.  The signal is the checked kernel's (`sendSignalOnCoreFlowing`), read
 under the installed labelling context (`Platform.FFI.getKernelLabelingContext`,
-as the syscall and fault entries read it): its donation lends a context heading
-another thread's reply stack only to a thread the stack's top lender flows to.  The mask reaches the distributor as the physical write the step
+as the syscall and fault entries read it): its donation lends the
+notification's context only to a thread the context's label flows to.  The mask reaches the distributor as the physical write the step
 records (`PhysicalWrite.setInterruptMask`), performed after the commit as
 every entry performs the writes its step owes.  A woken thread queued on any
 core wakes that core: the raised flags are fired as every entry fires them.
@@ -141,8 +141,8 @@ declares**: the wake's coverage
 (`schedLockSet_notificationSignalBoundOnCore_coversWrites`), then the donation
 to the woken thread, on the cores the footprint read off the entry state
 (`signalWakeDonationCores`), which the wake keeps
-(`notificationSignalBoundOnCore_signalDonationCores_eq`).  Where the lender flow
-check refuses, nothing is donated and the wake's coverage is the signal's; the
+(`notificationSignalBoundOnCore_signalDonationCores_eq`).  Where the
+context-label check refuses, nothing is donated and the wake's coverage is the signal's; the
 footprint still names the woken thread's home core the donation would have
 written: an over-approximation, covered by this proof. -/
 theorem schedLockSet_sendSignalOnCoreFlowing_coversWrites (ctx : LabelingContext)

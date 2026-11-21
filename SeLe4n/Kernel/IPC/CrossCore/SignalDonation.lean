@@ -8,7 +8,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.CrossCore.NotificationBind
-import SeLe4n.Kernel.SchedContext.NotificationDonationLenderFlow
+import SeLe4n.Kernel.SchedContext.NotificationDonationContextLabel
 
 /-!
 # seL4's `sendSignal`, its donations included
@@ -125,13 +125,13 @@ theorem sendSignalOnCore_fst_of_error {n : SeLe4n.ObjId} {badge : SeLe4n.Badge} 
     (sendSignalOnCore n badge c st).1 = (notificationSignalBoundOnCore n badge c st).1 := by
   rw [sendSignalOnCore_fst, h]
 
-/-! ### The checked signal: the donation under the lender flow check
+/-! ### The checked signal: the donation under the context-label check
 
 The checked kernel's `sendSignal` (`sendSignalOnCoreFlowing`): the same wake,
-then the donation to the thread it woke under the lender flow check
-(`maybeDonateSchedContextFlowing`), so a context heading another thread's reply
-stack is lent only to a thread its top lender flows to, and otherwise the wake
-alone is made, seL4's "do nothing" branch of the donation. -/
+then the donation to the thread it woke under the context-label check
+(`maybeDonateSchedContextFlowing`), so the notification's context is lent only
+to a thread its label flows to, and otherwise the wake alone is made, seL4's
+"do nothing" branch of the donation. -/
 
 /-- **The checked donation after a signal.** -/
 def donateToSignalledFlowing (ctx : LabelingContext) (st st' : SystemState) (n : SeLe4n.ObjId) :

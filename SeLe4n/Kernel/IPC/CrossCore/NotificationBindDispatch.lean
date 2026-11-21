@@ -53,7 +53,7 @@ Without the receiver gate a policy permitting a high signaler → high notificat
 but denying flow to a *low* bound TCB would be bypassed (codex review #3): the badge
 would leak to the low receiver.  Fail-closed with `.flowDenied` on either denial.
 A passed signal is the checked `sendSignal` (`sendSignalOnCoreFlowing`): the
-donation to the woken thread runs under the lender flow check. -/
+donation to the woken thread runs under the context-label check. -/
 @[inline] def notificationSignalBoundCrossCoreDispatchChecked (ctx : LabelingContext)
     (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
     (executingCore : CoreId)

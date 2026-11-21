@@ -949,7 +949,7 @@ at the core the syscall trapped on (threaded from the entry point), exactly as
 SM6.B's `notificationSignalBoundCrossCoreDispatch` does.
 
 WS-SX SX8.2: seL4-MCS `sendSignal` then donates the notification's context to
-the thread the signal woke, under the checked kernel's lender flow check read
+the thread the signal woke, under the checked kernel's context-label check read
 through this context (`donateToSignalledFlowingGeneric`, the donation the
 checked `sendSignalOnCoreFlowing` makes): the declassification downgrades the
 signal's own hops, never the lending of another thread's reply stack.  It runs once the audit record is committed, so a
