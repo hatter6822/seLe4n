@@ -1667,9 +1667,10 @@ const fn frame_words(trip: &RoundTrip) -> (u64, u64) {
 /// The code past the last operation (`SyscallId.encodingBound`): the one the
 /// kernel's selection answers when the label names no operation of the invoked
 /// capability's type, refused `IllegalOperation` (the model's
-/// `invalidSyscallNumber`).
-#[cfg(feature = "hw_target")]
-const NO_OPERATION: u64 = 48;
+/// `invalidSyscallNumber`).  Held to `sele4n_types::SyscallId::ENCODING_BOUND`
+/// by `no_operation_is_the_encoding_bound`.
+#[cfg(any(feature = "hw_target", test))]
+const NO_OPERATION: u64 = 49;
 
 /// `trip`, trapping as `syscall` ([`RoundTrip::issued`]).
 #[cfg(feature = "hw_target")]
@@ -17819,6 +17820,16 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The code the selection answers for a label no operation takes is the
+    /// one past the last operation, `SyscallId::ENCODING_BOUND`: a hand copy
+    /// left at 48 when label 36 took that number was read by the route
+    /// coverage as `SchedContext_UnbindObject`.
+    #[test]
+    fn no_operation_is_the_encoding_bound() {
+        assert_eq!(NO_OPERATION, sele4n_types::SyscallId::ENCODING_BOUND);
+        assert!(sele4n_types::SyscallId::from_u64(NO_OPERATION).is_none());
     }
 
     /// The exercisers' fan-out limit is the ABI's.

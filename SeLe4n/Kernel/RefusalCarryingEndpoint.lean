@@ -2580,8 +2580,20 @@ rewrite is held across them. -/
     securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
     !cFault && replyUnheldPopsInPlace st c rid
 
+/-- Whether a reply to a caller recording no server, its reply object linked
+to nothing, may answer it in place (`replyUnlinkedInPlace`), behind the flow
+gate: at most four words, the caller unfaulted.  WS-SX SX8.3: the shape
+SchedContext_Unbind of a lent context leaves once the server is finalised. -/
+@[noinline] def replyUnlinkedAdmits (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) (tid : SeLe4n.ThreadId)
+    (c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (cFault : Bool) (st : SystemState) : Bool :=
+  decide (Architecture.regMessageLength layout len ≤ 4) &&
+    securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
+    !cFault && replyUnlinkedInPlace st c rid
+
 /-- The no-server reply's arm: the checks of `replyUnheldAdmits`, then the
-in-place writes or the general arm. -/
+in-place writes; else, for a reply object linked to nothing, the checks of
+`replyUnlinkedAdmits` and its in-place writes; or the general arm. -/
 @[inline] def endpointReplyUnheldArmR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
@@ -2590,6 +2602,8 @@ in-place writes or the general arm. -/
     if replyUnheldAdmits ctx layout len tid c rid cFault st then
       .ok ((), performReplyUnheldDelivered st c rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) layout rf len cap.badgeWord cap.badged)
+    else if replyUnlinkedAdmits ctx layout len tid c rid cFault st then
+      .ok ((), performReplyUnlinkedDelivered st c rid layout rf len cap.badgeWord cap.badged)
     else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid executingCore cap st
 
 /-- Whether a reply to a faulted caller may answer it in place on a donated
@@ -3083,7 +3097,23 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext)
                   _ rfl (by simp only [maxMessageRegisters]; omega) hSz4
                   ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hP hNoF
                   (replyTransferInert_of_W hI) hFlow]
-              · rfl
+              · split
+                · next hG =>
+                  unfold replyUnlinkedAdmits at hG
+                  simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hG
+                  obtain ⟨⟨⟨hSz4, hFlow⟩, hNoF⟩, hP⟩ := hG
+                  have hAns : replyAnsweredCaller? st rid0 = some c := by
+                    rw [replyAnsweredCaller?_of_getReply st rid0 rp0 hR0, hC]
+                  simp only [endpointReplyCheckedArmGeneralR, hTgt, hAns, hFlow, ↓reduceIte]
+                  rw [replyTransferChecked_unlinked_inPlace ctx st tid c ct ep rid
+                    { length := len, extraCaps := extraCaps, label := label }
+                    (Architecture.regMessageRegs layout rf) layout rf len cap.badgeWord cap.badged
+                    executingCore
+                    { registers := extractMessageRegisters (Architecture.regMessageRegs layout rf) { length := len, extraCaps := extraCaps, label := label }, badge := cap.badge }
+                    _ rfl hSz4
+                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hP hNoF
+                    (replyTransferInert_of_W hI) hFlow]
+                · rfl
             · rfl
           · rfl
         · rfl
