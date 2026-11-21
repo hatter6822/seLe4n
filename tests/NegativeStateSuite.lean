@@ -2653,8 +2653,10 @@ def runWSJ1DecodeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 44)
   let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (47 = irqHandlerClear)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 47)
-  expectErr "J1 decodeSyscallCode invalid (48)"
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (48 = schedContextUnbindObject)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 48)
+  expectErr "J1 decodeSyscallCode invalid (49)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 49)
     .invalidSyscallNumber
 
   -- J1-NEG-05: decodeSyscallCode with large invalid number → invalidSyscallNumber
