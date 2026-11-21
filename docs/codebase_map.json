@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "sel4-notification-donation",
-      "commit_sha": "9e1d74af859e5e66c87f663a266fb771e6bf9668",
-      "tree_sha": "6428f4ac09c81a67fc62997924e3847d433136e9",
-      "committed_at_utc": "2026-11-21T05:32:04+00:00"
+      "commit_sha": "055ab1009ce8abbad375f9d66a7db050bc2d05dc",
+      "tree_sha": "99bb576beed8a741d39126e46aaa5283dd6f3439",
+      "committed_at_utc": "2026-11-21T07:51:48+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "542a4049c370344770b936a9ba6966573212ca11cb1f2bccaac7275f5ad8cac7"
+    "source_digest": "128da7bb9b8a0cec20f38184a6847bbe94a41029bf5577616e85676e6745177c"
   },
   "summary": {
     "module_count": 726,
-    "declaration_count": 38214
+    "declaration_count": 38224
   },
   "readme_sync": {
     "version": "0.37.35",
     "lean_toolchain": "v4.28.0",
     "production_files": 655,
-    "production_loc": 663097,
+    "production_loc": 663466,
     "test_files": 71,
     "test_loc": 92061,
-    "proved_theorem_lemma_decls": 25286,
+    "proved_theorem_lemma_decls": 25291,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -123890,7 +123890,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.EndpointReplyUnheldInPlace",
       "path": "SeLe4n/Kernel/IPC/CrossCore/EndpointReplyUnheldInPlace.lean",
-      "declaration_count": 17,
+      "declaration_count": 18,
       "declarations": [
         {
           "kind": "theorem",
@@ -124325,10 +124325,46 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "replyDispatch_unlinked_inPlace",
+          "full_name": "SeLe4n.Kernel.replyDispatch_unlinked_inPlace",
+          "line": 663,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Reply",
+            "SeLe4n.Kernel.Reply.consumed",
+            "SeLe4n.Kernel.answeredReplyObject?",
+            "SeLe4n.Kernel.applyReplyDonationOnCore",
+            "SeLe4n.Kernel.endpointReplyCrossCoreDispatch",
+            "SeLe4n.Kernel.popUnheldReplyHead_of_no_head",
+            "SeLe4n.Kernel.recordedReplyServer?",
+            "SeLe4n.Kernel.replyFrameHeadContext?",
+            "SeLe4n.Kernel.replyFrameHeadHolder?_of_no_head",
+            "SeLe4n.Kernel.replyOnCore_eq_storeLeg",
+            "SeLe4n.Kernel.replyUnlinkedInPlace",
+            "SeLe4n.Kernel.storeReplyLeg",
+            "SeLe4n.Model.IpcMessage",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getReply?_eq_some_iff",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.SystemState.unlinkReplyWaiterOpt",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.replyObject",
+            "SeLe4n.Model.maxMessageRegisters",
+            "SeLe4n.ObjId",
+            "SeLe4n.ReplyId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toValid?_isSome_iff",
+            "SeLe4n.ThreadId.toValid?_some_val_eq"
+          ]
+        },
+        {
           "kind": "def",
           "name": "performReplyUnlinkedDelivered",
           "full_name": "SeLe4n.Kernel.performReplyUnlinkedDelivered",
-          "line": 662,
+          "line": 708,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Badge.opt",
@@ -124347,7 +124383,7 @@
           "kind": "theorem",
           "name": "replyTransferChecked_unlinked_inPlace",
           "full_name": "SeLe4n.Kernel.replyTransferChecked_unlinked_inPlace",
-          "line": 674,
+          "line": 720,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Badge.opt",
@@ -124358,18 +124394,9 @@
             "SeLe4n.Kernel.Architecture.returnFrameOfMessage_regMessageBody",
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.Reply",
-            "SeLe4n.Kernel.Reply.consumed",
-            "SeLe4n.Kernel.answeredReplyObject?",
-            "SeLe4n.Kernel.applyReplyDonationOnCore",
-            "SeLe4n.Kernel.endpointReplyCrossCoreDispatch",
             "SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked_flow_allowed",
             "SeLe4n.Kernel.performReplyUnlinkedDelivered",
-            "SeLe4n.Kernel.popUnheldReplyHead_of_no_head",
-            "SeLe4n.Kernel.recordedReplyServer?",
-            "SeLe4n.Kernel.replyFrameHeadContext?",
-            "SeLe4n.Kernel.replyFrameHeadHolder?_of_no_head",
-            "SeLe4n.Kernel.replyOnCore_eq_storeLeg",
+            "SeLe4n.Kernel.replyDispatch_unlinked_inPlace",
             "SeLe4n.Kernel.replyTransferCaps_of_inert",
             "SeLe4n.Kernel.replyTransferInert",
             "SeLe4n.Kernel.replyTransferOnCoreChecked",
@@ -124378,7 +124405,6 @@
             "SeLe4n.Kernel.replyWakesInPlace_noResizeDue",
             "SeLe4n.Kernel.securityFlowsTo",
             "SeLe4n.Kernel.stageDeliveredMessage_holdMessage",
-            "SeLe4n.Kernel.storeReplyLeg",
             "SeLe4n.Kernel.storeReplyLegReady_noResizeDue",
             "SeLe4n.Kernel.storeReplyLeg_eq_hold",
             "SeLe4n.Kernel.threadHasPendingFault",
@@ -124386,10 +124412,8 @@
             "SeLe4n.Model.IpcMessage",
             "SeLe4n.Model.MessageInfo",
             "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.getReply?_eq_some_iff",
             "SeLe4n.Model.SystemState.getTcb?",
             "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
-            "SeLe4n.Model.SystemState.unlinkReplyWaiterOpt",
             "SeLe4n.Model.TCB",
             "SeLe4n.Model.TCB.faultWords",
             "SeLe4n.Model.TCB.ipcState",
@@ -124403,9 +124427,7 @@
             "SeLe4n.RegisterFile",
             "SeLe4n.ReplyId",
             "SeLe4n.SyscallRegisterLayout",
-            "SeLe4n.ThreadId",
-            "SeLe4n.ThreadId.toValid?_isSome_iff",
-            "SeLe4n.ThreadId.toValid?_some_val_eq"
+            "SeLe4n.ThreadId"
           ]
         }
       ]
@@ -126570,7 +126592,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.FaultAnswerInPlace",
       "path": "SeLe4n/Kernel/IPC/CrossCore/FaultAnswerInPlace.lean",
-      "declaration_count": 17,
+      "declaration_count": 19,
       "declarations": [
         {
           "kind": "theorem",
@@ -127127,6 +127149,62 @@
             "SeLe4n.ThreadId",
             "SeLe4n.ThreadId.toValid?_isSome_iff",
             "SeLe4n.ThreadId.toValid?_some_val_eq"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "performFaultReplyUnlinkedAnswer",
+          "full_name": "SeLe4n.Kernel.performFaultReplyUnlinkedAnswer",
+          "line": 578,
+          "called": [
+            "SeLe4n.Kernel.performFaultAnswer",
+            "SeLe4n.Kernel.storeFaultReplyLeg",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ReplyId",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "faultReplyTransferChecked_unlinked_inPlace",
+          "full_name": "SeLe4n.Kernel.faultReplyTransferChecked_unlinked_inPlace",
+          "line": 588,
+          "called": [
+            "SeLe4n.Kernel.Architecture.regMessageRegs",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.faultReplyApplyOnCore_decode_eq_performFaultAnswer",
+            "SeLe4n.Kernel.faultReplyOnCore",
+            "SeLe4n.Kernel.performFaultReplyUnlinkedAnswer",
+            "SeLe4n.Kernel.replyDispatch_unlinked_inPlace",
+            "SeLe4n.Kernel.replyTransferOnCoreChecked",
+            "SeLe4n.Kernel.replyUnlinkedInPlace",
+            "SeLe4n.Kernel.replyUnlinkedInPlace_eq_wakes",
+            "SeLe4n.Kernel.replyWakesInPlace_noResizeDue",
+            "SeLe4n.Kernel.storeFaultReplyLeg_eq",
+            "SeLe4n.Kernel.storeReplyLeg_eq_hold",
+            "SeLe4n.Kernel.threadHasPendingFault",
+            "SeLe4n.Kernel.wordAt_regMessageRegs",
+            "SeLe4n.Model.IpcMessage",
+            "SeLe4n.Model.IpcMessage.empty",
+            "SeLe4n.Model.MessageInfo",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.faultWords",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.pendingFault",
+            "SeLe4n.Model.TCB.pendingFault_isSome",
+            "SeLe4n.Model.TCB.replyObject",
+            "SeLe4n.Model.ThreadFaultWords.isFault",
+            "SeLe4n.ObjId",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ReplyId",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId"
           ]
         }
       ]
@@ -131226,7 +131304,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.LongFaultAnswerInPlace",
       "path": "SeLe4n/Kernel/IPC/CrossCore/LongFaultAnswerInPlace.lean",
-      "declaration_count": 24,
+      "declaration_count": 26,
       "declarations": [
         {
           "kind": "def",
@@ -131641,10 +131719,67 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "performFaultReplyUnlinkedAnswerLong",
+          "full_name": "SeLe4n.Kernel.performFaultReplyUnlinkedAnswerLong",
+          "line": 445,
+          "called": [
+            "SeLe4n.Kernel.performFaultAnswerLong",
+            "SeLe4n.Kernel.storeFaultReplyLeg",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ReplyId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "faultReplyTransferChecked_unlinked_inPlaceLong",
+          "full_name": "SeLe4n.Kernel.faultReplyTransferChecked_unlinked_inPlaceLong",
+          "line": 455,
+          "called": [
+            "SeLe4n.Kernel.Architecture.regMessageRegs",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.faultReplyApplyOnCore_decode_eq_performFaultAnswerLong",
+            "SeLe4n.Kernel.faultReplyOnCore",
+            "SeLe4n.Kernel.ipcBufferReadsAgree_storeFaultReplyLeg",
+            "SeLe4n.Kernel.ipcWordReadsAgree",
+            "SeLe4n.Kernel.overflowRegsFrom",
+            "SeLe4n.Kernel.performFaultReplyUnlinkedAnswerLong",
+            "SeLe4n.Kernel.replyDispatch_unlinked_inPlace",
+            "SeLe4n.Kernel.replyTransferOnCoreChecked",
+            "SeLe4n.Kernel.replyUnlinkedInPlace",
+            "SeLe4n.Kernel.replyUnlinkedInPlace_eq_wakes",
+            "SeLe4n.Kernel.replyWakesInPlace_noResizeDue",
+            "SeLe4n.Kernel.replyWordOr_longSendRegs",
+            "SeLe4n.Kernel.storeFaultReplyLeg_eq",
+            "SeLe4n.Kernel.storeReplyLeg",
+            "SeLe4n.Kernel.threadHasPendingFault",
+            "SeLe4n.Model.IpcMessage",
+            "SeLe4n.Model.IpcMessage.empty",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.faultWords",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.pendingFault",
+            "SeLe4n.Model.TCB.pendingFault_isSome",
+            "SeLe4n.Model.TCB.replyObject",
+            "SeLe4n.Model.ThreadFaultWords.isFault",
+            "SeLe4n.ObjId",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ReplyId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.arm64DefaultLayout"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "performFaultAnswerLong_ipcStateAt",
           "full_name": "SeLe4n.Kernel.performFaultAnswerLong_ipcStateAt",
-          "line": 444,
+          "line": 499,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
             "SeLe4n.Kernel.applyFaultRestart",
@@ -131670,7 +131805,7 @@
           "kind": "def",
           "name": "performReplyRecvFaultAnswerLong",
           "full_name": "SeLe4n.Kernel.performReplyRecvFaultAnswerLong",
-          "line": 470,
+          "line": 525,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore",
@@ -131690,7 +131825,7 @@
           "kind": "theorem",
           "name": "replyRecvTransferOnCore_fault_blocks_inPlaceLong",
           "full_name": "SeLe4n.Kernel.replyRecvTransferOnCore_fault_blocks_inPlaceLong",
-          "line": 485,
+          "line": 540,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
@@ -131761,7 +131896,7 @@
           "kind": "def",
           "name": "performReplyRecvDonatedFaultAnswerLong",
           "full_name": "SeLe4n.Kernel.performReplyRecvDonatedFaultAnswerLong",
-          "line": 565,
+          "line": 620,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore",
@@ -131784,7 +131919,7 @@
           "kind": "theorem",
           "name": "replyRecvTransferOnCore_fault_donated_inPlaceLong",
           "full_name": "SeLe4n.Kernel.replyRecvTransferOnCore_fault_donated_inPlaceLong",
-          "line": 580,
+          "line": 635,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
@@ -131863,7 +131998,7 @@
           "kind": "def",
           "name": "performReplyRecvUnheldFaultAnswerLong",
           "full_name": "SeLe4n.Kernel.performReplyRecvUnheldFaultAnswerLong",
-          "line": 671,
+          "line": 726,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore",
@@ -131886,7 +132021,7 @@
           "kind": "theorem",
           "name": "replyRecvTransferOnCore_fault_unheld_inPlaceLong",
           "full_name": "SeLe4n.Kernel.replyRecvTransferOnCore_fault_unheld_inPlaceLong",
-          "line": 686,
+          "line": 741,
           "called": [
             "SeLe4n.Badge",
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
@@ -138848,7 +138983,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.ReplyCapsLongDelivered",
       "path": "SeLe4n/Kernel/IPC/CrossCore/ReplyCapsLongDelivered.lean",
-      "declaration_count": 9,
+      "declaration_count": 11,
       "declarations": [
         {
           "kind": "abbrev",
@@ -139155,13 +139290,83 @@
             "SeLe4n.ThreadId.toValid?_some_val_eq",
             "SeLe4n.arm64DefaultLayout"
           ]
+        },
+        {
+          "kind": "def",
+          "name": "performReplyUnlinkedCapsDeliveredLong",
+          "full_name": "SeLe4n.Kernel.performReplyUnlinkedCapsDeliveredLong",
+          "line": 312,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Kernel.replyCapsLongTail",
+            "SeLe4n.Kernel.storeReplyLegReady",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ReplyId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replyTransferChecked_unlinkedCapsLong_inPlace",
+          "full_name": "SeLe4n.Kernel.replyTransferChecked_unlinkedCapsLong_inPlace",
+          "line": 323,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.capTargetOf",
+            "SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked_flow_allowed",
+            "SeLe4n.Kernel.ipcBufferReadsAgree_storeReplyLegReady",
+            "SeLe4n.Kernel.longReplyMessage",
+            "SeLe4n.Kernel.performReplyUnlinkedCapsDeliveredLong",
+            "SeLe4n.Kernel.receiverCapTarget?",
+            "SeLe4n.Kernel.replyCapRequest_of_routedReplyLong",
+            "SeLe4n.Kernel.replyCapsLongTail",
+            "SeLe4n.Kernel.replyDispatch_unlinked_inPlace",
+            "SeLe4n.Kernel.replyHeldCapsLong_eq_delivered",
+            "SeLe4n.Kernel.replyTransferCaps",
+            "SeLe4n.Kernel.replyTransferOnCoreChecked",
+            "SeLe4n.Kernel.replyUnlinkedInPlace",
+            "SeLe4n.Kernel.replyUnlinkedInPlace_eq_wakes",
+            "SeLe4n.Kernel.replyWakesInPlace_noResizeDue",
+            "SeLe4n.Kernel.routedExtraCaps",
+            "SeLe4n.Kernel.routedReplyLong_length",
+            "SeLe4n.Kernel.securityFlowsTo",
+            "SeLe4n.Kernel.storeReplyLegReady_noResizeDue",
+            "SeLe4n.Kernel.storeReplyLeg_eq_hold",
+            "SeLe4n.Kernel.threadHasPendingFault",
+            "SeLe4n.Model.MessageInfo",
+            "SeLe4n.Model.SyscallId",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.faultWords",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.pendingFault",
+            "SeLe4n.Model.TCB.pendingFault_eq_none_of_not_isFault",
+            "SeLe4n.Model.TCB.replyObject",
+            "SeLe4n.Model.ThreadFaultWords.isFault",
+            "SeLe4n.ObjId",
+            "SeLe4n.RegValue",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ReplyId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.arm64DefaultLayout"
+          ]
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.ReplyCapsReturnDelivered",
       "path": "SeLe4n/Kernel/IPC/CrossCore/ReplyCapsReturnDelivered.lean",
-      "declaration_count": 18,
+      "declaration_count": 20,
       "declarations": [
         {
           "kind": "theorem",
@@ -139597,10 +139802,86 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "performReplyUnlinkedCapsDelivered",
+          "full_name": "SeLe4n.Kernel.performReplyUnlinkedCapsDelivered",
+          "line": 459,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Kernel.capStepsApply",
+            "SeLe4n.Kernel.capStepsInfo",
+            "SeLe4n.Kernel.capTransferK",
+            "SeLe4n.Kernel.deliverCapsFrame",
+            "SeLe4n.Kernel.storeReplyLegReady",
+            "SeLe4n.Model.Capability",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ReplyId",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId",
+            "SeLe4n.VAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replyTransferChecked_unlinkedCaps_inPlace",
+          "full_name": "SeLe4n.Kernel.replyTransferChecked_unlinkedCaps_inPlace",
+          "line": 478,
+          "called": [
+            "SeLe4n.Badge",
+            "SeLe4n.Badge.opt",
+            "SeLe4n.CPtr",
+            "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscallOf",
+            "SeLe4n.Kernel.Architecture.regMessageBody",
+            "SeLe4n.Kernel.Architecture.regMessageBody_size",
+            "SeLe4n.Kernel.Architecture.regMessageLength",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.capTargetOf",
+            "SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked_flow_allowed",
+            "SeLe4n.Kernel.ipcBufferReadsAgree_storeReplyLegReady",
+            "SeLe4n.Kernel.performReplyUnlinkedCapsDelivered",
+            "SeLe4n.Kernel.receiverCapTarget?",
+            "SeLe4n.Kernel.replyCapRequest_of_routedReply",
+            "SeLe4n.Kernel.replyDispatch_unlinked_inPlace",
+            "SeLe4n.Kernel.replyHeldCaps_eq_delivered",
+            "SeLe4n.Kernel.replyTransferCaps",
+            "SeLe4n.Kernel.replyTransferOnCoreChecked",
+            "SeLe4n.Kernel.replyUnlinkedInPlace",
+            "SeLe4n.Kernel.replyUnlinkedInPlace_eq_wakes",
+            "SeLe4n.Kernel.replyWakesInPlace_noResizeDue",
+            "SeLe4n.Kernel.routedExtraCaps",
+            "SeLe4n.Kernel.securityFlowsTo",
+            "SeLe4n.Kernel.storeReplyLegReady_noResizeDue",
+            "SeLe4n.Kernel.storeReplyLeg_eq_hold",
+            "SeLe4n.Kernel.threadHasPendingFault",
+            "SeLe4n.Model.IpcMessage",
+            "SeLe4n.Model.MessageInfo",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.faultWords",
+            "SeLe4n.Model.TCB.ipcState",
+            "SeLe4n.Model.TCB.pendingFault",
+            "SeLe4n.Model.TCB.pendingFault_eq_none_of_not_isFault",
+            "SeLe4n.Model.TCB.replyObject",
+            "SeLe4n.Model.ThreadFaultWords.isFault",
+            "SeLe4n.Model.maxMessageRegisters",
+            "SeLe4n.ObjId",
+            "SeLe4n.RegValue",
+            "SeLe4n.RegisterFile",
+            "SeLe4n.ReplyId",
+            "SeLe4n.SyscallRegisterLayout",
+            "SeLe4n.ThreadId",
+            "SeLe4n.arm64DefaultLayout"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "routedExtraCaps_eq_of_routedReplyLong",
           "full_name": "SeLe4n.Kernel.routedExtraCaps_eq_of_routedReplyLong",
-          "line": 457,
+          "line": 532,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord",
@@ -139621,7 +139902,7 @@
           "kind": "theorem",
           "name": "routedExtraCaps_eq_of_routedReplyRecvLong",
           "full_name": "SeLe4n.Kernel.routedExtraCaps_eq_of_routedReplyRecvLong",
-          "line": 489,
+          "line": 564,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfoWord",
@@ -139642,7 +139923,7 @@
           "kind": "theorem",
           "name": "replyCapRequest_of_routedReplyLong",
           "full_name": "SeLe4n.Kernel.replyCapRequest_of_routedReplyLong",
-          "line": 522,
+          "line": 597,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
@@ -343517,7 +343798,7 @@
     {
       "module": "SeLe4n.Kernel.RefusalCarryingEndpoint",
       "path": "SeLe4n/Kernel/RefusalCarryingEndpoint.lean",
-      "declaration_count": 149,
+      "declaration_count": 150,
       "declarations": [
         {
           "kind": "theorem",
@@ -345772,17 +346053,33 @@
         },
         {
           "kind": "def",
+          "name": "replyUnlinkedFaultAdmits",
+          "full_name": "SeLe4n.Kernel.replyUnlinkedFaultAdmits",
+          "line": 2642,
+          "called": [
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.replyUnlinkedInPlace",
+            "SeLe4n.Kernel.securityFlowsTo",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ReplyId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "endpointReplyUnheldFaultArmR",
           "full_name": "SeLe4n.Kernel.endpointReplyUnheldFaultArmR",
-          "line": 2643,
+          "line": 2653,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.determineTargetCore",
             "SeLe4n.Kernel.endpointReplyCheckedArmRegsR",
             "SeLe4n.Kernel.performFaultReplyUnheldAnswer",
+            "SeLe4n.Kernel.performFaultReplyUnlinkedAnswer",
             "SeLe4n.Kernel.replyHeadContextCode",
             "SeLe4n.Kernel.replyUnheldFaultAdmits",
+            "SeLe4n.Kernel.replyUnlinkedFaultAdmits",
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.RefusalCarrying",
             "SeLe4n.RegisterFile",
@@ -345795,7 +346092,7 @@
           "kind": "def",
           "name": "endpointReplyCapsArmR",
           "full_name": "SeLe4n.Kernel.endpointReplyCapsArmR",
-          "line": 2661,
+          "line": 2674,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscallOf",
             "SeLe4n.Kernel.Architecture.regMessageLength",
@@ -345819,7 +346116,7 @@
           "kind": "theorem",
           "name": "endpointReplyCapsArmR_eq",
           "full_name": "SeLe4n.Kernel.endpointReplyCapsArmR_eq",
-          "line": 2685,
+          "line": 2698,
           "called": [
             "SeLe4n.Badge.opt",
             "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters",
@@ -345856,7 +346153,7 @@
           "kind": "def",
           "name": "endpointReplyDonatedCapsArmR",
           "full_name": "SeLe4n.Kernel.endpointReplyDonatedCapsArmR",
-          "line": 2734,
+          "line": 2747,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscallOf",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -345882,7 +346179,7 @@
           "kind": "theorem",
           "name": "endpointReplyDonatedCapsArmR_eq",
           "full_name": "SeLe4n.Kernel.endpointReplyDonatedCapsArmR_eq",
-          "line": 2756,
+          "line": 2769,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters",
             "SeLe4n.Kernel.Architecture.regMessageRegs",
@@ -345916,7 +346213,7 @@
           "kind": "def",
           "name": "endpointReplyUnheldCapsArmR",
           "full_name": "SeLe4n.Kernel.endpointReplyUnheldCapsArmR",
-          "line": 2803,
+          "line": 2819,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscallOf",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -345924,8 +346221,10 @@
             "SeLe4n.Kernel.determineTargetCore",
             "SeLe4n.Kernel.endpointReplyCheckedArmRegsR",
             "SeLe4n.Kernel.performReplyUnheldCapsDelivered",
+            "SeLe4n.Kernel.performReplyUnlinkedCapsDelivered",
             "SeLe4n.Kernel.replyHeadContextCode",
             "SeLe4n.Kernel.replyUnheldAdmits",
+            "SeLe4n.Kernel.replyUnlinkedAdmits",
             "SeLe4n.Kernel.routedExtraCaps",
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.RefusalCarrying",
@@ -345942,7 +346241,7 @@
           "kind": "theorem",
           "name": "endpointReplyUnheldCapsArmR_eq",
           "full_name": "SeLe4n.Kernel.endpointReplyUnheldCapsArmR_eq",
-          "line": 2825,
+          "line": 2854,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters",
             "SeLe4n.Kernel.Architecture.regMessageRegs",
@@ -345952,8 +346251,10 @@
             "SeLe4n.Kernel.endpointReplyUnheldCapsArmR",
             "SeLe4n.Kernel.replyAnsweredCaller?",
             "SeLe4n.Kernel.replyTransferChecked_unheldCaps_inPlace",
+            "SeLe4n.Kernel.replyTransferChecked_unlinkedCaps_inPlace",
             "SeLe4n.Kernel.replyTransferInertW",
             "SeLe4n.Kernel.replyUnheldAdmits",
+            "SeLe4n.Kernel.replyUnlinkedAdmits",
             "SeLe4n.Model.AccessRightSet.mem",
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.Capability.badge",
@@ -345976,7 +346277,7 @@
           "kind": "def",
           "name": "endpointReplyCheckedArmR",
           "full_name": "SeLe4n.Kernel.endpointReplyCheckedArmR",
-          "line": 2883,
+          "line": 2932,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageLength",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -346008,7 +346309,7 @@
           "kind": "theorem",
           "name": "endpointReplyCheckedArmR_eq_general",
           "full_name": "SeLe4n.Kernel.endpointReplyCheckedArmR_eq_general",
-          "line": 2960,
+          "line": 3009,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters",
             "SeLe4n.Kernel.Architecture.regMessageBody_size",
@@ -346027,6 +346328,7 @@
             "SeLe4n.Kernel.faultReplyTransferChecked_donated_inPlace",
             "SeLe4n.Kernel.faultReplyTransferChecked_inPlace",
             "SeLe4n.Kernel.faultReplyTransferChecked_unheld_inPlace",
+            "SeLe4n.Kernel.faultReplyTransferChecked_unlinked_inPlace",
             "SeLe4n.Kernel.replyAnsweredCaller?",
             "SeLe4n.Kernel.replyAnsweredCaller?_of_getReply",
             "SeLe4n.Kernel.replyDonatedAdmits",
@@ -346040,6 +346342,7 @@
             "SeLe4n.Kernel.replyUnheldAdmits",
             "SeLe4n.Kernel.replyUnheldFaultAdmits",
             "SeLe4n.Kernel.replyUnlinkedAdmits",
+            "SeLe4n.Kernel.replyUnlinkedFaultAdmits",
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.Capability.badge",
             "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
@@ -346053,7 +346356,7 @@
           "kind": "theorem",
           "name": "endpointReplyCheckedArmR_eq",
           "full_name": "SeLe4n.Kernel.endpointReplyCheckedArmR_eq",
-          "line": 3128,
+          "line": 3188,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageRegs",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -346076,7 +346379,7 @@
           "kind": "def",
           "name": "replyOperandArmThenTaintR",
           "full_name": "SeLe4n.Kernel.replyOperandArmThenTaintR",
-          "line": 3144,
+          "line": 3204,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -346102,7 +346405,7 @@
           "kind": "theorem",
           "name": "replyOperandArmThenTaintR_eq",
           "full_name": "SeLe4n.Kernel.replyOperandArmThenTaintR_eq",
-          "line": 3164,
+          "line": 3224,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageRegs",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -346141,7 +346444,7 @@
           "kind": "def",
           "name": "dispatchReplyCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchReplyCheckedR",
-          "line": 3207,
+          "line": 3267,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -346159,7 +346462,7 @@
           "kind": "theorem",
           "name": "dispatchReplyCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchReplyCheckedR_eq",
-          "line": 3215,
+          "line": 3275,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageRegs",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -346183,7 +346486,7 @@
           "kind": "def",
           "name": "endpointSendCapsGeneralR",
           "full_name": "SeLe4n.Kernel.endpointSendCapsGeneralR",
-          "line": 3243,
+          "line": 3303,
           "called": [
             "SeLe4n.Kernel.Architecture.stageWokenDelivery",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -346204,7 +346507,7 @@
           "kind": "theorem",
           "name": "endpointSendCapsGeneralR_eq",
           "full_name": "SeLe4n.Kernel.endpointSendCapsGeneralR_eq",
-          "line": 3261,
+          "line": 3321,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -346229,7 +346532,7 @@
           "kind": "def",
           "name": "endpointSendCapsCheckedArmR",
           "full_name": "SeLe4n.Kernel.endpointSendCapsCheckedArmR",
-          "line": 3302,
+          "line": 3362,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -346260,7 +346563,7 @@
           "kind": "theorem",
           "name": "endpointSendCapsCheckedArmR_eq_general",
           "full_name": "SeLe4n.Kernel.endpointSendCapsCheckedArmR_eq_general",
-          "line": 3355,
+          "line": 3415,
           "called": [
             "SeLe4n.Badge.opt",
             "SeLe4n.CPtr",
@@ -346327,7 +346630,7 @@
           "kind": "theorem",
           "name": "endpointSendCapsCheckedArmR_eq",
           "full_name": "SeLe4n.Kernel.endpointSendCapsCheckedArmR_eq",
-          "line": 3500,
+          "line": 3560,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -346353,7 +346656,7 @@
           "kind": "def",
           "name": "endpointCallCapsCheckedArmR",
           "full_name": "SeLe4n.Kernel.endpointCallCapsCheckedArmR",
-          "line": 3526,
+          "line": 3586,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -346387,7 +346690,7 @@
           "kind": "theorem",
           "name": "endpointCallCapsCheckedArmR_eq_general",
           "full_name": "SeLe4n.Kernel.endpointCallCapsCheckedArmR_eq_general",
-          "line": 3603,
+          "line": 3663,
           "called": [
             "SeLe4n.Badge.opt",
             "SeLe4n.CPtr",
@@ -346462,7 +346765,7 @@
           "kind": "theorem",
           "name": "endpointCallCapsCheckedArmR_eq",
           "full_name": "SeLe4n.Kernel.endpointCallCapsCheckedArmR_eq",
-          "line": 3836,
+          "line": 3896,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -346488,7 +346791,7 @@
           "kind": "def",
           "name": "transferringCheckedArmR",
           "full_name": "SeLe4n.Kernel.transferringCheckedArmR",
-          "line": 3851,
+          "line": 3911,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -346505,7 +346808,7 @@
           "kind": "theorem",
           "name": "transferringCheckedArmR_eq",
           "full_name": "SeLe4n.Kernel.transferringCheckedArmR_eq",
-          "line": 3859,
+          "line": 3919,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -346531,7 +346834,7 @@
           "kind": "def",
           "name": "transferringOperandArmThenTaintR",
           "full_name": "SeLe4n.Kernel.transferringOperandArmThenTaintR",
-          "line": 3879,
+          "line": 3939,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -346556,7 +346859,7 @@
           "kind": "theorem",
           "name": "transferringOperandArmThenTaintR_eq",
           "full_name": "SeLe4n.Kernel.transferringOperandArmThenTaintR_eq",
-          "line": 3897,
+          "line": 3957,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -346597,7 +346900,7 @@
           "kind": "def",
           "name": "dispatchTransferringCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchTransferringCheckedR",
-          "line": 3938,
+          "line": 3998,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -346615,7 +346918,7 @@
           "kind": "theorem",
           "name": "dispatchTransferringCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchTransferringCheckedR_eq",
-          "line": 3944,
+          "line": 4004,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.AuditRing",
@@ -346644,7 +346947,7 @@
           "kind": "def",
           "name": "longReplyRegs",
           "full_name": "SeLe4n.Kernel.longReplyRegs",
-          "line": 3968,
+          "line": 4028,
           "called": [
             "SeLe4n.Kernel.Architecture.regMessageRegs",
             "SeLe4n.Kernel.overflowRegsFrom",
@@ -346659,7 +346962,7 @@
           "kind": "def",
           "name": "endpointReplyLongGeneralR",
           "full_name": "SeLe4n.Kernel.endpointReplyLongGeneralR",
-          "line": 3976,
+          "line": 4036,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -346675,7 +346978,7 @@
           "kind": "def",
           "name": "endpointReplyLongCheckedArmR",
           "full_name": "SeLe4n.Kernel.endpointReplyLongCheckedArmR",
-          "line": 4003,
+          "line": 4067,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -346684,14 +346987,17 @@
             "SeLe4n.Kernel.performFaultReplyAnswerLong",
             "SeLe4n.Kernel.performFaultReplyDonatedAnswerLong",
             "SeLe4n.Kernel.performFaultReplyUnheldAnswerLong",
+            "SeLe4n.Kernel.performFaultReplyUnlinkedAnswerLong",
             "SeLe4n.Kernel.performReplyCapsDeliveredLong",
             "SeLe4n.Kernel.performReplyDeliveredLong",
             "SeLe4n.Kernel.performReplyDonatedCapsDeliveredLong",
             "SeLe4n.Kernel.performReplyUnheldCapsDeliveredLong",
+            "SeLe4n.Kernel.performReplyUnlinkedCapsDeliveredLong",
             "SeLe4n.Kernel.replyHeadContextCode",
             "SeLe4n.Kernel.replyPopsInPlace",
             "SeLe4n.Kernel.replyTransferInertW",
             "SeLe4n.Kernel.replyUnheldPopsInPlace",
+            "SeLe4n.Kernel.replyUnlinkedInPlace",
             "SeLe4n.Kernel.replyWakesInPlace",
             "SeLe4n.Kernel.routedExtraCaps",
             "SeLe4n.Kernel.securityFlowsTo",
@@ -346707,7 +347013,7 @@
           "kind": "theorem",
           "name": "endpointReplyLongCheckedArmR_eq_general",
           "full_name": "SeLe4n.Kernel.endpointReplyLongCheckedArmR_eq_general",
-          "line": 4100,
+          "line": 4181,
           "called": [
             "SeLe4n.Badge.opt",
             "SeLe4n.CPtr",
@@ -346724,6 +347030,7 @@
             "SeLe4n.Kernel.faultReplyTransferChecked_donated_inPlaceLong",
             "SeLe4n.Kernel.faultReplyTransferChecked_inPlaceLong",
             "SeLe4n.Kernel.faultReplyTransferChecked_unheld_inPlaceLong",
+            "SeLe4n.Kernel.faultReplyTransferChecked_unlinked_inPlaceLong",
             "SeLe4n.Kernel.longMessageDecode",
             "SeLe4n.Kernel.longMessageDecode_message",
             "SeLe4n.Kernel.longReplyRegs",
@@ -346736,6 +347043,7 @@
             "SeLe4n.Kernel.replyTransferChecked_donatedCapsLong_inPlace",
             "SeLe4n.Kernel.replyTransferChecked_inPlace",
             "SeLe4n.Kernel.replyTransferChecked_unheldCapsLong_inPlace",
+            "SeLe4n.Kernel.replyTransferChecked_unlinkedCapsLong_inPlace",
             "SeLe4n.Kernel.replyTransferInert_of_W",
             "SeLe4n.Kernel.replyWakesInPlace_noResizeDue",
             "SeLe4n.Model.AccessRightSet.mem",
@@ -346757,7 +347065,7 @@
           "kind": "theorem",
           "name": "endpointReplyLongCheckedArmR_eq",
           "full_name": "SeLe4n.Kernel.endpointReplyLongCheckedArmR_eq",
-          "line": 4241,
+          "line": 4343,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
@@ -346786,7 +347094,7 @@
           "kind": "def",
           "name": "replyLongOperandArmThenTaintR",
           "full_name": "SeLe4n.Kernel.replyLongOperandArmThenTaintR",
-          "line": 4265,
+          "line": 4367,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -346811,7 +347119,7 @@
           "kind": "theorem",
           "name": "replyLongOperandArmThenTaintR_eq",
           "full_name": "SeLe4n.Kernel.replyLongOperandArmThenTaintR_eq",
-          "line": 4283,
+          "line": 4385,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
@@ -346854,7 +347162,7 @@
           "kind": "def",
           "name": "dispatchReplyLongCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchReplyLongCheckedR",
-          "line": 4326,
+          "line": 4428,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -346871,7 +347179,7 @@
           "kind": "theorem",
           "name": "dispatchReplyLongCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchReplyLongCheckedR_eq",
-          "line": 4333,
+          "line": 4435,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr",
@@ -346902,7 +347210,7 @@
           "kind": "def",
           "name": "receiveQueueTailCode",
           "full_name": "SeLe4n.Kernel.receiveQueueTailCode",
-          "line": 4357,
+          "line": 4459,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getEndpoint?",
@@ -346913,7 +347221,7 @@
           "kind": "def",
           "name": "receiveBlocksFast",
           "full_name": "SeLe4n.Kernel.receiveBlocksFast",
-          "line": 4365,
+          "line": 4467,
           "called": [
             "SeLe4n.Kernel.receiveBlockAdmits",
             "SeLe4n.Kernel.receiveBlocksInPlaceCode",
@@ -346928,7 +347236,7 @@
           "kind": "def",
           "name": "resolveRecvReplyIdRootR",
           "full_name": "SeLe4n.Kernel.resolveRecvReplyIdRootR",
-          "line": 4379,
+          "line": 4481,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.SyscallGate",
@@ -346946,7 +347254,7 @@
           "kind": "def",
           "name": "resolveRecvReplyIdR",
           "full_name": "SeLe4n.Kernel.resolveRecvReplyIdR",
-          "line": 4398,
+          "line": 4500,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.callerCspaceRoot",
@@ -346961,7 +347269,7 @@
           "kind": "theorem",
           "name": "resolveRecvReplyIdRootR_eq",
           "full_name": "SeLe4n.Kernel.resolveRecvReplyIdRootR_eq",
-          "line": 4402,
+          "line": 4504,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.SyscallGate",
@@ -346978,7 +347286,7 @@
           "kind": "theorem",
           "name": "resolveRecvReplyIdR_eq",
           "full_name": "SeLe4n.Kernel.resolveRecvReplyIdR_eq",
-          "line": 4419,
+          "line": 4521,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.SyscallGate",
@@ -346996,7 +347304,7 @@
           "kind": "def",
           "name": "recvReplyCapK",
           "full_name": "SeLe4n.Kernel.recvReplyCapK",
-          "line": 4432,
+          "line": 4534,
           "called": [
             "SeLe4n.Kernel.capTargetsReservedKernelObject",
             "SeLe4n.Model.Capability",
@@ -347011,7 +347319,7 @@
           "kind": "def",
           "name": "resolveRecvReplyRootK",
           "full_name": "SeLe4n.Kernel.resolveRecvReplyRootK",
-          "line": 4454,
+          "line": 4556,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.lookupSlotFromK",
@@ -347028,7 +347336,7 @@
           "kind": "def",
           "name": "resolveRecvReplyK",
           "full_name": "SeLe4n.Kernel.resolveRecvReplyK",
-          "line": 4468,
+          "line": 4570,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.callerCspaceRoot",
@@ -347042,7 +347350,7 @@
           "kind": "theorem",
           "name": "resolveRecvReplyRootK_eq",
           "full_name": "SeLe4n.Kernel.resolveRecvReplyRootK_eq",
-          "line": 4472,
+          "line": 4574,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.SyscallGate.lookupSlot",
@@ -347071,7 +347379,7 @@
           "kind": "theorem",
           "name": "resolveRecvReplyK_eq",
           "full_name": "SeLe4n.Kernel.resolveRecvReplyK_eq",
-          "line": 4511,
+          "line": 4613,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.resolveRecvReplyIdR",
@@ -347087,7 +347395,7 @@
           "kind": "def",
           "name": "endpointReceiveRendezvousR",
           "full_name": "SeLe4n.Kernel.endpointReceiveRendezvousR",
-          "line": 4523,
+          "line": 4625,
           "called": [
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -347103,7 +347411,7 @@
           "kind": "def",
           "name": "endpointReceiveTakeR",
           "full_name": "SeLe4n.Kernel.endpointReceiveTakeR",
-          "line": 4554,
+          "line": 4656,
           "called": [
             "SeLe4n.Badge.ofWord",
             "SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode",
@@ -347148,7 +347456,7 @@
           "kind": "theorem",
           "name": "endpointReceiveTakeR_eq",
           "full_name": "SeLe4n.Kernel.endpointReceiveTakeR_eq",
-          "line": 4791,
+          "line": 4893,
           "called": [
             "SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedCallLong",
@@ -347197,7 +347505,7 @@
           "kind": "def",
           "name": "endpointReceiveLegR",
           "full_name": "SeLe4n.Kernel.endpointReceiveLegR",
-          "line": 5174,
+          "line": 5276,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReceiveTakeR",
@@ -347214,7 +347522,7 @@
           "kind": "theorem",
           "name": "endpointReceiveLegR_eq",
           "full_name": "SeLe4n.Kernel.endpointReceiveLegR_eq",
-          "line": 5184,
+          "line": 5286,
           "called": [
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -347254,7 +347562,7 @@
           "kind": "theorem",
           "name": "receiveReturnSchedContext_receiveBlocksFast",
           "full_name": "SeLe4n.Kernel.receiveReturnSchedContext_receiveBlocksFast",
-          "line": 5256,
+          "line": 5358,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue",
             "SeLe4n.Kernel.RobinHood.RHTable.noResizeDue_of_findsInPlace",
@@ -347278,7 +347586,7 @@
           "kind": "def",
           "name": "receiveBlockAfterReturn",
           "full_name": "SeLe4n.Kernel.receiveBlockAfterReturn",
-          "line": 5296,
+          "line": 5398,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.removeRunnableOnCore",
@@ -347292,7 +347600,7 @@
           "kind": "def",
           "name": "endpointReceiveReturnedLegR",
           "full_name": "SeLe4n.Kernel.endpointReceiveReturnedLegR",
-          "line": 5307,
+          "line": 5409,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReceiveLegR",
@@ -347309,7 +347617,7 @@
           "kind": "theorem",
           "name": "endpointReceiveReturnedLegR_eq",
           "full_name": "SeLe4n.Kernel.endpointReceiveReturnedLegR_eq",
-          "line": 5320,
+          "line": 5422,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.endpointReceiveLegR",
@@ -347328,7 +347636,7 @@
           "kind": "def",
           "name": "endpointReceiveResolvedR",
           "full_name": "SeLe4n.Kernel.endpointReceiveResolvedR",
-          "line": 5341,
+          "line": 5443,
           "called": [
             "SeLe4n.Kernel.Architecture.nbRecvFailedTransfer",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -347351,7 +347659,7 @@
           "kind": "def",
           "name": "endpointReceiveReplyResolvedR",
           "full_name": "SeLe4n.Kernel.endpointReceiveReplyResolvedR",
-          "line": 5367,
+          "line": 5469,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -347368,7 +347676,7 @@
           "kind": "theorem",
           "name": "endpointReceiveReplyResolvedR_eq",
           "full_name": "SeLe4n.Kernel.endpointReceiveReplyResolvedR_eq",
-          "line": 5374,
+          "line": 5476,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -347404,7 +347712,7 @@
           "kind": "def",
           "name": "replySlotBusyHolderCode",
           "full_name": "SeLe4n.Kernel.replySlotBusyHolderCode",
-          "line": 5413,
+          "line": 5515,
           "called": [
             "SeLe4n.Kernel.busyReplyHolderCode",
             "SeLe4n.Kernel.capTargetsReservedKernelObject",
@@ -347418,7 +347726,7 @@
           "kind": "def",
           "name": "receiveHolderFlowCode",
           "full_name": "SeLe4n.Kernel.receiveHolderFlowCode",
-          "line": 5426,
+          "line": 5528,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.securityFlowsTo",
@@ -347429,7 +347737,7 @@
           "kind": "def",
           "name": "receiveArmHolderCode",
           "full_name": "SeLe4n.Kernel.receiveArmHolderCode",
-          "line": 5437,
+          "line": 5539,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.LabelingContext",
@@ -347446,7 +347754,7 @@
           "kind": "theorem",
           "name": "receiveArmHolderCode_eq",
           "full_name": "SeLe4n.Kernel.receiveArmHolderCode_eq",
-          "line": 5447,
+          "line": 5549,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.LabelingContext",
@@ -347473,7 +347781,7 @@
           "kind": "def",
           "name": "cancelReceiveArmBusyReply",
           "full_name": "SeLe4n.Kernel.cancelReceiveArmBusyReply",
-          "line": 5481,
+          "line": 5583,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -347489,7 +347797,7 @@
           "kind": "def",
           "name": "receiveArmReport",
           "full_name": "SeLe4n.Kernel.receiveArmReport",
-          "line": 5491,
+          "line": 5593,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -347506,7 +347814,7 @@
           "kind": "def",
           "name": "endpointReceiveCheckedArmR",
           "full_name": "SeLe4n.Kernel.endpointReceiveCheckedArmR",
-          "line": 5506,
+          "line": 5608,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -347524,7 +347832,7 @@
           "kind": "theorem",
           "name": "endpointReceiveCheckedArmR_eq_resolved",
           "full_name": "SeLe4n.Kernel.endpointReceiveCheckedArmR_eq_resolved",
-          "line": 5524,
+          "line": 5626,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -347552,7 +347860,7 @@
           "kind": "theorem",
           "name": "endpointReceiveCheckedArmR_eq",
           "full_name": "SeLe4n.Kernel.endpointReceiveCheckedArmR_eq",
-          "line": 5555,
+          "line": 5657,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -347581,7 +347889,7 @@
           "kind": "def",
           "name": "receiveTaintSourceCode",
           "full_name": "SeLe4n.Kernel.receiveTaintSourceCode",
-          "line": 5596,
+          "line": 5698,
           "called": [
             "SeLe4n.Model.Capability",
             "SeLe4n.Model.SystemState",
@@ -347592,7 +347900,7 @@
           "kind": "def",
           "name": "threadObjOfCode",
           "full_name": "SeLe4n.Kernel.threadObjOfCode",
-          "line": 5607,
+          "line": 5709,
           "called": [
             "SeLe4n.ObjId",
             "SeLe4n.ThreadId",
@@ -347603,7 +347911,7 @@
           "kind": "def",
           "name": "notifObjOfCode",
           "full_name": "SeLe4n.Kernel.notifObjOfCode",
-          "line": 5613,
+          "line": 5715,
           "called": [
             "SeLe4n.ObjId"
           ]
@@ -347612,7 +347920,7 @@
           "kind": "def",
           "name": "receiveTaintSignalCode",
           "full_name": "SeLe4n.Kernel.receiveTaintSignalCode",
-          "line": 5618,
+          "line": 5720,
           "called": [
             "SeLe4n.Kernel.boundSignalTaintCode",
             "SeLe4n.Model.Capability",
@@ -347624,7 +347932,7 @@
           "kind": "def",
           "name": "receiveTaintStep",
           "full_name": "SeLe4n.Kernel.receiveTaintStep",
-          "line": 5628,
+          "line": 5730,
           "called": [
             "SeLe4n.Kernel.TaintWords",
             "SeLe4n.Kernel.joinTaintAt",
@@ -347637,7 +347945,7 @@
           "kind": "theorem",
           "name": "receiveTaintStep_eq",
           "full_name": "SeLe4n.Kernel.receiveTaintStep_eq",
-          "line": 5637,
+          "line": 5739,
           "called": [
             "SeLe4n.Kernel.TaintWords",
             "SeLe4n.Kernel.TaintWords.decode",
@@ -347677,7 +347985,7 @@
           "kind": "def",
           "name": "receiveOperandArmThenTaintR",
           "full_name": "SeLe4n.Kernel.receiveOperandArmThenTaintR",
-          "line": 5687,
+          "line": 5789,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -347703,7 +348011,7 @@
           "kind": "def",
           "name": "receiveOperandReport",
           "full_name": "SeLe4n.Kernel.receiveOperandReport",
-          "line": 5710,
+          "line": 5812,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -347722,7 +348030,7 @@
           "kind": "theorem",
           "name": "receiveOperandArmThenTaintR_eq",
           "full_name": "SeLe4n.Kernel.receiveOperandArmThenTaintR_eq",
-          "line": 5722,
+          "line": 5824,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.CSpaceAddr",
@@ -347763,7 +348071,7 @@
           "kind": "def",
           "name": "dispatchReceiveCheckedR",
           "full_name": "SeLe4n.Kernel.dispatchReceiveCheckedR",
-          "line": 5773,
+          "line": 5875,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -347779,7 +348087,7 @@
           "kind": "theorem",
           "name": "dispatchReceiveCheckedR_eq",
           "full_name": "SeLe4n.Kernel.dispatchReceiveCheckedR_eq",
-          "line": 5779,
+          "line": 5881,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.CoreId",

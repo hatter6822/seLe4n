@@ -269,7 +269,12 @@ thread blocks again (`maybeReturnSchedContext`), by binding or by donation.
 SX8.3 adds label 36 (`SchedContext_UnbindObject`) and lets SchedContext_Unbind
 take a context from a holder that has it by donation: the holder, then the
 notification, then the reply stack the context heads
-(`schedContextUnbindReply`, shared with context finalisation). **Standing
+(`schedContextUnbindReply`, shared with context finalisation), and answers
+in place every reply shape to a caller recording no server on a reply object
+linked to nothing (`replyDispatch_unlinked_inPlace`). SchedContext_Bind keeps
+its two refusals that seL4 does not make (a context heading a reply stack, a
+reply frame on a live stack): lifting them conflicts with the reply flow gate
+and `donationOwnerValid`, and the choice is with the owner. **Standing
 constraints for new code:** a scheduling-context unbind that ends a context's
 use runs `schedContextUnbindReply` last, as seL4's `schedContext_unbindReply`;
 UnbindObject on a thread does not, as seL4 does not; a reply-stack writer

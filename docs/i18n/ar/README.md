@@ -136,9 +136,9 @@ seLe4n نواة مصغّرة (microkernel) مبنية من الصفر بلغة L
 |-------|--------|
 | **الإصدار** | `0.37.35` |
 | **سلسلة أدوات Lean** | `v4.28.0` |
-| **أسطر Lean الإنتاجية** | 663,097 عبر 655 ملفًا |
+| **أسطر Lean الإنتاجية** | 663,466 عبر 655 ملفًا |
 | **أسطر Lean للاختبارات** | 92,061 عبر 71 مجموعة اختبار |
-| **الإعلانات المُبرهَنة** | 25,286 إعلانًا theorem/lemma (صفر sorry/axiom) |
+| **الإعلانات المُبرهَنة** | 25,291 إعلانًا theorem/lemma (صفر sorry/axiom) |
 | **حزم Rust** | `sele4n-types` و`sele4n-abi` و`sele4n-sys` (أغلفة فضاء المستخدم) و`sele4n-hal` (طبقة عتاد النواة)، واختبار المضيف `sele4n-lean-boundary` |
 | **العتاد المستهدف** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **مسارات الإقلاع** | كل مسار QEMU يُقلع أولًا صورة Raspberry Pi 5 على الآلة `raspi5b` من [rpi5_machine](https://github.com/hatter6822/rpi5_machine)، ثم صورة `virt` على آلة `virt` في QEMU |
