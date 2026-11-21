@@ -2812,6 +2812,68 @@ private def differentialSchedContextNotificationLinkAgrees : IO Unit := do
   expect "FO-SX8.3 (D18) control: ...and unbinds it when another thread is current"
     (frozenSchedContextUnbind diffScId.toObjId fs2).toOption.isSome
 
+/-- The live notification-link codes of the context and the notification. -/
+private def liveLinkCodes (st : SystemState) : Option (Nat × Nat) :=
+  match st.getSchedContext? diffScId, st.getNotification? diffNotifId with
+  | some sc, some n => some (sc.notificationCode, n.schedContextCode)
+  | _, _ => none
+
+/-- **FO-SX8.3b: `SchedContext_UnbindObject`** (seL4-MCS
+`decodeSchedContext_UnbindObject`), live.  On a notification: the context's own
+notification is unbound (both ends cleared) and another is refused
+`illegalState`; on a thread: the context's own thread is unbound and its
+notification link kept, another thread and the executing core's current one are
+refused `illegalState`. -/
+private def liveSchedContextUnbindObjectArms : IO Unit := do
+  let some vSc := diffScId.toObjId.toValid? | expect "FO-SX8.3b control: valid context id" false
+  let sc : SeLe4n.Kernel.SchedContext :=
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩ }
+  let ntfn : Notification :=
+    { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
+  let boundTcb : TCB :=
+    { diffTcb 62 with
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode
+        (SeLe4n.Kernel.SchedContextBinding.bound diffScId), scBindingOwnerCode := 0 }
+  let ist := diffAddSchedContext
+    (diffAddNotification (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) boundTcb)
+      (diffTcb 63)) diffNotifId ntfn) diffScId
+    { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some diffA), isActive := true }
+  match liveBindNotification ist.state with
+  | .error _ => expect "FO-SX8.3b control: the notification bind succeeds" false
+  | .ok (_, st) =>
+    expect "FO-SX8.3b control: both ends linked"
+      (liveLinkCodes st == some (diffNotifId.toNat + 1, diffScId.toObjId.toNat + 1))
+    expect "FO-SX8.3b: another notification is refused illegalState"
+      (match SeLe4n.Kernel.SchedContextOps.schedContextUnbindNotificationObject vSc
+          ⟨diffNotifId.val + 1⟩ st with
+       | .error .illegalState => true
+       | _ => false)
+    expect "FO-SX8.3b: the context's notification is unbound, both ends cleared"
+      (match SeLe4n.Kernel.SchedContextOps.schedContextUnbindNotificationObject vSc
+          diffNotifId st with
+       | .ok (_, st') => liveLinkCodes st' == some (0, 0) &&
+           ((st'.getSchedContext? diffScId).map (·.boundThreadCode)) ==
+             some (SeLe4n.ThreadId.optCode (some diffA))
+       | .error _ => false)
+    expect "FO-SX8.3b: another thread is refused illegalState"
+      (match SeLe4n.Kernel.SchedContextOps.schedContextUnbindThreadObjectOnCore vSc diffB
+          bootCoreId st with
+       | .error .illegalState => true
+       | _ => false)
+    expect "FO-SX8.3b: the context's thread is unbound, the notification link kept"
+      (match SeLe4n.Kernel.SchedContextOps.schedContextUnbindThreadObjectOnCore vSc diffA
+          bootCoreId st with
+       | .ok (st', _) =>
+           ((st'.getSchedContext? diffScId).map (·.boundThreadCode)) == some 0 &&
+             liveLinkCodes st' == some (diffNotifId.toNat + 1, diffScId.toObjId.toNat + 1)
+       | .error _ => false)
+    let stCur := { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId (some diffA) }
+    expect "FO-SX8.3b (D18): the executing core's current thread is refused illegalState"
+      (match SeLe4n.Kernel.SchedContextOps.schedContextUnbindThreadObjectOnCore vSc diffA
+          bootCoreId stCur with
+       | .error .illegalState => true
+       | _ => false)
+
 /-- **FO-050 (WS-RR RR8.12 Cut B2, `v0.35.182`): the bind PLACES a parked
 runnable thread, on both surfaces.**
 
@@ -3927,6 +3989,7 @@ def main : IO Unit := do
   differentialSchedContextBindClearsOrigin
   differentialSchedContextUnbindClearsOrigin
   differentialSchedContextNotificationLinkAgrees
+  liveSchedContextUnbindObjectArms
   differentialSchedContextBindRefusalsAgree
   differentialSchedContextBindPlacesParked
   differentialSchedContextConfigureKeepsOrder

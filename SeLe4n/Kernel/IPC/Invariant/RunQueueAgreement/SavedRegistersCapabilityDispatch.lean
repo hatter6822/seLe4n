@@ -777,6 +777,26 @@ theorem schedContextUnbindAllOnCore_savedRegsKeptExcept {W : SeLe4n.ThreadId →
       (unbindSchedContextNotification_savedRegsKeptExcept _ _
         (schedContextUnbind_stepCovers st stU vScId ec hInv hU).2)
 
+/-- **`SchedContext_UnbindObject` writes no saved register**: on a thread, the
+thread unbind (the current thread's context is refused); on a notification,
+the notification unbind. -/
+theorem schedContextUnbindThreadObjectOnCore_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
+    {vScId : SeLe4n.ValidObjId} {tid : SeLe4n.ThreadId} {ec : CoreId} {st st' : SystemState}
+    {sgi? : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId tid ec st = .ok (st', sgi?)) :
+    savedRegsKeptExcept W st st' :=
+  schedContextUnbind_savedRegsKeptExcept hInv
+    (SchedContextOps.schedContextUnbindOnCore_ok
+      (SchedContextOps.schedContextUnbindThreadObjectOnCore_ok h)).2.1
+
+theorem schedContextUnbindNotificationObject_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
+    {vScId : SeLe4n.ValidObjId} {n : SeLe4n.ObjId} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedContextUnbindNotificationObject vScId n st = .ok ((), st')) :
+    savedRegsKeptExcept W st st' := by
+  obtain ⟨-, rfl⟩ := SchedContextOps.schedContextUnbindNotificationObject_ok h
+  exact unbindSchedContextNotification_savedRegsKeptExcept _ _ hInv
+
 /-! ### The priority arms -/
 
 /-- The priority write: the thread's priority alone. -/
@@ -1706,11 +1726,13 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
     | exact hF (savedRegsKept.of_unchangedOrNoTcb fun oid =>
         (schedContextBindNotification_slots hInv h oid).imp id (·.1))
     | exact hX (bindNotification_savedRegsKeptExcept hInv h)
+    | exact hX (schedContextUnbindNotificationObject_savedRegsKeptExcept hInv h)
     | (cases h; rename_i hS
        first
         | (rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hS]
            exact writeCallReturnWord_savedRegsKeptOffCore _ hInv P.current hU hN)
         | exact hX (schedContextUnbindAllOnCore_savedRegsKeptExcept hInv hS)
+        | exact hX (schedContextUnbindThreadObjectOnCore_savedRegsKeptExcept hInv hS)
         | exact hW (schedContextConsumedOnCore_savedRegsWrittenFree hInv hU hN hS)
         | exact hW (schedContextYieldToOnCore_savedRegsWrittenFree hInv hU hN hYA hYN hS)
         | exact hX (unbindNotification_savedRegsKeptExcept hInv hS)

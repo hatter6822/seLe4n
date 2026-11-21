@@ -1082,6 +1082,49 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
           exact schedLockSet_schedContextUnbindAllOnCore_coversWrites st st₁ vScId e sgi S hObjInv
             hStep hSched
         · exact absurd hDisp (by simp)
+  -- ---- `.schedContextUnbindObject` (WS-SX SX8.3) ---------------------------
+  case schedContextUnbindObject =>
+    cases hT : cap.target <;> rw [hT] at hOps <;> simp only [reduceCtorEq] at hOps
+    rename_i scId
+    rw [hT] at hDisp
+    simp only at hDisp
+    cases hN : resolveSchedContextBindNotificationCode tid
+        (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+    | succ k =>
+      rw [hN] at hOps hDisp
+      simp only [Option.some.injEq] at hOps
+      subst hOps
+      simp only [schedLockSetForSyscall, Concurrency.SyscallLockOperands.ofObjectTarget,
+        Option.bind_some] at hSched
+      simp only at hDisp
+      split at hDisp
+      · exact absurd hDisp (by simp)
+      · exact schedLockSet_schedContextUnbindNotificationObject_coversWrites st st' _ _ S
+          hDisp hSched
+    | zero =>
+      rw [hN] at hOps hDisp
+      simp only at hOps hDisp
+      cases hRes : resolveSchedContextBindThread tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | error e => rw [hRes] at hOps; exact absurd hOps (by simp)
+      | ok v =>
+        rw [hRes] at hOps hDisp
+        simp only [Option.some.injEq] at hOps
+        subst hOps
+        simp only [schedLockSetForSyscall, Concurrency.SyscallLockOperands.ofObjectTarget,
+          Option.bind_some] at hSched
+        simp only at hDisp
+        split at hDisp
+        · exact absurd hDisp (by simp)
+        · rename_i vScId hV
+          rw [← validateObjIdArg_ok_val _ _ hV] at hSched
+          split at hDisp
+          · rename_i st₁ sgi hStep
+            simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
+            subst hDisp
+            exact schedLockSet_schedContextUnbindThreadObjectOnCore_coversWrites st st₁ vScId _ e
+              sgi S hObjInv hStep hSched
+          · exact absurd hDisp (by simp)
   -- ---- `.schedContextYieldTo` (WS-ZA ZA6.29) -------------------------------
   case schedContextYieldTo =>
     cases hT : cap.target <;> rw [hT] at hOps <;> simp only [Option.some.injEq, reduceCtorEq] at hOps

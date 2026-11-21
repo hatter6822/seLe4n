@@ -143,6 +143,13 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .schedContextUnbind =>
       ops.targetObject.bind fun scObjId =>
         LockSet.ofList? (schedLockSet_schedContextUnbindOnCore st scObjId)
+  -- WS-SX SX8.3: the thread path writes what the unbind's thread half writes;
+  -- the notification path writes no scheduler domain.
+  | .schedContextUnbindObject =>
+      ops.targetObject.bind fun scObjId =>
+        match ops.targetThread with
+        | some _ => LockSet.ofList? (schedLockSet_schedContextUnbindOnCore st scObjId)
+        | none => LockSet.ofList? (schedFootprintOfCores [] [])
   -- WS-ZA ZA6.29: the yieldTo writes the executing core (the linked branch) and
   -- the bound thread's home core (the resume and the requeue).
   | .schedContextYieldTo =>
@@ -268,7 +275,7 @@ write every core's queues: it declares the capability destroys' footprint. -/
 def declaredSchedFootprintSyscall : SyscallId → Bool
   | .tcbSuspend | .tcbResume
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetAffinity
-  | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject
   | .schedContextYieldTo
   | .notificationSignal | .notificationWait
   | .send | .receive | .call | .reply | .replyRecv
@@ -506,6 +513,11 @@ theorem schedLockSetForSyscall_contains_objStore_write (sid : SyscallId)
       ops.caller ops.targetReply executingCore
     rw [LockSet.ofList?_pairs hS, h]
     exact schedFootprintOfCores_contains_objStore_write _ _
+  case schedContextUnbindObject =>
+    obtain ⟨scObjId, -, hS⟩ := hS
+    cases hT : ops.targetThread <;> simp only [hT] at hS <;> rw [LockSet.ofList?_pairs hS] <;>
+      (try simp only [schedLockSet_schedContextUnbindOnCore]) <;>
+      exact schedFootprintOfCores_contains_objStore_write _ _
   all_goals
     repeat' obtain ⟨_, _, hS⟩ := hS
     rw [LockSet.ofList?_pairs hS]

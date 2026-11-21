@@ -181,15 +181,20 @@ pub enum SyscallId {
     /// `seL4_IRQHandler_Clear`.  Invoked on the interrupt-handler capability
     /// (`Write` right), with no message registers.  Returns no value.
     IrqHandlerClear = 47,
+    /// WS-SX SX8.3: unbind one object from a scheduling context — seL4's
+    /// `seL4_SchedContext_UnbindObject`.  Invoked on the scheduling-context
+    /// capability (`Write` right) with the thread or notification capability
+    /// as extra capability 0 and no message registers.  Returns no value.
+    SchedContextUnbindObject = 48,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls (variants).
-    pub const COUNT: usize = 45;
+    pub const COUNT: usize = 46;
 
     /// One past the largest syscall number: every number below it is a
     /// variant's or a retired one.
-    pub const ENCODING_BOUND: u64 = 48;
+    pub const ENCODING_BOUND: u64 = 49;
 
     /// Retired syscall numbers, reserved and never reassigned.  `8` was the
     /// in-place `lifecycleRetype`; since WS-ZA ZA5.4 part 14 every object is
@@ -249,6 +254,7 @@ impl SyscallId {
             45 => Some(Self::IrqControlGet),
             46 => Some(Self::IrqHandlerSetNotification),
             47 => Some(Self::IrqHandlerClear),
+            48 => Some(Self::SchedContextUnbindObject),
             _ => None,
         }
     }
@@ -287,6 +293,7 @@ impl SyscallId {
             Self::SchedContextConfigure => Some(33),
             Self::SchedContextBind => Some(34),
             Self::SchedContextUnbind => Some(35),
+            Self::SchedContextUnbindObject => Some(36),
             Self::SchedContextConsumed => Some(37),
             Self::SchedContextYieldTo => Some(38),
             Self::VSpaceUnifyInstruction => Some(42),
@@ -357,9 +364,10 @@ impl SyscallId {
             Self::NotificationSignal => AccessRight::Write,
             Self::NotificationWait => AccessRight::Read,
             Self::ReplyRecv => AccessRight::Read,
-            Self::SchedContextConfigure | Self::SchedContextBind | Self::SchedContextUnbind => {
-                AccessRight::Write
-            }
+            Self::SchedContextConfigure
+            | Self::SchedContextBind
+            | Self::SchedContextUnbind
+            | Self::SchedContextUnbindObject => AccessRight::Write,
             Self::TcbSuspend | Self::TcbResume => AccessRight::Write,
             Self::TcbSetPriority | Self::TcbSetMCPriority => AccessRight::Write,
             Self::TcbSetIPCBuffer => AccessRight::Write,
@@ -735,9 +743,19 @@ mod tests {
         ] {
             assert_eq!(sid.required_right(), AccessRight::Write);
         }
-        assert_eq!(SyscallId::from_u64(48), None);
-        assert_eq!(SyscallId::COUNT, 45);
-        assert_eq!(SyscallId::ENCODING_BOUND, 48);
+        // WS-SX SX8.3: the unbind-object invocation, appended the same way.
+        assert_eq!(
+            SyscallId::from_u64(48),
+            Some(SyscallId::SchedContextUnbindObject)
+        );
+        assert_eq!(
+            SyscallId::SchedContextUnbindObject.required_right(),
+            AccessRight::Write
+        );
+        assert_eq!(SyscallId::SchedContextUnbindObject.label(), Some(36));
+        assert_eq!(SyscallId::from_u64(49), None);
+        assert_eq!(SyscallId::COUNT, 46);
+        assert_eq!(SyscallId::ENCODING_BOUND, 49);
     }
 
     #[test]

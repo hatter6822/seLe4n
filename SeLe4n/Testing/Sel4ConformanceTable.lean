@@ -350,7 +350,8 @@ def sel4LabelRowsArch : List LabelRow := [
     (obj .schedContext) 0 0 [illegalOperation] (.implemented .schedContextUnbind),
   unitRow 36 "SchedContextUnbindObject"
     (src "decodeSchedContext_UnbindObject" "object/schedcontext.c" 29) (obj .schedContext)
-    0 1 [truncatedMessage, illegalOperation, invalidCapability] (.absent "SX8.3"),
+    0 1 [truncatedMessage, illegalOperation, invalidCapability]
+    (.implemented .schedContextUnbindObject),
   { label := 37, name := "SchedContextConsumed",
     decode := src "decodeSchedContextInvocation" "object/schedcontext.c" 275,
     capType := obj .schedContext, minLength := 0, extraCaps := 0, returns := .message,

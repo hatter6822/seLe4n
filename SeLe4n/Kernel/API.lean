@@ -1346,6 +1346,7 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .schedContextConfigure => .write
   | .schedContextBind      => .write
   | .schedContextUnbind    => .write
+  | .schedContextUnbindObject => .write
   | .tcbSuspend            => .write
   | .tcbResume             => .write
   | .tcbSetPriority        => .write
@@ -1409,7 +1410,7 @@ def syscallObjectKind? : SyscallId → Option KernelObjectType
   | .untypedRetype => some .untyped
   | .vspaceMap | .vspaceUnmap => some .frame
   | .vspaceUnifyInstruction => some .vspaceRoot
-  | .schedContextBind | .schedContextUnbind | .schedContextConsumed
+  | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject | .schedContextConsumed
   | .schedContextYieldTo => some .schedContext
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer
   | .tcbSetAffinity | .tcbSetSpace | .tcbBindNotification
@@ -1462,7 +1463,7 @@ def syscallMissingRightError : SyscallId → KernelError
   | .reply | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .declassify | .declassifySignal | .auditRead | .auditDrain | .serviceRegister | .serviceRevoke
-  | .serviceQuery | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+  | .serviceQuery | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer
   | .tcbSetAffinity | .tcbSetSpace | .pageTableMap
   | .pageTableUnmap | .yield | .schedContextConsumed | .schedContextYieldTo
@@ -1521,7 +1522,7 @@ reply-receive.  No wildcard: a new syscall states its answer.  Pinned against
   | .cspaceRevoke | .untypedRetype | .vspaceMap | .vspaceUnmap
   | .vspaceUnifyInstruction | .declassify | .auditRead | .auditDrain | .declassifySignal
   | .serviceRegister | .serviceRevoke | .serviceQuery | .notificationSignal
-  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .tcbSuspend
+  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject | .tcbSuspend
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer | .tcbSetAffinity
   | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
   | .schedContextConsumed | .schedContextYieldTo | .irqHandlerAck | .irqControlGet
@@ -1749,7 +1750,7 @@ def syscallNamesReply : SyscallId → Bool
   | .cspaceRevoke | .untypedRetype | .vspaceMap | .vspaceUnmap
   | .vspaceUnifyInstruction | .declassify | .auditRead | .auditDrain | .declassifySignal
   | .serviceRegister | .serviceRevoke | .serviceQuery | .notificationSignal
-  | .notificationWait | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+  | .notificationWait | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer
   | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap
   | .yield | .schedContextConsumed | .schedContextYieldTo | .irqHandlerAck | .irqControlGet
@@ -4992,6 +4993,32 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
               | .ok (st', _) => .ok ((), st')
               | .error e => .error e
     | _ => fun _ => .error (.invalidCapability 0)
+  -- WS-SX SX8.3: seL4-MCS's `SchedContext_UnbindObject` — extra capability 0
+  -- is read as the bind reads it: a notification capability unbinds the
+  -- context's notification (`schedContext_unbindNtfn`), every other capability
+  -- is the thread path (`schedContext_unbindTCB`).
+  | .schedContextUnbindObject =>
+    some <| match cap.target with
+    | .object scId =>
+      fun st => match resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | k + 1 =>
+        match validateObjIdArg scId with
+        | .error e => .error e
+        | .ok vScId => SchedContextOps.schedContextUnbindNotificationObject vScId ⟨k⟩ st
+      | 0 =>
+      match resolveSchedContextBindThread tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | .error e => .error e
+      | .ok vThreadId =>
+          match validateObjIdArg scId with
+          | .error e => .error e
+          | .ok vScId =>
+              match SchedContextOps.schedContextUnbindThreadObjectOnCore vScId
+                  vThreadId.val executingCore st with
+              | .ok (st', _) => .ok ((), st')
+              | .error e => .error e
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-ZA ZA6.9: seL4-MCS's `seL4_SchedContext_Consumed` — no arguments; the
   -- context from the capability target, the caller the executing core's
   -- current thread (`schedContextConsumedOnCore`).
@@ -5599,6 +5626,40 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   exact schedContextUnbindAllOnCore_preserves_ipcInvariantFull st st' vScId _
                     sgiU hObjInv hInv
                     hR hUn
+    all_goals try cases hStep
+  case schedContextUnbindObject =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object scId =>
+      try dsimp only [] at hStep
+      cases hN : resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | succ k =>
+          simp only [hN] at hStep
+          cases hVal : validateObjIdArg scId with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vScId =>
+              simp only [hVal] at hStep
+              exact schedContextUnbindNotificationObject_preserves_ipcInvariantFull st st' vScId _
+                hObjInv hInv hStep
+      | zero =>
+          simp only [hN] at hStep
+          cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok vThreadId =>
+              simp only [hRes] at hStep
+              cases hVal : validateObjIdArg scId with
+              | error e => simp only [hVal] at hStep; cases hStep
+              | ok vScId =>
+                  simp only [hVal] at hStep
+                  cases hUn : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId
+                      vThreadId.val executingCore st with
+                  | error e => simp only [hUn] at hStep; cases hStep
+                  | ok pair =>
+                      obtain ⟨stU, sgiU⟩ := pair
+                      simp only [hUn] at hStep
+                      cases hStep
+                      exact schedContextUnbindThreadObjectOnCore_preserves_ipcInvariantFull st _
+                        vScId _ _ sgiU hObjInv hInv hUn
     all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -7620,7 +7681,8 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .cspaceRevoke, .untypedRetype, .tcbSetSpace,
             .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed,
             .schedContextYieldTo, .irqHandlerAck, .irqControlGet,
-            .irqHandlerSetNotification, .irqHandlerClear] : List SyscallId) := by
+            .irqHandlerSetNotification, .irqHandlerClear,
+            .schedContextUnbindObject] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 -- ============================================================================

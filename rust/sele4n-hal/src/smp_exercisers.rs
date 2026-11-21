@@ -1626,6 +1626,7 @@ const fn op_encoding(op: u64) -> Option<(crate::svc_dispatch::Syscall, u64)> {
         45 => 26,
         46 => 28,
         47 => 29,
+        48 => 36,
         _ => return None,
     };
     Some((Syscall::Call, label))
@@ -1783,6 +1784,9 @@ const IRQ_HANDLER_SET_NOTIFICATION: u64 = 46;
 /// `IrqHandlerClear` (`SyscallId` 47, WS-ZA ZA6.32).
 #[cfg(feature = "hw_target")]
 const IRQ_HANDLER_CLEAR: u64 = 47;
+/// `SchedContextUnbindObject` (`SyscallId` 48, WS-SX SX8.3).
+#[cfg(feature = "hw_target")]
+const SCHED_CONTEXT_UNBIND_OBJECT: u64 = 48;
 /// **WS-ZA ZA6.2**: the steps of a scenario that are not syscalls, by a
 /// `syscall` no `SyscallId` takes.  A timer tick is entered as
 /// `handle_irq_per_core`'s timer branch enters it and measured as the kernel
@@ -5256,12 +5260,47 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             SCHED_CONTEXT_CAP,
             [0; 4],
         ),
+        // WS-SX SX8.3: seL4-MCS's `SchedContext_UnbindObject` on a thread
+        // capability: the context bound to the suspended partner again, then
+        // unbound from it through the thread named as extra capability 0
+        // (`schedContext_unbindTCB` alone).
+        cap_argument(
+            "sched-context-bind-for-unbind-object",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        cap_argument(
+            "sched-context-unbind-object-thread",
+            SCHED_CONTEXT_UNBIND_OBJECT,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
         // WS-SX SX7: the context bound to a notification (seL4-MCS
         // `schedContext_bindNtfn`), then unbound while it is bound to no
         // thread, which unbinds only the notification
         // (`invokeSchedContext_Unbind`'s `schedContext_unbindNtfn`).
         cap_argument(
             "sched-context-bind-notification",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            NOTIFICATION_CAP,
+            FRAME_VADDR,
+        ),
+        // WS-SX SX8.3: `SchedContext_UnbindObject` on the notification
+        // capability (`schedContext_unbindNtfn`), then the link made again for
+        // the context's own unbind below.
+        cap_argument(
+            "sched-context-unbind-object-notification",
+            SCHED_CONTEXT_UNBIND_OBJECT,
+            SCHED_CONTEXT_CAP,
+            NOTIFICATION_CAP,
+            FRAME_VADDR,
+        ),
+        cap_argument(
+            "sched-context-rebind-notification",
             SCHED_CONTEXT_BIND,
             SCHED_CONTEXT_CAP,
             NOTIFICATION_CAP,

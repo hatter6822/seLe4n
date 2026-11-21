@@ -57,6 +57,24 @@ theorem schedContextUnbindAllOnCore_mappingStage {vScId : SeLe4n.ValidObjId}
   · exact (schedContextUnbindOnCore_mappingStage hU).trans
       (unbindSchedContextNotification_mappingStage _ _)
 
+/-- **`SchedContext_UnbindObject` on a thread keeps the mappings recorded**: it
+is the per-core thread unbind. -/
+theorem schedContextUnbindThreadObjectOnCore_mappingStage {vScId : SeLe4n.ValidObjId}
+    {tid : SeLe4n.ThreadId} {ec : Concurrency.CoreId} {st st' : SystemState}
+    {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)}
+    (h : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId tid ec st = .ok (st', sgi?)) :
+    SystemState.MappingStage st st' :=
+  schedContextUnbindOnCore_mappingStage (SchedContextOps.schedContextUnbindThreadObjectOnCore_ok h)
+
+/-- **`SchedContext_UnbindObject` on a notification keeps the mappings
+recorded**: it is the notification unbind. -/
+theorem schedContextUnbindNotificationObject_mappingStage {vScId : SeLe4n.ValidObjId}
+    {n : SeLe4n.ObjId} {st st' : SystemState}
+    (h : SchedContextOps.schedContextUnbindNotificationObject vScId n st = .ok ((), st')) :
+    SystemState.MappingStage st st' := by
+  obtain ⟨-, rfl⟩ := SchedContextOps.schedContextUnbindNotificationObject_ok h
+  exact unbindSchedContextNotification_mappingStage _ _
+
 /-- **The bind keeps the mappings recorded**: a context and a notification,
 each rewritten as the kind it was, neither holding a mapping fact. -/
 theorem schedContextBindNotification_mappingStage {vScId : SeLe4n.ValidObjId}
@@ -316,6 +334,38 @@ theorem dispatchCapabilityOnly_mappingStage
                   simp only [hUn] at hStep
                   cases hStep
                   exact schedContextUnbindAllOnCore_mappingStage hUn
+    all_goals try cases hStep
+  case schedContextUnbindObject =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object scId =>
+      try dsimp only [] at hStep
+      cases hN : resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | succ k =>
+          simp only [hN] at hStep
+          cases hVal : validateObjIdArg scId with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vScId =>
+              simp only [hVal] at hStep
+              exact schedContextUnbindNotificationObject_mappingStage hStep
+      | zero =>
+          simp only [hN] at hStep
+          cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok vThreadId =>
+              simp only [hRes] at hStep
+              cases hVal : validateObjIdArg scId with
+              | error e => simp only [hVal] at hStep; cases hStep
+              | ok vScId =>
+                  simp only [hVal] at hStep
+                  cases hUn : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId
+                      vThreadId.val executingCore st with
+                  | error e => simp only [hUn] at hStep; cases hStep
+                  | ok pair =>
+                      obtain ⟨stU, sgiU⟩ := pair
+                      simp only [hUn] at hStep
+                      cases hStep
+                      exact schedContextUnbindThreadObjectOnCore_mappingStage hUn
     all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

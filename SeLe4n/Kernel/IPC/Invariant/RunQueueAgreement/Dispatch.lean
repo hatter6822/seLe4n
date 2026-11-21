@@ -558,6 +558,40 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
                   cases hStep
                   exact schedContextUnbindAllOnCore_runQueueEntryStage hUn
     all_goals try cases hStep
+  case schedContextUnbindObject =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object scId =>
+      try dsimp only [] at hStep
+      cases hN : resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | succ k =>
+          simp only [hN] at hStep
+          cases hVal : validateObjIdArg scId with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vScId =>
+              simp only [hVal] at hStep
+              obtain ⟨-, rfl⟩ := SchedContextOps.schedContextUnbindNotificationObject_ok hStep
+              exact (unbindSchedContextNotification_runQueueStage _ _).entry
+      | zero =>
+          simp only [hN] at hStep
+          cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok vThreadId =>
+              simp only [hRes] at hStep
+              cases hVal : validateObjIdArg scId with
+              | error e => simp only [hVal] at hStep; cases hStep
+              | ok vScId =>
+                  simp only [hVal] at hStep
+                  cases hUn : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId
+                      vThreadId.val executingCore st with
+                  | error e => simp only [hUn] at hStep; cases hStep
+                  | ok pair =>
+                      obtain ⟨stU, sgiU⟩ := pair
+                      simp only [hUn] at hStep
+                      cases hStep
+                      exact schedContextUnbindOnCore_runQueueEntryStage
+                        (SchedContextOps.schedContextUnbindThreadObjectOnCore_ok hUn)
+    all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>

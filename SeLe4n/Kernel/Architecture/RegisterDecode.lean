@@ -225,7 +225,7 @@ def syscallReadsOverflow : SyscallId → Bool
   | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction | .declassify
   | .auditRead | .auditDrain | .serviceRevoke | .serviceQuery | .schedContextBind
-  | .schedContextUnbind | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
+  | .schedContextUnbind | .schedContextUnbindObject | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap
   | .pageTableUnmap | .schedContextConsumed | .schedContextYieldTo | .irqHandlerAck
   | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear | .tcbBindNotification
@@ -1016,7 +1016,7 @@ def routedInvocation : SyscallId → Bool
   | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
-  | .serviceRevoke | .serviceQuery | .schedContextBind | .schedContextUnbind | .schedContextConsumed
+  | .serviceRevoke | .serviceQuery | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject | .schedContextConsumed
   | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbBindNotification | .tcbUnbindNotification | .tcbSuspend | .tcbResume
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer | .tcbSetAffinity

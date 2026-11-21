@@ -798,6 +798,32 @@ theorem schedLockSet_schedContextUnbindAllOnCore_coversWrites (st st' : SystemSt
       (footprintCoversWrites_of_scheduler_eq S hTable
         (unbindSchedContextNotification_scheduler _ _))
 
+/-- WS-SX SX8.3: **`SchedContext_UnbindObject` on a thread writes inside the
+footprint the thread unbind declares**: it is the per-core thread unbind. -/
+theorem schedLockSet_schedContextUnbindThreadObjectOnCore_coversWrites (st st' : SystemState)
+    (vScId : SeLe4n.ValidObjId) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet) (hObjInv : st.objects.invExt)
+    (hStep : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId tid executingCore st =
+      .ok (st', sgi))
+    (hS : LockSet.ofList?
+      (schedLockSet_schedContextUnbindOnCore st vScId.val) = some S) :
+    footprintCoversWrites S st st' :=
+  schedLockSet_schedContextUnbindOnCore_coversWrites st st' vScId executingCore sgi S hObjInv
+    (SchedContextOps.schedContextUnbindThreadObjectOnCore_ok hStep) hS
+
+/-- WS-SX SX8.3: **`SchedContext_UnbindObject` on a notification writes no
+scheduler domain**: the notification unbind writes two objects alone. -/
+theorem schedLockSet_schedContextUnbindNotificationObject_coversWrites (st st' : SystemState)
+    (vScId : SeLe4n.ValidObjId) (n : SeLe4n.ObjId) (S : LockSet)
+    (hStep : SchedContextOps.schedContextUnbindNotificationObject vScId n st = .ok ((), st'))
+    (hS : LockSet.ofList? (schedFootprintOfCores [] []) = some S) :
+    footprintCoversWrites S st st' := by
+  have hTable : (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs := by
+    rw [LockSet.ofList?_pairs hS]
+    exact schedFootprintOfCores_contains_objStore_write _ _
+  obtain ⟨-, rfl⟩ := SchedContextOps.schedContextUnbindNotificationObject_ok hStep
+  exact footprintCoversWrites_of_scheduler_eq S hTable (unbindSchedContextNotification_scheduler _ _)
+
 /-- WS-ZA ZA6.29: **the requeue moves no reservation**: it writes a run queue
 and a flag. -/
 theorem yieldToRequeue_replenishQueueOnCore (S : SystemState) (home : CoreId)

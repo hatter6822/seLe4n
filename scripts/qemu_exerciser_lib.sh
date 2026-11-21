@@ -918,6 +918,9 @@ for driver in drivers:
             # reply, on both sides; and finalisation of either end of a
             # notification-scheduling-context link clearing it.
             "sched-context-bind-notification", "sched-context-unbind-notification",
+            # WS-SX SX8.3: UnbindObject on a thread and on a notification.
+            "sched-context-bind-for-unbind-object", "sched-context-unbind-object-thread",
+            "sched-context-unbind-object-notification", "sched-context-rebind-notification",
             "bound-signal-bind-root", "bound-signal-signal", "bound-signal-receive",
             "bound-signal-reply-recv-signal", "bound-signal-reply-recv",
             "bound-signal-unbind-root",

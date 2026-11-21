@@ -4395,6 +4395,25 @@ def lockSet_schedContextUnbind (callerTid : ThreadId)
        (stateLevelLock, .write)])
     (queueOwnerMember queueOwner)
 
+/-- WS-SX SX8.3: `lockSet` for `schedContextUnbindObject`, on the object extra
+capability 0 names.  A thread (`.inl`) is the thread unbind's footprint, the
+unbind's own less nothing it writes — it is `schedContextUnbind`'s thread half;
+a notification (`.inr`) writes the invoked SchedContext and the notification
+and reads the caller and its CSpace root. -/
+def lockSet_schedContextUnbindObject (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (scid : SchedContextId)
+    (object : Sum ThreadId ObjId)
+    (queueOwner : Option QueueOwner) : LockSet :=
+  match object with
+  | .inl targetTcbTid =>
+    lockSet_schedContextUnbind callerTid cnodeRootObjId scid targetTcbTid queueOwner
+  | .inr ntfnId =>
+    lockSetOfList
+      [(tcbLock callerTid, .read),
+       (cnodeLock cnodeRootObjId, .read),
+       (schedContextLock scid, .write),
+       (notificationLock ntfnId, .write)]
+
 /-- WS-ZA ZA6.9: `lockSet` for `schedContextConsumed`.  `setConsumed` writes
 the invoked SchedContext (its consumed time is reset) and the caller's TCB (the
 reading lands in its saved registers); the CSpace root is read for the
@@ -5136,7 +5155,7 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- an `RHTable` whose insert may rehash, so both declare `stateLevelLock`.
   -- `.schedContextConfigure` writes the SchedContext and the bound thread and
   -- touches no index, so it is split out rather than widened with them.
-  | .schedContextBind | .schedContextUnbind =>
+  | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject =>
       [.tcb, .cnode, .schedContext, .endpoint, .notification, .objStore]
   | .schedContextConfigure =>
       [.tcb, .cnode, .schedContext, .endpoint, .notification]
@@ -5246,7 +5265,7 @@ def declaresStaticLockFootprint : SyscallId → Bool
   | .untypedRetype
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
+  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject | .schedContextConsumed
   | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap
@@ -7003,6 +7022,30 @@ theorem lockSet_consistent_schedContextConsumed (callerTid : ThreadId) (cnRoot :
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
+
+/-- WS-SX SX8.3: SM3.B.4 for `.schedContextUnbindObject`. -/
+theorem lockSet_consistent_schedContextUnbindObject (callerTid : ThreadId)
+    (cnRoot : ObjId) (scid : SchedContextId) (object : Sum ThreadId ObjId)
+    (queueOwner : Option QueueOwner) :
+    ∀ p ∈ (lockSet_schedContextUnbindObject callerTid cnRoot scid object queueOwner).pairs,
+      p.fst.kind ∈ permittedKinds .schedContextUnbindObject := by
+  cases object with
+  | inl t =>
+    intro p hMem
+    have h := lockSet_consistent_schedContextUnbind callerTid cnRoot scid t queueOwner p hMem
+    simpa [permittedKinds] using h
+  | inr n =>
+    exact lockSet_consistent_of_extended_base _ _
+      (by intro p hMem
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          rcases List.mem_cons.mp hMem with h | hMem
+          · rw [h]; simp; decide
+          exact absurd hMem (by intro h; cases h))
 
 /-- WS-ZA ZA6.32: SM3.B.4 for `.irqHandlerAck`. -/
 theorem lockSet_consistent_irqHandlerAck (callerTid : ThreadId) (cnRoot : ObjId) :

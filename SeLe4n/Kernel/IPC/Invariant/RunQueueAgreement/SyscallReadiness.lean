@@ -1006,6 +1006,42 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
                   cases hStep
                   exact schedContextUnbindAllOnCore_readyKeptStage hD hUn
     all_goals try cases hStep
+  case schedContextUnbindObject =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object scId =>
+      try dsimp only [] at hStep
+      cases hN : resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | succ k =>
+          simp only [hN] at hStep
+          cases hVal : validateObjIdArg scId with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vScId =>
+              simp only [hVal] at hStep
+              obtain ⟨-, rfl⟩ := SchedContextOps.schedContextUnbindNotificationObject_ok hStep
+              exact .of_stage (unbindSchedContextNotification_runQueueStage _ _)
+      | zero =>
+          simp only [hN] at hStep
+          cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok vThreadId =>
+              simp only [hRes] at hStep
+              cases hVal : validateObjIdArg scId with
+              | error e => simp only [hVal] at hStep; cases hStep
+              | ok vScId =>
+                  simp only [hVal] at hStep
+                  cases hUn : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId
+                      vThreadId.val executingCore st with
+                  | error e => simp only [hUn] at hStep; cases hStep
+                  | ok pair =>
+                      obtain ⟨stU, sgiU⟩ := pair
+                      simp only [hUn] at hStep
+                      cases hStep
+                      exact readyKeptStage.of_stage
+                        (SchedContextOps.schedContextUnbind_runQueueStage_of_dequeued vScId st _ hD
+                          (SchedContextOps.schedContextUnbindOnCore_ok
+                            (SchedContextOps.schedContextUnbindThreadObjectOnCore_ok hUn)).2.1)
+    all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>

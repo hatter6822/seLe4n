@@ -474,13 +474,15 @@ abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundar
     invocation's, capability-only, and WS-ZA ZA6.32 `irqHandlerAck`, the
     interrupt-handler acknowledge, and `irqControlGetFromCap`,
     `irqHandlerSetNotificationFromCap` and `irqHandlerClear`, the handler issue,
-    bind and unbind, all capability-only.  The read-only `lookupObject` left
+    bind and unbind, all capability-only.  WS-SX SX8.3 added
+    `schedContextUnbindThreadObjectOnCore`, the unbind-object invocation's,
+    capability-only.  The read-only `lookupObject` left
     with the definition, which nothing called.
 
     This theorem is the authority for the entry count; `enforcementBoundary`'s
     own docstring deliberately does not restate it. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 53 := by rfl
+    enforcementBoundaryExtended.length = 54 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

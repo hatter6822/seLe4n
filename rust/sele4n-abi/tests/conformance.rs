@@ -1307,12 +1307,13 @@ fn kernel_error_variant_count() {
 /// ZA6.29 added SchedContextYieldTo at 43; WS-ZA ZA6.32 added IrqHandlerAck at
 /// 44 and IrqControlGet, IrqHandlerSetNotification and IrqHandlerClear at 45 to
 /// 47; WS-SX SX6.5 retired TcbSetFaultHandler at 34 and WS-SX SX7.1 the
-/// untyped reset at 37, leaving 45 variants under an encoding bound of 48).
+/// untyped reset at 37; WS-SX SX8.3 added SchedContextUnbindObject at 48,
+/// leaving 46 variants under an encoding bound of 49).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 45;
+    const SYSCALL_COUNT: u64 = 46;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
-    assert_eq!(SyscallId::ENCODING_BOUND, 48);
+    assert_eq!(SyscallId::ENCODING_BOUND, 49);
     for i in live_syscall_numbers() {
         assert!(
             SyscallId::from_u64(i).is_some(),
@@ -1465,7 +1466,8 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is 47 (WS-ZA ZA6.32 added IrqHandlerAck at 44 and
+/// AA1-B-5: COUNT is 46 (WS-SX SX8.3 added SchedContextUnbindObject at 48,
+/// after WS-ZA ZA6.32 added IrqHandlerAck at 44 and
 /// IrqControlGet, IrqHandlerSetNotification and IrqHandlerClear at 45 to 47, after
 /// WS-ZA ZA6.29 added SchedContextYieldTo at 43, after
 /// WS-ZA ZA6.9 added SchedContextConsumed at 42, after
@@ -1481,7 +1483,7 @@ fn sched_context_boundary() {
 /// MintReplyCap).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 45);
+    assert_eq!(SyscallId::COUNT, 46);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1809,21 +1811,21 @@ fn declassify_roundtrip() {
     assert_eq!(sid.required_right(), AccessRight::Write);
 }
 
-/// D6-D5: Boundary — discriminant 48 is out of range for SyscallId
+/// D6-D5: Boundary — discriminant 49 is out of range for SyscallId
 /// (WS-BP BP7.1 added PageTableMap and PageTableUnmap, moving the boundary
 /// from 39 to 41; WS-ZA ZA4.3 added Yield, moving it to 42; WS-ZA ZA6.9 added
 /// SchedContextConsumed, moving it to 43; WS-ZA ZA6.29 added
 /// SchedContextYieldTo, moving it to 44; WS-ZA ZA6.32 added IrqHandlerAck,
 /// IrqControlGet, IrqHandlerSetNotification and IrqHandlerClear, moving it to
-/// 48).
+/// 48; WS-SX SX8.3 added SchedContextUnbindObject, moving it to 49).
 #[test]
 fn syscall_boundary() {
-    assert!(SyscallId::from_u64(47).is_some()); // Last valid
-    assert!(SyscallId::from_u64(48).is_none()); // First invalid
+    assert!(SyscallId::from_u64(48).is_some()); // Last valid
+    assert!(SyscallId::from_u64(49).is_none()); // First invalid
     assert!(SyscallId::from_u64(8).is_none()); // Retired (WS-ZA ZA5.4 part 14)
     assert!(SyscallId::from_u64(34).is_none()); // Retired (WS-SX SX6.5)
     assert!(SyscallId::from_u64(37).is_none()); // Retired (WS-SX SX7.1)
-    assert_eq!(SyscallId::COUNT, 45);
+    assert_eq!(SyscallId::COUNT, 46);
 }
 
 /// WS-ZA ZA6.9: SchedContextConsumed roundtrip (discriminant 42).
@@ -1846,6 +1848,19 @@ fn sched_context_yield_to_roundtrip() {
     assert_eq!(sid, SyscallId::SchedContextYieldTo);
     assert_eq!(sid.to_u64(), 43);
     assert_eq!(sid.required_right(), AccessRight::Write);
+}
+
+/// WS-SX SX8.3: SchedContextUnbindObject roundtrip (discriminant 48).
+/// `seL4_SchedContext_UnbindObject`: the scheduling-context capability with
+/// the write right, the thread or notification as extra capability 0, label
+/// 36; returns nothing.
+#[test]
+fn sched_context_unbind_object_roundtrip() {
+    let sid = SyscallId::from_u64(48).expect("SchedContextUnbindObject must exist");
+    assert_eq!(sid, SyscallId::SchedContextUnbindObject);
+    assert_eq!(sid.to_u64(), 48);
+    assert_eq!(sid.required_right(), AccessRight::Write);
+    assert_eq!(sid.label(), Some(36));
 }
 
 /// WS-ZA ZA6.32: IrqHandlerAck roundtrip (discriminant 44).
@@ -2169,6 +2184,7 @@ fn syscall_return_shape(sid: SyscallId) -> ReturnShape {
         | SyscallId::SchedContextConfigure
         | SyscallId::SchedContextBind
         | SyscallId::SchedContextUnbind
+        | SyscallId::SchedContextUnbindObject
         | SyscallId::TcbSuspend
         | SyscallId::TcbResume
         | SyscallId::TcbSetPriority
@@ -2872,6 +2888,8 @@ fn wrappers_name_their_syscalls() {
     assert_names("sched_context_bind", SyscallId::SchedContextBind);
     let _ = sele4n_sys::sched_context::sched_context_unbind(cap);
     assert_names("sched_context_unbind", SyscallId::SchedContextUnbind);
+    let _ = sele4n_sys::sched_context::sched_context_unbind_object(cap, CPtr::from(1u64), &mut buf);
+    assert_names("sched_context_unbind_object", SyscallId::SchedContextUnbindObject);
 
     let _ = sele4n_sys::tcb::tcb_suspend(cap);
     assert_names("tcb_suspend", SyscallId::TcbSuspend);

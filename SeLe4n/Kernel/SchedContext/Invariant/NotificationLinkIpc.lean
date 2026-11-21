@@ -96,4 +96,27 @@ theorem schedContextUnbindAllOnCore_preserves_ipcInvariantFull
       ((SchedContextOps.schedContextUnbind_runQueueEntryStage vScId st stU hU).1 hObjInv hR).1
       (schedContextUnbind_preserves_ipcInvariantFull st stU vScId hObjInv hInv hU)
 
+/-- **`SchedContext_UnbindObject` on a thread preserves `ipcInvariantFull`**:
+it is the per-core thread unbind, whose seam writes nothing on a context the
+executing core does not run, so the step is the single-core unbind. -/
+theorem schedContextUnbindThreadObjectOnCore_preserves_ipcInvariantFull
+    (st st' : SystemState) (vScId : SeLe4n.ValidObjId) (tid : SeLe4n.ThreadId)
+    (ec : Concurrency.CoreId) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId tid ec st = .ok (st', sgi)) :
+    ipcInvariantFull st' := by
+  obtain ⟨-, hU, -⟩ := SchedContextOps.schedContextUnbindOnCore_ok
+    (SchedContextOps.schedContextUnbindThreadObjectOnCore_ok hStep)
+  exact schedContextUnbind_preserves_ipcInvariantFull st st' vScId hObjInv hInv hU
+
+/-- **`SchedContext_UnbindObject` on a notification preserves
+`ipcInvariantFull`**: it is the notification unbind. -/
+theorem schedContextUnbindNotificationObject_preserves_ipcInvariantFull
+    (st st' : SystemState) (vScId : SeLe4n.ValidObjId) (n : SeLe4n.ObjId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : SchedContextOps.schedContextUnbindNotificationObject vScId n st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨-, rfl⟩ := SchedContextOps.schedContextUnbindNotificationObject_ok hStep
+  exact unbindSchedContextNotification_preserves_ipcInvariantFull _ _ hObjInv hInv
+
 end SeLe4n.Kernel

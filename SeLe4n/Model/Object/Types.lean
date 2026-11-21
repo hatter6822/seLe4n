@@ -5026,6 +5026,11 @@ inductive SyscallId where
   | irqHandlerClear        -- WS-ZA ZA6.32: unbind an interrupt line's
                            -- notification (seL4_IRQHandler_Clear), through
                            -- `irqHandlerClear`
+  | schedContextUnbindObject -- WS-SX SX8.3: unbind one object — the thread or the
+                           -- notification extra capability 0 names — from a
+                           -- scheduling context (seL4_SchedContext_UnbindObject),
+                           -- through `schedContextUnbindThreadObjectOnCore` and
+                           -- `schedContextUnbindNotificationObject`
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -5082,13 +5087,14 @@ namespace SyscallId
   | .irqControlGet         => 45
   | .irqHandlerSetNotification => 46
   | .irqHandlerClear       => 47
+  | .schedContextUnbindObject => 48
 
 /-- Total number of modeled syscalls (variants). -/
-def count : Nat := 45
+def count : Nat := 46
 
 /-- One past the largest syscall number: every number below it is a variant's
     or a retired one. -/
-def encodingBound : Nat := 48
+def encodingBound : Nat := 49
 
 /-- Retired operation codes, never reassigned: `8`, the in-place lifecycle
     retype (WS-ZA ZA5.4 part 14); `34`, the fault-handler configuration that
@@ -5145,6 +5151,7 @@ def retiredNumbers : List Nat := [8, 34, 37]
   | 45 => some .irqControlGet
   | 46 => some .irqHandlerSetNotification
   | 47 => some .irqHandlerClear
+  | 48 => some .schedContextUnbindObject
   | _  => none
 
 instance : ToString SyscallId where
@@ -5194,6 +5201,7 @@ instance : ToString SyscallId where
     | .irqControlGet         => "irqControlGet"
     | .irqHandlerSetNotification => "irqHandlerSetNotification"
     | .irqHandlerClear       => "irqHandlerClear"
+    | .schedContextUnbindObject => "schedContextUnbindObject"
 
 /-- AC4-D/IF-01: Exhaustive list of all SyscallId variants. Used by the enforcement
     boundary completeness witness to ensure every syscall is classified. The
@@ -5214,7 +5222,7 @@ def all : List SyscallId :=
   , .cspaceRevoke, .untypedRetype, .tcbSetSpace
   , .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed
   , .schedContextYieldTo, .irqHandlerAck, .irqControlGet
-  , .irqHandlerSetNotification, .irqHandlerClear ]
+  , .irqHandlerSetNotification, .irqHandlerClear, .schedContextUnbindObject ]
 
 /-- AC4-D: Compile-time check — `all` has exactly `count` elements.
     Fails at compile time if a variant is added to the inductive but not to `all`. -/
@@ -5247,9 +5255,9 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 20 | 21 | 22 | 23 | 24 | 25
   | 26 | 27 | 28 | 29 | 30
   | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 | 44
-  | 45 | 46 | 47 =>
+  | 45 | 46 | 47 | 48 =>
     intro s h; simp [ofNat?] at h <;> (subst h; rfl)
-  | n + 48 => intro s h; simp [ofNat?] at h
+  | n + 49 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by
@@ -5270,8 +5278,8 @@ theorem ofNat?_isSome_iff (n : Nat) :
   | 20 | 21 | 22 | 23 | 24 | 25
   | 26 | 27 | 28 | 29 | 30
   | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 | 44
-  | 45 | 46 | 47 => rfl
-  | n + 48 => simp [ofNat?, encodingBound, retiredNumbers]
+  | 45 | 46 | 47 | 48 => rfl
+  | n + 49 => simp [ofNat?, encodingBound, retiredNumbers]
 
 /-- The retired in-place retype's number names no syscall. -/
 theorem ofNat?_retired : ofNat? 8 = none := rfl
@@ -5518,6 +5526,7 @@ def label? : SyscallId → Option Nat
   | .schedContextConfigure => some 33
   | .schedContextBind => some 34
   | .schedContextUnbind => some 35
+  | .schedContextUnbindObject => some 36
   | .schedContextConsumed => some 37
   | .schedContextYieldTo => some 38
   | .vspaceUnifyInstruction => some 42
@@ -5581,6 +5590,7 @@ def ofLabel? : Nat → Option SyscallId
   | 33 => some .schedContextConfigure
   | 34 => some .schedContextBind
   | 35 => some .schedContextUnbind
+  | 36 => some .schedContextUnbindObject
   | 37 => some .schedContextConsumed
   | 38 => some .schedContextYieldTo
   | 42 => some .vspaceUnifyInstruction

@@ -184,7 +184,8 @@ yield `yieldOnCore`, WS-ZA ZA6.9's Consumed invocation
 `schedContextConsumedOnCore`, WS-ZA ZA6.29's yieldTo invocation
 `schedContextYieldToOnCore` and WS-ZA ZA6.32's interrupt acknowledge
 `irqHandlerAck`, handler issue `irqControlGetFromCap`, handler bind
-`irqHandlerSetNotificationFromCap` and handler clear `irqHandlerClear`, less WS-ZA ZA5.4 part 14's two retired in-place retype
+`irqHandlerSetNotificationFromCap` and handler clear `irqHandlerClear` and WS-SX SX8.3's
+unbind-object invocation `schedContextUnbindThreadObjectOnCore`, less WS-ZA ZA5.4 part 14's two retired in-place retype
 entries `lifecycleRetypeObject` / `lifecycleRevokeDeleteRetype` and the
 read-only `lookupObject`, which nothing called, and WS-SX SX7's retired reset
 `untypedResetFromCap`) and the
@@ -206,7 +207,7 @@ round 38 caught it stale at 53 one commit after the theorem moved.
 The SM8.E.3 promotion left the total **unchanged**, which is the point of
 appending the bracket last in the canonical list; SM9.A.11 moves it, because the
 two audit entries are genuinely new operations rather than a reclassification. -/
-theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 67 := by rfl
+theorem enforcementBoundaryPerCore_count : enforcementBoundaryPerCore.length = 68 := by rfl
 
 /-- SM8.B.7 (completeness, part 1): the per-core boundary **extends** the
 canonical one — it is the canonical list followed by the fourteen live cross-core

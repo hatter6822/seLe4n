@@ -292,12 +292,16 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
           (hBank := banksKeptOffCore_of_eq (by rw [schedContextBindNotification_machine h])))
     | exact hF (untypedRetypeFromCap_savedRegsKept hInv h)
          (untypedRetypeFromCap_stepCovers e' hInv hBi hPlaced h)
+    | exact hX (schedContextUnbindNotificationObject_savedRegsKeptExcept hInv h)
+        (schedContextUnbindNotificationObject_stepCovers (e := e') hInv h)
     | (cases h; rename_i hS
        first
         | (rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hS]
            exact (bankFrame.writeCallReturnWord_caller _ hInv).bankAgree hA)
         | exact hX (schedContextUnbindAllOnCore_savedRegsKeptExcept hInv hS)
             (schedContextUnbindAllOnCore_stepCovers _ _ _ e' _ hInv hS)
+        | exact hX (schedContextUnbindThreadObjectOnCore_savedRegsKeptExcept hInv hS)
+            (schedContextUnbindThreadObjectOnCore_stepCovers _ _ _ e' _ hInv hS)
         | exact schedContextConsumedOnCore_bankAgree hne hInv P.current hA hS
         | exact schedContextYieldToOnCore_bankAgree hne hInv hYA hYN P.current hA hS
         | exact hX (unbindNotification_savedRegsKeptExcept hInv hS)

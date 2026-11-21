@@ -439,6 +439,29 @@ theorem schedContextUnbindAllOnCore_stepCovers (st st' : SystemState) (vScId : S
       (hBank := banksKeptOffCore_of_eq (by rw [unbindSchedContextNotification_machine]))
     exact ⟨stepCovers_trans C C2, hI2⟩
 
+/-- **`SchedContext_UnbindObject` on a thread**: the single-core thread unbind
+(the per-core form's seam writes nothing once the current thread's context is
+refused). -/
+theorem schedContextUnbindThreadObjectOnCore_stepCovers (st st' : SystemState)
+    (vScId : SeLe4n.ValidObjId) (e : CoreId) (sgi? : Option (CoreId × SgiKind))
+    {tid : SeLe4n.ThreadId} {ec : CoreId} (hObjInv : st.objects.invExt)
+    (hStep : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId tid ec st = .ok (st', sgi?)) :
+    stepCovers e st st' ∧ st'.objects.invExt :=
+  schedContextUnbind_stepCovers st st' vScId e hObjInv
+    (SchedContextOps.schedContextUnbindOnCore_ok
+      (SchedContextOps.schedContextUnbindThreadObjectOnCore_ok hStep)).2.1
+
+/-- **`SchedContext_UnbindObject` on a notification**: the notification unbind,
+which keeps every scheduling key. -/
+theorem schedContextUnbindNotificationObject_stepCovers {e : CoreId} {st st' : SystemState}
+    {vScId : SeLe4n.ValidObjId} {n : SeLe4n.ObjId} (hObjInv : st.objects.invExt)
+    (hStep : SchedContextOps.schedContextUnbindNotificationObject vScId n st = .ok ((), st')) :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  obtain ⟨-, rfl⟩ := SchedContextOps.schedContextUnbindNotificationObject_ok hStep
+  exact (unbindSchedContextNotification_keyFrame _ _ hObjInv).stepCoversInv
+    (hRes := by rw [unbindSchedContextNotification_machine])
+    (hBank := banksKeptOffCore_of_eq (by rw [unbindSchedContextNotification_machine]))
+
 /-- The `Call`-gated reply write keeps the capability key frame: it is a
 return-frame write or the identity (`Architecture.writeCallReturnWord_of_frame`). -/
 theorem writeCallReturnWord_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId) (w : UInt64)
@@ -1544,6 +1567,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
         (hRes := by rw [schedContextBindNotification_machine h])
         (hBank := banksKeptOffCore_of_eq (by rw [schedContextBindNotification_machine h]))
     | exact (bindNotification_keyFrame _ _ _ _ hInv h).stepCoversInv
+    | exact (schedContextUnbindNotificationObject_stepCovers hInv h)
     | exact (pageTableMap_keyFrame _ _ _ _ _ hInv h).stepCoversInv
     | exact (pageTableUnmap_keyFrame _ _ _ hInv h).stepCoversInv
     | (cases h; rename_i hU
@@ -1552,6 +1576,7 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
            exact (writeCallReturnWord_keyFrame _ _ _ hInv).stepCoversInv
              (hRes := by rw [Architecture.writeCallReturnWord_machine]) (hBank := banksKeptOffCore_of_eq (by rw [Architecture.writeCallReturnWord_machine])))
         | exact (schedContextUnbindAllOnCore_stepCovers _ _ _ _ _ hInv hU)
+        | exact (schedContextUnbindThreadObjectOnCore_stepCovers _ _ _ _ _ hInv hU)
         | exact (schedContextConsumedOnCore_stepCovers _ hInv hU)
         | exact (schedContextYieldToOnCore_stepCovers hInv hU)
         | exact (unbindNotification_keyFrame _ _ _ hInv hU).stepCoversInv
