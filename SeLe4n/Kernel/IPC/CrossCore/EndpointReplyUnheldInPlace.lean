@@ -655,6 +655,52 @@ as `replyWakesInPlace`, which reads no TCB. -/
 theorem replyUnlinkedInPlace_eq_wakes (st : SystemState) (c : SeLe4n.ThreadId) (ct : TCB)
     (rid : SeLe4n.ReplyId) : replyUnlinkedInPlace st c rid = replyWakesInPlace st c ct rid := rfl
 
+/-- **The reply dispatch to a caller recording no server, its reply object
+linked to nothing**: under `replyUnlinkedInPlace`, the dispatch commits the
+reply leg's writes (`storeReplyLeg`) and pops nothing, as seL4's `reply_remove`
+does on a reply object neither heading a stack nor sitting on one.  The one
+derivation every unlinked shape (short, long, fault, capabilities) shares. -/
+theorem replyDispatch_unlinked_inPlace (st : SystemState) (replier c : SeLe4n.ThreadId)
+    (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId) (msg : IpcMessage)
+    (core : Concurrency.CoreId)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyUnlinkedInPlace st c rid = true) :
+    ∃ sgi, endpointReplyCrossCoreDispatch replier c msg core st =
+      (storeReplyLeg st c rid msg, .ok sgi) := by
+  simp only [replyUnlinkedInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
+  obtain ⟨⟨⟨⟨⟨hCRes, hLC⟩, hFC⟩, hLR⟩, hFR⟩, hRp⟩ := hG
+  obtain ⟨rp, hRo, hNext, hPrev⟩ : ∃ rp, st.objects[rid.toObjId]? = some (.reply rp) ∧
+      rp.next = none ∧ rp.prev = none := by
+    split at hRp
+    · next rp hRo =>
+      rw [Bool.and_eq_true] at hRp
+      exact ⟨rp, (SystemState.getReply?_eq_some_iff _ _ _).mp hRo,
+        Option.isNone_iff_eq_none.mp hRp.1, Option.isNone_iff_eq_none.mp hRp.2⟩
+    · cases hRp
+  obtain ⟨hEq, hR5⟩ := replyOnCore_eq_storeLeg st replier c none ct ep rid rp msg core hSz hT hIpc
+    hRO hCRes hLC hFC hLR hFR hRo (Or.inl ⟨hNext, hPrev⟩)
+  simp only [SystemState.unlinkReplyWaiterOpt] at hEq hR5
+  have hHead : replyFrameHeadContext? (storeReplyLeg st c rid msg) rid = none := by
+    unfold replyFrameHeadContext?
+    rw [hR5]
+    simp only [Reply.consumed, hNext]
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  obtain ⟨cv, hcv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff c).mpr hCRes)
+  have hRec : recordedReplyServer? st c = none := by
+    simp only [recordedReplyServer?, hTc, hIpc]
+  have hAns : answeredReplyObject? st c = some rid := by
+    simp only [answeredReplyObject?, hTc, Option.bind_some, hRO]
+  unfold endpointReplyCrossCoreDispatch
+  rw [hEq]
+  simp only [hRec, hAns, hcv]
+  unfold applyReplyDonationOnCore
+  rw [SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv, replyFrameHeadHolder?_of_no_head _ _ hHead]
+  simp only [popUnheldReplyHead_of_no_head _ _ _ _ hHead]
+  exact ⟨_, rfl⟩
+
 /-- The reply to a caller recording no server whose reply object is linked to
 nothing: the reply leg's writes, the caller woken holding the message, and the
 message staged in its return frame.  There is no context to pop and no server
@@ -692,45 +738,21 @@ theorem replyTransferChecked_unlinked_inPlace (ctx : LabelingContext) (st : Syst
   replace hMsg := hMsg.symm
   have hW : replyWakesInPlace st c ct rid = true := hG
   have hNo := replyWakesInPlace_noResizeDue hW
-  simp only [replyUnlinkedInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
-  obtain ⟨⟨⟨⟨⟨hCRes, hLC⟩, hFC⟩, hLR⟩, hFR⟩, hRp⟩ := hG
-  obtain ⟨rp, hRo, hNext, hPrev⟩ : ∃ rp, st.objects[rid.toObjId]? = some (.reply rp) ∧
-      rp.next = none ∧ rp.prev = none := by
-    split at hRp
-    · next rp hRo =>
-      rw [Bool.and_eq_true] at hRp
-      exact ⟨rp, (SystemState.getReply?_eq_some_iff _ _ _).mp hRo,
-        Option.isNone_iff_eq_none.mp hRp.1, Option.isNone_iff_eq_none.mp hRp.2⟩
-    · cases hRp
   have hSz' : ¬ msg.registers.size > maxMessageRegisters := by
     rw [← hMsg, Architecture.regMessageBody_size]; simp only [maxMessageRegisters]; omega
-  obtain ⟨hEq, hR5⟩ := replyOnCore_eq_storeLeg st replier c none ct ep rid rp msg core hSz' hT hIpc
-    hRO hCRes hLC hFC hLR hFR hRo (Or.inl ⟨hNext, hPrev⟩)
-  simp only [SystemState.unlinkReplyWaiterOpt] at hEq hR5
-  have hHead : replyFrameHeadContext? (storeReplyLeg st c rid msg) rid = none := by
-    unfold replyFrameHeadContext?
-    rw [hR5]
-    simp only [Reply.consumed, hNext]
+  obtain ⟨sgi, hD⟩ := replyDispatch_unlinked_inPlace st replier c ct ep rid msg core hSz' hT hIpc
+    hRO hG
   have hPF : ct.pendingFault = none := TCB.pendingFault_eq_none_of_not_isFault hNoF
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hNF : threadHasPendingFault st c = false := by
     simp only [threadHasPendingFault, hTc, Option.bind_some, hPF, Option.isSome_none]
-  obtain ⟨cv, hcv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff c).mpr hCRes)
-  have hRec : recordedReplyServer? st c = none := by
-    simp only [recordedReplyServer?, hTc, hIpc]
-  have hAns : answeredReplyObject? st c = some rid := by
-    simp only [answeredReplyObject?, hTc, Option.bind_some, hRO]
   have hNoS := storeReplyLegReady_noResizeDue st c rid hNo
   unfold replyTransferOnCoreChecked
   rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
   simp only [Bool.false_eq_true, ↓reduceIte,
     replyTransferCaps_of_inert st replier c grant ct hTc hX, CapTransferSummary.capInfo_empty]
-  unfold endpointReplyCrossCoreDispatch
-  rw [hEq]
-  simp only [hRec, hAns, hcv]
-  unfold applyReplyDonationOnCore
-  rw [SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv, replyFrameHeadHolder?_of_no_head _ _ hHead]
-  simp only [popUnheldReplyHead_of_no_head _ _ _ _ hHead]
+  rw [hD]
+  simp only []
   rw [storeReplyLeg_eq_hold _ _ _ _ hNo]
   unfold performReplyUnlinkedDelivered
   subst hMsg

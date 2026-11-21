@@ -450,6 +450,81 @@ theorem replyTransferChecked_unheldCaps_inPlace (ctx : LabelingContext) (st : Sy
   unfold performReplyUnheldCapsDelivered
   exact replyHeldCaps_eq_delivered st _ c layout rf len badgeWord badged stcb ct _ hNoQ hAX hSz4
 
+/-! ## The reply to a caller recording no server, its reply object linked to nothing, that transfers capabilities -/
+
+/-- **The reply to a caller recording no server, its reply object linked to
+nothing, that transfers capabilities, delivered** (WS-SX SX8.3): the caller
+woken without the message, the transfer in place on no endpoint, then the
+caller's frame with the transfer's report.  No context to hand back. -/
+@[noinline] def performReplyUnlinkedCapsDelivered (st : SystemState) (c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badgeWord : SeLe4n.Badge) (badged : Bool)
+    (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
+  let X := storeReplyLegReady st c rid
+  capTransferK X c.toObjId sv sb sroot count rv rb rroot
+    fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
+    deliverCapsFrame
+      (capStepsInfo c.toObjId false x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+      (capStepsApply c.toObjId false rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
+      c layout rf len badgeWord badged
+
+/-- **The checked reply to a caller recording no server, its reply object
+linked to nothing, that transfers capabilities, in place**: under the flow gate
+and `replyUnlinkedInPlace`, a granting reply of at most four words to an
+unfaulted caller blocked on it with no server recorded, from a replier whose
+frame routes as a reply, commits `performReplyUnlinkedCapsDelivered`'s state. -/
+theorem replyTransferChecked_unlinkedCaps_inPlace (ctx : LabelingContext) (st : SystemState)
+    (replier c : SeLe4n.ThreadId) (ct stcb : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
+    (mi' : MessageInfo) (regs : Array SeLe4n.RegValue)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (core : Concurrency.CoreId) (msg : IpcMessage)
+    (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hMsg : msg =
+      { registers := Architecture.regMessageBody layout rf len,
+        badge := SeLe4n.Badge.opt badgeWord badged })
+    (hSz4 : Architecture.regMessageLength layout len ≤ 4)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyUnlinkedInPlace st c rid = true)
+    (hNoF : ct.faultWords.isFault = false)
+    (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true)
+    (hS : st.getTcb? replier = some stcb)
+    (hR : Architecture.RegisterDecode.registerRoutedSyscallOf opCode SeLe4n.arm64DefaultLayout
+      stcb.registerContext = .reply capAddr mi) :
+    replyTransferOnCoreChecked ctx replier c mi' regs msg true core st =
+      .ok ((), performReplyUnlinkedCapsDelivered st c rid layout rf len badgeWord badged
+        stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0] (routedExtraCaps stcb.registerContext)
+        ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0]) := by
+  have hNo := replyWakesInPlace_noResizeDue ((replyUnlinkedInPlace_eq_wakes st c ct rid) ▸ hG)
+  have hSz' : ¬ msg.registers.size > maxMessageRegisters := by
+    rw [hMsg, Architecture.regMessageBody_size]
+    have : (4 : Nat) ≤ maxMessageRegisters := by decide
+    omega
+  obtain ⟨sgi, hD⟩ := replyDispatch_unlinked_inPlace st replier c ct ep rid msg core hSz' hT hIpc
+    hRO hG
+  have hPF : ct.pendingFault = none := TCB.pendingFault_eq_none_of_not_isFault hNoF
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hNF : threadHasPendingFault st c = false := by
+    simp only [threadHasPendingFault, hTc, Option.bind_some, hPF, Option.isSome_none]
+  have hNoS := storeReplyLegReady_noResizeDue st c rid hNo
+  have hAX := ipcBufferReadsAgree_storeReplyLegReady st c rid hNo
+  have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
+    unfold receiverCapTarget? capTargetOf; rw [hTc]
+  unfold replyTransferOnCoreChecked
+  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
+  simp only [Bool.false_eq_true, ↓reduceIte]
+  rw [hD]
+  simp only []
+  rw [storeReplyLeg_eq_hold _ _ _ _ hNo]
+  unfold replyTransferCaps
+  rw [replyCapRequest_of_routedReply st replier stcb capAddr mi hS hR, hTgt]
+  subst hMsg
+  unfold performReplyUnlinkedCapsDelivered
+  exact replyHeldCaps_eq_delivered st _ c layout rf len badgeWord badged stcb ct _ hNoS hAX hSz4
+
 /-! ## The request a routed long reply makes -/
 
 /-- The extra-capability count a routed long reply frame names is the count its

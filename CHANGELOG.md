@@ -90,7 +90,15 @@ D22, "Match seL4", 2026-11-19). Stacks on SX7 (`v0.37.33`).
   nothing (the state the donated unbind leaves once the server is finalised)
   fell to the general arm and copied the object store twice; it is answered
   in place (`replyUnlinkedAdmits`, `performReplyUnlinkedDelivered`,
-  `replyTransferChecked_unlinked_inPlace`).
+  `replyTransferChecked_unlinked_inPlace`). The same reply is answered in
+  place on its other shapes too: to a faulted caller
+  (`performFaultReplyUnlinkedAnswer`), at a long message
+  (`performReplyUnlinkedCapsDeliveredLong`, and
+  `performFaultReplyUnlinkedAnswerLong` for a long fault reply) and with a
+  capability transfer (`performReplyUnlinkedCapsDelivered`). Each in-place
+  state is proven the specification's, all through one shared derivation
+  of the dispatch (`replyDispatch_unlinked_inPlace`). This copy is also on
+  `main`.
 - The exerciser's no-operation code was still 48 after label 36 took that
   number, so the route coverage read every refused selection as
   `SchedContext_UnbindObject`; it is `SyscallId::ENCODING_BOUND` (49), held
@@ -103,7 +111,11 @@ D22, "Match seL4", 2026-11-19). Stacks on SX7 (`v0.37.33`).
   completed receive; return at a blocking Wait, receive and reply-receive;
   UnbindObject on a thread and on a notification; and
   `sched-context-unbind-donated`, the unbind of a server holding a lent
-  context, whose caller is then answered on a stack no context heads.
+  context, whose caller is then answered on a stack no context heads; that
+  caller answered again at 120 words (`unlinked-long-root-replies`), by a
+  reply that installs a capability (`unlinked-reply-installs-cap`) and,
+  after a capability fault lent the context, by a fault reply
+  (`unlinked-fault-root-replies`).
 - Three Tier 3 anchors restated as relation checks over the reply unlink and
   the receive leg's return; the frozen `isDonated` anchor replaced by a
   negative over both unbinds.

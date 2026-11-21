@@ -4635,6 +4635,22 @@ run_check "INVARIANT" rg -n '^theorem replyRecvLongFaultArmR_eq($|[ ({:\[\]])' S
 run_check "INVARIANT" rg -n -U '                              if ct\.faultWords\.isFault then\n                                if replyWakesInPlace st c ct rid then\n                                  \.ok \(\(\), performFaultReplyAnswerLong st c server rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n -U '                                else if replyPopsInPlace st c ct\.scBindingScCode server rid then\n                                  \.ok \(\(\), performFaultReplyDonatedAnswerLong st c server rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n -U '                              if ct\.faultWords\.isFault then\n                                \.ok \(\(\), performFaultReplyUnheldAnswerLong st c rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+# WS-SX SX8.3: the reply to a caller recording no server whose reply object is
+# linked to nothing (the state SchedContext_Unbind of a lent context leaves once
+# the server is finalised) is answered in place on every shape: the plain reply,
+# the fault answer, the capability transfer, and their long forms; each in-place
+# state is proven the specification's.
+run_check "INVARIANT" rg -n '^theorem replyDispatch_unlinked_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyUnheldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferChecked_unlinked_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyUnheldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem faultReplyTransferChecked_unlinked_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultAnswerInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferChecked_unlinkedCaps_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyCapsReturnDelivered.lean
+run_check "INVARIANT" rg -n '^theorem faultReplyTransferChecked_unlinked_inPlaceLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongFaultAnswerInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferChecked_unlinkedCapsLong_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyCapsLongDelivered.lean
+run_check "INVARIANT" rg -n -U '    else if replyUnlinkedAdmits ctx layout len tid c rid cFault st then\n      \.ok \(\(\), performReplyUnlinkedDelivered st c rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U '    else if replyUnlinkedFaultAdmits ctx tid c rid st then\n      \.ok \(\(\), performFaultReplyUnlinkedAnswer st c rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReplyUnheldCapsArmR[^\n]*(\n([ \t][^\n]*)?)*else if replyUnlinkedAdmits ctx layout len tid c rid cFault st then(\n([ \t][^\n]*)?)*\.ok \(\(\), performReplyUnlinkedCapsDelivered " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" rg -n -U '                                replyUnlinkedInPlace st c rid then\n                              if ct\.faultWords\.isFault then\n                                \.ok \(\(\), performFaultReplyUnlinkedAnswerLong st c rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReplyLongCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*\.ok \(\(\), performReplyUnlinkedCapsDeliveredLong " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
 run_check "INVARIANT" rg -n -U '      else if threadHasPendingFault st c then\n        replyRecvLongFaultArmR epId tid c rid badge grant rf len label executingCore st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '        if replyRecvBlocksFast st epId tid c rid then\n          \.ok \(\(\), performReplyRecvFaultAnswerLong st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '        else if replyRecvDonatedBlocks st epId tid c rid then\n          \.ok \(\(\), performReplyRecvDonatedFaultAnswerLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean

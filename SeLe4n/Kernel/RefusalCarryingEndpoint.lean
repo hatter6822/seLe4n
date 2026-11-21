@@ -2636,9 +2636,19 @@ place (`replyUnheldPopsInPlace`), behind the flow gate. -/
     (rid : SeLe4n.ReplyId) (st : SystemState) : Bool :=
   securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) && replyUnheldPopsInPlace st c rid
 
+/-- Whether a reply to a faulted caller recording no server, its reply object
+linked to nothing, may answer it in place (`replyUnlinkedInPlace`), behind the
+flow gate.  WS-SX SX8.3. -/
+@[noinline] def replyUnlinkedFaultAdmits (ctx : LabelingContext) (tid c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (st : SystemState) : Bool :=
+  securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) && replyUnlinkedInPlace st c rid
+
 /-- The reply to a faulted caller recording no server: the checks of
 `replyUnheldFaultAdmits`, then the fault answered in place
-(`performFaultReplyUnheldAnswer`, `faultReplyTransferChecked_unheld_inPlace`),
+(`performFaultReplyUnheldAnswer`, `faultReplyTransferChecked_unheld_inPlace`);
+else, for a reply object linked to nothing, the checks of
+`replyUnlinkedFaultAdmits` and its answer in place
+(`performFaultReplyUnlinkedAnswer`, `faultReplyTransferChecked_unlinked_inPlace`);
 or the general arm. -/
 @[inline] def endpointReplyUnheldFaultArmR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
@@ -2650,6 +2660,9 @@ or the general arm. -/
       .ok ((), performFaultReplyUnheldAnswer st c rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout rf
         (min len layout.msgRegs.size))
+    else if replyUnlinkedFaultAdmits ctx tid c rid st then
+      .ok ((), performFaultReplyUnlinkedAnswer st c rid kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7
+        layout rf (min len layout.msgRegs.size))
     else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid executingCore cap st
 
 /-- **The checked reply arm on a reply that transfers capabilities**, its
@@ -2799,7 +2812,10 @@ theorem endpointReplyDonatedCapsArmR_eq (ctx : LabelingContext)
 checks of `replyUnheldAdmits`, then, from a replier whose frame routes as a
 reply, the return, the transfer and the frame in place
 (`performReplyUnheldCapsDelivered`, `replyTransferChecked_unheldCaps_inPlace`);
-any other takes the general arm. -/
+else, for a reply object linked to nothing, the checks of `replyUnlinkedAdmits`,
+then the transfer and the frame in place (`performReplyUnlinkedCapsDelivered`,
+`replyTransferChecked_unlinkedCaps_inPlace`); any other takes the general
+arm. -/
 @[inline] def endpointReplyUnheldCapsArmR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
@@ -2815,6 +2831,19 @@ any other takes the general arm. -/
               .ok ((), performReplyUnheldCapsDelivered st c rid ⟨replyHeadContextCode st rid - 1⟩
                 (determineTargetCore st c) layout rf len cap.badgeWord cap.badged
                 stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
+                (routedExtraCaps stcb.registerContext) rv rb rroot)
+          | _ => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid
+              executingCore cap st
+      | none => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid
+          executingCore cap st
+    else if replyUnlinkedAdmits ctx layout len tid c rid cFault st then
+      match st.getTcb? tid with
+      | some stcb =>
+          match Architecture.RegisterDecode.registerRoutedSyscallOf SyscallId.reply.toNat
+              SeLe4n.arm64DefaultLayout stcb.registerContext with
+          | .reply _ _ =>
+              .ok ((), performReplyUnlinkedCapsDelivered st c rid layout rf len
+                cap.badgeWord cap.badged stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
                 (routedExtraCaps stcb.registerContext) rv rb rroot)
           | _ => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid
               executingCore cap st
@@ -2862,7 +2891,27 @@ theorem endpointReplyUnheldCapsArmR_eq (ctx : LabelingContext)
           hNoF hFlow hS hR]
       · rfl
     · rfl
-  · rfl
+  · split
+    · next hG =>
+      unfold replyUnlinkedAdmits at hG
+      simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hG
+      obtain ⟨⟨⟨hSz4, hFlow⟩, hNoF⟩, hP⟩ := hG
+      split
+      · next stcb hS =>
+        split
+        · next capAddr mi hR =>
+          simp only [endpointReplyCheckedArmGeneralR, hTgt, hAns, hFlow, ↓reduceIte, hGr]
+          rw [replyTransferChecked_unlinkedCaps_inPlace ctx st tid c ct stcb ep rid
+            { length := len, extraCaps := extraCaps, label := label }
+            (Architecture.regMessageRegs layout rf) layout rf len cap.badgeWord cap.badged
+            executingCore
+            { registers := extractMessageRegisters (Architecture.regMessageRegs layout rf)
+                { length := len, extraCaps := extraCaps, label := label }, badge := cap.badge }
+            capAddr mi rfl hSz4 ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hP
+            hNoF hFlow hS hR]
+        · rfl
+      · rfl
+    · rfl
 
 /-- WS-ZA ZA4.7: the checked reply arm (`dispatchWithCapChecked`'s `.reply`
 case), refusing in the state it was handed (`endpointReplyCheckedArmR_eq`).  A
@@ -3071,7 +3120,18 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext)
                   rw [faultReplyTransferChecked_unheld_inPlace ctx st tid c ct ep rid
                     { length := len, extraCaps := extraCaps, label := label } layout rf _ _
                     executingCore ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hP hF]
-                · rfl
+                · split
+                  · next hG =>
+                    unfold replyUnlinkedFaultAdmits at hG
+                    simp only [Bool.and_eq_true] at hG
+                    obtain ⟨hFlow, hP⟩ := hG
+                    have hAns : replyAnsweredCaller? st rid0 = some c := by
+                      rw [replyAnsweredCaller?_of_getReply st rid0 rp0 hR0, hC]
+                    simp only [endpointReplyCheckedArmGeneralR, hTgt, hAns, hFlow, ↓reduceIte]
+                    rw [faultReplyTransferChecked_unlinked_inPlace ctx st tid c ct ep rid
+                      { length := len, extraCaps := extraCaps, label := label } layout rf _ _
+                      executingCore ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hP hF]
+                  · rfl
               split
               rotate_left
               · rename_i hI
@@ -3998,8 +4058,12 @@ transfer and the long frame (`performReplyDonatedCapsDeliveredLong`,
 answers it in place on each of those shapes, as seL4's `handleFaultReply` does,
 its restart words past the fourth read from the replier's IPC buffer
 (`performFaultReplyAnswerLong`, `performFaultReplyDonatedAnswerLong`,
-`performFaultReplyUnheldAnswerLong`).  Any other reply, which a check failing
-makes, takes the general arm. -/
+`performFaultReplyUnheldAnswerLong`).  A reply to a caller recording no server
+whose reply object is linked to nothing (`replyUnlinkedInPlace`, WS-SX SX8.3)
+hands nothing back and runs the fault answer or the transfer and the long frame
+in place (`performFaultReplyUnlinkedAnswerLong`,
+`performReplyUnlinkedCapsDeliveredLong`).  Any other reply, which a check
+failing makes, takes the general arm. -/
 @[inline] def endpointReplyLongCheckedArmR (ctx : LabelingContext) (rf : SeLe4n.RegisterFile)
     (len extraCaps label : Nat) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (cap : Capability) : RefusalCarrying Unit :=
@@ -4080,6 +4144,23 @@ makes, takes the general arm. -/
                                     .ok ((), performReplyUnheldCapsDeliveredLong st c rid
                                       ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)
                                       rf len tid cap.badgeWord cap.badged stcb.spaceCells[2]
+                                      stcb.ipcBuffer stcb.spaceCells[0]
+                                      (if cap.rights.mem .grant then routedExtraCaps rf else 0)
+                                      ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0])
+                                | none => endpointReplyLongGeneralR ctx rf len extraCaps label tid
+                                    executingCore cap st
+                            else if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
+                                replyUnlinkedInPlace st c rid then
+                              if ct.faultWords.isFault then
+                                .ok ((), performFaultReplyUnlinkedAnswerLong st c rid
+                                  ct.faultKind label ct.faultIp ct.faultSp ct.faultLr ct.faultX0
+                                  ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5
+                                  ct.faultX6 ct.faultX7 tid rf len)
+                              else
+                                match st.getTcb? tid with
+                                | some stcb =>
+                                    .ok ((), performReplyUnlinkedCapsDeliveredLong st c rid rf len
+                                      tid cap.badgeWord cap.badged stcb.spaceCells[2]
                                       stcb.ipcBuffer stcb.spaceCells[0]
                                       (if cap.rights.mem .grant then routedExtraCaps rf else 0)
                                       ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0])
@@ -4225,7 +4306,28 @@ theorem endpointReplyLongCheckedArmR_eq_general (ctx : LabelingContext)
                       executingCore capAddr mi sid (cap.rights.mem .grant) hT' hIpc hRO hP hNoF
                       hFlow hS (hRf stcb hS) hRL hRead]
                   · rfl
-              · rfl
+              · split
+                · next hG =>
+                  simp only [Bool.and_eq_true] at hG
+                  obtain ⟨hFlow, hP⟩ := hG
+                  simp only [endpointReplyLongGeneralR, endpointReplyCheckedArmGeneralR, hTgt, hAns,
+                    hFlow, ↓reduceIte, longReplyRegs, hX, hMsg]
+                  split
+                  · next hF =>
+                    rw [faultReplyTransferChecked_unlinked_inPlaceLong ctx st tid c ct ep rid mi.length
+                      mi.extraCaps mi.label rf _ _ executingCore (by omega) hT' hIpc hRO hP hF]
+                  · next hF =>
+                    have hNoF : ct.faultWords.isFault = false := Bool.eq_false_iff.mpr hF
+                    split
+                    · next stcb hS =>
+                      rw [show cap.badge = SeLe4n.Badge.opt cap.badgeWord cap.badged from rfl,
+                            replyTransferChecked_unlinkedCapsLong_inPlace ctx st tid c ct stcb ep rid
+                        { length := mi.length, extraCaps := mi.extraCaps, label := mi.label }
+                        _ rf cap.badgeWord cap.badged
+                        executingCore capAddr mi sid (cap.rights.mem .grant) hT' hIpc hRO hP hNoF
+                        hFlow hS (hRf stcb hS) hRL hRead]
+                    · rfl
+                · rfl
             · rfl
           · rfl
         · rfl

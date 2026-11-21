@@ -570,4 +570,56 @@ theorem faultReplyTransferChecked_unheld_inPlace (ctx : LabelingContext) (st : S
     (fun i _ => wordAt_regMessageRegs layout rf i),
     storeFaultReplyLeg_eq, storeReplyLeg_eq_hold _ _ _ _ hNo]
 
+/-- **The fault answer to a caller recording no server, its reply object linked
+to nothing, in place** (WS-SX SX8.3): the reply leg's writes with no message,
+then the fault answer (`performFaultAnswer`).  No context to hand back (the
+reply object heads none, as seL4's `reply_remove` finds it once a lent context
+was let go of by `schedContext_unbindReply`) and no server's boost to revert. -/
+@[noinline] def performFaultReplyUnlinkedAnswer (st : SystemState) (c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (kind label : Nat) (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (n : Nat) : SystemState :=
+  performFaultAnswer (storeFaultReplyLeg st c rid) c kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7
+    layout rf n 0
+
+/-- **The checked fault reply to a caller recording no server, its reply object
+linked to nothing, in place**: under `replyUnlinkedInPlace`, a reply to a
+faulted caller blocked on it with no server recorded commits
+`performFaultReplyUnlinkedAnswer`'s state. -/
+theorem faultReplyTransferChecked_unlinked_inPlace (ctx : LabelingContext) (st : SystemState)
+    (replier c : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
+    (mi : MessageInfo) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+    (msg : IpcMessage) (grant : Bool) (core : CoreId)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyUnlinkedInPlace st c rid = true)
+    (hF : ct.faultWords.isFault = true) :
+    replyTransferOnCoreChecked ctx replier c mi (Architecture.regMessageRegs layout rf) msg grant core
+        st =
+      .ok ((), performFaultReplyUnlinkedAnswer st c rid ct.faultKind mi.label ct.faultIp ct.faultSp
+        ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6
+        ct.faultX7 layout rf (min mi.length layout.msgRegs.size)) := by
+  have hNo := replyWakesInPlace_noResizeDue ((replyUnlinkedInPlace_eq_wakes st c ct rid) ▸ hG)
+  obtain ⟨sgi, hD⟩ := replyDispatch_unlinked_inPlace st replier c ct ep rid IpcMessage.empty core
+    (by simp [IpcMessage.empty]) hT hIpc hRO hG
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  obtain ⟨tf, hPF⟩ : ∃ tf, ct.pendingFault = some tf :=
+    Option.isSome_iff_exists.mp (by rw [TCB.pendingFault_isSome]; exact hF)
+  have hHas : threadHasPendingFault st c = true := by
+    simp only [threadHasPendingFault, hTc, Option.bind_some, hPF, Option.isSome_some]
+  unfold replyTransferOnCoreChecked
+  rw [hHas]
+  simp only [↓reduceIte]
+  unfold faultReplyOnCore
+  rw [hTc]
+  simp only [hPF]
+  rw [hD]
+  simp only []
+  unfold performFaultReplyUnlinkedAnswer
+  rw [faultReplyApplyOnCore_decode_eq_performFaultAnswer _ c ct tf hPF mi _ layout rf
+    (min mi.length layout.msgRegs.size) 0
+    (by simp only [Architecture.regMessageRegs, Array.size_map])
+    (fun i _ => wordAt_regMessageRegs layout rf i),
+    storeFaultReplyLeg_eq, storeReplyLeg_eq_hold _ _ _ _ hNo]
+
 end SeLe4n.Kernel

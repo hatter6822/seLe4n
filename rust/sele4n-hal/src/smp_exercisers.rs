@@ -9216,6 +9216,324 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             CNODE_CAP,
             [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
         ),
+        // WS-SX SX8.3: the same unlinked reply object (the donated unbind's
+        // state once the server is deleted) answered at the longest message,
+        // 120 words, its overflow words copied from the root task's buffer
+        // (`performReplyUnlinkedCapsDeliveredLong`, transferring nothing),
+        // and then by a granting reply that installs the notification
+        // capability in the empty slot the partner's buffer names
+        // (`performReplyUnlinkedCapsDelivered`).  A signal through the copy
+        // shows it is there; each run leaves the state the scenario found.
+        retype(
+            "untyped-retype-unlinked-long-server",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "unlinked-long-server-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "unlinked-long-server-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        retype(
+            "untyped-retype-unlinked-long-reply",
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-long-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        configure(
+            "unlinked-long-configure",
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "unlinked-long-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-long-resume-server",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unlinked-long-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unlinked-long-server-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "unlinked-long-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
+        ),
+        partner_step(
+            "unlinked-long-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x70, 0],
+            true,
+        ),
+        signal("unlinked-long-server-wakes-root"),
+        partner_step(
+            "unlinked-long-server-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unlinked-long-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-long-server-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        partner_step(
+            "unlinked-long-root-replies",
+            REPLY,
+            CHAIN_REPLY_CAP,
+            TAIL_MESSAGE_LENGTH,
+            [0x71, 0],
+            false,
+        ),
+        invocation(
+            "unlinked-long-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-long-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unlinked-long-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
+        retype(
+            "untyped-retype-unlinked-caps-server",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "unlinked-caps-server-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "unlinked-caps-server-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        retype(
+            "untyped-retype-unlinked-caps-reply",
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-caps-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        configure(
+            "unlinked-caps-configure",
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "unlinked-caps-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-caps-resume-server",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unlinked-caps-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unlinked-caps-server-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "unlinked-caps-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
+        ),
+        partner_step(
+            "unlinked-caps-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x72, 0],
+            true,
+        ),
+        signal("unlinked-caps-server-wakes-root"),
+        partner_step(
+            "unlinked-caps-server-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unlinked-caps-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-caps-server-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        receive_path(
+            "unlinked-caps-receive-path",
+            FRAME_VADDR,
+            [CNODE_CAP, cap_address(EMPTY_SLOT), 64],
+        ),
+        with_caps_keeping_path(
+            partner_step(
+                "unlinked-reply-installs-cap",
+                REPLY,
+                CHAIN_REPLY_CAP,
+                ONE_EXTRA_CAP | 1,
+                [0x73, 0],
+                false,
+            ),
+            FRAME_VADDR,
+            [NOTIFICATION_CAP, 0, 0],
+        ),
+        RoundTrip {
+            cptr: cap_address(EMPTY_SLOT),
+            ..signal("unlinked-reply-installed-signal")
+        },
+        RoundTrip {
+            name: "unlinked-reply-installed-wait",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            reply: None,
+            issued: None,
+            selects: None,
+            msg_len: 1,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            resumes: false,
+            caps_or_badges: None,
+            overflow: None,
+            returns: None,
+        },
+        invocation(
+            "unlinked-reply-installed-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [EMPTY_SLOT, 0, 0, 0],
+        ),
+        receive_path("unlinked-caps-receive-path-closed", FRAME_VADDR, [0; 3]),
+        invocation(
+            "unlinked-caps-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-caps-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unlinked-caps-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
         // The ordinary server loop with a client already queued: the root
         // task takes the partner's call, then a third thread's send queues on
         // the endpoint while the root task waits; the root task's
@@ -16162,6 +16480,167 @@ fn fault_entries() -> Option<bool> {
             || !fault_delivered("cap-fault-donating-delivered")
             || heap_allocations_round_trip(&donating_reply, which) != Some(true)
             || !unmeasured_all(&donating_teardown, "the donating fault's teardown failed")
+        {
+            return Some(false);
+        }
+    }
+    crate::interrupts::restore_interrupts(ticks);
+    // WS-SX SX8.3: the same capability fault delivered to a passive server
+    // waiting with a reply object of its own, the fault's call lending the
+    // partner's context; the server wakes the root task and waits, the root
+    // task unbinds the context from the server holding it on loan (letting
+    // go of the stack it heads, seL4-MCS `schedContext_unbindReply`) and
+    // deletes the server.  The root task's reply through the reply's
+    // capability then answers the fault of a caller recording no server whose
+    // reply object is linked to nothing (`performFaultReplyUnlinkedAnswer`):
+    // the partner restarts with no context to run on, and is suspended.
+    let unlinked_fault_setup = [
+        retype(
+            "untyped-retype-unlinked-fault-server",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            ROOT_IPC_BUFFER,
+        ),
+        set_space(
+            "unlinked-fault-server-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            ROOT_IPC_BUFFER,
+        ),
+        set_priority(
+            "unlinked-fault-server-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            ROOT_IPC_BUFFER,
+        ),
+        retype(
+            "untyped-retype-unlinked-fault-reply",
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+            ROOT_IPC_BUFFER,
+        ),
+        invocation(
+            "unlinked-fault-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        configure(
+            "unlinked-fault-configure",
+            ROOT_IPC_BUFFER,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "unlinked-fault-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            ROOT_IPC_BUFFER,
+        ),
+        invocation(
+            "unlinked-fault-resume-server",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unlinked-fault-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unlinked-fault-server-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "unlinked-fault-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
+        ),
+    ];
+    let unlinked_fault_unlink = [
+        signal("unlinked-fault-server-wakes-root"),
+        partner_step(
+            "unlinked-fault-server-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unlinked-fault-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-fault-server-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+    ];
+    let unlinked_fault_reply = partner_step(
+        "unlinked-fault-root-replies",
+        REPLY,
+        CHAIN_REPLY_CAP,
+        1,
+        [FAULT_REPLY_WORD, 0],
+        false,
+    );
+    let unlinked_fault_teardown = [
+        invocation(
+            "unlinked-fault-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-fault-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unlinked-fault-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
+    ];
+    let ticks = crate::interrupts::disable_interrupts();
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        if !unmeasured_all(&unlinked_fault_setup, "the unlinked fault's setup failed")
+            || heap_allocations_trap(&fault_trip(2, "unlinked-cap-fault-delivered"), which)
+                != Some(true)
+            || !unmeasured_all(&unlinked_fault_unlink, "the unlinked fault's unlink failed")
+            || heap_allocations_round_trip(&unlinked_fault_reply, which) != Some(true)
+            || !unmeasured_all(
+                &unlinked_fault_teardown,
+                "the unlinked fault's teardown failed",
+            )
         {
             return Some(false);
         }

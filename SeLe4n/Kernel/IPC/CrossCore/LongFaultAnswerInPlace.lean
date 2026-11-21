@@ -438,6 +438,61 @@ theorem faultReplyTransferChecked_unheld_inPlaceLong (ctx : LabelingContext) (st
     (replyWordOr_longSendRegs st _ replier rf len extraCaps label hLen hW),
     storeFaultReplyLeg_eq, storeReplyLeg_eq_hold _ _ _ _ hNo]
 
+/-- **The long fault answer to a caller recording no server, its reply object
+linked to nothing, in place** (WS-SX SX8.3): the reply leg's writes with no
+message, then the fault answer (`performFaultAnswerLong`).  No context to hand
+back. -/
+@[noinline] def performFaultReplyUnlinkedAnswerLong (st : SystemState) (c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (kind label : Nat) (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64)
+    (replier : SeLe4n.ThreadId) (rf : SeLe4n.RegisterFile) (len : Nat) : SystemState :=
+  performFaultAnswerLong (storeFaultReplyLeg st c rid) c kind label
+    ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 replier rf len
+
+/-- **The checked long fault reply to a caller recording no server, its reply
+object linked to nothing, in place**: under `replyUnlinkedInPlace`, a long reply
+to a faulted caller blocked on it with no server recorded commits
+`performFaultReplyUnlinkedAnswerLong`'s state. -/
+theorem faultReplyTransferChecked_unlinked_inPlaceLong (ctx : LabelingContext) (st : SystemState)
+    (replier c : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
+    (len extraCaps label : Nat) (rf : SeLe4n.RegisterFile)
+    (msg : IpcMessage) (grant : Bool) (core : CoreId) (hLen : 4 ≤ len)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyUnlinkedInPlace st c rid = true)
+    (hF : ct.faultWords.isFault = true) :
+    replyTransferOnCoreChecked ctx replier c
+        { length := len, extraCaps := extraCaps, label := label }
+        (Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf ++
+          (overflowRegsFrom st replier 0 (len - 4)).toArray) msg grant core
+        st =
+      .ok ((), performFaultReplyUnlinkedAnswerLong st c rid ct.faultKind label ct.faultIp
+        ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5
+        ct.faultX6 ct.faultX7 replier rf len) := by
+  have hNo := replyWakesInPlace_noResizeDue ((replyUnlinkedInPlace_eq_wakes st c ct rid) ▸ hG)
+  obtain ⟨sgi, hD⟩ := replyDispatch_unlinked_inPlace st replier c ct ep rid IpcMessage.empty core
+    (by simp [IpcMessage.empty]) hT hIpc hRO hG
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  obtain ⟨tf, hPF⟩ : ∃ tf, ct.pendingFault = some tf :=
+    Option.isSome_iff_exists.mp (by rw [TCB.pendingFault_isSome]; exact hF)
+  have hHas : threadHasPendingFault st c = true := by
+    simp only [threadHasPendingFault, hTc, Option.bind_some, hPF, Option.isSome_some]
+  have hW : ipcWordReadsAgree (storeReplyLeg st c rid IpcMessage.empty) st := by
+    rw [← storeFaultReplyLeg_eq]
+    exact (ipcBufferReadsAgree_storeFaultReplyLeg st c rid hNo).words
+  unfold replyTransferOnCoreChecked
+  rw [hHas]
+  simp only [↓reduceIte]
+  unfold faultReplyOnCore
+  rw [hTc]
+  simp only [hPF]
+  rw [hD]
+  simp only []
+  unfold performFaultReplyUnlinkedAnswerLong
+  rw [faultReplyApplyOnCore_decode_eq_performFaultAnswerLong _ c ct tf hPF _ _ replier rf len
+    (replyWordOr_longSendRegs st _ replier rf len extraCaps label hLen hW),
+    storeFaultReplyLeg_eq]
+
 /-! ## The long fault reply-receive -/
 
 /-- The long fault answer leaves every other thread in the IPC state it was in. -/
