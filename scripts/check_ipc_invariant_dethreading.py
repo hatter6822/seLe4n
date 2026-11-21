@@ -297,8 +297,10 @@ MACHINERY_PINS = {
     # store's refill-view frame (WS-ZA ZA6.4), and the `yield_codes` tactic
     # that discharges a store's yield-code frame (WS-ZA ZA6.6), and the
     # `resident_frame` tactic that discharges a step's resident-thread frame
-    # (WS-ZA ZA6.8); none mints a declaration.
-    ("SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean", "macro"): 8,
+    # (WS-ZA ZA6.8), and the `ntfn_link_codes` tactic that discharges a
+    # store's notification-link-code frame (WS-SX SX8.3); none mints a
+    # declaration.
+    ("SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean", "macro"): 9,
     # WS-ZA ZA6.37: the `transfer_off_run_links` tactic, which carries one
     # receive-leg precondition of `endpointReplyRecv` across the reply-waiter
     # unlink its reply leg ends with; a tactic macro mints no declaration.

@@ -10004,7 +10004,7 @@ run_check "INVARIANT" rg -n -U '^structure SystemState\.bookkeepingAgrees \(st :
 run_check "INVARIANT" rg -n -U '^theorem storeObject_preserves_bookkeepingAgrees\n[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*\n    \(hFit : \(st\.objects\[id\]\?\)\.isSome ∨ st\.objectIndex\.length < maxObjects\)' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_ok_size_lt($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_objectIndex_length_le($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
-run_check "INVARIANT" rg -n 'hRefill, hYield, ⟨ist\.hLifecycleConsistent, hCount⟩⟩' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n 'hRefill, hYield, ⟨ist\.hLifecycleConsistent, hCount⟩, hNtfnLinks⟩' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle\.objectCountBounded($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
 run_negative_check "INVARIANT" rg -n -U 'theorem proofLayerInvariantBundle\.objects_noResizeDue[^\n]*\n[^\n]*hS' SeLe4n/Kernel/Architecture/Invariant.lean
 # WS-UC UC3: the boot's object and ASID tables are boot-sized, built where the
