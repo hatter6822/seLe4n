@@ -1429,9 +1429,11 @@ sender already queued): when `replyRecvUnlinkedTakeAdmits` passes and the sender
 saved frame routes as a capability-free send, the reply leg's transfer
 inert, `performReplyRecvUnlinkedTakeDelivered`; granting, its frame routing as a
 reply-receive, `performReplyRecvUnlinkedTakeCapsDelivered`; every word read on the
-pre-state.  Otherwise `replyRecvUnlinkedTakeArmR`; an admitted shape whose reads then
-disagree takes the specification's path (`replyRecvUnlinkedTakeArmR_eq`). -/
-@[inline] def replyRecvUnlinkedTakeArmR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+pre-state.  Otherwise `replyRecvTakeArmR`; an admitted shape whose reads then
+disagree takes the specification's path (`replyRecvUnlinkedTakeArmR_eq`).  Out of
+line, so the arm and the take arm it falls back to are compiled once for every
+site that reaches them. -/
+@[noinline] def replyRecvUnlinkedTakeArmR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
@@ -1576,8 +1578,9 @@ saved frame routes as a capability-free send, the reply leg's transfer
 inert, `performReplyRecvUnheldTakeDelivered`; granting, its frame routing as a
 reply-receive, `performReplyRecvUnheldTakeCapsDelivered`; every word read on the
 pre-state.  Otherwise `replyRecvUnlinkedTakeArmR`; an admitted shape whose reads then
-disagree takes the specification's path (`replyRecvUnheldTakeArmR_eq`). -/
-@[inline] def replyRecvUnheldTakeArmR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+disagree takes the specification's path (`replyRecvUnheldTakeArmR_eq`).  Out of
+line, so the five sites of `replyRecvUnheldArmR` share one copy. -/
+@[noinline] def replyRecvUnheldTakeArmR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=

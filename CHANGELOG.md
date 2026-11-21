@@ -111,6 +111,16 @@ D22, "Match seL4", 2026-11-19). Stacks on SX7 (`v0.37.33`).
   specification's through one composite (`replyRecvAnsweringOnCore_unlinked_inPlace`,
   the receive's guard carried across the reply leg by
   `storeReplyLeg_receiveGuard`), with the six arms' `_eq` proofs extended.
+- When that reply-receive's receive leg met a sender already queued, it took
+  the general arm, which allocates; so did the same on a reply object heading
+  a stack no thread holds. Both now take the sender in place
+  (`performReplyRecvUnlinkedTakeDelivered`, `performReplyRecvUnheldTakeDelivered`
+  and the capability-carrying `..TakeCapsDelivered`), the take's guard carried
+  across the reply leg alone (`storeReplyLeg_takeGuard`) and across the unheld
+  pop and its settle (`popUnheldSettled_takeGuard`), each proven the
+  specification's (`IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean`) and
+  routed unheld take, then unlinked take, then the take answering a recorded
+  server.
 - The exerciser's no-operation code was still 48 after label 36 took that
   number, so the route coverage read every refused selection as
   `SchedContext_UnbindObject`; it is `SyscallId::ENCODING_BOUND` (49), held
@@ -134,6 +144,10 @@ D22, "Match seL4", 2026-11-19). Stacks on SX7 (`v0.37.33`).
   long (`unlinked-long-reply-recv`, `unlinked-long-reply-recv-installs-cap`)
   and to a faulted caller at one word and at 120
   (`unlinked-fault-root-reply-recv`, `unlinked-fault-root-reply-recv-long`).
+  The same with a third thread's send queued first, so the receive leg takes
+  it: `orphan-reply-recv-takes`, `unlinked-reply-recv-takes` and the
+  installing `unheld-reply-recv-takes-installs-cap`,
+  `unlinked-reply-recv-takes-installs-cap`.
 - Three Tier 3 anchors restated as relation checks over the reply unlink and
   the receive leg's return; the frozen `isDonated` anchor replaced by a
   negative over both unbinds.
