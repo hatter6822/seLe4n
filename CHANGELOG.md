@@ -99,6 +99,18 @@ D22, "Match seL4", 2026-11-19). Stacks on SX7 (`v0.37.33`).
   state is proven the specification's, all through one shared derivation
   of the dispatch (`replyDispatch_unlinked_inPlace`). This copy is also on
   `main`.
+- The reply-receive through such a reply object copied the object store on
+  every shape. It is answered in place on each, the receive leg blocking the
+  replier: the four-word reply-receive (`replyRecvUnlinkedAdmits`,
+  `performReplyRecvUnlinkedDelivered`), to a faulted caller
+  (`performReplyRecvUnlinkedFaultAnswer`), with a capability transfer
+  (`performReplyRecvUnlinkedCapsDelivered`) and their long forms
+  (`performReplyRecvUnlinkedDeliveredLong`,
+  `performReplyRecvUnlinkedFaultAnswerLong`,
+  `performReplyRecvUnlinkedCapsDeliveredLong`). Each is proven the
+  specification's through one composite (`replyRecvAnsweringOnCore_unlinked_inPlace`,
+  the receive's guard carried across the reply leg by
+  `storeReplyLeg_receiveGuard`), with the six arms' `_eq` proofs extended.
 - The exerciser's no-operation code was still 48 after label 36 took that
   number, so the route coverage read every refused selection as
   `SchedContext_UnbindObject`; it is `SyscallId::ENCODING_BOUND` (49), held
@@ -115,7 +127,13 @@ D22, "Match seL4", 2026-11-19). Stacks on SX7 (`v0.37.33`).
   caller answered again at 120 words (`unlinked-long-root-replies`), by a
   reply that installs a capability (`unlinked-reply-installs-cap`) and,
   after a capability fault lent the context, by a fault reply
-  (`unlinked-fault-root-replies`).
+  (`unlinked-fault-root-replies`) and a long fault reply
+  (`unlinked-fault-root-replies-long`). The reply-receive on the same state,
+  the context bound to the caller again so it can wake the replier: plain
+  (`unlinked-reply-recv`), installing (`unlinked-reply-recv-installs-cap`),
+  long (`unlinked-long-reply-recv`, `unlinked-long-reply-recv-installs-cap`)
+  and to a faulted caller at one word and at 120
+  (`unlinked-fault-root-reply-recv`, `unlinked-fault-root-reply-recv-long`).
 - Three Tier 3 anchors restated as relation checks over the reply unlink and
   the receive leg's return; the frozen `isDonated` anchor replaced by a
   negative over both unbinds.

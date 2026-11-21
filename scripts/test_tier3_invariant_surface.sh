@@ -4651,6 +4651,24 @@ run_check "INVARIANT" rg -n -U '    else if replyUnlinkedFaultAdmits ctx tid c r
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReplyUnheldCapsArmR[^\n]*(\n([ \t][^\n]*)?)*else if replyUnlinkedAdmits ctx layout len tid c rid cFault st then(\n([ \t][^\n]*)?)*\.ok \(\(\), performReplyUnlinkedCapsDelivered " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
 run_check "INVARIANT" rg -n -U '                                replyUnlinkedInPlace st c rid then\n                              if ct\.faultWords\.isFault then\n                                \.ok \(\(\), performFaultReplyUnlinkedAnswerLong st c rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReplyLongCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*\.ok \(\(\), performReplyUnlinkedCapsDeliveredLong " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+# WS-SX SX8.3: the reply-receive answering a caller recording no server whose
+# reply object is linked to nothing, in place on every shape: the plain
+# reply-receive, the fault answer, the capability transfer, and their long
+# forms; each in-place state is proven the specification's.
+run_check "INVARIANT" rg -n '^theorem storeReplyLeg_receiveGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvAnsweringOnCore_unlinked_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unlinked_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_fault_unlinked_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultAnswerInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_fault_unlinked_inPlaceLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongFaultAnswerInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unlinked_capsDelivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCapsDelivered.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unlinked_deliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvPopInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unlinked_capsDeliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvPopInPlace.lean
+run_check "INVARIANT" rg -n -U '    else if replyRecvUnlinkedAdmits epId tid c rid grant layout len st then\n      \.ok \(\(\), performReplyRecvUnlinkedDelivered st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '                  else if replyRecvUnlinkedBlocks st epId tid c rid then\n                    \.ok \(\(\), performReplyRecvUnlinkedCapsDelivered st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '        else if replyRecvUnlinkedBlocks st epId tid c rid then\n          \.ok \(\(\), performReplyRecvUnlinkedFaultAnswer st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '        else if replyRecvUnlinkedBlocks st epId tid c rid then\n          \.ok \(\(\), performReplyRecvUnlinkedFaultAnswerLong st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    else if replyRecvLongUnlinkedAdmits st epId tid c rid grant then\n      \.ok \(\(\), performReplyRecvUnlinkedDeliveredLong st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "    else if replyRecvLongUnlinkedCapsAdmits st epId tid c rid grant then(\n([ \t][^\n]*)?)*\.ok \(\(\), performReplyRecvUnlinkedCapsDeliveredLong " SeLe4n/Kernel/RefusalCarryingReplyRecv.lean'
 run_check "INVARIANT" rg -n -U '      else if threadHasPendingFault st c then\n        replyRecvLongFaultArmR epId tid c rid badge grant rf len label executingCore st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '        if replyRecvBlocksFast st epId tid c rid then\n          \.ok \(\(\), performReplyRecvFaultAnswerLong st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '        else if replyRecvDonatedBlocks st epId tid c rid then\n          \.ok \(\(\), performReplyRecvDonatedFaultAnswerLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean

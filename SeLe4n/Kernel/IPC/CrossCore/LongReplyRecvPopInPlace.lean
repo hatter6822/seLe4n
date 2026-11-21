@@ -535,4 +535,160 @@ theorem replyRecvOnCore_unheld_capsDeliveredLong (st : SystemState) (epId : SeLe
   rw [hSc, hX]
   exact congrArg (fun Z => (.ok ((), Z) : Except KernelError (Unit × SystemState))) hK.symm
 
+
+/-! ### The long reply-receive on a reply object linked to nothing -/
+
+/-- **The unlinked long reply-receive, its reply transferring nothing,
+delivered** (WS-SX SX8.3): the reply leg's writes, the replier's block and
+priority walk, then the long frame.  Nothing to pop. -/
+@[noinline] def performReplyRecvUnlinkedDeliveredLong (st : SystemState) (c tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId)
+    (tailCode : Nat) (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge)
+    (core : CoreId) : SystemState :=
+  deliverLongReplyRecvCapsFrame 0 (storeReplyRecvBlockTail (storeReplyLegReady st c rid) tid rid
+    epId tailCode core) c rf len tid badge
+
+/-- **The unlinked long reply-receive, delivered**: under the guard of
+`replyRecvOnCore_unlinked_inPlace` and a message of `len` words, more than four,
+the checked arm's result is `performReplyRecvUnlinkedDeliveredLong`. -/
+theorem replyRecvOnCore_unlinked_deliveredLong (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) (grant : Bool) (core : CoreId)
+    (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
+    (hLen : 5 ≤ len) (hSz : ¬ (longReplyRecvRegs rf st tid len).size > maxMessageRegisters)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep0 none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyUnlinkedInPlace st c rid = true)
+    (hNe : tid ≠ c)
+    (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true)
+    (hInert : replyTransferInert st tid ct grant = true) :
+    (match endpointReplyRecvOnCore epId tid rid c
+        { registers := longReplyRecvRegs rf st tid len, badge := badge } grant core st with
+      | .ok (summary, st') =>
+          (.ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo) :
+            Except KernelError (Unit × SystemState))
+      | .error e => .error e) =
+      .ok ((), performReplyRecvUnlinkedDeliveredLong st c tid rid epId ep.recvTailCode rf len badge
+        core) := by
+  have hNo := replyWakesInPlace_noResizeDue (show replyWakesInPlace st c ct rid = true from hG)
+  obtain ⟨hEq, x, hX, hB⟩ := replyRecvOnCore_unlinked_inPlace st epId tid c rid
+    { registers := longReplyRecvRegs rf st tid len, badge := badge } grant core
+    ct ep0 rt ep rp hSz hT hIpc hRO hG hNe hE hS hR hA hEnq hRp hStash hRec hInert
+  rw [hEq]
+  simp only [CapTransferSummary.capInfo_empty]
+  have h1 := storeReplyLegReady_noResizeDue st c rid hNo
+  have hAP := ipcBufferReadsAgree_storeReplyLegReady st c rid hNo
+  rw [storeReplyLeg_eq_hold _ _ _ _ hNo] at hX ⊢
+  exact congrArg (fun Z => (.ok ((), Z) : Except KernelError (Unit × SystemState)))
+    (replyRecvBlockTail_stagedLong _ st c tid rid epId ep.recvTailCode core rf len badge 0 h1
+      hNe hLen ((ipcBufferReadsAgree_storeReplyRecvBlockTail _ tid rid epId ep.recvTailCode core
+        h1).words.trans hAP.words) ⟨x, hX, hB⟩)
+
+/-- **The unlinked long reply-receive whose reply leg transfers, delivered**: as
+`performReplyRecvUnlinkedCapsDelivered`, with the long frame. -/
+@[noinline] def performReplyRecvUnlinkedCapsDeliveredLong (st : SystemState) (c tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId)
+    (tailCode : Nat) (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge)
+    (core : CoreId) (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
+  let X := storeReplyLegReady st c rid
+  capTransferK X c.toObjId sv sb sroot count rv rb rroot
+    fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
+    deliverLongReplyRecvCapsFrame
+      (capStepsInfo c.toObjId false x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+      (storeReplyRecvBlockTail
+        (capStepsApply c.toObjId false rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X)
+        tid rid epId tailCode core)
+      c rf len tid badge
+
+/-- **The unlinked long reply-receive whose reply leg transfers, delivered**: as
+`replyRecvOnCore_unlinked_capsDelivered`, for a message of `len` words, more
+than four, read in the replier's registers and buffer. -/
+theorem replyRecvOnCore_unlinked_capsDeliveredLong (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) (core : CoreId)
+    (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
+    (stcb : TCB) (count : Nat)
+    (hLen : 5 ≤ len) (hSz : ¬ (longReplyRecvRegs rf st tid len).size > maxMessageRegisters)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep0 none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyUnlinkedInPlace st c rid = true)
+    (hNe : tid ≠ c)
+    (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true)
+    (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count) :
+    (match endpointReplyRecvOnCore epId tid rid c
+        { registers := longReplyRecvRegs rf st tid len, badge := badge } true core st with
+      | .ok (summary, st') =>
+          (.ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo) :
+            Except KernelError (Unit × SystemState))
+      | .error e => .error e) =
+      .ok ((), performReplyRecvUnlinkedCapsDeliveredLong st c tid rid epId ep.recvTailCode rf len
+        badge core stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0] count ct.spaceCells[2]
+        ct.ipcBuffer ct.spaceCells[0]) := by
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
+    unfold receiverCapTarget? capTargetOf; rw [hTc]
+  generalize hMsg : ({ registers := longReplyRecvRegs rf st tid len, badge := badge } :
+    IpcMessage) = msg
+  have hNo := replyWakesInPlace_noResizeDue (show replyWakesInPlace st c ct rid = true from hG)
+  obtain ⟨hE1, ⟨rt1, hR1, hA1, hB1⟩, hG1⟩ := storeReplyLeg_receiveGuard st c tid rid msg ct rp
+    epId ep rt hNo hT (replyUnlinkedInPlace_findsCaller hG) hRp hNe hE hR hA hEnq
+    (replyUnlinkedInPlace_consumedFree hG hRp) hStash hRec
+  have hNoP := storeReplyLegReady_noResizeDue st c rid hNo
+  have hAP := ipcBufferReadsAgree_storeReplyLegReady st c rid hNo
+  have hP1 : storeReplyLeg st c rid msg = (storeReplyLegReady st c rid).mapTcbInPlace c
+      (holdMessage msg) := storeReplyLeg_eq_hold _ _ _ _ hNo
+  generalize hX : storeReplyLegReady st c rid = X at hP1 hNoP hAP
+  have hAX' : ipcBufferReadsAgree X st := hAP
+  rw [hP1] at hE1 hR1 hG1
+  obtain ⟨s, Y1, hT1⟩ := receiveTransferCaps_ok (frameCapRequestOf st stcb count) none
+    (capTargetOf st ct) X
+  have hNoY := receiveTransferCaps_noResizeDue _ _ _ X Y1 s hNoP hT1
+  have hHT : receiveTransferCaps (frameCapRequestOf st stcb count) none (capTargetOf st ct)
+      (X.mapTcbInPlace c (holdMessage msg)) = .ok (s, Y1.mapTcbInPlace c (holdMessage msg)) := by
+    rw [receiveTransferCaps_mapTcbInPlace (LinkBlindWrite.withMessageSlots _ _ _) c _ _ _ X hNoP, hT1]
+    rfl
+  have hFr := (receiveTransferCaps_reply_transferFrame (S := X.mapTcbInPlace c (holdMessage msg))
+    ((ipcBufferReadsAgree_mapTcbInPlace X c (holdMessage msg) (fun _ => ⟨rfl, rfl⟩)).trans hAX')
+    ((RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoP) c.toObjId stcb ct count hHT).1
+  obtain ⟨hE2, ⟨rt2, hR2, hA2, hB2⟩, hG2⟩ := receiveGuard_of_transferFrame hFr hE1 hR1 hA1 hG1
+  have hXf : replyTransferCaps st tid c true (storeReplyLeg st c rid msg) =
+      .ok (s, Y1.mapTcbInPlace c (holdMessage msg)) := by
+    unfold replyTransferCaps
+    rw [hReq, hTgt, hP1, hHT]
+  rw [replyRecvOnCore_unlinked_transfer st epId tid c rid msg true core ct ep0 ep rp (hMsg ▸ hSz) hT
+    hIpc hRO hG hS hRp hXf hE2 hR2 hA2
+    ((SystemState.mapTcbInPlace_noResizeDue _ _ _).mpr hNoY) hG2]
+  dsimp only
+  subst hMsg
+  simp only [CapTransferSummary.capInfo_empty]
+  obtain ⟨hE3, ⟨rt3, hR3, hA3⟩, hG3⟩ := receiveReturnSchedContext_receiveGuard true _ tid
+    ((SystemState.mapTcbInPlace_noResizeDue _ _ _).mpr hNoY) hE2 hR2 hA2 hG2
+  obtain ⟨t2, hT2, hB2⟩ := receiveBlock_receiver_blocked _ epId ep tid rt3 (some rid) core hE3 hR3
+    hA3 hG3
+  have hWY := ipcWordReadsAgree_receiveTransferCaps _ _ _ hNoP hT1
+  rw [replyRecvBlockTail_stagedLong Y1 st c tid rid epId ep.recvTailCode core rf len badge s.capInfo hNoY hNe
+    hLen ((ipcBufferReadsAgree_storeReplyRecvBlockTail Y1 tid rid epId ep.recvTailCode core hNoY).words.trans
+      (hWY.trans hAX'.words)) ⟨t2, hT2, hB2⟩]
+  have hK := capTransferK_eq_at X c.toObjId false stcb count ct
+    (fun i Y => deliverLongReplyRecvCapsFrame i (storeReplyRecvBlockTail Y tid rid epId ep.recvTailCode
+      core) c rf len tid badge)
+  simp only [transferEndpoint?, Bool.false_eq_true, ↓reduceIte] at hK
+  rw [hAX'.frameCapRequestOf, hAX'.capTargetOf, hT1] at hK
+  unfold performReplyRecvUnlinkedCapsDeliveredLong
+  rw [hX]
+  exact congrArg (fun Z => (.ok ((), Z) : Except KernelError (Unit × SystemState))) hK.symm
+
 end SeLe4n.Kernel
