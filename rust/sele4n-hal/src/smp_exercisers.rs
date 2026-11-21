@@ -10333,8 +10333,9 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // server's delete, and a third thread carved in the server's slot is
         // bound the context and queues a Call; the root task, holding none,
         // answers the partner and takes the Call, which lends it the caller's
-        // context (`performReplyRecvUnlinkedCallTakeDelivered`).  Its reply
-        // returns the context, and the caller is unbound before its delete.
+        // context (`performReplyRecvUnlinkedCallTakeDelivered`).  The partner
+        // is suspended, the reply returns the context, the caller restarts the
+        // root task and suspends itself, and it is unbound before its delete.
         retype(
             "untyped-retype-unlinked-call-take-server",
             UNTYPED_CAP,
@@ -10508,6 +10509,15 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             ),
             CHAIN_REPLY_CAP,
         ),
+        // The partner, answered with no context, is suspended before the
+        // root task's reply: the reply returns the caller's context and with
+        // it the root task's priority, so a ready partner would be chosen.
+        invocation(
+            "unlinked-call-take-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
         partner_step(
             "unlinked-call-take-root-replies",
             REPLY,
@@ -10516,13 +10526,29 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             [0x77, 0],
             false,
         ),
-        kernel_step("unlinked-call-take-unmask-ticks", UNMASK_TICKS_STEP),
+        // The reply handed the context back and took the root task off its
+        // core (seL4-MCS: a server whose context returns to its caller no
+        // longer runs), so the caller restarts it before suspending itself,
+        // which leaves the root task current.
         invocation(
-            "unlinked-call-take-suspend-caller",
+            "unlinked-call-take-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-call-take-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        self_suspend(invocation(
+            "unlinked-call-take-caller-suspends",
             TCB_SUSPEND,
             CHAIN_TCB_CAP,
             [0; 4],
-        ),
+        )),
+        kernel_step("unlinked-call-take-unmask-ticks", UNMASK_TICKS_STEP),
         invocation(
             "unlinked-call-take-unbind-caller",
             SCHED_CONTEXT_UNBIND,
@@ -10534,12 +10560,6 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             CSPACE_DELETE,
             CNODE_CAP,
             [CHAIN_TCB_SLOT, 0, 0, 0],
-        ),
-        invocation(
-            "unlinked-call-take-suspend-partner",
-            TCB_SUSPEND,
-            PARTNER_TCB_CAP,
-            [0; 4],
         ),
         invocation(
             "unlinked-call-take-reply-cap-delete",
