@@ -4634,6 +4634,14 @@ run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_donated_capsDeliveredLong(
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_capsDeliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvPopInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvLongCapsR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvLongPopR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+# The long reply-receive whose receive leg takes a queued sender writes in place,
+# its long delivery commuted past the take's writes of the replier.
+run_check "INVARIANT" rg -n '^theorem deliverLongReplyRecvFrame_mapTcbInPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTakeFrame_stagedLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_take_deliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_take_capsDeliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvLongTakeArmR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '      \| none => replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st\n    else replyRecvLongTakeArmR epId tid c rid badge grant rf len label executingCore st\n' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    if replyRecvLongDonatedAdmits st epId tid c rid grant then\n      \.ok \(\(\), performReplyRecvDonatedDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    else if replyRecvLongUnheldAdmits st epId tid c rid grant then\n      \.ok \(\(\), performReplyRecvUnheldDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    else if replyRecvLongDonatedCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}              \.ok \(\(\), performReplyRecvDonatedCapsDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
