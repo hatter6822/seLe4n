@@ -411,21 +411,19 @@ theorem schedContextUnbind_replenishQueueOnCore_ne_of_link (st st' : SystemState
       cases hTcb : st.getTcb? tid with
       | some tcb =>
         simp only [hTcb] at h
-        split at h
-        · exact absurd h (by simp)
-        · rw [Except.ok.injEq, Prod.mk.injEq] at h
-          rw [← h.2, markKeyChangeFor_replenishQueueOnCore, markCandidacyGainFor_replenishQueueOnCore,
-            SchedContextOps.purgeReplenishment_replenishQueueOnCore_ne _ _ _ (by
-              rw [SystemState.releaseCoreOf_of_runLinks
-                  (SchedContextOps.schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _),
+        rw [Except.ok.injEq, Prod.mk.injEq] at h
+        rw [← h.2, markKeyChangeFor_replenishQueueOnCore, markCandidacyGainFor_replenishQueueOnCore,
+          SchedContextOps.purgeReplenishment_replenishQueueOnCore_ne _ _ _ (by
+            rw [SystemState.releaseCoreOf_of_runLinks
+                (SchedContextOps.schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _),
 ]
-              exact hLink2 _ (by rfl) _ (by rfl) _ _ _),
-            SchedContextOps.schedContextUnbindQueueStage_replenishQueueOnCore,
-            SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
-          dsimp only
-          repeat' split
-          all_goals
-            simp [SchedulerState.setCurrentOnCore_replenishQueueOnCore]
+            exact hLink2 _ (by rfl) _ (by rfl) _ _ _),
+          SchedContextOps.schedContextUnbindQueueStage_replenishQueueOnCore,
+          SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
+        dsimp only
+        repeat' split
+        all_goals
+          simp [SchedulerState.setCurrentOnCore_replenishQueueOnCore]
       | none =>
         simp only [hTcb] at h
         rw [Except.ok.injEq, Prod.mk.injEq] at h

@@ -921,6 +921,18 @@ for driver in drivers:
             # WS-SX SX8.3: UnbindObject on a thread and on a notification.
             "sched-context-bind-for-unbind-object", "sched-context-unbind-object-thread",
             "sched-context-unbind-object-notification", "sched-context-rebind-notification",
+            # WS-SX SX8.3 (D22): the unbind of a context held by donation,
+            # letting go of the reply stack it heads.
+            "untyped-retype-donated-unbind-server", "donated-unbind-server-set-space",
+            "donated-unbind-server-set-priority", "untyped-retype-donated-unbind-reply",
+            "donated-unbind-reply-cap-mint", "donated-unbind-configure",
+            "donated-unbind-bind-partner", "donated-unbind-resume-server",
+            "donated-unbind-root-waits", "donated-unbind-server-resumes-partner",
+            "donated-unbind-server-receives", "donated-unbind-partner-calls",
+            "donated-unbind-server-wakes-root", "donated-unbind-server-waits",
+            "sched-context-unbind-donated", "donated-unbind-server-delete",
+            "donated-unbind-root-replies", "donated-unbind-suspend-partner",
+            "donated-unbind-reply-cap-delete", "donated-unbind-reply-delete",
             "bound-signal-bind-root", "bound-signal-signal", "bound-signal-receive",
             "bound-signal-reply-recv-signal", "bound-signal-reply-recv",
             "bound-signal-unbind-root",

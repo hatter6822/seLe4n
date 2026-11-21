@@ -58,7 +58,7 @@ theorem RecordsFrame.schedContextBindNotification {vScId : SeLe4n.ValidObjId}
 
 
 /-- **`SchedContext_Unbind` keeps the records**: the thread unbind's frame,
-then the notification unbind's. -/
+then the notification unbind's and the reply-stack unlink's. -/
 theorem RecordsFrame.schedContextUnbindAllOnCore {vScId : SeLe4n.ValidObjId}
     {ec : Concurrency.CoreId} {st st' : SystemState}
     {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
@@ -66,9 +66,13 @@ theorem RecordsFrame.schedContextUnbindAllOnCore {vScId : SeLe4n.ValidObjId}
     RecordsFrame st st' := by
   obtain ⟨stU, hU | ⟨-, hU, -⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok h
   · obtain ⟨rfl, -⟩ := hU
-    exact RecordsFrame.unbindSchedContextNotification _ _ hInv
+    have F := RecordsFrame.unbindSchedContextNotification _
+      (SeLe4n.SchedContextId.ofObjId vScId.val) hInv
+    exact F.trans (RecordsFrame.schedContextUnbindReply _ _ F.invExt)
   · have F := RecordsFrame.schedContextUnbindOnCore hInv hU
-    exact F.trans (RecordsFrame.unbindSchedContextNotification _ _ F.invExt)
+    have F2 := F.trans (RecordsFrame.unbindSchedContextNotification _
+      (SeLe4n.SchedContextId.ofObjId vScId.val) F.invExt)
+    exact F2.trans (RecordsFrame.schedContextUnbindReply _ _ F2.invExt)
 
 /-- **`SchedContext_UnbindObject` keeps the records**: on a thread, the thread
 unbind's frame; on a notification, the notification unbind's. -/

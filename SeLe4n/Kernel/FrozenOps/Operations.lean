@@ -11,6 +11,7 @@ import SeLe4n.Kernel.FrozenOps.Core
 import SeLe4n.Kernel.FrozenOps.ReleaseQueue
 import SeLe4n.Kernel.SchedContext.Budget
 import SeLe4n.Kernel.SchedContext.Operations
+import SeLe4n.Kernel.SchedContext.ReplyLink
 import SeLe4n.Kernel.Architecture.PageTableInstall
 import SeLe4n.Kernel.IPC.DualQueue.SenderMessage
 
@@ -1690,12 +1691,35 @@ def frozenUnbindSchedContextNotification (st : FrozenSystemState) (scId : SeLe4n
         | none => .ok st1
   | _ => .ok st
 
+/-- **Frozen `schedContext_unbindReply`** (`schedContextUnbindReply`): the
+context at `scId` lets go of the reply stack it heads — the head reply's upward
+link cleared, then the context's head; the state as it is where the context
+heads no stack or its head does not name it back. -/
+def frozenSchedContextUnbindReply (st : FrozenSystemState) (scId : SeLe4n.ObjId) :
+    Except KernelError FrozenSystemState :=
+  match st.getObject? scId with
+  | some (.schedContext sc) =>
+    match sc.scReply with
+    | some rid =>
+      match st.getObject? rid.toObjId with
+      | some (.reply r) =>
+        if replyStackLinkHeads scId r.next then
+          match frozenWithObjectStored st rid.toObjId (.reply { r with next := none }) with
+          | .error e => .error e
+          | .ok st1 => frozenWithObjectStored st1 scId (.schedContext { sc with scReply := none })
+        else .ok st
+      | _ => .ok st
+    | none => .ok st
+  | _ => .ok st
+
 /-- Z8-H: Frozen SchedContext unbind — unbind a thread from a SchedContext.
 Mirrors `schedContextUnbind` in frozen state. No RunQueue or replenish queue
 manipulation (frozen phase uses fixed membership set). Clears bidirectional
-binding, then the context's notification link; the context of the current
-thread is refused `illegalState` (D18), and a context bound to no thread has
-its notification link cleared alone (WS-SX SX8.3).
+binding, then the context's notification link, then the reply stack it heads
+(`frozenSchedContextUnbindReply`); the context of the current thread is refused
+`illegalState` (D18), a holder that received the context by donation is
+unbound like any other (D22), and a context bound to no thread has its
+notification link and its reply stack cleared alone (WS-SX SX8.3).
 
 **AK8-H (WS-AK / DS-M02) — Transactional two-phase rewrite:** the previous
 implementation was non-transactional — on a failed TCB lookup AFTER the SC
@@ -1719,7 +1743,10 @@ def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
       -- `invokeSchedContext_Unbind`, the live `schedContextUnbindAllOnCore`).
       | none =>
         match frozenUnbindSchedContextNotification st scId with
-        | .ok st' => .ok ((), st')
+        | .ok st' =>
+          match frozenSchedContextUnbindReply st' scId with
+          | .ok st'' => .ok ((), st'')
+          | .error e => .error e
         | .error e => .error e
       | some tid =>
         -- WS-SX SX8.3 (D18's frozen sweep): seL4-MCS refuses the context of
@@ -1730,17 +1757,8 @@ def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
         -- AK8-H Phase 1: Validate TCB lookup BEFORE any state mutation.
         match st.getTcb? tid with
         | some tcb =>
-          -- WS-OD (PR #894 review): **the donated-holder rejection this path
-          -- claims to mirror.**  `schedContextUnbind` refuses to unbind a holder
-          -- that received the context by donation, because erasing that binding
-          -- while the context's stack still names the caller leaves the caller's
-          -- frame dead on the stack — the Reply and the context can then never be
-          -- retyped.  This operation's own docstring says it mirrors that one,
-          -- and it cleared both sides unconditionally, so the frozen path could
-          -- construct exactly the dead stack the live guard exists to prevent.
-          -- `freezeObject` preserves TCBs and SchedContexts verbatim, so the
-          -- shape reaches here intact; one question must not have two answers.
-          if tcb.schedContextBinding.isDonated then .error .illegalState else
+          -- WS-SX SX8.3 (D22): a holder that received the context by donation
+          -- is unbound like any other, as the live `schedContextUnbind` does.
           -- AK8-H Phase 2: Both lookups succeeded; apply all writes atomically.
           -- **WS-HP HP10.4, frozen mirror (PR #897 review)**: and the origin,
           -- for the bind's reason in the other direction — the reservation stops
@@ -1760,7 +1778,12 @@ def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
               -- WS-SX SX8.3: then the context's notification, as the live
               -- `schedContextUnbindAllOnCore` unbinds it after the thread.
               match frozenUnbindSchedContextNotification st2 scId with
-              | .ok st3 => .ok ((), st3)
+              | .ok st3 =>
+                -- WS-SX SX8.3 (D22): then the reply stack, as the live
+                -- `schedContextUnbindAllOnCore` lets go of it last.
+                match frozenSchedContextUnbindReply st3 scId with
+                | .ok st4 => .ok ((), st4)
+                | .error e => .error e
               | .error e => .error e
             | .error e => .error e
         | _ =>

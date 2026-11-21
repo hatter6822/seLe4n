@@ -402,18 +402,16 @@ theorem schedContextUnbind {vScId : SeLe4n.ValidObjId} {st st' : SystemState}
     · contradiction
     · split at hStep
       · dsimp only [] at hStep
-        split at hStep
-        · contradiction
-        · cases hStep
-          refine chain ?_ (markKeyChangeFor _ _ _) hInv
-          refine chain ?_ (markCandidacyGainFor _ _ _)
-          refine chain ?_ (purgeReplenishment _ _)
-          refine chain ?_ (schedContextUnbindQueueStage _ _ _ _ _)
-          refine chain (chain (withScheduler _ _) fun h => rewriteObject _ h ?_) fun h =>
-            updateTcb _ _ h fun _ => rfl
-          refine Eq.trans ?_ (congrArg recordViewOf
-            ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc)).symm
-          rfl
+        cases hStep
+        refine chain ?_ (markKeyChangeFor _ _ _) hInv
+        refine chain ?_ (markCandidacyGainFor _ _ _)
+        refine chain ?_ (purgeReplenishment _ _)
+        refine chain ?_ (schedContextUnbindQueueStage _ _ _ _ _)
+        refine chain (chain (withScheduler _ _) fun h => rewriteObject _ h ?_) fun h =>
+          updateTcb _ _ h fun _ => rfl
+        refine Eq.trans ?_ (congrArg recordViewOf
+          ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc)).symm
+        rfl
       · cases hStep
         refine chain ?_ (purgeReplenishment _ _) hInv
         exact rewriteObject_schedContext hSc _ _

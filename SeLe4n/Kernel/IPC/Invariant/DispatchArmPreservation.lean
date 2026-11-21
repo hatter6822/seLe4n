@@ -2492,13 +2492,6 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
       split at hStep
       · rename_i tcb hTcb
         dsimp only [] at hStep
-        -- `v0.35.4`: a donated holder is refused, so a successful unbind saw a
-        -- binding that is not a donation.
-        have hNotDon : tcb.schedContextBinding.isDonated = false := by
-          cases hD : tcb.schedContextBinding.isDonated with
-          | false => rfl
-          | true => rw [hD] at hStep; simp at hStep
-        simp only [hNotDon, Bool.false_eq_true, if_false] at hStep
         have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
           (SchedContextId.ofObjId vScId.val) sc).mp hSc
         have hTcbRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb

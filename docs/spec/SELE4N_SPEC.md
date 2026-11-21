@@ -1337,11 +1337,24 @@ internal; nothing a thread writes names one.
     (`schedContext_bindNtfn`).
   - SchedContext_Unbind refuses the context of the executing core's current
     thread (`schedContextRunsOn`, seL4's check of `sc_tcb` against
-    `ksCurThread`) and unbinds the notification.
+    `ksCurThread`). It unbinds the holder, whether it holds the context by
+    binding or by donation (seL4's `schedContext_unbindTCB`), then the
+    notification, then lets go of the reply stack the context heads
+    (`schedContextUnbindReply`, seL4's `schedContext_unbindReply`): the head
+    reply's upward link and the context's head are cleared, and the callers
+    below keep waiting on their replies. Finalisation of a context runs the
+    same `schedContextUnbindReply`.
+  - SchedContext_UnbindObject (label 36) unbinds a thread or a notification
+    from the context. On a thread it unbinds that thread alone, as seL4 does,
+    and leaves any stack the context heads in place.
   - Finalisation of either end clears the link at both ends, and the retire
     guards read it.
-  - A notification's donation of its context on a wait is not built yet. It is
-    WS-SX SX8 (§10, `docs/planning/SEL4_ABI_FIDELITY_PLAN.md`).
+  - A notification lends its context to a thread that holds none
+    (`maybeDonateSchedContext`, seL4's `maybeDonateSchedContext`) when a
+    signal wakes a waiter or a bound receiver, and when a receive completes on
+    the notification. The thread gives it back when it blocks again
+    (`maybeReturnSchedContext`, seL4's `maybeReturnSchedContext`) whenever
+    it holds the notification's context, by binding or by donation.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering

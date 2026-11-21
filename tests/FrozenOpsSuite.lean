@@ -2812,6 +2812,58 @@ private def differentialSchedContextNotificationLinkAgrees : IO Unit := do
   expect "FO-SX8.3 (D18) control: ...and unbinds it when another thread is current"
     (frozenSchedContextUnbind diffScId.toObjId fs2).toOption.isSome
 
+/-- The frozen holder binding, context head and head reply's upward link. -/
+private def frozenDonationShape (fs : FrozenSystemState) (rid : SeLe4n.ReplyId) :
+    Option (Nat × Nat × Option SeLe4n.ReplyId × Option SeLe4n.Kernel.ReplyStackLink) :=
+  match fs.getObject? diffA.toObjId, fs.getObject? diffScId.toObjId, fs.getObject? rid.toObjId with
+  | some (.tcb t), some (.schedContext sc), some (.reply r) =>
+    some (t.scBindingScCode, sc.boundThreadCode, sc.scReply, r.next)
+  | _, _, _ => none
+
+/-- **FO-SX8.3 (D22): the unbind of a holder that received its context through
+a reply.**  seL4-MCS's `invokeSchedContext_Unbind` unbinds the holder
+(`schedContext_unbindTCB`) and lets go of the reply stack
+(`schedContext_unbindReply`); the frozen unbind agrees with the live one and
+both leave the holder unbound, the context bound to nothing and heading no
+stack, and the lender's frame with no upward link, its caller kept. -/
+private def differentialDonatedHolderUnbindAgrees : IO Unit := do
+  let rid : SeLe4n.ReplyId := ⟨505⟩
+  let holder : TCB :=
+    { diffTcb 62 with
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode
+        (SeLe4n.Kernel.SchedContextBinding.donated diffScId diffB),
+      scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode
+        (SeLe4n.Kernel.SchedContextBinding.donated diffScId diffB) }
+  let lender : TCB := TCB.setIpcState { diffTcb 63 with
+    replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply diffEpId (some diffA))
+  let reply : SeLe4n.Kernel.Reply :=
+    { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffB),
+      next := some (SeLe4n.Kernel.ReplyStackLink.head diffScId) }
+  let sc : SeLe4n.Kernel.SchedContext :=
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
+      boundThreadCode := SeLe4n.ThreadId.optCode (some diffA), scReply := some rid,
+      isActive := true }
+  let ist := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
+    (mkEmptyIntermediateState ()) holder) lender) rid reply) diffScId sc
+  let fu := frozenSchedContextUnbind diffScId.toObjId (freeze ist)
+  expect "FO-SX8.3 (D22) control: the frozen holder starts donated, the context heading the stack"
+    (frozenDonationShape (freeze ist) rid ==
+      some (diffScId.toObjId.toNat + 1, diffA.toNat + 1, some rid, some (SeLe4n.Kernel.ReplyStackLink.head diffScId)))
+  expect "FO-SX8.3 (D22) DIFFERENTIAL: the unbind of a donated holder agrees"
+    (frozenRunAgrees unitResultAgrees fu (liveUnbindAll ist.state))
+  expect "FO-SX8.3 (D22): ...succeeds, unbinds the holder and lets go of the stack"
+    (match fu with
+     | .ok (_, fs') => frozenDonationShape fs' rid == some (0, 0, none, none)
+     | .error _ => false)
+  expect "FO-SX8.3 (D22): ...and the lender stays blocked on its reply"
+    (match fu with
+     | .ok (_, fs') =>
+       match fs'.getObject? diffB.toObjId, fs'.getObject? rid.toObjId with
+       | some (.tcb t), some (.reply r) =>
+         t.ipcState == .blockedOnReply diffEpId (some diffA) && r.caller == some diffB
+       | _, _ => false
+     | .error _ => false)
+
 /-- The live notification-link codes of the context and the notification. -/
 private def liveLinkCodes (st : SystemState) : Option (Nat × Nat) :=
   match st.getSchedContext? diffScId, st.getNotification? diffNotifId with
@@ -3989,6 +4041,7 @@ def main : IO Unit := do
   differentialSchedContextBindClearsOrigin
   differentialSchedContextUnbindClearsOrigin
   differentialSchedContextNotificationLinkAgrees
+  differentialDonatedHolderUnbindAgrees
   liveSchedContextUnbindObjectArms
   differentialSchedContextBindRefusalsAgree
   differentialSchedContextBindPlacesParked

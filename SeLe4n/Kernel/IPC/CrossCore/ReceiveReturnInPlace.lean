@@ -155,7 +155,7 @@ theorem receiveReturnSchedContext_of_scUnbound {blocks : Bool} {st : SystemState
       rw [hV, hT'] at hA
       split at hA
       · cases hA
-      · simp [TCB.schedContextBinding, h0, SchedContextBinding.ofCodes] at hA)
+      · simp [TCB.schedContextBinding, h0, SchedContextBinding.ofCodes, SchedContextBinding.scId?] at hA)
 
 end ReturnInPlace
 

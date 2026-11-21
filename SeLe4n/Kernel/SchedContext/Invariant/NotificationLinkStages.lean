@@ -92,7 +92,7 @@ theorem schedContextBindNotification_slots {vScId : SeLe4n.ValidObjId}
     · left; exact SystemState.updateSchedContext_objects_ne _ _ _ _ hs hInv
 
 /-- **`SchedContext_Unbind` is a kernel-entry stage**: the thread unbind's, then
-the notification unbind's stage. -/
+the notification unbind's and the reply-stack unlink's stages. -/
 theorem schedContextUnbindAllOnCore_runQueueEntryStage {vScId : SeLe4n.ValidObjId}
     {ec : Concurrency.CoreId} {st st' : SystemState}
     {sgi : Option (Concurrency.CoreId × Concurrency.SgiKind)}
@@ -100,9 +100,11 @@ theorem schedContextUnbindAllOnCore_runQueueEntryStage {vScId : SeLe4n.ValidObjI
     SystemState.RunQueueEntryStage st st' := by
   obtain ⟨stU, hU | ⟨-, hU, -⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok h
   · obtain ⟨rfl, -⟩ := hU
-    exact (unbindSchedContextNotification_runQueueStage _ _).entry
+    exact ((unbindSchedContextNotification_runQueueStage _ _).trans
+      (schedContextUnbindReply_runQueueStage _ _)).entry
   · exact (schedContextUnbindOnCore_runQueueEntryStage hU).trans
-      (unbindSchedContextNotification_runQueueStage _ _).entry
+      ((unbindSchedContextNotification_runQueueStage _ _).trans
+        (schedContextUnbindReply_runQueueStage _ _)).entry
 
 /-- **`SchedContext_Unbind` blocks no thread.** -/
 theorem schedContextUnbindAllOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop}
@@ -112,10 +114,12 @@ theorem schedContextUnbindAllOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop
     readyKeptStage S st st' := by
   obtain ⟨stU, hU | ⟨-, -, hU⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok h
   · obtain ⟨rfl, -⟩ := hU
-    exact .of_stage (unbindSchedContextNotification_runQueueStage _ _)
+    exact .of_stage ((unbindSchedContextNotification_runQueueStage _ _).trans
+      (schedContextUnbindReply_runQueueStage _ _))
   · have A := SchedContextOps.schedContextUnbind_runQueueStage_of_dequeued vScId st stU hD hU
     exact (readyKeptStage.of_stage A).trans A.1
-      (.of_stage (unbindSchedContextNotification_runQueueStage _ _))
+      (.of_stage ((unbindSchedContextNotification_runQueueStage _ _).trans
+        (schedContextUnbindReply_runQueueStage _ _)))
 
 /-- **The notification unbind read from the context's end writes a context's
 slot and a notification's alone**: every other slot is as it was, and neither
@@ -156,5 +160,51 @@ theorem unbindSchedContextNotification_slots (st : SystemState) (s : SeLe4n.Sche
       · refine ⟨e0, fun x e => ?_⟩
         rw [insertObjects_getElem_self _ _ _ hI1] at e; cases e
     · rw [insertObjects_getElem_ne _ _ _ _ hn hI1]; exact hSc sc hS
+
+/-- **A context's reply-stack unlink keeps the object store's extended
+invariant.** -/
+theorem schedContextUnbindReply_preserves_objects_invExt (st : SystemState) (x : SeLe4n.ObjId)
+    (hInv : st.objects.invExt) : (schedContextUnbindReply st x).objects.invExt :=
+  schedContextUnbindReply_induct (fun _ b => b.objects.invExt) st x hInv
+    (fun _ _ _ _ _ _ _ _ hS => SystemState.updateSchedContext_preserves_objects_invExt _ _ _
+      (storeObject_preserves_objects_invExt _ _ _ _ hInv hS))
+
+/-- **A context's reply-stack unlink writes a Reply's slot and a context's
+alone**: every other slot is as it was, and neither written slot is or becomes a
+thread. -/
+theorem schedContextUnbindReply_slots (st : SystemState) (x : SeLe4n.ObjId)
+    (hInv : st.objects.invExt) :
+    ∀ oid : SeLe4n.ObjId, (schedContextUnbindReply st x).objects[oid]? = st.objects[oid]? ∨
+      ((∀ y : TCB, st.objects[oid]? ≠ some (.tcb y)) ∧
+        (∀ y : TCB, (schedContextUnbindReply st x).objects[oid]? ≠ some (.tcb y))) := by
+  intro oid
+  refine schedContextUnbindReply_induct (fun a b => b.objects[oid]? = a.objects[oid]? ∨
+      ((∀ y : TCB, a.objects[oid]? ≠ some (.tcb y)) ∧
+        (∀ y : TCB, b.objects[oid]? ≠ some (.tcb y)))) st x (Or.inl rfl) ?_
+  intro _ rid r s1 _ _ hR _ hS
+  have hI1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hS
+  have hRraw := (SystemState.getReply?_eq_some_iff st rid r).mp hR
+  -- the reply's slot
+  have hStep1 : s1.objects[oid]? = st.objects[oid]? ∨
+      ((∀ y : TCB, st.objects[oid]? ≠ some (.tcb y)) ∧
+        (∀ y : TCB, s1.objects[oid]? ≠ some (.tcb y))) := by
+    by_cases ho : oid = rid.toObjId
+    · subst ho; right
+      refine ⟨fun y e => (by rw [hRraw] at e; cases e), fun y e => ?_⟩
+      rw [storeObject_objects_eq _ _ _ _ hInv hS] at e; cases e
+    · left; exact storeObject_objects_ne _ _ _ _ _ ho hInv hS
+  cases hG : s1.getSchedContext? ⟨x.val⟩ with
+  | none => rw [SystemState.updateSchedContext_eq_self_of_none hG]; exact hStep1
+  | some y =>
+    have hGraw := (SystemState.getSchedContext?_eq_some_iff _ _ y).mp hG
+    by_cases hs : (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = oid
+    · subst hs; right
+      refine ⟨fun z e => ?_, fun z e => ?_⟩
+      · rcases hStep1 with e1 | ⟨e1, -⟩
+        · rw [← e1, hGraw] at e; cases e
+        · exact e1 z e
+      · rw [SystemState.updateSchedContext_eq_of_some hG] at e
+        rw [insertObjects_getElem_self _ _ _ hI1] at e; cases e
+    · rw [SystemState.updateSchedContext_objects_ne _ _ _ _ hs hI1]; exact hStep1
 
 end SeLe4n.Kernel

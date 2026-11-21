@@ -277,11 +277,11 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextBind,
       "`{ sc with boundThread := some _ }`; `scReply` is untouched by the update")
     -- WS-ZA ZA5.4 part 25: the finalisation's unstack-step predicate.  A
-    -- `Prop` over the two writes `finaliseSchedContextUnstack` makes (it states
+    -- `Prop` over the two writes `schedContextUnbindReply` makes (it states
     -- what a predicate survives across them), so it stores nothing: the write
     -- is the operation's, registered below with its chain result.
   , (`SeLe4n.Kernel.FinaliseUnstackStep,
-      "a step predicate (`Prop`) naming the unstack's two writes in a hypothesis; it builds no state, and the write it describes is `finaliseSchedContextUnstack`'s, registered with its chain result")
+      "a step predicate (`Prop`) naming the unstack's two writes in a hypothesis; it builds no state, and the write it describes is `schedContextUnbindReply`'s, registered with its chain result")
     -- WS-ZA ZA5.4 part 25: the reply's stasher record (seL4 MCS's
     -- `reply->replyTCB`).  `{ r with stasherCode := _ }` and nothing else, so
     -- `prev`, `next` and `caller` keep the values read: the spec record, its
@@ -294,7 +294,7 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.storeReceiveBlock,
       "the register-path receive block: the endpoint enqueue, the receiver's block, and the Reply's `{ r with stasherCode := _ }` (`storeReplyStasher`); no chain field")
   , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextUnbind,
-      "`{ sc with boundThread := none, isActive := false }`; `scReply` is untouched")
+      "`{ sc with boundThread := none, isActive := false }`; `scReply` is untouched by the update, and the stack the context heads is let go through `frozenSchedContextUnbindReply`, registered below")
     -- WS-ZA ZA6.6: the yield link (seL4-MCS's `tcbYieldTo` / `scYieldFrom`).
     -- Each writes a context through `SchedContext.yieldCleared`
     -- (`{ sc with yieldFromCode := 0 }`) or `SchedContext.updateConsumed`
@@ -875,6 +875,11 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .mirrors `SeLe4n.Kernel.cutThreadReplyFrameOut)
   , (`SeLe4n.Kernel.FrozenOps.frozenConsumeCallerReplyLink,
       .mirrors `SeLe4n.Model.SystemState.consumeCallerReplyLink)
+    -- WS-SX SX8.3 (D22): the frozen `SchedContext_Unbind`'s let-go of the
+    -- stack the context heads (seL4's `schedContext_unbindReply`).  `FO-SX8.3`
+    -- runs it against the live unbind, whole state.
+  , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextUnbindReply,
+      .mirrors `SeLe4n.Kernel.schedContextUnbindReply)
     -- The cut itself, its total fold, and the thread-keyed wrapper the
     -- cancellation path runs.
     -- **WS-HP HP6.3**: the composed store step is a *half-step* of the operation
@@ -933,12 +938,12 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- WS-ZA ZA5.4 part 25: a finalised scheduling context lets go of the
     -- stack it heads (seL4's `schedContext_unbindReply`): the head's upward
     -- link cleared, then the context's head.
-  , (`SeLe4n.Kernel.finaliseSchedContextUnstack,
-      .states [`SeLe4n.Kernel.finaliseSchedContextUnstack_preserves_donationChainWellFormed])
+  , (`SeLe4n.Kernel.schedContextUnbindReply,
+      .states [`SeLe4n.Kernel.schedContextUnbindReply_preserves_donationChainWellFormed])
     -- WS-ZA ZA6.34: its compiled form, the head reply's link cleared in its
-    -- slot (`finaliseSchedContextUnstack_eq_impl`, `@[csimp]`): the same writes.
-  , (`SeLe4n.Kernel.finaliseSchedContextUnstackImpl,
-      .mirrors `SeLe4n.Kernel.finaliseSchedContextUnstack)
+    -- slot (`schedContextUnbindReply_eq_impl`, `@[csimp]`): the same writes.
+  , (`SeLe4n.Kernel.schedContextUnbindReplyImpl,
+      .mirrors `SeLe4n.Kernel.schedContextUnbindReply)
     -- The push's second store: the new head's links and the old head's `next`.
     -- Between the two stores the context's head names a frame that does not yet
     -- answer it, so the chain is broken by construction here.

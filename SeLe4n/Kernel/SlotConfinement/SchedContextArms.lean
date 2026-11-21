@@ -85,13 +85,6 @@ theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
       simp only [hBound]
       split at hStep
       · next tcb hTcb =>
-        -- `v0.35.4`: a donated holder is refused, so a successful unbind saw a
-        -- binding that is not a donation.
-        have hNotDon : tcb.schedContextBinding.isDonated = false := by
-          cases hD : tcb.schedContextBinding.isDonated with
-          | false => rfl
-          | true => rw [hD] at hStep; simp at hStep
-        simp only [hNotDon, Bool.false_eq_true, if_false] at hStep
         rw [Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨-, hs⟩ := hStep
         subst hs
@@ -821,8 +814,8 @@ theorem schedContextUnbindOnCore_confinedToCores (vScId : SeLe4n.ValidObjId)
     (SchedContextOps.schedContextUnbindOnCore_ok hStep).2.1
 
 /-- **The live `.schedContextUnbind` bound**: seL4-MCS's `SchedContext_Unbind`
-writes the thread unbind's cores, and the notification unbind writes no
-scheduler slot or machine state. -/
+writes the thread unbind's cores, and the notification unbind and the
+reply-stack unlink write no scheduler slot or machine state. -/
 theorem schedContextUnbindAllOnCore_confinedToCores (vScId : SeLe4n.ValidObjId)
     (executingCore : CoreId) (st st' : SystemState)
     (sgi : Option (CoreId × Concurrency.SgiKind))
@@ -830,9 +823,11 @@ theorem schedContextUnbindAllOnCore_confinedToCores (vScId : SeLe4n.ValidObjId)
       = .ok (st', sgi)) :
     observableSlotsConfinedToCores st st' (schedContextUnbindWriteSet st vScId.val) := by
   have hN : ∀ X : SystemState, observableSlotsConfinedToCores X
-      (unbindSchedContextNotification X (SeLe4n.SchedContextId.ofObjId vScId.val)) [] :=
+      (schedContextUnbindReply
+        (unbindSchedContextNotification X (SeLe4n.SchedContextId.ofObjId vScId.val)) vScId.val) [] :=
     fun X => observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-      (unbindSchedContextNotification_scheduler _ _) (unbindSchedContextNotification_machine _ _)
+      (by rw [schedContextUnbindReply_scheduler, unbindSchedContextNotification_scheduler])
+      (by rw [schedContextUnbindReply_machine, unbindSchedContextNotification_machine])
   obtain ⟨stU, hU | ⟨-, hU, -⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok hStep
   · obtain ⟨rfl, -⟩ := hU
     exact observableSlotsConfinedToCores_mono (fun _ h => by simp at h) (hN _)

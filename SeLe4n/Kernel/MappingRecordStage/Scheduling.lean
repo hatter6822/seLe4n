@@ -688,19 +688,17 @@ theorem schedContextUnbind_mappingStage {vScId : SeLe4n.ValidObjId} {st st' : Sy
     · contradiction
     · split at hStep
       · dsimp only [] at hStep
-        split at hStep
-        · contradiction
-        · cases hStep
-          refine MappingStage.trans ?_ (markKeyChangeFor_mappingStage _ _ _)
-          refine MappingStage.trans ?_ (markCandidacyGainFor_mappingStage _ _ _)
-          refine MappingStage.trans ?_
-            (purgeReplenishment_mappingStage _ _)
-          refine MappingStage.trans ?_ (MappingStage.of_objectsAgreeOffRunLinks
-            (SchedContextOps.schedContextUnbindQueueStage_objects_invExt _ _ _ _ _)
-            (SchedContextOps.schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _)
-            (schedContextUnbindQueueStage_onlyObjectsSchedulerDiffer _ _ _ _ _).ghostsKept)
-          refine MappingStage.trans ?_ (updateTcb_mappingStage _ _ _)
-          exact MappingStage.rewriteObject_schedContext_schedulerOnly hSc _ _
+        cases hStep
+        refine MappingStage.trans ?_ (markKeyChangeFor_mappingStage _ _ _)
+        refine MappingStage.trans ?_ (markCandidacyGainFor_mappingStage _ _ _)
+        refine MappingStage.trans ?_
+          (purgeReplenishment_mappingStage _ _)
+        refine MappingStage.trans ?_ (MappingStage.of_objectsAgreeOffRunLinks
+          (SchedContextOps.schedContextUnbindQueueStage_objects_invExt _ _ _ _ _)
+          (SchedContextOps.schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _)
+          (schedContextUnbindQueueStage_onlyObjectsSchedulerDiffer _ _ _ _ _).ghostsKept)
+        refine MappingStage.trans ?_ (updateTcb_mappingStage _ _ _)
+        exact MappingStage.rewriteObject_schedContext_schedulerOnly hSc _ _
       · cases hStep
         refine MappingStage.trans ?_
           (purgeReplenishment_mappingStage _ _)

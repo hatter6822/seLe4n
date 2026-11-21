@@ -1678,10 +1678,10 @@ theorem cutHeadFrameKeepingContextImpl_preserves_donationChainWellFormed (st : S
 /-- **A scheduling context's unstack keeps the donation chains** (seL4's
 `schedContext_unbindReply`): the stack it let go of is no context's, so every
 remaining context's walk reads what it read before. -/
-theorem finaliseSchedContextUnstack_preserves_donationChainWellFormed {s : SystemState}
+theorem schedContextUnbindReply_preserves_donationChainWellFormed {s : SystemState}
     (x : SeLe4n.ObjId) (hInv : s.objects.invExt) (hC : donationChainWellFormed s) :
-    donationChainWellFormed (finaliseSchedContextUnstack s x) := by
-  unfold finaliseSchedContextUnstack
+    donationChainWellFormed (schedContextUnbindReply s x) := by
+  unfold schedContextUnbindReply
   split
   · next sc hSc =>
     split

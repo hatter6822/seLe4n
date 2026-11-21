@@ -298,8 +298,8 @@ theorem schedControlConfigure_crossCoreNonInterference (ctx : LabelingContext)
 /-- SM8.B.3 (**the live `.schedContextUnbind` arm, cross-core**): an unbind is
 invisible on every core outside its write set — including the core the demoted
 thread was running on, when that is not the observer's.  The arm is seL4-MCS's
-`SchedContext_Unbind`: the thread unbind, then the notification unbind, which
-writes no core's slot. -/
+`SchedContext_Unbind`: the thread unbind, then the notification unbind and the
+reply-stack unlink, which write no core's slot. -/
 theorem schedContextUnbindAllOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (vScId : SeLe4n.ValidObjId) (executingCore : CoreId)
     (st st' : SystemState) (c : CoreId)

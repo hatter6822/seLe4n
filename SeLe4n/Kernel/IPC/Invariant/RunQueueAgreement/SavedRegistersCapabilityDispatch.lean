@@ -630,18 +630,16 @@ theorem schedContextUnbind_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
     split at h
     · cases h
     · split at h
-      · split at h
-        · cases h
-        · cases h
-          refine savedRegsKeptExcept.trans ?_ (.of_objects_eq (markKeyChangeFor_objects _ _ _))
-          refine savedRegsKeptExcept.trans ?_ (.of_objects_eq (markCandidacyGainFor_objects _ _ _))
-          refine savedRegsKeptExcept.trans ?_ (.of_releaseLinks (SchedContextOps.purgeReplenishment_agree _ _))
-          refine savedRegsKeptExcept.trans ?_
-            (.of_runLinks (SchedContextOps.schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _))
-          refine savedRegsKeptExcept.trans ?_ (.updateTcb _ _ _ ?_ (fun _ => rfl))
-          · exact savedRegsKeptExcept.trans (.of_objects_eq rfl) (.rewriteObject_notTcb _ hInv
-              (fun x hx => by rw [hO] at hx; cases hx) (fun x hx => by cases hx))
-          · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
+      · cases h
+        refine savedRegsKeptExcept.trans ?_ (.of_objects_eq (markKeyChangeFor_objects _ _ _))
+        refine savedRegsKeptExcept.trans ?_ (.of_objects_eq (markCandidacyGainFor_objects _ _ _))
+        refine savedRegsKeptExcept.trans ?_ (.of_releaseLinks (SchedContextOps.purgeReplenishment_agree _ _))
+        refine savedRegsKeptExcept.trans ?_
+          (.of_runLinks (SchedContextOps.schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _))
+        refine savedRegsKeptExcept.trans ?_ (.updateTcb _ _ _ ?_ (fun _ => rfl))
+        · exact savedRegsKeptExcept.trans (.of_objects_eq rfl) (.rewriteObject_notTcb _ hInv
+            (fun x hx => by rw [hO] at hx; cases hx) (fun x hx => by cases hx))
+        · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
       · cases h
         refine savedRegsKeptExcept.trans ?_ (.of_releaseLinks (SchedContextOps.purgeReplenishment_agree _ _))
         exact .rewriteObject_notTcb _ hInv (fun x hx => by rw [hO] at hx; cases hx)
@@ -764,7 +762,7 @@ theorem SchedPointPrefix.currentFreeOrMatched {e : CoreId} {base st s st' : Syst
 
 /-- **`SchedContext_Unbind` writes no saved register**: the thread unbind (the
 current thread's context is refused, so no scheduling point runs), then the
-notification unbind. -/
+notification unbind and the reply-stack unlink. -/
 theorem schedContextUnbindAllOnCore_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
     {vScId : SeLe4n.ValidObjId} {ec : CoreId} {st st' : SystemState}
     {sgi? : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
@@ -772,10 +770,14 @@ theorem schedContextUnbindAllOnCore_savedRegsKeptExcept {W : SeLe4n.ThreadId →
     savedRegsKeptExcept W st st' := by
   obtain ⟨stU, hU | ⟨-, -, hU⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok h
   · obtain ⟨rfl, -⟩ := hU
-    exact unbindSchedContextNotification_savedRegsKeptExcept _ _ hInv
-  · exact (schedContextUnbind_savedRegsKeptExcept hInv hU).trans
-      (unbindSchedContextNotification_savedRegsKeptExcept _ _
-        (schedContextUnbind_stepCovers st stU vScId ec hInv hU).2)
+    exact (unbindSchedContextNotification_savedRegsKeptExcept _ _ hInv).trans
+      (schedContextUnbindReply_savedRegsKeptExcept _ _
+        (unbindSchedContextNotification_preserves_objects_invExt _ _ hInv))
+  · have hIU := (schedContextUnbind_stepCovers st stU vScId ec hInv hU).2
+    exact (schedContextUnbind_savedRegsKeptExcept hInv hU).trans
+      ((unbindSchedContextNotification_savedRegsKeptExcept _ _ hIU).trans
+        (schedContextUnbindReply_savedRegsKeptExcept _ _
+          (unbindSchedContextNotification_preserves_objects_invExt _ _ hIU)))
 
 /-- **`SchedContext_UnbindObject` writes no saved register**: on a thread, the
 thread unbind (the current thread's context is refused); on a notification,

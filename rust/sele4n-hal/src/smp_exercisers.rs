@@ -9065,6 +9065,156 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             SCHED_CONTEXT_CAP,
             [0; 4],
         ),
+        // WS-SX SX8.3 (D22): seL4-MCS's `SchedContext_Unbind` of a context
+        // held by donation.  The server is carved again with a reply and the
+        // context bound to the partner; the root task waits, so the server
+        // runs, resumes the partner and receives; the partner's call lends it
+        // the context, the server's reply heading the stack; the server wakes
+        // the root task and waits on the notification.  The root task unbinds
+        // the context from the server that holds it on loan
+        // (`schedContext_unbindTCB`), and the unbind lets go of the stack
+        // (`schedContext_unbindReply`): the partner stays blocked on a reply
+        // no context heads.  The server is deleted, and the root task's reply
+        // answers the partner, which gets no context back; the partner, the
+        // reply's capability and the reply are removed, leaving the state
+        // the scenario found.
+        retype(
+            "untyped-retype-donated-unbind-server",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "donated-unbind-server-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "donated-unbind-server-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        retype(
+            "untyped-retype-donated-unbind-reply",
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+            FRAME_VADDR,
+        ),
+        invocation(
+            "donated-unbind-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        configure(
+            "donated-unbind-configure",
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "donated-unbind-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "donated-unbind-resume-server",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "donated-unbind-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "donated-unbind-server-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "donated-unbind-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
+        ),
+        partner_step(
+            "donated-unbind-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x6d, 0],
+            true,
+        ),
+        signal("donated-unbind-server-wakes-root"),
+        partner_step(
+            "donated-unbind-server-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "sched-context-unbind-donated",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "donated-unbind-server-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        partner_step(
+            "donated-unbind-root-replies",
+            REPLY,
+            CHAIN_REPLY_CAP,
+            1,
+            [0x6e, 0],
+            false,
+        ),
+        invocation(
+            "donated-unbind-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "donated-unbind-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "donated-unbind-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
         // The ordinary server loop with a client already queued: the root
         // task takes the partner's call, then a third thread's send queues on
         // the endpoint while the root task waits; the root task's

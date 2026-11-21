@@ -776,8 +776,8 @@ theorem schedLockSet_schedContextUnbindOnCore_coversWrites (st st' : SystemState
       sgi d hObjInv hd hStep)
 
 /-- **`SchedContext_Unbind`'s footprint covers its writes**: the thread
-unbind's, then the notification unbind, which writes the object store alone
-under the footprint's table write lock. -/
+unbind's, then the notification unbind and the reply-stack unlink, which write
+the object store alone under the footprint's table write lock. -/
 theorem schedLockSet_schedContextUnbindAllOnCore_coversWrites (st st' : SystemState)
     (vScId : SeLe4n.ValidObjId) (executingCore : CoreId)
     (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet) (hObjInv : st.objects.invExt)
@@ -791,12 +791,12 @@ theorem schedLockSet_schedContextUnbindAllOnCore_coversWrites (st st' : SystemSt
   obtain ⟨stU, hU | ⟨-, hU, -⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok hStep
   · obtain ⟨rfl, -⟩ := hU
     exact footprintCoversWrites_of_scheduler_eq S hTable
-      (unbindSchedContextNotification_scheduler _ _)
+      (by rw [schedContextUnbindReply_scheduler, unbindSchedContextNotification_scheduler])
   · exact footprintCoversWrites_trans S
       (schedLockSet_schedContextUnbindOnCore_coversWrites st stU vScId executingCore sgi S
         hObjInv hU hS)
       (footprintCoversWrites_of_scheduler_eq S hTable
-        (unbindSchedContextNotification_scheduler _ _))
+        (by rw [schedContextUnbindReply_scheduler, unbindSchedContextNotification_scheduler]))
 
 /-- WS-SX SX8.3: **`SchedContext_UnbindObject` on a thread writes inside the
 footprint the thread unbind declares**: it is the per-core thread unbind. -/

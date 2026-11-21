@@ -45,6 +45,17 @@ theorem unbindSchedContextNotification_mappingStage (st : SystemState)
       (SystemState.MappingStage.insert (pre := .notification ntfn) rfl h1 rfl
         (by simp [KernelObject.objectType]))
 
+/-- **A context's reply-stack unlink keeps the mappings recorded**: a Reply
+stored over a Reply, then a context rewritten as the kind it was. -/
+theorem schedContextUnbindReply_mappingStage (st : SystemState) (x : SeLe4n.ObjId) :
+    SystemState.MappingStage st (schedContextUnbindReply st x) := by
+  refine SystemState.MappingStage.of_invExt fun _ => ?_
+  refine schedContextUnbindReply_induct (fun a b => SystemState.MappingStage a b) st x
+    (SystemState.MappingStage.refl st) ?_
+  intro _ rid r s1 _ _ hR _ hS
+  exact (SystemState.MappingStage.storeObject hS ((SystemState.getReply?_eq_some_iff st rid r).mp hR)
+    rfl (by simp [KernelObject.objectType])).trans (updateSchedContext_mappingStage s1 _ _)
+
 /-- **`SchedContext_Unbind` keeps the mappings recorded.** -/
 theorem schedContextUnbindAllOnCore_mappingStage {vScId : SeLe4n.ValidObjId}
     {ec : Concurrency.CoreId} {st st' : SystemState}
@@ -53,9 +64,11 @@ theorem schedContextUnbindAllOnCore_mappingStage {vScId : SeLe4n.ValidObjId}
     SystemState.MappingStage st st' := by
   obtain ⟨stU, hU | ⟨-, hU, -⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok h
   · obtain ⟨rfl, -⟩ := hU
-    exact unbindSchedContextNotification_mappingStage _ _
+    exact (unbindSchedContextNotification_mappingStage _ _).trans
+      (schedContextUnbindReply_mappingStage _ _)
   · exact (schedContextUnbindOnCore_mappingStage hU).trans
-      (unbindSchedContextNotification_mappingStage _ _)
+      ((unbindSchedContextNotification_mappingStage _ _).trans
+        (schedContextUnbindReply_mappingStage _ _))
 
 /-- **`SchedContext_UnbindObject` on a thread keeps the mappings recorded**: it
 is the per-core thread unbind. -/

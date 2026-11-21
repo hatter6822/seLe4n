@@ -1068,6 +1068,16 @@ theorem runQueueStage_of_objectsAgreeOffNotificationLinks {st st' : SystemState}
     fun _ _ _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (by rw [hS]) hL hM d,
     fun _ _ => hM⟩
 
+/-- **A context's reply-stack unlink is a run-queue stage** (seL4's
+`schedContext_unbindReply`): a Reply stored over itself with its upward link
+cleared, then the context's head, neither a scheduling link. -/
+theorem schedContextUnbindReply_runQueueStage (st : SystemState) (x : SeLe4n.ObjId) :
+    SystemState.RunQueueStage st (schedContextUnbindReply st x) :=
+  schedContextUnbindReply_induct (fun a b => SystemState.RunQueueStage a b) st x
+    (SystemState.RunQueueStage.refl st)
+    (fun _ _ _ _ _ _ hR _ hS => (storeObject_replyOver_runQueueStage hR hS).trans
+      (updateSchedContext_runQueueStage _ _ _))
+
 /-- **The notification unbind read from the context's end is a run-queue
 stage**: two link words written, both ends cleared together
 (`unbindSchedContextNotification_preserves_notificationLinksAgree`). -/

@@ -4713,7 +4713,7 @@ run_check "INVARIANT" rg -n '^theorem Reply\.nextNamesFrame_eq($|[ ({:\[\]])' Se
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem TCB\.blockingServer\?_eq_impl($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem blockingServer_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/BlockingGraph.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem resumeReadyMidState_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^@\[csimp\] theorem finaliseSchedContextUnstack_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem schedContextUnbindReply_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/ReplyLink.lean
 run_check "INVARIANT" rg -n '^theorem severReplyFrameBelowStores_transport($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^  , `SeLe4n\.Kernel\.severReplyFrameBelowStores$' SeLe4n/Testing/ReplyStackWriteCensus.lean
 # The in-place reply runs only on a reply with no frame below to cut.
@@ -5021,7 +5021,7 @@ run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \
 # The admission no longer refuses a queued or current ready holder.  A busy
 # reply is finalised as reply_remove: its caller's wait cancelled, the boost it
 # lent reverted, the caller suspended.
-run_check "INVARIANT" rg -n -U 'def finaliseSchedContext \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if schedContextFinaliseAdmitted st x then\n    unbindSchedContextNotification \(finaliseSchedContextCleanup \(finaliseSchedContextUnstack\n      \(finaliseSchedContextUnbind \(finaliseSchedContextDeschedule st x\) x\) x\) x\) ⟨x\.val⟩' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseSchedContext \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if schedContextFinaliseAdmitted st x then\n    unbindSchedContextNotification \(finaliseSchedContextCleanup \(schedContextUnbindReply\n      \(finaliseSchedContextUnbind \(finaliseSchedContextDeschedule st x\) x\) x\) x\) ⟨x\.val⟩' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # The deschedule runs first, on the state the admission reads, so it reads only
 # whether the holder is ready: the admission reads the binding back and the idle check.
 run_check "INVARIANT" rg -n -U 'def finaliseSchedContextDeschedule [^\n]*(\n([ \t][^\n]*)?){0,9}\n        if t\.ipcStateCode == 0 && t\.ipcObjectCode == 0 then descheduleAtPlacement st tid$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
@@ -5069,7 +5069,7 @@ run_check "INVARIANT" rg -n '^theorem finaliseReplyUnstash_hidden($|[ ({:\[\]])'
 run_check "INVARIANT" rg -n '^theorem finaliseReply_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
 run_check "INVARIANT" rg -n '^theorem finaliseReplyStep_keepsIpcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
 run_check "INVARIANT" rg -n '^theorem finaliseScDescheduleStep_keepsIpcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
-run_check "INVARIANT" rg -n '^theorem finaliseSchedContextUnstack_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
+run_check "INVARIANT" rg -n '^theorem schedContextUnbindReply_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
 run_check "INVARIANT" rg -n '^theorem finaliseSchedContextDeschedule_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
 run_check "INVARIANT" rg -n '^theorem finaliseReply_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
 run_negative_check "INVARIANT" rg -n 'finaliseThreadCleanup' SeLe4n
@@ -18758,13 +18758,14 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def replyFrameOnLiveStack[^\n]*(\n([ 
 # the definition and the field it reads, and changes only the question asked.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyFrameOnLiveStack[^\n]*(\n([ \t][^\n]*)?)*r\.next\.isSome" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 #
-# (2) The frozen unbind mirrors the live one.  `schedContextUnbind` refuses a
-# holder whose binding is `.donated`; the frozen path cleared `sc.boundThread`
-# and the holder's binding unconditionally while its own docstring said it
-# mirrors the live transition -- so it built exactly the dead stack the live
-# guard exists to prevent.  One question, two answers; the docstring described
-# the better behaviour, so the code moved.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*if tcb\.schedContextBinding\.isDonated then \.error \.illegalState else" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# (2) The frozen unbind mirrors the live one.  Since WS-SX SX8.3 (D22, seL4-MCS
+# `schedContext_unbindTCB` + `schedContext_unbindReply`) neither refuses a holder
+# whose binding is `.donated`: the pop is keyed on the reply frame, a frame
+# heading a context bound to no thread is popped by `popUnheldReplyHead`, and
+# `SchedContext_Unbind` lets go of the stack last on both surfaces.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind [^\n]*(\n([ \t][^\n]*)?)*match frozenUnbindSchedContextNotification st2 scId with\n[ \t]*\| \.ok st3 =>\n([ \t]*--[^\n]*\n)*[ \t]*match frozenSchedContextUnbindReply st3 scId with" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\\[inline\\] def schedContextUnbindAllPerform [^\n]*\n[^\n]*\n  schedContextUnbindReply \(unbindSchedContextNotification \(schedContextUnbindPerform st vScId\)" SeLe4n/Kernel/SchedContext/OperationsPerCore.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (frozenSchedContextUnbind|schedContextUnbind) [^\n]*(\n([ \t][^\n]*)?)*isDonated" SeLe4n/Kernel/FrozenOps/Operations.lean SeLe4n/Kernel/SchedContext/Operations.lean'
 #
 # (3) PR #897 review -- **the same mirror, swept.**  Two things the review's own
 # finding named and two the sweep found.  `SchedContext.donationOrigin` is a field

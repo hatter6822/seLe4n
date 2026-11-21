@@ -80,9 +80,33 @@ theorem unbindSchedContextNotification_preserves_ipcInvariantFull (st : SystemSt
     exact insertObjects_notificationSchedLink_preserves_ipcInvariantFull _ n ntfn 0
       (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hObjInv) hSc h1
 
+/-- **A context's reply-stack unlink keeps the bundle** (seL4's
+`schedContext_unbindReply`): the head reply's upward link is a stack link, not
+its caller (`storeObject_reply_stackLinks_preserves_ipcInvariantFull`), and the
+context's head is content the bundle does not read
+(`insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull`). -/
+theorem schedContextUnbindReply_preserves_ipcInvariantFull (st : SystemState)
+    (x : SeLe4n.ObjId) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (schedContextUnbindReply st x) ∧
+      (schedContextUnbindReply st x).objects.invExt := by
+  refine schedContextUnbindReply_induct
+    (fun _ s' => ipcInvariantFull s' ∧ s'.objects.invExt) st x ⟨hInv, hObjInv⟩ ?_
+  intro _ rid r s1 _ _ hR _ hS
+  have h1 := storeObject_reply_stackLinks_preserves_ipcInvariantFull
+    (a' := { r with next := none }) hObjInv hInv hR rfl rfl hS
+  have hI1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS
+  cases hG : s1.getSchedContext? ⟨x.val⟩ with
+  | none => rw [SystemState.updateSchedContext_eq_self_of_none hG]; exact ⟨h1, hI1⟩
+  | some y =>
+    rw [SystemState.updateSchedContext_eq_of_some hG]
+    exact ⟨insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull s1 _ y _ hI1 h1
+      ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hG) rfl,
+      RHTable_insert_preserves_invExt _ _ _ hI1⟩
+
 /-- **`SchedContext_Unbind` keeps the IPC bundle**: the thread unbind (the
 current thread's context is refused, so the per-core form's seam writes nothing
-and the step is the single-core unbind), then the notification unbind. -/
+and the step is the single-core unbind), then the notification unbind, then the
+reply-stack unlink. -/
 theorem schedContextUnbindAllOnCore_preserves_ipcInvariantFull
     (st st' : SystemState) (vScId : SeLe4n.ValidObjId) (ec : Concurrency.CoreId)
     (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
@@ -91,10 +115,15 @@ theorem schedContextUnbindAllOnCore_preserves_ipcInvariantFull
     ipcInvariantFull st' := by
   obtain ⟨stU, hU | ⟨-, -, hU⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok hStep
   · obtain ⟨rfl, -⟩ := hU
-    exact unbindSchedContextNotification_preserves_ipcInvariantFull _ _ hObjInv hInv
-  · exact unbindSchedContextNotification_preserves_ipcInvariantFull _ _
-      ((SchedContextOps.schedContextUnbind_runQueueEntryStage vScId st stU hU).1 hObjInv hR).1
-      (schedContextUnbind_preserves_ipcInvariantFull st stU vScId hObjInv hInv hU)
+    exact (schedContextUnbindReply_preserves_ipcInvariantFull _ _
+      (unbindSchedContextNotification_preserves_objects_invExt _ _ hObjInv)
+      (unbindSchedContextNotification_preserves_ipcInvariantFull _ _ hObjInv hInv)).1
+  · have hIU := ((SchedContextOps.schedContextUnbind_runQueueEntryStage vScId st stU hU).1
+      hObjInv hR).1
+    exact (schedContextUnbindReply_preserves_ipcInvariantFull _ _
+      (unbindSchedContextNotification_preserves_objects_invExt _ _ hIU)
+      (unbindSchedContextNotification_preserves_ipcInvariantFull _ _ hIU
+        (schedContextUnbind_preserves_ipcInvariantFull st stU vScId hObjInv hInv hU))).1
 
 /-- **`SchedContext_UnbindObject` on a thread preserves `ipcInvariantFull`**:
 it is the per-core thread unbind, whose seam writes nothing on a context the

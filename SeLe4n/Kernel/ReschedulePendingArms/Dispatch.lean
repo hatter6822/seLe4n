@@ -422,21 +422,28 @@ theorem capabilityKeyFrame.stepCoversInv {e : CoreId} {st st' : SystemState}
 
 /-- **`SchedContext_Unbind`**: the single-core thread unbind (the per-core
 form's seam writes nothing once the current thread's context is refused), then
-the notification unbind, which keeps every scheduling key. -/
+the notification unbind and the reply-stack unlink, which keep every scheduling
+key. -/
 theorem schedContextUnbindAllOnCore_stepCovers (st st' : SystemState) (vScId : SeLe4n.ValidObjId)
     (e : CoreId) (sgi? : Option (CoreId × SgiKind)) {ec : CoreId} (hObjInv : st.objects.invExt)
     (hStep : SchedContextOps.schedContextUnbindAllOnCore vScId ec st = .ok (st', sgi?)) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   obtain ⟨stU, hU | ⟨-, -, hU⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok hStep
   · obtain ⟨rfl, -⟩ := hU
-    exact (unbindSchedContextNotification_keyFrame _ _ hObjInv).stepCoversInv
-      (hRes := by rw [unbindSchedContextNotification_machine])
-      (hBank := banksKeptOffCore_of_eq (by rw [unbindSchedContextNotification_machine]))
+    have K := unbindSchedContextNotification_keyFrame _
+      (SeLe4n.SchedContextId.ofObjId vScId.val) hObjInv
+    exact (K.trans (schedContextUnbindReply_keyFrame _ vScId.val K.2.2)).stepCoversInv
+      (hRes := by rw [schedContextUnbindReply_machine, unbindSchedContextNotification_machine])
+      (hBank := banksKeptOffCore_of_eq
+        (by rw [schedContextUnbindReply_machine, unbindSchedContextNotification_machine]))
   · obtain ⟨C, hI⟩ := schedContextUnbind_stepCovers st stU vScId e hObjInv hU
-    obtain ⟨C2, hI2⟩ := (unbindSchedContextNotification_keyFrame _
-        (SeLe4n.SchedContextId.ofObjId vScId.val) hI).stepCoversInv (e := e)
-      (hRes := by rw [unbindSchedContextNotification_machine])
-      (hBank := banksKeptOffCore_of_eq (by rw [unbindSchedContextNotification_machine]))
+    have K := unbindSchedContextNotification_keyFrame _
+      (SeLe4n.SchedContextId.ofObjId vScId.val) hI
+    obtain ⟨C2, hI2⟩ := (K.trans (schedContextUnbindReply_keyFrame _ vScId.val K.2.2)).stepCoversInv
+      (e := e)
+      (hRes := by rw [schedContextUnbindReply_machine, unbindSchedContextNotification_machine])
+      (hBank := banksKeptOffCore_of_eq
+        (by rw [schedContextUnbindReply_machine, unbindSchedContextNotification_machine]))
     exact ⟨stepCovers_trans C C2, hI2⟩
 
 /-- **`SchedContext_UnbindObject` on a thread**: the single-core thread unbind

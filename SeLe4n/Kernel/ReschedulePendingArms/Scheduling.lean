@@ -1474,22 +1474,20 @@ theorem schedContextUnbind_stepCovers (st st' : SystemState) (vScId : SeLe4n.Val
     · rename_i tid _
       split at hStep
       · rename_i tcb hT
-        split at hStep
-        · contradiction
-        · cases hStep
-          constructor
-          · refine stepCovers_trans ?_ (unbindTail_stepCovers e _ vScId sc tid tcb _ _ _ ?_ ?_ ?_ _)
-            · exact stepCovers_of_schedSlots _ _ (unbindClear_covered _ _).1
-                (unbindClear_covered _ _).2.1 (unbindClear_covered _ _).2.2
-            · exact hObjInv
-            · exact hScRaw
-            · exact hT
-          · rw [markKeyChangeFor_objects, markCandidacyGainFor_objects]
-            refine SchedContextOps.purgeReplenishment_objects_invExt _ _ ?_
-            refine SchedContextOps.schedContextUnbindQueueStage_objects_invExt _ _ _ _ _
-              (SystemState.updateTcb_preserves_objects_invExt _ _ _
-                (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ ?_))
-            exact hObjInv
+        cases hStep
+        constructor
+        · refine stepCovers_trans ?_ (unbindTail_stepCovers e _ vScId sc tid tcb _ _ _ ?_ ?_ ?_ _)
+          · exact stepCovers_of_schedSlots _ _ (unbindClear_covered _ _).1
+              (unbindClear_covered _ _).2.1 (unbindClear_covered _ _).2.2
+          · exact hObjInv
+          · exact hScRaw
+          · exact hT
+        · rw [markKeyChangeFor_objects, markCandidacyGainFor_objects]
+          refine SchedContextOps.purgeReplenishment_objects_invExt _ _ ?_
+          refine SchedContextOps.schedContextUnbindQueueStage_objects_invExt _ _ _ _ _
+            (SystemState.updateTcb_preserves_objects_invExt _ _ _
+              (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ ?_))
+          exact hObjInv
       · cases hStep
         have hAdm : st.rewriteAdmissible vScId.val (.schedContext
             { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) :=
