@@ -354,18 +354,19 @@ theorem setInterruptLineMask_stepCovers (e : CoreId) (st : SystemState) (line : 
     (st' := Architecture.setInterruptLineMask st line masked) hInv rfl rfl).stepCoversInv
     (hRes := rfl) (hBank := banksKeptOffCore_of_eq rfl)
 
-/-- WS-ZA ZA6.32: **the interrupt step covers** on any core: the bound-aware
-signal's coverage (`notificationSignalBoundOnCore_stepCovers`), then the
+/-- WS-ZA ZA6.32: **the interrupt step covers** on any core, on a state where
+the binding pair holds: seL4's `sendSignal` coverage (`sendSignalOnCore_stepCovers`,
+the bound-aware signal and the donation to the thread it woke), then the
 mask. -/
 theorem handleInterruptOnCore_stepCovers (e : CoreId) (st : SystemState) (c : CoreId)
-    (line : Nat) (hInv : st.objects.invExt) :
+    (line : Nat) (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st) :
     stepCovers e st (handleInterruptOnCore st c line) ∧
       (handleInterruptOnCore st c line).objects.invExt := by
   unfold handleInterruptOnCore
   split
   · rename_i ntfn badge _
-    obtain ⟨h1, hI⟩ := notificationSignalBoundOnCore_stepCovers e
-      (notificationId := ntfn) (badge := badge) (executingCore := c) hInv
+    obtain ⟨h1, hI⟩ := sendSignalOnCore_stepCovers e (n := ntfn) (badge := badge) (c := c)
+      hInv hBi
     have hSig : stepCovers e st (interruptSignal ntfn badge c st) ∧
         (interruptSignal ntfn badge c st).objects.invExt := ⟨h1, hI⟩
     exact stepCoversInv_trans hSig.1 (setInterruptLineMask_stepCovers e _ line true hSig.2)
@@ -373,10 +374,10 @@ theorem handleInterruptOnCore_stepCovers (e : CoreId) (st : SystemState) (c : Co
 
 /-- …and the raw step's. -/
 theorem interruptEntryStep_stepCovers (e : CoreId) (st : SystemState) (coreId intId : UInt64)
-    (hInv : st.objects.invExt) :
+    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st) :
     stepCovers e st (interruptEntryStep st coreId intId) :=
   interruptEntryStep_of (P := stepCovers e st) st coreId intId (stepCovers_refl e st)
-    (fun c _ _ => (handleInterruptOnCore_stepCovers e st c _ hInv).1)
+    (fun c _ _ => (handleInterruptOnCore_stepCovers e st c _ hInv hBi).1)
 
 /-! ### The seams fire from the flags, and the flags cover the diff
 

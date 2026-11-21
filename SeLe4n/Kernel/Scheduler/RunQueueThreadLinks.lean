@@ -14,6 +14,7 @@ import SeLe4n.Kernel.Scheduler.IdleThread
 import SeLe4n.Kernel.SchedContext.ReleaseLinks
 import SeLe4n.Kernel.SchedContext.RefillState
 import SeLe4n.Kernel.SchedContext.YieldLinkInvariant
+import SeLe4n.Kernel.SchedContext.Invariant.NotificationLinkAgree
 
 /-!
 # The run queue's links in the threads (WS-ZA ZA4.5)
@@ -276,6 +277,18 @@ theorem _root_.SeLe4n.Kernel.YieldLinksKept.mapTcbInPlace (st : SystemState) (t 
   · cases st.objects[x]? with
     | none => rfl
     | some o => cases o <;> simp [KernelObject.mapTcb, objYieldCodes, hg]
+  · rfl
+
+/-- WS-SX SX8.3: **the in-place thread write primitive keeps every slot's
+notification-link codes**: a thread holds neither link word. -/
+theorem _root_.SeLe4n.Kernel.NotificationLinksKept.mapTcbInPlace (st : SystemState)
+    (t : SeLe4n.ThreadId) (g : TCB → TCB) :
+    Kernel.NotificationLinksKept (st.mapTcbInPlace t g) st := fun x => by
+  rw [objects_mapTcbInPlace]
+  split
+  · cases st.objects[x]? with
+    | none => rfl
+    | some o => cases o <;> rfl
   · rfl
 
 /-- **The in-place thread write primitive keeps every context's refill view**:
@@ -2142,6 +2155,24 @@ macro "yield_codes" : tactic =>
     | (simp_all only [objYieldCodes]; rfl)
     | (simp_all [objYieldCodes]; done))
 
+/-- WS-SX SX8.3: the notification-link codes of an object written over its
+slot's: an object that is not a notification or a context holds none, and a
+notification or a context written with its link word kept holds its slot's. -/
+macro "ntfn_link_codes" : tactic =>
+  `(tactic| first
+    | rfl
+    | (rw [(getTcb?_eq_some_iff _ _ _).mp ‹SystemState.getTcb? _ _ = some _›]; rfl)
+    | (rw [(getSchedContext?_eq_some_iff _ _ _).mp
+        ‹SystemState.getSchedContext? _ _ = some _›]; rfl)
+    | (rw [(getNotification?_eq_some_iff _ _ _).mp
+        ‹SystemState.getNotification? _ _ = some _›]; rfl)
+    | (rw [(getReply?_eq_some_iff _ _ _).mp ‹SystemState.getReply? _ _ = some _›]; rfl)
+    | (rw [(getCNode?_eq_some_iff _ _ _).mp ‹SystemState.getCNode? _ _ = some _›]; rfl)
+    | (rw [(getUntyped?_eq_some_iff _ _ _).mp ‹SystemState.getUntyped? _ _ = some _›]; rfl)
+    | (simp_all only [Kernel.objNotificationLinkCodes]; done)
+    | (simp_all only [Kernel.objNotificationLinkCodes]; rfl)
+    | (simp_all [Kernel.objNotificationLinkCodes]; done))
+
 /-- `t` is a thread a core may run: its TCB is ready in IPC and not suspended
 (seL4's `st_tcb_at runnable`). -/
 def runnable (st : SystemState) (t : SeLe4n.ThreadId) : Prop :=
@@ -2903,6 +2934,10 @@ structure RunQueueLinkStage (st st' : SystemState) : Prop where
   /-- WS-ZA ZA6.6: the yield link stays in agreement (`yieldLinksAgree`): each
   end names the other. -/
   yield : st.objects.invExt → st.runQueueRefined → st.yieldLinksAgree → st'.yieldLinksAgree
+  /-- WS-SX SX8.3: the notification link stays in agreement
+  (`notificationLinksAgree`): a notification and its context name each other. -/
+  notificationLinks : st.objects.invExt → st.runQueueRefined → notificationLinksAgree st →
+    notificationLinksAgree st'
   /-- WS-ZA ZA6.8: the step links no thread and makes no linked thread
   resident (`YieldLinkLiveFrame`). -/
   live : st.objects.invExt → st.runQueueRefined → YieldLinkLiveFrame st' st
@@ -2922,6 +2957,10 @@ structure RunQueueLinkFrame (P : SeLe4n.SchedContextId → Prop) (st st' : Syste
   refills : ∀ S, (∀ x, P x → S x) → st.objects.invExt → st.runQueueRefined →
     st.releaseQueueRefined → st.refillsSoundExcept S → st'.refillsSoundExcept S
   yield : st.objects.invExt → st.runQueueRefined → st.yieldLinksAgree → st'.yieldLinksAgree
+  /-- WS-SX SX8.3: the notification link stays in agreement
+  (`notificationLinksAgree`): a notification and its context name each other. -/
+  notificationLinks : st.objects.invExt → st.runQueueRefined → notificationLinksAgree st →
+    notificationLinksAgree st'
   /-- WS-ZA ZA6.8: the step links no thread and makes no linked thread
   resident (`YieldLinkLiveFrame`). -/
   live : st.objects.invExt → st.runQueueRefined → YieldLinkLiveFrame st' st
@@ -2929,7 +2968,7 @@ structure RunQueueLinkFrame (P : SeLe4n.SchedContextId → Prop) (st st' : Syste
 /-- A link stage is a frame off any contexts. -/
 theorem RunQueueLinkStage.toFrame {st st' : SystemState} (h : RunQueueLinkStage st st')
     (P : SeLe4n.SchedContextId → Prop) : RunQueueLinkFrame P st st' :=
-  ⟨h.links, h.release, fun S _ => h.refills S, h.yield, h.live⟩
+  ⟨h.links, h.release, fun S _ => h.refills S, h.yield, h.notificationLinks, h.live⟩
 
 /-- **Closing a frame off `s`**: a frame off `s` whose end is sound off `S`
 whenever it is sound off `S` and `s` (the written context placed) is a link
@@ -2944,15 +2983,15 @@ theorem RunQueueLinkFrame.withRefills {s : SeLe4n.SchedContextId} {st st' : Syst
     by_cases hs : S s
     · exact h.refills S (fun x hx => hx ▸ hs) hI hR hQ hS
     · exact hF S hs hI hR hQ (h.links hI hR).1 (h.release hI hR hQ) hS
-        (h.refills _ (fun x hx => Or.inr hx) hI hR hQ (hS.mono fun x hx => Or.inl hx)), h.yield, h.live⟩
+        (h.refills _ (fun x hx => Or.inr hx) hI hR hQ (hS.mono fun x hx => Or.inl hx)), h.yield, h.notificationLinks, h.live⟩
 
 theorem RunQueueLinkFrame.mono {P P' : SeLe4n.SchedContextId → Prop} {st st' : SystemState}
     (hP : ∀ x, P x → P' x) (h : RunQueueLinkFrame P st st') : RunQueueLinkFrame P' st st' :=
-  ⟨h.links, h.release, fun S hS => h.refills S (fun x hx => hS x (hP x hx)), h.yield, h.live⟩
+  ⟨h.links, h.release, fun S hS => h.refills S (fun x hx => hS x (hP x hx)), h.yield, h.notificationLinks, h.live⟩
 
 theorem RunQueueLinkFrame.refl (P : SeLe4n.SchedContextId → Prop) (st : SystemState) :
     RunQueueLinkFrame P st st :=
-  ⟨fun h r => ⟨h, r⟩, fun _ _ r => r, fun _ _ _ _ _ s => s, fun _ _ y => y,
+  ⟨fun h r => ⟨h, r⟩, fun _ _ r => r, fun _ _ _ _ _ s => s, fun _ _ y => y, fun _ _ n => n,
     fun _ _ => .refl st⟩
 
 theorem RunQueueLinkFrame.trans {P : SeLe4n.SchedContextId → Prop} {st st' st'' : SystemState}
@@ -2963,6 +3002,8 @@ theorem RunQueueLinkFrame.trans {P : SeLe4n.SchedContextId → Prop} {st st' st'
     fun S hS h r q x => let ⟨h', r'⟩ := h1.links h r
       h2.refills S hS h' r' (h1.release h r q) (h1.refills S hS h r q x),
     fun h r y => let ⟨h', r'⟩ := h1.links h r; h2.yield h' r' (h1.yield h r y),
+    fun h r n => let ⟨h', r'⟩ := h1.links h r
+      h2.notificationLinks h' r' (h1.notificationLinks h r n),
     fun h r => let ⟨h', r'⟩ := h1.links h r; (h2.live h' r').trans (h1.live h r)⟩
 
 instance {st st' : SystemState} : CoeFun (RunQueueLinkStage st st')
@@ -3030,6 +3071,7 @@ theorem RunQueueFrameStage.of_invExt {P : SeLe4n.SchedContextId → Prop} {st st
     (H : st.objects.invExt → RunQueueFrameStage P st st') : RunQueueFrameStage P st st' :=
   ⟨⟨fun h r => (H h).1 h r, fun h r q => (H h).1.release h r q,
       fun S hS h r q x => (H h).1.refills S hS h r q x, fun h r y => (H h).1.yield h r y,
+      fun h r n => (H h).1.notificationLinks h r n,
       fun h r => (H h).1.live h r⟩,
     fun e h r r' d => (H h).2.1 e h r r' d,
     fun h r => (H h).2.2 h r⟩
@@ -3071,12 +3113,14 @@ theorem RunQueueLinkStage.of_frames {st st' : SystemState}
     (hRel : st.objects.invExt → releaseStateAgree st' st)
     (hV : st.objects.invExt → RefillViewsKept st' st)
     (hY : st.objects.invExt → YieldLinksKept st' st)
+    (hN : st.objects.invExt → NotificationLinksKept st' st)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueLinkStage st st' :=
   ⟨hL, fun h _ r => (hRel h).refined r,
     fun _ h _ q s => refillsSoundExcept_of_kept (hV h)
       (fun c => by rw [(hRel h).replenishQueueOnCore c]) ((hRel h).refined q) s,
-    fun h _ y => yieldLinksAgree_of_kept (hY h) y, fun h _ => .of_kept (hY h) hRes⟩
+    fun h _ y => yieldLinksAgree_of_kept (hY h) y,
+    fun h _ n => notificationLinksAgree_of_kept (hN h) n, fun h _ => .of_kept (hY h) hRes⟩
 
 /-- A link half, with the release queues carried by `hRel` and the refill
 state by `hRef`: a step that edits a release queue. -/
@@ -3086,13 +3130,15 @@ theorem RunQueueLinkStage.of_framesWith {st st' : SystemState}
     (hRef : ∀ S, st.objects.invExt → st.releaseQueueRefined → st.refillsSoundExcept S →
       st'.refillsSoundExcept S)
     (hY : st.objects.invExt → YieldLinksKept st' st)
+    (hN : st.objects.invExt → NotificationLinksKept st' st)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueLinkStage st st' :=
   ⟨hL, fun h _ r => hRel h r, fun S h _ q s => hRef S h q s,
-    fun h _ y => yieldLinksAgree_of_kept (hY h) y, fun h _ => .of_kept (hY h) hRes⟩
+    fun h _ y => yieldLinksAgree_of_kept (hY h) y,
+    fun h _ n => notificationLinksAgree_of_kept (hN h) n, fun h _ => .of_kept (hY h) hRes⟩
 
 theorem RunQueueLinkStage.refl (st : SystemState) : RunQueueLinkStage st st :=
-  ⟨fun h r => ⟨h, r⟩, fun _ _ r => r, fun _ _ _ _ s => s, fun _ _ y => y,
+  ⟨fun h r => ⟨h, r⟩, fun _ _ r => r, fun _ _ _ _ s => s, fun _ _ y => y, fun _ _ n => n,
     fun _ _ => .refl st⟩
 
 theorem RunQueueLinkStage.trans {st st' st'' : SystemState}
@@ -3103,6 +3149,7 @@ theorem RunQueueLinkStage.trans {st st' st'' : SystemState}
     fun S h r q s => let ⟨h', r'⟩ := h1 h r
       h2.refills S h' r' (h1.release h r q) (h1.refills S h r q s),
     fun h r y => let ⟨h', r'⟩ := h1 h r; h2.yield h' r' (h1.yield h r y),
+    fun h r n => let ⟨h', r'⟩ := h1 h r; h2.notificationLinks h' r' (h1.notificationLinks h r n),
     fun h r => let ⟨h', r'⟩ := h1 h r; (h2.live h' r').trans (h1.live h r)⟩
 
 theorem RunQueueStage.refl (st : SystemState) : RunQueueStage st st :=
@@ -3124,7 +3171,7 @@ theorem RunQueueLinkStage.of_frame {st st' : SystemState} (hO : st'.objects = st
   .of_frames
     (fun h r => ⟨hO ▸ h, runQueueRefined_of_frame (fun c t => runLinkOn_of_objects hO c t) hQ hE r⟩)
     (fun _ => .of_objects_eq hO hS)
-    (fun _ => .of_objects_eq hO) (fun _ => .of_objects_eq hO) hRes
+    (fun _ => .of_objects_eq hO) (fun _ => .of_objects_eq hO) (fun _ => .of_objects_eq hO) hRes
 
 /-- A stage's link half. -/
 theorem RunQueueLinkStage.of_stage {st st' : SystemState} (h : RunQueueStage st st') :
@@ -3162,6 +3209,7 @@ theorem RunQueueWindowStage.of_invExt {p : SchedPoint} {st st' : SystemState}
     (H : st.objects.invExt → RunQueueWindowStage p st st') : RunQueueWindowStage p st st' :=
   ⟨⟨fun h r => (H h).1 h r, fun h r q => (H h).1.release h r q,
       fun S h r q s => (H h).1.refills S h r q s, fun h r y => (H h).1.yield h r y,
+      fun h r n => (H h).1.notificationLinks h r n,
       fun h r => (H h).1.live h r⟩,
     fun h r r' d => (H h).2.1 h r r' d, fun c hp h r => (H h).2.2 c hp h r⟩
 
@@ -3184,11 +3232,15 @@ structure RunQueueLinkStageOn (L : SeLe4n.ObjId → Prop) (st st' : SystemState)
   refills : ∀ S, st.objects.invExt → st.runQueueRefined → st.releaseQueueRefined →
     st.refillsSoundExcept S → st'.refillsSoundExcept S
   yield : st.objects.invExt → st.runQueueRefined → st.yieldLinksAgree → st'.yieldLinksAgree
+  /-- WS-SX SX8.3: the notification link stays in agreement
+  (`notificationLinksAgree`): a notification and its context name each other. -/
+  notificationLinks : st.objects.invExt → st.runQueueRefined → notificationLinksAgree st →
+    notificationLinksAgree st'
   live : st.objects.invExt → st.runQueueRefined → YieldLinkLiveFrameOn L st' st
 
 theorem RunQueueLinkStage.toOn {st st' : SystemState} (h : RunQueueLinkStage st st')
     (L : SeLe4n.ObjId → Prop) : RunQueueLinkStageOn L st st' :=
-  ⟨h.links, h.release, h.refills, h.yield, fun h' r => (h.live h' r).toOn L⟩
+  ⟨h.links, h.release, h.refills, h.yield, h.notificationLinks, fun h' r => (h.live h' r).toOn L⟩
 
 theorem RunQueueLinkStageOn.trans {L : SeLe4n.ObjId → Prop} {st st' st'' : SystemState}
     (h1 : RunQueueLinkStageOn L st st') (h2 : RunQueueLinkStageOn L st' st'') :
@@ -3198,11 +3250,13 @@ theorem RunQueueLinkStageOn.trans {L : SeLe4n.ObjId → Prop} {st st' st'' : Sys
     fun S h r q s => let ⟨h', r'⟩ := h1.links h r
       h2.refills S h' r' (h1.release h r q) (h1.refills S h r q s),
     fun h r y => let ⟨h', r'⟩ := h1.links h r; h2.yield h' r' (h1.yield h r y),
+    fun h r n => let ⟨h', r'⟩ := h1.links h r
+      h2.notificationLinks h' r' (h1.notificationLinks h r n),
     fun h r => let ⟨h', r'⟩ := h1.links h r; (h2.live h' r').trans (h1.live h r)⟩
 
 theorem RunQueueLinkStageOn.mono {L L' : SeLe4n.ObjId → Prop} {st st' : SystemState}
     (hL : ∀ k, L k → L' k) (h : RunQueueLinkStageOn L st st') : RunQueueLinkStageOn L' st st' :=
-  ⟨h.links, h.release, h.refills, h.yield, fun h' r => (h.live h' r).mono hL⟩
+  ⟨h.links, h.release, h.refills, h.yield, h.notificationLinks, fun h' r => (h.live h' r).mono hL⟩
 
 /-- WS-ZA ZA6.29: **a whole kernel entry that links only threads of `L`**. -/
 def RunQueueEntryStageOn (L : SeLe4n.ObjId → Prop) (st st' : SystemState) : Prop :=
@@ -3240,7 +3294,8 @@ theorem RunQueueEntryStageOn.of_invExt {L : SeLe4n.ObjId → Prop} {st st' : Sys
     (H : st.objects.invExt → RunQueueEntryStageOn L st st') : RunQueueEntryStageOn L st st' :=
   ⟨⟨fun h r => (H h).1.links h r,
       fun h r q => (H h).1.release h r q, fun S h r q s => (H h).1.refills S h r q s,
-      fun h r y => (H h).1.yield h r y, fun h r => (H h).1.live h r⟩,
+      fun h r y => (H h).1.yield h r y,
+      fun h r n => (H h).1.notificationLinks h r n, fun h r => (H h).1.live h r⟩,
     fun h r r' d => (H h).2 h r r' d⟩
 
 /-- WS-ZA ZA6.29: core `e`'s current thread at `st`, as an object slot: the
@@ -3376,6 +3431,7 @@ theorem RunQueueStage.of_invExt {st st' : SystemState}
     (H : st.objects.invExt → RunQueueStage st st') : RunQueueStage st st' :=
   ⟨⟨fun h r => (H h).1 h r, fun h r q => (H h).1.release h r q,
       fun S h r q s => (H h).1.refills S h r q s, fun h r y => (H h).1.yield h r y,
+      fun h r n => (H h).1.notificationLinks h r n,
       fun h r => (H h).1.live h r⟩,
     fun e h r r' d => (H h).2.1 e h r r' d,
     fun h r => (H h).2.2 h r⟩
@@ -3448,6 +3504,7 @@ theorem RunQueueStage.of_frameLive {st st' : SystemState} (hO : st'.objects = st
       (fun c => by rw [(releaseStateAgree.of_objects_eq hO hS).replenishQueueOnCore c])
       ((releaseStateAgree.of_objects_eq hO hS).refined q) s,
     fun _ _ y => yieldLinksAgree_of_kept (.of_objects_eq hO) y,
+    fun _ _ n => notificationLinksAgree_of_kept (.of_objects_eq hO) n,
     fun _ _ => ⟨.of_kept (.of_objects_eq hO), hLive⟩⟩,
     fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq hC (fun c t => runLinkOn_of_objects hO c t)
       (StateMono.of_objects hO) d, fun _ _ => StateMono.of_objects hO⟩
@@ -3474,6 +3531,8 @@ theorem RunQueueEntryStage.of_frameThen {st m st' : SystemState} (hO : m.objects
       h2.1.refills S h' r' (hRel.refined q) (refillsSoundExcept_of_kept (.of_objects_eq hO)
         (fun c => by rw [hRel.replenishQueueOnCore c]) (hRel.refined q) x),
     fun h r y => let ⟨h', r'⟩ := P h r; h2.1.yield h' r' (yieldLinksAgree_of_kept (.of_objects_eq hO) y),
+    fun h r n => let ⟨h', r'⟩ := P h r
+      h2.1.notificationLinks h' r' (notificationLinksAgree_of_kept (.of_objects_eq hO) n),
     hLive⟩,
     fun h r r'' d => let ⟨h', r'⟩ := P h r
       h2.2 h' r' r'' (currentDequeuedUniqueExcept_of_eq hC (fun c t => runLinkOn_of_objects hO c t)
@@ -3504,10 +3563,13 @@ theorem RunQueueStage.of_objectsAgreeOffTaint {st st' : SystemState}
     .of_map KernelObject.eraseTaint (fun o => by cases o <;> rfl) hA
   have hY : YieldLinksKept st' st :=
     .of_map KernelObject.eraseTaint (fun o => by cases o <;> rfl) hA
+  have hN : NotificationLinksKept st' st :=
+    .of_map KernelObject.eraseTaint (fun o => by cases o <;> rfl) hA
   exact ⟨⟨fun h r => ⟨hI h, runQueueRefined_of_frame hL hQ hE r⟩,
       fun _ _ q => hRel.refined q,
       fun _ _ _ q s => refillsSoundExcept_of_kept hV (fun c => by rw [hRel.replenishQueueOnCore c])
-        (hRel.refined q) s, fun _ _ y => yieldLinksAgree_of_kept hY y, fun _ _ => .of_kept hY hRes⟩,
+        (hRel.refined q) s, fun _ _ y => yieldLinksAgree_of_kept hY y,
+        fun _ _ n => notificationLinksAgree_of_kept hN n, fun _ _ => .of_kept hY hRes⟩,
     fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq hC hL hM d, fun _ _ => hM⟩
 
 /-- WS-ZA ZA6.3: **a step that keeps every thread's TCB is a stage** — it
@@ -3525,13 +3587,15 @@ theorem RunQueueFrameStage.of_tcbFrame {st st' : SystemState}
     (hRef : ∀ S, (∀ x, P x → S x) → st.objects.invExt → st.releaseQueueRefined →
       st.refillsSoundExcept S → st'.refillsSoundExcept S)
     (hY : st.objects.invExt → YieldLinksKept st' st)
+    (hN : st.objects.invExt → NotificationLinksKept st' st)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueFrameStage P st st' := by
   have hL : ∀ c t, st'.runLinkOn c t = st.runLinkOn c t := fun c t => runLinkOn_of_getTcb? (hG t) c
   have hM : StateMono st st' := StateMono.of_getTcb hG
   exact ⟨⟨fun h r => ⟨hI h, runQueueRefined_of_frame hL hQ hE r⟩,
       fun h _ q => hRel h q, fun S hS h _ q x => hRef S hS h q x,
-      fun h _ y => yieldLinksAgree_of_kept (hY h) y, fun h _ => .of_kept (hY h) hRes⟩,
+      fun h _ y => yieldLinksAgree_of_kept (hY h) y,
+    fun h _ n => notificationLinksAgree_of_kept (hN h) n, fun h _ => .of_kept (hY h) hRes⟩,
     fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq hC hL hM d, fun _ _ => hM⟩
 
 /-- ...with the refill state carried by `hRef`. -/
@@ -3545,12 +3609,13 @@ theorem RunQueueStage.of_tcbFrame {st st' : SystemState}
     (hRef : ∀ S, st.objects.invExt → st.releaseQueueRefined → st.refillsSoundExcept S →
       st'.refillsSoundExcept S)
     (hY : st.objects.invExt → YieldLinksKept st' st)
+    (hN : st.objects.invExt → NotificationLinksKept st' st)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueStage st st' :=
   let h := RunQueueFrameStage.of_tcbFrame (P := fun _ => False) hG hI hQ hE hC hRel
-    (fun S _ => hRef S) hY hRes
+    (fun S _ => hRef S) hY hN hRes
   ⟨⟨h.1.links, h.1.release, fun S => h.1.refills S (fun _ h => h.elim), h.1.yield,
-      h.1.live⟩,
+      h.1.notificationLinks, h.1.live⟩,
     h.2⟩
 
 /-- A step that writes neither the objects nor the run queues and their ends,
@@ -3581,6 +3646,7 @@ theorem RunQueueLinkStage.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {
       (by rw [updateTcb_scheduler]))
     (fun h => .updateTcb st tid f h hA)
     (fun h => .updateTcb st tid f h hY)
+    (fun h => .updateTcb st tid f h)
 
 theorem RunQueueStage.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
     (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
@@ -3656,6 +3722,7 @@ theorem RunQueueFrameStage.updateTcb_heldBy (st : SystemState) (tid : SeLe4n.Thr
       (by rw [updateTcb_scheduler])).refined q,
     fun S hS h _ _ x => refillsSoundExcept_updateTcb_heldBy h hS x,
     fun h _ y => yieldLinksAgree_of_kept (YieldLinksKept.updateTcb st tid f h hY) y,
+    fun h _ n => notificationLinksAgree_of_kept (NotificationLinksKept.updateTcb st tid f h) n,
     fun h _ => .of_kept (YieldLinksKept.updateTcb st tid f h hY) (by resident_frame)⟩,
     fun _ h _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [updateTcb_scheduler]) (fun c x => by
       unfold SystemState.updateTcb; split
@@ -3804,6 +3871,8 @@ theorem RunQueueLinkStage.insert {st st' : SystemState} {k : SeLe4n.ObjId}
     (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
     (hV : objRefillView (some obj) = objRefillView st.objects[k]? := by refill_view)
     (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes)
+    (hN : Kernel.objNotificationLinkCodes (some obj) = Kernel.objNotificationLinkCodes st.objects[k]? :=
+      by ntfn_link_codes)
     (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueLinkStage st st' :=
@@ -3814,6 +3883,7 @@ theorem RunQueueLinkStage.insert {st st' : SystemState} {k : SeLe4n.ObjId}
       (fun c => by rw [(show releaseStateAgree st' st from ⟨.insert hInv hO hR, hS⟩).replenishQueueOnCore c])
       ((show releaseStateAgree st' st from ⟨.insert hInv hO hR, hS⟩).refined q) s,
     fun hInv _ y => yieldLinksAgree_of_kept (.insert hInv hO hY) y,
+    fun hInv _ n => notificationLinksAgree_of_kept (.insert hInv hO hN) n,
     fun hInv _ => .of_kept (.insert hInv hO hY) hRes⟩
 
 /-- A step that writes one object giving the same run-queue entries, and no run
@@ -3828,10 +3898,12 @@ theorem RunQueueStage.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj : Ke
     (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
     (hV : objRefillView (some obj) = objRefillView st.objects[k]? := by refill_view)
     (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes)
+    (hN : Kernel.objNotificationLinkCodes (some obj) = Kernel.objNotificationLinkCodes st.objects[k]? :=
+      by ntfn_link_codes)
     (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueStage st st' :=
-  ⟨RunQueueLinkStage.insert hO hQ hE h hR hV hY hS hRes,
+  ⟨RunQueueLinkStage.insert hO hQ hE h hR hV hY hN hS hRes,
     fun _ hInv _ _ d => currentDequeuedUniqueExcept_of_eq hC (runLinkOn_insert hInv hO h)
       (StateMono.insert hInv hO hm) d, fun hInv _ => StateMono.insert hInv hO hm⟩
 
@@ -3848,6 +3920,8 @@ theorem RunQueueFrameStage.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj
     (hC : st'.scheduler.currentCode = st.scheduler.currentCode := by current_frame)
     (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
     (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes)
+    (hN : Kernel.objNotificationLinkCodes (some obj) = Kernel.objNotificationLinkCodes st.objects[k]? :=
+      by ntfn_link_codes)
     (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame)
     (hA : ∀ x, obj = .tcb x → x.threadState ≠ .Inactive →
@@ -3864,6 +3938,7 @@ theorem RunQueueFrameStage.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj
         (by rw [SeLe4n.SchedContextId.toObjId_ofObjId]; exact hA))
       hP ((show releaseStateAgree st' st from ⟨.insert hInv hO hR, hS⟩).refined q) x,
     fun hInv _ y => yieldLinksAgree_of_kept (.insert hInv hO hY) y,
+    fun hInv _ n => notificationLinksAgree_of_kept (.insert hInv hO hN) n,
     fun hInv _ => .of_kept (.insert hInv hO hY) hRes⟩,
     fun _ hInv _ _ d => currentDequeuedUniqueExcept_of_eq hC (runLinkOn_insert hInv hO h)
       (StateMono.insert hInv hO hm) d, fun hInv _ => StateMono.insert hInv hO hm⟩
@@ -3876,12 +3951,14 @@ theorem RunQueueFrameStage.storeObject {st st' : SystemState} {k : SeLe4n.ObjId}
     (hm : objStateMono st.objects[k]? obj)
     (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
     (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes)
+    (hN : Kernel.objNotificationLinkCodes (some obj) = Kernel.objNotificationLinkCodes st.objects[k]? :=
+      by ntfn_link_codes)
     (hA : ∀ x, obj = .tcb x → x.threadState ≠ .Inactive →
       ∃ y, st.objects[k]? = some (.tcb y) ∧ y.threadState ≠ .Inactive := by
       intro _ h; cases h) :
     RunQueueFrameStage (· = SeLe4n.SchedContextId.ofObjId k) st st' := by
   unfold SeLe4n.Model.storeObject at hS; cases hS
-  exact RunQueueFrameStage.insert rfl rfl rfl h hm rfl hR hY rfl rfl hA
+  exact RunQueueFrameStage.insert rfl rfl rfl h hm rfl hR hY hN rfl rfl hA
 
 /-- WS-ZA ZA6.4: **a context created in an empty slot** — unbound and well
 formed — is a stage: no entry names the slot (its pre-state holds no context),
@@ -3896,12 +3973,14 @@ theorem RunQueueStage.insert_freshContext {st st' : SystemState} {k : SeLe4n.Obj
     (hR : ∀ c, objReleaseLinkOn (some (.schedContext u)) c = objReleaseLinkOn st.objects[k]? c := by
       release_links)
     (hY : u.yieldFromCode = 0 := by first | rfl | assumption)
+    (hNt : u.notificationCode = 0 := by first | rfl | assumption)
     (hS : st'.scheduler.releaseSlots = st.scheduler.releaseSlots := by release_frame)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueStage st st' :=
   (RunQueueFrameStage.insert hO hQ hE (fun c => by rw [hNone]; rfl)
     (by rw [hNone]; exact objStateMono_nonTcb rfl rfl) hC hR
-    (by rw [hNone]; simp only [objYieldCodes, hY]) hS hRes).withRefills
+    (by rw [hNone]; simp only [objYieldCodes, hY]) (by rw [hNone]; simp only [Kernel.objNotificationLinkCodes, hNt])
+    hS hRes).withRefills
     fun _ _ hI _ hRel _ _ _ h4 => refillsSoundExcept_close_unbound h4
       (fun a ha => by
         have e : (st.objects.insert k (.schedContext u))[k]? = some (.schedContext u) :=
@@ -3948,12 +4027,13 @@ theorem RunQueueStage.of_placement {st st' : SystemState}
     (hRel : st.objects.invExt → releaseStateAgree st' st)
     (hV : st.objects.invExt → RefillViewsKept st' st)
     (hY : st.objects.invExt → YieldLinksKept st' st)
+    (hN : st.objects.invExt → NotificationLinksKept st' st)
     (hC : st'.scheduler.currentCode = st.scheduler.currentCode := by current_frame)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueStage st st' :=
   ⟨.of_frames
     (fun h r => ⟨hInv h, runQueueRefined_of_frame (runLinkOn_of_placement (hP h)) hQ hE r⟩) hRel
-    hV hY hRes,
+    hV hY hN hRes,
     fun _ h _ _ d => currentDequeuedUniqueExcept_of_eq hC (runLinkOn_of_placement (hP h)) (hM h) d,
     fun h _ => hM h⟩
 
@@ -3969,13 +4049,15 @@ theorem RunQueueFrameStage.of_placement {P : SeLe4n.SchedContextId → Prop} {st
     (hRel : st.objects.invExt → releaseStateAgree st' st)
     (hK : st.objects.invExt → RefillsKeptOff P st' st)
     (hY : st.objects.invExt → YieldLinksKept st' st)
+    (hN : st.objects.invExt → NotificationLinksKept st' st)
     (hC : st'.scheduler.currentCode = st.scheduler.currentCode := by current_frame)
     (hRes : st'.machine.residentCode = st.machine.residentCode := by resident_frame) :
     RunQueueFrameStage P st st' :=
   ⟨⟨fun h r => ⟨hInv h, runQueueRefined_of_frame (runLinkOn_of_placement (hP h)) hQ hE r⟩,
     fun h _ r => (hRel h).refined r,
     fun _ hS h _ q x => refillsSoundExcept_of_keptOff (hK h) hS ((hRel h).refined q) x,
-    fun h _ y => yieldLinksAgree_of_kept (hY h) y, fun h _ => .of_kept (hY h) hRes⟩,
+    fun h _ y => yieldLinksAgree_of_kept (hY h) y,
+    fun h _ n => notificationLinksAgree_of_kept (hN h) n, fun h _ => .of_kept (hY h) hRes⟩,
     fun _ h _ _ d => currentDequeuedUniqueExcept_of_eq hC (runLinkOn_of_placement (hP h)) (hM h) d,
     fun h _ => hM h⟩
 
@@ -3988,10 +4070,12 @@ theorem RunQueueStage.storeObject {st st' : SystemState} {k : SeLe4n.ObjId}
     (hm : objStateMono st.objects[k]? obj)
     (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
     (hV : objRefillView (some obj) = objRefillView st.objects[k]? := by refill_view)
-    (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes) :
+    (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes)
+    (hN : Kernel.objNotificationLinkCodes (some obj) = Kernel.objNotificationLinkCodes st.objects[k]? :=
+      by ntfn_link_codes) :
     RunQueueStage st st' := by
   unfold SeLe4n.Model.storeObject at hS; cases hS
-  exact RunQueueStage.insert rfl rfl rfl h hm rfl hR hV hY
+  exact RunQueueStage.insert rfl rfl rfl h hm rfl hR hV hY hN
 
 /-- A store keeping the run-queue entry its slot gives keeps the link agreement. -/
 theorem RunQueueLinkStage.storeObject {st st' : SystemState} {k : SeLe4n.ObjId}
@@ -3999,13 +4083,15 @@ theorem RunQueueLinkStage.storeObject {st st' : SystemState} {k : SeLe4n.ObjId}
     (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c)
     (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn st.objects[k]? c := by release_links)
     (hV : objRefillView (some obj) = objRefillView st.objects[k]? := by refill_view)
-    (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes) :
+    (hY : objYieldCodes (some obj) = objYieldCodes st.objects[k]? := by yield_codes)
+    (hN : Kernel.objNotificationLinkCodes (some obj) = Kernel.objNotificationLinkCodes st.objects[k]? :=
+      by ntfn_link_codes) :
     RunQueueLinkStage st st' := by
   unfold SeLe4n.Model.storeObject at hS; cases hS
   exact .of_frames (fun hInv r => ⟨RHTable_insert_preserves_invExt st.objects k obj hInv,
     runQueueRefined_of_frame (runLinkOn_insert hInv rfl h) rfl rfl r⟩)
     (fun hInv => ⟨.insert hInv rfl hR, rfl⟩)
-    (fun hInv => .insert hInv rfl hV) fun hInv => .insert hInv rfl hY
+    (fun hInv => .insert hInv rfl hV) (fun hInv => .insert hInv rfl hY) fun hInv => .insert hInv rfl hN
 
 /-- The store of an object other than a TCB over an object other than a TCB. -/
 theorem RunQueueStage.storeObject_nonTcb {st st' : SystemState} {k : SeLe4n.ObjId}
@@ -4014,10 +4100,12 @@ theorem RunQueueStage.storeObject_nonTcb {st st' : SystemState} {k : SeLe4n.ObjI
     (hObj : ∀ t, obj ≠ .tcb t) (hOldT : ∀ t, old ≠ .tcb t)
     (hR : ∀ c, objReleaseLinkOn (some obj) c = objReleaseLinkOn (some old) c := by release_links)
     (hV : objRefillView (some obj) = objRefillView (some old) := by refill_view)
-    (hY : objYieldCodes (some obj) = objYieldCodes (some old) := by yield_codes) :
+    (hY : objYieldCodes (some obj) = objYieldCodes (some old) := by yield_codes)
+    (hN : Kernel.objNotificationLinkCodes (some obj) = Kernel.objNotificationLinkCodes (some old) :=
+      by ntfn_link_codes) :
     RunQueueStage st st' :=
   RunQueueStage.storeObject (hR := by rw [hOld]; exact hR)
-    (hV := by rw [hOld]; exact hV) (hY := by rw [hOld]; exact hY) hS (fun c => by
+    (hV := by rw [hOld]; exact hV) (hY := by rw [hOld]; exact hY) (hN := by rw [hOld]; exact hN) hS (fun c => by
     rw [hOld]
     cases obj <;> cases old <;> first | rfl | exact absurd rfl (hObj _) | exact absurd rfl (hOldT _))
     (objStateMono_nonTcb (by rw [hOld]; cases old <;> first | rfl | exact absurd rfl (hOldT _))
@@ -4034,7 +4122,7 @@ theorem RunQueueStage.storeObject_tcb {st st' : SystemState} {k : SeLe4n.ObjId}
   RunQueueStage.storeObject hS (fun c => by rw [hOld]; exact h c) (by rw [hOld]; exact hm)
     (fun _ => by rw [hOld]; rfl)
     (by rw [hOld]; simp only [objRefillView, Kernel.tcbRefillView, hTS])
-    (by rw [hOld]; simp only [objYieldCodes, hYc])
+    (by rw [hOld]; simp only [objYieldCodes, hYc]) (by rw [hOld]; rfl)
 
 
 /-- **The block write**: a TCB stored over core `c`'s current thread `t` that
@@ -4061,6 +4149,7 @@ theorem RunQueueWindowStage.storeObject_block {st st' : SystemState} {c : CoreId
     (fun hInv => ⟨.insert hInv hO (fun _ => by rw [hRaw]; rfl), by rw [hSc]⟩)
     (fun hInv => .insert hInv hO (by rw [hRaw]; simp only [objRefillView, Kernel.tcbRefillView, hT]))
     (fun hInv => .insert hInv hO (by rw [hRaw]; simp only [objYieldCodes, hYc]))
+    (fun hInv => .insert hInv hO (by rw [hRaw]; rfl))
     (by unfold SeLe4n.Model.storeObject at hS; cases hS; rfl),
     fun hInv _ _ d => ?_, fun _ hp => by cases hp⟩
   have hGet : ∀ u, st'.getTcb? u = if u = t then some new else st.getTcb? u := fun u => by

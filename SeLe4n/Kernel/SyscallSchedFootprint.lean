@@ -143,6 +143,13 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .schedContextUnbind =>
       ops.targetObject.bind fun scObjId =>
         LockSet.ofList? (schedLockSet_schedContextUnbindOnCore st scObjId)
+  -- WS-SX SX8.3: the thread path writes what the unbind's thread half writes;
+  -- the notification path writes no scheduler domain.
+  | .schedContextUnbindObject =>
+      ops.targetObject.bind fun scObjId =>
+        match ops.targetThread with
+        | some _ => LockSet.ofList? (schedLockSet_schedContextUnbindOnCore st scObjId)
+        | none => LockSet.ofList? (schedFootprintOfCores [] [])
   -- WS-ZA ZA6.29: the yieldTo writes the executing core (the linked branch) and
   -- the bound thread's home core (the resume and the requeue).
   | .schedContextYieldTo =>
@@ -151,8 +158,11 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .notificationSignal =>
       ops.targetObject.bind fun nId =>
         LockSet.ofList? (schedLockSet_notificationSignalBoundOnCore st nId)
+  -- WS-SX SX8.2: and the waiter's home core where the completion's
+  -- `maybeDonateSchedContext` donates (seL4's guard, on the pre-state).
   | .notificationWait =>
-      LockSet.ofList? (schedLockSet_notificationWaitOnCore executingCore)
+      LockSet.ofList?
+        (schedLockSet_notificationWaitOnCore st ops.targetObject ops.caller executingCore)
   -- **WS-ZA ZA4.3**: a yield invokes no capability, so it reads no operand.
   | .yield =>
       LockSet.ofList? (schedLockSet_yieldOnCore executingCore)
@@ -265,7 +275,7 @@ write every core's queues: it declares the capability destroys' footprint. -/
 def declaredSchedFootprintSyscall : SyscallId → Bool
   | .tcbSuspend | .tcbResume
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetAffinity
-  | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject
   | .schedContextYieldTo
   | .notificationSignal | .notificationWait
   | .send | .receive | .call | .reply | .replyRecv
@@ -315,7 +325,8 @@ capability transfer; the object domain needs it on all eight of its arms,
 because there every footprint names the caller's CNode. -/
 
 /-- `.notificationWait` declares unconditionally: its footprint is the executing
-core's run-queue lock and nothing the state or the operands can withhold. -/
+core's run-queue lock and the donation's cores, a set nothing the state or the
+operands can withhold. -/
 @[simp] theorem schedLockSetForSyscall_notificationWait_isSome
     (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
     (schedLockSetForSyscall .notificationWait ops executingCore st).isSome := by
@@ -502,6 +513,11 @@ theorem schedLockSetForSyscall_contains_objStore_write (sid : SyscallId)
       ops.caller ops.targetReply executingCore
     rw [LockSet.ofList?_pairs hS, h]
     exact schedFootprintOfCores_contains_objStore_write _ _
+  case schedContextUnbindObject =>
+    obtain ⟨scObjId, -, hS⟩ := hS
+    cases hT : ops.targetThread <;> simp only [hT] at hS <;> rw [LockSet.ofList?_pairs hS] <;>
+      (try simp only [schedLockSet_schedContextUnbindOnCore]) <;>
+      exact schedFootprintOfCores_contains_objStore_write _ _
   all_goals
     repeat' obtain ⟨_, _, hS⟩ := hS
     rw [LockSet.ofList?_pairs hS]

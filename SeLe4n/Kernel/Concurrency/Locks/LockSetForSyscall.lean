@@ -18,6 +18,7 @@ import SeLe4n.Kernel.IPC.CrossCore.NotificationBind
 -- teardown leaves.
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.IPC.BusyReplyHolder
+import SeLe4n.Kernel.SchedContext.NotificationDonation
 /-!
 # WS-SM SM3.C.9 — the syscall → lock-set dispatcher
 
@@ -226,22 +227,59 @@ def SyscallLockOperands.ofReplyTarget (caller : ThreadId) (reply : ReplyId)
 def receiverBoundNotification? (st : SystemState) (receiver : ThreadId) : Option ObjId :=
   (st.getTcb? receiver).bind (·.boundNotification)
 
+/-- **The context a completed signal donates, as a lock operand**, for a thread
+bound to a notification: seL4's guard read on the entry state
+(`signalDonationContext?`, exact; a receive's busy-reply cancel keeps everything
+the guard reads, `receiveCompletion_signalDonationContext?_eq`).
+`afterEarlierStep` says the guard is instead read after a reply-receive's reply,
+which may return the receiver's donated context; that names the notification's
+bound context whenever it has one (`notificationContext?`), a superset
+(`replyRecvDonationContext_superset`). -/
+def boundSignalDonationContext? (st : SystemState) (receiver : ThreadId)
+    (afterEarlierStep : Bool) : Option SchedContextId :=
+  (receiverBoundNotification? st receiver).bind fun n =>
+    if afterEarlierStep then SeLe4n.Kernel.notificationContext? st n
+    else SeLe4n.Kernel.signalDonationContext? st n receiver
+
 /-- **A receive's footprint with its busy reply's holder cancelled** (seL4-MCS
 `receiveIPC`'s `cancelIPC(replyTCB)`): the receive's own footprint and, when the
 reply it names is busy with another thread (`busyReplyHolder?`), the footprint of
 that thread's IPC cancel (`lockSet_cancelIpcBlockingOnCore`, the suspend's
-cancellation root), each resolved from the state the receive is handed. -/
+cancellation root), each resolved from the state the receive is handed.  The
+receive's own footprint is resolved on the state its leg runs on
+(`receiveLegState`): a blocking receive first returns its bound notification's
+context, which decides whether a `Call` it rendezvouses with donates. -/
 def lockSet_receiveCancellingHolder (st : SystemState) (endpointId : ObjId)
     (receiver : ThreadId) (cnodeRootObjId : ObjId) (replyId : Option ReplyId) : LockSet :=
-  lockSetExtendOpt
+  lockSetExtendOpt (lockSetExtendOpt
     (match SeLe4n.Kernel.busyReplyHolder? st receiver replyId with
-     | none => lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId
+     | none => lockSet_endpointReceiveOnCore (SeLe4n.Kernel.receiveLegState st receiver)
+         endpointId receiver cnodeRootObjId replyId
      | some holder =>
-        (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).union
+        (lockSet_endpointReceiveOnCore (SeLe4n.Kernel.receiveLegState st receiver) endpointId
+          receiver cnodeRootObjId replyId).union
           (SeLe4n.Kernel.lockSet_cancelIpcBlockingOnCore st holder))
     -- seL4-MCS `receiveIPC`: the receiver's bound notification, which a receive
     -- that finds it active completes (`completeSignalArm`), writing it.
-    ((receiverBoundNotification? st receiver).map fun n => (notificationLock n, .write))
+    ((receiverBoundNotification? st receiver).map fun n => (notificationLock n, .write)))
+  -- and `completeSignal`'s `maybeDonateSchedContext`: the context it donates.
+  -- seL4's guard read on the entry state: the busy reply's cancel keeps what it
+  -- reads (`receiveCompletion_signalDonationContext?_eq`).
+  -- Where no donation's guard holds, `receiveIPC`'s `maybeReturnSchedContext`:
+  -- the context a blocking receive returns, seL4's guard read on the entry
+  -- state (`receiveReturnContext?`).  With a busy reply the guard is read after
+  -- the cancel, which may rewrite the receiver's binding, so that arm locks the
+  -- notification's context without the guard (`receiveReturnNotificationContext?`,
+  -- the superset: `cancelRecvBusyReply_receiveReturnContext?_locked`).  Each is
+  -- the bound notification's context, so one member serves all and the
+  -- footprint keeps its size.
+  ((match boundSignalDonationContext? st receiver false with
+    | some s => some s
+    | none =>
+      match SeLe4n.Kernel.busyReplyHolder? st receiver replyId with
+      | none => SeLe4n.Kernel.receiveReturnContext? st receiver
+      | some _ => SeLe4n.Kernel.receiveReturnNotificationContext? st receiver).map fun s =>
+      (schedContextLock s, .write))
 
 /-- **WS-SM SM3.C.9**: the declared lock-set footprint of a syscall, or
 `none` where one has not been established yet.
@@ -333,14 +371,17 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
         ops.targetObject.bind fun endpointId =>
           ops.targetReply.bind fun rid =>
             (replyAnsweredCaller? st rid).map fun prevCaller =>
-              lockSetExtendOpt
+              lockSetExtendOpt (lockSetExtendOpt
                 (lockSet_endpointReplyRecvOnCore st ops.caller caller.cspaceRoot prevCaller
                   endpointId)
                 -- seL4-MCS `handleReplyRecv`'s `receiveIPC`: the replier's bound
                 -- notification, which a receive that finds it active completes
                 -- (`replyRecvCompletesSignalArm`), writing it.
                 ((receiverBoundNotification? st ops.caller).map fun n =>
-                  (notificationLock n, .write))
+                  (notificationLock n, .write)))
+                -- and `completeSignal`'s donation, its guard read after the reply.
+                ((boundSignalDonationContext? st ops.caller true).map fun s =>
+                  (schedContextLock s, .write))
   -- The two notification arms. The signal's footprint is bound-delivery aware
   -- (`boundDeliveryTarget?` folds the bound TCB's endpoint and TCB writes in);
   -- the wait's one state-dependent member is the queue's old tail, whose
@@ -348,11 +389,23 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .notificationSignal =>
       (st.getTcb? ops.caller).bind fun caller =>
         ops.targetObject.map fun notificationId =>
-          lockSet_notificationSignalOnCore st notificationId ops.caller caller.cspaceRoot
+          -- seL4-MCS `sendSignal`'s `maybeDonateSchedContext`: the context the
+          -- signal donates to the thread it wakes, seL4's guard on the entry state.
+          lockSetExtendOpt
+            (lockSet_notificationSignalOnCore st notificationId ops.caller caller.cspaceRoot)
+            ((SeLe4n.Kernel.signalWakeDonationContext? st notificationId).map fun s =>
+              (schedContextLock s, .write))
   | .notificationWait =>
       (st.getTcb? ops.caller).bind fun caller =>
         ops.targetObject.map fun notificationId =>
-          lockSet_notificationWaitOnCore st notificationId ops.caller caller.cspaceRoot
+          -- seL4-MCS `completeSignal`'s `maybeDonateSchedContext` where the
+          -- notification holds a word, `receiveSignal`'s `maybeReturnSchedContext`
+          -- where the wait blocks: the context either writes, read on the entry
+          -- state.
+          lockSetExtendOpt
+            (lockSet_notificationWaitOnCore st notificationId ops.caller caller.cspaceRoot)
+            ((SeLe4n.Kernel.waitCompletionContext? st notificationId ops.caller).map fun s =>
+              (schedContextLock s, .write))
   -- Undeclared: the caller keeps its existing serialisation. Each of
   -- these becomes a `some` in a later cut, paired with the coverage
   -- proof that its footprint contains every write the op performs.
@@ -371,7 +424,7 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .untypedRetype
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
+  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject | .schedContextConsumed
   | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
@@ -531,11 +584,13 @@ and, since **WS-OD OD3.5**, for a delegated reply too. -/
           ops.targetObject.bind fun endpointId =>
             ops.targetReply.bind fun rid =>
               (replyAnsweredCaller? st rid).map fun prevCaller =>
-                lockSetExtendOpt
+                lockSetExtendOpt (lockSetExtendOpt
                   (lockSet_endpointReplyRecvOnCore st ops.caller caller.cspaceRoot prevCaller
                     endpointId)
                   ((receiverBoundNotification? st ops.caller).map fun n =>
-                    (notificationLock n, .write)) := rfl
+                    (notificationLock n, .write)))
+                  ((boundSignalDonationContext? st ops.caller true).map fun s =>
+                    (schedContextLock s, .write)) := rfl
 
 /-- **WS-OD OD3.5**: and the delegated case's distinguishing member is really
 there — the recorded server's own TCB write lock, which is what the refusal
@@ -579,11 +634,13 @@ theorem lockSetForSyscall_replyRecv_delegated_declares
     (hServer : recordedReplyServer? st prevCaller = some server)
     (hDelegated : server ≠ ops.caller) :
     lockSetForSyscall .replyRecv ops st
-        = some (lockSetExtendOpt
+        = some (lockSetExtendOpt (lockSetExtendOpt
             (lockSet_endpointReplyRecvOnCore st ops.caller caller.cspaceRoot prevCaller
               endpointId)
             ((receiverBoundNotification? st ops.caller).map fun n =>
               (notificationLock n, .write)))
+            ((boundSignalDonationContext? st ops.caller true).map fun s =>
+              (schedContextLock s, .write)))
       ∧ (tcbLock server, AccessMode.write)
           ∈ (lockSet_endpointReplyRecvOnCore st ops.caller caller.cspaceRoot prevCaller
                endpointId).pairs
@@ -631,8 +688,10 @@ resolved signal footprint. -/
     lockSetForSyscall .notificationSignal ops st
       = (st.getTcb? ops.caller).bind fun caller =>
           ops.targetObject.map fun notificationId =>
-            lockSet_notificationSignalOnCore st notificationId ops.caller
-              caller.cspaceRoot := rfl
+            lockSetExtendOpt
+              (lockSet_notificationSignalOnCore st notificationId ops.caller caller.cspaceRoot)
+              ((SeLe4n.Kernel.signalWakeDonationContext? st notificationId).map fun s =>
+                (schedContextLock s, .write)) := rfl
 
 /-- **WS-RR RR7.11**: and it declares whenever the caller resolves and a
 notification is named. -/
@@ -651,7 +710,10 @@ ZA4.4). -/
     lockSetForSyscall .notificationWait ops st
       = (st.getTcb? ops.caller).bind fun caller =>
           ops.targetObject.map fun notificationId =>
-            lockSet_notificationWaitOnCore st notificationId ops.caller caller.cspaceRoot := rfl
+            lockSetExtendOpt
+              (lockSet_notificationWaitOnCore st notificationId ops.caller caller.cspaceRoot)
+              ((SeLe4n.Kernel.waitCompletionContext? st notificationId ops.caller).map fun s =>
+                (schedContextLock s, .write)) := rfl
 
 /-- **WS-RR RR7.11**: and it declares under the same two conditions. -/
 theorem lockSetForSyscall_notificationWait_isSome_iff
@@ -847,10 +909,12 @@ included declares. -/
 theorem mem_write_lockSet_receiveCancellingHolder (st : SystemState) (endpointId : ObjId)
     (receiver : ThreadId) (cnodeRootObjId : ObjId) (replyId : Option ReplyId) (l : LockKey)
     (h : (l, AccessMode.write) ∈
-      (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs) :
+      (lockSet_endpointReceiveOnCore (SeLe4n.Kernel.receiveLegState st receiver) endpointId
+        receiver cnodeRootObjId replyId).pairs) :
     (l, AccessMode.write) ∈
       (lockSet_receiveCancellingHolder st endpointId receiver cnodeRootObjId replyId).pairs := by
   unfold lockSet_receiveCancellingHolder
+  apply mem_write_lockSetExtendOpt
   apply mem_write_lockSetExtendOpt
   split
   · exact h
@@ -885,8 +949,51 @@ theorem lockSetForSyscall_receive_covers_boundNotification
   rw [lockSetForSyscall_receive_eq ops st caller endpointId hTcb hEp] at hDecl
   cases hDecl
   unfold lockSet_receiveCancellingHolder
+  apply mem_write_lockSetExtendOpt
   rw [hBound]
   exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- seL4-MCS `completeSignal`'s `maybeDonateSchedContext`: and the context a
+receive's completion donates, seL4's guard read on the entry state
+(`boundSignalDonationContext?`; exact by
+`receiveCompletion_signalDonationContext?_eq`). -/
+theorem lockSetForSyscall_receive_covers_donationContext
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (endpointId : ObjId) (S : LockSet) (s : SchedContextId)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hEp : ops.targetObject = some endpointId)
+    (hCtx : boundSignalDonationContext? st ops.caller false = some s)
+    (hDecl : lockSetForSyscall .receive ops st = some S) :
+    (schedContextLock s, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_receive_eq ops st caller endpointId hTcb hEp] at hDecl
+  cases hDecl
+  unfold lockSet_receiveCancellingHolder
+  rw [hCtx]
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`: and the context a
+blocking receive returns, seL4's guard read on the entry state
+(`receiveReturnContext?`). -/
+theorem lockSetForSyscall_receive_covers_returnContext
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (endpointId : ObjId) (S : LockSet) (s : SchedContextId)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hEp : ops.targetObject = some endpointId)
+    (hNoDon : boundSignalDonationContext? st ops.caller false = none)
+    (hCtx : SeLe4n.Kernel.receiveReturnContext? st ops.caller = some s)
+    (hDecl : lockSetForSyscall .receive ops st = some S) :
+    (schedContextLock s, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_receive_eq ops st caller endpointId hTcb hEp] at hDecl
+  cases hDecl
+  unfold lockSet_receiveCancellingHolder
+  rw [hNoDon]
+  simp only
+  cases SeLe4n.Kernel.busyReplyHolder? st ops.caller ops.targetReply with
+  | none => simp only; rw [hCtx]; exact LockSet.mem_insertOrMerge_write_self _ _
+  | some _ =>
+    simp only
+    rw [SeLe4n.Kernel.receiveReturnNotificationContext?_of_receiveReturnContext? hCtx]
+    exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD OD3.12**: and the queue-structure neighbour.
 
@@ -899,7 +1006,8 @@ theorem lockSetForSyscall_receive_covers_queueNeighbour
     (endpointId : ObjId) (S : LockSet) (q : ThreadId)
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId)
-    (hq : receiveSideQueueStructureNeighbor? st endpointId = some q)
+    (hq : receiveSideQueueStructureNeighbor? (SeLe4n.Kernel.receiveLegState st ops.caller)
+      endpointId = some q)
     (hDecl : lockSetForSyscall .receive ops st = some S) :
     (tcbLock q, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_receive_eq ops st caller endpointId hTcb hEp] at hDecl
@@ -918,7 +1026,7 @@ theorem lockSetForSyscall_receive_covers_capsWrites
     (endpointId : ObjId) (S : LockSet)
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId)
-    (hCaps : receiveInstallsCaps st endpointId = true)
+    (hCaps : receiveInstallsCaps (SeLe4n.Kernel.receiveLegState st ops.caller) endpointId = true)
     (hDecl : lockSetForSyscall .receive ops st = some S) :
     (cnodeLock caller.cspaceRoot, AccessMode.write) ∈ S.pairs ∧
     (stateLevelLock, AccessMode.write) ∈ S.pairs := by
@@ -997,12 +1105,35 @@ theorem lockSetForSyscall_replyRecv_eq
     (hRid : ops.targetReply = some rid)
     (hAns : replyAnsweredCaller? st rid = some prevCaller) :
     lockSetForSyscall .replyRecv ops st
-      = some (lockSetExtendOpt
+      = some (lockSetExtendOpt (lockSetExtendOpt
           (lockSet_endpointReplyRecvOnCore st ops.caller caller.cspaceRoot prevCaller
             endpointId)
           ((receiverBoundNotification? st ops.caller).map fun n =>
-            (notificationLock n, .write))) := by
+            (notificationLock n, .write)))
+          ((boundSignalDonationContext? st ops.caller true).map fun s =>
+            (schedContextLock s, .write))) := by
   simp only [lockSetForSyscall, hTcb, hEp, hRid, Option.bind_some, hAns, Option.map_some]
+
+/-- seL4-MCS `handleReplyRecv`'s `completeSignal`: and the context its
+completion donates, its guard read after the reply
+(`boundSignalDonationContext?` with `afterEarlierStep`; the superset is
+`replyRecvDonationContext_superset`). -/
+theorem lockSetForSyscall_replyRecv_covers_donationContext
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (endpointId : ObjId) (rid : ReplyId) (prevCaller : ThreadId) (S : LockSet)
+    (s : SchedContextId)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hEp : ops.targetObject = some endpointId)
+    (hRid : ops.targetReply = some rid)
+    (hAns : replyAnsweredCaller? st rid = some prevCaller)
+    (hCtx : boundSignalDonationContext? st ops.caller true = some s)
+    (hDecl : lockSetForSyscall .replyRecv ops st = some S) :
+    (schedContextLock s, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_replyRecv_eq ops st caller endpointId rid prevCaller
+    hTcb hEp hRid hAns] at hDecl
+  cases hDecl
+  rw [hCtx]
+  exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-RR RR7.11**: `.replyRecv`'s three unconditional writes — its own TCB
 (it replies, then receives), the answered caller's, and the endpoint. -/
@@ -1020,9 +1151,9 @@ theorem lockSetForSyscall_replyRecv_covers_writes
   rw [lockSetForSyscall_replyRecv_eq ops st caller endpointId rid prevCaller
     hTcb hEp hRid hAns] at hDecl
   cases hDecl
-  exact ⟨mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_caller_tcb_write_mem ..))))),
-         mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_target_tcb_write_mem ..))))),
-         mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_endpoint_write_mem ..)))))⟩
+  exact ⟨mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_caller_tcb_write_mem ..)))))),
+         mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_target_tcb_write_mem ..)))))),
+         mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_endpoint_write_mem ..))))))⟩
 
 /-- And its reply leg's capability transfer: the answered caller's receive
 slot's CNode (`replyInstallCNode?`, the member `.reply` declares for the same
@@ -1040,8 +1171,8 @@ theorem lockSetForSyscall_replyRecv_covers_replyInstall
   rw [lockSetForSyscall_replyRecv_eq ops st caller endpointId rid prevCaller
     hTcb hEp hRid hAns] at hDecl
   cases hDecl
-  exact fun r hR => mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReplyRecvOnCore_covers_replyInstall st ops.caller
-    caller.cspaceRoot prevCaller endpointId r hR)
+  exact fun r hR => mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReplyRecvOnCore_covers_replyInstall st ops.caller
+    caller.cspaceRoot prevCaller endpointId r hR))
 
 /-- And the CDT lock its reply leg's capability install takes
 (`replyInstallCdtLock?`, the member `.reply` declares for the same
@@ -1059,8 +1190,8 @@ theorem lockSetForSyscall_replyRecv_covers_replyInstallCdt
   rw [lockSetForSyscall_replyRecv_eq ops st caller endpointId rid prevCaller
     hTcb hEp hRid hAns] at hDecl
   cases hDecl
-  exact fun h => mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReplyRecvOnCore_covers_replyInstallCdt st ops.caller
-    caller.cspaceRoot prevCaller endpointId h)
+  exact fun h => mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReplyRecvOnCore_covers_replyInstallCdt st ops.caller
+    caller.cspaceRoot prevCaller endpointId h))
 
 /-- **WS-RR RR7.11**: and its receive leg's capability install, which writes the
 same CDT structure a send's does. -/
@@ -1078,7 +1209,7 @@ theorem lockSetForSyscall_replyRecv_covers_capsWrites
   rw [lockSetForSyscall_replyRecv_eq ops st caller endpointId rid prevCaller
     hTcb hEp hRid hAns] at hDecl
   cases hDecl
-  refine ⟨mem_write_lockSetExtendOpt _ _ _ ?_, mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReplyRecvOnCore_covers_cdt _ _ _ _ _ hCaps)⟩
+  refine ⟨mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_), mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReplyRecvOnCore_covers_cdt _ _ _ _ _ hCaps))⟩
   unfold lockSet_endpointReplyRecvOnCore
   rw [hCaps]
   exact mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_capsInstall_write_mem ..))))
@@ -1102,7 +1233,7 @@ theorem lockSetForSyscall_replyRecv_covers_queueNeighbour
   rw [lockSetForSyscall_replyRecv_eq ops st caller endpointId rid prevCaller
     hTcb hEp hRid hAns] at hDecl
   cases hDecl
-  exact mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReplyRecvOnCore_covers_queueNeighbour _ _ _ _ _ _ hq)
+  exact mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_endpointReplyRecvOnCore_covers_queueNeighbour _ _ _ _ _ _ hq))
 
 /-- **WS-OD OD3.5**: and the two writes this arm was missing — the second
 SchedContext hand-off's object lock, and the state-level lock that hand-off's
@@ -1132,8 +1263,8 @@ theorem lockSetForSyscall_replyRecv_covers_redonation
   cases hDecl
   unfold lockSet_endpointReplyRecvOnCore
   rw [hNew]
-  exact ⟨mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_redonated_sc_write_mem ..))))),
-         mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_redonation_stateLevel_write_mem ..)))))⟩
+  exact ⟨mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_redonated_sc_write_mem ..)))))),
+         mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ (lockSet_replyRecv_redonation_stateLevel_write_mem ..))))))⟩
 
 /-- **`.replyRecv` write-locks the replier's bound notification**: seL4-MCS
 `handleReplyRecv`'s `receiveIPC` completes it when it is active
@@ -1151,6 +1282,7 @@ theorem lockSetForSyscall_replyRecv_covers_boundNotification
   rw [lockSetForSyscall_replyRecv_eq ops st caller endpointId rid prevCaller
     hTcb hEp hRid hAns] at hDecl
   cases hDecl
+  apply mem_write_lockSetExtendOpt
   rw [hBound]
   exact LockSet.mem_insertOrMerge_write_self _ _
 
@@ -1161,8 +1293,10 @@ theorem lockSetForSyscall_notificationSignal_eq
     (hTcb : st.getTcb? ops.caller = some caller)
     (hNtfn : ops.targetObject = some notificationId) :
     lockSetForSyscall .notificationSignal ops st
-      = some (lockSet_notificationSignalOnCore st notificationId ops.caller
-                caller.cspaceRoot) := by
+      = some (lockSetExtendOpt
+          (lockSet_notificationSignalOnCore st notificationId ops.caller caller.cspaceRoot)
+          ((SeLe4n.Kernel.signalWakeDonationContext? st notificationId).map fun s =>
+            (schedContextLock s, .write))) := by
   unfold lockSetForSyscall
   rw [hTcb, hNtfn]; rfl
 
@@ -1177,10 +1311,26 @@ theorem lockSetForSyscall_notificationSignal_covers_writes
     (notificationLock notificationId, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_notificationSignal_eq ops st caller notificationId hTcb hNtfn] at hDecl
   cases hDecl
+  apply mem_write_lockSetExtendOpt
   unfold lockSet_notificationSignalOnCore
   cases boundDeliveryTarget? st notificationId with
   | none => exact lockSet_notificationSignal_notification_write_mem _ _ _ _ _ _ _
   | some _ => exact lockSet_notificationSignal_notification_write_mem _ _ _ _ _ _ _
+
+/-- WS-SX SX8.2: **and the context seL4's `sendSignal` donates**, where its
+guard holds on the entry state for the thread the signal wakes. -/
+theorem lockSetForSyscall_notificationSignal_covers_donationContext
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (notificationId : ObjId) (S : LockSet) (s : SeLe4n.SchedContextId)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hNtfn : ops.targetObject = some notificationId)
+    (hDon : SeLe4n.Kernel.signalWakeDonationContext? st notificationId = some s)
+    (hDecl : lockSetForSyscall .notificationSignal ops st = some S) :
+    (schedContextLock s, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_notificationSignal_eq ops st caller notificationId hTcb hNtfn] at hDecl
+  cases hDecl
+  rw [hDon]
+  exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-RR RR7.11**: and the bound-delivery pair, on the path that takes it —
 the bound TCB the badge is delivered to, and the endpoint it is dequeued from.
@@ -1199,8 +1349,10 @@ theorem lockSetForSyscall_notificationSignal_covers_boundDelivery
     (endpointLock epId, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_notificationSignal_eq ops st caller notificationId hTcb hNtfn] at hDecl
   cases hDecl
-  exact ⟨lockSet_notificationSignalOnCore_bound_tcb_write_mem _ _ _ _ _ _ hBound,
-         lockSet_notificationSignalOnCore_bound_endpoint_write_mem _ _ _ _ _ _ hBound⟩
+  exact ⟨mem_write_lockSetExtendOpt _ _ _
+           (lockSet_notificationSignalOnCore_bound_tcb_write_mem _ _ _ _ _ _ hBound),
+         mem_write_lockSetExtendOpt _ _ _
+           (lockSet_notificationSignalOnCore_bound_endpoint_write_mem _ _ _ _ _ _ hBound)⟩
 
 /-- **WS-OD OD3.10**: and the two queue neighbours the dequeue relinks.
 
@@ -1225,10 +1377,12 @@ theorem lockSetForSyscall_notificationSignal_covers_spliceNeighbors
     (∀ n, boundTcbObj.queueNext = some n → (tcbLock n, AccessMode.write) ∈ S.pairs) := by
   rw [lockSetForSyscall_notificationSignal_eq ops st caller notificationId hTcb hNtfn] at hDecl
   cases hDecl
-  exact ⟨fun p hp => lockSet_notificationSignalOnCore_splice_prev_write_mem
-           _ _ _ _ _ _ _ _ hBound hBoundTcb hp,
-         fun n hn => lockSet_notificationSignalOnCore_splice_next_write_mem
-           _ _ _ _ _ _ _ _ hBound hBoundTcb hn⟩
+  exact ⟨fun p hp => mem_write_lockSetExtendOpt _ _ _
+           (lockSet_notificationSignalOnCore_splice_prev_write_mem
+             _ _ _ _ _ _ _ _ hBound hBoundTcb hp),
+         fun n hn => mem_write_lockSetExtendOpt _ _ _
+           (lockSet_notificationSignalOnCore_splice_next_write_mem
+             _ _ _ _ _ _ _ _ hBound hBoundTcb hn)⟩
 
 /-- **WS-RR RR7.11**: at resolved operands, `.notificationWait` declares the
 wait footprint. -/
@@ -1237,9 +1391,29 @@ theorem lockSetForSyscall_notificationWait_eq
     (hTcb : st.getTcb? ops.caller = some caller)
     (hNtfn : ops.targetObject = some notificationId) :
     lockSetForSyscall .notificationWait ops st
-      = some (lockSet_notificationWaitOnCore st notificationId ops.caller caller.cspaceRoot) := by
+      = some (lockSetExtendOpt
+          (lockSet_notificationWaitOnCore st notificationId ops.caller caller.cspaceRoot)
+          ((SeLe4n.Kernel.waitCompletionContext? st notificationId ops.caller).map fun s =>
+            (schedContextLock s, .write))) := by
   unfold lockSetForSyscall
   rw [hTcb, hNtfn]; rfl
+
+/-- WS-SX SX8.2: **and the context the wait's completion writes**: the
+context seL4's `completeSignal` donates where the notification holds a word, or
+the context seL4's `maybeReturnSchedContext` takes back where the wait blocks,
+each where its guard holds on the entry state (`waitCompletionContext?`). -/
+theorem lockSetForSyscall_notificationWait_covers_completionContext
+    (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (notificationId : ObjId) (S : LockSet) (s : SeLe4n.SchedContextId)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hNtfn : ops.targetObject = some notificationId)
+    (hCtx : SeLe4n.Kernel.waitCompletionContext? st notificationId ops.caller = some s)
+    (hDecl : lockSetForSyscall .notificationWait ops st = some S) :
+    (schedContextLock s, AccessMode.write) ∈ S.pairs := by
+  rw [lockSetForSyscall_notificationWait_eq ops st caller notificationId hTcb hNtfn] at hDecl
+  cases hDecl
+  rw [hCtx]
+  exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-RR RR7.11**: the wait's writes — the caller's own TCB (it blocks,
 or consumes a pending badge into its message field), the notification, and
@@ -1257,8 +1431,9 @@ theorem lockSetForSyscall_notificationWait_covers_writes
       (tcbLock t, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_notificationWait_eq ops st caller notificationId hTcb hNtfn] at hDecl
   cases hDecl
-  refine ⟨lockSet_notificationWait_caller_tcb_write_mem _ _ _ _,
-         lockSet_notificationWait_notification_write_mem _ _ _ _, fun t hT => ?_⟩
+  refine ⟨mem_write_lockSetExtendOpt _ _ _ (lockSet_notificationWait_caller_tcb_write_mem _ _ _ _),
+         mem_write_lockSetExtendOpt _ _ _ (lockSet_notificationWait_notification_write_mem _ _ _ _),
+         fun t hT => mem_write_lockSetExtendOpt _ _ _ ?_⟩
   unfold lockSet_notificationWaitOnCore
   rw [hT]
   exact lockSet_notificationWait_tail_tcb_write_mem _ _ _ _
@@ -1353,7 +1528,7 @@ def declaredFootprintSyscall : SyscallId → Bool
   | .untypedRetype
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
+  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject | .schedContextConsumed
   | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield

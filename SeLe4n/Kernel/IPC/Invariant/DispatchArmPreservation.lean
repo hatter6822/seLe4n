@@ -1971,6 +1971,92 @@ binding a thread that is the recorded owner of an in-flight donation — on
 the seL4-MCS discipline such a thread is mid-`Call`, and handing it a fresh
 SchedContext there would corrupt the donation bookkeeping the reply's
 return path depends on. -/
+theorem schedContextBindPerform_preserves_ipcInvariantFull
+    (st : SystemState) (vScId : SeLe4n.ValidObjId) (vThreadId : SeLe4n.ValidThreadId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hBidir : schedContextBindingBidirectional st)
+    (hNotOwner : ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
+      st.objects[s.toObjId]? = some (.tcb sTcb) →
+      sTcb.schedContextBinding ≠ .donated sc0 vThreadId.val)
+    (hA : SchedContextOps.schedContextDonateAdmitted st vScId vThreadId = true) :
+    ipcInvariantFull (SchedContextOps.schedContextBindPerform st vScId vThreadId) := by
+  obtain ⟨sc, hSc, tcb, hFreeGuard, hT, hUnbound, hEq⟩ :=
+    SchedContextOps.schedContextBindPerform_of_donateAdmitted st vScId vThreadId hA
+  rw [hEq]
+  try dsimp only []
+  rw [SystemState.updateTcb_after_rewriteObject_schedContext st vScId.val _ _
+    vThreadId.val tcb _ hObjInv hT]
+  try dsimp only []
+  have hFree : sc.boundThread = none := by
+    cases hB : sc.boundThread with
+    | none => rfl
+    | some x => rw [hB] at hFreeGuard; simp at hFreeGuard
+  have hPreT := (SystemState.getTcb?_eq_some_iff st vThreadId.val tcb).mp hT
+  have hPreS : st.objects[(⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId]?
+      = some (.schedContext sc) :=
+    (SystemState.getSchedContext?_eq_some_iff st
+      (SchedContextId.ofObjId vScId.val) sc).mp hSc
+  have hNeIds : vThreadId.val.toObjId
+      ≠ (⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId := by
+    intro h
+    rw [h, hPreS] at hPreT
+    exact absurd (Option.some.inj hPreT) (fun hx => KernelObject.noConfusion hx)
+  have hObjInv1 := RobinHood.RHTable.insert_preserves_invExt st.objects
+    vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }) hObjInv
+  have hAtS2 : (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) } : SystemState)).objects[(⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId]?
+      = some (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }) := by
+    have h1 : (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }))[(⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId]? = some (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }) := by
+      simp only [RHTable_getElem?_eq_get?]
+      exact RobinHood.RHTable.getElem?_insert_self st.objects _ _ hObjInv
+    simp only [RHTable_getElem?_eq_get?] at h1 ⊢
+    rw [RobinHood.RHTable.getElem?_insert_ne _ vThreadId.val.toObjId _ _
+      (by simp only [beq_iff_eq]; exact hNeIds) hObjInv1]
+    exact h1
+  have hAtT2 : (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) } : SystemState)).objects[vThreadId.val.toObjId]?
+      = some (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) := by
+    simp only [RHTable_getElem?_eq_get?]
+    exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv1
+  have hFrame2 : ∀ oid : SeLe4n.ObjId, oid ≠ vThreadId.val.toObjId →
+      oid ≠ (⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId →
+      (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) } : SystemState)).objects[oid]?
+        = st.objects[oid]? := by
+    intro oid hNeT hNeS
+    simp only [RHTable_getElem?_eq_get?]
+    rw [RobinHood.RHTable.getElem?_insert_ne _ vThreadId.val.toObjId oid _
+      (by simp only [beq_iff_eq]; exact fun h => hNeT h.symm) hObjInv1]
+    rw [RobinHood.RHTable.getElem?_insert_ne st.objects vScId.val oid _
+      (by simp only [beq_iff_eq]; exact fun h => hNeS (h.symm.trans rfl)) hObjInv]
+  have hNoOther : ∀ (t' : SeLe4n.ThreadId) (tcb2 : TCB), t' ≠ vThreadId.val →
+      st.objects[t'.toObjId]? = some (.tcb tcb2) →
+      tcb2.schedContextBinding.scId? ≠ some ⟨vScId.val.toNat⟩ := by
+    intro t' tcb2 _ hT2 hS2
+    obtain ⟨scX, hScX, hBX⟩ := hBidir t' tcb2 ⟨vScId.val.toNat⟩ hT2 hS2
+    have : scX = sc := by
+      have := hScX.symm.trans hPreS
+      simpa only [Option.some.injEq, KernelObject.schedContext.injEq] using this
+    rw [this, hFree] at hBX
+    cases hBX
+  have hInv2 := ipcInvariantFull_of_schedBindingRewrite st _ vThreadId.val
+    ⟨vScId.val.toNat⟩ tcb
+    { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }
+    sc { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }
+    hInv hPreT hAtT2 hPreS hAtS2 hFrame2
+    rfl rfl rfl rfl rfl rfl rfl rfl
+    (Or.inl ⟨hUnbound, rfl, hFree, rfl, hNotOwner, hNoOther⟩)
+  -- The release placement at the bind's end writes release links
+  -- alone (WS-ZA ZA6.4).
+  refine ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
+    (.of_releaseLinks (SystemState.releasePlace_agree _ _ _)) ?_
+  -- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: the placement of a parked
+  -- runnable thread writes only run-queue links, which no conjunct
+  -- reads; otherwise the state is the double write.
+  split
+  · refine markReschedulePendingOnCore_preserves_ipcInvariantFull _ _
+      (ipcInvariantFull_runEnqueueOnCore _ _ _ _ hInv2)
+  · exact hInv2
+
+/-- `.schedContextBind` is its writes under seL4's donation guard
+(`schedContextBind_ok_donate`). -/
 theorem schedContextBind_preserves_ipcInvariantFull
     (st st' : SystemState) (vScId : SeLe4n.ValidObjId) (vThreadId : SeLe4n.ValidThreadId)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
@@ -1980,108 +2066,9 @@ theorem schedContextBind_preserves_ipcInvariantFull
       sTcb.schedContextBinding ≠ .donated sc0 vThreadId.val)
     (hStep : SchedContextOps.schedContextBind vScId vThreadId st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  unfold SchedContextOps.schedContextBind at hStep
-  split at hStep
-  · rename_i sc hSc _
-    split at hStep
-    · contradiction
-    · rename_i hFreeGuard
-      -- `v0.35.4`: a context heading a reply stack is refused, so a successful
-      -- bind saw none — the guard is discharged here rather than split, which
-      -- keeps the arm structure below it what it was.
-      have hNoHead : sc.scReply.isSome = false := by
-        cases hH : sc.scReply.isSome with
-        | false => rfl
-        | true => rw [hH] at hStep; simp at hStep
-      simp only [hNoHead, Bool.false_eq_true, if_false] at hStep
-      split at hStep
-      · rename_i tcb hT
-        -- `v0.35.4`: and a thread whose reply frame is on a live stack is refused.
-        have hNoLive : replyFrameOnLiveStack st tcb = false := by
-          cases hL : replyFrameOnLiveStack st tcb with
-          | false => rfl
-          | true => rw [hL] at hStep; simp at hStep
-        simp only [hNoLive, Bool.false_eq_true, if_false] at hStep
-        · split at hStep
-          · rename_i hUnbound
-            try dsimp only [] at hStep
-            -- `v0.35.71`: the two typed writes over `st`, reduced to the double
-            -- insert under the pre-state's TCB witness -- the bundle levers
-            -- below are stated over that literal.
-            rw [SystemState.updateTcb_after_rewriteObject_schedContext st vScId.val _ _
-              vThreadId.val tcb _ hObjInv hT] at hStep
-            try dsimp only [] at hStep
-            cases hStep
-            have hFree : sc.boundThread = none := by
-              cases hB : sc.boundThread with
-              | none => rfl
-              | some x => rw [hB] at hFreeGuard; simp at hFreeGuard
-            have hPreT := (SystemState.getTcb?_eq_some_iff st vThreadId.val tcb).mp hT
-            have hPreS : st.objects[(⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId]?
-                = some (.schedContext sc) :=
-              (SystemState.getSchedContext?_eq_some_iff st
-                (SchedContextId.ofObjId vScId.val) sc).mp hSc
-            have hNeIds : vThreadId.val.toObjId
-                ≠ (⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId := by
-              intro h
-              rw [h, hPreS] at hPreT
-              exact absurd (Option.some.inj hPreT) (fun hx => KernelObject.noConfusion hx)
-            have hObjInv1 := RobinHood.RHTable.insert_preserves_invExt st.objects
-              vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }) hObjInv
-            have hAtS2 : (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) } : SystemState)).objects[(⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId]?
-                = some (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }) := by
-              have h1 : (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }))[(⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId]? = some (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }) := by
-                simp only [RHTable_getElem?_eq_get?]
-                exact RobinHood.RHTable.getElem?_insert_self st.objects _ _ hObjInv
-              simp only [RHTable_getElem?_eq_get?] at h1 ⊢
-              rw [RobinHood.RHTable.getElem?_insert_ne _ vThreadId.val.toObjId _ _
-                (by simp only [beq_iff_eq]; exact hNeIds) hObjInv1]
-              exact h1
-            have hAtT2 : (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) } : SystemState)).objects[vThreadId.val.toObjId]?
-                = some (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) := by
-              simp only [RHTable_getElem?_eq_get?]
-              exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv1
-            have hFrame2 : ∀ oid : SeLe4n.ObjId, oid ≠ vThreadId.val.toObjId →
-                oid ≠ (⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId →
-                (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) } : SystemState)).objects[oid]?
-                  = st.objects[oid]? := by
-              intro oid hNeT hNeS
-              simp only [RHTable_getElem?_eq_get?]
-              rw [RobinHood.RHTable.getElem?_insert_ne _ vThreadId.val.toObjId oid _
-                (by simp only [beq_iff_eq]; exact fun h => hNeT h.symm) hObjInv1]
-              rw [RobinHood.RHTable.getElem?_insert_ne st.objects vScId.val oid _
-                (by simp only [beq_iff_eq]; exact fun h => hNeS (h.symm.trans rfl)) hObjInv]
-            have hNoOther : ∀ (t' : SeLe4n.ThreadId) (tcb2 : TCB), t' ≠ vThreadId.val →
-                st.objects[t'.toObjId]? = some (.tcb tcb2) →
-                tcb2.schedContextBinding.scId? ≠ some ⟨vScId.val.toNat⟩ := by
-              intro t' tcb2 _ hT2 hS2
-              obtain ⟨scX, hScX, hBX⟩ := hBidir t' tcb2 ⟨vScId.val.toNat⟩ hT2 hS2
-              have : scX = sc := by
-                have := hScX.symm.trans hPreS
-                simpa only [Option.some.injEq, KernelObject.schedContext.injEq] using this
-              rw [this, hFree] at hBX
-              cases hBX
-            have hInv2 := ipcInvariantFull_of_schedBindingRewrite st _ vThreadId.val
-              ⟨vScId.val.toNat⟩ tcb
-              { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }
-              sc { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }
-              hInv hPreT hAtT2 hPreS hAtS2 hFrame2
-              rfl rfl rfl rfl rfl rfl rfl rfl
-              (Or.inl ⟨hUnbound, rfl, hFree, rfl, hNotOwner, hNoOther⟩)
-            -- The release placement at the bind's end writes release links
-            -- alone (WS-ZA ZA6.4).
-            refine ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
-              (.of_releaseLinks (SystemState.releasePlace_agree _ _ _)) ?_
-            -- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: the placement of a parked
-            -- runnable thread writes only run-queue links, which no conjunct
-            -- reads; otherwise the state is the double write.
-            split
-            · refine markReschedulePendingOnCore_preserves_ipcInvariantFull _ _
-                (ipcInvariantFull_runEnqueueOnCore _ _ _ _ hInv2)
-            · exact hInv2
-          · contradiction
-      · contradiction
-  · contradiction
+  obtain ⟨hA, rfl⟩ := SchedContextOps.schedContextBind_ok_donate hStep
+  exact schedContextBindPerform_preserves_ipcInvariantFull st vScId vThreadId hObjInv hInv
+    hBidir hNotOwner hA
 
 -- ============================================================================
 -- §12  The scheduler switch chain (shared by the unbind, suspend and resume
@@ -2418,18 +2405,20 @@ private theorem insertObjects_schedContextClear_preserves_ipcInvariantFull
 
 /-- The object-writing tail of the unbind — bidirectional clear, replenish
 purge, index write — over any scheduler-stage state `stA` that still holds
-the pre-state objects.  The binding-rewrite lever carries the clear. -/
-private theorem schedContextUnbindTail_preserves_ipcInvariantFull
+the pre-state objects, the context written as any `sc'` naming no thread (the
+unbind's, and seL4's return on a running receiver, which clears the link
+alone).  The binding-rewrite lever carries the clear. -/
+theorem schedContextUnbindTail_preserves_ipcInvariantFull
     (stA : SystemState) (scObj : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
-    (sc : SeLe4n.Kernel.SchedContext) (tcb : TCB)
-    (h : stA.rewriteAdmissible scObj
-      (.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }))
+    (sc sc' : SeLe4n.Kernel.SchedContext) (tcb : TCB)
+    (h : stA.rewriteAdmissible scObj (.schedContext sc'))
+    (hClear : sc'.boundThread = none)
     (hObjInvA : stA.objects.invExt) (hInvA : ipcInvariantFull stA)
     (hPreS : stA.objects[scObj]? = some (.schedContext sc))
     (hPreT : stA.objects[tid.toObjId]? = some (.tcb tcb))
     (hBoundEq : sc.boundThread = some tid) :
     ipcInvariantFull ((stA.rewriteObject scObj
-          (.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
+          (.schedContext sc')
           h).updateTcb tid (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })) := by
   -- `v0.35.71`: the two typed writes, reduced to the double insert the levers
   -- below are stated over.
@@ -2437,21 +2426,21 @@ private theorem schedContextUnbindTail_preserves_ipcInvariantFull
     ((SystemState.getTcb?_eq_some_iff stA tid tcb).mpr hPreT)]
   have hScObjEq : (⟨scObj.toNat⟩ : SeLe4n.SchedContextId).toObjId = scObj := rfl
   have hObjInv2 := RobinHood.RHTable.insert_preserves_invExt stA.objects scObj
-    (.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hObjInvA
+    (.schedContext sc') hObjInvA
   have hNeIds : tid.toObjId ≠ scObj := by
     intro h
     rw [h, hPreS] at hPreT
     exact absurd (Option.some.inj hPreT) (fun hx => KernelObject.noConfusion hx)
-  have hAtS3 : (({ { stA with objects := (stA.objects.insert scObj (.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })) } with objects := ((stA.objects.insert scObj (.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }))).insert tid.toObjId (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) } : SystemState)).objects[scObj]? = some (.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) := by
+  have hAtS3 : (({ { stA with objects := (stA.objects.insert scObj (.schedContext sc')) } with objects := ((stA.objects.insert scObj (.schedContext sc'))).insert tid.toObjId (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) } : SystemState)).objects[scObj]? = some (.schedContext sc') := by
     simp only [RHTable_getElem?_eq_get?]
     rw [RobinHood.RHTable.getElem?_insert_ne _ tid.toObjId scObj _
       (by simp only [beq_iff_eq]; exact hNeIds) hObjInv2]
     exact RobinHood.RHTable.getElem?_insert_self stA.objects scObj _ hObjInvA
-  have hAtT3 : (({ { stA with objects := (stA.objects.insert scObj (.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })) } with objects := ((stA.objects.insert scObj (.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }))).insert tid.toObjId (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) } : SystemState)).objects[tid.toObjId]? = some (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) := by
+  have hAtT3 : (({ { stA with objects := (stA.objects.insert scObj (.schedContext sc')) } with objects := ((stA.objects.insert scObj (.schedContext sc'))).insert tid.toObjId (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) } : SystemState)).objects[tid.toObjId]? = some (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) := by
     simp only [RHTable_getElem?_eq_get?]
     exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv2
   have hFrame3 : ∀ oid : SeLe4n.ObjId, oid ≠ tid.toObjId → oid ≠ scObj →
-      (({ { stA with objects := (stA.objects.insert scObj (.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })) } with objects := ((stA.objects.insert scObj (.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }))).insert tid.toObjId (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) } : SystemState)).objects[oid]? = stA.objects[oid]? := by
+      (({ { stA with objects := (stA.objects.insert scObj (.schedContext sc')) } with objects := ((stA.objects.insert scObj (.schedContext sc'))).insert tid.toObjId (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) } : SystemState)).objects[oid]? = stA.objects[oid]? := by
     intro oid hNeT hNeS
     simp only [RHTable_getElem?_eq_get?]
     rw [RobinHood.RHTable.getElem?_insert_ne _ tid.toObjId oid _
@@ -2462,11 +2451,11 @@ private theorem schedContextUnbindTail_preserves_ipcInvariantFull
       = some (.schedContext sc) := hPreS
   have hInv3 := ipcInvariantFull_of_schedBindingRewrite stA _ tid ⟨scObj.toNat⟩ tcb
     { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }
-    sc { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+    sc sc'
     hInvA hPreT (hScObjEq ▸ hAtT3) hPreS' (hScObjEq ▸ hAtS3)
     (fun oid hT hS => hFrame3 oid hT (hScObjEq ▸ hS))
     rfl rfl rfl rfl rfl rfl rfl rfl
-    (Or.inr ⟨rfl, hBoundEq, rfl⟩)
+    (Or.inr ⟨rfl, hBoundEq, hClear⟩)
   exact ipcInvariantFull_of_objects_eq rfl hInv3
 
 /-- The unbind's run-queue stage keeps the bundle: a re-key keeps membership, a
@@ -2503,13 +2492,6 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
       split at hStep
       · rename_i tcb hTcb
         dsimp only [] at hStep
-        -- `v0.35.4`: a donated holder is refused, so a successful unbind saw a
-        -- binding that is not a donation.
-        have hNotDon : tcb.schedContextBinding.isDonated = false := by
-          cases hD : tcb.schedContextBinding.isDonated with
-          | false => rfl
-          | true => rw [hD] at hStep; simp at hStep
-        simp only [hNotDon, Bool.false_eq_true, if_false] at hStep
         have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
           (SchedContextId.ofObjId vScId.val) sc).mp hSc
         have hTcbRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
@@ -2528,8 +2510,8 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
             (markCandidacyGainFor_preserves_ipcInvariantFull _ _ _
             (purgeReplenishment_preserves_ipcInvariantFull _ _
                 (schedContextUnbindQueueStage_preserves_ipcInvariantFull _ _ _ _ _
-                  (schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
-                    _ hObjInv hStage hScRaw hTcbRaw hBound))))
+                  (schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc _ tcb
+                    _ rfl hObjInv hStage hScRaw hTcbRaw hBound))))
         | none =>
           rw [hRC] at hStep
           simp only [Option.isSome_none] at hStep
@@ -2538,8 +2520,8 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
             (markCandidacyGainFor_preserves_ipcInvariantFull _ _ _
             (purgeReplenishment_preserves_ipcInvariantFull _ _
                 (schedContextUnbindQueueStage_preserves_ipcInvariantFull _ _ _ _ _
-                  (schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
-                    _ hObjInv hInv hScRaw hTcbRaw hBound))))
+                  (schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc _ tcb
+                    _ rfl hObjInv hInv hScRaw hTcbRaw hBound))))
       · rename_i hTcbNone
         dsimp only [SystemState.rewriteObject] at hStep
         cases hStep
@@ -5695,7 +5677,7 @@ theorem stageWokenDelivery_preserves_ipcInvariantFull
 /-- Review round (PR #887): the delivered-message staging is a single
 `writeReturnFrameToTcb` insert or the identity, so it preserves the
 object-store invariant. -/
-theorem stageDeliveredMessage_preserves_objects_invExt
+theorem stageDeliveredMessage_objects_invExt
     (st : SystemState) (tid : SeLe4n.ThreadId) (capInfo : Nat)
     (hObjInv : st.objects.invExt) :
     (Architecture.stageDeliveredMessage st tid capInfo).objects.invExt := by
@@ -5719,25 +5701,7 @@ theorem stageWokenDelivery_preserves_objects_invExt
   | none => exact hObjInv
   | some tid =>
       rw [Architecture.stageWokenDelivery_some]
-      exact stageDeliveredMessage_preserves_objects_invExt st tid capInfo hObjInv
-
-/-- Staging never disturbs the object-store invariant: every arm is one TCB
-insert or the identity. -/
-theorem stageDeliveredMessage_objects_invExt
-    (st : SystemState) (tid : SeLe4n.ThreadId) (capInfo : Nat)
-    (hObjInv : st.objects.invExt) :
-    (Architecture.stageDeliveredMessage st tid capInfo).objects.invExt := by
-  unfold Architecture.stageDeliveredMessage
-  cases hLk : st.getTcb? tid with
-  | none => exact hObjInv
-  | some tcb =>
-      dsimp only []
-      split
-      · cases tcb.pendingMessage with
-        | none => exact hObjInv
-        | some msg =>
-            exact writeDeliveredFrameToTcb_preserves_objects_invExt st tid _ hObjInv
-      · exact hObjInv
+      exact stageDeliveredMessage_objects_invExt st tid capInfo hObjInv
 
 /-- **WS-RM (`v0.35.6`)**: a return-frame writeback carries no chain data.  Its
 one write is a `.tcb` at a key that already held one (`getTcb?` is what selects

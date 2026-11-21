@@ -948,6 +948,13 @@ def notificationSignalDeclassifiedOnCore (ctx : GenericLabelingContext)
 at the core the syscall trapped on (threaded from the entry point), exactly as
 SM6.B's `notificationSignalBoundCrossCoreDispatch` does.
 
+WS-SX SX8.2: seL4-MCS `sendSignal` then donates the notification's context to
+the thread the signal woke (`donateToSignalled`, the donation
+`sendSignalOnCore` makes).  It runs once the audit record is committed, so a
+refused record donates nothing and the downgrade stays fail-closed; the record
+writes the audit trail alone, which the donation neither reads nor writes, so
+the state a program sees is `sendSignalOnCore`'s followed by the record.
+
 Deliberately **not** a boot-pinned sibling: the actor and the wake target are
 both per-core facts, and a `bootCoreId` form would be the defect the per-core
 routing gate exists to catch. -/
@@ -955,8 +962,61 @@ def notificationSignalDeclassifiedCrossCoreDispatch (ctx : GenericLabelingContex
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
     (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
-  notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge
-    executingCore st
+  match notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge
+      executingCore st with
+  | (st', .ok sgi) => (donateToSignalled st st' notificationId, .ok sgi)
+  | (st', .error e) => (st', .error e)
+
+/-- The declassifying dispatch's answer is the declassifying signal's: the
+donation writes state alone. -/
+theorem notificationSignalDeclassifiedCrossCoreDispatch_snd (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState) :
+    (notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy notificationId badge c st).2 =
+      (notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st).2 := by
+  unfold notificationSignalDeclassifiedCrossCoreDispatch
+  rcases notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st with
+    ⟨st', _ | _⟩ <;> rfl
+
+/-- **A property the declassifying signal carries and every donation after it
+carries, the declassifying dispatch carries.** -/
+theorem notificationSignalDeclassifiedCrossCoreDispatch_induct (P : SystemState → Prop)
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState)
+    (hSig : P (notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st).1)
+    (hDonate : ∀ t sgi, signalWokenThread? st notificationId = some t →
+      (notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st).2 = .ok sgi →
+      P (maybeDonateSchedContext
+        (notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st).1
+        notificationId t)) :
+    P (notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy notificationId badge c
+      st).1 := by
+  unfold notificationSignalDeclassifiedCrossCoreDispatch
+  revert hSig hDonate
+  rcases notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st with
+    ⟨st', _ | sgi⟩
+  · intro hSig _; exact hSig
+  · intro hSig hDonate
+    dsimp only
+    unfold donateToSignalled
+    cases hW : signalWokenThread? st notificationId with
+    | none => exact hSig
+    | some t => exact hDonate t sgi hW rfl
+
+/-- A refused declassifying dispatch donates nothing. -/
+theorem notificationSignalDeclassifiedCrossCoreDispatch_fst_of_error
+    {ctx : GenericLabelingContext} {declPolicy : DeclassificationPolicy}
+    {notificationId : SeLe4n.ObjId} {badge : SeLe4n.Badge} {c : CoreId} {st : SystemState}
+    {e : KernelError}
+    (h : (notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st).2 = .error e) :
+    (notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy notificationId badge c st).1 =
+      (notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st).1 := by
+  unfold notificationSignalDeclassifiedCrossCoreDispatch
+  revert h
+  rcases notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st with
+    ⟨st', _ | _⟩
+  · intro _; rfl
+  · intro h; cases h
 
 -- ============================================================================
 -- §5  WS-SM SM9.C.1 — path reductions and the fail-closed arms
@@ -2245,17 +2305,6 @@ theorem notificationSignalDeclassifiedOnCore_preserves_trailDestinations
     exact declassifiedSignalPlan_record_destinations ctx declPolicy notificationId signaler st
       records hPlan r hr
 
-/-- WS-SM SM9.C.2: the live dispatch **is** the transition at the caller's own
-core — definitional, so every §5–§12 theorem is a statement about the live arm
-with `c := executingCore`, the core the syscall trapped on. -/
-@[simp] theorem notificationSignalDeclassifiedCrossCoreDispatch_eq
-    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
-    (executingCore : CoreId) (st : SystemState) :
-    notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy notificationId
-      badge executingCore st =
-      notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge
-        executingCore st := rfl
 
 
 -- ============================================================================

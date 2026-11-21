@@ -322,6 +322,15 @@ theorem storeReplyRendezvous_eq_hold (st : SystemState) (c server : SeLe4n.Threa
   rw [updateTcb_msg _ _ _ _ _ _ _ hNo3 ?_, unlinkReplyWaiter_msg]
   intros; rfl
 
+
+/-- The reply leg's writes leave room. -/
+theorem storeReplyRendezvous_noResizeDue (st : SystemState) (c server : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (msg : IpcMessage) (hNo : st.objects.noResizeDue) :
+    (storeReplyRendezvous st c server rid msg).objects.noResizeDue := by
+  rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo]
+  exact (SystemState.mapTcbInPlace_noResizeDue _ _ _).mpr
+    (storeReplyRendezvousReady_noResizeDue st c server rid hNo)
+
 /-- The reply leg holding a message is the leg woken holding none, then the
 message held. -/
 theorem storeReplyLeg_eq_hold (st : SystemState) (c : SeLe4n.ThreadId)

@@ -676,6 +676,18 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                            controlCore := some ⟨core, hCore⟩ }
                   else none
       | .schedContextUnbind, .object scId => some (.ofObjectTarget tid scId)
+      -- WS-SX SX8.3: an unbind-object names its context, and the thread extra
+      -- capability 0 names when it names one (the operand the bind reads); a
+      -- notification operand leaves the thread unset.
+      | .schedContextUnbindObject, .object scId =>
+          match resolveSchedContextBindNotificationCode tid
+              (schedContextBindArgsOf s tid decoded.msgInfo.extraCaps) s with
+          | _ + 1 => some (.ofObjectTarget tid scId)
+          | 0 =>
+          match resolveSchedContextBindThread tid
+              (schedContextBindArgsOf s tid decoded.msgInfo.extraCaps) s with
+          | .error _ => none
+          | .ok v => some { SyscallLockOperands.ofObjectTarget tid scId with targetThread := some v.val }
       | .schedContextYieldTo, .object scId => some (.ofObjectTarget tid scId)
       -- WS-ZA ZA6.37: a delete names the CNode and the slot it empties, which
       -- its scheduler footprint reads to decide which cores the finalisation of

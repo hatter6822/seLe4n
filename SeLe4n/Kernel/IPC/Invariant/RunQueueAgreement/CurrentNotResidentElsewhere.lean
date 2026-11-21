@@ -328,6 +328,7 @@ resident nowhere else**: its step moves no core's slot off the executing core
 (`interruptEntryStep_stepCovers`). -/
 theorem interruptEntryState_preserves_currentNotResidentElsewhere (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
+    (hBi : schedContextBindingBidirectional (Concurrency.saveCapturedTrapFrameAt st coreId frame))
     (hInv0 : st.objects.invExt) (hR0 : st.runQueueRefined) (hD0 : st.currentDequeuedUnique)
     (hC : st.currentNotResidentElsewhere) :
     (Architecture.clearIcacheMaintenance
@@ -345,7 +346,7 @@ theorem interruptEntryState_preserves_currentNotResidentElsewhere (coreId intId 
   · intro c hc
     exact keptOffCore_of_save_stepCovers (saveCapturedTrapFrameAt_scheduler st coreId frame)
       (saveCapturedTrapFrameAt_residentCode st coreId frame)
-      (interruptEntryStep_stepCovers c _ coreId intId hSv.1)
+      (interruptEntryStep_stepCovers c _ coreId intId hSv.1 hBi)
   · intro hc
     rw [interruptEntryStep_invalid_core _ coreId intId hc]
     exact ⟨saveCapturedTrapFrameAt_scheduler st coreId frame,

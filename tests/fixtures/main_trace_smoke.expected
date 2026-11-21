@@ -58,10 +58,10 @@
 [IMT-019] H1 caller not ready after dequeue: true
 [IMT-021] H1 caller ready after reply: true
 [IMT-024] H1 unauthorized reply rejected: true
-[IMB-001] H12d oversized registers rejected: true
+[IMB-001] H12d oversized registers clamped to 120: true
 [IMB-004] H12d oversized caps rejected: true
 [IMB-008] H12d boundary message accepted: true
-[IMB-009] H12d call oversized rejected: true
+[IMB-009] H12d call oversized clamped to 120: true
 [IMB-012] H12d reply oversized rejected: true
 [DDT-002] H12f dequeue-on-dispatch current: some 1
 [DDT-003] H12f dispatched thread absent from runQueue: true
@@ -106,7 +106,7 @@
 [RDT-002] register decode success: syscall=SeLe4n.Model.SyscallId.send, capAddr=0, msgRegs=4
 [RDT-003] syscallEntryChecked send success, endpoint has sender: true
 [RDT-006] syscallEntryChecked invalid syscall decode error: SeLe4n.Model.KernelError.invalidSyscallNumber
-[RDT-008] syscallEntryChecked malformed msgInfo decode error: SeLe4n.Model.KernelError.invalidMessageInfo
+[RDT-008] syscallEntryChecked over-length msgInfo clamped, send accepted: true
 [RDT-010] syscallEntryChecked out-of-bounds layout error: SeLe4n.Model.KernelError.invalidRegister
 [KSD-001] cspaceMint via decoded regs destination populated: true
 [KSD-002] cspaceCopy via decoded regs target matches: true
@@ -204,7 +204,7 @@
 [PTY-001] parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2)
 [PTY-001] parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4)
 [XVAL-001] MessageInfo roundtrip ok: encoded=19087658 length=42 extraCaps=2 label=4660
-[XVAL-002] SyscallId roundtrip ok: all 45 variants
+[XVAL-002] SyscallId roundtrip ok: all 46 variants
 [XVAL-003] CSpaceMintArgs roundtrip ok: regs=#[{ word := 10 }, { word := 64 }, { word := 20 }, { word := 64 }, { word := 7 }, { word := 999 }]
 [XVAL-004] MessageInfo bit layout ok: len=42 caps=384 unwrapped=3584 label=20480
 [XVAL-005] SetIPCBufferArgs roundtrip ok: regs=#[{ word := 1024 }]

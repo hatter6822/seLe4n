@@ -104,7 +104,7 @@ private def rd001_decodeSyscallCodeValid : IO Unit := do
 
 /-- RD-002: decodeSyscallCode — invalid values. -/
 private def rd002_decodeSyscallCodeInvalid : IO Unit := do
-  -- First invalid: 48 (WS-ZA ZA6.32 added irqHandlerAck at 44 and
+  -- First invalid: 49 (WS-SX SX8.3 added schedContextUnbindObject at 48, WS-ZA ZA6.32 added irqHandlerAck at 44 and
   -- irqControlGet, irqHandlerSetNotification and irqHandlerClear at 45 to 47, ZA6.29
   -- schedContextYieldTo at 43, ZA6.9
   -- schedContextConsumed at 42, ZA4.3 yield at 41, WS-BP BP7.1 added
@@ -115,14 +115,14 @@ private def rd002_decodeSyscallCodeInvalid : IO Unit := do
   -- declassifySignal at 33, SM9.A's auditRead at 31 and auditDrain at 32,
   -- SM8.C's declassify at 30, SM7.D's vspaceUnifyInstruction at 29 and
   -- PR #822 Phase H's mintReplyCap at 28)
-  let r48 := decodeSyscallCode 48
-  expect "invalid=48" (isErrEq r48 .invalidSyscallNumber)
+  let r49 := decodeSyscallCode 49
+  expect "invalid=49" (isErrEq r49 .invalidSyscallNumber)
   -- Large value
   let rLarge := decodeSyscallCode 999999
   expect "invalid=999999" (isErrEq rLarge .invalidSyscallNumber)
 
-/-- RD-003: decodeSyscallCode — boundary edge 47/48 (WS-ZA ZA6.32:
-irqHandlerClear=47 is the last valid). -/
+/-- RD-003: decodeSyscallCode — boundary edge 48/49 (WS-SX SX8.3:
+schedContextUnbindObject=48 is the last valid). -/
 private def rd003_decodeSyscallCodeBoundary : IO Unit := do
   let r38 := decodeSyscallCode 38
   let r39 := decodeSyscallCode 39
@@ -135,6 +135,7 @@ private def rd003_decodeSyscallCodeBoundary : IO Unit := do
   let r46 := decodeSyscallCode 46
   let r47 := decodeSyscallCode 47
   let r48 := decodeSyscallCode 48
+  let r49 := decodeSyscallCode 49
   expect "tcbSetSpace=38" (isOkEq r38 .tcbSetSpace)
   expect "pageTableMap=39" (isOkEq r39 .pageTableMap)
   expect "pageTableUnmap=40" (isOkEq r40 .pageTableUnmap)
@@ -145,7 +146,8 @@ private def rd003_decodeSyscallCodeBoundary : IO Unit := do
   expect "irqControlGet=45" (isOkEq r45 .irqControlGet)
   expect "irqHandlerSetNotification=46" (isOkEq r46 .irqHandlerSetNotification)
   expect "boundary=47 ok (irqHandlerClear)" (isOkEq r47 .irqHandlerClear)
-  expect "boundary=48 err" (!r48.isOk)
+  expect "boundary=48 ok (schedContextUnbindObject)" (isOkEq r48 .schedContextUnbindObject)
+  expect "boundary=49 err" (!r49.isOk)
 
 /-- RD-004: decodeMsgInfo — valid round-trip. -/
 private def rd004_decodeMsgInfoValid : IO Unit := do
@@ -161,11 +163,11 @@ private def rd005_decodeMsgInfoOverflow : IO Unit := do
   let encodedBoundary := encodeMsgInfo miBoundary
   let decodedBoundary := decodeMsgInfo encodedBoundary
   expect "boundary length=120 ok" (isOkEq decodedBoundary miBoundary)
-  -- Overflow: length=121 should fail
-  -- length field is bits 0..6 (7 bits), extraCaps bits 7..8 (2 bits), label bits 9+
-  let rawWithLength121 := 121  -- bits 0-6 = 121
-  let result := decodeMsgInfo ⟨rawWithLength121⟩
-  expect "overflow length" (!result.isOk)
+  -- Overflow: length=121 clamps to 120, as seL4's `messageInfoFromWord` does
+  -- (length field is bits 0..6, so 121 and 127 are the over-length values).
+  let result := decodeMsgInfo ⟨121⟩
+  expect "overflow length clamps to 120" (isOkEq result miBoundary)
+  expect "length 127 clamps to 120" (isOkEq (decodeMsgInfo ⟨127⟩) miBoundary)
 
 /-- RD-006: decodeCapPtr — valid and boundary values. -/
 private def rd006_decodeCapPtrValid : IO Unit := do

@@ -114,6 +114,7 @@ def syscallReturnShape : SyscallId → ReturnShape
   | .schedContextConfigure => .unit
   | .schedContextBind      => .unit
   | .schedContextUnbind    => .unit
+  | .schedContextUnbindObject => .unit
   | .tcbSuspend            => .unit
   | .tcbResume             => .unit
   | .tcbSetPriority        => .unit

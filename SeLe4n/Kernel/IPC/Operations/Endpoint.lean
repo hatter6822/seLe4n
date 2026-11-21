@@ -5695,7 +5695,7 @@ neither a frame above nor a frame below that links up to it (an unlinked frame:
 nothing to repair), or when the frame does not resolve at all (nothing to remove it
 from).  **The cut from below** (`severReplyFrameBelowStores`, `v0.36.136`) when it
 has no frame above but its `prev` names a frame whose `next` still names it: a
-*contextless stack top*, which `finaliseSchedContextUnstack` leaves when it
+*contextless stack top*, which `schedContextUnbindReply` leaves when it
 detaches a context from a stack of two or more frames (seL4's `schedContext_unbindReply`
 clears the head's `replyNext` alone).  seL4's `reply_remove` takes the same arm —
 `if (prev_ptr) prev->replyNext = 0` — and without it the frame below keeps naming a

@@ -525,12 +525,14 @@ private def runIpcPayloadBoundsNegativeChecks : IO Unit := do
 
   -- Send and call read their words and capability addresses from the sender's
   -- frame (WS-ZA ZA4.7), so their bound is the message-info decode's: a word
-  -- declaring more than 120 registers does not decode, and its two-bit
-  -- extra-caps field names at most three capabilities.
-  if (MessageInfo.decode (MessageInfo.mk (maxMessageRegisters + 1) 0 0 0).encode).isNone then
-    IO.println "negative check passed [a message-info word declaring 121 registers does not decode]"
+  -- declaring more than 120 registers decodes with its length clamped to 120
+  -- (seL4's `messageInfoFromWord`), and its two-bit extra-caps field names at
+  -- most three capabilities.
+  if (MessageInfo.decode (MessageInfo.mk (maxMessageRegisters + 1) 0 0 0).encode).map
+      (·.length) == some maxMessageRegisters then
+    IO.println "negative check passed [a message-info word declaring 121 registers clamps to 120]"
   else
-    throw <| IO.userError "a message-info word declaring 121 registers decoded"
+    throw <| IO.userError "a message-info word declaring 121 registers did not clamp to 120"
   match MessageInfo.decode (MessageInfo.mk 0 (maxExtraCaps + 1) 0 0).encode with
   | some mi =>
     if mi.extraCaps ≤ maxExtraCaps then
@@ -2651,8 +2653,10 @@ def runWSJ1DecodeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 44)
   let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (47 = irqHandlerClear)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 47)
-  expectErr "J1 decodeSyscallCode invalid (48)"
+  let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (48 = schedContextUnbindObject)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 48)
+  expectErr "J1 decodeSyscallCode invalid (49)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 49)
     .invalidSyscallNumber
 
   -- J1-NEG-05: decodeSyscallCode with large invalid number → invalidSyscallNumber
@@ -2664,20 +2668,13 @@ def runWSJ1DecodeChecks : IO Unit := do
   let _ ← expectOkVal "J1 decodeSyscallCode valid boundary (12)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 12)
 
-  -- J1-NEG-07: decodeMsgInfo with oversized length → invalidMessageInfo
-  -- maxMessageRegisters = 120 (7-bit field max 127, but bounded to 120).
-  -- Encode a word with length = 121 (exceeds bound).
-  let oversizedLength : SeLe4n.RegValue := ⟨121⟩  -- bits 0..6 = 121
-  expectErr "J1 decodeMsgInfo oversized length (121 > 120)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo oversizedLength)
-    .invalidMessageInfo
-
-  -- J1-NEG-08: decodeMsgInfo with maximum 7-bit length field → invalidMessageInfo
-  -- The 7-bit length field can hold 0..127; any value 121..127 exceeds maxMessageRegisters=120.
-  let maxFieldLength : SeLe4n.RegValue := ⟨127⟩  -- bits 0..6 = 127 > 120
-  expectErr "J1 decodeMsgInfo max 7-bit length (127 > 120)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo maxFieldLength)
-    .invalidMessageInfo
+  -- J1-NEG-07/08 (WS-SX SX8.1): a length field past 120 is clamped to 120, as
+  -- seL4's `messageInfoFromWord` clamps it; the word is never refused.
+  for len in [121, 127] do
+    let mi ← expectOkVal s!"J1 decodeMsgInfo length {len} clamps"
+      (SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo ⟨len.toUInt64⟩)
+    unless mi.length == 120 do
+      throw <| IO.userError s!"J1 decodeMsgInfo length {len}: expected 120, got {mi.length}"
 
   -- J1-NEG-09: decodeMsgInfo with valid boundary values → success
   -- length=120, extraCaps=3, label=0 → valid.
@@ -2734,16 +2731,17 @@ def runWSJ1DecodeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.encodingBound SeLe4n.arm64DefaultLayout regsInvalidSyscall 32)
     .invalidSyscallNumber
 
-  -- J1-NEG-16: decodeSyscallArgs with malformed msgInfo in register → invalidMessageInfo
-  -- Write an oversized length (127 > 120) into the msgInfo register (x1).
-  let regsInvalidMsgInfo : SeLe4n.RegisterFile :=
+  -- J1-NEG-16 (WS-SX SX8.1): a message-info register with length 127 decodes,
+  -- its length clamped to 120 (seL4's `messageInfoFromWord`).
+  let regsLongMsgInfo : SeLe4n.RegisterFile :=
     SeLe4n.RegisterFile.withGprs 0 0 (fun r =>
-        if r == 1 then 127  -- length=127 > maxMessageRegisters=120
-        else if r == 7 then 0  -- valid syscall (send)
+        if r == 1 then 127
+        else if r == 7 then 0
         else 0)
-  expectErr "J1 decodeSyscallArgs malformed msgInfo in register"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat SeLe4n.arm64DefaultLayout regsInvalidMsgInfo 32)
-    .invalidMessageInfo
+  let dLong ← expectOkVal "J1 decodeSyscallArgs long msgInfo clamps"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SyscallId.send.toNat SeLe4n.arm64DefaultLayout regsLongMsgInfo 32)
+  unless dLong.msgInfo.length == 120 do
+    throw <| IO.userError "J1 decodeSyscallArgs long msgInfo: expected length 120"
 
   -- J1-NEG-17: decodeSyscallArgs with all-zero registers → valid decode
   -- Zero registers: capPtr=0, msgInfo=(len=0,caps=0,label=0), syscallId=send

@@ -694,6 +694,30 @@ theorem unbindSchedContextNotification_savedRegsKeptExcept {W : SeLe4n.ThreadId 
       exact savedRegs_eq_some_iff.mpr ⟨x, e.trans hx, rfl⟩
   · rw [n1 _ h2, n1 _ h1]
 
+/-- **A context's reply-stack unlink writes no saved register**: it writes a
+Reply's slot and a context's. -/
+theorem schedContextUnbindReply_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
+    (st : SystemState) (s : SeLe4n.ObjId) (hInv : st.objects.invExt) :
+    savedRegsKeptExcept W st (schedContextUnbindReply st s) := .of_eq fun t => by
+  have n1 : ∀ X : SystemState, (∀ x : TCB, X.objects[t.toObjId]? ≠ some (.tcb x)) →
+      X.savedRegs t = none := fun X hX => by
+    cases hr : X.savedRegs t with
+    | none => rfl
+    | some r => obtain ⟨x, hx, -⟩ := savedRegs_eq_some_iff.mp hr; exact absurd hx (hX x)
+  rcases schedContextUnbindReply_slots st s hInv t.toObjId with e | ⟨h1, h2⟩
+  · cases hr : st.savedRegs t with
+    | none =>
+      cases hr' : (schedContextUnbindReply st s).savedRegs t with
+      | none => rfl
+      | some r =>
+        obtain ⟨x, hx, rfl⟩ := savedRegs_eq_some_iff.mp hr'
+        rw [e] at hx
+        rw [savedRegs_eq_some_iff.mpr ⟨x, hx, rfl⟩] at hr; cases hr
+    | some r =>
+      obtain ⟨x, hx, rfl⟩ := savedRegs_eq_some_iff.mp hr
+      exact savedRegs_eq_some_iff.mpr ⟨x, e.trans hx, rfl⟩
+  · rw [n1 _ h2, n1 _ h1]
+
 /-! ### The finalisation's census -/
 
 section

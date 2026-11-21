@@ -2041,6 +2041,211 @@ private def runOverflowDeliveryWitnesses : IO Unit := do
         ((SeLe4n.Model.MessageInfo.decode frame.x1.toNat).map (·.length) == some 4)
 
 -- ============================================================================
+-- §13  seL4-MCS notification scheduling-context donation and return, through
+--      the dispatch
+-- ============================================================================
+
+/-- The context bound to the fixture's notification (seL4's `ntfnSchedContext`). -/
+private def ntfnScId : SeLe4n.SchedContextId := ⟨910⟩
+
+/-- A context the caller holds as its own, for the call-take's donation. -/
+private def callerOwnScId : SeLe4n.SchedContextId := ⟨912⟩
+
+/-- `st` with the notification bound to `holder` (seL4's `tcbBoundNotification`)
+and to context `ntfnScId`; `holder` holds the context, the context naming it
+back, when `holds`, and the context serves no thread otherwise.  The context is
+`isActive`, so a return that cleared it (an unbind) is told from seL4's. -/
+private def withNotificationContext (st : SystemState) (holder : SeLe4n.ThreadId)
+    (holds : Bool) : SystemState :=
+  let sc : SchedContext := { SeLe4n.Kernel.SchedContext.empty ntfnScId with
+    boundThreadCode := if holds then holder.val + 1 else 0,
+    notificationCode := ntfnId.val + 1, isActive := true }
+  let st1 := { st with objects := st.objects.insert ntfnScId.toObjId (.schedContext sc) }
+  let bindNtfn (n : Notification) : Notification :=
+    { n with boundTCBCode := holder.val + 1, schedContextCode := ntfnScId.val + 1 }
+  let st2 := match st1.getNotification? ntfnId with
+    | some n => { st1 with objects := st1.objects.insert ntfnId (.notification (bindNtfn n)) }
+    | none => st1
+  st2.updateTcb holder fun t => { t with
+    boundNotificationCode := ntfnId.val + 1,
+    scBindingScCode := if holds then ntfnScId.val + 1 else 0, scBindingOwnerCode := 0 }
+
+/-- `st` with `tid` holding context `s` of its own, the context naming it back. -/
+private def withOwnContext (st : SystemState) (tid : SeLe4n.ThreadId)
+    (s : SeLe4n.SchedContextId) : SystemState :=
+  let sc : SchedContext := { SeLe4n.Kernel.SchedContext.empty s with
+    boundThreadCode := tid.val + 1, isActive := true }
+  let st1 := { st with objects := st.objects.insert s.toObjId (.schedContext sc) }
+  st1.updateTcb tid fun t => { t with scBindingScCode := s.val + 1, scBindingOwnerCode := 0 }
+
+/-- `twoThreadState` with the reply object the shared reply capability names,
+answering no caller: a reply-receive through it replies to nobody and receives. -/
+private def twoThreadReplyState : SystemState :=
+  let r : Reply := { replyId := replyRid }
+  { twoThreadState with objects := twoThreadState.objects.insert replyRid.toObjId (.reply r) }
+
+/-- `tid` holds `s` as its own and `s` names it back. -/
+private def holdsBoth (st : SystemState) (tid : SeLe4n.ThreadId) (s : SeLe4n.SchedContextId) :
+    Bool :=
+  (st.getTcb? tid).any (fun t => decide (t.schedContextBinding = .bound s)) &&
+    (st.getSchedContext? s).any (fun sc => decide (sc.boundThread = some tid))
+
+/-- seL4's return: `tid` holds no context, `s` serves no thread, and `s` keeps
+its `isActive` — seL4's `maybeReturnSchedContext` writes the two links alone. -/
+private def returnedBoth (st : SystemState) (tid : SeLe4n.ThreadId) (s : SeLe4n.SchedContextId) :
+    Bool :=
+  (st.getTcb? tid).any (fun t => t.scBindingScCode == 0 && t.scBindingOwnerCode == 0) &&
+    (st.getSchedContext? s).any (fun sc => decide (sc.boundThread = none) && sc.isActive)
+
+/-- Donation on `sendSignal`'s wake: the caller, holding no context, blocks on
+its bound notification (the return's guard fails: nothing written), and the
+peer's signal wakes it and donates the notification's context. -/
+private def donateOnSignalScenario : Except KernelError (SystemState × SystemState) := do
+  let st0 := withNotificationContext twoThreadState callerTid false
+  let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.notificationWait 0 capPtrValue.toUInt64 0 0 0 st0
+  if out1 != .blocks then throw .illegalState
+  let (_, st2) ← dispatchFromAbiOn core1
+    SyscallId.notificationSignal 1 capPtrValue.toUInt64 0 0 0 st1
+  pure (st1, st2)
+
+/-- Donation on `completeSignal` (a `Wait` finding a word): the peer signals
+first, then the caller's `Wait` consumes the word and takes the context. -/
+private def donateOnWaitScenario :
+    Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) := do
+  let st0 := withNotificationContext twoThreadState callerTid false
+  let (_, st1) ← dispatchFromAbiOn core1
+    SyscallId.notificationSignal 1 capPtrValue.toUInt64 0 0 0 st0
+  dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.notificationWait 0 capPtrValue.toUInt64 0 0 0 st1
+
+/-- Return on `receiveSignal`'s block: the caller holds the notification's
+context and waits on the idle notification. -/
+private def returnOnWaitScenario :
+    Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
+  dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.notificationWait 0 capPtrValue.toUInt64 0 0 0
+    (withNotificationContext twoThreadState callerTid true)
+
+/-- Donation on a receive completing its bound notification (`receiveIPC`'s
+`completeSignal`): the peer signals, then the caller's receive on the endpoint
+takes the word and the context. -/
+private def donateOnReceiveScenario :
+    Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) := do
+  let st0 := withNotificationContext twoThreadState callerTid false
+  let (_, st1) ← dispatchFromAbiOn core1
+    SyscallId.notificationSignal 1 capPtrValue.toUInt64 0 0 0 st0
+  dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    endpointWait 0 epCapPtr.toUInt64 0 0 0 st1
+
+/-- Return on a blocking receive that blocks (`receiveIPC`'s
+`maybeReturnSchedContext`, then the block). -/
+private def returnOnReceiveBlockScenario :
+    Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
+  dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    endpointWait 0 epCapPtr.toUInt64 0 0 0
+    (withNotificationContext twoThreadState callerTid true)
+
+/-- Return on a blocking receive that takes a parked send: seL4 returns the
+context before it looks at the endpoint. -/
+private def returnOnReceiveTakeScenario :
+    Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) := do
+  let st0 := withNotificationContext twoThreadState callerTid true
+  let (out1, st1) ← dispatchFromAbiOn core1
+    SyscallId.send 2 epCapPtr.toUInt64 7 8 0 st0
+  if out1 != .blocks then throw .illegalState
+  dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    endpointWait 0 epCapPtr.toUInt64 0 0 0 st1
+
+/-- A bound replier's reply-receive that blocks: the peer holds the
+notification's context, replies to the blocked caller and blocks on the empty
+endpoint. -/
+private def replyRecvReturnBlockScenario :
+    Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) :=
+  dispatchReplyRecvOn core1 2 epCapPtr.toUInt64 replyCapPtr.toUInt64 21 22
+    (withNotificationContext replyPendingState peerTid true)
+
+/-- A bound replier's reply-receive that takes a parked send. -/
+private def replyRecvReturnTakeScenario :
+    Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) := do
+  let st0 := withNotificationContext twoThreadReplyState peerTid true
+  let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.send 2 epCapPtr.toUInt64 7 8 0 st0
+  if out1 != .blocks then throw .illegalState
+  dispatchReplyRecvOn core1 0 epCapPtr.toUInt64 replyCapPtr.toUInt64 0 0 st1
+
+/-- A bound replier's reply-receive that takes a parked call: the return runs
+first, so the replier holds no context and the caller's is donated to it
+(seL4-MCS `reply_push`'s `canDonate`). -/
+private def replyRecvReturnCallTakeScenario :
+    Except KernelError (Kernel.Architecture.SyscallOutcome × SystemState) := do
+  let st0 := withOwnContext (withNotificationContext twoThreadReplyState peerTid true)
+    callerTid callerOwnScId
+  let (out1, st1) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.call 2 epCapPtr.toUInt64 7 8 0 st0
+  if out1 != .blocks then throw .illegalState
+  dispatchReplyRecvOn core1 0 epCapPtr.toUInt64 replyCapPtr.toUInt64 0 0 st1
+
+private def runNotificationDonationDispatchWitnesses : IO Unit := do
+  IO.println "-- §13 notification scheduling-context donation and return, through the dispatch"
+  match donateOnSignalScenario with
+  | .error e => assertBool s!"13a: the wait and the signal dispatch (got .error {reprStr e})" false
+  | .ok (st1, st2) => do
+      assertBool "13a: a waiter holding no context returns nothing when it blocks"
+        ((st1.getTcb? callerTid).any (fun t => t.scBindingScCode == 0) &&
+          (st1.getSchedContext? ntfnScId).any (fun sc => decide (sc.boundThread = none)))
+      assertBool "13a: the signal's wake donates the notification's context to the waiter"
+        (holdsBoth st2 callerTid ntfnScId)
+  match donateOnWaitScenario with
+  | .ok (.returns frame, st) =>
+      assertBool "13b: a Wait consuming a word takes the notification's context"
+        (holdsBoth st callerTid ntfnScId && frame.x0 == signalledBadge.toUInt64)
+  | _ => assertBool "13b: a Wait on an active notification returns a frame" false
+  match returnOnWaitScenario with
+  | .ok (.blocks, st) =>
+      assertBool "13c: a blocking Wait returns its context, both links cleared, isActive kept"
+        (returnedBoth st callerTid ntfnScId)
+  | _ => assertBool "13c: a Wait on an idle notification blocks" false
+  match donateOnReceiveScenario with
+  | .ok (.returns frame, st) =>
+      assertBool "13d: a receive completing its bound notification takes the context"
+        (holdsBoth st callerTid ntfnScId && frame.x0 == signalledBadge.toUInt64)
+  | _ => assertBool "13d: a receive on an active bound notification returns a frame" false
+  match returnOnReceiveBlockScenario with
+  | .ok (.blocks, st) =>
+      assertBool "13e: a blocking receive that blocks returns its context"
+        (returnedBoth st callerTid ntfnScId &&
+          (st.getTcb? callerTid).any (fun t => t.ipcState == .blockedOnReceive epId))
+  | _ => assertBool "13e: a receive on an empty endpoint blocks" false
+  match returnOnReceiveTakeScenario with
+  | .ok (.returns frame, st) =>
+      assertBool "13f: a blocking receive that takes a send returns its context first"
+        (returnedBoth st callerTid ntfnScId && frame.x2 == 7 && frame.x3 == 8)
+  | _ => assertBool "13f: a receive on a parked send returns the message frame" false
+  match replyRecvReturnBlockScenario with
+  | .ok (.blocks, st) =>
+      assertBool "13g: a bound replier's blocking reply-receive returns its context"
+        (returnedBoth st peerTid ntfnScId &&
+          (st.getTcb? callerTid).any (fun t => t.ipcState == .ready))
+  | _ => assertBool "13g: a reply-receive on an empty endpoint blocks the replier" false
+  match replyRecvReturnTakeScenario with
+  | .ok (.returns frame, st) =>
+      assertBool "13h: a bound replier's reply-receive taking a send returns its context"
+        (returnedBoth st peerTid ntfnScId && frame.x2 == 7 && frame.x3 == 8)
+  | .ok (_, _) => assertBool "13h: the reply-receive on a parked send returns a frame" false
+  | .error e => assertBool s!"13h: the reply-receive dispatches (got .error {reprStr e})" false
+  match replyRecvReturnCallTakeScenario with
+  | .ok (.returns frame, st) =>
+      assertBool "13i: a bound replier's reply-receive taking a call returns its context"
+        ((st.getSchedContext? ntfnScId).any (fun sc => decide (sc.boundThread = none) && sc.isActive))
+      assertBool "13i: ...and takes the caller's context by donation"
+        ((st.getTcb? peerTid).any (fun t =>
+            decide (t.schedContextBinding = .donated callerOwnScId callerTid)) &&
+          frame.x2 == 7 && frame.x3 == 8)
+  | .ok (_, _) => assertBool "13i: the reply-receive on a parked call returns a frame" false
+  | .error e => assertBool s!"13i: the reply-receive dispatches (got .error {reprStr e})" false
+
+-- ============================================================================
 -- Runner
 -- ============================================================================
 
@@ -2060,6 +2265,7 @@ def runSyscallReturnAbiChecks : IO Unit := do
   runAuditReadEndToEnd
   runDeclassifiedBadgeDeliveryWitnesses
   runOverflowDeliveryWitnesses
+  runNotificationDonationDispatchWitnesses
   runTraceFixtureCheck
   runReturnShapeFixtureCheck
   runAbiLayoutFixtureCheck

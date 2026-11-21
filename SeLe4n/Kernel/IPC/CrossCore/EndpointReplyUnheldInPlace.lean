@@ -35,6 +35,13 @@ theorem storeReplyLegReady_noResizeDue (st : SystemState) (c : SeLe4n.ThreadId)
   exact updateTcb_noResizeDue _ _ _ (modifyObject_noResizeDue _ _ _
     (enqueueRunnableOnCore_noResizeDue _ _ _ (updateTcb_noResizeDue _ _ _ hNo)))
 
+/-- The reply leg's writes, the message held, leave room. -/
+theorem storeReplyLeg_noResizeDue (st : SystemState) (c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (msg : IpcMessage) (hNo : st.objects.noResizeDue) :
+    (storeReplyLeg st c rid msg).objects.noResizeDue := by
+  rw [storeReplyLeg_eq_hold _ _ _ _ hNo]
+  exact (SystemState.mapTcbInPlace_noResizeDue _ _ _).mpr (storeReplyLegReady_noResizeDue st c rid hNo)
+
 /-- **Off the answered caller and its reply object, the reply leg's writes
 touch only links.** -/
 theorem storeReplyLegReady_agree (st : SystemState) (c : SeLe4n.ThreadId)
@@ -624,5 +631,137 @@ theorem replyTransferChecked_unheld_inPlace (ctx : LabelingContext) (st : System
   rfl
 
 end UnheldReplyDelivered
+
+section UnlinkedReplyDelivered
+
+/-- **A reply object linked to nothing, answered in place** (WS-SX SX8.3): the
+caller `c` an unreserved thread, its slot and its reply object's local, and the
+reply object neither heading a stack nor sitting on one.  This is the shape a
+caller is left in when the context it lent was let go by SchedContext_Unbind
+(`schedContextUnbindReply`, seL4's `schedContext_unbindReply`) and its server
+was then finalised: no context to hand back, no server to leave.  The same test
+as `replyWakesInPlace`, which reads no TCB. -/
+@[inline] def replyUnlinkedInPlace (st : SystemState) (c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) : Bool :=
+  !c.isReserved &&
+  storeLeavesIndexAndTypes st c.toObjId .tcb &&
+  st.objects.findsInPlace c.toObjId &&
+  storeLeavesIndexAndTypes st rid.toObjId .reply &&
+  st.objects.findsInPlace rid.toObjId &&
+  (match st.getReply? rid with
+   | some rp => rp.next.isNone && rp.prev.isNone
+   | none => false)
+
+theorem replyUnlinkedInPlace_eq_wakes (st : SystemState) (c : SeLe4n.ThreadId) (ct : TCB)
+    (rid : SeLe4n.ReplyId) : replyUnlinkedInPlace st c rid = replyWakesInPlace st c ct rid := rfl
+
+/-- **The reply dispatch to a caller recording no server, its reply object
+linked to nothing**: under `replyUnlinkedInPlace`, the dispatch commits the
+reply leg's writes (`storeReplyLeg`) and pops nothing, as seL4's `reply_remove`
+does on a reply object neither heading a stack nor sitting on one.  The one
+derivation every unlinked shape (short, long, fault, capabilities) shares. -/
+theorem replyDispatch_unlinked_inPlace (st : SystemState) (replier c : SeLe4n.ThreadId)
+    (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId) (msg : IpcMessage)
+    (core : Concurrency.CoreId)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyUnlinkedInPlace st c rid = true) :
+    ∃ sgi, endpointReplyCrossCoreDispatch replier c msg core st =
+      (storeReplyLeg st c rid msg, .ok sgi) := by
+  simp only [replyUnlinkedInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
+  obtain ⟨⟨⟨⟨⟨hCRes, hLC⟩, hFC⟩, hLR⟩, hFR⟩, hRp⟩ := hG
+  obtain ⟨rp, hRo, hNext, hPrev⟩ : ∃ rp, st.objects[rid.toObjId]? = some (.reply rp) ∧
+      rp.next = none ∧ rp.prev = none := by
+    split at hRp
+    · next rp hRo =>
+      rw [Bool.and_eq_true] at hRp
+      exact ⟨rp, (SystemState.getReply?_eq_some_iff _ _ _).mp hRo,
+        Option.isNone_iff_eq_none.mp hRp.1, Option.isNone_iff_eq_none.mp hRp.2⟩
+    · cases hRp
+  obtain ⟨hEq, hR5⟩ := replyOnCore_eq_storeLeg st replier c none ct ep rid rp msg core hSz hT hIpc
+    hRO hCRes hLC hFC hLR hFR hRo (Or.inl ⟨hNext, hPrev⟩)
+  simp only [SystemState.unlinkReplyWaiterOpt] at hEq hR5
+  have hHead : replyFrameHeadContext? (storeReplyLeg st c rid msg) rid = none := by
+    unfold replyFrameHeadContext?
+    rw [hR5]
+    simp only [Reply.consumed, hNext]
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  obtain ⟨cv, hcv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff c).mpr hCRes)
+  have hRec : recordedReplyServer? st c = none := by
+    simp only [recordedReplyServer?, hTc, hIpc]
+  have hAns : answeredReplyObject? st c = some rid := by
+    simp only [answeredReplyObject?, hTc, Option.bind_some, hRO]
+  unfold endpointReplyCrossCoreDispatch
+  rw [hEq]
+  simp only [hRec, hAns, hcv]
+  unfold applyReplyDonationOnCore
+  rw [SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv, replyFrameHeadHolder?_of_no_head _ _ hHead]
+  simp only [popUnheldReplyHead_of_no_head _ _ _ _ hHead]
+  exact ⟨_, rfl⟩
+
+/-- The reply to a caller recording no server whose reply object is linked to
+nothing: the reply leg's writes, the caller woken holding the message, and the
+message staged in its return frame.  There is no context to pop and no server
+whose boost to revert. -/
+@[noinline] def performReplyUnlinkedDelivered (st : SystemState) (c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) : SystemState :=
+  let X := storeReplyLegReady st c rid
+  writeDeliveredFrameIfReady X c (Architecture.regMessageFrameW layout rf len badgeWord badged)
+    (fun _ => holdDeliveredBody X c layout rf len (SeLe4n.Badge.opt badgeWord badged))
+
+/-- **The checked reply to a caller recording no server, its reply object
+linked to nothing, in place**: under the flow gate and `replyUnlinkedInPlace`,
+a reply of at most four words to an unfaulted caller commits
+`performReplyUnlinkedDelivered`'s state. -/
+theorem replyTransferChecked_unlinked_inPlace (ctx : LabelingContext) (st : SystemState)
+    (replier c : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) (core : CoreId) (msg : IpcMessage)
+    (grant : Bool)
+    (hMsg : msg =
+      { registers := Architecture.regMessageBody layout rf len, badge := SeLe4n.Badge.opt badgeWord badged })
+    (hSz4 : Architecture.regMessageLength layout len ≤ 4)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyUnlinkedInPlace st c rid = true)
+    (hNoF : ct.faultWords.isFault = false)
+    (hX : replyTransferInert st replier ct grant = true)
+    (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true) :
+    replyTransferOnCoreChecked ctx replier c mi regs msg grant core st =
+      .ok ((), performReplyUnlinkedDelivered st c rid layout rf len badgeWord badged) := by
+  replace hMsg := hMsg.symm
+  have hW : replyWakesInPlace st c ct rid = true := hG
+  have hNo := replyWakesInPlace_noResizeDue hW
+  have hSz' : ¬ msg.registers.size > maxMessageRegisters := by
+    rw [← hMsg, Architecture.regMessageBody_size]; simp only [maxMessageRegisters]; omega
+  obtain ⟨sgi, hD⟩ := replyDispatch_unlinked_inPlace st replier c ct ep rid msg core hSz' hT hIpc
+    hRO hG
+  have hPF : ct.pendingFault = none := TCB.pendingFault_eq_none_of_not_isFault hNoF
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hNF : threadHasPendingFault st c = false := by
+    simp only [threadHasPendingFault, hTc, Option.bind_some, hPF, Option.isSome_none]
+  have hNoS := storeReplyLegReady_noResizeDue st c rid hNo
+  unfold replyTransferOnCoreChecked
+  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
+  simp only [Bool.false_eq_true, ↓reduceIte,
+    replyTransferCaps_of_inert st replier c grant ct hTc hX, CapTransferSummary.capInfo_empty]
+  rw [hD]
+  simp only []
+  rw [storeReplyLeg_eq_hold _ _ _ _ hNo]
+  unfold performReplyUnlinkedDelivered
+  subst hMsg
+  rw [Architecture.regMessageFrameW_eq,
+    stageDeliveredMessage_holdMessage _ _ _ hNoS
+      (by rw [Architecture.regMessageBody_size]; exact hSz4),
+    Architecture.returnFrameOfMessage_regMessageBody]
+  rfl
+
+end UnlinkedReplyDelivered
 
 end SeLe4n.Kernel

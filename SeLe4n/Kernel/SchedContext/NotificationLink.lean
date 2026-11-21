@@ -305,6 +305,18 @@ theorem unbindSchedContextNotification_objects_back (st : SystemState)
       · exact ⟨o0, h0, Or.inl r⟩
       · exact ⟨o0, h0, Or.inr (Or.inl r)⟩
 
+/-- The notification unbind read from the context's end keeps the object
+store's extended invariant. -/
+theorem unbindSchedContextNotification_preserves_objects_invExt (st : SystemState)
+    (s : SeLe4n.SchedContextId) (hInv : st.objects.invExt) :
+    (unbindSchedContextNotification st s).objects.invExt := by
+  have h1 := SystemState.updateSchedContext_preserves_objects_invExt st s
+    (fun c => { c with notificationCode := 0 }) hInv
+  rcases unbindSchedContextNotification_shape st s hInv with h | ⟨_, _, h | ⟨n, ntfn, _, h⟩⟩
+  · rw [h]; exact hInv
+  · rw [h]; exact h1
+  · rw [h]; exact RHTable_insert_preserves_invExt _ _ _ h1
+
 /-- The notification unbind read from the context's end writes the object
 store alone. -/
 theorem unbindSchedContextNotification_frame (st : SystemState) (s : SeLe4n.SchedContextId) :

@@ -548,6 +548,19 @@ theorem replyRecvAnswerCaller_replyViews_eq (answer : Option Architecture.FaultR
   | none => exact stageDeliveredMessage_replyViews_eq _ _ _ hInv
   | some o => exact faultReplyApplyOnCore_replyViews_eq _ _ _ hInv
 
+/-- **seL4-MCS `receiveIPC`'s return keeps every reply view**: it rewrites
+scheduling-context binding codes, a context and the replenish queues alone. -/
+theorem receiveReturnSchedContext_replyViews_eq (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    (receiveReturnSchedContext blocks st tid).replyViews = st.replyViews :=
+  replyViews_eq_of_tcbs
+    (fun k t0 hk => by
+      obtain ⟨x, hx, e⟩ := receiveReturnSchedContext_tcb_fwd blocks st tid hInv k t0 hk
+      exact ⟨x, hx, by rcases e with rfl | rfl <;> rfl⟩)
+    (fun k t' hk => by
+      obtain ⟨y, hy, -⟩ := receiveReturnSchedContext_tcb blocks st tid hInv k t' hk
+      exact ⟨y, hy⟩)
+
 /-- **The live reply-receive keeps the reply-waiter queues consistent**: the
 reply leg unlinks the answered caller, the receive leg links the next caller to
 the server, and every step between and after them (the donation pop, the
@@ -555,8 +568,8 @@ capability unwrap, the post-receive donation, the priority hand-off, the
 return-frame stagers) keeps the views.
 
 The receive leg's two facts are stated at the state it runs on, the reply leg's
-commit with the donation pop and the reply leg's capability transfer applied
-(`replyRecvReceiveLegState`), as the arm's
+commit with the donation pop, the reply leg's capability transfer and the
+bound notification's context return applied (`replyRecvReceiveLegState`), as the arm's
 other composite theorems state theirs. -/
 theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
     {answer : Option Architecture.FaultReplyOutcome}
@@ -598,10 +611,14 @@ theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
           refine replyWaitersConsistent.of_views ?_ hB1
           rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
           rw [receiveTransferCaps_replyViews_eq hIq hX, replyRecvPopDonation_replyViews_eq hI1 hP]
+        have hIr := receiveReturnSchedContext_objects_invExt true st1p tid hIp
+        have hBr : (receiveReturnSchedContext true st1p tid).replyWaitersConsistent :=
+          replyWaitersConsistent.of_views (receiveReturnSchedContext_replyViews_eq true st1p tid hIp)
+            hBp
         have hB2 := endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent epId tid
-          (some rid) ec st1p hIp hBp hRecv1 hHead1
+          (some rid) ec _ hIr hBr hRecv1 hHead1
         have hI2 := endpointReceiveDualWithCapsOnCore_preserves_objects_invExt epId tid
-          (some rid) ec st1p hIp
+          (some rid) ec _ hIr
         split at h
         · cases h
         · rename_i st2 nxt sum2 sgi2 hW

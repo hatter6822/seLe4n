@@ -8,6 +8,7 @@
 -/
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.IPC.CrossCore.DeliveredInPlace
+import SeLe4n.Kernel.IPC.Invariant.SignalWakeLinkFrame
 import SeLe4n.Kernel.Architecture.InterruptMask
 import SeLe4n.Kernel.Concurrency.Runtime
 
@@ -53,20 +54,23 @@ open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 
 /-- **The interrupt's signal**, as the `.notificationSignal` syscall's arm
-leaves the state (`dispatchWithCapChecked`): the bound-aware per-core signal.
-The wake writes the badge into the woken thread's badge register and drops a
-woken bound receiver's reply stash itself (`TCB.signalWoken`,
-`TCB.signalBoundWoken`), so nothing runs after it.  A signal the notification
-refuses leaves the state as the signal does, unchanged. -/
+leaves the state (`dispatchWithCapChecked`): seL4-MCS `sendSignal`
+(`sendSignalOnCore`), the bound-aware per-core signal and then the donation of
+the notification's scheduling context to the thread it woke, under seL4's
+guard (`maybeDonateSchedContext`), as seL4's `handleInterrupt` signals through
+`sendSignal`.  The wake writes the badge into the woken thread's badge register
+and drops a woken bound receiver's reply stash itself (`TCB.signalWoken`,
+`TCB.signalBoundWoken`).  A signal the notification refuses leaves the state as
+the signal does, unchanged. -/
 def interruptSignal (ntfn : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
     (st : SystemState) : SystemState :=
-  (notificationSignalBoundOnCore ntfn badge c st).1
+  (sendSignalOnCore ntfn badge c st).1
 
 /-- `interruptSignal` restated, the fallback of its compiled form (a separate
 definition, so the `@[csimp]` replacement does not reach the fallback). -/
 def interruptSignalGeneral (ntfn : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
     (st : SystemState) : SystemState :=
-  (notificationSignalBoundOnCore ntfn badge c st).1
+  (sendSignalOnCore ntfn badge c st).1
 
 /-- **The interrupt's signal as compiled**: a signal that wakes its
 notification's head waiter, with no bound receiver and every write in its slot
@@ -75,9 +79,10 @@ notification's head waiter, with no bound receiver and every write in its slot
 syscall's arm does (`notificationSignalCheckedArmR`); a signal whose bound
 thread is blocked receiving, every write of its removal in its slot
 (`queueRemoveInPlace`), wakes that thread with the badge in its badge register
-(`performSignalBoundDelivered`); a signal with neither a bound receiver nor a
-waiter wakes no thread and is the signal's own state; every other signal runs
-the specification. -/
+(`performSignalBoundDelivered`); each wake is followed by the compiled donation
+to the thread it woke (`maybeDonateSchedContextFast`); a signal with neither a
+bound receiver nor a waiter wakes no thread, so donates nothing, and is the
+signal's own state; every other signal runs the specification. -/
 @[inline] def interruptSignalImpl (ntfn : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
     (st : SystemState) : SystemState :=
   if (boundDeliveryTarget? st ntfn).isNone then
@@ -86,7 +91,8 @@ the specification. -/
         match n.waitHeadCode with
         | k + 1 =>
             if signalWakesInPlace st ntfn ⟨k⟩ then
-              performSignalWoken st ntfn ⟨k⟩ (ntfnSuccessorCode st ⟨k⟩) badge c
+              maybeDonateSchedContextFast
+                (performSignalWoken st ntfn ⟨k⟩ (ntfnSuccessorCode st ⟨k⟩) badge c) ntfn.val k
             else interruptSignalGeneral ntfn badge c st
         | 0 => (notificationSignalBoundOnCore ntfn badge c st).1
     | none => interruptSignalGeneral ntfn badge c st
@@ -102,7 +108,9 @@ the specification. -/
                   match st.getEndpoint? ⟨tcb.ipcObjectCode⟩ with
                   | some ep =>
                       if queueRemoveInPlace st ⟨tcb.ipcObjectCode⟩ true ⟨k⟩ ep tcb then
-                        performSignalBoundDelivered c ⟨k⟩ ⟨tcb.ipcObjectCode⟩ ep tcb badge st
+                        maybeDonateSchedContextFast
+                          (performSignalBoundDelivered c ⟨k⟩ ⟨tcb.ipcObjectCode⟩ ep tcb badge st)
+                          ntfn.val k
                       else interruptSignalGeneral ntfn badge c st
                   | _ => interruptSignalGeneral ntfn badge c st
                 else interruptSignalGeneral ntfn badge c st
@@ -128,15 +136,21 @@ the specification. -/
             exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.2
           have hHead : n.waitHead = some ⟨k⟩ := by
             rw [← Notification.ofOptCode_waitHeadCode, hK]; rfl
-          simp only [interruptSignal, notificationSignalBoundOnCore, hBound,
+          have hWk : signalWokenThread? st ntfn = some ⟨k⟩ := by
+            simp only [signalWokenThread?, hBound, hN, Option.bind_some, hHead]
+          simp only [interruptSignal, sendSignalOnCore, notificationSignalBoundOnCore, hBound,
             notificationSignalOnCore_eq_impl, notificationSignalOnCoreImpl, hN, hHead, hW,
-            ↓reduceIte, Option.map_none]
-          rw [← optCode_ntfnSuccessor?, ← signalWoken_eq_perform]
+            ↓reduceIte, Option.map_none, donateToSignalled, hWk]
+          rw [← optCode_ntfnSuccessor?, ← signalWoken_eq_perform, maybeDonateSchedContextFast_eq]
         · exact hG
       · next hK =>
         have hHead : n.waitHead = none := by
           rw [← Notification.ofOptCode_waitHeadCode, hK]; rfl
-        simp only [interruptSignal, hBound, Option.map_none]
+        have hWk : signalWokenThread? st ntfn = none := by
+          simp only [signalWokenThread?, hBound, hN, Option.bind_some, hHead]
+        unfold interruptSignal
+        rw [sendSignalOnCore_fst]
+        split <;> first | rfl | simp only [donateToSignalled, hWk]
     · exact hG
   · split
     · next n hN =>
@@ -153,10 +167,12 @@ the specification. -/
               split
               · next hQ =>
                 have hBT := boundDeliveryTarget?_of_codes st ntfn n k tcb hN hK0 hB hTT hSt
-                rw [← hG]
-                unfold interruptSignalGeneral
-                rw [notificationSignalBoundOnCore_bound_eq ntfn badge c st ⟨k⟩ ⟨tcb.ipcObjectCode⟩
-                  ep tcb hBT hE hTT hQ]
+                have hS := notificationSignalBoundOnCore_bound_eq ntfn badge c st ⟨k⟩
+                  ⟨tcb.ipcObjectCode⟩ ep tcb hBT hE hTT hQ
+                have hWk : signalWokenThread? st ntfn = some ⟨k⟩ := by
+                  simp only [signalWokenThread?, hBT]
+                simp only [interruptSignal, sendSignalOnCore, hS, donateToSignalled, hWk]
+                rw [maybeDonateSchedContextFast_eq]
                 rfl
               · exact hG
             all_goals exact hG
@@ -256,22 +272,12 @@ theorem handleInterruptOnCore_preserves_objects_invExt (st : SystemState) (c : C
     (line : Nat) (h : st.objects.invExt) : (handleInterruptOnCore st c line).objects.invExt :=
   handleInterruptOnCore_of (P := fun s => s.objects.invExt) st c line
     (fun s hs => by simpa using hs) h
-    (fun ntfn _ _ => (notificationSignalBoundOnCore_preserves_objects_invExt _ _ _ st h))
+    (fun ntfn _ _ => (sendSignalOnCore_preserves_objects_invExt _ _ _ st h))
 
 /-- …and so does the raw step. -/
 theorem interruptEntryStep_preserves_objects_invExt (st : SystemState) (coreId intId : UInt64)
     (h : st.objects.invExt) : (interruptEntryStep st coreId intId).objects.invExt :=
   interruptEntryStep_of (P := fun s => s.objects.invExt) st coreId intId h
     (fun c _ _ => handleInterruptOnCore_preserves_objects_invExt st c _ h)
-
-/-- No core's replenish queue moves. -/
-theorem handleInterruptOnCore_replenishQueueOnCore (st : SystemState) (c d : CoreId)
-    (line : Nat) :
-    (handleInterruptOnCore st c line).scheduler.replenishQueueOnCore d =
-      st.scheduler.replenishQueueOnCore d :=
-  handleInterruptOnCore_of
-    (P := fun s => s.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d)
-    st c line (fun s hs => by simpa using hs) rfl
-    (fun ntfn _ _ => (notificationSignalBoundOnCore_replenishQueueOnCore _ _ _ st d))
 
 end SeLe4n.Kernel

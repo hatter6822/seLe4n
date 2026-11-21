@@ -25,6 +25,9 @@ import SeLe4n.Kernel.SyscallSchedFootprint
 import SeLe4n.Kernel.SyscallSchedContainment
 import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
 import SeLe4n.Kernel.InterruptEntry
+import SeLe4n.Kernel.IPC.Invariant.SignalDonationFrame
+import SeLe4n.Kernel.IPC.Invariant.ReplySignalFrame
+import SeLe4n.Kernel.IPC.Invariant.ReplyBindingPairFrame
 
 namespace SeLe4n.Kernel
 
@@ -239,10 +242,303 @@ theorem schedLockSet_replyRecvArmOnCore_coversTransfer (endpointId : SeLe4n.ObjI
   exact schedLockSet_replyRecvTransferOnCore_subset_arm endpointId receiver replyId prevCaller
     label msg grant e st _ hl
 
+/-- ...and so is the notification the receive's lock operands name. -/
+theorem cancelRecvBusyReply_receiverBoundNotification? (ctx : LabelingContext)
+    (tid : SeLe4n.ThreadId) (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (ec : Concurrency.CoreId) (st : SystemState) (hInv : st.objects.invExt) :
+    Concurrency.receiverBoundNotification? (cancelRecvBusyReply ctx tid gate decoded ec st) tid =
+      Concurrency.receiverBoundNotification? st tid := by
+  have e := cancelRecvBusyReply_boundNotificationCode ctx tid gate decoded ec st hInv
+  unfold Concurrency.receiverBoundNotification?
+  cases h1 : (cancelRecvBusyReply ctx tid gate decoded ec st).getTcb? tid <;>
+    cases h0 : st.getTcb? tid <;> rw [h1, h0] at e <;> simp only [Option.map] at e
+  all_goals first
+    | rfl
+    | cases e
+    | (simp only [Option.bind_some, TCB.boundNotification]
+       rw [Option.some.inj e])
+
+/-- **A receive that completes a signal after its cancel completes the
+notification its entry state names.** -/
+theorem receiveCompletion_receiverBoundNotification?_eq {ctx : LabelingContext}
+    {tid : SeLe4n.ThreadId} {gate : SyscallGate} {decoded : SyscallDecodeResult}
+    {ec : Concurrency.CoreId} {st : SystemState} (hInv : st.objects.invExt)
+    (hSig : receiveCompletesSignal ctx (cancelRecvBusyReply ctx tid gate decoded ec st) tid = true) :
+    Concurrency.receiverBoundNotification? st tid =
+      some (receiverBoundNotification (cancelRecvBusyReply ctx tid gate decoded ec st) tid) := by
+  rw [← cancelRecvBusyReply_receiverBoundNotification? ctx tid gate decoded ec st hInv]
+  unfold receiveCompletesSignal at hSig
+  unfold Concurrency.receiverBoundNotification? receiverBoundNotification
+  cases hT : (cancelRecvBusyReply ctx tid gate decoded ec st).getTcb? tid with
+  | none => rw [hT] at hSig; cases hSig
+  | some t =>
+    rw [hT] at hSig
+    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hSig
+    obtain ⟨k, hk⟩ := Nat.exists_eq_succ_of_ne_zero hSig.1.1
+    simp only [Option.bind_some, TCB.boundNotification, hk, SeLe4n.ObjId.ofOptCode]
+    rfl
+
+/-- **seL4-MCS `receiveIPC`'s `completeSignal` writes a notification the
+receive locks**: the one the completion reads after the busy-reply cancel is the
+one the footprint names on the entry state
+(`receiveCompletion_receiverBoundNotification?_eq`). -/
+theorem lockSetForSyscall_receive_covers_completedNotification
+    (ops : Concurrency.SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (endpointId : SeLe4n.ObjId) (S : LockSet) {ctx : LabelingContext} {gate : SyscallGate}
+    {decoded : SyscallDecodeResult} {ec : CoreId} (hInv : st.objects.invExt)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hEp : ops.targetObject = some endpointId)
+    (hSig : receiveCompletesSignal ctx (cancelRecvBusyReply ctx ops.caller gate decoded ec st)
+      ops.caller = true)
+    (hDecl : Concurrency.lockSetForSyscall .receive ops st = some S) :
+    (Concurrency.notificationLock
+        (receiverBoundNotification (cancelRecvBusyReply ctx ops.caller gate decoded ec st) ops.caller),
+      AccessMode.write) ∈ S.pairs :=
+  Concurrency.lockSetForSyscall_receive_covers_boundNotification ops st caller endpointId S _ hTcb hEp
+    (receiveCompletion_receiverBoundNotification?_eq hInv hSig) hDecl
+
+/-- **A reply that leaves the receive's test true kept the receiver's binding**:
+the receiver's TCB on the entry state names the notification it names after
+the reply, since the reply keeps every binding code
+(`notificationsAndBindingsKept`). -/
+theorem replyRecv_boundCode_of_completes {ctx : LabelingContext}
+    {st st1 : SystemState} {tid : SeLe4n.ThreadId}
+    (hK : notificationsAndBindingsKept st st1)
+    (hSig : receiveCompletesSignal ctx st1 tid = true) :
+    ∃ t t1, st.getTcb? tid = some t ∧ st1.getTcb? tid = some t1 ∧
+      t.boundNotificationCode = t1.boundNotificationCode ∧ t1.boundNotificationCode ≠ 0 := by
+  unfold receiveCompletesSignal at hSig
+  cases hT1 : st1.getTcb? tid with
+  | none => rw [hT1] at hSig; cases hSig
+  | some t1 =>
+    rw [hT1] at hSig
+    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hSig
+    have hc := hSig.1.1
+    have hB := hK.2.1 tid.toObjId
+    rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hT1] at hB
+    cases hO : st.objects[tid.toObjId]? with
+    | none =>
+      rw [hO] at hB
+      simp only [notificationBindingCodes, KernelObject.bindingCodes, Prod.mk.injEq] at hB
+      exact absurd hB.1 hc
+    | some o =>
+      rw [hO] at hB
+      cases o <;> simp only [notificationBindingCodes, KernelObject.bindingCodes,
+        Prod.mk.injEq] at hB
+      all_goals first
+        | exact absurd hB.1 hc
+        | skip
+      rename_i t
+      exact ⟨t, t1, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO, rfl, hB.1.symm, hc⟩
+
+/-- **The reply-receive's donation core is the receiver's home core** whenever
+the receive completes a signal (`replyRecv_boundCode_of_completes`). -/
+theorem replyRecvDonationCores_eq_home_of_completes {ctx : LabelingContext}
+    {st st1 : SystemState} {tid : SeLe4n.ThreadId}
+    (hK : notificationsAndBindingsKept st st1)
+    (hSig : receiveCompletesSignal ctx st1 tid = true) :
+    replyRecvDonationCores st tid = [determineTargetCore st tid] := by
+  obtain ⟨t, t1, hT, -, hE, hc⟩ := replyRecv_boundCode_of_completes hK hSig
+  unfold replyRecvDonationCores
+  rw [hT]
+  simp only [hE, hc, ↓reduceIte]
+
+/-- **The reply-receive's donated context is in its object-domain footprint**:
+the context the completion's donation writes (`signalDonationContext?`, read on
+the state the completion hands it) is the context the receiver's bound
+notification names on the entry state (`boundSignalDonationContext?` with its
+guard read after the reply), which the footprint locks.  The reply creates,
+deletes and rewrites no notification (`notificationsAndBindingsKept`), and the
+consumption and the badge frame keep every notification's context word
+(`completeSignalArm_donationPre_ntfnContexts`). -/
+theorem replyRecvDonationContext_superset {ctx : LabelingContext}
+    {tid prevCaller : SeLe4n.ThreadId} {mi : MessageInfo} {regs : Array SeLe4n.RegValue}
+    {msg : IpcMessage} {grant : Bool} {c : CoreId} {st st1 st2 : SystemState}
+    {badge : SeLe4n.Badge} {s : SeLe4n.SchedContextId} (hObjInv : st.objects.invExt)
+    (hR : replyTransferOnCoreChecked ctx tid prevCaller mi regs msg grant c st = .ok ((), st1))
+    (hSig : receiveCompletesSignal ctx st1 tid = true)
+    (hW : notificationWaitCrossCoreDispatchChecked ctx (receiverBoundNotification st1 tid) tid c
+      st1 = (st2, .ok (some badge)))
+    (hD : signalDonationContext? (Architecture.writeReturnFrameToTcb st2 tid
+      (Architecture.badgeReturnFrame st2 tid badge)) (receiverBoundNotification st1 tid) tid
+        = some s) :
+    Concurrency.boundSignalDonationContext? st tid true = some s := by
+  have hK := notificationsAndBindingsKept.of_replyTransferOnCoreChecked hObjInv hR
+  have hObj1 := replyTransferOnCoreChecked_objects_invExt hObjInv hR
+  have hA := (ntfnContextsAgree.of_notificationsAndBindingsKept hK).trans
+    (completeSignalArm_donationPre_ntfnContexts hObj1
+      (notificationWaitCrossCoreDispatchChecked_ok_inner hW))
+  have hN := notificationContext?_of_signalDonationContext? hD
+  rw [notificationContext?_congr hA] at hN
+  obtain ⟨t, t1, hT, hT1, hE, hc⟩ := replyRecv_boundCode_of_completes hK hSig
+  unfold Concurrency.boundSignalDonationContext? Concurrency.receiverBoundNotification?
+  rw [hT]
+  unfold receiverBoundNotification at hN
+  rw [hT1] at hN
+  obtain ⟨k, hk⟩ := Nat.exists_eq_succ_of_ne_zero hc
+  simp only [Option.bind_some, TCB.boundNotification, hE, hk, SeLe4n.ObjId.ofOptCode,
+    ↓reduceIte, Nat.add_sub_cancel] at hN ⊢
+  exact hN
+
+/-- **A reply-receive's pop keeps every notification and every binding code**
+(seL4-MCS `reply_remove` / `reply_pop`): the donated context's return and the
+unheld context's pop and sever write threads' context bindings, contexts and
+reply objects, never a notification or a bound-notification / bound-thread
+code, and the settle moves release links only. -/
+theorem notificationsAndBindingsKept.of_replyRecvPopDonation {rid : SeLe4n.ReplyId}
+    {target : SeLe4n.ThreadId} {st st' : SystemState}
+    {r : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} (hInv : st.objects.invExt)
+    (h : replyRecvPopDonation rid target st = .ok (r, st')) :
+    notificationsAndBindingsKept st st' := by
+  unfold replyRecvPopDonation at h
+  split at h
+  case h_2 =>
+    split at h
+    · cases h
+    · rename_i hPop
+      cases h
+      rcases popUnheldReplyHead_objects_frame hPop with ⟨-, rfl⟩ |
+          ⟨scId, _, st1, -, -, hRet, rfl⟩ | ⟨scId, _, -, -, hSev⟩
+      · exact .refl _
+      · exact (notificationsAndBindingsKept.of_kindPreservingWrite
+          (returnUnheldSchedContext_kindPreservingWrite hInv hRet)
+          (fun k nt hk => (returnUnheldSchedContext_notification_iff hInv hRet k nt).mp hk)).trans
+          (notificationsAndBindingsKept.of_offSchedulerLinks
+            (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
+              (SchedContextOps.settleReturnedContext_agree _ _ _)))
+      · exact notificationsAndBindingsKept.of_kindPreservingWrite
+          (severUnheldSchedContext_kindPreservingWrite hInv hSev)
+          (fun k nt hk => (severUnheldSchedContext_notification_iff hInv hSev k nt).mp hk)
+  repeat' (first | split at h | dsimp only at h)
+  all_goals first
+    | (cases h; exact .refl _)
+    | (cases h; done)
+    | skip
+  rename_i st1 hRet
+  cases h
+  obtain ⟨n, -, hS⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
+  exact (notificationsAndBindingsKept.of_kindPreservingWrite
+      (returnDonatedSchedContext_kindPreservingWrite hInv hS)
+      (fun k nt hk => returnDonatedSchedContext_notification_backward _ _ _ _ _ hInv _ hS k nt
+        hk)).trans
+    (notificationsAndBindingsKept.of_offSchedulerLinks
+      (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
+        (SchedContextOps.settleReturnedContext_agree _ _ _)))
+
+/-- **A reply-receive's legs before its receive keep every notification and
+every binding code**: the reply (`endpointReplyOnCore`), the pop
+(`replyRecvPopDonation`) and the reply's capability transfer
+(`replyRecvReplyTransfer`), the state the receive's context return runs on. -/
+theorem notificationsAndBindingsKept.of_replyRecvBeforeReceive
+    {answer : Option Architecture.FaultReplyOutcome} {st st1 st1q st1p : SystemState}
+    {tid prevCaller : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {msg : IpcMessage} {c : CoreId}
+    {grant : Bool} {r : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)}
+    {summary : CapTransferSummary} (hObjInv : st.objects.invExt)
+    (h1 : (endpointReplyOnCore tid prevCaller msg c st).1 = st1)
+    (hPop : replyRecvPopDonation rid prevCaller st1 = .ok (r, st1q))
+    (hXf : replyRecvReplyTransfer answer st tid prevCaller grant st1q = .ok (summary, st1p)) :
+    notificationsAndBindingsKept st st1p := by
+  have K1 := notificationsAndBindingsKept.of_endpointReplyOnCore tid prevCaller msg c st hObjInv
+  have I1 := endpointReplyOnCore_preserves_objects_invExt tid prevCaller msg c st hObjInv
+  rw [h1] at K1 I1
+  have K2 := notificationsAndBindingsKept.of_replyRecvPopDonation I1 hPop
+  have I2 := replyRecvPopDonation_preserves_objects_invExt rid prevCaller st1 st1q r I1 hPop
+  refine K1.trans (K2.trans ?_)
+  cases answer with
+  | none => exact notificationsAndBindingsKept.of_replyTransferCaps st tid prevCaller grant I2 hXf
+  | some _ => cases hXf; exact .refl _
+
+/-- **The context a reply-receive's receive returns is in its object-domain
+footprint**: the context the return writes (`receiveReturnContextAt?`, seL4's
+guard read on the state the reply, the pop and the transfer leave) is the
+context the receiver's bound notification names on the entry state
+(`boundSignalDonationContext?` with its guard read after an earlier step), which
+the footprint locks.  The legs before the receive create, delete and rewrite no
+notification and keep the receiver's bound-notification code
+(`notificationsAndBindingsKept`).  The superset is the guard: the entry state
+cannot tell whether the pop will have left the receiver holding the context its
+notification names. -/
+theorem replyRecvReturnContext_superset {st S : SystemState} {tid : SeLe4n.ThreadId}
+    {s : SeLe4n.SchedContextId} (hK : notificationsAndBindingsKept st S)
+    (hRet : receiveReturnContextAt? true S tid = some s) :
+    Concurrency.boundSignalDonationContext? st tid true = some s := by
+  unfold receiveReturnContextAt? at hRet
+  simp only [↓reduceIte] at hRet
+  cases hT1 : S.getTcb? tid with
+  | none => rw [hT1] at hRet; cases hRet
+  | some t1 =>
+  rw [hT1] at hRet
+  dsimp only at hRet
+  by_cases hc : t1.boundNotificationCode = 0
+  · simp [hc] at hRet
+  simp only [hc, ↓reduceIte] at hRet
+  have hN : notificationContext? S ⟨t1.boundNotificationCode - 1⟩ = some s := by
+    unfold signalReturnContext? at hRet
+    split at hRet
+    · exact hRet
+    · cases hRet
+  rw [notificationContext?_congr (ntfnContextsAgree.of_notificationsAndBindingsKept hK)] at hN
+  have hB := hK.2.1 tid.toObjId
+  rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hT1] at hB
+  obtain ⟨t, hT, hE⟩ : ∃ t, st.getTcb? tid = some t ∧
+      t.boundNotificationCode = t1.boundNotificationCode := by
+    cases hO : st.objects[tid.toObjId]? with
+    | none =>
+      rw [hO] at hB
+      simp only [notificationBindingCodes, KernelObject.bindingCodes, Prod.mk.injEq] at hB
+      exact absurd hB.1 hc
+    | some o =>
+      rw [hO] at hB
+      cases o <;> simp only [notificationBindingCodes, KernelObject.bindingCodes,
+        Prod.mk.injEq] at hB
+      all_goals first
+        | exact absurd hB.1 hc
+        | skip
+      rename_i t
+      exact ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO, hB.1.symm⟩
+  unfold Concurrency.boundSignalDonationContext? Concurrency.receiverBoundNotification?
+  rw [hT]
+  obtain ⟨k, hk⟩ := Nat.exists_eq_succ_of_ne_zero hc
+  simp only [Option.bind_some, TCB.boundNotification, hE, hk, SeLe4n.ObjId.ofOptCode,
+    ↓reduceIte, Nat.add_sub_cancel] at hN ⊢
+  exact hN
+
+/-- **The reply-receive's footprint locks the context its receive returns**
+(seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, run by `handleReplyRecv`
+after `doReplyTransfer`): on the state the reply, the pop and the transfer
+leave, the context the return writes is a write member of `.replyRecv`'s
+declared set. -/
+theorem lockSetForSyscall_replyRecv_covers_returnContext
+    {answer : Option Architecture.FaultReplyOutcome}
+    (ops : Concurrency.SyscallLockOperands) (st : SystemState) (caller : TCB)
+    (endpointId : SeLe4n.ObjId) (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (S : Concurrency.LockSet) (s : SeLe4n.SchedContextId) {st1 st1q st1p : SystemState}
+    {msg : IpcMessage} {c : CoreId} {grant : Bool}
+    {r : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {summary : CapTransferSummary}
+    (hObjInv : st.objects.invExt)
+    (hTcb : st.getTcb? ops.caller = some caller)
+    (hEp : ops.targetObject = some endpointId)
+    (hRid : ops.targetReply = some rid)
+    (hAns : replyAnsweredCaller? st rid = some prevCaller)
+    (h1 : (endpointReplyOnCore ops.caller prevCaller msg c st).1 = st1)
+    (hPop : replyRecvPopDonation rid prevCaller st1 = .ok (r, st1q))
+    (hXf : replyRecvReplyTransfer answer st ops.caller prevCaller grant st1q =
+      .ok (summary, st1p))
+    (hRet : receiveReturnContextAt? true st1p ops.caller = some s)
+    (hDecl : Concurrency.lockSetForSyscall .replyRecv ops st = some S) :
+    (Concurrency.schedContextLock s, Concurrency.AccessMode.write) ∈ S.pairs :=
+  Concurrency.lockSetForSyscall_replyRecv_covers_donationContext ops st caller endpointId rid
+    prevCaller S s hTcb hEp hRid hAns
+    (replyRecvReturnContext_superset
+      (notificationsAndBindingsKept.of_replyRecvBeforeReceive hObjInv h1 hPop hXf) hRet) hDecl
+
 /-- **A reply-receive whose receive completes its bound notification is covered by
 the arm's footprint**: the reply leg is confined to its own write set and
-replenish cores, which the arm's footprint names, and the completion and the
-badge frame leave the scheduler alone. -/
+replenish cores, which the arm's footprint names, the completion and the badge
+frame leave the scheduler alone, and the completion's donation
+(`maybeDonateSchedContext`) writes the receiver's home core, which no step
+before it moves (`replyTransferOnCoreChecked_homeCoresKept`) and the arm names
+(`replyRecvDonationCores_eq_home_of_completes`). -/
 theorem replyRecvCompletesSignalArm_coversWrites (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage) (grant : Bool)
@@ -254,22 +550,51 @@ theorem replyRecvCompletesSignalArm_coversWrites (ctx : LabelingContext)
       = .ok ((), st')) :
     footprintCoversWrites S st st' := by
   obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases hStep
+  have hK := notificationsAndBindingsKept.of_replyTransferOnCoreChecked hObjInv hR
+  have hHK := replyTransferOnCoreChecked_homeCoresKept hObjInv hR
+  have hObj1 := replyTransferOnCoreChecked_objects_invExt hObjInv hR
+  have hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs :=
+    LockSet.ofList?_pairs hS ▸ schedFootprintOfCores_contains_objStore_write _ _
   rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx receiver prevCaller _ _ _ _ e
     st hFlow] at hR
   have hConf := replyTransferOnCore_confinedToCores receiver prevCaller _ _ msg grant e st st1
     hObjInv hR
-  have hSched : st'.scheduler = st1.scheduler := by
-    rcases hOr with rfl | ⟨st2, badge, _, _, _, hS2, rfl⟩
-    · rfl
-    · rw [Architecture.writeReturnFrameToTcb_scheduler_eq]; exact hS2
-  refine footprintCoversWrites_of_cores S _ _ st st' (LockSet.ofList?_pairs hS)
-    (fun d hd => ?_) (fun d hd => ?_)
-  · have hd' := fun m => hd (List.mem_append_right _ m)
-    rw [hSched]
-    exact ⟨hConf.runQueue d hd', hConf.current d hd', hConf.activeDomain d hd'⟩
-  · rw [hSched]
-    exact replyTransferOnCore_replenishQueueOnCore_ne receiver prevCaller _ _ msg grant e st st1
-      d hObjInv (fun m => hd (List.mem_append_right _ m)) hR
+  have hRep : footprintCoversWrites S st st1 := by
+    refine footprintCoversWrites_of_cores S _ _ st st1 (LockSet.ofList?_pairs hS)
+      (fun d hd => ?_) (fun d hd => ?_)
+    · have hd' := fun m => hd (List.mem_append_right _ (List.mem_append_left _ m))
+      exact ⟨hConf.runQueue d hd', hConf.current d hd', hConf.activeDomain d hd'⟩
+    · exact replyTransferOnCore_replenishQueueOnCore_ne receiver prevCaller _ _ msg grant e st
+        st1 d hObjInv (fun m => hd (List.mem_append_right _ (List.mem_append_left _ m))) hR
+  rcases hOr with rfl | ⟨st2, badge, hSig1, _, hW, hS2, rfl⟩
+  · exact hRep
+  have hW' := notificationWaitCrossCoreDispatchChecked_ok_inner hW
+  refine footprintCoversWrites_trans S hRep (footprintCoversWrites_trans S
+    (footprintCoversWrites_of_scheduler_eq S hTable
+      (by rw [Architecture.writeReturnFrameToTcb_scheduler_eq]; exact hS2))
+    (maybeDonateSchedContext_coversWrites S _ _ receiver
+      (completeSignalArm_donationPre_objects_invExt hObj1 hW') hTable fun d hd => ?_))
+  -- The donation writes the receiver's home core on the state the completion
+  -- hands it, which is its home core on the entry state: neither the reply
+  -- nor the consumption nor the badge frame writes an affinity.
+  have hHome : determineTargetCore (Architecture.writeReturnFrameToTcb st2 receiver
+      (Architecture.badgeReturnFrame st2 receiver badge)) receiver
+        = determineTargetCore st receiver :=
+    (hHK.trans
+      (homeCoresKept.of_schedLinkFrame
+        (completeSignalArm_donationPre_schedLinkFrame hObj1 hW'))) receiver
+  have hAll : d ∈ replyRecvDonationCores st receiver := by
+    rw [replyRecvDonationCores_eq_home_of_completes hK hSig1, ← hHome]
+    unfold signalDonationCores at hd
+    split at hd
+    · exact hd
+    · cases hd
+  rw [LockSet.ofList?_pairs hS]
+  unfold schedLockSet_replyRecvArmOnCore
+  exact ⟨(mem_schedFootprintOfCores_runQueue_iff _ _ d).mpr
+      (List.mem_append_right _ (List.mem_append_right _ hAll)),
+    (mem_schedFootprintOfCores_replenishQueue_iff _ _ d).mpr
+      (List.mem_append_right _ (List.mem_append_right _ hAll))⟩
 
 /-- **A receive run on its busy-reply-cancelled state is covered** by the
 receive's footprint (`schedLockSet_receiveCancellingHolderOnCore`) at the
@@ -312,7 +637,8 @@ theorem receiveResolvedArm_coversWrites (ctx : LabelingContext)
           rw [hRid] at hB
           simp only [schedLockSetForSyscall, Option.bind_some,
             schedLockSet_receiveCancellingHolderOnCore, hRid, hB] at hSched
-          exact footprintCoversWrites_of_allCores S _ st _ (LockSet.ofList?_pairs hSched)
+          exact footprintCoversWrites_of_cores S _ _ st _ (LockSet.ofList?_pairs hSched)
+            (fun d hd => absurd (List.mem_append_left _ (Concurrency.mem_allCores d)) hd)
             (fun d _ => cancelReplyHolder_replenishQueueOnCore st ⟨k⟩ e d)
         · rename_i hR0
           exact absurd (recvBusyReplyHolderCode_eq_zero_of_resolveRecvReplyId_ok hR0)
@@ -326,11 +652,62 @@ theorem receiveResolvedArm_coversWrites (ctx : LabelingContext)
     | ok r =>
     rw [hRes] at hDisp
     simp only [hSig, ↓reduceIte] at hDisp
-    obtain ⟨st1, badge, _, hSch, hPost⟩ := completeSignalArm_consumes hSig hDisp
+    obtain ⟨st1, badge, hW, hSch, hPost⟩ := completeSignalArm_consumes hSig hDisp
     subst hPost
-    exact footprintCoversWrites_trans S (st₂ := stC) hCancel
-      (footprintCoversWrites_of_scheduler_eq S hTable
-        (by rw [Architecture.writeReturnFrameToTcb_scheduler_eq, hSch]))
+    have hW' := notificationWaitCrossCoreDispatchChecked_ok_inner hW
+    -- seL4-MCS `completeSignal`'s `maybeDonateSchedContext`, on the cores the
+    -- footprint read off the completion's pre-state: the cancelled state when
+    -- the reply names a holder, the entry's own otherwise.
+    unfold cancelRecvBusyReply at hC
+    cases hCode : recvBusyReplyHolderCode ctx tid gate decoded st with
+    | zero =>
+      rw [hCode] at hC
+      simp only at hC
+      subst hC
+      rw [hRes] at hOps
+      injection hOps with hOps
+      subst hOps
+      simp only [schedLockSetForSyscall, Option.bind_some] at hSched
+      refine footprintCoversWrites_trans S (st₂ := st) hCancel
+        (footprintCoversWrites_trans S
+          (footprintCoversWrites_of_scheduler_eq S hTable
+            (by rw [Architecture.writeReturnFrameToTcb_scheduler_eq, hSch]))
+          (maybeDonateSchedContext_coversWrites S _ _ tid
+            (completeSignalArm_donationPre_objects_invExt hObjInv hW') hTable fun d hd => ?_))
+      rw [completeSignalArm_signalDonationCores_eq _ hObjInv hW'] at hd
+      have hD : d ∈ receiveDonationCores st tid r e := by
+        simpa only [receiveDonationCores, busyReplyHolder?_of_resolveRecvReplyId_ok tid hRes]
+          using hd
+      rw [LockSet.ofList?_pairs hSched]
+      unfold schedLockSet_receiveCancellingHolderOnCore
+      exact ⟨(mem_schedFootprintOfCores_runQueue_iff _ _ d).mpr (List.mem_append_right _ hD),
+        (mem_schedFootprintOfCores_replenishQueue_iff _ _ d).mpr (List.mem_append_right _ hD)⟩
+    | succ k =>
+      rw [hCode] at hC
+      simp only at hC
+      subst hC
+      have hB := recvBusyReplyHolderCode_succ hCode
+      have hObjC := cancelReplyHolder_objects_invExt st ⟨k⟩ e hObjInv
+      split at hOps
+      · simp only [hB, Option.isSome_some, ↓reduceIte, Option.some.injEq] at hOps
+        subst hOps
+        simp only [schedLockSetForSyscall, Option.bind_some] at hSched
+        refine footprintCoversWrites_trans S hCancel
+          (footprintCoversWrites_trans S
+            (footprintCoversWrites_of_scheduler_eq S hTable
+              (by rw [Architecture.writeReturnFrameToTcb_scheduler_eq, hSch]))
+            (maybeDonateSchedContext_coversWrites S _ _ tid
+              (completeSignalArm_donationPre_objects_invExt hObjC hW') hTable fun d hd => ?_))
+        rw [completeSignalArm_signalDonationCores_eq _ hObjC hW'] at hd
+        have hD : d ∈ receiveDonationCores st tid (recvReplyLookup? gate decoded st) e := by
+          simpa only [receiveDonationCores, hB] using hd
+        rw [LockSet.ofList?_pairs hSched]
+        unfold schedLockSet_receiveCancellingHolderOnCore
+        exact ⟨(mem_schedFootprintOfCores_runQueue_iff _ _ d).mpr (List.mem_append_right _ hD),
+          (mem_schedFootprintOfCores_replenishQueue_iff _ _ d).mpr (List.mem_append_right _ hD)⟩
+      · rename_i hR0
+        exact absurd (recvBusyReplyHolderCode_eq_zero_of_resolveRecvReplyId_ok hR0)
+          (by rw [hCode]; simp)
   simp only [Bool.not_eq_true] at hSig
   by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
   · -- WS-SX SX7.2: `NBRecv` with no sender waiting: the holder's cancel, then
@@ -372,8 +749,16 @@ theorem receiveResolvedArm_coversWrites (ctx : LabelingContext)
       simp only [schedLockSetForSyscall, Option.bind_some,
         schedLockSet_receiveCancellingHolderOnCore,
         busyReplyHolder?_of_resolveRecvReplyId_ok tid hR] at hSched
-      exact schedLockSet_endpointReceiveOnCore_coversWrites epId tid replyId? e st st₁ stDon
-        dequeued summary sgi S hObjInv hHeads hSched hLeg hHand
+      exact footprintCoversWrites_trans S
+        (footprintCoversWrites_receiveLegState S st tid _ _ hObjInv (LockSet.ofList?_pairs hSched)
+          fun _ h => List.mem_append_left _ (List.mem_append_right _ h))
+        (footprintCoversWrites_of_cores_subset S _ _ _ _ _ stDon (LockSet.ofList?_pairs hSched)
+          (fun _ h => List.mem_append_left _ h)
+          (fun _ h => List.mem_append_left _ (List.mem_append_left _ h))
+          fun S0 hS0 => schedLockSet_endpointReceiveOnCore_coversWrites epId tid replyId? e _ st₁
+            stDon dequeued summary sgi S0 (receiveLegState_objects_invExt st tid hObjInv)
+            (receiveReturnSchedContext_queueHeadBlockedConsistent _ st tid hObjInv hHeads)
+            hS0 hLeg hHand)
     | succ k =>
       -- the holder `⟨k⟩` is cancelled first; the operands name its reply
       rw [hCode] at hC
@@ -393,8 +778,10 @@ theorem receiveResolvedArm_coversWrites (ctx : LabelingContext)
         rw [hRid] at hB
         simp only [schedLockSetForSyscall, Option.bind_some,
           schedLockSet_receiveCancellingHolderOnCore, hRid, hB] at hSched
-        exact schedLockSet_receiveCancellingHolder_coversWrites epId tid (some rid) e ⟨k⟩ st
-          st₁ stDon dequeued summary sgi S hObjInv (LockSet.ofList?_pairs hSched) hLeg hHand
+        exact footprintCoversWrites_of_cores_append S _ _ _ _ st stDon
+          (LockSet.ofList?_pairs hSched) fun S0 hS0 =>
+            schedLockSet_receiveCancellingHolder_coversWrites epId tid (some rid) e ⟨k⟩ st
+              st₁ stDon dequeued summary sgi S0 hObjInv (LockSet.ofList?_pairs hS0) hLeg hHand
       · rename_i hR0
         exact absurd (recvBusyReplyHolderCode_eq_zero_of_resolveRecvReplyId_ok hR0)
           (by rw [hCode]; simp)
@@ -695,6 +1082,49 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
           exact schedLockSet_schedContextUnbindAllOnCore_coversWrites st st₁ vScId e sgi S hObjInv
             hStep hSched
         · exact absurd hDisp (by simp)
+  -- ---- `.schedContextUnbindObject` (WS-SX SX8.3) ---------------------------
+  case schedContextUnbindObject =>
+    cases hT : cap.target <;> rw [hT] at hOps <;> simp only [reduceCtorEq] at hOps
+    rename_i scId
+    rw [hT] at hDisp
+    simp only at hDisp
+    cases hN : resolveSchedContextBindNotificationCode tid
+        (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+    | succ k =>
+      rw [hN] at hOps hDisp
+      simp only [Option.some.injEq] at hOps
+      subst hOps
+      simp only [schedLockSetForSyscall, Concurrency.SyscallLockOperands.ofObjectTarget,
+        Option.bind_some] at hSched
+      simp only at hDisp
+      split at hDisp
+      · exact absurd hDisp (by simp)
+      · exact schedLockSet_schedContextUnbindNotificationObject_coversWrites st st' _ _ S
+          hDisp hSched
+    | zero =>
+      rw [hN] at hOps hDisp
+      simp only at hOps hDisp
+      cases hRes : resolveSchedContextBindThread tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | error e => rw [hRes] at hOps; exact absurd hOps (by simp)
+      | ok v =>
+        rw [hRes] at hOps hDisp
+        simp only [Option.some.injEq] at hOps
+        subst hOps
+        simp only [schedLockSetForSyscall, Concurrency.SyscallLockOperands.ofObjectTarget,
+          Option.bind_some] at hSched
+        simp only at hDisp
+        split at hDisp
+        · exact absurd hDisp (by simp)
+        · rename_i vScId hV
+          rw [← validateObjIdArg_ok_val _ _ hV] at hSched
+          split at hDisp
+          · rename_i st₁ sgi hStep
+            simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
+            subst hDisp
+            exact schedLockSet_schedContextUnbindThreadObjectOnCore_coversWrites st st₁ vScId _ e
+              sgi S hObjInv hStep hSched
+          · exact absurd hDisp (by simp)
   -- ---- `.schedContextYieldTo` (WS-ZA ZA6.29) -------------------------------
   case schedContextYieldTo =>
     cases hT : cap.target <;> rw [hT] at hOps <;> simp only [Option.some.injEq, reduceCtorEq] at hOps
@@ -731,7 +1161,7 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
       have h₁ := notificationSignalBoundCrossCoreDispatchChecked_fst_of_ok ctx nId tid
         cap.signalBadge e st st₁ r hSig
       rw [← h₁]
-      exact schedLockSet_notificationSignalBoundOnCore_coversWrites nId cap.signalBadge e st S
+      exact schedLockSet_sendSignalOnCore_coversWrites nId cap.signalBadge e st S
         hObjInv hSched
     · exact absurd hDisp (by simp)
   -- ---- `.notificationWait` ------------------------------------------------
@@ -750,21 +1180,58 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
         (Architecture.writeReturnFrameToTcb_scheduler_eq _ _ _)
     simp only [Bool.not_eq_true] at hNb
     simp only [hNb, Bool.false_eq_true, ↓reduceIte] at hDisp
+    unfold completeSignalArm at hDisp
     split at hDisp
     · rename_i st₁ badge hWait
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
       subst hDisp
       have h₁ := notificationWaitCrossCoreDispatchChecked_fst_of_ok ctx nId tid e st st₁ _ hWait
-      refine footprintCoversWrites_trans S ?_ (footprintCoversWrites_of_scheduler_eq S hTable
-        (Architecture.writeReturnFrameToTcb_scheduler_eq _ _ _))
-      rw [← h₁]
-      exact schedLockSet_notificationWaitOnCore_coversWrites nId tid e st S hSched
+      have hW' := notificationWaitCrossCoreDispatchChecked_ok_inner hWait
+      have hWaitCov : footprintCoversWrites S st st₁ := by
+        rw [← h₁]
+        exact schedLockSet_notificationWaitOnCore_coversWrites nId tid e st S _ hSched
+      -- seL4-MCS `completeSignal`'s `maybeDonateSchedContext`: on the cores the
+      -- footprint read off the wait's pre-state, which the consumption and the
+      -- badge register keep.
+      refine footprintCoversWrites_trans S hWaitCov (footprintCoversWrites_trans S
+        (footprintCoversWrites_of_scheduler_eq S hTable
+          (Architecture.writeReturnFrameToTcb_scheduler_eq _ _ _))
+        (maybeDonateSchedContext_coversWrites S _ nId tid
+          (completeSignalArm_donationPre_objects_invExt hObjInv hW') hTable fun d hd => ?_))
+      rw [completeSignalArm_signalDonationCores_eq nId hObjInv hW'] at hd
+      rw [LockSet.ofList?_pairs hSched]
+      have hPend := notificationWaitOnCore_notificationPending hW'
+      simp only [Option.isSome_some] at hPend
+      exact schedLockSet_notificationWaitOnCore_contains_donation_writes st (some nId) tid e d
+        (by simpa only [waitDonationCores, Option.map_some, Option.getD_some, hPend,
+          ↓reduceIte] using hd)
     · rename_i st₁ hWait
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
       subst hDisp
       have h₁ := notificationWaitCrossCoreDispatchChecked_fst_of_ok ctx nId tid e st st₁ _ hWait
-      rw [← h₁]
-      exact schedLockSet_notificationWaitOnCore_coversWrites nId tid e st S hSched
+      have hW' := notificationWaitCrossCoreDispatchChecked_ok_inner hWait
+      have hWaitCov : footprintCoversWrites S st st₁ := by
+        rw [← h₁]
+        exact schedLockSet_notificationWaitOnCore_coversWrites nId tid e st S _ hSched
+      have hObjInv1 : st₁.objects.invExt := by
+        have := notificationWaitCrossCoreDispatch_preserves_objects_invExt nId tid e st hObjInv
+        unfold notificationWaitCrossCoreDispatch at this
+        rw [hW'] at this
+        exact this
+      -- seL4-MCS `receiveSignal`'s `maybeReturnSchedContext` after the block: no
+      -- run queue, and the purge's replenish queue the footprint read off the
+      -- wait's entry state, which the block keeps.
+      obtain ⟨-, hRR, -⟩ := notificationWaitOnCore_blocked_signalReturn_eq nId hObjInv hW'
+      have hPend := notificationWaitOnCore_notificationPending hW'
+      simp only [Option.isSome_none] at hPend
+      have hRet := schedLockSet_notificationWaitOnCore_contains_return_writes st (some nId) tid e
+      refine footprintCoversWrites_trans S hWaitCov
+        (maybeReturnSchedContext_coversWrites S st₁ nId tid hObjInv1 hTable (fun d hd => ?_))
+      · rw [hRR] at hd
+        rw [LockSet.ofList?_pairs hSched]
+        exact hRet d
+          (by simpa only [waitReturnReplenishCores, Option.map_some, Option.getD_some, hPend,
+            Bool.false_eq_true, ↓reduceIte] using hd)
     · exact absurd hDisp (by simp)
   -- ---- `.send` ------------------------------------------------------------
   case send =>

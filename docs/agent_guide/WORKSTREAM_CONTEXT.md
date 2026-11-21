@@ -27,7 +27,7 @@ When a cut lands, update the row's status/version here and write the detail in
 `CHANGELOG.md` and `docs/REGISTERED_DEBT.md`.  A row that grows past one line
 of summary is a sign the narrative belongs in those files instead.
 
-### WS-CV The register context by value — IN FLIGHT (registered v0.36.50; CV0 landed v0.36.59; CV1.1 v0.36.61; CV2.1 v0.36.73; CV3.1–CV3.4 and the save-and-stage half of CV4.3 v0.36.74; the rest recorded landed at the v0.36.205 re-read, which deleted two rows and renumbered; open: CV1.2 and the closure CV5.2, folded into WS-SX as SX16.1 and SX16.2 — WS-CV closes alongside WS-SX at v0.38.0; opens before WS-CB)
+### WS-CV The register context by value — IN FLIGHT (registered v0.36.50; CV0 landed v0.36.59; CV1.1 v0.36.61; CV2.1 v0.36.73; CV3.1–CV3.4 and the save-and-stage half of CV4.3 v0.36.74; the rest recorded landed at the v0.36.205 re-read, which deleted two rows and renumbered; open: CV1.2 and the closure CV5.2, folded into WS-SX as SX17.1 and SX17.2 — WS-CV closes alongside WS-SX at v0.38.0; opens before WS-CB)
 
 The TCB's `registerContext`, the per-core register banks and the Lean boundary
 become one structure: `SeLe4n.RegisterFile` takes `Architecture.TrapContext`'s
@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31; SX6 v0.37.32; SX7 v0.37.33, its remainder split into SX8–SX12)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31; SX6 v0.37.32; SX7 v0.37.33, its remainder split into SX8–SX12; SX8 v0.37.35)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -138,8 +138,9 @@ conformance table (SX8), page-table teardown and per-frame W^X (SX9),
 per-invocation rights as `Option AccessRight` (SX10), the Running state per
 core (SX11), the compound syscalls' invoke phase (SX12), timeout faults with
 SetTimeoutEndpoint and SetSchedParams (SX13), the full CNode invocation set
-(SX14), seL4's error codes in the label (SX15) and closure (SX16). Rows and
-decisions D1–D21 (D1–D17 each default taken, owner card open; D18–D21 the
+(SX14), seL4's error codes in the label (SX15), seL4's remaining
+invocations (SX16) and closure (SX17). Rows and
+decisions D1–D23 (D1–D17 each default taken, owner card open; D18–D23 the
 owner's) are in
 [`SEL4_ABI_FIDELITY_PLAN.md`](../planning/SEL4_ABI_FIDELITY_PLAN.md). It
 supersedes WS-UC's "next PR" scope.
@@ -258,6 +259,29 @@ in x7; answer an error only to a Call; read a reply capability from x6; write
 only the registers seL4 writes for that syscall; a running-core comparison on
 the compiled path asks `schedContextRunsOn`-style Bool tests, never
 `== some core`, which boxes the core.
+
+SX8 (`v0.37.35`) finished the notification-context piece. SX8.1 is the seL4
+conformance table, a Lean table under `SeLe4n/Testing/` that a Tier 2 suite
+checks against the decode, the selection and the return. SX8.2 lends a
+notification's context to a woken waiter, a woken bound receiver or a receive
+completing a signal (`maybeDonateSchedContext`), and returns it when the
+thread blocks again (`maybeReturnSchedContext`), by binding or by donation.
+SX8.3 adds label 36 (`SchedContext_UnbindObject`) and lets SchedContext_Unbind
+take a context from a holder that has it by donation: the holder, then the
+notification, then the reply stack the context heads
+(`schedContextUnbindReply`, shared with context finalisation), and answers
+in place every reply shape to a caller recording no server on a reply object
+linked to nothing (`replyDispatch_unlinked_inPlace`), and every reply-receive
+shape on it (`replyRecvAnsweringOnCore_unlinked_inPlace`). SchedContext_Bind
+keeps its two refusals that seL4 does not make (a context heading a reply
+stack, a reply frame on a live stack) until D25 ("Flow-checked": lifted when
+every lender on the affected stack flows to the bound thread) lands; it is
+open on this row. **Standing
+constraints for new code:** a scheduling-context unbind that ends a context's
+use runs `schedContextUnbindReply` last, as seL4's `schedContext_unbindReply`;
+UnbindObject on a thread does not, as seL4 does not; a reply-stack writer
+registers in `SeLe4n/Testing/ReplyStackWriteCensus.lean`, and a frozen one as
+the `.mirrors` of its live twin.
 
 Beside WS-SX, `v0.37.22` retired the unchecked register-sourced entry (owner
 decision 2026-11-13): `syscallEntry`, `dispatchSyscall` and the unchecked

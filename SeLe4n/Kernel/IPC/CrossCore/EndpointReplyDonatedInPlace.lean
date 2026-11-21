@@ -296,20 +296,6 @@ section SettleMoves
 variable (r : SeLe4n.ThreadId) (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile)
   (μ : Option IpcMessage → Option IpcMessage) (π : Nat → Nat)
 
-theorem releaseCoreOf_mapTcbInPlace (st : SystemState) (g : TCB → TCB) (s : SeLe4n.SchedContextId) :
-    (st.mapTcbInPlace r g).releaseCoreOf s = st.releaseCoreOf s := by
-  unfold SystemState.releaseCoreOf; rw [SystemState.getSchedContext?_mapTcbInPlace]
-
-theorem releaseRemoveAnywhere_mapTcbInPlace (st : SystemState) (g : TCB → TCB)
-    (s : SeLe4n.SchedContextId) :
-    (st.mapTcbInPlace r g).releaseRemoveAnywhere s =
-      (st.releaseRemoveAnywhere s).mapTcbInPlace r g := by
-  unfold SystemState.releaseRemoveAnywhere
-  rw [releaseCoreOf_mapTcbInPlace]
-  split
-  · exact releaseRemoveOn_mapTcbInPlace r g st _ s
-  · rfl
-
 theorem releasePlace_mapTcbInPlace (st : SystemState) (g : TCB → TCB) (c : CoreId)
     (s : SeLe4n.SchedContextId) :
     (st.mapTcbInPlace r g).releasePlace c s = (st.releasePlace c s).mapTcbInPlace r g := by

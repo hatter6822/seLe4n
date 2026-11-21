@@ -13,6 +13,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatchInvariant
 import SeLe4n.Kernel.IPC.Invariant.FaultPreservation
 import SeLe4n.Kernel.IPC.Invariant.Reachability
 import SeLe4n.Kernel.IPC.Invariant.YieldPreservation
+import SeLe4n.Kernel.IPC.Invariant.ReplyBindingPairFrame
 
 /-!
 # The dispatch-tier `ipcInvariantFull` payoffs
@@ -367,20 +368,24 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
               replyRecvPopDonation_preserves_objects_invExt
                 rid prevCaller st1 st1q returnedSc?
                 hObjInv1 hPop
-            have hInv1p : ipcInvariantFull st1p := by
+            have hInv1p0 : ipcInvariantFull st1p := by
               rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
               exact receiveTransferCaps_preserves_ipcInvariantFull hInv1q hObjInv1q hX
-            have hObjInv1p : st1p.objects.invExt :=
+            have hObjInv1p0 : st1p.objects.invExt :=
               replyRecvReplyTransfer_objects_invExt hObjInv1q hX
+            -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, before the
+            -- receive leg; the leg's obligations are stated at its post-state.
+            obtain ⟨hInv1p, hObjInv1p⟩ :=
+              receiveReturnSchedContext_preserves_ipcInvariantFull true st1p tid hObjInv1p0 hInv1p0
             obtain ⟨tcbR, hT1, hReadyR⟩ := hReceiverReady1
-            have hT1obj := (SystemState.getTcb?_eq_some_iff st1p tid tcbR).mp hT1
-            have hFresh1 := readyThread_endpointQueueFresh st1p tid tcbR
+            have hT1obj := (SystemState.getTcb?_eq_some_iff _ tid tcbR).mp hT1
+            have hFresh1 := readyThread_endpointQueueFresh _ tid tcbR
               hInv1p.queueHeadBlockedConsistent hInv1p.endpointQueueTailBlockedConsistent
               hT1obj hReadyR
-            have hTail1 := recvTailCrossQueueFresh st1p epId
+            have hTail1 := recvTailCrossQueueFresh _ epId
               hInv1p.dualQueueSystemInvariant hInv1p.endpointQueueTailBlockedConsistent
             have hInv2 := endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
-              epId tid (some rid) ec st1p
+              epId tid (some rid) ec (receiveReturnSchedContext true st1p tid)
               hInv1p hObjInv1p hCleanupStack1 hBudgets1 hFresh1 hTail1
               (fun r hr => by obtain rfl := Option.some.inj hr; exact hReplyIdValid1)
               (fun tcb hTcb => by
@@ -391,7 +396,8 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
                 rw [hT1] at hTcb
                 obtain rfl := Option.some.inj hTcb
                 exact hReadyR)
-            cases hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) ec st1p with
+            cases hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
+                (receiveReturnSchedContext true st1p tid) with
             | mk st2 res2 =>
                 rw [hRecv] at hStep hInv2
                 cases res2 with
@@ -466,9 +472,15 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     -- receiver abandoned, and the pop resolves its new owner off that context's
     -- own reply stack; this is the obligation that resolution carries.  Vacuous
     -- unless the receiver holds a `.donated` binding whose context heads a stack.
-    cleanupDonationStackValid st tid ∧
-    (∀ rid, replyIdOpt = some rid → replyIdEstablishFresh st rid) ∧
-    (∀ st1 res, endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st = (st1, res) →
+    -- **WS-SX SX8.2**: stated at the state seL4-MCS's `maybeReturnSchedContext`
+    -- leaves, which the receive runs on (`receiveReturnSchedContext`).
+    cleanupDonationStackValid
+      (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid) tid ∧
+    (∀ rid, replyIdOpt = some rid → replyIdEstablishFresh
+      (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid) rid) ∧
+    (∀ st1 res, endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore
+      (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid)
+        = (st1, res) →
       st1.objects.invExt) ∧
     -- **WS-OD OD3.6**: the arm's rendezvous donation makes the receiver hold a
     -- `.donated` binding, and `donationOwnerValid` demands that a donation's
@@ -478,7 +490,9 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     -- reply leg: over the receive stage's committed state, which is a
     -- pre-state-computable expression, so the pack stays pre-state.
     (∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
-      (endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st).1.getTcb? s = some sTcb →
+      (endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore
+        (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid)
+        ).1.getTcb? s = some sTcb →
       sTcb.schedContextBinding ≠ .donated sc0 tid)
   replyStage : ∀ rid (r : Reply) (callerTid : SeLe4n.ThreadId),
     decoded.syscallId = .reply → cap.target = .replyCap rid →
@@ -784,7 +798,18 @@ private theorem receiveResolvedArm_cancelled_preserves_ipcInvariantFull
         unfold notificationWaitCrossCoreDispatch at hWaitInv hObjInv1
         rw [hFst] at hWaitInv hObjInv1
         rw [hPost]
-        exact writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _ hObjInv1 hWaitInv
+        -- seL4-MCS `completeSignal`'s `maybeDonateSchedContext`, on the binding
+        -- pair and the loan record of the state the receive was handed.
+        exact completeSignalArm_donation_preserves_ipcInvariantFull _ hObjInv
+          (notificationWaitCrossCoreDispatchChecked_ok_inner hW)
+          (writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _ hObjInv1 hWaitInv)
+          (schedContextBindingBidirectional_of_consistent hPack.capOnly.schedContextLinks.binding
+            hInv.donationOwnerValid)
+          hInv
+          (fun tcb hTcb => by
+            rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hTcb] at hTC
+            obtain rfl := Option.some.inj hTC
+            exact readyThread_notBlockedOnReply _ hReadyC)
       simp only [Bool.not_eq_true] at hSig
       by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st
           epId = true
@@ -798,15 +823,31 @@ private theorem receiveResolvedArm_cancelled_preserves_ipcInvariantFull
       obtain ⟨hCleanupStack, hRidFresh, hRecvInvExt,
           hRecvNotOwner⟩ :=
         hPack.recvStage epId replyIdOpt hSel hTgt hRid
-      obtain ⟨tcbC, hTC, hReadyC, hBoundC⟩ := hPack.callerShape
-      have hFresh := readyThread_endpointQueueFresh st tid tcbC
-        hInv.queueHeadBlockedConsistent hInv.endpointQueueTailBlockedConsistent
-        ((SystemState.getTcb?_eq_some_iff st tid tcbC).mp hTC) hReadyC
-      have hTailR := recvTailCrossQueueFresh st epId
-        hInv.dualQueueSystemInvariant hInv.endpointQueueTailBlockedConsistent
+      obtain ⟨tcbC0, hTC0, hReadyC0, -⟩ := hPack.callerShape
+      -- **WS-SX SX8.2**: seL4-MCS `receiveIPC`'s `maybeReturnSchedContext` runs
+      -- first; it writes two binding codes and a context's thread link, so the
+      -- receive's premises hold of the state it leaves.
+      obtain ⟨hInvR, hObjInvR⟩ := receiveReturnSchedContext_preserves_ipcInvariantFull
+        (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid hObjInv hInv
+      have hBudgetsR : allTimeoutBudgetsNone
+          (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid) := by
+        intro t x hx
+        obtain ⟨y, hy, hxy⟩ := receiveReturnSchedContext_tcb _ st tid hObjInv _ x hx
+        rcases hxy with h | h <;> rw [h] <;> exact hBudgets t y hy
+      obtain ⟨tcbC, hTCRaw, hTC0'⟩ := receiveReturnSchedContext_tcb_fwd
+        (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid hObjInv _ tcbC0
+        ((SystemState.getTcb?_eq_some_iff st tid tcbC0).mp hTC0)
+      have hReadyC : tcbC.ipcState = .ready := by rcases hTC0' with rfl | rfl <;> exact hReadyC0
+      generalize receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid
+        = stR at hStep hCleanupStack hRidFresh hRecvInvExt hRecvNotOwner hInvR hObjInvR hBudgetsR hTCRaw
+      have hTC : stR.getTcb? tid = some tcbC := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hTCRaw
+      have hFresh := readyThread_endpointQueueFresh stR tid tcbC
+        hInvR.queueHeadBlockedConsistent hInvR.endpointQueueTailBlockedConsistent hTCRaw hReadyC
+      have hTailR := recvTailCrossQueueFresh stR epId
+        hInvR.dualQueueSystemInvariant hInvR.endpointQueueTailBlockedConsistent
       have hRecvInv := endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull
         epId tid replyIdOpt
-        executingCore st hInv hObjInv hCleanupStack hBudgets
+        executingCore stR hInvR hObjInvR hCleanupStack hBudgetsR
         hFresh hTailR hRidFresh
         (fun tcb hTcb => by
           rw [hTC] at hTcb
@@ -817,7 +858,7 @@ private theorem receiveResolvedArm_cancelled_preserves_ipcInvariantFull
           obtain rfl := Option.some.inj hTcb
           exact hReadyC)
       cases hRecv : endpointReceiveDualWithCapsOnCore epId tid replyIdOpt
-          executingCore st with
+          executingCore stR with
       | mk st1 res1 =>
           rw [hRecv] at hStep hRecvInv
           cases res1 with
@@ -871,7 +912,7 @@ theorem replyRecvCompletesSignalArm_preserves_ipcInvariantFull (ctx : LabelingCo
     (tid prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage) (grant : Bool)
     (c : CoreId) (st st' : SystemState)
     (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
-    (hBudgets : allTimeoutBudgetsNone st)
+    (hBudgets : allTimeoutBudgetsNone st) (hP : schedContextBindingPair st)
     (hFlow : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) = true)
     (hFaultP : threadHasPendingFault st prevCaller = true →
       ReplyLegPremises tid prevCaller IpcMessage.empty c st)
@@ -883,6 +924,7 @@ theorem replyRecvCompletesSignalArm_preserves_ipcInvariantFull (ctx : LabelingCo
       = .ok ((), st')) :
     ipcInvariantFull st' := by
   obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_cases hStep
+  have hP1 := replyTransferOnCoreChecked_bindingPair hObjInv hP hR
   rw [replyTransferOnCoreChecked_eq_unchecked_of_flow_allowed ctx tid prevCaller _ _ _ _ c st
     hFlow] at hR
   obtain ⟨hInv1, hObj1⟩ := replyTransferOnCore_preserves_ipcInvariantFull tid prevCaller _ _
@@ -909,7 +951,16 @@ theorem replyRecvCompletesSignalArm_preserves_ipcInvariantFull (ctx : LabelingCo
       (receiverBoundNotification st1 tid) tid c st1 hObj1
     unfold notificationWaitCrossCoreDispatch at hWaitInv hObjInv2
     rw [hFst] at hWaitInv hObjInv2
-    exact writeReturnFrameToTcb_preserves_ipcInvariantFull st2 tid _ hObjInv2 hWaitInv
+    -- seL4-MCS: the reply returned a donated context first; the receive's
+    -- `completeSignal` donates on the binding pair the reply left.
+    exact completeSignalArm_donation_preserves_ipcInvariantFull _ hObj1
+      (notificationWaitCrossCoreDispatchChecked_ok_inner hW)
+      (writeReturnFrameToTcb_preserves_ipcInvariantFull st2 tid _ hObjInv2 hWaitInv)
+      hP1.1 hInv1
+      (fun tcb hTcb => by
+        rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hTcb] at hTC
+        obtain rfl := Option.some.inj hTC
+        exact readyThread_notBlockedOnReply _ hReadyC)
 
 /-- WS-RR RR3.24 (**the dispatch payoff**): every syscall
 `dispatchWithCapChecked` routes preserves `ipcInvariantFull`.  The
@@ -1218,17 +1269,22 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                   rw [notificationSignalBoundCrossCoreDispatchChecked_flow_allowed_no_delivery
                         ctx notifId tid cap.signalBadge executingCore st hFlow hNoBound] at hStep
                   have hNoBound := hPack.signalNoBoundTarget notifId hSy hTgt
-                  have hReduce : notificationSignalBoundCrossCoreDispatch notifId cap.signalBadge
-                      executingCore st = notificationSignalOnCore notifId cap.signalBadge
-                        executingCore st := by
-                    unfold notificationSignalBoundCrossCoreDispatch
-                    exact notificationSignalBoundOnCore_fallthrough_eq notifId cap.signalBadge
-                      executingCore st hNoBound
-                  rw [hReduce] at hStep
-                  have hSigInv := notificationSignalOnCore_preserves_ipcInvariantFull notifId
-                    cap.signalBadge executingCore st hInv hObjInv
-                    hPack.reachable.notificationWaiterConsistent hBudgets
-                  cases hSig : notificationSignalOnCore notifId cap.signalBadge
+                  -- seL4's `sendSignal`: the wake (no bound receiver: the
+                  -- notification's own signal), then the donation to its woken head.
+                  have hWake : ipcInvariantFull
+                      (notificationSignalBoundOnCore notifId cap.signalBadge executingCore st).1 := by
+                    rw [notificationSignalBoundOnCore_fallthrough_eq notifId cap.signalBadge
+                      executingCore st hNoBound]
+                    exact notificationSignalOnCore_preserves_ipcInvariantFull notifId
+                      cap.signalBadge executingCore st hInv hObjInv
+                      hPack.reachable.notificationWaiterConsistent hBudgets
+                  have hSigInv := sendSignalOnCore_preserves_ipcInvariantFull notifId
+                    cap.signalBadge executingCore st hObjInv hWake
+                    (schedContextBindingBidirectional_of_consistent
+                      hPack.capOnly.schedContextLinks.binding hInv.donationOwnerValid)
+                    hInv hPack.reachable.notificationWaiterConsistent
+                  unfold notificationSignalBoundCrossCoreDispatch at hStep
+                  cases hSig : sendSignalOnCore notifId cap.signalBadge
                       executingCore st with
                   | mk st1 res1 =>
                       rw [hSig] at hStep hSigInv
@@ -1251,6 +1307,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
             exact writeReturnFrameToTcb_preserves_ipcInvariantFull st tid _ hObjInv hInv
           simp only [Bool.not_eq_true] at hNb
           simp only [hNb, Bool.false_eq_true, ↓reduceIte] at hStep
+          unfold completeSignalArm at hStep
           cases hFlow : securityFlowsTo (ctx.objectLabelOf notifId)
               (ctx.threadLabelOf tid) with
           | false =>
@@ -1286,8 +1343,13 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                         cases badge? with
                         | none =>
                             simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                            have hObjInv1 : st1.objects.invExt := by
+                              have h := notificationWaitCrossCoreDispatch_preserves_objects_invExt
+                                notifId tid executingCore st hObjInv
+                              rw [hWait] at h; exact h
                             rw [← hStep]
-                            exact hWaitInv
+                            exact maybeReturnSchedContext_preserves_ipcInvariantFull _ _ _ hObjInv1
+                              hWaitInv
                         | some badge =>
                             simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
                             have hObjInv1 : st1.objects.invExt := by
@@ -1295,8 +1357,17 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                                 notifId tid executingCore st hObjInv
                               rw [hWait] at h; exact h
                             rw [← hStep]
-                            exact writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _
-                              hObjInv1 hWaitInv
+                            exact completeSignalArm_donation_preserves_ipcInvariantFull _ hObjInv
+                              hWait
+                              (writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _
+                                hObjInv1 hWaitInv)
+                              (schedContextBindingBidirectional_of_consistent
+                                hPack.capOnly.schedContextLinks.binding hInv.donationOwnerValid)
+                              hInv
+                              (fun tcb hTcb => by
+                                rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hTcb] at hTC
+                                obtain rfl := Option.some.inj hTC
+                                exact readyThread_notBlockedOnReply _ hReadyC)
               · simp only [notificationWaitCrossCoreDispatchChecked, hFlow, hBound,
                   ↓reduceIte] at hStep
                 cases hStep
@@ -1336,7 +1407,9 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                   obtain ⟨hFP, hRP, hB1⟩ :=
                     hPack.replyRecvSignalStage rid prevCaller replyBadge replyGrant epId hSy hTgt hRR
                   exact replyRecvCompletesSignalArm_preserves_ipcInvariantFull ctx tid prevCaller
-                    _ _ replyGrant executingCore st st' hInv hObjInv hBudgets hRF hFP hRP hB1 hStep
+                    _ _ replyGrant executingCore st st' hInv hObjInv hBudgets
+                    (schedContextBindingPair_of_consistent hPack.capOnly.schedContextLinks.binding
+                      hInv.donationOwnerValid) hRF hFP hRP hB1 hStep
                 rw [if_neg hSigR] at hStep
                 obtain ⟨hNoEdge1, hHolderDon1, hStackValid1, hOriginCoh1, hUnheldB1,
                     hCleanupStack1, hReady1, hBudgets1, hRidFresh1, hRetStage⟩ :=
@@ -1392,13 +1465,14 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                   | error e => simp only [] at hStep; cases hStep
                   | ok sgi1 =>
                       simp only [] at hStep
-                      rw [notificationSignalDeclassifiedCrossCoreDispatch_eq] at hDisp
                       have hSigInv : ipcInvariantFull st1 :=
-                        notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthrough
+                        notificationSignalDeclassifiedCrossCoreDispatch_preserves_ipcInvariantFull_fallthrough
                           (liftLegacyContext ctx) ctx.declassificationPolicy notifId
                           ntfnCap.signalBadge executingCore st st1 sgi1 hNoBound
                           hInv hObjInv hQ.base.reachable.notificationWaiterConsistent
-                          hQ.base.reachable.allTimeoutBudgetsNone hDisp
+                          hQ.base.reachable.allTimeoutBudgetsNone
+                          (schedContextBindingBidirectional_of_consistent
+                            hPack.capOnly.schedContextLinks.binding hInv.donationOwnerValid) hDisp
                       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
                       rw [← hStep]
                       exact hSigInv
@@ -2316,6 +2390,14 @@ theorem syscallDispatchQuiescence_inhabited_receive :
     simp only [resolveRecvReplyId, witnessDecodedRecv] at hRes
     injection hRes with hOpt
     subst hOpt
+    -- **WS-SX SX8.2**: the witness thread has no bound notification, so seL4's
+    -- return writes nothing.
+    have hRet : ∀ b, receiveReturnSchedContext b witnessSt3 witnessTid = witnessSt3 := by
+      intro b
+      unfold receiveReturnSchedContext
+      rw [witnessSt3_getTcb]
+      cases b <;> simp [witnessTcbBound, witnessTcbFresh]
+    rw [hRet]
     -- **WS-OD OD4.4**: the witness store heads no reply stack, so the pre-receive
     -- cleanup's outer-caller obligation is discharged outright.
     refine ⟨cleanupDonationStackValid_of_no_stacks witnessSt3 witnessSt3_noStacks witnessTid,

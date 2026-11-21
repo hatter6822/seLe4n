@@ -271,20 +271,6 @@ theorem notificationSignalBoundOnCore {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge
         exact (of_frame F1).trans (S2.trans (of_frame F3))
   · exact notificationSignalOnCore hInv hN
 
-theorem notificationSignalBoundCrossCoreDispatchChecked {ctx : LabelingContext} {nid : SeLe4n.ObjId}
-    {signaler : SeLe4n.ThreadId} {badge : SeLe4n.Badge} {c : CoreId} {st : SystemState}
-    (hInv : st.objects.invExt) (hN : notificationWaiterConsistent st) :
-    RecordsStep st (_root_.SeLe4n.Kernel.notificationSignalBoundCrossCoreDispatchChecked ctx nid
-      signaler badge c st).1 := by
-  unfold _root_.SeLe4n.Kernel.notificationSignalBoundCrossCoreDispatchChecked
-  split
-  · split
-    · split
-      · exact notificationSignalBoundOnCore hInv hN
-      · exact refl hInv
-    · exact notificationSignalBoundOnCore hInv hN
-  · exact refl hInv
-
 theorem notificationSignalDeclassifiedOnCore {ctx : GenericLabelingContext}
     {declPolicy : DeclassificationPolicy} {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge} {c : CoreId}
     {st : SystemState} (hInv : st.objects.invExt) (hN : notificationWaiterConsistent st) :

@@ -550,29 +550,28 @@ def overflowStop (msgInfo : UInt64) : Nat :=
   | some mi => min (mi.length - 4) maxOverflowSlots
   | none => 0
 
-/-- The compiled `overflowStop`: the fields read off the word itself, so a word
-`≥ 2^63` builds no heap number. -/
+/-- The compiled `overflowStop`: the length read off the word itself, clamped
+to 120 as `messageInfoFromWord` clamps it, so a word `≥ 2^63` builds no heap
+number. -/
 @[inline] def overflowStopImpl (w : UInt64) : Nat :=
-  let length := (w &&& 0x7F).toNat
-  if length ≤ maxMessageRegisters && ((w >>> 7) &&& 0x3).toNat ≤ SeLe4n.Model.maxExtraCaps &&
-      (w >>> 12).toNat ≤ SeLe4n.Model.MessageInfo.maxLabel then
-    min (length - 4) maxOverflowSlots
-  else 0
+  min ((if (w &&& 0x7F) ≤ 120 then w &&& 0x7F else 120).toNat - 4) maxOverflowSlots
 
 @[csimp] theorem overflowStop_eq_impl : @overflowStop = @overflowStopImpl := by
   funext w
   unfold overflowStop overflowStopImpl SeLe4n.Model.MessageInfo.decode
-  simp only [UInt64.toNat_and, UInt64.toNat_shiftRight]
-  have h7 : (7 : UInt64).toNat % 64 = 7 := rfl
-  have h9 : (12 : UInt64).toNat % 64 = 12 := rfl
-  have h7f : (0x7F : UInt64).toNat = 0x7F := rfl
-  have h3 : (0x3 : UInt64).toNat = 0x3 := rfl
-  rw [h7, h9, h7f, h3]
-  by_cases hc : (decide ((w.toNat &&& 0x7F) ≤ maxMessageRegisters) &&
-      decide ((w.toNat >>> 7 &&& 0x3) ≤ SeLe4n.Model.maxExtraCaps) &&
-      decide ((w.toNat >>> 12) ≤ SeLe4n.Model.MessageInfo.maxLabel)) = true
-  · rw [if_pos hc, if_pos hc]
-  · rw [if_neg hc, if_neg hc]
+  have h1 : (w &&& 0x7F).toNat = w.toNat &&& 0x7F := by simp [UInt64.toNat_and]
+  have hLen : (if (w &&& 0x7F) ≤ 120 then w &&& 0x7F else 120).toNat =
+      min (w.toNat &&& 0x7F) maxMessageRegisters := by
+    unfold maxMessageRegisters
+    by_cases hc : (w &&& 0x7F) ≤ 120
+    · have := UInt64.le_iff_toNat_le.mp hc
+      rw [if_pos hc]; simp only [UInt64.toNat_ofNat] at this; omega
+    · have := UInt64.lt_iff_toNat_lt.mp (UInt64.not_le.mp hc)
+      rw [if_neg hc]; simp only [UInt64.toNat_ofNat] at this; show 120 = _; omega
+  have hLab : w.toNat >>> 12 ≤ SeLe4n.Model.MessageInfo.maxLabel := by
+    rw [Nat.shiftRight_eq_div_pow]; unfold SeLe4n.Model.MessageInfo.maxLabel
+    have := UInt64.toNat_lt_size w; simp [UInt64.size] at this; omega
+  simp only [if_pos hLab, hLen]
 
 /-- **WS-BP BP7.8: the addresses of the overflow words a syscall will read** —
 the caller's slots `0 .. overflow` that the shared resolver answers, where

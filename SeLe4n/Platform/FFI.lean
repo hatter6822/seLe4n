@@ -3285,6 +3285,7 @@ def capFaultReceivePhase? : SyscallId → Option Bool
   | .schedContextConfigure  => some false
   | .schedContextBind       => some false
   | .schedContextUnbind     => some false
+  | .schedContextUnbindObject => some false
   | .tcbSuspend             => some false
   | .tcbResume              => some false
   | .tcbSetPriority         => some false

@@ -96,6 +96,10 @@ run_check_with_timeout "TRACE" lake exe decode_validation_suite
 # AK4-G (R-ABI-C01): End-to-end ABI round-trip suite —
 # simulates Rust encoder, verifies Lean decode succeeds for all 5-arg syscalls.
 run_check_with_timeout "TRACE" lake exe abi_roundtrip_suite
+# WS-SX SX8.1: the seL4 conformance table (one row per syscall and per
+# invocation label, sourced from seL4 17.0.0) checked against the decode, the
+# selection and the return.  See `tests/Sel4ConformanceSuite.lean`.
+run_check_with_timeout "TRACE" lake exe sel4_conformance_suite
 # AK7 (foundational model): 33 regression tests covering AK7-A..AK7-K.
 run_check_with_timeout "TRACE" lake exe model_integrity_suite
 # AK9 (platform / boot / DTB / MMIO): 21 regression tests covering AK9-A..AK9-H.

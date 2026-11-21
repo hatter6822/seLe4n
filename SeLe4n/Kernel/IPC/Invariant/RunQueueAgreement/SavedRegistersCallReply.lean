@@ -902,6 +902,20 @@ theorem replyRecvAnswerCaller_savedRegsKeptExcept
       exact (savedRegsUnwritten.of_removeRunnableOnCore _ _ _ hInv).kept.trans
         (.updateTcb _ _ _ (removeRunnableOnCore_objects_invExt _ _ _ hInv) fun _ => rfl)
 
+/-- **seL4 `receiveIPC`'s return writes no saved registers**: it clears two
+binding codes and a context's thread link (WS-SX SX8.2). -/
+theorem savedRegsUnwritten.receiveReturn (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    savedRegsUnwritten st (receiveReturnSchedContext blocks st tid) :=
+  ⟨fun t _ => by
+    unfold SystemState.savedRegs SystemState.getTcb?
+    rcases receiveReturnSchedContext_objects blocks st tid hInv t.toObjId with
+      e | ⟨y, hy, e⟩ | ⟨sc, sc', hs, e⟩
+    · rw [e]
+    · rw [e, hy] <;> rfl
+    · rw [e, hs],
+   receiveReturnSchedContext_objects_invExt blocks st tid hInv⟩
+
 /-- WS-ZA ZA6.26: **the reply-and-receive writes only the answered caller and
 the woken sender**: its legs write no saved register; the reply's staging names
 the caller the reply leg found blocked on its reply, and the send's completion
@@ -944,10 +958,13 @@ theorem endpointReplyRecvOnCore_savedRegsWrittenFree {epId : SeLe4n.ObjId}
       st1.objects[o]? = some (.endpoint ep) := fun o ep hx =>
     (replyRecvPopDonation_frame h0.2 hPop).1 o ep
       ((receiveTransferCaps_ipcFrame h1q.2 hXU).1 o ep hx)
+  -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, before the receive leg.
+  have h1r := h1.trans (savedRegsUnwritten.receiveReturn true st1p tid h1.2)
   have h2v := endpointReceiveDualWithCapsOnCore_savedRegsUnwritten epId tid (some rid)
-    ec h1.2
+    ec h1r.2
   revert h h2v
-  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) ec st1p = r2
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
+    (receiveReturnSchedContext true st1p tid) = r2
   obtain ⟨st2, res2⟩ := r2
   cases res2 with
   | error _ => intro h; cases h
@@ -959,7 +976,7 @@ theorem endpointReplyRecvOnCore_savedRegsWrittenFree {epId : SeLe4n.ObjId}
   · cases h
   rename_i st3 hPost
   cases h
-  have h2 := h1.trans h2v
+  have h2 := h1r.trans h2v
   have h3 := h2.trans (replyRecvPostReceiveDonation_savedRegsUnwritten h2.2 hPost)
   have h4 := h3.trans (applyReceiveLegPipHandoff_savedRegsUnwritten st3 tid nextThread
     ((recordedReplyServer? st prevCaller).getD tid) ec h3.2)

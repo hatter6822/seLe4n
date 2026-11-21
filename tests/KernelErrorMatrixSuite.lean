@@ -243,19 +243,18 @@ private def row_invalidSyscallNumber : KernelErrorRejection :=
     runScenario   := fun _ =>
       runUnit (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallCode 255) }
 
-/-- Row: `decodeMsgInfo` rejects malformed message-info word with
-`.invalidMessageInfo`.  `MessageInfo.decode` returns `none` on length or
-extraCaps overflow. -/
+/-- Row: a decode that reads a message word past the message is refused
+`.invalidMessageInfo` (`requireMsgReg`).  A message-info word itself is never
+refused: seL4's `messageInfoFromWord` clamps a length past 120 to 120 (WS-SX
+SX8.1), so the length-overflow trigger this row once used is gone. -/
 private def row_invalidMessageInfo : KernelErrorRejection :=
-  { syscall       := "decodeMsgInfo"
+  { syscall       := "requireMsgReg"
     expectedError := .invalidMessageInfo
-    scenarioTag   := "AN11A.2.invalidMessageInfo.length_overflow"
-    scenarioDesc  := "Decoding a msgInfo word whose length field exceeds" ++
-                     " maxMessageRegisters returns .invalidMessageInfo"
+    scenarioTag   := "AN11A.2.invalidMessageInfo.word_past_message"
+    scenarioDesc  := "Reading message word 0 of an empty message" ++
+                     " returns .invalidMessageInfo"
     runScenario   := fun _ =>
-      -- Length field 127 > maxMessageRegisters, rejected by MessageInfo.decode
-      -- (every bit above 12 is the 52-bit label, so only a field bound fails).
-      runUnit (SeLe4n.Kernel.Architecture.RegisterDecode.decodeMsgInfo (rv 0x7F)) }
+      runUnit (SeLe4n.Kernel.Architecture.SyscallArgDecode.requireMsgReg #[] 0) }
 
 /-- Row: a configure whose period exceeds seL4-MCS's `MAX_PERIOD`
 (`UINT64_MAX / 8` ticks) is refused `rangeError MIN_BUDGET MAX_PERIOD`, so no

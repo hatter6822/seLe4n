@@ -8,6 +8,7 @@
 import SeLe4n.Kernel.SchedContext.ReleaseLinks
 import SeLe4n.Kernel.SchedContext.Invariant.Defs
 import SeLe4n.Kernel.SchedContext.YieldLinkInvariant
+import SeLe4n.Kernel.SchedContext.Invariant.NotificationLinkAgree
 
 /-! # The refill state every transition keeps
 
@@ -477,6 +478,12 @@ end RefillViewsKept
 codes. -/
 theorem YieldLinksKept.of_agreeOffReleaseLinks {st st' : SystemState}
     (h : SystemState.objectsAgreeOffReleaseLinks st' st) : YieldLinksKept st' st :=
+  .of_map KernelObject.withoutRelease (fun o => by cases o <;> rfl) h
+
+/-- WS-SX SX8.3: a write to the release fields alone keeps every slot's
+notification-link codes. -/
+theorem NotificationLinksKept.of_agreeOffReleaseLinks {st st' : SystemState}
+    (h : SystemState.objectsAgreeOffReleaseLinks st' st) : NotificationLinksKept st' st :=
   .of_map KernelObject.withoutRelease (fun o => by cases o <;> rfl) h
 
 /-- **Every context well formed, read through the views.** -/

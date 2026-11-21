@@ -3,15 +3,18 @@
 > **Workstream**: WS-SX (the syscall and invocation ABI made seL4's).
 > **Status**: **ACTIVE** — registered at `v0.37.19` (this plan, docs only);
 > SX1 landed at `v0.37.20`; SX5 landed at `v0.37.31`; SX6 at `v0.37.32`;
-> SX7 at `v0.37.33`, which split its remainder into SX8–SX12 (D20).
+> SX7 at `v0.37.33`, which split its remainder into SX8–SX12 (D20); SX8 at
+> `v0.37.35` (SX8.1 the conformance table, SX8.2 donation and return, SX8.3
+> label 36 and the unbind of a donated holder, D22).
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
-> **Rows**: SX1–SX16, numbered in the order they are implemented, one PR each.
+> **Rows**: SX1–SX17, numbered in the order they are implemented, one PR each.
 > Each row consumes only lower-numbered rows. A row that changes a transition
 > carries the proofs that cover it. No two rows run in parallel.
-> **Decisions**: D1–D21 (§3). D1–D17 are each **default taken; owner card open**;
+> **Decisions**: D1–D24 (§3). D1–D17 are each **default taken; owner card open**;
 > D7 follows the owner's standing rule (implement seL4's behaviour, never defer
-> it). D18–D21 were decided by the owner when SX7 closed.
+> it). D18–D21 were decided by the owner when SX7 closed; D22 when SX8 started;
+> D23 and D24 during SX8.
 > **Supersedes**: the "Next PR" scope in
 > `docs/agent_guide/WORKSTREAM_CONTEXT.md` (the root task's boot IPC buffer
 > and the guard in the capability with `CNode_Mutate`). Both are rows here
@@ -107,7 +110,7 @@ facts it rests on are restated here.
 
 ## 3. Owner decisions
 
-D1–D17 are each **default taken; owner card open**; D18–D21 are the owner's.
+D1–D17 are each **default taken; owner card open**; D18–D24 are the owner's.
 A different answer changes only the rows that cite it.
 
 - **D1. The error label.** *Default:* **seL4's error codes (1–10) in the
@@ -195,6 +198,20 @@ A different answer changes only the rows that cite it.
   (2026-11-19):* one row per invocation label, sourced from the seL4 source,
   held in code or test data and checked by a test against the decode and the
   return code (SX8.1).
+- **D22. SchedContext_Unbind of a context donated through a reply.** *Decided
+  by the owner (2026-11-19, "Match seL4"):* Unbind succeeds on a donated
+  context, as seL4-MCS's `schedContext_unbindTCB` with `unbindReply` does: the
+  context's reply link is cleared, and `donationOwnerValid` is restated so that
+  a donation chain may be cut (SX8.3).
+- **D23. The seL4 invocations seLe4n lacks.** *Decided by the owner
+  (2026-11-20, "New row"):* every invocation label SX8.1's table marks absent
+  that no earlier row owns gets one new row, SX16, landed before the closure
+  (now SX17). `ARM_SMC_Call` stays absent, as in seL4's default build.
+- **D24. A thread with no scheduling context.** *Decided by the owner
+  (2026-11-20, "Match in SX11"):* in SX11 a thread with no scheduling context
+  (`.unbound`, including one whose context SX8.2's `maybeReturnSchedContext`
+  returned) becomes unschedulable, as in seL4-MCS, which never runs a thread
+  without one. SX8 leaves the scheduler's run rule unchanged (SX11.1).
 
 ## 4. Rows
 
@@ -376,11 +393,20 @@ clears of both ends, and the retire guards that read the link words; this
 phase finishes the piece. SX8.1's table is the reference every later row
 checks its operations against.
 
+**Status: landed at `v0.37.35`.** SX8.3's restatement of `donationOwnerValid`
+turned out to be unnecessary: the invariant constrains `.donated` holders
+only, and `donationChainWellFormed` constrains stacks from the contexts that
+head them, so the state the unbind leaves (the holder unbound, its caller
+blocked on a reply no context heads) was already admitted, as context
+finalisation already reached it. Neither invariant was weakened; the unbind
+and the finalisation now share one `schedContextUnbindReply`
+(`SchedContext/ReplyLink.lean`).
+
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
 | SX8.1 | **The seL4 conformance table** (D21). One row per invocation label and per syscall: the registers and IPC-buffer words read, the registers written on success and on each error, the seL4 error codes with their payloads, and whether it blocks, each sourced from the seL4 source (the decode and perform function, file and line, of the aarch64 MCS tree). It is held in code or test data (a Lean table under `SeLe4n/Testing/`, or a fixture a producer emits), never in a `.md` file. A Tier 2 suite checks every row against the decode (`decodeSyscallArgs` and its arities, `truncationMinimum`, the register reads), the selection (`Syscall.selectOperation`) and the return (`syscallReturnShape`, the error frame), so a row that changes an operation changes its table row in the same PR. Also moved here from SX7.1: the word-first decodes the debt register's raw-slot row still holds open at its families (2) (`mintReplyCap`'s two slots) and (7) (the service register's interface id), each testing the word before any `Nat` is made. | The table's agreement with the decode and the return shape, decided over every row. The two decodes' round trips below the word bound. | the new suite; QEMU: a word `≥ 2^63` in each of the two decodes, held to 0 |
 | SX8.2 | **Donation and return** (consumes SX8.1's rows for Signal, Wait, Recv and SchedContext_Bind). seL4's `maybeDonateSchedContext` in `completeSignal` and in `sendSignal`'s waiter and bound-thread wakes, recorded as the woken thread's `.bound` binding with the notification link kept on the context (D19). **Chokepoints:** the receive and the Wait share `completeSignalArm` and its fast form `notificationWaitGatedR`, once `dispatchWithCapChecked`'s `.notificationWait` arm calls `completeSignalArm` instead of inlining its body (a pure refactor, landed first in the row); every signal (the Signal syscall, `declassifySignal`, IRQ delivery) runs `notificationSignalBoundOnCore` and its in-place form, so the donation lands there, after the wake. **Donation** is `schedContextBind`'s ok-state with a refusal as the identity (`maybeDonate st nid tid`): wake first, then donate, so the bind finds the thread placed and its only scheduler write is the home core's release; the fast form is `schedContextBindAdmitted` / `schedContextBindPerform` under a word guard, `@[noinline]`, the ids passed as `Nat` codes. **Return** (`maybeReturnSchedContext`) runs only on a blocking receive: Wait's block branch, and receiveIPC's blocking path with a bound notification, before the endpoint switch, so it runs even when a sender is then found. It clears the thread's binding and `sc.boundThreadCode`, keeps the notification link, and requests a reschedule if the thread is current. After Wait's block `schedContextUnbind`'s ok-state is the specification; a receive that does not block needs its own operation, since that state clears the running core's current slot. **Decided in the row:** (1) `notificationWaitOnCore_confinedToCores` is `{executingCore}` and the donation's release writes the waiter's home core: prove the thread homed on the executing core at the call site, or widen the write and lock sets by the context and its home core's run and replenish queues; (2) non-interference: `boundSignalHidden` gains the context, and the bind gets a real projection frame (`schedContextBind_preserves_projection` is a closure-form tautology); (3) `notificationWaitOnCore_consumed_scheduler_eq` stays the wait's, and the arm's scheduler change is the bind's. | Each family's arm lemma is the old one composed with the bind's: run-queue stage, readiness, kernel-records frame, mapping-record stage, key frame and step coverage, saved registers, `ipcInvariantFull` (with `schedContextBindingBidirectional` and not-an-owner at the intermediate state), cross-core non-interference, slot confinement; the lock sets name the context and its core's queues. | QEMU: donation on a signal to a waiter, on a bound wake and on a receive that completes a signal; return on a blocking Wait and a blocking receive; every reading 0 |
-| SX8.3 | Label 36 `SchedContext_UnbindObject` (the thread or notification capability as extra capability 0). **Unbind of a donated holder** with seL4's `unbindReply`: it conflicts with seLe4n's `donationOwnerValid` and reply-stack invariants, so **the owner decides it when the row starts**. The frozen twins: `frozenSchedContextBind` on a notification, and `frozenSchedContextUnbind`'s notification half and its success on a context bound to no thread. The link-agreement invariant (template `yieldLinksAgree`, `SchedContext/YieldLinkInvariant.lean`; the retire guards already give an erased object both words 0). | The invariant's preservation over every transition that writes either word; frozen agreement for the two twins. | `frozen_ops_suite` rows; QEMU: UnbindObject on a thread and on a notification, at 0 |
+| SX8.3 | Label 36 `SchedContext_UnbindObject` (the thread or notification capability as extra capability 0). **Unbind of a donated holder** with seL4's `unbindReply` (D22): the unbind succeeds, the reply link is cleared, and `donationOwnerValid` is restated so that a chain may be cut. The frozen twins: `frozenSchedContextBind` on a notification, and `frozenSchedContextUnbind`'s notification half and its success on a context bound to no thread. The link-agreement invariant (template `yieldLinksAgree`, `SchedContext/YieldLinkInvariant.lean`; the retire guards already give an erased object both words 0). | The invariant's preservation over every transition that writes either word; frozen agreement for the two twins. | `frozen_ops_suite` rows; QEMU: UnbindObject on a thread and on a notification, at 0 |
 
 **Acceptance:** the conformance suite passes over every label; each donation
 and return path above measured at 0; `sched-context-unbind-object`.
@@ -402,7 +428,7 @@ and return path above measured at 0; `sched-context-unbind-object`.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX11.1 | The thread state seL4 calls Running, held per core, including self-suspend by Call: seL4's `suspend` leaves the caller `Inactive`, so `handleInvocation` writes no reply and the restart PC stays at the `SVC`. The no-reply half landed with SX7 at `v0.37.33` (`syscallReturnOutcome` answers only a runnable caller); this row makes a thread stopped inside its own syscall (a self-suspend, a Call that links no reply) resume at its `SVC`, where it now resumes past it with its request registers. | The thread-state invariants and the scheduler's per-core current-thread theorems over the new state. | `smp_4core_scheduler.expected`; QEMU: `tcb-suspend-self-by-call` |
+| SX11.1 | The thread state seL4 calls Running, held per core, including self-suspend by Call: seL4's `suspend` leaves the caller `Inactive`, so `handleInvocation` writes no reply and the restart PC stays at the `SVC`. The no-reply half landed with SX7 at `v0.37.33` (`syscallReturnOutcome` answers only a runnable caller); this row makes a thread stopped inside its own syscall (a self-suspend, a Call that links no reply) resume at its `SVC`, where it now resumes past it with its request registers. Gap closed here (D24, "Match in SX11"): until this row, a thread whose context SX8.2 returned (`.unbound`) is still scheduled at its legacy priority, where seL4 never runs a thread with no scheduling context; this row makes a thread with no scheduling context unschedulable, as in seL4-MCS. The scheduler's run rule is not changed in SX8. | The thread-state invariants and the scheduler's per-core current-thread theorems over the new state. | `smp_4core_scheduler.expected`; QEMU: `tcb-suspend-self-by-call` |
 
 ### SX12 — The invoke phase of NBSendRecv, NBSendWait and ReplyRecv
 
@@ -447,12 +473,29 @@ This row needs F1 to hold. SX3, SX4, SX7 and SX13 made it hold.
 **Acceptance:** every error scenario re-pinned to seL4's codes; a fault
 handler's receive reads fault tags only.
 
-### SX16 — Closure
+### SX16 — seL4's remaining invocations (D23)
+
+SX8.1's conformance table marks every seL4 invocation label seLe4n does not
+implement as absent; the ones no earlier row owns are this row's. Each is
+implemented as seL4-MCS's decode and perform (aarch64, the default build) with
+its specification, a proven-equal fast form, the flow gate before anything
+observable, its NI and invariant obligations, an exact SMP lock set and zero
+allocation per entry. `ARM_SMC_Call` stays absent, as in seL4's default build
+(`CONFIG_ALLOW_SMC_CALLS` off).
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX16.1 | WS-CV's CV1.2, folded into WS-SX (maintainer's decision; WS-CV closes alongside WS-SX at `v0.38.0`): the information-flow surface (`ObservableState.machineRegs`, the per-core fragments, `lowEquivalentSliceOnCoreCheckWithRegs`) moves to lawful equality, and `RegisterFile.beq_iff_eq'` / `beq_self` / `beq_symm` / `beq_trans` (`SeLe4n/Machine.lean:528-539`) retire with their last consumer. At `origin/main` that is 51 citing sites in 13 files; the build enumerates them when the lemmas are deleted. The spec's information-flow equality passages and the evidence-index rows of the re-proved unwinding relations change in the same row. **Zero allocation**: proofs and the test-side `…CheckWithRegs` comparison only, no compiled entry. | The `machineRegs` unwinding relations re-proved on lawful equality; every `beq_*` citing site rewritten to `beq_iff_eq` / decidable equality before the lemmas are deleted. | Tier 3 anchor `machineRegs_beq_self` retires |
-| SX16.2 | `docs/CLAIM_EVIDENCE_INDEX.md` gets a row per seL4 behaviour this plan follows. The spec's syscall-boundary section is rewritten to the seL4 ABI. The workstream is closed in `docs/REGISTERED_DEBT.md` and `docs/agent_guide/WORKSTREAM_CONTEXT.md`, and this plan moves to `docs/dev_history/planning/`. **Full documentation sweep against the final tree:** the spec, every GitBook chapter on the syscall ABI and CSpace, README metrics, `docs/DEVELOPMENT.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, the `docs/REGISTERED_DEBT.md` index row, and `docs/agent_guide/WORKSTREAM_CONTEXT.md`, whose WS-SX section moves to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`. **Refresh every not-yet-started plan** against WS-SX's final tree: the remaining WS-UC rows UC6–UC10, `CONTEXT_BY_VALUE_PLAN.md`, `HIERARCHICAL_CBS_PLAN.md`, `LOCK_STATE_SEPARATION_PLAN.md`, and every other plan under `docs/planning/` — file:line citations, names, rows the new ABI makes obsolete or newly needs, and the decisions it affects. If the refresh is too large for SX16, it is the very next PR, landed before any next-row code. **WS-CV's closure (its CV5.2), in the same row** (consumes SX16.1): the `v0.36.47` register-file debt row is deleted from `docs/REGISTERED_DEBT.md`; the WS-CV section of `docs/agent_guide/WORKSTREAM_CONTEXT.md` moves to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`; `CONTEXT_BY_VALUE_PLAN.md` moves to `docs/dev_history/planning/`, every live link to it (a search for `CONTEXT_BY_VALUE_PLAN` outside `docs/dev_history/`) repointed to cite it by workstream ID; and `HIERARCHICAL_CBS_PLAN.md` is re-checked against it, which the plan refresh above covers. | none | `check_claim_evidence_citations.py` |
+| SX16.1 | **The invocations no earlier row owns** (labels 2–5, 16, 17, 30–32, 39–41, 48–56 of SX8.1's table, and label 1's argument list). TCB: `ReadRegisters`, `WriteRegisters`, `CopyRegisters` (`tcb.c`, the suspend and resume flags and the arch register order), `Configure`, `SetTLSBase` and `SetFlags` (`UnbindNotification` is implemented already). Domain: `DomainSet_Set` and the domain schedule invocations `DomainSchedule_Configure` and `DomainSchedule_SetStart`. VSpace and page: `ARM_VSpace_Clean_Data`, `Invalidate_Data` and `CleanInvalidate_Data` (`Unify_Instruction` is implemented already), and the page's `Clean_Data`, `Invalidate_Data`, `CleanInvalidate_Data`, `Unify_Instruction` and `GetAddress`. ASID: `ARM_ASIDControl_MakePool` and `ARM_ASIDPool_Assign`. IRQ: `ARM_IRQ_IssueIRQHandlerTrigger` and, in the SMP build, `ARM_IRQ_IssueIRQHandlerTriggerCore`. `Untyped_Retype` drops the extra `childId` word to seL4's six-word argument list, the child placed at the untyped's free index as seL4 places it. Every absent conformance-table row this row owns becomes implemented, its decode, arity, return shape and errors checked by the suite. | Each invocation's preservation obligations (`ipcInvariantFull`, the scheduler bundle, the records and mapping stages, saved registers, slot confinement, cross-core NI) and its fast form's `_eq`; the retype's decode round trip without `childId`. | the conformance suite (every row implemented but `ARM_SMC_Call`); QEMU: each invocation's success and first refusal at 0; `abi_layout.expected` for the retype's arguments |
+
+**Acceptance:** the conformance table has no absent row but `ARM_SMC_Call`;
+every new path measured at 0.
+
+### SX17 — Closure
+
+| Sub-task | Change | Proofs | Gates and fixtures |
+|---|---|---|---|
+| SX17.1 | WS-CV's CV1.2, folded into WS-SX (maintainer's decision; WS-CV closes alongside WS-SX at `v0.38.0`): the information-flow surface (`ObservableState.machineRegs`, the per-core fragments, `lowEquivalentSliceOnCoreCheckWithRegs`) moves to lawful equality, and `RegisterFile.beq_iff_eq'` / `beq_self` / `beq_symm` / `beq_trans` (`SeLe4n/Machine.lean:528-539`) retire with their last consumer. At `origin/main` that is 51 citing sites in 13 files; the build enumerates them when the lemmas are deleted. The spec's information-flow equality passages and the evidence-index rows of the re-proved unwinding relations change in the same row. **Zero allocation**: proofs and the test-side `…CheckWithRegs` comparison only, no compiled entry. | The `machineRegs` unwinding relations re-proved on lawful equality; every `beq_*` citing site rewritten to `beq_iff_eq` / decidable equality before the lemmas are deleted. | Tier 3 anchor `machineRegs_beq_self` retires |
+| SX17.2 | `docs/CLAIM_EVIDENCE_INDEX.md` gets a row per seL4 behaviour this plan follows. The spec's syscall-boundary section is rewritten to the seL4 ABI. The workstream is closed in `docs/REGISTERED_DEBT.md` and `docs/agent_guide/WORKSTREAM_CONTEXT.md`, and this plan moves to `docs/dev_history/planning/`. **Full documentation sweep against the final tree:** the spec, every GitBook chapter on the syscall ABI and CSpace, README metrics, `docs/DEVELOPMENT.md`, `docs/CLAIM_EVIDENCE_INDEX.md`, the `docs/REGISTERED_DEBT.md` index row, and `docs/agent_guide/WORKSTREAM_CONTEXT.md`, whose WS-SX section moves to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`. **Refresh every not-yet-started plan** against WS-SX's final tree: the remaining WS-UC rows UC6–UC10, `CONTEXT_BY_VALUE_PLAN.md`, `HIERARCHICAL_CBS_PLAN.md`, `LOCK_STATE_SEPARATION_PLAN.md`, and every other plan under `docs/planning/` — file:line citations, names, rows the new ABI makes obsolete or newly needs, and the decisions it affects. If the refresh is too large for SX17, it is the very next PR, landed before any next-row code. **WS-CV's closure (its CV5.2), in the same row** (consumes SX17.1): the `v0.36.47` register-file debt row is deleted from `docs/REGISTERED_DEBT.md`; the WS-CV section of `docs/agent_guide/WORKSTREAM_CONTEXT.md` moves to `docs/dev_history/planning/CLOSED_WORKSTREAM_CONTEXT.md`; `CONTEXT_BY_VALUE_PLAN.md` moves to `docs/dev_history/planning/`, every live link to it (a search for `CONTEXT_BY_VALUE_PLAN` outside `docs/dev_history/`) repointed to cite it by workstream ID; and `HIERARCHICAL_CBS_PLAN.md` is re-checked against it, which the plan refresh above covers. | none | `check_claim_evidence_citations.py` |
 
 ## 5. Estimate
 
@@ -473,9 +516,10 @@ handler's receive reads fault tags only.
 | SX13 | 2–3 |
 | SX14 | 2 |
 | SX15 | 1 |
-| SX16 | 2 |
+| SX16 | 4–5 |
+| SX17 | 2 |
 
-About 35–40 sessions in all. The largest risks:
+About 40–45 sessions in all. The largest risks:
 - the boot base case (SX5.3);
 - the IPC-buffer read path (SX6.6);
 - keeping refusals at 0 heap cells (D2b).

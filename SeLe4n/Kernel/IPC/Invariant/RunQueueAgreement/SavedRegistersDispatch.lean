@@ -4,6 +4,8 @@ Released under GPL-3.0-or-later license as described in the file LICENSE.
 -/
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SavedRegistersCallReply
 import SeLe4n.Kernel.Architecture.TaintWordFrame
+import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SavedRegistersCapabilityDispatch
+import SeLe4n.Kernel.IPC.Invariant.SignalDonationFrame
 
 /-!
 # The saved-register census over the whole syscall dispatch
@@ -277,9 +279,11 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
       have h1 := notificationWaitCrossCoreDispatchChecked_savedRegsUnwritten ctx
         (receiverBoundNotification stC tid) tid ec hIC
       rw [hWt] at h1
-      exact hW ((w0.trans h1.writtenFree).trans
+      exact hW (((w0.trans h1.writtenFree).trans
         (.of_kept (writeReturnFrameToTcb_savedRegsKeptExcept st1 tid _ h1.2)
-          fun _ e => e ▸ hFr))
+          fun _ e => e ▸ hFr)).donate _ _
+        (completeSignalArm_donationPre_objects_invExt hIC
+          (notificationWaitCrossCoreDispatchChecked_ok_inner hWt)))
     simp only [Bool.not_eq_true] at hSig
     by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
     · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the caller's
@@ -303,7 +307,18 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
       · cases h
       rename_i stDon hHand
       cases h
-      exact hW (w0.trans (receiveArm_savedRegsWrittenFree _ hIC hHC hFr hRecv hHand))
+      -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext` first: it writes no
+      -- saved register and no endpoint.
+      have hIR := receiveReturnSchedContext_objects_invExt
+        (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid hIC
+      have hHR : ∀ w, ((receiveReturnSchedContext (Syscall.wordReceiveBlocks
+          (callerSyscallWord stC tid)) stC tid).getEndpoint? epId).bind (·.sendQ.head) = some w →
+          offCoreFree ec st w := by
+        intro w hw
+        rw [receiveReturnSchedContext_getEndpoint? _ stC tid hIC] at hw
+        exact hHC w hw
+      exact hW ((w0.trans (savedRegsWrittenFree.receiveReturn _ stC tid hIC)).trans
+        (receiveArm_savedRegsWrittenFree _ hIR hHR hFr hRecv hHand))
     · cases h
   cases hId : decoded.syscallId <;> rw [hId] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
@@ -401,13 +416,20 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
     · cases h
       exact hW (.of_kept (writeReturnFrameToTcb_savedRegsKeptExcept st tid _ hInv) fun _ e =>
         e ▸ hFr)
+    unfold completeSignalArm at h
     split at h
     · rename_i hWt
       cases h
-      exact hW (notificationWaitArm_savedRegsWrittenFree _ P hN hWt).2
+      exact hW ((notificationWaitArm_savedRegsWrittenFree _ P hN hWt).2.donate _ _
+        (completeSignalArm_donationPre_objects_invExt hInv
+          (notificationWaitCrossCoreDispatchChecked_ok_inner hWt)))
     · rename_i hWt
       cases h
-      exact hW (notificationWaitArm_savedRegsWrittenFree default P hN hWt).1
+      exact hW ((notificationWaitArm_savedRegsWrittenFree default P hN hWt).1.giveBack _ _
+        (by
+          have := notificationWaitOnCore_preserves_objects_invExt notifId tid ec st hInv
+          rw [notificationWaitCrossCoreDispatchChecked_ok_inner hWt] at this
+          exact this))
     · cases h
   case none.replyRecv.object epId =>
     split at h
@@ -435,9 +457,11 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
         have h1 := notificationWaitCrossCoreDispatchChecked_savedRegsUnwritten ctx
           (receiverBoundNotification st1 tid) tid ec hI1
         rw [hWt] at h1
-        exact hW ((w1.trans h1.writtenFree).trans
+        exact hW (((w1.trans h1.writtenFree).trans
           (.of_kept (writeReturnFrameToTcb_savedRegsKeptExcept st2 tid _ h1.2)
-            fun _ e => e ▸ hFr))
+            fun _ e => e ▸ hFr)).donate _ _
+          (completeSignalArm_donationPre_objects_invExt hI1
+            (notificationWaitCrossCoreDispatchChecked_ok_inner hWt)))
     rename_i summ stR hRR
     cases h
     obtain ⟨w, i⟩ := endpointReplyRecvOnCore_savedRegsWrittenFree P.dequeued P.queueHeads hRT

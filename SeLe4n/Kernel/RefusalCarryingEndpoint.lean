@@ -26,6 +26,7 @@ import SeLe4n.Kernel.IPC.CrossCore.LongCapsDelivered
 import SeLe4n.Kernel.IPC.CrossCore.ReplyCapsLongDelivered
 import SeLe4n.Kernel.IPC.CrossCore.LongFaultAnswerInPlace
 import SeLe4n.Kernel.IPC.CrossCore.ReceiveCallDonatingInPlace
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvInPlace
 
 /-!
 # The endpoint syscalls, refusing in the state they were refused in
@@ -2579,8 +2580,20 @@ rewrite is held across them. -/
     securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
     !cFault && replyUnheldPopsInPlace st c rid
 
+/-- Whether a reply to a caller recording no server, its reply object linked
+to nothing, may answer it in place (`replyUnlinkedInPlace`), behind the flow
+gate: at most four words, the caller unfaulted.  WS-SX SX8.3: the shape
+SchedContext_Unbind of a lent context leaves once the server is finalised. -/
+@[noinline] def replyUnlinkedAdmits (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) (tid : SeLe4n.ThreadId)
+    (c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (cFault : Bool) (st : SystemState) : Bool :=
+  decide (Architecture.regMessageLength layout len ≤ 4) &&
+    securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
+    !cFault && replyUnlinkedInPlace st c rid
+
 /-- The no-server reply's arm: the checks of `replyUnheldAdmits`, then the
-in-place writes or the general arm. -/
+in-place writes; else, for a reply object linked to nothing, the checks of
+`replyUnlinkedAdmits` and its in-place writes; or the general arm. -/
 @[inline] def endpointReplyUnheldArmR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
@@ -2589,6 +2602,8 @@ in-place writes or the general arm. -/
     if replyUnheldAdmits ctx layout len tid c rid cFault st then
       .ok ((), performReplyUnheldDelivered st c rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) layout rf len cap.badgeWord cap.badged)
+    else if replyUnlinkedAdmits ctx layout len tid c rid cFault st then
+      .ok ((), performReplyUnlinkedDelivered st c rid layout rf len cap.badgeWord cap.badged)
     else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid executingCore cap st
 
 /-- Whether a reply to a faulted caller may answer it in place on a donated
@@ -2621,9 +2636,19 @@ place (`replyUnheldPopsInPlace`), behind the flow gate. -/
     (rid : SeLe4n.ReplyId) (st : SystemState) : Bool :=
   securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) && replyUnheldPopsInPlace st c rid
 
+/-- Whether a reply to a faulted caller recording no server, its reply object
+linked to nothing, may answer it in place (`replyUnlinkedInPlace`), behind the
+flow gate.  WS-SX SX8.3. -/
+@[noinline] def replyUnlinkedFaultAdmits (ctx : LabelingContext) (tid c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (st : SystemState) : Bool :=
+  securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) && replyUnlinkedInPlace st c rid
+
 /-- The reply to a faulted caller recording no server: the checks of
 `replyUnheldFaultAdmits`, then the fault answered in place
-(`performFaultReplyUnheldAnswer`, `faultReplyTransferChecked_unheld_inPlace`),
+(`performFaultReplyUnheldAnswer`, `faultReplyTransferChecked_unheld_inPlace`);
+else, for a reply object linked to nothing, the checks of
+`replyUnlinkedFaultAdmits` and its answer in place
+(`performFaultReplyUnlinkedAnswer`, `faultReplyTransferChecked_unlinked_inPlace`);
 or the general arm. -/
 @[inline] def endpointReplyUnheldFaultArmR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
@@ -2635,6 +2660,9 @@ or the general arm. -/
       .ok ((), performFaultReplyUnheldAnswer st c rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout rf
         (min len layout.msgRegs.size))
+    else if replyUnlinkedFaultAdmits ctx tid c rid st then
+      .ok ((), performFaultReplyUnlinkedAnswer st c rid kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7
+        layout rf (min len layout.msgRegs.size))
     else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid executingCore cap st
 
 /-- **The checked reply arm on a reply that transfers capabilities**, its
@@ -2784,7 +2812,10 @@ theorem endpointReplyDonatedCapsArmR_eq (ctx : LabelingContext)
 checks of `replyUnheldAdmits`, then, from a replier whose frame routes as a
 reply, the return, the transfer and the frame in place
 (`performReplyUnheldCapsDelivered`, `replyTransferChecked_unheldCaps_inPlace`);
-any other takes the general arm. -/
+else, for a reply object linked to nothing, the checks of `replyUnlinkedAdmits`,
+then the transfer and the frame in place (`performReplyUnlinkedCapsDelivered`,
+`replyTransferChecked_unlinkedCaps_inPlace`); any other takes the general
+arm. -/
 @[inline] def endpointReplyUnheldCapsArmR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
@@ -2800,6 +2831,19 @@ any other takes the general arm. -/
               .ok ((), performReplyUnheldCapsDelivered st c rid ⟨replyHeadContextCode st rid - 1⟩
                 (determineTargetCore st c) layout rf len cap.badgeWord cap.badged
                 stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
+                (routedExtraCaps stcb.registerContext) rv rb rroot)
+          | _ => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid
+              executingCore cap st
+      | none => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid
+          executingCore cap st
+    else if replyUnlinkedAdmits ctx layout len tid c rid cFault st then
+      match st.getTcb? tid with
+      | some stcb =>
+          match Architecture.RegisterDecode.registerRoutedSyscallOf SyscallId.reply.toNat
+              SeLe4n.arm64DefaultLayout stcb.registerContext with
+          | .reply _ _ =>
+              .ok ((), performReplyUnlinkedCapsDelivered st c rid layout rf len
+                cap.badgeWord cap.badged stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0]
                 (routedExtraCaps stcb.registerContext) rv rb rroot)
           | _ => endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid
               executingCore cap st
@@ -2847,7 +2891,27 @@ theorem endpointReplyUnheldCapsArmR_eq (ctx : LabelingContext)
           hNoF hFlow hS hR]
       · rfl
     · rfl
-  · rfl
+  · split
+    · next hG =>
+      unfold replyUnlinkedAdmits at hG
+      simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hG
+      obtain ⟨⟨⟨hSz4, hFlow⟩, hNoF⟩, hP⟩ := hG
+      split
+      · next stcb hS =>
+        split
+        · next capAddr mi hR =>
+          simp only [endpointReplyCheckedArmGeneralR, hTgt, hAns, hFlow, ↓reduceIte, hGr]
+          rw [replyTransferChecked_unlinkedCaps_inPlace ctx st tid c ct stcb ep rid
+            { length := len, extraCaps := extraCaps, label := label }
+            (Architecture.regMessageRegs layout rf) layout rf len cap.badgeWord cap.badged
+            executingCore
+            { registers := extractMessageRegisters (Architecture.regMessageRegs layout rf)
+                { length := len, extraCaps := extraCaps, label := label }, badge := cap.badge }
+            capAddr mi rfl hSz4 ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hP
+            hNoF hFlow hS hR]
+        · rfl
+      · rfl
+    · rfl
 
 /-- WS-ZA ZA4.7: the checked reply arm (`dispatchWithCapChecked`'s `.reply`
 case), refusing in the state it was handed (`endpointReplyCheckedArmR_eq`).  A
@@ -3056,7 +3120,18 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext)
                   rw [faultReplyTransferChecked_unheld_inPlace ctx st tid c ct ep rid
                     { length := len, extraCaps := extraCaps, label := label } layout rf _ _
                     executingCore ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hP hF]
-                · rfl
+                · split
+                  · next hG =>
+                    unfold replyUnlinkedFaultAdmits at hG
+                    simp only [Bool.and_eq_true] at hG
+                    obtain ⟨hFlow, hP⟩ := hG
+                    have hAns : replyAnsweredCaller? st rid0 = some c := by
+                      rw [replyAnsweredCaller?_of_getReply st rid0 rp0 hR0, hC]
+                    simp only [endpointReplyCheckedArmGeneralR, hTgt, hAns, hFlow, ↓reduceIte]
+                    rw [faultReplyTransferChecked_unlinked_inPlace ctx st tid c ct ep rid
+                      { length := len, extraCaps := extraCaps, label := label } layout rf _ _
+                      executingCore ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hP hF]
+                  · rfl
               split
               rotate_left
               · rename_i hI
@@ -3082,7 +3157,23 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext)
                   _ rfl (by simp only [maxMessageRegisters]; omega) hSz4
                   ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hP hNoF
                   (replyTransferInert_of_W hI) hFlow]
-              · rfl
+              · split
+                · next hG =>
+                  unfold replyUnlinkedAdmits at hG
+                  simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hG
+                  obtain ⟨⟨⟨hSz4, hFlow⟩, hNoF⟩, hP⟩ := hG
+                  have hAns : replyAnsweredCaller? st rid0 = some c := by
+                    rw [replyAnsweredCaller?_of_getReply st rid0 rp0 hR0, hC]
+                  simp only [endpointReplyCheckedArmGeneralR, hTgt, hAns, hFlow, ↓reduceIte]
+                  rw [replyTransferChecked_unlinked_inPlace ctx st tid c ct ep rid
+                    { length := len, extraCaps := extraCaps, label := label }
+                    (Architecture.regMessageRegs layout rf) layout rf len cap.badgeWord cap.badged
+                    executingCore
+                    { registers := extractMessageRegisters (Architecture.regMessageRegs layout rf) { length := len, extraCaps := extraCaps, label := label }, badge := cap.badge }
+                    _ rfl hSz4
+                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hP hNoF
+                    (replyTransferInert_of_W hI) hFlow]
+                · rfl
             · rfl
           · rfl
         · rfl
@@ -3967,8 +4058,12 @@ transfer and the long frame (`performReplyDonatedCapsDeliveredLong`,
 answers it in place on each of those shapes, as seL4's `handleFaultReply` does,
 its restart words past the fourth read from the replier's IPC buffer
 (`performFaultReplyAnswerLong`, `performFaultReplyDonatedAnswerLong`,
-`performFaultReplyUnheldAnswerLong`).  Any other reply, which a check failing
-makes, takes the general arm. -/
+`performFaultReplyUnheldAnswerLong`).  A reply to a caller recording no server
+whose reply object is linked to nothing (`replyUnlinkedInPlace`, WS-SX SX8.3)
+hands nothing back and runs the fault answer or the transfer and the long frame
+in place (`performFaultReplyUnlinkedAnswerLong`,
+`performReplyUnlinkedCapsDeliveredLong`).  Any other reply, which a check
+failing makes, takes the general arm. -/
 @[inline] def endpointReplyLongCheckedArmR (ctx : LabelingContext) (rf : SeLe4n.RegisterFile)
     (len extraCaps label : Nat) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (cap : Capability) : RefusalCarrying Unit :=
@@ -4049,6 +4144,23 @@ makes, takes the general arm. -/
                                     .ok ((), performReplyUnheldCapsDeliveredLong st c rid
                                       ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)
                                       rf len tid cap.badgeWord cap.badged stcb.spaceCells[2]
+                                      stcb.ipcBuffer stcb.spaceCells[0]
+                                      (if cap.rights.mem .grant then routedExtraCaps rf else 0)
+                                      ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0])
+                                | none => endpointReplyLongGeneralR ctx rf len extraCaps label tid
+                                    executingCore cap st
+                            else if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
+                                replyUnlinkedInPlace st c rid then
+                              if ct.faultWords.isFault then
+                                .ok ((), performFaultReplyUnlinkedAnswerLong st c rid
+                                  ct.faultKind label ct.faultIp ct.faultSp ct.faultLr ct.faultX0
+                                  ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5
+                                  ct.faultX6 ct.faultX7 tid rf len)
+                              else
+                                match st.getTcb? tid with
+                                | some stcb =>
+                                    .ok ((), performReplyUnlinkedCapsDeliveredLong st c rid rf len
+                                      tid cap.badgeWord cap.badged stcb.spaceCells[2]
                                       stcb.ipcBuffer stcb.spaceCells[0]
                                       (if cap.rights.mem .grant then routedExtraCaps rf else 0)
                                       ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0])
@@ -4194,7 +4306,28 @@ theorem endpointReplyLongCheckedArmR_eq_general (ctx : LabelingContext)
                       executingCore capAddr mi sid (cap.rights.mem .grant) hT' hIpc hRO hP hNoF
                       hFlow hS (hRf stcb hS) hRL hRead]
                   · rfl
-              · rfl
+              · split
+                · next hG =>
+                  simp only [Bool.and_eq_true] at hG
+                  obtain ⟨hFlow, hP⟩ := hG
+                  simp only [endpointReplyLongGeneralR, endpointReplyCheckedArmGeneralR, hTgt, hAns,
+                    hFlow, ↓reduceIte, longReplyRegs, hX, hMsg]
+                  split
+                  · next hF =>
+                    rw [faultReplyTransferChecked_unlinked_inPlaceLong ctx st tid c ct ep rid mi.length
+                      mi.extraCaps mi.label rf _ _ executingCore (by omega) hT' hIpc hRO hP hF]
+                  · next hF =>
+                    have hNoF : ct.faultWords.isFault = false := Bool.eq_false_iff.mpr hF
+                    split
+                    · next stcb hS =>
+                      rw [show cap.badge = SeLe4n.Badge.opt cap.badgeWord cap.badged from rfl,
+                            replyTransferChecked_unlinkedCapsLong_inPlace ctx st tid c ct stcb ep rid
+                        { length := mi.length, extraCaps := mi.extraCaps, label := mi.label }
+                        _ rf cap.badgeWord cap.badged
+                        executingCore capAddr mi sid (cap.rights.mem .grant) hT' hIpc hRO hP hNoF
+                        hFlow hS (hRf stcb hS) hRL hRead]
+                    · rfl
+                · rfl
             · rfl
           · rfl
         · rfl
@@ -5137,60 +5270,30 @@ theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     · rfl
   · rfl
 
-/-- The checked receive arm once its reply object is resolved, given as its
-code: the blocking receive written in place when it may be
-(`receiveBlocksFast`), the rendezvous otherwise (`endpointReceiveTakeR`).
-Inlined, so its result is matched by the caller rather than built. -/
-@[inline] def endpointReceiveResolvedR (ctx : LabelingContext) (epId : SeLe4n.ObjId)
-    (tid : SeLe4n.ThreadId) (replyCode : Nat) (executingCore : Concurrency.CoreId) :
-    RefusalCarrying Unit :=
+/-- **The receive's endpoint leg, compiled**: the blocking receive written in
+place when it may be (`receiveBlocksFast`), the rendezvous otherwise
+(`endpointReceiveTakeR`), every refusal carrying the state it was handed. -/
+@[inline] def endpointReceiveLegR (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (replyCode : Nat)
+    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
-    -- seL4-MCS `receiveIPC`: an active bound notification is completed, as a
-    -- `Wait` on it consumes it (`notificationWaitGatedR`).
-    if receiveCompletesSignal ctx st tid then
-      notificationWaitGatedR ctx tid (receiverBoundNotification st tid) executingCore st
-    else
-    if receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId then
-      .ok ((), Architecture.nbRecvFailedTransfer st tid)
-    else
     if receiveBlocksFast st epId tid replyCode then
       .ok ((), removeRunnableOnCore
         (storeReceiveBlock st epId tid (receiveQueueTailCode st epId) replyCode) tid executingCore)
     else endpointReceiveTakeR epId tid replyCode executingCore st
 
-/-- The checked receive arm once its gate has passed and its busy reply is
-cancelled (`receiveResolvedArm`): the reply object resolved at the CSpace root
-`root?` read before the cancel, the blocking receive written in place when it
-may be, the rendezvous otherwise, every refusal carrying the state it was
-handed (`endpointReceiveReplyResolvedR_eq`). -/
-@[inline] def endpointReceiveReplyResolvedR (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (canReply : Bool)
-    (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId) (epId : SeLe4n.ObjId)
-    (root? : Option Capability) : RefusalCarrying Unit :=
-  fun st =>
-    let resolved := fun replyCode => endpointReceiveResolvedR ctx epId tid replyCode executingCore st
-    resolveRecvReplyRootK st root? canReply replyAddr (fun e => .error (e, st)) resolved
-
-theorem endpointReceiveReplyResolvedR_eq (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (epId : SeLe4n.ObjId)
-    (st : SystemState) (root? : Option Capability) (canReply : Bool) (replyAddr : SeLe4n.CPtr)
-    (hRid : resolveRecvReplyIdRootR st tid root? canReply replyAddr = resolveRecvReplyId gate decoded st) :
-    endpointReceiveReplyResolvedR ctx tid canReply replyAddr executingCore epId root? st =
-      RefusalCarrying.ofKernel (receiveResolvedArm ctx decoded gate tid epId executingCore) st := by
-  simp only [endpointReceiveReplyResolvedR, RefusalCarrying.ofKernel, receiveResolvedArm]
-  rw [resolveRecvReplyRootK_eq st tid, hRid]
-  cases resolveRecvReplyId gate decoded st with
-  | error e => rfl
-  | ok rid =>
-  simp only [endpointReceiveResolvedR]
-  by_cases hSig : receiveCompletesSignal ctx st tid = true
-  · simp only [hSig, ↓reduceIte, notificationWaitGatedR_eq, RefusalCarrying.ofKernel]
-  simp only [Bool.not_eq_true] at hSig
-  simp only [hSig, Bool.false_eq_true, ↓reduceIte]
-  by_cases hN : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st
-      epId = true
-  · simp only [hN, ↓reduceIte]
-  simp only [Bool.not_eq_true] at hN
-  simp only [hN, Bool.false_eq_true, ↓reduceIte]
+/-- **The compiled leg is the leg**: the endpoint receive and its hand-off, on
+any state. -/
+theorem endpointReceiveLegR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (rid : Option SeLe4n.ReplyId) (executingCore : Concurrency.CoreId) (st : SystemState) :
+    endpointReceiveLegR epId tid (SeLe4n.ReplyId.optCode rid) executingCore st =
+      RefusalCarrying.ofKernel (fun s =>
+        match endpointReceiveDualWithCapsOnCore epId tid rid executingCore s with
+        | (st', .ok (dequeued, summary, _sgi)) =>
+            match applyReceiveRendezvousHandoff st' tid dequeued executingCore with
+            | .error e => .error e
+            | .ok stDon => .ok ((), Architecture.stageDeliveredMessage stDon tid summary.capInfo)
+        | (_, .error e) => .error e) st := by
+  simp only [endpointReceiveLegR, RefusalCarrying.ofKernel]
   by_cases hF : receiveBlocksFast st epId tid (SeLe4n.ReplyId.optCode rid) = true
   · rw [if_pos hF]
     unfold receiveBlocksFast at hF
@@ -5246,6 +5349,165 @@ theorem endpointReceiveReplyResolvedR_eq (ctx : LabelingContext) (decoded : Sysc
     · rfl
     · simp only []
       cases applyReceiveRendezvousHandoff st' tid dq executingCore <;> rfl
+
+/-- **A receive that blocks in place still does after the return**: seL4-MCS's
+`maybeReturnSchedContext` writes the receiver's binding and its context, which
+the in-place block reads neither of, and keeps the endpoint, so the guard and
+the receive queue's tail read on the state the arm is handed are the ones the
+block reads after the return. -/
+theorem receiveReturnSchedContext_receiveBlocksFast (blocks : Bool) (st : SystemState)
+    (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (replyCode : Nat)
+    (h : receiveBlocksFast st epId tid replyCode = true) :
+    receiveBlocksFast (receiveReturnSchedContext blocks st tid) epId tid replyCode = true ∧
+      receiveQueueTailCode (receiveReturnSchedContext blocks st tid) epId =
+        receiveQueueTailCode st epId := by
+  unfold receiveBlocksFast at h
+  cases hEp : st.getEndpoint? epId with
+  | none => rw [hEp] at h; cases h
+  | some ep =>
+    rw [hEp] at h
+    simp only [Bool.and_eq_true] at h
+    obtain ⟨hS, hO⟩ := h
+    cases hR : st.getTcb? tid with
+    | none => rw [hR] at hO; cases hO
+    | some rt =>
+      rw [hR] at hO
+      simp only [Bool.and_eq_true] at hO
+      obtain ⟨hA, hG⟩ := hO
+      rw [receiveBlocksInPlaceCode_eq] at hG
+      have hNo : st.objects.noResizeDue := by
+        have hG' := hG
+        simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true] at hG'
+        exact RobinHood.RHTable.noResizeDue_of_findsInPlace hG'.1.1.1.1.1.2
+      have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
+      have hRraw := (SystemState.getTcb?_eq_some_iff _ _ _).mp hR
+      obtain ⟨hE', ⟨rt', hR', hA'⟩, hG'⟩ :=
+        receiveReturnSchedContext_receiveGuard blocks st tid hNo hE hRraw hA hG
+      have hEp' := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE'
+      have hR'' := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hR'
+      refine ⟨?_, ?_⟩
+      · unfold receiveBlocksFast
+        rw [hEp', hR'']
+        simp only [receiveBlocksInPlaceCode_eq, hS, hA', hG', Bool.and_self]
+      · unfold receiveQueueTailCode
+        rw [hEp', hEp]
+
+/-- The in-place block after the return, the receive queue's tail read before
+it: out of line, so its two arguments are evaluated in order and the state is
+handed to the return alone. -/
+@[noinline] def receiveBlockAfterReturn (tailCode : Nat) (st : SystemState)
+    (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (replyCode : Nat)
+    (executingCore : Concurrency.CoreId) : SystemState :=
+  removeRunnableOnCore (storeReceiveBlock st epId tid tailCode replyCode) tid executingCore
+
+/-- **The receive leg after seL4's return**: when the receive blocks in place
+(read on the state the arm is handed, `receiveReturnSchedContext_receiveBlocksFast`)
+the return and the block are written in place, the state handed to them alone;
+otherwise the leg runs on the returned state, and a refusal there carries the
+state the arm was handed, so the return is not committed
+(`endpointReceiveReturnedLegR_eq`). -/
+@[inline] def endpointReceiveReturnedLegR (blocks : Bool) (epId : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (replyCode : Nat) (executingCore : Concurrency.CoreId) :
+    RefusalCarrying Unit :=
+  fun st =>
+    if receiveBlocksFast st epId tid replyCode then
+      .ok ((), receiveBlockAfterReturn (receiveQueueTailCode st epId)
+        (receiveReturnSchedContextFast blocks st tid.val) epId tid replyCode executingCore)
+    else
+      match endpointReceiveLegR epId tid replyCode executingCore
+          (receiveReturnSchedContextFast blocks st tid.val) with
+      | .error (e, _) => .error (e, st)
+      | r => r
+
+theorem endpointReceiveReturnedLegR_eq (blocks : Bool) (epId : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (replyCode : Nat) (executingCore : Concurrency.CoreId)
+    (st : SystemState) :
+    endpointReceiveReturnedLegR blocks epId tid replyCode executingCore st =
+      match endpointReceiveLegR epId tid replyCode executingCore
+          (receiveReturnSchedContextFast blocks st tid.val) with
+      | .error (e, _) => .error (e, st)
+      | r => r := by
+  unfold endpointReceiveReturnedLegR
+  by_cases hF : receiveBlocksFast st epId tid replyCode = true
+  · rw [if_pos hF]
+    obtain ⟨hF', hT⟩ := receiveReturnSchedContext_receiveBlocksFast blocks st epId tid replyCode hF
+    rw [receiveReturnSchedContextFast_eq]
+    unfold endpointReceiveLegR receiveBlockAfterReturn
+    rw [if_pos hF', hT]
+  · rw [if_neg hF]
+
+/-- The checked receive arm once its reply object is resolved, given as its
+code: the blocking receive written in place when it may be
+(`receiveBlocksFast`), the rendezvous otherwise (`endpointReceiveTakeR`).
+Inlined, so its result is matched by the caller rather than built. -/
+@[inline] def endpointReceiveResolvedR (ctx : LabelingContext) (epId : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (replyCode : Nat) (executingCore : Concurrency.CoreId) :
+    RefusalCarrying Unit :=
+  fun st =>
+    -- seL4-MCS `receiveIPC`: an active bound notification is completed, as a
+    -- `Wait` on it consumes it (`notificationWaitGatedR`).
+    if receiveCompletesSignal ctx st tid then
+      notificationWaitGatedR ctx tid (receiverBoundNotification st tid) executingCore st
+    else
+    if receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId then
+      .ok ((), Architecture.nbRecvFailedTransfer st tid)
+    else
+    -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`: where it writes, the
+    -- return is written in place (`receiveReturnSchedContextFast`) and the leg
+    -- runs on the state it leaves; a refusal there carries the state the arm was
+    -- handed, so the return is not committed.
+    if receiveReturnFires (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid then
+      endpointReceiveReturnedLegR (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) epId tid
+        replyCode executingCore st
+    else endpointReceiveLegR epId tid replyCode executingCore st
+
+/-- The checked receive arm once its gate has passed and its busy reply is
+cancelled (`receiveResolvedArm`): the reply object resolved at the CSpace root
+`root?` read before the cancel, the blocking receive written in place when it
+may be, the rendezvous otherwise, every refusal carrying the state it was
+handed (`endpointReceiveReplyResolvedR_eq`). -/
+@[inline] def endpointReceiveReplyResolvedR (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (canReply : Bool)
+    (replyAddr : SeLe4n.CPtr) (executingCore : Concurrency.CoreId) (epId : SeLe4n.ObjId)
+    (root? : Option Capability) : RefusalCarrying Unit :=
+  fun st =>
+    let resolved := fun replyCode => endpointReceiveResolvedR ctx epId tid replyCode executingCore st
+    resolveRecvReplyRootK st root? canReply replyAddr (fun e => .error (e, st)) resolved
+
+theorem endpointReceiveReplyResolvedR_eq (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (epId : SeLe4n.ObjId)
+    (st : SystemState) (root? : Option Capability) (canReply : Bool) (replyAddr : SeLe4n.CPtr)
+    (hRid : resolveRecvReplyIdRootR st tid root? canReply replyAddr = resolveRecvReplyId gate decoded st) :
+    endpointReceiveReplyResolvedR ctx tid canReply replyAddr executingCore epId root? st =
+      RefusalCarrying.ofKernel (receiveResolvedArm ctx decoded gate tid epId executingCore) st := by
+  simp only [endpointReceiveReplyResolvedR, RefusalCarrying.ofKernel, receiveResolvedArm]
+  rw [resolveRecvReplyRootK_eq st tid, hRid]
+  cases resolveRecvReplyId gate decoded st with
+  | error e => rfl
+  | ok rid =>
+  simp only [endpointReceiveResolvedR]
+  by_cases hSig : receiveCompletesSignal ctx st tid = true
+  · simp only [hSig, ↓reduceIte, notificationWaitGatedR_eq, RefusalCarrying.ofKernel]
+  simp only [Bool.not_eq_true] at hSig
+  simp only [hSig, Bool.false_eq_true, ↓reduceIte]
+  by_cases hN : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st
+      epId = true
+  · simp only [hN, ↓reduceIte]
+  simp only [Bool.not_eq_true] at hN
+  simp only [hN, Bool.false_eq_true, ↓reduceIte]
+  by_cases hRF : receiveReturnFires (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid
+      = true
+  · simp only [hRF, ↓reduceIte, endpointReceiveReturnedLegR_eq, receiveReturnSchedContextFast_eq,
+      endpointReceiveLegR_eq,
+      RefusalCarrying.ofKernel, SeLe4n.ReplyId.ofOptCode_optCode]
+    rcases endpointReceiveDualWithCapsOnCore epId tid rid executingCore
+        (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid)
+      with ⟨st', _ | ⟨dq, summary, sgi⟩⟩
+    · rfl
+    · simp only []
+      cases applyReceiveRendezvousHandoff st' tid dq executingCore <;> rfl
+  simp only [Bool.not_eq_true] at hRF
+  simp only [hRF, Bool.false_eq_true, ↓reduceIte, receiveReturnSchedContext_of_fires_false hRF]
+  exact endpointReceiveLegR_eq epId tid rid executingCore st
 
 /-- The busy holder of the reply capability in slot `cnode`/`slot`, as
 `recvReplyCapK` reads the slot: present, not a reserved object's, carrying the

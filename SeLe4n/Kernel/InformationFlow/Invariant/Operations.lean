@@ -31,14 +31,16 @@ open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 /-! ### AN6-A.1 (H-07): Shared closure-form proof-sketch recipe
 
-Five capability-only dispatch arms currently ship as *closure-form*
+Four capability-only dispatch arms currently ship as *closure-form*
 `_preserves_projection` theorems — the theorem takes `hProjEq : ∀
 stFinal, op = .ok stFinal → projectState stFinal = projectState st` and
 its body is `hProjEq st' hStep`. The closure form provides a *stable
 interface* for callers but requires them to discharge the projection
 preservation themselves using this file's named frame lemmas.
 
-The five closure-form arms, in stabilising-recipe order:
+The four closure-form arms, in stabilising-recipe order (the fifth,
+`schedContextBind_preserves_projection` (AK6F.14), is proven outright from the
+bind's per-core frame in `InformationFlow/PerCoreSchedulerNonInterference.lean`):
 
   1. `schedContextConfigure_preserves_projection` (AK6F.13) — baseline
      recipe: two `storeObject` updates at non-observable target + a
@@ -50,12 +52,10 @@ The five closure-form arms, in stabilising-recipe order:
      (AK6F.19) — uses the substantive frame lemmas
      `resumeThread_frame_insert` and `resumeThread_frame_ensureRunnable`
      from this file (both proven).
-  3. `schedContextBind_preserves_projection` (AK6F.14) — two SC+TCB
-     updates at non-observable target + runQueue re-bucket.
-  4. `schedContextUnbind_preserves_projection` (AK6F.15) — five-phase
+  3. `schedContextUnbind_preserves_projection` (AK6F.15) — five-phase
      teardown: `scheduler.current` clear, runQueue remove, SC+TCB
      updates, replenQueue remove.
-  5. `tcbSuspend_preserves_projection` = `suspendThread_preserves_projection`
+  4. `tcbSuspend_preserves_projection` = `suspendThread_preserves_projection`
      (AK6F.18) — hardest: 9-phase PIP-revert + IPC cleanup + donation
      cancel + TCB-state transition + optional schedule.
 
@@ -5323,25 +5323,10 @@ theorem schedContextBind_frame_runQueue_rebucket
   runQueue_remove_insert_preserves_projection_at_high ctx observer st threadId pri
     hThreadHigh
 
-/-- AK6-F.14: `schedContextBind` preservation. Closure form; substantive
-    discharge for a caller uses the following frame lemmas:
-    - `objects_insert_preserves_projection_high` at high scId (SC update).
-    - `objects_insert_preserves_projection_high` at high threadId.toObjId (TCB update).
-    - `schedContextBind_frame_runQueue_rebucket` at thread-high threadId.
-    Each phase composes via `Eq.trans`. ≈25 LOC total discharge. -/
-theorem schedContextBind_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (vScId : SeLe4n.ValidObjId) (vThreadId : SeLe4n.ValidThreadId)
-    (st st' : SystemState)
-    (hProjEq :
-        ∀ stFinal,
-          SeLe4n.Kernel.SchedContextOps.schedContextBind vScId vThreadId st
-            = .ok ((), stFinal) →
-          projectState ctx observer stFinal = projectState ctx observer st)
-    (hStep : SeLe4n.Kernel.SchedContextOps.schedContextBind vScId vThreadId st
-              = .ok ((), st')) :
-    projectState ctx observer st' = projectState ctx observer st :=
-  hProjEq st' hStep
+/- AK6-F.14's `schedContextBind_preserves_projection` is proven, not a closure:
+it lives beside the bind's per-core frame in
+`InformationFlow/PerCoreSchedulerNonInterference.lean`, which this module sits
+below. -/
 
 -- ============================================================================
 -- AK6-F.15: schedContextUnbind preservation (closure form + frame lemmas)

@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.37.34"
+version = "0.37.35"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -141,6 +141,11 @@ root = "tests.DecodeValidationSuite"
 [[lean_exe]]
 name = "abi_roundtrip_suite"
 root = "tests.AbiRoundtripSuite"
+
+# WS-SX SX8.1: the seL4 conformance table checked against the kernel.
+[[lean_exe]]
+name = "sel4_conformance_suite"
+root = "tests.Sel4ConformanceSuite"
 
 # Model integrity regression suite — kernel model type/kind/null discipline
 [[lean_exe]]

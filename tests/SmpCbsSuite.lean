@@ -1281,9 +1281,10 @@ private def runSyscallSchedResolverScenarios : IO Unit := do
          decide (fp.pairs
            = schedLockSet_schedContextUnbindOnCore st scId0.toObjId)
      | none => false)
-  assertBool "...and .notificationWait answers the executing core's alone"
+  assertBool "...and .notificationWait answers the wait's, at its own operands"
     (match schedLockSetForSyscall .notificationWait opsThread bootCoreId st with
-     | some fp => decide (fp.pairs = schedLockSet_notificationWaitOnCore bootCoreId)
+     | some fp => decide (fp.pairs = schedLockSet_notificationWaitOnCore st opsThread.targetObject
+         opsThread.caller bootCoreId)
      | none => false)
   -- (ii) Two arms do not answer the same set: a resolver that dispatched to one
   -- footprint for every arm would pass (i) three times over.

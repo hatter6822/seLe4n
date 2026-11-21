@@ -1,3 +1,148 @@
+## v0.37.35 — notification context donation and the seL4 conformance table
+
+WS-SX SX8 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`), the whole row: SX8.1
+(the conformance table), SX8.2 (a notification's context lent and returned)
+and SX8.3 (label 36 and the unbind of a donated holder, the owner's decision
+D22, "Match seL4", 2026-11-19). Stacks on SX7 (`v0.37.33`).
+
+### The conformance table (SX8.1)
+- `SeLe4n/Testing/Sel4ConformanceTable.lean`: one row per seL4-MCS syscall
+  (11) and per invocation label (seL4's 56 for aarch64 MCS SMP, then the
+  model's 57–66), sourced from seL4 release 17.0.0 (commit `62e345c2`): the
+  decode function with file and line, the registers or message words and
+  extra capabilities read, the success return, the seL4 errors with their
+  payload words, whether it blocks, and seLe4n's status (implemented, a
+  seLe4n hardening, a deviation a later row owns, absent, or model-only).
+- `sel4LabelRows_agree` and `sel4SyscallRows_agree` decide every row against
+  the label round trip, `Syscall.selectOperation` (Call, Send, NBSend),
+  `truncationMinimum`, `syscallReturnShape` and the `Syscall` predicates;
+  `sel4LabelRows_cover` proves every labelled operation has its row.
+- `tests/Sel4ConformanceSuite.lean` (`sel4_conformance_suite`, Tier 2): the
+  same rows at run time, the register reads of `decodeSyscallArgs`
+  (x0, x1, x2–x5, x6, `canReply` from x7), each seL4 error's payload and error
+  frame, the message-info clamp and the two word-first decodes.
+
+### seL4 behaviour the table exposed, fixed here
+- A message-info length past 120 is clamped to 120, as seL4's
+  `messageInfoFromWord` (`include/api/types.h:83`) clamps it; it was refused
+  `invalidMessageInfo`. `MessageInfo.decode`, `decodeMsgInfoWord` (now always
+  `.ok`, `decodeMsgInfoWord_ok`), `overflowStopImpl` and `routedLength` clamp.
+  A Signal with such a word now signals (`bad-message-info`).
+
+### Word-first decodes (raw-slot debt families (2) and (7), closed)
+- `mintReplyCap`'s two slots are read through `windowWordOf`; the service
+  register's interface id is tested on its word and refused
+  `invalidArgument 0` at or past `2 ^ 62`. Round trips below the bound.
+- QEMU scenarios `mint-reply-cap-wide-slot` and
+  `service-register-wide-interface` pass a word `≥ 2^63`.
+
+### SX8.2 refactor
+- `dispatchWithCapChecked`'s `.notificationWait` arm calls `completeSignalArm`
+  instead of inlining its body, so the wait and the receive that completes
+  its bound notification share one body (no behaviour change).
+
+### Donation and return (SX8.2)
+- seL4-MCS's `maybeDonateSchedContext`: a signal that wakes a waiter or a
+  bound receiver, and a receive that completes a signal, lend the
+  notification's context to a thread holding none, recorded as the thread's
+  `.bound` binding with the notification link kept (D19); wake first, then the
+  bind's admitted / perform pair under a word guard, allocation-free.
+- seL4-MCS's `maybeReturnSchedContext`: a blocking Wait, a blocking receive
+  and ReplyRecv's receive leg return the context the thread holds, by binding
+  or by donation, before the endpoint is looked at.
+- `notificationLinksAgree` (the two link words name each other) is the
+  proof-layer bundle's 23rd conjunct, carried by every entry's run-queue
+  stages; the boot's Prop object shapes carry the two zero codes the Bool
+  checks already required.
+- Lock sets: the donation writes the receiver's home core only, proven at the
+  call site; no over-approximation. Non-interference: the lent context is
+  read through the wake a hidden signal makes (`boundSignalHidden.woken`), and
+  the bind has a real projection frame
+  (`schedContextBind_preserves_projection`).
+
+### Label 36 and the unbind of a donated holder (SX8.3, D22)
+- `SchedContext_UnbindObject` (`SyscallId` 48, label 36): a thread or a
+  notification as extra capability 0. On a thread it unbinds that thread
+  alone, as seL4's `unbindTCB`; on a notification it clears the link.
+- SchedContext_Unbind takes the context from a holder that has it by donation
+  (seL4's `schedContext_unbindTCB`): the `isDonated` refusal is retired on the
+  live and frozen surfaces with its proofs. The unbind then lets go of the
+  reply stack the context heads: `schedContextUnbindReply`
+  (`SchedContext/ReplyLink.lean`, seL4's `schedContext_unbindReply`, with its
+  in-place `@[csimp]` form), which was the finalisation's
+  `finaliseSchedContextUnstack`; the two paths now share it.
+- `donationOwnerValid` and `donationChainWellFormed` are unchanged: both
+  already admit the state the unbind leaves (the holder unbound, its caller
+  blocked on a reply no context heads), which context finalisation already
+  reached.
+- The return guard reads the context the thread holds, by binding or by
+  donation (`SchedContextBinding.scId?`).
+- Frozen twins: `frozenSchedContextUnbind` with the notification half, the
+  reply unlink (`frozenSchedContextUnbindReply`, registered in the reply-stack
+  write census as the live one's mirror) and success on a context bound to
+  no thread.
+
+### Allocation fixes found by the heap gate
+- The compiled signal copied the object store; the blocking receive's return
+  copied it; the wide-slot mint refusal built records. Each now writes in
+  place under a proven equality, and every reading is 0.
+- A reply to a caller recording no server whose reply object is linked to
+  nothing (the state the donated unbind leaves once the server is finalised)
+  fell to the general arm and copied the object store twice; it is answered
+  in place (`replyUnlinkedAdmits`, `performReplyUnlinkedDelivered`,
+  `replyTransferChecked_unlinked_inPlace`). The same reply is answered in
+  place on its other shapes too: to a faulted caller
+  (`performFaultReplyUnlinkedAnswer`), at a long message
+  (`performReplyUnlinkedCapsDeliveredLong`, and
+  `performFaultReplyUnlinkedAnswerLong` for a long fault reply) and with a
+  capability transfer (`performReplyUnlinkedCapsDelivered`). Each in-place
+  state is proven the specification's, all through one shared derivation
+  of the dispatch (`replyDispatch_unlinked_inPlace`). This copy is also on
+  `main`.
+- The reply-receive through such a reply object copied the object store on
+  every shape. It is answered in place on each, the receive leg blocking the
+  replier: the four-word reply-receive (`replyRecvUnlinkedAdmits`,
+  `performReplyRecvUnlinkedDelivered`), to a faulted caller
+  (`performReplyRecvUnlinkedFaultAnswer`), with a capability transfer
+  (`performReplyRecvUnlinkedCapsDelivered`) and their long forms
+  (`performReplyRecvUnlinkedDeliveredLong`,
+  `performReplyRecvUnlinkedFaultAnswerLong`,
+  `performReplyRecvUnlinkedCapsDeliveredLong`). Each is proven the
+  specification's through one composite (`replyRecvAnsweringOnCore_unlinked_inPlace`,
+  the receive's guard carried across the reply leg by
+  `storeReplyLeg_receiveGuard`), with the six arms' `_eq` proofs extended.
+- The exerciser's no-operation code was still 48 after label 36 took that
+  number, so the route coverage read every refused selection as
+  `SchedContext_UnbindObject`; it is `SyscallId::ENCODING_BOUND` (49), held
+  by a host test.
+
+### Tests and fixtures
+- `frozen_ops_suite`: FO-SX8.3 rows for the donated-holder unbind (live
+  against frozen, whole state) and FO-SX8.3b for UnbindObject.
+- QEMU scenarios: donation on a signal to a waiter, on a bound wake and on a
+  completed receive; return at a blocking Wait, receive and reply-receive;
+  UnbindObject on a thread and on a notification; and
+  `sched-context-unbind-donated`, the unbind of a server holding a lent
+  context, whose caller is then answered on a stack no context heads; that
+  caller answered again at 120 words (`unlinked-long-root-replies`), by a
+  reply that installs a capability (`unlinked-reply-installs-cap`) and,
+  after a capability fault lent the context, by a fault reply
+  (`unlinked-fault-root-replies`) and a long fault reply
+  (`unlinked-fault-root-replies-long`). The reply-receive on the same state,
+  the context bound to the caller again so it can wake the replier: plain
+  (`unlinked-reply-recv`), installing (`unlinked-reply-recv-installs-cap`),
+  long (`unlinked-long-reply-recv`, `unlinked-long-reply-recv-installs-cap`)
+  and to a faulted caller at one word and at 120
+  (`unlinked-fault-root-reply-recv`, `unlinked-fault-root-reply-recv-long`).
+- Three Tier 3 anchors restated as relation checks over the reply unlink and
+  the receive leg's return; the frozen `isDonated` anchor replaced by a
+  negative over both unbinds.
+- `main_trace_smoke.expected`: `[IMB-001]` now reads "oversized registers
+  clamped to 120: true" (rationale: the clamp above); checksum regenerated.
+- NegativeStateSuite J1-NEG-07/08/16, SmpIpcSuite and the kernel-error
+  matrix's `invalidMessageInfo` row (now `requireMsgReg` past the message)
+  follow the clamp.
+
 ## v0.37.34 — README brought up to date
 
 Documentation only; no Lean, Rust or script changes. The root `README.md`

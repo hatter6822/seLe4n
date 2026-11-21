@@ -273,16 +273,6 @@ theorem FinaliseYieldStep.schedContextCleanup {P : SystemState → Prop} (h : Fi
     · exact hs
   · exact hs
 
-theorem replyStackLinkHeads_spec {x : SeLe4n.ObjId} {n : Option ReplyStackLink}
-    (h : replyStackLinkHeads x n = true) : n = some (.head ⟨x.val⟩) := by
-  rcases n with _ | (_ | ⟨v⟩)
-  · cases h
-  · cases h
-  · simp only [replyStackLinkHeads, beq_iff_eq] at h
-    obtain ⟨vv⟩ := v
-    simp only at h
-    subst h; rfl
-
 /-- **What the reply finalisation's check admits**, read off its codes: the
 head pop commits (or the reply heads no stack), the caller is no reserved or
 idle thread and is held and queued nowhere, is blocked on this reply and linked
@@ -542,11 +532,11 @@ theorem threadOfOptCode_succ (t : SeLe4n.ThreadId) :
   exact this
 
 /-- **A property the unstack keeps holds after it.** -/
-theorem finaliseSchedContextUnstack_closed (P : SystemState → Prop) (hUn : FinaliseUnstackStep P)
+theorem schedContextUnbindReply_closed (P : SystemState → Prop) (hUn : FinaliseUnstackStep P)
     (x : SeLe4n.ObjId) (s₀ : SystemState) (h₀ : P s₀) (hA : schedContextFinaliseAdmitted s₀ x = true)
     (st : SystemState) (hS₀ : st = finaliseSchedContextUnbind (finaliseSchedContextDeschedule s₀ x) x)
-    (h : P st) : P (finaliseSchedContextUnstack st x) := by
-  unfold finaliseSchedContextUnstack
+    (h : P st) : P (schedContextUnbindReply st x) := by
+  unfold schedContextUnbindReply
   split
   · rename_i sc hSc
     split
@@ -764,7 +754,7 @@ theorem finaliseSchedContext_closed (P : SystemState → Prop) (hDes : FinaliseS
   · rename_i hA
     refine hLink _ _ ?_
     exact hYield.schedContextCleanup _ x
-      (finaliseSchedContextUnstack_closed P hUn x st h hA _ rfl (finaliseSchedContextUnbind_closed P hRel _ x
+      (schedContextUnbindReply_closed P hUn x st h hA _ rfl (finaliseSchedContextUnbind_closed P hRel _ x
         (finaliseSchedContextDeschedule_closed P hDes st x hA h)))
   · exact h
 

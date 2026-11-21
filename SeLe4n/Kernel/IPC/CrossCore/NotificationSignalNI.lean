@@ -668,7 +668,9 @@ theorem notificationSignalBoundOnCore_bound_path_NI_smp
 
 /-- WS-ZA ZA6.32: **what the bound-aware signal writes, hidden**: the
 notification; on the bound-delivery path the bound thread and the endpoint
-splice; on the waiter path the woken waiter and its successor. -/
+splice; on the waiter path the woken waiter and its successor; and the
+scheduling context bound to the notification, which seL4's `sendSignal`
+donates to the thread the signal wakes (`sendSignalOnCore_lowEquivalent`). -/
 structure boundSignalHidden (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (notificationId : SeLe4n.ObjId) : Prop where
   notification : objectObservable ctx observer notificationId = false
@@ -678,6 +680,8 @@ structure boundSignalHidden (ctx : LabelingContext) (observer : IfObserver)
   waiter : ∀ ntfn w, st.getNotification? notificationId = some ntfn → ntfn.waitHead = some w →
     threadObservable ctx observer w = false ∧ objectObservable ctx observer w.toObjId = false ∧
       ∀ n, ntfnSuccessor? st w = some n → objectObservable ctx observer n.toObjId = false
+  context : ∀ s, notificationContext? st notificationId = some s →
+    objectObservable ctx observer s.toObjId = false
 
 /-- WS-ZA ZA6.32: **the bound-aware signal is invisible on every core** when
 what it writes is hidden: the bound delivery

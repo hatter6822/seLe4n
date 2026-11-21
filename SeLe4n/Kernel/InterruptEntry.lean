@@ -12,6 +12,7 @@ import SeLe4n.Kernel.IPC.CrossCore.InterruptDelivery
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.Scheduler.ActivateThread
 import SeLe4n.Kernel.SyscallSchedContainment
+import SeLe4n.Kernel.IPC.Invariant.ReplyBindingPairFrame
 import SeLe4n.Platform.FFI
 
 /-!
@@ -86,19 +87,31 @@ theorem footprintCoversWrites_of_table {S : LockSet} {st mid post : SystemState}
 
 /-- **The run queues the interrupt entry declares**: the executing core's,
 and at a line bound to a notification (`Architecture.irqBinding?`, the line's
-interrupt node slot) the cores the signal wakes onto. -/
+interrupt node slot) the cores the signal wakes onto and, where seL4's donation
+guard holds on the entry state, the woken thread's home core the donation
+places it on (`signalWakeDonationCores`). -/
 def interruptRunCores (st : SystemState) (c : CoreId) (line : Nat) : List CoreId :=
   c :: match Architecture.irqBinding? st line with
-    | some (ntfn, _) => notificationSignalBoundWriteSet st ntfn
+    | some (ntfn, _) => notificationSignalBoundWriteSet st ntfn ++ signalWakeDonationCores st ntfn
     | none => []
 
-/-- **The footprint the interrupt entry declares**: the table write lock and
-the run queues `interruptRunCores` names; nothing for an id naming no core or
-a line that is no device line, on which the step commits nothing. -/
+/-- **The release queues the interrupt entry declares**: at a line bound to a
+notification, the donated context's home core where seL4's donation guard holds
+on the entry state (`signalWakeDonationCores`); none otherwise. -/
+def interruptReplenishCores (st : SystemState) (line : Nat) : List CoreId :=
+  match Architecture.irqBinding? st line with
+  | some (ntfn, _) => signalWakeDonationCores st ntfn
+  | none => []
+
+/-- **The footprint the interrupt entry declares**: the table write lock, the
+run queues `interruptRunCores` names and the release queues
+`interruptReplenishCores` names; nothing for an id naming no core or a line
+that is no device line, on which the step commits nothing. -/
 def declaredLockSetForInterrupt (coreId intId : UInt64) : SystemState → Option LockSet :=
   fun st => (Concurrency.coreIdOfUInt64? coreId).bind fun c =>
     if Architecture.deviceInterruptLine st intId.toNat then
-      LockSet.ofList? (schedFootprintOfCores (interruptRunCores st c intId.toNat) [])
+      LockSet.ofList? (schedFootprintOfCores (interruptRunCores st c intId.toNat)
+        (interruptReplenishCores st intId.toNat))
     else none
 
 /-- A declared footprint is the one of the decoded core, at a device line. -/
@@ -106,7 +119,8 @@ theorem declaredLockSetForInterrupt_some {coreId intId : UInt64} {st : SystemSta
     {S : LockSet} (hS : declaredLockSetForInterrupt coreId intId st = some S) :
     ∃ c, Concurrency.coreIdOfUInt64? coreId = some c ∧
       Architecture.deviceInterruptLine st intId.toNat = true ∧
-      S.pairs = schedFootprintOfCores (interruptRunCores st c intId.toNat) [] := by
+      S.pairs = schedFootprintOfCores (interruptRunCores st c intId.toNat)
+        (interruptReplenishCores st intId.toNat) := by
   unfold declaredLockSetForInterrupt at hS
   cases hc : Concurrency.coreIdOfUInt64? coreId with
   | none => rw [hc] at hS; cases hS
@@ -119,9 +133,38 @@ theorem declaredLockSetForInterrupt_some {coreId intId : UInt64} {st : SystemSta
       rw [hd] at hS
       exact ⟨c, rfl, rfl, LockSet.ofList?_pairs hS⟩
 
+/-- **seL4's `sendSignal` is covered by the signal's footprint**: the wake
+(`schedLockSet_notificationSignalBoundOnCore_coversWrites`), then the donation
+to the woken thread, on the cores the footprint read off the entry state
+(`signalWakeDonationCores`), which the wake keeps
+(`notificationSignalBoundOnCore_signalDonationCores_eq`). -/
+theorem schedLockSet_sendSignalOnCore_coversWrites (notificationId : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState) (S : LockSet)
+    (hObjInv : st.objects.invExt)
+    (hS : LockSet.ofList? (schedLockSet_notificationSignalBoundOnCore st notificationId)
+      = some S) :
+    footprintCoversWrites S st (sendSignalOnCore notificationId badge executingCore st).1 := by
+  have hWake := schedLockSet_notificationSignalBoundOnCore_coversWrites notificationId badge
+    executingCore st S hObjInv hS
+  have hP := LockSet.ofList?_pairs hS
+  have hTable : (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs := by
+    rw [hP]; exact schedFootprintOfCores_contains_objStore_write _ _
+  refine sendSignalOnCore_induct (fun s => footprintCoversWrites S st s) notificationId badge
+    executingCore st hWake (fun t _ hT _ => footprintCoversWrites_trans S hWake
+      (maybeDonateSchedContext_coversWrites S _ notificationId t
+        (notificationSignalBoundOnCore_preserves_objects_invExt _ _ _ st hObjInv) hTable
+        fun d hd => ?_))
+  rw [notificationSignalBoundOnCore_signalDonationCores_eq _ _ _ st hObjInv] at hd
+  have hd' : d ∈ signalWakeDonationCores st notificationId := by
+    simp only [signalWakeDonationCores, hT]; exact hd
+  rw [hP]
+  exact ⟨(mem_schedFootprintOfCores_runQueue_iff _ _ d).mpr (List.mem_append_right _ hd'),
+    (mem_schedFootprintOfCores_replenishQueue_iff _ _ d).mpr hd'⟩
+
 /-- **The interrupt step's writes are inside the footprint it declares**: the
-signal's own coverage (`schedLockSet_notificationSignalBoundOnCore_coversWrites`)
-carried through the mask, which writes no object and no scheduler field. -/
+signal's own coverage (`schedLockSet_sendSignalOnCore_coversWrites`, the wake
+and the donation) carried through the mask, which writes no object and no
+scheduler field. -/
 theorem interruptEntryStep_coversWrites (coreId intId : UInt64) (st : SystemState)
     (S : LockSet) (hInv : st.objects.invExt)
     (hS : declaredLockSetForInterrupt coreId intId st = some S) :
@@ -129,7 +172,7 @@ theorem interruptEntryStep_coversWrites (coreId intId : UInt64) (st : SystemStat
   obtain ⟨c, hc, hd, hP⟩ := declaredLockSetForInterrupt_some hS
   rw [interruptEntryStep_device st coreId intId c hc hd]
   unfold handleInterruptOnCore
-  unfold interruptRunCores at hP
+  unfold interruptRunCores interruptReplenishCores at hP
   cases hH : Architecture.irqBinding? st intId.toNat with
   | none =>
     exact footprintCoversWrites_of_frame (footprintCoversWrites_refl S st) rfl rfl
@@ -137,10 +180,11 @@ theorem interruptEntryStep_coversWrites (coreId intId : UInt64) (st : SystemStat
     obtain ⟨ntfn, badge⟩ := p
     rw [hH] at hP
     dsimp only
-    have hB := footprintCoversWrites_of_confined S _ [] st _ hP
-      ((notificationSignalBoundOnCore_confinedToCores ntfn badge
-        c st hInv).mono (fun _ h => List.mem_cons_of_mem _ h))
-      (fun d _ => notificationSignalBoundOnCore_replenishQueueOnCore _ _ c st d)
+    have hB := footprintCoversWrites_of_cores_subset S
+      (notificationSignalBoundWriteSet st ntfn ++ signalWakeDonationCores st ntfn)
+      (signalWakeDonationCores st ntfn) _ _ st _ hP (fun _ h => List.mem_cons_of_mem _ h)
+      (fun _ h => h) (fun S0 hS0 => schedLockSet_sendSignalOnCore_coversWrites ntfn badge c st S0
+        hInv hS0)
     exact footprintCoversWrites_of_frame hB rfl rfl
 
 /-- The declared footprint names the table write lock… -/

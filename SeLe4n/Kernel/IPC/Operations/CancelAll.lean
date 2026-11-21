@@ -10,6 +10,7 @@ import SeLe4n.Kernel.IPC.Operations.DonationPopInPlace
 import SeLe4n.Kernel.IPC.Operations.UnheldContextPopInPlace
 import SeLe4n.Kernel.IPC.BusyReplyHolder
 import SeLe4n.Kernel.SchedContext.NotificationLink
+import SeLe4n.Kernel.SchedContext.ReplyLink
 
 /-!
 # Cancelling every waiter of an endpoint or a notification
@@ -1082,11 +1083,6 @@ holds the pre-state across its writes. -/
     else st
   | none => st
 
-/-- **Whether a reply stack's head link names the context at `x`.** -/
-@[inline] def replyStackLinkHeads (x : SeLe4n.ObjId) : Option ReplyStackLink → Bool
-  | some (.head s) => s.val == x.val
-  | _ => false
-
 /-- **Whether a final delete may finalise the scheduling context at `x`**: a
 reply stack it heads has a head that names it back; a thread it is bound to is
 bound back to it, as its own (`.bound`) or on loan (`.donated`), is no core's
@@ -1226,68 +1222,6 @@ context, so the reservation arm is the in-place unbind
       (schedContextBinding_ownerCleared (x := ⟨t.scBindingScCode - 1⟩)
         (by show _ = _ - 1 + 1; omega))]
 
-/-- **Let go of the reply stack a scheduling context being finalised heads**
-(seL4's `schedContext_unbindReply`: `scReply->replyNext = 0; scReply = NULL`):
-the head reply's upward link is cleared, then the context's head.  The frames
-below the head stay linked to it, a stack no context carries, and their callers
-keep waiting on their replies. -/
-def finaliseSchedContextUnstack (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
-  match st.getSchedContext? ⟨x.val⟩ with
-  | some sc =>
-    match sc.scReply with
-    | some rid =>
-      match st.getReply? rid with
-      | some r =>
-        if replyStackLinkHeads x r.next then
-          match storeObject rid.toObjId (.reply { r with next := none }) st with
-          | .ok ((), st1) => st1.updateSchedContext ⟨x.val⟩ fun sc => { sc with scReply := none }
-          | .error _ => st
-        else st
-      | none => st
-    | none => st
-  | none => st
-
-/-- `finaliseSchedContextUnstack` as it is compiled: the head reply's upward
-link cleared in its slot (`SystemState.storeReplyWith`), so no reply record, no
-object cell and no store result is built
-(`finaliseSchedContextUnstack_eq_impl`). -/
-@[inline] def finaliseSchedContextUnstackImpl (st : SystemState) (x : SeLe4n.ObjId) :
-    SystemState :=
-  match st.getSchedContext? ⟨x.val⟩ with
-  | some sc =>
-    match sc.scReply with
-    | some rid =>
-      match st.getReply? rid with
-      | some r =>
-        if replyStackLinkHeads x r.next then
-          (st.storeReplyWith rid.toObjId fun r => { r with next := none }).updateSchedContext
-            ⟨x.val⟩ fun sc => { sc with scReply := none }
-        else st
-      | none => st
-    | none => st
-  | none => st
-
-@[csimp] theorem finaliseSchedContextUnstack_eq_impl :
-    @finaliseSchedContextUnstack = @finaliseSchedContextUnstackImpl := by
-  funext st x
-  unfold finaliseSchedContextUnstack finaliseSchedContextUnstackImpl
-  cases st.getSchedContext? ⟨x.val⟩ with
-  | none => rfl
-  | some sc =>
-    dsimp only
-    cases sc.scReply with
-    | none => rfl
-    | some rid =>
-      dsimp only
-      cases hR : st.getReply? rid with
-      | none => rfl
-      | some r =>
-        dsimp only
-        split
-        · rw [SystemState.storeObject_reply_eq_storeReplyWith
-            ((SystemState.getReply?_eq_some_iff _ _ _).mp hR) (fun r => { r with next := none })]
-        · rfl
-
 /-- **The destroy cleanup of a finalised scheduling context**
 (`lifecyclePreRetypeCleanup`'s scheduling-context arm), run once the context is
 bound to no thread and heads no reply stack, so its release finds no binding
@@ -1413,7 +1347,7 @@ step reads or writes, so the order changes nothing: the whole finalisation is
 one kernel step. -/
 def finaliseSchedContext (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
   if schedContextFinaliseAdmitted st x then
-    unbindSchedContextNotification (finaliseSchedContextCleanup (finaliseSchedContextUnstack
+    unbindSchedContextNotification (finaliseSchedContextCleanup (schedContextUnbindReply
       (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x) x) x) ⟨x.val⟩
   else st
 
@@ -1422,7 +1356,7 @@ is.** -/
 theorem finaliseSchedContext_eq (x : SeLe4n.ObjId) (st : SystemState) :
     finaliseSchedContext x st =
       if schedContextFinaliseAdmitted st x then
-        unbindSchedContextNotification (finaliseSchedContextCleanupImpl (finaliseSchedContextUnstack
+        unbindSchedContextNotification (finaliseSchedContextCleanupImpl (schedContextUnbindReply
           (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x) x) x) ⟨x.val⟩
       else st := by
   unfold finaliseSchedContext; rw [finaliseSchedContextCleanup_eq]

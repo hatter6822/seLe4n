@@ -2626,7 +2626,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
     -- Notifications: idle + empty
     (∀ notif, obj = .notification notif →
       notif.state = .idle ∧ notif.waitHead = none ∧ notif.waitTail = none ∧
-      notif.pendingBadge = none) ∧
+      notif.pendingBadge = none ∧ notif.schedContextCode = 0) ∧
     -- CNodes: structural, and (WS-BP BP3.5) every held capability's badge is
     -- valid and none is a reply capability
     (∀ cn, obj = .cnode cn →
@@ -2660,7 +2660,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
       schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
       -- **WS-HP HP10.3**: and no recorded reservation origin.
       sc.donationOrigin = none ∧ sc.releaseCoreCode = 0 ∧ sc.consumed = 0 ∧
-      sc.yieldFromCode = 0) ∧
+      sc.yieldFromCode = 0 ∧ sc.notificationCode = 0) ∧
     -- WS-SM SM6.D / PR #822: a boot Reply is inert — no blocked caller and no
     -- reply-stack link in either direction.
     (∀ r, obj = .reply r →
@@ -2683,8 +2683,8 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   | notification notif =>
     simp only [bootSafeObjectCheck, bootSafeNotificationCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨h1, h2⟩, h2t⟩, h3⟩, -⟩, -⟩ := h
-    exact ⟨fun _ he => by injection he, fun _ he => by injection he; subst_vars; exact ⟨h1, Option.eq_none_of_isNone h2, Option.eq_none_of_isNone h2t, Option.eq_none_of_isNone h3⟩,
+    obtain ⟨⟨⟨⟨⟨h1, h2⟩, h2t⟩, h3⟩, -⟩, hSc0⟩ := h
+    exact ⟨fun _ he => by injection he, fun _ he => by injection he; subst_vars; exact ⟨h1, Option.eq_none_of_isNone h2, Option.eq_none_of_isNone h2t, Option.eq_none_of_isNone h3, by simpa using hSc0⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he⟩
@@ -2746,7 +2746,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
     simp only [bootSafeObjectCheck, bootSafeSchedContextCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
     obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩,
-      hUnbound⟩, hNoReplyStack⟩, hNoOrigin⟩, hNoRelease⟩, hTot⟩, hFit⟩, hNoConsumed⟩, hNoYield⟩, -⟩ := h
+      hUnbound⟩, hNoReplyStack⟩, hNoOrigin⟩, hNoRelease⟩, hTot⟩, hFit⟩, hNoConsumed⟩, hNoYield⟩, hNoNtfn⟩ := h
     refine ⟨fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun s hs => ?_,
@@ -2754,7 +2754,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
     injection hs; subst_vars
     refine ⟨?_, Option.eq_none_of_isNone hUnbound, Option.eq_none_of_isNone hNoReplyStack,
             Option.eq_none_of_isNone hNoOrigin, by simpa using hNoRelease,
-            by simpa using hNoConsumed, by simpa using hNoYield⟩
+            by simpa using hNoConsumed, by simpa using hNoYield, by simpa using hNoNtfn⟩
     unfold schedContextWellFormed
     refine ⟨⟨hPeriod, hBudgetPeriod, hRemaining, hRepLen⟩, ⟨hRemaining, hBudgetPeriod⟩,
             ⟨hRepLen, ?_⟩, ?_, hTot, hFit⟩
@@ -2787,7 +2787,7 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
       ep.serviceRegistered = false) ∧
     (∀ notif, obj = .notification notif →
       notif.state = .idle ∧ notif.waitHead = none ∧ notif.waitTail = none ∧
-      notif.pendingBadge = none) ∧
+      notif.pendingBadge = none ∧ notif.schedContextCode = 0) ∧
     (∀ cn, obj = .cnode cn →
       cn.radixWidth ≤ 64 ∧ cn.cells.size = 2 ^ cn.radixWidth ∧
       (∀ slot cap badge, cn.lookup slot = some cap →
@@ -2812,7 +2812,7 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
     (∀ sc, obj = .schedContext sc →
       schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
       sc.donationOrigin = none ∧ sc.releaseCoreCode = 0 ∧ sc.consumed = 0 ∧
-      sc.yieldFromCode = 0) ∧
+      sc.yieldFromCode = 0 ∧ sc.notificationCode = 0) ∧
     (∀ r, obj = .reply r →
       r.caller = none ∧ r.prev = none ∧ r.next = none) ∧
     (∀ ut, obj = .untyped ut →
@@ -5598,7 +5598,7 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   -- WS-RC R4.C: `.val = []` references the underlying List projection.
   (∀ notif, obj = .notification notif →
     notif.state = .idle ∧ notif.waitHead = none ∧ notif.waitTail = none ∧
-      notif.pendingBadge = none) ∧
+      notif.pendingBadge = none ∧ notif.schedContextCode = 0) ∧
   -- CNodes must satisfy slot-count bound, depth consistency, and badge validity
   -- WS-SM SM6.D / PR #822 Phase H (#1.a): a boot CNode holds no reply capabilities —
   -- reply caps are minted at runtime (`mintReplyCap`) from retyped Reply objects, never
@@ -5658,7 +5658,7 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   (∀ sc, obj = .schedContext sc →
     schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
       sc.donationOrigin = none ∧ sc.releaseCoreCode = 0 ∧ sc.consumed = 0 ∧
-      sc.yieldFromCode = 0) ∧
+      sc.yieldFromCode = 0 ∧ sc.notificationCode = 0) ∧
   -- WS-SM SM6.D: a boot Reply is inert — no blocked caller and no reply-stack
   -- link in either direction.
   (∀ r, obj = .reply r →
@@ -5737,7 +5737,7 @@ def bootObjectShapeOffLinks (obj : KernelObject) : Prop :=
     ep.serviceRegistered = false) ∧
   (∀ notif, obj = .notification notif →
     notif.state = .idle ∧ notif.waitHead = none ∧ notif.waitTail = none ∧
-      notif.pendingBadge = none) ∧
+      notif.pendingBadge = none ∧ notif.schedContextCode = 0) ∧
   (∀ cn, obj = .cnode cn → bootCNodeShape cn) ∧
   (∀ tcb, obj = .tcb tcb → bootTcbShape tcb) ∧
   (∀ vs, obj = .vspaceRoot vs →
@@ -5745,7 +5745,7 @@ def bootObjectShapeOffLinks (obj : KernelObject) : Prop :=
   (∀ sc, obj = .schedContext sc →
     schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
       sc.donationOrigin = none ∧ sc.releaseCoreCode = 0 ∧ sc.consumed = 0 ∧
-      sc.yieldFromCode = 0) ∧
+      sc.yieldFromCode = 0 ∧ sc.notificationCode = 0) ∧
   (∀ r, obj = .reply r →
     r.caller = none ∧ r.prev = none ∧ r.next = none) ∧
   -- WS-SX SX5.3: the root task's IPC buffer frame and the tables on its walk,
@@ -6174,7 +6174,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
       show notificationInvariant ntfn
       unfold notificationInvariant notificationQueueWellFormed
-      rw [hNtfn.1]; exact ⟨hNtfn.2.1, hNtfn.2.2.2⟩
+      rw [hNtfn.1]; exact ⟨hNtfn.2.1, hNtfn.2.2.2.1⟩
     · -- dualQueueSystemInvariant
       refine ⟨?_, ?_, ?_, ?_, ?_⟩
       · -- all endpoints have well-formed queues
@@ -6238,7 +6238,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       · -- notificationBadgesWellFormed
         intro oid ntfn badge hObj hBadge
         have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
-        rw [hNtfn.2.2.2] at hBadge; exact absurd hBadge (by simp)
+        rw [hNtfn.2.2.2.1] at hBadge; exact absurd hBadge (by simp)
       · -- capabilityBadgesWellFormed
         intro oid o slot cap badge hObj hSlotLookup hBadge
         cases o with
@@ -6597,15 +6597,29 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         rw [((hShape _ _ hO).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1]
       | schedContext sc =>
         show (0, sc.yieldFromCode) = (0, 0)
-        rw [((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2.2.2.2]
+        rw [((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2.2.2.2.1]
       | _ => rfl
   -- 22. bookkeepingAgrees (WS-UC UC2): every intermediate state carries the
   -- agreement, and the caller bounds the object count.
-  -- Compose all 22 components
+  -- 23. notificationLinksAgree (WS-SX SX8.3): no boot notification is bound
+  -- to a context and no boot context to a notification, so every code is 0.
+  have hNtfnLinks : notificationLinksAgree ist.state := notificationLinksAgree_of_clear fun k => by
+    cases hO : ist.state.objects[k]? with
+    | none => rfl
+    | some o =>
+      cases o with
+      | notification n =>
+        show (n.schedContextCode, 0) = (0, 0)
+        rw [((hShape _ _ hO).2.1 n rfl).2.2.2.2]
+      | schedContext sc =>
+        show (0, sc.notificationCode) = (0, 0)
+        rw [((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2.2.2.2.2]
+      | _ => rfl
+  -- Compose all 23 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
          hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle, hAckBounded,
-         hAuditBounded, hRun, hMappings, hRel, hRefill, hYield, ⟨ist.hLifecycleConsistent, hCount⟩⟩
+         hAuditBounded, hRun, hMappings, hRel, hRefill, hYield, ⟨ist.hLifecycleConsistent, hCount⟩, hNtfnLinks⟩
 
 /-- WS-ZA ZA6.8: **a boot-shaped state keeps no linked thread current or
 resident** — no boot thread yields to a context, so every yield-to code is 0

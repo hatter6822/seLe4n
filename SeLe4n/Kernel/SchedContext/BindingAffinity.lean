@@ -305,13 +305,6 @@ private theorem schedContextUnbind_ok_char
       cases hTcb : st.getTcb? tid with
       | some tcb =>
         rw [hTcb] at h; simp only [] at h
-        -- `v0.35.4`: a donated holder is refused, so a successful unbind saw a
-        -- binding that is not a donation.
-        have hNotDon : tcb.schedContextBinding.isDonated = false := by
-          cases hD : tcb.schedContextBinding.isDonated with
-          | false => rfl
-          | true => rw [hD] at h; simp at h
-        simp only [hNotDon, Bool.false_eq_true, if_false] at h
         cases h
         refine ⟨?_, ?_, Or.inl ⟨tcb, rfl, ?_⟩⟩
         · -- the replenish queues: only the purge touches them, on the core

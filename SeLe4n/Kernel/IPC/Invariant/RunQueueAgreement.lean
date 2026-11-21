@@ -88,7 +88,8 @@ theorem recordSendCap_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
       SystemState.runQueueRefined_of_frame hL rfl rfl r⟩)
       (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _)
       (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _)
-      (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _ fun _ => rfl),
+      (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _ fun _ => rfl)
+      (fun _ => by unfold recordSendCap; exact .mapTcbInPlace _ _ _),
     fun _ _ _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (st := st)
       (st' := recordSendCap st tid badge grant grantReply) rfl hL hM d, fun _ _ => hM⟩
 
@@ -317,6 +318,7 @@ theorem enqueueRunnableOnCore_runQueueLinkStage (st : SystemState) (c : Concurre
     (fun h => enqueueRunnableOnCore_releaseStateAgree st c tid h)
     (fun h => enqueueRunnableOnCore_refillViewsKept st c tid h)
     (fun h => enqueueRunnableOnCore_yieldLinksKept st c tid h)
+    (fun h => enqueueRunnableOnCore_notificationLinksKept st c tid h)
     (by have h := enqueueRunnableOnCore_onlyObjectsSchedulerDiffer st c tid
         unfold SystemState.onlyObjectsSchedulerDiffer at h; rw [h])
 
@@ -960,6 +962,29 @@ theorem ipcUnwrapCaps_yieldLinksKept {caps : Array TransferCap} {endpointId : Op
   · exact hA.yieldCodes
   · rw [hc, hc']; rfl
 
+/-- The objects at a key agreeing up to derivation metadata hold the same
+notification-link codes: a CNode holds none and a thread holds none. -/
+theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.notificationLinkCodes
+    {st st' : SystemState} {oid : SeLe4n.ObjId}
+    (h : SystemState.objectAgreesOffDerivationMetadataAt st' st oid) :
+    objNotificationLinkCodes st'.objects[oid]? = objNotificationLinkCodes st.objects[oid]? := by
+  rcases h with e | ⟨_, _, ha, hb, _⟩ | ⟨_, _, ha, hb, _⟩
+  · rw [e]
+  · rw [ha, hb]; rfl
+  · rw [ha, hb]; rfl
+
+/-- The capability transfer keeps every notification-link code. -/
+theorem ipcUnwrapCaps_notificationLinksKept {caps : Array TransferCap}
+    {endpointId : Option SeLe4n.ObjId}
+    {rtcb : TCB} {slot? : Option CSpaceAddr} {st st' : SystemState} {summary : CapTransferSummary}
+    (hObjInv : st.objects.invExt)
+    (h : ipcUnwrapCaps caps endpointId rtcb slot? st = .ok (summary, st')) :
+    NotificationLinksKept st' st := fun k => by
+  rcases ipcUnwrapCaps_object_cases caps endpointId rtcb slot? st st' summary k hObjInv h with
+    hA | ⟨_, -, -, ⟨cn, hc⟩, ⟨cn', hc'⟩⟩
+  · exact hA.notificationLinkCodes
+  · rw [hc, hc']; rfl
+
 /-- The cap transfer writes CNodes, the derivation tree and slot links: every
 thread's TCB reads as it did off its slot links. -/
 theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {endpointId : Option SeLe4n.ObjId}
@@ -977,6 +1002,7 @@ theorem ipcUnwrapCaps_runQueueStage {caps : Array TransferCap} {endpointId : Opt
     (fun hInv => ipcUnwrapCaps_releaseStateAgree hInv h)
     (fun hInv => ipcUnwrapCaps_refillViewsKept hInv h)
     (fun hInv => ipcUnwrapCaps_yieldLinksKept hInv h)
+    (fun hInv => ipcUnwrapCaps_notificationLinksKept hInv h)
     (hRes := by rw [ipcUnwrapCaps_preserves_machine caps endpointId rtcb slot? st st' summary h])
 
 /-- WS-ZA ZA4.7: the rendezvous capability lookup: CDT writes, then the
@@ -1018,6 +1044,7 @@ theorem donateSchedContext_runQueueFrameStage {st st' : SystemState}
     (fun hInv => donateSchedContext_releaseStateAgree st st' client server scId hInv h)
     (fun hInv => donateSchedContext_refillsKeptOff st st' client server scId hInv h)
     (fun hInv => donateSchedContext_yieldLinksKept st st' client server scId hInv h)
+    (fun hInv => donateSchedContext_notificationLinksKept st st' client server scId hInv h)
     (by rw [hS])
     (by rw [donateSchedContext_machine_eq st st' client server scId h])
 

@@ -307,7 +307,7 @@ scenarios:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runIpcMessageBoundsTrace
     subsystem: IPC
-    description: "H12d oversized registers rejected: true"
+    description: "H12d oversized registers clamped to 120: true"
   IMB-004:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runIpcMessageBoundsTrace
@@ -322,7 +322,7 @@ scenarios:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runIpcMessageBoundsTrace
     subsystem: IPC
-    description: "H12d call oversized rejected: true"
+    description: "H12d call oversized clamped to 120: true"
   IMB-012:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runIpcMessageBoundsTrace
@@ -547,7 +547,7 @@ scenarios:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runRegisterDecodeTrace
     subsystem: Architecture
-    description: "syscallEntryChecked malformed msgInfo decode error: SeLe4n.Model.KernelError.i"
+    description: "syscallEntryChecked over-length msgInfo clamped, send accepted: true"
   RDT-010:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runRegisterDecodeTrace

@@ -336,6 +336,7 @@ no core**: its signal wakes a thread and blocks none, and its mask writes no
 thread. -/
 theorem interruptEntryState_preserves_blockedNotResident (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
+    (hBi : schedContextBindingBidirectional (Concurrency.saveCapturedTrapFrameAt st coreId frame))
     (hInv0 : st.objects.invExt) (hR0 : st.runQueueRefined) (hD0 : st.currentDequeuedUnique)
     (hC : st.currentNotResidentElsewhere) (hB : st.blockedNotResident) :
     (Architecture.clearIcacheMaintenance
@@ -358,7 +359,7 @@ theorem interruptEntryState_preserves_blockedNotResident (coreId intId : UInt64)
   · intro c hc
     exact ⟨(keptOffCore_of_save_stepCovers (saveCapturedTrapFrameAt_scheduler st coreId frame)
       (saveCapturedTrapFrameAt_residentCode st coreId frame)
-      (interruptEntryStep_stepCovers c _ coreId intId hInvS)).2, .of_stateMono hM⟩
+      (interruptEntryStep_stepCovers c _ coreId intId hInvS hBi)).2, .of_stateMono hM⟩
   · intro hc
     refine ⟨?_, .of_stateMono hM⟩
     rw [interruptEntryStep_invalid_core _ coreId intId hc]

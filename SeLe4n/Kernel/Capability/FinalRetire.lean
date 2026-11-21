@@ -2896,6 +2896,43 @@ theorem retireFinalObject_yieldLinksKept (ec : Concurrency.CoreId) (target recor
         simp [objYieldCodes, h0]
       | _ => rfl
 
+/-- WS-SX SX8.3: **the retire keeps every notification-link code.**  It erases
+a notification only when it is quiescent (`passiveObjectQuiescent`: bound to no
+context) and a context only when the guard admits it (`schedContextRetirable`:
+bound to no notification), so every key reads the codes it read. -/
+theorem retireFinalObject_notificationLinksKept (ec : Concurrency.CoreId) (target recorder : Nat)
+    (st : SystemState) (hInv : st.objects.invExt) :
+    NotificationLinksKept (retireFinalObject ec target recorder st) st := fun k => by
+  rcases retireFinalObject_key ec target recorder st hInv k with e | ⟨-, -, hpost⟩
+  · rw [e]
+  · have hPost : objNotificationLinkCodes (retireFinalObject ec target recorder st).objects[k]? =
+        (0, 0) := by
+      rcases hpost with hn | ⟨U, hU⟩
+      · rw [hn]; rfl
+      · rw [hU]; rfl
+    rw [hPost]
+    cases hP : st.objects[k]? with
+    | none => rfl
+    | some o =>
+      cases o with
+      | notification n =>
+        by_cases h0 : n.schedContextCode = 0
+        · simp [objNotificationLinkCodes, h0]
+        · have hq : passiveObjectQuiescent st k = false := by
+            simp [passiveObjectQuiescent, SystemState.getObject?, hP, h0]
+          have hK := retireFinalObject_passive_kept ec target recorder st hInv
+            (by rw [hP]; trivial) hq
+          rw [hK, hP] at hpost
+          rcases hpost with hn | ⟨U, hU⟩ <;> first | cases hn | cases hU
+      | schedContext sc =>
+        rcases retireFinalObject_schedContext_cases ec target recorder st hInv hP with e | ⟨-, hR⟩
+        · rw [e] at hpost
+          rcases hpost with hn | ⟨U, hU⟩ <;> first | cases hn | cases hU
+        · obtain ⟨sc', hS', -, -, -, -, -, h0⟩ := schedContextRetirable_parts hR
+          rw [hP] at hS'; cases hS'
+          simp [objNotificationLinkCodes, h0]
+      | _ => rfl
+
 /-- A reply linked upward is not quiescent. -/
 theorem passiveObjectQuiescent_of_next {st : SystemState} {o : SeLe4n.ObjId} {r : Reply}
     (hR : st.objects[o]? = some (.reply r)) (hN : r.next.isSome = true) :
