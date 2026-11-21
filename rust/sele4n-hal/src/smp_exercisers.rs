@@ -18875,12 +18875,17 @@ fn fault_entries() -> Option<bool> {
         let which = if first { " (first call)" } else { "" };
         if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
             || !unmeasured(&handler_waits, "the handler did not wait on the endpoint")
-            || heap_allocations_trap(&fault_trip(2, "cap-fault-delivered-to-take-reply-recv"), which)
-                != Some(true)
+            || heap_allocations_trap(
+                &fault_trip(2, "cap-fault-delivered-to-take-reply-recv"),
+                which,
+            ) != Some(true)
             || !unmeasured(&take_resume_restorer, "the third thread was not resumed")
             || !unmeasured(&take_root_waits, "the root task did not wait")
             || !unmeasured(&take_restorer_wakes_root, "the third thread did not signal")
-            || !unmeasured(&take_restorer_sends, "the third thread's send did not queue")
+            || !unmeasured(
+                &take_restorer_sends,
+                "the third thread's send did not queue",
+            )
             || heap_allocations_round_trip(&take_reply_recv, which) != Some(true)
             || !unmeasured(&take_suspend_restorer, "the third thread was not suspended")
             || !suspend_partner()
