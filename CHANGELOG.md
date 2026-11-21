@@ -86,6 +86,15 @@ D22, "Match seL4", 2026-11-19). Stacks on SX7 (`v0.37.33`).
 - The compiled signal copied the object store; the blocking receive's return
   copied it; the wide-slot mint refusal built records. Each now writes in
   place under a proven equality, and every reading is 0.
+- A reply to a caller recording no server whose reply object is linked to
+  nothing (the state the donated unbind leaves once the server is finalised)
+  fell to the general arm and copied the object store twice; it is answered
+  in place (`replyUnlinkedAdmits`, `performReplyUnlinkedDelivered`,
+  `replyTransferChecked_unlinked_inPlace`).
+- The exerciser's no-operation code was still 48 after label 36 took that
+  number, so the route coverage read every refused selection as
+  `SchedContext_UnbindObject`; it is `SyscallId::ENCODING_BOUND` (49), held
+  by a host test.
 
 ### Tests and fixtures
 - `frozen_ops_suite`: FO-SX8.3 rows for the donated-holder unbind (live

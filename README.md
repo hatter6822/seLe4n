@@ -160,9 +160,9 @@ pointers into it.
 |-----------|-------|
 | **Version** | `0.37.35` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 662,957 across 655 files |
+| **Production Lean LoC** | 663,097 across 655 files |
 | **Test Lean LoC** | 92,061 across 71 test suites |
-| **Proved declarations** | 25,284 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 25,286 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (user-space wrappers), `sele4n-hal` (the kernel's hardware layer), and the host test `sele4n-lean-boundary` |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Boot lanes** | Every QEMU lane boots the Raspberry Pi 5 image on [rpi5_machine](https://github.com/hatter6822/rpi5_machine)'s `raspi5b` machine first, then the `virt` image on QEMU's `virt` |
