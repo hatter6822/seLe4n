@@ -800,4 +800,164 @@ theorem irqControlGetFromCap {tid : SeLe4n.ThreadId} {srcAddr : SeLe4n.CPtr}
 
 end LendersFrame
 
+namespace LendersFrame
+
+theorem descheduleAt (st : SystemState) (t : SeLe4n.ThreadId) (p : Option CoreId)
+    (hInv : st.objects.invExt) : LendersFrame st (_root_.SeLe4n.Kernel.descheduleAt st t p) := by
+  refine of_kept ?_ (RecordsFrame.descheduleAt st t p hInv)
+  unfold _root_.SeLe4n.Kernel.descheduleAt
+  split
+  · exact chainObjectsKept.removeRunnableOnCore _ _ _
+  · exact chainObjectsKept.refl _
+
+theorem releaseRemoveThread (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    LendersFrame st (Lifecycle.Suspend.releaseRemoveThread st t) :=
+  of_views (contextStackViewsAgree_of_objectsAgreeOffReleaseLinks
+      (Lifecycle.Suspend.releaseRemoveThread_agree st t))
+    (RecordsFrame.releaseRemoveThread st t hInv).invExt
+
+theorem cancelYieldTo (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    LendersFrame st (_root_.SeLe4n.Kernel.cancelYieldTo st t) := by
+  unfold _root_.SeLe4n.Kernel.cancelYieldTo
+  split
+  · split
+    · exact refl hInv
+    · rename_i k _
+      exact (updateSchedContext st ⟨k⟩ SchedContext.yieldCleared (fun _ => rfl) hInv).andThen
+        fun h => updateTcb _ t _ h
+  · exact refl hInv
+
+theorem suspendRescheduleOnCore {st st' : SystemState} {runningCore executingCore : CoreId}
+    {wasCurrent localDeboosted : Bool} {sgi? : Option (CoreId × Concurrency.SgiKind)}
+    (hInv : st.objects.invExt)
+    (h : Lifecycle.Suspend.suspendRescheduleOnCore st runningCore executingCore wasCurrent
+      localDeboosted = .ok (st', sgi?)) : LendersFrame st st' := by
+  unfold Lifecycle.Suspend.suspendRescheduleOnCore at h
+  repeat' split at h
+  all_goals first
+    | (cases h; done)
+    | (rename_i hH; rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1];
+        exact handleRescheduleSgiOnCore hInv hH)
+    | (rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]; exact refl hInv)
+
+/-- **The thread suspend** (seL4 `suspend`): seL4-MCS's `cancelIPC` (a links
+shrink), the priority revert, the deschedule, the state writes, the release
+removal, the yield cancel and the scheduling point. -/
+theorem suspendThreadOnCore {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
+    {executingCore : CoreId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
+    (hInv : st.objects.invExt)
+    (hStep : Lifecycle.Suspend.suspendThreadOnCore st vtid executingCore = .ok (st', sgi?)) :
+    LendersFrame st st' := by
+  simp only [Lifecycle.Suspend.suspendThreadOnCore] at hStep
+  split at hStep
+  case h_2 => exact absurd hStep (by simp)
+  case h_1 tcb hT =>
+    split at hStep
+    case isTrue => cases hStep; exact refl hInv
+    case isFalse hA =>
+      have S1 := cancelIpcKeepingContexts st vtid.val tcb hInv
+      have S2 : LendersFrame st
+          (match PriorityInheritance.blockingServer st vtid.val with
+           | some serverId => (PriorityInheritance.propagatePipChainCrossCore
+               (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) serverId executingCore).1
+           | none => Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) := by
+        cases PriorityInheritance.blockingServer st vtid.val with
+        | none => exact S1
+        | some serverId => exact S1.andThen fun h => propagatePipChainCrossCore _ _ _ _ h
+      have S3 := S2.andThen fun h => descheduleAt _ vtid.val (placedCoreOf? st vtid.val) h
+      have S4 := S3.andThen fun h =>
+        (show LendersFrame _ (Lifecycle.Suspend.clearPendingStateValid _ vtid) by
+          unfold Lifecycle.Suspend.clearPendingStateValid Lifecycle.Suspend.clearPendingState
+          exact updateTcb _ _ _ h)
+      have S5 := S4.andThen fun h => updateTcb _ vtid.val (fun t => { t with threadState := .Inactive }) h
+      have S6 := S5.andThen fun h => releaseRemoveThread _ vtid.val h
+      have S7 := S6.andThen fun h => cancelYieldTo _ vtid.val h
+      exact S7.andThen fun h => suspendRescheduleOnCore h hStep
+
+end LendersFrame
+
+namespace LendersFrame
+
+theorem markKeyChangeFrom (pre st : SystemState) (t : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    LendersFrame st (_root_.SeLe4n.Kernel.markKeyChangeFrom pre st t) :=
+  of_kept (chainObjectsKept.of_objects_eq (markKeyChangeFrom_objects pre st t))
+    (RecordsFrame.markKeyChangeFrom pre st t hInv)
+
+theorem enqueueRunnableOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : LendersFrame st (_root_.SeLe4n.Kernel.enqueueRunnableOnCore st c t) :=
+  ⟨(chainObjectsKept.enqueueRunnableOnCore st c t hInv).linksShrink,
+   enqueueRunnableOnCore_preserves_objects_invExt st c t hInv⟩
+
+theorem resumeContext (st : SystemState) (t : SeLe4n.ThreadId) (home : CoreId)
+    (hInv : st.objects.invExt) : LendersFrame st (Lifecycle.Suspend.resumeContext st t home) := by
+  rcases Lifecycle.Suspend.resumeContext_cases st t home with e | ⟨s, e⟩ <;> rw [e]
+  · exact refl hInv
+  · exact (updateSchedContext st s (fun sc => sc.refillUnblockCheck st.machine.timer)
+      (fun sc => (SchedContext.fields_of_refillsErased
+        (SchedContext.refillUnblockCheck_refillsErased sc _)).2.2.2.2.2.2.2.1) hInv).andThen
+      fun h => settleReturnedContext _ home s h
+
+theorem resumeReadyMidState (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    LendersFrame st (Lifecycle.Suspend.resumeReadyMidState st t) := by
+  have S : LendersFrame st (Lifecycle.Suspend.restoreToReadyStaging st t false) := by
+    unfold Lifecycle.Suspend.restoreToReadyStaging; exact updateTcb _ _ _ hInv
+  unfold Lifecycle.Suspend.resumeReadyMidState
+  dsimp only
+  exact S.andThen fun h => updateTcb _ t _ h
+
+theorem retirePendingFaultForResume (st : SystemState) (t : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    LendersFrame st (_root_.SeLe4n.Kernel.retirePendingFaultForResume st t) := by
+  unfold _root_.SeLe4n.Kernel.retirePendingFaultForResume
+  split
+  · split
+    · split
+      · unfold discardPendingFault; exact updateTcb _ _ _ hInv
+      · unfold applyFaultRestart; exact updateTcb _ _ _ hInv
+    · exact refl hInv
+  · exact refl hInv
+
+/-- **The thread resume** (seL4 `restart`'s resume half): the ready mark, the
+key hook, the context's return, the wake and the scheduling point. -/
+theorem resumeThreadOnCore {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
+    {executingCore : CoreId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
+    (hInv : st.objects.invExt)
+    (h : Lifecycle.Suspend.resumeThreadOnCore st vtid executingCore = .ok (st', sgi?)) :
+    LendersFrame st st' := by
+  unfold Lifecycle.Suspend.resumeThreadOnCore at h
+  dsimp only at h
+  split at h
+  · split at h
+    · cases h
+    · have S0 := ((resumeReadyMidState st vtid.val hInv).andThen fun h =>
+        markKeyChangeFrom st _ vtid.val h).andThen fun h =>
+          resumeContext _ vtid.val (determineTargetCore st vtid.val) h
+      have S := S0.andThen fun h => enqueueRunnableOnCore _ (determineTargetCore st vtid.val) vtid.val h
+      split at h
+      · split at h
+        · split at h
+          · rename_i hH
+            rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]
+            exact S.andThen fun h' => handleRescheduleSgiOnCore h' hH
+          · cases h
+        · rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]; exact S
+      · rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]; exact S0
+  · cases h
+
+/-- **The thread restart** (seL4 `restart`): a resume, or a suspend then a
+resume, each after the fault retire; or nothing. -/
+theorem restartThreadOnCore {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
+    {executingCore : CoreId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
+    (hInv : st.objects.invExt)
+    (h : Lifecycle.Suspend.restartThreadOnCore st vtid executingCore = .ok (st', sgi?)) :
+    LendersFrame st st' := by
+  rcases Lifecycle.Suspend.restartThreadOnCore_cases h with hRes | ⟨st1, _, hSus, hRes⟩ | ⟨rfl, _⟩
+  · exact (retirePendingFaultForResume st vtid.val hInv).andThen fun h' => resumeThreadOnCore h' hRes
+  · exact ((suspendThreadOnCore hInv hSus).andThen fun h' =>
+      retirePendingFaultForResume st1 vtid.val h').andThen fun h' => resumeThreadOnCore h' hRes
+  · exact refl hInv
+
+end LendersFrame
+
 end SeLe4n.Kernel

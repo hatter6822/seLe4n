@@ -11528,6 +11528,9 @@ open SeLe4n.Kernel.Concurrency
 #check @LendersFrame.pageTableMap
 #check @LendersFrame.pageTableUnmap
 #check @LendersFrame.irqControlGetFromCap
+#check @LendersFrame.suspendThreadOnCore
+#check @LendersFrame.resumeThreadOnCore
+#check @LendersFrame.restartThreadOnCore
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing
