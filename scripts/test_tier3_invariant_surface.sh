@@ -11293,6 +11293,7 @@ import SeLe4n.Kernel.RefusalCarryingReplyRecv
 import SeLe4n.Kernel.InformationFlow.PerCoreSchedulerNonInterference
 import SeLe4n.Kernel.SchedContext.Invariant.ContextLenders
 import SeLe4n.Kernel.IPC.Invariant.ContextLenderSites
+import SeLe4n.Kernel.IPC.Invariant.ContextLenderLinks
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency
 #check @replyRecvCompletesSignalArm
@@ -11420,6 +11421,19 @@ open SeLe4n.Kernel.Concurrency
 #check @storeReplyLeg_preserves_contextLendersFlow
 #check @linkReply_preserves_contextLendersFlow
 #check @linkCallerReply_preserves_contextLendersFlow
+#check @contextLendersFlow_of_linksShrinkOff
+#check @chainObjectsKept.endpointQueuePopHead
+#check @chainObjectsKept.endpointQueueEnqueue
+#check @linkServerStashedReply_preserves_contextLendersFlow
+#check @storeCallRendezvous_preserves_contextLendersFlow
+#check @storeCallRendezvousReady_preserves_contextLendersFlow
+#check @storeReceiveCallReady_preserves_contextLendersFlow
+#check @receiveCallTakeState_preserves_contextLendersFlow
+#check @endpointCall_preserves_contextLendersFlow
+#check @endpointCallOnCore_preserves_contextLendersFlow
+#check @endpointReceiveDual_preserves_contextLendersFlow
+#check @endpointReceiveDualOnCore_preserves_contextLendersFlow
+#check @cleanupPreReceiveDonationMigrated_linksShrink
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing

@@ -153,6 +153,7 @@ import SeLe4n.Kernel.SchedContext.Invariant.ContextLenders
 import SeLe4n.Kernel.IPC.Invariant.ContextLenderRemovals
 import SeLe4n.Kernel.IPC.Invariant.ContextLenderPops
 import SeLe4n.Kernel.IPC.Invariant.ContextLenderSites
+import SeLe4n.Kernel.IPC.Invariant.ContextLenderLinks
 -- WS-LS LS2.5: the per-transition scheduler footprints, each beside its
 -- transition, and the constructor every one of them is an instance of.
 import SeLe4n.Kernel.Scheduler.SchedFootprint

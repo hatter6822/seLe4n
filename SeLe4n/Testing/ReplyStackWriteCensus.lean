@@ -257,7 +257,10 @@ def chainNeutralConstructors : List (Name × String) :=
     -- no link in either direction.  Linking a caller cannot falsify a chain
     -- clause (`Reply.wellFormed`'s antecedent becomes false, and the walk reads
     -- `prev` / `next` / `scReply`), and the guard is what makes that structural
-    -- rather than incidental.
+    -- rather than incidental.  Chain-neutral is not lender-neutral: a linked
+    -- caller is what `contextLendersFlow` reads, so every entry here that links
+    -- a lender field owes the lender record `neutralLenderRecords` holds, derived
+    -- from the write (`lenderFieldWriter`), not from this list.
     (`SeLe4n.Model.SystemState.linkReply,
       "writes `Reply.caller` only, gated on `Reply.isFree` — no link in either direction")
     -- A `{ sc with budget := …, period := …, … }` update: `scReply` is not in
@@ -1147,6 +1150,162 @@ def reconciliationViolations (derived alsoWriting recorded : List Name) : List S
         data ({stale}) — this list is what the chain surface is read off, so a stale entry \
         overstates it"])
 
+/-! ## What a caller-linking writer owes
+
+WS-SX SX8 (D27): `donationChainWellFormed` cannot be falsified by linking a
+caller, which is why `chainNeutralConstructors` exempts the writers that do it
+from a chain result.  `contextLendersFlow` reads exactly that write: a caller on
+a reply object on a context's stack is a lender.  So "chain-neutral" is not
+"lender-neutral", and an exemption from the first must not be one from the
+second.
+
+**The requirement is derived from what each writer writes, not listed.**  A
+writer *links a lender field* when a `Reply` record it builds — in its own body
+or in a helper it reaches that is not itself a registered write site — assigns
+`callerCode` or `prev`, or a `SchedContext` record assigns `scReply`, anything
+other than the value it read (`r.callerCode`, the projection) or the empty value
+(`0`, `none`).  Anything the classifier cannot read as one of those two is a
+write, so it fails closed.  The walk follows a definition's **computational**
+constants — its body, `let` values and applied arguments — and not binder
+types, which hold statements rather than stores (an inventory of theorem
+statements mentions every operation it is about and performs none).  It stops
+at a registered site, which carries its own lender results, and at a theorem. -/
+
+/-- The fields a lender view reads, by structure. -/
+def lenderFields : List (Name × Name) :=
+  [(`SeLe4n.Kernel.Reply, `callerCode), (`SeLe4n.Kernel.Reply, `prev),
+   (`SeLe4n.Kernel.SchedContext, `scReply)]
+
+/-- `true` when `a` is the field read back from a record of the same structure
+(`r.f`, as a projection function or a primitive projection). -/
+def isFieldCopy (S f : Name) (idx : Nat) (a : Expr) : Bool :=
+  match a.consumeMData with
+  | .proj s i _ => s == S && i == idx
+  | e => e.isAppOfArity (S ++ f) 1
+
+/-- `true` when `a` is the empty value of a lender field: `none`, or the code
+`0`. -/
+def isEmptyFieldValue (a : Expr) : Bool :=
+  let a := a.consumeMData
+  a.isAppOf ``Option.none || a == .lit (.natVal 0) ||
+    (a.isAppOfArity ``OfNat.ofNat 3 && (a.getArg! 1).consumeMData == .lit (.natVal 0))
+
+/-- `true` when `e` builds a record that writes a lender field: a full
+constructor application whose argument at a lender field is neither a copy nor
+the empty value.  A structure this environment does not hold reads as a write. -/
+def writesLenderField (env : Environment) (e : Expr) : Bool :=
+  (e.find? fun x => lenderFields.any fun (S, f) =>
+    x.isAppOf (S ++ `mk) &&
+      match getStructureInfo? env S with
+      | some info =>
+        let nParams := (getStructureCtor env S).numParams
+        match info.fieldNames.idxOf? f with
+        | none => true
+        | some idx =>
+          x.getAppNumArgs == nParams + info.fieldNames.size &&
+            match x.getAppArgs[nParams + idx]? with
+            | none => true
+            | some a => !(isFieldCopy S f idx a) && !(isEmptyFieldValue a)
+      | none => true).isSome
+
+/-- The constants of `e` in computational position: everything but binder
+types. -/
+partial def computationalConstants : Expr → Array Name → Array Name
+  | .const c _, acc => if acc.contains c then acc else acc.push c
+  | .app f a, acc => computationalConstants a (computationalConstants f acc)
+  | .lam _ _ b _, acc => computationalConstants b acc
+  | .letE _ _ v b _, acc => computationalConstants b (computationalConstants v acc)
+  | .mdata _ e, acc => computationalConstants e acc
+  | .proj _ _ e, acc => computationalConstants e acc
+  | _, acc => acc
+
+/-- `some w` when `n` writes a lender field, `w` being the definition whose own
+body holds the write — `n` itself, or a helper reached through calls that are
+not registered sites (`stop`).  Only a body-bearing declaration is read. -/
+partial def lenderFieldWriter (env : Environment) (stop : List Name)
+    (seen : Std.HashSet Name) (n : Name) : Option Name × Std.HashSet Name :=
+  if seen.contains n then (none, seen) else
+  let seen := seen.insert n
+  -- A theorem carries a proof, not a write: `DeclarationKind`'s body-bearing
+  -- answer is the one owner of that question.
+  if !DeclarationKind.bodyBearingName env n then (none, seen) else
+  match (env.find? n).bind (·.value? (allowOpaque := true)) with
+  | none => (none, seen)
+  | some v =>
+    if writesLenderField env v then (some n, seen) else
+    (computationalConstants v #[]).foldl (fun (acc : Option Name × Std.HashSet Name) c =>
+      if acc.1.isSome then acc
+      else if isProjectConstant c && !stop.contains c then lenderFieldWriter env stop acc.2 c
+      else acc) (none, seen)
+
+/-- What a chain-neutral writer that links a lender field owes. -/
+inductive LenderRecord where
+  /-- Its lender results: each mentions the writer and concludes a lender
+  predicate (`lenderResultViolations`). -/
+  | results (names : List Name)
+  /-- A frozen-surface writer: `contextLendersFlow` is a predicate on
+  `SystemState`, so the frozen twin names the live writer it performs, which
+  must carry results of its own. -/
+  | mirrors (live : Name)
+  deriving Inhabited
+
+/-- The lender records of the chain-neutral writers that link a lender field. -/
+def neutralLenderRecords : List (Name × LenderRecord) :=
+  [ (`SeLe4n.Model.SystemState.linkReply,
+      .results [`SeLe4n.Kernel.linkReply_preserves_contextLendersFlow])
+  , (`SeLe4n.Model.SystemState.linkCallerReply,
+      .results [`SeLe4n.Kernel.linkCallerReply_preserves_contextLendersFlow])
+  , (`SeLe4n.Model.SystemState.linkServerStashedReply,
+      .results [`SeLe4n.Kernel.linkServerStashedReply_preserves_contextLendersFlow])
+  , (`SeLe4n.Kernel.storeCallRendezvous,
+      .results [`SeLe4n.Kernel.storeCallRendezvous_preserves_contextLendersFlow])
+  , (`SeLe4n.Kernel.storeCallRendezvousReady,
+      .results [`SeLe4n.Kernel.storeCallRendezvousReady_preserves_contextLendersFlow])
+  , (`SeLe4n.Kernel.receiveCallTakeState,
+      .results [`SeLe4n.Kernel.receiveCallTakeState_preserves_contextLendersFlow])
+  , (`SeLe4n.Kernel.storeReceiveCallReady,
+      .results [`SeLe4n.Kernel.storeReceiveCallReady_preserves_contextLendersFlow])
+  , (`SeLe4n.Kernel.endpointReceiveDual,
+      .results [`SeLe4n.Kernel.endpointReceiveDual_preserves_contextLendersFlow])
+  , (`SeLe4n.Kernel.endpointReceiveDualOnCore,
+      .results [`SeLe4n.Kernel.endpointReceiveDualOnCore_preserves_contextLendersFlow])
+  , (`SeLe4n.Kernel.endpointCall,
+      .results [`SeLe4n.Kernel.endpointCall_preserves_contextLendersFlow])
+  , (`SeLe4n.Kernel.endpointCallOnCore,
+      .results [`SeLe4n.Kernel.endpointCallOnCore_preserves_contextLendersFlow])
+  , (`SeLe4n.Kernel.FrozenOps.frozenLinkCallerReply,
+      .mirrors `SeLe4n.Model.SystemState.linkCallerReply)
+  , (`SeLe4n.Kernel.FrozenOps.frozenLinkServerStashedReply,
+      .mirrors `SeLe4n.Model.SystemState.linkServerStashedReply) ]
+
+/-- Where the derived lender writers and the records disagree; `[]` when they
+are the same set and every record holds up.  `linkers` is derived; both
+directions are checked, so a record naming a writer that links nothing is stale
+rather than coverage. -/
+def lenderRecordViolations (env : Environment) (linkers : List Name)
+    (records : List (Name × LenderRecord)) : List String :=
+  let recorded := records.map (·.1)
+  let missing := linkers.filter (fun n => !recorded.contains n)
+  let stale := recorded.filter (fun n => !linkers.contains n)
+  (if missing.isEmpty then [] else
+    [s!"{missing.length} chain-neutral writer(s) link a lender field (a `Reply`'s caller or \
+        `prev`, or a context's `scReply`) and name no lender result ({missing}) — a writer \
+        exempt from a chain result is not exempt from saying what it does to the lenders on \
+        a context's stack"]) ++
+  (if stale.isEmpty then [] else
+    [s!"{stale.length} lender record(s) name writers that link no lender field ({stale}) — a \
+        stale record reads like coverage"]) ++
+  records.flatMap fun (n, r) =>
+    match r with
+    | .results [] => [s!"`{n}` is recorded with no lender result"]
+    | .results rs => rs.flatMap (lenderResultViolations env n)
+    | .mirrors live =>
+      (if live == n then [s!"`{n}` is recorded as mirroring itself"] else []) ++
+      (match records.find? (fun (m, _) => m == live) with
+       | some (_, .results (_ :: _)) => []
+       | _ => [s!"`{n}` is recorded as mirroring `{live}`, which carries no lender result of \
+           its own — a frozen writer whose live twin is uncovered is covered by nothing"])
+
 /-! ## Witnesses
 
 A census that accepted everything would read exactly like a passing one.  These
@@ -1258,6 +1417,28 @@ private def eq_1 (rid : SeLe4n.ReplyId) : SeLe4n.Model.Kernel Unit :=
 private def censusWitnessNoWrite (st : SeLe4n.Model.SystemState) (rid : SeLe4n.ReplyId) :
     Option SeLe4n.Kernel.Reply :=
   st.getReply? rid
+
+/-- **A chain-neutral caller link**: a reply object's caller written in the
+writer's own body, which the lender requirement must see. -/
+private def censusWitnessCallerLink (rid : SeLe4n.ReplyId) (c : SeLe4n.ThreadId) :
+    SeLe4n.Model.Kernel Unit := fun st =>
+  match st.getReply? rid with
+  | some r => SeLe4n.Model.storeObject rid.toObjId
+      (.reply { r with callerCode := SeLe4n.ThreadId.optCode (some c) }) st
+  | none => .error .replyCapInvalid
+
+/-- ...and one delegated to a helper that builds the record (`replyWithCaller`),
+which the walk must follow. -/
+private def censusWitnessDelegatedCallerLink (rid : SeLe4n.ReplyId) (c : SeLe4n.ThreadId)
+    (st : SeLe4n.Model.SystemState) : SeLe4n.Model.SystemState :=
+  st.modifyObject rid.toObjId (SeLe4n.Kernel.replyWithCaller c)
+
+/-- **A write of no lender field**: a reply object rebuilt with every lender
+field read back, which the requirement must not see. -/
+private def censusWitnessStasherOnly (rid : SeLe4n.ReplyId) : SeLe4n.Model.Kernel Unit := fun st =>
+  match st.getReply? rid with
+  | some r => SeLe4n.Model.storeObject rid.toObjId (.reply { r with stasherCode := 1 }) st
+  | none => .error .replyCapInvalid
 
 run_cmd Command.liftTermElabM do
   let env ← getEnv
@@ -1454,6 +1635,54 @@ run_cmd Command.liftTermElabM do
     throwError "reply-stack write census: a stale registry entry was accepted"
   unless (reconciliationViolations [] [] []).isEmpty do
     throwError "reply-stack write census: two empty sets were reported as disagreeing"
+  -- The lender requirement on chain-neutral writers, both directions: a caller
+  -- written in the writer's own body and one delegated to a record-building
+  -- helper are lender writes, and a record rebuilt with every lender field read
+  -- back is not.
+  let stopAt : List Name := chainWriteRegistry.map (·.1)
+  unless (lenderFieldWriter env stopAt {} ``censusWitnessCallerLink).1.isSome do
+    throwError "reply-stack write census: a writer linking a reply object's caller in its own \
+      body is not seen to write a lender field"
+  unless (lenderFieldWriter env stopAt {} ``censusWitnessDelegatedCallerLink).1 ==
+      some `SeLe4n.Kernel.replyWithCaller do
+    throwError "reply-stack write census: a caller link delegated to `replyWithCaller` is not \
+      traced to the helper that builds the record"
+  if (lenderFieldWriter env stopAt {} ``censusWitnessStasherOnly).1.isSome then
+    throwError "reply-stack write census: a reply object rebuilt with every lender field read \
+      back is seen to write one"
+  -- ...and the records: a linker with no record, a stale record, an empty one, a
+  -- self-mirror and a mirror of an uncovered writer are each refused.
+  if (lenderRecordViolations env [`a] []).isEmpty then
+    throwError "reply-stack write census: a lender writer with no lender record was accepted"
+  if (lenderRecordViolations env []
+      [(`SeLe4n.Kernel.storeCallRendezvous, .results
+        [`SeLe4n.Kernel.storeCallRendezvous_preserves_contextLendersFlow])]).isEmpty then
+    throwError "reply-stack write census: a STALE lender record was accepted"
+  if (lenderRecordViolations env [`SeLe4n.Kernel.storeCallRendezvous]
+      [(`SeLe4n.Kernel.storeCallRendezvous, .results [])]).isEmpty then
+    throwError "reply-stack write census: a lender record naming no result was accepted"
+  if (lenderRecordViolations env [`SeLe4n.Kernel.storeCallRendezvous]
+      [(`SeLe4n.Kernel.storeCallRendezvous, .results
+        [`SeLe4n.Kernel.endpointCall_preserves_contextLendersFlow])]).isEmpty then
+    throwError "reply-stack write census: a lender result about another writer was accepted"
+  if (lenderRecordViolations env [`a] [(`a, .mirrors `a)]).isEmpty then
+    throwError "reply-stack write census: a lender record mirroring itself was accepted"
+  if (lenderRecordViolations env [`a, `b] [(`a, .mirrors `b), (`b, .mirrors `a)]).isEmpty then
+    throwError "reply-stack write census: a mirror of a writer with no lender result was accepted"
+  unless (lenderRecordViolations env [`SeLe4n.Kernel.storeCallRendezvous]
+      [(`SeLe4n.Kernel.storeCallRendezvous, .results
+        [`SeLe4n.Kernel.storeCallRendezvous_preserves_contextLendersFlow])]).isEmpty do
+    throwError "reply-stack write census: a genuine lender record was refused"
+  -- The requirement itself: every chain-neutral writer that links a lender field
+  -- carries a lender record, and every record names such a writer.
+  let mut linkers : List Name := []
+  for (n, _) in chainNeutralConstructors do
+    if (lenderFieldWriter env stopAt {} n).1.isSome then linkers := n :: linkers
+  let lenderGaps := lenderRecordViolations env linkers neutralLenderRecords
+  unless lenderGaps.isEmpty do
+    throwError "reply-stack write census: {lenderGaps}"
+  logInfo m!"reply-stack write census: {linkers.length} chain-neutral writers link a lender \
+    field, each with lender results or a live twin that has them"
   -- The census.  The set is derived; the registry is reconciled against it in
   -- both directions; the witnesses above are excluded by name, since they are
   -- planted write sites rather than kernel ones.
@@ -1461,7 +1690,8 @@ run_cmd Command.liftTermElabM do
     [``censusWitnessBareConsume, ``censusWitnessDirectLinkWrite,
      ``censusWitnessSplitWriter, ``censusWitnessSplitHelper,
      ``censusWitnessDelegatedStoreWriter, ``censusWitnessDelegatedStoreHelper,
-     ``eq_censusWitnessUserNamed, ``eq_1, ``censusWitnessRawTableWrite]
+     ``eq_censusWitnessUserNamed, ``eq_1, ``censusWitnessRawTableWrite,
+     ``censusWitnessCallerLink, ``censusWitnessDelegatedCallerLink, ``censusWitnessStasherOnly]
   let mut derived : List Name := []
   for n in directWriteCandidates env do
     if witnesses.contains n then continue
