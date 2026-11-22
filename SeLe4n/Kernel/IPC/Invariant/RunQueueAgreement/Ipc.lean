@@ -346,6 +346,7 @@ theorem applyReplyDonationOnCore_runQueueStage {st st' : SystemState} {rid : SeL
   · exact popUnheldReplyHead_runQueueStage h
   repeat' (first | split at h | dsimp only at h)
   all_goals first
+    | exact keepDonatedSchedContextResolved_runQueueStage h
     | (cases h; exact RunQueueStage.refl _)
     | (cases h; done)
     | (cases h
@@ -581,6 +582,9 @@ theorem replyRecvPopDonation_runQueueStage {rid : SeLe4n.ReplyId} {target : SeLe
     | (cases h; exact RunQueueStage.refl _)
     | (cases h; done)
     | (cases h
+       rename_i hK
+       exact keepDonatedSchedContextResolved_runQueueStage hK)
+    | (cases h
        rename_i hRet
        exact SchedContextOps.settleReturnedContext_runQueueStage
          (returnDonatedSchedContextResolved_runQueueFrameStage hRet)
@@ -699,6 +703,20 @@ theorem popUnheldReplyHead_frame {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadI
     subst hRw
     exact ⟨tcb, hPre, rfl⟩
 
+/-- The held pop adds no endpoint, keeps every current slot and every IPC state. -/
+theorem keepDonatedSchedContextResolved_frame {holder : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {st st' : SystemState}
+    (hInv : st.objects.invExt) (h : keepDonatedSchedContextResolved st holder scId = .ok st') :
+    (∀ (oid : SeLe4n.ObjId) (ep : Endpoint), st'.objects[oid]? = some (.endpoint ep) →
+      st.objects[oid]? = some (.endpoint ep)) ∧
+    (∀ c, st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) ∧
+    (∀ (y : SeLe4n.ThreadId) (tcb' : TCB), st'.objects[y.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState) := by
+  obtain ⟨_, -, hK'⟩ := keepDonatedSchedContextResolved_ok_decompose h
+  exact ⟨keepDonatedSchedContext_endpoint_backward hInv hK',
+    fun c' => by rw [keepDonatedSchedContext_scheduler_eq hK'],
+    fun t tcb' hT => keepDonatedSchedContext_tcb_ipcState_backward hInv hK' _ tcb' hT⟩
+
 /-- The donation pop writes only scheduling-context bindings and replenishment
 queues (the settle): it adds no endpoint, keeps every current slot and every IPC state. -/
 theorem replyRecvPopDonation_frame {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId}
@@ -719,30 +737,34 @@ theorem replyRecvPopDonation_frame {rid : SeLe4n.ReplyId} {target : SeLe4n.Threa
   all_goals first
     | (cases h; exact ⟨fun _ _ h => h, fun _ => rfl, fun _ t h => ⟨t, h, rfl⟩⟩)
     | (cases h; done)
+    | (cases h
+       rename_i hK
+       exact keepDonatedSchedContextResolved_frame hInv hK)
     | skip
-  rename_i st1 hRet
-  cases h
-  refine ⟨fun oid ep hE => ?_, fun c' => ?_, fun t tcb' hT => ?_⟩
-  · replace hE := (SchedContextOps.settleReturnedContext_agree _ _ _).symm.get_of_not_sc
-      (fun _ e => KernelObject.noConfusion e) hE
-    exact returnDonatedSchedContextResolved_lift (P := fun s =>
-      s.objects[oid]? = some (.endpoint ep) → st.objects[oid]? = some (.endpoint ep)) hRet
-      (fun n s hS => returnDonatedSchedContext_endpoint_backward st s _ _ _ hInv n hS oid ep) hE
-  · rw [SchedContextOps.settleReturnedContext_currentOnCore]
-    exact returnDonatedSchedContextResolved_lift (P := fun s =>
-      s.scheduler.currentOnCore c' = st.scheduler.currentOnCore c') hRet
-      (fun n s hS => by
-        show s.scheduler.currentOnCore c' = _
-        rw [returnDonatedSchedContext_scheduler_eq st s _ _ _ n hS]; rfl)
-  · replace hT := (SchedContextOps.settleReturnedContext_agree _ _ _).symm.get_of_not_sc
-      (fun _ e => KernelObject.noConfusion e) hT
-    exact returnDonatedSchedContextResolved_lift (P := fun s =>
-      s.objects[t.toObjId]? = some (.tcb tcb') →
-        ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState)
-      hRet (fun n s hS hT => by
-        obtain ⟨tcb, h0, hS', -⟩ := returnDonatedSchedContext_tcb_ipcState_replyObject_backward
-          st s _ _ _ hInv n hS t.toObjId tcb' hT
-        exact ⟨tcb, h0, hS'⟩) hT
+  all_goals
+    rename_i st1 hRet
+    cases h
+    refine ⟨fun oid ep hE => ?_, fun c' => ?_, fun t tcb' hT => ?_⟩
+    · replace hE := (SchedContextOps.settleReturnedContext_agree _ _ _).symm.get_of_not_sc
+        (fun _ e => KernelObject.noConfusion e) hE
+      exact returnDonatedSchedContextResolved_lift (P := fun s =>
+        s.objects[oid]? = some (.endpoint ep) → st.objects[oid]? = some (.endpoint ep)) hRet
+        (fun n s hS => returnDonatedSchedContext_endpoint_backward st s _ _ _ hInv n hS oid ep) hE
+    · rw [SchedContextOps.settleReturnedContext_currentOnCore]
+      exact returnDonatedSchedContextResolved_lift (P := fun s =>
+        s.scheduler.currentOnCore c' = st.scheduler.currentOnCore c') hRet
+        (fun n s hS => by
+          show s.scheduler.currentOnCore c' = _
+          rw [returnDonatedSchedContext_scheduler_eq st s _ _ _ n hS]; rfl)
+    · replace hT := (SchedContextOps.settleReturnedContext_agree _ _ _).symm.get_of_not_sc
+        (fun _ e => KernelObject.noConfusion e) hT
+      exact returnDonatedSchedContextResolved_lift (P := fun s =>
+        s.objects[t.toObjId]? = some (.tcb tcb') →
+          ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState)
+        hRet (fun n s hS hT => by
+          obtain ⟨tcb, h0, hS', -⟩ := returnDonatedSchedContext_tcb_ipcState_replyObject_backward
+            st s _ _ _ hInv n hS t.toObjId tcb' hT
+          exact ⟨tcb, h0, hS'⟩) hT
 
 /-- A capability transfer keeps every endpoint, every core's current thread and
 every thread's IPC state: it writes a receive slot's CNode, the derivation tree

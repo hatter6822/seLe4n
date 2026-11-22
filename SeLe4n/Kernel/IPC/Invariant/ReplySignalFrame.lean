@@ -197,14 +197,14 @@ theorem of_propagatePipChainCrossCore (st : SystemState) (tid : SeLe4n.ThreadId)
     (fun oid n h => PriorityInheritance.propagatePipChainCrossCore_notification_backward
       st tid c fuel hObjInv oid n h)
 
-/-- The donated context's return, on each of its four arms. -/
+/-- The donated context's return, on each of its five arms. -/
 theorem of_applyReplyDonationOnCore (st st' : SystemState) (rid : SeLe4n.ReplyId)
     (targetVtid : SeLe4n.ValidThreadId) (ownerHome : CoreId) (hObjInv : st.objects.invExt)
     (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
     notificationsAndBindingsKept st st' := by
   rcases applyReplyDonationOnCore_objects_frame st st' rid targetVtid ownerHome h with
     ⟨-, hEq⟩ | ⟨scId, n, s1, -, -, -, hRet, hA⟩ | ⟨scId, holder, n, s1, hRet, hA⟩ |
-    ⟨scId, n, -, -, -, hSev⟩
+    ⟨scId, n, -, -, -, hSev⟩ | ⟨scId, holder, n, -, -, hK⟩
   · exact of_objects_eq hEq
   · exact (of_kindPreservingWrite (returnUnheldSchedContext_kindPreservingWrite hObjInv hRet)
       (fun k nt hk => (returnUnheldSchedContext_notification_iff hObjInv hRet k nt).mp hk)).trans
@@ -214,6 +214,8 @@ theorem of_applyReplyDonationOnCore (st st' : SystemState) (rid : SeLe4n.ReplyId
         k nt hk)).trans (of_offSchedulerLinks hA)
   · exact of_kindPreservingWrite (severUnheldSchedContext_kindPreservingWrite hObjInv hSev)
       (fun k nt hk => (severUnheldSchedContext_notification_iff hObjInv hSev k nt).mp hk)
+  · exact of_kindPreservingWrite (keepDonatedSchedContext_kindPreservingWrite hObjInv hK)
+      (fun k nt hk => (keepDonatedSchedContext_notification_iff hObjInv hK k nt).mp hk)
 
 /-- The cross-core reply dispatch: the reply leg, the donation return and the
 priority-inheritance revert. -/

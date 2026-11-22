@@ -14001,7 +14001,13 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyDispatchRep
 # WS-ZA ZA6.33: the return settles, so the pair is the purge's cores (wherever
 # the context's replenishment stood) and the recipient's home.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyDonationReturnReplenishCores[^\n]*(\n([ \t][^\n]*)?)*\| some \(scId, _\) => SchedContextOps\.purgeReplenishCores st scId \+\+\n *\[replyDonationRecipientHome st rid target\]" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
-run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_ok_none_frameHead \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
+# A `none` answer is the unheld pop or the held pop that keeps the context with
+# its holder (seL4-MCS `reply_pop` where the recipient holds a context).
+run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_ok_none_decompose \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
+run_check "INVARIANT" rg -n '^def keepDonatedSchedContext \(' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^def popHeldReplyHead \(' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContext_establishes_ipcInvariantFull_of_except$' SeLe4n/Kernel/IPC/Invariant/HeldContextPop.lean
+run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContext_stepCovers \(' SeLe4n/Kernel/ReschedulePendingArms/Ipc.lean
 # NEGATIVE: the retired result-keyed pair must not come back, anywhere in code.
 run_negative_check "INVARIANT" rg -n 'replyRecvPopReplenishCores' SeLe4n tests
 # The ARM's write set branches on the seam's own predicate and, on the fault branch,
@@ -19634,7 +19640,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatch[^\
 # handed back.  Both the specification pop and the finalise pop route on the
 # recipient's acceptability, and each compiled form keeps the sever arm.
 run_check "INVARIANT" rg -n '^def severUnheldSchedContext \(st : SystemState\)' SeLe4n/Kernel/IPC/Operations/UnheldContextPop.lean
-run_check "INVARIANT" rg -n '^@\[inline\] def donationSeverSchedContext ' SeLe4n/Kernel/IPC/Operations/UnheldContextPop.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def donationSeverSchedContext ' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def popUnheldReplyHead \(st[^\n]*(\n([ \t][^\n]*)?)*    if donationRecipientAcceptable st target then\n(([ \t][^\n]*)?\n)*    else severUnheldSchedContextResolved st scId" SeLe4n/Kernel/IPC/Operations/UnheldContextPop.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def popUnheldReplyHeadImpl[^\n]*(\n([ \t][^\n]*)?)*    else severUnheldSchedContextResolved st scId" SeLe4n/Kernel/IPC/Operations/UnheldContextPopInPlace.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def finaliseReplyUnheldPop \(st[^\n]*(\n([ \t][^\n]*)?)*      match severUnheldSchedContextResolved st s with" SeLe4n/Kernel/IPC/Operations/CancelAll.lean'

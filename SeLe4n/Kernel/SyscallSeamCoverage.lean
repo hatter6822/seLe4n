@@ -380,6 +380,17 @@ theorem replyRecvDonationContext_superset {ctx : LabelingContext}
     ↓reduceIte, Nat.add_sub_cancel] at hN ⊢
   exact hN
 
+/-- The held pop keeps every notification and every binding code: it writes a
+context, the replies and one thread's scheduling-context binding. -/
+theorem notificationsAndBindingsKept_of_keepDonatedSchedContextResolved
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} {st st' : SystemState}
+    (hInv : st.objects.invExt) (h : keepDonatedSchedContextResolved st holder scId = .ok st') :
+    notificationsAndBindingsKept st st' := by
+  obtain ⟨_, -, hK'⟩ := keepDonatedSchedContextResolved_ok_decompose h
+  exact notificationsAndBindingsKept.of_kindPreservingWrite
+    (keepDonatedSchedContext_kindPreservingWrite hInv hK')
+    (fun k nt hk => (keepDonatedSchedContext_notification_iff hInv hK' k nt).mp hk)
+
 /-- **A reply-receive's pop keeps every notification and every binding code**
 (seL4-MCS `reply_remove` / `reply_pop`): the donated context's return and the
 unheld context's pop and sever write threads' context bindings, contexts and
@@ -413,17 +424,21 @@ theorem notificationsAndBindingsKept.of_replyRecvPopDonation {rid : SeLe4n.Reply
   all_goals first
     | (cases h; exact .refl _)
     | (cases h; done)
+    | (cases h
+       rename_i hK
+       exact notificationsAndBindingsKept_of_keepDonatedSchedContextResolved hInv hK)
     | skip
-  rename_i st1 hRet
-  cases h
-  obtain ⟨n, -, hS⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-  exact (notificationsAndBindingsKept.of_kindPreservingWrite
-      (returnDonatedSchedContext_kindPreservingWrite hInv hS)
-      (fun k nt hk => returnDonatedSchedContext_notification_backward _ _ _ _ _ hInv _ hS k nt
-        hk)).trans
-    (notificationsAndBindingsKept.of_offSchedulerLinks
-      (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
-        (SchedContextOps.settleReturnedContext_agree _ _ _)))
+  all_goals
+    rename_i st1 hRet
+    cases h
+    obtain ⟨n, -, hS⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
+    exact (notificationsAndBindingsKept.of_kindPreservingWrite
+        (returnDonatedSchedContext_kindPreservingWrite hInv hS)
+        (fun k nt hk => returnDonatedSchedContext_notification_backward _ _ _ _ _ hInv _ hS k nt
+          hk)).trans
+      (notificationsAndBindingsKept.of_offSchedulerLinks
+        (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
+          (SchedContextOps.settleReturnedContext_agree _ _ _)))
 
 /-- **A reply-receive's legs before its receive keep every notification and
 every binding code**: the reply (`endpointReplyOnCore`), the pop

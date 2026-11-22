@@ -83,17 +83,6 @@ def returnUnheldSchedContextResolved (st : SystemState) (scId : SeLe4n.SchedCont
   | .error e => .error e
   | .ok newOwner? => returnUnheldSchedContext st scId owner newOwner?
 
-/-- **The context record `reply_pop` stores when it hands nothing back**: the
-head moves to the frame below, the holder is left as it is (none: the context
-is unheld), and the origin is kept only while an outer caller remains, as the
-donation pop's record keeps it (`donationReturnSchedContext`, which also names
-the recipient as holder). -/
-@[inline] def donationSeverSchedContext (sc : SchedContext) (nextHead? : Option SeLe4n.ReplyId)
-    (newOwner? : Option SeLe4n.ThreadId) : SchedContext :=
-  { sc with
-      scReply := nextHead?,
-      donationOrigin := if newOwner?.isNone then none else sc.donationOrigin }
-
 /-- **seL4-MCS's `reply_pop` at an unheld head whose caller holds a context of
 its own**: `reply_pop` donates the context back only when the caller holds none
 (`if (tcb->tcbSchedContext == NULL) schedContext_donate(sc, tcb)`), so here it

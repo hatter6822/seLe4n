@@ -250,15 +250,21 @@ def applyReplyDonation (st : SystemState) (rid : SeLe4n.ReplyId)
           -- the out-of-order removal of plan §3.2, in which the client's own
           -- frame left the stack and the surviving bottom frame names the
           -- intermediate caller.
-          match returnDonatedSchedContextResolved st holderVtid.val scId
-                  (replyDonationRecipient st scId target) with
-          | .error e => .error e
-          | .ok st' =>
-              -- WS-ZA ZA6.33: seL4's `schedContext_donate` tail on the boot
-              -- core's release queue: the context off whichever queue holds it,
-              -- and placed again for the recipient (`settleReturnedContext`).
-              .ok (removeRunnable (SchedContextOps.settleReturnedContext st' Concurrency.bootCoreId scId)
-                holder)
+          -- seL4-MCS's `reply_pop` donates the context back only to a thread
+          -- that holds none; one that holds a context of its own is handed
+          -- nothing, and the head is popped off the context, which stays with
+          -- its holder (`keepDonatedSchedContextResolved`).
+          if donationRecipientAcceptable st (replyDonationRecipient st scId target) then
+            match returnDonatedSchedContextResolved st holderVtid.val scId
+                    (replyDonationRecipient st scId target) with
+            | .error e => .error e
+            | .ok st' =>
+                -- WS-ZA ZA6.33: seL4's `schedContext_donate` tail on the boot
+                -- core's release queue: the context off whichever queue holds it,
+                -- and placed again for the recipient (`settleReturnedContext`).
+                .ok (removeRunnable (SchedContextOps.settleReturnedContext st' Concurrency.bootCoreId scId)
+                  holder)
+          else keepDonatedSchedContextResolved st holderVtid.val scId
       | none => .error (.invalidArgument 0)
 
 -- ============================================================================
@@ -539,6 +545,12 @@ theorem applyReplyDonation_machine_eq
         have hHEq : holderVtid.val = holder :=
           SeLe4n.ThreadId.toValid?_some_val_eq holder holderVtid hHV
         simp only [hHV, hHEq] at h
+        cases hA : donationRecipientAcceptable st (replyDonationRecipient st scId targetVtid.val) with
+        | false =>
+          simp only [hA, Bool.false_eq_true, ↓reduceIte] at h
+          exact keepDonatedSchedContextResolved_machine_eq h
+        | true =>
+        simp only [hA, ↓reduceIte] at h
         -- WS-OD OD4.4: the split is on the *resolved* return, which is the
         -- operation the arm now runs; the frame is lifted through its own
         -- decomposition rather than restated at a fixed `newOwner?`.

@@ -521,8 +521,12 @@ theorem applyReplyDonationOnCore_mappingStage {st st' : SystemState} {rid : SeLe
     (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
     MappingStage st st' := by
   rcases applyReplyDonationOnCore_ok_decompose _ _ _ _ _ h with
-    ⟨-, hP⟩ | ⟨_, holderVtid, _, _, -, -, hR, rfl⟩
+    ⟨-, hP⟩ | ⟨_, holderVtid, _, _, -, -, hR, rfl⟩ | ⟨_, _, _, -, -, -, hK⟩
   · exact popUnheldReplyHead_mappingStage hP
+  rotate_right
+  · exact MappingStage.of_kindPreservingWrite
+      (fun hI => keepDonatedSchedContext_objects_invExt hI hK)
+      (fun hI => keepDonatedSchedContext_kindPreservingWrite hI hK)
   · exact ((returnDonatedSchedContext_mappingStage hR).trans
       (MappingStage.of_kindPreservingWrite
         (SchedContextOps.settleReturnedContext_objects_invExt _ _ _)
@@ -732,14 +736,22 @@ theorem replyRecvPopDonation_mappingStage {rid : SeLe4n.ReplyId} {target : SeLe4
   · dsimp only at h
     split at h
     · split at h
-      · cases h
-      · rename_i st1 hRet
-        cases h
-        exact (returnDonatedSchedContextResolved_mappingStage hRet).trans
-          (MappingStage.of_kindPreservingWrite
-            (SchedContextOps.settleReturnedContext_objects_invExt _ _ _)
-            fun _ => (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
-              (SchedContextOps.settleReturnedContext_agree _ _ _)).kindPreserving)
+      · split at h
+        · cases h
+        · rename_i st1 hRet
+          cases h
+          exact (returnDonatedSchedContextResolved_mappingStage hRet).trans
+            (MappingStage.of_kindPreservingWrite
+              (SchedContextOps.settleReturnedContext_objects_invExt _ _ _)
+              fun _ => (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
+                (SchedContextOps.settleReturnedContext_agree _ _ _)).kindPreserving)
+      · split at h
+        · cases h
+        · rename_i st1 hK
+          cases h
+          exact MappingStage.of_kindPreservingWrite
+            (fun hI => keepDonatedSchedContextResolved_objects_invExt hI hK)
+            (fun hI => keepDonatedSchedContextResolved_kindPreservingWrite hI hK)
     · cases h
   · split at h
     · cases h

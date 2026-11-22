@@ -150,13 +150,19 @@ def applyReplyDonationOnCore (st : SystemState) (rid : SeLe4n.ReplyId)
           -- commits -- `replyDonationRecipientHome` is what the live dispatch
           -- passes, and `applyReplyDonationOnCore_ownerHome_is_recipient_home`
           -- is the tie.
-          match returnDonatedSchedContextResolved st holderVtid.val scId
-                  (replyDonationRecipient st scId target) with
-          | .error e => .error e
-          | .ok st' =>
-              .ok (descheduleAtPlacement
-                    (SchedContextOps.settleReturnedContext st' ownerHome scId)
-                    holder)
+          -- seL4-MCS's `reply_pop` donates the context back only to a thread
+          -- that holds none; one that holds a context of its own is handed
+          -- nothing, the head is popped off the context, and the holder keeps
+          -- it and stays where it runs (`keepDonatedSchedContextResolved`).
+          if donationRecipientAcceptable st (replyDonationRecipient st scId target) then
+            match returnDonatedSchedContextResolved st holderVtid.val scId
+                    (replyDonationRecipient st scId target) with
+            | .error e => .error e
+            | .ok st' =>
+                .ok (descheduleAtPlacement
+                      (SchedContextOps.settleReturnedContext st' ownerHome scId)
+                      holder)
+          else keepDonatedSchedContextResolved st holderVtid.val scId
       | none => .error (.invalidArgument 0)
 
 /-- **WS-HP HP10.7: the DESTINATION core of the reply path's returned context**
@@ -313,13 +319,16 @@ theorem applyReplyDonationOnCore_characterisation
                  -- `holder`, never the argument.  **WS-HP HP10.7**: and onto
                  -- the redirect, so the recipient at the bottom of the stack is
                  -- the reservation's recorded origin.
-                 (match returnDonatedSchedContextResolved st holderVtid.val scId
-                     (replyDonationRecipient st scId targetVtid.val) with
-                  | .error e => .error e
-                  | .ok st' =>
-                      .ok (descheduleAtPlacement
-                            (SchedContextOps.settleReturnedContext st' ownerHome scId)
-                            holder))
+                 (if donationRecipientAcceptable st
+                     (replyDonationRecipient st scId targetVtid.val) then
+                   (match returnDonatedSchedContextResolved st holderVtid.val scId
+                       (replyDonationRecipient st scId targetVtid.val) with
+                    | .error e => .error e
+                    | .ok st' =>
+                        .ok (descheduleAtPlacement
+                              (SchedContextOps.settleReturnedContext st' ownerHome scId)
+                              holder))
+                  else keepDonatedSchedContextResolved st holderVtid.val scId)
              | none => .error (.invalidArgument 0)
          | none => popUnheldReplyHead st rid targetVtid.val ownerHome) := by
   simp only [applyReplyDonationOnCore]
@@ -424,7 +433,7 @@ theorem applyReplyDonationOnCore_ok_decompose
     -- or a context its finalised server returned to no one, popped to the caller.
     (replyFrameHeadHolder? st rid = none ∧
       popUnheldReplyHead st rid targetVtid.val ownerHome = .ok st'')
-    ∨ ∃ (scId : SeLe4n.SchedContextId) (holderVtid : SeLe4n.ValidThreadId)
+    ∨ (∃ (scId : SeLe4n.SchedContextId) (holderVtid : SeLe4n.ValidThreadId)
         (newOwner? : Option SeLe4n.ThreadId) (st' : SystemState),
         replyFrameHeadHolder? st rid = some (scId, holderVtid.val) ∧
         -- **WS-OD OD4.4**: the resolver's answer is part of the decomposition,
@@ -441,7 +450,15 @@ theorem applyReplyDonationOnCore_ok_decompose
           (replyDonationRecipient st scId targetVtid.val) newOwner? = .ok st' ∧
         st'' = descheduleAtPlacement
           (SchedContextOps.settleReturnedContext st' ownerHome scId)
-          holderVtid.val := by
+          holderVtid.val)
+    -- seL4-MCS's `reply_pop` where the recipient holds a context of its own: the
+    -- head is popped off the context, which stays with its holder.
+    ∨ ∃ (scId : SeLe4n.SchedContextId) (holderVtid : SeLe4n.ValidThreadId)
+        (newOwner? : Option SeLe4n.ThreadId),
+        replyFrameHeadHolder? st rid = some (scId, holderVtid.val) ∧
+        donationRecipientAcceptable st (replyDonationRecipient st scId targetVtid.val) = false ∧
+        replyStackOuterCaller? st scId = .ok newOwner? ∧
+        keepDonatedSchedContext st holderVtid.val scId newOwner? = .ok st'' := by
   rw [applyReplyDonationOnCore_characterisation] at h
   cases hTrig : replyFrameHeadHolder? st rid with
   | none => rw [hTrig] at h; exact Or.inl ⟨rfl, h⟩
@@ -457,33 +474,47 @@ theorem applyReplyDonationOnCore_ok_decompose
         SeLe4n.ThreadId.toValid?_some_val_eq holder holderVtid hHV
       subst hHEq
       simp only [] at h
+      cases hA : donationRecipientAcceptable st (replyDonationRecipient st scId targetVtid.val) with
+      | false =>
+        rw [hA] at h
+        simp only [Bool.false_eq_true, ↓reduceIte] at h
+        obtain ⟨n, hRes, hKeep⟩ := keepDonatedSchedContextResolved_ok_decompose h
+        exact Or.inr (Or.inr ⟨scId, holderVtid, n, rfl, hA, hRes, hKeep⟩)
+      | true =>
+      rw [hA] at h
+      simp only [↓reduceIte] at h
       cases hR : returnDonatedSchedContextResolved st holderVtid.val scId
           (replyDonationRecipient st scId targetVtid.val) with
       | error e => rw [hR] at h; cases h
       | ok st' =>
         rw [hR] at h
         obtain ⟨n, hRes, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hR
-        exact Or.inr ⟨scId, holderVtid, n, st', rfl, hRes, hPop, (Except.ok.inj h).symm⟩
+        exact Or.inr (Or.inl ⟨scId, holderVtid, n, st', rfl, hRes, hPop, (Except.ok.inj h).symm⟩)
 
 /-- **WS-RR RR8.12 Cut C3a (the licence)**: a successful return whose frame heads a
 context **is** the pop, then the settle of that context on the destination it was
 handed (WS-ZA ZA6.33), then the holder's deschedule at its placement — so a
 footprint declaring `replyDonationReturnReplenishCores` names the settle's own
-cores, not a proxy for them. -/
+cores, not a proxy for them.  Where the recipient holds a context of its own the
+return is the held pop instead, which settles nothing. -/
 theorem applyReplyDonationOnCore_ok_settles (st st'' : SystemState) (rid : SeLe4n.ReplyId)
     (targetVtid : SeLe4n.ValidThreadId) (ownerHome : CoreId)
     (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
     (hHead : replyFrameHeadHolder? st rid = some (scId, holder))
     (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st'') :
-    ∃ st' newOwner?, returnDonatedSchedContext st holder scId
+    (∃ st' newOwner?, returnDonatedSchedContext st holder scId
         (replyDonationRecipient st scId targetVtid.val) newOwner? = .ok st' ∧
       st'' = descheduleAtPlacement
-        (SchedContextOps.settleReturnedContext st' ownerHome scId) holder := by
+        (SchedContextOps.settleReturnedContext st' ownerHome scId) holder) ∨
+    ∃ newOwner?, keepDonatedSchedContext st holder scId newOwner? = .ok st'' := by
   rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with
-    ⟨hNone, _⟩ | ⟨scId', holderVtid, n, st', hHead', _, hRet, hEq⟩
+    ⟨hNone, _⟩ | ⟨scId', holderVtid, n, st', hHead', _, hRet, hEq⟩ |
+      ⟨scId', holderVtid, n, hHead', -, -, hK⟩
   · exact absurd (hHead.symm.trans hNone) (by simp)
   · obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj (hHead'.symm.trans hHead))
-    exact ⟨st', n, hRet, hEq⟩
+    exact .inl ⟨st', n, hRet, hEq⟩
+  · obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj (hHead'.symm.trans hHead))
+    exact .inr ⟨n, hK⟩
 
 /-- WS-ZA ZA6.33: the return keeps every release link, so the settle's purge
 reads the core the **pre**-state's link names — what lets a footprint resolved
@@ -583,8 +614,9 @@ theorem applyReplyDonationOnCore_replenishQueueOnCore_of_no_head (st st'' : Syst
     (c : CoreId) :
     st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with
-    ⟨_, hPop⟩ | ⟨scId, holderVtid, _, _, hHead, _, _, _⟩
+    ⟨_, hPop⟩ | ⟨scId, holderVtid, _, _, hHead, _, _, _⟩ | ⟨scId, holderVtid, _, hHead, -, -, -⟩
   · rw [popUnheldReplyHead_of_no_head st rid _ _ hNone] at hPop; cases hPop; rfl
+  · exact absurd ((replyFrameHeadHolder?_of_no_head st rid hNone).symm.trans hHead) (by simp)
   · exact absurd ((replyFrameHeadHolder?_of_no_head st rid hNone).symm.trans hHead) (by simp)
 
 /-- **WS-RR RR8.12 Cut C6c: the reply donation's exactness frame.**
@@ -606,7 +638,9 @@ theorem applyReplyDonationOnCore_replenishQueueOnCore_ne (st st'' : SystemState)
     (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st'') :
     st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with
-    ⟨_, hPop⟩ | ⟨scId, holderVtid, newOwner?, st', hHead, _, hRet, hEq⟩
+    ⟨_, hPop⟩ | ⟨scId, holderVtid, newOwner?, st', hHead, _, hRet, hEq⟩ | ⟨_, _, _, -, -, -, hK⟩
+  rotate_right
+  · rw [keepDonatedSchedContext_scheduler_eq hK]
   · exact popUnheldReplyHead_replenishQueueOnCore_ne hObjInv hFrom hTo hPop
   · have hP : c ∉ SchedContextOps.purgeReplenishCores st' scId := by
       rw [returnDonatedSchedContext_purgeReplenishCores hObjInv hRet]
@@ -660,7 +694,9 @@ theorem applyReplyDonationOnCore_machine_eq
     (ownerHome : CoreId)
     (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st'') :
     st''.machine = st.machine := by
-  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with ⟨_, hPop⟩ | ⟨scId, holderVtid, n, st', _, _, hRet, hEq⟩
+  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with ⟨_, hPop⟩ | ⟨scId, holderVtid, n, st', _, _, hRet, hEq⟩ | ⟨_, _, _, -, -, -, hK⟩
+  rotate_right
+  · exact keepDonatedSchedContext_machine_eq hK
   · exact popUnheldReplyHead_machine_eq hPop
   · rw [hEq]
     show (descheduleAtPlacement _ _).machine = _
@@ -695,17 +731,24 @@ theorem applyReplyDonationOnCore_objects_frame
         returnDonatedSchedContext st holder scId
           (replyDonationRecipient st scId targetVtid.val) newOwner? = .ok st' ∧
         st''.objectsAgreeOffSchedulerLinks st')
-    ∨ ∃ (scId : SeLe4n.SchedContextId) (newOwner? : Option SeLe4n.ThreadId),
+    ∨ (∃ (scId : SeLe4n.SchedContextId) (newOwner? : Option SeLe4n.ThreadId),
         replyFrameHeadHolder? st rid = none ∧ replyFrameHeadContext? st rid = some scId ∧
         replyStackOuterCaller? st scId = .ok newOwner? ∧
-        severUnheldSchedContext st scId newOwner? = .ok st'' := by
-  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with ⟨hNone, hPop⟩ | ⟨scId, holderVtid, n, st', _, _, hRet, hEq⟩
+        severUnheldSchedContext st scId newOwner? = .ok st'')
+    ∨ ∃ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+        (newOwner? : Option SeLe4n.ThreadId),
+        replyFrameHeadHolder? st rid = some (scId, holder) ∧
+        replyStackOuterCaller? st scId = .ok newOwner? ∧
+        keepDonatedSchedContext st holder scId newOwner? = .ok st'' := by
+  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with ⟨hNone, hPop⟩ | ⟨scId, holderVtid, n, st', _, _, hRet, hEq⟩ | ⟨scId, holderVtid, n, hH, -, hN, hK⟩
+  rotate_right
+  · exact Or.inr (Or.inr (Or.inr (Or.inr ⟨scId, holderVtid.val, n, hH, hN, hK⟩)))
   · rcases popUnheldReplyHead_objects_frame hPop with ⟨hN, rfl⟩ | ⟨scId, n, st1, hH, hN, hP, rfl⟩ |
         ⟨scId, n, hH, hN, hP⟩
     · exact Or.inl ⟨hN, rfl⟩
     · exact Or.inr (Or.inl ⟨scId, n, st1, hNone, hH, hN, hP,
         .of_releaseLinks (SchedContextOps.settleReturnedContext_agree _ _ _)⟩)
-    · exact Or.inr (Or.inr (Or.inr ⟨scId, n, hNone, hH, hN, hP⟩))
+    · exact Or.inr (Or.inr (Or.inr (Or.inl ⟨scId, n, hNone, hH, hN, hP⟩)))
   · refine Or.inr (Or.inr (Or.inl ⟨scId, holderVtid.val, n, st', hRet, ?_⟩))
     rw [hEq]
     exact SystemState.objectsAgreeOffSchedulerLinks.trans
@@ -799,7 +842,9 @@ theorem applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
         replyFrameHeadContext? st rid = some scId → determineTargetCore st targetVtid.val = ownerHome)
     (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st'') :
     replenishQueueAffinityConsistent_smp st'' := by
-  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with ⟨hNoH, hPop⟩ | ⟨scId, holderVtid, n, st', hRes, _, hRet, hEq⟩
+  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with ⟨hNoH, hPop⟩ | ⟨scId, holderVtid, n, st', hRes, _, hRet, hEq⟩ | ⟨_, _, _, -, -, -, hK⟩
+  rotate_right
+  · exact keepDonatedSchedContext_preserves_replenishQueueAffinityConsistent_smp hObjInv hCons hK
   · rcases popUnheldReplyHead_objects_frame hPop with ⟨_, rfl⟩ | ⟨scId, n, st1, hH, _, hP, rfl⟩ |
         ⟨_, _, -, -, hS⟩
     · exact hCons

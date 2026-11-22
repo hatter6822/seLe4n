@@ -95,7 +95,11 @@ theorem applyReplyDonationOnCore_preserves_donationChainWellFormed_of_except
       donationChainWellFormed st)
     (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st'') :
     donationChainWellFormed st'' := by
-  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with ⟨_, hPop⟩ | ⟨scId, holderVtid, n, st', hHead, _, hRet, hEq⟩
+  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with ⟨_, hPop⟩ | ⟨scId, holderVtid, n, st', hHead, _, hRet, hEq⟩ | ⟨scId, holderVtid, n, hHead, -, -, hK⟩
+  rotate_right
+  · have hCtx := (replyFrameHeadHolder?_eq_some hHead).1
+    exact keepDonatedSchedContext_preserves_donationChainWellFormed_of_except hObjInv
+      (hChainNone scId · hCtx) (hChainHead scId · · · hCtx) hK
   · exact popUnheldReplyHead_preserves_donationChainWellFormed_of_except hObjInv hChainNone
       hChainHead hChainNoHead hPop
   · have hCtx := (replyFrameHeadHolder?_eq_some hHead).1
@@ -245,7 +249,12 @@ theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
     (hUnheld : unheldReplyPopCoherent st rid targetVtid.val)
     (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st'') :
     ipcInvariantFull st'' := by
-  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with ⟨hNoH, hPop⟩ | ⟨scId, holderVtid, n, st', hHead, hRes, hR, hEq⟩
+  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with ⟨hNoH, hPop⟩ | ⟨scId, holderVtid, n, st', hHead, hRes, hR, hEq⟩ | ⟨scId, holderVtid, n, hHead, -, hRes, hK⟩
+  rotate_right
+  · -- seL4-MCS's held `reply_pop`: the holder keeps the context, owing the frame below.
+    exact keepDonatedSchedContext_preserves_ipcInvariantFull hObjInv hInv
+      (hHolderDonation scId holderVtid.val hHead)
+      (hStackValid scId holderVtid.val targetVtid.val n hRes).2 hK
   · exact popUnheldReplyHead_preserves_ipcInvariantFull hObjInv hInv hStackValid hUnheld hNoH hPop
   · have hRet : replyDonationReturn? st holderVtid.val = some (scId, targetVtid.val) :=
       hHolderDonation scId holderVtid.val hHead
@@ -324,7 +333,21 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
       st.objects[s.toObjId]? = some (.tcb sTcb) ∧ sTcb.schedContextBinding = .donated sc woken
   · obtain ⟨s0, sTcb0, sc0, hS0, hB0⟩ := hAny
     have hHeadEq := hDonationReturned s0 sTcb0 sc0 hS0 hB0
-    rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with ⟨hNone, _⟩ | ⟨scId, holderVtid, n, st', hHead, hRes, hR, hEq⟩
+    rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with ⟨hNone, _⟩ | ⟨scId, holderVtid, n, st', hHead, hRes, hR, hEq⟩ | ⟨scId, holderVtid, n, hHead, -, hRes, hK⟩
+    rotate_right
+    · obtain ⟨hScEq, hS0Eq⟩ : sc0 = scId ∧ s0 = holderVtid.val := by
+        have := hHeadEq.symm.trans hHead
+        simpa using this
+      rw [hScEq] at hB0
+      rw [hS0Eq] at hS0
+      have hRet : replyDonationReturn? st holderVtid.val = some (scId, targetVtid.val) :=
+        hHolderDonation scId holderVtid.val hHead
+      have hWoken : woken = targetVtid.val :=
+        (answeredHeadHolder_donation_owner_eq st targetVtid.val holderVtid.val woken sTcb0
+          scId scId hRet hS0 hB0).2
+      subst hWoken
+      exact keepDonatedSchedContext_establishes_ipcInvariantFull_of_except hObjInv hInv hRet
+        (hStackValid scId holderVtid.val targetVtid.val n hRes).2 hK
     · rw [hHeadEq] at hNone; cases hNone
     · obtain ⟨hScEq, hS0Eq⟩ : sc0 = scId ∧ s0 = holderVtid.val := by
         have := hHeadEq.symm.trans hHead
@@ -393,7 +416,9 @@ theorem applyReplyDonationOnCore_preserves_objects_invExt
     (hObjInv : st.objects.invExt)
     (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st'') :
     st''.objects.invExt := by
-  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with ⟨_, hPop⟩ | ⟨scId, holderVtid, n, st', _, _, hR, hEq⟩
+  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome h with ⟨_, hPop⟩ | ⟨scId, holderVtid, n, st', _, _, hR, hEq⟩ | ⟨_, _, _, -, -, -, hK⟩
+  rotate_right
+  · exact keepDonatedSchedContext_objects_invExt hObjInv hK
   · exact popUnheldReplyHead_objects_invExt hObjInv hPop
   · have hInv' := returnDonatedSchedContext_preserves_objects_invExt st st' holderVtid.val scId
       (replyDonationRecipient st scId targetVtid.val) hObjInv n hR
@@ -422,8 +447,10 @@ theorem applyReplyDonationOnCore_tcb_ipcState_backward
   · exact popUnheldReplyHead_tcb_ipcState_backward hObjInv hPop t tcb' hTcb'
   rcases applyReplyDonationOnCore_objects_frame st st'' rid targetVtid ownerHome h with
     ⟨_, hObj⟩ | ⟨scId, newOwner?, st', _, _, _, hP, hObj⟩ | ⟨scId, holder, newOwner?, st', hRet, hObj⟩ |
-      ⟨_, _, -, -, -, hS⟩
+      ⟨_, _, -, -, -, hS⟩ | ⟨_, _, _, -, -, hK⟩
   · exact ⟨tcb', by rw [← hObj]; exact hTcb', rfl⟩
+  rotate_right
+  · exact keepDonatedSchedContext_tcb_ipcState_backward hObjInv hK t tcb' hTcb'
   rotate_left 2
   · obtain ⟨-, -, -, -, -, -, tBwd, -, -, -⟩ := severUnheldSchedContext_objects hObjInv hS
     exact ⟨tcb', tBwd _ _ hTcb', rfl⟩
@@ -1151,7 +1178,10 @@ theorem applyReplyDonationOnCore_preserves_schedulerInvariantBase_smp
     (hStep : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st'') :
     schedulerInvariantBase_smp st'' := by
   rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome hStep
-    with ⟨_, hPop⟩ | ⟨scId, holderVtid, newOwner?, st', _, _, hRet, hEq⟩
+    with ⟨_, hPop⟩ | ⟨scId, holderVtid, newOwner?, st', _, _, hRet, hEq⟩ | ⟨_, _, _, -, -, -, hK⟩
+  rotate_right
+  · exact schedulerInvariantBase_smp_of_frame h (by rw [keepDonatedSchedContext_scheduler_eq hK])
+      (kindPreservingWrite.getTcb?_isSome (keepDonatedSchedContext_kindPreservingWrite hObjInv hK))
   · exact popUnheldReplyHead_preserves_schedulerInvariantBase_smp hObjInv h hPop
   · subst hEq
     exact descheduleAtPlacement_preserves_schedulerInvariantBase_smp _
@@ -1170,7 +1200,11 @@ theorem applyReplyDonationOnCore_preserves_capabilityInvariantBundle
     (hStep : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st'') :
     capabilityInvariantBundle st'' := by
   rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid ownerHome hStep
-    with ⟨_, hPop⟩ | ⟨scId, holderVtid, newOwner?, st', _, _, hRet, hEq⟩
+    with ⟨_, hPop⟩ | ⟨scId, holderVtid, newOwner?, st', _, _, hRet, hEq⟩ | ⟨_, _, _, -, -, -, hK⟩
+  rotate_right
+  · exact capabilityInvariantBundle_of_kindPreserving h (keepDonatedSchedContext_cdt_eq hK)
+      (keepDonatedSchedContext_objects_invExt h.2.2.2.2.1 hK)
+      (keepDonatedSchedContext_kindPreservingWrite h.2.2.2.2.1 hK)
   · exact popUnheldReplyHead_preserves_capabilityInvariantBundle h hPop
   · subst hEq
     have hRetB := returnDonatedSchedContext_preserves_capabilityInvariantBundle h hRet

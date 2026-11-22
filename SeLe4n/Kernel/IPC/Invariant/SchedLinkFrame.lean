@@ -12,6 +12,7 @@ import SeLe4n.Kernel.SchedContext.BindingAffinity
 import SeLe4n.Kernel.IPC.Invariant.CancelAllFrame
 import SeLe4n.Kernel.IPC.Invariant.CancellationBundle
 import SeLe4n.Kernel.IPC.Invariant.UnheldContextPop
+import SeLe4n.Kernel.IPC.Invariant.HeldContextPop
 
 /-!
 # The scheduling links a final delete carries
@@ -1274,6 +1275,65 @@ theorem SchedLinkFrame.severUnheldSchedContext {st st' : SystemState}
     · rw [storeObject_objects_ne st s1 _ _ _ e hInv hS1]
   exact (⟨p1 _ rfl, p1 _ rfl, p1 _ rfl, by rw [storeObject_scheduler_eq st s1 _ _ hS1]⟩ :
     SchedLinkFrame st s1).trans (SchedLinkFrame.storeDonationHeadPop hInv1 hS2)
+
+/-- **The held pop writes no budget, affinity or release field**: the context
+stored over itself with a new head and origin, the head pop, and the holder's
+binding codes. -/
+theorem keepDonatedSchedContext_auxReleaseAgree {st st' : SystemState}
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (hInv : st.objects.invExt)
+    (h : SeLe4n.Kernel.keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    schedAuxAgree st st' ∧
+      ∀ oid : SeLe4n.ObjId, schedReleaseOf st'.objects[oid]? = schedReleaseOf st.objects[oid]? := by
+  obtain ⟨sc, head?, ht, s1, s2, hSc, -, -, -, hS1, hS2, hL, hS3⟩ :=
+    keepDonatedSchedContext_ok_storeChain h
+  have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hInv hS1
+  have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hS2
+  have hO2 : s2.objects[holder.toObjId]? = some (.tcb ht) := lookupTcb_some_objects s2 holder ht hL
+  have F2 := SchedLinkFrame.storeDonationHeadPop hInv1 hS2
+  have p1 : ∀ {α : Type} (p : Option KernelObject → α),
+      (p (some (.schedContext (donationSeverSchedContext sc
+        (head?.bind (fun q => q.2.prev)) newOwner?))) = p (some (.schedContext sc))) →
+      ∀ oid : SeLe4n.ObjId, p s1.objects[oid]? = p st.objects[oid]? := by
+    intro α p hp oid
+    by_cases e : oid = scId.toObjId
+    · subst e; rw [storeObject_objects_eq st s1 _ _ hInv hS1, hSc]; exact hp
+    · rw [storeObject_objects_ne st s1 _ _ _ e hInv hS1]
+  have p3 : ∀ {α : Type} (p : Option KernelObject → α),
+      (∀ t : TCB, p (some (.tcb { t with
+          scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId newOwner?),
+          scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }))
+        = p (some (.tcb t))) →
+      ∀ oid : SeLe4n.ObjId, p st'.objects[oid]? = p s2.objects[oid]? := by
+    intro α p hp oid
+    by_cases e : oid = holder.toObjId
+    · subst e; rw [storeObject_objects_eq s2 st' _ _ hInv2 hS3, hO2]; exact hp ht
+    · rw [storeObject_objects_ne s2 st' _ _ _ e hInv2 hS3]
+  exact ⟨fun oid => by rw [p3 tcbSchedAuxOf (fun _ => rfl), F2.aux, p1 tcbSchedAuxOf rfl],
+    fun oid => by rw [p3 schedReleaseOf (fun _ => rfl), F2.release, p1 schedReleaseOf rfl]⟩
+
+/-- **The held pop keeps replenish-queue affinity**: it moves no replenish
+queue and no affinity, and the context it writes keeps its holder. -/
+theorem keepDonatedSchedContext_preserves_replenishQueueAffinityConsistent_smp
+    {st st' : SystemState} {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {newOwner? : Option SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (hCons : replenishQueueAffinityConsistent_smp st)
+    (h : SeLe4n.Kernel.keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    replenishQueueAffinityConsistent_smp st' := by
+  obtain ⟨sc, head?, _, hSc, -, -, -, -, -, hSc', -, -, -, cBwd, -⟩ :=
+    keepDonatedSchedContext_objects hInv h
+  have hAux := (keepDonatedSchedContext_auxReleaseAgree hInv h).1
+  intro c s t hMem sc' hS tid hb
+  rw [keepDonatedSchedContext_scheduler_eq h] at hMem
+  rw [hAux.determineTargetCore_eq]
+  have hS' := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS
+  by_cases e : s.toObjId = scId.toObjId
+  · have es := SeLe4n.SchedContextId.toObjId_injective _ _ e
+    subst es
+    rw [hSc'] at hS'; cases hS'
+    exact hCons c s t hMem sc ((SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc) tid hb
+  · exact hCons c s t hMem sc' ((SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
+      (cBwd _ _ e hS')) tid hb
 
 /-- **The unheld pop keeps every scheduling-link invariant**: it writes no
 budget, affinity, release field or release slot, and no replenishment queue;

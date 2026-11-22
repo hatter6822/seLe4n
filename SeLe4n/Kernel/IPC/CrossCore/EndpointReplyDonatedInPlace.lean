@@ -148,7 +148,7 @@ theorem applyReplyDonationOnCore_eq_inPlace (S : SystemState) (rid : SeLe4n.Repl
   have hhv' := SeLe4n.ThreadId.toValid?_some_val_eq _ _ hhv
   unfold applyReplyDonationOnCore
   rw [replyDonationRecipientHome_of_head S rid c scId holder hHolder, hHolder]
-  simp only [hhv, hcv, hRecipEq]
+  simp only [hhv, hcv, hRecipEq, hRecip, ↓reduceIte]
   rw [hhv', returnDonatedSchedContextResolved_eq_inPlace S holder c scId sc rid r ot ht hSc hB hHead
     hR hNext hBelow hOuter hRecip hORes hHRes hOT hHT hNeOH hLsc hFsc hLr hFr hLo hFo hLh]
   rfl
@@ -196,7 +196,7 @@ theorem replyRecvPopDonation_eq_inPlace (S : SystemState) (rid : SeLe4n.ReplyId)
     ((SeLe4n.ThreadId.toValid?_isSome_iff c).mpr hORes)
   unfold replyRecvPopDonation
   rw [hHolder]
-  simp only [hhv, hcv, hRecipEq]
+  simp only [hhv, hcv, hRecipEq, hRecip, ↓reduceIte]
   rw [returnDonatedSchedContextResolved_eq_inPlace S holder c scId sc rid r ot ht hSc hB hHead
     hR hNext hBelow hOuter hRecip hORes hHRes hOT hHT hNeOH hLsc hFsc hLr hFr hLo hFo hLh]
   rfl

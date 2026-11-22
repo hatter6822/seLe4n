@@ -268,6 +268,22 @@ theorem popUnheldReplyHead_replyViews_eq {st st' : SystemState} {rid : SeLe4n.Re
         obtain ⟨t0, h0, -⟩ := hB k t' hk
         exact ⟨t0, h0⟩)
 
+/-- **The held pop keeps the reply views**: it rewrites one thread's binding
+codes and writes the context and the replies — no reply-view field. -/
+theorem keepDonatedSchedContextResolved_replyViews_eq {st st' : SystemState}
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} (hInv : st.objects.invExt)
+    (h : keepDonatedSchedContextResolved st holder scId = .ok st') :
+    st'.replyViews = st.replyViews := by
+  obtain ⟨_, -, hK⟩ := keepDonatedSchedContextResolved_ok_decompose h
+  obtain ⟨hF, hB⟩ := keepDonatedSchedContext_tcb_bindingRewrite hInv hK
+  exact replyViews_eq_of_tcbs
+    (fun k t0 hk => by
+      obtain ⟨t', h', hR⟩ := hF k t0 hk
+      exact ⟨t', h', replyView_of_tcbBindingRewrite hR⟩)
+    (fun k t' hk => by
+      obtain ⟨t0, h0, -⟩ := hB k t' hk
+      exact ⟨t0, h0⟩)
+
 /-- The reply path's donation return: the context goes back and settles, the
 holder is descheduled — no reply-view field. -/
 theorem applyReplyDonationOnCore_replyViews_eq {st st' : SystemState} {rid : SeLe4n.ReplyId}
@@ -279,11 +295,13 @@ theorem applyReplyDonationOnCore_replyViews_eq {st st' : SystemState} {rid : SeL
   · exact popUnheldReplyHead_replyViews_eq hInv h
   · split at h
     · split at h
-      · cases h
-      · rename_i s1 h1
-        cases h
-        rw [descheduleAtPlacement_replyViews_eq, settleReturnedContext_replyViews_eq,
-          returnDonatedSchedContextResolved_replyViews_eq hInv h1]
+      · split at h
+        · cases h
+        · rename_i s1 h1
+          cases h
+          rw [descheduleAtPlacement_replyViews_eq, settleReturnedContext_replyViews_eq,
+            returnDonatedSchedContextResolved_replyViews_eq hInv h1]
+      · exact keepDonatedSchedContextResolved_replyViews_eq hInv h
     · cases h
 
 -- ============================================================================
@@ -493,11 +511,17 @@ theorem replyRecvPopDonation_replyViews_eq {rid : SeLe4n.ReplyId} {t : SeLe4n.Th
   split at h
   · split at h
     · split at h
-      · cases h
-      · rename_i s1 h1
-        cases h
-        rw [settleReturnedContext_replyViews_eq,
-          returnDonatedSchedContextResolved_replyViews_eq hInv h1]
+      · split at h
+        · cases h
+        · rename_i s1 h1
+          cases h
+          rw [settleReturnedContext_replyViews_eq,
+            returnDonatedSchedContextResolved_replyViews_eq hInv h1]
+      · split at h
+        · cases h
+        · rename_i s1 h1
+          cases h
+          exact keepDonatedSchedContextResolved_replyViews_eq hInv h1
     · cases h
   · split at h
     · cases h

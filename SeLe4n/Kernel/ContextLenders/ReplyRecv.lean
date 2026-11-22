@@ -48,13 +48,11 @@ theorem replyRecvPopDonation_binding_cases {rid : SeLe4n.ReplyId} {target : SeLe
     (∃ t0, st.objects[y.toObjId]? = some (.tcb t0) ∧ t0.schedContextBinding.scId? = some s) ∨
     (∃ sc holder, r = some (sc, holder) ∧ y = replyDonationRecipient st sc target ∧ s = sc) ∨
     (r = none ∧ y = target) := by
-  unfold replyRecvPopDonation at h
-  split at h
-  case h_2 =>
-    split at h
-    · cases h
-    rename_i hPop
-    cases h
+  rcases r with _ | ⟨oldScId, holder⟩
+  · rcases replyRecvPopDonation_ok_none_decompose rid target st st' h with ⟨-, hPop⟩ |
+        ⟨_, _, -, -, hK⟩
+    rotate_right
+    · exact .inl (keepDonatedSchedContextResolved_binding_backward hInv hK y t' s hT hS)
     rcases popUnheldReplyHead_objects_frame hPop with ⟨-, rfl⟩ |
         ⟨scId, _, st1, -, -, hP, rfl⟩ | ⟨_, _, -, -, hSv⟩
     · exact .inl ⟨t', hT, hS⟩
@@ -67,13 +65,8 @@ theorem replyRecvPopDonation_binding_cases {rid : SeLe4n.ReplyId} {target : SeLe
       exact .inl ⟨t', tBwd _ _ (fun e => hy (SeLe4n.ThreadId.toObjId_injective _ _ e)) hT, hS⟩
     · obtain ⟨-, -, -, -, -, -, tBwd, -, -, -⟩ := severUnheldSchedContext_objects hInv hSv
       exact .inl ⟨t', tBwd _ _ hT, hS⟩
-  repeat' (first | split at h | dsimp only at h)
-  all_goals first
-    | (cases h; exact .inl ⟨t', hT, hS⟩)
-    | (cases h; done)
-    | skip
-  rename_i oldScId holder _ _ _ _ _ _ _ _ st1 hRet
-  cases h
+  obtain ⟨st1, hRet, rfl⟩ :=
+    replyRecvPopDonation_ok_some_decompose rid target st st' oldScId holder h
   replace hT := (SchedContextOps.settleReturnedContext_agree _ _ _).symm.get_of_not_sc
     (fun _ e => KernelObject.noConfusion e) hT
   by_cases hy : y = replyDonationRecipient st oldScId target
@@ -236,11 +229,17 @@ theorem replyRecvPopDonation {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId}
   · dsimp only at h
     split at h
     · split at h
-      · cases h
-      · rename_i st1 hRet
-        cases h
-        exact (returnDonatedSchedContextResolved hInv hRet).andThen fun hI =>
-          settleReturnedContext _ _ _ hI
+      · split at h
+        · cases h
+        · rename_i st1 hRet
+          cases h
+          exact (returnDonatedSchedContextResolved hInv hRet).andThen fun hI =>
+            settleReturnedContext _ _ _ hI
+      · split at h
+        · cases h
+        · rename_i st1 hK
+          cases h
+          exact keepDonatedSchedContextResolved hInv hK
     · cases h
   · split at h
     · cases h

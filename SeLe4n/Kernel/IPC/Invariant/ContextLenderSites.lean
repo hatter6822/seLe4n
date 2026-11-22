@@ -186,6 +186,26 @@ theorem returnUnheldSchedContext_linksShrink {st st' : SystemState}
                 (fun _ e => by cases e) (fun _ e => by cases e)).trans
                 (contextStackLinksShrink_of_objects_eq (markKeyChangeFrom_objects _ _ _)))
 
+/-- **The held pop shrinks the stack links**: the sever's head pop, then the
+holder's binding store, which writes no reply and no context. -/
+theorem keepDonatedSchedContext_linksShrink {st st' : SystemState}
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt) (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    contextStackLinksShrink st st' := by
+  obtain ⟨sc, head?, _, s1, s2, hSc, -, -, hH, hS1, hS2, -, hS3⟩ :=
+    keepDonatedSchedContext_ok_storeChain h
+  have hI1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hI2 := storeDonationHeadPop_preserves_objects_invExt hI1 hS2
+  exact ((contextStackLinksShrink_storeHeadBelow hObjInv hSc hH rfl hS1).trans
+    (storeDonationHeadPop_linksShrink hI1 hS2)).trans
+    (contextStackLinksShrink_storeObject_other hI2 hS3 (fun _ e => by cases e) (fun _ e => by cases e))
+
+/-- The resolved held pop shrinks the stack links. -/
+theorem keepDonatedSchedContextResolved_linksShrink {st st' : SystemState}
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} (hObjInv : st.objects.invExt)
+    (h : keepDonatedSchedContextResolved st holder scId = .ok st') : contextStackLinksShrink st st' :=
+  keepDonatedSchedContextResolved_lift h fun _ _ hP => keepDonatedSchedContext_linksShrink hObjInv hP
+
 theorem returnUnheldSchedContext_preserves_contextLendersFlow {ctx : LabelingContext}
     {st st' : SystemState} {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
     {newOwner? : Option SeLe4n.ThreadId}

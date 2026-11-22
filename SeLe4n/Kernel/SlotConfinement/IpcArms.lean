@@ -259,8 +259,13 @@ theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
     (hStep : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
     observableSlotsConfinedToCores st st' (replyDonationDescheduleCores st rid) := by
   rcases applyReplyDonationOnCore_ok_decompose st st' rid targetVtid
-    ownerHome hStep with ⟨_, hEq⟩ | ⟨scId, holderVtid, n, stRet, hHead, _, hRet, hEq⟩
+    ownerHome hStep with ⟨_, hEq⟩ | ⟨scId, holderVtid, n, stRet, hHead, _, hRet, hEq⟩ |
+      ⟨_, _, _, -, -, -, hK⟩
   · exact observableSlotsConfinedToCores_widen (popUnheldReplyHead_confinedToCores hEq)
+  rotate_right
+  · exact observableSlotsConfinedToCores_widen
+      (observableSlotsConfinedToCores_nil_of_scheduler_except_reschedule_machine_eq
+        (by rw [keepDonatedSchedContext_scheduler_eq hK]) (keepDonatedSchedContext_machine_eq hK))
   · -- The core list is stated on the **pre**-state, which is the only state a
     -- caller holds.  That is sound because neither step before the deschedule
     -- moves a thread: the return writes objects alone and the settle writes
@@ -619,6 +624,15 @@ theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
       | some targetV =>
         rw [hHV, hTV] at hStep
         simp only [] at hStep
+        split at hStep
+        rotate_left
+        · split at hStep
+          · cases hStep
+          · rename_i s1 hK
+            cases hStep
+            exact observableSlotsConfinedToCores_nil_of_scheduler_except_reschedule_machine_eq
+              (by rw [keepDonatedSchedContextResolved_scheduler_eq hK])
+              (keepDonatedSchedContextResolved_machine_eq hK)
         cases hRet : returnDonatedSchedContextResolved st holder oldScId
             (replyDonationRecipient st oldScId target) with
         | error e => rw [hRet] at hStep; simp only [] at hStep; cases hStep

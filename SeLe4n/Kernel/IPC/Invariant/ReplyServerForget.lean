@@ -473,6 +473,23 @@ theorem severUnheldSchedContext_runQueueStage {st st' : SystemState}
   exact (RunQueueStage.storeObject_nonTcb hS1 hSc (fun _ e => by cases e)
     (fun _ e => by cases e)).trans (storeDonationHeadPop_runQueueStage hS2)
 
+/-- **The held pop is a run-queue stage**: the sever's two stores, then the
+holder's binding codes, which no run-queue reading sees. -/
+theorem keepDonatedSchedContext_runQueueStage {st st' : SystemState}
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') : RunQueueStage st st' := by
+  obtain ⟨_, _, ht, _, s2, hSc, -, -, -, hS1, hS2, hL, hS3⟩ := keepDonatedSchedContext_ok_storeChain h
+  have hO2 : s2.objects[holder.toObjId]? = some (.tcb ht) := lookupTcb_some_objects s2 holder ht hL
+  exact ((RunQueueStage.storeObject_nonTcb hS1 hSc (fun _ e => by cases e)
+    (fun _ e => by cases e)).trans (storeDonationHeadPop_runQueueStage hS2)).trans
+    (RunQueueStage.storeObject_tcb hS3 hO2 (fun _ => rfl))
+
+/-- The resolved held pop is a run-queue stage. -/
+theorem keepDonatedSchedContextResolved_runQueueStage {st st' : SystemState}
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    (h : keepDonatedSchedContextResolved st holder scId = .ok st') : RunQueueStage st st' :=
+  keepDonatedSchedContextResolved_lift h fun _ _ hP => keepDonatedSchedContext_runQueueStage hP
+
 /-- **A finalised reply's pop off an unheld context, and its settle, is a
 run-queue stage**: the pop a frame stage off the context
 (`returnUnheldSchedContext_runQueueFrameStage`), closed by the settle

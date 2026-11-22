@@ -155,11 +155,20 @@ def replyRecvPopDonation (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId) :
             -- because "which thread receives the context" is one question and
             -- the return and the migration must not be free to answer it twice.
             let recipient := replyDonationRecipient st oldScId target
-            match returnDonatedSchedContextResolved st holder oldScId recipient with
-            | .error e => .error e
-            | .ok st1' =>
-                .ok (some (oldScId, holder), SchedContextOps.settleReturnedContext st1'
-                  (determineTargetCore st recipient) oldScId)
+            -- seL4-MCS's `reply_pop` donates only to a recipient holding no
+            -- context; one that holds its own leaves the context with its holder,
+            -- the head popped (`keepDonatedSchedContext`).  No thread loses a
+            -- context there, so there is no holder to deschedule.
+            if donationRecipientAcceptable st recipient then
+              match returnDonatedSchedContextResolved st holder oldScId recipient with
+              | .error e => .error e
+              | .ok st1' =>
+                  .ok (some (oldScId, holder), SchedContextOps.settleReturnedContext st1'
+                    (determineTargetCore st recipient) oldScId)
+            else
+              match keepDonatedSchedContextResolved st holder oldScId with
+              | .error e => .error e
+              | .ok st' => .ok (none, st')
         | _, _ => .error (.invalidArgument 0)
     -- **WS-ZA ZA6.34**: a frame heading a context no thread holds is popped as
     -- seL4-MCS's `reply_pop` pops it, the context donated to the answered caller
@@ -964,8 +973,10 @@ def replyRecvTransferWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
 -- `replyDonationReturnReplenishCores` (`IPC/CrossCore/EndpointReplyDispatch.lean`
 -- §1), one owner for both reply-shaped arms: the `.reply` dispatch's return reads
 -- the same trigger at the same state, and `replyRecvPopDonation_holder_eq_frameHead`
--- / `replyRecvPopDonation_ok_none_frameHead` are what say the pop's `returned?` IS
--- that trigger's answer.  Two spellings of one pair held together by a theorem is
+-- is what says a `returned?` the pop answers IS that trigger's answer.  (A `none`
+-- answer is the unheld pop or the held pop that keeps the context with its holder;
+-- the footprint names the hand-off's pair on both, a proven superset where the
+-- pop moves no replenishment.)  Two spellings of one pair held together by a theorem is
 -- the duplication this project retires.
 
 /-- **WS-RR RR8.12 Cut C2**: the replenish-queue cores the post-receive half

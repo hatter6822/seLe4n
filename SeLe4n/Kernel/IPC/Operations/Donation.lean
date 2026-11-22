@@ -402,12 +402,15 @@ theorem applyReplyDonation_characterisation
                   -- operation onto the redirect for the same reason OD4.4 moved
                   -- it onto the stack resolver: a characterisation stated at the
                   -- argument is a model of a different program.
-                  (match returnDonatedSchedContextResolved st holderVtid.val scId
-                      (replyDonationRecipient st scId targetVtid.val) with
-                   | .error e => .error e
-                   | .ok st' => .ok (removeRunnable
-                       (SchedContextOps.settleReturnedContext st'
-                         Concurrency.bootCoreId scId) holderVtid.val))
+                  (if donationRecipientAcceptable st
+                      (replyDonationRecipient st scId targetVtid.val) then
+                    (match returnDonatedSchedContextResolved st holderVtid.val scId
+                        (replyDonationRecipient st scId targetVtid.val) with
+                     | .error e => .error e
+                     | .ok st' => .ok (removeRunnable
+                         (SchedContextOps.settleReturnedContext st'
+                           Concurrency.bootCoreId scId) holderVtid.val))
+                   else keepDonatedSchedContextResolved st holderVtid.val scId)
               | none => .error (.invalidArgument 0))
          -- WS-ZA ZA6.34: a frame heading a context no thread holds is popped
          -- to the answered caller; one heading nothing pops nothing.
@@ -423,8 +426,10 @@ theorem applyReplyDonation_characterisation
     | some holderVtid =>
         simp only []
         rw [SeLe4n.ThreadId.toValid?_some_val_eq holder holderVtid hHV]
-        cases returnDonatedSchedContextResolved st holder _
-          (replyDonationRecipient st _ targetVtid.val) <;> rfl
+        split
+        · cases returnDonatedSchedContextResolved st holder _
+            (replyDonationRecipient st _ targetVtid.val) <;> rfl
+        · rfl
 
 /-- WS-RR RR2.1 / RR2.2 (operation): the cross-core `.call` SchedContext
 donation — the single-core `applyCallDonation` **plus** the SM5.H.4

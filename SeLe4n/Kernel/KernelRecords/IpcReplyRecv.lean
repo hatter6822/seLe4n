@@ -47,11 +47,17 @@ theorem replyRecvPopDonation {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId}
   · dsimp only at h
     split at h
     · split at h
-      · cases h
-      · rename_i st1 hRet
-        cases h
-        have F := returnDonatedSchedContextResolved hInv hRet
-        exact F.trans (settleReturnedContext _ _ _ F.invExt)
+      · split at h
+        · cases h
+        · rename_i st1 hRet
+          cases h
+          have F := returnDonatedSchedContextResolved hInv hRet
+          exact F.trans (settleReturnedContext _ _ _ F.invExt)
+      · split at h
+        · cases h
+        · rename_i st1 hK
+          cases h
+          exact keepDonatedSchedContextResolved hInv hK
     · cases h
   · split at h
     · cases h

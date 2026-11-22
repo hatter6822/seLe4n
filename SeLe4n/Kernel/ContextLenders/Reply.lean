@@ -58,6 +58,14 @@ theorem popUnheldReplyHead {st st' : SystemState} {rid : SeLe4n.ReplyId} {target
   · exact of_records (severUnheldSchedContext_linksShrink hInv hS)
       (RecordsFrame.severUnheldSchedContext hInv hS)
 
+/-- The held pop (seL4-MCS `reply_pop` keeping the context with its holder). -/
+theorem keepDonatedSchedContextResolved {st st' : SystemState} {holder : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.keepDonatedSchedContextResolved st holder scId = .ok st') :
+    LendersFrame st st' :=
+  of_records (keepDonatedSchedContextResolved_linksShrink hInv h)
+    (RecordsFrame.keepDonatedSchedContextResolved hInv h)
+
 theorem returnDonatedSchedContextResolved {st st' : SystemState} {serverTid : SeLe4n.ThreadId}
     {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId} (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.returnDonatedSchedContextResolved st serverTid scId originalOwner
@@ -77,11 +85,13 @@ theorem applyReplyDonationOnCore {st st' : SystemState} {rid : SeLe4n.ReplyId}
   · exact popUnheldReplyHead hInv h
   · split at h
     · split at h
-      · cases h
-      · rename_i st1 hRet
-        cases h
-        exact ((returnDonatedSchedContextResolved hInv hRet).andThen fun h =>
-          settleReturnedContext _ _ _ h).andThen fun h => descheduleAtPlacement _ _ h
+      · split at h
+        · cases h
+        · rename_i st1 hRet
+          cases h
+          exact ((returnDonatedSchedContextResolved hInv hRet).andThen fun h =>
+            settleReturnedContext _ _ _ h).andThen fun h => descheduleAtPlacement _ _ h
+      · exact keepDonatedSchedContextResolved hInv h
     · cases h
 
 theorem removeCallerReplyFrame {caller : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}

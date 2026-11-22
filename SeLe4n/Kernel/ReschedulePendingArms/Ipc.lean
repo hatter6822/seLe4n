@@ -1122,6 +1122,71 @@ theorem severUnheldSchedContext_keyFrame {st st' : SystemState}
     severUnheldSchedContext_scheduler_eq h,
     storeDonationHeadPop_preserves_objects_invExt hInv1 hS2⟩
 
+/-- **The held pop covers**: it moves no scheduler field, and the one key input
+it moves — the holder's binding — keeps the context the holder's budget reads
+(the pop's guard), so neither the holder's key nor its eligibility moves. -/
+theorem keepDonatedSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (hInv : st.objects.invExt) (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  obtain ⟨sc, head?, ht, s1, s2, hG, hSc, -, -, -, hS1, hS2, hL, hS3⟩ :=
+    keepDonatedSchedContext_ok_storeChainGuarded h
+  obtain ⟨sc2, _, ht2, hSc2, -, -, -, hO, -, hScPost, hO', -, -, -, -⟩ :=
+    keepDonatedSchedContext_objects hInv h
+  rw [hSc] at hSc2; cases hSc2
+  have hInv1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hS1
+  have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hS2
+  have k1 : keyInputsEq st s1 := keyInputsEq_storeObject hInv hS1 (by rw [hSc]; rfl)
+  have k2 := keyInputsEq_trans k1 (storeDonationHeadPop_keyInputsEq hInv1 hS2)
+  have hO2 := lookupTcb_some_objects _ _ _ hL
+  have k3 := keyInputsEqExcept_storeObject_tcb hInv2 hO2 hS3
+  have hO1 : st.objects[holder.toObjId]? = some (.tcb ht) := by
+    have h1 := storeDonationHeadPop_tcb_backward hInv1 hS2 _ _ hO2
+    have hNe : holder.toObjId ≠ scId.toObjId := by
+      intro e; rw [e, storeObject_objects_eq st s1 _ _ hInv hS1] at h1; cases h1
+    rwa [storeObject_objects_ne st s1 _ _ _ hNe hInv hS1] at h1
+  rw [hO1] at hO; cases hO
+  have hSch := keepDonatedSchedContext_scheduler_eq h
+  have hMach := keepDonatedSchedContext_machine_eq h
+  have hRun : SystemState.RunCoresAgree st' st :=
+    (runCoresAgree_storeObject_tcb hInv2 hO2 hS3 rfl).trans k2.runCoresAgree
+  have hPreT : st.getTcb? holder = some ht := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO1
+  have hPostT := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO'
+  have hPreSc : st.getSchedContext? scId = some sc :=
+    (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc
+  have hPostSc := (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hScPost
+  have hBudOf : ∀ (s : SystemState) (t : TCB) (x : SeLe4n.SchedContextId),
+      t.schedContextBinding.scId? = some x →
+      hasSufficientBudget s t = match s.getSchedContext? x with
+        | some sc => sc.budgetRemaining.isPositive | none => false := by
+    intro s t x hx
+    unfold hasSufficientBudget
+    cases hb : t.schedContextBinding <;> rw [hb] at hx <;>
+      simp only [SchedContextBinding.scId?, reduceCtorEq, Option.some.injEq] at hx <;>
+      (try subst hx) <;> rfl
+  refine ⟨stepCovers_of_frame (fun t => ?_) (fun t => ?_)
+    (fun c _ t ht' => by rw [hRun.queuedOn] at ht'; exact ht') (fun c _ => by rw [hSch])
+    (reschedulePendingMonotone_of_scheduler_eq hSch) (by rw [hMach])
+    (banksKeptOffCore_of_eq (by rw [hMach])), keepDonatedSchedContext_objects_invExt hInv h⟩
+  · by_cases ho : t = holder
+    · subst ho; unfold schedKeyView; rw [hPostT, hPreT]; rfl
+    · rw [schedKeyView_eq_of_keyInputsEqExcept k3 ho, schedKeyView_eq_of_keyInputsEq k2]
+  · by_cases ho : t = holder
+    · subst ho; unfold budgetEligibleView; rw [hPostT, hPreT]
+      simp only [Option.map_some]
+      rw [hBudOf st' _ scId (tcb_donationReturnBinding_scId? scId newOwner? ht),
+        hBudOf st ht scId hG, hPostSc, hPreSc]
+      rfl
+    · rw [budgetEligibleView_eq_of_keyInputsEqExcept k3 ho, budgetEligibleView_eq_of_keyInputsEq k2]
+
+/-- The resolved held pop covers. -/
+theorem keepDonatedSchedContextResolved_stepCovers (e : CoreId) {st st' : SystemState}
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} (hInv : st.objects.invExt)
+    (h : keepDonatedSchedContextResolved st holder scId = .ok st') :
+    stepCovers e st st' ∧ st'.objects.invExt :=
+  keepDonatedSchedContextResolved_lift (P := fun s => stepCovers e st s ∧ s.objects.invExt) h
+    (fun _ _ hP => keepDonatedSchedContext_stepCovers e hInv hP)
+
 /-- The pop at an unheld head covers: the unheld pop and the returned context's
 settle, or the sever. -/
 theorem popUnheldReplyHead_stepCovers (e : CoreId) {st st' : SystemState}
@@ -1152,6 +1217,7 @@ theorem applyReplyDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
   · exact popUnheldReplyHead_stepCovers e hInv h
   · split at h
     · split at h
+      split at h
       · cases h
       · rename_i st1 hRet
         cases h
@@ -1162,6 +1228,7 @@ theorem applyReplyDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
         unfold descheduleAtPlacement
         exact descheduleAt_objects_invExt _ _ _
           (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1Inv)
+      · exact keepDonatedSchedContextResolved_stepCovers e hInv h
     · cases h
 
 /-- The live reply covers on every outcome: the reply leg, the donation
@@ -1635,12 +1702,18 @@ theorem replyRecvPopDonation_stepCovers (e : CoreId) {rid : SeLe4n.ReplyId}
   · dsimp only at h
     split at h
     · split at h
-      · cases h
-      · rename_i st1 hRet
-        cases h
-        obtain ⟨h1, h1Inv⟩ := returnDonatedSchedContextResolved_stepCovers e hInv hRet
-        exact ⟨stepCovers_trans h1 (settleReturnedContext_stepCovers e _ _ _),
-          SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1Inv⟩
+      · split at h
+        · cases h
+        · rename_i st1 hRet
+          cases h
+          obtain ⟨h1, h1Inv⟩ := returnDonatedSchedContextResolved_stepCovers e hInv hRet
+          exact ⟨stepCovers_trans h1 (settleReturnedContext_stepCovers e _ _ _),
+            SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1Inv⟩
+      · split at h
+        · cases h
+        · rename_i st1 hK
+          cases h
+          exact keepDonatedSchedContextResolved_stepCovers e hInv hK
     · cases h
   · split at h
     · cases h

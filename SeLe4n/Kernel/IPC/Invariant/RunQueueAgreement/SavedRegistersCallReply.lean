@@ -345,6 +345,36 @@ theorem of_returnUnheldSchedContext {st st' : SystemState} {scId : SeLe4n.SchedC
         rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr this] at h1
         cases h1
 
+/-- The held pop rewrites one thread's binding codes, no saved register. -/
+theorem of_keepDonatedSchedContext {st st' : SystemState} {holder : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    savedRegsUnwritten st st' := by
+  refine ⟨.of_map fun x => ?_, keepDonatedSchedContext_objects_invExt hInv h⟩
+  obtain ⟨_, _, ot, -, -, -, -, hO, -, -, hO', tBwd, tFwd, -, -⟩ :=
+    keepDonatedSchedContext_objects hInv h
+  by_cases e : x.toObjId = holder.toObjId
+  · rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr (e ▸ hO'),
+      (SystemState.getTcb?_eq_some_iff _ _ _).mpr (e ▸ hO)]
+    rfl
+  · cases h1 : st.getTcb? x with
+    | some t0 =>
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr
+        (tFwd _ _ e ((SystemState.getTcb?_eq_some_iff _ _ _).mp h1))]
+    | none =>
+      cases h2 : st'.getTcb? x with
+      | none => rfl
+      | some t1 =>
+        have := tBwd _ _ e ((SystemState.getTcb?_eq_some_iff _ _ _).mp h2)
+        rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr this] at h1
+        cases h1
+
+/-- The resolved held pop. -/
+theorem of_keepDonatedSchedContextResolved {st st' : SystemState} {holder : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} (hInv : st.objects.invExt)
+    (h : keepDonatedSchedContextResolved st holder scId = .ok st') : savedRegsUnwritten st st' :=
+  keepDonatedSchedContextResolved_lift h fun _ _ hP => of_keepDonatedSchedContext hInv hP
+
 /-- The pop at an unheld head: the unheld pop, then the settle; or the sever,
 which writes no thread. -/
 theorem of_popUnheldReplyHead {st st' : SystemState} {rid : SeLe4n.ReplyId}
@@ -602,13 +632,15 @@ theorem applyReplyDonationOnCore_savedRegsUnwritten {st st' : SystemState} {rid 
   · exact savedRegsUnwritten.of_popUnheldReplyHead hInv h
   · split at h
     · split at h
-      · cases h
-      · rename_i st1 hRet
-        cases h
-        have h1 := savedRegsUnwritten.of_returnDonatedSchedContextResolved hInv hRet
-        exact h1.trans ((savedRegsUnwritten.of_settle _ _ _ h1.2).trans
-          (savedRegsUnwritten.of_descheduleAt _ _ _
-            (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1.2)))
+      · split at h
+        · cases h
+        · rename_i st1 hRet
+          cases h
+          have h1 := savedRegsUnwritten.of_returnDonatedSchedContextResolved hInv hRet
+          exact h1.trans ((savedRegsUnwritten.of_settle _ _ _ h1.2).trans
+            (savedRegsUnwritten.of_descheduleAt _ _ _
+              (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1.2)))
+      · exact savedRegsUnwritten.of_keepDonatedSchedContextResolved hInv h
     · cases h
 
 /-- The live reply writes no saved register: the reply leg, the donation
@@ -655,11 +687,17 @@ theorem replyRecvPopDonation_savedRegsUnwritten {rid : SeLe4n.ReplyId} {target :
   · dsimp only at h
     split at h
     · split at h
-      · cases h
-      · rename_i st1 hRet
-        cases h
-        have h1 := savedRegsUnwritten.of_returnDonatedSchedContextResolved hInv hRet
-        exact h1.trans (savedRegsUnwritten.of_settle _ _ _ h1.2)
+      · split at h
+        · cases h
+        · rename_i st1 hRet
+          cases h
+          have h1 := savedRegsUnwritten.of_returnDonatedSchedContextResolved hInv hRet
+          exact h1.trans (savedRegsUnwritten.of_settle _ _ _ h1.2)
+      · split at h
+        · cases h
+        · rename_i st1 hK
+          cases h
+          exact savedRegsUnwritten.of_keepDonatedSchedContextResolved hInv hK
     · cases h
   · split at h
     · cases h

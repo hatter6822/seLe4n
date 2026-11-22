@@ -1998,7 +1998,7 @@ theorem applyReplyDonation_ok_decompose
     -- or a context its finalised server returned to no one, popped to the caller.
     (replyFrameHeadHolder? st rid = none ∧
       popUnheldReplyHead st rid targetVtid.val Concurrency.bootCoreId = .ok st'') ∨
-    ∃ (scId : SeLe4n.SchedContextId) (holderVtid : SeLe4n.ValidThreadId)
+    (∃ (scId : SeLe4n.SchedContextId) (holderVtid : SeLe4n.ValidThreadId)
       (newOwner? : Option SeLe4n.ThreadId) (st' : SystemState),
       replyFrameHeadHolder? st rid = some (scId, holderVtid.val) ∧
       -- **WS-OD OD4.4**: the resolver's answer is part of the decomposition, so
@@ -2015,7 +2015,15 @@ theorem applyReplyDonation_ok_decompose
       -- `schedContext_donate`): purged, and re-placed only under an active holder.
       st'' = removeRunnable
         (SchedContextOps.settleReturnedContext st' Concurrency.bootCoreId scId)
-        holderVtid.val := by
+        holderVtid.val) ∨
+    -- seL4-MCS's `reply_pop` where the recipient holds a context of its own: the
+    -- head is popped off the context, which stays with its holder.
+    ∃ (scId : SeLe4n.SchedContextId) (holderVtid : SeLe4n.ValidThreadId)
+      (newOwner? : Option SeLe4n.ThreadId),
+      replyFrameHeadHolder? st rid = some (scId, holderVtid.val) ∧
+      donationRecipientAcceptable st (replyDonationRecipient st scId targetVtid.val) = false ∧
+      replyStackOuterCaller? st scId = .ok newOwner? ∧
+      keepDonatedSchedContext st holderVtid.val scId newOwner? = .ok st'' := by
   rw [applyReplyDonation_characterisation] at h
   cases hRet : replyFrameHeadHolder? st rid with
   | none => rw [hRet] at h; exact Or.inl ⟨rfl, h⟩
@@ -2031,6 +2039,15 @@ theorem applyReplyDonation_ok_decompose
       have hHolderEq : holderVtid.val = holder :=
         SeLe4n.ThreadId.toValid?_some_val_eq holder holderVtid hV
       subst hHolderEq
+      cases hA : donationRecipientAcceptable st (replyDonationRecipient st scId targetVtid.val) with
+      | false =>
+        rw [hA] at h
+        simp only [Bool.false_eq_true, ↓reduceIte] at h
+        obtain ⟨n, hRes, hKeep⟩ := keepDonatedSchedContextResolved_ok_decompose h
+        exact Or.inr (Or.inr ⟨scId, holderVtid, n, rfl, hA, hRes, hKeep⟩)
+      | true =>
+      rw [hA] at h
+      simp only [↓reduceIte] at h
       cases hR : returnDonatedSchedContextResolved st holderVtid.val scId
           (replyDonationRecipient st scId targetVtid.val) with
       | error e => rw [hR] at h; simp only [] at h; cases h
@@ -2038,7 +2055,7 @@ theorem applyReplyDonation_ok_decompose
         rw [hR] at h
         simp only [Except.ok.injEq] at h
         obtain ⟨n, hRes, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hR
-        exact Or.inr ⟨scId, holderVtid, n, st', rfl, hRes, hPop, h.symm⟩
+        exact Or.inr (Or.inl ⟨scId, holderVtid, n, st', rfl, hRes, hPop, h.symm⟩)
 
 /-- **WS-RR RR2.5**: the donation return preserves the whole IPC bundle.
 
@@ -2239,13 +2256,14 @@ theorem applyReplyDonation_preserves_objects_invExt
     (h : applyReplyDonation st rid targetVtid = .ok st'') :
     st''.objects.invExt := by
   rcases applyReplyDonation_ok_decompose st st'' rid targetVtid h with
-    ⟨_, hEq⟩ | ⟨scId, holderVtid, newOwner?, st', _, _, hR, hEq⟩
+    ⟨_, hEq⟩ | ⟨scId, holderVtid, newOwner?, st', _, _, hR, hEq⟩ | ⟨_, _, _, _, _, _, hK⟩
   · exact popUnheldReplyHead_objects_invExt hObjInv hEq
   · rw [hEq]
     refine removeRunnable_objects_invExt _ _ ?_
     exact SchedContextOps.settleReturnedContext_objects_invExt _ _ _
       (returnDonatedSchedContext_preserves_objects_invExt st st' holderVtid.val scId
         (replyDonationRecipient st scId targetVtid.val) hObjInv newOwner? hR)
+  · exact keepDonatedSchedContext_objects_invExt hObjInv hK
 
 
 -- ============================================================================

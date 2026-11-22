@@ -126,6 +126,48 @@ theorem returnDonatedSchedContext_bindingPair {st st' : SystemState}
       refine ⟨sc0, (SystemState.getSchedContext?_eq_some_iff _ _ _).mp ?_, hbt⟩
       rw [e]; exact (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr h0
 
+/-- **The held pop keeps the thread every context names and the context every
+thread names**: it rewrites the holder's binding to one naming the context it
+already named (the pop's guard) and stores the context with its holder kept. -/
+theorem keepDonatedSchedContext_scIdLinksAgree {st st' : SystemState}
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt) (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    scIdLinksAgree st st' := by
+  obtain ⟨sc, _, _, hSc, -, -, -, -, -, hSc', -, tBwd, tFwd, cBwd, cFwd⟩ :=
+    keepDonatedSchedContext_objects hObjInv h
+  obtain ⟨ht, hO, hG, hO'⟩ := keepDonatedSchedContext_holder hObjInv h
+  refine ⟨fun t => ?_, fun s => ?_⟩
+  · by_cases e : t.toObjId = holder.toObjId
+    · rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr (e ▸ hO'),
+        (SystemState.getTcb?_eq_some_iff _ _ _).mpr (e ▸ hO)]
+      simp only [Option.map_some, tcb_donationReturnBinding_scId?, hG]
+    · cases h1 : st.getTcb? t with
+      | some t0 =>
+        rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr
+          (tFwd _ _ e ((SystemState.getTcb?_eq_some_iff _ _ _).mp h1))]
+      | none =>
+        cases h2 : st'.getTcb? t with
+        | none => rfl
+        | some t1 =>
+          have := tBwd _ _ e ((SystemState.getTcb?_eq_some_iff _ _ _).mp h2)
+          rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr this] at h1
+          cases h1
+  · by_cases e : s.toObjId = scId.toObjId
+    · rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mpr (e ▸ hSc'),
+        (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr (e ▸ hSc)]
+      rfl
+    · cases h1 : st.getSchedContext? s with
+      | some x =>
+        rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
+          (cFwd _ _ e ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp h1))]
+      | none =>
+        cases h2 : st'.getSchedContext? s with
+        | none => rfl
+        | some x =>
+          have := cBwd _ _ e ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp h2)
+          rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mpr this] at h1
+          cases h1
+
 /-- **An unheld context's pop keeps the binding pair**: the context, bound to
 no thread, goes to the recipient, unbound before, whose binding the pop writes
 to name it; every other thread and context is as it was. -/
@@ -255,9 +297,9 @@ theorem endpointReplyOnCore_bindingLinksAgree
   · exact (endpointReply_bindingLinksAgree st r1 expected target msg hObjInv hR).trans
       (bindingLinksAgree.of_offSchedulerLinks hA.objects)
 
-/-- **The donated context's return keeps the binding pair**, on each of its four
+/-- **The donated context's return keeps the binding pair**, on each of its five
 arms: nothing to return, an unheld context popped back, a donated one returned,
-or an unheld one severed. -/
+an unheld one severed, or a held one kept. -/
 theorem applyReplyDonationOnCore_bindingPair (st st' : SystemState) (rid : SeLe4n.ReplyId)
     (targetVtid : SeLe4n.ValidThreadId) (ownerHome : CoreId) (hObjInv : st.objects.invExt)
     (hP : schedContextBindingPair st)
@@ -265,13 +307,14 @@ theorem applyReplyDonationOnCore_bindingPair (st st' : SystemState) (rid : SeLe4
     schedContextBindingPair st' := by
   rcases applyReplyDonationOnCore_objects_frame st st' rid targetVtid ownerHome h with
     ⟨-, hEq⟩ | ⟨scId, n, s1, -, -, -, hRet, hA⟩ | ⟨scId, holder, n, s1, hRet, hA⟩ |
-    ⟨scId, n, -, -, -, hSev⟩
+    ⟨scId, n, -, -, -, hSev⟩ | ⟨_, _, _, -, -, hK⟩
   · exact hP.of_bindingLinksAgree (bindingLinksAgree.of_objects_eq hEq)
   · exact (returnUnheldSchedContext_bindingPair hObjInv hP hRet).of_bindingLinksAgree
       (bindingLinksAgree.of_offSchedulerLinks hA)
   · exact (returnDonatedSchedContext_bindingPair hObjInv hP hRet).of_bindingLinksAgree
       (bindingLinksAgree.of_offSchedulerLinks hA)
   · exact hP.of_schedLinkFrame (SchedLinkFrame.severUnheldSchedContext hObjInv hSev)
+  · exact hP.of_scIdLinksAgree (keepDonatedSchedContext_scIdLinksAgree hObjInv hK)
 
 /-- **The cross-core reply dispatch keeps the binding pair**: the reply leg, the
 donation return and the priority-inheritance revert. -/
@@ -549,7 +592,7 @@ theorem endpointReplyOnCore_homeCoresKept
   · exact (endpointReply_homeCoresKept st r1 expected target msg hObjInv hR).trans
       (homeCoresKept.of_offSchedulerLinks hA.objects)
 
-/-- **The donated context's return keeps every home core**, on each of its four
+/-- **The donated context's return keeps every home core**, on each of its five
 arms: the returns rewrite bindings, never an affinity. -/
 theorem applyReplyDonationOnCore_homeCoresKept (st st' : SystemState) (rid : SeLe4n.ReplyId)
     (targetVtid : SeLe4n.ValidThreadId) (ownerHome : CoreId) (hObjInv : st.objects.invExt)
@@ -557,7 +600,7 @@ theorem applyReplyDonationOnCore_homeCoresKept (st st' : SystemState) (rid : SeL
     homeCoresKept st st' := by
   rcases applyReplyDonationOnCore_objects_frame st st' rid targetVtid ownerHome h with
     ⟨-, hEq⟩ | ⟨scId, n, s1, -, -, -, hRet, hA⟩ | ⟨scId, holder, n, s1, hRet, hA⟩ |
-    ⟨scId, n, -, -, -, hSev⟩
+    ⟨scId, n, -, -, -, hSev⟩ | ⟨_, _, _, -, -, hK⟩
   · exact homeCoresKept.of_objects_eq hEq
   · exact (homeCoresKept.of_placement fun x =>
       returnUnheldSchedContext_getTcb?_placement_eq hObjInv hRet x).trans
@@ -566,6 +609,7 @@ theorem applyReplyDonationOnCore_homeCoresKept (st st' : SystemState) (rid : SeL
       returnDonatedSchedContext_getTcb?_placement_eq _ _ _ _ _ hObjInv _ hRet x).trans
       (homeCoresKept.of_offSchedulerLinks hA)
   · exact homeCoresKept.of_schedLinkFrame (SchedLinkFrame.severUnheldSchedContext hObjInv hSev)
+  · exact homeCoresKept.of_placement fun x => keepDonatedSchedContext_getTcb?_placement_eq hObjInv hK x
 
 /-- **The cross-core reply dispatch keeps every home core**: the reply leg, the
 donation return and the priority-inheritance revert. -/

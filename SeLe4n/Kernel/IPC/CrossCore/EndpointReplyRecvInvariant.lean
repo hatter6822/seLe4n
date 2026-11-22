@@ -122,6 +122,9 @@ theorem replyRecvPopDonation_holder_eq_frameHead (rid : SeLe4n.ReplyId)
       | some targetV =>
         rw [hHV, hTV] at h
         simp only [] at h
+        split at h
+        rotate_left
+        · split at h <;> simp at h
         cases hRet : returnDonatedSchedContextResolved st holder0 scId0
             (replyDonationRecipient st scId0 target) with
         | error e => rw [hRet] at h; simp only [] at h; cases h
@@ -160,6 +163,9 @@ theorem replyRecvPopDonation_ok_some_decompose (rid : SeLe4n.ReplyId)
     | some targetV =>
       rw [hHV, hTV] at h
       simp only [] at h
+      split at h
+      rotate_left
+      · split at h <;> simp at h
       cases hRet : returnDonatedSchedContextResolved st holder scId
           (replyDonationRecipient st scId target) with
       | error e => rw [hRet] at h; simp only [] at h; cases h
@@ -168,21 +174,26 @@ theorem replyRecvPopDonation_ok_some_decompose (rid : SeLe4n.ReplyId)
         simp only [] at h
         exact ⟨st1', rfl, ((Prod.mk.inj (Except.ok.inj h)).2).symm⟩
 
-/-- **WS-ZA ZA6.34: a pop that hands no context back is the pop at an unheld
-head** — the frame resolves no holder, and the pop of the context it heads, if
-any, as seL4-MCS's `reply_pop` runs it with no thread losing a context.  The
-identity where the frame heads nothing (`replyRecvPopDonation_ok_none_eq`). -/
+/-- **WS-ZA ZA6.34: a pop that hands no context back** is the pop at an unheld
+head — the frame resolves no holder, and the pop of the context it heads, if any,
+as seL4-MCS's `reply_pop` runs it with no thread losing a context — or the held
+pop whose recipient holds a context of its own (`keepDonatedSchedContext`), where
+the context stays with its holder.  The identity where the frame heads nothing
+(`replyRecvPopDonation_ok_none_eq`). -/
 theorem replyRecvPopDonation_ok_none_decompose (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
     (st st' : SystemState)
     (h : replyRecvPopDonation rid target st = .ok (none, st')) :
-    replyFrameHeadHolder? st rid = none ∧
-      popUnheldReplyHead st rid target (determineTargetCore st target) = .ok st' := by
+    (replyFrameHeadHolder? st rid = none ∧
+      popUnheldReplyHead st rid target (determineTargetCore st target) = .ok st') ∨
+    ∃ scId holder, replyFrameHeadHolder? st rid = some (scId, holder) ∧
+      donationRecipientAcceptable st (replyDonationRecipient st scId target) = false ∧
+      keepDonatedSchedContextResolved st holder scId = .ok st' := by
   unfold replyRecvPopDonation at h
   cases hHead : replyFrameHeadHolder? st rid with
   | none =>
       rw [hHead] at h
       simp only [] at h
-      refine ⟨rfl, ?_⟩
+      refine Or.inl ⟨rfl, ?_⟩
       cases hP : popUnheldReplyHead st rid target (determineTargetCore st target) with
       | error e => rw [hP] at h; cases h
       | ok s =>
@@ -201,13 +212,22 @@ theorem replyRecvPopDonation_ok_none_decompose (rid : SeLe4n.ReplyId) (target : 
       | some targetV =>
         rw [hHV, hTV] at h
         simp only [] at h
-        cases hRet : returnDonatedSchedContextResolved st holder oldScId
-            (replyDonationRecipient st oldScId target) with
-        | error e => rw [hRet] at h; simp only [] at h; cases h
-        | ok st1' =>
-          rw [hRet] at h
-          simp only [] at h
-          exact absurd (Prod.mk.inj (Except.ok.inj h)).1 (by simp)
+        split at h
+        · cases hRet : returnDonatedSchedContextResolved st holder oldScId
+              (replyDonationRecipient st oldScId target) with
+          | error e => rw [hRet] at h; simp only [] at h; cases h
+          | ok st1' =>
+            rw [hRet] at h
+            simp only [] at h
+            exact absurd (Prod.mk.inj (Except.ok.inj h)).1 (by simp)
+        · rename_i hAcc
+          refine Or.inr ⟨oldScId, holder, rfl, by simpa using hAcc, ?_⟩
+          cases hK : keepDonatedSchedContextResolved st holder oldScId with
+          | error e => rw [hK] at h; cases h
+          | ok s =>
+            rw [hK] at h
+            simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+            rw [h]
 
 /-- **WS-RR RR8.12 Cut C2**: and a pop that hands nothing back at a frame heading
 nothing commits nothing, so a `.replyRecv` whose answered frame heads no context
@@ -216,9 +236,11 @@ footprint's empty pop pair. -/
 theorem replyRecvPopDonation_ok_none_eq (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
     (st st' : SystemState) (hNoHead : replyFrameHeadContext? st rid = none)
     (h : replyRecvPopDonation rid target st = .ok (none, st')) : st' = st := by
-  have hP := (replyRecvPopDonation_ok_none_decompose rid target st st' h).2
-  rw [popUnheldReplyHead_of_no_head st rid _ _ hNoHead] at hP
-  cases hP; rfl
+  rcases replyRecvPopDonation_ok_none_decompose rid target st st' h with
+    ⟨-, hP⟩ | ⟨_, _, hH, -, -⟩
+  · rw [popUnheldReplyHead_of_no_head st rid _ _ hNoHead] at hP
+    cases hP; rfl
+  · rw [replyFrameHeadHolder?_of_no_head st rid hNoHead] at hH; cases hH
 
 /-- **WS-RR RR8.12 Cut C6e (the exactness frame)**: the pop writes no replenish
 queue outside `replyDonationReturnReplenishCores` — the FOOTPRINT's own first
@@ -239,7 +261,10 @@ theorem replyRecvPopDonation_replenishQueueOnCore_ne (rid : SeLe4n.ReplyId)
   cases hRet : returned? with
   | none =>
     subst hRet
-    obtain ⟨hNoH, hP⟩ := replyRecvPopDonation_ok_none_decompose rid target st st' h
+    rcases replyRecvPopDonation_ok_none_decompose rid target st st' h with
+      ⟨hNoH, hP⟩ | ⟨_, _, -, -, hK⟩
+    rotate_right
+    · rw [keepDonatedSchedContextResolved_scheduler_eq hK]
     cases hH : replyFrameHeadContext? st rid with
     | none =>
       rw [popUnheldReplyHead_of_no_head st rid _ _ hH] at hP; cases hP; rfl
@@ -266,17 +291,6 @@ theorem replyRecvPopDonation_replenishQueueOnCore_ne (rid : SeLe4n.ReplyId)
         (replyDonationRecipient st scId target) newOwner? hPop]
     rfl
 
-/-- **WS-RR RR8.12 Cut C3a**: and it hands nothing back exactly when the answered
-frame heads nothing — the `none` result is the trigger's own `none`, which is what
-lets the `.replyRecv` footprint's pop component be the frame-keyed
-`replyDonationReturnReplenishCores` rather than a second pair keyed on the result.
-The other direction is `replyRecvPopDonation_holder_eq_frameHead`. -/
-theorem replyRecvPopDonation_ok_none_frameHead (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
-    (st st' : SystemState)
-    (h : replyRecvPopDonation rid target st = .ok (none, st')) :
-    replyFrameHeadHolder? st rid = none :=
-  (replyRecvPopDonation_ok_none_decompose rid target st st' h).1
-
 /-- **WS-RM (`v0.35.6`)**: the pop preserves object-store integrity — the return
 is a store chain over existing keys and the settle writes release links alone. -/
 theorem replyRecvPopDonation_preserves_objects_invExt (rid : SeLe4n.ReplyId)
@@ -287,8 +301,10 @@ theorem replyRecvPopDonation_preserves_objects_invExt (rid : SeLe4n.ReplyId)
     st'.objects.invExt := by
   by_cases hR : returned? = none
   · subst hR
-    exact popUnheldReplyHead_objects_invExt hObjInv
-      (replyRecvPopDonation_ok_none_decompose rid target st st' hStep).2
+    rcases replyRecvPopDonation_ok_none_decompose rid target st st' hStep with
+      ⟨-, hP⟩ | ⟨_, _, -, -, hK⟩
+    · exact popUnheldReplyHead_objects_invExt hObjInv hP
+    · exact keepDonatedSchedContextResolved_objects_invExt hObjInv hK
   unfold replyRecvPopDonation at hStep
   cases hHead : replyFrameHeadHolder? st rid with
   | none =>
@@ -308,6 +324,10 @@ theorem replyRecvPopDonation_preserves_objects_invExt (rid : SeLe4n.ReplyId)
       | some targetV =>
         rw [hHV, hTV] at hStep
         simp only [] at hStep
+        split at hStep
+        rotate_left
+        · split at hStep <;> simp at hStep
+          exact absurd hStep.1.symm hR
         cases hRet : returnDonatedSchedContextResolved st holder oldScId
               (replyDonationRecipient st oldScId target) with
         | error e => rw [hRet] at hStep; simp only [] at hStep; cases hStep
@@ -341,8 +361,12 @@ theorem replyRecvPopDonation_preserves_replenishQueueAffinityConsistent_smp
     replenishQueueAffinityConsistent_smp st' := by
   by_cases hR : returned? = none
   · subst hR
-    rcases popUnheldReplyHead_objects_frame
-        (replyRecvPopDonation_ok_none_decompose rid target st st' h).2 with
+    rcases replyRecvPopDonation_ok_none_decompose rid target st st' h with
+      ⟨-, hU⟩ | ⟨_, _, -, -, hK⟩
+    rotate_right
+    · obtain ⟨_, -, hK'⟩ := keepDonatedSchedContextResolved_ok_decompose hK
+      exact keepDonatedSchedContext_preserves_replenishQueueAffinityConsistent_smp hObjInv hCons hK'
+    rcases popUnheldReplyHead_objects_frame hU with
       ⟨_, rfl⟩ | ⟨scId, n, st1, _, _, hP, rfl⟩ | ⟨_, _, -, -, hS⟩
     · exact hCons
     rotate_left
@@ -369,6 +393,10 @@ theorem replyRecvPopDonation_preserves_replenishQueueAffinityConsistent_smp
       | some targetV =>
         rw [hHV, hTV] at h
         simp only [] at h
+        split at h
+        rotate_left
+        · split at h <;> simp at h
+          exact absurd h.1.symm hR
         cases hRet : returnDonatedSchedContextResolved st holder oldScId
             (replyDonationRecipient st oldScId target) with
         | error e =>
@@ -654,8 +682,12 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
     ipcInvariantFull st' := by
   by_cases hR : returned? = none
   · subst hR
-    obtain ⟨hNoH, hP⟩ := replyRecvPopDonation_ok_none_decompose rid target st st' h
-    exact popUnheldReplyHead_preserves_ipcInvariantFull hObjInv hInv hStackValid hUnheld hNoH hP
+    rcases replyRecvPopDonation_ok_none_decompose rid target st st' h with
+      ⟨hNoH, hP⟩ | ⟨scId, holder, hH, -, hK⟩
+    · exact popUnheldReplyHead_preserves_ipcInvariantFull hObjInv hInv hStackValid hUnheld hNoH hP
+    · obtain ⟨n, hRes, hK'⟩ := keepDonatedSchedContextResolved_ok_decompose hK
+      exact keepDonatedSchedContext_preserves_ipcInvariantFull hObjInv hInv
+        (hHolderDonation scId holder hH) (hStackValid scId holder target n hRes).2 hK'
   unfold replyRecvPopDonation at h
   cases hHead : replyFrameHeadHolder? st rid with
   | none =>
@@ -675,6 +707,10 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
       | some targetV =>
         rw [hHV, hTV] at h
         simp only [] at h
+        split at h
+        rotate_left
+        · split at h <;> simp at h
+          exact absurd h.1.symm hR
         have hHEq : holderV.val = holder :=
           SeLe4n.ThreadId.toValid?_some_val_eq holder holderV hHV
         cases hRet : returnDonatedSchedContextResolved st holder oldScId
