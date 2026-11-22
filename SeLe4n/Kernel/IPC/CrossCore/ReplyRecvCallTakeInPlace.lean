@@ -583,7 +583,7 @@ theorem replyRecvCallTakes_spec {st : SystemState} {epId : SeLe4n.ObjId}
 
 /-- The reply leg's writes, the receive's context return in place, the
 receive leg's take of the queued caller `s`,
-the donation of `s`'s context `scS` to the server, its replenishment migrated
+the lend of `s`'s context at the admission's answer (`lendSchedContextInPlaceWhen`) `scS` to the server, its replenishment migrated
 from `donorHome` to `doneeHome`, the server's priority walk, then the answered
 caller's frame, read from the server's saved registers `rf`.  Out of line from
 the server's own frame (`writeReceiverMessageFrame`): `rf` is the server's
@@ -591,15 +591,13 @@ register file, released once these legs return, so that frame's write finds it
 unshared. -/
 @[noinline] def replyRecvCallTakeLegs (st : SystemState) (c tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId) (nextCode : Nat)
-    (scS : SeLe4n.SchedContextId) (donorHome doneeHome core : CoreId)
+    (scS : SeLe4n.SchedContextId) (lend : Bool) (donorHome doneeHome core : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) : SystemState :=
   let Y := (PriorityInheritance.propagatePipChainCrossCore
-      (migrateSchedContextReplenishment
-        (donateSchedContextInPlace (storeReceiveCallReady
+      (lendSchedContextInPlaceWhen lend (storeReceiveCallReady
           (receiveReturnSchedContextFast true (storeReplyRendezvousReady st c tid rid) tid.val)
-          epId s nextCode tid rid) s tid scS)
-        scS donorHome doneeHome) tid core).1
+          epId s nextCode tid rid) s tid scS donorHome doneeHome) tid core).1
   writeDeliveredFrameIfReady Y c (Architecture.regMessageFrame layout rf len badge)
     (fun _ => holdReplyRecvBody Y c layout rf len badge)
 
@@ -608,12 +606,12 @@ unshared. -/
 (`writeReceiverMessageFrame`). -/
 @[inline] def performReplyRecvCallTakeDelivered (st : SystemState) (c tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId) (nextCode : Nat)
-    (scS : SeLe4n.SchedContextId) (donorHome doneeHome core : CoreId)
+    (scS : SeLe4n.SchedContextId) (lend : Bool) (donorHome doneeHome core : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (sRf : SeLe4n.RegisterFile) (sLen : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool) : SystemState :=
   writeReceiverMessageFrame
-    (replyRecvCallTakeLegs st c tid rid epId s nextCode scS donorHome doneeHome core layout rf
+    (replyRecvCallTakeLegs st c tid rid epId s nextCode scS lend donorHome doneeHome core layout rf
       len badge) tid sRf sLen badgeWord badged
 
 end CallTake
@@ -631,7 +629,7 @@ delivering no fault, whose take and donation the reply leg leaves in place
 call donates its context to the server exactly as `.receive` does
 (`replyRecvPostReceiveDonation`), every context, core and word it takes read on
 the pre-state. -/
-theorem replyRecvOnCore_callTake_delivered (st : SystemState) (epId : SeLe4n.ObjId)
+theorem replyRecvOnCore_callTake_delivered {lend : Bool} (st : SystemState) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (layout : SeLe4n.SyscallRegisterLayout)
     (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) (grant : Bool)
     (core : CoreId) (ct : TCB) (ep0 : SeLe4n.ObjId) (rp : Reply) (ep : Endpoint)
@@ -651,13 +649,14 @@ theorem replyRecvOnCore_callTake_delivered (st : SystemState) (epId : SeLe4n.Obj
       (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
       .call capAddr mi) :
     (match endpointReplyRecvOnCore epId tid rid c
-        { registers := Architecture.regMessageBody layout rf len, badge := badge } grant core st with
+        { registers := Architecture.regMessageBody layout rf len, badge := badge } grant core st
+        lend with
       | .ok (summary, st') =>
           (.ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo) :
             Except KernelError (Unit × SystemState))
       | .error e => .error e) =
       .ok ((), performReplyRecvCallTakeDelivered st c tid rid epId s sTcb.queueNextCode
-        ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s) (determineTargetCore st tid) core
+        ⟨sTcb.scBindingScCode - 1⟩ lend (determineTargetCore st s) (determineTargetCore st tid) core
         layout rf len badge sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge)
         sTcb.ipcBadged) := by
   generalize hM : ({ registers := Architecture.regMessageBody layout rf len, badge := badge } :
@@ -684,6 +683,7 @@ theorem replyRecvOnCore_callTake_delivered (st : SystemState) (epId : SeLe4n.Obj
   have hF' : sTcbP.ipcFaultSend = false := by rw [hKept.faultSend]; exact hF
   obtain ⟨hRecv, -, -, hCallT, hDonE⟩ := receiveCallDonatingTake_delivered _ epId ep tid rid core s
     sTcbP capAddr mi hE2 hH hSP2 hGP hF' hR'
+  have hDonL := applyRendezvousCallDonation_lendInPlace (lend := lend) hDonE
   obtain ⟨hEq, hHead⟩ := replyOnCore_inPlace st tid c tid ct ep0 rid msg core hSz hT hIpc hRO hG
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hXf := replyRecvReplyTransfer_of_inert none st tid c grant ct hTc (fun _ => hInert)
@@ -697,7 +697,7 @@ theorem replyRecvOnCore_callTake_delivered (st : SystemState) (epId : SeLe4n.Obj
   have hEp1 := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE2
   unfold endpointReplyRecvOnCore endpointReplyRecvAnsweringOnCore
   simp only [hRecS, Option.getD_some, hEq, hPop, hXf, hRecv, hEp1, Option.bind_some, hH]
-  simp only [replyRecvPostReceiveDonation, hCallT, ↓reduceIte, hDonE,
+  simp only [replyRecvPostReceiveDonation, hCallT, ↓reduceIte, hDonL,
     applyReceiveLegPipHandoff, beq_self_eq_true, replyRecvAnswerCaller,
     CapTransferSummary.capInfo_empty]
   unfold performReplyRecvCallTakeDelivered writeReceiverMessageFrame replyRecvCallTakeLegs
@@ -737,24 +737,21 @@ theorem replyRecvOnCore_callTake_delivered (st : SystemState) (epId : SeLe4n.Obj
     sTcb.queueNextCode tid rid = R at hx hNoR ⊢
   have hNoRc : (R.mapTcbInPlace c (holdMessage msg)).objects.noResizeDue :=
     (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoR
-  rw [donateSchedContextInPlace_msg tid id _ id _ s tid scS hNoRc hst.symm,
-    donateSchedContextInPlace_msg c id _ id R s tid scS hNoR hcs,
-    migrateSchedContextReplenishment_mapTcbInPlace, migrateSchedContextReplenishment_mapTcbInPlace]
-  have hNoD := donateSchedContextInPlace_noResizeDue R s tid scS hNoR
-  have hNoM := migrateSchedContextReplenishment_noResizeDue _ scS (determineTargetCore st s)
-    (determineTargetCore st tid) hNoD
+  rw [lendSchedContextInPlaceWhen_msg tid id _ id lend _ s tid scS _ _ hNoRc hst.symm,
+    lendSchedContextInPlaceWhen_msg c id _ id lend R s tid scS _ _ hNoR hcs]
+  have hNoM := lendSchedContextInPlaceWhen_noResizeDue lend R s tid scS (determineTargetCore st s)
+    (determineTargetCore st tid) hNoR
   rw [propagatePipChainCrossCore_msg _ _ _ _ _ _ _ ?_, propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoM]
   rotate_left
   · exact (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoM
   -- the caller's state carried to the walk's
-  obtain ⟨x1, hx1, e1⟩ := donateSchedContextInPlace_ipcStateCarried R s tid scS hNoR s x hx
-  have hx2 := (migrateSchedContextReplenishment_getTcb? _ scS (determineTargetCore st s)
-    (determineTargetCore st tid) s).trans hx1
+  obtain ⟨x1, hx2, e1⟩ := lendSchedContextInPlaceWhen_ipcStateCarried lend R s tid scS
+    (determineTargetCore st s) (determineTargetCore st tid) hNoR s x hx
   obtain ⟨x', hx', e'⟩ := propagatePipChainCrossCore_ipcStateCarried _ tid core hNoM s x1 hx2
   have hNoY := propagatePipChainCrossCore_noResizeDue _ tid core hNoM
-  generalize (PriorityInheritance.propagatePipChainCrossCore (migrateSchedContextReplenishment
-    (donateSchedContextInPlace R s tid scS) scS (determineTargetCore st s)
-    (determineTargetCore st tid)) tid core).1 = Y0 at hx' hNoY ⊢
+  generalize (PriorityInheritance.propagatePipChainCrossCore (lendSchedContextInPlaceWhen lend
+    R s tid scS (determineTargetCore st s) (determineTargetCore st tid)) tid core).1 = Y0
+    at hx' hNoY ⊢
   rw [show ∀ m : IpcMessage, TCB.withMessageSlots id (fun _ => some m) id = holdMessage m from
     fun _ => rfl]
   rw [SystemState.mapTcbInPlace_swap Y0 _ _ (fun h => absurd h hNe)]

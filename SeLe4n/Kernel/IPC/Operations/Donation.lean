@@ -831,6 +831,18 @@ theorem applyRendezvousCallDonation_cases {st st' : SystemState}
       exact h.symm
     · cases h
 
+/-- **A refused lend commits nothing where the lend would have committed**: a
+rendezvous whose donation succeeds at an admitted lend is, at a refused one, the
+state it was handed. -/
+theorem applyRendezvousCallDonation_false_of_ok {st st' : SystemState}
+    {receiver donor : SeLe4n.ThreadId}
+    (h : applyRendezvousCallDonation st receiver donor = .ok st') :
+    applyRendezvousCallDonation st receiver donor false = .ok st := by
+  unfold applyRendezvousCallDonation at h ⊢
+  cases hd : donor.toValid? <;> cases hr : receiver.toValid? <;>
+    simp only [hd, hr, reduceCtorEq] at h ⊢
+  rfl
+
 /-- **WS-OD OD5.5: `.replyRecv`'s (and `.receive`'s) re-donation is a PUSH at
 every chain depth.**
 

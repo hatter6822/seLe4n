@@ -97,25 +97,86 @@ theorem callLendSchedContext?_flows {ctx : LabelingContext} {st : SystemState}
     exact callLendAdmits_flows hAdm hS
 
 /-- **The receive's lend admission**: a receive that takes a `Call` lends the
-caller's context at the rendezvous, so it asks the call's own admission of the
-thread it takes, the head of the endpoint's send queue, read on the state the
-arm is handed.  `true` where no sender waits, since such a receive takes no
-call and lends nothing either way. -/
+caller's context at the rendezvous, so where the head of the endpoint's send
+queue is blocked on a call it asks that call's own admission
+(`callLendAdmits`), read on the state the arm is handed.  It refuses nothing
+else: `true` where no thread waits, or where the head is blocked on a plain
+send, since such a take lends nothing either way (ruling (y): the admission
+refuses only what would lend). -/
 def receiveLendAdmits (ctx : LabelingContext) (st : SystemState) (epId : SeLe4n.ObjId) : Bool :=
   match st.getEndpoint? epId with
   | some ep =>
       match ep.sendQ.head with
-      | some s => callLendAdmits ctx st s
+      | some s =>
+          match lookupTcb st s with
+          | some t =>
+              match t.ipcState with
+              | .blockedOnCall _ =>
+                  match t.schedContextBinding.scId? with
+                  | some sc => securityFlowsTo (ctx.threadLabelOf s) (ctx.objectLabelOf sc.toObjId)
+                  | none => true
+              | _ => true
+          | none => true
       | none => true
   | none => true
 
-/-- The receive's admission is the call's admission of the send queue's head. -/
+/-- Where the send queue's head is blocked on a call, the receive's admission is
+that call's admission. -/
 theorem receiveLendAdmits_of_head {ctx : LabelingContext} {st : SystemState}
-    {epId : SeLe4n.ObjId} {ep : Endpoint} {s : SeLe4n.ThreadId}
-    (hEp : st.getEndpoint? epId = some ep) (hHead : ep.sendQ.head = some s) :
+    {epId : SeLe4n.ObjId} {ep : Endpoint} {s : SeLe4n.ThreadId} {t : TCB} {e : SeLe4n.ObjId}
+    (hEp : st.getEndpoint? epId = some ep) (hHead : ep.sendQ.head = some s)
+    (hT : lookupTcb st s = some t) (hCall : t.ipcState = .blockedOnCall e) :
     receiveLendAdmits ctx st epId = callLendAdmits ctx st s := by
-  unfold receiveLendAdmits
+  unfold receiveLendAdmits callLendAdmits
   rw [hEp]
-  simp only [hHead]
+  simp only [hHead, hT, hCall]
+
+/-- **The admission refuses only a call**: where it refuses, the send queue's
+head is a thread blocked on a call holding a context its label does not flow
+to. -/
+theorem receiveLendAdmits_false {ctx : LabelingContext} {st : SystemState}
+    {epId : SeLe4n.ObjId} (h : receiveLendAdmits ctx st epId = false) :
+    ∃ (ep : Endpoint) (s : SeLe4n.ThreadId) (t : TCB) (e : SeLe4n.ObjId) (sc : SeLe4n.SchedContextId),
+      st.getEndpoint? epId = some ep ∧ ep.sendQ.head = some s ∧ lookupTcb st s = some t ∧
+      t.ipcState = .blockedOnCall e ∧ t.schedContextBinding.scId? = some sc ∧
+      securityFlowsTo (ctx.threadLabelOf s) (ctx.objectLabelOf sc.toObjId) = false := by
+  unfold receiveLendAdmits at h
+  cases hEp : st.getEndpoint? epId with
+  | none => simp only [hEp] at h; cases h
+  | some ep =>
+  simp only [hEp] at h
+  cases hH : ep.sendQ.head with
+  | none => simp only [hH] at h; cases h
+  | some s =>
+  simp only [hH] at h
+  cases hT : lookupTcb st s with
+  | none => simp only [hT] at h; cases h
+  | some t =>
+  simp only [hT] at h
+  cases hI : t.ipcState with
+  | blockedOnCall e =>
+    simp only [hI] at h
+    cases hS : t.schedContextBinding.scId? with
+    | none => simp only [hS] at h; cases h
+    | some sc =>
+      simp only [hS] at h
+      exact ⟨ep, s, t, e, sc, rfl, hH, hT, hI, hS, h⟩
+  | _ => simp only [hI] at h; cases h
+
+/-- The receive's admission passes wherever the call's admission of the send
+queue's head passes. -/
+theorem receiveLendAdmits_of_callLendAdmits {ctx : LabelingContext} {st : SystemState}
+    {epId : SeLe4n.ObjId} {ep : Endpoint} {s : SeLe4n.ThreadId}
+    (hEp : st.getEndpoint? epId = some ep) (hHead : ep.sendQ.head = some s)
+    (hA : callLendAdmits ctx st s = true) :
+    receiveLendAdmits ctx st epId = true := by
+  cases h : receiveLendAdmits ctx st epId
+  · obtain ⟨ep', s', t, e, sc, hEp', hH', hT, -, hS, hF⟩ := receiveLendAdmits_false h
+    rw [hEp] at hEp'; cases hEp'
+    rw [hHead] at hH'; cases hH'
+    unfold callLendAdmits at hA
+    simp only [hT, hS, hF] at hA
+    cases hA
+  · rfl
 
 end SeLe4n.Kernel

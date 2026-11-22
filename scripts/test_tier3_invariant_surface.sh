@@ -11386,6 +11386,15 @@ open SeLe4n.Kernel.Concurrency
 #check @replyRecvRendezvousChainCores_subset
 #check @replyRecvUnlentRendezvousR
 #check @replyRecvLongUnlentRendezvousR
+#check @receiveLendAdmits_false
+#check @receiveLendAdmits_of_callLendAdmits
+#check @applyRendezvousCallDonation_false_of_ok
+#check @lendSchedContextInPlaceWhen
+#check @applyRendezvousCallDonation_lendInPlace
+#check @lendSchedContextInPlaceWhen_msg
+#check @lendSchedContextInPlaceWhen_ipcStateCarried
+#check @replyRecvUnlentArmR
+#check @replyRecvUnlentArmR_eq
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing
@@ -13756,8 +13765,17 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveReplenishCore
 # `none` arm declares the same donation's pair, at the receive leg's post-state.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveReplenishCores[^\n]*(\n([ \t][^\n]*)?)*\| none =>\n *if rendezvousDequeuedCall st nextThread then\n *rendezvousCallDonationReplenishCores st tid nextThread" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 # WS-SX ruling D28: the reply-receive's fast arms ask the receive leg's lend admission
-# before any in-place form, and a refused one runs the specification at `lend := false`.
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def replyRecvResolvedR[^\n]*(\n([ \t][^\n]*)?)*else if !receiveLendAdmits ctx st epId then\n *replyRecvUnlentRendezvousR epId" SeLe4n/Kernel/RefusalCarryingReplyRecv.lean'
+# before any in-place form; a refused one is answered by the unlent arm, which takes
+# the refused call in place on each shape the admitted path takes it in place, at
+# `lend := false`, and the specification at `lend := false` otherwise (ruling (y)).
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def replyRecvResolvedR[^\n]*(\n([ \t][^\n]*)?)*else if !receiveLendAdmits ctx st epId then\n *replyRecvUnlentArmR epId" SeLe4n/Kernel/RefusalCarryingReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def replyRecvUnlentArmR[^\n]*(\n([ \t][^\n]*)?)*if replyRecvDonatedCallTakeAdmits epId tid c rid grant layout len st then\n *\.ok \(\(\), performReplyRecvDonatedCallTakeDelivered st c tid rid\n[^\n]*\n *sTcb\.queueNextCode ⟨sTcb\.scBindingScCode - 1⟩ false " SeLe4n/Kernel/RefusalCarryingReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def replyRecvUnlentArmR[^\n]*(\n([ \t][^\n]*)?)*else if replyRecvUnlinkedCallTakeAdmits epId tid c rid grant layout len st then\n *\.ok \(\(\), performReplyRecvUnlinkedCallTakeDelivered st c tid rid epId s\n *sTcb\.queueNextCode ⟨sTcb\.scBindingScCode - 1⟩ false " SeLe4n/Kernel/RefusalCarryingReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def replyRecvUnlentArmR[^\n]*(\n([ \t][^\n]*)?)*else if replyRecvCallTakeAdmits epId tid c rid grant layout len st then\n *\.ok \(\(\), performReplyRecvCallTakeDelivered st c tid rid epId s sTcb\.queueNextCode\n *⟨sTcb\.scBindingScCode - 1⟩ false " SeLe4n/Kernel/RefusalCarryingReplyRecv.lean'
+# Ruling (y): the receive's admission refuses only a head blocked on a call.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def receiveLendAdmits[^\n]*(\n([ \t][^\n]*)?)*match t\.ipcState with\n *\| \.blockedOnCall _ =>\n *match t\.schedContextBinding\.scId\? with\n *\| some sc => securityFlowsTo \(ctx\.threadLabelOf s\) \(ctx\.objectLabelOf sc\.toObjId\)\n *\| none => true\n *\| _ => true" SeLe4n/Kernel/IPC/Operations/CallLendLabel.lean'
+# The in-place lend of a reply-receive's taken call follows the admission.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def lendSchedContextInPlaceWhen[^\n]*(\n([ \t][^\n]*)?)*  if lend then\n *migrateSchedContextReplenishment \(donateSchedContextInPlace X donor donee scS\) scS donorHome\n *doneeHome\n *else X" SeLe4n/Kernel/IPC/CrossCore/ReplyRecvDonatedCallTakeInPlace.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def replyRecvLongResolvedR[^\n]*(\n([ \t][^\n]*)?)*else if !receiveLendAdmits ctx st epId then\n *replyRecvLongUnlentRendezvousR epId" SeLe4n/Kernel/RefusalCarryingReplyRecv.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[noinline\] def replyRecvUnlentRendezvousR[^\n]*(\n([ \t][^\n]*)?)*grant executingCore st false with" SeLe4n/Kernel/RefusalCarryingReplyRecv.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonationWriteSet[^\n]*(\n([ \t][^\n]*)?)*replyRecvRendezvousChainCores st tid nextThread recordedServer serverCore true \+\+\n *replyRecvRendezvousChainCores st tid nextThread recordedServer serverCore false" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'

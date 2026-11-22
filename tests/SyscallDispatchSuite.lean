@@ -2092,9 +2092,16 @@ private def callLend_admission : IO Unit := do
   -- The receive that takes a parked call asks the same admission of the
   -- send queue's head, on the state the arm is handed.
   let epObj : SeLe4n.ObjId := ⟨62⟩
-  let withEp (q : IntrusiveQueue) : SystemState :=
-    { st with objects := st.objects.insert epObj (.endpoint (Endpoint.ofQueues q {})) }
+  let withHead (ipc : ThreadIpcState) (q : IntrusiveQueue) : SystemState :=
+    let callerTcb : TCB := TCB.setIpcState { mkTcb 3 with
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId),
+      scBindingOwnerCode := 0 } ipc
+    let objs := (st.objects.insert caller.toObjId (.tcb callerTcb)).insert epObj
+      (.endpoint (Endpoint.ofQueues q {}))
+    { st with objects := objs }
+  let withEp := withHead (.blockedOnCall epObj)
   let parked := withEp { head := some caller, tail := some caller }
+  let sending := withHead (.blockedOnSend epObj) { head := some caller, tail := some caller }
   let empty := withEp {}
   expect "receive_lend_reads_send_queue_head"
     (receiveLendAdmits defaultLabelingContext parked epObj &&
@@ -2102,6 +2109,9 @@ private def callLend_admission : IO Unit := do
       receiveLendAdmits highCaller parked epObj == callLendAdmits highCaller parked caller &&
       receiveLendAdmits highCaller empty epObj)
     "a receive lends the parked caller's context only where the caller flows to it"
+  expect "receive_lend_refuses_only_a_call"
+    (receiveLendAdmits highCaller sending epObj && !callLendAdmits highCaller sending caller)
+    "a plain send at the head lends nothing, so the admission refuses nothing there"
   -- The reply-receive's receive leg takes the same call and asks the same
   -- admission (WS-SX ruling D28): its post-receive half lends at `lend := true`
   -- and lends nothing at `lend := false`, the call still taken.
