@@ -964,12 +964,12 @@ theorem endpointCallWithCapsOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.
 the chain walk from it. -/
 theorem endpointCallCrossCoreDispatch_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
     {caller : SeLe4n.ThreadId} {payload : SendPayload}
-    {executingCore : CoreId} {st : SystemState}
+    {executingCore : CoreId} {st : SystemState} {lend : Bool}
     (hInv : st.objects.invExt) :
     stepCovers e st (endpointCallCrossCoreDispatch endpointId caller payload
-      executingCore st).1 ∧
+      executingCore st lend).1 ∧
     (endpointCallCrossCoreDispatch endpointId caller payload
-      executingCore st).1.objects.invExt := by
+      executingCore st lend).1.objects.invExt := by
   unfold endpointCallCrossCoreDispatch
   obtain ⟨hC, hCInv⟩ := endpointCallWithCapsOnCore_stepCovers e
     (endpointId := endpointId) (caller := caller) (payload := payload)
@@ -987,7 +987,9 @@ theorem endpointCallCrossCoreDispatch_stepCovers (e : CoreId) {endpointId : SeLe
     all_goals first
       | exact ⟨hC, hCInv⟩
       | (rename_i hD
-         obtain ⟨hDc, hDInv⟩ := applyCallDonationOnCore_stepCovers e hCInv hD
+         obtain ⟨hDc, hDInv⟩ := applyCallDonationOnCoreWhen_induct
+           (fun s => stepCovers e _ s ∧ s.objects.invExt) hD ⟨stepCovers_refl e _, hCInv⟩
+           (applyCallDonationOnCore_stepCovers e hCInv)
          exact (propagatePipChainCrossCore_stepCovers e executingCore _ _ _ hDInv).imp_left
            (stepCovers_trans (stepCovers_trans hC hDc)))
 

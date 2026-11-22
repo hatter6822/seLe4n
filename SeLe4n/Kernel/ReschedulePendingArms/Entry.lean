@@ -113,7 +113,7 @@ theorem faultDeliverOnCore_stepCovers (e : CoreId) {st : SystemState} {tid : SeL
     dsimp only
     have hC := endpointCallCrossCoreDispatch_stepCovers e (endpointId := tgt.endpoint) (caller := tid)
       (payload := SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply)
-      (executingCore := c) hInv
+      (executingCore := c) (lend := true) hInv
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply)
       c st = r at hC ⊢
     obtain ⟨st1, res⟩ := r

@@ -1306,6 +1306,17 @@ theorem applyCallDonationOnCore_confinedToCores (st st' : SystemState)
     simpa using observableSlotsConfinedToCores_trans h1
       (migrateSchedContextReplenishment_confinedToCores st1 scId donorHome doneeHome)
 
+/-- The gated donation is per-core silent: the donation's own confinement, or
+nothing written. -/
+theorem applyCallDonationOnCoreWhen_confinedToCores (lend : Bool) (st st' : SystemState)
+    (callerVtid receiverVtid : SeLe4n.ValidThreadId) (donorHome doneeHome : CoreId)
+    (hStep : applyCallDonationOnCoreWhen lend st callerVtid receiverVtid donorHome doneeHome =
+      .ok st') :
+    observableSlotsConfinedToCores st st' [] :=
+  applyCallDonationOnCoreWhen_induct (observableSlotsConfinedToCores st · []) hStep
+    (observableSlotsConfinedToCores_refl st [])
+    (applyCallDonationOnCore_confinedToCores st st' callerVtid receiverVtid donorHome doneeHome)
+
 /-- **WS-OD OD3.6**: the shared rendezvous hand-off is per-core silent, and so is
 its guarded form.
 

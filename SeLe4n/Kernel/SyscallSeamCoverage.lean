@@ -1284,7 +1284,7 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
           (footprintCoversWrites_of_scheduler_eq S hTable
             (Architecture.stageWokenDelivery_scheduler_eq _ _ _))
         rw [← show _ = st₂ from congrArg Prod.fst hCallC]
-        exact schedLockSet_endpointCallOnCore_coversWrites epId tid _ e _ S hObjInv hSched
+        exact schedLockSet_endpointCallOnCore_coversWrites epId tid _ e _ S hObjInv hSched _
       · exact absurd (congrArg Prod.snd hCallC) (by simp)
     · exact absurd hDisp (by simp)
   -- ---- `.receive` ---------------------------------------------------------

@@ -257,7 +257,7 @@ theorem faultDeliverOnCore {st : SystemState} {t : SeLe4n.ThreadId} {f : Fault}
   · rename_i tgt _
     have S := endpointCallCrossCoreDispatch (endpointId := tgt.endpoint) (caller := t)
       (payload := .fault f fctx tgt.cap.badge tgt.cap.canLinkReply)
-      (c := c) hInv hQ
+      (c := c) (lend := true) hInv hQ
     have P := endpointCallCrossCoreDispatch_callerParked (endpointId := tgt.endpoint)
       (caller := t) (payload := .fault f fctx tgt.cap.badge tgt.cap.canLinkReply)
       (c := c) hInv hQ

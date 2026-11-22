@@ -774,9 +774,9 @@ theorem endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent_of_reacha
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (c : CoreId) (st : SystemState)
     (hReach : ipcReachable st) (tcb : TCB) (hT : st.objects[caller.toObjId]? = some (.tcb tcb))
-    (hReady : tcb.ipcState = .ready) :
+    (hReady : tcb.ipcState = .ready) (lend : Bool := true) :
     (endpointCallCrossCoreDispatch endpointId caller payload c
-      st).1.replyWaitersConsistent :=
+      st lend).1.replyWaitersConsistent :=
   have hI := hReach.ipcInvariantFull
   endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent endpointId caller payload
     c st hReach.objects_invExt hReach.replyWaitersConsistent
@@ -785,7 +785,7 @@ theorem endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent_of_reacha
         subst h
         exact (readyThread_endpointQueueFresh st _ tcb hI.queueHeadBlockedConsistent
           hI.endpointQueueTailBlockedConsistent hT hReady endpointId ep hE).2.2.1 hH,
-      receiveHead_serverFree hI.queueHeadBlockedConsistent hE hH⟩)
+      receiveHead_serverFree hI.queueHeadBlockedConsistent hE hH⟩) lend
 
 /-- **The live send carries the reply-waiter queues**, likewise. -/
 theorem endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable

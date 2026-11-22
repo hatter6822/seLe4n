@@ -719,9 +719,9 @@ theorem callDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
   unfold endpointCallCrossCoreDispatch
   rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _ hReq, hEq]
   simp only [Except.map, hEp, hH, hLk, ↓reduceIte, hcv, hrv]
-  unfold applyCallDonationOnCore
+  unfold applyCallDonationOnCoreWhen applyCallDonationOnCore
   rw [applyCallDonation_eq_ok_self_of_no_donation _ _ _ (by rw [hcv', hrv']; exact hDon)]
-  simp only [hcv', hrv', hDon]
+  simp only [hcv', hrv', hDon, ite_self]
   rfl
 
 end SeLe4n.Kernel

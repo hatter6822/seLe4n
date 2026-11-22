@@ -119,12 +119,13 @@ post-donation state — `endpointCallLive_confinedToCores` instantiated at the
 receiver `ep.receiveQ.head` and the state `applyCallDonation` returns. -/
 theorem endpointCallCrossCoreDispatch_confinedToCores (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
+    (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt)
+    (lend : Bool := true) :
     observableSlotsConfinedToCores st
       (endpointCallCrossCoreDispatch endpointId caller payload
-        executingCore st).1
+        executingCore st lend).1
       (endpointCallDispatchWriteSet endpointId caller payload
-        executingCore st) := by
+        executingCore st lend) := by
   have hCaps := endpointCallWithCapsOnCore_confinedToCores endpointId caller payload
     executingCore st hObjInv
   -- A core outside the union is outside the endpoint-call leg, which is what
@@ -168,14 +169,14 @@ theorem endpointCallCrossCoreDispatch_confinedToCores (endpointId : SeLe4n.ObjId
             | none => simp only []; exact hWiden _ _ hCaps
             | some receiverV =>
               simp only []
-              cases hDon : applyCallDonationOnCore stWith callerV receiverV
+              cases hDon : applyCallDonationOnCoreWhen lend stWith callerV receiverV
                   (determineTargetCore st caller) (determineTargetCore st receiverTid) with
               | error e => simp only []; exact hWiden _ _ hCaps
               | ok stDon =>
                 simp only []
                 exact endpointCallLive_confinedToCores st stWith stDon endpointId
                   executingCore receiverTid hCaps
-                  (applyCallDonationOnCore_confinedToCores stWith stDon callerV receiverV
+                  (applyCallDonationOnCoreWhen_confinedToCores lend stWith stDon callerV receiverV
                     (determineTargetCore st caller) (determineTargetCore st receiverTid) hDon)
 
 /-- SM8.B.2: on the rendezvous path the live write set **is** the §5a union,
@@ -197,10 +198,11 @@ theorem endpointCallDispatchWriteSet_eq_live_of_rendezvous (endpointId : SeLe4n.
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hLinks : callRendezvousLinks st receiverTid payload = true)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
-    (hDon : applyCallDonationOnCore stWith callerV receiverV
+    (lend : Bool)
+    (hDon : applyCallDonationOnCoreWhen lend stWith callerV receiverV
       (determineTargetCore st caller) (determineTargetCore st receiverTid) = .ok stDon) :
     endpointCallDispatchWriteSet endpointId caller payload
-        executingCore st
+        executingCore st lend
       = endpointCallLiveWriteSet st endpointId executingCore stDon receiverTid := by
   unfold endpointCallDispatchWriteSet endpointCallDispatchChainWriteSet endpointCallLiveWriteSet
   cases hEp : st.getEndpoint? endpointId with

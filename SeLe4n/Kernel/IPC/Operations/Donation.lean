@@ -469,6 +469,59 @@ theorem applyCallDonationOnCore_eq_of_sharedHome
     | none => rfl
     | some scId => simp only [migrateSchedContextReplenishment_noop]
 
+/-- **The call donation where the lend is admitted, nothing where it is not.**
+
+`lend` is the checked kernel's answer to "may this caller lend its context":
+the caller's label flows to its effective context's label
+(`callLendAdmits`, `IPC/Operations/CallLendLabel.lean`).  Where it may not,
+the call goes on and lends nothing, seL4-MCS's own "do nothing" branch of
+`reply_push`'s donation: the receiver keeps no context, exactly as after a call
+by a caller that holds none.  The ctx-free kernel lends wherever seL4 does
+(`lend := true`, `applyCallDonationOnCoreWhen_true`). -/
+def applyCallDonationOnCoreWhen (lend : Bool) (st : SystemState)
+    (callerVtid receiverVtid : SeLe4n.ValidThreadId) (donorHome doneeHome : CoreId) :
+    Except KernelError SystemState :=
+  if lend then applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome
+  else .ok st
+
+@[simp] theorem applyCallDonationOnCoreWhen_true (st : SystemState)
+    (callerVtid receiverVtid : SeLe4n.ValidThreadId) (donorHome doneeHome : CoreId) :
+    applyCallDonationOnCoreWhen true st callerVtid receiverVtid donorHome doneeHome =
+      applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome := rfl
+
+@[simp] theorem applyCallDonationOnCoreWhen_false (st : SystemState)
+    (callerVtid receiverVtid : SeLe4n.ValidThreadId) (donorHome doneeHome : CoreId) :
+    applyCallDonationOnCoreWhen false st callerVtid receiverVtid donorHome doneeHome =
+      .ok st := rfl
+
+/-- **A gated donation is the donation or nothing**: every consumer's frame and
+preservation obligation splits here, the donation arm by the ungated donation's
+lemma and the other by reflexivity. -/
+theorem applyCallDonationOnCoreWhen_cases {lend : Bool} {st st'' : SystemState}
+    {callerVtid receiverVtid : SeLe4n.ValidThreadId} {donorHome doneeHome : CoreId}
+    (h : applyCallDonationOnCoreWhen lend st callerVtid receiverVtid donorHome doneeHome =
+      .ok st'') :
+    (lend = true ∧
+      applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') ∨
+      (lend = false ∧ st'' = st) := by
+  cases lend with
+  | true => exact Or.inl ⟨rfl, h⟩
+  | false => exact Or.inr ⟨rfl, (Except.ok.inj h).symm⟩
+
+/-- **A property the donation and the identity carry, the gated donation
+carries.** -/
+theorem applyCallDonationOnCoreWhen_induct (P : SystemState → Prop) {lend : Bool}
+    {st st'' : SystemState} {callerVtid receiverVtid : SeLe4n.ValidThreadId}
+    {donorHome doneeHome : CoreId}
+    (h : applyCallDonationOnCoreWhen lend st callerVtid receiverVtid donorHome doneeHome =
+      .ok st'')
+    (hId : P st)
+    (hDonate : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome =
+      .ok st'' → P st'') : P st'' := by
+  rcases applyCallDonationOnCoreWhen_cases h with ⟨_, h⟩ | ⟨_, rfl⟩
+  · exact hDonate h
+  · exact hId
+
 /-- WS-RR RR2.1 (decomposition): a successful cross-core call donation is the
 successful single-core donation, optionally followed by the migration. -/
 theorem applyCallDonationOnCore_ok_decompose
@@ -1001,6 +1054,34 @@ theorem applyCallDonationOnCore_replenishQueueOnCore_ne
   · rw [hEq, migrateSchedContextReplenishment_replenishQueueOnCore_other st' scId donorHome
       doneeHome c (Ne.symm hFrom) (Ne.symm hTo),
       applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hDon]; rfl
+
+/-- The gated donation's replenish-queue frame where the gated resolver lends
+nothing. -/
+theorem applyCallDonationOnCoreWhen_replenishQueueOnCore_of_no_donation (lend : Bool)
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId)
+    (hNone : callLendSchedContext? lend st callerVtid.val receiverVtid.val = none)
+    (h : applyCallDonationOnCoreWhen lend st callerVtid receiverVtid donorHome doneeHome =
+      .ok st'')
+    (c : CoreId) :
+    st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  rcases applyCallDonationOnCoreWhen_cases h with ⟨rfl, h⟩ | ⟨_, rfl⟩
+  · exact applyCallDonationOnCore_replenishQueueOnCore_of_no_donation st st'' callerVtid
+      receiverVtid donorHome doneeHome hNone h c
+  · rfl
+
+/-- The gated donation's replenish-queue frame off the two homes. -/
+theorem applyCallDonationOnCoreWhen_replenishQueueOnCore_ne (lend : Bool)
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome c : CoreId)
+    (hFrom : c ≠ donorHome) (hTo : c ≠ doneeHome)
+    (h : applyCallDonationOnCoreWhen lend st callerVtid receiverVtid donorHome doneeHome =
+      .ok st'') :
+    st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  rcases applyCallDonationOnCoreWhen_cases h with ⟨_, h⟩ | ⟨_, rfl⟩
+  · exact applyCallDonationOnCore_replenishQueueOnCore_ne st st'' callerVtid receiverVtid
+      donorHome doneeHome c hFrom hTo h
+  · rfl
 
 /-- **WS-RR RR8.12 Cut C2 (the licence)**: a successful hand-off whose resolver
 answers `some` **is** the single-core donation followed by the SM5.H migration between

@@ -416,9 +416,9 @@ theorem callDispatchChecked_inPlace_inert (ctx : LabelingContext) (st : SystemSt
     rw [callRendezvousLinks_of_stash payload ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT) hRid]
     exact hGr
   simp only [hEp, hH, hLk, ↓reduceIte, hcv, hrv]
-  unfold applyCallDonationOnCore
+  unfold applyCallDonationOnCoreWhen applyCallDonationOnCore
   rw [applyCallDonation_eq_ok_self_of_no_donation _ _ _ (by rw [hcv', hrv']; exact hDon)]
-  simp only [hcv', hrv', hDon]
+  simp only [hcv', hrv', hDon, ite_self]
   rfl
 
 /-- **What a sender blocked by a routed capability-carrying send of at most
@@ -1887,7 +1887,7 @@ pass before any write (`callWakesInPlace`, the seL4 decode/perform split) writes
 in place on a state nothing else holds (`performCallRendezvous`,
 `callDispatchChecked_inPlace`); a call that lends the caller's context to a
 passive server, every check of the rendezvous and of the donation passing first
-(`callDonatesInPlace`), writes its donation and the replenishment migration
+(`callDonatesInPlace`) and the lend admitted (`callLendAdmits`), writes its donation and the replenishment migration
 between the two home cores in place too (`performCallDonating`,
 `callDispatchChecked_donating_inPlace`; the homes are read here, before the
 first write); a call with no receiver waiting whose checks all pass blocks in
@@ -1928,7 +1928,8 @@ does; any other call takes the general arm. -/
                         else if (st.getTcb? tid).isSome &&
                             endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                               (ctx.endpointLabelOf epId) &&
-                            cap.canLinkReply && callDonatesInPlace st epId tid r rt rid then
+                            cap.canLinkReply && callDonatesInPlace st epId tid r rt rid &&
+                            callLendAdmits ctx st tid then
                           .ok ((), callRendezvousDonatingDelivered st epId tid r rt.queueNextCode
                             rid (callerScId st tid) (determineTargetCore st tid)
                             (determineTargetCore st r) layout rf len cap.badgeWord cap.badged
@@ -2007,12 +2008,12 @@ theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
             · split
               · next hG =>
                 simp only [Bool.and_eq_true] at hG
-                obtain ⟨⟨⟨hS, hFlow⟩, hGr⟩, hW⟩ := hG
+                obtain ⟨⟨⟨⟨hS, hFlow⟩, hGr⟩, hW⟩, hLend⟩ := hG
                 obtain ⟨sgi, hD⟩ := callDispatchChecked_donating_inPlace ctx st epId ep tid r rt rid
                   (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) _ executingCore
                   (hMsg cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply) hS) (hReq epId _ _ _)
                   ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
-                  ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hGr hW hFlow
+                  ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hGr hW hFlow hLend
                 rw [callRendezvousDonatingDelivered_eq _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ hW]
                 simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD]
                 rfl
@@ -2037,7 +2038,7 @@ theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
             unfold endpointCallCheckedArmGeneralR
             simp only [hTgt, hE, Option.bind_some, hH]
             unfold endpointCallCrossCoreDispatchChecked
-            rw [if_pos hFlow, endpointCallCrossCoreDispatch_no_receiver _ _ _ _ _ hNoRecv,
+            rw [if_pos hFlow, endpointCallCrossCoreDispatch_no_receiver _ _ _ _ _ hNoRecv _,
               endpointCallWithCapsOnCore_no_caps _ _ _ _ _ (hReq epId _ _ _),
               callBlock_inPlace_eq _ _ _ _ _ ep t
                 ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
@@ -2309,7 +2310,7 @@ theorem endpointCallLongCheckedArmR_eq_general (ctx : LabelingContext)
             unfold endpointCallCheckedArmGeneralR
             simp only [hTgt, hE, Option.bind_some, hH]
             unfold endpointCallCrossCoreDispatchChecked
-            rw [if_pos hFlow, endpointCallCrossCoreDispatch_no_receiver _ _ _ _ _ hNoRecv,
+            rw [if_pos hFlow, endpointCallCrossCoreDispatch_no_receiver _ _ _ _ _ hNoRecv _,
               endpointCallWithCapsOnCore_no_caps _ _ _ _ _ (hReq epId _ _ _),
               callBlock_inPlace_eq _ _ _ _ _ ep t
                 ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
@@ -3877,7 +3878,7 @@ theorem endpointCallCapsCheckedArmR_eq_general (ctx : LabelingContext)
             unfold endpointCallCheckedArmGeneralR
             simp only [hTgt, hE, Option.bind_some, hH]
             unfold endpointCallCrossCoreDispatchChecked
-            rw [if_pos hFlow, endpointCallCrossCoreDispatch_no_receiver _ _ _ _ _ hNoRecv,
+            rw [if_pos hFlow, endpointCallCrossCoreDispatch_no_receiver _ _ _ _ _ hNoRecv _,
               endpointCallWithCapsOnCore_no_caps _ _ _ _ _ hReq,
               callBlock_inPlace_eq _ _ _ _ _ ep t
                 ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH

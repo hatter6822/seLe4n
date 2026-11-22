@@ -695,9 +695,9 @@ theorem endpointCallCrossCoreDispatch_readyKeptStage (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (c : CoreId) (st : SystemState)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some caller)
-    (hNI : isIdleThreadId caller = false) :
+    (hNI : isIdleThreadId caller = false) (lend : Bool := true) :
     readyKeptStage (· = caller) st
-      (endpointCallCrossCoreDispatch endpointId caller payload c st).1 := by
+      (endpointCallCrossCoreDispatch endpointId caller payload c st lend).1 := by
   have s0 := (endpointCallWithCapsOnCore_runQueueEntryStage endpointId caller payload c st
     hHeads hCur hNI).1
   have r0 := endpointCallWithCapsOnCore_readyKeptStage endpointId caller payload c st
@@ -713,8 +713,8 @@ theorem endpointCallCrossCoreDispatch_readyKeptStage (endpointId : SeLe4n.ObjId)
     all_goals first
       | exact r0
       | (rename_i hD; exact r0.trans s0
-          ((readyKeptStage.of_frame (applyCallDonationOnCore_runQueueFrameStage hD)).transFrame
-            (applyCallDonationOnCore_runQueueFrameStage hD)
+          ((readyKeptStage.of_frame (applyCallDonationOnCoreWhen_runQueueFrameStage hD)).transFrame
+            (applyCallDonationOnCoreWhen_runQueueFrameStage hD)
             (.of_stage (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _))))
 
 /-- **The fault suspend keeps every thread's readiness**: the deschedule is a

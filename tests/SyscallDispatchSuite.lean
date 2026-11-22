@@ -2030,6 +2030,66 @@ private def notificationDonation_contextLabelCheck : IO Unit := do
       bound (maybeDonateSchedContextFlowing highLender stStack nA waiter))
     "the check reads no reply object: a stack's lender changes nothing"
 
+/-- **The call's lend admission** (`callLendAdmits`, `applyCallDonationOnCoreWhen`).
+Caller 3 holds context 61 (bound); server 4 holds none, so a call from 3 to 4
+lends 61.
+
+* The caller's label flows to the context's label: the lend is admitted and
+  the gated donation is the donation.
+* A caller labelled above its context: the lend is refused, and the gated
+  donation writes nothing (seL4's "do nothing" branch); the call itself is not
+  refused.
+* The admission reads the caller's own binding and the labels alone: the
+  server's binding changes nothing. -/
+private def callLend_admission : IO Unit := do
+  let caller : SeLe4n.ThreadId := ⟨3⟩
+  let server : SeLe4n.ThreadId := ⟨4⟩
+  let scObj : SeLe4n.ObjId := ⟨61⟩
+  let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofObjId scObj
+  let mkSt (serverBound : Bool) : SystemState :=
+    mkState [
+      (caller.toObjId, .tcb { mkTcb 3 with
+        scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId),
+        scBindingOwnerCode := 0 }),
+      (server.toObjId, .tcb (if serverBound then { mkTcb 4 with
+        scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId),
+        scBindingOwnerCode := 0 } else mkTcb 4)),
+      (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with
+        boundThreadCode := caller.val + 1, isActive := true })] none
+  let st := mkSt false
+  let highCaller : LabelingContext :=
+    { defaultLabelingContext with
+      threadLabelOf := fun t =>
+        if t = caller then SecurityLabel.kernelTrusted else SecurityLabel.publicLabel }
+  expect "call_lend_context_resolved"
+    (callDonationSchedContext? st caller server == some scId)
+    "a call from the bound caller to the passive server lends the caller's context"
+  expect "call_lend_admitted_when_caller_flows"
+    (callLendAdmits defaultLabelingContext st caller &&
+      callLendSchedContext? (callLendAdmits defaultLabelingContext st caller) st caller server ==
+        some scId)
+    "a caller whose label flows to its context's label lends it"
+  match caller.toValid?, server.toValid? with
+  | some cV, some sV =>
+    let refused := applyCallDonationOnCoreWhen (callLendAdmits highCaller st caller) st cV sV
+      bootCoreId bootCoreId
+    let refusedLendsNothing : Bool := match refused with
+      | .ok st' =>
+        (st'.getTcb? server).any (fun t => t.scBindingScCode == 0) &&
+          (st'.getTcb? caller).any (fun t => decide (t.schedContextBinding = .bound scId))
+      | .error _ => false
+    expect "call_lend_refused_donates_nothing"
+      (!callLendAdmits highCaller st caller &&
+        callLendSchedContext? (callLendAdmits highCaller st caller) st caller server == none &&
+        refusedLendsNothing)
+      "a caller labelled above its context lends nothing; the call is not refused"
+  | _, _ => expect "call_lend_ids_valid" false "the test threads are valid"
+  expect "call_lend_admission_reads_caller_alone"
+    (callLendAdmits highCaller st caller == callLendAdmits highCaller (mkSt true) caller &&
+      callLendAdmits defaultLabelingContext st caller ==
+        callLendAdmits defaultLabelingContext (mkSt true) caller)
+    "the admission reads the caller's binding and the labels: the server's binding changes nothing"
+
 /-- SD-060 (`v0.35.204`): **`.schedContextBind` binds only a thread the caller
 holds a WRITABLE TCB capability to.**
 
@@ -3187,6 +3247,7 @@ def main : IO Unit := do
   schedContextUnbind_seL4_semantics
   notificationDonation_seL4_semantics
   notificationDonation_contextLabelCheck
+  callLend_admission
   finalise_clears_notification_link
   IO.println "--- WS-ZA ZA6.4: a configure takes a core's scheduling control ---"
   sd063_schedContextConfigure_requires_sched_control

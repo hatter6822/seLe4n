@@ -1350,7 +1350,7 @@ theorem endpointCallCrossCoreDispatchChecked_readyKeptStage (ctx : LabelingConte
   unfold endpointCallCrossCoreDispatchChecked
   split
   · exact endpointCallCrossCoreDispatch_readyKeptStage _ _ _ _ _ P.endpointHeads
-      P.current P.notIdle
+      P.current P.notIdle _
   · exact .refl _
 
 theorem notificationWaitCrossCoreDispatchChecked_readyKeptStage (ctx : LabelingContext)

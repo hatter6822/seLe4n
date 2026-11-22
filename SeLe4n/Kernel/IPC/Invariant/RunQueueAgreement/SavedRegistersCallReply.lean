@@ -173,6 +173,15 @@ theorem of_applyCallDonationOnCore {st st' : SystemState}
   · exact h1
   · exact h1.trans (of_migrate _ _ _ _ h1.2)
 
+theorem of_applyCallDonationOnCoreWhen {lend : Bool} {st st' : SystemState}
+    {callerVtid receiverVtid : SeLe4n.ValidThreadId} {donorHome doneeHome : CoreId}
+    (hInv : st.objects.invExt)
+    (h : applyCallDonationOnCoreWhen lend st callerVtid receiverVtid donorHome doneeHome =
+      .ok st') :
+    savedRegsUnwritten st st' :=
+  applyCallDonationOnCoreWhen_induct (savedRegsUnwritten st) h (.refl hInv)
+    (of_applyCallDonationOnCore hInv)
+
 theorem of_applyRendezvousCallDonation {st st' : SystemState} {receiver donor : SeLe4n.ThreadId}
     (hInv : st.objects.invExt) (h : applyRendezvousCallDonation st receiver donor = .ok st') :
     savedRegsUnwritten st st' := by
@@ -267,8 +276,8 @@ theorem endpointCallWithCapsOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId
 passive receiver, and the chain walk from it. -/
 theorem endpointCallCrossCoreDispatch_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload) (c : CoreId)
-    {st : SystemState} (hInv : st.objects.invExt) :
-    savedRegsUnwritten st (endpointCallCrossCoreDispatch endpointId caller payload c st).1 := by
+    {st : SystemState} (hInv : st.objects.invExt) (lend : Bool := true) :
+    savedRegsUnwritten st (endpointCallCrossCoreDispatch endpointId caller payload c st lend).1 := by
   have h0 := endpointCallWithCapsOnCore_savedRegsUnwritten endpointId caller payload c hInv
   unfold endpointCallCrossCoreDispatch
   generalize endpointCallWithCapsOnCore endpointId caller payload c st = r at h0
@@ -282,7 +291,7 @@ theorem endpointCallCrossCoreDispatch_savedRegsUnwritten (endpointId : SeLe4n.Ob
     all_goals first
       | exact h0
       | (rename_i hD
-         have h1 := h0.trans (savedRegsUnwritten.of_applyCallDonationOnCore h0.2 hD)
+         have h1 := h0.trans (savedRegsUnwritten.of_applyCallDonationOnCoreWhen h0.2 hD)
          exact h1.trans (savedRegsUnwritten.of_propagate _ _ _ _ h1.2))
 
 theorem endpointCallCrossCoreDispatchChecked_savedRegsUnwritten (ctx : LabelingContext)
@@ -292,7 +301,7 @@ theorem endpointCallCrossCoreDispatchChecked_savedRegsUnwritten (ctx : LabelingC
       (endpointCallCrossCoreDispatchChecked ctx endpointId caller payload c st).1 := by
   unfold endpointCallCrossCoreDispatchChecked
   split
-  · exact endpointCallCrossCoreDispatch_savedRegsUnwritten _ _ _ _ hInv
+  · exact endpointCallCrossCoreDispatch_savedRegsUnwritten _ _ _ _ hInv _
   · exact .refl hInv
 
 /-! ### The donation returns and the reply objects -/

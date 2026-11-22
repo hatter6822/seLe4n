@@ -445,19 +445,30 @@ theorem schedLockSet_endpointCallOnCore_coversWrites (endpointId : SeLe4n.ObjId)
     (executingCore : CoreId) (st : SystemState)
     (S : LockSet) (hObjInv : st.objects.invExt)
     (hS : LockSet.ofList? (schedLockSet_endpointCallOnCore endpointId caller payload
-      executingCore st) = some S) :
+      executingCore st) = some S) (lend : Bool := true) :
     footprintCoversWrites S st
       (endpointCallCrossCoreDispatch endpointId caller payload
-        executingCore st).1 :=
+        executingCore st lend).1 :=
   footprintCoversWrites_of_confined S
     (endpointCallDispatchWriteSet endpointId caller payload
-      executingCore st)
+      executingCore st
+      ++ endpointCallDispatchChainWriteSet endpointId caller payload executingCore st false)
     (endpointCallDispatchReplenishCores endpointId caller payload
       executingCore st) st _ (LockSet.ofList?_pairs hS)
-    (endpointCallCrossCoreDispatch_confinedToCores endpointId caller payload
-      executingCore st hObjInv)
+    (observableSlotsConfinedToCores_mono (fun d hd => by
+        unfold endpointCallDispatchWriteSet at hd ⊢
+        cases lend with
+        | true => exact List.mem_append_left _ hd
+        | false =>
+          rcases List.mem_append.mp hd with h | h
+          · exact List.mem_append_left _ (List.mem_append_left _ h)
+          · exact List.mem_append_right _ h)
+      (endpointCallCrossCoreDispatch_confinedToCores endpointId caller payload
+        executingCore st hObjInv lend))
     (fun d hd => endpointCallCrossCoreDispatch_replenishQueueOnCore_ne endpointId caller payload
-      executingCore st d hd)
+      executingCore st d lend (fun h => hd
+        (endpointCallDispatchReplenishCores_subset_true endpointId caller payload executingCore
+          st lend d h)))
 
 /-- **WS-RR RR8.12 Cut C6d**: `.reply`'s footprint covers its writes — of the
 **arm**, `replyTransferOnCore`, not of the dispatch beneath it.

@@ -1735,6 +1735,18 @@ theorem applyCallDonationOnCore_preserves_objects_invExt
   · exact hInv1
   · exact migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ hInv1
 
+/-- …and so does the gated donation, which is it or nothing. -/
+theorem applyCallDonationOnCoreWhen_preserves_objects_invExt (lend : Bool)
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId)
+    (hObjInv : st.objects.invExt)
+    (h : applyCallDonationOnCoreWhen lend st callerVtid receiverVtid donorHome doneeHome =
+      .ok st'') :
+    st''.objects.invExt :=
+  applyCallDonationOnCoreWhen_induct (·.objects.invExt) h hObjInv
+    (applyCallDonationOnCore_preserves_objects_invExt st st'' callerVtid receiverVtid donorHome
+      doneeHome hObjInv)
+
 /-- **WS-RR RR8.16** (`v0.35.200`): `applyCallDonation` is a
 `kindPreservingWrite` — the no-op arm reflexively, the donating arm through
 `donateSchedContext`. -/

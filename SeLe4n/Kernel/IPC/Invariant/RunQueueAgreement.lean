@@ -1108,6 +1108,14 @@ theorem applyCallDonationOnCore_runQueueFrameStage {st st' : SystemState}
   · exact h1
   · exact h1.trans ((migrateSchedContextReplenishment_runQueueStage _ _ _ _).toFrame _)
 
+/-- …and the gated donation, which is it or nothing. -/
+theorem applyCallDonationOnCoreWhen_runQueueFrameStage {lend : Bool} {st st' : SystemState}
+    {callerV receiverV : SeLe4n.ValidThreadId} {donorHome doneeHome : Concurrency.CoreId}
+    (h : applyCallDonationOnCoreWhen lend st callerV receiverV donorHome doneeHome = .ok st') :
+    SystemState.RunQueueFrameStage (fun _ => True) st st' :=
+  applyCallDonationOnCoreWhen_induct (SystemState.RunQueueFrameStage (fun _ => True) st) h
+    ((RunQueueStage.refl _).toFrame _) applyCallDonationOnCore_runQueueFrameStage
+
 -- ============================================================================
 -- Activity frames (WS-ZA ZA6.33)
 -- ============================================================================
@@ -1298,9 +1306,10 @@ theorem endpointCallCrossCoreDispatch_runQueueEntryStage (endpointId : SeLe4n.Ob
     (c : Concurrency.CoreId) (st : SystemState)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some caller)
     (hNI : isIdleThreadId caller = false)
-    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hAct : st.activeAt caller) :
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hAct : st.activeAt caller)
+    (lend : Bool := true) :
     SystemState.RunQueueEntryStage st
-      (endpointCallCrossCoreDispatch endpointId caller payload c st).1 := by
+      (endpointCallCrossCoreDispatch endpointId caller payload c st lend).1 := by
   have s0 := endpointCallWithCapsOnCore_runQueueEntryStage endpointId caller payload c st
     hHeads hCur hNI
   have a0 := fun hKeep => endpointCallWithCapsOnCore_activeKeptStage endpointId caller
@@ -1315,10 +1324,11 @@ theorem endpointCallCrossCoreDispatch_runQueueEntryStage (endpointId : SeLe4n.Ob
     repeat' split
     all_goals first
       | exact s0
-      | (rename_i hD; exact s0.trans ((applyCallDonationOnCore_runQueueStage
+      | (rename_i hD; exact s0.trans ((applyCallDonationOnCoreWhen_induct (RunQueueStage _) hD
+          (RunQueueStage.refl _) (applyCallDonationOnCore_runQueueStage
           (by
             rw [SeLe4n.ThreadId.toValid?_some_val_eq caller _ (by assumption)]
-            exact a0 (callKeepsCallerActive_of_head (by assumption) (by assumption))) hD).trans
+            exact a0 (callKeepsCallerActive_of_head (by assumption) (by assumption))))).trans
           (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _)).entry)
 
 -- ============================================================================

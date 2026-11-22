@@ -398,15 +398,15 @@ theorem callDispatchChecked_inPlace_transfer (ctx : LabelingContext) (st : Syste
     simp only [receiveTransferCaps, Except.ok.injEq, Prod.mk.injEq] at hTr
     obtain ⟨rfl, rfl⟩ := hTr
     simp only [Option.isNone_none, ↓reduceIte]
-    unfold applyCallDonationOnCore
+    unfold applyCallDonationOnCoreWhen applyCallDonationOnCore
     rw [applyCallDonation_eq_ok_self_of_no_donation _ _ _ (by rw [hcv', hrv']; exact hDon')]
-    simp only [hcv', hrv', hDon']
+    simp only [hcv', hrv', hDon', ite_self]
   | some q =>
     rw [hReq] at hTr
     simp only [Option.isNone_some, Bool.false_eq_true, ↓reduceIte, hTr]
-    unfold applyCallDonationOnCore
+    unfold applyCallDonationOnCoreWhen applyCallDonationOnCore
     rw [applyCallDonation_eq_ok_self_of_no_donation _ _ _ (by rw [hcv', hrv']; exact hDon')]
-    simp only [hcv', hrv', hDon']
+    simp only [hcv', hrv', hDon', ite_self]
 
 /-! ## The call that links no reply, with a transfer -/
 

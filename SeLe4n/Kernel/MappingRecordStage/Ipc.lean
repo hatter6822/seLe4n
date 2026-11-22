@@ -387,9 +387,9 @@ theorem endpointCallWithCapsOnCore_mappingStage {endpointId : SeLe4n.ObjId}
 
 theorem endpointCallCrossCoreDispatch_mappingStage {endpointId : SeLe4n.ObjId}
     {caller : SeLe4n.ThreadId} {payload : SendPayload}
-    {executingCore : CoreId} {st : SystemState} :
+    {executingCore : CoreId} {st : SystemState} {lend : Bool} :
     MappingStage st (endpointCallCrossCoreDispatch endpointId caller payload
-      executingCore st).1 := by
+      executingCore st lend).1 := by
   unfold endpointCallCrossCoreDispatch
   have hC := endpointCallWithCapsOnCore_mappingStage (endpointId := endpointId)
     (caller := caller) (payload := payload)
@@ -407,7 +407,8 @@ theorem endpointCallCrossCoreDispatch_mappingStage {endpointId : SeLe4n.ObjId}
     all_goals first
       | exact hC
       | (rename_i hD
-         exact (hC.trans (applyCallDonationOnCore_mappingStage hD)).trans
+         exact (hC.trans (applyCallDonationOnCoreWhen_induct (MappingStage _) hD
+           (MappingStage.refl _) applyCallDonationOnCore_mappingStage)).trans
            propagatePipChainCrossCore_mappingStage)
 
 theorem endpointCallCrossCoreDispatchChecked_mappingStage {ctx : LabelingContext}

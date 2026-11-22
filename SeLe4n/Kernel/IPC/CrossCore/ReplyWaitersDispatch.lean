@@ -185,6 +185,13 @@ theorem applyCallDonationOnCore_replyViews_eq {st st' : SystemState}
   · exact hV
   · rw [migrateSchedContextReplenishment_replyViews_eq, hV]
 
+theorem applyCallDonationOnCoreWhen_replyViews_eq {lend : Bool} {st st' : SystemState}
+    {c r : SeLe4n.ValidThreadId} {a b : CoreId} (hInv : st.objects.invExt)
+    (h : applyCallDonationOnCoreWhen lend st c r a b = .ok st') :
+    st'.replyViews = st.replyViews :=
+  applyCallDonationOnCoreWhen_induct (·.replyViews = st.replyViews) h rfl
+    (applyCallDonationOnCore_replyViews_eq hInv)
+
 theorem applyRendezvousCallDonation_replyViews_eq {st st' : SystemState}
     {r d : SeLe4n.ThreadId} (hInv : st.objects.invExt)
     (h : applyRendezvousCallDonation st r d = .ok st') : st'.replyViews = st.replyViews := by
@@ -346,9 +353,9 @@ theorem endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent
     (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent)
     (hCaller : ReplyViews.serverFree st.replyViews caller)
     (hHead : ∀ ep r, st.objects[endpointId]? = some (.endpoint ep) → ep.receiveQ.head = some r →
-      r ≠ caller ∧ ReplyViews.serverFree st.replyViews r) :
+      r ≠ caller ∧ ReplyViews.serverFree st.replyViews r) (lend : Bool := true) :
     (endpointCallCrossCoreDispatch endpointId caller payload c
-      st).1.replyWaitersConsistent := by
+      st lend).1.replyWaitersConsistent := by
   have hB := endpointCallWithCapsOnCore_preserves_replyWaitersConsistent endpointId caller payload
     c st hInv hC hCaller hHead
   have hI := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload
@@ -367,8 +374,8 @@ theorem endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent
         | (rename_i hD
            exact replyWaitersConsistent.of_views
             ((propagatePipChainCrossCore_replyViews_eq _ _ _ _
-              (applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hI hD)).trans
-              (applyCallDonationOnCore_replyViews_eq hI hD)) hB)
+              (applyCallDonationOnCoreWhen_preserves_objects_invExt _ _ _ _ _ _ _ hI hD)).trans
+              (applyCallDonationOnCoreWhen_replyViews_eq hI hD)) hB)
 
 /-- **The live reply keeps the reply-waiter queues consistent**: the reply
 unlinks the answered caller; the donation return and the priority reversion

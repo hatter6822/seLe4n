@@ -2472,7 +2472,7 @@ run_check "INVARIANT" rg -n '^theorem applyCallDonationOnCore_donated_caller_mig
 # ...and the live dispatch resolves both endpoints from its own pre-state, which
 # is what makes the theorem above a statement about the arm rather than about an
 # arbitrary pair of cores.
-run_check "INVARIANT" bash -lc 'rg -U -n "match applyCallDonationOnCore st. callerV receiverV\n +\(determineTargetCore st caller\) \(determineTargetCore st receiverTid\) with" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "match applyCallDonationOnCoreWhen lend st. callerV receiverV\n +\(determineTargetCore st caller\) \(determineTargetCore st receiverTid\) with" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
 
 # OD4.7: the `.call` footprint does NOT grow.  The push's whole write set is
 # four keys, and every one is already a declared write member.
@@ -4488,7 +4488,7 @@ run_check "INVARIANT" rg -n '^theorem cutReplyFrameStoresInPlace_eq($|[ ({:\[\]]
 run_check "INVARIANT" rg -n '^theorem donateSchedContext_eq_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationInPlace.lean
 run_check "INVARIANT" rg -n '^theorem callDispatchChecked_donating_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDonatingInPlace.lean
 run_check "INVARIANT" rg -n '^theorem donateSchedContextInPlace_msg($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDonatingInPlace.lean
-run_check "INVARIANT" rg -n -U '                            cap\.canLinkReply && callDonatesInPlace st epId tid r rt rid then\n                          \.ok \(\(\), callRendezvousDonatingDelivered st epId tid r rt\.queueNextCode' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U '                            cap\.canLinkReply && callDonatesInPlace st epId tid r rt rid &&\n                            callLendAdmits ctx st tid then\n                          \.ok \(\(\), callRendezvousDonatingDelivered st epId tid r rt\.queueNextCode' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 # WS-ZA ZA6.33: the donating route migrates the replenishment in place, the two
 # homes read in the arm before its first write, and the migration is compiled
 # through its in-place write.
@@ -11352,6 +11352,16 @@ open SeLe4n.Kernel.Concurrency
 #check @contextLendersFlow
 #check @contextLendersFlow_of_no_stacks
 #check @donationContextFlows_lenders
+#check @callLendAdmits
+#check @callLendAdmits_congr
+#check @callLendAdmits_flows
+#check @callLendSchedContext?
+#check @callLendSchedContext?_flows
+#check @applyCallDonationOnCoreWhen
+#check @applyCallDonationOnCoreWhen_cases
+#check @applyCallDonationOnCoreWhen_induct
+#check @endpointCallDispatchReplenishCores_subset_true
+#check @schedLockSet_endpointCallOnCore_coversWrites
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing
@@ -13762,13 +13772,16 @@ run_check "INVARIANT" rg -n '^def schedLockSet_replyTransferOnCore \(' SeLe4n/Ke
 # (the confinement theorem is stated at it), the replenish segment the mirror of the
 # dispatch's own guard.  Mutation: keep `schedFootprintOfCores` and resolve either
 # segment a second way inside the body.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointCallOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n *\(endpointCallDispatchWriteSet endpointId caller payload\n *executingCore st\)\n *\(endpointCallDispatchReplenishCores endpointId caller payload\n *executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+# The run segment joins the chain at a refused lend: one label-free footprint for
+# both answers of the lend admission, a proven superset
+# (`endpointCallDispatchReplenishCores_subset_true`).
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointCallOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n *\(endpointCallDispatchWriteSet endpointId caller payload\n *executingCore st\n *\+\+ endpointCallDispatchChainWriteSet endpointId caller payload executingCore st false\)\n *\(endpointCallDispatchReplenishCores endpointId caller payload\n *executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointReplyOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(endpointReplyDispatchWriteSet replier target msg executingCore st\)\n *\(endpointReplyDispatchReplenishCores replier target msg executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_replyTransferOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(replyTransferWriteSet replier callerTid mi regs msg executingCore st\)\n *\(replyTransferReplenishCores replier callerTid msg executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
 # The `.call` segment asks the donation's OWN guard at the WithCaps post-state, where
 # the dispatch asks it, and reads the two homes off the pre-state, where the dispatch
 # reads them -- so the pair and the migration's endpoints are the same expressions.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointCallDispatchReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match callDonationSchedContext\? st. callerV.val receiverV.val with\n *\| some _ => \[determineTargetCore st caller, determineTargetCore st receiverTid\]\n *\| none => \[\]" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointCallDispatchReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match callLendSchedContext\? lend st. callerV.val receiverV.val with\n *\| some _ => \[determineTargetCore st caller, determineTargetCore st receiverTid\]\n *\| none => \[\]" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
 # NEGATIVE: the guard asked at the PRE-state is a proxy for the one the dispatch
 # reads (the leg may have changed the receiver's binding).  Declaration-bounded.
 # Mutation: ask `callDonationSchedContext?` of `st` instead of the leg's post-state.

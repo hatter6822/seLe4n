@@ -271,9 +271,9 @@ theorem callDispatch_inPlace (st : SystemState)
     rw [callRendezvousLinks_of_stash payload ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT) hRid]
     exact hGr
   simp only [Except.map, hEp, hH, hLk, ↓reduceIte, hcv, hrv]
-  unfold applyCallDonationOnCore
+  unfold applyCallDonationOnCoreWhen applyCallDonationOnCore
   rw [applyCallDonation_eq_ok_self_of_no_donation _ _ _ (by rw [hcv', hrv']; exact hDon)]
-  simp only [hcv', hrv', hDon]
+  simp only [hcv', hrv', hDon, ite_self]
   rfl
 
 /-- **The call rendezvous's delivery is the held message's stage**: the

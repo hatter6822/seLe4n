@@ -949,7 +949,7 @@ theorem endpointCallCrossCoreDispatchChecked_runQueueEntryStage (ctx : LabelingC
   unfold endpointCallCrossCoreDispatchChecked
   split
   · exact endpointCallCrossCoreDispatch_runQueueEntryStage _ _ _ _ _ P.endpointHeads
-      P.current P.notIdle P.objInv P.refined P.currentActive
+      P.current P.notIdle P.objInv P.refined P.currentActive _
   · exact (RunQueueStage.refl _).entry
 
 theorem notificationWaitCrossCoreDispatchChecked_runQueueEntryStage (ctx : LabelingContext)
