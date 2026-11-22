@@ -11306,6 +11306,7 @@ import SeLe4n.Kernel.ContextLenders.ReplyRecv
 import SeLe4n.Kernel.ContextLenders.Capability
 import SeLe4n.Kernel.ContextLenders.SyscallDispatch
 import SeLe4n.Kernel.ContextLenders.CapabilityOnly
+import SeLe4n.Kernel.ContextLenders.CapabilityDispatch
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency
 #check @replyRecvCompletesSignalArm
@@ -11541,6 +11542,9 @@ open SeLe4n.Kernel.Concurrency
 #check @LendersFrame.setIPCBufferOp
 #check @LendersFrame.irqHandlerSetNotification
 #check @LendersFrame.irqHandlerClear
+#check @dispatchCapabilityOnly_lendersFrame
+#check @dispatchWithCapChecked_lendersStage
+#check @dispatchSyscallChecked_lendersStage
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing
