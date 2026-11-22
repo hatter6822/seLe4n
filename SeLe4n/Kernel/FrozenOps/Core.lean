@@ -1398,6 +1398,57 @@ def frozenReturnDonatedSchedContextResolved (st : FrozenSystemState)
   | .ok newOwner? =>
     frozenReturnDonatedSchedContext st serverTid scId originalOwner newOwner?
 
+/-- **WS-SX SX8, frozen mirror**: seL4-MCS's `reply_pop` where the recipient
+holds a context of its own — the head popped, the context kept by `holder`.
+
+`keepDonatedSchedContext`'s counterpart, write for write and guard for guard, in
+the live order: refused on a context not bound to `holder` and on an outer
+caller the pop would refuse, before any write; the record keeps its holder
+(`donationSeverSchedContext`, the **live** function), the head is popped, and
+the holder's binding becomes `donationReturnBinding` (the live function again),
+behind the live internal guard that the holder's binding names the context. -/
+def frozenKeepDonatedSchedContext (st : FrozenSystemState) (holder : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (newOwner? : Option SeLe4n.ThreadId) :
+    Except KernelError FrozenSystemState :=
+  match st.getSchedContext? scId with
+  | none => .error .objectNotFound
+  | some sc =>
+    if sc.boundThread != some holder then .error (.invalidArgument 0)
+    else if !frozenOuterCallerAcceptable st holder holder newOwner? then
+      .error (.invalidArgument 0)
+    else
+      match frozenDonationHeadOf? st scId sc with
+      | .error e => .error e
+      | .ok head? =>
+        match frozenWithObjectStored st scId.toObjId
+            (.schedContext (SeLe4n.Kernel.donationSeverSchedContext sc
+              (head?.bind (fun p => p.2.prev)) newOwner?)) with
+        | .error e => .error e
+        | .ok st1 =>
+          match frozenStoreDonationHeadPop st1 scId head? with
+          | .error e => .error e
+          | .ok st2 =>
+            match frozenLookupTcb st2 holder with
+            | none => .error .objectNotFound
+            | some ht =>
+              if ht.schedContextBinding.scId? != some scId then .error (.invalidArgument 0)
+              else
+                frozenWithObjectStored st2 holder.toObjId
+                  (.tcb { ht with
+                    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode
+                      (SeLe4n.Kernel.donationReturnBinding scId newOwner?),
+                    scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode
+                      (SeLe4n.Kernel.donationReturnBinding scId newOwner?) })
+
+/-- **WS-SX SX8, frozen mirror**: the held pop with its outer caller resolved
+(`keepDonatedSchedContextResolved`'s counterpart). -/
+def frozenKeepDonatedSchedContextResolved (st : FrozenSystemState)
+    (holder : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) :
+    Except KernelError FrozenSystemState :=
+  match frozenReplyStackOuterCaller? st scId with
+  | .error e => .error e
+  | .ok newOwner? => frozenKeepDonatedSchedContext st holder scId newOwner?
+
 /-- **WS-ZA ZA6.34, frozen mirror**: the pop of a context no thread holds, back
 to `owner`.
 

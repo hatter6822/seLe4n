@@ -1743,14 +1743,14 @@ private def differentialEndpointReplyDonationAgrees : IO Unit := do
       (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze unheaded))
       (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
         (liveReplySpine diffB diffA msg) unheaded.state))
-  -- ### Half three: the RECIPIENT GUARD.  Same donation on the stack, but the
-  -- answered caller has acquired a reservation of its own while blocked, so the
-  -- pop would overwrite it.  The live pop refuses (`donationRecipientAcceptable`,
-  -- WS-HP HP4.6) and the frozen one must too — a mirror missing a live guard
-  -- succeeds where the kernel refuses, which is the direction that matters.
-  -- The guard is head-driven-specific: under the binding-driven reading the
-  -- recipient was the binding's own recorded owner, which the operation had
-  -- already seen hold nothing, so this half could not have existed before HP4.
+  -- ### Half three: the HELD ARM.  Same donation on the stack, but the
+  -- answered caller has acquired a reservation of its own while blocked.
+  -- seL4-MCS's `reply_pop` hands nothing back to a thread that holds a context
+  -- (WS-SX SX8): the head is popped off the context, which stays with the
+  -- server, and the caller keeps its own reservation.  The live pop takes that
+  -- arm (`keepDonatedSchedContextResolved`) and the frozen composite must too —
+  -- a mirror that refuses where the kernel succeeds, or that overwrites the
+  -- caller's reservation, disagrees on exactly this state.
   let ownCaller : TCB := (TCB.setIpcState { diffTcb 62 with
     replyObjectCode := SeLe4n.ReplyId.optCode (some rid),
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound diffOwnScId), scBindingOwnerCode := 0 } (.blockedOnReply diffEpId (some diffB)))
@@ -1765,9 +1765,17 @@ private def differentialEndpointReplyDonationAgrees : IO Unit := do
     (match (freeze bound).getTcb? diffA with
      | some t => t.schedContextBinding == .bound diffOwnScId
      | none   => false)
-  expect "FO-042: the live pop REFUSES to overwrite it"
-    (liveReplySpine diffB diffA msg bound.state).toOption.isNone
-  expect "FO-042: and the frozen composite refuses it too, with the same error"
+  expect "FO-042: the live pop keeps the context with the server, the head popped"
+    (match liveReplySpine diffB diffA msg bound.state with
+     | .ok ((), st') =>
+       (match st'.getTcb? diffA, st'.getTcb? diffB, st'.getSchedContext? diffScId with
+        | some a, some b, some sc =>
+          a.schedContextBinding == .bound diffOwnScId &&
+            b.schedContextBinding == .bound diffScId &&
+            sc.boundThread == some diffB && sc.scReply == none
+        | _, _, _ => false)
+     | .error _ => false)
+  expect "FO-042: and the frozen composite takes the same arm, state for state"
     (frozenRunAgrees unitResultAgrees
       (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze bound))
       (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)

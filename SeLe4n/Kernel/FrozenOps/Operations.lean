@@ -1191,10 +1191,16 @@ def frozenApplyReplyDonation (st : FrozenSystemState) (holder : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId) :
     Except KernelError FrozenSystemState :=
   if holder.isReserved then .error (.invalidArgument 0)
-  else
+  -- WS-SX SX8: seL4-MCS's `reply_pop`, routed as the live step routes it: the
+  -- context back to a recipient that holds none, and where it holds one the
+  -- head popped off the context, which stays with its holder
+  -- (`frozenKeepDonatedSchedContextResolved`); the holder is then not
+  -- descheduled, since it keeps its reservation.
+  else if frozenDonationRecipientAcceptable st originalOwner then
     match frozenReturnDonatedSchedContextResolved st holder scId originalOwner with
     | .error e => .error e
     | .ok st' => .ok (frozenRemoveRunnable st' holder)
+  else frozenKeepDonatedSchedContextResolved st holder scId
 
 /-- **WS-RM, frozen mirror of the whole `.reply` operation** (PR #895 review
 round 13).

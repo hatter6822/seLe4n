@@ -19794,7 +19794,12 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSchedContext[^
 # UNBINDS rather than the one it rebinds, so it would pass on exactly the state it
 # exists to refuse (and refuse every ordinary pop).  The live twin's own negative.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*!frozenDonationRecipientAcceptable st serverTid" SeLe4n/Kernel/FrozenOps/Core.lean'
-run_prose_check "TRACE" rg -n 'the frozen composite refuses it too, with the same error' tests/FrozenOpsSuite.lean
+# WS-SX SX8: FO-042's third half is now seL4's held arm of `reply_pop` -- the
+# answered caller holds a context, so the head is popped and the context stays
+# with the server -- and the frozen composite must take the same arm.
+run_prose_check "TRACE" rg -n 'and the frozen composite takes the same arm, state for state' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenApplyReplyDonation[^\n]*(\n([ \t][^\n]*)?)*  else if frozenDonationRecipientAcceptable st originalOwner then\n[^\n]*frozenReturnDonatedSchedContextResolved st holder scId originalOwner[^\n]*(\n([ \t][^\n]*)?)*  else frozenKeepDonatedSchedContextResolved st holder scId" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" rg -n '^def frozenKeepDonatedSchedContext($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
 
 # (18) ...and the live twin's own ID PROMOTION, at the unit the live code puts it:
 # `applyReplyDonation` refuses a holder `ThreadId.toValid?` will not promote, so
