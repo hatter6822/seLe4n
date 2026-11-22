@@ -1103,4 +1103,184 @@ theorem finaliseFinalObject (target : Nat) (st : SystemState) (hInv : st.objects
 
 end LendersFrame
 
+/-! ### The delete chain
+
+The slot's delete writes CNodes, threads and the derivation tree alone; the
+finalisation of destroyed capabilities writes VSpace roots alone; the retire
+keeps or erases each object (`retireFinalObject_key`), so every reply object and
+every context after it was there before it. -/
+
+namespace chainObjectsKept
+
+theorem cspaceDeleteSlot {addr : CSpaceAddr} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.cspaceDeleteSlot addr st = .ok ((), st')) :
+    chainObjectsKept st st' := by
+  obtain ⟨stC, hC, rfl⟩ := cspaceDeleteSlot_ok_decompose addr st st' h
+  have F := RecordsFrame.cspaceDeleteSlotCore hInv hC
+  have F2 := F.trans (RecordsFrame.withCdt stC (stC.cdt.spliceNode addr) F.invExt)
+  exact ((cspaceDeleteSlotCore hInv hC).trans (withCdt stC (stC.cdt.spliceNode addr))).trans
+    (of_linkReach (spliceDeletedCdtNode_reach stC addr) F2.invExt)
+
+theorem retireFinalObject (ec : CoreId) (target recorder : Nat) (st : SystemState)
+    (hInv : st.objects.invExt) :
+    chainObjectsKept st (_root_.SeLe4n.Kernel.retireFinalObject ec target recorder st) := by
+  refine ⟨fun x r hx => ?_, fun x sc hx => ?_⟩ <;>
+    rcases retireFinalObject_key ec target recorder st hInv x with e | ⟨-, -, hn | ⟨U, hU⟩⟩
+  all_goals first
+    | (rw [← e]; exact hx)
+    | (rw [hn] at hx; cases hx)
+    | (rw [hU] at hx; cases hx)
+
+end chainObjectsKept
+
+namespace LendersFrame
+
+theorem cspaceDeleteSlot {addr : CSpaceAddr} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.cspaceDeleteSlot addr st = .ok ((), st')) : LendersFrame st st' :=
+  of_kept (chainObjectsKept.cspaceDeleteSlot hInv h) (RecordsFrame.cspaceDeleteSlot hInv h)
+
+/-- **The retire of what a final delete destroyed**: a node's line, or the
+registration's release, the finalisation and the object's retire. -/
+theorem retireFinalisedObject (ec : CoreId) (target recorder : Nat) (st : SystemState)
+    (hInv : st.objects.invExt) :
+    LendersFrame st (_root_.SeLe4n.Kernel.retireFinalisedObject ec target recorder st) := by
+  rcases retireFinalisedObject_cases ec target recorder st with ⟨-, hE⟩ | ⟨-, hE⟩ <;> rw [hE]
+  · exact ⟨(chainObjectsKept.of_objects_eq (retireIrqNode_objects _ _)).linksShrink,
+      by rw [retireIrqNode_objects]; exact hInv⟩
+  · have F1 : LendersFrame st (releaseFinalRegistration target st) :=
+      releaseFinalRegistration_closed (LendersFrame st)
+        (fun _ _ _ F hR => F.andThen fun hI =>
+          of_kept (chainObjectsKept.revokeService hI hR) (RecordsFrame.revokeService hI hR))
+        target st (refl hInv)
+    exact (F1.andThen fun hI => finaliseFinalObject target _ hI).andThen fun hI =>
+      ⟨(chainObjectsKept.retireFinalObject ec target recorder _ hI).linksShrink,
+        (retireFinalObject_frame ec target recorder _ hI).1⟩
+
+/-- **The finalising delete**: the slot's delete, the destroyed capabilities'
+finalisation, then the retire. -/
+theorem cspaceDeleteSlotFinalising {ec : CoreId} {addr : CSpaceAddr} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
+    LendersFrame st st' := by
+  obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st _ h
+  have F1 := cspaceDeleteSlot hInv hD
+  obtain ⟨hI2, hW2, -⟩ := finaliseDestroyedCapabilities_ok_frame ec _ _ st1 st2 F1.invExt hF
+  exact (F1.andThen fun _ => of_vspaceRootOnlyWrite hW2 hI2).andThen fun hI =>
+    retireFinalisedObject ec _ _ st2 hI
+
+theorem cspaceDeleteSlotZombie {ec : CoreId} {addr : CSpaceAddr} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.cspaceDeleteSlotZombie ec addr st = .ok ((), st')) :
+    LendersFrame st st' :=
+  cspaceDeleteSlotZombie_closed (LendersFrame st)
+    (fun _ _ _ F hD => F.andThen fun hI => cspaceDeleteSlotFinalising hI hD)
+    (fun d _ F => F.andThen fun hI => finaliseFinalObject d _ hI) (refl hInv) h
+
+theorem cspaceRevokeCdtFinalising {ec : CoreId} {addr : CSpaceAddr} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
+    LendersFrame st st' :=
+  cspaceRevokeCdtFinalising_closed (LendersFrame st)
+    (fun _ _ _ F hD => F.andThen fun hI => cspaceDeleteSlotFinalising hI hD)
+    (fun d _ F => F.andThen fun hI => finaliseFinalObject d _ hI) (refl hInv) h
+
+end LendersFrame
+
+
+/-! ### The thread-space set and the handler arms
+
+A space slot's set is the slot copied — a thread rewrite, the tree spliced and,
+when the source holds a capability, the slot written and its derivation edge —
+then the retire of the object its old capability was the last to name.  The
+handler bind and clear are a zombie delete and a copy. -/
+
+namespace chainObjectsKept
+
+theorem threadSlotCopied {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (hInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    chainObjectsKept st
+      (_root_.SeLe4n.Kernel.threadSlotCopied st tid slot srcCNode srcSlot rights data) := by
+  have hPre := (SystemState.getTcb?_eq_some_iff st tid t).mp hT
+  have F1 := RecordsFrame.storeObject hInv (threadSlotCleared_store hT slot) (by rw [hPre]; rfl)
+    (fun _ => by simp)
+  have K1 := storeObject_other hInv (threadSlotCleared_store hT slot) (fun _ h => by cases h)
+    (fun _ h => by cases h)
+  have F2 := F1.trans (RecordsFrame.withCdt _ ((threadSlotCleared tid.toObjId slot st).cdt.spliceNode
+    { cnode := tid.toObjId, slot := slot }) F1.invExt)
+  have K3 := (K1.trans (withCdt _ ((threadSlotCleared tid.toObjId slot st).cdt.spliceNode
+    { cnode := tid.toObjId, slot := slot }))).trans
+      (of_linkReach (spliceDeletedCdtNode_reach _ _) F2.invExt)
+  have F3 := F2.trans (RecordsFrame.of_linkReach (spliceDeletedCdtNode_reach _ _) F2.invExt)
+  rcases threadSlotCopied_cases st tid slot srcCNode srcSlot rights data with ⟨-, e⟩ | ⟨cap, -, e⟩
+  · rw [e]; exact K3
+  · rw [e]
+    have F4 := F3.trans (RecordsFrame.updateTcb _ tid F3.invExt (fun _ => rfl)
+      (f := (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights data))))
+    exact (K3.trans (updateTcb _ tid (·.insertSpaceCap slot (TCB.spaceCopyOf cap rights data))
+      F3.invExt)).trans (cdtAddChild _ _ _ _ F4.invExt)
+
+end chainObjectsKept
+
+namespace LendersFrame
+
+theorem threadSlotSet (ec : CoreId) {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (hInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
+    (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
+    LendersFrame st (_root_.SeLe4n.Kernel.threadSlotSet ec st tid slot srcCNode srcSlot rights data) := by
+  have F := RecordsFrame.threadSlotCopied hInv hT slot srcCNode srcSlot rights data
+  unfold _root_.SeLe4n.Kernel.threadSlotSet
+  exact (of_kept (chainObjectsKept.threadSlotCopied hInv hT slot srcCNode srcSlot rights data) F).andThen
+    fun hI => ⟨(chainObjectsKept.retireFinalObject ec _ _ _ hI).linksShrink,
+      (retireFinalObject_frame ec _ _ _ hI).1⟩
+
+theorem copyThreadSpaces (ec : CoreId) {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
+    {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr} (hInv : st.objects.invExt)
+    (hStep : _root_.SeLe4n.Kernel.copyThreadSpaces ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
+    LendersFrame st st' := by
+  obtain ⟨tcb, t1, t2, hT, -, -, -, hT1, hI1, hT2, hI2, rfl⟩ := copyThreadSpaces_ok_steps hInv hStep
+  exact ((threadSlotSet ec hInv hT _ _ _ _ _).andThen fun _ => threadSlotSet ec hI1 hT1 _ _ _ _ _).andThen
+    fun _ => threadSlotSet ec hI2 hT2 _ _ _ _ _
+
+theorem copyThreadSpacesZombie (ec : CoreId) {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
+    {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr} (hInv : st.objects.invExt)
+    (hStep : _root_.SeLe4n.Kernel.copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
+    LendersFrame st st' := by
+  have hChain : ∀ n s, ZombieRun ec n st s → LendersFrame st s := fun _ _ hR =>
+    hR.chain.closed (LendersFrame st)
+      (fun _ _ _ F hD => F.andThen fun hI => cspaceDeleteSlotFinalising hI hD)
+      (fun d _ F => F.andThen fun hI => finaliseFinalObject d _ hI) (refl hInv)
+  rcases copyThreadSpacesZombie_cases hStep with h1 | ⟨n, s, hR, rfl | h2⟩
+  · exact copyThreadSpaces ec hInv h1
+  · exact hChain n _ hR
+  · exact (hChain n s hR).andThen fun hI => copyThreadSpaces ec hI h2
+
+theorem setIPCBufferOp (ec : CoreId) {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
+    {callerTid : SeLe4n.ThreadId} {bufferCap? : Option SeLe4n.CPtr} {addr : SeLe4n.VAddr}
+    (hInv : st.objects.invExt)
+    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp ec st vtid callerTid bufferCap? addr
+      = .ok st') : LendersFrame st st' := by
+  obtain ⟨c, s, t, hT, -, rfl⟩ := Architecture.IpcBufferValidation.setIPCBufferOp_ok_perform hStep
+  unfold Architecture.IpcBufferValidation.setIPCBufferPerform
+  exact (threadSlotSet ec hInv hT _ _ _ _ _).andThen fun hI =>
+    updateTcb _ vtid.val (fun t => { t with ipcBuffer := addr }) hI
+
+theorem irqHandlerSetNotification {ec : CoreId} {line : Nat} {src : CSpaceAddr}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (hStep : _root_.SeLe4n.Kernel.irqHandlerSetNotification ec line src st = .ok ((), st')) :
+    LendersFrame st st' := by
+  obtain ⟨-, st1, -, -, -, hZ, hC⟩ := irqHandlerSetNotification_ok hInv hStep
+  exact (cspaceDeleteSlotZombie hInv hZ).andThen fun hI => cspaceCopy hI hC
+
+theorem irqHandlerClear {ec : CoreId} {line : Nat} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (hStep : _root_.SeLe4n.Kernel.irqHandlerClear ec line st = .ok ((), st')) :
+    LendersFrame st st' := by
+  unfold _root_.SeLe4n.Kernel.irqHandlerClear at hStep
+  split at hStep
+  · cases hStep
+  exact cspaceDeleteSlotZombie hInv hStep
+
+end LendersFrame
+
 end SeLe4n.Kernel

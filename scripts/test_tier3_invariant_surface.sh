@@ -11534,6 +11534,13 @@ open SeLe4n.Kernel.Concurrency
 #check @LendersFrame.untypedRetypeFromCap
 #check @contextStackViewsAgree_of_finaliseWrite
 #check @LendersFrame.finaliseFinalObject
+#check @LendersFrame.retireFinalisedObject
+#check @LendersFrame.cspaceDeleteSlotZombie
+#check @LendersFrame.cspaceRevokeCdtFinalising
+#check @LendersFrame.copyThreadSpacesZombie
+#check @LendersFrame.setIPCBufferOp
+#check @LendersFrame.irqHandlerSetNotification
+#check @LendersFrame.irqHandlerClear
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing
