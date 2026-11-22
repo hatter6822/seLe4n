@@ -11510,6 +11510,9 @@ open SeLe4n.Kernel.Concurrency
 #check @LendersDispatchPremises
 #check @clearStashStage_lendersStage
 #check @dispatchWithCapChecked_lendersStage_of_capabilityOnly
+#check @LendersFrame.yieldOnCore
+#check @applySyscallTaint_lendersStage
+#check @dispatchSyscallChecked_lendersStage_of_capabilityOnly
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing

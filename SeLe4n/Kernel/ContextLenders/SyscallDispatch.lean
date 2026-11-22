@@ -232,4 +232,106 @@ theorem dispatchWithCapChecked_lendersStage_of_capabilityOnly (ctx : LabelingCon
         (LendersFrame.notificationSignalDeclassifiedCrossCoreDispatch _ _ _ _ _ st hInv).stage hSig
     · cases h
 
+namespace LendersFrame
+
+/-- The yield's charge: the slice end, or the budget forfeit with the key hook. -/
+theorem yieldChargeOnCore {st st' : SystemState} {c : CoreId} {tid : SeLe4n.ThreadId}
+    (hInv : st.objects.invExt) (h : _root_.SeLe4n.Kernel.yieldChargeOnCore st c tid = .ok st') :
+    LendersFrame st st' := by
+  unfold _root_.SeLe4n.Kernel.yieldChargeOnCore at h
+  split at h
+  · cases h
+  · rename_i tcb hTcb _
+    split at h
+    · rw [Except.ok.injEq] at h; subst h
+      exact sliceExpireOnCore st c tid tcb hTcb hInv
+    all_goals
+      split at h
+      · rename_i sc hSc _
+        rw [Except.ok.injEq] at h; subst h
+        exact (spendBudgetOnCore st c tid _ sc hSc _ _ hInv).andThen fun h => markKeyChangeFor _ _ _ h
+      · cases h
+
+/-- **The yield keeps the lenders' flow**: the charge and the reschedule. -/
+theorem yieldOnCore {st st' : SystemState} {c : CoreId} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.yieldOnCore st c = .ok st') : LendersFrame st st' := by
+  unfold _root_.SeLe4n.Kernel.yieldOnCore at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · rename_i hC
+      exact (yieldChargeOnCore hInv hC).andThen fun h' => scheduleEffectiveOnCore h' h
+
+end LendersFrame
+
+theorem objStackViews_map_eraseTaint (o? : Option KernelObject) :
+    objStackHead (o?.map KernelObject.eraseTaint) = objStackHead o? ∧
+    objStackPrev (o?.map KernelObject.eraseTaint) = objStackPrev o? ∧
+    objStackCaller (o?.map KernelObject.eraseTaint) = objStackCaller o? := by
+  cases o? with
+  | none => exact ⟨rfl, rfl, rfl⟩
+  | some o => cases o <;> exact ⟨rfl, rfl, rfl⟩
+
+/-- **A write of taint words alone** is a frame of the three views. -/
+theorem contextStackViewsAgree_of_objectsAgreeOffTaint {st st' : SystemState}
+    (h : st.objectsAgreeOffTaint st') : contextStackViewsAgree st st' := by
+  have key : ∀ x : SeLe4n.ObjId, objStackHead st'.objects[x]? = objStackHead st.objects[x]? ∧
+      objStackPrev st'.objects[x]? = objStackPrev st.objects[x]? ∧
+      objStackCaller st'.objects[x]? = objStackCaller st.objects[x]? := fun x => by
+    have a := objStackViews_map_eraseTaint st'.objects[x]?
+    have b := objStackViews_map_eraseTaint st.objects[x]?
+    rw [h x] at a
+    exact ⟨a.1.symm.trans b.1, a.2.1.symm.trans b.2.1, a.2.2.symm.trans b.2.2⟩
+  refine ⟨fun s => ?_, fun r => ?_, fun r => ?_⟩
+  · rw [contextStackHead_eq_obj, contextStackHead_eq_obj]; exact (key _).1
+  · rw [replyStackPrev_eq_obj, replyStackPrev_eq_obj]; exact (key _).2.1
+  · rw [replyStackCaller_eq_obj, replyStackCaller_eq_obj]; exact (key _).2.2
+
+/-- **The taint pass keeps the lenders' flow**: it writes the taint words alone. -/
+theorem applySyscallTaint_lendersStage {ctx : LabelingContext} (plan : TaintPlan)
+    (pre post : SystemState) : LendersStage ctx post (applySyscallTaint plan pre post) :=
+  LendersStage.of_viewsAgree
+    (contextStackViewsAgree_of_objectsAgreeOffTaint (applySyscallTaint_objectsAgreeOffTaint _ _ _))
+
+/-- **The checked syscall dispatch carries the lenders' flow**: the yield, the
+capability resolution (a read, so the arm runs on the dispatcher's state and
+reads its premises there), the routed arm, and the taint pass, which writes the
+taint words alone.  The premise pack is read at the gate the dispatcher builds
+from the caller's thread record. -/
+theorem dispatchSyscallChecked_lendersStage_of_capabilityOnly (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (ec : CoreId) (st st' : SystemState)
+    (hInv : st.objects.invExt)
+    (P : ∀ tcb, st.getObject? tid.toObjId = some (.tcb tcb) → ∀ cap,
+      LendersDispatchPremises ctx decoded tid ec
+        { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr,
+          requiredRight := syscallRequiredRight decoded.syscallId } cap st)
+    (hCaller : CallerReady st tid)
+    (hCapOnly : ∀ cap k st'', dispatchCapabilityOnly decoded cap tid ec = some k →
+      dispatchCapabilityOnlyChecked ctx decoded.syscallId decoded.msgInfo.extraCaps tid cap k st
+        = .ok ((), st'') → LendersStage ctx st st'')
+    (h : dispatchSyscallChecked ctx decoded tid ec st = .ok ((), st')) :
+    LendersStage ctx st st' := by
+  unfold dispatchSyscallChecked at h
+  split at h
+  · cases h
+  by_cases hY : decoded.syscallId = .yield
+  · simp only [hY, ↓reduceIte, dispatchYield] at h
+    split at h
+    · cases h
+    · rename_i hYieldOk
+      cases h
+      exact (LendersFrame.yieldOnCore hInv hYieldOk).stage
+  simp only [hY, ↓reduceIte] at h
+  split at h <;> try (cases h; done)
+  rename_i tcb hTcb
+  split at h
+  · cases h
+  rename_i stPost hD
+  cases h
+  refine LendersStage.trans (b := stPost) ?_ (applySyscallTaint_lendersStage _ _ _)
+  obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
+  exact dispatchWithCapChecked_lendersStage_of_capabilityOnly ctx decoded tid ec _ cap st stPost
+    (P tcb hTcb cap) hCaller (fun k hk => hCapOnly cap k stPost hk) hD
+
 end SeLe4n.Kernel
