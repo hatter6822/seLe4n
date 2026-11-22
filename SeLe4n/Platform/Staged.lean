@@ -275,6 +275,7 @@ import SeLe4n.Kernel.ContextLenders.Dispatch
 import SeLe4n.Kernel.ContextLenders.ReplyRecv
 import SeLe4n.Kernel.ContextLenders.Capability
 import SeLe4n.Kernel.ContextLenders.SyscallDispatch
+import SeLe4n.Kernel.ContextLenders.CapabilityOnly
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.YieldLinkedNotResident

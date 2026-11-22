@@ -11305,6 +11305,7 @@ import SeLe4n.Kernel.ContextLenders.Dispatch
 import SeLe4n.Kernel.ContextLenders.ReplyRecv
 import SeLe4n.Kernel.ContextLenders.Capability
 import SeLe4n.Kernel.ContextLenders.SyscallDispatch
+import SeLe4n.Kernel.ContextLenders.CapabilityOnly
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency
 #check @replyRecvCompletesSignalArm
@@ -11513,6 +11514,12 @@ open SeLe4n.Kernel.Concurrency
 #check @LendersFrame.yieldOnCore
 #check @applySyscallTaint_lendersStage
 #check @dispatchSyscallChecked_lendersStage_of_capabilityOnly
+#check @chainObjectsKept.mintReplyCapWithCdt
+#check @LendersFrame.setPriorityOnCore
+#check @LendersFrame.schedContextYieldToOnCore
+#check @LendersFrame.updateSchedContext_clearHead
+#check @LendersFrame.schedContextUnbindReply
+#check @LendersFrame.schedContextUnbindAllOnCore
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing
