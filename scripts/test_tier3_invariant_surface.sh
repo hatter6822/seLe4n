@@ -11291,6 +11291,7 @@ import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SyscallReadiness
 import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
 import SeLe4n.Kernel.RefusalCarryingReplyRecv
 import SeLe4n.Kernel.InformationFlow.PerCoreSchedulerNonInterference
+import SeLe4n.Kernel.SchedContext.Invariant.ContextLenders
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency
 #check @replyRecvCompletesSignalArm
@@ -11395,6 +11396,13 @@ open SeLe4n.Kernel.Concurrency
 #check @lendSchedContextInPlaceWhen_ipcStateCarried
 #check @replyRecvUnlentArmR
 #check @replyRecvUnlentArmR_eq
+#check @OnContextStack_iff_views
+#check @contextLendersFlow_iff_views
+#check @contextStacksShrink
+#check @contextLendersFlow_of_shrink
+#check @contextStackViewsAgree
+#check @contextLendersFlow_of_viewsAgree
+#check @contextStackViewsAgree_of_chainFrame
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing

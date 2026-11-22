@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.SchedContext.NotificationDonationContextLabel
+import SeLe4n.Kernel.IPC.Invariant.Defs
 
 /-!
 # The lenders on a context's stack: the transport relations
@@ -182,5 +183,27 @@ theorem contextStackViewsAgree_of_objects {st st' : SystemState}
       simp only [h1, h2, Option.map_some, Option.map_none, Option.some.injEq, reduceCtorEq,
         Option.bind_some, Option.bind_none, Prod.mk.injEq] at this ⊢
     exact this.2
+
+
+/-! ### The chain frame, read for the lenders -/
+
+theorem contextStackHead_eq_stackHead (st : SystemState) (s : SeLe4n.SchedContextId) :
+    contextStackHead st s = (schedContextStackHead? st.objects[s.toObjId]?).bind id := by
+  unfold contextStackHead SystemState.getSchedContext? schedContextStackHead?
+  split <;> simp_all
+
+theorem replyStackPrev_eq_links (st : SystemState) (r : SeLe4n.ReplyId) :
+    replyStackPrev st r = (replyStackLinks? st.objects[r.toObjId]?).bind (·.1) := by
+  unfold replyStackPrev SystemState.getReply? replyStackLinks?
+  split <;> simp_all
+
+/-- **A chain frame that keeps every caller is a lenders frame.** -/
+theorem contextStackViewsAgree_of_chainFrame {st st' : SystemState}
+    (h : donationChainFrame st st') (hC : ∀ r, replyStackCaller st' r = replyStackCaller st r) :
+    contextStackViewsAgree st st' :=
+  ⟨fun s => by rw [contextStackHead_eq_stackHead, contextStackHead_eq_stackHead,
+      h.stackHeads s.toObjId],
+   fun r => by rw [replyStackPrev_eq_links, replyStackPrev_eq_links, h.replyLinks r.toObjId],
+   hC⟩
 
 end SeLe4n.Kernel
