@@ -960,4 +960,57 @@ theorem restartThreadOnCore {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
 
 end LendersFrame
 
+/-- **A carve shrinks the links**: the watermark, the fresh child (a new reply
+object or context is born with no link and no caller, seL4's zeroed object),
+the free index, the scrub, the capability insert and the derivation edge. -/
+theorem untypedRetypeObject_linksShrink {src dst : CSpaceAddr} {childId : SeLe4n.ObjId}
+    {req : CarveRequest} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.untypedRetypeObject src childId dst req st = .ok ((), st')) :
+    contextStackLinksShrink st st' := by
+  obtain ⟨utCap, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
+    untypedRetypeObject_ok_decompose src dst childId req st st' hInv h
+  obtain ⟨ut₀, ut', cap, stUt, _, stCh, cn, hUt, _, _, _, _, _, _, hLk, _, _, hStUt, hStCh, hOCh,
+    hStIdx⟩ := retypeFromUntyped_ok_stores st st1 src untypedId childId _ _ hInv hRt
+  have hI1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hStUt
+  have hI2 := storeObject_preserves_objects_invExt _ _ _ _ hI1 hStCh
+  have hI3 := storeObject_preserves_objects_invExt _ _ _ _ hI2 hStIdx
+  have L1 := (chainObjectsKept.storeObject_other hInv hStUt (fun _ e => by cases e)
+    (fun _ e => by cases e)).linksShrink
+  have L2 : contextStackLinksShrink stUt stCh := by
+    refine contextStackLinksShrink_storeObject hI1 hStCh (fun _ r _ hr => ?_) (fun x hx => ?_)
+      (fun l hl => ?_)
+    · cases req <;> simp [CarveRequest.object, objStackHead,
+        SeLe4n.Kernel.SchedContext.empty] at hr
+    · cases req <;> simp [CarveRequest.object, objStackPrev, SeLe4n.Kernel.Reply.empty] at hx
+    · cases req <;> simp [CarveRequest.object, objStackCaller, SeLe4n.Kernel.Reply.empty] at hl
+  have L3 := (chainObjectsKept.storeObject_other hI2 hStIdx (fun _ e => by cases e)
+    (fun _ e => by cases e)).linksShrink
+  have hIZ : (req.scrub st1 ut (req.carveIndex ut (retypeFreeIndex st src utCap))).objects.invExt := by
+    rw [CarveRequest.scrub_objects]; exact hI3
+  have L4 : contextStackLinksShrink st1
+      (req.scrub st1 ut (req.carveIndex ut (retypeFreeIndex st src utCap))) :=
+    (chainObjectsKept.of_objects_eq (CarveRequest.scrub_objects st1 ut _ req)).linksShrink
+  have L5 := (chainObjectsKept.cspaceInsertSlot hIZ hIns).linksShrink
+  have L6 := (chainObjectsKept.cdtAddChild st2 src dst .retype
+    (cspaceInsertSlot_preserves_objects_invExt _ _ _ _ hIZ hIns)).linksShrink
+  exact ((((L1.trans L2).trans L3).trans L4).trans L5).trans L6
+
+namespace LendersFrame
+
+/-- The live `.untypedRetype` arm: the carve chain. -/
+theorem untypedRetypeFromCap {tid : SeLe4n.ThreadId} {ec : CoreId}
+    {srcAddr : SeLe4n.CPtr} {root? : Option SeLe4n.CPtr}
+    {args? : Except KernelError SeLe4n.Kernel.Architecture.SyscallArgDecode.UntypedRetypeArgs}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.untypedRetypeFromCap tid ec srcAddr root? args? st = .ok ((), st')) :
+    LendersFrame st st' :=
+  (untypedRetypeFromCap_chain h).rel (P := fun s => s.objects.invExt)
+    (R := fun a b => a.objects.invExt → LendersFrame a b) (fun _ => refl)
+    (fun h1 h2 hI => (h1 hI).andThen h2)
+    (fun hP hC => untypedRetypeObject_preserves_objects_invExt hP hC)
+    (fun hP hC _ => ⟨untypedRetypeObject_linksShrink hP hC,
+      untypedRetypeObject_preserves_objects_invExt hP hC⟩) hInv hInv
+
+end LendersFrame
+
 end SeLe4n.Kernel
