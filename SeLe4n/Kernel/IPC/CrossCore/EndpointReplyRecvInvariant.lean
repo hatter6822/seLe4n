@@ -951,6 +951,48 @@ theorem replyRecvReceiveLegState_eq_of_error (answer : Option Architecture.Fault
     replyRecvReceiveLegState answer pre replier grant rid target st1 = st1 := by
   unfold replyRecvReceiveLegState; rw [h]
 
+/-- **The thread a receive dequeues owns no loan**, on the receive's committed
+state: a rendezvous dequeues the head of the send queue, which waits on the
+endpoint (`queueHeadBlockedConsistent`) and so on no reply, while a loan's owner
+waits on a reply (`donationOwnerValid`), and the receive writes no binding
+(`endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous`).  A
+receive that blocks reports the receiver itself, which `hRecvNotOwner` covers.
+The rendezvous donation's donor obligation. -/
+theorem endpointReceiveDualWithCapsOnCore_dequeuedNotOwner
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (executingCore : Concurrency.CoreId) (st st' : SystemState) (dequeued : SeLe4n.ThreadId)
+    (summary : CapTransferSummary) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hRecvNotOwner : ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
+      st'.getTcb? s = some sTcb → sTcb.schedContextBinding ≠ .donated sc0 receiver)
+    (hStep : endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st =
+      (st', .ok (dequeued, summary, sgi))) :
+    ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
+      st'.getTcb? s = some sTcb → sTcb.schedContextBinding ≠ .donated sc0 dequeued := by
+  cases hS : receiveRendezvousSender? st endpointId with
+  | none =>
+    rw [endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_receiver_of_blocked endpointId receiver
+      replyId executingCore st st' dequeued summary sgi hS hStep]
+    exact hRecvNotOwner
+  | some sender =>
+    unfold receiveRendezvousSender? at hS
+    cases hEp : st.getEndpoint? endpointId with
+    | none => rw [hEp] at hS; cases hS
+    | some ep =>
+      rw [hEp] at hS
+      have hHead : ep.sendQ.head = some sender := hS
+      rw [endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_head endpointId receiver replyId
+        executingCore st st' dequeued summary sgi ep sender hEp hHead hStep]
+      have hBnd := endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous
+        endpointId receiver replyId executingCore st ep sender hObjInv hEp hHead
+      rw [hStep] at hBnd
+      refine notDonationOwner_of_notBlockedOnReply hInv.donationOwnerValid hBnd ?_
+      intro tcb hT ep' rt hR
+      have hQ := (hInv.queueHeadBlockedConsistent endpointId ep sender tcb
+        ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp)
+        ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)).2 hHead
+      rcases hQ with h | h <;> rw [h] at hR <;> cases hR
+
 /-- **WS-RM RM5.2**: the post-receive donation step preserves the IPC invariant
 bundle.
 
@@ -982,6 +1024,9 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull {lend : Bool}
     (hReceiverNotOwner : ∀ (tid' : SeLe4n.ThreadId) (tcb : TCB)
         (scId : SeLe4n.SchedContextId),
         st.getTcb? tid' = some tcb → tcb.schedContextBinding ≠ .donated scId tid)
+    (hDequeuedNotOwner : ∀ (tid' : SeLe4n.ThreadId) (tcb : TCB)
+        (scId : SeLe4n.SchedContextId),
+        st.getTcb? tid' = some tcb → tcb.schedContextBinding ≠ .donated scId nextThread)
     (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st lend
         = .ok (u, st')) :
     ipcInvariantFull st' := by
@@ -1007,7 +1052,7 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull {lend : Bool}
               simpa using hDon
             have hInv2 : ipcInvariantFull st2 :=
               applyReceiveRendezvousDonation_preserves_ipcInvariantFull _ st2
-                tid nextThread hObjInv hInv hReceiverNotOwner hStep
+                tid nextThread hObjInv hInv hReceiverNotOwner hDequeuedNotOwner hStep
             have hObjInv2 : st2.objects.invExt :=
               applyReceiveRendezvousDonation_preserves_objects_invExt _ st2 tid
                 nextThread hObjInv hStep
@@ -1055,6 +1100,14 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull {lend : Bool}
           rw [SystemState.getTcb?_eq_some_iff] at hTcb
           run_links_back hA at tcb hTcb
           exact hReceiverNotOwner tid' tcb scId ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hTcb)
+        have hSDqNotOwner : ∀ (tid' : SeLe4n.ThreadId) (tcb : TCB)
+            (scId : SeLe4n.SchedContextId),
+            (replyRecvHolderDeschedule tid holder st).getTcb? tid'
+              = some tcb → tcb.schedContextBinding ≠ .donated scId nextThread := by
+          intro tid' tcb scId hTcb
+          rw [SystemState.getTcb?_eq_some_iff] at hTcb
+          run_links_back hA at tcb hTcb
+          exact hDequeuedNotOwner tid' tcb scId ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hTcb)
         cases hDon : applyRendezvousCallDonation
             (replyRecvHolderDeschedule tid holder st) tid nextThread lend with
         | error e => rw [hDon] at h; simp only [] at h; cases h
@@ -1074,7 +1127,7 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull {lend : Bool}
               simpa using hDon
             have hInv2 : ipcInvariantFull st2 :=
               applyReceiveRendezvousDonation_preserves_ipcInvariantFull _ st2
-                tid nextThread hSObj hSInv hSNotOwner hStep
+                tid nextThread hSObj hSInv hSNotOwner hSDqNotOwner hStep
             have hObjInv2 : st2.objects.invExt :=
               applyReceiveRendezvousDonation_preserves_objects_invExt _ st2 tid
                 nextThread hSObj hStep

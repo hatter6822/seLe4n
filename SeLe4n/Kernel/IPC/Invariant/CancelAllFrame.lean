@@ -473,29 +473,69 @@ theorem replyHeadPop_commits_return {st : SystemState} {c : SeLe4n.ThreadId} {t 
   rw [hD, hT]
   simp only [popHeldReplyHead_of_acceptable (donatedReturnCommits_recipientAcceptable hC), hOk]
 
-/-- **A head reply's pop never refuses for the caller's own binding on a
-reachable state**: the pop's `donationRecipientAcceptable` conjunct of
-`donatedReturnCommits` asks that the caller the context goes back to holds no
-binding, and `donationOwnerValid` makes the owner a `.donated` holder names
-`.unbound`.  The conjunct stays in the check, since the shared pop
-(`returnDonatedSchedContext`) refuses there on an arbitrary state too, so the
-check reads exactly what the pop does before any write; on a state the kernel
-reaches it always passes, and the finalise refuses no thread or reply for it. -/
-theorem donationRecipientAcceptable_of_donationOwnerValid {st : SystemState}
-    {hd c : SeLe4n.ThreadId} {ht : TCB} {s : SeLe4n.SchedContextId}
-    (hOV : donationOwnerValid st) (hT : st.getTcb? hd = some ht)
-    (hB : ht.schedContextBinding = .donated s c) :
-    donationRecipientAcceptable st c = true := by
-  obtain ⟨-, ownerTcb, hO, hU, -⟩ :=
-    hOV hd ht s c ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hB
-  unfold donationRecipientAcceptable
-  cases hL : lookupTcb st c with
+/-- **A head reply's pop on the held arm**: where the caller the context is owed
+to holds a context of its own, the finalise's pop is seL4's `reply_pop` held arm,
+the head popped and the context kept by its holder (`keepDonatedSchedContext`). -/
+theorem replyHeadPop_commits_kept {st : SystemState} {c : SeLe4n.ThreadId} {t : TCB}
+    {s : SeLe4n.SchedContextId} {hd : SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (hT : st.getTcb? c = some t)
+    (hD : Lifecycle.Suspend.cancelledCallerDonation? st c t = some (s, hd))
+    (hA : donationRecipientAcceptable st c = false)
+    (hC' : heldPopCommits st hd s c = true) :
+    ∃ (n : Option SeLe4n.ThreadId) (st' : SystemState), replyStackOuterCaller? st s = .ok n ∧
+      keepDonatedSchedContext st hd s n = .ok st' ∧
+      Lifecycle.Suspend.returnDonationToCancelledCaller st c t = st' := by
+  have hC : keptPopCommits st hd s = true := by
+    rw [heldPopCommits_of_not_acceptable hA] at hC'; exact hC'
+  obtain ⟨st', hOk⟩ := keepDonatedSchedContextResolved_ok_of_commits hInv hC
+  obtain ⟨n, hResN, hPop⟩ := keepDonatedSchedContextResolved_ok_decompose hOk
+  refine ⟨n, st', hResN, hPop, ?_⟩
+  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+  rw [hD, hT]
+  simp only [popHeldReplyHead_of_not_acceptable hA, hOk]
+
+/-- **The outer caller of a head reply is not the head's caller**: the outer
+caller waits on the frame below the head (`replyCallerLinkageReciprocal`), whose
+link names the head as a frame, while the head's caller waits on the head, whose
+link is a head link. -/
+theorem replyStackOuterCaller_ne_headCaller {st : SystemState} {x : SeLe4n.ObjId} {r : Reply}
+    {c : SeLe4n.ThreadId} {t : TCB} {s s' : SeLe4n.SchedContextId} {outer : SeLe4n.ThreadId}
+    (hLink : replyCallerLinkageReciprocal st)
+    (hX : st.getObject? x = some (.reply r)) (hN : r.next = some (.head s))
+    (hT : st.getTcb? c = some t) (hRO : t.replyObject = some ⟨x.val⟩)
+    (hRes : replyStackOuterCaller? st s' = .ok (some outer)) :
+    outer ≠ c := by
+  intro e
+  subst e
+  obtain ⟨-, rid, -, below, b, -, -, -, hBelow, hBN, hBC⟩ := replyStackOuterCaller?_ok_some st s' outer hRes
+  have hBo := (SystemState.getReply?_eq_some_iff _ _ _).mp hBelow
+  obtain ⟨tcbO, hTO, hROO, -⟩ := hLink.2 below b outer hBo hBC
+  rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hT] at hTO
+  have eT : t = tcbO := KernelObject.tcb.inj (Option.some.inj hTO)
+  subst eT
+  rw [hRO] at hROO
+  have eB : (⟨x.val⟩ : SeLe4n.ReplyId) = below := Option.some.inj hROO
+  subst eB
+  rw [show (⟨x.val⟩ : SeLe4n.ReplyId).toObjId = x from rfl, ← SystemState.getObject?_eq_getElem,
+    hX] at hBo
+  have eR : r = b := KernelObject.reply.inj (Option.some.inj hBo)
+  subst eR
+  rw [hN] at hBN
+  cases hBN
+
+/-- **The held pop's outer-caller check, with the recipient named**: the held pop
+checks the outer caller against its holder alone; an outer caller that is also
+not the recipient passes the donation return's check. -/
+theorem outerCallerAcceptable_of_self {st : SystemState} {holder recipient : SeLe4n.ThreadId}
+    {n : Option SeLe4n.ThreadId} (h : outerCallerAcceptable st holder holder n = true)
+    (hNe : ∀ o, n = some o → o ≠ recipient) :
+    outerCallerAcceptable st holder recipient n = true := by
+  cases n with
   | none => rfl
-  | some tcb =>
-    rw [lookupTcb_some_objects st c tcb hL] at hO
-    cases hO
-    show (ownerTcb.schedContextBinding == .unbound) = true
-    rw [hU]; rfl
+  | some outer =>
+    unfold outerCallerAcceptable at h ⊢
+    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at h ⊢
+    exact ⟨⟨hNe outer rfl, h.1.2⟩, h.2⟩
 
 /-- **The cancel a finalised reply runs is the reclaim**: a head reply's pop is
 `cancelIpcBlockingReclaimed` itself, and a reply heading no stack hands nothing

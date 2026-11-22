@@ -1926,7 +1926,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "if !outerCallerAcceptable st serverTid
 # All three clauses, each load-bearing: the donor shape, and the two threads the
 # pop rewrites (a claim about their pre-state shape would not survive the step).
 run_check "INVARIANT" bash -lc 'rg -U -n "outer != originalOwner && outer != serverTid" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "outerTcb\.schedContextBinding == \.unbound &&[^\n]*(\n([ \t][^\n]*)?)*\| \.blockedOnReply _ _ => true" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "!outerTcb\.schedContextBinding\.isDonated &&[^\n]*(\n([ \t][^\n]*)?)*\| \.blockedOnReply _ _ => true" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # The guard is part of the ONE decomposition, not beside it: that theorem already
 # carries the context lookup and the head validation, neither of which is a
 # store, so it is "what a successful pop tells you" and an incomplete one would

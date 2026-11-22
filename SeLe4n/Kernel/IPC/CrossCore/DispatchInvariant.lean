@@ -467,6 +467,17 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
                   TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) (hRecvReady t0 h0)
                 rw [hReady] at hOwnerIpc
                 cases hOwnerIpc
+              -- Donation precondition 3: nothing owns a donation on the caller,
+              -- which was not waiting on a reply when it called.
+              have hDon3 : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+                  stWc.getTcb? tid = some tcb →
+                  tcb.schedContextBinding ≠ .donated scId callerV.val := by
+                have hBnd := endpointCallWithCapsOnCore_sameSchedContextBindings endpointId caller
+                  payload executingCore st hObjInv
+                rw [hWc] at hBnd
+                rw [hCallerV]
+                exact notDonationOwner_of_notBlockedOnReply hInv.donationOwnerValid hBnd
+                  hCallerNotReply
               cases hDon : applyCallDonationOnCoreWhen lend stWc callerV receiverV
                   (determineTargetCore st caller) (determineTargetCore st receiverTid) with
               | error e => simp only; exact hWithCaps
@@ -475,7 +486,7 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
                 have hDonFull : ipcInvariantFull stDon :=
                   applyCallDonationOnCoreWhen_induct ipcInvariantFull hDon hWithCaps
                     (applyCallDonationOnCore_preserves_ipcInvariantFull stWc stDon callerV receiverV
-                      _ _ hWithCapsInv hWithCaps hDon1 hDon2)
+                      _ _ hWithCapsInv hWithCaps hDon1 hDon2 hDon3)
                 have hDonInv : stDon.objects.invExt :=
                   applyCallDonationOnCoreWhen_induct (·.objects.invExt) hDon hWithCapsInv
                     (applyCallDonationOnCore_preserves_objects_invExt stWc stDon callerV receiverV

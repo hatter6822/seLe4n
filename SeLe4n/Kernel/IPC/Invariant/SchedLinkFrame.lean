@@ -1085,10 +1085,12 @@ theorem keepDonatedSchedContext_preserves_schedLinks {st st' : SystemState}
     exact hB tid t0 h0
   · by_cases e : tid.toObjId = holder.toObjId
     · rw [e, hHt'] at hT; cases hT
-      have hBd' : donationReturnBinding scId newOwner? = .bound s := by
+      have hBd' : donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)
+          = .bound s := by
         rw [← hBd]; exact (SchedContextBinding.ofCodes_codes _).symm
       have hs : s = scId := by
-        cases newOwner? <;> simp [donationReturnBinding] at hBd' ⊢; exact hBd'.symm
+        revert hBd'; generalize heldPopOwner? ht.schedContextBinding newOwner? = o
+        cases o <;> simp [donationReturnBinding] <;> exact fun h => h.symm
       subst hs
       exact ⟨_, hSc', by rw [SeLe4n.ThreadId.toObjId_injective _ _ e]; exact hBt⟩
     · obtain ⟨sc0, hS0, hb0⟩ := hC.1 tid tcb (tBwd _ _ e hT) s hBd
@@ -1102,7 +1104,7 @@ theorem keepDonatedSchedContext_preserves_schedLinks {st st' : SystemState}
       rw [hBt] at hb'; cases hb'
       refine ⟨_, hHt', ?_⟩
       obtain rfl := SeLe4n.SchedContextId.toObjId_injective _ _ es
-      cases newOwner? with
+      cases heldPopOwner? ht.schedContextBinding newOwner? with
       | none => exact Or.inl (SchedContextBinding.ofCodes_codes (.bound _))
       | some o => exact Or.inr ⟨o, SchedContextBinding.ofCodes_codes (.donated _ o)⟩
     · obtain ⟨t0, h0, hb0⟩ := hC.2 s sc1 (cBwd _ _ es hS1) tid hb
@@ -1353,8 +1355,10 @@ theorem keepDonatedSchedContext_auxReleaseAgree {st st' : SystemState}
     · rw [storeObject_objects_ne st s1 _ _ _ e hInv hS1]
   have p3 : ∀ {α : Type} (p : Option KernelObject → α),
       (∀ t : TCB, p (some (.tcb { t with
-          scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId newOwner?),
-          scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }))
+          scBindingScCode := SchedContextBinding.scCode
+            (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)),
+          scBindingOwnerCode := SchedContextBinding.ownerCode
+            (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)) }))
         = p (some (.tcb t))) →
       ∀ oid : SeLe4n.ObjId, p st'.objects[oid]? = p s2.objects[oid]? := by
     intro α p hp oid

@@ -1903,11 +1903,11 @@ theorem ipcInvariantFull_of_schedBindingRewrite
               rw [hOt] at h2
               have := h2.symm.trans (hOt ▸ hPreT)
               simpa only [Option.some.injEq, KernelObject.tcb.injEq] using this
-            refine ⟨tcb', hOt ▸ hAtT, hUnb, ?_⟩
+            refine ⟨tcb', hOt ▸ hAtT, by rw [hUnb]; rfl, ?_⟩
             rw [hIpc]
             exact hOEq ▸ hOB
         · obtain ⟨oTcb', hO', hOIpc, hOBind⟩ := hFwd owner.toObjId oTcb hO
-          exact ⟨oTcb', hO', (hOBind hOt).trans hOU, by rw [hOIpc]; exact hOB⟩
+          exact ⟨oTcb', hO', by rw [hOBind hOt]; exact hOU, by rw [hOIpc]; exact hOB⟩
   · -- donationBudgetTransfer
     intro t1 t2 tcb1 tcb2 s0 h1 h2 hNe12 hS1 hS2
     obtain ⟨y1, hy1, _, _, _, _, _, _, _, _, hb1⟩ := hBwd t1.toObjId tcb1 h1

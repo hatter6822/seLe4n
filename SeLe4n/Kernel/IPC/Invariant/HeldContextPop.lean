@@ -9,8 +9,9 @@ import SeLe4n.Kernel.IPC.Invariant.UnheldContextPop
 
 `keepDonatedSchedContext` is seL4-MCS's `reply_pop` at a head whose context a
 thread holds, where the thread the pop answers holds a context of its own: the
-head is popped off the context, and the context stays with its holder as the
-binding the frame below owes (`donationReturnBinding`).  It writes the context's
+head is popped off the context, and the context stays with its holder: a holder
+that owns it stays `.bound` (seL4 writes nothing to it), and a holder that has it
+on loan owes it to the frame below (`donationReturnBinding` at `heldPopOwner?`).  It writes the context's
 head and origin, the two replies, and the holder's binding, and no other thread.
 
 The bundle's conjuncts that read no binding carry across the read agreement the
@@ -81,8 +82,10 @@ theorem keepDonatedSchedContext_ok_of_schedContextBindingConsistent
     (hS2 : storeDonationHeadPop scId head? s1 = .ok s2)
     (hL : lookupTcb s2 holder = some ht)
     (hS3 : storeObject holder.toObjId (.tcb { ht with
-          scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId newOwner?),
-          scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) })
+          scBindingScCode := SchedContextBinding.scCode
+            (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)),
+          scBindingOwnerCode := SchedContextBinding.ownerCode
+            (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)) })
         s2 = .ok ((), st')) :
     keepDonatedSchedContext st holder scId newOwner? = .ok st' := by
   have hG := keepDonatedSchedContext_holderGuard_of_schedContextBindingConsistent hObjInv
@@ -106,7 +109,7 @@ theorem keepDonatedSchedContext_donationReadAgreement (hObjInv : st.objects.invE
   have a1 := donationReadAgreement_of_schedContextStore st s1 scId.toObjId sc _ hSc hObjInv hS1
   have a2 := donationReadAgreement_of_headPop hInv1 hS2
   have a3 := donationReadAgreement_of_tcbBindingStore s2 st' holder.toObjId ot
-    (donationReturnBinding scId newOwner?) ot.originScCode
+    (donationReturnBinding scId (heldPopOwner? ot.schedContextBinding newOwner?)) ot.originScCode
     (lookupTcb_some_objects s2 holder ot hL) hInv2 hS3
   exact (a1.trans a2).trans a3
 
@@ -130,6 +133,9 @@ theorem keepDonatedSchedContext_establishes_ipcInvariantFull_of_except
   have hPObj : st.objects[holder.toObjId]? = some (.tcb pTcb) := lookupTcb_some_objects st holder pTcb hLk
   have hEqT : pTcb = ht := by rw [hPObj] at hHt; cases hHt; rfl
   subst hEqT
+  -- The holder holds the context on loan, so it comes to owe the frame below.
+  have hHP : heldPopOwner? pTcb.schedContextBinding newOwner? = newOwner? := by rw [hPB]; rfl
+  rw [hHP] at hHt'
   have hAgree := keepDonatedSchedContext_donationReadAgreement hObjInv h
   have hBd := donationReturnBinding_stored pTcb scId newOwner?
   have split : ∀ (X : SeLe4n.ThreadId) (t : TCB), st'.objects[X.toObjId]? = some (.tcb t) →
@@ -163,8 +169,7 @@ theorem keepDonatedSchedContext_establishes_ipcInvariantFull_of_except
           rw [hOt] at hM
           simp only [Bool.and_eq_true] at hM
           obtain ⟨hU, hR⟩ := hM
-          have hU : oT.schedContextBinding = .unbound := by
-            revert hU; cases oT.schedContextBinding <;> simp [BEq.beq]
+          have hU : oT.schedContextBinding.isDonated = false := by simpa using hU
           refine ⟨⟨_, hSc', ?_⟩, oT, tFwd _ _ (fun e => hNeO (SeLe4n.ThreadId.toObjId_injective _ _ e))
             ((SystemState.getTcb?_eq_some_iff _ _ _).mp hOt), hU, ?_⟩
           · exact hB0
@@ -186,7 +191,7 @@ theorem keepDonatedSchedContext_establishes_ipcInvariantFull_of_except
         subst eo
         rw [hPObj] at hoT
         cases hoT
-        rw [hPB] at hoU; cases hoU
+        simp [hPB] at hoU
       have hoR' : ∃ epId replyTarget, oT.ipcState = .blockedOnReply epId replyTarget := by
         rcases hoR with hEq | hR
         · subst hEq

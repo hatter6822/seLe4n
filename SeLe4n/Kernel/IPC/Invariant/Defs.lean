@@ -3074,7 +3074,7 @@ def donationOwnerValid (st : SystemState) : Prop :=
     (∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc) ∧
       sc.boundThread = some tid) ∧
     (∃ ownerTcb, st.objects[owner.toObjId]? = some (.tcb ownerTcb) ∧
-      ownerTcb.schedContextBinding = .unbound ∧
+      ownerTcb.schedContextBinding.isDonated = false ∧
       ∃ epId replyTarget, ownerTcb.ipcState = .blockedOnReply epId replyTarget)
 
 /-- WS-OD OD4.4: **the one clause of `donationReturnOuterValid` a caller must
@@ -3132,7 +3132,7 @@ structure donationReturnOuterValid (st : SystemState)
   on a reply — the donor shape `donationOwnerValid` requires. -/
   outerIsDonor : ∀ outer, newOwner? = some outer →
     ∃ outerTcb, st.objects[outer.toObjId]? = some (.tcb outerTcb) ∧
-      outerTcb.schedContextBinding = .unbound ∧
+      outerTcb.schedContextBinding.isDonated = false ∧
       ∃ epId replyTarget, outerTcb.ipcState = .blockedOnReply epId replyTarget
   /-- The outer caller is not the thread being rebound: a donation whose owner is
   itself would be a self-loop, and the pop would then be writing the fact it is
@@ -3244,7 +3244,7 @@ theorem outerCallerAcceptable_some_char (st : SystemState)
     (h : outerCallerAcceptable st serverTid originalOwner (some outer) = true) :
     outer ≠ originalOwner ∧ outer ≠ serverTid ∧
     ∃ outerTcb, st.getTcb? outer = some outerTcb ∧
-      outerTcb.schedContextBinding = .unbound ∧
+      outerTcb.schedContextBinding.isDonated = false ∧
       ∃ epId replyTarget, outerTcb.ipcState = .blockedOnReply epId replyTarget := by
   unfold outerCallerAcceptable at h
   simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at h
@@ -3258,11 +3258,8 @@ theorem outerCallerAcceptable_some_char (st : SystemState)
     intro h3
     simp only [Bool.and_eq_true] at h3
     obtain ⟨hB, hI⟩ := h3
-    -- `BEq SchedContextBinding` is hand-written (`SchedContext/Types.lean`), so
-    -- the `==` is discharged by evaluation on the three constructors rather than
-    -- through a `LawfulBEq` instance the type does not carry.
-    have hBnd : outerTcb.schedContextBinding = SchedContextBinding.unbound := by
-      revert hB; cases outerTcb.schedContextBinding <;> simp [BEq.beq]
+    have hBnd : outerTcb.schedContextBinding.isDonated = false := by
+      simpa using hB
     -- The `cases` above substituted the typed read in the goal, so the
     -- conclusion's equation is definitional here.
     refine ⟨outerTcb, rfl, hBnd, ?_⟩
@@ -5386,10 +5383,10 @@ structure donationOwnerFrame (st st' : SystemState) : Prop where
       sc'.boundThread = sc.boundThread
   ownerForward : ∀ (owner : SeLe4n.ThreadId) (ownerTcb : TCB),
     st.objects[owner.toObjId]? = some (.tcb ownerTcb) →
-    ownerTcb.schedContextBinding = .unbound →
+    ownerTcb.schedContextBinding.isDonated = false →
     (∃ epId replyTarget, ownerTcb.ipcState = .blockedOnReply epId replyTarget) →
     ∃ ownerTcb', st'.objects[owner.toObjId]? = some (.tcb ownerTcb') ∧
-      ownerTcb'.schedContextBinding = .unbound ∧
+      ownerTcb'.schedContextBinding.isDonated = false ∧
       ∃ epId replyTarget, ownerTcb'.ipcState = .blockedOnReply epId replyTarget
 
 namespace donationOwnerFrame
@@ -5499,7 +5496,7 @@ def donationOwnerValidExcept (st : SystemState) (woken : SeLe4n.ThreadId) : Prop
     (∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc) ∧
       sc.boundThread = some tid) ∧
     (∃ ownerTcb, st.objects[owner.toObjId]? = some (.tcb ownerTcb) ∧
-      ownerTcb.schedContextBinding = .unbound ∧
+      ownerTcb.schedContextBinding.isDonated = false ∧
       (owner = woken ∨
         ∃ epId replyTarget, ownerTcb.ipcState = .blockedOnReply epId replyTarget))
 
@@ -5833,10 +5830,24 @@ theorem donationOwnerValidExcept_of_frames
   obtain ⟨ownerTcb', hOwner', hBind', hCase⟩ := hFrame.tcbForward owner ownerTcb hOwnerSt
   obtain ⟨sc', hSc', hBound'⟩ := hFrame.scForward scId sc hScSt
   refine ⟨⟨sc', hSc', hBound'.trans hBound⟩,
-    ⟨ownerTcb', hOwner', hBind'.trans hUnbound, ?_⟩⟩
+    ⟨ownerTcb', hOwner', by rw [hBind']; exact hUnbound, ?_⟩⟩
   cases hCase with
   | inl hw => exact Or.inl hw
   | inr hi => exact Or.inr ⟨ep, rt, hi.trans hReply⟩
+
+/-- **No loan names a thread that is not waiting on a reply**, read across a
+binding frame: `donationOwnerValid` puts every loan's owner on a reply wait.  The
+call donation's donor obligation (`hCallerNotOwner`) at the state the donation
+runs on, from the state before the call blocked the donor. -/
+theorem notDonationOwner_of_notBlockedOnReply {st st' : SystemState} {x : SeLe4n.ThreadId}
+    (hDOV : donationOwnerValid st) (hBind : sameSchedContextBindings st st')
+    (hX : ∀ tcb, st.getTcb? x = some tcb → ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt) :
+    ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+      st'.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId x := by
+  intro tid tcb scId hT hB
+  obtain ⟨t0, h0, e0⟩ := hBind tid tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
+  obtain ⟨-, oT, hO, -, ep, rt, hR⟩ := hDOV tid t0 scId x h0 (e0.trans hB)
+  exact hX oT ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hO) ep rt hR
 
 -- ============================================================================
 -- Notification binding reciprocity
@@ -7562,15 +7573,17 @@ and every other thread as it was. -/
 theorem keepDonatedSchedContext_tcb_split (hObjInv : st.objects.invExt)
     (h : keepDonatedSchedContext st holder scId newOwner? = .ok st')
     (X : SeLe4n.ThreadId) (t : TCB) (hX : st'.objects[X.toObjId]? = some (.tcb t)) :
-    (X = holder ∧ t.schedContextBinding = donationReturnBinding scId newOwner?) ∨
+    (X = holder ∧ ∃ ht : TCB, st.objects[holder.toObjId]? = some (.tcb ht) ∧
+        t.schedContextBinding =
+          donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)) ∨
       (X ≠ holder ∧ st.objects[X.toObjId]? = some (.tcb t)) := by
-  obtain ⟨_, _, ht, _, _, _, _, _, _, _, hHt', tBwd, _, _, _⟩ :=
+  obtain ⟨_, _, ht, _, _, _, _, hO, _, _, hHt', tBwd, _, _, _⟩ :=
     keepDonatedSchedContext_objects hObjInv h
   by_cases e : X.toObjId = holder.toObjId
   · have eX := SeLe4n.ThreadId.toObjId_injective _ _ e
     subst eX
     rw [hHt'] at hX; cases hX
-    exact Or.inl ⟨rfl, SchedContextBinding.ofCodes_codes _⟩
+    exact Or.inl ⟨rfl, ht, hO, SchedContextBinding.ofCodes_codes _⟩
   · exact Or.inr ⟨fun h => e (h ▸ rfl), tBwd _ _ e hX⟩
 
 /-- The binding the held pop writes names the context it keeps. -/
@@ -7589,9 +7602,11 @@ theorem keepDonatedSchedContext_preserves_donationBudgetTransfer (hObjInv : st.o
   rcases keepDonatedSchedContext_tcb_split hObjInv h t1 tcb1 h1 with ⟨e1, hb1⟩ | ⟨_, hPre1⟩ <;>
     rcases keepDonatedSchedContext_tcb_split hObjInv h t2 tcb2 h2 with ⟨e2, hb2⟩ | ⟨_, hPre2⟩
   · exact hNe (e1.trans e2.symm)
-  · subst e1; rw [hb1] at hS1; obtain rfl := donationReturnBinding_scId?_eq hS1
+  · subst e1; obtain ⟨_, _, hb1⟩ := hb1
+    rw [hb1] at hS1; obtain rfl := donationReturnBinding_scId?_eq hS1
     exact hInv _ t2 ht tcb2 _ hO hPre2 hNe hG hS2
-  · subst e2; rw [hb2] at hS2; obtain rfl := donationReturnBinding_scId?_eq hS2
+  · subst e2; obtain ⟨_, _, hb2⟩ := hb2
+    rw [hb2] at hS2; obtain rfl := donationReturnBinding_scId?_eq hS2
     exact hInv t1 _ tcb1 ht _ hPre1 hO hNe hS1 hG
   · exact hInv t1 t2 tcb1 tcb2 s hPre1 hPre2 hNe hS1 hS2
 
@@ -7605,47 +7620,53 @@ theorem keepDonatedSchedContext_preserves_donationOwnerUnique (hObjInv : st.obje
   rcases keepDonatedSchedContext_tcb_split hObjInv h t1 tcb1 h1 with ⟨e1, hb1⟩ | ⟨_, hPre1⟩ <;>
     rcases keepDonatedSchedContext_tcb_split hObjInv h t2 tcb2 h2 with ⟨e2, hb2⟩ | ⟨_, hPre2⟩
   · exact e1.trans e2.symm
-  · rw [hb1] at hB1
-    cases hN : newOwner? with
+  · obtain ⟨_, _, hb1⟩ := hb1
+    rw [hb1] at hB1
+    cases hN : heldPopOwner? _ newOwner? with
     | none => rw [hN] at hB1; cases hB1
     | some outer =>
       rw [hN] at hB1
       simp only [donationReturnBinding_some, SchedContextBinding.donated.injEq] at hB1
       obtain ⟨-, rfl⟩ := hB1
-      exact absurd hB2 (hOuterFree outer hN t2 tcb2 s2 hPre2)
-  · rw [hb2] at hB2
-    cases hN : newOwner? with
+      exact absurd hB2 (hOuterFree outer (heldPopOwner?_some hN).2 t2 tcb2 s2 hPre2)
+  · obtain ⟨_, _, hb2⟩ := hb2
+    rw [hb2] at hB2
+    cases hN : heldPopOwner? _ newOwner? with
     | none => rw [hN] at hB2; cases hB2
     | some outer =>
       rw [hN] at hB2
       simp only [donationReturnBinding_some, SchedContextBinding.donated.injEq] at hB2
       obtain ⟨-, rfl⟩ := hB2
-      exact absurd hB1 (hOuterFree outer hN t1 tcb1 s1 hPre1)
+      exact absurd hB1 (hOuterFree outer (heldPopOwner?_some hN).2 t1 tcb1 s1 hPre1)
   · exact hInv t1 t2 tcb1 tcb2 s1 s2 o hPre1 hPre2 hB1 hB2
 
-/-- **The held pop keeps `donationOwnerValid`**: the holder's new loan names an
-outer caller the pop accepted (`outerCallerAcceptable`: a stored, unbound,
-reply-blocked thread), and every other loan, its context and its owner are as
-they were (no owner is the holder, whose binding names the context it holds). -/
+/-- **The held pop keeps `donationOwnerValid`**: a holder on loan comes to owe an
+outer caller the pop accepted (`outerCallerAcceptable`: a stored, reply-blocked
+thread holding no loan), and every other loan and its context are as they were;
+an owner that is the holder held the context as its own, which the pop keeps
+(`heldPopOwner?`: a `.bound` holder stays `.bound`). -/
 theorem keepDonatedSchedContext_preserves_donationOwnerValid (hObjInv : st.objects.invExt)
     (hInv : donationOwnerValid st)
     (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
     donationOwnerValid st' := by
-  obtain ⟨sc, head?, ht, hSc, hB0, hOut, _, hHt, _, hSc', _, _, tFwd, _, cFwd⟩ :=
+  obtain ⟨sc, head?, ht, hSc, hB0, hOut, _, hHt, _, hSc', hHtPost, _, tFwd, _, cFwd⟩ :=
     keepDonatedSchedContext_objects hObjInv h
   obtain ⟨ht2, hO2, hG, -⟩ := keepDonatedSchedContext_holder hObjInv h
   rw [hHt] at hO2
   obtain rfl : ht = ht2 := by injection hO2 with e; injection e
   intro tid tcb s o hT hBdT
   rcases keepDonatedSchedContext_tcb_split hObjInv h tid tcb hT with ⟨rfl, hb⟩ | ⟨hNe, hT0⟩
-  · rw [hb] at hBdT
-    cases hN : newOwner? with
+  · obtain ⟨ht', hHt'', hb⟩ := hb
+    rw [hHt] at hHt''
+    obtain rfl : ht = ht' := by injection hHt'' with e; injection e
+    rw [hb] at hBdT
+    cases hN : heldPopOwner? ht.schedContextBinding newOwner? with
     | none => rw [hN] at hBdT; cases hBdT
     | some outer =>
       rw [hN] at hBdT
       simp only [donationReturnBinding_some, SchedContextBinding.donated.injEq] at hBdT
       obtain ⟨rfl, rfl⟩ := hBdT
-      rw [hN] at hOut
+      rw [(heldPopOwner?_some hN).2] at hOut
       obtain ⟨hNeO, -, oT, hOt, hU, hR⟩ := outerCallerAcceptable_some_char st tid tid _ hOut
       exact ⟨⟨_, hSc', hB0⟩, oT,
         tFwd _ _ (fun e => hNeO (SeLe4n.ThreadId.toObjId_injective _ _ e))
@@ -7657,13 +7678,23 @@ theorem keepDonatedSchedContext_preserves_donationOwnerValid (hObjInv : st.objec
       cases hx
       rw [hB0] at hxB
       exact hNe (Option.some.inj hxB).symm
-    have hoNe : o.toObjId ≠ holder.toObjId := by
-      intro e
-      rw [e, hHt] at hoT
-      cases hoT
-      rw [hoU] at hG
-      cases hG
-    exact ⟨⟨x, cFwd _ _ hsNe hx, hxB⟩, oT, tFwd _ _ hoNe hoT, hoU, hoR⟩
+    by_cases hoE : o.toObjId = holder.toObjId
+    · -- The owner is the holder: it owned the context it holds (a loan's owner is
+      -- not itself on loan), so the pop keeps it `.bound` (seL4 writes nothing
+      -- to it), and its reply wait is untouched.
+      rw [hoE, hHt] at hoT
+      have e : ht = oT := by injection hoT with e; injection e
+      subst e
+      have hb : heldPopOwner? ht.schedContextBinding newOwner? = none := by
+        unfold heldPopOwner?; rw [hoU]; rfl
+      rw [hoE]
+      refine ⟨⟨x, cFwd _ _ hsNe hx, hxB⟩, _, hHtPost, ?_, hoR⟩
+      show (SchedContextBinding.ofCodes
+        (SchedContextBinding.scCode (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)))
+        (SchedContextBinding.ownerCode
+          (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)))).isDonated = false
+      rw [SchedContextBinding.ofCodes_codes, hb]; rfl
+    · exact ⟨⟨x, cFwd _ _ hsNe hx, hxB⟩, oT, tFwd _ _ hoE hoT, hoU, hoR⟩
 
 end HeldPopDonationFacts
 
@@ -7728,7 +7759,7 @@ theorem returnDonatedSchedContext_donationOwnerValid_at_target
     (∃ sc, st'.objects[scId'.toObjId]? = some (.schedContext sc) ∧
       sc.boundThread = some tid) ∧
     (∃ ownerTcb, st'.objects[owner'.toObjId]? = some (.tcb ownerTcb) ∧
-      ownerTcb.schedContextBinding = .unbound ∧
+      ownerTcb.schedContextBinding.isDonated = false ∧
       ∃ epId replyTarget, ownerTcb.ipcState = .blockedOnReply epId replyTarget) := by
   have hTidEq : tid = originalOwner := SeLe4n.ThreadId.toObjId_injective tid originalOwner hTidO
   -- The written binding is a donation, so the return is one level up the stack.
@@ -8552,8 +8583,8 @@ theorem cleanupPreReceiveDonationChecked_ok_of_non_donated
 
 /-- AK1-A (I-H01): Self-donation is precluded by `donationOwnerValid`.
     A receiver with `.donated scId owner` binding cannot have `owner = receiver`
-    because `donationOwnerValid` requires the owner's TCB to have
-    `.bound scId` binding, which is incompatible with `.donated`. -/
+    because `donationOwnerValid` requires the owner's TCB to hold no
+    loan, which is incompatible with `.donated`. -/
 theorem donationOwnerValid_excludes_self_donation
     (st : SystemState) (receiver : SeLe4n.ThreadId) (recvTcb : TCB)
     (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
@@ -8575,8 +8606,8 @@ theorem donationOwnerValid_excludes_self_donation
     exact KernelObject.tcb.inj this
   -- recvTcb's binding is `.donated scId owner`, ownerTcb's is `.bound scId`.
   rw [hTcbEq] at hBind
-  rw [hOwnerBind] at hBind
-  cases hBind
+  rw [hBind] at hOwnerBind
+  cases hOwnerBind
 
 /-- AK1-A (I-H01): Type-disjointness — `SchedContext` at scId cannot alias
     any TCB object. If `donationOwnerValid` yields a SchedContext at scId
@@ -8836,8 +8867,10 @@ theorem keepDonatedSchedContext_ok_of_holderBinding {st : SystemState}
     simp only [Bool.false_eq_true, if_false]
     rw [hHt2]
   obtain ⟨st', hS3⟩ := storeObject_isOk s2 holder.toObjId (.tcb { ht with
-    scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId newOwner?),
-    scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) })
+    scBindingScCode := SchedContextBinding.scCode
+      (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)),
+    scBindingOwnerCode := SchedContextBinding.ownerCode
+      (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)) })
   have hSc' : st.getSchedContext? scId = some sc :=
     (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hScObj
   refine ⟨st', ?_⟩
@@ -8923,13 +8956,22 @@ theorem returnDonatedSchedContext_ok_under_invariants
     (hBind : recvTcb.schedContextBinding = .donated scId owner)
     (hRecvNotRes : ¬receiver.isReserved = true)
     (hOwnerNotRes : ¬owner.isReserved = true)
+    (hAcc : donationRecipientAcceptable st owner = true)
     (newOwner? : Option SeLe4n.ThreadId)
     (hOuterOk : outerCallerAcceptable st receiver owner newOwner? = true) :
     ∃ st', returnDonatedSchedContext st receiver scId owner newOwner? = .ok st' := by
   have hRecvObj : st.objects[receiver.toObjId]? = some (.tcb recvTcb) :=
     lookupTcb_some_objects st receiver recvTcb hLk
-  obtain ⟨⟨sc, hScObj, hScBound⟩, ownerTcb, hOwnerObj, hOwnerUnbound, _⟩ :=
+  obtain ⟨⟨sc, hScObj, hScBound⟩, ownerTcb, hOwnerObj, -, _⟩ :=
     hDOV receiver recvTcb scId owner hRecvObj hBind
+  -- The owner holds no loan (`donationOwnerValid`); that it holds no context at
+  -- all is the router's own test (`donationRecipientAcceptable`).
+  have hOwnerUnbound : ownerTcb.schedContextBinding = .unbound := by
+    have hL : lookupTcb st owner = some ownerTcb := by
+      unfold lookupTcb; rw [if_neg (by simpa using hOwnerNotRes)]
+      exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hOwnerObj
+    rw [donationRecipientAcceptable_eq_of_some st owner ownerTcb hL] at hAcc
+    revert hAcc; cases ownerTcb.schedContextBinding <;> simp [BEq.beq]
   exact returnDonatedSchedContext_ok_of_boundAndRecipient st receiver recvTcb scId owner
     sc ownerTcb hObjInv hHeadRes hLk hScObj hScBound hOwnerObj hOwnerUnbound
     (donationOwnerValid_excludes_self_donation st receiver recvTcb scId owner
@@ -8947,7 +8989,9 @@ theorem returnDonatedSchedContext_ok_under_invariants
 
     - `none` / `.unbound` / `.bound _`: structurally `.ok st` (discharged
       by unfolding the Checked function).
-    - `.donated scId owner`: the operation invokes
+    - `.donated scId owner`: the operation invokes seL4-MCS's `reply_pop`
+      (`popHeldReplyHead`): the held pop where the owner holds a context of
+      its own (`keepDonatedSchedContext_ok_of_holderBinding`), and otherwise
       `returnDonatedSchedContext`, which under `donationOwnerValid` +
       non-reservation is fully machine-verified by
       `returnDonatedSchedContext_ok_under_invariants` above (four sequential
@@ -9013,24 +9057,24 @@ theorem cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull
       obtain ⟨newOwner?, hRes⟩ :=
         replyStackOuterCallerResolves_of_chainWellFormed st scId hChain scObj
           ((SystemState.getSchedContext?_eq_some_iff st scId scObj).mp hScObj)
-      -- The owner holds no context (`donationOwnerValid`), so the held-head pop
-      -- is the donation return.
-      obtain ⟨_, oT, hoT, hoU, -⟩ := hDOV receiver recvTcb scId owner
-        (lookupTcb_some_objects st receiver recvTcb hLk) hBind
-      have hAcc : donationRecipientAcceptable st owner = true := by
-        unfold donationRecipientAcceptable
-        cases hL : lookupTcb st owner with
-        | none => rfl
-        | some t =>
-          rw [lookupTcb_some_objects st owner t hL] at hoT
-          cases hoT
-          simp only [hoU]; rfl
+      -- seL4-MCS `reply_pop`: the context goes back to the owner where it holds
+      -- none (the donation return), and stays with the receiver, its head popped,
+      -- where the owner holds one of its own (the held pop).
+      have hOuter := (hStack recvTcb scId owner hLk hBind) newOwner? hRes
       show ∃ st', popHeldReplyHead st receiver scId owner = .ok st'
-      rw [popHeldReplyHead_of_acceptable hAcc, returnDonatedSchedContextResolved_of_resolved hRes]
-      exact returnDonatedSchedContext_ok_under_invariants
-        st receiver recvTcb scId owner hObjInv hDOV
-        (donationHeadResolves_of_chainWellFormed st scId hChain) hLk hBind hRecvNotRes
-        (hOwnerNotRes recvTcb scId owner hLk hBind) newOwner?
-        ((hStack recvTcb scId owner hLk hBind) newOwner? hRes).1
+      cases hAcc : donationRecipientAcceptable st owner with
+      | true =>
+        rw [popHeldReplyHead_of_acceptable hAcc, returnDonatedSchedContextResolved_of_resolved hRes]
+        exact returnDonatedSchedContext_ok_under_invariants
+          st receiver recvTcb scId owner hObjInv hDOV
+          (donationHeadResolves_of_chainWellFormed st scId hChain) hLk hBind hRecvNotRes
+          (hOwnerNotRes recvTcb scId owner hLk hBind) hAcc newOwner? hOuter.1
+      | false =>
+        rw [popHeldReplyHead_of_not_acceptable hAcc, keepDonatedSchedContextResolved_of_resolved hRes]
+        obtain ⟨⟨sc, hSc, hScB⟩, _⟩ := hDOV receiver recvTcb scId owner
+          (lookupTcb_some_objects st receiver recvTcb hLk) hBind
+        exact keepDonatedSchedContext_ok_of_holderBinding hObjInv
+          (donationHeadResolves_of_chainWellFormed st scId hChain) hLk
+          (by rw [hBind]; rfl) hSc hScB (outerCallerAcceptable_self_of hOuter.1)
 
 end SeLe4n.Kernel

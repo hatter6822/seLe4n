@@ -266,7 +266,7 @@ def donationOwnerValid_perCore (st : SystemState) (c : CoreId) : Prop :=
     (∃ sc, st.getSchedContext? scId = some sc ∧
       sc.boundThread = some tid) ∧
     (∃ ownerTcb, st.getTcb? owner = some ownerTcb ∧
-      ownerTcb.schedContextBinding = .unbound ∧
+      ownerTcb.schedContextBinding.isDonated = false ∧
       ∃ epId replyTarget, ownerTcb.ipcState = .blockedOnReply epId replyTarget)
 
 /-- SM6.D: per-core form of `donationBudgetTransfer` (Z7-I).  Restricted on

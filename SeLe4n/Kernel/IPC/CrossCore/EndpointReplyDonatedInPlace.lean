@@ -452,8 +452,9 @@ theorem outerTestAt_of_view {s s' : SystemState} {x : SeLe4n.ThreadId}
       rw [h']
       have a := congrArg TCB.ipcStateCode e1
       have b := congrArg TCB.scBindingScCode e1
-      simp only [TCB.withoutRunLinks] at a b
-      simp only [a, b]
+      have c := congrArg TCB.scBindingOwnerCode e1
+      simp only [TCB.withoutRunLinks] at a b c
+      simp only [a, b, c]
     | _ =>
       rw [agreeAt_of_not_tcb h (fun _ e => by cases e) e]
 

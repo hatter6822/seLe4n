@@ -7192,7 +7192,11 @@ theorem keepDonatedSchedContext_replyLinkageFrame {st st' : SystemState}
   have hF2 := hF1.trans (storeDonationHeadPop_replyLinkageFrame hInv1 hS2)
   exact hF2.trans (storeObject_modifiedTcb_replyLinkageFrame s2 st'
     holder.toObjId ht
-    { ht with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donationReturnBinding scId newOwner?), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }
+    { ht with
+        scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode
+          (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)),
+        scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode
+          (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)) }
     (lookupTcb_some_objects s2 holder ht hL) rfl
     (fun _ ep rt hb => ⟨ep, rt, hb⟩) hInv2 hS3)
 

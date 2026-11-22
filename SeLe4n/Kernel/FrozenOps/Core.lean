@@ -1064,7 +1064,7 @@ def frozenOuterCallerAcceptable (st : FrozenSystemState)
       (match st.getTcb? outer with
        | none => false
        | some outerTcb =>
-         outerTcb.schedContextBinding == .unbound &&
+         !outerTcb.schedContextBinding.isDonated &&
            (match outerTcb.ipcState with
             | .blockedOnReply _ _ => true
             | _ => false))
@@ -1405,8 +1405,8 @@ holds a context of its own — the head popped, the context kept by `holder`.
 the live order: refused on a context not bound to `holder` and on an outer
 caller the pop would refuse, before any write; the record keeps its holder
 (`donationSeverSchedContext`, the **live** function), the head is popped, and
-the holder's binding becomes `donationReturnBinding` (the live function again),
-behind the live internal guard that the holder's binding names the context. -/
+the holder's binding becomes `donationReturnBinding` at `heldPopOwner?` (the live
+functions again: a `.bound` holder stays `.bound`), behind the live internal guard that the holder's binding names the context. -/
 def frozenKeepDonatedSchedContext (st : FrozenSystemState) (holder : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (newOwner? : Option SeLe4n.ThreadId) :
     Except KernelError FrozenSystemState :=
@@ -1436,9 +1436,11 @@ def frozenKeepDonatedSchedContext (st : FrozenSystemState) (holder : SeLe4n.Thre
                 frozenWithObjectStored st2 holder.toObjId
                   (.tcb { ht with
                     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode
-                      (SeLe4n.Kernel.donationReturnBinding scId newOwner?),
+                      (SeLe4n.Kernel.donationReturnBinding scId
+                        (SeLe4n.Kernel.heldPopOwner? ht.schedContextBinding newOwner?)),
                     scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode
-                      (SeLe4n.Kernel.donationReturnBinding scId newOwner?) })
+                      (SeLe4n.Kernel.donationReturnBinding scId
+                        (SeLe4n.Kernel.heldPopOwner? ht.schedContextBinding newOwner?)) })
 
 /-- **WS-SX SX8, frozen mirror**: the held pop with its outer caller resolved
 (`keepDonatedSchedContextResolved`'s counterpart). -/

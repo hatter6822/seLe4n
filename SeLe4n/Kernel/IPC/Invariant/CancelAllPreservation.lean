@@ -439,7 +439,9 @@ bundle: the reply-stack resolution answers, the head is held on loan from the
 caller, the caller's one loan is that head, and the outer caller is a waiting
 donor that nobody holds a loan from.  A reply heading no stack owes nothing:
 its caller lends to no one (`replyCaller_lendsNone`).  A head reply's admission
-read the first two (`donatedReturnCommits`, the holder's binding codes); the
+read the first two (`heldPopCommits` on either arm of `reply_pop`, the holder's
+binding codes; on the held arm the outer caller is not the caller,
+`replyStackOuterCaller_ne_headCaller`); the
 third is `donationOwnerUnique`; and a loan from the outer caller would make the
 outer caller's frame a head (`lentContextHeadsLenderFrame`), where the reply
 stack reads a frame link (`replyStackOuterCaller?_ok_some`, `replyCallerLinkage`). -/
@@ -459,7 +461,7 @@ theorem finaliseReply_armPremises {s : SystemState} {x : SeLe4n.ObjId} {r : Repl
     rw [hB]
     simp only [hRO]
   rcases replyCallerFinalisable_cases hX hF with ⟨hHd, hD⟩ |
-    ⟨sd, sc, hd, htd, -, hSc, -, hBt, hTd, hBd, hC, hD⟩
+    ⟨sd, sc, hd, htd, hRN, hSc, -, hBt, hTd, hBd, hC, hD⟩
   · have hNo := replyCaller_lendsNone hW hX hT hHd hRO
     refine ⟨fun _ _ e => (by rw [hD] at e; cases e), fun rid e => ?_,
       fun _ _ holder ht sd hH hBd => absurd hBd (hNo holder ht sd hH),
@@ -467,21 +469,45 @@ theorem finaliseReply_armPremises {s : SystemState} {x : SeLe4n.ObjId} {r : Repl
     rw [hRO] at e
     cases e
     exact replyFrameHeadHolderDonation_of_no_head _ _ _ (hDonEq.symm.trans hD)
-  · have hA := donationRecipientAcceptable_of_donationOwnerValid hFull.donationOwnerValid hTd hBd
-    obtain ⟨n, -, hResN, -, -⟩ := replyHeadPop_commits_return hInv hT hD hA hC
-    have hC' := hC
-    rw [heldPopCommits_of_acceptable hA] at hC'
-    unfold donatedReturnCommits at hC'
-    rw [hResN, hSc] at hC'
-    simp only [Bool.and_eq_true] at hC'
-    obtain ⟨⟨⟨⟨-, hOut⟩, -⟩, -⟩, hSv⟩ := hC'
-    have hTdO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTd
-    have hLkd : lookupTcb s hd = some htd := by
-      obtain ⟨t', ht'⟩ := Option.isSome_iff_exists.mp hSv
+  · have hTdO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTd
+    have hLkOf : ∀ t', lookupTcb s hd = some t' → lookupTcb s hd = some htd := by
+      intro t' ht'
       rw [ht']
       have := lookupTcb_some_objects s hd t' ht'
       rw [hTdO] at this
       rw [KernelObject.tcb.inj (Option.some.inj this)]
+    -- seL4-MCS `reply_pop` on either arm: the stack resolves, the outer caller
+    -- passes the donation return's check, and the holder resolves.  On the held
+    -- arm (the caller holds a context of its own) the pop checks the outer
+    -- caller against the holder alone, and the outer caller waits on the frame
+    -- below the caller's own, so it is not the caller.
+    obtain ⟨n, hResN, hOut, hLkd⟩ : ∃ n, replyStackOuterCaller? s sd = .ok n ∧
+        outerCallerAcceptable s hd c n = true ∧ lookupTcb s hd = some htd := by
+      cases hA : donationRecipientAcceptable s c with
+      | true =>
+        obtain ⟨n, -, hResN, -, -⟩ := replyHeadPop_commits_return hInv hT hD hA hC
+        have hC' := hC
+        rw [heldPopCommits_of_acceptable hA] at hC'
+        unfold donatedReturnCommits at hC'
+        rw [hResN, hSc] at hC'
+        simp only [Bool.and_eq_true] at hC'
+        obtain ⟨⟨⟨⟨-, hOut⟩, -⟩, -⟩, hSv⟩ := hC'
+        obtain ⟨t', ht'⟩ := Option.isSome_iff_exists.mp hSv
+        exact ⟨n, hResN, hOut, hLkOf t' ht'⟩
+      | false =>
+        obtain ⟨n, -, hResN, -, -⟩ := replyHeadPop_commits_kept hInv hT hD hA hC
+        have hC' := hC
+        rw [heldPopCommits_of_not_acceptable hA] at hC'
+        unfold keptPopCommits at hC'
+        rw [hResN, hSc] at hC'
+        simp only [Bool.and_eq_true] at hC'
+        obtain ⟨⟨-, hOutS⟩, hL⟩ := hC'
+        refine ⟨n, hResN, outerCallerAcceptable_of_self hOutS (fun o hn => ?_), ?_⟩
+        · subst hn
+          exact replyStackOuterCaller_ne_headCaller hFull.replyCallerLinkage.1 hX hRN hT hRO hResN
+        · cases hLk : lookupTcb s hd with
+          | none => rw [hLk] at hL; cases hL
+          | some t' => exact hLk.symm.trans (hLkOf t' hLk)
     refine ⟨fun sd' hd' e _ _ => ?_, fun rid e => ?_, fun ot hLkc holder ht sd' hH hBd' => ?_,
       fun sd' hd' e n' hRes' => ?_⟩
     · rw [hD] at e

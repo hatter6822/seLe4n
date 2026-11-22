@@ -342,7 +342,7 @@ theorem keepDonatedSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
   · by_cases ho : t = holder
     · subst ho; unfold budgetEligibleView; rw [hPostT, hPreT]
       simp only [Option.map_some]
-      rw [hBudOf st' _ scId (tcb_donationReturnBinding_scId? scId newOwner? ht),
+      rw [hBudOf st' _ scId (tcb_donationReturnBinding_scId? scId _ ht),
         hBudOf st ht scId hG, hPostSc, hPreSc]
       rfl
     · rw [budgetEligibleView_eq_of_keyInputsEqExcept k3 ho, budgetEligibleView_eq_of_keyInputsEq k2]

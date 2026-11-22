@@ -1081,7 +1081,7 @@ theorem donationOwnerFrame.of_readViewAgreement {s1 s2 : SystemState}
     congrArg TCB.schedContextBinding e
   have eI : t'.ipcReadView.ipcState = ownerTcb.ipcReadView.ipcState := congrArg TCB.ipcState e
   obtain ⟨ep, rt, hb⟩ := hR
-  exact ⟨t', ht, eB.trans hU, ep, rt, eI.trans hb⟩
+  exact ⟨t', ht, by rw [show t'.schedContextBinding = _ from eB]; exact hU, ep, rt, eI.trans hb⟩
 
 /-- The IPC read view frames the timeout budget: it is inside the view. -/
 theorem timeoutBudgetFrame.of_readViewAgreement {s1 s2 : SystemState}

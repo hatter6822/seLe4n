@@ -3167,7 +3167,7 @@ def outerCallerAcceptable (st : SystemState) (serverTid originalOwner : SeLe4n.T
       (match st.getTcb? outer with
        | none => false
        | some outerTcb =>
-         outerTcb.schedContextBinding == .unbound &&
+         !outerTcb.schedContextBinding.isDonated &&
            (match outerTcb.ipcState with
             | .blockedOnReply _ _ => true
             | _ => false))
@@ -7989,16 +7989,50 @@ theorem returnDonatedSchedContextResolved_eq_legacy_of_no_stack
   returnDonatedSchedContextResolved_of_resolved
     (replyStackOuterCaller?_of_no_stack st scId sc hSc hNoHead)
 
+/-- **The owner a held pop leaves its holder owing**: seL4-MCS's `reply_pop`
+held arm writes nothing to the holder (its `tcbSchedContext` is unchanged, and
+seL4 keeps no bound/donated distinction on the TCB).  So a holder that owns the
+context (`.bound`) keeps owning it (`none`: `donationReturnBinding` answers
+`.bound`), and only a holder that has it on loan (`.donated`) has its recorded
+owner moved to the caller of the frame below (`newOwner?`) — seLe4n's encoding
+of the same seL4 state. -/
+@[inline] def heldPopOwner? (b : SchedContextBinding) (newOwner? : Option SeLe4n.ThreadId) :
+    Option SeLe4n.ThreadId :=
+  if b.isDonated then newOwner? else none
+
+@[simp] theorem heldPopOwner?_bound (scId : SeLe4n.SchedContextId)
+    (newOwner? : Option SeLe4n.ThreadId) :
+    heldPopOwner? (.bound scId) newOwner? = none := rfl
+
+@[simp] theorem heldPopOwner?_donated (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (newOwner? : Option SeLe4n.ThreadId) :
+    heldPopOwner? (.donated scId owner) newOwner? = newOwner? := rfl
+
+@[simp] theorem heldPopOwner?_unbound (newOwner? : Option SeLe4n.ThreadId) :
+    heldPopOwner? .unbound newOwner? = none := rfl
+
+/-- The held pop's owner is the stack's answer or none. -/
+theorem heldPopOwner?_cases (b : SchedContextBinding) (newOwner? : Option SeLe4n.ThreadId) :
+    heldPopOwner? b newOwner? = newOwner? ∨ heldPopOwner? b newOwner? = none := by
+  unfold heldPopOwner?; split <;> simp
+
+/-- The owner the held pop records is one the stack answered. -/
+theorem heldPopOwner?_some {b : SchedContextBinding} {newOwner? : Option SeLe4n.ThreadId}
+    {o : SeLe4n.ThreadId} (h : heldPopOwner? b newOwner? = some o) :
+    b.isDonated = true ∧ newOwner? = some o := by
+  unfold heldPopOwner? at h; split at h <;> simp_all
+
 /-- **seL4-MCS's `reply_pop` at a held head whose recipient holds a context of
 its own.**  `reply_pop` donates the context back only when the thread it answers
 holds none (`if (tcb->tcbSchedContext == NULL) schedContext_donate(sc, tcb)`);
 otherwise it pops the head off the context alone, and the context stays with the
 thread that holds it.  So the context's head moves to the frame below
 (`sc->scReply = prev`), the popped head's links are cleared and the frame below
-re-headed (`storeDonationHeadPop`), and the holder keeps the context as the
-binding the frame below owes (`donationReturnBinding`: its own at the bottom of
-the stack, a loan from the outer caller above it).  The recipient is not
-written.  Refused, before any write, on a context not bound to `holder`, an
+re-headed (`storeDonationHeadPop`), and the holder keeps the context: a holder
+that owns it (`.bound`) stays `.bound`, as seL4 writes nothing to it, and a
+holder that has it on loan owes it to the frame below (`donationReturnBinding`
+at `heldPopOwner?`: its own at the bottom of the stack, a loan from the outer
+caller above it).  The recipient is not written.  Refused, before any write, on a context not bound to `holder`, an
 outer caller the donation pop would refuse (`outerCallerAcceptable`), and a head
 that does not name the context back.  Its internal holder guard (the holder's
 binding names the context) never refuses where the binding pair holds
@@ -8033,8 +8067,10 @@ def keepDonatedSchedContext (st : SystemState) (holder : SeLe4n.ThreadId)
             if ht.schedContextBinding.scId? != some scId then .error (.invalidArgument 0)
             else
             let ht' := { ht with
-              scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId newOwner?),
-              scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }
+              scBindingScCode := SchedContextBinding.scCode
+                (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)),
+              scBindingOwnerCode := SchedContextBinding.ownerCode
+                (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)) }
             match storeObject holder.toObjId (.tcb ht') st2 with
             | .error e => .error e
             | .ok ((), st3) => .ok st3
@@ -8176,8 +8212,8 @@ theorem keepDonatedSchedContext_ok_storeChainGuarded {st st' : SystemState}
       storeDonationHeadPop scId head? s1 = .ok s2 ∧
       lookupTcb s2 holder = some ht ∧
       storeObject holder.toObjId (.tcb { ht with
-          scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId newOwner?),
-          scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) })
+          scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)),
+          scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)) })
         s2 = .ok ((), st') := by
   unfold keepDonatedSchedContext at h
   cases hSc : st.getSchedContext? scId with
@@ -8220,9 +8256,9 @@ theorem keepDonatedSchedContext_ok_storeChainGuarded {st st' : SystemState}
                 rw [if_neg hG] at h
                 have hG' : ht.schedContextBinding.scId? = some scId := by simpa using hG
                 cases hS3 : storeObject holder.toObjId (.tcb { ht with
-                    scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId newOwner?),
+                    scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)),
                     scBindingOwnerCode := SchedContextBinding.ownerCode
-                      (donationReturnBinding scId newOwner?) }) s2 with
+                      (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)) }) s2 with
                 | error e => rw [hS3] at h; cases h
                 | ok r3 =>
                   obtain ⟨⟨⟩, s3⟩ := r3
@@ -8249,8 +8285,8 @@ theorem keepDonatedSchedContext_ok_storeChain {st st' : SystemState}
       storeDonationHeadPop scId head? s1 = .ok s2 ∧
       lookupTcb s2 holder = some ht ∧
       storeObject holder.toObjId (.tcb { ht with
-          scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId newOwner?),
-          scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) })
+          scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)),
+          scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)) })
         s2 = .ok ((), st') := by
   obtain ⟨sc, head?, ht, s1, s2, -, h1, h2, h3, h4, h5, h6, h7, h8⟩ :=
     keepDonatedSchedContext_ok_storeChainGuarded h
@@ -8366,8 +8402,8 @@ theorem keepDonatedSchedContext_objects (hObjInv : st.objects.invExt)
       st'.objects[scId.toObjId]? = some (.schedContext
         (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?)) ∧
       st'.objects[holder.toObjId]? = some (.tcb { ht with
-          scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId newOwner?),
-          scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }) ∧
+          scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)),
+          scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)) }) ∧
       (∀ k t, k ≠ holder.toObjId → st'.objects[k]? = some (.tcb t) → st.objects[k]? = some (.tcb t)) ∧
       (∀ k t, k ≠ holder.toObjId → st.objects[k]? = some (.tcb t) → st'.objects[k]? = some (.tcb t)) ∧
       (∀ k x, k ≠ scId.toObjId → st'.objects[k]? = some (.schedContext x) →
@@ -8476,8 +8512,8 @@ theorem keepDonatedSchedContext_holder (hObjInv : st.objects.invExt)
     ∃ ht : TCB, st.objects[holder.toObjId]? = some (.tcb ht) ∧
       ht.schedContextBinding.scId? = some scId ∧
       st'.objects[holder.toObjId]? = some (.tcb { ht with
-          scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId newOwner?),
-          scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }) := by
+          scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)),
+          scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)) }) := by
   obtain ⟨_, _, ht1, s1, s2, hG, -, -, -, -, hS1, hS2, hL, -⟩ :=
     keepDonatedSchedContext_ok_storeChainGuarded h
   obtain ⟨_, _, ht, _, _, _, _, hO, _, _, hO', _, _, _, _⟩ :=
@@ -8525,9 +8561,7 @@ theorem keepDonatedSchedContext_binding_backward (hObjInv : st.objects.invExt)
     have e2 : ht = ht1 := by injection h1 with h1; injection h1 with h1
     subst e2
     refine ⟨ht, hO, ?_⟩
-    rw [hG]
-    cases newOwner? <;> simp [TCB.schedContextBinding, donationReturnBinding,
-      SchedContextBinding.scId?] at hS <;> exact congrArg some hS
+    rw [hG, ← hS, tcb_donationReturnBinding_scId?]
   · exact ⟨t', tBwd _ _ e hT, hS⟩
 
 /-- The resolved held pop moves no thread onto a context. -/

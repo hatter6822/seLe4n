@@ -419,7 +419,9 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull {lend : Bool}
                         have hInv3 := replyRecvPostReceiveDonation_preserves_ipcInvariantFull
                           tid ((recordedReplyServer? st prevCaller).getD tid) nextThread
                           ec
-                          returnedSc? st2 st3 () hObjInv2 hInv2 hNotOwner2 hRet
+                          returnedSc? st2 st3 () hObjInv2 hInv2 hNotOwner2
+                          (endpointReceiveDualWithCapsOnCore_dequeuedNotOwner epId tid (some rid) ec
+                            _ st2 nextThread summary2 sgi2 hObjInv1p hInv1p hNotOwner2 hRecv) hRet
                         have hObjInv3 := hObjInv3f st3 hRet
                         -- WS-OD OD3.14: the receive leg's priority hand-off runs
                         -- between the donation return and the staging.  It writes
@@ -900,6 +902,11 @@ private theorem receiveResolvedArm_cancelled_preserves_ipcInvariantFull
                       (fun s sTcb sc0 hs => by
                         rw [hRecv] at hRecvNotOwner
                         exact hRecvNotOwner s sTcb sc0 hs)
+                      (endpointReceiveDualWithCapsOnCore_dequeuedNotOwner epId tid replyIdOpt
+                        executingCore stR st1 nextThread summary sgi1 hObjInvR hInvR
+                        (fun s sTcb sc0 hs => by
+                          rw [hRecv] at hRecvNotOwner
+                          exact hRecvNotOwner s sTcb sc0 hs) hRecv)
                       hDonation
                   have hDonObj : stDon.objects.invExt :=
                     applyReceiveRendezvousHandoff_preserves_objects_invExt st1 stDon

@@ -419,11 +419,164 @@ theorem returnDonatedSchedContext_keepsLentContextHeads {st st' : SystemState}
     have eh : h = holder := Option.some.inj hBd
     exact eH (by rw [eh])
 
+/-- **What the held pop leaves of a thread's reply link**: every thread after it
+was there before with the same reply object (the holder's store rewrites only its
+binding codes). -/
+theorem keepDonatedSchedContext_tcb_replyObject_backward {st st' : SystemState}
+    {h : SeLe4n.ThreadId} {s : SeLe4n.SchedContextId} {n : Option SeLe4n.ThreadId}
+    (hInv : st.objects.invExt) (hPop : keepDonatedSchedContext st h s n = .ok st')
+    (k : SeLe4n.ObjId) (t' : TCB) (hT : st'.objects[k]? = some (.tcb t')) :
+    ∃ t, st.objects[k]? = some (.tcb t) ∧ t.replyObject = t'.replyObject := by
+  obtain ⟨_, _, ht, _, _, _, _, hO, _, _, hHt', tBwd, _, _, _⟩ :=
+    keepDonatedSchedContext_objects hInv hPop
+  by_cases e : k = h.toObjId
+  · subst e
+    rw [hHt'] at hT
+    cases hT
+    exact ⟨ht, hO, rfl⟩
+  · exact ⟨t', tBwd _ _ e hT, rfl⟩
+
+/-- **The held pop keeps the fact** (seL4 MCS's `reply_pop` held arm): a holder
+that owns the context keeps owning it and takes no loan; a holder on loan holds
+it afterwards from the outer caller the reply stack names, whose frame the pop
+has just made the head; and every other loan's lender keeps its frame, which is
+neither the popped head (its context is bound to the holder,
+`donationOwnerValid`) nor the frame below it (a frame link, not a head). -/
+theorem keepDonatedSchedContext_keepsLentContextHeads {st st' : SystemState}
+    {h : SeLe4n.ThreadId} {s : SeLe4n.SchedContextId}
+    {n : Option SeLe4n.ThreadId} (hInv : st.objects.invExt) (hW : lentContextHeadsLenderFrame st)
+    (hOwn : donationOwnerValid st) (hLink : replyCallerLinkageReciprocal st)
+    (hRes : replyStackOuterCaller? st s = .ok n)
+    (hPop : keepDonatedSchedContext st h s n = .ok st')
+    (hBound : ∀ sc, st.objects[s.toObjId]? = some (.schedContext sc) → sc.boundThread = some h) :
+    lentContextHeadsLenderFrame st' := by
+  obtain ⟨sc, head?, hSc, hHead, hKeep, hBelow, -⟩ := keepDonatedSchedContext_reply_cases hInv hPop
+  have hGetSc : st.getSchedContext? s = some sc := (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc
+  -- What the head validation and the resolver read.
+  have hHeadAt : ∀ x rx, head? = some (x, rx) →
+      st.objects[x.toObjId]? = some (.reply rx) ∧ rx.next = some (.head s) := by
+    intro x rx e
+    subst e
+    unfold donationHeadOf? at hHead
+    revert hHead
+    cases sc.scReply with
+    | none => intro hc; cases hc
+    | some rid' =>
+      simp only []
+      cases hG : st.getReply? rid' with
+      | none => intro hc; cases hc
+      | some r' =>
+        simp only []
+        split
+        · intro hc; cases hc
+        · rename_i hN
+          intro hc; cases hc
+          exact ⟨(SystemState.getReply?_eq_some_iff _ _ _).mp hG, by simpa using hN⟩
+  have hBelowAt : ∀ x rx y, head? = some (x, rx) → rx.prev = some y →
+      ∃ b outer, st.objects[y.toObjId]? = some (.reply b) ∧ b.next = some (.frame x) ∧
+        b.caller = some outer ∧ n = some outer := by
+    intro x rx y e hP
+    unfold replyStackOuterCaller? at hRes
+    rw [hGetSc] at hRes
+    simp only at hRes
+    rw [hHead, e] at hRes
+    simp only at hRes
+    rw [hP] at hRes
+    simp only at hRes
+    cases hGb : st.getReply? y with
+    | none => rw [hGb] at hRes; cases hRes
+    | some b =>
+      rw [hGb] at hRes
+      simp only at hRes
+      split at hRes
+      · cases hRes
+      · rename_i hNx
+        cases hCl : b.caller with
+        | none => rw [hCl] at hRes; cases hRes
+        | some outer =>
+          rw [hCl] at hRes
+          cases hRes
+          exact ⟨b, outer, (SystemState.getReply?_eq_some_iff _ _ _).mp hGb,
+            by simpa using hNx, hCl, rfl⟩
+  have hNoneOf : head? = none ∨ (∃ x rx, head? = some (x, rx) ∧ rx.prev = none) → n = none := by
+    intro hc
+    unfold replyStackOuterCaller? at hRes
+    rw [hGetSc] at hRes
+    simp only at hRes
+    rw [hHead] at hRes
+    rcases hc with e | ⟨x, rx, e, hP⟩
+    · rw [e] at hRes; simp only [Except.ok.injEq] at hRes; exact hRes.symm
+    · rw [e] at hRes; simp only [hP, Except.ok.injEq] at hRes; exact hRes.symm
+  -- A reply off the head and the frame below keeps its record; a stack head
+  -- other than the popped head is not the frame below.
+  have keepHead : ∀ (rid : SeLe4n.ReplyId) (r : Reply) (sc' : SeLe4n.SchedContextId),
+      st.objects[rid.toObjId]? = some (.reply r) → r.next = some (.head sc') →
+      (∀ x rx, head? = some (x, rx) → rid.toObjId ≠ x.toObjId) →
+      st'.objects[rid.toObjId]? = some (.reply r) := by
+    intro rid r sc' hR hN hNx
+    refine hKeep _ r hR hNx (fun x rx y e hP hy => ?_)
+    obtain ⟨b, -, hb, hbN, -⟩ := hBelowAt x rx y e hP
+    rw [← hy, hR] at hb; cases hb
+    rw [hN] at hbN; cases hbN
+  intro holder ht' sc' o ot' hH' hB' hO'
+  obtain ⟨ot, hOpre, hRO⟩ := keepDonatedSchedContext_tcb_replyObject_backward hInv hPop o.toObjId ot' hO'
+  rcases keepDonatedSchedContext_tcb_split hInv hPop holder ht' hH' with
+    ⟨rfl, ht, -, hb⟩ | ⟨eH, hHpre⟩
+  · -- The holder: on loan from the outer caller, where it was on loan before.
+    rw [hb] at hB'
+    cases hn : heldPopOwner? ht.schedContextBinding n with
+    | none => rw [hn] at hB'; cases hB'
+    | some outer =>
+      rw [hn] at hB'
+      simp only [donationReturnBinding, SchedContextBinding.donated.injEq] at hB'
+      obtain ⟨e1, e2⟩ := hB'
+      have hn0 : n = some outer := (heldPopOwner?_some hn).2
+      -- The stack had a frame below the head, whose caller is the outer caller.
+      cases hHd : head? with
+      | none => rw [hNoneOf (Or.inl hHd)] at hn0; cases hn0
+      | some p =>
+        obtain ⟨x, rx⟩ := p
+        cases hP : rx.prev with
+        | none => rw [hNoneOf (Or.inr ⟨x, rx, hHd, hP⟩)] at hn0; cases hn0
+        | some y =>
+          obtain ⟨b, outer', hb, hbN, hbC, hn'⟩ := hBelowAt x rx y hHd hP
+          have eo : outer' = o := (Option.some.inj (hn'.symm.trans hn0)).trans e2
+          obtain ⟨tcbO, hTO, hROy, -⟩ := hLink.2 y b o hb (by rw [hbC, eo])
+          have eT : tcbO = ot := by
+            rw [hOpre] at hTO; exact (KernelObject.tcb.inj (Option.some.inj hTO)).symm
+          have hyx : y.toObjId ≠ x.toObjId := by
+            intro e
+            rw [e, (hHeadAt x rx hHd).1] at hb
+            have eb : rx = b := KernelObject.reply.inj (Option.some.inj hb)
+            rw [← eb, (hHeadAt x rx hHd).2] at hbN
+            cases hbN
+          refine ⟨y, { b with next := some (.head s) }, by rw [← hRO, ← eT]; exact hROy,
+            hBelow x rx y b hHd hP hb hyx, ?_⟩
+          show some (ReplyStackLink.head s) = some (.head sc')
+          rw [e1]
+  · -- Any other loan: its holder and binding are the pre-state's.
+    obtain ⟨rid, r, hROr, hR, hN⟩ := hW holder ht' sc' o ot hHpre hB' hOpre
+    refine ⟨rid, r, by rw [← hRO]; exact hROr, keepHead rid r sc' hR hN (fun x rx e hx => ?_), hN⟩
+    -- The popped head heads `s`, which is bound to `h`, not to this holder.
+    obtain ⟨hxR, hxN⟩ := hHeadAt x rx e
+    rw [hx, hxR] at hR
+    have er : rx = r := KernelObject.reply.inj (Option.some.inj hR)
+    rw [← er, hxN] at hN
+    have e3 : s = sc' := ReplyStackLink.head.inj (Option.some.inj hN)
+    obtain ⟨⟨sc0, hSc0, hBd⟩, -⟩ := hOwn holder ht' sc' o hHpre hB'
+    rw [← e3, hSc] at hSc0
+    have es : sc = sc0 := KernelObject.schedContext.inj (Option.some.inj hSc0)
+    rw [← es, hBound sc hSc] at hBd
+    have eh : h = holder := Option.some.inj hBd
+    exact eH eh.symm
+
 /-- **A finalised reply's donation return keeps the fact, and leaves no loan
 from the caller**: a reply heading no stack returns nothing, and its caller
 lends to no one (`replyCaller_lendsNone`); a head reply's pop commits
-(`replyHeadPop_commits`), keeps the fact
-(`returnDonatedSchedContext_keepsLentContextHeads`), and leaves the caller
+(`replyHeadPop_commits`) on either arm of seL4's `reply_pop`.  The held arm
+(`keepDonatedSchedContext_keepsLentContextHeads`) leaves the holder owing the
+outer caller, which is not the caller (`replyStackOuterCaller_ne_headCaller`);
+the return (`returnDonatedSchedContext_keepsLentContextHeads`) leaves the caller
 lending nothing: the thread it took the context from holds none, the caller
 holds it from the outer caller, never from itself, and any other loan from the
 caller would be a second one (`donationOwnerUnique`). -/
@@ -437,19 +590,47 @@ theorem finaliseReplyReturn_keepsLentContextHeads {s : SystemState} {x : SeLe4n.
           some (.tcb ht) → ht.schedContextBinding ≠ .donated sd c := by
   obtain ⟨-, -, -, -, -, hRO, -, -, -⟩ := replyCallerFinalisable_parts hF
   rcases replyCallerFinalisable_cases hX hF with ⟨hHd, hD⟩ |
-    ⟨sd, sc, hd, htd, -, hSc, -, hBt, hTd, hBd, hC, hD⟩
+    ⟨sd, sc, hd, htd, hRN, hSc, -, hBt, hTd, hBd, hC, hD⟩
   · have hNone : Lifecycle.Suspend.returnDonationToCancelledCaller s c t = s := by
       unfold Lifecycle.Suspend.returnDonationToCancelledCaller; rw [hD]
     rw [hNone]
     exact ⟨hW, replyCaller_lendsNone hW hX hT hHd hRO⟩
-  · obtain ⟨n, st', hResN, hPop, hEq⟩ := replyHeadPop_commits_return hInv hT hD
-      (donationRecipientAcceptable_of_donationOwnerValid hFull.donationOwnerValid hTd hBd) hC
+  · have hScO := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc
+    have hBound : ∀ sc', s.objects[sd.toObjId]? = some (.schedContext sc') →
+        sc'.boundThread = some hd := fun sc' h' => by
+      rw [hScO] at h'
+      rw [← KernelObject.schedContext.inj (Option.some.inj h')]; exact hBt
+    cases hA : donationRecipientAcceptable s c with
+    | false =>
+      -- seL4-MCS `reply_pop` held arm: the caller holds a context of its own, so
+      -- the head is popped and the holder keeps the context; it comes to owe the
+      -- outer caller, which waits on the frame below and so is not the caller.
+      obtain ⟨n, st', hResN, hPop, hEq⟩ := replyHeadPop_commits_kept hInv hT hD hA hC
+      rw [hEq]
+      refine ⟨keepDonatedSchedContext_keepsLentContextHeads hInv hW hFull.donationOwnerValid
+        hFull.replyCallerLinkage.1 hResN hPop hBound, ?_⟩
+      intro holder ht sd' hH hBind
+      rcases keepDonatedSchedContext_tcb_split hInv hPop holder ht hH with
+        ⟨rfl, ht0, hH0, hb⟩ | ⟨eH, hH0⟩
+      · rw [hb] at hBind
+        rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hTd] at hH0
+        obtain rfl : htd = ht0 := KernelObject.tcb.inj (Option.some.inj hH0)
+        rw [hBd] at hBind
+        cases hn : n with
+        | none => rw [hn] at hBind; cases hBind
+        | some outer =>
+          rw [hn] at hBind
+          simp only [heldPopOwner?_donated, donationReturnBinding,
+            SchedContextBinding.donated.injEq] at hBind
+          exact replyStackOuterCaller_ne_headCaller hFull.replyCallerLinkage.1 hX hRN hT hRO
+            (hn ▸ hResN) hBind.2
+      · exact eH (hFull.donationOwnerUnique holder hd ht htd sd' sd c hH0
+          ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTd) hBind hBd)
+    | true =>
+    obtain ⟨n, st', hResN, hPop, hEq⟩ := replyHeadPop_commits_return hInv hT hD hA hC
     rw [hEq]
-    have hScO := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc
     refine ⟨returnDonatedSchedContext_keepsLentContextHeads hInv hW hFull.donationOwnerValid
-      hFull.replyCallerLinkage.1 hResN hPop (fun sc' h' => by
-        rw [hScO] at h'
-        rw [← KernelObject.schedContext.inj (Option.some.inj h')]; exact hBt), ?_⟩
+      hFull.replyCallerLinkage.1 hResN hPop hBound, ?_⟩
     intro holder ht sd' hH hBind
     obtain ⟨hSrv, hOwnB, hOther⟩ := returnDonatedSchedContext_tcb_schedContextBinding_backward
       s st' hd sd c hInv n hPop holder.toObjId ht hH

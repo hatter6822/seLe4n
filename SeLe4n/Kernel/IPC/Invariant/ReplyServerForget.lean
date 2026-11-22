@@ -179,7 +179,7 @@ theorem ipcInvariantFull_of_serverForgotten (st st' : SystemState) (key : SeLe4n
       obtain ⟨⟨sc, hScAt, hBound⟩, ownerTcb, hOwner, hOwnerUnbound, hOwnerBlk⟩ :=
         hInv.donationOwnerValid t ty s owner hy (p.fields.1 ▸ hBind)
       obtain ⟨ox, hox, po⟩ := hFw hOwner
-      exact ⟨⟨sc, (hSc _ sc).mpr hScAt, hBound⟩, ox, hox, po.fields.1.trans hOwnerUnbound,
+      exact ⟨⟨sc, (hSc _ sc).mpr hScAt, hBound⟩, ox, hox, by rw [po.fields.1]; exact hOwnerUnbound,
         (po.reply_any hB).mpr hOwnerBlk⟩
     · intro t1 t2 tcb1 tcb2 s h1 h2 hNe hS1 hS2
       obtain ⟨y1, hy1, p1⟩ := hBk h1

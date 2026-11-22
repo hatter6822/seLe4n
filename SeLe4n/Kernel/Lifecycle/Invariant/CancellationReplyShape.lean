@@ -332,12 +332,14 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
       | ok st' =>
         rw [hK] at hTcb
         simp only at hTcb
-        rcases keepDonatedSchedContext_tcb_split hInv hK tid tcb hTcb with ⟨_, hB'⟩ | ⟨hH, hAtA⟩
+        rcases keepDonatedSchedContext_tcb_split hInv hK tid tcb hTcb with
+          ⟨_, ht0, -, hB'⟩ | ⟨hH, hAtA⟩
         · rw [hB'] at hBind
-          cases hN : n with
+          cases hN : heldPopOwner? ht0.schedContextBinding n with
           | none => rw [hN] at hBind; cases hBind
           | some outer =>
-            rw [hN] at hBind hOutV
+            rw [hN] at hBind
+            rw [(heldPopOwner?_some hN).2] at hOutV
             simp only [donationReturnBinding, SchedContextBinding.donated.injEq] at hBind
             exact (outerCallerAcceptable_some_char _ holder v outer hOutV).1 hBind.2
         · obtain ⟨hResEq, _⟩ := donatedContextIsOwnerFrameHead_cancelledCallerDonation? st v tcbV
@@ -370,15 +372,18 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
       have hVSame : vTcb0 = tcbV :=
         KernelObject.tcb.inj (Option.some.inj
           (hVObj.symm.trans (lookupTcb_some_objects st v tcbV hLookup)))
+      -- `v` holds no context: the router's own test, which took this arm.
       have hVUnboundV : tcbV.schedContextBinding = .unbound := by
-        rw [← hVSame]; exact hVUnbound
+        have e := donationRecipientAcceptable_eq_of_some st v tcbV hLookup
+        rw [show donationRecipientAcceptable st v = true by simpa using hAcc] at e
+        revert e; cases tcbV.schedContextBinding <;> simp [BEq.beq]
       -- `v` gave its binding up and the residual holder holds one, so they differ.
       have hNeVHolder : v ≠ holder := by
         intro hEq
         rw [hEq] at hVObj
         rw [KernelObject.tcb.inj (Option.some.inj (hVObj.symm.trans hHolderAt))] at hVUnbound
         rw [hBind0] at hVUnbound
-        cases hVUnbound
+        simp at hVUnbound
       obtain ⟨st', hOk⟩ := returnDonatedSchedContext_ok_of_boundAndRecipient
         st holder tcb scId0 v sc tcbV
         hInv hHeadResA hLkHolder

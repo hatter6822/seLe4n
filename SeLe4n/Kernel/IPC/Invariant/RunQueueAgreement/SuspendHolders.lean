@@ -168,8 +168,9 @@ theorem keepDonatedSchedContext_holdersNameTheirContexts {st st' : SystemState}
     rw [hBt] at hb'; cases hb'
     rw [hHt'] at hx'; cases hx'
     exact (congrArg SchedContextBinding.scId?
-      (SchedContextBinding.ofCodes_codes (donationReturnBinding s newOwner?))).trans
-      (donationReturnBinding_scId? s newOwner?)
+      (SchedContextBinding.ofCodes_codes
+        (donationReturnBinding s (heldPopOwner? ht.schedContextBinding newOwner?)))).trans
+      (donationReturnBinding_scId? s _)
   · rw [keepDonatedSchedContext_getSchedContext?_ne hInv h s es] at hs
     by_cases et : t.toObjId = holder.toObjId
     · exfalso; apply es
