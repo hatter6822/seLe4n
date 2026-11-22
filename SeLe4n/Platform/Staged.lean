@@ -270,6 +270,8 @@ import SeLe4n.Kernel.ContextLenders.Fault
 import SeLe4n.Kernel.ContextLenders.Notification
 import SeLe4n.Kernel.ContextLenders.Cancel
 import SeLe4n.Kernel.ContextLenders.Receive
+import SeLe4n.Kernel.ContextLenders.Reply
+import SeLe4n.Kernel.ContextLenders.Dispatch
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.YieldLinkedNotResident

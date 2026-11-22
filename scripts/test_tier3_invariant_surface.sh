@@ -11300,6 +11300,8 @@ import SeLe4n.Kernel.ContextLenders.Fault
 import SeLe4n.Kernel.ContextLenders.Notification
 import SeLe4n.Kernel.ContextLenders.Cancel
 import SeLe4n.Kernel.ContextLenders.Receive
+import SeLe4n.Kernel.ContextLenders.Reply
+import SeLe4n.Kernel.ContextLenders.Dispatch
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency
 #check @replyRecvCompletesSignalArm
@@ -11482,6 +11484,15 @@ open SeLe4n.Kernel.Concurrency
 #check @LendersFrame.receiveReturnSchedContext
 #check @LendersFrame.maybeDonateSchedContextFlowing
 #check @LendersFrame.completeSignalArm
+#check @LendersFrame.applyReplyDonationOnCore
+#check @LendersFrame.endpointReplyOnCore
+#check @LendersFrame.endpointReplyCrossCoreDispatchChecked
+#check @LendersFrame.faultReplyOnCore
+#check @LendersFrame.replyTransferOnCoreChecked
+#check @receiveLendAdmits_flows_dequeued
+#check @ReceiveLendersPremises
+#check @receiveResolvedArm_lendersStage
+#check @LendersFrame.replyRecvCompletesSignalArm
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing

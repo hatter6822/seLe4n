@@ -250,27 +250,56 @@ theorem applyRendezvousCallDonation_preserves_contextLendersFlow {ctx : Labeling
     · exact hInv
   · cases h
 
-/-- And the receive's guarded form: a receive that dequeued no `Call` lends nothing. -/
+/-- And the receive's guarded form: a receive that dequeued no `Call` lends
+nothing, and a dequeued `Call` lends only the context the donation resolves
+(`callDonationSchedContext?`), so the flow is asked of that context alone. -/
 theorem applyReceiveRendezvousDonation_preserves_contextLendersFlow {ctx : LabelingContext}
     {st st' : SystemState} {receiver dequeued : SeLe4n.ThreadId} {lend : Bool}
     (hP : LendersPremises st) (hInv : contextLendersFlow ctx st)
-    (hFlow : lend = true → ∀ (t : TCB) (s : SeLe4n.SchedContextId), lookupTcb st dequeued = some t →
-      t.schedContextBinding.scId? = some s →
+    (hFlow : lend = true → rendezvousDequeuedCall st dequeued = true →
+      ∀ s, callDonationSchedContext? st dequeued receiver = some s →
       securityFlowsTo (ctx.threadLabelOf dequeued) (ctx.objectLabelOf s.toObjId) = true)
     (h : applyReceiveRendezvousDonation st receiver dequeued lend = .ok st') :
     contextLendersFlow ctx st' := by
-  unfold applyReceiveRendezvousDonation at h
-  split at h
-  · exact applyRendezvousCallDonation_preserves_contextLendersFlow hP hInv hFlow h
-  · cases h; exact hInv
+  cases hS : callDonationSchedContext? st dequeued receiver with
+  | none =>
+    cases hDV : dequeued.toValid? with
+    | none =>
+      unfold applyReceiveRendezvousDonation applyRendezvousCallDonation at h
+      split at h
+      · simp only [hDV, reduceCtorEq] at h
+      · cases h; exact hInv
+    | some dV =>
+      cases hRV : receiver.toValid? with
+      | none =>
+        unfold applyReceiveRendezvousDonation applyRendezvousCallDonation at h
+        split at h
+        · simp only [hDV, hRV, reduceCtorEq] at h
+        · cases h; exact hInv
+      | some rV =>
+        rw [applyReceiveRendezvousDonation_of_no_donation st receiver dequeued dV rV hDV hRV hS] at h
+        cases h; exact hInv
+  | some s =>
+    unfold applyReceiveRendezvousDonation at h
+    split at h
+    · rename_i hCall
+      refine applyRendezvousCallDonation_preserves_contextLendersFlow hP hInv
+        (fun hL t s' hT hB => ?_) h
+      obtain ⟨-, ⟨c, hC, hCB⟩⟩ := callDonationSchedContext?_some_char _ _ _ _ hS
+      rw [hT] at hC
+      cases hC
+      rw [hB] at hCB
+      cases hCB
+      exact hFlow hL hCall s hS
+    · cases h; exact hInv
 
 /-- **The receive rendezvous' hand-off carries the lenders' flow**: the lend,
 then the priority walk. -/
 theorem applyReceiveRendezvousHandoff_preserves_contextLendersFlow {ctx : LabelingContext}
     {st st' : SystemState} {receiver dequeued : SeLe4n.ThreadId} {ec : CoreId} {lend : Bool}
     (hP : LendersPremises st) (hInv : contextLendersFlow ctx st)
-    (hFlow : lend = true → ∀ (t : TCB) (s : SeLe4n.SchedContextId), lookupTcb st dequeued = some t →
-      t.schedContextBinding.scId? = some s →
+    (hFlow : lend = true → rendezvousDequeuedCall st dequeued = true →
+      ∀ s, callDonationSchedContext? st dequeued receiver = some s →
       securityFlowsTo (ctx.threadLabelOf dequeued) (ctx.objectLabelOf s.toObjId) = true)
     (h : applyReceiveRendezvousHandoff st receiver dequeued ec lend = .ok st') :
     contextLendersFlow ctx st' := by
