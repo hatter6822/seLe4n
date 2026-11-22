@@ -766,7 +766,9 @@ that a lower-labelled client can send to a higher-labelled server
 invariant is accordingly **unestablishable** rather than merely absent, and the
 closure is representational: a queue's content must live in an object whose label
 *dominates* every member's, which the endpoint is and a member's own TCB is not.
-Registered as WS-RR RR8.8 debt rather than papered over here.
+Registered debt rather than papered over here (`docs/REGISTERED_DEBT.md`
+table C, "An endpoint queue's membership lives in its members' TCBs"; first
+registered by WS-RR RR8.8, now with no pre-v1.0.0 owner).
 
 **What this arm carries.**  `v0.36.136` retired the reclaim's holder abort (the
 holder of a returned donation keeps waiting, unbound, as seL4 MCS leaves it), so

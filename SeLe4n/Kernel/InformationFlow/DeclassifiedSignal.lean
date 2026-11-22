@@ -2022,7 +2022,10 @@ That gives the section its shape: each result comes in two forms — an
 **transfer** one where it does not.  The one place the second form is needed is
 `ipcInvariantFull` on the *bound-delivery* path: SM6.D closed the whole bundle
 for `notificationSignalOnCore` and left the bound path's
-`endpointQueueRemoveDual` per-conjunct suite as registered debt.  SM9.C does not
+`endpointQueueRemoveDual` per-conjunct suite open; the bound-aware dispatch's
+bundle has since landed, and instantiating this transfer from it is registered
+debt (`docs/REGISTERED_DEBT.md` table C, "The dispatch payoff confines the
+signal and declassified-signal arms to unbound delivery", owned by WS-PK).  SM9.C does not
 inherit that gap silently — it states the transfer, and instantiates it
 unconditionally on the fall-through path where SM6.D's theorem applies. -/
 
@@ -2134,7 +2137,8 @@ theorem notificationSignalDeclassifiedOnCore_preserves_ipcInvariant
 The audit append changes no object lookup, so a bundle
 that holds of the delivery's post-state holds of the committed one.  The premise
 is the delivery's own obligation — SM6.D's, discharged unconditionally on the
-fall-through path below and registered debt on the bound-delivery path. -/
+fall-through path below and, on the bound-delivery path, the registered debt
+named in the section docstring. -/
 theorem notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)

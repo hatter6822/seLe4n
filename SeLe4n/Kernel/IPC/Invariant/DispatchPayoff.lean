@@ -730,8 +730,10 @@ their transitions' own frames (`auditReadFromCore_frame` pins `st' = st`;
 `auditDrain_frame` and `declassifyObjectFromCore_frame_of_ok` pin an
 audit-log-only rewrite, which no `ipcInvariantFull` conjunct reads) plus
 the declassified signal's fallthrough bundle, under the same
-unbound-delivery confinement as the ordinary signal arm (bound delivery is
-SM6.D's registered debt on both tiers). -/
+unbound-delivery confinement as the ordinary signal arm (lifting it on both
+tiers is registered debt: `docs/REGISTERED_DEBT.md` table C, "The dispatch
+payoff confines the signal and declassified-signal arms to unbound delivery",
+owned by WS-PK). -/
 
 /-- Pre-state pack for the flow-checked dispatch tier: the arms' pack,
 plus the declassifying signal's unbound-delivery confinement — that arm is
@@ -2086,8 +2088,9 @@ Coverage, and the one boundary:
   `retypeReplacementFresh` fixes a fresh reply's caller to `none` and only
   the call rendezvous creates a caller-carrying reply.  That interior --
   and `replyRecvStage`'s resolver premise, which needs a CSpace-resolved
-  reply capability the same rendezvous supplies -- is the registered
-  residual (WS-DT, `docs/REGISTERED_DEBT.md`);
+  reply capability the same rendezvous supplies -- is registered debt
+  (`docs/REGISTERED_DEBT.md` table C, "The dispatch payoff's per-arm
+  inhabitation stops at the `.reply` arm's caller premise", owned by WS-PK);
 * `checked…_inhabited_declassifySignal` -- the checked tier's confinement
   computed on a present object, as the signal arm's is. -/
 

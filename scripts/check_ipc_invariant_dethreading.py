@@ -3150,8 +3150,8 @@ def grammar_coverage(root: str, sources: list[str]) -> list[str]:
     fragment of Lean's grammar in text: pinned machinery can mint family
     names it never spells.  The structural endpoint is an
     elaborator-backed census (declarations and telescopes read from Lean's
-    own environment), registered as tracked debt in
-    `docs/REGISTERED_DEBT.md` (WS-DT residuals).
+    own environment): `SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean`,
+    built in Tier 1, is that census (`CENSUS_MODULE`).
     """
     known = set(_MODIFIERS) | set(_COMMANDS)
     seen: dict[str, tuple[str, int, int]] = {}
@@ -3213,11 +3213,11 @@ def minting_machinery(root: str, sources: list[str]) -> list[str]:
     mechanism set is reviewed by count instead (fail closed).
 
     The residual is a *pinned* file minting family-shaped names it never
-    spells (constructed via `Name` surgery) -- that is the
-    elaborator-backed-census debt registered in
-    `docs/REGISTERED_DEBT.md` (WS-DT residuals), now confined to the
-    pinned files below rather than open anywhere in the tree; spelled
-    names are `family_references`' half.
+    spells (constructed via `Name` surgery) -- which the
+    elaborator-backed census (`CENSUS_MODULE`) reads from Lean's own
+    environment over the modules it imports, so this text half is confined to the pinned files
+    below rather than open anywhere in the tree; spelled names are
+    `family_references`' half.
     """
     counts: dict[tuple[str, str], int] = {}
     first: dict[tuple[str, str], int] = {}

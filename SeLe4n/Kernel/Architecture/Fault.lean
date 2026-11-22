@@ -461,17 +461,15 @@ never authority.  That is not a simplification of seL4 — seL4's fault messages
 carry no extra caps either — and it is what makes the RR4.20
 non-interference argument about a *data* flow only.
 
-**What reaches hardware registers.**  The full message is delivered in the
-model — a handler's `pendingMessage` holds every word, and
-`decodeFault_encodeFault` recovers the fault from it — but the WS-RA return
-frame carries only `MR0`-`MR3` in `x2`-`x5`, and no receive path yet writes
-`MR4` onward into the receiver's IPC buffer (seL4's `setMRs_fault` does; the
-buffer-side write is a registered WS-RA residual with no consumer until this
-phase).  So on hardware a `vmFault` or `capFault` handler sees its whole
-message in registers, while an `unknownSyscall` (13 words) or `userException`
-(5 words) handler sees the first four and must not read `seL4_GetMR(4)`
-onward until the buffer write lands.  Tracked debt, not a silent truncation:
-`docs/REGISTERED_DEBT.md` carries the row and its closure target. -/
+**What reaches hardware.**  The full message is delivered in the model — a
+handler's `pendingMessage` holds every word, and `decodeFault_encodeFault`
+recovers the fault from it.  The return frame carries `MR0`-`MR3` in
+`x2`-`x5`, and every delivery, the fault seams included, writes `MR4` onward
+into the receiver's IPC buffer as seL4's `setMRs_fault` does
+(`Architecture.messageOverflowWrites`, at the address
+`IpcBufferRead.ipcBufferSlotPAddr?` resolves for a writable RAM mapping), so
+an `unknownSyscall` (13 words) or `userException` (5 words) handler reads its
+whole message through `seL4_GetMR`. -/
 def encodeFault (f : Fault) (ctx : FaultContext) :
     MessageInfo × Array SeLe4n.RegValue :=
   ({ length := faultMessageLength f, extraCaps := 0, label := faultLabel f },

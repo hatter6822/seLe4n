@@ -3484,9 +3484,9 @@ AN6-C adds *transitive* ancestor tracking via a new
 `UntypedObject.parent : Option ObjId` field (AN6-C.1, defined in
 `Model/Object/Types.lean`) plus a parent-chain walker and a transitive
 disjointness predicate. The full 11th-conjunct integration (preservation
-proofs + 130-site rename cascade) is a multi-day workstream and is
-tracked as follow-up AN6-C.5..C.10 (originally planned in WS-AN
-AN6-C; the historical record is in `docs/REGISTERED_DEBT.md`).
+proofs + 130-site rename cascade) is a multi-day workstream, registered
+as row 27 of `docs/REGISTERED_DEBT.md` table C.1 (transitive
+ancestor/descendant tracking; first planned as WS-AN AN6-C.5..C.10).
 This section lands
 the foundation pieces (C.1 through C.4) so future commits can compose
 on the predicate without re-doing the design work.

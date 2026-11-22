@@ -1194,7 +1194,9 @@ structure IpcMessage where
       fault endpoint").  Restoring seL4's sender-side label pass-through
       therefore needs its own authority story (a badge or endpoint distinction
       that separates kernel-originated fault deliveries from user sends) and is
-      registered as WS-RR debt rather than folded in here — wiring it silently
+      registered debt rather than folded in here (`docs/REGISTERED_DEBT.md`
+      table A, "A user send's `MessageInfo` label is discarded at delivery",
+      owned by WS-CB) — wiring it silently
       would open the channel this default keeps shut.
 
       Bounded by `MessageInfo.maxLabel` on every path that sets it: the fault

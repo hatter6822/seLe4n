@@ -2906,7 +2906,9 @@ It follows from the full classification (`threadStateConsistent_implies_
 threadInactiveFlagConsistent`), so it holds of the boot state too; its
 preservation across the scheduler and IPC surfaces — or the replacement of the
 stored field by the inferred one — is registered debt
-(`docs/REGISTERED_DEBT.md`, owned by WS-RR RR7.36), not a theorem of this cut.
+(`docs/REGISTERED_DEBT.md` table A, "The scheduler's dispatch and the IPC
+rendezvous do not write `TCB.threadState`"; partly discharged by WS-RR RR7.36,
+the rest with no pre-v1.0.0 owner), not a theorem of this cut.
 New code must not cite `threadStateConsistent` of a post-dispatch state. -/
 def threadInactiveFlagConsistent (st : SystemState) : Prop :=
   ∀ (oid : SeLe4n.ObjId) (tcb : TCB),
