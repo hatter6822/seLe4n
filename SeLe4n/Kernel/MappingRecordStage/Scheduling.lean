@@ -369,10 +369,9 @@ theorem cancelIpcBlockingReclaimed_mappingStage (st : SystemState) (tid : SeLe4n
     (cancelIpcBlockingMigrated_objects_invExt tid tcb st)
     (.of_releaseLinks (cancelIpcBlockingMigrated_agree tid tcb st))
     (by
-      unfold cancelIpcBlockingMigrated
-      split
-      · exact (SchedContextOps.settleReturnedContext_releaseOnlyWrite _ _ _).ghostsKept
-      · exact .refl _) h1.1
+      rcases cancelIpcBlockingMigrated_cases tid tcb st with h | ⟨_, _, _, _, h⟩ <;> rw [h]
+      · exact .refl _
+      · exact (SchedContextOps.settleReturnedContext_releaseOnlyWrite _ _ _).ghostsKept) h1.1
   have h3 := MappingStage.of_objectsAgreeOffRunLinks
     (fun _ => cancelIpcBlockingReclaimed_objects_invExt tid tcb st h1.1)
     (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks tid tcb st)

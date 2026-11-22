@@ -1265,16 +1265,14 @@ theorem finaliseReplyCancel_preserves_schedContextLinkInvariant {s : SystemState
     F.releaseState.refined
       ((returnDonationToCancelledCaller_releaseStateAgree s c t hInv).refined hI.refined)
   have rM : (cancelIpcBlockingMigrated c t s).releaseQueueRefined := by
-    unfold cancelIpcBlockingMigrated
-    split
-    · exact SchedContextOps.settleReturnedContext_refined rC _ _
+    rcases cancelIpcBlockingMigrated_cases c t s with h | ⟨_, _, _, _, h⟩ <;> rw [h]
     · exact rC
+    · exact SchedContextOps.settleReturnedContext_refined rC _ _
   have qC := replenishQueueEntriesBound_smp_of_frame F.binding F.replenish qR
   have qM : replenishQueueEntriesBound_smp (cancelIpcBlockingMigrated c t s) := by
-    unfold cancelIpcBlockingMigrated
-    split
-    · exact settleReturnedContext_preserves_replenishQueueEntriesBound_smp _ _ _ qC
+    rcases cancelIpcBlockingMigrated_cases c t s with h | ⟨_, _, _, _, h⟩ <;> rw [h]
     · exact qC
+    · exact settleReturnedContext_preserves_replenishQueueEntriesBound_smp _ _ _ qC
   have hM : schedContextLinkInvariant (cancelIpcBlockingMigrated c t s) :=
     ⟨bM, cM, qM, cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp c t s
       hInv hI.refined hI.replenishAffinity, rM⟩

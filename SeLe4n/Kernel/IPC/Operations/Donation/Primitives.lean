@@ -1037,6 +1037,26 @@ theorem keepDonatedSchedContext_refillsKeptOff
     rw [keepDonatedSchedContext_scheduler_eq h]
   exact (SystemState.RefillsKeptOff.of_kept (a3.trans a2) hQ).trans a1
 
+/-- WS-SX SX8: **the held pop keeps every refill view**: the context keeps
+its refills and its holder (the record rewrites the head and the origin), the
+head pop writes replies, and the holder's store rewrites its binding words, not
+its thread state. -/
+theorem keepDonatedSchedContext_refillViewsKept
+    {st st' : SystemState} {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {newOwner? : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    RefillViewsKept st' st := by
+  obtain ⟨_, _, _, s1, s2, hSc, _, _, _, h1, hClear, hL3, h3⟩ := keepDonatedSchedContext_ok_storeChain h
+  have i1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv h1
+  have i2 := storeDonationHeadPop_preserves_objects_invExt i1 hClear
+  have a1 : RefillViewsKept s1 st := .storeObject hObjInv h1 (by rw [hSc]; rfl)
+  have a2 : RefillViewsKept s2 s1 :=
+    .of_getSchedContext?_eq (storeDonationHeadPop_getSchedContext?_eq i1 hClear)
+      (fun t => by rw [storeDonationHeadPop_getTcb?_eq i1 hClear])
+  have a3 : RefillViewsKept st' s2 := .storeObject i2 h3 (by
+    rw [lookupTcb_some_objects _ _ _ hL3]; rfl)
+  exact a3.trans (a2.trans a1)
+
 /-- WS-SX SX8: the held pop keeps every yield code. -/
 theorem keepDonatedSchedContext_yieldLinksKept
     {st st' : SystemState} {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}

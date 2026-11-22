@@ -223,10 +223,8 @@ theorem descheduleUnboundHolder_replyViews_eq (stPre stPost : SystemState)
 theorem cancelIpcBlockingMigrated_replyViews_eq (victim : SeLe4n.ThreadId) (tcb : TCB)
     (st : SystemState) :
     (cancelIpcBlockingMigrated victim tcb st).replyViews = (cancelIpcBlocking st victim tcb).replyViews := by
-  unfold cancelIpcBlockingMigrated
-  split
-  · exact settleReturnedContext_replyViews_eq _ _ _
-  · rfl
+  rcases cancelIpcBlockingMigrated_cases victim tcb st with h | ⟨_, _, _, _, h⟩ <;> rw [h]
+  exact settleReturnedContext_replyViews_eq _ _ _
 
 /-- **The per-core cancellation keeps the reply-waiter queues consistent.** -/
 theorem cancelIpcBlockingOnCore_preserves_replyWaitersConsistent (victim : SeLe4n.ThreadId)

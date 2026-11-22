@@ -213,11 +213,10 @@ theorem finaliseReplyCancel (s : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
     (hInv : s.objects.invExt) :
     RecordsStep s (finaliseReplyRevert (cancelIpcBlockingReclaimed c t s) t.blockingServer?) := by
   have S1 : RecordsStep s (cancelIpcBlockingMigrated c t s) := by
-    unfold cancelIpcBlockingMigrated
     have S := cancelIpcBlocking s c t hInv
-    split
-    · exact S.trans (of_frame (RecordsFrame.settleReturnedContext _ _ _ S.invExt))
+    rcases cancelIpcBlockingMigrated_cases c t s with h | ⟨_, _, _, _, h⟩ <;> rw [h]
     · exact S
+    · exact S.trans (of_frame (RecordsFrame.settleReturnedContext _ _ _ S.invExt))
   have S2 : RecordsStep s (cancelIpcBlockingReclaimed c t s) := by
     unfold cancelIpcBlockingReclaimed descheduleUnboundHolder
     split

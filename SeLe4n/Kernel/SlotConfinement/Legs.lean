@@ -1172,11 +1172,9 @@ theorem cancelIpcBlockingMigrated_confinedToCores (victim : SeLe4n.ThreadId) (tc
     (st : SystemState) :
     observableSlotsConfinedToCores (cancelIpcBlocking st victim tcb)
       (cancelIpcBlockingMigrated victim tcb st) [] := by
-  unfold cancelIpcBlockingMigrated
-  split
-  · rename_i scId holder _
-    exact settleReturnedContext_confinedToCores _ _ scId
+  rcases cancelIpcBlockingMigrated_cases victim tcb st with h | ⟨scId, _, _, _, h⟩ <;> rw [h]
   · exact observableSlotsConfinedToCores_refl _ _
+  · exact settleReturnedContext_confinedToCores _ _ scId
 
 /-- **`v0.35.158`** (WS-OD OD1.7's wake until then): the reclaim's holder
 deschedule writes exactly the unbound holder's placed core — and no core at all

@@ -1819,15 +1819,27 @@ running caller must then *place* it, which only the settle does.
 The source core is resolved from the pre-state so the `withLockSet` bracket can
 declare the `LockKey.replenishQueue` write locks before the transition runs
 (`cancelIpcBlockingReplenishCores`); the torn state and the source are each
-bound once, so the settle and its destination read one state. -/
+bound once, so the settle and its destination read one state.
+
+**Only a return is settled** (WS-SX SX8).  The reclaim's pop is seL4's
+`reply_pop`, routed on the victim's own binding (`popHeldReplyHead`): where the
+victim holds a context of its own the head is popped and the context stays with
+its holder, and `reply_pop` then calls no `schedContext_donate`, so no release
+queue is touched.  The settle runs on the arm that hands the context back
+(`donationRecipientAcceptable st victim`, the router's own test, read on the
+same pre-state), and the held arm is the teardown alone.  The lock cores
+(`cancelIpcBlockingReplenishCores`) still name the settle's pair on the held
+arm: a proven superset, since that arm writes no replenish queue. -/
 def cancelIpcBlockingMigrated (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) :
     SystemState :=
   match Lifecycle.Suspend.cancelledCallerDonation? st victim tcb with
   | some (scId, holder) =>
       let torn := cancelIpcBlocking st victim tcb
-      let fromCore := determineTargetCore st holder
-      SchedContextOps.settleReturnedContext torn
-        (replenishHomeOfSchedContext torn scId fromCore) scId
+      if donationRecipientAcceptable st victim then
+        let fromCore := determineTargetCore st holder
+        SchedContextOps.settleReturnedContext torn
+          (replenishHomeOfSchedContext torn scId fromCore) scId
+      else torn
   | none => cancelIpcBlocking st victim tcb
 
 /-- **`v0.35.170`: the cores the reclaim's teardown writes a replenish queue
@@ -1886,27 +1898,53 @@ is every arm but a reply arm whose caller had donated. -/
   unfold cancelIpcBlockingMigrated
   rw [h]
 
+/-- **What the migrated teardown is**: the plain teardown, or — where a donation
+is reclaimed and the victim holds no context, so the pop hands it back — the
+plain teardown with the returned context settled. -/
+theorem cancelIpcBlockingMigrated_cases (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (st : SystemState) :
+    cancelIpcBlockingMigrated victim tcb st = cancelIpcBlocking st victim tcb ∨
+    ∃ scId holder, Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder) ∧
+      donationRecipientAcceptable st victim = true ∧
+      cancelIpcBlockingMigrated victim tcb st =
+        SchedContextOps.settleReturnedContext (cancelIpcBlocking st victim tcb)
+          (replenishHomeOfSchedContext (cancelIpcBlocking st victim tcb) scId
+            (determineTargetCore st holder)) scId := by
+  unfold cancelIpcBlockingMigrated
+  split
+  · next scId holder hD =>
+    by_cases hA : donationRecipientAcceptable st victim = true
+    · exact .inr ⟨scId, holder, hD, hA, by rw [if_pos hA]⟩
+    · exact .inl (by rw [if_neg hA])
+  · exact .inl rfl
+
+/-- **Where the victim holds a context of its own the migrated teardown is the
+plain teardown**: the held pop hands nothing back, so nothing is settled. -/
+theorem cancelIpcBlockingMigrated_of_not_acceptable (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (st : SystemState) (h : donationRecipientAcceptable st victim = false) :
+    cancelIpcBlockingMigrated victim tcb st = cancelIpcBlocking st victim tcb := by
+  unfold cancelIpcBlockingMigrated
+  split
+  · rw [if_neg (by simp [h])]
+  · rfl
+
 /-- The migration writes the contexts' release fields alone, so the migrated
 teardown's object store is the plain teardown's off them. -/
 theorem cancelIpcBlockingMigrated_agree (victim : SeLe4n.ThreadId)
     (tcb : TCB) (st : SystemState) :
     (cancelIpcBlockingMigrated victim tcb st).objectsAgreeOffReleaseLinks
       (cancelIpcBlocking st victim tcb) := by
-  unfold cancelIpcBlockingMigrated
-  split
-  · rename_i scId holder _
-    exact SchedContextOps.settleReturnedContext_agree _ _ scId
-  · exact .refl _
+  rcases cancelIpcBlockingMigrated_cases victim tcb st with h | ⟨scId, holder, _, _, h⟩
+  · rw [h]; exact .refl _
+  · rw [h]; exact SchedContextOps.settleReturnedContext_agree _ _ scId
 
 /-- ...and keeps the extension invariant. -/
 theorem cancelIpcBlockingMigrated_objects_invExt (victim : SeLe4n.ThreadId)
     (tcb : TCB) (st : SystemState) (hInv : (cancelIpcBlocking st victim tcb).objects.invExt) :
     (cancelIpcBlockingMigrated victim tcb st).objects.invExt := by
-  unfold cancelIpcBlockingMigrated
-  split
-  · rename_i scId holder _
-    exact SchedContextOps.settleReturnedContext_objects_invExt _ _ scId hInv
-  · exact hInv
+  rcases cancelIpcBlockingMigrated_cases victim tcb st with h | ⟨scId, holder, _, _, h⟩
+  · rw [h]; exact hInv
+  · rw [h]; exact SchedContextOps.settleReturnedContext_objects_invExt _ _ scId hInv
 
 /-- The migration touches only replenish queues, so every core's run queue is the
 plain teardown's. -/
@@ -1914,11 +1952,9 @@ plain teardown's. -/
     (tcb : TCB) (st : SystemState) (c : CoreId) :
     (cancelIpcBlockingMigrated victim tcb st).scheduler.runQueueOnCore c
       = (cancelIpcBlocking st victim tcb).scheduler.runQueueOnCore c := by
-  unfold cancelIpcBlockingMigrated
-  split
-  · rename_i scId holder _
-    exact SchedContextOps.settleReturnedContext_runQueueOnCore _ _ scId c
-  · rfl
+  rcases cancelIpcBlockingMigrated_cases victim tcb st with h | ⟨scId, holder, _, _, h⟩
+  · rw [h]
+  · rw [h]; exact SchedContextOps.settleReturnedContext_runQueueOnCore _ _ scId c
 
 /-- The migration writes no TCB, so every TCB lookup is the plain teardown's. -/
 @[simp] theorem cancelIpcBlockingMigrated_getTcb? (victim : SeLe4n.ThreadId)
@@ -1941,11 +1977,9 @@ current thread of every core is the plain teardown's. -/
     (tcb : TCB) (st : SystemState) (c : CoreId) :
     (cancelIpcBlockingMigrated victim tcb st).scheduler.currentOnCore c
       = (cancelIpcBlocking st victim tcb).scheduler.currentOnCore c := by
-  unfold cancelIpcBlockingMigrated
-  split
-  · rename_i scId holder _
-    exact SchedContextOps.settleReturnedContext_currentOnCore _ _ scId c
-  · rfl
+  rcases cancelIpcBlockingMigrated_cases victim tcb st with h | ⟨scId, holder, _, _, h⟩
+  · rw [h]
+  · rw [h]; exact SchedContextOps.settleReturnedContext_currentOnCore _ _ scId c
 
 /-- **`v0.35.158`: the holder the reclaim UNBOUND — `some holder` exactly when
 this teardown took the victim's reservation away from it.**

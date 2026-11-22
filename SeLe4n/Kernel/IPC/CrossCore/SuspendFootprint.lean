@@ -83,11 +83,12 @@ theorem cancelIpcBlockingMigrated_replenishQueueOnCore_ne (st : SystemState)
       (determineTargetCore st holder) ≠ c) :
     (cancelIpcBlockingMigrated victim tcb st).scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
-  unfold cancelIpcBlockingMigrated
-  rw [hDon]
-  dsimp only
-  rw [SchedContextOps.settleReturnedContext_replenishQueueOnCore_ne _ _ _ _ hFrom (Ne.symm hTo),
-    Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq]; rfl
+  rcases cancelIpcBlockingMigrated_cases victim tcb st with h | ⟨scId', holder', hD', _, h⟩ <;>
+    rw [h]
+  · rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq]; rfl
+  · rw [hDon] at hD'; cases hD'
+    rw [SchedContextOps.settleReturnedContext_replenishQueueOnCore_ne _ _ _ _ hFrom (Ne.symm hTo),
+      Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq]; rfl
 
 /-- `v0.35.169`: ...and with nothing donated it writes none at all. -/
 theorem cancelIpcBlockingMigrated_replenishQueueOnCore_of_no_donation (st : SystemState)

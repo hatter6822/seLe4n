@@ -686,6 +686,27 @@ theorem cancelIpcBlocking_refillViewsKept (st : SystemState) (v : SeLe4n.ThreadI
   have h := cancelIpcBlocking_refillViewsKept_of_return st v tcbV hInv
   rwa [Lifecycle.Suspend.returnDonationToCancelledCaller_none st v tcbV hD] at h
 
+/-- WS-SX SX8: **where the victim holds a context of its own, the reclaim keeps
+every refill view**: its pop is the held pop, which hands nothing back
+(`keepDonatedSchedContext_refillViewsKept`), or it refuses and writes nothing. -/
+theorem returnDonationToCancelledCaller_refillViewsKept_of_not_acceptable (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt)
+    (hA : donationRecipientAcceptable st v = false) :
+    RefillViewsKept (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) st :=
+  Lifecycle.Suspend.returnDonationToCancelledCaller_elim (P := fun s => RefillViewsKept s st)
+    (st := st) (tid := v) (tcb := tcbV) (.refl _) fun _ _ _ _ hPop => by
+      rw [popHeldReplyHead_of_not_acceptable hA] at hPop
+      exact keepDonatedSchedContextResolved_lift (P := fun s => RefillViewsKept s st) hPop
+        fun _ _ hK => keepDonatedSchedContext_refillViewsKept hInv hK
+
+/-- ...so the teardown keeps every refill view there too. -/
+theorem cancelIpcBlocking_refillViewsKept_of_not_acceptable (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt)
+    (hA : donationRecipientAcceptable st v = false) :
+    RefillViewsKept (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) st :=
+  (cancelIpcBlocking_refillViewsKept_of_return st v tcbV hInv).trans
+    (returnDonationToCancelledCaller_refillViewsKept_of_not_acceptable st v tcbV hInv hA)
+
 /-- WS-ZA ZA6.33: **the teardown keeps every context's refills off the one it
 returns**. -/
 theorem cancelIpcBlocking_refillsKeptOff (st : SystemState) (v : SeLe4n.ThreadId)
@@ -1164,10 +1185,10 @@ theorem cancelIpcBlocking_runQueueFrameStage (st : SystemState) (victim : SeLe4n
     (fun hInv => cancelIpcBlocking_notificationLinksKept st victim tcb hInv)
     (hRes := by rw [Lifecycle.Suspend.cancelIpcBlocking_machine_eq st victim tcb])
 
-/-- ...and a stage when it returns nothing: every arm but a reply arm whose
-caller had donated. -/
-theorem cancelIpcBlocking_runQueueStage (st : SystemState) (victim : SeLe4n.ThreadId)
-    (tcb : TCB) (hD : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = none) :
+/-- ...and a stage wherever it keeps every refill view. -/
+theorem cancelIpcBlocking_runQueueStage_of_kept (st : SystemState) (victim : SeLe4n.ThreadId)
+    (tcb : TCB)
+    (hK : st.objects.invExt → RefillViewsKept (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) st) :
     SystemState.RunQueueStage st (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) :=
   have hS := Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq st victim tcb
   SystemState.RunQueueStage.of_placement
@@ -1176,10 +1197,18 @@ theorem cancelIpcBlocking_runQueueStage (st : SystemState) (victim : SeLe4n.Thre
     (fun hInv x => cancelIpcBlocking_placement_frame st victim tcb hInv x)
     (fun hInv => cancelIpcBlocking_stateMono st victim tcb hInv)
     (fun hInv => cancelIpcBlocking_releaseStateAgree st victim tcb hInv)
-    (fun hInv => cancelIpcBlocking_refillViewsKept st victim tcb hInv hD)
+    hK
     (fun hInv => cancelIpcBlocking_yieldLinksKept st victim tcb hInv)
     (fun hInv => cancelIpcBlocking_notificationLinksKept st victim tcb hInv)
     (hRes := by rw [Lifecycle.Suspend.cancelIpcBlocking_machine_eq st victim tcb])
+
+/-- ...so it is a stage when it returns nothing: every arm but a reply arm whose
+caller had donated. -/
+theorem cancelIpcBlocking_runQueueStage (st : SystemState) (victim : SeLe4n.ThreadId)
+    (tcb : TCB) (hD : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = none) :
+    SystemState.RunQueueStage st (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) :=
+  cancelIpcBlocking_runQueueStage_of_kept st victim tcb fun hInv =>
+    cancelIpcBlocking_refillViewsKept st victim tcb hInv hD
 
 /-- WS-ZA ZA6.33: the context the teardown returns is well formed after it
 wherever it was before: the return rebinds it and keeps its refills. -/
@@ -1238,6 +1267,12 @@ theorem cancelIpcBlockingMigrated_runQueueStage (st : SystemState) (victim : SeL
   | some p =>
     obtain ⟨scId, holder⟩ := p
     dsimp only
+    cases hA : donationRecipientAcceptable st victim with
+    | false =>
+      exact cancelIpcBlocking_runQueueStage_of_kept st victim tcb fun hInv =>
+        cancelIpcBlocking_refillViewsKept_of_not_acceptable st victim tcb hInv hA
+    | true =>
+    rw [if_pos rfl]
     refine SchedContextOps.settleReturnedContext_runQueueStage
       (cancelIpcBlocking_runQueueFrameStage st victim tcb (· = scId)
         (fun p h => by rw [hD] at h; cases h; rfl)) ?_
@@ -1282,6 +1317,22 @@ theorem cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_s
   | some p =>
     obtain ⟨scId, holder⟩ := p
     dsimp only
+    cases hA : donationRecipientAcceptable st victim with
+    | false =>
+      -- The held pop: nothing settled, every context keeps its holder.
+      have hK := cancelIpcBlocking_refillViewsKept_of_not_acceptable st victim tcb hInv hA
+      rw [if_neg (by decide)]
+      intro c' s0 t0 hMem sc hSc tid hB
+      have hQ : (Lifecycle.Suspend.cancelIpcBlocking st victim tcb).scheduler.replenishQueueOnCore c'
+          = st.scheduler.replenishQueueOnCore c' := by
+        rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq]; rfl
+      rw [hQ] at hMem
+      obtain ⟨b, hb, hv⟩ := hK.getSchedContext? hSc
+      rw [cancelIpcBlocking_determineTargetCore_eq st victim tcb hInv tid]
+      refine hCons c' s0 t0 hMem b hb tid ?_
+      rw [← SchedContext.boundThread_refillView, hv, SchedContext.boundThread_refillView]; exact hB
+    | true =>
+    rw [if_pos rfl]
     refine settleReturnedContext_preserves_affinityConsistent_smp _ _ scId
       ((cancelIpcBlocking_releaseStateAgree st victim tcb hInv).refined hRef)
       (replenishHomeOfSchedContext_spec _ scId _) ?_

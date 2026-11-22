@@ -213,12 +213,9 @@ theorem cancelIpcBlockingMigrated_preserves_projection
     (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb) :
     projectState ctx observer (cancelIpcBlockingMigrated victim tcb st)
       = projectState ctx observer (cancelIpcBlocking st victim tcb) := by
-  unfold cancelIpcBlockingMigrated
-  split
-  · rename_i scId holder hRes
-    exact settleReturnedContext_preserves_projection ctx observer _ _ scId
-      (hCtxHigh scId holder hRes)
-  · rfl
+  rcases cancelIpcBlockingMigrated_cases victim tcb st with h | ⟨scId, holder, hRes, _, h⟩ <;> rw [h]
+  exact settleReturnedContext_preserves_projection ctx observer _ _ scId
+    (hCtxHigh scId holder hRes)
 
 /-- The per-core form of the same. -/
 theorem cancelIpcBlockingMigrated_preserves_projectionOnCore
@@ -227,12 +224,9 @@ theorem cancelIpcBlockingMigrated_preserves_projectionOnCore
     (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb) :
     projectStateOnCore ctx observer (cancelIpcBlockingMigrated victim tcb st) c
       = projectStateOnCore ctx observer (cancelIpcBlocking st victim tcb) c := by
-  unfold cancelIpcBlockingMigrated
-  split
-  · rename_i scId holder hRes
-    exact settleReturnedContext_preserves_projectionOnCore ctx observer _ _ scId c
-      (hCtxHigh scId holder hRes)
-  · rfl
+  rcases cancelIpcBlockingMigrated_cases victim tcb st with h | ⟨scId, holder, hRes, _, h⟩ <;> rw [h]
+  exact settleReturnedContext_preserves_projectionOnCore ctx observer _ _ scId c
+    (hCtxHigh scId holder hRes)
 
 -- ============================================================================
 -- §4b  `v0.35.158` — the reclaim's holder deschedule (WS-OD OD1.7's wake until then)

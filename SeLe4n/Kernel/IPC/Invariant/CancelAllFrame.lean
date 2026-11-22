@@ -2355,13 +2355,12 @@ theorem cancelIpcBlockingMigrated (st : SystemState) (c : SeLe4n.ThreadId) (t : 
     (hInv : (Lifecycle.Suspend.cancelIpcBlocking st c t).objects.invExt) :
     FinaliseFrameAny (Lifecycle.Suspend.cancelIpcBlocking st c t)
       (SeLe4n.Kernel.cancelIpcBlockingMigrated c t st) := by
-  unfold SeLe4n.Kernel.cancelIpcBlockingMigrated
-  split
+  rcases SeLe4n.Kernel.cancelIpcBlockingMigrated_cases c t st with h | ⟨_, _, _, _, h⟩ <;> rw [h]
+  · exact .refl hInv
   · exact (FinaliseFrame.of_releaseOnlyWrite
       (SchedContextOps.settleReturnedContext_releaseOnlyWrite _ _ _)
       (SchedContextOps.settleReturnedContext_agree _ _ _)
       (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ hInv)).any
-  · exact .refl hInv
 
 /-- **A reply-blocked caller's cancel with its reservation handed back**: the
 cancel, the replenishment migration, and the holder taken off its core. -/
@@ -2706,10 +2705,8 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
         (Lifecycle.Suspend.cancelIpcBlocking s c t).cdt := by
       unfold cancelIpcBlockingReclaimed
       refine (hC (descheduleUnboundHolder_onlyObjectsSchedulerDiffer _ _ _ _)).trans ?_
-      unfold cancelIpcBlockingMigrated
-      split
-      · exact SchedContextOps.settleReturnedContext_cdt _ _ _
-      · rfl
+      rcases cancelIpcBlockingMigrated_cases c t s with h | ⟨_, _, _, _, h⟩ <;> rw [h]
+      exact SchedContextOps.settleReturnedContext_cdt _ _ _
     have hRet : (Lifecycle.Suspend.returnDonationToCancelledCaller s c t).cdt = s.cdt := by
       refine Lifecycle.Suspend.returnDonationToCancelledCaller_elimPops
         (P := fun a => a.cdt = s.cdt) rfl (fun _ _ n _ _ hPop => ?_)

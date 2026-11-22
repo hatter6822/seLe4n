@@ -1038,11 +1038,10 @@ theorem finaliseReplyCancel (s : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
     (hInv : s.objects.invExt) :
     LendersFrame s (finaliseReplyRevert (cancelIpcBlockingReclaimed c t s) t.blockingServer?) := by
   have S1 : LendersFrame s (cancelIpcBlockingMigrated c t s) := by
-    unfold cancelIpcBlockingMigrated
     have S := cancelIpcBlocking s c t hInv
-    split
-    · exact S.andThen fun h => settleReturnedContext _ _ _ h
+    rcases cancelIpcBlockingMigrated_cases c t s with h | ⟨_, _, _, _, h⟩ <;> rw [h]
     · exact S
+    · exact S.andThen fun h => settleReturnedContext _ _ _ h
   have S2 : LendersFrame s (cancelIpcBlockingReclaimed c t s) := by
     unfold cancelIpcBlockingReclaimed descheduleUnboundHolder
     split

@@ -21201,7 +21201,7 @@ run_check "INVARIANT" bash -lc 'rg -n "the .! rg. wrapper stopped being read as 
 # presence check standing in for "this script invokes the shell builtin", and it
 # fails CLOSED -- it refuses rather than reading raw text -- so it is a usability
 # defect rather than a hole.  Registered; the rename is an improvement either way.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingMigrated[^\n]*(\n([ \t][^\n]*)?)*      let torn := cancelIpcBlocking st victim tcb\n      let fromCore := determineTargetCore st holder\n      SchedContextOps\.settleReturnedContext torn\n        \(replenishHomeOfSchedContext torn scId fromCore\) scId" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingMigrated[^\n]*(\n([ \t][^\n]*)?)*      let torn := cancelIpcBlocking st victim tcb\n      if donationRecipientAcceptable st victim then\n        let fromCore := determineTargetCore st holder\n        SchedContextOps\.settleReturnedContext torn\n          \(replenishHomeOfSchedContext torn scId fromCore\) scId\n      else torn\n" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 # ...and the inline spelling must not come back.  DECLARATION-SCOPED, because
 # `CancellationBundle.lean` states the same composition in a `have` where it is the
 # subject of the proof rather than a duplicated evaluation -- a tree-wide negative
@@ -21211,8 +21211,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingMigrate
 # ...and the two frame proofs the binding broke now CITE the settle's own lemmas
 # (WS-ZA ZA6.33: the return settles; it was the migration's) instead of
 # re-deriving them by `unfold` and `split`.
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem cancelIpcBlockingMigrated_runQueueOnCore[^\n]*(\n([ \t][^\n]*)?)*    exact SchedContextOps\.settleReturnedContext_runQueueOnCore _ _ scId c" SeLe4n/Kernel/Lifecycle/Suspend.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem cancelIpcBlockingMigrated_currentOnCore[^\n]*(\n([ \t][^\n]*)?)*    exact SchedContextOps\.settleReturnedContext_currentOnCore _ _ scId c" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem cancelIpcBlockingMigrated_runQueueOnCore[^\n]*(\n([ \t][^\n]*)?)*  · rw \[h\]; exact SchedContextOps\.settleReturnedContext_runQueueOnCore _ _ scId c" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem cancelIpcBlockingMigrated_currentOnCore[^\n]*(\n([ \t][^\n]*)?)*  · rw \[h\]; exact SchedContextOps\.settleReturnedContext_currentOnCore _ _ scId c" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 
 # ---------------------------------------------------------------------------
 # `v0.35.122`: the changed-file anchor sweep.  `CLAUDE.md` states this as a

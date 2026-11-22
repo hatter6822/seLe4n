@@ -695,7 +695,8 @@ theorem cancelIpcBlockingReclaimed_eq_inPlace (st : SystemState) (c : SeLe4n.Thr
   | some ct =>
   rw [hTg] at hM
   dsimp only at hM
-  obtain ⟨scId, hCode, hHolder, _, hPop⟩ := replyPopsInPlace_pop st c ⟨s⟩ _ ct hTg hSRes hM
+  obtain ⟨scId, hCode, hHolder, hCommits, hPop⟩ := replyPopsInPlace_pop st c ⟨s⟩ _ ct hTg hSRes hM
+  have hA := donatedReturnCommits_recipientAcceptable hCommits
   have hSc : (⟨replyHeadContextCode st ⟨t.replyObjectCode - 1⟩ - 1⟩ : SeLe4n.SchedContextId) =
       scId := by rw [hCode]; rfl
   rw [hSc]
@@ -730,7 +731,7 @@ theorem cancelIpcBlockingReclaimed_eq_inPlace (st : SystemState) (c : SeLe4n.Thr
   unfold cancelIpcBlockingReclaimed descheduleUnboundHolder cancelIpcBlockingMigrated
     cancelUnboundHolder? cancelHeadReplyCallerInPlace
   rw [hDon]
-  simp only [hTorn, Nat.add_sub_cancel]
+  simp only [hTorn, hA, if_true, Nat.add_sub_cancel]
   generalize SchedContextOps.settleReturnedContext _ _ scId = post
   cases post.getTcb? ⟨s⟩ with
   | none => rfl
