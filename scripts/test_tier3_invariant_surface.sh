@@ -11297,6 +11297,7 @@ import SeLe4n.Kernel.IPC.Invariant.ContextLenderLinks
 import SeLe4n.Kernel.ContextLenders.Entry
 import SeLe4n.Kernel.ContextLenders.Interrupt
 import SeLe4n.Kernel.ContextLenders.Fault
+import SeLe4n.Kernel.ContextLenders.Notification
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency
 #check @replyRecvCompletesSignalArm
@@ -11463,6 +11464,12 @@ open SeLe4n.Kernel.Concurrency
 #check @faultDeliverOnCoreChecked_preserves_contextLendersFlow
 #check @faultEntryState_lendersStage
 #check @unknownSyscallEntryState_lendersStage
+#check @applyReceiveRendezvousHandoff_preserves_contextLendersFlow
+#check @endpointReceiveDualWithCapsOnCore_preserves_contextLendersFlow
+#check @chainObjectsKept.endpointSendDualOnCore
+#check @endpointSendCrossCoreDispatchChecked_lendersStage
+#check @LendersFrame.notificationSignalBoundCrossCoreDispatchChecked
+#check @LendersFrame.notificationSignalDeclassifiedCrossCoreDispatch
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing

@@ -230,4 +230,150 @@ theorem endpointCallCrossCoreDispatchChecked_preserves_contextLendersFlow {ctx :
       executingCore st _ hInv hChain hMid id hFlow
   · exact hFlow
 
+/-- **The rendezvous lend carries the lenders' flow**, lent or refused: lent, it
+is the call donation, whose donor flows to every context it holds. -/
+theorem applyRendezvousCallDonation_preserves_contextLendersFlow {ctx : LabelingContext}
+    {st st' : SystemState} {receiver donor : SeLe4n.ThreadId} {lend : Bool}
+    (hP : LendersPremises st) (hInv : contextLendersFlow ctx st)
+    (hFlow : lend = true → ∀ (t : TCB) (s : SeLe4n.SchedContextId), lookupTcb st donor = some t →
+      t.schedContextBinding.scId? = some s →
+      securityFlowsTo (ctx.threadLabelOf donor) (ctx.objectLabelOf s.toObjId) = true)
+    (h : applyRendezvousCallDonation st receiver donor lend = .ok st') :
+    contextLendersFlow ctx st' := by
+  unfold applyRendezvousCallDonation at h
+  split at h
+  · rename_i donorV receiverV hD _
+    have hEq : donorV.val = donor := SeLe4n.ThreadId.toValid?_some_val_eq donor donorV hD
+    rcases applyCallDonationOnCoreWhen_cases h with ⟨hL, h⟩ | ⟨_, rfl⟩
+    · exact applyCallDonationOnCore_preserves_contextLendersFlow hP hInv
+        (fun t s hT hS => by rw [hEq] at hT ⊢; exact hFlow hL t s hT hS) h
+    · exact hInv
+  · cases h
+
+/-- And the receive's guarded form: a receive that dequeued no `Call` lends nothing. -/
+theorem applyReceiveRendezvousDonation_preserves_contextLendersFlow {ctx : LabelingContext}
+    {st st' : SystemState} {receiver dequeued : SeLe4n.ThreadId} {lend : Bool}
+    (hP : LendersPremises st) (hInv : contextLendersFlow ctx st)
+    (hFlow : lend = true → ∀ (t : TCB) (s : SeLe4n.SchedContextId), lookupTcb st dequeued = some t →
+      t.schedContextBinding.scId? = some s →
+      securityFlowsTo (ctx.threadLabelOf dequeued) (ctx.objectLabelOf s.toObjId) = true)
+    (h : applyReceiveRendezvousDonation st receiver dequeued lend = .ok st') :
+    contextLendersFlow ctx st' := by
+  unfold applyReceiveRendezvousDonation at h
+  split at h
+  · exact applyRendezvousCallDonation_preserves_contextLendersFlow hP hInv hFlow h
+  · cases h; exact hInv
+
+/-- **The receive rendezvous' hand-off carries the lenders' flow**: the lend,
+then the priority walk. -/
+theorem applyReceiveRendezvousHandoff_preserves_contextLendersFlow {ctx : LabelingContext}
+    {st st' : SystemState} {receiver dequeued : SeLe4n.ThreadId} {ec : CoreId} {lend : Bool}
+    (hP : LendersPremises st) (hInv : contextLendersFlow ctx st)
+    (hFlow : lend = true → ∀ (t : TCB) (s : SeLe4n.SchedContextId), lookupTcb st dequeued = some t →
+      t.schedContextBinding.scId? = some s →
+      securityFlowsTo (ctx.threadLabelOf dequeued) (ctx.objectLabelOf s.toObjId) = true)
+    (h : applyReceiveRendezvousHandoff st receiver dequeued ec lend = .ok st') :
+    contextLendersFlow ctx st' := by
+  obtain ⟨stDon, hDon, rfl⟩ := applyReceiveRendezvousHandoff_ok_decompose _ _ _ _ _ h
+  have h1 := applyReceiveRendezvousDonation_preserves_contextLendersFlow hP hInv hFlow hDon
+  have hI := applyReceiveRendezvousDonation_preserves_objects_invExt _ _ _ _ hP.invExt hDon
+  split
+  · exact LendersStage.of_kept (chainObjectsKept.propagatePipChainCrossCore _ _ _ _ hI) h1
+  · exact h1
+
+/-- **The per-core receive with its capability transfer carries the lenders'
+flow**: the receive's one caller link is on a free reply
+(`endpointReceiveDualOnCore_preserves_contextLendersFlow`), and the transfer
+writes CNodes and thread records. -/
+theorem endpointReceiveDualWithCapsOnCore_preserves_contextLendersFlow {ctx : LabelingContext}
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (core : CoreId) (st : SystemState) (hInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st) (hFlow : contextLendersFlow ctx st) :
+    contextLendersFlow ctx
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st).1 := by
+  have h1 := endpointReceiveDualOnCore_preserves_contextLendersFlow (endpointId := endpointId)
+    (receiver := receiver) (replyId := replyId) (core := core) hInv hChain hFlow
+  have hI1 := endpointReceiveDualOnCore_preserves_objects_invExt endpointId receiver replyId core
+    st hInv
+  unfold endpointReceiveDualWithCapsOnCore
+  cases hC : endpointReceiveDualOnCore endpointId receiver replyId core st with
+  | mk st1 r =>
+    rw [hC] at h1 hI1
+    cases r with
+    | error e => exact h1
+    | ok p =>
+      obtain ⟨_, _⟩ := p
+      dsimp only
+      split
+      · exact h1
+      · split
+        · exact h1
+        · rename_i hT
+          exact LendersStage.of_kept (chainObjectsKept.receiveTransferCaps hI1 hT) h1
+
+/-- **The per-core send writes no reply object and no context**: the
+rendezvous pops the receiver, completes its receive and wakes it; the block
+enqueues the sender, blocks it and deschedules it. -/
+theorem chainObjectsKept.endpointSendDualOnCore (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload) (core : CoreId) (st : SystemState)
+    (hInv : st.objects.invExt) :
+    chainObjectsKept st (_root_.SeLe4n.Kernel.endpointSendDualOnCore endpointId sender payload
+      core st).1 := by
+  unfold _root_.SeLe4n.Kernel.endpointSendDualOnCore
+  split
+  · split
+    · split
+      · exact refl _
+      · split
+        · exact refl _
+        · rename_i receiver _ st1 hPop
+          have hK1 := endpointQueuePopHead hInv hPop
+          have hI1 := endpointQueuePopHead_preserves_objects_invExt _ _ _ _ _ _ hInv hPop
+          split
+          · exact refl _
+          · rename_i st2 hS2
+            have hK2 := hK1.trans (storeTcbReceiveComplete hI1 hS2)
+            have hI2 := storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ hI1 hS2
+            exact hK2.trans (wakeThread st2 receiver core hI2)
+    · split
+      · exact refl _
+      · rename_i st1 hE
+        have hK1 := endpointQueueEnqueue hInv hE
+        have hI1 := endpointQueueEnqueue_preserves_objects_invExt _ _ _ _ _ hInv hE
+        split
+        · exact refl _
+        · rename_i st2 hS2
+          exact (hK1.trans (storeTcbIpcStateAndMessage hI1 hS2)).trans
+            ((removeRunnableOnCore _ sender core).trans (recordSendCap _ sender _ _ _))
+  · split <;> exact refl _
+
+/-- **The flow-checked send carries the lenders' flow**: it lends nothing and
+links no caller. -/
+theorem endpointSendCrossCoreDispatchChecked_lendersStage {ctx : LabelingContext}
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
+    (core : CoreId) (st : SystemState) (hInv : st.objects.invExt) :
+    LendersStage ctx st
+      (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload core st).1 := by
+  have hK := chainObjectsKept.endpointSendDualOnCore endpointId sender payload core st hInv
+  have hI1 := endpointSendDualOnCore_preserves_objects_invExt endpointId sender payload core st hInv
+  unfold endpointSendCrossCoreDispatchChecked
+  split
+  · unfold endpointSendDualWithCapsOnCore
+    cases hC : _root_.SeLe4n.Kernel.endpointSendDualOnCore endpointId sender payload core st with
+    | mk st1 r =>
+      rw [hC] at hK hI1
+      cases r with
+      | error e => exact LendersStage.of_kept hK
+      | ok sgi =>
+        dsimp only
+        split
+        · exact LendersStage.of_kept hK
+        · split
+          · split
+            · exact LendersStage.of_kept hK
+            · rename_i hT
+              exact LendersStage.of_kept (hK.trans (chainObjectsKept.receiveTransferCaps hI1 hT))
+          · exact LendersStage.of_kept hK
+  · exact LendersStage.refl _
+
 end SeLe4n.Kernel

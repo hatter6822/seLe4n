@@ -267,6 +267,7 @@ import SeLe4n.Kernel.ContextLenders.Timer
 import SeLe4n.Kernel.ContextLenders.Interrupt
 import SeLe4n.Kernel.ContextLenders.Call
 import SeLe4n.Kernel.ContextLenders.Fault
+import SeLe4n.Kernel.ContextLenders.Notification
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.YieldLinkedNotResident
