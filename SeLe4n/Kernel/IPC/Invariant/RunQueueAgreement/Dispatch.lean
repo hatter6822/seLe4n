@@ -1172,7 +1172,7 @@ the same current thread.  The reply and the pop keep every endpoint head
 wakeable and the caller current, so the receive half is a kernel entry.  The
 caller the reply woke is ready and is not the replier, so the receive keeps it
 ready and the fault answer's abandon may deschedule it. -/
-theorem endpointReplyRecvOnCore_runQueueEntryStage {answer : Option Architecture.FaultReplyOutcome}
+theorem endpointReplyRecvOnCore_runQueueEntryStage {lend : Bool} {answer : Option Architecture.FaultReplyOutcome}
     {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool}
     {c : Concurrency.CoreId}
@@ -1180,7 +1180,7 @@ theorem endpointReplyRecvOnCore_runQueueEntryStage {answer : Option Architecture
     (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
     (hQ : queueHeadBlockedConsistent st)
     (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant c st =
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant c st lend =
       .ok (s, st')) :
     SystemState.RunQueueEntryStage st st' := by
   have hPrev : ∀ sgi?, (endpointReplyOnCore tid prevCaller msg c st).2 = .ok sgi? →

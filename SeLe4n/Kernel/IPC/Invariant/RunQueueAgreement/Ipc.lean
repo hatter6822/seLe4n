@@ -593,11 +593,11 @@ theorem replyRecvHolderDeschedule_runQueueStage (tid holder : SeLe4n.ThreadId)
   · exact RunQueueStage.refl _
   · exact descheduleAt_runQueueStage _ _ _
 
-theorem replyRecvPostReceiveDonation_runQueueStage {tid recordedServer nextThread : SeLe4n.ThreadId}
+theorem replyRecvPostReceiveDonation_runQueueStage {lend : Bool} {tid recordedServer nextThread : SeLe4n.ThreadId}
     {c : Concurrency.CoreId} {returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)}
     {st st' : SystemState}
     (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hC : st.coherentAt nextThread)
-    (h : replyRecvPostReceiveDonation tid recordedServer nextThread c returned? st = .ok ((), st')) :
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread c returned? st lend = .ok ((), st')) :
     RunQueueStage st st' := by
   unfold replyRecvPostReceiveDonation at h
   repeat' (first | split at h | dsimp only at h)

@@ -667,11 +667,11 @@ theorem replyRecvPopDonation_savedRegsUnwritten {rid : SeLe4n.ReplyId} {target :
       cases h
       exact savedRegsUnwritten.of_popUnheldReplyHead hInv hPop
 
-theorem replyRecvPostReceiveDonation_savedRegsUnwritten
+theorem replyRecvPostReceiveDonation_savedRegsUnwritten {lend : Bool}
     {tid recordedServer nextThread : SeLe4n.ThreadId} {serverCore : CoreId}
     {returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {st st' : SystemState}
     (hInv : st.objects.invExt)
-    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st lend
       = .ok ((), st')) :
     savedRegsUnwritten st st' := by
   unfold replyRecvPostReceiveDonation at h
@@ -933,14 +933,14 @@ the woken sender**: its legs write no saved register; the reply's staging names
 the caller the reply leg found blocked on its reply, and the send's completion
 names the send queue's head after the reply leg, the donation pop and the reply
 leg's capability transfer, which write no endpoint, so the head the entry began from, blocked there. -/
-theorem endpointReplyRecvOnCore_savedRegsWrittenFree {epId : SeLe4n.ObjId}
+theorem endpointReplyRecvOnCore_savedRegsWrittenFree {lend : Bool} {epId : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
     {msg : IpcMessage} {grant : Bool} {ec e : CoreId}
     {st st' : SystemState} {summary : CapTransferSummary}
     {answer : Option Architecture.FaultReplyOutcome}
     (hD : st.currentDequeuedUnique) (hQ : queueHeadBlockedConsistent st)
     (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident) (hInv : st.objects.invExt)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant ec st
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant ec st lend
       = .ok (summary, st')) :
     savedRegsWrittenFree e st st st' ∧ st'.objects.invExt := by
   unfold endpointReplyRecvAnsweringOnCore at h

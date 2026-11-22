@@ -173,7 +173,7 @@ def endpointReplyRecvCheckedArmGeneralR (ctx : LabelingContext) (mi : MessageInf
                 | .error e => .error (e, st)
               else
               match replyRecvTransferOnCore epId tid rid prevCaller mi.label msg
-                  replyGrant executingCore st with
+                  replyGrant executingCore st (receiveLendAdmits ctx st epId) with
               | .ok (summary, st') =>
                   .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
               | .error e => .error (e, st)
@@ -239,7 +239,8 @@ theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
           · rcases replyRecvCompletesSignalArm ctx tid prevCaller decoded.msgInfo.label _
               replyGrant executingCore st with _ | ⟨⟨⟩, st'⟩ <;> rfl
           · rcases replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label _
-              replyGrant executingCore st with _ | ⟨summary, st'⟩ <;> rfl
+              replyGrant executingCore st (receiveLendAdmits ctx st epId) with
+              _ | ⟨summary, st'⟩ <;> rfl
         · rfl
   | _ =>
     simp only [endpointReplyRecvCheckedArmGeneralR, RefusalCarrying.ofKernelReporting,
@@ -457,6 +458,22 @@ here. -/
     match replyRecvTransferOnCore epId tid rid c label
         { registers := Architecture.regMessageBody layout rf len, badge := badge }
         grant executingCore st with
+    | .ok (summary, st') =>
+        .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
+    | .error e => .error (e, st)
+
+/-- The checked reply-receive whose receive leg would take a `Call` the lend
+admission refuses (`receiveLendAdmits`, WS-SX ruling D28), through the
+specification's path at `lend := false`: the reply is answered, the call is
+taken and nothing is lent.  Out of line, as `replyRecvRendezvousR`. -/
+@[noinline] def replyRecvUnlentRendezvousR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
+    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+  fun st =>
+    match replyRecvTransferOnCore epId tid rid c label
+        { registers := Architecture.regMessageBody layout rf len, badge := badge }
+        grant executingCore st false with
     | .ok (summary, st') =>
         .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
     | .error e => .error (e, st)
@@ -2303,6 +2320,8 @@ completes the replier's bound notification (`receiveCompletesSignal`) runs
   fun st =>
     if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) then
       if receiveCompletesSignal ctx st tid then signalArm st
+      else if !receiveLendAdmits ctx st epId then
+        replyRecvUnlentRendezvousR epId tid c rid badge grant layout rf len label executingCore st
       else if threadHasPendingFault st c then
         replyRecvFaultArmR epId tid c rid badge grant layout rf len label executingCore st
       else if decide (Architecture.regMessageLength layout len ≤ 4) &&
@@ -2401,6 +2420,9 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
           by_cases hSig : receiveCompletesSignal ctx st tid = true
           · simp only [hSig, if_true]
           simp only [hSig, if_false, Bool.false_eq_true]
+          cases hLend : receiveLendAdmits ctx st epId
+          · simp only [Bool.not_false, ↓reduceIte, replyRecvUnlentRendezvousR]
+          simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
           split
           · next hFault =>
             rw [replyRecvFaultArmR_eq epId tid c rid badge grant layout rf len label executingCore st
@@ -2863,6 +2885,20 @@ message read in the replier's registers and IPC buffer (`longReplyRecvRegs`). -/
     match replyRecvTransferOnCore epId tid rid c label
         { registers := longReplyRecvRegs rf st tid len, badge := badge }
         grant executingCore st with
+    | .ok (summary, st') =>
+        .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
+    | .error e => .error (e, st)
+
+/-- The long reply-receive whose receive leg would take a `Call` the lend
+admission refuses, through the specification's path at `lend := false`
+(`replyRecvUnlentRendezvousR`'s long twin). -/
+@[noinline] def replyRecvLongUnlentRendezvousR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool) (rf : SeLe4n.RegisterFile)
+    (len label : Nat) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+  fun st =>
+    match replyRecvTransferOnCore epId tid rid c label
+        { registers := longReplyRecvRegs rf st tid len, badge := badge }
+        grant executingCore st false with
     | .ok (summary, st') =>
         .ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo)
     | .error e => .error (e, st)
@@ -3552,6 +3588,8 @@ specification's path. -/
   fun st =>
     if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) then
       if receiveCompletesSignal ctx st tid then signalArm st
+      else if !receiveLendAdmits ctx st epId then
+        replyRecvLongUnlentRendezvousR epId tid c rid badge grant rf len label executingCore st
       else if threadHasPendingFault st c then
         replyRecvLongFaultArmR epId tid c rid badge grant rf len label executingCore st
       else if replyRecvBlocksFast st epId tid c rid && replyRecvReplyInertW st tid c grant then
@@ -3661,6 +3699,9 @@ theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)
         · by_cases hSig : receiveCompletesSignal ctx st tid = true
           · simp only [hSig, if_true]
           simp only [hSig, if_false, Bool.false_eq_true]
+          cases hLend : receiveLendAdmits ctx st epId
+          · simp only [Bool.not_false, ↓reduceIte, replyRecvLongUnlentRendezvousR]
+          simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte]
           split
           · next hFlt =>
             rw [replyRecvLongFaultArmR_eq epId tid c rid badge grant rf mi.length mi.label

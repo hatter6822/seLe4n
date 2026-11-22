@@ -220,14 +220,14 @@ theorem validThreadId_val_toValid? (v : SeLe4n.ValidThreadId) :
 /-- **The `.replyRecv` arm's composite is covered by the arm's footprint**: the
 composite's own footprint (`schedLockSet_replyRecvTransferOnCore_coversWrites`)
 is contained in the arm's (`schedLockSet_replyRecvTransferOnCore_subset_arm`). -/
-theorem schedLockSet_replyRecvArmOnCore_coversTransfer (endpointId : SeLe4n.ObjId)
+theorem schedLockSet_replyRecvArmOnCore_coversTransfer {lend : Bool} (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
     (label : Nat) (msg : IpcMessage) (grant : Bool) (e : CoreId) (st st' : SystemState)
     (summary : CapTransferSummary) (S : LockSet) (hObjInv : st.objects.invExt)
     (hS : LockSet.ofList? (schedLockSet_replyRecvArmOnCore endpointId receiver replyId
       prevCaller label msg grant e st) = some S)
     (hStep : replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg grant
-      e st = .ok (summary, st')) :
+      e st lend = .ok (summary, st')) :
     footprintCoversWrites S st st' := by
   obtain ⟨S0, hS0⟩ := schedFootprintOfCores_ofList?_isSome
     (replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg grant e st)

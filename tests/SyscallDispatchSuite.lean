@@ -2102,6 +2102,27 @@ private def callLend_admission : IO Unit := do
       receiveLendAdmits highCaller parked epObj == callLendAdmits highCaller parked caller &&
       receiveLendAdmits highCaller empty epObj)
     "a receive lends the parked caller's context only where the caller flows to it"
+  -- The reply-receive's receive leg takes the same call and asks the same
+  -- admission (WS-SX ruling D28): its post-receive half lends at `lend := true`
+  -- and lends nothing at `lend := false`, the call still taken.
+  -- The taken call's reply object, linked to the caller as the rendezvous links it.
+  let rid : SeLe4n.ReplyId := ⟨63⟩
+  let callerBlocked : TCB := TCB.setIpcState { mkTcb 3 with
+    replyObjectCode := SeLe4n.ReplyId.optCode (some rid),
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId),
+    scBindingOwnerCode := 0 } (.blockedOnReply epObj (some server))
+  let callReply : KernelObject :=
+    .reply { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some caller) }
+  let callObjs := (st.objects.insert caller.toObjId (.tcb callerBlocked)).insert rid.toObjId callReply
+  let stCall : SystemState := { st with objects := callObjs }
+  let serverHolds (lend : Bool) : Bool :=
+    match replyRecvPostReceiveDonation server server caller bootCoreId none stCall lend with
+    | .ok ((), st') => (st'.getTcb? server).any (fun t => t.scBindingScCode != 0)
+    | .error _ => false
+  expect "reply_recv_lend_follows_admission"
+    (serverHolds true && !serverHolds false &&
+      !receiveLendAdmits highCaller (withEp { head := some caller, tail := some caller }) epObj)
+    "the reply-receive lends the taken call's context only at an admitted lend"
 
 /-- SD-060 (`v0.35.204`): **`.schedContextBind` binds only a thread the caller
 holds a WRITABLE TCB capability to.**

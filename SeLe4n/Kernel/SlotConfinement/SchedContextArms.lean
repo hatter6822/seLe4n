@@ -330,14 +330,14 @@ The reply leg, the donation pop, the receive leg and the post-receive
 donation, at the states they really run at. The receive leg's
 `objects.invExt` premise is discharged from the reply leg's own preservation
 theorem rather than assumed, exactly as in §4a. -/
-theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
+theorem endpointReplyRecvOnCore_confinedToCores {lend : Bool} (endpointId : SeLe4n.ObjId)
     {answer : Option Architecture.FaultReplyOutcome}
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
     (msg : IpcMessage) (grant : Bool)
     (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary)
     (hObjInv : st.objects.invExt)
     (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg
-      grant executingCore st = .ok (summary, st')) :
+      grant executingCore st lend = .ok (summary, st')) :
     observableSlotsConfinedToCores st st'
       (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg grant
         executingCore st) := by
@@ -400,7 +400,7 @@ theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
             cases hDon : replyRecvPostReceiveDonation receiver
                 ((recordedReplyServer? st prevCaller).getD receiver) nextThread
                 executingCore
-                returnedSc? st2 with
+                returnedSc? st2 lend with
             | error e =>
                 rw [hDon] at hStep
                 exact absurd hStep (by simp)
@@ -421,13 +421,30 @@ theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
                   (replyRecvPostReceiveDonationWriteSet receiver
                     ((recordedReplyServer? st prevCaller).getD receiver) nextThread
                     executingCore returnedSc? st2 ++
-                    (receiveLegPipHandoffWriteSet st3 receiver nextThread
+                    (replyRecvPostDonationTailCores answer receiver nextThread
+                        ((recordedReplyServer? st prevCaller).getD receiver) prevCaller executingCore
+                        returnedSc? st2 true ++
+                      replyRecvPostDonationTailCores answer receiver nextThread
+                        ((recordedReplyServer? st prevCaller).getD receiver) prevCaller executingCore
+                        returnedSc? st2 false)) := by
+                rw [← hStep.2]
+                -- The arm ran at one lend; its tail is inside both lends' tails.
+                refine observableSlotsConfinedToCores_mono (fun c hc => by
+                    rcases List.mem_append.mp hc with h | h
+                    · exact List.mem_append_left _ h
+                    · exact List.mem_append_right _
+                        (replyRecvPostDonationTailCores_subset _ _ _ _ _ _ _ _ lend c h)) ?_
+                have hTail : replyRecvPostDonationTailCores answer receiver nextThread
+                    ((recordedReplyServer? st prevCaller).getD receiver) prevCaller executingCore
+                    returnedSc? st2 lend =
+                    receiveLegPipHandoffWriteSet st3 receiver nextThread
                       ((recordedReplyServer? st prevCaller).getD receiver) executingCore ++
                     replyRecvAnswerCores answer
                       (applyReceiveLegPipHandoff st3 receiver nextThread
                         ((recordedReplyServer? st prevCaller).getD receiver) executingCore)
-                      prevCaller)) := by
-                rw [← hStep.2]
+                      prevCaller := by
+                  unfold replyRecvPostDonationTailCores; rw [hDon]
+                rw [hTail]
                 exact observableSlotsConfinedToCores_trans hConf
                     (observableSlotsConfinedToCores_trans hPip
                       (replyRecvAnswerCaller_confinedToCores answer _ prevCaller _))

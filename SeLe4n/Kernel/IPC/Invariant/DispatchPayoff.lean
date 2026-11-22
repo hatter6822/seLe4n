@@ -261,7 +261,7 @@ rather than at the reply leg's own.  That accessor is derived from
 pre-state-computable expression and the pack stays flat.  The pop's own two
 obligation (`hStackValid1`) is stated at the reply leg's state, which is where
 it runs. -/
-theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
+theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull {lend : Bool}
     {answer : Option Architecture.FaultReplyOutcome} (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
     (ec : CoreId) (st stOut : SystemState) (summary : CapTransferSummary)
@@ -325,9 +325,9 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
           nextThread ec
           (replyRecvPoppedDonation rid prevCaller
             (endpointReplyOnCore tid prevCaller msg ec st).1)
-          st2 = .ok ((), st3) →
+          st2 lend = .ok ((), st3) →
         st3.objects.invExt))
-    (hStep : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant ec st = .ok (summary, stOut)) :
+    (hStep : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant ec st lend = .ok (summary, stOut)) :
     ipcInvariantFull stOut ∧ stOut.objects.invExt := by
   unfold endpointReplyRecvAnsweringOnCore at hStep
   dsimp only [] at hStep
@@ -409,7 +409,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull
                       hReturnStage nextThread summary2 sgi2 st2 hRecv
                     cases hRet : replyRecvPostReceiveDonation tid
                         ((recordedReplyServer? st prevCaller).getD tid) nextThread
-                        ec returnedSc? st2 with
+                        ec returnedSc? st2 lend with
                     | error e => rw [hRet] at hStep; cases hStep
                     | ok pair3 =>
                         obtain ⟨u3, st3⟩ := pair3; cases u3
@@ -613,13 +613,13 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
       st2.objects.invExt ∧
       (∀ (tid' : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
         st2.getTcb? tid' = some tcb → tcb.schedContextBinding ≠ .donated scId tid) ∧
-      (∀ st3, replyRecvPostReceiveDonation tid ((recordedReplyServer? st prevCaller).getD tid)
+      (∀ (lend : Bool) st3, replyRecvPostReceiveDonation tid ((recordedReplyServer? st prevCaller).getD tid)
           nextThread executingCore
           (replyRecvPoppedDonation rid prevCaller
             (endpointReplyOnCore tid prevCaller
               (replyRecvArmLegMessage decoded st prevCaller replyBadge)
               executingCore st).1)
-          st2 = .ok ((), st3) →
+          st2 lend = .ok ((), st3) →
         st3.objects.invExt))
 
   /-- **The reply leg of a reply-receive whose receive completes its bound
@@ -1413,7 +1413,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                   hPack.replyRecvStage rid prevCaller replyBadge replyGrant epId hSy hTgt hRR
                 cases hBody : replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label
                     { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, badge := replyBadge }
-                    replyGrant executingCore st with
+                    replyGrant executingCore st (receiveLendAdmits ctx st epId) with
                 | error e => simp only [hBody] at hStep; cases hStep
                 | ok pairB =>
                     obtain ⟨summary, stB⟩ := pairB
@@ -1423,7 +1423,9 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                       epId tid rid prevCaller _ replyGrant
                       executingCore st stB summary
                       hPack.reachable hNoEdge1 hHolderDon1 hStackValid1
-                      hOriginCoh1 hUnheldB1 hCleanupStack1 hReady1 hBudgets1 hRidFresh1 hRetStage
+                      hOriginCoh1 hUnheldB1 hCleanupStack1 hReady1 hBudgets1 hRidFresh1
+                      (fun n s2 g st2 h => (hRetStage n s2 g st2 h).imp_right
+                        (fun h' => h'.imp_right (fun h'' => h'' _)))
                       (by unfold replyRecvTransferOnCore at hBody; exact hBody)
                     rw [← hStep]
                     exact stageDeliveredMessage_preserves_ipcInvariantFull stB tid _

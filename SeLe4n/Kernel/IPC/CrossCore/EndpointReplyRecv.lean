@@ -254,8 +254,8 @@ returned and both walks keep `recordedServer`; the two coincide on every
 non-delegated reply, so this is the pre-fix body verbatim there. -/
 def replyRecvPostReceiveDonation (tid recordedServer : SeLe4n.ThreadId)
     (nextThread : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
-    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) : Kernel Unit :=
-  fun st =>
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (st : SystemState)
+    (lend : Bool := true) : Except KernelError (Unit × SystemState) :=
     match returned? with
     | none =>
         -- A reply that popped no context leaves the receiver as it was, and the
@@ -265,7 +265,7 @@ def replyRecvPostReceiveDonation (tid recordedServer : SeLe4n.ThreadId)
         -- client holds one, and `applyRendezvousCallDonation` is the identity
         -- otherwise.  The reply leg has no say in it.
         if rendezvousDequeuedCall st nextThread then
-            match applyRendezvousCallDonation st tid nextThread with
+            match applyRendezvousCallDonation st tid nextThread lend with
             | .error e => .error e
             | .ok st2 =>
                 .ok ((), (PriorityInheritance.propagatePipChainCrossCore st2 recordedServer
@@ -292,7 +292,7 @@ def replyRecvPostReceiveDonation (tid recordedServer : SeLe4n.ThreadId)
             -- `removeRunnableOnCore` writes no object — so every object-level
             -- fact the donation needs transports across it unchanged.
             match applyRendezvousCallDonation
-                (replyRecvHolderDeschedule tid holder st) tid nextThread with
+                (replyRecvHolderDeschedule tid holder st) tid nextThread lend with
             | .error e => .error e
             | .ok st2 =>
                 .ok ((), (PriorityInheritance.propagatePipChainCrossCore st2 recordedServer serverCore).1)
@@ -320,13 +320,13 @@ def replyRecvPostReceiveDonation (tid recordedServer : SeLe4n.ThreadId)
 declines (`callDonationSchedContext?` answering `none`: the receiver already holds
 a context, the dequeued caller holds none, or the two are one thread) is the chain
 walk alone, whether or not a `Call` was dequeued. -/
-theorem replyRecvPostReceiveDonation_none_of_declined (tid recordedServer nextThread : SeLe4n.ThreadId)
+theorem replyRecvPostReceiveDonation_none_of_declined {lend : Bool} (tid recordedServer nextThread : SeLe4n.ThreadId)
     (serverCore : Concurrency.CoreId) (st : SystemState) (nextV tidV : SeLe4n.ValidThreadId)
     (hNV : nextThread.toValid? = some nextV) (hTV : tid.toValid? = some tidV)
     (hNone : callDonationSchedContext? st nextThread tid = none) :
-    replyRecvPostReceiveDonation tid recordedServer nextThread serverCore none st =
+    replyRecvPostReceiveDonation tid recordedServer nextThread serverCore none st lend =
       .ok ((), (PriorityInheritance.propagatePipChainCrossCore st recordedServer serverCore).1) := by
-  have h := applyReceiveRendezvousDonation_of_no_donation st tid nextThread nextV tidV hNV hTV hNone (lend := true)
+  have h := applyReceiveRendezvousDonation_of_no_donation st tid nextThread nextV tidV hNV hTV hNone (lend := lend)
   unfold applyReceiveRendezvousDonation at h
   unfold replyRecvPostReceiveDonation
   simp only []
@@ -336,9 +336,9 @@ theorem replyRecvPostReceiveDonation_none_of_declined (tid recordedServer nextTh
 
 /-- ...and on a receive leg that blocked, which hands back the receiver itself as
 the thread it dequeued, that is always so: a thread donates nothing to itself. -/
-theorem replyRecvPostReceiveDonation_none_self (tid recordedServer : SeLe4n.ThreadId)
+theorem replyRecvPostReceiveDonation_none_self {lend : Bool} (tid recordedServer : SeLe4n.ThreadId)
     (serverCore : Concurrency.CoreId) (st : SystemState) (hRes : tid.isReserved = false) :
-    replyRecvPostReceiveDonation tid recordedServer tid serverCore none st =
+    replyRecvPostReceiveDonation tid recordedServer tid serverCore none st lend =
       .ok ((), (PriorityInheritance.propagatePipChainCrossCore st recordedServer serverCore).1) := by
   obtain ⟨tidV, hTV⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff tid).mpr hRes)
   exact replyRecvPostReceiveDonation_none_of_declined tid recordedServer tid serverCore st tidV tidV
@@ -573,9 +573,8 @@ the message as given, so every leg is the same transition on both answers. -/
 def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOutcome)
     (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
-    (executingCore : Concurrency.CoreId)
-    : Kernel CapTransferSummary :=
-  fun st =>
+    (executingCore : Concurrency.CoreId) (st : SystemState) (lend : Bool := true) :
+    Except KernelError (CapTransferSummary × SystemState) :=
     -- WS-SM SM6.D (PR #822 review): capture the recorded server (the passive server
     -- `prevCaller` donated its SC to) and its home core BEFORE the reply leg consumes
     -- `prevCaller.blockedOnReply` — on a delegated reply cap this differs from the
@@ -631,7 +630,7 @@ def endpointReplyRecvAnsweringOnCore (answer : Option Architecture.FaultReplyOut
             -- state is independent of the core
             -- (`propagatePipChainCrossCore_state_core_independent`).
             match replyRecvPostReceiveDonation tid recordedServer nextThread executingCore
-                returnedSc? st2 with
+                returnedSc? st2 lend with
             | .error e => .error e
             | .ok ((), st3) =>
                 -- WS-RA RA.B.5b: stage the reply leg's woken caller
@@ -664,9 +663,9 @@ delivers `msg` and its return frame is staged (`endpointReplyRecvAnsweringOnCore
 at `none`).  Every in-place form of the arm is proven equal to this one. -/
 def endpointReplyRecvOnCore (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
-    (executingCore : Concurrency.CoreId)
-    : Kernel CapTransferSummary :=
-  endpointReplyRecvAnsweringOnCore none epId tid rid prevCaller msg grant executingCore
+    (executingCore : Concurrency.CoreId) (st : SystemState) (lend : Bool := true) :
+    Except KernelError (CapTransferSummary × SystemState) :=
+  endpointReplyRecvAnsweringOnCore none epId tid rid prevCaller msg grant executingCore st lend
 
 /-- **The `.replyRecv` arm's transition**: the composite at the answer the
 replied-to caller's own fault record selects on the pre-state
@@ -686,22 +685,22 @@ reply capability's MR0 stripped); the decode reads `msg.registers` as the reply'
 words, exactly as the `.reply` arm's decode reads its MR0 onward. -/
 def replyRecvTransferOnCore (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
-    (grant : Bool) (executingCore : Concurrency.CoreId) : Kernel CapTransferSummary :=
-  fun st =>
+    (grant : Bool) (executingCore : Concurrency.CoreId) (st : SystemState)
+    (lend : Bool := true) : Except KernelError (CapTransferSummary × SystemState) :=
     -- A faulted caller is handed the empty message, as `.reply`'s fault branch
     -- hands it (`faultReplyOnCore`): a fault reply's payload is registers.
     endpointReplyRecvAnsweringOnCore (replyRecvCallerFaultAnswer? st prevCaller label msg)
       epId tid rid prevCaller
       (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
-      executingCore st
+      executingCore st lend
 
 /-- On a caller carrying no fault the arm's transition is the ordinary composite. -/
-theorem replyRecvTransferOnCore_of_no_fault (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+theorem replyRecvTransferOnCore_of_no_fault {lend : Bool} (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
     (grant : Bool) (c : Concurrency.CoreId) (st : SystemState)
     (h : threadHasPendingFault st prevCaller = false) :
-    replyRecvTransferOnCore epId tid rid prevCaller label msg grant c st =
-      endpointReplyRecvOnCore epId tid rid prevCaller msg grant c st := by
+    replyRecvTransferOnCore epId tid rid prevCaller label msg grant c st lend =
+      endpointReplyRecvOnCore epId tid rid prevCaller msg grant c st lend := by
   unfold replyRecvTransferOnCore
   rw [replyRecvCallerFaultAnswer?_eq_none st prevCaller label msg h]
   rfl
@@ -753,6 +752,29 @@ def replyRecvHolderDescheduleWriteSet (tid holder : SeLe4n.ThreadId)
     (st : SystemState) : List Concurrency.CoreId :=
   if holder = tid then []
   else descheduleAtPlacementCores st holder
+/-- The chain walk's cores after the post-receive half's `Call` donation at the
+lend `lend`: the walk from `recordedServer` on the donation's post-state, empty
+on the fail-closed arm.  The write set names it at **both** lends, so it is
+one label-free set covering the arm whatever the checked kernel's admission
+answers (`replyRecvRendezvousChainCores_subset`). -/
+def replyRecvRendezvousChainCores (st : SystemState) (tid nextThread recordedServer : SeLe4n.ThreadId)
+    (serverCore : Concurrency.CoreId) (lend : Bool) : List Concurrency.CoreId :=
+  match applyRendezvousCallDonation st tid nextThread lend with
+  | .error _ => []
+  | .ok st2 => pipChainWriteSet st2 recordedServer serverCore st2.objects.size
+
+/-- Either lend's chain cores are inside the write set's union of both. -/
+theorem replyRecvRendezvousChainCores_subset (st : SystemState)
+    (tid nextThread recordedServer : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
+    (lend : Bool) :
+    ∀ c ∈ replyRecvRendezvousChainCores st tid nextThread recordedServer serverCore lend,
+      c ∈ replyRecvRendezvousChainCores st tid nextThread recordedServer serverCore true ++
+        replyRecvRendezvousChainCores st tid nextThread recordedServer serverCore false := by
+  intro c hc
+  cases lend
+  · exact List.mem_append_right _ hc
+  · exact List.mem_append_left _ hc
+
 /-- SM8.B.2 / WS-RR RR2.20 / **WS-RM (`v0.35.6`)**: **the cores the post-receive
 half may write**, mirroring its own control flow.  Three shapes: a rendezvous
 arm (on either pop answer) donates (per-core silent) and walks from the
@@ -772,23 +794,55 @@ def replyRecvPostReceiveDonationWriteSet (tid recordedServer nextThread : SeLe4n
   match returned? with
   | none =>
       if rendezvousDequeuedCall st nextThread then
-        match applyRendezvousCallDonation st tid nextThread with
-        | .error _ => []
-        | .ok st2 => pipChainWriteSet st2 recordedServer serverCore st2.objects.size
+        replyRecvRendezvousChainCores st tid nextThread recordedServer serverCore true ++
+          replyRecvRendezvousChainCores st tid nextThread recordedServer serverCore false
       else pipChainWriteSet st recordedServer serverCore st.objects.size
   | some (_, holder) =>
       if rendezvousDequeuedCall st nextThread then
-        match applyRendezvousCallDonation
-            (replyRecvHolderDeschedule tid holder st) tid nextThread with
-        | .error _ => []
-        | .ok st2 =>
-            -- The deschedule's cores come FIRST, because it runs first: the
-            -- holder is taken off its own core before the new client's context
-            -- is donated to the invoker (PR #895 review round 8).  A footprint
-            -- that omitted them would be false of exactly that arm.
-            replyRecvHolderDescheduleWriteSet tid holder st ++
-              pipChainWriteSet st2 recordedServer serverCore st2.objects.size
+        -- The deschedule's cores come FIRST, because it runs first: the
+        -- holder is taken off its own core before the new client's context
+        -- is donated to the invoker (PR #895 review round 8).  A footprint
+        -- that omitted them would be false of exactly that arm.
+        replyRecvHolderDescheduleWriteSet tid holder st ++
+          (replyRecvRendezvousChainCores (replyRecvHolderDeschedule tid holder st) tid nextThread
+              recordedServer serverCore true ++
+            replyRecvRendezvousChainCores (replyRecvHolderDeschedule tid holder st) tid nextThread
+              recordedServer serverCore false)
       else replyRecvDescheduleAndWalkWriteSet holder recordedServer serverCore st
+/-- The cores the `.replyRecv` tail writes after the post-receive donation at the
+lend `lend`: the receive leg's priority hand-off and the answer to the replied-to
+caller, both on the donation's post-state; empty on the fail-closed arm. -/
+def replyRecvPostDonationTailCores (answer : Option Architecture.FaultReplyOutcome)
+    (receiver nextThread recordedServer prevCaller : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (st2 : SystemState)
+    (lend : Bool) : List Concurrency.CoreId :=
+  match replyRecvPostReceiveDonation receiver recordedServer nextThread executingCore returned? st2
+      lend with
+  | .error _ => []
+  | .ok (_, st3) =>
+      receiveLegPipHandoffWriteSet st3 receiver nextThread recordedServer executingCore
+        ++ replyRecvAnswerCores answer
+          (applyReceiveLegPipHandoff st3 receiver nextThread recordedServer executingCore)
+          prevCaller
+
+/-- Either lend's tail cores are inside the union of both. -/
+theorem replyRecvPostDonationTailCores_subset (answer : Option Architecture.FaultReplyOutcome)
+    (receiver nextThread recordedServer prevCaller : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (st2 : SystemState)
+    (lend : Bool) :
+    ∀ c ∈ replyRecvPostDonationTailCores answer receiver nextThread recordedServer prevCaller
+        executingCore returned? st2 lend,
+      c ∈ replyRecvPostDonationTailCores answer receiver nextThread recordedServer prevCaller
+          executingCore returned? st2 true ++
+        replyRecvPostDonationTailCores answer receiver nextThread recordedServer prevCaller
+          executingCore returned? st2 false := by
+  intro c hc
+  cases lend
+  · exact List.mem_append_right _ hc
+  · exact List.mem_append_left _ hc
+
 /-- SM8.B.2: **the cores the live `.replyRecv` may write** — the answered
 caller's home core, the receive leg's set at the reply's post-state, the
 donation leg's set at the receive's post-state, and (**WS-OD OD3.14**) the
@@ -831,21 +885,17 @@ def endpointReplyRecvAnsweringWriteSet (answer : Option Architecture.FaultReplyO
                   (receiveReturnSchedContext true st1p receiver) with
                | (_, .error _) => []
                | (st2, .ok (nextThread, _, _)) =>
+                  -- The hand-off and the answer run on the donation's post-state,
+                  -- which the lend decides, so both lends' tails are named.
                   replyRecvPostReceiveDonationWriteSet receiver
                     ((recordedReplyServer? st prevCaller).getD receiver) nextThread
                     executingCore returnedSc? st2 ++
-                    (match replyRecvPostReceiveDonation receiver
-                        ((recordedReplyServer? st prevCaller).getD receiver) nextThread
-                        executingCore
-                        returnedSc? st2 with
-                     | .error _ => []
-                     | .ok (_, st3) =>
-                        receiveLegPipHandoffWriteSet st3 receiver nextThread
-                          ((recordedReplyServer? st prevCaller).getD receiver) executingCore
-                          ++ replyRecvAnswerCores answer
-                            (applyReceiveLegPipHandoff st3 receiver nextThread
-                              ((recordedReplyServer? st prevCaller).getD receiver) executingCore)
-                            prevCaller))))
+                    (replyRecvPostDonationTailCores answer receiver nextThread
+                        ((recordedReplyServer? st prevCaller).getD receiver) prevCaller executingCore
+                        returnedSc? st2 true ++
+                      replyRecvPostDonationTailCores answer receiver nextThread
+                        ((recordedReplyServer? st prevCaller).getD receiver) prevCaller executingCore
+                        returnedSc? st2 false))))
 
 /-- The cores the ordinary `.replyRecv` composite (`endpointReplyRecvOnCore`) may
 write: `endpointReplyRecvAnsweringWriteSet` at `none`. -/

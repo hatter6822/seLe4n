@@ -670,11 +670,11 @@ theorem replyRecvHolderDeschedule_confinedToCores (tid holder : SeLe4n.ThreadId)
 inside its write set.  The re-donation and *its* replenishment migration are
 per-core silent; what is not silent is the recorded server's deschedule and the
 chain reversion, and both are named. -/
-theorem replyRecvPostReceiveDonation_confinedToCores
+theorem replyRecvPostReceiveDonation_confinedToCores {lend : Bool}
     (tid recordedServer nextThread : SeLe4n.ThreadId) (serverCore : CoreId)
     (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
     (st st' : SystemState) (u : Unit)
-    (hStep : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
+    (hStep : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st lend
       = .ok (u, st')) :
     observableSlotsConfinedToCores st st'
       (replyRecvPostReceiveDonationWriteSet tid recordedServer nextThread serverCore
@@ -690,9 +690,13 @@ theorem replyRecvPostReceiveDonation_confinedToCores
     split
     · next hCall =>
       simp only [hCall, if_true] at hStep
-      split
-      · next e hDon => simp only [hDon] at hStep; exact absurd hStep (by simp)
-      · next st2 hDon =>
+      -- The arm runs at one lend; the write set names both lends' chains.
+      refine observableSlotsConfinedToCores_mono
+        (replyRecvRendezvousChainCores_subset st tid nextThread recordedServer serverCore lend) ?_
+      unfold replyRecvRendezvousChainCores
+      cases hDon : applyRendezvousCallDonation st tid nextThread lend with
+      | error e => simp only [hDon] at hStep; exact absurd hStep (by simp)
+      | ok st2 =>
         simp only [hDon] at hStep
         rw [← hOkInj hStep]
         exact observableSlotsConfinedToCores_trans
@@ -710,9 +714,18 @@ theorem replyRecvPostReceiveDonation_confinedToCores
     split
     · next hCall =>
       simp only [hCall, if_true] at hStep
-      split
-      · next e hDon => simp only [hDon] at hStep; exact absurd hStep (by simp)
-      · next st2 hDon =>
+      -- The deschedule's cores, then the chain at the arm's lend inside both lends'.
+      refine observableSlotsConfinedToCores_mono (cs := replyRecvHolderDescheduleWriteSet tid holder st ++
+          replyRecvRendezvousChainCores (replyRecvHolderDeschedule tid holder st) tid nextThread
+            recordedServer serverCore lend) (fun c hc => by
+          rcases List.mem_append.mp hc with h | h
+          · exact List.mem_append_left _ h
+          · exact List.mem_append_right _ (replyRecvRendezvousChainCores_subset _ _ _ _ _ lend c h)) ?_
+      unfold replyRecvRendezvousChainCores
+      cases hDon : applyRendezvousCallDonation (replyRecvHolderDeschedule tid holder st) tid
+          nextThread lend with
+      | error e => simp only [hDon] at hStep; exact absurd hStep (by simp)
+      | ok st2 =>
         simp only [hDon] at hStep
         rw [← hOkInj hStep]
         -- Associated to the RIGHT so the declared set is `desched ++ ([] ++ pip)`,

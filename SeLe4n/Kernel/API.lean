@@ -6991,8 +6991,12 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                 -- WS-RA RA.B.6: stage the receive leg's delivery (the checked
                 -- twin of the unchecked arm's staging; the receive leg's own
                 -- flow gate governs the consumed message).
+                -- WS-SX ruling D28: the receive leg lends a taken `Call`'s
+                -- context only at the call's admission of the send queue's head
+                -- (`receiveLendAdmits`), read on the state the arm is handed,
+                -- as the `.receive` arm reads it.
                 match replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label msg
-                replyGrant executingCore st with
+                replyGrant executingCore st (receiveLendAdmits ctx st epId) with
                 -- PR #873 round 7: the checked twin of the unchecked arm's
                 -- WithCaps receive leg — the endpoint→receiver flow is gated
                 -- above, so the *unchecked* per-core WithCaps receive inside
@@ -8393,7 +8397,7 @@ theorem dispatchArm_replyRecv_matches_returnShape
     (hBody : replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label
         { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
           badge := replyBadge }
-        replyGrant executingCore st = .ok (summary, stB))
+        replyGrant executingCore st (receiveLendAdmits ctx st epId) = .ok (summary, stB))
     (hTcb : stB.getTcb? tid = some tcb)
     (hReady : tcb.ipcState = .ready)
     (hMsg : tcb.pendingMessage = some msg)

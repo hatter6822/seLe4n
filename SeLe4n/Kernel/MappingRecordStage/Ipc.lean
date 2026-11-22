@@ -747,10 +747,10 @@ theorem replyRecvPopDonation_mappingStage {rid : SeLe4n.ReplyId} {target : SeLe4
       cases h
       exact popUnheldReplyHead_mappingStage hPop
 
-theorem replyRecvPostReceiveDonation_mappingStage
+theorem replyRecvPostReceiveDonation_mappingStage {lend : Bool}
     {tid recordedServer nextThread : SeLe4n.ThreadId} {serverCore : CoreId}
     {returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {st st' : SystemState}
-    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st lend
       = .ok ((), st')) : MappingStage st st' := by
   unfold replyRecvPostReceiveDonation at h
   split at h

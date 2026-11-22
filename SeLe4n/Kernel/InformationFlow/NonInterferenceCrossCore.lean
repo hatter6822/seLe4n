@@ -114,13 +114,13 @@ theorem endpointReplyCrossCoreDispatch_crossCoreNonInterference (ctx : LabelingC
 kernel really runs on a cross-core `ReplyRecv` is invisible to any core outside
 its write set, with no hypothesis on the clearance of the answered caller, the
 rendezvousing sender, the recorded server or any chain member. -/
-theorem endpointReplyRecvOnCore_crossCoreNonInterference (ctx : LabelingContext)
+theorem endpointReplyRecvOnCore_crossCoreNonInterference {lend : Bool} (ctx : LabelingContext)
     {answer : Option Architecture.FaultReplyOutcome}
     (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
     (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg grant executingCore st
+    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg grant executingCore st lend
       = .ok (summary, st'))
     (hne : c ∉ endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg grant executingCore st)
     (hShared : sharedViewUnchanged ctx observer st st') :
@@ -132,12 +132,12 @@ theorem endpointReplyRecvOnCore_crossCoreNonInterference (ctx : LabelingContext)
 /-- The `.replyRecv` arm's transition at the answer its caller's fault record
 selects: a faulted caller's restart or abandon lands on the cores
 `replyRecvTransferWriteSet` names, so it too is invisible outside them. -/
-theorem replyRecvTransferOnCore_crossCoreNonInterference (ctx : LabelingContext)
+theorem replyRecvTransferOnCore_crossCoreNonInterference {lend : Bool} (ctx : LabelingContext)
     (observer : IfObserver) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
     (grant : Bool) (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary)
     (c : CoreId) (hObjInv : st.objects.invExt)
-    (hStep : replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg grant executingCore st = .ok (summary, st'))
+    (hStep : replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg grant executingCore st lend = .ok (summary, st'))
     (hne : c ∉ replyRecvTransferWriteSet endpointId receiver replyId prevCaller label msg grant executingCore st)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=

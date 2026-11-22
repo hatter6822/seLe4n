@@ -520,7 +520,7 @@ declared arm whose walk sits outside its run segment.
 The replenish half is the four-stage composition: the pop's pair, the block path's
 pair, the re-donation's pair, each read at the state its own stage runs on, with
 the tail writing no replenish queue at all. -/
-theorem schedLockSet_endpointReplyRecvOnCore_coversWrites
+theorem schedLockSet_endpointReplyRecvOnCore_coversWrites {lend : Bool}
     {answer : Option Architecture.FaultReplyOutcome} (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
     (msg : IpcMessage) (grant : Bool)
@@ -532,7 +532,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_coversWrites
       (replyRecvHandoffReplenishCores answer endpointId receiver replyId prevCaller msg grant
         executingCore st)) = some S)
     (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg
-      grant executingCore st = .ok (summary, st')) :
+      grant executingCore st lend = .ok (summary, st')) :
     footprintCoversWrites S st st' :=
   footprintCoversWrites_of_confined S
     (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg grant
@@ -547,7 +547,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_coversWrites
 /-- The `.replyRecv` arm's transition is covered by its declared footprint: the
 composite at the answer the caller's fault record selects, so a faulted caller's
 restart or abandon lands on the cores `replyRecvAnswerCores` names. -/
-theorem schedLockSet_replyRecvTransferOnCore_coversWrites (endpointId : SeLe4n.ObjId)
+theorem schedLockSet_replyRecvTransferOnCore_coversWrites {lend : Bool} (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
     (label : Nat) (msg : IpcMessage) (grant : Bool)
     (executingCore : CoreId) (st st' : SystemState)
@@ -555,7 +555,7 @@ theorem schedLockSet_replyRecvTransferOnCore_coversWrites (endpointId : SeLe4n.O
     (hS : LockSet.ofList? (schedLockSet_replyRecvTransferOnCore endpointId receiver replyId
       prevCaller label msg grant executingCore st) = some S)
     (hStep : replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg grant
-      executingCore st = .ok (summary, st')) :
+      executingCore st lend = .ok (summary, st')) :
     footprintCoversWrites S st st' :=
   schedLockSet_endpointReplyRecvOnCore_coversWrites endpointId receiver replyId prevCaller _ grant
     executingCore st st' summary S hObjInv hS hStep

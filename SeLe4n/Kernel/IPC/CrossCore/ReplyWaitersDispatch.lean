@@ -519,10 +519,10 @@ theorem replyRecvHolderDeschedule_objects_invExt (t h : SeLe4n.ThreadId) (st : S
   · exact hInv
   · exact descheduleAtPlacement_preserves_objects_invExt _ _ hInv
 
-theorem replyRecvPostReceiveDonation_replyViews_eq {t srv nxt : SeLe4n.ThreadId} {c : CoreId}
+theorem replyRecvPostReceiveDonation_replyViews_eq {lend : Bool} {t srv nxt : SeLe4n.ThreadId} {c : CoreId}
     {ret : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {st st' : SystemState}
     (hInv : st.objects.invExt)
-    (h : replyRecvPostReceiveDonation t srv nxt c ret st = .ok ((), st')) :
+    (h : replyRecvPostReceiveDonation t srv nxt c ret st lend = .ok ((), st')) :
     st'.replyViews = st.replyViews := by
   unfold replyRecvPostReceiveDonation at h
   split at h
@@ -581,7 +581,7 @@ The receive leg's two facts are stated at the state it runs on, the reply leg's
 commit with the donation pop, the reply leg's capability transfer and the
 bound notification's context return applied (`replyRecvReceiveLegState`), as the arm's
 other composite theorems state theirs. -/
-theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
+theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent {lend : Bool}
     {answer : Option Architecture.FaultReplyOutcome}
     (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
@@ -593,7 +593,7 @@ theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
         (endpointReplyOnCore tid prevCaller msg ec st).1).objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head = some s → s ≠ tid ∧ ReplyViews.serverFree (replyRecvReceiveLegState answer
         st tid grant rid prevCaller (endpointReplyOnCore tid prevCaller msg ec st).1).replyViews s)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant ec st
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant ec st lend
       = .ok (summary, stOut)) :
     stOut.replyWaitersConsistent := by
   have hB1 := endpointReplyOnCore_preserves_replyWaitersConsistent tid prevCaller msg ec st hInv hC

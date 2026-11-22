@@ -1648,11 +1648,11 @@ theorem replyRecvPopDonation_stepCovers (e : CoreId) {rid : SeLe4n.ReplyId}
       cases h
       exact popUnheldReplyHead_stepCovers e hInv hPop
 
-theorem replyRecvPostReceiveDonation_stepCovers (e : CoreId)
+theorem replyRecvPostReceiveDonation_stepCovers {lend : Bool} (e : CoreId)
     {tid recordedServer nextThread : SeLe4n.ThreadId} {serverCore : CoreId}
     {returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {st st' : SystemState}
     (hInv : st.objects.invExt)
-    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st lend
       = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold replyRecvPostReceiveDonation at h
