@@ -530,6 +530,18 @@ theorem returnDonatedSchedContextResolved_replyViews_eq {st st' : SystemState} {
   returnDonatedSchedContextResolved_lift (P := fun x => x.replyViews = st.replyViews) h
     (fun _ _ hPop => returnDonatedSchedContext_replyViews_eq hInv hPop)
 
+/-- **A reply-stack pop rewrites scheduling-context bindings alone**, whichever
+arm runs. -/
+theorem donationPopFrame_replyViews_eq {st st' : SystemState} (h : donationPopFrame st st') :
+    st'.replyViews = st.replyViews :=
+  replyViews_eq_of_tcbs
+    (fun k t0 hk => by
+      obtain ⟨t', h', hR⟩ := h.tcbFwd k t0 hk
+      exact ⟨t', h', replyView_of_tcbBindingRewrite hR⟩)
+    (fun k t' hk => by
+      obtain ⟨t0, h0, -⟩ := h.tcbBack k t' hk
+      exact ⟨t0, h0⟩)
+
 theorem cleanupPreReceiveDonationChecked_replyViews_eq {st st' : SystemState} {r : ThreadId}
     (hInv : st.objects.invExt) (h : cleanupPreReceiveDonationChecked st r = .ok st') :
     st'.replyViews = st.replyViews := by
@@ -537,7 +549,7 @@ theorem cleanupPreReceiveDonationChecked_replyViews_eq {st st' : SystemState} {r
   split at h
   · cases h; rfl
   · split at h
-    · exact returnDonatedSchedContextResolved_replyViews_eq hInv h
+    · exact donationPopFrame_replyViews_eq (popHeldReplyHead_donationPopFrame hInv h)
     · cases h; rfl
 
 theorem replyViews_storeTcbIpcStateAndMessage_fromTcb {st st' : SystemState} {t : ThreadId}

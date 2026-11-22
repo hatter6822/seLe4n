@@ -1231,7 +1231,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_covers_pop
 /-- **WS-RR RR8.12 Cut C2 (coverage, the block path)**: on a receive leg that blocks
 holding a loan, the footprint covers the pre-receive return's migration footprint
 member for member — at the cores the migration actually resolves on the post-pop
-state it runs on (`receivePreReturnReplenishCores_eq_migration`).  The `.replyRecv`
+state it runs on (`receivePreReturnReplenishCores_covers_migration`).  The `.replyRecv`
 sibling of `schedLockSet_endpointReceiveOnCore_covers_preReturnMigration`, read at
 the state the arm's receive leg runs on rather than at the syscall's pre-state,
 because that is where this arm's leg runs.  Conditioned on the pop's OWN guard and
@@ -1261,12 +1261,13 @@ theorem schedLockSet_endpointReplyRecvOnCore_covers_preReturnMigration
     or_false] at hp
   have hSeg := replyRecvHandoffReplenishCores_eq_of_pop none endpointId receiver replyId
     prevCaller msg grant executingCore st st1 st1q st1p sgi returned? xs hReply hPop hX
-  have hPre := receivePreReturnReplenishCores_eq_migration _ stClean endpointId receiver scId
+  have hPre := receivePreReturnReplenishCores_covers_migration _ stClean endpointId receiver scId
     owner hObjInv (receiveRendezvousSender?_of_blocked _ endpointId ep hEp hHead) hDon hClean
-  rcases hp with h | h <;> subst h <;>
+  rcases hp with h | h <;> subst h
   · refine (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr ?_
-    rw [hSeg, hPre]
-    simp
+    rw [hSeg]; simp [hPre.1]
+  · refine (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr ?_
+    rw [hSeg]; simp [hPre.2]
 
 /-- **WS-RR RR8.12 Cut C2 (coverage, the re-donation)**: on a receive leg that
 dequeues a `Call` after the pop handed a context back, the footprint covers WS-OD

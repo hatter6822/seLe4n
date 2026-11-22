@@ -516,43 +516,70 @@ theorem cleanupPreReceiveDonationMigrated_preserves_replenishQueueAffinityConsis
     obtain ⟨scId, owner⟩ := pair
     rw [preReceiveReturnMigration_of_donation st stClean receiver scId owner hDon]
     rw [cleanupPreReceiveDonationChecked_of_donation st receiver scId owner hDon] at hC
-    obtain ⟨newOwner?, _, hRet⟩ := returnDonatedSchedContextResolved_ok_decompose hC
-    obtain ⟨scPre, hScPre, hScPreBound⟩ :=
-      returnDonatedSchedContext_ok_implies_sc_bound st stClean receiver scId owner newOwner? hRet
-    have hSched :=
-      returnDonatedSchedContext_scheduler_eq st stClean receiver scId owner newOwner? hRet
-    exact migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp st stClean
-      scId (determineTargetCore st receiver) scPre receiver
-      (fun c => by rw [hSched]; rfl)
-      (fun scId₀ hne => returnDonatedSchedContext_getSchedContext?_ne st stClean receiver scId
-        scId₀ owner hne hObjInv newOwner? hRet)
-      (fun tid => determineTargetCore_congr st stClean tid
-        (TCB.map_cpuAffinity_of_placement (returnDonatedSchedContext_getTcb?_placement_eq st stClean receiver scId owner hObjInv
-          newOwner? hRet tid)))
-      hScPre hScPreBound rfl hCons
+    refine popHeldReplyHead_liftPops (P := fun s => replenishQueueAffinityConsistent_smp
+        (migrateSchedContextReplenishment s scId (determineTargetCore st receiver)
+          (replenishHomeOfSchedContext s scId (determineTargetCore st receiver)))) hC
+      (fun newOwner? s hRet => ?_) (fun newOwner? s hKeep => ?_)
+    · obtain ⟨scPre, hScPre, hScPreBound⟩ :=
+        returnDonatedSchedContext_ok_implies_sc_bound st s receiver scId owner newOwner? hRet
+      have hSched :=
+        returnDonatedSchedContext_scheduler_eq st s receiver scId owner newOwner? hRet
+      exact migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp st s
+        scId (determineTargetCore st receiver) scPre receiver
+        (fun c => by rw [hSched]; rfl)
+        (fun scId₀ hne => returnDonatedSchedContext_getSchedContext?_ne st s receiver scId
+          scId₀ owner hne hObjInv newOwner? hRet)
+        (fun tid => determineTargetCore_congr st s tid
+          (TCB.map_cpuAffinity_of_placement (returnDonatedSchedContext_getTcb?_placement_eq st s receiver scId owner hObjInv
+            newOwner? hRet tid)))
+        hScPre hScPreBound rfl hCons
+    · -- The held pop: the context stays with the receiver, so the migration
+      -- runs from the receiver's home to the receiver's home.
+      obtain ⟨⟨scPre, hScPre, hScPreBound⟩, -⟩ := keepDonatedSchedContext_boundThread hObjInv hKeep
+      exact migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp st s
+        scId (determineTargetCore st receiver) scPre receiver
+        (fun c => by rw [keepDonatedSchedContext_scheduler_eq hKeep])
+        (fun scId₀ hne => keepDonatedSchedContext_getSchedContext?_ne hObjInv hKeep scId₀ hne)
+        (fun tid => determineTargetCore_congr st s tid
+          (TCB.map_cpuAffinity_of_placement
+            (keepDonatedSchedContext_getTcb?_placement_eq hObjInv hKeep tid)))
+        hScPre hScPreBound rfl hCons
 
-/-- **`v0.35.161`: the migration's destination is the owner's home, read off the
-pre-state.**  The licence for a footprint that declares the block-path replenish
-pair before the transition runs: the pop binds the context to the owner the
-receiver's binding names (`returnDonatedSchedContext_post_boundThread`), writes no
-`cpuAffinity`, and so the post-pop home `replenishHomeOfSchedContext` resolves is
-the owner's pre-state home. -/
+/-- **`v0.35.161`: the migration's destination, read off the pre-state.**  The
+licence for a footprint that declares the block-path replenish pair before the
+transition runs: where the owner holds no context the pop binds the context to it
+(`returnDonatedSchedContext_post_boundThread`), and where it holds one the held pop
+leaves the context with the receiver (`keepDonatedSchedContext_boundThread`); the
+pop writes no `cpuAffinity`, so the post-pop home `replenishHomeOfSchedContext`
+resolves is the owner's or the receiver's pre-state home. -/
 theorem preReceiveReturnMigration_destination (st stClean : SystemState)
     (receiver : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hDon : preReceiveDonation? st receiver = some (scId, owner))
     (hC : cleanupPreReceiveDonationChecked st receiver = .ok stClean) :
     replenishHomeOfSchedContext stClean scId (determineTargetCore st receiver)
-      = determineTargetCore st owner := by
+        = determineTargetCore st owner ∨
+      replenishHomeOfSchedContext stClean scId (determineTargetCore st receiver)
+        = determineTargetCore st receiver := by
   rw [cleanupPreReceiveDonationChecked_of_donation st receiver scId owner hDon] at hC
-  obtain ⟨newOwner?, _, hRet⟩ := returnDonatedSchedContextResolved_ok_decompose hC
-  obtain ⟨scPost, hScPost, hBound⟩ :=
-    returnDonatedSchedContext_post_boundThread st stClean receiver scId owner hObjInv newOwner?
-      hRet
-  rw [replenishHomeOfSchedContext_eq_of_bound stClean scId _ scPost owner hScPost hBound]
-  exact determineTargetCore_congr st stClean owner
-    (TCB.map_cpuAffinity_of_placement (returnDonatedSchedContext_getTcb?_placement_eq st stClean receiver scId owner hObjInv
-      newOwner? hRet owner))
+  refine popHeldReplyHead_liftPops (P := fun s => replenishHomeOfSchedContext s scId
+      (determineTargetCore st receiver) = determineTargetCore st owner ∨
+      replenishHomeOfSchedContext s scId (determineTargetCore st receiver)
+        = determineTargetCore st receiver) hC
+    (fun newOwner? s hRet => ?_) (fun newOwner? s hKeep => ?_)
+  · obtain ⟨scPost, hScPost, hBound⟩ :=
+      returnDonatedSchedContext_post_boundThread st s receiver scId owner hObjInv newOwner? hRet
+    refine .inl ?_
+    rw [replenishHomeOfSchedContext_eq_of_bound s scId _ scPost owner hScPost hBound]
+    exact determineTargetCore_congr st s owner
+      (TCB.map_cpuAffinity_of_placement (returnDonatedSchedContext_getTcb?_placement_eq st s receiver scId owner hObjInv
+        newOwner? hRet owner))
+  · obtain ⟨-, scPost, hScPost, hBound⟩ := keepDonatedSchedContext_boundThread hObjInv hKeep
+    refine .inr ?_
+    rw [replenishHomeOfSchedContext_eq_of_bound s scId _ scPost receiver hScPost hBound]
+    exact determineTargetCore_congr st s receiver
+      (TCB.map_cpuAffinity_of_placement
+        (keepDonatedSchedContext_getTcb?_placement_eq hObjInv hKeep receiver))
 
 /-- WS-SM SM6.C.5 (plan §3.1): endpoint receive across cores — the receive leg of
 `replyRecv`.
@@ -5774,7 +5801,7 @@ One owner for both receiving arms: `.receive`'s segment
 `.replyRecv`'s (`replyRecvHandoffReplenishCores`) reads it at the state its receive
 leg runs on.  Two spellings of "which cores does the pre-receive return move between"
 would be the divergence hazard §0b closed one hand-off over, and
-`receivePreReturnReplenishCores_eq_migration` is the licence — stated once, consumed by
+`receivePreReturnReplenishCores_covers_migration` is the licence — stated once, consumed by
 both — that the pre-state pair **is** the migration's. -/
 def receivePreReturnReplenishCores (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) : List CoreId :=
@@ -5819,29 +5846,30 @@ theorem receivePreReturnReplenishCores_of_no_sender_returning (st : SystemState)
   rw [receivePreReturn?_of_no_sender st endpointId receiver hNoSender, hDon]
 
 /-- **The block path's licence, stated once for both receiving arms.**  On a block that
-returns a loan, the pre-state pair **is** the pair `preReceiveReturnMigration` migrates
-between at the state it runs on: the source is the receiver's home by definition, and
-the destination `replenishHomeOfSchedContext` resolves off the post-pop state is the
-owner's home (`preReceiveReturnMigration_destination`), because the pop binds the
-context to the owner the binding names and writes no `cpuAffinity`.  Not "agrees
-with" and not "over-approximates": the two lists are equal, which is what keeps a
-footprint a bracket resolves before the transition and the migration the transition
-then performs from naming different cores.  Conditioned on the pop's OWN guard
-(`preReceiveDonation?`) and on the pop having committed, because those are the only
-shapes on which there is a migration to equal. -/
-theorem receivePreReturnReplenishCores_eq_migration (st stClean : SystemState)
+returns a loan, both cores `preReceiveReturnMigration` migrates between at the state it
+runs on are members of the pre-state pair: the source is the receiver's home by
+definition, and the destination `replenishHomeOfSchedContext` resolves off the post-pop
+state is the owner's home where the pop hands the context back, and the receiver's
+own where the owner holds a context and the held pop keeps it with the receiver
+(`preReceiveReturnMigration_destination`).  On the hand-back the pair is exactly the
+migration's two cores; on the held pop the migration runs between the receiver's
+home and itself, and the owner's home is the pair's proven over-approximation.
+Conditioned on the pop's OWN guard (`preReceiveDonation?`) and on the pop having
+committed, because those are the only shapes on which there is a migration to cover. -/
+theorem receivePreReturnReplenishCores_covers_migration (st stClean : SystemState)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hNoSender : receiveRendezvousSender? st endpointId = none)
     (hDon : preReceiveDonation? st receiver = some (scId, owner))
     (hClean : cleanupPreReceiveDonationChecked st receiver = .ok stClean) :
-    receivePreReturnReplenishCores st endpointId receiver
-      = [determineTargetCore st receiver,
-         replenishHomeOfSchedContext stClean scId (determineTargetCore st receiver)] := by
+    determineTargetCore st receiver ∈ receivePreReturnReplenishCores st endpointId receiver ∧
+      replenishHomeOfSchedContext stClean scId (determineTargetCore st receiver)
+        ∈ receivePreReturnReplenishCores st endpointId receiver := by
   rw [receivePreReturnReplenishCores_of_no_sender_returning st endpointId receiver scId owner
-    hNoSender (endpointReplyDonation?_of_preReceiveDonation? st receiver scId owner hDon),
-    preReceiveReturnMigration_destination st stClean receiver scId owner hObjInv hDon hClean]
+    hNoSender (endpointReplyDonation?_of_preReceiveDonation? st receiver scId owner hDon)]
+  rcases preReceiveReturnMigration_destination st stClean receiver scId owner hObjInv hDon hClean
+    with h | h <;> rw [h] <;> simp
 
 /-- **WS-RR RR8.12 Cut C6e (the exactness frame)**: the pre-receive donation return
 writes no replenish queue outside `receivePreReturnReplenishCores` — the FOOTPRINT's
@@ -5850,9 +5878,8 @@ both receiving arms.
 
 Both branches are the step's own: with no loan the migration is the identity and the
 checked cleanup writes objects only, so *every* core is framed; with one, the
-migration's two endpoints are exactly the pair the segment names, which is
-`receivePreReturnReplenishCores_eq_migration` — an equality, not an
-over-approximation, so the frame needs no slack. -/
+migration's two endpoints are members of the pair the segment names
+(`receivePreReturnReplenishCores_covers_migration`). -/
 theorem cleanupPreReceiveDonationMigrated_replenishQueueOnCore_ne (st st' : SystemState)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (c : CoreId)
     (hObjInv : st.objects.invExt)
@@ -5867,15 +5894,16 @@ theorem cleanupPreReceiveDonationMigrated_replenishQueueOnCore_ne (st st' : Syst
     rw [hEq, preReceiveReturnMigration_of_no_donation st stClean receiver hDon, hSched]; rfl
   | some pair =>
     obtain ⟨scId, owner⟩ := pair
-    rw [receivePreReturnReplenishCores_eq_migration st stClean endpointId receiver scId owner
-      hObjInv hNoSender hDon hClean] at hne
-    simp only [List.mem_cons, List.not_mem_nil, or_false, not_or] at hne
-    obtain ⟨hFrom, hTo⟩ := hne
+    obtain ⟨hCovFrom, hCovTo⟩ := receivePreReturnReplenishCores_covers_migration st stClean
+      endpointId receiver scId owner hObjInv hNoSender hDon hClean
+    have hFrom : determineTargetCore st receiver ≠ c := fun e => hne (e ▸ hCovFrom)
+    have hTo : replenishHomeOfSchedContext stClean scId (determineTargetCore st receiver) ≠ c :=
+      fun e => hne (e ▸ hCovTo)
     rw [hEq, preReceiveReturnMigration_of_donation st stClean receiver scId owner hDon,
       migrateSchedContextReplenishment_replenishQueueOnCore_other stClean scId
         (determineTargetCore st receiver)
         (replenishHomeOfSchedContext stClean scId (determineTargetCore st receiver)) c
-        (Ne.symm hFrom) (Ne.symm hTo), hSched]; rfl
+        hFrom hTo, hSched]; rfl
 
 /-- **WS-RR RR8.12**: **the cores whose replenish queue a cross-core receive may
 write** — the dequeued donor's home and the receiver's, on a rendezvous whose
@@ -5943,7 +5971,7 @@ receiver's home core to the owner's (`cleanupPreReceiveDonationMigrated`) — th
 SM5.H hand-off the leg performed without a migration, which is the defect this cut
 closes.  The segment reads that pair through `receivePreReturn?`, the resolver the
 object domain already reads the same return through, so the two domains cannot name
-different owners; `endpointReceiveHandoffReplenishCores_of_blocked_returning_eq_migration`
+different owners; `endpointReceiveHandoffReplenishCores_of_blocked_returning_covers_migration`
 is the licence that the pre-state pair **is** the migration's, and
 `…_of_blocked` keeps the empty segment for a receiver holding no loan. -/
 def endpointReceiveHandoffReplenishCores (st : SystemState) (endpointId : SeLe4n.ObjId)
@@ -6038,17 +6066,14 @@ theorem endpointReceiveHandoffReplenishCores_of_blocked_returning (st : SystemSt
   exact receivePreReturnReplenishCores_of_no_sender_returning st endpointId receiver scId owner
     (receiveRendezvousSender?_of_blocked st endpointId ep hEp hHead) hDon
 
-/-- **`v0.35.161`: the block path's licence.**  On a block that returns a loan, the
-pre-state pair **is** the pair `preReceiveReturnMigration` migrates between at the
-state it runs on: the source is the receiver's home by definition, and the
-destination `replenishHomeOfSchedContext` resolves off the post-pop state is the
-owner's home (`preReceiveReturnMigration_destination`), because the pop binds the
-context to the owner the binding names and writes no `cpuAffinity`.  Not "agrees
-with" and not "over-approximates": the two lists are equal, which is what keeps the
-footprint a bracket resolves before the transition and the migration the transition
-then performs from naming different cores — the rendezvous arm's
-`…_of_donating_call_rendezvous`, on the other arm. -/
-theorem endpointReceiveHandoffReplenishCores_of_blocked_returning_eq_migration
+/-- **`v0.35.161`: the block path's licence.**  On a block that returns a loan,
+both cores `preReceiveReturnMigration` migrates between at the state it runs on are
+members of the pre-state pair (`receivePreReturnReplenishCores_covers_migration`):
+exactly the migration's two cores where the pop hands the context back, and a proven
+superset of the held pop's single core (the receiver's home) where the owner holds
+a context of its own — the rendezvous arm's `…_of_donating_call_rendezvous`, on the
+other arm. -/
+theorem endpointReceiveHandoffReplenishCores_of_blocked_returning_covers_migration
     (st stClean : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (suppliesReply : Bool)
     (ep : Endpoint) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
@@ -6056,12 +6081,14 @@ theorem endpointReceiveHandoffReplenishCores_of_blocked_returning_eq_migration
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none)
     (hDon : preReceiveDonation? st receiver = some (scId, owner))
     (hClean : cleanupPreReceiveDonationChecked st receiver = .ok stClean) :
-    endpointReceiveHandoffReplenishCores st endpointId receiver suppliesReply
-      = [determineTargetCore st receiver,
-         replenishHomeOfSchedContext stClean scId (determineTargetCore st receiver)] := by
+    determineTargetCore st receiver
+        ∈ endpointReceiveHandoffReplenishCores st endpointId receiver suppliesReply ∧
+      replenishHomeOfSchedContext stClean scId (determineTargetCore st receiver)
+        ∈ endpointReceiveHandoffReplenishCores st endpointId receiver suppliesReply := by
   rw [endpointReceiveHandoffReplenishCores_of_blocked_returning st endpointId receiver suppliesReply ep scId
-    owner hEp hHead (endpointReplyDonation?_of_preReceiveDonation? st receiver scId owner hDon),
-    preReceiveReturnMigration_destination st stClean receiver scId owner hObjInv hDon hClean]
+    owner hEp hHead (endpointReplyDonation?_of_preReceiveDonation? st receiver scId owner hDon)]
+  rcases preReceiveReturnMigration_destination st stClean receiver scId owner hObjInv hDon hClean
+    with h | h <;> rw [h] <;> simp
 
 /-- **WS-RR RR8.12 (PR #897 Codex review)**: and empty on a plain `Send`
 rendezvous — the case this narrowing closes.
@@ -6600,7 +6627,7 @@ the migration **actually** resolves, on the post-pop state it runs on, so a
 The block-path sibling of `schedLockSet_endpointReceiveOnCore_covers_donation`, and
 the statement that makes the block-path member *true* rather than plausible: the
 migration's source is the receiver's pre-state home and its destination the owner's
-(`endpointReceiveHandoffReplenishCores_of_blocked_returning_eq_migration`), and both
+(`endpointReceiveHandoffReplenishCores_of_blocked_returning_covers_migration`), and both
 are in the declared segment.  Conditioned on the pop's OWN guard (`preReceiveDonation?`)
 and on the pop having committed, because those are the only shapes on which there is
 a migration to cover; where the guard declines the segment is empty
@@ -6621,12 +6648,11 @@ theorem schedLockSet_endpointReceiveOnCore_covers_preReturnMigration
   intro p hp
   simp only [migrateSchedContextReplenishmentLockSet, List.mem_cons, List.not_mem_nil,
     or_false] at hp
-  have hSeg := endpointReceiveHandoffReplenishCores_of_blocked_returning_eq_migration st stClean
-    endpointId receiver replyId.isSome ep scId owner hObjInv hEp hHead hDon hClean
-  rcases hp with h | h <;> subst h <;>
-  · refine (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr ?_
-    rw [hSeg]
-    simp
+  have hSeg := endpointReceiveHandoffReplenishCores_of_blocked_returning_covers_migration st
+    stClean endpointId receiver replyId.isSome ep scId owner hObjInv hEp hHead hDon hClean
+  rcases hp with h | h <;> subst h
+  · exact (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr hSeg.1
+  · exact (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr hSeg.2
 
 
 end SeLe4n.Kernel

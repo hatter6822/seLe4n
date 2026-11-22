@@ -143,6 +143,23 @@ theorem returnDonatedSchedContextResolved {st st' : SystemState} {serverTid : Se
   obtain ⟨_, -, hR⟩ := returnDonatedSchedContextResolved_ok_decompose h
   exact returnDonatedSchedContext hInv hR
 
+/-- The held pop: the sever's two stores and the holder's binding. -/
+theorem keepDonatedSchedContext {st st' : SystemState} {holder : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    RecordsFrame st st' := by
+  obtain ⟨sc, head?, _, s1, s2, hSc, -, -, -, hS1, hS2, hL, hS3⟩ :=
+    keepDonatedSchedContext_ok_storeChain h
+  have F1 := storeSchedContext hInv hSc hS1
+  have F2 := F1.trans (storeDonationHeadPop F1.invExt hS2)
+  exact F2.trans (storeTcbBinding F2.invExt hL hS3)
+
+theorem keepDonatedSchedContextResolved {st st' : SystemState} {holder : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.keepDonatedSchedContextResolved st holder scId = .ok st') :
+    RecordsFrame st st' :=
+  keepDonatedSchedContextResolved_lift h fun _ _ hP => keepDonatedSchedContext hInv hP
+
 theorem cleanupPreReceiveDonationChecked {st st' : SystemState} {receiver : SeLe4n.ThreadId}
     (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.cleanupPreReceiveDonationChecked st receiver = .ok st') :
@@ -151,7 +168,8 @@ theorem cleanupPreReceiveDonationChecked {st st' : SystemState} {receiver : SeLe
   split at h
   · cases h; exact refl hInv
   · split at h
-    · exact returnDonatedSchedContextResolved hInv h
+    · exact popHeldReplyHead_lift h (fun _ _ hR => returnDonatedSchedContextResolved hInv hR)
+        (fun _ _ hK => keepDonatedSchedContextResolved hInv hK)
     · cases h; exact refl hInv
 
 /-- The replenishment migration moves a release link only. -/

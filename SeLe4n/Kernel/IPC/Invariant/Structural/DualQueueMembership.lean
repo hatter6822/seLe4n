@@ -7174,17 +7174,41 @@ theorem returnDonatedSchedContext_replyLinkageFrame
   exact hF4.trans (replyLinkageFrame.of_objects_eq (by rw [hEq]))
 
 open SeLe4n.Model.SystemState in
+/-- The held pop frames the reply linkage: a context store, the head pop, and
+one thread's binding codes. -/
+theorem keepDonatedSchedContext_replyLinkageFrame {st st' : SystemState}
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt)
+    (hStep : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    replyLinkageFrame st st' := by
+  obtain ⟨sc, head?, ht, s1, s2, hSc, _, _, _, hS1, hS2, hL, hS3⟩ :=
+    keepDonatedSchedContext_ok_storeChain hStep
+  have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hS2
+  have hF1 : replyLinkageFrame st s1 :=
+    storeObject_nonTcbNonReply_replyLinkageFrame st s1 scId.toObjId _ _ hSc
+      (fun _ => by simp) (fun _ => by simp) (fun _ => by simp) (fun _ => by simp)
+      hObjInv hS1
+  have hF2 := hF1.trans (storeDonationHeadPop_replyLinkageFrame hInv1 hS2)
+  exact hF2.trans (storeObject_modifiedTcb_replyLinkageFrame s2 st'
+    holder.toObjId ht
+    { ht with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donationReturnBinding scId newOwner?), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }
+    (lookupTcb_some_objects s2 holder ht hL) rfl
+    (fun _ ep rt hb => ⟨ep, rt, hb⟩) hInv2 hS3)
+
+open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.7: the pre-receive donation cleanup frames the reply linkage — it is
 either a no-op or one `returnDonatedSchedContext`. -/
 theorem cleanupPreReceiveDonation_replyLinkageFrame
     (st : SystemState) (receiver : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) :
     replyLinkageFrame st (cleanupPreReceiveDonation st receiver) :=
-  cleanupPreReceiveDonation_frame_helper (P := fun s => replyLinkageFrame st s) st receiver
+  cleanupPreReceiveDonation_elimPops (P := fun s => replyLinkageFrame st s)
     (replyLinkageFrame.refl st)
     (fun scId originalOwner newOwner? st' hRet =>
       returnDonatedSchedContext_replyLinkageFrame st st' receiver scId originalOwner hObjInv
         newOwner? hRet)
+    (fun _ _ _ hK => keepDonatedSchedContext_replyLinkageFrame hObjInv hK)
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: a `storeTcbIpcState_fromTcb` whose new `ipcState` is not
@@ -8867,25 +8891,11 @@ theorem cleanupPreReceiveDonation_timeoutBudgetFrame
     (st : SystemState) (receiver : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) :
     timeoutBudgetFrame st (cleanupPreReceiveDonation st receiver) := by
-  unfold cleanupPreReceiveDonation
-  cases hL : lookupTcb st receiver with
-  | none => exact timeoutBudgetFrame.refl st
-  | some recvTcb =>
-    simp only []
-    cases hBind : recvTcb.schedContextBinding with
-    | unbound => exact timeoutBudgetFrame.refl st
-    | bound scId => exact timeoutBudgetFrame.refl st
-    | donated scId originalOwner =>
-      simp only []
-      cases hRet : returnDonatedSchedContextResolved st receiver scId originalOwner with
-      | error _ => exact timeoutBudgetFrame.refl st
-      | ok st' =>
-        simp only []
-        obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        intro tid tcb' hTcb'
-        exact returnDonatedSchedContext_tcb_timeoutBudget_backward st st' receiver scId
-          originalOwner hObjInv n hPop tid.toObjId tcb' hTcb'
-
+  refine cleanupPreReceiveDonation_elimFrame (P := fun s => timeoutBudgetFrame st s) hObjInv
+    (timeoutBudgetFrame.refl st) fun st' hF => ?_
+  intro tid tcb' hTcb'
+  obtain ⟨tcb, hPre, _, _, rfl⟩ := hF.tcbBack tid.toObjId tcb' hTcb'
+  exact ⟨tcb, hPre, rfl⟩
 open SeLe4n.Model.SystemState in
 /-- D6: `linkReply` frames the SchedContext/owner side forward — it stores only the `.reply`
 object at `rid` (non-Sc/non-TCB), disturbing neither witness. -/
@@ -16752,28 +16762,11 @@ theorem cleanupPreReceiveDonation_preserves_queueNextBlockingConsistent
     (st : SystemState) (receiver : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) (hInv : queueNextBlockingConsistent st) :
     queueNextBlockingConsistent (cleanupPreReceiveDonation st receiver) := by
-  unfold cleanupPreReceiveDonation
-  cases hL : lookupTcb st receiver with
-  | none => exact hInv
-  | some recvTcb =>
-    simp only []
-    cases hB : recvTcb.schedContextBinding with
-    | donated scId originalOwner =>
-      simp only []
-      cases hR : returnDonatedSchedContextResolved st receiver scId originalOwner with
-      | error e => exact hInv
-      | ok st' =>
-        simp only []
-        obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hR
-        refine queueNextBlockingConsistent_of_tcb_links_backward st st' ?_ hInv
-        intro y tcb' hY
-        obtain ⟨tcb, hTcb, hQN, _, hIpc, _⟩ :=
-          returnDonatedSchedContext_tcb_queue_backward st st' receiver scId originalOwner hObjInv
-            n hPop y.toObjId tcb' hY
-        exact ⟨tcb, hTcb, hIpc, hQN⟩
-    | unbound => exact hInv
-    | bound _ => exact hInv
-
+  refine cleanupPreReceiveDonation_elimFrame hObjInv hInv fun st' hF => ?_
+  refine queueNextBlockingConsistent_of_tcb_links_backward st st' ?_ hInv
+  intro y tcb' hY
+  obtain ⟨tcb, hTcb, hQN, _, hIpc, _⟩ := hF.tcb_queue_backward y.toObjId tcb' hY
+  exact ⟨tcb, hTcb, hIpc, hQN⟩
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b: `cleanupPreReceiveDonation` preserves
 `endpointQueueTailBlockedConsistent` — it touches no endpoint and preserves every TCB's `ipcState`
@@ -16810,30 +16803,11 @@ theorem cleanupPreReceiveDonation_preserves_queueNextTargetBlocked
     (st : SystemState) (receiver : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) (hInv : queueNextTargetBlocked st) :
     queueNextTargetBlocked (cleanupPreReceiveDonation st receiver) := by
-  unfold cleanupPreReceiveDonation
-  cases hL : lookupTcb st receiver with
-  | none => exact hInv
-  | some recvTcb =>
-    simp only []
-    cases hB : recvTcb.schedContextBinding with
-    | donated scId originalOwner =>
-      simp only []
-      cases hR : returnDonatedSchedContextResolved st receiver scId originalOwner with
-      | error e => exact hInv
-      | ok st' =>
-        simp only []
-        obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hR
-        refine queueNextTargetBlocked_of_tcb_links_backward st st' ?_ hInv
-        intro y tcb' hY
-        obtain ⟨tcb, hTcb, hQN, _, hIpc, _⟩ :=
-          returnDonatedSchedContext_tcb_queue_backward st st' receiver scId originalOwner hObjInv
-            n hPop
-            y.toObjId tcb' hY
-        exact ⟨tcb, hTcb, hIpc, hQN⟩
-    | unbound => exact hInv
-    | bound _ => exact hInv
-
-
+  refine cleanupPreReceiveDonation_elimFrame hObjInv hInv fun st' hF => ?_
+  refine queueNextTargetBlocked_of_tcb_links_backward st st' ?_ hInv
+  intro y tcb' hY
+  obtain ⟨tcb, hTcb, hQN, _, hIpc, _⟩ := hF.tcb_queue_backward y.toObjId tcb' hY
+  exact ⟨tcb, hTcb, hIpc, hQN⟩
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `cleanupPreReceiveDonation` preserves `endpointQueueLinksOnlyBlocked`
 (`returnDonatedSchedContext` rewrites only `schedContextBinding`, preserving every TCB's `ipcState`
@@ -16843,28 +16817,11 @@ theorem cleanupPreReceiveDonation_preserves_endpointQueueLinksOnlyBlocked
     (st : SystemState) (receiver : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) (hInv : endpointQueueLinksOnlyBlocked st) :
     endpointQueueLinksOnlyBlocked (cleanupPreReceiveDonation st receiver) := by
-  unfold cleanupPreReceiveDonation
-  cases hL : lookupTcb st receiver with
-  | none => exact hInv
-  | some recvTcb =>
-    simp only []
-    cases hB : recvTcb.schedContextBinding with
-    | donated scId originalOwner =>
-      simp only []
-      cases hR : returnDonatedSchedContextResolved st receiver scId originalOwner with
-      | error e => exact hInv
-      | ok st' =>
-        simp only []
-        obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hR
-        refine endpointQueueLinksOnlyBlocked_of_tcb_links_backward st st' ?_ hInv
-        intro y tcb' hY
-        obtain ⟨tcb, hTcb, hQN, _, hIpc, _⟩ :=
-          returnDonatedSchedContext_tcb_queue_backward st st' receiver scId originalOwner hObjInv
-            n hPop
-            y.toObjId tcb' hY
-        exact ⟨tcb, hTcb, hIpc, hQN⟩
-    | unbound => exact hInv
-    | bound _ => exact hInv
+  refine cleanupPreReceiveDonation_elimFrame hObjInv hInv fun st' hF => ?_
+  refine endpointQueueLinksOnlyBlocked_of_tcb_links_backward st st' ?_ hInv
+  intro y tcb' hY
+  obtain ⟨tcb, hTcb, hQN, _, hIpc, _⟩ := hF.tcb_queue_backward y.toObjId tcb' hY
+  exact ⟨tcb, hTcb, hIpc, hQN⟩
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b: `endpointReceiveDual` **establishes** `queueNextBlockingConsistent`
 from the pre-state (de-threads `hQNBC'`). Rendezvous (pop sendQ) — Call sub-path: caller

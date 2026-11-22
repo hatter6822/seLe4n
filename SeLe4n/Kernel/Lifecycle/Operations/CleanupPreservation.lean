@@ -3528,6 +3528,42 @@ theorem returnDonatedSchedContextResolved_runQueueStage {st st' : SystemState}
   let ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
   returnDonatedSchedContext_runQueueStage hA hPop
 
+/-- **The donation-stack head pop is a run-queue stage**: at most two replies
+stored over replies. -/
+theorem storeDonationHeadPop_runQueueStage {st st' : SystemState} {scId : SeLe4n.SchedContextId}
+    {head? : Option (SeLe4n.ReplyId × Reply)}
+    (h : storeDonationHeadPop scId head? st = .ok st') : SystemState.RunQueueStage st st' := by
+  rcases storeDonationHeadPop_cases h with ⟨_, rfl⟩ | ⟨rid, rh, s1, _, hClear, hReHead⟩
+  · exact .refl _
+  · have f1 : SystemState.RunQueueStage st s1 := by
+      rcases storeDonationHeadClear_cases hClear with rfl | ⟨rid0, r0, _, hRead, hS0⟩
+      · exact .refl _
+      · exact SystemState.RunQueueStage.storeObject_nonTcb hS0 hRead (fun _ e => by cases e)
+          (fun _ e => by cases e)
+    have f2 : SystemState.RunQueueStage s1 st' := by
+      rcases storeReplyReHead_cases hReHead with rfl | ⟨below, b, _, hReadB, hS2⟩
+      · exact .refl _
+      · exact SystemState.RunQueueStage.storeObject_nonTcb hS2 hReadB (fun _ e => by cases e)
+          (fun _ e => by cases e)
+    exact f1.trans f2
+
+/-- **The held pop is a run-queue stage**: the sever's two stores, then the
+holder's binding codes, which no run-queue reading sees. -/
+theorem keepDonatedSchedContext_runQueueStage {st st' : SystemState}
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') : SystemState.RunQueueStage st st' := by
+  obtain ⟨_, _, ht, _, s2, hSc, -, -, -, hS1, hS2, hL, hS3⟩ := keepDonatedSchedContext_ok_storeChain h
+  have hO2 : s2.objects[holder.toObjId]? = some (.tcb ht) := lookupTcb_some_objects s2 holder ht hL
+  exact ((SystemState.RunQueueStage.storeObject_nonTcb hS1 hSc (fun _ e => by cases e)
+    (fun _ e => by cases e)).trans (storeDonationHeadPop_runQueueStage hS2)).trans
+    (SystemState.RunQueueStage.storeObject_tcb hS3 hO2 (fun _ => rfl))
+
+/-- The resolved held pop is a run-queue stage. -/
+theorem keepDonatedSchedContextResolved_runQueueStage {st st' : SystemState}
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    (h : keepDonatedSchedContextResolved st holder scId = .ok st') : SystemState.RunQueueStage st st' :=
+  keepDonatedSchedContextResolved_lift h fun _ _ hP => keepDonatedSchedContext_runQueueStage hP
+
 theorem returnDonatedSchedContextResolved_runQueueFrameStage {st st' : SystemState}
     {serverTid : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
     {originalOwner : SeLe4n.ThreadId}

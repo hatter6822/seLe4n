@@ -148,23 +148,6 @@ theorem severUnheldSchedContext {st st' : SystemState} {scId : SeLe4n.SchedConte
   have F1 := storeSchedContext hInv hSc hS1
   exact F1.trans (storeDonationHeadPop F1.invExt hS2)
 
-/-- The held pop: the sever's two stores and the holder's binding. -/
-theorem keepDonatedSchedContext {st st' : SystemState} {holder : SeLe4n.ThreadId}
-    {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId} (hInv : st.objects.invExt)
-    (h : _root_.SeLe4n.Kernel.keepDonatedSchedContext st holder scId newOwner? = .ok st') :
-    RecordsFrame st st' := by
-  obtain ⟨sc, head?, _, s1, s2, hSc, -, -, -, hS1, hS2, hL, hS3⟩ :=
-    keepDonatedSchedContext_ok_storeChain h
-  have F1 := storeSchedContext hInv hSc hS1
-  have F2 := F1.trans (storeDonationHeadPop F1.invExt hS2)
-  exact F2.trans (storeTcbBinding F2.invExt hL hS3)
-
-theorem keepDonatedSchedContextResolved {st st' : SystemState} {holder : SeLe4n.ThreadId}
-    {scId : SeLe4n.SchedContextId} (hInv : st.objects.invExt)
-    (h : _root_.SeLe4n.Kernel.keepDonatedSchedContextResolved st holder scId = .ok st') :
-    RecordsFrame st st' :=
-  keepDonatedSchedContextResolved_lift h fun _ _ hP => keepDonatedSchedContext hInv hP
-
 theorem popUnheldReplyHead {st st' : SystemState} {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId}
     {home : CoreId} (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.popUnheldReplyHead st rid target home = .ok st') :

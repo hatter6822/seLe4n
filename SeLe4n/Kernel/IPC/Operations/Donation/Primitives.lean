@@ -568,26 +568,15 @@ theorem applyReplyDonation_machine_eq
           exact (hRem.trans (SchedContextOps.settleReturnedContext_machine _ _ _)).trans hMach
 
 /-- AG8-G: cleanupPreReceiveDonation preserves machine state.
-All fallback paths return `st` unchanged, and the success path delegates to
-`returnDonatedSchedContext` which preserves machine state. -/
+All fallback paths return `st` unchanged, and the success path is a held-head
+pop — the donation return or the held pop — each of which preserves machine
+state. -/
 theorem cleanupPreReceiveDonation_machine_eq
     (st : SystemState) (receiver : SeLe4n.ThreadId) :
-    (cleanupPreReceiveDonation st receiver).machine = st.machine := by
-  unfold cleanupPreReceiveDonation
-  cases lookupTcb st receiver with
-  | none => rfl
-  | some recvTcb =>
-    simp only []
-    cases recvTcb.schedContextBinding with
-    | unbound => rfl
-    | bound scId => rfl
-    | donated scId originalOwner =>
-      simp only []
-      cases hReturn : returnDonatedSchedContextResolved st receiver scId originalOwner with
-      | error _ => rfl
-      | ok st' =>
-        obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hReturn
-        exact returnDonatedSchedContext_machine_eq st st' receiver scId originalOwner n hPop
+    (cleanupPreReceiveDonation st receiver).machine = st.machine :=
+  cleanupPreReceiveDonation_elimPops (P := fun s => s.machine = st.machine) rfl
+    (fun scId o n s h => returnDonatedSchedContext_machine_eq st s receiver scId o n h)
+    (fun _ _ _ h => keepDonatedSchedContext_machine_eq h)
 
 -- ============================================================================
 -- WS-RR RR2.3: donation object-store frames — what the SchedContext rebinding

@@ -1639,6 +1639,37 @@ private theorem returnDonatedSchedContext_preserves_projection
     rw [hEq]; rfl
   rw [hFinal, hP4, hP3, hP2, hP1]
 
+/-- The held pop preserves projection for the same reason the donation return
+does: the context's `scReply` and origin, the replies' stack links and the
+holder's binding codes are all stripped by `projectKernelObject`. -/
+private theorem keepDonatedSchedContext_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (holder : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (newOwner? : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hKeep : keepDonatedSchedContext st holder scId newOwner? = .ok st')
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none →
+        st.objectIndexSet.contains oid = true)
+    (hObjSetInv : st.objectIndexSet.table.invExt) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  obtain ⟨sc, head?, ht, s1, s2, hSc, _, _, _, hS1, hS2, hL, hS3⟩ :=
+    keepDonatedSchedContext_ok_storeChain hKeep
+  have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hS2
+  have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _ hObjSetInv hS1
+  have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
+    hObjSetInv hIdxComplete hS1
+  have hP1 := storeObject_projectionStable_preserves_projection ctx observer st s1
+    scId.toObjId _ (.schedContext sc) hSc
+    (by simp [projectKernelObject, donationSeverSchedContext])
+    hObjInv hS1
+  have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hS2
+  have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 st'
+    holder.toObjId _ (.tcb ht) (lookupTcb_some_objects s2 holder ht hL)
+    (projectKernelObject_tcb_schedContextBinding_invariant ctx observer ht _ _)
+    hInv2 hS3
+  rw [hP3, hP2, hP1]
+
 /-- WS-SM SM6.D (#7.1 fold): `storeTcbQueueLinks` preserves
 `objectIndexSetComplete` — it is a single `storeObject` at an existing key. -/
 theorem storeTcbQueueLinks_preserves_objectIndexSetComplete
@@ -2004,7 +2035,7 @@ theorem endpointReceiveDual_preserves_projection
                   | bound _ => rfl
                   | donated scId originalOwner =>
                     simp only []
-                    cases hReturn : returnDonatedSchedContextResolved st receiver scId
+                    cases hReturn : popHeldReplyHead st receiver scId
                         originalOwner with
                     | error _ => rfl
                     | ok st' =>
@@ -2013,10 +2044,15 @@ theorem endpointReceiveDual_preserves_projection
                       -- receiver is needed at all.  WS-OD OD4.4: and none on the
                       -- resolver's answer either — the pop is invisible at every
                       -- reply-stack depth.
-                      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hReturn
-                      exact returnDonatedSchedContext_preserves_projection ctx observer
-                        st st' receiver scId originalOwner hObjInv n hPop
-                        hIdxComplete hObjSetInv
+                      -- The held pop (the owner holds a context) is invisible
+                      -- for the same reason.
+                      exact popHeldReplyHead_liftPops
+                        (P := fun s => projectState ctx observer s = projectState ctx observer st)
+                        hReturn
+                        (fun n s hPop => returnDonatedSchedContext_preserves_projection ctx observer
+                          st s receiver scId originalOwner hObjInv n hPop hIdxComplete hObjSetInv)
+                        (fun n s hK => keepDonatedSchedContext_preserves_projection ctx observer
+                          st s receiver scId n hObjInv hK hIdxComplete hObjSetInv)
               -- Common tail: from st2 back to st (storeTcbIpcState → enqueue → cleanup).
               have hProjTail : projectState ctx observer st2 = projectState ctx observer st := by
                 rw [storeTcbIpcStateAndMessage_preserves_projection ctx observer st1 st2 receiver _ _

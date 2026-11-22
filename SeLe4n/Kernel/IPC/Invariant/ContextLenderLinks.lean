@@ -787,7 +787,7 @@ theorem contextStackViewsAgree_of_objectsAgreeOffReleaseLinks {st st' : SystemSt
   · rw [replyStackCaller_eq_obj, replyStackCaller_eq_obj]; exact (key _).2.2
 
 /-- **The receive's pre-block return of a lent context** shrinks the stacks: a
-donation pop. -/
+held-head pop (the donation return or the held pop). -/
 theorem cleanupPreReceiveDonationChecked_linksShrink {st st' : SystemState}
     {receiver : SeLe4n.ThreadId} (hInv : st.objects.invExt)
     (h : cleanupPreReceiveDonationChecked st receiver = .ok st') :
@@ -796,8 +796,8 @@ theorem cleanupPreReceiveDonationChecked_linksShrink {st st' : SystemState}
   split at h
   · cases h; exact .refl _
   · split at h
-    · obtain ⟨_, _, hRet⟩ := returnDonatedSchedContextResolved_ok_decompose h
-      exact returnDonatedSchedContext_linksShrink hInv hRet
+    · exact popHeldReplyHead_liftPops h (fun _ _ hRet => returnDonatedSchedContext_linksShrink hInv hRet)
+        (fun _ _ hK => keepDonatedSchedContext_linksShrink hInv hK)
     · cases h; exact .refl _
 
 theorem cleanupPreReceiveDonationChecked_objects_invExt {st st' : SystemState}

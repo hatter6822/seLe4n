@@ -2410,7 +2410,8 @@ run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextResolved_eq_legac
 # HP4 section — a second copy here would be one question with two answers, and
 # the argument spelling is not what this row is about.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonation[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContextResolved st" SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean'
-run_check "INVARIANT" rg -n 'returnDonatedSchedContextResolved st receiver scId originalOwner' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n 'popHeldReplyHead st receiver scId originalOwner' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def popHeldReplyHead \([^\n]*(\n[ \t][^\n]*)*\n    returnDonatedSchedContextResolved st holder scId recipient\n  else keepDonatedSchedContextResolved st holder scId$" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # (the suspend site is pinned by OD1.4's order anchor above, which OD4.4 updated
 # to the `…Resolved` spelling — one anchor for one question)
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPopDonation[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContextResolved st" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
@@ -12035,7 +12036,7 @@ run_check "INVARIANT" rg -n 'cleanupPreReceiveDonationChecked_preservesFieldsOut
 # one-line bridge every frame lemma of the six call sites crosses -- and the
 # negative below refuses the retired literal.  The underscore run is the arity,
 # so an argument added to the pop is caught here rather than absorbed silently.
-run_check "INVARIANT" bash -lc 'rg -U -n "returnDonatedSchedContextResolved_lift hStep\n[ \t]*\(fun n s hs => returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ n hs\)" SeLe4n/Kernel/CrossSubsystem.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "popHeldReplyHead_liftPops hStep\n[ \t]*\(fun n s hs => returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ n hs\)\n[ \t]*\(fun _ _ hs => keepDonatedSchedContext_preservesFieldsOutside hs\)" SeLe4n/Kernel/CrossSubsystem.lean'
 run_negative_check "INVARIANT" rg -n 'returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ none hStep' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n 'writeSetSurfaceElaborates' tests/CrossSubsystemPerCoreSuite.lean
 run_check "INVARIANT" rg -n 'StateField enum has 18 variants' tests/InformationFlowSuite.lean
@@ -13865,7 +13866,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveHandoffReplenishCo
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveHandoffReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match receivePreReturn\? st endpointId receiver with" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveHandoffReplenishCores_of_blocked \([^\n]*(\n([ \t][^\n]*)?)*\(hNoDon : endpointReplyDonation\? st receiver = none\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" rg -n '^theorem endpointReceiveHandoffReplenishCores_of_blocked_returning \(st : SystemState\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveHandoffReplenishCores_of_blocked_returning_eq_migration$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveHandoffReplenishCores_of_blocked_returning_covers_migration$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_contains_preReturn_replenish_writes$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_covers_preReturnMigration$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # What carries the block path across the point where the single-core and cross-core
@@ -13947,7 +13948,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvHandoffReplenis
 # ...nor take a core as a PARAMETER (the shape Cut 8a-ii's first form had).
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (replyRecvHandoffReplenishCores|schedLockSet_endpointReplyRecvOnCore)[^\n]*(\n([ \t][^\n]*)?)*(donorHome|doneeHome|holderHome|ownerHome)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 # The block-path pair's shared licence, consumed by both receiving arms.
-run_check "INVARIANT" rg -n '^theorem receivePreReturnReplenishCores_eq_migration \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem receivePreReturnReplenishCores_covers_migration \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # The three coverage relations, each at the cores its migration ACTUALLY resolves
 # on the state it runs on, and the two decompositions they read.
 run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReplyRecvOnCore_covers_pop$' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean

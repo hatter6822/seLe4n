@@ -389,8 +389,8 @@ theorem of_popUnheldReplyHead {st st' : SystemState} {rid : SeLe4n.ReplyId}
   · have h1 := of_returnUnheldSchedContext hInv hP
     exact h1.trans (of_settle _ _ _ h1.2)
 
-/-- The pre-receive cleanup returns a donated context and migrates its
-replenishments. -/
+/-- The pre-receive cleanup pops the held head (returning the context or keeping
+it with the receiver) and migrates its replenishments. -/
 theorem of_cleanupPreReceiveDonationMigrated {st st' : SystemState} {receiver : SeLe4n.ThreadId}
     (hInv : st.objects.invExt) (h : cleanupPreReceiveDonationMigrated st receiver = .ok st') :
     savedRegsUnwritten st st' := by
@@ -400,7 +400,8 @@ theorem of_cleanupPreReceiveDonationMigrated {st st' : SystemState} {receiver : 
     split at hC
     · cases hC; exact .refl hInv
     · split at hC
-      · exact of_returnDonatedSchedContextResolved hInv hC
+      · exact popHeldReplyHead_lift hC (fun _ _ hR => of_returnDonatedSchedContextResolved hInv hR)
+          (fun _ _ hK => of_keepDonatedSchedContextResolved hInv hK)
       · cases hC; exact .refl hInv
   refine hClean.trans ?_
   unfold preReceiveReturnMigration

@@ -1898,6 +1898,17 @@ theorem returnDonatedSchedContext_preservesFieldsOutside
     | rfl
     | exact (hf (by decide)).elim
 
+/-- The held pop writes a context, the replies and one thread: IPC fields only. -/
+theorem keepDonatedSchedContext_preservesFieldsOutside
+    {st st' : SystemState} {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {newOwner? : Option SeLe4n.ThreadId}
+    (hStep : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
+  obtain ⟨_, _, _, s1, s2, _, _, _, _, hS1, hS2, _, hS3⟩ := keepDonatedSchedContext_ok_storeChain hStep
+  refine preservesFieldsOutside_trans (storeObject_preservesFieldsOutside_ipc _ _ _ _ hS1) ?_
+  refine preservesFieldsOutside_trans (storeDonationHeadPop_preservesFieldsOutside_ipc hS2) ?_
+  exact storeObject_preservesFieldsOutside_ipc _ _ _ _ hS3
+
 theorem cleanupPreReceiveDonationChecked_preservesFieldsOutside
     (st st' : SystemState) (receiver : SeLe4n.ThreadId)
     (hStep : cleanupPreReceiveDonationChecked st receiver = .ok st') :
@@ -1907,8 +1918,9 @@ theorem cleanupPreReceiveDonationChecked_preservesFieldsOutside
   · cases hStep
     exact preservesFieldsOutside_refl _ _
   · split at hStep
-    · exact returnDonatedSchedContextResolved_lift hStep
+    · exact popHeldReplyHead_liftPops hStep
         (fun n s hs => returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ n hs)
+        (fun _ _ hs => keepDonatedSchedContext_preservesFieldsOutside hs)
     · cases hStep
       exact preservesFieldsOutside_refl _ _
 

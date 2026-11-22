@@ -1051,11 +1051,8 @@ theorem endpointReceiveDual_preserves_ipcInvariant
           rw [hBridge] at hStep
           have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
           have hInvClean : ipcInvariant (cleanupPreReceiveDonation st receiver) :=
-            cleanupPreReceiveDonation_frame_helper st receiver hInv
-              (fun scId owner newOwner? st' hRet =>
-                fun oid ntfn hObj' => hInv oid ntfn
-                  (returnDonatedSchedContext_notification_backward st st' receiver scId owner
-                    hObjInv newOwner? hRet oid ntfn hObj'))
+            cleanupPreReceiveDonation_elimFrame hObjInv hInv
+              (fun st' hF => fun oid ntfn hObj' => hInv oid ntfn (hF.notification_backward oid ntfn hObj'))
           cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
           | error e => simp [hEnq] at hStep
           | ok st1 =>
