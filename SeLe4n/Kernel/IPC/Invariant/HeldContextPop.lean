@@ -170,6 +170,69 @@ theorem keepDonatedSchedContext_holder (hObjInv : st.objects.invExt)
   subst e2
   exact ⟨ht, hO, hG, hO'⟩
 
+/-- **The held pop's holder guard holds wherever a context's bound thread names
+it back** (the second half of the binding pair `schedContextBindingConsistent`,
+which the scheduler bundle carries).  The pop reads its holder after its two
+stores, which write the context and the reply objects and no thread, so the
+thread it reads is the pre-state's `sc.boundThread`, whose binding the
+invariant says is `.bound scId` or `.donated scId _`.  So the guard
+`ht.schedContextBinding.scId? = some scId` never refuses on a state the
+invariant holds of, and the held pop is seL4's `reply_pop` there. -/
+theorem keepDonatedSchedContext_holderGuard_of_schedContextBindingConsistent
+    (hObjInv : st.objects.invExt) (hCons : schedContextBindingConsistent st)
+    {sc X : SchedContext} {head? : Option (SeLe4n.ReplyId × Reply)} {s1 s2 : SystemState}
+    {ht : TCB}
+    (hSc : st.objects[scId.toObjId]? = some (.schedContext sc))
+    (hB : sc.boundThread = some holder)
+    (hS1 : storeObject scId.toObjId (.schedContext X) st = .ok ((), s1))
+    (hS2 : storeDonationHeadPop scId head? s1 = .ok s2)
+    (hL : lookupTcb s2 holder = some ht) :
+    ht.schedContextBinding.scId? = some scId := by
+  have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hO2 := lookupTcb_some_objects s2 holder ht hL
+  have h1 := storeDonationHeadPop_tcb_backward hInv1 hS2 _ _ hO2
+  have hNe : holder.toObjId ≠ scId.toObjId := by
+    intro e'; rw [e', storeObject_objects_eq st s1 _ _ hObjInv hS1] at h1; cases h1
+  rw [storeObject_objects_ne st s1 _ _ _ hNe hObjInv hS1] at h1
+  obtain ⟨t, hT, hBind⟩ := hCons.2 scId sc hSc holder hB
+  rw [hT] at h1
+  have e : t = ht := by injection h1 with h1; injection h1
+  subst e
+  rcases hBind with hb | ⟨o, hb⟩ <;> rw [hb] <;> rfl
+
+/-- **The holder guard is redundant under the binding pair**: on a state where a
+context's bound thread names it back, the held pop that passes its seL4 checks
+(the context bound to `holder`, the outer caller acceptable, the head resolved)
+and whose stores succeed answers `.ok` — the guard's refusal branch is never
+taken.  Stated over `schedContextBindingConsistent`, the scheduler bundle's
+binding pair. -/
+theorem keepDonatedSchedContext_ok_of_schedContextBindingConsistent
+    (hObjInv : st.objects.invExt) (hCons : schedContextBindingConsistent st)
+    {sc : SchedContext} {head? : Option (SeLe4n.ReplyId × Reply)} {s1 s2 : SystemState}
+    {ht : TCB}
+    (hSc : st.objects[scId.toObjId]? = some (.schedContext sc))
+    (hB : sc.boundThread = some holder)
+    (hOut : outerCallerAcceptable st holder holder newOwner? = true)
+    (hHead : donationHeadOf? st scId sc = .ok head?)
+    (hS1 : storeObject scId.toObjId
+        (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
+        st = .ok ((), s1))
+    (hS2 : storeDonationHeadPop scId head? s1 = .ok s2)
+    (hL : lookupTcb s2 holder = some ht)
+    (hS3 : storeObject holder.toObjId (.tcb { ht with
+          scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId newOwner?),
+          scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) })
+        s2 = .ok ((), st')) :
+    keepDonatedSchedContext st holder scId newOwner? = .ok st' := by
+  have hG := keepDonatedSchedContext_holderGuard_of_schedContextBindingConsistent hObjInv
+    hCons hSc hB hS1 hS2 hL
+  have hSc' : st.getSchedContext? scId = some sc :=
+    (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc
+  unfold keepDonatedSchedContext
+  simp only [hSc', hB, hOut, hHead, hS1, hS2, hL, hG, bne_self_eq_false, Bool.not_true,
+    Bool.false_eq_true, if_false]
+  rw [hS3]
+
 /-- The binding the held pop writes names the context it kept. -/
 theorem tcb_donationReturnBinding_scId? (scId : SeLe4n.SchedContextId) (n : Option SeLe4n.ThreadId)
     (ht : TCB) :

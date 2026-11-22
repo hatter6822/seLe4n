@@ -14008,6 +14008,10 @@ run_check "INVARIANT" rg -n '^def keepDonatedSchedContext \(' SeLe4n/Kernel/IPC/
 run_check "INVARIANT" rg -n '^def popHeldReplyHead \(' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContext_establishes_ipcInvariantFull_of_except$' SeLe4n/Kernel/IPC/Invariant/HeldContextPop.lean
 run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContext_stepCovers \(' SeLe4n/Kernel/ReschedulePendingArms/Ipc.lean
+# The held pop's holder guard is redundant: the binding pair gives it, so its
+# refusal branch is unreachable and the pop is seL4's `reply_pop`.
+run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContext_holderGuard_of_schedContextBindingConsistent$' SeLe4n/Kernel/IPC/Invariant/HeldContextPop.lean
+run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContext_ok_of_schedContextBindingConsistent$' SeLe4n/Kernel/IPC/Invariant/HeldContextPop.lean
 # NEGATIVE: the retired result-keyed pair must not come back, anywhere in code.
 run_negative_check "INVARIANT" rg -n 'replyRecvPopReplenishCores' SeLe4n tests
 # The ARM's write set branches on the seam's own predicate and, on the fault branch,
