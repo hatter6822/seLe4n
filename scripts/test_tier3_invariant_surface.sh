@@ -11298,6 +11298,8 @@ import SeLe4n.Kernel.ContextLenders.Entry
 import SeLe4n.Kernel.ContextLenders.Interrupt
 import SeLe4n.Kernel.ContextLenders.Fault
 import SeLe4n.Kernel.ContextLenders.Notification
+import SeLe4n.Kernel.ContextLenders.Cancel
+import SeLe4n.Kernel.ContextLenders.Receive
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency
 #check @replyRecvCompletesSignalArm
@@ -11470,6 +11472,16 @@ open SeLe4n.Kernel.Concurrency
 #check @endpointSendCrossCoreDispatchChecked_lendersStage
 #check @LendersFrame.notificationSignalBoundCrossCoreDispatchChecked
 #check @LendersFrame.notificationSignalDeclassifiedCrossCoreDispatch
+#check @LendersFrame.cancelIpcKeepingContexts
+#check @LendersFrame.suspendCancelRevert
+#check @LendersFrame.cancelReplyHolder
+#check @chainObjectsKept.notificationWaitOnCore
+#check @LendersFrame.notificationWaitCrossCoreDispatchChecked
+#check @LendersFrame.schedContextReturnPerform
+#check @LendersFrame.maybeReturnSchedContext
+#check @LendersFrame.receiveReturnSchedContext
+#check @LendersFrame.maybeDonateSchedContextFlowing
+#check @LendersFrame.completeSignalArm
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing
