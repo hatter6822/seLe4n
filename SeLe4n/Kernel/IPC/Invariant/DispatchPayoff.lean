@@ -541,8 +541,14 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
       unheldReplyHeadBoundByNone (endpointReplyOnCore tid callerTid
           { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
             badge := cap.badge } executingCore st).1 hid)
-  signalNoBoundTarget : ∀ notifId, decoded.syscallId = .notificationSignal →
-    cap.target = .object notifId → boundDeliveryTarget? st notifId = none
+  /-- seL4's `sendSignal` to a bound notification whose receiver waits on an
+      endpoint splices that receiver off the endpoint's receive queue; the
+      bundle survives the splice when the receiver's queue predecessor is
+      blocked receiving on the same endpoint (`splicePredecessorBlocked`,
+      vacuous at the queue head and with no bound receiver). -/
+  signalBoundReceiverSplice : ∀ notifId, decoded.syscallId = .notificationSignal →
+    cap.target = .object notifId → ∀ (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId),
+      boundDeliveryTarget? st notifId = some (t, epId) → splicePredecessorBlocked true epId st t
   replyRecvStage : ∀ rid prevCaller replyBadge replyGrant epId,
     decoded.syscallId = .replyRecv → cap.target = .object epId →
     resolveReplyRecvReply gate decoded st = .ok (some (rid, prevCaller, replyBadge, replyGrant)) →
@@ -729,24 +735,22 @@ per-transition bundle with the arm's staging writes.  The SM9 arms close from
 their transitions' own frames (`auditReadFromCore_frame` pins `st' = st`;
 `auditDrain_frame` and `declassifyObjectFromCore_frame_of_ok` pin an
 audit-log-only rewrite, which no `ipcInvariantFull` conjunct reads) plus
-the declassified signal's fallthrough bundle, under the same
-unbound-delivery confinement as the ordinary signal arm (lifting it on both
-tiers is registered debt: `docs/REGISTERED_DEBT.md` table C, "The dispatch
-payoff confines the signal and declassified-signal arms to unbound delivery",
-owned by WS-PK). -/
+the declassified signal's bundle on both delivery paths, under the same
+bound-receiver splice premise as the ordinary signal arm. -/
 
 /-- Pre-state pack for the flow-checked dispatch tier: the arms' pack,
-plus the declassifying signal's unbound-delivery confinement — that arm is
-live only on this tier, so only this tier's pack carries its confinement.
+plus the declassifying signal's bound-receiver splice premise — that arm is
+live only on this tier, so only this tier's pack carries it.
 Every field is a pre-state fact. -/
 structure checkedSyscallDispatchQuiescence (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
     (st : SystemState) : Prop where
   base : syscallDispatchQuiescence decoded tid executingCore gate cap st
-  declassifySignalNoBoundTarget : ∀ ntfnCap notifId,
+  declassifySignalBoundReceiverSplice : ∀ ntfnCap notifId,
     decoded.syscallId = .declassifySignal →
     resolveDeclassifySignalTarget tid decoded.msgInfo.extraCaps st = .ok (ntfnCap, notifId) →
-    boundDeliveryTarget? st notifId = none
+    ∀ (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId),
+      boundDeliveryTarget? st notifId = some (t, epId) → splicePredecessorBlocked true epId st t
 
 /-- **The receive arm past its flow gate preserves the bundle** — on the state
 its busy-reply cancel leaves (`dispatchWithCapChecked`'s `.receive` arm, and the
@@ -1258,42 +1262,26 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
       case notificationSignal =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
         case object notifId =>
-              have hNoBound := hQ.base.signalNoBoundTarget notifId hSy hTgt
-              cases hFlow : securityFlowsTo (ctx.threadLabelOf tid)
-                  (ctx.objectLabelOf notifId) with
-              | false =>
-                  rw [notificationSignalBoundCrossCoreDispatchChecked_flow_denied
-                        ctx notifId tid cap.signalBadge executingCore st hFlow] at hStep
-                  simp only [] at hStep; cases hStep
-              | true =>
-                  rw [notificationSignalBoundCrossCoreDispatchChecked_flow_allowed_no_delivery
-                        ctx notifId tid cap.signalBadge executingCore st hFlow hNoBound] at hStep
-                  have hNoBound := hPack.signalNoBoundTarget notifId hSy hTgt
-                  -- seL4's `sendSignal`: the wake (no bound receiver: the
-                  -- notification's own signal), then the donation to its woken head.
-                  have hWake : ipcInvariantFull
-                      (notificationSignalBoundOnCore notifId cap.signalBadge executingCore st).1 := by
-                    rw [notificationSignalBoundOnCore_fallthrough_eq notifId cap.signalBadge
-                      executingCore st hNoBound]
-                    exact notificationSignalOnCore_preserves_ipcInvariantFull notifId
-                      cap.signalBadge executingCore st hInv hObjInv
-                      hPack.reachable.notificationWaiterConsistent hBudgets
-                  have hSigInv := sendSignalOnCoreFlowing_preserves_ipcInvariantFull ctx notifId
-                    cap.signalBadge executingCore st hObjInv hWake
-                    (schedContextBindingBidirectional_of_consistent
-                      hPack.capOnly.schedContextLinks.binding hInv.donationOwnerValid)
-                    hInv hPack.reachable.notificationWaiterConsistent
-                  cases hSig : sendSignalOnCoreFlowing ctx notifId cap.signalBadge
-                      executingCore st with
-                  | mk st1 res1 =>
-                      rw [hSig] at hStep hSigInv
-                      cases res1 with
-                      | error e => simp only [] at hStep; cases hStep
-                      | ok u1 =>
-                          simp only [] at hStep
-                          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                          rw [← hStep]
-                          exact hSigInv
+              -- seL4's `sendSignal`: the flow gate, the wake (the bound
+              -- receiver's or the notification's own), then the donation to
+              -- the woken thread.
+              have hSigInv := notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFull
+                ctx notifId tid cap.signalBadge executingCore st hInv hObjInv
+                hPack.reachable.notificationWaiterConsistent hBudgets
+                (hPack.signalBoundReceiverSplice notifId hSy hTgt)
+                (schedContextBindingBidirectional_of_consistent
+                  hPack.capOnly.schedContextLinks.binding hInv.donationOwnerValid)
+              cases hSig : notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid
+                  cap.signalBadge executingCore st with
+              | mk st1 res1 =>
+                  rw [hSig] at hStep hSigInv
+                  cases res1 with
+                  | error e => simp only [] at hStep; cases hStep
+                  | ok u1 =>
+                      simp only [] at hStep
+                      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                      rw [← hStep]
+                      exact hSigInv
         all_goals cases hStep
       case notificationWait =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1456,7 +1444,6 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
           | ok pr =>
               obtain ⟨ntfnCap, notifId⟩ := pr
               simp only [hR] at hStep
-              have hNoBound := hQ.declassifySignalNoBoundTarget ntfnCap notifId hSy hR
               cases hDisp : notificationSignalDeclassifiedCrossCoreDispatch
                   (liftLegacyContext ctx) ctx.declassificationPolicy notifId
                   ntfnCap.signalBadge executingCore st with
@@ -1467,11 +1454,12 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                   | ok sgi1 =>
                       simp only [] at hStep
                       have hSigInv : ipcInvariantFull st1 :=
-                        notificationSignalDeclassifiedCrossCoreDispatch_preserves_ipcInvariantFull_fallthrough
+                        notificationSignalDeclassifiedCrossCoreDispatch_preserves_ipcInvariantFull
                           (liftLegacyContext ctx) ctx.declassificationPolicy notifId
-                          ntfnCap.signalBadge executingCore st st1 sgi1 hNoBound
+                          ntfnCap.signalBadge executingCore st st1 sgi1
                           hInv hObjInv hQ.base.reachable.notificationWaiterConsistent
                           hQ.base.reachable.allTimeoutBudgetsNone
+                          (hQ.declassifySignalBoundReceiverSplice ntfnCap notifId hSy hR)
                           (schedContextBindingBidirectional_of_consistent
                             hPack.capOnly.schedContextLinks.binding hInv.donationOwnerValid) hDisp
                       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
@@ -2046,7 +2034,7 @@ theorem syscallDispatchQuiescence_inhabited :
     simp [witnessDecoded] at hSy
 
 /-- The checked-tier pack is inhabited too: the base witness plus the
-declassifying signal's confinement, vacuous at a `.send`-shaped decode. -/
+declassifying signal's splice premise, vacuous at a `.send`-shaped decode. -/
 theorem checkedSyscallDispatchQuiescence_inhabited :
     checkedSyscallDispatchQuiescence witnessDecoded witnessTid Concurrency.bootCoreId witnessGate
       witnessCap witnessSt3 :=
@@ -2067,8 +2055,9 @@ than only the state-shaped ones.
 
 Coverage, and the one boundary:
 
-* `…_inhabited_signal` -- `signalNoBoundTarget` computes
-  `boundDeliveryTarget? = none` on a present object;
+* `…_inhabited_signal` -- `signalBoundReceiverSplice`'s target premise
+  fires on a present object and its bound-target premise is refuted by
+  computing `boundDeliveryTarget? = none`;
 * `…_inhabited_bind` / `…_inhabited_suspend` -- the capability pack's
   arm-guarded fields under their own arms (PR #886 review: the guards keep
   unrelated payloads from activating them): `boundThreadNotDonationOwner`
@@ -2091,11 +2080,14 @@ Coverage, and the one boundary:
   reply capability the same rendezvous supplies -- is registered debt
   (`docs/REGISTERED_DEBT.md` table C, "The dispatch payoff's per-arm
   inhabitation stops at the `.reply` arm's caller premise", owned by WS-PK);
-* `checked…_inhabited_declassifySignal` -- the checked tier's confinement
-  computed on a present object, as the signal arm's is. -/
+* `checked…_inhabited_declassifySignal` -- the checked tier's splice
+  premise, its bound target refuted by computation as the signal arm's is.
+  Firing either splice premise on a bound receiver needs a notification
+  bound to a thread queued on an endpoint, which the retype lever cannot
+  build either: the same lever boundary. -/
 
 /-- A `.notificationSignal` decode: no registers, so every register-reading
-decoder refuses and only the signal confinement fires. -/
+decoder refuses and only the signal's splice premise fires. -/
 private def witnessDecodedSignal : SyscallDecodeResult :=
   { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default,
     syscallId := .notificationSignal }
@@ -2147,10 +2139,10 @@ private theorem witnessCapOnlySignal :
     cases hVal
     exact witnessThreadQuiescent
 
-/-- **The signal arm's confinement is exercised**: the decode is
-`.notificationSignal`, the target premise fires, and
-`boundDeliveryTarget? = none` is computed on the present (non-notification)
-object rather than assumed. -/
+/-- **The signal arm's splice premise is exercised**: the decode is
+`.notificationSignal`, the target premise fires, and the bound-target premise
+is refuted by computing `boundDeliveryTarget? = none` on the present
+(non-notification) object rather than assumed. -/
 theorem syscallDispatchQuiescence_inhabited_signal :
     syscallDispatchQuiescence witnessDecodedSignal witnessTid Concurrency.bootCoreId witnessGateSignal
       witnessCapTcbObject witnessSt3 := by
@@ -2169,11 +2161,12 @@ theorem syscallDispatchQuiescence_inhabited_signal :
     simp [witnessDecodedSignal, receivesWithoutReply] at hSy
   · intro rid r callerTid hSy
     simp [witnessDecodedSignal] at hSy
-  · intro notifId hSy hTgt
+  · intro notifId hSy hTgt t epId hBound
     injection hTgt with hObj
     subst hObj
-    unfold boundDeliveryTarget?
-    rw [witnessSt3_getNotification_tcbSlot]
+    unfold boundDeliveryTarget? at hBound
+    rw [witnessSt3_getNotification_tcbSlot] at hBound
+    cases hBound
   · intro rid prevCaller replyBadge replyGrant epId hSy
     simp [witnessDecodedSignal] at hSy
   · intro rid prevCaller replyBadge replyGrant epId hSy
@@ -2548,7 +2541,7 @@ theorem syscallDispatchQuiescence_inhabited_mint :
   · intro hSy
     simp [witnessDecodedMint] at hSy
 
-/-- A `.declassifySignal` decode: the checked tier's confinement fires. -/
+/-- A `.declassifySignal` decode: the checked tier's splice premise fires. -/
 private def witnessDecodedDeclassifySignal : SyscallDecodeResult :=
   { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default,
     syscallId := .declassifySignal }
@@ -2605,22 +2598,23 @@ private theorem syscallDispatchQuiescence_inhabited_declassifySignal :
   · intro hSy
     simp [witnessDecodedDeclassifySignal] at hSy
 
-/-- **The checked confinement is exercised**: the `.declassifySignal` decode
-fires, and `boundDeliveryTarget? = none` is computed on every object the
-extra-capability resolver could name — the witness store holds no
-notification, so the lookup the confinement reads is `none` at every id. -/
+/-- **The checked splice premise is exercised**: the `.declassifySignal`
+decode fires, and its bound-target premise is refuted by computation on every
+object the extra-capability resolver could name — the witness store holds no
+notification, so `boundDeliveryTarget?` is `none` at every id. -/
 theorem checkedSyscallDispatchQuiescence_inhabited_declassifySignal :
     checkedSyscallDispatchQuiescence witnessDecodedDeclassifySignal witnessTid Concurrency.bootCoreId
       witnessGateDeclassifySignal witnessCapTcbObject witnessSt3 :=
   ⟨syscallDispatchQuiescence_inhabited_declassifySignal, by
-    intro ntfnCap notifId _ _
+    intro ntfnCap notifId _ _ t epId hBound
     have hN : witnessSt3.getNotification? notifId = none := by
       unfold SystemState.getNotification?
       rw [witnessSt3_lookup]
       by_cases h1 : (witnessScId.toObjId == notifId) = true <;>
         by_cases h2 : (witnessTid.toObjId == notifId) = true <;> simp [h1, h2]
-    unfold boundDeliveryTarget?
-    rw [hN]⟩
+    unfold boundDeliveryTarget? at hBound
+    rw [hN] at hBound
+    cases hBound⟩
 
 /-- A fresh reply object at slot `⟨3⟩`: the reply arm's object-lookup premise
 fires against a real stored reply.  Its `caller` is `none` -- the retype

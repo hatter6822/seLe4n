@@ -698,17 +698,20 @@ theorem notificationSignalDeclassifiedOnCore_bindingLinksAgree {ctx : GenericLab
   exact fun oid => by
     rw [hObj]; exact (notificationSignalBoundOnCore_schedLinkFrame n badge c st hObjInv).binding oid
 
-/-- **The declassifying dispatch keeps the IPC bundle** off the bound-delivery
-path: the declassifying signal's lemma, then the donation's on its state, which
-agrees with the wake's on every object, so finds the binding pair the signal
-was handed. -/
-theorem notificationSignalDeclassifiedCrossCoreDispatch_preserves_ipcInvariantFull_fallthrough
+/-- **The declassifying dispatch keeps the IPC bundle** on both delivery
+paths: the declassifying signal's lemma (the bound receiver's splice
+predecessor blocked, `splicePredecessorBlocked`), then the donation's on its
+state, which agrees with the wake's on every object, so finds the binding pair
+the signal was handed. -/
+theorem notificationSignalDeclassifiedCrossCoreDispatch_preserves_ipcInvariantFull
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
     (n : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : Concurrency.CoreId)
     (st st' : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
-    (hNoBound : boundDeliveryTarget? st n = none)
     (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
     (hNWC : notificationWaiterConsistent st) (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hPred : ∀ (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId),
+      boundDeliveryTarget? st n = some (t, epId) →
+      splicePredecessorBlocked true epId st t)
     (hBi : schedContextBindingBidirectional st)
     (hStep : notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy n badge c st =
       (st', .ok sgi)) :
@@ -722,8 +725,8 @@ theorem notificationSignalDeclassifiedCrossCoreDispatch_preserves_ipcInvariantFu
     | ok sgi0 =>
       simp only [Prod.mk.injEq, Except.ok.injEq] at hStep
       obtain ⟨rfl, -⟩ := hStep
-      have hS0 := notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthrough ctx
-        declPolicy n badge c st s0 sgi0 hNoBound hInv hObjInv hNWC hAllBudgetsNone hOn
+      have hS0 := notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull ctx
+        declPolicy n badge c st s0 sgi0 hInv hObjInv hNWC hAllBudgetsNone hPred hOn
       have hObj := notificationSignalDeclassifiedOnCore_objects_eq ctx declPolicy n badge c st s0
         sgi0 hOn
       have F := notificationSignalBoundOnCore_schedLinkFrame n badge c st hObjInv

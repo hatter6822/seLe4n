@@ -1361,7 +1361,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _ie := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_objects_invExt
      have _ii := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_ipcInvariant
      have _tf := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer
-     have _ft := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthrough
+     have _ft := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull
      have _pt := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_ipcInvariantFull_perCore_transfer
      -- The three trail invariants SM9.A's reader gate depends on.
      have _ta := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_trailActors

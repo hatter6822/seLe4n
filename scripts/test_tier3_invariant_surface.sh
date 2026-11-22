@@ -11296,6 +11296,7 @@ import SeLe4n.Kernel.IPC.Invariant.ContextLenderSites
 import SeLe4n.Kernel.IPC.Invariant.ContextLenderLinks
 import SeLe4n.Kernel.ContextLenders.Entry
 import SeLe4n.Kernel.ContextLenders.Interrupt
+import SeLe4n.Kernel.ContextLenders.Fault
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency
 #check @replyRecvCompletesSignalArm
@@ -11452,6 +11453,16 @@ open SeLe4n.Kernel.Concurrency
 #check @LendersFrame.schedContextBindPerform
 #check @LendersFrame.sendSignalOnCoreFlowing
 #check @interruptEntryState_lendersStage
+#check @chainObjectsKept.receiveTransferCaps
+#check @chainObjectsKept.propagatePipChainCrossCore
+#check @applyCallDonation_preserves_contextLendersFlow
+#check @endpointCallWithCapsOnCore_preserves_contextLendersFlow
+#check @endpointCallCrossCoreDispatch_preserves_contextLendersFlow
+#check @endpointCallCrossCoreDispatchChecked_preserves_contextLendersFlow
+#check @FaultLendPremises
+#check @faultDeliverOnCoreChecked_preserves_contextLendersFlow
+#check @faultEntryState_lendersStage
+#check @unknownSyscallEntryState_lendersStage
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing
@@ -11488,7 +11499,7 @@ open SeLe4n.Kernel.Concurrency
 #check @lockSetForSyscall_notificationSignal_covers_donationContext
 #check @notificationSignalDeclassifiedCrossCoreDispatch_induct
 #check @notificationSignalDeclassifiedCrossCoreDispatch_snd
-#check @notificationSignalDeclassifiedCrossCoreDispatch_preserves_ipcInvariantFull_fallthrough
+#check @notificationSignalDeclassifiedCrossCoreDispatch_preserves_ipcInvariantFull
 #check @notificationSignalDeclassifiedCrossCoreDispatch_stepCovers
 #check @notificationSignalDeclassifiedCrossCoreDispatch_runQueueStage
 #check @notificationSignalDeclassifiedCrossCoreDispatch_recordsStage
