@@ -1064,6 +1064,65 @@ theorem returnDonatedSchedContext_preserves_schedLinks {st st' : SystemState}
       exact ⟨sc1, by rw [returnDonatedSchedContext_getSchedContext?_ne st st' serverTid scId s0
         originalOwner hs hInv newOwner? h]; exact h1, tid, hb⟩
 
+/-- **WS-SX SX8: the held pop keeps the scheduling links**: no thread's timeout
+budget moves, the popped context stays bound to its holder, whose binding still
+names it, and no queue entry moves. -/
+theorem keepDonatedSchedContext_preserves_schedLinks {st st' : SystemState}
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (hInv : st.objects.invExt) (hB : allTimeoutBudgetsNone st)
+    (hC : schedContextBindingConsistent st) (hR : replenishQueueEntriesBound_smp st)
+    (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    allTimeoutBudgetsNone st' ∧ schedContextBindingConsistent st' ∧
+      replenishQueueEntriesBound_smp st' := by
+  obtain ⟨sc, _, ht, hSc, hBt, _, _, hHt, _, hSc', hHt', tBwd, tFwd, cBwd, cFwd⟩ :=
+    keepDonatedSchedContext_objects hInv h
+  have hGht : ht.schedContextBinding.scId? = some scId := by
+    obtain ⟨ht0, h0, hG0, _⟩ := keepDonatedSchedContext_holder hInv h
+    rw [hHt] at h0; cases h0; exact hG0
+  refine ⟨fun tid tcb hT => ?_, ⟨fun tid tcb hT s hBd => ?_, fun s sc1 hS1 tid hb => ?_⟩,
+    fun c s0 n hMem => ?_⟩
+  · obtain ⟨t0, h0, c, o, rfl⟩ := (keepDonatedSchedContext_donationPopFrame hInv h).tcbBack _ tcb hT
+    exact hB tid t0 h0
+  · by_cases e : tid.toObjId = holder.toObjId
+    · rw [e, hHt'] at hT; cases hT
+      have hBd' : donationReturnBinding scId newOwner? = .bound s := by
+        rw [← hBd]; exact (SchedContextBinding.ofCodes_codes _).symm
+      have hs : s = scId := by
+        cases newOwner? <;> simp [donationReturnBinding] at hBd' ⊢; exact hBd'.symm
+      subst hs
+      exact ⟨_, hSc', by rw [SeLe4n.ThreadId.toObjId_injective _ _ e]; exact hBt⟩
+    · obtain ⟨sc0, hS0, hb0⟩ := hC.1 tid tcb (tBwd _ _ e hT) s hBd
+      by_cases es : s.toObjId = scId.toObjId
+      · rw [es, hSc] at hS0; cases hS0
+        rw [hBt] at hb0; cases hb0; exact absurd rfl e
+      · exact ⟨sc0, cFwd _ _ es hS0, hb0⟩
+  · by_cases es : s.toObjId = scId.toObjId
+    · rw [es, hSc'] at hS1; cases hS1
+      have hb' : sc.boundThread = some tid := hb
+      rw [hBt] at hb'; cases hb'
+      refine ⟨_, hHt', ?_⟩
+      obtain rfl := SeLe4n.SchedContextId.toObjId_injective _ _ es
+      cases newOwner? with
+      | none => exact Or.inl (SchedContextBinding.ofCodes_codes (.bound _))
+      | some o => exact Or.inr ⟨o, SchedContextBinding.ofCodes_codes (.donated _ o)⟩
+    · obtain ⟨t0, h0, hb0⟩ := hC.2 s sc1 (cBwd _ _ es hS1) tid hb
+      by_cases e : tid.toObjId = holder.toObjId
+      · rw [e, hHt] at h0; cases h0
+        exfalso; apply es
+        have : ht.schedContextBinding.scId? = some s := by
+          rcases hb0 with hb0 | ⟨o, hb0⟩ <;> rw [hb0] <;> rfl
+        rw [hGht] at this; cases this; rfl
+      · exact ⟨t0, tFwd _ _ e h0, hb0⟩
+  · have hQ : st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+      rw [keepDonatedSchedContext_scheduler_eq h]
+    rw [hQ] at hMem
+    by_cases hs : s0 = scId
+    · subst hs
+      obtain ⟨_, ⟨sc', h1, h2⟩⟩ := keepDonatedSchedContext_boundThread hInv h
+      exact ⟨sc', h1, holder, h2⟩
+    · obtain ⟨sc1, h1, tid, hb⟩ := hR c s0 n hMem
+      exact ⟨sc1, by rw [keepDonatedSchedContext_getSchedContext?_ne hInv h s0 hs]; exact h1, tid, hb⟩
+
 /-- ...and so does a cancelled caller's donation return, or its refusal. -/
 theorem returnDonationToCancelledCaller_preserves_schedLinks (st : SystemState)
     (c : SeLe4n.ThreadId) (t : TCB) (hInv : st.objects.invExt) (hB : allTimeoutBudgetsNone st)
@@ -1071,14 +1130,9 @@ theorem returnDonationToCancelledCaller_preserves_schedLinks (st : SystemState)
     allTimeoutBudgetsNone (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) ∧
       schedContextBindingConsistent (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) ∧
       replenishQueueEntriesBound_smp (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) := by
-  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-  split
-  · split
-    · rename_i hOk
-      obtain ⟨n, -, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
-      exact returnDonatedSchedContext_preserves_schedLinks hInv hB hC hR hPop
-    · exact ⟨hB, hC, hR⟩
-  · exact ⟨hB, hC, hR⟩
+  exact Lifecycle.Suspend.returnDonationToCancelledCaller_elimPops ⟨hB, hC, hR⟩
+    (fun _ _ _ _ _ hPop => returnDonatedSchedContext_preserves_schedLinks hInv hB hC hR hPop)
+    (fun _ _ _ _ _ hK => keepDonatedSchedContext_preserves_schedLinks hInv hB hC hR hK)
 
 namespace SchedLinkFrame
 

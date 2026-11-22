@@ -611,38 +611,42 @@ theorem returnDonationToCancelledCaller_preserves_projection
   · rename_i scId holder _ _ _
     split
     · rename_i st' h
-      -- WS-OD OD3.2: the chain is four object writes now — the head clear sits
-      -- between the SchedContext store and the client's binding, and is
-      -- projection-stable for the same reason the other three are (every field
-      -- the return touches is stripped by `projectKernelObject`).
-      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
-      obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-        hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
-        returnDonatedSchedContext_ok_storeChain _ st' holder scId victim n hPop
-      have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt _ s1 _ _ hObjInv hS1
-      have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
-      have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
-      have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt _ s1 _ _
-        hObjSetInv hS1
-      have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete _ s1 _ _ hObjInv
-        hObjSetInv hIdxComplete hS1
-      have hP1 := storeObject_projectionStable_preserves_projection ctx observer _ s1
-        scId.toObjId _ (.schedContext sc) hSc
-        (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _)
-        hObjInv hS1
-      have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
-      have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
-        victim.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 victim clientTcb hL1)
-        (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _ _)
-        hInv2 hS3
-      have hP4 := storeObject_projectionStable_preserves_projection ctx observer s3 s4
-        holder.toObjId _ (.tcb serverTcb) (lookupTcb_some_objects s3 holder serverTcb hL2)
-        (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _ _)
-        hInv3 hS4
-      have hFinal : projectState ctx observer st' = projectState ctx observer s4 := by
-        rw [hEq]
-        rfl
-      rw [hFinal, hP4, hP3, hP2, hP1]
+      apply popHeldReplyHead_liftPops h
+      · intro n st' hPop
+        -- WS-OD OD3.2: the chain is four object writes now — the head clear sits
+        -- between the SchedContext store and the client's binding, and is
+        -- projection-stable for the same reason the other three are (every field
+        -- the return touches is stripped by `projectKernelObject`).
+        obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
+          hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+          returnDonatedSchedContext_ok_storeChain _ st' holder scId victim n hPop
+        have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt _ s1 _ _ hObjInv hS1
+        have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
+        have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+        have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt _ s1 _ _
+          hObjSetInv hS1
+        have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete _ s1 _ _ hObjInv
+          hObjSetInv hIdxComplete hS1
+        have hP1 := storeObject_projectionStable_preserves_projection ctx observer _ s1
+          scId.toObjId _ (.schedContext sc) hSc
+          (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _)
+          hObjInv hS1
+        have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
+        have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
+          victim.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 victim clientTcb hL1)
+          (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _ _)
+          hInv2 hS3
+        have hP4 := storeObject_projectionStable_preserves_projection ctx observer s3 s4
+          holder.toObjId _ (.tcb serverTcb) (lookupTcb_some_objects s3 holder serverTcb hL2)
+          (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _ _)
+          hInv3 hS4
+        have hFinal : projectState ctx observer st' = projectState ctx observer s4 := by
+          rw [hEq]
+          rfl
+        rw [hFinal, hP4, hP3, hP2, hP1]
+      · intro n _ hK
+        exact keepDonatedSchedContext_preserves_projection ctx observer _ _ holder scId n hObjInv
+          hK hIdxComplete hObjSetInv
     · rfl
   · rfl
 

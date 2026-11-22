@@ -1713,38 +1713,21 @@ theorem tcbNtfnFieldsKept.of_bindingRewrite {tx ty : TCB} (h : tcbBindingRewrite
   obtain ⟨_, _, rfl⟩ := h
   exact ⟨fun _ => Iff.rfl, rfl, rfl, rfl⟩
 
-/-- **The donation return** (seL4 MCS's `reply_pop`) writes a context, the
-stack's replies and two threads' binding codes: no notification, and nothing
-the notification queues or the budgets read of a thread. -/
-theorem NtfnFrame.returnDonatedSchedContext {st st' : SystemState} {h : SeLe4n.ThreadId}
-    {sc : SeLe4n.SchedContextId} {c : SeLe4n.ThreadId} {n : Option SeLe4n.ThreadId}
-    (hInv : st.objects.invExt) (hPop : SeLe4n.Kernel.returnDonatedSchedContext st h sc c n = .ok st') :
+/-- **A pop frame** — the donation return or the held pop — keeps every
+notification and rewrites thread bindings only. -/
+theorem NtfnFrame.of_donationPopFrame {st st' : SystemState} (h : donationPopFrame st st') :
     NtfnFrame st st' :=
-  ⟨fun k o => ⟨fun hk => returnDonatedSchedContext_objects_backward_of_kind st st' h sc c n hInv hPop
-      k _ (donationReturnWritesKind_notification o) hk,
-    fun hk => returnDonatedSchedContext_objects_forward_of_kind st st' h sc c n hInv hPop
-      k _ (donationReturnWritesKind_notification o) hk⟩,
-    fun k ty hy =>
-      let ⟨tx, hx, hR⟩ := returnDonatedSchedContext_tcb_rewrite st st' h sc c hInv n hPop k ty hy
-      ⟨tx, hx, .of_bindingRewrite hR⟩,
-    fun k tx hx =>
-      let ⟨ty, hy, hR⟩ := returnDonatedSchedContext_tcb_rewrite_backward st st' h sc c n hInv hPop
-        k tx hx
-      ⟨ty, hy, .of_bindingRewrite hR⟩⟩
+  ⟨fun k o => ⟨h.notification_backward k o, h.notification_forward k o⟩,
+    fun k ty hy => let ⟨tx, hx, hR⟩ := h.tcbFwd k ty hy; ⟨tx, hx, .of_bindingRewrite hR⟩,
+    fun k tx hx => let ⟨ty, hy, hR⟩ := h.tcbBack k tx hx; ⟨ty, hy, .of_bindingRewrite hR⟩⟩
 
 /-- **A cancelled caller's donation return**: the return when it commits, the
 state itself when there is none to make. -/
 theorem NtfnFrame.returnDonationToCancelledCaller (st : SystemState) (c : SeLe4n.ThreadId)
     (t : TCB) (hInv : st.objects.invExt) :
-    NtfnFrame st (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) := by
-  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-  split
-  · split
-    · rename_i hOk
-      obtain ⟨n, -, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
-      exact NtfnFrame.returnDonatedSchedContext hInv hPop
-    · exact .refl st
-  · exact .refl st
+    NtfnFrame st (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) :=
+  Lifecycle.Suspend.returnDonationToCancelledCaller_elimFrame hInv (.refl st)
+    fun _ hF => .of_donationPopFrame hF
 
 /-- **A cancelled caller's donation return keeps the donation chains**
 (`returnDonatedSchedContext_preserves_donationChainWellFormed`, unconditional in
@@ -1752,15 +1735,11 @@ the outer caller). -/
 theorem returnDonationToCancelledCaller_preserves_donationChainWellFormed (st : SystemState)
     (c : SeLe4n.ThreadId) (t : TCB) (hInv : st.objects.invExt)
     (hChain : donationChainWellFormed st) :
-    donationChainWellFormed (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) := by
-  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-  split
-  · split
-    · rename_i hOk
-      obtain ⟨n, -, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
-      exact returnDonatedSchedContext_preserves_donationChainWellFormed _ _ _ _ _ n hInv hChain hPop
-    · exact hChain
-  · exact hChain
+    donationChainWellFormed (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) :=
+  Lifecycle.Suspend.returnDonationToCancelledCaller_elimPops hChain
+    (fun _ _ n _ _ hPop =>
+      returnDonatedSchedContext_preserves_donationChainWellFormed _ _ _ _ _ n hInv hChain hPop)
+    (fun _ _ _ _ _ hK => keepDonatedSchedContext_preserves_donationChainWellFormed hInv hChain hK)
 
 /-- **What each step of a finalisation carries**: the IPC bundle, the object
 table's well-formedness, the notification queues, the reply-waiter queues, the

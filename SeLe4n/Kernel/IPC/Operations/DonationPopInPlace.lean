@@ -463,7 +463,7 @@ theorem replyPopsInPlace_pop (st : SystemState) (c server : SeLe4n.ThreadId)
       replyHeadContextCode st rid = scId.val + 1 ∧
       replyFrameHeadHolder? st rid = some (scId, server) ∧
       donatedReturnCommits st server scId c = true ∧
-      returnDonatedSchedContextResolved st server scId c =
+      popHeldReplyHead st server scId c =
         .ok (returnDonatedSchedContextInPlace st server c scId) := by
   unfold replyPopsInPlace at hG
   simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
@@ -567,7 +567,8 @@ theorem replyPopsInPlace_pop (st : SystemState) (c server : SeLe4n.ThreadId)
       rw [hRg]
       simp only [hN, hScg, hHead, beq_self_eq_true, ↓reduceIte]
     · rw [hScg]; exact hB
-  · exact returnDonatedSchedContextResolved_eq_inPlace st server c scId sc rid rp ct srv hScg hB
+  · rw [popHeldReplyHead_of_acceptable hRecip]
+    exact returnDonatedSchedContextResolved_eq_inPlace st server c scId sc rid rp ct srv hScg hB
       hHead hRg hN hBelow hOuter hRecip hCRes hSRes hT hSrv hNe hLsc hFsc hLR hFR hLC hFC hLS
 
 /-- **Whether a donation return passes the in-place pop's checks**, read as

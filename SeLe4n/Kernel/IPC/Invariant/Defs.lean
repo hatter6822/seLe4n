@@ -8790,6 +8790,62 @@ theorem returnDonatedSchedContext_ok_of_boundAndRecipient
         simp only []
         exact ⟨_, rfl⟩
 
+/-- **The held pop succeeds** where the context is bound to the holder, the
+holder's own binding names it, its head resolves and the outer caller passes:
+its two stores write no thread, so the holder it reads after them is the one it
+read before, and every check it makes passes. -/
+theorem keepDonatedSchedContext_ok_of_holderBinding {st : SystemState}
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} {sc : SchedContext} {ht : TCB}
+    {newOwner? : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt) (hHeadRes : donationHeadResolves st scId)
+    (hLk : lookupTcb st holder = some ht)
+    (hG : ht.schedContextBinding.scId? = some scId)
+    (hScObj : st.objects[scId.toObjId]? = some (.schedContext sc))
+    (hB : sc.boundThread = some holder)
+    (hOut : outerCallerAcceptable st holder holder newOwner? = true) :
+    ∃ st', keepDonatedSchedContext st holder scId newOwner? = .ok st' := by
+  obtain ⟨head?, hHead, hBelow⟩ := hHeadRes sc hScObj
+  obtain ⟨s1, hS1⟩ := storeObject_isOk st scId.toObjId
+    (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
+  have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  obtain ⟨s2, hS2⟩ : ∃ s2, storeDonationHeadPop scId head? s1 = .ok s2 := by
+    refine storeDonationHeadPop_ok_of_reply scId s1 head? hInv1 ?_ ?_
+    · intro rid r hPr
+      obtain ⟨hObjR, _⟩ := donationHeadOf?_ok_resolves st scId sc rid r (by rw [hHead, hPr])
+      have hNeSc : rid.toObjId ≠ scId.toObjId := by
+        intro hEq; rw [hEq, hScObj] at hObjR; cases hObjR
+      rw [storeObject_objects_ne st s1 scId.toObjId rid.toObjId _ hNeSc hObjInv hS1]
+      exact hObjR
+    · intro rid r below hPr hPrev
+      obtain ⟨b, hBl⟩ := hBelow rid r below hPr hPrev
+      have hNeSc : below.toObjId ≠ scId.toObjId := by
+        intro hEq; rw [hEq, hScObj] at hBl; cases hBl
+      refine ⟨b, ?_⟩
+      rw [storeObject_objects_ne st s1 scId.toObjId below.toObjId _ hNeSc hObjInv hS1]
+      exact hBl
+  have hHtObj := lookupTcb_some_objects st holder ht hLk
+  have hScNe : scId.toObjId ≠ holder.toObjId :=
+    schedContext_ne_tcb_at_objId st scId holder sc ht hScObj hHtObj
+  have hHt2 : s2.objects[holder.toObjId]? = some (.tcb ht) :=
+    storeDonationHeadPop_tcb_eq hInv1 hS2 holder.toObjId ht (by
+      rw [storeObject_objects_ne st s1 scId.toObjId holder.toObjId _ hScNe.symm hObjInv hS1]
+      exact hHtObj)
+  have hL2 : lookupTcb s2 holder = some ht := by
+    unfold lookupTcb SystemState.getTcb?
+    rw [Bool.eq_false_iff.mpr (lookupTcb_some_not_reserved st holder ht hLk)]
+    simp only [Bool.false_eq_true, if_false]
+    rw [hHt2]
+  obtain ⟨st', hS3⟩ := storeObject_isOk s2 holder.toObjId (.tcb { ht with
+    scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId newOwner?),
+    scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) })
+  have hSc' : st.getSchedContext? scId = some sc :=
+    (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hScObj
+  refine ⟨st', ?_⟩
+  unfold keepDonatedSchedContext
+  simp only [hSc', hB, hOut, hHead, hS1, hS2, hL2, hG, bne_self_eq_false, Bool.not_true,
+    Bool.false_eq_true, if_false]
+  rw [hS3]
+
 /-- **The pop succeeds, from a `.donated` binding** — the instance of
 `returnDonatedSchedContext_ok_of_boundAndRecipient` at the BINDING-driven reading.
 

@@ -1642,7 +1642,7 @@ private theorem returnDonatedSchedContext_preserves_projection
 /-- The held pop preserves projection for the same reason the donation return
 does: the context's `scReply` and origin, the replies' stack links and the
 holder's binding codes are all stripped by `projectKernelObject`. -/
-private theorem keepDonatedSchedContext_preserves_projection
+theorem keepDonatedSchedContext_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (holder : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (newOwner? : Option SeLe4n.ThreadId)

@@ -135,15 +135,9 @@ theorem cutThreadReplyFrameOut_replyViews_eq (st : SystemState) (tcb : TCB)
 
 theorem returnDonationToCancelledCaller_replyViews_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (hInv : st.objects.invExt) :
-    (returnDonationToCancelledCaller st tid tcb).replyViews = st.replyViews := by
-  unfold returnDonationToCancelledCaller
-  split
-  · rename_i scId holder _ _ _
-    split
-    · rename_i st' hR
-      exact returnDonatedSchedContextResolved_replyViews_eq hInv hR
-    · rfl
-  · rfl
+    (returnDonationToCancelledCaller st tid tcb).replyViews = st.replyViews :=
+  returnDonationToCancelledCaller_elimFrame (P := fun s => s.replyViews = st.replyViews) hInv rfl
+    fun _ hF => donationPopFrame_replyViews_eq hF
 
 theorem replyViews_unlinkReplyWaiterOpt (st : SystemState) (w : SeLe4n.ThreadId)
     (s? : Option SeLe4n.ThreadId) :

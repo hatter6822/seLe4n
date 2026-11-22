@@ -952,10 +952,53 @@ def returnDonationToCancelledCaller (st : SystemState) (tid : SeLe4n.ThreadId)
     -- `schedContext_unbindTCB` leaves it (`v0.36.136`: the abort that ended its
     -- operation is retired with the invariant that forbade an unbound sender).
     -- WS-OD OD4.4: the new owner is resolved off the context's reply stack.
-    match returnDonatedSchedContextResolved st holder scId tid with
+    -- WS-SX SX8: the pop is seL4's `reply_pop` (`reply_remove` on a head
+    -- frame): the context goes back to the caller where it holds none, and
+    -- stays with the holder, the head popped, where it holds one.
+    match popHeldReplyHead st holder scId tid with
     | .ok st' => st'
     | .error _ => st
   | _, _ => st
+
+/-- **A property of the state and of every successful held-head pop the
+cancelled caller's loan could run is a property of the reclaim.** -/
+theorem returnDonationToCancelledCaller_elim {P : SystemState → Prop} {st : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hSt : P st)
+    (hPop : ∀ scId holder s, cancelledCallerDonation? st tid tcb = some (scId, holder) →
+      popHeldReplyHead st holder scId tid = .ok s → P s) :
+    P (returnDonationToCancelledCaller st tid tcb) := by
+  unfold returnDonationToCancelledCaller
+  split
+  · next scId holder _ hD _ =>
+    split
+    · next st' hR => exact hPop scId holder st' hD hR
+    · exact hSt
+  · exact hSt
+
+/-- **The reclaim at both pops' frames**: a property of the state, of every
+donation return to the caller and of every held pop is a property of the
+reclaim. -/
+theorem returnDonationToCancelledCaller_elimPops {P : SystemState → Prop} {st : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hSt : P st)
+    (hRet : ∀ scId holder (n : Option SeLe4n.ThreadId) s,
+      cancelledCallerDonation? st tid tcb = some (scId, holder) →
+      returnDonatedSchedContext st holder scId tid n = .ok s → P s)
+    (hKeep : ∀ scId holder (n : Option SeLe4n.ThreadId) s,
+      cancelledCallerDonation? st tid tcb = some (scId, holder) →
+      keepDonatedSchedContext st holder scId n = .ok s → P s) :
+    P (returnDonationToCancelledCaller st tid tcb) :=
+  returnDonationToCancelledCaller_elim hSt fun scId holder _ hD h =>
+    popHeldReplyHead_liftPops h (fun n s hs => hRet scId holder n s hD hs)
+      (fun n s hs => hKeep scId holder n s hD hs)
+
+/-- **A property of the state and of every pop frame out of it is a property of
+the reclaim.** -/
+theorem returnDonationToCancelledCaller_elimFrame {P : SystemState → Prop} {st : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hObjInv : st.objects.invExt) (hSt : P st)
+    (hF : ∀ s, donationPopFrame st s → P s) :
+    P (returnDonationToCancelledCaller st tid tcb) :=
+  returnDonationToCancelledCaller_elim hSt fun _ _ s _ h =>
+    hF s (popHeldReplyHead_donationPopFrame hObjInv h)
 
 def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) : SystemState :=

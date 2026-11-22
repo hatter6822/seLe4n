@@ -453,7 +453,7 @@ theorem replyHeadPop_commits {st : SystemState} {c : SeLe4n.ThreadId} {t : TCB}
   refine ⟨n, st', hResN, hPop, ?_⟩
   unfold Lifecycle.Suspend.returnDonationToCancelledCaller
   rw [hD, hT]
-  simp only [hOk]
+  simp only [popHeldReplyHead_of_acceptable (donatedReturnCommits_recipientAcceptable hC), hOk]
 
 /-- **A head reply's pop never refuses for the caller's own binding on a
 reachable state**: the pop's `donationRecipientAcceptable` conjunct of
@@ -2295,6 +2295,20 @@ theorem severUnheldSchedContext {st st' : SystemState} {scId : SeLe4n.SchedConte
   have f1 := storeObject hInv hSc (Or.inl (finaliseWritable_schedContext sc)) hS1 rfl rfl
   exact f1.trans (storeDonationHeadPop f1.invExt hClear)
 
+/-- **The held pop**: the context's store, the pop's two reply stores, then the
+holder's binding rewrite. -/
+theorem keepDonatedSchedContext {st st' : SystemState} {holder : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (hInv : st.objects.invExt)
+    (h : SeLe4n.Kernel.keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    FinaliseFrameAny st st' := by
+  obtain ⟨sc, _, ht, s1, s2, hSc, -, -, -, hS1, hClear, hL, hS3⟩ :=
+    keepDonatedSchedContext_ok_storeChain h
+  have f1 := storeObject hInv hSc (Or.inl (finaliseWritable_schedContext sc)) hS1 rfl rfl
+  have f2 := f1.trans (storeDonationHeadPop f1.invExt hClear)
+  exact f2.trans (storeObject f2.invExt (lookupTcb_some_objects _ _ _ hL)
+    (Or.inl (finaliseWritable_tcb _)) hS3 rfl rfl)
+
 /-- **A reply's pop off a context no thread holds**, its sever, or nothing when
 it declines. -/
 theorem finaliseReplyUnheldPop (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId)
@@ -2315,15 +2329,10 @@ theorem finaliseReplyUnheldPop (st : SystemState) (r : Reply) (c : SeLe4n.Thread
 declines. -/
 theorem returnDonationToCancelledCaller (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
     (hInv : st.objects.invExt) :
-    FinaliseFrameAny st (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) := by
-  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-  split
-  · split
-    · rename_i hOk
-      obtain ⟨n, -, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
-      exact returnDonatedSchedContext hInv hPop
-    · exact .refl hInv
-  · exact .refl hInv
+    FinaliseFrameAny st (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) :=
+  Lifecycle.Suspend.returnDonationToCancelledCaller_elimPops (.refl hInv)
+    (fun _ _ _ _ _ hPop => returnDonatedSchedContext hInv hPop)
+    (fun _ _ _ _ _ hK => keepDonatedSchedContext hInv hK)
 
 /-- **A reply-blocked caller's cancel**: the donation return, the splice, the
 restore, the consume and the unlink (`cancelIpcBlocking`'s reply arm). -/
@@ -2702,18 +2711,14 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
       · exact SchedContextOps.settleReturnedContext_cdt _ _ _
       · rfl
     have hRet : (Lifecycle.Suspend.returnDonationToCancelledCaller s c t).cdt = s.cdt := by
-      unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-      split
-      · split
-        · rename_i hOk
-          obtain ⟨n, -, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
-          obtain ⟨_, _, _, _, s1, s2, s3, s4, -, -, -, -, hS1, hClear, -, hS3, -, hS4, hEq⟩ :=
-            returnDonatedSchedContext_ok_storeChain _ _ _ _ _ n hPop
-          have eC := congrArg SystemState.cdt hEq
-          exact eC.trans ((hSt hS4).trans ((hSt hS3).trans ((storeDonationHeadPop_cdt_eq hClear).trans
-            (hSt hS1))))
-        · rfl
-      · rfl
+      refine Lifecycle.Suspend.returnDonationToCancelledCaller_elimPops
+        (P := fun a => a.cdt = s.cdt) rfl (fun _ _ n _ _ hPop => ?_)
+        (fun _ _ _ _ _ hK => keepDonatedSchedContext_cdt_eq hK)
+      obtain ⟨_, _, _, _, s1, s2, s3, s4, -, -, -, -, hS1, hClear, -, hS3, -, hS4, hEq⟩ :=
+        returnDonatedSchedContext_ok_storeChain _ _ _ _ _ n hPop
+      have eC := congrArg SystemState.cdt hEq
+      exact eC.trans ((hSt hS4).trans ((hSt hS3).trans ((storeDonationHeadPop_cdt_eq hClear).trans
+        (hSt hS1))))
     rw [hRev, hRecl, cancelIpcBlocking_replyArm_unfold s c t hB]
     replace h : (Lifecycle.Suspend.returnDonationToCancelledCaller s c t).cdt = st.cdt :=
       hRet.trans h

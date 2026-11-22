@@ -408,12 +408,16 @@ private theorem returnDonationToCancelledCaller_getSchedContext?_ne (st : System
   | none => rfl
   | some _ =>
     dsimp only
-    cases hRet : returnDonatedSchedContextResolved st holder scId v with
+    cases hRet : popHeldReplyHead st holder scId v with
     | error _ => rfl
     | ok st' =>
-      obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-      exact returnDonatedSchedContext_getSchedContext?_ne _ st' holder scId scId₀ v hne hInv
-        newOwner? hPop
+      dsimp only
+      apply popHeldReplyHead_liftPops hRet
+      · intro newOwner? _ hPop
+        exact returnDonatedSchedContext_getSchedContext?_ne _ _ holder scId scId₀ v hne hInv
+          newOwner? hPop
+      · intro _ _ hK
+        exact keepDonatedSchedContext_getSchedContext?_ne hInv hK scId₀ hne
 
 /-- **WS-RR RR8.11: the teardown writes a scheduling context only through the
 reclaim.**
@@ -518,11 +522,15 @@ theorem returnDonationToCancelledCaller_releaseStateAgree (st : SystemState)
     | none => exact .refl st
     | some _ =>
       dsimp only
-      cases hRet : returnDonatedSchedContextResolved st holder scId v with
+      cases hRet : popHeldReplyHead st holder scId v with
       | error _ => exact .refl st
       | ok st' =>
-        obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        exact returnDonatedSchedContext_releaseStateAgree hInv hPop
+        dsimp only
+        apply popHeldReplyHead_liftPops hRet
+        · intro _ _ hPop
+          exact returnDonatedSchedContext_releaseStateAgree hInv hPop
+        · intro _ _ hK
+          exact keepDonatedSchedContext_releaseStateAgree hInv hK
 
 /-- WS-ZA ZA6.3: **the teardown holds the release queues** — it writes a
 context only through the reclaim, which keeps its release fields, and no
@@ -608,11 +616,15 @@ theorem returnDonationToCancelledCaller_refillsKeptOff (st : SystemState)
     | none => exact .refl P st
     | some _ =>
       dsimp only
-      cases hRet : returnDonatedSchedContextResolved st holder scId v with
+      cases hRet : popHeldReplyHead st holder scId v with
       | error _ => exact .refl P st
       | ok st' =>
-        obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        exact (returnDonatedSchedContext_refillsKeptOff hInv hPop).mono fun x hx => by subst hx; exact hS
+        dsimp only
+        apply popHeldReplyHead_liftPops hRet
+        · intro _ _ hPop
+          exact (returnDonatedSchedContext_refillsKeptOff hInv hPop).mono fun x hx => by subst hx; exact hS
+        · intro _ _ hK
+          exact (keepDonatedSchedContext_refillsKeptOff hInv hK).mono fun x hx => by subst hx; exact hS
 
 /-- WS-ZA ZA6.33: **everything the teardown does but the return keeps every
 refill view** — the queue removals and the frame cut write no context and no
@@ -711,11 +723,15 @@ theorem returnDonationToCancelledCaller_yieldLinksKept (st : SystemState)
     | none => exact .refl st
     | some _ =>
       dsimp only
-      cases hRet : returnDonatedSchedContextResolved st holder scId v with
+      cases hRet : popHeldReplyHead st holder scId v with
       | error _ => exact .refl st
       | ok st' =>
-        obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        exact returnDonatedSchedContext_yieldLinksKept hInv hPop
+        dsimp only
+        apply popHeldReplyHead_liftPops hRet
+        · intro _ _ hPop
+          exact returnDonatedSchedContext_yieldLinksKept hInv hPop
+        · intro _ _ hK
+          exact keepDonatedSchedContext_yieldLinksKept hInv hK
 
 /-- WS-ZA ZA6.6: **the teardown keeps every yield code** — it patches queue
 links, IPC fields, bindings and the reply link, never a yield end. -/
@@ -784,11 +800,15 @@ theorem returnDonationToCancelledCaller_notificationLinksKept (st : SystemState)
     | none => exact .refl st
     | some _ =>
       dsimp only
-      cases hRet : returnDonatedSchedContextResolved st holder scId v with
+      cases hRet : popHeldReplyHead st holder scId v with
       | error _ => exact .refl st
       | ok st' =>
-        obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        exact returnDonatedSchedContext_notificationLinksKept hInv hPop
+        dsimp only
+        apply popHeldReplyHead_liftPops hRet
+        · intro _ _ hPop
+          exact returnDonatedSchedContext_notificationLinksKept hInv hPop
+        · intro _ _ hK
+          exact keepDonatedSchedContext_notificationLinksKept hInv hK
 
 /-- WS-SX SX8.3: the reply consume writes a reply over a reply and a thread
 over a thread. -/
@@ -1082,11 +1102,15 @@ theorem returnDonationToCancelledCaller_tableReferenceFrame (st : SystemState)
     | none => exact .refl _
     | some _ =>
       dsimp only
-      cases hRet : returnDonatedSchedContextResolved st holder scId v with
+      cases hRet : popHeldReplyHead st holder scId v with
       | error _ => exact .refl _
       | ok st' =>
-        obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        exact returnDonatedSchedContext_tableReferenceFrame hInv hPop
+        dsimp only
+        apply popHeldReplyHead_liftPops hRet
+        · intro _ _ hPop
+          exact returnDonatedSchedContext_tableReferenceFrame hInv hPop
+        · intro _ _ hK
+          exact keepDonatedSchedContext_tableReferenceFrame hInv hK
 
 /-- **The IPC teardown keeps the reference tables and every object's
 back-links**: each of its writes rewrites a thread, a reply, a scheduling
@@ -1173,16 +1197,28 @@ theorem cancelIpcBlocking_returned_refillsView (st : SystemState) (victim : SeLe
     · rename_i s0 holder _ _ _
       split at hc
       · rename_i st' hRet
-        obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        by_cases hs : scId = s0
-        · subst hs
-          obtain ⟨b, a', hb, -, ha', -, hv⟩ := returnDonatedSchedContext_rebinds hInv hPop
-          rw [ha'] at hc; cases hc; exact ⟨b, hb, hv⟩
-        · obtain ⟨b, hb, hv⟩ := (returnDonatedSchedContext_refillsKeptOff hInv hPop).1 scId c hs hc
-          exact ⟨b, hb, by
-            show ({ c.refillView with boundThreadCode := 0 } : SchedContext) =
-              { b.refillView with boundThreadCode := 0 }
-            rw [hv]⟩
+        revert hc
+        refine popHeldReplyHead_liftPops (P := fun s => s.getSchedContext? scId = some c →
+          ∃ b, st.getSchedContext? scId = some b ∧ c.refillsView = b.refillsView) hRet
+          (fun _ _ hPop hc => ?_) (fun _ _ hK hc => ?_)
+        · by_cases hs : scId = s0
+          · subst hs
+            obtain ⟨b, a', hb, -, ha', -, hv⟩ := returnDonatedSchedContext_rebinds hInv hPop
+            rw [ha'] at hc; cases hc; exact ⟨b, hb, hv⟩
+          · obtain ⟨b, hb, hv⟩ := (returnDonatedSchedContext_refillsKeptOff hInv hPop).1 scId c hs hc
+            exact ⟨b, hb, by
+              show ({ c.refillView with boundThreadCode := 0 } : SchedContext) =
+                { b.refillView with boundThreadCode := 0 }
+              rw [hv]⟩
+        · by_cases hs : scId = s0
+          · subst hs
+            obtain ⟨b, a', hb, ha', hv⟩ := keepDonatedSchedContext_refillsView hInv hK
+            rw [ha'] at hc; cases hc; exact ⟨b, hb, hv⟩
+          · obtain ⟨b, hb, hv⟩ := (keepDonatedSchedContext_refillsKeptOff hInv hK).1 scId c hs hc
+            exact ⟨b, hb, by
+              show ({ c.refillView with boundThreadCode := 0 } : SchedContext) =
+                { b.refillView with boundThreadCode := 0 }
+              rw [hv]⟩
       · exact ⟨c, hc, rfl⟩
     · exact ⟨c, hc, rfl⟩
   obtain ⟨b, hb, hv⟩ := hR b1 hb1

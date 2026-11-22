@@ -56,30 +56,21 @@ theorem returnDonationToCancelledCaller_scheduler_eq (st : SystemState)
     (returnDonationToCancelledCaller st tid tcb).scheduler =
       { st.scheduler with reschedulePending :=
           (returnDonationToCancelledCaller st tid tcb).scheduler.reschedulePending } := by
-  unfold returnDonationToCancelledCaller
-  split
-  · rename_i scId holder _ _ _
-    cases h : returnDonatedSchedContextResolved st holder scId tid with
-    | error _ => rfl
-    | ok st' =>
-      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
-      exact returnDonatedSchedContext_scheduler_eq _ st' holder scId tid n hPop
-  · rfl
+  refine returnDonationToCancelledCaller_elimPops (P := fun s =>
+    s.scheduler = { st.scheduler with reschedulePending := s.scheduler.reschedulePending })
+    rfl (fun scId holder n st' _ hPop => ?_) (fun _ _ _ _ _ hK => ?_)
+  · exact returnDonatedSchedContext_scheduler_eq _ st' holder scId tid n hPop
+  · dsimp only; rw [keepDonatedSchedContext_scheduler_eq hK]
 
 /-- **WS-RR RR7.22 (residual, remediation)**: the donation return never touches
 the machine, hence no core's register bank. -/
 theorem returnDonationToCancelledCaller_machine_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) :
     (returnDonationToCancelledCaller st tid tcb).machine = st.machine := by
-  unfold returnDonationToCancelledCaller
-  split
-  · rename_i scId holder _ _ _
-    cases h : returnDonatedSchedContextResolved st holder scId tid with
-    | error _ => rfl
-    | ok st' =>
-      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
-      exact returnDonatedSchedContext_machine_eq _ st' holder scId tid n hPop
-  · rfl
+  exact returnDonationToCancelledCaller_elimPops (P := fun s => s.machine = st.machine) rfl
+    (fun scId holder n st' _ hPop =>
+      returnDonatedSchedContext_machine_eq _ st' holder scId tid n hPop)
+    (fun _ _ _ _ _ hK => keepDonatedSchedContext_machine_eq hK)
 
 /-- **WS-RR RR7.22 (residual, remediation)**: the donation return is the identity
 at a key that holds no TCB.
@@ -109,52 +100,31 @@ theorem returnDonationToCancelledCaller_tcb_lookup (st : SystemState)
     (k : SeLe4n.ObjId) (t0 : TCB) (hk : st.objects[k]? = some (.tcb t0)) :
     ∃ t', (returnDonationToCancelledCaller st tid tcb).objects[k]? = some (.tcb t') ∧
       t'.placement = t0.placement := by
-  unfold returnDonationToCancelledCaller
-  split
-  · rename_i scId holder _ _ _
-    split
-    · rename_i st' h
-      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
-      obtain ⟨tB, hkB, hRw⟩ :=
-        returnDonatedSchedContext_tcb_rewrite _ st' holder scId tid hInv n hPop k t0 hk
-      obtain ⟨_, _, rfl⟩ := hRw
-      exact ⟨_, hkB, rfl⟩
-    -- The refusal arm is all-or-nothing: it returns the *pre*-state, so the
-    -- pre-state's own TCB is the witness.
-    · exact ⟨t0, hk, rfl⟩
-  · exact ⟨t0, hk, rfl⟩
+  -- The refusal arm is all-or-nothing: it returns the *pre*-state, so the
+  -- pre-state's own TCB is the witness; each pop rewrites a thread's binding only.
+  exact returnDonationToCancelledCaller_elimFrame (P := fun s =>
+      ∃ t', s.objects[k]? = some (.tcb t') ∧ t'.placement = t0.placement)
+    hInv ⟨t0, hk, rfl⟩ fun _ hF => by
+    obtain ⟨_, hkB, _, _, rfl⟩ := hF.tcbFwd k t0 hk
+    exact ⟨_, hkB, rfl⟩
 
 /-- **WS-RR RR7.22 (residual, remediation)**: the donation return preserves the
 Robin-Hood external invariant — three `storeObject`s, each of which does. -/
 theorem returnDonationToCancelledCaller_preserves_objects_invExt (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt) :
     (returnDonationToCancelledCaller st tid tcb).objects.invExt := by
-  unfold returnDonationToCancelledCaller
-  split
-  · rename_i scId holder _ _ _
-    split
-    · rename_i st' h
-      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
-      exact returnDonatedSchedContext_preserves_objects_invExt _ st' holder scId tid
-        hInv n hPop
-    · exact hInv
-  · exact hInv
+  exact returnDonationToCancelledCaller_elimFrame hInv hInv fun _ hF => hF.objInv
 
 /-- `v0.35.4`: the donation return preserves the identity registry's
 well-formedness — the pop's stores each do. -/
 theorem returnDonationToCancelledCaller_preserves_objectIndexSet_invExt (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hSetInv : st.objectIndexSet.table.invExt) :
     (returnDonationToCancelledCaller st tid tcb).objectIndexSet.table.invExt := by
-  unfold returnDonationToCancelledCaller
-  split
-  · rename_i scId holder _ _ _
-    split
-    · rename_i st' h
-      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
-      exact returnDonatedSchedContext_preserves_objectIndexSet_invExt _ st' holder scId tid n
-        hSetInv hPop
-    · exact hSetInv
-  · exact hSetInv
+  exact returnDonationToCancelledCaller_elimPops hSetInv
+    (fun scId holder n st' _ hPop =>
+      returnDonatedSchedContext_preserves_objectIndexSet_invExt _ st' holder scId tid n
+        hSetInv hPop)
+    (fun _ _ _ _ _ hK => keepDonatedSchedContext_preserves_objectIndexSet_invExt hSetInv hK)
 
 /-- `v0.35.4`: ...and its completeness. -/
 theorem returnDonationToCancelledCaller_preserves_objectIndexSetComplete (st : SystemState)
@@ -162,16 +132,12 @@ theorem returnDonationToCancelledCaller_preserves_objectIndexSetComplete (st : S
     (hSetInv : st.objectIndexSet.table.invExt)
     (hComplete : SeLe4n.Model.objectIndexSetComplete st) :
     SeLe4n.Model.objectIndexSetComplete (returnDonationToCancelledCaller st tid tcb) := by
-  unfold returnDonationToCancelledCaller
-  split
-  · rename_i scId holder _ _ _
-    split
-    · rename_i st' h
-      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
-      exact returnDonatedSchedContext_preserves_objectIndexSetComplete _ st' holder scId tid n
-        hInv hSetInv hComplete hPop
-    · exact hComplete
-  · exact hComplete
+  exact returnDonationToCancelledCaller_elimPops hComplete
+    (fun scId holder n st' _ hPop =>
+      returnDonatedSchedContext_preserves_objectIndexSetComplete _ st' holder scId tid n
+        hInv hSetInv hComplete hPop)
+    (fun _ _ _ _ _ hK =>
+      keepDonatedSchedContext_preserves_objectIndexSetComplete hInv hSetInv hComplete hK)
 
 /-- **WS-RR RR7.22 (residual, remediation)**: the donation return is the identity
 when there is nothing to return — no recorded reply target, no such thread, or a
@@ -1446,17 +1412,8 @@ theorem consumeReplyLink_preserves_ipcInvariant
 theorem returnDonationToCancelledCaller_preserves_ipcInvariant (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
     ipcInvariant (returnDonationToCancelledCaller st tid tcb) := by
-  unfold returnDonationToCancelledCaller
-  split
-  · rename_i scId holder _ _ _
-    split
-    · rename_i st' h
-      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
-      intro oid ntfn hN
-      exact hIpc oid ntfn (returnDonatedSchedContext_notification_backward _ st' holder
-        scId tid hInv n hPop oid ntfn hN)
-    · exact hIpc
-  · exact hIpc
+  exact returnDonationToCancelledCaller_elimFrame hInv hIpc fun _ hF oid ntfn hN =>
+    hIpc oid ntfn (hF.notification_backward oid ntfn hN)
 
 /-- WS-SM SM6.E: `cancelIpcBlocking` preserves `ipcInvariant` — every
 `ipcState` arm composes the sweeps' notification-safe rewrites with the

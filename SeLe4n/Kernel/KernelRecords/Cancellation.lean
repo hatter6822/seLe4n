@@ -200,15 +200,11 @@ theorem consumeReplyLink_width (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB
 theorem returnDonationToCancelledCaller_width (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
     (hInv : st.objects.invExt) :
     (Lifecycle.Suspend.returnDonationToCancelledCaller st c t).machine.physicalAddressWidth =
-      st.machine.physicalAddressWidth := by
-  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-  split
-  · split
-    · rename_i hOk
-      obtain ⟨n, -, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
-      exact (RecordsFrame.returnDonatedSchedContext hInv hPop).width
-    · rfl
-  · rfl
+      st.machine.physicalAddressWidth :=
+  Lifecycle.Suspend.returnDonationToCancelledCaller_elimPops
+    (P := fun s => s.machine.physicalAddressWidth = st.machine.physicalAddressWidth) rfl
+    (fun _ _ _ _ _ hPop => (RecordsFrame.returnDonatedSchedContext hInv hPop).width)
+    (fun _ _ _ _ _ hK => (RecordsFrame.keepDonatedSchedContext hInv hK).width)
 
 namespace RecordsStep
 

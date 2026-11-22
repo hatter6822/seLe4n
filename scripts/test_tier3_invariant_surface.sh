@@ -14008,7 +14008,13 @@ run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_ok_none_decompose \('
 run_check "INVARIANT" rg -n '^def keepDonatedSchedContext \(' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^def popHeldReplyHead \(' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContext_establishes_ipcInvariantFull_of_except$' SeLe4n/Kernel/IPC/Invariant/HeldContextPop.lean
-run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContext_stepCovers \(' SeLe4n/Kernel/ReschedulePendingArms/Ipc.lean
+run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContext_stepCovers \(' SeLe4n/Kernel/ReschedulePendingArms/Cancellation.lean
+# The cancelled caller's reclaim is seL4's reply_remove -> reply_pop on a head frame:
+# it runs the held-head router at the caller, and its consumers cross both pops
+# through the reclaim's own eliminators.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def returnDonationToCancelledCaller \([^\n]*(\n([ \t][^\n]*)?)*\n    match popHeldReplyHead st holder scId tid with\n    \| \.ok st. => st.\n    \| \.error _ => st$" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_check "INVARIANT" rg -n '^theorem returnDonationToCancelledCaller_elim(Pops|Frame)? \{' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContext_ok_of_holderBinding \{' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # The held pop's holder guard is redundant: the binding pair gives it, so its
 # refusal branch is unreachable and the pop is seL4's `reply_pop`.
 run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContext_holderGuard_of_schedContextBindingConsistent$' SeLe4n/Kernel/IPC/Invariant/HeldContextPop.lean

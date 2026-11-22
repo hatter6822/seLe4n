@@ -82,14 +82,9 @@ theorem returnDonationToCancelledCaller (st : SystemState) (c : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) :
     LendersFrame st (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) := by
   refine of_shrink ?_ (FinaliseFrameAny.returnDonationToCancelledCaller st c t hInv).invExt
-  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-  split
-  · split
-    · rename_i hOk
-      obtain ⟨_, -, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
-      exact returnDonatedSchedContext_linksShrink hInv hPop
-    · exact .refl _
-  · exact .refl _
+  exact Lifecycle.Suspend.returnDonationToCancelledCaller_elimPops (.refl _)
+    (fun _ _ _ _ _ hPop => returnDonatedSchedContext_linksShrink hInv hPop)
+    (fun _ _ _ _ _ hK => keepDonatedSchedContext_linksShrink hInv hK)
 
 theorem cutCancelledCallerHead (st : SystemState) (t : TCB) (hInv : st.objects.invExt) :
     LendersFrame st (Lifecycle.Suspend.cutCancelledCallerHead st t) := by

@@ -299,22 +299,10 @@ scheduling contexts (`returnDonatedSchedContext_getTcb?_placement_eq`). -/
 private theorem returnDonationToCancelledCaller_linkFrame_frame (st : SystemState)
     (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
     ((Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).getTcb? x).map TCB.linkFrame
-      = (st.getTcb? x).map TCB.linkFrame := by
-  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-  cases hD : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV with
-  | none => rfl
-  | some p =>
-    obtain ⟨scId, holder⟩ := p
-    cases hT : st.getTcb? v with
-    | none => rfl
-    | some _ =>
-      dsimp only
-      cases hRet : returnDonatedSchedContextResolved st holder scId v with
-      | error _ => rfl
-      | ok st' =>
-        obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        exact returnDonatedSchedContext_getTcb?_map_eq TCB.linkFrame (fun _ _ _ => rfl) _ st'
-          holder scId v hInv newOwner? hPop x
+      = (st.getTcb? x).map TCB.linkFrame :=
+  Lifecycle.Suspend.returnDonationToCancelledCaller_elimFrame
+    (P := fun s => (s.getTcb? x).map TCB.linkFrame = (st.getTcb? x).map TCB.linkFrame)
+    hInv rfl fun _ hF => hF.getTcb?_map_eq TCB.linkFrame (fun _ _ _ => rfl) x
 
 /-- WS-RR RR8.11: **the consume materialises no thread.**  The backward half the
 tree lacked: its two stores are at keys their own lookups found occupied, so a TCB
@@ -489,23 +477,10 @@ theorem restoreToReadyStaging_stateMono (st : SystemState) (tid : SeLe4n.ThreadI
 /-- The reclaim's pop rebinds scheduling contexts and blocks no thread. -/
 private theorem returnDonationToCancelledCaller_stateMono (st : SystemState)
     (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt) :
-    SystemState.StateMono st (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) := by
-  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-  cases hD : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV with
-  | none => exact SystemState.StateMono.refl _
-  | some p =>
-    obtain ⟨scId, holder⟩ := p
-    cases hT : st.getTcb? v with
-    | none => exact SystemState.StateMono.refl _
-    | some _ =>
-      dsimp only
-      cases hRet : returnDonatedSchedContextResolved st holder scId v with
-      | error _ => exact SystemState.StateMono.refl _
-      | ok st' =>
-        obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        exact SystemState.StateMono.of_stateFields
-          (returnDonatedSchedContext_getTcb?_stateFields_eq _ st' holder scId v hInv
-            newOwner? hPop)
+    SystemState.StateMono st (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) :=
+  Lifecycle.Suspend.returnDonationToCancelledCaller_elimFrame hInv
+    (SystemState.StateMono.refl _) fun _ hF => SystemState.StateMono.of_stateFields
+      (hF.getTcb?_map_eq (fun x => (x.ipcState, x.threadState, x.cpuAffinity)) (fun _ _ _ => rfl))
 
 /-- **The teardown blocks and suspends no thread**: it readies the victim and,
 on the reply arm, the donation holder, and otherwise patches queue links,

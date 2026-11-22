@@ -491,22 +491,10 @@ theorem of_removeFromNotificationWaitQueue (st : SystemState) (tid : SeLe4n.Thre
 theorem of_returnDonationToCancelledCaller (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
     (hInv : st.objects.invExt) :
     savedRegsKeptExcept W st (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) :=
-  of_map fun x => by
-    unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-    cases hD : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV with
-    | none => rfl
-    | some p =>
-      obtain ⟨scId, holder⟩ := p
-      cases hT : st.getTcb? v with
-      | none => rfl
-      | some _ =>
-        dsimp only
-        cases hRet : returnDonatedSchedContextResolved st holder scId v with
-        | error _ => rfl
-        | ok st' =>
-          obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-          exact returnDonatedSchedContext_getTcb?_map_eq TCB.registerContext (fun _ _ _ => rfl) _
-            st' holder scId v hInv newOwner? hPop x
+  of_map fun x =>
+    Lifecycle.Suspend.returnDonationToCancelledCaller_elimFrame
+      (P := fun s => (s.getTcb? x).map TCB.registerContext = (st.getTcb? x).map TCB.registerContext)
+      hInv rfl fun _ hF => hF.getTcb?_map_eq TCB.registerContext (fun _ _ _ => rfl) x
 
 /-- The pop off an unheld context, and its settle, rewrite the recipient's
 binding codes and no thread's registers; the sever writes no thread. -/
