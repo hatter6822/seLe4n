@@ -12,7 +12,6 @@ import SeLe4n.Kernel.IPC.Operations.UnheldContextPopInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDonatedInPlace
 import SeLe4n.Kernel.IPC.CrossCore.FaultAnswerInPlace
 import SeLe4n.Kernel.SchedContext.ReplyLink
-import SeLe4n.Kernel.IPC.Invariant.Reachability
 
 /-!
 # The lenders across the remaining reply-stack write sites
@@ -361,41 +360,6 @@ theorem schedContextUnbindReply_preserves_contextLendersFlow {ctx : LabelingCont
     (st : SystemState) (x : SeLe4n.ObjId) (hInv : st.objects.invExt)
     (hFlow : contextLendersFlow ctx st) : contextLendersFlow ctx (schedContextUnbindReply st x) :=
   contextLendersFlow_of_linksShrink hFlow (schedContextUnbindReply_linksShrink st x hInv)
-
-/-! ### The depth-2 chain fixture -/
-
-/-- **The fixture's lenders flow wherever its two callers flow to its context**:
-its one context heads the inner frame above the outer one, and those two frames'
-callers are its only lenders. -/
-theorem donationChainWitness_contextLendersFlow (ctx : LabelingContext)
-    (hInner : securityFlowsTo (ctx.threadLabelOf donationChainWitnessInnerCaller)
-      (ctx.objectLabelOf donationChainWitnessContext.toObjId) = true)
-    (hOuter : securityFlowsTo (ctx.threadLabelOf donationChainWitnessOuterCaller)
-      (ctx.objectLabelOf donationChainWitnessContext.toObjId) = true) :
-    contextLendersFlow ctx donationChainWitness := by
-  have hS : ∀ s r, OnContextStackView donationChainWitness s r → s = donationChainWitnessContext := by
-    intro s r hOn
-    induction hOn with
-    | head hH =>
-      rw [contextStackHead_eq_obj, donationChainWitness_lookup_cases] at hH
-      by_cases h3 : donationChainWitnessContext.toObjId = s.toObjId
-      · exact (SeLe4n.SchedContextId.toObjId_injective _ _ h3).symm
-      · simp only [beq_iff_eq, h3, if_false] at hH
-        split at hH <;> (try split at hH) <;> simp [objStackHead] at hH
-    | lower _ _ ih => exact ih
-  rw [contextLendersFlow_iff_views]
-  intro s r l hOn hC
-  rw [hS s r hOn]
-  rw [replyStackCaller_eq_obj, donationChainWitness_lookup_cases] at hC
-  split at hC
-  · simp only [objStackCaller, witnessChainInnerReply, SeLe4n.Kernel.Reply.caller_mk] at hC
-    simp [SeLe4n.ThreadId.ofOptCode_optCode] at hC
-    rw [← hC]; exact hInner
-  · split at hC
-    · simp only [objStackCaller, witnessChainOuterReply] at hC
-      simp [SeLe4n.ThreadId.ofOptCode_optCode] at hC
-      rw [← hC]; exact hOuter
-    · split at hC <;> simp [objStackCaller] at hC
 
 /-! ### The caller link -/
 
