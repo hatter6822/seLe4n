@@ -680,8 +680,16 @@ actually run the half-step. -/
 inductive ChainDiscipline where
   /-- The site carries its own chain results.  Each named theorem must mention
   the site and a `donationChain…` form, so the record cannot drift into naming
-  a theorem about something else. -/
-  | states (results : List Name)
+  a theorem about something else.
+
+  **And its lender results** (WS-SX SX8, D27): what the write does to the
+  lenders on a context's stack (`contextLendersFlow`).  Each named theorem must
+  mention the site and conclude a lender predicate (`lenderPredicates`), so a
+  new site cannot join the registry without saying whether it frames, shrinks
+  or admits a push onto a context's stack.  A half-step or a frozen mirror
+  inherits the lender results of the stating entry it resolves to, exactly as
+  it inherits that entry's chain results. -/
+  | states (results : List Name) (lenders : List Name)
   /-- The site is one store of a multi-store transition: on its own the chain is
   broken by construction.  The composite named here is what re-establishes it,
   and it must be registered `states` and must run this half-step. -/
@@ -760,6 +768,31 @@ def resultViolations (env : Environment) (site : Name) (result : Name) : List St
         [s!"`{site}` names `{result}` as a chain result, but its CONCLUSION asserts no \
             `donationChain…` predicate — a hypothesis mentioning one is not a result"])
 
+/-- The lender predicates (`SeLe4n.Kernel.SchedContext.Invariant.ContextLenders`):
+the invariant itself and the three transport relations a step's lender result
+concludes. -/
+def lenderPredicates : List Name :=
+  [ `SeLe4n.Kernel.contextLendersFlow, `SeLe4n.Kernel.contextStacksShrink
+  , `SeLe4n.Kernel.contextStackLinksShrink, `SeLe4n.Kernel.contextStackViewsAgree ]
+
+/-- The lender results a site may be recorded as stating, and the shape check on
+each: a statement mentioning the site whose **conclusion** asserts a lender
+predicate.  A hypothesis naming one is not a result, for the reason
+`resultViolations` gives for the chain forms. -/
+def lenderResultViolations (env : Environment) (site : Name) (result : Name) : List String :=
+  match env.find? result with
+  | none =>
+      [s!"`{site}` names the lender result `{result}`, which is not a declaration of this \
+          environment"]
+  | some info =>
+      let concluded := (conclusionOf info.type).getUsedConstants
+      (if info.type.getUsedConstants.contains site then [] else
+        [s!"`{site}` names the lender result `{result}`, whose statement does not mention \
+            `{site}` — a result about some other subject"]) ++
+      (if concluded.any (lenderPredicates.contains ·) then [] else
+        [s!"`{site}` names `{result}` as a lender result, but its CONCLUSION asserts no \
+            lender predicate (`contextLendersFlow` or a transport relation)"])
+
 /-! ## The registry
 
 One entry per reply-stack write site.  The **set** is derived from the
@@ -785,19 +818,22 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- until the donation pop takes it off.
   , (`SeLe4n.Model.SystemState.consumeCallerReply,
       .states [`SeLe4n.Kernel.consumeCallerReply_preserves_donationChainWellFormed,
-               `SeLe4n.Kernel.consumeCallerReply_head_preserves_donationChainWellFormedExcept])
+               `SeLe4n.Kernel.consumeCallerReply_head_preserves_donationChainWellFormedExcept]
+        [`SeLe4n.Kernel.consumeCallerReply_preserves_contextLendersFlow])
     -- The pure projection of the pair (WS-RR RR8.5).  Its two chain results are
     -- the pair's own, reached through the bridge `consumeCallerReply_eq_link`
     -- rather than proved a second time over a second body.
   , (`SeLe4n.Model.SystemState.consumeCallerReplyLink,
       .states [`SeLe4n.Kernel.consumeCallerReplyLink_preserves_donationChainWellFormed,
-               `SeLe4n.Kernel.consumeCallerReplyLink_head_preserves_donationChainWellFormedExcept])
+               `SeLe4n.Kernel.consumeCallerReplyLink_head_preserves_donationChainWellFormedExcept]
+        [`SeLe4n.Kernel.consumeCallerReplyLink_preserves_contextLendersFlow])
     -- seL4's `reply_remove`: the cut, then the unlink.  This is the step both
     -- reply spines run, and the one a new reply path must call rather than
     -- reaching for the consume.
   , (`SeLe4n.Kernel.removeCallerReplyFrame,
       .states [`SeLe4n.Kernel.removeCallerReplyFrame_preserves_donationChainWellFormed,
-               `SeLe4n.Kernel.removeCallerReplyFrame_head_preserves_donationChainWellFormedExcept])
+               `SeLe4n.Kernel.removeCallerReplyFrame_head_preserves_donationChainWellFormedExcept]
+        [`SeLe4n.Kernel.removeCallerReplyFrame_preserves_contextLendersFlow])
     -- WS-ZA ZA4.7: the in-place reply.  `replyConsumedObject` is the consume
     -- as an object rewrite; the leg that runs it (WS-ZA ZA6.34: factored out
     -- of `storeReplyRendezvous`, which adds only the reply-waiter unlink, so
@@ -805,9 +841,11 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- reply heads no frame, so it keeps the chain whole.
   , (`SeLe4n.Kernel.replyConsumedObject, .halfStep `SeLe4n.Kernel.storeReplyLeg)
   , (`SeLe4n.Kernel.storeReplyLeg,
-      .states [`SeLe4n.Kernel.storeReplyLeg_preserves_donationChainWellFormed])
+      .states [`SeLe4n.Kernel.storeReplyLeg_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.storeReplyLeg_preserves_contextLendersFlow])
   , (`SeLe4n.Kernel.storeReplyLegReady,
-      .states [`SeLe4n.Kernel.storeReplyLegReady_preserves_donationChainWellFormed])
+      .states [`SeLe4n.Kernel.storeReplyLegReady_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.storeReplyLegReady_preserves_contextLendersFlow])
     -- WS-ZA ZA6.31: the fault reply's store is the reply's with no message
     -- (`storeFaultReplyRendezvous_eq`, `rfl`).
   , (`SeLe4n.Kernel.storeFaultReplyRendezvous,
@@ -815,7 +853,8 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- The fault reply's leg on the donated and unheld shapes: the reply leg
     -- at the empty message (`storeFaultReplyLeg_eq`, `rfl`).
   , (`SeLe4n.Kernel.storeFaultReplyLeg,
-      .states [`SeLe4n.Kernel.storeFaultReplyLeg_preserves_donationChainWellFormed])
+      .states [`SeLe4n.Kernel.storeFaultReplyLeg_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.storeFaultReplyLeg_preserves_contextLendersFlow])
     -- ---------------------------------------------------------------------
     -- The frozen execution surface.
     --
@@ -897,9 +936,11 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (`SeLe4n.Kernel.severReplyFrameBelowStores,
       .halfStep `SeLe4n.Kernel.cutReplyFrameOut)
   , (`SeLe4n.Kernel.cutReplyFrameOut,
-      .states [`SeLe4n.Kernel.cutReplyFrameOut_preserves_donationChainWellFormed])
+      .states [`SeLe4n.Kernel.cutReplyFrameOut_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.cutReplyFrameOut_preserves_contextLendersFlow])
   , (`SeLe4n.Kernel.cutReplyFrameOutOrSelf,
-      .states [`SeLe4n.Kernel.cutReplyFrameOutOrSelf_preserves_donationChainWellFormed])
+      .states [`SeLe4n.Kernel.cutReplyFrameOutOrSelf_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.cutReplyFrameOutOrSelf_preserves_contextLendersFlow])
     -- The compiled forms a final delete runs (`@[csimp]` through
     -- `finaliseReply_eq_impl`): each equals its spec form, and states the
     -- chain through that equality.
@@ -917,29 +958,35 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (`SeLe4n.Kernel.severReplyFrameBelowStoresInPlace,
       .mirrors `SeLe4n.Kernel.severReplyFrameBelowStores)
   , (`SeLe4n.Kernel.consumeCallerReplyInPlace,
-      .states [`SeLe4n.Kernel.consumeCallerReplyInPlace_preserves_donationChainWellFormed])
+      .states [`SeLe4n.Kernel.consumeCallerReplyInPlace_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.consumeCallerReplyInPlace_preserves_contextLendersFlow])
   , (`SeLe4n.Kernel.cutThreadReplyFrameOut,
-      .states [`SeLe4n.Kernel.cutThreadReplyFrameOut_preserves_donationChainWellFormed])
+      .states [`SeLe4n.Kernel.cutThreadReplyFrameOut_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.cutThreadReplyFrameOut_preserves_contextLendersFlow])
     -- The cancellation path's teardown: the projection above under the victim's
     -- own `replyObject`.  Until WS-RR RR8.5 this was a raw-insert twin of the
     -- pair (`clearTcbReplyObject` then `clearReplyObjectCaller`) with its own
     -- chain proof; it is a corollary now.
   , (`SeLe4n.Kernel.Lifecycle.Suspend.consumeReplyLink,
-      .states [`SeLe4n.Kernel.consumeReplyLink_preserves_donationChainWellFormed])
+      .states [`SeLe4n.Kernel.consumeReplyLink_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.consumeReplyLink_preserves_contextLendersFlow])
     -- WS-ZA ZA6.33: the suspend's reply arm (seL4-MCS's `reply_remove_tcb` on
     -- a head): the frame's upward link and the context's head cleared, the
     -- context kept by the thread it is bound to.
   , (`SeLe4n.Kernel.Lifecycle.Suspend.cutHeadFrameKeepingContext,
-      .states [`SeLe4n.Kernel.cutHeadFrameKeepingContext_preserves_donationChainWellFormed])
+      .states [`SeLe4n.Kernel.cutHeadFrameKeepingContext_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.cutHeadFrameKeepingContext_preserves_contextLendersFlow])
     -- Its compiled form, each object written in its slot, is the same cut
     -- (`cutHeadFrameKeepingContext_eq_impl`) and states the chain through it.
   , (`SeLe4n.Kernel.Lifecycle.Suspend.cutHeadFrameKeepingContextImpl,
-      .states [`SeLe4n.Kernel.cutHeadFrameKeepingContextImpl_preserves_donationChainWellFormed])
+      .states [`SeLe4n.Kernel.cutHeadFrameKeepingContextImpl_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.cutHeadFrameKeepingContextImpl_preserves_contextLendersFlow])
     -- WS-ZA ZA5.4 part 25: a finalised scheduling context lets go of the
     -- stack it heads (seL4's `schedContext_unbindReply`): the head's upward
     -- link cleared, then the context's head.
   , (`SeLe4n.Kernel.schedContextUnbindReply,
-      .states [`SeLe4n.Kernel.schedContextUnbindReply_preserves_donationChainWellFormed])
+      .states [`SeLe4n.Kernel.schedContextUnbindReply_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.schedContextUnbindReply_preserves_contextLendersFlow])
     -- WS-ZA ZA6.34: its compiled form, the head reply's link cleared in its
     -- slot (`schedContextUnbindReply_eq_impl`, `@[csimp]`): the same writes.
   , (`SeLe4n.Kernel.schedContextUnbindReplyImpl,
@@ -949,36 +996,43 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- answer it, so the chain is broken by construction here.
   , (`SeLe4n.Kernel.storeDonationFramePush, .halfStep `SeLe4n.Kernel.donateSchedContext)
   , (`SeLe4n.Kernel.donateSchedContext,
-      .states [`SeLe4n.Kernel.donateSchedContext_preserves_donationChainWellFormed])
+      .states [`SeLe4n.Kernel.donateSchedContext_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.donateSchedContext_preserves_contextLendersFlow])
     -- The push with each object rewritten in its slot: on the states whose
     -- checks pass it is `donateSchedContext`'s state, so it carries that result.
   , (`SeLe4n.Kernel.donateSchedContextInPlace,
-      .states [`SeLe4n.Kernel.donateSchedContextInPlace_preserves_donationChainWellFormed])
+      .states [`SeLe4n.Kernel.donateSchedContextInPlace_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.donateSchedContextInPlace_preserves_contextLendersFlow])
     -- The pop's three stores, and the pair that composes the first two.
   , (`SeLe4n.Kernel.storeDonationHeadClear, .halfStep `SeLe4n.Kernel.storeDonationHeadPop)
   , (`SeLe4n.Kernel.storeReplyReHead, .halfStep `SeLe4n.Kernel.storeDonationHeadPop)
   , (`SeLe4n.Kernel.storeDonationHeadPop, .halfStep `SeLe4n.Kernel.returnDonatedSchedContext)
   , (`SeLe4n.Kernel.returnDonatedSchedContext,
       .states [`SeLe4n.Kernel.returnDonatedSchedContext_preserves_donationChainWellFormed,
-               `SeLe4n.Kernel.returnDonatedSchedContext_preserves_donationChainWellFormed_of_except])
+               `SeLe4n.Kernel.returnDonatedSchedContext_preserves_donationChainWellFormed_of_except]
+        [`SeLe4n.Kernel.returnDonatedSchedContext_preserves_contextLendersFlow])
     -- WS-ZA ZA6.33: the pop with each object rewritten in its slot: on the
     -- states whose checks pass it is the resolved pop's state, so it carries
     -- that pop's result.
   , (`SeLe4n.Kernel.returnDonatedSchedContextInPlace,
-      .states [`SeLe4n.Kernel.returnDonatedSchedContextInPlace_preserves_donationChainWellFormed])
+      .states [`SeLe4n.Kernel.returnDonatedSchedContextInPlace_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.returnDonatedSchedContextInPlace_preserves_contextLendersFlow])
     -- WS-ZA ZA6.34: the pop of a context no thread holds (seL4-MCS's
     -- `reply_pop` after its holder's `schedContext_unbindTCB`), back to the
     -- popped reply's caller: the donation return's stores less the holder's.
   , (`SeLe4n.Kernel.returnUnheldSchedContext,
-      .states [`SeLe4n.Kernel.returnUnheldSchedContext_preserves_donationChainWellFormed])
+      .states [`SeLe4n.Kernel.returnUnheldSchedContext_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.returnUnheldSchedContext_preserves_contextLendersFlow])
     -- Its in-place form: on the states its gate admits it is that pop.
   , (`SeLe4n.Kernel.returnUnheldSchedContextInPlace,
-      .states [`SeLe4n.Kernel.returnUnheldSchedContextInPlace_preserves_donationChainWellFormed])
+      .states [`SeLe4n.Kernel.returnUnheldSchedContextInPlace_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.returnUnheldSchedContextInPlace_preserves_contextLendersFlow])
     -- WS-ZA ZA6.34: `reply_pop` at an unheld head whose caller holds a context
     -- of its own: the context's head moved to the frame below and the head
     -- pop, no context handed on.
   , (`SeLe4n.Kernel.severUnheldSchedContext,
-      .states [`SeLe4n.Kernel.severUnheldSchedContext_preserves_donationChainWellFormed])
+      .states [`SeLe4n.Kernel.severUnheldSchedContext_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.severUnheldSchedContext_preserves_contextLendersFlow])
     -- ---------------------------------------------------------------------
     -- The tree's own depth-2 chain fixture (WS-OD OD2.4).  It stores a
     -- `SchedContext` whose `scReply` heads the stack and two `Reply` objects
@@ -997,7 +1051,8 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (privateIn `SeLe4n.Kernel.IPC.Invariant.Reachability `SeLe4n.Kernel.chainWitnessSt2,
       .halfStep `SeLe4n.Kernel.donationChainWitness)
   , (`SeLe4n.Kernel.donationChainWitness,
-      .states [`SeLe4n.Kernel.donationChainWitness_wellFormed]) ]
+      .states [`SeLe4n.Kernel.donationChainWitness_wellFormed]
+        [`SeLe4n.Kernel.donationChainWitness_contextLendersFlow]) ]
 
 /-- Follow a chain of `halfStep` records to the entry that states something.
 
@@ -1019,7 +1074,7 @@ where
     | fuel' + 1 =>
       match registry.find? (fun (m, _) => m == n) with
       | none => false
-      | some (_, .states _) => true
+      | some (_, .states _ _) => true
       | some (_, .halfStep next) => go next fuel'
         -- A chain that ends at a `mirrors` entry follows through to the live
         -- twin, so a frozen half-step is covered exactly when that twin is.
@@ -1029,10 +1084,14 @@ where
 def disciplineViolations (env : Environment) (registry : List (Name × ChainDiscipline))
     (site : Name) (d : ChainDiscipline) : List String :=
   match d with
-  | .states results =>
-      if results.isEmpty then
+  | .states results lenders =>
+      (if results.isEmpty then
         [s!"`{site}` is recorded as stating its chain behaviour and names no result"]
-      else results.flatMap (resultViolations env site)
+      else results.flatMap (resultViolations env site)) ++
+      (if lenders.isEmpty then
+        [s!"`{site}` is recorded as stating its chain behaviour and names no lender result \
+            — a reply-stack write that says nothing of the lenders on a context's stack"]
+      else lenders.flatMap (lenderResultViolations env site))
   | .halfStep composite =>
       (if halfStepResolves registry composite then [] else
         [s!"`{site}` is recorded as a half-step of `{composite}`, and following the \
@@ -1350,12 +1409,30 @@ run_cmd Command.liftTermElabM do
     throwError "reply-stack write census: a half-step recorded under a composite that does \
       not run it was accepted"
   if (disciplineViolations env chainWriteRegistry `SeLe4n.Kernel.removeCallerReplyFrame
-      (.states [])).isEmpty then
+      (.states [] [])).isEmpty then
     throwError "reply-stack write census: a `states` record naming no result was accepted"
+  -- The lender half, both directions: a stating record naming no lender result,
+  -- a lender result about another site, and one concluding no lender predicate
+  -- are each refused; the registry's own record is accepted.
+  if (disciplineViolations env chainWriteRegistry `SeLe4n.Kernel.removeCallerReplyFrame
+      (.states [`SeLe4n.Kernel.removeCallerReplyFrame_preserves_donationChainWellFormed]
+        [])).isEmpty then
+    throwError "reply-stack write census: a `states` record naming no lender result was \
+      accepted"
+  if (lenderResultViolations env `SeLe4n.Kernel.removeCallerReplyFrame
+      `SeLe4n.Kernel.cutReplyFrameOut_preserves_contextLendersFlow).isEmpty then
+    throwError "reply-stack write census: a lender result about another site was accepted"
+  if (lenderResultViolations env `SeLe4n.Kernel.removeCallerReplyFrame
+      `SeLe4n.Kernel.removeCallerReplyFrame_preserves_donationChainWellFormed).isEmpty then
+    throwError "reply-stack write census: a lender result concluding no lender predicate \
+      was accepted"
+  unless (lenderResultViolations env `SeLe4n.Kernel.removeCallerReplyFrame
+      `SeLe4n.Kernel.removeCallerReplyFrame_preserves_contextLendersFlow).isEmpty do
+    throwError "reply-stack write census: a genuine lender result was refused"
   -- The half-step resolution, on synthetic registries: a chain that reaches a
   -- stating entry resolves; one that closes on itself, one that runs off the
   -- end of the registry, and one that is not registered at all do not.
-  unless halfStepResolves [(`a, .halfStep `b), (`b, .states [`t])] `a do
+  unless halfStepResolves [(`a, .halfStep `b), (`b, .states [`t] [`t])] `a do
     throwError "reply-stack write census: a half-step chain reaching a stating entry was \
       not resolved"
   if halfStepResolves [(`a, .halfStep `b), (`b, .halfStep `a)] `a then
@@ -1364,7 +1441,7 @@ run_cmd Command.liftTermElabM do
   if halfStepResolves [(`a, .halfStep `b)] `a then
     throwError "reply-stack write census: a half-step chain running off the end of the \
       registry resolved"
-  if halfStepResolves [(`b, .states [`t])] `a then
+  if halfStepResolves [(`b, .states [`t] [`t])] `a then
     throwError "reply-stack write census: an unregistered composite resolved"
   -- The reconciliation, on synthetic inputs.
   unless (reconciliationViolations [`a, `b] [] [`a, `b]).isEmpty do
@@ -1413,7 +1490,7 @@ run_cmd Command.liftTermElabM do
     unless violations.isEmpty do
       throwError "reply-stack write census: {violations}"
   let stating := chainWriteRegistry.filter
-    (fun (_, d) => match d with | .states _ => true | _ => false)
+    (fun (_, d) => match d with | .states _ _ => true | _ => false)
   let mirroring := chainWriteRegistry.filter
     (fun (_, d) => match d with | .mirrors _ => true | _ => false)
   -- The count and the frontier it is taken over, together.  `chainWriteFrontier`
@@ -1440,7 +1517,7 @@ run_cmd Command.liftTermElabM do
   let summary := s!"reply-stack write census: {recorded.length} write sites \
 ({derived.length} reached through a chain-write primitive, \
 {recorded.length - derived.length} found only by the record-constructing frontier), \
-{stating.length} of them stating their own chain result, {mirroring.length} on the \
+{stating.length} of them stating their own chain and lender results, {mirroring.length} on the \
 frozen surface mirroring a live site that does; the remaining {halfSteps.length} are \
 half-steps of a composite that does\n      frontier: {chainWriteFrontier}"
   unless (summary.splitOn chainWriteFrontier).length > 1 do
