@@ -263,6 +263,8 @@ import SeLe4n.Kernel.KernelRecords.Entry
 import SeLe4n.Kernel.KernelRecords.SyscallEntry
 import SeLe4n.Kernel.ContextLenders.Stage
 import SeLe4n.Kernel.ContextLenders.Entry
+import SeLe4n.Kernel.ContextLenders.Timer
+import SeLe4n.Kernel.ContextLenders.Interrupt
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.YieldLinkedNotResident

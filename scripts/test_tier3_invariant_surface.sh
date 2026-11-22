@@ -11295,6 +11295,7 @@ import SeLe4n.Kernel.SchedContext.Invariant.ContextLenders
 import SeLe4n.Kernel.IPC.Invariant.ContextLenderSites
 import SeLe4n.Kernel.IPC.Invariant.ContextLenderLinks
 import SeLe4n.Kernel.ContextLenders.Entry
+import SeLe4n.Kernel.ContextLenders.Interrupt
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency
 #check @replyRecvCompletesSignalArm
@@ -11443,6 +11444,14 @@ open SeLe4n.Kernel.Concurrency
 #check @chainObjectsKept.settleResidencyAt
 #check @perCoreRescheduleEntryState_lendersStage
 #check @fpAccessEntryState_lendersStage
+#check @contextStackViewsAgree_insert
+#check @LendersFrame.rewriteObject_schedContext
+#check @LendersFrame.timeoutThread
+#check @LendersFrame.timerTickOnCore
+#check @perCoreTimerTickEntryState_lendersStage
+#check @LendersFrame.schedContextBindPerform
+#check @LendersFrame.sendSignalOnCoreFlowing
+#check @interruptEntryState_lendersStage
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing
