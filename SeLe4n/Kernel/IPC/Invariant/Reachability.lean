@@ -40,10 +40,12 @@ family, and they are answered differently:
   `ipcReachable_default` (RR3.14) showing the boot state satisfies it, so the
   bundle is inhabited rather than vacuous.  Carrying it *along a trace* —
   concluding the pack's components alongside the bundle so the next syscall's
-  pack is fed from the last one's conclusion — is the registered WS-DT
-  trace-composition debt (`docs/REGISTERED_DEBT.md`, closure target SM10):
-  no per-syscall `ipcReachable` preservation theorem exists yet, and the
-  payoffs conclude `ipcInvariantFull` alone.
+  pack is fed from the last one's conclusion — is registered debt
+  (`docs/REGISTERED_DEBT.md` table C, "`ipcReachable` is not carried across a
+  trace of kernel entries", owner WS-PK; it was WS-DT's until WS-DT closed):
+  no per-entry `ipcReachable` preservation theorem exists yet, and the
+  payoffs conclude `ipcInvariantFull` alone, so a per-entry theorem that needs
+  a chain fact takes it as a premise read off the state the step runs from.
 
 * **Running-caller-shaped** — the freshness and blocking-state conditions about
   the syscall's *own* thread (`hFreshSender`, `hSenderNotRecv`,
@@ -164,7 +166,8 @@ makes it a decision rather than a cost imposed on every caller.
 
 What it does **not** yet carry is preservation along a trace — no
 `ipcReachableUnder` preservation theorem exists, exactly as none exists for
-`ipcReachable` itself (the WS-DT trace-composition debt).  What the per-arm lifts
+`ipcReachable` itself (`docs/REGISTERED_DEBT.md` table C, "`ipcReachable` is not
+carried across a trace of kernel entries", owner WS-PK).  What the per-arm lifts
 in `IPC/Invariant/BlockedSenderPreservation.lean` give is each conjunct across one
 transition, which is what a consumer composes by hand until that debt closes. -/
 def ipcReachableUnder (ctx : LabelingContext) (st : SystemState) : Prop :=
