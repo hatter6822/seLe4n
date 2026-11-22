@@ -19093,7 +19093,18 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind \([^\n]*
 # operation over.  The order is the live order, so the error codes agree too.
 # (WS-SX SX6.4 retired the domain refusal on both sides: a context carries no
 # domain, and seL4-MCS's bind checks none.)
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*else if sc\.scReply\.isSome then \.error \.illegalState" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# WS-SX SX8 (D25): a context heading a reply stack binds on both sides, as
+# seL4-MCS's `decodeSchedContext_Bind` binds it.  NEGATIVE on both binds; the
+# label rule is the checked dispatch's gate, anchored after it.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*sc\.scReply\.isSome then \.error" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind \([^\n]*(\n([ \t][^\n]*)?)*sc\.scReply\.isSome then \.error" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def schedContextBindAdmitted \([^\n]*(\n([ \t][^\n]*)?)*sc\.scReply\.isSome then false" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def schedContextBindLabelGate \([^\n]*(\n([ \t][^\n]*)?)*\| \.ok vT => if schedContextBindLabelAdmits ctx st scId vT\.val then k st else \.error \.flowDenied" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.ok vThreadId =>\s+if !schedContextBindLabelAdmits ctx st scObjId vThreadId\.val then\s+\.error \(\.flowDenied, st\)" SeLe4n/Kernel/RefusalCarryingInvocation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchInvocationBy \([^\n]*(\n([ \t][^\n]*)?)*\| \.object scId =>\s+schedContextBindLabelGate ctx xc tid scId \(fun st =>" SeLe4n/Kernel/RefusalCarryingInvocation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchCapabilityOnlyChecked \([^\n]*(\n([ \t][^\n]*)?)*\| \.schedContextBind =>\n    match cap\.target with\n    \| \.object scId => schedContextBindLabelGate ctx xc tid scId k" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" rg -n '^theorem schedContextBindLabelGate_admits ' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem schedContextBindLabelAdmits_flows ' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*if frozenReplyFrameOnLiveStack st tcb then \.error \.illegalState" SeLe4n/Kernel/FrozenOps/Operations.lean'
 # The bind writes no priority: since WS-SX SX6.4 the thread's TCB is its only
 # home, so the mirror has no reservation field to copy.  NEGATIVE.

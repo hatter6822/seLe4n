@@ -91,6 +91,19 @@ D22, "Match seL4", 2026-11-19). Stacks on SX7 (`v0.37.33`).
   write census as the live one's mirror) and success on a context bound to
   no thread.
 
+### SchedContext_Bind under the context-label rule (D25, D27)
+- SchedContext_Bind binds a context that heads a reply stack, as seL4-MCS's
+  `decodeSchedContext_Bind` does: the `scReply` refusal is retired from
+  `schedContextBind`, its admitted check and `frozenSchedContextBind`, with
+  the proofs that consumed it.
+- The checked dispatch admits such a bind only where the context's label
+  flows to the bound thread (`schedContextBindLabelGate`, beside the service
+  gates in `dispatchCapabilityOnlyChecked`), and refuses it `flowDenied`
+  otherwise, before the bind reads or writes anything else. With every lender
+  on the stack flowing to the context's label (`contextLendersFlow`), every
+  lender then flows to the thread the reply later takes the context back
+  from. A context heading no stack binds as before.
+
 ### Allocation fixes found by the heap gate
 - The compiled signal copied the object store; the blocking receive's return
   copied it; the wide-slot mint refusal built records. Each now writes in

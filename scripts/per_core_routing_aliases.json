@@ -27,5 +27,7 @@
   "_audit_reader_note": "PR #870 review: the enforcement-boundary label for the audit-trail read is now `auditReadFromCore` — the LIVE entry point the `.auditRead` arm calls — so no alias is needed and the routing walk audits the subject-resolution seam itself (the first cut labelled the inner query `auditReadWord`, which takes a caller-supplied reader domain; coverage tracking that helper would have stayed green had the live seam drifted onto the confused-clearance shape).  The drain's label was the live entry from the start.",
   "_yield_note": "The yield syscall invokes no capability: the dispatcher runs it from a guard ahead of the caller's CSpace lookup, and that guard arm calls `dispatchYield`, the `Kernel` wrapper over `yieldOnCore`, so the walk starts there.  The capability dispatcher's own `.yield` arm is an unreachable refusal spelled for exhaustiveness (`fun _ => .error .illegalState`) and is inert.",
   "yieldOnCore#alt": "dispatchYield",
-  "yieldOnCore#inert": true
+  "yieldOnCore#inert": true,
+  "_bind_gate_note": "The checked dispatch gates the bind's thread path by its label rule (`dispatchCapabilityOnlyChecked`'s `.schedContextBind` arm calls `schedContextBindLabelGate`, which runs the capability-only arm it is handed), so that arm's root is the gate.",
+  "schedContextBind#alt": "schedContextBindLabelGate"
 }

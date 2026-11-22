@@ -3054,8 +3054,8 @@ private def differentialSchedContextBindPlacesParked : IO Unit := do
     expect "FO-050 (3): the frozen bind leaves it in NO bucket"
       (!SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere fzBound diffA)
 
-/-- FO-047c: the refusals the frozen bind did not carry, and the domain the
-binds do not check.
+/-- FO-047c: the refusals the frozen bind did not carry, and what the binds
+admit: a context heading a stack and a thread in another domain.
 
 Each refusal drives a state the live bind refuses and asserts the frozen mirror
 refuses it **with the same error code**, beside a control establishing that the
@@ -3082,11 +3082,22 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
   let istHeading := diffAddSchedContext (diffAddReply
     (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) (diffTcb 62)) (diffTcb 63))
     headRid headReply) diffScId scHeading
-  expect "FO-047c control: the live bind refuses a reservation heading a stack"
-    (liveErr istHeading.state == some KernelError.illegalState)
-  expect "FO-047c: ...and the frozen bind refuses it identically"
-    (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istHeading))
-      == some KernelError.illegalState)
+  -- WS-SX SX8 (D25): seL4-MCS's `decodeSchedContext_Bind` binds it, so both
+  -- binds admit it (the checked dispatch's label rule is not the operation's).
+  expect "FO-047c control: the live bind admits a reservation heading a stack"
+    (liveErr istHeading.state == none)
+  expect "FO-047c: ...and so does the frozen bind"
+    (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istHeading)) == none)
+  -- ...and the checked dispatch's label rule decides it: a context heading a
+  -- stack binds only to a thread its label flows to (D25 static, D27).
+  let ctxHigh : SeLe4n.Kernel.LabelingContext :=
+    { SeLe4n.Kernel.defaultLabelingContext with
+      objectLabelOf := fun _ => SeLe4n.Kernel.SecurityLabel.kernelTrusted }
+  expect "FO-047c: the label rule refuses a context heading a stack to a thread below its label"
+    (!SeLe4n.Kernel.schedContextBindLabelAdmits ctxHigh istHeading.state diffScId.toObjId diffA)
+  expect "FO-047c: ...admits it where the label flows"
+    (SeLe4n.Kernel.schedContextBindLabelAdmits SeLe4n.Kernel.defaultLabelingContext
+      istHeading.state diffScId.toObjId diffA)
   -- (2) a thread in another domain than the binder's: seL4-MCS's
   -- `decodeSchedContext_Bind` checks no domain and a context carries none
   -- (WS-SX SX6.4), so both binds admit it.
@@ -3101,6 +3112,8 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
     (liveErr istDomain.state == none)
   expect "FO-047c: ...and so does the frozen bind"
     (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istDomain)) == none)
+  expect "FO-047c: the label rule admits a context heading no stack under any labels"
+    (SeLe4n.Kernel.schedContextBindLabelAdmits ctxHigh istDomain.state diffScId.toObjId diffA)
   -- (3) the thread's own reply frame is on a LIVE stack — reciprocated, so the
   -- pop that reaches it will write this thread's binding.
   let ownRid : SeLe4n.ReplyId := ⟨71⟩

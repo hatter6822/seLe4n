@@ -345,7 +345,8 @@ def sel4LabelRowsArch : List LabelRow := [
     5 1 [truncatedMessage, rangeError, invalidCapability] (.implemented .schedContextConfigure),
   unitRow 34 "SchedContextBind" (src "decodeSchedContext_Bind" "object/schedcontext.c" 87)
     (obj .schedContext) 0 1 [truncatedMessage, illegalOperation, invalidCapability]
-    (.implemented .schedContextBind),
+    (.hardening .schedContextBind
+      "flow gate: a context heading a reply stack binds only to a thread its label flows to (D25, D27)"),
   unitRow 35 "SchedContextUnbind" (src "decodeSchedContextInvocation" "object/schedcontext.c" 283)
     (obj .schedContext) 0 0 [illegalOperation] (.implemented .schedContextUnbind),
   unitRow 36 "SchedContextUnbindObject"

@@ -5963,6 +5963,84 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
 -- T6-I/M-IF-1: Information-flow-checked dispatch
 -- ============================================================================
 
+/-- **SchedContext_Bind's label rule (D25 in its static form, D27).**  A
+context that heads a reply stack is on loan from the callers on that stack, and
+the reply each of them later answers takes it back from whichever thread holds
+it.  Every lender on a context's stack flows to the context's label
+(`contextLendersFlow`), so a bind of such a context to a thread the context's
+label flows to gives every lender on the stack a flow to the bound thread
+(`securityFlowsTo_trans`), with no read of the stack's frames: the notification
+lend's rule (`donationContextFlows`), asked of the bound thread.  A context that
+heads no stack is owed to nobody, and the rule admits it as seL4's
+`decodeSchedContext_Bind` does.  It reads the context's head and two static
+labels, and writes nothing. -/
+def schedContextBindLabelAdmits (ctx : LabelingContext) (st : SystemState)
+    (scId : SeLe4n.ObjId) (t : SeLe4n.ThreadId) : Bool :=
+  match st.getSchedContext? (SchedContextId.ofObjId scId) with
+  | none => true
+  | some sc =>
+    match sc.scReply with
+    | none => true
+    | some _ => securityFlowsTo (ctx.objectLabelOf scId) (ctx.threadLabelOf t)
+
+/-- A context heading no stack is admitted to any thread. -/
+theorem schedContextBindLabelAdmits_of_no_head {ctx : LabelingContext} {st : SystemState}
+    {scId : SeLe4n.ObjId} {t : SeLe4n.ThreadId} {sc : SchedContext}
+    (hSc : st.getSchedContext? (SchedContextId.ofObjId scId) = some sc)
+    (hR : sc.scReply = none) : schedContextBindLabelAdmits ctx st scId t = true := by
+  unfold schedContextBindLabelAdmits; simp only [hSc, hR]
+
+/-- **What an admitted bind of a context heading a stack carries**: the
+context's label flows to the bound thread. -/
+theorem schedContextBindLabelAdmits_flows {ctx : LabelingContext} {st : SystemState}
+    {scId : SeLe4n.ObjId} {t : SeLe4n.ThreadId} {sc : SchedContext} {r : SeLe4n.ReplyId}
+    (h : schedContextBindLabelAdmits ctx st scId t = true)
+    (hSc : st.getSchedContext? (SchedContextId.ofObjId scId) = some sc)
+    (hR : sc.scReply = some r) :
+    securityFlowsTo (ctx.objectLabelOf scId) (ctx.threadLabelOf t) = true := by
+  unfold schedContextBindLabelAdmits at h; simpa only [hSc, hR] using h
+
+/-- **The bind's thread path under its label rule.**  Extra capability 0 names
+a notification (the notification bind, which lends nothing) or a thread; on the
+thread path a context heading a stack is bound only where its label flows to
+the thread (`schedContextBindLabelAdmits`), and is refused `flowDenied`
+otherwise, before the bind reads or writes anything else.  A context heading
+no stack, and every refusal the resolution itself answers, runs the
+capability-only arm `k` as it is. -/
+@[inline] def schedContextBindLabelGate (ctx : LabelingContext) (xc : Nat)
+    (tid : SeLe4n.ThreadId) (scId : SeLe4n.ObjId) (k : Kernel Unit) : Kernel Unit :=
+  fun st =>
+    match resolveSchedContextBindNotificationCode tid (schedContextBindArgsOf st tid xc) st with
+    | _ + 1 => k st
+    | 0 =>
+      match resolveSchedContextBindThread tid (schedContextBindArgsOf st tid xc) st with
+      | .error _ => k st
+      | .ok vT => if schedContextBindLabelAdmits ctx st scId vT.val then k st else .error .flowDenied
+
+/-- A success through the label gate is a success of the arm. -/
+theorem schedContextBindLabelGate_ok {ctx : LabelingContext} {xc : Nat} {tid : SeLe4n.ThreadId}
+    {scId : SeLe4n.ObjId} {k : Kernel Unit} {st : SystemState} {r : Unit × SystemState}
+    (h : schedContextBindLabelGate ctx xc tid scId k st = .ok r) : k st = .ok r := by
+  unfold schedContextBindLabelGate at h
+  repeat' split at h
+  all_goals first | exact h | cases h
+
+/-- **The gate decides the bound thread's flow**: a gate that runs the arm on
+the thread path has read `schedContextBindLabelAdmits` true of the thread the
+resolution answers. -/
+theorem schedContextBindLabelGate_admits {ctx : LabelingContext} {xc : Nat}
+    {tid : SeLe4n.ThreadId} {scId : SeLe4n.ObjId} {k : Kernel Unit} {st : SystemState}
+    {r : Unit × SystemState} {vT : SeLe4n.ValidThreadId}
+    (h : schedContextBindLabelGate ctx xc tid scId k st = .ok r)
+    (hN : resolveSchedContextBindNotificationCode tid (schedContextBindArgsOf st tid xc) st = 0)
+    (hT : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid xc) st = .ok vT) :
+    schedContextBindLabelAdmits ctx st scId vT.val = true := by
+  unfold schedContextBindLabelGate at h
+  simp only [hN, hT] at h
+  cases hA : schedContextBindLabelAdmits ctx st scId vT.val with
+  | true => rfl
+  | false => simp [hA] at h
+
 /-- **The flow gates of the two capability-only service arms.**  The service
 query reads the registration its endpoint records, and the revoke removes it,
 so each is a read or a write of the endpoint its extra capability 0 names
@@ -5978,7 +6056,9 @@ one function for each.  The gate reads labels only and runs before the arm, so
 a refusal reveals nothing about the registry.  Every other arm, and a
 capability naming no object (which each arm refuses itself), runs the
 capability-only arm `k` as it is; `dispatchCapabilityOnlyChecked_ok` is the bridge
-back to `k` for a success. -/
+back to `k` for a success.  The bind's thread path is gated the same way by its
+label rule (`schedContextBindLabelGate`), which reads only the context's head
+and two static labels. -/
 def dispatchCapabilityOnlyChecked (ctx : LabelingContext) (sid : SyscallId) (xc : Nat)
     (tid : SeLe4n.ThreadId) (cap : Capability) (k : Kernel Unit) : Kernel Unit :=
   match sid with
@@ -5991,6 +6071,10 @@ def dispatchCapabilityOnlyChecked (ctx : LabelingContext) (sid : SyscallId) (xc 
     match cap.target with
     | .serviceRegistry _ =>
       serviceEndpointArm .serviceRevoke tid xc fun _ epId => revokeServiceChecked ctx tid epId
+    | _ => k
+  | .schedContextBind =>
+    match cap.target with
+    | .object scId => schedContextBindLabelGate ctx xc tid scId k
     | _ => k
   | _ => k
 
@@ -6009,7 +6093,7 @@ theorem dispatchCapabilityOnlyChecked_ok {ctx : LabelingContext} {decoded : Sysc
     unfold dispatchCapabilityOnly at hC
     rw [hS] at hC
     cases hT : cap.target <;> rw [hT] at h hC <;> simp only [Option.some.injEq] at hC <;>
-      subst hC <;> try exact h
+      subst hC <;> first | exact h | exact schedContextBindLabelGate_ok h | skip
   · simp only [serviceEndpointArm] at h ⊢
     cases hR : resolveServiceEndpoint .serviceRevoke tid decoded.msgInfo.extraCaps st with
     | error e => simp only [hR] at h; cases h
@@ -6029,15 +6113,16 @@ theorem dispatchCapabilityOnlyChecked_ok {ctx : LabelingContext} {decoded : Sysc
       · simpa [serviceQueryStaged, lookupServiceChecked, hA] using h
       · simp [serviceQueryStaged, lookupServiceChecked, hA] at h
 
-/-- Every arm but the two service arms is ungated. -/
+/-- Every arm but the two service arms and the bind is ungated. -/
 @[simp] theorem dispatchCapabilityOnlyChecked_of_not_service (ctx : LabelingContext) {sid : SyscallId}
     (xc : Nat) (tid : SeLe4n.ThreadId) (cap : Capability) (k : Kernel Unit)
-    (hQ : sid ≠ .serviceQuery) (hR : sid ≠ .serviceRevoke) :
+    (hQ : sid ≠ .serviceQuery) (hR : sid ≠ .serviceRevoke) (hB : sid ≠ .schedContextBind) :
     dispatchCapabilityOnlyChecked ctx sid xc tid cap k = k := by
   unfold dispatchCapabilityOnlyChecked
   split
   · exact absurd rfl hQ
   · exact absurd rfl hR
+  · exact absurd rfl hB
   · rfl
 
 /-! ### The non-blocking syscalls (WS-SX SX7.2)

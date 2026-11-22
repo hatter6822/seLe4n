@@ -1584,17 +1584,10 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
     match st.getObject? scId with
     | some (.schedContext sc) =>
       if sc.boundThread.isSome then .error .illegalState
-      -- **PR #897 review, the sweep the origin fix owed.**  The live bind refuses
-      -- four things and this mirror refused one, so it **succeeded where the
-      -- kernel refuses** -- the direction that matters on a differential surface,
-      -- and the `v0.35.59` shape one operation over (*a named condition beside
-      -- unnamed ones is a subset*).  The three below are the live guards in the
-      -- live order, so the two agree on the error code as well as on the verdict.
-      --
-      -- WS-OD (`v0.35.4`): a context that heads a reply stack is on loan down a
-      -- call chain and owed back along it; binding it elsewhere would give it a
-      -- second claimant the pop then displaces.
-      else if sc.scReply.isSome then .error .illegalState
+      -- **PR #897 review, the sweep the origin fix owed.**  The live bind's
+      -- guards in the live order, so the two agree on the error code as well as
+      -- on the verdict.  WS-SX SX8 (D25): a context heading a reply stack binds,
+      -- as the live bind does; its label rule is the checked dispatch's.
       else
         match st.getTcb? threadId with
         | some tcb =>

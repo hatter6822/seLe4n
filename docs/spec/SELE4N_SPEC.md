@@ -5874,13 +5874,15 @@ take's checks carried across the reply leg alone (`storeReplyLeg_takeGuard`) and
 across the unheld pop (`popUnheldSettled_takeGuard`), each proven the
 specification's, so `unlinked-reply-recv-takes`, `orphan-reply-recv-takes`,
 `unlinked-reply-recv-takes-installs-cap` and `unheld-reply-recv-takes-installs-cap`
-read 0.  SchedContext_Bind keeps two
-refusals seL4 does not make, a context heading a reply stack and a thread whose
-reply frame is on a live stack.  Decision D25 lifts them behind a flow check
-(the bind admitted when every lender on the affected stack flows to the bound
-thread); until that lands the refusals stand, because lifting them unguarded
-would let a reply strip a context from a thread the flow gate never checked and
-would falsify `donationOwnerValid`, which the noninterference proofs rest on.  A reply deleted later is
+read 0.  SchedContext_Bind binds a context heading a reply stack, as seL4's
+`decodeSchedContext_Bind` does, under the static form of decision D25 (D27):
+the checked dispatch admits it only where the context's label flows to the
+bound thread (`schedContextBindLabelGate`, refusing `flowDenied` before the
+bind reads or writes anything else), so with every lender on the stack flowing
+to the context's label (`contextLendersFlow`) every lender flows to the thread
+the reply later takes the context back from.  The bind still refuses a thread
+whose reply frame is on a live stack, which seL4 does not; lifting it needs
+seL4's held pop arm and the `donationOwnerValid` weakening, still to land.  A reply deleted later is
 `reply_remove`: at a head that pop, elsewhere the sever of the stack.  The head
 pop's recipient check refuses no reachable held state
 (`donationRecipientAcceptable_of_donationOwnerValid`).  A context whose holder is blocked sending or calling is finalised

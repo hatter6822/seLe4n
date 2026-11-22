@@ -572,13 +572,6 @@ private theorem schedContextBind_ok_char
     | none =>
       rw [hBT] at h
       simp only [Option.isSome_none, Bool.false_eq_true, if_false] at h
-      -- `v0.35.4`: a context heading a reply stack is refused, so a successful
-      -- bind saw none.
-      have hNoHead : sc.scReply.isSome = false := by
-        cases hH : sc.scReply.isSome with
-        | false => rfl
-        | true => rw [hH] at h; simp at h
-      simp only [hNoHead, Bool.false_eq_true, if_false] at h
       refine ⟨sc, rfl, hBT, ?_⟩
       cases hTcb : st.getTcb? vThreadId.val with
       | none => rw [hTcb] at h; cases h
