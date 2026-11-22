@@ -530,15 +530,16 @@ endpoint is present and `endpointBlockedCancellable` admits the thread,
   | _ => false
 
 /-- **Whether the pop of a head reply commits, read on the pre-state** (seL4
-MCS's `reply_pop` hand-back, decided before any write).  A reply that heads no
-stack answers `true`: it has nothing to hand back.  A reply heading the stack of
-the context `s` answers `true` when the context names it back as its head, is
-bound to a thread `h` that holds it on loan from the reply's caller `c`
-(`.donated s c`, read off the binding codes), and the donation return of `s`
-from `h` to `c` commits (`donatedReturnCommits`, which decides every refusal of
-`returnDonatedSchedContextResolved` on the state it runs on).  Each read is
-`O(1)`: the context, its bound thread, that thread's two binding words, and the
-return's own checks (the reply stack's head and the frame below it). -/
+MCS's `reply_pop`, decided before any write).  A reply that heads no stack
+answers `true`: it has nothing to hand back.  A reply heading the stack of the
+context `s` answers `true` when the context names it back as its head, is bound
+to a thread `h` that holds it on loan from the reply's caller `c` (`.donated s
+c`, read off the binding codes), and the held-head pop of `s` from `h` to `c`
+commits (`heldPopCommits`, which decides every refusal of `popHeldReplyHead` on
+the state it runs on): the return of `s` to `c` where `c` holds no context, the
+held pop, `s` staying with `h`, where it holds one.  Each read is `O(1)`: the
+context, its bound thread, that thread's two binding words, and the pop's own
+checks (the reply stack's head and the frame below it). -/
 @[inline] def replyHeadPopCommits (st : SystemState) (x : SeLe4n.ObjId) (r : Reply)
     (c : SeLe4n.ThreadId) : Bool :=
   match r.next with
@@ -554,15 +555,16 @@ return's own checks (the reply stack's head and the frame below it). -/
         (match st.getTcb? ⟨k⟩ with
          | some ht => ht.scBindingScCode == s.val + 1 && ht.scBindingOwnerCode == c.val + 1
          | none => false) &&
-        donatedReturnCommits st ⟨k⟩ s c
+        heldPopCommits st ⟨k⟩ s c
     | none => false
   | _ => true
 
 /-- **Whether a final delete may finalise the reply at `x`, whose caller `c`
 (its TCB `t`) waits on it**, read on the pre-state before any write.  A reply
 heading a context's stack is popped only when the pop commits
-(`replyHeadPopCommits`: the context goes back to the caller, seL4's
-`reply_remove` head branch, `reply_pop`); a reply heading none is spliced out
+(`replyHeadPopCommits`: the context goes back to the caller where it holds
+none and stays with its holder where it holds one, seL4's `reply_remove` head
+branch, `reply_pop`); a reply heading none is spliced out
 (the non-head branch).  The caller is no reserved or idle thread and is on no
 run queue — a core's FP/SIMD or resident hold on it stays, as seL4 keeps a
 lazily saved context across `setThreadState Inactive` — is blocked on this

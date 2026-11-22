@@ -2838,7 +2838,9 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     -- pop one level up hands the
     -- context back to the intermediate caller as a **donation from the outer
     -- caller**, with the new owner resolved off the stack rather than passed in.
-    match SeLe4n.Kernel.returnDonatedSchedContextResolved stPushed serverTid scId callerTid with
+    -- WS-SX SX8: through the kernel's own router (seL4's `reply_pop`): the
+    -- caller holds no context of its own, so the pop is the hand-back.
+    match SeLe4n.Kernel.popHeldReplyHead stPushed serverTid scId callerTid with
     | .error err =>
       IO.println s!"[SCN-DONATION-RETURN-RESOLVED-OUTER] depth-2 resolved return: error {reprStr err}"
     | .ok stPopped =>

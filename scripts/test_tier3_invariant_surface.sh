@@ -5114,6 +5114,12 @@ run_check "INVARIANT" rg -n -U 'def finaliseReply [^\n]*(\n([ \t][^\n]*)?){0,8}\
 # the context to its caller.  The pop's refusal is decided on the pre-state.
 run_check "INVARIANT" rg -n -U 'def finaliseReplyCancel [^\n]*\n[^\n]*\n  if replyStackLinkIsHead r\.next then cancelIpcBlockingReclaimed c t st\n  else Lifecycle\.Suspend\.cancelIpcBlocking st c t' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n -U 'def replyCallerFinalisable [^\n]*(\n([ \t][^\n]*)?){0,20}replyHeadPopCommits' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# WS-SX SX8: the final delete's head pop commits on either arm of seL4's
+# reply_pop: the head-reply check reads the held-head pop's commit, which the
+# router's own test splits into the return's and the held pop's.
+run_check "INVARIANT" rg -n -U '^@\[inline\] def replyHeadPopCommits [^\n]*(\n([ \t][^\n]*)?)*        heldPopCommits st ⟨k⟩ s c\n' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '^def heldPopCommits [^\n]*(\n([ \t][^\n]*)?)*  if donationRecipientAcceptable st recipient then donatedReturnCommits st holder scId recipient\n  else keptPopCommits st holder scId\n' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem popHeldReplyHead_ok_of_commits($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # The busy reply's finalise is compiled in place, through @[csimp].
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem finaliseReply_eq_impl : @finaliseReply = @finaliseReplyImpl' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^theorem finaliseSchedContextDeschedule_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean

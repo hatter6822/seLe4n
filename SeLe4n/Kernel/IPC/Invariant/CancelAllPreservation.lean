@@ -467,8 +467,10 @@ theorem finaliseReply_armPremises {s : SystemState} {x : SeLe4n.ObjId} {r : Repl
     rw [hRO] at e
     cases e
     exact replyFrameHeadHolderDonation_of_no_head _ _ _ (hDonEq.symm.trans hD)
-  · obtain ⟨n, -, hResN, -, -⟩ := replyHeadPop_commits hInv hT hD hC
+  · have hA := donationRecipientAcceptable_of_donationOwnerValid hFull.donationOwnerValid hTd hBd
+    obtain ⟨n, -, hResN, -, -⟩ := replyHeadPop_commits_return hInv hT hD hA hC
     have hC' := hC
+    rw [heldPopCommits_of_acceptable hA] at hC'
     unfold donatedReturnCommits at hC'
     rw [hResN, hSc] at hC'
     simp only [Bool.and_eq_true] at hC'

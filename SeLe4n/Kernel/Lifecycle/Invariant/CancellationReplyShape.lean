@@ -176,7 +176,7 @@ def cancelDonationStackValid (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TC
 cancellation reclaims, the resolver answers on its context, so the pop is
 decided by its own checks.  The chain invariant gives it
 (`cancelDonationResolves_of_chainWellFormed`), and so does a pre-state check
-that the return commits (`donatedReturnCommits`). -/
+that the pop commits (`heldPopCommits`). -/
 def cancelDonationResolves (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB) : Prop :=
   ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
     Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some (scId, holder) →

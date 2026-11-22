@@ -143,16 +143,20 @@ theorem replyCaller_lendsNone {st : SystemState} {x : SeLe4n.ObjId} {r : Reply}
   cases hR'
   rw [hN] at hHd; simp [replyStackLinkIsHead] at hHd
 
-/-- **What the donation return leaves of the replies**: a reply it names neither
-as the head nor as the frame below keeps its record, and the frame below (its
-link to the head kept apart from the head itself) heads the context, and the
-head itself (kept apart from the frame below) is unlinked from the stack. -/
-theorem returnDonatedSchedContext_reply_cases {st st' : SystemState} {h : SeLe4n.ThreadId}
-    {s : SeLe4n.SchedContextId} {c : SeLe4n.ThreadId} {n : Option SeLe4n.ThreadId}
-    (hInv : st.objects.invExt) (hPop : returnDonatedSchedContext st h s c n = .ok st') :
-    ∃ (sc : SchedContext) (head? : Option (SeLe4n.ReplyId × Reply)),
-      st.objects[s.toObjId]? = some (.schedContext sc) ∧ donationHeadOf? st s sc = .ok head? ∧
-      (∀ (k : SeLe4n.ObjId) (r : Reply), st.objects[k]? = some (.reply r) →
+/-- **What a head pop leaves of the replies**, for any pop that stores the
+context, pops its head (`storeDonationHeadPop`), and then writes no reply: a reply
+it names neither as the head nor as the frame below keeps its record, the frame
+below (its link to the head kept apart from the head itself) heads the context,
+and the head itself (kept apart from the frame below) is unlinked from the
+stack.  The donation return and the held pop are both such pops. -/
+theorem donationHeadPop_reply_cases {st s1 s2 st' : SystemState} {s : SeLe4n.SchedContextId}
+    {sc sc' : SchedContext} {head? : Option (SeLe4n.ReplyId × Reply)}
+    (hInv : st.objects.invExt) (hSc : st.objects[s.toObjId]? = some (.schedContext sc))
+    (hS1 : storeObject s.toObjId (.schedContext sc') st = .ok ((), s1))
+    (hClear : storeDonationHeadPop s head? s1 = .ok s2)
+    (tail : ∀ (k : SeLe4n.ObjId) (r : Reply), s2.objects[k]? = some (.reply r) →
+      st'.objects[k]? = some (.reply r)) :
+    (∀ (k : SeLe4n.ObjId) (r : Reply), st.objects[k]? = some (.reply r) →
         (∀ x rx, head? = some (x, rx) → k ≠ x.toObjId) →
         (∀ x rx y, head? = some (x, rx) → rx.prev = some y → k ≠ y.toObjId) →
         st'.objects[k]? = some (.reply r)) ∧
@@ -162,28 +166,13 @@ theorem returnDonatedSchedContext_reply_cases {st st' : SystemState} {h : SeLe4n
       (∀ x rx, head? = some (x, rx) → st.objects[x.toObjId]? = some (.reply rx) →
         (∀ y, rx.prev = some y → y.toObjId ≠ x.toObjId) →
         st'.objects[x.toObjId]? = some (.reply { rx with prev := none, next := none })) := by
-  obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4, hSc, -, -, hHead, hS1, hClear, hL1,
-    hS3, hL2, hS4, hEq⟩ := returnDonatedSchedContext_ok_storeChain _ _ h s c n hPop
   have hI1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hS1
-  have hI2 := storeDonationHeadPop_preserves_objects_invExt hI1 hClear
-  have hI3 := storeObject_preserves_objects_invExt _ _ _ _ hI2 hS3
-  have eO : st'.objects = s4.objects := by rw [hEq]
-  have tail : ∀ (k : SeLe4n.ObjId) (r : Reply), s2.objects[k]? = some (.reply r) →
-      st'.objects[k]? = some (.reply r) := by
-    intro k r hk
-    have hc : k ≠ c.toObjId := by
-      intro e; rw [e, lookupTcb_some_objects _ _ _ hL1] at hk; cases hk
-    have h3 : s3.objects[k]? = some (.reply r) := by
-      rw [storeObject_objects_ne _ _ _ k _ hc hI2 hS3]; exact hk
-    have hh : k ≠ h.toObjId := by
-      intro e; rw [e, lookupTcb_some_objects _ _ _ hL2] at h3; cases h3
-    rw [eO, storeObject_objects_ne _ _ _ k _ hh hI3 hS4]; exact h3
   have first : ∀ (k : SeLe4n.ObjId) (r : Reply), st.objects[k]? = some (.reply r) →
       s1.objects[k]? = some (.reply r) := by
     intro k r hk
     have hne : k ≠ s.toObjId := by intro e; rw [e, hSc] at hk; cases hk
     rw [storeObject_objects_ne _ _ _ k _ hne hInv hS1]; exact hk
-  refine ⟨sc, head?, hSc, hHead, fun k r hk h1 h2 => tail k r ?_,
+  refine ⟨fun k r hk h1 h2 => tail k r ?_,
     fun x rx y b hHd hP hb hyx => tail _ _ ?_, fun x rx hHd hx hyx => tail _ _ ?_⟩
   · rw [storeDonationHeadPop_objects_ne hI1 hClear k h1 h2]; exact first k r hk
   · subst hHd
@@ -225,6 +214,71 @@ theorem returnDonatedSchedContext_reply_cases {st st' : SystemState} {h : SeLe4n
         obtain ⟨b', -, hS2⟩ := storeReplyReHead_some_ok hRe
         rw [storeObject_objects_ne _ _ _ _ _ (fun e => hyx y hP e.symm) hI1' hS2]
         exact hx1
+
+
+/-- **What the donation return leaves of the replies**
+(`donationHeadPop_reply_cases`). -/
+theorem returnDonatedSchedContext_reply_cases {st st' : SystemState} {h : SeLe4n.ThreadId}
+    {s : SeLe4n.SchedContextId} {c : SeLe4n.ThreadId} {n : Option SeLe4n.ThreadId}
+    (hInv : st.objects.invExt) (hPop : returnDonatedSchedContext st h s c n = .ok st') :
+    ∃ (sc : SchedContext) (head? : Option (SeLe4n.ReplyId × Reply)),
+      st.objects[s.toObjId]? = some (.schedContext sc) ∧ donationHeadOf? st s sc = .ok head? ∧
+    (∀ (k : SeLe4n.ObjId) (r : Reply), st.objects[k]? = some (.reply r) →
+        (∀ x rx, head? = some (x, rx) → k ≠ x.toObjId) →
+        (∀ x rx y, head? = some (x, rx) → rx.prev = some y → k ≠ y.toObjId) →
+        st'.objects[k]? = some (.reply r)) ∧
+      (∀ x rx y b, head? = some (x, rx) → rx.prev = some y →
+        st.objects[y.toObjId]? = some (.reply b) → y.toObjId ≠ x.toObjId →
+        st'.objects[y.toObjId]? = some (.reply { b with next := some (.head s) })) ∧
+      (∀ x rx, head? = some (x, rx) → st.objects[x.toObjId]? = some (.reply rx) →
+        (∀ y, rx.prev = some y → y.toObjId ≠ x.toObjId) →
+        st'.objects[x.toObjId]? = some (.reply { rx with prev := none, next := none })) := by
+  obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4, hSc, -, -, hHead, hS1, hClear, hL1,
+    hS3, hL2, hS4, hEq⟩ := returnDonatedSchedContext_ok_storeChain _ _ h s c n hPop
+  have hI1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hS1
+  have hI2 := storeDonationHeadPop_preserves_objects_invExt hI1 hClear
+  have hI3 := storeObject_preserves_objects_invExt _ _ _ _ hI2 hS3
+  have eO : st'.objects = s4.objects := by rw [hEq]
+  have tail : ∀ (k : SeLe4n.ObjId) (r : Reply), s2.objects[k]? = some (.reply r) →
+      st'.objects[k]? = some (.reply r) := by
+    intro k r hk
+    have hc : k ≠ c.toObjId := by
+      intro e; rw [e, lookupTcb_some_objects _ _ _ hL1] at hk; cases hk
+    have h3 : s3.objects[k]? = some (.reply r) := by
+      rw [storeObject_objects_ne _ _ _ k _ hc hI2 hS3]; exact hk
+    have hh : k ≠ h.toObjId := by
+      intro e; rw [e, lookupTcb_some_objects _ _ _ hL2] at h3; cases h3
+    rw [eO, storeObject_objects_ne _ _ _ k _ hh hI3 hS4]; exact h3
+  exact ⟨sc, head?, hSc, hHead, donationHeadPop_reply_cases hInv hSc hS1 hClear tail⟩
+
+/-- **What the held pop leaves of the replies** (`donationHeadPop_reply_cases`):
+its last store is the holder's, which is no reply. -/
+theorem keepDonatedSchedContext_reply_cases {st st' : SystemState} {h : SeLe4n.ThreadId}
+    {s : SeLe4n.SchedContextId} {n : Option SeLe4n.ThreadId}
+    (hInv : st.objects.invExt) (hPop : keepDonatedSchedContext st h s n = .ok st') :
+    ∃ (sc : SchedContext) (head? : Option (SeLe4n.ReplyId × Reply)),
+      st.objects[s.toObjId]? = some (.schedContext sc) ∧ donationHeadOf? st s sc = .ok head? ∧
+    (∀ (k : SeLe4n.ObjId) (r : Reply), st.objects[k]? = some (.reply r) →
+        (∀ x rx, head? = some (x, rx) → k ≠ x.toObjId) →
+        (∀ x rx y, head? = some (x, rx) → rx.prev = some y → k ≠ y.toObjId) →
+        st'.objects[k]? = some (.reply r)) ∧
+      (∀ x rx y b, head? = some (x, rx) → rx.prev = some y →
+        st.objects[y.toObjId]? = some (.reply b) → y.toObjId ≠ x.toObjId →
+        st'.objects[y.toObjId]? = some (.reply { b with next := some (.head s) })) ∧
+      (∀ x rx, head? = some (x, rx) → st.objects[x.toObjId]? = some (.reply rx) →
+        (∀ y, rx.prev = some y → y.toObjId ≠ x.toObjId) →
+        st'.objects[x.toObjId]? = some (.reply { rx with prev := none, next := none })) := by
+  obtain ⟨sc, head?, ht, s1, s2, hSc, -, -, hHead, hS1, hClear, hL, hS3⟩ :=
+    keepDonatedSchedContext_ok_storeChain hPop
+  have hI1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hS1
+  have hI2 := storeDonationHeadPop_preserves_objects_invExt hI1 hClear
+  have tail : ∀ (k : SeLe4n.ObjId) (r : Reply), s2.objects[k]? = some (.reply r) →
+      st'.objects[k]? = some (.reply r) := by
+    intro k r hk
+    have hh : k ≠ h.toObjId := by
+      intro e; rw [e, lookupTcb_some_objects _ _ _ hL] at hk; cases hk
+    rw [storeObject_objects_ne _ _ _ k _ hh hI2 hS3]; exact hk
+  exact ⟨sc, head?, hSc, hHead, donationHeadPop_reply_cases hInv hSc hS1 hClear tail⟩
 
 /-- **The donation return keeps the fact** (seL4 MCS's `reply_pop`): the thread
 the context is taken from holds nothing any more; the thread it goes back to
@@ -388,7 +442,8 @@ theorem finaliseReplyReturn_keepsLentContextHeads {s : SystemState} {x : SeLe4n.
       unfold Lifecycle.Suspend.returnDonationToCancelledCaller; rw [hD]
     rw [hNone]
     exact ⟨hW, replyCaller_lendsNone hW hX hT hHd hRO⟩
-  · obtain ⟨n, st', hResN, hPop, hEq⟩ := replyHeadPop_commits hInv hT hD hC
+  · obtain ⟨n, st', hResN, hPop, hEq⟩ := replyHeadPop_commits_return hInv hT hD
+      (donationRecipientAcceptable_of_donationOwnerValid hFull.donationOwnerValid hTd hBd) hC
     rw [hEq]
     have hScO := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc
     refine ⟨returnDonatedSchedContext_keepsLentContextHeads hInv hW hFull.donationOwnerValid
@@ -434,9 +489,23 @@ theorem finaliseReplyReturn_replyUnheaded {s : SystemState} {x : SeLe4n.ObjId} {
       unfold Lifecycle.Suspend.returnDonationToCancelledCaller; rw [hD]
     rw [hNone]
     exact ⟨r, hXo, fun sc e => by rw [e] at hHd; simp [replyStackLinkIsHead] at hHd⟩
-  · obtain ⟨n, st', hResN, hPop, hEq⟩ := replyHeadPop_commits hInv hT hD hC
+  · obtain ⟨st', hOk, hEq⟩ := replyHeadPop_commits hInv hT hD hC
     rw [hEq]
-    obtain ⟨sc0, head?, hSc0, hHead, -, -, hTop⟩ := returnDonatedSchedContext_reply_cases hInv hPop
+    -- Both arms of the pop (seL4's `reply_pop`) unlink the head the same way.
+    have hArms : ∃ (n : Option SeLe4n.ThreadId) (sc0 : SchedContext)
+        (head? : Option (SeLe4n.ReplyId × Reply)), replyStackOuterCaller? s sd = .ok n ∧
+        s.objects[sd.toObjId]? = some (.schedContext sc0) ∧ donationHeadOf? s sd sc0 = .ok head? ∧
+        (∀ x rx, head? = some (x, rx) → s.objects[x.toObjId]? = some (.reply rx) →
+          (∀ y, rx.prev = some y → y.toObjId ≠ x.toObjId) →
+          st'.objects[x.toObjId]? = some (.reply { rx with prev := none, next := none })) := by
+      rcases popHeldReplyHead_ok_cases hOk with ⟨-, hR⟩ | ⟨-, hK⟩
+      · obtain ⟨n, hResN, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hR
+        obtain ⟨sc0, head?, hSc0, hHead, -, -, hTop⟩ := returnDonatedSchedContext_reply_cases hInv hPop
+        exact ⟨n, sc0, head?, hResN, hSc0, hHead, hTop⟩
+      · obtain ⟨n, hResN, hPop⟩ := keepDonatedSchedContextResolved_ok_decompose hK
+        obtain ⟨sc0, head?, hSc0, hHead, -, -, hTop⟩ := keepDonatedSchedContext_reply_cases hInv hPop
+        exact ⟨n, sc0, head?, hResN, hSc0, hHead, hTop⟩
+    obtain ⟨n, sc0, head?, hResN, hSc0, hHead, hTop⟩ := hArms
     rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc] at hSc0
     cases hSc0
     have hGetR : s.getReply? ⟨x.val⟩ = some r := (SystemState.getReply?_eq_some_iff _ _ _).mpr hXo

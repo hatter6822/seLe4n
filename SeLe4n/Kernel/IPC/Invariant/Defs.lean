@@ -8846,6 +8846,54 @@ theorem keepDonatedSchedContext_ok_of_holderBinding {st : SystemState}
     Bool.false_eq_true, if_false]
   rw [hS3]
 
+/-- **A held pop that commits succeeds**: `keptPopCommits` answered every check
+the resolved held pop makes, on the state it runs on — the resolver's success
+gives the head, and the holder read after the two stores is the pre-state's
+(`keepDonatedSchedContext_ok_of_holderBinding`). -/
+theorem keepDonatedSchedContextResolved_ok_of_commits {st : SystemState}
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} (hObjInv : st.objects.invExt)
+    (h : keptPopCommits st holder scId = true) :
+    ∃ st', keepDonatedSchedContextResolved st holder scId = .ok st' := by
+  unfold keptPopCommits at h
+  cases hRes : replyStackOuterCaller? st scId with
+  | error e => rw [hRes] at h; cases h
+  | ok n =>
+    rw [hRes] at h
+    simp only at h
+    cases hSc : st.getSchedContext? scId with
+    | none => rw [hSc] at h; cases h
+    | some sc =>
+      rw [hSc] at h
+      simp only [Bool.and_eq_true, beq_iff_eq] at h
+      obtain ⟨⟨hB, hOut⟩, hHt⟩ := h
+      cases hLk : lookupTcb st holder with
+      | none => rw [hLk] at hHt; cases hHt
+      | some ht =>
+        rw [hLk] at hHt
+        have hScObj := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc
+        have hHeadRes : donationHeadResolves st scId :=
+          donationHeadResolves_of_outerCallerResolves st scId (fun _ _ => ⟨n, hRes⟩)
+        obtain ⟨st', hOk⟩ := keepDonatedSchedContext_ok_of_holderBinding hObjInv hHeadRes hLk
+          hHt hScObj hB hOut
+        exact ⟨st', by rw [keepDonatedSchedContextResolved_of_resolved hRes]; exact hOk⟩
+
+/-- **A held-head pop that commits succeeds**, on either arm
+(`returnDonatedSchedContextResolved_ok_of_commits`,
+`keepDonatedSchedContextResolved_ok_of_commits`). -/
+theorem popHeldReplyHead_ok_of_commits {st : SystemState} {holder : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {recipient : SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : heldPopCommits st holder scId recipient = true) :
+    ∃ st', popHeldReplyHead st holder scId recipient = .ok st' := by
+  cases hA : donationRecipientAcceptable st recipient with
+  | true =>
+    rw [heldPopCommits_of_acceptable hA] at h
+    rw [popHeldReplyHead_of_acceptable hA]
+    exact returnDonatedSchedContextResolved_ok_of_commits hObjInv h
+  | false =>
+    rw [heldPopCommits_of_not_acceptable hA] at h
+    rw [popHeldReplyHead_of_not_acceptable hA]
+    exact keepDonatedSchedContextResolved_ok_of_commits hObjInv h
+
 /-- **The pop succeeds, from a `.donated` binding** — the instance of
 `returnDonatedSchedContext_ok_of_boundAndRecipient` at the BINDING-driven reading.
 

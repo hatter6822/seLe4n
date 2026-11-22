@@ -8755,6 +8755,51 @@ theorem donatedReturnCommits_recipientAcceptable {st : SystemState}
     · simp only [Bool.and_eq_true] at h
       exact h.1.1.2
 
+/-- **Whether the held pop commits, read on the state it runs on** (seL4's
+`reply_pop` where the recipient holds a context of its own: the head popped, the
+context kept by its holder, decided before any write).
+`keepDonatedSchedContextResolved` refuses at the reply-stack resolver, at the
+context's own `boundThread` guard, at the outer caller's acceptability, at the
+head, and at the holder's lookup and its binding after its first two stores.
+Each is answered here on the pre-state: the resolver's success validates the
+head, and the two stores write no thread, so the holder read after them is the
+pre-state's (`keepDonatedSchedContextResolved_ok_of_commits`). -/
+def keptPopCommits (st : SystemState) (holder : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) : Bool :=
+  match replyStackOuterCaller? st scId with
+  | .error _ => false
+  | .ok newOwner? =>
+    match st.getSchedContext? scId with
+    | none => false
+    | some sc =>
+      sc.boundThread == some holder &&
+        outerCallerAcceptable st holder holder newOwner? &&
+        ((lookupTcb st holder).bind (fun ht => ht.schedContextBinding.scId?) == some scId)
+
+/-- **Whether the held-head pop commits, read on the state it runs on**: the
+router's own test picks the arm (`popHeldReplyHead`), and the arm's commit check
+decides it — the donation return's where the recipient holds no context
+(`donatedReturnCommits`), the held pop's where it holds one (`keptPopCommits`). -/
+def heldPopCommits (st : SystemState) (holder : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (recipient : SeLe4n.ThreadId) : Bool :=
+  if donationRecipientAcceptable st recipient then donatedReturnCommits st holder scId recipient
+  else keptPopCommits st holder scId
+
+/-- Where the recipient holds no context, the held-head pop commits as the
+donation return does. -/
+theorem heldPopCommits_of_acceptable {st : SystemState} {holder : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {recipient : SeLe4n.ThreadId}
+    (h : donationRecipientAcceptable st recipient = true) :
+    heldPopCommits st holder scId recipient = donatedReturnCommits st holder scId recipient := by
+  unfold heldPopCommits; rw [if_pos h]
+
+/-- Where it holds one, the held-head pop commits as the held pop does. -/
+theorem heldPopCommits_of_not_acceptable {st : SystemState} {holder : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {recipient : SeLe4n.ThreadId}
+    (h : donationRecipientAcceptable st recipient = false) :
+    heldPopCommits st holder scId recipient = keptPopCommits st holder scId := by
+  unfold heldPopCommits; rw [if_neg (by simp [h])]
+
 private theorem storeObject_keeps_other {s s' : SystemState} {k j : SeLe4n.ObjId} {o : KernelObject}
     (hInv : s.objects.invExt) (hS : storeObject k o s = .ok ((), s')) (hne : j ≠ k) :
     s'.objects[j]? = s.objects[j]? :=

@@ -352,14 +352,14 @@ theorem replyUnheldPopAdmitted_parts {st : SystemState} {x : SeLe4n.ObjId} {r : 
 
 /-- **What a committing head pop reads**: the context `s` the reply heads names
 the reply back, is bound to a thread `h` holding it on loan from the caller
-(`.donated s c`), and the donation return of `s` from `h` to `c` commits. -/
+(`.donated s c`), and the held-head pop of `s` from `h` to `c` commits. -/
 theorem replyHeadPopCommits_head {st : SystemState} {x : SeLe4n.ObjId} {r : Reply}
     {c : SeLe4n.ThreadId} {s : SeLe4n.SchedContextId} (hN : r.next = some (.head s))
     (h : replyHeadPopCommits st x r c = true) :
     ∃ (sc : SchedContext) (hd : SeLe4n.ThreadId) (ht : TCB),
       st.getSchedContext? s = some sc ∧ sc.scReply = some ⟨x.val⟩ ∧ sc.boundThread = some hd ∧
       st.getTcb? hd = some ht ∧ ht.schedContextBinding = .donated s c ∧
-      donatedReturnCommits st hd s c = true := by
+      heldPopCommits st hd s c = true := by
   unfold replyHeadPopCommits at h
   rw [hN] at h
   simp only at h
@@ -405,7 +405,7 @@ theorem replyCallerFinalisable_cases {st : SystemState} {x : SeLe4n.ObjId} {r : 
       r.next = some (.head s) ∧ st.getSchedContext? s = some sc ∧
       sc.scReply = some ⟨x.val⟩ ∧ sc.boundThread = some hd ∧
       st.getTcb? hd = some ht ∧ ht.schedContextBinding = .donated s c ∧
-      donatedReturnCommits st hd s c = true ∧
+      heldPopCommits st hd s c = true ∧
       Lifecycle.Suspend.cancelledCallerDonation? st c t = some (s, hd) := by
   obtain ⟨hHd, -, -, -, ⟨ep, rt, hB⟩, hRO, -, -, -⟩ := replyCallerFinalisable_parts h
   have hGR : st.getReply? ⟨x.val⟩ = some r := by
@@ -436,18 +436,36 @@ theorem replyCallerFinalisable_cases {st : SystemState} {x : SeLe4n.ObjId} {r : 
       rw [hGR]
       simp only [hN, hSc, hRp, beq_self_eq_true, ↓reduceIte, Option.bind_some, hBt]
 
-/-- **A head reply's admitted pop commits**: the cancelled caller's donation
-return is the return of the context the reply heads, from the thread holding it
-on loan, at the reply stack's answer, which the admission's
-`donatedReturnCommits` has read (`returnDonatedSchedContextResolved_ok_of_commits`). -/
+/-- **A head reply's admitted pop commits**: the cancelled caller's reclaim is
+the held-head pop of the context the reply heads, from the thread holding it on
+loan, which the admission's `heldPopCommits` has read
+(`popHeldReplyHead_ok_of_commits`). -/
 theorem replyHeadPop_commits {st : SystemState} {c : SeLe4n.ThreadId} {t : TCB}
     {s : SeLe4n.SchedContextId} {hd : SeLe4n.ThreadId} (hInv : st.objects.invExt)
     (hT : st.getTcb? c = some t)
     (hD : Lifecycle.Suspend.cancelledCallerDonation? st c t = some (s, hd))
-    (hC : donatedReturnCommits st hd s c = true) :
+    (hC : heldPopCommits st hd s c = true) :
+    ∃ st', popHeldReplyHead st hd s c = .ok st' ∧
+      Lifecycle.Suspend.returnDonationToCancelledCaller st c t = st' := by
+  obtain ⟨st', hOk⟩ := popHeldReplyHead_ok_of_commits hInv hC
+  refine ⟨st', hOk, ?_⟩
+  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+  rw [hD, hT]
+  simp only [hOk]
+
+/-- **...and where the caller holds no context, it is the donation return**, at
+the reply stack's answer (`returnDonatedSchedContextResolved_ok_of_commits`). -/
+theorem replyHeadPop_commits_return {st : SystemState} {c : SeLe4n.ThreadId} {t : TCB}
+    {s : SeLe4n.SchedContextId} {hd : SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (hT : st.getTcb? c = some t)
+    (hD : Lifecycle.Suspend.cancelledCallerDonation? st c t = some (s, hd))
+    (hA : donationRecipientAcceptable st c = true)
+    (hC' : heldPopCommits st hd s c = true) :
     ∃ (n : Option SeLe4n.ThreadId) (st' : SystemState), replyStackOuterCaller? st s = .ok n ∧
       returnDonatedSchedContext st hd s c n = .ok st' ∧
       Lifecycle.Suspend.returnDonationToCancelledCaller st c t = st' := by
+  have hC : donatedReturnCommits st hd s c = true := by
+    rw [heldPopCommits_of_acceptable hA] at hC'; exact hC'
   obtain ⟨st', hOk⟩ := returnDonatedSchedContextResolved_ok_of_commits hInv hC
   obtain ⟨n, hResN, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
   refine ⟨n, st', hResN, hPop, ?_⟩
