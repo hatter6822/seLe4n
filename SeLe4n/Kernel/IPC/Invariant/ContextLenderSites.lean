@@ -200,6 +200,15 @@ theorem keepDonatedSchedContext_linksShrink {st st' : SystemState}
     (storeDonationHeadPop_linksShrink hI1 hS2)).trans
     (contextStackLinksShrink_storeObject_other hI2 hS3 (fun _ e => by cases e) (fun _ e => by cases e))
 
+/-- **The held pop keeps every lender flowing to its context**: it shrinks the
+stack links. -/
+theorem keepDonatedSchedContext_preserves_contextLendersFlow {ctx : LabelingContext}
+    {st st' : SystemState} {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {newOwner? : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt) (hInv : contextLendersFlow ctx st)
+    (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') : contextLendersFlow ctx st' :=
+  contextLendersFlow_of_linksShrink hInv (keepDonatedSchedContext_linksShrink hObjInv h)
+
 /-- The resolved held pop shrinks the stack links. -/
 theorem keepDonatedSchedContextResolved_linksShrink {st st' : SystemState}
     {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} (hObjInv : st.objects.invExt)

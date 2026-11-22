@@ -906,6 +906,9 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .mirrors `SeLe4n.Kernel.returnUnheldSchedContext)
   , (`SeLe4n.Kernel.FrozenOps.frozenSeverUnheldSchedContext,
       .mirrors `SeLe4n.Kernel.severUnheldSchedContext)
+    -- WS-SX SX8: the frozen held pop.
+  , (`SeLe4n.Kernel.FrozenOps.frozenKeepDonatedSchedContext,
+      .mirrors `SeLe4n.Kernel.keepDonatedSchedContext)
     -- WS-SX SX4: the frozen suspend's cancel of a reply-blocked thread, each
     -- step the frozen form of the live suspend's (`cancelIpcKeepingContexts`):
     -- the head frame cut off the context it heads, the thread's frame cut out
@@ -1036,6 +1039,12 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (`SeLe4n.Kernel.severUnheldSchedContext,
       .states [`SeLe4n.Kernel.severUnheldSchedContext_preserves_donationChainWellFormed]
         [`SeLe4n.Kernel.severUnheldSchedContext_preserves_contextLendersFlow])
+    -- WS-SX SX8: `reply_pop` at a held head whose recipient holds a context of
+    -- its own: the context's head moved to the frame below, the head popped,
+    -- the context kept by its holder.
+  , (`SeLe4n.Kernel.keepDonatedSchedContext,
+      .states [`SeLe4n.Kernel.keepDonatedSchedContext_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.keepDonatedSchedContext_preserves_contextLendersFlow])
     -- ---------------------------------------------------------------------
     -- The tree's own depth-2 chain fixture (WS-OD OD2.4).  It stores a
     -- `SchedContext` whose `scReply` heads the stack and two `Reply` objects
