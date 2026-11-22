@@ -492,4 +492,312 @@ theorem schedContextUnbindNotificationObject {vScId : SeLe4n.ValidObjId}
 
 end LendersFrame
 
+theorem configuredSchedContext_scReply (budget period : Nat) (extraRefills badge flags : UInt64)
+    (timer : Nat) (keep : Bool) (sc : SchedContext) :
+    (SchedContextOps.configuredSchedContext budget period extraRefills badge flags timer keep sc).scReply =
+      sc.scReply := by
+  unfold SchedContextOps.configuredSchedContext
+  cases keep
+  · exact (SchedContext.fields_of_refillsErased (SchedContext.refillNew_refillsErased _ _ _)).2.2.2.2.2.2.2.1
+  · exact (SchedContext.fields_of_refillsErased
+      (SchedContext.refillUpdate_refillsErased _ _ _ _)).2.2.2.2.2.2.2.1
+
+namespace LendersFrame
+
+/-- A context stored with the head its slot already had. -/
+theorem storeSchedContext_keepHead {st st' : SystemState} {s : SeLe4n.SchedContextId}
+    {sc' : SchedContext} (hInv : st.objects.invExt)
+    (h : storeObject s.toObjId (.schedContext sc') st = .ok ((), st'))
+    (hH : contextStackHead st s = sc'.scReply) : LendersFrame st st' :=
+  ⟨contextStackLinksShrink_storeSchedContext hInv h (fun r hr => .head (hH.trans hr)),
+   storeObject_preserves_objects_invExt _ _ _ _ hInv h⟩
+
+/-- The configure purges the context's replenishment, stores the reconfigured
+context (its head kept) over the old one, and runs the placement, the candidacy
+hook and the resume tail. -/
+theorem schedContextConfigure {vScId : SeLe4n.ValidObjId}
+    {budget period : Nat} {extraRefills badge flags : UInt64} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedContextConfigure vScId budget period extraRefills badge flags st =
+      .ok ((), st')) : LendersFrame st st' := by
+  cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
+  | none =>
+    unfold SchedContextOps.schedContextConfigure at h
+    split at h
+    · exact absurd h (by simp)
+    · rw [hSc] at h; exact absurd h (by simp)
+  | some sc =>
+    have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
+      (SchedContextId.ofObjId vScId.val) sc).mp hSc
+    unfold SchedContextOps.schedContextConfigure at h
+    split at h
+    · exact absurd h (by simp)
+    · rw [hSc] at h
+      dsimp only at h
+      split at h
+      · split at h
+        · exact absurd h (by simp)
+        · rename_i stStored hStore
+          have V := contextStackViewsAgree_of_objectsAgreeOffReleaseLinks
+            (SchedContextOps.purgeReplenishment_agree st ⟨vScId.val.toNat⟩)
+          have Fp := purgeReplenishment st ⟨vScId.val.toNat⟩ hInv
+          have F1 : LendersFrame st stStored := Fp.andThen fun hI =>
+            storeSchedContext_keepHead (s := SeLe4n.SchedContextId.ofObjId vScId.val) hI hStore (by
+              rw [configuredSchedContext_scReply]
+              refine (V.head _).trans ?_
+              rw [contextStackHead_eq_obj]
+              exact congrArg objStackHead hScRaw)
+          split at h
+          · rw [Except.ok.injEq, Prod.mk.injEq] at h
+            rw [← h.2]; exact F1
+          · split at h
+            · rw [Except.ok.injEq, Prod.mk.injEq] at h
+              rw [← h.2]
+              exact ((F1.andThen fun h => releasePlace _ _ _ h).andThen fun h =>
+                markCandidacyGainFor _ _ _ h).andThen fun h => configureResumeBound _ _ _ h
+            · rw [Except.ok.injEq, Prod.mk.injEq] at h
+              rw [← h.2]; exact F1.andThen fun h => releasePlace _ _ _ h
+      · exact absurd h (by simp)
+
+end LendersFrame
+
+namespace LendersFrame
+
+theorem migrateSchedContextReplenishment (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (fromCore toCore : CoreId) (hInv : st.objects.invExt) :
+    LendersFrame st (_root_.SeLe4n.Kernel.migrateSchedContextReplenishment st scId fromCore toCore) :=
+  of_views (contextStackViewsAgree_of_objectsAgreeOffReleaseLinks
+      (migrateSchedContextReplenishment_agree st scId fromCore toCore))
+    (RecordsFrame.migrateSchedContextReplenishment st scId fromCore toCore hInv).invExt
+
+theorem vacateForAffinityChange (st : SystemState) (t : SeLe4n.ThreadId) (o n : CoreId)
+    (hInv : st.objects.invExt) : LendersFrame st (_root_.SeLe4n.Kernel.vacateForAffinityChange st t o n) := by
+  unfold _root_.SeLe4n.Kernel.vacateForAffinityChange
+  split
+  · exact withScheduler _ _ hInv
+  · exact refl hInv
+
+theorem migrateRunQueueOnAffinityChange (st : SystemState) (t : SeLe4n.ThreadId) (o n : CoreId)
+    (hInv : st.objects.invExt) :
+    LendersFrame st (_root_.SeLe4n.Kernel.migrateRunQueueOnAffinityChange st t o n) := by
+  unfold _root_.SeLe4n.Kernel.migrateRunQueueOnAffinityChange
+  split
+  · exact refl hInv
+  · split
+    · exact refl hInv
+    · split
+      · exact ((runRemoveOnCore st o t hInv).andThen fun h => runEnqueueAdmitted _ n t _ h).andThen
+          fun h => withScheduler _ _ h
+      · exact refl hInv
+
+theorem requeueVacatedOnNewHome (st : SystemState) (t : SeLe4n.ThreadId) (n : CoreId) (v : Bool)
+    (hInv : st.objects.invExt) :
+    LendersFrame st (_root_.SeLe4n.Kernel.requeueVacatedOnNewHome st t n v) := by
+  unfold _root_.SeLe4n.Kernel.requeueVacatedOnNewHome
+  split
+  · split
+    · exact (runEnqueueOnCore st n t _ hInv).andThen fun h => withScheduler _ _ h
+    · exact refl hInv
+  · exact refl hInv
+
+theorem setThreadCpuAffinityWithMigration {st st' : SystemState} {t : SeLe4n.ThreadId}
+    {affinity : Option CoreId} {ec : CoreId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
+    (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.setThreadCpuAffinityWithMigration st t affinity ec = .ok (st', sgi?)) :
+    LendersFrame st st' := by
+  obtain ⟨tcb, stSet, -, -, -, -, hSet, rfl, -⟩ := setThreadCpuAffinityWithMigration_ok_shape h
+  have F0 := vacateForAffinityChange st t (determineTargetCore st t)
+    (affinity.getD Concurrency.bootCoreId) hInv
+  have F1 : LendersFrame st stSet := by
+    unfold setThreadCpuAffinity at hSet
+    split at hSet
+    · rename_i x hT _
+      rw [Except.ok.injEq] at hSet; subst hSet
+      refine F0.andThen fun h => rewriteObject_tcb hT _ ?_ _ h
+      rfl
+    · cases hSet
+  refine chain (chain (fun _ => ?_) (fun h => migrateRunQueueOnAffinityChange _ _ _ _ h))
+    (fun h => requeueVacatedOnNewHome _ _ _ _ h) hInv
+  split
+  · exact F1.andThen fun h => migrateSchedContextReplenishment _ _ _ _ h
+  · exact F1
+
+theorem setThreadCpuAffinityOnCore {st st' : SystemState} {vTarget : SeLe4n.ValidThreadId}
+    {affinity : Option CoreId} {ec : CoreId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
+    (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.setThreadCpuAffinityOnCore st vTarget affinity ec = .ok (st', sgi?)) :
+    LendersFrame st st' :=
+  setThreadCpuAffinityWithMigration hInv h
+
+theorem schedControlConfigure {core : CoreId} {vScId : SeLe4n.ValidObjId}
+    {budget period : Nat} {extraRefills badge flags : UInt64} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedControlConfigure core vScId budget period extraRefills badge flags
+      st = .ok ((), st')) : LendersFrame st st' := by
+  rcases SchedContextOps.schedControlConfigure_ok_cases h with h | ⟨_, _, _, _, -, -, -, hM, h⟩
+  · exact schedContextConfigure hInv h
+  · exact (setThreadCpuAffinityWithMigration hInv hM).andThen fun h' => schedContextConfigure h' h
+
+end LendersFrame
+
+namespace chainObjectsKept
+
+/-- **A write of VSpace roots alone** rewrites no reply object and no context. -/
+theorem of_vspaceRootOnlyWrite {st st' : SystemState} (h : vspaceRootOnlyWrite st st') :
+    chainObjectsKept st st' := by
+  refine ⟨fun x r hx => ?_, fun x sc hx => ?_⟩ <;> rcases h x with e | ⟨-, r', hr'⟩
+  all_goals first
+    | (rw [← e]; exact hx)
+    | (rw [hr'] at hx; cases hx)
+
+end chainObjectsKept
+
+namespace LendersFrame
+
+/-- A store of an object of neither chain kind. -/
+theorem storeObject_other {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
+    (hInv : st.objects.invExt) (h : storeObject k o st = .ok ((), st'))
+    (hRp : ∀ r, o ≠ .reply r) (hSc : ∀ sc, o ≠ .schedContext sc) : LendersFrame st st' :=
+  ⟨(chainObjectsKept.storeObject_other hInv h hRp hSc).linksShrink,
+   storeObject_preserves_objects_invExt _ _ _ _ hInv h⟩
+
+theorem of_vspaceRootOnlyWrite {st st' : SystemState} (h : vspaceRootOnlyWrite st st')
+    (hI : st'.objects.invExt) : LendersFrame st st' :=
+  ⟨(chainObjectsKept.of_vspaceRootOnlyWrite h).linksShrink, hI⟩
+
+theorem vspaceUnifyInstructionPage {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : Architecture.vspaceUnifyInstructionPage asid vaddr st = .ok ((), st')) :
+    LendersFrame st st' :=
+  of_kept (chainObjectsKept.of_objects_eq (Architecture.vspaceUnifyInstructionPage_frame h).1)
+    (RecordsFrame.vspaceUnifyInstructionPage hInv h)
+
+theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast {ec : CoreId}
+    {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast ec asid vaddr st
+      = .ok ((), st')) : LendersFrame st st' :=
+  have hF := vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame ec asid vaddr st st' hInv h
+  of_vspaceRootOnlyWrite hF.2.1 hF.1
+
+theorem vspaceMapFromFrameCap {tid : SeLe4n.ThreadId} {ec : CoreId}
+    {args : Architecture.SyscallArgDecode.VSpaceMapArgs} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.vspaceMapFromFrameCap tid ec args st = .ok ((), st')) :
+    LendersFrame st st' := by
+  obtain ⟨_, _, _, st1, _, _, _, _, _, hMap, epoch, st2, hT, hRec⟩ :=
+    vspaceMapFromFrameCap_ok tid ec args st st' h
+  obtain ⟨cn, _, -, -, hS⟩ := cspaceRecordFrameMapping_ok_decompose _ _ st2 st' hRec
+  have hF := vspaceMapPageCheckedWithShootdownFromStatePerCore_ok_frame ec _ _ _ _ st st1 hInv hMap
+  have F1 := of_vspaceRootOnlyWrite hF.2.1 hF.1
+  obtain ⟨f, rootId, root, stR, -, -, -, h1, h2⟩ := tagFrameMapping_ok _ _ _ st1 st2 epoch hT
+  have F2 := F1.andThen fun hI => storeObject_other hI h1 (fun _ e => by cases e) (fun _ e => by cases e)
+  have F3 := F2.andThen fun hI => storeObject_other hI h2 (fun _ e => by cases e) (fun _ e => by cases e)
+  exact F3.andThen fun hI => storeObject_other hI hS (fun _ e => by cases e) (fun _ e => by cases e)
+
+theorem vspaceMapOrRemapFromFrameCap {tid : SeLe4n.ThreadId} {ec : CoreId}
+    {args : Architecture.SyscallArgDecode.VSpaceMapArgs} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.vspaceMapOrRemapFromFrameCap tid ec args st = .ok ((), st')) :
+    LendersFrame st st' :=
+  vspaceMapOrRemapFromFrameCap_closed (fun a b => a.objects.invExt → LendersFrame a b)
+    (fun _ _ h hI => vspaceMapFromFrameCap hI h)
+    (fun _ _ h hI => vspaceUnmapPageWithShootdownAndIcacheBroadcast hI h)
+    (fun _ _ _ h₁ h₂ hI => (h₁ hI).andThen h₂) h hInv
+
+theorem vspaceUnmapFrameCap {ec : CoreId} {addr : CSpaceAddr} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.vspaceUnmapFrameCap ec addr st = .ok ((), st')) :
+    LendersFrame st st' := by
+  obtain ⟨st1, hU, hC⟩ := vspaceUnmapFrameCap_cases h
+  obtain ⟨cn, _, -, -, hS⟩ := cspaceClearFrameMapping_ok_decompose _ st1 st' hC
+  obtain ⟨hI1, hV, -⟩ := unmapLivePages_ok_frame ec _ st st1 hInv hU
+  exact (of_vspaceRootOnlyWrite hV hI1).andThen fun hI =>
+    storeObject_other hI hS (fun _ e => by cases e) (fun _ e => by cases e)
+
+theorem pageTableMap {tableId rootId : SeLe4n.ObjId} {vaddr : SeLe4n.VAddr} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : Architecture.pageTableMap tableId rootId vaddr st = .ok ((), st')) : LendersFrame st st' := by
+  obtain ⟨table, root, level, st1, -, -, -, -, -, -, hS1, hS2⟩ :=
+    Architecture.pageTableMap_ok tableId rootId vaddr st st' h
+  have F1 := storeObject_other hInv hS1 (fun _ e => by cases e) (fun _ e => by cases e)
+  have F2 : ∀ ws, LendersFrame st1 (Architecture.recordPhysicalWrites st1 ws) := fun _ =>
+    ⟨(chainObjectsKept.of_objects_eq (st := st1) (st' := Architecture.recordPhysicalWrites st1 _) rfl).linksShrink, F1.invExt⟩
+  exact (F1.andThen fun _ => F2 _).andThen fun hI =>
+    storeObject_other hI hS2 (fun _ e => by cases e) (fun _ e => by cases e)
+
+end LendersFrame
+
+namespace LendersFrame
+
+theorem pageTableUnmap {tableId : SeLe4n.ObjId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : Architecture.pageTableUnmap tableId st = .ok ((), st')) : LendersFrame st st' := by
+  unfold Architecture.pageTableUnmap at h
+  cases hT : st.getPageTable? tableId with
+  | none => rw [hT] at h; cases h
+  | some table =>
+    have Ft : ∀ {s : SystemState}, storeObject tableId (.pageTable table.uninstalled) st =
+        .ok ((), s) → LendersFrame st s :=
+      fun hS => storeObject_other hInv hS (fun _ e => by cases e) (fun _ e => by cases e)
+    rw [hT] at h
+    simp only at h
+    split at h
+    · cases h; exact refl hInv
+    · split at h
+      · exact Ft h
+      · split at h
+        · split at h
+          · cases h
+          · cases hS1 : storeObject tableId (.pageTable table.uninstalled) st with
+            | error e => rw [hS1] at h; cases h
+            | ok p =>
+              obtain ⟨⟨⟩, st1⟩ := p
+              rw [hS1] at h
+              simp only at h
+              have F1 := Ft hS1
+              have F2 : ∀ ws, LendersFrame st1 (Architecture.recordPhysicalWrites st1 ws) := fun _ =>
+                ⟨(chainObjectsKept.of_objects_eq (st := st1)
+                  (st' := Architecture.recordPhysicalWrites st1 _) rfl).linksShrink, F1.invExt⟩
+              exact (F1.andThen fun _ => F2 _).andThen fun hI =>
+                storeObject_other hI h (fun _ e => by cases e) (fun _ e => by cases e)
+        · exact Ft h
+
+theorem irqControlGet {control dst : CSpaceAddr} {line : Nat} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.irqControlGet control dst line st = .ok ((), st')) :
+    LendersFrame st st' := by
+  refine ⟨?_, (RecordsFrame.irqControlGet hInv h).invExt⟩
+  unfold _root_.SeLe4n.Kernel.irqControlGet at h
+  cases hR : irqControlLineRefusal st line with
+  | some e => rw [hR] at h; cases h
+  | none =>
+    rw [hR] at h
+    simp only at h
+    cases hI : _root_.SeLe4n.Kernel.cspaceInsertSlot dst (Capability.irqHandlerOf line)
+        (Architecture.setIrqLineSignal st line true) with
+    | error e => rw [hI] at h; cases h
+    | ok pr =>
+      obtain ⟨⟨⟩, st1⟩ := pr
+      rw [hI] at h
+      injection h with h
+      injection h with hu h
+      subst h
+      have F0 := RecordsFrame.of_objects_eq hInv (Architecture.setIrqLineSignal_objects st line true)
+        (Architecture.setIrqLineSignal_asidTable st line true)
+      have K0 : chainObjectsKept st (Architecture.setIrqLineSignal st line true) :=
+        chainObjectsKept.of_objects_eq (Architecture.setIrqLineSignal_objects st line true)
+      have F1 := RecordsFrame.cspaceInsertSlot F0.invExt hI
+      exact ((K0.trans (chainObjectsKept.cspaceInsertSlot F0.invExt hI)).trans
+        (chainObjectsKept.cdtAddChild st1 control dst .mint F1.invExt)).linksShrink
+
+theorem irqControlGetFromCap {tid : SeLe4n.ThreadId} {srcAddr : SeLe4n.CPtr}
+    {root? : Option SeLe4n.CPtr}
+    {args? : Except KernelError Architecture.SyscallArgDecode.IrqControlGetArgs} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.irqControlGetFromCap tid srcAddr root? args? st = .ok ((), st')) :
+    LendersFrame st st' := by
+  obtain ⟨_, _, _, _, _, _, hG⟩ := irqControlGetFromCap_ok tid srcAddr root? args? st st' h
+  exact irqControlGet hInv hG
+
+end LendersFrame
+
 end SeLe4n.Kernel

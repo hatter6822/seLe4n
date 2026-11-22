@@ -11520,6 +11520,14 @@ open SeLe4n.Kernel.Concurrency
 #check @LendersFrame.updateSchedContext_clearHead
 #check @LendersFrame.schedContextUnbindReply
 #check @LendersFrame.schedContextUnbindAllOnCore
+#check @LendersFrame.schedContextConfigure
+#check @LendersFrame.schedControlConfigure
+#check @LendersFrame.setThreadCpuAffinityOnCore
+#check @LendersFrame.vspaceMapOrRemapFromFrameCap
+#check @LendersFrame.vspaceUnmapFrameCap
+#check @LendersFrame.pageTableMap
+#check @LendersFrame.pageTableUnmap
+#check @LendersFrame.irqControlGetFromCap
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing
