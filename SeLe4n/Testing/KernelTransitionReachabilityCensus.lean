@@ -1477,7 +1477,7 @@ def nonExecutedTransitionsPlain : List Name :=
 
 Lean mangles a `private def` to `_private.<Module>.0.<userName>`, which no name
 literal can spell, so each is built with the compiler's own mangling through
-`ReplyStackWriteCensus.privateIn`.  Eight of these are that census's own planted
+`ReplyStackWriteCensus.privateIn`.  Eleven of these are that census's own planted
 witnesses, which enter this domain because this module imports it for
 `isAuxiliary`; they are deliberately not executed, and their presence here is
 the derivation working rather than noise to carve out.  One is the export
@@ -1495,12 +1495,15 @@ def nonExecutedTransitionsPrivate : List Name :=
   , privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt4
   , privateIn `SeLe4n.Kernel.IPC.Invariant.Reachability `SeLe4n.Kernel.chainWitnessSt1
   , privateIn `SeLe4n.Kernel.IPC.Invariant.Reachability `SeLe4n.Kernel.chainWitnessSt2
+  , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessCallerLink
+  , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDelegatedCallerLink
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessBareConsume
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDelegatedStoreHelper
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDelegatedStoreWriter
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDirectLinkWrite
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessRawTableWrite
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessSplitWriter
+  , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessStasherOnly
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.eq_1
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.eq_censusWitnessUserNamed
   , privateIn `SeLe4n.Testing.ExportCommitDisciplineCensus
