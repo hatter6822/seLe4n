@@ -11307,6 +11307,7 @@ import SeLe4n.Kernel.ContextLenders.Capability
 import SeLe4n.Kernel.ContextLenders.SyscallDispatch
 import SeLe4n.Kernel.ContextLenders.CapabilityOnly
 import SeLe4n.Kernel.ContextLenders.CapabilityDispatch
+import SeLe4n.Kernel.ContextLenders.SyscallEntry
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency
 #check @replyRecvCompletesSignalArm
@@ -11545,6 +11546,10 @@ open SeLe4n.Kernel.Concurrency
 #check @dispatchCapabilityOnly_lendersFrame
 #check @dispatchWithCapChecked_lendersStage
 #check @dispatchSyscallChecked_lendersStage
+#check @syscallEntryChecked_lendersStage
+#check @syscallDispatchFromAbi_lendersStage
+#check @syscallDispatchCrossCoreStep_lendersStage
+#check @syscallDispatchEntryState_lendersStage
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing
