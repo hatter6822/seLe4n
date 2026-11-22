@@ -11294,6 +11294,7 @@ import SeLe4n.Kernel.InformationFlow.PerCoreSchedulerNonInterference
 import SeLe4n.Kernel.SchedContext.Invariant.ContextLenders
 import SeLe4n.Kernel.IPC.Invariant.ContextLenderSites
 import SeLe4n.Kernel.IPC.Invariant.ContextLenderLinks
+import SeLe4n.Kernel.ContextLenders.Entry
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency
 #check @replyRecvCompletesSignalArm
@@ -11434,6 +11435,14 @@ open SeLe4n.Kernel.Concurrency
 #check @endpointReceiveDual_preserves_contextLendersFlow
 #check @endpointReceiveDualOnCore_preserves_contextLendersFlow
 #check @cleanupPreReceiveDonationMigrated_linksShrink
+#check @LendersStage
+#check @LendersPremises
+#check @LendersStage.of_linksShrink
+#check @LendersStage.entryTail
+#check @contextStackViewsAgree_of_objectsAgreeOffYield
+#check @chainObjectsKept.settleResidencyAt
+#check @perCoreRescheduleEntryState_lendersStage
+#check @fpAccessEntryState_lendersStage
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing
