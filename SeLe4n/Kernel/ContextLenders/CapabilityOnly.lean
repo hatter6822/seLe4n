@@ -430,14 +430,9 @@ theorem updateSchedContext_clearHead (st : SystemState) (scId : SeLe4n.SchedCont
 the head frame's upward link cleared, then the context's head. -/
 theorem schedContextUnbindReply (st : SystemState) (x : SeLe4n.ObjId)
     (hInv : st.objects.invExt) :
-    LendersFrame st (_root_.SeLe4n.Kernel.schedContextUnbindReply st x) := by
-  rcases schedContextUnbindReply_cases st x with h | ⟨sc, rid, r, st1, -, -, hR, -, hS, h⟩
-  · rw [h]; exact refl hInv
-  · rw [h]
-    have F : LendersFrame st st1 :=
-      ⟨contextStackLinksShrink_storeReply hInv hR hS (Or.inr rfl) (Or.inr rfl),
-       storeObject_preserves_objects_invExt _ _ _ _ hInv hS⟩
-    exact F.andThen fun h' => updateSchedContext_clearHead _ _ _ (fun _ => Or.inl rfl) h'
+    LendersFrame st (_root_.SeLe4n.Kernel.schedContextUnbindReply st x) :=
+  of_shrink (schedContextUnbindReply_linksShrink st x hInv)
+    (RecordsFrame.schedContextUnbindReply st x hInv).invExt
 
 theorem unbindSchedContextNotification (st : SystemState) (s : SeLe4n.SchedContextId)
     (hInv : st.objects.invExt) :
@@ -509,7 +504,7 @@ theorem storeSchedContext_keepHead {st st' : SystemState} {s : SeLe4n.SchedConte
     {sc' : SchedContext} (hInv : st.objects.invExt)
     (h : storeObject s.toObjId (.schedContext sc') st = .ok ((), st'))
     (hH : contextStackHead st s = sc'.scReply) : LendersFrame st st' :=
-  ⟨contextStackLinksShrink_storeSchedContext hInv h (fun r hr => .head (hH.trans hr)),
+  ⟨contextStackLinksShrink_storeSchedContext hInv h (fun _ hr => .head (hH.trans hr)),
    storeObject_preserves_objects_invExt _ _ _ _ hInv h⟩
 
 /-- The configure purges the context's replenishment, stores the reconfigured
@@ -1010,6 +1005,101 @@ theorem untypedRetypeFromCap {tid : SeLe4n.ThreadId} {ec : CoreId}
     (fun hP hC => untypedRetypeObject_preserves_objects_invExt hP hC)
     (fun hP hC _ => ⟨untypedRetypeObject_linksShrink hP hC,
       untypedRetypeObject_preserves_objects_invExt hP hC⟩) hInv hInv
+
+end LendersFrame
+
+/-- **A finalisation write** (threads, endpoints, notifications and contexts
+alone, each context keeping its head) moves none of the three stack views. -/
+theorem contextStackViewsAgree_of_finaliseWrite {st st' : SystemState}
+    (h : finaliseWrite st st') : contextStackViewsAgree st st' := by
+  have key : ∀ x : SeLe4n.ObjId, objStackHead st'.objects[x]? = objStackHead st.objects[x]? ∧
+      objStackPrev st'.objects[x]? = objStackPrev st.objects[x]? ∧
+      objStackCaller st'.objects[x]? = objStackCaller st.objects[x]? := fun x => by
+    rcases h x with e | ⟨pre, post, hp, hq, ht, -, hh, hw⟩
+    · rw [e]; exact ⟨rfl, rfl, rfl⟩
+    · rw [hp, hq]
+      rcases hw with hw | hw | hw | hw <;>
+        cases pre <;> simp only [KernelObject.objectType, reduceCtorEq] at hw <;>
+        cases post <;> simp only [KernelObject.objectType, reduceCtorEq] at ht <;>
+        simp_all [objStackHead, objStackPrev, objStackCaller, schedContextStackHead?]
+  refine ⟨fun s => ?_, fun r => ?_, fun r => ?_⟩
+  · rw [contextStackHead_eq_obj, contextStackHead_eq_obj]; exact (key _).1
+  · rw [replyStackPrev_eq_obj, replyStackPrev_eq_obj]; exact (key _).2.1
+  · rw [replyStackCaller_eq_obj, replyStackCaller_eq_obj]; exact (key _).2.2
+
+namespace LendersFrame
+
+theorem of_finaliseFrame {st st' : SystemState} (F : FinaliseFrame st st') : LendersFrame st st' :=
+  of_views (contextStackViewsAgree_of_finaliseWrite F.write) F.invExt
+
+/-- A reply-blocked caller's cancel, its lent context handed back and its
+holder descheduled, then its server's boost reverted. -/
+theorem finaliseReplyCancel (s : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
+    (hInv : s.objects.invExt) :
+    LendersFrame s (finaliseReplyRevert (cancelIpcBlockingReclaimed c t s) t.blockingServer?) := by
+  have S1 : LendersFrame s (cancelIpcBlockingMigrated c t s) := by
+    unfold cancelIpcBlockingMigrated
+    have S := cancelIpcBlocking s c t hInv
+    split
+    · exact S.andThen fun h => settleReturnedContext _ _ _ h
+    · exact S
+  have S2 : LendersFrame s (cancelIpcBlockingReclaimed c t s) := by
+    unfold cancelIpcBlockingReclaimed descheduleUnboundHolder
+    split
+    · exact S1
+    · exact S1.andThen fun h => of_finaliseFrame (FinaliseFrame.descheduleAt _ _ _ h)
+  exact S2.andThen fun h => of_finaliseFrame (FinaliseFrame.finaliseReplyRevert _ _ h)
+
+theorem finaliseReplyUnheldPop (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    LendersFrame st (_root_.SeLe4n.Kernel.finaliseReplyUnheldPop st r c) := by
+  rcases finaliseReplyUnheldPop_cases st r c with e | ⟨_, _, _, _, _, hP, e⟩ |
+      ⟨_, _, _, _, _, _, hP, e⟩
+  · rw [e]; exact refl hInv
+  · rw [e]
+    have F := RecordsFrame.returnUnheldSchedContext hInv hP
+    exact (of_shrink (returnUnheldSchedContext_linksShrink hInv hP) F.invExt).andThen
+      fun h => settleReturnedContext _ _ _ h
+  · rw [e]
+    exact of_shrink (severUnheldSchedContext_linksShrink hInv hP)
+      (RecordsFrame.severUnheldSchedContext hInv hP).invExt
+
+/-- **The finalisation** (seL4 `finaliseCap` on the object's last capability)
+shrinks the links: every step writes threads, endpoints, notifications and
+contexts keeping their heads, or is one of the removals (the cancel of a
+reply's caller, the cut, the unstack, the unheld pop). -/
+theorem finaliseFinalObject (target : Nat) (st : SystemState) (hInv : st.objects.invExt) :
+    LendersFrame st (_root_.SeLe4n.Kernel.finaliseFinalObject target st) :=
+  finaliseFinalObject_closed (LendersFrame st)
+    (fun _ _ _ _ _ _ h _ _ _ _ => h.andThen fun hI =>
+      of_finaliseFrame (FinaliseFrame.storeEndpointWaiterCancelled _ _ _ _ _ _ hI))
+    (fun _ s _ t tcb h _ _ _ _ => (h.andThen fun hI => cancelIpcBlocking s t tcb hI).andThen
+      fun hI => of_finaliseFrame (FinaliseFrame.wakeCancelledWaiter _ _ hI))
+    (fun _ s _ t h _ _ _ _ => h.andThen fun hI =>
+      of_finaliseFrame (FinaliseFrame.storeUnbindNotification s t _ hI))
+    (fun s t _ h _ _ _ _ => h.andThen fun hI => of_finaliseFrame (FinaliseFrame.descheduleAt s t _ hI))
+    (fun s s' t tcb sc x h hT hS hSc hB hOk => h.andThen fun hI =>
+      of_finaliseFrame (FinaliseFrame.releaseStep s s s' t tcb sc x (.refl hI) hT hS hSc hB hOk))
+    (fun s _ t tcb _ h _ _ _ _ => h.andThen fun hI => cancelIpcBlocking s t tcb hI)
+    (fun s e q t ep tcb h _ _ _ => h.andThen fun hI =>
+      of_finaliseFrame (FinaliseFrame.storeEndpointBlockedCancelled s e q t ep tcb hI))
+    (fun s t _ h _ _ _ _ _ => h.andThen fun hI => of_finaliseFrame (FinaliseFrame.suspend s t hI))
+    (fun s t h => h.andThen fun hI => of_finaliseFrame (FinaliseFrame.releaseCores s t hI))
+    (fun s s1 _ _ _ r h _ _ hR _ hS _ _ _ _ => h.andThen fun hI =>
+      (show LendersFrame s s1 from
+        of_shrink (contextStackLinksShrink_storeReply hI hR hS (Or.inr rfl) (Or.inr rfl))
+          (storeObject_preserves_objects_invExt _ _ _ _ hI hS)).andThen fun h' =>
+        updateSchedContext_clearHead _ _ _ (fun _ => Or.inl rfl) h')
+    (fun s _ _ c t h _ _ _ _ => h.andThen fun hI => finaliseReplyCancel s c t hI)
+    (fun s s1 _ tid _ h _ _ hEq => by
+      subst hEq; exact h.andThen fun hI => of_finaliseFrame (FinaliseFrame.updateTcb s tid _ hI))
+    ⟨fun s t h => h.andThen fun hI => cancelYieldTo s t hI,
+     fun s c h => h.andThen fun hI => completeYieldFrom s c hI⟩
+    (fun s w x _ h _ _ _ => h.andThen fun hI => of_finaliseFrame (FinaliseFrame.orphanReplyWaiter s w x hI))
+    (fun s _ r c _ h _ _ _ _ => h.andThen fun hI => finaliseReplyUnheldPop s r c hI)
+    (fun s _ _ _ t h _ _ _ _ => h.andThen fun hI => cutCancelledCallerHead s t hI)
+    (fun s c h => h.andThen fun hI => unbindSchedContextNotification s c hI)
+    target st (refl hInv)
 
 end LendersFrame
 

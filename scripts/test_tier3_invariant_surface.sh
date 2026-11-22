@@ -11531,6 +11531,9 @@ open SeLe4n.Kernel.Concurrency
 #check @LendersFrame.suspendThreadOnCore
 #check @LendersFrame.resumeThreadOnCore
 #check @LendersFrame.restartThreadOnCore
+#check @LendersFrame.untypedRetypeFromCap
+#check @contextStackViewsAgree_of_finaliseWrite
+#check @LendersFrame.finaliseFinalObject
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing
