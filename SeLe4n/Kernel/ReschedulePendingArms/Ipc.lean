@@ -804,18 +804,20 @@ theorem applyCallDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
   · exact stepCovers_trans h1 (migrateSchedContextReplenishment_stepCovers e _ _ _ _)
 
 /-- The receive rendezvous' hand-off covers: the lend, then the chain walk. -/
-theorem applyReceiveRendezvousHandoff_stepCovers (e : CoreId) {st st' : SystemState}
+theorem applyReceiveRendezvousHandoff_stepCovers {lend : Bool} (e : CoreId) {st st' : SystemState}
     {receiver dequeued : SeLe4n.ThreadId} {executingCore : CoreId} (hInv : st.objects.invExt)
-    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st') :
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore lend = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
   obtain ⟨stDon, hDon, rfl⟩ := applyReceiveRendezvousHandoff_ok_decompose _ _ _ _ _ h
   have hD : stepCovers e st stDon ∧ stDon.objects.invExt := by
     unfold applyReceiveRendezvousDonation at hDon
     split at hDon
-    · unfold applyRendezvousCallDonation at hDon
-      split at hDon
-      · exact applyCallDonationOnCore_stepCovers e hInv hDon
-      · cases hDon
+    · rcases applyRendezvousCallDonation_cases hDon with hDon | rfl
+      · unfold applyRendezvousCallDonation at hDon
+        split at hDon
+        · exact applyCallDonationOnCore_stepCovers e hInv hDon
+        · cases hDon
+      · exact ⟨stepCovers_refl e _, hInv⟩
     · cases hDon; exact ⟨stepCovers_refl e st, hInv⟩
   split
   · obtain ⟨hW, hWInv⟩ := propagatePipChainCrossCore_stepCovers e executingCore _ stDon receiver hD.2
@@ -1606,10 +1608,13 @@ theorem notificationWaitCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : 
 
 /-! ### ReplyRecv -/
 
-theorem applyRendezvousCallDonation_stepCovers (e : CoreId) {st st' : SystemState}
+theorem applyRendezvousCallDonation_stepCovers {lend : Bool} (e : CoreId) {st st' : SystemState}
     {receiver donor : SeLe4n.ThreadId} (hInv : st.objects.invExt)
-    (h : applyRendezvousCallDonation st receiver donor = .ok st') :
+    (h : applyRendezvousCallDonation st receiver donor lend = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
+  rcases applyRendezvousCallDonation_cases h with h | rfl
+  rotate_left
+  · exact ⟨stepCovers_refl e _, hInv⟩
   unfold applyRendezvousCallDonation at h
   split at h
   · exact applyCallDonationOnCore_stepCovers e hInv h

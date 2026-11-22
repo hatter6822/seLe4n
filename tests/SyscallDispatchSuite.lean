@@ -2089,6 +2089,19 @@ private def callLend_admission : IO Unit := do
       callLendAdmits defaultLabelingContext st caller ==
         callLendAdmits defaultLabelingContext (mkSt true) caller)
     "the admission reads the caller's binding and the labels: the server's binding changes nothing"
+  -- The receive that takes a parked call asks the same admission of the
+  -- send queue's head, on the state the arm is handed.
+  let epObj : SeLe4n.ObjId := ⟨62⟩
+  let withEp (q : IntrusiveQueue) : SystemState :=
+    { st with objects := st.objects.insert epObj (.endpoint (Endpoint.ofQueues q {})) }
+  let parked := withEp { head := some caller, tail := some caller }
+  let empty := withEp {}
+  expect "receive_lend_reads_send_queue_head"
+    (receiveLendAdmits defaultLabelingContext parked epObj &&
+      !receiveLendAdmits highCaller parked epObj &&
+      receiveLendAdmits highCaller parked epObj == callLendAdmits highCaller parked caller &&
+      receiveLendAdmits highCaller empty epObj)
+    "a receive lends the parked caller's context only where the caller flows to it"
 
 /-- SD-060 (`v0.35.204`): **`.schedContextBind` binds only a thread the caller
 holds a WRITABLE TCB capability to.**

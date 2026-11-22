@@ -4547,7 +4547,7 @@ run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextInPlace_keepsAt($
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem receiveCallDonatesPastPop_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvDonatedCallTakeInPlace.lean
 # A receive taking a caller that donates its context runs in place.
 run_check "INVARIANT" rg -n '^theorem receiveCallDonatingTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReceiveCallDonatingInPlace.lean
-run_check "INVARIANT" rg -n -U 'receiveCallDonatesInPlace st epId tid s sTcb rid then\n\s*\.ok \(\(\), performReceiveCallDonatingDelivered st epId s' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U 'receiveCallDonatesInPlace st epId tid s sTcb rid && lend then\n\s*\.ok \(\(\), performReceiveCallDonatingDelivered st epId s' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n -U '    if replyRecvUnheldAdmits epId tid c rid grant layout len st then\n      \.ok \(\(\), performReplyRecvUnheldDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 # A reply-receive whose reply leg installs a capability runs the transfer in
 # place between the reply's writes and the receive leg, on every shape that
@@ -11362,6 +11362,12 @@ open SeLe4n.Kernel.Concurrency
 #check @applyCallDonationOnCoreWhen_induct
 #check @endpointCallDispatchReplenishCores_subset_true
 #check @schedLockSet_endpointCallOnCore_coversWrites
+#check @receiveLendAdmits
+#check @receiveLendAdmits_of_head
+#check @applyRendezvousCallDonation_cases
+#check @endpointReceiveHandoffChainCores
+#check @endpointReceiveHandoffChainWriteSet_subset_cores
+#check @schedLockSet_endpointReceiveOnCore_coversWrites
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing
@@ -13426,7 +13432,7 @@ run_check "INVARIANT" rg -n '^def schedLockSet_endpointReceiveOnCore \(' SeLe4n/
 # the donation's own pair by theorem.  The mutation that decides keeps
 # `schedFootprintOfCores` and resolves either segment a second way inside the
 # definition.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointReceiveOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n *\(endpointReceiveDualWriteSet st endpointId executingCore\n *\+\+ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore\)\n *\(endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointReceiveOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n *\(endpointReceiveDualWriteSet st endpointId executingCore\n *\+\+ endpointReceiveHandoffChainCores st endpointId receiver replyId executingCore\)\n *\(endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 # ...and the shape that was REPLACED must not come back.  Cut 8a-ii's first form
 # took the two donation cores as parameters `donorHome doneeHome`, which breaks the
 # project's own rule that *a parameter is a place for a caller to be wrong*, and
@@ -23162,7 +23168,7 @@ run_check "INVARIANT" rg -n 'C6e: core 3 is outside the segment' tests/SmpIpcSui
 # names `applyReceiveRendezvousHandoff`, and the leg-plus-donation spelling that
 # was the unit until then must not come back.
 run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_endpointReceiveOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore = \.ok st" SeLe4n/Kernel/SyscallSchedContainment.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_endpointReceiveOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore lend = \.ok st" SeLe4n/Kernel/SyscallSchedContainment.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_endpointReceiveOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hDon : applyReceiveRendezvousDonation" SeLe4n/Kernel/SyscallSchedContainment.lean'
 # The arm's replenish frame, keyed on the footprint's own segment rather than on
 # which of the arm's three shapes the state takes.

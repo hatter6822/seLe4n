@@ -588,7 +588,7 @@ a fault, the WithCaps receive installs nothing and commits the take, the
 rendezvous hands off no SchedContext and runs the receiver's priority walk, the
 caller is left blocked on the reply, and staging the receiver's message writes `performFaultReceiveDelivered`'s state, the fault's
 words read from the caller's TCB. -/
-theorem receiveFaultTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+theorem receiveFaultTake_delivered {lend : Bool} (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB) (f : Fault)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
     (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
@@ -598,7 +598,7 @@ theorem receiveFaultTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId
         (receiveCallTakeState st endpointId s sTcb receiver rid,
           .ok (s, { results := #[] }, none)) ∧
       applyReceiveRendezvousHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
-          receiver s core =
+          receiver s core lend =
         .ok (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
           receiver core) ∧
       Architecture.stageDeliveredMessage (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)

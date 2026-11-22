@@ -277,17 +277,20 @@ theorem applyCallDonationOnCore {st st' : SystemState}
   · exact F1.trans (migrateSchedContextReplenishment _ _ _ _ F1.invExt)
 
 theorem applyRendezvousCallDonation {st st' : SystemState} {receiver donor : SeLe4n.ThreadId}
-    (hInv : st.objects.invExt)
-    (h : _root_.SeLe4n.Kernel.applyRendezvousCallDonation st receiver donor = .ok st') :
+    {lend : Bool} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.applyRendezvousCallDonation st receiver donor lend = .ok st') :
     RecordsFrame st st' := by
+  rcases _root_.SeLe4n.Kernel.applyRendezvousCallDonation_cases h with h | rfl
+  rotate_left
+  · exact RecordsFrame.refl hInv
   unfold _root_.SeLe4n.Kernel.applyRendezvousCallDonation at h
   split at h
   · exact applyCallDonationOnCore hInv h
   · cases h
 
-theorem applyReceiveRendezvousDonation {st st' : SystemState} {receiver dequeued : SeLe4n.ThreadId}
+theorem applyReceiveRendezvousDonation {lend : Bool} {st st' : SystemState} {receiver dequeued : SeLe4n.ThreadId}
     (hInv : st.objects.invExt)
-    (h : _root_.SeLe4n.Kernel.applyReceiveRendezvousDonation st receiver dequeued = .ok st') :
+    (h : _root_.SeLe4n.Kernel.applyReceiveRendezvousDonation st receiver dequeued lend = .ok st') :
     RecordsFrame st st' := by
   unfold _root_.SeLe4n.Kernel.applyReceiveRendezvousDonation at h
   split at h
@@ -295,9 +298,9 @@ theorem applyReceiveRendezvousDonation {st st' : SystemState} {receiver dequeued
   · cases h; exact refl hInv
 
 /-- The receive rendezvous' hand-off: the lend, then the chain walk. -/
-theorem applyReceiveRendezvousHandoff {st st' : SystemState} {receiver dequeued : SeLe4n.ThreadId}
+theorem applyReceiveRendezvousHandoff {lend : Bool} {st st' : SystemState} {receiver dequeued : SeLe4n.ThreadId}
     {ec : CoreId} (hInv : st.objects.invExt)
-    (h : _root_.SeLe4n.Kernel.applyReceiveRendezvousHandoff st receiver dequeued ec = .ok st') :
+    (h : _root_.SeLe4n.Kernel.applyReceiveRendezvousHandoff st receiver dequeued ec lend = .ok st') :
     RecordsFrame st st' := by
   obtain ⟨stDon, hDon, rfl⟩ := applyReceiveRendezvousHandoff_ok_decompose _ _ _ _ _ h
   have F := applyReceiveRendezvousDonation hInv hDon

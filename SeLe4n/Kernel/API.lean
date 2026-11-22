@@ -6506,21 +6506,23 @@ def receiveResolvedArm (ctx : LabelingContext) (decoded : SyscallDecodeResult) (
             with
         | (st', .ok (dequeued, summary, _sgi)) =>
             -- **WS-OD OD3.6**: the checked twin of the unchecked arm's
-            -- `maybeDonateSchedContext` step, and the *same* definition.  No
-            -- extra flow gate is owed: the donation writes only
-            -- `schedContextBinding` and `SchedContext.boundThread`, both of
-            -- which `projectKernelObject` erases, so it is invisible to every
-            -- observer (`returnDonatedSchedContext_preserves_projection` makes
-            -- the same argument for the hand-off's other direction); and the
-            -- endpoint→receiver flow this donation follows is gated above.
+            -- `maybeDonateSchedContext` step, and the *same* definition, at
+            -- the lend admission of the caller it takes (WS-SX ruling (u)):
+            -- the call's context is lent only where the caller's label flows
+            -- to the context's (`receiveLendAdmits`, the call's admission of
+            -- the send queue's head on the state the arm is handed); otherwise
+            -- the receive goes on and lends nothing, as at the call
+            -- rendezvous.  The admission reads that caller's own binding and
+            -- static labels alone (`callLendAdmits_congr`).
             --
-            -- **WS-OD OD3.14**: likewise the priority half, and for the same
-            -- reason no extra gate is owed -- `projectKernelObject` strips
+            -- **WS-OD OD3.14**: the priority half runs on every `Call`
+            -- rendezvous, lent or not -- `projectKernelObject` strips
             -- `pipBoost` (AJ2-B), and the run-queue re-bucketing the walk
             -- performs is bounded by `receiveRendezvousHandoffWriteSet`,
             -- exactly as the flow-checked `.call` arm's own walk is bounded
             -- by `endpointCallLiveWriteSet`.
-            match applyReceiveRendezvousHandoff st' tid dequeued executingCore with
+            match applyReceiveRendezvousHandoff st' tid dequeued executingCore
+                (receiveLendAdmits ctx st epId) with
             | .error e => .error e
             | .ok stDon =>
               -- WS-RA RA.B.6: stage the non-blocking consume's delivery (the
@@ -8349,7 +8351,7 @@ theorem dispatchArm_receive_matches_returnShape
     -- walk writes `pipBoost` and run-queue buckets, neither of which is a
     -- register context, so the frame conclusion is unchanged.
     (hDon : applyReceiveRendezvousHandoff st' tid next executingCore
-        = .ok stDon)
+        (receiveLendAdmits ctx st epId) = .ok stDon)
     (hTcb : stDon.getTcb? tid = some tcb)
     (hReady : tcb.ipcState = .ready)
     (hMsg : tcb.pendingMessage = some msg)
@@ -9667,8 +9669,9 @@ theorem dispatchWithCapChecked_receive_delegates
       -- a send that parked before its receiver arrived delivers its capabilities
       -- too, and the staged `extraCaps` is the summary's installed count.
       -- WS-OD OD3.6: including the rendezvous donation, which the checked arm
-      -- performs with the *same* definition and behind no extra gate -- the
-      -- delegation claim is about the whole arm, so it names every step of it.
+      -- performs with the *same* definition at the dequeued caller's lend
+      -- admission -- the delegation claim is about the whole arm, so it names
+      -- every step of it.
       -- WS-SX SX8.2: seL4-MCS's `maybeReturnSchedContext` first, on a blocking
       -- receive with a bound notification.
       (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore
@@ -9676,7 +9679,7 @@ theorem dispatchWithCapChecked_receive_delegates
           with
        | (st', .ok (dequeued, summary, _)) =>
            (match applyReceiveRendezvousHandoff st' tid dequeued
-                    executingCore with
+                    executingCore (receiveLendAdmits ctx st epId) with
             | .error e => .error e
             | .ok stDon =>
                 .ok ((), Architecture.stageDeliveredMessage
@@ -9886,12 +9889,12 @@ def syscallDelegates : SyscallId → Prop
            -- routed through the WithCaps transition, the staged `extraCaps` is
            -- the transfer summary's installed count rather than a hardcoded 0.
            -- WS-OD OD3.6: and the rendezvous donation runs between them, in the
-           -- checked arm as in the unchecked one and behind no extra gate.  The
-           -- obligation names it: a delegation claim that omitted a step would
-           -- be a claim about a different program.
+           -- checked arm as in the unchecked one, at the dequeued caller's lend
+           -- admission.  The obligation names it: a delegation claim that omitted
+           -- a step would be a claim about a different program.
            | (st', .ok (dequeued, summary, _)) =>
                (match applyReceiveRendezvousHandoff st' tid dequeued
-                        executingCore with
+                        executingCore (receiveLendAdmits ctx st epId) with
                 | .error e => .error e
                 | .ok stDon =>
                     .ok ((), Architecture.stageDeliveredMessage

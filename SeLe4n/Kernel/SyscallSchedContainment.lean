@@ -572,18 +572,18 @@ post-donation state, which is exactly how the arm composes
 (`applyReceiveRendezvousHandoff_ok_decompose`); the replenish segment is the
 donation's pair, and the walk moves no scheduling context
 (`propagatePipChainCrossCore_replenishQueueOnCore`). -/
-theorem schedLockSet_endpointReceiveOnCore_coversWrites (endpointId : SeLe4n.ObjId)
+theorem schedLockSet_endpointReceiveOnCore_coversWrites {lend : Bool} (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (executingCore : CoreId) (st st1 st' : SystemState) (dequeued : SeLe4n.ThreadId)
     (summary : CapTransferSummary) (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet)
     (hObjInv : st.objects.invExt) (hHeads : queueHeadBlockedConsistent st)
     (hS : LockSet.ofList? (schedLockSet_endpointReceiveOnCore st endpointId receiver replyId executingCore) = some S)
     (hLeg : endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st = (st1, .ok (dequeued, summary, sgi)))
-    (hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore = .ok st') :
+    (hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore lend = .ok st') :
     footprintCoversWrites S st st' := by
   obtain ⟨stDon, hDon, hEq⟩ :=
     applyReceiveRendezvousHandoff_ok_decompose st1 st' receiver dequeued executingCore hHand
-  have hChain : endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore
+  have hChain : endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore lend
       = if rendezvousDequeuedCall st1 dequeued then
           pipChainWriteSet stDon receiver executingCore stDon.objects.size
         else [] := by
@@ -603,10 +603,19 @@ theorem schedLockSet_endpointReceiveOnCore_coversWrites (endpointId : SeLe4n.Obj
       hObjInv hHeads hd hLeg hDon
   refine footprintCoversWrites_of_confined S
     (endpointReceiveDualWriteSet st endpointId executingCore
-      ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore)
+      ++ endpointReceiveHandoffChainCores st endpointId receiver replyId executingCore)
     (endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome) st st'
     (LockSet.ofList?_pairs hS) ?_ ?_
-  · rw [hChain]
+  · refine observableSlotsConfinedToCores_mono (cs := endpointReceiveDualWriteSet st endpointId
+      executingCore ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId
+      executingCore lend) ?_ ?_
+    · intro c hc
+      rcases List.mem_append.mp hc with h | h
+      · exact List.mem_append_left _ h
+      · exact List.mem_append_right _
+          (endpointReceiveHandoffChainWriteSet_subset_cores st endpointId receiver replyId
+            executingCore lend c h)
+    rw [hChain]
     subst hEq
     cases hCall : rendezvousDequeuedCall st1 dequeued
     · simp only [Bool.false_eq_true, if_false]
@@ -633,14 +642,14 @@ names** (`endpointReceiveLegReplenishCores`): the leg's own pre-receive return
 and the donation of the `Call` it dequeues; the chain walk moves none
 (`propagatePipChainCrossCore_replenishQueueOnCore`).  No queue-head premise: the
 segment is read off the leg's own run, not predicted from the endpoint. -/
-theorem endpointReceiveLegAndHandoff_replenishQueueOnCore_ne (endpointId : SeLe4n.ObjId)
+theorem endpointReceiveLegAndHandoff_replenishQueueOnCore_ne {lend : Bool} (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
     (st st1 st' : SystemState) (dequeued : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId) (hObjInv : st.objects.invExt)
     (hne : c ∉ endpointReceiveLegReplenishCores st endpointId receiver replyId executingCore)
     (hLeg : endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st =
       (st1, .ok (dequeued, summary, sgi)))
-    (hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore = .ok st') :
+    (hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore lend = .ok st') :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold endpointReceiveLegReplenishCores at hne
   rw [hLeg] at hne
@@ -687,7 +696,7 @@ theorem footprintCoversWrites_receiveLegState (S : LockSet) (st : SystemState)
 which moves no reservation, then the receive's return (`receiveLegState`), which
 moves the one its purge names, then the receive's leg and hand-off on the state
 it leaves, which move the ones the leg re-run there names. -/
-theorem schedLockSet_receiveCancellingHolder_coversWrites (endpointId : SeLe4n.ObjId)
+theorem schedLockSet_receiveCancellingHolder_coversWrites {lend : Bool} (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
     (holder : SeLe4n.ThreadId) (st st1 st' : SystemState) (dequeued : SeLe4n.ThreadId)
     (summary : CapTransferSummary) (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet)
@@ -700,7 +709,7 @@ theorem schedLockSet_receiveCancellingHolder_coversWrites (endpointId : SeLe4n.O
     (hLeg : endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore
       (receiveLegState (cancelReplyHolder st holder executingCore) receiver) =
         (st1, .ok (dequeued, summary, sgi)))
-    (hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore = .ok st') :
+    (hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore lend = .ok st') :
     footprintCoversWrites S st st' :=
   footprintCoversWrites_of_allCores S _ st st' hS fun d hd => by
     simp only [List.mem_append, not_or] at hd

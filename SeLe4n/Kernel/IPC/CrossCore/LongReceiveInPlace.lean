@@ -421,7 +421,7 @@ read, the WithCaps receive installs nothing and commits the take, the
 rendezvous hands off no SchedContext and runs the receiver's priority walk, the
 caller is left blocked on the reply, and staging the receiver's message writes
 `performReceiveCallDeliveredLong`'s state. -/
-theorem receiveCallLongTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+theorem receiveCallLongTake_delivered {lend : Bool} (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
@@ -437,7 +437,7 @@ theorem receiveCallLongTake_delivered (st : SystemState) (endpointId : SeLe4n.Ob
         (receiveCallTakeState st endpointId s sTcb receiver rid,
           .ok (s, { results := #[] }, none)) ∧
       applyReceiveRendezvousHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
-          receiver s core =
+          receiver s core lend =
         .ok (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
           receiver core) ∧
       Architecture.stageDeliveredMessage (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
@@ -575,7 +575,7 @@ caller blocked by a routed capability-free call of at most four words, the
 WithCaps receive installs nothing and commits the take, the rendezvous hands
 off no SchedContext and runs the receiver's priority walk, and staging the
 receiver's message writes `performReceiveCallDelivered`'s state. -/
-theorem receiveCallTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+theorem receiveCallTake_delivered {lend : Bool} (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
@@ -589,7 +589,7 @@ theorem receiveCallTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
         (receiveCallTakeState st endpointId s sTcb receiver rid,
           .ok (s, { results := #[] }, none)) ∧
       applyReceiveRendezvousHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
-          receiver s core =
+          receiver s core lend =
         .ok (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
           receiver core) ∧
       Architecture.stageDeliveredMessage (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
@@ -859,7 +859,7 @@ capability-free call of at most four words, the WithCaps receive installs
 nothing and commits the take, the rendezvous hands off nothing (the caller is
 `.ready`, not blocked on a reply), and staging the receiver's message writes
 `performReceiveCallNoLinkDelivered`'s state. -/
-theorem receiveCallNoLinkTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+theorem receiveCallNoLinkTake_delivered {lend : Bool} (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
@@ -874,7 +874,7 @@ theorem receiveCallNoLinkTake_delivered (st : SystemState) (endpointId : SeLe4n.
       mi.length sTcb.ipcBadgeView
     endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
         (S4, .ok (s, { results := #[] }, none)) ∧
-      applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
+      applyReceiveRendezvousHandoff S4 receiver s core lend = .ok S4 ∧
       Architecture.stageDeliveredMessage S4 receiver 0 =
         performReceiveCallNoLinkDelivered st endpointId s sTcb.queueNextCode receiver
           f.x0 f.x1 f.x2 f.x3 f.x4 f.x5 := by
@@ -1025,7 +1025,7 @@ not delivering a fault, the WithCaps receive installs nothing and takes the
 in-place writes, the rendezvous hands off no donation, and staging the
 receiver's message writes
 `performReceiveDeliveredLong`'s state. -/
-theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId) (ep : Endpoint)
+theorem receiveTakeLong_delivered {lend : Bool} (st : SystemState) (endpointId : SeLe4n.ObjId) (ep : Endpoint)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
@@ -1042,7 +1042,7 @@ theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     let S4 := W.1.updateTcb receiver (callReceiverTcb (blockedSenderMessage P s sTcb))
     endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
         (S4, .ok (s, { results := #[] }, W.2)) ∧
-      applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
+      applyReceiveRendezvousHandoff S4 receiver s core lend = .ok S4 ∧
       Architecture.stageDeliveredMessage S4
           receiver 0 =
         performReceiveDeliveredLong st endpointId s sTcb.queueNextCode receiver core
@@ -1180,7 +1180,7 @@ all read, the WithCaps receive installs nothing and commits the take, the
 rendezvous hands off nothing (the caller is `.ready`, not blocked on a reply),
 and staging the receiver's message writes
 `performReceiveCallNoLinkDeliveredLong`'s state. -/
-theorem receiveCallNoLinkTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+theorem receiveCallNoLinkTakeLong_delivered {lend : Bool} (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
@@ -1196,7 +1196,7 @@ theorem receiveCallNoLinkTakeLong_delivered (st : SystemState) (endpointId : SeL
     let S4 := receiveCallNoLinkTakeState st endpointId s sTcb receiver
     endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
         (S4, .ok (s, { results := #[] }, none)) ∧
-      applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
+      applyReceiveRendezvousHandoff S4 receiver s core lend = .ok S4 ∧
       Architecture.stageDeliveredMessage S4 receiver 0 =
         performReceiveCallNoLinkDeliveredLong st endpointId s sTcb.queueNextCode receiver
           mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
@@ -1327,7 +1327,7 @@ holding a fault, the WithCaps receive installs nothing and commits the take,
 the rendezvous hands off nothing, and staging the receiver's message writes
 `performFaultReceiveNoLinkDelivered`'s state, the fault's words read from the
 caller's TCB. -/
-theorem receiveFaultNoLinkTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+theorem receiveFaultNoLinkTake_delivered {lend : Bool} (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB) (f : Fault)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
@@ -1337,7 +1337,7 @@ theorem receiveFaultNoLinkTake_delivered (st : SystemState) (endpointId : SeLe4n
     let S4 := receiveCallNoLinkTakeState st endpointId s sTcb receiver
     endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
         (S4, .ok (s, { results := #[] }, none)) ∧
-      applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
+      applyReceiveRendezvousHandoff S4 receiver s core lend = .ok S4 ∧
       Architecture.stageDeliveredMessage S4 receiver 0 =
         performFaultReceiveNoLinkDelivered st endpointId s sTcb.queueNextCode receiver
           (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.faultKind sTcb.faultFlag

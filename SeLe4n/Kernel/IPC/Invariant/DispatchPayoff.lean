@@ -884,11 +884,9 @@ private theorem receiveResolvedArm_cancelled_preserves_ipcInvariantFull
               -- through the hand-off rather than the donation alone.  The
               -- chain walk adds no obligation: it writes `pipBoost` and
               -- run-queue buckets, which the bundle reads nowhere.
-              cases hDonation : applyReceiveRendezvousHandoff st1 tid nextThread
-                  executingCore with
-              | error e => rw [hDonation] at hStep; simp only [] at hStep; cases hStep
-              | ok stDon =>
-                  rw [hDonation] at hStep
+              split at hStep
+              · cases hStep
+              next stDon hDonation =>
                   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
                   have hDonInv : ipcInvariantFull stDon :=
                     applyReceiveRendezvousHandoff_preserves_ipcInvariantFull st1 stDon

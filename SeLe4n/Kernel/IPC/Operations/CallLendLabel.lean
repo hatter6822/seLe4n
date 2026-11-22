@@ -96,4 +96,26 @@ theorem callLendSchedContext?_flows {ctx : LabelingContext} {st : SystemState}
     rw [hAdm] at hS
     exact callLendAdmits_flows hAdm hS
 
+/-- **The receive's lend admission**: a receive that takes a `Call` lends the
+caller's context at the rendezvous, so it asks the call's own admission of the
+thread it takes, the head of the endpoint's send queue, read on the state the
+arm is handed.  `true` where no sender waits, since such a receive takes no
+call and lends nothing either way. -/
+def receiveLendAdmits (ctx : LabelingContext) (st : SystemState) (epId : SeLe4n.ObjId) : Bool :=
+  match st.getEndpoint? epId with
+  | some ep =>
+      match ep.sendQ.head with
+      | some s => callLendAdmits ctx st s
+      | none => true
+  | none => true
+
+/-- The receive's admission is the call's admission of the send queue's head. -/
+theorem receiveLendAdmits_of_head {ctx : LabelingContext} {st : SystemState}
+    {epId : SeLe4n.ObjId} {ep : Endpoint} {s : SeLe4n.ThreadId}
+    (hEp : st.getEndpoint? epId = some ep) (hHead : ep.sendQ.head = some s) :
+    receiveLendAdmits ctx st epId = callLendAdmits ctx st s := by
+  unfold receiveLendAdmits
+  rw [hEp]
+  simp only [hHead]
+
 end SeLe4n.Kernel

@@ -192,17 +192,20 @@ theorem applyCallDonationOnCoreWhen_replyViews_eq {lend : Bool} {st st' : System
   applyCallDonationOnCoreWhen_induct (·.replyViews = st.replyViews) h rfl
     (applyCallDonationOnCore_replyViews_eq hInv)
 
-theorem applyRendezvousCallDonation_replyViews_eq {st st' : SystemState}
+theorem applyRendezvousCallDonation_replyViews_eq {lend : Bool} {st st' : SystemState}
     {r d : SeLe4n.ThreadId} (hInv : st.objects.invExt)
-    (h : applyRendezvousCallDonation st r d = .ok st') : st'.replyViews = st.replyViews := by
+    (h : applyRendezvousCallDonation st r d lend = .ok st') : st'.replyViews = st.replyViews := by
+  rcases applyRendezvousCallDonation_cases h with h | rfl
+  rotate_left
+  · rfl
   unfold applyRendezvousCallDonation at h
   split at h
   · exact applyCallDonationOnCore_replyViews_eq hInv h
   · cases h
 
-theorem applyReceiveRendezvousDonation_replyViews_eq {st st' : SystemState}
+theorem applyReceiveRendezvousDonation_replyViews_eq {lend : Bool} {st st' : SystemState}
     {r d : SeLe4n.ThreadId} (hInv : st.objects.invExt)
-    (h : applyReceiveRendezvousDonation st r d = .ok st') : st'.replyViews = st.replyViews := by
+    (h : applyReceiveRendezvousDonation st r d lend = .ok st') : st'.replyViews = st.replyViews := by
   unfold applyReceiveRendezvousDonation at h
   split at h
   · exact applyRendezvousCallDonation_replyViews_eq hInv h
@@ -213,9 +216,9 @@ theorem applyReceiverPipHandoff_replyViews_eq (st : SystemState) (r : SeLe4n.Thr
     (applyReceiverPipHandoff st r c).replyViews = st.replyViews :=
   propagatePipChainCrossCore_replyViews_eq _ _ _ _ hInv
 
-theorem applyReceiveRendezvousHandoff_replyViews_eq {st st' : SystemState}
+theorem applyReceiveRendezvousHandoff_replyViews_eq {lend : Bool} {st st' : SystemState}
     {r d : SeLe4n.ThreadId} {c : CoreId} (hInv : st.objects.invExt)
-    (h : applyReceiveRendezvousHandoff st r d c = .ok st') : st'.replyViews = st.replyViews := by
+    (h : applyReceiveRendezvousHandoff st r d c lend = .ok st') : st'.replyViews = st.replyViews := by
   unfold applyReceiveRendezvousHandoff at h
   split at h
   · cases h

@@ -182,9 +182,12 @@ theorem of_applyCallDonationOnCoreWhen {lend : Bool} {st st' : SystemState}
   applyCallDonationOnCoreWhen_induct (savedRegsUnwritten st) h (.refl hInv)
     (of_applyCallDonationOnCore hInv)
 
-theorem of_applyRendezvousCallDonation {st st' : SystemState} {receiver donor : SeLe4n.ThreadId}
-    (hInv : st.objects.invExt) (h : applyRendezvousCallDonation st receiver donor = .ok st') :
+theorem of_applyRendezvousCallDonation {lend : Bool} {st st' : SystemState} {receiver donor : SeLe4n.ThreadId}
+    (hInv : st.objects.invExt) (h : applyRendezvousCallDonation st receiver donor lend = .ok st') :
     savedRegsUnwritten st st' := by
+  rcases applyRendezvousCallDonation_cases h with h | rfl
+  rotate_left
+  · exact refl hInv
   unfold applyRendezvousCallDonation at h
   split at h
   · exact of_applyCallDonationOnCore hInv h
@@ -544,9 +547,9 @@ theorem endpointReceiveDualWithCapsOnCore_savedRegsUnwritten (endpointId : SeLe4
 
 /-- The receive rendezvous' hand-off writes no saved register: the lend, then
 the chain walk. -/
-theorem applyReceiveRendezvousHandoff_savedRegsUnwritten {st st' : SystemState}
+theorem applyReceiveRendezvousHandoff_savedRegsUnwritten {lend : Bool} {st st' : SystemState}
     {receiver dequeued : SeLe4n.ThreadId} {c : CoreId} (hInv : st.objects.invExt)
-    (h : applyReceiveRendezvousHandoff st receiver dequeued c = .ok st') :
+    (h : applyReceiveRendezvousHandoff st receiver dequeued c lend = .ok st') :
     savedRegsUnwritten st st' := by
   obtain ⟨stDon, hDon, rfl⟩ := applyReceiveRendezvousHandoff_ok_decompose _ _ _ _ _ h
   have h1 : savedRegsUnwritten st stDon := by
@@ -779,14 +782,14 @@ theorem callArm_savedRegsWrittenFree {ctx : LabelingContext} {epId : SeLe4n.ObjI
 sender**: the receive and its hand-off write no saved register, and the send's
 completion names the send queue's head at the entry's start, which is blocked
 there, so it is free of every core. -/
-theorem receiveArmCompletion_savedRegsWrittenFree {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+theorem receiveArmCompletion_savedRegsWrittenFree {lend : Bool} {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {replyId : Option SeLe4n.ReplyId} {ec e : CoreId}
     {base st s1 stDon : SystemState} {dequeued : SeLe4n.ThreadId} {summary : CapTransferSummary}
     {sgi : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
     (hHead : ∀ w, (st.getEndpoint? epId).bind (·.sendQ.head) = some w → offCoreFree e base w)
     (hRecv : endpointReceiveDualWithCapsOnCore epId tid replyId ec st
       = (s1, .ok (dequeued, summary, sgi)))
-    (hHand : applyReceiveRendezvousHandoff s1 tid dequeued ec = .ok stDon) :
+    (hHand : applyReceiveRendezvousHandoff s1 tid dequeued ec lend = .ok stDon) :
     savedRegsWrittenFree e base st
       stDon ∧
     stDon.objects.invExt := by
@@ -799,7 +802,7 @@ theorem receiveArmCompletion_savedRegsWrittenFree {epId : SeLe4n.ObjId} {tid : S
 caller**: up to the caller's staging it writes only the woken sender
 (`receiveArmCompletion_savedRegsWrittenFree`), and the delivered message is
 staged into the caller, the executing core's current thread. -/
-theorem receiveArm_savedRegsWrittenFree {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+theorem receiveArm_savedRegsWrittenFree {lend : Bool} {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {replyId : Option SeLe4n.ReplyId} {ec : CoreId}
     {base st s1 stDon : SystemState} {dequeued : SeLe4n.ThreadId} {summary : CapTransferSummary}
     {sgi : Option (CoreId × Concurrency.SgiKind)} (n : Nat) (hInv : st.objects.invExt)
@@ -807,7 +810,7 @@ theorem receiveArm_savedRegsWrittenFree {epId : SeLe4n.ObjId} {tid : SeLe4n.Thre
     (hCaller : offCoreFree ec base tid)
     (hRecv : endpointReceiveDualWithCapsOnCore epId tid replyId ec st
       = (s1, .ok (dequeued, summary, sgi)))
-    (hHand : applyReceiveRendezvousHandoff s1 tid dequeued ec = .ok stDon) :
+    (hHand : applyReceiveRendezvousHandoff s1 tid dequeued ec lend = .ok stDon) :
     savedRegsWrittenFree ec base st (Architecture.stageDeliveredMessage
       stDon
       tid n) := by

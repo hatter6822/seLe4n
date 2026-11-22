@@ -1796,14 +1796,14 @@ donation must be shown inert, which is
 `.blockedOnSend` rather than at "not a `Call`" for the reason its own docstring
 gives, and that conjunct is what says `.blockedOnSend` is the reachable non-`Call`
 shape for a send queue's head. -/
-theorem endpointReceiveLegAndDonation_replenishQueueOnCore_ne (endpointId : SeLe4n.ObjId)
+theorem endpointReceiveLegAndDonation_replenishQueueOnCore_ne {lend : Bool} (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (executingCore : Concurrency.CoreId) (st st1 stDon : SystemState) (dequeued : SeLe4n.ThreadId)
     (summary : CapTransferSummary) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind)) (c : Concurrency.CoreId)
     (hObjInv : st.objects.invExt) (hHeads : queueHeadBlockedConsistent st)
     (hne : c ∉ endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome)
     (hLeg : endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st = (st1, .ok (dequeued, summary, sgi)))
-    (hDon : applyReceiveRendezvousDonation st1 receiver dequeued = .ok stDon) :
+    (hDon : applyReceiveRendezvousDonation st1 receiver dequeued lend = .ok stDon) :
     stDon.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   cases hSender : receiveRendezvousSender? st endpointId with
   | none =>

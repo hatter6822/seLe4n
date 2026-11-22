@@ -326,7 +326,7 @@ theorem replyRecvPostReceiveDonation_none_of_declined (tid recordedServer nextTh
     (hNone : callDonationSchedContext? st nextThread tid = none) :
     replyRecvPostReceiveDonation tid recordedServer nextThread serverCore none st =
       .ok ((), (PriorityInheritance.propagatePipChainCrossCore st recordedServer serverCore).1) := by
-  have h := applyReceiveRendezvousDonation_of_no_donation st tid nextThread nextV tidV hNV hTV hNone
+  have h := applyReceiveRendezvousDonation_of_no_donation st tid nextThread nextV tidV hNV hTV hNone (lend := true)
   unfold applyReceiveRendezvousDonation at h
   unfold replyRecvPostReceiveDonation
   simp only []

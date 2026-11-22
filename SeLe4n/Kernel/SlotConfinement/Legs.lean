@@ -1323,18 +1323,21 @@ its guarded form.
 Both receiving arms run it, so its confinement is stated once here rather than
 re-derived at each arm — and `[]` rather than a core list because a SchedContext
 hand-off writes only bindings, which the per-core observer does not read. -/
-theorem applyRendezvousCallDonation_confinedToCores (st st' : SystemState)
+theorem applyRendezvousCallDonation_confinedToCores {lend : Bool} (st st' : SystemState)
     (receiver donor : SeLe4n.ThreadId)
-    (hStep : applyRendezvousCallDonation st receiver donor = .ok st') :
+    (hStep : applyRendezvousCallDonation st receiver donor lend = .ok st') :
     observableSlotsConfinedToCores st st' [] := by
+  rcases applyRendezvousCallDonation_cases hStep with hStep | rfl
+  rotate_left
+  · exact observableSlotsConfinedToCores_refl _ _
   obtain ⟨donorV, receiverV, _, _, hDon⟩ :=
     applyRendezvousCallDonation_ok_decompose st st' receiver donor hStep
   exact applyCallDonationOnCore_confinedToCores st st' donorV receiverV _ _ hDon
 
 /-- WS-OD OD3.6: and the guarded form, whose other arm is the identity. -/
-theorem applyReceiveRendezvousDonation_confinedToCores (st st' : SystemState)
+theorem applyReceiveRendezvousDonation_confinedToCores {lend : Bool} (st st' : SystemState)
     (receiver dequeued : SeLe4n.ThreadId)
-    (hStep : applyReceiveRendezvousDonation st receiver dequeued = .ok st') :
+    (hStep : applyReceiveRendezvousDonation st receiver dequeued lend = .ok st') :
     observableSlotsConfinedToCores st st' [] := by
   unfold applyReceiveRendezvousDonation at hStep
   cases hCall : rendezvousDequeuedCall st dequeued with
@@ -1373,10 +1376,10 @@ the walk is confined to `pipChainWriteSet` at the state it runs on (SM8.B.2).
 The declared set is the walk's alone because widening `[]` into it is free
 (`observableSlotsConfinedToCores_mono`) — stating the union `[] ++ …` would
 declare the same cores in a shape every consumer would have to normalise. -/
-theorem applyReceiveRendezvousHandoff_confinedToCores (st stDon st' : SystemState)
+theorem applyReceiveRendezvousHandoff_confinedToCores {lend : Bool} (st stDon st' : SystemState)
     (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
-    (hDon : applyReceiveRendezvousDonation st receiver dequeued = .ok stDon)
-    (hStep : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st') :
+    (hDon : applyReceiveRendezvousDonation st receiver dequeued lend = .ok stDon)
+    (hStep : applyReceiveRendezvousHandoff st receiver dequeued executingCore lend = .ok st') :
     observableSlotsConfinedToCores st st'
       (receiveRendezvousHandoffWriteSet st receiver dequeued executingCore stDon) := by
   obtain ⟨stDon', hDon', hEq⟩ :=

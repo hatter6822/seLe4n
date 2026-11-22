@@ -2363,20 +2363,23 @@ argument does not cover, because the same predicate decides both. -/
 
 /-- WS-OD OD3.6: the rendezvous hand-off preserves the object-store extension
 invariant. -/
-theorem applyRendezvousCallDonation_preserves_objects_invExt
+theorem applyRendezvousCallDonation_preserves_objects_invExt {lend : Bool}
     (st st'' : SystemState) (receiver donor : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
-    (h : applyRendezvousCallDonation st receiver donor = .ok st'') :
+    (h : applyRendezvousCallDonation st receiver donor lend = .ok st'') :
     st''.objects.invExt := by
+  rcases applyRendezvousCallDonation_cases h with h | rfl
+  rotate_left
+  · exact hObjInv
   obtain ⟨donorV, receiverV, _, _, hDon⟩ :=
     applyRendezvousCallDonation_ok_decompose st st'' receiver donor h
   exact applyCallDonationOnCore_preserves_objects_invExt st st'' donorV receiverV _ _ hObjInv hDon
 
 /-- WS-OD OD3.6: and so does the guarded form, whose other arm changes nothing. -/
-theorem applyReceiveRendezvousDonation_preserves_objects_invExt
+theorem applyReceiveRendezvousDonation_preserves_objects_invExt {lend : Bool}
     (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
-    (h : applyReceiveRendezvousDonation st receiver dequeued = .ok st'') :
+    (h : applyReceiveRendezvousDonation st receiver dequeued lend = .ok st'') :
     st''.objects.invExt := by
   unfold applyReceiveRendezvousDonation at h
   cases hCall : rendezvousDequeuedCall st dequeued with
@@ -2393,13 +2396,13 @@ asks that the donor be `.blockedOnReply` and that no thread already holds a
 donation naming the receiver as owner; the first is exactly what the guard
 decides, so only `hReceiverNotOwner` -- a whole-store fact no local step can
 establish -- survives as a caller obligation. -/
-theorem applyReceiveRendezvousDonation_preserves_ipcInvariantFull
+theorem applyReceiveRendezvousDonation_preserves_ipcInvariantFull {lend : Bool}
     (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
     (hReceiverNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
         st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId receiver)
-    (h : applyReceiveRendezvousDonation st receiver dequeued = .ok st'') :
+    (h : applyReceiveRendezvousDonation st receiver dequeued lend = .ok st'') :
     ipcInvariantFull st'' := by
   unfold applyReceiveRendezvousDonation at h
   cases hCall : rendezvousDequeuedCall st dequeued with
@@ -2407,6 +2410,9 @@ theorem applyReceiveRendezvousDonation_preserves_ipcInvariantFull
   | true =>
     rw [hCall] at h
     simp only [if_true] at h
+    rcases applyRendezvousCallDonation_cases h with h | rfl
+    rotate_left
+    · exact hInv
     obtain ⟨donorV, receiverV, hDv, hRv, hDon⟩ :=
       applyRendezvousCallDonation_ok_decompose st st'' receiver dequeued h
     refine applyCallDonationOnCore_preserves_ipcInvariantFull st st'' donorV receiverV _ _
@@ -2425,10 +2431,10 @@ which is the point of expressing the step over the two rather than inlining it. 
 
 /-- WS-OD OD3.14: the hand-off preserves the object-store extension invariant —
 the donation does (OD3.6) and the chain walk does (SM5.F.2). -/
-theorem applyReceiveRendezvousHandoff_preserves_objects_invExt
+theorem applyReceiveRendezvousHandoff_preserves_objects_invExt {lend : Bool}
     (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
     (hObjInv : st.objects.invExt)
-    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st'') :
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore lend = .ok st'') :
     st''.objects.invExt := by
   obtain ⟨stDon, hDon, hEq⟩ :=
     applyReceiveRendezvousHandoff_ok_decompose st st'' receiver dequeued executingCore h
@@ -2446,13 +2452,13 @@ theorem applyReceiveRendezvousHandoff_preserves_objects_invExt
 The caller obligation is OD3.6's and no more: the walk writes `pipBoost` and
 run-queue buckets, which the bundle reads nowhere, so it contributes a frame
 rather than a hypothesis. -/
-theorem applyReceiveRendezvousHandoff_preserves_ipcInvariantFull
+theorem applyReceiveRendezvousHandoff_preserves_ipcInvariantFull {lend : Bool}
     (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
     (hReceiverNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
         st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId receiver)
-    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st'') :
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore lend = .ok st'') :
     ipcInvariantFull st'' := by
   obtain ⟨stDon, hDon, hEq⟩ :=
     applyReceiveRendezvousHandoff_ok_decompose st st'' receiver dequeued executingCore h
@@ -2471,11 +2477,11 @@ theorem applyReceiveRendezvousHandoff_preserves_ipcInvariantFull
 /-- WS-OD OD3.14: the hand-off keeps SM5.H's replenish-queue affinity — the
 `hObjInvDon` hypothesis `Donation.lean` had to leave open (it sits below the
 module that proves the donation preserves `invExt`) is discharged here. -/
-theorem applyReceiveRendezvousHandoff_preserves_replenishAffinity_smp
+theorem applyReceiveRendezvousHandoff_preserves_replenishAffinity_smp {lend : Bool}
     (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
     (hObjInv : st.objects.invExt)
     (hCons : replenishQueueAffinityConsistent_smp st)
-    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st'') :
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore lend = .ok st'') :
     replenishQueueAffinityConsistent_smp st'' :=
   applyReceiveRendezvousHandoff_preserves_replenishQueueAffinityConsistent_smp
     st st'' receiver dequeued executingCore hObjInv
