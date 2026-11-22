@@ -415,14 +415,14 @@ theorem endpointReplyCrossCoreDispatch_preserves_replyWaitersConsistent
 /-- **Fault delivery keeps the reply-waiter queues consistent**: it is the live
 call on the handler's endpoint, or the fail-closed suspend; the fault record and
 the woken handler's return frame keep the views. -/
-theorem faultDeliverOnCore_preserves_replyWaitersConsistent (st : SystemState)
+theorem faultDeliverOnCore_preserves_replyWaitersConsistent {lend : Bool} (st : SystemState)
     (tid : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (c : CoreId)
     (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent)
     (hFaulted : ReplyViews.serverFree st.replyViews tid)
     (hHead : ∀ (eid : SeLe4n.ObjId) (ep : Endpoint) (r : SeLe4n.ThreadId),
       st.objects[eid]? = some (.endpoint ep) → ep.receiveQ.head = some r →
       r ≠ tid ∧ ReplyViews.serverFree st.replyViews r) :
-    (faultDeliverOnCore st tid f ctx c).1.replyWaitersConsistent := by
+    (faultDeliverOnCore st tid f ctx c lend).1.replyWaitersConsistent := by
   have hSus : (recordPendingFault (faultSuspendOnCore st tid c) tid
       { fault := f, context := ctx }).replyWaitersConsistent :=
     replyWaitersConsistent.of_views
@@ -433,13 +433,13 @@ theorem faultDeliverOnCore_preserves_replyWaitersConsistent (st : SystemState)
   split
   · exact hSus
   · rename_i tgt _
-    have hB := endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent tgt.endpoint tid
+    have hB := endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent (lend := lend) tgt.endpoint tid
       (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st hInv hC
       hFaulted (hHead tgt.endpoint)
-    have hI := endpointCallCrossCoreDispatch_preserves_objects_invExt tgt.endpoint tid
+    have hI := endpointCallCrossCoreDispatch_preserves_objects_invExt (lend := lend) tgt.endpoint tid
       (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st hInv
     cases hR : endpointCallCrossCoreDispatch tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply)
-        c st with
+        c st lend with
     | mk s1 res =>
       rw [hR] at hB hI
       cases res with

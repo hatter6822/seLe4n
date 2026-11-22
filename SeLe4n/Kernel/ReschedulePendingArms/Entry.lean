@@ -102,20 +102,20 @@ theorem faultSuspendRecord_stepCovers (e : CoreId) (st : SystemState) (tid : SeL
 
 /-- **The fault delivery covers**: the Call it composes covers, and the
 suspend, record and staging steps around it move no key. -/
-theorem faultDeliverOnCore_stepCovers (e : CoreId) {st : SystemState} {tid : SeLe4n.ThreadId}
+theorem faultDeliverOnCore_stepCovers {lend : Bool} (e : CoreId) {st : SystemState} {tid : SeLe4n.ThreadId}
     {f : Fault} {ctx : FaultContext} {c : CoreId} (hInv : st.objects.invExt) :
-    stepCovers e st (faultDeliverOnCore st tid f ctx c).1 ∧
-    (faultDeliverOnCore st tid f ctx c).1.objects.invExt := by
+    stepCovers e st (faultDeliverOnCore st tid f ctx c lend).1 ∧
+    (faultDeliverOnCore st tid f ctx c lend).1.objects.invExt := by
   unfold faultDeliverOnCore
   split
   · exact faultSuspendRecord_stepCovers e st tid c _ hInv
   · rename_i tgt _
     dsimp only
-    have hC := endpointCallCrossCoreDispatch_stepCovers e (endpointId := tgt.endpoint) (caller := tid)
+    have hC := endpointCallCrossCoreDispatch_stepCovers (lend := lend) e (endpointId := tgt.endpoint) (caller := tid)
       (payload := SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply)
-      (executingCore := c) (lend := true) hInv
+      (executingCore := c) hInv
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply)
-      c st = r at hC ⊢
+      c st lend = r at hC ⊢
     obtain ⟨st1, res⟩ := r
     obtain ⟨hC, hCInv⟩ := hC
     cases res with

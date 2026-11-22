@@ -406,18 +406,6 @@ theorem stageWokenDelivery_performCallDonating (st : SystemState) (endpointId : 
     Architecture.returnFrameOfMessage_regMessageBody]
   rfl
 
-theorem callTakesReplyInPlace_noResizeDue {st : SystemState} {endpointId : SeLe4n.ObjId}
-    {caller r : SeLe4n.ThreadId} {rt : TCB} {rid : SeLe4n.ReplyId}
-    (h : callTakesReplyInPlace st endpointId caller r rt rid = true) : st.objects.noResizeDue := by
-  simp only [callTakesReplyInPlace, sendWakesInPlace, Bool.and_eq_true] at h
-  exact RHTable.noResizeDue_of_findsInPlace h.1.1.1.1.1.1.1.1.1.1.1.1.2
-
-theorem callTakesReplyInPlace_ne {st : SystemState} {endpointId : SeLe4n.ObjId}
-    {caller r : SeLe4n.ThreadId} {rt : TCB} {rid : SeLe4n.ReplyId}
-    (h : callTakesReplyInPlace st endpointId caller r rt rid = true) : caller ≠ r := by
-  simp only [callTakesReplyInPlace, Bool.and_eq_true] at h
-  exact bne_iff_ne.mp h.1.1.1.1.1.1.1.2
-
 theorem callRendezvousDonatingDelivered_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (rt : TCB) (rid : SeLe4n.ReplyId)
     (scId : SeLe4n.SchedContextId) (donorHome doneeHome : Concurrency.CoreId)

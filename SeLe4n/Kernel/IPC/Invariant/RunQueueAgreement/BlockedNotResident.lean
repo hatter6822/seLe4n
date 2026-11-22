@@ -727,11 +727,11 @@ theorem faultSuspendOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop} (st : S
 
 /-- **The fault delivery blocks only the faulting thread**: the handler call, or
 the fail-closed suspend; then the woken handler's frame and the fault record. -/
-theorem faultDeliverOnCore_readyKeptStage (st : SystemState) (tid : SeLe4n.ThreadId)
+theorem faultDeliverOnCore_readyKeptStage {lend : Bool} (st : SystemState) (tid : SeLe4n.ThreadId)
     (f : Fault) (fctx : FaultContext) (c : CoreId)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some tid)
     (hNI : isIdleThreadId tid = false) (hAct : st.activeAt tid) :
-    readyKeptStage (· = tid) st (faultDeliverOnCore st tid f fctx c).1 := by
+    readyKeptStage (· = tid) st (faultDeliverOnCore st tid f fctx c lend).1 := by
   have sus := (faultSuspendOnCore_readyKeptStage (S := (· = tid)) st tid c).trans
     (faultSuspendOnCore_runQueueEntryStage st tid c hCur hNI).1
     (.of_stage (recordPendingFault_runQueueStage _ tid { fault := f, context := fctx }))
@@ -740,13 +740,13 @@ theorem faultDeliverOnCore_readyKeptStage (st : SystemState) (tid : SeLe4n.Threa
   · exact sus
   · rename_i tgt _
     intro hI hR
-    have s0 := (endpointCallCrossCoreDispatch_runQueueEntryStage tgt.endpoint tid
+    have s0 := (endpointCallCrossCoreDispatch_runQueueEntryStage (lend := lend) tgt.endpoint tid
       (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st hHeads hCur hNI
       hI hR hAct).1
-    have r0 := endpointCallCrossCoreDispatch_readyKeptStage tgt.endpoint tid
+    have r0 := endpointCallCrossCoreDispatch_readyKeptStage (lend := lend) tgt.endpoint tid
       (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st hHeads hCur hNI
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid
-      (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st = r at s0 r0 ⊢
+      (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st lend = r at s0 r0 ⊢
     obtain ⟨st1, r⟩ := r
     cases r with
     | error e => exact sus hI hR

@@ -4489,6 +4489,7 @@ run_check "INVARIANT" rg -n '^theorem donateSchedContext_eq_inPlace($|[ ({:\[\]]
 run_check "INVARIANT" rg -n '^theorem callDispatchChecked_donating_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDonatingInPlace.lean
 run_check "INVARIANT" rg -n '^theorem donateSchedContextInPlace_msg($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDonatingInPlace.lean
 run_check "INVARIANT" rg -n -U '                            cap\.canLinkReply && callDonatesInPlace st epId tid r rt rid &&\n                            callLendAdmits ctx st tid then\n                          \.ok \(\(\), callRendezvousDonatingDelivered st epId tid r rt\.queueNextCode' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U '                            cap\.canLinkReply &&\n                            callWakesUnlentInPlace \(callLendAdmits ctx st tid\) st epId tid r rt rid then\n                          \.ok \(\(\), callRendezvousDelivered st epId tid r rt\.queueNextCode rid$' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 # WS-ZA ZA6.33: the donating route migrates the replenishment in place, the two
 # homes read in the arm before its first write, and the migration is compiled
 # through its in-place write.
@@ -6002,6 +6003,10 @@ run_check "INVARIANT" rg -n '^theorem faultFrameW_capFault($|[ ({:\[\]])' SeLe4n
 run_check "INVARIANT" rg -n '^theorem faultMessage_overflowRegs_capFault($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
 run_check "INVARIANT" rg -n '^def resolveFaultHandler($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
 run_check "INVARIANT" rg -n '^def faultDeliverOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^        faultDeliverOnCore st tid f fctx executingCore \(callLendAdmits ctx st tid\)$' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^          \(\.fault f ctx tgt\.cap\.badge tgt\.cap\.canLinkReply\) executingCore st lend with$' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^          else if cap\.canLinkReply && callDonatesInPlace st epId tid r rt rid && lend then$' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
+run_check "INVARIANT" rg -n '^        faultDeliverHandledWords st tid c \(callLendAdmits lctx st tid\) epId cap k flag w0 w1 lk$' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
 run_check "INVARIANT" rg -n '^def faultReplyOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
 run_check "INVARIANT" rg -n '^theorem faultDeliverOnCore_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
 run_check "INVARIANT" rg -n '^theorem faultReplyOnCore_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
@@ -6175,7 +6180,7 @@ run_check "INVARIANT" rg -n -U '^    \(fun d w0 w1 w2 w3 w4 s =>\n      match ca
 # message held as a constant.
 run_check "INVARIANT" rg -n '^theorem receiveCallTake_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultReceiveInPlace.lean
 run_check "INVARIANT" rg -n '^theorem receiveFaultTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultReceiveInPlace.lean
-run_check "INVARIANT" rg -n -U '^              if receiveCallTakesInPlace st epId tid s sTcb rid then\n                \.ok \(\(\), performFaultReceiveDelivered st epId s sTcb\.queueNextCode tid rid$' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U '^              if receiveCallTakesUnlentInPlace lend st epId tid s sTcb rid then\n                \.ok \(\(\), performFaultReceiveDelivered st epId s sTcb\.queueNextCode tid rid$' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n '^theorem deliverFaultFrame_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
 run_check "INVARIANT" rg -n '^theorem storeFaultReplyRendezvous_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
 run_check "INVARIANT" rg -n '^  let s1 := st\.updateTcb c faultReplyReceiverTcb$' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
@@ -11368,6 +11373,14 @@ open SeLe4n.Kernel.Concurrency
 #check @endpointReceiveHandoffChainCores
 #check @endpointReceiveHandoffChainWriteSet_subset_cores
 #check @schedLockSet_endpointReceiveOnCore_coversWrites
+#check @callWakesUnlentInPlace
+#check @callWakesUnlentInPlace_takesReply
+#check @callRendezvous_inPlace_unlent
+#check @applyCallDonationOnCoreWhen_ok_self
+#check @receiveCallTakesUnlentInPlace
+#check @receiveCallTakesUnlentInPlace_takesReply
+#check @receiveCallTakesUnlentInPlace_lendsNothing
+#check @applyReceiveRendezvousDonation_of_lendsNothing
 #check @donationContextFlowsGeneric_liftLegacyContext
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing

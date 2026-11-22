@@ -798,11 +798,12 @@ theorem faultDeliverOnCoreChecked_savedRegsWrittenFree {ctx : LabelingContext}
   · unfold faultDeliverOnCore
     rw [hRes]
     dsimp only
-    have h1 := endpointCallCrossCoreDispatch_savedRegsUnwritten tgt.endpoint tid
+    have h1 := endpointCallCrossCoreDispatch_savedRegsUnwritten
+      (lend := callLendAdmits ctx s tid) tgt.endpoint tid
       (.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c hInv
     revert h1
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid (.fault f fctx tgt.cap.badge tgt.cap.canLinkReply)
-      c s = r
+      c s (callLendAdmits ctx s tid) = r
     obtain ⟨s1, res⟩ := r
     cases res with
     | error _ => intro _; exact hSusp

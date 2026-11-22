@@ -508,6 +508,19 @@ theorem applyCallDonationOnCoreWhen_cases {lend : Bool} {st st'' : SystemState}
   | true => exact Or.inl ⟨rfl, h⟩
   | false => exact Or.inr ⟨rfl, (Except.ok.inj h).symm⟩
 
+/-- **A gated donation that lends nothing commits nothing**: where the call
+donates no context, or the lend is refused, the gated donation is the state it
+was handed. -/
+theorem applyCallDonationOnCoreWhen_ok_self {lend : Bool} {st : SystemState}
+    {callerVtid receiverVtid : SeLe4n.ValidThreadId} {donorHome doneeHome : CoreId}
+    (h : callDonationSchedContext? st callerVtid.val receiverVtid.val = none ∨ lend = false) :
+    applyCallDonationOnCoreWhen lend st callerVtid receiverVtid donorHome doneeHome = .ok st := by
+  rcases h with h | rfl
+  · unfold applyCallDonationOnCoreWhen applyCallDonationOnCore
+    rw [applyCallDonation_eq_ok_self_of_no_donation _ _ _ h]
+    simp only [h, ite_self]
+  · rfl
+
 /-- **A property the donation and the identity carry, the gated donation
 carries.** -/
 theorem applyCallDonationOnCoreWhen_induct (P : SystemState → Prop) {lend : Bool}
@@ -954,6 +967,19 @@ theorem applyReceiveRendezvousDonation_of_no_donation (st : SystemState)
       exact hNone
     rw [applyCallDonation_eq_ok_self_of_no_donation st dequeuedV receiverV hNoneV]
     simp only [hNoneV]
+
+/-- **A rendezvous that lends nothing commits nothing**: no context to donate,
+or the lend refused (`lend = false`). -/
+theorem applyReceiveRendezvousDonation_of_lendsNothing (st : SystemState)
+    (receiver dequeued : SeLe4n.ThreadId) (dequeuedV receiverV : SeLe4n.ValidThreadId)
+    (hDV : dequeued.toValid? = some dequeuedV) (hRV : receiver.toValid? = some receiverV)
+    {lend : Bool} (hNone : callDonationSchedContext? st dequeued receiver = none ∨ lend = false) :
+    applyReceiveRendezvousDonation st receiver dequeued lend = .ok st := by
+  rcases hNone with hNone | rfl
+  · exact applyReceiveRendezvousDonation_of_no_donation st receiver dequeued dequeuedV receiverV
+      hDV hRV hNone
+  · unfold applyReceiveRendezvousDonation applyRendezvousCallDonation
+    split <;> simp only [hDV, hRV, applyCallDonationOnCoreWhen_false]
 
 /-- WS-OD OD3.6: and on a `Call` rendezvous it is exactly the donation. -/
 @[simp] theorem applyReceiveRendezvousDonation_of_call (st : SystemState)

@@ -1521,22 +1521,22 @@ theorem writeFaultRegistersToTcb_runQueueStage (st : SystemState) (tid : SeLe4n.
 
 /-- The fault delivery for core `c`'s current thread: the handler call, or the
 fail-closed suspend; then the woken handler's frame and the fault record. -/
-theorem faultDeliverOnCore_runQueueEntryStage (st : SystemState) (tid : SeLe4n.ThreadId)
+theorem faultDeliverOnCore_runQueueEntryStage {lend : Bool} (st : SystemState) (tid : SeLe4n.ThreadId)
     (f : Fault) (fctx : FaultContext) (c : Concurrency.CoreId)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some tid)
     (hNI : isIdleThreadId tid = false)
     (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hAct : st.activeAt tid) :
-    SystemState.RunQueueEntryStage st (faultDeliverOnCore st tid f fctx c).1 := by
+    SystemState.RunQueueEntryStage st (faultDeliverOnCore st tid f fctx c lend).1 := by
   have sus := (faultSuspendOnCore_runQueueEntryStage st tid c hCur hNI).trans
     (recordPendingFault_runQueueStage _ tid { fault := f, context := fctx }).entry
   unfold faultDeliverOnCore
   split
   · exact sus
   · rename_i tgt _
-    have s0 := endpointCallCrossCoreDispatch_runQueueEntryStage tgt.endpoint tid
+    have s0 := endpointCallCrossCoreDispatch_runQueueEntryStage (lend := lend) tgt.endpoint tid
       (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st hHeads hCur hNI hInv hR hAct
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid
-      (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st = r at s0 ⊢
+      (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st lend = r at s0 ⊢
     obtain ⟨st1, r⟩ := r
     cases r with
     | error e => exact sus

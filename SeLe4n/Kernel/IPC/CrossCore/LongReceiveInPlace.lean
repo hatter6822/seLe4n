@@ -426,7 +426,7 @@ theorem receiveCallLongTake_delivered {lend : Bool} (st : SystemState) (endpoint
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
     (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
-    (hG : receiveCallTakesInPlace st endpointId receiver s sTcb rid = true)
+    (hG : receiveCallTakesUnlentInPlace lend st endpointId receiver s sTcb rid = true)
     (hF : sTcb.ipcFaultSend = false)
     (hR : registerRoutedSyscall
       (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
@@ -445,20 +445,18 @@ theorem receiveCallLongTake_delivered {lend : Bool} (st : SystemState) (endpoint
         performReceiveCallDeliveredLong st endpointId s sTcb.queueNextCode receiver rid core
           sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged := by
   obtain ⟨hTake, hIpc, hBs, hBr⟩ :=
-    receiveCallTake_inPlace st endpointId ep receiver rid core s sTcb hE hH hT hG
-  have hG' := hG
-  simp only [receiveCallTakesInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne,
+    receiveCallTake_inPlace st endpointId ep receiver rid core s sTcb hE hH hT
+      (receiveCallTakesUnlentInPlace_takesReply hG)
+  have hG' := receiveCallTakesUnlentInPlace_takesReply hG
+  simp only [receiveCallTakesReplyInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne,
     ne_eq] at hG'
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hSG, hRRes⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, hRT⟩, _⟩, _⟩ := hG'
   have hSG' := hSG
   simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hSG'
   obtain ⟨⟨⟨⟨⟨hSRes, _⟩, hFE⟩, _⟩, _⟩, _⟩ := hSG'
   have hNo : st.objects.noResizeDue := RHTable.noResizeDue_of_findsInPlace hFE
-  obtain ⟨rt, hRTo, hDN⟩ : ∃ rt, st.getTcb? receiver = some rt ∧
-      callDonatesNothing sTcb rt = true := by
-    split at hRT
-    · next rt h => exact ⟨rt, h, hRT⟩
-    · cases hRT
+  obtain ⟨rt, hRTo⟩ := Option.isSome_iff_exists.mp hRT
+  have hDN := receiveCallTakesUnlentInPlace_lendsNothing hG hRTo
   have hTs : st.getTcb? s = some sTcb := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   obtain ⟨x, hx, hxI⟩ := Option.map_eq_some_iff.mp hIpc
   refine ⟨?_, ?_, ?_⟩
@@ -483,7 +481,7 @@ theorem receiveCallLongTake_delivered {lend : Bool} (st : SystemState) (endpoint
     obtain ⟨rv, hrv⟩ := Option.isSome_iff_exists.mp
       ((SeLe4n.ThreadId.toValid?_isSome_iff receiver).mpr hRRes)
     have hNone : callDonationSchedContext? (receiveCallTakeState st endpointId s sTcb receiver rid)
-        s receiver = none := by
+        s receiver = none ∨ lend = false := hDN.imp_left fun hDN => by
       rw [callDonationSchedContext?_congr (s := st) hBs hBr, callDonationSchedContext?_eq_bindings]
       simp only [lookupTcb, hRRes, hSRes, Bool.false_eq_true, ↓reduceIte, hRTo, hTs,
         Option.map_some]
@@ -492,7 +490,7 @@ theorem receiveCallLongTake_delivered {lend : Bool} (st : SystemState) (endpoint
       cases rt.schedContextBinding <;> cases sTcb.schedContextBinding <;>
         simp [donationOfBindings, SchedContextBinding.scId?]
     unfold applyReceiveRendezvousHandoff
-    rw [applyReceiveRendezvousDonation_of_no_donation _ receiver s sv rv hsv hrv hNone]
+    rw [applyReceiveRendezvousDonation_of_lendsNothing _ receiver s sv rv hsv hrv hNone]
     simp only [hCall, ↓reduceIte]
   · have hNoS := storeReceiveCallReady_noResizeDue st endpointId s sTcb.queueNextCode receiver
       rid hNo
@@ -580,7 +578,7 @@ theorem receiveCallTake_delivered {lend : Bool} (st : SystemState) (endpointId :
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
     (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
-    (hG : receiveCallTakesInPlace st endpointId receiver s sTcb rid = true)
+    (hG : receiveCallTakesUnlentInPlace lend st endpointId receiver s sTcb rid = true)
     (hF : sTcb.ipcFaultSend = false)
     (hR : registerRoutedSyscall
       (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
@@ -597,20 +595,18 @@ theorem receiveCallTake_delivered {lend : Bool} (st : SystemState) (endpointId :
         performReceiveCallDelivered st endpointId s sTcb.queueNextCode receiver rid core
           sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged := by
   obtain ⟨hTake, hIpc, hBs, hBr⟩ :=
-    receiveCallTake_inPlace st endpointId ep receiver rid core s sTcb hE hH hT hG
-  have hG' := hG
-  simp only [receiveCallTakesInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne,
+    receiveCallTake_inPlace st endpointId ep receiver rid core s sTcb hE hH hT
+      (receiveCallTakesUnlentInPlace_takesReply hG)
+  have hG' := receiveCallTakesUnlentInPlace_takesReply hG
+  simp only [receiveCallTakesReplyInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne,
     ne_eq] at hG'
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hSG, hRRes⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, hRT⟩, _⟩, _⟩ := hG'
   have hSG' := hSG
   simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hSG'
   obtain ⟨⟨⟨⟨⟨hSRes, _⟩, hFE⟩, _⟩, _⟩, _⟩ := hSG'
   have hNo : st.objects.noResizeDue := RHTable.noResizeDue_of_findsInPlace hFE
-  obtain ⟨rt, hRTo, hDN⟩ : ∃ rt, st.getTcb? receiver = some rt ∧
-      callDonatesNothing sTcb rt = true := by
-    split at hRT
-    · next rt h => exact ⟨rt, h, hRT⟩
-    · cases hRT
+  obtain ⟨rt, hRTo⟩ := Option.isSome_iff_exists.mp hRT
+  have hDN := receiveCallTakesUnlentInPlace_lendsNothing hG hRTo
   have hTs : st.getTcb? s = some sTcb := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   obtain ⟨x, hx, hxI⟩ := Option.map_eq_some_iff.mp hIpc
   refine ⟨?_, ?_, ?_⟩
@@ -635,7 +631,7 @@ theorem receiveCallTake_delivered {lend : Bool} (st : SystemState) (endpointId :
     obtain ⟨rv, hrv⟩ := Option.isSome_iff_exists.mp
       ((SeLe4n.ThreadId.toValid?_isSome_iff receiver).mpr hRRes)
     have hNone : callDonationSchedContext? (receiveCallTakeState st endpointId s sTcb receiver rid)
-        s receiver = none := by
+        s receiver = none ∨ lend = false := hDN.imp_left fun hDN => by
       rw [callDonationSchedContext?_congr (s := st) hBs hBr, callDonationSchedContext?_eq_bindings]
       simp only [lookupTcb, hRRes, hSRes, Bool.false_eq_true, ↓reduceIte, hRTo, hTs,
         Option.map_some]
@@ -644,7 +640,7 @@ theorem receiveCallTake_delivered {lend : Bool} (st : SystemState) (endpointId :
       cases rt.schedContextBinding <;> cases sTcb.schedContextBinding <;>
         simp [donationOfBindings, SchedContextBinding.scId?]
     unfold applyReceiveRendezvousHandoff
-    rw [applyReceiveRendezvousDonation_of_no_donation _ receiver s sv rv hsv hrv hNone]
+    rw [applyReceiveRendezvousDonation_of_lendsNothing _ receiver s sv rv hsv hrv hNone]
     simp only [hCall, ↓reduceIte]
   · have hNoS := storeReceiveCallReady_noResizeDue st endpointId s sTcb.queueNextCode receiver
       rid hNo
