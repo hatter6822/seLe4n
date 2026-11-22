@@ -11551,6 +11551,8 @@ open SeLe4n.Kernel.Concurrency
 #check @syscallDispatchCrossCoreStep_lendersStage
 #check @syscallDispatchEntryState_lendersStage
 #check @donationContextFlowsGeneric_liftLegacyContext
+#check @donationContextFlows_eq_impl
+#check @donationContextFlowsGeneric_eq_impl
 #check @donateToSignalledFlowing
 #check @sendSignalOnCoreFlowing
 #check @sendSignalOnCoreFlowing_eq_impl

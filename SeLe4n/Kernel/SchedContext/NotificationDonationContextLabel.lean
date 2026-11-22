@@ -48,6 +48,25 @@ def donationContextFlows (ctx : LabelingContext) (st : SystemState) (n : SeLe4n.
   | none => true
   | some s => securityFlowsTo (ctx.objectLabelOf s.toObjId) (ctx.threadLabelOf tid)
 
+/-- `donationContextFlows` as compiled: the notification's context word read in
+place.  `notificationContext?` hands back a fresh `some` when the store's entry is
+shared, one allocation per signal the gate measures; matched where it is read,
+the word builds nothing. -/
+@[inline] def donationContextFlowsImpl (ctx : LabelingContext) (st : SystemState)
+    (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getNotification? n with
+  | none => true
+  | some ntfn =>
+    match ntfn.schedContext with
+    | none => true
+    | some s => securityFlowsTo (ctx.objectLabelOf s.toObjId) (ctx.threadLabelOf tid)
+
+@[csimp] theorem donationContextFlows_eq_impl :
+    @donationContextFlows = @donationContextFlowsImpl := by
+  funext ctx st n tid
+  unfold donationContextFlows donationContextFlowsImpl notificationContext?
+  cases st.getNotification? n <;> rfl
+
 /-- **The checked notification donation**: seL4-MCS's `maybeDonateSchedContext`
 where the context-label check passes, and nothing where it does not. -/
 def maybeDonateSchedContextFlowing (ctx : LabelingContext) (st : SystemState)
@@ -161,6 +180,23 @@ def donationContextFlowsGeneric (gctx : GenericLabelingContext) (st : SystemStat
   match notificationContext? st n with
   | none => true
   | some s => genericFlowCheck gctx (gctx.objectDomainOf s.toObjId) (gctx.threadDomainOf tid)
+
+/-- `donationContextFlowsGeneric` as compiled: the context word read in place,
+as `donationContextFlowsImpl`. -/
+@[inline] def donationContextFlowsGenericImpl (gctx : GenericLabelingContext) (st : SystemState)
+    (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getNotification? n with
+  | none => true
+  | some ntfn =>
+    match ntfn.schedContext with
+    | none => true
+    | some s => genericFlowCheck gctx (gctx.objectDomainOf s.toObjId) (gctx.threadDomainOf tid)
+
+@[csimp] theorem donationContextFlowsGeneric_eq_impl :
+    @donationContextFlowsGeneric = @donationContextFlowsGenericImpl := by
+  funext gctx st n tid
+  unfold donationContextFlowsGeneric donationContextFlowsGenericImpl notificationContext?
+  cases st.getNotification? n <;> rfl
 
 /-- **One question, one answer**: on a lifted legacy context the generic check
 is the legacy one. -/
