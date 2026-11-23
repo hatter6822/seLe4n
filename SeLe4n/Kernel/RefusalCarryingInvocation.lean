@@ -323,7 +323,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
             }
             match resolveBindNotificationCap ntfnGate st with
             | .error e => .error e
-            | .ok notifId => bindNotification notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
+            | .ok notifId => bindNotificationChecked ctx notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
           | none => .error .objectNotFound
     | _ => .error (.invalidCapability 0)
   | .tcbUnbindNotification =>
@@ -514,7 +514,7 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
       hMove, hReply, hDelete, hMap, hUnify,
       hPrio, hMcp, hIpcBuf, hAff,
       hSpace, hPt, hIrqGet,
-      dispatchCapabilityOnlyChecked]
+      dispatchCapabilityOnlyChecked, tcbBindNotificationArm]
   all_goals first | rfl | (split <;> rfl)
 
 /-- WS-ZA ZA5.2: answering an admitted resume's pending fault keeps it admitted:
@@ -888,11 +888,15 @@ refusal is read where it is, never rebuilt. -/
                     | none => .error (.illegalState, st)
                     | some _ =>
                       if ntfnCap.hasRight .read then
-                        RefusalCarrying.ofChecked
-                          (bindNotificationInPlace st notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
-                          (fun st => storeBindNotification st notifId
-                            (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
-                          (dispatchInvocationBy ctx sid capAddr xc layout regs tid executingCore cap) st
+                        -- The two-way label check (`bindNotificationChecked`),
+                        -- before any write.
+                        if notificationFlowGate ctx notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) then
+                          RefusalCarrying.ofChecked
+                            (bindNotificationInPlace st notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
+                            (fun st => storeBindNotification st notifId
+                              (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
+                            (dispatchInvocationBy ctx sid capAddr xc layout regs tid executingCore cap) st
+                        else .error (.flowDenied, st)
                       else .error (.illegalState, st)
                   | _ => .error (.illegalState, st))
         | none => .error (.objectNotFound, st)
@@ -1562,12 +1566,18 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
                       SyscallGate.lookupSlot_mk, hRes, hL, hIdle, hTg, hN]
                   | some ntfn =>
                     by_cases hRight : ntfnCap.hasRight .read = true
-                    · simp only [hIdle, hRight, hTg, hN, Bool.false_eq_true, ↓reduceIte]
-                      apply RefusalCarrying.ofChecked_eq
-                      intro hA
-                      simp only [dispatchInvocationBy, hD, hC, resolveBindNotificationCap,
-                        SyscallGate.lookupSlot_mk, hRes, hL, hIdle, hRight, hTg, hN,
-                        Bool.false_eq_true, ↓reduceIte, bindNotification_of_inPlace _ _ _ hA]
+                    · by_cases hG : notificationFlowGate ctx notifId
+                          (SeLe4n.ThreadId.ofNat objId.toNat) = true
+                      · simp only [hIdle, hRight, hTg, hN, hG, Bool.false_eq_true, ↓reduceIte]
+                        apply RefusalCarrying.ofChecked_eq
+                        intro hA
+                        simp only [dispatchInvocationBy, hD, hC, resolveBindNotificationCap,
+                          SyscallGate.lookupSlot_mk, hRes, hL, hIdle, hRight, hTg, hN,
+                          Bool.false_eq_true, ↓reduceIte, bindNotificationChecked, hG,
+                          bindNotification_of_inPlace _ _ _ hA]
+                      · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC,
+                          resolveBindNotificationCap, SyscallGate.lookupSlot_mk, hRes, hL, hIdle,
+                          hTg, hN, hRight, bindNotificationChecked, hG]
                     · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, resolveBindNotificationCap,
                         SyscallGate.lookupSlot_mk, hRes, hL, hIdle, hTg, hN, hRight]
                 | _ => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, resolveBindNotificationCap,

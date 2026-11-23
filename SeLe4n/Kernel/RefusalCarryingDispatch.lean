@@ -159,7 +159,7 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_error_state (ctx : Label
     | some target =>
       obtain ⟨receiver, _⟩ := target
       simp only [hTarget] at h ⊢
-      by_cases hRecv : securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf receiver)
+      by_cases hRecv : notificationFlowGate ctx notificationId receiver
       · simp only [hRecv, ↓reduceIte] at h ⊢
         exact notificationSignalBoundOnCore_error_state _ _ _ st e h
       · simp only [hRecv, Bool.false_eq_true, ↓reduceIte]
@@ -221,7 +221,7 @@ other signal takes the general arm. -/
                       if tcb.ipcStateCode = 1 then
                         match st.getEndpoint? ⟨tcb.ipcObjectCode⟩ with
                         | some ep =>
-                            if securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf ⟨k⟩) &&
+                            if notificationFlowGate ctx notifId ⟨k⟩ &&
                                 queueRemoveInPlace st ⟨tcb.ipcObjectCode⟩ true ⟨k⟩ ep tcb then
                               .ok ((), performSignalBoundDelivered executingCore ⟨k⟩
                                 ⟨tcb.ipcObjectCode⟩ ep tcb cap.signalBadge st)
@@ -531,7 +531,7 @@ writes the same way; every other wait takes the specification's form. -/
 @[inline] def notificationWaitGatedR (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
     (notifId : SeLe4n.ObjId) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
-        if securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf tid) then
+        if notificationFlowGate ctx notifId tid then
           if notificationBoundElsewhere st notifId tid then .error (.invalidCapability 0, st) else
           match st.getNotification? notifId with
           | some ntfn =>
@@ -594,7 +594,7 @@ theorem notificationWaitGatedR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId
   funext st
   simp only [notificationWaitGatedR, RefusalCarrying.ofKernel, completeSignalArm,
     notificationWaitCrossCoreDispatchChecked]
-  by_cases hFlow : securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf tid) = true
+  by_cases hFlow : notificationFlowGate ctx notifId tid = true
   · simp only [hFlow, ↓reduceIte]
     by_cases hBound : notificationBoundElsewhere st notifId tid = true
     · simp only [hBound, ↓reduceIte, RefusalCarrying.ofKernel]

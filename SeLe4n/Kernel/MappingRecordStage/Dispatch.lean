@@ -372,6 +372,7 @@ theorem dispatchCapabilityOnly_mappingStage
   case tcbBindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object tcbObjId =>
+      simp only [tcbBindNotificationArm] at hStep
       try dsimp only [] at hStep
       cases hDec : tcbBindNotificationArgsOf st tid decoded.msgInfo.extraCaps with
       | error e => simp only [hDec] at hStep; cases hStep

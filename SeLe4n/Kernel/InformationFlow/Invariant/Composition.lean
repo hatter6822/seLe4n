@@ -938,6 +938,49 @@ theorem endpointObjectHigh_of_admittedThreadHigh
   · simp only [Bool.not_eq_true] at hEp
     exact hEp
 
+/-- **The receive counterpart**: an endpoint's object is non-observable whenever
+a receiver the endpoint admitted is.
+
+The receive gate is two-way (`endpointReceiveFlowGate`), so a receiver it
+admitted satisfies `threadLabelOf tid ⊑ endpointLabelOf epId` exactly as a
+sender does, and `endpointObjectCoherence` carries that to the object label.
+Under the one-way receive gate this did not hold: a higher receiver joined a
+lower endpoint's receive queue with the endpoint visible. -/
+theorem endpointObjectHigh_of_admittedReceiverHigh
+    (ctx : LabelingContext) (observer : IfObserver)
+    (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (hValid : LabelingContextValid ctx)
+    (hAdmitted : endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId)
+      (ctx.threadLabelOf tid) = true)
+    (hThreadHigh : threadObservable ctx observer tid = false) :
+    objectObservable ctx observer epId = false :=
+  endpointObjectHigh_of_admittedThreadHigh ctx observer epId tid hValid
+    (endpointReceiveFlowGate_implies_receiverFlowsToEndpoint ctx epId _ _ hAdmitted) hThreadHigh
+
+/-- **An admitted checked Wait by a hidden waiter is a `NonInterferenceStep`**,
+with the notification's non-observability derived from the gate
+(`notificationObjectHigh_of_admittedThreadHigh`) rather than assumed: the
+`notificationWait` constructor's `hNtfnHigh` is discharged for every admitted
+step. -/
+theorem nonInterferenceStep_of_notificationWaitChecked
+    (ctx : LabelingContext) (observer : IfObserver) (st st' : SystemState)
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (result : Option SeLe4n.Badge)
+    (hWaiterHigh : threadObservable ctx observer waiter = false)
+    (hWaiterObjHigh : objectObservable ctx observer waiter.toObjId = false)
+    (hTailHigh : ∀ t, notificationWaitTail? st notificationId = some t →
+        objectObservable ctx observer t.toObjId = false)
+    (hStep : notificationWaitChecked ctx notificationId waiter st = .ok (result, st')) :
+    NonInterferenceStep ctx observer st st' := by
+  have hGate := enforcementSoundness_notificationWaitChecked ctx notificationId waiter
+    st result st' hStep
+  rw [notificationWaitChecked_eq_notificationWait_when_allowed ctx notificationId waiter st hGate]
+    at hStep
+  exact .notificationWait notificationId waiter result
+    (notificationObjectHigh_of_admittedThreadHigh ctx observer notificationId waiter hGate
+      hWaiterHigh)
+    hWaiterHigh hWaiterObjHigh hTailHigh hStep
+
 /-- **WS-RR RR8.8**: a donated scheduling context's holder is at least as high as
 its donor — the labelling fact the cancellation reclaim's two projection
 obligations rest on, and the one the register had scheduled against no sub-task.

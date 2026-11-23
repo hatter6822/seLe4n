@@ -241,6 +241,7 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
   all_goals cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
   all_goals try unfold serviceEndpointArm at h
+  all_goals try unfold tcbBindNotificationArm at h
   all_goals (repeat' split at h)
   all_goals first | (cases h; done) | skip
   all_goals try (dsimp only at h; repeat' split at h)

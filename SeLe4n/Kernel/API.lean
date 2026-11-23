@@ -4722,6 +4722,41 @@ theorem vspaceMapOrRemapFromFrameCap_closed {tid : SeLe4n.ThreadId}
   · exact hMap _ _ hM
   · exact hTrans _ _ _ (hUnmap _ _ hU) (hMap _ _ hM)
 
+/-- **The `.tcbBindNotification` arm, with its bind as a parameter.**  The
+notification is extra capability 0 (WS-SX SX6.4, `tcbBindNotificationArgsOf`),
+resolved through the caller's CSpace; `bind` then binds it to the TCB the
+invoked capability names.  The capability-only dispatch passes
+`bindNotification`; the checked dispatch passes `bindNotificationChecked`, which
+refuses a cross-label bind `flowDenied` before any write — one resolution, two
+binds, so the two tiers cannot disagree about which notification is bound. -/
+@[inline] def tcbBindNotificationArm (bind : SeLe4n.ObjId → SeLe4n.ThreadId → Kernel Unit)
+    (tid : SeLe4n.ThreadId) (xc : Nat) (tcbObjId : SeLe4n.ObjId) : Kernel Unit :=
+  fun st => match tcbBindNotificationArgsOf st tid xc with
+  | .error e => .error e
+  | .ok args =>
+      -- WS-SM SM6.B (review #1): resolve the notification through a CAPABILITY in
+      -- the caller's CSpace (seL4 BindNotification takes a notification cap), not a
+      -- raw ObjId.  A TCB-cap holder must *also* hold a notification capability
+      -- that may receive (Read: seL4's `CanReceive`, checked by
+      -- `decodeBindNotification`) to redirect that notification's signals — otherwise it could hijack
+      -- or deny any notification merely by naming its ObjId.  The type is
+      -- checked before the right, each refusal seL4's `IllegalOperation`
+      -- (`resolveBindNotificationCap`).
+      -- Typed accessors (AK7 cascade discipline): `getTcb?` / `getCNode?`
+      -- instead of raw `st.objects[…]?` matches.
+      match st.getTcb? tid with
+      | some callerTcb =>
+        let ntfnGate : SyscallGate := {
+          callerId      := tid
+          cspaceRootCap := callerTcb.spaceCells[0]
+          capAddr       := args.notificationCPtr
+          requiredRight := .read
+        }
+        match resolveBindNotificationCap ntfnGate st with
+        | .error e => .error e
+        | .ok notifId => bind notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
+      | none => .error .objectNotFound
+
 /-- V8-H/Z5-J/D1/AE1-A/AE1-B: Shared dispatch for capability-only syscalls — these arms
 derive authority entirely from capability possession and require no
 information-flow checks. `dispatchWithCapChecked` delegates to this helper
@@ -5060,31 +5095,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   | .tcbBindNotification =>
     some <| match cap.target with
     | .object tcbObjId =>
-      fun st => match tcbBindNotificationArgsOf st tid decoded.msgInfo.extraCaps with
-      | .error e => .error e
-      | .ok args =>
-          -- WS-SM SM6.B (review #1): resolve the notification through a CAPABILITY in
-          -- the caller's CSpace (seL4 BindNotification takes a notification cap), not a
-          -- raw ObjId.  A TCB-cap holder must *also* hold a notification capability
-          -- that may receive (Read: seL4's `CanReceive`, checked by
-          -- `decodeBindNotification`) to redirect that notification's signals — otherwise it could hijack
-          -- or deny any notification merely by naming its ObjId.  The type is
-          -- checked before the right, each refusal seL4's `IllegalOperation`
-          -- (`resolveBindNotificationCap`).
-          -- Typed accessors (AK7 cascade discipline): `getTcb?` / `getCNode?`
-          -- instead of raw `st.objects[…]?` matches.
-          match st.getTcb? tid with
-          | some callerTcb =>
-            let ntfnGate : SyscallGate := {
-              callerId      := tid
-              cspaceRootCap := callerTcb.spaceCells[0]
-              capAddr       := args.notificationCPtr
-              requiredRight := .read
-            }
-            match resolveBindNotificationCap ntfnGate st with
-            | .error e => .error e
-            | .ok notifId => bindNotification notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
-          | none => .error .objectNotFound
+      tcbBindNotificationArm bindNotification tid decoded.msgInfo.extraCaps tcbObjId
     | _ => fun _ => .error (.invalidCapability 0)
   -- WS-SM SM6.B: unbind the capability-target TCB's bound notification.
   | .tcbUnbindNotification =>
@@ -5659,6 +5670,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
   case tcbBindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object tcbObjId =>
+      simp only [tcbBindNotificationArm] at hStep
       try dsimp only [] at hStep
       cases hDec : tcbBindNotificationArgsOf st tid decoded.msgInfo.extraCaps with
       | error e => simp only [hDec] at hStep; cases hStep
@@ -5913,7 +5925,10 @@ otherwise.  The checked tier runs the policy-checked wrappers themselves —
 `serviceQueryStaged` (`lookupServiceChecked` under the query arm's return-word
 staging) and `revokeServiceChecked` — so the dispatcher and the enforcement inventory name
 one function for each.  The gate reads labels only and runs before the arm, so
-a refusal reveals nothing about the registry.  Every other arm, and a
+a refusal reveals nothing about the registry.  The notification bind runs
+`bindNotificationChecked` in place of `bindNotification`, behind the same
+resolution (`tcbBindNotificationArm`): a bind is refused `flowDenied` unless
+the notification's and the thread's labels flow both ways.  Every other arm, and a
 capability naming no object (which each arm refuses itself), runs the
 capability-only arm `k` as it is; `dispatchCapabilityOnlyChecked_ok` is the bridge
 back to `k` for a success. -/
@@ -5930,7 +5945,42 @@ def dispatchCapabilityOnlyChecked (ctx : LabelingContext) (sid : SyscallId) (xc 
     | .serviceRegistry _ =>
       serviceEndpointArm .serviceRevoke tid xc fun _ epId => revokeServiceChecked ctx tid epId
     | _ => k
+  | .tcbBindNotification =>
+    match cap.target with
+    | .object tcbObjId => tcbBindNotificationArm (bindNotificationChecked ctx) tid xc tcbObjId
+    | _ => k
   | _ => k
+
+/-- A bind arm's success transfers to any bind that succeeds wherever the first
+does: the resolution is shared, so only the bind differs. -/
+theorem tcbBindNotificationArm_ok_of_bind_ok
+    {bind₁ bind₂ : SeLe4n.ObjId → SeLe4n.ThreadId → Kernel Unit}
+    (hBind : ∀ n t st r, bind₁ n t st = .ok r → bind₂ n t st = .ok r)
+    {tid : SeLe4n.ThreadId} {xc : Nat} {tcbObjId : SeLe4n.ObjId} {st : SystemState}
+    {r : Unit × SystemState}
+    (h : tcbBindNotificationArm bind₁ tid xc tcbObjId st = .ok r) :
+    tcbBindNotificationArm bind₂ tid xc tcbObjId st = .ok r := by
+  unfold tcbBindNotificationArm at h ⊢
+  cases hA : tcbBindNotificationArgsOf st tid xc with
+  | error e => simp [hA] at h
+  | ok args =>
+    simp only [hA] at h ⊢
+    cases hT : st.getTcb? tid with
+    | none => simp [hT] at h
+    | some callerTcb =>
+      simp only [hT] at h ⊢
+      split at h
+      · cases h
+      · exact hBind _ _ _ _ h
+
+/-- A checked bind succeeds only as the unchecked bind. -/
+theorem bindNotificationChecked_ok {ctx : LabelingContext} {n : SeLe4n.ObjId}
+    {t : SeLe4n.ThreadId} {st : SystemState} {r : Unit × SystemState}
+    (h : bindNotificationChecked ctx n t st = .ok r) : bindNotification n t st = .ok r := by
+  unfold bindNotificationChecked at h
+  split at h
+  · exact h
+  · cases h
 
 /-- A success through the gate is a success of the capability-only arm it
 stands for: each checked service arm is the unchecked arm once its gate
@@ -5966,16 +6016,18 @@ theorem dispatchCapabilityOnlyChecked_ok {ctx : LabelingContext} {decoded : Sysc
       by_cases hA : serviceEndpointReadAdmitted ctx tid epId = true
       · simpa [serviceQueryStaged, lookupServiceChecked, hA] using h
       · simp [serviceQueryStaged, lookupServiceChecked, hA] at h
+  · exact tcbBindNotificationArm_ok_of_bind_ok (fun _ _ _ _ hB => bindNotificationChecked_ok hB) h
 
-/-- Every arm but the two service arms is ungated. -/
+/-- Every arm but the two service arms and the notification bind is ungated. -/
 @[simp] theorem dispatchCapabilityOnlyChecked_of_not_service (ctx : LabelingContext) {sid : SyscallId}
     (xc : Nat) (tid : SeLe4n.ThreadId) (cap : Capability) (k : Kernel Unit)
-    (hQ : sid ≠ .serviceQuery) (hR : sid ≠ .serviceRevoke) :
+    (hQ : sid ≠ .serviceQuery) (hR : sid ≠ .serviceRevoke) (hB : sid ≠ .tcbBindNotification) :
     dispatchCapabilityOnlyChecked ctx sid xc tid cap k = k := by
   unfold dispatchCapabilityOnlyChecked
   split
   · exact absurd rfl hQ
   · exact absurd rfl hR
+  · exact absurd rfl hB
   · rfl
 
 /-! ### The non-blocking syscalls (WS-SX SX7.2)
@@ -6089,7 +6141,7 @@ binding checks have admitted it. -/
   (match st.getNotification? notifId with
    | some ntfn => ntfn.pendingBadge.isNone
    | none => false) &&
-  securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf tid) &&
+  notificationFlowGate ctx notifId tid &&
   !notificationBoundElsewhere st notifId tid
 
 /-- A blocking wait never takes the non-blocking failure. -/
@@ -6158,7 +6210,7 @@ and the notification's label flows to the receiver's. -/
       (match st.getNotification? ⟨t.boundNotificationCode - 1⟩ with
        | some ntfn => ntfn.pendingBadge.isSome
        | none => false) &&
-      securityFlowsTo (ctx.objectLabelOf ⟨t.boundNotificationCode - 1⟩) (ctx.threadLabelOf tid)
+      notificationFlowGate ctx ⟨t.boundNotificationCode - 1⟩ tid
   | none => false
 
 /-- **seL4's `completeSignal` on the receiver**: the bound notification's word
@@ -6241,7 +6293,7 @@ theorem notificationWaitCrossCoreDispatchChecked_ok_inner {ctx : LabelingContext
     (h : notificationWaitCrossCoreDispatchChecked ctx notifId tid c st = (st1, .ok r)) :
     notificationWaitOnCore notifId tid c st = (st1, .ok r) := by
   unfold notificationWaitCrossCoreDispatchChecked at h
-  by_cases hF : securityFlowsTo (ctx.objectLabelOf notifId) (ctx.threadLabelOf tid) = true
+  by_cases hF : notificationFlowGate ctx notifId tid = true
   · by_cases hE : notificationBoundElsewhere st notifId tid = true
     · simp only [hF, hE, ↓reduceIte] at h; cases h
     · simp only [hF, hE, Bool.false_eq_true, ↓reduceIte] at h; exact h
@@ -6291,8 +6343,7 @@ theorem completeSignalArm_consumes {ctx : LabelingContext} {tid : SeLe4n.ThreadI
 the signal, whatever the notification holds. -/
 theorem receiveCompletesSignal_false_of_flowDenied (ctx : LabelingContext)
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hDeny : securityFlowsTo (ctx.objectLabelOf (receiverBoundNotification st tid))
-      (ctx.threadLabelOf tid) = false) :
+    (hDeny : notificationFlowGate ctx (receiverBoundNotification st tid) tid = false) :
     receiveCompletesSignal ctx st tid = false := by
   unfold receiveCompletesSignal
   unfold receiverBoundNotification at hDeny
@@ -6333,7 +6384,7 @@ theorem receiveCompletesSignal_eq_views (ctx : LabelingContext) (st : SystemStat
       match tcbBoundNotificationCodeOf? st.objects[tid.toObjId]? with
       | some c =>
           c != 0 && (notificationPendingOf? st.objects[(⟨c - 1⟩ : SeLe4n.ObjId)]?).getD false &&
-            securityFlowsTo (ctx.objectLabelOf ⟨c - 1⟩) (ctx.threadLabelOf tid)
+            notificationFlowGate ctx ⟨c - 1⟩ tid
       | none => false := by
   unfold receiveCompletesSignal SystemState.getTcb? SystemState.getNotification?
   cases h : st.objects[tid.toObjId]? with
@@ -6375,9 +6426,9 @@ theorem receiveCompletesSignal_lowEquivalent (ctx : LabelingContext)
   cases tcbBoundNotificationCodeOf? st₂.objects[tid.toObjId]? with
   | none => rfl
   | some c =>
-    by_cases hF : securityFlowsTo (ctx.objectLabelOf ⟨c - 1⟩) (ctx.threadLabelOf tid) = true
+    by_cases hF : notificationFlowGate ctx ⟨c - 1⟩ tid = true
     · have hNO : objectObservable ctx observer ⟨c - 1⟩ = true :=
-        securityFlowsTo_trans _ _ _ hF hThreadObs
+        securityFlowsTo_trans _ _ _ (notificationFlowGate_forward hF) hThreadObs
       have hN : notificationPendingOf? st₁.objects[(⟨c - 1⟩ : SeLe4n.ObjId)]? =
           notificationPendingOf? st₂.objects[(⟨c - 1⟩ : SeLe4n.ObjId)]? := by
         rw [← notificationPendingOf?_project ctx observer,
@@ -6654,7 +6705,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         -- configured override (`endpointFlowGate`).  A conjunction, so an
         -- override can only narrow, and an unconfigured deployment is unchanged
         -- (`endpointFlowGate_eq_securityFlowsTo_of_no_override`).
-        if !endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
+        if !endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
           .error .flowDenied
         else
           -- WS-SX SX4: a reply busy with another thread has that thread's IPC
@@ -6880,7 +6931,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         -- WS-SM SM8.C: the receive leg carries the endpoint override too; the
         -- reply leg below deliberately does not (the override governs flows that
         -- cross this endpoint, and `receiver → prevCaller` does not).
-        if !endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
+        if !endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
           .error .flowDenied
         else
           -- WS-SX SX6.1: the reply half is seL4-MCS's `handleInvocation` with
@@ -7569,7 +7620,23 @@ theorem checkedDispatch_receive_flow_denied
   -- WS-SM SM8.C: a denied global flow denies the gate whatever the endpoint's
   -- override says, so this theorem keeps the hypothesis it always had.
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap,
-    endpointFlowGate_false_of_securityFlowsTo_false ctx epId _ _ hDenied]
+    endpointReceiveFlowGate_false_of_securityFlowsTo_false ctx epId _ _ hDenied]
+
+/-- **A higher receiver on a lower endpoint is refused**: a checked `.receive`
+whose receiver's label does not flow to the endpoint's returns `.flowDenied` for
+every state, before anything is written — the receiver never joins the lower
+endpoint's receive queue, which the lower domain observes. -/
+theorem checkedDispatch_receive_flow_denied_of_receiverAbove
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .receive)
+    (epId : SeLe4n.ObjId)
+    (hCap : cap.target = .object epId)
+    (st : SystemState)
+    (hAbove : securityFlowsTo (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId) = false) :
+    dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .flowDenied := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap,
+    endpointReceiveFlowGate_false_of_receiverFlowsToEndpoint_false ctx epId _ _ hAbove]
 
 /-- WS-SM SM6.D (PR #822 review, IF-ordering): a checked `.replyRecv` whose receive-leg
 (endpoint→receiver) flow is **denied** returns `.flowDenied` *for every state and decode*
@@ -7587,7 +7654,7 @@ theorem checkedDispatch_replyRecv_recv_flow_denied
     (hDenied : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = false) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .flowDenied := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap,
-    endpointFlowGate_false_of_securityFlowsTo_false ctx epId _ _ hDenied]
+    endpointReceiveFlowGate_false_of_securityFlowsTo_false ctx epId _ _ hDenied]
 
 -- ============================================================================
 -- W2-C (MED-04): the dispatcher's wildcard arm is unreachable
@@ -8220,7 +8287,7 @@ theorem dispatchArm_receive_matches_returnShape
     (hCancel : cancelRecvBusyReply ctx tid gate decoded executingCore st0 = st)
     (hSyscall : decoded.syscallId = .receive)
     (hTarget : cap.target = .object epId)
-    (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
+    (hFlow : endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
     (hReply : resolveRecvReplyId gate decoded st = .ok replyIdOpt)
     -- WS-SX SX7.2: the receive is not `NBRecv`'s failure with no sender waiting.
     (hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId = false)
@@ -8274,7 +8341,7 @@ theorem dispatchArm_replyRecv_matches_returnShape
     (st stB : SystemState) (msg : IpcMessage) (tcb : TCB) (summary : CapTransferSummary)
     (hSyscall : decoded.syscallId = .replyRecv)
     (hTarget : cap.target = .object epId)
-    (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
+    (hFlow : endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
     (hXc : callerExtraCapsFault? st tid decoded.msgInfo.extraCaps = none)
     (hResolve : resolveReplyRecvReply gate decoded st =
       .ok (some (rid, prevCaller, replyBadge, replyGrant)))
@@ -8314,7 +8381,7 @@ theorem dispatchArm_replyRecv_signal_matches_returnShape
     (replyGrant : Bool) (st st1 st2 : SystemState) (badge : SeLe4n.Badge) (tcb : TCB)
     (hSyscall : decoded.syscallId = .replyRecv)
     (hTarget : cap.target = .object epId)
-    (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
+    (hFlow : endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
     (hXc : callerExtraCapsFault? st tid decoded.msgInfo.extraCaps = none)
     (hResolve : resolveReplyRecvReply gate decoded st =
       .ok (some (rid, prevCaller, replyBadge, replyGrant)))
@@ -9541,8 +9608,8 @@ theorem dispatchWithCapChecked_receive_delegates
     (hCancel : cancelRecvBusyReply ctx tid gate decoded executingCore st0 = st)
     (hSyscall : decoded.syscallId = .receive)
     (hTarget : cap.target = .object epId)
-    (hFlow : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
-    -- WS-SM SM8.C: the arm's gate is the global check AND the endpoint override.
+    -- The arm's gate: the two-way label check AND the endpoint override.
+    (hFlow : twoWayLabelGate (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
     (hOverride : endpointOverrideAllows ctx epId (ctx.endpointLabelOf epId)
       (ctx.threadLabelOf tid) = true)
     (hReply : resolveRecvReplyId gate decoded st = .ok replyIdOpt) :
@@ -9571,14 +9638,14 @@ theorem dispatchWithCapChecked_receive_delegates
   by_cases hS : receiveCompletesSignal ctx st tid = true
   · subst hCancel
     simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget,
-      endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hS]
+      endpointReceiveFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hS]
   by_cases hN : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId = true
   · subst hCancel
     simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget,
-      endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hS, hN]
+      endpointReceiveFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hS, hN]
   · subst hCancel
     simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget,
-      endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hS, hN]
+      endpointReceiveFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hS, hN]
 
 /-- **The live checked `.send` arm routes to `endpointSendCrossCoreDispatchChecked`.**
 The checked mirror of `dispatchWithCap_send_delegates`; the gate is inside the
@@ -9750,9 +9817,9 @@ def syscallDelegates : SyscallId → Prop
         cancelRecvBusyReply ctx tid gate decoded executingCore st0 = st →
         decoded.syscallId = .receive →
         cap.target = .object epId →
-        securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true →
-        -- WS-SM SM8.C: the arm's gate is the global lattice check AND this
-        -- endpoint's configured override, so the obligation carries both.
+        -- The arm's gate is the two-way label check AND this endpoint's
+        -- configured override, so the obligation carries both.
+        twoWayLabelGate (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true →
         endpointOverrideAllows ctx epId (ctx.endpointLabelOf epId)
           (ctx.threadLabelOf tid) = true →
         resolveRecvReplyId gate decoded st = .ok replyIdOpt →

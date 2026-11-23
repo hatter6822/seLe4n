@@ -6021,7 +6021,7 @@ run_check "INVARIANT" rg -n 'an NBWait on an endpoint no sender waits on returns
 # completes it (`completeSignal`) before the endpoint is consulted, gated on the
 # notification -> receiver flow; the compiled arm takes the wait's consumption,
 # and a denied flow decides nothing the receiver can observe.
-run_check "INVARIANT" rg -n -U '^      securityFlowsTo \(ctx\.objectLabelOf ⟨t\.boundNotificationCode - 1⟩\) \(ctx\.threadLabelOf tid\)\n  \| none => false$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^      notificationFlowGate ctx ⟨t\.boundNotificationCode - 1⟩ tid\n  \| none => false$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '^        if receiveCompletesSignal ctx st tid then\n          completeSignalArm ctx tid \(receiverBoundNotification st tid\) executingCore st\n        else\n([ \t]*(--[^\n]*)?\n)*        if receiveFindsNothing ' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U '^    if receiveCompletesSignal ctx st tid then\n      notificationWaitGatedR ctx tid \(receiverBoundNotification st tid\) executingCore st\n    else\n([ \t]*(--[^\n]*)?\n)*    if receiveFindsNothing ' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n '^theorem notificationWaitGatedR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingDispatch.lean
@@ -8220,11 +8220,41 @@ run_check "INVARIANT" rg -n 'securityFlowsTo srcLabel dstLabel && endpointOverri
 run_check "INVARIANT" rg -n '^theorem endpointFlowGate_implies_securityFlowsTo($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n '^theorem endpointFlowGate_is_not_securityFlowsTo($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n 'endpointFlowGate ctx endpointId senderLabel endpointLabel' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n 'endpointFlowGate ctx endpointId endpointLabel receiverLabel' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'endpointFlowGate ctx endpointId callerLabel endpointLabel' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'endpointFlowGate ctx epId' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'endpointFlowGate ctx endpointId' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
 run_check "INVARIANT" rg -n 'endpointFlowGate ctx endpointId' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+# The two-way label gate: every Wait, receive, bound delivery, bound-notification
+# completion and notification bind asks one question through one owner, and a
+# one-way form left at any of those sites is a high-to-low channel (a higher
+# thread on a lower object's queue).  Pinned by shape (the owner's body is both
+# directions), by consumer (each site reads the owner) and negatively (no site
+# reads the one-way notification form again).
+run_check "INVARIANT" bash -lc 'rg -U -n "^def twoWayLabelGate \(a b : SecurityLabel\) : Bool :=\n  securityFlowsTo a b && securityFlowsTo b a$" SeLe4n/Kernel/InformationFlow/Policy.lean'
+run_check "INVARIANT" rg -n '^theorem twoWayLabelGate_iff_eq($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveFlowGate[^\n]*(\n([ \t][^\n]*)?)*  twoWayLabelGate endpointLabel receiverLabel &&" SeLe4n/Kernel/InformationFlow/Policy.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def notificationFlowGate[^\n]*(\n([ \t][^\n]*)?)*  twoWayLabelGate \(ctx\.objectLabelOf notificationId\) \(ctx\.threadLabelOf tid\)$" SeLe4n/Kernel/InformationFlow/Policy.lean'
+run_check "INVARIANT" rg -n 'if endpointReceiveFlowGate ctx endpointId endpointLabel receiverLabel then' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def notificationWaitChecked[^\n]*(\n([ \t][^\n]*)?)*    if notificationFlowGate ctx notificationId waiter then" SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def bindNotificationChecked[^\n]*(\n([ \t][^\n]*)?)*    if notificationFlowGate ctx notificationId tcbId then" SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def notificationWaitCrossCoreDispatchChecked[^\n]*(\n([ \t][^\n]*)?)*  if notificationFlowGate ctx notificationId waiter then" SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def notificationSignalBoundCrossCoreDispatchChecked[^\n]*(\n([ \t][^\n]*)?)*        if notificationFlowGate ctx notificationId receiver then" SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def notificationWaitGatedR[^\n]*(\n([ \t][^\n]*)?)*        if notificationFlowGate ctx notifId tid then" SeLe4n/Kernel/RefusalCarryingDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def waitFindsNothing[^\n]*(\n([ \t][^\n]*)?)*  notificationFlowGate ctx notifId tid &&" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def receiveCompletesSignal[^\n]*(\n([ \t][^\n]*)?)*      notificationFlowGate ctx ⟨t\.boundNotificationCode - 1⟩ tid" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchCapabilityOnlyChecked[^\n]*(\n([ \t][^\n]*)?)*    \| \.object tcbObjId => tcbBindNotificationArm \(bindNotificationChecked ctx\) tid xc tcbObjId" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchCapabilityOnly \([^\n]*(\n([ \t][^\n]*)?)*      tcbBindNotificationArm bindNotification tid decoded\.msgInfo\.extraCaps tcbObjId" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "if ntfnCap\.hasRight \.read then\n[^\n]*\n[^\n]*\n *if notificationFlowGate ctx notifId \(SeLe4n\.ThreadId\.ofNat tcbObjId\.toNat\) then" SeLe4n/Kernel/RefusalCarryingInvocation.lean'
+run_check "INVARIANT" rg -n '\| \.ok notifId => bindNotificationChecked ctx notifId' SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_negative_check "INVARIANT" rg -n 'securityFlowsTo \(ctx\.objectLabelOf (notifId|notificationId|⟨[^⟩]*⟩)\) \(ctx\.threadLabelOf (tid|waiter|receiver|⟨k⟩)\)' SeLe4n/Kernel/API.lean SeLe4n/Kernel/RefusalCarryingDispatch.lean SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n '^theorem notificationObjectHigh_of_admittedThreadHigh($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem notificationWaitChecked_NI($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem endpointObjectHigh_of_admittedReceiverHigh($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem nonInterferenceStep_of_notificationWaitChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem notificationWaitChecked_flowDenied_of_waiterAbove($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualChecked_flowDenied_of_receiverAbove($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem bindNotificationChecked_flowDenied_of_threadAbove($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem checkedDispatch_receive_flow_denied_of_receiverAbove($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'if !securityFlowsTo \(ctx\.endpointLabelOf epId\)' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem liveEndpointOverride_is_not_a_declassification_basis($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 
@@ -12791,12 +12821,13 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def schedContextBindArgsO
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def tcbBindNotificationArgsOf [^\n]*\n[^\n]*\n  match callerExtraCapAddr\? st tid xc 0 with\n  \| none => \.error \.truncatedMessage" SeLe4n/Kernel/API.lean'
 # WS-SX SX6.4: a bind asks the notification capability to receive (seL4's
 # `CanReceive`, `.read`), on the specification arm and the compiled arm alike.
-run_check "INVARIANT" rg -n -U '^            let ntfnGate : SyscallGate := \{\n              callerId      := tid\n              cspaceRootCap := callerTcb\.spaceCells\[0\]\n              capAddr       := args\.notificationCPtr\n              requiredRight := \.read\n            \}$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U '^        let ntfnGate : SyscallGate := \{\n          callerId      := tid\n          cspaceRootCap := callerTcb\.spaceCells\[0\]\n          capAddr       := args\.notificationCPtr\n          requiredRight := \.read\n        \}$' SeLe4n/Kernel/API.lean
 # seL4's `decodeBindNotification` order: the notification's type, then
 # `CanReceive`, each refusal `IllegalOperation` (`.illegalState`), on the
 # specification's resolver and the compiled arm alike.
 run_check "INVARIANT" rg -n -U '      else match ntfnCap\.target with\n        \| \.object notifId =>\n          match st\.getNotification\? notifId with\n          \| none => \.error \.illegalState\n          \| some _ => if ntfnCap\.hasRight \.read then \.ok notifId else \.error \.illegalState\n        \| _ => \.error \.illegalState$' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^            \| \.ok notifId => bindNotification notifId \(SeLe4n\.ThreadId\.ofNat tcbObjId\.toNat\) st$' SeLe4n/Kernel/API.lean SeLe4n/Kernel/RefusalCarryingInvocation.lean
+run_check "INVARIANT" rg -n '^        \| \.ok notifId => bind notifId \(SeLe4n\.ThreadId\.ofNat tcbObjId\.toNat\) st$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^            \| \.ok notifId => bindNotificationChecked ctx notifId \(SeLe4n\.ThreadId\.ofNat tcbObjId\.toNat\) st$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n -U '                    match st\.getNotification\? notifId with\n                    \| none => \.error \(\.illegalState, st\)\n                    \| some _ =>\n                      if ntfnCap\.hasRight \.read then$' SeLe4n/Kernel/RefusalCarryingInvocation.lean
 run_check "INVARIANT" rg -n '^            if ntfn\.boundTCB\.isSome \|\| tcb\.boundNotification\.isSome \|\| ntfn\.waitHeadCode != 0 then$' SeLe4n/Kernel/IPC/Operations/NotificationBind.lean
 run_negative_check "INVARIANT" rg -n 'bindNotificationCapNumber' SeLe4n tests

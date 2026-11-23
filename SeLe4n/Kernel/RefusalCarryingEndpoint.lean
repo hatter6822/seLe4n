@@ -5333,7 +5333,7 @@ def receiveArmReport (ctx : LabelingContext) (tid : SeLe4n.ThreadId) (canReply :
     (st : SystemState) : SystemState :=
   match cap.target with
   | .object epId =>
-    if !endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then st
+    if !endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then st
     else cancelReceiveArmBusyReply ctx tid canReply replyAddr executingCore (callerCspaceRoot st tid) st
   | _ => st
 
@@ -5349,7 +5349,7 @@ after it reports the cancelled state (`receiveArmReport`). -/
   fun st =>
     match cap.target with
     | .object epId =>
-      if !endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
+      if !endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
         .error (.flowDenied, st)
       else
       let root? := callerCspaceRoot st tid
@@ -5370,7 +5370,7 @@ theorem endpointReceiveCheckedArmR_eq_resolved (ctx : LabelingContext)
     (hRoot : gate.cspaceRootCap = callerCspaceRoot st tid)
     (hNames : receiveReplyAddr? decoded = if canReply then some replyAddr else none)
     (hTgt : cap.target = .object epId)
-    (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true) :
+    (hFlow : endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true) :
     endpointReceiveCheckedArmR ctx tid canReply replyAddr executingCore cap st =
       match receiveResolvedArm ctx decoded gate tid epId executingCore
           (cancelRecvBusyReply ctx tid gate decoded executingCore st) with
@@ -5414,7 +5414,7 @@ theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
     rfl
   cases hTgt : cap.target with
   | object epId =>
-    by_cases hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId)
+    by_cases hFlow : endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId)
         (ctx.threadLabelOf tid) = true
     · rw [endpointReceiveCheckedArmR_eq_resolved ctx decoded tid executingCore gate cap st epId
         canReply replyAddr hCaller hRoot hNames hTgt hFlow]

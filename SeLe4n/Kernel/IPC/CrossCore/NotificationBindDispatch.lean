@@ -44,8 +44,10 @@ def notificationSignalBoundCrossCoreDispatch (notificationId : SeLe4n.ObjId)
 /-- WS-SM SM6.B: the info-flow-checked cross-core bound-signal dispatch.  Gates on
 `securityFlowsTo signaler→notification` AND — when the signal would take the
 bound-delivery path (`boundDeliveryTarget?` resolves a bound `BlockedOnReceive`
-TCB) — on `securityFlowsTo notification→receiver`, because bound delivery writes
-the badge **directly into the bound TCB**, a second sink beyond the notification.
+TCB) — on the two-way `notificationFlowGate` between the notification and the
+receiver, because bound delivery writes the badge **directly into the bound
+TCB**, a second sink beyond the notification, and whether it happens depends on
+the receiver's state, which a lower notification's observer must not learn.
 Without the receiver gate a policy permitting a high signaler → high notification
 but denying flow to a *low* bound TCB would be bypassed (codex review #3): the badge
 would leak to the low receiver.  Fail-closed with `.flowDenied` on either denial. -/
@@ -56,7 +58,7 @@ would leak to the low receiver.  Fail-closed with `.flowDenied` on either denial
   if securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf notificationId) then
     match boundDeliveryTarget? st notificationId with
     | some (receiver, _) =>
-        if securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf receiver) then
+        if notificationFlowGate ctx notificationId receiver then
           notificationSignalBoundOnCore notificationId badge executingCore st
         else
           (st, .error .flowDenied)
@@ -101,7 +103,7 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_flow_denied_to_receiver
     (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState) (receiver : SeLe4n.ThreadId) (ep : SeLe4n.ObjId)
     (hAllow : securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf notificationId) = true)
     (hTarget : boundDeliveryTarget? st notificationId = some (receiver, ep))
-    (hDenyR : securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf receiver) = false) :
+    (hDenyR : notificationFlowGate ctx notificationId receiver = false) :
     notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler badge executingCore st
       = (st, .error .flowDenied) := by
   simp [notificationSignalBoundCrossCoreDispatchChecked, hAllow, hTarget, hDenyR]
@@ -125,7 +127,7 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_flow_allowed_to_receiver
     (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState) (receiver : SeLe4n.ThreadId) (ep : SeLe4n.ObjId)
     (hAllow : securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf notificationId) = true)
     (hTarget : boundDeliveryTarget? st notificationId = some (receiver, ep))
-    (hAllowR : securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf receiver) = true) :
+    (hAllowR : notificationFlowGate ctx notificationId receiver = true) :
     notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler badge executingCore st
       = notificationSignalBoundCrossCoreDispatch notificationId badge executingCore st := by
   simp [notificationSignalBoundCrossCoreDispatchChecked, notificationSignalBoundCrossCoreDispatch,
@@ -213,13 +215,14 @@ def notificationWaitCrossCoreDispatch (notificationId : SeLe4n.ObjId)
   notificationWaitOnCore notificationId waiter executingCore st
 
 /-- WS-SM SM6.B: the info-flow-checked cross-core notification-wait dispatch — gates
-on `securityFlowsTo notification→waiter` (the badge flows from the notification to
-the waiter, matching `notificationWaitChecked`), fail-closed with `.flowDenied`. -/
+on the two-way `notificationFlowGate` (the badge flows from the notification to
+the waiter, and a blocking wait writes the waiter into the notification's queue;
+matching `notificationWaitChecked`), fail-closed with `.flowDenied`. -/
 def notificationWaitCrossCoreDispatchChecked (ctx : LabelingContext)
     (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (executingCore : CoreId)
     (st : SystemState) :
     SystemState × Except KernelError (Option SeLe4n.Badge) :=
-  if securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf waiter) then
+  if notificationFlowGate ctx notificationId waiter then
     -- seL4's `handleRecv`: a notification bound to another thread is the
     -- wait's capability fault (`missingCapability 0`), refused before any
     -- write; checked after the flow, so a denied wait learns nothing of it.
@@ -249,7 +252,7 @@ theorem notificationWaitCrossCoreDispatchChecked_fst_of_ok (ctx : LabelingContex
 theorem notificationWaitCrossCoreDispatchChecked_flow_denied
     (ctx : LabelingContext) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (executingCore : CoreId) (st : SystemState)
-    (hDeny : securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf waiter) = false) :
+    (hDeny : notificationFlowGate ctx notificationId waiter = false) :
     notificationWaitCrossCoreDispatchChecked ctx notificationId waiter executingCore st
       = (st, .error .flowDenied) := by
   simp [notificationWaitCrossCoreDispatchChecked, hDeny]
@@ -260,7 +263,7 @@ preconditions. -/
 theorem notificationWaitCrossCoreDispatchChecked_flow_allowed
     (ctx : LabelingContext) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (executingCore : CoreId) (st : SystemState)
-    (hAllow : securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf waiter) = true)
+    (hAllow : notificationFlowGate ctx notificationId waiter = true)
     (hUnbound : notificationBoundElsewhere st notificationId waiter = false) :
     notificationWaitCrossCoreDispatchChecked ctx notificationId waiter executingCore st
       = notificationWaitCrossCoreDispatch notificationId waiter executingCore st := by

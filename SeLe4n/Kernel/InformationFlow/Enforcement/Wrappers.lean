@@ -12,6 +12,7 @@ import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.Service.Operations
 import SeLe4n.Kernel.Service.Registry
+import SeLe4n.Kernel.IPC.Operations.NotificationBind
 
 namespace SeLe4n.Kernel
 
@@ -202,6 +203,7 @@ def enforcementBoundary : List EnforcementClass :=
   , .policyGated "revokeServiceChecked"
   , .policyGated "notificationWaitChecked" -- V2-A: notification wait IF check
   , .policyGated "endpointReplyRecvChecked" -- V2-C: compound reply+recv IF check
+  , .policyGated "bindNotificationChecked" -- notification bind: two-way label check
   -- Capability-only: authority derived from capability possession
   , .capabilityOnly "cspaceLookupSlot"
   , .capabilityOnly "cspaceInsertSlot"
@@ -289,10 +291,9 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "irqControlGetFromCap"
   , .capabilityOnly "irqHandlerSetNotificationFromCap"
   , .capabilityOnly "irqHandlerClear"
-  -- WS-SM SM6.B: notification-binding capability-only operations (seL4
-  -- NotificationBind / UnbindNotification — mutate the boundTCB ⇄ boundNotification
-  -- relation; gated by the TCB capability, not an information-flow policy)
-  , .capabilityOnly "bindNotification"
+  -- WS-SM SM6.B: the notification unbind (seL4 UnbindNotification) — removes the
+  -- boundTCB ⇄ boundNotification relation; gated by the TCB capability.  The
+  -- bind is policy-gated (`bindNotificationChecked`, above).
   , .capabilityOnly "unbindNotification"
   -- WS-SM SM6.D / PR #822 Phase H: mint a reply cap from an `.object`-to-Reply cap
   -- (authority from holding the object cap to the Reply; no information-flow policy —
@@ -425,7 +426,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .irqControlGet => "irqControlGetFromCap"
   | .irqHandlerSetNotification => "irqHandlerSetNotificationFromCap"
   | .irqHandlerClear => "irqHandlerClear"
-  | .tcbBindNotification => "bindNotification"
+  | .tcbBindNotification => "bindNotificationChecked"
   | .tcbUnbindNotification => "unbindNotification"
   | .mintReplyCap => "mintReplyCapWithCdt"
   | .vspaceUnifyInstruction => "vspaceUnifyInstructionPage"
@@ -604,13 +605,15 @@ def cspaceMoveChecked
       .error .flowDenied
 
 /-- WS-H8/H-07: Policy-checked endpoint receive (dual-queue): verifies that
-information may flow from the endpoint's domain to the receiver's domain
+information may flow both ways between the endpoint's domain and the receiver's
 before delegating to `endpointReceiveDual`.
 
-The receiver learns about the sender's presence and message content; the
-wrapper gates on `securityFlowsTo` from endpoint to receiver domain.
+The receiver learns about the sender's presence and message content, and a
+blocking receive writes the receiver into the endpoint's queue; the wrapper
+gates on the two-way `endpointReceiveFlowGate`.
 
-Returns `flowDenied` when `securityFlowsTo endpointLabel receiverLabel = false`. -/
+Returns `flowDenied` unless the endpoint's and the receiver's labels flow both
+ways and the endpoint's override admits the flow. -/
 def endpointReceiveDualChecked
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId)
@@ -619,8 +622,9 @@ def endpointReceiveDualChecked
   fun st =>
     let endpointLabel := ctx.endpointLabelOf endpointId
     let receiverLabel := ctx.threadLabelOf receiver
-    -- WS-SM SM8.C: global check ∧ this endpoint's override.
-    if endpointFlowGate ctx endpointId endpointLabel receiverLabel then
+    -- WS-SM SM8.C: the label check ∧ this endpoint's override; the label check
+    -- is two-way, since a blocking receive joins the endpoint's queue.
+    if endpointReceiveFlowGate ctx endpointId endpointLabel receiverLabel then
       endpointReceiveDual endpointId receiver replyId st
     else
       .error .flowDenied
@@ -845,19 +849,38 @@ def endpointReplyChecked
 from the notification's domain to the waiter's domain before delegating to
 `notificationWait`.
 
-The waiter learns about the notification state (badge value or blocking);
-the wrapper gates on `securityFlowsTo` from notification to waiter domain.
+The waiter learns about the notification state (badge value or blocking), and
+a blocking wait writes the waiter into the notification's queue; the wrapper
+gates on the two-way `notificationFlowGate`.
 
-Returns `flowDenied` when `securityFlowsTo notificationLabel waiterLabel = false`. -/
+Returns `flowDenied` unless the notification's and the waiter's labels flow
+both ways. -/
 def notificationWaitChecked
     (ctx : LabelingContext)
     (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) : Kernel (Option SeLe4n.Badge) :=
   fun st =>
-    let waiterLabel := ctx.threadLabelOf waiter
-    let notificationLabel := ctx.objectLabelOf notificationId
-    if securityFlowsTo notificationLabel waiterLabel then
+    -- Two-way: a waiter joins the notification's queue, which a lower domain
+    -- observing the notification would see (`notificationFlowGate`).
+    if notificationFlowGate ctx notificationId waiter then
       notificationWait notificationId waiter st
+    else
+      .error .flowDenied
+
+/-- **Policy-checked notification bind**: binds `notificationId` to the thread
+`tcbId` only when their labels flow both ways (`notificationFlowGate`).
+
+A bind writes the notification's bound-thread field, which an observer of the
+notification sees, and makes every later `Signal` on it deliver to that thread
+when it is blocked receiving — so a later lower `Signal`'s effect on the
+notification would depend on a higher thread's state.  The capabilities the
+caller holds do not admit a flow its label does not.  Refused `flowDenied`
+before any write. -/
+def bindNotificationChecked (ctx : LabelingContext) (notificationId : SeLe4n.ObjId)
+    (tcbId : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    if notificationFlowGate ctx notificationId tcbId then
+      bindNotification notificationId tcbId st
     else
       .error .flowDenied
 
@@ -923,7 +946,7 @@ theorem endpointSendDualChecked_endpointPolicy_dependent :
 
 /-- V2-C: Policy-checked endpointReplyRecv: verifies that information may flow
 from the replier's domain to the reply target's domain (for the reply leg),
-and from the endpoint's domain to the receiver's domain (for the receive leg).
+and both ways between the endpoint's domain and the receiver's (for the receive leg).
 
 This is a compound operation (reply + receive). Both legs must satisfy their
 respective flow checks.
@@ -947,8 +970,8 @@ def endpointReplyRecvChecked
     -- to the caller the endpoint already admitted on the way in, which the
     -- receive leg below gates.
     if securityFlowsTo receiverLabel targetLabel then
-      -- Receive leg: endpoint → receiver. WS-SM SM8.C: global check ∧ override.
-      if endpointFlowGate ctx endpointId endpointLabel receiverLabel then
+      -- Receive leg: endpoint ↔ receiver, two-way, ∧ the override.
+      if endpointReceiveFlowGate ctx endpointId endpointLabel receiverLabel then
         endpointReplyRecv endpointId receiver replyTarget msg replyId st
       else
         .error .flowDenied

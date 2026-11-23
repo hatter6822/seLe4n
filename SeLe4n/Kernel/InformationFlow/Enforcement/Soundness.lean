@@ -105,7 +105,8 @@ theorem endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed
     (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
     (st : SystemState)
-    (hFlow : securityFlowsTo (ctx.endpointLabelOf endpointId)
+    -- The two-way label gate: a receive that blocks joins the endpoint's queue.
+    (hTwoWay : twoWayLabelGate (ctx.endpointLabelOf endpointId)
                (ctx.threadLabelOf receiver) = true)
     -- WS-SM SM8.C: the endpoint's own override must admit the flow too.
     (hOverride : endpointOverrideAllows ctx endpointId (ctx.endpointLabelOf endpointId)
@@ -113,7 +114,7 @@ theorem endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed
     endpointReceiveDualChecked ctx endpointId receiver replyId st =
       endpointReceiveDual endpointId receiver replyId st := by
   unfold endpointReceiveDualChecked
-  simp [endpointFlowGate_of ctx endpointId _ _ hFlow hOverride]
+  simp [endpointReceiveFlowGate_of ctx endpointId _ _ hTwoWay hOverride]
 
 /-- WS-H8: When the policy denies flow, endpointReceiveDualChecked returns
 `flowDenied`. -/
@@ -128,7 +129,23 @@ theorem endpointReceiveDualChecked_flowDenied
     endpointReceiveDualChecked ctx endpointId receiver replyId st =
       .error .flowDenied := by
   unfold endpointReceiveDualChecked
-  simp [endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny]
+  simp [endpointReceiveFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny]
+
+/-- A receiver whose label does not flow to the endpoint's is refused
+`flowDenied` before anything is written: a higher thread cannot join a lower
+endpoint's receive queue, which the lower domain observes. -/
+theorem endpointReceiveDualChecked_flowDenied_of_receiverAbove
+    (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (st : SystemState)
+    (hAbove : securityFlowsTo (ctx.threadLabelOf receiver)
+               (ctx.endpointLabelOf endpointId) = false) :
+    endpointReceiveDualChecked ctx endpointId receiver replyId st =
+      .error .flowDenied := by
+  unfold endpointReceiveDualChecked
+  simp [endpointReceiveFlowGate_false_of_receiverFlowsToEndpoint_false ctx endpointId _ _ hAbove]
 
 -- ============================================================================
 -- WS-H8: Denied-preserves-state theorems for new wrappers
@@ -177,7 +194,7 @@ theorem endpointReceiveDualChecked_denied_preserves_state
       endpointReceiveDualChecked ctx endpointId receiver replyId st = .ok (r, st') := by
   intro ⟨r, st', h⟩
   simp [endpointReceiveDualChecked,
-    endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny] at h
+    endpointReceiveFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny] at h
 
 -- ============================================================================
 -- WS-H8: Enforcement sufficiency theorems for new wrappers
@@ -228,17 +245,17 @@ theorem enforcement_sufficiency_endpointReceiveDual
     (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
     (st : SystemState) :
-    -- WS-SM SM8.C: stated against `endpointFlowGate`, the predicate the wrapper
+    -- Stated against `endpointReceiveFlowGate`, the predicate the wrapper
     -- branches on (see `enforcement_sufficiency_endpointSendDual`).
-    (endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+    (endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
         (ctx.threadLabelOf receiver) = true ∧
        endpointReceiveDualChecked ctx endpointId receiver replyId st =
          endpointReceiveDual endpointId receiver replyId st) ∨
-    (endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+    (endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
         (ctx.threadLabelOf receiver) = false ∧
        endpointReceiveDualChecked ctx endpointId receiver replyId st =
          .error .flowDenied) := by
-  cases hFlow : endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+  cases hFlow : endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
       (ctx.threadLabelOf receiver) with
   | true => left; exact ⟨rfl, by simp [endpointReceiveDualChecked, hFlow]⟩
   | false => right; exact ⟨rfl, by simp [endpointReceiveDualChecked, hFlow]⟩
@@ -583,10 +600,10 @@ theorem enforcementSoundness_endpointReceiveDualChecked_gate
     (replyId : Option SeLe4n.ReplyId)
     (st : SystemState) (r : SeLe4n.ThreadId) (st' : SystemState)
     (hStep : endpointReceiveDualChecked ctx endpointId receiver replyId st = .ok (r, st')) :
-    endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+    endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
       (ctx.threadLabelOf receiver) = true := by
   unfold endpointReceiveDualChecked at hStep
-  cases h : endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+  cases h : endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
       (ctx.threadLabelOf receiver) with
   | true => rfl
   | false => simp [h] at hStep
@@ -598,10 +615,9 @@ theorem enforcementSoundness_endpointReceiveDualChecked
     (replyId : Option SeLe4n.ReplyId)
     (st : SystemState) (r : SeLe4n.ThreadId) (st' : SystemState)
     (hStep : endpointReceiveDualChecked ctx endpointId receiver replyId st = .ok (r, st')) :
-    securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = true :=
-  endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _
-    (enforcementSoundness_endpointReceiveDualChecked_gate ctx endpointId receiver replyId
-      st r st' hStep)
+    twoWayLabelGate (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = true :=
+  (Bool.and_eq_true _ _ ▸ enforcementSoundness_endpointReceiveDualChecked_gate ctx endpointId
+      receiver replyId st r st' hStep).1
 
 -- ============================================================================
 -- Y2-E: Enforcement soundness for the remaining 5 checked wrappers
@@ -664,37 +680,37 @@ theorem enforcementSoundness_cspaceMintChecked
   | false => simp [h] at hStep
 
 /-- Y2-E: Enforcement soundness for notificationWaitChecked.
-Success implies notification→waiter flow is allowed. -/
+Success implies the notification's and the waiter's labels flow both ways. -/
 theorem enforcementSoundness_notificationWaitChecked
     (ctx : LabelingContext)
     (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (st : SystemState) (r : Option SeLe4n.Badge) (st' : SystemState)
     (hStep : notificationWaitChecked ctx notificationId waiter st = .ok (r, st')) :
-    securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf waiter) = true := by
+    notificationFlowGate ctx notificationId waiter = true := by
   unfold notificationWaitChecked at hStep
-  cases h : securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf waiter) with
+  cases h : notificationFlowGate ctx notificationId waiter with
   | true => rfl
   | false => simp [h] at hStep
 
 /-- Y2-E: Enforcement soundness for endpointReplyRecvChecked (compound).
-Success implies both flow checks pass: replier→target AND endpoint→receiver. -/
+Success implies both flow checks pass: replier→target AND endpoint↔receiver. -/
 theorem enforcementSoundness_endpointReplyRecvChecked
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
     (msg : IpcMessage) (replyId : Option SeLe4n.ReplyId) (st st' : SystemState)
     (hStep : endpointReplyRecvChecked ctx endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
     securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) = true ∧
-    securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = true := by
+    twoWayLabelGate (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = true := by
   unfold endpointReplyRecvChecked at hStep
   cases h1 : securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) with
   | false => simp [h1] at hStep
   | true =>
     -- WS-SM SM8.C: the receive leg branches on the gate; the reply leg does not
     -- (the endpoint override governs flows crossing the endpoint).
-    cases h2 : endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+    cases h2 : endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
         (ctx.threadLabelOf receiver) with
     | false => simp [h1, h2] at hStep
-    | true => exact ⟨rfl, endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ h2⟩
+    | true => exact ⟨rfl, (Bool.and_eq_true _ _ ▸ h2).1⟩
 
 -- ============================================================================
 -- WS-H10/A-39: Declassification enforcement
@@ -1053,10 +1069,10 @@ theorem enforcementBridge_to_NonInterferenceStep
     (∀ src dst,
       cspaceMoveChecked ctx src dst st = .ok ((), st') →
       securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = true) ∧
-    -- 5. endpointReceiveDualChecked: success implies endpoint→receiver flow allowed
+    -- 5. endpointReceiveDualChecked: success implies endpoint↔receiver flow allowed
     (∀ eid receiver replyId r,
       endpointReceiveDualChecked ctx eid receiver replyId st = .ok (r, st') →
-      securityFlowsTo (ctx.endpointLabelOf eid) (ctx.threadLabelOf receiver) = true) ∧
+      twoWayLabelGate (ctx.endpointLabelOf eid) (ctx.threadLabelOf receiver) = true) ∧
     -- 6. registerServiceChecked: success implies caller→endpoint flow allowed
     (∀ caller reg,
       registerServiceChecked ctx caller reg st = .ok ((), st') →
@@ -1073,15 +1089,15 @@ theorem enforcementBridge_to_NonInterferenceStep
     (∀ src dst rights badge,
       cspaceMintChecked ctx src dst rights badge st = .ok ((), st') →
       securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = true) ∧
-    -- 10. notificationWaitChecked: success implies notification→waiter flow allowed
+    -- 10. notificationWaitChecked: success implies notification↔waiter flow allowed
     (∀ ntfnId waiter r,
       notificationWaitChecked ctx ntfnId waiter st = .ok (r, st') →
-      securityFlowsTo (ctx.objectLabelOf ntfnId) (ctx.threadLabelOf waiter) = true) ∧
+      notificationFlowGate ctx ntfnId waiter = true) ∧
     -- 11. endpointReplyRecvChecked: success implies both flow checks pass
     (∀ eid receiver replyTarget payload replyId,
       endpointReplyRecvChecked ctx eid receiver replyTarget payload replyId st = .ok ((), st') →
       securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) = true ∧
-      securityFlowsTo (ctx.endpointLabelOf eid) (ctx.threadLabelOf receiver) = true) ∧
+      twoWayLabelGate (ctx.endpointLabelOf eid) (ctx.threadLabelOf receiver) = true) ∧
     -- 12. lookupServiceChecked: success implies endpoint→caller flow allowed
     (∀ caller epId r,
       lookupServiceChecked ctx caller epId st = .ok r →
@@ -1212,24 +1228,34 @@ theorem enforcement_sufficiency_endpointReply
 theorem notificationWaitChecked_denied_preserves_state
     (ctx : LabelingContext) (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) (st : SystemState)
-    (hDeny : securityFlowsTo (ctx.objectLabelOf notificationId)
-               (ctx.threadLabelOf waiter) = false) :
+    (hDeny : notificationFlowGate ctx notificationId waiter = false) :
     ¬∃ (r : Option SeLe4n.Badge) (st' : SystemState),
       notificationWaitChecked ctx notificationId waiter st = .ok (r, st') := by
   intro ⟨r, st', h⟩
   simp [notificationWaitChecked, hDeny] at h
 
+/-- A waiter whose label does not flow to the notification's is refused
+`flowDenied` before anything is written: a higher thread cannot join a lower
+notification's wait queue, which the lower domain observes. -/
+theorem notificationWaitChecked_flowDenied_of_waiterAbove
+    (ctx : LabelingContext) (notificationId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) (st : SystemState)
+    (hAbove : securityFlowsTo (ctx.threadLabelOf waiter)
+               (ctx.objectLabelOf notificationId) = false) :
+    notificationWaitChecked ctx notificationId waiter st = .error .flowDenied := by
+  simp [notificationWaitChecked, notificationFlowGate,
+    twoWayLabelGate_false_of_backward_false hAbove]
+
 /-- WS-SM SM8.C: `notificationWaitChecked` either delegates or returns `flowDenied`. -/
 theorem enforcement_sufficiency_notificationWait
     (ctx : LabelingContext) (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) (st : SystemState) :
-    (securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf waiter) = true ∧
+    (notificationFlowGate ctx notificationId waiter = true ∧
        notificationWaitChecked ctx notificationId waiter st =
          notificationWait notificationId waiter st) ∨
-    (securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf waiter) = false ∧
+    (notificationFlowGate ctx notificationId waiter = false ∧
        notificationWaitChecked ctx notificationId waiter st = .error .flowDenied) := by
-  cases hFlow : securityFlowsTo (ctx.objectLabelOf notificationId)
-      (ctx.threadLabelOf waiter) with
+  cases hFlow : notificationFlowGate ctx notificationId waiter with
   | true => left; exact ⟨rfl, by simp [notificationWaitChecked, hFlow]⟩
   | false => right; exact ⟨rfl, by simp [notificationWaitChecked, hFlow]⟩
 
@@ -1244,15 +1270,14 @@ theorem endpointReplyRecvChecked_denied_preserves_state
     (replyId : Option SeLe4n.ReplyId) (st : SystemState)
     (hDeny : securityFlowsTo (ctx.threadLabelOf receiver)
                (ctx.threadLabelOf replyTarget) = false ∨
-             securityFlowsTo (ctx.endpointLabelOf endpointId)
+             endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
                (ctx.threadLabelOf receiver) = false) :
     ¬∃ st', endpointReplyRecvChecked ctx endpointId receiver replyTarget msg replyId st
       = .ok ((), st') := by
   intro ⟨st', h⟩
   rcases hDeny with hReply | hRecv
   · simp [endpointReplyRecvChecked, hReply] at h
-  · simp [endpointReplyRecvChecked,
-      endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hRecv] at h
+  · simp [endpointReplyRecvChecked, hRecv] at h
 
 /-- WS-SM SM8.C: `endpointReplyRecvChecked` either delegates (both legs allowed)
 or returns `flowDenied`. There is no third behaviour, and in particular no arm
@@ -1262,22 +1287,65 @@ theorem enforcement_sufficiency_endpointReplyRecv
     (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
     (replyId : Option SeLe4n.ReplyId) (st : SystemState) :
     (securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) = true ∧
-       endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+       endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
          (ctx.threadLabelOf receiver) = true ∧
        endpointReplyRecvChecked ctx endpointId receiver replyTarget msg replyId st =
          endpointReplyRecv endpointId receiver replyTarget msg replyId st) ∨
     ((securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) = false ∨
-        endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+        endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
           (ctx.threadLabelOf receiver) = false) ∧
        endpointReplyRecvChecked ctx endpointId receiver replyTarget msg replyId st =
          .error .flowDenied) := by
   cases hReply : securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) with
   | false => right; exact ⟨Or.inl rfl, by simp [endpointReplyRecvChecked, hReply]⟩
   | true =>
-    cases hRecv : endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+    cases hRecv : endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
         (ctx.threadLabelOf receiver) with
     | true => left; exact ⟨rfl, rfl, by simp [endpointReplyRecvChecked, hReply, hRecv]⟩
     | false =>
       right; exact ⟨Or.inr rfl, by simp [endpointReplyRecvChecked, hReply, hRecv]⟩
+
+/-- `bindNotificationChecked` denied → no state change. -/
+theorem bindNotificationChecked_denied_preserves_state
+    (ctx : LabelingContext) (notificationId : SeLe4n.ObjId)
+    (tcbId : SeLe4n.ThreadId) (st : SystemState)
+    (hDeny : notificationFlowGate ctx notificationId tcbId = false) :
+    bindNotificationChecked ctx notificationId tcbId st = .error .flowDenied := by
+  simp [bindNotificationChecked, hDeny]
+
+/-- A thread whose label does not flow to the notification's cannot be bound to
+it: the bind is refused `flowDenied` before any write. -/
+theorem bindNotificationChecked_flowDenied_of_threadAbove
+    (ctx : LabelingContext) (notificationId : SeLe4n.ObjId)
+    (tcbId : SeLe4n.ThreadId) (st : SystemState)
+    (hAbove : securityFlowsTo (ctx.threadLabelOf tcbId)
+               (ctx.objectLabelOf notificationId) = false) :
+    bindNotificationChecked ctx notificationId tcbId st = .error .flowDenied := by
+  simp [bindNotificationChecked, notificationFlowGate,
+    twoWayLabelGate_false_of_backward_false hAbove]
+
+/-- `bindNotificationChecked` either delegates or returns `flowDenied`. -/
+theorem enforcement_sufficiency_bindNotification
+    (ctx : LabelingContext) (notificationId : SeLe4n.ObjId)
+    (tcbId : SeLe4n.ThreadId) (st : SystemState) :
+    (notificationFlowGate ctx notificationId tcbId = true ∧
+       bindNotificationChecked ctx notificationId tcbId st =
+         bindNotification notificationId tcbId st) ∨
+    (notificationFlowGate ctx notificationId tcbId = false ∧
+       bindNotificationChecked ctx notificationId tcbId st = .error .flowDenied) := by
+  cases hFlow : notificationFlowGate ctx notificationId tcbId with
+  | true => left; exact ⟨rfl, by simp [bindNotificationChecked, hFlow]⟩
+  | false => right; exact ⟨rfl, by simp [bindNotificationChecked, hFlow]⟩
+
+/-- A successful checked bind passed the two-way gate. -/
+theorem enforcementSoundness_bindNotificationChecked
+    (ctx : LabelingContext) (notificationId : SeLe4n.ObjId)
+    (tcbId : SeLe4n.ThreadId) (st st' : SystemState)
+    (hStep : bindNotificationChecked ctx notificationId tcbId st = .ok ((), st')) :
+    notificationFlowGate ctx notificationId tcbId = true := by
+  unfold bindNotificationChecked at hStep
+  cases h : notificationFlowGate ctx notificationId tcbId with
+  | true => rfl
+  | false => simp [h] at hStep
 
 end SeLe4n.Kernel

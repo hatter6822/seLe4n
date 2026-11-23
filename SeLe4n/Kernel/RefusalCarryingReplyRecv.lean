@@ -115,7 +115,7 @@ theorem replyRecvSkipReply_eq (ctx : LabelingContext) (decoded : SyscallDecodeRe
     (hCaller : gate.callerId = tid)
     (hRoot : gate.cspaceRootCap = callerCspaceRoot st tid)
     (hTgt : cap.target = .object epId)
-    (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true) :
+    (hFlow : endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true) :
     endpointReceiveCheckedArmR ctx tid true decoded.replyCPtr executingCore cap st =
       match receiveResolvedArm ctx decoded gate tid epId executingCore
           (cancelRecvBusyReply ctx tid gate decoded executingCore st) with
@@ -130,7 +130,7 @@ theorem replyRecvSkipReport_eq (ctx : LabelingContext) (decoded : SyscallDecodeR
     (hRR : decoded.syscallId = .replyRecv)
     (hRoot : gate.cspaceRootCap = callerCspaceRoot st tid)
     (hTgt : cap.target = .object epId)
-    (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true) :
+    (hFlow : endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true) :
     receiveArmReport ctx tid true decoded.replyCPtr executingCore cap st =
       cancelRecvBusyReply ctx tid gate decoded executingCore st := by
   simp only [receiveArmReport, hTgt, hFlow, Bool.not_true, Bool.false_eq_true, ↓reduceIte,
@@ -149,7 +149,7 @@ def endpointReplyRecvCheckedArmGeneralR (ctx : LabelingContext) (mi : MessageInf
   fun st =>
     match cap.target with
     | .object epId =>
-      if !endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
+      if !endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
         .error (.flowDenied, st)
       else
         callerExtraCapsFailK st tid mi.extraCaps
@@ -191,7 +191,7 @@ theorem endpointReplyRecvCheckedArmGeneralR_eq (ctx : LabelingContext)
         (dispatchWithCapChecked ctx decoded tid executingCore gate cap) st := by
   cases hTgt : cap.target with
   | object epId =>
-    by_cases hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId)
+    by_cases hFlow : endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId)
         (ctx.threadLabelOf tid) = true
     case neg =>
       simp only [endpointReplyRecvCheckedArmGeneralR, RefusalCarrying.ofKernelReporting,
@@ -1524,7 +1524,7 @@ receives alone (WS-SX SX7.2). -/
   fun st =>
     match cap.target with
     | .object epId =>
-      if !endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
+      if !endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
         .error (.flowDenied, st)
       else
         let replyAddr := SeLe4n.CPtr.ofWord (SeLe4n.readRegWord rf layout.replyReg)
@@ -2518,7 +2518,7 @@ replier's overflow words into the caller's buffer
   fun st =>
     match cap.target with
     | .object epId =>
-      if !endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
+      if !endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
         .error (.flowDenied, st)
       else
         let replyAddr := SeLe4n.CPtr.ofWord

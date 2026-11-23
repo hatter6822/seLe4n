@@ -333,6 +333,75 @@ theorem notificationSignalChecked_NI
   exact notificationSignal_preserves_lowEquivalent ctx observer notificationId badge
     s₁ s₂ s₁' s₂' hLow hNtfnHigh hCoherent hWaiterDomain₁ hSuccHigh₁ hWaiterDomain₂ hSuccHigh₂ hObjInv₁ hObjInv₂ hStep₁ hStep₂
 
+/-- **A notification a hidden thread was admitted to is hidden.**
+
+The notification counterpart of `endpointObjectHigh_of_admittedThreadHigh`, and
+it needs no coherence obligation: `notificationFlowGate` reads the
+notification's *object* label, the label the projection decides visibility by,
+so its backward half (`threadLabelOf tid ⊑ objectLabelOf notificationId`)
+composes with the observer's clearance directly.  Every thread a Wait, a
+bound delivery, a receive that consumes its bound notification, or a Bind
+admitted is such a thread. -/
+theorem notificationObjectHigh_of_admittedThreadHigh
+    (ctx : LabelingContext) (observer : IfObserver)
+    (notificationId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (hAdmitted : notificationFlowGate ctx notificationId tid = true)
+    (hThreadHigh : threadObservable ctx observer tid = false) :
+    objectObservable ctx observer notificationId = false := by
+  cases hObs : objectObservable ctx observer notificationId with
+  | false => rfl
+  | true =>
+    unfold objectObservable at hObs
+    unfold threadObservable at hThreadHigh
+    rw [securityFlowsTo_trans _ _ _ (notificationFlowGate_backward hAdmitted) hObs]
+      at hThreadHigh
+    exact absurd hThreadHigh (by decide)
+
+/-- An admitted checked wait runs the unchecked wait. -/
+theorem notificationWaitChecked_eq_notificationWait_when_allowed
+    (ctx : LabelingContext) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (st : SystemState) (hGate : notificationFlowGate ctx notificationId waiter = true) :
+    notificationWaitChecked ctx notificationId waiter st =
+      notificationWait notificationId waiter st := by
+  simp [notificationWaitChecked, hGate]
+
+/-- **An admitted Wait by a hidden waiter preserves low-equivalence, for every
+observer, with no hypothesis about the notification.**
+
+`notificationWait_preserves_lowEquivalent` takes `hNtfnHigh`; here it is
+derived from the gate the checked wait passed
+(`notificationObjectHigh_of_admittedThreadHigh`).  Under the one-way gate this
+step was admitted with the notification visible — a high waiter on a low
+notification — and no theorem covered it. -/
+theorem notificationWaitChecked_NI
+    (ctx : LabelingContext) (observer : IfObserver)
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (result₁ result₂ : Option SeLe4n.Badge)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hWaiterHigh : threadObservable ctx observer waiter = false)
+    (hWaiterObjHigh : objectObservable ctx observer waiter.toObjId = false)
+    (hTailHigh₁ : ∀ t, notificationWaitTail? s₁ notificationId = some t →
+      objectObservable ctx observer t.toObjId = false)
+    (hTailHigh₂ : ∀ t, notificationWaitTail? s₂ notificationId = some t →
+      objectObservable ctx observer t.toObjId = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
+    (hStep₁ : notificationWaitChecked ctx notificationId waiter s₁ = .ok (result₁, s₁'))
+    (hStep₂ : notificationWaitChecked ctx notificationId waiter s₂ = .ok (result₂, s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  have hGate := enforcementSoundness_notificationWaitChecked ctx notificationId waiter
+    s₁ result₁ s₁' hStep₁
+  rw [notificationWaitChecked_eq_notificationWait_when_allowed ctx notificationId waiter s₁ hGate]
+    at hStep₁
+  rw [notificationWaitChecked_eq_notificationWait_when_allowed ctx notificationId waiter s₂ hGate]
+    at hStep₂
+  exact notificationWait_preserves_lowEquivalent ctx observer notificationId waiter
+    result₁ result₂ s₁ s₂ s₁' s₂' hLow
+    (notificationObjectHigh_of_admittedThreadHigh ctx observer notificationId waiter hGate
+      hWaiterHigh)
+    hWaiterHigh hWaiterObjHigh hTailHigh₁ hTailHigh₂ hObjInv₁ hObjInv₂ hStep₁ hStep₂
+
 /-- R5-A/M-01: cspaceCopyChecked NI — projection-based (internalized).
 Replaces the prior hypothesis-accepting version. -/
 private theorem cspaceCopyChecked_NI
@@ -2694,8 +2763,8 @@ theorem endpointReceiveDualChecked_NI
   -- check, and the gate-level soundness theorem carries both.
   have hGate := enforcementSoundness_endpointReceiveDualChecked_gate ctx endpointId receiver
     replyId s₁ r₁ s₁' hStep₁
-  have hFlow := endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate
-  have hOverride := endpointFlowGate_implies_override ctx endpointId _ _ hGate
+  have hFlow := (Bool.and_eq_true _ _ ▸ hGate).1
+  have hOverride := endpointReceiveFlowGate_implies_override ctx endpointId _ _ hGate
   rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver
     replyId s₁ hFlow hOverride] at hStep₁
   rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver
