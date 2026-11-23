@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.37.37` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 681,031 across 686 Lean files |
-| **Test LoC** | 92,527 across 71 Lean test suites |
-| **Proved declarations** | 25,989 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 680,393 across 687 Lean files |
+| **Test LoC** | 92,469 across 71 Lean test suites |
+| **Proved declarations** | 25,997 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -3364,6 +3364,10 @@ bounded from both sides so it is the least strict upper bound.  Discriminant `37
 (the former `allocationMisaligned`) is retired and reserved
 (`retiredDiscriminants`, `ofDiscriminant?_retired`): it decodes to no error, in
 Lean and in Rust (`KernelError::RETIRED`), and is never reassigned (`v0.36.125`).
+Discriminant `56` (the former `declassificationDeniedAtReceiver`, the declassified
+signal's second-hop refusal) is retired the same way at `v0.37.37`
+(`ofDiscriminant?_retired_declassificationDeniedAtReceiver`); the retired set is
+`[11, 35, 37, 56, 57]`, and no other word moved.
 
 **WS-SX SX1 (v0.37.20) — an error carries seL4's payload.**  Four
 `KernelError` constructors take seL4's fields as machine words (`UInt64`, seL4's
@@ -3464,7 +3468,7 @@ a rewind at activation would also rewind a Resume of a thread that was not in a
 system call, where seL4's `FaultIP` equals its `NextIP`.  Its user-visible PC is
 therefore seL4's `FaultIP` throughout.  The former `.ipcCancelled` error (and
 `cancelledIpcFrame`) is retired; its discriminant 57 is reserved
-(`KernelError.retiredDiscriminants = [35, 37, 57]`) and decodes to no error in
+(`KernelError.retiredDiscriminants`, which also holds 11 and 56) and decodes to no error in
 Lean and in the three Rust crates.  Two paths move nothing: the `.ready` arm
 (the thread was not blocked) and `restoreToReady`, the resume spelling of the
 same field clear.  Resume sets `Restart` (seL4's `restart`), so a thread a
@@ -4224,8 +4228,15 @@ boot is the all-cores form), refuses a boot whose labeling's declared
 separation witnesses are not installed threads of the boot state
 (`declaredWitnessesInstalled`, PR #889 review round 3 — the guard decides
 that two admissible ids are separated, only the boot state can say they are
-threads), and is provably the checked idle boot followed by the witness check
-and the two installs with the labeling-refusal arm unreachable
+threads), refuses a boot whose notifications queue or bind a thread of another
+label (`notificationLabelsCoherent`, decided beside the witness check and before
+any physical write or install; `bootAndInitialiseFromPlatformOn_incoherent`,
+`incoherentNotificationLabelsBootError` — the base case of the coherence the
+two-way `notificationFlowGate` keeps at every Wait and bind, under which a
+declassified signal's receiver is at its notification's label; the RPi5 and
+QEMU virt deployments are proved coherent under every labeling), and is
+provably the checked idle boot followed by the witness and coherence checks and
+the two installs with the labeling-refusal arm unreachable
 (`bootAndInitialisePlatform_eq_checked_boot`); `lean_kernel_main` is its caller,
 through `bootAndInitialiseRPi5OrHalt` (§6.2.9).
 
@@ -6508,13 +6519,12 @@ Every kernel object has a decidable well-formedness predicate:
   `auditWindowAllVisible`, each equal to the list view) and build neither the
   trail nor its visible view.  The declassified signal's admitted forms are the
   stored badge, the wake of the head waiter and the delivery to a bound
-  receiver, each writing the records its one or two downgrades owe; the read's
+  receiver, each writing the record its one downgrade owes; the read's
   covers every opcode, 0 to 29 (since `v0.36.204`, ZA6.35).  Other cases take
   the specification's arm.  The shipped QEMU labeling is unchanged and refuses all
   four calls (`qemuVirt_shippedLabeling_denies`); the allocation exerciser
   measures them on its own test-image entry (`exerciserKernelMain`), whose
-  labeling permits two downgrades (the boot domain to the upper partition,
-  and the upper partition to a low band in the lower trusted domain) and
+  labeling permits one downgrade (the boot domain to the upper partition) and
   configures the audit monitor.  Each reads
   0 allocations, and so does an IPC carrying the resulting taint.  That entry
   is a library of its own (`SeLe4nQemuVirtExerciser`, outside `SeLe4n.lean`'s
@@ -6533,10 +6543,13 @@ Every kernel object has a decidable well-formedness predicate:
   `reasonW0`–`reasonW4`, read through `RefusalSlot.reason`), and the entry's
   record writes the words as handed (`recordSyscallRefusalW_eq`), so a refused
   lookup's payload builds no error.  The declassify and declassified-signal arms answer
-  a refusal without the specification's general arm (`declassifyRefusal`,
-  `declassifySignalPlanRefusal`, `declassifySignalPresentRefusal`, each proven
-  equal to `auditedArmSpec`), and the audit read splits a slot on its receiver
-  flag instead of building the optional receiver.  A refused audit read
+  a refusal without the specification's general arm (`declassifyRefusal`, and
+  `declassifySignalPresentRefused` deciding `.declassificationDenied`, each
+  proven equal to `auditedArmSpec`), and the audit read splits a slot on its
+  receiver flag instead of building the optional receiver.  Since `v0.37.37` no
+  refusal names a receiver (the declassified signal's second-hop refusal is
+  deleted), so every slot's receiver flag is clear; retiring the field and
+  audit-read opcodes 25/26 is registered debt.  A refused audit read
   answers from the read's own inputs (`auditReadFastRefusal`, proven the
   specification's refusal by `auditReadFastRefusal_spec`), not from its
   payload words.  A refused declassification
@@ -7202,8 +7215,8 @@ Every kernel object has a decidable well-formedness predicate:
   a notification whose bound thread is blocked receiving delivers to that
   thread in place (`performSignalBoundDelivered`,
   `declassifySignalBoundPerform`), its removal guard read off the queue's end
-  codes (`dualQueueRemovalEnabledCode`), and a two-hop downgrade writes both
-  records over the trail (`declassifySignalHopsRecord`).
+  codes (`dualQueueRemovalEnabledCode`), and a downgrade writes its record over
+  the trail (`declassifySignalRecord`).
   Since `v0.37.3` a signal, wait, receive, yield, invocation, audited call
   or five-word call of more than four words, a five-word call short of its
   fifth word, a refused message-info word and an unnamed syscall number each
@@ -8216,8 +8229,8 @@ interrupt handler's.
 `.declassifySignal` takes its badge the same way, from the notification
 capability it names as extra capability 0 (the invoked capability is the audit
 trail's; `dispatchWithCapChecked_declassifySignal_badge_of_cap`): the badge is ORed in
-as notification badge bits, and a declassifying signal whose two hops are
-ordinary is the ordinary signal, so a register-supplied badge was a second
+as notification badge bits, and a declassifying signal whose hop is ordinary is
+the ordinary signal, so a register-supplied badge was a second
 forging path.  What it declassifies is the delivery of the capability's badge
 across the label boundary; no caller-supplied word crosses.  Witnesses:
 `tests/SyscallReturnAbiSuite.lean` §9s (an unbadged capability delivers 0; a

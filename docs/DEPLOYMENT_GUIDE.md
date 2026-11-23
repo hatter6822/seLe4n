@@ -303,7 +303,13 @@ cliff as its conservative default.
 **The declassification surface is wider than `.declassify` (SM9.B–SM9.D).**
 `.declassifySignal` (SyscallId 33) is the data-carrying declassification — a
 bound notification signal whose badge may cross a boundary the base lattice
-denies, gated on both hops and recorded per authorized hop. Refused
+denies, gated on the caller's hop into the notification and recorded when that
+hop is a downgrade.  The onward delivery needs no second authorization: a
+notification's waiters and bound thread carry its own label (the Wait and bind
+gates admit only equal labels, and the boot refuses a configuration whose
+notifications queue or bind a thread of another label, with
+`incoherentNotificationLabelsBootError`), so a boot configuration must label a
+notification and the threads it pre-binds or pre-queues alike. Refused
 downgrades are recorded too: the type-bounded refusal ledger
 (`SystemState.declassificationRefusals`, SM9.B) lets a monitor distinguish
 "no attempts" from "many attempts, all denied", read through `.auditRead`
@@ -366,6 +372,10 @@ deployment analyses as it would any other user-level protocol.
   isolation is required
 - [ ] **Platform binding validated** -- use hardware-specific `PlatformBinding`
   instance (not simulation contracts) for target hardware
+- [ ] **Notification labels coherent** -- every thread a configuration binds to
+  or queues on a notification carries the notification's label; the boot
+  refuses any other configuration (`notificationLabelsCoherent`) before it
+  installs anything
 - [ ] **Endpoint overrides reviewed for availability** (SM8.C) -- a widening
   `endpointPolicy` override cannot leak (the gate conjoins), but a narrowing one
   can refuse traffic policy intended to allow; review §2.x

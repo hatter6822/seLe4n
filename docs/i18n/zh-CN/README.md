@@ -138,9 +138,9 @@ seLe4n 是一个用 Lean 4 从零构建的微内核。每个内核转换都是�
 |------|-----|
 | **版本** | `0.37.37` |
 | **Lean 工具链** | `v4.28.0` |
-| **生产代码行数** | 681,031 行，分布于 686 个文件 |
-| **测试代码行数** | 92,527 行，分布于 71 个测试套件 |
-| **已证明的声明** | 25,989 个定理/引理声明（零 sorry/axiom） |
+| **生产代码行数** | 680,393 行，分布于 687 个文件 |
+| **测试代码行数** | 92,469 行，分布于 71 个测试套件 |
+| **已证明的声明** | 25,997 个定理/引理声明（零 sorry/axiom） |
 | **Rust crate** | `sele4n-types`、`sele4n-abi`、`sele4n-sys`（用户态封装）、`sele4n-hal`（内核硬件层），以及主机测试 `sele4n-lean-boundary` |
 | **目标硬件** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **启动通道** | 每条 QEMU 通道先在 [rpi5_machine](https://github.com/hatter6822/rpi5_machine) 的 `raspi5b` 机器上启动 Raspberry Pi 5 镜像，再在 QEMU 的 `virt` 上启动 `virt` 镜像 |
