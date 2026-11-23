@@ -1175,6 +1175,13 @@ witnesses are not installed threads of the boot state. -/
 def uninstalledSeparationWitnessBootError : String :=
   "boot: the labeling's declared separation witnesses are not installed threads of the boot state (PR #889 review round 3)"
 
+/-- The refusal for a boot state a notification of which has a queued waiter or
+a bound thread its label differs from (`notificationLabelsCoherent`).  The live
+Wait and bind admit a thread only at its notification's label; a configuration
+installs its objects as given, so the boot refuses one that does not. -/
+def incoherentNotificationLabelsBootError : String :=
+  "boot: a notification's queued waiter or bound thread has a label other than the notification's"
+
 /-- **WS-SX SX5.3 (D15)**: the refusal for a boot that owes physical writes on
 a machine that performs none — the host and simulation entries, which no HAL
 backs.  Every binding of those reserves no root server, so they owe none. -/
@@ -1212,7 +1219,7 @@ def completePhysicalWrites (owed : Architecture.PhysicalWriteLedger) : BaseIO Un
 labeling — the shared body of `bootAndInitialiseFromPlatform` (every model
 core) and `bootAndInitialisePlatform` (the binding's cores).
 
-Three refusals, in order, and none commits anything: the labeling guard
+Four refusals, in order, and none commits anything: the labeling guard
 (`insecureLabelingContextBootError`), the checked boot's own rejection
 (forwarded verbatim), and — new in this round — a boot whose labeling's
 declared separation witnesses are not installed threads of the boot state
@@ -1222,6 +1229,13 @@ state can say whether those ids are threads the deployment creates, and a
 partition that separates no running thread is exactly the vacuous deployment
 the guard exists to refuse.
 
+Then a boot state a notification of which has a queued waiter or a bound thread
+of another label (`incoherentNotificationLabelsBootError`,
+`notificationLabelsCoherent`): the live Wait and bind admit a thread only
+through the two-way `notificationFlowGate`, so this refusal is the base case of
+that coherence, and a configuration cannot install what no syscall could
+produce.
+
 WS-SX SX5.3 (D15): an accepted boot owes physical writes — the root task's IPC
 buffer page and its three tables zeroed and their descriptors stored
 (`installRootServer`, seL4's `create_rootserver_objects` and
@@ -1229,7 +1243,7 @@ buffer page and its three tables zeroed and their descriptors stored
 (`machine`: the hardware entries pass `completePhysicalWrites`) and installs
 the state with its ledger drained (`drainBootPhysicalWrites`), so the root
 task's first instruction finds its buffer mapped and the first syscall's
-commit starts from an empty ledger.  A fourth refusal: a boot that owes writes
+commit starts from an empty ledger.  A fifth refusal: a boot that owes writes
 on a machine that performs none (`machine = none`, the host and simulation
 entries) is refused (`unperformedBootPhysicalWritesBootError`), never
 installed with its writes dropped.  Inlined, with `bootAndInitialisePlatform`,
@@ -1249,23 +1263,53 @@ entry links no HAL symbol. -/
     | Except.error e => pure (Except.error e)
     | Except.ok ist =>
       if declaredWitnessesInstalled ist.state ctx then
-        match machine with
-        | some perform =>
-          perform ist.state.drainedPhysicalWrites
-          let st := (drainBootPhysicalWrites ist).state
-          initialiseKernelState st
-          initialiseKernelLabelingContext ctx
-          pure (Except.ok st)
-        | none =>
-          if ist.state.drainedPhysicalWrites.count == 0 then
+        if notificationLabelsCoherent ist.state ctx then
+          match machine with
+          | some perform =>
+            perform ist.state.drainedPhysicalWrites
             let st := (drainBootPhysicalWrites ist).state
             initialiseKernelState st
             initialiseKernelLabelingContext ctx
             pure (Except.ok st)
-          else
-            pure (Except.error unperformedBootPhysicalWritesBootError)
+          | none =>
+            if ist.state.drainedPhysicalWrites.count == 0 then
+              let st := (drainBootPhysicalWrites ist).state
+              initialiseKernelState st
+              initialiseKernelLabelingContext ctx
+              pure (Except.ok st)
+            else
+              pure (Except.error unperformedBootPhysicalWritesBootError)
+        else
+          pure (Except.error incoherentNotificationLabelsBootError)
       else
         pure (Except.error uninstalledSeparationWitnessBootError)
+
+/-- **An accepted boot installs a coherent state.**  The wrapper installs
+`(drainBootPhysicalWrites ist).state` only on the arm where
+`notificationLabelsCoherent ist.state ctx` held, and draining the ledger writes
+no object, so the state the first syscall runs on has every notification's
+queued waiters and bound thread at the notification's label. -/
+theorem drainBootPhysicalWrites_notificationLabelsCoherent (ist : IntermediateState)
+    (ctx : LabelingContext) (h : notificationLabelsCoherent ist.state ctx = true) :
+    notificationLabelsCoherent (drainBootPhysicalWrites ist).state ctx = true := h
+
+/-- **A boot state that is not coherent is refused before any install**: when
+the checked boot accepts the configuration and its witnesses are installed, but
+some notification queues or binds a thread of another label, the wrapper is the
+coherence refusal and nothing else — no physical write is performed and neither
+the kernel state nor the labeling context is installed. -/
+theorem bootAndInitialiseFromPlatformOn_incoherent
+    (machine : Option (Architecture.PhysicalWriteLedger → BaseIO Unit))
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ctx : LabelingContext) (ist : IntermediateState)
+    (hSecure : isInsecureDefaultContext ctx = false)
+    (hBoot : bootFromPlatformCheckedStartedFor cores config = Except.ok ist)
+    (hWitness : declaredWitnessesInstalled ist.state ctx = true)
+    (hIncoherent : notificationLabelsCoherent ist.state ctx = false) :
+    bootAndInitialiseFromPlatformOn machine cores config ctx =
+      pure (Except.error incoherentNotificationLabelsBootError) := by
+  unfold bootAndInitialiseFromPlatformOn
+  simp only [hSecure, hBoot, hWitness, hIncoherent, Bool.false_eq_true, ↓reduceIte]
 
 /-- **PR #889 review round 22**: the cores a configuration declares.
 
@@ -1938,11 +1982,14 @@ theorem bootAndInitialisePlatform_eq_checked_boot (platform : Type) [PlatformBin
           (bindPlatformConfig platform config) with
         | Except.error e => pure (Except.error e)
         | Except.ok ist =>
-            if declaredWitnessesInstalled ist.state (PlatformBinding.labeling (platform := platform)) then do
-              perform ist.state.drainedPhysicalWrites
-              initialiseKernelState (drainBootPhysicalWrites ist).state
-              initialiseKernelLabelingContext (PlatformBinding.labeling (platform := platform))
-              pure (Except.ok (drainBootPhysicalWrites ist).state)
+            if declaredWitnessesInstalled ist.state (PlatformBinding.labeling (platform := platform)) then
+              if notificationLabelsCoherent ist.state (PlatformBinding.labeling (platform := platform)) then do
+                perform ist.state.drainedPhysicalWrites
+                initialiseKernelState (drainBootPhysicalWrites ist).state
+                initialiseKernelLabelingContext (PlatformBinding.labeling (platform := platform))
+                pure (Except.ok (drainBootPhysicalWrites ist).state)
+              else
+                pure (Except.error incoherentNotificationLabelsBootError)
             else
               pure (Except.error uninstalledSeparationWitnessBootError)) := by
   unfold bootAndInitialisePlatform bootAndInitialiseFromPlatformOn

@@ -3908,8 +3908,8 @@ run_check "INVARIANT" rg -n '^  rootServerFor := fun board => rpi5RootServerAt \
 run_check "INVARIANT" rg -n '^def untypedExtentsOf : List \(Nat × Nat\) → List \(Nat × Nat\)$' SeLe4n/Platform/Boot/RegionMapReservation.lean
 run_check "INVARIANT" rg -n -U '^  \(extensions\.zip \(untypedExtentsOf extensions\)\)\.forM fun \(e, u\) => do\n    ffiExtendBootRamMap \(UInt64\.ofNat e\.1\) \(UInt64\.ofNat e\.2\)\n    ffiReserveRegionMap \(UInt64\.ofNat u\.1\) \(UInt64\.ofNat u\.2\)\n      \(UInt64\.ofNat \(regionMapBaseOf e\)\)$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n -U '^def installRootServer \(config : PlatformConfig\) \(ist : IntermediateState\) : IntermediateState :=\n  match config\.rootServer with\n  \| none => ist\n  \| some r => installRootServerAt r ist$' SeLe4n/Platform/Boot/RootServer.lean
-run_check "INVARIANT" rg -n -U '^        match machine with\n        \| some perform =>\n          perform ist\.state\.drainedPhysicalWrites\n          let st := \(drainBootPhysicalWrites ist\)\.state\n          initialiseKernelState st$' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n -U '^        \| none =>\n          if ist\.state\.drainedPhysicalWrites\.count == 0 then\n            let st := \(drainBootPhysicalWrites ist\)\.state\n            initialiseKernelState st[^\n]*(\n([ \t][^\n]*)?)*?          else\n            pure \(Except\.error unperformedBootPhysicalWritesBootError\)$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^          match machine with\n          \| some perform =>\n            perform ist\.state\.drainedPhysicalWrites\n            let st := \(drainBootPhysicalWrites ist\)\.state\n            initialiseKernelState st$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^          \| none =>\n            if ist\.state\.drainedPhysicalWrites\.count == 0 then\n              let st := \(drainBootPhysicalWrites ist\)\.state\n              initialiseKernelState st[^\n]*(\n([ \t][^\n]*)?)*?            else\n              pure \(Except\.error unperformedBootPhysicalWritesBootError\)$' SeLe4n/Platform/FFI.lean
 # Every hardware entry passes the HAL's performer; no entry a host or a simulation reaches does.
 run_check "INVARIANT" rg -n '^  bootAndInitialisePlatform SeLe4n\.Platform\.RPi5\.RPi5Platform \(some completePhysicalWrites\) config$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^  bootAndInitialisePlatform QemuVirtPlatform \(some completePhysicalWrites\) config$' SeLe4n/Platform/QemuVirt/BootEntry.lean
@@ -13373,6 +13373,23 @@ run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreads_thr
 # so the all-cores theorems are the hardware boot's.
 run_check "INVARIANT" rg -n '^def declaredWitnessesInstalled($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n 'if declaredWitnessesInstalled ist.state ctx then' SeLe4n/Platform/FFI.lean
+# The boot refuses a state a notification of which queues or binds a thread of
+# another label, before any install: the coherence test sits inside the witness
+# test's accepting arm and wraps the whole install (`match machine`), and the
+# coherence refusal is that test's own `else`, ahead of the witness refusal.
+run_check "INVARIANT" rg -n '^def notificationLabelsCoherent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def notificationEntryLabelsCoherent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
+run_check "INVARIANT" rg -U -n 'if declaredWitnessesInstalled ist\.state ctx then\n +if notificationLabelsCoherent ist\.state ctx then\n +match machine with' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -P -U -n '\n( +)if declaredWitnessesInstalled ist\.state ctx then\n\1  if notificationLabelsCoherent ist\.state ctx then\n\1    match machine with\n(?:\1    [^\n]*\n)*\1  else\n\1    pure \(Except\.error incoherentNotificationLabelsBootError\)\n\1else\n\1  pure \(Except\.error uninstalledSeparationWitnessBootError\)\n' SeLe4n/Platform/FFI.lean
+run_negative_check "INVARIANT" rg -U -n 'Except\.ok ist =>\n(( +[^\n]*)?\n)*? +initialiseKernelState[^\n]*\n(( +[^\n]*)?\n)*? +if notificationLabelsCoherent' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem drainBootPhysicalWrites_notificationLabelsCoherent($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem bootAndInitialiseFromPlatformOn_incoherent($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^  bootRefusesCrossLabelNotificationBinding$' tests/SyscallDispatchSuite.lean
+run_check "INVARIANT" rg -n '^theorem notificationLabelsCoherent_signalReceiver($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
+run_check "INVARIANT" rg -n '^theorem bootPipeline_notificationInertObjects($|[ ({:\[\]])' SeLe4n/Platform/Boot/NotificationLabels.lean
+run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_notificationLabelsCoherent($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem qemuVirtDeploymentBootState_notificationLabelsCoherent($|[ ({:\[\]])' SeLe4n/Platform/QemuVirt/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem RHTable.fold_and_true_of_forall_get\?($|[ ({:\[\]])' SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean
 run_check "INVARIANT" rg -n '^def bootFromPlatformCheckedWithIdleThreadsFor($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def PlatformBinding.declaredCores ' SeLe4n/Platform/Contract.lean
 run_check "INVARIANT" rg -n '^theorem rpi5_cores_eq_allCores($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Contract.lean
