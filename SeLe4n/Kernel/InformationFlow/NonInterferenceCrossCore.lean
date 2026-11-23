@@ -816,15 +816,17 @@ scope statement: it says which parts of the state the syscall is permitted to
 change, so an auditor can check that a downgrade the policy authorized landed
 where the policy expected it to land and nowhere else.
 
-The distinction the sub-phase turns on, and the one `footprint_does_not_authorize`
-below makes a theorem rather than a remark: **naming a sink in the footprint
-says where writes land, not that they are permitted.** The footprint is
-computed from the *state* — which notification, which receiver, which home core
-— and consults no policy at all. Authorization is a separate, per-hop decision,
-and a receiver that is squarely inside the footprint is refused when the policy
-refuses it. Conflating the two would be exactly the SM6.B badge-leak class one
-abstraction up: "the delivery targets this TCB" read as "the delivery to this
-TCB is allowed". -/
+The distinction the sub-phase turns on, and the one
+`footprint_receiver_at_notification_label` below makes a theorem rather than a
+remark: **naming a sink in the footprint says where writes land, not that they
+are permitted.** The footprint is computed from the *state* — which
+notification, which receiver, which home core — and consults no policy at all.
+The caller's hop is a separate policy decision, and the receiver is admissible
+for a reason outside the footprint: the two-way wait and bind gates and the
+boot's label check put only threads of the notification's own label there.
+Conflating the two would be exactly the SM6.B badge-leak class one abstraction
+up: "the delivery targets this TCB" read as "the delivery to this TCB is
+allowed". -/
 
 /-- WS-SM SM9.C.5: **the authorized effect footprint of a declassifying signal.**
 
@@ -836,8 +838,7 @@ of thing and an auditor needs all three:
 * `receiver` — the thread the badge is delivered onward to, resolved from the
   *pre-state* by `declassifiedSignalReceiver?` (the bound TCB, else the head
   waiter). `none` when the signal only accumulates a badge with nobody to
-  deliver it to, which is also exactly when the second hop needs no
-  authorization.
+  deliver it to.
 * `cores` — the scheduler slots and register banks the delivery may write,
   which is the live signal's own `sendSignalWriteSet`: SM6.B's
   `notificationSignalBoundWriteSet` and, since WS-SX SX8.2, the home core of
@@ -865,10 +866,9 @@ structure DeclassificationEffectFootprint where
 /-- WS-SM SM9.C.5: the footprint of a declassifying signal, computed from the
 pre-state alone.
 
-**Takes no `DeclassificationPolicy` and no `LabelingContext`** — which is the
-content of `footprint_does_not_authorize` stated at the level of the type
-signature, and the reason that theorem is provable rather than merely
-plausible. -/
+**Takes no `DeclassificationPolicy` and no `LabelingContext`**: the footprint
+cannot carry an authorization, because it reads nothing an authorization is
+decided from. -/
 def declassifiedSignalEffectFootprint (st : SystemState) (notificationId : SeLe4n.ObjId) :
     DeclassificationEffectFootprint :=
   { notification := notificationId
@@ -876,10 +876,10 @@ def declassifiedSignalEffectFootprint (st : SystemState) (notificationId : SeLe4
     cores := sendSignalWriteSet st notificationId }
 
 /-- WS-SM SM9.C.5: the footprint's receiver is the transition's own pre-state
-resolution — the same function the *authorization* consults for its second hop.
+resolution — the same function the delivery and the label theorem below read.
 
 Load-bearing rather than a restatement: the two must name the same thread, or a
-footprint could bound the writes to one TCB while the policy check ran against
+footprint could bound the writes to one TCB while the label fact held of
 another. That is the confused-deputy shape one level up from the v0.32.97
 capability-target finding, and this is where it is excluded. -/
 @[simp] theorem declassifiedSignalEffectFootprint_receiver (st : SystemState)
@@ -895,33 +895,30 @@ different cores. -/
     (declassifiedSignalEffectFootprint st notificationId).cores =
       sendSignalWriteSet st notificationId := rfl
 
-/-- WS-SM SM9.C.6 (**`footprint_does_not_authorize`**): a receiver inside the
-authorized effect footprint is **still refused** when the policy refuses it.
+/-- WS-SM SM9.C.6 (**the footprint's receiver is admissible by label, not by
+being named**): on a notification-label coherent state, a receiver inside the
+authorized effect footprint carries the notification's own domain, so the
+delivery to it is the identity flow and owes no authorization.
 
-The theorem the sub-phase exists to make checkable. Its hypotheses are the
-receiver's own two denials — the base lattice says no and the declassification
-policy says no — and its conclusion is that the plan errors at the *second* hop,
-with the second hop's own discriminant, even though the first hop was
-authorized and even though the receiver is exactly the thread the footprint
-names.
-
-Read the other way: `receiver ∈ footprint` carries no authorization content
-whatsoever. A reader who took the footprint as a permission — "the delivery may
-write this TCB, therefore the delivery to it is allowed" — would have re-opened
-the badge leak SM6.B closed at v0.31.73, with stronger authority behind it. -/
-theorem footprint_does_not_authorize (ctx : GenericLabelingContext)
+The footprint says *where* the writes land and carries no authorization: what
+makes the receiver admissible is that the checked wait and bind admit a thread
+to a notification only at its label (`notificationFlowGate`) and the boot
+refuses a configuration that does otherwise (`notificationLabelsCoherent`).  A
+reader who took the footprint itself as the permission would have nothing to
+point at on a state where those gates had been bypassed — which is why the
+coherence is this theorem's hypothesis rather than its conclusion. -/
+theorem footprint_receiver_at_notification_label (ctx : LabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
-    (actorDomain : SecurityDomain) (st : SystemState) (receiver : SeLe4n.ThreadId)
-    (hIn : (declassifiedSignalEffectFootprint st notificationId).receiver = some receiver)
-    (hFirst : ctx.policy.canFlow actorDomain (ctx.objectDomainOf notificationId) = true)
-    (hDeny : ctx.policy.canFlow (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = false)
-    (hNoDecl : declPolicy.canDeclassify (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = false) :
-    declassifiedSignalPlan ctx declPolicy notificationId actorDomain st =
-      .error .declassificationDeniedAtReceiver :=
-  declassifiedSignalPlan_receiver_refused ctx declPolicy notificationId actorDomain st receiver
-    hFirst (by simpa using hIn) hDeny hNoDecl
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hCoherent : notificationLabelsCoherent st ctx = true)
+    (hIn : (declassifiedSignalEffectFootprint st notificationId).receiver = some receiver) :
+    (liftLegacyContext ctx).objectDomainOf notificationId =
+        (liftLegacyContext ctx).threadDomainOf receiver ∧
+      declassifiedSignalHopAuthorization (liftLegacyContext ctx) declPolicy
+        ((liftLegacyContext ctx).objectDomainOf notificationId)
+        ((liftLegacyContext ctx).threadDomainOf receiver) = .ok .ordinary :=
+  declassifiedSignalReceiver_flow_ordinary_of_coherent ctx declPolicy st notificationId receiver
+    hCoherent (by simpa using hIn)
 
 /-- WS-SM SM9.C.6: and the converse half — **authorization does not widen the
 footprint.**

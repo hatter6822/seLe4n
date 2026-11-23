@@ -817,10 +817,13 @@ def runInformationFlowChecks : IO Unit := do
   -- query and revoke wrappers (`lookupServiceChecked`, `revokeServiceChecked`),
   -- which replace the read-only lookup and the capability-only revoke: the
   -- query is refused unless the endpoint's label flows to the caller, the
-  -- revoke unless the caller's label flows to the endpoint.
-  expect "enforcement boundary: 15 policy-gated operations defined"
+  -- revoke unless the caller's label flows to the endpoint.  16 with the
+  -- notification bind (`bindNotificationChecked`), which replaces the
+  -- capability-only bind: a bind is refused unless the notification's and the
+  -- thread's labels flow both ways.
+  expect "enforcement boundary: 16 policy-gated operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
-      match c with | .policyGated _ => true | _ => false)).length == 15)
+      match c with | .policyGated _ => true | _ => false)).length == 16)
 
   expect "enforcement boundary: capability-only operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
@@ -910,12 +913,14 @@ def runInformationFlowChecks : IO Unit := do
     publicEndpointState
   expect "SM8.C: notificationWaitChecked denies a cross-domain wait"
     (match deniedWait with | .error .flowDenied => true | _ => false)
-  -- and the direction is load-bearing: a secret *thread* waiting on a public
-  -- notification is an upward read, which the gate must allow.
-  let allowedUpwardWait := SeLe4n.Kernel.notificationWaitChecked secretSenderCtx ⟨10⟩ ⟨1⟩
+  -- and the gate is two-way: a secret *thread* waiting on a public notification
+  -- would join the public notification's wait queue, which the public domain
+  -- observes, and a later public Signal's effect would depend on it.  The wait
+  -- is refused before anything is written.
+  let deniedUpwardWait := SeLe4n.Kernel.notificationWaitChecked secretSenderCtx ⟨10⟩ ⟨1⟩
     publicEndpointState
-  expect "SM8.C: notificationWaitChecked allows a public notification → secret waiter"
-    (match allowedUpwardWait with | .error .flowDenied => false | _ => true)
+  expect "notificationWaitChecked refuses a secret waiter on a public notification"
+    (match deniedUpwardWait with | .error .flowDenied => true | _ => false)
 
   let deniedReplyRecv := SeLe4n.Kernel.endpointReplyRecvChecked secretSenderCtx ⟨10⟩ ⟨1⟩ ⟨2⟩
     testMsg none publicEndpointState
@@ -1234,8 +1239,8 @@ def runInformationFlowChecks : IO Unit := do
   let extendedBoundary := SeLe4n.Kernel.enforcementBoundaryExtended
   let policyGatedCount := extendedBoundary.filter (fun e => match e with
     | .policyGated _ => true | _ => false) |>.length
-  expect "enforcement boundary has 15 policy-gated ops"
-    (policyGatedCount = 15)
+  expect "enforcement boundary has 16 policy-gated ops"
+    (policyGatedCount = 16)
 
   IO.println "enforcement boundary classification verified"
 
@@ -1382,8 +1387,8 @@ def runInformationFlowChecks : IO Unit := do
   let pgCount := boundary.filter (fun c => match c with | .policyGated _ => true | _ => false) |>.length
   let coCount := boundary.filter (fun c => match c with | .capabilityOnly _ => true | _ => false) |>.length
   let roCount := boundary.filter (fun c => match c with | .readOnly _ => true | _ => false) |>.length
-  expect "enforcement boundary has 15 policy-gated"
-    (pgCount = 15)
+  expect "enforcement boundary has 16 policy-gated"
+    (pgCount = 16)
   -- WS-SM SM8.E.3: 23 → 24 with the 2PL bracket (`withLockSet`), classified
   -- capability-only for the same reason as `storeObject` — an internal building
   -- block used under an already-capability-guarded context, consulting no
@@ -1411,8 +1416,10 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-SX SX6.5: 38 → 37, `setThreadFaultHandlerOp` left with its syscall;
   -- WS-SX SX7: 37 → 36, the untyped reset left with its syscall; WS-SX
   -- SX8.3: 36 → 37, `schedContextUnbindThreadObjectOnCore`.
-  expect "enforcement boundary has 37 capability-only"
-    (coCount = 37)
+  -- 37 → 36: `bindNotification` became the policy-gated `bindNotificationChecked`
+  -- (the bind now runs the two-way label gate before any write).
+  expect "enforcement boundary has 36 capability-only"
+    (coCount = 36)
   expect "enforcement boundary has 2 read-only"
     (roCount = 2)
   expect "enforcement boundary total is 54"
@@ -1808,6 +1815,106 @@ def runInformationFlowChecks : IO Unit := do
 
   IO.println "all V6 information-flow & cross-subsystem checks passed"
 
+/-! ### The two-way Wait / receive / bind gate
+
+A higher thread on a lower notification's or endpoint's queue is part of the
+lower domain's view: the queue lives in the object, and a later lower
+`Signal`'s effect depends on whether the higher thread waited.  Each case
+below was admitted by the one-way gate and is refused `flowDenied` by the
+two-way one, before anything is written: the lower observer's view of the
+object is the same after the attempt, and a lower `Signal` afterwards has the
+effect it has when the higher thread never tried. -/
+
+private def twoWayObjId : SeLe4n.ObjId := ⟨300⟩
+private def twoWayHigh : SeLe4n.ThreadId := ⟨301⟩
+
+/-- The object at `twoWayObjId` is public; every thread and every other object
+is secret. -/
+private def twoWayCtx : SeLe4n.Kernel.LabelingContext :=
+  { objectLabelOf := fun o => if o = twoWayObjId then publicLabel else secretLabel
+    threadLabelOf := fun _ => secretLabel
+    endpointLabelOf := fun o => if o = twoWayObjId then publicLabel else secretLabel }
+
+private def twoWayTcb : TCB :=
+  { tid := twoWayHigh, priority := ⟨40⟩, domain := ⟨0⟩,
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨800⟩ ⟨805⟩,
+    ipcBuffer := SeLe4n.VAddr.ofNat 4096, cpuAffinity := none, threadState := .Ready }
+
+private def twoWayState (obj : KernelObject) : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject twoWayObjId obj
+    |>.withObject twoWayHigh.toObjId (.tcb twoWayTcb)
+    |>.withRunnable [twoWayHigh]
+    |>.build)
+
+/-- The public observer's view of the public object. -/
+private def twoWayView (st : SystemState) : Option KernelObject :=
+  (st.getObject? twoWayObjId).map (SeLe4n.Kernel.projectKernelObject twoWayCtx reviewer)
+
+private def runTwoWayGateChecks : IO Unit := do
+  expect "the public object is visible to the public observer, the waiter is not"
+    (SeLe4n.Kernel.objectObservable twoWayCtx reviewer twoWayObjId &&
+      !SeLe4n.Kernel.threadObservable twoWayCtx reviewer twoWayHigh)
+  -- Wait, through the live cross-core dispatch.
+  let ntfnSt := twoWayState (.notification
+    { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+  let (waitSt, waitR) :=
+    SeLe4n.Kernel.notificationWaitCrossCoreDispatchChecked twoWayCtx twoWayObjId twoWayHigh
+      bootCoreId ntfnSt
+  expect "a secret waiter on a public notification is refused flowDenied"
+    (match waitR with | .error .flowDenied => true | _ => false)
+  expect "the refused wait left the public notification as the public observer saw it"
+    (twoWayView waitSt == twoWayView ntfnSt)
+  let badge := SeLe4n.Badge.ofNatMasked 5
+  let afterAttempt := (SeLe4n.Kernel.notificationSignalOnCore twoWayObjId badge bootCoreId waitSt).1
+  let withoutAttempt := (SeLe4n.Kernel.notificationSignalOnCore twoWayObjId badge bootCoreId ntfnSt).1
+  expect "a public Signal after the refused wait has the effect it has without it"
+    (twoWayView afterAttempt == twoWayView withoutAttempt)
+  -- The checked wrapper refuses the same wait.
+  expect "notificationWaitChecked refuses the secret waiter on the public notification"
+    (match SeLe4n.Kernel.notificationWaitChecked twoWayCtx twoWayObjId twoWayHigh ntfnSt with
+      | .error .flowDenied => true | _ => false)
+  -- Receive.
+  let epSt := twoWayState (.endpoint {})
+  expect "a secret receiver on a public endpoint is refused flowDenied"
+    (match SeLe4n.Kernel.endpointReceiveDualChecked twoWayCtx twoWayObjId twoWayHigh none epSt with
+      | .error .flowDenied => true | _ => false)
+  -- Bind.
+  expect "a secret thread cannot be bound to a public notification"
+    (match SeLe4n.Kernel.bindNotificationChecked twoWayCtx twoWayObjId twoWayHigh ntfnSt with
+      | .error .flowDenied => true | _ => false)
+  -- Send: a public sender on a secret endpoint, which the one-way gate
+  -- admitted.  Its blocking would enqueue it on the secret endpoint, and the
+  -- sender's own state (ready or blocked) would then depend on whether a secret
+  -- receiver waits there.
+  let upCtx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun _ => secretLabel, threadLabelOf := fun _ => publicLabel,
+      endpointLabelOf := fun _ => secretLabel }
+  expect "a public sender on a secret endpoint is refused flowDenied"
+    (match SeLe4n.Kernel.endpointSendDualChecked upCtx twoWayObjId twoWayHigh
+        (.frame SeLe4n.Badge.zero false true) epSt with
+      | .error .flowDenied => true | _ => false)
+  -- The load-bearing negative: with the object labelled like the thread, the
+  -- same calls are admitted, so the checks above test the gate.
+  let sameCtx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun _ => secretLabel, threadLabelOf := fun _ => secretLabel,
+      endpointLabelOf := fun _ => secretLabel }
+  expect "the same wait is admitted when the notification is labelled like the waiter"
+    (match (SeLe4n.Kernel.notificationWaitCrossCoreDispatchChecked sameCtx twoWayObjId twoWayHigh
+        bootCoreId ntfnSt).2 with
+      | .error .flowDenied => false | _ => true)
+  expect "the same receive is admitted when the endpoint is labelled like the receiver"
+    (match SeLe4n.Kernel.endpointReceiveDualChecked sameCtx twoWayObjId twoWayHigh none epSt with
+      | .error .flowDenied => false | _ => true)
+  expect "the same send is admitted when the endpoint is labelled like the sender"
+    (match SeLe4n.Kernel.endpointSendDualChecked sameCtx twoWayObjId twoWayHigh
+        (.frame SeLe4n.Badge.zero false true) epSt with
+      | .error .flowDenied => false | _ => true)
+  expect "the same bind is admitted when the notification is labelled like the thread"
+    (match SeLe4n.Kernel.bindNotificationChecked sameCtx twoWayObjId twoWayHigh ntfnSt with
+      | .error .flowDenied => false | _ => true)
+  IO.println "two-way Wait / receive / send / bind gate checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -1819,4 +1926,5 @@ def main : IO Unit := do
   if !ok then
     throw <| IO.userError "InformationFlowSuite: AK6 sub-tests failed"
   SeLe4n.Testing.runInformationFlowChecks
+  SeLe4n.Testing.runTwoWayGateChecks
   SeLe4n.Testing.runServiceRegistryFlowChecks

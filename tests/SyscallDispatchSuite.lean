@@ -146,7 +146,7 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   -- decodes to none, as the retired syscall number 8 does.
   expect "sd001_37_retired_unassigned"
     (SeLe4n.Model.KernelError.ofDiscriminant? 37 == none &&
-      SeLe4n.Model.KernelError.retiredDiscriminants == [11, 35, 37, 57] &&
+      SeLe4n.Model.KernelError.retiredDiscriminants == [11, 35, 37, 56, 57] &&
       (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 37)).isNone)
     "discriminant 37 is retired: it must decode to no error"
   pin "sd001_38_revocationRequired"           .revocationRequired           38
@@ -165,6 +165,12 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   pin "sd001_51_partialResolution"            .partialResolution            51
   pin "sd001_52_missingSchedContext"          .missingSchedContext          52
   pin "sd001_53_threadOnDifferentCore"        .threadOnDifferentCore        53
+  -- 56 is retired (the former `declassificationDeniedAtReceiver`): no error
+  -- has it, and it decodes to none.
+  expect "sd001_56_retired_unassigned"
+    (SeLe4n.Model.KernelError.ofDiscriminant? 56 == none &&
+      (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 56)).isNone)
+    "discriminant 56 is retired: it must decode to no error"
   -- 57 is retired (the former `ipcCancelled`): a cancelled IPC answers with
   -- no error, as seL4's does — the thread restarts its system call.
   expect "sd001_57_retired_unassigned"
@@ -1214,6 +1220,73 @@ private def sd055_witnesses_installed_and_binding_cores : IO Unit := do
      SeLe4n.Platform.PlatformBinding.declaredCores (platform := SeLe4n.Platform.Sim.SimPlatform) ==
        SeLe4n.Kernel.Concurrency.allCores)
     "the binding's core list is the first coreCount model cores"
+
+/-- A notification at id `3` (the harness labeling's lower partition) bound to
+thread `bound`, which names it back. -/
+private def boundNotificationEntry (bound : Nat) : SeLe4n.Platform.Boot.ObjectEntry :=
+  { id := ⟨3⟩
+    obj := .notification
+      { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
+        boundTCBCode := bound + 1 }
+    hSlots := fun _ h => KernelObject.noConfusion h,
+    hMappings := fun _ h => KernelObject.noConfusion h }
+
+/-- Witness thread `id` bound to the notification at id `3`. -/
+private def boundWitnessEntry (id : Nat) : SeLe4n.Platform.Boot.ObjectEntry :=
+  { id := ⟨id⟩, obj := .tcb { witnessTcb id with boundNotificationCode := 4 },
+    hSlots := fun _ h => KernelObject.noConfusion h,
+    hMappings := fun _ h => KernelObject.noConfusion h }
+
+/-- **The boot refuses a configuration that binds a notification to a thread of
+another label** (`incoherentNotificationLabelsBootError`), before it installs
+anything, and admits the same binding at equal labels.  The live bind admits a
+thread only through the two-way `notificationFlowGate`; the boot holds a
+configuration to the same rule, so no state the first syscall runs on has a
+notification bound to, or queueing, a thread of another label. -/
+private def bootRefusesCrossLabelNotificationBinding : IO Unit := do
+  let ctx := SeLe4n.Kernel.harnessLabelingContext
+  -- Upper-domain witness bound to a lower-domain notification: refused.
+  let cross : SeLe4n.Platform.Boot.PlatformConfig :=
+    { initialObjects :=
+        [ witnessEntry SeLe4n.Kernel.harnessLowerWitnessIndex
+        , boundWitnessEntry harnessUpperWitness
+        , boundNotificationEntry harnessUpperWitness ] }
+  let sentinelTid : SeLe4n.ThreadId := ⟨123⟩
+  initialiseKernelState (mkState [(⟨123⟩, .tcb (mkTcb 123 .Ready))] (some sentinelTid))
+  match ← bootAndInitialiseFromPlatform cross ctx with
+  | Except.error e =>
+      expect "boot_cross_label_binding_refused"
+        (e == incoherentNotificationLabelsBootError)
+        s!"expected the notification-label refusal, got: {e}"
+      let st ← getKernelState
+      expect "boot_cross_label_binding_installs_nothing"
+        ((st.scheduler.currentOnCore bootCoreId) == some sentinelTid)
+        "a refused boot must leave the pre-boot state installed"
+  | Except.ok _ =>
+      failLine "boot_cross_label_binding_unexpected_success"
+        "a boot binding a notification to a thread of another label must be refused"
+  expect "boot_cross_label_binding_predicate_on_the_boot_state"
+    (match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads cross with
+     | Except.ok ist => !SeLe4n.Kernel.notificationLabelsCoherent ist.state ctx
+     | Except.error _ => false)
+    "the checked boot accepts the configuration; the label check is what refuses it"
+  -- The same binding at equal labels: admitted.
+  let same : SeLe4n.Platform.Boot.PlatformConfig :=
+    { initialObjects :=
+        [ boundWitnessEntry SeLe4n.Kernel.harnessLowerWitnessIndex
+        , witnessEntry harnessUpperWitness
+        , boundNotificationEntry SeLe4n.Kernel.harnessLowerWitnessIndex ] }
+  match ← bootAndInitialiseFromPlatform same ctx with
+  | Except.error e =>
+      failLine "boot_same_label_binding_unexpected_error"
+        s!"a binding at equal labels should boot, got: {e}"
+  | Except.ok st =>
+      expect "boot_same_label_binding_admitted"
+        (SeLe4n.Kernel.notificationLabelsCoherent st ctx &&
+          (match st.getNotification? ⟨3⟩ with
+           | some n => n.boundTCBCode == SeLe4n.Kernel.harnessLowerWitnessIndex + 1
+           | none => false))
+        "the installed state keeps the binding and is label-coherent"
 
 /-- SD-056 (PR #889 review round 5): **the declared witnesses are not the boot
 VSpace root's id, and the binding's core count is structural.**
@@ -3296,6 +3369,8 @@ def main : IO Unit := do
   sd055_witnesses_installed_and_binding_cores
   IO.println "--- PR #889 review round 5: witnesses off the boot root, structural cores ---"
   sd056_witnesses_off_boot_root_and_structural_cores
+  IO.println "--- a configured notification binding must be at equal labels ---"
+  bootRefusesCrossLabelNotificationBinding
   IO.println "--- WS-RR RR7.29: .mintReplyCap through the syscall gate ---"
   sd058_mintReplyCapThroughTheSyscallGate
   sd059_cspaceRevokeThroughTheSyscallGate

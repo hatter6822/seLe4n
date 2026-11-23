@@ -1293,8 +1293,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
           simp only [Bool.not_eq_true] at hNb
           simp only [hNb, Bool.false_eq_true, ↓reduceIte] at hStep
           unfold completeSignalArm at hStep
-          cases hFlow : securityFlowsTo (ctx.objectLabelOf notifId)
-              (ctx.threadLabelOf tid) with
+          cases hFlow : notificationFlowGate ctx notifId tid with
           | false =>
               rw [notificationWaitCrossCoreDispatchChecked_flow_denied
                     ctx notifId tid executingCore st hFlow] at hStep

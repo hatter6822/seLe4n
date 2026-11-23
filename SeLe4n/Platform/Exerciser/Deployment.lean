@@ -46,15 +46,9 @@ its scenarios need, and in nothing else.
   Information may now flow up into the boot domain, which the shipped
   confinement forbids: this image is a test image, and the shipped images keep
   the confinement.
-* **Two downgrades** (`declassificationPolicy`): from the boot domain to the
+* **One downgrade** (`declassificationPolicy`): from the boot domain to the
   upper one, the one pair the base lattice refuses that a boot thread can
-  reach, and from the upper one to the low band below, so a declassified
-  signal can owe two records (WS-ZA ZA6.35).
-* **A low band** (`inLowBand`, WS-ZA ZA6.35): the ids from `lowBandBase`, which
-  no boot object holds, labeled `lowTrusted`, entity and endpoint alike.  The
-  exerciser carves a thread and an endpoint there, so a declassified signal's
-  second hop can be a downgrade the policy permits (the upper domain into the
-  band) or one it refuses (the boot domain into the band).
+  reach.
 * **The audit monitor**: the clearance is the top, so the boot domain's
   threads qualify, and the root task holds the boot audit capability in slot
   10 (`auditSlot`, the exerciser's copy slot), which the exerciser deletes
@@ -127,37 +121,21 @@ theorem lowerWitnessIndex_below_boundary :
     lowerWitnessIndex < SeLe4n.Kernel.separationBoundary upperDomainBase := by
   decide
 
-/-- The exerciser's two authorized downgrades: from the boot domain
-    (`kernelTrusted`, domain 3) to the upper one (`highUntrusted`, domain 2),
-    and from the upper one to the low band (`lowTrusted`, domain 1). -/
+/-- The exerciser's one authorized downgrade: from the boot domain
+    (`kernelTrusted`, domain 3) to the upper one (`highUntrusted`, domain 2). -/
 def declassificationPolicy : SeLe4n.Kernel.DeclassificationPolicy :=
   { canDeclassify := fun src dst =>
-      (src.id == (SeLe4n.Kernel.embedLegacyLabel .kernelTrusted).id &&
-        dst.id == (SeLe4n.Kernel.embedLegacyLabel .highUntrusted).id) ||
-      (src.id == (SeLe4n.Kernel.embedLegacyLabel .highUntrusted).id &&
-        dst.id == (SeLe4n.Kernel.embedLegacyLabel .lowTrusted).id) }
-
-/-- The first id of the exerciser's low band: below the upper domain's base and
-    above every boot object, so the band holds only what the exerciser carves
-    there. -/
-def lowBandBase : Nat := 0x8_0000
-
-/-- The number of ids in the exerciser's low band. -/
-def lowBandSize : Nat := 0x100
-
-/-- Whether an entity index is in the exerciser's low band. -/
-def inLowBand (index : Nat) : Bool :=
-  lowBandBase ≤ index && index < lowBandBase + lowBandSize
+      src.id == (SeLe4n.Kernel.embedLegacyLabel .kernelTrusted).id &&
+        dst.id == (SeLe4n.Kernel.embedLegacyLabel .highUntrusted).id }
 
 /-- The exerciser's entity labels: the shipped partition, its lower half at the
-    top of the lattice, and the low band at `lowTrusted`. -/
+    top of the lattice. -/
 def entityLabel (index : Nat) : SeLe4n.Kernel.SecurityLabel :=
-  if inLowBand index then .lowTrusted
-  else SeLe4n.Kernel.indexPartitionedLabel upperDomainBase .kernelTrusted .highUntrusted index
+  SeLe4n.Kernel.indexPartitionedLabel upperDomainBase .kernelTrusted .highUntrusted index
 
 /-- The exerciser's labeling: the shipped partition at the shipped boundary and
-    witnesses, its lower half at the top of the lattice, a low band, two
-    downgrades and the top as the audit monitor's clearance.  An endpoint's flow
+    witnesses, its lower half at the top of the lattice, one downgrade and the
+    top as the audit monitor's clearance.  An endpoint's flow
     label is its entity label, so the two agree everywhere. -/
 def deploymentLabeling : SeLe4n.Kernel.DeploymentLabeling :=
   { SeLe4n.Kernel.indexPartitionedDeploymentLabeling upperDomainBase
@@ -170,19 +148,16 @@ def deploymentLabeling : SeLe4n.Kernel.DeploymentLabeling :=
     declassificationPolicy := declassificationPolicy
     auditMonitorClearance := some (SeLe4n.Kernel.embedLegacyLabel .kernelTrusted) }
 
-/-- The exerciser's policy authorizes exactly two pairs: the boot domain to the
-    upper one, and the upper one to the low band. -/
+/-- The exerciser's policy authorizes exactly one pair: the boot domain to the
+    upper one. -/
 theorem declassificationPolicy_canDeclassify_iff (src dst : SeLe4n.Kernel.SecurityDomain) :
     declassificationPolicy.canDeclassify src dst = true ↔
-      (src = SeLe4n.Kernel.embedLegacyLabel .kernelTrusted ∧
-        dst = SeLe4n.Kernel.embedLegacyLabel .highUntrusted) ∨
-      (src = SeLe4n.Kernel.embedLegacyLabel .highUntrusted ∧
-        dst = SeLe4n.Kernel.embedLegacyLabel .lowTrusted) := by
+      src = SeLe4n.Kernel.embedLegacyLabel .kernelTrusted ∧
+        dst = SeLe4n.Kernel.embedLegacyLabel .highUntrusted := by
   obtain ⟨s⟩ := src
   obtain ⟨d⟩ := dst
   simp [declassificationPolicy, SeLe4n.Kernel.embedLegacyLabel,
-    SeLe4n.Kernel.SecurityLabel.kernelTrusted, SeLe4n.Kernel.SecurityLabel.highUntrusted,
-    SeLe4n.Kernel.SecurityLabel.lowTrusted]
+    SeLe4n.Kernel.SecurityLabel.kernelTrusted, SeLe4n.Kernel.SecurityLabel.highUntrusted]
 
 /-- The exerciser's monitor clearance validates — it is the top — so its audit
     calls are not refused for want of a monitor. -/
@@ -226,7 +201,7 @@ def schedContextId : SeLe4n.ObjId := ⟨10⟩
     buffer frame's, then the three tables' — the first above the boot objects. -/
 def rootServerFirstObjId : SeLe4n.ObjId := ⟨11⟩
 /-- The first id of the untypeds over a board's further extensions: in the boot
-    domain, below the low band, and clear of every id the exerciser carves. -/
+    domain, below every id the exerciser carves there. -/
 def extraUntypedIdBase : Nat := 0x4_0000
 /-- The untrusted domain's initial TCB — the upper separation witness. -/
 def untrustedTcbId : SeLe4n.ObjId := ⟨upperDomainBase⟩

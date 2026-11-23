@@ -289,7 +289,7 @@ theorem endpointSendDualChecked_NI
   -- rewrite below needs the override half as well as the lattice half.
   have hGate := enforcementSoundness_endpointSendDualChecked_gate ctx endpointId sender payload
     s₁ r₁ s₁' hStep₁
-  have hFlow := endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate
+  have hFlow := endpointFlowGate_implies_twoWay ctx endpointId _ _ hGate
   have hOverride := endpointFlowGate_implies_override ctx endpointId _ _ hGate
   rw [endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed ctx endpointId sender payload
     s₁ hFlow hOverride] at hStep₁
@@ -332,6 +332,75 @@ theorem notificationSignalChecked_NI
   rw [notificationSignalChecked_eq_notificationSignal_when_allowed ctx notificationId signaler badge s₂ hFlow] at hStep₂
   exact notificationSignal_preserves_lowEquivalent ctx observer notificationId badge
     s₁ s₂ s₁' s₂' hLow hNtfnHigh hCoherent hWaiterDomain₁ hSuccHigh₁ hWaiterDomain₂ hSuccHigh₂ hObjInv₁ hObjInv₂ hStep₁ hStep₂
+
+/-- **A notification a hidden thread was admitted to is hidden.**
+
+The notification counterpart of `endpointObjectHigh_of_admittedThreadHigh`, and
+it needs no coherence obligation: `notificationFlowGate` reads the
+notification's *object* label, the label the projection decides visibility by,
+so its backward half (`threadLabelOf tid ⊑ objectLabelOf notificationId`)
+composes with the observer's clearance directly.  Every thread a Wait, a
+bound delivery, a receive that consumes its bound notification, or a Bind
+admitted is such a thread. -/
+theorem notificationObjectHigh_of_admittedThreadHigh
+    (ctx : LabelingContext) (observer : IfObserver)
+    (notificationId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (hAdmitted : notificationFlowGate ctx notificationId tid = true)
+    (hThreadHigh : threadObservable ctx observer tid = false) :
+    objectObservable ctx observer notificationId = false := by
+  cases hObs : objectObservable ctx observer notificationId with
+  | false => rfl
+  | true =>
+    unfold objectObservable at hObs
+    unfold threadObservable at hThreadHigh
+    rw [securityFlowsTo_trans _ _ _ (notificationFlowGate_backward hAdmitted) hObs]
+      at hThreadHigh
+    exact absurd hThreadHigh (by decide)
+
+/-- An admitted checked wait runs the unchecked wait. -/
+theorem notificationWaitChecked_eq_notificationWait_when_allowed
+    (ctx : LabelingContext) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (st : SystemState) (hGate : notificationFlowGate ctx notificationId waiter = true) :
+    notificationWaitChecked ctx notificationId waiter st =
+      notificationWait notificationId waiter st := by
+  simp [notificationWaitChecked, hGate]
+
+/-- **An admitted Wait by a hidden waiter preserves low-equivalence, for every
+observer, with no hypothesis about the notification.**
+
+`notificationWait_preserves_lowEquivalent` takes `hNtfnHigh`; here it is
+derived from the gate the checked wait passed
+(`notificationObjectHigh_of_admittedThreadHigh`).  Under the one-way gate this
+step was admitted with the notification visible — a high waiter on a low
+notification — and no theorem covered it. -/
+theorem notificationWaitChecked_NI
+    (ctx : LabelingContext) (observer : IfObserver)
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (result₁ result₂ : Option SeLe4n.Badge)
+    (s₁ s₂ s₁' s₂' : SystemState)
+    (hLow : lowEquivalent ctx observer s₁ s₂)
+    (hWaiterHigh : threadObservable ctx observer waiter = false)
+    (hWaiterObjHigh : objectObservable ctx observer waiter.toObjId = false)
+    (hTailHigh₁ : ∀ t, notificationWaitTail? s₁ notificationId = some t →
+      objectObservable ctx observer t.toObjId = false)
+    (hTailHigh₂ : ∀ t, notificationWaitTail? s₂ notificationId = some t →
+      objectObservable ctx observer t.toObjId = false)
+    (hObjInv₁ : s₁.objects.invExt)
+    (hObjInv₂ : s₂.objects.invExt)
+    (hStep₁ : notificationWaitChecked ctx notificationId waiter s₁ = .ok (result₁, s₁'))
+    (hStep₂ : notificationWaitChecked ctx notificationId waiter s₂ = .ok (result₂, s₂')) :
+    lowEquivalent ctx observer s₁' s₂' := by
+  have hGate := enforcementSoundness_notificationWaitChecked ctx notificationId waiter
+    s₁ result₁ s₁' hStep₁
+  rw [notificationWaitChecked_eq_notificationWait_when_allowed ctx notificationId waiter s₁ hGate]
+    at hStep₁
+  rw [notificationWaitChecked_eq_notificationWait_when_allowed ctx notificationId waiter s₂ hGate]
+    at hStep₂
+  exact notificationWait_preserves_lowEquivalent ctx observer notificationId waiter
+    result₁ result₂ s₁ s₂ s₁' s₂' hLow
+    (notificationObjectHigh_of_admittedThreadHigh ctx observer notificationId waiter hGate
+      hWaiterHigh)
+    hWaiterHigh hWaiterObjHigh hTailHigh₁ hTailHigh₂ hObjInv₁ hObjInv₂ hStep₁ hStep₂
 
 /-- R5-A/M-01: cspaceCopyChecked NI — projection-based (internalized).
 Replaces the prior hypothesis-accepting version. -/
@@ -2730,7 +2799,7 @@ theorem endpointReceiveDualChecked_NI
   -- check, and the gate-level soundness theorem carries both.
   have hGate := enforcementSoundness_endpointReceiveDualChecked_gate ctx endpointId receiver
     replyId s₁ r₁ s₁' hStep₁
-  have hFlow := endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate
+  have hFlow := (Bool.and_eq_true _ _ ▸ hGate).1
   have hOverride := endpointFlowGate_implies_override ctx endpointId _ _ hGate
   rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver
     replyId s₁ hFlow hOverride] at hStep₁
@@ -5416,23 +5485,17 @@ theorem schedContextUnbind_preserves_projection
       rewrites the victim's queue-NEIGHBOUR TCBs' `queuePrev`/`queueNext`,
       and queue-link fields survive projection — so a high victim spliced
       out from between low-observable neighbours changes the low projection.
-      **WS-RR RR8.8 correction**: the invariant this was tracked against —
-      "a queue's members share the endpoint's label", SM6.B debt — is
-      **unestablishable**.  The live admission gate is
-      `label sender ⊑ label endpoint`, an order rather than an equality, so a
-      low and a high waiter on one high endpoint are both admitted by design
-      (`endpointAdmissionAdmitsMixedObservability`); establishing uniformity
-      would mean narrowing the gate to equality and refusing the one-way flow
-      the lattice exists to permit.  The gate's own direction, composed with
-      `LabelingContextValid.endpointObjectCoherence` (which carries the
-      endpoint's *flow* label on to the *object* label the projection reads),
-      closes the *endpoint object* — non-observable whenever any waiter is,
-      `endpointObjectHigh_of_admittedThreadHigh` — and closes nothing about the
-      neighbours, so the residue is representational: a
-      queue's content must live in an object whose label dominates every
-      member's, which the endpoint is and a member's own TCB is not.  The
-      SM6.E cancellation-NI module consumes this obligation as its
-      `hTeardownProj` hypothesis; see `docs/REGISTERED_DEBT.md`.
+      The invariant this is tracked against — "a queue's members share the
+      endpoint's label" — is establishable now that the live admission gate is
+      two-way (`endpointFlowGate`, label equality): every admission keeps a
+      queue label-uniform (`endpointAdmissionUniform`).  The gate composed
+      with `LabelingContextValid.endpointObjectCoherence` closes the *endpoint
+      object* — non-observable whenever any waiter is,
+      `endpointObjectHigh_of_admittedThreadHigh`; the neighbours are closed by
+      the state invariant that carries the uniformity across every
+      transition, not yet proved.  The SM6.E cancellation-NI module consumes
+      this obligation as its `hTeardownProj` hypothesis; see
+      `docs/REGISTERED_DEBT.md`.
     - **G4 re-lookup**: no state change.
     - **G5 `cancelDonation` (WS-RC R5.A split)**: post-R5.A the G5 step
       dispatches explicitly on `schedContextBinding`:

@@ -86,13 +86,10 @@ pub enum SyscallId {
     //
     // Unlike `Declassify`, which authorizes a downgrade and records it without
     // moving any user data, this one performs the real delivery — the badge
-    // lands where an ordinary `NotificationSignal` would put it — and gates
-    // **two** hops: the signaller into the notification, and the notification
-    // onward into the *resolved receiver*.  An authorized signaller aimed at a
-    // sink the policy never authorized is refused at the second, with its own
-    // discriminant (`DeclassificationDeniedAtReceiver`), because a monitor
-    // reading a bare "denied" cannot tell an unauthorized caller from an
-    // authorized caller aimed at an unauthorized sink.
+    // lands where an ordinary `NotificationSignal` would put it — and gates the
+    // signaller's hop into the notification.  The onward delivery needs no gate:
+    // only a thread of the notification's own label can wait on it or be bound
+    // to it, so that flow is the identity flow.
     DeclassifySignal = 33,
     // 34: retired (WS-SX SX6.5, `tcbSetFaultHandler`: seL4-MCS installs the
     // fault endpoint in `TCB_SetSpace`, extra capability 0); reserved.

@@ -193,8 +193,8 @@ field is carried, never derived from the flow endpoints.
 
 Load-bearing for the same reason `declassificationEventOnCore_originatingCore`
 is: the tempting way to add the field is to default it to the source domain,
-which would compile everywhere and be silently wrong for exactly the second-hop
-events it exists to attribute. -/
+which would compile everywhere and be silently wrong for any event whose flow
+source is not its actor. -/
 theorem declassificationEventOnCore_actor
     (c : CoreId) (actor : DeclassificationActor) (srcDomain dstDomain : SecurityDomain)
     (targetId : SeLe4n.ObjId) (epoch : Nat) (position : Nat)
@@ -244,10 +244,10 @@ def declassificationSubjectDomainOnCore (ctx : GenericLabelingContext) (st : Sys
 thread and the domain the labeling gives it, bundled once so the `.declassify`
 entry point does not spell the pair out at every site.
 
-Named rather than inlined because SM9.C's two-hop signal builds the *same*
-actor for both of its events while their flow endpoints differ; having one
-constructor for "who is acting" is what keeps `attributionFromRunningSubject`
-one rule rather than one per producer. -/
+Named rather than inlined because the declassified signal builds the *same*
+actor the `.declassify` entry point does; having one constructor for "who is
+acting" is what keeps `attributionFromRunningSubject` one rule rather than one
+per producer. -/
 abbrev declassificationActorOf (ctx : GenericLabelingContext) (tid : SeLe4n.ThreadId) :
     DeclassificationActor :=
   { subject := tid, domain := ctx.threadDomainOf tid }
@@ -257,8 +257,9 @@ coincide** — which is why the conflation SM8.C carried went unnoticed.
 
 Stated over `declassificationActorOf`, the constructor the `.declassify` entry
 point uses, so it is a fact about that producer rather than an assumption about
-producers in general: SM9.C's second-hop event is exactly the case where the two
-separate (`secondHop_actor_differs_from_flowSource`). -/
+producers in general: an event whose flow source is not its actor (the
+declassified signal's second hop, deleted at `v0.37.37`) is the case where the
+two separate. -/
 theorem declassifyStoreEvent_singleHop_actor_domain_eq_src
     (c : CoreId) (ctx : GenericLabelingContext) (tid : SeLe4n.ThreadId)
     (dstDomain : SecurityDomain) (targetId : SeLe4n.ObjId) (st : SystemState) :
@@ -283,10 +284,11 @@ auditor needs to be able to rule out.
 
 **WS-SM SM9.C.1 — stated over the actor, not over `srcDomain`.**  SM8.C read the
 source domain, which was right while one event described one subject's own
-downgrade.  A transition that emits one event per authorized *hop* separates the
-two: the second hop of a two-hop delivery has the intermediate object's domain
-as its source while the *same* subject performed it, so reading `srcDomain` here
-would make this predicate assert that a high subject is mid.  Reading the actor
+downgrade.  An event whose source is not its subject's own domain separates the
+two (the declassified signal's second hop, deleted at `v0.37.37`, had the
+intermediate object's domain as its source while the *same* subject performed
+it), and reading `srcDomain` there would make this predicate assert that a high
+subject is mid.  Reading the actor
 makes attributability true of **every** recorded event rather than only of
 single-hop ones (`attributionFromRunningSubject_over_actor`), and for a
 single-hop event the two readings coincide

@@ -1,3 +1,137 @@
+## v0.37.37 — Endpoints and notification waits join only equal labels
+
+Security fix (Medium): three high-to-low storage channels through endpoint and
+notification queues are closed by making every gate that can enqueue a thread,
+or make a later operation's result depend on it, a **two-way label gate**.
+
+- **The channels.** Every Wait, receive and bind gate tested only
+  `securityFlowsTo L(object) L(thread)`, and every send gate only
+  `securityFlowsTo L(thread) L(endpoint)`.  So a higher thread could wait on a
+  lower notification or receive on a lower endpoint (its queue entry is visible
+  to the lower observer, and a later lower `Signal` or send has a different
+  result), be bound to a lower notification (bound delivery and
+  `receiveCompletesSignal` used the same one-way test), and a lower sender's
+  own state after a send on a higher endpoint read back whether a higher
+  receiver was waiting there (ready or blocked).
+- **One owner.** `twoWayLabelGate a b := securityFlowsTo a b && securityFlowsTo b a`
+  (`InformationFlow/Policy.lean`), proved equal to label equality
+  (`twoWayLabelGate_iff_eq`).  `endpointFlowGate` uses it for every endpoint
+  operation: send, receive, call, reply-receive, fault delivery and the
+  per-endpoint override path; `notificationFlowGate` for notification Wait
+  (checked wrapper, refusal-carrying arm, cross-core dispatch), bound delivery
+  and `receiveCompletesSignal`.  The one-way forms are deleted; a Tier 3
+  negative anchor keeps them out of the gate sites.
+- **Bind is policy-gated.** `.tcbBindNotification` runs
+  `bindNotificationChecked` (new; the enforcement boundary is 16 policy-gated,
+  36 capability-only), refused `flowDenied` before any write.
+- **One owner for the lend check too.** SX8's `donationContextFlows` (a
+  notification lends its context only to a thread of the context's label)
+  asked the same two-way question by hand; it is now `twoWayLabelGate`.
+  SX8's other lend gates (`callLendAdmits`, `receiveLendAdmits`,
+  `schedContextBindLabelAdmits`) ask one-way questions and are unchanged.
+- **SchedContext_Bind joins only equal labels (owner decision D35).** A thread
+  could hold a context below its own label, so the lower domain saw the
+  holder's budget charges and reply-stack pops.  The checked dispatch's bind
+  rule is now the two-way label gate between the context and its target, a
+  thread (`schedContextBindLabelAdmits`) or a notification
+  (`schedContextBindNotificationLabelAdmits`, new), refused `flowDenied` before
+  any write in the gate and the live arm; it replaces D25's stack-head rule
+  (`schedContextBindLabelAdmits_of_no_head` is deleted).  The Call lend path is
+  closed by the endpoint gate: `callLend_holderFlowsToContext` proves a Call
+  lend's holder is at or below the lent context.
+- **Conformance rows.** Five `.hardening` behaviour rows, each with a scenario
+  run both ways: cross-label send, receive, Wait, notification bind and
+  context bind refused; the SX8 signal-lend scenario's higher waiter now waits
+  on a notification of its own label.
+- **Signal stays one-way.** It never blocks the signaller and returns nothing
+  that depends on a receiver.  Cross-label traffic uses notifications.
+- **Proofs.** An admitted Wait or receive needs no hypothesis that the object is
+  non-observable: `notificationObjectHigh_of_admittedThreadHigh` and
+  `endpointObjectHigh_of_admittedReceiverHigh` derive it from the gate, and
+  `notificationWaitChecked_NI` / `nonInterferenceStep_of_notificationWaitChecked`
+  take no `hNtfnHigh`.  `endpointAdmissionUniform` (every admission keeps a
+  queue label-uniform) and `endpointAdmissionRefusesMixedLabels` replace
+  `endpointAdmissionAdmitsMixedObservability`.  New refusal theorems:
+  `notificationWaitChecked_flowDenied_of_waiterAbove`,
+  `endpointReceiveDualChecked_flowDenied_of_receiverAbove`,
+  `endpointSendDualChecked_flowDenied_of_endpointAbove`,
+  `bindNotificationChecked_flowDenied_of_threadAbove`,
+  `checkedDispatch_receive_flow_denied_of_receiverAbove`.
+- **Tests.** `information_flow_suite` checks the refused cross-label Wait,
+  receive, send and bind, that the refused Wait leaves the lower view unchanged
+  and a later lower `Signal` has the effect it has without it, and that each
+  call is admitted at equal labels; one existing check that expected an upward
+  Wait to be admitted now expects `flowDenied`.  The SMP information-flow
+  fixture's boundary-count line is regenerated (15/37 → 16/36).
+- **Exerciser.** The declassification scenario's boot-domain waits on the
+  upper notification are now refused: `declassified-wait-pending`,
+  `declassified-wait-blocks` and `declassified-signal-wakes` become
+  `declassified-wait-refused` (measured refusal) and `declassified-signal-pending`.
+  The bound scenario's second thread and endpoint move from the low band into
+  the boot domain (its fault to the boot endpoint is now same-label); the
+  upper notification's bind to it is the measured refusal
+  `bind-upper-notification-refused`, and `declassified-signal-two-hop`,
+  `declassified-signal-refused-at-receiver` and `audit-read-refusal-receiver`,
+  which needed a cross-label bind, are dropped.  The heap gate's expected set
+  follows.
+- **Boot refuses a notification labeling the gates would refuse (Low, fixed).**
+  The live Wait and bind admit a thread to a notification only through the
+  two-way `notificationFlowGate`, but the boot installed a configuration's
+  objects as given, so a pre-bound or pre-queued thread of another label could
+  reach the running kernel.  `bootAndInitialiseFromPlatformOn` now decides
+  `notificationLabelsCoherent` (every notification's bound thread and queue
+  ends, and every thread blocked on a notification and its queue neighbours,
+  pass the gate; a thread blocked on none has no queue links) beside
+  `declaredWitnessesInstalled`, before any physical write or install, and
+  refuses with `incoherentNotificationLabelsBootError`
+  (`bootAndInitialiseFromPlatformOn_incoherent`).  The installed state is
+  coherent (`drainBootPhysicalWrites_notificationLabelsCoherent`), and the RPi5
+  and QEMU virt deployments are proved coherent under every labeling, so the
+  refusal never fires for them.  `notificationLabelsCoherent_signalReceiver_label`
+  puts a coherent state's resolved signal receiver at its notification's label.
+  Tests: a cross-label pre-binding is refused with the pre-boot state kept, and
+  the same binding at equal labels boots.
+- **The declassified signal's second-hop refusal is deleted (owner decision,
+  2026-11-23).**  With the two-way gate the receiver of a declassified signal
+  is at the notification's label, so the onward hop is always the identity
+  flow (`declassifiedSignalReceiver_flow_ordinary_of_coherent`, on a coherent
+  state).  Deleted: the second-hop check (`declassifiedSignalPlan` takes no
+  state and authorizes the caller's hop only; it yields at most one record),
+  `DeclassifiedSignalHop` and its refusal map, the refusal seam's receiver
+  re-resolution (`refusedSignalReceiver?`, `refusalReceiverFor` and their
+  word forms), the theorems about two hops or a refused receiver, and the
+  exerciser labeling's low band.  `footprint_does_not_authorize` is replaced
+  by `footprint_receiver_at_notification_label`.  Theorems that took the
+  second hop as a premise drop it (`declassifiedSignal_ordinary_eq_signal`,
+  `declassifiedSignal_denied_before_capacity`,
+  `recordSyscallRefusal_preserves_auditObservationalEquivalence`); the two
+  that state the receiver's hop is the identity keep an explicit
+  `notificationLabelsCoherent` hypothesis, since coherence is proved at boot
+  and kept by the gates but not yet carried as a state invariant.  The
+  deletion also removes a one-bit disclosure: the old check's
+  refusal-versus-success told a caller authorized for the first hop whether a
+  waiter was queued.
+- **Error word 56 is retired.**  `declassificationDeniedAtReceiver` had no
+  other producer; 56 joins `retiredDiscriminants` (`[11, 35, 37, 56, 57]`) and
+  Rust's `KernelError::RETIRED`, and decodes to none on both sides.  No other
+  word moves.  A refused declassified signal answers `declassificationDenied`.
+- **Kept, now inert.** The refusal ledger's `refusedReceiver` field and
+  audit-read opcodes 25/26 stay in the ABI; every refusal now names no
+  receiver, so opcode 25 answers 0.  Retiring them is an audit-read ABI cut,
+  registered as debt.
+- **Tests.** The SMP information-flow suite's declassified-signal fixture
+  puts the waiter at the notification's label; its groups check one record per
+  delivery, a caller-hop-only policy delivering, the same verdict with and
+  without a waiter, and the receiverless refusal at the seam and at the ABI
+  boundary.  The fixture `smp_information_flow.expected` is regenerated by its
+  producer (`hops=1`, one record, the retired word).
+- **Debt.** The queue-membership row closes (cross-label traffic uses
+  notifications), and so does the second-hop row (deleted per the owner's
+  decision).  Registered: the queue label-uniformity state invariant (the
+  teardown's neighbour clause is still a hypothesis; the boot check is its base
+  case), the receiver field and opcodes 25/26, and restoring the sharp audit
+  trail invariants the second hop had forced into general forms.
+
 ## v0.37.36 — notification context donation and the seL4 conformance table
 
 WS-SX SX8 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`), the whole row: SX8.1

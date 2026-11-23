@@ -174,23 +174,21 @@ with the projection's own object-identity discipline.
 
 **WS-SM SM9.C.1 — four conjuncts, and why the last two are not redundant.**
 SM9.C adds two things an entry discloses.  The `actor` pair (§3.5) is a *third*
-domain: on the second hop of a two-hop delivery the actor is the signalling
-subject while the source is the intermediate object, so a reader cleared for the
-source and destination could otherwise read off the domain of a subject it
-dominates neither.  And the round-3 argument for `targetObject` stopped being
-*derivable*: it went through the producer invariant "`dstDomain` is the target
-object's own domain", which a second-hop event falsifies by design (its
-destination is the receiving *thread's* domain, and the labeling scores a
-thread and an object independently).  So the object-identity conjunct is stated
-**directly** here rather than derived, which makes
-`auditVisibleEntry_target_domain_flows` unconditional — strictly stronger than
-the form it replaces.
+domain: an entry whose source is not its actor's domain would otherwise hand a
+reader cleared for the source and destination the domain of a subject it
+dominates neither (the declassified signal's second hop was such an entry until
+`v0.37.37` deleted it; the conjunct stays, so visibility never rests on which
+producers exist).  And the round-3 argument for `targetObject` is stated
+**directly** rather than derived through the producer invariant "`dstDomain` is
+the target object's own domain", which the deleted second hop falsified, so
+`auditVisibleEntry_target_domain_flows` is unconditional — strictly stronger
+than the derived form.
 
 The actor's *identity* needs no conjunct of its own: `actor.domain` is that
 subject's own domain by construction at every producer
 (`auditTrailActorsFromLabeling`), so the third conjunct gates it.  That
-indirection is sound here precisely where the target's was not — SM9.C
-maintains the actor invariant at both hops and breaks the destination one. -/
+indirection is sound here precisely where the target's was not — every
+producer maintains the actor invariant, whatever it records as destination. -/
 def auditEntryVisibleTo (ctx : GenericLabelingContext) (reader : SecurityDomain)
     (e : DeclassificationEvent) : Bool :=
   ctx.policy.canFlow e.srcDomain reader && ctx.policy.canFlow e.dstDomain reader &&
@@ -275,9 +273,9 @@ theorem auditLogVisibleTo_cleared_dst (ctx : GenericLabelingContext)
   exact h4.1.1.2
 
 /-- WS-SM SM9.C.1 (**the actor projection**): a visible entry's *actor* domain
-flows to the reader — the conjunct the two-hop design owes, since a second-hop
-event's source is the intermediate object's domain and says nothing about the
-subject that performed the downgrade. -/
+flows to the reader — owed whenever an entry's source need not be its actor's
+domain (the declassified signal's second hop, deleted at `v0.37.37`, was such an
+entry), so the filter never depends on which producers exist. -/
 theorem auditLogVisibleTo_cleared_actor (ctx : GenericLabelingContext)
     (reader : SecurityDomain) (log : DeclassificationAuditLog)
     {e : DeclassificationEvent} (h : e ∈ auditLogVisibleTo ctx reader log) :
@@ -290,10 +288,10 @@ theorem auditLogVisibleTo_cleared_actor (ctx : GenericLabelingContext)
 /-- WS-SM SM9.C.1 (**the object-identity projection**): a visible entry's target
 object is one whose **own** domain flows to the reader.
 
-Stated directly rather than derived through the destination, because SM9.C's
-second-hop event's destination is a *thread's* domain: the derivation round 3
-used holds only while `dstDomain = objectDomainOf targetObject`, which two-hop
-delivery falsifies by design. -/
+Stated directly rather than derived through the destination: the derivation
+round 3 used holds only while `dstDomain = objectDomainOf targetObject`, a
+producer invariant the declassified signal's second hop (deleted at `v0.37.37`)
+falsified, and the direct statement needs no producer invariant at all. -/
 theorem auditLogVisibleTo_cleared_target (ctx : GenericLabelingContext)
     (reader : SecurityDomain) (log : DeclassificationAuditLog)
     {e : DeclassificationEvent} (h : e ∈ auditLogVisibleTo ctx reader log) :
@@ -974,9 +972,8 @@ designation is not here either — it is a string, and gets the byte protocol of
 
 **WS-SM SM9.C.1 adds the actor pair.**  A record a monitor cannot read is a
 record that does not exist for the purpose it was added for, and the actor is
-exactly what a monitor most needs on a second-hop event: its `srcDomain` is the
-intermediate object's, so without the actor the trail names *what* crossed and
-not *who* crossed it.  Both components are unbounded `Nat` in the model
+what names *who* crossed, where `srcDomain` and `dstDomain` name only *what*
+crossed and where to.  Both components are unbounded `Nat` in the model
 (`ThreadId.toNat`, `SecurityDomain.id`), so both ride the chunk protocol. -/
 inductive AuditReadField where
   | srcDomain
@@ -1069,10 +1066,12 @@ inductive AuditReadOp where
   /-- WS-SM SM9.B.10: chunk `chunk` of unbounded field `field` of ring slot
       `slot`. -/
   | refusalSlotField (slot : Nat) (field : RefusalReadField) (chunk : Nat)
-  /-- WS-SM SM9.C.1 (`refusalRecord_names_failed_hop`): how many chunks ring
-      slot `slot`'s **refused receiver** needs — `0` when the refusal named no
-      receiver, which is unambiguous because a present value always needs at
-      least one chunk (`auditFieldChunkCount?` of `0` is `some 1`).  Its own
+  /-- WS-SM SM9.C.1: how many chunks ring slot `slot`'s **refused receiver**
+      needs — `0` when the refusal named no receiver, which is every refusal
+      since `v0.37.37` deleted the declassified signal's second-hop refusal,
+      the one producer that named one (retiring this selector pair is
+      registered debt, `docs/REGISTERED_DEBT.md`).  `0` is unambiguous because
+      a present value always needs at least one chunk (`auditFieldChunkCount?` of `0` is `some 1`).  Its own
       pair of constructors rather than a fourth `RefusalReadField`, because the
       field is the ledger's one *optional* export and the absent case needs an
       in-band encoding the total-field protocol deliberately does not have. -/
@@ -2145,12 +2144,14 @@ or an object.
 
 The generalisation SM9.C forces.  While `.declassify` was the only producer,
 every recorded source was a *subject's* domain and every recorded destination an
-*object's*, and the two invariants below could say so.  A two-hop delivery
-records a hop whose source is the intermediate notification's domain and whose
-destination is the receiving thread's, so neither of those sharper statements
-survives; what does survive — and is all the drain's dominance argument needs —
-is that a recorded domain is one the labeling gives to *something*, since the
-configured monitor is validated to dominate both families. -/
+*object's*, and the two invariants below could say so.  The declassified
+signal's second hop recorded a hop from the intermediate notification's domain
+to the receiving thread's, which broke both sharper statements; that hop was
+deleted at `v0.37.37`, so every producer meets the sharper forms again, and
+restoring them is registered debt (`docs/REGISTERED_DEBT.md`).  What the general
+form states — and is all the drain's dominance argument needs — is that a
+recorded domain is one the labeling gives to *something*, since the configured
+monitor is validated to dominate both families. -/
 def labelingAssignedDomain (ctx : GenericLabelingContext) (d : SecurityDomain) : Prop :=
   (∃ tid : SeLe4n.ThreadId, d = ctx.threadDomainOf tid) ∨
     (∃ oid : SeLe4n.ObjId, d = ctx.objectDomainOf oid)
@@ -2169,8 +2170,7 @@ theorem labelingAssignedDomain_object (ctx : GenericLabelingContext)
 
 A property of kernel-produced trails rather than a gate: the audited producer
 records `srcDomain := ctx.threadDomainOf tid` for the subject the executing core
-is running, and SM9.C's second hop records the intermediate object's domain, so
-every entry either writes satisfies this by construction.
+is running, so every entry it writes satisfies this by construction.
 
 It is *not* the visibility gate, and it does not age the way a records-derived
 gate would.  A records-derived gate becomes **more permissive** as entries
@@ -2229,11 +2229,10 @@ in its **sharp** form — `dstDomain = ctx.objectDomainOf targetObject`, so a
 reader cleared for the destination was cleared for the disclosed object's own
 domain — and built the capstone `auditVisibleEntry_target_domain_flows` on it.
 
-SM9.C's second-hop event makes that statement **false**: its destination is the
-receiving *thread's* domain while its target names that thread's TCB, and the
-labeling scores a thread and an object independently.  Retiring it is therefore
-the honest move, and the two things it bought are both kept, each by something
-stronger or equal:
+SM9.C's second-hop event made that statement **false** (its destination was
+the receiving *thread's* domain while its target named that thread's TCB) until
+`v0.37.37` deleted the hop; restoring the sharp form is registered debt.  The two
+things it bought are both kept, each by something stronger or equal:
 
 * the object-identity discipline moves **into the filter** as its own conjunct,
   so the capstone holds with no trail hypothesis at all;
@@ -2267,9 +2266,8 @@ domain.**
 
 The third trail invariant, and the one that lets the visibility filter gate the
 disclosed *subject identity* through the `actor.domain` conjunct rather than
-through a fifth conjunct of its own.  Unlike the destination invariant this one
-**survives** SM9.C: both hops of a two-hop delivery share one actor, read off
-the state by the same `declassificationActorOf` the single-hop producer uses. -/
+through a fifth conjunct of its own.  Every producer reads the actor off the
+state by the same `declassificationActorOf`. -/
 def auditTrailActorsFromLabeling (ctx : GenericLabelingContext)
     (log : DeclassificationAuditLog) : Prop :=
   ∀ e ∈ log, e.actor.domain = ctx.threadDomainOf e.actor.subject
@@ -2343,8 +2341,8 @@ object identity its own projection redacts.
 
 **WS-SM SM9.C.1 — now unconditional.**  Round 3 derived it from the destination
 conjunct plus the producer invariant `dstDomain = objectDomainOf targetObject`,
-which SM9.C's second-hop event falsifies (its destination is the receiving
-*thread's* domain).  The object-identity conjunct is in the filter itself, so
+which the declassified signal's second hop falsified until `v0.37.37` deleted
+it.  The object-identity conjunct is in the filter itself, so
 the capstone needs no hypothesis about the trail at all — a strengthening, and
 the reason the retired invariant is not merely weakened but replaced. -/
 theorem auditVisibleEntry_target_domain_flows (ctx : GenericLabelingContext)
@@ -2392,10 +2390,10 @@ Owed since the visibility filter gained its destination conjunct, and owed
 independently since the fourth conjunct disclosed `objectDomainOf targetObject`
 for every entry: a first-hop entry's `dstDomain` is an *object* domain (the
 producer sets it to the target object's own), so subject dominance alone does
-not imply the monitor sees the whole trail.  A second-hop entry's `dstDomain`
-is a *thread* domain instead (WS-SM SM9.C.1 — the reason
-`auditTrailDestinationsAreTargetDomains` was retired), and that side rides the
-subject half; both halves together cover every conjunct the filter checks.
+not imply the monitor sees the whole trail.  An entry whose `dstDomain` is a
+*thread* domain (the declassified signal's second hop recorded one until
+`v0.37.37`) rides the subject half; both halves together cover every conjunct
+the filter checks.
 Configuration-derived exactly as the subject half is. -/
 def auditMonitorDominatesObjects (ctx : GenericLabelingContext)
     (monitorClearance : Option SecurityDomain) : Prop :=

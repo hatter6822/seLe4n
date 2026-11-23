@@ -93,21 +93,20 @@ pub fn declassify(
 ///
 /// # What makes it a declassification
 ///
-/// Two gated hops, not one.  The kernel authorizes the **signaller into the
-/// notification** and the **notification onward into the resolved receiver**,
-/// each against the base lattice first and the configured declassification
-/// policy second, and appends one attributed audit entry per hop that turned
-/// out to be a downgrade.  A hop the base lattice already permits is an
-/// ordinary flow and records nothing, so a deployment with no declassification
-/// policy configured gets exactly `notification_signal`'s behaviour and an
-/// audit trail that cannot grow (Lean:
+/// One gated hop.  The kernel authorizes the **signaller into the
+/// notification** against the base lattice first and the configured
+/// declassification policy second, and appends one attributed audit entry when
+/// that hop turned out to be a downgrade.  A hop the base lattice already
+/// permits is an ordinary flow and records nothing, so a deployment with no
+/// declassification policy configured gets exactly `notification_signal`'s
+/// behaviour and an audit trail that cannot grow (Lean:
 /// `declassifiedSignal_default_policy_eq_signal`).
 ///
-/// Gating the second hop is not optional decoration.  A signaller authorized
-/// into the notification but not onward to the thread that will receive the
-/// badge is **refused**, with its own discriminant — because a receiver being
-/// inside the delivery's effect footprint says where the badge lands, not that
-/// sending it there is permitted (Lean: `footprint_does_not_authorize`).
+/// The onward delivery to the thread that receives the badge needs no gate of
+/// its own: a thread waits on, or is bound to, a notification only at the
+/// notification's own label (the two-way wait and bind gates, and the boot's
+/// label check), so that flow is the identity flow (Lean:
+/// `declassifiedSignalReceiver_flow_ordinary_of_coherent`).
 ///
 /// # Arguments
 ///
@@ -119,8 +118,8 @@ pub fn declassify(
 /// label boundary is the identity the capability was minted with, so a
 /// declassifying signal can no more forge another sender's badge bits than an
 /// ordinary one.  No security domain is a parameter, for the reason `declassify` takes none: the source is read off
-/// the subject the executing core is running, and the two destinations off the
-/// notification and its resolved receiver.  Requires the **write** right — the
+/// the subject the executing core is running, and the destination off the
+/// notification.  Requires the **write** right — the
 /// same authority the ordinary signal requires, which the declassification
 /// gates sit on top of rather than replace.
 ///
@@ -135,15 +134,13 @@ pub fn declassify(
 ///   or anything but a notification.
 /// * `IllegalState` — the executing core is running no thread, so there is no
 ///   subject to attribute the downgrade to.
-/// * `DeclassificationDenied` — the **first** hop (signaller → notification)
-///   is authorized by neither policy.  Also what an unconfigured deployment
-///   gets whenever the base lattice denies that hop.
-/// * `DeclassificationDeniedAtReceiver` — the **second** hop (notification →
-///   resolved receiver) is authorized by neither policy.  A distinct
-///   discriminant on purpose: an unauthorized caller and an authorized caller
-///   aimed at an unauthorized sink call for opposite responses.
+/// * `DeclassificationDenied` — the signaller's hop into the notification is
+///   authorized by neither policy.  Also what an unconfigured deployment gets
+///   whenever the base lattice denies that hop.  The onward delivery to the
+///   receiver is never refused: only a thread of the notification's own label
+///   can wait on it or be bound to it.
 /// * `AuditLogCapacityExceeded` — the audit trail cannot hold this delivery's
-///   records.  The badge was **not delivered**: a downgrade the kernel cannot
+///   record.  The badge was **not delivered**: a downgrade the kernel cannot
 ///   record is refused rather than performed unaudited (Lean:
 ///   `declassifiedSignal_never_unaudited`).
 #[inline]

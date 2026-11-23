@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Platform.FFI
+import SeLe4n.Platform.Boot.NotificationLabels
 
 /-!
 # Raspberry Pi 5 — the deployment the hardware boot installs (WS-BP BP3)
@@ -1050,6 +1051,27 @@ theorem rpi5DeploymentBootStateAt_witnessesInstalled (v : BCM2712Config)
     (rpi5Deployment_startInitialThreads v hv) _
     (rpi5DeploymentIdleStateAt_witnessesInstalled v hv)
 
+/-- Every configured object is notification-inert: the deployment queues no
+    thread on its notification and binds none to it. -/
+private theorem rpi5InitialObjectsFor_notificationInert (v : BCM2712Config) :
+    ∀ e ∈ rpi5InitialObjectsFor v, notificationInertObject e.obj = true := by
+  intro e he
+  simp only [rpi5InitialObjectsFor, List.mem_cons, List.mem_append, List.mem_map,
+    List.not_mem_nil, or_false] at he
+  rcases he with (rfl | rfl | rfl | rfl | rfl | rfl | rfl) | ⟨u, -, rfl⟩ <;> rfl
+
+/-- **The state the hardware boot installs is notification-label coherent**, on
+    every variant and under every labeling, so the boot's coherence refusal
+    (`incoherentNotificationLabelsBootError`) is unreachable for this
+    deployment. -/
+theorem rpi5DeploymentBootStateAt_notificationLabelsCoherent (v : BCM2712Config)
+    (ctx : SeLe4n.Kernel.LabelingContext) :
+    SeLe4n.Kernel.notificationLabelsCoherent (rpi5DeploymentBootStateAt v).state ctx = true :=
+  notificationLabelsCoherent_of_inertObjects
+    (rpi5DeploymentBootStateAt v).hAllTables.objects.1
+    (bootPipeline_notificationInertObjects _ _ _ _ _ _ _
+      (rpi5InitialObjectsFor_notificationInert v)) ctx
+
 /-- **WS-BP BP7.11 — the payoff**: on the state the hardware boot installs,
     **both initial threads are started** — queued and stored `.Ready` — the root
     task in the boot domain and the untrusted thread in the other, so the
@@ -1089,7 +1111,8 @@ theorem bootAndInitialiseRPi5_rpi5PlatformConfigFor (board : SeLe4n.MachineConfi
       (bindPlatformConfig RPi5Platform (rpi5PlatformConfigFor board)) with
     | .error e => _ | .ok ist => _) = _
   rw [bindPlatformConfig_rpi5PlatformConfigFor, rpi5BoundPlatformConfigAt_boot _ hv]
-  simp only [rpi5DeploymentBootStateAt_witnessesInstalled _ hv, ↓reduceIte]
+  simp only [rpi5DeploymentBootStateAt_witnessesInstalled _ hv,
+    rpi5DeploymentBootStateAt_notificationLabelsCoherent, ↓reduceIte]
 
 /-- **WS-BP BP3 acceptance**: ...so the halting boot the entry reaches
     (`bootAndInitialiseRPi5OrHalt`) installs the deployment and never reaches

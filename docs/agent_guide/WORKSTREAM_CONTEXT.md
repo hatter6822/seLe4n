@@ -3414,7 +3414,14 @@ code may assume:
   pinned set is what closes the class rather than the instance.
 - **An endpoint queue's membership lives in its members' TCBs, and those members'
   labels differ** (WS-RR RR8.8, `v0.35.83`).  Three facts new code must respect,
-  and the first is the one that decides the other two.  (1) **The admission gate
+  and the first is the one that decides the other two.  **Superseded at
+  `v0.37.37`**: every endpoint and notification-wait gate is now two-way (label
+  equality, `twoWayLabelGate`), so the admission below is refused
+  (`endpointAdmissionRefusesMixedLabels`), `endpointAdmissionAdmitsMixedObservability`
+  is deleted, every admission keeps a queue label-uniform
+  (`endpointAdmissionUniform`), and the uniformity invariant is establishable —
+  its proof is the open row in `docs/REGISTERED_DEBT.md`.  Cross-label traffic
+  uses notifications.  As it stood before: (1) **The admission gate
   is an order, not an equality**: the live send / call gate is
   `endpointFlowGate ctx ep (threadLabelOf sender) (endpointLabelOf ep)` and the
   receive gate its mirror, so a *lower*-labelled and a *higher*-labelled sender

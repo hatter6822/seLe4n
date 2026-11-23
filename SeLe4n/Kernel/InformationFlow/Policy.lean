@@ -226,6 +226,64 @@ theorem securityFlowsTo_refl (l : SecurityLabel) :
   | mk c i =>
       simp [securityFlowsTo, confidentialityFlowsTo_refl, integrityFlowsTo_refl]
 
+/-- **The two-way label gate**: information may flow between `a` and `b` in
+**both** directions.
+
+This is the one answer to "may a thread wait in, or receive from, an object's
+queue?".  A one-way test (`securityFlowsTo objectLabel waiterLabel`) admits a
+high thread onto a lower object's queue, and the queue is part of the object
+the lower domain observes: the waiter's entry and the outcome of a later lower
+`Signal` or `Send` both depend on whether the high thread waited, a direct
+high-to-low storage channel.  seL4's information-flow model treats `Receive`
+the same way, as a read *and* a write of the object's partition.  On the
+product lattice the gate is label equality (`twoWayLabelGate_iff_eq`). -/
+def twoWayLabelGate (a b : SecurityLabel) : Bool :=
+  securityFlowsTo a b && securityFlowsTo b a
+
+/-- The two-way label gate admits exactly equal labels. -/
+theorem twoWayLabelGate_iff_eq (a b : SecurityLabel) :
+    twoWayLabelGate a b = true ↔ a = b := by
+  cases a with
+  | mk c₁ i₁ =>
+    cases b with
+    | mk c₂ i₂ =>
+      cases c₁ <;> cases i₁ <;> cases c₂ <;> cases i₂ <;> decide
+
+/-- The forward half of an admitted two-way gate. -/
+theorem twoWayLabelGate_forward {a b : SecurityLabel} (h : twoWayLabelGate a b = true) :
+    securityFlowsTo a b = true :=
+  (Bool.and_eq_true _ _ ▸ h).1
+
+/-- The backward half of an admitted two-way gate. -/
+theorem twoWayLabelGate_backward {a b : SecurityLabel} (h : twoWayLabelGate a b = true) :
+    securityFlowsTo b a = true :=
+  (Bool.and_eq_true _ _ ▸ h).2
+
+/-- The two-way gate is symmetric. -/
+theorem twoWayLabelGate_comm (a b : SecurityLabel) :
+    twoWayLabelGate a b = twoWayLabelGate b a := by
+  simp [twoWayLabelGate, Bool.and_comm]
+
+/-- The gate's introduction rule. -/
+theorem twoWayLabelGate_of {a b : SecurityLabel}
+    (hForward : securityFlowsTo a b = true) (hBackward : securityFlowsTo b a = true) :
+    twoWayLabelGate a b = true := by
+  simp [twoWayLabelGate, hForward, hBackward]
+
+/-- A denied forward flow denies the gate. -/
+theorem twoWayLabelGate_false_of_forward_false {a b : SecurityLabel}
+    (h : securityFlowsTo a b = false) : twoWayLabelGate a b = false := by
+  simp [twoWayLabelGate, h]
+
+/-- A denied backward flow denies the gate: the case a one-way test admits. -/
+theorem twoWayLabelGate_false_of_backward_false {a b : SecurityLabel}
+    (h : securityFlowsTo b a = false) : twoWayLabelGate a b = false := by
+  simp [twoWayLabelGate, h]
+
+/-- A label always meets itself. -/
+theorem twoWayLabelGate_refl (a : SecurityLabel) : twoWayLabelGate a a = true :=
+  twoWayLabelGate_of (securityFlowsTo_refl a) (securityFlowsTo_refl a)
+
 -- WS-RR RR8.8: the three reflexivity facts above sit here, beside the
 -- definitions they are about, rather than a thousand lines below.
 -- `DeploymentLabeling`'s endpoint/object coherence obligation is discharged by
@@ -453,7 +511,7 @@ structure LabelingContext where
       is that wiring; `endpointFlowGate` is where it is read.
 
       Defaulted to "no override anywhere", which makes the gate's second conjunct
-      vacuously `true` (`endpointFlowGate_eq_securityFlowsTo_of_no_override`), so
+      vacuously `true` (`endpointFlowGate_eq_twoWayLabelGate_of_no_override`), so
       every existing construction site and every existing behaviour is unchanged
       until an operator configures one.
 
@@ -1702,8 +1760,17 @@ def endpointOverrideAllows (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
 
 /-- WS-SM SM8.C: **the flow gate every endpoint-keyed IPC check runs.**
 
-The global lattice check **and** the endpoint's own override — a conjunction,
-never a replacement.
+The two-way label gate (`twoWayLabelGate`) **and** the endpoint's own override
+— a conjunction, never a replacement.
+
+Two-way because every endpoint operation can block: a sender or receiver whose
+peer is absent is enqueued on the endpoint, the queue is part of the endpoint
+object, and whether a later operation on it blocks or completes depends on that
+entry.  A one-way gate admitted a thread whose label the endpoint's does not
+flow *from*, so that thread's blocking wrote a lower object and a lower thread's
+later send or receive observed it.  So an endpoint carries traffic only between
+threads of its own label; cross-label traffic uses notifications, whose
+`Signal` never blocks the signaller.
 
 Conjoining rather than overriding is what makes V6-G's `endpointPolicyRestricted`
 structural instead of a deployment obligation: a misconfigured override cannot
@@ -1712,13 +1779,12 @@ widen anything, because the global check still has to pass
 An override can only ever deny more, which is the only direction a per-endpoint
 restriction should be able to move.
 
-Read by the four endpoint-keyed gate sites: the `endpointSendDualChecked` /
-`endpointReceiveDualChecked` / `endpointCallChecked` / `endpointReplyRecvChecked`
-enforcement wrappers, the live cross-core `.send` and `.call` dispatches, and the
-live `.receive` / `.replyRecv` arms. -/
+Read by every endpoint site: the send, call, receive and reply-receive
+enforcement wrappers, the live cross-core `.send`, `.call`, `.receive` and
+`.replyRecv` arms, and fault delivery. -/
 def endpointFlowGate (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
     (srcLabel dstLabel : SecurityLabel) : Bool :=
-  securityFlowsTo srcLabel dstLabel && endpointOverrideAllows ctx endpointId srcLabel dstLabel
+  twoWayLabelGate srcLabel dstLabel && endpointOverrideAllows ctx endpointId srcLabel dstLabel
 
 /-- WS-SM SM8.C: **the gate never admits a flow the global lattice denies.**
 
@@ -1729,7 +1795,29 @@ theorem endpointFlowGate_implies_securityFlowsTo (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
     (h : endpointFlowGate ctx endpointId srcLabel dstLabel = true) :
     securityFlowsTo srcLabel dstLabel = true :=
+  twoWayLabelGate_forward (Bool.and_eq_true _ _ ▸ h).1
+
+/-- An admitted endpoint operation: the destination's label flows back to the
+source's — the direction a one-way gate did not test. -/
+theorem endpointFlowGate_implies_dstFlowsToSrc (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
+    (h : endpointFlowGate ctx endpointId srcLabel dstLabel = true) :
+    securityFlowsTo dstLabel srcLabel = true :=
+  twoWayLabelGate_backward (Bool.and_eq_true _ _ ▸ h).1
+
+/-- An admitted endpoint operation passed the two-way label gate. -/
+theorem endpointFlowGate_implies_twoWay (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
+    (h : endpointFlowGate ctx endpointId srcLabel dstLabel = true) :
+    twoWayLabelGate srcLabel dstLabel = true :=
   (Bool.and_eq_true _ _ ▸ h).1
+
+/-- An admitted endpoint operation joins two equal labels. -/
+theorem endpointFlowGate_implies_eq (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
+    (h : endpointFlowGate ctx endpointId srcLabel dstLabel = true) :
+    srcLabel = dstLabel :=
+  (twoWayLabelGate_iff_eq _ _).1 (Bool.and_eq_true _ _ ▸ h).1
 
 /-- WS-SM SM8.C: …and it admits nothing the endpoint's own policy denies. -/
 theorem endpointFlowGate_implies_override (ctx : LabelingContext)
@@ -1743,7 +1831,7 @@ separately, which is how the enforcement wrappers' `…_when_allowed` theorems
 carry them. -/
 theorem endpointFlowGate_of (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
     (srcLabel dstLabel : SecurityLabel)
-    (hFlow : securityFlowsTo srcLabel dstLabel = true)
+    (hFlow : twoWayLabelGate srcLabel dstLabel = true)
     (hOverride : endpointOverrideAllows ctx endpointId srcLabel dstLabel = true) :
     endpointFlowGate ctx endpointId srcLabel dstLabel = true := by
   simp [endpointFlowGate, hFlow, hOverride]
@@ -1764,16 +1852,52 @@ theorem endpointFlowGate_false_of_securityFlowsTo_false (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
     (h : securityFlowsTo srcLabel dstLabel = false) :
     endpointFlowGate ctx endpointId srcLabel dstLabel = false := by
-  simp [endpointFlowGate, h]
+  simp [endpointFlowGate, twoWayLabelGate_false_of_forward_false h]
+
+/-- A denied destination-to-source flow denies the gate: a higher thread on a
+lower endpoint, or a lower one on a higher endpoint's receiving side, which a
+one-way gate admitted. -/
+theorem endpointFlowGate_false_of_dstFlowsToSrc_false (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
+    (h : securityFlowsTo dstLabel srcLabel = false) :
+    endpointFlowGate ctx endpointId srcLabel dstLabel = false := by
+  simp [endpointFlowGate, twoWayLabelGate_false_of_backward_false h]
 
 /-- WS-SM SM8.C: with no override configured at this endpoint the gate **is**
-the global check — so an unconfigured deployment behaves exactly as it did
-before the field existed. -/
-theorem endpointFlowGate_eq_securityFlowsTo_of_no_override (ctx : LabelingContext)
+the two-way label gate. -/
+theorem endpointFlowGate_eq_twoWayLabelGate_of_no_override (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
     (hNone : ctx.endpointPolicy.endpointPolicy endpointId = none) :
-    endpointFlowGate ctx endpointId srcLabel dstLabel = securityFlowsTo srcLabel dstLabel := by
+    endpointFlowGate ctx endpointId srcLabel dstLabel = twoWayLabelGate srcLabel dstLabel := by
   simp [endpointFlowGate, endpointOverrideAllows, hNone]
+
+/-- **The gate every notification read runs**: may thread `tid` wait on, consume
+from, take a bound delivery from, or bind to the notification `notificationId`.
+
+The two-way label gate between the notification's object label and the
+thread's.  Each of those writes the notification (its wait queue, its pending
+word, its bound-thread field) or makes a later lower `Signal`'s effect on it
+depend on the thread, so a thread whose label the notification's does not also
+flow from is refused.  `Signal` is not gated by this: it never blocks the
+signaller and returns nothing that depends on a receiver, so it keeps the
+one-way `securityFlowsTo signaller notification`. -/
+def notificationFlowGate (ctx : LabelingContext) (notificationId : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) : Bool :=
+  twoWayLabelGate (ctx.objectLabelOf notificationId) (ctx.threadLabelOf tid)
+
+/-- An admitted notification read: the notification's label flows to the
+thread's. -/
+theorem notificationFlowGate_forward {ctx : LabelingContext} {notificationId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} (h : notificationFlowGate ctx notificationId tid = true) :
+    securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf tid) = true :=
+  twoWayLabelGate_forward h
+
+/-- An admitted notification read: the thread's label flows to the
+notification's. -/
+theorem notificationFlowGate_backward {ctx : LabelingContext} {notificationId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} (h : notificationFlowGate ctx notificationId tid = true) :
+    securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf notificationId) = true :=
+  twoWayLabelGate_backward h
 
 /-- WS-SM SM8.C: and the default context configures no override anywhere, so the
 gate is the global check at every endpoint unless a deployment says otherwise. -/

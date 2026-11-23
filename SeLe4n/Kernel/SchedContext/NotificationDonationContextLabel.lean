@@ -52,14 +52,13 @@ open SeLe4n.Model
 
 /-- **The context-label check**: the context the notification lends
 (`notificationContext?`, seL4-MCS's `ntfnSchedContext`) and the thread the
-donation would lend it to carry equal labels, each flowing to the other;
+donation would lend it to carry equal labels (`twoWayLabelGate`, each flowing to the other);
 `true` where the notification lends no context. -/
 def donationContextFlows (ctx : LabelingContext) (st : SystemState) (n : SeLe4n.ObjId)
     (tid : SeLe4n.ThreadId) : Bool :=
   match notificationContext? st n with
   | none => true
-  | some s => securityFlowsTo (ctx.objectLabelOf s.toObjId) (ctx.threadLabelOf tid) &&
-      securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf s.toObjId)
+  | some s => twoWayLabelGate (ctx.objectLabelOf s.toObjId) (ctx.threadLabelOf tid)
 
 /-- `donationContextFlows` as compiled: the notification's context word read in
 place.  `notificationContext?` hands back a fresh `some` when the store's entry is
@@ -72,8 +71,7 @@ the word builds nothing. -/
   | some ntfn =>
     match ntfn.schedContext with
     | none => true
-    | some s => securityFlowsTo (ctx.objectLabelOf s.toObjId) (ctx.threadLabelOf tid) &&
-        securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf s.toObjId)
+    | some s => twoWayLabelGate (ctx.objectLabelOf s.toObjId) (ctx.threadLabelOf tid)
 
 @[csimp] theorem donationContextFlows_eq_impl :
     @donationContextFlows = @donationContextFlowsImpl := by
@@ -125,7 +123,7 @@ theorem donationContextFlows_context {ctx : LabelingContext} {st : SystemState}
     (hS : notificationContext? st n = some s) :
     securityFlowsTo (ctx.objectLabelOf s.toObjId) (ctx.threadLabelOf tid) = true := by
   unfold donationContextFlows at h
-  simp only [hS, Bool.and_eq_true] at h
+  simp only [hS, twoWayLabelGate, Bool.and_eq_true] at h
   exact h.1
 
 /-- **...and the other half**: where it passes, the thread it is lent to flows
@@ -137,7 +135,7 @@ theorem donationContextFlows_context_back {ctx : LabelingContext} {st : SystemSt
     (hS : notificationContext? st n = some s) :
     securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf s.toObjId) = true := by
   unfold donationContextFlows at h
-  simp only [hS, Bool.and_eq_true] at h
+  simp only [hS, twoWayLabelGate, Bool.and_eq_true] at h
   exact h.2
 
 /-- **Where the thread does not flow back to the context, the check refuses**:
@@ -148,7 +146,7 @@ theorem donationContextFlows_false_of_not_back {ctx : LabelingContext} {st : Sys
     (hBack : securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf s.toObjId) = false) :
     donationContextFlows ctx st n tid = false := by
   unfold donationContextFlows
-  simp only [hS, hBack, Bool.and_false]
+  simp only [hS, twoWayLabelGate, hBack, Bool.and_false]
 
 /-- **Where the check refuses, the checked donation writes nothing.** -/
 theorem maybeDonateSchedContextFlowing_of_flows_false {ctx : LabelingContext}
@@ -246,7 +244,8 @@ theorem donationContextFlowsGeneric_liftLegacyContext (ctx : LabelingContext)
   cases notificationContext? st n with
   | none => rfl
   | some s =>
-    simp only [genericFlowCheck, domainFlowsTo, liftLegacyContext, legacyLattice_canFlow_embed]
+    simp only [genericFlowCheck, domainFlowsTo, liftLegacyContext, legacyLattice_canFlow_embed,
+      twoWayLabelGate]
 
 /-- **The checked notification donation under a generic labelling context.** -/
 def maybeDonateSchedContextFlowingGeneric (gctx : GenericLabelingContext) (st : SystemState)

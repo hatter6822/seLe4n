@@ -25,7 +25,7 @@ namespace SeLe4n.Model.KernelError
 /-- The canonical numeric discriminant of each `KernelError` — the table
 that previously lived only in `Platform.FFI.KernelError.toUInt32` (which
 becomes this function's `UInt32` instance, so the table exists exactly once).
-Discriminants `11`, `35`, `37` and `57` are retired (`retiredDiscriminants`) and no variant has one.  Mirrors `rust/sele4n-types/src/error.rs` exactly;
+Discriminants `11`, `35`, `37`, `56` and `57` are retired (`retiredDiscriminants`) and no variant has one.  Mirrors `rust/sele4n-types/src/error.rs` exactly;
 `tests/SyscallDispatchSuite.lean` round-trips the pairing. -/
 @[inline] def toDiscriminant : KernelError → Nat
   | .invalidCapability _           => 0
@@ -84,7 +84,7 @@ Discriminants `11`, `35`, `37` and `57` are retired (`retiredDiscriminants`) and
   | .threadOnDifferentCore         => 53
   | .auditLogCapacityExceeded      => 54
   | .auditFieldTooLarge            => 55
-  | .declassificationDeniedAtReceiver => 56
+  -- 56: retired (`retiredDiscriminants`).
   -- 57: retired (`retiredDiscriminants`).
   -- seL4's `seL4_TruncatedMessage`: a message shorter than its decode reads.
   | .truncatedMessage              => 58
@@ -153,7 +153,7 @@ def ofDiscriminant? : Nat → Option KernelError
   | 53 => some .threadOnDifferentCore
   | 54 => some .auditLogCapacityExceeded
   | 55 => some .auditFieldTooLarge
-  | 56 => some .declassificationDeniedAtReceiver
+  -- 56: retired (`retiredDiscriminants`), decodes to `none`.
   -- 57: retired (`retiredDiscriminants`), decodes to `none`.
   | 58 => some .truncatedMessage
   | 59 => some (.rangeError 0 0)
@@ -206,10 +206,13 @@ seL4's `seL4_DeleteFirst` (`targetSlotOccupied`), and `35`, the
 `invalidCapPtr` a capability-pointer register past `2^64` was refused with
 before a register became a 64-bit word (WS-SX SX1.3), and `37`, the
 `allocationMisaligned` the carve returned before it rounded the free index up
-to the object's boundary (WS-ZA ZA5.4 part 14), and `57`, the `ipcCancelled` a
+to the object's boundary (WS-ZA ZA5.4 part 14), `56`, the
+`declassificationDeniedAtReceiver` the declassifying signal answered when it
+refused its onward hop, before the two-way notification gates and the boot's
+label check made that hop the identity flow, and `57`, the `ipcCancelled` a
 cancelled IPC answered before a cancelled IPC restarted its system call
 (WS-SX SX4).  No variant has one, and `ofDiscriminant?` decodes one to `none`. -/
-def retiredDiscriminants : List Nat := [11, 35, 37, 57]
+def retiredDiscriminants : List Nat := [11, 35, 37, 56, 57]
 
 /-- Every discriminant is inside the table. -/
 theorem toDiscriminant_lt (e : KernelError) : toDiscriminant e < kernelErrorEncodingBound := by
@@ -261,6 +264,11 @@ theorem ofDiscriminant?_retired_capPtr : ofDiscriminant? 35 = none := rfl
 
 /-- The retired `ipcCancelled` discriminant names no error. -/
 theorem ofDiscriminant?_retired_ipcCancelled : ofDiscriminant? 57 = none := rfl
+
+/-- The retired `declassificationDeniedAtReceiver` discriminant names no
+error. -/
+theorem ofDiscriminant?_retired_declassificationDeniedAtReceiver :
+    ofDiscriminant? 56 = none := rfl
 
 /-- The retired `mappingConflict` discriminant names no error. -/
 theorem ofDiscriminant?_retired_mappingConflict : ofDiscriminant? 11 = none := rfl
