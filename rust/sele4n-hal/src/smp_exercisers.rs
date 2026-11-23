@@ -14184,21 +14184,16 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 6] = [
     ),
     partner_step("receive-tainted", RECEIVE, ENDPOINT_CAP, 0, [0, 0], false),
     // A boot-domain wait on the upper notification: the two-way label gate
-    // refuses it before any write, so the stored badge stays pending.
-    RoundTrip {
-        returns: Some((
-            (crate::svc_dispatch::ERROR_LABEL_BASE + FLOW_DENIED) << 12,
-            [None; 4],
-        )),
-        ..partner_step(
-            "declassified-wait-refused",
-            WAIT,
-            FRAME_CAP,
-            0,
-            [0, 0],
-            false,
-        )
-    },
+    // refuses it before any write, so the stored badge stays pending.  A Wait
+    // is not a Call, so the refused caller resumes with its trapped registers.
+    resuming(partner_step(
+        "declassified-wait-refused",
+        WAIT,
+        FRAME_CAP,
+        0,
+        [0, 0],
+        false,
+    )),
     // A second declassified signal on it: its one hop the caller's downgrade
     // into the notification (one record), the word left pending.
     cap_argument(
