@@ -7634,6 +7634,114 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         )),
+        // seL4-MCS's `reply_pop` where the answered caller holds a context of
+        // its own (WS-SX SX8, the held arm): the partner, holding the image's
+        // scheduling context, calls and lends it to the root task; the root
+        // task carves a second context and binds it to the blocked partner (a
+        // lender binds, as `decodeSchedContext_Bind` binds it); the root task's
+        // reply then pops the head and keeps the loaned context, which it now
+        // owns, and wakes the partner on its own.  The partner is suspended,
+        // the carved context's only capability deleted (which unbinds it), and
+        // the image's context taken back from the root task as above.
+        configure(
+            "held-pop-configure",
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "held-pop-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation("held-pop-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        with_reply(
+            partner_step(
+                "held-pop-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "held-pop-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x6a, 0],
+            true,
+        ),
+        retype(
+            "untyped-retype-held-pop-context",
+            UNTYPED_CAP,
+            [
+                SCHED_CONTEXT_TYPE,
+                THREAD_CHILD_IDS[2],
+                CNODE_CAP,
+                MINT_SLOT,
+            ],
+            FRAME_VADDR,
+        ),
+        configure(
+            "held-pop-carved-configure",
+            FRAME_VADDR,
+            MINT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "held-pop-bind-lender",
+            SCHED_CONTEXT_BIND,
+            MINT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        partner_step("held-pop-reply", REPLY, REPLY_CAP, 1, [0x6b, 0], false),
+        invocation(
+            "held-pop-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "held-pop-carved-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MINT_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "held-pop-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "held-pop-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "held-pop-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        signal("held-pop-partner-wakes-root"),
+        self_suspend(invocation(
+            "held-pop-partner-suspends",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        )),
         // A granting reply on a donated reply object that installs: the
         // partner, holding the image's scheduling context, calls and lends it
         // to the root task; the root task's reply, naming the notification

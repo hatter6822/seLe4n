@@ -445,6 +445,13 @@ for driver in drivers:
             "suspend-donated-unbind", "suspend-donated-resume-partner",
             "suspend-donated-root-waits", "suspend-donated-partner-wakes-root",
             "suspend-donated-partner-suspends", "suspend-queued-tcb", "suspend-recv-partner-receives",
+            # WS-SX SX8: reply_pop's held arm, to a bound lender.
+            "held-pop-configure", "held-pop-bind-partner", "held-pop-resume",
+            "held-pop-root-receives", "held-pop-partner-calls", "untyped-retype-held-pop-context",
+            "held-pop-carved-configure", "held-pop-bind-lender", "held-pop-reply",
+            "held-pop-suspend-partner", "held-pop-carved-delete", "held-pop-resume-partner",
+            "held-pop-root-waits", "held-pop-unbind", "held-pop-partner-wakes-root",
+            "held-pop-partner-suspends",
             "suspend-recv-resume", "suspend-recv-root-receives", "suspend-recv-wake-root",
             "suspend-reply-partner-calls", "suspend-reply-resume",
             "suspend-reply-root-receives", "suspend-send-partner-sends", "suspend-send-resume",
