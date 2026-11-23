@@ -13,10 +13,10 @@
 > **Rows**: SX1–SX20, numbered in the order they are implemented, one PR each.
 > Each row consumes only lower-numbered rows. A row that changes a transition
 > carries the proofs that cover it. No two rows run in parallel.
-> **Decisions**: D1–D32 (§3). D1–D17 are each **default taken; owner card open**;
+> **Decisions**: D1–D32 and D34 (§3). D1–D17 are each **default taken; owner card open**;
 > D7 follows the owner's standing rule (implement seL4's behaviour, never defer
 > it). D18–D21 were decided by the owner when SX7 closed; D22 when SX8 started;
-> D23–D32 during SX8.
+> D23–D32 during SX8; D34 when SX9 started.
 > **Supersedes**: the "Next PR" scope in
 > `docs/agent_guide/WORKSTREAM_CONTEXT.md` (the root task's boot IPC buffer
 > and the guard in the capability with `CNode_Mutate`). Both are rows here
@@ -112,7 +112,7 @@ facts it rests on are restated here.
 
 ## 3. Owner decisions
 
-D1–D17 are each **default taken; owner card open**; D18–D32 are the owner's.
+D1–D17 are each **default taken; owner card open**; D18–D32 and D34 are the owner's.
 A different answer changes only the rows that cite it.
 
 - **D1. The error label.** *Default:* **seL4's error codes (1–10) in the
@@ -253,6 +253,14 @@ A different answer changes only the rows that cite it.
   SX8 closes at `v0.37.36` with no further kernel work; its remainder becomes
   SX9 (notification-lend assurance), SX10 (D31) and SX11 (one composed
   in-place ReplyRecv path), and the rows after them are renumbered.
+- **D34. The cleared observer of the notification lend.** *Decided by the
+  owner (2026-11-23, "Finer projection"):* for an observer the context's label
+  flows to (and so, under D30, the woken thread's), the projection shows the
+  words that decide the lend: the notification's context word
+  (`Notification.schedContextCode`), the thread's binding words
+  (`TCB.scBindingScCode`, `scBindingOwnerCode`) and the context's thread word
+  (`SchedContext.boundThreadCode`).  SX9.1's two-run theorem is stated over
+  that projection, not over premises that the two runs agree on those words.
 
 ## 4. Rows
 
@@ -466,7 +474,7 @@ SX8's remainder on the lend's evidence (D32). No transition changes.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX9.1 | **The two-run theorem for every observer** over the checked notification lend (`maybeDonateSchedContextFlowing`, D30). An observer the context's label does not flow to: the single-run `maybeDonateSchedContext_lowEquivalent` (`InformationFlow/PerCoreSchedulerNonInterference.lean:1956`) closes it, given that the woken thread is hidden (a thread/object label coherence fact). An observer cleared for the context (so, by D30, for the thread): the lend's writes are visible, and the projection erases the inputs that decide it (`Notification.schedContextCode`, `InformationFlow/Projection.lean:371`; `TCB.scBinding*`, `:214`). **Open, ruled by the owner when the row starts:** premises that the two runs agree on those inputs, or a finer projection for that observer. | The theorem; pair lemmas (two runs, one write) for `rewriteObject`, `updateTcb`, `runEnqueueOnCore`, `releasePlace` and `markReschedulePending`, none in the tree. | Tier 3 anchors on the theorem and its five pair lemmas |
+| SX9.1 | **The two-run theorem for every observer** over the checked notification lend (`maybeDonateSchedContextFlowing`, D30). An observer the context's label does not flow to: the single-run `maybeDonateSchedContext_lowEquivalent` (`InformationFlow/PerCoreSchedulerNonInterference.lean:1956`) closes it, given that the woken thread is hidden (a thread/object label coherence fact). An observer cleared for the context (so, by D30, for the thread): the lend's writes are visible, and the projection erases the inputs that decide it (`Notification.schedContextCode`, `InformationFlow/Projection.lean:371`; `TCB.scBinding*`, `:214`). **Ruled by the owner (D34):** a finer projection for that observer, which shows those words. | The theorem; pair lemmas (two runs, one write) for `rewriteObject`, `updateTcb`, `runEnqueueOnCore`, `releasePlace` and `markReschedulePending`, none in the tree. | Tier 3 anchors on the theorem and its five pair lemmas |
 | SX9.2 | **The remaining D21 behaviour rows** in `sel4BehaviourRows` (`Testing/Sel4ConformanceTable.lean:512`), each with its scenario in `runBehaviourRows` (`tests/Sel4ConformanceSuite.lean:301`): reply_pop's held arm; SchedContext_Unbind of a donated holder with `unbindReply` (D22); suspend keeps the victim's binding; a blocking receive returns the context; SchedContext_Bind of a lender. | none (rows and scenarios) | `sel4_conformance_suite` |
 | SX9.3 | **Heap scenarios on the two labelled bands** of `Exerciser.deploymentLabeling` (`Platform/Exerciser/Deployment.lean:162`): a Call whose lend the label check refuses (D28); a notification lend refused low to high and high to low (D30); SchedContext_Bind of a context heading a stack (D25). | none | `scripts/qemu_exerciser_lib.sh` expected set; QEMU: each reads 0 |
 
