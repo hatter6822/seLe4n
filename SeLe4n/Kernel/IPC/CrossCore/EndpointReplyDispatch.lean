@@ -22,6 +22,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.IPC.Operations.Donation.Primitives
 import SeLe4n.Kernel.IPC.Operations.UnheldContextPopInPlace
+import SeLe4n.Kernel.IPC.Operations.HeldContextPopInPlace
 import SeLe4n.Kernel.IPC.Invariant.SchedLinkFrame
 import SeLe4n.Kernel.SchedContext.ReplenishAffinity
 import SeLe4n.Kernel.InformationFlow.Enforcement.Wrappers

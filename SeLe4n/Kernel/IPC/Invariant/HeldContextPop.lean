@@ -3,6 +3,7 @@ Copyright (C) 2026 seLe4n contributors
 SPDX-License-Identifier: GPL-3.0-or-later
 -/
 import SeLe4n.Kernel.IPC.Invariant.UnheldContextPop
+import SeLe4n.Kernel.IPC.Operations.HeldContextPopInPlace
 
 /-!
 # The IPC bundle across the pop of a held context its recipient cannot take
@@ -282,6 +283,16 @@ theorem keepDonatedSchedContext_preserves_donationChainWellFormed
     donationChainWellFormed st' :=
   keepDonatedSchedContext_preserves_donationChainWellFormed_of_except hObjInv
     (fun _ _ _ => hChain) (fun _ rid _ _ _ => donationChainWellFormedExcept_of_wellFormed hChain rid) h
+
+/-- **The held pop in place keeps the donation chains** on every state its gate
+admits: there it is the specification's held pop (`keptPopsInPlace_pop`), which
+keeps them (`keepDonatedSchedContext_preserves_donationChainWellFormed`). -/
+theorem keepDonatedSchedContextInPlace_preserves_donationChainWellFormed (st : SystemState)
+    (holder : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (hObjInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st) (hG : keptPopsInPlace st holder scId = true) :
+    donationChainWellFormed (keepDonatedSchedContextInPlace st holder scId) :=
+  keepDonatedSchedContextResolved_lift (keptPopsInPlace_pop st holder scId hG).2
+    fun _ _ hP => keepDonatedSchedContext_preserves_donationChainWellFormed hObjInv hChain hP
 
 end HeldPop
 

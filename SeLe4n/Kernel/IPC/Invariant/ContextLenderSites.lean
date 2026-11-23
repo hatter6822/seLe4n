@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.IPC.Invariant.ContextLenderPops
 import SeLe4n.Kernel.IPC.Operations.UnheldContextPopInPlace
+import SeLe4n.Kernel.IPC.Operations.HeldContextPopInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDonatedInPlace
 import SeLe4n.Kernel.IPC.CrossCore.FaultAnswerInPlace
 import SeLe4n.Kernel.SchedContext.ReplyLink
@@ -236,6 +237,16 @@ theorem returnUnheldSchedContextInPlace_preserves_contextLendersFlow {ctx : Labe
   | ok n =>
     rw [hO] at h; simp only [] at h
     exact returnUnheldSchedContext_preserves_contextLendersFlow hInv hFlow h
+
+/-- The compiled held pop is the resolved held pop on the states its gate
+admits (`keptPopsInPlace_pop`). -/
+theorem keepDonatedSchedContextInPlace_preserves_contextLendersFlow {ctx : LabelingContext}
+    (st : SystemState) (holder : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (hInv : st.objects.invExt) (hFlow : contextLendersFlow ctx st)
+    (hG : keptPopsInPlace st holder scId = true) :
+    contextLendersFlow ctx (keepDonatedSchedContextInPlace st holder scId) :=
+  keepDonatedSchedContextResolved_lift (keptPopsInPlace_pop st holder scId hG).2
+    fun _ _ hP => keepDonatedSchedContext_preserves_contextLendersFlow hInv hFlow hP
 
 /-! ### The compiled push and pop -/
 

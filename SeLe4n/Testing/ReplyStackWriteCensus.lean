@@ -1045,6 +1045,10 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (`SeLe4n.Kernel.keepDonatedSchedContext,
       .states [`SeLe4n.Kernel.keepDonatedSchedContext_preserves_donationChainWellFormed]
         [`SeLe4n.Kernel.keepDonatedSchedContext_preserves_contextLendersFlow])
+    -- Its in-place form: on the states its gate admits it is that pop.
+  , (`SeLe4n.Kernel.keepDonatedSchedContextInPlace,
+      .states [`SeLe4n.Kernel.keepDonatedSchedContextInPlace_preserves_donationChainWellFormed]
+        [`SeLe4n.Kernel.keepDonatedSchedContextInPlace_preserves_contextLendersFlow])
     -- ---------------------------------------------------------------------
     -- The tree's own depth-2 chain fixture (WS-OD OD2.4).  It stores a
     -- `SchedContext` whose `scReply` heads the stack and two `Reply` objects

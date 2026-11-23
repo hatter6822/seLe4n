@@ -2116,9 +2116,20 @@ private def runDonationReturnPopChecks : IO Unit := do
         popServer chainSc popClient (some popOuter) with
      | .error e => e == (KernelError.invalidArgument 0)
      | .ok _ => false)
-  assertBool "NEGATIVE: an outer caller that still holds a binding is refused"
+  -- An outer caller that holds a context of its own (`.bound`) is a donor all
+  -- the same: seL4-MCS's `reply_pop` writes nothing to it, and the reply that
+  -- answers it later keeps the context with its holder.  One that holds a loan
+  -- (`.donated`) is not: it would owe two contexts.
+  assertBool "an outer caller that owns a context of its own is accepted"
     (match returnDonatedSchedContext
         (popStoreWith { popWaitingDonor with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound chainOtherSc), scBindingOwnerCode := 0 }
+          (some chainHeadReply) (some chainOuterReply))
+        popServer chainSc popClient (some popOuter) with
+     | .error _ => false
+     | .ok _ => true)
+  assertBool "NEGATIVE: an outer caller that still holds a loan is refused"
+    (match returnDonatedSchedContext
+        (popStoreWith { popWaitingDonor with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated chainOtherSc popServer), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated chainOtherSc popServer) }
           (some chainHeadReply) (some chainOuterReply))
         popServer chainSc popClient (some popOuter) with
      | .error e => e == (KernelError.invalidArgument 0)

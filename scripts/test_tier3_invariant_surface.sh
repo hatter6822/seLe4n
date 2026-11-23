@@ -1940,7 +1940,7 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem outerCallerAcceptable_none' SeLe
 # while keeping the whole depth-2 chain — a suite that deleted the outer caller
 # instead would pass a check that only asked whether one exists.
 run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that is not blocked on a reply is refused" tests/SmpIpcSuite.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that still holds a binding is refused" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that still holds a loan is refused" tests/SmpIpcSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that IS the rebound thread is refused" tests/SmpIpcSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that IS the server is refused" tests/SmpIpcSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: a frame below the head linking up to a different frame is refused" tests/SmpIpcSuite.lean'
@@ -4730,6 +4730,20 @@ run_check "INVARIANT" rg -n '^@\[csimp\] theorem unheldPopCommits_eq_impl' SeLe4
 # NEGATIVE: the compiled commit test must not name the constant it replaces,
 # which would loop at run time.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def unheldPopCommitsImpl[^\n]*(\n([ \t][^\n]*)?)*unheldPopCommits st" SeLe4n/Kernel/IPC/Operations/UnheldContextPopInPlace.lean'
+# WS-SX SX8: seL4-MCS's `reply_pop` held arm (the recipient holds a context of
+# its own) writes in place: the resolved held pop, the held-head router and its
+# commit test each compile through a proven `@[csimp]`.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem keepDonatedSchedContextResolved_eq_impl' SeLe4n/Kernel/IPC/Operations/HeldContextPopInPlace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem keptPopCommits_eq_impl' SeLe4n/Kernel/IPC/Operations/HeldContextPopInPlace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem popHeldReplyHead_eq_impl' SeLe4n/Kernel/IPC/Operations/HeldContextPopInPlace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem heldPopCommits_eq_impl' SeLe4n/Kernel/IPC/Operations/HeldContextPopInPlace.lean
+run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContextResolved_eq_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/HeldContextPopInPlace.lean
+# NEGATIVE: an Impl that names the constant it replaces is never `@[inline]`, or
+# the call would be re-routed to the Impl at every inlined site and loop.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def (keepDonatedSchedContextResolvedImpl|keptPopCommitsImpl)" SeLe4n/Kernel/IPC/Operations/HeldContextPopInPlace.lean'
+# The compiled reply's held arm is reached through that module: the dispatch that
+# holds `applyReplyDonationOnCore` imports it.
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.IPC\.Operations\.HeldContextPopInPlace$' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
 # WS-ZA ZA6.33: a pop above the bottom of the stack hands the context to the
 # answered caller whatever origin is recorded, and the gate asks the origin
 # only at the bottom; moving a thread off the core it runs on writes the old
