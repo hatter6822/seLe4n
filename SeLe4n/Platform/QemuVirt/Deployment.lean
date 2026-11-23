@@ -478,6 +478,23 @@ theorem qemuVirtDeploymentBootState_witnessesInstalled :
     (by simp [qemuVirtInitialObjects])
   exact ⟨Option.isSome_iff_exists.mpr ⟨_, h1⟩, Option.isSome_iff_exists.mpr ⟨_, h2⟩⟩
 
+/-- Every configured object is notification-inert: the deployment queues no
+    thread on its notification and binds none to it. -/
+private theorem qemuVirtInitialObjects_notificationInert :
+    ∀ e ∈ qemuVirtInitialObjects, notificationInertObject e.obj = true := by
+  intro e he
+  simp only [qemuVirtInitialObjects, List.mem_cons, List.not_mem_nil, or_false] at he
+  rcases he with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> rfl
+
+/-- The state the `virt` boot installs is notification-label coherent under
+    every labeling, so the boot's coherence refusal is unreachable for it. -/
+theorem qemuVirtDeploymentBootState_notificationLabelsCoherent (ctx : SeLe4n.Kernel.LabelingContext) :
+    SeLe4n.Kernel.notificationLabelsCoherent qemuVirtDeploymentBootState.state ctx = true :=
+  notificationLabelsCoherent_of_inertObjects
+    qemuVirtDeploymentBootState.hAllTables.objects.1
+    (bootPipeline_notificationInertObjects _ _ _ _ _ _ _
+      qemuVirtInitialObjects_notificationInert) ctx
+
 /-- On the installed state both initial threads are started. -/
 theorem qemuVirtDeploymentBootState_initialThreadsStarted :
     Kernel.threadStarted qemuVirtDeploymentBootState.state ⟨qemuVirtRootTaskTcbId.val⟩ ∧
@@ -502,7 +519,8 @@ theorem bootAndInitialiseQemuVirt_qemuVirtPlatformConfigFor (board : SeLe4n.Mach
       (bindPlatformConfig QemuVirtPlatform (qemuVirtPlatformConfigFor board)) with
     | .error e => _ | .ok ist => _) = _
   rw [bindPlatformConfig_qemuVirtPlatformConfigFor, qemuVirtBoundPlatformConfig_boot]
-  simp only [qemuVirtDeploymentBootState_witnessesInstalled, ↓reduceIte]
+  simp only [qemuVirtDeploymentBootState_witnessesInstalled,
+    qemuVirtDeploymentBootState_notificationLabelsCoherent, ↓reduceIte]
 
 /-- ...so the halting boot never halts on it. -/
 theorem bootAndInitialiseQemuVirtOrHalt_qemuVirtPlatformConfigFor (board : SeLe4n.MachineConfig) :

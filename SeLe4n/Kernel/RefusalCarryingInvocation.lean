@@ -345,7 +345,7 @@ def dispatchInvocationBy (ctx : LabelingContext) (sid : SyscallId) (capAddr : Se
             }
             match resolveBindNotificationCap ntfnGate st with
             | .error e => .error e
-            | .ok notifId => bindNotification notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
+            | .ok notifId => bindNotificationChecked ctx notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
           | none => .error .objectNotFound
     | _ => .error (.invalidCapability 0)
   | .tcbUnbindNotification =>
@@ -536,7 +536,7 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
       hMove, hReply, hDelete, hMap, hUnify,
       hPrio, hMcp, hIpcBuf, hAff,
       hSpace, hPt, hIrqGet,
-      dispatchCapabilityOnlyChecked]
+      dispatchCapabilityOnlyChecked, tcbBindNotificationArm]
   all_goals first | rfl | (split <;> rfl)
 
 /-- WS-ZA ZA5.2: answering an admitted resume's pending fault keeps it admitted:
@@ -760,6 +760,10 @@ refusal is read where it is, never rebuilt. -/
                     -- capability (`resolveSchedContextBindNotificationCode`).
                     match st.getNotification? tcbObjId with
                     | some _ =>
+                      -- D35: the context binds only a notification of its label.
+                      if !schedContextBindNotificationLabelAdmits ctx scObjId tcbObjId then
+                        .error (.flowDenied, st)
+                      else
                       match validateObjIdArg scObjId with
                       | .error e => .error (e, st)
                       | .ok vScId =>
@@ -775,8 +779,8 @@ refusal is read where it is, never rebuilt. -/
                       match validateThreadIdArg (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
                       | .error e => .error (e, st)
                       | .ok vThreadId =>
-                        -- WS-SX SX8 (D25): the label rule, read in place.
-                        if !schedContextBindLabelAdmits ctx st scObjId vThreadId.val then
+                        -- D35: the label rule (equal labels), read in place.
+                        if !schedContextBindLabelAdmits ctx scObjId vThreadId.val then
                           .error (.flowDenied, st)
                         else
                         match validateObjIdArg scObjId with
@@ -966,11 +970,15 @@ refusal is read where it is, never rebuilt. -/
                     | none => .error (.illegalState, st)
                     | some _ =>
                       if ntfnCap.hasRight .read then
-                        RefusalCarrying.ofChecked
-                          (bindNotificationInPlace st notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
-                          (fun st => storeBindNotification st notifId
-                            (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
-                          (dispatchInvocationBy ctx sid capAddr xc layout regs tid executingCore cap) st
+                        -- The two-way label check (`bindNotificationChecked`),
+                        -- before any write.
+                        if notificationFlowGate ctx notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) then
+                          RefusalCarrying.ofChecked
+                            (bindNotificationInPlace st notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
+                            (fun st => storeBindNotification st notifId
+                              (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
+                            (dispatchInvocationBy ctx sid capAddr xc layout regs tid executingCore cap) st
+                        else .error (.flowDenied, st)
                       else .error (.illegalState, st)
                   | _ => .error (.illegalState, st))
         | none => .error (.objectNotFound, st)
@@ -1430,18 +1438,24 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
                   | object tcbObjId =>
                     cases hNt : st.getNotification? tcbObjId with
                     | some ntfn =>
+                      by_cases hNLab : schedContextBindNotificationLabelAdmits ctx objId tcbObjId = true
+                      rotate_left
+                      · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, schedContextBindLabelGate,
+                          resolveSchedContextBindNotificationCode, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
+                          syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hNt, hNLab]
+                      simp only [hNLab, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
                       cases hS : validateObjIdArg objId with
                       | error e =>
                         simp [RefusalCarrying.ofKernel, dispatchInvocationBy, schedContextBindLabelGate,
                           resolveSchedContextBindNotificationCode, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
-                          syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hNt, hS]
+                          syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hNt, hNLab, hS]
                       | ok vScId =>
-                        simp only [hIdle, hRight, hTg, hNt, hS, Bool.false_eq_true, ↓reduceIte]
+                        simp only [hIdle, hRight, hTg, hNt, hNLab, hS, Bool.false_eq_true, ↓reduceIte]
                         apply RefusalCarrying.ofChecked_eq
                         intro hA
                         simp only [dispatchInvocationBy, schedContextBindLabelGate, resolveSchedContextBindNotificationCode, hD, hC,
                           syscallResolveCap, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap, hRes, hL, hIdle, hRight,
-                          hTg, hNt, hS, Bool.false_eq_true, ↓reduceIte,
+                          hTg, hNt, hNLab, hS, Bool.false_eq_true, ↓reduceIte,
                           schedContextBindNotification_of_admitted _ _ _ hA]
                     | none =>
                       cases hT : st.getTcb? (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
@@ -1456,7 +1470,7 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
                             resolveSchedContextBindNotificationCode, resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
                             syscallResolveCap, hRes, hL, hIdle, hRight, hTg, hNt, hT, hV]
                         | ok vThreadId =>
-                          by_cases hLab : schedContextBindLabelAdmits ctx st objId vThreadId.val = true
+                          by_cases hLab : schedContextBindLabelAdmits ctx objId vThreadId.val = true
                           rotate_left
                           · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, schedContextBindLabelGate,
                               resolveSchedContextBindNotificationCode, resolveSchedContextBindThread, hD, hC, syscallLookupCap, SyscallGate.lookupSlot_mk, LookupFault.ofWords_word, syscallLookupArgumentCap, KernelError.argumentCapRefusal, KernelError.forArgumentCap,
@@ -1745,12 +1759,18 @@ theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
                       SyscallGate.lookupSlot_mk, hRes, hL, hIdle, hTg, hN]
                   | some ntfn =>
                     by_cases hRight : ntfnCap.hasRight .read = true
-                    · simp only [hIdle, hRight, hTg, hN, Bool.false_eq_true, ↓reduceIte]
-                      apply RefusalCarrying.ofChecked_eq
-                      intro hA
-                      simp only [dispatchInvocationBy, hD, hC, resolveBindNotificationCap,
-                        SyscallGate.lookupSlot_mk, hRes, hL, hIdle, hRight, hTg, hN,
-                        Bool.false_eq_true, ↓reduceIte, bindNotification_of_inPlace _ _ _ hA]
+                    · by_cases hG : notificationFlowGate ctx notifId
+                          (SeLe4n.ThreadId.ofNat objId.toNat) = true
+                      · simp only [hIdle, hRight, hTg, hN, hG, Bool.false_eq_true, ↓reduceIte]
+                        apply RefusalCarrying.ofChecked_eq
+                        intro hA
+                        simp only [dispatchInvocationBy, hD, hC, resolveBindNotificationCap,
+                          SyscallGate.lookupSlot_mk, hRes, hL, hIdle, hRight, hTg, hN,
+                          Bool.false_eq_true, ↓reduceIte, bindNotificationChecked, hG,
+                          bindNotification_of_inPlace _ _ _ hA]
+                      · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC,
+                          resolveBindNotificationCap, SyscallGate.lookupSlot_mk, hRes, hL, hIdle,
+                          hTg, hN, hRight, bindNotificationChecked, hG]
                     · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, resolveBindNotificationCap,
                         SyscallGate.lookupSlot_mk, hRes, hL, hIdle, hTg, hN, hRight]
                 | _ => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, resolveBindNotificationCap,

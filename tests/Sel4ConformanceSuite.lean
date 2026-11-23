@@ -185,10 +185,13 @@ private def bContextAbove : LabelingContext :=
     objectLabelOf := fun o =>
       if o = bScObj then SecurityLabel.kernelTrusted else SecurityLabel.publicLabel }
 
-/-- The waiter labelled above every object: the context's label flows to it,
-but not back. -/
+/-- The waiter labelled above the context: the context's label flows to it,
+but not back.  The notification carries the waiter's label, since a waiter
+joins a notification only at its own label (the two-way label gate). -/
 private def bWaiterAbove : LabelingContext :=
   { defaultLabelingContext with
+    objectLabelOf := fun o =>
+      if o = bNtfn then SecurityLabel.kernelTrusted else SecurityLabel.publicLabel
     threadLabelOf := fun t =>
       if t = bWaiter then SecurityLabel.kernelTrusted else SecurityLabel.publicLabel }
 
@@ -288,13 +291,60 @@ private def bCheckDestroyUnbinds : Bool :=
       (st'.getTcb? lender).any (fun t => decide (t.schedContextBinding = .unbound))
   | .error _ => false
 
+/-- Object 90 public, every thread and every other object secret: the
+cross-label fixture for the label-gate rows. -/
+private def bLabelObj : SeLe4n.ObjId := ⟨90⟩
+private def bCrossCtx : LabelingContext :=
+  { objectLabelOf := fun o => if o = bLabelObj then SecurityLabel.publicLabel else SecurityLabel.kernelTrusted
+    threadLabelOf := fun _ => SecurityLabel.kernelTrusted
+    endpointLabelOf := fun o => if o = bLabelObj then SecurityLabel.publicLabel else SecurityLabel.kernelTrusted }
+/-- Every thread public, every object secret: a lower sender on a higher
+endpoint, which the lattice alone permits. -/
+private def bUpCtx : LabelingContext :=
+  { objectLabelOf := fun _ => SecurityLabel.kernelTrusted, threadLabelOf := fun _ => SecurityLabel.publicLabel
+    endpointLabelOf := fun _ => SecurityLabel.kernelTrusted }
+/-- Every label equal: the admitted half. -/
+private def bSameCtx : LabelingContext :=
+  { objectLabelOf := fun _ => SecurityLabel.kernelTrusted, threadLabelOf := fun _ => SecurityLabel.kernelTrusted
+    endpointLabelOf := fun _ => SecurityLabel.kernelTrusted }
+private def bEpState : SystemState := bState [(bLabelObj, .endpoint {}), (bWaiter.toObjId, .tcb (bTcb 2))]
+private def bIdleNtfn : Notification :=
+  { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
+private def bNtfnLabelState : SystemState :=
+  bState [(bLabelObj, .notification bIdleNtfn), (bWaiter.toObjId, .tcb (bTcb 2))]
+private def bRefused {α} : Except KernelError α → Bool
+  | .error .flowDenied => true
+  | _ => false
+private def bCheckCrossSend : Bool :=
+  bRefused (endpointSendDualChecked bUpCtx bLabelObj bWaiter (.frame SeLe4n.Badge.zero false true) bEpState) &&
+  !bRefused (endpointSendDualChecked bSameCtx bLabelObj bWaiter (.frame SeLe4n.Badge.zero false true) bEpState)
+private def bCheckCrossReceive : Bool :=
+  bRefused (endpointReceiveDualChecked bCrossCtx bLabelObj bWaiter none bEpState) &&
+  !bRefused (endpointReceiveDualChecked bSameCtx bLabelObj bWaiter none bEpState)
+private def bCheckCrossWait : Bool :=
+  bRefused (notificationWaitChecked bCrossCtx bLabelObj bWaiter bNtfnLabelState) &&
+  !bRefused (notificationWaitChecked bSameCtx bLabelObj bWaiter bNtfnLabelState)
+private def bCheckCrossNotificationBind : Bool :=
+  bRefused (bindNotificationChecked bCrossCtx bLabelObj bWaiter bNtfnLabelState) &&
+  !bRefused (bindNotificationChecked bSameCtx bLabelObj bWaiter bNtfnLabelState)
+private def bCheckCrossContextBind : Bool :=
+  !schedContextBindLabelAdmits bCrossCtx bLabelObj bWaiter &&
+  schedContextBindLabelAdmits bSameCtx bLabelObj bWaiter &&
+  !schedContextBindNotificationLabelAdmits bCrossCtx bLabelObj bNtfn &&
+  schedContextBindNotificationLabelAdmits bSameCtx bLabelObj bNtfn
+
 /-- Each behaviour row's scenario, by the row's name. -/
 private def behaviourChecks : List (String × Bool) := [
   ("signal-lends-context", bCheckSignal),
   ("wait-consume-lends-context", bCheckWaitConsume),
   ("wait-block-returns-context", bCheckWaitReturn),
   ("call-lends-context", bCheckCallLend),
-  ("destroy-unbinds-context", bCheckDestroyUnbinds) ]
+  ("destroy-unbinds-context", bCheckDestroyUnbinds),
+  ("cross-label-send-refused", bCheckCrossSend),
+  ("cross-label-receive-refused", bCheckCrossReceive),
+  ("cross-label-wait-refused", bCheckCrossWait),
+  ("cross-label-notification-bind-refused", bCheckCrossNotificationBind),
+  ("cross-label-context-bind-refused", bCheckCrossContextBind) ]
 
 /-- Every behaviour row has its scenario and every scenario its row, and each
 scenario passes. -/

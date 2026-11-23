@@ -3097,16 +3097,16 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
     (liveErr istHeading.state == none)
   expect "FO-047c: ...and so does the frozen bind"
     (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istHeading)) == none)
-  -- ...and the checked dispatch's label rule decides it: a context heading a
-  -- stack binds only to a thread its label flows to (D25 static, D27).
+  -- ...and the checked dispatch's label rule decides it: a context binds only to
+  -- a thread of its own label (D35, which replaced D25's stack-head rule).
   let ctxHigh : SeLe4n.Kernel.LabelingContext :=
     { SeLe4n.Kernel.defaultLabelingContext with
       objectLabelOf := fun _ => SeLe4n.Kernel.SecurityLabel.kernelTrusted }
-  expect "FO-047c: the label rule refuses a context heading a stack to a thread below its label"
-    (!SeLe4n.Kernel.schedContextBindLabelAdmits ctxHigh istHeading.state diffScId.toObjId diffA)
-  expect "FO-047c: ...admits it where the label flows"
+  expect "FO-047c: the label rule refuses a context to a thread of another label"
+    (!SeLe4n.Kernel.schedContextBindLabelAdmits ctxHigh diffScId.toObjId diffA)
+  expect "FO-047c: ...admits it at equal labels"
     (SeLe4n.Kernel.schedContextBindLabelAdmits SeLe4n.Kernel.defaultLabelingContext
-      istHeading.state diffScId.toObjId diffA)
+      diffScId.toObjId diffA)
   -- (2) a thread in another domain than the binder's: seL4-MCS's
   -- `decodeSchedContext_Bind` checks no domain and a context carries none
   -- (WS-SX SX6.4), so both binds admit it.
@@ -3121,8 +3121,8 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
     (liveErr istDomain.state == none)
   expect "FO-047c: ...and so does the frozen bind"
     (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istDomain)) == none)
-  expect "FO-047c: the label rule admits a context heading no stack under any labels"
-    (SeLe4n.Kernel.schedContextBindLabelAdmits ctxHigh istDomain.state diffScId.toObjId diffA)
+  expect "FO-047c: the label rule refuses a context heading no stack across labels too"
+    (!SeLe4n.Kernel.schedContextBindLabelAdmits ctxHigh diffScId.toObjId diffA)
   -- (3) the thread's own reply frame is on a LIVE stack — reciprocated, so the
   -- thread lends a context.  seL4-MCS's `decodeSchedContext_Bind` binds a lender
   -- (WS-SX SX8), and the pop that reaches its frame keeps the loaned context with

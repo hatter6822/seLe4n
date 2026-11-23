@@ -116,19 +116,14 @@ record-level half of that argument and
 `Platform.FFI.refusalRecord_domain_is_seam_resolved_at_seam` the seam-level
 one.
 
-**What a two-hop refusal owes — and the premise that moved.**  Plan §3.5's
-declassifying signal (SM9.C.1) authorizes two hops, and a refusal of the second
-names the *resolved receiver* as well as the operand (`refusedReceiver` below;
-`Platform.FFI.refusalRecord_names_failed_hop`).  The SM9.B landing deferred the
-field on the ground that the receiver is resolved inside the transition, whose
-error arm carries no post-state, "so the seam cannot see it" — but the seam
-holds the **pre-state** and the caller's `x0`, and the transition resolves its
-receiver from that same pre-state deterministically
-(`declassifiedSignalReceiver?`), so the seam can re-resolve it and a theorem can
-pin the two resolutions equal (`Platform.FFI.refusedSignalReceiver?_resolves`).
-With a producer that provably sets it, the field stops being the
-unwired-structure shape CLAUDE.md forbids and becomes the §3.1 obligation
-discharged.  *Which* hop failed still rides the `reason` discriminant. -/
+**The receiver field outlived its producer.**  The declassifying signal
+(SM9.C.1) once authorized two hops and named the resolved receiver of a refused
+second hop here.  The two-way label gate admits a waiter or a bound thread only
+at its notification's own label, so that second hop is always the identity flow
+(`declassifiedSignalReceiver_flow_ordinary_of_coherent`) and `v0.37.37` deleted
+its check and its refusal.  No producer names a receiver now; the field and its
+audit-read selectors stay until an audit-read ABI cut retires them, registered
+in `docs/REGISTERED_DEBT.md`. -/
 structure DeclassificationRefusal where
   /-- The core the refused syscall was executing on. -/
   originatingCore : CoreId
@@ -154,21 +149,10 @@ structure DeclassificationRefusal where
   /-- The capability pointer the caller supplied in `x0` — what it asked for,
       verbatim. -/
   requestedTarget : SeLe4n.CPtr
-  /-- WS-SM SM9.C.1 (`refusalRecord_names_failed_hop`): the receiver a refused
-      **second hop** had resolved — the thread the badge would have been
-      delivered onward to — and `none` for every other refusal.
-
-      Seam-resolved like `subjectDomain`: the producer re-runs the transition's
-      own pre-state resolution (`Platform.FFI.refusedSignalReceiver?`), which a
-      theorem pins to the receiver the second-hop gate refused.  Without it a
-      hop-2 refusal reduces to the original capability operand and a
-      discriminant, and a monitor cannot identify the bound waiter an attempted
-      downgrade actually targeted — while the *success* path is required to
-      audit exactly that destination (`declassifiedSignal_audits_actual_destination`).
-
-      Deliberately **not** defaulted, for the reason `DeclassificationEvent.actor`
-      is not: a `:= none` default would let a future second producer compile
-      while silently never naming the receiver its refusals resolved. -/
+  /-- WS-SM SM9.C.1: the receiver a refused declassified signal's second hop
+      had resolved — `none` for every refusal since `v0.37.37` deleted that
+      hop's check (see the structure docstring).  Retiring the field, with
+      audit-read selectors 25 and 26, is registered debt. -/
   refusedReceiver : Option SeLe4n.ThreadId
   deriving Repr, DecidableEq
 

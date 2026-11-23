@@ -2483,6 +2483,39 @@ theorem RHTable.fold_or_false_iff {α β : Type} [BEq α] [Hashable α] [LawfulB
     · rw [← hSlot]; exact Array.getElem_mem_toList _
     · rw [eq_of_beq hKey, hVal]; exact hf
 
+/-- **A conjunction folded over a table from `true` holds when every entry the
+table resolves satisfies it** -- the converse of `fold_and_true_of_get?`, so a
+whole-table check can be discharged from a per-lookup invariant.  Needs
+`invExt`: every entry the fold visits is one `get?` returns. -/
+theorem RHTable.fold_and_true_of_forall_get? {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (f : α → β → Bool) (hExt : t.invExt)
+    (h : ∀ k v, t.get? k = some v → f k v = true) :
+    t.fold true (fun acc k v => acc && f k v) = true := by
+  have hList : ∀ (l : List (Option (RHEntry α β))) (acc : Bool),
+      acc = true → (∀ e, some e ∈ l → f e.key e.value = true) →
+      l.foldl (fun acc slot => match slot with
+        | none => acc | some e => acc && f e.key e.value) acc = true := by
+    intro l
+    induction l with
+    | nil => intro acc hAcc _; exact hAcc
+    | cons hd tl ih =>
+      intro acc hAcc hAll
+      simp only [List.foldl_cons]
+      cases hd with
+      | none => exact ih acc hAcc fun e he => hAll e (List.mem_cons_of_mem _ he)
+      | some e0 =>
+        refine ih _ ?_ fun e he => hAll e (List.mem_cons_of_mem _ he)
+        show (acc && f e0.key e0.value) = true
+        rw [hAcc, hAll e0 (List.mem_cons_self ..)]; rfl
+  unfold RHTable.fold
+  rw [← Array.foldl_toList]
+  refine hList _ true rfl fun e he => ?_
+  obtain ⟨j, hj, hjE⟩ := List.getElem_of_mem he
+  have hjc : j < t.capacity := by rw [← t.hSlotsLen]; simpa using hj
+  have hSlot : t.slots[j]'(t.hSlotsLen ▸ hjc) = some e := by
+    simpa [Array.getElem_toList] using hjE
+  exact h _ _ (RHTable.slot_entry_implies_get t j hjc e hSlot hExt)
+
 -- ============================================================================
 -- A key held in one slot only: the erase removes it, on every table
 -- ============================================================================

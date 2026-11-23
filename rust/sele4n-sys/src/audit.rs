@@ -117,10 +117,10 @@ pub enum AuditReadOpcode {
     RefusalRequestedTarget = 20,
     // WS-SM SM9.C.1: the **actor** — the subject the originating core was
     // running when the downgrade was performed, and the domain the labeling
-    // gave it.  A separate field from `SrcDomain` because a two-hop delivery's
-    // second event has a source domain that is nobody's subject domain: the
-    // notification's.  Appended after the refusal opcodes, so every earlier
-    // opcode keeps its value.
+    // gave it.  A separate field from `SrcDomain` so an entry whose source is
+    // not its subject's domain (the declassified signal's second hop, deleted
+    // at v0.37.37) can never misattribute it.  Appended after the refusal
+    // opcodes, so every earlier opcode keeps its value.
     /// Chunk count for the entry's actor thread id.
     ActorSubjectChunks = 21,
     /// Chunk count for the entry's actor domain.
@@ -129,9 +129,11 @@ pub enum AuditReadOpcode {
     ActorSubject = 23,
     /// One chunk of the entry's actor domain.
     ActorDomain = 24,
-    /// WS-SM SM9.C.1 (`refusalRecord_names_failed_hop`): chunk count of ring
-    /// slot `index`'s refused receiver — `0` means the refusal named no
-    /// receiver (a present value always needs at least one chunk).
+    /// WS-SM SM9.C.1: chunk count of ring slot `index`'s refused receiver —
+    /// `0` means the refusal named no receiver (a present value always needs
+    /// at least one chunk).  Every refusal answers `0` since v0.37.37 deleted
+    /// the declassified signal's second-hop refusal, the one producer that
+    /// named a receiver; retiring this opcode pair is registered debt.
     RefusalReceiverChunks = 25,
     /// One chunk of ring slot `index`'s refused receiver;
     /// `InvalidArgument` when the refusal named none.
@@ -554,8 +556,7 @@ mod tests {
         assert_eq!(AuditReadOpcode::ActorDomainChunks.to_u64(), 22);
         assert_eq!(AuditReadOpcode::ActorSubject.to_u64(), 23);
         assert_eq!(AuditReadOpcode::ActorDomain.to_u64(), 24);
-        // WS-SM SM9.C.1 (`refusalRecord_names_failed_hop`): the refused
-        // receiver, appended after the actor pair.
+        // WS-SM SM9.C.1: the refused receiver, appended after the actor pair.
         assert_eq!(AuditReadOpcode::RefusalReceiverChunks.to_u64(), 25);
         assert_eq!(AuditReadOpcode::RefusalReceiver.to_u64(), 26);
         // WS-SM SM9.D.14: the causality verdicts — the adjacent form, then the

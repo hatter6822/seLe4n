@@ -1062,7 +1062,7 @@ set_option maxRecDepth 8192
 #check @endpointFlowGate_of
 #check @endpointFlowGate_false_of_override_false
 #check @endpointFlowGate_false_of_securityFlowsTo_false
-#check @endpointFlowGate_eq_securityFlowsTo_of_no_override
+#check @endpointFlowGate_eq_twoWayLabelGate_of_no_override
 #check @endpointOverrideAllows_default
 #check @endpointFlowGate_is_not_securityFlowsTo
 #check @endpointGateRestricted
@@ -1744,9 +1744,6 @@ set_option maxRecDepth 8192
 #check @declassifiedSignalReceiver?
 #check @declassifiedSignalReceiver?_bound
 #check @declassifiedSignalReceiver?_fallthrough
-#check @DeclassifiedSignalHop
-#check @DeclassifiedSignalHop.refusal
-#check @DeclassifiedSignalHop.refusal_injective
 #check @DeclassifiedHopAuthorization
 #check @declassifiedSignalHopAuthorization
 #check @declassifiedSignalHopAuthorization_ordinary
@@ -1775,7 +1772,6 @@ set_option maxRecDepth 8192
 #check @recordDeclassifiedHopsFrom_preserves_trailWellFormed
 #check @recordDeclassifiedHopsFrom_preserves_proofLayerInvariantBundle
 #check @recordDeclassifiedHops_appended
-#check @recordDeclassifiedHops_two
 #check @recordDeclassifiedHops_preserves_proofLayerInvariantBundle
 
 -- SM9.C.1 / SM9.C.2 — the plan, the transition and its cross-core dispatch.
@@ -1790,9 +1786,7 @@ set_option maxRecDepth 8192
 #check @declassifiedSignalPlan_record_shape
 #check @declassifiedSignalPlan_record_sources
 #check @declassifiedSignalPlan_record_destinations
-#check @declassifiedSignalPlan_receiver_refused
 #check @declassifiedSignalPlan_ordinary
-#check @declassifiedSignalPlan_two_hops
 #check @notificationSignalDeclassifiedOnCore_frame
 #check @declassifiedSignalPlan_default_empty
 #check @notificationSignalDeclassifiedOnCore_preserves_proofLayerInvariantBundle
@@ -1809,13 +1803,9 @@ set_option maxRecDepth 8192
 
 -- SM9.C.1 — the headline properties.
 #check @declassifiedSignal_delivers_badge
-#check @declassifiedSignal_gates_resolved_receiver
 #check @declassifiedSignal_no_invented_edge
-#check @declassifiedSignal_audits_each_hop
-#check @declassifiedSignal_audits_actual_destination
-#check @secondHopEvent_names_firstHop
-#check @secondHop_actor_differs_from_flowSource
 #check @declassifiedSignal_ordinary_eq_signal
+#check @declassifiedSignalReceiver_flow_ordinary_of_coherent
 #check @declassifiedSignal_never_unaudited
 #check @declassifiedSignal_default_policy_never_downgrades
 #check @declassifiedSignal_default_policy_eq_signal
@@ -1831,7 +1821,7 @@ set_option maxRecDepth 8192
 #check @declassifiedSignalEffectFootprint
 #check @declassifiedSignalEffectFootprint_receiver
 #check @declassifiedSignalEffectFootprint_cores
-#check @footprint_does_not_authorize
+#check @footprint_receiver_at_notification_label
 #check @notificationSignalDeclassifiedOnCore_confinedToCores
 #check @declassificationRelativeNonInterference
 #check @declassifiedSignalDispatch_confinedToCores
@@ -1861,22 +1851,10 @@ set_option maxRecDepth 8192
 -- SM9.C.1 (audit cut) — the failed hop reaches the monitor, and the two
 -- enforcement families gain the thirteenth policy-gated entry's members.
 #check @declassifiedSignalHopAuthorization_error_refusal
-#check @declassifiedSignalPlan_deniedAtReceiver_resolves
 #check @notificationSignalDeclassifiedOnCore_denied_preserves_state
 #check @enforcement_sufficiency_declassifySignal
-#check @Platform.FFI.refusedSignalReceiver?
-#check @Platform.FFI.refusedSignalReceiver?_resolves
-#check @Platform.FFI.refusalReceiverFor
-#check @Platform.FFI.refusalReceiverFor_receiver_hop
-#check @Platform.FFI.refusalReceiverFor_other
-#check @Platform.FFI.refusalRecord_names_failed_hop
 #check @AuditReadOp.refusalReceiverChunkCount
 #check @AuditReadOp.refusalReceiverChunk
-
--- SM9.C.1 (PR #872 review) — the plain-waiter gate: provably a no-op on
--- checked-admitted waiters, its disclosure exhibited rather than hidden.
-#check @declassifiedSignalPlan_admitted_receiver_error_is_first_hop
-#check @declassifiedSignalPlan_outcome_depends_on_receiver
 
 -- SM9.C.1 (PR #872 review, round 2) — the target gate ahead of every policy
 -- read, and the theorem that an invalid target is never a policy oracle.
@@ -6173,10 +6151,10 @@ private def runEndpointPolicyGateChecks : IO Unit := do
         (niLabeling.endpointLabelOf lowEndpoint) = true) &&
      decide (securityFlowsTo (niLabeling.threadLabelOf highCurrent)
         (niLabeling.endpointLabelOf lowEndpoint) = false))
-  assertBool "with no override configured the gate IS the global check"
+  assertBool "with no override configured the gate IS the two-way label gate"
     (decide (endpointFlowGate niLabeling lowEndpoint (niLabeling.threadLabelOf lowCurrent)
         (niLabeling.endpointLabelOf lowEndpoint) =
-       securityFlowsTo (niLabeling.threadLabelOf lowCurrent)
+       twoWayLabelGate (niLabeling.threadLabelOf lowCurrent)
         (niLabeling.endpointLabelOf lowEndpoint)))
   assertBool "a narrowing override denies a flow the lattice permits"
     (decide (endpointFlowGate narrowingOverrideLabeling lowEndpoint
@@ -6184,8 +6162,15 @@ private def runEndpointPolicyGateChecks : IO Unit := do
   assertBool "…and only at the endpoint it names — the high endpoint is untouched"
     (decide (endpointFlowGate narrowingOverrideLabeling highEndpoint
         (niLabeling.threadLabelOf lowCurrent) (niLabeling.endpointLabelOf highEndpoint) =
-       securityFlowsTo (niLabeling.threadLabelOf lowCurrent)
+       twoWayLabelGate (niLabeling.threadLabelOf lowCurrent)
         (niLabeling.endpointLabelOf highEndpoint)))
+  -- The two-way gate refuses the low thread at the high endpoint, which the
+  -- lattice alone permits: an endpoint joins only its own label.
+  assertBool "NEGATIVE: the low thread is refused at the high endpoint the lattice permits"
+    (decide (securityFlowsTo (niLabeling.threadLabelOf lowCurrent)
+        (niLabeling.endpointLabelOf highEndpoint) = true) &&
+     decide (endpointFlowGate niLabeling highEndpoint (niLabeling.threadLabelOf lowCurrent)
+        (niLabeling.endpointLabelOf highEndpoint) = false))
   -- The load-bearing negative: a WIDENING override changes nothing.  This is the
   -- structural restriction — the reason the gate is a conjunction and not a
   -- replacement, and the reason SM8.C's Rule 3 needs no deployment obligation.
@@ -9885,19 +9870,25 @@ private def runAuditDrainSignalChecks : IO Unit := do
 -- Two things make it different in kind from every other group in this suite.
 -- It is the tree's first deliberately **visible** flow, so its bound is a write
 -- set plus a recording obligation rather than an equality of projections; and
--- it gates **two** hops, because the delivery has a second endpoint — the
--- resolved receiver — that the first authorization says nothing about.
+-- its one authorization is the caller's: the two-way label gate admits a
+-- waiter or a bound thread only at its notification's own label, so the onward
+-- delivery to the resolved receiver is always the identity flow.
 
-/-- §11 fixtures — the notification sits in the **middle** domain, so both hops
-are genuine downgrades under `launderingDeclPolicy` (2 → 1, then 1 → 0).
+/-- §11 fixtures — the notification sits in the **middle** domain, so the
+caller's hop is a genuine downgrade under `launderingDeclPolicy` (2 → 1), and the
+waiter shares the notification's label, as the two-way wait gate requires of
+every waiter a reachable state holds.
 
-`declassContext` puts every object in the public domain, which would make hop 1
-a `2 → 0` the policy refuses; that is a useful negative but it cannot exercise
-the two-record path.  This context differs from it in exactly one field. -/
+`declassContext` puts every object in the public domain, which would make the
+hop a `2 → 0` the policy refuses; that is a useful negative but it cannot
+exercise the recorded path.  This context differs from it in the notification's
+domain and the waiter's. -/
 private def signalDeclassContext : GenericLabelingContext :=
   { declassContext with
       objectDomainOf := fun oid =>
-        if oid = highNotification then declassMiddle else declassPublic }
+        if oid = highNotification then declassMiddle else declassPublic
+      threadDomainOf := fun tid =>
+        if tid = crossCoreWaiter then declassMiddle else declassContext.threadDomainOf tid }
 
 /-- The core the signal runs on: core 1, whose current thread `highCurrent` is
 in the secret domain — so the actor's domain is read off the state, not
@@ -9908,8 +9899,7 @@ private def signalCore : CoreId := c1
 
 `waitingNotificationState` already parks `crossCoreWaiter` (public domain,
 homed on core 2) on `highNotification`, so the delivery has a real receiver on
-a *remote* core — which is what makes the second hop's gate non-vacuous and the
-write set a genuine remote write.
+a *remote* core — which is what makes the write set a genuine remote write.
 
 Core 2's **run queue is emptied**, which §5.2b's fixture does not do because its
 own subject is a suspend victim that has to occupy it.  Here the receiver is
@@ -9926,14 +9916,15 @@ private def declassSignalRun :
   notificationSignalDeclassifiedOnCore signalDeclassContext launderingDeclPolicy
     highNotification (SeLe4n.Badge.ofNatMasked 0x5C) signalCore declassSignalState
 
-/-- The same delivery under a policy that authorizes the **first** hop only, so
-the receiver's gate is the one that refuses. -/
-private def receiverOnlyDeniedPolicy : DeclassificationPolicy :=
+/-- The same delivery under a policy that authorizes the caller's hop **only**
+(`2 → 1`, never `1 → 0`): the receiver at the notification's label needs no
+authorization of its own, so this delivers exactly as the laundering policy does. -/
+private def callerHopOnlyPolicy : DeclassificationPolicy :=
   { canDeclassify := fun src dst => decide (src.id = 2) && decide (dst.id = 1) }
 
-private def declassSignalReceiverDenied :
+private def declassSignalCallerHopOnly :
     SystemState × Except KernelError (Option (CoreId × Concurrency.SgiKind)) :=
-  notificationSignalDeclassifiedOnCore signalDeclassContext receiverOnlyDeniedPolicy
+  notificationSignalDeclassifiedOnCore signalDeclassContext callerHopOnlyPolicy
     highNotification (SeLe4n.Badge.ofNatMasked 0x5C) signalCore declassSignalState
 
 /-- The deny-all policy an unconfigured deployment carries.
@@ -9951,96 +9942,71 @@ private def declassSignalDefault :
   notificationSignalDeclassifiedOnCore signalDeclassContext denyAllDeclPolicy
     highNotification (SeLe4n.Badge.ofNatMasked 0x5C) signalCore declassSignalState
 
-/-- §11.1  SM9.C.1 — the two hops, and the records they leave. -/
+/-- §11.1  SM9.C.1 — the caller's hop, and the record it leaves. -/
 private def runDeclassifiedSignalHopChecks : IO Unit := do
-  IO.println "--- §11.1 SM9.C.1 two gated hops, two records ---"
-  assertBool "the fixture really has both endpoints: a secret subject on core 1, a public waiter on core 2"
+  IO.println "--- §11.1 SM9.C.1 one gated hop, one record ---"
+  assertBool "the fixture really has both endpoints: a secret subject on core 1, a middle waiter on core 2"
     (decide (declassSignalState.scheduler.currentOnCore signalCore = some highCurrent) &&
      decide (signalDeclassContext.threadDomainOf highCurrent = declassSecret) &&
      decide (declassifiedSignalReceiver? declassSignalState highNotification
        = some crossCoreWaiter) &&
-     decide (signalDeclassContext.threadDomainOf crossCoreWaiter = declassPublic) &&
+     decide (signalDeclassContext.threadDomainOf crossCoreWaiter = declassMiddle) &&
      decide (SeLe4n.Kernel.determineTargetCore declassSignalState crossCoreWaiter = c2))
-  assertBool "the notification sits between them, so BOTH hops are downgrades the base policy denies"
+  assertBool "the notification sits at the waiter's label, and the caller's hop is a downgrade the base policy denies"
     (decide (signalDeclassContext.objectDomainOf highNotification = declassMiddle) &&
      decide (signalDeclassContext.policy.canFlow declassSecret declassMiddle = false) &&
-     decide (signalDeclassContext.policy.canFlow declassMiddle declassPublic = false))
-  assertBool "the delivery succeeds and records exactly two events, in hop order"
+     decide (signalDeclassContext.policy.canFlow declassMiddle declassMiddle = true))
+  assertBool "the delivery succeeds and records exactly one event, the caller's hop"
     (match declassSignalRun.2 with
      | .error _ => false
      | .ok _ =>
        match declassSignalRun.1.declassificationAuditLog with
-       | [e₁, e₂] =>
+       | [e₁] =>
            decide (e₁.srcDomain = declassSecret) && decide (e₁.dstDomain = declassMiddle) &&
-           decide (e₁.targetObject = highNotification) &&
-           decide (e₂.srcDomain = declassMiddle) && decide (e₂.dstDomain = declassPublic) &&
-           decide (e₂.targetObject = crossCoreWaiter.toObjId)
+           decide (e₁.targetObject = highNotification)
        | _ => false)
-  -- The actor is the SAME on both entries and is the subject the core was
-  -- running.  The second event's *source* is the notification's domain, which
-  -- is nobody's subject domain — which is exactly why the actor is a separate
-  -- field rather than recoverable from `srcDomain`.
-  assertBool "both events name the running subject as actor, on the originating core"
+  assertBool "the event names the running subject as actor, on the originating core"
     (match declassSignalRun.1.declassificationAuditLog with
-     | [e₁, e₂] =>
+     | [e₁] =>
          decide (e₁.actor.subject = highCurrent) && decide (e₁.actor.domain = declassSecret) &&
-         decide (e₂.actor.subject = highCurrent) && decide (e₂.actor.domain = declassSecret) &&
-         decide (e₁.originatingCore = signalCore) && decide (e₂.originatingCore = signalCore)
+         decide (e₁.srcDomain = e₁.actor.domain) && decide (e₁.originatingCore = signalCore)
      | _ => false)
-  assertBool "NEGATIVE: the second event's SOURCE is not its actor's domain — one record could not carry both"
-    (match declassSignalRun.1.declassificationAuditLog with
-     | [_, e₂] => decide (e₂.srcDomain ≠ e₂.actor.domain)
-     | _ => false)
-  -- The laundering barrier, on the real trail: no single entry names the
-  -- composite `2 → 0`, which is the edge the policy deliberately withholds.
-  assertBool "NEGATIVE: no recorded event names the composite 2 → 0 the policy withholds"
+  -- The laundering barrier, on the real trail: no entry names a flow into the
+  -- public domain, which the delivery never reaches.
+  assertBool "NEGATIVE: no recorded event names a flow into the public domain"
     (declassSignalRun.1.declassificationAuditLog.all (fun e =>
-      !(decide (e.srcDomain = declassSecret) && decide (e.dstDomain = declassPublic))))
+      !decide (e.dstDomain = declassPublic)))
 
-/-- §11.2  SM9.C.1 — the receiver's own gate, which is the whole point. -/
+/-- §11.2  SM9.C.1 — the resolved receiver shares the notification's label. -/
 private def runDeclassifiedSignalReceiverGateChecks : IO Unit := do
-  IO.println "--- §11.2 SM9.C.1 the resolved receiver is gated separately ---"
-  -- The scenario the v0.31.73 badge-leak closure exists for, one abstraction
-  -- up: the caller IS authorized into the notification, and is still refused —
-  -- because the badge would go somewhere the policy never authorized.
-  assertBool "an authorized signaller aimed at an unauthorized sink is REFUSED at the second hop"
-    (decide (receiverOnlyDeniedPolicy.canDeclassify declassSecret declassMiddle = true) &&
-     decide (receiverOnlyDeniedPolicy.canDeclassify declassMiddle declassPublic = false) &&
-     (match declassSignalReceiverDenied.2 with
-      | .error e => decide (e = KernelError.declassificationDeniedAtReceiver)
-      | .ok _ => false))
-  assertBool "…with its OWN discriminant, distinct from a first-hop refusal"
-    (decide (DeclassifiedSignalHop.callerToNotification.refusal
-               = KernelError.declassificationDenied) &&
-     decide (DeclassifiedSignalHop.notificationToReceiver.refusal
-               = KernelError.declassificationDeniedAtReceiver) &&
-     decide (DeclassifiedSignalHop.callerToNotification.refusal
-               ≠ DeclassifiedSignalHop.notificationToReceiver.refusal))
-  -- Fail-closed, and *completely*: the refusal leaves no badge, no wake and no
-  -- audit entry.  A partial commit here would be the worst outcome — a delivery
-  -- that happened with only half its authorization recorded.
-  assertBool "the refusal leaves the state untouched — no badge, no wake, no record"
-    (decide (declassSignalReceiverDenied.1.declassificationAuditLog
-               = declassSignalState.declassificationAuditLog) &&
-     (match declassSignalReceiverDenied.1.getNotification? highNotification,
-        declassSignalState.getNotification? highNotification with
-      | some n', some n => decide (n'.pendingBadge = n.pendingBadge) &&
-                           decide (n'.waitHead = n.waitHead ∧ n'.waitTail = n.waitTail)
-      | _, _ => false) &&
-     runQueueAgreeOn declassSignalState declassSignalReceiverDenied.1 c2)
-  -- The load-bearing negative: **being in the footprint is not authorization**.
-  -- The receiver the delivery would have written is squarely inside the effect
-  -- footprint, and the delivery to it is still refused.
-  assertBool "NEGATIVE: the refused receiver IS in the effect footprint — a footprint is not a permission"
+  IO.println "--- §11.2 SM9.C.1 the resolved receiver is at the notification's label ---"
+  -- The caller's hop is the only authorization: a policy that never permits
+  -- `1 → 0` still delivers, because the receiver's hop is the identity flow.
+  assertBool "a policy authorizing only the caller's hop delivers, with one record"
+    (decide (callerHopOnlyPolicy.canDeclassify declassSecret declassMiddle = true) &&
+     decide (callerHopOnlyPolicy.canDeclassify declassMiddle declassPublic = false) &&
+     (match declassSignalCallerHopOnly.2 with
+      | .ok _ => decide (declassSignalCallerHopOnly.1.declassificationAuditLog.length = 1)
+      | .error _ => false))
+  assertBool "the footprint's receiver is the waiter, at the notification's own domain"
     (decide ((declassifiedSignalEffectFootprint declassSignalState highNotification).receiver
                = some crossCoreWaiter) &&
      decide ((declassifiedSignalEffectFootprint declassSignalState highNotification).cores
                = [c2]) &&
-     (match declassSignalReceiverDenied.2 with
-      | .error e => decide (e = KernelError.declassificationDeniedAtReceiver)
-      | .ok _ => false))
-  -- And the footprint consults no policy at all — the reason the above can be
-  -- stated without a caveat.
+     decide (signalDeclassContext.threadDomainOf crossCoreWaiter
+               = signalDeclassContext.objectDomainOf highNotification))
+  -- Fail-closed, and *completely*: a refused hop leaves no badge, no wake and
+  -- no audit entry.
+  assertBool "a refused hop leaves the state untouched — no badge, no wake, no record"
+    (decide (declassSignalDefault.1.declassificationAuditLog
+               = declassSignalState.declassificationAuditLog) &&
+     (match declassSignalDefault.1.getNotification? highNotification,
+        declassSignalState.getNotification? highNotification with
+      | some n', some n => decide (n'.pendingBadge = n.pendingBadge) &&
+                           decide (n'.waitHead = n.waitHead ∧ n'.waitTail = n.waitTail)
+      | _, _ => false) &&
+     runQueueAgreeOn declassSignalState declassSignalDefault.1 c2)
+  -- And the footprint consults no policy at all.
   assertBool "the footprint is a function of the STATE: it is identical under both policies"
     (decide ((declassifiedSignalEffectFootprint declassSignalState highNotification).notification
                = highNotification) &&
@@ -10073,9 +10039,9 @@ private def runDeclassifiedSignalDeliveryChecks : IO Unit := do
   assertBool "the wake lands on the receiver's OWN home core, not the signaller's"
     (!runQueueAgreeOn declassSignalState declassSignalRun.1 c2 &&
      runQueueAgreeOn declassSignalState declassSignalRun.1 signalCore)
-  -- NEGATIVE: a delivery with no receiver has nothing to gate onward and
-  -- records only the first hop — one record, not two.
-  assertBool "NEGATIVE: with no receiver there is no second hop, and only one record"
+  -- With no receiver the badge is stored, and the one record is the caller's
+  -- hop, exactly as with one.
+  assertBool "with no receiver the badge is stored, and the record is still the caller's hop"
     (let noWaiterState : SystemState :=
        { declassSignalState with
            objects := declassSignalState.objects.insert highNotification
@@ -10114,7 +10080,7 @@ private def runDeclassifiedSignalRelativeNiChecks : IO Unit := do
       | .error _ => false))
   assertBool "…and the trail grew by exactly the number of authorized downgrades"
     (decide (declassSignalRun.1.declassificationAuditLog.length
-               = declassSignalState.declassificationAuditLog.length + 2))
+               = declassSignalState.declassificationAuditLog.length + 1))
   -- The other load-bearing negative the plan asks for: an UNRECORDED difference
   -- is refutable.  Strip the trail growth and the run is not a legal outcome —
   -- computed rather than argued, by checking that the ONLY successful shape has
@@ -10138,10 +10104,10 @@ private def runDeclassifiedSignalDefaultChecks : IO Unit := do
      decide (declassSignalDefault.1.declassificationAuditLog
                = declassSignalState.declassificationAuditLog))
   -- The degenerate case, which is what makes the syscall usable at all: when
-  -- the base lattice already permits both hops, the declassifying signal IS the
+  -- the base lattice already permits the hop, the declassifying signal IS the
   -- ordinary bound signal and records nothing.  So an unconfigured deployment
   -- is not running a second, differently-audited signal path.
-  assertBool "both hops permitted ⇒ the transition IS the ordinary bound signal, and records nothing"
+  assertBool "the hop permitted ⇒ the transition IS the ordinary bound signal, and records nothing"
     (let permissiveCtx : GenericLabelingContext :=
        { signalDeclassContext with policy := { canFlow := fun _ _ => true } }
      let run := notificationSignalDeclassifiedOnCore permissiveCtx denyAllDeclPolicy
@@ -10181,10 +10147,9 @@ private def runDeclassifiedSignalAbiChecks : IO Unit := do
   assertBool "it returns UNIT: the badge goes to the receiver, not back to the signaller"
     (decide (Architecture.syscallReturnShape .declassifySignal = .unit) &&
      decide (Architecture.syscallReturnShape .notificationSignal = .unit))
-  assertBool "the second-hop refusal has a boundary discriminant, distinct from the first"
-    (decide (SeLe4n.Model.KernelError.toDiscriminant .declassificationDeniedAtReceiver = 56) &&
-     decide (SeLe4n.Model.KernelError.ofDiscriminant? 56
-               = some KernelError.declassificationDeniedAtReceiver) &&
+  assertBool "a refused signal has one discriminant, and the retired second-hop word 56 decodes to nothing"
+    (decide (SeLe4n.Model.KernelError.ofDiscriminant? 56 = none) &&
+     decide (56 ∈ SeLe4n.Model.KernelError.retiredDiscriminants) &&
      decide (SeLe4n.Model.KernelError.toDiscriminant .declassificationDenied ≠ 56))
   -- SM9.C.9: the arm is delegation-backed and in the cross-core inventory,
   -- which is what ties "this is the live arm" to a theorem rather than to a
@@ -10245,8 +10210,8 @@ private def runDeclassifiedSignalAbiChecks : IO Unit := do
        | .capabilityOnly n => n == "notificationSignalDeclassifiedCrossCoreDispatch"
        | _ => false))
 
-/-- §11.7 fixtures — a CSpace through which the seam can re-resolve the refused
-receiver.  Slot 2 of a single-level CNode (depth 4 = radixWidth, the §7.9
+/-- §11.7 fixtures — a CSpace through which the signal's operands resolve at the
+seam.  Slot 2 of a single-level CNode (depth 4 = radixWidth, the §7.9
 shape) carries the audit-trail capability the declassifying signal invokes, and
 slot 5 a write capability to `highNotification`, the signal's extra capability
 0 (WS-SX SX6.7): `highCurrent`'s saved message info names one extra capability
@@ -10273,81 +10238,31 @@ private def declassSeamState : SystemState :=
                         { registers := #[⟨0x5C⟩] } 1)) }
     highCurrent #[SeLe4n.CPtr.ofNat 5]
 
-/-- The seam run on a hop-2 refusal: syscall 33, reason 56, `x0 = 2` (the slot
-the capability sits in). -/
-private def declassSeamRefusalState : SystemState :=
-  Platform.FFI.recordSyscallRefusal niLabeling c1 (33 : UInt32) highCurrent
-    .declassificationDeniedAtReceiver (2 : UInt64) declassSeamState
-
-/-- §11.7  SM9.C.1 — `refusalRecord_names_failed_hop`: a refused second hop
-names the resolved receiver, end to end — transition resolution, seam
-re-resolution, the recorded field, and the monitor's read of it. -/
-private def runDeclassifiedSignalFailedHopChecks : IO Unit := do
-  IO.println "--- §11.7 SM9.C.1 a refused second hop names the resolved receiver ---"
-  -- The premise chain is real on this fixture: the capability at x0 = 2 is
-  -- the audit trail's, its extra capability 0 resolves to the notification, and the plan under the first-hop-only policy
-  -- refuses with the receiver's own discriminant.
-  assertBool "the seam's re-resolution names exactly the receiver the gate refused"
-    (decide (Platform.FFI.refusedSignalReceiver? declassSeamState highCurrent
-        (SeLe4n.CPtr.ofNat 2) = some crossCoreWaiter) &&
-     decide (declassifiedSignalReceiver? declassSeamState highNotification
-        = some crossCoreWaiter) &&
-     (match declassifiedSignalPlan signalDeclassContext receiverOnlyDeniedPolicy
-         highNotification declassSecret declassSeamState with
-      | .error e => decide (e = KernelError.declassificationDeniedAtReceiver)
-      | .ok _ => false))
-  assertBool "the recorded refusal carries the receiver, beside the raw operand"
-    (match declassSeamRefusalState.declassificationRefusals.recent.get
-        declassSeamState.declassificationRefusals.nextSlot with
-     | some r =>
-         decide (r.refusedReceiver = some crossCoreWaiter) &&
-         decide (r.reason = KernelError.declassificationDeniedAtReceiver) &&
-         decide (r.syscall = SyscallId.declassifySignal) &&
-         decide (r.requestedTarget = SeLe4n.CPtr.ofNat 2)
-     | none => false)
-  -- NEGATIVE: a FIRST-hop refusal of the same syscall names no receiver — the
-  -- fill is keyed on the reason, not on the syscall alone.
-  assertBool "NEGATIVE: a first-hop refusal records no receiver"
+/-- §11.7  SM9.C.1 — the refusal ledger's receiver field is never filled: no
+refusal names a receiver since the second-hop refusal was deleted, and the
+monitor reads the in-band "none" through opcodes 25 and 26. -/
+private def runDeclassifiedSignalRefusalReceiverChecks : IO Unit := do
+  IO.println "--- §11.7 SM9.C.1 a refused signal names no receiver ---"
+  assertBool "a refused declassifying signal records the operand and no receiver"
     (match (Platform.FFI.recordSyscallRefusal niLabeling c1 (33 : UInt32) highCurrent
         .declassificationDenied (2 : UInt64)
         declassSeamState).declassificationRefusals.recent.get
         declassSeamState.declassificationRefusals.nextSlot with
      | some r => decide (r.refusedReceiver = none) &&
-                 decide (r.reason = KernelError.declassificationDenied)
+                 decide (r.reason = KernelError.declassificationDenied) &&
+                 decide (r.syscall = SyscallId.declassifySignal) &&
+                 decide (r.requestedTarget = SeLe4n.CPtr.ofNat 2)
      | none => false)
-  -- NEGATIVE: the same discriminant from a DIFFERENT syscall names no receiver
-  -- either — the fill is keyed on both coordinates, so a future second
-  -- producer of the discriminant must decide its own resolution semantics.
-  assertBool "NEGATIVE: the discriminant alone does not trigger the resolution — the syscall is a key too"
-    (match (Platform.FFI.recordSyscallRefusal niLabeling c1 (30 : UInt32) highCurrent
-        .declassificationDeniedAtReceiver (2 : UInt64)
-        declassSeamState).declassificationRefusals.recent.get
-        declassSeamState.declassificationRefusals.nextSlot with
-     | some r => decide (r.refusedReceiver = none) &&
-                 decide (r.syscall = SyscallId.declassify)
-     | none => false)
-  -- The monitor reads the receiver back: chunk count, then the chunk — and the
-  -- receiver-less record answers count 0, the in-band "none".
-  assertBool "the monitor reads the receiver back through opcodes 25 and 26"
+  assertBool "a receiver-less slot answers chunk count 0, and its chunk read refuses"
     (let mc := auditMonitorLabeling.auditMonitorClearance
-     (match auditReadWord auditGenericCtx mc auditMonitorReader declassSeamRefusalState
-        (.refusalReceiverChunkCount 0) with
-      | .ok n => decide (n = 1)
-      | .error _ => false) &&
-     (match auditReadWord auditGenericCtx mc auditMonitorReader declassSeamRefusalState
-        (.refusalReceiverChunk 0 0) with
-      | .ok w => decide (w = crossCoreWaiter.val)
-      | .error _ => false))
-  assertBool "NEGATIVE: a receiver-less slot answers chunk count 0, and its chunk read refuses"
-    (let mc := auditMonitorLabeling.auditMonitorClearance
-     let hopOneState : SystemState :=
+     let refusedState : SystemState :=
        Platform.FFI.recordSyscallRefusal niLabeling c1 (33 : UInt32) highCurrent
          .declassificationDenied (2 : UInt64) declassSeamState
-     (match auditReadWord auditGenericCtx mc auditMonitorReader hopOneState
+     (match auditReadWord auditGenericCtx mc auditMonitorReader refusedState
         (.refusalReceiverChunkCount 0) with
       | .ok n => decide (n = 0)
       | .error _ => false) &&
-     (match auditReadWord auditGenericCtx mc auditMonitorReader hopOneState
+     (match auditReadWord auditGenericCtx mc auditMonitorReader refusedState
         (.refusalReceiverChunk 0 0) with
       | .error e => decide (e = (KernelError.invalidArgument auditReadChunkWord))
       | .ok _ => false))
@@ -10361,74 +10276,42 @@ private def runDeclassifiedSignalFailedHopChecks : IO Unit := do
      decide (decodeAuditReadOp 29 0 0 = some (.chainNamesArchived 0 0)) &&
      decide (decodeAuditReadOp 30 0 0 = none))
 
-/-- §11.8 fixture — the no-waiter twin of `declassSignalState`, so the
-disclosure pair below compares two states differing ONLY in the queue. -/
+/-- §11.8 fixture — the no-waiter twin of `declassSignalState`, so the pair below
+compares two states differing ONLY in the queue. -/
 private def declassNoWaiterState : SystemState :=
   { declassSignalState with
       objects := declassSignalState.objects.insert highNotification
         (.notification { state := .idle,
                          hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := 0 }) }
 
-/-- §11.8  SM9.C.1 (PR #872 review) — the plain-waiter gate: a no-op on
-checked-admitted waiters, honest about what its refusal discloses, and
-strictly safer than the symmetric alternative. -/
-private def runDeclassifiedSignalWaiterGateChecks : IO Unit := do
-  IO.println "--- §11.8 SM9.C.1 the plain-waiter gate, and what its refusal discloses ---"
-  -- The checked-deployment case: a waiter the base policy admits (the wait
-  -- gate's own admission condition) can never trigger the receiver refusal —
-  -- the hop is ordinary, the plan succeeds with hop 1's single record, and
-  -- the gate is a provable no-op.
-  assertBool "a checked-admitted plain waiter never triggers the receiver refusal"
-    (let admittedCtx : GenericLabelingContext :=
-       { signalDeclassContext with
-           policy := { canFlow := fun a b =>
-             (decide (a = declassMiddle) && decide (b = declassPublic)) ||
-               signalDeclassContext.policy.canFlow a b } }
-     decide (admittedCtx.policy.canFlow declassMiddle declassPublic = true) &&
-     (match declassifiedSignalPlan admittedCtx receiverOnlyDeniedPolicy highNotification
-         declassSecret declassSignalState with
-      | .ok records => decide (records.length = 1)
-      | .error _ => false) &&
-     decide (declassifiedSignalReceiver? declassSignalState highNotification
-       = some crossCoreWaiter))
-  -- DISCLOSURE, exhibited: with the caller's own hop authorized, the verdict
-  -- depends on the resolved receiver — one bit of queue state readable off
-  -- the ABI outcome by a hop-1-authorized writer.  The same class of refusal
-  -- has disclosed BOUND-receiver state on the ordinary checked path since
-  -- v0.31.73; this widens it to plain waiters exactly where the protected
-  -- data is a freshly-downgraded badge.
-  assertBool "DISCLOSURE: refusal-vs-success reveals the denied plain waiter's presence"
+/-- §11.8  SM9.C.1 — the verdict reads no receiver.  The plan takes no state, so
+whether a waiter is queued cannot change the outcome: the deleted second-hop
+check's refusal-vs-success disclosed one bit of queue state, and that bit is
+gone with it. -/
+private def runDeclassifiedSignalReceiverBlindChecks : IO Unit := do
+  IO.println "--- §11.8 SM9.C.1 the verdict does not depend on the receiver ---"
+  assertBool "with and without a waiter, the caller-hop-only policy delivers with one record"
     (decide (declassifiedSignalReceiver? declassNoWaiterState highNotification = none) &&
-     (match declassifiedSignalPlan signalDeclassContext receiverOnlyDeniedPolicy
-         highNotification declassSecret declassNoWaiterState with
-      | .ok records => decide (records.length = 1)
-      | .error _ => false) &&
-     (match declassifiedSignalPlan signalDeclassContext receiverOnlyDeniedPolicy
-         highNotification declassSecret declassSignalState with
-      | .error e => decide (e = KernelError.declassificationDeniedAtReceiver)
-      | .ok _ => false))
-  -- WHY fail-closed wins: on the SAME denied-waiter state the ordinary
-  -- checked signal DELIVERS — the badge lands in the public waiter's TCB,
-  -- ungated, because that path trusts wait-time admission.  The declassified
-  -- path refuses and the waiter provably keeps waiting: the data never moves.
-  assertBool "NEGATIVE: the symmetric alternative delivers the badge to the denied receiver"
-    (decide (securityFlowsTo (niLabeling.threadLabelOf highCurrent)
-        (niLabeling.objectLabelOf highNotification) = true) &&
-     (match SeLe4n.Kernel.notificationSignalBoundCrossCoreDispatchChecked niLabeling
-         highNotification highCurrent (SeLe4n.Badge.ofNatMasked 0x5C) signalCore declassSignalState with
-      | (st', .ok _) =>
-          (match st'.getTcb? crossCoreWaiter with
-           | some tcb =>
-               decide (tcb.registerContext.x0 = (SeLe4n.Badge.ofNatMasked 0x5C).word) &&
-               decide (tcb.pendingMessage = none) &&
-               decide (tcb.ipcState = ThreadIpcState.ready)
-           | none => false)
+     decide (declassifiedSignalReceiver? declassSignalState highNotification
+       = some crossCoreWaiter) &&
+     (match notificationSignalDeclassifiedOnCore signalDeclassContext callerHopOnlyPolicy
+         highNotification (SeLe4n.Badge.ofNatMasked 0x5C) signalCore declassNoWaiterState with
+      | (st, .ok _) => decide (st.declassificationAuditLog.length = 1)
       | (_, .error _) => false) &&
-     (match declassSignalReceiverDenied.1.getTcb? crossCoreWaiter with
-      | some tcb =>
-          decide (tcb.ipcState = ThreadIpcState.blockedOnNotification highNotification) &&
-          decide (tcb.pendingMessage = none)
-      | none => false))
+     (match declassSignalCallerHopOnly with
+      | (st, .ok _) => decide (st.declassificationAuditLog.length = 1)
+      | (_, .error _) => false))
+  assertBool "…and under the deny-all default both are refused with the same discriminant"
+    (match notificationSignalDeclassifiedOnCore signalDeclassContext denyAllDeclPolicy
+         highNotification (SeLe4n.Badge.ofNatMasked 0x5C) signalCore declassNoWaiterState,
+       declassSignalDefault with
+     | (_, .error e₁), (_, .error e₂) =>
+         decide (e₁ = KernelError.declassificationDenied) && decide (e₁ = e₂)
+     | _, _ => false)
+  assertBool "the delivered waiter is woken with the badge"
+    (match declassSignalCallerHopOnly.1.getTcb? crossCoreWaiter with
+     | some tcb => decide (tcb.ipcState = ThreadIpcState.ready)
+     | none => false)
 
 /-- §11.9  SM9.C.1 (PR #872 review, round 2) — the target gate: a wrong-kind or
 absent operand answers the ordinary signal's own errors before any policy is
@@ -11384,11 +11267,11 @@ rules={DeclassificationRuleId.all.length}" ]
 /-- The SM9.C half: what a **data-carrying** declassification does, reported as
 observables.  The three lines above report views, authorized downgrades and
 refused attempts; these report the one operation in the tree that deliberately
-*changes* a low observer's view — its two hops, its recorded evidence, and the
-footprint the change is confined to. -/
+*changes* a low observer's view — its one authorized hop, its recorded evidence,
+and the footprint the change is confined to. -/
 private def declassifiedSignalTraceLines : List String :=
   let footprint := declassifiedSignalEffectFootprint declassSignalState highNotification
-  [ s!"[smp-information-flow] declassifying signal: hops=2 \
+  [ s!"[smp-information-flow] declassifying signal: hops=1 \
 actorDomain={(signalDeclassContext.threadDomainOf highCurrent).id} \
 notificationDomain={(signalDeclassContext.objectDomainOf highNotification).id} \
 receiverDomain={match declassifiedSignalReceiver? declassSignalState highNotification with
@@ -11402,8 +11285,8 @@ cores={footprint.cores.map (·.val)}"
 {match declassSignalRun.2 with
   | .ok _ => s!"ok records={declassSignalRun.1.declassificationAuditLog.length}"
   | .error e => s!"{reprStr e}"} \
-receiverGateDenied={match declassSignalReceiverDenied.2 with
-  | .ok _ => "none"
+callerHopOnly={match declassSignalCallerHopOnly.2 with
+  | .ok _ => s!"ok records={declassSignalCallerHopOnly.1.declassificationAuditLog.length}"
   | .error e => s!"{reprStr e}"} \
 unconfigured={match declassSignalDefault.2 with
   | .ok _ => "ok"
@@ -11411,16 +11294,8 @@ unconfigured={match declassSignalDefault.2 with
   , s!"[smp-information-flow] declassifying signal ABI: id={SyscallId.declassifySignal.toNat} \
 right={reprStr (syscallRequiredRight .declassifySignal)} \
 shape={reprStr (Architecture.syscallReturnShape .declassifySignal)} \
-receiverRefusal={SeLe4n.Model.KernelError.toDiscriminant .declassificationDeniedAtReceiver}"
-  , s!"[smp-information-flow] declassifying signal failed hop: \
-reason={SeLe4n.Model.KernelError.toDiscriminant .declassificationDeniedAtReceiver} \
-recordedReceiver={match declassSeamRefusalState.declassificationRefusals.recent.get
-    declassSeamState.declassificationRefusals.nextSlot with
-  | some r => match r.refusedReceiver with
-    | some t => toString t.toNat
-    | none => "none"
-  | none => "no-record"} \
-receiverOpcodes=25/26" ]
+refusal={SeLe4n.Model.KernelError.toDiscriminant .declassificationDenied} \
+retired56={(SeLe4n.Model.KernelError.ofDiscriminant? 56).isNone}" ]
 
 private def informationFlowTraceLines : List String :=
   observerTraceLines ++ nonInterferenceTraceLines ++ auditReaderTraceLines ++
@@ -11557,23 +11432,22 @@ private def runPostDrainRecordingFreshnessChecks : IO Unit := do
      | some st => decide ((st.declassificationAuditLog.map (·.timestamp)).Nodup))
 
 /-- §13.2 fixture — the deployment whose declassification policy authorizes the
-signal's FIRST hop only, stated over the embedded legacy domains the boundary
+signal's caller hop only, stated over the embedded legacy domains the boundary
 resolves: the secret-trusted subject (domain 3) may downgrade into the
-high-untrusted notification (domain 2), and nothing may go further.  Both hops
-are genuine downgrades under the faithful legacy lattice (trust is lost on the
-first, confidentiality on the second), so the second — onward to the public
-waiter — is refused by the policy, at the receiver's own gate. -/
-private def signalReceiverDeniedLabeling : LabelingContext :=
+high-untrusted notification (domain 2), and nothing may go further.  The waiter
+carries the notification's own label, as the two-way wait gate requires, so
+the onward delivery is the identity flow and needs no authorization. -/
+private def signalSeamLabeling : LabelingContext :=
   { niLabeling with
       -- WS-RR RR5.4: the deployment declares the separation it genuinely has —
-      -- the secret-trusted subject against the public waiter, two real threads
+      -- the secret-trusted subject against the high-untrusted waiter, two real threads
       -- the labeler below puts in different domains.  Before RR5.4 this fixture
       -- relabelled the sentinel object id `0` instead, which defeated the
       -- three-sample probe without separating anything that runs.
       separatedThreads := some (highCurrent, crossCoreWaiter)
       threadLabelOf := fun tid =>
         if tid = highCurrent then SecurityLabel.kernelTrusted
-        else if tid = crossCoreWaiter then SecurityLabel.publicLabel
+        else if tid = crossCoreWaiter then { confidentiality := .high, integrity := .untrusted }
         else niLabeling.threadLabelOf tid
       objectLabelOf := fun oid =>
         if oid = highNotification then
@@ -11586,10 +11460,10 @@ private def signalReceiverDeniedLabeling : LabelingContext :=
               { confidentiality := .high, integrity := .untrusted }) } }
 
 /-- §13.2 fixture — the deny-all control deployment: the same labelers (and the
-same declared separation), with NO declassification policy configured, so the
-`.declassify` control's refusal is `.declassificationDenied` itself. -/
+same declared separation), with NO declassification policy configured, so both
+syscalls' refusals are `.declassificationDenied` itself. -/
 private def declassifyDenyAllLabeling : LabelingContext :=
-  { signalReceiverDeniedLabeling with
+  { signalSeamLabeling with
       declassificationPolicy := { canDeclassify := fun _ _ => false } }
 
 /-- §13.2 fixture — the seam CSpace with a second slot: a write capability to
@@ -11610,11 +11484,20 @@ private def seamBoundaryState : SystemState :=
 /-- §13.2 fixture — the denied `.declassifySignal`, through the boundary the
 hardware calls: msgInfo 129 (one message register, one extra capability), x0 = 2
 (the slot holding the audit-trail capability; the notification's write
-capability is extra capability 0, slot 5).  The plan authorizes hop 1 and
-refuses hop 2, so the committed record must carry the resolved receiver. -/
+capability is extra capability 0, slot 5).  The deny-all deployment refuses the
+caller's hop. -/
 private def deniedSignalDispatchOutcome :
     Except KernelError (Architecture.SyscallOutcome × SystemState) :=
-  SeLe4n.Testing.dispatchOperationFromAbi signalReceiverDeniedLabeling c1
+  SeLe4n.Testing.dispatchOperationFromAbi declassifyDenyAllLabeling c1
+    SyscallId.declassifySignal 2
+    (({ length := 1, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64) 0x5C 0 0 0 0 0 0 0 0
+    seamBoundaryState
+
+/-- §13.2 fixture — the same signal under the deployment that authorizes the
+caller's hop: it delivers to the waiter at the notification's label. -/
+private def admittedSignalDispatchOutcome :
+    Except KernelError (Architecture.SyscallOutcome × SystemState) :=
+  SeLe4n.Testing.dispatchOperationFromAbi signalSeamLabeling c1
     SyscallId.declassifySignal 2
     (({ length := 1, extraCaps := 1, label := 0 } : MessageInfo).encode.toUInt64) 0x5C 0 0 0 0 0 0 0 0
     seamBoundaryState
@@ -11634,28 +11517,28 @@ private def deniedDeclassifyDispatchOutcome :
 /-- §13.2  SM9.E.2 — the refusal seam covers BOTH declassifying syscalls, at
 the boundary the hardware calls.
 
-§10.3 dispatches a denied `.declassify` and §11.7 exercises the seam function's
-receiver fill; this group is the composition the plan names: a denied
-`.declassifySignal` THROUGH `syscallDispatchFromAbi`, its record carrying the
-resolved receiver, beside the denied `.declassify` control at the same state —
+§10.3 dispatches a denied `.declassify` and §11.7 exercises the seam function;
+this group is the composition the plan names: a denied `.declassifySignal`
+THROUGH `syscallDispatchFromAbi`, beside the denied `.declassify` control at the
+same state —
 so "both declassifying syscalls reach the seam" is a fact about the boundary,
 not only about the classification table. -/
 private def runDeclassifyingSeamBoundaryChecks : IO Unit := do
   IO.println "--- §13.2 the refusal seam covers both declassifying syscalls at the boundary ---"
-  assertBool "the denied signal's frame is exactly the receiver refusal's error frame"
+  assertBool "the denied signal's frame is exactly the policy refusal's error frame"
     (match deniedSignalDispatchOutcome with
      | .ok (.returns f, _) =>
-         decide (f = Architecture.errorFrame KernelError.declassificationDeniedAtReceiver false)
+         decide (f = Architecture.errorFrame KernelError.declassificationDenied false)
      | _ => false)
-  assertBool "…and the committed record names the signal syscall, the receiver and the operand"
+  assertBool "…and the committed record names the signal syscall and the operand, and no receiver"
     (match deniedSignalDispatchOutcome with
      | .ok (_, committed) =>
          (match committed.declassificationRefusals.recent.get
              seamBoundaryState.declassificationRefusals.nextSlot with
           | some r =>
               decide (r.syscall = SyscallId.declassifySignal) &&
-              decide (r.reason = KernelError.declassificationDeniedAtReceiver) &&
-              decide (r.refusedReceiver = some crossCoreWaiter) &&
+              decide (r.reason = KernelError.declassificationDenied) &&
+              decide (r.refusedReceiver = none) &&
               decide (r.requestedTarget = SeLe4n.CPtr.ofNat 2) &&
               decide (r.subject = highCurrent)
           | none => false)
@@ -11678,6 +11561,14 @@ private def runDeclassifyingSeamBoundaryChecks : IO Unit := do
          decide (c₁.declassificationAuditLog = seamBoundaryState.declassificationAuditLog) &&
          decide (c₂.declassificationAuditLog = seamBoundaryState.declassificationAuditLog)
      | _, _ => false)
+  assertBool "the admitted signal at the same state records its one hop and no refusal"
+    (match admittedSignalDispatchOutcome with
+     | .ok (_, committed) =>
+         decide (committed.declassificationAuditLog.length
+                   = seamBoundaryState.declassificationAuditLog.length + 1) &&
+         decide (committed.declassificationRefusals.nextSlot
+                   = seamBoundaryState.declassificationRefusals.nextSlot)
+     | .error _ => false)
   assertBool "the seam's classification admits exactly the two declassifying syscalls"
     (decide (refusalSeamClass .declassify = .records) &&
      decide (refusalSeamClass .declassifySignal = .records) &&
@@ -12149,8 +12040,8 @@ declassification, causal provenance and the acceptance scenarios"
   runDeclassifiedSignalRelativeNiChecks
   runDeclassifiedSignalDefaultChecks
   runDeclassifiedSignalAbiChecks
-  runDeclassifiedSignalFailedHopChecks
-  runDeclassifiedSignalWaiterGateChecks
+  runDeclassifiedSignalRefusalReceiverChecks
+  runDeclassifiedSignalReceiverBlindChecks
   runDeclassifiedSignalTargetGateChecks
   runTaintAlgebraChecks
   runTaintMountChecks

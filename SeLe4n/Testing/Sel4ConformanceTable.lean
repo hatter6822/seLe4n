@@ -346,7 +346,7 @@ def sel4LabelRowsArch : List LabelRow := [
   unitRow 34 "SchedContextBind" (src "decodeSchedContext_Bind" "object/schedcontext.c" 87)
     (obj .schedContext) 0 1 [truncatedMessage, illegalOperation, invalidCapability]
     (.hardening .schedContextBind
-      "flow gate: a context heading a reply stack binds only to a thread its label flows to (D25, D27)"),
+      "flow gate: a context binds only to a thread or notification of its own label (D35)"),
   unitRow 35 "SchedContextUnbind" (src "decodeSchedContextInvocation" "object/schedcontext.c" 283)
     (obj .schedContext) 0 0 [illegalOperation] (.implemented .schedContextUnbind),
   unitRow 36 "SchedContextUnbindObject"
@@ -527,6 +527,26 @@ def sel4BehaviourRows : List BehaviourRow := [
       "flow gate: a caller lends only a context its own label flows to; the call goes on either way" },
   { name := "destroy-unbinds-context",
     source := objectC "finaliseCap (schedContext_unbindTCB)" "objecttype.c" 195,
-    status := .implemented .cspaceDelete } ]
+    status := .implemented .cspaceDelete },
+  { name := "cross-label-send-refused",
+    source := objectC "sendIPC" "endpoint.c" 23,
+    status := .hardening .send
+      "flow gate: an endpoint carries traffic only between threads of its own label; flowDenied before any write" },
+  { name := "cross-label-receive-refused",
+    source := objectC "receiveIPC" "endpoint.c" 134,
+    status := .hardening .receive
+      "flow gate: a receiver joins an endpoint only at its own label; flowDenied before any write" },
+  { name := "cross-label-wait-refused",
+    source := objectC "receiveSignal" "notification.c" 194,
+    status := .hardening .notificationWait
+      "flow gate: a waiter joins a notification only at its own label; flowDenied before any write" },
+  { name := "cross-label-notification-bind-refused",
+    source := objectC "bindNotification" "notification.c" 380,
+    status := .hardening .tcbBindNotification
+      "flow gate: a notification binds only a thread of its own label; flowDenied before any write" },
+  { name := "cross-label-context-bind-refused",
+    source := objectC "decodeSchedContext_Bind" "schedcontext.c" 87,
+    status := .hardening .schedContextBind
+      "flow gate: a context binds only a thread or notification of its own label (D35); flowDenied before any write" } ]
 
 end SeLe4n.Testing.Sel4Conformance

@@ -1238,8 +1238,8 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
       -- as seL4-MCS's `decodeSchedContext_Bind` binds it.  The reply each lender
       -- on the stack answers takes it back from the bound thread, as it takes it
       -- back from a notification's waiter; the checked dispatch admits the bind
-      -- only where the context's label flows to the thread
-      -- (`schedContextBindLabelGate`), so every lender flows to it.
+      -- only where the context's label equals the thread's (D35,
+      -- `schedContextBindLabelGate`), so every lender flows to it.
       else
         match st.getTcb? vThreadId.val with
         | some tcb =>

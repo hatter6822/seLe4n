@@ -151,7 +151,7 @@ theorem word_ofWords (t w1 w2 w3 : UInt64) (i : Nat) :
 
 end LookupFault
 
-/-- F-04: Kernel error codes. This inductive has 59 variants.
+/-- F-04: Kernel error codes. This inductive has 56 variants (discriminants 0–60, five retired).
 Five carry seL4's error payload (`setMRs_syscall_error`, `src/object/tcb.c`):
 `invalidCapability`, `invalidArgument`, `rangeError`, `failedLookup` and
 `untypedRegionExhausted`.  The payload rides in the message registers of the
@@ -303,23 +303,12 @@ inductive KernelError where
                            -- was well-formed — it is the *value* that does not
                            -- fit, which is a statement about the kernel's
                            -- export width and not about the request.
-  | declassificationDeniedAtReceiver
-                           -- WS-SM SM9.C.1: a data-carrying declassification
-                           -- gates **two** hops — the caller into the
-                           -- notification, and the notification onward into the
-                           -- resolved receiver — and this is the second one
-                           -- refusing.  A distinct discriminant, not
-                           -- `declassificationDenied`, because the refusal
-                           -- ledger stores exactly this field and a monitor
-                           -- reading "denied" with no idea *which*
-                           -- authorization failed cannot tell an unauthorized
-                           -- caller from an authorized caller aimed at an
-                           -- unauthorized sink — the two call for opposite
-                           -- responses.  It discloses nothing the caller could
-                           -- not already learn: the ordinary checked
-                           -- `.notificationSignal` on the same capability
-                           -- already answers `.flowDenied` exactly when a bound
-                           -- receiver is present and the flow to it is refused.
+  -- 56: retired (`retiredDiscriminants`), the former
+  -- `declassificationDeniedAtReceiver`: the declassifying signal's refusal of
+  -- its onward hop into the resolved receiver, deleted once the two-way
+  -- notification gates and the boot's label check put only threads of a
+  -- notification's own label in its queue or binding, so that hop is the
+  -- identity flow and could never be refused.
   -- 57: retired (`retiredDiscriminants`), the former `ipcCancelled`.  A
   -- cancelled IPC restarts its system call, as seL4's does (WS-SX SX4,
   -- `ThreadState.Restart`), so no thread reads an error for it.
@@ -402,8 +391,8 @@ and ids read from capabilities (`validateObjIdArg`). -/
 compares its fields, any other pair its constructor index.  The derived
 `DecidableEq` compared two errors of one constructor through a generated
 same-constructor matcher whose alternatives are a closure, built on every
-such comparison, so a refusal compared against a constant (the refusal
-ledger's `declassificationDeniedAtReceiver`) built a cell; this compares
+such comparison, so a refusal compared against a constant built a cell; this
+compares
 scalars (`eqWords_iff`), and is the instance. -/
 @[inline] def KernelError.eqWords : KernelError → KernelError → Bool
   | .invalidCapability n, .invalidCapability m => n == m
