@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.37.35-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.37.36-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -141,11 +141,11 @@ Rust 하드웨어 계층과 함께 대상 기기에서 부팅되는 커널 이�
 
 | 항목 | 값 |
 |------|-----|
-| **버전** | `0.37.35` |
+| **버전** | `0.37.36` |
 | **Lean 툴체인** | `v4.28.0` |
-| **프로덕션 Lean LoC** | 656개 파일, 665,924줄 |
-| **테스트 Lean LoC** | 71개 테스트 스위트, 92,061줄 |
-| **증명된 선언** | 25,319개 theorem/lemma 선언 (sorry/axiom 제로) |
+| **프로덕션 Lean LoC** | 686개 파일, 680,574줄 |
+| **테스트 Lean LoC** | 71개 테스트 스위트, 92,362줄 |
+| **증명된 선언** | 25,955개 theorem/lemma 선언 (sorry/axiom 제로) |
 | **Rust 크레이트** | `sele4n-types`, `sele4n-abi`, `sele4n-sys`(사용자 공간 래퍼), `sele4n-hal`(커널의 하드웨어 계층), 호스트 테스트 `sele4n-lean-boundary` |
 | **대상 하드웨어** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **부팅 레인** | 모든 QEMU 레인은 먼저 [rpi5_machine](https://github.com/hatter6822/rpi5_machine)의 `raspi5b` 머신에서 Raspberry Pi 5 이미지를 부팅하고, 그다음 QEMU의 `virt`에서 `virt` 이미지를 부팅합니다 |

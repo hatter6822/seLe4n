@@ -1,9 +1,13 @@
-## v0.37.35 — notification context donation and the seL4 conformance table
+## v0.37.36 — notification context donation and the seL4 conformance table
 
 WS-SX SX8 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`), the whole row: SX8.1
 (the conformance table), SX8.2 (a notification's context lent and returned)
 and SX8.3 (label 36 and the unbind of a donated holder, the owner's decision
-D22, "Match seL4", 2026-11-19). Stacks on SX7 (`v0.37.33`).
+D22, "Match seL4", 2026-11-19), with the lenders' flow, seL4's held reply_pop
+arm and the destroy's unbind the owner's decisions D25–D30 brought into the
+row. SX8 closes here by the owner's decision D32 ("Wrap up SX8",
+2026-11-23); its remainder is the new rows SX9–SX11. Stacks on SX7
+(`v0.37.33`).
 
 ### The conformance table (SX8.1)
 - `SeLe4n/Testing/Sel4ConformanceTable.lean`: one row per seL4-MCS syscall
@@ -59,9 +63,10 @@ D22, "Match seL4", 2026-11-19). Stacks on SX7 (`v0.37.33`).
   read through the wake a hidden signal makes (`boundSignalHidden.woken`), and
   the bind has a real projection frame
   (`schedContextBind_preserves_projection`).
-- The checked kernel lends a notification's context only to a thread its
-  label flows to (`maybeDonateSchedContextFlowing`, `donationContextFlows`;
-  D27), otherwise it donates nothing (seL4's "do nothing" branch). The check
+- The checked kernel lends a notification's context only to a thread whose
+  label equals the context's (`maybeDonateSchedContextFlowing`,
+  `donationContextFlows`: each label flows to the other; D26, D27, D30),
+  otherwise it donates nothing (seL4's "do nothing" branch). The check
   reads static labels and the notification's context word, and no reply
   object (`donationContextFlows_congr`). It runs on the checked signal, the
   wait and receive completions, the declassifying signal and the interrupt
@@ -147,6 +152,112 @@ D22, "Match seL4", 2026-11-19). Stacks on SX7 (`v0.37.33`).
   number, so the route coverage read every refused selection as
   `SchedContext_UnbindObject`; it is `SyscallId::ENCODING_BOUND` (49), held
   by a host test.
+
+### The lenders' flow (D26, D27, D28)
+- `contextLendersFlow`: every caller on a frame of a context's reply stack
+  flows to the context's label (D27, "Adopt A*"). It is carried by every
+  kernel entry: the checked syscall entry and dispatch, the capability-only
+  table, the fault and unknown-syscall entries, the interrupt, the timer, the
+  reschedule and the FP access (`ContextLenders/`). Each entry reads the
+  chain facts it needs (`donationChainWellFormed`,
+  `replyCallerLinkageReciprocal`, `objects.invExt`) as premises on the state
+  it runs from; carrying them across a trace is registered in
+  `docs/REGISTERED_DEBT.md` table C and owned by WS-PK (D29, "Register and
+  follow"), with the dispatch payoff's caller-premise witnesses beside it.
+- With the invariant, every lend is checked on two static labels and reads no
+  reply object. A Call, a fault and a receive that takes a parked Call lend
+  the caller's context only where the caller flows to it (`callLendAdmits`,
+  `receiveLendAdmits`); a refused lend proceeds and lends nothing (D28,
+  "Donate nothing"), and is answered in place on every shape the admitted
+  lend is (`callWakesUnlentInPlace`, `receiveCallTakesUnlentInPlace`,
+  `replyRecvUnlentArmR`). The notification lend's first check, the stack's
+  top lender against the waiter (D26), gave way to the static form.
+- The reply-stack write census requires a lender result of every writer,
+  and of every writer that links a caller into a reply object; the census
+  derives the writers from their bodies and fails closed.
+
+### seL4's held reply_pop arm
+- seL4-MCS's `reply_pop` gives a context back only to a recipient holding
+  none; otherwise the head is popped and the context stays with its holder.
+  `keepDonatedSchedContext` is that arm, on the reply leg, the reply-receive
+  pop, the cancelled caller's reclaim, the pre-receive cleanup, the final
+  delete's head pop and the frozen reply, and a `.bound` holder stays
+  `.bound` (it writes nothing to the holder, as seL4 does).
+- `donationOwnerValid`'s owner clause, and the outer-caller checks beside it,
+  read "not donated" where they read `.unbound`, the one weakening the held
+  arm needs; `donationRecipientAcceptable_of_donationOwnerValid` is deleted.
+- The held arm runs in place at every site
+  (`keepDonatedSchedContextInPlace`, through proven `@[csimp]`s), and a
+  four-word reply or reply-receive to a caller holding its own context is
+  composed in place (`performReplyHeldDelivered`,
+  `performReplyRecvHeldDelivered`).
+
+### Destroy unbinds a lent context
+- The destroy path's donated arm (`cancelDonatedDonationOnCore`) returned a
+  lent context to its recorded owner and refused when that owner could not
+  take it. It is now the bound arm on the owner-cleared view of the holder,
+  as seL4-MCS's `schedContext_unbindTCB`: the context is left unheld at the
+  head of its stack, and the destroy never refuses
+  (`cancelDonationArmOnCore_ok`). `cleanupDonatedSchedContext` and its
+  lemmas, the donated arm's lock set and the donated section of the
+  cancellation non-interference are deleted. `main_trace_smoke.expected`'s
+  `[Z7D-007]` line expects the unbind (rationale: the destroy no longer hands
+  the context back).
+- This had to land before the Bind lift below: with a lender bindable, the
+  return-to-owner arm would have let a lender's controller make a server's
+  destroy fail (a cross-authority denial of service). It never shipped.
+
+### SchedContext_Bind's second refusal lifted (D25)
+- The bind no longer refuses a thread whose reply frame is on a live stack,
+  as `decodeSchedContext_Bind` does not. `schedContextBindAdmitted` is
+  retired; `schedContextDonateAdmitted` is the one guard. The held pop's
+  outer-caller check reads the holder's own binding (`heldPopOuter?`), and
+  the dispatch pack's `boundThreadNotDonationOwner` field is retired.
+
+### Retired: the donation cancellation
+- No live operation ran `cancelBoundDonation`, `cancelDonatedDonation`,
+  `cancelDonation`, `cancelDonationValid` or `cancelDonationOnCore` since the
+  suspend took seL4's shape; they are deleted with their theorems, census
+  rows, tests and anchors. The `.tcbSuspend` footprint's tail is the context
+  the victim's binding names, and the `cancelledCallerAlreadyBound` refusal is
+  gone.
+
+### The notification lend at equal labels (D30)
+- A lend is decided by the woken thread's own binding and writes the
+  context's thread end, which the context's domain reads back, so a context
+  labelled below the thread showed that domain one bit of the thread's
+  state. The lend now needs the two labels equal
+  (`donationContextFlows_context_back`,
+  `donationContextFlows_false_of_not_back`); a cross-label lend is skipped
+  and the signal is still delivered.
+
+### Compiled size
+- The receive arm's resolved leg compiled the whole rendezvous twice at every
+  inline site. The leg after a return now runs out of line
+  (`endpointReceiveReturnedRendezvousR`): `RefusalCarryingEndpoint.c` 16.3 MB
+  to 11.3 MB, `RefusalCarryingReplyRecv.c` 30.1 MB to 22.5 MB (23.7 MB on
+  `main`).
+
+### A heap regression found and fixed on the branch
+- The label check read the notification's context through
+  `notificationContext?`, which built a fresh `some` when the store's entry
+  was shared: one 16-byte cell on every bound and donation-partner signal
+  (the heap gate's reading on the branch). The checks now read the context word in place,
+  joined to the specification by `@[csimp]`.
+
+### Conformance behaviour rows (D21)
+- `sel4BehaviourRows`: the signal and Wait lends, the Wait's return, a Call's
+  lend to a passive server and the destroyed thread's unbind, each with its
+  seL4 source and status, and a kernel scenario per row in
+  `sel4_conformance_suite` (both halves for a hardening).
+
+### SX8's remainder (D32)
+- New plan rows, the rows after them renumbered (SX9–SX17 become SX12–SX20):
+  SX9, the notification lend's assurance (the two-run theorem for every
+  observer, the remaining behaviour rows, the label-refused heap scenarios);
+  SX10, the donation-origin redirect deleted (D31, "Match seL4"), which fixes
+  a middle-frame recipient divergence also on `main`; SX11, one composed
+  in-place ReplyRecv path.
 
 ### Tests and fixtures
 - `frozen_ops_suite`: FO-SX8.3 rows for the donated-holder unbind (live
