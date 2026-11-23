@@ -146,7 +146,7 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   -- decodes to none, as the retired syscall number 8 does.
   expect "sd001_37_retired_unassigned"
     (SeLe4n.Model.KernelError.ofDiscriminant? 37 == none &&
-      SeLe4n.Model.KernelError.retiredDiscriminants == [11, 35, 37, 57] &&
+      SeLe4n.Model.KernelError.retiredDiscriminants == [11, 35, 37, 56, 57] &&
       (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 37)).isNone)
     "discriminant 37 is retired: it must decode to no error"
   pin "sd001_38_revocationRequired"           .revocationRequired           38
@@ -165,6 +165,12 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   pin "sd001_51_partialResolution"            .partialResolution            51
   pin "sd001_52_missingSchedContext"          .missingSchedContext          52
   pin "sd001_53_threadOnDifferentCore"        .threadOnDifferentCore        53
+  -- 56 is retired (the former `declassificationDeniedAtReceiver`): no error
+  -- has it, and it decodes to none.
+  expect "sd001_56_retired_unassigned"
+    (SeLe4n.Model.KernelError.ofDiscriminant? 56 == none &&
+      (Kernel.Architecture.ofErrorLabel? (Kernel.Architecture.errorLabelBase + 56)).isNone)
+    "discriminant 56 is retired: it must decode to no error"
   -- 57 is retired (the former `ipcCancelled`): a cancelled IPC answers with
   -- no error, as seL4's does — the thread restarts its system call.
   expect "sd001_57_retired_unassigned"

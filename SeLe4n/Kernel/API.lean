@@ -7199,11 +7199,11 @@ def dispatchWithCapChecked (ctx : LabelingContext)
   -- itself, as on the ordinary path, and nothing runs after it.
   --
   -- Neither domain is an operand.  The source is the *actor's* — read off the
-  -- subject the executing core is running — and the two destinations are the
-  -- notification's own domain and the **resolved receiver's**, so a signaller
-  -- authorized into the notification but not onward to the thread that will
-  -- receive the badge is refused at the second hop
-  -- (`.declassificationDeniedAtReceiver`).
+  -- subject the executing core is running — and the destination is the
+  -- notification's own domain.  The thread that receives the badge needs no
+  -- gate of its own: the two-way wait and bind gates and the boot's label check
+  -- put only threads of the notification's label there, so the onward flow is
+  -- the identity flow (`declassifiedSignalReceiver_flow_ordinary_of_coherent`).
   | .declassifySignal =>
     match cap.target with
     | .auditTrail _ =>

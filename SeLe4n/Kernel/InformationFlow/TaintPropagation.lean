@@ -433,11 +433,7 @@ resolves it.**
 The planner needs the object the caller named, and the entry has only the raw
 `CPtr`.  This is the same resolution `syscallResolveCap` performs — caller's
 TCB, its CSpace root capability, `lookupSlot` at 64 bits, then the slot — so the plan is keyed
-on the object the arm acts on rather than on a second reading of the operand.
-
-Shared with the SM9.B refusal seam (`Platform.FFI.refusedSignalReceiver?`),
-which used to spell the same four steps out; one resolver means the two cannot
-drift. -/
+on the object the arm acts on rather than on a second reading of the operand. -/
 def syscallOperandCap? (st : SystemState) (tid : SeLe4n.ThreadId)
     (capPtr : SeLe4n.CPtr) : Option Capability :=
   match st.getTcb? tid with
@@ -745,9 +741,9 @@ theorem signalDelivery_stored_of_no_receiver (st : SystemState) (nid : SeLe4n.Ob
 
 The badge leaves the signaller for the notification, and — when a waiter or a
 bound TCB is there to take it — on to that receiver.  The receiver is resolved
-by `declassifiedSignalReceiver?`, the *same* function SM9.C's second-hop gate
-and the SM9.B refusal seam use, so the object the plan tags is the object the
-delivery reaches.
+by `declassifiedSignalReceiver?`, the *same* function the delivery's own
+footprint resolves (`NonInterferenceCrossCore`), so the object the plan tags is
+the object the delivery reaches.
 
 The two orderings write different objects, because a notification's taint
 reflects the content it currently holds (the content-derived model).  With a
@@ -2181,8 +2177,8 @@ reason:
 
 * flows first, and their sources are read from the **pre**-state's taint —
   **seeded with this commit's own origination**, so a syscall that both
-  declassifies *and* delivers (`.declassifySignal`, whose second hop to a waiting
-  receiver is an ordinary delivery) carries the fresh event's tag to the object
+  declassifies *and* delivers (`.declassifySignal`, whose delivery to a waiting
+  receiver is an ordinary one) carries the fresh event's tag to the object
   the delivery reached.  Without the seed the receiver would read the target's
   pre-event taint and the fresh downgrade would have no successor — a missed
   chain, the direction a detector must never err in.  The seed is a no-op for

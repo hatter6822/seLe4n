@@ -685,8 +685,7 @@ fn live_syscall_numbers() -> impl Iterator<Item = u64> {
 }
 
 /// Verify KernelError roundtrip for every variant (0–60).
-/// WS-SM SM9.C.1: DeclassificationDeniedAtReceiver at 56 extends SM9.A.2's
-/// range of 0..=55 (which extended SM8.C.9's range of 0..=54).
+/// Discriminant 56 (the former DeclassificationDeniedAtReceiver) is retired.
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
     // 61 discriminants (0–60), FailedLookup at 60.
@@ -1640,7 +1639,7 @@ fn error_boundary_after_invalid_irq() {
     assert!(KernelError::from_u32(53).is_some()); // ThreadOnDifferentCore (SM5.B)
     assert!(KernelError::from_u32(54).is_some()); // AuditLogCapacityExceeded (SM8.C.9)
     assert!(KernelError::from_u32(55).is_some()); // AuditFieldTooLarge (SM9.A.2)
-    assert!(KernelError::from_u32(56).is_some()); // DeclassificationDeniedAtReceiver (SM9.C.1)
+    assert!(KernelError::from_u32(56).is_none()); // retired (DeclassificationDeniedAtReceiver)
     assert!(KernelError::from_u32(57).is_none()); // retired (WS-SX SX4, IpcCancelled)
     assert!(KernelError::from_u32(58).is_some()); // TruncatedMessage
     assert!(KernelError::from_u32(59).is_some()); // RangeError

@@ -10518,28 +10518,25 @@ run_check "INVARIANT" rg -n '^@\[inline\] def declassifiedSignalReceiver\?' SeLe
 run_check "INVARIANT" rg -n '^import SeLe4n.Kernel.InformationFlow.DeclassifiedSignal' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.DeclassifiedSignal$' scripts/staged_module_allowlist.txt
 
-# SM9.C.1: the TWO hops, each with its own refusal discriminant.  The injectivity
-# is what keeps a monitor able to tell an unauthorized caller from an authorized
-# caller aimed at an unauthorized sink — the two call for opposite responses.
-run_check "INVARIANT" rg -n '^inductive DeclassifiedSignalHop($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^def DeclassifiedSignalHop.refusal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem DeclassifiedSignalHop.refusal_injective($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^  \| declassificationDeniedAtReceiver' SeLe4n/Model/KernelError.lean
-run_check "INVARIANT" rg -n 'declassificationDeniedAtReceiver *=> 56' SeLe4n/Model/KernelErrorWords.lean
-# NEGATIVE: the second hop must not collapse onto the first's discriminant —
-# that is exactly the information a refusal ledger exists to preserve.
-run_negative_check "INVARIANT" rg -n 'notificationToReceiver => \.declassificationDenied$' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+# SM9.C.1: ONE authorization, the caller's.  The two-way label gate admits a
+# waiter or a bound thread only at its notification's own label, so the onward
+# hop is the identity flow; the plan therefore takes no state (it cannot read
+# the receiver) and authorizes the caller's domain into the notification's.
+run_check "INVARIANT" rg -n -U '^def declassifiedSignalPlan \(ctx : GenericLabelingContext\)\n    \(declPolicy : DeclassificationPolicy\) \(notificationId : SeLe4n\.ObjId\)\n    \(actorDomain : SecurityDomain\) :\n    Except KernelError \(List DeclassifiedHopRecord\) :=\n  match declassifiedSignalHopAuthorization ctx declPolicy actorDomain\n          \(ctx\.objectDomainOf notificationId\) with\n' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignalReceiver_flow_ordinary_of_coherent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+# The retired second-hop refusal: no variant, word 56 in the retired list on
+# both sides of the ABI, and no other word moved.
+run_negative_check "INVARIANT" rg -n '^  \| declassificationDeniedAtReceiver' SeLe4n/Model/KernelError.lean
+run_check "INVARIANT" rg -n -U '^theorem ofDiscriminant\?_retired_declassificationDeniedAtReceiver :\n    ofDiscriminant\? 56 = none' SeLe4n/Model/KernelErrorWords.lean
+run_check "INVARIANT" rg -n 'pub const RETIRED: \[u32; 5\] = \[11, 35, 37, 56, 57\];' rust/sele4n-types/src/error.rs
+run_negative_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-types/src/error.rs
 
-# SM9.C.1: the headline properties.  The badge really crosses; the resolved
-# receiver is gated; every authorized downgrade is recorded; and no entry names
-# an edge no policy authorized (which a single record for a two-hop delivery
-# could not have said).
+# SM9.C.1: the headline properties.  The badge really crosses; every
+# authorized downgrade is recorded; and no entry names an edge no policy
+# authorized.
 run_check "INVARIANT" rg -n '^theorem declassifiedSignal_delivers_badge($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignal_gates_resolved_receiver($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^theorem declassifiedSignal_never_unaudited($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^theorem declassifiedSignal_no_invented_edge($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignal_audits_each_hop($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignal_audits_actual_destination($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^theorem declassifiedSignal_ordinary_eq_signal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^theorem declassifiedSignal_denied_before_capacity($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 # The unconfigured deployment: NOT "the syscall fails" — a hop the base lattice
@@ -10548,23 +10545,19 @@ run_check "INVARIANT" rg -n '^theorem declassifiedSignal_denied_before_capacity(
 run_check "INVARIANT" rg -n '^theorem declassifiedSignal_default_policy_never_downgrades($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^theorem declassifiedSignal_default_policy_eq_signal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 
-# SM9.C.1: the ACTOR — a two-hop delivery's second event has a source domain
-# that is nobody's subject domain, so attributability cannot read `srcDomain`.
+# SM9.C.1: the ACTOR — attributability reads the recorded subject, never
+# `srcDomain`, so no producer can misattribute an event.
 run_check "INVARIANT" rg -n '^structure DeclassificationActor($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^  actor : DeclassificationActor' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^theorem attributionFromRunningSubject_over_actor($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem secondHop_actor_differs_from_flowSource($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem secondHopEvent_names_firstHop($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 # NEGATIVE: the actor field must stay REQUIRED — a default would attribute every
 # event to whatever it names while compiling everywhere.
 run_negative_check "INVARIANT" rg -n '^  actor : DeclassificationActor :=' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 # The visibility filter reads every disclosed domain, the actor's included.
 run_check "INVARIANT" rg -n 'ctx.policy.canFlow e.actor.domain reader' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_cleared_actor($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-# NEGATIVE: the retired trail invariant.  A two-hop delivery's second event has
-# a *thread* domain as its destination while its target is a TCB, so
-# `auditTrailDestinationsAreTargetDomains` is FALSE of it; the object-identity
-# discipline moved into the filter itself, which is strictly stronger.
+# NEGATIVE: the retired trail invariant stays retired; the object-identity
+# discipline lives in the filter itself, which is strictly stronger.
 run_negative_check "INVARIANT" rg -n 'auditTrailDestinationsAreTargetDomains' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 
 # SM9.C.3 / SM9.C.4: the invariant surface the delivery inherits, transferred
@@ -10577,11 +10570,11 @@ run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_ipcIn
 run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_preserves_trailActors($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 
 # SM9.C.5 / SM9.C.6: the effect footprint, defined ONCE and read by both the
-# non-interference theorem and the confinement proof, and the non-implication
-# that keeps it from being mistaken for a permission.
+# non-interference theorem and the confinement proof, and its receiver at the
+# notification's own label on a coherent state.
 run_check "INVARIANT" rg -n '^structure DeclassificationEffectFootprint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^def declassifiedSignalEffectFootprint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem footprint_does_not_authorize($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem footprint_receiver_at_notification_label($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem declassificationRelativeNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem declassifiedSignalDispatch_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -10647,8 +10640,7 @@ run_check "INVARIANT" rg -n -U '^@\[noinline\] def endpointReceiveReturnedRendez
 run_check "INVARIANT" rg -n -U '^    else endpointReceiveReturnedRendezvousR blocks epId tid replyCode executingCore lend st\n\ntheorem endpointReceiveReturnedLegR_eq' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n '^theorem receiveReturnSchedContext_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/SchedContextArms.lean
 run_check "INVARIANT" rg -n '^theorem receiveWithReturn_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-# NEGATIVE: the footprint must take no policy — that is what makes
-# `footprint_does_not_authorize` provable rather than merely plausible.
+# NEGATIVE: the footprint must take no policy — it is a function of the state.
 run_negative_check "INVARIANT" rg -n 'def declassifiedSignalEffectFootprint.*DeclassificationPolicy' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # SM9.C.7: the taxonomy `KernelOperation` deliberately does NOT grow.  Every
@@ -10663,7 +10655,6 @@ run_negative_check "INVARIANT" rg -n 'declassifiedSignal' SeLe4n/Kernel/Informat
 run_check "INVARIANT" rg -n '^  \| declassifySignal' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'def count : Nat := 46' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-types/src/error.rs
 run_check "INVARIANT" rg -n '^pub fn declassify_signal' rust/sele4n-sys/src/declassify.rs
 run_check "INVARIANT" rg -n 'assert_names\("declassify_signal", SyscallId::DeclassifySignal\)' rust/sele4n-abi/tests/conformance.rs
 run_check "INVARIANT" rg -n '\| \.declassify \| \.declassifySignal => \.records' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
@@ -10702,65 +10693,47 @@ run_check "INVARIANT" rg -n '^  runDeclassifiedSignalDeliveryChecks' tests/SmpIn
 run_check "INVARIANT" rg -n '^  runDeclassifiedSignalRelativeNiChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^  runDeclassifiedSignalDefaultChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^  runDeclassifiedSignalAbiChecks' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'NEGATIVE: the second event.s SOURCE is not its actor.s domain' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'NEGATIVE: no recorded event names the composite 2 . 0 the policy withholds' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'NEGATIVE: the refused receiver IS in the effect footprint' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'NEGATIVE: with no receiver there is no second hop' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'NEGATIVE: no recorded event names a flow into the public domain' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'a policy authorizing only the caller.s hop delivers, with one record' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'the footprint.s receiver is the waiter, at the notification.s own domain' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: this is NOT plain non-interference' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: an unrecorded downgrade is refutable' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: an idle core cannot declassify' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: it does not share the ordinary signal.s boundary entry' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^private def declassifiedSignalTraceLines($|[ ({:\[\]])' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'declassifying signal: hops=2 actorDomain=2 notificationDomain=1 receiverDomain=0' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'declassifying signal: hops=1 actorDomain=2 notificationDomain=1 receiverDomain=1' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'declassifying signal footprint: notification=1016 receiver=1021 cores=\[2\]' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'declassifying signal run: ok records=2' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'declassifying signal ABI: id=33' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'declassifying signal run: ok records=1 callerHopOnly=ok records=1' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'declassifying signal ABI: id=33 .* refusal=14 retired56=true$' tests/fixtures/smp_information_flow.expected
 
-# WS-SM SM9.C.1 (audit cut) — the failed hop reaches the monitor.  The refusal
-# record names the resolved receiver of a refused second hop, the seam
-# re-resolves it from the pre-state (the "seam cannot see it" premise the
-# SM9.B landing recorded was wrong — the seam holds the pre-state and x0), a
-# theorem pins the two resolutions equal, and the monitor reads the field back
-# through its own opcode pair.
+# WS-SM SM9.C.1 (audit cut) — a refused signal reaches the monitor as the
+# policy's one refusal.  The ledger's receiver field and its opcode pair stay
+# (retiring them is an audit-read ABI cut, registered debt), but no producer
+# fills the field: both refusal writers store `false` and the zero word.
 run_check "INVARIANT" rg -n 'refusedReceiver : Option SeLe4n.ThreadId' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 # A recorded refusal's error is held in its ledger slot as its discriminant and payload words,
 # and the entry's refusal record writes those words without rebuilding the error.
 run_check "INVARIANT" rg -n -U '^  reasonCode : Nat\n  reasonW0 : UInt64\n' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 run_check "INVARIANT" rg -n '^theorem recordSyscallRefusalW_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n -U '          match refusalReceiverForWords st tid sid d x0 with\n          \| k \+ 1 =>\n            \{ st with\n              declassificationRefusals :=\n                recordRefusalWords st\.declassificationRefusals executingCore tid domain sid\n                  d w0 w1 w2 w3 w4 ' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^              recordRefusalWords st\.declassificationRefusals executingCore tid domain sid\n                d w0 w1 w2 w3 w4 \(SeLe4n\.CPtr\.ofWord x0\) false ⟨0⟩ \}' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'KernelError\.ofPayloadWords d w0 w1 w2 w3 w4' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def refusedSignalReceiver\?' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem refusedSignalReceiver\?_resolves' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def refusalReceiverFor($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem refusalReceiverFor_other($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem refusalRecord_names_failed_hop($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignalPlan_deniedAtReceiver_resolves($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_negative_check "INVARIANT" rg -n 'refusedReceiver := some' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem declassifiedSignalHopAuthorization_error_refusal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n 'refusalReceiverChunkCount \(slot : Nat\)' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n 'RefusalReceiverChunks = 25' rust/sele4n-sys/src/audit.rs
 run_check "INVARIANT" rg -n 'RefusalReceiver = 26' rust/sele4n-sys/src/audit.rs
-run_check "INVARIANT" rg -n 'a refused second hop names the resolved receiver' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'NEGATIVE: a first-hop refusal records no receiver' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'NEGATIVE: the discriminant alone does not trigger the resolution' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'declassifying signal failed hop: reason=56 recordedReceiver=1021' tests/fixtures/smp_information_flow.expected
-# The record-level fill is keyed on BOTH coordinates — a reason-only key would
-# run the notification resolver against a future syscall's unrelated operand.
-run_check "INVARIANT" rg -n 'sid = SyscallId.declassifySignal ∧ ke = KernelError.declassificationDeniedAtReceiver' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^  runDeclassifiedSignalRefusalReceiverChecks$' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'a refused declassifying signal records the operand and no receiver' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'a receiver-less slot answers chunk count 0, and its chunk read refuses' tests/SmpInformationFlowSuite.lean
 # The SM8.E defect class stays closed: the thirteenth policy-gated entry's
 # members of BOTH enforcement families exist.
 run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_declassifySignal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_denied_preserves_state($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 
-# WS-SM SM9.C (PR #872 review) — the plain-waiter gate.  Deliberately
-# asymmetric with the ordinary checked signal (which gates the receiver on the
-# bound path only and trusts wait-time admission): provably a no-op on
-# checked-admitted waiters, and its one-bit refusal disclosure exhibited as a
-# theorem rather than hidden.
-run_check "INVARIANT" rg -n '^theorem declassifiedSignalPlan_admitted_receiver_error_is_first_hop($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignalPlan_outcome_depends_on_receiver($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n 'a checked-admitted plain waiter never triggers the receiver refusal' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'DISCLOSURE: refusal-vs-success reveals the denied plain waiter' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'NEGATIVE: the symmetric alternative delivers the badge to the denied receiver' tests/SmpInformationFlowSuite.lean
+# WS-SM SM9.C — the verdict reads no receiver: with and without a waiter the
+# same policy gives the same outcome, so a refusal discloses no queue state.
+run_check "INVARIANT" rg -n '^  runDeclassifiedSignalReceiverBlindChecks$' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'with and without a waiter, the caller-hop-only policy delivers with one record' tests/SmpInformationFlowSuite.lean
 
 # WS-SM SM9.C (PR #872 review, round 2) — the target gate: the operand must be
 # a live notification BEFORE any policy is consulted (the sibling
@@ -10843,10 +10816,8 @@ run_check "INVARIANT" rg -n '^  predecessorWords : TaintWords$' SeLe4n/Kernel/In
 run_check "INVARIANT" rg -n '^def declassificationEventNames($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^abbrev declassificationActorTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
 run_check "INVARIANT" rg -n '^abbrev declassifyStoreEventWithTags($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
-# The multi-hop recorder threads the snapshot, so hop 2 names hop 1 within one
-# transition — the property `recordDeclassifiedHops_two` now carries.
+# The recorder threads the snapshot through the records it appends.
 run_check "INVARIANT" rg -n '^def recordDeclassifiedHopsFrom($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n 'declassificationEventNames e₂ e₁ = true' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 
 # SM9.D.7 – SM9.D.11: the propagation sites, as DATA with a total
 # classification.  Totality over `SyscallId` is necessary and not sufficient —
@@ -11977,9 +11948,9 @@ run_check "INVARIANT" rg -n '^def kernelErrorEncodingBound($|[ ({:\[\]])' SeLe4n
 run_check "INVARIANT" rg -n '^theorem kernelErrorEncodingBound_tight($|[ ({:\[\]])' SeLe4n/Model/KernelErrorWords.lean
 run_check "INVARIANT" rg -n 'toDiscriminant e < kernelErrorEncodingBound' SeLe4n/Model/KernelErrorWords.lean
 # Discriminants 35 (the former invalidCapPtr), 37 (the former
-# allocationMisaligned) and 57 (the former ipcCancelled) are retired and decode
-# to none.
-run_check "INVARIANT" rg -n '^def retiredDiscriminants : List Nat := \[11, 35, 37, 57\]$' SeLe4n/Model/KernelErrorWords.lean
+# allocationMisaligned), 56 (the former declassificationDeniedAtReceiver) and 57
+# (the former ipcCancelled) are retired and decode to none.
+run_check "INVARIANT" rg -n '^def retiredDiscriminants : List Nat := \[11, 35, 37, 56, 57\]$' SeLe4n/Model/KernelErrorWords.lean
 run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_retired_ipcCancelled : ofDiscriminant\? 57 = none' SeLe4n/Model/KernelErrorWords.lean
 run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_retired : ofDiscriminant\? 37 = none' SeLe4n/Model/KernelErrorWords.lean
 run_check "INVARIANT" rg -n '^theorem ofDiscriminant\?_retired_capPtr : ofDiscriminant\? 35 = none' SeLe4n/Model/KernelErrorWords.lean
@@ -12547,7 +12518,7 @@ run_check "INVARIANT" rg -n '^theorem declassificationChainCausal_of_pairwise($|
 run_check "INVARIANT" rg -n '^theorem chainVerdict_all_ok_causal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # PR #873 review: the flow sources are SEEDED with this commit's own origination,
 # so a syscall that both declassifies and delivers (`.declassifySignal`, whose
-# second hop is an ordinary delivery) carries the fresh event's tag to the object
+# delivery to the receiver is an ordinary one) carries the fresh event's tag to the object
 # the delivery reached.  Reading the raw pre-table there loses the successor —
 # a MISSED chain, the direction a detector must never err in.
 run_check "INVARIANT" rg -n 'applyOrigination \(planOriginationTags plan pre post\)' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
@@ -12721,7 +12692,8 @@ run_check "INVARIANT" rg -n 'NEGATIVE: the pre-epoch rule would have stamped it 
 # OUTERMOST refusal and now say so explicitly, so the class of refusal every
 # dispatch-level check covers is part of its assertion.
 run_check "INVARIANT" rg -n '^  runDeclassifyingSeamBoundaryChecks' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n 'the denied signal.s frame is exactly the receiver refusal.s error frame' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'the denied signal.s frame is exactly the policy refusal.s error frame' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'the admitted signal at the same state records its one hop and no refusal' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'the denied declassify at the same state is the POLICY.s refusal, recorded receiverless' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: neither refusal wrote the trail' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'the seam.s classification admits exactly the two declassifying syscalls' tests/SmpInformationFlowSuite.lean
@@ -12749,7 +12721,7 @@ run_check "INVARIANT" rg -n '^  runDeclassificationTaintFixtureCheck' tests/SmpI
 run_check "TRACE" rg -n 'cliff fill: capacity=256 filled=256' tests/fixtures/declassification_reader.expected
 run_check "TRACE" rg -n 'cliff recovery: postDrainRecords=1 freshTimestamp=256 wellFormed=true' tests/fixtures/declassification_reader.expected
 run_check "TRACE" rg -n 'epoch survivors: survivorStamps=.1, 2. recordedStamp=3 survivorCollision=false' tests/fixtures/declassification_reader.expected
-run_check "TRACE" rg -n 'seam boundary: signalReason=56 signalReceiver=1021 declassifyReason=14 recordingSyscalls=2' tests/fixtures/declassification_reader.expected
+run_check "TRACE" rg -n 'seam boundary: signalReason=14 signalReceiver=none declassifyReason=14 recordingSyscalls=2' tests/fixtures/declassification_reader.expected
 run_check "TRACE" rg -n 'causal verdicts: causal=true launders=true domainOnlyFalsePositive=true adjacencyFalseNegative=true snapshotsDistinguishSameDomain=true' tests/fixtures/declassification_taint.expected
 run_check "TRACE" rg -n 'monitor verdict: word=1 strippedWord=0' tests/fixtures/declassification_taint.expected
 

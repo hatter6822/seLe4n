@@ -7,41 +7,36 @@ WS-SM SM9.C: the data-carrying declassification.
 `.declassify` (SM8.C.9) authorizes a downgrade and records it; **no bytes
 cross**.  This module is the transition that moves the data: a notification
 signal whose badge is permitted to cross a label boundary the base policy
-denies, on the SM6.B cross-core signal path, with one audit entry per authorized
-hop.
+denies, on the SM6.B cross-core signal path, with one audit entry when the
+downgrade is authorized.
 
-## Two hops, two authorizations, two records
+## One authorization: the caller's
 
-The live `notificationSignalBoundCrossCoreDispatchChecked` gates **two** flows —
-`signaler → notification` and, when the signal resolves a receiver,
-`notification → receiver`.  The second was added at v0.31.73 for a reason that
-matters more here than there: without it a signal authorized to the notification
-delivers the badge onward into a low bound TCB.  A declassifying variant gated
-only on the notification would re-open that leak with *stronger* authority
-behind it, so this transition gates the **resolved destination** as well
-(`declassifiedSignal_gates_resolved_receiver`).
-
-Gating both hops immediately raises what one audit event can honestly say.  On a
-`high → mid` notification followed by a `mid → low` delivery, a single record
-must either drop the first downgrade or collapse two domain pairs — and
-potentially two authorization decisions — into a direct `high → low` edge no
-policy authorized.  So the transition emits **one event per authorized
-downgrade**, in hop order, sharing one actor
-(`declassifiedSignal_audits_each_hop`, `declassifiedSignal_no_invented_edge`).
+The transition gates the one flow a policy decides — `signaler → notification`.
+The onward delivery `notification → receiver` needs no gate of its own, because
+every receiver a signal can resolve is at the notification's label: a thread
+reaches a notification's queue or its binding only through the two-way
+`notificationFlowGate` (the checked wait and bind), which admits exactly equal
+labels, and the boot refuses a configuration that queues or binds a thread of
+another label (`notificationLabelsCoherent`).  On such a state the onward flow
+is the identity flow, which the base lattice permits and which is no
+downgrade (`declassifiedSignalReceiver_flow_ordinary_of_coherent`).  The
+second-hop gate this transition used to run, and the refusal it reported, were
+deleted for that reason: on the states the kernel produces they could never
+fire.
 
 An ordinary hop — one the base policy already permits — is *not* a
-declassification and records nothing.  That is why a signal both of whose hops
-are ordinary is exactly the ordinary checked signal
+declassification and records nothing.  That is why a signal whose hop is
+ordinary is exactly the ordinary checked signal
 (`declassifiedSignal_ordinary_eq_signal`): the syscall adds authority where the
 policy withholds it and adds nothing where the policy does not.
 
 ## What a footprint does not do
 
 Naming the receiver's TCB in the effect footprint says *where the writes land*.
-It says nothing about whether that sink is permitted, and conflating the two is
-exactly how the v0.31.73 leak would come back.  `footprint_does_not_authorize`
-keeps the distinction on the record: there are states whose footprint names a
-receiver the transition then refuses to deliver to.
+It carries no authorization: the receiver is admissible because the wait and
+bind gates put only threads of the notification's own label there, not because
+the footprint names it (`footprint_receiver_at_notification_label`).
 -/
 import SeLe4n.Kernel.IPC.CrossCore.NotificationBindDispatch
 import SeLe4n.Kernel.IPC.CrossCore.NotificationInvariant
@@ -393,49 +388,6 @@ matches the receiver where it resolves it and no `some` is built. -/
   | some (t, _) => some t
   | none => notificationSignalWaiter? st notificationId
 
-/-- `declassifiedSignalReceiver?` as its code (`ThreadId.optCode`): read off the
-notification's head-waiter and bound-thread codes and the bound thread's
-blocking state, so a caller that tests the receiver, or carries it across a
-branch, holds a word and builds no `some` (`ofOptCode_declassifiedSignalReceiverCode`). -/
-@[inline] def declassifiedSignalReceiverCode (st : SystemState) (notificationId : SeLe4n.ObjId) :
-    Nat :=
-  match st.getNotification? notificationId with
-  | none => 0
-  | some ntfn =>
-    match ntfn.waitHeadCode with
-    | k + 1 => k + 1
-    | 0 =>
-      match ntfn.boundTCBCode with
-      | 0 => 0
-      | k + 1 =>
-        match st.getTcb? ⟨k⟩ with
-        | none => 0
-        | some tcb =>
-          match tcb.ipcState with
-          | .blockedOnReceive _ => k + 1
-          | _ => 0
-
-@[simp] theorem ofOptCode_declassifiedSignalReceiverCode (st : SystemState)
-    (notificationId : SeLe4n.ObjId) :
-    SeLe4n.ThreadId.ofOptCode (declassifiedSignalReceiverCode st notificationId) =
-      declassifiedSignalReceiver? st notificationId := by
-  unfold declassifiedSignalReceiverCode declassifiedSignalReceiver? notificationSignalWaiter?
-  rw [boundDeliveryTarget?_eq_impl]
-  unfold boundDeliveryTargetImpl?
-  cases st.getNotification? notificationId with
-  | none => rfl
-  | some ntfn =>
-    simp only [Notification.waitHead, Notification.boundTCB]
-    rcases ntfn.waitHeadCode with _ | k
-    · simp only [↓reduceIte, SeLe4n.ThreadId.ofOptCode]
-      rcases ntfn.boundTCBCode with _ | b
-      · rfl
-      · simp only
-        cases st.getTcb? ⟨b⟩ with
-        | none => rfl
-        | some tcb => dsimp only; cases tcb.ipcState <;> rfl
-    · simp only [Nat.add_one_ne_zero, ↓reduceIte, SeLe4n.ThreadId.ofOptCode]
-
 /-- WS-SM SM9.C.1: on the bound-delivery path the resolved receiver is the bound
 TCB. -/
 @[simp] theorem declassifiedSignalReceiver?_bound (st : SystemState)
@@ -479,33 +431,8 @@ theorem getObjectType?_isSome_eq_raw (st : SystemState) (id : SeLe4n.ObjId) :
   cases st.objects[id]? <;> rfl
 
 -- ============================================================================
--- §2  WS-SM SM9.C.1 — per-hop authorization
+-- §2  WS-SM SM9.C.1 — the hop's authorization
 -- ============================================================================
-
-/-- WS-SM SM9.C.1: **which of the two authorizations a refusal is about.**
-
-The distinction has to reach the refusal ledger: a monitor reading "denied" with
-no idea which gate refused cannot tell an unauthorized caller from an authorized
-caller aimed at an unauthorized sink, and those call for opposite responses.  It
-rides the `KernelError` discriminant, which the ledger already stores. -/
-inductive DeclassifiedSignalHop where
-  /-- The signaller releasing into the notification. -/
-  | callerToNotification
-  /-- The notification releasing onward into the resolved receiver. -/
-  | notificationToReceiver
-  deriving Repr, DecidableEq, Inhabited
-
-/-- WS-SM SM9.C.1: the error a refused hop returns.  Total with no wildcard, so
-a third hop cannot be added without deciding what it reports. -/
-def DeclassifiedSignalHop.refusal : DeclassifiedSignalHop → KernelError
-  | .callerToNotification => .declassificationDenied
-  | .notificationToReceiver => .declassificationDeniedAtReceiver
-
-/-- WS-SM SM9.C.1: the two hops report **different** discriminants — the
-property the refusal ledger's usefulness rests on. -/
-theorem DeclassifiedSignalHop.refusal_injective :
-    ∀ h₁ h₂ : DeclassifiedSignalHop, h₁.refusal = h₂.refusal → h₁ = h₂ := by
-  intro h₁ h₂ h; cases h₁ <;> cases h₂ <;> first | rfl | (exact absurd h (by decide))
 
 /-- WS-SM SM9.C.1: **how a hop was permitted** — by the base policy, or by the
 declassification policy.
@@ -528,7 +455,7 @@ authorized downgrade.  The `.error .flowDenied` arm that decision returns for an
 *allowed* base flow is the "not a declassification" answer, which here is a
 success with nothing to record rather than a refusal. -/
 def declassifiedSignalHopAuthorization (ctx : GenericLabelingContext)
-    (declPolicy : DeclassificationPolicy) (hop : DeclassifiedSignalHop)
+    (declPolicy : DeclassificationPolicy)
     (srcDomain dstDomain : SecurityDomain) :
     Except KernelError DeclassifiedHopAuthorization :=
   if ctx.policy.canFlow srcDomain dstDomain then
@@ -536,36 +463,36 @@ def declassifiedSignalHopAuthorization (ctx : GenericLabelingContext)
   else
     match declassificationDecision ctx declPolicy srcDomain dstDomain with
     | .ok () => .ok .declassified
-    | .error _ => .error hop.refusal
+    | .error _ => .error .declassificationDenied
 
 /-- WS-SM SM9.C.1: a hop the base policy permits is ordinary. -/
 theorem declassifiedSignalHopAuthorization_ordinary (ctx : GenericLabelingContext)
-    (declPolicy : DeclassificationPolicy) (hop : DeclassifiedSignalHop)
+    (declPolicy : DeclassificationPolicy)
     (srcDomain dstDomain : SecurityDomain)
     (hFlow : ctx.policy.canFlow srcDomain dstDomain = true) :
-    declassifiedSignalHopAuthorization ctx declPolicy hop srcDomain dstDomain = .ok .ordinary := by
+    declassifiedSignalHopAuthorization ctx declPolicy srcDomain dstDomain = .ok .ordinary := by
   simp [declassifiedSignalHopAuthorization, hFlow]
 
 /-- WS-SM SM9.C.1: a hop the base policy denies and the declassification policy
 authorizes is a **downgrade**. -/
 theorem declassifiedSignalHopAuthorization_declassified (ctx : GenericLabelingContext)
-    (declPolicy : DeclassificationPolicy) (hop : DeclassifiedSignalHop)
+    (declPolicy : DeclassificationPolicy)
     (srcDomain dstDomain : SecurityDomain)
     (hDeny : ctx.policy.canFlow srcDomain dstDomain = false)
     (hDecl : declPolicy.canDeclassify srcDomain dstDomain = true) :
-    declassifiedSignalHopAuthorization ctx declPolicy hop srcDomain dstDomain =
+    declassifiedSignalHopAuthorization ctx declPolicy srcDomain dstDomain =
       .ok .declassified := by
   simp [declassifiedSignalHopAuthorization, hDeny, declassificationDecision, hDecl]
 
-/-- WS-SM SM9.C.1: a hop neither policy permits is refused, **with this hop's
-own discriminant**. -/
+/-- WS-SM SM9.C.1: a hop neither policy permits is refused with
+`.declassificationDenied`. -/
 theorem declassifiedSignalHopAuthorization_refused (ctx : GenericLabelingContext)
-    (declPolicy : DeclassificationPolicy) (hop : DeclassifiedSignalHop)
+    (declPolicy : DeclassificationPolicy)
     (srcDomain dstDomain : SecurityDomain)
     (hDeny : ctx.policy.canFlow srcDomain dstDomain = false)
     (hNoDecl : declPolicy.canDeclassify srcDomain dstDomain = false) :
-    declassifiedSignalHopAuthorization ctx declPolicy hop srcDomain dstDomain =
-      .error hop.refusal := by
+    declassifiedSignalHopAuthorization ctx declPolicy srcDomain dstDomain =
+      .error .declassificationDenied := by
   simp [declassifiedSignalHopAuthorization, hDeny, declassificationDecision, hNoDecl]
 
 /-- WS-SM SM9.C.1 (**the soundness of a `.declassified` verdict**): the gate says
@@ -573,8 +500,8 @@ theorem declassifiedSignalHopAuthorization_refused (ctx : GenericLabelingContext
 checks `.declassify` runs, on the same function. -/
 theorem declassifiedSignalHopAuthorization_declassified_authorized
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (hop : DeclassifiedSignalHop) (srcDomain dstDomain : SecurityDomain)
-    (h : declassifiedSignalHopAuthorization ctx declPolicy hop srcDomain dstDomain =
+    (srcDomain dstDomain : SecurityDomain)
+    (h : declassifiedSignalHopAuthorization ctx declPolicy srcDomain dstDomain =
       .ok .declassified) :
     declassificationDecision ctx declPolicy srcDomain dstDomain = .ok () := by
   unfold declassifiedSignalHopAuthorization at h
@@ -592,8 +519,8 @@ theorem declassifiedSignalHopAuthorization_declassified_authorized
 policy permits it, so no downgrade occurred and no record is owed. -/
 theorem declassifiedSignalHopAuthorization_ordinary_flows
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (hop : DeclassifiedSignalHop) (srcDomain dstDomain : SecurityDomain)
-    (h : declassifiedSignalHopAuthorization ctx declPolicy hop srcDomain dstDomain =
+    (srcDomain dstDomain : SecurityDomain)
+    (h : declassifiedSignalHopAuthorization ctx declPolicy srcDomain dstDomain =
       .ok .ordinary) :
     ctx.policy.canFlow srcDomain dstDomain = true := by
   unfold declassifiedSignalHopAuthorization at h
@@ -608,7 +535,7 @@ theorem declassifiedSignalHopAuthorization_ordinary_flows
     | ok u => cases u; exact absurd h (by simp)
 
 -- ============================================================================
--- §3  WS-SM SM9.C.1 — the per-hop record obligations
+-- §3  WS-SM SM9.C.1 — the record obligation
 -- ============================================================================
 
 /-- WS-SM SM9.C.1: **one authorized downgrade the transition owes a record
@@ -616,20 +543,18 @@ for** — the flow's two endpoints and the object the badge lands in.
 
 A list of these is what the commit below folds into the trail.  Deliberately not
 a list of whole `DeclassificationEvent`s: the timestamp is the trail's own
-shape, so an event can only be built against the state it is appended to, and
-building it early would stamp the second hop with the first hop's position. -/
+shape, so an event can only be built against the state it is appended to. -/
 structure DeclassifiedHopRecord where
   /-- The domain the badge is released *from* on this hop. -/
   srcDomain : SecurityDomain
   /-- The domain it is released *into*. -/
   dstDomain : SecurityDomain
-  /-- The object that receives it — the notification on hop 1, the receiver's
-      TCB on hop 2.  This is the SM9.C.1 "actual destination". -/
+  /-- The object that receives it: the notification the capability names. -/
   target : SeLe4n.ObjId
   deriving Repr, DecidableEq
 
 /-- WS-SM SM9.C.1: the record a hop owes — `[]` for an ordinary flow, one entry
-for a downgrade.  A list rather than an `Option` so the two hops concatenate. -/
+for a downgrade. -/
 def declassifiedHopRecords (auth : DeclassifiedHopAuthorization)
     (srcDomain dstDomain : SecurityDomain) (target : SeLe4n.ObjId) :
     List DeclassifiedHopRecord :=
@@ -652,11 +577,10 @@ def declassifiedHopRecords (auth : DeclassifiedHopAuthorization)
 against the state it lands in.
 
 Fail-closed as a whole: `recordDeclassificationChecked` refuses at capacity, and
-`foldlM` over `Option` propagates that refusal, so a two-hop delivery with room
-for only one entry records *neither* and the operation fails.  Recording one hop
-of an authorized two-hop delivery would leave a downgrade the kernel performed
-and did not record, which is the failure the fail-closed bound exists to
-exclude. -/
+the recursion propagates that refusal, so a list with more records than the
+trail has room for records *none* of them and the operation fails.  Recording a
+prefix would leave a downgrade the kernel performed and did not record, which is
+the failure the fail-closed bound exists to exclude. -/
 def recordDeclassifiedHopsFrom (c : CoreId) (actor : DeclassificationActor)
     (tags : TaintWords) :
     List DeclassifiedHopRecord → SystemState → Option SystemState
@@ -676,19 +600,16 @@ def recordDeclassifiedHopsFrom (c : CoreId) (actor : DeclassificationActor)
 stamped against the state it lands in and each carrying the acting subject's
 provenance.
 
-The accumulator is what makes a two-hop delivery a *causal* chain rather than
-merely a syntactically linked one.  The first hop's snapshot is the subject's
-taint at the pre-state; the second hop's is that snapshot **extended with the
-first hop's freshly allocated timestamp**, so `declassificationChainCausal`
-accepts the pair the transition writes.  Taking the pre-transition snapshot for
-both would reject it — the timestamp does not exist until the first hop is
-recorded — which is the failure mode §3.5 of the plan names.
+The first record's snapshot is the subject's taint at the pre-state; each later
+record's is that snapshot **extended with the timestamps the earlier records
+were allocated**, so the entries of one list form a *causal* chain
+(`declassificationChainCausal`) rather than merely a syntactically linked one.
+The declassifying signal's plan holds at most one record, so on that path the
+snapshot is the pre-state's.
 
 Fail-closed as a whole: `recordDeclassificationChecked` refuses at capacity and
-the recursion propagates that refusal, so a two-hop delivery with room for only
-one entry records *neither* and the operation fails.  Recording one hop of an
-authorized two-hop delivery would leave a downgrade the kernel performed and did
-not record, which is the failure the fail-closed bound exists to exclude. -/
+the recursion propagates that refusal, so a list with more records than the
+trail has room for records *none* of them and the operation fails. -/
 def recordDeclassifiedHops (c : CoreId) (actor : DeclassificationActor)
     (records : List DeclassifiedHopRecord) (st : SystemState) : Option SystemState :=
   recordDeclassifiedHopsFrom c actor (declassificationActorWords actor st) records st
@@ -838,52 +759,30 @@ theorem recordDeclassifiedHops_preserves_trailWellFormed (c : CoreId)
 -- ============================================================================
 
 /-- WS-SM SM9.C.1: the records a signal on `notificationId` owes, and whether it
-is authorized at all — resolved entirely from the **pre**-state.
+is authorized at all — decided from the acting subject's domain and the
+notification's, before any write.
 
 Factored out of the transition so the gate and the audit are one computation
 read twice (the §3.5 "defined once" discipline): the commit below folds exactly
-this list, and `declassifiedSignal_audits_each_hop` reads it too, so a record
+this list, and `declassifiedSignal_no_invented_edge` reads it too, so a record
 the gate authorized and the commit did not write is not expressible.
 
-**The second hop gates the plain waiter too — deliberately, where the ordinary
-checked signal does not** (PR #872 review).  The ordinary
-`notificationSignalBoundCrossCoreDispatchChecked` gates `notification →
-receiver` only on the *bound-delivery* path and trusts the waiter queue,
-because the checked *wait* gate admits a plain waiter only when that flow
-already holds — so for a waiter admitted under the checked discipline this
-hop's base verdict is `true`, the hop is `.ordinary`, and the gate is provably
-a no-op (`declassifiedSignalPlan_admitted_receiver_error_is_first_hop`).  The
-gate bites exactly on states the checked discipline does not produce — a
-waiter admitted through the *unchecked* `.notificationWait` arm, or relabeled
-after admission — and there the symmetric alternative would deliver a
-freshly-downgraded badge to a receiver no policy authorized: the v0.31.73
-badge-leak class with declassification authority behind it.  The honest cost
-is a one-bit disclosure: a caller authorized at hop 1 can distinguish
-"denied-domain plain waiter present" (refusal) from "no waiter" (success),
-which the same class of refusal already disclosed for *bound* receivers on the
-ordinary checked path since v0.31.73.  Exhibited rather than hidden:
-`declassifiedSignalPlan_outcome_depends_on_receiver`. -/
+**One hop.**  The onward delivery into the resolved receiver is not gated here:
+every receiver a signal resolves is at the notification's label (the two-way
+wait and bind gates, and the boot's `notificationLabelsCoherent`), so that flow
+is the identity flow and owes neither an authorization nor a record
+(`declassifiedSignalReceiver_flow_ordinary_of_coherent`).  The plan therefore
+reads no state. -/
 def declassifiedSignalPlan (ctx : GenericLabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
-    (actorDomain : SecurityDomain) (st : SystemState) :
+    (actorDomain : SecurityDomain) :
     Except KernelError (List DeclassifiedHopRecord) :=
-  match declassifiedSignalHopAuthorization ctx declPolicy .callerToNotification
-          actorDomain (ctx.objectDomainOf notificationId) with
+  match declassifiedSignalHopAuthorization ctx declPolicy actorDomain
+          (ctx.objectDomainOf notificationId) with
   | .error e => .error e
-  | .ok hop1 =>
-      match declassifiedSignalReceiver? st notificationId with
-      | none =>
-          .ok (declassifiedHopRecords hop1 actorDomain (ctx.objectDomainOf notificationId)
-            notificationId)
-      | some receiver =>
-          match declassifiedSignalHopAuthorization ctx declPolicy .notificationToReceiver
-                  (ctx.objectDomainOf notificationId) (ctx.threadDomainOf receiver) with
-          | .error e => .error e
-          | .ok hop2 =>
-              .ok (declassifiedHopRecords hop1 actorDomain (ctx.objectDomainOf notificationId)
-                    notificationId ++
-                declassifiedHopRecords hop2 (ctx.objectDomainOf notificationId)
-                  (ctx.threadDomainOf receiver) receiver.toObjId)
+  | .ok hop =>
+      .ok (declassifiedHopRecords hop actorDomain (ctx.objectDomainOf notificationId)
+        notificationId)
 
 /-- WS-SM SM9.C.1 / SM9.C.2 (**the transition**): a notification signal whose
 badge may cross a boundary the base policy denies, on core `c`.
@@ -904,7 +803,7 @@ The shape, in the order the steps run and for the reasons SM8.C.9 established:
    invalid capability is never a policy oracle: before this step ran first, a
    caller holding a writable capability to a non-notification object read its
    own hop-1 verdict off the error discriminant.
-3. **Decide both hops**, before any capacity check.  Deciding first confines the
+3. **Decide the hop**, before any capacity check.  Deciding first confines the
    observation of trail occupancy to a caller whose downgrade *is* authorized
    (`declassifiedSignal_denied_before_capacity`), which is the SM8.C.9 ordering
    and the reason CC-8 is bounded to declassifying subjects.
@@ -934,7 +833,7 @@ def notificationSignalDeclassifiedOnCore (ctx : GenericLabelingContext)
           else (st, .error .objectNotFound)
       | some _ =>
           let actor := declassificationActorOf ctx signaler
-          match declassifiedSignalPlan ctx declPolicy notificationId actor.domain st with
+          match declassifiedSignalPlan ctx declPolicy notificationId actor.domain with
           | .error e => (st, .error e)
           | .ok records =>
               match notificationSignalBoundOnCore notificationId badge c st with
@@ -952,7 +851,7 @@ WS-SX SX8.2: seL4-MCS `sendSignal` then donates the notification's context to
 the thread the signal woke, under the checked kernel's context-label check read
 through this context (`donateToSignalledFlowingGeneric`, the donation the
 checked `sendSignalOnCoreFlowing` makes): the declassification downgrades the
-signal's own hops, never the lending of another thread's reply stack.  It runs once the audit record is committed, so a
+signal's own hop, never the lending of another thread's reply stack.  It runs once the audit record is committed, so a
 refused record donates nothing and the downgrade stays fail-closed; the record
 writes the audit trail alone, which the donation neither reads nor writes, so
 the state a program sees is the checked signal's followed by the record.
@@ -1048,7 +947,7 @@ theorem notificationSignalDeclassifiedOnCore_eq_of_subject (ctx : GenericLabelin
     (hNtfn : st.getNotification? notificationId = some ntfn) :
     notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
       (match declassifiedSignalPlan ctx declPolicy notificationId
-              (declassificationActorOf ctx signaler).domain st with
+              (declassificationActorOf ctx signaler).domain with
        | .error e => (st, .error e)
        | .ok records =>
            match notificationSignalBoundOnCore notificationId badge c st with
@@ -1069,7 +968,7 @@ theorem notificationSignalDeclassifiedOnCore_plan_refused (ctx : GenericLabeling
     (hCur : st.scheduler.currentOnCore c = some signaler)
     (hNtfn : st.getNotification? notificationId = some ntfn)
     (hPlan : declassifiedSignalPlan ctx declPolicy notificationId
-      (declassificationActorOf ctx signaler).domain st = .error e) :
+      (declassificationActorOf ctx signaler).domain = .error e) :
     notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
       (st, .error e) := by
   rw [notificationSignalDeclassifiedOnCore_eq_of_subject ctx declPolicy notificationId badge c
@@ -1090,7 +989,7 @@ theorem notificationSignalDeclassifiedOnCore_ok_inv (ctx : GenericLabelingContex
     ∃ signaler records,
       st.scheduler.currentOnCore c = some signaler ∧
       declassifiedSignalPlan ctx declPolicy notificationId
-        (declassificationActorOf ctx signaler).domain st = .ok records ∧
+        (declassificationActorOf ctx signaler).domain = .ok records ∧
       notificationSignalBoundOnCore notificationId badge c st =
         ((notificationSignalBoundOnCore notificationId badge c st).1, .ok sgi) ∧
       recordDeclassifiedHops c (declassificationActorOf ctx signaler) records
@@ -1113,7 +1012,7 @@ theorem notificationSignalDeclassifiedOnCore_ok_inv (ctx : GenericLabelingContex
     | some ntfn =>
       simp only at hStep
       obtain ⟨plan, hPlan⟩ : ∃ p, declassifiedSignalPlan ctx declPolicy notificationId
-          (declassificationActorOf ctx signaler).domain st = p := ⟨_, rfl⟩
+          (declassificationActorOf ctx signaler).domain = p := ⟨_, rfl⟩
       rw [hPlan] at hStep
       cases plan with
       | error e => exact absurd hStep (by simp)
@@ -1148,8 +1047,7 @@ theorem notificationSignalDeclassifiedOnCore_ok_inv (ctx : GenericLabelingContex
 order, each carrying this transition's actor, this core and the kernel's own
 basis.
 
-The correspondence `declassifiedSignal_no_invented_edge` and
-`declassifiedSignal_audits_actual_destination` both read: an appended entry's
+The correspondence `declassifiedSignal_no_invented_edge` reads: an appended entry's
 flow endpoints and target are some planned record's, and nothing else was
 appended. -/
 theorem recordDeclassifiedHopsFrom_appended (c : CoreId) (actor : DeclassificationActor)
@@ -1202,49 +1100,6 @@ theorem recordDeclassifiedHops_appended (c : CoreId) (actor : DeclassificationAc
         e.authorizationBasis = .policyRule) :=
   recordDeclassifiedHopsFrom_appended c actor records _ st st' h
 
-/-- WS-SM SM9.C.1: **the exact two-hop shape.**  Two records append two events in
-hop order, and the second is stamped one past the first — the fact
-`secondHopEvent_names_firstHop` rests on. -/
-theorem recordDeclassifiedHops_two (c : CoreId) (actor : DeclassificationActor)
-    (r₁ r₂ : DeclassifiedHopRecord) (st st' : SystemState)
-    (h : recordDeclassifiedHops c actor [r₁, r₂] st = some st') :
-    ∃ e₁ e₂ : DeclassificationEvent,
-      st'.declassificationAuditLog = st.declassificationAuditLog ++ [e₁, e₂] ∧
-      e₁ = declassifyStoreEvent c actor r₁.srcDomain r₁.dstDomain r₁.target st ∧
-      e₂.srcDomain = r₂.srcDomain ∧ e₂.dstDomain = r₂.dstDomain ∧
-      e₂.targetObject = r₂.target ∧ e₂.actor = actor ∧ e₂.originatingCore = c ∧
-      e₂.authorizationBasis = .policyRule ∧
-      e₂.timestamp = e₁.timestamp + 1 ∧
-      declassificationEventNames e₂ e₁ = true := by
-  obtain ⟨hRoom₁, hRest⟩ := recordDeclassifiedHopsFrom_cons c actor
-    (declassificationActorWords actor st) r₁ [r₂] st st' h
-  obtain ⟨hRoom₂, hRest'⟩ := recordDeclassifiedHopsFrom_cons c actor
-    (TaintWords.join (declassificationActorWords actor st)
-      (TaintWords.singletonWords
-        (st.declassificationAuditEpoch + st.declassificationAudit.length))) r₂ [] _ st' hRest
-  simp only [recordDeclassifiedHopsFrom_nil, Option.some.injEq] at hRest'
-  subst hRest'
-  simp only [SystemState.declassificationAuditLog, AuditRing.length_toList] at hRoom₁ hRoom₂
-  refine ⟨declassifyStoreEvent c actor r₁.srcDomain r₁.dstDomain r₁.target st,
-          declassifyStoreEventWithTags c actor r₂.srcDomain r₂.dstDomain r₂.target
-            (TaintWords.join (declassificationActorWords actor st)
-              (TaintWords.singletonWords
-                (st.declassificationAuditEpoch + st.declassificationAudit.length)))
-            { st with declassificationAudit := (st.declassificationAudit.append
-                (declassifyStoreEvent c actor r₁.srcDomain r₁.dstDomain r₁.target st)) },
-          ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_, ?_⟩
-  · show (AuditRing.append (AuditRing.append st.declassificationAudit _) _).toList = _
-    rw [AuditRing.toList_append _ _ (by simpa using hRoom₂),
-      AuditRing.toList_append _ _ (by simpa using hRoom₁)]
-    simp [recordDeclassification]
-  · show (st.declassificationAudit.append _).epoch + (st.declassificationAudit.append _).length =
-      (st.declassificationAuditEpoch + st.declassificationAudit.length) + 1
-    rw [AuditRing.epoch_append, AuditRing.length_append _ _ (by simpa using hRoom₁)]
-    rfl
-  · show (TaintWords.join _ (TaintWords.singletonWords _)).decode.contains _ = true
-    rw [TaintWords.decode_join_singletonWords]
-    exact DeclassificationTaint.contains_insert_self _ _
-
 -- ============================================================================
 -- §7  WS-SM SM9.C.1 — what the plan authorizes
 -- ============================================================================
@@ -1258,217 +1113,116 @@ decision is the single function `.declassify` and this transition share: an
 edge in the trail is an edge some run of that function authorized. -/
 theorem declassifiedSignalPlan_records_authorized (ctx : GenericLabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
-    (actorDomain : SecurityDomain) (st : SystemState) (records : List DeclassifiedHopRecord)
-    (hPlan : declassifiedSignalPlan ctx declPolicy notificationId actorDomain st = .ok records) :
+    (actorDomain : SecurityDomain) (records : List DeclassifiedHopRecord)
+    (hPlan : declassifiedSignalPlan ctx declPolicy notificationId actorDomain = .ok records) :
     ∀ r ∈ records, declassificationDecision ctx declPolicy r.srcDomain r.dstDomain = .ok () := by
   unfold declassifiedSignalPlan at hPlan
-  obtain ⟨a1, hA1⟩ : ∃ a, declassifiedSignalHopAuthorization ctx declPolicy .callerToNotification
+  obtain ⟨a1, hA1⟩ : ∃ a, declassifiedSignalHopAuthorization ctx declPolicy
       actorDomain (ctx.objectDomainOf notificationId) = a := ⟨_, rfl⟩
   rw [hA1] at hPlan
   cases a1 with
   | error e => exact absurd hPlan (by simp)
-  | ok hop1 =>
-    have hHop1 : ∀ r ∈ declassifiedHopRecords hop1 actorDomain
-        (ctx.objectDomainOf notificationId) notificationId,
-        declassificationDecision ctx declPolicy r.srcDomain r.dstDomain = .ok () := by
-      cases hop1 with
-      | ordinary => intro r hMem; simp at hMem
-      | declassified =>
-        intro r hMem
-        rcases List.mem_singleton.mp hMem with rfl
-        exact declassifiedSignalHopAuthorization_declassified_authorized ctx declPolicy
-          .callerToNotification _ _ hA1
-    obtain ⟨recv, hRecv⟩ : ∃ x, declassifiedSignalReceiver? st notificationId = x := ⟨_, rfl⟩
-    rw [hRecv] at hPlan
-    cases recv with
-    | none =>
-      simp only [Except.ok.injEq] at hPlan
-      subst hPlan; exact hHop1
-    | some receiver =>
-      simp only at hPlan
-      obtain ⟨a2, hA2⟩ : ∃ a, declassifiedSignalHopAuthorization ctx declPolicy
-          .notificationToReceiver (ctx.objectDomainOf notificationId)
-          (ctx.threadDomainOf receiver) = a := ⟨_, rfl⟩
-      rw [hA2] at hPlan
-      cases a2 with
-      | error e => exact absurd hPlan (by simp)
-      | ok hop2 =>
-        simp only [Except.ok.injEq] at hPlan
-        subst hPlan
-        intro r hMem
-        rcases List.mem_append.mp hMem with h1 | h2
-        · exact hHop1 r h1
-        · cases hop2 with
-          | ordinary => simp at h2
-          | declassified =>
-            rcases List.mem_singleton.mp h2 with rfl
-            exact declassifiedSignalHopAuthorization_declassified_authorized ctx declPolicy
-              .notificationToReceiver _ _ hA2
+  | ok hop =>
+    simp only [Except.ok.injEq] at hPlan
+    subst hPlan
+    cases hop with
+    | ordinary => intro r hMem; simp at hMem
+    | declassified =>
+      intro r hMem
+      rcases List.mem_singleton.mp hMem with rfl
+      exact declassifiedSignalHopAuthorization_declassified_authorized ctx declPolicy _ _ hA1
 
-/-- WS-SM SM9.C.1: **each planned record is one of the two hop shapes** — the
-caller releasing into the notification, or the notification releasing into the
-resolved receiver.  There is no third. -/
+/-- WS-SM SM9.C.1: **each planned record is the caller's release into the
+notification** — its source the acting subject's domain, its destination the
+notification's, its target the notification itself.  There is no other. -/
 theorem declassifiedSignalPlan_record_shape (ctx : GenericLabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
-    (actorDomain : SecurityDomain) (st : SystemState) (records : List DeclassifiedHopRecord)
-    (hPlan : declassifiedSignalPlan ctx declPolicy notificationId actorDomain st = .ok records) :
+    (actorDomain : SecurityDomain) (records : List DeclassifiedHopRecord)
+    (hPlan : declassifiedSignalPlan ctx declPolicy notificationId actorDomain = .ok records) :
     ∀ r ∈ records,
-      (r.srcDomain = actorDomain ∧ r.dstDomain = ctx.objectDomainOf notificationId ∧
-        r.target = notificationId) ∨
-      (∃ receiver, declassifiedSignalReceiver? st notificationId = some receiver ∧
-        r.srcDomain = ctx.objectDomainOf notificationId ∧
-        r.dstDomain = ctx.threadDomainOf receiver ∧ r.target = receiver.toObjId) := by
+      r.srcDomain = actorDomain ∧ r.dstDomain = ctx.objectDomainOf notificationId ∧
+        r.target = notificationId := by
   unfold declassifiedSignalPlan at hPlan
-  obtain ⟨a1, hA1⟩ : ∃ a, declassifiedSignalHopAuthorization ctx declPolicy .callerToNotification
+  obtain ⟨a1, hA1⟩ : ∃ a, declassifiedSignalHopAuthorization ctx declPolicy
       actorDomain (ctx.objectDomainOf notificationId) = a := ⟨_, rfl⟩
   rw [hA1] at hPlan
   cases a1 with
   | error e => exact absurd hPlan (by simp)
-  | ok hop1 =>
-    have hHop1 : ∀ r ∈ declassifiedHopRecords hop1 actorDomain
-        (ctx.objectDomainOf notificationId) notificationId,
-        r.srcDomain = actorDomain ∧ r.dstDomain = ctx.objectDomainOf notificationId ∧
-          r.target = notificationId := by
-      cases hop1 with
-      | ordinary => intro r hMem; simp at hMem
-      | declassified =>
-        intro r hMem
-        rcases List.mem_singleton.mp hMem with rfl
-        exact ⟨rfl, rfl, rfl⟩
-    obtain ⟨recv, hRecv⟩ : ∃ x, declassifiedSignalReceiver? st notificationId = x := ⟨_, rfl⟩
-    rw [hRecv] at hPlan
-    cases recv with
-    | none =>
-      simp only [Except.ok.injEq] at hPlan
-      subst hPlan
-      exact fun r hr => Or.inl (hHop1 r hr)
-    | some receiver =>
-      simp only at hPlan
-      obtain ⟨a2, hA2⟩ : ∃ a, declassifiedSignalHopAuthorization ctx declPolicy
-          .notificationToReceiver (ctx.objectDomainOf notificationId)
-          (ctx.threadDomainOf receiver) = a := ⟨_, rfl⟩
-      rw [hA2] at hPlan
-      cases a2 with
-      | error e => exact absurd hPlan (by simp)
-      | ok hop2 =>
-        simp only [Except.ok.injEq] at hPlan
-        subst hPlan
-        intro r hMem
-        rcases List.mem_append.mp hMem with h1 | h2
-        · exact Or.inl (hHop1 r h1)
-        · cases hop2 with
-          | ordinary => simp at h2
-          | declassified =>
-            rcases List.mem_singleton.mp h2 with rfl
-            exact Or.inr ⟨receiver, hRecv, rfl, rfl, rfl⟩
+  | ok hop =>
+    simp only [Except.ok.injEq] at hPlan
+    subst hPlan
+    cases hop with
+    | ordinary => intro r hMem; simp at hMem
+    | declassified =>
+      intro r hMem
+      rcases List.mem_singleton.mp hMem with rfl
+      exact ⟨rfl, rfl, rfl⟩
 
 /-- WS-SM SM9.C.1: every planned record's **source** is a domain the labeling
-assigns — the acting subject's on hop 1, the notification's on hop 2. -/
+assigns — the acting subject's. -/
 theorem declassifiedSignalPlan_record_sources (ctx : GenericLabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
-    (signaler : SeLe4n.ThreadId) (st : SystemState) (records : List DeclassifiedHopRecord)
+    (signaler : SeLe4n.ThreadId) (records : List DeclassifiedHopRecord)
     (hPlan : declassifiedSignalPlan ctx declPolicy notificationId
-      (ctx.threadDomainOf signaler) st = .ok records) :
+      (ctx.threadDomainOf signaler) = .ok records) :
     ∀ r ∈ records, labelingAssignedDomain ctx r.srcDomain := by
   intro r hr
-  rcases declassifiedSignalPlan_record_shape ctx declPolicy notificationId
-    (ctx.threadDomainOf signaler) st records hPlan r hr with h1 | ⟨receiver, -, h2, -, -⟩
-  · rw [h1.1]
-    exact labelingAssignedDomain_thread ctx signaler
-  · rw [h2]
-    exact labelingAssignedDomain_object ctx notificationId
+  rw [(declassifiedSignalPlan_record_shape ctx declPolicy notificationId
+    (ctx.threadDomainOf signaler) records hPlan r hr).1]
+  exact labelingAssignedDomain_thread ctx signaler
 
 /-- WS-SM SM9.C.1: every planned record's **destination** likewise — the
-notification's domain on hop 1, the receiver's on hop 2. -/
+notification's domain. -/
 theorem declassifiedSignalPlan_record_destinations (ctx : GenericLabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
-    (signaler : SeLe4n.ThreadId) (st : SystemState) (records : List DeclassifiedHopRecord)
+    (signaler : SeLe4n.ThreadId) (records : List DeclassifiedHopRecord)
     (hPlan : declassifiedSignalPlan ctx declPolicy notificationId
-      (ctx.threadDomainOf signaler) st = .ok records) :
+      (ctx.threadDomainOf signaler) = .ok records) :
     ∀ r ∈ records, labelingAssignedDomain ctx r.dstDomain := by
   intro r hr
-  rcases declassifiedSignalPlan_record_shape ctx declPolicy notificationId
-    (ctx.threadDomainOf signaler) st records hPlan r hr with h1 | ⟨receiver, -, -, h2, -⟩
-  · rw [h1.2.1]
-    exact labelingAssignedDomain_object ctx notificationId
-  · rw [h2]
-    exact labelingAssignedDomain_thread ctx receiver
+  rw [(declassifiedSignalPlan_record_shape ctx declPolicy notificationId
+    (ctx.threadDomainOf signaler) records hPlan r hr).2.1]
+  exact labelingAssignedDomain_object ctx notificationId
 
-/-- WS-SM SM9.C.1 (**the resolved-destination gate, at the plan**): when the
-signal resolves a receiver and neither policy permits the onward flow, the plan
-refuses with the *receiver's own* discriminant. -/
-theorem declassifiedSignalPlan_receiver_refused (ctx : GenericLabelingContext)
-    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
-    (actorDomain : SecurityDomain) (st : SystemState) (receiver : SeLe4n.ThreadId)
-    (hFirst : ctx.policy.canFlow actorDomain (ctx.objectDomainOf notificationId) = true)
-    (hRecv : declassifiedSignalReceiver? st notificationId = some receiver)
-    (hDeny : ctx.policy.canFlow (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = false)
-    (hNoDecl : declPolicy.canDeclassify (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = false) :
-    declassifiedSignalPlan ctx declPolicy notificationId actorDomain st =
-      .error .declassificationDeniedAtReceiver := by
-  unfold declassifiedSignalPlan
-  rw [declassifiedSignalHopAuthorization_ordinary ctx declPolicy .callerToNotification
-    actorDomain (ctx.objectDomainOf notificationId) hFirst]
-  simp only
-  rw [hRecv]
-  simp only
-  rw [declassifiedSignalHopAuthorization_refused ctx declPolicy .notificationToReceiver
-    (ctx.objectDomainOf notificationId) (ctx.threadDomainOf receiver) hDeny hNoDecl]
-  rfl
-
-/-- WS-SM SM9.C.1: **both hops ordinary ⇒ nothing to record.**  The plan of a
-signal the base policy already permits end to end is empty, which is what makes
-the transition degenerate to the ordinary checked signal. -/
+/-- WS-SM SM9.C.1: **an ordinary hop ⇒ nothing to record.**  The plan of a
+signal the base policy already permits is empty, which is what makes the
+transition degenerate to the ordinary checked signal. -/
 theorem declassifiedSignalPlan_ordinary (ctx : GenericLabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
-    (actorDomain : SecurityDomain) (st : SystemState)
-    (hFirst : ctx.policy.canFlow actorDomain (ctx.objectDomainOf notificationId) = true)
-    (hSecond : ∀ receiver, declassifiedSignalReceiver? st notificationId = some receiver →
-      ctx.policy.canFlow (ctx.objectDomainOf notificationId)
-        (ctx.threadDomainOf receiver) = true) :
-    declassifiedSignalPlan ctx declPolicy notificationId actorDomain st = .ok [] := by
+    (actorDomain : SecurityDomain)
+    (hFirst : ctx.policy.canFlow actorDomain (ctx.objectDomainOf notificationId) = true) :
+    declassifiedSignalPlan ctx declPolicy notificationId actorDomain = .ok [] := by
   unfold declassifiedSignalPlan
-  rw [declassifiedSignalHopAuthorization_ordinary ctx declPolicy .callerToNotification
+  rw [declassifiedSignalHopAuthorization_ordinary ctx declPolicy
     actorDomain (ctx.objectDomainOf notificationId) hFirst]
-  simp only
-  obtain ⟨recv, hRecv⟩ : ∃ x, declassifiedSignalReceiver? st notificationId = x := ⟨_, rfl⟩
-  rw [hRecv]
-  cases recv with
-  | none => rfl
-  | some receiver =>
-    simp only
-    rw [declassifiedSignalHopAuthorization_ordinary ctx declPolicy .notificationToReceiver
-      (ctx.objectDomainOf notificationId) (ctx.threadDomainOf receiver) (hSecond receiver hRecv)]
-    rfl
-
-/-- WS-SM SM9.C.1: **both hops downgrades ⇒ two records**, in hop order, the
-first naming the notification and the second the *receiver's own TCB*. -/
-theorem declassifiedSignalPlan_two_hops (ctx : GenericLabelingContext)
-    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
-    (actorDomain : SecurityDomain) (st : SystemState) (receiver : SeLe4n.ThreadId)
-    (hRecv : declassifiedSignalReceiver? st notificationId = some receiver)
-    (hDeny₁ : ctx.policy.canFlow actorDomain (ctx.objectDomainOf notificationId) = false)
-    (hDecl₁ : declPolicy.canDeclassify actorDomain (ctx.objectDomainOf notificationId) = true)
-    (hDeny₂ : ctx.policy.canFlow (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = false)
-    (hDecl₂ : declPolicy.canDeclassify (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = true) :
-    declassifiedSignalPlan ctx declPolicy notificationId actorDomain st =
-      .ok [ { srcDomain := actorDomain, dstDomain := ctx.objectDomainOf notificationId,
-              target := notificationId }
-          , { srcDomain := ctx.objectDomainOf notificationId,
-              dstDomain := ctx.threadDomainOf receiver, target := receiver.toObjId } ] := by
-  unfold declassifiedSignalPlan
-  rw [declassifiedSignalHopAuthorization_declassified ctx declPolicy .callerToNotification
-    actorDomain (ctx.objectDomainOf notificationId) hDeny₁ hDecl₁]
-  simp only
-  rw [hRecv]
-  simp only
-  rw [declassifiedSignalHopAuthorization_declassified ctx declPolicy .notificationToReceiver
-    (ctx.objectDomainOf notificationId) (ctx.threadDomainOf receiver) hDeny₂ hDecl₂]
   rfl
+
+/-- WS-SM SM9.C.1: **a downgrade ⇒ one record**, naming the notification. -/
+theorem declassifiedSignalPlan_declassified (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
+    (actorDomain : SecurityDomain)
+    (hDeny : ctx.policy.canFlow actorDomain (ctx.objectDomainOf notificationId) = false)
+    (hDecl : declPolicy.canDeclassify actorDomain (ctx.objectDomainOf notificationId) = true) :
+    declassifiedSignalPlan ctx declPolicy notificationId actorDomain =
+      .ok [ { srcDomain := actorDomain, dstDomain := ctx.objectDomainOf notificationId,
+              target := notificationId } ] := by
+  unfold declassifiedSignalPlan
+  rw [declassifiedSignalHopAuthorization_declassified ctx declPolicy
+    actorDomain (ctx.objectDomainOf notificationId) hDeny hDecl]
+  rfl
+
+/-- WS-SM SM9.C.1: **a refused hop ⇒ `.declassificationDenied`**, the one
+refusal the plan reports. -/
+theorem declassifiedSignalPlan_refused (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
+    (actorDomain : SecurityDomain)
+    (hDeny : ctx.policy.canFlow actorDomain (ctx.objectDomainOf notificationId) = false)
+    (hNoDecl : declPolicy.canDeclassify actorDomain (ctx.objectDomainOf notificationId) = false) :
+    declassifiedSignalPlan ctx declPolicy notificationId actorDomain =
+      .error .declassificationDenied := by
+  unfold declassifiedSignalPlan
+  rw [declassifiedSignalHopAuthorization_refused ctx declPolicy
+    actorDomain (ctx.objectDomainOf notificationId) hDeny hNoDecl]
 
 -- ============================================================================
 -- §8  WS-SM SM9.C.1 — the headline properties
@@ -1521,42 +1275,9 @@ theorem declassifiedSignal_delivers_badge (ctx : GenericLabelingContext)
     congrArg Prod.snd hSignal]
   rfl
 
-/-- WS-SM SM9.C.1 (**`declassifiedSignal_gates_resolved_receiver`**): a signal
-whose *resolved destination* is authorized by neither policy is refused, with
-the state untouched and the receiver hop's own discriminant.
-
-The v0.31.73 leak, closed under declassification authority.  Without this the
-caller's authorization to release into the notification would carry the badge
-onward into a receiver no policy admits — and with a *stronger* warrant behind
-it than the ordinary signal has, which is what makes the omission worse here
-than there. -/
-theorem declassifiedSignal_gates_resolved_receiver (ctx : GenericLabelingContext)
-    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
-    (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState) (signaler receiver : SeLe4n.ThreadId)
-    (hCur : st.scheduler.currentOnCore c = some signaler)
-    (hFirst : ctx.policy.canFlow (ctx.threadDomainOf signaler)
-      (ctx.objectDomainOf notificationId) = true)
-    (hRecv : declassifiedSignalReceiver? st notificationId = some receiver)
-    (hDeny : ctx.policy.canFlow (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = false)
-    (hNoDecl : declPolicy.canDeclassify (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = false) :
-    notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
-      (st, .error .declassificationDeniedAtReceiver) := by
-  obtain ⟨ntfn, hNtfn⟩ :=
-    declassifiedSignalReceiver?_some_notification st notificationId receiver hRecv
-  exact notificationSignalDeclassifiedOnCore_plan_refused ctx declPolicy notificationId badge c
-    st signaler ntfn _ hCur hNtfn
-    (declassifiedSignalPlan_receiver_refused ctx declPolicy notificationId
-      (declassificationActorOf ctx signaler).domain st receiver hFirst hRecv hDeny hNoDecl)
-
 /-- WS-SM SM9.C.1 (**`declassifiedSignal_no_invented_edge`**): every event the
 transition appends names a domain pair some `declassificationDecision` returned
-`.ok` for — the trail reports no edge no policy authorized.
-
-The property a *single* record for a two-hop delivery could not have: collapsing
-`high → mid` and `mid → low` into one entry would put a direct `high → low` edge
-in the trail, and no run of the decision ever returned `.ok` for that pair. -/
+`.ok` for — the trail reports no edge no policy authorized. -/
 theorem declassifiedSignal_no_invented_edge (ctx : GenericLabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
     (badge : SeLe4n.Badge) (c : CoreId) (st st' : SystemState)
@@ -1581,180 +1302,52 @@ theorem declassifiedSignal_no_invented_edge (ctx : GenericLabelingContext)
   refine ⟨?_, hCore, hBasis⟩
   rw [hSrc, hDst]
   exact declassifiedSignalPlan_records_authorized ctx declPolicy notificationId
-    (declassificationActorOf ctx signaler).domain st records hPlan r hr
+    (declassificationActorOf ctx signaler).domain records hPlan r hr
 
 
 -- ============================================================================
--- §9  WS-SM SM9.C.1 — two authorizations, two records
+-- §9  WS-SM SM9.C.1 — the onward delivery is the identity flow
 -- ============================================================================
 
-/-- WS-SM SM9.C.1 (**`declassifiedSignal_audits_each_hop`**): a delivery whose
-*both* hops are downgrades records **two** events, in hop order, sharing one
-actor and one core — the first naming the notification, the second naming the
-receiver's own TCB, and stamped one past the first.
+/-- WS-SM SM9.C.1 (**the second hop is the identity flow**): on a
+notification-label coherent state, the receiver a declassifying signal
+resolves carries the notification's own domain, so the onward flow
+`notification → receiver` is one the base lattice permits and no downgrade —
+its authorization is `.ordinary` under every declassification policy.
 
-The property a single collapsed record could not have.  On `high → mid` then
-`mid → low` one entry must either drop a downgrade or invent the direct
-`high → low` edge; two entries report exactly the two decisions that ran. -/
-theorem declassifiedSignal_audits_each_hop (ctx : GenericLabelingContext)
-    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
-    (badge : SeLe4n.Badge) (c : CoreId) (st st' : SystemState)
-    (sgi : Option (CoreId × SgiKind)) (signaler receiver : SeLe4n.ThreadId)
-    (hCur : st.scheduler.currentOnCore c = some signaler)
-    (hRecv : declassifiedSignalReceiver? st notificationId = some receiver)
-    (hDeny₁ : ctx.policy.canFlow (ctx.threadDomainOf signaler)
-      (ctx.objectDomainOf notificationId) = false)
-    (hDecl₁ : declPolicy.canDeclassify (ctx.threadDomainOf signaler)
-      (ctx.objectDomainOf notificationId) = true)
-    (hDeny₂ : ctx.policy.canFlow (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = false)
-    (hDecl₂ : declPolicy.canDeclassify (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = true)
-    (hStep : notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
-      (st', .ok sgi)) :
-    ∃ e₁ e₂ : DeclassificationEvent,
-      st'.declassificationAuditLog = st.declassificationAuditLog ++ [e₁, e₂] ∧
-      e₁.srcDomain = ctx.threadDomainOf signaler ∧
-      e₁.dstDomain = ctx.objectDomainOf notificationId ∧
-      e₁.targetObject = notificationId ∧
-      e₂.srcDomain = ctx.objectDomainOf notificationId ∧
-      e₂.dstDomain = ctx.threadDomainOf receiver ∧
-      e₂.targetObject = receiver.toObjId ∧
-      e₁.actor = declassificationActorOf ctx signaler ∧
-      e₂.actor = declassificationActorOf ctx signaler ∧
-      e₁.originatingCore = c ∧ e₂.originatingCore = c ∧
-      e₂.timestamp = e₁.timestamp + 1 ∧
-      declassificationEventNames e₂ e₁ = true := by
-  obtain ⟨signaler', records, hCur', hPlan, -, hRec⟩ :=
-    notificationSignalDeclassifiedOnCore_ok_inv ctx declPolicy notificationId badge c st st'
-      sgi hStep
-  rw [hCur] at hCur'
-  have hEq : signaler' = signaler := (Option.some.inj hCur').symm
-  rw [hEq] at hPlan hRec
-  rw [declassifiedSignalPlan_two_hops ctx declPolicy notificationId
-    (declassificationActorOf ctx signaler).domain st receiver hRecv hDeny₁ hDecl₁ hDeny₂ hDecl₂]
-    at hPlan
-  obtain rfl : records = _ := (Except.ok.inj hPlan).symm
-  obtain ⟨e₁, e₂, hLog, hE₁, hSrc₂, hDst₂, hTgt₂, hAct₂, hCore₂, -, hTs, hNames⟩ :=
-    recordDeclassifiedHops_two c (declassificationActorOf ctx signaler) _ _ _ st' hRec
-  refine ⟨e₁, e₂, ?_, ?_, ?_, ?_, hSrc₂, hDst₂, hTgt₂, ?_, hAct₂, ?_, hCore₂, hTs, hNames⟩
-  · rw [hLog, notificationSignalBoundOnCore_declassificationAuditLog_eq]
-  · rw [hE₁]; rfl
-  · rw [hE₁]; rfl
-  · rw [hE₁]; rfl
-  · rw [hE₁]; rfl
-  · rw [hE₁]; rfl
-
-/-- WS-SM SM9.C.1 (**`declassifiedSignal_audits_actual_destination`**): the
-second hop's entry names the **resolved receiver**, not the notification the
-capability pointed at.
-
-Without it a monitor reading the trail knows a badge left a `mid` notification
-and not which `low` subject received it — while the whole reason the second gate
-exists is that the receiver is a sink in its own right. -/
-theorem declassifiedSignal_audits_actual_destination (ctx : GenericLabelingContext)
-    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
-    (badge : SeLe4n.Badge) (c : CoreId) (st st' : SystemState)
-    (sgi : Option (CoreId × SgiKind)) (signaler receiver : SeLe4n.ThreadId)
-    (hCur : st.scheduler.currentOnCore c = some signaler)
-    (hRecv : declassifiedSignalReceiver? st notificationId = some receiver)
-    (hDeny₁ : ctx.policy.canFlow (ctx.threadDomainOf signaler)
-      (ctx.objectDomainOf notificationId) = false)
-    (hDecl₁ : declPolicy.canDeclassify (ctx.threadDomainOf signaler)
-      (ctx.objectDomainOf notificationId) = true)
-    (hDeny₂ : ctx.policy.canFlow (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = false)
-    (hDecl₂ : declPolicy.canDeclassify (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = true)
-    (hStep : notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
-      (st', .ok sgi)) :
-    ∃ e ∈ st'.declassificationAuditLog,
-      e.targetObject = receiver.toObjId ∧ e.dstDomain = ctx.threadDomainOf receiver ∧
-      e.srcDomain = ctx.objectDomainOf notificationId ∧ e.originatingCore = c := by
-  obtain ⟨e₁, e₂, hLog, -, -, -, hSrc₂, hDst₂, hTgt₂, -, -, -, hCore₂, -⟩ :=
-    declassifiedSignal_audits_each_hop ctx declPolicy notificationId badge c st st' sgi
-      signaler receiver hCur hRecv hDeny₁ hDecl₁ hDeny₂ hDecl₂ hStep
-  refine ⟨e₂, ?_, hTgt₂, hDst₂, hSrc₂, hCore₂⟩
-  rw [hLog]
-  exact List.mem_append_right _ (by simp)
-
-/-- WS-SM SM9.C.1 (**`secondHopEvent_names_firstHop`**, at the linkage the tree
-has): the two entries a two-hop delivery records are a **linked chain** — the
-first's destination is the second's source and the timestamps strictly increase,
-so the detector the trail already carries does not reject the very scenario this
-design exists to record.
-
-The *causal* form — the second event naming the first through a snapshot of the
-actor's taint — needs `predecessorTags`, which is SM9.D.13a's field and
-deliberately not invented here: a field no producer could set is the
-unwired-structure shape CLAUDE.md forbids.  What SM9.C owes and delivers is that
-the chain the transition writes is one `declassificationChainLinked` accepts. -/
-theorem secondHopEvent_names_firstHop (ctx : GenericLabelingContext)
-    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
-    (badge : SeLe4n.Badge) (c : CoreId) (st st' : SystemState)
-    (sgi : Option (CoreId × SgiKind)) (signaler receiver : SeLe4n.ThreadId)
-    (hCur : st.scheduler.currentOnCore c = some signaler)
-    (hRecv : declassifiedSignalReceiver? st notificationId = some receiver)
-    (hDeny₁ : ctx.policy.canFlow (ctx.threadDomainOf signaler)
-      (ctx.objectDomainOf notificationId) = false)
-    (hDecl₁ : declPolicy.canDeclassify (ctx.threadDomainOf signaler)
-      (ctx.objectDomainOf notificationId) = true)
-    (hDeny₂ : ctx.policy.canFlow (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = false)
-    (hDecl₂ : declPolicy.canDeclassify (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = true)
-    (hStep : notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
-      (st', .ok sgi)) :
-    ∃ e₁ e₂ : DeclassificationEvent,
-      st'.declassificationAuditLog = st.declassificationAuditLog ++ [e₁, e₂] ∧
-      e₁.dstDomain = e₂.srcDomain ∧ e₁.timestamp < e₂.timestamp := by
-  obtain ⟨e₁, e₂, hLog, -, hDst₁, -, hSrc₂, -, -, -, -, -, -, hTs⟩ :=
-    declassifiedSignal_audits_each_hop ctx declPolicy notificationId badge c st st' sgi
-      signaler receiver hCur hRecv hDeny₁ hDecl₁ hDeny₂ hDecl₂ hStep
-  exact ⟨e₁, e₂, hLog, by rw [hDst₁, hSrc₂], by omega⟩
-
-/-- WS-SM SM9.C.1 (**`secondHop_actor_differs_from_flowSource`**): the two
-identities genuinely separate.
-
-A two-hop delivery's second entry has the *notification's* domain as its source
-and the *signalling subject's* as its actor, and there are states where those
-differ — which is why SM8.C's `attributionFromRunningSubject` had to be restated
-over the actor.  Read the other way: recording the second event's source as the
-actor's domain would assert a `high → low` edge no decision returned. -/
-theorem secondHop_actor_differs_from_flowSource (ctx : GenericLabelingContext)
-    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
-    (badge : SeLe4n.Badge) (c : CoreId) (st st' : SystemState)
-    (sgi : Option (CoreId × SgiKind)) (signaler receiver : SeLe4n.ThreadId)
-    (hCur : st.scheduler.currentOnCore c = some signaler)
-    (hRecv : declassifiedSignalReceiver? st notificationId = some receiver)
-    (hDeny₁ : ctx.policy.canFlow (ctx.threadDomainOf signaler)
-      (ctx.objectDomainOf notificationId) = false)
-    (hDecl₁ : declPolicy.canDeclassify (ctx.threadDomainOf signaler)
-      (ctx.objectDomainOf notificationId) = true)
-    (hDeny₂ : ctx.policy.canFlow (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = false)
-    (hDecl₂ : declPolicy.canDeclassify (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = true)
-    (hDiffer : ctx.threadDomainOf signaler ≠ ctx.objectDomainOf notificationId)
-    (hStep : notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
-      (st', .ok sgi)) :
-    ∃ e ∈ st'.declassificationAuditLog,
-      e.actor.domain = ctx.threadDomainOf signaler ∧
-      e.srcDomain = ctx.objectDomainOf notificationId ∧
-      e.actor.domain ≠ e.srcDomain := by
-  obtain ⟨e₁, e₂, hLog, -, -, -, hSrc₂, -, -, -, hAct₂, -, -, -⟩ :=
-    declassifiedSignal_audits_each_hop ctx declPolicy notificationId badge c st st' sgi
-      signaler receiver hCur hRecv hDeny₁ hDecl₁ hDeny₂ hDecl₂ hStep
-  refine ⟨e₂, ?_, by rw [hAct₂], hSrc₂, ?_⟩
-  · rw [hLog]; exact List.mem_append_right _ (by simp)
-  · rw [hAct₂, hSrc₂]; exact hDiffer
+This is why the transition gates and records one hop only.  The coherence is a
+hypothesis rather than a consequence of reachability: the boot establishes it
+(`notificationLabelsCoherent`, refused otherwise) and the checked wait and bind
+admit a thread to a notification only at its label (`notificationFlowGate`), but
+the preservation theorem over every transition is registered debt, so the fact
+is stated on the states it is proved for. -/
+theorem declassifiedSignalReceiver_flow_ordinary_of_coherent (ctx : LabelingContext)
+    (declPolicy : DeclassificationPolicy) (st : SystemState)
+    (notificationId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (hCoherent : notificationLabelsCoherent st ctx = true)
+    (hRecv : declassifiedSignalReceiver? st notificationId = some receiver) :
+    (liftLegacyContext ctx).objectDomainOf notificationId =
+        (liftLegacyContext ctx).threadDomainOf receiver ∧
+      declassifiedSignalHopAuthorization (liftLegacyContext ctx) declPolicy
+        ((liftLegacyContext ctx).objectDomainOf notificationId)
+        ((liftLegacyContext ctx).threadDomainOf receiver) = .ok .ordinary := by
+  have hLabel := notificationLabelsCoherent_signalReceiver_label hCoherent
+    (by unfold declassifiedSignalReceiver? at hRecv; exact hRecv)
+  have hDom : (liftLegacyContext ctx).objectDomainOf notificationId =
+      (liftLegacyContext ctx).threadDomainOf receiver := by
+    show embedLegacyLabel (ctx.objectLabelOf notificationId) =
+      embedLegacyLabel (ctx.threadLabelOf receiver)
+    rw [hLabel]
+  refine ⟨hDom, declassifiedSignalHopAuthorization_ordinary _ _ _ _ ?_⟩
+  rw [hDom]
+  exact DomainFlowPolicy.legacyLattice_reflexive _
 
 -- ============================================================================
 -- §10  WS-SM SM9.C.1 — the ordinary path, attribution, and the ordering
 -- ============================================================================
 
 /-- WS-SM SM9.C.1 (**the degenerate case, as an equation**): when the base policy
-already permits both hops, the declassifying signal **is** the ordinary
+already permits the caller's hop, the declassifying signal **is** the ordinary
 cross-core bound signal, and records nothing.
 
 Worth an equation rather than a remark: it says the syscall adds authority
@@ -1765,10 +1358,7 @@ theorem declassifiedSignal_ordinary_eq_signal (ctx : GenericLabelingContext)
     (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState) (signaler : SeLe4n.ThreadId)
     (hCur : st.scheduler.currentOnCore c = some signaler)
     (hFirst : ctx.policy.canFlow (ctx.threadDomainOf signaler)
-      (ctx.objectDomainOf notificationId) = true)
-    (hSecond : ∀ receiver, declassifiedSignalReceiver? st notificationId = some receiver →
-      ctx.policy.canFlow (ctx.objectDomainOf notificationId)
-        (ctx.threadDomainOf receiver) = true) :
+      (ctx.objectDomainOf notificationId) = true) :
     notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
       notificationSignalBoundOnCore notificationId badge c st := by
   cases hN : st.getNotification? notificationId with
@@ -1791,7 +1381,7 @@ theorem declassifiedSignal_ordinary_eq_signal (ctx : GenericLabelingContext)
   rw [notificationSignalDeclassifiedOnCore_eq_of_subject ctx declPolicy notificationId badge c
     st signaler ntfn hCur hN,
     declassifiedSignalPlan_ordinary ctx declPolicy notificationId
-      (declassificationActorOf ctx signaler).domain st hFirst hSecond]
+      (declassificationActorOf ctx signaler).domain hFirst]
   simp only
   obtain ⟨pair, hPair⟩ : ∃ p, notificationSignalBoundOnCore notificationId badge c st = p :=
     ⟨_, rfl⟩
@@ -1816,15 +1406,15 @@ argument is the gate's own soundness (`…_declassified_authorized`): a
 `.declassified` verdict means `declassificationDecision` succeeded, which
 `declassificationDecision_ok_iff` says requires `canDeclassify = true`. -/
 theorem declassifiedSignalHopAuthorization_default_ordinary (ctx : GenericLabelingContext)
-    (declPolicy : DeclassificationPolicy) (hop : DeclassifiedSignalHop)
+    (declPolicy : DeclassificationPolicy)
     (srcDomain dstDomain : SecurityDomain) (auth : DeclassifiedHopAuthorization)
     (hDefault : declPolicy.canDeclassify = fun _ _ => false)
-    (h : declassifiedSignalHopAuthorization ctx declPolicy hop srcDomain dstDomain = .ok auth) :
+    (h : declassifiedSignalHopAuthorization ctx declPolicy srcDomain dstDomain = .ok auth) :
     auth = .ordinary := by
   cases auth with
   | ordinary => rfl
   | declassified =>
-    have hDec := declassifiedSignalHopAuthorization_declassified_authorized ctx declPolicy hop
+    have hDec := declassifiedSignalHopAuthorization_declassified_authorized ctx declPolicy
       srcDomain dstDomain h
     have := ((declassificationDecision_ok_iff ctx declPolicy srcDomain dstDomain).mp hDec).2
     rw [hDefault] at this
@@ -1834,7 +1424,7 @@ theorem declassifiedSignalHopAuthorization_default_ordinary (ctx : GenericLabeli
 declassification policy an admitted plan is **empty**.
 
 Not "the transition fails" — that would be false, and stating it would be the
-kind of over-claim this workstream keeps correcting.  A signal whose hops the
+kind of over-claim this workstream keeps correcting.  A signal whose hop the
 base lattice already permits is an ordinary signal, and the honest property is
 that an unconfigured deployment can perform *no downgrade*: the plan it admits
 records nothing, so by `declassifiedSignal_never_unaudited`'s dual the trail
@@ -1842,50 +1432,30 @@ never grows and by `declassifiedSignal_ordinary_eq_signal` the transition is
 literally `notificationSignalBoundOnCore`. -/
 theorem declassifiedSignalPlan_default_empty (ctx : GenericLabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
-    (actorDomain : SecurityDomain) (st : SystemState)
+    (actorDomain : SecurityDomain)
     (records : List DeclassifiedHopRecord)
     (hDefault : declPolicy.canDeclassify = fun _ _ => false)
-    (hPlan : declassifiedSignalPlan ctx declPolicy notificationId actorDomain st = .ok records) :
+    (hPlan : declassifiedSignalPlan ctx declPolicy notificationId actorDomain = .ok records) :
     records = [] := by
   unfold declassifiedSignalPlan at hPlan
   obtain ⟨a₁, hA₁⟩ : ∃ a, declassifiedSignalHopAuthorization ctx declPolicy
-      .callerToNotification actorDomain (ctx.objectDomainOf notificationId) = a := ⟨_, rfl⟩
+      actorDomain (ctx.objectDomainOf notificationId) = a := ⟨_, rfl⟩
   rw [hA₁] at hPlan
   cases a₁ with
   | error e => exact absurd hPlan (by simp)
   | ok auth₁ =>
     have hOrd₁ := declassifiedSignalHopAuthorization_default_ordinary ctx declPolicy
-      .callerToNotification actorDomain (ctx.objectDomainOf notificationId) auth₁ hDefault hA₁
+      actorDomain (ctx.objectDomainOf notificationId) auth₁ hDefault hA₁
     subst hOrd₁
-    simp only at hPlan
-    obtain ⟨recv, hRecv⟩ : ∃ x, declassifiedSignalReceiver? st notificationId = x := ⟨_, rfl⟩
-    rw [hRecv] at hPlan
-    cases recv with
-    | none =>
-      simp only [declassifiedHopRecords_ordinary] at hPlan
-      exact (Except.ok.inj hPlan).symm
-    | some receiver =>
-      simp only at hPlan
-      obtain ⟨a₂, hA₂⟩ : ∃ a, declassifiedSignalHopAuthorization ctx declPolicy
-          .notificationToReceiver (ctx.objectDomainOf notificationId)
-          (ctx.threadDomainOf receiver) = a := ⟨_, rfl⟩
-      rw [hA₂] at hPlan
-      cases a₂ with
-      | error e => exact absurd hPlan (by simp)
-      | ok auth₂ =>
-        have hOrd₂ := declassifiedSignalHopAuthorization_default_ordinary ctx declPolicy
-          .notificationToReceiver (ctx.objectDomainOf notificationId)
-          (ctx.threadDomainOf receiver) auth₂ hDefault hA₂
-        subst hOrd₂
-        simp only [declassifiedHopRecords_ordinary, List.append_nil] at hPlan
-        exact (Except.ok.inj hPlan).symm
+    simp only [declassifiedHopRecords_ordinary] at hPlan
+    exact (Except.ok.inj hPlan).symm
 
 /-- WS-SM SM9.C.1 (**`declassifiedSignal_never_unaudited`**): every downgrade the
 transition performs is recorded.
 
 The two halves the fail-closed capacity bound buys: a hop the plan marked a
-downgrade contributes an entry, and a delivery that could not record **all** of
-its downgrades performs none of them — the state is the pre-state and the badge
+downgrade contributes an entry, and a delivery that could not record its
+downgrade performs none of it — the state is the pre-state and the badge
 does not move. -/
 theorem declassifiedSignal_never_unaudited (ctx : GenericLabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
@@ -1896,7 +1466,7 @@ theorem declassifiedSignal_never_unaudited (ctx : GenericLabelingContext)
       (st', .ok sgi)) :
     ∃ records : List DeclassifiedHopRecord,
       declassifiedSignalPlan ctx declPolicy notificationId
-        (declassificationActorOf ctx signaler).domain st = .ok records ∧
+        (declassificationActorOf ctx signaler).domain = .ok records ∧
       ∃ appended : DeclassificationAuditLog,
         st'.declassificationAuditLog = st.declassificationAuditLog ++ appended ∧
         appended.length = records.length ∧
@@ -1939,7 +1509,7 @@ theorem declassifiedSignal_default_policy_never_downgrades (ctx : GenericLabelin
     notificationSignalDeclassifiedOnCore_ok_inv ctx declPolicy notificationId badge c st st'
       sgi hStep
   have hNil := declassifiedSignalPlan_default_empty ctx declPolicy notificationId
-    (declassificationActorOf ctx signaler).domain st records hDefault hPlan
+    (declassificationActorOf ctx signaler).domain records hDefault hPlan
   subst hNil
   rw [recordDeclassifiedHops_nil] at hRec
   rw [← Option.some.inj hRec, notificationSignalBoundOnCore_declassificationAuditLog_eq]
@@ -1964,7 +1534,7 @@ theorem declassifiedSignal_default_policy_eq_signal (ctx : GenericLabelingContex
     notificationSignalDeclassifiedOnCore_ok_inv ctx declPolicy notificationId badge c st st'
       sgi hStep
   have hNil := declassifiedSignalPlan_default_empty ctx declPolicy notificationId
-    (declassificationActorOf ctx signaler).domain st records hDefault hPlan
+    (declassificationActorOf ctx signaler).domain records hDefault hPlan
   subst hNil
   rw [recordDeclassifiedHops_nil] at hRec
   rw [hSignal, Option.some.inj hRec]
@@ -1973,10 +1543,7 @@ theorem declassifiedSignal_default_policy_eq_signal (ctx : GenericLabelingContex
 the transition records is **attributable** — its actor is the subject the
 originating core was running, at the domain the labeling gives that subject.
 
-SM8.C's rule, restated over the field that makes it true of a *two-hop* event.
-Read on the second entry it says: the `mid → low` release was performed by the
-`high` subject on core `c`, which is exactly what an auditor needs and exactly
-what recording the actor's domain as the source would have destroyed. -/
+SM8.C's rule, restated over the actor field the record carries. -/
 theorem attributionFromRunningSubject_over_actor (ctx : GenericLabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
     (badge : SeLe4n.Badge) (c : CoreId) (st st' : SystemState)
@@ -2080,8 +1647,8 @@ theorem notificationSignalDeclassifiedOnCore_preserves_proofLayerInvariantBundle
     (declassificationActorOf ctx signaler) records _ st' hSignalInv hRec
 
 /-- WS-SM SM9.C.4 / SM9.A.1a: the trail's timestamp discipline survives —
-**both** entries of a two-hop delivery are stamped from the state they land in,
-so the second is the first plus one and no timestamp is reused. -/
+every entry the delivery records is stamped from the state it lands in, so no
+timestamp is reused. -/
 theorem notificationSignalDeclassifiedOnCore_preserves_trailWellFormed
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
@@ -2194,8 +1761,9 @@ theorem notificationSignalDeclassifiedOnCore_ipcInvariantFull_perCore_transfer
 *policy* refuses learns **nothing about the trail's occupancy** — the error it
 gets is the policy's, on a full trail exactly as on an empty one.
 
-The plan is computed before the trail is touched, so the two states in the
-statement may differ in trail length by any amount.  Without this ordering,
+The plan is computed before the trail is touched and reads no state, so the two
+states in the statement may differ in anything but the acting subject and the
+notification's presence — the trail's length among it.  Without this ordering,
 occupancy — a function of how many authorized downgrades *other* subjects
 performed — would be readable by every caller of a syscall the policy refuses,
 which is CC-8 widened from declassifying subjects to all of them. -/
@@ -2207,27 +1775,20 @@ theorem declassifiedSignal_denied_before_capacity (ctx : GenericLabelingContext)
     (hCur₂ : st₂.scheduler.currentOnCore c = some signaler)
     (hNtfn₁ : st₁.getNotification? notificationId = some ntfn₁)
     (hNtfn₂ : st₂.getNotification? notificationId = some ntfn₂)
-    (hSameRecv : declassifiedSignalReceiver? st₁ notificationId =
-      declassifiedSignalReceiver? st₂ notificationId)
     (hPlan : declassifiedSignalPlan ctx declPolicy notificationId
-      (declassificationActorOf ctx signaler).domain st₁ = .error e) :
+      (declassificationActorOf ctx signaler).domain = .error e) :
     notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st₁ =
       (st₁, .error e) ∧
     notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st₂ =
       (st₂, .error e) := by
-  have hPlan₂ : declassifiedSignalPlan ctx declPolicy notificationId
-      (declassificationActorOf ctx signaler).domain st₂ = .error e := by
-    unfold declassifiedSignalPlan at hPlan ⊢
-    rw [← hSameRecv]
-    exact hPlan
   exact ⟨notificationSignalDeclassifiedOnCore_plan_refused ctx declPolicy notificationId badge c
       st₁ signaler ntfn₁ e hCur₁ hNtfn₁ hPlan,
     notificationSignalDeclassifiedOnCore_plan_refused ctx declPolicy notificationId badge c
-      st₂ signaler ntfn₂ e hCur₂ hNtfn₂ hPlan₂⟩
+      st₂ signaler ntfn₂ e hCur₂ hNtfn₂ hPlan⟩
 
 /-- WS-SM SM9.C.1: the transition establishes the trail's **actor** invariant —
-both hops share one actor, read off the state, so every entry it writes carries
-that subject's own domain. -/
+the actor is read off the state, so every entry it writes carries that
+subject's own domain. -/
 theorem notificationSignalDeclassifiedOnCore_preserves_trailActors
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
@@ -2247,13 +1808,8 @@ theorem notificationSignalDeclassifiedOnCore_preserves_trailActors
   · obtain ⟨hActor, -, -⟩ := hFields e hNew
     rw [hActor]
 
-/-- WS-SM SM9.C.1: and the **source** invariant — hop 1's source is the acting
-subject's domain and hop 2's is the notification's, so both are domains the
-labeling assigns.
-
-Hop 2 is exactly why `auditTrailSourcesFromLabeling` had to generalise from
-"some *subject's* domain" to "some *entity's*": an intermediate object's domain
-need be no thread's. -/
+/-- WS-SM SM9.C.1: and the **source** invariant — a record's source is the
+acting subject's domain, which the labeling assigns. -/
 theorem notificationSignalDeclassifiedOnCore_preserves_trailSources
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
@@ -2278,11 +1834,11 @@ theorem notificationSignalDeclassifiedOnCore_preserves_trailSources
   · exact hSources e hOld
   · obtain ⟨r, hr, hSrc, -, -⟩ := hCorr e hNew
     rw [hSrc]
-    exact declassifiedSignalPlan_record_sources ctx declPolicy notificationId signaler st
+    exact declassifiedSignalPlan_record_sources ctx declPolicy notificationId signaler
       records hPlan r hr
 
-/-- WS-SM SM9.C.1: and the **destination** invariant — hop 1's destination is the
-notification's domain and hop 2's is the receiver's, both labeling-assigned. -/
+/-- WS-SM SM9.C.1: and the **destination** invariant — a record's destination is
+the notification's domain, which the labeling assigns. -/
 theorem notificationSignalDeclassifiedOnCore_preserves_trailDestinations
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
@@ -2307,7 +1863,7 @@ theorem notificationSignalDeclassifiedOnCore_preserves_trailDestinations
   · exact hDests e hOld
   · obtain ⟨r, hr, -, hDst, -⟩ := hCorr e hNew
     rw [hDst]
-    exact declassifiedSignalPlan_record_destinations ctx declPolicy notificationId signaler st
+    exact declassifiedSignalPlan_record_destinations ctx declPolicy notificationId signaler
       records hPlan r hr
 
 
@@ -2316,16 +1872,16 @@ theorem notificationSignalDeclassifiedOnCore_preserves_trailDestinations
 -- §13  WS-SM SM9.C.1 / SM9.C.8 — the failed hop, and the enforcement families
 -- ============================================================================
 
-/-- WS-SM SM9.C.1: a hop authorization's error is always **that hop's own**
-discriminant — the gate discards the decision's error and reports the hop, so
-the two hops stay distinguishable at the refusal ledger whatever the decision
+/-- WS-SM SM9.C.1: a hop authorization's error is always
+`.declassificationDenied` — the gate discards the decision's error, so the
+refusal the ledger records names the declassification whatever the decision
 returned. -/
 theorem declassifiedSignalHopAuthorization_error_refusal (ctx : GenericLabelingContext)
-    (declPolicy : DeclassificationPolicy) (hop : DeclassifiedSignalHop)
+    (declPolicy : DeclassificationPolicy)
     (srcDomain dstDomain : SecurityDomain) (e : KernelError)
-    (h : declassifiedSignalHopAuthorization ctx declPolicy hop srcDomain dstDomain =
+    (h : declassifiedSignalHopAuthorization ctx declPolicy srcDomain dstDomain =
       .error e) :
-    e = hop.refusal := by
+    e = .declassificationDenied := by
   unfold declassifiedSignalHopAuthorization at h
   split at h
   · exact absurd h (by simp)
@@ -2336,42 +1892,26 @@ theorem declassifiedSignalHopAuthorization_error_refusal (ctx : GenericLabelingC
     | error e' => exact (Except.error.inj h).symm
     | ok u => cases u; exact absurd h (by simp)
 
-/-- WS-SM SM9.C.1 (**`refusalRecord_names_failed_hop`, the transition half**): a
-plan refused with the *receiver's* discriminant had **resolved a receiver** —
-the second-hop gate is the only producer of `.declassificationDeniedAtReceiver`,
-and it runs only under `declassifiedSignalReceiver? st notificationId = some r`.
-
-This is what makes the seam's re-resolution meaningful: the receiver a hop-2
-refusal is about exists in the pre-state, by the same function the seam
-re-runs. -/
-theorem declassifiedSignalPlan_deniedAtReceiver_resolves (ctx : GenericLabelingContext)
+/-- WS-SM SM9.C.1: **the plan's only refusal is `.declassificationDenied`.** -/
+theorem declassifiedSignalPlan_error_refusal (ctx : GenericLabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
-    (actorDomain : SecurityDomain) (st : SystemState)
-    (hPlan : declassifiedSignalPlan ctx declPolicy notificationId actorDomain st =
-      .error .declassificationDeniedAtReceiver) :
-    ∃ receiver, declassifiedSignalReceiver? st notificationId = some receiver := by
+    (actorDomain : SecurityDomain) (e : KernelError)
+    (hPlan : declassifiedSignalPlan ctx declPolicy notificationId actorDomain = .error e) :
+    e = .declassificationDenied := by
   unfold declassifiedSignalPlan at hPlan
-  obtain ⟨a1, hA1⟩ : ∃ a, declassifiedSignalHopAuthorization ctx declPolicy .callerToNotification
+  obtain ⟨a1, hA1⟩ : ∃ a, declassifiedSignalHopAuthorization ctx declPolicy
       actorDomain (ctx.objectDomainOf notificationId) = a := ⟨_, rfl⟩
   rw [hA1] at hPlan
   cases a1 with
-  | error e =>
-    have hE : e = DeclassifiedSignalHop.callerToNotification.refusal :=
-      declassifiedSignalHopAuthorization_error_refusal ctx declPolicy .callerToNotification
-        actorDomain (ctx.objectDomainOf notificationId) e hA1
-    subst hE
-    exact absurd (Except.error.inj hPlan) (by decide)
-  | ok hop1 =>
-    simp only at hPlan
-    obtain ⟨recv, hRecv⟩ : ∃ x, declassifiedSignalReceiver? st notificationId = x := ⟨_, rfl⟩
-    rw [hRecv] at hPlan
-    cases recv with
-    | none => exact absurd hPlan (by simp)
-    | some receiver => exact ⟨receiver, hRecv⟩
+  | error e' =>
+    have hE := declassifiedSignalHopAuthorization_error_refusal ctx declPolicy
+      actorDomain (ctx.objectDomainOf notificationId) e' hA1
+    rw [← hE]; exact (Except.error.inj hPlan).symm
+  | ok hop => exact absurd hPlan (by simp)
 
 /-- WS-SM SM9.C.8 (**the `_denied_preserves_state` family member**): every
 refusal of the declassifying signal returns the **pre-state exactly** — the
-idle-core arm, both hop gates, the delivery's own failure, and the fail-closed
+idle-core arm, the target gate, the hop gate, the delivery's own failure, and the fail-closed
 capacity refusal alike.
 
 One statement rather than one per refusal mode, and stronger than the family's
@@ -2402,7 +1942,7 @@ theorem notificationSignalDeclassifiedOnCore_denied_preserves_state
     | some ntfn =>
       simp only at hStep
       obtain ⟨plan, hPlan⟩ : ∃ p, declassifiedSignalPlan ctx declPolicy notificationId
-          (declassificationActorOf ctx signaler).domain st = p := ⟨_, rfl⟩
+          (declassificationActorOf ctx signaler).domain = p := ⟨_, rfl⟩
       rw [hPlan] at hStep
       cases plan with
       | error e' => exact (congrArg Prod.fst hStep).symm
@@ -2438,14 +1978,13 @@ wrong-kind/absent refusal:
    `.objectNotFound` absent — before any policy is consulted, so an invalid
    capability is never a policy oracle
    (`notificationSignalDeclassifiedOnCore_invalid_target_policy_blind`);
-3. a plan either hop's gate refuses is returned verbatim, with that hop's own
-   discriminant, the state untouched;
+3. a plan the hop gate refuses is returned verbatim
+   (`.declassificationDenied`), the state untouched;
 4. a delivery failure of the underlying bound signal is returned verbatim —
    this transition invents no discriminant for it and performs no partial
    commit;
 5. an authorized plan whose records do not all fit refuses fail-closed with
-   `.auditLogCapacityExceeded`, delivering nothing — recording one hop of a
-   two-hop delivery is not among the outcomes;
+   `.auditLogCapacityExceeded`, delivering nothing;
 6. otherwise the delivery commits with exactly the planned records appended.
 
 Arms 3 and 4 are stated as "the error, verbatim" so a future refusal cannot be
@@ -2466,18 +2005,18 @@ theorem enforcement_sufficiency_declassifySignal
              (st, .error .objectNotFound)))) ∨
     (∃ signaler e, st.scheduler.currentOnCore c = some signaler ∧
        declassifiedSignalPlan ctx declPolicy notificationId
-         (declassificationActorOf ctx signaler).domain st = .error e ∧
+         (declassificationActorOf ctx signaler).domain = .error e ∧
        notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
          (st, .error e)) ∨
     (∃ signaler records e, st.scheduler.currentOnCore c = some signaler ∧
        declassifiedSignalPlan ctx declPolicy notificationId
-         (declassificationActorOf ctx signaler).domain st = .ok records ∧
+         (declassificationActorOf ctx signaler).domain = .ok records ∧
        (notificationSignalBoundOnCore notificationId badge c st).2 = .error e ∧
        notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
          (st, .error e)) ∨
     (∃ signaler records sgi, st.scheduler.currentOnCore c = some signaler ∧
        declassifiedSignalPlan ctx declPolicy notificationId
-         (declassificationActorOf ctx signaler).domain st = .ok records ∧
+         (declassificationActorOf ctx signaler).domain = .ok records ∧
        (notificationSignalBoundOnCore notificationId badge c st).2 = .ok sgi ∧
        recordDeclassifiedHops c (declassificationActorOf ctx signaler) records
          (notificationSignalBoundOnCore notificationId badge c st).1 = none ∧
@@ -2485,7 +2024,7 @@ theorem enforcement_sufficiency_declassifySignal
          (st, .error .auditLogCapacityExceeded)) ∨
     (∃ signaler records sgi st2, st.scheduler.currentOnCore c = some signaler ∧
        declassifiedSignalPlan ctx declPolicy notificationId
-         (declassificationActorOf ctx signaler).domain st = .ok records ∧
+         (declassificationActorOf ctx signaler).domain = .ok records ∧
        (notificationSignalBoundOnCore notificationId badge c st).2 = .ok sgi ∧
        recordDeclassifiedHops c (declassificationActorOf ctx signaler) records
          (notificationSignalBoundOnCore notificationId badge c st).1 = some st2 ∧
@@ -2510,7 +2049,7 @@ theorem enforcement_sufficiency_declassifySignal
       have hEq := notificationSignalDeclassifiedOnCore_eq_of_subject ctx declPolicy
         notificationId badge c st signaler ntfn hCur hN
       obtain ⟨plan, hPlan⟩ : ∃ p, declassifiedSignalPlan ctx declPolicy notificationId
-          (declassificationActorOf ctx signaler).domain st = p := ⟨_, rfl⟩
+          (declassificationActorOf ctx signaler).domain = p := ⟨_, rfl⟩
       rw [hPlan] at hEq
       cases plan with
       | error e => exact Or.inr (Or.inr (Or.inl ⟨signaler, e, hCur, hPlan, hEq⟩))
@@ -2544,104 +2083,7 @@ theorem enforcement_sufficiency_declassifySignal
 
 
 -- ============================================================================
--- §14  WS-SM SM9.C.1 — the plain-waiter gate: no-op when admitted, honest
---       about what its refusal discloses (PR #872 review)
--- ============================================================================
-
-/-- WS-SM SM9.C.1 (PR #872 review): **for a receiver the base policy admits,
-the receiver refusal is unreachable** — an error out of the plan is the
-*caller's* hop, never the receiver's.
-
-This is the checked-deployment case: the checked wait gate admits a plain
-waiter only when `notification → waiter` already flows, so on every state that
-discipline produces the second hop is `.ordinary` and this transition's
-receiver gate is a no-op.  The refusal — and the one-bit disclosure it carries
-— is confined to states built outside the checked discipline (an
-unchecked-wait admission, or a post-admission relabeling), where the
-alternative to refusing is delivering a freshly-downgraded badge to a receiver
-no policy authorized. -/
-theorem declassifiedSignalPlan_admitted_receiver_error_is_first_hop
-    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (notificationId : SeLe4n.ObjId) (actorDomain : SecurityDomain) (st : SystemState)
-    (receiver : SeLe4n.ThreadId) (e : KernelError)
-    (hRecv : declassifiedSignalReceiver? st notificationId = some receiver)
-    (hFlow : ctx.policy.canFlow (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = true)
-    (hErr : declassifiedSignalPlan ctx declPolicy notificationId actorDomain st = .error e) :
-    e = KernelError.declassificationDenied := by
-  unfold declassifiedSignalPlan at hErr
-  obtain ⟨a1, hA1⟩ : ∃ a, declassifiedSignalHopAuthorization ctx declPolicy .callerToNotification
-      actorDomain (ctx.objectDomainOf notificationId) = a := ⟨_, rfl⟩
-  rw [hA1] at hErr
-  cases a1 with
-  | error e' =>
-    have hE : e' = DeclassifiedSignalHop.callerToNotification.refusal :=
-      declassifiedSignalHopAuthorization_error_refusal ctx declPolicy .callerToNotification
-        actorDomain (ctx.objectDomainOf notificationId) e' hA1
-    have : e = e' := (Except.error.inj hErr).symm
-    rw [this, hE]; rfl
-  | ok hop1 =>
-    simp only at hErr
-    rw [hRecv] at hErr
-    simp only at hErr
-    rw [declassifiedSignalHopAuthorization_ordinary ctx declPolicy .notificationToReceiver
-      (ctx.objectDomainOf notificationId) (ctx.threadDomainOf receiver) hFlow] at hErr
-    exact absurd hErr (by simp)
-
-/-- WS-SM SM9.C.1 (PR #872 review, **the disclosure, exhibited**): with the
-caller's own hop authorized, the plan's verdict depends on the resolved
-receiver — success with one record when nobody is waiting, the receiver's
-refusal when a denied-domain plain waiter is.
-
-A caller holding a write capability on the notification therefore reads one
-bit of queue state off the ABI outcome.  Kept, and stated rather than hidden,
-because every alternative is worse: delivering ungated re-opens the v0.31.73
-badge leak with downgrade authority behind it; parking the badge past a queued
-waiter invents notification states the ordinary machinery never produces and
-breaks the frame equality the whole invariant transfer rests on; and refusing
-both ways kills the delivery the phase exists to perform.  The same class of
-refusal has disclosed *bound*-receiver state on the ordinary checked path
-since v0.31.73 — this widens it to plain waiters exactly where the data it
-protects is a freshly-downgraded badge, and only on states the checked wait
-discipline does not produce
-(`declassifiedSignalPlan_admitted_receiver_error_is_first_hop`). -/
-theorem declassifiedSignalPlan_outcome_depends_on_receiver
-    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (notificationId : SeLe4n.ObjId) (actorDomain : SecurityDomain)
-    (s₁ s₂ : SystemState) (receiver : SeLe4n.ThreadId)
-    (hRecv₁ : declassifiedSignalReceiver? s₁ notificationId = none)
-    (hRecv₂ : declassifiedSignalReceiver? s₂ notificationId = some receiver)
-    (hDeny₁ : ctx.policy.canFlow actorDomain (ctx.objectDomainOf notificationId) = false)
-    (hDecl₁ : declPolicy.canDeclassify actorDomain (ctx.objectDomainOf notificationId) = true)
-    (hDeny₂ : ctx.policy.canFlow (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = false)
-    (hNoDecl₂ : declPolicy.canDeclassify (ctx.objectDomainOf notificationId)
-      (ctx.threadDomainOf receiver) = false) :
-    declassifiedSignalPlan ctx declPolicy notificationId actorDomain s₁ =
-      .ok [{ srcDomain := actorDomain, dstDomain := ctx.objectDomainOf notificationId,
-             target := notificationId }] ∧
-    declassifiedSignalPlan ctx declPolicy notificationId actorDomain s₂ =
-      .error .declassificationDeniedAtReceiver := by
-  constructor
-  · unfold declassifiedSignalPlan
-    rw [declassifiedSignalHopAuthorization_declassified ctx declPolicy .callerToNotification
-      actorDomain (ctx.objectDomainOf notificationId) hDeny₁ hDecl₁]
-    simp only
-    rw [hRecv₁]
-    rfl
-  · unfold declassifiedSignalPlan
-    rw [declassifiedSignalHopAuthorization_declassified ctx declPolicy .callerToNotification
-      actorDomain (ctx.objectDomainOf notificationId) hDeny₁ hDecl₁]
-    simp only
-    rw [hRecv₂]
-    simp only
-    rw [declassifiedSignalHopAuthorization_refused ctx declPolicy .notificationToReceiver
-      (ctx.objectDomainOf notificationId) (ctx.threadDomainOf receiver) hDeny₂ hNoDecl₂]
-    rfl
-
-
--- ============================================================================
--- §15  WS-SM SM9.C.1 — the target gate (PR #872 review, round 2)
+-- §14  WS-SM SM9.C.1 — the target gate (PR #872 review, round 2)
 -- ============================================================================
 
 /-- WS-SM SM9.C.1 (PR #872 review): a present-but-wrong-kind target answers the

@@ -38,11 +38,10 @@
 [smp-information-flow] refusal write: attempts=1 version=1 trailMoved=false exemptRecorded=false
 [smp-information-flow] refusal read (monitor): status=slot1/v1 counters=1/0
 [smp-information-flow] refusal read (partial): status=SeLe4n.Model.KernelError.illegalAuthority tags=SeLe4n.Model.KernelError.illegalAuthority
-[smp-information-flow] declassifying signal: hops=2 actorDomain=2 notificationDomain=1 receiverDomain=0
+[smp-information-flow] declassifying signal: hops=1 actorDomain=2 notificationDomain=1 receiverDomain=1
 [smp-information-flow] declassifying signal footprint: notification=1016 receiver=1021 cores=[2]
-[smp-information-flow] declassifying signal run: ok records=2 receiverGateDenied=SeLe4n.Model.KernelError.declassificationDeniedAtReceiver unconfigured=SeLe4n.Model.KernelError.declassificationDenied
-[smp-information-flow] declassifying signal ABI: id=33 right=SeLe4n.Model.AccessRight.write shape=SeLe4n.Kernel.Architecture.ReturnShape.unit receiverRefusal=56
-[smp-information-flow] declassifying signal failed hop: reason=56 recordedReceiver=1021 receiverOpcodes=25/26
+[smp-information-flow] declassifying signal run: ok records=1 callerHopOnly=ok records=1 unconfigured=SeLe4n.Model.KernelError.declassificationDenied
+[smp-information-flow] declassifying signal ABI: id=33 right=SeLe4n.Model.AccessRight.write shape=SeLe4n.Kernel.Architecture.ReturnShape.unit refusal=14 retired56=true
 [smp-information-flow] taint classification: moving=8 inert=38 maxTags=8
 [smp-information-flow] taint propagation: liveReceiverTagged=true unrelatedUntouched=true transportUntouched=true
 [smp-information-flow] causal chain: causal=true launders=true domainOnlyFalsePositive=true causalVerdict=false

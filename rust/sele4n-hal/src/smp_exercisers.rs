@@ -14255,8 +14255,8 @@ const DECLASSIFICATION_LOOKUP_REFUSAL: RoundTrip = RoundTrip {
 };
 /// The same refused lookup through a declassified signal, measured: its
 /// refusal is recorded by the seam like the declassification's, and it is the
-/// declassified signal's measured refusal now that a cross-label bind (the
-/// refused second hop's setup) is itself refused.  Root task as the caller,
+/// declassified signal's measured refusal: a cross-label bind or wait is
+/// itself refused, so the signal has no refusal past its caller's hop.  Root task as the caller,
 /// for the same reason.
 #[cfg(feature = "hw_target")]
 const DECLASSIFIED_SIGNAL_LOOKUP_REFUSAL: RoundTrip = RoundTrip {
@@ -14847,9 +14847,8 @@ const UPPER_NOTIFICATION_CARVE: RoundTrip = retype(
     ROOT_IPC_BUFFER,
 );
 /// The bound scenario's second thread: its id in the exerciser labeling's boot
-/// domain, just past the low band (`Exerciser.lowBandBase` + `lowBandSize`),
-/// so it carries the root task's label: an endpoint carries traffic only
-/// between threads of its own label.
+/// domain, so it carries the root task's label: an endpoint carries traffic
+/// only between threads of its own label.
 #[cfg(feature = "hw_target")]
 const BOUND_THREAD_ID: u64 = 0x8_0100;
 /// The bound scenario's endpoint, the one the second thread receives on, in the
@@ -15058,15 +15057,15 @@ const BOUND_SIGNAL_TEARDOWN: [RoundTrip; 6] = [
 /// restores the other.  Then:
 /// - the root task's receive on the boot endpoint blocks, and the second
 ///   thread's declassified signal on the root task's notification delivers to
-///   it, bound and blocked receiving (seL4's `sendSignal` bound arm: both hops
-///   ordinary flows, no record); the second thread's yield runs the root task,
+///   it, bound and blocked receiving (seL4's `sendSignal` bound arm: an
+///   ordinary flow, no record); the second thread's yield runs the root task,
 ///   whose receive blocks again, and its plain signal delivers the same way;
 ///   once more, and the bound line's interrupt (its handler issued and bound
 ///   to that notification) delivers the same way, and its acknowledge
 ///   follows; the second thread's receive on its endpoint blocks;
 /// - the upper notification's bind to the second thread, refused `flowDenied`
 ///   before any write: the thread's label is not the notification's, so a
-///   declassified signal's second hop can never reach a thread of another
+///   declassified signal's delivery can never reach a thread of another
 ///   label.
 ///
 /// The three deliveries and the refusal are measured; the setup, the switches
@@ -15857,9 +15856,9 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     ) {
         return Some(false);
     }
-    // WS-ZA ZA6.35: the declassified signal's bound delivery, its two-hop
-    // downgrade and its refused second hop, the partner suspended and the
-    // timer masked across each run; then the boot audit capability deleted so
+    // WS-ZA ZA6.35: the declassified signal's refused lookups, its bound
+    // delivery and the refused bind across labels, the partner suspended and
+    // the timer masked across each run; then the boot audit capability deleted so
     // its slot is the copy's again.  Each run opens with the refused lookup,
     // which needs the root task as its caller: with the partner suspended the
     // root task is the only thread core 0 can run, whatever a tick did before.

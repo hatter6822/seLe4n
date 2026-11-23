@@ -1315,35 +1315,28 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   -- deliberately *visible* flow, so what is anchored here is a bound plus a
   -- recording obligation rather than an equality of projections.
 
-  assertBool "SM9.C.1: two gated hops, one record per authorized downgrade, no invented edge"
-    (-- The resolved receiver — the second hop's destination, read off the
+  assertBool "SM9.C.1: one gated hop, one record per authorized downgrade, no invented edge"
+    (-- The resolved receiver — the delivery's destination, read off the
      -- pre-state exactly as the delivery reads it.
      have _r := @SeLe4n.Kernel.declassifiedSignalReceiver?
      have _hb := @SeLe4n.Kernel.declassifiedSignalReceiver?_bound
-     -- The per-hop authorization, and the injectivity that keeps the two
-     -- refusals distinguishable at the ABI.
+     -- The caller's hop authorization.
      have _ha := @SeLe4n.Kernel.declassifiedSignalHopAuthorization
-     have _hi := @SeLe4n.Kernel.DeclassifiedSignalHop.refusal_injective
      have _hs := @SeLe4n.Kernel.declassifiedSignalHopAuthorization_declassified_authorized
      -- The transition, its cross-core dispatch, and the frame everything rides.
      have _t := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore
      have _d := @SeLe4n.Kernel.notificationSignalDeclassifiedCrossCoreDispatch
      have _f := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_frame
-     -- The headline properties: the badge really crosses, the resolved receiver
-     -- is gated, every hop is recorded, and no entry names an edge no policy
-     -- authorized.
+     -- The headline properties: the badge really crosses, the receiver of a
+     -- coherent state is at the notification's label (so its hop is the
+     -- identity flow), the hop is recorded, and no entry names an edge no
+     -- policy authorized.
      have _bd := @SeLe4n.Kernel.declassifiedSignal_delivers_badge
-     have _gr := @SeLe4n.Kernel.declassifiedSignal_gates_resolved_receiver
+     have _rc := @SeLe4n.Kernel.declassifiedSignalReceiver_flow_ordinary_of_coherent
      have _na := @SeLe4n.Kernel.declassifiedSignal_never_unaudited
      have _ie := @SeLe4n.Kernel.declassifiedSignal_no_invented_edge
-     have _ah := @SeLe4n.Kernel.declassifiedSignal_audits_each_hop
-     have _ad := @SeLe4n.Kernel.declassifiedSignal_audits_actual_destination
-     -- Attribution: the actor is the running subject, and on the second hop its
-     -- domain is provably NOT the recorded source — which is why the actor is a
-     -- field rather than something recoverable from `srcDomain`.
+     -- Attribution: the actor is the running subject.
      have _at := @SeLe4n.Kernel.attributionFromRunningSubject_over_actor
-     have _sd := @SeLe4n.Kernel.secondHop_actor_differs_from_flowSource
-     have _sn := @SeLe4n.Kernel.secondHopEvent_names_firstHop
      -- The degenerate case, and the unconfigured deployment.
      have _oe := @SeLe4n.Kernel.declassifiedSignal_ordinary_eq_signal
      have _dn := @SeLe4n.Kernel.declassifiedSignal_default_policy_never_downgrades
@@ -1369,7 +1362,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _td := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_trailDestinations
      true)
 
-  -- SM9.C.5/.C.6 — the effect footprint, `footprint_does_not_authorize` and
+  -- SM9.C.5/.C.6 — the effect footprint, `footprint_receiver_at_notification_label` and
   -- `declassificationRelativeNonInterference` live in `NonInterferenceCrossCore`
   -- (with the live arm's dispatch-level bound), outside this file's import set
   -- for the same reason the SM9.A round-4 audit entries are: that module sits
@@ -1399,22 +1392,12 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
        ∧ SeLe4n.Kernel.syscallRequiredRight .declassifySignal = .write
        ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .declassifySignal = .unit))
 
-  assertBool "SM9.C.1 (audit cut): a refused second hop names the resolved receiver"
-    (-- The transition half: a plan refused with the receiver's discriminant
-     -- had resolved a receiver, so the seam's re-resolution has something to
-     -- name; the seam half: the two resolutions are the same function on the
-     -- same pre-state; and the family members the thirteenth policy-gated
-     -- entry owes.
-     have _pr := @SeLe4n.Kernel.declassifiedSignalPlan_deniedAtReceiver_resolves
+  assertBool "SM9.C.1 (audit cut): a refused signal is the policy's one refusal"
+    (-- The refusal is `.declassificationDenied`, and the family members the
+     -- thirteenth policy-gated entry owes.
      have _er := @SeLe4n.Kernel.declassifiedSignalHopAuthorization_error_refusal
-     have _rr := @SeLe4n.Platform.FFI.refusedSignalReceiver?_resolves
-     have _nf := @SeLe4n.Platform.FFI.refusalRecord_names_failed_hop
      have _dp := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_denied_preserves_state
      have _es := @SeLe4n.Kernel.enforcement_sufficiency_declassifySignal
-     -- PR #872 review: the plain-waiter gate — a no-op on checked-admitted
-     -- waiters, its disclosure exhibited.
-     have _aw := @SeLe4n.Kernel.declassifiedSignalPlan_admitted_receiver_error_is_first_hop
-     have _od := @SeLe4n.Kernel.declassifiedSignalPlan_outcome_depends_on_receiver
      -- PR #872 review round 2: the target gate ahead of every policy read —
      -- an invalid target is never a policy oracle.
      have _wk := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_wrong_kind

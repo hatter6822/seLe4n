@@ -272,10 +272,10 @@ structure DeclassificationEvent where
   /-- Source domain of the **flow** this event authorized.
 
       For a single-hop downgrade this is the acting subject's own domain and
-      coincides with `actorDomain`.  For the second hop of a two-hop delivery
-      (WS-SM SM9.C.1) it is the *intermediate object's* domain — the badge
-      leaves the notification and enters the receiver — which is why the actor
-      is a separate pair of fields below. -/
+      coincides with `actorDomain`.  The actor is a separate pair of fields
+      below so a producer whose flow source is not its actor (the declassified
+      signal's second hop, WS-SM SM9.C.1, deleted at `v0.37.37`) can never
+      misattribute the subject. -/
   srcDomain : SecurityDomain
   /-- Destination domain receiving the declassified information. -/
   dstDomain : SecurityDomain
