@@ -613,6 +613,20 @@ theorem cancelBoundDonationOnCore_hidden (ctx : LabelingContext) (observer : IfO
     (SchedContextOps.purgeReplenishment_releaseOnlyWrite _ scId)
     (releaseWriteAt.releaseRemoveAnywhere _ scId) hSc).trans hA.projection
 
+/-- **WS-SX SX8: a donated holder's unbind is invisible when the context and the
+holder are hidden**: it is the reservation unbind on the owner-cleared record
+(`cancelDonatedDonationOnCore_ok_view`). -/
+theorem cancelDonatedDonationOnCore_hidden (ctx : LabelingContext) (observer : IfObserver)
+    {s s' : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hInv : s.objects.invExt)
+    (hSc : ∀ scId owner, tcb.schedContextBinding = .donated scId owner →
+      objectObservable ctx observer scId.toObjId = false)
+    (hT : objectObservable ctx observer tid.toObjId = false)
+    (h : cancelDonatedDonationOnCore s tid tcb = .ok s') :
+    projectState ctx observer s' = projectState ctx observer s :=
+  let ⟨scId, owner, hD, hV, hB⟩ := cancelDonatedDonationOnCore_ok_view h
+  cancelBoundDonationOnCore_hidden ctx observer hInv hV (hSc scId owner hD) hT hB
+
 /-- **A finalised thread's notification unbind is invisible** when the thread
 and its notification are hidden; it keeps the thread's IPC state, its
 notification and endpoint queue links and its scheduling binding. -/

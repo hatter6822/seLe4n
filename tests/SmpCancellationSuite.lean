@@ -147,7 +147,8 @@ open SeLe4n.Testing
 #check @spliceOutMidQueueNode_preserves_objects_invExt
 #check @removeFromAllEndpointQueues_preserves_objects_invExt
 #check @removeFromNotificationWaitQueue_preserves_objects_invExt
-#check @cleanupDonatedSchedContext_preserves_objects_invExt
+#check @cancelDonatedDonationOnCore_preserves_objects_invExt
+#check @cancelDonationArmOnCore_ok
 
 -- SM6.E flagship:
 #check @cancellation_cross_core_correct
@@ -1019,7 +1020,8 @@ private def runBoundDonationCancelChecks : IO Unit := do
       && (st'.queuedOn core1 victimTid == stBoundDonation.queuedOn core1 victimTid))
 
 -- ----------------------------------------------------------------------------
--- Scenario F: donation cancellation — donated arm (return to original owner).
+-- Scenario F: donation cancellation — donated arm (WS-SX SX8: seL4's
+-- `schedContext_unbindTCB`; the context goes back to no one).
 -- ----------------------------------------------------------------------------
 
 private def stDonated : SystemState :=
@@ -1036,33 +1038,31 @@ private def stDonated : SystemState :=
   withReleaseEntryOnCore base core1 scId 42
 
 private def runDonatedDonationCancelChecks : IO Unit := do
-  IO.println "--- §3.7 SM6.E.3 donated-donation cancel (return to owner) ---"
+  IO.println "--- §3.7 SM6.E.3 donated-donation cancel (unbind, context unheld) ---"
   let tcb := victimTcb stDonated
   assertBool "cancelBindingSc?/cancelDonatedOwner? resolve the donated SC + owner"
     (decide (cancelBindingSc? tcb = some scId ∧ cancelDonatedOwner? tcb = some ownerTid))
   let (st', resOk) := armOutcome stDonated victimTid tcb
   assertBool "donated-donation cancel succeeds"
     resOk
-  assertBool "the SC is returned to the original owner"
+  assertBool "the SC is bound to no one (not returned to the owner) and inactive"
     (match st'.getSchedContext? scId with
-     | some sc => decide (sc.boundThread = some ownerTid)
+     | some sc => sc.boundThread.isNone && !sc.isActive
      | none => false)
-  assertBool "the owner's binding is re-established to .bound"
+  assertBool "the owner's binding is unchanged (.unbound): it gets the SC back only by reply_pop"
     (match st'.getTcb? ownerTid with
-     | some t => decide (t.schedContextBinding = .bound scId)
+     | some t => decide (t.schedContextBinding = .unbound)
      | none => false)
   assertBool "the victim's binding is cleared to .unbound"
     (match st'.getTcb? victimTid with
      | some t => decide (t.schedContextBinding = .unbound)
      | none => false)
-  -- §2b replenishment migration: the SC's pending replenishment moves from
-  -- the victim's home core (core 1) to the owner's home core (boot) at its
-  -- original eligibility time.
-  assertBool "SC replenishment is migrated off the victim's home core"
+  -- The exact purge takes the SC's pending replenishment off the queue its own
+  -- link names, and an unheld context is placed on no queue.
+  assertBool "SC replenishment is purged off the victim's home core"
     (!(st'.releaseEntriesOn core1).any (fun e => e.1 == scId))
-  assertBool "SC replenishment lands on the owner's home core at its original time"
-    ((st'.releaseEntriesOn bootCoreId).any
-      (fun e => e.1 == scId && e.2 == 42))
+  assertBool "SC replenishment is placed on no other core"
+    (!(st'.releaseEntriesOn bootCoreId).any (fun e => e.1 == scId))
 
 -- ----------------------------------------------------------------------------
 -- Scenario G: dispatcher identity + ghost victim + bracket atomicity.

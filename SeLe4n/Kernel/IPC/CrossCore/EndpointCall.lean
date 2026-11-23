@@ -2820,9 +2820,7 @@ theorem lockSet_endpointCall_caller_tcb_write_mem
 -- live in the `LockKey` domain, whose whole reason for existing (SM5.A.2)
 -- is that a per-core scheduler slot has no `ObjId` to key a `LockId` on. So
 -- "extend the call's footprint with `migrateSchedContextReplenishmentLockSet`"
--- is a statement in the cross-domain `LockKey` order, exactly as SM6.E's
--- `cancelDonatedDonationOnCoreLockSet` is for the `.tcbSuspend` arm that
--- runs the same migration. Both footprints below are `LockKey` lists in
+-- is a statement in the cross-domain `LockKey` order. Both footprints below are `LockKey` lists in
 -- plan §4.4 ascending order (`object < runQueue < replenishQueue`), each
 -- same-kind segment `CoreId`-ascending, so the list *is* the SM3.D acquisition
 -- sequence.
@@ -2834,10 +2832,6 @@ donor's home core, purged, and the donee's home core, receiving), emitted in
 `CoreId`-ascending order. On a shared home core the two endpoints coincide, the
 migration is a definitional no-op, and the footprint collapses to the single
 slot.
-
-Structurally identical to `cancelDonatedDonationOnCoreLockSet`, and for the
-same reason: it is the same primitive, moving the same SchedContext's
-replenishments between the same two kinds of core.
 
 **WS-RR RR8.12**: spelled through `schedFootprintOfCores`, which is the shared
 answer to "what is a scheduler-domain footprint over these core sets" — an

@@ -11,7 +11,7 @@ import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.IPC.Invariant.TimeoutAbortPreservation
 -- WS-SM SM6.E: cleanup-primitive `objects.invExt` lemmas
 -- (`removeFromAll*_preserves_objects_invExt`,
--- `cleanupDonatedSchedContext_preserves_objects_invExt`), composed by the
+-- `cancelDonatedDonationOnCore_preserves_objects_invExt`), composed by the
 -- cancellation invariant surface below.
 import SeLe4n.Kernel.Lifecycle.Operations.CleanupPreservation
 

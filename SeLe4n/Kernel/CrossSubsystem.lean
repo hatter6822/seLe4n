@@ -2580,11 +2580,10 @@ theorem cleanup_frame_preserves_schedContextPredicates
 
 /-- Z9-O2: Frame case — thread cleanup (returning donated SchedContext) preserves
     all 3 new cross-subsystem predicates when `objects` is unchanged. For the
-    actual mutation case, `cleanupDonatedSchedContext` returns the SchedContext
-    to its original owner by modifying both TCBs' `schedContextBinding` fields.
-    Operation-specific preservation must show that the return operation maintains
-    the uniqueness invariant (Z9-B) by clearing the dying thread's binding before
-    or atomically with updating the owner's binding. -/
+    actual mutation case, `cancelDonationArmOnCore` unbinds the SchedContext
+    from the dying thread (seL4's `schedContext_unbindTCB`), clearing both the
+    thread's binding and the context's `boundThread`; its own preservation
+    theorems carry that case. -/
 theorem threadCleanup_frame_preserves_schedContextPredicates
     (st st' : SystemState)
     (hObjects : st'.objects = st.objects)

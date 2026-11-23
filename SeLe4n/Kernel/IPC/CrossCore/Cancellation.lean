@@ -62,8 +62,9 @@ lock-set discipline:
   instead of the single-core form's hardcoded `bootCoreId`;
   `cancelBoundDonationOnCore … bootCoreId = cancelBoundDonation` definitionally
   (the SM5.A backward-compatibility bridge pattern).  The donated arm
-  (`cancelDonatedDonation` → `returnDonatedSchedContext`) performs object
-  writes only, so it is core-independent and shared as-is.  **Since
+  (`cancelDonatedDonationOnCore`) is seL4's `schedContext_unbindTCB`: it is
+  the bound arm run on the owner-cleared view of the holder, so the context is
+  unbound from the holder, never returned to the recorded lender.  **Since
   `v0.35.164` the two arms and their `Except`-shaped dispatcher
   `cancelDonationArmOnCore` are defined in `Lifecycle/Operations/Cleanup.lean`**,
   because the destroy path (`lifecyclePreRetypeCleanup`) runs them too and
@@ -2475,25 +2476,15 @@ theorem cancelBoundDonationOnCore_preserves_ipcInvariant
     simp only [cancelBoundDonationOnCore, hB] at h
     cases h
 
-/-- WS-SM SM6.E.3: the per-core donated arm preserves `ipcInvariant` — the
-return writes SchedContext/TCB objects only and the context settle only
-release-queue links. -/
+/-- WS-SX SX8: the per-core donated arm preserves `ipcInvariant` — it is the
+bound arm on the owner-cleared record. -/
 theorem cancelDonatedDonationOnCore_preserves_ipcInvariant
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hInv : st.objects.invExt) (hIpc : ipcInvariant st)
     (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
-    ipcInvariant st' := by
-  unfold cancelDonatedDonationOnCore at h
-  split at h
-  · split at h
-    · cases h
-    · injection h with h
-      subst h
-      exact ipcInvariant_of_objectsAgreeOffSchedulerLinks
-        (.of_releaseLinks (SchedContextOps.settleReturnedContext_agree _ _ _))
-        (cleanupDonatedSchedContext_preserves_ipcInvariant _ _ _ hInv hIpc
-          (by assumption))
-  · cases h
+    ipcInvariant st' :=
+  let ⟨_, _, _, _, hB⟩ := cancelDonatedDonationOnCore_ok_view h
+  cancelBoundDonationOnCore_preserves_ipcInvariant st st' tid _ hInv hIpc hB
 
 -- `v0.35.164`: `cancelBoundDonationOnCore_runQueue_current_eq`,
 -- `cancelBoundDonationOnCore_replenishQueue_purged` and
@@ -2968,60 +2959,6 @@ theorem cancelBoundDonationOnCoreLockSet_pairwise_le (purgeCore : CoreId) :
     (fun a ha => by rcases List.mem_singleton.mp ha with rfl; exact hle)
     (List.Pairwise.cons (fun a ha => by simp at ha) List.Pairwise.nil)
 
-/-- WS-SM SM6.E: the scheduler-domain footprint of the per-core **donated**
-arm `cancelDonatedDonationOnCore` — the object-store table write lock plus
-the replenish-queue write locks of **both** migration endpoints (the
-victim's home core, purged, and the original owner's home core, receiving),
-emitted in `CoreId`-ascending order so the list is itself the canonical
-acquisition sequence.  On a shared home core the two endpoints coincide and
-the footprint collapses to the bound-arm shape.
-
-**WS-RR RR8.12**: spelled through `schedFootprintOfCores` — an empty run set,
-because the donated arm moves replenishments and touches no run queue. -/
-def cancelDonatedDonationOnCoreLockSet (victimHome ownerHome : CoreId) :
-    List (LockKey × Concurrency.AccessMode) :=
-  schedFootprintOfCores [] [victimHome, ownerHome]
-
-/-- SM6.E: every lock in the donated-arm footprint is acquired in **write**
-mode. -/
-theorem cancelDonatedDonationOnCoreLockSet_write_only
-    (victimHome ownerHome : CoreId) :
-    ∀ p ∈ cancelDonatedDonationOnCoreLockSet victimHome ownerHome,
-      p.2 = Concurrency.AccessMode.write :=
-  schedFootprintOfCores_write_only _ _
-
-/-- SM6.E: the victim's home-core replenish-queue write lock is in the
-donated-arm footprint (the migration source / purge slot). -/
-theorem cancelDonatedDonationOnCoreLockSet_contains_victimHome_write
-    (victimHome ownerHome : CoreId) :
-    (LockKey.replenishQueue victimHome, Concurrency.AccessMode.write)
-      ∈ cancelDonatedDonationOnCoreLockSet victimHome ownerHome :=
-  (mem_schedFootprintOfCores_replenishQueue_iff _ _ victimHome).mpr (by simp)
-
-/-- SM6.E: the owner's home-core replenish-queue write lock is in the
-donated-arm footprint (the migration destination). -/
-theorem cancelDonatedDonationOnCoreLockSet_contains_ownerHome_write
-    (victimHome ownerHome : CoreId) :
-    (LockKey.replenishQueue ownerHome, Concurrency.AccessMode.write)
-      ∈ cancelDonatedDonationOnCoreLockSet victimHome ownerHome :=
-  (mem_schedFootprintOfCores_replenishQueue_iff _ _ ownerHome).mpr (by simp)
-
-/-- SM6.E: the donated-arm footprint's projected keys are duplicate-free —
-the segment carries one lock per distinct home core, and the object-store key
-is of a different constructor. -/
-theorem cancelDonatedDonationOnCoreLockSet_keys_nodup
-    (victimHome ownerHome : CoreId) :
-    ((cancelDonatedDonationOnCoreLockSet victimHome ownerHome).map (·.1)).Nodup :=
-  schedFootprintOfCores_keys_nodup _ _
-
-/-- SM6.E: the donated-arm footprint's keys form a `LockKey`-ascending
-acquisition sequence — object < replenishQueue cross-domain, and the two
-replenish endpoints are emitted in `CoreId`-ascending order. -/
-theorem cancelDonatedDonationOnCoreLockSet_pairwise_le
-    (victimHome ownerHome : CoreId) :
-    ((cancelDonatedDonationOnCoreLockSet victimHome ownerHome).map (·.1)).Pairwise (· ≤ ·) :=
-  schedFootprintOfCores_pairwise_le _ _
-
 /-- **WS-RR RR8.12**: the suspend pipeline's G3 **is** this dispatcher.
 
 G3 spells the three-way binding match out again rather than calling
@@ -3201,33 +3138,6 @@ theorem suspendThreadOnCoreLockSet_contains_reclaim_replenishQueue_writes
       ∈ suspendThreadOnCoreLockSet home executingCore ownerHome outerHome placed
           holderPlaced reclaimReplenish :=
   (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mpr (by simp [hc])
-
-/-- **WS-OD OD5.3: the second pop's settle destination, read off the operation.**
-
-`cancelDonatedDonationOnCore` settles the reclaimed context (WS-ZA ZA6.33,
-seL4's `schedContext_donate`): off the release queue its own link names, and
-placed again on the home of the thread its binding **records as owner**.  At
-call depth 1 that thread is whoever donated to the victim; at depth ≥ 2 it is
-the *outer caller* the reply stack resolved -- a core the pre-state binding
-does not mention.
-
-Stated so the footprint's owner replenish member has a consumer: the
-destination is `determineTargetCore stC originalOwner`, and `originalOwner` is
-the binding's own field rather than anything resolvable before the return ran. -/
-theorem cancelDonatedDonationOnCore_settles_on_recorded_owner
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
-    (hBind : tcb.schedContextBinding = .donated scId originalOwner)
-    (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
-    ∃ stC, cleanupDonatedSchedContext st tid = .ok stC ∧
-      st' = SchedContextOps.settleReturnedContext stC
-        (determineTargetCore stC originalOwner) scId := by
-  unfold cancelDonatedDonationOnCore at h
-  rw [hBind] at h
-  simp only [] at h
-  cases hC : cleanupDonatedSchedContext st tid with
-  | error e => rw [hC] at h; cases h
-  | ok stC => rw [hC] at h; exact ⟨stC, rfl, (Except.ok.inj h).symm⟩
 
 /-- SM6.E: the suspend footprint's keys form a `LockKey`-ascending
 acquisition sequence — the full three-domain ladder

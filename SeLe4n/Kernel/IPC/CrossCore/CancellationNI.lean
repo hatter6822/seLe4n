@@ -39,11 +39,10 @@ discharged **substantively** here:
   a blocked victim is neither queued nor current on any core) — §3.
 
 The single-core object-level teardown (`cancelIpcBlocking`'s sweeps and
-reply-link consume) and the donated-arm return (`cleanupDonatedSchedContext`)
-are surface **shared with the single-core suspend pipeline**, whose projection
+reply-link consume) is surface **shared with the single-core suspend pipeline**, whose projection
 preservation is the InformationFlow subsystem's established closure form
 (`suspendThread_preserves_projection` / `cancelDonatedDonation_preserves_projection`,
-AK6-F.17/18).  The composites here (§3/§4) take exactly that single obligation
+AK6-F.17/18).  The composites here (§3) take exactly that single obligation
 as a hypothesis and discharge every cross-core leg substantively — so closing
 the single-core closure forms immediately closes the cross-core NI too.
 -/
@@ -411,63 +410,6 @@ theorem cancelIpcBlockingOnCore_ready_cancellation_NI_smp
       descheduleThread_state_eq]
   exact descheduleAtPlacement_preserves_projectionOnCore ctx observer st victim c
     hVictimHigh
-
--- ============================================================================
--- §4  The per-core donated arm
--- ============================================================================
-
-/-- WS-SM SM6.E (boot-core form): the per-core donated-arm cancellation is
-invisible given the single-core return's projection preservation (the
-AK6-F.17 `cancelDonatedDonation_preserves_projection` obligation) — the
-returned context's settle (WS-ZA ZA6.33; formerly the SM6.E replenishment
-migration) is discharged substantively. -/
-theorem cancelDonatedDonationOnCore_cancellation_NI
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hReturnProj : ∀ stR, cleanupDonatedSchedContext st tid = .ok stR →
-        projectState ctx observer stR = projectState ctx observer st)
-    (hCtxHigh : ∀ scId owner, tcb.schedContextBinding = .donated scId owner →
-        objectObservable ctx observer scId.toObjId = false)
-    (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
-    projectState ctx observer st' = projectState ctx observer st := by
-  unfold cancelDonatedDonationOnCore at h
-  split at h
-  · rename_i scId owner hBind
-    split at h
-    · cases h
-    · injection h with h
-      subst h
-      rw [settleReturnedContext_preserves_projection ctx observer _ _ _
-        (hCtxHigh scId owner hBind)]
-      exact hReturnProj _ (by assumption)
-  · cases h
-
-/-- WS-SM SM6.E (∀-core form): the per-core donated-arm cancellation is
-invisible on *every* core given the per-core return projection. -/
-theorem cancelDonatedDonationOnCore_cancellation_NI_smp
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hReturnProj : ∀ stR, cleanupDonatedSchedContext st tid = .ok stR →
-        ∀ c : CoreId, projectStateOnCore ctx observer stR c
-          = projectStateOnCore ctx observer st c)
-    (hCtxHigh : ∀ scId owner, tcb.schedContextBinding = .donated scId owner →
-        objectObservable ctx observer scId.toObjId = false)
-    (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
-    lowEquivalent_smp ctx observer st' st := by
-  intro c
-  show projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c
-  unfold cancelDonatedDonationOnCore at h
-  split at h
-  · rename_i scId owner hBind
-    split at h
-    · cases h
-    · injection h with h
-      subst h
-      rw [settleReturnedContext_preserves_projectionOnCore ctx observer _ _ _ c
-        (hCtxHigh scId owner hBind)]
-      exact hReturnProj _ (by assumption) c
-  · cases h
-
 
 -- ============================================================================
 -- §5  WS-RR RR2.18 — discharging the teardown projection on the reply arm

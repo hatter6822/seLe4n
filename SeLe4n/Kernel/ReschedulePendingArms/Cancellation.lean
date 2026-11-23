@@ -672,33 +672,13 @@ theorem cancelBoundDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
       exact SystemState.updateTcb_preserves_objects_invExt _ tid _ hInvP
   · cases h
 
-/-- The donated cleanup is the return or the identity. -/
-theorem cleanupDonatedSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
-    {tid : SeLe4n.ThreadId} (hInv : st.objects.invExt)
-    (h : cleanupDonatedSchedContext st tid = .ok st') :
-    stepCovers e st st' ∧ st'.objects.invExt := by
-  unfold cleanupDonatedSchedContext at h
-  split at h
-  · cases h; exact ⟨stepCovers_refl e _, hInv⟩
-  · split at h
-    · exact returnDonatedSchedContextResolved_stepCovers e hInv h
-    · cases h; exact ⟨stepCovers_refl e _, hInv⟩
-
-/-- **The donated cancellation covers**: the return, then the returned
-context's settle (WS-ZA ZA6.33), a release-only write that moves no slot. -/
+/-- **WS-SX SX8: the donated cancellation covers**, as the in-place unbind it is
+on the owner-cleared record. -/
 theorem cancelDonatedDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
     {tid : SeLe4n.ThreadId} {tcb : TCB} (hInv : st.objects.invExt)
     (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
-    stepCovers e st st' ∧ st'.objects.invExt := by
-  unfold cancelDonatedDonationOnCore at h
-  split at h
-  · split at h
-    · cases h
-    · rename_i sMid hC
-      cases h
-      obtain ⟨h1, hI⟩ := cleanupDonatedSchedContext_stepCovers e hInv hC
-      exact ⟨stepCovers_trans h1 (settleReturnedContext_stepCovers e _ _ _),
-        SchedContextOps.settleReturnedContext_objects_invExt _ _ _ hI⟩
-  · cases h
+    stepCovers e st st' ∧ st'.objects.invExt :=
+  let ⟨_, _, _, _, hB⟩ := cancelDonatedDonationOnCore_ok_view h
+  cancelBoundDonationOnCore_stepCovers e hInv hB
 
 end SeLe4n.Kernel

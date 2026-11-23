@@ -227,8 +227,7 @@ thread held (`completeHeldYield`, seL4-MCS's `unbindFromSC` →
 (`replenishQueueAffinityConsistent_smp_of_objectsAgreeOffYield`). -/
 theorem cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityConsistent_smp
     (st stArm : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (held : Nat)
-    (hTcb : lookupTcb st tid = some tcb)
-    (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
+    (hInv : st.objects.invExt)
     (hCons : replenishQueueAffinityConsistent_smp st)
     (hArm : cancelDonationArmOnCore st tid tcb = .ok stArm) :
     replenishQueueAffinityConsistent_smp (cleanupTcbReferences (completeHeldYield stArm held) tid) :=
@@ -239,7 +238,7 @@ theorem cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityC
       (SystemState.completeHeldYield_objectsAgreeOffYield _ _ hInvA)
       (SystemState.completeHeldYield_scheduler _ _)
       (cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp
-        st stArm tid tcb hTcb hInv hRef hCons hArm))
+        st stArm tid tcb hInv hCons hArm))
 
 /-- ...and every binding (Z4-O reads two projections the yield writes leave). -/
 theorem schedContextBindingConsistent_of_objectsAgreeOffYield {st st' : SystemState}
@@ -307,7 +306,7 @@ record the store does not hold at that thread's key is describing a different
 state. -/
 theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp
     (st st' : SystemState) (target : SeLe4n.ObjId) (currentObj newObj : KernelObject)
-    (hInv : st.objects.invExt) (hRef : st.releaseQueueRefined)
+    (hInv : st.objects.invExt)
     (hCons : replenishQueueAffinityConsistent_smp st)
     (hTcb : ∀ tcb : TCB, currentObj = .tcb tcb → lookupTcb st tcb.tid = some tcb)
     (h : lifecyclePreRetypeCleanup st target currentObj newObj = .ok st') :
@@ -336,7 +335,7 @@ theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp
           tcb.scBindingScCode hInvA
         have hInvC := cleanupTcbReferences_preserves_objects_invExt _ tcb.tid hInvH
         have hS := cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityConsistent_smp
-          st stArm tcb.tid tcb tcb.scBindingScCode (hTcb tcb rfl) hInv hRef hCons hArm
+          st stArm tcb.tid tcb tcb.scBindingScCode hInv hCons hArm
         have hS := replenishQueueAffinityConsistent_smp_of_objectsAgreeOffYield
           (SystemState.cancelYieldTo_objectsAgreeOffYield _ tcb.tid hInvC)
           (SystemState.cancelYieldTo_scheduler _ _) hS
@@ -411,63 +410,28 @@ theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp
 -- §3  `v0.35.183` (register row 63): Z4-O across the destroy path
 -- ============================================================================
 
-/-- **`v0.35.183`: the destroy path's donated arm preserves Z4-O.**
+/-- **WS-SX SX8: the destroy path's donated arm preserves Z4-O.**
 
-`cleanupDonatedSchedContext` is the resolved donation pop at the thread's own
-recorded `(scId, owner)`, so this is one lift of the pop's own theorem through
-`returnDonatedSchedContextResolved_lift` — the resolver's answer is a parameter
-the pop's preservation does not read.
-
-The arm's two non-pop branches are the identity: a thread the store has lost, and
-a thread whose binding is not `.donated`. -/
-theorem cleanupDonatedSchedContext_preserves_schedContextBindingConsistent
-    (st st' : SystemState) (tid : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt)
-    (hCons : schedContextBindingConsistent st)
-    (h : cleanupDonatedSchedContext st tid = .ok st') :
-    schedContextBindingConsistent st' := by
-  unfold cleanupDonatedSchedContext at h
-  cases hLk : lookupTcb st tid with
-  | none => rw [hLk] at h; injection h with h; exact h ▸ hCons
-  | some tcb =>
-    rw [hLk] at h
-    simp only [] at h
-    cases hB : tcb.schedContextBinding with
-    | unbound => rw [hB] at h; injection h with h; exact h ▸ hCons
-    | bound _ => rw [hB] at h; injection h with h; exact h ▸ hCons
-    | donated scId owner =>
-      rw [hB] at h
-      exact returnDonatedSchedContextResolved_lift h (fun newOwner? s hPop =>
-        returnDonatedSchedContext_preserves_schedContextBindingConsistent st s tid scId
-          owner newOwner? hInv hCons hPop)
-
-/-- **`v0.35.183`: and so does the arm that settles the returned context.**
-
-The settle (purge, then place when the new holder is active) writes the
-release-queue links and nothing else (`settleReturnedContext_agree`), so
-Z4-O crosses it by the release-links frame form. -/
+The arm is the in-place unbind on the owner-cleared record, which clears one
+reciprocal pair: the holder's binding and the context's `boundThread`.  Z4-O's
+forward clause reads `.bound` bindings only, so the pair a `.donated` holder is
+in is read off `donationOwnerValid` instead: the context it holds names it
+back. -/
 theorem cancelDonatedDonationOnCore_preserves_schedContextBindingConsistent
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb)
     (hInv : st.objects.invExt)
     (hCons : schedContextBindingConsistent st)
+    (hOwner : donationOwnerValid st)
     (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
     schedContextBindingConsistent st' := by
-  unfold cancelDonatedDonationOnCore at h
-  cases hB : tcb.schedContextBinding with
-  | unbound => rw [hB] at h; exact absurd h (by simp)
-  | bound _ => rw [hB] at h; exact absurd h (by simp)
-  | donated scId owner =>
-    rw [hB] at h
-    cases hRet : cleanupDonatedSchedContext st tid with
-    | error e => rw [hRet] at h; exact absurd h (by simp)
-    | ok stRet =>
-      rw [hRet] at h
-      injection h with h
-      subst h
-      exact schedContextBindingConsistent_of_objectsAgreeOffReleaseLinks
-        (SchedContextOps.settleReturnedContext_agree _ _ _)
-        (cleanupDonatedSchedContext_preserves_schedContextBindingConsistent st stRet tid
-          hInv hCons hRet)
+  obtain ⟨scId, owner, hD, hV, hB⟩ := cancelDonatedDonationOnCore_ok_view h
+  obtain ⟨⟨sc, hScRaw, hScBound⟩, _⟩ := hOwner tid tcb scId owner
+    ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb) hD
+  exact cancelBoundDonationOnCore_preserves_schedContextBindingConsistent_of_reciprocal
+    st st' tid _ scId hV tcb hTcb (.inr ⟨owner, hD⟩)
+    ⟨sc, (SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hScRaw, hScBound⟩
+    hInv hCons hB
 
 /-- **`v0.35.183`: the destroy path's reservation arm preserves Z4-O, on every
 binding.**
@@ -487,6 +451,7 @@ theorem cancelDonationArmOnCore_preserves_schedContextBindingConsistent
     (hTcb : st.getTcb? tid = some tcb)
     (hInv : st.objects.invExt)
     (hCons : schedContextBindingConsistent st)
+    (hOwner : donationOwnerValid st)
     (h : cancelDonationArmOnCore st tid tcb = .ok st') :
     schedContextBindingConsistent st' := by
   unfold cancelDonationArmOnCore at h
@@ -499,7 +464,7 @@ theorem cancelDonationArmOnCore_preserves_schedContextBindingConsistent
   | donated scId owner =>
     rw [hB] at h
     exact cancelDonatedDonationOnCore_preserves_schedContextBindingConsistent st st' tid tcb
-      hInv hCons h
+      hTcb hInv hCons hOwner h
 
 /-- **`v0.35.183` (register row 63): the SchedContext arm does NOT preserve Z4-O,
 and that is deliberate.**
@@ -576,6 +541,7 @@ theorem cleanupTcbReferences_after_donationArm_preserves_schedContextBindingCons
     (hTcb : lookupTcb st tid = some tcb)
     (hInv : st.objects.invExt)
     (hCons : schedContextBindingConsistent st)
+    (hOwner : donationOwnerValid st)
     (hArm : cancelDonationArmOnCore st tid tcb = .ok stArm) :
     schedContextBindingConsistent (cleanupTcbReferences (completeHeldYield stArm held) tid) :=
   have hInvA := cancelDonationArmOnCore_preserves_objects_invExt st stArm tid tcb hInv hArm
@@ -584,7 +550,7 @@ theorem cleanupTcbReferences_after_donationArm_preserves_schedContextBindingCons
     (schedContextBindingConsistent_of_objectsAgreeOffYield
       (SystemState.completeHeldYield_objectsAgreeOffYield _ _ hInvA)
       (cancelDonationArmOnCore_preserves_schedContextBindingConsistent st stArm tid tcb
-        (getTcb?_of_lookupTcb st tid tcb hTcb) hInv hCons hArm))
+        (getTcb?_of_lookupTcb st tid tcb hTcb) hInv hCons hOwner hArm))
 
 /-- **`v0.35.183` (register row 63): the destroy path's pre-retype cleanup
 preserves Z4-O, on every object kind the retype's own detachment pack admits.**
@@ -615,6 +581,7 @@ theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent
     (st st' : SystemState) (target : SeLe4n.ObjId) (currentObj newObj : KernelObject)
     (hInv : st.objects.invExt)
     (hCons : schedContextBindingConsistent st)
+    (hOwner : donationOwnerValid st)
     (hTcb : ∀ tcb : TCB, currentObj = .tcb tcb → lookupTcb st tcb.tid = some tcb)
     (hNotSc : ∀ sc : SeLe4n.Kernel.SchedContext, currentObj ≠ .schedContext sc)
     (h : lifecyclePreRetypeCleanup st target currentObj newObj = .ok st') :
@@ -640,7 +607,7 @@ theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent
           tcb.scBindingScCode hInvA
         have hInvC := cleanupTcbReferences_preserves_objects_invExt _ tcb.tid hInvH
         have hS := cleanupTcbReferences_after_donationArm_preserves_schedContextBindingConsistent
-          st stArm tcb.tid tcb tcb.scBindingScCode (hTcb tcb rfl) hInv hCons hArm
+          st stArm tcb.tid tcb tcb.scBindingScCode (hTcb tcb rfl) hInv hCons hOwner hArm
         have hS := schedContextBindingConsistent_of_objectsAgreeOffYield
           (SystemState.cancelYieldTo_objectsAgreeOffYield _ tcb.tid hInvC) hS
         -- The slot detach then writes link words alone (`detachTcbSlots_agree`).
@@ -701,11 +668,9 @@ the destroy path's own fact rather than one proof's scaffolding: the replenish
 half needs exactly the carve-out that says a surviving context names no thread at
 the destroyed key. -/
 
-/-- **`v0.35.185`: the donated arm leaves the target `.unbound`.**
-
-The pop's own per-thread characterisation at the holder, lifted through the
-resolver and framed across the context settle (which writes no
-object). -/
+/-- **WS-SX SX8: the donated arm leaves the target `.unbound`**: it is the
+in-place unbind on the owner-cleared record, which clears the stored record's
+two binding codes. -/
 theorem cancelDonatedDonationOnCore_target_unbound
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hLk : lookupTcb st tid = some tcb)
@@ -713,41 +678,10 @@ theorem cancelDonatedDonationOnCore_target_unbound
     (h : cancelDonatedDonationOnCore st tid tcb = .ok st')
     (t : TCB) (hT : st'.getTcb? tid = some t) :
     t.schedContextBinding = SchedContextBinding.unbound := by
-  unfold cancelDonatedDonationOnCore at h
-  cases hB : tcb.schedContextBinding with
-  | unbound => rw [hB] at h; exact absurd h (by simp)
-  | bound _ => rw [hB] at h; exact absurd h (by simp)
-  | donated scId owner =>
-    rw [hB] at h
-    cases hRet : cleanupDonatedSchedContext st tid with
-    | error e => rw [hRet] at h; exact absurd h (by simp)
-    | ok stRet =>
-      rw [hRet] at h
-      injection h with h
-      subst h
-      -- The settle writes replenish queues only, so the reading at `tid` is
-      -- the pop's own.
-      have hTRet : stRet.getTcb? tid = some t := by
-        rw [← SchedContextOps.settleReturnedContext_getTcb?]; exact hT
-      -- Unfold the arm down to the resolved pop and read its holder clause.
-      unfold cleanupDonatedSchedContext at hRet
-      rw [hLk] at hRet
-      simp only [] at hRet
-      rw [hB] at hRet
-      refine returnDonatedSchedContextResolved_lift
-        (P := fun s => ∀ tX : TCB, s.getTcb? tid = some tX →
-          tX.schedContextBinding = SchedContextBinding.unbound)
-        hRet (fun newOwner? s hPop => ?_) t hTRet
-      have hNe : owner ≠ tid :=
-        returnDonatedSchedContext_ok_recipient_ne_server st s tid scId owner newOwner? tcb
-          (getTcb?_of_lookupTcb st tid tcb hLk) (by rw [hB]; simp) hPop
-      obtain ⟨_, ⟨srvTcb, _, hSrvPost⟩, _⟩ :=
-        returnDonatedSchedContext_getTcb?_char st s tid scId owner hInv hNe newOwner? hPop
-      intro tX hRead
-      rw [hRead] at hSrvPost
-      have hEq : tX = { srvTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } :=
-        Option.some.inj hSrvPost
-      rw [hEq]; rfl
+  obtain ⟨scId, _, -, hV, hB⟩ := cancelDonatedDonationOnCore_ok_view h
+  have hSelf := (cancelBoundDonationOnCore_getTcb? st st' tid _ scId hV hInv hB).1
+  rw [hT, getTcb?_of_lookupTcb st tid tcb hLk] at hSelf
+  rw [Option.some.inj hSelf]; rfl
 
 /-- **`v0.35.185`: and so does the reservation arm, on every binding.**
 
@@ -800,19 +734,9 @@ theorem cancelDonationArmOnCore_target_isSome
     rw [hSelf, getTcb?_of_lookupTcb st tid tcb hLk]; rfl
   | donated scId owner =>
     rw [hB] at h
-    -- The pop stores the holder's record back; the settle writes no object.
-    unfold cancelDonatedDonationOnCore at h
-    rw [hB] at h
-    cases hRet : cleanupDonatedSchedContext st tid with
-    | error e => rw [hRet] at h; exact absurd h (by simp)
-    | ok stRet =>
-      rw [hRet] at h
-      injection h with h
-      subst h
-      have hIs := cleanupDonatedSchedContext_getTcb?_isSome st stRet tid tid hInv hRet
-        (by rw [getTcb?_of_lookupTcb st tid tcb hLk]; rfl)
-      rw [SchedContextOps.settleReturnedContext_getTcb?]
-      exact hIs
+    obtain ⟨scId', _, -, hV, hBd⟩ := cancelDonatedDonationOnCore_ok_view h
+    have hSelf := (cancelBoundDonationOnCore_getTcb? st st' tid _ scId' hV hInv hBd).1
+    rw [hSelf, getTcb?_of_lookupTcb st tid tcb hLk]; rfl
 
 /-- **`v0.35.185` (register row 63): the pre-retype cleanup keeps the object
 table's extension invariant.**

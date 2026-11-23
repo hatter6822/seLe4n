@@ -7234,9 +7234,8 @@ theorem cleanupPreReceiveDonation_preserves_objects_invExt
 -- This is proven via storeObject's insert semantics on the RHTable.
 
 /-- AI4-A: returnDonatedSchedContext preserves objects.invExt.
-(WS-SM SM6.E: promoted from `private` — the cancellation invariant surface
-consumes it for `cancelDonatedDonation_preserves_objects_invExt`, via
-`cleanupDonatedSchedContext_preserves_objects_invExt`.) -/
+(WS-SM SM6.E: promoted from `private`; the reply path's return consumes
+it.) -/
 theorem returnDonatedSchedContext_preserves_objects_invExt
     (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)

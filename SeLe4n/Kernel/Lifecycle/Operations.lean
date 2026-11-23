@@ -21,7 +21,7 @@ A thin re-export hub over the lifecycle child modules:
 
 | Child module                                 | Subject matter                                                                 |
 |----------------------------------------------|--------------------------------------------------------------------------------|
-| `Operations.Cleanup`                         | `lifecycleRetypeAuthority`, `removeThreadFromQueue`, `spliceOutMidQueueNode`, `removeFromAll{Endpoint,Notification}Queues`, `cleanupDonatedSchedContext`, `cleanupTcbReferences` |
+| `Operations.Cleanup`                         | `lifecycleRetypeAuthority`, `removeThreadFromQueue`, `spliceOutMidQueueNode`, `removeFromAll{Endpoint,Notification}Queues`, `cleanupTcbReferences` |
 | `Operations.CleanupPreservation`             | Cleanup-primitive preservation theorems, `detachCNodeSlots`, `lifecyclePreRetypeCleanup`, `lifecycleCleanupPipeline` — the destroy-path cleanup a capability's finalisation will call |
 | `Operations.ScrubAndUntyped`                 | the object-identifier address-space guard, the carve (`CarveRequest`, `retypeFromUntyped`) + capacity / alignment / freshness / atomicity / error-path theorems |
 | `Operations.RetypeWrappers`                  | A released ASID's shootdown round, and the carve-scrub discharge |

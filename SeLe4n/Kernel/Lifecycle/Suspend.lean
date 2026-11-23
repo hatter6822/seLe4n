@@ -1654,24 +1654,12 @@ theorem releaseRemoveThread_replenishQueueOnCore_ne (st : SystemState) (tid : Se
 -- D1-D: cancelDonation (split into two named arms — R5.A / DEEP-SUSP-02)
 -- ============================================================================
 --
--- The two donation-cancellation arms are semantically distinct:
---   * `cancelBoundDonation` performs an in-place unbind of a SchedContext
---     that the suspended thread owns directly (mirrors `schedContextUnbind`
---     restricted to the suspended-thread case).
---   * `cancelDonatedDonation` returns a temporarily-donated SchedContext to
---     its original owner via `cleanupDonatedSchedContext`.
--- Pre-R5, both lived inside a single `cancelDonation` that branched on the
--- `schedContextBinding` variant; the split exposes the two-arm semantics at
--- the call site (`suspendThread` now dispatches explicitly) while a thin
--- `cancelDonation` dispatcher is retained for backward compatibility with
--- the existing closure-form preservation theorems
--- (`cancelDonation_preserves_projection`, `cancelDonation_scheduler_eq`,
--- etc.).
---
--- Each split arm returns `.error .illegalState` on the wrong-variant path so
--- a caller that dispatches incorrectly fails loudly rather than silently
--- no-opping; the dispatcher `cancelDonation` continues to return `.ok st`
--- on `.unbound` to preserve the original suspend semantics.
+-- The donation-cancellation arms live in `Lifecycle/Operations/Cleanup.lean`
+-- (`cancelBoundDonationOnCore`, `cancelDonatedDonationOnCore`, dispatched by
+-- `cancelDonationArmOnCore`).  Both are seL4's `schedContext_unbindTCB`: the
+-- donated arm runs the bound arm on the owner-cleared view of the holder, so a
+-- donated context is unbound from the holder, never returned to its lender,
+-- and the dispatcher never refuses (`cancelDonationArmOnCore_ok`).
 
 -- ============================================================================
 -- D1-F: clearPendingState

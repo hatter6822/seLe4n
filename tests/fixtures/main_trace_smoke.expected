@@ -183,7 +183,7 @@
 [Z7D-004] applyCallDonation active-server: scheduler_unchanged=true
 [Z7D-005] applyReplyDonation: caller_got_back=true server_passive=true
 [Z7D-006] applyReplyDonation non-donated: unchanged=true
-[Z7D-007] cleanupDonatedSchedContext: caller_recovered=true
+[Z7D-007] cancelDonationArmOnCore donated: ok=true context_unheld=true caller_recovered=false
 [Z7D-008] cleanupPreReceiveDonation: caller_back=true
 [SCN-DONATION-PUSH-DEPTH-TWO] depth-2 donateSchedContext: server_holds=true head_pushed=true frame_linked=true
 [SCN-DONATION-RETURN-RESOLVED-OUTER] depth-2 resolved return: mid_rebound_donated=true head_popped=true frame_cleared=true

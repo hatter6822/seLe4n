@@ -2941,7 +2941,6 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "holderPlaced\.toList\)\n[ \t]
 # the reclaim can leave the victim `.donated`, and the second pop migrates to
 # whatever thread that binding records.
 run_check "INVARIANT" rg -n '^theorem returnDonationToCancelledCaller_leaves_donated_at_depth_two($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_settles_on_recorded_owner($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 
 # OD5.4: retype refuses both halves of a live stack -- the frame and the head.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*if !r\.isFree \|\| st\.replyStashedAt \(SeLe4n\.ReplyId\.ofNat target\.toNat\) r then" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
@@ -7944,7 +7943,6 @@ run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_crossCoreNonInterferen
 run_check "INVARIANT" rg -n '^theorem switchToThreadOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/IpcArms.lean
 run_check "INVARIANT" rg -n '^theorem handleRescheduleSgiOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/IpcArms.lean
 run_check "INVARIANT" rg -n '^theorem suspendRescheduleOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/IpcArms.lean
-run_check "INVARIANT" rg -n '^theorem cleanupDonatedSchedContext_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
 # The CC-3 witness must depend on the metadata it witnesses: a component
 # identity on `objects` stays green if `priority` is erased from the TCB
 # projection.  Pin the fields by name.
@@ -13540,7 +13538,6 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointCallCrossCoreDispatchLock
 run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonationOnCoreLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatchLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingOnCoreLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelDonatedDonationOnCoreLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCoreLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The hand-written deduplication the constructor retired must not come back: a
 # footprint over a core SET does not branch on whether two of its cores coincide.
@@ -14142,6 +14139,23 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\
 # the unbind's).  Mutation: restore either spelling inside the definition.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*cleanupDonatedSchedContext st tcb\.tid" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*scThreadIndexRemove" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# WS-SX SX8 (destroy follows seL4): the donated arm is seL4's
+# `schedContext_unbindTCB` -- the bound arm on the owner-cleared record, one
+# owner with the finalisation's unbind.  Mutation: route `.donated` back to a
+# return (the context handed to the recorded owner) or to a settle.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelDonatedDonationOnCore[^\n]*(\n([ \t][^\n]*)?)*\| \.donated _ _ => cancelBoundDonationOnCore st tid \{ tcb with scBindingOwnerCode := 0 \}" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cancelDonatedDonationOnCore[^\n]*(\n([ \t][^\n]*)?)*(returnDonatedSchedContext|settleReturnedContext|determineTargetCore)" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+# The destroy arm never refuses, on any binding.
+run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_ok \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonationArmOnCore_ok[^\n]*(\n([ \t][^\n]*)?)*∃ st., cancelDonationArmOnCore st tid tcb = \.ok st." SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_ok_of_donated \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_ok_view($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+# Z4-O across the donated unbind reads the pair off `donationOwnerValid`.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonatedDonationOnCore_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*\(hOwner : donationOwnerValid st\)" SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean'
+# The retired hand-back at destroy, its settle-destination theorem and its
+# two-endpoint footprint stay deleted.
+run_negative_check "INVARIANT" rg -n '^(def|theorem) (cleanupDonatedSchedContext|cancelDonatedDonationOnCore_settles_on_recorded_owner|cancelDonatedDonationOnCoreLockSet|cancelDonatedDonationOnCore_cancellation_NI)($|[ ({:_\[\]])' SeLe4n
+run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_hidden \(' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
 # NEGATIVE: the two per-core arms have ONE home; a copy back in the
 # cancellation module is the two-spellings hazard this cut closes.
 run_negative_check "INVARIANT" rg -n '^def (cancelBoundDonationOnCore|cancelDonatedDonationOnCore|cancelDonationArmOnCore)\b' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
@@ -14169,13 +14183,14 @@ run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_confinedToCores \(
 run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-# RELATION: the donated arm's theorem composes the ONE settle lemma rather than a
-# second confinement argument (the bound arm takes no core parameter at all).
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*refine settleReturnedContext_preserves_affinityConsistent_smp st1 _ scId" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# RELATION (WS-SX SX8): the donated arm's theorem IS the bound arm's, read
+# through the owner-cleared view, rather than a second confinement argument.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*cancelDonatedDonationOnCore_ok_view h\n *exact cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 # The witness computes the retired cleanup beside the live retype on both
 # binding shapes, with the unbound control on which the two agree.
 run_check "INVARIANT" rg -n '\(a\) NEGATIVE \(the defect\): the retired retype FALSIFIES the affinity invariant' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n '\(a\) PAYOFF: the arm migrated the replenishment to the client.s home \(core 0\)' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(a\) PAYOFF: the arm purged the replenishment from every core' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(a\) PAYOFF: the client is not handed the context at destroy' tests/SmpIpcSuite.lean
 # A holder with a reply waiter is refused by the retype (WS-ZA ZA4.6).
 run_check "INVARIANT" rg -n '\(b\) NEGATIVE \(the defect\): the retired retype FALSIFIES the binding invariant' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '\(b\) PAYOFF: the replenishment was purged from the destroyed thread.s home' tests/SmpIpcSuite.lean
@@ -14373,7 +14388,6 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cleanupTcbReferences_preserve
 # §3: the four donation-side steps, in the order they compose.
 run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
-run_check "INVARIANT" rg -n '^theorem cleanupDonatedSchedContext_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
 run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_after_donationArm_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean

@@ -531,7 +531,7 @@ set_option maxRecDepth 8192
 #check @suspendThreadOnCoreWriteSet
 #check @suspendThreadOnCore_confinedToCores
 #check @suspendThreadOnCore_crossCoreNonInterference
-#check @SeLe4n.Kernel.cleanupDonatedSchedContext_machine_eq
+#check @SeLe4n.Kernel.cancelDonatedDonationOnCore_machine_eq
 #check @onCore_objects_eq_projectObjects
 
 -- §1.7  SM8.B — the enforcement boundary and the covert-channel inventory

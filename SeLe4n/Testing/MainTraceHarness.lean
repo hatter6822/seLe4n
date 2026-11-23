@@ -2766,16 +2766,27 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let unchanged := (stAfterNormal.scheduler.currentOnCore bootCoreId) == (stReplyNormal.scheduler.currentOnCore bootCoreId)
   IO.println s!"[Z7D-006] applyReplyDonation non-donated: unchanged={unchanged}"
 
-  -- Z7D-007: cleanupDonatedSchedContext — lifecycle cleanup returns SC
+  -- Z7D-007: the destroy path's reservation arm on a donated holder.  WS-SX SX8
+  -- (seL4's `schedContext_unbindTCB`): the holder is unbound and the context is
+  -- handed to no one -- the caller is NOT recovered at destroy; it gets the
+  -- context back only through `reply_pop`.  The arm never refuses.
   let stCleanup := st1.withObjectStored callerTid.toObjId callerDonated
       |>.withObjectStored serverTid.toObjId serverDonated
       |>.withObjectStored scId.toObjId (.schedContext scDonated)
-  let stCleaned := match SeLe4n.Kernel.cleanupDonatedSchedContext stCleanup serverTid with
-    | .ok s => s | .error _ => stCleanup
-  let callerRecovered := match stCleaned.getTcb? callerTid with
+  let stCleaned := match stCleanup.getTcb? serverTid with
+    | some t =>
+      (match SeLe4n.Kernel.cancelDonationArmOnCore stCleanup serverTid t with
+       | .ok s => some s | .error _ => none)
+    | none => none
+  let armOk := stCleaned.isSome
+  let stC := stCleaned.getD stCleanup
+  let callerRecovered := match stC.getTcb? callerTid with
     | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
     | none => false
-  IO.println s!"[Z7D-007] cleanupDonatedSchedContext: caller_recovered={callerRecovered}"
+  let contextUnheld := match stC.getSchedContext? scId with
+    | some sc => sc.boundThread.isNone
+    | none => false
+  IO.println s!"[Z7D-007] cancelDonationArmOnCore donated: ok={armOk} context_unheld={contextUnheld} caller_recovered={callerRecovered}"
 
   -- Z7D-008: cleanupPreReceiveDonation — stale donation cleaned up
   let stStale := st1.withObjectStored callerTid.toObjId callerTcb

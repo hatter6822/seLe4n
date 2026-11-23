@@ -1080,7 +1080,7 @@ scenarios:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runDonationTrace
     subsystem: SchedContext
-    description: "Z7: cleanupDonatedSchedContext — lifecycle cleanup returns SC"
+    description: "Z7: cancelDonationArmOnCore — destroy unbinds a donated holder, context unheld"
   Z7D-008:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runDonationTrace

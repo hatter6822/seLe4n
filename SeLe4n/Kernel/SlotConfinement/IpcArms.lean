@@ -1208,27 +1208,15 @@ theorem migrateRunQueueOnAffinityChange_confinedToCores (st : SystemState)
   all_goals (unfold migrateRunQueueOnAffinityChange; repeat' split)
   all_goals simp
 
-/-- SM8.B.2: the donated-SchedContext cancellation arm is per-core silent for
-the same reason — the SC returns to its owner in the object store and is
-settled (WS-ZA ZA6.33): purged from the queue that holds it and placed on the
-owner's home core's, neither of which the observer reads. -/
+/-- SM8.B.2 / WS-SX SX8: the donated-SchedContext cancellation arm is per-core
+silent for the same reason — it is the in-place unbind on the owner-cleared
+record. -/
 theorem cancelDonatedDonationOnCore_confinedToCores (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB)
     (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
-    observableSlotsConfinedToCores st st' [] := by
-  unfold cancelDonatedDonationOnCore at h
-  split at h
-  · split at h
-    · exact absurd h (by simp)
-    · next stCleanup hCleanup =>
-      rw [Except.ok.injEq] at h
-      subst h
-      exact observableSlotsConfinedToCores_trans
-        (observableSlotsConfinedToCores_nil_of_scheduler_except_reschedule_machine_eq
-          (cleanupDonatedSchedContext_scheduler_eq st stCleanup tid hCleanup)
-          (cleanupDonatedSchedContext_machine_eq st stCleanup tid hCleanup))
-        (settleReturnedContext_confinedToCores stCleanup _ _)
-  · exact absurd h (by simp)
+    observableSlotsConfinedToCores st st' [] :=
+  let ⟨_, _, _, _, hB⟩ := cancelDonatedDonationOnCore_ok_view h
+  cancelBoundDonationOnCore_confinedToCores st st' tid _ hB
 
 -- WS-RR RR8.12 Cut C3b-iv (`v0.35.170`): `suspendThreadOnCoreWriteSet` moved to
 -- the production `SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean` (via
