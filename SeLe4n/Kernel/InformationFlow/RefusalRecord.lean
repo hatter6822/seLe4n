@@ -901,7 +901,7 @@ def refusalSeamClass : SeLe4n.Model.SyscallId → RefusalSeamClass
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction => .exempt
   | .serviceRegister | .serviceRevoke | .serviceQuery => .exempt
   | .notificationSignal | .notificationWait | .replyRecv => .exempt
-  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
+  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject | .schedContextConsumed
   | .schedContextYieldTo => .exempt
   | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear => .exempt
   | .tcbSuspend | .tcbResume => .exempt

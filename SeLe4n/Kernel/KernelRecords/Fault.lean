@@ -187,11 +187,12 @@ theorem endpointCallWithCapsOnCore_callerParked {endpointId : SeLe4n.ObjId}
 
 theorem endpointCallCrossCoreDispatch_callerParked {endpointId : SeLe4n.ObjId}
     {caller : SeLe4n.ThreadId} {payload : SendPayload}
-    {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) (hQ : queueHeadBlockedConsistent st) :
+    {c : CoreId} {st : SystemState} {lend : Bool} (hInv : st.objects.invExt)
+    (hQ : queueHeadBlockedConsistent st) :
     ∀ v, (_root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch endpointId caller payload
-        c st).2 = .ok v →
+        c st lend).2 = .ok v →
       FaultParkedAt (_root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch endpointId caller payload
-        c st).1 caller := by
+        c st lend).1 caller := by
   unfold _root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch
   have S := RecordsStep.endpointCallWithCapsOnCore (endpointId := endpointId) (caller := caller)
     (payload := payload) (c := c) hInv hQ
@@ -211,7 +212,8 @@ theorem endpointCallCrossCoreDispatch_callerParked {endpointId : SeLe4n.ObjId}
     all_goals first
       | (intro _ _; exact P1)
       | (rename_i hD; intro _ _
-         have F := RecordsFrame.applyCallDonationOnCore S.invExt hD
+         have F := applyCallDonationOnCoreWhen_induct (RecordsFrame _) hD
+           (RecordsFrame.refl S.invExt) (RecordsFrame.applyCallDonationOnCore S.invExt)
          exact (P1.frame F).frame (RecordsFrame.propagatePipChainCrossCore _ _ _ _ F.invExt))
       | (intro _ h; cases h)
 
@@ -246,10 +248,10 @@ theorem faultSuspendRecord (st : SystemState) (t : SeLe4n.ThreadId) (c : CoreId)
 /-- **The fault delivery keeps the address-space records and every fault record
 parked**: the handler call parks the thread, or the suspend does, before the
 record lands. -/
-theorem faultDeliverOnCore {st : SystemState} {t : SeLe4n.ThreadId} {f : Fault}
+theorem faultDeliverOnCore {lend : Bool} {st : SystemState} {t : SeLe4n.ThreadId} {f : Fault}
     {fctx : FaultContext} {c : CoreId} (hInv : st.objects.invExt)
     (hQ : queueHeadBlockedConsistent st) :
-    RecordsStep st (_root_.SeLe4n.Kernel.faultDeliverOnCore st t f fctx c).1 := by
+    RecordsStep st (_root_.SeLe4n.Kernel.faultDeliverOnCore st t f fctx c lend).1 := by
   have sus := faultSuspendRecord st t c { fault := f, context := fctx } hInv
   unfold _root_.SeLe4n.Kernel.faultDeliverOnCore
   split
@@ -257,12 +259,12 @@ theorem faultDeliverOnCore {st : SystemState} {t : SeLe4n.ThreadId} {f : Fault}
   · rename_i tgt _
     have S := endpointCallCrossCoreDispatch (endpointId := tgt.endpoint) (caller := t)
       (payload := .fault f fctx tgt.cap.badge tgt.cap.canLinkReply)
-      (c := c) hInv hQ
-    have P := endpointCallCrossCoreDispatch_callerParked (endpointId := tgt.endpoint)
+      (c := c) (lend := lend) hInv hQ
+    have P := endpointCallCrossCoreDispatch_callerParked (lend := lend) (endpointId := tgt.endpoint)
       (caller := t) (payload := .fault f fctx tgt.cap.badge tgt.cap.canLinkReply)
       (c := c) hInv hQ
     generalize _root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch tgt.endpoint t
-      (.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st = r at S P ⊢
+      (.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st lend = r at S P ⊢
     obtain ⟨st1, res⟩ := r
     dsimp only at S P ⊢
     cases res with

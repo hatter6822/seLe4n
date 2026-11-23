@@ -347,14 +347,16 @@ substantive write moves the aborted thread to `.ready`.  Every other thread's
 (`_tcb_forward_of_ne`, `_binding_backward`), and no SchedContext is written in
 either direction (`_schedContext_forward`).
 
-It is stated as "the aborted thread holds a binding" rather than as "the aborted
-thread owns no donation" because the first implies the second:
-`donationOwnerValid`'s own second clause puts every owner at `.unbound`. -/
+It is stated as "the aborted thread is not waiting on a reply" rather than as
+"the aborted thread owns no donation" because the first implies the second:
+`donationOwnerValid`'s own second clause puts every owner on a reply wait, and the
+aborted thread waits on an endpoint queue. -/
 theorem abortPendingIpcOnEndpoint_preserves_donationOwnerValid
     (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (st st' : SystemState) (hInv : st.objects.invExt)
     (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st')
-    (hBound : ∀ t, st.getTcb? tid = some t → t.schedContextBinding ≠ .unbound)
+    (hNotReplyWait : ∀ t, st.getTcb? tid = some t →
+      ∀ epId replyTarget, t.ipcState ≠ .blockedOnReply epId replyTarget)
     (hOwner : donationOwnerValid st) :
     donationOwnerValid st' := by
   intro donee doneeTcb scId owner hDoneeAt hBind
@@ -363,17 +365,18 @@ theorem abortPendingIpcOnEndpoint_preserves_donationOwnerValid
       donee.toObjId doneeTcb hDoneeAt
   obtain ⟨⟨sc, hScAt, hScBound⟩, ownerTcb, hOwnerAt, hOwnerUnbound, hOwnerBlocked⟩ :=
     hOwner donee doneeTcb0 scId owner hDoneeAt0 (hBind0.trans hBind)
-  -- The owner is not the aborted thread: owners are `.unbound`, and the aborted
-  -- thread holds a binding by hypothesis.
+  -- The owner is not the aborted thread: owners wait on a reply, and the aborted
+  -- thread does not by hypothesis.
   have hOwnerNe : owner.toObjId ≠ tid.toObjId := by
     intro hEq
-    exact hBound ownerTcb ((SystemState.getTcb?_eq_some_iff st tid ownerTcb).mpr
-      (hEq ▸ hOwnerAt)) hOwnerUnbound
+    obtain ⟨e, r, hR⟩ := hOwnerBlocked
+    exact hNotReplyWait ownerTcb ((SystemState.getTcb?_eq_some_iff st tid ownerTcb).mpr
+      (hEq ▸ hOwnerAt)) e r hR
   obtain ⟨ownerTcb', hOwnerAt', hIpc', hBind'⟩ :=
     abortPendingIpcOnEndpoint_tcb_forward_of_ne epId isReceiveQ tid st st' hInv h
       owner.toObjId hOwnerNe ownerTcb hOwnerAt
   exact ⟨⟨sc, abortPendingIpcOnEndpoint_schedContext_forward epId isReceiveQ tid st st'
       hInv h scId.toObjId sc hScAt, hScBound⟩,
-    ownerTcb', hOwnerAt', hBind'.trans hOwnerUnbound, by rw [hIpc']; exact hOwnerBlocked⟩
+    ownerTcb', hOwnerAt', by rw [hBind']; exact hOwnerUnbound, by rw [hIpc']; exact hOwnerBlocked⟩
 
 end SeLe4n.Kernel

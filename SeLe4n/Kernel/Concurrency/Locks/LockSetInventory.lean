@@ -181,6 +181,8 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_schedContextBind .lockSet,
     lkst! "lockSet for schedContextUnbind"
       lockSet_schedContextUnbind .lockSet,
+    lkst! "lockSet for schedContextUnbindObject"
+      lockSet_schedContextUnbindObject .lockSet,
     lkst! "lockSet for schedContextConsumed"
       lockSet_schedContextConsumed .lockSet,
     lkst! "lockSet for schedContextYieldTo"
@@ -268,6 +270,8 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_consistent_schedContextBind .consistency,
     lkst! "lockSet_consistent for schedContextUnbind"
       lockSet_consistent_schedContextUnbind .consistency,
+    lkst! "lockSet_consistent for schedContextUnbindObject"
+      lockSet_consistent_schedContextUnbindObject .consistency,
     lkst! "lockSet_consistent for schedContextConsumed"
       lockSet_consistent_schedContextConsumed .consistency,
     lkst! "lockSet_consistent for schedContextYieldTo"
@@ -393,23 +397,24 @@ A regression that adds a new SM3.B theorem without updating the
 inventory fails this count witness at the Tier-3 surface check.  WS-ZA ZA6.9
 added the `schedContextConsumed` lockSet + consistency pair, and WS-ZA ZA6.29
 the `schedContextYieldTo` pair, and WS-ZA ZA6.32 the `irqHandlerAck`,
-`irqControlGet`, `irqHandlerSetNotification` and `irqHandlerClear` pairs.
+`irqControlGet`, `irqHandlerSetNotification` and `irqHandlerClear` pairs, and
+WS-SX SX8.3 the `schedContextUnbindObject` pair.
 WS-SX SX6.5 removed the `tcbSetFaultHandler` pair with the syscall: seL4-MCS
 sets the fault endpoint in `TCB_SetSpace`, whose footprint gained the
 endpoint's read. -/
 theorem lockSetTheorems_count :
-    lockSetTheorems.length = 107 := by decide
+    lockSetTheorems.length = 109 := by decide
 
-/-- WS-SM SM3.B: 43 entries in the `lockSet` category (one per statically
+/-- WS-SM SM3.B: 44 entries in the `lockSet` category (one per statically
 declared SyscallId variant). -/
 theorem lockSetTheorems_lockSet_count :
-    (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 43 := by
+    (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 44 := by
   decide
 
-/-- WS-SM SM3.B: 43 entries in the `consistency` category (one per statically
+/-- WS-SM SM3.B: 44 entries in the `consistency` category (one per statically
 declared SyscallId variant). -/
 theorem lockSetTheorems_consistency_count :
-    (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 43 := by
+    (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 44 := by
   decide
 
 /-- WS-SM SM3.B: 6 entries in the `acquireSort` category

@@ -181,7 +181,8 @@ theorem cleanupPreReceiveDonationChecked_runQueueStage {st st' : SystemState}
   split at h
   · cases h; exact RunQueueStage.refl _
   · split at h
-    · exact returnDonatedSchedContextResolved_runQueueStage hA h
+    · exact popHeldReplyHead_lift h (fun _ _ hR => returnDonatedSchedContextResolved_runQueueStage hA hR)
+        (fun _ _ hK => keepDonatedSchedContextResolved_runQueueStage hK)
     · cases h; exact RunQueueStage.refl _
 
 theorem preReceiveReturnMigration_runQueueStage (st stClean : SystemState)

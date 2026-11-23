@@ -613,6 +613,20 @@ theorem cancelBoundDonationOnCore_hidden (ctx : LabelingContext) (observer : IfO
     (SchedContextOps.purgeReplenishment_releaseOnlyWrite _ scId)
     (releaseWriteAt.releaseRemoveAnywhere _ scId) hSc).trans hA.projection
 
+/-- **WS-SX SX8: a donated holder's unbind is invisible when the context and the
+holder are hidden**: it is the reservation unbind on the owner-cleared record
+(`cancelDonatedDonationOnCore_ok_view`). -/
+theorem cancelDonatedDonationOnCore_hidden (ctx : LabelingContext) (observer : IfObserver)
+    {s s' : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hInv : s.objects.invExt)
+    (hSc : ∀ scId owner, tcb.schedContextBinding = .donated scId owner →
+      objectObservable ctx observer scId.toObjId = false)
+    (hT : objectObservable ctx observer tid.toObjId = false)
+    (h : cancelDonatedDonationOnCore s tid tcb = .ok s') :
+    projectState ctx observer s' = projectState ctx observer s :=
+  let ⟨scId, owner, hD, hV, hB⟩ := cancelDonatedDonationOnCore_ok_view h
+  cancelBoundDonationOnCore_hidden ctx observer hInv hV (hSc scId owner hD) hT hB
+
 /-- **A finalised thread's notification unbind is invisible** when the thread
 and its notification are hidden; it keeps the thread's IPC state, its
 notification and endpoint queue links and its scheduling binding. -/
@@ -1698,11 +1712,11 @@ theorem finaliseSchedContextUnbind_hidden (ctx : LabelingContext) (observer : If
 is hidden: the head reply's upward link is a stack link, which the projection
 strips (`projectKernelObject_reply_next_invariant`), and the context's head is
 written in its hidden slot. -/
-theorem finaliseSchedContextUnstack_hidden (ctx : LabelingContext) (observer : IfObserver)
+theorem schedContextUnbindReply_hidden (ctx : LabelingContext) (observer : IfObserver)
     {s : SystemState} {x : SeLe4n.ObjId} (hInv : s.objects.invExt)
     (hX : objectObservable ctx observer x = false) :
-    projectState ctx observer (finaliseSchedContextUnstack s x) = projectState ctx observer s := by
-  unfold finaliseSchedContextUnstack
+    projectState ctx observer (schedContextUnbindReply s x) = projectState ctx observer s := by
+  unfold schedContextUnbindReply
   split
   · split
     · next rid _ =>
@@ -1740,7 +1754,7 @@ theorem finaliseSchedContextCleanupImpl_hidden (ctx : LabelingContext) (observer
 /-- **A scheduling context's finalisation is invisible** when the context and
 the thread bound to it are hidden: the holder's deschedule
 (`finaliseSchedContextDeschedule_hidden`), the release (`finaliseSchedContextUnbind_hidden`),
-the reply-stack unlink (`finaliseSchedContextUnstack_hidden`), and the destroy cleanup, which completes the yield the context records
+the reply-stack unlink (`schedContextUnbindReply_hidden`), and the destroy cleanup, which completes the yield the context records
 (`finaliseSchedContextCleanupImpl_hidden`). -/
 theorem finaliseSchedContext_hidden (ctx : LabelingContext) (observer : IfObserver)
     {st : SystemState} {x : SeLe4n.ObjId} (hInv : st.objects.invExt)
@@ -1757,13 +1771,13 @@ theorem finaliseSchedContext_hidden (ctx : LabelingContext) (observer : IfObserv
       refine finaliseSchedContextUnbind_closed (FinaliseFrame st) ?_ _ x hD
       exact FinaliseFrame.releaseStep st
     rename_i hA
-    have hFU := finaliseSchedContextUnstack_closed (FinaliseFrameAny st)
+    have hFU := schedContextUnbindReply_closed (FinaliseFrameAny st)
       (FinaliseFrameAny.unstackStep st) x st (.refl hInv) hA _ rfl hF.any
     have hU := hFU.invExt
     refine ((projectedObjectsWrite.unbindSchedContextNotification _ _
       ((FinaliseFrameAny.yieldStep st).schedContextCleanup _ x hFU).invExt).projection).trans ?_
     refine (finaliseSchedContextCleanupImpl_hidden ctx observer hU hX).trans
-      ((finaliseSchedContextUnstack_hidden ctx observer hF.invExt hX).trans
+      ((schedContextUnbindReply_hidden ctx observer hF.invExt hX).trans
         ((finaliseSchedContextUnbind_hidden ctx observer hD.invExt hX hH.deschedule).trans
           (finaliseSchedContextDeschedule_hidden ctx observer hH)))
   · rfl

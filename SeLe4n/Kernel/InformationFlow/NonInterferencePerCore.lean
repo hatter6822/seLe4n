@@ -1022,8 +1022,19 @@ theorem returnDonatedSchedContext_confinedToCore (st st' : SystemState)
     (returnDonatedSchedContext_scheduler_eq st st' receiver scId originalOwner newOwner? hStep)
     (returnDonatedSchedContext_machine_eq st st' receiver scId originalOwner newOwner? hStep)
 
+/-- The held pop writes no scheduler or machine state, so it is confined to
+every core. -/
+theorem keepDonatedSchedContext_confinedToCore {st st' : SystemState}
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (c₀ : CoreId) (hStep : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    observableSlotsConfinedToCore st st' c₀ := by
+  have hS := keepDonatedSchedContext_scheduler_eq hStep
+  exact observableSlotsConfinedToCore_of_scheduler_except_reschedule_machine_eq c₀
+    (by rw [hS]) (keepDonatedSchedContext_machine_eq hStep)
+
 /-- The checked pre-receive donation cleanup is either the identity or a
-`returnDonatedSchedContext`, so it is confined to every core. -/
+held-head pop (a `returnDonatedSchedContext` or a `keepDonatedSchedContext`), so it
+is confined to every core. -/
 theorem cleanupPreReceiveDonationChecked_confinedToCore (st st' : SystemState)
     (receiver : SeLe4n.ThreadId) (c₀ : CoreId)
     (hStep : cleanupPreReceiveDonationChecked st receiver = .ok st') :
@@ -1038,8 +1049,9 @@ theorem cleanupPreReceiveDonationChecked_confinedToCore (st st' : SystemState)
     cases hBind : recvTcb.schedContextBinding with
     | donated scId originalOwner =>
       simp only [hBind] at hStep
-      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hStep
-      exact returnDonatedSchedContext_confinedToCore st st' receiver scId originalOwner c₀ n hPop
+      exact popHeldReplyHead_liftPops hStep
+        (fun n s hPop => returnDonatedSchedContext_confinedToCore st s receiver scId originalOwner c₀ n hPop)
+        (fun _ _ hK => keepDonatedSchedContext_confinedToCore c₀ hK)
     | unbound | bound _ =>
       simp only [hBind, Except.ok.injEq] at hStep
       exact observableSlotsConfinedToCore_of_eq c₀ hStep.symm

@@ -261,6 +261,23 @@ import SeLe4n.Kernel.KernelRecords.IpcStages
 import SeLe4n.Kernel.KernelRecords.Dispatch
 import SeLe4n.Kernel.KernelRecords.Entry
 import SeLe4n.Kernel.KernelRecords.SyscallEntry
+import SeLe4n.Kernel.ContextLenders.Stage
+import SeLe4n.Kernel.ContextLenders.Entry
+import SeLe4n.Kernel.ContextLenders.Timer
+import SeLe4n.Kernel.ContextLenders.Interrupt
+import SeLe4n.Kernel.ContextLenders.Call
+import SeLe4n.Kernel.ContextLenders.Fault
+import SeLe4n.Kernel.ContextLenders.Notification
+import SeLe4n.Kernel.ContextLenders.Cancel
+import SeLe4n.Kernel.ContextLenders.Receive
+import SeLe4n.Kernel.ContextLenders.Reply
+import SeLe4n.Kernel.ContextLenders.Dispatch
+import SeLe4n.Kernel.ContextLenders.ReplyRecv
+import SeLe4n.Kernel.ContextLenders.Capability
+import SeLe4n.Kernel.ContextLenders.SyscallDispatch
+import SeLe4n.Kernel.ContextLenders.CapabilityOnly
+import SeLe4n.Kernel.ContextLenders.CapabilityDispatch
+import SeLe4n.Kernel.ContextLenders.SyscallEntry
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.YieldLinkedNotResident
@@ -596,8 +613,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyNI
 -- WS-SM SM6.E: cross-core cancellation non-interference —
 -- `descheduleThread_cancellation_NI{,_smp}` +
 -- `cancelIpcBlockingOnCore_{,ready_}cancellation_NI{,_smp}` +
--- `cancelDonatedDonationOnCore_cancellation_NI{,_smp}` + the ∀-core
--- replenish-queue / migration projection frames.  Every SM6.E-new state
+-- the ∀-core replenish-queue / migration projection frames.  Every SM6.E-new state
 -- effect (placement deschedule, exact link-core purge, replenishment
 -- migration) is discharged substantively; the composites consume the
 -- single-core teardown/return projection obligations that the production

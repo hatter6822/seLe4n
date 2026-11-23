@@ -245,18 +245,18 @@ theorem callDispatch_inPlace (st : SystemState)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
     (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
     (hGr : payload.canLinkReply = true)
-    (hG : callWakesInPlace st endpointId caller r rt rid = true) :
-    ∃ sgi, endpointCallCrossCoreDispatch endpointId caller payload core st =
+    (lend : Bool) (hG : callWakesUnlentInPlace lend st endpointId caller r rt rid = true) :
+    ∃ sgi, endpointCallCrossCoreDispatch endpointId caller payload core st lend =
       (performCallRendezvous st endpointId caller r rt.queueNext rid msg core,
        .ok ({ results := #[] }, sgi)) := by
-  have hG' := hG
-  simp only [callWakesInPlace, sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG'
+  have hG' := callWakesUnlentInPlace_takesReply hG
+  simp only [callTakesReplyInPlace, sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG'
   have hCRes : caller.isReserved = false := hG'.1.1.1.1.1.1.1.1.2
   have hRRes : r.isReserved = false := hG'.1.1.1.1.1.1.1.1.1.1.1.1.1.1
   have hEp : st.getEndpoint? endpointId = some ep :=
     (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE
-  obtain ⟨hEq, hDon⟩ := callRendezvous_inPlace st endpointId ep caller r rt rid payload msg core hM
-    hE hH hT hRid hGr hG
+  obtain ⟨hEq, hDon⟩ := callRendezvous_inPlace_unlent st endpointId ep caller r rt rid payload msg
+    core hM hE hH hT hRid hGr hG
   obtain ⟨cv, hcv⟩ := Option.isSome_iff_exists.mp
     ((SeLe4n.ThreadId.toValid?_isSome_iff caller).mpr hCRes)
   obtain ⟨rv, hrv⟩ := Option.isSome_iff_exists.mp
@@ -271,9 +271,7 @@ theorem callDispatch_inPlace (st : SystemState)
     rw [callRendezvousLinks_of_stash payload ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT) hRid]
     exact hGr
   simp only [Except.map, hEp, hH, hLk, ↓reduceIte, hcv, hrv]
-  unfold applyCallDonationOnCore
-  rw [applyCallDonation_eq_ok_self_of_no_donation _ _ _ (by rw [hcv', hrv']; exact hDon)]
-  simp only [hcv', hrv', hDon]
+  rw [applyCallDonationOnCoreWhen_ok_self (by rw [hcv', hrv']; exact hDon)]
   rfl
 
 /-- **The call rendezvous's delivery is the held message's stage**: the
@@ -1057,13 +1055,14 @@ theorem performFaultCallDonatingDelivered_eq (st : SystemState) (endpointId : Se
 
 /-- A delivery whose handler resolved and whose flow the policy admits, handed
 the fault as words: the specification's delivery of the fault the words name
-(`faultDeliverOnCore`).  Out of line, the fallback of `faultDeliverHandledWords`. -/
+(`faultDeliverOnCore`, lending where `lend` admits it).  Out of line, the
+fallback of `faultDeliverHandledWords`. -/
 @[noinline] def faultDeliverHandledSpec (st : SystemState) (tid : SeLe4n.ThreadId)
-    (c : CoreId) (k : Nat) (flag : Bool) (w0 w1 : UInt64) (lk : UInt64)
+    (c : CoreId) (lend : Bool) (k : Nat) (flag : Bool) (w0 w1 : UInt64) (lk : UInt64)
     (ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) : SystemState :=
   let w := faultWordsOf k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7
   match w.fault? with
-  | some f => (faultDeliverOnCore st tid f w.context c).1
+  | some f => (faultDeliverOnCore st tid f w.context c lend).1
   | none => st
 
 /-- The blocking call's writes, each in its slot: the caller appended to the
@@ -1119,11 +1118,12 @@ as the specification's delivery does. -/
 waiting with a reply object, every write of the call rendezvous staying in its
 slot (`callWakesInPlace`), is delivered in place, its words past the fourth
 into the handler's IPC buffer (`performFaultCallDelivered`), and recorded as
-its words; a fault whose handler is not waiting, the faulting thread enqueued
-and blocked in place (`performFaultCallBlock`), likewise; every other delivery
-is the specification's (`faultDeliverHandledWords_eq`). -/
+its words; the lend to a passive handler only where `lend` admits it; a fault
+whose handler is not waiting, the faulting thread enqueued and blocked in place
+(`performFaultCallBlock`), likewise; every other delivery is the
+specification's (`faultDeliverHandledWords_eq`). -/
 @[noinline] def faultDeliverHandledWords (st : SystemState) (tid : SeLe4n.ThreadId)
-    (c : CoreId) (epId : SeLe4n.ObjId) (cap : Capability) (k : Nat) (flag : Bool)
+    (c : CoreId) (lend : Bool) (epId : SeLe4n.ObjId) (cap : Capability) (k : Nat) (flag : Bool)
     (w0 w1 : UInt64) (lk : UInt64) (ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) :
     SystemState :=
   match st.getEndpoint? epId with
@@ -1141,22 +1141,22 @@ is the specification's (`faultDeliverHandledWords_eq`). -/
         else
         match rt.pendingReceiveReply with
         | some rid =>
-          if cap.canLinkReply && callWakesInPlace st epId tid r rt rid then
+          if cap.canLinkReply && callWakesUnlentInPlace lend st epId tid r rt rid then
             recordFaultWords
               (performFaultCallDelivered st epId tid r rt.queueNextCode rid cap k flag w0 w1 lk
                 ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 c) tid
               (faultWordsOf k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7)
-          else if cap.canLinkReply && callDonatesInPlace st epId tid r rt rid then
+          else if cap.canLinkReply && callDonatesInPlace st epId tid r rt rid && lend then
             recordFaultWords
               (performFaultCallDonatingDelivered st epId tid r rt.queueNextCode rid
                 (callerScId st tid) (determineTargetCore st tid) (determineTargetCore st r) cap
                 k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7 c) tid
               (faultWordsOf k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7)
-          else faultDeliverHandledSpec st tid c k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5
+          else faultDeliverHandledSpec st tid c lend k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5
               x6 x7
-        | none => faultDeliverHandledSpec st tid c k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3
+        | none => faultDeliverHandledSpec st tid c lend k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3
               x4 x5 x6 x7
-      | none => faultDeliverHandledSpec st tid c k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5
+      | none => faultDeliverHandledSpec st tid c lend k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5
               x6 x7
     | none =>
       match st.getTcb? tid with
@@ -1164,20 +1164,20 @@ is the specification's (`faultDeliverHandledWords_eq`). -/
         if enqueueAdmits t && enqueuesInPlaceCode st epId tid ep.sendTailCode then
           recordFaultWords (performFaultCallBlock st epId tid ep.sendTailCode cap c) tid
             (faultWordsOf k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7)
-        else faultDeliverHandledSpec st tid c k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5
+        else faultDeliverHandledSpec st tid c lend k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5
               x6 x7
-      | none => faultDeliverHandledSpec st tid c k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5
+      | none => faultDeliverHandledSpec st tid c lend k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5
               x6 x7
-  | none => faultDeliverHandledSpec st tid c k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5
+  | none => faultDeliverHandledSpec st tid c lend k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5
               x6 x7
 
 /-- **The admitted delivery's words are the specification's**: for the handler
 the thread's handler resolves to, `faultDeliverHandledWords` handed the words of
 a fault and its context commits `faultDeliverOnCore`'s state. -/
 theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
-    (f : Fault) (ctx : FaultContext) (tgt : FaultHandlerTarget)
+    (lend : Bool) (f : Fault) (ctx : FaultContext) (tgt : FaultHandlerTarget)
     (hRes : resolveFaultHandler st tid = .ok tgt) :
-    faultDeliverHandledWords st tid c tgt.endpoint tgt.cap
+    faultDeliverHandledWords st tid c lend tgt.endpoint tgt.cap
         (ThreadFaultWords.ofFault f ctx).kind (ThreadFaultWords.ofFault f ctx).flag
         (ThreadFaultWords.ofFault f ctx).word0 (ThreadFaultWords.ofFault f ctx).word1
         (ThreadFaultWords.ofFault f ctx).lookup (ThreadFaultWords.ofFault f ctx).ip
@@ -1187,8 +1187,8 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
         (ThreadFaultWords.ofFault f ctx).x3 (ThreadFaultWords.ofFault f ctx).x4
         (ThreadFaultWords.ofFault f ctx).x5 (ThreadFaultWords.ofFault f ctx).x6
         (ThreadFaultWords.ofFault f ctx).x7 =
-      (faultDeliverOnCore st tid f ctx c).1 := by
-  have hSpec : faultDeliverHandledSpec st tid c
+      (faultDeliverOnCore st tid f ctx c lend).1 := by
+  have hSpec : faultDeliverHandledSpec st tid c lend
       (ThreadFaultWords.ofFault f ctx).kind (ThreadFaultWords.ofFault f ctx).flag
       (ThreadFaultWords.ofFault f ctx).word0 (ThreadFaultWords.ofFault f ctx).word1
       (ThreadFaultWords.ofFault f ctx).lookup (ThreadFaultWords.ofFault f ctx).ip
@@ -1198,7 +1198,7 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
       (ThreadFaultWords.ofFault f ctx).x3 (ThreadFaultWords.ofFault f ctx).x4
       (ThreadFaultWords.ofFault f ctx).x5 (ThreadFaultWords.ofFault f ctx).x6
       (ThreadFaultWords.ofFault f ctx).x7 =
-      (faultDeliverOnCore st tid f ctx c).1 := by
+      (faultDeliverOnCore st tid f ctx c lend).1 := by
     simp only [faultDeliverHandledSpec, faultWordsOf_fields, ThreadFaultWords.fault?_ofFault,
       ThreadFaultWords.context_ofFault]
   generalize hw : ThreadFaultWords.ofFault f ctx = w at hSpec ⊢
@@ -1231,7 +1231,7 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
             (.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) (faultMessage f ctx tgt.cap.badge)
             c rfl
             (by unfold sendCapRequest; split <;> (try rfl); split <;> rfl)
-            hE hH hT' (callRendezvousLinks_false_of hT hNL) hW hC
+            hE hH hT' (callRendezvousLinks_false_of hT hNL) hW hC lend
           unfold faultDeliverOnCore
           simp only [hRes, hEp, Option.bind_some, hH, hD]
           rw [recordPendingFault_eq_words]
@@ -1253,21 +1253,23 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
               (.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) (faultMessage f ctx tgt.cap.badge)
               c rfl
               (by unfold sendCapRequest; split <;> (try rfl); split <;> rfl)
-              hE hH hT' hRid (by simpa [SendPayload.canLinkReply, SendPayload.grant, SendPayload.grantReply] using hGr) hIn
+              hE hH hT' hRid (by simpa [SendPayload.canLinkReply, SendPayload.grant, SendPayload.grantReply] using hGr) lend hIn
             unfold faultDeliverOnCore
             simp only [hRes, hEp, Option.bind_some, hH, hD]
             rw [recordPendingFault_eq_words, ← TCB.optCode_queueNext]
             have hIC : CapTransferSummary.capInfo { results := #[] } = 0 := rfl
             have hRdy := storeCallRendezvousReady_ready st tgt.endpoint ep tid r rt rid c hE hH hT'
-              (callWakesInPlace_takesReply hIn).1
+              (callWakesUnlentInPlace_takesReply hIn)
             rw [← TCB.optCode_queueNext] at hRdy
             rw [hIC, ← performFaultCallDelivered_eq st tgt.endpoint tid r rt.queueNext rid tgt.cap
-              f ctx c (callWakesInPlace_noResizeDue hIn) (callWakesInPlace_ne hIn) hRdy,
+              f ctx c (callTakesReplyInPlace_noResizeDue (callWakesUnlentInPlace_takesReply hIn))
+              (callTakesReplyInPlace_ne (callWakesUnlentInPlace_takesReply hIn)) hRdy,
               faultWordsOf_fields]
           · split
             · next hDonGuard =>
               simp only [Bool.and_eq_true] at hDonGuard
-              obtain ⟨hGr, hDon⟩ := hDonGuard
+              obtain ⟨⟨hGr, hDon⟩, hLend⟩ := hDonGuard
+              subst hLend
               have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
               have hT' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
               have hTR : callTakesReplyInPlace st tgt.endpoint tid r rt rid = true := by
@@ -1312,7 +1314,7 @@ theorem faultDeliverHandledWords_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
             simp only [hEp, hH]
           unfold faultDeliverOnCore
           simp only [hRes, hEp, Option.bind_some, hH]
-          rw [endpointCallCrossCoreDispatch_no_receiver _ _ _ _ _ hNoR,
+          rw [endpointCallCrossCoreDispatch_no_receiver _ _ _ _ _ hNoR lend,
             endpointCallWithCapsOnCore_no_caps _ _ _ _ _
               (sendCapRequest_of_no_receiver _ _ _ _ (by simp only [hEp, Option.bind_some, hH])),
             hBlk]
@@ -1336,7 +1338,8 @@ flow gate, and on every refusal the suspend with the fault recorded as words. -/
       (faultWordsOf k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7))
     (fun epId cap =>
       if endpointFlowGate lctx epId (lctx.threadLabelOf tid) (lctx.endpointLabelOf epId) then
-        faultDeliverHandledWords st tid c epId cap k flag w0 w1 lk ip sp lr spsr
+        faultDeliverHandledWords st tid c (callLendAdmits lctx st tid) epId cap k flag w0 w1 lk
+          ip sp lr spsr
           x0 x1 x2 x3 x4 x5 x6 x7
       else recordFaultWords (faultSuspendOnCore st tid c) tid
         (faultWordsOf k flag w0 w1 lk ip sp lr spsr x0 x1 x2 x3 x4 x5 x6 x7))
@@ -1361,7 +1364,7 @@ theorem faultDeliverCheckedWords_eq (lctx : LabelingContext) (st : SystemState)
   | ok tgt =>
     simp only []
     split
-    · exact faultDeliverHandledWords_eq st tid c f ctx tgt hRes
+    · exact faultDeliverHandledWords_eq st tid c _ f ctx tgt hRes
     · rfl
 
 /-- The words of a fault and a context are its own words beside the context's:

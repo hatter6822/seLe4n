@@ -287,9 +287,7 @@ theorem routedExtraCaps_eq {rf : SeLe4n.RegisterFile} {sid : SyscallId} {capAddr
         all_goals done
       subst hm
       unfold Architecture.RegisterDecode.decodeMsgInfoWord at hD
-      split at hD
-      · cases hD; rfl
-      · cases hD
+      cases hD; rfl
   · cases hR
 
 theorem routedLength_eq {rf : SeLe4n.RegisterFile} {sid : SyscallId} {capAddr : SeLe4n.CPtr}
@@ -324,9 +322,7 @@ theorem routedLength_eq {rf : SeLe4n.RegisterFile} {sid : SyscallId} {capAddr : 
         all_goals done
       subst hm
       unfold Architecture.RegisterDecode.decodeMsgInfoWord at hD
-      split at hD
-      · cases hD; rfl
-      · cases hD
+      cases hD; rfl
   · cases hR
 
 theorem frameCapRequestOf_zero (st : SystemState) (tcb : TCB) : frameCapRequestOf st tcb 0 = none := by

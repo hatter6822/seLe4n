@@ -334,21 +334,22 @@ theorem perCoreRescheduleEntryState_preserves_blockedNotResident (coreId : UInt6
 /-- WS-ZA ZA6.32: **the interrupt entry keeps a thread blocked in IPC resident on
 no core**: its signal wakes a thread and blocks none, and its mask writes no
 thread. -/
-theorem interruptEntryState_preserves_blockedNotResident (coreId intId : UInt64)
+theorem interruptEntryState_preserves_blockedNotResident (ctx : LabelingContext) (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
+    (hBi : schedContextBindingBidirectional (Concurrency.saveCapturedTrapFrameAt st coreId frame))
     (hInv0 : st.objects.invExt) (hR0 : st.runQueueRefined) (hD0 : st.currentDequeuedUnique)
     (hC : st.currentNotResidentElsewhere) (hB : st.blockedNotResident) :
     (Architecture.clearIcacheMaintenance
       (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
-        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        (interruptEntryStep ctx (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
         coreId) coreId))).blockedNotResident := by
-  have S := interruptEntryState_runQueueEntryStage coreId intId frame st E
+  have S := interruptEntryState_runQueueEntryStage ctx coreId intId frame st E
   have hD := S.2 hInv0 hR0 (S.1.links hInv0 hR0).2 hD0
   have hSv := saveCapturedTrapFrameAt_runQueueStage st coreId frame
   obtain ⟨hInvS, hRS⟩ := hSv.1.links hInv0 hR0
   have ES := E.of_ipcFrame hSv (saveCapturedTrapFrameAt_ipcFrame st coreId frame)
-  have hStep := interruptEntryStep_runQueueStage _ coreId intId ES
-  have hM : SystemState.StateMono st (interruptEntryStep
+  have hStep := interruptEntryStep_runQueueStage ctx _ coreId intId ES
+  have hM : SystemState.StateMono st (interruptEntryStep ctx
       (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId) :=
     (hSv.2.2 hInv0 hR0).trans (hStep.2.2 hInvS hRS)
   obtain ⟨hInvM, hRM⟩ := hStep.1.links hInvS hRS
@@ -358,10 +359,10 @@ theorem interruptEntryState_preserves_blockedNotResident (coreId intId : UInt64)
   · intro c hc
     exact ⟨(keptOffCore_of_save_stepCovers (saveCapturedTrapFrameAt_scheduler st coreId frame)
       (saveCapturedTrapFrameAt_residentCode st coreId frame)
-      (interruptEntryStep_stepCovers c _ coreId intId hInvS)).2, .of_stateMono hM⟩
+      (interruptEntryStep_stepCovers ctx c _ coreId intId hInvS hBi)).2, .of_stateMono hM⟩
   · intro hc
     refine ⟨?_, .of_stateMono hM⟩
-    rw [interruptEntryStep_invalid_core _ coreId intId hc]
+    rw [interruptEntryStep_invalid_core ctx _ coreId intId hc]
     exact saveCapturedTrapFrameAt_residentCode st coreId frame
 
 /-- WS-ZA ZA6.18: **the FP/SIMD entry keeps a thread blocked in IPC resident on
@@ -694,9 +695,9 @@ theorem endpointCallCrossCoreDispatch_readyKeptStage (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (c : CoreId) (st : SystemState)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some caller)
-    (hNI : isIdleThreadId caller = false) :
+    (hNI : isIdleThreadId caller = false) (lend : Bool := true) :
     readyKeptStage (· = caller) st
-      (endpointCallCrossCoreDispatch endpointId caller payload c st).1 := by
+      (endpointCallCrossCoreDispatch endpointId caller payload c st lend).1 := by
   have s0 := (endpointCallWithCapsOnCore_runQueueEntryStage endpointId caller payload c st
     hHeads hCur hNI).1
   have r0 := endpointCallWithCapsOnCore_readyKeptStage endpointId caller payload c st
@@ -712,8 +713,8 @@ theorem endpointCallCrossCoreDispatch_readyKeptStage (endpointId : SeLe4n.ObjId)
     all_goals first
       | exact r0
       | (rename_i hD; exact r0.trans s0
-          ((readyKeptStage.of_frame (applyCallDonationOnCore_runQueueFrameStage hD)).transFrame
-            (applyCallDonationOnCore_runQueueFrameStage hD)
+          ((readyKeptStage.of_frame (applyCallDonationOnCoreWhen_runQueueFrameStage hD)).transFrame
+            (applyCallDonationOnCoreWhen_runQueueFrameStage hD)
             (.of_stage (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _))))
 
 /-- **The fault suspend keeps every thread's readiness**: the deschedule is a
@@ -726,11 +727,11 @@ theorem faultSuspendOnCore_readyKeptStage {S : SeLe4n.ThreadId → Prop} (st : S
 
 /-- **The fault delivery blocks only the faulting thread**: the handler call, or
 the fail-closed suspend; then the woken handler's frame and the fault record. -/
-theorem faultDeliverOnCore_readyKeptStage (st : SystemState) (tid : SeLe4n.ThreadId)
+theorem faultDeliverOnCore_readyKeptStage {lend : Bool} (st : SystemState) (tid : SeLe4n.ThreadId)
     (f : Fault) (fctx : FaultContext) (c : CoreId)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some tid)
     (hNI : isIdleThreadId tid = false) (hAct : st.activeAt tid) :
-    readyKeptStage (· = tid) st (faultDeliverOnCore st tid f fctx c).1 := by
+    readyKeptStage (· = tid) st (faultDeliverOnCore st tid f fctx c lend).1 := by
   have sus := (faultSuspendOnCore_readyKeptStage (S := (· = tid)) st tid c).trans
     (faultSuspendOnCore_runQueueEntryStage st tid c hCur hNI).1
     (.of_stage (recordPendingFault_runQueueStage _ tid { fault := f, context := fctx }))
@@ -739,13 +740,13 @@ theorem faultDeliverOnCore_readyKeptStage (st : SystemState) (tid : SeLe4n.Threa
   · exact sus
   · rename_i tgt _
     intro hI hR
-    have s0 := (endpointCallCrossCoreDispatch_runQueueEntryStage tgt.endpoint tid
+    have s0 := (endpointCallCrossCoreDispatch_runQueueEntryStage (lend := lend) tgt.endpoint tid
       (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st hHeads hCur hNI
       hI hR hAct).1
-    have r0 := endpointCallCrossCoreDispatch_readyKeptStage tgt.endpoint tid
+    have r0 := endpointCallCrossCoreDispatch_readyKeptStage (lend := lend) tgt.endpoint tid
       (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st hHeads hCur hNI
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid
-      (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st = r at s0 r0 ⊢
+      (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st lend = r at s0 r0 ⊢
     obtain ⟨st1, r⟩ := r
     cases r with
     | error e => exact sus hI hR

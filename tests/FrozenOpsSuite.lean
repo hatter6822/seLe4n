@@ -1743,14 +1743,14 @@ private def differentialEndpointReplyDonationAgrees : IO Unit := do
       (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze unheaded))
       (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
         (liveReplySpine diffB diffA msg) unheaded.state))
-  -- ### Half three: the RECIPIENT GUARD.  Same donation on the stack, but the
-  -- answered caller has acquired a reservation of its own while blocked, so the
-  -- pop would overwrite it.  The live pop refuses (`donationRecipientAcceptable`,
-  -- WS-HP HP4.6) and the frozen one must too — a mirror missing a live guard
-  -- succeeds where the kernel refuses, which is the direction that matters.
-  -- The guard is head-driven-specific: under the binding-driven reading the
-  -- recipient was the binding's own recorded owner, which the operation had
-  -- already seen hold nothing, so this half could not have existed before HP4.
+  -- ### Half three: the HELD ARM.  Same donation on the stack, but the
+  -- answered caller has acquired a reservation of its own while blocked.
+  -- seL4-MCS's `reply_pop` hands nothing back to a thread that holds a context
+  -- (WS-SX SX8): the head is popped off the context, which stays with the
+  -- server, and the caller keeps its own reservation.  The live pop takes that
+  -- arm (`keepDonatedSchedContextResolved`) and the frozen composite must too —
+  -- a mirror that refuses where the kernel succeeds, or that overwrites the
+  -- caller's reservation, disagrees on exactly this state.
   let ownCaller : TCB := (TCB.setIpcState { diffTcb 62 with
     replyObjectCode := SeLe4n.ReplyId.optCode (some rid),
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound diffOwnScId), scBindingOwnerCode := 0 } (.blockedOnReply diffEpId (some diffB)))
@@ -1765,9 +1765,17 @@ private def differentialEndpointReplyDonationAgrees : IO Unit := do
     (match (freeze bound).getTcb? diffA with
      | some t => t.schedContextBinding == .bound diffOwnScId
      | none   => false)
-  expect "FO-042: the live pop REFUSES to overwrite it"
-    (liveReplySpine diffB diffA msg bound.state).toOption.isNone
-  expect "FO-042: and the frozen composite refuses it too, with the same error"
+  expect "FO-042: the live pop keeps the context with the server, the head popped"
+    (match liveReplySpine diffB diffA msg bound.state with
+     | .ok ((), st') =>
+       (match st'.getTcb? diffA, st'.getTcb? diffB, st'.getSchedContext? diffScId with
+        | some a, some b, some sc =>
+          a.schedContextBinding == .bound diffOwnScId &&
+            b.schedContextBinding == .bound diffScId &&
+            sc.boundThread == some diffB && sc.scReply == none
+        | _, _, _ => false)
+     | .error _ => false)
+  expect "FO-042: and the frozen composite takes the same arm, state for state"
     (frozenRunAgrees unitResultAgrees
       (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze bound))
       (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
@@ -2741,6 +2749,191 @@ private def differentialSchedContextUnbindClearsOrigin : IO Unit := do
      | .ok (_, st') => frozenOriginOf st' diffScId == some none
      | .error _ => false)
 
+/-- WS-SX SX8.3: the live `SchedContext_Bind` on a notification capability. -/
+private def liveBindNotification (st : SystemState) :
+    Except KernelError (Unit × SystemState) :=
+  match diffScId.toObjId.toValid? with
+  | some v => SeLe4n.Kernel.schedContextBindNotification v diffNotifId st
+  | none => .error (.invalidArgument 0)
+
+/-- WS-SX SX8.3: the live `SchedContext_Unbind` (`schedContextUnbindAllOnCore`),
+its reschedule request dropped. -/
+private def liveUnbindAll (st : SystemState) : Except KernelError (Unit × SystemState) :=
+  match diffScId.toObjId.toValid? with
+  | some v =>
+    match SeLe4n.Kernel.SchedContextOps.schedContextUnbindAllOnCore v bootCoreId st with
+    | .ok (st', _) => .ok ((), st')
+    | .error e => .error e
+  | none => .error (.invalidArgument 0)
+
+/-- The notification-link codes of the frozen context and notification. -/
+private def frozenLinkCodes (fs : FrozenSystemState) : Option (Nat × Nat) :=
+  match fs.getObject? diffScId.toObjId, fs.getObject? diffNotifId with
+  | some (.schedContext sc), some (.notification n) => some (sc.notificationCode, n.schedContextCode)
+  | _, _ => none
+
+/-- **FO-SX8.3: the frozen twins of the notification link.**  The frozen
+`SchedContext_Bind` on a notification and the frozen unbind of a context bound
+to no thread agree with the live operations, refusals included; the frozen
+unbind refuses the current thread's context, as the live one does (D18). -/
+private def differentialSchedContextNotificationLinkAgrees : IO Unit := do
+  let sc : SeLe4n.Kernel.SchedContext :=
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩ }
+  let ntfn : Notification :=
+    { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
+  let ist := diffAddSchedContext
+    (diffAddNotification (mkEmptyIntermediateState ()) diffNotifId ntfn) diffScId sc
+  let fb := frozenSchedContextBindNotification diffScId.toObjId diffNotifId (freeze ist)
+  let lb := liveBindNotification ist.state
+  expect "FO-SX8.3 DIFFERENTIAL: the bind on a notification agrees"
+    (frozenRunAgrees unitResultAgrees fb lb)
+  expect "FO-SX8.3: the frozen bind links both ends"
+    (match fb with
+     | .ok (_, fs) => frozenLinkCodes fs == some (diffNotifId.toNat + 1, diffScId.toObjId.toNat + 1)
+     | .error _ => false)
+  match fb, lb with
+  | .ok (_, fs), .ok (_, ls) =>
+    expect "FO-SX8.3 DIFFERENTIAL: a second bind is refused alike"
+      (frozenRunAgrees unitResultAgrees
+        (frozenSchedContextBindNotification diffScId.toObjId diffNotifId fs)
+        (liveBindNotification ls))
+    let fu := frozenSchedContextUnbind diffScId.toObjId fs
+    expect "FO-SX8.3 DIFFERENTIAL: the unbind of a context bound to no thread agrees"
+      (frozenRunAgrees unitResultAgrees fu (liveUnbindAll ls))
+    expect "FO-SX8.3: ...and clears both ends"
+      (match fu with
+       | .ok (_, fs') => frozenLinkCodes fs' == some (0, 0)
+       | .error _ => false)
+  | _, _ => expect "FO-SX8.3 control: both binds succeed" false
+  let boundTcb : TCB :=
+    { diffTcb 62 with
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode
+        (SeLe4n.Kernel.SchedContextBinding.bound diffScId), scBindingOwnerCode := 0 }
+  let ist2 := diffAddSchedContext (diffAddTcb (mkEmptyIntermediateState ()) boundTcb) diffScId
+    { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some diffA), isActive := true }
+  let fs2 := freeze ist2
+  let fsCur := { fs2 with scheduler := { fs2.scheduler with current := some diffA } }
+  expect "FO-SX8.3 (D18): the frozen unbind refuses the current thread's context"
+    (match frozenSchedContextUnbind diffScId.toObjId fsCur with
+     | .error .illegalState => true
+     | _ => false)
+  expect "FO-SX8.3 (D18) control: ...and unbinds it when another thread is current"
+    (frozenSchedContextUnbind diffScId.toObjId fs2).toOption.isSome
+
+/-- The frozen holder binding, context head and head reply's upward link. -/
+private def frozenDonationShape (fs : FrozenSystemState) (rid : SeLe4n.ReplyId) :
+    Option (Nat × Nat × Option SeLe4n.ReplyId × Option SeLe4n.Kernel.ReplyStackLink) :=
+  match fs.getObject? diffA.toObjId, fs.getObject? diffScId.toObjId, fs.getObject? rid.toObjId with
+  | some (.tcb t), some (.schedContext sc), some (.reply r) =>
+    some (t.scBindingScCode, sc.boundThreadCode, sc.scReply, r.next)
+  | _, _, _ => none
+
+/-- **FO-SX8.3 (D22): the unbind of a holder that received its context through
+a reply.**  seL4-MCS's `invokeSchedContext_Unbind` unbinds the holder
+(`schedContext_unbindTCB`) and lets go of the reply stack
+(`schedContext_unbindReply`); the frozen unbind agrees with the live one and
+both leave the holder unbound, the context bound to nothing and heading no
+stack, and the lender's frame with no upward link, its caller kept. -/
+private def differentialDonatedHolderUnbindAgrees : IO Unit := do
+  let rid : SeLe4n.ReplyId := ⟨505⟩
+  let holder : TCB :=
+    { diffTcb 62 with
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode
+        (SeLe4n.Kernel.SchedContextBinding.donated diffScId diffB),
+      scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode
+        (SeLe4n.Kernel.SchedContextBinding.donated diffScId diffB) }
+  let lender : TCB := TCB.setIpcState { diffTcb 63 with
+    replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply diffEpId (some diffA))
+  let reply : SeLe4n.Kernel.Reply :=
+    { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffB),
+      next := some (SeLe4n.Kernel.ReplyStackLink.head diffScId) }
+  let sc : SeLe4n.Kernel.SchedContext :=
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
+      boundThreadCode := SeLe4n.ThreadId.optCode (some diffA), scReply := some rid,
+      isActive := true }
+  let ist := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
+    (mkEmptyIntermediateState ()) holder) lender) rid reply) diffScId sc
+  let fu := frozenSchedContextUnbind diffScId.toObjId (freeze ist)
+  expect "FO-SX8.3 (D22) control: the frozen holder starts donated, the context heading the stack"
+    (frozenDonationShape (freeze ist) rid ==
+      some (diffScId.toObjId.toNat + 1, diffA.toNat + 1, some rid, some (SeLe4n.Kernel.ReplyStackLink.head diffScId)))
+  expect "FO-SX8.3 (D22) DIFFERENTIAL: the unbind of a donated holder agrees"
+    (frozenRunAgrees unitResultAgrees fu (liveUnbindAll ist.state))
+  expect "FO-SX8.3 (D22): ...succeeds, unbinds the holder and lets go of the stack"
+    (match fu with
+     | .ok (_, fs') => frozenDonationShape fs' rid == some (0, 0, none, none)
+     | .error _ => false)
+  expect "FO-SX8.3 (D22): ...and the lender stays blocked on its reply"
+    (match fu with
+     | .ok (_, fs') =>
+       match fs'.getObject? diffB.toObjId, fs'.getObject? rid.toObjId with
+       | some (.tcb t), some (.reply r) =>
+         t.ipcState == .blockedOnReply diffEpId (some diffA) && r.caller == some diffB
+       | _, _ => false
+     | .error _ => false)
+
+/-- The live notification-link codes of the context and the notification. -/
+private def liveLinkCodes (st : SystemState) : Option (Nat × Nat) :=
+  match st.getSchedContext? diffScId, st.getNotification? diffNotifId with
+  | some sc, some n => some (sc.notificationCode, n.schedContextCode)
+  | _, _ => none
+
+/-- **FO-SX8.3b: `SchedContext_UnbindObject`** (seL4-MCS
+`decodeSchedContext_UnbindObject`), live.  On a notification: the context's own
+notification is unbound (both ends cleared) and another is refused
+`illegalState`; on a thread: the context's own thread is unbound and its
+notification link kept, another thread and the executing core's current one are
+refused `illegalState`. -/
+private def liveSchedContextUnbindObjectArms : IO Unit := do
+  let some vSc := diffScId.toObjId.toValid? | expect "FO-SX8.3b control: valid context id" false
+  let sc : SeLe4n.Kernel.SchedContext :=
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩ }
+  let ntfn : Notification :=
+    { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
+  let boundTcb : TCB :=
+    { diffTcb 62 with
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode
+        (SeLe4n.Kernel.SchedContextBinding.bound diffScId), scBindingOwnerCode := 0 }
+  let ist := diffAddSchedContext
+    (diffAddNotification (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) boundTcb)
+      (diffTcb 63)) diffNotifId ntfn) diffScId
+    { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some diffA), isActive := true }
+  match liveBindNotification ist.state with
+  | .error _ => expect "FO-SX8.3b control: the notification bind succeeds" false
+  | .ok (_, st) =>
+    expect "FO-SX8.3b control: both ends linked"
+      (liveLinkCodes st == some (diffNotifId.toNat + 1, diffScId.toObjId.toNat + 1))
+    expect "FO-SX8.3b: another notification is refused illegalState"
+      (match SeLe4n.Kernel.SchedContextOps.schedContextUnbindNotificationObject vSc
+          ⟨diffNotifId.val + 1⟩ st with
+       | .error .illegalState => true
+       | _ => false)
+    expect "FO-SX8.3b: the context's notification is unbound, both ends cleared"
+      (match SeLe4n.Kernel.SchedContextOps.schedContextUnbindNotificationObject vSc
+          diffNotifId st with
+       | .ok (_, st') => liveLinkCodes st' == some (0, 0) &&
+           ((st'.getSchedContext? diffScId).map (·.boundThreadCode)) ==
+             some (SeLe4n.ThreadId.optCode (some diffA))
+       | .error _ => false)
+    expect "FO-SX8.3b: another thread is refused illegalState"
+      (match SeLe4n.Kernel.SchedContextOps.schedContextUnbindThreadObjectOnCore vSc diffB
+          bootCoreId st with
+       | .error .illegalState => true
+       | _ => false)
+    expect "FO-SX8.3b: the context's thread is unbound, the notification link kept"
+      (match SeLe4n.Kernel.SchedContextOps.schedContextUnbindThreadObjectOnCore vSc diffA
+          bootCoreId st with
+       | .ok (st', _) =>
+           ((st'.getSchedContext? diffScId).map (·.boundThreadCode)) == some 0 &&
+             liveLinkCodes st' == some (diffNotifId.toNat + 1, diffScId.toObjId.toNat + 1)
+       | .error _ => false)
+    let stCur := { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId (some diffA) }
+    expect "FO-SX8.3b (D18): the executing core's current thread is refused illegalState"
+      (match SeLe4n.Kernel.SchedContextOps.schedContextUnbindThreadObjectOnCore vSc diffA
+          bootCoreId stCur with
+       | .error .illegalState => true
+       | _ => false)
+
 /-- **FO-050 (WS-RR RR8.12 Cut B2, `v0.35.182`): the bind PLACES a parked
 runnable thread, on both surfaces.**
 
@@ -2869,13 +3062,14 @@ private def differentialSchedContextBindPlacesParked : IO Unit := do
     expect "FO-050 (3): the frozen bind leaves it in NO bucket"
       (!SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere fzBound diffA)
 
-/-- FO-047c: the refusals the frozen bind did not carry, and the domain the
-binds do not check.
+/-- FO-047c: the refusals the frozen bind did not carry, and what the binds
+admit: a context heading a stack, a thread in another domain, and a lender.
 
 Each refusal drives a state the live bind refuses and asserts the frozen mirror
 refuses it **with the same error code**, beside a control establishing that the
 live side really refuses rather than both sides sharing a success.  A thread in
-another domain is admitted by both, as seL4-MCS's bind checks no domain. -/
+another domain and a thread whose reply frame is on a live stack are admitted by
+both, as seL4-MCS's bind checks neither. -/
 private def differentialSchedContextBindRefusalsAgree : IO Unit := do
   let errOf {α : Type} : Except KernelError α → Option KernelError
     | .ok _ => none
@@ -2897,11 +3091,22 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
   let istHeading := diffAddSchedContext (diffAddReply
     (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) (diffTcb 62)) (diffTcb 63))
     headRid headReply) diffScId scHeading
-  expect "FO-047c control: the live bind refuses a reservation heading a stack"
-    (liveErr istHeading.state == some KernelError.illegalState)
-  expect "FO-047c: ...and the frozen bind refuses it identically"
-    (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istHeading))
-      == some KernelError.illegalState)
+  -- WS-SX SX8 (D25): seL4-MCS's `decodeSchedContext_Bind` binds it, so both
+  -- binds admit it (the checked dispatch's label rule is not the operation's).
+  expect "FO-047c control: the live bind admits a reservation heading a stack"
+    (liveErr istHeading.state == none)
+  expect "FO-047c: ...and so does the frozen bind"
+    (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istHeading)) == none)
+  -- ...and the checked dispatch's label rule decides it: a context heading a
+  -- stack binds only to a thread its label flows to (D25 static, D27).
+  let ctxHigh : SeLe4n.Kernel.LabelingContext :=
+    { SeLe4n.Kernel.defaultLabelingContext with
+      objectLabelOf := fun _ => SeLe4n.Kernel.SecurityLabel.kernelTrusted }
+  expect "FO-047c: the label rule refuses a context heading a stack to a thread below its label"
+    (!SeLe4n.Kernel.schedContextBindLabelAdmits ctxHigh istHeading.state diffScId.toObjId diffA)
+  expect "FO-047c: ...admits it where the label flows"
+    (SeLe4n.Kernel.schedContextBindLabelAdmits SeLe4n.Kernel.defaultLabelingContext
+      istHeading.state diffScId.toObjId diffA)
   -- (2) a thread in another domain than the binder's: seL4-MCS's
   -- `decodeSchedContext_Bind` checks no domain and a context carries none
   -- (WS-SX SX6.4), so both binds admit it.
@@ -2916,8 +3121,12 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
     (liveErr istDomain.state == none)
   expect "FO-047c: ...and so does the frozen bind"
     (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istDomain)) == none)
+  expect "FO-047c: the label rule admits a context heading no stack under any labels"
+    (SeLe4n.Kernel.schedContextBindLabelAdmits ctxHigh istDomain.state diffScId.toObjId diffA)
   -- (3) the thread's own reply frame is on a LIVE stack — reciprocated, so the
-  -- pop that reaches it will write this thread's binding.
+  -- thread lends a context.  seL4-MCS's `decodeSchedContext_Bind` binds a lender
+  -- (WS-SX SX8), and the pop that reaches its frame keeps the loaned context with
+  -- its holder (`reply_pop`'s held arm), so both binds ADMIT it.
   let ownRid : SeLe4n.ReplyId := ⟨71⟩
   let aboveRid : SeLe4n.ReplyId := ⟨72⟩
   let ownReply : SeLe4n.Kernel.Reply :=
@@ -2933,30 +3142,12 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
     ownRid ownReply) aboveRid aboveReply) diffScId scDomainZero
   expect "FO-047c control: the frame above really answers this one (a LIVE stack)"
     (SeLe4n.Kernel.FrozenOps.frozenReplyFrameOnLiveStack (freeze istOwed) owedTcb)
-  expect "FO-047c control: the live bind refuses a thread owed a context"
-    (liveErr istOwed.state == some KernelError.illegalState)
-  expect "FO-047c: ...and the frozen bind refuses it identically"
-    (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istOwed))
-      == some KernelError.illegalState)
-  -- ...and the NEGATIVE that keeps the guard from degenerating into "any reply
-  -- link refuses": a frame whose upward link nothing answers is owed nothing, and
-  -- binding it is an operation both sides support.
-  let staleTcb : TCB :=
-    (TCB.setIpcState { diffTcb 62 with
-      replyObjectCode := SeLe4n.ReplyId.optCode (some ownRid)
-      } (.blockedOnReply diffEpId diffB))
-  let staleAbove : SeLe4n.Kernel.Reply := { replyId := aboveRid, callerCode := SeLe4n.ThreadId.optCode (some diffB) }
-  let istStale := diffAddSchedContext (diffAddReply (diffAddReply
-    (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) staleTcb) (diffTcb 63))
-    ownRid ownReply) aboveRid staleAbove) diffScId scDomainZero
-  expect "FO-047c control: a stale upward link is NOT a live stack"
-    (!(SeLe4n.Kernel.FrozenOps.frozenReplyFrameOnLiveStack (freeze istStale) staleTcb))
   -- SUCCESS on both sides, not "no error": `liveErr` answers `none` for an
   -- unpromotable id as well as for an accepted bind, so the weaker form could
   -- pass on a fixture the live operation never ran at all.
-  expect "FO-047c NEGATIVE: both sides ADMIT a thread whose frame is off every stack"
-    ((liveSchedContextBindState istStale.state diffScId diffA).isSome
-      && (frozenSchedContextBind diffScId.toObjId diffA (freeze istStale)).toOption.isSome)
+  expect "FO-047c: both sides ADMIT a thread whose frame is on a live stack (seL4 binds a lender)"
+    ((liveSchedContextBindState istOwed.state diffScId diffA).isSome
+      && (frozenSchedContextBind diffScId.toObjId diffA (freeze istOwed)).toOption.isSome)
 
 /-- **The live `schedContextConfigure`, in the `Option SystemState` shape the
 SchedContext scenarios compare.**  `none` is "did not run" -- an unpromotable id
@@ -3855,6 +4046,9 @@ def main : IO Unit := do
   differentialQueueNeighbourResolutionAgrees
   differentialSchedContextBindClearsOrigin
   differentialSchedContextUnbindClearsOrigin
+  differentialSchedContextNotificationLinkAgrees
+  differentialDonatedHolderUnbindAgrees
+  liveSchedContextUnbindObjectArms
   differentialSchedContextBindRefusalsAgree
   differentialSchedContextBindPlacesParked
   differentialSchedContextConfigureKeepsOrder

@@ -265,13 +265,14 @@ the donee (`donateSchedContext_post_boundThread`), and the donor is left
 donation survives because neither of the two threads the transition rewrites can
 be one of its readings: the donated SchedContext cannot be `scId` (the pre-state
 `sc.boundThread` is the donor, and the donor is not the donation's subject), and
-the owner cannot be the donor (an owner is `.unbound`, the donor is `.bound`) or
-the donee (`hReceiverNotOwner`).
+the owner cannot be the donor (`hCallerNotOwner`) or the donee
+(`hReceiverNotOwner`).
 
-`hCallerBlockedOnReply` and `hReceiverNotOwner` are exactly what the live `.call`
-rendezvous establishes: it stores the caller `.blockedOnReply` before the
-donation runs, and it wakes the receiver to `.ready`, which `donationOwnerValid`
-forbids a donation owner from being. -/
+`hCallerBlockedOnReply`, `hReceiverNotOwner` and `hCallerNotOwner` are exactly
+what the live `.call` rendezvous establishes: it stores the caller
+`.blockedOnReply` before the donation runs, it wakes the receiver to `.ready`, and
+the caller was running (or waiting on an endpoint) before it, none of which
+`donationOwnerValid` lets a donation owner be. -/
 theorem applyCallDonation_preserves_donationOwnerValid
     (st st' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
     (hObjInv : st.objects.invExt)
@@ -280,6 +281,8 @@ theorem applyCallDonation_preserves_donationOwnerValid
         ∃ ep rt, tcb.ipcState = .blockedOnReply ep rt)
     (hReceiverNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
         st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId receiverVtid.val)
+    (hCallerNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+        st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId callerVtid.val)
     (h : applyCallDonation st callerVtid receiverVtid = .ok st') :
     donationOwnerValid st' := by
   rw [applyCallDonation_characterisation] at h
@@ -351,15 +354,9 @@ theorem applyCallDonation_preserves_donationOwnerValid
           exact hTidC (Option.some.inj hScOldBound).symm
         have hOwnerNeC : owner' ≠ callerVtid.val := by
           intro hEq
-          rw [hEq] at hOwner
-          have hSame := hCPre.symm.trans
-            ((getTcb?_eq_some_iff st callerVtid.val ownerTcb).mpr hOwner)
-          obtain rfl : cTcb = ownerTcb := Option.some.inj hSame
-          -- WS-OD OD4.2: the donor references `scId`; a donation owner
-          -- references nothing.  Stated on the effective reading, which covers
-          -- a `.donated` donor as well as a `.bound` one.
-          rw [hOwnerUnbound] at hCB
-          simp [SchedContextBinding.scId?] at hCB
+          -- No loan names the donor (`hCallerNotOwner`: the donor was running
+          -- when it called, and a loan's owner waits on a reply).
+          exact hCallerNotOwner tid tcb' scId' hPre (hEq ▸ hBind')
         have hOwnerNeR : owner' ≠ receiverVtid.val := by
           intro hEq
           rw [hEq] at hBind'
@@ -448,31 +445,21 @@ theorem applyCallDonation_donating_binding
 /-- **WS-RR RR2.5**: the call donation preserves `donationOwnerUnique`.
 
 The only donation it creates is the donee's, whose owner is the donor.  No
-*other* thread can already name the donor as its owner: `donationOwnerValid`
-would then force the donor `.unbound`, and the guard saw it `.bound`. -/
+*other* thread already names the donor as its owner (`hCallerNotOwner`). -/
 theorem applyCallDonation_preserves_donationOwnerUnique
     (st st' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
     (hObjInv : st.objects.invExt)
-    (hDOV : donationOwnerValid st) (hDOU : donationOwnerUnique st)
+    (hCallerNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+        st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId callerVtid.val)
+    (hDOU : donationOwnerUnique st)
     (h : applyCallDonation st callerVtid receiverVtid = .ok st') :
     donationOwnerUnique st' := by
   cases hSc : callDonationSchedContext? st callerVtid.val receiverVtid.val with
   | none =>
       rw [applyCallDonation_characterisation, hSc] at h; cases h; exact hDOU
   | some scId =>
-    obtain ⟨cTcb, _, _, hCPre, hCB, _⟩ :=
-      applyCallDonation_donating_char st st' callerVtid receiverVtid scId hObjInv hSc h
-    -- No pre-state donation can name the donor as its owner.
-    have hNoOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (s : SeLe4n.SchedContextId),
-        st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated s callerVtid.val := by
-      intro tid tcb s hTcb hBind
-      obtain ⟨_, ownerTcb, hOwner, hOwnerUnbound, _⟩ :=
-        hDOV tid tcb s callerVtid.val ((getTcb?_eq_some_iff st tid tcb).mp hTcb) hBind
-      have hSame : some cTcb = some ownerTcb :=
-        hCPre.symm.trans ((getTcb?_eq_some_iff st callerVtid.val ownerTcb).mpr hOwner)
-      rw [← Option.some.inj hSame] at hOwnerUnbound
-      rw [hOwnerUnbound] at hCB
-      simp [SchedContextBinding.scId?] at hCB
+    -- No pre-state donation names the donor as its owner.
+    have hNoOwner := hCallerNotOwner
     intro tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
     have hT1 : st'.getTcb? tid1 = some tcb1 := (getTcb?_eq_some_iff st' tid1 tcb1).mpr h1
     have hT2 : st'.getTcb? tid2 = some tcb2 := (getTcb?_eq_some_iff st' tid2 tcb2).mpr h2
@@ -1323,7 +1310,7 @@ theorem ipcInvariantFull_of_tcbFieldUpdateAgree
       hInv.donationOwnerValid t ty s owner hTy (hBindEq ▸ hBind')
     obtain ⟨ownerTx, hOwnerAt, hOwnerIpc, hOwnerBind⟩ := hFwd owner.toObjId ownerTcb hOwner
     exact ⟨⟨sc, (hSc s.toObjId sc).mpr hScAt, hBound⟩,
-      ownerTx, hOwnerAt, hOwnerBind.trans hOwnerUnbound,
+      ownerTx, hOwnerAt, by rw [hOwnerBind]; exact hOwnerUnbound,
       by rw [hOwnerIpc]; exact hOwnerBlk⟩
   · intro t1 t2 tcb1 tcb2 s h1 h2 hNe hS1 hS2
     obtain ⟨y1, hy1, _, e1⟩ := hBwd t1.toObjId tcb1 h1
@@ -1644,6 +1631,42 @@ theorem donateSchedContext_yieldLinksKept
   have a5 : YieldLinksKept st' s4 := .of_objects_eq (by rw [hEq])
   exact a5.trans (a4.trans (a3.trans (a2.trans a1)))
 
+/-- WS-SX SX8.3: the donation keeps every notification-link code: the context
+is rebound, the frame push writes replies, and the threads are stored over
+threads. -/
+theorem donateSchedContext_notificationLinksKept
+    (st st' : SystemState) (clientTid serverTid : SeLe4n.ThreadId)
+    (clientScId : SeLe4n.SchedContextId) (hObjInv : st.objects.invExt)
+    (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
+    NotificationLinksKept st' st := by
+  obtain ⟨sc, donorTcb, clientTcb, serverTcb, pushRid, pushReply, s1, s2, s3, s4,
+    hSc, _, _, hFrame, hS1, hS2, hL1, hS3, hL2, hS4, hEq⟩ :=
+    donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
+  have hScRaw := (SystemState.getSchedContext?_eq_some_iff st clientScId sc).mp hSc
+  have a1 : NotificationLinksKept s1 st := .storeObject hObjInv hS1 (by rw [hScRaw]; rfl)
+  have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  obtain ⟨_, hRepPre, _, _, _⟩ := donationPushFrame?_ok st donorTcb pushRid pushReply hFrame
+  have hRep1 : s1.getReply? pushRid = some pushReply := by
+    have hNe : pushRid.toObjId ≠ clientScId.toObjId := by
+      intro hk
+      have := (SystemState.getReply?_eq_some_iff st pushRid pushReply).mp hRepPre
+      rw [hk, hScRaw] at this
+      cases this
+    unfold SystemState.getReply? at hRepPre ⊢
+    rw [storeObject_objects_ne st s1 clientScId.toObjId pushRid.toObjId _ hNe hObjInv hS1]
+    exact hRepPre
+  have a2 : NotificationLinksKept s2 s1 :=
+    .of_replyWrite (fun k hk => storeDonationFramePush_non_reply_eq hInv1 hRep1 hS2 k hk)
+      (fun k r hk => storeDonationFramePush_reply_kind_stable hInv1 hS2 k r hk)
+  have hInv2 := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
+  have a3 : NotificationLinksKept s3 s2 := .storeObject hInv2 hS3 (by
+    rw [lookupTcb_some_objects s2 clientTid clientTcb hL1]; rfl)
+  have hInv3 := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  have a4 : NotificationLinksKept s4 s3 := .storeObject hInv3 hS4 (by
+    rw [lookupTcb_some_objects s3 serverTid serverTcb hL2]; rfl)
+  have a5 : NotificationLinksKept st' s4 := .of_objects_eq (by rw [hEq])
+  exact a5.trans (a4.trans (a3.trans (a2.trans a1)))
+
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and the donation push writes no CDT
 table. -/
 theorem donateSchedContext_cdt_eq
@@ -1698,6 +1721,18 @@ theorem applyCallDonationOnCore_preserves_objects_invExt
   rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> rw [hEq]
   · exact hInv1
   · exact migrateSchedContextReplenishment_preserves_objects_invExt _ _ _ _ hInv1
+
+/-- …and so does the gated donation, which is it or nothing. -/
+theorem applyCallDonationOnCoreWhen_preserves_objects_invExt (lend : Bool)
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId)
+    (hObjInv : st.objects.invExt)
+    (h : applyCallDonationOnCoreWhen lend st callerVtid receiverVtid donorHome doneeHome =
+      .ok st'') :
+    st''.objects.invExt :=
+  applyCallDonationOnCoreWhen_induct (·.objects.invExt) h hObjInv
+    (applyCallDonationOnCore_preserves_objects_invExt st st'' callerVtid receiverVtid donorHome
+      doneeHome hObjInv)
 
 /-- **WS-RR RR8.16** (`v0.35.200`): `applyCallDonation` is a
 `kindPreservingWrite` — the no-op arm reflexively, the donating arm through
@@ -1790,7 +1825,9 @@ exactly what the live `.call` path establishes before the donation runs:
 * `hReceiverNotOwner` — nothing already owns a donation whose owner is the
   receiver.  The receiver has just been woken out of the endpoint's receive
   queue, and `donationOwnerValid` requires a donation owner to be
-  `.blockedOnReply`. -/
+  `.blockedOnReply`.
+* `hCallerNotOwner` — likewise for the caller, which was running (or waiting on
+  the endpoint's send queue) before the call's own blocking store. -/
 theorem applyCallDonation_preserves_ipcInvariantFull
     (st st' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
     (hObjInv : st.objects.invExt)
@@ -1799,18 +1836,20 @@ theorem applyCallDonation_preserves_ipcInvariantFull
         ∃ ep rt, tcb.ipcState = .blockedOnReply ep rt)
     (hReceiverNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
         st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId receiverVtid.val)
+    (hCallerNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+        st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId callerVtid.val)
     (h : applyCallDonation st callerVtid receiverVtid = .ok st') :
     ipcInvariantFull st' := by
   have hDOV : donationOwnerValid st' :=
     applyCallDonation_preserves_donationOwnerValid st st' callerVtid receiverVtid hObjInv
-      hInv.donationOwnerValid hCallerBlockedOnReply hReceiverNotOwner h
+      hInv.donationOwnerValid hCallerBlockedOnReply hReceiverNotOwner hCallerNotOwner h
   exact ipcInvariantFull_of_donationReadAgreement st st' hInv
     (applyCallDonation_donationReadAgreement st st' callerVtid receiverVtid hObjInv h)
     (donationOwnerValid_implies_donationChainAcyclic st' hDOV) hDOV
     (applyCallDonation_preserves_donationBudgetTransfer st st' callerVtid receiverVtid hObjInv
       hInv.donationBudgetTransfer h)
     (applyCallDonation_preserves_donationOwnerUnique st st' callerVtid receiverVtid hObjInv
-      hInv.donationOwnerValid hInv.donationOwnerUnique h)
+      hCallerNotOwner hInv.donationOwnerUnique h)
 
 /-- **WS-RR RR2.5**: the per-core call donation preserves the bundle.
 
@@ -1826,13 +1865,15 @@ theorem applyCallDonationOnCore_preserves_ipcInvariantFull
         ∃ ep rt, tcb.ipcState = .blockedOnReply ep rt)
     (hReceiverNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
         st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId receiverVtid.val)
+    (hCallerNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+        st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId callerVtid.val)
     (h : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') :
     ipcInvariantFull st'' := by
   obtain ⟨st', hDon, _⟩ :=
     applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid donorHome doneeHome h
   have hFull' : ipcInvariantFull st' :=
     applyCallDonation_preserves_ipcInvariantFull st st' callerVtid receiverVtid hObjInv hInv
-      hCallerBlockedOnReply hReceiverNotOwner hDon
+      hCallerBlockedOnReply hReceiverNotOwner hCallerNotOwner hDon
   exact ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
     (.of_releaseLinks (applyCallDonationOnCore_agree st st' st'' callerVtid receiverVtid
       donorHome doneeHome hDon h)) hFull'
@@ -1950,7 +1991,7 @@ theorem applyReplyDonation_ok_decompose
     -- or a context its finalised server returned to no one, popped to the caller.
     (replyFrameHeadHolder? st rid = none ∧
       popUnheldReplyHead st rid targetVtid.val Concurrency.bootCoreId = .ok st'') ∨
-    ∃ (scId : SeLe4n.SchedContextId) (holderVtid : SeLe4n.ValidThreadId)
+    (∃ (scId : SeLe4n.SchedContextId) (holderVtid : SeLe4n.ValidThreadId)
       (newOwner? : Option SeLe4n.ThreadId) (st' : SystemState),
       replyFrameHeadHolder? st rid = some (scId, holderVtid.val) ∧
       -- **WS-OD OD4.4**: the resolver's answer is part of the decomposition, so
@@ -1967,7 +2008,15 @@ theorem applyReplyDonation_ok_decompose
       -- `schedContext_donate`): purged, and re-placed only under an active holder.
       st'' = removeRunnable
         (SchedContextOps.settleReturnedContext st' Concurrency.bootCoreId scId)
-        holderVtid.val := by
+        holderVtid.val) ∨
+    -- seL4-MCS's `reply_pop` where the recipient holds a context of its own: the
+    -- head is popped off the context, which stays with its holder.
+    ∃ (scId : SeLe4n.SchedContextId) (holderVtid : SeLe4n.ValidThreadId)
+      (newOwner? : Option SeLe4n.ThreadId),
+      replyFrameHeadHolder? st rid = some (scId, holderVtid.val) ∧
+      donationRecipientAcceptable st (replyDonationRecipient st scId targetVtid.val) = false ∧
+      replyStackOuterCaller? st scId = .ok newOwner? ∧
+      keepDonatedSchedContext st holderVtid.val scId newOwner? = .ok st'' := by
   rw [applyReplyDonation_characterisation] at h
   cases hRet : replyFrameHeadHolder? st rid with
   | none => rw [hRet] at h; exact Or.inl ⟨rfl, h⟩
@@ -1983,6 +2032,15 @@ theorem applyReplyDonation_ok_decompose
       have hHolderEq : holderVtid.val = holder :=
         SeLe4n.ThreadId.toValid?_some_val_eq holder holderVtid hV
       subst hHolderEq
+      cases hA : donationRecipientAcceptable st (replyDonationRecipient st scId targetVtid.val) with
+      | false =>
+        rw [hA] at h
+        simp only [Bool.false_eq_true, ↓reduceIte] at h
+        obtain ⟨n, hRes, hKeep⟩ := keepDonatedSchedContextResolved_ok_decompose h
+        exact Or.inr (Or.inr ⟨scId, holderVtid, n, rfl, hA, hRes, hKeep⟩)
+      | true =>
+      rw [hA] at h
+      simp only [↓reduceIte] at h
       cases hR : returnDonatedSchedContextResolved st holderVtid.val scId
           (replyDonationRecipient st scId targetVtid.val) with
       | error e => rw [hR] at h; simp only [] at h; cases h
@@ -1990,7 +2048,7 @@ theorem applyReplyDonation_ok_decompose
         rw [hR] at h
         simp only [Except.ok.injEq] at h
         obtain ⟨n, hRes, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hR
-        exact Or.inr ⟨scId, holderVtid, n, st', rfl, hRes, hPop, h.symm⟩
+        exact Or.inr (Or.inl ⟨scId, holderVtid, n, st', rfl, hRes, hPop, h.symm⟩)
 
 /-- **WS-RR RR2.5**: the donation return preserves the whole IPC bundle.
 
@@ -2191,13 +2249,14 @@ theorem applyReplyDonation_preserves_objects_invExt
     (h : applyReplyDonation st rid targetVtid = .ok st'') :
     st''.objects.invExt := by
   rcases applyReplyDonation_ok_decompose st st'' rid targetVtid h with
-    ⟨_, hEq⟩ | ⟨scId, holderVtid, newOwner?, st', _, _, hR, hEq⟩
+    ⟨_, hEq⟩ | ⟨scId, holderVtid, newOwner?, st', _, _, hR, hEq⟩ | ⟨_, _, _, _, _, _, hK⟩
   · exact popUnheldReplyHead_objects_invExt hObjInv hEq
   · rw [hEq]
     refine removeRunnable_objects_invExt _ _ ?_
     exact SchedContextOps.settleReturnedContext_objects_invExt _ _ _
       (returnDonatedSchedContext_preserves_objects_invExt st st' holderVtid.val scId
         (replyDonationRecipient st scId targetVtid.val) hObjInv newOwner? hR)
+  · exact keepDonatedSchedContext_objects_invExt hObjInv hK
 
 
 -- ============================================================================
@@ -2315,20 +2374,23 @@ argument does not cover, because the same predicate decides both. -/
 
 /-- WS-OD OD3.6: the rendezvous hand-off preserves the object-store extension
 invariant. -/
-theorem applyRendezvousCallDonation_preserves_objects_invExt
+theorem applyRendezvousCallDonation_preserves_objects_invExt {lend : Bool}
     (st st'' : SystemState) (receiver donor : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
-    (h : applyRendezvousCallDonation st receiver donor = .ok st'') :
+    (h : applyRendezvousCallDonation st receiver donor lend = .ok st'') :
     st''.objects.invExt := by
+  rcases applyRendezvousCallDonation_cases h with h | rfl
+  rotate_left
+  · exact hObjInv
   obtain ⟨donorV, receiverV, _, _, hDon⟩ :=
     applyRendezvousCallDonation_ok_decompose st st'' receiver donor h
   exact applyCallDonationOnCore_preserves_objects_invExt st st'' donorV receiverV _ _ hObjInv hDon
 
 /-- WS-OD OD3.6: and so does the guarded form, whose other arm changes nothing. -/
-theorem applyReceiveRendezvousDonation_preserves_objects_invExt
+theorem applyReceiveRendezvousDonation_preserves_objects_invExt {lend : Bool}
     (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
-    (h : applyReceiveRendezvousDonation st receiver dequeued = .ok st'') :
+    (h : applyReceiveRendezvousDonation st receiver dequeued lend = .ok st'') :
     st''.objects.invExt := by
   unfold applyReceiveRendezvousDonation at h
   cases hCall : rendezvousDequeuedCall st dequeued with
@@ -2340,18 +2402,20 @@ theorem applyReceiveRendezvousDonation_preserves_objects_invExt
 
 /-- **WS-OD OD3.6: the receive rendezvous hand-off preserves `ipcInvariantFull`.**
 
-One hypothesis, not two.  `applyCallDonationOnCore_preserves_ipcInvariantFull`
+Two hypotheses, not three.  `applyCallDonationOnCore_preserves_ipcInvariantFull`
 asks that the donor be `.blockedOnReply` and that no thread already holds a
-donation naming the receiver as owner; the first is exactly what the guard
-decides, so only `hReceiverNotOwner` -- a whole-store fact no local step can
-establish -- survives as a caller obligation. -/
-theorem applyReceiveRendezvousDonation_preserves_ipcInvariantFull
+donation naming the receiver or the donor as owner; the first is exactly what the
+guard decides, so only `hReceiverNotOwner` and `hDequeuedNotOwner` -- whole-store
+facts no local step can establish -- survive as caller obligations. -/
+theorem applyReceiveRendezvousDonation_preserves_ipcInvariantFull {lend : Bool}
     (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
     (hReceiverNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
         st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId receiver)
-    (h : applyReceiveRendezvousDonation st receiver dequeued = .ok st'') :
+    (hDequeuedNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+        st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId dequeued)
+    (h : applyReceiveRendezvousDonation st receiver dequeued lend = .ok st'') :
     ipcInvariantFull st'' := by
   unfold applyReceiveRendezvousDonation at h
   cases hCall : rendezvousDequeuedCall st dequeued with
@@ -2359,14 +2423,19 @@ theorem applyReceiveRendezvousDonation_preserves_ipcInvariantFull
   | true =>
     rw [hCall] at h
     simp only [if_true] at h
+    rcases applyRendezvousCallDonation_cases h with h | rfl
+    rotate_left
+    · exact hInv
     obtain ⟨donorV, receiverV, hDv, hRv, hDon⟩ :=
       applyRendezvousCallDonation_ok_decompose st st'' receiver dequeued h
     refine applyCallDonationOnCore_preserves_ipcInvariantFull st st'' donorV receiverV _ _
-      hObjInv hInv ?_ ?_ hDon
+      hObjInv hInv ?_ ?_ ?_ hDon
     · rw [hDv]
       exact rendezvousDequeuedCall_blockedOnReply st dequeued hCall
     · rw [hRv]
       exact hReceiverNotOwner
+    · rw [hDv]
+      exact hDequeuedNotOwner
 
 /-! ### WS-OD OD3.14 — and the priority hand-off that runs beside it
 
@@ -2377,10 +2446,10 @@ which is the point of expressing the step over the two rather than inlining it. 
 
 /-- WS-OD OD3.14: the hand-off preserves the object-store extension invariant —
 the donation does (OD3.6) and the chain walk does (SM5.F.2). -/
-theorem applyReceiveRendezvousHandoff_preserves_objects_invExt
+theorem applyReceiveRendezvousHandoff_preserves_objects_invExt {lend : Bool}
     (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
     (hObjInv : st.objects.invExt)
-    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st'') :
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore lend = .ok st'') :
     st''.objects.invExt := by
   obtain ⟨stDon, hDon, hEq⟩ :=
     applyReceiveRendezvousHandoff_ok_decompose st st'' receiver dequeued executingCore h
@@ -2398,13 +2467,15 @@ theorem applyReceiveRendezvousHandoff_preserves_objects_invExt
 The caller obligation is OD3.6's and no more: the walk writes `pipBoost` and
 run-queue buckets, which the bundle reads nowhere, so it contributes a frame
 rather than a hypothesis. -/
-theorem applyReceiveRendezvousHandoff_preserves_ipcInvariantFull
+theorem applyReceiveRendezvousHandoff_preserves_ipcInvariantFull {lend : Bool}
     (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
     (hReceiverNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
         st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId receiver)
-    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st'') :
+    (hDequeuedNotOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+        st.getTcb? tid = some tcb → tcb.schedContextBinding ≠ .donated scId dequeued)
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore lend = .ok st'') :
     ipcInvariantFull st'' := by
   obtain ⟨stDon, hDon, hEq⟩ :=
     applyReceiveRendezvousHandoff_ok_decompose st st'' receiver dequeued executingCore h
@@ -2413,7 +2484,7 @@ theorem applyReceiveRendezvousHandoff_preserves_ipcInvariantFull
       hObjInv hDon
   have hInvDon : ipcInvariantFull stDon :=
     applyReceiveRendezvousDonation_preserves_ipcInvariantFull st stDon receiver dequeued
-      hObjInv hInv hReceiverNotOwner hDon
+      hObjInv hInv hReceiverNotOwner hDequeuedNotOwner hDon
   subst hEq
   split
   · exact propagatePipChainCrossCore_preserves_ipcInvariantFull stDon receiver executingCore _
@@ -2423,11 +2494,11 @@ theorem applyReceiveRendezvousHandoff_preserves_ipcInvariantFull
 /-- WS-OD OD3.14: the hand-off keeps SM5.H's replenish-queue affinity — the
 `hObjInvDon` hypothesis `Donation.lean` had to leave open (it sits below the
 module that proves the donation preserves `invExt`) is discharged here. -/
-theorem applyReceiveRendezvousHandoff_preserves_replenishAffinity_smp
+theorem applyReceiveRendezvousHandoff_preserves_replenishAffinity_smp {lend : Bool}
     (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
     (hObjInv : st.objects.invExt)
     (hCons : replenishQueueAffinityConsistent_smp st)
-    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st'') :
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore lend = .ok st'') :
     replenishQueueAffinityConsistent_smp st'' :=
   applyReceiveRendezvousHandoff_preserves_replenishQueueAffinityConsistent_smp
     st st'' receiver dequeued executingCore hObjInv

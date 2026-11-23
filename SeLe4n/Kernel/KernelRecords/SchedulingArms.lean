@@ -297,32 +297,29 @@ theorem rewriteObject_tcb {st : SystemState} {t : SeLe4n.ThreadId} {x : TCB}
     RecordsFrame st (st.rewriteObject t.toObjId (.tcb x') hA) :=
   rewriteObject hA hInv (by rw [(SystemState.getTcb?_eq_some_iff st t x).mp h]; simp [hV])
 
-/-- The bind writes the context's bound thread and the thread's binding in
-place, places a parked thread, then the context's placement. -/
+/-- The bind's writes: the context's bound thread and the thread's binding in
+place, a parked thread placed, then the context's placement. -/
+theorem schedContextBindPerform (st : SystemState) (vScId : SeLe4n.ValidObjId)
+    (vTid : SeLe4n.ValidThreadId) (hInv : st.objects.invExt) :
+    RecordsFrame st (SchedContextOps.schedContextBindPerform st vScId vTid) := by
+  unfold SchedContextOps.schedContextBindPerform
+  split
+  · exact refl hInv
+  rename_i sc hSc _
+  split
+  · exact refl hInv
+  refine chain ?_ (releasePlace _ _ _) hInv
+  split
+  · refine chain (chain ?_ (runEnqueueOnCore _ _ _ _)) (markReschedulePendingOnCore _ _)
+    exact chain (rewriteObject_schedContext hSc _ _) fun h => updateTcb _ _ h fun _ => rfl
+  · exact chain (rewriteObject_schedContext hSc _ _) fun h => updateTcb _ _ h fun _ => rfl
+
+/-- The bind is its writes (`schedContextBind_ok_donate`). -/
 theorem schedContextBind {vScId : SeLe4n.ValidObjId} {vTid : SeLe4n.ValidThreadId}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (h : SchedContextOps.schedContextBind vScId vTid st = .ok ((), st')) : RecordsFrame st st' := by
-  unfold SchedContextOps.schedContextBind at h
-  split at h
-  · rename_i sc hSc _
-    split at h
-    · cases h
-    · split at h
-      · cases h
-      · split at h
-        · split at h
-          · cases h
-          · split at h
-            · simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
-              subst h
-              refine chain ?_ (releasePlace _ _ _) hInv
-              split
-              · refine chain (chain ?_ (runEnqueueOnCore _ _ _ _)) (markReschedulePendingOnCore _ _)
-                exact chain (rewriteObject_schedContext hSc _ _) fun h => updateTcb _ _ h fun _ => rfl
-              · exact chain (rewriteObject_schedContext hSc _ _) fun h => updateTcb _ _ h fun _ => rfl
-            all_goals cases h
-        · cases h
-  · cases h
+  rw [(SchedContextOps.schedContextBind_ok_donate h).2]
+  exact schedContextBindPerform st vScId vTid hInv
 
 /-- The configure's resume tail writes run-queue links and the scheduler alone. -/
 theorem configureResumeBound (st : SystemState) (t : SeLe4n.ThreadId) (sc : SchedContext)
@@ -405,18 +402,16 @@ theorem schedContextUnbind {vScId : SeLe4n.ValidObjId} {st st' : SystemState}
     · contradiction
     · split at hStep
       · dsimp only [] at hStep
-        split at hStep
-        · contradiction
-        · cases hStep
-          refine chain ?_ (markKeyChangeFor _ _ _) hInv
-          refine chain ?_ (markCandidacyGainFor _ _ _)
-          refine chain ?_ (purgeReplenishment _ _)
-          refine chain ?_ (schedContextUnbindQueueStage _ _ _ _ _)
-          refine chain (chain (withScheduler _ _) fun h => rewriteObject _ h ?_) fun h =>
-            updateTcb _ _ h fun _ => rfl
-          refine Eq.trans ?_ (congrArg recordViewOf
-            ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc)).symm
-          rfl
+        cases hStep
+        refine chain ?_ (markKeyChangeFor _ _ _) hInv
+        refine chain ?_ (markCandidacyGainFor _ _ _)
+        refine chain ?_ (purgeReplenishment _ _)
+        refine chain ?_ (schedContextUnbindQueueStage _ _ _ _ _)
+        refine chain (chain (withScheduler _ _) fun h => rewriteObject _ h ?_) fun h =>
+          updateTcb _ _ h fun _ => rfl
+        refine Eq.trans ?_ (congrArg recordViewOf
+          ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc)).symm
+        rfl
       · cases hStep
         refine chain ?_ (purgeReplenishment _ _) hInv
         exact rewriteObject_schedContext hSc _ _

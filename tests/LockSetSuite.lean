@@ -365,7 +365,7 @@ blocked object, its consumed Reply and its SchedContext binding as its own
 arguments; it is retired, and those members now belong to the two footprints the
 pipeline's sub-operations declare — the teardown's
 (`lockSet_cancelIpcBlocking`, which the suspend footprint is *built over*) and
-the donation cancellation's (`lockSet_cancelDonation`).  The sizes below are the
+the suspend's own tail (`suspendDonationCancelTail?`).  The sizes below are the
 same members counted where they now live: the suspend footprint adds the
 caller's TCB read and the CSpace root read on top of the teardown's. -/
 
@@ -382,34 +382,12 @@ example :
     (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩ none none none none none
       none none none none none).size = 1 := by decide
 
-/-! ### Donation cancellation of a `.donated` binding: 4 (victim + donated SC +
-original owner + — WS-OD OD3.5 — the state-level lock the `scThreadIndex` write
-takes).  The pop's three stack members are `none` on a context heading no
-stack. -/
-
-example :
-    (SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) (some ⟨7⟩)
-      none none none).size = 4 := by decide
-
-/-! ### …of a `.bound` binding: 3 (victim + bound SC + the state-level lock). -/
-
-example :
-    (SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) none
-      none none none).size = 3 := by decide
-
 /-! ### WS-SM SM6.E — teardown of a `.blockedOnReply` target: 2 (the victim and
 the Reply object its reply link is consumed from). -/
 
 example :
     (SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩ none none (some ⟨60⟩) none none
       none none none none none).size = 2 := by decide
-
-/-! ### WS-OD (`v0.35.4`) — …and the pop's own three stack objects, on the
-donated arm that performs it: 7. -/
-
-example :
-    (SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) (some ⟨7⟩)
-      (some ⟨60⟩) (some ⟨61⟩) (some ⟨9⟩)).size = 7 := by decide
 
 -- ============================================================================
 -- §6 — Permitted kinds for every syscall
@@ -614,13 +592,6 @@ example :
     (some ⟨64⟩)
 
 example :
-    ∀ p ∈ (SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) (some ⟨7⟩)
-              (some ⟨60⟩) (some ⟨61⟩) (some ⟨9⟩)).pairs,
-      p.fst.kind ∈ permittedKinds .tcbSuspend :=
-  SeLe4n.Kernel.lockSet_consistent_cancelDonation ⟨3⟩ (some ⟨50⟩) (some ⟨7⟩)
-    (some ⟨60⟩) (some ⟨61⟩) (some ⟨9⟩)
-
-example :
     ∀ p ∈ (SeLe4n.Kernel.lockSet_tcbSuspendOnCore default ⟨5⟩ (ObjId.ofNat 10)
               ⟨3⟩).pairs,
       p.fst.kind ∈ permittedKinds .tcbSuspend :=
@@ -745,12 +716,12 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 107 := by decide
+example : lockSetTheorems.length = 109 := by decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 43 := by
+example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 44 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 43 := by
+example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 44 := by
   decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6 := by
@@ -1050,25 +1021,6 @@ private def runPerTransitionShapeChecks : IO Unit := do
   assertBool "cancelIpcBlocking size (no Options) = 1"
     (decide ((SeLe4n.Kernel.lockSet_cancelIpcBlocking ⟨3⟩ none none none none none
               none none none none none).size = 1))
-  -- Donation cancellation of a `.bound` binding: victim + SC + index.
-  -- **WS-OD OD3.5**: the state-level lock, because `scThreadIndex` is an
-  -- `RHTable` no per-object lock decomposes.
-  assertBool "cancelDonation size (.bound binding, SC + index) = 3"
-    (decide ((SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) none
-              none none none).size = 3))
-  assertBool "a SchedContext-resolving donation cancellation declares the state-level lock"
-    (decide ((stateLevelLock, AccessMode.write)
-      ∈ (SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) none
-           none none none).pairs))
-  -- …of a `.donated` binding: + the original owner.
-  assertBool "cancelDonation size (.donated binding, SC + originalOwner + index) = 4"
-    (decide ((SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) (some ⟨7⟩)
-              none none none).size = 4))
-  -- **WS-OD (`v0.35.4`)**: …and the pop the donated arm performs — the head it
-  -- clears, the frame below it re-heads and the outer caller it validates.
-  assertBool "cancelDonation size (.donated + the pop's three stack objects) = 7"
-    (decide ((SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) (some ⟨7⟩)
-              (some ⟨60⟩) (some ⟨61⟩) (some ⟨9⟩)).size = 7))
   -- The widest teardown arm: a reply-arm victim owed a donation, at reply-stack
   -- depth ≥ 3.
   -- **WS-HP HP3.4** took it to fifteen: the splice re-links the frame *below*
@@ -1767,8 +1719,8 @@ private def runFstInjChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 107"
-    (decide (lockSetTheorems.length = 107))
+  assertBool "lockSetTheorems.length = 109"
+    (decide (lockSetTheorems.length = 109))
   -- WS-RR RR8.16: the figure is DERIVED from the classifier rather than
   -- written down.  `.cspaceRevoke` declares no static footprint (its CDT
   -- subtree is unbounded and a `LockSet` is capped at `maxLockSetSize`), so

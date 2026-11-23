@@ -644,4 +644,21 @@ theorem unbindSchedContextNotification_keyFrame (st : SystemState) (s : SeLe4n.S
   · rw [h]; exact k1
   · rw [h]; exact k1.trans (capabilityKeyFrame_insert k1.2.2 (by rw [h1]; rfl))
 
+/-- **A context's reply-stack unlink keeps every scheduling key**: a Reply
+stored over a Reply, then a context's head, which no key reads. -/
+theorem schedContextUnbindReply_keyFrame (st : SystemState) (x : SeLe4n.ObjId)
+    (hInv : st.objects.invExt) : capabilityKeyFrame st (schedContextUnbindReply st x) := by
+  refine schedContextUnbindReply_induct (fun a b => capabilityKeyFrame a b) st x
+    (capabilityKeyFrame_of_objects_scheduler_eq hInv rfl rfl) ?_
+  intro _ rid r s1 _ _ hR _ hS
+  have hRraw := (SystemState.getReply?_eq_some_iff st rid r).mp hR
+  have k1 : capabilityKeyFrame st s1 :=
+    storeObject_inert_keyFrame hInv hS (by rw [hRraw]; rfl) rfl
+  cases hG : s1.getSchedContext? ⟨x.val⟩ with
+  | none => rw [SystemState.updateSchedContext_eq_self_of_none hG]; exact k1
+  | some y =>
+    have hGraw := (SystemState.getSchedContext?_eq_some_iff _ _ y).mp hG
+    rw [SystemState.updateSchedContext_eq_of_some hG]
+    exact k1.trans (capabilityKeyFrame_insert k1.2.2 (by rw [hGraw]; rfl))
+
 end SeLe4n.Kernel

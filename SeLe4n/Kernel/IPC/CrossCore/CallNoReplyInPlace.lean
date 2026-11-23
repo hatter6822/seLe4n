@@ -166,8 +166,8 @@ theorem callDispatch_noReply_inPlace (st : SystemState) (endpointId : SeLe4n.Obj
     (hT : st.objects[r.toObjId]? = some (.tcb rt))
     (hLinks : callRendezvousLinks st r payload = false)
     (hG : sendWakesInPlace st endpointId r rt.queueNext = true)
-    (hC : (lookupTcb st caller).isSome = true) :
-    endpointCallCrossCoreDispatch endpointId caller payload core st =
+    (hC : (lookupTcb st caller).isSome = true) (lend : Bool := true) :
+    endpointCallCrossCoreDispatch endpointId caller payload core st lend =
       (descheduleInactive (wakeThread (storeSendRendezvous st endpointId r rt.queueNext msg) r
           core).1 caller core,
        .ok ({ results := #[] },
@@ -200,7 +200,7 @@ theorem callDispatchChecked_noReply_inPlace (ctx : LabelingContext) (st : System
   unfold endpointCallCrossCoreDispatchChecked
   rw [if_pos hFlow]
   exact callDispatch_noReply_inPlace st endpointId ep caller r rt payload msg core hM hReq hE hH
-    hT hLinks hG hC
+    hT hLinks hG hC _
 
 /-- **The no-reply call, delivered**: the receiver woken holding no message,
 the caller descheduled and `Inactive`, then the message's frame written into

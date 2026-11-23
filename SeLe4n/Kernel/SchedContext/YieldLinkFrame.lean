@@ -235,7 +235,10 @@ theorem RunQueueStage.of_objectsAgreeOffYield {st st' : SystemState}
       fun _ _ r => hRel.refined r,
       fun _ _ _ q s => refillsSoundExcept_of_kept hV
         (fun c => by rw [hRel.replenishQueueOnCore c]) (hRel.refined q) s,
-      fun h _ y => hY h y, fun h _ => .of_unset (hU h) hRes⟩,
+      fun h _ y => hY h y,
+      fun _ _ n => Kernel.notificationLinksAgree_of_kept
+        (Kernel.NotificationLinksKept.of_map KernelObject.withoutYield (fun o => by cases o <;> rfl) hA) n,
+      fun h _ => .of_unset (hU h) hRes⟩,
     fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [hS]) hL hM d, fun _ _ => hM⟩
 
 /-- WS-ZA ZA6.29: **a step that writes only the yield link ends, linking only
@@ -266,7 +269,10 @@ theorem RunQueueEntryStageOn.of_objectsAgreeOffYield {L : SeLe4n.ObjId → Prop}
       fun _ _ r => hRel.refined r,
       fun _ _ _ q s => refillsSoundExcept_of_kept hV
         (fun c => by rw [hRel.replenishQueueOnCore c]) (hRel.refined q) s,
-      fun h _ y => hY h y, fun h _ => ⟨hU h, fun c t hr => Or.inl (by
+      fun h _ y => hY h y,
+      fun _ _ n => Kernel.notificationLinksAgree_of_kept
+        (Kernel.NotificationLinksKept.of_map KernelObject.withoutYield (fun o => by cases o <;> rfl) hA) n,
+      fun h _ => ⟨hU h, fun c t hr => Or.inl (by
         unfold MachineState.residentOnCore at hr ⊢; rw [← hRes]; exact hr)⟩⟩,
     fun _ _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [hS]) hL hM d⟩
 
@@ -324,6 +330,7 @@ theorem updateConsumed_runQueueStage (st : SystemState) (s : SeLe4n.SchedContext
   · exact fun hInv => .updateSchedContext st s _ hInv (fun _ => ⟨rfl, rfl, rfl⟩)
   · exact fun hInv => .updateSchedContext st s _ hInv (fun sc => by simp)
   · exact fun hInv => Kernel.YieldLinksKept.updateSchedContext st s _ hInv (fun _ => rfl)
+  · exact fun hInv => Kernel.NotificationLinksKept.updateSchedContext st s _ hInv
   · rw [hU]
   · exact congrArg MachineState.residentCode (updateSchedContext_machine st s _)
 

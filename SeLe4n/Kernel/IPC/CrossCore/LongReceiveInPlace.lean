@@ -421,12 +421,12 @@ read, the WithCaps receive installs nothing and commits the take, the
 rendezvous hands off no SchedContext and runs the receiver's priority walk, the
 caller is left blocked on the reply, and staging the receiver's message writes
 `performReceiveCallDeliveredLong`'s state. -/
-theorem receiveCallLongTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+theorem receiveCallLongTake_delivered {lend : Bool} (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
     (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
-    (hG : receiveCallTakesInPlace st endpointId receiver s sTcb rid = true)
+    (hG : receiveCallTakesUnlentInPlace lend st endpointId receiver s sTcb rid = true)
     (hF : sTcb.ipcFaultSend = false)
     (hR : registerRoutedSyscall
       (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
@@ -437,7 +437,7 @@ theorem receiveCallLongTake_delivered (st : SystemState) (endpointId : SeLe4n.Ob
         (receiveCallTakeState st endpointId s sTcb receiver rid,
           .ok (s, { results := #[] }, none)) ∧
       applyReceiveRendezvousHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
-          receiver s core =
+          receiver s core lend =
         .ok (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
           receiver core) ∧
       Architecture.stageDeliveredMessage (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
@@ -445,20 +445,18 @@ theorem receiveCallLongTake_delivered (st : SystemState) (endpointId : SeLe4n.Ob
         performReceiveCallDeliveredLong st endpointId s sTcb.queueNextCode receiver rid core
           sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged := by
   obtain ⟨hTake, hIpc, hBs, hBr⟩ :=
-    receiveCallTake_inPlace st endpointId ep receiver rid core s sTcb hE hH hT hG
-  have hG' := hG
-  simp only [receiveCallTakesInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne,
+    receiveCallTake_inPlace st endpointId ep receiver rid core s sTcb hE hH hT
+      (receiveCallTakesUnlentInPlace_takesReply hG)
+  have hG' := receiveCallTakesUnlentInPlace_takesReply hG
+  simp only [receiveCallTakesReplyInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne,
     ne_eq] at hG'
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hSG, hRRes⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, hRT⟩, _⟩, _⟩ := hG'
   have hSG' := hSG
   simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hSG'
   obtain ⟨⟨⟨⟨⟨hSRes, _⟩, hFE⟩, _⟩, _⟩, _⟩ := hSG'
   have hNo : st.objects.noResizeDue := RHTable.noResizeDue_of_findsInPlace hFE
-  obtain ⟨rt, hRTo, hDN⟩ : ∃ rt, st.getTcb? receiver = some rt ∧
-      callDonatesNothing sTcb rt = true := by
-    split at hRT
-    · next rt h => exact ⟨rt, h, hRT⟩
-    · cases hRT
+  obtain ⟨rt, hRTo⟩ := Option.isSome_iff_exists.mp hRT
+  have hDN := receiveCallTakesUnlentInPlace_lendsNothing hG hRTo
   have hTs : st.getTcb? s = some sTcb := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   obtain ⟨x, hx, hxI⟩ := Option.map_eq_some_iff.mp hIpc
   refine ⟨?_, ?_, ?_⟩
@@ -483,7 +481,7 @@ theorem receiveCallLongTake_delivered (st : SystemState) (endpointId : SeLe4n.Ob
     obtain ⟨rv, hrv⟩ := Option.isSome_iff_exists.mp
       ((SeLe4n.ThreadId.toValid?_isSome_iff receiver).mpr hRRes)
     have hNone : callDonationSchedContext? (receiveCallTakeState st endpointId s sTcb receiver rid)
-        s receiver = none := by
+        s receiver = none ∨ lend = false := hDN.imp_left fun hDN => by
       rw [callDonationSchedContext?_congr (s := st) hBs hBr, callDonationSchedContext?_eq_bindings]
       simp only [lookupTcb, hRRes, hSRes, Bool.false_eq_true, ↓reduceIte, hRTo, hTs,
         Option.map_some]
@@ -492,7 +490,7 @@ theorem receiveCallLongTake_delivered (st : SystemState) (endpointId : SeLe4n.Ob
       cases rt.schedContextBinding <;> cases sTcb.schedContextBinding <;>
         simp [donationOfBindings, SchedContextBinding.scId?]
     unfold applyReceiveRendezvousHandoff
-    rw [applyReceiveRendezvousDonation_of_no_donation _ receiver s sv rv hsv hrv hNone]
+    rw [applyReceiveRendezvousDonation_of_lendsNothing _ receiver s sv rv hsv hrv hNone]
     simp only [hCall, ↓reduceIte]
   · have hNoS := storeReceiveCallReady_noResizeDue st endpointId s sTcb.queueNextCode receiver
       rid hNo
@@ -575,12 +573,12 @@ caller blocked by a routed capability-free call of at most four words, the
 WithCaps receive installs nothing and commits the take, the rendezvous hands
 off no SchedContext and runs the receiver's priority walk, and staging the
 receiver's message writes `performReceiveCallDelivered`'s state. -/
-theorem receiveCallTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+theorem receiveCallTake_delivered {lend : Bool} (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
     (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
-    (hG : receiveCallTakesInPlace st endpointId receiver s sTcb rid = true)
+    (hG : receiveCallTakesUnlentInPlace lend st endpointId receiver s sTcb rid = true)
     (hF : sTcb.ipcFaultSend = false)
     (hR : registerRoutedSyscall
       (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
@@ -589,7 +587,7 @@ theorem receiveCallTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
         (receiveCallTakeState st endpointId s sTcb receiver rid,
           .ok (s, { results := #[] }, none)) ∧
       applyReceiveRendezvousHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
-          receiver s core =
+          receiver s core lend =
         .ok (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
           receiver core) ∧
       Architecture.stageDeliveredMessage (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
@@ -597,20 +595,18 @@ theorem receiveCallTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
         performReceiveCallDelivered st endpointId s sTcb.queueNextCode receiver rid core
           sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged := by
   obtain ⟨hTake, hIpc, hBs, hBr⟩ :=
-    receiveCallTake_inPlace st endpointId ep receiver rid core s sTcb hE hH hT hG
-  have hG' := hG
-  simp only [receiveCallTakesInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne,
+    receiveCallTake_inPlace st endpointId ep receiver rid core s sTcb hE hH hT
+      (receiveCallTakesUnlentInPlace_takesReply hG)
+  have hG' := receiveCallTakesUnlentInPlace_takesReply hG
+  simp only [receiveCallTakesReplyInPlace, Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne,
     ne_eq] at hG'
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hSG, hRRes⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, _⟩, hRT⟩, _⟩, _⟩ := hG'
   have hSG' := hSG
   simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hSG'
   obtain ⟨⟨⟨⟨⟨hSRes, _⟩, hFE⟩, _⟩, _⟩, _⟩ := hSG'
   have hNo : st.objects.noResizeDue := RHTable.noResizeDue_of_findsInPlace hFE
-  obtain ⟨rt, hRTo, hDN⟩ : ∃ rt, st.getTcb? receiver = some rt ∧
-      callDonatesNothing sTcb rt = true := by
-    split at hRT
-    · next rt h => exact ⟨rt, h, hRT⟩
-    · cases hRT
+  obtain ⟨rt, hRTo⟩ := Option.isSome_iff_exists.mp hRT
+  have hDN := receiveCallTakesUnlentInPlace_lendsNothing hG hRTo
   have hTs : st.getTcb? s = some sTcb := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   obtain ⟨x, hx, hxI⟩ := Option.map_eq_some_iff.mp hIpc
   refine ⟨?_, ?_, ?_⟩
@@ -635,7 +631,7 @@ theorem receiveCallTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     obtain ⟨rv, hrv⟩ := Option.isSome_iff_exists.mp
       ((SeLe4n.ThreadId.toValid?_isSome_iff receiver).mpr hRRes)
     have hNone : callDonationSchedContext? (receiveCallTakeState st endpointId s sTcb receiver rid)
-        s receiver = none := by
+        s receiver = none ∨ lend = false := hDN.imp_left fun hDN => by
       rw [callDonationSchedContext?_congr (s := st) hBs hBr, callDonationSchedContext?_eq_bindings]
       simp only [lookupTcb, hRRes, hSRes, Bool.false_eq_true, ↓reduceIte, hRTo, hTs,
         Option.map_some]
@@ -644,7 +640,7 @@ theorem receiveCallTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
       cases rt.schedContextBinding <;> cases sTcb.schedContextBinding <;>
         simp [donationOfBindings, SchedContextBinding.scId?]
     unfold applyReceiveRendezvousHandoff
-    rw [applyReceiveRendezvousDonation_of_no_donation _ receiver s sv rv hsv hrv hNone]
+    rw [applyReceiveRendezvousDonation_of_lendsNothing _ receiver s sv rv hsv hrv hNone]
     simp only [hCall, ↓reduceIte]
   · have hNoS := storeReceiveCallReady_noResizeDue st endpointId s sTcb.queueNextCode receiver
       rid hNo
@@ -859,7 +855,7 @@ capability-free call of at most four words, the WithCaps receive installs
 nothing and commits the take, the rendezvous hands off nothing (the caller is
 `.ready`, not blocked on a reply), and staging the receiver's message writes
 `performReceiveCallNoLinkDelivered`'s state. -/
-theorem receiveCallNoLinkTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+theorem receiveCallNoLinkTake_delivered {lend : Bool} (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
@@ -874,7 +870,7 @@ theorem receiveCallNoLinkTake_delivered (st : SystemState) (endpointId : SeLe4n.
       mi.length sTcb.ipcBadgeView
     endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
         (S4, .ok (s, { results := #[] }, none)) ∧
-      applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
+      applyReceiveRendezvousHandoff S4 receiver s core lend = .ok S4 ∧
       Architecture.stageDeliveredMessage S4 receiver 0 =
         performReceiveCallNoLinkDelivered st endpointId s sTcb.queueNextCode receiver
           f.x0 f.x1 f.x2 f.x3 f.x4 f.x5 := by
@@ -1025,7 +1021,7 @@ not delivering a fault, the WithCaps receive installs nothing and takes the
 in-place writes, the rendezvous hands off no donation, and staging the
 receiver's message writes
 `performReceiveDeliveredLong`'s state. -/
-theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId) (ep : Endpoint)
+theorem receiveTakeLong_delivered {lend : Bool} (st : SystemState) (endpointId : SeLe4n.ObjId) (ep : Endpoint)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
@@ -1042,7 +1038,7 @@ theorem receiveTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     let S4 := W.1.updateTcb receiver (callReceiverTcb (blockedSenderMessage P s sTcb))
     endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
         (S4, .ok (s, { results := #[] }, W.2)) ∧
-      applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
+      applyReceiveRendezvousHandoff S4 receiver s core lend = .ok S4 ∧
       Architecture.stageDeliveredMessage S4
           receiver 0 =
         performReceiveDeliveredLong st endpointId s sTcb.queueNextCode receiver core
@@ -1180,7 +1176,7 @@ all read, the WithCaps receive installs nothing and commits the take, the
 rendezvous hands off nothing (the caller is `.ready`, not blocked on a reply),
 and staging the receiver's message writes
 `performReceiveCallNoLinkDeliveredLong`'s state. -/
-theorem receiveCallNoLinkTakeLong_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+theorem receiveCallNoLinkTakeLong_delivered {lend : Bool} (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
@@ -1196,7 +1192,7 @@ theorem receiveCallNoLinkTakeLong_delivered (st : SystemState) (endpointId : SeL
     let S4 := receiveCallNoLinkTakeState st endpointId s sTcb receiver
     endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
         (S4, .ok (s, { results := #[] }, none)) ∧
-      applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
+      applyReceiveRendezvousHandoff S4 receiver s core lend = .ok S4 ∧
       Architecture.stageDeliveredMessage S4 receiver 0 =
         performReceiveCallNoLinkDeliveredLong st endpointId s sTcb.queueNextCode receiver
           mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
@@ -1327,7 +1323,7 @@ holding a fault, the WithCaps receive installs nothing and commits the take,
 the rendezvous hands off nothing, and staging the receiver's message writes
 `performFaultReceiveNoLinkDelivered`'s state, the fault's words read from the
 caller's TCB. -/
-theorem receiveFaultNoLinkTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+theorem receiveFaultNoLinkTake_delivered {lend : Bool} (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB) (f : Fault)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
@@ -1337,7 +1333,7 @@ theorem receiveFaultNoLinkTake_delivered (st : SystemState) (endpointId : SeLe4n
     let S4 := receiveCallNoLinkTakeState st endpointId s sTcb receiver
     endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
         (S4, .ok (s, { results := #[] }, none)) ∧
-      applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
+      applyReceiveRendezvousHandoff S4 receiver s core lend = .ok S4 ∧
       Architecture.stageDeliveredMessage S4 receiver 0 =
         performFaultReceiveNoLinkDelivered st endpointId s sTcb.queueNextCode receiver
           (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged sTcb.faultKind sTcb.faultFlag

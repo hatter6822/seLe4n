@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.CrossCore.NotificationBind
+import SeLe4n.Kernel.IPC.CrossCore.SignalDonation
 import SeLe4n.Kernel.IPC.CrossCore.NotificationInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 
@@ -34,12 +35,14 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency
 
-/-- WS-SM SM6.B: the unchecked cross-core bound-signal dispatch — the bound-aware
-cross-core signal at the core the syscall trapped on. -/
+/-- WS-SM SM6.B: the unchecked cross-core bound-signal dispatch — seL4's
+`sendSignal` (`sendSignalOnCore`: the bound-aware cross-core wake, then the
+donation of the notification's context to the thread it woke) at the core the
+syscall trapped on. -/
 def notificationSignalBoundCrossCoreDispatch (notificationId : SeLe4n.ObjId)
     (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
-  notificationSignalBoundOnCore notificationId badge executingCore st
+  sendSignalOnCore notificationId badge executingCore st
 
 /-- WS-SM SM6.B: the info-flow-checked cross-core bound-signal dispatch.  Gates on
 `securityFlowsTo signaler→notification` AND — when the signal would take the
@@ -48,7 +51,9 @@ TCB) — on `securityFlowsTo notification→receiver`, because bound delivery wr
 the badge **directly into the bound TCB**, a second sink beyond the notification.
 Without the receiver gate a policy permitting a high signaler → high notification
 but denying flow to a *low* bound TCB would be bypassed (codex review #3): the badge
-would leak to the low receiver.  Fail-closed with `.flowDenied` on either denial. -/
+would leak to the low receiver.  Fail-closed with `.flowDenied` on either denial.
+A passed signal is the checked `sendSignal` (`sendSignalOnCoreFlowing`): the
+donation to the woken thread runs under the context-label check. -/
 @[inline] def notificationSignalBoundCrossCoreDispatchChecked (ctx : LabelingContext)
     (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
     (executingCore : CoreId)
@@ -57,23 +62,24 @@ would leak to the low receiver.  Fail-closed with `.flowDenied` on either denial
     match boundDeliveryTarget? st notificationId with
     | some (receiver, _) =>
         if securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf receiver) then
-          notificationSignalBoundOnCore notificationId badge executingCore st
+          sendSignalOnCoreFlowing ctx notificationId badge executingCore st
         else
           (st, .error .flowDenied)
     | none =>
-        notificationSignalBoundOnCore notificationId badge executingCore st
+        sendSignalOnCoreFlowing ctx notificationId badge executingCore st
   else
     (st, .error .flowDenied)
 
 /-- **WS-LS LS2.3**: a checked signal that succeeds committed the unchecked
 transition's state — every refusing branch returns the pre-state with an error,
-so the state a successful answer carries is `notificationSignalBoundOnCore`'s. -/
+so the state a successful answer carries is the checked signal's
+(`sendSignalOnCoreFlowing`). -/
 theorem notificationSignalBoundCrossCoreDispatchChecked_fst_of_ok (ctx : LabelingContext)
     (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
     (executingCore : CoreId) (st st' : SystemState) (r : Option (CoreId × SgiKind))
     (h : notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler badge
       executingCore st = (st', .ok r)) :
-    (notificationSignalBoundOnCore notificationId badge executingCore st).1 = st' := by
+    (sendSignalOnCoreFlowing ctx notificationId badge executingCore st).1 = st' := by
   unfold notificationSignalBoundCrossCoreDispatchChecked at h
   split at h
   · split at h
@@ -82,6 +88,22 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_fst_of_ok (ctx : Labelin
       · exact absurd (congrArg Prod.snd h) (by simp)
     · exact congrArg Prod.fst h
   · exact absurd (congrArg Prod.snd h) (by simp)
+
+/-- **A property the entry state carries and the signal carries, the checked
+signal carries**: every gate refuses in the state it was handed, and a passed gate
+runs the checked signal (`sendSignalOnCoreFlowing`).  Each family lemma of the
+checked signal is this, with the signal's (the wake's composed with the donation's,
+`sendSignalOnCoreFlowing_induct`). -/
+theorem notificationSignalBoundCrossCoreDispatchChecked_induct (P : SystemState → Prop)
+    (ctx : LabelingContext) (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState)
+    (hRefl : P st)
+    (hSig : P (sendSignalOnCoreFlowing ctx notificationId badge executingCore st).1) :
+    P (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler badge
+      executingCore st).1 := by
+  unfold notificationSignalBoundCrossCoreDispatchChecked
+  repeat' split
+  all_goals first | exact hSig | exact hRefl
 
 /-- WS-SM SM6.B: a disallowed signaler→notification flow is rejected before any
 state change. -/
@@ -107,19 +129,20 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_flow_denied_to_receiver
   simp [notificationSignalBoundCrossCoreDispatchChecked, hAllow, hTarget, hDenyR]
 
 /-- WS-SM SM6.B: with signaler→notification permitted and no bound-delivery target
-(the ordinary signal path), the checked dispatch is exactly the unchecked one. -/
+(the ordinary signal path), the checked dispatch is the checked signal
+(`sendSignalOnCoreFlowing`). -/
 theorem notificationSignalBoundCrossCoreDispatchChecked_flow_allowed_no_delivery
     (ctx : LabelingContext) (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId)
     (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState)
     (hAllow : securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf notificationId) = true)
     (hNone : boundDeliveryTarget? st notificationId = none) :
     notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler badge executingCore st
-      = notificationSignalBoundCrossCoreDispatch notificationId badge executingCore st := by
-  simp [notificationSignalBoundCrossCoreDispatchChecked, notificationSignalBoundCrossCoreDispatch,
-    hAllow, hNone]
+      = sendSignalOnCoreFlowing ctx notificationId badge executingCore st := by
+  simp [notificationSignalBoundCrossCoreDispatchChecked, hAllow, hNone]
 
 /-- WS-SM SM6.B: when both the signaler→notification and notification→receiver flows
-are permitted, the checked bound delivery is exactly the unchecked one. -/
+are permitted, the checked bound delivery is the checked signal
+(`sendSignalOnCoreFlowing`). -/
 theorem notificationSignalBoundCrossCoreDispatchChecked_flow_allowed_to_receiver
     (ctx : LabelingContext) (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId)
     (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState) (receiver : SeLe4n.ThreadId) (ep : SeLe4n.ObjId)
@@ -127,74 +150,8 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_flow_allowed_to_receiver
     (hTarget : boundDeliveryTarget? st notificationId = some (receiver, ep))
     (hAllowR : securityFlowsTo (ctx.objectLabelOf notificationId) (ctx.threadLabelOf receiver) = true) :
     notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler badge executingCore st
-      = notificationSignalBoundCrossCoreDispatch notificationId badge executingCore st := by
-  simp [notificationSignalBoundCrossCoreDispatchChecked, notificationSignalBoundCrossCoreDispatch,
-    hAllow, hTarget, hAllowR]
-
-/-- WS-SM SM6.B: the unchecked dispatch preserves `objects.invExt`. -/
-theorem notificationSignalBoundCrossCoreDispatch_preserves_objects_invExt
-    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
-    (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
-    (notificationSignalBoundCrossCoreDispatch notificationId badge executingCore st).1.objects.invExt :=
-  notificationSignalBoundOnCore_preserves_objects_invExt notificationId badge
-    executingCore st hObjInv
-
-/-- WS-SM SM6.B: the unchecked dispatch preserves `ipcInvariant`. -/
-theorem notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariant
-    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
-    (executingCore : CoreId) (st : SystemState) (hInv : ipcInvariant st) (hObjInv : st.objects.invExt) :
-    ipcInvariant (notificationSignalBoundCrossCoreDispatch notificationId badge executingCore st).1 :=
-  notificationSignalBoundOnCore_preserves_ipcInvariant notificationId badge
-    executingCore st hInv hObjInv
-
-/-- **WS-RR RR7.22 (residual)**: the unchecked bound-signal dispatch preserves
-the whole nineteen-conjunct bundle — the live arm's payoff for the splice engine.
-
-The dispatch is `notificationSignalBoundOnCore` at the executing core, so the bundle is that transition's, instantiated. -/
-theorem notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull
-    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
-    (executingCore : CoreId) (st : SystemState)
-    (hInv : ipcInvariantFull st)
-    (hObjInv : st.objects.invExt)
-    (hNWC : notificationWaiterConsistent st)
-    (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hPred : ∀ (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId),
-      boundDeliveryTarget? st notificationId = some (t, epId) →
-      splicePredecessorBlocked true epId st t) :
-    ipcInvariantFull
-      (notificationSignalBoundCrossCoreDispatch notificationId badge executingCore st).1 :=
-  notificationSignalBoundOnCore_preserves_ipcInvariantFull notificationId badge
-    executingCore st hInv hObjInv hNWC hAllBudgetsNone hPred
-
-/-- **WS-RR RR7.22 (residual)**: the *flow-checked* bound-signal dispatch —
-the form the live SM9 arm runs — preserves the bundle.
-
-Three arms, and each is settled by an existing reduction rather than by a fresh
-argument: a denied signaler flow and a denied receiver flow both return the
-pre-state untouched, and the two permitted arms are literally the unchecked
-dispatch. -/
-theorem notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFull
-    (ctx : LabelingContext) (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId)
-    (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState)
-    (hInv : ipcInvariantFull st)
-    (hObjInv : st.objects.invExt)
-    (hNWC : notificationWaiterConsistent st)
-    (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hPred : ∀ (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId),
-      boundDeliveryTarget? st notificationId = some (t, epId) →
-      splicePredecessorBlocked true epId st t) :
-    ipcInvariantFull
-      (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler badge executingCore st).1 := by
-  unfold notificationSignalBoundCrossCoreDispatchChecked
-  split
-  · split
-    · split
-      · exact notificationSignalBoundOnCore_preserves_ipcInvariantFull notificationId badge
-          executingCore st hInv hObjInv hNWC hAllBudgetsNone hPred
-      · exact hInv
-    · exact notificationSignalBoundOnCore_preserves_ipcInvariantFull notificationId badge
-        executingCore st hInv hObjInv hNWC hAllBudgetsNone hPred
-  · exact hInv
+      = sendSignalOnCoreFlowing ctx notificationId badge executingCore st := by
+  simp [notificationSignalBoundCrossCoreDispatchChecked, hAllow, hTarget, hAllowR]
 
 -- ============================================================================
 -- §5  Cross-core notification WAIT dispatch (per-core deschedule)

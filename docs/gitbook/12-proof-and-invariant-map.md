@@ -292,6 +292,24 @@ of the *middle* of a stack in `O(1)` by reconnecting the frames either side of i
 which is what the upward link exists for and what stops a cancelled middle
 caller's frame from being left on a stack with its caller gone — pinning its Reply
 and its SchedContext against every retype.
+A fourth writer lets a stack go: since `v0.37.36` (WS-SX SX8.3)
+SchedContext_Unbind takes a context from a holder that has it by donation and
+then clears the head frame's upward link and the context's head
+(`schedContextUnbindReply`,
+[`ReplyLink.lean`](../../SeLe4n/Kernel/SchedContext/ReplyLink.lean), seL4's
+`schedContext_unbindReply`), the same step context finalisation runs. The
+callers below keep waiting on a stack no context heads, a state both
+`donationOwnerValid` and `donationChainWellFormed` already admit, so neither
+was restated.
+The same row added the stack's **lenders** beside the chain: every caller on a
+frame of a context's stack flows to the context's label (`contextLendersFlow`,
+[`NotificationDonationContextLabel.lean`](../../SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean)),
+carried by every kernel entry and required of every reply-stack writer by the
+write census, so the lend and bind checks read static labels only. reply_pop
+gained seL4's held arm (a recipient that holds a context keeps it, the head is
+popped), and `donationOwnerValid`'s owner clause reads "not donated" in place
+of `.unbound`, the one weakening the held arm needs; the canonical statement is
+[`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §6.
 With the push live the predicate is no longer vacuous — a depth-2 Call leaves a
 two-frame stack — which is the order this workstream was numbered for: the
 invariant and its frames landed at OD2, before the transitions that must

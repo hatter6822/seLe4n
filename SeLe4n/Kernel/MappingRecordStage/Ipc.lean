@@ -338,18 +338,20 @@ theorem applyCallDonationOnCore_mappingStage {st st' : SystemState}
     (fun hI => applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hI h)
     (fun hI => applyCallDonationOnCore_kindPreservingWrite _ _ _ _ _ _ hI h)
 
-theorem applyReceiveRendezvousHandoff_mappingStage {st st' : SystemState}
+theorem applyReceiveRendezvousHandoff_mappingStage {lend : Bool} {st st' : SystemState}
     {receiver dequeued : SeLe4n.ThreadId} {executingCore : CoreId}
-    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st') :
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore lend = .ok st') :
     MappingStage st st' := by
   obtain ⟨stDon, hDon, rfl⟩ := applyReceiveRendezvousHandoff_ok_decompose _ _ _ _ _ h
   have hD : MappingStage st stDon := by
     unfold applyReceiveRendezvousDonation at hDon
     split at hDon
-    · unfold applyRendezvousCallDonation at hDon
-      split at hDon
-      · exact applyCallDonationOnCore_mappingStage hDon
-      · cases hDon
+    · rcases applyRendezvousCallDonation_cases hDon with hDon | rfl
+      · unfold applyRendezvousCallDonation at hDon
+        split at hDon
+        · exact applyCallDonationOnCore_mappingStage hDon
+        · cases hDon
+      · exact MappingStage.refl _
     · cases hDon; exact MappingStage.refl _
   split
   · exact hD.trans propagatePipChainCrossCore_mappingStage
@@ -387,9 +389,9 @@ theorem endpointCallWithCapsOnCore_mappingStage {endpointId : SeLe4n.ObjId}
 
 theorem endpointCallCrossCoreDispatch_mappingStage {endpointId : SeLe4n.ObjId}
     {caller : SeLe4n.ThreadId} {payload : SendPayload}
-    {executingCore : CoreId} {st : SystemState} :
+    {executingCore : CoreId} {st : SystemState} {lend : Bool} :
     MappingStage st (endpointCallCrossCoreDispatch endpointId caller payload
-      executingCore st).1 := by
+      executingCore st lend).1 := by
   unfold endpointCallCrossCoreDispatch
   have hC := endpointCallWithCapsOnCore_mappingStage (endpointId := endpointId)
     (caller := caller) (payload := payload)
@@ -407,7 +409,8 @@ theorem endpointCallCrossCoreDispatch_mappingStage {endpointId : SeLe4n.ObjId}
     all_goals first
       | exact hC
       | (rename_i hD
-         exact (hC.trans (applyCallDonationOnCore_mappingStage hD)).trans
+         exact (hC.trans (applyCallDonationOnCoreWhen_induct (MappingStage _) hD
+           (MappingStage.refl _) applyCallDonationOnCore_mappingStage)).trans
            propagatePipChainCrossCore_mappingStage)
 
 theorem endpointCallCrossCoreDispatchChecked_mappingStage {ctx : LabelingContext}
@@ -518,8 +521,12 @@ theorem applyReplyDonationOnCore_mappingStage {st st' : SystemState} {rid : SeLe
     (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
     MappingStage st st' := by
   rcases applyReplyDonationOnCore_ok_decompose _ _ _ _ _ h with
-    ⟨-, hP⟩ | ⟨_, holderVtid, _, _, -, -, hR, rfl⟩
+    ⟨-, hP⟩ | ⟨_, holderVtid, _, _, -, -, hR, rfl⟩ | ⟨_, _, _, -, -, -, hK⟩
   · exact popUnheldReplyHead_mappingStage hP
+  rotate_right
+  · exact MappingStage.of_kindPreservingWrite
+      (fun hI => keepDonatedSchedContext_objects_invExt hI hK)
+      (fun hI => keepDonatedSchedContext_kindPreservingWrite hI hK)
   · exact ((returnDonatedSchedContext_mappingStage hR).trans
       (MappingStage.of_kindPreservingWrite
         (SchedContextOps.settleReturnedContext_objects_invExt _ _ _)
@@ -671,20 +678,6 @@ theorem notificationSignalBoundOnCore_mappingStage {notificationId : SeLe4n.ObjI
         exact (h1.trans h2).trans (wakeThread_mappingStage _ _ executingCore)
   · exact notificationSignalOnCore_mappingStage
 
-theorem notificationSignalBoundCrossCoreDispatchChecked_mappingStage {ctx : LabelingContext}
-    {notificationId : SeLe4n.ObjId} {signaler : SeLe4n.ThreadId} {badge : SeLe4n.Badge}
-    {executingCore : CoreId} {st : SystemState} :
-    MappingStage st (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
-      badge executingCore st).1 := by
-  unfold notificationSignalBoundCrossCoreDispatchChecked
-  split
-  · split
-    · split
-      · exact notificationSignalBoundOnCore_mappingStage
-      · exact MappingStage.refl _
-    · exact notificationSignalBoundOnCore_mappingStage
-  · exact MappingStage.refl _
-
 /-- The single-core wait is a kind-preserving write: the park, then the waiter's
 queue links. -/
 theorem notificationWait_kindPreservingWrite {notifId : SeLe4n.ObjId} {waiter : SeLe4n.ThreadId}
@@ -724,9 +717,12 @@ theorem notificationWaitCrossCoreDispatchChecked_mappingStage {ctx : LabelingCon
 
 /-! ### ReplyRecv -/
 
-theorem applyRendezvousCallDonation_mappingStage {st st' : SystemState}
+theorem applyRendezvousCallDonation_mappingStage {lend : Bool} {st st' : SystemState}
     {receiver donor : SeLe4n.ThreadId}
-    (h : applyRendezvousCallDonation st receiver donor = .ok st') : MappingStage st st' := by
+    (h : applyRendezvousCallDonation st receiver donor lend = .ok st') : MappingStage st st' := by
+  rcases applyRendezvousCallDonation_cases h with h | rfl
+  rotate_left
+  · exact MappingStage.refl _
   unfold applyRendezvousCallDonation at h
   split at h
   · exact applyCallDonationOnCore_mappingStage h
@@ -740,14 +736,22 @@ theorem replyRecvPopDonation_mappingStage {rid : SeLe4n.ReplyId} {target : SeLe4
   · dsimp only at h
     split at h
     · split at h
-      · cases h
-      · rename_i st1 hRet
-        cases h
-        exact (returnDonatedSchedContextResolved_mappingStage hRet).trans
-          (MappingStage.of_kindPreservingWrite
-            (SchedContextOps.settleReturnedContext_objects_invExt _ _ _)
-            fun _ => (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
-              (SchedContextOps.settleReturnedContext_agree _ _ _)).kindPreserving)
+      · split at h
+        · cases h
+        · rename_i st1 hRet
+          cases h
+          exact (returnDonatedSchedContextResolved_mappingStage hRet).trans
+            (MappingStage.of_kindPreservingWrite
+              (SchedContextOps.settleReturnedContext_objects_invExt _ _ _)
+              fun _ => (SystemState.objectsAgreeOffSchedulerLinks.of_releaseLinks
+                (SchedContextOps.settleReturnedContext_agree _ _ _)).kindPreserving)
+      · split at h
+        · cases h
+        · rename_i st1 hK
+          cases h
+          exact MappingStage.of_kindPreservingWrite
+            (fun hI => keepDonatedSchedContextResolved_objects_invExt hI hK)
+            (fun hI => keepDonatedSchedContextResolved_kindPreservingWrite hI hK)
     · cases h
   · split at h
     · cases h
@@ -755,10 +759,10 @@ theorem replyRecvPopDonation_mappingStage {rid : SeLe4n.ReplyId} {target : SeLe4
       cases h
       exact popUnheldReplyHead_mappingStage hPop
 
-theorem replyRecvPostReceiveDonation_mappingStage
+theorem replyRecvPostReceiveDonation_mappingStage {lend : Bool}
     {tid recordedServer nextThread : SeLe4n.ThreadId} {serverCore : CoreId}
     {returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {st st' : SystemState}
-    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st lend
       = .ok ((), st')) : MappingStage st st' := by
   unfold replyRecvPostReceiveDonation at h
   split at h
@@ -805,54 +809,5 @@ theorem replyRecvAnswerCaller_mappingStage (answer : Option Architecture.FaultRe
   cases answer with
   | none => exact stageDeliveredMessage_mappingStage _ _ _
   | some o => exact faultReplyApplyOnCore_mappingStage _ _ o
-
-theorem endpointReplyRecvOnCore_mappingStage {answer : Option Architecture.FaultReplyOutcome}
-    {epId : SeLe4n.ObjId}
-    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
-    {msg : IpcMessage} {grant : Bool}
-    {executingCore : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant executingCore st
-      = .ok (summary, st')) : MappingStage st st' := by
-  unfold endpointReplyRecvAnsweringOnCore at h
-  dsimp only at h
-  have hR := endpointReplyOnCore_mappingStage (replier := tid) (target := prevCaller)
-    (msg := msg) (executingCore := executingCore) (st := st)
-  revert h hR
-  generalize endpointReplyOnCore tid prevCaller msg executingCore st = r1
-  obtain ⟨st1, res1⟩ := r1
-  cases res1 with
-  | error _ => intro h; cases h
-  | ok _ =>
-  intro h hR
-  dsimp only at h hR
-  split at h
-  · cases h
-  rename_i ret st1q hPop
-  have hP := replyRecvPopDonation_mappingStage hPop
-  split at h
-  · cases h
-  rename_i xs st1p hX
-  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
-  have hXs := receiveTransferCaps_mappingStage hX
-  have hV := endpointReceiveDualWithCapsOnCore_mappingStage (endpointId := epId)
-    (receiver := tid) (replyId := some rid)
-    (executingCore := executingCore) (st := st1p)
-  revert h hV
-  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore st1p = r2
-  obtain ⟨st2, res2⟩ := r2
-  cases res2 with
-  | error _ => intro h; cases h
-  | ok q =>
-  obtain ⟨nextThread, summ, _⟩ := q
-  intro h hV
-  dsimp only at h hV
-  split at h
-  · cases h
-  rename_i st3 hPost
-  cases h
-  exact (((((hR.trans hP).trans hXs).trans hV).trans
-    (replyRecvPostReceiveDonation_mappingStage hPost)).trans
-    (applyReceiveLegPipHandoff_mappingStage _ _ _ _ _)).trans
-    (replyRecvAnswerCaller_mappingStage answer _ prevCaller _)
 
 end SeLe4n.Kernel

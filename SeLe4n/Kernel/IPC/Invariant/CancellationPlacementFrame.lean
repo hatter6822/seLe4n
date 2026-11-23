@@ -248,6 +248,35 @@ theorem abortPendingIpcOnEndpoint_yieldLinksKept {epId : SeLe4n.ObjId} {isReceiv
   exact (YieldLinksKept.storeObject hInv1 hStore (by rw [lookupTcb_some_objects _ _ _ hLook]; rfl)).trans
     (endpointQueueRemove_yieldLinksKept _ _ _ _ _ hInv hRem)
 
+/-- WS-SX SX8.3: the queue splice keeps every slot's notification-link codes:
+it writes threads and the endpoint, no notification and no context. -/
+theorem endpointQueueRemove_notificationLinksKept (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
+    NotificationLinksKept st' st :=
+  .of_kindFrames
+    (fun a n ha => endpointQueueRemove_unwritten_kind_forward (fun o => ∃ n, o = .notification n)
+      (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
+      (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
+      endpointId isReceiveQ tid st st' hInv h a _ ⟨n, rfl⟩ ha)
+    (fun a n ha => endpointQueueRemove_notification_backward endpointId isReceiveQ tid st st'
+      hInv h a n ha)
+    (fun a sc ha => endpointQueueRemove_schedContext_forward endpointId isReceiveQ tid st st'
+      hInv h a sc ha)
+    (fun a sc ha => endpointQueueRemove_schedContext_backward endpointId isReceiveQ tid st st'
+      hInv h a sc ha)
+
+/-- ...and so does the timeout's abort: the thread is stored over itself. -/
+theorem abortPendingIpcOnEndpoint_notificationLinksKept {epId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid : SeLe4n.ThreadId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (hA : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
+    NotificationLinksKept st' st := by
+  obtain ⟨st1, tcb1, hRem, hLook, hStore⟩ := abortPendingIpcOnEndpoint_shape hA
+  have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hRem
+  exact (NotificationLinksKept.storeObject hInv1 hStore
+    (by rw [lookupTcb_some_objects _ _ _ hLook]; rfl)).trans
+    (endpointQueueRemove_notificationLinksKept _ _ _ _ _ hInv hRem)
+
 /-- ...so it keeps the run queues in agreement with the links. -/
 theorem abortPendingIpcOnEndpoint_runQueueStage {epId : SeLe4n.ObjId} {isReceiveQ : Bool}
     {tid : SeLe4n.ThreadId} {st st' : SystemState}
@@ -262,6 +291,7 @@ theorem abortPendingIpcOnEndpoint_runQueueStage {epId : SeLe4n.ObjId} {isReceive
     (fun hInv => abortPendingIpcOnEndpoint_releaseStateAgree hInv hA)
     (fun hInv => abortPendingIpcOnEndpoint_refillViewsKept hInv hA)
     (fun hInv => abortPendingIpcOnEndpoint_yieldLinksKept hInv hA)
+    (fun hInv => abortPendingIpcOnEndpoint_notificationLinksKept hInv hA)
     (hRes := by rw [abortPendingIpcOnEndpoint_machine epId isReceiveQ tid st st' hA])
 
 /-- WS-RR RR8.11: the reclaim moves no thread's home core — the pop rebinds
@@ -269,22 +299,10 @@ scheduling contexts (`returnDonatedSchedContext_getTcb?_placement_eq`). -/
 private theorem returnDonationToCancelledCaller_linkFrame_frame (st : SystemState)
     (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
     ((Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).getTcb? x).map TCB.linkFrame
-      = (st.getTcb? x).map TCB.linkFrame := by
-  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-  cases hD : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV with
-  | none => rfl
-  | some p =>
-    obtain ⟨scId, holder⟩ := p
-    cases hT : st.getTcb? v with
-    | none => rfl
-    | some _ =>
-      dsimp only
-      cases hRet : returnDonatedSchedContextResolved st holder scId v with
-      | error _ => rfl
-      | ok st' =>
-        obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        exact returnDonatedSchedContext_getTcb?_map_eq TCB.linkFrame (fun _ _ _ => rfl) _ st'
-          holder scId v hInv newOwner? hPop x
+      = (st.getTcb? x).map TCB.linkFrame :=
+  Lifecycle.Suspend.returnDonationToCancelledCaller_elimFrame
+    (P := fun s => (s.getTcb? x).map TCB.linkFrame = (st.getTcb? x).map TCB.linkFrame)
+    hInv rfl fun _ hF => hF.getTcb?_map_eq TCB.linkFrame (fun _ _ _ => rfl) x
 
 /-- WS-RR RR8.11: **the consume materialises no thread.**  The backward half the
 tree lacked: its two stores are at keys their own lookups found occupied, so a TCB
@@ -459,23 +477,10 @@ theorem restoreToReadyStaging_stateMono (st : SystemState) (tid : SeLe4n.ThreadI
 /-- The reclaim's pop rebinds scheduling contexts and blocks no thread. -/
 private theorem returnDonationToCancelledCaller_stateMono (st : SystemState)
     (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt) :
-    SystemState.StateMono st (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) := by
-  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-  cases hD : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV with
-  | none => exact SystemState.StateMono.refl _
-  | some p =>
-    obtain ⟨scId, holder⟩ := p
-    cases hT : st.getTcb? v with
-    | none => exact SystemState.StateMono.refl _
-    | some _ =>
-      dsimp only
-      cases hRet : returnDonatedSchedContextResolved st holder scId v with
-      | error _ => exact SystemState.StateMono.refl _
-      | ok st' =>
-        obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        exact SystemState.StateMono.of_stateFields
-          (returnDonatedSchedContext_getTcb?_stateFields_eq _ st' holder scId v hInv
-            newOwner? hPop)
+    SystemState.StateMono st (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) :=
+  Lifecycle.Suspend.returnDonationToCancelledCaller_elimFrame hInv
+    (SystemState.StateMono.refl _) fun _ hF => SystemState.StateMono.of_stateFields
+      (hF.getTcb?_map_eq (fun x => (x.ipcState, x.threadState, x.cpuAffinity)) (fun _ _ _ => rfl))
 
 /-- **The teardown blocks and suspends no thread**: it readies the victim and,
 on the reply arm, the donation holder, and otherwise patches queue links,

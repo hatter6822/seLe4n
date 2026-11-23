@@ -901,7 +901,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   assertBool "lock-set non-interference + the covert-channel inventory resolve"
     (have _w := @SeLe4n.Kernel.withLockSet_preserves_projection
      have _u := @SeLe4n.Kernel.nonInterference_perCore_underLockSet
-     have _e : SeLe4n.Kernel.enforcementBoundaryPerCore.length = 67 :=
+     have _e : SeLe4n.Kernel.enforcementBoundaryPerCore.length = 68 :=
        SeLe4n.Kernel.enforcementBoundaryPerCore_count
      -- PR #861 review round 4: the boundary now also classifies the live
      -- cross-core wrappers, and the SMP completeness half audits them.  Rounds
@@ -1036,7 +1036,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   -- that silently reverted — or a second entry added without reconciling the
   -- per-core list — fails the anchor file too, not only the dedicated suite.
   assertBool "the canonical enforcement boundary carries the two-phase-locking bracket"
-    (have _e : SeLe4n.Kernel.enforcementBoundaryExtended.length = 53 :=
+    (have _e : SeLe4n.Kernel.enforcementBoundaryExtended.length = 54 :=
        SeLe4n.Kernel.enforcementBoundaryExtended_count
      have _c := SeLe4n.Kernel.enforcementBoundary_classifies_withLockSet
      have _o := SeLe4n.Kernel.enforcementBoundaryPerCore_classifies_withLockSet_once
@@ -1205,7 +1205,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      -- Both syscalls are in the ABI and value-returning.
      decide (SeLe4n.Model.SyscallId.auditRead.toNat = 31
        ∧ SeLe4n.Model.SyscallId.auditDrain.toNat = 32
-       ∧ SeLe4n.Model.SyscallId.count = 45
+       ∧ SeLe4n.Model.SyscallId.count = 46
        ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .auditRead = .word
        ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .auditDrain = .word))
 
@@ -1361,7 +1361,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _ie := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_objects_invExt
      have _ii := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_ipcInvariant
      have _tf := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer
-     have _ft := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthrough
+     have _ft := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull
      have _pt := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_ipcInvariantFull_perCore_transfer
      -- The three trail invariants SM9.A's reader gate depends on.
      have _ta := @SeLe4n.Kernel.notificationSignalDeclassifiedOnCore_preserves_trailActors
@@ -1395,7 +1395,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      -- file's import set; `SmpInformationFlowSuite` §11.6 checks it.)
      decide (SeLe4n.Kernel.refusalSeamClass .declassifySignal = .records
        ∧ SeLe4n.Model.SyscallId.declassifySignal.toNat = 33
-       ∧ SeLe4n.Model.SyscallId.count = 45
+       ∧ SeLe4n.Model.SyscallId.count = 46
        ∧ SeLe4n.Kernel.syscallRequiredRight .declassifySignal = .write
        ∧ SeLe4n.Kernel.Architecture.syscallReturnShape .declassifySignal = .unit))
 

@@ -8,6 +8,7 @@
 -/
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.IPC.CrossCore.DeliveredInPlace
+import SeLe4n.Kernel.IPC.Invariant.SignalWakeLinkFrame
 import SeLe4n.Kernel.Architecture.InterruptMask
 import SeLe4n.Kernel.Concurrency.Runtime
 
@@ -53,20 +54,23 @@ open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 
 /-- **The interrupt's signal**, as the `.notificationSignal` syscall's arm
-leaves the state (`dispatchWithCapChecked`): the bound-aware per-core signal.
-The wake writes the badge into the woken thread's badge register and drops a
-woken bound receiver's reply stash itself (`TCB.signalWoken`,
-`TCB.signalBoundWoken`), so nothing runs after it.  A signal the notification
-refuses leaves the state as the signal does, unchanged. -/
-def interruptSignal (ntfn : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
-    (st : SystemState) : SystemState :=
-  (notificationSignalBoundOnCore ntfn badge c st).1
+leaves the state (`dispatchWithCapChecked`): seL4-MCS `sendSignal`
+(`sendSignalOnCore`), the bound-aware per-core signal and then the donation of
+the notification's scheduling context to the thread it woke, under seL4's
+guard (`maybeDonateSchedContext`), as seL4's `handleInterrupt` signals through
+`sendSignal`.  The wake writes the badge into the woken thread's badge register
+and drops a woken bound receiver's reply stash itself (`TCB.signalWoken`,
+`TCB.signalBoundWoken`).  A signal the notification refuses leaves the state as
+the signal does, unchanged. -/
+def interruptSignal (ctx : LabelingContext) (ntfn : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (c : CoreId) (st : SystemState) : SystemState :=
+  (sendSignalOnCoreFlowing ctx ntfn badge c st).1
 
 /-- `interruptSignal` restated, the fallback of its compiled form (a separate
 definition, so the `@[csimp]` replacement does not reach the fallback). -/
-def interruptSignalGeneral (ntfn : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
-    (st : SystemState) : SystemState :=
-  (notificationSignalBoundOnCore ntfn badge c st).1
+def interruptSignalGeneral (ctx : LabelingContext) (ntfn : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState) : SystemState :=
+  (sendSignalOnCoreFlowing ctx ntfn badge c st).1
 
 /-- **The interrupt's signal as compiled**: a signal that wakes its
 notification's head waiter, with no bound receiver and every write in its slot
@@ -75,21 +79,23 @@ notification's head waiter, with no bound receiver and every write in its slot
 syscall's arm does (`notificationSignalCheckedArmR`); a signal whose bound
 thread is blocked receiving, every write of its removal in its slot
 (`queueRemoveInPlace`), wakes that thread with the badge in its badge register
-(`performSignalBoundDelivered`); a signal with neither a bound receiver nor a
-waiter wakes no thread and is the signal's own state; every other signal runs
-the specification. -/
-@[inline] def interruptSignalImpl (ntfn : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
-    (st : SystemState) : SystemState :=
+(`performSignalBoundDelivered`); each wake is followed by the compiled donation
+to the thread it woke (`maybeDonateSchedContextFast`); a signal with neither a
+bound receiver nor a waiter wakes no thread, so donates nothing, and is the
+signal's own state; every other signal runs the specification. -/
+@[inline] def interruptSignalImpl (ctx : LabelingContext) (ntfn : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState) : SystemState :=
   if (boundDeliveryTarget? st ntfn).isNone then
     match st.getNotification? ntfn with
     | some n =>
         match n.waitHeadCode with
         | k + 1 =>
             if signalWakesInPlace st ntfn ⟨k⟩ then
-              performSignalWoken st ntfn ⟨k⟩ (ntfnSuccessorCode st ⟨k⟩) badge c
-            else interruptSignalGeneral ntfn badge c st
+              maybeDonateSchedContextFlowingFast ctx
+                (performSignalWoken st ntfn ⟨k⟩ (ntfnSuccessorCode st ⟨k⟩) badge c) ntfn.val k
+            else interruptSignalGeneral ctx ntfn badge c st
         | 0 => (notificationSignalBoundOnCore ntfn badge c st).1
-    | none => interruptSignalGeneral ntfn badge c st
+    | none => interruptSignalGeneral ctx ntfn badge c st
   else
     -- No waiter: a bound thread blocked receiving takes the badge.
     match st.getNotification? ntfn with
@@ -102,17 +108,19 @@ the specification. -/
                   match st.getEndpoint? ⟨tcb.ipcObjectCode⟩ with
                   | some ep =>
                       if queueRemoveInPlace st ⟨tcb.ipcObjectCode⟩ true ⟨k⟩ ep tcb then
-                        performSignalBoundDelivered c ⟨k⟩ ⟨tcb.ipcObjectCode⟩ ep tcb badge st
-                      else interruptSignalGeneral ntfn badge c st
-                  | _ => interruptSignalGeneral ntfn badge c st
-                else interruptSignalGeneral ntfn badge c st
-            | _ => interruptSignalGeneral ntfn badge c st
-        | _, _ => interruptSignalGeneral ntfn badge c st
-    | none => interruptSignalGeneral ntfn badge c st
+                        maybeDonateSchedContextFlowingFast ctx
+                          (performSignalBoundDelivered c ⟨k⟩ ⟨tcb.ipcObjectCode⟩ ep tcb badge st)
+                          ntfn.val k
+                      else interruptSignalGeneral ctx ntfn badge c st
+                  | _ => interruptSignalGeneral ctx ntfn badge c st
+                else interruptSignalGeneral ctx ntfn badge c st
+            | _ => interruptSignalGeneral ctx ntfn badge c st
+        | _, _ => interruptSignalGeneral ctx ntfn badge c st
+    | none => interruptSignalGeneral ctx ntfn badge c st
 
 @[csimp] theorem interruptSignal_eq_impl : @interruptSignal = @interruptSignalImpl := by
-  funext ntfn badge c st
-  have hG : interruptSignalGeneral ntfn badge c st = interruptSignal ntfn badge c st := rfl
+  funext ctx ntfn badge c st
+  have hG : interruptSignalGeneral ctx ntfn badge c st = interruptSignal ctx ntfn badge c st := rfl
   unfold interruptSignalImpl
   split
   · next hBound =>
@@ -128,15 +136,23 @@ the specification. -/
             exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.2
           have hHead : n.waitHead = some ⟨k⟩ := by
             rw [← Notification.ofOptCode_waitHeadCode, hK]; rfl
-          simp only [interruptSignal, notificationSignalBoundOnCore, hBound,
+          have hWk : signalWokenThread? st ntfn = some ⟨k⟩ := by
+            simp only [signalWokenThread?, hBound, hN, Option.bind_some, hHead]
+          simp only [interruptSignal, sendSignalOnCoreFlowing, notificationSignalBoundOnCore, hBound,
             notificationSignalOnCore_eq_impl, notificationSignalOnCoreImpl, hN, hHead, hW,
-            ↓reduceIte, Option.map_none]
-          rw [← optCode_ntfnSuccessor?, ← signalWoken_eq_perform]
+            ↓reduceIte, Option.map_none, donateToSignalledFlowing, hWk]
+          rw [← optCode_ntfnSuccessor?, ← signalWoken_eq_perform,
+            maybeDonateSchedContextFlowingFast_eq]
         · exact hG
       · next hK =>
         have hHead : n.waitHead = none := by
           rw [← Notification.ofOptCode_waitHeadCode, hK]; rfl
-        simp only [interruptSignal, hBound, Option.map_none]
+        have hWk : signalWokenThread? st ntfn = none := by
+          simp only [signalWokenThread?, hBound, hN, Option.bind_some, hHead]
+        unfold interruptSignal sendSignalOnCoreFlowing
+        rcases notificationSignalBoundOnCore ntfn badge c st with ⟨st', _ | _⟩
+        · rfl
+        · simp only [donateToSignalledFlowing, hWk]
     · exact hG
   · split
     · next n hN =>
@@ -153,10 +169,12 @@ the specification. -/
               split
               · next hQ =>
                 have hBT := boundDeliveryTarget?_of_codes st ntfn n k tcb hN hK0 hB hTT hSt
-                rw [← hG]
-                unfold interruptSignalGeneral
-                rw [notificationSignalBoundOnCore_bound_eq ntfn badge c st ⟨k⟩ ⟨tcb.ipcObjectCode⟩
-                  ep tcb hBT hE hTT hQ]
+                have hS := notificationSignalBoundOnCore_bound_eq ntfn badge c st ⟨k⟩
+                  ⟨tcb.ipcObjectCode⟩ ep tcb hBT hE hTT hQ
+                have hWk : signalWokenThread? st ntfn = some ⟨k⟩ := by
+                  simp only [signalWokenThread?, hBT]
+                simp only [interruptSignal, sendSignalOnCoreFlowing, hS, donateToSignalledFlowing, hWk]
+                rw [maybeDonateSchedContextFlowingFast_eq]
                 rfl
               · exact hG
             all_goals exact hG
@@ -168,74 +186,77 @@ the specification. -/
 /-- **seL4's `handleInterrupt` on core `c`**: the bound handler's notification
 signalled (`interruptSignal`, the badge written into the thread it wakes) and
 the line masked, or, with no handler bound, the line masked. -/
-def handleInterruptOnCore (st : SystemState) (c : CoreId) (line : Nat) : SystemState :=
+def handleInterruptOnCore (ctx : LabelingContext) (st : SystemState) (c : CoreId) (line : Nat) :
+    SystemState :=
   match Architecture.irqBinding? st line with
   | some (ntfn, badge) =>
-      Architecture.setInterruptLineMask (interruptSignal ntfn badge c st) line true
+      Architecture.setInterruptLineMask (interruptSignal ctx ntfn badge c st) line true
   | none => Architecture.setInterruptLineMask st line true
 
 /-- **The interrupt entry's step**, over the raw core id and INTID the HAL
 passes: inert unless the id names a core and the INTID a device line. -/
-def interruptEntryStep (st : SystemState) (coreId intId : UInt64) : SystemState :=
+def interruptEntryStep (ctx : LabelingContext) (st : SystemState) (coreId intId : UInt64) :
+    SystemState :=
   match Concurrency.coreIdOfUInt64? coreId with
   | none => st
   | some c =>
-      if Architecture.deviceInterruptLine st intId.toNat then handleInterruptOnCore st c intId.toNat
+      if Architecture.deviceInterruptLine st intId.toNat then
+        handleInterruptOnCore ctx st c intId.toNat
       else st
 
 /-! ### The step's shape -/
 
 /-- An id naming no core enters nothing. -/
-theorem interruptEntryStep_invalid_core (st : SystemState) (coreId intId : UInt64)
-    (h : Concurrency.coreIdOfUInt64? coreId = none) : interruptEntryStep st coreId intId = st := by
+theorem interruptEntryStep_invalid_core (ctx : LabelingContext) (st : SystemState) (coreId intId : UInt64)
+    (h : Concurrency.coreIdOfUInt64? coreId = none) : interruptEntryStep ctx st coreId intId = st := by
   simp [interruptEntryStep, h]
 
 /-- A line that is no device line enters nothing. -/
-theorem interruptEntryStep_not_device (st : SystemState) (coreId intId : UInt64)
+theorem interruptEntryStep_not_device (ctx : LabelingContext) (st : SystemState) (coreId intId : UInt64)
     (h : Architecture.deviceInterruptLine st intId.toNat = false) :
-    interruptEntryStep st coreId intId = st := by
+    interruptEntryStep ctx st coreId intId = st := by
   unfold interruptEntryStep
   cases Concurrency.coreIdOfUInt64? coreId <;> simp [h]
 
 /-- **A line the board does not have enters nothing**: an INTID at or past the
 board's line count (`MachineState.interruptLineCount`) is refused before any
 write, as seL4's `Arch_checkIRQ` refuses one above `maxIRQ`. -/
-theorem interruptEntryStep_off_board (st : SystemState) (coreId intId : UInt64)
+theorem interruptEntryStep_off_board (ctx : LabelingContext) (st : SystemState) (coreId intId : UInt64)
     (h : st.machine.interruptLineCount ≤ intId.toNat) :
-    interruptEntryStep st coreId intId = st := by
+    interruptEntryStep ctx st coreId intId = st := by
   apply interruptEntryStep_not_device
   simp only [Architecture.deviceInterruptLine, Architecture.deviceInterruptLineUnder,
     Bool.and_eq_false_iff, decide_eq_false_iff_not, Nat.not_lt]
   exact .inl (.inr h)
 
 /-- On a core and a device line the step is `handleInterruptOnCore`. -/
-theorem interruptEntryStep_device (st : SystemState) (coreId intId : UInt64) (c : CoreId)
+theorem interruptEntryStep_device (ctx : LabelingContext) (st : SystemState) (coreId intId : UInt64) (c : CoreId)
     (hc : Concurrency.coreIdOfUInt64? coreId = some c)
     (h : Architecture.deviceInterruptLine st intId.toNat = true) :
-    interruptEntryStep st coreId intId = handleInterruptOnCore st c intId.toNat := by
+    interruptEntryStep ctx st coreId intId = handleInterruptOnCore ctx st c intId.toNat := by
   simp [interruptEntryStep, hc, h]
 
 /-- **Every state the step reaches is `P`** when the state it starts from is,
 the signal's is and the mask keeps `P`: the one case split every frame below
 is an instance of. -/
-theorem handleInterruptOnCore_of {P : SystemState → Prop} (st : SystemState) (c : CoreId)
+theorem handleInterruptOnCore_of {P : SystemState → Prop} (ctx : LabelingContext) (st : SystemState) (c : CoreId)
     (line : Nat)
     (hMask : ∀ s, P s → P (Architecture.setInterruptLineMask s line true))
     (hSt : P st)
     (hSig : ∀ ntfn badge, Architecture.irqBinding? st line = some (ntfn, badge) →
-      P (interruptSignal ntfn badge c st)) :
-    P (handleInterruptOnCore st c line) := by
+      P (interruptSignal ctx ntfn badge c st)) :
+    P (handleInterruptOnCore ctx st c line) := by
   unfold handleInterruptOnCore
   cases h : Architecture.irqBinding? st line with
   | none => exact hMask _ hSt
   | some p => obtain ⟨ntfn, badge⟩ := p; exact hMask _ (hSig ntfn badge h)
 
 /-- …and the raw step's. -/
-theorem interruptEntryStep_of {P : SystemState → Prop} (st : SystemState) (coreId intId : UInt64)
+theorem interruptEntryStep_of {P : SystemState → Prop} (ctx : LabelingContext) (st : SystemState) (coreId intId : UInt64)
     (hSt : P st) (hStep : ∀ c, Concurrency.coreIdOfUInt64? coreId = some c →
       Architecture.deviceInterruptLine st intId.toNat = true →
-      P (handleInterruptOnCore st c intId.toNat)) :
-    P (interruptEntryStep st coreId intId) := by
+      P (handleInterruptOnCore ctx st c intId.toNat)) :
+    P (interruptEntryStep ctx st coreId intId) := by
   unfold interruptEntryStep
   cases hc : Concurrency.coreIdOfUInt64? coreId with
   | none => exact hSt
@@ -246,32 +267,22 @@ theorem interruptEntryStep_of {P : SystemState → Prop} (st : SystemState) (cor
     | true => simpa using hStep c hc hd
 
 /-- The step leaves the line masked. -/
-theorem handleInterruptOnCore_masks (st : SystemState) (c : CoreId) (line : Nat) :
-    (handleInterruptOnCore st c line).machine.irqLineMasked line = true := by
+theorem handleInterruptOnCore_masks (ctx : LabelingContext) (st : SystemState) (c : CoreId) (line : Nat) :
+    (handleInterruptOnCore ctx st c line).machine.irqLineMasked line = true := by
   unfold handleInterruptOnCore
   split <;> simp
 
 /-- The step keeps the object store's invariant. -/
-theorem handleInterruptOnCore_preserves_objects_invExt (st : SystemState) (c : CoreId)
-    (line : Nat) (h : st.objects.invExt) : (handleInterruptOnCore st c line).objects.invExt :=
-  handleInterruptOnCore_of (P := fun s => s.objects.invExt) st c line
+theorem handleInterruptOnCore_preserves_objects_invExt (ctx : LabelingContext) (st : SystemState) (c : CoreId)
+    (line : Nat) (h : st.objects.invExt) : (handleInterruptOnCore ctx st c line).objects.invExt :=
+  handleInterruptOnCore_of (P := fun s => s.objects.invExt) ctx st c line
     (fun s hs => by simpa using hs) h
-    (fun ntfn _ _ => (notificationSignalBoundOnCore_preserves_objects_invExt _ _ _ st h))
+    (fun ntfn _ _ => (sendSignalOnCoreFlowing_preserves_objects_invExt ctx _ _ _ st h))
 
 /-- …and so does the raw step. -/
-theorem interruptEntryStep_preserves_objects_invExt (st : SystemState) (coreId intId : UInt64)
-    (h : st.objects.invExt) : (interruptEntryStep st coreId intId).objects.invExt :=
-  interruptEntryStep_of (P := fun s => s.objects.invExt) st coreId intId h
-    (fun c _ _ => handleInterruptOnCore_preserves_objects_invExt st c _ h)
-
-/-- No core's replenish queue moves. -/
-theorem handleInterruptOnCore_replenishQueueOnCore (st : SystemState) (c d : CoreId)
-    (line : Nat) :
-    (handleInterruptOnCore st c line).scheduler.replenishQueueOnCore d =
-      st.scheduler.replenishQueueOnCore d :=
-  handleInterruptOnCore_of
-    (P := fun s => s.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d)
-    st c line (fun s hs => by simpa using hs) rfl
-    (fun ntfn _ _ => (notificationSignalBoundOnCore_replenishQueueOnCore _ _ _ st d))
+theorem interruptEntryStep_preserves_objects_invExt (ctx : LabelingContext) (st : SystemState) (coreId intId : UInt64)
+    (h : st.objects.invExt) : (interruptEntryStep ctx st coreId intId).objects.invExt :=
+  interruptEntryStep_of (P := fun s => s.objects.invExt) ctx st coreId intId h
+    (fun c _ _ => handleInterruptOnCore_preserves_objects_invExt ctx st c _ h)
 
 end SeLe4n.Kernel

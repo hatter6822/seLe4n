@@ -356,13 +356,16 @@ theorem receiveGuard_of_transferFrame {s' s : SystemState} (h : transferFrame s'
     (hR : s.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
     (hG : receiveBlocksInPlace s epId tid tail? rid? = true) :
     s'.objects[epId]? = some (.endpoint ep) ∧
-      (∃ rt', s'.objects[tid.toObjId]? = some (.tcb rt') ∧ receiveBlockAdmits rt' = true) ∧
+      (∃ rt', s'.objects[tid.toObjId]? = some (.tcb rt') ∧ receiveBlockAdmits rt' = true ∧
+        rt'.boundNotificationCode = rt.boundNotificationCode) ∧
       receiveBlocksInPlace s' epId tid tail? rid? = true := by
   refine ⟨h.obj hE rfl (transferView_endpoint_back ep), ?_, ?_⟩
   · obtain ⟨rt', h1, e⟩ := h.tcb hR
-    refine ⟨rt', h1, ?_⟩
-    have : receiveBlockAdmits rt' = receiveBlockAdmits rt'.withoutLinks := rfl
-    rw [this, e]; exact hA
+    refine ⟨rt', h1, ?_, ?_⟩
+    · have : receiveBlockAdmits rt' = receiveBlockAdmits rt'.withoutLinks := rfl
+      rw [this, e]; exact hA
+    · show rt'.withoutLinks.boundNotificationCode = rt.withoutLinks.boundNotificationCode
+      rw [e]
   · unfold receiveBlocksInPlace at hG ⊢
     simp only [Bool.and_eq_true] at hG ⊢
     obtain ⟨⟨hEnq, hSt⟩, hRec⟩ := hG

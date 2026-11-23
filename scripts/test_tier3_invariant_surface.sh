@@ -778,8 +778,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem storeTcbReceiveComple
 run_check "INVARIANT" rg -n '^theorem boundDeliveryTarget\?_some' SeLe4n/Kernel/IPC/Operations/NotificationBind.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull\b' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SignalDonationFrame.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SignalDonationFrame.lean
 # **WS-RR RR7.22 (residual, second consumer)**: the cancellation arm's sweep is a
 # fold over the whole object store, so its payoff is a *pointwise* fact — false
 # of the accumulator at every key not yet visited, hence not a fold invariant.
@@ -1926,7 +1926,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "if !outerCallerAcceptable st serverTid
 # All three clauses, each load-bearing: the donor shape, and the two threads the
 # pop rewrites (a claim about their pre-state shape would not survive the step).
 run_check "INVARIANT" bash -lc 'rg -U -n "outer != originalOwner && outer != serverTid" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "outerTcb\.schedContextBinding == \.unbound &&[^\n]*(\n([ \t][^\n]*)?)*\| \.blockedOnReply _ _ => true" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "!outerTcb\.schedContextBinding\.isDonated &&[^\n]*(\n([ \t][^\n]*)?)*\| \.blockedOnReply _ _ => true" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # The guard is part of the ONE decomposition, not beside it: that theorem already
 # carries the context lookup and the head validation, neither of which is a
 # store, so it is "what a successful pop tells you" and an incomplete one would
@@ -1940,7 +1940,7 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem outerCallerAcceptable_none' SeLe
 # while keeping the whole depth-2 chain — a suite that deleted the outer caller
 # instead would pass a check that only asked whether one exists.
 run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that is not blocked on a reply is refused" tests/SmpIpcSuite.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that still holds a binding is refused" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that still holds a loan is refused" tests/SmpIpcSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that IS the rebound thread is refused" tests/SmpIpcSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: an outer caller that IS the server is refused" tests/SmpIpcSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: a frame below the head linking up to a different frame is refused" tests/SmpIpcSuite.lean'
@@ -2057,21 +2057,31 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv[^\n]*(\n([ \t][
 # cancellation's members from the victim's PRE-state binding, while the pipeline
 # runs that cancellation on the binding the teardown leaves -- so the syscall's
 # footprint is `lockSet_tcbSuspendOnCore`, built over the state-resolved
-# cancellation footprint, and the `scThreadIndex` member is declared by the
-# donation cancellation's own footprint and by the suspend tail.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_cancelDonation[^\n]*(\n([ \t][^\n]*)?)*if bindingScId\.isSome then some \(stateLevelLock, AccessMode\.write\) else none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# cancellation footprint, and the state-level member is declared by the suspend
+# tail with the victim's context.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_tcbSuspendOnCore[^\n]*(\n([ \t][^\n]*)?)*if \(suspendDonationCancelTailOf\? st targetTid\)\.scId\?\.isSome then" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # NEGATIVE: and the retired footprint must not come back.
 run_negative_check "INVARIANT" rg -n '^def lockSet_tcbSuspend \(' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# The suspend tail is the live suspend's footprint: seL4's `suspend` keeps the
+# victim's context, so the only context it writes is the one the release removal
+# takes off its queue -- the one the victim's binding names.  The retired donation
+# cancellation's owner, head, frame-below and outer-caller members are gone, and
+# so is the refusal that existed only because the reclaim could overwrite a
+# binding.  Mutation: re-key the tail on the reclaim or restore a member.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendDonationCancelTail\?[^\n]*(\n([ \t][^\n]*)?)*match tcb\.schedContextBinding\.scId\? with\n *\| some scId => \{ scId\? := some scId \}" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^structure SuspendDonationCancelMembers[^\n]*(\n([ \t][^\n]*)?)*(owner\?|head\?|belowHead\?|outer\?) :" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_negative_check "INVARIANT" rg -n '^def cancelledCallerAlreadyBound' SeLe4n/
+run_check "INVARIANT" rg -n '^theorem lockSet_tcbSuspendOnCore_covers_releaseRemove \(' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# The retired donation cancellation (no live operation ran it) stays deleted.
+run_negative_check "INVARIANT" rg -n '^(@\[inline\] )?def (cancelDonation|cancelDonationValid|cancelDonationOnCore|cancelBoundDonation|cancelDonatedDonation|lockSet_cancelDonation|lockSet_cancelDonationOnCore) ' SeLe4n/
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_cancelIpcBlocking[^\n]*(\n([ \t][^\n]*)?)*if returnedDonationSc\.isSome then some \(stateLevelLock, AccessMode\.write\) else none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_cancelDonation[^\n]*(\n([ \t][^\n]*)?)*if bindingScId\.isSome then some \(stateLevelLock, AccessMode\.write\) else none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The bind and the unbind take it UNCONDITIONALLY — the index write is not
 # optional on their success path, which is the `lockSet_cspaceMint` shape.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_schedContextBind[^\n]*(\n([ \t][^\n]*)?)*\(stateLevelLock, \.write\)\]\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*\(stateLevelLock, \.write\)\]\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 # ...and `.schedContextConfigure` is split out rather than widened with them: it
 # writes the SchedContext and the bound thread and touches no index.
-run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind \| \.schedContextUnbind =>\n      \[\.tcb, \.cnode, \.schedContext, \.endpoint, \.notification, \.objStore\]\n  \| \.schedContextConfigure =>\n      \[\.tcb, \.cnode, \.schedContext, \.endpoint, \.notification\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind \| \.schedContextUnbind \| \.schedContextUnbindObject =>\n      \[\.tcb, \.cnode, \.schedContext, \.endpoint, \.notification, \.objStore\]\n  \| \.schedContextConfigure =>\n      \[\.tcb, \.cnode, \.schedContext, \.endpoint, \.notification\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 # The kind inventories that admit it.
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.reply =>\n      \[\.tcb, \.cnode, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.tcbSuspend =>\n      \[\.tcb, \.cnode, \.endpoint, \.notification, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
@@ -2260,7 +2270,8 @@ run_check "INVARIANT" rg -n '^theorem applyReceiveLegPipHandoff_confinedToCores(
 # The walk is not per-core silent, so `.replyRecv`'s declared write set gains a
 # FOURTH leg, read at the state that leg runs at -- the discipline the module
 # states for the other three.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyRecvAnsweringWriteSet[^\n]*(\n([ \t][^\n]*)?)*receiveLegPipHandoffWriteSet st3 receiver nextThread" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostDonationTailCores[^\n]*(\n([ \t][^\n]*)?)*receiveLegPipHandoffWriteSet st3 receiver nextThread recordedServer" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyRecvAnsweringWriteSet[^\n]*(\n([ \t][^\n]*)?)*replyRecvPostDonationTailCores answer receiver nextThread\n[^\n]*\n *returnedSc\? st2 true \+\+\n *replyRecvPostDonationTailCores answer receiver nextThread\n[^\n]*\n *returnedSc\? st2 false" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 # The SM3.C walker's obligation list grows with the walks, not with the
 # syscalls: `.replyRecv` declares TWO chain starts because it performs two.
 run_check "INVARIANT" rg -n '^@\[inline\] def pipChainStart_endpointReceive' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
@@ -2409,7 +2420,8 @@ run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextResolved_eq_legac
 # HP4 section — a second copy here would be one question with two answers, and
 # the argument spelling is not what this row is about.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonation[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContextResolved st" SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean'
-run_check "INVARIANT" rg -n 'returnDonatedSchedContextResolved st receiver scId originalOwner' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n 'popHeldReplyHead st receiver scId originalOwner' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def popHeldReplyHead \([^\n]*(\n[ \t][^\n]*)*\n    returnDonatedSchedContextResolved st holder scId recipient\n  else keepDonatedSchedContextResolved st holder scId$" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # (the suspend site is pinned by OD1.4's order anchor above, which OD4.4 updated
 # to the `…Resolved` spelling — one anchor for one question)
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPopDonation[^\n]*(\n([ \t][^\n]*)?)*returnDonatedSchedContextResolved st" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
@@ -2472,7 +2484,7 @@ run_check "INVARIANT" rg -n '^theorem applyCallDonationOnCore_donated_caller_mig
 # ...and the live dispatch resolves both endpoints from its own pre-state, which
 # is what makes the theorem above a statement about the arm rather than about an
 # arbitrary pair of cores.
-run_check "INVARIANT" bash -lc 'rg -U -n "match applyCallDonationOnCore st. callerV receiverV\n +\(determineTargetCore st caller\) \(determineTargetCore st receiverTid\) with" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "match applyCallDonationOnCoreWhen lend st. callerV receiverV\n +\(determineTargetCore st caller\) \(determineTargetCore st receiverTid\) with" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
 
 # OD4.7: the `.call` footprint does NOT grow.  The push's whole write set is
 # four keys, and every one is already a declared write member.
@@ -2929,7 +2941,6 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "holderPlaced\.toList\)\n[ \t]
 # the reclaim can leave the victim `.donated`, and the second pop migrates to
 # whatever thread that binding records.
 run_check "INVARIANT" rg -n '^theorem returnDonationToCancelledCaller_leaves_donated_at_depth_two($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_settles_on_recorded_owner($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 
 # OD5.4: retype refuses both halves of a live stack -- the frame and the head.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*if !r\.isFree \|\| st\.replyStashedAt \(SeLe4n\.ReplyId\.ofNat target\.toNat\) r then" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
@@ -3050,7 +3061,6 @@ run_negative_check "INVARIANT" rg -n 'restoreToReadyOnCore_eq_enqueue_mid' SeLe4
 run_negative_check "INVARIANT" rg -n 'clearTcbIpcFields' SeLe4n tests
 # The cross-core twin of the bound-donation cancel is held to the single-core
 # arm by `rfl`, which is what forced the twin to migrate in the same cut.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelBoundDonationOnCore_eq_cancelBoundDonation[^\n]*(\n([ \t][^\n]*)?)*= cancelBoundDonation st tid tcb := rfl" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 
 # ----------------------------------------------------------------------------
 # v0.35.65 -- the witnessed lookups, and the scheduler's context-save family
@@ -4211,7 +4221,7 @@ run_check "INVARIANT" rg -n '^def liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Mod
 run_check "INVARIANT" rg -n '^theorem SystemState\.liveMappingsRecorded_of_epochsVacant($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.default_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem SystemState\.liveMappingsRecorded\.of_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Model/MappingRecords.lean
-run_check "INVARIANT" rg -n -U 'def proofLayerInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*    st\.liveMappingsRecorded ∧\n    st\.releaseQueueRefined ∧\n    st\.refillsSound ∧\n    st\.yieldLinksAgree ∧\n    st\.bookkeepingAgrees$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n -U 'def proofLayerInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*    st\.liveMappingsRecorded ∧\n    st\.releaseQueueRefined ∧\n    st\.refillsSound ∧\n    st\.yieldLinksAgree ∧\n    st\.bookkeepingAgrees ∧\n    notificationLinksAgree st$' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n 'SystemState\.liveMappingsRecorded_of_epochsVacant' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotFinalising_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtFinalising_preserves_liveMappingsRecorded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/MappingRecords.lean
@@ -4318,9 +4328,9 @@ run_check "INVARIANT" rg -n '^theorem interruptEntryState_recordsStage($|[ ({:\[
 run_check "INVARIANT" rg -n '^theorem faultEntryState_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Entry.lean
 run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Entry.lean
 run_check "INVARIANT" rg -n '^theorem RecordsStage.faultDeliverAfterSpill($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Entry.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyRecvAnsweringOnCore($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/IpcReplyRecv.lean
-run_check "INVARIANT" rg -n '^theorem RecordsStage.endpointReplyRecvAnsweringOnCore($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/IpcReplyRecv.lean
-run_check "INVARIANT" rg -n '^theorem RecordsStage.replyRecvTransferOnCore($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/IpcReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecvAnsweringOnCore($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem RecordsStage.endpointReplyRecvAnsweringOnCore($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem RecordsStage.replyRecvTransferOnCore($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Dispatch.lean
 run_check "INVARIANT" rg -n '^theorem inactiveQuiescent_of_resume($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Dispatch.lean
 run_check "INVARIANT" rg -n '^theorem RecordsArmPremises.writeFfiRegistersToTcb($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/SyscallEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_recordsStage($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/SyscallEntry.lean
@@ -4488,7 +4498,8 @@ run_check "INVARIANT" rg -n '^theorem cutReplyFrameStoresInPlace_eq($|[ ({:\[\]]
 run_check "INVARIANT" rg -n '^theorem donateSchedContext_eq_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/DonationInPlace.lean
 run_check "INVARIANT" rg -n '^theorem callDispatchChecked_donating_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDonatingInPlace.lean
 run_check "INVARIANT" rg -n '^theorem donateSchedContextInPlace_msg($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDonatingInPlace.lean
-run_check "INVARIANT" rg -n -U '                            cap\.canLinkReply && callDonatesInPlace st epId tid r rt rid then\n                          \.ok \(\(\), callRendezvousDonatingDelivered st epId tid r rt\.queueNextCode' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U '                            cap\.canLinkReply && callDonatesInPlace st epId tid r rt rid &&\n                            callLendAdmits ctx st tid then\n                          \.ok \(\(\), callRendezvousDonatingDelivered st epId tid r rt\.queueNextCode' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U '                            cap\.canLinkReply &&\n                            callWakesUnlentInPlace \(callLendAdmits ctx st tid\) st epId tid r rt rid then\n                          \.ok \(\(\), callRendezvousDelivered st epId tid r rt\.queueNextCode rid$' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 # WS-ZA ZA6.33: the donating route migrates the replenishment in place, the two
 # homes read in the arm before its first write, and the migration is compiled
 # through its in-place write.
@@ -4513,6 +4524,12 @@ run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_donated_delivered($|[ ({:\
 run_check "INVARIANT" rg -n -U '      else replyRecvDonatedArmR epId tid c rid badge grant layout rf len label executingCore st\n    else \.error \(\.replyCapInvalid, st\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    if replyRecvDonatedAdmits epId tid c rid grant layout len st then\n      \.ok \(\(\), performReplyRecvDonatedDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    if replyDonatedAdmits ctx layout len tid c server rid cBinding cFault st then\n      \.ok \(\(\), performReplyDonatedDelivered st c server rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+# A reply to a caller holding a context of its own takes reply_pop's held arm in
+# place (the head popped, the context kept by the server), proven the
+# specification's and routed after the donated arm.
+run_check "INVARIANT" rg -n '^theorem replyHeldPopsInPlace_pop($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyHeldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferChecked_held_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyHeldInPlace.lean
+run_check "INVARIANT" rg -n -U '    else if replyHeldAdmits ctx layout len tid c server rid cBinding cFault st then\n      \.ok \(\(\), performReplyHeldDelivered st c server rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n '^  , \(`SeLe4n\.Kernel\.returnDonatedSchedContextInPlace,$' SeLe4n/Testing/ReplyStackWriteCensus.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem consumed_eq_impl' SeLe4n/Model/Object/Reply.lean
 # WS-ZA ZA6.34: a reply to a caller recording no server (its server finalised)
@@ -4533,7 +4550,14 @@ run_check "INVARIANT" rg -n '^theorem returnUnheldSchedContextInPlace_popFrame($
 run_check "INVARIANT" rg -n '^theorem popUnheldSettled_receiveGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
-run_check "INVARIANT" rg -n -U '        executingCore\)\n    else replyRecvDonatedCallTakeArmR epId tid c rid badge grant layout rf len label executingCore\n      st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+# A reply-receive to a caller holding a context of its own runs reply_pop's
+# held arm in place (the head popped, the context kept by the server, which
+# then blocks), proven the specification's and routed after the donated arm;
+# any other shape falls through to the call-take arm.
+run_check "INVARIANT" rg -n '^theorem keepHeldPop_receiveGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyHeldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_held_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyHeldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_held_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyHeldInPlace.lean
+run_check "INVARIANT" rg -n -U '    else if replyRecvHeldAdmits epId tid c rid grant layout len st then\n      \.ok \(\(\), performReplyRecvHeldDelivered st c tid rid ⟨replyHeadContextCode st rid - 1⟩\n        epId \(receiveQueueTailCode st epId\) layout rf len badge executingCore\)\n    else replyRecvDonatedCallTakeArmR epId tid c rid badge grant layout rf len label executingCore\n      st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 # A donated reply-receive whose receive leg takes a caller queued by a Call is
 # donated that caller's context in place, every check read on the pre-state and
 # carried across the reply leg and the pop; any other shape falls through to the
@@ -4547,7 +4571,7 @@ run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextInPlace_keepsAt($
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem receiveCallDonatesPastPop_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvDonatedCallTakeInPlace.lean
 # A receive taking a caller that donates its context runs in place.
 run_check "INVARIANT" rg -n '^theorem receiveCallDonatingTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReceiveCallDonatingInPlace.lean
-run_check "INVARIANT" rg -n -U 'receiveCallDonatesInPlace st epId tid s sTcb rid then\n\s*\.ok \(\(\), performReceiveCallDonatingDelivered st epId s' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U 'receiveCallDonatesInPlace st epId tid s sTcb rid && lend then\n\s*\.ok \(\(\), performReceiveCallDonatingDelivered st epId s' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n -U '    if replyRecvUnheldAdmits epId tid c rid grant layout len st then\n      \.ok \(\(\), performReplyRecvUnheldDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 # A reply-receive whose reply leg installs a capability runs the transfer in
 # place between the reply's writes and the receive leg, on every shape that
@@ -4574,6 +4598,9 @@ run_check "INVARIANT" rg -n '^theorem storeReplyRendezvous_callDonationGuard($|[
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem receiveCallDonatesPastReply_eq_impl' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvCallTakes_spec($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_callTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem receiveReturnSchedContext_callDonationGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem receiveReturnSchedContext_agreeOff($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReceiveReturnInPlace.lean
+run_check "INVARIANT" rg -n '^theorem receiveReturnSchedContext_getTcb\?_self_of_fires($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReceiveReturnInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvCallTakeArmR_of_admits($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvCallTakeArmR_of_not_admits($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvCallTakeArmR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
@@ -4582,7 +4609,7 @@ run_check "INVARIANT" rg -n -U 'executingCore st\n    else replyRecvCapsArmR epI
 # A reply-receive whose receive leg meets a waiting sender (the server loop under
 # load) takes it in place after the reply leg and its transfer: the sender's
 # message words kept across the reply's writes, the take's guard carried across
-# both, proven the specification's and routed after the unheld arm.
+# both, proven the specification's and routed after the unheld and unlinked arms.
 run_check "INVARIANT" rg -n '^theorem storeReplyRendezvousReady_keepsSendCaps($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem storeReplyRendezvous_takeGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem takeGuard_of_transferFrame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeInPlace.lean
@@ -4590,7 +4617,30 @@ run_check "INVARIANT" rg -n '^theorem replyRecvTakeFrame_staged($|[ ({:\[\]])' S
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_take_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_take_capsDelivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvTakeArmR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '        executingCore\)\n    else replyRecvTakeArmR epId tid c rid badge grant layout rf len label executingCore st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '        executingCore\)\n    else if replyRecvUnlinkedAdmits epId tid c rid grant layout len st then\n      \.ok \(\(\), performReplyRecvUnlinkedDelivered st c tid rid epId \(receiveQueueTailCode st epId\)\n        layout rf len badge executingCore\)\n    else replyRecvUnlinkedCallTakeArmR epId tid c rid badge grant layout rf len label executingCore\n      st\n' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+# A reply-receive to a caller recording no server whose receive leg meets a waiting
+# sender takes it in place, on a reply object heading a stack no thread holds
+# (the unheld pop between the legs) and on one linked to nothing: the take's guard
+# carried across the reply leg alone and across the pop, proven the
+# specification's, and routed unheld take -> unlinked take -> take.
+run_check "INVARIANT" rg -n '^theorem storeReplyLegReady_keepsSendCaps($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem storeReplyLeg_takeGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unlinked_take_transfer($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unlinked_take_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unlinked_take_capsDelivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem takeGuard_of_popFrame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem popUnheldSettled_takeGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_take_transfer($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_take_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_take_capsDelivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvUnlinkedTakes_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvUnheldTakes_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvUnlinkedTakeArmR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvUnheldTakeArmR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    else replyRecvUnlinkedTakeArmR epId tid c rid badge grant layout rf len label executingCore st\n\n[ ]*\ntheorem replyRecvUnheldTakeArmR_eq ' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    else replyRecvTakeArmR epId tid c rid badge grant layout rf len label executingCore st\n\n[ ]*\ntheorem replyRecvUnlinkedTakeArmR_eq ' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '                \.ok \(\(\), performReplyRecvUnheldTakeDelivered st c tid rid\n                  ⟨replyHeadContextCode st rid - 1⟩ \(determineTargetCore st c\) epId s' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '                \.ok \(\(\), performReplyRecvUnlinkedTakeDelivered st c tid rid epId s' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '              if replyRecvReplyInertW st tid c grant then\n(                [^\n]*\n){1,2}                \.ok \(\(\), performReplyRecvTakeDelivered st c tid rid epId s' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '                        \.ok \(\(\), performReplyRecvTakeCapsDelivered st c tid rid epId s' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '                  if replyRecvBlocksFast st epId tid c rid then\n                    \.ok \(\(\), performReplyRecvBlockCapsDelivered st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
@@ -4608,11 +4658,33 @@ run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_donated_capsDeliveredLong(
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_capsDeliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvPopInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvLongCapsR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvLongPopR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+# The long reply-receive whose receive leg takes a queued sender writes in place,
+# its long delivery commuted past the take's writes of the replier.
+run_check "INVARIANT" rg -n '^theorem deliverLongReplyRecvFrame_mapTcbInPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTakeFrame_stagedLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_take_deliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_take_capsDeliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvLongTakeArmR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+# The reply-receive answering a fault whose receive leg takes a queued sender writes in place.
+run_check "INVARIANT" rg -n '^theorem performFaultAnswer_msg($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvFaultTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_fault_take_transfer($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvFaultTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvFaultTakeFrame_staged($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvFaultTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_fault_take_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvFaultTakeInPlace.lean
+run_check "INVARIANT" rg -n -U '        else if replyRecvTakes st epId tid c rid then\n(          [^\n]*\n){1,14}                  \.ok \(\(\), performReplyRecvFaultTakeDelivered st c tid rid epId s' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '      \| none => replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st\n    else replyRecvLongTakeArmR epId tid c rid badge grant rf len label executingCore st\n' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    if replyRecvLongDonatedAdmits st epId tid c rid grant then\n      \.ok \(\(\), performReplyRecvDonatedDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    else if replyRecvLongUnheldAdmits st epId tid c rid grant then\n      \.ok \(\(\), performReplyRecvUnheldDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    else if replyRecvLongDonatedCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}              \.ok \(\(\), performReplyRecvDonatedCapsDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    else if replyRecvLongUnheldCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}              \.ok \(\(\), performReplyRecvUnheldCapsDeliveredLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    if replyRecvLongCapsAdmits st epId tid c rid grant then\n(      [^\n]*\n){1,6}              \.ok \(\(\), performReplyRecvBlockCapsDeliveredLong st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+# The reply-receive on an unlinked reply object whose receive leg takes a queued Call writes in place.
+run_check "INVARIANT" rg -n '^theorem storeReplyLeg_callDonationGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedCallTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvUnlinkedCallTakes_spec($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedCallTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unlinked_callTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedCallTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvUnlinkedCallTakeArmR_of_admits($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvUnlinkedCallTakeArmR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '            \| \.call _ mi =>\n              \.ok \(\(\), performReplyRecvUnlinkedCallTakeDelivered st c tid rid epId s' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    else replyRecvUnheldTakeArmR epId tid c rid badge grant layout rf len label executingCore st\n\ntheorem replyRecvUnlinkedCallTakeArmR_of_not_admits ' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_negative_check "INVARIANT" rg -n '\b(replyTransferStoresInPlace|cnodeStoreInPlace)\b' SeLe4n tests Main.lean
 # A fault answered by a long reply or reply-receive runs in place on every shape
 # the short answer does, its restart words past the fourth read from the
@@ -4632,6 +4704,40 @@ run_check "INVARIANT" rg -n '^theorem replyRecvLongFaultArmR_eq($|[ ({:\[\]])' S
 run_check "INVARIANT" rg -n -U '                              if ct\.faultWords\.isFault then\n                                if replyWakesInPlace st c ct rid then\n                                  \.ok \(\(\), performFaultReplyAnswerLong st c server rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n -U '                                else if replyPopsInPlace st c ct\.scBindingScCode server rid then\n                                  \.ok \(\(\), performFaultReplyDonatedAnswerLong st c server rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n -U '                              if ct\.faultWords\.isFault then\n                                \.ok \(\(\), performFaultReplyUnheldAnswerLong st c rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+# WS-SX SX8.3: the reply to a caller recording no server whose reply object is
+# linked to nothing (the state SchedContext_Unbind of a lent context leaves once
+# the server is finalised) is answered in place on every shape: the plain reply,
+# the fault answer, the capability transfer, and their long forms; each in-place
+# state is proven the specification's.
+run_check "INVARIANT" rg -n '^theorem replyDispatch_unlinked_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyUnheldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferChecked_unlinked_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyUnheldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem faultReplyTransferChecked_unlinked_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultAnswerInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferChecked_unlinkedCaps_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyCapsReturnDelivered.lean
+run_check "INVARIANT" rg -n '^theorem faultReplyTransferChecked_unlinked_inPlaceLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongFaultAnswerInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferChecked_unlinkedCapsLong_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyCapsLongDelivered.lean
+run_check "INVARIANT" rg -n -U '    else if replyUnlinkedAdmits ctx layout len tid c rid cFault st then\n      \.ok \(\(\), performReplyUnlinkedDelivered st c rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U '    else if replyUnlinkedFaultAdmits ctx tid c rid st then\n      \.ok \(\(\), performFaultReplyUnlinkedAnswer st c rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReplyUnheldCapsArmR[^\n]*(\n([ \t][^\n]*)?)*else if replyUnlinkedAdmits ctx layout len tid c rid cFault st then(\n([ \t][^\n]*)?)*\.ok \(\(\), performReplyUnlinkedCapsDelivered " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+run_check "INVARIANT" rg -n -U '                                replyUnlinkedInPlace st c rid then\n                              if ct\.faultWords\.isFault then\n                                \.ok \(\(\), performFaultReplyUnlinkedAnswerLong st c rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReplyLongCheckedArmR[^\n]*(\n([ \t][^\n]*)?)*\.ok \(\(\), performReplyUnlinkedCapsDeliveredLong " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
+# WS-SX SX8.3: the reply-receive answering a caller recording no server whose
+# reply object is linked to nothing, in place on every shape: the plain
+# reply-receive, the fault answer, the capability transfer, and their long
+# forms; each in-place state is proven the specification's.
+run_check "INVARIANT" rg -n '^theorem storeReplyLeg_receiveGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvAnsweringOnCore_unlinked_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unlinked_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_fault_unlinked_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultAnswerInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_fault_unlinked_inPlaceLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongFaultAnswerInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unlinked_capsDelivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCapsDelivered.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unlinked_deliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvPopInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unlinked_capsDeliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvPopInPlace.lean
+run_check "INVARIANT" rg -n -U '    else if replyRecvUnlinkedAdmits epId tid c rid grant layout len st then\n      \.ok \(\(\), performReplyRecvUnlinkedDelivered st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '                  else if replyRecvUnlinkedBlocks st epId tid c rid then\n                    \.ok \(\(\), performReplyRecvUnlinkedCapsDelivered st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '        else if replyRecvUnlinkedBlocks st epId tid c rid then\n          \.ok \(\(\), performReplyRecvUnlinkedFaultAnswer st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '        else if replyRecvUnlinkedBlocks st epId tid c rid then\n          \.ok \(\(\), performReplyRecvUnlinkedFaultAnswerLong st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    else if replyRecvLongUnlinkedAdmits st epId tid c rid grant then\n      \.ok \(\(\), performReplyRecvUnlinkedDeliveredLong st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "    else if replyRecvLongUnlinkedCapsAdmits st epId tid c rid grant then(\n([ \t][^\n]*)?)*\.ok \(\(\), performReplyRecvUnlinkedCapsDeliveredLong " SeLe4n/Kernel/RefusalCarryingReplyRecv.lean'
 run_check "INVARIANT" rg -n -U '      else if threadHasPendingFault st c then\n        replyRecvLongFaultArmR epId tid c rid badge grant rf len label executingCore st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '        if replyRecvBlocksFast st epId tid c rid then\n          \.ok \(\(\), performReplyRecvFaultAnswerLong st c tid rid epId' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '        else if replyRecvDonatedBlocks st epId tid c rid then\n          \.ok \(\(\), performReplyRecvDonatedFaultAnswerLong st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
@@ -4645,6 +4751,20 @@ run_check "INVARIANT" rg -n '^@\[csimp\] theorem unheldPopCommits_eq_impl' SeLe4
 # NEGATIVE: the compiled commit test must not name the constant it replaces,
 # which would loop at run time.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def unheldPopCommitsImpl[^\n]*(\n([ \t][^\n]*)?)*unheldPopCommits st" SeLe4n/Kernel/IPC/Operations/UnheldContextPopInPlace.lean'
+# WS-SX SX8: seL4-MCS's `reply_pop` held arm (the recipient holds a context of
+# its own) writes in place: the resolved held pop, the held-head router and its
+# commit test each compile through a proven `@[csimp]`.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem keepDonatedSchedContextResolved_eq_impl' SeLe4n/Kernel/IPC/Operations/HeldContextPopInPlace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem keptPopCommits_eq_impl' SeLe4n/Kernel/IPC/Operations/HeldContextPopInPlace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem popHeldReplyHead_eq_impl' SeLe4n/Kernel/IPC/Operations/HeldContextPopInPlace.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem heldPopCommits_eq_impl' SeLe4n/Kernel/IPC/Operations/HeldContextPopInPlace.lean
+run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContextResolved_eq_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/HeldContextPopInPlace.lean
+# NEGATIVE: an Impl that names the constant it replaces is never `@[inline]`, or
+# the call would be re-routed to the Impl at every inlined site and loop.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def (keepDonatedSchedContextResolvedImpl|keptPopCommitsImpl)" SeLe4n/Kernel/IPC/Operations/HeldContextPopInPlace.lean'
+# The compiled reply's held arm is reached through that module: the dispatch that
+# holds `applyReplyDonationOnCore` imports it.
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.IPC\.Operations\.HeldContextPopInPlace$' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
 # WS-ZA ZA6.33: a pop above the bottom of the stack hands the context to the
 # answered caller whatever origin is recorded, and the gate asks the origin
 # only at the bottom; moving a thread off the core it runs on writes the old
@@ -4710,7 +4830,7 @@ run_check "INVARIANT" rg -n '^theorem Reply\.nextNamesFrame_eq($|[ ({:\[\]])' Se
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem TCB\.blockingServer\?_eq_impl($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem blockingServer_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/BlockingGraph.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem resumeReadyMidState_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^@\[csimp\] theorem finaliseSchedContextUnstack_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem schedContextUnbindReply_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/ReplyLink.lean
 run_check "INVARIANT" rg -n '^theorem severReplyFrameBelowStores_transport($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^  , `SeLe4n\.Kernel\.severReplyFrameBelowStores$' SeLe4n/Testing/ReplyStackWriteCensus.lean
 # The in-place reply runs only on a reply with no frame below to cut.
@@ -4933,12 +5053,12 @@ run_check "INVARIANT" rg -n '^      · exact ⟨\.refl _, hInv, fun _ h => offCo
 run_check "INVARIANT" rg -n '^      e ▸ offCoreFree_of_notReady hD hRT hBNR hB\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
 run_check "INVARIANT" rg -n '^            \(endpointReplyCrossCoreDispatchChecked_ok_target_notReady hR\)\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
 run_check "INVARIANT" rg -n '^    exact hW \(sendArm_savedRegsWrittenFree _ P hRT hBNR hSend hClr\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
-run_check "INVARIANT" rg -n '^      exact hW \(w0\.trans \(receiveArm_savedRegsWrittenFree _ hIC hHC hFr hRecv hHand\)\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^        \(receiveArm_savedRegsWrittenFree _ hIR hHR hFr hRecv hHand\)\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      exact hW \(callArm_savedRegsWrittenFree _ P hRT hBNR hCall\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^    exact hW \(replyTransferOnCoreChecked_savedRegsWrittenFree P\.dequeued hRT hBNR hInv h\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      exact hW \(notificationSignalArm_savedRegsWrittenFree P hRT hBNR hSig\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      exact hW \(declassifySignalArm_savedRegsWrittenFree P hRT hBNR hSig\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
-run_check "INVARIANT" rg -n '^      exact hW \(notificationWaitArm_savedRegsWrittenFree _ P hN hWt\)\.2$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
+run_check "INVARIANT" rg -n '^      exact hW \(\(notificationWaitArm_savedRegsWrittenFree _ P hN hWt\)\.2\.donate _ _$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^  rw \[yieldChargeOnCore_currentOnCore hCharge, hCur\] at ht$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^      \(applySyscallTaint_objectsAgreeOffTaint _ _ _\)\) t id\)\.trans$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
 run_check "INVARIANT" rg -n '^    \(\(E\.of_ipcFrame hF \(IpcFrame\.of_frame rfl fun _ => rfl\)\)\.arm hCur \(hNI tid hCur\)\)$' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersDispatch.lean
@@ -5018,7 +5138,7 @@ run_negative_check "INVARIANT" rg -n -U 'def threadFinaliseAdmitted[^\n]*(\n([ \
 # The admission no longer refuses a queued or current ready holder.  A busy
 # reply is finalised as reply_remove: its caller's wait cancelled, the boost it
 # lent reverted, the caller suspended.
-run_check "INVARIANT" rg -n -U 'def finaliseSchedContext \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if schedContextFinaliseAdmitted st x then\n    unbindSchedContextNotification \(finaliseSchedContextCleanup \(finaliseSchedContextUnstack\n      \(finaliseSchedContextUnbind \(finaliseSchedContextDeschedule st x\) x\) x\) x\) ⟨x\.val⟩' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U 'def finaliseSchedContext \(x : SeLe4n\.ObjId\) \(st : SystemState\) : SystemState :=\n  if schedContextFinaliseAdmitted st x then\n    unbindSchedContextNotification \(finaliseSchedContextCleanup \(schedContextUnbindReply\n      \(finaliseSchedContextUnbind \(finaliseSchedContextDeschedule st x\) x\) x\) x\) ⟨x\.val⟩' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 # The deschedule runs first, on the state the admission reads, so it reads only
 # whether the holder is ready: the admission reads the binding back and the idle check.
 run_check "INVARIANT" rg -n -U 'def finaliseSchedContextDeschedule [^\n]*(\n([ \t][^\n]*)?){0,9}\n        if t\.ipcStateCode == 0 && t\.ipcObjectCode == 0 then descheduleAtPlacement st tid$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
@@ -5029,6 +5149,12 @@ run_check "INVARIANT" rg -n -U 'def finaliseReply [^\n]*(\n([ \t][^\n]*)?){0,8}\
 # the context to its caller.  The pop's refusal is decided on the pre-state.
 run_check "INVARIANT" rg -n -U 'def finaliseReplyCancel [^\n]*\n[^\n]*\n  if replyStackLinkIsHead r\.next then cancelIpcBlockingReclaimed c t st\n  else Lifecycle\.Suspend\.cancelIpcBlocking st c t' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n -U 'def replyCallerFinalisable [^\n]*(\n([ \t][^\n]*)?){0,20}replyHeadPopCommits' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+# WS-SX SX8: the final delete's head pop commits on either arm of seL4's
+# reply_pop: the head-reply check reads the held-head pop's commit, which the
+# router's own test splits into the return's and the held pop's.
+run_check "INVARIANT" rg -n -U '^@\[inline\] def replyHeadPopCommits [^\n]*(\n([ \t][^\n]*)?)*        heldPopCommits st ⟨k⟩ s c\n' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
+run_check "INVARIANT" rg -n -U '^def heldPopCommits [^\n]*(\n([ \t][^\n]*)?)*  if donationRecipientAcceptable st recipient then donatedReturnCommits st holder scId recipient\n  else keptPopCommits st holder scId\n' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem popHeldReplyHead_ok_of_commits($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # The busy reply's finalise is compiled in place, through @[csimp].
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem finaliseReply_eq_impl : @finaliseReply = @finaliseReplyImpl' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^theorem finaliseSchedContextDeschedule_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
@@ -5066,7 +5192,7 @@ run_check "INVARIANT" rg -n '^theorem finaliseReplyUnstash_hidden($|[ ({:\[\]])'
 run_check "INVARIANT" rg -n '^theorem finaliseReply_closed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
 run_check "INVARIANT" rg -n '^theorem finaliseReplyStep_keepsIpcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
 run_check "INVARIANT" rg -n '^theorem finaliseScDescheduleStep_keepsIpcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllPreservation.lean
-run_check "INVARIANT" rg -n '^theorem finaliseSchedContextUnstack_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
+run_check "INVARIANT" rg -n '^theorem schedContextUnbindReply_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllReachability.lean
 run_check "INVARIANT" rg -n '^theorem finaliseSchedContextDeschedule_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
 run_check "INVARIANT" rg -n '^theorem finaliseReply_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
 run_negative_check "INVARIANT" rg -n 'finaliseThreadCleanup' SeLe4n
@@ -5845,14 +5971,11 @@ run_check "INVARIANT" rg -n '^def descheduleThread($|[ ({:\[\]])' SeLe4n/Kernel/
 run_check "INVARIANT" rg -n '^def cancelIpcBlockingOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # `v0.35.164`: the arm lives beside the cleanup it completes -- see the block below.
 run_check "INVARIANT" rg -n '^def cancelBoundDonationOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
-run_check "INVARIANT" rg -n '^def cancelDonationOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^def lockSet_cancelIpcBlocking($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^def lockSet_cancelDonation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem descheduleThread_emits_sgi_if_remote_current($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_emits_sgi_if_remote_current($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_no_sgi_if_not_current($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_consistent_cancelIpcBlocking($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_consistent_cancelDonation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem mem_insertOrMerge_write_of_mem_write($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
 # **WS-OD (`v0.35.4`)**: the parametric suspend coverage family is one lift now --
 # the syscall footprint is *defined over* the cancellation footprint, so every
@@ -5862,13 +5985,10 @@ run_check "INVARIANT" rg -n '^theorem lockSet_tcbSuspendOnCore_covers_cancelIpcB
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_consumed_reply_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_atomic_under_lockSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_atomic_under_lockSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonation_atomic_under_lockSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_atomic_under_lockSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_replenishQueue_purged($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cancellation_cross_core_correct($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonation_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
 run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n '^def runSmpCancellationChecks($|[ ({:\[\]])' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_cancellation_suite' scripts/test_tier2_negative.sh
@@ -5920,6 +6040,10 @@ run_check "INVARIANT" rg -n '^theorem faultFrameW_capFault($|[ ({:\[\]])' SeLe4n
 run_check "INVARIANT" rg -n '^theorem faultMessage_overflowRegs_capFault($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
 run_check "INVARIANT" rg -n '^def resolveFaultHandler($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
 run_check "INVARIANT" rg -n '^def faultDeliverOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^        faultDeliverOnCore st tid f fctx executingCore \(callLendAdmits ctx st tid\)$' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^          \(\.fault f ctx tgt\.cap\.badge tgt\.cap\.canLinkReply\) executingCore st lend with$' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^          else if cap\.canLinkReply && callDonatesInPlace st epId tid r rt rid && lend then$' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
+run_check "INVARIANT" rg -n '^        faultDeliverHandledWords st tid c \(callLendAdmits lctx st tid\) epId cap k flag w0 w1 lk$' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
 run_check "INVARIANT" rg -n '^def faultReplyOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
 run_check "INVARIANT" rg -n '^theorem faultDeliverOnCore_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
 run_check "INVARIANT" rg -n '^theorem faultReplyOnCore_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
@@ -6093,7 +6217,7 @@ run_check "INVARIANT" rg -n -U '^    \(fun d w0 w1 w2 w3 w4 s =>\n      match ca
 # message held as a constant.
 run_check "INVARIANT" rg -n '^theorem receiveCallTake_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultReceiveInPlace.lean
 run_check "INVARIANT" rg -n '^theorem receiveFaultTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultReceiveInPlace.lean
-run_check "INVARIANT" rg -n -U '^              if receiveCallTakesInPlace st epId tid s sTcb rid then\n                \.ok \(\(\), performFaultReceiveDelivered st epId s sTcb\.queueNextCode tid rid$' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U '^              if receiveCallTakesUnlentInPlace lend st epId tid s sTcb rid then\n                \.ok \(\(\), performFaultReceiveDelivered st epId s sTcb\.queueNextCode tid rid$' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n '^theorem deliverFaultFrame_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
 run_check "INVARIANT" rg -n '^theorem storeFaultReplyRendezvous_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
 run_check "INVARIANT" rg -n '^  let s1 := st\.updateTcb c faultReplyReceiverTcb$' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
@@ -7641,7 +7765,7 @@ run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded_by_globalProjecti
 run_check "INVARIANT" rg -n '^theorem crossCoreTransition_invisible_to_every_observer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 67' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 68' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -7765,7 +7889,7 @@ run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterferenc
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # SM9.A.4b took the inventory 26 -> 28 with the two audit readers, both of
 # which take an executing core and carry an EMPTY write set.
-run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 38' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 41' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # PR #861 review round 34: the context-restore gate lives in WRAPPERS, never
 # inside the transitions.  An in-transition `if contextRestoreSeamLive` reduces
@@ -7806,7 +7930,7 @@ run_check "INVARIANT" rg -n '^def endpointReplyDispatchWriteSet \(' SeLe4n/Kerne
 run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/IpcArms.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/IpcArms.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/SchedContextArms.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # `v0.35.170` (WS-RR RR8.12 Cut C3b-iv): repointed -- production now, beside the
 # resolved footprint that reads it, as its four siblings were at C3b-i..iii.
@@ -7819,7 +7943,6 @@ run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_crossCoreNonInterferen
 run_check "INVARIANT" rg -n '^theorem switchToThreadOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/IpcArms.lean
 run_check "INVARIANT" rg -n '^theorem handleRescheduleSgiOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/IpcArms.lean
 run_check "INVARIANT" rg -n '^theorem suspendRescheduleOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/IpcArms.lean
-run_check "INVARIANT" rg -n '^theorem cleanupDonatedSchedContext_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
 # The CC-3 witness must depend on the metadata it witnesses: a component
 # identity on `objects` stays green if `priority` is erased from the TCB
 # projection.  Pin the fields by name.
@@ -8055,7 +8178,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 # Audit IPC-2 (`v0.36.49`): the two-leg ReplyRecv composite these three named is
 # deleted; the live transition took its name and its entries are anchored above.
 run_negative_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 38' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 41' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # WS-ZA ZA5.4 part 22: the space change takes the executing core for its retire,
 # so it is a cross-core inventory entry, delegation-backed; part 26: through the
 # zombie delete, which may write every core.
@@ -8388,7 +8511,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: linearOrder disagrees on exactly one of t
 # SM9.A.11 took it 40 -> 42 with the two audit readers; WS-RR RR8.16
 # (`v0.35.190`) took it 44 -> 45 with `cspaceRevokeCdt`.  The anchor pins HEAD's
 # value; the arrows above are history, which is why they are not restated in it.
-run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 53' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 54' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
@@ -8879,7 +9002,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: it IS visible at the core it landed on' t
 run_check "INVARIANT" rg -n 'NEGATIVE: the remote wake is not confined to the EXECUTING core' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'SCOPE: the decidable slice cannot see a badge write' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^\[smp-information-flow\]' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'enforcement boundary: canonical 53' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'enforcement boundary: canonical 54' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'smp_information_flow\.expected' tests/fixtures/smp_information_flow.expected.sha256
 # The FIXTURE's independence probe must land on a core whose current thread the
 # low observer can SEE, or the reported set is `allCores` and the line is
@@ -9061,11 +9184,11 @@ run_check "INVARIANT" rg -n '32 => some \.auditDrain' SeLe4n/Model/Object/Types.
 # `.tcbSetFaultHandler` took it to 35 and WS-RR RR8.16's `.cspaceRevoke` to 36;
 # WS-ZA ZA5.4 part 14 retired number 8 and WS-SX SX6.5 number 34, and WS-SX SX7.1 number 37, leaving 45
 # variants under a bound of 48.
-run_check "INVARIANT" rg -n '^def count : Nat := 45' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def count : Nat := 46' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'AuditRead = 31' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'AuditDrain = 32' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub const COUNT: usize = 45;' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub const ENCODING_BOUND: u64 = 48;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const COUNT: usize = 46;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const ENCODING_BOUND: u64 = 49;' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'pub const RETIRED: \[u64; 3\] = \[8, 34, 37\];' rust/sele4n-types/src/syscall.rs
 
 # WS-ZA ZA4.3: the yield syscall, both ABI halves, and the proofs that cover it:
@@ -9177,7 +9300,7 @@ run_check "INVARIANT" rg -n '^  runAuditDrainSignalChecks' tests/SmpInformationF
 run_check "INVARIANT" rg -n 'capabilityOnly "auditReadFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_negative_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 67' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 68' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditRead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditDrain($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #870 round 6 (the lock domain): a declared footprint covers the COMMITTED
@@ -9258,7 +9381,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: the PRE-EPOCH rule would have stamped thi
 run_check "INVARIANT" rg -n 'NEGATIVE: an unconfigured deployment still has the cliff' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^private def auditReaderTraceLines($|[ ({:\[\]])' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'audit view: trail 3 entries' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=45' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=46' tests/fixtures/smp_information_flow.expected
 # The end-to-end ABI witness: the returned word is the SELECTED one, not the
 # caller's own preloaded `x0`.  Without the staged frame the assertion below
 # would read back whatever the caller left there.
@@ -9985,8 +10108,10 @@ run_check "INVARIANT" rg -n '^    st\.liveMappingsRecorded ∧$' SeLe4n/Kernel/A
 run_check "INVARIANT" rg -n '^    st\.releaseQueueRefined ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^    st\.refillsSound ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^    st\.yieldLinksAgree ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^    st\.bookkeepingAgrees$' SeLe4n/Kernel/Architecture/Invariant.lean
-run_negative_check "INVARIANT" rg -n 'st\.bookkeepingAgrees ∧' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^    st\.bookkeepingAgrees ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^    notificationLinksAgree st$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_negative_check "INVARIANT" rg -n 'notificationLinksAgree st ∧' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle\.notificationLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
 # The 22nd conjunct (WS-UC UC2): the bookkeeping ghosts agree with the object
 # table, established by the boot's empty state, carried by every kernel entry through
 # its mapping-record stages, and transported by the taint-word frame.
@@ -9999,7 +10124,7 @@ run_check "INVARIANT" rg -n -U '^structure SystemState\.bookkeepingAgrees \(st :
 run_check "INVARIANT" rg -n -U '^theorem storeObject_preserves_bookkeepingAgrees\n[^\n]*\n[^\n]*\n[^\n]*\n[^\n]*\n    \(hFit : \(st\.objects\[id\]\?\)\.isSome ∨ st\.objectIndex\.length < maxObjects\)' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_ok_size_lt($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_objectIndex_length_le($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
-run_check "INVARIANT" rg -n 'hRefill, hYield, ⟨ist\.hLifecycleConsistent, hCount⟩⟩' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n 'hRefill, hYield, ⟨ist\.hLifecycleConsistent, hCount⟩, hNtfnLinks⟩' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle\.objectCountBounded($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
 run_negative_check "INVARIANT" rg -n -U 'theorem proofLayerInvariantBundle\.objects_noResizeDue[^\n]*\n[^\n]*hS' SeLe4n/Kernel/Architecture/Invariant.lean
 # WS-UC UC3: the boot's object and ASID tables are boot-sized, built where the
@@ -10045,6 +10170,15 @@ run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_preserves_yiel
 run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_yieldLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
 run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_yieldLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_yieldLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchEntryState_preserves_notificationLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickEntryState_preserves_notificationLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem perCoreRescheduleEntryState_preserves_notificationLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryState_preserves_notificationLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem unknownSyscallEntryState_preserves_notificationLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem fpAccessEntryState_preserves_notificationLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem interruptEntryState_preserves_notificationLinksAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Entry.lean
+run_check "INVARIANT" rg -n '^theorem runQueueStage_of_objectsAgreeOffNotificationLinks($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean
+run_check "INVARIANT" rg -n 'notificationLinksAgree_of_clear fun k' SeLe4n/Platform/Boot.lean
 # WS-ZA ZA6.7: seL4-MCS's `activateThread` yield completion at every entry's
 # tail.  The compiled form reads the core's current-thread code (no `some`
 # built) and is out of line, the linked case too (an inlined form's join point
@@ -10327,7 +10461,7 @@ run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines($|[ ({:\[\]])'
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=45 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=46 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
 
 # ============================================================================
 # WS-SM SM9.C — the data-carrying declassification
@@ -10416,9 +10550,67 @@ run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_confi
 run_check "INVARIANT" rg -n '^theorem declassificationRelativeNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem declassifiedSignalDispatch_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem declassifiedSignalDispatch_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-# The footprint's cores ARE SM6.B's write set — one definition, not two that can
-# drift (the failure mode v0.32.101 and v0.33.16 both caught).
-run_check "INVARIANT" rg -n 'cores := notificationSignalBoundWriteSet st notificationId' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# The footprint's cores ARE the live signal's write set — one definition, not two
+# that can drift (the failure mode v0.32.101 and v0.33.16 both caught).
+run_check "INVARIANT" rg -n 'cores := sendSignalWriteSet st notificationId' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# WS-SX SX8.2: the live `.notificationSignal` arm is seL4's sendSignal (wake then
+# donation); its confinement and cross-core non-interference, and the write set.
+run_check "INVARIANT" rg -n '^def sendSignalWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
+run_check "INVARIANT" rg -n '^theorem sendSignalOnCoreFlowing_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem sendSignalOnCoreFlowing_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContext_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/SchedContextArms.lean
+run_check "INVARIANT" rg -n '^theorem schedContextBind_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem completeSignalArm_scheduler_of_donation($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+# WS-SX SX8.2: seL4's `maybeReturnSchedContext` after a blocking Wait — the
+# return, the lock set's return replenish cores, and the wait arm wired through
+# it.  One return: the Wait's and the receive's are seL4's writes and the purge,
+# never the unbind's (which would clear `isActive` and the donation origin).
+run_check "INVARIANT" rg -n '^def maybeReturnSchedContext($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+run_check "INVARIANT" rg -n '^        if schedContextReturnAdmitted st vS vT then schedContextReturnPerform st vS tid$' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+run_check "INVARIANT" rg -n '^        schedContextReturnPerform st ⟨⟨sCode - 1⟩, hS⟩ ⟨tCode⟩$' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+run_negative_check "INVARIANT" rg -n 'schedContextUnbindPerform' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+run_check "INVARIANT" rg -n '^theorem maybeReturnSchedContext_runSlots($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+# The return's guard compiles on the link codes, so asking it allocates nothing.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem schedContextReturnAdmitted_eq_codes($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+run_check "INVARIANT" rg -n '^theorem maybeReturnSchedContext_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/SchedContextArms.lean
+run_check "INVARIANT" rg -n '^theorem completeSignalArm_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem completeSignalArm_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '\| \.waitDispatch => niName! completeSignalArm_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem maybeReturnSchedContext_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem maybeReturnSchedContext_savedRegsKeptExcept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_check "INVARIANT" rg -n '^theorem savedRegsWrittenFree.giveBack($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCapabilityDispatch.lean
+run_check "INVARIANT" rg -n '\| \(st'"'"', \.ok none\) => \.ok \(\(\), maybeReturnSchedContext st'"'"' notifId tid\)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^    \(executingCore :: waitDonationCores st notificationId\? waiter\)$' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^      waitReturnReplenishCores st notificationId\? waiter\)$' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+# The wait's object footprint locks the completion's context, keyed on the word.
+run_check "INVARIANT" rg -n 'waitCompletionContext\? st notificationId ops.caller\)\.map' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_negative_check "INVARIANT" rg -n 'signalDonationContext\? st notificationId ops.caller' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+# WS-SX SX8.2: seL4 `receiveIPC`'s `maybeReturnSchedContext` on a blocking
+# receive, before the endpoint leg — the return, its wiring and its footprints.
+run_check "INVARIANT" rg -n '^@\[inline\] def schedContextReturnPerform($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+run_check "INVARIANT" rg -n '^def receiveReturnSchedContext($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+run_check "INVARIANT" rg -n '^def receiveLegState($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+run_check "INVARIANT" rg -n '\(receiveReturnSchedContext \(Syscall\.wordReceiveBlocks \(callerSyscallWord st tid\)\) st tid\)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'endpointReceiveDualWriteSet \(receiveLegState st receiver\)' SeLe4n/Kernel/IPC/CrossCore/BusyReplyReceiveFootprint.lean
+run_check "INVARIANT" rg -n 'lockSet_endpointReceiveOnCore \(SeLe4n\.Kernel\.receiveLegState st receiver\)' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem footprintCoversWrites_receiveLegState($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_receive_covers_returnContext($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+# The return purges the context's replenish-queue entry (seLe4n's unbind's
+# purge), and the receive's replenish segments name that core.
+run_check "INVARIANT" rg -n 'SchedContextOps\.purgeReplenishment \(schedContextReturnLinks st vS tid\)' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+run_check "INVARIANT" rg -n '^def receiveReturnReplenishCores($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/NotificationDonation.lean
+run_check "INVARIANT" rg -n 'receiveReturnReplenishCores \(cancelReplyHolder st holder executingCore\) receiver' SeLe4n/Kernel/IPC/CrossCore/BusyReplyReceiveFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedContextReturnPerform_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Dispatch.lean
+run_check "INVARIANT" rg -n '^theorem cancelRecvBusyReply_receiveReturnContext\?_locked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/ReplyBindingPairFrame.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveLegR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+# The leg after a return runs out of line, so the receive arm compiles the
+# rendezvous once per inline site (it doubled RefusalCarryingEndpoint.c and
+# RefusalCarryingReplyRecv.c when inlined twice).  The out-of-line arm takes
+# words and the state; the returned leg's fallback is that arm, not the leg.
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def endpointReceiveReturnedRendezvousR \(blocks : Bool\) \(epId : SeLe4n\.ObjId\)\n    \(tid : SeLe4n\.ThreadId\) \(replyCode : Nat\) \(executingCore : Concurrency\.CoreId\) \(lend : Bool\)\n    \(st : SystemState\) :' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U '^    else endpointReceiveReturnedRendezvousR blocks epId tid replyCode executingCore lend st\n\ntheorem endpointReceiveReturnedLegR_eq' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n '^theorem receiveReturnSchedContext_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/SchedContextArms.lean
+run_check "INVARIANT" rg -n '^theorem receiveWithReturn_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # NEGATIVE: the footprint must take no policy — that is what makes
 # `footprint_does_not_authorize` provable rather than merely plausible.
 run_negative_check "INVARIANT" rg -n 'def declassifiedSignalEffectFootprint.*DeclassificationPolicy' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -10433,7 +10625,7 @@ run_negative_check "INVARIANT" rg -n 'declassifiedSignal' SeLe4n/Kernel/Informat
 # SM9.C.8: the syscall, both Rust mirrors and the seam classification the total
 # `refusalSeamClass` forced it to supply.
 run_check "INVARIANT" rg -n '^  \| declassifySignal' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n 'def count : Nat := 45' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'def count : Nat := 46' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-types/src/error.rs
 run_check "INVARIANT" rg -n '^pub fn declassify_signal' rust/sele4n-sys/src/declassify.rs
@@ -10737,7 +10929,7 @@ run_check "INVARIANT" rg -n 'ipcCapTransferArrivalOrder' tests/OperationChainSui
 run_check "INVARIANT" rg -n 'endpointReceiveDualWithCapsOnCore epId tid \(some rid\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 run_negative_check "INVARIANT" rg -n 'endpointReceiveDualOnCore epId tid \(some rid\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 # Audit IPC-2 (`v0.36.49`): the dispatch table calls the one transition.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchWithCapChecked [^\n]*(\n([ \t][^\n]*)?)*replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label msg" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchWithCapChecked [^\n]*(\n([ \t][^\n]*)?)*replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label msg\n *replyGrant executingCore st \(receiveLendAdmits ctx st epId\) with" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" rg -n 'replyRecvCapTransferArrivalOrder' tests/OperationChainSuite.lean
 
 # PR #873 round 8 (SECURITY): **a receive that dequeued nothing installs
@@ -10761,7 +10953,10 @@ run_check "INVARIANT" rg -n 'receiveInstallsCaps st endpointObjId' SeLe4n/Kernel
 # entry and the live-arm claim sits on the new one.  The negative forbids the
 # claim drifting back onto the bare transition.
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/IpcArms.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# WS-SX SX8.2: both arms run seL4-MCS's return before the leg, so the entry names
+# the receive-with-return theorem; the retired bare-leg theorem must not return.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.endpointReceiveDualWithCaps =>\n *niName! receiveWithReturn_crossCoreNonInterference" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+run_negative_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '\| \.endpointReceiveDualWithCaps => \.delegationProof \.receive' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_negative_check "INVARIANT" rg -n '\| \.endpointReceiveDual => \.delegationProof \.receive' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
@@ -11136,6 +11331,24 @@ import SeLe4n.Kernel.IPC.Invariant.DispatchPayoff
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.SyscallReadiness
 import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
 import SeLe4n.Kernel.RefusalCarryingReplyRecv
+import SeLe4n.Kernel.InformationFlow.PerCoreSchedulerNonInterference
+import SeLe4n.Kernel.SchedContext.Invariant.ContextLenders
+import SeLe4n.Kernel.IPC.Invariant.ContextLenderSites
+import SeLe4n.Kernel.IPC.Invariant.ContextLenderLinks
+import SeLe4n.Kernel.ContextLenders.Entry
+import SeLe4n.Kernel.ContextLenders.Interrupt
+import SeLe4n.Kernel.ContextLenders.Fault
+import SeLe4n.Kernel.ContextLenders.Notification
+import SeLe4n.Kernel.ContextLenders.Cancel
+import SeLe4n.Kernel.ContextLenders.Receive
+import SeLe4n.Kernel.ContextLenders.Reply
+import SeLe4n.Kernel.ContextLenders.Dispatch
+import SeLe4n.Kernel.ContextLenders.ReplyRecv
+import SeLe4n.Kernel.ContextLenders.Capability
+import SeLe4n.Kernel.ContextLenders.SyscallDispatch
+import SeLe4n.Kernel.ContextLenders.CapabilityOnly
+import SeLe4n.Kernel.ContextLenders.CapabilityDispatch
+import SeLe4n.Kernel.ContextLenders.SyscallEntry
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency
 #check @replyRecvCompletesSignalArm
@@ -11157,6 +11370,310 @@ open SeLe4n.Kernel.Concurrency
 #check @schedLockSet_replyRecvTransferOnCore_subset_arm
 #check @schedLockSet_replyRecvArmOnCore_coversTransfer
 #check @lockSetForSyscall_replyRecv_covers_boundNotification
+#check @lockSetForSyscall_replyRecv_covers_donationContext
+#check @lockSetForSyscall_receive_covers_donationContext
+#check @lockSetForSyscall_receive_covers_returnContext
+#check @receiveReturnContext?
+#check @receiveLegState_queues
+#check @receiveReturnSchedContext_scheduler_frame
+#check @maybeReturnSchedContextFast_eq
+#check @receiveReturnSchedContextFast_eq
+#check @replyTransferOnCoreChecked_homeCoresKept
+#check @replyTransferOnCoreChecked_objects_invExt
+#check @replyRecv_boundCode_of_completes
+#check @replyRecvDonationCores_eq_home_of_completes
+#check @replyRecvDonationContext_superset
+#check @notificationsAndBindingsKept.of_replyRecvPopDonation
+#check @notificationsAndBindingsKept.of_replyRecvBeforeReceive
+#check @replyRecvReturnContext_superset
+#check @lockSetForSyscall_replyRecv_covers_returnContext
+#check @receiveReturnSchedContext_callDonationGuard
+#check @ntfnContextsAgree.of_notificationsAndBindingsKept
+#check @notificationContext?_congr
+#check @notificationsBackward_of_kindPreservingAt
+#check @cancelReplyHolder_ntfnContextsAgree
+#check @cancelRecvBusyReply_ntfnContextsAgree
+#check @cancelRecvBusyReply_signalDonationContext?
+#check @signalDonationContext?_congr
+#check @receiveCompletion_signalDonationContext?_eq
+#check @cancelRecvBusyReply_boundNotificationCode
+#check @cancelRecvBusyReply_receiverBoundNotification
+#check @cancelRecvBusyReply_receiverBoundNotification?
+#check @receiveCompletion_receiverBoundNotification?_eq
+#check @lockSetForSyscall_receive_covers_completedNotification
+#check @sendSignalOnCore
+#check @signalWokenThread?
+#check @donateToSignalled
+#check @notificationContext?
+#check @donationContextFlows
+#check @maybeDonateSchedContextFlowing
+#check @maybeDonateSchedContextFlowing_induct
+#check @maybeDonateSchedContextFlowing_of_flows_false
+#check @maybeDonateSchedContextFlowingFast_eq
+#check @donationContextFlows_context
+#check @donationContextFlows_context_back
+#check @donationContextFlows_false_of_not_back
+#check @donationContextFlows_congr
+#check @OnContextStack
+#check @contextLendersFlow
+#check @contextLendersFlow_of_no_stacks
+#check @donationContextFlows_lenders
+#check @callLendAdmits
+#check @callLendAdmits_congr
+#check @callLendAdmits_flows
+#check @callLendSchedContext?
+#check @callLendSchedContext?_flows
+#check @applyCallDonationOnCoreWhen
+#check @applyCallDonationOnCoreWhen_cases
+#check @applyCallDonationOnCoreWhen_induct
+#check @endpointCallDispatchReplenishCores_subset_true
+#check @schedLockSet_endpointCallOnCore_coversWrites
+#check @receiveLendAdmits
+#check @receiveLendAdmits_of_head
+#check @applyRendezvousCallDonation_cases
+#check @endpointReceiveHandoffChainCores
+#check @endpointReceiveHandoffChainWriteSet_subset_cores
+#check @schedLockSet_endpointReceiveOnCore_coversWrites
+#check @callWakesUnlentInPlace
+#check @callWakesUnlentInPlace_takesReply
+#check @callRendezvous_inPlace_unlent
+#check @applyCallDonationOnCoreWhen_ok_self
+#check @receiveCallTakesUnlentInPlace
+#check @receiveCallTakesUnlentInPlace_takesReply
+#check @receiveCallTakesUnlentInPlace_lendsNothing
+#check @applyReceiveRendezvousDonation_of_lendsNothing
+#check @replyRecvRendezvousChainCores
+#check @replyRecvRendezvousChainCores_subset
+#check @replyRecvUnlentRendezvousR
+#check @replyRecvLongUnlentRendezvousR
+#check @receiveLendAdmits_false
+#check @receiveLendAdmits_of_callLendAdmits
+#check @applyRendezvousCallDonation_false_of_ok
+#check @lendSchedContextInPlaceWhen
+#check @applyRendezvousCallDonation_lendInPlace
+#check @lendSchedContextInPlaceWhen_msg
+#check @lendSchedContextInPlaceWhen_ipcStateCarried
+#check @replyRecvUnlentArmR
+#check @replyRecvUnlentArmR_eq
+#check @OnContextStack_iff_views
+#check @contextLendersFlow_iff_views
+#check @contextStacksShrink
+#check @contextLendersFlow_of_shrink
+#check @contextStackViewsAgree
+#check @contextLendersFlow_of_viewsAgree
+#check @contextStackViewsAgree_of_chainFrame
+#check @contextStackLinksShrink
+#check @contextLendersFlow_of_linksShrink
+#check @contextLendersFlow_of_push
+#check @not_onContextStack_of_next_none
+#check @cutReplyFrameOut_preserves_contextLendersFlow
+#check @removeCallerReplyFrame_preserves_contextLendersFlow
+#check @returnDonatedSchedContext_preserves_contextLendersFlow
+#check @donateSchedContext_preserves_contextLendersFlow
+#check @donateSchedContextInPlace_preserves_contextLendersFlow
+#check @returnUnheldSchedContext_preserves_contextLendersFlow
+#check @severUnheldSchedContext_preserves_contextLendersFlow
+#check @cutHeadFrameKeepingContext_preserves_contextLendersFlow
+#check @schedContextUnbindReply_preserves_contextLendersFlow
+#check @storeReplyLeg_preserves_contextLendersFlow
+#check @linkReply_preserves_contextLendersFlow
+#check @linkCallerReply_preserves_contextLendersFlow
+#check @contextLendersFlow_of_linksShrinkOff
+#check @chainObjectsKept.endpointQueuePopHead
+#check @chainObjectsKept.endpointQueueEnqueue
+#check @linkServerStashedReply_preserves_contextLendersFlow
+#check @storeCallRendezvous_preserves_contextLendersFlow
+#check @storeCallRendezvousReady_preserves_contextLendersFlow
+#check @storeReceiveCallReady_preserves_contextLendersFlow
+#check @receiveCallTakeState_preserves_contextLendersFlow
+#check @endpointCall_preserves_contextLendersFlow
+#check @endpointCallOnCore_preserves_contextLendersFlow
+#check @endpointReceiveDual_preserves_contextLendersFlow
+#check @endpointReceiveDualOnCore_preserves_contextLendersFlow
+#check @cleanupPreReceiveDonationMigrated_linksShrink
+#check @LendersStage
+#check @LendersPremises
+#check @LendersStage.of_linksShrink
+#check @LendersStage.entryTail
+#check @contextStackViewsAgree_of_objectsAgreeOffYield
+#check @chainObjectsKept.settleResidencyAt
+#check @perCoreRescheduleEntryState_lendersStage
+#check @fpAccessEntryState_lendersStage
+#check @contextStackViewsAgree_insert
+#check @LendersFrame.rewriteObject_schedContext
+#check @LendersFrame.timeoutThread
+#check @LendersFrame.timerTickOnCore
+#check @perCoreTimerTickEntryState_lendersStage
+#check @LendersFrame.schedContextBindPerform
+#check @LendersFrame.sendSignalOnCoreFlowing
+#check @interruptEntryState_lendersStage
+#check @chainObjectsKept.receiveTransferCaps
+#check @chainObjectsKept.propagatePipChainCrossCore
+#check @applyCallDonation_preserves_contextLendersFlow
+#check @endpointCallWithCapsOnCore_preserves_contextLendersFlow
+#check @endpointCallCrossCoreDispatch_preserves_contextLendersFlow
+#check @endpointCallCrossCoreDispatchChecked_preserves_contextLendersFlow
+#check @FaultLendPremises
+#check @faultDeliverOnCoreChecked_preserves_contextLendersFlow
+#check @faultEntryState_lendersStage
+#check @unknownSyscallEntryState_lendersStage
+#check @applyReceiveRendezvousHandoff_preserves_contextLendersFlow
+#check @endpointReceiveDualWithCapsOnCore_preserves_contextLendersFlow
+#check @chainObjectsKept.endpointSendDualOnCore
+#check @endpointSendCrossCoreDispatchChecked_lendersStage
+#check @LendersFrame.notificationSignalBoundCrossCoreDispatchChecked
+#check @LendersFrame.notificationSignalDeclassifiedCrossCoreDispatch
+#check @LendersFrame.cancelIpcKeepingContexts
+#check @LendersFrame.suspendCancelRevert
+#check @LendersFrame.cancelReplyHolder
+#check @chainObjectsKept.notificationWaitOnCore
+#check @LendersFrame.notificationWaitCrossCoreDispatchChecked
+#check @LendersFrame.schedContextReturnPerform
+#check @LendersFrame.maybeReturnSchedContext
+#check @LendersFrame.receiveReturnSchedContext
+#check @LendersFrame.maybeDonateSchedContextFlowing
+#check @LendersFrame.completeSignalArm
+#check @LendersFrame.applyReplyDonationOnCore
+#check @LendersFrame.endpointReplyOnCore
+#check @LendersFrame.endpointReplyCrossCoreDispatchChecked
+#check @LendersFrame.faultReplyOnCore
+#check @LendersFrame.replyTransferOnCoreChecked
+#check @receiveLendAdmits_flows_dequeued
+#check @ReceiveLendersPremises
+#check @receiveResolvedArm_lendersStage
+#check @LendersFrame.replyRecvCompletesSignalArm
+#check @replyRecvPopDonation_binding_cases
+#check @replyRecvLendAdmits_flows_dequeued
+#check @LendersFrame.replyRecvPopDonation
+#check @replyRecvPostReceiveDonation_preserves_contextLendersFlow
+#check @ReplyRecvLendersPremises
+#check @endpointReplyRecvAnsweringOnCore_lendersStage
+#check @replyRecvTransferOnCore_lendersStage
+#check @chainObjectsKept.cspaceMove
+#check @LendersFrame.cspaceMintWithCdt
+#check @LendersFrame.registerService
+#check @LendersFrame.declassifyObjectFromCore
+#check @LendersDispatchPremises
+#check @clearStashStage_lendersStage
+#check @dispatchWithCapChecked_lendersStage_of_capabilityOnly
+#check @LendersFrame.yieldOnCore
+#check @applySyscallTaint_lendersStage
+#check @dispatchSyscallChecked_lendersStage_of_capabilityOnly
+#check @chainObjectsKept.mintReplyCapWithCdt
+#check @LendersFrame.setPriorityOnCore
+#check @LendersFrame.schedContextYieldToOnCore
+#check @LendersFrame.updateSchedContext_clearHead
+#check @LendersFrame.schedContextUnbindReply
+#check @LendersFrame.schedContextUnbindAllOnCore
+#check @LendersFrame.schedContextConfigure
+#check @LendersFrame.schedControlConfigure
+#check @LendersFrame.setThreadCpuAffinityOnCore
+#check @LendersFrame.vspaceMapOrRemapFromFrameCap
+#check @LendersFrame.vspaceUnmapFrameCap
+#check @LendersFrame.pageTableMap
+#check @LendersFrame.pageTableUnmap
+#check @LendersFrame.irqControlGetFromCap
+#check @LendersFrame.suspendThreadOnCore
+#check @LendersFrame.resumeThreadOnCore
+#check @LendersFrame.restartThreadOnCore
+#check @LendersFrame.untypedRetypeFromCap
+#check @contextStackViewsAgree_of_finaliseWrite
+#check @LendersFrame.finaliseFinalObject
+#check @LendersFrame.retireFinalisedObject
+#check @LendersFrame.cspaceDeleteSlotZombie
+#check @LendersFrame.cspaceRevokeCdtFinalising
+#check @LendersFrame.copyThreadSpacesZombie
+#check @LendersFrame.setIPCBufferOp
+#check @LendersFrame.irqHandlerSetNotification
+#check @LendersFrame.irqHandlerClear
+#check @dispatchCapabilityOnly_lendersFrame
+#check @dispatchWithCapChecked_lendersStage
+#check @dispatchSyscallChecked_lendersStage
+#check @syscallEntryChecked_lendersStage
+#check @syscallDispatchFromAbi_lendersStage
+#check @syscallDispatchCrossCoreStep_lendersStage
+#check @syscallDispatchEntryState_lendersStage
+#check @donationContextFlowsGeneric_liftLegacyContext
+#check @donationContextFlows_eq_impl
+#check @donationContextFlowsGeneric_eq_impl
+#check @donateToSignalledFlowing
+#check @sendSignalOnCoreFlowing
+#check @sendSignalOnCoreFlowing_eq_impl
+#check @sendSignalOnCoreFlowing_induct
+#check @sendSignalOnCore_snd
+#check @sendSignalOnCore_induct
+#check @sendSignalOnCore_preserves_ipcInvariantFull
+#check @notificationSignalBoundOnCore_schedLinkFrame
+#check @notificationSignalOnCore_schedLinkFrame
+#check @SchedLinkFrame.endpointQueueRemoveDual
+#check @schedContextBindPerform_preserves_objects_invExt
+#check @maybeDonateSchedContext_preserves_objects_invExt
+#check @signalWokenThread?_not_blockedOnReply
+#check @notificationSignalBoundCrossCoreDispatchChecked_induct
+#check @sendSignalOnCoreFlowing_stepCovers
+#check @sendSignalOnCoreFlowing_runQueueStage
+#check @sendSignalOnCoreFlowing_mappingStage
+#check @sendSignalOnCoreFlowing_recordsStage
+#check @sendSignalOnCoreFlowing_savedRegsKept
+#check @notificationSignalBoundOnCore_ntfnContextsAgree
+#check @notificationSignalBoundOnCore_signalDonationCores_eq
+#check @notificationSignalBoundOnCore_signalDonationContext?_eq
+#check @signalWakeDonationCores
+#check @signalWakeDonationContext?
+#check @schedLockSet_sendSignalOnCoreFlowing_coversWrites
+#check @footprintCoversWrites_of_cores_subset
+#check @interruptReplenishCores
+#check @schedContextBindPerform_lowEquivalent
+#check @schedContextBind_lowEquivalent
+#check @maybeDonateSchedContext_lowEquivalent
+#check @boundSignalHidden.woken
+#check @sendSignalOnCoreFlowing_lowEquivalent
+#check @lockSetForSyscall_notificationSignal_covers_donationContext
+#check @notificationSignalDeclassifiedCrossCoreDispatch_induct
+#check @notificationSignalDeclassifiedCrossCoreDispatch_snd
+#check @notificationSignalDeclassifiedCrossCoreDispatch_preserves_ipcInvariantFull
+#check @notificationSignalDeclassifiedCrossCoreDispatch_stepCovers
+#check @notificationSignalDeclassifiedCrossCoreDispatch_runQueueStage
+#check @notificationSignalDeclassifiedCrossCoreDispatch_recordsStage
+#check @notificationSignalDeclassifiedCrossCoreDispatch_mappingStage
+#check @maybeDonateSchedContext_onlyObjectsSchedulerDiffer
+#check @maybeDonateSchedContext_declassificationAuditLog_eq
+#check @maybeDonateSchedContextFast_eq_code
+#check @maybeReturnSchedContext
+#check @maybeReturnSchedContextFast_eq
+#check @maybeReturnSchedContext_cases
+#check @maybeReturnSchedContext_induct
+#check @maybeReturnSchedContext_of_guard_false
+#check @maybeReturnSchedContext_objects
+#check @maybeReturnSchedContext_objects_invExt
+#check @maybeReturnSchedContext_scheduler_frame
+#check @maybeReturnSchedContext_runSlots
+#check @schedContextReturnAdmittedCodes
+#check @schedContextReturnAdmitted_eq_codes
+#check @signalReturnContext?_purgeCores
+#check @signalReturnGuard_congr
+#check @signalReturnReplenishCores
+#check @signalReturnContext?
+#check @notificationWaitOnCore_blocked_cases
+#check @notificationWaitOnCore_blocked_frames
+#check @notificationWaitOnCore_blocked_signalReturn_eq
+#check @linkNtfnWaiter_schedFrames
+#check @bindingLinksAgree.getTcb?_binding
+#check @maybeReturnSchedContext_coversWrites
+#check @waitReturnReplenishCores
+#check @schedLockSet_notificationWaitOnCore_contains_return_writes
+#check @maybeReturnSchedContext_preserves_ipcInvariantFull
+#check @maybeReturnSchedContext_stepCovers
+#check @maybeReturnSchedContext_runQueueEntryStage
+#check @maybeReturnSchedContext_mappingStage
+#check @maybeReturnSchedContext_recordsStage
+#check @maybeReturnSchedContext_readyKeptStage
+#check @notificationPending
+#check @waitCompletionContext?
+#check @notificationWaitOnCore_notificationPending
+#check @completeSignalArm_consumed_waitCompletionContext?_eq
+#check @notificationWaitOnCore_blocked_waitCompletionContext?_eq
+#check @lockSetForSyscall_notificationWait_covers_completionContext
 #check @endpointReplyRecvCheckedArmR_eq_general
 #check @endpointReplyRecvLongCheckedArmR_eq_general
 #check @replyRecvSignalArmR
@@ -11561,7 +12078,7 @@ run_check "INVARIANT" rg -n 'cleanupPreReceiveDonationChecked_preservesFieldsOut
 # one-line bridge every frame lemma of the six call sites crosses -- and the
 # negative below refuses the retired literal.  The underscore run is the arity,
 # so an argument added to the pop is caught here rather than absorbed silently.
-run_check "INVARIANT" bash -lc 'rg -U -n "returnDonatedSchedContextResolved_lift hStep\n[ \t]*\(fun n s hs => returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ n hs\)" SeLe4n/Kernel/CrossSubsystem.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "popHeldReplyHead_liftPops hStep\n[ \t]*\(fun n s hs => returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ n hs\)\n[ \t]*\(fun _ _ hs => keepDonatedSchedContext_preservesFieldsOutside hs\)" SeLe4n/Kernel/CrossSubsystem.lean'
 run_negative_check "INVARIANT" rg -n 'returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ none hStep' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n 'writeSetSurfaceElaborates' tests/CrossSubsystemPerCoreSuite.lean
 run_check "INVARIANT" rg -n 'StateField enum has 18 variants' tests/InformationFlowSuite.lean
@@ -12222,7 +12739,7 @@ run_check "INVARIANT" rg -n '^\s*\| ipcMessageTooLarge' SeLe4n/Model/KernelError
 run_check "INVARIANT" rg -n '^\s*\| ipcMessageTooManyCaps' SeLe4n/Model/KernelError.lean
 # WS-H12d: Trace harness and fixture anchors.
 run_check "INVARIANT" rg -n '^private def runIpcMessageBoundsTrace($|[ ({:\[\]])' SeLe4n/Testing/MainTraceHarness.lean
-run_check "TRACE" rg -n 'H12d oversized registers rejected' tests/fixtures/main_trace_smoke.expected
+run_check "TRACE" rg -n 'H12d oversized registers clamped to 120' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'H12d oversized caps rejected' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'H12d boundary message accepted' tests/fixtures/main_trace_smoke.expected
 
@@ -12768,7 +13285,7 @@ run_check "INVARIANT" rg -n '^theorem resolveSchedContextBindNotificationCode_eq
 # invoking core's current thread's context before the thread unbind, then
 # unbinds the notification.
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextUnbind =>(\n([ \t][^\n]*)?)*              match SchedContextOps\.schedContextUnbindAllOnCore vScId\n                  executingCore st with" SeLe4n/Kernel/API.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbindAllOnCore[^\n]*(\n([ \t][^\n]*)?)*    \| _ \+ 1 =>\n      match schedContextUnbindOnCore vScId executingCore st with(\n([ \t][^\n]*)?)*unbindSchedContextNotification st. \(SeLe4n\.SchedContextId\.ofObjId vScId\.val\), sgi\)" SeLe4n/Kernel/SchedContext/OperationsPerCore.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbindAllOnCore[^\n]*(\n([ \t][^\n]*)?)*    \| _ \+ 1 =>\n      match schedContextUnbindOnCore vScId executingCore st with(\n([ \t][^\n]*)?)*\.ok \(schedContextUnbindReply\n[ \t]*\(unbindSchedContextNotification st. \(SeLe4n\.SchedContextId\.ofObjId vScId\.val\)\)\n[ \t]*vScId\.val, sgi\)" SeLe4n/Kernel/SchedContext/OperationsPerCore.lean'
 # The refusal is the thread unbind's own and precedes the revocation, so the
 # per-core unbind runs no local scheduling point.  Mutation: move the refusal
 # after the `schedContextUnbind` call, or restore the preemption seam.
@@ -13029,7 +13546,6 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointCallCrossCoreDispatchLock
 run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReplyDonationOnCoreLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatchLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingOnCoreLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelDonatedDonationOnCoreLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCoreLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The hand-written deduplication the constructor retired must not come back: a
 # footprint over a core SET does not branch on whether two of its cores coincide.
@@ -13058,7 +13574,7 @@ run_check "INVARIANT" rg -n '^def schedLockSet_endpointSendOnCore \(' SeLe4n/Ker
 # and the confinement claim cannot name different cores.  The mutation that decides
 # keeps the definition and resolves the cores a second way.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_notificationSignalOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(notificationSignalWriteSet st notificationId\) \[\]" SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_notificationSignalBoundOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(notificationSignalBoundWriteSet st notificationId\) \[\]" SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_notificationSignalBoundOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n    \(notificationSignalBoundWriteSet st notificationId \+\+ signalWakeDonationCores st notificationId\)\n    \(signalWakeDonationCores st notificationId\)" SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointSendOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(endpointSendWriteSet st endpointId executingCore\) \[\]" SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean'
 # The write sets are declared in PRODUCTION, beside the transitions they are about.
 # They were in the staged `InformationFlow/NonInterferenceCrossCore.lean`, which
@@ -13142,7 +13658,7 @@ run_check "INVARIANT" rg -n '^def schedLockSet_endpointReceiveOnCore \(' SeLe4n/
 # the donation's own pair by theorem.  The mutation that decides keeps
 # `schedFootprintOfCores` and resolves either segment a second way inside the
 # definition.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointReceiveOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n *\(endpointReceiveDualWriteSet st endpointId executingCore\n *\+\+ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore\)\n *\(endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointReceiveOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n *\(endpointReceiveDualWriteSet st endpointId executingCore\n *\+\+ endpointReceiveHandoffChainCores st endpointId receiver replyId executingCore\)\n *\(endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 # ...and the shape that was REPLACED must not come back.  Cut 8a-ii's first form
 # took the two donation cores as parameters `donorHome doneeHome`, which breaks the
 # project's own rule that *a parameter is a place for a caller to be wrong*, and
@@ -13391,7 +13907,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveHandoffReplenishCo
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveHandoffReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match receivePreReturn\? st endpointId receiver with" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveHandoffReplenishCores_of_blocked \([^\n]*(\n([ \t][^\n]*)?)*\(hNoDon : endpointReplyDonation\? st receiver = none\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" rg -n '^theorem endpointReceiveHandoffReplenishCores_of_blocked_returning \(st : SystemState\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveHandoffReplenishCores_of_blocked_returning_eq_migration$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveHandoffReplenishCores_of_blocked_returning_covers_migration$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_contains_preReturn_replenish_writes$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_covers_preReturnMigration$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # What carries the block path across the point where the single-core and cross-core
@@ -13434,10 +13950,11 @@ run_check "INVARIANT" rg -n '^def schedLockSet_endpointReplyRecvOnCore \(' SeLe4
 # resolve either segment a second way inside the body.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n *\(endpointReplyRecvWriteSet endpointId receiver replyId prevCaller msg grant executingCore st\)\n *\(replyRecvHandoffReplenishCores none endpointId receiver replyId prevCaller msg grant\n *executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 # The segment mirrors the spine: the pop's pair at the reply leg's post-state
-# (`st1`), the block-path pair at the pop's post-state (`st1p`), the re-donation
+# (`st1`), seL4-MCS `receiveIPC`'s return at the pop's post-state (`st1p`), the
+# block-path pair at the return's post-state, the re-donation
 # pair at the receive leg's post-state (`st2`).  Pinned with each state NAMED, so a
 # component moved to a state its hand-off does not run on fails the anchor.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvHandoffReplenishCores[^\n]*(\n([ \t][^\n]*)?)*replyDonationReturnReplenishCores st1 replyId prevCaller \+\+\n *\(receivePreReturnReplenishCores st1p endpointId receiver \+\+" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvHandoffReplenishCores[^\n]*(\n([ \t][^\n]*)?)*replyDonationReturnReplenishCores st1 replyId prevCaller \+\+\n *\(receiveReturnReplenishCoresAt true st1p receiver \+\+\n *\(receivePreReturnReplenishCores \(receiveReturnSchedContext true st1p receiver\) endpointId\n *receiver \+\+" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvHandoffReplenishCores[^\n]*(\n([ \t][^\n]*)?)*replyRecvPostReceiveReplenishCores receiver nextThread returnedSc\? st2\)\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 # The re-donation pair is keyed on the arm's OWN three gates -- the pop's
 # `returned?`, the dequeued `Call`, and the donation's OWN resolver at the
@@ -13446,7 +13963,22 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveReplenishCore
 # A reply that popped nothing donates a dequeued `Call` as `.receive` does, so the
 # `none` arm declares the same donation's pair, at the receive leg's post-state.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveReplenishCores[^\n]*(\n([ \t][^\n]*)?)*\| none =>\n *if rendezvousDequeuedCall st nextThread then\n *rendezvousCallDonationReplenishCores st tid nextThread" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation [^\n]*(\n([ \t][^\n]*)?)*\| none =>\s*(--[^\n]*\s*)*if rendezvousDequeuedCall st nextThread then\n *match applyRendezvousCallDonation st tid nextThread with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
+# WS-SX ruling D28: the reply-receive's fast arms ask the receive leg's lend admission
+# before any in-place form; a refused one is answered by the unlent arm, which takes
+# the refused call in place on each shape the admitted path takes it in place, at
+# `lend := false`, and the specification at `lend := false` otherwise (ruling (y)).
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def replyRecvResolvedR[^\n]*(\n([ \t][^\n]*)?)*else if !receiveLendAdmits ctx st epId then\n *replyRecvUnlentArmR epId" SeLe4n/Kernel/RefusalCarryingReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def replyRecvUnlentArmR[^\n]*(\n([ \t][^\n]*)?)*if replyRecvDonatedCallTakeAdmits epId tid c rid grant layout len st then\n *\.ok \(\(\), performReplyRecvDonatedCallTakeDelivered st c tid rid\n[^\n]*\n *sTcb\.queueNextCode ⟨sTcb\.scBindingScCode - 1⟩ false " SeLe4n/Kernel/RefusalCarryingReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def replyRecvUnlentArmR[^\n]*(\n([ \t][^\n]*)?)*else if replyRecvUnlinkedCallTakeAdmits epId tid c rid grant layout len st then\n *\.ok \(\(\), performReplyRecvUnlinkedCallTakeDelivered st c tid rid epId s\n *sTcb\.queueNextCode ⟨sTcb\.scBindingScCode - 1⟩ false " SeLe4n/Kernel/RefusalCarryingReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def replyRecvUnlentArmR[^\n]*(\n([ \t][^\n]*)?)*else if replyRecvCallTakeAdmits epId tid c rid grant layout len st then\n *\.ok \(\(\), performReplyRecvCallTakeDelivered st c tid rid epId s sTcb\.queueNextCode\n *⟨sTcb\.scBindingScCode - 1⟩ false " SeLe4n/Kernel/RefusalCarryingReplyRecv.lean'
+# Ruling (y): the receive's admission refuses only a head blocked on a call.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def receiveLendAdmits[^\n]*(\n([ \t][^\n]*)?)*match t\.ipcState with\n *\| \.blockedOnCall _ =>\n *match t\.schedContextBinding\.scId\? with\n *\| some sc => securityFlowsTo \(ctx\.threadLabelOf s\) \(ctx\.objectLabelOf sc\.toObjId\)\n *\| none => true\n *\| _ => true" SeLe4n/Kernel/IPC/Operations/CallLendLabel.lean'
+# The in-place lend of a reply-receive's taken call follows the admission.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def lendSchedContextInPlaceWhen[^\n]*(\n([ \t][^\n]*)?)*  if lend then\n *migrateSchedContextReplenishment \(donateSchedContextInPlace X donor donee scS\) scS donorHome\n *doneeHome\n *else X" SeLe4n/Kernel/IPC/CrossCore/ReplyRecvDonatedCallTakeInPlace.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def replyRecvLongResolvedR[^\n]*(\n([ \t][^\n]*)?)*else if !receiveLendAdmits ctx st epId then\n *replyRecvLongUnlentRendezvousR epId" SeLe4n/Kernel/RefusalCarryingReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[noinline\] def replyRecvUnlentRendezvousR[^\n]*(\n([ \t][^\n]*)?)*grant executingCore st false with" SeLe4n/Kernel/RefusalCarryingReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonationWriteSet[^\n]*(\n([ \t][^\n]*)?)*replyRecvRendezvousChainCores st tid nextThread recordedServer serverCore true \+\+\n *replyRecvRendezvousChainCores st tid nextThread recordedServer serverCore false" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation [^\n]*(\n([ \t][^\n]*)?)*\| none =>\s*(--[^\n]*\s*)*if rendezvousDequeuedCall st nextThread then\n *match applyRendezvousCallDonation st tid nextThread lend with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def rendezvousCallDonationReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match callDonationSchedContext\? st donor receiver with\n *\| some _ => \[determineTargetCore st donor, determineTargetCore st receiver\]" SeLe4n/Kernel/IPC/Operations/Donation.lean'
 # ...and the `.replyRecv` segment must not read the `.receive` arm's pre-state
 # segment or its donating-sender resolver: it derives each pair from its own gates,
@@ -13457,7 +13989,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvHandoffReplenis
 # ...nor take a core as a PARAMETER (the shape Cut 8a-ii's first form had).
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (replyRecvHandoffReplenishCores|schedLockSet_endpointReplyRecvOnCore)[^\n]*(\n([ \t][^\n]*)?)*(donorHome|doneeHome|holderHome|ownerHome)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 # The block-path pair's shared licence, consumed by both receiving arms.
-run_check "INVARIANT" rg -n '^theorem receivePreReturnReplenishCores_eq_migration \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem receivePreReturnReplenishCores_covers_migration \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # The three coverage relations, each at the cores its migration ACTUALLY resolves
 # on the state it runs on, and the two decompositions they read.
 run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReplyRecvOnCore_covers_pop$' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
@@ -13469,7 +14001,7 @@ run_check "INVARIANT" rg -n '^theorem applyRendezvousCallDonation_ok_migrates$' 
 # queue written by the live transition -- the licence composed from the reply leg's
 # new frame, the pop's identity arm, the receive leg's frame and the two walks.
 run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReplyRecvOnCore_no_replenishQueue_of_no_donation$' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation$' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_replenishQueueOnCore_of_no_donation( \{lend : Bool\})?$' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_replenishQueueOnCore$' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_ok_none_eq \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
 # The run-segment membership lemmas, hand-anchored until Cut 8c's census.
@@ -13487,13 +14019,16 @@ run_check "INVARIANT" rg -n '^def schedLockSet_replyTransferOnCore \(' SeLe4n/Ke
 # (the confinement theorem is stated at it), the replenish segment the mirror of the
 # dispatch's own guard.  Mutation: keep `schedFootprintOfCores` and resolve either
 # segment a second way inside the body.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointCallOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n *\(endpointCallDispatchWriteSet endpointId caller payload\n *executingCore st\)\n *\(endpointCallDispatchReplenishCores endpointId caller payload\n *executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+# The run segment joins the chain at a refused lend: one label-free footprint for
+# both answers of the lend admission, a proven superset
+# (`endpointCallDispatchReplenishCores_subset_true`).
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointCallOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n *\(endpointCallDispatchWriteSet endpointId caller payload\n *executingCore st\n *\+\+ endpointCallDispatchChainWriteSet endpointId caller payload executingCore st false\)\n *\(endpointCallDispatchReplenishCores endpointId caller payload\n *executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointReplyOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(endpointReplyDispatchWriteSet replier target msg executingCore st\)\n *\(endpointReplyDispatchReplenishCores replier target msg executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_replyTransferOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(replyTransferWriteSet replier callerTid mi regs msg executingCore st\)\n *\(replyTransferReplenishCores replier callerTid msg executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
 # The `.call` segment asks the donation's OWN guard at the WithCaps post-state, where
 # the dispatch asks it, and reads the two homes off the pre-state, where the dispatch
 # reads them -- so the pair and the migration's endpoints are the same expressions.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointCallDispatchReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match callDonationSchedContext\? st. callerV.val receiverV.val with\n *\| some _ => \[determineTargetCore st caller, determineTargetCore st receiverTid\]\n *\| none => \[\]" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointCallDispatchReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match callLendSchedContext\? lend st. callerV.val receiverV.val with\n *\| some _ => \[determineTargetCore st caller, determineTargetCore st receiverTid\]\n *\| none => \[\]" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
 # NEGATIVE: the guard asked at the PRE-state is a proxy for the one the dispatch
 # reads (the leg may have changed the receiver's binding).  Declaration-bounded.
 # Mutation: ask `callDonationSchedContext?` of `st` instead of the leg's post-state.
@@ -13508,7 +14043,23 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyDispatchRep
 # WS-ZA ZA6.33: the return settles, so the pair is the purge's cores (wherever
 # the context's replenishment stood) and the recipient's home.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyDonationReturnReplenishCores[^\n]*(\n([ \t][^\n]*)?)*\| some \(scId, _\) => SchedContextOps\.purgeReplenishCores st scId \+\+\n *\[replyDonationRecipientHome st rid target\]" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
-run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_ok_none_frameHead \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
+# A `none` answer is the unheld pop or the held pop that keeps the context with
+# its holder (seL4-MCS `reply_pop` where the recipient holds a context).
+run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_ok_none_decompose \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
+run_check "INVARIANT" rg -n '^def keepDonatedSchedContext \(' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^def popHeldReplyHead \(' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContext_establishes_ipcInvariantFull_of_except$' SeLe4n/Kernel/IPC/Invariant/HeldContextPop.lean
+run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContext_stepCovers \(' SeLe4n/Kernel/ReschedulePendingArms/Cancellation.lean
+# The cancelled caller's reclaim is seL4's reply_remove -> reply_pop on a head frame:
+# it runs the held-head router at the caller, and its consumers cross both pops
+# through the reclaim's own eliminators.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def returnDonationToCancelledCaller \([^\n]*(\n([ \t][^\n]*)?)*\n    match popHeldReplyHead st holder scId tid with\n    \| \.ok st. => st.\n    \| \.error _ => st$" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_check "INVARIANT" rg -n '^theorem returnDonationToCancelledCaller_elim(Pops|Frame)? \{' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContext_ok_of_holderBinding \{' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# The held pop's holder guard is redundant: the binding pair gives it, so its
+# refusal branch is unreachable and the pop is seL4's `reply_pop`.
+run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContext_holderGuard_of_schedContextBindingConsistent$' SeLe4n/Kernel/IPC/Invariant/HeldContextPop.lean
+run_check "INVARIANT" rg -n '^theorem keepDonatedSchedContext_ok_of_schedContextBindingConsistent$' SeLe4n/Kernel/IPC/Invariant/HeldContextPop.lean
 # NEGATIVE: the retired result-keyed pair must not come back, anywhere in code.
 run_negative_check "INVARIANT" rg -n 'replyRecvPopReplenishCores' SeLe4n tests
 # The ARM's write set branches on the seam's own predicate and, on the fault branch,
@@ -13596,12 +14147,28 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\
 # the unbind's).  Mutation: restore either spelling inside the definition.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*cleanupDonatedSchedContext st tcb\.tid" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*scThreadIndexRemove" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# WS-SX SX8 (destroy follows seL4): the donated arm is seL4's
+# `schedContext_unbindTCB` -- the bound arm on the owner-cleared record, one
+# owner with the finalisation's unbind.  Mutation: route `.donated` back to a
+# return (the context handed to the recorded owner) or to a settle.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelDonatedDonationOnCore[^\n]*(\n([ \t][^\n]*)?)*\| \.donated _ _ => cancelBoundDonationOnCore st tid \{ tcb with scBindingOwnerCode := 0 \}" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cancelDonatedDonationOnCore[^\n]*(\n([ \t][^\n]*)?)*(returnDonatedSchedContext|settleReturnedContext|determineTargetCore)" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+# The destroy arm never refuses, on any binding.
+run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_ok \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonationArmOnCore_ok[^\n]*(\n([ \t][^\n]*)?)*∃ st., cancelDonationArmOnCore st tid tcb = \.ok st." SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_ok_of_donated \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_ok_view($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+# Z4-O across the donated unbind reads the pair off `donationOwnerValid`.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonatedDonationOnCore_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*\(hOwner : donationOwnerValid st\)" SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean'
+# The retired hand-back at destroy, its settle-destination theorem and its
+# two-endpoint footprint stay deleted.
+run_negative_check "INVARIANT" rg -n '^(def|theorem) (cleanupDonatedSchedContext|cancelDonatedDonationOnCore_settles_on_recorded_owner|cancelDonatedDonationOnCoreLockSet|cancelDonatedDonationOnCore_cancellation_NI)($|[ ({:_\[\]])' SeLe4n
+run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_hidden \(' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
 # NEGATIVE: the two per-core arms have ONE home; a copy back in the
 # cancellation module is the two-spellings hazard this cut closes.
 run_negative_check "INVARIANT" rg -n '^def (cancelBoundDonationOnCore|cancelDonatedDonationOnCore|cancelDonationArmOnCore)\b' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # The bracket-shaped dispatcher is DEFINED through the arm (one owner), and the
 # suspend's G3 is pinned to the arm directly, by `rfl`.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelDonationOnCore[^\n]*(\n([ \t][^\n]*)?)*match cancelDonationArmOnCore st tid tcb with" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendDonationArm_eq_cancelDonationArmOnCore[^\n]*(\n([ \t][^\n]*)?)*= cancelDonationArmOnCore st tid tcb := rfl" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The pack's new field: a retype target holds no reservation of its own either
 # (seL4's revoke, suspend and unbind before the object is finalised).
@@ -13624,13 +14191,14 @@ run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_confinedToCores \(
 run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-# RELATION: the donated arm's theorem composes the ONE settle lemma rather than a
-# second confinement argument (the bound arm takes no core parameter at all).
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*refine settleReturnedContext_preserves_affinityConsistent_smp st1 _ scId" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# RELATION (WS-SX SX8): the donated arm's theorem IS the bound arm's, read
+# through the owner-cleared view, rather than a second confinement argument.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*cancelDonatedDonationOnCore_ok_view h\n *exact cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 # The witness computes the retired cleanup beside the live retype on both
 # binding shapes, with the unbound control on which the two agree.
 run_check "INVARIANT" rg -n '\(a\) NEGATIVE \(the defect\): the retired retype FALSIFIES the affinity invariant' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n '\(a\) PAYOFF: the arm migrated the replenishment to the client.s home \(core 0\)' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(a\) PAYOFF: the arm purged the replenishment from every core' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(a\) PAYOFF: the client is not handed the context at destroy' tests/SmpIpcSuite.lean
 # A holder with a reply waiter is refused by the retype (WS-ZA ZA4.6).
 run_check "INVARIANT" rg -n '\(b\) NEGATIVE \(the defect\): the retired retype FALSIFIES the binding invariant' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '\(b\) PAYOFF: the replenishment was purged from the destroyed thread.s home' tests/SmpIpcSuite.lean
@@ -13828,7 +14396,6 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cleanupTcbReferences_preserve
 # §3: the four donation-side steps, in the order they compose.
 run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
-run_check "INVARIANT" rg -n '^theorem cleanupDonatedSchedContext_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
 run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_after_donationArm_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/CleanupReservation.lean
@@ -14239,7 +14806,6 @@ run_check "INVARIANT" rg -n '^theorem releaseSchedContextBinding_replenishQueueO
 run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_replenishQueueOnCore_ne \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupFootprint.lean
 
 run_check "INVARIANT" rg -n '^def currentThreadUniqueAcrossCores($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_observer_atomic($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 
 # WS-I2/R-05: Lean #check correctness anchors (type-level validation).
 # D5: The Liveness module is proof-only and not imported from Main.lean,
@@ -18576,13 +19142,14 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def replyFrameOnLiveStack[^\n]*(\n([ 
 # the definition and the field it reads, and changes only the question asked.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyFrameOnLiveStack[^\n]*(\n([ \t][^\n]*)?)*r\.next\.isSome" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 #
-# (2) The frozen unbind mirrors the live one.  `schedContextUnbind` refuses a
-# holder whose binding is `.donated`; the frozen path cleared `sc.boundThread`
-# and the holder's binding unconditionally while its own docstring said it
-# mirrors the live transition -- so it built exactly the dead stack the live
-# guard exists to prevent.  One question, two answers; the docstring described
-# the better behaviour, so the code moved.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*if tcb\.schedContextBinding\.isDonated then \.error \.illegalState else" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# (2) The frozen unbind mirrors the live one.  Since WS-SX SX8.3 (D22, seL4-MCS
+# `schedContext_unbindTCB` + `schedContext_unbindReply`) neither refuses a holder
+# whose binding is `.donated`: the pop is keyed on the reply frame, a frame
+# heading a context bound to no thread is popped by `popUnheldReplyHead`, and
+# `SchedContext_Unbind` lets go of the stack last on both surfaces.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind [^\n]*(\n([ \t][^\n]*)?)*match frozenUnbindSchedContextNotification st2 scId with\n[ \t]*\| \.ok st3 =>\n([ \t]*(--[^\n]*)?\n)*[ \t]*match frozenSchedContextUnbindReply st3 scId with" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\\[inline\\] def schedContextUnbindAllPerform [^\n]*\n[^\n]*\n  schedContextUnbindReply \(unbindSchedContextNotification \(schedContextUnbindPerform st vScId\)" SeLe4n/Kernel/SchedContext/OperationsPerCore.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (frozenSchedContextUnbind|schedContextUnbind) [^\n]*(\n([ \t][^\n]*)?)*isDonated" SeLe4n/Kernel/FrozenOps/Operations.lean SeLe4n/Kernel/SchedContext/Operations.lean'
 #
 # (3) PR #897 review -- **the same mirror, swept.**  Two things the review's own
 # finding named and two the sweep found.  `SchedContext.donationOrigin` is a field
@@ -18599,8 +19166,46 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind \([^\n]*
 # operation over.  The order is the live order, so the error codes agree too.
 # (WS-SX SX6.4 retired the domain refusal on both sides: a context carries no
 # domain, and seL4-MCS's bind checks none.)
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*else if sc\.scReply\.isSome then \.error \.illegalState" SeLe4n/Kernel/FrozenOps/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*if frozenReplyFrameOnLiveStack st tcb then \.error \.illegalState" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# WS-SX SX8 (D25): a context heading a reply stack binds on both sides, as
+# seL4-MCS's `decodeSchedContext_Bind` binds it.  NEGATIVE on both binds; the
+# label rule is the checked dispatch's gate, anchored after it.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*sc\.scReply\.isSome then \.error" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind \([^\n]*(\n([ \t][^\n]*)?)*sc\.scReply\.isSome then \.error" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def schedContextDonateAdmitted \([^\n]*(\n([ \t][^\n]*)?)*sc\.scReply\.isSome then false" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def schedContextBindLabelGate \([^\n]*(\n([ \t][^\n]*)?)*\| \.ok vT => if schedContextBindLabelAdmits ctx st scId vT\.val then k st else \.error \.flowDenied" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.ok vThreadId =>\s+if !schedContextBindLabelAdmits ctx st scObjId vThreadId\.val then\s+\.error \(\.flowDenied, st\)" SeLe4n/Kernel/RefusalCarryingInvocation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchInvocationBy \([^\n]*(\n([ \t][^\n]*)?)*\| \.object scId =>\s+schedContextBindLabelGate ctx xc tid scId \(fun st =>" SeLe4n/Kernel/RefusalCarryingInvocation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchCapabilityOnlyChecked \([^\n]*(\n([ \t][^\n]*)?)*\| \.schedContextBind =>\n    match cap\.target with\n    \| \.object scId => schedContextBindLabelGate ctx xc tid scId k" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" rg -n '^theorem schedContextBindLabelGate_admits ' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem schedContextBindLabelAdmits_flows ' SeLe4n/Kernel/API.lean
+# WS-SX SX8 (av): the notification lend admits only equal labels -- both directions, in the
+# spec, its compiled form and the generic form; the label test runs before the donation reads
+# the waiter's binding.
+run_check "INVARIANT" rg -n -U '^  \| some s => securityFlowsTo \(ctx\.objectLabelOf s\.toObjId\) \(ctx\.threadLabelOf tid\) &&\n      securityFlowsTo \(ctx\.threadLabelOf tid\) \(ctx\.objectLabelOf s\.toObjId\)$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
+run_check "INVARIANT" rg -n -U '^    \| some s => securityFlowsTo \(ctx\.objectLabelOf s\.toObjId\) \(ctx\.threadLabelOf tid\) &&\n        securityFlowsTo \(ctx\.threadLabelOf tid\) \(ctx\.objectLabelOf s\.toObjId\)$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
+run_check "INVARIANT" rg -n -U '^  \| some s => genericFlowCheck gctx \(gctx\.objectDomainOf s\.toObjId\) \(gctx\.threadDomainOf tid\) &&\n      genericFlowCheck gctx \(gctx\.threadDomainOf tid\) \(gctx\.objectDomainOf s\.toObjId\)$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
+run_check "INVARIANT" rg -n '^  if donationContextFlows ctx st n tid then maybeDonateSchedContext st n tid else st$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
+run_check "INVARIANT" rg -n '^theorem donationContextFlows_context_back ' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
+run_check "INVARIANT" rg -n '^theorem donationContextFlows_false_of_not_back ' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
+# WS-SX SX8: a lender binds on both sides, as seL4-MCS's
+# `decodeSchedContext_Bind` binds it; the bind's checks and the donation's are
+# ONE guard (`schedContextDonateAdmitted`), so the retired bind-only guard and
+# its proxy for "is this a lender" must not come back.  NEGATIVE.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*ReplyFrameOnLiveStack" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind \([^\n]*(\n([ \t][^\n]*)?)*replyFrameOnLiveStack" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_negative_check "INVARIANT" rg -n '^@\[inline\] def schedContextBindAdmitted ' SeLe4n/Kernel/SchedContext/Operations.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextBind_ok_iff [^\n]*(\n([ \t][^\n]*)?)*schedContextDonateAdmitted st vS vT = true" SeLe4n/Kernel/SchedContext/Operations.lean'
+# ...and the held pop asks its outer check only of a holder on loan
+# (`heldPopOuter?`), so binding a lender never makes the pop that reaches its
+# frame refuse: the specification, its commit test, the in-place gate and the
+# frozen mirror all read the recorded owner, not the stack's raw answer.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def keepDonatedSchedContext \([^\n]*(\n([ \t][^\n]*)?)*if !outerCallerAcceptable st holder holder \(heldPopOuter\? st holder newOwner\?\) then" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def keptPopCommits \([^\n]*(\n([ \t][^\n]*)?)*outerCallerAcceptable st holder holder \(heldPopOuter\? st holder newOwner\?\) &&" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def heldPopOuter\? [^\n]*(\n([ \t][^\n]*)?)*\| some ht => heldPopOwner\? ht\.schedContextBinding newOwner\?" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def keptPopsInPlace \([^\n]*(\n([ \t][^\n]*)?)*outerCallerAcceptableCode st holder holder\n *\(heldPopOwnerCode \(heldHolderOwnerCode st holder\) bR\.callerCode\)" SeLe4n/Kernel/IPC/Operations/HeldContextPopInPlace.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenKeepDonatedSchedContext \([^\n]*(\n([ \t][^\n]*)?)*frozenOuterCallerAcceptable st holder holder\n *\(match st\.getTcb\? holder with\n *\| some ht => SeLe4n\.Kernel\.heldPopOwner\? ht\.schedContextBinding newOwner\?" SeLe4n/Kernel/FrozenOps/Core.lean'
+# NEGATIVE: the pack no longer carries the "bound thread lends nothing" premise.
+run_negative_check "INVARIANT" rg -n '^  boundThreadNotDonationOwner :' SeLe4n/Kernel/API.lean
 # The bind writes no priority: since WS-SX SX6.4 the thread's TCB is its only
 # home, so the mirror has no reservation field to copy.  NEGATIVE.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*priority := sc\." SeLe4n/Kernel/FrozenOps/Operations.lean'
@@ -18729,17 +19334,10 @@ run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_spl
 # tied a member to the resolver the footprint reads it from.  `_correct` and
 # `_size_le` do not stand in: one is about the members' kinds, the other about
 # how many there are.
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_victim($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_bindingSchedContext($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_stateLevel($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_donatedOwner($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_pop($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_outerCaller_key($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # NEGATIVE, token-preserving -- the outer caller is READ by the pop (it validates
 # that TCB before handing a context over) and written by nothing, so a coverage
 # theorem claiming a write there would describe a footprint wider than the
 # operation.  It keeps the member and changes its mode.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_cancelDonationOnCore_covers_outerCaller_key[^\n]*(\n([ \t][^\n]*)?)*tcbLock outer, AccessMode\.write" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 
 # (4) The chain payoff -- the theorem the workstream exists for -- and the
 # fault-reply and reply-transfer forms that compose it.
@@ -18782,11 +19380,11 @@ run_check "INVARIANT" bash -lc 'rg -n "the RETIRED chain condition.s premise: th
 # answers, and a re-keying would then break an anchor that is not about keys.
 run_check "INVARIANT" rg -n '^def replyRecvPopDonation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 run_check "INVARIANT" rg -n '^def replyRecvPostReceiveDonation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyRecvAnsweringOnCore[^\n]*(\n([ \t][^\n]*)?)*replyRecvPopDonation [^\n]*st1 with[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveDualWithCapsOnCore epId tid \(some rid\) executingCore st1p with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyRecvAnsweringOnCore[^\n]*(\n([ \t][^\n]*)?)*replyRecvPopDonation [^\n]*st1 with[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveDualWithCapsOnCore epId tid \(some rid\) executingCore\s+\(receiveReturnSchedContext true st1p tid\) with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 # NEGATIVE: the receive leg must not run on the PRE-pop state.  Token-preserving
 # -- it keeps the pop, the receive leg and both bindings, and feeds the receive
 # leg the state the reply leg committed instead of the one the pop did.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyRecvAnsweringOnCore[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveDualWithCapsOnCore epId tid \(some rid\) executingCore st1 with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyRecvAnsweringOnCore[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveDualWithCapsOnCore epId tid \(some rid\) executingCore\s+(\(receiveReturnSchedContext true )?st1[ )]" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 # ...and the two halves' bundle theorems, each stated at the state its own step
 # runs on rather than at one two legs away.
 run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
@@ -19129,7 +19727,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatch[^\
 # handed back.  Both the specification pop and the finalise pop route on the
 # recipient's acceptability, and each compiled form keeps the sever arm.
 run_check "INVARIANT" rg -n '^def severUnheldSchedContext \(st : SystemState\)' SeLe4n/Kernel/IPC/Operations/UnheldContextPop.lean
-run_check "INVARIANT" rg -n '^@\[inline\] def donationSeverSchedContext ' SeLe4n/Kernel/IPC/Operations/UnheldContextPop.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def donationSeverSchedContext ' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def popUnheldReplyHead \(st[^\n]*(\n([ \t][^\n]*)?)*    if donationRecipientAcceptable st target then\n(([ \t][^\n]*)?\n)*    else severUnheldSchedContextResolved st scId" SeLe4n/Kernel/IPC/Operations/UnheldContextPop.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def popUnheldReplyHeadImpl[^\n]*(\n([ \t][^\n]*)?)*    else severUnheldSchedContextResolved st scId" SeLe4n/Kernel/IPC/Operations/UnheldContextPopInPlace.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def finaliseReplyUnheldPop \(st[^\n]*(\n([ \t][^\n]*)?)*      match severUnheldSchedContextResolved st s with" SeLe4n/Kernel/IPC/Operations/CancelAll.lean'
@@ -19266,7 +19864,12 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSchedContext[^
 # UNBINDS rather than the one it rebinds, so it would pass on exactly the state it
 # exists to refuse (and refuse every ordinary pop).  The live twin's own negative.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*!frozenDonationRecipientAcceptable st serverTid" SeLe4n/Kernel/FrozenOps/Core.lean'
-run_prose_check "TRACE" rg -n 'the frozen composite refuses it too, with the same error' tests/FrozenOpsSuite.lean
+# WS-SX SX8: FO-042's third half is now seL4's held arm of `reply_pop` -- the
+# answered caller holds a context, so the head is popped and the context stays
+# with the server -- and the frozen composite must take the same arm.
+run_prose_check "TRACE" rg -n 'and the frozen composite takes the same arm, state for state' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenApplyReplyDonation[^\n]*(\n([ \t][^\n]*)?)*  else if frozenDonationRecipientAcceptable st originalOwner then\n[^\n]*frozenReturnDonatedSchedContextResolved st holder scId originalOwner[^\n]*(\n([ \t][^\n]*)?)*  else frozenKeepDonatedSchedContextResolved st holder scId" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" rg -n '^def frozenKeepDonatedSchedContext($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
 
 # (18) ...and the live twin's own ID PROMOTION, at the unit the live code puts it:
 # `applyReplyDonation` refuses a holder `ThreadId.toValid?` will not promote, so
@@ -19738,7 +20341,6 @@ run_negative_check "INVARIANT" rg -n '^def cancelIpcBlockingReplenishCores' SeLe
 # they are pinned by `rfl` -- which fires on a dispatcher change even when that
 # change updates all of the dispatcher's own frame theorems, which is the case no
 # other theorem covers.
-run_check "INVARIANT" rg -n '^theorem suspendDonationArm_eq_cancelDonationOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # The witness: the bare G2 computed beside the live one on a holder blocked on a
 # call of its own, plus the live transition run on it -- and, since `v0.35.158`,
 # the retired WAKE computed beside the live deschedule on the blocked, the queued
@@ -19785,7 +20387,6 @@ run_negative_check "INVARIANT" bash -lc 'rg -n "^def commitPrimitives" SeLe4n/Te
 # A row is what makes a step added to one side and not the other a build
 # failure; losing one is losing the only check on that pair.
 run_check "INVARIANT" bash -lc 'rg -U -n "SeLe4n\.Kernel\.cancelIpcBlockingOnCore,\n[^\n]*SeLe4n\.Kernel\.cancelIpcBlockingReclaimed,\n[^\n]*SeLe4n\.Kernel\.cancelIpcBlockingOnCore_eq_reclaimed_deschedule" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "SeLe4n\.Kernel\.cancelDonationOnCore,\n[^\n]*SeLe4n\.Kernel\.cancelBoundDonationOnCore,\n[^\n]*SeLe4n\.Kernel\.suspendDonationArm_eq_cancelDonationOnCore" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
 
 # The pin check asks for a RELATION, not for both names (PR #897 review).  Asking
 # whether the statement MENTIONS both programs is this project's oldest defect
@@ -20679,7 +21280,7 @@ run_check "INVARIANT" bash -lc 'rg -n "the .! rg. wrapper stopped being read as 
 # presence check standing in for "this script invokes the shell builtin", and it
 # fails CLOSED -- it refuses rather than reading raw text -- so it is a usability
 # defect rather than a hole.  Registered; the rename is an improvement either way.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingMigrated[^\n]*(\n([ \t][^\n]*)?)*      let torn := cancelIpcBlocking st victim tcb\n      let fromCore := determineTargetCore st holder\n      SchedContextOps\.settleReturnedContext torn\n        \(replenishHomeOfSchedContext torn scId fromCore\) scId" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingMigrated[^\n]*(\n([ \t][^\n]*)?)*      let torn := cancelIpcBlocking st victim tcb\n      if donationRecipientAcceptable st victim then\n        let fromCore := determineTargetCore st holder\n        SchedContextOps\.settleReturnedContext torn\n          \(replenishHomeOfSchedContext torn scId fromCore\) scId\n      else torn\n" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 # ...and the inline spelling must not come back.  DECLARATION-SCOPED, because
 # `CancellationBundle.lean` states the same composition in a `have` where it is the
 # subject of the proof rather than a duplicated evaluation -- a tree-wide negative
@@ -20689,8 +21290,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingMigrate
 # ...and the two frame proofs the binding broke now CITE the settle's own lemmas
 # (WS-ZA ZA6.33: the return settles; it was the migration's) instead of
 # re-deriving them by `unfold` and `split`.
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem cancelIpcBlockingMigrated_runQueueOnCore[^\n]*(\n([ \t][^\n]*)?)*    exact SchedContextOps\.settleReturnedContext_runQueueOnCore _ _ scId c" SeLe4n/Kernel/Lifecycle/Suspend.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem cancelIpcBlockingMigrated_currentOnCore[^\n]*(\n([ \t][^\n]*)?)*    exact SchedContextOps\.settleReturnedContext_currentOnCore _ _ scId c" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem cancelIpcBlockingMigrated_runQueueOnCore[^\n]*(\n([ \t][^\n]*)?)*  · rw \[h\]; exact SchedContextOps\.settleReturnedContext_runQueueOnCore _ _ scId c" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem cancelIpcBlockingMigrated_currentOnCore[^\n]*(\n([ \t][^\n]*)?)*  · rw \[h\]; exact SchedContextOps\.settleReturnedContext_currentOnCore _ _ scId c" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 
 # ---------------------------------------------------------------------------
 # `v0.35.122`: the changed-file anchor sweep.  `CLAUDE.md` states this as a
@@ -22008,7 +22609,7 @@ run_negative_check "INVARIANT" rg -F -n 'def receiveLegPipHandoffWriteSet' SeLe4
 # ...while the CONFINEMENT theorems stay there, because
 # `observableSlotsConfinedToCores` is that module's predicate and the relocation
 # is of the write sets alone.
-run_check "INVARIANT" rg -F -n 'theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)' SeLe4n/Kernel/SlotConfinement/IpcArms.lean
+run_check "INVARIANT" rg -F -n 'theorem endpointReplyRecvOnCore_confinedToCores {lend : Bool} (endpointId : SeLe4n.ObjId)' SeLe4n/Kernel/SlotConfinement/SchedContextArms.lean
 run_check "INVARIANT" rg -F -n 'theorem pipChainWriteSet_subset_live' SeLe4n/Kernel/SlotConfinement/Legs.lean
 
 # --- `v0.35.146` (PR #897 review, and the sweep it opened): the frozen queue
@@ -22145,7 +22746,7 @@ run_check "INVARIANT" rg -F -n 'SELF_TEST_ROGUE_USER_NAMED = "eq_cfPlantedUserNa
 run_check "INVARIANT" rg -F -n 'Kernel (Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 run_check "INVARIANT" rg -F -n '.ok (some (oldScId, holder), SchedContextOps.settleReturnedContext st1'"'"'' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 # Both deschedule arms name the holder; both chain walks keep `recordedServer`.
-run_check "INVARIANT" rg -F -n '(replyRecvHolderDeschedule tid holder st) tid nextThread with' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+run_check "INVARIANT" rg -F -n '(replyRecvHolderDeschedule tid holder st) tid nextThread lend with' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 run_check "INVARIANT" rg -F -n '(descheduleAtPlacement st holder) recordedServer serverCore).1)' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 # ...and the relation that ties the deschedule to the pop's own trigger.
 run_check "INVARIANT" rg -F -n 'theorem replyRecvPopDonation_holder_eq_frameHead' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
@@ -22873,7 +23474,7 @@ run_check "INVARIANT" rg -n 'C6e: core 3 is outside the segment' tests/SmpIpcSui
 # names `applyReceiveRendezvousHandoff`, and the leg-plus-donation spelling that
 # was the unit until then must not come back.
 run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_endpointReceiveOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore = \.ok st" SeLe4n/Kernel/SyscallSchedContainment.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_endpointReceiveOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore lend = \.ok st" SeLe4n/Kernel/SyscallSchedContainment.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_endpointReceiveOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hDon : applyReceiveRendezvousDonation" SeLe4n/Kernel/SyscallSchedContainment.lean'
 # The arm's replenish frame, keyed on the footprint's own segment rather than on
 # which of the arm's three shapes the state takes.
@@ -23711,8 +24312,8 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyRecvAnsweringOnCore[
 run_negative_check "INVARIANT" rg -n '^def (replyRecvBody|endpointReplyRecvOnCore|replyRecvPopDonation|replyRecvPostReceiveDonation)\b' SeLe4n/Kernel/API.lean SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_negative_check "INVARIANT" rg -n '\breplyRecvBody\b|\bendpointReplyRecvWithDonation\b' SeLe4n/ tests/
 run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_observer_atomic$' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull$' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_observer_atomic( \{lend : Bool\})?$' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull( \{lend : Bool\})?$' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
 run_check "INVARIANT" rg -n '\| \.endpointReplyRecvDispatch => niName! endpointReplyRecvOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # Audit IPC-5 (`v0.36.49`): ONE TCB field writer.  Each `storeTcb*` writer is
@@ -24159,9 +24760,9 @@ run_check "INVARIANT" rg -n '^          match SchedContextOps\.schedContextYield
 # WS-ZA ZA6.37: the reference interrupt dispatch runs the live entries' handlers
 # on the executing core — the timer arm the per-core tick, every other line
 # seL4's handleInterrupt on that core — and takes no handler parameter.
-run_check "INVARIANT" rg -n -U '^def handleInterrupt \(st : SystemState\) \(c : Concurrency\.CoreId\) \(intId : InterruptId\) :\n    SystemState :=\n  if intId = timerInterruptId then timerTickOnCore st c\n  else handleInterruptOnCore st c intId\.val$' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
-run_check "INVARIANT" rg -n '^    \.ok \(\(\), handleInterrupt stEoi c intId\)$' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
-run_check "INVARIANT" rg -n '^      match interruptDispatchSequence st executingCore rawIntId with$' SeLe4n/Kernel/Architecture/ExceptionModel.lean
+run_check "INVARIANT" rg -n -U '^def handleInterrupt \(ctx : LabelingContext\) \(st : SystemState\) \(c : Concurrency\.CoreId\) \(intId : InterruptId\) :\n    SystemState :=\n  if intId = timerInterruptId then timerTickOnCore st c\n  else handleInterruptOnCore ctx st c intId\.val$' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
+run_check "INVARIANT" rg -n '^    \.ok \(\(\), handleInterrupt ctx stEoi c intId\)$' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
+run_check "INVARIANT" rg -n '^      match interruptDispatchSequence ctx st executingCore rawIntId with$' SeLe4n/Kernel/Architecture/ExceptionModel.lean
 run_check "INVARIANT" rg -n '^theorem handleInterrupt_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
 run_check "INVARIANT" rg -n '^theorem timerTickOnCore_machine_interruptsEnabled($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/ExceptionModel.lean
 run_negative_check "INVARIANT" rg -n '^(noncomputable )?def (handleInterruptWith|interruptDispatchSequenceWith|dispatchExceptionWith) ' SeLe4n/Kernel/Architecture

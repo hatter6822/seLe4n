@@ -250,15 +250,21 @@ def applyReplyDonation (st : SystemState) (rid : SeLe4n.ReplyId)
           -- the out-of-order removal of plan §3.2, in which the client's own
           -- frame left the stack and the surviving bottom frame names the
           -- intermediate caller.
-          match returnDonatedSchedContextResolved st holderVtid.val scId
-                  (replyDonationRecipient st scId target) with
-          | .error e => .error e
-          | .ok st' =>
-              -- WS-ZA ZA6.33: seL4's `schedContext_donate` tail on the boot
-              -- core's release queue: the context off whichever queue holds it,
-              -- and placed again for the recipient (`settleReturnedContext`).
-              .ok (removeRunnable (SchedContextOps.settleReturnedContext st' Concurrency.bootCoreId scId)
-                holder)
+          -- seL4-MCS's `reply_pop` donates the context back only to a thread
+          -- that holds none; one that holds a context of its own is handed
+          -- nothing, and the head is popped off the context, which stays with
+          -- its holder (`keepDonatedSchedContextResolved`).
+          if donationRecipientAcceptable st (replyDonationRecipient st scId target) then
+            match returnDonatedSchedContextResolved st holderVtid.val scId
+                    (replyDonationRecipient st scId target) with
+            | .error e => .error e
+            | .ok st' =>
+                -- WS-ZA ZA6.33: seL4's `schedContext_donate` tail on the boot
+                -- core's release queue: the context off whichever queue holds it,
+                -- and placed again for the recipient (`settleReturnedContext`).
+                .ok (removeRunnable (SchedContextOps.settleReturnedContext st' Concurrency.bootCoreId scId)
+                  holder)
+          else keepDonatedSchedContextResolved st holderVtid.val scId
       | none => .error (.invalidArgument 0)
 
 -- ============================================================================
@@ -539,6 +545,12 @@ theorem applyReplyDonation_machine_eq
         have hHEq : holderVtid.val = holder :=
           SeLe4n.ThreadId.toValid?_some_val_eq holder holderVtid hHV
         simp only [hHV, hHEq] at h
+        cases hA : donationRecipientAcceptable st (replyDonationRecipient st scId targetVtid.val) with
+        | false =>
+          simp only [hA, Bool.false_eq_true, ↓reduceIte] at h
+          exact keepDonatedSchedContextResolved_machine_eq h
+        | true =>
+        simp only [hA, ↓reduceIte] at h
         -- WS-OD OD4.4: the split is on the *resolved* return, which is the
         -- operation the arm now runs; the frame is lifted through its own
         -- decomposition rather than restated at a fixed `newOwner?`.
@@ -556,26 +568,15 @@ theorem applyReplyDonation_machine_eq
           exact (hRem.trans (SchedContextOps.settleReturnedContext_machine _ _ _)).trans hMach
 
 /-- AG8-G: cleanupPreReceiveDonation preserves machine state.
-All fallback paths return `st` unchanged, and the success path delegates to
-`returnDonatedSchedContext` which preserves machine state. -/
+All fallback paths return `st` unchanged, and the success path is a held-head
+pop — the donation return or the held pop — each of which preserves machine
+state. -/
 theorem cleanupPreReceiveDonation_machine_eq
     (st : SystemState) (receiver : SeLe4n.ThreadId) :
-    (cleanupPreReceiveDonation st receiver).machine = st.machine := by
-  unfold cleanupPreReceiveDonation
-  cases lookupTcb st receiver with
-  | none => rfl
-  | some recvTcb =>
-    simp only []
-    cases recvTcb.schedContextBinding with
-    | unbound => rfl
-    | bound scId => rfl
-    | donated scId originalOwner =>
-      simp only []
-      cases hReturn : returnDonatedSchedContextResolved st receiver scId originalOwner with
-      | error _ => rfl
-      | ok st' =>
-        obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hReturn
-        exact returnDonatedSchedContext_machine_eq st st' receiver scId originalOwner n hPop
+    (cleanupPreReceiveDonation st receiver).machine = st.machine :=
+  cleanupPreReceiveDonation_elimPops (P := fun s => s.machine = st.machine) rfl
+    (fun scId o n s h => returnDonatedSchedContext_machine_eq st s receiver scId o n h)
+    (fun _ _ _ h => keepDonatedSchedContext_machine_eq h)
 
 -- ============================================================================
 -- WS-RR RR2.3: donation object-store frames — what the SchedContext rebinding
@@ -986,6 +987,121 @@ theorem returnDonatedSchedContext_yieldLinksKept
     rw [lookupTcb_some_objects _ _ _ hL4]; rfl)
   have a5 : YieldLinksKept st' s4 := .of_objects_eq (by rw [hEq])
   exact a5.trans (a4.trans (a3.trans (a2.trans a1)))
+
+/-- WS-SX SX8.3: `returnDonatedSchedContext` keeps every notification-link
+code: the context store rewrites the binding only, the head pop writes replies,
+and the two thread stores write threads. -/
+theorem returnDonatedSchedContext_notificationLinksKept
+    {st st' : SystemState} {serverTid : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    NotificationLinksKept st' st := by
+  obtain ⟨sc, _, _, _, s1, s2, s3, s4, hSc, _, _, _, h1, hClear, hL3, h3, hL4, h4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  have i1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv h1
+  have i2 := storeDonationHeadPop_preserves_objects_invExt i1 hClear
+  have i3 := storeObject_preserves_objects_invExt s2 s3 _ _ i2 h3
+  have a1 : NotificationLinksKept s1 st := .storeObject hObjInv h1 (by rw [hSc]; rfl)
+  have a2 : NotificationLinksKept s2 s1 :=
+    .of_replyWrite (fun k hk => storeDonationHeadPop_non_reply_eq i1 hClear k hk)
+      (fun k r hk => let ⟨r', e, _⟩ := storeDonationHeadPop_reply_rewrite i1 hClear k r hk; ⟨r', e⟩)
+  have a3 : NotificationLinksKept s3 s2 := .storeObject i2 h3 (by
+    rw [lookupTcb_some_objects _ _ _ hL3]; rfl)
+  have a4 : NotificationLinksKept s4 s3 := .storeObject i3 h4 (by
+    rw [lookupTcb_some_objects _ _ _ hL4]; rfl)
+  have a5 : NotificationLinksKept st' s4 := .of_objects_eq (by rw [hEq])
+  exact a5.trans (a4.trans (a3.trans (a2.trans a1)))
+
+/-- WS-SX SX8: the held pop keeps every context's refill view but the popped
+one's, and every queue's entries: its context store, the head pop, and one thread
+store with the binding rewritten. -/
+theorem keepDonatedSchedContext_refillsKeptOff
+    {st st' : SystemState} {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {newOwner? : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    SystemState.RefillsKeptOff (· = scId) st' st := by
+  obtain ⟨_, _, _, s1, s2, _, _, _, _, h1, hClear, hL3, h3⟩ := keepDonatedSchedContext_ok_storeChain h
+  have i1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv h1
+  have i2 := storeDonationHeadPop_preserves_objects_invExt i1 hClear
+  have a1 : SystemState.RefillsKeptOff (· = scId) s1 st := .storeObject hObjInv h1
+  have a2 : RefillViewsKept s2 s1 :=
+    .of_getSchedContext?_eq (storeDonationHeadPop_getSchedContext?_eq i1 hClear)
+      (fun t => by rw [storeDonationHeadPop_getTcb?_eq i1 hClear])
+  have a3 : RefillViewsKept st' s2 := .storeObject i2 h3 (by
+    rw [lookupTcb_some_objects _ _ _ hL3]; rfl)
+  have hQ : ∀ c, (st'.scheduler.replenishQueueOnCore c).entries =
+      (s1.scheduler.replenishQueueOnCore c).entries := fun c => by
+    rw [storeObject_scheduler_eq st s1 _ _ h1]
+    unfold SchedulerState.replenishQueueOnCore
+    rw [keepDonatedSchedContext_scheduler_eq h]
+  exact (SystemState.RefillsKeptOff.of_kept (a3.trans a2) hQ).trans a1
+
+/-- WS-SX SX8: **the held pop keeps every refill view**: the context keeps
+its refills and its holder (the record rewrites the head and the origin), the
+head pop writes replies, and the holder's store rewrites its binding words, not
+its thread state. -/
+theorem keepDonatedSchedContext_refillViewsKept
+    {st st' : SystemState} {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {newOwner? : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    RefillViewsKept st' st := by
+  obtain ⟨_, _, _, s1, s2, hSc, _, _, _, h1, hClear, hL3, h3⟩ := keepDonatedSchedContext_ok_storeChain h
+  have i1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv h1
+  have i2 := storeDonationHeadPop_preserves_objects_invExt i1 hClear
+  have a1 : RefillViewsKept s1 st := .storeObject hObjInv h1 (by rw [hSc]; rfl)
+  have a2 : RefillViewsKept s2 s1 :=
+    .of_getSchedContext?_eq (storeDonationHeadPop_getSchedContext?_eq i1 hClear)
+      (fun t => by rw [storeDonationHeadPop_getTcb?_eq i1 hClear])
+  have a3 : RefillViewsKept st' s2 := .storeObject i2 h3 (by
+    rw [lookupTcb_some_objects _ _ _ hL3]; rfl)
+  exact a3.trans (a2.trans a1)
+
+/-- WS-SX SX8: the held pop keeps every yield code. -/
+theorem keepDonatedSchedContext_yieldLinksKept
+    {st st' : SystemState} {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {newOwner? : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    YieldLinksKept st' st := by
+  obtain ⟨_, _, _, s1, s2, hSc, _, _, _, h1, hClear, hL3, h3⟩ := keepDonatedSchedContext_ok_storeChain h
+  have i1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv h1
+  have i2 := storeDonationHeadPop_preserves_objects_invExt i1 hClear
+  have a1 : YieldLinksKept s1 st := .storeObject hObjInv h1 (by rw [hSc]; rfl)
+  have a2 : YieldLinksKept s2 s1 :=
+    .of_getTcb?_eq (storeDonationHeadPop_getTcb?_eq i1 hClear)
+      (storeDonationHeadPop_getSchedContext?_eq i1 hClear)
+  have a3 : YieldLinksKept st' s2 := .storeObject i2 h3 (by
+    rw [lookupTcb_some_objects _ _ _ hL3]; rfl)
+  exact a3.trans (a2.trans a1)
+
+/-- WS-SX SX8: the held pop keeps every notification-link code. -/
+theorem keepDonatedSchedContext_notificationLinksKept
+    {st st' : SystemState} {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {newOwner? : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    NotificationLinksKept st' st := by
+  obtain ⟨_, _, _, s1, s2, hSc, _, _, _, h1, hClear, hL3, h3⟩ := keepDonatedSchedContext_ok_storeChain h
+  have i1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv h1
+  have i2 := storeDonationHeadPop_preserves_objects_invExt i1 hClear
+  have a1 : NotificationLinksKept s1 st := .storeObject hObjInv h1 (by rw [hSc]; rfl)
+  have a2 : NotificationLinksKept s2 s1 :=
+    .of_replyWrite (fun k hk => storeDonationHeadPop_non_reply_eq i1 hClear k hk)
+      (fun k r hk => let ⟨r', e, _⟩ := storeDonationHeadPop_reply_rewrite i1 hClear k r hk; ⟨r', e⟩)
+  have a3 : NotificationLinksKept st' s2 := .storeObject i2 h3 (by
+    rw [lookupTcb_some_objects _ _ _ hL3]; rfl)
+  exact a3.trans (a2.trans a1)
+
+/-- WS-SX SX8: the held pop keeps the popped context's refills: it rewrites the
+head and the origin only. -/
+theorem keepDonatedSchedContext_refillsView
+    {st st' : SystemState} {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {newOwner? : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    ∃ b a, st.getSchedContext? scId = some b ∧ st'.getSchedContext? scId = some a ∧
+      a.refillsView = b.refillsView := by
+  obtain ⟨sc, _, _, hSc, _, _, _, _, _, hSc', _⟩ := keepDonatedSchedContext_objects hObjInv h
+  exact ⟨sc, _, (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc,
+    (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc', rfl⟩
 
 /-- WS-RR RR2.9: `returnDonatedSchedContext` never changes any thread's
 placement (`TCB.placement`) — the mirror of `donateSchedContext_getTcb?_placement_eq`.

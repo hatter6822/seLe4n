@@ -135,15 +135,9 @@ theorem cutThreadReplyFrameOut_replyViews_eq (st : SystemState) (tcb : TCB)
 
 theorem returnDonationToCancelledCaller_replyViews_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (hInv : st.objects.invExt) :
-    (returnDonationToCancelledCaller st tid tcb).replyViews = st.replyViews := by
-  unfold returnDonationToCancelledCaller
-  split
-  · rename_i scId holder _ _ _
-    split
-    · rename_i st' hR
-      exact returnDonatedSchedContextResolved_replyViews_eq hInv hR
-    · rfl
-  · rfl
+    (returnDonationToCancelledCaller st tid tcb).replyViews = st.replyViews :=
+  returnDonationToCancelledCaller_elimFrame (P := fun s => s.replyViews = st.replyViews) hInv rfl
+    fun _ hF => donationPopFrame_replyViews_eq hF
 
 theorem replyViews_unlinkReplyWaiterOpt (st : SystemState) (w : SeLe4n.ThreadId)
     (s? : Option SeLe4n.ThreadId) :
@@ -229,10 +223,8 @@ theorem descheduleUnboundHolder_replyViews_eq (stPre stPost : SystemState)
 theorem cancelIpcBlockingMigrated_replyViews_eq (victim : SeLe4n.ThreadId) (tcb : TCB)
     (st : SystemState) :
     (cancelIpcBlockingMigrated victim tcb st).replyViews = (cancelIpcBlocking st victim tcb).replyViews := by
-  unfold cancelIpcBlockingMigrated
-  split
-  · exact settleReturnedContext_replyViews_eq _ _ _
-  · rfl
+  rcases cancelIpcBlockingMigrated_cases victim tcb st with h | ⟨_, _, _, _, h⟩ <;> rw [h]
+  exact settleReturnedContext_replyViews_eq _ _ _
 
 /-- **The per-core cancellation keeps the reply-waiter queues consistent.** -/
 theorem cancelIpcBlockingOnCore_preserves_replyWaitersConsistent (victim : SeLe4n.ThreadId)

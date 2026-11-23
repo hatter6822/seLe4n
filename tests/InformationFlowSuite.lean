@@ -857,7 +857,7 @@ def runInformationFlowChecks : IO Unit := do
   -- v0.36.198: the read-only `lookupObject` entry left with the deleted
   -- definition it named.
   expect "enforcement boundary: total 54 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 53)
+    (SeLe4n.Kernel.enforcementBoundary.length == 54)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge false true) publicEndpointState
@@ -1409,13 +1409,14 @@ def runInformationFlowChecks : IO Unit := do
   -- `irqHandlerSetNotificationFromCap` and `irqHandlerClear`.  Read-only
   -- 3 → 2 at v0.36.198: `lookupObject` was deleted (nothing called it).
   -- WS-SX SX6.5: 38 → 37, `setThreadFaultHandlerOp` left with its syscall;
-  -- WS-SX SX7: 37 → 36, the untyped reset left with its syscall.
-  expect "enforcement boundary has 36 capability-only"
-    (coCount = 36)
+  -- WS-SX SX7: 37 → 36, the untyped reset left with its syscall; WS-SX
+  -- SX8.3: 36 → 37, `schedContextUnbindThreadObjectOnCore`.
+  expect "enforcement boundary has 37 capability-only"
+    (coCount = 37)
   expect "enforcement boundary has 2 read-only"
     (roCount = 2)
-  expect "enforcement boundary total is 53"
-    (boundary.length = 53)
+  expect "enforcement boundary total is 54"
+    (boundary.length = 54)
 
   IO.println "enforcement boundary completeness verified"
 
@@ -1519,7 +1520,7 @@ def runInformationFlowChecks : IO Unit := do
 
   -- V6-L: Extended boundary matches canonical
   expect "enforcementBoundaryExtended has 54 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 53)
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 54)
   expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

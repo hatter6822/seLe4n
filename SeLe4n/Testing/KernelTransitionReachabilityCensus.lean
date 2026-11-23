@@ -1071,10 +1071,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Concurrency.setTlbAction
   , `SeLe4n.Kernel.Concurrency.updateObjectAt
   , `SeLe4n.Kernel.Concurrency.withLockSet
-  , `SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation
-  , `SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation
-  , `SeLe4n.Kernel.Lifecycle.Suspend.cancelDonation
-  , `SeLe4n.Kernel.Lifecycle.Suspend.cancelDonationValid
   , `SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlockingValid
   , `SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyMidState
   , `SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyOnCore
@@ -1136,7 +1132,6 @@ def nonExecutedTransitionsPlain : List Name :=
   -- (`auditedArmSpec_declassify_trail`, `auditedArmSpec_declassifySignal_trail`),
   -- so no arm runs the specification itself.
   , `SeLe4n.Kernel.auditedArmSpec
-  , `SeLe4n.Kernel.cancelDonationOnCore
   , `SeLe4n.Kernel.cancelIpcBlockingOnCore
   , `SeLe4n.Kernel.chooseThread
   , `SeLe4n.Kernel.chooseThreadEffective
@@ -1335,6 +1330,12 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.notificationSignal
   , `SeLe4n.Kernel.notificationSignalBound
   , `SeLe4n.Kernel.notificationSignalBoundCrossCoreDispatch
+  -- WS-SX SX8: seL4's ctx-free `sendSignal` (the donation unchecked), the
+  -- unchecked dispatch's; every seam runs the checked signal
+  -- (`sendSignalOnCoreFlowing`), whose donation asks the context-label check.
+  , `SeLe4n.Kernel.donateToSignalled
+  , `SeLe4n.Kernel.sendSignalOnCore
+  , `SeLe4n.Kernel.sendSignalOnCoreImpl
   , `SeLe4n.Kernel.notificationSignalChecked
   , `SeLe4n.Kernel.notificationWait
   , `SeLe4n.Kernel.notificationWaitChecked
@@ -1471,7 +1472,7 @@ def nonExecutedTransitionsPlain : List Name :=
 
 Lean mangles a `private def` to `_private.<Module>.0.<userName>`, which no name
 literal can spell, so each is built with the compiler's own mangling through
-`ReplyStackWriteCensus.privateIn`.  Eight of these are that census's own planted
+`ReplyStackWriteCensus.privateIn`.  Eleven of these are that census's own planted
 witnesses, which enter this domain because this module imports it for
 `isAuxiliary`; they are deliberately not executed, and their presence here is
 the derivation working rather than noise to carve out.  One is the export
@@ -1489,12 +1490,15 @@ def nonExecutedTransitionsPrivate : List Name :=
   , privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt4
   , privateIn `SeLe4n.Kernel.IPC.Invariant.Reachability `SeLe4n.Kernel.chainWitnessSt1
   , privateIn `SeLe4n.Kernel.IPC.Invariant.Reachability `SeLe4n.Kernel.chainWitnessSt2
+  , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessCallerLink
+  , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDelegatedCallerLink
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessBareConsume
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDelegatedStoreHelper
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDelegatedStoreWriter
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDirectLinkWrite
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessRawTableWrite
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessSplitWriter
+  , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessStasherOnly
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.eq_1
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.eq_censusWitnessUserNamed
   , privateIn `SeLe4n.Testing.ExportCommitDisciplineCensus
@@ -1558,11 +1562,6 @@ def standsBesideLive : List (Name × Name × Name) :=
     (`SeLe4n.Kernel.cancelIpcBlockingOnCore,
      `SeLe4n.Kernel.cancelIpcBlockingReclaimed,
      `SeLe4n.Kernel.cancelIpcBlockingOnCore_eq_reclaimed_deschedule)
-    -- WS-RR RR8.12 (second cut), the sweep's own finding one level down: the
-    -- suspend pipeline's G3 re-spells the dispatcher rather than calling it.
-  , (`SeLe4n.Kernel.cancelDonationOnCore,
-     `SeLe4n.Kernel.cancelBoundDonationOnCore,
-     `SeLe4n.Kernel.suspendDonationArm_eq_cancelDonationOnCore)
   ]
 
 /-! ## Reconciliation -/

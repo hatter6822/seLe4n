@@ -948,6 +948,15 @@ def notificationSignalDeclassifiedOnCore (ctx : GenericLabelingContext)
 at the core the syscall trapped on (threaded from the entry point), exactly as
 SM6.B's `notificationSignalBoundCrossCoreDispatch` does.
 
+WS-SX SX8.2: seL4-MCS `sendSignal` then donates the notification's context to
+the thread the signal woke, under the checked kernel's context-label check read
+through this context (`donateToSignalledFlowingGeneric`, the donation the
+checked `sendSignalOnCoreFlowing` makes): the declassification downgrades the
+signal's own hops, never the lending of another thread's reply stack.  It runs once the audit record is committed, so a
+refused record donates nothing and the downgrade stays fail-closed; the record
+writes the audit trail alone, which the donation neither reads nor writes, so
+the state a program sees is the checked signal's followed by the record.
+
 Deliberately **not** a boot-pinned sibling: the actor and the wake target are
 both per-core facts, and a `bootCoreId` form would be the defect the per-core
 routing gate exists to catch. -/
@@ -955,8 +964,63 @@ def notificationSignalDeclassifiedCrossCoreDispatch (ctx : GenericLabelingContex
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
     (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
-  notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge
-    executingCore st
+  match notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge
+      executingCore st with
+  | (st', .ok sgi) => (donateToSignalledFlowingGeneric ctx st st' notificationId, .ok sgi)
+  | (st', .error e) => (st', .error e)
+
+/-- The declassifying dispatch's answer is the declassifying signal's: the
+donation writes state alone. -/
+theorem notificationSignalDeclassifiedCrossCoreDispatch_snd (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState) :
+    (notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy notificationId badge c st).2 =
+      (notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st).2 := by
+  unfold notificationSignalDeclassifiedCrossCoreDispatch
+  rcases notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st with
+    ⟨st', _ | _⟩ <;> rfl
+
+/-- **A property the declassifying signal carries and every donation after it
+carries, the declassifying dispatch carries.** -/
+theorem notificationSignalDeclassifiedCrossCoreDispatch_induct (P : SystemState → Prop)
+    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState)
+    (hSig : P (notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st).1)
+    (hDonate : ∀ t sgi, signalWokenThread? st notificationId = some t →
+      (notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st).2 = .ok sgi →
+      P (maybeDonateSchedContext
+        (notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st).1
+        notificationId t)) :
+    P (notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy notificationId badge c
+      st).1 := by
+  unfold notificationSignalDeclassifiedCrossCoreDispatch
+  revert hSig hDonate
+  rcases notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st with
+    ⟨st', _ | sgi⟩
+  · intro hSig _; exact hSig
+  · intro hSig hDonate
+    dsimp only
+    unfold donateToSignalledFlowingGeneric
+    cases hW : signalWokenThread? st notificationId with
+    | none => exact hSig
+    | some t =>
+      exact maybeDonateSchedContextFlowingGeneric_induct P ctx _ notificationId t hSig
+        (hDonate t sgi hW rfl)
+
+/-- A refused declassifying dispatch donates nothing. -/
+theorem notificationSignalDeclassifiedCrossCoreDispatch_fst_of_error
+    {ctx : GenericLabelingContext} {declPolicy : DeclassificationPolicy}
+    {notificationId : SeLe4n.ObjId} {badge : SeLe4n.Badge} {c : CoreId} {st : SystemState}
+    {e : KernelError}
+    (h : (notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st).2 = .error e) :
+    (notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy notificationId badge c st).1 =
+      (notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st).1 := by
+  unfold notificationSignalDeclassifiedCrossCoreDispatch
+  revert h
+  rcases notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st with
+    ⟨st', _ | _⟩
+  · intro _; rfl
+  · intro h; cases h
 
 -- ============================================================================
 -- §5  WS-SM SM9.C.1 — path reductions and the fail-closed arms
@@ -1956,11 +2020,13 @@ is the trail's own capacity bound.
 That gives the section its shape: each result comes in two forms — an
 **unconditional** one where the underlying signal's own theorem exists, and a
 **transfer** one where it does not.  The one place the second form is needed is
-`ipcInvariantFull` on the *bound-delivery* path: SM6.D closed the whole bundle
-for `notificationSignalOnCore` and left the bound path's
-`endpointQueueRemoveDual` per-conjunct suite as registered debt.  SM9.C does not
-inherit that gap silently — it states the transfer, and instantiates it
-unconditionally on the fall-through path where SM6.D's theorem applies. -/
+`ipcInvariantFull`: the audit append is object-store-transparent, so the
+bundle transfers from the delivery's post-state
+(`notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer`), and the
+delivery's own bundle is the bound-aware signal's
+(`notificationSignalBoundOnCore_preserves_ipcInvariantFull`), whose one
+non-bundle premise is the bound receiver's splice predecessor
+(`splicePredecessorBlocked`). -/
 
 /-- WS-SM SM9.C.4: the whole `proofLayerInvariantBundle` across the audit fold
 at any accumulator — each append is a trail write, and the SM8.C.8 carriage
@@ -2069,8 +2135,8 @@ theorem notificationSignalDeclassifiedOnCore_preserves_ipcInvariant
 
 The audit append changes no object lookup, so a bundle
 that holds of the delivery's post-state holds of the committed one.  The premise
-is the delivery's own obligation — SM6.D's, discharged unconditionally on the
-fall-through path below and registered debt on the bound-delivery path. -/
+is the delivery's own obligation, discharged below from the bound-aware
+signal's bundle. -/
 theorem notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
@@ -2083,30 +2149,29 @@ theorem notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer
     notificationId badge c st st' sgi hStep
   exact ipcInvariantFull_of_getElem_eq (fun oid => by rw [hObjects]) hSignalInv
 
-/-- WS-SM SM9.C.3 (**the fall-through instance, unconditional**): off the
-bound-delivery path the delivery *is* `notificationSignalOnCore`, whose whole
-bundle SM6.D closed — so the declassifying signal carries it with no premise
-about the delivery at all.
-
-The waiter and badge-accumulation paths are the ones a deployment reaches
-without a bound notification, which is every deployment that has not called
-`.tcbBindNotification`. -/
-theorem notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthrough
+/-- WS-SM SM9.C.3: **the whole bundle across the declassifying signal**, on
+both delivery paths.  The delivery is the bound-aware signal
+(`notificationSignalBoundOnCore`): off the bound path it is
+`notificationSignalOnCore`, and on it the bound receiver is spliced off its
+endpoint's receive queue, which keeps the bundle when that receiver's queue
+predecessor is blocked on the same side (`splicePredecessorBlocked`). -/
+theorem notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull
     (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId)
     (st st' : SystemState) (sgi : Option (CoreId × SgiKind))
-    (hNoBound : boundDeliveryTarget? st notificationId = none)
     (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
     (hNWC : notificationWaiterConsistent st)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hPred : ∀ (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId),
+      boundDeliveryTarget? st notificationId = some (t, epId) →
+      splicePredecessorBlocked true epId st t)
     (hStep : notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge c st =
       (st', .ok sgi)) :
-    ipcInvariantFull st' := by
-  refine notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer ctx declPolicy
-    notificationId badge c st st' sgi ?_ hStep
-  rw [notificationSignalBoundOnCore_fallthrough_eq notificationId badge c st hNoBound]
-  exact notificationSignalOnCore_preserves_ipcInvariantFull notificationId badge c st hInv
-    hObjInv hNWC hAllBudgetsNone
+    ipcInvariantFull st' :=
+  notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer ctx declPolicy
+    notificationId badge c st st' sgi
+    (notificationSignalBoundOnCore_preserves_ipcInvariantFull notificationId badge c st hInv
+      hObjInv hNWC hAllBudgetsNone hPred) hStep
 
 /-- WS-SM SM9.C.3: **the per-core bundle**, from the whole-bundle form. -/
 theorem notificationSignalDeclassifiedOnCore_ipcInvariantFull_perCore_transfer
@@ -2245,17 +2310,6 @@ theorem notificationSignalDeclassifiedOnCore_preserves_trailDestinations
     exact declassifiedSignalPlan_record_destinations ctx declPolicy notificationId signaler st
       records hPlan r hr
 
-/-- WS-SM SM9.C.2: the live dispatch **is** the transition at the caller's own
-core — definitional, so every §5–§12 theorem is a statement about the live arm
-with `c := executingCore`, the core the syscall trapped on. -/
-@[simp] theorem notificationSignalDeclassifiedCrossCoreDispatch_eq
-    (ctx : GenericLabelingContext) (declPolicy : DeclassificationPolicy)
-    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
-    (executingCore : CoreId) (st : SystemState) :
-    notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy notificationId
-      badge executingCore st =
-      notificationSignalDeclassifiedOnCore ctx declPolicy notificationId badge
-        executingCore st := rfl
 
 
 -- ============================================================================

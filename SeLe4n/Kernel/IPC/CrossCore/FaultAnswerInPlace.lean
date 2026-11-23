@@ -81,7 +81,8 @@ words past MR0. -/
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat) :
     SystemState :=
   performFaultAnswer (PriorityInheritance.propagatePipChainCrossCore
-      (removeRunnableOnCore (storeReceiveBlock (storeFaultReplyRendezvous st c tid rid) epId tid
+      (removeRunnableOnCore (storeReceiveBlock
+        (receiveReturnSchedContextFast true (storeFaultReplyRendezvous st c tid rid) tid.val) epId tid
         tailCode (rid.val + 1)) tid core) tid core).1 c kind label
     ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout rf (Architecture.regMessageLength layout len) 0
 
@@ -143,6 +144,7 @@ theorem replyRecvTransferOnCore_fault_blocks_inPlace (st : SystemState) (epId : 
     ct ep0 rt ep rp (by simp [IpcMessage.empty]) hT hIpc hRO hG hNe hE hS hR hA hEnq hRp hFree
     hStash hRec (fun h => by cases h)]
   unfold performReplyRecvFaultAnswer replyRecvAnswerCaller
+  rw [receiveReturnSchedContextFast_eq]
   dsimp only
   rw [faultReplyApplyOnCore_decode_eq_performFaultAnswer _ c ct tf hPF _ _ layout rf
     (Architecture.regMessageLength layout len) 0
@@ -177,13 +179,14 @@ theorem performReplyRecvFaultAnswer_staged (st : SystemState) (epId : SeLe4n.Obj
     simp only [replyWakesInPlace, Bool.and_eq_true] at hG
     exact hG.1.1.1.2
   have hCT : c.toObjId ≠ tid.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e).symm
-  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := storeReplyRendezvous_receiveGuard st c tid rid
+  obtain ⟨hE0, ⟨rt0, hR0, hA0, -⟩, hG0⟩ := storeReplyRendezvous_receiveGuard st c tid rid
     IpcMessage.empty ct rp epId ep rt hNo hT hFC hRp hNe hE hR hA hEnq hFree hStash hRec
+  have h0' := storeReplyRendezvous_noResizeDue st c tid rid IpcMessage.empty hNo
+  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := receiveReturnSchedContext_receiveGuard true _ tid h0'
+    hE0 hR0 hA0 hG0
   obtain ⟨t, hT1, hB⟩ := receiveBlock_receiver_blocked _ epId ep tid rt1 (some rid) core hE1 hR1
     hA1 hG1
-  have h0 : (storeReplyRendezvous st c tid rid IpcMessage.empty).objects.noResizeDue := by
-    rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo, SystemState.mapTcbInPlace_noResizeDue]
-    exact storeReplyRendezvousReady_noResizeDue st c tid rid hNo
+  have h0 := receiveReturnSchedContext_noResizeDue true _ tid h0'
   have h3 := removeRunnableOnCore_noResizeDue _ tid core
     (storeReceiveBlock_noResizeDue _ epId tid ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid)) h0)
   obtain ⟨x, hX, hEq⟩ := propagatePipChainCrossCore_ipcStateCarried _ tid core h3 tid t hT1
@@ -191,6 +194,7 @@ theorem performReplyRecvFaultAnswer_staged (st : SystemState) (epId : SeLe4n.Obj
     x0 x1 x2 x3 x4 x5 x6 x7 layout rf (Architecture.regMessageLength layout len) 0 hCT
     (propagatePipChainCrossCore_noResizeDue _ _ _ h3) x hX
   unfold performReplyRecvFaultAnswer
+  rw [receiveReturnSchedContextFast_eq]
   exact Architecture.stageDeliveredMessage_id_when_blocked _ tid 0 x' hX'
     (by rw [hEq', hEq, hB]; exact fun h => by cases h)
 
@@ -234,8 +238,9 @@ answer (`performFaultAnswer`). -/
     SystemState :=
   performFaultAnswer (PriorityInheritance.propagatePipChainCrossCore
       (descheduleAtPlacement (removeRunnableOnCore (storeReceiveBlock
-        (popDonationSettledInPlace (storeFaultReplyRendezvous st c tid rid) c tid scId home) epId tid
-        tailCode (rid.val + 1)) tid core) tid) tid core).1 c kind label
+        (receiveReturnSchedContextFast true
+          (popDonationSettledInPlace (storeFaultReplyRendezvous st c tid rid) c tid scId home) tid.val)
+        epId tid tailCode (rid.val + 1)) tid core) tid) tid core).1 c kind label
     ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout rf (Architecture.regMessageLength layout len) 0
 
 /-- **The donated reply-receive answering a fault is the specification's**, and
@@ -302,12 +307,15 @@ theorem replyRecvTransferOnCore_fault_donated_inPlace (st : SystemState) (epId :
   refine ⟨?_, ?_⟩
   · unfold replyRecvTransferOnCore
     rw [hL, hEq, hAp]
-    rfl
+    first
+      | (unfold performReplyRecvDonatedFaultAnswer; rw [receiveReturnSchedContextFast_eq]; rfl)
+      | (unfold performReplyRecvUnheldFaultAnswer; rw [receiveReturnSchedContextFast_eq]; rfl)
   · have h0 : (storeReplyRendezvous st c tid rid IpcMessage.empty).objects.noResizeDue := by
       rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo, SystemState.mapTcbInPlace_noResizeDue]
       exact storeReplyRendezvousReady_noResizeDue st c tid rid hNo
-    have h2 := popDonationSettledInPlace_noResizeDue _ c tid ⟨replyHeadContextCode st rid - 1⟩
-      (determineTargetCore st c) h0
+    have h2 := receiveReturnSchedContext_noResizeDue true _ tid
+      (popDonationSettledInPlace_noResizeDue _ c tid ⟨replyHeadContextCode st rid - 1⟩
+        (determineTargetCore st c) h0)
     have h3 := storeReceiveBlock_noResizeDue _ epId tid ep.recvTailCode
       (SeLe4n.ReplyId.optCode (some rid)) h2
     have h4 := removeRunnableOnCore_noResizeDue _ tid core h3
@@ -319,6 +327,7 @@ theorem replyRecvTransferOnCore_fault_donated_inPlace (st : SystemState) (epId :
       ct.faultX6 ct.faultX7 layout rf (Architecture.regMessageLength layout len) 0 hCT
       (propagatePipChainCrossCore_noResizeDue _ _ _ h5) x2 hX2
     unfold performReplyRecvDonatedFaultAnswer
+    rw [receiveReturnSchedContextFast_eq]
     exact Architecture.stageDeliveredMessage_id_when_blocked _ tid 0 x3 hX3
       (by rw [e3, e2, e1, hB]; exact fun h => by cases h)
 
@@ -333,9 +342,9 @@ the replier's block on the endpoint and its priority walk, then the fault answer
     SystemState :=
   performFaultAnswer (PriorityInheritance.propagatePipChainCrossCore
       (removeRunnableOnCore (storeReceiveBlock
-        (SchedContextOps.settleReturnedContext
-          (returnUnheldSchedContextInPlace (storeFaultReplyLeg st c rid) c scId) home scId) epId tid
-        tailCode (rid.val + 1)) tid core) tid core).1 c kind label
+        (receiveReturnSchedContextFast true (SchedContextOps.settleReturnedContext
+          (returnUnheldSchedContextInPlace (storeFaultReplyLeg st c rid) c scId) home scId) tid.val)
+        epId tid tailCode (rid.val + 1)) tid core) tid core).1 c kind label
     ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout rf (Architecture.regMessageLength layout len) 0
 
 /-- **The reply-receive answering a fault for a caller recording no server is
@@ -402,13 +411,16 @@ theorem replyRecvTransferOnCore_fault_unheld_inPlace (st : SystemState) (epId : 
   refine ⟨?_, ?_⟩
   · unfold replyRecvTransferOnCore
     rw [hL, hEq, hAp]
-    rfl
+    first
+      | (unfold performReplyRecvDonatedFaultAnswer; rw [receiveReturnSchedContextFast_eq]; rfl)
+      | (unfold performReplyRecvUnheldFaultAnswer; rw [receiveReturnSchedContextFast_eq]; rfl)
   · have h0 : (storeReplyLeg st c rid IpcMessage.empty).objects.noResizeDue := by
       rw [storeReplyLeg_eq_hold _ _ _ _ hNo, SystemState.mapTcbInPlace_noResizeDue]
       exact storeReplyLegReady_noResizeDue st c rid hNo
     have h1 := returnUnheldSchedContextInPlace_noResizeDue _ c ⟨replyHeadContextCode st rid - 1⟩ h0
-    have h2 := settleReturnedContext_noResizeDue _ (determineTargetCore st c)
-      ⟨replyHeadContextCode st rid - 1⟩ h1
+    have h2 := receiveReturnSchedContext_noResizeDue true _ tid
+      (settleReturnedContext_noResizeDue _ (determineTargetCore st c)
+        ⟨replyHeadContextCode st rid - 1⟩ h1)
     have h3 := storeReceiveBlock_noResizeDue _ epId tid ep.recvTailCode
       (SeLe4n.ReplyId.optCode (some rid)) h2
     have h4 := removeRunnableOnCore_noResizeDue _ tid core h3
@@ -418,6 +430,7 @@ theorem replyRecvTransferOnCore_fault_unheld_inPlace (st : SystemState) (epId : 
       ct.faultX6 ct.faultX7 layout rf (Architecture.regMessageLength layout len) 0 hCT
       (propagatePipChainCrossCore_noResizeDue _ _ _ h4) x2 hX2
     unfold performReplyRecvUnheldFaultAnswer
+    rw [receiveReturnSchedContextFast_eq]
     exact Architecture.stageDeliveredMessage_id_when_blocked _ tid 0 x3 hX3
       (by rw [e3, e2, hB]; exact fun h => by cases h)
 
@@ -556,5 +569,156 @@ theorem faultReplyTransferChecked_unheld_inPlace (ctx : LabelingContext) (st : S
     (by simp only [Architecture.regMessageRegs, Array.size_map])
     (fun i _ => wordAt_regMessageRegs layout rf i),
     storeFaultReplyLeg_eq, storeReplyLeg_eq_hold _ _ _ _ hNo]
+
+/-- **The fault answer to a caller recording no server, its reply object linked
+to nothing, in place** (WS-SX SX8.3): the reply leg's writes with no message,
+then the fault answer (`performFaultAnswer`).  No context to hand back (the
+reply object heads none, as seL4's `reply_remove` finds it once a lent context
+was let go of by `schedContext_unbindReply`) and no server's boost to revert. -/
+@[noinline] def performFaultReplyUnlinkedAnswer (st : SystemState) (c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (kind label : Nat) (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (n : Nat) : SystemState :=
+  performFaultAnswer (storeFaultReplyLeg st c rid) c kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7
+    layout rf n 0
+
+/-- **The checked fault reply to a caller recording no server, its reply object
+linked to nothing, in place**: under `replyUnlinkedInPlace`, a reply to a
+faulted caller blocked on it with no server recorded commits
+`performFaultReplyUnlinkedAnswer`'s state. -/
+theorem faultReplyTransferChecked_unlinked_inPlace (ctx : LabelingContext) (st : SystemState)
+    (replier c : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
+    (mi : MessageInfo) (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+    (msg : IpcMessage) (grant : Bool) (core : CoreId)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyUnlinkedInPlace st c rid = true)
+    (hF : ct.faultWords.isFault = true) :
+    replyTransferOnCoreChecked ctx replier c mi (Architecture.regMessageRegs layout rf) msg grant core
+        st =
+      .ok ((), performFaultReplyUnlinkedAnswer st c rid ct.faultKind mi.label ct.faultIp ct.faultSp
+        ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6
+        ct.faultX7 layout rf (min mi.length layout.msgRegs.size)) := by
+  have hNo := replyWakesInPlace_noResizeDue ((replyUnlinkedInPlace_eq_wakes st c ct rid) ▸ hG)
+  obtain ⟨sgi, hD⟩ := replyDispatch_unlinked_inPlace st replier c ct ep rid IpcMessage.empty core
+    (by simp [IpcMessage.empty]) hT hIpc hRO hG
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  obtain ⟨tf, hPF⟩ : ∃ tf, ct.pendingFault = some tf :=
+    Option.isSome_iff_exists.mp (by rw [TCB.pendingFault_isSome]; exact hF)
+  have hHas : threadHasPendingFault st c = true := by
+    simp only [threadHasPendingFault, hTc, Option.bind_some, hPF, Option.isSome_some]
+  unfold replyTransferOnCoreChecked
+  rw [hHas]
+  simp only [↓reduceIte]
+  unfold faultReplyOnCore
+  rw [hTc]
+  simp only [hPF]
+  rw [hD]
+  simp only []
+  unfold performFaultReplyUnlinkedAnswer
+  rw [faultReplyApplyOnCore_decode_eq_performFaultAnswer _ c ct tf hPF mi _ layout rf
+    (min mi.length layout.msgRegs.size) 0
+    (by simp only [Architecture.regMessageRegs, Array.size_map])
+    (fun i _ => wordAt_regMessageRegs layout rf i),
+    storeFaultReplyLeg_eq, storeReplyLeg_eq_hold _ _ _ _ hNo]
+
+
+/-- **The reply-receive answering a fault for a caller recording no server whose
+reply object is linked to nothing, in place** (WS-SX SX8.3): the reply leg's
+writes with no message, the replier's block on the endpoint and its priority
+walk, then the fault answer (`performFaultAnswer`).  Nothing to pop. -/
+@[noinline] def performReplyRecvUnlinkedFaultAnswer (st : SystemState) (c tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId)
+    (tailCode : Nat) (core : CoreId) (kind label : Nat) (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat) :
+    SystemState :=
+  performFaultAnswer (PriorityInheritance.propagatePipChainCrossCore
+      (removeRunnableOnCore (storeReceiveBlock
+        (receiveReturnSchedContextFast true (storeFaultReplyLeg st c rid) tid.val)
+        epId tid tailCode (rid.val + 1)) tid core) tid core).1 c kind label
+    ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout rf (Architecture.regMessageLength layout len) 0
+
+/-- **The reply-receive answering a fault for a caller recording no server whose
+reply object is linked to nothing is the specification's**, and it stages
+nothing for the replier, which the receive leaves blocked. -/
+theorem replyRecvTransferOnCore_fault_unlinked_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (label : Nat)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) (grant : Bool) (core : CoreId)
+    (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply) (tf : ThreadFault)
+    (hPF : ct.pendingFault = some tf)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep0 none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyUnlinkedInPlace st c rid = true)
+    (hNe : tid ≠ c)
+    (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
+    replyRecvTransferOnCore epId tid rid c label
+        { registers := Architecture.regMessageBody layout rf len, badge := badge }
+        grant core st =
+      .ok ({ results := #[] }, performReplyRecvUnlinkedFaultAnswer st c tid rid epId
+        ep.recvTailCode core
+        ct.faultKind label ct.faultIp ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2
+        ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6 ct.faultX7 layout rf len) ∧
+    Architecture.stageDeliveredMessage (performReplyRecvUnlinkedFaultAnswer st c tid rid epId
+        ep.recvTailCode core
+        ct.faultKind label ct.faultIp ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2
+        ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6 ct.faultX7 layout rf len) tid 0 =
+      performReplyRecvUnlinkedFaultAnswer st c tid rid epId ep.recvTailCode core
+        ct.faultKind label ct.faultIp ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2
+        ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6 ct.faultX7 layout rf len := by
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hNo := replyWakesInPlace_noResizeDue (show replyWakesInPlace st c ct rid = true from hG)
+  have hCT : c.toObjId ≠ tid.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e).symm
+  obtain ⟨hEq, x, hX, hB⟩ := replyRecvAnsweringOnCore_unlinked_inPlace
+    (replyRecvCallerFaultAnswer? st c label
+      { registers := Architecture.regMessageBody layout rf len, badge := badge })
+    st epId tid c rid IpcMessage.empty grant core ct ep0 rt ep rp (by simp [IpcMessage.empty])
+    hT hIpc hRO hG hNe hE hS hR hA hEnq hRp hStash hRec
+    (fun h => by rw [replyRecvCallerFaultAnswer?_of_fault st c ct tf label _ hTc hPF] at h; cases h)
+  have hAns := replyRecvCallerFaultAnswer?_of_fault st c ct tf label
+    { registers := Architecture.regMessageBody layout rf len, badge := badge } hTc hPF
+  have hAp : ∀ X : SystemState, replyRecvAnswerCaller
+        (replyRecvCallerFaultAnswer? st c label
+          { registers := Architecture.regMessageBody layout rf len, badge := badge }) X c 0 =
+      performFaultAnswer X c ct.faultKind label ct.faultIp ct.faultSp ct.faultLr ct.faultX0
+        ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6 ct.faultX7 layout rf
+        (Architecture.regMessageLength layout len) 0 := fun X => by
+    rw [hAns]
+    exact faultReplyApplyOnCore_decode_eq_performFaultAnswer _ c ct tf hPF _ _ layout rf
+      (Architecture.regMessageLength layout len) 0
+      (by simp only [Architecture.regMessageBody_size, Nat.min_self])
+      (fun i hi => wordAt_regMessageBody layout rf len i hi)
+  have hL : replyRecvLegMessage (replyRecvCallerFaultAnswer? st c label
+      { registers := Architecture.regMessageBody layout rf len, badge := badge })
+      { registers := Architecture.regMessageBody layout rf len, badge := badge } =
+      IpcMessage.empty := by rw [hAns]; rfl
+  refine ⟨?_, ?_⟩
+  · unfold replyRecvTransferOnCore
+    rw [hL, hEq, hAp]
+    unfold performReplyRecvUnlinkedFaultAnswer
+    rw [receiveReturnSchedContextFast_eq]
+    rfl
+  · have h0 : (storeReplyLeg st c rid IpcMessage.empty).objects.noResizeDue := by
+      rw [storeReplyLeg_eq_hold _ _ _ _ hNo, SystemState.mapTcbInPlace_noResizeDue]
+      exact storeReplyLegReady_noResizeDue st c rid hNo
+    have h2 := receiveReturnSchedContext_noResizeDue true _ tid h0
+    have h3 := storeReceiveBlock_noResizeDue _ epId tid ep.recvTailCode
+      (SeLe4n.ReplyId.optCode (some rid)) h2
+    have h4 := removeRunnableOnCore_noResizeDue _ tid core h3
+    obtain ⟨x2, hX2, e2⟩ := propagatePipChainCrossCore_ipcStateCarried _ tid core h4 tid x hX
+    obtain ⟨x3, hX3, e3⟩ := performFaultAnswer_ipcStateAt _ c tid ct.faultKind label ct.faultIp
+      ct.faultSp ct.faultLr ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5
+      ct.faultX6 ct.faultX7 layout rf (Architecture.regMessageLength layout len) 0 hCT
+      (propagatePipChainCrossCore_noResizeDue _ _ _ h4) x2 hX2
+    unfold performReplyRecvUnlinkedFaultAnswer
+    rw [receiveReturnSchedContextFast_eq]
+    exact Architecture.stageDeliveredMessage_id_when_blocked _ tid 0 x3 hX3
+      (by rw [e3, e2, hB]; exact fun h => by cases h)
 
 end SeLe4n.Kernel

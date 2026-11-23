@@ -608,11 +608,12 @@ private def sd037_entryWordPairs : IO Unit := do
       syncedWordAt mem bytes 0 (pa 0x1000) == 0x1111111111111111)
     "pairs past the entry's count must not be read"
   expect "sd037g_a_high_bit_message_info_asks_its_overflow"
-    (overflowStop 7 == 3 && overflowStop 4 == 0 && overflowStop 121 == 0 &&
+    (overflowStop 7 == 3 && overflowStop 4 == 0 &&
+      overflowStop 121 == maxOverflowSlots && overflowStop 120 == maxOverflowSlots &&
       overflowStop ((7 : UInt64) ||| ((1 : UInt64) <<< 63)) == 3 &&
-      overflowStop ((0x7F : UInt64) ||| ((1 : UInt64) <<< 63)) == 0 &&
+      overflowStop ((0x7F : UInt64) ||| ((1 : UInt64) <<< 63)) == maxOverflowSlots &&
       overflowStop ((7 : UInt64) ||| ((5 : UInt64) <<< 12)) == 3)
-    "the overflow count must follow the MessageInfo decode, label bits included"
+    "the overflow count must follow the MessageInfo decode (length clamped to 120), label bits included"
 
 /-- SD-035: Sequential dispatches — the IO.Ref state evolves
     correctly across multiple syscall invocations.
@@ -1871,6 +1872,283 @@ private def finalise_clears_notification_link : IO Unit := do
   expect "finalise_unnamed_notification_keeps_the_context_link" (scCode stB == nA.val + 1)
     "a notification its context does not name back leaves the context's link"
 
+/-- seL4-MCS notification scheduling-context donation and return
+(`maybeDonateSchedContext`, `maybeReturnSchedContext`, `receiveIPC`'s
+`maybeReturnSchedContext`).  Notification 80 is bound to context 60; thread 2's
+bound notification is 80.
+
+* **Donation** (the step `completeSignal`, `receiveSignal`'s active case and
+  `sendSignal`'s wake each run): a thread with no context and a context with no
+  thread are bound both ways; seL4's guard false (the thread already holds a
+  context, or the context already serves a thread) writes nothing.
+* **Return on a blocking `Wait`**: the receive's return (seL4 runs one
+  `maybeReturnSchedContext`): both links cleared, the context's `isActive` and
+  donation origin kept — it is not an unbind.
+* **Return on a blocking receive** (`receiveReturnSchedContext`): both links
+  cleared, the receiver keeps its current slot; a non-blocking receive, or a
+  thread whose context is not the notification's, writes nothing.
+* **The purge**: a returned context queued on a replenish queue is taken off
+  it, as seLe4n's unbind does. -/
+private def notificationDonation_seL4_semantics : IO Unit := do
+  let waiter : SeLe4n.ThreadId := ⟨2⟩
+  let scObj : SeLe4n.ObjId := ⟨60⟩
+  let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofObjId scObj
+  let otherSc : SeLe4n.ObjId := ⟨61⟩
+  let nA : SeLe4n.ObjId := ⟨80⟩
+  let ntfn : Notification :=
+    { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
+      schedContextCode := scId.val + 1 }
+  let mkSt (scThread : Nat) (tcbSc : Nat) (current : Option SeLe4n.ThreadId := none) :
+      SystemState :=
+    mkState [
+      (waiter.toObjId,
+        .tcb { mkTcb 2 with boundNotificationCode := nA.val + 1, scBindingScCode := tcbSc }),
+      (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with
+        boundThreadCode := scThread, notificationCode := nA.val + 1 }),
+      (otherSc, .schedContext (SeLe4n.Kernel.SchedContext.empty
+        (SeLe4n.SchedContextId.ofObjId otherSc))),
+      (nA, .notification ntfn)] current
+  let bound (st : SystemState) : Bool :=
+    (st.getTcb? waiter).any (fun t => decide (t.schedContextBinding = .bound scId)) &&
+      (st.getSchedContext? scId).any (fun sc => decide (sc.boundThread = some waiter))
+  let unbound (st : SystemState) : Bool :=
+    (st.getTcb? waiter).any (fun t => t.scBindingScCode == 0 && t.scBindingOwnerCode == 0) &&
+      (st.getSchedContext? scId).any (fun sc => decide (sc.boundThread = none))
+  -- Donation.
+  expect "ntfn_donate_binds_both_ways" (bound (maybeDonateSchedContext (mkSt 0 0) nA waiter))
+    "a thread with no context takes the notification's unbound context, both links written"
+  expect "ntfn_donate_guard_thread_has_context"
+    (!bound (maybeDonateSchedContext (mkSt 0 (otherSc.val + 1)) nA waiter) &&
+      (((maybeDonateSchedContext (mkSt 0 (otherSc.val + 1)) nA waiter).getSchedContext? scId).any
+        fun sc => decide (sc.boundThread = none)))
+    "a thread already holding a context takes none (seL4's guard false)"
+  expect "ntfn_donate_guard_context_serves_a_thread"
+    (((maybeDonateSchedContext (mkSt 7 0) nA waiter).getTcb? waiter).any
+      fun t => t.scBindingScCode == 0)
+    "a context already serving a thread is not donated (seL4's guard false)"
+  -- Return on a blocking Wait.
+  expect "ntfn_return_on_wait_unbinds"
+    (unbound (maybeReturnSchedContext (mkSt (waiter.val + 1) (scId.val + 1)) nA waiter))
+    "a waiter holding its notification's context returns it, both links cleared"
+  expect "ntfn_return_on_wait_guard_false"
+    (((maybeReturnSchedContext (mkSt 0 (otherSc.val + 1)) nA waiter).getTcb? waiter).any
+      fun t => t.scBindingScCode == otherSc.val + 1)
+    "a waiter holding another context keeps it (seL4's guard false)"
+  let stA := mkState [
+      (waiter.toObjId,
+        .tcb { mkTcb 2 with boundNotificationCode := nA.val + 1, scBindingScCode := scId.val + 1 }),
+      (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with
+        boundThreadCode := waiter.val + 1, notificationCode := nA.val + 1, isActive := true,
+        donationOrigin := some ⟨9⟩ }),
+      (nA, .notification ntfn)] none
+  let stA' := maybeReturnSchedContext stA nA waiter
+  expect "ntfn_return_on_wait_keeps_isActive_and_origin"
+    (unbound stA' && (stA'.getSchedContext? scId).any
+      (fun sc => sc.isActive && sc.donationOrigin == some ⟨9⟩))
+    "the Wait's return clears the two links and keeps isActive and the donation origin"
+  -- Return on a blocking receive: the receiver is current and stays so.
+  let stR := mkSt (waiter.val + 1) (scId.val + 1) (some waiter)
+  let stR' := receiveReturnSchedContext true stR waiter
+  expect "ntfn_return_on_receive_unbinds_keeps_current"
+    (unbound stR' && stR'.scheduler.currentOnCore bootCoreId == stR.scheduler.currentOnCore bootCoreId)
+    "a blocking receiver returns its notification's context and keeps its current slot"
+  expect "ntfn_return_on_receive_nonblocking_writes_nothing"
+    (bound (receiveReturnSchedContext false stR waiter))
+    "a non-blocking receive returns nothing"
+  -- The purge: the context queued on a replenish queue is taken off it.
+  let stQ := stR.releaseInsertOn bootCoreId scId 100
+  expect "ntfn_return_purge_precondition_queued" (stQ.releaseCoreOf scId == some bootCoreId)
+    "the test context is queued on the boot core's replenish queue"
+  let stQ' := receiveReturnSchedContext true stQ waiter
+  expect "ntfn_return_purges_replenish_entry"
+    (unbound stQ' && stQ'.releaseCoreOf scId == none)
+    "a returned context is taken off the replenish queue that held it"
+  expect "ntfn_return_wait_purges_replenish_entry"
+    ((maybeReturnSchedContext stQ nA waiter).releaseCoreOf scId == none)
+    "the Wait's return, the receive's return, purges it too"
+
+/-- **The notification donation's context-label check**
+(`maybeDonateSchedContextFlowing`).  Notification 80 is bound to context 60,
+which may head a reply stack: its head reply 90 names thread 5 as its caller,
+the thread that lent the context through a `Call`, and no thread holds the
+context.  Thread 2 takes the notification's word.
+
+* A context whose label flows to the waiter: the context is lent, both links
+  written, as `maybeDonateSchedContext` does, whoever lent it before.
+* A context labelled above the waiter: nothing is donated, seL4's "do
+  nothing" branch — the state is returned as it was.
+* A context labelled below the waiter: nothing is donated either.  The lend is
+  decided by the waiter's own binding and writes the context's thread end,
+  which the context's domain reads back, so the labels must be equal.
+* The check reads the labels and the notification's context word alone: a
+  stack's lender changes nothing (`donationContextFlows_congr`). -/
+private def notificationDonation_contextLabelCheck : IO Unit := do
+  let waiter : SeLe4n.ThreadId := ⟨2⟩
+  let lender : SeLe4n.ThreadId := ⟨5⟩
+  let scObj : SeLe4n.ObjId := ⟨60⟩
+  let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofObjId scObj
+  let nA : SeLe4n.ObjId := ⟨80⟩
+  let rid : SeLe4n.ReplyId := ⟨90⟩
+  let ntfn : Notification :=
+    { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
+      schedContextCode := scId.val + 1 }
+  let mkSt (head : Option SeLe4n.ReplyId) : SystemState :=
+    mkState [
+      (waiter.toObjId, .tcb { mkTcb 2 with boundNotificationCode := nA.val + 1 }),
+      (lender.toObjId, .tcb (mkTcb 5)),
+      (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with
+        notificationCode := nA.val + 1, scReply := head }),
+      (rid.toObjId,
+        .reply { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some lender) }),
+      (nA, .notification ntfn)] none
+  let bound (st : SystemState) : Bool :=
+    (st.getTcb? waiter).any (fun t => decide (t.schedContextBinding = .bound scId)) &&
+      (st.getSchedContext? scId).any (fun sc => decide (sc.boundThread = some waiter))
+  let highContext : LabelingContext :=
+    { defaultLabelingContext with
+      objectLabelOf := fun o =>
+        if o = scObj then SecurityLabel.kernelTrusted else SecurityLabel.publicLabel }
+  let highLender : LabelingContext :=
+    { defaultLabelingContext with
+      threadLabelOf := fun t =>
+        if t = lender then SecurityLabel.kernelTrusted else SecurityLabel.publicLabel }
+  let stStack := mkSt (some rid)
+  expect "ntfn_donate_context_found"
+    (notificationContext? stStack nA == some scId)
+    "the check reads the context the notification lends"
+  expect "ntfn_donate_context_flows_lends"
+    (bound (maybeDonateSchedContextFlowing defaultLabelingContext stStack nA waiter))
+    "a context whose label flows to the waiter: the context is lent, both links written"
+  expect "ntfn_donate_context_not_flowing_donates_nothing"
+    (!donationContextFlows highContext stStack nA waiter &&
+      !bound (maybeDonateSchedContextFlowing highContext stStack nA waiter) &&
+      ((maybeDonateSchedContextFlowing highContext stStack nA waiter).getTcb? waiter).any
+        (fun t => t.scBindingScCode == 0) &&
+      ((maybeDonateSchedContextFlowing highContext stStack nA waiter).getSchedContext?
+        scId).any (fun sc => decide (sc.boundThread = none)))
+    "a context labelled above the waiter is not lent: nothing donated (seL4's do-nothing branch)"
+  let highWaiter : LabelingContext :=
+    { defaultLabelingContext with
+      threadLabelOf := fun t =>
+        if t = waiter then SecurityLabel.kernelTrusted else SecurityLabel.publicLabel }
+  expect "ntfn_donate_context_below_waiter_donates_nothing"
+    (!donationContextFlows highWaiter stStack nA waiter &&
+      !bound (maybeDonateSchedContextFlowing highWaiter stStack nA waiter) &&
+      ((maybeDonateSchedContextFlowing highWaiter stStack nA waiter).getTcb? waiter).any
+        (fun t => t.scBindingScCode == 0) &&
+      ((maybeDonateSchedContextFlowing highWaiter stStack nA waiter).getSchedContext?
+        scId).any (fun sc => decide (sc.boundThread = none)))
+    "a context labelled below the waiter is not lent: the labels must be equal"
+  expect "ntfn_donate_check_reads_no_stack"
+    (donationContextFlows highLender stStack nA waiter ==
+        donationContextFlows highLender (mkSt none) nA waiter &&
+      bound (maybeDonateSchedContextFlowing highLender stStack nA waiter))
+    "the check reads no reply object: a stack's lender changes nothing"
+
+/-- **The call's lend admission** (`callLendAdmits`, `applyCallDonationOnCoreWhen`).
+Caller 3 holds context 61 (bound); server 4 holds none, so a call from 3 to 4
+lends 61.
+
+* The caller's label flows to the context's label: the lend is admitted and
+  the gated donation is the donation.
+* A caller labelled above its context: the lend is refused, and the gated
+  donation writes nothing (seL4's "do nothing" branch); the call itself is not
+  refused.
+* The admission reads the caller's own binding and the labels alone: the
+  server's binding changes nothing. -/
+private def callLend_admission : IO Unit := do
+  let caller : SeLe4n.ThreadId := ⟨3⟩
+  let server : SeLe4n.ThreadId := ⟨4⟩
+  let scObj : SeLe4n.ObjId := ⟨61⟩
+  let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofObjId scObj
+  let mkSt (serverBound : Bool) : SystemState :=
+    mkState [
+      (caller.toObjId, .tcb { mkTcb 3 with
+        scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId),
+        scBindingOwnerCode := 0 }),
+      (server.toObjId, .tcb (if serverBound then { mkTcb 4 with
+        scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId),
+        scBindingOwnerCode := 0 } else mkTcb 4)),
+      (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with
+        boundThreadCode := caller.val + 1, isActive := true })] none
+  let st := mkSt false
+  let highCaller : LabelingContext :=
+    { defaultLabelingContext with
+      threadLabelOf := fun t =>
+        if t = caller then SecurityLabel.kernelTrusted else SecurityLabel.publicLabel }
+  expect "call_lend_context_resolved"
+    (callDonationSchedContext? st caller server == some scId)
+    "a call from the bound caller to the passive server lends the caller's context"
+  expect "call_lend_admitted_when_caller_flows"
+    (callLendAdmits defaultLabelingContext st caller &&
+      callLendSchedContext? (callLendAdmits defaultLabelingContext st caller) st caller server ==
+        some scId)
+    "a caller whose label flows to its context's label lends it"
+  match caller.toValid?, server.toValid? with
+  | some cV, some sV =>
+    let refused := applyCallDonationOnCoreWhen (callLendAdmits highCaller st caller) st cV sV
+      bootCoreId bootCoreId
+    let refusedLendsNothing : Bool := match refused with
+      | .ok st' =>
+        (st'.getTcb? server).any (fun t => t.scBindingScCode == 0) &&
+          (st'.getTcb? caller).any (fun t => decide (t.schedContextBinding = .bound scId))
+      | .error _ => false
+    expect "call_lend_refused_donates_nothing"
+      (!callLendAdmits highCaller st caller &&
+        callLendSchedContext? (callLendAdmits highCaller st caller) st caller server == none &&
+        refusedLendsNothing)
+      "a caller labelled above its context lends nothing; the call is not refused"
+  | _, _ => expect "call_lend_ids_valid" false "the test threads are valid"
+  expect "call_lend_admission_reads_caller_alone"
+    (callLendAdmits highCaller st caller == callLendAdmits highCaller (mkSt true) caller &&
+      callLendAdmits defaultLabelingContext st caller ==
+        callLendAdmits defaultLabelingContext (mkSt true) caller)
+    "the admission reads the caller's binding and the labels: the server's binding changes nothing"
+  -- The receive that takes a parked call asks the same admission of the
+  -- send queue's head, on the state the arm is handed.
+  let epObj : SeLe4n.ObjId := ⟨62⟩
+  let withHead (ipc : ThreadIpcState) (q : IntrusiveQueue) : SystemState :=
+    let callerTcb : TCB := TCB.setIpcState { mkTcb 3 with
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId),
+      scBindingOwnerCode := 0 } ipc
+    let objs := (st.objects.insert caller.toObjId (.tcb callerTcb)).insert epObj
+      (.endpoint (Endpoint.ofQueues q {}))
+    { st with objects := objs }
+  let withEp := withHead (.blockedOnCall epObj)
+  let parked := withEp { head := some caller, tail := some caller }
+  let sending := withHead (.blockedOnSend epObj) { head := some caller, tail := some caller }
+  let empty := withEp {}
+  expect "receive_lend_reads_send_queue_head"
+    (receiveLendAdmits defaultLabelingContext parked epObj &&
+      !receiveLendAdmits highCaller parked epObj &&
+      receiveLendAdmits highCaller parked epObj == callLendAdmits highCaller parked caller &&
+      receiveLendAdmits highCaller empty epObj)
+    "a receive lends the parked caller's context only where the caller flows to it"
+  expect "receive_lend_refuses_only_a_call"
+    (receiveLendAdmits highCaller sending epObj && !callLendAdmits highCaller sending caller)
+    "a plain send at the head lends nothing, so the admission refuses nothing there"
+  -- The reply-receive's receive leg takes the same call and asks the same
+  -- admission (WS-SX ruling D28): its post-receive half lends at `lend := true`
+  -- and lends nothing at `lend := false`, the call still taken.
+  -- The taken call's reply object, linked to the caller as the rendezvous links it.
+  let rid : SeLe4n.ReplyId := ⟨63⟩
+  let callerBlocked : TCB := TCB.setIpcState { mkTcb 3 with
+    replyObjectCode := SeLe4n.ReplyId.optCode (some rid),
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId),
+    scBindingOwnerCode := 0 } (.blockedOnReply epObj (some server))
+  let callReply : KernelObject :=
+    .reply { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some caller) }
+  let callObjs := (st.objects.insert caller.toObjId (.tcb callerBlocked)).insert rid.toObjId callReply
+  let stCall : SystemState := { st with objects := callObjs }
+  let serverHolds (lend : Bool) : Bool :=
+    match replyRecvPostReceiveDonation server server caller bootCoreId none stCall lend with
+    | .ok ((), st') => (st'.getTcb? server).any (fun t => t.scBindingScCode != 0)
+    | .error _ => false
+  expect "reply_recv_lend_follows_admission"
+    (serverHolds true && !serverHolds false &&
+      !receiveLendAdmits highCaller (withEp { head := some caller, tail := some caller }) epObj)
+    "the reply-receive lends the taken call's context only at an admitted lend"
+
 /-- SD-060 (`v0.35.204`): **`.schedContextBind` binds only a thread the caller
 holds a WRITABLE TCB capability to.**
 
@@ -3026,6 +3304,9 @@ def main : IO Unit := do
   IO.println "--- .schedContextBind on a notification capability binds the notification ---"
   schedContextBind_notification_capability
   schedContextUnbind_seL4_semantics
+  notificationDonation_seL4_semantics
+  notificationDonation_contextLabelCheck
+  callLend_admission
   finalise_clears_notification_link
   IO.println "--- WS-ZA ZA6.4: a configure takes a core's scheduling control ---"
   sd063_schedContextConfigure_requires_sched_control

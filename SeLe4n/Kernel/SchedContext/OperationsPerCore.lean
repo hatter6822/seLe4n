@@ -14,6 +14,7 @@
 import SeLe4n.Kernel.SchedContext.Operations
 import SeLe4n.Kernel.SchedContext.PriorityManagementPerCore
 import SeLe4n.Kernel.SchedContext.NotificationLink
+import SeLe4n.Kernel.SchedContext.ReplyLink
 
 /-!
 # WS-SM SM8.B — per-core SchedContext operations
@@ -215,9 +216,13 @@ theorem schedContextUnbindOnCore_refuses_current (vScId : SeLe4n.ValidObjId)
 seL4-MCS refuses the invocation `IllegalOperation` when the context is bound to
 the thread the invoking core is running (`decodeSchedContextInvocation`,
 `SchedContextUnbind`: `sc->scTcb == ksCurThread`), and otherwise unbinds the
-context's thread (`schedContext_unbindAllTCBs`) and its notification
-(`schedContext_unbindNtfn`).  A context bound to no thread is unbound from its
-notification alone and the invocation succeeds.
+context's thread (`schedContext_unbindAllTCBs`), its notification
+(`schedContext_unbindNtfn`) and the reply stack it heads
+(`schedContext_unbindReply`, `schedContextUnbindReply`).  A context bound to no
+thread is unbound from its notification and its stack alone and the invocation
+succeeds.  A holder that received the context by donation through a reply is
+unbound like any other (D22): its lender stays blocked on its reply, on a stack
+no context heads.
 
 The refusal is the per-core thread unbind's own (`schedContextUnbindOnCore`), so
 the thread unbind never runs on the executing core's own current thread: it
@@ -226,21 +231,26 @@ below is the single-core unbind's. -/
 
 /-- **seL4-MCS's `SchedContext_Unbind`**, across cores: refused `objectNotFound`
 for an absent context; a context bound to no thread loses its notification link
-alone; otherwise its thread is unbound (`schedContextUnbindOnCore`, which
-refuses `illegalState` — seL4's `IllegalOperation` — when that thread is the
-executing core's current one), then its notification. -/
+and its reply stack alone; otherwise its thread is unbound
+(`schedContextUnbindOnCore`, which refuses `illegalState` — seL4's
+`IllegalOperation` — when that thread is the executing core's current one), then
+its notification, then its reply stack. -/
 def schedContextUnbindAllOnCore (vScId : SeLe4n.ValidObjId) (executingCore : CoreId)
     (st : SystemState) : Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
   match st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
   | none => .error .objectNotFound
   | some sc =>
     match sc.boundThreadCode with
-    | 0 => .ok (unbindSchedContextNotification st (SeLe4n.SchedContextId.ofObjId vScId.val), none)
+    | 0 => .ok (schedContextUnbindReply
+        (unbindSchedContextNotification st (SeLe4n.SchedContextId.ofObjId vScId.val)) vScId.val,
+        none)
     | _ + 1 =>
       match schedContextUnbindOnCore vScId executingCore st with
       | .error e => .error e
       | .ok (st', sgi) =>
-        .ok (unbindSchedContextNotification st' (SeLe4n.SchedContextId.ofObjId vScId.val), sgi)
+        .ok (schedContextUnbindReply
+          (unbindSchedContextNotification st' (SeLe4n.SchedContextId.ofObjId vScId.val))
+          vScId.val, sgi)
 
 /-- **Whether `schedContextUnbindAllOnCore` succeeds**, read before any write. -/
 @[inline] def schedContextUnbindAllAdmitted (st : SystemState) (vScId : SeLe4n.ValidObjId)
@@ -258,8 +268,8 @@ def schedContextUnbindAllOnCore (vScId : SeLe4n.ValidObjId) (executingCore : Cor
 context bound to no thread), then the notification's. -/
 @[inline] def schedContextUnbindAllPerform (st : SystemState) (vScId : SeLe4n.ValidObjId) :
     SystemState :=
-  unbindSchedContextNotification (schedContextUnbindPerform st vScId)
-    (SeLe4n.SchedContextId.ofObjId vScId.val)
+  schedContextUnbindReply (unbindSchedContextNotification (schedContextUnbindPerform st vScId)
+    (SeLe4n.SchedContextId.ofObjId vScId.val)) vScId.val
 
 /-- The single-core perform on a context bound to no thread is the identity. -/
 theorem schedContextUnbindPerform_of_unbound {st : SystemState} {vScId : SeLe4n.ValidObjId}
@@ -306,7 +316,8 @@ theorem schedContextUnbindAllOnCore_ok {vScId : SeLe4n.ValidObjId} {executingCor
         (schedContextRunningCore? st vScId.val ≠ some executingCore ∧
           schedContextUnbindOnCore vScId executingCore st = .ok (stU, sgi) ∧
           schedContextUnbind vScId st = .ok ((), stU))) ∧
-      st' = unbindSchedContextNotification stU (SeLe4n.SchedContextId.ofObjId vScId.val) := by
+      st' = schedContextUnbindReply
+        (unbindSchedContextNotification stU (SeLe4n.SchedContextId.ofObjId vScId.val)) vScId.val := by
   unfold schedContextUnbindAllOnCore at h
   cases hS : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
   | none => simp [hS] at h
@@ -350,5 +361,124 @@ theorem schedContextUnbindAllOnCore_refuses_current (vScId : SeLe4n.ValidObjId)
         rw [hC]; rfl
       rw [hB] at hR'; cases hR'
     | succ k => simp only [schedContextUnbindOnCore_refuses_current vScId executingCore st hRunning]
+
+/-! ## `SchedContext_UnbindObject` (seL4-MCS `decodeSchedContext_UnbindObject`)
+
+seL4-MCS reads extra capability 0 (none: `TruncatedMessage`).  A thread
+capability must name the context's own thread (`sc->scTcb != tcb`:
+`IllegalOperation`), which must not be the invoking core's current one
+(`IllegalOperation`); the invoke is `schedContext_unbindTCB` alone — the
+notification link and the reply link stay.  A notification capability must name
+the context's own notification (`IllegalOperation`), and the invoke is
+`schedContext_unbindNtfn`.  Any other capability is `InvalidCapability 1`, which
+the operand resolver answers. -/
+
+/-- **seL4-MCS's `SchedContext_UnbindObject` on a thread capability**: refused
+`objectNotFound` for an absent context and `illegalState` (seL4's
+`IllegalOperation`) when the context is not bound to that thread; otherwise the
+per-core thread unbind, which refuses the executing core's current thread. -/
+def schedContextUnbindThreadObjectOnCore (vScId : SeLe4n.ValidObjId) (tid : SeLe4n.ThreadId)
+    (executingCore : CoreId) (st : SystemState) :
+    Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
+  match st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
+  | none => .error .objectNotFound
+  | some sc =>
+    if sc.boundThreadCode == tid.val + 1 then schedContextUnbindOnCore vScId executingCore st
+    else .error .illegalState
+
+/-- **Whether the thread unbind-object succeeds**, read before any write. -/
+@[inline] def schedContextUnbindThreadObjectAdmitted (st : SystemState)
+    (vScId : SeLe4n.ValidObjId) (tid : SeLe4n.ThreadId) (executingCore : CoreId) : Bool :=
+  match st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
+  | none => false
+  | some sc =>
+    sc.boundThreadCode == tid.val + 1 &&
+      !schedContextRunsOn st vScId.val executingCore && schedContextUnbindAdmitted st vScId
+
+/-- **What a successful thread unbind-object did**: the context is bound to the
+named thread, and the per-core thread unbind ran. -/
+theorem schedContextUnbindThreadObjectOnCore_ok {vScId : SeLe4n.ValidObjId}
+    {tid : SeLe4n.ThreadId} {executingCore : CoreId} {st st' : SystemState}
+    {sgi : Option (CoreId × SgiKind)}
+    (h : schedContextUnbindThreadObjectOnCore vScId tid executingCore st = .ok (st', sgi)) :
+    schedContextUnbindOnCore vScId executingCore st = .ok (st', sgi) := by
+  unfold schedContextUnbindThreadObjectOnCore at h
+  cases hS : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
+  | none => simp [hS] at h
+  | some sc =>
+    simp only [hS] at h
+    split at h
+    · exact h
+    · cases h
+
+/-- An admitted thread unbind-object succeeds with the single-core unbind's
+state. -/
+theorem schedContextUnbindThreadObjectOnCore_of_admitted (st : SystemState)
+    (vScId : SeLe4n.ValidObjId) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
+    (h : schedContextUnbindThreadObjectAdmitted st vScId tid executingCore = true) :
+    ∃ sgi, schedContextUnbindThreadObjectOnCore vScId tid executingCore st =
+      .ok (schedContextUnbindPerform st vScId, sgi) := by
+  unfold schedContextUnbindThreadObjectAdmitted at h
+  unfold schedContextUnbindThreadObjectOnCore schedContextUnbindOnCore
+  cases hS : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
+  | none => simp [hS] at h
+  | some sc =>
+    simp only [hS, Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at h
+    obtain ⟨⟨hB, hR⟩, hA⟩ := h
+    simp only [hB, ↓reduceIte, hR, Bool.false_eq_true,
+      schedContextUnbind_of_admitted st vScId hA]
+    cases schedContextRunningCore? st vScId.val <;> exact ⟨_, rfl⟩
+
+/-- **seL4-MCS's `SchedContext_UnbindObject` on a notification capability**:
+refused `objectNotFound` for an absent context and `illegalState` (seL4's
+`IllegalOperation`) when the context is not bound to that notification;
+otherwise both ends of the link are cleared (`unbindSchedContextNotification`). -/
+def schedContextUnbindNotificationObject (vScId : SeLe4n.ValidObjId) (ntfnId : SeLe4n.ObjId) :
+    Kernel Unit := fun st =>
+  match st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
+  | none => .error .objectNotFound
+  | some sc =>
+    if sc.notificationCode == ntfnId.val + 1 then
+      .ok ((), unbindSchedContextNotification st (SeLe4n.SchedContextId.ofObjId vScId.val))
+    else .error .illegalState
+
+/-- **Whether the notification unbind-object succeeds**, read before any write. -/
+@[inline] def schedContextUnbindNotificationObjectAdmitted (st : SystemState)
+    (vScId : SeLe4n.ValidObjId) (ntfnId : SeLe4n.ObjId) : Bool :=
+  match st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
+  | none => false
+  | some sc => sc.notificationCode == ntfnId.val + 1
+
+/-- **What a successful notification unbind-object did**: the notification
+unbind, admitted. -/
+theorem schedContextUnbindNotificationObject_ok {vScId : SeLe4n.ValidObjId}
+    {ntfnId : SeLe4n.ObjId} {st st' : SystemState}
+    (h : schedContextUnbindNotificationObject vScId ntfnId st = .ok ((), st')) :
+    schedContextUnbindNotificationObjectAdmitted st vScId ntfnId = true ∧
+      st' = unbindSchedContextNotification st (SeLe4n.SchedContextId.ofObjId vScId.val) := by
+  unfold schedContextUnbindNotificationObject at h
+  unfold schedContextUnbindNotificationObjectAdmitted
+  cases hS : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
+  | none => simp [hS] at h
+  | some sc =>
+    simp only [hS] at h ⊢
+    split at h
+    · rename_i hc
+      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
+      exact ⟨hc, h.symm⟩
+    · cases h
+
+/-- An admitted notification unbind-object succeeds with the notification
+unbind's state. -/
+theorem schedContextUnbindNotificationObject_of_admitted (st : SystemState)
+    (vScId : SeLe4n.ValidObjId) (ntfnId : SeLe4n.ObjId)
+    (h : schedContextUnbindNotificationObjectAdmitted st vScId ntfnId = true) :
+    schedContextUnbindNotificationObject vScId ntfnId st =
+      .ok ((), unbindSchedContextNotification st (SeLe4n.SchedContextId.ofObjId vScId.val)) := by
+  unfold schedContextUnbindNotificationObjectAdmitted at h
+  unfold schedContextUnbindNotificationObject
+  cases hS : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
+  | none => simp [hS] at h
+  | some sc => simp only [hS] at h ⊢; simp [h]
 
 end SeLe4n.Kernel.SchedContextOps

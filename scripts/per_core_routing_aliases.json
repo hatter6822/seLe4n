@@ -11,7 +11,8 @@
   "cspaceMintChecked#alt": "cspaceMintWithCdt",
   "cspaceMoveChecked#alt": "cspaceMove",
   "notificationSignalBoundCrossCoreDispatchChecked#alt": "notificationSignalBoundCrossCoreDispatch",
-  "notificationWaitCrossCoreDispatchChecked#alt": "notificationWaitCrossCoreDispatch",
+  "_wait_arm_note": "The checked `.notificationWait` arm runs the wait through `completeSignalArm`, the one body it shares with the receive that completes a bound notification (seL4-MCS `completeSignal`): it calls `notificationWaitCrossCoreDispatchChecked` and writes the badge frame, so the walk starts from that helper and reaches the checked wait.",
+  "notificationWaitCrossCoreDispatchChecked#alt": ["notificationWaitCrossCoreDispatch", "completeSignalArm"],
   "_reply_seam_note": "Fault handling (v0.34.44): both `.reply` arms now dispatch through the reply seam `replyTransferOnCore` / `replyTransferOnCoreChecked` — seL4's `doReplyTransfer`, which branches on the answered thread's `pendingFault` before transferring anything. A fault handler holds nothing but the reply capability the fault Call gave it, so without that branch the reply-based restart is verified and unreachable. The seam is the root the walk starts from; the cross-core reply chain it calls on the ordinary branch is reached transitively, and the fault reply on the other branch is now audited too. The reach depth went 2 -> 3 in the same cut, because this extra hop would otherwise have shortened the walk into the reply chain by one level.",
   "endpointReplyCrossCoreDispatchChecked": "replyTransferOnCoreChecked",
   "endpointReplyCrossCoreDispatchChecked#alt": "replyTransferOnCore",
@@ -26,5 +27,7 @@
   "_audit_reader_note": "PR #870 review: the enforcement-boundary label for the audit-trail read is now `auditReadFromCore` — the LIVE entry point the `.auditRead` arm calls — so no alias is needed and the routing walk audits the subject-resolution seam itself (the first cut labelled the inner query `auditReadWord`, which takes a caller-supplied reader domain; coverage tracking that helper would have stayed green had the live seam drifted onto the confused-clearance shape).  The drain's label was the live entry from the start.",
   "_yield_note": "The yield syscall invokes no capability: the dispatcher runs it from a guard ahead of the caller's CSpace lookup, and that guard arm calls `dispatchYield`, the `Kernel` wrapper over `yieldOnCore`, so the walk starts there.  The capability dispatcher's own `.yield` arm is an unreachable refusal spelled for exhaustiveness (`fun _ => .error .illegalState`) and is inert.",
   "yieldOnCore#alt": "dispatchYield",
-  "yieldOnCore#inert": true
+  "yieldOnCore#inert": true,
+  "_bind_gate_note": "The checked dispatch gates the bind's thread path by its label rule (`dispatchCapabilityOnlyChecked`'s `.schedContextBind` arm calls `schedContextBindLabelGate`, which runs the capability-only arm it is handed), so that arm's root is the gate.",
+  "schedContextBind#alt": "schedContextBindLabelGate"
 }

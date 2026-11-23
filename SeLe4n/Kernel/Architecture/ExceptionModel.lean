@@ -318,7 +318,7 @@ def dispatchException (ctx : LabelingContext) (etype : ExceptionType)
   match etype with
   | .synchronous => dispatchSynchronousException ctx ectx st executingCore
   | .irq =>
-      match interruptDispatchSequence st executingCore rawIntId with
+      match interruptDispatchSequence ctx st executingCore rawIntId with
       | .error e => .error e
       | .ok ((), st') => .ok (none, st')
   | .fiq => .error .notSupported
@@ -353,7 +353,7 @@ theorem dispatchException_svc (ctx : LabelingContext) (ectx : ExceptionContext) 
 theorem dispatchException_irq (ctx : LabelingContext) (ectx : ExceptionContext) (rawIntId : Nat)
     (st : SystemState) (c : CoreId) :
     dispatchException ctx .irq ectx rawIntId st c =
-      (match interruptDispatchSequence st c rawIntId with
+      (match interruptDispatchSequence ctx st c rawIntId with
        | .error e => .error e
        | .ok ((), st') => .ok (none, st')) := rfl
 
@@ -518,12 +518,12 @@ theorem setCurrentThread_preserves_interruptsEnabled
 /-- AG5-G: `interruptDispatchSequence` for spurious interrupts preserves
     interrupt-disabled state (state is unchanged). -/
 theorem interruptDispatchSequence_preserves_interruptsEnabled_spurious
-    (st : SystemState) (c : CoreId) (rawIntId : Nat)
+    (ctx : LabelingContext) (st : SystemState) (c : CoreId) (rawIntId : Nat)
     (hSpurious : rawIntId ≥ spuriousInterruptThreshold) :
-    ∀ st', interruptDispatchSequence st c rawIntId = .ok ((), st') →
+    ∀ st', interruptDispatchSequence ctx st c rawIntId = .ok ((), st') →
     st'.machine.interruptsEnabled = st.machine.interruptsEnabled := by
   intro st' hStep
-  rw [interruptDispatchSequence_spurious st c rawIntId hSpurious] at hStep
+  rw [interruptDispatchSequence_spurious ctx st c rawIntId hSpurious] at hStep
   simp at hStep; exact hStep.symm ▸ rfl
 
 /-- AG5-G: `chooseThread` preserves `interruptsEnabled`.
@@ -707,8 +707,9 @@ theorem timerTickOnCore_machine_interruptsEnabled (st : SystemState) (c : CoreId
     on every core: the timer arm is the per-core tick
     (`handleInterrupt_timer`), which keeps the flag
     (`timerTickOnCore_machine_interruptsEnabled`). -/
-theorem handleInterrupt_timer_preserves_interruptsEnabled (st : SystemState) (c : CoreId) :
-    (handleInterrupt st c timerInterruptId).machine.interruptsEnabled =
+theorem handleInterrupt_timer_preserves_interruptsEnabled (ctx : LabelingContext)
+    (st : SystemState) (c : CoreId) :
+    (handleInterrupt ctx st c timerInterruptId).machine.interruptsEnabled =
       st.machine.interruptsEnabled := by
   rw [handleInterrupt_timer]
   exact timerTickOnCore_machine_interruptsEnabled st c
@@ -750,10 +751,10 @@ structure InterruptsEnabledPreservationBundle (st : SystemState) : Prop where
   setCurrent : ∀ (tid : Option SeLe4n.ThreadId) (st' : SystemState),
     setCurrentThread tid st = .ok ((), st') →
     st'.machine.interruptsEnabled = st.machine.interruptsEnabled
-  dispatchSpurious : ∀ (c : CoreId) (rawIntId : Nat),
+  dispatchSpurious : ∀ (ctx : LabelingContext) (c : CoreId) (rawIntId : Nat),
     rawIntId ≥ spuriousInterruptThreshold →
     ∀ (st' : SystemState),
-    interruptDispatchSequence st c rawIntId = .ok ((), st') →
+    interruptDispatchSequence ctx st c rawIntId = .ok ((), st') →
     st'.machine.interruptsEnabled = st.machine.interruptsEnabled
   chooseThread' : ∀ (result : Option SeLe4n.ThreadId) (st' : SystemState),
     chooseThread st = .ok (result, st') →
@@ -764,8 +765,8 @@ structure InterruptsEnabledPreservationBundle (st : SystemState) : Prop where
   timerTick' : ∀ (st' : SystemState),
     timerTick st = .ok ((), st') →
     st'.machine.interruptsEnabled = st.machine.interruptsEnabled
-  handleInterruptTimer : ∀ (c : CoreId),
-    (handleInterrupt st c timerInterruptId).machine.interruptsEnabled =
+  handleInterruptTimer : ∀ (ctx : LabelingContext) (c : CoreId),
+    (handleInterrupt ctx st c timerInterruptId).machine.interruptsEnabled =
       st.machine.interruptsEnabled
 
 /-- AN6-F (CX-M04): Composition witness — every `SystemState` inhabits the
@@ -775,10 +776,10 @@ theorem archInvariant_interruptsEnabled_all_eight_bundle (st : SystemState) :
   { saveOutgoing := saveOutgoingContext_preserves_interruptsEnabled st
     restoreIncoming := restoreIncomingContext_preserves_interruptsEnabled st
     setCurrent := fun tid st' h => setCurrentThread_preserves_interruptsEnabled tid st st' h
-    dispatchSpurious := interruptDispatchSequence_preserves_interruptsEnabled_spurious st
+    dispatchSpurious := fun ctx => interruptDispatchSequence_preserves_interruptsEnabled_spurious ctx st
     chooseThread' := chooseThread_preserves_interruptsEnabled st
     schedule' := schedule_preserves_interruptsEnabled st
     timerTick' := timerTick_preserves_interruptsEnabled st
-    handleInterruptTimer := handleInterrupt_timer_preserves_interruptsEnabled st }
+    handleInterruptTimer := fun ctx => handleInterrupt_timer_preserves_interruptsEnabled ctx st }
 
 end SeLe4n.Kernel.Architecture

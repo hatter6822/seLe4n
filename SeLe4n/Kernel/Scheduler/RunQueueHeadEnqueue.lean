@@ -610,6 +610,7 @@ theorem RunQueueLinkStage.runEnqueueHeadOnCore (st : SystemState) (c : CoreId)
     (fun _ => .of_agreeOffRunLinks (runEnqueueHeadOnCore_objectsAgreeOffRunLinks st c t p)
       (by rw [runEnqueueHeadOnCore_scheduler]; split <;> rfl))
     (fun _ => .of_agreeOffRunLinks (runEnqueueHeadOnCore_objectsAgreeOffRunLinks st c t p))
+    (fun _ => .of_agreeOffRunLinks (runEnqueueHeadOnCore_objectsAgreeOffRunLinks st c t p))
     fun _ => .of_agreeOffRunLinks (runEnqueueHeadOnCore_objectsAgreeOffRunLinks st c t p)
 
 /-- The guarded head enqueue of a runnable thread current on no core, on its

@@ -305,4 +305,67 @@ theorem replyTransferChecked_unheldCapsLong_inPlace (ctx : LabelingContext) (st 
   exact replyHeldCapsLong_eq_delivered st _ c replier rf mi.length badgeWord badged stcb ct _ hNoQ
     hAX hLen
 
+/-- **The long reply to a caller recording no server, its reply object linked to
+nothing, that transfers capabilities, delivered** (WS-SX SX8.3): the caller
+woken without the message, the transfer, then the long frame.  No context to
+hand back. -/
+@[noinline] def performReplyUnlinkedCapsDeliveredLong (st : SystemState) (c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (rf : SeLe4n.RegisterFile) (len : Nat) (replier : SeLe4n.ThreadId)
+    (badgeWord : SeLe4n.Badge) (badged : Bool)
+    (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
+  replyCapsLongTail (storeReplyLegReady st c rid)
+    c replier rf len badgeWord badged sv sb sroot count rv rb rroot
+
+/-- **The checked long reply to a caller recording no server, its reply object
+linked to nothing, that transfers capabilities, in place**: as
+`replyTransferChecked_unheldCapsLong_inPlace`, under `replyUnlinkedInPlace`. -/
+theorem replyTransferChecked_unlinkedCapsLong_inPlace (ctx : LabelingContext) (st : SystemState)
+    (replier c : SeLe4n.ThreadId) (ct stcb : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
+    (mi' : MessageInfo) (regs : Array SeLe4n.RegValue)
+    (rf : SeLe4n.RegisterFile) (badgeWord : SeLe4n.Badge) (badged : Bool)
+    (core : Concurrency.CoreId) (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (sid : SyscallId)
+    (g : Bool)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyUnlinkedInPlace st c rid = true)
+    (hNoF : ct.faultWords.isFault = false)
+    (hFlow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf c) = true)
+    (hS : st.getTcb? replier = some stcb) (hRf : stcb.registerContext = rf)
+    (hR : (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyLong capAddr mi ∧
+        sid = .reply) ∨
+      (registerRoutedSyscall opCode SeLe4n.arm64DefaultLayout rf 32 = .replyRecvLong capAddr mi ∧
+        sid = .replyRecv))
+    (hRead : ∀ j, j < mi.length - 4 →
+      ∃ w, Architecture.IpcBufferRead.ipcBufferReadMr st replier j = .ok w) :
+    replyTransferOnCoreChecked ctx replier c mi' regs
+        (longReplyMessage st replier rf mi.length badgeWord badged) g core st =
+      .ok ((), performReplyUnlinkedCapsDeliveredLong st c rid rf mi.length replier badgeWord badged
+        stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0] (if g then routedExtraCaps rf else 0)
+        ct.spaceCells[2] ct.ipcBuffer ct.spaceCells[0]) := by
+  have hNo := replyWakesInPlace_noResizeDue ((replyUnlinkedInPlace_eq_wakes st c ct rid) ▸ hG)
+  obtain ⟨hLen, hSz'⟩ := routedReplyLong_length st replier rf capAddr mi sid badgeWord badged hR
+  obtain ⟨sgi, hD⟩ := replyDispatch_unlinked_inPlace st replier c ct ep rid
+    (longReplyMessage st replier rf mi.length badgeWord badged) core hSz' hT hIpc hRO hG
+  have hPF : ct.pendingFault = none := TCB.pendingFault_eq_none_of_not_isFault hNoF
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hNF : threadHasPendingFault st c = false := by
+    simp only [threadHasPendingFault, hTc, Option.bind_some, hPF, Option.isSome_none]
+  have hNoS := storeReplyLegReady_noResizeDue st c rid hNo
+  have hAX := ipcBufferReadsAgree_storeReplyLegReady st c rid hNo
+  have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
+    unfold receiverCapTarget? capTargetOf; rw [hTc]
+  unfold replyTransferOnCoreChecked
+  rw [hNF, endpointReplyCrossCoreDispatchChecked_flow_allowed _ _ _ _ _ _ hFlow]
+  simp only [Bool.false_eq_true, ↓reduceIte]
+  rw [hD]
+  simp only []
+  rw [storeReplyLeg_eq_hold _ _ _ _ hNo]
+  unfold replyTransferCaps
+  rw [replyCapRequest_of_routedReplyLong st replier stcb rf capAddr mi sid g hS hRf hR hRead, hTgt]
+  unfold performReplyUnlinkedCapsDeliveredLong replyCapsLongTail
+  exact replyHeldCapsLong_eq_delivered st _ c replier rf mi.length badgeWord badged stcb ct _ hNoS
+    hAX hLen
+
 end SeLe4n.Kernel

@@ -8,8 +8,10 @@ import SeLe4n.Kernel.IPC.DualQueue.RemoveInPlace
 import SeLe4n.Kernel.IPC.Operations.NotificationBind
 import SeLe4n.Kernel.IPC.Operations.DonationPopInPlace
 import SeLe4n.Kernel.IPC.Operations.UnheldContextPopInPlace
+import SeLe4n.Kernel.IPC.Operations.HeldContextPopInPlace
 import SeLe4n.Kernel.IPC.BusyReplyHolder
 import SeLe4n.Kernel.SchedContext.NotificationLink
+import SeLe4n.Kernel.SchedContext.ReplyLink
 
 /-!
 # Cancelling every waiter of an endpoint or a notification
@@ -529,15 +531,16 @@ endpoint is present and `endpointBlockedCancellable` admits the thread,
   | _ => false
 
 /-- **Whether the pop of a head reply commits, read on the pre-state** (seL4
-MCS's `reply_pop` hand-back, decided before any write).  A reply that heads no
-stack answers `true`: it has nothing to hand back.  A reply heading the stack of
-the context `s` answers `true` when the context names it back as its head, is
-bound to a thread `h` that holds it on loan from the reply's caller `c`
-(`.donated s c`, read off the binding codes), and the donation return of `s`
-from `h` to `c` commits (`donatedReturnCommits`, which decides every refusal of
-`returnDonatedSchedContextResolved` on the state it runs on).  Each read is
-`O(1)`: the context, its bound thread, that thread's two binding words, and the
-return's own checks (the reply stack's head and the frame below it). -/
+MCS's `reply_pop`, decided before any write).  A reply that heads no stack
+answers `true`: it has nothing to hand back.  A reply heading the stack of the
+context `s` answers `true` when the context names it back as its head, is bound
+to a thread `h` that holds it on loan from the reply's caller `c` (`.donated s
+c`, read off the binding codes), and the held-head pop of `s` from `h` to `c`
+commits (`heldPopCommits`, which decides every refusal of `popHeldReplyHead` on
+the state it runs on): the return of `s` to `c` where `c` holds no context, the
+held pop, `s` staying with `h`, where it holds one.  Each read is `O(1)`: the
+context, its bound thread, that thread's two binding words, and the pop's own
+checks (the reply stack's head and the frame below it). -/
 @[inline] def replyHeadPopCommits (st : SystemState) (x : SeLe4n.ObjId) (r : Reply)
     (c : SeLe4n.ThreadId) : Bool :=
   match r.next with
@@ -553,15 +556,16 @@ return's own checks (the reply stack's head and the frame below it). -/
         (match st.getTcb? ⟨k⟩ with
          | some ht => ht.scBindingScCode == s.val + 1 && ht.scBindingOwnerCode == c.val + 1
          | none => false) &&
-        donatedReturnCommits st ⟨k⟩ s c
+        heldPopCommits st ⟨k⟩ s c
     | none => false
   | _ => true
 
 /-- **Whether a final delete may finalise the reply at `x`, whose caller `c`
 (its TCB `t`) waits on it**, read on the pre-state before any write.  A reply
 heading a context's stack is popped only when the pop commits
-(`replyHeadPopCommits`: the context goes back to the caller, seL4's
-`reply_remove` head branch, `reply_pop`); a reply heading none is spliced out
+(`replyHeadPopCommits`: the context goes back to the caller where it holds
+none and stays with its holder where it holds one, seL4's `reply_remove` head
+branch, `reply_pop`); a reply heading none is spliced out
 (the non-head branch).  The caller is no reserved or idle thread and is on no
 run queue — a core's FP/SIMD or resident hold on it stays, as seL4 keeps a
 lazily saved context across `setThreadState Inactive` — is blocked on this
@@ -1082,11 +1086,6 @@ holds the pre-state across its writes. -/
     else st
   | none => st
 
-/-- **Whether a reply stack's head link names the context at `x`.** -/
-@[inline] def replyStackLinkHeads (x : SeLe4n.ObjId) : Option ReplyStackLink → Bool
-  | some (.head s) => s.val == x.val
-  | _ => false
-
 /-- **Whether a final delete may finalise the scheduling context at `x`**: a
 reply stack it heads has a head that names it back; a thread it is bound to is
 bound back to it, as its own (`.bound`) or on loan (`.donated`), is no core's
@@ -1226,68 +1225,6 @@ context, so the reservation arm is the in-place unbind
       (schedContextBinding_ownerCleared (x := ⟨t.scBindingScCode - 1⟩)
         (by show _ = _ - 1 + 1; omega))]
 
-/-- **Let go of the reply stack a scheduling context being finalised heads**
-(seL4's `schedContext_unbindReply`: `scReply->replyNext = 0; scReply = NULL`):
-the head reply's upward link is cleared, then the context's head.  The frames
-below the head stay linked to it, a stack no context carries, and their callers
-keep waiting on their replies. -/
-def finaliseSchedContextUnstack (st : SystemState) (x : SeLe4n.ObjId) : SystemState :=
-  match st.getSchedContext? ⟨x.val⟩ with
-  | some sc =>
-    match sc.scReply with
-    | some rid =>
-      match st.getReply? rid with
-      | some r =>
-        if replyStackLinkHeads x r.next then
-          match storeObject rid.toObjId (.reply { r with next := none }) st with
-          | .ok ((), st1) => st1.updateSchedContext ⟨x.val⟩ fun sc => { sc with scReply := none }
-          | .error _ => st
-        else st
-      | none => st
-    | none => st
-  | none => st
-
-/-- `finaliseSchedContextUnstack` as it is compiled: the head reply's upward
-link cleared in its slot (`SystemState.storeReplyWith`), so no reply record, no
-object cell and no store result is built
-(`finaliseSchedContextUnstack_eq_impl`). -/
-@[inline] def finaliseSchedContextUnstackImpl (st : SystemState) (x : SeLe4n.ObjId) :
-    SystemState :=
-  match st.getSchedContext? ⟨x.val⟩ with
-  | some sc =>
-    match sc.scReply with
-    | some rid =>
-      match st.getReply? rid with
-      | some r =>
-        if replyStackLinkHeads x r.next then
-          (st.storeReplyWith rid.toObjId fun r => { r with next := none }).updateSchedContext
-            ⟨x.val⟩ fun sc => { sc with scReply := none }
-        else st
-      | none => st
-    | none => st
-  | none => st
-
-@[csimp] theorem finaliseSchedContextUnstack_eq_impl :
-    @finaliseSchedContextUnstack = @finaliseSchedContextUnstackImpl := by
-  funext st x
-  unfold finaliseSchedContextUnstack finaliseSchedContextUnstackImpl
-  cases st.getSchedContext? ⟨x.val⟩ with
-  | none => rfl
-  | some sc =>
-    dsimp only
-    cases sc.scReply with
-    | none => rfl
-    | some rid =>
-      dsimp only
-      cases hR : st.getReply? rid with
-      | none => rfl
-      | some r =>
-        dsimp only
-        split
-        · rw [SystemState.storeObject_reply_eq_storeReplyWith
-            ((SystemState.getReply?_eq_some_iff _ _ _).mp hR) (fun r => { r with next := none })]
-        · rfl
-
 /-- **The destroy cleanup of a finalised scheduling context**
 (`lifecyclePreRetypeCleanup`'s scheduling-context arm), run once the context is
 bound to no thread and heads no reply stack, so its release finds no binding
@@ -1413,7 +1350,7 @@ step reads or writes, so the order changes nothing: the whole finalisation is
 one kernel step. -/
 def finaliseSchedContext (x : SeLe4n.ObjId) (st : SystemState) : SystemState :=
   if schedContextFinaliseAdmitted st x then
-    unbindSchedContextNotification (finaliseSchedContextCleanup (finaliseSchedContextUnstack
+    unbindSchedContextNotification (finaliseSchedContextCleanup (schedContextUnbindReply
       (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x) x) x) ⟨x.val⟩
   else st
 
@@ -1422,7 +1359,7 @@ is.** -/
 theorem finaliseSchedContext_eq (x : SeLe4n.ObjId) (st : SystemState) :
     finaliseSchedContext x st =
       if schedContextFinaliseAdmitted st x then
-        unbindSchedContextNotification (finaliseSchedContextCleanupImpl (finaliseSchedContextUnstack
+        unbindSchedContextNotification (finaliseSchedContextCleanupImpl (schedContextUnbindReply
           (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x) x) x) ⟨x.val⟩
       else st := by
   unfold finaliseSchedContext; rw [finaliseSchedContextCleanup_eq]

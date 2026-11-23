@@ -296,15 +296,15 @@ theorem fpAccessEntryState_preserves_kernelRecordsSound (coreId : UInt64)
 
 /-- **The interrupt entry preserves the records**, from the reachable state the
 step runs from. -/
-theorem interruptEntryState_preserves_kernelRecordsSound (coreId intId : UInt64)
+theorem interruptEntryState_preserves_kernelRecordsSound (ctx : LabelingContext) (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState)
     (hK : st.kernelRecordsSound)
     (hR : ipcReachable (Concurrency.saveCapturedTrapFrameAt st coreId frame)) :
     (Architecture.clearIcacheMaintenance
       (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
-        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        (interruptEntryStep ctx (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
         coreId) coreId))).kernelRecordsSound :=
-  interruptEntryState_recordsStage coreId intId frame st hR hK
+  interruptEntryState_recordsStage ctx coreId intId frame st hR hK
 
 /-- **The fault entry preserves the records**, from the queue heads and the
 running threads of the state the step runs from. -/

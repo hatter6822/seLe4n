@@ -558,6 +558,40 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
                   cases hStep
                   exact schedContextUnbindAllOnCore_runQueueEntryStage hUn
     all_goals try cases hStep
+  case schedContextUnbindObject =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object scId =>
+      try dsimp only [] at hStep
+      cases hN : resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | succ k =>
+          simp only [hN] at hStep
+          cases hVal : validateObjIdArg scId with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vScId =>
+              simp only [hVal] at hStep
+              obtain ⟨-, rfl⟩ := SchedContextOps.schedContextUnbindNotificationObject_ok hStep
+              exact (unbindSchedContextNotification_runQueueStage _ _).entry
+      | zero =>
+          simp only [hN] at hStep
+          cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok vThreadId =>
+              simp only [hRes] at hStep
+              cases hVal : validateObjIdArg scId with
+              | error e => simp only [hVal] at hStep; cases hStep
+              | ok vScId =>
+                  simp only [hVal] at hStep
+                  cases hUn : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId
+                      vThreadId.val executingCore st with
+                  | error e => simp only [hUn] at hStep; cases hStep
+                  | ok pair =>
+                      obtain ⟨stU, sgiU⟩ := pair
+                      simp only [hUn] at hStep
+                      cases hStep
+                      exact schedContextUnbindOnCore_runQueueEntryStage
+                        (SchedContextOps.schedContextUnbindThreadObjectOnCore_ok hUn)
+    all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>
@@ -915,20 +949,8 @@ theorem endpointCallCrossCoreDispatchChecked_runQueueEntryStage (ctx : LabelingC
   unfold endpointCallCrossCoreDispatchChecked
   split
   · exact endpointCallCrossCoreDispatch_runQueueEntryStage _ _ _ _ _ P.endpointHeads
-      P.current P.notIdle P.objInv P.refined P.currentActive
+      P.current P.notIdle P.objInv P.refined P.currentActive _
   · exact (RunQueueStage.refl _).entry
-
-theorem notificationSignalBoundCrossCoreDispatchChecked_runQueueStage (ctx : LabelingContext)
-    (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
-    (c : Concurrency.CoreId) (st : SystemState) (hHeads : notificationHeadsWakeable st)
-    (hBlk : blockedCurrentNowhere st) :
-    RunQueueStage st (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId
-      signaler badge c st).1 := by
-  unfold notificationSignalBoundCrossCoreDispatchChecked
-  repeat' split
-  all_goals first
-    | exact RunQueueStage.refl _
-    | exact notificationSignalBoundOnCore_runQueueStage _ _ _ _ hHeads hBlk
 
 theorem notificationWaitCrossCoreDispatchChecked_runQueueEntryStage (ctx : LabelingContext)
     (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (c : Concurrency.CoreId)
@@ -971,6 +993,139 @@ theorem notificationSignalDeclassifiedOnCore_runQueueStage (ctx : GenericLabelin
       rw [recordDeclassifiedHops_frame _ _ _ _ _ hRec]
       exact hB.trans (RunQueueStage.of_frame rfl rfl rfl)
 
+/-- **seL4-MCS `maybeDonateSchedContext` keeps the run queues in agreement with
+the threads' links**: the identity, or the bind's writes under seL4's guard
+(`schedContextBindPerform_runQueueStage`). -/
+theorem maybeDonateSchedContext_runQueueStage (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) : RunQueueStage st (maybeDonateSchedContext st n tid) :=
+  maybeDonateSchedContext_induct (fun a b => RunQueueStage a b) st n tid (RunQueueStage.refl _)
+    (fun vS vT _ hA => schedContextBindPerform_runQueueStage st vS vT hA)
+
+/-- …and so does the checked donation. -/
+theorem maybeDonateSchedContextFlowing_runQueueStage {ctx : LabelingContext} (st : SystemState)
+    (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) :
+    RunQueueStage st (maybeDonateSchedContextFlowing ctx st n tid) :=
+  maybeDonateSchedContextFlowing_induct (RunQueueStage st) ctx st n tid (RunQueueStage.refl _)
+    (maybeDonateSchedContext_runQueueStage st n tid)
+
+/-- **seL4's three writes are a frame stage off the returned context**: its
+thread link written in place (no run, release or yield link moves), the thread's
+binding written in place, then reschedule flags. -/
+theorem schedContextReturnLinks_runQueueFrameStage (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (sc : SchedContext)
+    (hSc : st.getSchedContext? (SchedContextId.ofObjId vS.val) = some sc) :
+    SystemState.RunQueueFrameStage (· = SchedContextId.ofObjId vS.val) st
+      (schedContextReturnLinks st vS tid) := by
+  have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
+    (SchedContextId.ofObjId vS.val) sc).mp hSc
+  unfold schedContextReturnLinks
+  rw [SystemState.getSchedContextWitnessed?_eq_some hSc]
+  dsimp only
+  split
+  · exact (RunQueueStage.refl _).toFrame _
+  try dsimp only
+  have hIns : SystemState.RunQueueFrameStage (· = SchedContextId.ofObjId vS.val) st
+      (st.rewriteObject vS.val (.schedContext { sc with boundThreadCode := 0 })
+        (SystemState.rewriteAdmissible_schedContext hSc _)) :=
+    SystemState.RunQueueFrameStage.insert rfl rfl rfl
+      (fun c => by rw [show st.objects[vS.val]? = _ from hScRaw]; rfl)
+      (SystemState.objStateMono_nonTcb (by rw [show st.objects[vS.val]? = _ from hScRaw]; rfl) rfl)
+      (hR := fun _ => by rw [show st.objects[vS.val]? = _ from hScRaw]; rfl)
+      (hY := by rw [show st.objects[vS.val]? = _ from hScRaw]; rfl)
+  refine SystemState.RunQueueFrameStage.trans ?_ ((markKeyChangeFor_runQueueStage _ _ _).toFrame _)
+  refine SystemState.RunQueueFrameStage.trans ?_
+    ((markCandidacyGainFor_runQueueStage _ _ _).toFrame _)
+  have hU : ∀ S : SystemState, RunQueueStage S
+      (S.updateTcb tid fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 }) :=
+    fun S => RunQueueStage.updateTcb _ _ (by intro _ _; rfl)
+  refine SystemState.RunQueueFrameStage.trans (hIns.trans ((hU _).toFrame _)) ?_
+  split
+  · exact (RunQueueStage.markReschedulePendingOnCore _ _).toFrame _
+  · exact (RunQueueStage.refl _).toFrame _
+
+/-- **The return on a running receiver keeps the run queues in agreement with
+the threads' links**: seL4's three writes are a frame stage off the context (its
+refill view reads the thread link), closed by the purge, which leaves the
+context unbound and on no replenish queue (`refillsSoundExcept_close_unbound`),
+as the unbind's close does. -/
+theorem schedContextReturnPerform_runQueueStage (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (vT : SeLe4n.ValidThreadId) (hTv : vT.val = tid)
+    (hA : schedContextReturnAdmitted st vS vT = true) :
+    RunQueueStage st (schedContextReturnPerform st vS tid) := by
+  unfold schedContextReturnAdmitted at hA
+  cases hSc : st.getSchedContext? (SchedContextId.ofObjId vS.val) with
+  | none => rw [hSc] at hA; cases hA
+  | some sc =>
+  rw [hSc] at hA
+  cases hTc : st.getTcb? vT.val with
+  | none => rw [hTc] at hA; cases hA
+  | some tcb =>
+  subst hTv
+  unfold schedContextReturnPerform
+  refine SystemState.RunQueueFrameStage.withRefills
+    ((schedContextReturnLinks_runQueueFrameStage st vS vT.val sc hSc).trans
+      (SchedContextOps.purgeReplenishment_runQueueFrameStage _ _))
+    fun _ hs hI _ _ _ hR4 h0 h4 => ?_
+  refine SystemState.refillsSoundExcept_close_unbound (u := { sc with boundThreadCode := 0 }) h4
+    (fun a ha => ?_) rfl (h0.1 _ sc hs hSc) (fun c e he hes => ?_)
+  · obtain ⟨b, hb, hv⟩ := (RefillViewsKept.of_agreeOffReleaseLinks
+      (SchedContextOps.purgeReplenishment_agree _ _)).getSchedContext? ha
+    rw [schedContextReturnLinks_getSchedContext?_self st vS vT.val sc tcb hI hSc hTc] at hb
+    cases Option.some.inj hb
+    exact hv.symm
+  · exact SystemState.not_mem_entries_of_not_queued hR4
+      (SystemState.releaseRemoveAnywhere_not_queued _ _) c e he hes
+
+/-- **seL4 `receiveIPC`'s return keeps the run queues in agreement with the
+threads' links.** -/
+theorem receiveReturnSchedContext_runQueueStage (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) : RunQueueStage st (receiveReturnSchedContext blocks st tid) :=
+  receiveReturnSchedContext_induct (fun a b => RunQueueStage a b) blocks st tid
+    (RunQueueStage.refl _)
+    (fun vS vT hT hA => schedContextReturnPerform_runQueueStage st vS tid vT hT hA)
+
+/-- **seL4-MCS `maybeReturnSchedContext` is a kernel-entry stage**: the identity,
+or seL4's writes and the purge (`schedContextReturnPerform_runQueueStage`). -/
+theorem maybeReturnSchedContext_runQueueEntryStage (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) : SystemState.RunQueueEntryStage st (maybeReturnSchedContext st n tid) :=
+  (maybeReturnSchedContext_induct (fun a b => RunQueueStage a b) st n tid
+    (RunQueueStage.refl _)
+    (fun vS vT hT hA => schedContextReturnPerform_runQueueStage st vS tid vT hT hA)).entry
+
+/-- **seL4's `sendSignal` keeps the run queues in agreement with the threads'
+links**: the wake's stage, then the donation's. -/
+theorem sendSignalOnCoreFlowing_runQueueStage (ctx : LabelingContext) (n : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (c : Concurrency.CoreId) (st : SystemState)
+    (hHeads : notificationHeadsWakeable st) (hBlk : blockedCurrentNowhere st) :
+    RunQueueStage st (sendSignalOnCoreFlowing ctx n badge c st).1 :=
+  have hW := notificationSignalBoundOnCore_runQueueStage n badge c st hHeads hBlk
+  sendSignalOnCoreFlowing_induct (fun s => RunQueueStage st s) ctx n badge c st hW
+    (fun t _ _ _ => hW.trans (maybeDonateSchedContext_runQueueStage _ n t))
+
+/-- **The declassifying dispatch keeps the run queues in agreement with the
+threads' links**: the declassifying signal's stage, then the donation's. -/
+theorem notificationSignalDeclassifiedCrossCoreDispatch_runQueueStage (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (c : Concurrency.CoreId) (st : SystemState)
+    (hHeads : notificationHeadsWakeable st) (hBlk : blockedCurrentNowhere st) :
+    RunQueueStage st
+      (notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy notificationId badge c st).1 :=
+  have hS := notificationSignalDeclassifiedOnCore_runQueueStage ctx declPolicy notificationId
+    badge c st hHeads hBlk
+  notificationSignalDeclassifiedCrossCoreDispatch_induct (fun s => RunQueueStage st s) ctx
+    declPolicy notificationId badge c st hS
+    (fun t _ _ _ => hS.trans (maybeDonateSchedContext_runQueueStage _ notificationId t))
+
+theorem notificationSignalBoundCrossCoreDispatchChecked_runQueueStage (ctx : LabelingContext)
+    (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (c : Concurrency.CoreId) (st : SystemState) (hHeads : notificationHeadsWakeable st)
+    (hBlk : blockedCurrentNowhere st) :
+    RunQueueStage st (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId
+      signaler badge c st).1 :=
+  notificationSignalBoundCrossCoreDispatchChecked_induct (fun s => RunQueueStage st s) ctx
+    notificationId signaler badge c st (RunQueueStage.refl _)
+    (sendSignalOnCoreFlowing_runQueueStage ctx notificationId badge c st hHeads hBlk)
+
 /-- A reply-receive whose receive completes its bound notification keeps the run
 queues in agreement with the threads' links: the reply leg, the wait's
 consumption, then the badge register written. -/
@@ -984,9 +1139,158 @@ theorem replyRecvCompletesSignalArm_runQueueEntryStage {ctx : LabelingContext}
   have hS := replyTransferOnCoreChecked_runQueueEntryStage hInv hD hR
   rcases hOr with rfl | ⟨st2, badge, _, _, hW, _, rfl⟩
   · exact hS
-  · exact (hS.trans (notificationWaitOnCore_consumed_runQueueStage
+  · exact ((hS.trans (notificationWaitOnCore_consumed_runQueueStage
       (notificationWaitCrossCoreDispatchChecked_ok_inner hW)).entry).trans
-      (writeReturnFrameToTcb_runQueueStage _ _ _).entry
+      (writeReturnFrameToTcb_runQueueStage _ _ _).entry).trans
+      (maybeDonateSchedContextFlowing_runQueueStage _ _ _).entry
+
+/-- **seL4 `receiveIPC`'s return keeps what the per-core receive asks of its
+state**: every endpoint head wakeable, the receiver current where it was and
+active — it writes two binding codes, a context's thread link and flags. -/
+theorem receiveReturnSchedContext_receiveEntryFacts (blocks : Bool) {stC : SystemState}
+    {tid : SeLe4n.ThreadId} {e : Concurrency.CoreId} (hInvC : stC.objects.invExt)
+    (hHC : endpointHeadsWakeable stC) (hCurC : stC.scheduler.currentOnCore e = some tid)
+    (hActC : stC.activeAt tid) :
+    endpointHeadsWakeable (receiveReturnSchedContext blocks stC tid) ∧
+      (receiveReturnSchedContext blocks stC tid).scheduler.currentOnCore e = some tid ∧
+      (receiveReturnSchedContext blocks stC tid).activeAt tid := by
+  refine ⟨fun epId ep hE r hr => ?_, by rw [receiveReturnSchedContext_currentOnCore]; exact hCurC, ?_⟩
+  · have hE0 : stC.getEndpoint? epId = some ep := by
+      rw [← hE, receiveReturnSchedContext_getEndpoint? _ stC tid hInvC]
+    obtain ⟨hN, hB⟩ := hHC epId ep hE0 r hr
+    refine ⟨fun c => by rw [receiveReturnSchedContext_currentOnCore]; exact hN c, fun x hx => ?_⟩
+    obtain ⟨y, hy, hxy⟩ := receiveReturnSchedContext_tcb _ stC tid hInvC _ x
+      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hx)
+    rcases hxy with h | h <;> (subst x; exact hB y ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hy))
+  · obtain ⟨y, hy, hA⟩ := hActC
+    obtain ⟨x, hx, hxy⟩ := receiveReturnSchedContext_tcb_fwd blocks stC tid hInvC _ y
+      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hy)
+    exact ⟨x, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hx, by rcases hxy with h | h <;> (subst x; exact hA)⟩
+
+/-- `ReplyRecv`: the reply, the donation pop, then a receive on the same core by
+the same current thread.  The reply and the pop keep every endpoint head
+wakeable and the caller current, so the receive half is a kernel entry.  The
+caller the reply woke is ready and is not the replier, so the receive keeps it
+ready and the fault answer's abandon may deschedule it. -/
+theorem endpointReplyRecvOnCore_runQueueEntryStage {lend : Bool} {answer : Option Architecture.FaultReplyOutcome}
+    {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool}
+    {c : Concurrency.CoreId}
+    {st st' : SystemState} {s : CapTransferSummary}
+    (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
+    (hQ : queueHeadBlockedConsistent st)
+    (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false)
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant c st lend =
+      .ok (s, st')) :
+    SystemState.RunQueueEntryStage st st' := by
+  have hPrev : ∀ sgi?, (endpointReplyOnCore tid prevCaller msg c st).2 = .ok sgi? →
+      (endpointReplyOnCore tid prevCaller msg c st).1.readyOrAbsent prevCaller ∧
+      prevCaller ≠ tid ∧ isIdleThreadId prevCaller = false := by
+    intro sgi hOk
+    obtain ⟨-, tcb', ep, ex, -, hL, hS, -⟩ := endpointReplyOnCore_ok_decompose _ _ _ _ _ hOk
+    have hT := getTcb?_of_lookupTcb _ _ _ hL
+    refine ⟨fun x hx => endpointReplyOnCore_ok_target_ready _ _ _ _ _ hInv hOk hx, ?_,
+      notIdle_of_blocked hD hT (by rw [hS]; exact fun h => by cases h)⟩
+    rintro rfl
+    obtain ⟨tcb, hT0, hRun, -⟩ := hD.runnable hCur
+    rw [hT] at hT0
+    cases hT0
+    rw [hS] at hRun
+    cases hRun
+  have hE := endpointReplyOnCore_runQueueStage tid prevCaller msg c st
+    (blockedCurrentNowhere_of_currentDequeuedUnique hD)
+  have hC1 : (endpointReplyOnCore tid prevCaller msg c st).1.scheduler.currentOnCore c = some tid :=
+    (endpointReplyOnCore_currentOnCore tid prevCaller msg c st c).trans hCur
+  have hInv1 := endpointReplyOnCore_preserves_objects_invExt tid prevCaller msg c st hInv
+  have hEB := endpointReplyOnCore_endpoint_backward tid prevCaller msg c st hInv
+  have hCB := endpointReplyOnCore_currentOnCore tid prevCaller msg c st
+  have hQ1 : ∀ sgi?, (endpointReplyOnCore tid prevCaller msg c st).2 = .ok sgi? →
+      queueHeadBlockedConsistent (endpointReplyOnCore tid prevCaller msg c st).1 := fun _ hOk =>
+    endpointReplyOnCore_preserves_queueHeadBlockedConsistent tid prevCaller msg c st hInv hQ hOk
+  unfold endpointReplyRecvAnsweringOnCore at h
+  dsimp only at h
+  generalize endpointReplyOnCore tid prevCaller msg c st = p at hE h hC1 hInv1 hEB hCB hQ1 hPrev
+  obtain ⟨st1, r⟩ := p
+  dsimp only at hE hC1 hInv1 hEB hCB hQ1 hPrev
+  cases r with
+  | error => cases h
+  | ok sgi =>
+  dsimp only at h
+  obtain ⟨hRdy1, hNe, hNIp⟩ := hPrev _ rfl
+  have hH1 := (endpointHeadsWakeable_of hD hQ).of_frame hEB hCB (hQ1 _ rfl)
+  split at h
+  · cases h
+  rename_i ret st1q hPop
+  split at h
+  · cases h
+  rename_i xs st1p hX
+  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
+  -- The pop, then the reply leg's capability transfer, which writes a CNode alone.
+  have hPopS := (replyRecvPopDonation_runQueueStage hPop).trans (receiveTransferCaps_runQueueStage hX)
+  have hIq : st1q.objects.invExt :=
+    let ⟨hI1, hR1⟩ := hE.1.links hInv hRf
+    ((replyRecvPopDonation_runQueueStage hPop).1.links hI1 hR1).1
+  have hPE : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint), st1p.objects[oid]? = some (.endpoint ep) →
+      st1.objects[oid]? = some (.endpoint ep) := by
+    obtain ⟨hQE, -, -⟩ := replyRecvPopDonation_frame hInv1 hPop
+    obtain ⟨hXE, -, -⟩ := receiveTransferCaps_ipcFrame hIq hX
+    exact fun oid ep hE => hQE oid ep (hXE oid ep hE)
+  have hPC : ∀ c, st1p.scheduler.currentOnCore c = st1.scheduler.currentOnCore c := by
+    obtain ⟨-, hQC, -⟩ := replyRecvPopDonation_frame hInv1 hPop
+    intro c
+    rw [← hQC c, receiveTransferCaps_scheduler_eq hX]
+  have hPT : ∀ (y : SeLe4n.ThreadId) (tcb' : TCB), st1p.objects[y.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st1.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
+    obtain ⟨-, -, hQT⟩ := replyRecvPopDonation_frame hInv1 hPop
+    obtain ⟨-, -, hXT⟩ := receiveTransferCaps_ipcFrame hIq hX
+    intro y tcb' hT
+    obtain ⟨t1, h1, e1⟩ := hXT y tcb' hT
+    obtain ⟨t0, h0, e0⟩ := hQT y t1 h1
+    exact ⟨t0, h0, e0.trans e1⟩
+  -- The replier is current, so active; the reply and the pop suspend no thread.
+  have hA1 : st1.activeAt tid :=
+    activeKeptStage.of_stage hE hInv hRf tid (hD.runnable hCur).activeAt
+  have hAp : st1p.activeAt tid :=
+    let ⟨hI1, hR1⟩ := hE.1.links hInv hRf
+    activeKeptStage.of_stage hPopS hI1 hR1 tid hA1
+  have hHp := hH1.of_frame hPE hPC (queueHeadBlockedConsistent_of_endpoint_tcb_backward _ _ hPE hPT
+      (hQ1 _ rfl))
+  -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, before the receive leg.
+  obtain ⟨hI1, hR1⟩ := hE.1.links hInv hRf
+  obtain ⟨hIp, hRp⟩ := hPopS.1.links hI1 hR1
+  have RR := receiveReturnSchedContext_runQueueStage true st1p tid
+  obtain ⟨hIR, hRR⟩ := RR.1.links hIp hRp
+  obtain ⟨hHR, hCurR, hActR⟩ := receiveReturnSchedContext_receiveEntryFacts true hIp hHp
+    ((hPC c).trans hC1) hAp
+  have hR := endpointReceiveDualWithCapsOnCore_runQueueEntryStage epId tid (some rid) c
+    (receiveReturnSchedContext true st1p tid) hHR hCurR hNI hActR
+  have hRK := endpointReceiveDualWithCapsOnCore_readyKeptStage epId tid (some rid) c
+    (receiveReturnSchedContext true st1p tid) hHR hCurR hNI hActR
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) c
+    (receiveReturnSchedContext true st1p tid) = q at hR hRK h
+  obtain ⟨st2, r2⟩ := q
+  dsimp only at hR hRK
+  rcases r2 with _ | ⟨nt, sm, _⟩ <;> dsimp only at h
+  · cases h
+  split at h
+  · cases h
+  rename_i st3 hPost
+  cases h
+  -- The donor the post-receive hand-off reads is blocked on its reply, and the
+  -- stages so far keep every thread coherent, so it is not suspended.
+  have hAll := ((hE.trans hPopS).trans RR).entry.trans hR
+  obtain ⟨hI2, hR2⟩ := hAll.1.links hInv hRf
+  have hD2 := hAll.2 hInv hRf hR2 hD
+  have hPH := (replyRecvPostReceiveDonation_runQueueStage hI2 hR2 (hD2.coherent nt) hPost).trans
+    (applyReceiveLegPipHandoff_runQueueStage st3 tid nt
+      ((recordedReplyServer? st prevCaller).getD tid) c)
+  -- The woken caller stays ready: the pop and the post-receive stages are
+  -- monotone, and the receive blocks only the replier.
+  have hRdyX := (hPH.2.2 hI2 hR2).readyOrAbsent
+    (hRK hIR hRR prevCaller hNe ((RR.2.2 hIp hRp).readyOrAbsent
+      ((hPopS.2.2 hI1 hR1).readyOrAbsent hRdy1)))
+  exact hAll.trans (hPH.entry.trans
+    (replyRecvAnswerCaller_runQueueEntryStage answer _ prevCaller _ hRdyX hNIp))
 
 /-- A receive run on its busy-reply-cancelled state keeps the run queues in
 agreement with the threads' links: the `.receive` arm, and the `.replyRecv`
@@ -1031,10 +1335,11 @@ theorem receiveResolvedArm_runQueueEntryStage (ctx : LabelingContext)
     simp only [hSig, ↓reduceIte] at h
     obtain ⟨st1, badge, hW, _, hPost⟩ := completeSignalArm_consumes hSig h
     subst hPost
-    exact (hS.trans (runQueueStage_of_pair_eq
+    exact ((hS.trans (runQueueStage_of_pair_eq
       (notificationWaitOnCore_runQueueEntryStage _ tid executingCore stC hCurC P.notIdle)
       (notificationWaitCrossCoreDispatchChecked_ok_inner hW))).trans
-      (writeReturnFrameToTcb_runQueueStage _ _ _).entry
+      (writeReturnFrameToTcb_runQueueStage _ _ _).entry).trans
+      (maybeDonateSchedContextFlowing_runQueueStage _ _ _).entry
   simp only [Bool.not_eq_true] at hSig
   by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
   · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
@@ -1056,13 +1361,22 @@ theorem receiveResolvedArm_runQueueEntryStage (ctx : LabelingContext)
     · cases h
     rename_i stDon hHand
     cases h
+    -- **WS-SX SX8.2**: seL4-MCS `receiveIPC`'s `maybeReturnSchedContext` first:
+    -- two binding codes and a context's thread link, then flags.
+    have hInvC : stC.objects.invExt := hIC
+    have R := receiveReturnSchedContext_runQueueStage
+      (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid
+    obtain ⟨hIR, hRR⟩ := R.1.links hIC hRC
+    have hDR := R.entry.2 hIC hRC hRR hDC
+    obtain ⟨hHR, hCurR, hActR⟩ := receiveReturnSchedContext_receiveEntryFacts
+      (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) hInvC hHC hCurC hActC
     have E := runQueueStage_of_pair_eq
-      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ hHC
-        hCurC P.notIdle hActC) hRecv
-    obtain ⟨_, hR2⟩ := E.1.links hIC hRC
-    exact runQueueEntryStage_trans_of_invExt hS fun _ _ => E.trans
+      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ hHR
+        hCurR P.notIdle hActR) hRecv
+    obtain ⟨_, hR2⟩ := E.1.links hIR hRR
+    exact runQueueEntryStage_trans_of_invExt (hS.trans R.entry) fun _ _ => E.trans
       ((applyReceiveRendezvousHandoff_runQueueStage
-          ((E.2 hIC hRC hR2 hDC).coherent _) hHand).trans
+          ((E.2 hIR hRR hR2 hDR).coherent _) hHand).trans
         (stageDeliveredMessage_runQueueStage _ _ _)).entry
   · cases h
 
@@ -1190,16 +1504,19 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
   case none.notificationWait.object notifId =>
     split at h
     · cases h; exact (writeReturnFrameToTcb_runQueueStage _ _ _).entry
+    unfold completeSignalArm at h
     split at h
+    · rename_i hW
+      cases h
+      exact ((runQueueStage_of_pair_eq
+        (notificationWaitCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ P) hW).trans
+        (writeReturnFrameToTcb_runQueueStage _ _ _).entry).trans
+        (maybeDonateSchedContextFlowing_runQueueStage _ _ _).entry
     · rename_i hW
       cases h
       exact (runQueueStage_of_pair_eq
         (notificationWaitCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ P) hW).trans
-        (writeReturnFrameToTcb_runQueueStage _ _ _).entry
-    · rename_i hW
-      cases h
-      exact runQueueStage_of_pair_eq
-        (notificationWaitCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ P) hW
+        (maybeReturnSchedContext_runQueueEntryStage _ _ _)
     · cases h
   case none.replyRecv.object epId =>
     split at h
@@ -1237,7 +1554,7 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     · rename_i hSig
       cases h
       exact (runQueueStage_of_pair_eq
-        (notificationSignalDeclassifiedOnCore_runQueueStage _ _ _ _ _ _ P.ntfnHeads
+        (notificationSignalDeclassifiedCrossCoreDispatch_runQueueStage _ _ _ _ _ _ P.ntfnHeads
           P.blocked) hSig).entry
     · cases h
 

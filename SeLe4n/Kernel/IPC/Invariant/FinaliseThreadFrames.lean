@@ -270,22 +270,11 @@ codes.** -/
 theorem returnDonationToCancelledCaller (s : SystemState) (w : SeLe4n.ThreadId) (t : TCB)
     (hInv : s.objects.invExt)
     (hg : ∀ (u : TCB) (c o : Nat), g { u with scBindingScCode := c, scBindingOwnerCode := o } = g u) :
-    tcbProjKept g (Lifecycle.Suspend.returnDonationToCancelledCaller s w t) s := by
-  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-  split
-  · rename_i scId holder _ _ _
-    split
-    · rename_i st' hOk
-      obtain ⟨n, -, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
-      refine of_fwd_bwd (fun k t0 hk => ?_) (fun k t' hk => ?_)
-      · obtain ⟨t', h', c, o, e⟩ :=
-          returnDonatedSchedContext_tcb_rewrite _ st' holder scId w hInv n hPop k t0 hk
-        exact ⟨t', h', by rw [e, hg]⟩
-      · obtain ⟨t0, h0, -⟩ :=
-          returnDonatedSchedContext_tcb_rewrite_backward _ st' holder scId w n hInv hPop k t' hk
-        exact ⟨t0, h0⟩
-    · exact refl _
-  · exact refl _
+    tcbProjKept g (Lifecycle.Suspend.returnDonationToCancelledCaller s w t) s :=
+  Lifecycle.Suspend.returnDonationToCancelledCaller_elimFrame (P := fun x => tcbProjKept g x s)
+    hInv (refl _) fun _ hF => of_fwd_bwd
+      (fun k t0 hk => let ⟨t', h', c, o, e⟩ := hF.tcbFwd k t0 hk; ⟨t', h', by rw [e, hg]⟩)
+      (fun k t' hk => let ⟨t0, h0, _⟩ := hF.tcbBack k t' hk; ⟨t0, h0⟩)
 
 /-- **A consume of `w`'s reply link keeps every thread but its reply code.** -/
 theorem consumeReplyLink (s : SystemState) (w : SeLe4n.ThreadId) (t : TCB)

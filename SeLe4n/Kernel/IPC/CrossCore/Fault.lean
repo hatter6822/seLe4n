@@ -264,7 +264,7 @@ composition of theorems that already exist
 (`IPC/Invariant/FaultPreservation.lean`), rather than a re-proof of the Call's
 whole precondition pack transported across an extra TCB write. -/
 def faultDeliverOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (f : Fault)
-    (ctx : FaultContext) (executingCore : CoreId) :
+    (ctx : FaultContext) (executingCore : CoreId) (lend : Bool := true) :
     SystemState × FaultDeliveryResult :=
   let tf : ThreadFault := { fault := f, context := ctx }
   match resolveFaultHandler st tid with
@@ -280,7 +280,7 @@ def faultDeliverOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (f : Fault)
       -- neither the fault tag nor `MR0`-`MR3` — the frame the ABI promises.
       let wokenReceiver? := (st.getEndpoint? tgt.endpoint).bind (·.receiveQ.head)
       match endpointCallCrossCoreDispatch tgt.endpoint tid
-          (.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) executingCore st with
+          (.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) executingCore st lend with
       | (_, .error _) =>
           (recordPendingFault (faultSuspendOnCore st tid executingCore) tid tf,
            { disposition := .suspended })
@@ -292,40 +292,40 @@ def faultDeliverOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (f : Fault)
 
 /-- WS-RR RR4.10: a fault whose handler does not resolve — for any reason —
 takes the fail-closed path. -/
-theorem faultDeliverOnCore_suspends_on_unresolvable (st : SystemState)
+theorem faultDeliverOnCore_suspends_on_unresolvable {lend : Bool} (st : SystemState)
     (tid : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (c : CoreId)
     (e : KernelError) (hErr : resolveFaultHandler st tid = .error e) :
-    faultDeliverOnCore st tid f ctx c =
+    faultDeliverOnCore st tid f ctx c lend =
       (recordPendingFault (faultSuspendOnCore st tid c) tid { fault := f, context := ctx },
        { disposition := .suspended }) := by
   unfold faultDeliverOnCore; rw [hErr]
 
 /-- WS-RR RR4.10 (**the negative**): a thread whose fault-handler slot is empty suspends
 on its own core. -/
-theorem faultDeliverOnCore_suspends_without_handler (st : SystemState)
+theorem faultDeliverOnCore_suspends_without_handler {lend : Bool} (st : SystemState)
     (tid : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (c : CoreId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) (hNone : tcb.faultHandlerCap = none) :
-    faultDeliverOnCore st tid f ctx c =
+    faultDeliverOnCore st tid f ctx c lend =
       (recordPendingFault (faultSuspendOnCore st tid c) tid { fault := f, context := ctx },
        { disposition := .suspended }) :=
   faultDeliverOnCore_suspends_on_unresolvable st tid f ctx c _
     (resolveFaultHandler_none_of_noHandler st tid tcb hTcb hNone)
 
 /-- WS-RR RR4.12: the fail-closed path fires no SGI — nothing was woken. -/
-theorem faultDeliverOnCore_suspended_no_sgi (st : SystemState)
+theorem faultDeliverOnCore_suspended_no_sgi {lend : Bool} (st : SystemState)
     (tid : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (c : CoreId)
     (e : KernelError) (hErr : resolveFaultHandler st tid = .error e) :
-    (faultDeliverOnCore st tid f ctx c).2.sgi = none := by
+    (faultDeliverOnCore st tid f ctx c lend).2.sgi = none := by
   rw [faultDeliverOnCore_suspends_on_unresolvable st tid f ctx c e hErr]
 
 /-- WS-RR RR4.11: the disposition is binary — the delivery either reached an
 endpoint or suspended the thread.  There is no third outcome, and in
 particular none that leaves the thread where it was. -/
-theorem faultDeliverOnCore_disposition_total (st : SystemState)
+theorem faultDeliverOnCore_disposition_total {lend : Bool} (st : SystemState)
     (tid : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (c : CoreId) :
-    (∃ epId, (faultDeliverOnCore st tid f ctx c).2.disposition = .delivered epId) ∨
-    (faultDeliverOnCore st tid f ctx c).2.disposition = .suspended := by
-  cases h : (faultDeliverOnCore st tid f ctx c).2.disposition with
+    (∃ epId, (faultDeliverOnCore st tid f ctx c lend).2.disposition = .delivered epId) ∨
+    (faultDeliverOnCore st tid f ctx c lend).2.disposition = .suspended := by
+  cases h : (faultDeliverOnCore st tid f ctx c lend).2.disposition with
   | delivered epId => exact Or.inl ⟨epId, rfl⟩
   | suspended => exact Or.inr rfl
 
@@ -334,14 +334,14 @@ theorem faultDeliverOnCore_disposition_total (st : SystemState)
 the fault recorded.  The delivery adds nothing else — which is what lets
 `faultDeliverOnCore_preserves_ipcInvariantFull` be a composition rather than a
 re-proof. -/
-theorem faultDeliverOnCore_delivered_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+theorem faultDeliverOnCore_delivered_eq {lend : Bool} (st : SystemState) (tid : SeLe4n.ThreadId)
     (f : Fault) (ctx : FaultContext) (c : CoreId) (tgt : FaultHandlerTarget)
     (st' : SystemState) (summary : CapTransferSummary)
     (sgi? : Option (CoreId × SgiKind))
     (hRes : resolveFaultHandler st tid = .ok tgt)
     (hCall : endpointCallCrossCoreDispatch tgt.endpoint tid
-        (.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st = (st', .ok (summary, sgi?))) :
-    faultDeliverOnCore st tid f ctx c =
+        (.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st lend = (st', .ok (summary, sgi?))) :
+    faultDeliverOnCore st tid f ctx c lend =
       (recordPendingFault
          (Architecture.stageWokenDelivery st'
            ((st.getEndpoint? tgt.endpoint).bind (·.receiveQ.head)) summary.capInfo)
@@ -888,7 +888,14 @@ design point of the arm: an error would hand the trap layer a state in which
 the faulting thread is still runnable at the faulting instruction, which is
 exactly the livelock RR4.19 exists to remove — reintroduced through the policy
 layer.  Fail-closed here means *contained*, not *reported*: the thread stops,
-and its `pendingFault` records why for anything permitted to look. -/
+and its `pendingFault` records why for anything permitted to look.
+
+**The fault's Call lends as the `.call` arm's does** (`callLendAdmits`, owner
+decision D28): a fault delivered to a passive handler lends the faulting
+thread's context only where the thread's label flows to the context's label;
+otherwise the delivery goes on and lends nothing.  The admission reads the
+faulting thread's own binding and static labels, on the state the fault was
+taken in. -/
 def faultDeliverOnCoreChecked (ctx : LabelingContext) (st : SystemState)
     (tid : SeLe4n.ThreadId) (f : Fault) (fctx : FaultContext)
     (executingCore : CoreId) : SystemState × FaultDeliveryResult :=
@@ -900,7 +907,7 @@ def faultDeliverOnCoreChecked (ctx : LabelingContext) (st : SystemState)
   | .ok tgt =>
       if endpointFlowGate ctx tgt.endpoint (ctx.threadLabelOf tid)
           (ctx.endpointLabelOf tgt.endpoint) then
-        faultDeliverOnCore st tid f fctx executingCore
+        faultDeliverOnCore st tid f fctx executingCore (callLendAdmits ctx st tid)
       else
         (recordPendingFault (faultSuspendOnCore st tid executingCore) tid
            { fault := f, context := fctx },
@@ -945,7 +952,8 @@ theorem faultDeliverOnCoreChecked_flow_allowed (ctx : LabelingContext)
     (hRes : resolveFaultHandler st tid = .ok tgt)
     (hAllow : endpointFlowGate ctx tgt.endpoint (ctx.threadLabelOf tid)
       (ctx.endpointLabelOf tgt.endpoint) = true) :
-    faultDeliverOnCoreChecked ctx st tid f fctx c = faultDeliverOnCore st tid f fctx c := by
+    faultDeliverOnCoreChecked ctx st tid f fctx c =
+      faultDeliverOnCore st tid f fctx c (callLendAdmits ctx st tid) := by
   simp [faultDeliverOnCoreChecked, hRes, hAllow]
 
 /-- WS-RR RR4.20: a delivery the checked arm performed had its flow admitted

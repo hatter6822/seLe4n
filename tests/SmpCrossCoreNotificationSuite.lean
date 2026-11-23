@@ -12,6 +12,7 @@ import SeLe4n.Kernel.IPC.CrossCore.NotificationSignalNI
 import SeLe4n.Kernel.IPC.CrossCore.NotificationInvariant
 import SeLe4n.Kernel.IPC.CrossCore.NotificationBind
 import SeLe4n.Kernel.IPC.CrossCore.NotificationBindDispatch
+import SeLe4n.Kernel.IPC.Invariant.SignalDonationFrame
 import SeLe4n.Testing.StateBuilder
 
 /-!

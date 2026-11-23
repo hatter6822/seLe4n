@@ -3081,6 +3081,30 @@ def mintReplyCapAdmittedAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot
     (st : SystemState) : Bool :=
   mintReplyCapAdmitted ⟨cnode, srcSlot⟩ ⟨cnode, dstSlot⟩ st
 
+/-- **The mint's source lookup refused**: the CNode is one and its slot `srcSlot`
+holds no capability, so `mintReplyCapWithCdt`'s lookup answers
+`invalidCapability 0` (`mintReplyCapWithCdt_of_sourceAbsent`).  Asked before the
+refusal is built, so the compiled refusal makes no record of the two slots. -/
+@[inline] def mintReplyCapSourceAbsent (cnode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot)
+    (st : SystemState) : Bool :=
+  cnodeInvoked cnode st && (SystemState.lookupSlotCap st ⟨cnode, srcSlot⟩).isNone
+
+theorem cnodeInvoked_of_mintReplyCapSourceAbsent {cnode : SeLe4n.ObjId} {srcSlot : SeLe4n.Slot}
+    {st : SystemState} (h : mintReplyCapSourceAbsent cnode srcSlot st = true) :
+    cnodeInvoked cnode st = true := by
+  unfold mintReplyCapSourceAbsent at h
+  simp only [Bool.and_eq_true] at h
+  exact h.1
+
+theorem mintReplyCapWithCdt_of_sourceAbsent {cnode : SeLe4n.ObjId} {srcSlot : SeLe4n.Slot}
+    {st : SystemState} (h : mintReplyCapSourceAbsent cnode srcSlot st = true) (dst : CSpaceAddr) :
+    mintReplyCapWithCdt ⟨cnode, srcSlot⟩ dst st = .error (.invalidCapability 0) := by
+  unfold mintReplyCapSourceAbsent cnodeInvoked at h
+  simp only [Bool.and_eq_true, Option.isSome_iff_exists, Option.isNone_iff_eq_none] at h
+  obtain ⟨⟨c, hC⟩, hN⟩ := h
+  unfold mintReplyCapWithCdt mintReplyCap cspaceLookupSlot
+  simp only [hN, hC]
+
 /-- `mintReplyCapPerform` on slots `srcSlot` and `dstSlot` of `cnode`. -/
 def mintReplyCapPerformAt (cnode : SeLe4n.ObjId) (srcSlot dstSlot : SeLe4n.Slot)
     (st : SystemState) : SystemState :=

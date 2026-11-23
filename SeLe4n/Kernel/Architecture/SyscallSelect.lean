@@ -75,7 +75,8 @@ def kindTakesLabel (sid : SyscallId) : KernelObjectType → Bool
   | .untyped => sid == .untypedRetype
   | .vspaceRoot => sid == .vspaceUnifyInstruction
   | .schedContext => sid == .schedContextBind || sid == .schedContextUnbind ||
-      sid == .schedContextConsumed || sid == .schedContextYieldTo
+      sid == .schedContextUnbindObject || sid == .schedContextConsumed ||
+      sid == .schedContextYieldTo
   | .tcb => sid == .tcbSuspend || sid == .tcbResume || sid == .tcbSetPriority ||
       sid == .tcbSetMCPriority || sid == .tcbSetIPCBuffer || sid == .tcbSetAffinity ||
       sid == .tcbSetSpace || sid == .tcbBindNotification || sid == .tcbUnbindNotification

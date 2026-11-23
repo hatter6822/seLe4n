@@ -1668,6 +1668,17 @@ theorem lockSet_schedContextUnbind_size_le (a : ThreadId) (b : ObjId)
   unfold lockSet_schedContextUnbind maxLockSetSize
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
+/-- WS-SX SX8.3: `seL4_SchedContext_UnbindObject`'s footprint is the thread
+unbind's, or four fixed locks. -/
+theorem lockSet_schedContextUnbindObject_size_le (a : ThreadId) (b : ObjId)
+    (c : SchedContextId) (d : Sum ThreadId ObjId) (q : Option QueueOwner) :
+    (lockSet_schedContextUnbindObject a b c d q).size ≤ maxLockSetSize := by
+  cases d with
+  | inl t => exact lockSet_schedContextUnbind_size_le a b c t q
+  | inr n =>
+    unfold lockSet_schedContextUnbindObject maxLockSetSize
+    exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
 /-- WS-ZA ZA6.9: `seL4_SchedContext_Consumed`'s footprint is three fixed locks. -/
 theorem lockSet_schedContextConsumed_size_le (a : ThreadId) (b : ObjId)
     (c : SchedContextId) :
@@ -1858,6 +1869,7 @@ theorem lockSetTransitions_within_bound :
     (∀ a b c d q, (lockSet_schedContextConfigure a b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_schedContextBind a b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c d q, (lockSet_schedContextUnbind a b c d q).size ≤ maxLockSetSize) ∧
+    (∀ a b c d q, (lockSet_schedContextUnbindObject a b c d q).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_schedContextConsumed a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c d y, (lockSet_schedContextYieldTo a b c d y).size ≤ maxLockSetSize) ∧
     (∀ a b, (lockSet_irqHandlerAck a b).size ≤ maxLockSetSize) ∧
@@ -1890,6 +1902,7 @@ theorem lockSetTransitions_within_bound :
    lockSet_serviceRegister_size_le, lockSet_serviceRevoke_size_le,
    lockSet_serviceQuery_size_le, lockSet_schedContextConfigure_size_le,
    lockSet_schedContextBind_size_le, lockSet_schedContextUnbind_size_le,
+   lockSet_schedContextUnbindObject_size_le,
    lockSet_schedContextConsumed_size_le,
    lockSet_schedContextYieldTo_size_le,
    lockSet_irqHandlerAck_size_le,

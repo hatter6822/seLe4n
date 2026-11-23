@@ -322,6 +322,15 @@ theorem storeReplyRendezvous_eq_hold (st : SystemState) (c server : SeLe4n.Threa
   rw [updateTcb_msg _ _ _ _ _ _ _ hNo3 ?_, unlinkReplyWaiter_msg]
   intros; rfl
 
+
+/-- The reply leg's writes leave room. -/
+theorem storeReplyRendezvous_noResizeDue (st : SystemState) (c server : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (msg : IpcMessage) (hNo : st.objects.noResizeDue) :
+    (storeReplyRendezvous st c server rid msg).objects.noResizeDue := by
+  rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo]
+  exact (SystemState.mapTcbInPlace_noResizeDue _ _ _).mpr
+    (storeReplyRendezvousReady_noResizeDue st c server rid hNo)
+
 /-- The reply leg holding a message is the leg woken holding none, then the
 message held. -/
 theorem storeReplyLeg_eq_hold (st : SystemState) (c : SeLe4n.ThreadId)
@@ -443,18 +452,6 @@ theorem performReplyRendezvous_eq_delivered (st : SystemState) (c server : SeLe4
     Architecture.returnFrameOfMessage_regMessageBody]
   rfl
 
-theorem callWakesInPlace_noResizeDue {st : SystemState} {endpointId : SeLe4n.ObjId}
-    {caller r : SeLe4n.ThreadId} {rt : TCB} {rid : SeLe4n.ReplyId}
-    (h : callWakesInPlace st endpointId caller r rt rid = true) : st.objects.noResizeDue := by
-  simp only [callWakesInPlace, sendWakesInPlace, Bool.and_eq_true] at h
-  exact RHTable.noResizeDue_of_findsInPlace h.1.1.1.1.1.1.1.1.1.1.1.1.2
-
-theorem callWakesInPlace_ne {st : SystemState} {endpointId : SeLe4n.ObjId}
-    {caller r : SeLe4n.ThreadId} {rt : TCB} {rid : SeLe4n.ReplyId}
-    (h : callWakesInPlace st endpointId caller r rt rid = true) : caller ≠ r := by
-  simp only [callWakesInPlace, Bool.and_eq_true] at h
-  exact bne_iff_ne.mp h.1.1.1.1.1.1.1.2
-
 /-- A call rendezvous carrying more than four words: held and staged as the
 specification does.  Out of line, so the woken receiver it names is built only
 on this path and never hoisted ahead of the length test (WS-ZA ZA4.7). -/
@@ -483,11 +480,23 @@ longer one is held and staged as the specification does
   else callRendezvousStaged st endpointId caller r nextCode rid layout rf len
     (SeLe4n.Badge.opt badgeWord badged) core
 
+theorem callTakesReplyInPlace_noResizeDue {st : SystemState} {endpointId : SeLe4n.ObjId}
+    {caller r : SeLe4n.ThreadId} {rt : TCB} {rid : SeLe4n.ReplyId}
+    (h : callTakesReplyInPlace st endpointId caller r rt rid = true) : st.objects.noResizeDue := by
+  simp only [callTakesReplyInPlace, sendWakesInPlace, Bool.and_eq_true] at h
+  exact RHTable.noResizeDue_of_findsInPlace h.1.1.1.1.1.1.1.1.1.1.1.1.2
+
+theorem callTakesReplyInPlace_ne {st : SystemState} {endpointId : SeLe4n.ObjId}
+    {caller r : SeLe4n.ThreadId} {rt : TCB} {rid : SeLe4n.ReplyId}
+    (h : callTakesReplyInPlace st endpointId caller r rt rid = true) : caller ≠ r := by
+  simp only [callTakesReplyInPlace, Bool.and_eq_true] at h
+  exact bne_iff_ne.mp h.1.1.1.1.1.1.1.2
+
 theorem callRendezvousDelivered_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (rt : TCB) (rid : SeLe4n.ReplyId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool)
-    (core : Concurrency.CoreId) (hG : callWakesInPlace st endpointId caller r rt rid = true) :
+    (core : Concurrency.CoreId) (hG : callTakesReplyInPlace st endpointId caller r rt rid = true) :
     callRendezvousDelivered st endpointId caller r rt.queueNextCode rid layout rf len badgeWord
         badged core =
       Architecture.stageWokenDelivery
@@ -500,7 +509,7 @@ theorem callRendezvousDelivered_eq (st : SystemState) (endpointId : SeLe4n.ObjId
   · next hSz =>
     rw [← TCB.optCode_queueNext]
     exact (stageWokenDelivery_performCallRendezvous _ _ _ _ _ _ _ _ _ _ _ _
-      (callWakesInPlace_noResizeDue hG) (callWakesInPlace_ne hG) hSz).symm
+      (callTakesReplyInPlace_noResizeDue hG) (callTakesReplyInPlace_ne hG) hSz).symm
   · unfold callRendezvousStaged; rfl
 
 theorem replyWakesInPlace_noResizeDue {st : SystemState} {c : SeLe4n.ThreadId} {ct : TCB}

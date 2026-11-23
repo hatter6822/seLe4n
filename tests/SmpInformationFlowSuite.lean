@@ -434,6 +434,9 @@ set_option maxRecDepth 8192
 #check @cancellationCrossCore_confinedToCores
 #check @notificationSignalOnCore_crossCoreNonInterference
 #check @notificationWaitOnCore_crossCoreNonInterference
+#check @completeSignalArm_confinedToCores
+#check @completeSignalArm_crossCoreNonInterference
+#check @maybeReturnSchedContext_confinedToCores
 #check @endpointCallOnCore_crossCoreNonInterference
 #check @endpointReplyOnCore_crossCoreNonInterference
 #check @descheduleThread_crossCoreNonInterference
@@ -528,7 +531,7 @@ set_option maxRecDepth 8192
 #check @suspendThreadOnCoreWriteSet
 #check @suspendThreadOnCore_confinedToCores
 #check @suspendThreadOnCore_crossCoreNonInterference
-#check @SeLe4n.Kernel.cleanupDonatedSchedContext_machine_eq
+#check @SeLe4n.Kernel.cancelDonatedDonationOnCore_machine_eq
 #check @onCore_objects_eq_projectObjects
 
 -- §1.7  SM8.B — the enforcement boundary and the covert-channel inventory
@@ -1797,12 +1800,12 @@ set_option maxRecDepth 8192
 #check @notificationSignalDeclassifiedOnCore_preserves_objects_invExt
 #check @notificationSignalDeclassifiedOnCore_preserves_ipcInvariant
 #check @notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer
-#check @notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull_fallthrough
+#check @notificationSignalDeclassifiedOnCore_preserves_ipcInvariantFull
 #check @notificationSignalDeclassifiedOnCore_ipcInvariantFull_perCore_transfer
 #check @notificationSignalDeclassifiedOnCore_preserves_trailActors
 #check @notificationSignalDeclassifiedOnCore_preserves_trailSources
 #check @notificationSignalDeclassifiedOnCore_preserves_trailDestinations
-#check @notificationSignalDeclassifiedCrossCoreDispatch_eq
+#check @notificationSignalDeclassifiedCrossCoreDispatch_induct
 
 -- SM9.C.1 — the headline properties.
 #check @declassifiedSignal_delivers_badge
@@ -1833,6 +1836,8 @@ set_option maxRecDepth 8192
 #check @declassificationRelativeNonInterference
 #check @declassifiedSignalDispatch_confinedToCores
 #check @declassifiedSignalDispatch_crossCoreNonInterference
+#check @sendSignalOnCoreFlowing_confinedToCores
+#check @sendSignalOnCoreFlowing_crossCoreNonInterference
 
 -- SM9.C.8 / SM9.C.9 — the ABI, the live arm and its registries.
 #check @dispatchWithCapChecked_declassifySignal_delegates
@@ -4638,11 +4643,11 @@ private def runRunQueueComparisonChecks : IO Unit := do
 /-- §5.3  The set-of-cores algebra and its coverage record. -/
 private def runCoreSetAlgebraChecks : IO Unit := do
   IO.println "--- §5.3 the set-of-cores confinement algebra ---"
-  assertBool "thirty-eight cross-core transitions are covered"
-    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 38))
-  assertBool "twenty-eight of the thirty-eight can name a core other than the executing one"
+  assertBool "forty-one cross-core transitions are covered"
+    (decide (SeLe4n.Kernel.CrossCoreTransition.all.length = 41))
+  assertBool "thirty-one of the forty-one can name a core other than the executing one"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 28))
+      SeLe4n.Kernel.crossCoreTransitionWritesRemote).length = 31))
   assertBool "…and the wait, the two VSpace arms, the carve, the declassification, the two audit readers, the yield, the Consumed invocation and the buffer change are the ten that cannot"
     ([SeLe4n.Kernel.CrossCoreTransition.notificationWait,
       .vspaceMapDispatch, .vspaceUnmapDispatch,
@@ -4650,9 +4655,35 @@ private def runCoreSetAlgebraChecks : IO Unit := do
       .auditReadDispatch, .auditDrainDispatch, .yieldDispatch,
       .schedContextConsumedDispatch].all (fun t =>
         decide (SeLe4n.Kernel.crossCoreTransitionWritesRemote t = false)))
-  assertBool "thirty-one of the thirty-eight are the arms the live syscall dispatch reaches"
+  assertBool "thirty-two of the forty-one are the arms the live syscall dispatch reaches"
     (decide ((SeLe4n.Kernel.CrossCoreTransition.all.filter
-      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 31))
+      SeLe4n.Kernel.crossCoreTransitionIsLiveArm).length = 32))
+  -- WS-SX SX8.3: the UnbindObject invocation's thread path is a live,
+  -- delegation-backed arm naming its own syscall, and it writes a remote core:
+  -- the core running the unbound thread, whose current slot it clears.
+  assertBool "the UnbindObject invocation is a live, delegation-backed arm that may write a remote core"
+    (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .schedContextUnbindObjectDispatch
+      && (SeLe4n.Kernel.crossCoreLiveArmEvidence .schedContextUnbindObjectDispatch).isDelegationBacked
+      && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .schedContextUnbindObjectDispatch
+                   = some SeLe4n.Model.SyscallId.schedContextUnbindObject)
+      && SeLe4n.Kernel.crossCoreTransitionWritesRemote .schedContextUnbindObjectDispatch)
+  -- WS-SX SX8.2: the live `.signal` arm is seL4-MCS `sendSignal` (the wake,
+  -- then the donation); the bound-aware wake alone is its below-API leg.
+  assertBool "the live signal arm is seL4's sendSignal and the bound-aware wake is a below-API leg"
+    (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .sendSignalDispatch
+      && !SeLe4n.Kernel.crossCoreTransitionIsLiveArm .notificationSignalBound
+      && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .sendSignalDispatch
+                   = some SeLe4n.Model.SyscallId.notificationSignal)
+      && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .notificationSignalBound = none))
+  -- WS-SX SX8.2: the live `.wait` arm is `completeSignalArm` (the checked wait,
+  -- then seL4-MCS's donation or return); the wait alone is its below-API leg.
+  assertBool "the live wait arm is completeSignalArm and the bare wait is a below-API leg"
+    (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .waitDispatch
+      && !SeLe4n.Kernel.crossCoreTransitionIsLiveArm .notificationWait
+      && SeLe4n.Kernel.crossCoreTransitionWritesRemote .waitDispatch
+      && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .waitDispatch
+                   = some SeLe4n.Model.SyscallId.notificationWait)
+      && decide (SeLe4n.Kernel.crossCoreLiveArmSyscall .notificationWait = none))
   -- WS-ZA ZA6.32: the interrupt handler's bind and clear empty the line's node
   -- slot by the zombie delete, so they are live, delegation-backed arms naming
   -- their own syscalls that may write remote cores, as the delete does.
@@ -4754,8 +4785,8 @@ private def runCoreSetAlgebraChecks : IO Unit := do
              ∧ SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointSendDispatch = true
              ∧ (SeLe4n.Kernel.crossCoreLiveArmEvidence .endpointSendDispatch).syscall?
                  = some SeLe4n.Model.SyscallId.send))
-  assertBool "twenty-three live arms are mechanically tied to the dispatch"
-    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 23))
+  assertBool "twenty-four live arms are mechanically tied to the dispatch"
+    (decide (SeLe4n.Kernel.crossCoreLiveArmDelegationBacked.length = 24))
   -- The fourth review round's finding, as a checked fact: the three arms it
   -- named are in the inventory and are all classified as live.
   assertBool "the bound signal, the receive dual and replyRecv are all covered"
@@ -4781,8 +4812,8 @@ private def runCoreSetAlgebraChecks : IO Unit := do
   -- made it a live arm.  Neither half holds now — both receive-shaped arms reach
   -- the WithCaps form — so the live-arm claim moved to that entry and the bare
   -- transition became a below-API one, like `.endpointReply` beside it.
-  assertBool "the bound signal and the WithCaps receive are both live arms"
-    (decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .notificationSignalBound = true) &&
+  assertBool "seL4's sendSignal and the WithCaps receive are both live arms"
+    (decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .sendSignalDispatch = true) &&
      decide (SeLe4n.Kernel.crossCoreTransitionIsLiveArm .endpointReceiveDualWithCaps = true))
   -- NEGATIVE: and the bare receive cannot carry the claim as well, which is what
   -- would happen if a later cut added the WithCaps entry without demoting it.
@@ -5358,8 +5389,8 @@ private def runPerCoreCoverageChecks : IO Unit := do
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
   assertBool "68 entries: 54 canonical (the 2PL bracket, the two audit readers, the declassifying signal, WS-BP BP7.1's untyped carve and reset and the two finalising destroyers, the space change, the two page-table operations, the yield, the Consumed invocation, the yieldTo invocation and the interrupt acknowledge) + 14 cross-core wrappers"
-    (decide (enforcementBoundaryPerCore.length = 67) &&
-     decide (enforcementBoundaryExtended.length = 53) &&
+    (decide (enforcementBoundaryPerCore.length = 68) &&
+     decide (enforcementBoundaryExtended.length = 54) &&
      decide (crossCoreEnforcementEntries.length = 14))
   assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)
@@ -9512,7 +9543,7 @@ private def runAuditLiveArmChecks : IO Unit := do
   assertBool "both audit syscalls are in the ABI, with different required rights"
     (decide (SyscallId.auditRead.toNat = 31) &&
      decide (SyscallId.auditDrain.toNat = 32) &&
-     decide (SyscallId.count = 45) &&
+     decide (SyscallId.count = 46) &&
      decide (syscallRequiredRight .auditRead = AccessRight.read) &&
      decide (syscallRequiredRight .auditDrain = AccessRight.write))
   assertBool "both return a WORD, so the boundary reads the staged frame rather than constructing"
@@ -10137,9 +10168,9 @@ private def runDeclassifiedSignalDefaultChecks : IO Unit := do
 /-- §11.6  SM9.C.8 / SM9.C.9 — the ABI, the live arm and the registries. -/
 private def runDeclassifiedSignalAbiChecks : IO Unit := do
   IO.println "--- §11.6 SM9.C.8 the syscall, end to end ---"
-  assertBool "the syscall is in the ABI at 33, count 45, requiring the notification's write right"
+  assertBool "the syscall is in the ABI at 33, count 46, requiring the notification's write right"
     (decide (SyscallId.declassifySignal.toNat = 33) &&
-     decide (SyscallId.count = 45) &&
+     decide (SyscallId.count = 46) &&
      decide (SyscallId.ofNat? 33 = some SyscallId.declassifySignal) &&
      decide (syscallRequiredRight .declassifySignal = AccessRight.write))
   -- The same right the ordinary signal needs: the declassification gates sit

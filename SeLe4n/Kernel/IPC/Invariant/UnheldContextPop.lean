@@ -195,8 +195,7 @@ theorem returnUnheldSchedContext_preserves_ipcInvariantFull (hObjInv : st.object
           rw [hOt] at hM
           simp only [Bool.and_eq_true] at hM
           obtain ⟨hU, hR⟩ := hM
-          have hU : oT.schedContextBinding = .unbound := by
-            revert hU; cases oT.schedContextBinding <;> simp [BEq.beq]
+          have hU : oT.schedContextBinding.isDonated = false := by simpa using hU
           refine ⟨⟨_, hSc', ?_⟩, oT, tFwd _ _ (fun e => hNeO (SeLe4n.ThreadId.toObjId_injective _ _ e))
             ((SystemState.getTcb?_eq_some_iff _ _ _).mp hOt), hU, ?_⟩
           · unfold SchedContext.boundThread donationReturnSchedContext

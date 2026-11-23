@@ -173,9 +173,21 @@ theorem of_applyCallDonationOnCore {st st' : SystemState}
   · exact h1
   · exact h1.trans (of_migrate _ _ _ _ h1.2)
 
-theorem of_applyRendezvousCallDonation {st st' : SystemState} {receiver donor : SeLe4n.ThreadId}
-    (hInv : st.objects.invExt) (h : applyRendezvousCallDonation st receiver donor = .ok st') :
+theorem of_applyCallDonationOnCoreWhen {lend : Bool} {st st' : SystemState}
+    {callerVtid receiverVtid : SeLe4n.ValidThreadId} {donorHome doneeHome : CoreId}
+    (hInv : st.objects.invExt)
+    (h : applyCallDonationOnCoreWhen lend st callerVtid receiverVtid donorHome doneeHome =
+      .ok st') :
+    savedRegsUnwritten st st' :=
+  applyCallDonationOnCoreWhen_induct (savedRegsUnwritten st) h (.refl hInv)
+    (of_applyCallDonationOnCore hInv)
+
+theorem of_applyRendezvousCallDonation {lend : Bool} {st st' : SystemState} {receiver donor : SeLe4n.ThreadId}
+    (hInv : st.objects.invExt) (h : applyRendezvousCallDonation st receiver donor lend = .ok st') :
     savedRegsUnwritten st st' := by
+  rcases applyRendezvousCallDonation_cases h with h | rfl
+  rotate_left
+  · exact refl hInv
   unfold applyRendezvousCallDonation at h
   split at h
   · exact of_applyCallDonationOnCore hInv h
@@ -267,8 +279,8 @@ theorem endpointCallWithCapsOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId
 passive receiver, and the chain walk from it. -/
 theorem endpointCallCrossCoreDispatch_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload) (c : CoreId)
-    {st : SystemState} (hInv : st.objects.invExt) :
-    savedRegsUnwritten st (endpointCallCrossCoreDispatch endpointId caller payload c st).1 := by
+    {st : SystemState} (hInv : st.objects.invExt) (lend : Bool := true) :
+    savedRegsUnwritten st (endpointCallCrossCoreDispatch endpointId caller payload c st lend).1 := by
   have h0 := endpointCallWithCapsOnCore_savedRegsUnwritten endpointId caller payload c hInv
   unfold endpointCallCrossCoreDispatch
   generalize endpointCallWithCapsOnCore endpointId caller payload c st = r at h0
@@ -282,7 +294,7 @@ theorem endpointCallCrossCoreDispatch_savedRegsUnwritten (endpointId : SeLe4n.Ob
     all_goals first
       | exact h0
       | (rename_i hD
-         have h1 := h0.trans (savedRegsUnwritten.of_applyCallDonationOnCore h0.2 hD)
+         have h1 := h0.trans (savedRegsUnwritten.of_applyCallDonationOnCoreWhen h0.2 hD)
          exact h1.trans (savedRegsUnwritten.of_propagate _ _ _ _ h1.2))
 
 theorem endpointCallCrossCoreDispatchChecked_savedRegsUnwritten (ctx : LabelingContext)
@@ -292,7 +304,7 @@ theorem endpointCallCrossCoreDispatchChecked_savedRegsUnwritten (ctx : LabelingC
       (endpointCallCrossCoreDispatchChecked ctx endpointId caller payload c st).1 := by
   unfold endpointCallCrossCoreDispatchChecked
   split
-  · exact endpointCallCrossCoreDispatch_savedRegsUnwritten _ _ _ _ hInv
+  · exact endpointCallCrossCoreDispatch_savedRegsUnwritten _ _ _ _ hInv _
   · exact .refl hInv
 
 /-! ### The donation returns and the reply objects -/
@@ -333,6 +345,36 @@ theorem of_returnUnheldSchedContext {st st' : SystemState} {scId : SeLe4n.SchedC
         rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr this] at h1
         cases h1
 
+/-- The held pop rewrites one thread's binding codes, no saved register. -/
+theorem of_keepDonatedSchedContext {st st' : SystemState} {holder : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    savedRegsUnwritten st st' := by
+  refine ⟨.of_map fun x => ?_, keepDonatedSchedContext_objects_invExt hInv h⟩
+  obtain ⟨_, _, ot, -, -, -, -, hO, -, -, hO', tBwd, tFwd, -, -⟩ :=
+    keepDonatedSchedContext_objects hInv h
+  by_cases e : x.toObjId = holder.toObjId
+  · rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr (e ▸ hO'),
+      (SystemState.getTcb?_eq_some_iff _ _ _).mpr (e ▸ hO)]
+    rfl
+  · cases h1 : st.getTcb? x with
+    | some t0 =>
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr
+        (tFwd _ _ e ((SystemState.getTcb?_eq_some_iff _ _ _).mp h1))]
+    | none =>
+      cases h2 : st'.getTcb? x with
+      | none => rfl
+      | some t1 =>
+        have := tBwd _ _ e ((SystemState.getTcb?_eq_some_iff _ _ _).mp h2)
+        rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr this] at h1
+        cases h1
+
+/-- The resolved held pop. -/
+theorem of_keepDonatedSchedContextResolved {st st' : SystemState} {holder : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} (hInv : st.objects.invExt)
+    (h : keepDonatedSchedContextResolved st holder scId = .ok st') : savedRegsUnwritten st st' :=
+  keepDonatedSchedContextResolved_lift h fun _ _ hP => of_keepDonatedSchedContext hInv hP
+
 /-- The pop at an unheld head: the unheld pop, then the settle; or the sever,
 which writes no thread. -/
 theorem of_popUnheldReplyHead {st st' : SystemState} {rid : SeLe4n.ReplyId}
@@ -347,8 +389,8 @@ theorem of_popUnheldReplyHead {st st' : SystemState} {rid : SeLe4n.ReplyId}
   · have h1 := of_returnUnheldSchedContext hInv hP
     exact h1.trans (of_settle _ _ _ h1.2)
 
-/-- The pre-receive cleanup returns a donated context and migrates its
-replenishments. -/
+/-- The pre-receive cleanup pops the held head (returning the context or keeping
+it with the receiver) and migrates its replenishments. -/
 theorem of_cleanupPreReceiveDonationMigrated {st st' : SystemState} {receiver : SeLe4n.ThreadId}
     (hInv : st.objects.invExt) (h : cleanupPreReceiveDonationMigrated st receiver = .ok st') :
     savedRegsUnwritten st st' := by
@@ -358,7 +400,8 @@ theorem of_cleanupPreReceiveDonationMigrated {st st' : SystemState} {receiver : 
     split at hC
     · cases hC; exact .refl hInv
     · split at hC
-      · exact of_returnDonatedSchedContextResolved hInv hC
+      · exact popHeldReplyHead_lift hC (fun _ _ hR => of_returnDonatedSchedContextResolved hInv hR)
+          (fun _ _ hK => of_keepDonatedSchedContextResolved hInv hK)
       · cases hC; exact .refl hInv
   refine hClean.trans ?_
   unfold preReceiveReturnMigration
@@ -535,9 +578,9 @@ theorem endpointReceiveDualWithCapsOnCore_savedRegsUnwritten (endpointId : SeLe4
 
 /-- The receive rendezvous' hand-off writes no saved register: the lend, then
 the chain walk. -/
-theorem applyReceiveRendezvousHandoff_savedRegsUnwritten {st st' : SystemState}
+theorem applyReceiveRendezvousHandoff_savedRegsUnwritten {lend : Bool} {st st' : SystemState}
     {receiver dequeued : SeLe4n.ThreadId} {c : CoreId} (hInv : st.objects.invExt)
-    (h : applyReceiveRendezvousHandoff st receiver dequeued c = .ok st') :
+    (h : applyReceiveRendezvousHandoff st receiver dequeued c lend = .ok st') :
     savedRegsUnwritten st st' := by
   obtain ⟨stDon, hDon, rfl⟩ := applyReceiveRendezvousHandoff_ok_decompose _ _ _ _ _ h
   have h1 : savedRegsUnwritten st stDon := by
@@ -590,13 +633,15 @@ theorem applyReplyDonationOnCore_savedRegsUnwritten {st st' : SystemState} {rid 
   · exact savedRegsUnwritten.of_popUnheldReplyHead hInv h
   · split at h
     · split at h
-      · cases h
-      · rename_i st1 hRet
-        cases h
-        have h1 := savedRegsUnwritten.of_returnDonatedSchedContextResolved hInv hRet
-        exact h1.trans ((savedRegsUnwritten.of_settle _ _ _ h1.2).trans
-          (savedRegsUnwritten.of_descheduleAt _ _ _
-            (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1.2)))
+      · split at h
+        · cases h
+        · rename_i st1 hRet
+          cases h
+          have h1 := savedRegsUnwritten.of_returnDonatedSchedContextResolved hInv hRet
+          exact h1.trans ((savedRegsUnwritten.of_settle _ _ _ h1.2).trans
+            (savedRegsUnwritten.of_descheduleAt _ _ _
+              (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1.2)))
+      · exact savedRegsUnwritten.of_keepDonatedSchedContextResolved hInv h
     · cases h
 
 /-- The live reply writes no saved register: the reply leg, the donation
@@ -643,11 +688,17 @@ theorem replyRecvPopDonation_savedRegsUnwritten {rid : SeLe4n.ReplyId} {target :
   · dsimp only at h
     split at h
     · split at h
-      · cases h
-      · rename_i st1 hRet
-        cases h
-        have h1 := savedRegsUnwritten.of_returnDonatedSchedContextResolved hInv hRet
-        exact h1.trans (savedRegsUnwritten.of_settle _ _ _ h1.2)
+      · split at h
+        · cases h
+        · rename_i st1 hRet
+          cases h
+          have h1 := savedRegsUnwritten.of_returnDonatedSchedContextResolved hInv hRet
+          exact h1.trans (savedRegsUnwritten.of_settle _ _ _ h1.2)
+      · split at h
+        · cases h
+        · rename_i st1 hK
+          cases h
+          exact savedRegsUnwritten.of_keepDonatedSchedContextResolved hInv hK
     · cases h
   · split at h
     · cases h
@@ -655,11 +706,11 @@ theorem replyRecvPopDonation_savedRegsUnwritten {rid : SeLe4n.ReplyId} {target :
       cases h
       exact savedRegsUnwritten.of_popUnheldReplyHead hInv hPop
 
-theorem replyRecvPostReceiveDonation_savedRegsUnwritten
+theorem replyRecvPostReceiveDonation_savedRegsUnwritten {lend : Bool}
     {tid recordedServer nextThread : SeLe4n.ThreadId} {serverCore : CoreId}
     {returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {st st' : SystemState}
     (hInv : st.objects.invExt)
-    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st lend
       = .ok ((), st')) :
     savedRegsUnwritten st st' := by
   unfold replyRecvPostReceiveDonation at h
@@ -770,14 +821,14 @@ theorem callArm_savedRegsWrittenFree {ctx : LabelingContext} {epId : SeLe4n.ObjI
 sender**: the receive and its hand-off write no saved register, and the send's
 completion names the send queue's head at the entry's start, which is blocked
 there, so it is free of every core. -/
-theorem receiveArmCompletion_savedRegsWrittenFree {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+theorem receiveArmCompletion_savedRegsWrittenFree {lend : Bool} {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {replyId : Option SeLe4n.ReplyId} {ec e : CoreId}
     {base st s1 stDon : SystemState} {dequeued : SeLe4n.ThreadId} {summary : CapTransferSummary}
     {sgi : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
     (hHead : ∀ w, (st.getEndpoint? epId).bind (·.sendQ.head) = some w → offCoreFree e base w)
     (hRecv : endpointReceiveDualWithCapsOnCore epId tid replyId ec st
       = (s1, .ok (dequeued, summary, sgi)))
-    (hHand : applyReceiveRendezvousHandoff s1 tid dequeued ec = .ok stDon) :
+    (hHand : applyReceiveRendezvousHandoff s1 tid dequeued ec lend = .ok stDon) :
     savedRegsWrittenFree e base st
       stDon ∧
     stDon.objects.invExt := by
@@ -790,7 +841,7 @@ theorem receiveArmCompletion_savedRegsWrittenFree {epId : SeLe4n.ObjId} {tid : S
 caller**: up to the caller's staging it writes only the woken sender
 (`receiveArmCompletion_savedRegsWrittenFree`), and the delivered message is
 staged into the caller, the executing core's current thread. -/
-theorem receiveArm_savedRegsWrittenFree {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+theorem receiveArm_savedRegsWrittenFree {lend : Bool} {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {replyId : Option SeLe4n.ReplyId} {ec : CoreId}
     {base st s1 stDon : SystemState} {dequeued : SeLe4n.ThreadId} {summary : CapTransferSummary}
     {sgi : Option (CoreId × Concurrency.SgiKind)} (n : Nat) (hInv : st.objects.invExt)
@@ -798,7 +849,7 @@ theorem receiveArm_savedRegsWrittenFree {epId : SeLe4n.ObjId} {tid : SeLe4n.Thre
     (hCaller : offCoreFree ec base tid)
     (hRecv : endpointReceiveDualWithCapsOnCore epId tid replyId ec st
       = (s1, .ok (dequeued, summary, sgi)))
-    (hHand : applyReceiveRendezvousHandoff s1 tid dequeued ec = .ok stDon) :
+    (hHand : applyReceiveRendezvousHandoff s1 tid dequeued ec lend = .ok stDon) :
     savedRegsWrittenFree ec base st (Architecture.stageDeliveredMessage
       stDon
       tid n) := by
@@ -902,19 +953,33 @@ theorem replyRecvAnswerCaller_savedRegsKeptExcept
       exact (savedRegsUnwritten.of_removeRunnableOnCore _ _ _ hInv).kept.trans
         (.updateTcb _ _ _ (removeRunnableOnCore_objects_invExt _ _ _ hInv) fun _ => rfl)
 
+/-- **seL4 `receiveIPC`'s return writes no saved registers**: it clears two
+binding codes and a context's thread link (WS-SX SX8.2). -/
+theorem savedRegsUnwritten.receiveReturn (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    savedRegsUnwritten st (receiveReturnSchedContext blocks st tid) :=
+  ⟨fun t _ => by
+    unfold SystemState.savedRegs SystemState.getTcb?
+    rcases receiveReturnSchedContext_objects blocks st tid hInv t.toObjId with
+      e | ⟨y, hy, e⟩ | ⟨sc, sc', hs, e⟩
+    · rw [e]
+    · rw [e, hy] <;> rfl
+    · rw [e, hs],
+   receiveReturnSchedContext_objects_invExt blocks st tid hInv⟩
+
 /-- WS-ZA ZA6.26: **the reply-and-receive writes only the answered caller and
 the woken sender**: its legs write no saved register; the reply's staging names
 the caller the reply leg found blocked on its reply, and the send's completion
 names the send queue's head after the reply leg, the donation pop and the reply
 leg's capability transfer, which write no endpoint, so the head the entry began from, blocked there. -/
-theorem endpointReplyRecvOnCore_savedRegsWrittenFree {epId : SeLe4n.ObjId}
+theorem endpointReplyRecvOnCore_savedRegsWrittenFree {lend : Bool} {epId : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
     {msg : IpcMessage} {grant : Bool} {ec e : CoreId}
     {st st' : SystemState} {summary : CapTransferSummary}
     {answer : Option Architecture.FaultReplyOutcome}
     (hD : st.currentDequeuedUnique) (hQ : queueHeadBlockedConsistent st)
     (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident) (hInv : st.objects.invExt)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant ec st
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant ec st lend
       = .ok (summary, st')) :
     savedRegsWrittenFree e st st st' ∧ st'.objects.invExt := by
   unfold endpointReplyRecvAnsweringOnCore at h
@@ -944,10 +1009,13 @@ theorem endpointReplyRecvOnCore_savedRegsWrittenFree {epId : SeLe4n.ObjId}
       st1.objects[o]? = some (.endpoint ep) := fun o ep hx =>
     (replyRecvPopDonation_frame h0.2 hPop).1 o ep
       ((receiveTransferCaps_ipcFrame h1q.2 hXU).1 o ep hx)
+  -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, before the receive leg.
+  have h1r := h1.trans (savedRegsUnwritten.receiveReturn true st1p tid h1.2)
   have h2v := endpointReceiveDualWithCapsOnCore_savedRegsUnwritten epId tid (some rid)
-    ec h1.2
+    ec h1r.2
   revert h h2v
-  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) ec st1p = r2
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
+    (receiveReturnSchedContext true st1p tid) = r2
   obtain ⟨st2, res2⟩ := r2
   cases res2 with
   | error _ => intro h; cases h
@@ -959,7 +1027,7 @@ theorem endpointReplyRecvOnCore_savedRegsWrittenFree {epId : SeLe4n.ObjId}
   · cases h
   rename_i st3 hPost
   cases h
-  have h2 := h1.trans h2v
+  have h2 := h1r.trans h2v
   have h3 := h2.trans (replyRecvPostReceiveDonation_savedRegsUnwritten h2.2 hPost)
   have h4 := h3.trans (applyReceiveLegPipHandoff_savedRegsUnwritten st3 tid nextThread
     ((recordedReplyServer? st prevCaller).getD tid) ec h3.2)

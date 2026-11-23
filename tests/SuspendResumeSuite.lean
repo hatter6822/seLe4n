@@ -462,7 +462,7 @@ private def sr021_frozenRoundtrip : IO Unit := do
 -- R5.A (DEEP-SUSP-02): cancelDonation split into two named arms
 -- ============================================================================
 
-/-- SR-022: `cancelBoundDonation` on a `.bound scId` TCB clears the binding. -/
+/-- SR-022: `cancelBoundDonationOnCore` on a `.bound scId` TCB clears the binding. -/
 private def sr022_cancelBoundDonationClearsBinding : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 100
@@ -472,7 +472,7 @@ private def sr022_cancelBoundDonationClearsBinding : IO Unit := do
       budgetRemaining := ⟨1000⟩, isActive := true, refillTailCount := 0 }
   let tcb := { mkTcb 1 .Ready with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let st := mkState [(⟨1⟩, .tcb tcb), (scId.toObjId, .schedContext sc)]
-  match cancelBoundDonation st tid tcb with
+  match SeLe4n.Kernel.cancelBoundDonationOnCore st tid tcb with
   | .ok st' =>
     -- Post-state: TCB binding is `.unbound`, SC's boundThread is `none`.
     match st'.objects[tid.toObjId]? with
@@ -486,7 +486,7 @@ private def sr022_cancelBoundDonationClearsBinding : IO Unit := do
     | _ => throw <| IO.userError "SC not found after cancelBoundDonation"
   | .error e => throw <| IO.userError s!"cancelBoundDonation failed: {repr e}"
 
-/-- SR-023: `cancelBoundDonation` on a `.donated` TCB returns `.illegalState`
+/-- SR-023: `cancelBoundDonationOnCore` on a `.donated` TCB returns `.illegalState`
     — the dispatcher chooses the wrong arm. -/
 private def sr023_cancelBoundDonationRejectsDonated : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
@@ -494,31 +494,31 @@ private def sr023_cancelBoundDonationRejectsDonated : IO Unit := do
   let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 100
   let tcb := { mkTcb 1 .Ready with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId donor), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId donor) }
   let st := mkState [(⟨1⟩, .tcb tcb)]
-  match cancelBoundDonation st tid tcb with
+  match SeLe4n.Kernel.cancelBoundDonationOnCore st tid tcb with
   | .ok _ => throw <| IO.userError "cancelBoundDonation should reject .donated"
   | .error e =>
     expect "cancelBoundDonation rejects .donated with illegalState"
       (e == .illegalState)
 
-/-- SR-024: `cancelDonatedDonation` on a `.bound` TCB returns `.illegalState`
+/-- SR-024: `cancelDonatedDonationOnCore` on a `.bound` TCB returns `.illegalState`
     — the dispatcher chooses the wrong arm. -/
 private def sr024_cancelDonatedDonationRejectsBound : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 100
   let tcb := { mkTcb 1 .Ready with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let st := mkState [(⟨1⟩, .tcb tcb)]
-  match cancelDonatedDonation st tid tcb with
+  match SeLe4n.Kernel.cancelDonatedDonationOnCore st tid tcb with
   | .ok _ => throw <| IO.userError "cancelDonatedDonation should reject .bound"
   | .error e =>
     expect "cancelDonatedDonation rejects .bound with illegalState"
       (e == .illegalState)
 
-/-- SR-025: The thin `cancelDonation` dispatcher on `.unbound` is identity. -/
+/-- SR-025: The destroy path's reservation arm (`cancelDonationArmOnCore`) on `.unbound` is identity. -/
 private def sr025_cancelDonationUnboundIdentity : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let tcb := { mkTcb 1 .Ready with scBindingScCode := 0, scBindingOwnerCode := 0 }
   let st := mkState [(⟨1⟩, .tcb tcb)]
-  match cancelDonation st tid tcb with
+  match SeLe4n.Kernel.cancelDonationArmOnCore st tid tcb with
   | .ok st' =>
     -- State should be identical to input.
     expect "cancelDonation .unbound returns identity"

@@ -11,6 +11,8 @@ import SeLe4n.Kernel.SlotConfinement.IpcArms
 import SeLe4n.Kernel.SchedContext.SchedContextFootprint
 import SeLe4n.Kernel.Scheduler.Operations.AffinityFootprint
 import SeLe4n.Kernel.SchedContext.SchedControlFootprint
+import SeLe4n.Kernel.SchedContext.NotificationDonation
+import SeLe4n.Kernel.SchedContext.NotificationDonationContextLabel
 
 /-!
 # Per-core slot confinement — the live SchedContext arms
@@ -84,13 +86,6 @@ theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
       simp only [hBound]
       split at hStep
       · next tcb hTcb =>
-        -- `v0.35.4`: a donated holder is refused, so a successful unbind saw a
-        -- binding that is not a donation.
-        have hNotDon : tcb.schedContextBinding.isDonated = false := by
-          cases hD : tcb.schedContextBinding.isDonated with
-          | false => rfl
-          | true => rw [hD] at hStep; simp at hStep
-        simp only [hNotDon, Bool.false_eq_true, if_false] at hStep
         rw [Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨-, hs⟩ := hStep
         subst hs
@@ -141,119 +136,324 @@ The bridge is **transported into the disequality** rather than rewritten into th
 goal: the post-state is a structure literal far too large to restate, but
 `hHome ▸ hne` gives the setter's own frame lemma exactly the hypothesis it
 wants, and `exact` closes the rest up to definitional equality. -/
+theorem schedContextBindPerform_confinedToCores (vScId : SeLe4n.ValidObjId)
+    (vThreadId : SeLe4n.ValidThreadId) (st : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hA : SchedContextOps.schedContextDonateAdmitted st vScId vThreadId = true) :
+    observableSlotsConfinedToCores st (SchedContextOps.schedContextBindPerform st vScId vThreadId)
+      (schedContextBindWriteSet st vThreadId.val) := by
+  obtain ⟨sc, hSc, tcb, -, hTcb, hUnbound, hEq⟩ :=
+    SchedContextOps.schedContextBindPerform_of_donateAdmitted st vScId vThreadId hA
+  rw [hEq]
+  try dsimp only []
+  -- `v0.35.71`: the two typed writes over `st`, reduced to the double
+  -- insert under the pre-state's TCB witness.
+  rw [SystemState.updateTcb_after_rewriteObject_schedContext st vScId.val _ _
+    vThreadId.val tcb _ hObjInv hTcb]
+  let sc1 : SchedContext :=
+    { sc.releaseReadyHead st.machine.timer with
+      boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val)
+      donationOrigin := none }
+  let scObj : KernelObject := .schedContext sc1
+  let st1 : SystemState := { st with objects := st.objects.insert vScId.val scObj }
+  let tcb1 : TCB :=
+    { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }
+  let tcbObj : KernelObject := .tcb tcb1
+  let st2 : SystemState :=
+    { st1 with objects := st1.objects.insert vThreadId.val.toObjId tcbObj }
+  have hScRaw : st.objects.get? vScId.val = some (.schedContext sc) := by
+    simpa using (SystemState.getSchedContext?_eq_some_iff st
+      (SeLe4n.SchedContextId.ofObjId vScId.val) sc).mp hSc
+  have hT1 : ∀ x : SeLe4n.ThreadId, st1.getTcb? x = st.getTcb? x := fun x =>
+    getTcb?_insert_schedContext_eq st st1
+      (SeLe4n.SchedContextId.ofObjId vScId.val) sc sc1 hObjInv
+      (by simpa using hScRaw) rfl x
+  have hInv1 : st1.objects.invExt :=
+    SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
+  have hTcb1 : st1.objects.get? vThreadId.val.toObjId = some (.tcb tcb) := by
+    have h := hT1 vThreadId.val
+    rw [hTcb] at h
+    simpa using (SystemState.getTcb?_eq_some_iff st1 vThreadId.val tcb).mp h
+  have hHome : determineTargetCore st2 vThreadId.val
+      = determineTargetCore st vThreadId.val := by
+    refine Eq.trans (determineTargetCore_insert_tcb st1 st2 vThreadId.val tcb tcb1
+      hInv1 hTcb1 rfl rfl vThreadId.val) ?_
+    exact determineTargetCore_congr st st1 vThreadId.val (by rw [hT1 vThreadId.val])
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;>
+    simp only [schedContextBindWriteSet, List.mem_singleton] at hc
+  -- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: two arms since WS-SX SX6.4
+  -- — the placement of a parked runnable thread and the identity.  The
+  -- placement writes `setRunQueueOnCore bindHome`, the same core the
+  -- write set names, so each clause is one lemma and then `rfl`.
+  · have hne : determineTargetCore st vThreadId.val ≠ c := fun h => hc h.symm
+    -- KSC-1: the placement arm raises the home core's flag, which moves
+    -- no slot.  WS-ZA ZA4.5: it writes through the thread's TCB
+    -- run-queue links, on the home core only.
+    refine (SystemState.releaseOnlyWrite.runQueueOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
+    split
+    · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+        SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ c _ _ (hHome ▸ hne)]
+    · rfl
+  · refine (SystemState.releaseOnlyWrite.currentOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
+    split
+    · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_currentOnCore,
+        SystemState.runEnqueueOnCore_currentOnCore]
+    · rfl
+  · refine (SystemState.releaseOnlyWrite.activeDomainOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
+    split
+    · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_activeDomainOnCore,
+        SystemState.runEnqueueOnCore_activeDomainOnCore]
+    · rfl
+  · refine (SystemState.releaseOnlyWrite.domainTimeRemainingOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
+    split
+    · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore,
+        SystemState.runEnqueueOnCore_domainTimeRemainingOnCore]
+    · rfl
+  · refine (SystemState.releaseOnlyWrite.domainScheduleIndexOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
+    split
+    · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore,
+        SystemState.runEnqueueOnCore_domainScheduleIndexOnCore]
+    · rfl
+  · -- registers: untouched on both arms.
+    refine (congrArg (fun m => m.regsOnCore c)
+      (SystemState.releaseOnlyWrite.machine (SystemState.releasePlace_releaseOnlyWrite _ _ _))).trans ?_
+    split
+    · rw [SystemState.markReschedulePendingOnCore, SystemState.runEnqueueOnCore_machine]
+    · rfl
+
+/-- The bind is its writes under seL4's donation guard
+(`schedContextBind_ok_donate`). -/
 theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
     (vThreadId : SeLe4n.ValidThreadId) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
     (hStep : SchedContextOps.schedContextBind vScId vThreadId st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' (schedContextBindWriteSet st vThreadId.val) := by
-  unfold SchedContextOps.schedContextBind at hStep
-  split at hStep
-  · next sc hSc _ =>
-    split at hStep
-    · exact absurd hStep (by simp)
-    · -- `v0.35.4`: a context heading a reply stack is refused, so a successful
-      -- bind saw none.
-      have hNoHead : sc.scReply.isSome = false := by
-        cases hH : sc.scReply.isSome with
-        | false => rfl
-        | true => rw [hH] at hStep; simp at hStep
-      simp only [hNoHead, Bool.false_eq_true, if_false] at hStep
-      split at hStep
-      · next tcb hTcb =>
-        -- `v0.35.4`: and a thread whose reply frame is on a live stack is refused.
-        have hNoLive : replyFrameOnLiveStack st tcb = false := by
-          cases hL : replyFrameOnLiveStack st tcb with
-          | false => rfl
-          | true => rw [hL] at hStep; simp at hStep
-        simp only [hNoLive, Bool.false_eq_true, if_false] at hStep
-        · split at hStep
-          · next hUnbound =>
-            rw [Except.ok.injEq, Prod.mk.injEq] at hStep
-            obtain ⟨-, hs⟩ := hStep
-            subst hs
-            -- `v0.35.71`: the two typed writes over `st`, reduced to the double
-            -- insert under the pre-state's TCB witness.
-            rw [SystemState.updateTcb_after_rewriteObject_schedContext st vScId.val _ _
-              vThreadId.val tcb _ hObjInv hTcb]
-            let sc1 : SchedContext :=
-              { sc.releaseReadyHead st.machine.timer with
-                boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val)
-                donationOrigin := none }
-            let scObj : KernelObject := .schedContext sc1
-            let st1 : SystemState := { st with objects := st.objects.insert vScId.val scObj }
-            let tcb1 : TCB :=
-              { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }
-            let tcbObj : KernelObject := .tcb tcb1
-            let st2 : SystemState :=
-              { st1 with objects := st1.objects.insert vThreadId.val.toObjId tcbObj }
-            have hScRaw : st.objects.get? vScId.val = some (.schedContext sc) := by
-              simpa using (SystemState.getSchedContext?_eq_some_iff st
-                (SeLe4n.SchedContextId.ofObjId vScId.val) sc).mp hSc
-            have hT1 : ∀ x : SeLe4n.ThreadId, st1.getTcb? x = st.getTcb? x := fun x =>
-              getTcb?_insert_schedContext_eq st st1
-                (SeLe4n.SchedContextId.ofObjId vScId.val) sc sc1 hObjInv
-                (by simpa using hScRaw) rfl x
-            have hInv1 : st1.objects.invExt :=
-              SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
-            have hTcb1 : st1.objects.get? vThreadId.val.toObjId = some (.tcb tcb) := by
-              have h := hT1 vThreadId.val
-              rw [hTcb] at h
-              simpa using (SystemState.getTcb?_eq_some_iff st1 vThreadId.val tcb).mp h
-            have hHome : determineTargetCore st2 vThreadId.val
-                = determineTargetCore st vThreadId.val := by
-              refine Eq.trans (determineTargetCore_insert_tcb st1 st2 vThreadId.val tcb tcb1
-                hInv1 hTcb1 rfl rfl vThreadId.val) ?_
-              exact determineTargetCore_congr st st1 vThreadId.val (by rw [hT1 vThreadId.val])
-            refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;>
-              simp only [schedContextBindWriteSet, List.mem_singleton] at hc
-            -- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: two arms since WS-SX SX6.4
-            -- — the placement of a parked runnable thread and the identity.  The
-            -- placement writes `setRunQueueOnCore bindHome`, the same core the
-            -- write set names, so each clause is one lemma and then `rfl`.
-            · have hne : determineTargetCore st vThreadId.val ≠ c := fun h => hc h.symm
-              -- KSC-1: the placement arm raises the home core's flag, which moves
-              -- no slot.  WS-ZA ZA4.5: it writes through the thread's TCB
-              -- run-queue links, on the home core only.
-              refine (SystemState.releaseOnlyWrite.runQueueOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
-              split
-              · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-                  SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ c _ _ (hHome ▸ hne)]
-              · rfl
-            · refine (SystemState.releaseOnlyWrite.currentOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
-              split
-              · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_currentOnCore,
-                  SystemState.runEnqueueOnCore_currentOnCore]
-              · rfl
-            · refine (SystemState.releaseOnlyWrite.activeDomainOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
-              split
-              · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_activeDomainOnCore,
-                  SystemState.runEnqueueOnCore_activeDomainOnCore]
-              · rfl
-            · refine (SystemState.releaseOnlyWrite.domainTimeRemainingOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
-              split
-              · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore,
-                  SystemState.runEnqueueOnCore_domainTimeRemainingOnCore]
-              · rfl
-            · refine (SystemState.releaseOnlyWrite.domainScheduleIndexOnCore (SystemState.releasePlace_releaseOnlyWrite _ _ _) c).trans ?_
-              split
-              · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore,
-                  SystemState.runEnqueueOnCore_domainScheduleIndexOnCore]
-              · rfl
-            · -- registers: untouched on both arms.
-              refine (congrArg (fun m => m.regsOnCore c)
-                (SystemState.releaseOnlyWrite.machine (SystemState.releasePlace_releaseOnlyWrite _ _ _))).trans ?_
-              split
-              · rw [SystemState.markReschedulePendingOnCore, SystemState.runEnqueueOnCore_machine]
-              · rfl
-          · exact absurd hStep (by simp)
-      · exact absurd hStep (by simp)
-  · exact absurd hStep (by simp)
+  obtain ⟨hA, rfl⟩ := SchedContextOps.schedContextBind_ok_donate hStep
+  exact schedContextBindPerform_confinedToCores vScId vThreadId st hObjInv hA
+
+/-- **seL4-MCS `maybeDonateSchedContext` writes no core but the receiver's
+home core, and that one only where seL4's guard holds** (`signalDonationCores`):
+the identity where it fails, the bind's writes (on the home core,
+`schedContextBindPerform_confinedToCores`) where it holds. -/
+theorem maybeDonateSchedContext_confinedToCores (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
+    observableSlotsConfinedToCores st (maybeDonateSchedContext st n tid)
+      (signalDonationCores st n tid) := by
+  cases hG : signalDonationGuard st n tid with
+  | false =>
+    rw [maybeDonateSchedContext_of_guard_false hG]
+    exact observableSlotsConfinedToCores_refl st _
+  | true =>
+    have hC : signalDonationCores st n tid = schedContextBindWriteSet st tid := by
+      simp [signalDonationCores, hG, schedContextBindWriteSet]
+    rw [hC]
+    refine maybeDonateSchedContext_induct
+      (fun st s => observableSlotsConfinedToCores st s (schedContextBindWriteSet st tid))
+      st n tid (observableSlotsConfinedToCores_refl st _) ?_
+    intro vS vT hT hA
+    subst hT
+    exact schedContextBindPerform_confinedToCores vS vT st hObjInv hA
+
+/-- …and so does the checked donation, the donation or nothing. -/
+theorem maybeDonateSchedContextFlowing_confinedToCores {ctx : LabelingContext} (st : SystemState)
+    (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
+    observableSlotsConfinedToCores st (maybeDonateSchedContextFlowing ctx st n tid)
+      (signalDonationCores st n tid) :=
+  maybeDonateSchedContextFlowing_induct
+    (fun s => observableSlotsConfinedToCores st s (signalDonationCores st n tid)) ctx st n tid
+    (observableSlotsConfinedToCores_refl st _) (maybeDonateSchedContext_confinedToCores st n tid hObjInv)
+
+/-- WS-SX SX8.2: **seL4-MCS `maybeReturnSchedContext` writes no observable slot
+of any core**: its two object writes, a reschedule flag and the purge's replenish
+queue are none of the six confined slots (the thread keeps its current slot and
+its queues; seL4's `rescheduleRequired` is a flag). -/
+theorem maybeReturnSchedContext_confinedToCores (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores st (maybeReturnSchedContext st n tid) [] := by
+  have hF := fun {F : Type} (f : SchedulerState → F)
+      (h : ∀ (s : SystemState) c, f (s.markReschedulePendingOnCore c).scheduler = f s.scheduler)
+      (hP : ∀ (s : SystemState) x,
+        f (SchedContextOps.purgeReplenishment s x).scheduler = f s.scheduler) =>
+    maybeReturnSchedContext_scheduler_frame f st n tid h hP
+  have hM : (maybeReturnSchedContext st n tid).machine = st.machine :=
+    maybeReturnSchedContext_induct (fun a b => b.machine = a.machine) st n tid rfl
+      (fun vS _ _ _ => by
+        show (schedContextReturnPerform st vS tid).machine = st.machine
+        unfold schedContextReturnPerform schedContextReturnLinks
+        rw [SchedContextOps.purgeReplenishment_machine]
+        split
+        · rfl
+        split
+        · rfl
+        dsimp only
+        rw [markKeyChangeFor_machine, markCandidacyGainFor_machine]
+        split <;> simp [SystemState.markReschedulePendingOnCore, SystemState.updateTcb_machine,
+          SystemState.rewriteObject_machine])
+  refine ⟨fun c _ => (maybeReturnSchedContext_runSlots st n tid c).1,
+    fun c _ => (maybeReturnSchedContext_runSlots st n tid c).2.1,
+    fun c _ => (maybeReturnSchedContext_runSlots st n tid c).2.2,
+    fun c _ => hF (fun s => s.domainTimeRemainingOnCore c)
+      (fun _ _ => by simp [SystemState.markReschedulePendingOnCore])
+      (fun _ _ => SchedContextOps.purgeReplenishment_domainTimeRemainingOnCore _ _ _),
+    fun c _ => hF (fun s => s.domainScheduleIndexOnCore c)
+      (fun _ _ => by simp [SystemState.markReschedulePendingOnCore])
+      (fun _ _ => SchedContextOps.purgeReplenishment_domainScheduleIndexOnCore _ _ _),
+    fun c _ => by rw [hM]⟩
+
+/-- **seL4 `receiveIPC`'s return writes no observable slot of any core**: it is
+the identity or seL4's `maybeReturnSchedContext`
+(`maybeReturnSchedContext_confinedToCores`).  So the receive's write set is its
+leg's, read on the state the return leaves. -/
+theorem receiveReturnSchedContext_confinedToCores (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores st (receiveReturnSchedContext blocks st tid) [] := by
+  unfold receiveReturnSchedContext
+  split
+  · split
+    · split
+      · exact observableSlotsConfinedToCores_refl st _
+      · exact maybeReturnSchedContext_confinedToCores st _ tid
+    · exact observableSlotsConfinedToCores_refl st _
+  · exact observableSlotsConfinedToCores_refl st _
 
 -- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `setThreadCpuAffinityWriteSet` moved to the
 -- production `SeLe4n/Kernel/Scheduler/Operations/AffinityFootprint.lean` (via
 -- `SyscallSchedFootprint.lean` until WS-LS LS2.5), beside
 -- `schedLockSet_setThreadCpuAffinityOnCore`, for the reason the `.tcbResume`
 -- tombstone above gives.  Same name, same namespace.
+
+/-- SM8.B.2 (**the live `.replyRecv` bound**): `endpointReplyRecvOnCore` — the function
+`API.dispatchWithCapChecked`'s `.replyRecv` arm routes through — writes no core outside
+`endpointReplyRecvWriteSet`.
+
+The reply leg, the donation pop, the receive leg and the post-receive
+donation, at the states they really run at. The receive leg's
+`objects.invExt` premise is discharged from the reply leg's own preservation
+theorem rather than assumed, exactly as in §4a. -/
+theorem endpointReplyRecvOnCore_confinedToCores {lend : Bool} (endpointId : SeLe4n.ObjId)
+    {answer : Option Architecture.FaultReplyOutcome}
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (grant : Bool)
+    (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg
+      grant executingCore st lend = .ok (summary, st')) :
+    observableSlotsConfinedToCores st st'
+      (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg grant
+        executingCore st) := by
+  have hReply := endpointReplyOnCore_confinedToCores receiver prevCaller msg executingCore st
+    hObjInv
+  have hInv1 : (endpointReplyOnCore receiver prevCaller msg executingCore st).1.objects.invExt :=
+    endpointReplyOnCore_preserves_objects_invExt receiver prevCaller msg executingCore st hObjInv
+  unfold endpointReplyRecvAnsweringOnCore endpointReplyRecvAnsweringWriteSet at *
+  simp only [] at hStep
+  cases hRep : endpointReplyOnCore receiver prevCaller msg executingCore st with
+  | mk st1 res =>
+    rw [hRep] at hReply hInv1 hStep
+    cases res with
+    | error e => simp only [] at hStep; exact absurd hStep (by simp)
+    | ok replySgi =>
+      simp only [] at hStep ⊢
+      -- **WS-RM (`v0.35.6`)**: the pop, between the legs.
+      cases hPop : replyRecvPopDonation replyId prevCaller st1 with
+      | error e => rw [hPop] at hStep; exact absurd hStep (by simp)
+      | ok popPair =>
+        obtain ⟨returnedSc?, st1q⟩ := popPair
+        rw [hPop] at hStep
+        simp only [] at hStep ⊢
+        -- The reply leg's capability transfer, between the pop and the receive
+        -- leg: it writes a CNode and the derivation tree, no core.
+        obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st receiver prevCaller grant st1q
+        rw [hX] at hStep ⊢
+        simp only [] at hStep ⊢
+        have hPopConf : observableSlotsConfinedToCores st1 st1p [] := by
+          have hQ := replyRecvPopDonation_confinedToCores replyId prevCaller st1 st1q returnedSc? hPop
+          rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
+          have hXc : observableSlotsConfinedToCores st1q st1p [] :=
+            observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+              (receiveTransferCaps_scheduler_eq hX) (receiveTransferCaps_preserves_machine hX)
+          simpa using observableSlotsConfinedToCores_trans hQ hXc
+        have hInv1p : st1p.objects.invExt :=
+          replyRecvReplyTransfer_objects_invExt
+            (replyRecvPopDonation_preserves_objects_invExt
+              replyId prevCaller st1 st1q returnedSc? hInv1 hPop) hX
+        -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, between the reply
+        -- transfer and the receive leg: it writes no confined slot.
+        have hRetConf := receiveReturnSchedContext_confinedToCores true st1p receiver
+        have hInv1r : (receiveReturnSchedContext true st1p receiver).objects.invExt :=
+          receiveReturnSchedContext_objects_invExt true st1p receiver hInv1p
+        have hRecv := endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver
+          (some replyId) executingCore (receiveReturnSchedContext true st1p receiver) hInv1r
+        cases hRcv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
+            executingCore (receiveReturnSchedContext true st1p receiver) with
+        | mk st2 res2 =>
+          rw [hRcv] at hRecv hStep
+          cases res2 with
+          | error e => simp only [] at hStep; exact absurd hStep (by simp)
+          | ok pair =>
+            rcases pair with ⟨nextThread, recvSummary, recvSgi⟩
+            simp only [] at hStep ⊢
+            -- WS-RA RA.B.5b: the body stages the woken caller's reply frame and
+            -- the completed plain sender's unit frame after the donation; both
+            -- stagers frame the scheduler and the machine, so the donation's
+            -- confinement transports across them unchanged.
+            cases hDon : replyRecvPostReceiveDonation receiver
+                ((recordedReplyServer? st prevCaller).getD receiver) nextThread
+                executingCore
+                returnedSc? st2 lend with
+            | error e =>
+                rw [hDon] at hStep
+                exact absurd hStep (by simp)
+            | ok pair2 =>
+              rcases pair2 with ⟨u2, st3⟩
+              rw [hDon] at hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              have hConf := replyRecvPostReceiveDonation_confinedToCores receiver
+                ((recordedReplyServer? st prevCaller).getD receiver) nextThread
+                executingCore
+                returnedSc? st2 st3 u2 hDon
+              -- WS-OD OD3.14: the receive leg's priority hand-off is the fourth
+              -- leg, read at the state it runs at.  On a non-delegated reply it is
+              -- the identity and its declared set is empty.
+              have hPip := applyReceiveLegPipHandoff_confinedToCores st3 receiver nextThread
+                ((recordedReplyServer? st prevCaller).getD receiver) executingCore
+              have hStaged : observableSlotsConfinedToCores st2 st'
+                  (replyRecvPostReceiveDonationWriteSet receiver
+                    ((recordedReplyServer? st prevCaller).getD receiver) nextThread
+                    executingCore returnedSc? st2 ++
+                    (replyRecvPostDonationTailCores answer receiver nextThread
+                        ((recordedReplyServer? st prevCaller).getD receiver) prevCaller executingCore
+                        returnedSc? st2 true ++
+                      replyRecvPostDonationTailCores answer receiver nextThread
+                        ((recordedReplyServer? st prevCaller).getD receiver) prevCaller executingCore
+                        returnedSc? st2 false)) := by
+                rw [← hStep.2]
+                -- The arm ran at one lend; its tail is inside both lends' tails.
+                refine observableSlotsConfinedToCores_mono (fun c hc => by
+                    rcases List.mem_append.mp hc with h | h
+                    · exact List.mem_append_left _ h
+                    · exact List.mem_append_right _
+                        (replyRecvPostDonationTailCores_subset _ _ _ _ _ _ _ _ lend c h)) ?_
+                have hTail : replyRecvPostDonationTailCores answer receiver nextThread
+                    ((recordedReplyServer? st prevCaller).getD receiver) prevCaller executingCore
+                    returnedSc? st2 lend =
+                    receiveLegPipHandoffWriteSet st3 receiver nextThread
+                      ((recordedReplyServer? st prevCaller).getD receiver) executingCore ++
+                    replyRecvAnswerCores answer
+                      (applyReceiveLegPipHandoff st3 receiver nextThread
+                        ((recordedReplyServer? st prevCaller).getD receiver) executingCore)
+                      prevCaller := by
+                  unfold replyRecvPostDonationTailCores; rw [hDon]
+                rw [hTail]
+                exact observableSlotsConfinedToCores_trans hConf
+                    (observableSlotsConfinedToCores_trans hPip
+                      (replyRecvAnswerCaller_confinedToCores answer _ prevCaller _))
+              have hRetRecv := observableSlotsConfinedToCores_trans hRetConf hRecv
+              simp only [List.nil_append] at hRetRecv
+              have hPopRecv := observableSlotsConfinedToCores_trans hPopConf hRetRecv
+              simp only [List.nil_append] at hPopRecv
+              exact observableSlotsConfinedToCores_trans hReply
+                (observableSlotsConfinedToCores_trans hPopRecv hStaged)
 
 /-- SM8.B.2: the affinity write touches the object store only. -/
 theorem setThreadCpuAffinity_scheduler_machine_eq (st stSet : SystemState)
@@ -641,8 +841,8 @@ theorem schedContextUnbindOnCore_confinedToCores (vScId : SeLe4n.ValidObjId)
     (SchedContextOps.schedContextUnbindOnCore_ok hStep).2.1
 
 /-- **The live `.schedContextUnbind` bound**: seL4-MCS's `SchedContext_Unbind`
-writes the thread unbind's cores, and the notification unbind writes no
-scheduler slot or machine state. -/
+writes the thread unbind's cores, and the notification unbind and the
+reply-stack unlink write no scheduler slot or machine state. -/
 theorem schedContextUnbindAllOnCore_confinedToCores (vScId : SeLe4n.ValidObjId)
     (executingCore : CoreId) (st st' : SystemState)
     (sgi : Option (CoreId × Concurrency.SgiKind))
@@ -650,15 +850,38 @@ theorem schedContextUnbindAllOnCore_confinedToCores (vScId : SeLe4n.ValidObjId)
       = .ok (st', sgi)) :
     observableSlotsConfinedToCores st st' (schedContextUnbindWriteSet st vScId.val) := by
   have hN : ∀ X : SystemState, observableSlotsConfinedToCores X
-      (unbindSchedContextNotification X (SeLe4n.SchedContextId.ofObjId vScId.val)) [] :=
+      (schedContextUnbindReply
+        (unbindSchedContextNotification X (SeLe4n.SchedContextId.ofObjId vScId.val)) vScId.val) [] :=
     fun X => observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-      (unbindSchedContextNotification_scheduler _ _) (unbindSchedContextNotification_machine _ _)
+      (by rw [schedContextUnbindReply_scheduler, unbindSchedContextNotification_scheduler])
+      (by rw [schedContextUnbindReply_machine, unbindSchedContextNotification_machine])
   obtain ⟨stU, hU | ⟨-, hU, -⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok hStep
   · obtain ⟨rfl, -⟩ := hU
     exact observableSlotsConfinedToCores_mono (fun _ h => by simp at h) (hN _)
   · exact observableSlotsConfinedToCores_mono (fun _ h => by simpa using h)
       (observableSlotsConfinedToCores_trans
         (schedContextUnbindOnCore_confinedToCores vScId executingCore st stU sgi hU) (hN stU))
+
+/-- WS-SX SX8.3 (**the live `.schedContextUnbindObject` bound, thread path**):
+the per-core thread unbind's. -/
+theorem schedContextUnbindThreadObjectOnCore_confinedToCores (vScId : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (executingCore : CoreId) (st st' : SystemState)
+    (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hStep : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId tid executingCore st
+      = .ok (st', sgi)) :
+    observableSlotsConfinedToCores st st' (schedContextUnbindWriteSet st vScId.val) :=
+  schedContextUnbindOnCore_confinedToCores vScId executingCore st st' sgi
+    (SchedContextOps.schedContextUnbindThreadObjectOnCore_ok hStep)
+
+/-- WS-SX SX8.3 (**the live `.schedContextUnbindObject` bound, notification
+path**): the notification unbind writes no core's observable slot. -/
+theorem schedContextUnbindNotificationObject_confinedToCores (vScId : SeLe4n.ValidObjId)
+    (n : SeLe4n.ObjId) (st st' : SystemState)
+    (hStep : SchedContextOps.schedContextUnbindNotificationObject vScId n st = .ok ((), st')) :
+    observableSlotsConfinedToCores st st' [] := by
+  obtain ⟨-, rfl⟩ := SchedContextOps.schedContextUnbindNotificationObject_ok hStep
+  exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+    (unbindSchedContextNotification_scheduler _ _) (unbindSchedContextNotification_machine _ _)
 
 /-- WS-ZA ZA6.9 (**the live `.schedContextConsumed` bound**): the Consumed
 invocation writes no core's observable slot — `setConsumed` writes a context's
