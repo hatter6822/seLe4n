@@ -977,6 +977,13 @@ private def stBoundDonation : SystemState :=
   -- per the SM5.H affinity discipline.
   withReleaseEntryOnCore base core1 scId 42
 
+/-- The destroy path's reservation arm, its state and whether it committed. -/
+private def armOutcome (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    SystemState × Bool :=
+  match cancelDonationArmOnCore st tid tcb with
+  | .ok s => (s, true)
+  | .error _ => (st, false)
+
 private def runBoundDonationCancelChecks : IO Unit := do
   IO.println "--- §3.6 SM6.E.3 bound-donation cancel (home-core replenish purge) ---"
   let tcb := victimTcb stBoundDonation
@@ -985,10 +992,9 @@ private def runBoundDonationCancelChecks : IO Unit := do
   assertBool "setup: core 1's replenish queue holds the SC's entry"
     ((stBoundDonation.releaseEntriesOn core1).any
       (fun e => e.1 == scId))
-  let res := cancelDonationArmOnCore stBoundDonation victimTid tcb
-  let st' := match res with | .ok s => s | .error _ => stBoundDonation
+  let (st', resOk) := armOutcome stBoundDonation victimTid tcb
   assertBool "bound-donation cancel succeeds"
-    (match res with | .ok _ => true | .error _ => false)
+    resOk
   assertBool "victim's binding is cleared to .unbound"
     (match st'.getTcb? victimTid with
      | some t => decide (t.schedContextBinding = .unbound)
@@ -1034,10 +1040,9 @@ private def runDonatedDonationCancelChecks : IO Unit := do
   let tcb := victimTcb stDonated
   assertBool "cancelBindingSc?/cancelDonatedOwner? resolve the donated SC + owner"
     (decide (cancelBindingSc? tcb = some scId ∧ cancelDonatedOwner? tcb = some ownerTid))
-  let res := cancelDonationArmOnCore stDonated victimTid tcb
-  let st' := match res with | .ok s => s | .error _ => stDonated
+  let (st', resOk) := armOutcome stDonated victimTid tcb
   assertBool "donated-donation cancel succeeds"
-    (match res with | .ok _ => true | .error _ => false)
+    resOk
   assertBool "the SC is returned to the original owner"
     (match st'.getSchedContext? scId with
      | some sc => decide (sc.boundThread = some ownerTid)
@@ -1071,10 +1076,9 @@ private def runDispatcherEdgeChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject victimTid.toObjId (.tcb tcbU)
       |>.build)
-  let resU := cancelDonationArmOnCore stU victimTid tcbU
-  let stU' := match resU with | .ok s => s | .error _ => stU
+  let (stU', resUOk) := armOutcome stU victimTid tcbU
   assertBool "cancelDonationArmOnCore on .unbound is the identity (.ok, state preserved)"
-    ((match resU with | .ok _ => true | .error _ => false)
+    (resUOk
       && (match stU'.getTcb? victimTid with
           | some t => t == tcbU
           | none => false))
