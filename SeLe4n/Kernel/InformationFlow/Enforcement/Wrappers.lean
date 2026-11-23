@@ -76,7 +76,7 @@ theorem endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed
     (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
     (st : SystemState)
-    (hFlow : securityFlowsTo (ctx.threadLabelOf sender)
+    (hFlow : twoWayLabelGate (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = true)
     -- WS-SM SM8.C: the endpoint's own override must admit the flow too. Not a
     -- free premise: it is exactly what a configured deployment can deny, and
@@ -109,6 +109,23 @@ theorem endpointSendDualChecked_flowDenied
   -- WS-SM SM8.C: a denied global flow denies the gate whatever the override
   -- says, so this theorem keeps the hypothesis it had before the gate existed.
   simp [endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny]
+
+/-- A send whose endpoint's label does not flow back to the sender's is refused
+`flowDenied` before any write: a lower thread sending on a higher endpoint,
+which the one-way gate admitted (and whose blocking then wrote the higher
+endpoint's queue, observable through the higher receiver's later result). -/
+theorem endpointSendDualChecked_flowDenied_of_endpointAbove
+    (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId)
+    (payload : SendPayload)
+    (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.endpointLabelOf endpointId)
+               (ctx.threadLabelOf sender) = false) :
+    endpointSendDualChecked ctx endpointId sender payload st =
+      .error .flowDenied := by
+  unfold endpointSendDualChecked
+  simp [endpointFlowGate_false_of_dstFlowsToSrc_false ctx endpointId _ _ hDeny]
 
 /-- When the policy allows flow, the checked mint behaves identically to the
 CDT-tracked mint. -/
@@ -610,7 +627,7 @@ before delegating to `endpointReceiveDual`.
 
 The receiver learns about the sender's presence and message content, and a
 blocking receive writes the receiver into the endpoint's queue; the wrapper
-gates on the two-way `endpointReceiveFlowGate`.
+gates on the two-way `endpointFlowGate`.
 
 Returns `flowDenied` unless the endpoint's and the receiver's labels flow both
 ways and the endpoint's override admits the flow. -/
@@ -624,7 +641,7 @@ def endpointReceiveDualChecked
     let receiverLabel := ctx.threadLabelOf receiver
     -- WS-SM SM8.C: the label check ∧ this endpoint's override; the label check
     -- is two-way, since a blocking receive joins the endpoint's queue.
-    if endpointReceiveFlowGate ctx endpointId endpointLabel receiverLabel then
+    if endpointFlowGate ctx endpointId endpointLabel receiverLabel then
       endpointReceiveDual endpointId receiver replyId st
     else
       .error .flowDenied
@@ -971,7 +988,7 @@ def endpointReplyRecvChecked
     -- receive leg below gates.
     if securityFlowsTo receiverLabel targetLabel then
       -- Receive leg: endpoint ↔ receiver, two-way, ∧ the override.
-      if endpointReceiveFlowGate ctx endpointId endpointLabel receiverLabel then
+      if endpointFlowGate ctx endpointId endpointLabel receiverLabel then
         endpointReplyRecv endpointId receiver replyTarget msg replyId st
       else
         .error .flowDenied

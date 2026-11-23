@@ -1059,7 +1059,7 @@ set_option maxRecDepth 8192
 #check @endpointFlowGate_of
 #check @endpointFlowGate_false_of_override_false
 #check @endpointFlowGate_false_of_securityFlowsTo_false
-#check @endpointFlowGate_eq_securityFlowsTo_of_no_override
+#check @endpointFlowGate_eq_twoWayLabelGate_of_no_override
 #check @endpointOverrideAllows_default
 #check @endpointFlowGate_is_not_securityFlowsTo
 #check @endpointGateRestricted
@@ -6142,10 +6142,10 @@ private def runEndpointPolicyGateChecks : IO Unit := do
         (niLabeling.endpointLabelOf lowEndpoint) = true) &&
      decide (securityFlowsTo (niLabeling.threadLabelOf highCurrent)
         (niLabeling.endpointLabelOf lowEndpoint) = false))
-  assertBool "with no override configured the gate IS the global check"
+  assertBool "with no override configured the gate IS the two-way label gate"
     (decide (endpointFlowGate niLabeling lowEndpoint (niLabeling.threadLabelOf lowCurrent)
         (niLabeling.endpointLabelOf lowEndpoint) =
-       securityFlowsTo (niLabeling.threadLabelOf lowCurrent)
+       twoWayLabelGate (niLabeling.threadLabelOf lowCurrent)
         (niLabeling.endpointLabelOf lowEndpoint)))
   assertBool "a narrowing override denies a flow the lattice permits"
     (decide (endpointFlowGate narrowingOverrideLabeling lowEndpoint
@@ -6153,8 +6153,15 @@ private def runEndpointPolicyGateChecks : IO Unit := do
   assertBool "…and only at the endpoint it names — the high endpoint is untouched"
     (decide (endpointFlowGate narrowingOverrideLabeling highEndpoint
         (niLabeling.threadLabelOf lowCurrent) (niLabeling.endpointLabelOf highEndpoint) =
-       securityFlowsTo (niLabeling.threadLabelOf lowCurrent)
+       twoWayLabelGate (niLabeling.threadLabelOf lowCurrent)
         (niLabeling.endpointLabelOf highEndpoint)))
+  -- The two-way gate refuses the low thread at the high endpoint, which the
+  -- lattice alone permits: an endpoint joins only its own label.
+  assertBool "NEGATIVE: the low thread is refused at the high endpoint the lattice permits"
+    (decide (securityFlowsTo (niLabeling.threadLabelOf lowCurrent)
+        (niLabeling.endpointLabelOf highEndpoint) = true) &&
+     decide (endpointFlowGate niLabeling highEndpoint (niLabeling.threadLabelOf lowCurrent)
+        (niLabeling.endpointLabelOf highEndpoint) = false))
   -- The load-bearing negative: a WIDENING override changes nothing.  This is the
   -- structural restriction — the reason the gate is a conjunction and not a
   -- replacement, and the reason SM8.C's Rule 3 needs no deployment obligation.

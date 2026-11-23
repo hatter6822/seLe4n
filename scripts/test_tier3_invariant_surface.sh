@@ -8216,7 +8216,6 @@ run_check "INVARIANT" rg -n 'SeLe4n\.Kernel\.InformationFlow\.DeclassificationPe
 run_check "INVARIANT" rg -n '^  endpointPolicy : EndpointFlowPolicy' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n '^def endpointOverrideAllows($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n '^def endpointFlowGate($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
-run_check "INVARIANT" rg -n 'securityFlowsTo srcLabel dstLabel && endpointOverrideAllows' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n '^theorem endpointFlowGate_implies_securityFlowsTo($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n '^theorem endpointFlowGate_is_not_securityFlowsTo($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n 'endpointFlowGate ctx endpointId senderLabel endpointLabel' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
@@ -8232,9 +8231,9 @@ run_check "INVARIANT" rg -n 'endpointFlowGate ctx endpointId' SeLe4n/Kernel/IPC/
 # reads the one-way notification form again).
 run_check "INVARIANT" bash -lc 'rg -U -n "^def twoWayLabelGate \(a b : SecurityLabel\) : Bool :=\n  securityFlowsTo a b && securityFlowsTo b a$" SeLe4n/Kernel/InformationFlow/Policy.lean'
 run_check "INVARIANT" rg -n '^theorem twoWayLabelGate_iff_eq($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveFlowGate[^\n]*(\n([ \t][^\n]*)?)*  twoWayLabelGate endpointLabel receiverLabel &&" SeLe4n/Kernel/InformationFlow/Policy.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointFlowGate[^\n]*(\n([ \t][^\n]*)?)*  twoWayLabelGate srcLabel dstLabel && endpointOverrideAllows ctx endpointId srcLabel dstLabel$" SeLe4n/Kernel/InformationFlow/Policy.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def notificationFlowGate[^\n]*(\n([ \t][^\n]*)?)*  twoWayLabelGate \(ctx\.objectLabelOf notificationId\) \(ctx\.threadLabelOf tid\)$" SeLe4n/Kernel/InformationFlow/Policy.lean'
-run_check "INVARIANT" rg -n 'if endpointReceiveFlowGate ctx endpointId endpointLabel receiverLabel then' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n 'if endpointFlowGate ctx endpointId endpointLabel receiverLabel then' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def notificationWaitChecked[^\n]*(\n([ \t][^\n]*)?)*    if notificationFlowGate ctx notificationId waiter then" SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def bindNotificationChecked[^\n]*(\n([ \t][^\n]*)?)*    if notificationFlowGate ctx notificationId tcbId then" SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def notificationWaitCrossCoreDispatchChecked[^\n]*(\n([ \t][^\n]*)?)*  if notificationFlowGate ctx notificationId waiter then" SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean'
@@ -8256,6 +8255,13 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualChecked_flowDenied_of_r
 run_check "INVARIANT" rg -n '^theorem bindNotificationChecked_flowDenied_of_threadAbove($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^theorem checkedDispatch_receive_flow_denied_of_receiverAbove($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'if !securityFlowsTo \(ctx\.endpointLabelOf epId\)' SeLe4n/Kernel/API.lean
+# Send, call and fault delivery read the same two-way owner: an endpoint joins
+# only threads of its own label, so a lower sender's blocking never depends on
+# a higher receiver.
+run_check "INVARIANT" rg -n '^theorem endpointFlowGate_implies_eq($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem endpointFlowGate_false_of_dstFlowsToSrc_false($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendDualChecked_flowDenied_of_endpointAbove($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_negative_check "INVARIANT" rg -n '^def endpointReceiveFlowGate($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n '^theorem liveEndpointOverride_is_not_a_declassification_basis($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 
 # ---------------------------------------------------------------------------
@@ -19530,25 +19536,16 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem removeCallerReplyFrame_establ
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem removeCallerReplyFrame_establishes_ipcInvariantFull_of_exceptReplyLinkage[^\n]*(\n([ \t][^\n]*)?)*cutReplyFrameOutOrSelf_preserves_ipcInvariantFullExceptReplyLinkage st rid caller" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
 
 # ---------------------------------------------------------------------------
-# WS-RR RR8.8 -- what the endpoint admission gate admits onto one queue.
-#
-# The theorem has no consumer today and is anchored for that reason: it is the
-# refutation of the remedy three cancellation-NI obligations were registered
-# against (an endpoint/notification queue label-uniformity invariant), and a
-# refutation nothing consults reads exactly like one nobody checked.
-#
-# Relation, not presence.  A presence check on the name survives a mutation that
-# keeps the theorem and drops the discriminating conjunct, which is the whole of
-# its content: the gate admits BOTH senders, and the observer sees EXACTLY ONE of
-# them.  Each conjunct is anchored inside the declaration's own bounded gap.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointAdmissionAdmitsMixedObservability[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate ctx epId \(ctx.threadLabelOf lowerTid\) \(ctx.endpointLabelOf epId\) = true" SeLe4n/Kernel/InformationFlow/Projection.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointAdmissionAdmitsMixedObservability[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate ctx epId \(ctx.threadLabelOf upperTid\) \(ctx.endpointLabelOf epId\) = true" SeLe4n/Kernel/InformationFlow/Projection.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointAdmissionAdmitsMixedObservability[^\n]*(\n([ \t][^\n]*)?)*threadObservable ctx observer lowerTid = true" SeLe4n/Kernel/InformationFlow/Projection.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointAdmissionAdmitsMixedObservability[^\n]*(\n([ \t][^\n]*)?)*threadObservable ctx observer upperTid = false" SeLe4n/Kernel/InformationFlow/Projection.lean'
-# ...and the destination of both gate readings is the ENDPOINT's own label, which
-# is what makes this a statement about what a queue admits rather than about a
-# rendezvous: a mutation that reads a receiver's label instead keeps every token.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointAdmissionAdmitsMixedObservability[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate ctx epId \(ctx.threadLabelOf (lower|upper)Tid\) \(ctx.threadLabelOf" SeLe4n/Kernel/InformationFlow/Projection.lean'
+# What the endpoint admission gate admits onto one queue: only the endpoint's
+# own label.  Relation, not presence: the conclusion is label EQUALITY of two
+# admitted threads, read from the gate on the ENDPOINT's label (a mutation that
+# reads a receiver's label keeps every token), and the non-vacuity witness
+# refuses the lower thread of the pair the one-way gate admitted.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointAdmissionUniform[^\n]*(\n([ \t][^\n]*)?)*\(h₂ : endpointFlowGate ctx epId \(ctx.threadLabelOf tid₂\) \(ctx.endpointLabelOf epId\) = true\)" SeLe4n/Kernel/InformationFlow/Projection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointAdmissionUniform[^\n]*(\n([ \t][^\n]*)?)*    ctx.threadLabelOf tid₁ = ctx.threadLabelOf tid₂\n      ∧ threadObservable ctx observer tid₁ = threadObservable ctx observer tid₂" SeLe4n/Kernel/InformationFlow/Projection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointAdmissionRefusesMixedLabels[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate ctx epId \(ctx.threadLabelOf lowerTid\) \(ctx.endpointLabelOf epId\) = false" SeLe4n/Kernel/InformationFlow/Projection.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointAdmissionUniform[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate ctx epId \(ctx.threadLabelOf tid[₁₂]\) \(ctx.threadLabelOf" SeLe4n/Kernel/InformationFlow/Projection.lean'
+run_negative_check "INVARIANT" rg -n '^theorem endpointAdmissionAdmitsMixedObservability($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 
 # ---------------------------------------------------------------------------
 # WS-RR RR8.8 / RR8.9 -- the labelling layer the two obligations reduce to.

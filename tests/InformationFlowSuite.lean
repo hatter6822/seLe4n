@@ -1882,6 +1882,17 @@ private def runTwoWayGateChecks : IO Unit := do
   expect "a secret thread cannot be bound to a public notification"
     (match SeLe4n.Kernel.bindNotificationChecked twoWayCtx twoWayObjId twoWayHigh ntfnSt with
       | .error .flowDenied => true | _ => false)
+  -- Send: a public sender on a secret endpoint, which the one-way gate
+  -- admitted.  Its blocking would enqueue it on the secret endpoint, and the
+  -- sender's own state (ready or blocked) would then depend on whether a secret
+  -- receiver waits there.
+  let upCtx : SeLe4n.Kernel.LabelingContext :=
+    { objectLabelOf := fun _ => secretLabel, threadLabelOf := fun _ => publicLabel,
+      endpointLabelOf := fun _ => secretLabel }
+  expect "a public sender on a secret endpoint is refused flowDenied"
+    (match SeLe4n.Kernel.endpointSendDualChecked upCtx twoWayObjId twoWayHigh
+        (.frame SeLe4n.Badge.zero false true) epSt with
+      | .error .flowDenied => true | _ => false)
   -- The load-bearing negative: with the object labelled like the thread, the
   -- same calls are admitted, so the checks above test the gate.
   let sameCtx : SeLe4n.Kernel.LabelingContext :=
@@ -1894,10 +1905,14 @@ private def runTwoWayGateChecks : IO Unit := do
   expect "the same receive is admitted when the endpoint is labelled like the receiver"
     (match SeLe4n.Kernel.endpointReceiveDualChecked sameCtx twoWayObjId twoWayHigh none epSt with
       | .error .flowDenied => false | _ => true)
+  expect "the same send is admitted when the endpoint is labelled like the sender"
+    (match SeLe4n.Kernel.endpointSendDualChecked sameCtx twoWayObjId twoWayHigh
+        (.frame SeLe4n.Badge.zero false true) epSt with
+      | .error .flowDenied => false | _ => true)
   expect "the same bind is admitted when the notification is labelled like the thread"
     (match SeLe4n.Kernel.bindNotificationChecked sameCtx twoWayObjId twoWayHigh ntfnSt with
       | .error .flowDenied => false | _ => true)
-  IO.println "two-way Wait / receive / bind gate checks passed"
+  IO.println "two-way Wait / receive / send / bind gate checks passed"
 
 end SeLe4n.Testing
 

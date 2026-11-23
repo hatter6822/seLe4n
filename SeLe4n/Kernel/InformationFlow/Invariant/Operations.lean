@@ -289,7 +289,7 @@ theorem endpointSendDualChecked_NI
   -- rewrite below needs the override half as well as the lattice half.
   have hGate := enforcementSoundness_endpointSendDualChecked_gate ctx endpointId sender payload
     s₁ r₁ s₁' hStep₁
-  have hFlow := endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate
+  have hFlow := endpointFlowGate_implies_twoWay ctx endpointId _ _ hGate
   have hOverride := endpointFlowGate_implies_override ctx endpointId _ _ hGate
   rw [endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed ctx endpointId sender payload
     s₁ hFlow hOverride] at hStep₁
@@ -2764,7 +2764,7 @@ theorem endpointReceiveDualChecked_NI
   have hGate := enforcementSoundness_endpointReceiveDualChecked_gate ctx endpointId receiver
     replyId s₁ r₁ s₁' hStep₁
   have hFlow := (Bool.and_eq_true _ _ ▸ hGate).1
-  have hOverride := endpointReceiveFlowGate_implies_override ctx endpointId _ _ hGate
+  have hOverride := endpointFlowGate_implies_override ctx endpointId _ _ hGate
   rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver
     replyId s₁ hFlow hOverride] at hStep₁
   rw [endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed ctx endpointId receiver
@@ -5530,23 +5530,17 @@ theorem cancelDonatedDonation_preserves_projection
       rewrites the victim's queue-NEIGHBOUR TCBs' `queuePrev`/`queueNext`,
       and queue-link fields survive projection — so a high victim spliced
       out from between low-observable neighbours changes the low projection.
-      **WS-RR RR8.8 correction**: the invariant this was tracked against —
-      "a queue's members share the endpoint's label", SM6.B debt — is
-      **unestablishable**.  The live admission gate is
-      `label sender ⊑ label endpoint`, an order rather than an equality, so a
-      low and a high waiter on one high endpoint are both admitted by design
-      (`endpointAdmissionAdmitsMixedObservability`); establishing uniformity
-      would mean narrowing the gate to equality and refusing the one-way flow
-      the lattice exists to permit.  The gate's own direction, composed with
-      `LabelingContextValid.endpointObjectCoherence` (which carries the
-      endpoint's *flow* label on to the *object* label the projection reads),
-      closes the *endpoint object* — non-observable whenever any waiter is,
-      `endpointObjectHigh_of_admittedThreadHigh` — and closes nothing about the
-      neighbours, so the residue is representational: a
-      queue's content must live in an object whose label dominates every
-      member's, which the endpoint is and a member's own TCB is not.  The
-      SM6.E cancellation-NI module consumes this obligation as its
-      `hTeardownProj` hypothesis; see `docs/REGISTERED_DEBT.md`.
+      The invariant this is tracked against — "a queue's members share the
+      endpoint's label" — is establishable now that the live admission gate is
+      two-way (`endpointFlowGate`, label equality): every admission keeps a
+      queue label-uniform (`endpointAdmissionUniform`).  The gate composed
+      with `LabelingContextValid.endpointObjectCoherence` closes the *endpoint
+      object* — non-observable whenever any waiter is,
+      `endpointObjectHigh_of_admittedThreadHigh`; the neighbours are closed by
+      the state invariant that carries the uniformity across every
+      transition, not yet proved.  The SM6.E cancellation-NI module consumes
+      this obligation as its `hTeardownProj` hypothesis; see
+      `docs/REGISTERED_DEBT.md`.
     - **G4 re-lookup**: no state change.
     - **G5 `cancelDonation` (WS-RC R5.A split)**: post-R5.A the G5 step
       dispatches explicitly on `schedContextBinding`:

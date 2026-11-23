@@ -674,7 +674,7 @@ theorem endpointSendCrossCoreDispatchChecked_flow_allowed
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
-    (hAllow : securityFlowsTo (ctx.threadLabelOf sender)
+    (hAllow : twoWayLabelGate (ctx.threadLabelOf sender)
       (ctx.endpointLabelOf endpointId) = true)
     -- WS-SM SM8.C: the endpoint's override must admit the flow too.
     (hOverride : endpointOverrideAllows ctx endpointId (ctx.threadLabelOf sender)

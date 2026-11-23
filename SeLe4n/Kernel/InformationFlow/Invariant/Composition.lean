@@ -915,12 +915,11 @@ call gate admitted onto an endpoint satisfies it — and
 endpoint object either, which is what makes the endpoint half of a queue
 teardown's write set invisible.
 
-**Only the endpoint half.**  The same order says *nothing* relating two threads
-admitted onto one endpoint: both satisfy `⊑ endpointLabelOf epId` and neither
-bounds the other, which is exactly the admission
-`endpointAdmissionAdmitsMixedObservability` exhibits.  So a teardown's writes to
-the victim's queue **neighbours** are not covered by this and cannot be \-- see
-`docs/REGISTERED_DEBT.md` for why the residue is representational. -/
+**Only the endpoint half.**  This order alone says nothing relating two threads
+admitted onto one endpoint; the gate's two-way form does (`endpointAdmissionUniform`:
+both carry the endpoint's label).  A teardown's writes to the victim's queue
+**neighbours** are covered once the queue label-uniformity state invariant is
+proved, which `docs/REGISTERED_DEBT.md` tracks. -/
 theorem endpointObjectHigh_of_admittedThreadHigh
     (ctx : LabelingContext) (observer : IfObserver)
     (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
@@ -941,7 +940,7 @@ theorem endpointObjectHigh_of_admittedThreadHigh
 /-- **The receive counterpart**: an endpoint's object is non-observable whenever
 a receiver the endpoint admitted is.
 
-The receive gate is two-way (`endpointReceiveFlowGate`), so a receiver it
+The receive gate is two-way (`endpointFlowGate`), so a receiver it
 admitted satisfies `threadLabelOf tid ⊑ endpointLabelOf epId` exactly as a
 sender does, and `endpointObjectCoherence` carries that to the object label.
 Under the one-way receive gate this did not hold: a higher receiver joined a
@@ -950,12 +949,12 @@ theorem endpointObjectHigh_of_admittedReceiverHigh
     (ctx : LabelingContext) (observer : IfObserver)
     (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (hValid : LabelingContextValid ctx)
-    (hAdmitted : endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId)
+    (hAdmitted : endpointFlowGate ctx epId (ctx.endpointLabelOf epId)
       (ctx.threadLabelOf tid) = true)
     (hThreadHigh : threadObservable ctx observer tid = false) :
     objectObservable ctx observer epId = false :=
   endpointObjectHigh_of_admittedThreadHigh ctx observer epId tid hValid
-    (endpointReceiveFlowGate_implies_receiverFlowsToEndpoint ctx epId _ _ hAdmitted) hThreadHigh
+    (endpointFlowGate_implies_dstFlowsToSrc ctx epId _ _ hAdmitted) hThreadHigh
 
 /-- **An admitted checked Wait by a hidden waiter is a `NonInterferenceStep`**,
 with the notification's non-observability derived from the gate

@@ -114,7 +114,7 @@ theorem endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed
     endpointReceiveDualChecked ctx endpointId receiver replyId st =
       endpointReceiveDual endpointId receiver replyId st := by
   unfold endpointReceiveDualChecked
-  simp [endpointReceiveFlowGate_of ctx endpointId _ _ hTwoWay hOverride]
+  simp [endpointFlowGate_of ctx endpointId _ _ hTwoWay hOverride]
 
 /-- WS-H8: When the policy denies flow, endpointReceiveDualChecked returns
 `flowDenied`. -/
@@ -129,7 +129,7 @@ theorem endpointReceiveDualChecked_flowDenied
     endpointReceiveDualChecked ctx endpointId receiver replyId st =
       .error .flowDenied := by
   unfold endpointReceiveDualChecked
-  simp [endpointReceiveFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny]
+  simp [endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny]
 
 /-- A receiver whose label does not flow to the endpoint's is refused
 `flowDenied` before anything is written: a higher thread cannot join a lower
@@ -145,7 +145,7 @@ theorem endpointReceiveDualChecked_flowDenied_of_receiverAbove
     endpointReceiveDualChecked ctx endpointId receiver replyId st =
       .error .flowDenied := by
   unfold endpointReceiveDualChecked
-  simp [endpointReceiveFlowGate_false_of_receiverFlowsToEndpoint_false ctx endpointId _ _ hAbove]
+  simp [endpointFlowGate_false_of_dstFlowsToSrc_false ctx endpointId _ _ hAbove]
 
 -- ============================================================================
 -- WS-H8: Denied-preserves-state theorems for new wrappers
@@ -194,7 +194,7 @@ theorem endpointReceiveDualChecked_denied_preserves_state
       endpointReceiveDualChecked ctx endpointId receiver replyId st = .ok (r, st') := by
   intro ⟨r, st', h⟩
   simp [endpointReceiveDualChecked,
-    endpointReceiveFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny] at h
+    endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny] at h
 
 -- ============================================================================
 -- WS-H8: Enforcement sufficiency theorems for new wrappers
@@ -245,17 +245,17 @@ theorem enforcement_sufficiency_endpointReceiveDual
     (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
     (st : SystemState) :
-    -- Stated against `endpointReceiveFlowGate`, the predicate the wrapper
+    -- Stated against `endpointFlowGate`, the predicate the wrapper
     -- branches on (see `enforcement_sufficiency_endpointSendDual`).
-    (endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+    (endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
         (ctx.threadLabelOf receiver) = true ∧
        endpointReceiveDualChecked ctx endpointId receiver replyId st =
          endpointReceiveDual endpointId receiver replyId st) ∨
-    (endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+    (endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
         (ctx.threadLabelOf receiver) = false ∧
        endpointReceiveDualChecked ctx endpointId receiver replyId st =
          .error .flowDenied) := by
-  cases hFlow : endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+  cases hFlow : endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
       (ctx.threadLabelOf receiver) with
   | true => left; exact ⟨rfl, by simp [endpointReceiveDualChecked, hFlow]⟩
   | false => right; exact ⟨rfl, by simp [endpointReceiveDualChecked, hFlow]⟩
@@ -600,10 +600,10 @@ theorem enforcementSoundness_endpointReceiveDualChecked_gate
     (replyId : Option SeLe4n.ReplyId)
     (st : SystemState) (r : SeLe4n.ThreadId) (st' : SystemState)
     (hStep : endpointReceiveDualChecked ctx endpointId receiver replyId st = .ok (r, st')) :
-    endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+    endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
       (ctx.threadLabelOf receiver) = true := by
   unfold endpointReceiveDualChecked at hStep
-  cases h : endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+  cases h : endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
       (ctx.threadLabelOf receiver) with
   | true => rfl
   | false => simp [h] at hStep
@@ -707,7 +707,7 @@ theorem enforcementSoundness_endpointReplyRecvChecked
   | true =>
     -- WS-SM SM8.C: the receive leg branches on the gate; the reply leg does not
     -- (the endpoint override governs flows crossing the endpoint).
-    cases h2 : endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+    cases h2 : endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
         (ctx.threadLabelOf receiver) with
     | false => simp [h1, h2] at hStep
     | true => exact ⟨rfl, (Bool.and_eq_true _ _ ▸ h2).1⟩
@@ -1270,7 +1270,7 @@ theorem endpointReplyRecvChecked_denied_preserves_state
     (replyId : Option SeLe4n.ReplyId) (st : SystemState)
     (hDeny : securityFlowsTo (ctx.threadLabelOf receiver)
                (ctx.threadLabelOf replyTarget) = false ∨
-             endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+             endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
                (ctx.threadLabelOf receiver) = false) :
     ¬∃ st', endpointReplyRecvChecked ctx endpointId receiver replyTarget msg replyId st
       = .ok ((), st') := by
@@ -1287,19 +1287,19 @@ theorem enforcement_sufficiency_endpointReplyRecv
     (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
     (replyId : Option SeLe4n.ReplyId) (st : SystemState) :
     (securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) = true ∧
-       endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+       endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
          (ctx.threadLabelOf receiver) = true ∧
        endpointReplyRecvChecked ctx endpointId receiver replyTarget msg replyId st =
          endpointReplyRecv endpointId receiver replyTarget msg replyId st) ∨
     ((securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) = false ∨
-        endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+        endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
           (ctx.threadLabelOf receiver) = false) ∧
        endpointReplyRecvChecked ctx endpointId receiver replyTarget msg replyId st =
          .error .flowDenied) := by
   cases hReply : securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) with
   | false => right; exact ⟨Or.inl rfl, by simp [endpointReplyRecvChecked, hReply]⟩
   | true =>
-    cases hRecv : endpointReceiveFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
+    cases hRecv : endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
         (ctx.threadLabelOf receiver) with
     | true => left; exact ⟨rfl, rfl, by simp [endpointReplyRecvChecked, hReply, hRecv]⟩
     | false =>

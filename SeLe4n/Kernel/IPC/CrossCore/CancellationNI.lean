@@ -756,17 +756,14 @@ The endpoint object closes from the admission gate composed with
 its endpoint's *flow* label (`endpointFlowGate_implies_securityFlowsTo`, no
 hypothesis) and that conjunct carries it on to the *object* label the projection
 reads, so the object is non-observable whenever any waiter is
-(`endpointObjectHigh_of_admittedThreadHigh`).  The neighbours do not, and
-cannot: their labels are constrained only against the *endpoint's*, so nothing
-relates a neighbour to the victim.  The failing direction is therefore **not** "a
-low endpoint holding a high waiter", which the gate makes impossible; it is a low
-waiter beside a high one on a high endpoint, which the gate permits by design so
-that a lower-labelled client can send to a higher-labelled server
-(`endpointAdmissionAdmitsMixedObservability`).  A queue label-uniformity
-invariant is accordingly **unestablishable** rather than merely absent, and the
-closure is representational: a queue's content must live in an object whose label
-*dominates* every member's, which the endpoint is and a member's own TCB is not.
-Registered as WS-RR RR8.8 debt rather than papered over here.
+(`endpointObjectHigh_of_admittedThreadHigh`).  The neighbours are related to
+the victim by the gate's two-way form: every admission onto an endpoint's queue
+requires the thread's label to *equal* the endpoint's
+(`endpointAdmissionUniform`), so a low waiter beside a high one on one endpoint
+is no longer admitted.  What this arm still takes as a hypothesis is the state
+invariant that carries that uniformity across every transition (queue label
+uniformity), which the gate now makes establishable but which is not yet
+proved; registered in `docs/REGISTERED_DEBT.md` rather than papered over here.
 
 **What this arm carries.**  `v0.36.136` retired the reclaim's holder abort (the
 holder of a returned donation keeps waiting, unbound, as seL4 MCS leaves it), so

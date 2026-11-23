@@ -6704,8 +6704,8 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         -- WS-SM SM8.C: the gate is the global lattice check AND this endpoint's
         -- configured override (`endpointFlowGate`).  A conjunction, so an
         -- override can only narrow, and an unconfigured deployment is unchanged
-        -- (`endpointFlowGate_eq_securityFlowsTo_of_no_override`).
-        if !endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
+        -- (`endpointFlowGate_eq_twoWayLabelGate_of_no_override`).
+        if !endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
           .error .flowDenied
         else
           -- WS-SX SX4: a reply busy with another thread has that thread's IPC
@@ -6931,7 +6931,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         -- WS-SM SM8.C: the receive leg carries the endpoint override too; the
         -- reply leg below deliberately does not (the override governs flows that
         -- cross this endpoint, and `receiver → prevCaller` does not).
-        if !endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
+        if !endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
           .error .flowDenied
         else
           -- WS-SX SX6.1: the reply half is seL4-MCS's `handleInvocation` with
@@ -7620,7 +7620,7 @@ theorem checkedDispatch_receive_flow_denied
   -- WS-SM SM8.C: a denied global flow denies the gate whatever the endpoint's
   -- override says, so this theorem keeps the hypothesis it always had.
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap,
-    endpointReceiveFlowGate_false_of_securityFlowsTo_false ctx epId _ _ hDenied]
+    endpointFlowGate_false_of_securityFlowsTo_false ctx epId _ _ hDenied]
 
 /-- **A higher receiver on a lower endpoint is refused**: a checked `.receive`
 whose receiver's label does not flow to the endpoint's returns `.flowDenied` for
@@ -7636,7 +7636,7 @@ theorem checkedDispatch_receive_flow_denied_of_receiverAbove
     (hAbove : securityFlowsTo (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId) = false) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .flowDenied := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap,
-    endpointReceiveFlowGate_false_of_receiverFlowsToEndpoint_false ctx epId _ _ hAbove]
+    endpointFlowGate_false_of_dstFlowsToSrc_false ctx epId _ _ hAbove]
 
 /-- WS-SM SM6.D (PR #822 review, IF-ordering): a checked `.replyRecv` whose receive-leg
 (endpoint→receiver) flow is **denied** returns `.flowDenied` *for every state and decode*
@@ -7654,7 +7654,7 @@ theorem checkedDispatch_replyRecv_recv_flow_denied
     (hDenied : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = false) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .error .flowDenied := by
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap,
-    endpointReceiveFlowGate_false_of_securityFlowsTo_false ctx epId _ _ hDenied]
+    endpointFlowGate_false_of_securityFlowsTo_false ctx epId _ _ hDenied]
 
 -- ============================================================================
 -- W2-C (MED-04): the dispatcher's wildcard arm is unreachable
@@ -8287,7 +8287,7 @@ theorem dispatchArm_receive_matches_returnShape
     (hCancel : cancelRecvBusyReply ctx tid gate decoded executingCore st0 = st)
     (hSyscall : decoded.syscallId = .receive)
     (hTarget : cap.target = .object epId)
-    (hFlow : endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
+    (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
     (hReply : resolveRecvReplyId gate decoded st = .ok replyIdOpt)
     -- WS-SX SX7.2: the receive is not `NBRecv`'s failure with no sender waiting.
     (hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId = false)
@@ -8341,7 +8341,7 @@ theorem dispatchArm_replyRecv_matches_returnShape
     (st stB : SystemState) (msg : IpcMessage) (tcb : TCB) (summary : CapTransferSummary)
     (hSyscall : decoded.syscallId = .replyRecv)
     (hTarget : cap.target = .object epId)
-    (hFlow : endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
+    (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
     (hXc : callerExtraCapsFault? st tid decoded.msgInfo.extraCaps = none)
     (hResolve : resolveReplyRecvReply gate decoded st =
       .ok (some (rid, prevCaller, replyBadge, replyGrant)))
@@ -8381,7 +8381,7 @@ theorem dispatchArm_replyRecv_signal_matches_returnShape
     (replyGrant : Bool) (st st1 st2 : SystemState) (badge : SeLe4n.Badge) (tcb : TCB)
     (hSyscall : decoded.syscallId = .replyRecv)
     (hTarget : cap.target = .object epId)
-    (hFlow : endpointReceiveFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
+    (hFlow : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
     (hXc : callerExtraCapsFault? st tid decoded.msgInfo.extraCaps = none)
     (hResolve : resolveReplyRecvReply gate decoded st =
       .ok (some (rid, prevCaller, replyBadge, replyGrant)))
@@ -9638,14 +9638,14 @@ theorem dispatchWithCapChecked_receive_delegates
   by_cases hS : receiveCompletesSignal ctx st tid = true
   · subst hCancel
     simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget,
-      endpointReceiveFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hS]
+      endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hS]
   by_cases hN : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId = true
   · subst hCancel
     simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget,
-      endpointReceiveFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hS, hN]
+      endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hS, hN]
   · subst hCancel
     simp [dispatchWithCapChecked, dispatchCapabilityOnly, receiveResolvedArm, hSyscall, hTarget,
-      endpointReceiveFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hS, hN]
+      endpointFlowGate_of ctx epId _ _ hFlow hOverride, hReply, hS, hN]
 
 /-- **The live checked `.send` arm routes to `endpointSendCrossCoreDispatchChecked`.**
 The checked mirror of `dispatchWithCap_send_delegates`; the gate is inside the

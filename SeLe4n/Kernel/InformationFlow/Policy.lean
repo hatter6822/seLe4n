@@ -511,7 +511,7 @@ structure LabelingContext where
       is that wiring; `endpointFlowGate` is where it is read.
 
       Defaulted to "no override anywhere", which makes the gate's second conjunct
-      vacuously `true` (`endpointFlowGate_eq_securityFlowsTo_of_no_override`), so
+      vacuously `true` (`endpointFlowGate_eq_twoWayLabelGate_of_no_override`), so
       every existing construction site and every existing behaviour is unchanged
       until an operator configures one.
 
@@ -1760,8 +1760,17 @@ def endpointOverrideAllows (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
 
 /-- WS-SM SM8.C: **the flow gate every endpoint-keyed IPC check runs.**
 
-The global lattice check **and** the endpoint's own override — a conjunction,
-never a replacement.
+The two-way label gate (`twoWayLabelGate`) **and** the endpoint's own override
+— a conjunction, never a replacement.
+
+Two-way because every endpoint operation can block: a sender or receiver whose
+peer is absent is enqueued on the endpoint, the queue is part of the endpoint
+object, and whether a later operation on it blocks or completes depends on that
+entry.  A one-way gate admitted a thread whose label the endpoint's does not
+flow *from*, so that thread's blocking wrote a lower object and a lower thread's
+later send or receive observed it.  So an endpoint carries traffic only between
+threads of its own label; cross-label traffic uses notifications, whose
+`Signal` never blocks the signaller.
 
 Conjoining rather than overriding is what makes V6-G's `endpointPolicyRestricted`
 structural instead of a deployment obligation: a misconfigured override cannot
@@ -1770,12 +1779,12 @@ widen anything, because the global check still has to pass
 An override can only ever deny more, which is the only direction a per-endpoint
 restriction should be able to move.
 
-Read by the sending sites: the `endpointSendDualChecked` / `endpointCallChecked`
-enforcement wrappers and the live cross-core `.send` and `.call` dispatches.  A
-receive runs `endpointReceiveFlowGate`, which is two-way. -/
+Read by every endpoint site: the send, call, receive and reply-receive
+enforcement wrappers, the live cross-core `.send`, `.call`, `.receive` and
+`.replyRecv` arms, and fault delivery. -/
 def endpointFlowGate (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
     (srcLabel dstLabel : SecurityLabel) : Bool :=
-  securityFlowsTo srcLabel dstLabel && endpointOverrideAllows ctx endpointId srcLabel dstLabel
+  twoWayLabelGate srcLabel dstLabel && endpointOverrideAllows ctx endpointId srcLabel dstLabel
 
 /-- WS-SM SM8.C: **the gate never admits a flow the global lattice denies.**
 
@@ -1786,7 +1795,29 @@ theorem endpointFlowGate_implies_securityFlowsTo (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
     (h : endpointFlowGate ctx endpointId srcLabel dstLabel = true) :
     securityFlowsTo srcLabel dstLabel = true :=
+  twoWayLabelGate_forward (Bool.and_eq_true _ _ ▸ h).1
+
+/-- An admitted endpoint operation: the destination's label flows back to the
+source's — the direction a one-way gate did not test. -/
+theorem endpointFlowGate_implies_dstFlowsToSrc (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
+    (h : endpointFlowGate ctx endpointId srcLabel dstLabel = true) :
+    securityFlowsTo dstLabel srcLabel = true :=
+  twoWayLabelGate_backward (Bool.and_eq_true _ _ ▸ h).1
+
+/-- An admitted endpoint operation passed the two-way label gate. -/
+theorem endpointFlowGate_implies_twoWay (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
+    (h : endpointFlowGate ctx endpointId srcLabel dstLabel = true) :
+    twoWayLabelGate srcLabel dstLabel = true :=
   (Bool.and_eq_true _ _ ▸ h).1
+
+/-- An admitted endpoint operation joins two equal labels. -/
+theorem endpointFlowGate_implies_eq (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
+    (h : endpointFlowGate ctx endpointId srcLabel dstLabel = true) :
+    srcLabel = dstLabel :=
+  (twoWayLabelGate_iff_eq _ _).1 (Bool.and_eq_true _ _ ▸ h).1
 
 /-- WS-SM SM8.C: …and it admits nothing the endpoint's own policy denies. -/
 theorem endpointFlowGate_implies_override (ctx : LabelingContext)
@@ -1800,7 +1831,7 @@ separately, which is how the enforcement wrappers' `…_when_allowed` theorems
 carry them. -/
 theorem endpointFlowGate_of (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
     (srcLabel dstLabel : SecurityLabel)
-    (hFlow : securityFlowsTo srcLabel dstLabel = true)
+    (hFlow : twoWayLabelGate srcLabel dstLabel = true)
     (hOverride : endpointOverrideAllows ctx endpointId srcLabel dstLabel = true) :
     endpointFlowGate ctx endpointId srcLabel dstLabel = true := by
   simp [endpointFlowGate, hFlow, hOverride]
@@ -1821,84 +1852,24 @@ theorem endpointFlowGate_false_of_securityFlowsTo_false (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
     (h : securityFlowsTo srcLabel dstLabel = false) :
     endpointFlowGate ctx endpointId srcLabel dstLabel = false := by
-  simp [endpointFlowGate, h]
+  simp [endpointFlowGate, twoWayLabelGate_false_of_forward_false h]
+
+/-- A denied destination-to-source flow denies the gate: a higher thread on a
+lower endpoint, or a lower one on a higher endpoint's receiving side, which a
+one-way gate admitted. -/
+theorem endpointFlowGate_false_of_dstFlowsToSrc_false (ctx : LabelingContext)
+    (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
+    (h : securityFlowsTo dstLabel srcLabel = false) :
+    endpointFlowGate ctx endpointId srcLabel dstLabel = false := by
+  simp [endpointFlowGate, twoWayLabelGate_false_of_backward_false h]
 
 /-- WS-SM SM8.C: with no override configured at this endpoint the gate **is**
-the global check — so an unconfigured deployment behaves exactly as it did
-before the field existed. -/
-theorem endpointFlowGate_eq_securityFlowsTo_of_no_override (ctx : LabelingContext)
+the two-way label gate. -/
+theorem endpointFlowGate_eq_twoWayLabelGate_of_no_override (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (srcLabel dstLabel : SecurityLabel)
     (hNone : ctx.endpointPolicy.endpointPolicy endpointId = none) :
-    endpointFlowGate ctx endpointId srcLabel dstLabel = securityFlowsTo srcLabel dstLabel := by
+    endpointFlowGate ctx endpointId srcLabel dstLabel = twoWayLabelGate srcLabel dstLabel := by
   simp [endpointFlowGate, endpointOverrideAllows, hNone]
-
-/-- **The flow gate every endpoint receive runs**: the two-way label gate
-(`twoWayLabelGate`) between the endpoint and the receiver, and the endpoint's
-own override.
-
-A receive that blocks enqueues the receiver on the endpoint, and the queue is
-part of the endpoint object; so a receiver whose label the endpoint's does not
-also flow *from* would write a lower object.  Read by every receive site: the
-`endpointReceiveDualChecked` / `endpointReplyRecvChecked` wrappers and the live
-`.receive` / `.replyRecv` arms. -/
-def endpointReceiveFlowGate (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
-    (endpointLabel receiverLabel : SecurityLabel) : Bool :=
-  twoWayLabelGate endpointLabel receiverLabel &&
-    endpointOverrideAllows ctx endpointId endpointLabel receiverLabel
-
-/-- An admitted receive passes the endpoint's one-way gate too. -/
-theorem endpointReceiveFlowGate_implies_endpointFlowGate (ctx : LabelingContext)
-    (endpointId : SeLe4n.ObjId) (endpointLabel receiverLabel : SecurityLabel)
-    (h : endpointReceiveFlowGate ctx endpointId endpointLabel receiverLabel = true) :
-    endpointFlowGate ctx endpointId endpointLabel receiverLabel = true := by
-  simp only [endpointReceiveFlowGate, Bool.and_eq_true] at h
-  exact endpointFlowGate_of ctx endpointId _ _ (twoWayLabelGate_forward h.1) h.2
-
-/-- An admitted receive: the endpoint's label flows to the receiver's. -/
-theorem endpointReceiveFlowGate_implies_securityFlowsTo (ctx : LabelingContext)
-    (endpointId : SeLe4n.ObjId) (endpointLabel receiverLabel : SecurityLabel)
-    (h : endpointReceiveFlowGate ctx endpointId endpointLabel receiverLabel = true) :
-    securityFlowsTo endpointLabel receiverLabel = true :=
-  twoWayLabelGate_forward (Bool.and_eq_true _ _ ▸ h).1
-
-/-- An admitted receive: the receiver's label flows to the endpoint's — the
-direction a one-way gate did not test. -/
-theorem endpointReceiveFlowGate_implies_receiverFlowsToEndpoint (ctx : LabelingContext)
-    (endpointId : SeLe4n.ObjId) (endpointLabel receiverLabel : SecurityLabel)
-    (h : endpointReceiveFlowGate ctx endpointId endpointLabel receiverLabel = true) :
-    securityFlowsTo receiverLabel endpointLabel = true :=
-  twoWayLabelGate_backward (Bool.and_eq_true _ _ ▸ h).1
-
-/-- An admitted receive passes the endpoint's override. -/
-theorem endpointReceiveFlowGate_implies_override (ctx : LabelingContext)
-    (endpointId : SeLe4n.ObjId) (endpointLabel receiverLabel : SecurityLabel)
-    (h : endpointReceiveFlowGate ctx endpointId endpointLabel receiverLabel = true) :
-    endpointOverrideAllows ctx endpointId endpointLabel receiverLabel = true :=
-  (Bool.and_eq_true _ _ ▸ h).2
-
-/-- The receive gate's introduction rule. -/
-theorem endpointReceiveFlowGate_of (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
-    (endpointLabel receiverLabel : SecurityLabel)
-    (hTwoWay : twoWayLabelGate endpointLabel receiverLabel = true)
-    (hOverride : endpointOverrideAllows ctx endpointId endpointLabel receiverLabel = true) :
-    endpointReceiveFlowGate ctx endpointId endpointLabel receiverLabel = true := by
-  simp [endpointReceiveFlowGate, hTwoWay, hOverride]
-
-/-- A denied endpoint-to-receiver flow denies the receive. -/
-theorem endpointReceiveFlowGate_false_of_securityFlowsTo_false (ctx : LabelingContext)
-    (endpointId : SeLe4n.ObjId) (endpointLabel receiverLabel : SecurityLabel)
-    (h : securityFlowsTo endpointLabel receiverLabel = false) :
-    endpointReceiveFlowGate ctx endpointId endpointLabel receiverLabel = false := by
-  simp [endpointReceiveFlowGate, twoWayLabelGate_false_of_forward_false h]
-
-/-- A denied receiver-to-endpoint flow denies the receive: a higher receiver on a
-lower endpoint, which a one-way gate admitted. -/
-theorem endpointReceiveFlowGate_false_of_receiverFlowsToEndpoint_false
-    (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
-    (endpointLabel receiverLabel : SecurityLabel)
-    (h : securityFlowsTo receiverLabel endpointLabel = false) :
-    endpointReceiveFlowGate ctx endpointId endpointLabel receiverLabel = false := by
-  simp [endpointReceiveFlowGate, twoWayLabelGate_false_of_backward_false h]
 
 /-- **The gate every notification read runs**: may thread `tid` wait on, consume
 from, take a bound delivery from, or bind to the notification `notificationId`.
@@ -1927,13 +1898,6 @@ theorem notificationFlowGate_backward {ctx : LabelingContext} {notificationId : 
     {tid : SeLe4n.ThreadId} (h : notificationFlowGate ctx notificationId tid = true) :
     securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf notificationId) = true :=
   twoWayLabelGate_backward h
-
-/-- A denied override denies the receive. -/
-theorem endpointReceiveFlowGate_false_of_override_false (ctx : LabelingContext)
-    (endpointId : SeLe4n.ObjId) (endpointLabel receiverLabel : SecurityLabel)
-    (h : endpointOverrideAllows ctx endpointId endpointLabel receiverLabel = false) :
-    endpointReceiveFlowGate ctx endpointId endpointLabel receiverLabel = false := by
-  simp [endpointReceiveFlowGate, h]
 
 /-- WS-SM SM8.C: and the default context configures no override anywhere, so the
 gate is the global check at every endpoint unless a deployment says otherwise. -/
