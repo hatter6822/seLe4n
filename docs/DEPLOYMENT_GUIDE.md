@@ -210,8 +210,17 @@ configures neither behaves exactly as it did before they existed.**
 which **conjoins** the override with the global lattice check:
 
 ```
-endpointFlowGate ctx ep src dst  =  securityFlowsTo src dst  &&  override ep src dst
+endpointFlowGate ctx ep src dst  =  twoWayLabelGate src dst  &&  override ep src dst
+twoWayLabelGate a b              =  securityFlowsTo a b  &&  securityFlowsTo b a   -- a = b
 ```
+
+The lattice conjunct is **two-way** (since `v0.37.35`): an endpoint carries
+traffic only between threads of its own label, and so does a notification's
+wait queue and bound thread (`notificationFlowGate`).  Plan cross-label traffic
+on notifications: `Signal` keeps the one-way check (`thread ⊑ notification`)
+and the receiving side waits at the notification's own label.  A deployment
+whose components called or sent across labels on one endpoint now gets
+`flowDenied` there.
 
 The conjunction is the security property, not an implementation detail.  It
 means an override can only ever **narrow**:

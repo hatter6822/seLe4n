@@ -11321,9 +11321,8 @@ const STASHED_REPLY_SCENARIO: [RoundTrip; 6] = [
 /// minted from the endpoint's.
 /// **WS-ZA ZA5.13: the declassification scenario**, run on the exerciser
 /// image's labeling (`SeLe4n.Platform.Exerciser.deploymentLabeling`): its boot domain is
-/// the top of the lattice and its downgrades are from there to the upper
-/// domain and from the upper domain to the low band (WS-ZA ZA6.35, used by
-/// [`bound_declassified_signals`]).  A notification is carved at an upper id
+/// the top of the lattice and its downgrade is from there to the upper
+/// domain.  A notification is carved at an upper id
 /// ([`UPPER_NOTIFICATION_ID`], unmeasured, into the frame slot), then, as
 /// whichever thread is current:
 /// - the notification declassified (one audit record, and the caller tagged
@@ -11333,9 +11332,11 @@ const STASHED_REPLY_SCENARIO: [RoundTrip; 6] = [
 /// - a send that blocks carrying the caller's tags, and the other thread's
 ///   receive that takes the message — and the tags — from it: the tainted
 ///   path, IPC whose content carries a declassification's provenance;
-/// - a wait that takes the stored badge, a wait on the notification that
-///   blocks, and the other thread's declassified signal that wakes it (one more record, the second hop an
-///   ordinary flow);
+/// - a wait on the notification, refused `flowDenied` before any write: the
+///   waiter's label is not the notification's (the two-way label gate), so a
+///   boot-domain thread never joins an upper-domain queue;
+/// - a second declassified signal, which leaves the word pending (one more
+///   record);
 /// - a refused declassification, unmeasured, then the audit monitor's drain
 ///   and reads ([`AUDIT_SCENARIO`]) and the carved notification's only
 ///   capability deleted.
@@ -11343,7 +11344,7 @@ const STASHED_REPLY_SCENARIO: [RoundTrip; 6] = [
 /// Run twice like every scenario: the second run's caller and receiver are
 /// already tagged, so it is the steady state of the tainted path too.
 #[cfg(feature = "hw_target")]
-const DECLASSIFICATION_SCENARIO: [RoundTrip; 7] = [
+const DECLASSIFICATION_SCENARIO: [RoundTrip; 6] = [
     cap_argument(
         "declassify",
         DECLASSIFY,
@@ -11367,21 +11368,26 @@ const DECLASSIFICATION_SCENARIO: [RoundTrip; 7] = [
         true,
     ),
     partner_step("receive-tainted", RECEIVE, ENDPOINT_CAP, 0, [0, 0], false),
-    // WS-ZA ZA6.35: the stored badge taken by a wait, then a declassified
-    // signal that wakes the notification's next waiter: its first hop the
-    // caller's downgrade into the notification (one record), its second the
-    // notification's ordinary flow into the waiter.
-    partner_step(
-        "declassified-wait-pending",
-        WAIT,
-        FRAME_CAP,
-        0,
-        [0, 0],
-        false,
-    ),
-    partner_step("declassified-wait-blocks", WAIT, FRAME_CAP, 0, [0, 0], true),
+    // A boot-domain wait on the upper notification: the two-way label gate
+    // refuses it before any write, so the stored badge stays pending.
+    RoundTrip {
+        returns: Some((
+            (crate::svc_dispatch::ERROR_LABEL_BASE + FLOW_DENIED) << 12,
+            [None; 4],
+        )),
+        ..partner_step(
+            "declassified-wait-refused",
+            WAIT,
+            FRAME_CAP,
+            0,
+            [0, 0],
+            false,
+        )
+    },
+    // A second declassified signal on it: its one hop the caller's downgrade
+    // into the notification (one record), the word left pending.
     cap_argument(
-        "declassified-signal-wakes",
+        "declassified-signal-pending",
         DECLASSIFY_SIGNAL,
         AUDIT_CAP,
         FRAME_CAP,
@@ -12010,55 +12016,52 @@ const UPPER_NOTIFICATION_CARVE: RoundTrip = retype(
     ],
     ROOT_IPC_BUFFER,
 );
-/// The low band's thread: its id in the exerciser labeling's lower trusted
-/// domain.
+/// The bound scenario's second thread: its id in the exerciser labeling's boot
+/// domain, just past the low band (`Exerciser.lowBandBase` + `lowBandSize`),
+/// so it carries the root task's label: an endpoint carries traffic only
+/// between threads of its own label.
 #[cfg(feature = "hw_target")]
-const LOW_THREAD_ID: u64 = 0x8_0000;
-/// The low band's endpoint, the one the low thread receives on.
+const BOUND_THREAD_ID: u64 = 0x8_0100;
+/// The bound scenario's endpoint, the one the second thread receives on, in the
+/// boot domain beside it.
 #[cfg(feature = "hw_target")]
-const LOW_ENDPOINT_ID: u64 = 0x8_0001;
-/// The boot-domain notification bound to the root task, then to the low thread.
+const BOUND_ENDPOINT_ID: u64 = 0x8_0101;
+/// The boot-domain notification bound to the root task, then to the second thread.
 #[cfg(feature = "hw_target")]
 const BOOT_DOMAIN_NOTIFICATION_ID: u64 = PASSIVE_CHILD_IDS[1];
 #[cfg(feature = "hw_target")]
-const LOW_THREAD_CAP: u64 = CHAIN_TCB_CAP;
+const BOUND_THREAD_CAP: u64 = CHAIN_TCB_CAP;
 #[cfg(feature = "hw_target")]
-const LOW_ENDPOINT_CAP: u64 = STACK_TOP_TCB_CAP;
-/// `KernelError::DeclassificationDeniedAtReceiver`'s discriminant.
-#[cfg(feature = "hw_target")]
-const DECLASSIFICATION_DENIED_AT_RECEIVER: u64 = 56;
-/// The refusal ledger's ring size (`refusalRingSize`).
-#[cfg(feature = "hw_target")]
-const REFUSAL_RING_SIZE: u64 = 32;
+const BOUND_ENDPOINT_CAP: u64 = STACK_TOP_TCB_CAP;
 /// The bound scenario's setup, unmeasured.
 #[cfg(feature = "hw_target")]
 const BOUND_SIGNAL_SETUP: [RoundTrip; 11] = [
     retype(
-        "untyped-retype-low-thread",
+        "untyped-retype-bound-thread",
         UNTYPED_CAP,
-        [TCB_TYPE, LOW_THREAD_ID, CNODE_CAP, CHAIN_TCB_SLOT],
+        [TCB_TYPE, BOUND_THREAD_ID, CNODE_CAP, CHAIN_TCB_SLOT],
         ROOT_IPC_BUFFER,
     ),
     set_space(
-        "low-thread-set-space",
-        LOW_THREAD_CAP,
+        "bound-thread-set-space",
+        BOUND_THREAD_CAP,
         [ENDPOINT_CAP, CNODE_CAP, VSPACE_CAP],
         0,
         ROOT_IPC_BUFFER,
     ),
     set_priority(
-        "low-thread-set-priority",
+        "bound-thread-set-priority",
         TCB_SET_PRIORITY,
-        LOW_THREAD_CAP,
+        BOUND_THREAD_CAP,
         PARTNER_PRIORITY,
         ROOT_IPC_BUFFER,
     ),
     retype(
-        "untyped-retype-low-endpoint",
+        "untyped-retype-bound-endpoint",
         UNTYPED_CAP,
         [
             ENDPOINT_TYPE,
-            LOW_ENDPOINT_ID,
+            BOUND_ENDPOINT_ID,
             CNODE_CAP,
             STACK_TOP_TCB_SLOT,
         ],
@@ -12095,21 +12098,21 @@ const BOUND_SIGNAL_SETUP: [RoundTrip; 11] = [
         MOVE_CAP,
         ROOT_IPC_BUFFER,
     ),
-    // The low thread names its declassified signal's notification as extra
+    // The second thread names its declassified signal's notification as extra
     // capability 0, so it is given a buffer on the root task's buffer frame,
     // where every word the driver writes to the root task's buffer is mirrored
     // ([`PARTNER_IPC_BUFFER`]).
     set_ipc_buffer(
-        "low-thread-ipc-buffer",
-        LOW_THREAD_CAP,
+        "bound-thread-ipc-buffer",
+        BOUND_THREAD_CAP,
         PARTNER_IPC_BUFFER,
         ROOT_IPC_BUFFER_FRAME_CAP,
         ROOT_IPC_BUFFER,
     ),
-    invocation("low-thread-resume", TCB_RESUME, LOW_THREAD_CAP, [0; 4]),
+    invocation("bound-thread-resume", TCB_RESUME, BOUND_THREAD_CAP, [0; 4]),
 ];
 /// The root task's receive on the boot endpoint, which blocks and runs the
-/// low thread, unmeasured.
+/// second thread, unmeasured.
 #[cfg(feature = "hw_target")]
 const BOUND_ROOT_RECEIVES: RoundTrip = partner_step(
     "bound-root-receives",
@@ -12119,7 +12122,7 @@ const BOUND_ROOT_RECEIVES: RoundTrip = partner_step(
     [0, 0],
     true,
 );
-/// The low thread's declassified signal to the root task, bound and blocked.
+/// The second thread's declassified signal to the root task, bound and blocked.
 #[cfg(feature = "hw_target")]
 const DECLASSIFIED_SIGNAL_BOUND: RoundTrip = RoundTrip {
     msg_len: ONE_EXTRA_CAP,
@@ -12133,118 +12136,45 @@ const DECLASSIFIED_SIGNAL_BOUND: RoundTrip = RoundTrip {
         false,
     )
 };
-/// The low thread's plain signal to the root task, bound and blocked.
+/// The second thread's plain signal to the root task, bound and blocked.
 #[cfg(feature = "hw_target")]
 const SIGNAL_BOUND: RoundTrip = partner_step("signal-bound", SIGNAL, MOVE_CAP, 1, [6, 0], false);
-/// The low thread's yield, which runs the woken root task, unmeasured.
+/// The second thread's yield, which runs the woken root task, unmeasured.
 #[cfg(feature = "hw_target")]
-const LOW_THREAD_YIELDS: RoundTrip = kernel_step("low-thread-yields", YIELD);
+const BOUND_THREAD_YIELDS: RoundTrip = kernel_step("bound-thread-yields", YIELD);
 /// The bound line's acknowledge after its signal, unmeasured.
 #[cfg(feature = "hw_target")]
 const BOUND_IRQ_ACK: RoundTrip = irq_handler_ack("bound-irq-handler-ack", IRQ_BOUND_HANDLER_SLOT);
-/// The low thread's receive on its endpoint, which blocks and runs the root
+/// The second thread's receive on its endpoint, which blocks and runs the root
 /// task, unmeasured.
 #[cfg(feature = "hw_target")]
-const LOW_THREAD_RECEIVES: RoundTrip = partner_step(
-    "low-thread-receives",
+const BOUND_THREAD_RECEIVES: RoundTrip = partner_step(
+    "bound-thread-receives",
     RECEIVE,
-    LOW_ENDPOINT_CAP,
+    BOUND_ENDPOINT_CAP,
     0,
     [0, 0],
     true,
 );
-/// The upper notification bound to the low thread, unmeasured.
+/// The upper notification bound to the second thread, measured: refused
+/// `flowDenied` before any write, since the thread's label is not the
+/// notification's (the two-way label gate).
 #[cfg(feature = "hw_target")]
-const BIND_UPPER_TO_LOW_THREAD: RoundTrip = cap_argument(
-    "low-thread-bind-upper-notification",
-    TCB_BIND_NOTIFICATION,
-    LOW_THREAD_CAP,
-    FRAME_CAP,
-    ROOT_IPC_BUFFER,
-);
-/// The root task's declassified signal on the upper notification, both hops
-/// downgrades.
-#[cfg(feature = "hw_target")]
-const DECLASSIFIED_SIGNAL_TWO_HOP: RoundTrip = RoundTrip {
-    msg_len: ONE_EXTRA_CAP,
-    caps_or_badges: Some((ROOT_IPC_BUFFER, [FRAME_CAP, 0, 0], None)),
-    ..partner_step(
-        "declassified-signal-two-hop",
-        DECLASSIFY_SIGNAL,
-        AUDIT_CAP,
-        0,
-        [0, 0],
-        false,
-    )
-};
-/// The root task's yield, which runs the woken low thread, unmeasured.
-#[cfg(feature = "hw_target")]
-const BOUND_ROOT_YIELDS: RoundTrip = kernel_step("bound-root-yields", YIELD);
-/// The notifications swapped, unmeasured: the upper one unbound from the low
-/// thread, the boot domain's from the root task and bound to the low thread.
-#[cfg(feature = "hw_target")]
-const BOUND_SIGNAL_SWAP: [RoundTrip; 3] = [
-    invocation(
-        "low-thread-unbind-upper-notification",
-        TCB_UNBIND_NOTIFICATION,
-        LOW_THREAD_CAP,
-        [0; 4],
-    ),
-    invocation(
-        "root-unbind-boot-domain-notification",
-        TCB_UNBIND_NOTIFICATION,
-        ROOT_TCB_CAP,
-        [0; 4],
-    ),
-    cap_argument(
-        "low-thread-bind-boot-domain-notification",
-        TCB_BIND_NOTIFICATION,
-        LOW_THREAD_CAP,
-        MOVE_CAP,
-        ROOT_IPC_BUFFER,
-    ),
-];
-/// The root task's declassified signal refused at its second hop, measured.
-#[cfg(feature = "hw_target")]
-const DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER: RoundTrip = RoundTrip {
-    name: "declassified-signal-refused-at-receiver",
-    syscall: DECLASSIFY_SIGNAL,
-    cptr: AUDIT_CAP,
-    reply: None,
-    issued: None,
-    selects: None,
-    msg_len: ONE_EXTRA_CAP,
-    msg: [0, 0, 0, 0],
-    primed: None,
-    blocks: false,
-    resumes: false,
-    caps_or_badges: Some((ROOT_IPC_BUFFER, [MOVE_CAP, 0, 0], None)),
-    overflow: None,
+const BIND_UPPER_TO_BOUND_THREAD_REFUSED: RoundTrip = RoundTrip {
     returns: Some((
-        (crate::svc_dispatch::ERROR_LABEL_BASE + DECLASSIFICATION_DENIED_AT_RECEIVER) << 12,
+        (crate::svc_dispatch::ERROR_LABEL_BASE + FLOW_DENIED) << 12,
         [None; 4],
     )),
-};
-/// The refusal ledger's status, read unmeasured for the refusal's slot.
-#[cfg(feature = "hw_target")]
-const BOUND_REFUSAL_STATUS: RoundTrip = RoundTrip {
-    name: "bound-refusal-status",
-    syscall: AUDIT_READ,
-    cptr: AUDIT_CAP,
-    reply: None,
-    issued: None,
-    selects: None,
-    msg_len: 3,
-    msg: [12, 0, 0, 0],
-    primed: None,
-    blocks: false,
-    resumes: false,
-    caps_or_badges: None,
-    overflow: None,
-    returns: None,
+    ..cap_argument(
+        "bind-upper-notification-refused",
+        TCB_BIND_NOTIFICATION,
+        BOUND_THREAD_CAP,
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
+    )
 };
 /// The slots emptied again, unmeasured: the bound line's handler cleared and
-/// deleted, the low thread's capability deleted (its finalisation cancels its
+/// deleted, the second thread's capability deleted (its finalisation cancels its
 /// receive and unbinds its notification), then the endpoint's and the two
 /// notifications'.
 #[cfg(feature = "hw_target")]
@@ -12262,13 +12192,13 @@ const BOUND_SIGNAL_TEARDOWN: [RoundTrip; 6] = [
         [IRQ_BOUND_HANDLER_SLOT, 0, 0, 0],
     ),
     invocation(
-        "low-thread-delete",
+        "bound-thread-delete",
         CSPACE_DELETE,
         CNODE_CAP,
         [CHAIN_TCB_SLOT, 0, 0, 0],
     ),
     invocation(
-        "low-endpoint-delete",
+        "bound-endpoint-delete",
         CSPACE_DELETE,
         CNODE_CAP,
         [STACK_TOP_TCB_SLOT, 0, 0, 0],
@@ -12287,40 +12217,30 @@ const BOUND_SIGNAL_TEARDOWN: [RoundTrip; 6] = [
     ),
 ];
 
-/// **WS-ZA ZA6.35: a declassified signal's bound delivery, its two-hop
-/// downgrade and its refused second hop**, on the exerciser labeling's low
-/// band (`Exerciser.inLowBand`): a thread carved at [`LOW_THREAD_ID`],
-/// given the root task's spaces and priority, and an endpoint carved at
-/// [`LOW_ENDPOINT_ID`], both in the lower trusted domain, beside a
-/// notification in the boot domain (in the move slot) bound to the root task
-/// and the upper-domain one (in the frame slot).  With the partner suspended
-/// and the timer masked, the two threads are the core's only runnable ones,
-/// so a step that blocks one restores the other.  Then:
-/// - the root task's receive on the boot endpoint blocks, and the low thread's
-///   declassified signal on the root task's notification delivers to it, bound
-///   and blocked receiving (seL4's `sendSignal` bound arm: both hops ordinary
-///   flows, no record); the low thread's yield runs the root task, whose
-///   receive blocks again, and the low thread's plain signal delivers the
-///   same way; once more, and the bound line's interrupt (its handler issued
-///   and bound to that notification) delivers the same way, and its
-///   acknowledge follows; the low thread's receive on its endpoint blocks;
-/// - the upper notification bound to the low thread, and the root task's
-///   declassified signal on it delivers to the low thread, the first hop the
-///   downgrade from the boot domain to the upper one and the second the upper
-///   domain's downgrade to the lower one (two records, the second stamped
-///   with the first's words); the root task's yield runs the low thread, whose
-///   receive blocks again;
-/// - the notifications swapped, the boot domain's bound to the low thread, and
-///   the root task's declassified signal on it is refused at its second hop
-///   (`declassificationDeniedAtReceiver`: the boot domain does not flow to the
-///   lower one and the policy authorizes no such downgrade), which the
-///   refusal ledger records naming the receiver;
-/// - the audit monitor's read of that refusal's receiver chunk (opcode 26),
-///   its slot read off the ledger's status first, its word checked to be the
-///   low thread's id.
+/// **WS-ZA ZA6.35: a declassified signal's bound delivery, and a bind across
+/// labels refused**: a thread carved at [`BOUND_THREAD_ID`], given the root
+/// task's spaces and priority, and an endpoint carved at [`BOUND_ENDPOINT_ID`],
+/// both in the boot domain (an endpoint and a notification carry traffic only
+/// between threads of their own label), beside a notification in the boot
+/// domain (in the move slot) bound to the root task and the upper-domain one
+/// (in the frame slot).  With the partner suspended and the timer masked, the
+/// two threads are the core's only runnable ones, so a step that blocks one
+/// restores the other.  Then:
+/// - the root task's receive on the boot endpoint blocks, and the second
+///   thread's declassified signal on the root task's notification delivers to
+///   it, bound and blocked receiving (seL4's `sendSignal` bound arm: both hops
+///   ordinary flows, no record); the second thread's yield runs the root task,
+///   whose receive blocks again, and its plain signal delivers the same way;
+///   once more, and the bound line's interrupt (its handler issued and bound
+///   to that notification) delivers the same way, and its acknowledge
+///   follows; the second thread's receive on its endpoint blocks;
+/// - the upper notification's bind to the second thread, refused `flowDenied`
+///   before any write: the thread's label is not the notification's, so a
+///   declassified signal's second hop can never reach a thread of another
+///   label.
 ///
-/// The four deliveries, the refusal and the read are measured; the setup, the
-/// switches and the deletes that leave the slots empty again are not.
+/// The three deliveries and the refusal are measured; the setup, the switches
+/// and the deletes that leave the slots empty again are not.
 ///
 /// One run (`which` names the first call); the caller masks the timer across
 /// it.
@@ -12330,24 +12250,24 @@ fn bound_declassified_signals(which: &str) -> bool {
         name: "irq-signal-bound",
         enter: irq_bound_line_entry,
     };
-    // A capability fault to a handler waiting with no reply object: the low
+    // A capability fault to a handler waiting with no reply object: the second
     // thread's fault endpoint is the boot endpoint (installed by its SetSpace
     // in the setup, seL4-MCS's `TCB_SetSpace` extra capability 0), the root task's
     // receive on it (no reply object, message length 0) blocks it, and the
-    // low thread's fault finds the handler holding no reply to link it to.
+    // second thread's fault finds the handler holding no reply to link it to.
     // seL4-MCS's `sendIPC` (do_call, a waiting receiver, no reply pushed)
     // delivers the fault message and leaves the faulter `Inactive`, so the
     // handler is woken with the fault.  The handler receives again and blocks,
     // the bound line's interrupt wakes it through its bound notification, and
-    // the low thread is resumed.
+    // the second thread is resumed.
     let irq_wakes_handler = KernelEntry {
         name: "irq-wakes-handler-without-reply",
         enter: irq_bound_line_entry,
     };
     let resume_low = invocation(
-        "low-thread-resume-after-fault",
+        "bound-thread-resume-after-fault",
         TCB_RESUME,
-        LOW_THREAD_CAP,
+        BOUND_THREAD_CAP,
         [0; 4],
     );
     if !unmeasured_all(&BOUND_SIGNAL_SETUP, "the bound scenario's setup failed")
@@ -12364,19 +12284,19 @@ fn bound_declassified_signals(which: &str) -> bool {
         )
         || !heap_allocations_interrupt(&irq_wakes_handler, which)
         || !unmeasured(&BOUND_IRQ_ACK, "the bound line was not acknowledged")
-        || !unmeasured(&resume_low, "the low thread was not resumed")
+        || !unmeasured(&resume_low, "the second thread was not resumed")
         || !unmeasured(
             &BOUND_ROOT_RECEIVES,
             "the root task's receive did not block",
         )
         || heap_allocations_round_trip(&DECLASSIFIED_SIGNAL_BOUND, which) != Some(true)
-        || !unmeasured(&LOW_THREAD_YIELDS, "the low thread's yield failed")
+        || !unmeasured(&BOUND_THREAD_YIELDS, "the second thread's yield failed")
         || !unmeasured(
             &BOUND_ROOT_RECEIVES,
             "the root task's receive did not block",
         )
         || heap_allocations_round_trip(&SIGNAL_BOUND, which) != Some(true)
-        || !unmeasured(&LOW_THREAD_YIELDS, "the low thread's yield failed")
+        || !unmeasured(&BOUND_THREAD_YIELDS, "the second thread's yield failed")
         || !unmeasured(
             &BOUND_ROOT_RECEIVES,
             "the root task's receive did not block",
@@ -12384,63 +12304,12 @@ fn bound_declassified_signals(which: &str) -> bool {
         || !heap_allocations_interrupt(&irq_bound, which)
         || !unmeasured(&BOUND_IRQ_ACK, "the bound line was not acknowledged")
         || !unmeasured(
-            &LOW_THREAD_RECEIVES,
-            "the low thread's receive did not block",
+            &BOUND_THREAD_RECEIVES,
+            "the second thread's receive did not block",
         )
-        || !unmeasured(
-            &BIND_UPPER_TO_LOW_THREAD,
-            "the upper notification was not bound",
-        )
-        || heap_allocations_round_trip(&DECLASSIFIED_SIGNAL_TWO_HOP, which) != Some(true)
-        || !unmeasured(&BOUND_ROOT_YIELDS, "the root task's yield failed")
-        || !unmeasured(
-            &LOW_THREAD_RECEIVES,
-            "the low thread's receive did not block",
-        )
-        || !unmeasured_all(&BOUND_SIGNAL_SWAP, "the notifications were not swapped")
-        || heap_allocations_round_trip(&DECLASSIFIED_SIGNAL_REFUSED_AT_RECEIVER, which)
-            != Some(true)
+        || heap_allocations_round_trip(&BIND_UPPER_TO_BOUND_THREAD_REFUSED, which) != Some(true)
     {
         return false;
-    }
-    let Dispatched::Returned(status) = dispatch_round_trip(&BOUND_REFUSAL_STATUS).0 else {
-        crate::kprintln!(
-            "[smp-test] FAIL: heap-allocations-per-syscall: bound-refusal-status: the refusal ledger's status was not read"
-        );
-        return false;
-    };
-    // The status word is the next slot plus the version times the ring size:
-    // the refusal just recorded is in the slot before the next.
-    let slot = (status[0] % REFUSAL_RING_SIZE + REFUSAL_RING_SIZE - 1) % REFUSAL_RING_SIZE;
-    let read = RoundTrip {
-        name: "audit-read-refusal-receiver",
-        syscall: AUDIT_READ,
-        cptr: AUDIT_CAP,
-        reply: None,
-        issued: None,
-        selects: None,
-        msg_len: 3,
-        msg: [26, slot, 0, 0],
-        primed: None,
-        blocks: false,
-        resumes: false,
-        caps_or_badges: None,
-        overflow: None,
-        returns: None,
-    };
-    if heap_allocations_round_trip(&read, which) != Some(true) {
-        return false;
-    }
-    match dispatch_round_trip(&read).0 {
-        Dispatched::Returned(regs) if regs[0] == LOW_THREAD_ID => {}
-        Dispatched::Returned(regs) => {
-            crate::kprintln!(
-                "[smp-test] FAIL: heap-allocations-per-syscall: audit-read-refusal-receiver: slot {slot} names {:#x}, not the low thread",
-                regs[0]
-            );
-            return false;
-        }
-        _ => return false,
     }
     unmeasured_all(
         &BOUND_SIGNAL_TEARDOWN,

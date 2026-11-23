@@ -1,3 +1,65 @@
+## v0.37.35 — Endpoints and notification waits join only equal labels
+
+Security fix (Medium): three high-to-low storage channels through endpoint and
+notification queues are closed by making every gate that can enqueue a thread,
+or make a later operation's result depend on it, a **two-way label gate**.
+
+- **The channels.** Every Wait, receive and bind gate tested only
+  `securityFlowsTo L(object) L(thread)`, and every send gate only
+  `securityFlowsTo L(thread) L(endpoint)`.  So a higher thread could wait on a
+  lower notification or receive on a lower endpoint (its queue entry is visible
+  to the lower observer, and a later lower `Signal` or send has a different
+  result), be bound to a lower notification (bound delivery and
+  `receiveCompletesSignal` used the same one-way test), and a lower sender's
+  own state after a send on a higher endpoint read back whether a higher
+  receiver was waiting there (ready or blocked).
+- **One owner.** `twoWayLabelGate a b := securityFlowsTo a b && securityFlowsTo b a`
+  (`InformationFlow/Policy.lean`), proved equal to label equality
+  (`twoWayLabelGate_iff_eq`).  `endpointFlowGate` uses it for every endpoint
+  operation: send, receive, call, reply-receive, fault delivery and the
+  per-endpoint override path; `notificationFlowGate` for notification Wait
+  (checked wrapper, refusal-carrying arm, cross-core dispatch), bound delivery
+  and `receiveCompletesSignal`.  The one-way forms are deleted; a Tier 3
+  negative anchor keeps them out of the gate sites.
+- **Bind is policy-gated.** `.tcbBindNotification` runs
+  `bindNotificationChecked` (new; the enforcement boundary is 16 policy-gated,
+  35 capability-only), refused `flowDenied` before any write.
+- **Signal stays one-way.** It never blocks the signaller and returns nothing
+  that depends on a receiver.  Cross-label traffic uses notifications.
+- **Proofs.** An admitted Wait or receive needs no hypothesis that the object is
+  non-observable: `notificationObjectHigh_of_admittedThreadHigh` and
+  `endpointObjectHigh_of_admittedReceiverHigh` derive it from the gate, and
+  `notificationWaitChecked_NI` / `nonInterferenceStep_of_notificationWaitChecked`
+  take no `hNtfnHigh`.  `endpointAdmissionUniform` (every admission keeps a
+  queue label-uniform) and `endpointAdmissionRefusesMixedLabels` replace
+  `endpointAdmissionAdmitsMixedObservability`.  New refusal theorems:
+  `notificationWaitChecked_flowDenied_of_waiterAbove`,
+  `endpointReceiveDualChecked_flowDenied_of_receiverAbove`,
+  `endpointSendDualChecked_flowDenied_of_endpointAbove`,
+  `bindNotificationChecked_flowDenied_of_threadAbove`,
+  `checkedDispatch_receive_flow_denied_of_receiverAbove`.
+- **Tests.** `information_flow_suite` checks the refused cross-label Wait,
+  receive, send and bind, that the refused Wait leaves the lower view unchanged
+  and a later lower `Signal` has the effect it has without it, and that each
+  call is admitted at equal labels; one existing check that expected an upward
+  Wait to be admitted now expects `flowDenied`.  The SMP information-flow
+  fixture's boundary-count line is regenerated (15/36 → 16/35).
+- **Exerciser.** The declassification scenario's boot-domain waits on the
+  upper notification are now refused: `declassified-wait-pending`,
+  `declassified-wait-blocks` and `declassified-signal-wakes` become
+  `declassified-wait-refused` (measured refusal) and `declassified-signal-pending`.
+  The bound scenario's second thread and endpoint move from the low band into
+  the boot domain (its fault to the boot endpoint is now same-label); the
+  upper notification's bind to it is the measured refusal
+  `bind-upper-notification-refused`, and `declassified-signal-two-hop`,
+  `declassified-signal-refused-at-receiver` and `audit-read-refusal-receiver`,
+  which needed a cross-label bind, are dropped.  The heap gate's expected set
+  follows.
+- **Debt.** The queue-membership row closes (cross-label traffic uses
+  notifications).  Registered: the queue label-uniformity state invariant (the
+  teardown's neighbour clause is still a hypothesis), and the declassified
+  signal's second hop, which can no longer be a downgrade.
+
 ## v0.37.34 — README brought up to date
 
 Documentation only; no Lean, Rust or script changes. The root `README.md`
