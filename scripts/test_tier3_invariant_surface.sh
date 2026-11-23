@@ -10603,6 +10603,12 @@ run_check "INVARIANT" rg -n 'receiveReturnReplenishCores \(cancelReplyHolder st 
 run_check "INVARIANT" rg -n '^theorem schedContextReturnPerform_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Dispatch.lean
 run_check "INVARIANT" rg -n '^theorem cancelRecvBusyReply_receiveReturnContext\?_locked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/ReplyBindingPairFrame.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceiveLegR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+# The leg after a return runs out of line, so the receive arm compiles the
+# rendezvous once per inline site (it doubled RefusalCarryingEndpoint.c and
+# RefusalCarryingReplyRecv.c when inlined twice).  The out-of-line arm takes
+# words and the state; the returned leg's fallback is that arm, not the leg.
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def endpointReceiveReturnedRendezvousR \(blocks : Bool\) \(epId : SeLe4n\.ObjId\)\n    \(tid : SeLe4n\.ThreadId\) \(replyCode : Nat\) \(executingCore : Concurrency\.CoreId\) \(lend : Bool\)\n    \(st : SystemState\) :' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+run_check "INVARIANT" rg -n -U '^    else endpointReceiveReturnedRendezvousR blocks epId tid replyCode executingCore lend st\n\ntheorem endpointReceiveReturnedLegR_eq' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n '^theorem receiveReturnSchedContext_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/SchedContextArms.lean
 run_check "INVARIANT" rg -n '^theorem receiveWithReturn_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # NEGATIVE: the footprint must take no policy — that is what makes

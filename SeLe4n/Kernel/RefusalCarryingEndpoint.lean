@@ -5447,12 +5447,25 @@ handed to the return alone. -/
     (executingCore : Concurrency.CoreId) : SystemState :=
   removeRunnableOnCore (storeReceiveBlock st epId tid tailCode replyCode) tid executingCore
 
+/-- The receive leg on the returned state, a refusal there carrying the state
+the arm was handed.  Out of line: the leg it runs (`endpointReceiveLegR`, the
+whole rendezvous of `endpointReceiveTakeR`) is otherwise compiled a second time
+at every site that inlines the receive arm, beside the copy the arm runs when no
+return fires.  It takes words and the state. -/
+@[noinline] def endpointReceiveReturnedRendezvousR (blocks : Bool) (epId : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) (replyCode : Nat) (executingCore : Concurrency.CoreId) (lend : Bool)
+    (st : SystemState) : Except (KernelError × SystemState) (Unit × SystemState) :=
+  match endpointReceiveLegR epId tid replyCode executingCore lend
+      (receiveReturnSchedContextFast blocks st tid.val) with
+  | .error (e, _) => .error (e, st)
+  | r => r
+
 /-- **The receive leg after seL4's return**: when the receive blocks in place
 (read on the state the arm is handed, `receiveReturnSchedContext_receiveBlocksFast`)
 the return and the block are written in place, the state handed to them alone;
 otherwise the leg runs on the returned state, and a refusal there carries the
 state the arm was handed, so the return is not committed
-(`endpointReceiveReturnedLegR_eq`). -/
+(`endpointReceiveReturnedRendezvousR`, `endpointReceiveReturnedLegR_eq`). -/
 @[inline] def endpointReceiveReturnedLegR (blocks : Bool) (epId : SeLe4n.ObjId)
     (tid : SeLe4n.ThreadId) (replyCode : Nat) (executingCore : Concurrency.CoreId) (lend : Bool) :
     RefusalCarrying Unit :=
@@ -5460,11 +5473,7 @@ state the arm was handed, so the return is not committed
     if receiveBlocksFast st epId tid replyCode then
       .ok ((), receiveBlockAfterReturn (receiveQueueTailCode st epId)
         (receiveReturnSchedContextFast blocks st tid.val) epId tid replyCode executingCore)
-    else
-      match endpointReceiveLegR epId tid replyCode executingCore lend
-          (receiveReturnSchedContextFast blocks st tid.val) with
-      | .error (e, _) => .error (e, st)
-      | r => r
+    else endpointReceiveReturnedRendezvousR blocks epId tid replyCode executingCore lend st
 
 theorem endpointReceiveReturnedLegR_eq (blocks : Bool) (epId : SeLe4n.ObjId)
     (tid : SeLe4n.ThreadId) (replyCode : Nat) (executingCore : Concurrency.CoreId) (lend : Bool)
@@ -5482,6 +5491,7 @@ theorem endpointReceiveReturnedLegR_eq (blocks : Bool) (epId : SeLe4n.ObjId)
     unfold endpointReceiveLegR receiveBlockAfterReturn
     rw [if_pos hF', hT]
   · rw [if_neg hF]
+    rfl
 
 /-- The checked receive arm once its reply object is resolved, given as its
 code: the blocking receive written in place when it may be
