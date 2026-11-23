@@ -9,6 +9,7 @@
 
 import SeLe4n.Testing.Sel4ConformanceTable
 import SeLe4n.Testing.Helpers
+import SeLe4n.Testing.StateBuilder
 
 /-!
 # The seL4 conformance suite
@@ -130,6 +131,172 @@ def runWordFirst : IO Unit := do
       | .ok a => a.interfaceId.toNat == 9
       | _ => false)
 
+/-! ### The behaviour rows
+
+One scenario per `sel4BehaviourRows` row, each run against the kernel.  A
+hardening row's scenario runs both halves: seL4's behaviour where the gate
+admits it, and the refusal where it does not. -/
+
+section Behaviour
+open SeLe4n.Kernel
+open SeLe4n.Kernel.Concurrency
+
+private def bTcb (tid : Nat) : TCB :=
+  { tid := ⟨tid⟩, priority := ⟨10⟩, domain := ⟨0⟩,
+    spaceCells := SeLe4n.Model.TCB.spaceCellsOf ⟨0⟩ ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
+    threadState := .Ready }
+
+private def bState (objs : List (ObjId × KernelObject)) : SystemState :=
+  ({ objects := objs, current := none } : SeLe4n.Testing.BootstrapBuilder).buildChecked
+
+private def bWaiter : SeLe4n.ThreadId := ⟨2⟩
+private def bScObj : SeLe4n.ObjId := ⟨60⟩
+private def bScId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofObjId bScObj
+private def bNtfn : SeLe4n.ObjId := ⟨80⟩
+
+private def bNtfnObject : Bool → Notification
+  | true =>
+    { state := .active, hasPendingBadge := true, pendingWord := SeLe4n.Badge.ofNatMasked 7,
+      schedContextCode := bScId.val + 1 }
+  | false =>
+    { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
+      schedContextCode := bScId.val + 1 }
+
+/-- A notification lending context 60, with or without a pending badge, and
+waiter 2 holding no context. -/
+private def bNtfnState (pending : Bool) : SystemState :=
+  bState [
+    (bWaiter.toObjId, .tcb (bTcb 2)),
+    (bScObj, .schedContext { SeLe4n.Kernel.SchedContext.empty bScId with
+      notificationCode := bNtfn.val + 1 }),
+    (bNtfn, .notification (bNtfnObject pending))]
+
+private def bHolds (st : SystemState) : Bool :=
+  (st.getTcb? bWaiter).any (fun t => decide (t.schedContextBinding = .bound bScId)) &&
+    (st.getSchedContext? bScId).any (fun sc => decide (sc.boundThread = some bWaiter))
+
+private def bHoldsNothing (st : SystemState) : Bool :=
+  (st.getTcb? bWaiter).any (fun t => t.scBindingScCode == 0) &&
+    (st.getSchedContext? bScId).any (fun sc => decide (sc.boundThread = none))
+
+/-- The context labelled above every thread. -/
+private def bContextAbove : LabelingContext :=
+  { defaultLabelingContext with
+    objectLabelOf := fun o =>
+      if o = bScObj then SecurityLabel.kernelTrusted else SecurityLabel.publicLabel }
+
+/-- Waiter 2 blocks on the notification, then a signal wakes it. -/
+private def bSignalled (ctx : LabelingContext) : Option SystemState :=
+  match SeLe4n.Kernel.notificationWaitCrossCoreDispatchChecked ctx bNtfn bWaiter
+      bootCoreId (bNtfnState false) with
+  | (st1, .ok none) =>
+    match SeLe4n.Kernel.sendSignalOnCoreFlowing ctx bNtfn (SeLe4n.Badge.ofNatMasked 5)
+        bootCoreId st1 with
+    | (st2, .ok _) => some st2
+    | _ => none
+  | _ => none
+
+private def bWoken (st : SystemState) : Bool :=
+  (st.getTcb? bWaiter).any (fun t => decide (t.ipcState = .ready))
+
+private def bCheckSignal : Bool :=
+  (bSignalled defaultLabelingContext).any (fun st => bWoken st && bHolds st) &&
+    (bSignalled bContextAbove).any (fun st => bWoken st && bHoldsNothing st)
+
+private def bConsumed (ctx : LabelingContext) : Option SystemState :=
+  match SeLe4n.Kernel.completeSignalArm ctx bWaiter bNtfn bootCoreId (bNtfnState true) with
+  | .ok ((), st) => some st
+  | .error _ => none
+
+private def bCheckWaitConsume : Bool :=
+  (bConsumed defaultLabelingContext).any bHolds &&
+    (bConsumed bContextAbove).any bHoldsNothing
+
+/-- The waiter, lent the context by a signal, waits again and blocks: the
+context goes back to the notification. -/
+private def bCheckWaitReturn : Bool :=
+  match bSignalled defaultLabelingContext with
+  | some st =>
+    match SeLe4n.Kernel.completeSignalArm defaultLabelingContext bWaiter bNtfn bootCoreId st with
+    | .ok ((), st') => bHolds st && bHoldsNothing st' &&
+        (st'.getTcb? bWaiter).any (fun t => decide (t.ipcState = .blockedOnNotification bNtfn))
+    | .error _ => false
+  | none => false
+
+/-- Caller 3 holds context 61 and has called through reply 63; server 4 holds none.  Labelled with its
+context, the caller lends it; labelled above it, the call lends nothing. -/
+private def bCheckCallLend : Bool :=
+  let caller : SeLe4n.ThreadId := ⟨3⟩
+  let server : SeLe4n.ThreadId := ⟨4⟩
+  let scObj : SeLe4n.ObjId := ⟨61⟩
+  let scId := SeLe4n.SchedContextId.ofObjId scObj
+  let st := bState [
+    (caller.toObjId, .tcb { bTcb 3 with
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId),
+      replyObjectCode := SeLe4n.ReplyId.optCode (some ⟨63⟩) }),
+    (⟨63⟩, .reply { replyId := ⟨63⟩, callerCode := SeLe4n.ThreadId.optCode (some caller) }),
+    (server.toObjId, .tcb (bTcb 4)),
+    (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with
+      boundThreadCode := caller.val + 1, isActive := true })]
+  let highCaller : LabelingContext :=
+    { defaultLabelingContext with
+      threadLabelOf := fun t =>
+        if t = caller then SecurityLabel.kernelTrusted else SecurityLabel.publicLabel }
+  let lend (ctx : LabelingContext) : Option SystemState :=
+    match caller.toValid?, server.toValid? with
+    | some cV, some sV =>
+      match SeLe4n.Kernel.applyCallDonationOnCoreWhen (SeLe4n.Kernel.callLendAdmits ctx st caller)
+          st cV sV bootCoreId bootCoreId with
+      | .ok st' => some st'
+      | .error _ => none
+    | _, _ => none
+  (lend defaultLabelingContext).any (fun st' =>
+      (st'.getTcb? server).any (fun t => decide (t.schedContextBinding = .donated scId caller))) &&
+    (lend highCaller).any (fun st' =>
+      (st'.getTcb? server).any (fun t => t.scBindingScCode == 0) &&
+        (st'.getTcb? caller).any (fun t => decide (t.schedContextBinding = .bound scId)))
+
+/-- Thread 5 holds context 62 on loan from thread 6.  Its destruction unbinds
+the context, which stays unheld; the lender is not handed it back. -/
+private def bCheckDestroyUnbinds : Bool :=
+  let holder : SeLe4n.ThreadId := ⟨5⟩
+  let lender : SeLe4n.ThreadId := ⟨6⟩
+  let scObj : SeLe4n.ObjId := ⟨62⟩
+  let scId := SeLe4n.SchedContextId.ofObjId scObj
+  let binding : SeLe4n.Kernel.SchedContextBinding := .donated scId lender
+  let tcb : TCB :=
+    { bTcb 5 with
+      scBindingScCode := binding.scCode
+      scBindingOwnerCode := binding.ownerCode }
+  let st := bState [
+    (holder.toObjId, .tcb tcb), (lender.toObjId, .tcb (bTcb 6)),
+    (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with
+      boundThreadCode := holder.val + 1, isActive := true })]
+  match SeLe4n.Kernel.cancelDonationArmOnCore st holder tcb with
+  | .ok st' =>
+    (st'.getSchedContext? scId).any (fun sc => sc.boundThread.isNone) &&
+      (st'.getTcb? holder).any (fun t => decide (t.schedContextBinding = .unbound)) &&
+      (st'.getTcb? lender).any (fun t => decide (t.schedContextBinding = .unbound))
+  | .error _ => false
+
+/-- Each behaviour row's scenario, by the row's name. -/
+private def behaviourChecks : List (String × Bool) := [
+  ("signal-lends-context", bCheckSignal),
+  ("wait-consume-lends-context", bCheckWaitConsume),
+  ("wait-block-returns-context", bCheckWaitReturn),
+  ("call-lends-context", bCheckCallLend),
+  ("destroy-unbinds-context", bCheckDestroyUnbinds) ]
+
+/-- Every behaviour row has its scenario and every scenario its row, and each
+scenario passes. -/
+def runBehaviourRows : IO Unit := do
+  expect "behaviour rows and scenarios name the same behaviours"
+    (sel4BehaviourRows.map (·.name) == behaviourChecks.map (·.1))
+  for (name, ok) in behaviourChecks do
+    expect s!"behaviour {name}" ok
+
+end Behaviour
+
 end SeLe4n.Testing.Sel4ConformanceSuite
 
 def main : IO Unit := do
@@ -139,4 +306,5 @@ def main : IO Unit := do
   SeLe4n.Testing.Sel4ConformanceSuite.runErrors
   SeLe4n.Testing.Sel4ConformanceSuite.runMessageInfo
   SeLe4n.Testing.Sel4ConformanceSuite.runWordFirst
+  SeLe4n.Testing.Sel4ConformanceSuite.runBehaviourRows
   IO.println "=== Sel4ConformanceSuite PASSED ==="

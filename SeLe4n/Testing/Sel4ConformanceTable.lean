@@ -491,4 +491,42 @@ theorem sel4LabelRows_cover (sid : SyscallId) (l : Nat) (h : sid.label? = some l
     ∃ r ∈ sel4LabelRows, r.label = l ∧ r.status.op? = some sid := by
   cases sid <;> simp [SyscallId.label?] at h <;> subst h <;> decide
 
+/-- **One seL4 behaviour past a decode**: what an operation does that no label
+row shows (a lend, a return, an unbind), the seL4 function it follows, and
+seLe4n's status for it.  `tests/Sel4ConformanceSuite.lean` holds one scenario
+per row, run against the kernel, and checks that the scenarios and the rows
+name the same behaviours. -/
+structure BehaviourRow where
+  name : String
+  source : SourceRef
+  status : Status
+  deriving Repr
+
+/-- `src/object/<file>` at a line. -/
+def objectC (fn file : String) (line : Nat) : SourceRef := ⟨fn, "src/object/" ++ file, line⟩
+
+/-- **The scheduling-context lends, returns and unbinds** (WS-SX SX8): seL4-MCS's
+`maybeDonateSchedContext` in `sendSignal` and `completeSignal`, its
+`maybeReturnSchedContext` on a blocking `Wait`, `sendIPC`'s donation to a
+passive server, and `finaliseCap`'s unbind of a destroyed thread's context. -/
+def sel4BehaviourRows : List BehaviourRow := [
+  { name := "signal-lends-context",
+    source := objectC "sendSignal (maybeDonateSchedContext)" "notification.c" 62,
+    status := .hardening .notificationSignal
+      "flow gate: the notification's context is lent only where its label flows to the woken thread" },
+  { name := "wait-consume-lends-context",
+    source := objectC "completeSignal (maybeDonateSchedContext)" "notification.c" 325,
+    status := .hardening .notificationWait
+      "flow gate: the notification's context is lent only where its label flows to the waiter" },
+  { name := "wait-block-returns-context",
+    source := objectC "receiveSignal (maybeReturnSchedContext)" "notification.c" 225,
+    status := .implemented .notificationWait },
+  { name := "call-lends-context",
+    source := objectC "sendIPC (schedContext_donate)" "endpoint.c" 101,
+    status := .hardening .call
+      "flow gate: a caller lends only a context its own label flows to; the call goes on either way" },
+  { name := "destroy-unbinds-context",
+    source := objectC "finaliseCap (schedContext_unbindTCB)" "objecttype.c" 195,
+    status := .implemented .cspaceDelete } ]
+
 end SeLe4n.Testing.Sel4Conformance
