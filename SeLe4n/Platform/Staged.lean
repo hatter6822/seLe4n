@@ -686,6 +686,9 @@ import SeLe4n.Kernel.InformationFlow.NonInterferencePerCore
 -- reschedule SGI, the reschedule entry, the secondary-core entry and the
 -- residency settle (`PerCoreNonInterferenceStep`, `niStepCoverage_perCore_count`).
 import SeLe4n.Kernel.InformationFlow.PerCoreSchedulerNonInterference
+-- WS-SX SX9.1: two runs, one write: the pair lemmas for the notification
+-- lend's five writes (`rewriteObject_lowEquivalent_pair` and its siblings).
+import SeLe4n.Kernel.InformationFlow.LowEquivalencePairs
 -- WS-SM SM8.B: the SMP enforcement boundary (`enforcementBoundaryPerCore`, the
 -- canonical 38 entries plus the 2PL bracket) with its completeness witness, the
 -- seven-entry accepted covert-channel inventory as data (CC-1 … CC-7, each

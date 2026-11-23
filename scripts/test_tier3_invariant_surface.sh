@@ -7719,6 +7719,12 @@ run_check "INVARIANT" rg -n '^theorem timerTickBudgetOnCore_lowEquivalent($|[ ({
 run_check "INVARIANT" rg -n '^theorem yieldChargeOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem yieldOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalent_smp_pair_of_storeAndQueueWrite($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
+run_check "INVARIANT" rg -n '^theorem rewriteObject_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
+run_check "INVARIANT" rg -n '^theorem updateTcb_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
+run_check "INVARIANT" rg -n '^theorem runEnqueueOnCore_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
+run_check "INVARIANT" rg -n '^theorem releasePlace_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
+run_check "INVARIANT" rg -n '^theorem markReschedulePendingOnCore_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_eq_read($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem schedContextYieldToOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
