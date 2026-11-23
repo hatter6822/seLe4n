@@ -14253,6 +14253,26 @@ const DECLASSIFICATION_LOOKUP_REFUSAL: RoundTrip = RoundTrip {
         ROOT_IPC_BUFFER,
     )
 };
+/// The same refused lookup through a declassified signal, measured: its
+/// refusal is recorded by the seam like the declassification's, and it is the
+/// declassified signal's measured refusal now that a cross-label bind (the
+/// refused second hop's setup) is itself refused.  Root task as the caller,
+/// for the same reason.
+#[cfg(feature = "hw_target")]
+const DECLASSIFIED_SIGNAL_LOOKUP_REFUSAL: RoundTrip = RoundTrip {
+    returns: refused_with(
+        FAILED_LOOKUP,
+        5,
+        [Some(0), Some(4), Some(64), Some(ROOT_CNODE_GUARD >> 6)],
+    ),
+    ..cap_argument(
+        "declassified-signal-guard-mismatch-refused",
+        DECLASSIFY_SIGNAL,
+        AUDIT_CAP,
+        1,
+        ROOT_IPC_BUFFER,
+    )
+};
 /// A root slot no other scenario names: the read-only audit capability's.
 #[cfg(feature = "hw_target")]
 const READ_ONLY_AUDIT_SLOT: u64 = 60;
@@ -15847,6 +15867,8 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         let which = if first { " (first call)" } else { "" };
         let saved = crate::interrupts::disable_interrupts();
         let ok = heap_allocations_round_trip(&DECLASSIFICATION_LOOKUP_REFUSAL, which) == Some(true)
+            && heap_allocations_round_trip(&DECLASSIFIED_SIGNAL_LOOKUP_REFUSAL, which)
+                == Some(true)
             && bound_declassified_signals(which);
         crate::interrupts::restore_interrupts(saved);
         if !ok {
