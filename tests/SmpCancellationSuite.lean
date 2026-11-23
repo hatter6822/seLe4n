@@ -80,8 +80,6 @@ open SeLe4n.Testing
 
 -- SM6.E.3 per-core donation cancellation + the bootCore bridge:
 #check @cancelBoundDonationOnCore
-#check @cancelBoundDonationOnCore_eq_cancelBoundDonation
-#check @cancelDonationOnCore
 
 -- SM6.E.5 SGI emission of the composite:
 #check @cancelIpcBlockingOnCore_emits_sgi_if_remote_current
@@ -95,17 +93,12 @@ open SeLe4n.Testing
 #check @cancelBindingSc?
 #check @cancelDonatedOwner?
 #check @lockSet_cancelIpcBlocking
-#check @lockSet_cancelDonation
 #check @lockSet_cancelIpcBlockingOnCore
-#check @lockSet_cancelDonationOnCore
 
 -- SM6.E.1/.3 lock-set hierarchical correctness:
 #check @lockSet_consistent_cancelIpcBlocking
-#check @lockSet_consistent_cancelDonation
 #check @cancelIpcBlockingOnCore_lockSet_correct
-#check @cancelDonationOnCore_lockSet_correct
 #check @lockSet_cancelIpcBlockingOnCore_correct
-#check @lockSet_cancelDonationOnCore_correct
 
 -- SM6.E write coverage (cancellation footprints + the enclosing suspend
 -- footprint, member-by-member):
@@ -115,9 +108,6 @@ open SeLe4n.Testing
 #check @lockSet_cancelIpcBlocking_blocked_endpoint_write_mem
 #check @lockSet_cancelIpcBlocking_blocked_notification_write_mem
 #check @lockSet_cancelIpcBlocking_consumed_reply_write_mem
-#check @lockSet_cancelDonation_victim_tcb_write_mem
-#check @lockSet_cancelDonation_binding_sc_write_mem
-#check @lockSet_cancelDonation_donated_owner_tcb_write_mem
 -- **WS-OD (`v0.35.4`)**: the parametric `lockSet_tcbSuspend_*_write_mem` family
 -- is retired with the footprint it was about.  The syscall's footprint is
 -- `lockSet_tcbSuspendOnCore`, *defined over* the state-resolved cancellation
@@ -128,12 +118,9 @@ open SeLe4n.Testing
 #check @lockSet_tcbSuspendOnCore_covers_cancelIpcBlockingOnCore
 #check @lockSet_tcbSuspendOnCore_covers_victim
 #check @lockSet_tcbSuspendOnCore_covers_tail
-#check @lockSet_tcbSuspendOnCore_covers_boundCancel
-#check @lockSet_tcbSuspendOnCore_covers_donatedCancel
-#check @lockSet_tcbSuspendOnCore_covers_reclaimSecondPop
+#check @lockSet_tcbSuspendOnCore_covers_releaseRemove
 #check @suspendDonationCancelTail?
 #check @suspendDonationCancelTailOf?
-#check @cancelledCallerAlreadyBound
 -- WS-OD (`v0.35.4`): the teardown footprint's own new members.
 #check @cancelReclaimHead?
 #check @cancelSplicedFrameAbove?
@@ -142,30 +129,19 @@ open SeLe4n.Testing
 #check @lockSet_cancelIpcBlocking_spliced_frame_above_write_mem
 #check @lockSet_cancelIpcBlocking_below_head_write_mem
 #check @lockSet_cancelIpcBlocking_outer_caller_containsKey
-#check @lockSet_cancelDonation_head_write_mem
-#check @lockSet_cancelDonation_below_head_write_mem
-#check @lockSet_cancelDonation_outer_caller_containsKey
 #check @lockSet_cancelIpcBlockingOnCore_covers_reclaim
 #check @lockSet_cancelIpcBlockingOnCore_covers_splicedFrameAbove
 
 -- SM6.E.2/.4 2PL atomicity (single-core + cross-core forms):
 #check @cancelIpcBlocking_atomic_under_lockSet
 #check @cancelIpcBlockingOnCore_atomic_under_lockSet
-#check @cancelDonation_atomic_under_lockSet
-#check @cancelDonationOnCore_atomic_under_lockSet
 
 -- SM6.E invariant preservation + per-core donation frames:
 #check @cancelIpcBlocking_preserves_objects_invExt
 #check @cancelIpcBlockingOnCore_preserves_objects_invExt
-#check @cancelBoundDonation_preserves_objects_invExt
 #check @cancelBoundDonationOnCore_preserves_objects_invExt
-#check @cancelDonatedDonation_preserves_objects_invExt
-#check @cancelDonation_preserves_objects_invExt
-#check @cancelDonationOnCore_preserves_objects_invExt
-#check @cancelDonatedDonation_scheduler_eq
 #check @cancelBoundDonationOnCore_runQueue_current_eq
 #check @cancelBoundDonationOnCore_replenishQueue_purged
-#check @cancelDonationOnCore_runQueue_current_eq
 
 -- SM6.E cleanup-primitive invExt lemmas (CleanupPreservation):
 #check @spliceOutMidQueueNode_preserves_objects_invExt
@@ -202,7 +178,6 @@ open SeLe4n.Testing
 #check @notificationQueueWellFormed_unlink
 #check @cancelIpcBlocking_preserves_ipcInvariant
 #check @cancelIpcBlockingOnCore_preserves_ipcInvariant
-#check @cancelDonationOnCore_preserves_ipcInvariant
 #check @descheduleThread_preserves_ipcInvariant
 -- WS-LS LS2.1: the `cancellationObserver_*InsensitiveOn` pair is gone with the
 -- guarded capstone; the observer capstone is over the pair, hypothesis-free.
@@ -240,7 +215,6 @@ open SeLe4n.Testing
 #check @default_currentThreadUniqueAcrossCores
 #check @removeRunnableOnCore_preserves_currentThreadUniqueAcrossCores
 #check @descheduleThread_preserves_currentThreadUniqueAcrossCores
-#check @cancelDonationOnCore_observer_atomic
 #check @PriorityInheritance.crossCoreSgiBody_remote_deschedule
 -- WS-RR RR7.22 (residual): the object-store sweep, characterised per key.  The
 -- fact the cancellation bundle needs — "afterwards no endpoint still names the
@@ -590,18 +564,6 @@ example :
          ()) :=
   cancelIpcBlocking_atomic_under_lockSet victim tcb ec blEp blN r? rdSc? dh?
     bhR? oc? rh? fa? sb? ⟨s, LockState.unheld⟩
-
-/-- SM6.E.4 (WS-LS LS2.1: over the pair): the donation atomicity companion
-applies (dispatcher form). -/
-example :
-    withLockSet (lockSet_cancelDonation victim sc? ot? dh1? dh2? doc?) ec
-        (cancelDonationOnCore victim tcb) ⟨s, LockState.unheld⟩
-      = (⟨(cancelDonationOnCore victim tcb s).1,
-          LockState.bracket ec (lockSet_cancelDonation victim sc? ot? dh1? dh2? doc?)
-            LockState.unheld⟩,
-         (cancelDonationOnCore victim tcb s).2) :=
-  cancelDonationOnCore_atomic_under_lockSet victim tcb ec sc? ot? dh1? dh2? doc?
-    ⟨s, LockState.unheld⟩
 
 /-- SM6.E.1: `objects.invExt` transports through the cross-core cancellation. -/
 example (hInv : st.objects.invExt) :
@@ -1023,9 +985,10 @@ private def runBoundDonationCancelChecks : IO Unit := do
   assertBool "setup: core 1's replenish queue holds the SC's entry"
     ((stBoundDonation.releaseEntriesOn core1).any
       (fun e => e.1 == scId))
-  let (st', res) := cancelDonationOnCore victimTid tcb stBoundDonation
+  let res := cancelDonationArmOnCore stBoundDonation victimTid tcb
+  let st' := match res with | .ok s => s | .error _ => stBoundDonation
   assertBool "bound-donation cancel succeeds"
-    (match res with | .ok () => true | .error _ => false)
+    (match res with | .ok _ => true | .error _ => false)
   assertBool "victim's binding is cleared to .unbound"
     (match st'.getTcb? victimTid with
      | some t => decide (t.schedContextBinding = .unbound)
@@ -1048,12 +1011,6 @@ private def runBoundDonationCancelChecks : IO Unit := do
       && decide (st'.scheduler.currentOnCore core1
         = stBoundDonation.scheduler.currentOnCore core1)
       && (st'.queuedOn core1 victimTid == stBoundDonation.queuedOn core1 victimTid))
-  -- Lock-set: victim TCB write + SC write, permitted + Nodup.
-  let ls := lockSet_cancelDonationOnCore stBoundDonation victimTid
-  assertBool "donation lock-set kinds all permitted (.tcbSuspend)"
-    (decide (∀ p ∈ ls.pairs, p.fst.kind ∈ permittedKinds .tcbSuspend))
-  assertBool "SC write lock is in the donation footprint"
-    (decide ((schedContextLock scId, AccessMode.write) ∈ ls.pairs))
 
 -- ----------------------------------------------------------------------------
 -- Scenario F: donation cancellation — donated arm (return to original owner).
@@ -1077,9 +1034,10 @@ private def runDonatedDonationCancelChecks : IO Unit := do
   let tcb := victimTcb stDonated
   assertBool "cancelBindingSc?/cancelDonatedOwner? resolve the donated SC + owner"
     (decide (cancelBindingSc? tcb = some scId ∧ cancelDonatedOwner? tcb = some ownerTid))
-  let (st', res) := cancelDonationOnCore victimTid tcb stDonated
+  let res := cancelDonationArmOnCore stDonated victimTid tcb
+  let st' := match res with | .ok s => s | .error _ => stDonated
   assertBool "donated-donation cancel succeeds"
-    (match res with | .ok () => true | .error _ => false)
+    (match res with | .ok _ => true | .error _ => false)
   assertBool "the SC is returned to the original owner"
     (match st'.getSchedContext? scId with
      | some sc => decide (sc.boundThread = some ownerTid)
@@ -1100,10 +1058,6 @@ private def runDonatedDonationCancelChecks : IO Unit := do
   assertBool "SC replenishment lands on the owner's home core at its original time"
     ((st'.releaseEntriesOn bootCoreId).any
       (fun e => e.1 == scId && e.2 == 42))
-  -- Owner TCB write lock in the footprint (the plan row's "receiver TCB").
-  let ls := lockSet_cancelDonationOnCore stDonated victimTid
-  assertBool "original-owner TCB write lock is in the donation footprint"
-    (decide ((tcbLock ownerTid, AccessMode.write) ∈ ls.pairs))
 
 -- ----------------------------------------------------------------------------
 -- Scenario G: dispatcher identity + ghost victim + bracket atomicity.
@@ -1117,9 +1071,10 @@ private def runDispatcherEdgeChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject victimTid.toObjId (.tcb tcbU)
       |>.build)
-  let (stU', resU) := cancelDonationOnCore victimTid tcbU stU
-  assertBool "cancelDonationOnCore on .unbound is the identity (.ok, state preserved)"
-    ((match resU with | .ok () => true | .error _ => false)
+  let resU := cancelDonationArmOnCore stU victimTid tcbU
+  let stU' := match resU with | .ok s => s | .error _ => stU
+  assertBool "cancelDonationArmOnCore on .unbound is the identity (.ok, state preserved)"
+    ((match resU with | .ok _ => true | .error _ => false)
       && (match stU'.getTcb? victimTid with
           | some t => t == tcbU
           | none => false))

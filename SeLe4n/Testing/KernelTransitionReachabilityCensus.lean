@@ -1071,10 +1071,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Concurrency.setTlbAction
   , `SeLe4n.Kernel.Concurrency.updateObjectAt
   , `SeLe4n.Kernel.Concurrency.withLockSet
-  , `SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation
-  , `SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation
-  , `SeLe4n.Kernel.Lifecycle.Suspend.cancelDonation
-  , `SeLe4n.Kernel.Lifecycle.Suspend.cancelDonationValid
   , `SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlockingValid
   , `SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyMidState
   , `SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyOnCore
@@ -1136,7 +1132,6 @@ def nonExecutedTransitionsPlain : List Name :=
   -- (`auditedArmSpec_declassify_trail`, `auditedArmSpec_declassifySignal_trail`),
   -- so no arm runs the specification itself.
   , `SeLe4n.Kernel.auditedArmSpec
-  , `SeLe4n.Kernel.cancelDonationOnCore
   , `SeLe4n.Kernel.cancelIpcBlockingOnCore
   , `SeLe4n.Kernel.chooseThread
   , `SeLe4n.Kernel.chooseThreadEffective
@@ -1567,11 +1562,6 @@ def standsBesideLive : List (Name × Name × Name) :=
     (`SeLe4n.Kernel.cancelIpcBlockingOnCore,
      `SeLe4n.Kernel.cancelIpcBlockingReclaimed,
      `SeLe4n.Kernel.cancelIpcBlockingOnCore_eq_reclaimed_deschedule)
-    -- WS-RR RR8.12 (second cut), the sweep's own finding one level down: the
-    -- suspend pipeline's G3 re-spells the dispatcher rather than calling it.
-  , (`SeLe4n.Kernel.cancelDonationOnCore,
-     `SeLe4n.Kernel.cancelBoundDonationOnCore,
-     `SeLe4n.Kernel.suspendDonationArm_eq_cancelDonationOnCore)
   ]
 
 /-! ## Reconciliation -/

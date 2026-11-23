@@ -180,10 +180,6 @@ open SeLe4n.Model
 -- Surface anchor: WS-RC R5 (Phase R5) — Scheduler / Lifecycle behaviour symmetry
 -- ============================================================================
 -- R5.A (DEEP-SUSP-02): cancelDonation split into two named arms.
-#check @SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation
-#check @SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation
-#check @SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation_scheduler_runQueue_eq
-#check @SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation_scheduler_runQueue_eq
 -- R5.B (DEEP-SUSP-01): PIP recomputation on resume — structural witnesses.
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_objectIndex_eq
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_objects_eq_at_tid

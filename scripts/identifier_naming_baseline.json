@@ -422,9 +422,6 @@
  "an10_e_applyReplyDonation_wires_h6": {
   "tests/An10CascadeSuite.lean": 2
  },
- "an10_e_cancelDonationValid_reduces": {
-  "tests/An10CascadeSuite.lean": 2
- },
  "an10_e_cancelIpcBlockingValid_reduces": {
   "tests/An10CascadeSuite.lean": 2
  },

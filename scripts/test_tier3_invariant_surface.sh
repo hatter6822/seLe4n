@@ -2057,14 +2057,24 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_replyRecv[^\n]*(\n([ \t][
 # cancellation's members from the victim's PRE-state binding, while the pipeline
 # runs that cancellation on the binding the teardown leaves -- so the syscall's
 # footprint is `lockSet_tcbSuspendOnCore`, built over the state-resolved
-# cancellation footprint, and the `scThreadIndex` member is declared by the
-# donation cancellation's own footprint and by the suspend tail.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_cancelDonation[^\n]*(\n([ \t][^\n]*)?)*if bindingScId\.isSome then some \(stateLevelLock, AccessMode\.write\) else none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# cancellation footprint, and the state-level member is declared by the suspend
+# tail with the victim's context.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_tcbSuspendOnCore[^\n]*(\n([ \t][^\n]*)?)*if \(suspendDonationCancelTailOf\? st targetTid\)\.scId\?\.isSome then" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # NEGATIVE: and the retired footprint must not come back.
 run_negative_check "INVARIANT" rg -n '^def lockSet_tcbSuspend \(' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+# The suspend tail is the live suspend's footprint: seL4's `suspend` keeps the
+# victim's context, so the only context it writes is the one the release removal
+# takes off its queue -- the one the victim's binding names.  The retired donation
+# cancellation's owner, head, frame-below and outer-caller members are gone, and
+# so is the refusal that existed only because the reclaim could overwrite a
+# binding.  Mutation: re-key the tail on the reclaim or restore a member.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendDonationCancelTail\?[^\n]*(\n([ \t][^\n]*)?)*match tcb\.schedContextBinding\.scId\? with\n *\| some scId => \{ scId\? := some scId \}" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^structure SuspendDonationCancelMembers[^\n]*(\n([ \t][^\n]*)?)*(owner\?|head\?|belowHead\?|outer\?) :" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_negative_check "INVARIANT" rg -n '^def cancelledCallerAlreadyBound' SeLe4n/
+run_check "INVARIANT" rg -n '^theorem lockSet_tcbSuspendOnCore_covers_releaseRemove \(' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# The retired donation cancellation (no live operation ran it) stays deleted.
+run_negative_check "INVARIANT" rg -n '^(@\[inline\] )?def (cancelDonation|cancelDonationValid|cancelDonationOnCore|cancelBoundDonation|cancelDonatedDonation|lockSet_cancelDonation|lockSet_cancelDonationOnCore) ' SeLe4n/
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_cancelIpcBlocking[^\n]*(\n([ \t][^\n]*)?)*if returnedDonationSc\.isSome then some \(stateLevelLock, AccessMode\.write\) else none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_cancelDonation[^\n]*(\n([ \t][^\n]*)?)*if bindingScId\.isSome then some \(stateLevelLock, AccessMode\.write\) else none" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The bind and the unbind take it UNCONDITIONALLY — the index write is not
 # optional on their success path, which is the `lockSet_cspaceMint` shape.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_schedContextBind[^\n]*(\n([ \t][^\n]*)?)*\(stateLevelLock, \.write\)\]\)" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
@@ -3052,7 +3062,6 @@ run_negative_check "INVARIANT" rg -n 'restoreToReadyOnCore_eq_enqueue_mid' SeLe4
 run_negative_check "INVARIANT" rg -n 'clearTcbIpcFields' SeLe4n tests
 # The cross-core twin of the bound-donation cancel is held to the single-core
 # arm by `rfl`, which is what forced the twin to migrate in the same cut.
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelBoundDonationOnCore_eq_cancelBoundDonation[^\n]*(\n([ \t][^\n]*)?)*= cancelBoundDonation st tid tcb := rfl" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 
 # ----------------------------------------------------------------------------
 # v0.35.65 -- the witnessed lookups, and the scheduler's context-save family
@@ -5963,14 +5972,11 @@ run_check "INVARIANT" rg -n '^def descheduleThread($|[ ({:\[\]])' SeLe4n/Kernel/
 run_check "INVARIANT" rg -n '^def cancelIpcBlockingOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # `v0.35.164`: the arm lives beside the cleanup it completes -- see the block below.
 run_check "INVARIANT" rg -n '^def cancelBoundDonationOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
-run_check "INVARIANT" rg -n '^def cancelDonationOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^def lockSet_cancelIpcBlocking($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^def lockSet_cancelDonation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem descheduleThread_emits_sgi_if_remote_current($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_emits_sgi_if_remote_current($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_no_sgi_if_not_current($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_consistent_cancelIpcBlocking($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_consistent_cancelDonation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem mem_insertOrMerge_write_of_mem_write($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
 # **WS-OD (`v0.35.4`)**: the parametric suspend coverage family is one lift now --
 # the syscall footprint is *defined over* the cancellation footprint, so every
@@ -5980,13 +5986,10 @@ run_check "INVARIANT" rg -n '^theorem lockSet_tcbSuspendOnCore_covers_cancelIpcB
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_consumed_reply_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_atomic_under_lockSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_atomic_under_lockSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonation_atomic_under_lockSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_atomic_under_lockSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_replenishQueue_purged($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cancellation_cross_core_correct($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonation_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
 run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n '^def runSmpCancellationChecks($|[ ({:\[\]])' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_cancellation_suite' scripts/test_tier2_negative.sh
@@ -14144,7 +14147,6 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanu
 run_negative_check "INVARIANT" rg -n '^def (cancelBoundDonationOnCore|cancelDonatedDonationOnCore|cancelDonationArmOnCore)\b' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # The bracket-shaped dispatcher is DEFINED through the arm (one owner), and the
 # suspend's G3 is pinned to the arm directly, by `rfl`.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelDonationOnCore[^\n]*(\n([ \t][^\n]*)?)*match cancelDonationArmOnCore st tid tcb with" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendDonationArm_eq_cancelDonationArmOnCore[^\n]*(\n([ \t][^\n]*)?)*= cancelDonationArmOnCore st tid tcb := rfl" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The pack's new field: a retype target holds no reservation of its own either
 # (seL4's revoke, suspend and unbind before the object is finalised).
@@ -14782,7 +14784,6 @@ run_check "INVARIANT" rg -n '^theorem releaseSchedContextBinding_replenishQueueO
 run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_replenishQueueOnCore_ne \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupFootprint.lean
 
 run_check "INVARIANT" rg -n '^def currentThreadUniqueAcrossCores($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_observer_atomic($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 
 # WS-I2/R-05: Lean #check correctness anchors (type-level validation).
 # D5: The Liveness module is proof-only and not imported from Main.lean,
@@ -19284,17 +19285,10 @@ run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_spl
 # tied a member to the resolver the footprint reads it from.  `_correct` and
 # `_size_le` do not stand in: one is about the members' kinds, the other about
 # how many there are.
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_victim($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_bindingSchedContext($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_stateLevel($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_donatedOwner($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_pop($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_outerCaller_key($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # NEGATIVE, token-preserving -- the outer caller is READ by the pop (it validates
 # that TCB before handing a context over) and written by nothing, so a coverage
 # theorem claiming a write there would describe a footprint wider than the
 # operation.  It keeps the member and changes its mode.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_cancelDonationOnCore_covers_outerCaller_key[^\n]*(\n([ \t][^\n]*)?)*tcbLock outer, AccessMode\.write" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 
 # (4) The chain payoff -- the theorem the workstream exists for -- and the
 # fault-reply and reply-transfer forms that compose it.
@@ -20298,7 +20292,6 @@ run_negative_check "INVARIANT" rg -n '^def cancelIpcBlockingReplenishCores' SeLe
 # they are pinned by `rfl` -- which fires on a dispatcher change even when that
 # change updates all of the dispatcher's own frame theorems, which is the case no
 # other theorem covers.
-run_check "INVARIANT" rg -n '^theorem suspendDonationArm_eq_cancelDonationOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # The witness: the bare G2 computed beside the live one on a holder blocked on a
 # call of its own, plus the live transition run on it -- and, since `v0.35.158`,
 # the retired WAKE computed beside the live deschedule on the blocked, the queued
@@ -20345,7 +20338,6 @@ run_negative_check "INVARIANT" bash -lc 'rg -n "^def commitPrimitives" SeLe4n/Te
 # A row is what makes a step added to one side and not the other a build
 # failure; losing one is losing the only check on that pair.
 run_check "INVARIANT" bash -lc 'rg -U -n "SeLe4n\.Kernel\.cancelIpcBlockingOnCore,\n[^\n]*SeLe4n\.Kernel\.cancelIpcBlockingReclaimed,\n[^\n]*SeLe4n\.Kernel\.cancelIpcBlockingOnCore_eq_reclaimed_deschedule" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "SeLe4n\.Kernel\.cancelDonationOnCore,\n[^\n]*SeLe4n\.Kernel\.cancelBoundDonationOnCore,\n[^\n]*SeLe4n\.Kernel\.suspendDonationArm_eq_cancelDonationOnCore" SeLe4n/Testing/KernelTransitionReachabilityCensus.lean'
 
 # The pin check asks for a RELATION, not for both names (PR #897 review).  Asking
 # whether the statement MENTIONS both programs is this project's oldest defect

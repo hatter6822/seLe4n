@@ -489,34 +489,6 @@ def an10_e_cancelIpcBlockingValid_reduces : IO Bool := do
     | _ => false
   return isReadyWrapper && isReadyRaw && isReadyWrapper == isReadyRaw
 
-/-- AN10-E.H4 — `cancelDonationValid` reduces to `cancelDonation` on
-the `.unbound` (default) and `.bound scId` arms.  Compares the result
-of the wrapper against the raw form bytewise to assert observational
-equivalence. -/
-def an10_e_cancelDonationValid_reduces : IO Bool := do
-  let tid : ThreadId := ThreadId.ofNat 5
-  let vtid : ValidThreadId := ⟨tid, by decide⟩
-  let tcbUnbound : TCB := mkTcb 5
-  let scId : SchedContextId := SchedContextId.ofNat 200
-  let tcbBound : TCB := { mkTcb 5 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
-  let st : SystemState := default
-  -- Unbound arm: both forms return `.ok st` unchanged.
-  let unboundOk : Bool :=
-    match SeLe4n.Kernel.Lifecycle.Suspend.cancelDonationValid st vtid tcbUnbound,
-          SeLe4n.Kernel.Lifecycle.Suspend.cancelDonation st vtid.val tcbUnbound with
-    | Except.ok _, Except.ok _ => true
-    | _, _ => false
-  -- Bound arm: both forms attempt SC lookup; on default state (no SC), still `.ok`
-  -- because `cancelDonation`'s `.bound` branch handles missing SC by skipping the
-  -- SC-update and proceeding to clear the TCB binding.
-  let boundOk : Bool :=
-    match SeLe4n.Kernel.Lifecycle.Suspend.cancelDonationValid st vtid tcbBound,
-          SeLe4n.Kernel.Lifecycle.Suspend.cancelDonation st vtid.val tcbBound with
-    | Except.ok _, Except.ok _ => true
-    | Except.error e1, Except.error e2 => e1 == e2
-    | _, _ => false
-  return unboundOk && boundOk
-
 /-- AN10-E.R1.1 — `cspaceLookupSlot` rejects a non-CNode at the cnode
 slot with `.objectNotFound`. After the AN10-residual migration, the
 absent-arm uses `getCNode?` which returns `none` for both wrong-variant
@@ -793,7 +765,6 @@ def runAll : IO Bool := do
     ("an10_e_removeRunnableValid_no_op_on_empty_queue", an10_e_removeRunnableValid_no_op_on_empty_queue),
     ("an10_e_clearPendingStateValid_reduces", an10_e_clearPendingStateValid_reduces),
     ("an10_e_cancelIpcBlockingValid_reduces", an10_e_cancelIpcBlockingValid_reduces),
-    ("an10_e_cancelDonationValid_reduces", an10_e_cancelDonationValid_reduces),
     ("an10_e_cspaceLookupSlot_wrong_variant_is_objectNotFound",
       an10_e_cspaceLookupSlot_wrong_variant_is_objectNotFound),
     ("an10_e_cspaceLookupSlot_cnode_no_slot_is_invalidCapability",

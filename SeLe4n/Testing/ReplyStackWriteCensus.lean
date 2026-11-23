@@ -436,10 +436,8 @@ def chainNeutralConstructors : List (Name × String) :=
       "rebuilds a SchedContext for its replenishment; `scReply` is untouched")
   , (`SeLe4n.Kernel.handleYieldWithBudget,
       "`{ sc with budgetRemaining := Budget.zero, isActive := false }`; `scReply` is untouched")
-  , (`SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation,
-      "`{ sc with boundThread := none, isActive := false }` and the TCB's `schedContextBinding`; the binding graph, not the stack")
   , (`SeLe4n.Kernel.cancelBoundDonationOnCore,
-      "the per-core spelling of the same binding cancel; same reason")
+      "`{ sc with boundThread := none, isActive := false }` and the TCB's `schedContextBinding`; the binding graph, not the stack")
   , (`SeLe4n.Kernel.cancelBoundDonationPerform,
       "the in-place state of the same per-core binding cancel (`cancelBoundDonationOnCore_of_bound`): `{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }`; `scReply` is untouched")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendThread,
