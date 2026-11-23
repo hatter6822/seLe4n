@@ -5955,8 +5955,12 @@ the reply each of them later answers takes it back from whichever thread holds
 it.  Every lender on a context's stack flows to the context's label
 (`contextLendersFlow`), so a bind of such a context to a thread the context's
 label flows to gives every lender on the stack a flow to the bound thread
-(`securityFlowsTo_trans`), with no read of the stack's frames: the notification
-lend's rule (`donationContextFlows`), asked of the bound thread.  A context that
+(`securityFlowsTo_trans`), with no read of the stack's frames: the half of the
+notification lend's rule that carries the lenders' flow
+(`donationContextFlows_context`), asked of the bound thread.  The lend's other
+half (`donationContextFlows_context_back`) answers a read the bind does not
+make: the lend is decided by the waiter's own binding, which the bind's
+invoker already holds a capability to.  A context that
 heads no stack is owed to nobody, and the rule admits it as seL4's
 `decodeSchedContext_Bind` does.  It reads the context's head and two static
 labels, and writes nothing. -/

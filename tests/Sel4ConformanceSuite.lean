@@ -185,6 +185,13 @@ private def bContextAbove : LabelingContext :=
     objectLabelOf := fun o =>
       if o = bScObj then SecurityLabel.kernelTrusted else SecurityLabel.publicLabel }
 
+/-- The waiter labelled above every object: the context's label flows to it,
+but not back. -/
+private def bWaiterAbove : LabelingContext :=
+  { defaultLabelingContext with
+    threadLabelOf := fun t =>
+      if t = bWaiter then SecurityLabel.kernelTrusted else SecurityLabel.publicLabel }
+
 /-- Waiter 2 blocks on the notification, then a signal wakes it. -/
 private def bSignalled (ctx : LabelingContext) : Option SystemState :=
   match SeLe4n.Kernel.notificationWaitCrossCoreDispatchChecked ctx bNtfn bWaiter
@@ -201,7 +208,8 @@ private def bWoken (st : SystemState) : Bool :=
 
 private def bCheckSignal : Bool :=
   (bSignalled defaultLabelingContext).any (fun st => bWoken st && bHolds st) &&
-    (bSignalled bContextAbove).any (fun st => bWoken st && bHoldsNothing st)
+    (bSignalled bContextAbove).any (fun st => bWoken st && bHoldsNothing st) &&
+    (bSignalled bWaiterAbove).any (fun st => bWoken st && bHoldsNothing st)
 
 private def bConsumed (ctx : LabelingContext) : Option SystemState :=
   match SeLe4n.Kernel.completeSignalArm ctx bWaiter bNtfn bootCoreId (bNtfnState true) with
@@ -210,7 +218,8 @@ private def bConsumed (ctx : LabelingContext) : Option SystemState :=
 
 private def bCheckWaitConsume : Bool :=
   (bConsumed defaultLabelingContext).any bHolds &&
-    (bConsumed bContextAbove).any bHoldsNothing
+    (bConsumed bContextAbove).any bHoldsNothing &&
+    (bConsumed bWaiterAbove).any bHoldsNothing
 
 /-- The waiter, lent the context by a signal, waits again and blocks: the
 context goes back to the notification. -/

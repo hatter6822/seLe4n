@@ -11411,6 +11411,8 @@ open SeLe4n.Kernel.Concurrency
 #check @maybeDonateSchedContextFlowing_of_flows_false
 #check @maybeDonateSchedContextFlowingFast_eq
 #check @donationContextFlows_context
+#check @donationContextFlows_context_back
+#check @donationContextFlows_false_of_not_back
 #check @donationContextFlows_congr
 #check @OnContextStack
 #check @contextLendersFlow
@@ -19176,6 +19178,15 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchInvocationBy \([^\n]*(\n(
 run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchCapabilityOnlyChecked \([^\n]*(\n([ \t][^\n]*)?)*\| \.schedContextBind =>\n    match cap\.target with\n    \| \.object scId => schedContextBindLabelGate ctx xc tid scId k" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" rg -n '^theorem schedContextBindLabelGate_admits ' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem schedContextBindLabelAdmits_flows ' SeLe4n/Kernel/API.lean
+# WS-SX SX8 (av): the notification lend admits only equal labels -- both directions, in the
+# spec, its compiled form and the generic form; the label test runs before the donation reads
+# the waiter's binding.
+run_check "INVARIANT" rg -n -U '^  \| some s => securityFlowsTo \(ctx\.objectLabelOf s\.toObjId\) \(ctx\.threadLabelOf tid\) &&\n      securityFlowsTo \(ctx\.threadLabelOf tid\) \(ctx\.objectLabelOf s\.toObjId\)$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
+run_check "INVARIANT" rg -n -U '^    \| some s => securityFlowsTo \(ctx\.objectLabelOf s\.toObjId\) \(ctx\.threadLabelOf tid\) &&\n        securityFlowsTo \(ctx\.threadLabelOf tid\) \(ctx\.objectLabelOf s\.toObjId\)$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
+run_check "INVARIANT" rg -n -U '^  \| some s => genericFlowCheck gctx \(gctx\.objectDomainOf s\.toObjId\) \(gctx\.threadDomainOf tid\) &&\n      genericFlowCheck gctx \(gctx\.threadDomainOf tid\) \(gctx\.objectDomainOf s\.toObjId\)$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
+run_check "INVARIANT" rg -n '^  if donationContextFlows ctx st n tid then maybeDonateSchedContext st n tid else st$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
+run_check "INVARIANT" rg -n '^theorem donationContextFlows_context_back ' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
+run_check "INVARIANT" rg -n '^theorem donationContextFlows_false_of_not_back ' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
 # WS-SX SX8: a lender binds on both sides, as seL4-MCS's
 # `decodeSchedContext_Bind` binds it; the bind's checks and the donation's are
 # ONE guard (`schedContextDonateAdmitted`), so the retired bind-only guard and

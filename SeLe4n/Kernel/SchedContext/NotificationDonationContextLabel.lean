@@ -14,10 +14,21 @@ import SeLe4n.Kernel.InformationFlow.Policy
 # The notification donation's context-label check
 
 A notification's scheduling context `sc` is lent to the thread `W` that takes
-the notification's word only when **the context's label flows to `W`**
-(`securityFlowsTo (ctx.objectLabelOf sc) (ctx.threadLabelOf W)`,
-`donationContextFlows`); otherwise nothing is donated, which is seL4-MCS's own
-"do nothing" branch of `maybeDonateSchedContext`.
+the notification's word only when **the context and `W` carry equal labels**:
+the context's label flows to `W` and `W`'s label flows to the context
+(`donationContextFlows`); otherwise nothing is donated, which is seL4-MCS's own
+"do nothing" branch of `maybeDonateSchedContext`.  The signal itself is
+delivered either way.
+
+Both directions are needed.  A lend is decided by `W`'s own binding (seL4's
+guard: `W` holds no context), and the bind it makes writes the context's
+thread end, which the context's domain reads back (`SchedContext_Bind` on the
+context refuses a bound one).  Where `W` may be above the context, whether the
+context ends up bound is one bit of `W`'s state shown to the context's domain;
+with `L(W) ⊑ L(sc)` as well, that domain is cleared for `W` and the bit flows
+nowhere it may not.  The label test comes first and reads no thread's state, so
+a cross-label signal reads nothing of `W`'s binding
+(`maybeDonateSchedContextFlowing_of_flows_false`).
 
 The check reads static labels and the notification's context word, the word
 seL4's own guard reads, and nothing else: it reads no reply object, no stack
@@ -39,14 +50,16 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- **The context-label check**: the label of the context the notification
-lends (`notificationContext?`, seL4-MCS's `ntfnSchedContext`) flows to the thread the donation would lend it to; `true` where the
-notification lends no context. -/
+/-- **The context-label check**: the context the notification lends
+(`notificationContext?`, seL4-MCS's `ntfnSchedContext`) and the thread the
+donation would lend it to carry equal labels, each flowing to the other;
+`true` where the notification lends no context. -/
 def donationContextFlows (ctx : LabelingContext) (st : SystemState) (n : SeLe4n.ObjId)
     (tid : SeLe4n.ThreadId) : Bool :=
   match notificationContext? st n with
   | none => true
-  | some s => securityFlowsTo (ctx.objectLabelOf s.toObjId) (ctx.threadLabelOf tid)
+  | some s => securityFlowsTo (ctx.objectLabelOf s.toObjId) (ctx.threadLabelOf tid) &&
+      securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf s.toObjId)
 
 /-- `donationContextFlows` as compiled: the notification's context word read in
 place.  `notificationContext?` hands back a fresh `some` when the store's entry is
@@ -59,7 +72,8 @@ the word builds nothing. -/
   | some ntfn =>
     match ntfn.schedContext with
     | none => true
-    | some s => securityFlowsTo (ctx.objectLabelOf s.toObjId) (ctx.threadLabelOf tid)
+    | some s => securityFlowsTo (ctx.objectLabelOf s.toObjId) (ctx.threadLabelOf tid) &&
+        securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf s.toObjId)
 
 @[csimp] theorem donationContextFlows_eq_impl :
     @donationContextFlows = @donationContextFlowsImpl := by
@@ -111,8 +125,30 @@ theorem donationContextFlows_context {ctx : LabelingContext} {st : SystemState}
     (hS : notificationContext? st n = some s) :
     securityFlowsTo (ctx.objectLabelOf s.toObjId) (ctx.threadLabelOf tid) = true := by
   unfold donationContextFlows at h
-  rw [hS] at h
-  exact h
+  simp only [hS, Bool.and_eq_true] at h
+  exact h.1
+
+/-- **...and the other half**: where it passes, the thread it is lent to flows
+to the context's label, so the context's domain is cleared for the thread
+whose binding decided the lend. -/
+theorem donationContextFlows_context_back {ctx : LabelingContext} {st : SystemState}
+    {n : SeLe4n.ObjId} {tid : SeLe4n.ThreadId} {s : SeLe4n.SchedContextId}
+    (h : donationContextFlows ctx st n tid = true)
+    (hS : notificationContext? st n = some s) :
+    securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf s.toObjId) = true := by
+  unfold donationContextFlows at h
+  simp only [hS, Bool.and_eq_true] at h
+  exact h.2
+
+/-- **Where the thread does not flow back to the context, the check refuses**:
+a context above the thread it would be lent to is never lent to it. -/
+theorem donationContextFlows_false_of_not_back {ctx : LabelingContext} {st : SystemState}
+    {n : SeLe4n.ObjId} {tid : SeLe4n.ThreadId} {s : SeLe4n.SchedContextId}
+    (hS : notificationContext? st n = some s)
+    (hBack : securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf s.toObjId) = false) :
+    donationContextFlows ctx st n tid = false := by
+  unfold donationContextFlows
+  simp only [hS, hBack, Bool.and_false]
 
 /-- **Where the check refuses, the checked donation writes nothing.** -/
 theorem maybeDonateSchedContextFlowing_of_flows_false {ctx : LabelingContext}
@@ -179,7 +215,8 @@ def donationContextFlowsGeneric (gctx : GenericLabelingContext) (st : SystemStat
     (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) : Bool :=
   match notificationContext? st n with
   | none => true
-  | some s => genericFlowCheck gctx (gctx.objectDomainOf s.toObjId) (gctx.threadDomainOf tid)
+  | some s => genericFlowCheck gctx (gctx.objectDomainOf s.toObjId) (gctx.threadDomainOf tid) &&
+      genericFlowCheck gctx (gctx.threadDomainOf tid) (gctx.objectDomainOf s.toObjId)
 
 /-- `donationContextFlowsGeneric` as compiled: the context word read in place,
 as `donationContextFlowsImpl`. -/
@@ -190,7 +227,8 @@ as `donationContextFlowsImpl`. -/
   | some ntfn =>
     match ntfn.schedContext with
     | none => true
-    | some s => genericFlowCheck gctx (gctx.objectDomainOf s.toObjId) (gctx.threadDomainOf tid)
+    | some s => genericFlowCheck gctx (gctx.objectDomainOf s.toObjId) (gctx.threadDomainOf tid) &&
+        genericFlowCheck gctx (gctx.threadDomainOf tid) (gctx.objectDomainOf s.toObjId)
 
 @[csimp] theorem donationContextFlowsGeneric_eq_impl :
     @donationContextFlowsGeneric = @donationContextFlowsGenericImpl := by
