@@ -19209,8 +19209,14 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind \([^\n]*
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*sc\.scReply\.isSome then \.error" SeLe4n/Kernel/FrozenOps/Operations.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind \([^\n]*(\n([ \t][^\n]*)?)*sc\.scReply\.isSome then \.error" SeLe4n/Kernel/SchedContext/Operations.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def schedContextDonateAdmitted \([^\n]*(\n([ \t][^\n]*)?)*sc\.scReply\.isSome then false" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def schedContextBindLabelGate \([^\n]*(\n([ \t][^\n]*)?)*\| \.ok vT => if schedContextBindLabelAdmits ctx st scId vT\.val then k st else \.error \.flowDenied" SeLe4n/Kernel/API.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "\| \.ok vThreadId =>\s+if !schedContextBindLabelAdmits ctx st scObjId vThreadId\.val then\s+\.error \(\.flowDenied, st\)" SeLe4n/Kernel/RefusalCarryingInvocation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def schedContextBindLabelGate \([^\n]*(\n([ \t][^\n]*)?)*\| \.ok vT => if schedContextBindLabelAdmits ctx scId vT\.val then k st else \.error \.flowDenied" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def schedContextBindLabelGate \([^\n]*(\n([ \t][^\n]*)?)*    \| n \+ 1 =>\n      if schedContextBindNotificationLabelAdmits ctx scId ⟨n⟩ then k st else \.error \.flowDenied" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBindLabelAdmits [^\n]*(\n([ \t][^\n]*)?)*  twoWayLabelGate \(ctx\.objectLabelOf scId\) \(ctx\.threadLabelOf t\)$" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBindNotificationLabelAdmits [^\n]*(\n([ \t][^\n]*)?)*  twoWayLabelGate \(ctx\.objectLabelOf scId\) \(ctx\.objectLabelOf n\)$" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| some _ =>\n[^\n]*\n *if !schedContextBindNotificationLabelAdmits ctx scObjId tcbObjId then\n *\.error \(\.flowDenied, st\)" SeLe4n/Kernel/RefusalCarryingInvocation.lean'
+run_negative_check "INVARIANT" rg -n '^theorem schedContextBindLabelAdmits_of_no_head($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem callLend_holderFlowsToContext($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CallLendLabel.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.ok vThreadId =>\s+if !schedContextBindLabelAdmits ctx scObjId vThreadId\.val then\s+\.error \(\.flowDenied, st\)" SeLe4n/Kernel/RefusalCarryingInvocation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchInvocationBy \([^\n]*(\n([ \t][^\n]*)?)*\| \.object scId =>\s+schedContextBindLabelGate ctx xc tid scId \(fun st =>" SeLe4n/Kernel/RefusalCarryingInvocation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchCapabilityOnlyChecked \([^\n]*(\n([ \t][^\n]*)?)*\| \.schedContextBind =>\n    match cap\.target with\n    \| \.object scId => schedContextBindLabelGate ctx xc tid scId k" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" rg -n '^theorem schedContextBindLabelGate_admits ' SeLe4n/Kernel/API.lean
@@ -19218,8 +19224,9 @@ run_check "INVARIANT" rg -n '^theorem schedContextBindLabelAdmits_flows ' SeLe4n
 # WS-SX SX8 (av): the notification lend admits only equal labels -- both directions, in the
 # spec, its compiled form and the generic form; the label test runs before the donation reads
 # the waiter's binding.
-run_check "INVARIANT" rg -n -U '^  \| some s => securityFlowsTo \(ctx\.objectLabelOf s\.toObjId\) \(ctx\.threadLabelOf tid\) &&\n      securityFlowsTo \(ctx\.threadLabelOf tid\) \(ctx\.objectLabelOf s\.toObjId\)$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
-run_check "INVARIANT" rg -n -U '^    \| some s => securityFlowsTo \(ctx\.objectLabelOf s\.toObjId\) \(ctx\.threadLabelOf tid\) &&\n        securityFlowsTo \(ctx\.threadLabelOf tid\) \(ctx\.objectLabelOf s\.toObjId\)$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
+# Both directions through the one owner (`twoWayLabelGate`), not restated by hand.
+run_check "INVARIANT" rg -n '^  \| some s => twoWayLabelGate \(ctx\.objectLabelOf s\.toObjId\) \(ctx\.threadLabelOf tid\)$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
+run_check "INVARIANT" rg -n '^    \| some s => twoWayLabelGate \(ctx\.objectLabelOf s\.toObjId\) \(ctx\.threadLabelOf tid\)$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
 run_check "INVARIANT" rg -n -U '^  \| some s => genericFlowCheck gctx \(gctx\.objectDomainOf s\.toObjId\) \(gctx\.threadDomainOf tid\) &&\n      genericFlowCheck gctx \(gctx\.threadDomainOf tid\) \(gctx\.objectDomainOf s\.toObjId\)$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
 run_check "INVARIANT" rg -n '^  if donationContextFlows ctx st n tid then maybeDonateSchedContext st n tid else st$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
 run_check "INVARIANT" rg -n '^theorem donationContextFlows_context_back ' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean

@@ -29,6 +29,20 @@ or make a later operation's result depend on it, a **two-way label gate**.
   asked the same two-way question by hand; it is now `twoWayLabelGate`.
   SX8's other lend gates (`callLendAdmits`, `receiveLendAdmits`,
   `schedContextBindLabelAdmits`) ask one-way questions and are unchanged.
+- **SchedContext_Bind joins only equal labels (owner decision D35).** A thread
+  could hold a context below its own label, so the lower domain saw the
+  holder's budget charges and reply-stack pops.  The checked dispatch's bind
+  rule is now the two-way label gate between the context and its target, a
+  thread (`schedContextBindLabelAdmits`) or a notification
+  (`schedContextBindNotificationLabelAdmits`, new), refused `flowDenied` before
+  any write in the gate and the live arm; it replaces D25's stack-head rule
+  (`schedContextBindLabelAdmits_of_no_head` is deleted).  The Call lend path is
+  closed by the endpoint gate: `callLend_holderFlowsToContext` proves a Call
+  lend's holder is at or below the lent context.
+- **Conformance rows.** Five `.hardening` behaviour rows, each with a scenario
+  run both ways: cross-label send, receive, Wait, notification bind and
+  context bind refused; the SX8 signal-lend scenario's higher waiter now waits
+  on a notification of its own label.
 - **Signal stays one-way.** It never blocks the signaller and returns nothing
   that depends on a receiver.  Cross-label traffic uses notifications.
 - **Proofs.** An admitted Wait or receive needs no hypothesis that the object is

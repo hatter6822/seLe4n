@@ -5961,63 +5961,72 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
 -- T6-I/M-IF-1: Information-flow-checked dispatch
 -- ============================================================================
 
-/-- **SchedContext_Bind's label rule (D25 in its static form, D27).**  A
-context that heads a reply stack is on loan from the callers on that stack, and
-the reply each of them later answers takes it back from whichever thread holds
-it.  Every lender on a context's stack flows to the context's label
-(`contextLendersFlow`), so a bind of such a context to a thread the context's
-label flows to gives every lender on the stack a flow to the bound thread
-(`securityFlowsTo_trans`), with no read of the stack's frames: the half of the
-notification lend's rule that carries the lenders' flow
-(`donationContextFlows_context`), asked of the bound thread.  The lend's other
-half (`donationContextFlows_context_back`) answers a read the bind does not
-make: the lend is decided by the waiter's own binding, which the bind's
-invoker already holds a capability to.  A context that
-heads no stack is owed to nobody, and the rule admits it as seL4's
-`decodeSchedContext_Bind` does.  It reads the context's head and two static
-labels, and writes nothing. -/
-def schedContextBindLabelAdmits (ctx : LabelingContext) (st : SystemState)
-    (scId : SeLe4n.ObjId) (t : SeLe4n.ThreadId) : Bool :=
-  match st.getSchedContext? (SchedContextId.ofObjId scId) with
-  | none => true
-  | some sc =>
-    match sc.scReply with
-    | none => true
-    | some _ => securityFlowsTo (ctx.objectLabelOf scId) (ctx.threadLabelOf t)
+/-- **SchedContext_Bind's label rule (D35).**  A context is bound only to a
+thread or a notification of its own label: the two-way label gate
+(`twoWayLabelGate`) between the context's label and the target's, the owner
+every endpoint and notification-wait gate reads.
 
-/-- A context heading no stack is admitted to any thread. -/
-theorem schedContextBindLabelAdmits_of_no_head {ctx : LabelingContext} {st : SystemState}
-    {scId : SeLe4n.ObjId} {t : SeLe4n.ThreadId} {sc : SchedContext}
-    (hSc : st.getSchedContext? (SchedContextId.ofObjId scId) = some sc)
-    (hR : sc.scReply = none) : schedContextBindLabelAdmits ctx st scId t = true := by
-  unfold schedContextBindLabelAdmits; simp only [hSc, hR]
+A thread that holds a context is charged against its budget and popped from
+its reply stack, both visible at the context's label, so a context below its
+holder's label shows the holder's activity to the lower domain; and a context
+heading a reply stack is on loan from the callers on it, so a context above its
+holder's label would carry every lender's flow down to it.  Equality closes
+both.  It replaces D25's stack-head rule (a one-way check asked only of a
+context heading a stack), which this rule implies.  It reads two static labels
+and nothing else, and writes nothing. -/
+def schedContextBindLabelAdmits (ctx : LabelingContext) (scId : SeLe4n.ObjId)
+    (t : SeLe4n.ThreadId) : Bool :=
+  twoWayLabelGate (ctx.objectLabelOf scId) (ctx.threadLabelOf t)
 
-/-- **What an admitted bind of a context heading a stack carries**: the
-context's label flows to the bound thread. -/
-theorem schedContextBindLabelAdmits_flows {ctx : LabelingContext} {st : SystemState}
-    {scId : SeLe4n.ObjId} {t : SeLe4n.ThreadId} {sc : SchedContext} {r : SeLe4n.ReplyId}
-    (h : schedContextBindLabelAdmits ctx st scId t = true)
-    (hSc : st.getSchedContext? (SchedContextId.ofObjId scId) = some sc)
-    (hR : sc.scReply = some r) :
-    securityFlowsTo (ctx.objectLabelOf scId) (ctx.threadLabelOf t) = true := by
-  unfold schedContextBindLabelAdmits at h; simpa only [hSc, hR] using h
+/-- The same rule for a notification target. -/
+def schedContextBindNotificationLabelAdmits (ctx : LabelingContext) (scId n : SeLe4n.ObjId) :
+    Bool :=
+  twoWayLabelGate (ctx.objectLabelOf scId) (ctx.objectLabelOf n)
 
-/-- **The bind's thread path under its label rule.**  Extra capability 0 names
-a notification (the notification bind, which lends nothing) or a thread; on the
-thread path a context heading a stack is bound only where its label flows to
-the thread (`schedContextBindLabelAdmits`), and is refused `flowDenied`
-otherwise, before the bind reads or writes anything else.  A context heading
-no stack, and every refusal the resolution itself answers, runs the
-capability-only arm `k` as it is. -/
+/-- **What an admitted bind carries**: the context's label and the bound
+thread's are equal. -/
+theorem schedContextBindLabelAdmits_eq {ctx : LabelingContext} {scId : SeLe4n.ObjId}
+    {t : SeLe4n.ThreadId} (h : schedContextBindLabelAdmits ctx scId t = true) :
+    ctx.objectLabelOf scId = ctx.threadLabelOf t :=
+  (twoWayLabelGate_iff_eq _ _).1 h
+
+/-- **...so the context's label flows to the bound thread**, the half D25's
+stack-head rule asked of a context heading a stack. -/
+theorem schedContextBindLabelAdmits_flows {ctx : LabelingContext} {scId : SeLe4n.ObjId}
+    {t : SeLe4n.ThreadId} (h : schedContextBindLabelAdmits ctx scId t = true) :
+    securityFlowsTo (ctx.objectLabelOf scId) (ctx.threadLabelOf t) = true :=
+  twoWayLabelGate_forward h
+
+/-- **...and the bound thread's label flows to the context's**: the holder's
+budget charges and pops land at a label the holder may write. -/
+theorem schedContextBindLabelAdmits_holderFlows {ctx : LabelingContext} {scId : SeLe4n.ObjId}
+    {t : SeLe4n.ThreadId} (h : schedContextBindLabelAdmits ctx scId t = true) :
+    securityFlowsTo (ctx.threadLabelOf t) (ctx.objectLabelOf scId) = true :=
+  twoWayLabelGate_backward h
+
+/-- An admitted notification bind: the context's label and the notification's
+are equal. -/
+theorem schedContextBindNotificationLabelAdmits_eq {ctx : LabelingContext}
+    {scId n : SeLe4n.ObjId} (h : schedContextBindNotificationLabelAdmits ctx scId n = true) :
+    ctx.objectLabelOf scId = ctx.objectLabelOf n :=
+  (twoWayLabelGate_iff_eq _ _).1 h
+
+/-- **The bind under its label rule.**  Extra capability 0 names a
+notification or a thread; either is bound only where its label equals the
+context's (`schedContextBindNotificationLabelAdmits`,
+`schedContextBindLabelAdmits`), and is refused `flowDenied` otherwise, before
+the bind reads or writes anything else.  Every refusal the resolution itself
+answers runs the capability-only arm `k` as it is. -/
 @[inline] def schedContextBindLabelGate (ctx : LabelingContext) (xc : Nat)
     (tid : SeLe4n.ThreadId) (scId : SeLe4n.ObjId) (k : Kernel Unit) : Kernel Unit :=
   fun st =>
     match resolveSchedContextBindNotificationCode tid (schedContextBindArgsOf st tid xc) st with
-    | _ + 1 => k st
+    | n + 1 =>
+      if schedContextBindNotificationLabelAdmits ctx scId ⟨n⟩ then k st else .error .flowDenied
     | 0 =>
       match resolveSchedContextBindThread tid (schedContextBindArgsOf st tid xc) st with
       | .error _ => k st
-      | .ok vT => if schedContextBindLabelAdmits ctx st scId vT.val then k st else .error .flowDenied
+      | .ok vT => if schedContextBindLabelAdmits ctx scId vT.val then k st else .error .flowDenied
 
 /-- A success through the label gate is a success of the arm. -/
 theorem schedContextBindLabelGate_ok {ctx : LabelingContext} {xc : Nat} {tid : SeLe4n.ThreadId}
@@ -6026,6 +6035,21 @@ theorem schedContextBindLabelGate_ok {ctx : LabelingContext} {xc : Nat} {tid : S
   unfold schedContextBindLabelGate at h
   repeat' split at h
   all_goals first | exact h | cases h
+
+/-- **The gate decides the bound notification's label**: a gate that runs the
+arm on the notification path has read `schedContextBindNotificationLabelAdmits`
+true of the notification the resolution answers. -/
+theorem schedContextBindLabelGate_admits_notification {ctx : LabelingContext} {xc : Nat}
+    {tid : SeLe4n.ThreadId} {scId : SeLe4n.ObjId} {k : Kernel Unit} {st : SystemState}
+    {r : Unit × SystemState} {n : Nat}
+    (h : schedContextBindLabelGate ctx xc tid scId k st = .ok r)
+    (hN : resolveSchedContextBindNotificationCode tid (schedContextBindArgsOf st tid xc) st = n + 1) :
+    schedContextBindNotificationLabelAdmits ctx scId ⟨n⟩ = true := by
+  unfold schedContextBindLabelGate at h
+  simp only [hN] at h
+  cases hA : schedContextBindNotificationLabelAdmits ctx scId ⟨n⟩ with
+  | true => rfl
+  | false => simp [hA] at h
 
 /-- **The gate decides the bound thread's flow**: a gate that runs the arm on
 the thread path has read `schedContextBindLabelAdmits` true of the thread the
@@ -6036,10 +6060,10 @@ theorem schedContextBindLabelGate_admits {ctx : LabelingContext} {xc : Nat}
     (h : schedContextBindLabelGate ctx xc tid scId k st = .ok r)
     (hN : resolveSchedContextBindNotificationCode tid (schedContextBindArgsOf st tid xc) st = 0)
     (hT : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid xc) st = .ok vT) :
-    schedContextBindLabelAdmits ctx st scId vT.val = true := by
+    schedContextBindLabelAdmits ctx scId vT.val = true := by
   unfold schedContextBindLabelGate at h
   simp only [hN, hT] at h
-  cases hA : schedContextBindLabelAdmits ctx st scId vT.val with
+  cases hA : schedContextBindLabelAdmits ctx scId vT.val with
   | true => rfl
   | false => simp [hA] at h
 

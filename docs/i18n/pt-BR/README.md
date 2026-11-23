@@ -165,9 +165,9 @@ apontam para ela.
 |----------|-------|
 | **Versão** | `0.37.37` |
 | **Toolchain Lean** | `v4.28.0` |
-| **LoC Lean de produção** | 680.958 em 686 arquivos |
-| **LoC Lean de testes** | 92.477 em 71 suítes de testes |
-| **Declarações provadas** | 25.985 declarações de teorema/lema (zero sorry/axiom) |
+| **LoC Lean de produção** | 681.031 em 686 arquivos |
+| **LoC Lean de testes** | 92.527 em 71 suítes de testes |
+| **Declarações provadas** | 25.989 declarações de teorema/lema (zero sorry/axiom) |
 | **Crates Rust** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (wrappers em espaço de usuário), `sele4n-hal` (a camada de hardware do núcleo) e o teste de host `sele4n-lean-boundary` |
 | **Hardware alvo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Trilhas de boot** | Cada trilha QEMU inicializa primeiro a imagem do Raspberry Pi 5 na máquina `raspi5b` do [rpi5_machine](https://github.com/hatter6822/rpi5_machine) e depois a imagem `virt` na máquina `virt` do QEMU |

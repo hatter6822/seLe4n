@@ -179,4 +179,22 @@ theorem receiveLendAdmits_of_callLendAdmits {ctx : LabelingContext} {st : System
     cases hA
   · rfl
 
+/-- **A Call lend's holder is at or below the lent context (D35's Call path).**
+The endpoint gate is two-way, so a call's caller and the receiver that takes
+it carry the endpoint's own label; the lend admission puts the caller at or
+below the context it lends; so the receiver that comes to hold the context
+satisfies `L(holder) ⊑ L(sc)`, and the context's budget charges and pops,
+visible at its label, are at a label the holder may write. -/
+theorem callLend_holderFlowsToContext {ctx : LabelingContext} {st : SystemState}
+    {epId : SeLe4n.ObjId} {caller receiver : SeLe4n.ThreadId} {s : SeLe4n.SchedContextId}
+    (hSend : endpointFlowGate ctx epId (ctx.threadLabelOf caller) (ctx.endpointLabelOf epId) = true)
+    (hRecv : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf receiver) = true)
+    (hAdm : callLendAdmits ctx st caller = true)
+    (hS : callDonationSchedContext? st caller receiver = some s) :
+    securityFlowsTo (ctx.threadLabelOf receiver) (ctx.objectLabelOf s.toObjId) = true := by
+  have hC := endpointFlowGate_implies_eq ctx epId _ _ hSend
+  have hR := endpointFlowGate_implies_eq ctx epId _ _ hRecv
+  rw [← hR, ← hC]
+  exact callLendAdmits_flows hAdm hS
+
 end SeLe4n.Kernel
