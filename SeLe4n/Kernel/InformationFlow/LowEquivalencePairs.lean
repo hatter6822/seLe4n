@@ -246,20 +246,22 @@ theorem storeAndQueueWrite.runEnqueueOnCore (st : SystemState) (c : CoreId)
 
 /-- **One enqueue made in two runs.**  A hidden thread's is no view's.  An
 observable thread's shows on its core's filtered queue, appended unless it is
-already there, which the filtered queue shows; the two runs must also agree on
+already there, which the filtered queue shows, whatever priority each run
+inserts it at (the filtered queue is read in first-in first-out order, so the
+priority, which reads the erased boost, is no view's); the two runs must also agree on
 whether the enqueue is admitted at all (`runEnqueueAdmits`), which reads the
 thread's run-core word, a field the projection erases. -/
 theorem runEnqueueOnCore_lowEquivalent_pair {s₁ s₂ : SystemState} (c : CoreId)
-    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (hL : lowEquivalent_smp ctx observer s₁ s₂)
+    (t : SeLe4n.ThreadId) (p₁ p₂ : SeLe4n.Priority) (hL : lowEquivalent_smp ctx observer s₁ s₂)
     (hA : threadObservable ctx observer t = true →
       s₁.runEnqueueAdmits c t = s₂.runEnqueueAdmits c t) :
-    lowEquivalent_smp ctx observer (s₁.runEnqueueOnCore c t p) (s₂.runEnqueueOnCore c t p) := by
-  have hO : ∀ s : SystemState, projectObjects ctx observer (s.runEnqueueOnCore c t p) =
-      projectObjects ctx observer s := fun s =>
+    lowEquivalent_smp ctx observer (s₁.runEnqueueOnCore c t p₁) (s₂.runEnqueueOnCore c t p₂) := by
+  have hO : ∀ (s : SystemState) p, projectObjects ctx observer (s.runEnqueueOnCore c t p) =
+      projectObjects ctx observer s := fun s p =>
     projectObjects_of_objectsAgreeOffRunLinks ctx observer
       (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks s c t p)
   refine lowEquivalent_smp_pair_of_storeAndQueueWrite hL
-    (storeAndQueueWrite.runEnqueueOnCore s₁ c t p) (storeAndQueueWrite.runEnqueueOnCore s₂ c t p)
+    (storeAndQueueWrite.runEnqueueOnCore s₁ c t p₁) (storeAndQueueWrite.runEnqueueOnCore s₂ c t p₂)
     (by rw [hO, hO]; exact hL.objects) ?_
   intro d
   have hd := hL.runnable d
@@ -270,11 +272,11 @@ theorem runEnqueueOnCore_lowEquivalent_pair {s₁ s₂ : SystemState} (c : CoreI
       SystemState.runEnqueueOnCore_runQueueOnCore_self_eq]
     cases hT : threadObservable ctx observer t with
     | false =>
-      have e : ∀ s : SystemState,
+      have e : ∀ (s : SystemState) p,
           (if s.runEnqueueAdmits c t then (s.scheduler.runQueueOnCore c).insert t p
             else s.scheduler.runQueueOnCore c).toList.filter (threadObservable ctx observer) =
           (s.scheduler.runQueueOnCore c).toList.filter (threadObservable ctx observer) :=
-        fun s => by
+        fun s p => by
           split
           · exact RunQueue.toList_filter_insert_neg' _ t p _ hT
           · rfl
@@ -282,11 +284,11 @@ theorem runEnqueueOnCore_lowEquivalent_pair {s₁ s₂ : SystemState} (c : CoreI
     | true =>
       rw [hA hT]
       split
-      · rw [RunQueue.toList_filter_insert_pos _ t p _ hT,
-          RunQueue.toList_filter_insert_pos _ t p _ hT, hd]
+      · rw [RunQueue.toList_filter_insert_pos _ t p₁ _ hT,
+          RunQueue.toList_filter_insert_pos _ t p₂ _ hT, hd]
       · exact hd
-  · rw [SystemState.runEnqueueOnCore_runQueueOnCore_ne _ c d t p hc,
-      SystemState.runEnqueueOnCore_runQueueOnCore_ne _ c d t p hc]
+  · rw [SystemState.runEnqueueOnCore_runQueueOnCore_ne _ c d t p₁ hc,
+      SystemState.runEnqueueOnCore_runQueueOnCore_ne _ c d t p₂ hc]
     exact hd
 
 /-! ### The release placement -/

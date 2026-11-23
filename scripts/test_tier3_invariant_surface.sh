@@ -7741,6 +7741,14 @@ run_check "INVARIANT" rg -n '^theorem lowEquivalent_smp_pair_of_storeAndQueueWri
 run_check "INVARIANT" rg -n '^theorem rewriteObject_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
 run_check "INVARIANT" rg -n '^theorem updateTcb_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
 run_check "INVARIANT" rg -n '^theorem runEnqueueOnCore_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
+# WS-SX SX9.1: the enqueue pair takes each run's own priority (the boost it
+# reads is erased; the filtered queue ignores priority).
+run_check "INVARIANT" bash -lc 'rg -U -n "\(t : SeLe4n.ThreadId\) \(p₁ p₂ : SeLe4n.Priority\)[^\n]*\n(    [^\n]*\n)*?    lowEquivalent_smp ctx observer \(s₁.runEnqueueOnCore c t p₁\) \(s₂.runEnqueueOnCore c t p₂\)" SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean'
+# The two-run theorem's static labelling hypothesis, its deployment discharge,
+# and the hidden-thread half.
+run_check "INVARIANT" rg -n '^def threadObjectLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem deploymentLabelingContext_threadObjectLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContextFlowing_lowEquivalent_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
 run_check "INVARIANT" rg -n '^theorem releasePlace_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
 run_check "INVARIANT" rg -n '^theorem markReschedulePendingOnCore_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
