@@ -459,13 +459,18 @@ def decodeCSpaceMoveArgs (decoded : SyscallDecodeResult)
   pure (cnodeOpArgsOfWords r0.word r1.word r2.word r3.word)
 
 /-- Decode reply-capability mint arguments from message registers.
-    Requires 2 message registers (srcSlot, dstSlot). -/
+    Requires 2 message registers (srcSlot, dstSlot).  Each slot is read
+    through `windowWordOf` (WS-SX SX8.1): a word at or past `windowWordBound`
+    reads as that bound, a slot no CNode addresses (none has `2 ^ 62` slots),
+    so the lookup and the install refuse it as they refuse the word, and a
+    full-width word builds no heap number. -/
 def decodeMintReplyCapArgs (decoded : SyscallDecodeResult)
     : Except KernelError MintReplyCapArgs := do
   requireMessageLength decoded (truncationMinimum .mintReplyCap)
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
-  pure { srcSlot := Slot.ofNat r0.val, dstSlot := Slot.ofNat r1.val }
+  pure { srcSlot := Slot.ofNat (windowWordOf r0.word),
+         dstSlot := Slot.ofNat (windowWordOf r1.word) }
 
 /-- Decode CSpace delete arguments from message registers.
     Requires 1 message register (targetSlot). -/
@@ -917,15 +922,23 @@ theorem decodeCSpaceMoveArgs_roundtrip (args : CSpaceMoveArgs)
   rfl
 
 /-- Round-trip: encoding then decoding MintReplyCapArgs recovers the original,
-for slots a register word holds (WS-SX SX1.3: a register is a word). -/
+for slots below the word bound the decode reads them under (`windowWordOf`). -/
 theorem decodeMintReplyCapArgs_roundtrip (args : MintReplyCapArgs)
-    (hSrc : args.srcSlot.toNat < 2 ^ 64) (hDst : args.dstSlot.toNat < 2 ^ 64) :
+    (hSrc : args.srcSlot.toNat < windowWordBound) (hDst : args.dstSlot.toNat < windowWordBound) :
     decodeMintReplyCapArgs (stubDecoded (encodeMintReplyCapArgs args)) = .ok args := by
   rcases args with ⟨s, d⟩
   simp only at hSrc hDst
+  have hB : windowWordBound < 2 ^ 64 := by decide
+  have hWord : ∀ n, n < 2 ^ 64 → (RegValue.ofNat n).word.toNat = n := fun n hn => by
+    have := RegValue.val_ofNat_of_lt hn
+    simpa [RegValue.val] using this
+  have hS : windowWordOf (RegValue.ofNat s.toNat).word = s.toNat := by
+    rw [windowWordOf_of_lt (by rw [hWord _ (by omega)]; exact hSrc), hWord _ (by omega)]
+  have hD : windowWordOf (RegValue.ofNat d.toNat).word = d.toNat := by
+    rw [windowWordOf_of_lt (by rw [hWord _ (by omega)]; exact hDst), hWord _ (by omega)]
   simp [decodeMintReplyCapArgs, encodeMintReplyCapArgs, requireMessageLength,
     truncationMinimum, stubDecoded, requireMsgReg, bind, Except.bind, pure, Except.pure,
-    RegValue.val_ofNat_of_lt hSrc, RegValue.val_ofNat_of_lt hDst, Slot.ofNat_toNat]
+    hS, hD, Slot.ofNat_toNat]
 
 /-- Round-trip: encoding then decoding CSpaceDeleteArgs recovers the original,
 for a slot a register word holds. -/
@@ -1056,7 +1069,11 @@ def serviceMaxMessageSize : Nat := 120 * 8
     - `r2` (`maxMessageSize`) must be ≤ `serviceMaxMessageSize` (960).
     - `r3` (`maxResponseSize`) must be ≤ `serviceMaxMessageSize` (960).
     Kernel is the authoritative validator — the tightening prevents any
-    Rust-validated-but-Lean-accepted divergence. -/
+    Rust-validated-but-Lean-accepted divergence.
+
+    WS-SX SX8.1: the interface id is tested on its word first: a word at or
+    past `windowWordBound` is refused `invalidArgument 0` before any `Nat` is
+    made of it, so a full-width word builds no heap number. -/
 def decodeServiceRegisterArgs (decoded : SyscallDecodeResult)
     : Except KernelError ServiceRegisterArgs := do
   requireMessageLength decoded (truncationMinimum .serviceRegister)
@@ -1070,8 +1087,9 @@ def decodeServiceRegisterArgs (decoded : SyscallDecodeResult)
   else if r2.val > serviceMaxMessageSize then .error (.invalidArgument 2)
   else if r3.val > serviceMaxMessageSize then .error (.invalidArgument 3)
   else if r4.val ≥ 2 then .error .invalidMessageInfo
+  else if !wordLtNat r0.word windowWordBound then .error (.invalidArgument 0)
   else
-    pure { interfaceId    := InterfaceId.ofNat r0.val
+    pure { interfaceId    := InterfaceId.ofNat r0.word.toNat
            methodCount    := r1.val
            maxMessageSize := r2.val
            maxResponseSize := r3.val
@@ -1159,11 +1177,17 @@ theorem decodeServiceRegisterArgs_roundtrip (args : ServiceRegisterArgs)
     (hMc : args.methodCount ≤ serviceMaxMethodCount)
     (hMms : args.maxMessageSize ≤ serviceMaxMessageSize)
     (hMrs : args.maxResponseSize ≤ serviceMaxMessageSize)
-    (hIid : args.interfaceId.toNat < 2 ^ 64) :
+    (hIid : args.interfaceId.toNat < windowWordBound) :
     decodeServiceRegisterArgs (stubDecoded (encodeServiceRegisterArgs args)) = .ok args := by
   rcases args with ⟨iid, mc, mms, mrs, rg⟩
   simp only at hMc hMms hMrs hIid
+  have hIidB : iid.val < windowWordBound := hIid
+  have hIid : iid.val < 2 ^ 64 := Nat.lt_trans hIidB (by decide)
   have hIid' : iid.val < 2 ^ 64 := hIid
+  have hW : (RegValue.ofNat iid.val).word.toNat = iid.val := by
+    have := RegValue.val_ofNat_of_lt hIid
+    simpa [RegValue.val] using this
+  have hNotLe : ¬ windowWordBound ≤ iid.val := Nat.not_le.mpr hIidB
   have hMcW : mc < 2 ^ 64 := Nat.lt_of_le_of_lt hMc (by decide)
   have hMmsW : mms < 2 ^ 64 := Nat.lt_of_le_of_lt hMms (by decide)
   have hMrsW : mrs < 2 ^ 64 := Nat.lt_of_le_of_lt hMrs (by decide)
@@ -1177,7 +1201,8 @@ theorem decodeServiceRegisterArgs_roundtrip (args : ServiceRegisterArgs)
         InterfaceId.ofNat, InterfaceId.toNat]
   cases rg <;>
     simp [hMcFalse, hMmsFalse, hMrsFalse, RegValue.val_ofNat, Nat.mod_eq_of_lt hMcW,
-      Nat.mod_eq_of_lt hMmsW, Nat.mod_eq_of_lt hMrsW, Nat.mod_eq_of_lt hIid']
+      Nat.mod_eq_of_lt hMmsW, Nat.mod_eq_of_lt hMrsW, Nat.mod_eq_of_lt hIid',
+      wordLtNat_eq_decide, hIidB, hW, hNotLe]
 
 -- ============================================================================
 -- V2-I: Notification argument structures
@@ -1442,7 +1467,7 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
       args.methodCount ≤ serviceMaxMethodCount →
       args.maxMessageSize ≤ serviceMaxMessageSize →
       args.maxResponseSize ≤ serviceMaxMessageSize →
-      args.interfaceId.toNat < 2 ^ 64 →
+      args.interfaceId.toNat < windowWordBound →
       decodeServiceRegisterArgs (stubDecoded (encodeServiceRegisterArgs args)) = .ok args) ∧
     (∀ args, decodeNotificationWaitArgs (stubDecoded (encodeNotificationWaitArgs args)) = .ok args) ∧
     (∀ args : SchedContextConfigureArgs, args.budget < 2 ^ 64 → args.period < 2 ^ 64 →
@@ -2003,7 +2028,7 @@ theorem decodeCSpaceMoveArgs_eq_by (layout : SyscallRegisterLayout) (regs : Regi
     : Except KernelError MintReplyCapArgs := do
   let r0 ← get 0
   let r1 ← get 1
-  pure { srcSlot := Slot.ofNat r0.toNat, dstSlot := Slot.ofNat r1.toNat }
+  pure { srcSlot := Slot.ofNat (windowWordOf r0), dstSlot := Slot.ofNat (windowWordOf r1) }
 
 theorem decodeMintReplyCapArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
     (decoded : SyscallDecodeResult)
@@ -2366,6 +2391,7 @@ decode's order. -/
   else if serviceMaxMessageSize.toUInt64 < r2 then .error (.invalidArgument 2)
   else if serviceMaxMessageSize.toUInt64 < r3 then .error (.invalidArgument 3)
   else if 2 ≤ r4 then .error .invalidMessageInfo
+  else if !wordLtNat r0 windowWordBound then .error (.invalidArgument 0)
   else
     pure { interfaceId    := InterfaceId.ofNat r0.toNat
            methodCount    := r1.toNat

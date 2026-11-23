@@ -3,6 +3,7 @@ Copyright (C) 2026 seLe4n contributors
 SPDX-License-Identifier: GPL-3.0-or-later
 -/
 import SeLe4n.Kernel.IPC.Invariant.UnheldContextPop
+import SeLe4n.Kernel.IPC.Invariant.HeldContextPop
 
 /-!
 # The IPC bundle across the single-core reply pop
@@ -59,7 +60,13 @@ theorem applyReplyDonation_preserves_ipcInvariantFull
     (h : applyReplyDonation st rid targetVtid = .ok st'') :
     ipcInvariantFull st'' := by
   rcases applyReplyDonation_ok_decompose st st'' rid targetVtid h with
-    ⟨hNoH, hEq⟩ | ⟨scId, holderVtid, newOwner?, st', hHead, hRes, hR, hEq⟩
+    ⟨hNoH, hEq⟩ | ⟨scId, holderVtid, newOwner?, st', hHead, hRes, hR, hEq⟩ |
+      ⟨scId, holderVtid, newOwner?, hHead, -, hRes, hK⟩
+  rotate_right
+  · -- seL4-MCS's held `reply_pop`: the holder keeps the context, owing the frame below.
+    exact keepDonatedSchedContext_preserves_ipcInvariantFull hObjInv hInv
+      (hHolderDonation scId holderVtid.val hHead)
+      (hStackValid scId holderVtid.val targetVtid.val newOwner? hRes).2 hK
   · exact popUnheldReplyHead_preserves_ipcInvariantFull hObjInv hInv hStackValid hUnheld hNoH hEq
   · have hRet : replyDonationReturn? st holderVtid.val = some (scId, targetVtid.val) :=
       hHolderDonation scId holderVtid.val hHead
@@ -149,7 +156,22 @@ theorem applyReplyDonation_establishes_ipcInvariantFull_of_except
     obtain ⟨s0, sTcb0, sc0, hS0, hB0⟩ := hAny
     have hHeadEq := hDonationReturned s0 sTcb0 sc0 hS0 hB0
     rcases applyReplyDonation_ok_decompose st st'' rid targetVtid h with
-      ⟨hNone, _⟩ | ⟨scId, holderVtid, newOwner?, st', hHead, hRes, hR, hEq⟩
+      ⟨hNone, _⟩ | ⟨scId, holderVtid, newOwner?, st', hHead, hRes, hR, hEq⟩ |
+        ⟨scId, holderVtid, newOwner?, hHead, -, hRes, hK⟩
+    rotate_right
+    · obtain ⟨hScEq, hS0Eq⟩ : sc0 = scId ∧ s0 = holderVtid.val := by
+        have := hHeadEq.symm.trans hHead
+        simpa using this
+      rw [hScEq] at hB0
+      rw [hS0Eq] at hS0
+      have hRet : replyDonationReturn? st holderVtid.val = some (scId, targetVtid.val) :=
+        hHolderDonation scId holderVtid.val hHead
+      have hWoken : woken = targetVtid.val :=
+        (answeredHeadHolder_donation_owner_eq st targetVtid.val holderVtid.val woken sTcb0
+          scId scId hRet hS0 hB0).2
+      subst hWoken
+      exact keepDonatedSchedContext_establishes_ipcInvariantFull_of_except hObjInv hInv hRet
+        (hStackValid scId holderVtid.val targetVtid.val newOwner? hRes).2 hK
     · rw [hHeadEq] at hNone; cases hNone
     · obtain ⟨hScEq, hS0Eq⟩ : sc0 = scId ∧ s0 = holderVtid.val := by
         have := hHeadEq.symm.trans hHead

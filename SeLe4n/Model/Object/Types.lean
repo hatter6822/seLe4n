@@ -1194,7 +1194,9 @@ structure IpcMessage where
       fault endpoint").  Restoring seL4's sender-side label pass-through
       therefore needs its own authority story (a badge or endpoint distinction
       that separates kernel-originated fault deliveries from user sends) and is
-      registered as WS-RR debt rather than folded in here — wiring it silently
+      registered debt rather than folded in here (`docs/REGISTERED_DEBT.md`
+      table A, "A user send's `MessageInfo` label is discarded at delivery",
+      owned by WS-CB) — wiring it silently
       would open the channel this default keeps shut.
 
       Bounded by `MessageInfo.maxLabel` on every path that sets it: the fault
@@ -5026,6 +5028,11 @@ inductive SyscallId where
   | irqHandlerClear        -- WS-ZA ZA6.32: unbind an interrupt line's
                            -- notification (seL4_IRQHandler_Clear), through
                            -- `irqHandlerClear`
+  | schedContextUnbindObject -- WS-SX SX8.3: unbind one object — the thread or the
+                           -- notification extra capability 0 names — from a
+                           -- scheduling context (seL4_SchedContext_UnbindObject),
+                           -- through `schedContextUnbindThreadObjectOnCore` and
+                           -- `schedContextUnbindNotificationObject`
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -5082,13 +5089,14 @@ namespace SyscallId
   | .irqControlGet         => 45
   | .irqHandlerSetNotification => 46
   | .irqHandlerClear       => 47
+  | .schedContextUnbindObject => 48
 
 /-- Total number of modeled syscalls (variants). -/
-def count : Nat := 45
+def count : Nat := 46
 
 /-- One past the largest syscall number: every number below it is a variant's
     or a retired one. -/
-def encodingBound : Nat := 48
+def encodingBound : Nat := 49
 
 /-- Retired operation codes, never reassigned: `8`, the in-place lifecycle
     retype (WS-ZA ZA5.4 part 14); `34`, the fault-handler configuration that
@@ -5145,6 +5153,7 @@ def retiredNumbers : List Nat := [8, 34, 37]
   | 45 => some .irqControlGet
   | 46 => some .irqHandlerSetNotification
   | 47 => some .irqHandlerClear
+  | 48 => some .schedContextUnbindObject
   | _  => none
 
 instance : ToString SyscallId where
@@ -5194,6 +5203,7 @@ instance : ToString SyscallId where
     | .irqControlGet         => "irqControlGet"
     | .irqHandlerSetNotification => "irqHandlerSetNotification"
     | .irqHandlerClear       => "irqHandlerClear"
+    | .schedContextUnbindObject => "schedContextUnbindObject"
 
 /-- AC4-D/IF-01: Exhaustive list of all SyscallId variants. Used by the enforcement
     boundary completeness witness to ensure every syscall is classified. The
@@ -5214,7 +5224,7 @@ def all : List SyscallId :=
   , .cspaceRevoke, .untypedRetype, .tcbSetSpace
   , .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed
   , .schedContextYieldTo, .irqHandlerAck, .irqControlGet
-  , .irqHandlerSetNotification, .irqHandlerClear ]
+  , .irqHandlerSetNotification, .irqHandlerClear, .schedContextUnbindObject ]
 
 /-- AC4-D: Compile-time check — `all` has exactly `count` elements.
     Fails at compile time if a variant is added to the inductive but not to `all`. -/
@@ -5247,9 +5257,9 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 20 | 21 | 22 | 23 | 24 | 25
   | 26 | 27 | 28 | 29 | 30
   | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 | 44
-  | 45 | 46 | 47 =>
+  | 45 | 46 | 47 | 48 =>
     intro s h; simp [ofNat?] at h <;> (subst h; rfl)
-  | n + 48 => intro s h; simp [ofNat?] at h
+  | n + 49 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by
@@ -5270,8 +5280,8 @@ theorem ofNat?_isSome_iff (n : Nat) :
   | 20 | 21 | 22 | 23 | 24 | 25
   | 26 | 27 | 28 | 29 | 30
   | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 | 44
-  | 45 | 46 | 47 => rfl
-  | n + 48 => simp [ofNat?, encodingBound, retiredNumbers]
+  | 45 | 46 | 47 | 48 => rfl
+  | n + 49 => simp [ofNat?, encodingBound, retiredNumbers]
 
 /-- The retired in-place retype's number names no syscall. -/
 theorem ofNat?_retired : ofNat? 8 = none := rfl
@@ -5518,6 +5528,7 @@ def label? : SyscallId → Option Nat
   | .schedContextConfigure => some 33
   | .schedContextBind => some 34
   | .schedContextUnbind => some 35
+  | .schedContextUnbindObject => some 36
   | .schedContextConsumed => some 37
   | .schedContextYieldTo => some 38
   | .vspaceUnifyInstruction => some 42
@@ -5581,6 +5592,7 @@ def ofLabel? : Nat → Option SyscallId
   | 33 => some .schedContextConfigure
   | 34 => some .schedContextBind
   | 35 => some .schedContextUnbind
+  | 36 => some .schedContextUnbindObject
   | 37 => some .schedContextConsumed
   | 38 => some .schedContextYieldTo
   | 42 => some .vspaceUnifyInstruction
@@ -5723,18 +5735,21 @@ theorem mkChecked_wellFormed {length extraCaps label : Nat} {mi : MessageInfo}
 @[inline] def encode (mi : MessageInfo) : Nat :=
   mi.length ||| (mi.extraCaps <<< 7) ||| (mi.capsUnwrapped <<< 9) ||| (mi.label <<< 12)
 
-/-- Decode a raw word into MessageInfo fields by extracting bit fields.
-    Returns `none` if the length or extraCaps fields exceed their bounds,
-    or if the label exceeds the 52-bit maximum (only a word past 64 bits
-    can).  The
-    `capsUnwrapped` field is read as seL4 reads it; a send ignores it, since
-    the transfer that delivers a message sets it. -/
+/-- Decode a raw word into MessageInfo fields by extracting bit fields, as
+    seL4's `messageInfoFromWord` (`include/api/types.h`) does: **a length
+    field past `seL4_MsgMaxLength` (120) is clamped to 120**, never refused
+    (WS-SX SX8.1, the conformance table's `messageInfoFromWord` row).  The
+    two-bit extra-capability field cannot exceed 3.  Returns `none` only when
+    the label exceeds the 52-bit maximum, which only a number past 64 bits
+    can; every register word decodes.  The `capsUnwrapped` field is read as
+    seL4 reads it; a send ignores it, since the transfer that delivers a
+    message sets it. -/
 @[inline] def decode (w : Nat) : Option MessageInfo :=
-  let length    := w &&& 0x7F          -- bits 0..6
+  let length    := min (w &&& 0x7F) maxMessageRegisters  -- bits 0..6, clamped
   let extraCaps := (w >>> 7) &&& 0x3   -- bits 7..8
   let capsUnwrapped := (w >>> 9) &&& 0x7 -- bits 9..11
   let label     := w >>> 12            -- bits 12+
-  if length ≤ maxMessageRegisters && extraCaps ≤ Model.maxExtraCaps && label ≤ maxLabel then
+  if label ≤ maxLabel then
     some { length, extraCaps, label, capsUnwrapped }
   else
     none
@@ -5762,9 +5777,10 @@ theorem decode_wellFormed {w : Nat} {mi : MessageInfo}
   simp only at h
   split at h
   · rename_i hAll
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at hAll
     cases h
-    refine ⟨hAll.1.1, hAll.1.2, hAll.2, ?_⟩
+    refine ⟨Nat.min_le_right _ _, ?_, hAll, ?_⟩
+    · show (w >>> 7) &&& 0x3 ≤ Model.maxExtraCaps
+      rw [(decode_fields w).2.1]; unfold Model.maxExtraCaps; omega
     show (w >>> 9) &&& 0x7 ≤ maxCapsUnwrapped
     rw [(decode_fields w).2.2.1]; unfold maxCapsUnwrapped; omega
   · cases h
@@ -5808,12 +5824,7 @@ theorem encode_decode_roundtrip (mi : MessageInfo)
       = mi.capsUnwrapped := by omega
   have e4 : (mi.length + mi.extraCaps * 128 + mi.capsUnwrapped * 512 + mi.label * 4096) / 4096
       = mi.label := by omega
-  rw [e1, e2, e3, e4]
-  have hCond : (decide (mi.length ≤ maxMessageRegisters) && decide (mi.extraCaps ≤ maxExtraCaps)
-      && decide (mi.label ≤ maxLabel)) = true := by
-    simp only [Bool.and_eq_true, decide_eq_true_eq]
-    exact ⟨⟨hLen, hCaps⟩, hLabel⟩
-  rw [if_pos hCond]
+  rw [e1, e2, e3, e4, Nat.min_eq_left hLen, if_pos hLabel]
 
 end MessageInfo
 

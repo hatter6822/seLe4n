@@ -533,24 +533,6 @@ theorem lockSet_cancelIpcBlocking_size_le (victimTid : SeLe4n.ThreadId)
   simp only [List.length_cons, List.length_nil]
   omega
 
-/-- The donation-cancellation footprint: the victim's TCB plus the bound
-SchedContext, the donated arm's original owner, (WS-OD `v0.35.4`) the pop's
-three stack objects and the state-level lock. -/
-theorem lockSet_cancelDonation_size_le (victimTid : SeLe4n.ThreadId)
-    (bindingScId : Option SeLe4n.SchedContextId)
-    (donatedOriginalOwnerTid : Option SeLe4n.ThreadId)
-    (headReplyId belowHeadReplyId : Option SeLe4n.ReplyId)
-    (outerCallerTid : Option SeLe4n.ThreadId) :
-    (lockSet_cancelDonation victimTid bindingScId donatedOriginalOwnerTid
-        headReplyId belowHeadReplyId outerCallerTid).size
-      ≤ maxLockSetSize := by
-  unfold lockSet_cancelDonation maxLockSetSize
-  -- WS-OD OD3.5: three optionals — the state-level lock joined the SchedContext
-  -- and the original owner.  WS-OD (`v0.35.4`): six, with the pop's objects.
-  refine Nat.le_trans (size_le_6 _ _ _ _ _ _ _) ?_
-  simp only [List.length_cons, List.length_nil]
-  omega
-
 /-- WS-OD OD1.5: **the reply-arm shape of the cancellation footprint** —
 **ten** over all argument values since `v0.36.136` (thirteen from WS-HP HP3.1,
 twelve at `v0.35.4`).
@@ -727,84 +709,40 @@ theorem lockSet_cancelIpcBlockingOnCore_size_le (st : SystemState)
     (by unfold maxLockSetSize; omega)
 
 /-- **The cancelling receive's footprint is inside the ceiling**: the receive's
-seventeen members, the cancel's thirteen and the receiver's bound notification. -/
+seventeen members, the cancel's thirteen, the receiver's bound notification and
+the context its completion donates or its blocking return returns. -/
 theorem Concurrency.lockSet_receiveCancellingHolder_size_le (st : SystemState) (endpointId : ObjId)
     (receiver : ThreadId) (cnodeRootObjId : ObjId) (replyId : Option ReplyId) :
     (lockSet_receiveCancellingHolder st endpointId receiver cnodeRootObjId replyId).size
       ≤ maxLockSetSize := by
-  have hR := lockSet_endpointReceiveOnCore_size_le_seventeen st endpointId receiver
-    cnodeRootObjId replyId
+  have hR := lockSet_endpointReceiveOnCore_size_le_seventeen
+    (SeLe4n.Kernel.receiveLegState st receiver) endpointId receiver cnodeRootObjId replyId
   unfold Concurrency.lockSet_receiveCancellingHolder maxLockSetSize
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  refine Nat.le_trans (Nat.add_le_add_right (lockSetExtendOpt_size_le _ _) 1) ?_
   split
   · omega
   · rename_i holder _
     have hC := lockSet_cancelIpcBlockingOnCore_size_le_thirteen st holder
-    exact Nat.le_trans (Nat.add_le_add_right (union_size_le _ _) 1) (by omega)
-
-/-- …and the state-resolved donation cancellation, which adds nothing beyond the
-parametric form's arguments. -/
-theorem lockSet_cancelDonationOnCore_size_le (st : SystemState)
-    (victimTid : SeLe4n.ThreadId) :
-    (lockSet_cancelDonationOnCore st victimTid).size ≤ maxLockSetSize := by
-  unfold lockSet_cancelDonationOnCore
-  split <;> exact lockSet_cancelDonation_size_le _ _ _ _ _ _
+    exact Nat.le_trans (Nat.add_le_add_right (Nat.add_le_add_right (union_size_le _ _) 1) 1)
+      (by omega)
 
 -- ============================================================================
 -- §4  The `.tcbSuspend` footprint — the widest the kernel declares
 -- ============================================================================
-
-/-- WS-OD (`v0.35.4`): the arithmetic of the suspend footprint's widest shape,
-stated once over an arbitrary root.  Two read extensions, then a write extension
-on a key the root already holds (a mode merge, which costs nothing —
-`LockSet.size_insertOrMerge_of_containsKey`), then two more extensions: at most
-the root's size plus four. -/
-private theorem suspend_reclaim_tail_bound (R : LockSet) (a b : LockKey × AccessMode)
-    (l : LockKey) (o₁ o₂ : Option (LockKey × AccessMode)) (hR : R.size ≤ 13)
-    (hKey : (lockSetExtendOpt (lockSetExtendOpt R (some a)) (some b)).containsKey l = true) :
-    (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
-      (lockSetExtendOpt R (some a)) (some b)) (some (l, AccessMode.write))) o₁) o₂).size
-      ≤ 17 := by
-  have h1 := lockSetExtendOpt_size_le R (some a)
-  have h2 := lockSetExtendOpt_size_le (lockSetExtendOpt R (some a)) (some b)
-  have hM : (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt R (some a)) (some b))
-      (some (l, AccessMode.write))).size
-      = (lockSetExtendOpt (lockSetExtendOpt R (some a)) (some b)).size :=
-    LockSet.size_insertOrMerge_of_containsKey _ l AccessMode.write hKey
-  have h3 := lockSetExtendOpt_size_le (lockSetExtendOpt (lockSetExtendOpt
-    (lockSetExtendOpt R (some a)) (some b)) (some (l, AccessMode.write))) o₁
-  have h4 := lockSetExtendOpt_size_le (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
-    (lockSetExtendOpt R (some a)) (some b)) (some (l, AccessMode.write))) o₁) o₂
-  omega
 
 /-- **WS-OD (`v0.35.4`), WS-HP HP3.1, WS-ZA ZA4.6, ZA6.6: the resolved
 `.tcbSuspend` footprint is at most eighteen** (seventeen until ZA6.6 added the
 context the victim's yield link names; twenty from ZA4.6 until `v0.36.136`,
 seventeen before ZA4.6, sixteen before HP3.1).
 
-The yield-link member is the outermost extension and adds at most one.  Under
-it, case by case on what the victim is and what it is owed:
-
-* no victim TCB: the root is the victim's lock alone, plus the caller's two
-  reads — three;
-* a victim owed no donation: the cancellation root is at most nine
-  (`lockSet_cancelIpcBlockingOnCore_size_le_of_no_donation`), the caller's two
-  reads and the donation cancellation's five members plus the state-level lock
-  — seventeen at most;
-* a victim owed a donation at the bottom of its stack: the root is at most
-  thirteen and the tail is empty — fifteen;
-* a victim owed a donation above the bottom — the second pop: the root is at
-  most thirteen, the caller's two reads make fifteen, the outer caller's write
-  **merges** with the read the root already holds
-  (`lockSet_cancelIpcBlockingOnCore_covers_outerCaller_key`), and the second
-  frame's Reply and its caller make **seventeen**, and the yield-link member
-  **eighteen**.
-
-The last shape is a reply-arm victim at call depth ≥ 3 whose frame has
-something above it *and* is owed a reclaim — which no reachable state supplies
-(the removal's two frame members and the reclaim are exclusive there), so the
-reachable figure is the bottom-of-stack shape's.  The bound is stated over all
-argument values, as every declared bound is.
+The cancellation root is at most thirteen
+(`lockSet_cancelIpcBlockingOnCore_size_le_thirteen`), and the pipeline adds five
+extensions over it, each at most one: the caller's two reads, the context the
+victim's binding names, the state-level lock and the context its yield link
+names.  The donation cancellation's owner, head, frame-below and outer-caller
+members left the footprint with that retired arm; seL4's `suspend` keeps the
+victim's context and pops nothing.
 
 It is **not** the footprint that sets the ceiling: since PR #894 and WS-RM that
 is `lockSet_endpointReplyRecvOnCore`, at twenty-seven since WS-ZA ZA4.6. -/
@@ -812,70 +750,14 @@ theorem lockSet_tcbSuspendOnCore_size_le_eighteen (st : SystemState)
     (callerTid : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (targetTid : SeLe4n.ThreadId) :
     (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).size ≤ 18 := by
-  cases hT : st.getTcb? targetTid with
-  | none =>
-    have hTail : suspendDonationCancelTailOf? st targetTid = {} := by
-      unfold suspendDonationCancelTailOf?; rw [hT]
-    have hRoot : (lockSet_cancelIpcBlockingOnCore st targetTid).size ≤ 6 := by
-      unfold lockSet_cancelIpcBlockingOnCore
-      rw [hT]
-      exact lockSet_cancelIpcBlocking_noDonation_size_le targetTid none none none none none
-    unfold lockSet_tcbSuspendOnCore
-    refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
-    rw [hTail]
-    simp only [Option.map_none, extendOpt_none, Option.isSome_none, Bool.false_eq_true,
-      if_false]
-    have h1 := lockSetExtendOpt_size_le (lockSet_cancelIpcBlockingOnCore st targetTid)
-      (some (tcbLock callerTid, AccessMode.read))
-    have h2 := lockSetExtendOpt_size_le (lockSetExtendOpt
-      (lockSet_cancelIpcBlockingOnCore st targetTid) (some (tcbLock callerTid, AccessMode.read)))
-      (some (cnodeLock cnodeRootObjId, AccessMode.read))
-    omega
-  | some tcb =>
-    cases hRes : Lifecycle.Suspend.cancelledCallerDonation? st targetTid tcb with
-    | none =>
-      have hRoot := lockSet_cancelIpcBlockingOnCore_size_le_of_no_donation st targetTid tcb hT hRes
-      unfold lockSet_tcbSuspendOnCore
-      refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
-      exact Nat.succ_le_succ (Nat.le_trans (size_le_8_over _ _ _ _ _ _ _ _ _) (by omega))
-    | some pr =>
-      obtain ⟨scId, holder⟩ := pr
-      have hRoot := lockSet_cancelIpcBlockingOnCore_size_le_of_donation st targetTid tcb scId
-        holder hT hRes
-      cases hOuter : (replyStackBelowHead? st scId).2 with
-      | none =>
-        have hTail := suspendDonationCancelTailOf?_of_reclaim_bottom st targetTid tcb scId holder
-          hT hRes hOuter
-        unfold lockSet_tcbSuspendOnCore
-        refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
-        rw [hTail]
-        simp only [Option.map_none, extendOpt_none, Option.isSome_none, Bool.false_eq_true,
-          if_false]
-        have h1 := lockSetExtendOpt_size_le (lockSet_cancelIpcBlockingOnCore st targetTid)
-          (some (tcbLock callerTid, AccessMode.read))
-        have h2 := lockSetExtendOpt_size_le (lockSetExtendOpt
-          (lockSet_cancelIpcBlockingOnCore st targetTid)
-          (some (tcbLock callerTid, AccessMode.read)))
-          (some (cnodeLock cnodeRootObjId, AccessMode.read))
-        omega
-      | some outer =>
-        have hTail := suspendDonationCancelTailOf?_of_reclaim_outer st targetTid tcb scId holder
-          outer hT hRes hOuter
-        have hKey : (lockSetExtendOpt (lockSetExtendOpt
-            (lockSet_cancelIpcBlockingOnCore st targetTid)
-            (some (tcbLock callerTid, AccessMode.read)))
-            (some (cnodeLock cnodeRootObjId, AccessMode.read))).containsKey (tcbLock outer)
-            = true :=
-          containsKey_lockSetExtendOpt_of_containsKey _ _ _
-            (containsKey_lockSetExtendOpt_of_containsKey _ _ _
-              (lockSet_cancelIpcBlockingOnCore_covers_outerCaller_key st targetTid tcb scId
-                holder outer hT hRes hOuter))
-        unfold lockSet_tcbSuspendOnCore
-        refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
-        rw [hTail]
-        simp only [Option.map_none, Option.map_some, extendOpt_none, Option.isSome_none,
-          Bool.false_eq_true, if_false]
-        exact Nat.succ_le_succ (suspend_reclaim_tail_bound _ _ _ _ _ _ hRoot hKey)
+  have hRoot := lockSet_cancelIpcBlockingOnCore_size_le_thirteen st targetTid
+  unfold lockSet_tcbSuspendOnCore
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  refine Nat.succ_le_succ (Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_)
+  refine Nat.succ_le_succ (Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_)
+  refine Nat.succ_le_succ (Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_)
+  refine Nat.succ_le_succ (Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_)
+  omega
 
 /-- …and therefore inside the ceiling — the form the census, the deadlock-freedom
 theorem and the WCRT surface consume. -/

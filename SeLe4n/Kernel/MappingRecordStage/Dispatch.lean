@@ -45,6 +45,17 @@ theorem unbindSchedContextNotification_mappingStage (st : SystemState)
       (SystemState.MappingStage.insert (pre := .notification ntfn) rfl h1 rfl
         (by simp [KernelObject.objectType]))
 
+/-- **A context's reply-stack unlink keeps the mappings recorded**: a Reply
+stored over a Reply, then a context rewritten as the kind it was. -/
+theorem schedContextUnbindReply_mappingStage (st : SystemState) (x : SeLe4n.ObjId) :
+    SystemState.MappingStage st (schedContextUnbindReply st x) := by
+  refine SystemState.MappingStage.of_invExt fun _ => ?_
+  refine schedContextUnbindReply_induct (fun a b => SystemState.MappingStage a b) st x
+    (SystemState.MappingStage.refl st) ?_
+  intro _ rid r s1 _ _ hR _ hS
+  exact (SystemState.MappingStage.storeObject hS ((SystemState.getReply?_eq_some_iff st rid r).mp hR)
+    rfl (by simp [KernelObject.objectType])).trans (updateSchedContext_mappingStage s1 _ _)
+
 /-- **`SchedContext_Unbind` keeps the mappings recorded.** -/
 theorem schedContextUnbindAllOnCore_mappingStage {vScId : SeLe4n.ValidObjId}
     {ec : Concurrency.CoreId} {st st' : SystemState}
@@ -53,9 +64,29 @@ theorem schedContextUnbindAllOnCore_mappingStage {vScId : SeLe4n.ValidObjId}
     SystemState.MappingStage st st' := by
   obtain ⟨stU, hU | ⟨-, hU, -⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok h
   · obtain ⟨rfl, -⟩ := hU
-    exact unbindSchedContextNotification_mappingStage _ _
+    exact (unbindSchedContextNotification_mappingStage _ _).trans
+      (schedContextUnbindReply_mappingStage _ _)
   · exact (schedContextUnbindOnCore_mappingStage hU).trans
-      (unbindSchedContextNotification_mappingStage _ _)
+      ((unbindSchedContextNotification_mappingStage _ _).trans
+        (schedContextUnbindReply_mappingStage _ _))
+
+/-- **`SchedContext_UnbindObject` on a thread keeps the mappings recorded**: it
+is the per-core thread unbind. -/
+theorem schedContextUnbindThreadObjectOnCore_mappingStage {vScId : SeLe4n.ValidObjId}
+    {tid : SeLe4n.ThreadId} {ec : Concurrency.CoreId} {st st' : SystemState}
+    {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)}
+    (h : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId tid ec st = .ok (st', sgi?)) :
+    SystemState.MappingStage st st' :=
+  schedContextUnbindOnCore_mappingStage (SchedContextOps.schedContextUnbindThreadObjectOnCore_ok h)
+
+/-- **`SchedContext_UnbindObject` on a notification keeps the mappings
+recorded**: it is the notification unbind. -/
+theorem schedContextUnbindNotificationObject_mappingStage {vScId : SeLe4n.ValidObjId}
+    {n : SeLe4n.ObjId} {st st' : SystemState}
+    (h : SchedContextOps.schedContextUnbindNotificationObject vScId n st = .ok ((), st')) :
+    SystemState.MappingStage st st' := by
+  obtain ⟨-, rfl⟩ := SchedContextOps.schedContextUnbindNotificationObject_ok h
+  exact unbindSchedContextNotification_mappingStage _ _
 
 /-- **The bind keeps the mappings recorded**: a context and a notification,
 each rewritten as the kind it was, neither holding a mapping fact. -/
@@ -316,6 +347,38 @@ theorem dispatchCapabilityOnly_mappingStage
                   simp only [hUn] at hStep
                   cases hStep
                   exact schedContextUnbindAllOnCore_mappingStage hUn
+    all_goals try cases hStep
+  case schedContextUnbindObject =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object scId =>
+      try dsimp only [] at hStep
+      cases hN : resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | succ k =>
+          simp only [hN] at hStep
+          cases hVal : validateObjIdArg scId with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vScId =>
+              simp only [hVal] at hStep
+              exact schedContextUnbindNotificationObject_mappingStage hStep
+      | zero =>
+          simp only [hN] at hStep
+          cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok vThreadId =>
+              simp only [hRes] at hStep
+              cases hVal : validateObjIdArg scId with
+              | error e => simp only [hVal] at hStep; cases hStep
+              | ok vScId =>
+                  simp only [hVal] at hStep
+                  cases hUn : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId
+                      vThreadId.val executingCore st with
+                  | error e => simp only [hUn] at hStep; cases hStep
+                  | ok pair =>
+                      obtain ⟨stU, sgiU⟩ := pair
+                      simp only [hUn] at hStep
+                      cases hStep
+                      exact schedContextUnbindThreadObjectOnCore_mappingStage hUn
     all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -642,6 +705,146 @@ theorem cancelRecvBusyReply_mappingStage (ctx : LabelingContext) (tid : SeLe4n.T
   · exact MappingStage.refl st
   · exact cancelReplyHolder_mappingStage _ _ _
 
+/-- **A donation through a notification keeps the mapping records**: it is the
+identity or the bind's writes (`schedContextBindPerform_mappingStage`). -/
+theorem maybeDonateSchedContext_mappingStage (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) : MappingStage st (maybeDonateSchedContext st n tid) :=
+  maybeDonateSchedContext_induct MappingStage st n tid (MappingStage.refl _)
+    (fun _ _ _ _ => schedContextBindPerform_mappingStage _ _ _)
+
+/-- …and so does the checked donation. -/
+theorem maybeDonateSchedContextFlowing_mappingStage {ctx : LabelingContext} (st : SystemState)
+    (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) :
+    MappingStage st (maybeDonateSchedContextFlowing ctx st n tid) :=
+  maybeDonateSchedContextFlowing_induct (MappingStage st) ctx st n tid (MappingStage.refl _)
+    (maybeDonateSchedContext_mappingStage st n tid)
+
+/-- **seL4's return on a running receiver keeps the mapping records**: the
+context's thread link and the thread's binding written in place, then
+reschedule flags. -/
+theorem schedContextReturnLinks_mappingStage (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) : MappingStage st (schedContextReturnLinks st vS tid) := by
+  unfold schedContextReturnLinks
+  split
+  · exact MappingStage.refl _
+  rename_i sc hSc _
+  split
+  · exact MappingStage.refl _
+  dsimp only
+  refine MappingStage.trans ?_ (markKeyChangeFor_mappingStage _ _ _)
+  refine MappingStage.trans ?_ (markCandidacyGainFor_mappingStage _ _ _)
+  split
+  · refine MappingStage.trans ?_ (MappingStage.of_objects_eq
+      (SystemState.markReschedulePendingOnCore_objects _ _))
+    exact (MappingStage.rewriteObject_schedContext hSc _ _).trans
+      (updateTcb_mappingStage _ _ _)
+  · exact (MappingStage.rewriteObject_schedContext hSc _ _).trans
+      (updateTcb_mappingStage _ _ _)
+
+/-- **The return keeps the mapping records**: seL4's three writes, then the
+purge. -/
+theorem schedContextReturnPerform_mappingStage (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) : MappingStage st (schedContextReturnPerform st vS tid) :=
+  (schedContextReturnLinks_mappingStage st vS tid).trans (purgeReplenishment_mappingStage _ _)
+
+/-- **seL4-MCS `maybeReturnSchedContext` is a mapping stage**: the identity, or
+seL4's writes and the purge (`schedContextReturnPerform_mappingStage`). -/
+theorem maybeReturnSchedContext_mappingStage (st : SystemState) (n : SeLe4n.ObjId)
+    (tid : SeLe4n.ThreadId) : MappingStage st (maybeReturnSchedContext st n tid) :=
+  maybeReturnSchedContext_induct MappingStage st n tid (MappingStage.refl _)
+    (fun vS _ _ _ => schedContextReturnPerform_mappingStage st vS tid)
+
+/-- **seL4 `receiveIPC`'s return keeps the mapping records.** -/
+theorem receiveReturnSchedContext_mappingStage (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) : MappingStage st (receiveReturnSchedContext blocks st tid) :=
+  receiveReturnSchedContext_induct MappingStage blocks st tid (MappingStage.refl _)
+    (fun vS _ _ _ => schedContextReturnPerform_mappingStage st vS tid)
+
+/-- **The `.replyRecv` composite keeps the mapping records**: the reply leg, the
+pop, the reply's capability transfer, seL4-MCS `receiveIPC`'s return, the
+receive leg, the post-receive donation, the priority hand-off and the answered
+caller, each a mapping stage. -/
+theorem endpointReplyRecvOnCore_mappingStage {lend : Bool} {answer : Option Architecture.FaultReplyOutcome}
+    {epId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
+    {msg : IpcMessage} {grant : Bool}
+    {executingCore : Concurrency.CoreId} {st st' : SystemState} {summary : CapTransferSummary}
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant executingCore st lend
+      = .ok (summary, st')) : MappingStage st st' := by
+  unfold endpointReplyRecvAnsweringOnCore at h
+  dsimp only at h
+  have hR := endpointReplyOnCore_mappingStage (replier := tid) (target := prevCaller)
+    (msg := msg) (executingCore := executingCore) (st := st)
+  revert h hR
+  generalize endpointReplyOnCore tid prevCaller msg executingCore st = r1
+  obtain ⟨st1, res1⟩ := r1
+  cases res1 with
+  | error _ => intro h; cases h
+  | ok _ =>
+  intro h hR
+  dsimp only at h hR
+  split at h
+  · cases h
+  rename_i ret st1q hPop
+  have hP := replyRecvPopDonation_mappingStage hPop
+  split at h
+  · cases h
+  rename_i xs st1p hX
+  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
+  have hXs := receiveTransferCaps_mappingStage hX
+  have hRet := receiveReturnSchedContext_mappingStage true st1p tid
+  have hV := endpointReceiveDualWithCapsOnCore_mappingStage (endpointId := epId)
+    (receiver := tid) (replyId := some rid)
+    (executingCore := executingCore) (st := receiveReturnSchedContext true st1p tid)
+  revert h hV
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore
+    (receiveReturnSchedContext true st1p tid) = r2
+  obtain ⟨st2, res2⟩ := r2
+  cases res2 with
+  | error _ => intro h; cases h
+  | ok q =>
+  obtain ⟨nextThread, summ, _⟩ := q
+  intro h hV
+  dsimp only at h hV
+  split at h
+  · cases h
+  rename_i st3 hPost
+  cases h
+  exact ((((((hR.trans hP).trans hXs).trans hRet).trans hV).trans
+    (replyRecvPostReceiveDonation_mappingStage hPost)).trans
+    (applyReceiveLegPipHandoff_mappingStage _ _ _ _ _)).trans
+    (replyRecvAnswerCaller_mappingStage answer _ prevCaller _)
+
+/-- **seL4's `sendSignal` keeps the mapping records**: the wake's writes, then
+the donation's. -/
+theorem sendSignalOnCoreFlowing_mappingStage {ctx : LabelingContext} {n : SeLe4n.ObjId}
+    {badge : SeLe4n.Badge} {c : Concurrency.CoreId} {st : SystemState} :
+    MappingStage st (sendSignalOnCoreFlowing ctx n badge c st).1 :=
+  sendSignalOnCoreFlowing_induct (MappingStage st) ctx n badge c st
+    notificationSignalBoundOnCore_mappingStage
+    (fun t _ _ _ => notificationSignalBoundOnCore_mappingStage.trans
+      (maybeDonateSchedContext_mappingStage _ n t))
+
+/-- **The declassifying signal's dispatch keeps the mapping records**: the
+declassifying signal, then seL4's `sendSignal` donation. -/
+theorem notificationSignalDeclassifiedCrossCoreDispatch_mappingStage (ctx : GenericLabelingContext)
+    (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (c : Concurrency.CoreId) (st : SystemState) :
+    MappingStage st
+      (notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy notificationId badge c st).1 :=
+  have hS := notificationSignalDeclassifiedOnCore_mappingStage ctx declPolicy notificationId badge c st
+  notificationSignalDeclassifiedCrossCoreDispatch_induct (MappingStage st) ctx declPolicy
+    notificationId badge c st hS
+    (fun t _ _ _ => hS.trans (maybeDonateSchedContext_mappingStage _ notificationId t))
+
+theorem notificationSignalBoundCrossCoreDispatchChecked_mappingStage {ctx : LabelingContext}
+    {notificationId : SeLe4n.ObjId} {signaler : SeLe4n.ThreadId} {badge : SeLe4n.Badge}
+    {executingCore : Concurrency.CoreId} {st : SystemState} :
+    MappingStage st (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
+      badge executingCore st).1 :=
+  notificationSignalBoundCrossCoreDispatchChecked_induct (MappingStage st) ctx notificationId
+    signaler badge executingCore st (MappingStage.refl _) sendSignalOnCoreFlowing_mappingStage
+
 /-- **A receive that completes its bound notification keeps the mapping
 records**: the checked wait's consumption and the badge register. -/
 theorem completeSignalArm_mappingStage {ctx : LabelingContext} {tid : SeLe4n.ThreadId}
@@ -651,11 +854,13 @@ theorem completeSignalArm_mappingStage {ctx : LabelingContext} {tid : SeLe4n.Thr
   split at h
   · rename_i hW
     cases h
-    exact (MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW).trans
-      (writeReturnFrameToTcb_mappingStage _ _ _)
+    exact ((MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW).trans
+      (writeReturnFrameToTcb_mappingStage _ _ _)).trans
+      (maybeDonateSchedContextFlowing_mappingStage _ _ _)
   · rename_i hW
     cases h
-    exact MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW
+    exact (MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW).trans
+      (maybeReturnSchedContext_mappingStage _ _ _)
   · cases h
 
 /-- **A reply-receive whose receive completes its bound notification keeps the
@@ -688,9 +893,10 @@ theorem receiveResolvedArm_mappingStage {ctx : LabelingContext} {decoded : Sysca
   · cases h; exact writeReturnFrameToTcb_mappingStage _ _ _
   rename_i summ _ hRecv _ stDon hHand
   cases h
-  exact (MappingStage.of_fst_eq endpointReceiveDualWithCapsOnCore_mappingStage hRecv).trans
+  exact (receiveReturnSchedContext_mappingStage _ _ _).trans
+    ((MappingStage.of_fst_eq endpointReceiveDualWithCapsOnCore_mappingStage hRecv).trans
     ((applyReceiveRendezvousHandoff_mappingStage hHand).trans
-      (stageDeliveredMessage_mappingStage _ _ _))
+      (stageDeliveredMessage_mappingStage _ _ _)))
 
 /-- **Every arm `dispatchWithCapChecked` routes keeps the mappings recorded**,
 the capability-only arms it delegates, the IPC arms, the audit read and drain
@@ -801,15 +1007,7 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
   case none.notificationWait.object notifId =>
     split at h
     · cases h; exact writeReturnFrameToTcb_mappingStage _ _ _
-    split at h
-    · rename_i hW
-      cases h
-      exact (MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW).trans
-        (writeReturnFrameToTcb_mappingStage _ _ _)
-    · rename_i hW
-      cases h
-      exact MappingStage.of_fst_eq notificationWaitCrossCoreDispatchChecked_mappingStage hW
-    · cases h
+    exact completeSignalArm_mappingStage h
   case none.replyRecv.object epId =>
     -- the reply skipped (an extra capability fails, or the reply answers no
     -- caller): the receive runs on the busy reply's cancel
@@ -843,7 +1041,7 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     split at h
     · rename_i hSig
       cases h
-      exact (MappingStage.of_fst_eq (notificationSignalDeclassifiedOnCore_mappingStage _ _ _ _ _ _) hSig)
+      exact (MappingStage.of_fst_eq (notificationSignalDeclassifiedCrossCoreDispatch_mappingStage _ _ _ _ _ _) hSig)
     · cases h
 
 /-- **The checked syscall dispatch keeps the mappings recorded**: the yield, the

@@ -661,9 +661,11 @@ private def runErrorPathChecks : IO Unit := do
      | .error (.invalidCapability _) => true | _ => false)
   -- Oversized payload: a call reads its words from the caller's frame, so the
   -- bound is the message-info decode's — a word declaring one register too many
-  -- does not decode, and the call never sees it.
-  assertBool "a message-info word declaring an oversized payload does not decode"
-    (MessageInfo.decode (MessageInfo.mk (maxMessageRegisters + 1) 0 0 0).encode).isNone
+  -- decodes at the bound (seL4's `messageInfoFromWord` clamp, WS-SX SX8.1).
+  assertBool "a message-info word declaring an oversized payload is clamped to the bound"
+    (match MessageInfo.decode (MessageInfo.mk (maxMessageRegisters + 1) 0 0 0).encode with
+     | some mi => mi.length == maxMessageRegisters
+     | none => false)
   -- Receive-side duals.
   assertBool "receive on an absent endpoint fails with objectNotFound"
     (match (endpointReceiveDualOnCore ⟨899⟩ serverB (some replyB) c1 stFourCore).2 with
@@ -2114,9 +2116,20 @@ private def runDonationReturnPopChecks : IO Unit := do
         popServer chainSc popClient (some popOuter) with
      | .error e => e == (KernelError.invalidArgument 0)
      | .ok _ => false)
-  assertBool "NEGATIVE: an outer caller that still holds a binding is refused"
+  -- An outer caller that holds a context of its own (`.bound`) is a donor all
+  -- the same: seL4-MCS's `reply_pop` writes nothing to it, and the reply that
+  -- answers it later keeps the context with its holder.  One that holds a loan
+  -- (`.donated`) is not: it would owe two contexts.
+  assertBool "an outer caller that owns a context of its own is accepted"
     (match returnDonatedSchedContext
         (popStoreWith { popWaitingDonor with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound chainOtherSc), scBindingOwnerCode := 0 }
+          (some chainHeadReply) (some chainOuterReply))
+        popServer chainSc popClient (some popOuter) with
+     | .error _ => false
+     | .ok _ => true)
+  assertBool "NEGATIVE: an outer caller that still holds a loan is refused"
+    (match returnDonatedSchedContext
+        (popStoreWith { popWaitingDonor with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated chainOtherSc popServer), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated chainOtherSc popServer) }
           (some chainHeadReply) (some chainOuterReply))
         popServer chainSc popClient (some popOuter) with
      | .error e => e == (KernelError.invalidArgument 0)
@@ -4860,7 +4873,14 @@ index-only removal for a `.bound` thread, the reference sweep, the replacement
 stored.  Spelled here and nowhere else, so the assertions can show the live
 pipeline changed something. -/
 private def retiredRetypeTcbCleanup (st : SystemState) (tcb : TCB) : Option SystemState :=
-  match cleanupDonatedSchedContext st tcb.tid with
+  let retiredReturn : Except KernelError SystemState :=
+    match lookupTcb st tcb.tid with
+    | some t =>
+      match t.schedContextBinding with
+      | .donated scId owner => returnDonatedSchedContextResolved st tcb.tid scId owner
+      | _ => .ok st
+    | none => .ok st
+  match retiredReturn with
   | .error _ => none
   | .ok st1 =>
       let st2 : SystemState := match tcb.schedContextBinding with
@@ -4930,18 +4950,29 @@ private def runRetypeReservationChecks : IO Unit := do
           | .error .revocationRequired => true
           | _ => false)
           && serverTcb.replyWaitersHeadCode != 0)
-      -- PAYOFF: the reservation arm the retype runs (also the suspend's G3 arm)
-      -- migrates the replenishment with the return.
+      -- PAYOFF (WS-SX SX8, seL4's `schedContext_unbindTCB`): the reservation arm
+      -- the retype runs unbinds the holder and hands the context to no one; it
+      -- keeps its reply stack, and the client gets it back only through
+      -- `reply_pop`.  The arm never refuses.
+      let scReplyBefore := match stDon.getSchedContext? scClient with
+        | some sc => sc.scReply | none => none
       match okExcept (cancelDonationArmOnCore stDon donServer serverTcb) with
       | none => assertBool "(a) the reservation arm succeeds on the holder" false
       | some stArm =>
         let stNew := cleanupTcbReferences stArm donServer
-        assertBool "(a) PAYOFF: the context is bound back to the client"
-          (boundThreadOf stNew scClient == some donClient
-            && (match stNew.getTcb? donClient with
-                | some t => t.schedContextBinding == .bound scClient | none => false))
-        assertBool "(a) PAYOFF: the arm migrated the replenishment to the client's home (core 0)"
-          (replenishCountFor stNew c0 scClient == 1 && replenishCountFor stNew c1 scClient == 0)
+        assertBool "(a) PAYOFF: the context is bound to no one, and the holder is unbound"
+          (boundThreadOf stNew scClient == none
+            && (match stNew.getTcb? donServer with
+                | some t => t.schedContextBinding == .unbound | none => false))
+        assertBool "(a) PAYOFF: the client is not handed the context at destroy"
+          (match stNew.getTcb? donClient with
+           | some t => t.schedContextBinding == .unbound | none => false)
+        assertBool "(a) PAYOFF: the context keeps its reply stack and is inactive"
+          (match stNew.getSchedContext? scClient with
+           | some sc => sc.scReply == scReplyBefore && !sc.isActive
+           | none => false)
+        assertBool "(a) PAYOFF: the arm purged the replenishment from every core"
+          (allCores.all (fun c => replenishCountFor stNew c scClient == 0))
         assertBool "(a) PAYOFF: the affinity invariant holds after the arm"
           (replenishAffinityConsistentB stNew)
         assertBool "(a) PAYOFF: the binding invariant holds after the arm"

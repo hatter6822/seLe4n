@@ -39,11 +39,10 @@ discharged **substantively** here:
   a blocked victim is neither queued nor current on any core) — §3.
 
 The single-core object-level teardown (`cancelIpcBlocking`'s sweeps and
-reply-link consume) and the donated-arm return (`cleanupDonatedSchedContext`)
-are surface **shared with the single-core suspend pipeline**, whose projection
+reply-link consume) is surface **shared with the single-core suspend pipeline**, whose projection
 preservation is the InformationFlow subsystem's established closure form
 (`suspendThread_preserves_projection` / `cancelDonatedDonation_preserves_projection`,
-AK6-F.17/18).  The composites here (§3/§4) take exactly that single obligation
+AK6-F.17/18).  The composites here (§3) take exactly that single obligation
 as a hypothesis and discharge every cross-core leg substantively — so closing
 the single-core closure forms immediately closes the cross-core NI too.
 -/
@@ -213,12 +212,9 @@ theorem cancelIpcBlockingMigrated_preserves_projection
     (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb) :
     projectState ctx observer (cancelIpcBlockingMigrated victim tcb st)
       = projectState ctx observer (cancelIpcBlocking st victim tcb) := by
-  unfold cancelIpcBlockingMigrated
-  split
-  · rename_i scId holder hRes
-    exact settleReturnedContext_preserves_projection ctx observer _ _ scId
-      (hCtxHigh scId holder hRes)
-  · rfl
+  rcases cancelIpcBlockingMigrated_cases victim tcb st with h | ⟨scId, holder, hRes, _, h⟩ <;> rw [h]
+  exact settleReturnedContext_preserves_projection ctx observer _ _ scId
+    (hCtxHigh scId holder hRes)
 
 /-- The per-core form of the same. -/
 theorem cancelIpcBlockingMigrated_preserves_projectionOnCore
@@ -227,12 +223,9 @@ theorem cancelIpcBlockingMigrated_preserves_projectionOnCore
     (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb) :
     projectStateOnCore ctx observer (cancelIpcBlockingMigrated victim tcb st) c
       = projectStateOnCore ctx observer (cancelIpcBlocking st victim tcb) c := by
-  unfold cancelIpcBlockingMigrated
-  split
-  · rename_i scId holder hRes
-    exact settleReturnedContext_preserves_projectionOnCore ctx observer _ _ scId c
-      (hCtxHigh scId holder hRes)
-  · rfl
+  rcases cancelIpcBlockingMigrated_cases victim tcb st with h | ⟨scId, holder, hRes, _, h⟩ <;> rw [h]
+  exact settleReturnedContext_preserves_projectionOnCore ctx observer _ _ scId c
+    (hCtxHigh scId holder hRes)
 
 -- ============================================================================
 -- §4b  `v0.35.158` — the reclaim's holder deschedule (WS-OD OD1.7's wake until then)
@@ -419,63 +412,6 @@ theorem cancelIpcBlockingOnCore_ready_cancellation_NI_smp
     hVictimHigh
 
 -- ============================================================================
--- §4  The per-core donated arm
--- ============================================================================
-
-/-- WS-SM SM6.E (boot-core form): the per-core donated-arm cancellation is
-invisible given the single-core return's projection preservation (the
-AK6-F.17 `cancelDonatedDonation_preserves_projection` obligation) — the
-returned context's settle (WS-ZA ZA6.33; formerly the SM6.E replenishment
-migration) is discharged substantively. -/
-theorem cancelDonatedDonationOnCore_cancellation_NI
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hReturnProj : ∀ stR, cleanupDonatedSchedContext st tid = .ok stR →
-        projectState ctx observer stR = projectState ctx observer st)
-    (hCtxHigh : ∀ scId owner, tcb.schedContextBinding = .donated scId owner →
-        objectObservable ctx observer scId.toObjId = false)
-    (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
-    projectState ctx observer st' = projectState ctx observer st := by
-  unfold cancelDonatedDonationOnCore at h
-  split at h
-  · rename_i scId owner hBind
-    split at h
-    · cases h
-    · injection h with h
-      subst h
-      rw [settleReturnedContext_preserves_projection ctx observer _ _ _
-        (hCtxHigh scId owner hBind)]
-      exact hReturnProj _ (by assumption)
-  · cases h
-
-/-- WS-SM SM6.E (∀-core form): the per-core donated-arm cancellation is
-invisible on *every* core given the per-core return projection. -/
-theorem cancelDonatedDonationOnCore_cancellation_NI_smp
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hReturnProj : ∀ stR, cleanupDonatedSchedContext st tid = .ok stR →
-        ∀ c : CoreId, projectStateOnCore ctx observer stR c
-          = projectStateOnCore ctx observer st c)
-    (hCtxHigh : ∀ scId owner, tcb.schedContextBinding = .donated scId owner →
-        objectObservable ctx observer scId.toObjId = false)
-    (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
-    lowEquivalent_smp ctx observer st' st := by
-  intro c
-  show projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c
-  unfold cancelDonatedDonationOnCore at h
-  split at h
-  · rename_i scId owner hBind
-    split at h
-    · cases h
-    · injection h with h
-      subst h
-      rw [settleReturnedContext_preserves_projectionOnCore ctx observer _ _ _ c
-        (hCtxHigh scId owner hBind)]
-      exact hReturnProj _ (by assumption) c
-  · cases h
-
-
--- ============================================================================
 -- §5  WS-RR RR2.18 — discharging the teardown projection on the reply arm
 -- ============================================================================
 -- `hTeardownProj` above is the cancellation's *own* projection equality, taken
@@ -611,38 +547,42 @@ theorem returnDonationToCancelledCaller_preserves_projection
   · rename_i scId holder _ _ _
     split
     · rename_i st' h
-      -- WS-OD OD3.2: the chain is four object writes now — the head clear sits
-      -- between the SchedContext store and the client's binding, and is
-      -- projection-stable for the same reason the other three are (every field
-      -- the return touches is stripped by `projectKernelObject`).
-      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
-      obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-        hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
-        returnDonatedSchedContext_ok_storeChain _ st' holder scId victim n hPop
-      have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt _ s1 _ _ hObjInv hS1
-      have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
-      have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
-      have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt _ s1 _ _
-        hObjSetInv hS1
-      have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete _ s1 _ _ hObjInv
-        hObjSetInv hIdxComplete hS1
-      have hP1 := storeObject_projectionStable_preserves_projection ctx observer _ s1
-        scId.toObjId _ (.schedContext sc) hSc
-        (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _)
-        hObjInv hS1
-      have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
-      have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
-        victim.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 victim clientTcb hL1)
-        (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _ _)
-        hInv2 hS3
-      have hP4 := storeObject_projectionStable_preserves_projection ctx observer s3 s4
-        holder.toObjId _ (.tcb serverTcb) (lookupTcb_some_objects s3 holder serverTcb hL2)
-        (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _ _)
-        hInv3 hS4
-      have hFinal : projectState ctx observer st' = projectState ctx observer s4 := by
-        rw [hEq]
-        rfl
-      rw [hFinal, hP4, hP3, hP2, hP1]
+      apply popHeldReplyHead_liftPops h
+      · intro n st' hPop
+        -- WS-OD OD3.2: the chain is four object writes now — the head clear sits
+        -- between the SchedContext store and the client's binding, and is
+        -- projection-stable for the same reason the other three are (every field
+        -- the return touches is stripped by `projectKernelObject`).
+        obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
+          hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+          returnDonatedSchedContext_ok_storeChain _ st' holder scId victim n hPop
+        have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt _ s1 _ _ hObjInv hS1
+        have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
+        have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+        have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt _ s1 _ _
+          hObjSetInv hS1
+        have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete _ s1 _ _ hObjInv
+          hObjSetInv hIdxComplete hS1
+        have hP1 := storeObject_projectionStable_preserves_projection ctx observer _ s1
+          scId.toObjId _ (.schedContext sc) hSc
+          (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _)
+          hObjInv hS1
+        have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
+        have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
+          victim.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 victim clientTcb hL1)
+          (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _ _)
+          hInv2 hS3
+        have hP4 := storeObject_projectionStable_preserves_projection ctx observer s3 s4
+          holder.toObjId _ (.tcb serverTcb) (lookupTcb_some_objects s3 holder serverTcb hL2)
+          (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _ _)
+          hInv3 hS4
+        have hFinal : projectState ctx observer st' = projectState ctx observer s4 := by
+          rw [hEq]
+          rfl
+        rw [hFinal, hP4, hP3, hP2, hP1]
+      · intro n _ hK
+        exact keepDonatedSchedContext_preserves_projection ctx observer _ _ holder scId n hObjInv
+          hK hIdxComplete hObjSetInv
     · rfl
   · rfl
 

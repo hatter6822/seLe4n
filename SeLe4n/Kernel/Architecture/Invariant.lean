@@ -202,7 +202,15 @@ keeps it through the stages that keep the 18th (`MappingStage.bookkeeping`):
 each step either keeps every object's kind and the ghosts, or is a store, a
 retype's carve or a retire, each of which moves the ghosts with the store.  It
 reads the objects and the three ghosts alone, so the adapter transitions frame
-it. -/
+it.
+
+WS-SX SX8.3: `notificationLinksAgree` added as the 23rd component — a
+notification's bound context and a context's bound notification name each other
+(seL4-MCS's `ntfnSchedContext` / `scNotification` pairing).  Every kernel entry
+keeps it through its run-queue stages (`RunQueueLinkStage.notificationLinks`):
+the bind links two unbound ends, every unbind clears both ends together, a
+retype creates unbound objects and a retire erases only unbound ones.  It reads
+the two link words alone, so the adapter transitions frame it. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundleFull st ∧
     capabilityInvariantBundle st ∧
@@ -225,7 +233,8 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     st.releaseQueueRefined ∧
     st.refillsSound ∧
     st.yieldLinksAgree ∧
-    st.bookkeepingAgrees
+    st.bookkeepingAgrees ∧
+    notificationLinksAgree st
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
@@ -591,7 +600,13 @@ theorem default_ipcInvariantFull :
 object store. -/
 theorem proofLayerInvariantBundle.bookkeepingAgrees {st : SystemState}
     (h : proofLayerInvariantBundle st) : st.bookkeepingAgrees :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+/-- WS-SX SX8.3: the bundle's 23rd component — a notification and its context
+name each other. -/
+theorem proofLayerInvariantBundle.notificationLinksAgree {st : SystemState}
+    (h : proofLayerInvariantBundle st) : SeLe4n.Kernel.notificationLinksAgree st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- WS-UC UC3: in every state the bundle holds of, the object store and the
 ASID table are at least the boot capacity (`bootTableCapacity`): the bookkeeping
@@ -1020,13 +1035,13 @@ theorem proofLayerInvariantBundle_setDeclassificationAuditLog (st : SystemState)
     proofLayerInvariantBundle { st with declassificationAudit := trail } := by
   obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
           bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
-          bIcache, bAck, _bAuditPre, bRun, bMap, bRel, bRefill, bYield, bBook⟩ := h
+          bIcache, bAck, _bAuditPre, bRun, bMap, bRel, bRefill, bYield, bBook, bNtfnLinks⟩ := h
   exact ⟨bSched, bCap, coreIpcInvariantBundle_setDeclassificationAuditLog bCoreIpc,
          ipcSchedulerCouplingInvariantBundle_setDeclassificationAuditLog bCoupling,
          bLifecycle, bService, bVSpace,
          crossSubsystemInvariant_setDeclassificationAuditLog bCross,
          bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, bPerCoreTlb,
-         bIcache, bAck, SeLe4n.Kernel.AuditRing.bounded trail, bRun, bMap, bRel, bRefill, bYield, bBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩⟩
+         bIcache, bAck, SeLe4n.Kernel.AuditRing.bounded trail, bRun, bMap, bRel, bRefill, bYield, bBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩, bNtfnLinks⟩
 
 /-! ### WS-SM SM9.B.3 — `proofLayerInvariantBundle` carriage across a refusal-ledger write
 
@@ -1085,13 +1100,13 @@ theorem proofLayerInvariantBundle_setDeclassificationRefusals (st : SystemState)
     proofLayerInvariantBundle { st with declassificationRefusals := L } := by
   obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
           bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
-          bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield, bBook⟩ := h
+          bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield, bBook, bNtfnLinks⟩ := h
   exact ⟨bSched, bCap, coreIpcInvariantBundle_setDeclassificationRefusals bCoreIpc,
          ipcSchedulerCouplingInvariantBundle_setDeclassificationRefusals bCoupling,
          bLifecycle, bService, bVSpace,
          crossSubsystemInvariant_setDeclassificationRefusals bCross,
          bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, bPerCoreTlb,
-         bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield, bBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩⟩
+         bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield, bBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩, bNtfnLinks⟩
 
 /-- **WS-SM SM7.F.5**: `proofLayerInvariantBundle` carriage across a write to
 `perCoreTlb`.
@@ -1108,24 +1123,24 @@ theorem proofLayerInvariantBundle_setPerCoreTlb (st : SystemState)
     proofLayerInvariantBundle { st with perCoreTlb := t } := by
   obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
           bCross, bTlb, bSchedExt, bNtfn, bPending, _bPerCoreTlbPre,
-          bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield, bBook⟩ := h
+          bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield, bBook, bNtfnLinks⟩ := h
   exact ⟨bSched, bCap, coreIpcInvariantBundle_setPerCoreTlb bCoreIpc,
          ipcSchedulerCouplingInvariantBundle_setPerCoreTlb bCoupling,
          bLifecycle, bService, bVSpace, crossSubsystemInvariant_setPerCoreTlb bCross,
          bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, hPerCoreTlbConsistent,
-         bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield, bBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩⟩
+         bIcache, bAck, bAudit, bRun, bMap, bRel, bRefill, bYield, bBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩, bNtfnLinks⟩
 
 theorem advanceTimerState_preserves_proofLayerInvariantBundle
     (ticks : Nat) (st : SystemState)
     (hInv : proofLayerInvariantBundle st) :
     proofLayerInvariantBundle (advanceTimerState ticks st) := by
-  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC, hPB, hPCT, hIc, hAck, hAud, hRun, hMap, hRel, hRef, hYld, hBook⟩ := hInv
+  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC, hPB, hPCT, hIc, hAck, hAud, hRun, hMap, hRel, hRef, hYld, hBook, hNtfnLinks⟩ := hInv
   refine ⟨by exact hSched,
          advanceTimerState_preserves_capabilityInvariantBundle ticks st hCap,
          ?_, ?_, by exact hLife, ?_, ?_, ?_, by exact hTlb, by exact hExt, notificationWaiterConsistent_of_objects_eq (st := st) rfl hNWC,
          by exact hPB, by exact hPCT,
          by exact hIc, by exact hAck, by exact hAud, by exact hRun, by exact hMap, by exact hRel,
-         by exact hRef, by exact hYld, hBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩⟩
+         by exact hRef, by exact hYld, hBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩, by exact hNtfnLinks⟩
   -- coreIpcInvariantBundle
   · obtain ⟨hS, hC, hI⟩ := hIpc
     exact ⟨by exact hS,
@@ -1240,7 +1255,7 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
     (hInv : proofLayerInvariantBundle st)
     (hCtx : contextMatchesCurrent (writeRegisterState reg value st)) :
     proofLayerInvariantBundle (writeRegisterState reg value st) := by
-  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC, hPB, hPCT, hIc, hAck, hAud, hRun, hMap, hRel, hRef, hYld, hBook⟩ := hInv
+  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC, hPB, hPCT, hIc, hAck, hAud, hRun, hMap, hRel, hRef, hYld, hBook, hNtfnLinks⟩ := hInv
   -- writeRegisterState only changes machine.regs — establish definitional equalities
   have hEq : writeRegisterState reg value st =
       { st with machine := st.machine.setRegsOnCore bootCoreId (SeLe4n.writeReg st.machine.regs reg value) } :=
@@ -1251,7 +1266,7 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
          writeRegisterState_preserves_vspaceInvariantBundle reg value st hVsp,
          ?_, by exact hTlb, ?_, notificationWaiterConsistent_of_objects_eq (st := st) rfl hNWC, by exact hPB, by exact hPCT,
          by exact hIc, by exact hAck, by exact hAud, by exact hRun, by exact hMap, by exact hRel,
-         by exact hRef, by exact hYld, hBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩⟩
+         by exact hRef, by exact hYld, hBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩, by exact hNtfnLinks⟩
   -- schedulerInvariantBundleFull: swap contextMatchesCurrent
   · obtain ⟨hBase, hTs, hCts, hEdf, _, hRunn, hPri, hDom, hDomE⟩ := hSched
     exact ⟨hBase, hTs, hCts, hEdf, hCtx, hRunn, hPri, hDom, hDomE⟩
@@ -1399,7 +1414,7 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
   -- once here rather than at the call site.
   have hLookup : st.objects[newTid.toObjId]? = some (.tcb tcb) :=
     (SystemState.getTcb?_eq_some_iff st newTid tcb).mp hTcb
-  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC, hPB, hPCT, hIc, hAck, hAud, hRun, hMap, hRel, hRef, hYld, hBook⟩ := hInv
+  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC, hPB, hPCT, hIc, hAck, hAud, hRun, hMap, hRel, hRef, hYld, hBook, hNtfnLinks⟩ := hInv
   -- contextSwitchState changes machine.regs and scheduler.current; objects unchanged
   have hObjs : (contextSwitchState newTid newRegs st).objects = st.objects := rfl
   -- contextMatchesCurrent for the post-state: directly from BEq hypothesis
@@ -1459,7 +1474,7 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
          contextSwitchState_preserves_vspaceInvariantBundle newTid newRegs st hVsp,
          ?_, by exact hTlb, ?_, ?_, by exact hPB, by exact hPCT,
          by exact hIc, by exact hAck, by exact hAud, by exact hRun, by exact hMap, by exact hRel,
-         by exact hRef, by exact hYld, hBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩⟩
+         by exact hRef, by exact hYld, hBook.of_objects_ghosts rfl ⟨rfl, rfl, rfl, Nat.le_refl _, Nat.le_refl _⟩, by exact hNtfnLinks⟩
   -- 1. schedulerInvariantBundleFull
   · obtain ⟨⟨_, hUniq, _⟩, hTs, _, _, _, hRunn, hPri, hDom, hDomE⟩ := hSched
     have hQCC : queueCurrentConsistent

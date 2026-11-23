@@ -33,25 +33,50 @@ open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 
 /-- **Every notification kept, every binding code kept**: a notification the
-pre-state holds is in the post-state unchanged, and every slot holds the
-bound-notification / bound-thread codes it held. -/
+pre-state holds is in the post-state unchanged, every slot holds the
+bound-notification / bound-thread codes it held, and the post-state holds no
+notification the pre-state did not. -/
 def notificationsAndBindingsKept (st st' : SystemState) : Prop :=
   (∀ (oid : SeLe4n.ObjId) (n : Notification),
     st.objects[oid]? = some (.notification n) → st'.objects[oid]? = some (.notification n)) ∧
-  sameNotificationBindings st st'
+  sameNotificationBindings st st' ∧
+  (∀ (oid : SeLe4n.ObjId) (n : Notification),
+    st'.objects[oid]? = some (.notification n) → st.objects[oid]? = some (.notification n))
+
+/-- A key-wise kind-preserving write that keeps every notification creates
+none: a slot holding a notification afterwards held one before, which it kept. -/
+theorem notificationsBackward_of_kindPreservingAt {st st' : SystemState}
+    (hK : ∀ oid, kindPreservingWriteAt st st' oid)
+    (hF : ∀ (oid : SeLe4n.ObjId) (n : Notification),
+      st.objects[oid]? = some (.notification n) → st'.objects[oid]? = some (.notification n)) :
+    ∀ (oid : SeLe4n.ObjId) (n : Notification),
+      st'.objects[oid]? = some (.notification n) → st.objects[oid]? = some (.notification n) := by
+  intro oid n hn
+  rcases hK oid with e | ⟨pre, post, hp, hq, ht, -, -, -, -, -, -⟩
+  · rw [← e]; exact hn
+  · rw [hn] at hq
+    cases hq
+    cases pre <;> simp [KernelObject.objectType] at ht
+    rename_i m
+    have := hF oid m hp
+    rw [hn] at this
+    cases this
+    exact hp
 
 namespace notificationsAndBindingsKept
 
 theorem refl (st : SystemState) : notificationsAndBindingsKept st st :=
-  ⟨fun _ _ h => h, sameNotificationBindings.refl st⟩
+  ⟨fun _ _ h => h, sameNotificationBindings.refl st, fun _ _ h => h⟩
 
 theorem trans {a b c : SystemState} (h1 : notificationsAndBindingsKept a b)
     (h2 : notificationsAndBindingsKept b c) : notificationsAndBindingsKept a c :=
-  ⟨fun oid n h => h2.1 oid n (h1.1 oid n h), h1.2.trans h2.2⟩
+  ⟨fun oid n h => h2.1 oid n (h1.1 oid n h), h1.2.1.trans h2.2.1,
+    fun oid n h => h1.2.2 oid n (h2.2.2 oid n h)⟩
 
 theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
     notificationsAndBindingsKept st st' :=
-  ⟨fun _ _ hn => by rw [h]; exact hn, sameNotificationBindings.of_objects_eq h⟩
+  ⟨fun _ _ hn => by rw [h]; exact hn, sameNotificationBindings.of_objects_eq h,
+    fun _ _ hn => by rw [← h]; exact hn⟩
 
 /-- A write whose every key is a kind-preserving write, and which creates no
 notification content the pre-state did not hold. -/
@@ -60,7 +85,7 @@ theorem of_kindPreservingAt {st st' : SystemState}
     (hB : ∀ (oid : SeLe4n.ObjId) (n : Notification),
       st'.objects[oid]? = some (.notification n) → st.objects[oid]? = some (.notification n)) :
     notificationsAndBindingsKept st st' := by
-  refine ⟨fun oid n hn => ?_, fun oid => ?_⟩
+  refine ⟨fun oid n hn => ?_, fun oid => ?_, hB⟩
   · rcases hK oid with e | ⟨pre, post, hp, hq, ht, -, -, -, -, -, -⟩
     · rw [e]; exact hn
     · rw [hn] at hp; cases hp
@@ -98,8 +123,11 @@ theorem of_endpointReply
     (hObjInv : st.objects.invExt)
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     notificationsAndBindingsKept st st' := by
-  refine ⟨?_, sameNotificationBindings.of_kindPreservingWrite
-    (endpointReply_kindPreservingWrite st st' replier target msg hObjInv hStep)⟩
+  have hKP := endpointReply_kindPreservingWrite st st' replier target msg hObjInv hStep
+  suffices hF : ∀ (oid : SeLe4n.ObjId) (n : Notification),
+      st.objects[oid]? = some (.notification n) → st'.objects[oid]? = some (.notification n) from
+    ⟨hF, sameNotificationBindings.of_kindPreservingWrite hKP,
+      notificationsBackward_of_kindPreservingAt hKP.objectsAt hF⟩
   intro oid n hn
   unfold endpointReply at hStep
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
@@ -169,14 +197,14 @@ theorem of_propagatePipChainCrossCore (st : SystemState) (tid : SeLe4n.ThreadId)
     (fun oid n h => PriorityInheritance.propagatePipChainCrossCore_notification_backward
       st tid c fuel hObjInv oid n h)
 
-/-- The donated context's return, on each of its four arms. -/
+/-- The donated context's return, on each of its five arms. -/
 theorem of_applyReplyDonationOnCore (st st' : SystemState) (rid : SeLe4n.ReplyId)
     (targetVtid : SeLe4n.ValidThreadId) (ownerHome : CoreId) (hObjInv : st.objects.invExt)
     (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
     notificationsAndBindingsKept st st' := by
   rcases applyReplyDonationOnCore_objects_frame st st' rid targetVtid ownerHome h with
     ⟨-, hEq⟩ | ⟨scId, n, s1, -, -, -, hRet, hA⟩ | ⟨scId, holder, n, s1, hRet, hA⟩ |
-    ⟨scId, n, -, -, -, hSev⟩
+    ⟨scId, n, -, -, -, hSev⟩ | ⟨scId, holder, n, -, -, hK⟩
   · exact of_objects_eq hEq
   · exact (of_kindPreservingWrite (returnUnheldSchedContext_kindPreservingWrite hObjInv hRet)
       (fun k nt hk => (returnUnheldSchedContext_notification_iff hObjInv hRet k nt).mp hk)).trans
@@ -186,6 +214,8 @@ theorem of_applyReplyDonationOnCore (st st' : SystemState) (rid : SeLe4n.ReplyId
         k nt hk)).trans (of_offSchedulerLinks hA)
   · exact of_kindPreservingWrite (severUnheldSchedContext_kindPreservingWrite hObjInv hSev)
       (fun k nt hk => (severUnheldSchedContext_notification_iff hObjInv hSev k nt).mp hk)
+  · exact of_kindPreservingWrite (keepDonatedSchedContext_kindPreservingWrite hObjInv hK)
+      (fun k nt hk => (keepDonatedSchedContext_notification_iff hObjInv hK k nt).mp hk)
 
 /-- The cross-core reply dispatch: the reply leg, the donation return and the
 priority-inheritance revert. -/
@@ -264,14 +294,21 @@ theorem of_replyTransferCaps (pre : SystemState) (replier caller : SeLe4n.Thread
   · have hInvR : stR.objects.invExt := hO ▸ hObjInv
     exact hR.trans ⟨fun oid n hn => ipcUnwrapCaps_preserves_ntfn_objects caps none rtcb slot?
         stR st' summary oid n hn hInvR hU,
-      ipcUnwrapCaps_sameNotificationBindings caps none rtcb slot? stR st' summary hInvR hU⟩
+      ipcUnwrapCaps_sameNotificationBindings caps none rtcb slot? stR st' summary hInvR hU,
+      fun oid n hn => ipcUnwrapCaps_ntfn_backward caps none rtcb slot? stR st' summary oid n
+        hInvR hU hn⟩
 
 /-- The delivered message's frame is a write of the answered thread's TCB. -/
 theorem of_stageDeliveredMessage (st : SystemState) (tid : SeLe4n.ThreadId) (capInfo : Nat)
     (hObjInv : st.objects.invExt) :
     notificationsAndBindingsKept st (Architecture.stageDeliveredMessage st tid capInfo) := by
-  refine ⟨fun oid n hn => ?_, sameNotificationBindings.of_kindPreservingWrite
-    (Architecture.stageDeliveredMessage_kindPreservingWrite st tid capInfo hObjInv)⟩
+  have hKP := Architecture.stageDeliveredMessage_kindPreservingWrite st tid capInfo hObjInv
+  suffices hF : ∀ (oid : SeLe4n.ObjId) (n : Notification),
+      st.objects[oid]? = some (.notification n) →
+        (Architecture.stageDeliveredMessage st tid capInfo).objects[oid]? = some (.notification n) from
+    ⟨hF, sameNotificationBindings.of_kindPreservingWrite hKP,
+      notificationsBackward_of_kindPreservingAt hKP.objectsAt hF⟩
+  intro oid n hn
   unfold Architecture.stageDeliveredMessage
   cases st.getTcb? tid with
   | none => exact hn
@@ -291,12 +328,22 @@ theorem of_faultReplyApplyOnCore (st : SystemState) (faulted : SeLe4n.ThreadId)
     notificationsAndBindingsKept st (faultReplyApplyOnCore st faulted o) := by
   cases o with
   | restart frame =>
-    exact ⟨fun oid n hn => notification_updateTcb st faulted _ hObjInv oid n hn,
-      sameNotificationBindings.of_kindPreservingWrite
-        (applyFaultRestart_kindPreservingWrite st faulted frame hObjInv)⟩
+    have hKP := applyFaultRestart_kindPreservingWrite st faulted frame hObjInv
+    have hF : ∀ (oid : SeLe4n.ObjId) (n : Notification),
+        st.objects[oid]? = some (.notification n) →
+          (applyFaultRestart st faulted frame).objects[oid]? = some (.notification n) :=
+      fun oid n hn => notification_updateTcb st faulted _ hObjInv oid n hn
+    exact ⟨hF, sameNotificationBindings.of_kindPreservingWrite hKP,
+      notificationsBackward_of_kindPreservingAt hKP.objectsAt hF⟩
   | abandon =>
-    refine ⟨fun oid n hn => ?_, sameNotificationBindings.of_kindPreservingWrite
-      (faultAbandonOnCore_kindPreservingWrite st faulted _ hObjInv)⟩
+    have hKP := faultAbandonOnCore_kindPreservingWrite st faulted
+      (faultAbandonCore st faulted) hObjInv
+    suffices hF : ∀ (oid : SeLe4n.ObjId) (n : Notification),
+        st.objects[oid]? = some (.notification n) →
+          (faultReplyApplyOnCore st faulted .abandon).objects[oid]? = some (.notification n) from
+      ⟨hF, sameNotificationBindings.of_kindPreservingWrite hKP,
+        notificationsBackward_of_kindPreservingAt hKP.objectsAt hF⟩
+    intro oid n hn
     show (faultAbandonOnCore st faulted _).objects[oid]? = _
     unfold faultAbandonOnCore
     exact notification_updateTcb _ faulted _
@@ -370,5 +417,36 @@ theorem of_replyTransferOnCoreChecked {ctx : LabelingContext}
         exact (hE.trans hX').trans (of_stageDeliveredMessage _ _ _ hIX)
 
 end notificationsAndBindingsKept
+
+/-- WS-RR RR4.18: and the reply preserves the object-store invariant. -/
+theorem faultReplyOnCore_preserves_objects_invExt
+    (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
+    (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)
+    (hObjInv : st.objects.invExt) :
+    (faultReplyOnCore replier faulted mi regs c st).1.objects.invExt := by
+  cases hTcb : st.getTcb? faulted with
+  | none => simpa only [faultReplyOnCore, hTcb] using hObjInv
+  | some tcb =>
+      cases hFault : tcb.pendingFault with
+      | none => simpa only [faultReplyOnCore, hTcb, hFault] using hObjInv
+      | some tf =>
+          have hRepObj := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier
+            faulted IpcMessage.empty c st hObjInv
+          rcases hStep : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st
+            with ⟨stR, res⟩
+          rw [hStep] at hRepObj
+          simp only at hRepObj
+          cases res with
+          | error e => simpa only [faultReplyOnCore, hTcb, hFault, hStep] using hObjInv
+          | ok sgi? =>
+              simp only [faultReplyOnCore, hTcb, hFault, hStep, faultReplyApplyOnCore]
+              cases hOut : Architecture.decodeFaultReply tf.fault tf.context mi regs with
+              | restart frame =>
+                  simpa only [hOut] using
+                    applyFaultRestart_preserves_objects_invExt stR faulted frame hRepObj
+              | abandon =>
+                  simpa only [hOut] using
+                    faultAbandonOnCore_preserves_objects_invExt stR faulted
+                      (faultAbandonCore stR faulted) hRepObj
 
 end SeLe4n.Kernel

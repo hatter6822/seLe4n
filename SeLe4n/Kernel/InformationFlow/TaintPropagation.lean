@@ -200,6 +200,7 @@ def contentFlowClass : SyscallId → ContentFlowClass
   | .tcbUnbindNotification => .inert
   | .schedContextBind => .inert
   | .schedContextUnbind => .inert
+  | .schedContextUnbindObject => .inert
   -- WS-ZA ZA6.9: the Consumed reading is the invoked context's own counter,
   -- read under its capability; no message, badge or capability moves.
   | .schedContextConsumed => .inert
@@ -274,7 +275,7 @@ def syscallRecordsDeclassification : SyscallId → Bool
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority => false
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield => false
   | .tcbBindNotification | .tcbUnbindNotification => false
-  | .schedContextBind | .schedContextUnbind | .schedContextConfigure | .schedContextConsumed
+  | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject | .schedContextConfigure | .schedContextConsumed
   | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear => false
   | .serviceRegister | .serviceRevoke | .serviceQuery => false
 
@@ -842,7 +843,7 @@ def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
     | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
-    | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
+    | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject | .schedContextConsumed
     | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
     | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
@@ -1024,7 +1025,7 @@ def declassifyBypassedTargets (st : SystemState) (tid : SeLe4n.ThreadId)
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype
   | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
-  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
+  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject | .schedContextConsumed
     | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
   | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
@@ -1064,7 +1065,7 @@ def contentFlowBypassed (st : SystemState) (tid : SeLe4n.ThreadId)
     | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
-    | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
+    | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject | .schedContextConsumed
     | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
     | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
@@ -1141,7 +1142,7 @@ def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
     | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
-    | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextConsumed
+    | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject | .schedContextConsumed
     | .schedContextYieldTo | .irqHandlerAck | .irqControlGet | .irqHandlerSetNotification | .irqHandlerClear
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
     | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification

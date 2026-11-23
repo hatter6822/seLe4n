@@ -89,9 +89,16 @@ pub fn sched_context_bind(
     })
 }
 
-/// Unbind a scheduling context from its currently bound thread.
+/// Unbind a scheduling context — seL4-MCS's `seL4_SchedContext_Unbind`.
 ///
-/// Lean: `apiSchedContextUnbind` (API.lean) — requires `.write` right.
+/// The thread holding the context is unbound, whether it holds it by binding
+/// or by donation, then the notification bound to it, then the reply stack the
+/// context heads (seL4's `schedContext_unbindReply`): callers below keep
+/// waiting on their replies.  The context of the caller's own core's current
+/// thread is refused `IllegalOperation`.
+///
+/// Lean: `schedContextUnbindAllOnCore` (SchedContext/OperationsPerCore.lean)
+/// — requires `.write` right.
 /// Capability-only: no additional message registers needed.
 #[inline]
 pub fn sched_context_unbind(sc_cap: CPtr) -> KernelResult<SyscallResponse> {
@@ -101,6 +108,38 @@ pub fn sched_context_unbind(sc_cap: CPtr) -> KernelResult<SyscallResponse> {
         msg_info: MessageInfo::new_const(0, 0, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::SchedContextUnbind,
+        reply_cap: CPtr::NULL,
+    })
+}
+
+/// Unbind one object from a scheduling context — seL4-MCS's
+/// `seL4_SchedContext_UnbindObject`.
+///
+/// `object_cap` is the capability address, in the caller's own CSpace, of the
+/// thread or the notification to unbind, the message's extra capability 0
+/// (`caps_or_badges[0]` of `buf`, the caller's IPC buffer).  A thread must be
+/// the one the context is bound to and not the caller's own core's current
+/// thread, and its scheduling context alone is unbound; a notification must
+/// be the one the context is bound to, and the link is cleared.  Each refusal
+/// is `IllegalOperation`; a capability of another type is
+/// `InvalidCapability`; no extra capability is `TruncatedMessage`.  Requires
+/// the `Write` right on the SchedContext capability; no message word is sent.
+///
+/// Lean: `schedContextUnbindThreadObjectOnCore` and
+/// `schedContextUnbindNotificationObject` (SchedContext/OperationsPerCore.lean),
+/// WS-SX SX8.3.
+#[inline]
+pub fn sched_context_unbind_object(
+    sc_cap: CPtr,
+    object_cap: CPtr,
+    buf: &mut IpcBuffer,
+) -> KernelResult<SyscallResponse> {
+    buf.caps_or_badges[0] = object_cap.raw();
+    invoke_syscall(SyscallRequest {
+        cap_addr: sc_cap,
+        msg_info: MessageInfo::new_const(0, 1, 0),
+        msg_regs: [0; 4],
+        syscall_id: SyscallId::SchedContextUnbindObject,
         reply_cap: CPtr::NULL,
     })
 }

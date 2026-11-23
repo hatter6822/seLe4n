@@ -546,7 +546,9 @@ theorem cleanupPreReceiveDonationMigrated_stepCovers (e : CoreId) {st st' : Syst
     split at hC
     · cases hC; exact stepCovers_refl e st
     · split at hC
-      · exact (returnDonatedSchedContextResolved_stepCovers e hInv hC).1
+      · exact popHeldReplyHead_lift (P := fun s => stepCovers e st s) hC
+          (fun _ _ hR => (returnDonatedSchedContextResolved_stepCovers e hInv hR).1)
+          (fun _ _ hK => (keepDonatedSchedContextResolved_stepCovers e hInv hK).1)
       · cases hC; exact stepCovers_refl e st
   refine stepCovers_trans hClean ?_
   unfold preReceiveReturnMigration
@@ -804,18 +806,20 @@ theorem applyCallDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
   · exact stepCovers_trans h1 (migrateSchedContextReplenishment_stepCovers e _ _ _ _)
 
 /-- The receive rendezvous' hand-off covers: the lend, then the chain walk. -/
-theorem applyReceiveRendezvousHandoff_stepCovers (e : CoreId) {st st' : SystemState}
+theorem applyReceiveRendezvousHandoff_stepCovers {lend : Bool} (e : CoreId) {st st' : SystemState}
     {receiver dequeued : SeLe4n.ThreadId} {executingCore : CoreId} (hInv : st.objects.invExt)
-    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st') :
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore lend = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
   obtain ⟨stDon, hDon, rfl⟩ := applyReceiveRendezvousHandoff_ok_decompose _ _ _ _ _ h
   have hD : stepCovers e st stDon ∧ stDon.objects.invExt := by
     unfold applyReceiveRendezvousDonation at hDon
     split at hDon
-    · unfold applyRendezvousCallDonation at hDon
-      split at hDon
-      · exact applyCallDonationOnCore_stepCovers e hInv hDon
-      · cases hDon
+    · rcases applyRendezvousCallDonation_cases hDon with hDon | rfl
+      · unfold applyRendezvousCallDonation at hDon
+        split at hDon
+        · exact applyCallDonationOnCore_stepCovers e hInv hDon
+        · cases hDon
+      · exact ⟨stepCovers_refl e _, hInv⟩
     · cases hDon; exact ⟨stepCovers_refl e st, hInv⟩
   split
   · obtain ⟨hW, hWInv⟩ := propagatePipChainCrossCore_stepCovers e executingCore _ stDon receiver hD.2
@@ -964,12 +968,12 @@ theorem endpointCallWithCapsOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.
 the chain walk from it. -/
 theorem endpointCallCrossCoreDispatch_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
     {caller : SeLe4n.ThreadId} {payload : SendPayload}
-    {executingCore : CoreId} {st : SystemState}
+    {executingCore : CoreId} {st : SystemState} {lend : Bool}
     (hInv : st.objects.invExt) :
     stepCovers e st (endpointCallCrossCoreDispatch endpointId caller payload
-      executingCore st).1 ∧
+      executingCore st lend).1 ∧
     (endpointCallCrossCoreDispatch endpointId caller payload
-      executingCore st).1.objects.invExt := by
+      executingCore st lend).1.objects.invExt := by
   unfold endpointCallCrossCoreDispatch
   obtain ⟨hC, hCInv⟩ := endpointCallWithCapsOnCore_stepCovers e
     (endpointId := endpointId) (caller := caller) (payload := payload)
@@ -987,7 +991,9 @@ theorem endpointCallCrossCoreDispatch_stepCovers (e : CoreId) {endpointId : SeLe
     all_goals first
       | exact ⟨hC, hCInv⟩
       | (rename_i hD
-         obtain ⟨hDc, hDInv⟩ := applyCallDonationOnCore_stepCovers e hCInv hD
+         obtain ⟨hDc, hDInv⟩ := applyCallDonationOnCoreWhen_induct
+           (fun s => stepCovers e _ s ∧ s.objects.invExt) hD ⟨stepCovers_refl e _, hCInv⟩
+           (applyCallDonationOnCore_stepCovers e hCInv)
          exact (propagatePipChainCrossCore_stepCovers e executingCore _ _ _ hDInv).imp_left
            (stepCovers_trans (stepCovers_trans hC hDc)))
 
@@ -1148,6 +1154,7 @@ theorem applyReplyDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
   · exact popUnheldReplyHead_stepCovers e hInv h
   · split at h
     · split at h
+      split at h
       · cases h
       · rename_i st1 hRet
         cases h
@@ -1158,6 +1165,7 @@ theorem applyReplyDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
         unfold descheduleAtPlacement
         exact descheduleAt_objects_invExt _ _ _
           (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1Inv)
+      · exact keepDonatedSchedContextResolved_stepCovers e hInv h
     · cases h
 
 /-- The live reply covers on every outcome: the reply leg, the donation
@@ -1530,24 +1538,6 @@ theorem notificationSignalBoundOnCore_stepCovers (e : CoreId) {notificationId : 
           (stepCovers_trans hF2.stepCovers)
   · exact notificationSignalOnCore_stepCovers e hInv
 
-theorem notificationSignalBoundCrossCoreDispatchChecked_stepCovers (e : CoreId)
-    {ctx : LabelingContext} {notificationId : SeLe4n.ObjId} {signaler : SeLe4n.ThreadId}
-    {badge : SeLe4n.Badge} {executingCore : CoreId} {st : SystemState}
-    (hInv : st.objects.invExt) :
-    stepCovers e st (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
-      badge executingCore st).1 ∧
-    (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
-      badge executingCore st).1.objects.invExt := by
-  have hRefl : stepCovers e st st ∧ st.objects.invExt := ⟨stepCovers_refl e st, hInv⟩
-  unfold notificationSignalBoundCrossCoreDispatchChecked
-  split
-  · split
-    · split
-      · exact notificationSignalBoundOnCore_stepCovers e hInv
-      · exact hRefl
-    · exact notificationSignalBoundOnCore_stepCovers e hInv
-  · exact hRefl
-
 /-- The per-core wait covers on every outcome: consuming a badge keeps the
 waiter runnable, and blocking takes it off the executing core. -/
 theorem notificationWaitOnCore_stepCovers (e : CoreId) {notificationId : SeLe4n.ObjId}
@@ -1622,10 +1612,13 @@ theorem notificationWaitCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : 
 
 /-! ### ReplyRecv -/
 
-theorem applyRendezvousCallDonation_stepCovers (e : CoreId) {st st' : SystemState}
+theorem applyRendezvousCallDonation_stepCovers {lend : Bool} (e : CoreId) {st st' : SystemState}
     {receiver donor : SeLe4n.ThreadId} (hInv : st.objects.invExt)
-    (h : applyRendezvousCallDonation st receiver donor = .ok st') :
+    (h : applyRendezvousCallDonation st receiver donor lend = .ok st') :
     stepCovers e st st' ∧ st'.objects.invExt := by
+  rcases applyRendezvousCallDonation_cases h with h | rfl
+  rotate_left
+  · exact ⟨stepCovers_refl e _, hInv⟩
   unfold applyRendezvousCallDonation at h
   split at h
   · exact applyCallDonationOnCore_stepCovers e hInv h
@@ -1646,12 +1639,18 @@ theorem replyRecvPopDonation_stepCovers (e : CoreId) {rid : SeLe4n.ReplyId}
   · dsimp only at h
     split at h
     · split at h
-      · cases h
-      · rename_i st1 hRet
-        cases h
-        obtain ⟨h1, h1Inv⟩ := returnDonatedSchedContextResolved_stepCovers e hInv hRet
-        exact ⟨stepCovers_trans h1 (settleReturnedContext_stepCovers e _ _ _),
-          SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1Inv⟩
+      · split at h
+        · cases h
+        · rename_i st1 hRet
+          cases h
+          obtain ⟨h1, h1Inv⟩ := returnDonatedSchedContextResolved_stepCovers e hInv hRet
+          exact ⟨stepCovers_trans h1 (settleReturnedContext_stepCovers e _ _ _),
+            SchedContextOps.settleReturnedContext_objects_invExt _ _ _ h1Inv⟩
+      · split at h
+        · cases h
+        · rename_i st1 hK
+          cases h
+          exact keepDonatedSchedContextResolved_stepCovers e hInv hK
     · cases h
   · split at h
     · cases h
@@ -1659,11 +1658,11 @@ theorem replyRecvPopDonation_stepCovers (e : CoreId) {rid : SeLe4n.ReplyId}
       cases h
       exact popUnheldReplyHead_stepCovers e hInv hPop
 
-theorem replyRecvPostReceiveDonation_stepCovers (e : CoreId)
+theorem replyRecvPostReceiveDonation_stepCovers {lend : Bool} (e : CoreId)
     {tid recordedServer nextThread : SeLe4n.ThreadId} {serverCore : CoreId}
     {returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {st st' : SystemState}
     (hInv : st.objects.invExt)
-    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st lend
       = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold replyRecvPostReceiveDonation at h
@@ -1709,72 +1708,5 @@ theorem applyReceiveLegPipHandoff_stepCovers (e : CoreId) (st : SystemState)
   split
   · exact propagatePipChainCrossCore_stepCovers e executingCore _ st receiver hInv
   · exact ⟨stepCovers_refl e st, hInv⟩
-
-/-- The per-core reply-and-receive covers on its `.ok`: the reply leg, the
-donation pop, the reply leg's capability transfer, the receive leg, the post-receive donation, the chain walk and the
-staging. -/
-theorem endpointReplyRecvOnCore_stepCovers (e : CoreId)
-    {answer : Option Architecture.FaultReplyOutcome} {epId : SeLe4n.ObjId}
-    {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
-    {msg : IpcMessage} {grant : Bool}
-    {executingCore : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
-    (hInv : st.objects.invExt)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant executingCore st = .ok (summary, st')) :
-    stepCovers e st st' ∧ st'.objects.invExt := by
-  unfold endpointReplyRecvAnsweringOnCore at h
-  dsimp only at h
-  obtain ⟨hR, hRInv⟩ := endpointReplyOnCore_stepCovers e (replier := tid) (target := prevCaller)
-    (msg := msg) (executingCore := executingCore) hInv
-  revert h hR hRInv
-  generalize endpointReplyOnCore tid prevCaller msg executingCore st = r1
-  obtain ⟨st1, res1⟩ := r1
-  cases res1 with
-  | error _ => intro h; cases h
-  | ok _ =>
-  intro h hR hRInv
-  dsimp only at h hR hRInv
-  split at h
-  · cases h
-  rename_i ret st1q hPop
-  obtain ⟨hP0, hP0Inv⟩ := replyRecvPopDonation_stepCovers e hRInv hPop
-  -- The reply leg's capability transfer: a capability-key frame.
-  obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st tid prevCaller grant st1q
-  rw [hX] at h
-  dsimp only at h
-  have hXU := hX
-  rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hXU
-  have hXK := receiveTransferCaps_keyFrame hP0Inv hXU
-  have hP := stepCovers_trans hP0 (hXK.stepCovers (congrArg MachineState.residentCode
-    (receiveTransferCaps_preserves_machine hXU)) (banksKeptOffCore_of_eq
-      (congrArg MachineState.coreRegs (receiveTransferCaps_preserves_machine hXU))))
-  have hPInv : st1p.objects.invExt := hXK.2.2
-  obtain ⟨hV, hVInv⟩ := endpointReceiveDualWithCapsOnCore_stepCovers e (endpointId := epId)
-    (receiver := tid) (replyId := some rid)
-    (executingCore := executingCore) hPInv
-  revert h hV hVInv
-  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) executingCore st1p = r2
-  obtain ⟨st2, res2⟩ := r2
-  cases res2 with
-  | error _ => intro h; cases h
-  | ok q =>
-  obtain ⟨nextThread, summ, _⟩ := q
-  intro h hV hVInv
-  dsimp only at h hV hVInv
-  split at h
-  · cases h
-  rename_i st3 hPost
-  cases h
-  obtain ⟨hD, hDInv⟩ := replyRecvPostReceiveDonation_stepCovers e hVInv hPost
-  obtain ⟨hW, hWInv⟩ := applyReceiveLegPipHandoff_stepCovers e st3 tid nextThread
-    ((recordedReplyServer? st prevCaller).getD tid) executingCore hDInv
-  obtain ⟨hS1, hS1Inv⟩ : stepCovers e _ (replyRecvAnswerCaller answer _ prevCaller _) ∧
-      (replyRecvAnswerCaller answer _ prevCaller _).objects.invExt := by
-    cases answer with
-    | none =>
-      have hK := stageDeliveredMessage_keyFrame _ prevCaller xs.capInfo hWInv
-      exact ⟨hK.stepCovers, hK.2.2⟩
-    | some o => exact faultReplyApplyOnCore_stepCovers e _ prevCaller o hWInv
-  exact ⟨stepCovers_trans (stepCovers_trans (stepCovers_trans (stepCovers_trans
-    (stepCovers_trans hR hP) hV) hD) hW) hS1, hS1Inv⟩
 
 end SeLe4n.Kernel

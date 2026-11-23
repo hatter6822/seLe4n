@@ -81,6 +81,18 @@ theorem RecordsFrame.unbindSchedContextNotification (st : SystemState)
     have F := RecordsFrame.updateSchedContext st s (fun c => { c with notificationCode := 0 }) hInv
     exact F.trans (RecordsFrame.insert F.invExt (by rw [h1]; rfl))
 
+/-- **A context's reply-stack unlink keeps the records**: a Reply stored over a
+Reply, then a context's head. -/
+theorem RecordsFrame.schedContextUnbindReply (st : SystemState) (x : SeLe4n.ObjId)
+    (hInv : st.objects.invExt) :
+    RecordsFrame st (_root_.SeLe4n.Kernel.schedContextUnbindReply st x) := by
+  refine schedContextUnbindReply_induct (fun a b => RecordsFrame a b) st x
+    (RecordsFrame.refl hInv) ?_
+  intro _ rid r s1 _ _ hR _ hS
+  have hRraw := (SystemState.getReply?_eq_some_iff st rid r).mp hR
+  have F := RecordsFrame.storeObject hInv hS (by rw [hRraw]; rfl) (fun _ e => by cases e)
+  exact F.trans (RecordsFrame.updateSchedContext s1 _ _ F.invExt)
+
 namespace RecordsStep
 
 /-- **An endpoint waiter's cancel**: the pop, its fault record retired with its
@@ -201,11 +213,10 @@ theorem finaliseReplyCancel (s : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
     (hInv : s.objects.invExt) :
     RecordsStep s (finaliseReplyRevert (cancelIpcBlockingReclaimed c t s) t.blockingServer?) := by
   have S1 : RecordsStep s (cancelIpcBlockingMigrated c t s) := by
-    unfold cancelIpcBlockingMigrated
     have S := cancelIpcBlocking s c t hInv
-    split
-    · exact S.trans (of_frame (RecordsFrame.settleReturnedContext _ _ _ S.invExt))
+    rcases cancelIpcBlockingMigrated_cases c t s with h | ⟨_, _, _, _, h⟩ <;> rw [h]
     · exact S
+    · exact S.trans (of_frame (RecordsFrame.settleReturnedContext _ _ _ S.invExt))
   have S2 : RecordsStep s (cancelIpcBlockingReclaimed c t s) := by
     unfold cancelIpcBlockingReclaimed descheduleUnboundHolder
     split

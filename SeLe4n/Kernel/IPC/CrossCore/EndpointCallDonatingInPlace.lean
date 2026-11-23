@@ -406,18 +406,6 @@ theorem stageWokenDelivery_performCallDonating (st : SystemState) (endpointId : 
     Architecture.returnFrameOfMessage_regMessageBody]
   rfl
 
-theorem callTakesReplyInPlace_noResizeDue {st : SystemState} {endpointId : SeLe4n.ObjId}
-    {caller r : SeLe4n.ThreadId} {rt : TCB} {rid : SeLe4n.ReplyId}
-    (h : callTakesReplyInPlace st endpointId caller r rt rid = true) : st.objects.noResizeDue := by
-  simp only [callTakesReplyInPlace, sendWakesInPlace, Bool.and_eq_true] at h
-  exact RHTable.noResizeDue_of_findsInPlace h.1.1.1.1.1.1.1.1.1.1.1.1.2
-
-theorem callTakesReplyInPlace_ne {st : SystemState} {endpointId : SeLe4n.ObjId}
-    {caller r : SeLe4n.ThreadId} {rt : TCB} {rid : SeLe4n.ReplyId}
-    (h : callTakesReplyInPlace st endpointId caller r rt rid = true) : caller ≠ r := by
-  simp only [callTakesReplyInPlace, Bool.and_eq_true] at h
-  exact bne_iff_ne.mp h.1.1.1.1.1.1.1.2
-
 theorem callRendezvousDonatingDelivered_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (rt : TCB) (rid : SeLe4n.ReplyId)
     (scId : SeLe4n.SchedContextId) (donorHome doneeHome : Concurrency.CoreId)
@@ -571,7 +559,8 @@ theorem callDispatch_donating_inPlace (st : SystemState)
     rw [callRendezvousLinks_of_stash payload ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT) hRid]
     exact hGr
   simp only [Except.map, hEp, hH, hLk, ↓reduceIte, hcv, hrv]
-  unfold applyCallDonationOnCore
+  unfold applyCallDonationOnCoreWhen applyCallDonationOnCore
+  simp only [↓reduceIte]
   rw [applyCallDonation_characterisation, hcv', hrv', hDonId]
   dsimp only
   rw [hDon]
@@ -590,14 +579,15 @@ theorem callDispatchChecked_donating_inPlace (ctx : LabelingContext) (st : Syste
     (hGr : payload.canLinkReply = true)
     (hG : callDonatesInPlace st endpointId caller r rt rid = true)
     (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
-      (ctx.endpointLabelOf endpointId) = true) :
+      (ctx.endpointLabelOf endpointId) = true)
+    (hLend : callLendAdmits ctx st caller = true) :
     ∃ sgi, endpointCallCrossCoreDispatchChecked ctx endpointId caller payload core st =
       (performCallDonating st endpointId caller r rt.queueNext rid (callerScId st caller)
         (determineTargetCore st caller) (determineTargetCore st r) msg core,
        .ok ({ results := #[] }, sgi)) := by
   obtain ⟨sgi, h⟩ := callDispatch_donating_inPlace st endpointId ep caller r rt rid payload msg
     core hM hReq hE hH hT hRid hGr hG
-  exact ⟨sgi, by unfold endpointCallCrossCoreDispatchChecked; rw [if_pos hFlow]; exact h⟩
+  exact ⟨sgi, by unfold endpointCallCrossCoreDispatchChecked; rw [if_pos hFlow, hLend]; exact h⟩
 
 /-- **The in-place donation keeps the chain**: on the states whose checks pass
 it is `donateSchedContext`'s state (`donateSchedContext_eq_inPlace`), so it

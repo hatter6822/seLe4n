@@ -147,18 +147,45 @@ theorem returnDonatedSchedContext_holdersNameTheirContexts {st st' : SystemState
         rw [← hub]
         exact hy u ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hu)
 
+/-- **WS-SX SX8: the held pop keeps holders naming their contexts**: the popped
+context stays bound to its holder, whose binding still names it, and no other
+context or thread moves. -/
+theorem keepDonatedSchedContext_holdersNameTheirContexts {st st' : SystemState}
+    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
+    (hInv : st.objects.invExt) (hH : holdersNameTheirContexts st)
+    (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    holdersNameTheirContexts st' := by
+  obtain ⟨sc0, _, ht, hSc, hBt, _, _, hHt, _, hSc', hHt', tBwd, _, _, _⟩ :=
+    keepDonatedSchedContext_objects hInv h
+  obtain ⟨ht0, h0, hG, _⟩ := keepDonatedSchedContext_holder hInv h
+  rw [hHt] at h0; cases h0
+  intro s sc t hs hb x hx
+  have hx' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hx
+  by_cases es : s = scId
+  · subst es
+    rw [(SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc'] at hs; cases hs
+    have hb' : sc0.boundThread = some t := hb
+    rw [hBt] at hb'; cases hb'
+    rw [hHt'] at hx'; cases hx'
+    exact (congrArg SchedContextBinding.scId?
+      (SchedContextBinding.ofCodes_codes
+        (donationReturnBinding s (heldPopOwner? ht.schedContextBinding newOwner?)))).trans
+      (donationReturnBinding_scId? s _)
+  · rw [keepDonatedSchedContext_getSchedContext?_ne hInv h s es] at hs
+    by_cases et : t.toObjId = holder.toObjId
+    · exfalso; apply es
+      have := hH s sc t hs hb ht ((SystemState.getTcb?_eq_some_iff _ _ _).mpr
+        (by rw [et]; exact hHt))
+      rw [hG] at this; cases this; rfl
+    · exact hH s sc t hs hb x ((SystemState.getTcb?_eq_some_iff _ _ _).mpr (tBwd _ _ et hx'))
+
 /-- ...and so does a cancelled caller's donation return, or its refusal. -/
 theorem returnDonationToCancelledCaller_holdersNameTheirContexts (st : SystemState)
     (c : SeLe4n.ThreadId) (t : TCB) (hInv : st.objects.invExt) (hH : holdersNameTheirContexts st) :
-    holdersNameTheirContexts (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) := by
-  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-  split
-  · split
-    · rename_i hOk
-      obtain ⟨n, -, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hOk
-      exact returnDonatedSchedContext_holdersNameTheirContexts hInv hH hPop
-    · exact hH
-  · exact hH
+    holdersNameTheirContexts (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) :=
+  Lifecycle.Suspend.returnDonationToCancelledCaller_elimPops hH
+    (fun _ _ _ _ _ hPop => returnDonatedSchedContext_holdersNameTheirContexts hInv hH hPop)
+    (fun _ _ _ _ _ hK => keepDonatedSchedContext_holdersNameTheirContexts hInv hH hK)
 
 -- ============================================================================
 -- The scheduling point: a register save, run-queue links and the scheduler

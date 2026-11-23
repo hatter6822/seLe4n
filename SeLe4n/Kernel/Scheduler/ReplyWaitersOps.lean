@@ -924,6 +924,8 @@ theorem RunQueueStage.of_objectsAgreeOffReplyLinks {st st' : SystemState}
       (fun _ => Kernel.RefillViewsKept.of_map KernelObject.withoutReplyLinks
         (fun o => by cases o <;> rfl) hA)
       (fun _ => Kernel.YieldLinksKept.of_map KernelObject.withoutReplyLinks
+        (fun o => by cases o <;> rfl) hA)
+      (fun _ => Kernel.NotificationLinksKept.of_map KernelObject.withoutReplyLinks
         (fun o => by cases o <;> rfl) hA) hRes,
     fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [hS]) hL hM d, fun _ _ => hM⟩
 

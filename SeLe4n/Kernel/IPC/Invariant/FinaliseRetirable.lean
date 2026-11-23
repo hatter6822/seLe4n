@@ -191,7 +191,7 @@ theorem finaliseSchedContext_releases (x : SeLe4n.ObjId) (st : SystemState)
     (hInv : st.objects.invExt) (hA : schedContextFinaliseAdmitted st x = true) :
     schedContextRecordReleased (finaliseSchedContext x st) x := by
   rw [finaliseSchedContext_eq, if_pos hA]
-  have hFU := finaliseSchedContextUnstack_closed (FinaliseFrameAny st)
+  have hFU := schedContextUnbindReply_closed (FinaliseFrameAny st)
     (FinaliseFrameAny.unstackStep st) x st (.refl hInv) hA _ rfl
     (finaliseSchedContextUnbind_closed _ (FinaliseFrameAny.scReleaseStep st) _ x
       (finaliseSchedContextDeschedule_closed _ (FinaliseFrameAny.scDescheduleStep st) st x hA
@@ -199,7 +199,7 @@ theorem finaliseSchedContext_releases (x : SeLe4n.ObjId) (st : SystemState)
   have hInvU := hFU.invExt
   refine schedContextRecordReleased.unbindSchedContextNotification
     ((FinaliseFrameAny.yieldStep st).schedContextCleanup _ x hFU).invExt ?_ _
-  suffices hU : ∃ sc, (finaliseSchedContextUnstack (finaliseSchedContextUnbind
+  suffices hU : ∃ sc, (schedContextUnbindReply (finaliseSchedContextUnbind
       (finaliseSchedContextDeschedule st x) x) x).objects[x]? = some (.schedContext sc) ∧
       sc.boundThreadCode = 0 ∧ sc.donationOrigin = none ∧ sc.scReply = none by
     obtain ⟨sc, h1, h2, h3, h4⟩ := hU
@@ -233,7 +233,7 @@ theorem finaliseSchedContext_releases (x : SeLe4n.ObjId) (st : SystemState)
   obtain ⟨hB2, hD2⟩ := finaliseSchedContextUnbind_released hInv hA hG2
   generalize finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x = s2
     at hO2 hKeep hInv2 hG2
-  unfold finaliseSchedContextUnstack
+  unfold schedContextUnbindReply
   rw [hG2]
   dsimp only
   cases hS : sc2.scReply with

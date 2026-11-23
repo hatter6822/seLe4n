@@ -346,7 +346,8 @@ theorem settleReturnedContext_runQueueStage {st X : SystemState}
   split
   · rename_i hAct
     have hT := hFP.trans (releasePlace_runQueueFrameStage' (purgeReplenishment X s) c s)
-    refine ⟨⟨hT.1.links, hT.1.release, fun S hI hR hQ hS => ?_, hT.1.yield, hT.1.live⟩, hT.2⟩
+    refine ⟨⟨hT.1.links, hT.1.release, fun S hI hR hQ hS => ?_, hT.1.yield, hT.1.notificationLinks,
+      hT.1.live⟩, hT.2⟩
     by_cases hs : S s
     · exact hT.1.refills S (fun x hx => hx ▸ hs) hI hR hQ hS
     · obtain ⟨hYR, hYS, hYs, hYn⟩ := hY S hs hI hR hQ hS
@@ -357,7 +358,8 @@ theorem settleReturnedContext_runQueueStage {st X : SystemState}
       rw [ha] at hAct
       exact SystemState.holderActive_bound hAct
   · rename_i hAct
-    refine ⟨⟨hFP.1.links, hFP.1.release, fun S hI hR hQ hS => ?_, hFP.1.yield, hFP.1.live⟩,
+    refine ⟨⟨hFP.1.links, hFP.1.release, fun S hI hR hQ hS => ?_, hFP.1.yield, hFP.1.notificationLinks,
+      hFP.1.live⟩,
       hFP.2⟩
     by_cases hs : S s
     · exact hFP.1.refills S (fun x hx => hx ▸ hs) hI hR hQ hS
@@ -685,6 +687,14 @@ branch's updates out of line. -/
     (extraRefills badge flags : UInt64) (timer : Nat) (keep : Bool) (sc : SchedContext) :
     (configuredSchedContext budget period extraRefills badge flags timer keep sc).yieldFromCode =
       sc.yieldFromCode := by
+  unfold configuredSchedContext; cases keep <;> simp
+
+/-- WS-SX SX8.3: the configure keeps the context's end of the notification
+link. -/
+@[simp] theorem configuredSchedContext_notificationCode (budget period : Nat)
+    (extraRefills badge flags : UInt64) (timer : Nat) (keep : Bool) (sc : SchedContext) :
+    (configuredSchedContext budget period extraRefills badge flags timer keep sc).notificationCode =
+      sc.notificationCode := by
   unfold configuredSchedContext; cases keep <;> simp
 
 /-- The configured context reads nothing of the stored one's release fields. -/
@@ -1122,14 +1132,11 @@ theorem schedContextConfigure_of_admitted (st : SystemState) (vScId : ValidObjId
 -- Z5-G1/G2/G3: schedContextBind
 -- ============================================================================
 
--- **Tombstone (`v0.35.157`)**: `replyFrameOnLiveStack` — the bind guard's
--- "is this thread's reply frame on a live stack" test — lives in
--- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` beside `replyFrameHeadContext?`,
--- whose reciprocity check is its `.head` arm.  It moved when the reply pop's
--- origin redirect started asking the same question (`donationOriginRebindable`
--- is `¬ replyFrameOnLiveStack` at the origin): one question, one answer, and
--- the endpoint operations cannot import this module.  `schedContextBind` below
--- reads it under its unqualified name through `open SeLe4n.Kernel`.
+-- **WS-SX SX8**: `schedContextBind` refuses no thread for its reply frame.
+-- seL4-MCS's `decodeSchedContext_Bind` does not, and `reply_pop` donates back
+-- only to a caller that holds no context (`reply_pop`'s held arm,
+-- `keepDonatedSchedContext`), so a lender that is bound here keeps the context
+-- it is bound to and the loaned one stays with its holder.
 
 
 /-- A thread the bind places is no idle thread: an idle thread is never queued. -/
@@ -1227,19 +1234,21 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
     | some ⟨sc, hSc⟩ =>
       -- Z5-G1: Precondition check — SchedContext must not already have a bound thread
       if sc.boundThread.isSome then .error .illegalState
-      -- WS-OD (`v0.35.4`): a context that heads a reply stack is on loan down a
-      -- call chain and owed back along it; binding it elsewhere would give it a
-      -- second claimant the pop then displaces.  Refused until the chain unwinds
-      -- (or its callers are cancelled, which reclaims it).
-      else if sc.scReply.isSome then .error .illegalState
+      -- WS-SX SX8 (D25, static form): a context that heads a reply stack binds
+      -- as seL4-MCS's `decodeSchedContext_Bind` binds it.  The reply each lender
+      -- on the stack answers takes it back from the bound thread, as it takes it
+      -- back from a notification's waiter; the checked dispatch admits the bind
+      -- only where the context's label flows to the thread
+      -- (`schedContextBindLabelGate`), so every lender flows to it.
       else
         match st.getTcb? vThreadId.val with
         | some tcb =>
           -- WS-SX SX6.4: no domain check: seL4-MCS's `decodeSchedContext_Bind`
           -- refuses a bound context, a bound thread, and a blocked thread with
-          -- an unreleased context, and a context carries no domain.
-          if replyFrameOnLiveStack st tcb then .error .illegalState
-          else
+          -- an unreleased context, and a context carries no domain.  WS-SX SX8:
+          -- nor a lender: a thread whose reply frame is on a live stack binds,
+          -- and the pop that reaches its frame keeps the loaned context with its
+          -- holder (`reply_pop`'s held arm).
           -- Z5-G1: Precondition check — TCB must be unbound.
           -- AI6-D (L-13): `schedContextBind` checks `tcb.schedContextBinding`
           -- (binding state: `.unbound`) but NOT the thread's operational state
@@ -1259,11 +1268,11 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
             -- thread now *owns* this reservation, which is the state the origin
             -- records a departure from — so a recorded origin here is residue, and
             -- leaving it would let a later pop hand the reservation to a thread
-            -- this bind has nothing to do with.  Defense in depth rather than a
-            -- reachable repair: the guard above already refuses a context that
-            -- heads a reply stack, and the pop's bottom arm clears the field when
-            -- a chain unwinds — but "no state reaches this" is an argument about
-            -- every path into the operation, and clearing costs one field write.
+            -- this bind has nothing to do with.  A context heading a reply stack
+            -- with no holder (its server deleted or unbound) is bound here as
+            -- seL4 binds it, so the bound thread is where the stack's next pop
+            -- takes it back from, and the pop's bottom arm settles it on the
+            -- answered caller rather than on a recorded origin.
             --
             -- WS-ZA ZA6.4: a head refill released by now is made the head
             -- (`releaseReadyHead`), as seL4-MCS's `schedContext_resume` finds the
@@ -1310,28 +1319,27 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
         | none => .error .objectNotFound
     | none => .error .objectNotFound
 
-/-- **WS-ZA ZA5.2**: `schedContextBind`'s checks, read before anything is
-written: the context is stored, binds no thread and heads no reply stack; the
-thread is stored, is owed no context by a live reply stack, and is unbound.  When they pass the operation's state is
-`schedContextBindPerform` (`schedContextBind_of_admitted`), so the routed arm
-writes the context and the thread in place instead of holding the pre-state for
-a refusal that cannot come. -/
-@[inline] def schedContextBindAdmitted (st : SystemState) (vScId : ValidObjId)
+/-- **`schedContextBind`'s checks, and seL4-MCS `maybeDonateSchedContext`'s
+guard** (`decodeSchedContext_Bind`, `notification.c`), read before anything is
+written: the context is stored and bound to no thread, and the thread is stored
+and holds no context.  Neither seL4 site asks more (WS-SX SX8: a lender binds),
+so the bind and the donation are `schedContextBindPerform` under this guard
+alone (`schedContextBind_of_admitted`), and the routed arm writes the context
+and the thread in place instead of holding the pre-state for a refusal that
+cannot come. -/
+@[inline] def schedContextDonateAdmitted (st : SystemState) (vScId : ValidObjId)
     (vThreadId : ValidThreadId) : Bool :=
   match st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
   | none => false
   | some ⟨sc, _⟩ =>
     if sc.boundThread.isSome then false
-    else if sc.scReply.isSome then false
     else
       match st.getTcb? vThreadId.val with
       | none => false
       | some tcb =>
-        if replyFrameOnLiveStack st tcb then false
-        else
-          match tcb.schedContextBinding with
-          | .unbound => true
-          | _ => false
+        match tcb.schedContextBinding with
+        | .unbound => true
+        | _ => false
 
 /-- **WS-ZA ZA5.2**: `schedContextBind`'s writes, the operation's success arm
 written out over the same lookups: the context names the thread, the thread is
@@ -1361,9 +1369,9 @@ bound, and a parked runnable thread is placed on its home core. -/
 
 /-- **WS-ZA ZA5.2**: an admitted bind succeeds, and its state is the perform's. -/
 theorem schedContextBind_of_admitted (st : SystemState) (vScId : ValidObjId)
-    (vThreadId : ValidThreadId) (h : schedContextBindAdmitted st vScId vThreadId = true) :
+    (vThreadId : ValidThreadId) (h : schedContextDonateAdmitted st vScId vThreadId = true) :
     schedContextBind vScId vThreadId st = .ok ((), schedContextBindPerform st vScId vThreadId) := by
-  unfold schedContextBindAdmitted at h
+  unfold schedContextDonateAdmitted at h
   unfold schedContextBind schedContextBindPerform
   cases hW : st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
   | none => simp [hW] at h
@@ -1372,16 +1380,11 @@ theorem schedContextBind_of_admitted (st : SystemState) (vScId : ValidObjId)
     simp only [hW] at h ⊢
     by_cases hB : sc.boundThread.isSome = true
     · simp [hB] at h
-    by_cases hR : sc.scReply.isSome = true
-    · simp [hB, hR] at h
-    simp only [hB, hR, Bool.false_eq_true, ↓reduceIte] at h ⊢
+    simp only [hB, Bool.false_eq_true, ↓reduceIte] at h ⊢
     cases hT : st.getTcb? vThreadId.val with
     | none => simp [hT] at h
     | some tcb =>
       simp only [hT] at h ⊢
-      by_cases hL : replyFrameOnLiveStack st tcb = true
-      · simp [hL] at h
-      simp only [hL, Bool.false_eq_true, ↓reduceIte] at h ⊢
       cases hBind : tcb.schedContextBinding with
       | unbound => rfl
       | bound _ => simp [hBind] at h
@@ -1451,6 +1454,98 @@ placement reads the written state only (`schedContextBindPerform_eq_impl`). -/
         · rename_i hd; rw [SchedContext.releaseReadyHead_of_not_due _ _ (by simpa using hd)]
       rw [hF]
       rfl
+
+/-- A bind its checks refuse is refused. -/
+theorem schedContextBind_error_of_not_admitted (st : SystemState) (vS : ValidObjId)
+    (vT : ValidThreadId) (h : schedContextDonateAdmitted st vS vT = false) :
+    ∃ e, schedContextBind vS vT st = .error e := by
+  unfold schedContextDonateAdmitted at h
+  unfold schedContextBind
+  cases hW : st.getSchedContextWitnessed? (SchedContextId.ofObjId vS.val) with
+  | none => exact ⟨_, rfl⟩
+  | some w =>
+    obtain ⟨sc, hSc⟩ := w
+    simp only [hW] at h ⊢
+    by_cases hB : sc.boundThread.isSome = true
+    · simp only [hB, ↓reduceIte]; exact ⟨_, rfl⟩
+    simp only [hB, Bool.false_eq_true, ↓reduceIte] at h ⊢
+    cases hT : st.getTcb? vT.val with
+    | none => exact ⟨_, rfl⟩
+    | some tcb =>
+      simp only [hT] at h ⊢
+      cases hBind : tcb.schedContextBinding with
+      | unbound => simp [hBind] at h
+      | bound _ => exact ⟨_, rfl⟩
+      | donated _ _ => exact ⟨_, rfl⟩
+
+/-- **A bind succeeds exactly when its checks admit it, and its state is the
+perform's.** -/
+theorem schedContextBind_ok_iff (st st' : SystemState) (vS : ValidObjId) (vT : ValidThreadId) :
+    schedContextBind vS vT st = .ok ((), st') ↔
+      schedContextDonateAdmitted st vS vT = true ∧ st' = schedContextBindPerform st vS vT := by
+  constructor
+  · intro h
+    cases hA : schedContextDonateAdmitted st vS vT with
+    | true =>
+      rw [schedContextBind_of_admitted st vS vT hA] at h
+      cases h
+      exact ⟨rfl, rfl⟩
+    | false =>
+      obtain ⟨e, he⟩ := schedContextBind_error_of_not_admitted st vS vT hA
+      rw [he] at h
+      cases h
+  · rintro ⟨hA, rfl⟩
+    exact schedContextBind_of_admitted st vS vT hA
+
+/-- **A successful bind is a donation seL4's guard admits**: the corollary every
+bind family lemma is read off. -/
+theorem schedContextBind_ok_donate {st st' : SystemState} {vS : ValidObjId} {vT : ValidThreadId}
+    (h : schedContextBind vS vT st = .ok ((), st')) :
+    schedContextDonateAdmitted st vS vT = true ∧ st' = schedContextBindPerform st vS vT :=
+  (schedContextBind_ok_iff st st' vS vT).mp h
+
+/-- **The perform under seL4's guard, written out**: the context and the thread
+it reads, the guard's two facts, and the writes.  The prologue every family
+lemma of the donation opens with. -/
+theorem schedContextBindPerform_of_donateAdmitted (st : SystemState) (vScId : ValidObjId)
+    (vThreadId : ValidThreadId) (h : schedContextDonateAdmitted st vScId vThreadId = true) :
+    ∃ (sc : SchedContext) (hSc : st.getSchedContext? (SchedContextId.ofObjId vScId.val) = some sc)
+      (tcb : TCB),
+      ¬ sc.boundThread.isSome = true ∧ st.getTcb? vThreadId.val = some tcb ∧
+      tcb.schedContextBinding = .unbound ∧
+      schedContextBindPerform st vScId vThreadId =
+        (let scR := sc.releaseReadyHead st.machine.timer
+         let updatedSc := { scR with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val),
+                                     donationOrigin := none }
+         let st1 := st.rewriteObject vScId.val (KernelObject.schedContext updatedSc)
+           (SystemState.rewriteAdmissible_schedContext hSc updatedSc)
+         let st2 := st1.updateTcb vThreadId.val fun t =>
+           { t with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }
+         let bindHome := determineTargetCore st2 vThreadId.val
+         let st3 := if bindPlacesParkedThread st2 vThreadId.val tcb scR then
+           (st2.runEnqueueOnCore bindHome vThreadId.val
+             (resolveInsertPriority st2 vThreadId.val)).markReschedulePendingOnCore bindHome
+         else st2
+         st3.releasePlace bindHome ⟨vScId.val.toNat⟩) := by
+  unfold schedContextDonateAdmitted at h
+  unfold schedContextBindPerform
+  cases hW : st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
+  | none => simp [hW] at h
+  | some w =>
+    obtain ⟨sc, hSc⟩ := w
+    simp only [hW] at h ⊢
+    by_cases hB : sc.boundThread.isSome = true
+    · simp [hB] at h
+    simp only [hB, Bool.false_eq_true, ↓reduceIte] at h
+    cases hT : st.getTcb? vThreadId.val with
+    | none => simp [hT] at h
+    | some tcb =>
+      simp only [hT] at h
+      refine ⟨sc, hSc, tcb, hB, rfl, ?_, rfl⟩
+      cases hBind : tcb.schedContextBinding with
+      | unbound => rfl
+      | bound _ => simp [hBind] at h
+      | donated _ _ => simp [hBind] at h
 
 -- ============================================================================
 -- Z5-H1/H2/H3: schedContextUnbind
@@ -1614,17 +1709,13 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
       | some tid =>
         match st.getTcb? tid with
         | some tcb =>
-          -- WS-OD (`v0.35.4`): a holder that received the context by donation
-          -- is not unbound here.  The donation pop is keyed on the recorded
-          -- server's `.donated` binding; erasing that binding while the
-          -- context's stack still names the caller left the caller's frame
-          -- dead on the stack when the server later replied (the Reply and the
-          -- context could never be retyped again).  The context's owner
-          -- reclaims it by cancelling the blocked caller, which returns it and
-          -- unbinds the holder.  (seL4 allows the unbind and re-donates at the
-          -- pop because its pop is keyed on the reply object; this kernel keys
-          -- the pop on the binding and refuses the unbind instead — fail closed.)
-          if tcb.schedContextBinding.isDonated then .error .illegalState else
+          -- WS-SX SX8.3 (D22, seL4-MCS `schedContext_unbindTCB`): a holder that
+          -- received the context by donation is unbound like any other.  The
+          -- donation pop is keyed on the reply frame the context heads (WS-HP
+          -- HP4), and a frame heading a context bound to no thread is popped by
+          -- `popUnheldReplyHead`, so the caller's frame is never left dead on
+          -- the stack.  `SchedContext_Unbind` then lets go of the stack
+          -- (`schedContextUnbindReply`, seL4's `schedContext_unbindReply`).
           -- Z5-H1: Preemption guard — if the bound thread is current, clear
           -- current to force rescheduling.  Under dequeue-on-dispatch the
           -- current thread is not in the RunQueue, so clearing current is
@@ -1733,19 +1824,12 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
     | none => .error .objectNotFound
 
 /-- **WS-ZA ZA5.2**: `schedContextUnbind`'s checks: the context is stored and
-binds a thread, and that thread, if stored, holds the context by binding rather
-than by donation.  When they pass the operation's state is
+binds a thread.  When they pass the operation's state is
 `schedContextUnbindPerform` (`schedContextUnbind_of_admitted`). -/
 @[inline] def schedContextUnbindAdmitted (st : SystemState) (vScId : ValidObjId) : Bool :=
   match st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
   | none => false
-  | some ⟨sc, _⟩ =>
-    match sc.boundThread with
-    | none => false
-    | some tid =>
-      match st.getTcb? tid with
-      | some tcb => !tcb.schedContextBinding.isDonated
-      | none => true
+  | some ⟨sc, _⟩ => sc.boundThreadCode != 0
 
 /-- **WS-ZA ZA5.2**: `schedContextUnbind`'s writes, both success arms written
 out over the same lookups. -/
@@ -1798,15 +1882,21 @@ theorem schedContextUnbind_of_admitted (st : SystemState) (vScId : ValidObjId)
     obtain ⟨sc, hSc⟩ := w
     simp only [hW] at h ⊢
     cases hB : sc.boundThread with
-    | none => simp [hB] at h
+    | none =>
+      have h0 : sc.boundThreadCode = 0 := by
+        cases hc : sc.boundThreadCode with
+        | zero => rfl
+        | succ k =>
+          exfalso
+          have : sc.boundThread = some ⟨k⟩ := by
+            show SeLe4n.ThreadId.ofOptCode sc.boundThreadCode = _; rw [hc]; rfl
+          rw [hB] at this; cases this
+      simp [h0] at h
     | some tid =>
-      simp only [hB] at h ⊢
+      simp only []
       cases hT : st.getTcb? tid with
       | none => rfl
-      | some tcb =>
-        simp only [hT] at h ⊢
-        have hD : tcb.schedContextBinding.isDonated = false := by simpa using h
-        simp only [hD, Bool.false_eq_true, ↓reduceIte]
+      | some tcb => rfl
 
 /-- **WS-ZA ZA5.2**: the unbind's scheduler write — the core running the
 unbound thread loses it as current and is flagged to reschedule.  Compiled on
@@ -1979,43 +2069,39 @@ theorem schedContextBind_places_parked_thread
     split at h
     · exact absurd h (by simp)
     · split at h
-      · exact absurd h (by simp)
-      · split at h
-        · rename_i tcb' hTcb'
-          obtain rfl : tcb' = tcb := by rw [hTcb'] at hTcb; exact Option.some.inj hTcb
-          split at h
-          · exact absurd h (by simp)
-          · split at h
-            · dsimp only at h
-              rw [Except.ok.injEq, Prod.mk.injEq] at h
-              rw [← h.2, releasePlace_runnableOnSomeCore]
-              -- The guard transports from the pre-state: both of the bind's
-              -- writes are object rewrites, so the intermediate state's
-              -- scheduler IS the pre-state's.
-              have hSched : ∀ (a : SystemState) (b : SeLe4n.ObjId) (o : KernelObject)
-                  (pf : _) (f : TCB → TCB),
-                  ((a.rewriteObject b o pf).updateTcb vThreadId.val f).scheduler
-                    = a.scheduler := by
-                intro a b o pf f
-                rw [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
-              split
-              · -- The placement arm: Cut B2's own write.
-                rename_i hPlace
-                refine runnableOnSomeCore_of_enqueue_marked _ _ _ _ _ ?_
-                  (bindPlacesParkedThread_not_idle hPlace)
-                exact (bindWrites_runQueueRefined st _ _ _ _ _
-                  (by intro _ _; rfl) hInv hR (by rw [hTcb]; rfl)).2
-              · -- The identity arm is UNREACHABLE under the hypothesis: the
-                -- guard is the pre-state's, which this arm's condition denies.
-                rename_i hParkArm
-                exfalso
-                rw [bindPlacesParkedThread_congr _ _ _ (hSched _ _ _ _ _)
-                  (bindWrites_runCoresAgree st _ _ _ _ _ ?_ hInv)] at hParkArm
-                rotate_left; · intro _; rfl
-                rw [hPark] at hParkArm
-                simp at hParkArm
-            · exact absurd h (by simp)
+      · rename_i tcb' hTcb'
+        obtain rfl : tcb' = tcb := by rw [hTcb'] at hTcb; exact Option.some.inj hTcb
+        split at h
+        · dsimp only at h
+          rw [Except.ok.injEq, Prod.mk.injEq] at h
+          rw [← h.2, releasePlace_runnableOnSomeCore]
+          -- The guard transports from the pre-state: both of the bind's
+          -- writes are object rewrites, so the intermediate state's
+          -- scheduler IS the pre-state's.
+          have hSched : ∀ (a : SystemState) (b : SeLe4n.ObjId) (o : KernelObject)
+              (pf : _) (f : TCB → TCB),
+              ((a.rewriteObject b o pf).updateTcb vThreadId.val f).scheduler
+                = a.scheduler := by
+            intro a b o pf f
+            rw [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
+          split
+          · -- The placement arm: Cut B2's own write.
+            rename_i hPlace
+            refine runnableOnSomeCore_of_enqueue_marked _ _ _ _ _ ?_
+              (bindPlacesParkedThread_not_idle hPlace)
+            exact (bindWrites_runQueueRefined st _ _ _ _ _
+              (by intro _ _; rfl) hInv hR (by rw [hTcb]; rfl)).2
+          · -- The identity arm is UNREACHABLE under the hypothesis: the
+            -- guard is the pre-state's, which this arm's condition denies.
+            rename_i hParkArm
+            exfalso
+            rw [bindPlacesParkedThread_congr _ _ _ (hSched _ _ _ _ _)
+              (bindWrites_runCoresAgree st _ _ _ _ _ ?_ hInv)] at hParkArm
+            rotate_left; · intro _; rfl
+            rw [hPark] at hParkArm
+            simp at hParkArm
         · exact absurd h (by simp)
+      · exact absurd h (by simp)
   · exact absurd h (by simp)
 
 /-- **PR #900 review (`v0.36.1`): a bind places no thread on a reservation with no
@@ -2070,35 +2156,31 @@ theorem schedContextBind_leaves_unplaced_of_exhausted
     split at h
     · exact absurd h (by simp)
     · split at h
-      · exact absurd h (by simp)
-      · split at h
-        · rename_i tcb _
-          split at h
-          · exact absurd h (by simp)
-          · split at h
-            · dsimp only at h
-              rw [Except.ok.injEq, Prod.mk.injEq] at h
-              rw [← h.2, releasePlace_placedCoreOf?]
-              have hSched : ∀ (a : SystemState) (b : SeLe4n.ObjId) (o : KernelObject)
-                  (pf : _) (f : TCB → TCB),
-                  ((a.rewriteObject b o pf).updateTcb vThreadId.val f).scheduler
-                    = a.scheduler := by
-                intro a b o pf f
-                rw [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
-              split
-              · -- The placement arm needs the guard, whose budget conjunct is false.
-                rename_i hParkArm
-                exfalso
-                rw [bindPlacesParkedThread_of_exhausted _ _ _ _ hExhausted] at hParkArm
-                exact Bool.false_ne_true hParkArm
-              · -- The identity arm moves no scheduler slot.
-                refine (hPlacedCongr _ st ?_ ?_).trans hUnplaced
-                · show (((st.rewriteObject _ _ _).updateTcb _ _).scheduler) = st.scheduler
-                  exact hSched _ _ _ _ _
-                · exact SystemState.RunCoresAgree.trans (SystemState.RunCoresAgree.of_objects rfl)
-                    (bindWrites_runCoresAgree st _ _ _ _ _ (by intro _; rfl) hInv)
-            · exact absurd h (by simp)
+      · rename_i tcb _
+        split at h
+        · dsimp only at h
+          rw [Except.ok.injEq, Prod.mk.injEq] at h
+          rw [← h.2, releasePlace_placedCoreOf?]
+          have hSched : ∀ (a : SystemState) (b : SeLe4n.ObjId) (o : KernelObject)
+              (pf : _) (f : TCB → TCB),
+              ((a.rewriteObject b o pf).updateTcb vThreadId.val f).scheduler
+                = a.scheduler := by
+            intro a b o pf f
+            rw [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
+          split
+          · -- The placement arm needs the guard, whose budget conjunct is false.
+            rename_i hParkArm
+            exfalso
+            rw [bindPlacesParkedThread_of_exhausted _ _ _ _ hExhausted] at hParkArm
+            exact Bool.false_ne_true hParkArm
+          · -- The identity arm moves no scheduler slot.
+            refine (hPlacedCongr _ st ?_ ?_).trans hUnplaced
+            · show (((st.rewriteObject _ _ _).updateTcb _ _).scheduler) = st.scheduler
+              exact hSched _ _ _ _ _
+            · exact SystemState.RunCoresAgree.trans (SystemState.RunCoresAgree.of_objects rfl)
+                (bindWrites_runCoresAgree st _ _ _ _ _ (by intro _; rfl) hInv)
         · exact absurd h (by simp)
+      · exact absurd h (by simp)
   · exact absurd h (by simp)
 
 
@@ -2211,45 +2293,43 @@ theorem schedContextUnbind_runQueueLinkStage (vScId : SeLe4n.ValidObjId) (st st'
       split at hStep
       · rename_i tcb hTcb
         dsimp only [] at hStep
-        split at hStep
-        · contradiction
-        · have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
-            (SchedContextId.ofObjId vScId.val) sc).mp hSc
-          cases hStep
-          have hVac : SystemState.RunQueueStage st { st with scheduler := match runningCoreOf? st tid with
-              | some r => (st.scheduler.setCurrentOnCore r none).markReschedulePendingOnCore r
-              | none => st.scheduler } :=
-            SystemState.RunQueueStage.of_frame_vacate rfl (by split <;> rfl) (by split <;> rfl)
-              (fun c y h' => by
-                revert h'; split
-                · rename_i r _; intro h'
-                  by_cases hrc : r = c
-                  · subst hrc; simp at h'
-                  · rwa [SchedulerState.markReschedulePendingOnCore_currentOnCore,
-                      SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hrc] at h'
-                · exact id)
-          refine SystemState.RunQueueLinkStage.trans ?_ (.of_stage (markKeyChangeFor_runQueueStage _ _ _))
-          refine SystemState.RunQueueLinkStage.trans ?_
-            (.of_stage (markCandidacyGainFor_runQueueStage _ _ _))
-          refine schedContextUnbind_linkStage_close hSc rfl ?_ fun hI =>
-            schedContextUnbind_storedView (by exact hI) _ _ _ _ _ _
-          refine SystemState.RunQueueLinkFrame.trans (st' := SystemState.updateTcb _ _ _) ?_
-            (SystemState.RunQueueLinkStage.toFrame (schedContextUnbindQueueStage_runQueueLinkStage _ _ _ _ _) _)
-          refine SystemState.RunQueueLinkFrame.trans (st' := SystemState.rewriteObject _ _ _ _) ?_
-            (SystemState.RunQueueLinkStage.toFrame (.of_stage (SystemState.RunQueueStage.updateTcb _ _
-              (f := fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
-              (by intro _ _; rfl))) _)
-          refine SystemState.RunQueueLinkFrame.trans
-            (st' := { st with scheduler := match runningCoreOf? st tid with
-              | some r => (st.scheduler.setCurrentOnCore r none).markReschedulePendingOnCore r
-              | none => st.scheduler })
-            (SystemState.RunQueueLinkStage.toFrame (.of_stage hVac) _) ?_
-          refine (?_ : SystemState.RunQueueFrameStage _ _ _).1
-          exact SystemState.RunQueueFrameStage.insert rfl rfl rfl
-            (fun c => by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-              (SystemState.objStateMono_nonTcb (by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
-            (hR := fun _ => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-            (hY := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+        have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
+          (SchedContextId.ofObjId vScId.val) sc).mp hSc
+        cases hStep
+        have hVac : SystemState.RunQueueStage st { st with scheduler := match runningCoreOf? st tid with
+            | some r => (st.scheduler.setCurrentOnCore r none).markReschedulePendingOnCore r
+            | none => st.scheduler } :=
+          SystemState.RunQueueStage.of_frame_vacate rfl (by split <;> rfl) (by split <;> rfl)
+            (fun c y h' => by
+              revert h'; split
+              · rename_i r _; intro h'
+                by_cases hrc : r = c
+                · subst hrc; simp at h'
+                · rwa [SchedulerState.markReschedulePendingOnCore_currentOnCore,
+                    SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hrc] at h'
+              · exact id)
+        refine SystemState.RunQueueLinkStage.trans ?_ (.of_stage (markKeyChangeFor_runQueueStage _ _ _))
+        refine SystemState.RunQueueLinkStage.trans ?_
+          (.of_stage (markCandidacyGainFor_runQueueStage _ _ _))
+        refine schedContextUnbind_linkStage_close hSc rfl ?_ fun hI =>
+          schedContextUnbind_storedView (by exact hI) _ _ _ _ _ _
+        refine SystemState.RunQueueLinkFrame.trans (st' := SystemState.updateTcb _ _ _) ?_
+          (SystemState.RunQueueLinkStage.toFrame (schedContextUnbindQueueStage_runQueueLinkStage _ _ _ _ _) _)
+        refine SystemState.RunQueueLinkFrame.trans (st' := SystemState.rewriteObject _ _ _ _) ?_
+          (SystemState.RunQueueLinkStage.toFrame (.of_stage (SystemState.RunQueueStage.updateTcb _ _
+            (f := fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
+            (by intro _ _; rfl))) _)
+        refine SystemState.RunQueueLinkFrame.trans
+          (st' := { st with scheduler := match runningCoreOf? st tid with
+            | some r => (st.scheduler.setCurrentOnCore r none).markReschedulePendingOnCore r
+            | none => st.scheduler })
+          (SystemState.RunQueueLinkStage.toFrame (.of_stage hVac) _) ?_
+        refine (?_ : SystemState.RunQueueFrameStage _ _ _).1
+        exact SystemState.RunQueueFrameStage.insert rfl rfl rfl
+          (fun c => by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+            (SystemState.objStateMono_nonTcb (by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
+          (hR := fun _ => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+          (hY := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
       · dsimp only [] at hStep
         cases hStep
         have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
@@ -2280,76 +2360,74 @@ theorem schedContextUnbind_runQueueStage_of_dequeued (vScId : SeLe4n.ValidObjId)
       split at hStep
       · rename_i tcb hTcb
         dsimp only [] at hStep
-        split at hStep
-        · contradiction
-        · have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
-            (SchedContextId.ofObjId vScId.val) sc).mp hSc
-          cases hStep
-          have hVac : SystemState.RunQueueStage st { st with scheduler := match runningCoreOf? st tid with
-              | some r => (st.scheduler.setCurrentOnCore r none).markReschedulePendingOnCore r
-              | none => st.scheduler } :=
-            SystemState.RunQueueStage.of_frame_vacate rfl (by split <;> rfl) (by split <;> rfl)
-              (fun c y h' => by
-                revert h'; split
-                · rename_i r _; intro h'
-                  by_cases hrc : r = c
-                  · subst hrc; simp at h'
-                  · rwa [SchedulerState.markReschedulePendingOnCore_currentOnCore,
-                      SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hrc] at h'
-                · exact id)
-          refine SystemState.RunQueueStage.of_invExt fun hInv => ?_
-          have hNC : ∀ c, ({ st with scheduler := match runningCoreOf? st tid with
-              | some r => (st.scheduler.setCurrentOnCore r none).markReschedulePendingOnCore r
-              | none => st.scheduler } : SystemState).scheduler.currentOnCore c ≠ some tid := by
-            intro c hc
-            cases hRC : runningCoreOf? st tid with
-            | none =>
-              simp only [hRC] at hc
-              exact runningCoreOf?_none_currentOnCore hRC c hc
-            | some r =>
-              have hCurR := runningCoreOf?_some_currentOnCore hRC
-              simp only [hRC] at hc
-              by_cases hrc : r = c
-              · subst hrc; simp at hc
-              · rw [SchedulerState.markReschedulePendingOnCore_currentOnCore,
-                  SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hrc] at hc
-                exact hrc ((hD.current c tid hc).2.1 r hCurR)
-          refine SystemState.RunQueueStage.trans ?_ (markKeyChangeFor_runQueueStage _ _ _)
-          refine SystemState.RunQueueStage.trans ?_ (markCandidacyGainFor_runQueueStage _ _ _)
-          refine schedContextUnbind_stage_close hSc rfl ?_ fun hI =>
-            schedContextUnbind_storedView (by exact hI) _ _ _ _ _ _
-          refine SystemState.RunQueueFrameStage.trans (st' := SystemState.updateTcb _ _ _) ?_
-            (SystemState.RunQueueStage.toFrame (schedContextUnbindQueueStage_runQueueStage _ _ _ _ _ (by simpa only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler] using hNC)
-              (fun hW => ?hRun) (fun hW => ?hHome)) _)
-          refine SystemState.RunQueueFrameStage.trans (st' := SystemState.rewriteObject _ _ _ _) ?_
-            (SystemState.RunQueueStage.toFrame (SystemState.RunQueueStage.updateTcb _ _
-              (f := fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
-              (by intro _ _; rfl)) _)
-          refine SystemState.RunQueueFrameStage.trans
-            (st' := { st with scheduler := match runningCoreOf? st tid with
-              | some r => (st.scheduler.setCurrentOnCore r none).markReschedulePendingOnCore r
-              | none => st.scheduler })
-            (SystemState.RunQueueStage.toFrame hVac _) ?_
-          · exact SystemState.RunQueueFrameStage.insert rfl rfl rfl
-              (fun c => by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-              (SystemState.objStateMono_nonTcb (by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
-              (hR := fun _ => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-              (hY := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
-          case hRun =>
-            obtain ⟨r, hRC⟩ := Option.isSome_iff_exists.mp hW
-            have hR0 := hD.runnable (runningCoreOf?_some_currentOnCore hRC)
-            exact (((SystemState.StateMono.of_objects rfl).trans
-              ((SystemState.StateMono.insert hInv rfl
-                (SystemState.objStateMono_nonTcb (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)).trans
-              (SystemState.StateMono.updateTcb (RHTable_insert_preserves_invExt _ _ _ hInv) tid (by tcb_state_mono)))) tid).1 hR0
-          case hHome =>
-            obtain ⟨r, hRC⟩ := Option.isSome_iff_exists.mp hW
-            have hR0 := hD.runnable (runningCoreOf?_some_currentOnCore hRC)
-            exact ((SystemState.StateMono.of_objects rfl).trans
-              ((SystemState.StateMono.insert hInv rfl
-                (SystemState.objStateMono_nonTcb (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)).trans
-              (SystemState.StateMono.updateTcb (RHTable_insert_preserves_invExt _ _ _ hInv) tid (by tcb_state_mono)))).homedOn
-              hR0.activeAt (homedOn_determineTargetCore st tid)
+        have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
+          (SchedContextId.ofObjId vScId.val) sc).mp hSc
+        cases hStep
+        have hVac : SystemState.RunQueueStage st { st with scheduler := match runningCoreOf? st tid with
+            | some r => (st.scheduler.setCurrentOnCore r none).markReschedulePendingOnCore r
+            | none => st.scheduler } :=
+          SystemState.RunQueueStage.of_frame_vacate rfl (by split <;> rfl) (by split <;> rfl)
+            (fun c y h' => by
+              revert h'; split
+              · rename_i r _; intro h'
+                by_cases hrc : r = c
+                · subst hrc; simp at h'
+                · rwa [SchedulerState.markReschedulePendingOnCore_currentOnCore,
+                    SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hrc] at h'
+              · exact id)
+        refine SystemState.RunQueueStage.of_invExt fun hInv => ?_
+        have hNC : ∀ c, ({ st with scheduler := match runningCoreOf? st tid with
+            | some r => (st.scheduler.setCurrentOnCore r none).markReschedulePendingOnCore r
+            | none => st.scheduler } : SystemState).scheduler.currentOnCore c ≠ some tid := by
+          intro c hc
+          cases hRC : runningCoreOf? st tid with
+          | none =>
+            simp only [hRC] at hc
+            exact runningCoreOf?_none_currentOnCore hRC c hc
+          | some r =>
+            have hCurR := runningCoreOf?_some_currentOnCore hRC
+            simp only [hRC] at hc
+            by_cases hrc : r = c
+            · subst hrc; simp at hc
+            · rw [SchedulerState.markReschedulePendingOnCore_currentOnCore,
+                SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hrc] at hc
+              exact hrc ((hD.current c tid hc).2.1 r hCurR)
+        refine SystemState.RunQueueStage.trans ?_ (markKeyChangeFor_runQueueStage _ _ _)
+        refine SystemState.RunQueueStage.trans ?_ (markCandidacyGainFor_runQueueStage _ _ _)
+        refine schedContextUnbind_stage_close hSc rfl ?_ fun hI =>
+          schedContextUnbind_storedView (by exact hI) _ _ _ _ _ _
+        refine SystemState.RunQueueFrameStage.trans (st' := SystemState.updateTcb _ _ _) ?_
+          (SystemState.RunQueueStage.toFrame (schedContextUnbindQueueStage_runQueueStage _ _ _ _ _ (by simpa only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler] using hNC)
+            (fun hW => ?hRun) (fun hW => ?hHome)) _)
+        refine SystemState.RunQueueFrameStage.trans (st' := SystemState.rewriteObject _ _ _ _) ?_
+          (SystemState.RunQueueStage.toFrame (SystemState.RunQueueStage.updateTcb _ _
+            (f := fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
+            (by intro _ _; rfl)) _)
+        refine SystemState.RunQueueFrameStage.trans
+          (st' := { st with scheduler := match runningCoreOf? st tid with
+            | some r => (st.scheduler.setCurrentOnCore r none).markReschedulePendingOnCore r
+            | none => st.scheduler })
+          (SystemState.RunQueueStage.toFrame hVac _) ?_
+        · exact SystemState.RunQueueFrameStage.insert rfl rfl rfl
+            (fun c => by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+            (SystemState.objStateMono_nonTcb (by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)
+            (hR := fun _ => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+            (hY := by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+        case hRun =>
+          obtain ⟨r, hRC⟩ := Option.isSome_iff_exists.mp hW
+          have hR0 := hD.runnable (runningCoreOf?_some_currentOnCore hRC)
+          exact (((SystemState.StateMono.of_objects rfl).trans
+            ((SystemState.StateMono.insert hInv rfl
+              (SystemState.objStateMono_nonTcb (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)).trans
+            (SystemState.StateMono.updateTcb (RHTable_insert_preserves_invExt _ _ _ hInv) tid (by tcb_state_mono)))) tid).1 hR0
+        case hHome =>
+          obtain ⟨r, hRC⟩ := Option.isSome_iff_exists.mp hW
+          have hR0 := hD.runnable (runningCoreOf?_some_currentOnCore hRC)
+          exact ((SystemState.StateMono.of_objects rfl).trans
+            ((SystemState.StateMono.insert hInv rfl
+              (SystemState.objStateMono_nonTcb (by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl) rfl)).trans
+            (SystemState.StateMono.updateTcb (RHTable_insert_preserves_invExt _ _ _ hInv) tid (by tcb_state_mono)))).homedOn
+            hR0.activeAt (homedOn_determineTargetCore st tid)
       · dsimp only [] at hStep
         cases hStep
         have hScRaw := (SystemState.getSchedContext?_eq_some_iff st

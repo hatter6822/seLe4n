@@ -119,12 +119,13 @@ post-donation state — `endpointCallLive_confinedToCores` instantiated at the
 receiver `ep.receiveQ.head` and the state `applyCallDonation` returns. -/
 theorem endpointCallCrossCoreDispatch_confinedToCores (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
+    (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt)
+    (lend : Bool := true) :
     observableSlotsConfinedToCores st
       (endpointCallCrossCoreDispatch endpointId caller payload
-        executingCore st).1
+        executingCore st lend).1
       (endpointCallDispatchWriteSet endpointId caller payload
-        executingCore st) := by
+        executingCore st lend) := by
   have hCaps := endpointCallWithCapsOnCore_confinedToCores endpointId caller payload
     executingCore st hObjInv
   -- A core outside the union is outside the endpoint-call leg, which is what
@@ -168,14 +169,14 @@ theorem endpointCallCrossCoreDispatch_confinedToCores (endpointId : SeLe4n.ObjId
             | none => simp only []; exact hWiden _ _ hCaps
             | some receiverV =>
               simp only []
-              cases hDon : applyCallDonationOnCore stWith callerV receiverV
+              cases hDon : applyCallDonationOnCoreWhen lend stWith callerV receiverV
                   (determineTargetCore st caller) (determineTargetCore st receiverTid) with
               | error e => simp only []; exact hWiden _ _ hCaps
               | ok stDon =>
                 simp only []
                 exact endpointCallLive_confinedToCores st stWith stDon endpointId
                   executingCore receiverTid hCaps
-                  (applyCallDonationOnCore_confinedToCores stWith stDon callerV receiverV
+                  (applyCallDonationOnCoreWhen_confinedToCores lend stWith stDon callerV receiverV
                     (determineTargetCore st caller) (determineTargetCore st receiverTid) hDon)
 
 /-- SM8.B.2: on the rendezvous path the live write set **is** the §5a union,
@@ -197,10 +198,11 @@ theorem endpointCallDispatchWriteSet_eq_live_of_rendezvous (endpointId : SeLe4n.
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hLinks : callRendezvousLinks st receiverTid payload = true)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
-    (hDon : applyCallDonationOnCore stWith callerV receiverV
+    (lend : Bool)
+    (hDon : applyCallDonationOnCoreWhen lend stWith callerV receiverV
       (determineTargetCore st caller) (determineTargetCore st receiverTid) = .ok stDon) :
     endpointCallDispatchWriteSet endpointId caller payload
-        executingCore st
+        executingCore st lend
       = endpointCallLiveWriteSet st endpointId executingCore stDon receiverTid := by
   unfold endpointCallDispatchWriteSet endpointCallDispatchChainWriteSet endpointCallLiveWriteSet
   cases hEp : st.getEndpoint? endpointId with
@@ -257,8 +259,13 @@ theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
     (hStep : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st') :
     observableSlotsConfinedToCores st st' (replyDonationDescheduleCores st rid) := by
   rcases applyReplyDonationOnCore_ok_decompose st st' rid targetVtid
-    ownerHome hStep with ⟨_, hEq⟩ | ⟨scId, holderVtid, n, stRet, hHead, _, hRet, hEq⟩
+    ownerHome hStep with ⟨_, hEq⟩ | ⟨scId, holderVtid, n, stRet, hHead, _, hRet, hEq⟩ |
+      ⟨_, _, _, -, -, -, hK⟩
   · exact observableSlotsConfinedToCores_widen (popUnheldReplyHead_confinedToCores hEq)
+  rotate_right
+  · exact observableSlotsConfinedToCores_widen
+      (observableSlotsConfinedToCores_nil_of_scheduler_except_reschedule_machine_eq
+        (by rw [keepDonatedSchedContext_scheduler_eq hK]) (keepDonatedSchedContext_machine_eq hK))
   · -- The core list is stated on the **pre**-state, which is the only state a
     -- caller holds.  That is sound because neither step before the deschedule
     -- moves a thread: the return writes objects alone and the settle writes
@@ -617,6 +624,15 @@ theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
       | some targetV =>
         rw [hHV, hTV] at hStep
         simp only [] at hStep
+        split at hStep
+        rotate_left
+        · split at hStep
+          · cases hStep
+          · rename_i s1 hK
+            cases hStep
+            exact observableSlotsConfinedToCores_nil_of_scheduler_except_reschedule_machine_eq
+              (by rw [keepDonatedSchedContextResolved_scheduler_eq hK])
+              (keepDonatedSchedContextResolved_machine_eq hK)
         cases hRet : returnDonatedSchedContextResolved st holder oldScId
             (replyDonationRecipient st oldScId target) with
         | error e => rw [hRet] at hStep; simp only [] at hStep; cases hStep
@@ -668,11 +684,11 @@ theorem replyRecvHolderDeschedule_confinedToCores (tid holder : SeLe4n.ThreadId)
 inside its write set.  The re-donation and *its* replenishment migration are
 per-core silent; what is not silent is the recorded server's deschedule and the
 chain reversion, and both are named. -/
-theorem replyRecvPostReceiveDonation_confinedToCores
+theorem replyRecvPostReceiveDonation_confinedToCores {lend : Bool}
     (tid recordedServer nextThread : SeLe4n.ThreadId) (serverCore : CoreId)
     (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
     (st st' : SystemState) (u : Unit)
-    (hStep : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
+    (hStep : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st lend
       = .ok (u, st')) :
     observableSlotsConfinedToCores st st'
       (replyRecvPostReceiveDonationWriteSet tid recordedServer nextThread serverCore
@@ -688,9 +704,13 @@ theorem replyRecvPostReceiveDonation_confinedToCores
     split
     · next hCall =>
       simp only [hCall, if_true] at hStep
-      split
-      · next e hDon => simp only [hDon] at hStep; exact absurd hStep (by simp)
-      · next st2 hDon =>
+      -- The arm runs at one lend; the write set names both lends' chains.
+      refine observableSlotsConfinedToCores_mono
+        (replyRecvRendezvousChainCores_subset st tid nextThread recordedServer serverCore lend) ?_
+      unfold replyRecvRendezvousChainCores
+      cases hDon : applyRendezvousCallDonation st tid nextThread lend with
+      | error e => simp only [hDon] at hStep; exact absurd hStep (by simp)
+      | ok st2 =>
         simp only [hDon] at hStep
         rw [← hOkInj hStep]
         exact observableSlotsConfinedToCores_trans
@@ -708,9 +728,18 @@ theorem replyRecvPostReceiveDonation_confinedToCores
     split
     · next hCall =>
       simp only [hCall, if_true] at hStep
-      split
-      · next e hDon => simp only [hDon] at hStep; exact absurd hStep (by simp)
-      · next st2 hDon =>
+      -- The deschedule's cores, then the chain at the arm's lend inside both lends'.
+      refine observableSlotsConfinedToCores_mono (cs := replyRecvHolderDescheduleWriteSet tid holder st ++
+          replyRecvRendezvousChainCores (replyRecvHolderDeschedule tid holder st) tid nextThread
+            recordedServer serverCore lend) (fun c hc => by
+          rcases List.mem_append.mp hc with h | h
+          · exact List.mem_append_left _ h
+          · exact List.mem_append_right _ (replyRecvRendezvousChainCores_subset _ _ _ _ _ lend c h)) ?_
+      unfold replyRecvRendezvousChainCores
+      cases hDon : applyRendezvousCallDonation (replyRecvHolderDeschedule tid holder st) tid
+          nextThread lend with
+      | error e => simp only [hDon] at hStep; exact absurd hStep (by simp)
+      | ok st2 =>
         simp only [hDon] at hStep
         rw [← hOkInj hStep]
         -- Associated to the RIGHT so the declared set is `desched ++ ([] ++ pip)`,
@@ -853,113 +882,6 @@ theorem replyRecvAnswerCaller_confinedToCores (answer : Option Architecture.Faul
       (Architecture.stageDeliveredMessage_machine_eq _ _ _)
       (observableSlotsConfinedToCores_refl st _)
   | some outcome => exact faultReplyApplyOnCore_confinedToCores st prevCaller outcome
-
-/-- SM8.B.2 (**the live `.replyRecv` bound**): `endpointReplyRecvOnCore` — the function
-`API.dispatchWithCapChecked`'s `.replyRecv` arm routes through — writes no core outside
-`endpointReplyRecvWriteSet`.
-
-The reply leg, the donation pop, the receive leg and the post-receive
-donation, at the states they really run at. The receive leg's
-`objects.invExt` premise is discharged from the reply leg's own preservation
-theorem rather than assumed, exactly as in §4a. -/
-theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
-    {answer : Option Architecture.FaultReplyOutcome}
-    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (grant : Bool)
-    (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary)
-    (hObjInv : st.objects.invExt)
-    (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg
-      grant executingCore st = .ok (summary, st')) :
-    observableSlotsConfinedToCores st st'
-      (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg grant
-        executingCore st) := by
-  have hReply := endpointReplyOnCore_confinedToCores receiver prevCaller msg executingCore st
-    hObjInv
-  have hInv1 : (endpointReplyOnCore receiver prevCaller msg executingCore st).1.objects.invExt :=
-    endpointReplyOnCore_preserves_objects_invExt receiver prevCaller msg executingCore st hObjInv
-  unfold endpointReplyRecvAnsweringOnCore endpointReplyRecvAnsweringWriteSet at *
-  simp only [] at hStep
-  cases hRep : endpointReplyOnCore receiver prevCaller msg executingCore st with
-  | mk st1 res =>
-    rw [hRep] at hReply hInv1 hStep
-    cases res with
-    | error e => simp only [] at hStep; exact absurd hStep (by simp)
-    | ok replySgi =>
-      simp only [] at hStep ⊢
-      -- **WS-RM (`v0.35.6`)**: the pop, between the legs.
-      cases hPop : replyRecvPopDonation replyId prevCaller st1 with
-      | error e => rw [hPop] at hStep; exact absurd hStep (by simp)
-      | ok popPair =>
-        obtain ⟨returnedSc?, st1q⟩ := popPair
-        rw [hPop] at hStep
-        simp only [] at hStep ⊢
-        -- The reply leg's capability transfer, between the pop and the receive
-        -- leg: it writes a CNode and the derivation tree, no core.
-        obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st receiver prevCaller grant st1q
-        rw [hX] at hStep ⊢
-        simp only [] at hStep ⊢
-        have hPopConf : observableSlotsConfinedToCores st1 st1p [] := by
-          have hQ := replyRecvPopDonation_confinedToCores replyId prevCaller st1 st1q returnedSc? hPop
-          rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX
-          have hXc : observableSlotsConfinedToCores st1q st1p [] :=
-            observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-              (receiveTransferCaps_scheduler_eq hX) (receiveTransferCaps_preserves_machine hX)
-          simpa using observableSlotsConfinedToCores_trans hQ hXc
-        have hInv1p : st1p.objects.invExt :=
-          replyRecvReplyTransfer_objects_invExt
-            (replyRecvPopDonation_preserves_objects_invExt
-              replyId prevCaller st1 st1q returnedSc? hInv1 hPop) hX
-        have hRecv := endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver
-          (some replyId) executingCore st1p hInv1p
-        cases hRcv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId) executingCore st1p with
-        | mk st2 res2 =>
-          rw [hRcv] at hRecv hStep
-          cases res2 with
-          | error e => simp only [] at hStep; exact absurd hStep (by simp)
-          | ok pair =>
-            rcases pair with ⟨nextThread, recvSummary, recvSgi⟩
-            simp only [] at hStep ⊢
-            -- WS-RA RA.B.5b: the body stages the woken caller's reply frame and
-            -- the completed plain sender's unit frame after the donation; both
-            -- stagers frame the scheduler and the machine, so the donation's
-            -- confinement transports across them unchanged.
-            cases hDon : replyRecvPostReceiveDonation receiver
-                ((recordedReplyServer? st prevCaller).getD receiver) nextThread
-                executingCore
-                returnedSc? st2 with
-            | error e =>
-                rw [hDon] at hStep
-                exact absurd hStep (by simp)
-            | ok pair2 =>
-              rcases pair2 with ⟨u2, st3⟩
-              rw [hDon] at hStep
-              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-              have hConf := replyRecvPostReceiveDonation_confinedToCores receiver
-                ((recordedReplyServer? st prevCaller).getD receiver) nextThread
-                executingCore
-                returnedSc? st2 st3 u2 hDon
-              -- WS-OD OD3.14: the receive leg's priority hand-off is the fourth
-              -- leg, read at the state it runs at.  On a non-delegated reply it is
-              -- the identity and its declared set is empty.
-              have hPip := applyReceiveLegPipHandoff_confinedToCores st3 receiver nextThread
-                ((recordedReplyServer? st prevCaller).getD receiver) executingCore
-              have hStaged : observableSlotsConfinedToCores st2 st'
-                  (replyRecvPostReceiveDonationWriteSet receiver
-                    ((recordedReplyServer? st prevCaller).getD receiver) nextThread
-                    executingCore returnedSc? st2 ++
-                    (receiveLegPipHandoffWriteSet st3 receiver nextThread
-                      ((recordedReplyServer? st prevCaller).getD receiver) executingCore ++
-                    replyRecvAnswerCores answer
-                      (applyReceiveLegPipHandoff st3 receiver nextThread
-                        ((recordedReplyServer? st prevCaller).getD receiver) executingCore)
-                      prevCaller)) := by
-                rw [← hStep.2]
-                exact observableSlotsConfinedToCores_trans hConf
-                    (observableSlotsConfinedToCores_trans hPip
-                      (replyRecvAnswerCaller_confinedToCores answer _ prevCaller _))
-              exact observableSlotsConfinedToCores_trans hReply
-                (observableSlotsConfinedToCores_trans
-                  (by simpa using observableSlotsConfinedToCores_trans hPopConf hRecv) hStaged)
 
 -- ============================================================================
 -- §5e The live `.tcbSuspend` arm itself
@@ -1286,27 +1208,15 @@ theorem migrateRunQueueOnAffinityChange_confinedToCores (st : SystemState)
   all_goals (unfold migrateRunQueueOnAffinityChange; repeat' split)
   all_goals simp
 
-/-- SM8.B.2: the donated-SchedContext cancellation arm is per-core silent for
-the same reason — the SC returns to its owner in the object store and is
-settled (WS-ZA ZA6.33): purged from the queue that holds it and placed on the
-owner's home core's, neither of which the observer reads. -/
+/-- SM8.B.2 / WS-SX SX8: the donated-SchedContext cancellation arm is per-core
+silent for the same reason — it is the in-place unbind on the owner-cleared
+record. -/
 theorem cancelDonatedDonationOnCore_confinedToCores (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB)
     (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
-    observableSlotsConfinedToCores st st' [] := by
-  unfold cancelDonatedDonationOnCore at h
-  split at h
-  · split at h
-    · exact absurd h (by simp)
-    · next stCleanup hCleanup =>
-      rw [Except.ok.injEq] at h
-      subst h
-      exact observableSlotsConfinedToCores_trans
-        (observableSlotsConfinedToCores_nil_of_scheduler_except_reschedule_machine_eq
-          (cleanupDonatedSchedContext_scheduler_eq st stCleanup tid hCleanup)
-          (cleanupDonatedSchedContext_machine_eq st stCleanup tid hCleanup))
-        (settleReturnedContext_confinedToCores stCleanup _ _)
-  · exact absurd h (by simp)
+    observableSlotsConfinedToCores st st' [] :=
+  let ⟨_, _, _, _, hB⟩ := cancelDonatedDonationOnCore_ok_view h
+  cancelBoundDonationOnCore_confinedToCores st st' tid _ hB
 
 -- WS-RR RR8.12 Cut C3b-iv (`v0.35.170`): `suspendThreadOnCoreWriteSet` moved to
 -- the production `SeLe4n/Kernel/IPC/CrossCore/SuspendFootprint.lean` (via

@@ -69,6 +69,7 @@ import SeLe4n.Kernel.SchedContext.PriorityManagement
 import SeLe4n.Kernel.SchedContext.PriorityManagementPerCore
 import SeLe4n.Kernel.SchedContext.OperationsPerCore
 import SeLe4n.Kernel.SchedContext.NotificationLink
+import SeLe4n.Kernel.SchedContext.NotificationDonation
 import SeLe4n.Kernel.IPC.Operations.Donation
 import SeLe4n.Kernel.IPC.Invariant.DispatchArmPreservation
 import SeLe4n.Kernel.IPC.Invariant.YieldPreservation
@@ -1345,6 +1346,7 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .schedContextConfigure => .write
   | .schedContextBind      => .write
   | .schedContextUnbind    => .write
+  | .schedContextUnbindObject => .write
   | .tcbSuspend            => .write
   | .tcbResume             => .write
   | .tcbSetPriority        => .write
@@ -1408,7 +1410,7 @@ def syscallObjectKind? : SyscallId → Option KernelObjectType
   | .untypedRetype => some .untyped
   | .vspaceMap | .vspaceUnmap => some .frame
   | .vspaceUnifyInstruction => some .vspaceRoot
-  | .schedContextBind | .schedContextUnbind | .schedContextConsumed
+  | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject | .schedContextConsumed
   | .schedContextYieldTo => some .schedContext
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer
   | .tcbSetAffinity | .tcbSetSpace | .tcbBindNotification
@@ -1461,7 +1463,7 @@ def syscallMissingRightError : SyscallId → KernelError
   | .reply | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .declassify | .declassifySignal | .auditRead | .auditDrain | .serviceRegister | .serviceRevoke
-  | .serviceQuery | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+  | .serviceQuery | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer
   | .tcbSetAffinity | .tcbSetSpace | .pageTableMap
   | .pageTableUnmap | .yield | .schedContextConsumed | .schedContextYieldTo
@@ -1520,7 +1522,7 @@ reply-receive.  No wildcard: a new syscall states its answer.  Pinned against
   | .cspaceRevoke | .untypedRetype | .vspaceMap | .vspaceUnmap
   | .vspaceUnifyInstruction | .declassify | .auditRead | .auditDrain | .declassifySignal
   | .serviceRegister | .serviceRevoke | .serviceQuery | .notificationSignal
-  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .tcbSuspend
+  | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject | .tcbSuspend
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer | .tcbSetAffinity
   | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
   | .schedContextConsumed | .schedContextYieldTo | .irqHandlerAck | .irqControlGet
@@ -1748,7 +1750,7 @@ def syscallNamesReply : SyscallId → Bool
   | .cspaceRevoke | .untypedRetype | .vspaceMap | .vspaceUnmap
   | .vspaceUnifyInstruction | .declassify | .auditRead | .auditDrain | .declassifySignal
   | .serviceRegister | .serviceRevoke | .serviceQuery | .notificationSignal
-  | .notificationWait | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+  | .notificationWait | .schedContextConfigure | .schedContextBind | .schedContextUnbind | .schedContextUnbindObject
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer
   | .tcbSetAffinity | .tcbSetSpace | .pageTableMap | .pageTableUnmap
   | .yield | .schedContextConsumed | .schedContextYieldTo | .irqHandlerAck | .irqControlGet
@@ -5026,6 +5028,32 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
               | .ok (st', _) => .ok ((), st')
               | .error e => .error e
     | _ => fun _ => .error (.invalidCapability 0)
+  -- WS-SX SX8.3: seL4-MCS's `SchedContext_UnbindObject` — extra capability 0
+  -- is read as the bind reads it: a notification capability unbinds the
+  -- context's notification (`schedContext_unbindNtfn`), every other capability
+  -- is the thread path (`schedContext_unbindTCB`).
+  | .schedContextUnbindObject =>
+    some <| match cap.target with
+    | .object scId =>
+      fun st => match resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | k + 1 =>
+        match validateObjIdArg scId with
+        | .error e => .error e
+        | .ok vScId => SchedContextOps.schedContextUnbindNotificationObject vScId ⟨k⟩ st
+      | 0 =>
+      match resolveSchedContextBindThread tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | .error e => .error e
+      | .ok vThreadId =>
+          match validateObjIdArg scId with
+          | .error e => .error e
+          | .ok vScId =>
+              match SchedContextOps.schedContextUnbindThreadObjectOnCore vScId
+                  vThreadId.val executingCore st with
+              | .ok (st', _) => .ok ((), st')
+              | .error e => .error e
+    | _ => fun _ => .error (.invalidCapability 0)
   -- WS-ZA ZA6.9: seL4-MCS's `seL4_SchedContext_Consumed` — no arguments; the
   -- context from the capability target, the caller the executing core's
   -- current thread (`schedContextConsumedOnCore`).
@@ -5345,19 +5373,6 @@ structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
   pair's thread-side half the arms read is their consequence with the IPC
   bundle's loan record (`schedContextBindingBidirectional_of_consistent`). -/
   schedContextLinks : schedContextLinkInvariant st
-  /-- **`v0.35.204`**: keyed to the resolver the arm binds through, quantified
-  over the caller — the pack carries no caller, and a fact about *every* thread
-  any caller's CSpace resolves its extra capability 0 to is a pre-state fact
-  all the same. -/
-  boundThreadNotDonationOwner : ∀ (callerTid : SeLe4n.ThreadId)
-      (vThreadId : SeLe4n.ValidThreadId),
-    decoded.syscallId = .schedContextBind →
-    resolveSchedContextBindThread callerTid
-      (schedContextBindArgsOf st callerTid decoded.msgInfo.extraCaps) st =
-      .ok vThreadId →
-    ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
-      st.objects[s.toObjId]? = some (.tcb sTcb) →
-      sTcb.schedContextBinding ≠ .donated sc0 vThreadId.val
   targetThreadQuiescent : ∀ (objId : SeLe4n.ObjId),
     decoded.syscallId = .tcbSuspend ∨ decoded.syscallId = .tcbResume →
     cap.target = .object objId →
@@ -5584,8 +5599,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   simp only [hVal] at hStep
                   exact schedContextBind_preserves_ipcInvariantFull st st' vScId vThreadId
                     hObjInv hInv (schedContextBindingBidirectional_of_consistent
-                      hPack.schedContextLinks.binding hInv.donationOwnerValid)
-                    (hPack.boundThreadNotDonationOwner tid vThreadId hSy hRes) hStep
+                      hPack.schedContextLinks.binding hInv.donationOwnerValid) hStep
     all_goals try cases hStep
   case schedContextUnbind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -5609,6 +5623,40 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   exact schedContextUnbindAllOnCore_preserves_ipcInvariantFull st st' vScId _
                     sgiU hObjInv hInv
                     hR hUn
+    all_goals try cases hStep
+  case schedContextUnbindObject =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object scId =>
+      try dsimp only [] at hStep
+      cases hN : resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | succ k =>
+          simp only [hN] at hStep
+          cases hVal : validateObjIdArg scId with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vScId =>
+              simp only [hVal] at hStep
+              exact schedContextUnbindNotificationObject_preserves_ipcInvariantFull st st' vScId _
+                hObjInv hInv hStep
+      | zero =>
+          simp only [hN] at hStep
+          cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok vThreadId =>
+              simp only [hRes] at hStep
+              cases hVal : validateObjIdArg scId with
+              | error e => simp only [hVal] at hStep; cases hStep
+              | ok vScId =>
+                  simp only [hVal] at hStep
+                  cases hUn : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId
+                      vThreadId.val executingCore st with
+                  | error e => simp only [hUn] at hStep; cases hStep
+                  | ok pair =>
+                      obtain ⟨stU, sgiU⟩ := pair
+                      simp only [hUn] at hStep
+                      cases hStep
+                      exact schedContextUnbindThreadObjectOnCore_preserves_ipcInvariantFull st _
+                        vScId _ _ sgiU hObjInv hInv hUn
     all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -5913,6 +5961,88 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
 -- T6-I/M-IF-1: Information-flow-checked dispatch
 -- ============================================================================
 
+/-- **SchedContext_Bind's label rule (D25 in its static form, D27).**  A
+context that heads a reply stack is on loan from the callers on that stack, and
+the reply each of them later answers takes it back from whichever thread holds
+it.  Every lender on a context's stack flows to the context's label
+(`contextLendersFlow`), so a bind of such a context to a thread the context's
+label flows to gives every lender on the stack a flow to the bound thread
+(`securityFlowsTo_trans`), with no read of the stack's frames: the half of the
+notification lend's rule that carries the lenders' flow
+(`donationContextFlows_context`), asked of the bound thread.  The lend's other
+half (`donationContextFlows_context_back`) answers a read the bind does not
+make: the lend is decided by the waiter's own binding, which the bind's
+invoker already holds a capability to.  A context that
+heads no stack is owed to nobody, and the rule admits it as seL4's
+`decodeSchedContext_Bind` does.  It reads the context's head and two static
+labels, and writes nothing. -/
+def schedContextBindLabelAdmits (ctx : LabelingContext) (st : SystemState)
+    (scId : SeLe4n.ObjId) (t : SeLe4n.ThreadId) : Bool :=
+  match st.getSchedContext? (SchedContextId.ofObjId scId) with
+  | none => true
+  | some sc =>
+    match sc.scReply with
+    | none => true
+    | some _ => securityFlowsTo (ctx.objectLabelOf scId) (ctx.threadLabelOf t)
+
+/-- A context heading no stack is admitted to any thread. -/
+theorem schedContextBindLabelAdmits_of_no_head {ctx : LabelingContext} {st : SystemState}
+    {scId : SeLe4n.ObjId} {t : SeLe4n.ThreadId} {sc : SchedContext}
+    (hSc : st.getSchedContext? (SchedContextId.ofObjId scId) = some sc)
+    (hR : sc.scReply = none) : schedContextBindLabelAdmits ctx st scId t = true := by
+  unfold schedContextBindLabelAdmits; simp only [hSc, hR]
+
+/-- **What an admitted bind of a context heading a stack carries**: the
+context's label flows to the bound thread. -/
+theorem schedContextBindLabelAdmits_flows {ctx : LabelingContext} {st : SystemState}
+    {scId : SeLe4n.ObjId} {t : SeLe4n.ThreadId} {sc : SchedContext} {r : SeLe4n.ReplyId}
+    (h : schedContextBindLabelAdmits ctx st scId t = true)
+    (hSc : st.getSchedContext? (SchedContextId.ofObjId scId) = some sc)
+    (hR : sc.scReply = some r) :
+    securityFlowsTo (ctx.objectLabelOf scId) (ctx.threadLabelOf t) = true := by
+  unfold schedContextBindLabelAdmits at h; simpa only [hSc, hR] using h
+
+/-- **The bind's thread path under its label rule.**  Extra capability 0 names
+a notification (the notification bind, which lends nothing) or a thread; on the
+thread path a context heading a stack is bound only where its label flows to
+the thread (`schedContextBindLabelAdmits`), and is refused `flowDenied`
+otherwise, before the bind reads or writes anything else.  A context heading
+no stack, and every refusal the resolution itself answers, runs the
+capability-only arm `k` as it is. -/
+@[inline] def schedContextBindLabelGate (ctx : LabelingContext) (xc : Nat)
+    (tid : SeLe4n.ThreadId) (scId : SeLe4n.ObjId) (k : Kernel Unit) : Kernel Unit :=
+  fun st =>
+    match resolveSchedContextBindNotificationCode tid (schedContextBindArgsOf st tid xc) st with
+    | _ + 1 => k st
+    | 0 =>
+      match resolveSchedContextBindThread tid (schedContextBindArgsOf st tid xc) st with
+      | .error _ => k st
+      | .ok vT => if schedContextBindLabelAdmits ctx st scId vT.val then k st else .error .flowDenied
+
+/-- A success through the label gate is a success of the arm. -/
+theorem schedContextBindLabelGate_ok {ctx : LabelingContext} {xc : Nat} {tid : SeLe4n.ThreadId}
+    {scId : SeLe4n.ObjId} {k : Kernel Unit} {st : SystemState} {r : Unit × SystemState}
+    (h : schedContextBindLabelGate ctx xc tid scId k st = .ok r) : k st = .ok r := by
+  unfold schedContextBindLabelGate at h
+  repeat' split at h
+  all_goals first | exact h | cases h
+
+/-- **The gate decides the bound thread's flow**: a gate that runs the arm on
+the thread path has read `schedContextBindLabelAdmits` true of the thread the
+resolution answers. -/
+theorem schedContextBindLabelGate_admits {ctx : LabelingContext} {xc : Nat}
+    {tid : SeLe4n.ThreadId} {scId : SeLe4n.ObjId} {k : Kernel Unit} {st : SystemState}
+    {r : Unit × SystemState} {vT : SeLe4n.ValidThreadId}
+    (h : schedContextBindLabelGate ctx xc tid scId k st = .ok r)
+    (hN : resolveSchedContextBindNotificationCode tid (schedContextBindArgsOf st tid xc) st = 0)
+    (hT : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid xc) st = .ok vT) :
+    schedContextBindLabelAdmits ctx st scId vT.val = true := by
+  unfold schedContextBindLabelGate at h
+  simp only [hN, hT] at h
+  cases hA : schedContextBindLabelAdmits ctx st scId vT.val with
+  | true => rfl
+  | false => simp [hA] at h
+
 /-- **The flow gates of the two capability-only service arms.**  The service
 query reads the registration its endpoint records, and the revoke removes it,
 so each is a read or a write of the endpoint its extra capability 0 names
@@ -5931,7 +6061,9 @@ resolution (`tcbBindNotificationArm`): a bind is refused `flowDenied` unless
 the notification's and the thread's labels flow both ways.  Every other arm, and a
 capability naming no object (which each arm refuses itself), runs the
 capability-only arm `k` as it is; `dispatchCapabilityOnlyChecked_ok` is the bridge
-back to `k` for a success. -/
+back to `k` for a success.  The bind's thread path is gated the same way by its
+label rule (`schedContextBindLabelGate`), which reads only the context's head
+and two static labels. -/
 def dispatchCapabilityOnlyChecked (ctx : LabelingContext) (sid : SyscallId) (xc : Nat)
     (tid : SeLe4n.ThreadId) (cap : Capability) (k : Kernel Unit) : Kernel Unit :=
   match sid with
@@ -5948,6 +6080,10 @@ def dispatchCapabilityOnlyChecked (ctx : LabelingContext) (sid : SyscallId) (xc 
   | .tcbBindNotification =>
     match cap.target with
     | .object tcbObjId => tcbBindNotificationArm (bindNotificationChecked ctx) tid xc tcbObjId
+    | _ => k
+  | .schedContextBind =>
+    match cap.target with
+    | .object scId => schedContextBindLabelGate ctx xc tid scId k
     | _ => k
   | _ => k
 
@@ -5997,7 +6133,7 @@ theorem dispatchCapabilityOnlyChecked_ok {ctx : LabelingContext} {decoded : Sysc
     unfold dispatchCapabilityOnly at hC
     rw [hS] at hC
     cases hT : cap.target <;> rw [hT] at h hC <;> simp only [Option.some.injEq] at hC <;>
-      subst hC <;> try exact h
+      subst hC <;> first | exact h | exact schedContextBindLabelGate_ok h | skip
   · simp only [serviceEndpointArm] at h ⊢
     cases hR : resolveServiceEndpoint .serviceRevoke tid decoded.msgInfo.extraCaps st with
     | error e => simp only [hR] at h; cases h
@@ -6018,15 +6154,17 @@ theorem dispatchCapabilityOnlyChecked_ok {ctx : LabelingContext} {decoded : Sysc
       · simp [serviceQueryStaged, lookupServiceChecked, hA] at h
   · exact tcbBindNotificationArm_ok_of_bind_ok (fun _ _ _ _ hB => bindNotificationChecked_ok hB) h
 
-/-- Every arm but the two service arms and the notification bind is ungated. -/
+/-- Every arm but the two service arms and the two binds is ungated. -/
 @[simp] theorem dispatchCapabilityOnlyChecked_of_not_service (ctx : LabelingContext) {sid : SyscallId}
     (xc : Nat) (tid : SeLe4n.ThreadId) (cap : Capability) (k : Kernel Unit)
-    (hQ : sid ≠ .serviceQuery) (hR : sid ≠ .serviceRevoke) (hB : sid ≠ .tcbBindNotification) :
+    (hQ : sid ≠ .serviceQuery) (hR : sid ≠ .serviceRevoke) (hB : sid ≠ .schedContextBind)
+    (hN : sid ≠ .tcbBindNotification) :
     dispatchCapabilityOnlyChecked ctx sid xc tid cap k = k := by
   unfold dispatchCapabilityOnlyChecked
   split
   · exact absurd rfl hQ
   · exact absurd rfl hR
+  · exact absurd rfl hN
   · exact absurd rfl hB
   · rfl
 
@@ -6039,14 +6177,6 @@ only `Send` or `Call` did not issue (`Syscall.wordSendBlocks`) to an endpoint
 with no receiver waiting drops the message, and `NBRecv` or
 `NBWait` with nothing to take returns at once with `0` in the badge register
 (`doNBRecvFailedTransfer`). -/
-
-/-- **The syscall word the caller trapped with**: its saved `x7`
-(`arm64DefaultLayout.syscallNumReg`); `0`, which names no syscall, for a
-caller with no TCB. -/
-@[inline] def callerSyscallWord (st : SystemState) (tid : SeLe4n.ThreadId) : UInt64 :=
-  match st.getTcb? tid with
-  | some t => SeLe4n.readRegWord t.registerContext SeLe4n.arm64DefaultLayout.syscallNumReg
-  | none => 0
 
 /-- **seL4's `sendIPC` with `blocking = false` on an endpoint no receiver
 waits on**: the message is dropped and nothing is written.  Asked only once
@@ -6184,20 +6314,10 @@ passes (`notificationWaitCrossCoreDispatchChecked`).  A receive denied that
 flow does not complete the signal: it receives on the endpoint as if the
 notification were idle, so the receiver learns nothing of the notification
 (`receiveCompletesSignal_lowEquivalent`).  seL4-MCS's
-`maybeDonateSchedContext` / `maybeReturnSchedContext` move a context bound to
-the notification (`Notification.schedContext`, which `.schedContextBind` on a
-notification capability sets).  The receive does not move it yet: the donation
-and its return are the next cut of WS-SX SX7, and until it lands a receive that
-completes a signal leaves the notification's context where it is. -/
-
-/-- **The notification bound to `tid`** (`TCB.boundNotification`), as the id
-its code names; `⟨0⟩` for a thread with none, which a receive never reads
-(`receiveCompletesSignal` is `false` there). -/
-@[inline] def receiverBoundNotification (st : SystemState) (tid : SeLe4n.ThreadId) :
-    SeLe4n.ObjId :=
-  match st.getTcb? tid with
-  | some t => ⟨t.boundNotificationCode - 1⟩
-  | none => ⟨0⟩
+`maybeDonateSchedContext` moves a context bound to the notification
+(`Notification.schedContext`, which `.schedContextBind` on a notification
+capability sets) to a receiver that holds none: `completeSignalArm` donates it
+after the word is taken (WS-SX SX8.2). -/
 
 /-- **seL4-MCS `receiveIPC`'s first test**: the receiver has a bound
 notification, it is active (holds a pending word, seL4's `NtfnState_Active`),
@@ -6215,7 +6335,17 @@ and the notification's label flows to the receiver's. -/
 
 /-- **seL4's `completeSignal` on the receiver**: the bound notification's word
 consumed and written to the badge register (`x0`), every other register as it
-was.  The consumption is the one a `Wait` on an active notification performs
+was, and then seL4-MCS's `maybeDonateSchedContext`: a context bound to the
+notification and to no thread is donated to a receiver holding none
+(`maybeDonateSchedContext`, the bind's ok-state, the receiver's `.bound`
+binding with the notification link kept), under the checked kernel's
+context-label check (`maybeDonateSchedContextFlowing`): the notification's
+context is lent only to a receiver the context's label flows to.  A wait that finds no word blocks,
+and then, as seL4-MCS's `receiveSignal` does, returns the notification's context
+where it is the waiter's own (`maybeReturnSchedContext`: seL4's writes and the
+purge under seL4's guard, the receive's return; `isActive` and the donation
+origin are kept).  The consumption is the one a
+`Wait` on an active notification performs
 (`notificationWaitCrossCoreDispatchChecked`), so a receive and a wait that
 take a notification's word ask one transition. -/
 @[inline] def completeSignalArm (ctx : LabelingContext) (tid : SeLe4n.ThreadId)
@@ -6223,9 +6353,9 @@ take a notification's word ask one transition. -/
   fun st =>
     match notificationWaitCrossCoreDispatchChecked ctx notifId tid executingCore st with
     | (st', .ok (some badge)) =>
-        .ok ((), Architecture.writeReturnFrameToTcb st' tid
-          (Architecture.badgeReturnFrame st' tid badge))
-    | (st', .ok none) => .ok ((), st')
+        .ok ((), maybeDonateSchedContextFlowing ctx (Architecture.writeReturnFrameToTcb st' tid
+          (Architecture.badgeReturnFrame st' tid badge)) notifId tid)
+    | (st', .ok none) => .ok ((), maybeReturnSchedContext st' notifId tid)
     | (_, .error e) => .error e
 
 /-- A wait that consumed a badge moved no scheduler state: the consumption is a
@@ -6310,7 +6440,9 @@ theorem completeSignalArm_consumes {ctx : LabelingContext} {tid : SeLe4n.ThreadI
       notificationWaitCrossCoreDispatchChecked ctx (receiverBoundNotification st tid) tid c st =
         (st1, .ok (some badge)) ∧
       st1.scheduler = st.scheduler ∧
-      st' = Architecture.writeReturnFrameToTcb st1 tid (Architecture.badgeReturnFrame st1 tid badge) := by
+      st' = maybeDonateSchedContextFlowing ctx
+        (Architecture.writeReturnFrameToTcb st1 tid (Architecture.badgeReturnFrame st1 tid badge))
+        (receiverBoundNotification st tid) tid := by
   unfold completeSignalArm at h
   generalize hW : notificationWaitCrossCoreDispatchChecked ctx (receiverBoundNotification st tid) tid c st = w at h
   obtain ⟨st1, r⟩ := w
@@ -6338,6 +6470,21 @@ theorem completeSignalArm_consumes {ctx : LabelingContext} {tid : SeLe4n.ThreadI
         | some ntfn =>
           rw [hN] at hPend
           exact notificationWaitOnCore_not_blocked_of_pending hN hPend hI
+
+/-- **The completion's scheduler change is the donation's**: the wait's
+consumption keeps the scheduler (`notificationWaitOnCore_consumed_scheduler_eq`,
+which stays the wait's own statement) and so does the badge frame, so the arm's
+state is the checked donation (`maybeDonateSchedContextFlowing`) over a state
+whose scheduler is the entry state's.  Every scheduler write the arm makes is the
+bind's. -/
+theorem completeSignalArm_scheduler_of_donation {ctx : LabelingContext} {tid : SeLe4n.ThreadId}
+    {c : Concurrency.CoreId} {st st' : SystemState}
+    (hSig : receiveCompletesSignal ctx st tid = true)
+    (h : completeSignalArm ctx tid (receiverBoundNotification st tid) c st = .ok ((), st')) :
+    ∃ stD, stD.scheduler = st.scheduler ∧
+      st' = maybeDonateSchedContextFlowing ctx stD (receiverBoundNotification st tid) tid := by
+  obtain ⟨st1, badge, -, hS, rfl⟩ := completeSignalArm_consumes hSig h
+  exact ⟨_, (Architecture.writeReturnFrameToTcb_scheduler_eq _ _ _).trans hS, rfl⟩
 
 /-- A receive whose notification → receiver flow is denied does not complete
 the signal, whatever the notification holds. -/
@@ -6477,24 +6624,32 @@ def receiveResolvedArm (ctx : LabelingContext) (decoded : SyscallDecodeResult) (
         -- recorded on the message.  The endpoint→receiver flow is gated
         -- above, so the *unchecked* per-core WithCaps receive is correct
         -- here for the same reason the bare one was.
-        match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with
+        -- seL4-MCS `receiveIPC`: a blocking receive that did not complete its
+        -- bound notification returns that notification's context first, before
+        -- the endpoint is looked at (`maybeReturnSchedContext`, WS-SX SX8.2), so
+        -- a passive server can then be donated a caller's context.
+        match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore
+            (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid)
+            with
         | (st', .ok (dequeued, summary, _sgi)) =>
             -- **WS-OD OD3.6**: the checked twin of the unchecked arm's
-            -- `maybeDonateSchedContext` step, and the *same* definition.  No
-            -- extra flow gate is owed: the donation writes only
-            -- `schedContextBinding` and `SchedContext.boundThread`, both of
-            -- which `projectKernelObject` erases, so it is invisible to every
-            -- observer (`returnDonatedSchedContext_preserves_projection` makes
-            -- the same argument for the hand-off's other direction); and the
-            -- endpoint→receiver flow this donation follows is gated above.
+            -- `maybeDonateSchedContext` step, and the *same* definition, at
+            -- the lend admission of the caller it takes (WS-SX ruling (u)):
+            -- the call's context is lent only where the caller's label flows
+            -- to the context's (`receiveLendAdmits`, the call's admission of
+            -- the send queue's head on the state the arm is handed); otherwise
+            -- the receive goes on and lends nothing, as at the call
+            -- rendezvous.  The admission reads that caller's own binding and
+            -- static labels alone (`callLendAdmits_congr`).
             --
-            -- **WS-OD OD3.14**: likewise the priority half, and for the same
-            -- reason no extra gate is owed -- `projectKernelObject` strips
+            -- **WS-OD OD3.14**: the priority half runs on every `Call`
+            -- rendezvous, lent or not -- `projectKernelObject` strips
             -- `pipBoost` (AJ2-B), and the run-queue re-bucketing the walk
             -- performs is bounded by `receiveRendezvousHandoffWriteSet`,
             -- exactly as the flow-checked `.call` arm's own walk is bounded
             -- by `endpointCallLiveWriteSet`.
-            match applyReceiveRendezvousHandoff st' tid dequeued executingCore with
+            match applyReceiveRendezvousHandoff st' tid dequeued executingCore
+                (receiveLendAdmits ctx st epId) with
             | .error e => .error e
             | .ok stDon =>
               -- WS-RA RA.B.6: stage the non-blocking consume's delivery (the
@@ -6598,8 +6753,8 @@ theorem replyRecvCompletesSignalArm_cases {ctx : LabelingContext}
           notificationWaitCrossCoreDispatchChecked ctx (receiverBoundNotification st1 tid) tid c
             st1 = (st2, .ok (some badge)) ∧
           st2.scheduler = st1.scheduler ∧
-          st' = Architecture.writeReturnFrameToTcb st2 tid
-            (Architecture.badgeReturnFrame st2 tid badge)) := by
+          st' = maybeDonateSchedContextFlowing ctx (Architecture.writeReturnFrameToTcb st2 tid
+            (Architecture.badgeReturnFrame st2 tid badge)) (receiverBoundNotification st1 tid) tid) := by
   obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_split h
   refine ⟨st1, hR, ?_⟩
   rcases hOr with hEq | ⟨hSig, hRdy, hC⟩
@@ -6901,16 +7056,10 @@ def dispatchWithCapChecked (ctx : LabelingContext)
           .ok ((), Architecture.nbRecvFailedTransfer st tid)
         else
         -- WS-SM SM6.B: per-core checked cross-core wait (gates notification→waiter
-        -- flow, then deschedules the caller on its own core).
-        match notificationWaitCrossCoreDispatchChecked ctx notifId tid executingCore st with
-        | (st', .ok (some badge)) =>
-            -- WS-RA RA.B.5: stage the consumed badge (the checked twin of the
-            -- unchecked arm's staging; the flow gate already admitted
-            -- notification → waiter, which is the authority for the value).
-            .ok ((), Architecture.writeReturnFrameToTcb st' tid
-              (Architecture.badgeReturnFrame st' tid badge))
-        | (st', .ok none) => .ok ((), st')
-        | (_, .error e) => .error e
+        -- flow, then deschedules the caller on its own core); the consumed badge
+        -- is staged by `completeSignalArm`, the one body the wait and the receive
+        -- that completes its bound notification share (WS-SX SX8.2).
+        completeSignalArm ctx tid notifId executingCore st
     | _ => fun _ => .error (.invalidCapability 0)
   -- V2-C/T6-I: ReplyRecv — checked for both reply and receive legs
   | .replyRecv =>
@@ -6969,8 +7118,12 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                 -- WS-RA RA.B.6: stage the receive leg's delivery (the checked
                 -- twin of the unchecked arm's staging; the receive leg's own
                 -- flow gate governs the consumed message).
+                -- WS-SX ruling D28: the receive leg lends a taken `Call`'s
+                -- context only at the call's admission of the send queue's head
+                -- (`receiveLendAdmits`), read on the state the arm is handed,
+                -- as the `.receive` arm reads it.
                 match replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label msg
-                replyGrant executingCore st with
+                replyGrant executingCore st (receiveLendAdmits ctx st epId) with
                 -- PR #873 round 7: the checked twin of the unchecked arm's
                 -- WithCaps receive leg — the endpoint→receiver flow is gated
                 -- above, so the *unchecked* per-core WithCaps receive inside
@@ -7680,7 +7833,8 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .cspaceRevoke, .untypedRetype, .tcbSetSpace,
             .pageTableMap, .pageTableUnmap, .yield, .schedContextConsumed,
             .schedContextYieldTo, .irqHandlerAck, .irqControlGet,
-            .irqHandlerSetNotification, .irqHandlerClear] : List SyscallId) := by
+            .irqHandlerSetNotification, .irqHandlerClear,
+            .schedContextUnbindObject] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 -- ============================================================================
@@ -8150,6 +8304,38 @@ theorem dispatchWithCapChecked_reply_populates_msg
 -- the point: a reader that computes the right word and does not stage it hands
 -- back the caller's own preloaded `x0`.
 
+/-- **A donation leaves every return frame**: it writes no register
+(`maybeDonateSchedContext_registersAgree`). -/
+theorem readReturnFrame_maybeDonateSchedContext (st : SystemState) (n : SeLe4n.ObjId)
+    (tid t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    Architecture.readReturnFrame (maybeDonateSchedContext st n tid) t =
+      Architecture.readReturnFrame st t := by
+  have h := maybeDonateSchedContext_registersAgree st n tid hInv t
+  unfold Architecture.readReturnFrame
+  cases h1 : (maybeDonateSchedContext st n tid).getTcb? t with
+  | none =>
+    rw [h1] at h
+    cases h2 : st.getTcb? t with
+    | none => rfl
+    | some _ => rw [h2] at h; cases h
+  | some a =>
+    rw [h1] at h
+    cases h2 : st.getTcb? t with
+    | none => rw [h2] at h; cases h
+    | some b =>
+      rw [h2] at h
+      simp only [Option.map_some, Option.some.injEq] at h
+      simp only [h]
+
+/-- **A checked donation leaves every return frame**, as the donation does. -/
+theorem readReturnFrame_maybeDonateSchedContextFlowing (ctx : LabelingContext) (st : SystemState)
+    (n : SeLe4n.ObjId) (tid t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    Architecture.readReturnFrame (maybeDonateSchedContextFlowing ctx st n tid) t =
+      Architecture.readReturnFrame st t :=
+  maybeDonateSchedContextFlowing_induct
+    (fun s => Architecture.readReturnFrame s t = Architecture.readReturnFrame st t) ctx st n tid
+    rfl (readReturnFrame_maybeDonateSchedContext st n tid t hInv)
+
 /-- RA.B.8, `.notificationWait` (`.badge`): the arm's badge-consume path
 stages exactly the consumed badge, and the boundary read recovers it. -/
 theorem dispatchArm_notificationWait_matches_returnShape
@@ -8166,12 +8352,14 @@ theorem dispatchArm_notificationWait_matches_returnShape
     ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
         = Architecture.badgeReturnFrame st1 tid badge := by
-  refine ⟨rfl,
-    Architecture.writeReturnFrameToTcb st1 tid (Architecture.badgeReturnFrame st1 tid badge),
-    ?_, ?_⟩
-  · simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hDispatch,
+  refine ⟨rfl, maybeDonateSchedContextFlowing ctx
+    (Architecture.writeReturnFrameToTcb st1 tid (Architecture.badgeReturnFrame st1 tid badge))
+    notifId tid, ?_, ?_⟩
+  · simp [dispatchWithCapChecked, dispatchCapabilityOnly, completeSignalArm, hSyscall, hTarget, hDispatch,
       waitFindsNothing_of_consumed _ hDispatch]
-  · exact Architecture.readReturnFrame_writeReturnFrame st1 tid _ tcb hTcb hObjInv
+  · rw [readReturnFrame_maybeDonateSchedContextFlowing _ _ _ _ _
+      (writeReturnFrameToTcb_preserves_objects_invExt _ _ _ hObjInv)]
+    exact Architecture.readReturnFrame_writeReturnFrame st1 tid _ tcb hTcb hObjInv
 
 /-- RA.B.8, `.serviceQuery` (`.word`): the arm stages the resolved
 registration's `ServiceId` — the answer it used to discard — and, the caller
@@ -8296,7 +8484,9 @@ theorem dispatchArm_receive_matches_returnShape
     -- PR #873 round 6: the arm runs the WithCaps per-core receive, so the
     -- hypothesis names that transition and the staged `extraCaps` is the
     -- transfer summary's installed count rather than a hardcoded zero.
-    (hDispatch : endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st
+    -- WS-SX SX8.2: the receive runs on the state seL4's return leaves.
+    (hDispatch : endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore
+        (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid)
         = (st', .ok (next, summary, sgi)))
     -- WS-OD OD3.6: the arm's `maybeDonateSchedContext` step runs between the
     -- receive and the staging, so the boundary read is of the state it leaves.
@@ -8308,7 +8498,7 @@ theorem dispatchArm_receive_matches_returnShape
     -- walk writes `pipBoost` and run-queue buckets, neither of which is a
     -- register context, so the frame conclusion is unchanged.
     (hDon : applyReceiveRendezvousHandoff st' tid next executingCore
-        = .ok stDon)
+        (receiveLendAdmits ctx st epId) = .ok stDon)
     (hTcb : stDon.getTcb? tid = some tcb)
     (hReady : tcb.ipcState = .ready)
     (hMsg : tcb.pendingMessage = some msg)
@@ -8350,7 +8540,7 @@ theorem dispatchArm_replyRecv_matches_returnShape
     (hBody : replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label
         { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
           badge := replyBadge }
-        replyGrant executingCore st = .ok (summary, stB))
+        replyGrant executingCore st (receiveLendAdmits ctx st epId) = .ok (summary, stB))
     (hTcb : stB.getTcb? tid = some tcb)
     (hReady : tcb.ipcState = .ready)
     (hMsg : tcb.pendingMessage = some msg)
@@ -8404,15 +8594,17 @@ theorem dispatchArm_replyRecv_signal_matches_returnShape
     Architecture.syscallReturnShape .replyRecv = .message ∧
     ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid = Architecture.badgeReturnFrame st2 tid badge := by
-  refine ⟨rfl,
-    Architecture.writeReturnFrameToTcb st2 tid (Architecture.badgeReturnFrame st2 tid badge),
-    ?_, ?_⟩
+  refine ⟨rfl, maybeDonateSchedContextFlowing ctx
+    (Architecture.writeReturnFrameToTcb st2 tid (Architecture.badgeReturnFrame st2 tid badge))
+    (receiverBoundNotification st1 tid) tid, ?_, ?_⟩
   · simp only [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow,
       Bool.not_true, Bool.false_eq_true, ↓reduceIte, hXc, hResolve, hReplyFlow, hSig]
     unfold replyRecvCompletesSignalArm
     rw [hReply]
     simp only [hSig1, hReady1, Bool.and_self, ↓reduceIte, completeSignalArm, hWait]
-  · exact Architecture.readReturnFrame_writeReturnFrame st2 tid _ tcb hTcb hObjInv
+  · rw [readReturnFrame_maybeDonateSchedContextFlowing _ _ _ _ _
+      (writeReturnFrameToTcb_preserves_objects_invExt _ _ _ hObjInv)]
+    exact Architecture.readReturnFrame_writeReturnFrame st2 tid _ tcb hTcb hObjInv
 
 /-- RA.B.8, `.call` (`.message`) — **through the reply arm**, per §3.5: a
 successful call leaves the caller `blockedOnReply` in every ordering, so
@@ -8643,9 +8835,13 @@ theorem dispatchWithCapChecked_layer2_decode_pure
     that the caller can directly reference. The 14 arms fall into THREE
     substantiveness tiers:
 
-    **Fully substantive (6/14)** — proof uses only observability
+    **Fully substantive (7/14)** — proof uses only observability
     hypotheses, store invariants and pre-proven frame lemmas; NO abstract
     closures:
+    - `.schedContextBind` → `schedContextBind_preserves_projection` (AK6F.14,
+       `InformationFlow/PerCoreSchedulerNonInterference.lean`): the bind's
+       per-core frame `schedContextBind_lowEquivalent` read at the boot core,
+       whose view is the single-core projection.
     - `.cspaceDelete` → `cspaceDeleteSlot_preserves_projection`
     - `.serviceRevoke` → `revokeServiceChecked_preserves_projection`; the
        admitted revoke removes the registration the invoked endpoint records
@@ -8677,14 +8873,11 @@ theorem dispatchWithCapChecked_layer2_decode_pure
     - `.tcbSetMCPriority` → `setMCPriorityOnCore_preserves_projection` (WS-SM
       SM8.B; same reroute) mirror structure to setPriorityOnCore.
 
-    **Closure-form (6/14)** — theorem takes `hProjEq` abstract closure;
+    **Closure-form (5/14)** — theorem takes `hProjEq` abstract closure;
     body is `hProjEq st' hStep`. NOT tautological for callers — each has
     DOCUMENTED FRAME LEMMAS letting a caller discharge `hProjEq` in
     ≈25-60 LOC using substantively-proven building blocks. Listed here
     WITH their discharge recipes:
-    - `.schedContextBind` → `schedContextBind_preserves_projection` (AK6F.14);
-      discharge via `objects_insert_preserves_projection_high` × 2 +
-      `schedContextBind_frame_runQueue_rebucket`.
     - `.schedContextUnbind` → `schedContextUnbind_preserves_projection` (AK6F.15);
       discharge via `projectState_scheduler_current_cleared_when_high` +
       `removeRunnable_preserves_projection` + `objects_insert_preserves_projection_high` × 2 +
@@ -8706,12 +8899,10 @@ theorem dispatchWithCapChecked_layer2_decode_pure
     `objects_insert_preserves_projection_high`, `.donated` via
     `returnDonatedSchedContext` preservation).
 
-    Substantive closure of the 6 closure-form theorems is estimated at
+    Substantive closure of the 5 closure-form theorems is estimated at
     ≈300 LOC aggregate, tracked as continuation work AK6F.20b. Lean
     4.28.0's `split`/`split_ifs` interaction with `Except.ok` on
-    deeply-nested `match`-based Bool conditions (e.g., `schedContextBind`
-    has 5 nested matches before the first success-arm mutation)
-    currently prevents clean destructuring; the frame lemmas above are
+    deeply-nested `match`-based Bool conditions currently prevents clean destructuring; the frame lemmas above are
     the building blocks that a future patch will compose once a stable
     destructuring idiom is available.
 
@@ -8724,7 +8915,8 @@ theorem dispatchWithCapChecked_layer2_decode_pure
     | `.vspaceUnmap` | `vspaceUnmapPage_preserves_projection` (Operations.lean:797) |
     | `.serviceRevoke` | reduces to `cspaceRevoke_preserves_projection` (Operations.lean:1000) through the orchestrator |
     | `.serviceQuery` | read-only (`lookupServiceByRecordedRegistration` does not mutate state) |
-    | `.schedContextConfigure/Bind/Unbind` | `storeObject_preserves_projection` / `objects_insert_preserves_projection_high` (Operations.lean) at non-observable SchedContext target + TCB/RunQueue field preservation |
+    | `.schedContextBind` | **`schedContextBind_preserves_projection`** (PerCoreSchedulerNonInterference.lean), at a hidden context and thread |
+    | `.schedContextConfigure/Unbind` | `storeObject_preserves_projection` / `objects_insert_preserves_projection_high` (Operations.lean) at non-observable SchedContext target + TCB/RunQueue field preservation |
     | `.tcbSetIPCBuffer` | **`setIPCBufferOp_preserves_projection`** (Operations.lean — AK6-F.2b, v0.29.10) |
     | `.tcbSetPriority/SetMCPriority` | `objects_insert_preserves_projection_high` at non-observable TCB/SC — uses the universal direct-insert frame lemma (Operations.lean — AK6-F Step A, v0.29.10) |
     | `.tcbSetAffinity` | **`setThreadCpuAffinityOnCore_preserves_projection`** (Operations.lean — WS-SM SM8.B, review round 42) at non-observable target — the **live** wrapper, which round 37 rerouted this arm to; the boot-core `setThreadCpuAffinityOp_preserves_projection` (SM5.H.4) is its `bootCoreId` instance, reachable through `setThreadCpuAffinityOp_eq_onCore_state` but not needed here.  The affinity write is `cpuAffinity`-erased (invisible); the run-queue migration's write, at the executing core rather than a pinned boot core, preserves the filtered `projectRunnable` for a high thread (`migrateRunQueueOnAffinityChange_preserves_projection`); the replenishment migration is invisible when the target's bound context is non-observable (`migrateSchedContextReplenishment_preserves_projection`; the projection keeps each context's release core, WS-ZA ZA6.30). |
@@ -9081,7 +9273,8 @@ theorem dispatchWithCapChecked_declassifySignal_default_no_downgrade
       sgi hDefault hPair
     simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
     obtain ⟨-, hSt'⟩ := hStep
-    rw [← hSt']
+    -- seL4's `sendSignal` donation after the record writes no audit entry.
+    rw [← hSt', donateToSignalledFlowingGeneric_declassificationAuditLog_eq]
     exact hTrail
 
 /-- **WS-SM SM9.A.10: the live `.auditRead` arm routes to `auditReadFromCore`,
@@ -9623,12 +9816,17 @@ theorem dispatchWithCapChecked_receive_delegates
       -- a send that parked before its receiver arrived delivers its capabilities
       -- too, and the staged `extraCaps` is the summary's installed count.
       -- WS-OD OD3.6: including the rendezvous donation, which the checked arm
-      -- performs with the *same* definition and behind no extra gate -- the
-      -- delegation claim is about the whole arm, so it names every step of it.
-      (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with
+      -- performs with the *same* definition at the dequeued caller's lend
+      -- admission -- the delegation claim is about the whole arm, so it names
+      -- every step of it.
+      -- WS-SX SX8.2: seL4-MCS's `maybeReturnSchedContext` first, on a blocking
+      -- receive with a bound notification.
+      (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore
+          (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid)
+          with
        | (st', .ok (dequeued, summary, _)) =>
            (match applyReceiveRendezvousHandoff st' tid dequeued
-                    executingCore with
+                    executingCore (receiveLendAdmits ctx st epId) with
             | .error e => .error e
             | .ok stDon =>
                 .ok ((), Architecture.stageDeliveredMessage
@@ -9829,18 +10027,21 @@ def syscallDelegates : SyscallId → Prop
             completeSignalArm ctx tid (receiverBoundNotification st tid) executingCore st else
           -- WS-SX SX7.2: `NBRecv` with no sender waiting returns at once.
           if receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st epId then .ok ((), Architecture.nbRecvFailedTransfer st tid) else
-          (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore st with
+          -- WS-SX SX8.2: seL4-MCS's `maybeReturnSchedContext` first.
+          (match endpointReceiveDualWithCapsOnCore epId tid replyIdOpt executingCore
+              (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st tid)
+              with
            -- WS-RA RA.B.6: the arm stages the non-blocking consume's delivery
            -- into the caller's return frame.  PR #873 round 6: with the receive
            -- routed through the WithCaps transition, the staged `extraCaps` is
            -- the transfer summary's installed count rather than a hardcoded 0.
            -- WS-OD OD3.6: and the rendezvous donation runs between them, in the
-           -- checked arm as in the unchecked one and behind no extra gate.  The
-           -- obligation names it: a delegation claim that omitted a step would
-           -- be a claim about a different program.
+           -- checked arm as in the unchecked one, at the dequeued caller's lend
+           -- admission.  The obligation names it: a delegation claim that omitted
+           -- a step would be a claim about a different program.
            | (st', .ok (dequeued, summary, _)) =>
                (match applyReceiveRendezvousHandoff st' tid dequeued
-                        executingCore with
+                        executingCore (receiveLendAdmits ctx st epId) with
                 | .error e => .error e
                 | .ok stDon =>
                     .ok ((), Architecture.stageDeliveredMessage
@@ -10113,6 +10314,32 @@ def syscallDelegates : SyscallId → Prop
         decoded.syscallId = .irqHandlerClear →
         cap.target = .irqHandler line →
         dispatchWithCapChecked ctx decoded tid executingCore gate cap = irqHandlerClear executingCore line
+  -- WS-SX SX8.3: the unbind-object arm IS the bind's reading of extra
+  -- capability 0, then the notification or the thread unbind-object.
+  | .schedContextUnbindObject =>
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+        (gate : SyscallGate) (cap : Capability) (scId : SeLe4n.ObjId),
+        decoded.syscallId = .schedContextUnbindObject →
+        cap.target = .object scId →
+        dispatchWithCapChecked ctx decoded tid executingCore gate cap = fun st =>
+          match resolveSchedContextBindNotificationCode tid
+              (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | k + 1 =>
+            match validateObjIdArg scId with
+            | .error e => .error e
+            | .ok vScId => SchedContextOps.schedContextUnbindNotificationObject vScId ⟨k⟩ st
+          | 0 =>
+            match resolveSchedContextBindThread tid
+                (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+            | .error e => .error e
+            | .ok vThreadId =>
+              match validateObjIdArg scId with
+              | .error e => .error e
+              | .ok vScId =>
+                match SchedContextOps.schedContextUnbindThreadObjectOnCore vScId
+                    vThreadId.val executingCore st with
+                | .ok (st', _) => .ok ((), st')
+                | .error e => .error e
   | _ => False
 
 /-- WS-ZA ZA4.3: the `.yield` obligation, discharged. -/
@@ -10129,6 +10356,12 @@ theorem syscallDelegates_schedContextConsumed : syscallDelegates .schedContextCo
 theorem syscallDelegates_schedContextYieldTo : syscallDelegates .schedContextYieldTo := by
   intro ctx decoded tid executingCore gate cap scId vScId st hSyscall hTarget hValid
   simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget, hValid]
+
+/-- WS-SX SX8.3: the `.schedContextUnbindObject` obligation, discharged. -/
+theorem syscallDelegates_schedContextUnbindObject : syscallDelegates .schedContextUnbindObject := by
+  intro ctx decoded tid executingCore gate cap scId hSyscall hTarget
+  funext st
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, dispatchCapabilityOnlyChecked, hSyscall, hTarget]
 
 /-- WS-ZA ZA6.32: the `.irqHandlerAck` obligation, discharged. -/
 theorem syscallDelegates_irqHandlerAck : syscallDelegates .irqHandlerAck := by

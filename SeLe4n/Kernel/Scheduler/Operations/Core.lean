@@ -100,7 +100,8 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueFrameStage.of_releaseOnlyWrite
     SystemState.RunQueueFrameStage P st st' := by
   have hS := hW.2
   refine SystemState.RunQueueFrameStage.of_tcbFrame (fun t => hA.getTcb? t) hI
-    ?_ ?_ ?_ hR hF (fun _ => .of_agreeOffReleaseLinks hA) (by rw [hW.1])
+    ?_ ?_ ?_ hR hF (fun _ => .of_agreeOffReleaseLinks hA)
+    (fun _ => .of_agreeOffReleaseLinks hA) (by rw [hW.1])
   · rw [hS]
   · rw [hS]
   · rw [hS]
@@ -116,6 +117,7 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_releaseOnlyWrite
   have hS := hW.2
   exact SystemState.RunQueueStage.of_tcbFrame (fun t => hA.getTcb? t) hI
     (by rw [hS]) (by rw [hS]) (by rw [hS]) hR hF
+    (fun _ => .of_agreeOffReleaseLinks hA)
     (fun _ => .of_agreeOffReleaseLinks hA) (by rw [hW.1])
 
 -- WS-H12c: Frame lemmas — context save/restore do not affect scheduler state.
@@ -2904,7 +2906,9 @@ It follows from the full classification (`threadStateConsistent_implies_
 threadInactiveFlagConsistent`), so it holds of the boot state too; its
 preservation across the scheduler and IPC surfaces — or the replacement of the
 stored field by the inferred one — is registered debt
-(`docs/REGISTERED_DEBT.md`, owned by WS-RR RR7.36), not a theorem of this cut.
+(`docs/REGISTERED_DEBT.md` table A, "The scheduler's dispatch and the IPC
+rendezvous do not write `TCB.threadState`"; partly discharged by WS-RR RR7.36,
+the rest with no pre-v1.0.0 owner), not a theorem of this cut.
 New code must not cite `threadStateConsistent` of a post-dispatch state. -/
 def threadInactiveFlagConsistent (st : SystemState) : Prop :=
   ∀ (oid : SeLe4n.ObjId) (tcb : TCB),

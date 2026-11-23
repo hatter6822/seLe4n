@@ -563,43 +563,61 @@ theorem schedControlConfigure_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
 /-- **The bind writes no saved register**: a context over a context, the bound
 thread's binding codes, its placement on its home queue, and the release
 placement. -/
+theorem schedContextBindPerform_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
+    {st : SystemState} {vScId : SeLe4n.ValidObjId} {vThreadId : SeLe4n.ValidThreadId}
+    (hInv : st.objects.invExt)
+    (hA : SchedContextOps.schedContextDonateAdmitted st vScId vThreadId = true) :
+    savedRegsKeptExcept W st (SchedContextOps.schedContextBindPerform st vScId vThreadId) := by
+  obtain ⟨sc, hSc, tcb, -, hT, -, hEq⟩ :=
+    SchedContextOps.schedContextBindPerform_of_donateAdmitted st vScId vThreadId hA
+  rw [hEq]
+  try dsimp only []
+  have hO : st.objects[vScId.val]? = some (.schedContext sc) :=
+    (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc
+  refine savedRegsKeptExcept.trans ?_ (.of_releaseLinks (SystemState.releasePlace_agree _ _ _))
+  split
+  · refine savedRegsKeptExcept.trans ?_
+      (.of_objects_eq (SystemState.markReschedulePendingOnCore_objects _ _))
+    refine savedRegsKeptExcept.trans ?_
+      (.of_runLinks (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _))
+    refine savedRegsKeptExcept.trans ?_ (.updateTcb _ _ _ ?_ (fun _ => rfl))
+    · exact .rewriteObject_notTcb _ hInv (fun x hx => by rw [hO] at hx; cases hx)
+        (fun x hx => by cases hx)
+    · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
+  · refine savedRegsKeptExcept.trans ?_ (.updateTcb _ _ _ ?_ (fun _ => rfl))
+    · exact .rewriteObject_notTcb _ hInv (fun x hx => by rw [hO] at hx; cases hx)
+        (fun x hx => by cases hx)
+    · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
+
+/-- **seL4-MCS `maybeDonateSchedContext` writes no saved register**: the
+identity, or the bind's perform under seL4's guard. -/
+theorem maybeDonateSchedContext_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
+    {st : SystemState} (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    savedRegsKeptExcept W st (maybeDonateSchedContext st n tid) :=
+  maybeDonateSchedContext_induct (fun a b => savedRegsKeptExcept W a b) st n tid
+    (fun _ _ => rfl) (fun _ _ _ hA => schedContextBindPerform_savedRegsKeptExcept hInv hA)
+
+/-- …so a census survives a checked donation after it: the donation or
+nothing. -/
+theorem savedRegsWrittenFree.donate {ctx : LabelingContext} {e : CoreId}
+    {base pre post : SystemState}
+    (h : savedRegsWrittenFree e base pre post) (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (hInv : post.objects.invExt) :
+    savedRegsWrittenFree e base pre (maybeDonateSchedContextFlowing ctx post n tid) :=
+  maybeDonateSchedContextFlowing_induct (fun s => savedRegsWrittenFree e base pre s) ctx post n tid
+    h (fun t => by
+      rw [maybeDonateSchedContext_savedRegsKeptExcept (W := fun _ => False) n tid hInv t id]
+      exact h t)
+
+/-- The bind is its writes under seL4's donation guard
+(`schedContextBind_ok_donate`). -/
 theorem schedContextBind_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
     {st st' : SystemState} {vScId : SeLe4n.ValidObjId} {vThreadId : SeLe4n.ValidThreadId}
     (hInv : st.objects.invExt)
     (h : SchedContextOps.schedContextBind vScId vThreadId st = .ok ((), st')) :
     savedRegsKeptExcept W st st' := by
-  unfold SchedContextOps.schedContextBind at h
-  split at h
-  · rename_i sc hSc _
-    split at h
-    · cases h
-    split at h
-    · cases h
-    split at h
-    · rename_i tcb hT
-      split at h
-      · cases h
-      split at h
-      · cases h
-        have hO : st.objects[vScId.val]? = some (.schedContext sc) :=
-          (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc
-        refine savedRegsKeptExcept.trans ?_ (.of_releaseLinks (SystemState.releasePlace_agree _ _ _))
-        split
-        · refine savedRegsKeptExcept.trans ?_
-            (.of_objects_eq (SystemState.markReschedulePendingOnCore_objects _ _))
-          refine savedRegsKeptExcept.trans ?_
-            (.of_runLinks (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _))
-          refine savedRegsKeptExcept.trans ?_ (.updateTcb _ _ _ ?_ (fun _ => rfl))
-          · exact .rewriteObject_notTcb _ hInv (fun x hx => by rw [hO] at hx; cases hx)
-              (fun x hx => by cases hx)
-          · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
-        · refine savedRegsKeptExcept.trans ?_ (.updateTcb _ _ _ ?_ (fun _ => rfl))
-          · exact .rewriteObject_notTcb _ hInv (fun x hx => by rw [hO] at hx; cases hx)
-              (fun x hx => by cases hx)
-          · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
-      all_goals cases h
-    · cases h
-  · cases h
+  obtain ⟨hA, rfl⟩ := SchedContextOps.schedContextBind_ok_donate h
+  exact schedContextBindPerform_savedRegsKeptExcept hInv hA
 
 /-- **The unbind writes no saved register**: a context over a context, the
 thread's binding codes, its bucket, the replenishment purge and the key hooks;
@@ -616,23 +634,59 @@ theorem schedContextUnbind_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
     split at h
     · cases h
     · split at h
-      · split at h
-        · cases h
-        · cases h
-          refine savedRegsKeptExcept.trans ?_ (.of_objects_eq (markKeyChangeFor_objects _ _ _))
-          refine savedRegsKeptExcept.trans ?_ (.of_objects_eq (markCandidacyGainFor_objects _ _ _))
-          refine savedRegsKeptExcept.trans ?_ (.of_releaseLinks (SchedContextOps.purgeReplenishment_agree _ _))
-          refine savedRegsKeptExcept.trans ?_
-            (.of_runLinks (SchedContextOps.schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _))
-          refine savedRegsKeptExcept.trans ?_ (.updateTcb _ _ _ ?_ (fun _ => rfl))
-          · exact savedRegsKeptExcept.trans (.of_objects_eq rfl) (.rewriteObject_notTcb _ hInv
-              (fun x hx => by rw [hO] at hx; cases hx) (fun x hx => by cases hx))
-          · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
+      · cases h
+        refine savedRegsKeptExcept.trans ?_ (.of_objects_eq (markKeyChangeFor_objects _ _ _))
+        refine savedRegsKeptExcept.trans ?_ (.of_objects_eq (markCandidacyGainFor_objects _ _ _))
+        refine savedRegsKeptExcept.trans ?_ (.of_releaseLinks (SchedContextOps.purgeReplenishment_agree _ _))
+        refine savedRegsKeptExcept.trans ?_
+          (.of_runLinks (SchedContextOps.schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _))
+        refine savedRegsKeptExcept.trans ?_ (.updateTcb _ _ _ ?_ (fun _ => rfl))
+        · exact savedRegsKeptExcept.trans (.of_objects_eq rfl) (.rewriteObject_notTcb _ hInv
+            (fun x hx => by rw [hO] at hx; cases hx) (fun x hx => by cases hx))
+        · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
       · cases h
         refine savedRegsKeptExcept.trans ?_ (.of_releaseLinks (SchedContextOps.purgeReplenishment_agree _ _))
         exact .rewriteObject_notTcb _ hInv (fun x hx => by rw [hO] at hx; cases hx)
           (fun x hx => by cases hx)
   · cases h
+
+/-- **seL4's `maybeReturnSchedContext` writes no saved register**: it clears
+two binding codes and a context's thread link. -/
+theorem maybeReturnSchedContext_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
+    {st : SystemState} (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    savedRegsKeptExcept W st (maybeReturnSchedContext st n tid) := fun t _ => by
+  unfold SystemState.savedRegs SystemState.getTcb?
+  rcases maybeReturnSchedContext_objects st n tid hInv t.toObjId with
+    e | ⟨y, hy, e⟩ | ⟨sc, sc', hs, e⟩
+  · rw [e]
+  · rw [e, hy] <;> rfl
+  · rw [e, hs]
+
+/-- …so a census survives a return after it. -/
+theorem savedRegsWrittenFree.giveBack {e : CoreId} {base pre post : SystemState}
+    (h : savedRegsWrittenFree e base pre post) (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (hInv : post.objects.invExt) :
+    savedRegsWrittenFree e base pre (maybeReturnSchedContext post n tid) := fun t => by
+  rw [maybeReturnSchedContext_savedRegsKeptExcept (W := fun _ => False) n tid hInv t id]
+  exact h t
+
+/-- **seL4 `receiveIPC`'s return writes no saved registers**: it clears two
+binding codes and a context's thread link. -/
+theorem receiveReturnSchedContext_savedRegs (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (t : SeLe4n.ThreadId) :
+    (receiveReturnSchedContext blocks st tid).savedRegs t = st.savedRegs t := by
+  unfold SystemState.savedRegs SystemState.getTcb?
+  rcases receiveReturnSchedContext_objects blocks st tid hInv t.toObjId with
+    e | ⟨y, hy, e⟩ | ⟨sc, sc', hs, e⟩
+  · rw [e]
+  · rw [e, hy] <;> rfl
+  · rw [e, hs]
+
+/-- …so a census survives the return before the receive. -/
+theorem savedRegsWrittenFree.receiveReturn {e : CoreId} {base : SystemState} (blocks : Bool)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    savedRegsWrittenFree e base st (receiveReturnSchedContext blocks st tid) := fun t =>
+  .inl (receiveReturnSchedContext_savedRegs blocks st tid hInv t)
 
 /-- **A prefix the executing core's scheduling point ends**: the prefix writes
 only threads free at `base` and keeps or clears the core's slot, so the outgoing
@@ -712,7 +766,7 @@ theorem SchedPointPrefix.currentFreeOrMatched {e : CoreId} {base st s st' : Syst
 
 /-- **`SchedContext_Unbind` writes no saved register**: the thread unbind (the
 current thread's context is refused, so no scheduling point runs), then the
-notification unbind. -/
+notification unbind and the reply-stack unlink. -/
 theorem schedContextUnbindAllOnCore_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
     {vScId : SeLe4n.ValidObjId} {ec : CoreId} {st st' : SystemState}
     {sgi? : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
@@ -720,10 +774,34 @@ theorem schedContextUnbindAllOnCore_savedRegsKeptExcept {W : SeLe4n.ThreadId →
     savedRegsKeptExcept W st st' := by
   obtain ⟨stU, hU | ⟨-, -, hU⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok h
   · obtain ⟨rfl, -⟩ := hU
-    exact unbindSchedContextNotification_savedRegsKeptExcept _ _ hInv
-  · exact (schedContextUnbind_savedRegsKeptExcept hInv hU).trans
-      (unbindSchedContextNotification_savedRegsKeptExcept _ _
-        (schedContextUnbind_stepCovers st stU vScId ec hInv hU).2)
+    exact (unbindSchedContextNotification_savedRegsKeptExcept _ _ hInv).trans
+      (schedContextUnbindReply_savedRegsKeptExcept _ _
+        (unbindSchedContextNotification_preserves_objects_invExt _ _ hInv))
+  · have hIU := (schedContextUnbind_stepCovers st stU vScId ec hInv hU).2
+    exact (schedContextUnbind_savedRegsKeptExcept hInv hU).trans
+      ((unbindSchedContextNotification_savedRegsKeptExcept _ _ hIU).trans
+        (schedContextUnbindReply_savedRegsKeptExcept _ _
+          (unbindSchedContextNotification_preserves_objects_invExt _ _ hIU)))
+
+/-- **`SchedContext_UnbindObject` writes no saved register**: on a thread, the
+thread unbind (the current thread's context is refused); on a notification,
+the notification unbind. -/
+theorem schedContextUnbindThreadObjectOnCore_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
+    {vScId : SeLe4n.ValidObjId} {tid : SeLe4n.ThreadId} {ec : CoreId} {st st' : SystemState}
+    {sgi? : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId tid ec st = .ok (st', sgi?)) :
+    savedRegsKeptExcept W st st' :=
+  schedContextUnbind_savedRegsKeptExcept hInv
+    (SchedContextOps.schedContextUnbindOnCore_ok
+      (SchedContextOps.schedContextUnbindThreadObjectOnCore_ok h)).2.1
+
+theorem schedContextUnbindNotificationObject_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
+    {vScId : SeLe4n.ValidObjId} {n : SeLe4n.ObjId} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedContextUnbindNotificationObject vScId n st = .ok ((), st')) :
+    savedRegsKeptExcept W st st' := by
+  obtain ⟨-, rfl⟩ := SchedContextOps.schedContextUnbindNotificationObject_ok h
+  exact unbindSchedContextNotification_savedRegsKeptExcept _ _ hInv
 
 /-! ### The priority arms -/
 
@@ -1655,11 +1733,13 @@ theorem dispatchCapabilityOnly_savedRegsKeptOffCore {decoded : SyscallDecodeResu
     | exact hF (savedRegsKept.of_unchangedOrNoTcb fun oid =>
         (schedContextBindNotification_slots hInv h oid).imp id (·.1))
     | exact hX (bindNotification_savedRegsKeptExcept hInv h)
+    | exact hX (schedContextUnbindNotificationObject_savedRegsKeptExcept hInv h)
     | (cases h; rename_i hS
        first
         | (rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hS]
            exact writeCallReturnWord_savedRegsKeptOffCore _ hInv P.current hU hN)
         | exact hX (schedContextUnbindAllOnCore_savedRegsKeptExcept hInv hS)
+        | exact hX (schedContextUnbindThreadObjectOnCore_savedRegsKeptExcept hInv hS)
         | exact hW (schedContextConsumedOnCore_savedRegsWrittenFree hInv hU hN hS)
         | exact hW (schedContextYieldToOnCore_savedRegsWrittenFree hInv hU hN hYA hYN hS)
         | exact hX (unbindNotification_savedRegsKeptExcept hInv hS)

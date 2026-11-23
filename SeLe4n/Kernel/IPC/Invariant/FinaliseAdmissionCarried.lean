@@ -296,6 +296,30 @@ theorem donatedReturnCommits_eq (srv : SeLe4n.ThreadId) (c : SeLe4n.SchedContext
   simp only [h.replyStackOuterCaller?_eq, h.schedContext, h.outerCallerAcceptable_eq,
     h.donationRecipientAcceptable_eq, h.lookupTcb_isSome]
 
+theorem lookupTcb_scId? (y : SeLe4n.ThreadId) :
+    (lookupTcb s' y).bind (fun t => t.schedContextBinding.scId?) =
+      (lookupTcb s y).bind (fun t => t.schedContextBinding.scId?) := by
+  unfold lookupTcb
+  split
+  · rfl
+  · rcases h.getTcb? y with ⟨e1, e2⟩ | ⟨t, b, e1, e2⟩ <;> simp only [e1, e2] <;> rfl
+
+theorem heldPopOuter?_eq (y : SeLe4n.ThreadId) (n : Option SeLe4n.ThreadId) :
+    heldPopOuter? s' y n = heldPopOuter? s y n := by
+  unfold heldPopOuter?
+  rcases h.getTcb? y with ⟨e1, e2⟩ | ⟨t, b, e1, e2⟩ <;> simp only [e1, e2] <;> rfl
+
+theorem keptPopCommits_eq (srv : SeLe4n.ThreadId) (c : SeLe4n.SchedContextId) :
+    keptPopCommits s' srv c = keptPopCommits s srv c := by
+  unfold keptPopCommits
+  simp only [h.replyStackOuterCaller?_eq, h.schedContext, h.outerCallerAcceptable_eq,
+    h.lookupTcb_scId?, h.heldPopOuter?_eq]
+
+theorem heldPopCommits_eq (srv : SeLe4n.ThreadId) (c : SeLe4n.SchedContextId)
+    (own : SeLe4n.ThreadId) : heldPopCommits s' srv c own = heldPopCommits s srv c own := by
+  unfold heldPopCommits
+  rw [h.donationRecipientAcceptable_eq, h.donatedReturnCommits_eq, h.keptPopCommits_eq]
+
 
 theorem replyHeadPopCommits_eq (x : SeLe4n.ObjId) (r : Reply) (c : SeLe4n.ThreadId) :
     replyHeadPopCommits s' x r c = replyHeadPopCommits s x r c := by
@@ -316,7 +340,7 @@ theorem replyHeadPopCommits_eq (x : SeLe4n.ObjId) (r : Reply) (c : SeLe4n.Thread
         | zero => rfl
         | succ k =>
           dsimp only
-          rw [h.donatedReturnCommits_eq]
+          rw [h.heldPopCommits_eq]
           rcases h.getTcb? ⟨k⟩ with ⟨e1, e2⟩ | ⟨u, b, e1, e2⟩ <;> rw [e1, e2] <;> rfl
 
 theorem replyCallerFinalisable_eq (x : SeLe4n.ObjId) (r : Reply) (c : SeLe4n.ThreadId) (t : TCB) :

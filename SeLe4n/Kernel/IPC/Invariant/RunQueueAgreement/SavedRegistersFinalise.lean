@@ -491,22 +491,10 @@ theorem of_removeFromNotificationWaitQueue (st : SystemState) (tid : SeLe4n.Thre
 theorem of_returnDonationToCancelledCaller (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
     (hInv : st.objects.invExt) :
     savedRegsKeptExcept W st (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) :=
-  of_map fun x => by
-    unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-    cases hD : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV with
-    | none => rfl
-    | some p =>
-      obtain ⟨scId, holder⟩ := p
-      cases hT : st.getTcb? v with
-      | none => rfl
-      | some _ =>
-        dsimp only
-        cases hRet : returnDonatedSchedContextResolved st holder scId v with
-        | error _ => rfl
-        | ok st' =>
-          obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-          exact returnDonatedSchedContext_getTcb?_map_eq TCB.registerContext (fun _ _ _ => rfl) _
-            st' holder scId v hInv newOwner? hPop x
+  of_map fun x =>
+    Lifecycle.Suspend.returnDonationToCancelledCaller_elimFrame
+      (P := fun s => (s.getTcb? x).map TCB.registerContext = (st.getTcb? x).map TCB.registerContext)
+      hInv rfl fun _ hF => hF.getTcb?_map_eq TCB.registerContext (fun _ _ _ => rfl) x
 
 /-- The pop off an unheld context, and its settle, rewrite the recipient's
 binding codes and no thread's registers; the sever writes no thread. -/
@@ -684,6 +672,30 @@ theorem unbindSchedContextNotification_savedRegsKeptExcept {W : SeLe4n.ThreadId 
   · cases hr : st.savedRegs t with
     | none =>
       cases hr' : (unbindSchedContextNotification st s).savedRegs t with
+      | none => rfl
+      | some r =>
+        obtain ⟨x, hx, rfl⟩ := savedRegs_eq_some_iff.mp hr'
+        rw [e] at hx
+        rw [savedRegs_eq_some_iff.mpr ⟨x, hx, rfl⟩] at hr; cases hr
+    | some r =>
+      obtain ⟨x, hx, rfl⟩ := savedRegs_eq_some_iff.mp hr
+      exact savedRegs_eq_some_iff.mpr ⟨x, e.trans hx, rfl⟩
+  · rw [n1 _ h2, n1 _ h1]
+
+/-- **A context's reply-stack unlink writes no saved register**: it writes a
+Reply's slot and a context's. -/
+theorem schedContextUnbindReply_savedRegsKeptExcept {W : SeLe4n.ThreadId → Prop}
+    (st : SystemState) (s : SeLe4n.ObjId) (hInv : st.objects.invExt) :
+    savedRegsKeptExcept W st (schedContextUnbindReply st s) := .of_eq fun t => by
+  have n1 : ∀ X : SystemState, (∀ x : TCB, X.objects[t.toObjId]? ≠ some (.tcb x)) →
+      X.savedRegs t = none := fun X hX => by
+    cases hr : X.savedRegs t with
+    | none => rfl
+    | some r => obtain ⟨x, hx, -⟩ := savedRegs_eq_some_iff.mp hr; exact absurd hx (hX x)
+  rcases schedContextUnbindReply_slots st s hInv t.toObjId with e | ⟨h1, h2⟩
+  · cases hr : st.savedRegs t with
+    | none =>
+      cases hr' : (schedContextUnbindReply st s).savedRegs t with
       | none => rfl
       | some r =>
         obtain ⟨x, hx, rfl⟩ := savedRegs_eq_some_iff.mp hr'

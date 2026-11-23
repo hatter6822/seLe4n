@@ -1879,6 +1879,135 @@ theorem secondaryKernelMain_commits (coreId : UInt64) :
         Concurrency.recordCommittedCurrentThreadHw (some (c, SeLe4n.ThreadId.ofOptCode code))) :=
   (secondaryKernelMain_eq_perCoreRescheduleEntry coreId).trans (perCoreRescheduleEntry_commits coreId)
 
+/-! ### seL4-MCS `sendSignal`'s donation -/
+
+/-- **The bind's writes are invisible on every core** when the context and the
+thread are hidden: the context rewritten in its slot, the thread's binding
+words, the thread placed on its home core's run queue (a hidden thread the
+filtered queue drops) with that core's reschedule flag, and the context placed
+on the home core's release queue. -/
+theorem schedContextBindPerform_lowEquivalent (st : SystemState) (vS : SeLe4n.ValidObjId)
+    (vT : SeLe4n.ValidThreadId) (hInv : st.objects.invExt)
+    (hS : objectObservable ctx observer vS.val = false)
+    (hT : threadObservable ctx observer vT.val = false)
+    (hTo : objectObservable ctx observer vT.val.toObjId = false) :
+    lowEquivalent_smp ctx observer (SchedContextOps.schedContextBindPerform st vS vT) st := by
+  unfold SchedContextOps.schedContextBindPerform
+  split
+  · exact lowEquivalent_smp_refl st
+  · next sc hSc _ =>
+    split
+    · exact lowEquivalent_smp_refl st
+    · dsimp only
+      have hAdm := SystemState.rewriteAdmissible_schedContext hSc
+        { sc.releaseReadyHead st.machine.timer with
+          boundThreadCode := SeLe4n.ThreadId.optCode (some vT.val), donationOrigin := none }
+      have hL1 := rewriteObject_lowEquivalent (ctx := ctx) (observer := observer) st vS.val _
+        hAdm hInv hS
+      have hI1 := SystemState.rewriteObject_preserves_objects_invExt st vS.val _ hAdm hInv
+      generalize hSt1 : st.rewriteObject vS.val _ hAdm = st1 at hL1 hI1
+      have hL2 := lowEquivalent_smp_trans (lowEquivalent_smp_of_projectedObjectsWrite
+        (ctx := ctx) (observer := observer) (projectedObjectsWrite.of_hidden
+          (hiddenObjectsWrite.updateTcb st1 vT.val (fun t => { t with
+            scBindingScCode := SchedContextBinding.scCode
+              (SchedContextBinding.bound ⟨vS.val.toNat⟩), scBindingOwnerCode := 0 })
+            hI1 hTo))) hL1
+      generalize st1.updateTcb vT.val _ = st2 at hL2
+      refine lowEquivalent_smp_trans (releasePlace_lowEquivalent _ _ _ hS) ?_
+      split
+      · exact lowEquivalent_smp_trans (lowEquivalent_smp_trans
+          (markReschedulePendingOnCore_lowEquivalent _ _)
+          (runEnqueueOnCore_lowEquivalent _ _ vT.val _ hT)) hL2
+      · exact hL2
+
+/-- **A successful `schedContextBind` is invisible on every core** when the
+context and the thread are hidden: its state is the perform's
+(`schedContextBind_ok_iff`), whose writes all land in hidden state
+(`schedContextBindPerform_lowEquivalent`). -/
+theorem schedContextBind_lowEquivalent {st st' : SystemState} {vS : SeLe4n.ValidObjId}
+    {vT : SeLe4n.ValidThreadId} (hInv : st.objects.invExt)
+    (hS : objectObservable ctx observer vS.val = false)
+    (hT : threadObservable ctx observer vT.val = false)
+    (hTo : objectObservable ctx observer vT.val.toObjId = false)
+    (h : SchedContextOps.schedContextBind vS vT st = .ok ((), st')) :
+    lowEquivalent_smp ctx observer st' st := by
+  obtain ⟨-, rfl⟩ := (SchedContextOps.schedContextBind_ok_iff st st' vS vT).mp h
+  exact schedContextBindPerform_lowEquivalent st vS vT hInv hS hT hTo
+
+/-- AK6-F.14: **a successful `schedContextBind` keeps the single-core view**
+when the context and the thread are hidden.  The single-core projection is the
+per-core one at the boot core (`projectStateOnCore_bootCore`, by `rfl`), so the
+bind's per-core frame (`schedContextBind_lowEquivalent`) read at the boot core is
+this statement: the rewritten context and the thread's binding words are hidden
+objects, the placement enqueues a hidden thread the filtered run queue drops,
+and neither the reschedule flag nor the release queue is projected. -/
+theorem schedContextBind_preserves_projection {st st' : SystemState}
+    {vS : SeLe4n.ValidObjId} {vT : SeLe4n.ValidThreadId} (hInv : st.objects.invExt)
+    (hS : objectObservable ctx observer vS.val = false)
+    (hT : threadObservable ctx observer vT.val = false)
+    (hTo : objectObservable ctx observer vT.val.toObjId = false)
+    (h : SchedContextOps.schedContextBind vS vT st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st :=
+  schedContextBind_lowEquivalent hInv hS hT hTo h bootCoreId
+
+/-- **seL4-MCS `maybeDonateSchedContext` is invisible on every core** when the
+receiver and the notification's bound context are hidden: the identity, or the
+bind's writes (`schedContextBindPerform_lowEquivalent`). -/
+theorem maybeDonateSchedContext_lowEquivalent (st : SystemState) (n : SeLe4n.ObjId)
+    (t : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (hT : threadObservable ctx observer t = false)
+    (hTo : objectObservable ctx observer t.toObjId = false)
+    (hS : ∀ s, notificationContext? st n = some s → objectObservable ctx observer s.toObjId = false) :
+    lowEquivalent_smp ctx observer (maybeDonateSchedContext st n t) st := by
+  rcases maybeDonateSchedContext_cases st n t with h | ⟨vS, vT, hV, ⟨ntfn, s, hN, hSc, hEq⟩, -, h⟩
+  · rw [h]; exact lowEquivalent_smp_refl st
+  · rw [h]
+    subst hV
+    refine schedContextBindPerform_lowEquivalent st vS vT hInv ?_ hT hTo
+    rw [← hEq]
+    exact hS s (by simp only [notificationContext?, hN, Option.bind_some, hSc])
+
+/-- The thread a bound-aware signal wakes is one `boundSignalHidden` hides: the
+bound receiver, or the notification's head waiter. -/
+theorem boundSignalHidden.woken {st : SystemState} {n : SeLe4n.ObjId} {t : SeLe4n.ThreadId}
+    (h : boundSignalHidden ctx observer st n) (hW : signalWokenThread? st n = some t) :
+    threadObservable ctx observer t = false ∧ objectObservable ctx observer t.toObjId = false := by
+  unfold signalWokenThread? at hW
+  cases hB : boundDeliveryTarget? st n with
+  | some p =>
+    obtain ⟨u, ep⟩ := p
+    rw [hB] at hW
+    cases hW
+    exact ⟨(h.bound _ _ hB).2.1, (h.bound _ _ hB).2.2⟩
+  | none =>
+    rw [hB] at hW
+    cases hN : st.getNotification? n with
+    | none => rw [hN] at hW; cases hW
+    | some ntfn =>
+      rw [hN] at hW
+      obtain ⟨a, b, -⟩ := h.waiter ntfn t hN hW
+      exact ⟨a, b⟩
+
+/-- **seL4-MCS `sendSignal` is invisible on every core** when what it writes
+is hidden (`boundSignalHidden`): the wake (`notificationSignalBoundOnCore_lowEquivalent`),
+then the donation to the thread it woke of the notification's context, both
+of which `boundSignalHidden` hides, the context read through the wake, which
+keeps it (`notificationSignalBoundOnCore_ntfnContextsAgree`). -/
+theorem sendSignalOnCoreFlowing_lowEquivalent (kctx : LabelingContext) (n : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (c : CoreId)
+    (st : SystemState) (hInv : st.objects.invExt) (h : boundSignalHidden ctx observer st n) :
+    lowEquivalent_smp ctx observer (sendSignalOnCoreFlowing kctx n badge c st).1 st := by
+  have hW := notificationSignalBoundOnCore_lowEquivalent ctx observer n badge c st hInv h
+  refine sendSignalOnCoreFlowing_induct (fun s => lowEquivalent_smp ctx observer s st) kctx n
+    badge c st hW (fun t _ hT _ => ?_)
+  obtain ⟨hTh, hTo⟩ := h.woken hT
+  refine lowEquivalent_smp_trans (maybeDonateSchedContext_lowEquivalent _ n t
+    (notificationSignalBoundOnCore_preserves_objects_invExt _ _ _ st hInv) hTh hTo ?_) hW
+  intro s hs
+  rw [notificationContext?_congr (notificationSignalBoundOnCore_ntfnContextsAgree n badge c st hInv)]
+    at hs
+  exact h.context s hs
+
 /-! ### WS-ZA ZA6.32: the interrupt entry -/
 
 /-- The interrupt line's mask is no view's: the controller's mask words and the
@@ -1889,42 +2018,43 @@ theorem setInterruptLineMask_lowEquivalent (st : SystemState) (line : Nat) (mask
 
 /-- **What the interrupt step writes, hidden**: at a line bound to a
 notification (`Architecture.irqBinding?`, read off the line's interrupt node
-slot), what the bound-aware signal to that notification writes. -/
+slot), what seL4's `sendSignal` to that notification writes. -/
 def interruptStepHidden (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (line : Nat) : Prop :=
   ∀ ntfn badge, Architecture.irqBinding? st line = some (ntfn, badge) →
     boundSignalHidden ctx observer st ntfn
 
 /-- **seL4's `handleInterrupt` is invisible on every core** when the signal it
-sends writes only hidden state: the signal
-(`notificationSignalBoundOnCore_lowEquivalent`, whose badge-register write and
-stash clear land in a register context and a TCB no projection shows), and the
-mask. -/
-theorem handleInterruptOnCore_lowEquivalent (st : SystemState) (c : CoreId) (line : Nat)
+sends writes only hidden state: seL4's `sendSignal`
+(`sendSignalOnCoreFlowing_lowEquivalent`: the wake, whose badge-register write and
+stash clear land in a register context and a TCB no projection shows, and the
+donation of the notification's hidden context to the hidden thread it woke),
+and the mask. -/
+theorem handleInterruptOnCore_lowEquivalent (ctx : LabelingContext) (st : SystemState) (c : CoreId) (line : Nat)
     (hInv : st.objects.invExt) (h : interruptStepHidden ctx observer st line) :
-    lowEquivalent_smp ctx observer (handleInterruptOnCore st c line) st :=
-  handleInterruptOnCore_of (P := fun s => lowEquivalent_smp ctx observer s st) st c line
+    lowEquivalent_smp ctx observer (handleInterruptOnCore ctx st c line) st :=
+  handleInterruptOnCore_of (P := fun s => lowEquivalent_smp ctx observer s st) ctx st c line
     (fun s hs => lowEquivalent_smp_trans (setInterruptLineMask_lowEquivalent s line true) hs)
     (lowEquivalent_smp_refl st)
     (fun ntfn badge hN =>
-      notificationSignalBoundOnCore_lowEquivalent ctx observer ntfn badge c st hInv
-        (h ntfn badge hN))
+      sendSignalOnCoreFlowing_lowEquivalent ctx ntfn badge c st hInv (h ntfn badge hN))
 
 /-- …and so is the raw step. -/
-theorem interruptEntryStep_lowEquivalent (st : SystemState) (coreId intId : UInt64)
+theorem interruptEntryStep_lowEquivalent (ctx : LabelingContext) (st : SystemState) (coreId intId : UInt64)
     (hInv : st.objects.invExt) (h : interruptStepHidden ctx observer st intId.toNat) :
-    lowEquivalent_smp ctx observer (interruptEntryStep st coreId intId) st :=
-  interruptEntryStep_of (P := fun s => lowEquivalent_smp ctx observer s st) st coreId intId
-    (lowEquivalent_smp_refl st) (fun c _ _ => handleInterruptOnCore_lowEquivalent st c _ hInv h)
+    lowEquivalent_smp ctx observer (interruptEntryStep ctx st coreId intId) st :=
+  interruptEntryStep_of (P := fun s => lowEquivalent_smp ctx observer s st) ctx st coreId intId
+    (lowEquivalent_smp_refl st) (fun c _ _ => handleInterruptOnCore_lowEquivalent ctx st c _ hInv h)
 
 /-- **The state the interrupt entry commits** on core `c` for the raw ids, with
 the frame the HAL handed over: the frame saved, the bracketed step, the
 residency settle, the activation, and both hardware ledgers cleared. -/
-def interruptEntryState (st : SystemState) (c : CoreId) (coreId intId : UInt64)
+def interruptEntryState (ctx : LabelingContext) (st : SystemState) (c : CoreId)
+    (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext) : SystemState :=
   Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites
     (activateThreadOnCore (PriorityInheritance.settleResidencyOnCore
-      ((interruptBracket coreId intId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c) c))
+      ((interruptBracket ctx coreId intId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c) c))
 
 /-- **What the interrupt entry reads, hidden**: core `c`'s current thread at
 the save, what the step's signal writes, the scheduling point the settle opens,
@@ -1935,18 +2065,18 @@ structure interruptEntryHidden (ctx : LabelingContext) (observer : IfObserver) (
   current : currentHiddenOn ctx observer st c
   step : interruptStepHidden ctx observer (Architecture.saveCapturedTrapFrame st c frame) intId.toNat
   settle : schedulingPointHidden ctx observer
-    ((interruptBracket coreId intId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c
+    ((interruptBracket ctx coreId intId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c
   activation : activationContextHidden ctx observer (PriorityInheritance.settleResidencyOnCore
-    ((interruptBracket coreId intId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c) c
+    ((interruptBracket ctx coreId intId).run (Architecture.saveCapturedTrapFrame st c frame)).2 c) c
 
 /-- **The interrupt entry's commit is invisible on every core** when what it
 reads is hidden. -/
 theorem interruptEntryState_lowEquivalent (st : SystemState) (c : CoreId) (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext)
     (h : interruptEntryHidden ctx observer st c coreId intId frame) :
-    lowEquivalent_smp ctx observer (interruptEntryState st c coreId intId frame) st := by
+    lowEquivalent_smp ctx observer (interruptEntryState ctx st c coreId intId frame) st := by
   have hL0 := saveCapturedTrapFrame_lowEquivalent st c frame h.objects h.current
-  have hL1 := lowEquivalent_smp_trans (interruptEntryStep_lowEquivalent _ coreId intId
+  have hL1 := lowEquivalent_smp_trans (interruptEntryStep_lowEquivalent ctx _ coreId intId
     (saveCapturedTrapFrame_preserves_objects_invExt st c frame h.objects) h.step) hL0
   have hL2 := lowEquivalent_smp_trans (settleResidencyOnCore_lowEquivalent _ c h.settle) hL1
   have hL3 := lowEquivalent_smp_trans (activateThreadOnCore_lowEquivalent _ c
@@ -1965,11 +2095,12 @@ theorem interruptEntry_commits (coreId intId : UInt64) :
       | none => pure ()
       | some c => do
         let frame ← Platform.FFI.ffiTrapContext
+        let lctx ← Platform.FFI.getKernelLabelingContext
         let (raised, kind, context, tableBase, asid, code, writes, icache) ←
           Platform.FFI.modifyGetKernelState (fun st0 =>
             let st := Architecture.saveCapturedTrapFrame st0 c frame
             let pending0 := reschedulePendingSnapshot st
-            let mid := ((interruptBracket coreId intId).run st).2
+            let mid := ((interruptBracket lctx coreId intId).run st).2
             let pending := mid.scheduler.reschedulePending
             let post := activateThreadOnCore (PriorityInheritance.settleResidencyOnCore mid c) c
             (((pending0.raised pending).union (pending.raised post.scheduler.reschedulePending),
@@ -1977,7 +2108,7 @@ theorem interruptEntry_commits (coreId intId : UInt64) :
               Architecture.restoreTableBaseOnCore post c, Architecture.restoreAsidOnCore post c,
               post.scheduler.currentCode.get c, post.drainedPhysicalWrites,
               post.pendingIcacheMaintenance),
-              interruptEntryState st0 c coreId intId frame))
+              interruptEntryState lctx st0 c coreId intId frame))
         Platform.FFI.completePhysicalWrites writes
         Concurrency.fireRaisedReschedules raised
         Platform.FFI.completeIcacheMaintenance icache
@@ -2148,7 +2279,7 @@ inductive PerCoreNonInterferenceStep (ctx : LabelingContext) (observer : IfObser
   | interruptEntry {st : SystemState} (c : CoreId) (coreId intId : UInt64)
       (frame : Option Architecture.InFlightContext)
       (h : interruptEntryHidden ctx observer st c coreId intId frame) :
-      PerCoreNonInterferenceStep ctx observer st (interruptEntryState st c coreId intId frame)
+      PerCoreNonInterferenceStep ctx observer st (interruptEntryState ctx st c coreId intId frame)
 
 /-- **The per-core relation is sound**: every step of it is invisible on every
 core. -/

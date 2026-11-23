@@ -187,10 +187,9 @@ theorem cancelIpcBlockingReclaimed_stepCovers (e : CoreId) (st : SystemState)
     stepCovers e st (cancelIpcBlockingReclaimed victim tcb st) := by
   have hTorn := cancelIpcBlocking_stepCovers e st victim tcb hInv
   have hMig : stepCovers e st (cancelIpcBlockingMigrated victim tcb st) := by
-    unfold cancelIpcBlockingMigrated
-    split
-    · exact stepCovers_trans hTorn (settleReturnedContext_stepCovers e _ _ _)
+    rcases cancelIpcBlockingMigrated_cases victim tcb st with h | ⟨_, _, _, _, h⟩ <;> rw [h]
     · exact hTorn
+    · exact stepCovers_trans hTorn (settleReturnedContext_stepCovers e _ _ _)
   unfold cancelIpcBlockingReclaimed descheduleUnboundHolder
   split
   · exact hMig

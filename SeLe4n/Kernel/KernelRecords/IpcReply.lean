@@ -170,13 +170,15 @@ theorem applyReplyDonationOnCore {st st' : SystemState} {rid : SeLe4n.ReplyId}
   · exact popUnheldReplyHead hInv h
   · split at h
     · split at h
-      · cases h
-      · rename_i st1 hRet
-        cases h
-        have F1 := returnDonatedSchedContextResolved hInv hRet
-        refine F1.trans ((settleReturnedContext _ _ _ F1.invExt).trans
-          (descheduleAtPlacement _ _ ?_))
-        exact SchedContextOps.settleReturnedContext_objects_invExt _ _ _ F1.invExt
+      · split at h
+        · cases h
+        · rename_i st1 hRet
+          cases h
+          have F1 := returnDonatedSchedContextResolved hInv hRet
+          refine F1.trans ((settleReturnedContext _ _ _ F1.invExt).trans
+            (descheduleAtPlacement _ _ ?_))
+          exact SchedContextOps.settleReturnedContext_objects_invExt _ _ _ F1.invExt
+      · exact keepDonatedSchedContextResolved hInv h
     · cases h
 
 end RecordsFrame

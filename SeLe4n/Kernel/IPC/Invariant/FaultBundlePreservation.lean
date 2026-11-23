@@ -154,12 +154,12 @@ handler's return-frame staging plus the record, and the record itself writes one
 TCB field.  `endpointReceiveHeadsNotCurrent` is the call chain's own `hNotCur` in
 the one form a caller can supply here — the handler endpoint is resolved
 *inside* the transition. -/
-theorem faultDeliverOnCore_preserves_schedulerInvariantBase_smp (st : SystemState)
+theorem faultDeliverOnCore_preserves_schedulerInvariantBase_smp {lend : Bool} (st : SystemState)
     (tid : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (executingCore : CoreId)
     (hObjInv : st.objects.invExt)
     (hHeads : endpointReceiveHeadsNotCurrent st)
     (h : schedulerInvariantBase_smp st) :
-    schedulerInvariantBase_smp (faultDeliverOnCore st tid f ctx executingCore).1 := by
+    schedulerInvariantBase_smp (faultDeliverOnCore st tid f ctx executingCore lend).1 := by
   have hSusp := faultSuspendOnCore_preserves_schedulerInvariantBase_smp st tid executingCore
     hObjInv h
   have hSuspObj := faultSuspendOnCore_preserves_objects_invExt st tid executingCore hObjInv
@@ -175,12 +175,12 @@ theorem faultDeliverOnCore_preserves_schedulerInvariantBase_smp (st : SystemStat
   | ok tgt =>
       simp only
       cases hCall : endpointCallCrossCoreDispatch tgt.endpoint tid
-          (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) executingCore st with
+          (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) executingCore st lend with
       | mk stC resC =>
-          have hC := endpointCallCrossCoreDispatch_preserves_schedulerInvariantBase_smp
+          have hC := endpointCallCrossCoreDispatch_preserves_schedulerInvariantBase_smp (lend := lend)
             tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) executingCore st hObjInv
             (endpointReceiveHeadsNotCurrent_at hHeads tgt.endpoint) h
-          have hCObj := endpointCallCrossCoreDispatch_preserves_objects_invExt
+          have hCObj := endpointCallCrossCoreDispatch_preserves_objects_invExt (lend := lend)
             tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) executingCore st hObjInv
           rw [hCall] at hC hCObj
           simp only at hC hCObj
@@ -211,10 +211,10 @@ empty request *before* it resolves the receiver's CSpace root.  So the
 delivery composes the **no-caps** form and owes nothing — which is the honest
 reading of "a fault's payload is registers", one step further than the reply
 side needed it. -/
-theorem faultDeliverOnCore_preserves_capabilityInvariantBundle (st : SystemState)
+theorem faultDeliverOnCore_preserves_capabilityInvariantBundle {lend : Bool} (st : SystemState)
     (tid : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (executingCore : CoreId)
     (h : capabilityInvariantBundle st) :
-    capabilityInvariantBundle (faultDeliverOnCore st tid f ctx executingCore).1 := by
+    capabilityInvariantBundle (faultDeliverOnCore st tid f ctx executingCore lend).1 := by
   have hObjInv : st.objects.invExt := h.objectsInvExt
   have hSusp := faultSuspendOnCore_preserves_capabilityInvariantBundle st tid executingCore h
   have hSuspObj := faultSuspendOnCore_preserves_objects_invExt st tid executingCore hObjInv
@@ -231,11 +231,11 @@ theorem faultDeliverOnCore_preserves_capabilityInvariantBundle (st : SystemState
   | ok tgt =>
       simp only
       cases hCall : endpointCallCrossCoreDispatch tgt.endpoint tid
-          (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) executingCore st with
+          (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) executingCore st lend with
       | mk stC resC =>
-          have hC := endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle_of_no_caps
+          have hC := endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle_of_no_caps (lend := lend)
             tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) executingCore st (sendCapRequest_fault _ _ _ _ _ _ _) h
-          have hCObj := endpointCallCrossCoreDispatch_preserves_objects_invExt
+          have hCObj := endpointCallCrossCoreDispatch_preserves_objects_invExt (lend := lend)
             tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) executingCore st hObjInv
           rw [hCall] at hC hCObj
           simp only at hC hCObj

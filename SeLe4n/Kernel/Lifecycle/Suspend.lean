@@ -952,10 +952,53 @@ def returnDonationToCancelledCaller (st : SystemState) (tid : SeLe4n.ThreadId)
     -- `schedContext_unbindTCB` leaves it (`v0.36.136`: the abort that ended its
     -- operation is retired with the invariant that forbade an unbound sender).
     -- WS-OD OD4.4: the new owner is resolved off the context's reply stack.
-    match returnDonatedSchedContextResolved st holder scId tid with
+    -- WS-SX SX8: the pop is seL4's `reply_pop` (`reply_remove` on a head
+    -- frame): the context goes back to the caller where it holds none, and
+    -- stays with the holder, the head popped, where it holds one.
+    match popHeldReplyHead st holder scId tid with
     | .ok st' => st'
     | .error _ => st
   | _, _ => st
+
+/-- **A property of the state and of every successful held-head pop the
+cancelled caller's loan could run is a property of the reclaim.** -/
+theorem returnDonationToCancelledCaller_elim {P : SystemState → Prop} {st : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hSt : P st)
+    (hPop : ∀ scId holder s, cancelledCallerDonation? st tid tcb = some (scId, holder) →
+      popHeldReplyHead st holder scId tid = .ok s → P s) :
+    P (returnDonationToCancelledCaller st tid tcb) := by
+  unfold returnDonationToCancelledCaller
+  split
+  · next scId holder _ hD _ =>
+    split
+    · next st' hR => exact hPop scId holder st' hD hR
+    · exact hSt
+  · exact hSt
+
+/-- **The reclaim at both pops' frames**: a property of the state, of every
+donation return to the caller and of every held pop is a property of the
+reclaim. -/
+theorem returnDonationToCancelledCaller_elimPops {P : SystemState → Prop} {st : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hSt : P st)
+    (hRet : ∀ scId holder (n : Option SeLe4n.ThreadId) s,
+      cancelledCallerDonation? st tid tcb = some (scId, holder) →
+      returnDonatedSchedContext st holder scId tid n = .ok s → P s)
+    (hKeep : ∀ scId holder (n : Option SeLe4n.ThreadId) s,
+      cancelledCallerDonation? st tid tcb = some (scId, holder) →
+      keepDonatedSchedContext st holder scId n = .ok s → P s) :
+    P (returnDonationToCancelledCaller st tid tcb) :=
+  returnDonationToCancelledCaller_elim hSt fun scId holder _ hD h =>
+    popHeldReplyHead_liftPops h (fun n s hs => hRet scId holder n s hD hs)
+      (fun n s hs => hKeep scId holder n s hD hs)
+
+/-- **A property of the state and of every pop frame out of it is a property of
+the reclaim.** -/
+theorem returnDonationToCancelledCaller_elimFrame {P : SystemState → Prop} {st : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hObjInv : st.objects.invExt) (hSt : P st)
+    (hF : ∀ s, donationPopFrame st s → P s) :
+    P (returnDonationToCancelledCaller st tid tcb) :=
+  returnDonationToCancelledCaller_elim hSt fun _ _ s _ h =>
+    hF s (popHeldReplyHead_donationPopFrame hObjInv h)
 
 def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) : SystemState :=
@@ -1611,96 +1654,12 @@ theorem releaseRemoveThread_replenishQueueOnCore_ne (st : SystemState) (tid : Se
 -- D1-D: cancelDonation (split into two named arms — R5.A / DEEP-SUSP-02)
 -- ============================================================================
 --
--- The two donation-cancellation arms are semantically distinct:
---   * `cancelBoundDonation` performs an in-place unbind of a SchedContext
---     that the suspended thread owns directly (mirrors `schedContextUnbind`
---     restricted to the suspended-thread case).
---   * `cancelDonatedDonation` returns a temporarily-donated SchedContext to
---     its original owner via `cleanupDonatedSchedContext`.
--- Pre-R5, both lived inside a single `cancelDonation` that branched on the
--- `schedContextBinding` variant; the split exposes the two-arm semantics at
--- the call site (`suspendThread` now dispatches explicitly) while a thin
--- `cancelDonation` dispatcher is retained for backward compatibility with
--- the existing closure-form preservation theorems
--- (`cancelDonation_preserves_projection`, `cancelDonation_scheduler_eq`,
--- etc.).
---
--- Each split arm returns `.error .illegalState` on the wrong-variant path so
--- a caller that dispatches incorrectly fails loudly rather than silently
--- no-opping; the dispatcher `cancelDonation` continues to return `.ok st`
--- on `.unbound` to preserve the original suspend semantics.
-
-/-- D1-D / R5.A (DEEP-SUSP-02): Cancel an in-place SchedContext binding.
-
-The thread is the SchedContext's owner — clear the SchedContext's
-`boundThread`/`isActive`, drop it from the system replenish queue, drop the
-thread from the per-SchedContext thread index, and clear the TCB-side
-binding to `.unbound`.
-
-Returns `.error .illegalState` when invoked on a `.donated` or `.unbound`
-TCB — callers must dispatch on the variant explicitly. The unconditional
-caller path is `cancelDonation`, which handles the variant dispatch and
-preserves the original suspend semantics. -/
-def cancelBoundDonation (st : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) : Except KernelError SystemState :=
-  match tcb.schedContextBinding with
-  | .bound scId =>
-    -- Unbind: clear the SchedContext's boundThread and deactivate (AE3-B/U-15)
-    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-    let st1 : SystemState := st.updateSchedContext scId fun sc =>
-      -- **WS-HP HP10.4**: and the recorded reservation origin, because this is
-      -- the same question `schedContextUnbind` answers — "this context stops
-      -- being owned" — and two spellings of one loan-ender are free to diverge.
-      -- The suspend path reaches it for a `.bound` victim, so a context whose
-      -- origin survived a suspend would carry it into whatever binds it next.
-      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
-    -- AE3-C/SC-07: Remove SchedContext from the release queue (consistent with
-    -- schedContextUnbind).  WS-ZA ZA6.3: from the queue it is on, through its own
-    -- core code, so the links stay a chain and no core is assumed.
-    let st2 := SchedContextOps.purgeReplenishment st1 scId
-    -- Clear TCB binding
-    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.  The binding
-    -- write moves `tid`'s key, so it ends in the key hook (KSC-1), exactly as the
-    -- per-core twin `cancelBoundDonationOnCore` does.
-    .ok (markKeyChangeFrom st
-      (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) tid)
-  | _ => .error .illegalState
-
-/-- D1-D / R5.A (DEEP-SUSP-02): Cancel a donated SchedContext binding.
-
-The thread is a temporary holder of someone else's SchedContext — route to
-`cleanupDonatedSchedContext` which transfers the SchedContext back to the
-original owner via `returnDonatedSchedContext` (sets `boundThread` to the
-original owner and re-establishes the owner's binding).
-
-Returns `.error .illegalState` when invoked on a `.bound` or `.unbound` TCB. -/
-def cancelDonatedDonation (st : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) : Except KernelError SystemState :=
-  match tcb.schedContextBinding with
-  | .donated _ _ => cleanupDonatedSchedContext st tid
-  | _ => .error .illegalState
-
-/-- D1-D / AJ1-A (M-14) / R5.A (DEEP-SUSP-02): Thin dispatcher.
-
-Pre-R5 this contained the in-place unbind logic directly; the bound and
-donated arms are now factored into `cancelBoundDonation` and
-`cancelDonatedDonation` for legibility at the suspend call site
-(`suspendThread` dispatches on `schedContextBinding` itself and chooses the
-specific arm). The dispatcher is retained so existing closure-form
-preservation theorems and the AN10 typed entry-point `cancelDonationValid`
-continue to compile unchanged.
-
-`.unbound` is a no-op (returns `.ok st`); the `.bound` and `.donated` arms
-delegate to the named sub-operations. The dispatcher's three branches match
-the three `SchedContextBinding` variants exhaustively, so the original
-"caller-controlled error" shape from the wrong-variant arms of the sub-ops
-is hidden behind the dispatcher's variant match. -/
-def cancelDonation (st : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) : Except KernelError SystemState :=
-  match tcb.schedContextBinding with
-  | .unbound => .ok st
-  | .bound _ => cancelBoundDonation st tid tcb
-  | .donated _ _ => cancelDonatedDonation st tid tcb
+-- The donation-cancellation arms live in `Lifecycle/Operations/Cleanup.lean`
+-- (`cancelBoundDonationOnCore`, `cancelDonatedDonationOnCore`, dispatched by
+-- `cancelDonationArmOnCore`).  Both are seL4's `schedContext_unbindTCB`: the
+-- donated arm runs the bound arm on the owner-cleared view of the holder, so a
+-- donated context is unbound from the holder, never returned to its lender,
+-- and the dispatcher never refuses (`cancelDonationArmOnCore_ok`).
 
 -- ============================================================================
 -- D1-F: clearPendingState
@@ -1776,15 +1735,27 @@ running caller must then *place* it, which only the settle does.
 The source core is resolved from the pre-state so the `withLockSet` bracket can
 declare the `LockKey.replenishQueue` write locks before the transition runs
 (`cancelIpcBlockingReplenishCores`); the torn state and the source are each
-bound once, so the settle and its destination read one state. -/
+bound once, so the settle and its destination read one state.
+
+**Only a return is settled** (WS-SX SX8).  The reclaim's pop is seL4's
+`reply_pop`, routed on the victim's own binding (`popHeldReplyHead`): where the
+victim holds a context of its own the head is popped and the context stays with
+its holder, and `reply_pop` then calls no `schedContext_donate`, so no release
+queue is touched.  The settle runs on the arm that hands the context back
+(`donationRecipientAcceptable st victim`, the router's own test, read on the
+same pre-state), and the held arm is the teardown alone.  The lock cores
+(`cancelIpcBlockingReplenishCores`) still name the settle's pair on the held
+arm: a proven superset, since that arm writes no replenish queue. -/
 def cancelIpcBlockingMigrated (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) :
     SystemState :=
   match Lifecycle.Suspend.cancelledCallerDonation? st victim tcb with
   | some (scId, holder) =>
       let torn := cancelIpcBlocking st victim tcb
-      let fromCore := determineTargetCore st holder
-      SchedContextOps.settleReturnedContext torn
-        (replenishHomeOfSchedContext torn scId fromCore) scId
+      if donationRecipientAcceptable st victim then
+        let fromCore := determineTargetCore st holder
+        SchedContextOps.settleReturnedContext torn
+          (replenishHomeOfSchedContext torn scId fromCore) scId
+      else torn
   | none => cancelIpcBlocking st victim tcb
 
 /-- **`v0.35.170`: the cores the reclaim's teardown writes a replenish queue
@@ -1843,27 +1814,53 @@ is every arm but a reply arm whose caller had donated. -/
   unfold cancelIpcBlockingMigrated
   rw [h]
 
+/-- **What the migrated teardown is**: the plain teardown, or — where a donation
+is reclaimed and the victim holds no context, so the pop hands it back — the
+plain teardown with the returned context settled. -/
+theorem cancelIpcBlockingMigrated_cases (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (st : SystemState) :
+    cancelIpcBlockingMigrated victim tcb st = cancelIpcBlocking st victim tcb ∨
+    ∃ scId holder, Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder) ∧
+      donationRecipientAcceptable st victim = true ∧
+      cancelIpcBlockingMigrated victim tcb st =
+        SchedContextOps.settleReturnedContext (cancelIpcBlocking st victim tcb)
+          (replenishHomeOfSchedContext (cancelIpcBlocking st victim tcb) scId
+            (determineTargetCore st holder)) scId := by
+  unfold cancelIpcBlockingMigrated
+  split
+  · next scId holder hD =>
+    by_cases hA : donationRecipientAcceptable st victim = true
+    · exact .inr ⟨scId, holder, hD, hA, by rw [if_pos hA]⟩
+    · exact .inl (by rw [if_neg hA])
+  · exact .inl rfl
+
+/-- **Where the victim holds a context of its own the migrated teardown is the
+plain teardown**: the held pop hands nothing back, so nothing is settled. -/
+theorem cancelIpcBlockingMigrated_of_not_acceptable (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (st : SystemState) (h : donationRecipientAcceptable st victim = false) :
+    cancelIpcBlockingMigrated victim tcb st = cancelIpcBlocking st victim tcb := by
+  unfold cancelIpcBlockingMigrated
+  split
+  · rw [if_neg (by simp [h])]
+  · rfl
+
 /-- The migration writes the contexts' release fields alone, so the migrated
 teardown's object store is the plain teardown's off them. -/
 theorem cancelIpcBlockingMigrated_agree (victim : SeLe4n.ThreadId)
     (tcb : TCB) (st : SystemState) :
     (cancelIpcBlockingMigrated victim tcb st).objectsAgreeOffReleaseLinks
       (cancelIpcBlocking st victim tcb) := by
-  unfold cancelIpcBlockingMigrated
-  split
-  · rename_i scId holder _
-    exact SchedContextOps.settleReturnedContext_agree _ _ scId
-  · exact .refl _
+  rcases cancelIpcBlockingMigrated_cases victim tcb st with h | ⟨scId, holder, _, _, h⟩
+  · rw [h]; exact .refl _
+  · rw [h]; exact SchedContextOps.settleReturnedContext_agree _ _ scId
 
 /-- ...and keeps the extension invariant. -/
 theorem cancelIpcBlockingMigrated_objects_invExt (victim : SeLe4n.ThreadId)
     (tcb : TCB) (st : SystemState) (hInv : (cancelIpcBlocking st victim tcb).objects.invExt) :
     (cancelIpcBlockingMigrated victim tcb st).objects.invExt := by
-  unfold cancelIpcBlockingMigrated
-  split
-  · rename_i scId holder _
-    exact SchedContextOps.settleReturnedContext_objects_invExt _ _ scId hInv
-  · exact hInv
+  rcases cancelIpcBlockingMigrated_cases victim tcb st with h | ⟨scId, holder, _, _, h⟩
+  · rw [h]; exact hInv
+  · rw [h]; exact SchedContextOps.settleReturnedContext_objects_invExt _ _ scId hInv
 
 /-- The migration touches only replenish queues, so every core's run queue is the
 plain teardown's. -/
@@ -1871,11 +1868,9 @@ plain teardown's. -/
     (tcb : TCB) (st : SystemState) (c : CoreId) :
     (cancelIpcBlockingMigrated victim tcb st).scheduler.runQueueOnCore c
       = (cancelIpcBlocking st victim tcb).scheduler.runQueueOnCore c := by
-  unfold cancelIpcBlockingMigrated
-  split
-  · rename_i scId holder _
-    exact SchedContextOps.settleReturnedContext_runQueueOnCore _ _ scId c
-  · rfl
+  rcases cancelIpcBlockingMigrated_cases victim tcb st with h | ⟨scId, holder, _, _, h⟩
+  · rw [h]
+  · rw [h]; exact SchedContextOps.settleReturnedContext_runQueueOnCore _ _ scId c
 
 /-- The migration writes no TCB, so every TCB lookup is the plain teardown's. -/
 @[simp] theorem cancelIpcBlockingMigrated_getTcb? (victim : SeLe4n.ThreadId)
@@ -1898,11 +1893,9 @@ current thread of every core is the plain teardown's. -/
     (tcb : TCB) (st : SystemState) (c : CoreId) :
     (cancelIpcBlockingMigrated victim tcb st).scheduler.currentOnCore c
       = (cancelIpcBlocking st victim tcb).scheduler.currentOnCore c := by
-  unfold cancelIpcBlockingMigrated
-  split
-  · rename_i scId holder _
-    exact SchedContextOps.settleReturnedContext_currentOnCore _ _ scId c
-  · rfl
+  rcases cancelIpcBlockingMigrated_cases victim tcb st with h | ⟨scId, holder, _, _, h⟩
+  · rw [h]
+  · rw [h]; exact SchedContextOps.settleReturnedContext_currentOnCore _ _ scId c
 
 /-- **`v0.35.158`: the holder the reclaim UNBOUND — `some holder` exactly when
 this teardown took the victim's reservation away from it.**
@@ -2409,15 +2402,6 @@ open SeLe4n.Kernel
 @[simp] theorem cancelIpcBlockingValid_eq (st : SystemState)
     (vtid : SeLe4n.ValidThreadId) (tcb : TCB) :
     cancelIpcBlockingValid st vtid tcb = cancelIpcBlocking st vtid.val tcb := rfl
-
-/-- AN10-H4: typed entry-point for `cancelDonation`. -/
-@[inline] def cancelDonationValid (st : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (tcb : TCB) : Except KernelError SystemState :=
-  cancelDonation st vtid.val tcb
-
-@[simp] theorem cancelDonationValid_eq (st : SystemState)
-    (vtid : SeLe4n.ValidThreadId) (tcb : TCB) :
-    cancelDonationValid st vtid tcb = cancelDonation st vtid.val tcb := rfl
 
 -- ============================================================================
 -- D1-G: suspendThread (composite)

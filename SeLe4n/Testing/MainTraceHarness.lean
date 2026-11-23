@@ -772,9 +772,13 @@ private def runIpcMessageBoundsTrace (counter : IO.Ref Nat) (st1 : SystemState) 
 
   -- H12d-01: a send's words come from the sender's frame (WS-ZA ZA4.7), so the
   -- register bound lives in the message-info decode: a word declaring 121
-  -- registers does not decode.
+  -- registers decodes as 120, the length clamped as seL4's
+  -- `messageInfoFromWord` clamps it (WS-SX SX8.1).
   let oversizedRegsInfo : Nat := (MessageInfo.mk 121 0 0 0).encode
-  IO.println s!"[IMB-001] H12d oversized registers rejected: {(MessageInfo.decode oversizedRegsInfo).isNone}"
+  let regsClamped : Bool := match MessageInfo.decode oversizedRegsInfo with
+    | some mi => mi.length == maxMessageRegisters
+    | none => false
+  IO.println s!"[IMB-001] H12d oversized registers clamped to 120: {regsClamped}"
 
   -- H12d-02: and the word's two-bit extra-caps field names at most three
   -- capabilities, whatever a word asking for four decodes to.
@@ -803,7 +807,8 @@ private def runIpcMessageBoundsTrace (counter : IO.Ref Nat) (st1 : SystemState) 
       IO.println s!"[IMB-008] H12d boundary message accepted: true"
 
   -- H12d-04: a call reads the same frame, so a caller whose frame declares an
-  -- oversized message delivers no words rather than an unbounded message.
+  -- oversized message has its length clamped to 120 (seL4's
+  -- `messageInfoFromWord`) rather than delivering an unbounded message.
   let stOversized : SystemState :=
     match st1.getTcb? senderId with
     | none => st1
@@ -811,7 +816,7 @@ private def runIpcMessageBoundsTrace (counter : IO.Ref Nat) (st1 : SystemState) 
         let regs := SeLe4n.writeReg tcb.registerContext ⟨1⟩ oversizedRegsInfo.toUInt64
         st1.withObjectStored senderId.toObjId (.tcb { tcb with registerContext := regs })
   let callMsg := SeLe4n.Kernel.sendPayloadMessage stOversized senderId (.frame none false true)
-  IO.println s!"[IMB-009] H12d call oversized rejected: {callMsg.registers.size == 0}"
+  IO.println s!"[IMB-009] H12d call oversized clamped to 120: {decide (callMsg.registers.size ≤ maxMessageRegisters) && callMsg.registers.size != 0}"
 
   -- H12d-05: endpointReply with oversized message should be rejected
   let oversizedRegs : IpcMessage := {
@@ -1307,10 +1312,11 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
   | .ok _ =>
       IO.println "[RDT-007] unexpected syscallEntryChecked success with invalid syscall"
 
-  -- RDT-008: syscallEntryChecked with malformed msgInfo → decode error.
+  -- RDT-008: syscallEntryChecked with an over-length msgInfo: seL4's
+  -- `messageInfoFromWord` clamps the length to 120, so the send proceeds.
   let malformedMsgInfoRegs : SeLe4n.RegisterFile :=
     SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
-        if r == 1 then 127  -- length=127 > 120 → invalid
+        if r == 1 then 127  -- length=127 > 120 → clamped to 120
         else if r == 7 then Syscall.send.word  -- valid syscall (seL4's `Send`)
         else 0)
   let stMalformedMsgInfo : SystemState :=
@@ -1335,9 +1341,9 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
   match SeLe4n.Kernel.syscallEntryChecked SeLe4n.Kernel.harnessLabelingContext
       SeLe4n.arm64DefaultLayout bootCoreId 32 stMalformedMsgInfo with
   | .error err =>
-      IO.println s!"[RDT-008] syscallEntryChecked malformed msgInfo decode error: {reprStr err}"
+      IO.println s!"[RDT-009] unexpected syscallEntryChecked error with over-length msgInfo: {reprStr err}"
   | .ok _ =>
-      IO.println "[RDT-009] unexpected syscallEntryChecked success with malformed msgInfo"
+      IO.println "[RDT-008] syscallEntryChecked over-length msgInfo clamped, send accepted: true"
 
   -- RDT-010: Register decode with namespace mismatch — out-of-bounds layout
   let outOfBoundsLayout : SeLe4n.SyscallRegisterLayout := {
@@ -2760,16 +2766,27 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let unchanged := (stAfterNormal.scheduler.currentOnCore bootCoreId) == (stReplyNormal.scheduler.currentOnCore bootCoreId)
   IO.println s!"[Z7D-006] applyReplyDonation non-donated: unchanged={unchanged}"
 
-  -- Z7D-007: cleanupDonatedSchedContext — lifecycle cleanup returns SC
+  -- Z7D-007: the destroy path's reservation arm on a donated holder.  WS-SX SX8
+  -- (seL4's `schedContext_unbindTCB`): the holder is unbound and the context is
+  -- handed to no one -- the caller is NOT recovered at destroy; it gets the
+  -- context back only through `reply_pop`.  The arm never refuses.
   let stCleanup := st1.withObjectStored callerTid.toObjId callerDonated
       |>.withObjectStored serverTid.toObjId serverDonated
       |>.withObjectStored scId.toObjId (.schedContext scDonated)
-  let stCleaned := match SeLe4n.Kernel.cleanupDonatedSchedContext stCleanup serverTid with
-    | .ok s => s | .error _ => stCleanup
-  let callerRecovered := match stCleaned.getTcb? callerTid with
+  let stCleaned := match stCleanup.getTcb? serverTid with
+    | some t =>
+      (match SeLe4n.Kernel.cancelDonationArmOnCore stCleanup serverTid t with
+       | .ok s => some s | .error _ => none)
+    | none => none
+  let armOk := stCleaned.isSome
+  let stC := stCleaned.getD stCleanup
+  let callerRecovered := match stC.getTcb? callerTid with
     | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
     | none => false
-  IO.println s!"[Z7D-007] cleanupDonatedSchedContext: caller_recovered={callerRecovered}"
+  let contextUnheld := match stC.getSchedContext? scId with
+    | some sc => sc.boundThread.isNone
+    | none => false
+  IO.println s!"[Z7D-007] cancelDonationArmOnCore donated: ok={armOk} context_unheld={contextUnheld} caller_recovered={callerRecovered}"
 
   -- Z7D-008: cleanupPreReceiveDonation — stale donation cleaned up
   let stStale := st1.withObjectStored callerTid.toObjId callerTcb
@@ -2832,7 +2849,9 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     -- pop one level up hands the
     -- context back to the intermediate caller as a **donation from the outer
     -- caller**, with the new owner resolved off the stack rather than passed in.
-    match SeLe4n.Kernel.returnDonatedSchedContextResolved stPushed serverTid scId callerTid with
+    -- WS-SX SX8: through the kernel's own router (seL4's `reply_pop`): the
+    -- caller holds no context of its own, so the pop is the hand-back.
+    match SeLe4n.Kernel.popHeldReplyHead stPushed serverTid scId callerTid with
     | .error err =>
       IO.println s!"[SCN-DONATION-RETURN-RESOLVED-OUTER] depth-2 resolved return: error {reprStr err}"
     | .ok stPopped =>

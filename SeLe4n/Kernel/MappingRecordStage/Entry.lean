@@ -102,14 +102,14 @@ theorem perCoreRescheduleStep_mappingStage (st : SystemState) (coreId : UInt64) 
     · exact MappingStage.refl _
   · exact MappingStage.refl _
 
-/-- WS-ZA ZA6.32: the interrupt step: the bound signal and the stash clear,
-then the mask, which writes no object. -/
-theorem interruptEntryStep_mappingStage (st : SystemState) (coreId intId : UInt64) :
-    MappingStage st (interruptEntryStep st coreId intId) :=
-  interruptEntryStep_of (P := MappingStage st) st coreId intId (.refl st) fun c _ _ =>
-    handleInterruptOnCore_of (P := MappingStage st) st c _
+/-- WS-ZA ZA6.32: the interrupt step: seL4's `sendSignal` (the bound signal, the
+stash clear and the donation), then the mask, which writes no object. -/
+theorem interruptEntryStep_mappingStage (ctx : LabelingContext) (st : SystemState) (coreId intId : UInt64) :
+    MappingStage st (interruptEntryStep ctx st coreId intId) :=
+  interruptEntryStep_of (P := MappingStage st) ctx st coreId intId (.refl st) fun c _ _ =>
+    handleInterruptOnCore_of (P := MappingStage st) ctx st c _
       (fun _ h => h.trans (.of_objects_eq rfl)) (.refl st)
-      (fun ntfn _ _ => notificationSignalBoundOnCore_mappingStage)
+      (fun ntfn _ _ => sendSignalOnCoreFlowing_mappingStage)
 
 
 theorem dispatchVacatedCore_mappingStage (st : SystemState) (c : CoreId) :
@@ -506,14 +506,14 @@ theorem perCoreRescheduleEntryState_mappingStage (coreId : UInt64)
 
 /-- WS-ZA ZA6.32: **the interrupt entry's committed state keeps the mappings
 recorded**. -/
-theorem interruptEntryState_mappingStage (coreId intId : UInt64)
+theorem interruptEntryState_mappingStage (ctx : LabelingContext) (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState) :
     MappingStage st (Architecture.clearIcacheMaintenance
       (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
-        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        (interruptEntryStep ctx (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
         coreId) coreId))) :=
   ((((saveCapturedTrapFrameAt_mappingStage st coreId frame).trans
-    (interruptEntryStep_mappingStage _ coreId intId)).trans
+    (interruptEntryStep_mappingStage ctx _ coreId intId)).trans
     (settleResidencyAt_mappingStage _ coreId)).trans (activateThreadAt_mappingStage _ coreId)).trans
     (clearLedgers_mappingStage _)
 
@@ -676,14 +676,14 @@ theorem perCoreRescheduleEntryState_preserves_bookkeepingAgrees (coreId : UInt64
     (objects_invExt_of_capabilityInvariantBundle _ hB.2.1) hB.bookkeepingAgrees
 
 /-- **The interrupt entry keeps the bookkeeping in agreement with the objects.** -/
-theorem interruptEntryState_preserves_bookkeepingAgrees (coreId intId : UInt64)
+theorem interruptEntryState_preserves_bookkeepingAgrees (ctx : LabelingContext) (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState)
     (hB : Architecture.proofLayerInvariantBundle st) :
     (Architecture.clearIcacheMaintenance
       (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
-        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        (interruptEntryStep ctx (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
         coreId) coreId))).bookkeepingAgrees :=
-  (interruptEntryState_mappingStage coreId intId frame st).bookkeeping
+  (interruptEntryState_mappingStage ctx coreId intId frame st).bookkeeping
     (objects_invExt_of_capabilityInvariantBundle _ hB.2.1) hB.bookkeepingAgrees
 
 /-- **The fault entry keeps the bookkeeping in agreement with the objects.** -/

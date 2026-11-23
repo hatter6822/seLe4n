@@ -37,9 +37,9 @@ theorem writeFaultRegistersToTcb_mappingStage (st : SystemState) (tid : SeLe4n.T
 
 /-- **The fault delivery keeps the mappings recorded**: the handler call, or
 the fail-closed suspend; then the woken handler's frame and the fault record. -/
-theorem faultDeliverOnCore_mappingStage (st : SystemState) (tid : SeLe4n.ThreadId)
+theorem faultDeliverOnCore_mappingStage {lend : Bool} (st : SystemState) (tid : SeLe4n.ThreadId)
     (f : Fault) (fctx : FaultContext) (c : CoreId) :
-    MappingStage st (faultDeliverOnCore st tid f fctx c).1 := by
+    MappingStage st (faultDeliverOnCore st tid f fctx c lend).1 := by
   have sus := (faultSuspendOnCore_mappingStage st tid c).trans
     (recordPendingFault_mappingStage _ tid { fault := f, context := fctx })
   unfold faultDeliverOnCore
@@ -47,10 +47,10 @@ theorem faultDeliverOnCore_mappingStage (st : SystemState) (tid : SeLe4n.ThreadI
   · exact sus
   · rename_i tgt _
     have s0 : MappingStage st (endpointCallCrossCoreDispatch tgt.endpoint tid
-        (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st).1 :=
-      endpointCallCrossCoreDispatch_mappingStage
+        (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st lend).1 :=
+      endpointCallCrossCoreDispatch_mappingStage (lend := lend)
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid
-      (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st = r at s0 ⊢
+      (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st lend = r at s0 ⊢
     obtain ⟨st1, r⟩ := r
     cases r with
     | error e => exact sus

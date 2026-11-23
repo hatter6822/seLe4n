@@ -1262,6 +1262,88 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
   assertInvariants "chain12d: replyRecv arrival-order-independent transfer (queued)" stA2
   assertInvariants "chain12d: replyRecv arrival-order-independent transfer (rendezvous)" stB2
 
+/-- WS-SX SX8.2: **seL4-MCS `handleReplyRecv` returns the replier's notification
+context before its receive** (`receiveIPC`'s `maybeReturnSchedContext`, which
+`handleReplyRecv` always runs as a blocking receive, before it reads the
+endpoint).  The server holds context 3530, the context of its bound notification
+3520: the reply-receive unbinds both links whether the receive leg blocks or
+meets a parked sender.  A server holding another context keeps it (seL4's guard
+false). -/
+private def replyRecvReturnsNotificationContext : IO Unit := do
+  let epId : SeLe4n.ObjId := ⟨3500⟩
+  let server : SeLe4n.ThreadId := ⟨3510⟩
+  let prevCaller : SeLe4n.ThreadId := ⟨3511⟩
+  let nextSender : SeLe4n.ThreadId := ⟨3512⟩
+  let ntfnId : SeLe4n.ObjId := ⟨3520⟩
+  let scObj : SeLe4n.ObjId := ⟨3530⟩
+  let scId := SeLe4n.SchedContextId.ofObjId scObj
+  let otherObj : SeLe4n.ObjId := ⟨3531⟩
+  let otherSc := SeLe4n.SchedContextId.ofObjId otherObj
+  let rid : SeLe4n.ReplyId := ⟨3540⟩
+  let cn : SeLe4n.ObjId := ⟨3550⟩
+  let ntfn : Notification :=
+    { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
+      boundTCBCode := server.val + 1, schedContextCode := scId.val + 1 }
+  -- `held` is the context the server holds; the notification's is always 3530.
+  let mk (held : SeLe4n.SchedContextId) : SystemState :=
+    let scCtx : SeLe4n.Kernel.SchedContext := { SeLe4n.Kernel.SchedContext.empty scId with
+      boundThreadCode := if held = scId then server.val + 1 else 0,
+      notificationCode := ntfnId.val + 1 }
+    let scOther : SeLe4n.Kernel.SchedContext := { SeLe4n.Kernel.SchedContext.empty otherSc with
+      boundThreadCode := if held = otherSc then server.val + 1 else 0 }
+    let srv : TCB :=
+      { tid := server, priority := ⟨40⟩, domain := ⟨0⟩,
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cn SeLe4n.ObjId.sentinel,
+        ipcBuffer := (SeLe4n.VAddr.ofNat 4096), boundNotificationCode := ntfnId.val + 1,
+        scBindingScCode := held.val + 1 }
+    let caller : TCB := TCB.setIpcState
+      { tid := prevCaller, priority := ⟨39⟩,
+        domain := ⟨0⟩, spaceCells := SeLe4n.Model.TCB.spaceCellsOf cn SeLe4n.ObjId.sentinel,
+        ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
+        replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply epId (some server))
+    let sender : TCB :=
+      { tid := nextSender, priority := ⟨38⟩, domain := ⟨0⟩,
+        spaceCells := SeLe4n.Model.TCB.spaceCellsOf cn SeLe4n.ObjId.sentinel,
+        ipcBuffer := (SeLe4n.VAddr.ofNat 12288) }
+    let reply : SeLe4n.Kernel.Reply := { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some prevCaller) }
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject cn (.cnode (SeLe4n.Model.CNode.ofSlots 4 SeLe4n.UniqueSlotMap.empty))
+      |>.withObject ntfnId (.notification ntfn)
+      |>.withObject scObj (.schedContext scCtx)
+      |>.withObject otherObj (.schedContext scOther)
+      |>.withObject server.toObjId (.tcb srv)
+      |>.withObject prevCaller.toObjId (.tcb caller)
+      |>.withObject nextSender.toObjId (.tcb sender)
+      |>.withObject rid.toObjId (.reply reply)
+      |>.withRunnable [server, nextSender]
+      |>.build)
+  let replyMsg : IpcMessage := { registers := #[SeLe4n.RegValue.ofNat 7], badge := none }
+  let returned (st : SystemState) : Bool :=
+    (st.getTcb? server).any (fun t => t.scBindingScCode == 0 && t.scBindingOwnerCode == 0) &&
+      (st.getSchedContext? scId).any (fun sc => decide (sc.boundThread = none))
+  -- The receive leg blocks.
+  let (_, stB) ← expectOkSt "replyRecv return: the receive leg blocks"
+    (SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid prevCaller replyMsg
+      false bootCoreId (mk scId))
+  expect "replyRecv return: a blocking leg returns the notification's context"
+    (returned stB)
+  -- A sender is parked: seL4 returns before it reads the endpoint.
+  let (stP, _) := SeLe4n.Kernel.endpointSendDualWithCapsOnCore epId nextSender
+    (.frame none false true) bootCoreId (mk scId)
+  let (_, stR) ← expectOkSt "replyRecv return: the receive leg meets a parked sender"
+    (SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid prevCaller replyMsg
+      false bootCoreId stP)
+  expect "replyRecv return: a rendezvous leg returns the notification's context too"
+    (returned stR)
+  -- seL4's guard false: the server holds another context and keeps it.
+  let (_, stG) ← expectOkSt "replyRecv return: a server holding another context"
+    (SeLe4n.Kernel.endpointReplyRecvOnCore epId server rid prevCaller replyMsg
+      false bootCoreId (mk otherSc))
+  expect "replyRecv return: a server holding another context keeps it"
+    ((stG.getTcb? server).any (fun t => t.scBindingScCode == otherSc.val + 1) &&
+      (stG.getSchedContext? otherSc).any (fun sc => decide (sc.boundThread = some server)))
+
 /-- SCN-IPC-CAP-TRANSFER-NO-DUPLICATE (PR #873 round 8): **a receive that
 dequeues nothing installs nothing.**
 
@@ -3117,6 +3199,7 @@ private def runOperationChainSuite : IO Unit := do
   ipcCapTransferArrivalOrder
   ipcUntypedGrantFollowsDerivationRule
   replyRecvCapTransferArrivalOrder
+  replyRecvReturnsNotificationContext
   receiveWithoutSenderInstallsNothing
   receiveTakesParkedSenderRegisters
   revokeWhileParkedTransfersNothing

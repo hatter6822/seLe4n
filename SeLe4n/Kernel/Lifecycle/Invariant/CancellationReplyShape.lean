@@ -13,6 +13,7 @@ import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
 -- the reverse, so no cycle closes.
 import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
 import SeLe4n.Kernel.IPC.Invariant.CancellationPlacementFrame
+import SeLe4n.Kernel.IPC.Invariant.HeldContextPop
 
 /-!
 # WS-RR RR7.22 (residual, remediation) — the cancelled caller's donation
@@ -175,7 +176,7 @@ def cancelDonationStackValid (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TC
 cancellation reclaims, the resolver answers on its context, so the pop is
 decided by its own checks.  The chain invariant gives it
 (`cancelDonationResolves_of_chainWellFormed`), and so does a pre-state check
-that the return commits (`donatedReturnCommits`). -/
+that the pop commits (`heldPopCommits`). -/
 def cancelDonationResolves (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB) : Prop :=
   ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
     Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some (scId, holder) →
@@ -304,7 +305,49 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
     have hScA : st.objects[scId0.toObjId]? = some (.schedContext sc) :=
       (SystemState.getSchedContext?_eq_some_iff st scId0 sc).mp hSc
     obtain ⟨n, hResN⟩ := hResolves scId0 holder hRes sc hScA
-    rw [returnDonatedSchedContextResolved_of_resolved hResN] at hTcb
+    -- **WS-SX SX8**: where the caller holds a context of its own the pop is seL4's
+    -- held arm, which keeps the context with the holder and rewrites only the
+    -- holder's binding -- to the outer caller's, which the stack obligation says
+    -- is not the cancelled caller.
+    by_cases hAcc : donationRecipientAcceptable st v = false
+    · rw [popHeldReplyHead_of_not_acceptable hAcc,
+        keepDonatedSchedContextResolved_of_resolved hResN] at hTcb
+      have hOutV := ((hStack scId0 holder hRes) n hResN).1
+      cases hK : keepDonatedSchedContext st holder scId0 n with
+      | error e =>
+        -- A refused held pop is the identity, so `hTcb` is the holder's own
+        -- pre-state binding, which names the context: the pop cannot refuse.
+        rw [hK] at hTcb
+        simp only at hTcb
+        obtain ⟨hResEq, hLkTid⟩ := donatedContextIsOwnerFrameHead_cancelledCallerDonation? st v
+          tcbV hHolder hLookup hOwner tid tcb scId hTcb hBind
+        have hPair : (scId, tid) = (scId0, holder) := Option.some.inj (hResEq.symm.trans hRes)
+        have hScIdEq : scId = scId0 := congrArg Prod.fst hPair
+        have hTidEq : tid = holder := congrArg Prod.snd hPair
+        have hLkHolder : lookupTcb st holder = some tcb := by rw [← hTidEq]; exact hLkTid
+        obtain ⟨st', hOk⟩ := keepDonatedSchedContext_ok_of_holderBinding hInv hHeadResA hLkHolder
+          (by rw [hBind, ← hScIdEq]; rfl) hScA (by simpa using hBt)
+          (by rw [heldPopOuter?_of_donated (lookupTcb_some_objects st holder tcb hLkHolder) hBind]
+              exact outerCallerAcceptable_self_of hOutV)
+        rw [hOk] at hK; cases hK
+      | ok st' =>
+        rw [hK] at hTcb
+        simp only at hTcb
+        rcases keepDonatedSchedContext_tcb_split hInv hK tid tcb hTcb with
+          ⟨_, ht0, -, hB'⟩ | ⟨hH, hAtA⟩
+        · rw [hB'] at hBind
+          cases hN : heldPopOwner? ht0.schedContextBinding n with
+          | none => rw [hN] at hBind; cases hBind
+          | some outer =>
+            rw [hN] at hBind
+            rw [(heldPopOwner?_some hN).2] at hOutV
+            simp only [donationReturnBinding, SchedContextBinding.donated.injEq] at hBind
+            exact (outerCallerAcceptable_some_char _ holder v outer hOutV).1 hBind.2
+        · obtain ⟨hResEq, _⟩ := donatedContextIsOwnerFrameHead_cancelledCallerDonation? st v tcbV
+            hHolder hLookup hOwner tid tcb scId hAtA hBind
+          exact hH (congrArg Prod.snd (Option.some.inj (hResEq.symm.trans hRes)))
+    rw [popHeldReplyHead_of_acceptable (by simpa using hAcc),
+      returnDonatedSchedContextResolved_of_resolved hResN] at hTcb
     cases hRet : returnDonatedSchedContext st
         holder scId0 v n with
     | error e =>
@@ -330,15 +373,18 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
       have hVSame : vTcb0 = tcbV :=
         KernelObject.tcb.inj (Option.some.inj
           (hVObj.symm.trans (lookupTcb_some_objects st v tcbV hLookup)))
+      -- `v` holds no context: the router's own test, which took this arm.
       have hVUnboundV : tcbV.schedContextBinding = .unbound := by
-        rw [← hVSame]; exact hVUnbound
+        have e := donationRecipientAcceptable_eq_of_some st v tcbV hLookup
+        rw [show donationRecipientAcceptable st v = true by simpa using hAcc] at e
+        revert e; cases tcbV.schedContextBinding <;> simp [BEq.beq]
       -- `v` gave its binding up and the residual holder holds one, so they differ.
       have hNeVHolder : v ≠ holder := by
         intro hEq
         rw [hEq] at hVObj
         rw [KernelObject.tcb.inj (Option.some.inj (hVObj.symm.trans hHolderAt))] at hVUnbound
         rw [hBind0] at hVUnbound
-        cases hVUnbound
+        simp at hVUnbound
       obtain ⟨st', hOk⟩ := returnDonatedSchedContext_ok_of_boundAndRecipient
         st holder tcb scId0 v sc tcbV
         hInv hHeadResA hLkHolder
@@ -672,18 +718,15 @@ theorem cancelIpcBlocking_replyArm_tcb_frame (st : SystemState)
   have hReclaim :
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).objects[k]?
         = some (.tcb t0) := by
-    unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-    rw [hDon]
-    cases hVGet : st.getTcb? v with
-    | none => simp only []; exact hPre
-    | some _ =>
-      simp only []
-      cases hRet : returnDonatedSchedContextResolved st holder scId v with
-      | error e => exact hPre
-      | ok stRet =>
-        obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        exact returnDonatedSchedContext_other_tcb_eq _ stRet holder scId v n hInv hPop
-          k t0 hkV hkHolder hPre
+    refine Lifecycle.Suspend.returnDonationToCancelledCaller_elimPops
+      (P := fun s => s.objects[k]? = some (.tcb t0)) hPre
+      (fun _ _ n stRet hD' hPop => ?_) (fun _ _ _ _ hD' hK => ?_)
+    · rw [hDon] at hD'; cases hD'
+      exact returnDonatedSchedContext_other_tcb_eq _ stRet holder scId v n hInv hPop
+        k t0 hkV hkHolder hPre
+    · rw [hDon] at hD'; cases hD'
+      obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, hFwd, _, _⟩ := keepDonatedSchedContext_objects hInv hK
+      exact hFwd k t0 hkHolder hPre
   -- Stage 2: the restore writes the victim alone; stage 3: the reply consume
   -- writes the victim's TCB and a Reply object.
   have hInvR : (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).objects.invExt :=
@@ -844,7 +887,8 @@ theorem returnDonationToCancelledCaller_leaves_donated_at_depth_two
     unfold Lifecycle.Suspend.returnDonationToCancelledCaller
     rw [hDon, hGetV]
     simp only []
-    rw [hResolved]
+    rw [popHeldReplyHead_of_acceptable
+      (returnDonatedSchedContext_ok_recipientAcceptable _ _ _ _ _ _ hPop), hResolved]
   refine ⟨hEq, ?_⟩
   obtain ⟨t', hk', _⟩ := returnDonatedSchedContext_tcb_rewrite _ st' holder scId v hObjInv
     (some outer) hPop v.toObjId tcbV ((SystemState.getTcb?_eq_some_iff st v tcbV).mp hGetV)
@@ -3128,14 +3172,21 @@ theorem returnDonationToCancelledCaller_preserves_ipcInvariantFull
       exact hNotRes SeLe4n.ThreadId.sentinel_isReserved
     obtain ⟨n, hResN⟩ :=
       hResolves scId holder hRes sc ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc)
-    rw [returnDonatedSchedContextResolved_of_resolved hResN]
-    cases hPop : returnDonatedSchedContext st holder scId v n with
+    have hOuter := donationReturnOuterValid_of_stackValid (hStack scId holder hRes) hResN
+    cases hP : popHeldReplyHead st holder scId v with
     | error _ => exact hBundle
     | ok st' =>
-      exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except _ st'
-        ⟨holder, hNeSent⟩ scId v hObjInv
-        (ipcInvariantFullExceptDonationOwner_of_full v hBundle) hRet n
-        (donationReturnOuterValid_of_stackValid (hStack scId holder hRes) hResN) hPop
+      refine popHeldReplyHead_lift hP (fun _ _ hR => ?_) (fun _ _ hK => ?_)
+      · obtain ⟨n', hN', hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hR
+        rw [hResN] at hN'; cases hN'
+        exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except _ _
+          ⟨holder, hNeSent⟩ scId v hObjInv
+          (ipcInvariantFullExceptDonationOwner_of_full v hBundle) hRet n hOuter hPop
+      · -- **WS-SX SX8**: the held arm keeps the context with the holder.
+        obtain ⟨n', hN', hK'⟩ := keepDonatedSchedContextResolved_ok_decompose hK
+        rw [hResN] at hN'; cases hN'
+        exact keepDonatedSchedContext_preserves_ipcInvariantFull hObjInv hBundle hRet
+          hOuter.outerUnowned hK'
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RR RR8.7: the reclaim rewrites the victim's binding and nothing else of it.**
@@ -3161,12 +3212,12 @@ theorem returnDonationToCancelledCaller_victim_tcb_rewrite (st : SystemState)
   | some p =>
     obtain ⟨scId, holder⟩ := p
     simp only []
-    cases hR : returnDonatedSchedContextResolved st holder scId v with
-    | error _ => exact ⟨tcbV, hAtV, tcbBindingRewrite.refl tcbV⟩
-    | ok st' =>
-      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hR
-      exact returnDonatedSchedContext_tcb_rewrite _ st' holder scId v hObjInv n hPop v.toObjId
+    split
+    · next st' hR =>
+      obtain ⟨t', hT', hRw⟩ := (popHeldReplyHead_donationPopFrame hObjInv hR).tcbFwd v.toObjId
         tcbV hAtV
+      exact ⟨t', hT', hRw⟩
+    · exact ⟨tcbV, hAtV, tcbBindingRewrite.refl tcbV⟩
 
 -- ============================================================================
 -- WS-RR RR8.7 — §13  The arm keystone

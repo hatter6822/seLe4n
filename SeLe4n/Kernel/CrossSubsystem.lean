@@ -1898,6 +1898,17 @@ theorem returnDonatedSchedContext_preservesFieldsOutside
     | rfl
     | exact (hf (by decide)).elim
 
+/-- The held pop writes a context, the replies and one thread: IPC fields only. -/
+theorem keepDonatedSchedContext_preservesFieldsOutside
+    {st st' : SystemState} {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {newOwner? : Option SeLe4n.ThreadId}
+    (hStep : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
+  obtain ⟨_, _, _, s1, s2, _, _, _, _, hS1, hS2, _, hS3⟩ := keepDonatedSchedContext_ok_storeChain hStep
+  refine preservesFieldsOutside_trans (storeObject_preservesFieldsOutside_ipc _ _ _ _ hS1) ?_
+  refine preservesFieldsOutside_trans (storeDonationHeadPop_preservesFieldsOutside_ipc hS2) ?_
+  exact storeObject_preservesFieldsOutside_ipc _ _ _ _ hS3
+
 theorem cleanupPreReceiveDonationChecked_preservesFieldsOutside
     (st st' : SystemState) (receiver : SeLe4n.ThreadId)
     (hStep : cleanupPreReceiveDonationChecked st receiver = .ok st') :
@@ -1907,8 +1918,9 @@ theorem cleanupPreReceiveDonationChecked_preservesFieldsOutside
   · cases hStep
     exact preservesFieldsOutside_refl _ _
   · split at hStep
-    · exact returnDonatedSchedContextResolved_lift hStep
+    · exact popHeldReplyHead_liftPops hStep
         (fun n s hs => returnDonatedSchedContext_preservesFieldsOutside _ _ _ _ _ n hs)
+        (fun _ _ hs => keepDonatedSchedContext_preservesFieldsOutside hs)
     · cases hStep
       exact preservesFieldsOutside_refl _ _
 
@@ -2568,11 +2580,10 @@ theorem cleanup_frame_preserves_schedContextPredicates
 
 /-- Z9-O2: Frame case — thread cleanup (returning donated SchedContext) preserves
     all 3 new cross-subsystem predicates when `objects` is unchanged. For the
-    actual mutation case, `cleanupDonatedSchedContext` returns the SchedContext
-    to its original owner by modifying both TCBs' `schedContextBinding` fields.
-    Operation-specific preservation must show that the return operation maintains
-    the uniqueness invariant (Z9-B) by clearing the dying thread's binding before
-    or atomically with updating the owner's binding. -/
+    actual mutation case, `cancelDonationArmOnCore` unbinds the SchedContext
+    from the dying thread (seL4's `schedContext_unbindTCB`), clearing both the
+    thread's binding and the context's `boundThread`; its own preservation
+    theorems carry that case. -/
 theorem threadCleanup_frame_preserves_schedContextPredicates
     (st st' : SystemState)
     (hObjects : st'.objects = st.objects)
@@ -3484,9 +3495,9 @@ AN6-C adds *transitive* ancestor tracking via a new
 `UntypedObject.parent : Option ObjId` field (AN6-C.1, defined in
 `Model/Object/Types.lean`) plus a parent-chain walker and a transitive
 disjointness predicate. The full 11th-conjunct integration (preservation
-proofs + 130-site rename cascade) is a multi-day workstream and is
-tracked as follow-up AN6-C.5..C.10 (originally planned in WS-AN
-AN6-C; the historical record is in `docs/REGISTERED_DEBT.md`).
+proofs + 130-site rename cascade) is a multi-day workstream, registered
+as row 27 of `docs/REGISTERED_DEBT.md` table C.1 (transitive
+ancestor/descendant tracking; first planned as WS-AN AN6-C.5..C.10).
 This section lands
 the foundation pieces (C.1 through C.4) so future commits can compose
 on the predicate without re-doing the design work.

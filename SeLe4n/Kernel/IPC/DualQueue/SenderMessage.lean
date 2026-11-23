@@ -567,9 +567,7 @@ theorem decodeMsgInfoWord_extraCaps {w : UInt64} {mi : MessageInfo}
     (h : Architecture.RegisterDecode.decodeMsgInfoWord w = .ok mi) :
     mi.extraCaps = ((w >>> 7) &&& 3).toNat := by
   unfold Architecture.RegisterDecode.decodeMsgInfoWord at h
-  split at h
-  · cases h; rfl
-  · cases h
+  cases h; rfl
 
 /-- A register decode that succeeds took its message info from the layout's
 message-info register. -/

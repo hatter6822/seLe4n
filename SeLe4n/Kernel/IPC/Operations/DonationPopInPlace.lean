@@ -327,6 +327,16 @@ theorem TCB.schedContextBinding_beq_unbound (t : TCB) :
   | zero => rfl
   | succ s => cases t.scBindingOwnerCode <;> rfl
 
+/-- Whether a thread's binding is not a donation, read off its codes: no
+context, or a context with no owner word. -/
+theorem TCB.schedContextBinding_not_isDonated (t : TCB) :
+    (!t.schedContextBinding.isDonated) =
+      (t.scBindingScCode == 0 || t.scBindingOwnerCode == 0) := by
+  unfold TCB.schedContextBinding SchedContextBinding.ofCodes
+  cases t.scBindingScCode with
+  | zero => rfl
+  | succ s => cases t.scBindingOwnerCode <;> rfl
+
 /-- Whether a thread is blocked on a reply, read off its state code. -/
 theorem TCB.blockedOnReply_test_eq (t : TCB) :
     (match t.ipcState with
@@ -343,11 +353,11 @@ theorem TCB.blockedOnReply_test_eq (t : TCB) :
         | zero => rfl
         | succ n => exact (decide_eq_true (by omega)).symm
 
-/-- The outer caller's own state, as the pop reads it: unbound and blocked on a
-reply, off its codes. -/
+/-- The outer caller's own state, as the pop reads it: holding no donated
+context and blocked on a reply, off its codes. -/
 @[inline] def outerTestAt (st : SystemState) (x : SeLe4n.ThreadId) : Bool :=
   match st.getTcb? x with
-  | some t => t.scBindingScCode == 0 && decide (4 ≤ t.ipcStateCode)
+  | some t => (t.scBindingScCode == 0 || t.scBindingOwnerCode == 0) && decide (4 ≤ t.ipcStateCode)
   | none => false
 
 /-- The checks the pop makes of the outer caller (code `k`, `0` at the bottom of
@@ -375,8 +385,9 @@ theorem outerCallerAcceptableCode_eq (st : SystemState) (server c : SeLe4n.Threa
     | none => rfl
     | some t =>
       dsimp only
-      rw [TCB.schedContextBinding_beq_unbound]
-      exact congrArg (fun x => (o != c.val && o != server.val && (t.scBindingScCode == 0 && x)))
+      rw [TCB.schedContextBinding_not_isDonated]
+      exact congrArg (fun x => (o != c.val && o != server.val &&
+        ((t.scBindingScCode == 0 || t.scBindingOwnerCode == 0) && x)))
         (TCB.blockedOnReply_test_eq t).symm
 
 /-- The context code a reply heads (`0` where it heads none). -/
@@ -463,7 +474,7 @@ theorem replyPopsInPlace_pop (st : SystemState) (c server : SeLe4n.ThreadId)
       replyHeadContextCode st rid = scId.val + 1 ∧
       replyFrameHeadHolder? st rid = some (scId, server) ∧
       donatedReturnCommits st server scId c = true ∧
-      returnDonatedSchedContextResolved st server scId c =
+      popHeldReplyHead st server scId c =
         .ok (returnDonatedSchedContextInPlace st server c scId) := by
   unfold replyPopsInPlace at hG
   simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
@@ -567,7 +578,8 @@ theorem replyPopsInPlace_pop (st : SystemState) (c server : SeLe4n.ThreadId)
       rw [hRg]
       simp only [hN, hScg, hHead, beq_self_eq_true, ↓reduceIte]
     · rw [hScg]; exact hB
-  · exact returnDonatedSchedContextResolved_eq_inPlace st server c scId sc rid rp ct srv hScg hB
+  · rw [popHeldReplyHead_of_acceptable hRecip]
+    exact returnDonatedSchedContextResolved_eq_inPlace st server c scId sc rid rp ct srv hScg hB
       hHead hRg hN hBelow hOuter hRecip hCRes hSRes hT hSrv hNe hLsc hFsc hLR hFR hLC hFC hLS
 
 /-- **Whether a donation return passes the in-place pop's checks**, read as
@@ -694,7 +706,8 @@ theorem cancelIpcBlockingReclaimed_eq_inPlace (st : SystemState) (c : SeLe4n.Thr
   | some ct =>
   rw [hTg] at hM
   dsimp only at hM
-  obtain ⟨scId, hCode, hHolder, _, hPop⟩ := replyPopsInPlace_pop st c ⟨s⟩ _ ct hTg hSRes hM
+  obtain ⟨scId, hCode, hHolder, hCommits, hPop⟩ := replyPopsInPlace_pop st c ⟨s⟩ _ ct hTg hSRes hM
+  have hA := donatedReturnCommits_recipientAcceptable hCommits
   have hSc : (⟨replyHeadContextCode st ⟨t.replyObjectCode - 1⟩ - 1⟩ : SeLe4n.SchedContextId) =
       scId := by rw [hCode]; rfl
   rw [hSc]
@@ -729,7 +742,7 @@ theorem cancelIpcBlockingReclaimed_eq_inPlace (st : SystemState) (c : SeLe4n.Thr
   unfold cancelIpcBlockingReclaimed descheduleUnboundHolder cancelIpcBlockingMigrated
     cancelUnboundHolder? cancelHeadReplyCallerInPlace
   rw [hDon]
-  simp only [hTorn, Nat.add_sub_cancel]
+  simp only [hTorn, hA, if_true, Nat.add_sub_cancel]
   generalize SchedContextOps.settleReturnedContext _ _ scId = post
   cases post.getTcb? ⟨s⟩ with
   | none => rfl

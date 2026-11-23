@@ -384,9 +384,9 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
     (hCallerNotReply : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hNe : ∀ ep receiverTid, st.getEndpoint? endpointId = some ep →
-      ep.receiveQ.head = some receiverTid → caller ≠ receiverTid) :
+      ep.receiveQ.head = some receiverTid → caller ≠ receiverTid) (lend : Bool := true) :
     ipcInvariantFull (endpointCallCrossCoreDispatch endpointId caller payload
-      executingCore st).1 := by
+      executingCore st lend).1 := by
   have hWithCaps : ipcInvariantFull (endpointCallWithCapsOnCore endpointId caller payload
       executingCore st).1 :=
     endpointCallWithCapsOnCore_preserves_ipcInvariantFull endpointId caller payload
@@ -467,17 +467,30 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
                   TCB.of_withoutLinks_eq hw (fun _ => Iff.rfl) (hRecvReady t0 h0)
                 rw [hReady] at hOwnerIpc
                 cases hOwnerIpc
-              cases hDon : applyCallDonationOnCore stWc callerV receiverV
+              -- Donation precondition 3: nothing owns a donation on the caller,
+              -- which was not waiting on a reply when it called.
+              have hDon3 : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
+                  stWc.getTcb? tid = some tcb →
+                  tcb.schedContextBinding ≠ .donated scId callerV.val := by
+                have hBnd := endpointCallWithCapsOnCore_sameSchedContextBindings endpointId caller
+                  payload executingCore st hObjInv
+                rw [hWc] at hBnd
+                rw [hCallerV]
+                exact notDonationOwner_of_notBlockedOnReply hInv.donationOwnerValid hBnd
+                  hCallerNotReply
+              cases hDon : applyCallDonationOnCoreWhen lend stWc callerV receiverV
                   (determineTargetCore st caller) (determineTargetCore st receiverTid) with
               | error e => simp only; exact hWithCaps
               | ok stDon =>
                 simp only
                 have hDonFull : ipcInvariantFull stDon :=
-                  applyCallDonationOnCore_preserves_ipcInvariantFull stWc stDon callerV receiverV
-                    _ _ hWithCapsInv hWithCaps hDon1 hDon2 hDon
+                  applyCallDonationOnCoreWhen_induct ipcInvariantFull hDon hWithCaps
+                    (applyCallDonationOnCore_preserves_ipcInvariantFull stWc stDon callerV receiverV
+                      _ _ hWithCapsInv hWithCaps hDon1 hDon2 hDon3)
                 have hDonInv : stDon.objects.invExt :=
-                  applyCallDonationOnCore_preserves_objects_invExt stWc stDon callerV receiverV
-                    _ _ hWithCapsInv hDon
+                  applyCallDonationOnCoreWhen_induct (·.objects.invExt) hDon hWithCapsInv
+                    (applyCallDonationOnCore_preserves_objects_invExt stWc stDon callerV receiverV
+                      _ _ hWithCapsInv)
                 exact propagatePipChainCrossCore_preserves_ipcInvariantFull stDon receiverTid
                   executingCore _ hDonInv hDonFull
 

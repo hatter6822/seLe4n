@@ -31,14 +31,16 @@ open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 /-! ### AN6-A.1 (H-07): Shared closure-form proof-sketch recipe
 
-Five capability-only dispatch arms currently ship as *closure-form*
+Four capability-only dispatch arms currently ship as *closure-form*
 `_preserves_projection` theorems — the theorem takes `hProjEq : ∀
 stFinal, op = .ok stFinal → projectState stFinal = projectState st` and
 its body is `hProjEq st' hStep`. The closure form provides a *stable
 interface* for callers but requires them to discharge the projection
 preservation themselves using this file's named frame lemmas.
 
-The five closure-form arms, in stabilising-recipe order:
+The four closure-form arms, in stabilising-recipe order (the fifth,
+`schedContextBind_preserves_projection` (AK6F.14), is proven outright from the
+bind's per-core frame in `InformationFlow/PerCoreSchedulerNonInterference.lean`):
 
   1. `schedContextConfigure_preserves_projection` (AK6F.13) — baseline
      recipe: two `storeObject` updates at non-observable target + a
@@ -50,12 +52,10 @@ The five closure-form arms, in stabilising-recipe order:
      (AK6F.19) — uses the substantive frame lemmas
      `resumeThread_frame_insert` and `resumeThread_frame_ensureRunnable`
      from this file (both proven).
-  3. `schedContextBind_preserves_projection` (AK6F.14) — two SC+TCB
-     updates at non-observable target + runQueue re-bucket.
-  4. `schedContextUnbind_preserves_projection` (AK6F.15) — five-phase
+  3. `schedContextUnbind_preserves_projection` (AK6F.15) — five-phase
      teardown: `scheduler.current` clear, runQueue remove, SC+TCB
      updates, replenQueue remove.
-  5. `tcbSuspend_preserves_projection` = `suspendThread_preserves_projection`
+  4. `tcbSuspend_preserves_projection` = `suspendThread_preserves_projection`
      (AK6F.18) — hardest: 9-phase PIP-revert + IPC cleanup + donation
      cancel + TCB-state transition + optional schedule.
 
@@ -1708,6 +1708,37 @@ private theorem returnDonatedSchedContext_preserves_projection
     rw [hEq]; rfl
   rw [hFinal, hP4, hP3, hP2, hP1]
 
+/-- The held pop preserves projection for the same reason the donation return
+does: the context's `scReply` and origin, the replies' stack links and the
+holder's binding codes are all stripped by `projectKernelObject`. -/
+theorem keepDonatedSchedContext_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (holder : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (newOwner? : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hKeep : keepDonatedSchedContext st holder scId newOwner? = .ok st')
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none →
+        st.objectIndexSet.contains oid = true)
+    (hObjSetInv : st.objectIndexSet.table.invExt) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  obtain ⟨sc, head?, ht, s1, s2, hSc, _, _, _, hS1, hS2, hL, hS3⟩ :=
+    keepDonatedSchedContext_ok_storeChain hKeep
+  have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hS2
+  have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _ hObjSetInv hS1
+  have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
+    hObjSetInv hIdxComplete hS1
+  have hP1 := storeObject_projectionStable_preserves_projection ctx observer st s1
+    scId.toObjId _ (.schedContext sc) hSc
+    (by simp [projectKernelObject, donationSeverSchedContext])
+    hObjInv hS1
+  have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hS2
+  have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 st'
+    holder.toObjId _ (.tcb ht) (lookupTcb_some_objects s2 holder ht hL)
+    (projectKernelObject_tcb_schedContextBinding_invariant ctx observer ht _ _)
+    hInv2 hS3
+  rw [hP3, hP2, hP1]
+
 /-- WS-SM SM6.D (#7.1 fold): `storeTcbQueueLinks` preserves
 `objectIndexSetComplete` — it is a single `storeObject` at an existing key. -/
 theorem storeTcbQueueLinks_preserves_objectIndexSetComplete
@@ -2073,7 +2104,7 @@ theorem endpointReceiveDual_preserves_projection
                   | bound _ => rfl
                   | donated scId originalOwner =>
                     simp only []
-                    cases hReturn : returnDonatedSchedContextResolved st receiver scId
+                    cases hReturn : popHeldReplyHead st receiver scId
                         originalOwner with
                     | error _ => rfl
                     | ok st' =>
@@ -2082,10 +2113,15 @@ theorem endpointReceiveDual_preserves_projection
                       -- receiver is needed at all.  WS-OD OD4.4: and none on the
                       -- resolver's answer either — the pop is invisible at every
                       -- reply-stack depth.
-                      obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hReturn
-                      exact returnDonatedSchedContext_preserves_projection ctx observer
-                        st st' receiver scId originalOwner hObjInv n hPop
-                        hIdxComplete hObjSetInv
+                      -- The held pop (the owner holds a context) is invisible
+                      -- for the same reason.
+                      exact popHeldReplyHead_liftPops
+                        (P := fun s => projectState ctx observer s = projectState ctx observer st)
+                        hReturn
+                        (fun n s hPop => returnDonatedSchedContext_preserves_projection ctx observer
+                          st s receiver scId originalOwner hObjInv n hPop hIdxComplete hObjSetInv)
+                        (fun n s hK => keepDonatedSchedContext_preserves_projection ctx observer
+                          st s receiver scId n hObjInv hK hIdxComplete hObjSetInv)
               -- Common tail: from st2 back to st (storeTcbIpcState → enqueue → cleanup).
               have hProjTail : projectState ctx observer st2 = projectState ctx observer st := by
                 rw [storeTcbIpcStateAndMessage_preserves_projection ctx observer st1 st2 receiver _ _
@@ -5392,25 +5428,10 @@ theorem schedContextBind_frame_runQueue_rebucket
   runQueue_remove_insert_preserves_projection_at_high ctx observer st threadId pri
     hThreadHigh
 
-/-- AK6-F.14: `schedContextBind` preservation. Closure form; substantive
-    discharge for a caller uses the following frame lemmas:
-    - `objects_insert_preserves_projection_high` at high scId (SC update).
-    - `objects_insert_preserves_projection_high` at high threadId.toObjId (TCB update).
-    - `schedContextBind_frame_runQueue_rebucket` at thread-high threadId.
-    Each phase composes via `Eq.trans`. ≈25 LOC total discharge. -/
-theorem schedContextBind_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (vScId : SeLe4n.ValidObjId) (vThreadId : SeLe4n.ValidThreadId)
-    (st st' : SystemState)
-    (hProjEq :
-        ∀ stFinal,
-          SeLe4n.Kernel.SchedContextOps.schedContextBind vScId vThreadId st
-            = .ok ((), stFinal) →
-          projectState ctx observer stFinal = projectState ctx observer st)
-    (hStep : SeLe4n.Kernel.SchedContextOps.schedContextBind vScId vThreadId st
-              = .ok ((), st')) :
-    projectState ctx observer st' = projectState ctx observer st :=
-  hProjEq st' hStep
+/- AK6-F.14's `schedContextBind_preserves_projection` is proven, not a closure:
+it lives beside the bind's per-core frame in
+`InformationFlow/PerCoreSchedulerNonInterference.lean`, which this module sits
+below. -/
 
 -- ============================================================================
 -- AK6-F.15: schedContextUnbind preservation (closure form + frame lemmas)
@@ -5440,75 +5461,9 @@ theorem schedContextUnbind_preserves_projection
 -- AK6-F.17: cancelDonation preservation (closure form, sub-helper for suspend)
 -- ============================================================================
 
-/-- AK6-F.17: `cancelDonation` preservation helper, needed by suspendThread.
-    Closure form; substantive 3-arm discharge:
-    - **`.unbound`** arm: `st' = st` directly. `rfl`.
-    - **`.bound scId`** arm: SC unbind via `objects_insert_preserves_projection_high`
-      at high scId + `projectState_replenishQueue_eq`.
-    - **`.donated scId donor`** arm: uses `returnDonatedSchedContext` which
-      internally performs SC insert + donor TCB insert. Requires donor high,
-      derivable from the SC invariant `donationOwnerValid` plus the
-      suspended TCB's high observability.
-    Typical discharge: ≈30 LOC per arm, total ≈50 LOC. -/
-theorem cancelDonation_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hProjEq :
-        ∀ stFinal,
-          SeLe4n.Kernel.Lifecycle.Suspend.cancelDonation st tid tcb
-            = .ok stFinal →
-          projectState ctx observer stFinal = projectState ctx observer st)
-    (hStep : SeLe4n.Kernel.Lifecycle.Suspend.cancelDonation st tid tcb
-              = .ok st') :
-    projectState ctx observer st' = projectState ctx observer st :=
-  hProjEq st' hStep
-
 -- ============================================================================
 -- WS-RC R5.A (DEEP-SUSP-02): split-arm preservation helpers (closure form)
 -- ============================================================================
-
-/-- WS-RC R5.A: closure-form preservation helper for `cancelBoundDonation`.
-    Mirrors `cancelDonation_preserves_projection` (AK6-F.17) for the
-    in-place-unbind arm of the split. Substantive 1-arm discharge:
-    `.bound scId` case performs SC unbind via
-    `objects_insert_preserves_projection_high` at high scId +
-    `projectState_replenishQueue_eq`;
-    wrong-variant inputs error out so no projection obligation arises.
-    Typical discharge: ≈30 LOC. -/
-theorem cancelBoundDonation_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hProjEq :
-        ∀ stFinal,
-          SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation st tid tcb
-            = .ok stFinal →
-          projectState ctx observer stFinal = projectState ctx observer st)
-    (hStep : SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation st tid tcb
-              = .ok st') :
-    projectState ctx observer st' = projectState ctx observer st :=
-  hProjEq st' hStep
-
-/-- WS-RC R5.A: closure-form preservation helper for `cancelDonatedDonation`.
-    Mirrors `cancelDonation_preserves_projection` (AK6-F.17) for the
-    return-to-original-owner arm of the split. Substantive 1-arm
-    discharge: `.donated scId donor` case delegates to
-    `cleanupDonatedSchedContext` (which calls `returnDonatedSchedContext`,
-    performing SC insert + donor TCB insert); requires donor high,
-    derivable from the SC invariant `donationOwnerValid` plus the
-    suspended TCB's high observability. Wrong-variant inputs error out
-    so no projection obligation arises. Typical discharge: ≈30 LOC. -/
-theorem cancelDonatedDonation_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hProjEq :
-        ∀ stFinal,
-          SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation st tid tcb
-            = .ok stFinal →
-          projectState ctx observer stFinal = projectState ctx observer st)
-    (hStep : SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation st tid tcb
-              = .ok st') :
-    projectState ctx observer st' = projectState ctx observer st :=
-  hProjEq st' hStep
 
 -- ============================================================================
 -- AK6-F.18: suspendThread preservation (closure form)

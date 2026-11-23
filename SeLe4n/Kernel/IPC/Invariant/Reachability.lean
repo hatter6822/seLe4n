@@ -21,6 +21,7 @@ import SeLe4n.Kernel.IPC.Invariant.Structural
 import SeLe4n.Kernel.Architecture.Invariant
 import SeLe4n.Kernel.InformationFlow.Invariant.Composition
 import SeLe4n.Kernel.IPC.CrossCore.ReplyWaitersDispatch
+import SeLe4n.Kernel.SchedContext.Invariant.ContextLenders
 
 /-!
 # WS-RR RR3.13 — discharging the IPC bundles' pre-state preconditions
@@ -39,10 +40,12 @@ family, and they are answered differently:
   `ipcReachable_default` (RR3.14) showing the boot state satisfies it, so the
   bundle is inhabited rather than vacuous.  Carrying it *along a trace* —
   concluding the pack's components alongside the bundle so the next syscall's
-  pack is fed from the last one's conclusion — is the registered WS-DT
-  trace-composition debt (`docs/REGISTERED_DEBT.md`, closure target SM10):
-  no per-syscall `ipcReachable` preservation theorem exists yet, and the
-  payoffs conclude `ipcInvariantFull` alone.
+  pack is fed from the last one's conclusion — is registered debt
+  (`docs/REGISTERED_DEBT.md` table C, "`ipcReachable` is not carried across a
+  trace of kernel entries", owner WS-PK; it was WS-DT's until WS-DT closed):
+  no per-entry `ipcReachable` preservation theorem exists yet, and the
+  payoffs conclude `ipcInvariantFull` alone, so a per-entry theorem that needs
+  a chain fact takes it as a premise read off the state the step runs from.
 
 * **Running-caller-shaped** — the freshness and blocking-state conditions about
   the syscall's *own* thread (`hFreshSender`, `hSenderNotRecv`,
@@ -163,7 +166,8 @@ makes it a decision rather than a cost imposed on every caller.
 
 What it does **not** yet carry is preservation along a trace — no
 `ipcReachableUnder` preservation theorem exists, exactly as none exists for
-`ipcReachable` itself (the WS-DT trace-composition debt).  What the per-arm lifts
+`ipcReachable` itself (`docs/REGISTERED_DEBT.md` table C, "`ipcReachable` is not
+carried across a trace of kernel entries", owner WS-PK).  What the per-arm lifts
 in `IPC/Invariant/BlockedSenderPreservation.lean` give is each conjunct across one
 transition, which is what a consumer composes by hand until that debt closes. -/
 def ipcReachableUnder (ctx : LabelingContext) (st : SystemState) : Prop :=
@@ -774,9 +778,9 @@ theorem endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent_of_reacha
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (c : CoreId) (st : SystemState)
     (hReach : ipcReachable st) (tcb : TCB) (hT : st.objects[caller.toObjId]? = some (.tcb tcb))
-    (hReady : tcb.ipcState = .ready) :
+    (hReady : tcb.ipcState = .ready) (lend : Bool := true) :
     (endpointCallCrossCoreDispatch endpointId caller payload c
-      st).1.replyWaitersConsistent :=
+      st lend).1.replyWaitersConsistent :=
   have hI := hReach.ipcInvariantFull
   endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent endpointId caller payload
     c st hReach.objects_invExt hReach.replyWaitersConsistent
@@ -785,7 +789,7 @@ theorem endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent_of_reacha
         subst h
         exact (readyThread_endpointQueueFresh st _ tcb hI.queueHeadBlockedConsistent
           hI.endpointQueueTailBlockedConsistent hT hReady endpointId ep hE).2.2.1 hH,
-      receiveHead_serverFree hI.queueHeadBlockedConsistent hE hH⟩)
+      receiveHead_serverFree hI.queueHeadBlockedConsistent hE hH⟩) lend
 
 /-- **The live send carries the reply-waiter queues**, likewise. -/
 theorem endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable
@@ -1384,5 +1388,40 @@ theorem schedContextRetirable.replenishQueuedNowhere {st : SystemState}
   have hx : (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x := rfl
   rw [hx, hS] at hS''; cases hS''
   rw [schedContextRetirable_boundThread hR hS] at hb; cases hb
+
+/-! ### The depth-2 chain fixture -/
+
+/-- **The fixture's lenders flow wherever its two callers flow to its context**:
+its one context heads the inner frame above the outer one, and those two frames'
+callers are its only lenders. -/
+theorem donationChainWitness_contextLendersFlow (ctx : LabelingContext)
+    (hInner : securityFlowsTo (ctx.threadLabelOf donationChainWitnessInnerCaller)
+      (ctx.objectLabelOf donationChainWitnessContext.toObjId) = true)
+    (hOuter : securityFlowsTo (ctx.threadLabelOf donationChainWitnessOuterCaller)
+      (ctx.objectLabelOf donationChainWitnessContext.toObjId) = true) :
+    contextLendersFlow ctx donationChainWitness := by
+  have hS : ∀ s r, OnContextStackView donationChainWitness s r → s = donationChainWitnessContext := by
+    intro s r hOn
+    induction hOn with
+    | head hH =>
+      rw [contextStackHead_eq_obj, donationChainWitness_lookup_cases] at hH
+      by_cases h3 : donationChainWitnessContext.toObjId = s.toObjId
+      · exact (SeLe4n.SchedContextId.toObjId_injective _ _ h3).symm
+      · simp only [beq_iff_eq, h3, if_false] at hH
+        split at hH <;> (try split at hH) <;> simp [objStackHead] at hH
+    | lower _ _ ih => exact ih
+  rw [contextLendersFlow_iff_views]
+  intro s r l hOn hC
+  rw [hS s r hOn]
+  rw [replyStackCaller_eq_obj, donationChainWitness_lookup_cases] at hC
+  split at hC
+  · simp only [objStackCaller, witnessChainInnerReply, SeLe4n.Kernel.Reply.caller_mk] at hC
+    simp [SeLe4n.ThreadId.ofOptCode_optCode] at hC
+    rw [← hC]; exact hInner
+  · split at hC
+    · simp only [objStackCaller, witnessChainOuterReply] at hC
+      simp [SeLe4n.ThreadId.ofOptCode_optCode] at hC
+      rw [← hC]; exact hOuter
+    · split at hC <;> simp [objStackCaller] at hC
 
 end SeLe4n.Kernel

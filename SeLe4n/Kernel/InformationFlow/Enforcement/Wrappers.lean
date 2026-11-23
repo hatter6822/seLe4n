@@ -298,6 +298,8 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "schedContextConsumedOnCore"
   -- WS-ZA ZA6.29: the yieldTo invocation, a SchedContext capability's.
   , .capabilityOnly "schedContextYieldToOnCore"
+  -- WS-SX SX8.3: the unbind-object invocation, a SchedContext capability's.
+  , .capabilityOnly "schedContextUnbindThreadObjectOnCore"
   -- WS-ZA ZA6.32: the acknowledge, an interrupt-handler capability's.
   , .capabilityOnly "irqHandlerAck"
   -- WS-ZA ZA6.32: the handler issue, the interrupt-control capability's, and
@@ -427,6 +429,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .schedContextConfigure => "schedControlConfigure"
   | .schedContextBind => "schedContextBind"
   | .schedContextUnbind => "schedContextUnbind"
+  | .schedContextUnbindObject => "schedContextUnbindThreadObjectOnCore"
   | .tcbSuspend => "suspendThread"
   | .tcbResume => "resumeThread"
   | .tcbSetPriority => "setPriority"

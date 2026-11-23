@@ -297,8 +297,10 @@ MACHINERY_PINS = {
     # store's refill-view frame (WS-ZA ZA6.4), and the `yield_codes` tactic
     # that discharges a store's yield-code frame (WS-ZA ZA6.6), and the
     # `resident_frame` tactic that discharges a step's resident-thread frame
-    # (WS-ZA ZA6.8); none mints a declaration.
-    ("SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean", "macro"): 8,
+    # (WS-ZA ZA6.8), and the `ntfn_link_codes` tactic that discharges a
+    # store's notification-link-code frame (WS-SX SX8.3); none mints a
+    # declaration.
+    ("SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean", "macro"): 9,
     # WS-ZA ZA6.37: the `transfer_off_run_links` tactic, which carries one
     # receive-leg precondition of `endpointReplyRecv` across the reply-waiter
     # unlink its reply leg ends with; a tactic macro mints no declaration.
@@ -3148,8 +3150,8 @@ def grammar_coverage(root: str, sources: list[str]) -> list[str]:
     fragment of Lean's grammar in text: pinned machinery can mint family
     names it never spells.  The structural endpoint is an
     elaborator-backed census (declarations and telescopes read from Lean's
-    own environment), registered as tracked debt in
-    `docs/REGISTERED_DEBT.md` (WS-DT residuals).
+    own environment): `SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean`,
+    built in Tier 1, is that census (`CENSUS_MODULE`).
     """
     known = set(_MODIFIERS) | set(_COMMANDS)
     seen: dict[str, tuple[str, int, int]] = {}
@@ -3211,11 +3213,11 @@ def minting_machinery(root: str, sources: list[str]) -> list[str]:
     mechanism set is reviewed by count instead (fail closed).
 
     The residual is a *pinned* file minting family-shaped names it never
-    spells (constructed via `Name` surgery) -- that is the
-    elaborator-backed-census debt registered in
-    `docs/REGISTERED_DEBT.md` (WS-DT residuals), now confined to the
-    pinned files below rather than open anywhere in the tree; spelled
-    names are `family_references`' half.
+    spells (constructed via `Name` surgery) -- which the
+    elaborator-backed census (`CENSUS_MODULE`) reads from Lean's own
+    environment over the modules it imports, so this text half is confined to the pinned files
+    below rather than open anywhere in the tree; spelled names are
+    `family_references`' half.
     """
     counts: dict[tuple[str, str], int] = {}
     first: dict[tuple[str, str], int] = {}

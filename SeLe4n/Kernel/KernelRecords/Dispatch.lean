@@ -58,7 +58,7 @@ theorem RecordsFrame.schedContextBindNotification {vScId : SeLe4n.ValidObjId}
 
 
 /-- **`SchedContext_Unbind` keeps the records**: the thread unbind's frame,
-then the notification unbind's. -/
+then the notification unbind's and the reply-stack unlink's. -/
 theorem RecordsFrame.schedContextUnbindAllOnCore {vScId : SeLe4n.ValidObjId}
     {ec : Concurrency.CoreId} {st st' : SystemState}
     {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
@@ -66,9 +66,30 @@ theorem RecordsFrame.schedContextUnbindAllOnCore {vScId : SeLe4n.ValidObjId}
     RecordsFrame st st' := by
   obtain ⟨stU, hU | ⟨-, hU, -⟩, rfl⟩ := SchedContextOps.schedContextUnbindAllOnCore_ok h
   · obtain ⟨rfl, -⟩ := hU
-    exact RecordsFrame.unbindSchedContextNotification _ _ hInv
+    have F := RecordsFrame.unbindSchedContextNotification _
+      (SeLe4n.SchedContextId.ofObjId vScId.val) hInv
+    exact F.trans (RecordsFrame.schedContextUnbindReply _ _ F.invExt)
   · have F := RecordsFrame.schedContextUnbindOnCore hInv hU
-    exact F.trans (RecordsFrame.unbindSchedContextNotification _ _ F.invExt)
+    have F2 := F.trans (RecordsFrame.unbindSchedContextNotification _
+      (SeLe4n.SchedContextId.ofObjId vScId.val) F.invExt)
+    exact F2.trans (RecordsFrame.schedContextUnbindReply _ _ F2.invExt)
+
+/-- **`SchedContext_UnbindObject` keeps the records**: on a thread, the thread
+unbind's frame; on a notification, the notification unbind's. -/
+theorem RecordsFrame.schedContextUnbindThreadObjectOnCore {vScId : SeLe4n.ValidObjId}
+    {tid : SeLe4n.ThreadId} {ec : Concurrency.CoreId} {st st' : SystemState}
+    {sgi? : Option (Concurrency.CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId tid ec st = .ok (st', sgi?)) :
+    RecordsFrame st st' :=
+  RecordsFrame.schedContextUnbindOnCore hInv
+    (SchedContextOps.schedContextUnbindThreadObjectOnCore_ok h)
+
+theorem RecordsFrame.schedContextUnbindNotificationObject {vScId : SeLe4n.ValidObjId}
+    {n : SeLe4n.ObjId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedContextUnbindNotificationObject vScId n st = .ok ((), st')) :
+    RecordsFrame st st' := by
+  obtain ⟨-, rfl⟩ := SchedContextOps.schedContextUnbindNotificationObject_ok h
+  exact RecordsFrame.unbindSchedContextNotification _ _ hInv
 
 /-- A stage onto a transition's state is a stage onto the state it returns. -/
 theorem RecordsStage.of_fst_eq {α : Type} {st st' : SystemState} {p : SystemState × α} {r : α}
@@ -409,6 +430,38 @@ theorem dispatchCapabilityOnly_recordsStage
                   simp only [hUn] at hStep
                   cases hStep
                   exact .of_frameK fun hI => RecordsFrame.schedContextUnbindAllOnCore hI hUn
+    all_goals try cases hStep
+  case schedContextUnbindObject =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object scId =>
+      try dsimp only [] at hStep
+      cases hN : resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | succ k =>
+          simp only [hN] at hStep
+          cases hVal : validateObjIdArg scId with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vScId =>
+              simp only [hVal] at hStep
+              exact .of_frameK fun hI => RecordsFrame.schedContextUnbindNotificationObject hI hStep
+      | zero =>
+          simp only [hN] at hStep
+          cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok vThreadId =>
+              simp only [hRes] at hStep
+              cases hVal : validateObjIdArg scId with
+              | error e => simp only [hVal] at hStep; cases hStep
+              | ok vScId =>
+                  simp only [hVal] at hStep
+                  cases hUn : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId
+                      vThreadId.val executingCore st with
+                  | error e => simp only [hUn] at hStep; cases hStep
+                  | ok pair =>
+                      obtain ⟨stU, sgiU⟩ := pair
+                      simp only [hUn] at hStep
+                      cases hStep
+                      exact .of_frameK fun hI => RecordsFrame.schedContextUnbindThreadObjectOnCore hI hUn
     all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -753,6 +806,321 @@ theorem writeReturnFrameToTcb_recordsStage (x : SystemState) (t : SeLe4n.ThreadI
     (f : Architecture.SyscallReturnFrame) : RecordsStage x (Architecture.writeReturnFrameToTcb x t f) :=
   .of_frameK fun hI => RecordsFrame.writeReturnFrameToTcb x t f hI
 
+/-- **seL4-MCS `maybeDonateSchedContext` keeps the records**: the identity, or
+the bind's writes under seL4's guard (`RecordsFrame.schedContextBindPerform`). -/
+theorem maybeDonateSchedContext_recordsStage (x : SystemState) (n : SeLe4n.ObjId)
+    (t : SeLe4n.ThreadId) : RecordsStage x (maybeDonateSchedContext x n t) :=
+  .of_frameK fun hI => maybeDonateSchedContext_induct (fun a b => RecordsFrame a b) x n t
+    (RecordsFrame.refl hI) (fun vS vT _ _ => RecordsFrame.schedContextBindPerform x vS vT hI)
+
+/-- …and so does the checked donation. -/
+theorem maybeDonateSchedContextFlowing_recordsStage {ctx : LabelingContext} (x : SystemState)
+    (n : SeLe4n.ObjId) (t : SeLe4n.ThreadId) :
+    RecordsStage x (maybeDonateSchedContextFlowing ctx x n t) :=
+  maybeDonateSchedContextFlowing_induct (RecordsStage x) ctx x n t (RecordsStage.refl _)
+    (maybeDonateSchedContext_recordsStage x n t)
+
+/-- **seL4's return on a running receiver keeps the records**: the context's
+thread link and the thread's binding written in place, then reschedule flags. -/
+theorem RecordsFrame.schedContextReturnLinks {st : SystemState} (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    RecordsFrame st (SeLe4n.Kernel.schedContextReturnLinks st vS tid) := by
+  have hU : ∀ S : SystemState, S.objects.invExt → RecordsFrame S
+      (S.updateTcb tid fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 }) :=
+    fun S h => RecordsFrame.updateTcb _ _ h fun _ => rfl
+  unfold SeLe4n.Kernel.schedContextReturnLinks
+  split
+  · exact RecordsFrame.refl hInv
+  rename_i sc hSc _
+  split
+  · exact RecordsFrame.refl hInv
+  dsimp only
+  refine RecordsFrame.chain ?_ (RecordsFrame.markKeyChangeFor _ _ _) hInv
+  refine RecordsFrame.chain ?_ (RecordsFrame.markCandidacyGainFor _ _ _)
+  split
+  · exact RecordsFrame.chain (RecordsFrame.chain (RecordsFrame.rewriteObject_schedContext hSc _ _)
+      fun h => hU _ h) (RecordsFrame.markReschedulePendingOnCore _ _)
+  · exact RecordsFrame.chain (RecordsFrame.rewriteObject_schedContext hSc _ _) fun h => hU _ h
+
+/-- **The return keeps the records**: seL4's three writes, then the purge. -/
+theorem RecordsFrame.schedContextReturnPerform {st : SystemState} (vS : SeLe4n.ValidObjId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    RecordsFrame st (SeLe4n.Kernel.schedContextReturnPerform st vS tid) :=
+  let F1 := RecordsFrame.schedContextReturnLinks vS tid hInv
+  F1.trans (RecordsFrame.purgeReplenishment _ _ F1.invExt)
+
+/-- **seL4 `receiveIPC`'s return keeps what the receive needs of its state**:
+the store's integrity, the queue heads' blocking states and the caller ready —
+it writes two binding codes and a context's thread link, no IPC state and no
+endpoint. -/
+theorem receiveReturnSchedContext_receivePremises (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hI : st.objects.invExt) (hQ : queueHeadBlockedConsistent st)
+    (hC : CallerReady st tid) :
+    (receiveReturnSchedContext blocks st tid).objects.invExt ∧
+      queueHeadBlockedConsistent (receiveReturnSchedContext blocks st tid) ∧
+      CallerReady (receiveReturnSchedContext blocks st tid) tid := by
+  refine ⟨receiveReturnSchedContext_objects_invExt blocks st tid hI, ?_, ?_⟩
+  · intro epId ep hd tcb hEp hT
+    have hEp0 : st.objects[epId]? = some (.endpoint ep) := by
+      rcases receiveReturnSchedContext_objects blocks st tid hI epId with e | ⟨_, _, e⟩ | ⟨_, _, _, e⟩ <;>
+        rw [e] at hEp
+      · exact hEp
+      · cases hEp
+      · cases hEp
+    obtain ⟨y, hy, hxy⟩ := receiveReturnSchedContext_tcb blocks st tid hI _ tcb hT
+    have h := hQ epId ep hd y hEp0 hy
+    rcases hxy with h' | h' <;> (subst tcb; exact h)
+  · obtain ⟨t, hT, hR⟩ := hC
+    rcases receiveReturnSchedContext_objects blocks st tid hI tid.toObjId with e | ⟨y, hy, e⟩ | ⟨_, _, hs, _⟩
+    · exact ⟨t, by rw [e]; exact hT, hR⟩
+    · rw [hT] at hy; cases hy; exact ⟨_, e, hR⟩
+    · rw [hT] at hs; cases hs
+
+/-- **seL4 `receiveIPC`'s return keeps the records.** -/
+theorem receiveReturnSchedContext_recordsStage (blocks : Bool) (x : SystemState)
+    (t : SeLe4n.ThreadId) : RecordsStage x (receiveReturnSchedContext blocks x t) :=
+  .of_frameK fun hI => receiveReturnSchedContext_induct (fun a b => RecordsFrame a b) blocks x t
+    (RecordsFrame.refl hI) (fun vS _ _ _ => RecordsFrame.schedContextReturnPerform vS t hI)
+
+/-- **seL4 `receiveIPC`'s return keeps the receive leg's facts**: the queue
+heads' blocking states, the receiver ready, and every endpoint as it was — it
+writes two binding codes and a context's thread link, no IPC state and no
+endpoint. -/
+theorem receiveReturnSchedContext_receiveLegFacts (blocks : Bool) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hI : st.objects.invExt) (hQ : queueHeadBlockedConsistent st)
+    (hReady : ∀ x, st.getTcb? tid = some x → x.ipcState = .ready) :
+    queueHeadBlockedConsistent (receiveReturnSchedContext blocks st tid) ∧
+      (∀ x, (receiveReturnSchedContext blocks st tid).getTcb? tid = some x →
+        x.ipcState = .ready) ∧
+      (∀ (e : SeLe4n.ObjId) (ep : Endpoint),
+        (receiveReturnSchedContext blocks st tid).objects[e]? = some (.endpoint ep) →
+          st.objects[e]? = some (.endpoint ep)) := by
+  have hEB : ∀ (e : SeLe4n.ObjId) (ep : Endpoint),
+      (receiveReturnSchedContext blocks st tid).objects[e]? = some (.endpoint ep) →
+        st.objects[e]? = some (.endpoint ep) := fun e ep hEp => by
+    rcases receiveReturnSchedContext_objects blocks st tid hI e with h | ⟨_, _, h⟩ | ⟨_, _, _, h⟩ <;>
+      rw [h] at hEp
+    · exact hEp
+    · cases hEp
+    · cases hEp
+  refine ⟨fun epId ep hd tcb hEp hT => ?_, fun x hx => ?_, hEB⟩
+  · obtain ⟨y, hy, hxy⟩ := receiveReturnSchedContext_tcb blocks st tid hI _ tcb hT
+    have h := hQ epId ep hd y (hEB epId ep hEp) hy
+    rcases hxy with h' | h' <;> (subst tcb; exact h)
+  · obtain ⟨y, hy, hxy⟩ := receiveReturnSchedContext_tcb blocks st tid hI _ x
+      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hx)
+    rcases hxy with h' | h' <;> (subst x; exact hReady y ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hy))
+
+section ReplyRecvRecords
+
+open SeLe4n.Kernel.Concurrency (CoreId)
+
+namespace RecordsStep
+
+/-- **The reply-receive keeps the address-space records and every fault record
+parked**: the reply leg unparks its caller, every step after it keeps the
+records, and the answer either finds the caller carrying no fault record or
+clears the one it answers. -/
+theorem endpointReplyRecvAnsweringOnCore {lend : Bool} {answer : Option Architecture.FaultReplyOutcome}
+    {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
+    {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool}
+    {c : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
+    (hInv : st.objects.invExt) (hQ : queueHeadBlockedConsistent st)
+    (hReady : ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
+    (hAns : answer = none → NoFaultAt st prevCaller)
+    (h : _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg
+      grant c st lend = .ok (summary, st')) :
+    RecordsStep st st' := by
+  unfold _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore at h
+  dsimp only at h
+  have A := ReplyLegStep.endpointReplyOnCore (replier := tid) (target := prevCaller) (msg := msg)
+    (c := c) hInv
+  revert h A
+  cases hR : _root_.SeLe4n.Kernel.endpointReplyOnCore tid prevCaller msg c st with
+  | mk st1 res1 =>
+  cases res1 with
+  | error _ => intro h; cases h
+  | ok sgi =>
+  intro h A
+  dsimp only at h A
+  split at h
+  · cases h
+  rename_i ret st1q hPop
+  obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st tid prevCaller grant st1q
+  rw [hX] at h
+  dsimp only at h
+  obtain ⟨hQp, hRp, -⟩ := replyRecvReceiveLegFacts hInv hQ hR hPop hX hReady
+  have F0 := RecordsFrame.replyRecvPopDonation A.1.invExt hPop
+  have F1 := F0.trans (RecordsFrame.receiveTransferCaps F0.invExt
+    (by rw [replyRecvReplyTransfer_eq_receiveTransferCaps] at hX; exact hX))
+  -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, before the receive leg.
+  have FR : RecordsFrame st1p (receiveReturnSchedContext true st1p tid) :=
+    receiveReturnSchedContext_induct (fun a b => RecordsFrame a b) true st1p tid
+      (RecordsFrame.refl F1.invExt)
+      (fun vS _ _ _ => RecordsFrame.schedContextReturnPerform vS tid F1.invExt)
+  obtain ⟨hQr, hRr, -⟩ := receiveReturnSchedContext_receiveLegFacts true st1p tid F1.invExt
+    hQp hRp
+  have S2 := endpointReceiveDualWithCapsOnCore (endpointId := epId) (replyId := some rid)
+    (c := c) FR.invExt hQr
+    (fun x hx => by rw [hRr x hx]; exact ipcParked_ready)
+  revert h S2
+  generalize _root_.SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId tid (some rid)
+    c (receiveReturnSchedContext true st1p tid) = r2
+  obtain ⟨st2, res2⟩ := r2
+  cases res2 with
+  | error _ => intro h; cases h
+  | ok q =>
+  obtain ⟨nextThread, summ, _⟩ := q
+  intro h S2
+  dsimp only at h S2
+  split at h
+  · cases h
+  rename_i st3 hPost
+  cases h
+  have F3 := RecordsFrame.replyRecvPostReceiveDonation S2.invExt hPost
+  have F4 := RecordsFrame.applyReceiveLegPipHandoff st3 tid nextThread
+    ((recordedReplyServer? st prevCaller).getD tid) c F3.invExt
+  have Mid : RecordsStep st1 _ :=
+    ((((RecordsStep.of_frame (F1.trans FR)).trans S2).trans (.of_frame F3)).trans (.of_frame F4))
+  cases answer with
+  | none =>
+    have F5 := RecordsFrame.stageDeliveredMessage _ prevCaller xs.capInfo F4.invExt
+    exact ((A.2 (hAns rfl)).trans Mid).trans (.of_frame F5)
+  | some o =>
+    obtain ⟨S5, hN⟩ := faultReplyApplyOnCore _ prevCaller o F4.invExt
+    have F6 := RecordsFrame.refl S5.invExt
+    exact ((A.1.trans (.of_step (Mid.trans S5))).trans (.of_step (.of_frame F6))).close
+      (hN.frame F6)
+
+end RecordsStep
+
+namespace CallerReady
+
+theorem ready {st : SystemState} {t : SeLe4n.ThreadId} (h : CallerReady st t) :
+    ∀ x, st.getTcb? t = some x → x.ipcState = .ready := fun x hx => by
+  obtain ⟨tcb, hT, hR⟩ := h
+  have hE := hT.symm.trans ((SystemState.getTcb?_eq_some_iff _ _ _).mp hx)
+  simp only [Option.some.injEq, KernelObject.tcb.injEq] at hE
+  subst hE; exact hR
+
+end CallerReady
+
+open SeLe4n.Model.SystemState in
+/-- **The reply-receive keeps the records**, its server the running thread: an
+answer to a faulted caller clears its fault record, any other answer finds none. -/
+theorem RecordsStage.endpointReplyRecvAnsweringOnCore {lend : Bool}
+    {answer : Option Architecture.FaultReplyOutcome} {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool}
+    {c : CoreId} {st st' : SystemState}
+    {summary : CapTransferSummary} (hR : ipcReachable st) (hC : CallerReady st tid)
+    (hAns : answer = none → NoFaultAt st prevCaller)
+    (h : _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg
+      grant c st lend = .ok (summary, st')) : RecordsStage st st' :=
+  have hQ := hR.ipcInvariantFull.queueHeadBlockedConsistent
+  RecordsStage.of_step (RecordsStep.endpointReplyRecvAnsweringOnCore hR.objects_invExt hQ hC.ready hAns h)
+    fun hW => by
+      have hOk := h
+      unfold _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore at hOk
+      dsimp only at hOk
+      cases hRl : _root_.SeLe4n.Kernel.endpointReplyOnCore tid prevCaller msg c st with
+      | mk st1 res1 =>
+      rw [hRl] at hOk
+      cases res1 with
+      | error _ => cases hOk
+      | ok sgi =>
+      dsimp only at hOk
+      cases hP : _root_.SeLe4n.Kernel.replyRecvPopDonation rid prevCaller st1 with
+      | error _ => rw [hP] at hOk; cases hOk
+      | ok p =>
+      obtain ⟨ret, st1q⟩ := p
+      obtain ⟨⟨xs, st1p⟩, hX⟩ := replyRecvReplyTransfer_ok answer st tid prevCaller grant st1q
+      obtain ⟨hQp0, hRp0, hEp0⟩ :=
+        replyRecvReceiveLegFacts hR.objects_invExt hQ hRl hP hX hC.ready
+      have hInvP : st1p.objects.invExt :=
+        replyRecvReplyTransfer_objects_invExt
+          (replyRecvPopDonation_preserves_objects_invExt rid prevCaller st1 st1q ret
+            (by have := endpointReplyOnCore_preserves_objects_invExt tid prevCaller msg c st
+                  hR.objects_invExt
+                rw [hRl] at this; exact this) hP) hX
+      obtain ⟨hQp, hRp, hEpR⟩ := receiveReturnSchedContext_receiveLegFacts true st1p tid hInvP
+        hQp0 hRp0
+      have hEp : ∀ (e : SeLe4n.ObjId) (ep : Endpoint),
+          (receiveReturnSchedContext true st1p tid).objects[e]? = some (.endpoint ep) →
+          st.objects[e]? = some (.endpoint ep) := fun e ep h => hEp0 e ep (hEpR e ep h)
+      have hPost : replyRecvReceiveLegState answer st tid grant rid prevCaller
+          (_root_.SeLe4n.Kernel.endpointReplyOnCore tid prevCaller msg c st).1 =
+            receiveReturnSchedContext true st1p tid := by
+        rw [hRl]; exact replyRecvReceiveLegState_eq_of_ok _ _ _ _ _ _ _ _ _ _ _ hP hX
+      refine endpointReplyRecvOnCore_preserves_replyWaitersConsistent epId tid rid prevCaller msg
+        grant c st st' summary hR.objects_invExt hW ?_ ?_ h
+      · rw [hPost]
+        intro v hv
+        obtain ⟨t, hT, rfl⟩ := tcb_of_replyViews hv
+        have hS := hRp t ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT)
+        simp only [TCB.replyView, TCB.blockingServer?, hS]
+      · rw [hPost]
+        intro ep s hE hH
+        refine ⟨fun hs => ?_, sendHead_serverFree hQp hE hH⟩
+        subst hs
+        obtain ⟨tcb, hT, hRd⟩ := hC
+        rcases (hQ epId ep s tcb (hEp epId ep hE) hT).2 hH with hS | hS <;> rw [hRd] at hS <;>
+          cases hS
+
+/-- **The `.replyRecv` arm's transition keeps the records**: the answer the
+caller's own fault record selects, so a caller answered with its message
+carries no fault record. -/
+theorem RecordsStage.replyRecvTransferOnCore {lend : Bool} {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage}
+    {grant : Bool} {c : CoreId} {st st' : SystemState}
+    {summary : CapTransferSummary} (hR : ipcReachable st) (hC : CallerReady st tid)
+    (h : _root_.SeLe4n.Kernel.replyRecvTransferOnCore epId tid rid prevCaller label msg
+      grant c st lend = .ok (summary, st')) : RecordsStage st st' := by
+  unfold _root_.SeLe4n.Kernel.replyRecvTransferOnCore at h
+  refine RecordsStage.endpointReplyRecvAnsweringOnCore hR hC (fun hA x hx => ?_) h
+  cases hF : x.pendingFault with
+  | none => rfl
+  | some _ => simp only [replyRecvCallerFaultAnswer?, hx, hF] at hA; cases hA
+
+end ReplyRecvRecords
+
+
+/-- **seL4-MCS `maybeReturnSchedContext` keeps the kernel records**: the
+identity, or seL4's writes and the purge (`RecordsFrame.schedContextReturnPerform`). -/
+theorem maybeReturnSchedContext_recordsStage (x : SystemState) (n : SeLe4n.ObjId)
+    (t : SeLe4n.ThreadId) : RecordsStage x (maybeReturnSchedContext x n t) :=
+  .of_frameK fun hI => maybeReturnSchedContext_induct (fun a b => RecordsFrame a b) x n t
+    (RecordsFrame.refl hI) (fun vS _ _ _ => RecordsFrame.schedContextReturnPerform vS t hI)
+
+/-- **seL4's `sendSignal` keeps the records**: the wake's step, then the
+donation's. -/
+theorem sendSignalOnCoreFlowing_recordsStage {ctx : LabelingContext} {n : SeLe4n.ObjId}
+    {badge : SeLe4n.Badge} {c : Concurrency.CoreId} {st : SystemState} (hR : ipcReachable st) :
+    RecordsStage st (sendSignalOnCoreFlowing ctx n badge c st).1 :=
+  sendSignalOnCoreFlowing_induct (RecordsStage st) ctx n badge c st
+    (RecordsStage.notificationSignalBoundOnCore hR)
+    (fun t _ _ _ => (RecordsStage.notificationSignalBoundOnCore hR).trans
+      (maybeDonateSchedContext_recordsStage _ n t))
+
+/-- **The declassifying dispatch keeps the records**: the declassifying
+signal's stage, then the donation's. -/
+theorem notificationSignalDeclassifiedCrossCoreDispatch_recordsStage {ctx : GenericLabelingContext}
+    {declPolicy : DeclassificationPolicy} {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge}
+    {c : Concurrency.CoreId} {st : SystemState} (hR : ipcReachable st) :
+    RecordsStage st
+      (notificationSignalDeclassifiedCrossCoreDispatch ctx declPolicy nid badge c st).1 :=
+  have hS := RecordsStage.notificationSignalDeclassifiedOnCore (ctx := ctx)
+    (declPolicy := declPolicy) (badge := badge) (c := c) hR
+  notificationSignalDeclassifiedCrossCoreDispatch_induct (RecordsStage st) ctx declPolicy nid
+    badge c st hS (fun t _ _ _ => hS.trans (maybeDonateSchedContext_recordsStage _ nid t))
+
+/-- **The checked bound signal keeps the records.** -/
+theorem notificationSignalBoundCrossCoreDispatchChecked_recordsStage {ctx : LabelingContext}
+    {nid : SeLe4n.ObjId} {signaler : SeLe4n.ThreadId} {badge : SeLe4n.Badge}
+    {c : Concurrency.CoreId} {st : SystemState} (hR : ipcReachable st) :
+    RecordsStage st (notificationSignalBoundCrossCoreDispatchChecked ctx nid signaler badge c st).1 :=
+  notificationSignalBoundCrossCoreDispatchChecked_induct (RecordsStage st) ctx nid signaler badge
+    c st (RecordsStage.refl _) (sendSignalOnCoreFlowing_recordsStage hR)
+
 /-- The `Call`-gated reply write keeps the records. -/
 theorem writeCallReturnWord_recordsStage (x : SystemState) (t : SeLe4n.ThreadId)
     (w : UInt64) : RecordsStage x (Architecture.writeCallReturnWord x t w) :=
@@ -781,10 +1149,11 @@ theorem completeSignalArm_recordsStage {ctx : LabelingContext} {tid : SeLe4n.Thr
   split at h
   · rename_i hR
     cases h
-    exact (RecordsStage.of_fst_eq hW hR).trans (writeReturnFrameToTcb_recordsStage _ _ _)
+    exact ((RecordsStage.of_fst_eq hW hR).trans (writeReturnFrameToTcb_recordsStage _ _ _)).trans
+      (maybeDonateSchedContextFlowing_recordsStage _ _ _)
   · rename_i hR
     cases h
-    exact RecordsStage.of_fst_eq hW hR
+    exact (RecordsStage.of_fst_eq hW hR).trans (maybeReturnSchedContext_recordsStage _ _ _)
   · cases h
 
 /-- A receive run on its busy-reply-cancelled state keeps the records: the
@@ -842,10 +1211,14 @@ theorem receiveResolvedArm_recordsStage (ctx : LabelingContext)
     · cases h
     rename_i stDon hHand
     cases h
-    exact hS.trans ((RecordsStage.of_fst_eq
-      (RecordsStage.endpointReceiveDualWithCapsOnCore hIC hQC hCC) hRecv).trans
+    -- seL4-MCS `receiveIPC`'s return, before the endpoint: it writes no IPC
+    -- state, so the receive's premises carry over it.
+    obtain ⟨hIR, hQR, hCR⟩ := receiveReturnSchedContext_receivePremises
+      (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid hIC hQC hCC
+    exact hS.trans ((receiveReturnSchedContext_recordsStage _ _ _).trans ((RecordsStage.of_fst_eq
+      (RecordsStage.endpointReceiveDualWithCapsOnCore hIR hQR hCR) hRecv).trans
       ((RecordsStage.of_frameK fun hI => RecordsFrame.applyReceiveRendezvousHandoff hI hHand).trans
-        (RecordsStage.of_frameK fun hI => RecordsFrame.stageDeliveredMessage _ _ _ hI)))
+        (RecordsStage.of_frameK fun hI => RecordsFrame.stageDeliveredMessage _ _ _ hI))))
   · cases h
 
 /-- **A reply-receive whose receive completes its bound notification keeps the
@@ -989,21 +1362,24 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     · rename_i hSig
       cases h
       exact (RecordsStage.of_fst_eq
-        (RecordsStage.notificationSignalBoundCrossCoreDispatchChecked P.deletes.1) hSig)
+        (notificationSignalBoundCrossCoreDispatchChecked_recordsStage P.deletes.1) hSig)
     · cases h
   case none.notificationWait.object notifId =>
     split at h
     · cases h; exact writeReturnFrameToTcb_recordsStage _ _ _
+    unfold completeSignalArm at h
     split at h
+    · rename_i hW
+      cases h
+      exact ((RecordsStage.of_fst_eq
+        (RecordsStage.notificationWaitCrossCoreDispatchChecked P.deletes.1 hCaller) hW).trans
+        (writeReturnFrameToTcb_recordsStage _ _ _)).trans
+        (maybeDonateSchedContextFlowing_recordsStage _ _ _)
     · rename_i hW
       cases h
       exact (RecordsStage.of_fst_eq
         (RecordsStage.notificationWaitCrossCoreDispatchChecked P.deletes.1 hCaller) hW).trans
-        (writeReturnFrameToTcb_recordsStage _ _ _)
-    · rename_i hW
-      cases h
-      exact RecordsStage.of_fst_eq
-        (RecordsStage.notificationWaitCrossCoreDispatchChecked P.deletes.1 hCaller) hW
+        (maybeReturnSchedContext_recordsStage _ _ _)
     · cases h
   case none.declassify.auditTrail code =>
     split at h
@@ -1016,7 +1392,7 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
     split at h
     · rename_i hSig
       cases h
-      exact (RecordsStage.of_fst_eq (RecordsStage.notificationSignalDeclassifiedOnCore P.deletes.1) hSig)
+      exact (RecordsStage.of_fst_eq (notificationSignalDeclassifiedCrossCoreDispatch_recordsStage P.deletes.1) hSig)
     · cases h
 
 /-- **The taint pass keeps the records**: it writes the taint words alone. -/

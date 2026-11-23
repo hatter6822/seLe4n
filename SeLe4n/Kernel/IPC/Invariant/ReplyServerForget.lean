@@ -179,7 +179,7 @@ theorem ipcInvariantFull_of_serverForgotten (st st' : SystemState) (key : SeLe4n
       obtain ⟨⟨sc, hScAt, hBound⟩, ownerTcb, hOwner, hOwnerUnbound, hOwnerBlk⟩ :=
         hInv.donationOwnerValid t ty s owner hy (p.fields.1 ▸ hBind)
       obtain ⟨ox, hox, po⟩ := hFw hOwner
-      exact ⟨⟨sc, (hSc _ sc).mpr hScAt, hBound⟩, ox, hox, po.fields.1.trans hOwnerUnbound,
+      exact ⟨⟨sc, (hSc _ sc).mpr hScAt, hBound⟩, ox, hox, by rw [po.fields.1]; exact hOwnerUnbound,
         (po.reply_any hB).mpr hOwnerBlk⟩
     · intro t1 t2 tcb1 tcb2 s h1 h2 hNe hS1 hS2
       obtain ⟨y1, hy1, p1⟩ := hBk h1
@@ -410,6 +410,8 @@ theorem mapTcbInPlace_serverForgotten_runQueueStage {st : SystemState} {w : SeLe
       (fun _ => Kernel.RefillViewsKept.of_map (KernelObject.mapTcb TCB.serverForgotten)
         (fun o => by cases o <;> rfl) (mapTcbInPlace_serverForgotten_agree st w))
       (fun _ => Kernel.YieldLinksKept.of_map (KernelObject.mapTcb TCB.serverForgotten)
+        (fun o => by cases o <;> rfl) (mapTcbInPlace_serverForgotten_agree st w))
+      (fun _ => Kernel.NotificationLinksKept.of_map (KernelObject.mapTcb TCB.serverForgotten)
         (fun o => by cases o <;> rfl) (mapTcbInPlace_serverForgotten_agree st w)),
     fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [mapTcbInPlace_scheduler]) hL hM d, fun _ _ => hM⟩
 
@@ -421,25 +423,6 @@ theorem orphanReplyWaiter_runQueueStage {st : SystemState} {w x : SeLe4n.ThreadI
   let ⟨_, _, hB⟩ := replyCallerServerCode_blocked hS
   (mapTcbInPlace_serverForgotten_runQueueStage hT hB).trans
     (SystemState.unlinkReplyWaiter_runQueueStage _ w x)
-
-/-- **The donation-stack head pop is a run-queue stage**: at most two replies
-stored over replies. -/
-theorem storeDonationHeadPop_runQueueStage {st st' : SystemState} {scId : SeLe4n.SchedContextId}
-    {head? : Option (SeLe4n.ReplyId × Reply)}
-    (h : storeDonationHeadPop scId head? st = .ok st') : RunQueueStage st st' := by
-  rcases storeDonationHeadPop_cases h with ⟨_, rfl⟩ | ⟨rid, rh, s1, _, hClear, hReHead⟩
-  · exact .refl _
-  · have f1 : RunQueueStage st s1 := by
-      rcases storeDonationHeadClear_cases hClear with rfl | ⟨rid0, r0, _, hRead, hS0⟩
-      · exact .refl _
-      · exact RunQueueStage.storeObject_nonTcb hS0 hRead (fun _ e => by cases e)
-          (fun _ e => by cases e)
-    have f2 : RunQueueStage s1 st' := by
-      rcases storeReplyReHead_cases hReHead with rfl | ⟨below, b, _, hReadB, hS2⟩
-      · exact .refl _
-      · exact RunQueueStage.storeObject_nonTcb hS2 hReadB (fun _ e => by cases e)
-          (fun _ e => by cases e)
-    exact f1.trans f2
 
 /-- **The unheld pop is a run-queue frame stage off the context it rebinds**:
 the context stored over itself with a new holder and head, the head pop, the

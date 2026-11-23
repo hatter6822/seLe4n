@@ -685,10 +685,11 @@ theorem endpointCallCrossCoreDispatch_preserves_blockedSenderFlowsToEndpoint
     (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : blockedSenderFlowsToEndpoint ctx st)
-    (hGate : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = true) :
+    (hGate : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = true)
+    (lend : Bool := true) :
     blockedSenderFlowsToEndpoint ctx
       (endpointCallCrossCoreDispatch endpointId caller payload
-        executingCore st).1 := by
+        executingCore st lend).1 := by
   have hWcPre := endpointCallWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint ctx
     endpointId caller payload executingCore st hObjInv hPre hGate
   have hWcInv := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload
@@ -713,14 +714,18 @@ theorem endpointCallCrossCoreDispatch_preserves_blockedSenderFlowsToEndpoint
           · split
             · exact hWcPre
             · rename_i hDon
-              have hDonInv := applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _
-                hWcInv hDon
-              refine blockedSenderFlowsToEndpoint_of_shrinks ?_
-                (blockedSenderShrinks_of_ipcStateFrame
-                  (propagatePipChainCrossCore_ipcStateFrame _ _ executingCore _ hDonInv))
-              exact blockedSenderFlowsToEndpoint_of_shrinks hWcPre
-                (blockedSenderShrinks_of_ipcStateFrame
-                  (applyCallDonationOnCore_ipcStateFrame _ _ _ _ _ _ hWcInv hDon))
+              rcases applyCallDonationOnCoreWhen_cases hDon with ⟨_, hDon⟩ | ⟨_, rfl⟩
+              · have hDonInv := applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _
+                  hWcInv hDon
+                refine blockedSenderFlowsToEndpoint_of_shrinks ?_
+                  (blockedSenderShrinks_of_ipcStateFrame
+                    (propagatePipChainCrossCore_ipcStateFrame _ _ executingCore _ hDonInv))
+                exact blockedSenderFlowsToEndpoint_of_shrinks hWcPre
+                  (blockedSenderShrinks_of_ipcStateFrame
+                    (applyCallDonationOnCore_ipcStateFrame _ _ _ _ _ _ hWcInv hDon))
+              · exact blockedSenderFlowsToEndpoint_of_shrinks hWcPre
+                  (blockedSenderShrinks_of_ipcStateFrame
+                    (propagatePipChainCrossCore_ipcStateFrame _ _ executingCore _ hWcInv))
           all_goals exact hWcPre
         · exact hWcPre
       · exact hWcPre
@@ -744,7 +749,7 @@ theorem endpointCallCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpo
   · rename_i hGate
     exact endpointCallCrossCoreDispatch_preserves_blockedSenderFlowsToEndpoint ctx endpointId
       caller payload executingCore st hObjInv hPre
-      (endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate)
+      (endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate) _
   · exact hPre
 
 -- ============================================================================
@@ -1045,10 +1050,10 @@ theorem endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder
     (hBlockedReceivers : blockedReceiverFlowsFromEndpoint ctx st)
     (hQueueHeads : queueHeadBlockedConsistent st)
     (hGate : securityFlowsTo (ctx.threadLabelOf caller)
-      (ctx.endpointLabelOf endpointId) = true) :
+      (ctx.endpointLabelOf endpointId) = true) (lend : Bool := true) :
     donationOwnerFlowsToHolder ctx
       (endpointCallCrossCoreDispatch endpointId caller payload
-        executingCore st).1 := by
+        executingCore st lend).1 := by
   have hWcFrame := endpointCallWithCapsOnCore_sameSchedContextBindings endpointId caller payload
     executingCore st hObjInv
   have hWcInv := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload
@@ -1074,6 +1079,10 @@ theorem endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder
             split
             · exact hMid
             · rename_i st'' hDon
+              rcases applyCallDonationOnCoreWhen_cases hDon with ⟨_, hDon⟩ | ⟨_, rfl⟩
+              rotate_left
+              · exact donationOwnerFlowsToHolder_of_sameSchedContextBindings hMid
+                  (propagatePipChainCrossCore_sameSchedContextBindings _ _ executingCore _ hWcInv)
               have hDonInv := applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _
                 hWcInv hDon
               refine donationOwnerFlowsToHolder_of_sameSchedContextBindings ?_
@@ -1127,7 +1136,7 @@ theorem endpointCallCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolde
     exact endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder ctx endpointId
       caller payload executingCore st hObjInv hPre
       hBlockedReceivers hQueueHeads
-      (endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate)
+      (endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate) _
   · exact hPre
 
 end SeLe4n.Kernel

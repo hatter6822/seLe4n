@@ -132,7 +132,7 @@ theorem endpointCallCrossCoreDispatchChecked {ctx : LabelingContext} {endpointId
     split
     · obtain ⟨tcb, hT, hRd⟩ := hC
       exact endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent_of_reachable _ _ _ _
-        st hR tcb hT hRd
+        st hR tcb hT hRd _
     · exact hR.replyWaitersConsistent
 
 /-- **The checked reply keeps the records**: the fault reply, or the reply and
@@ -191,21 +191,6 @@ theorem notificationSignalBoundOnCore {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge
     notificationSignalBoundOnCore_preserves_replyWaitersConsistent nid badge c st
       hR.objects_invExt hR.replyWaitersConsistent
       (fun _ _ hG hH => notificationHead_serverFree hR.notificationWaiterConsistent hG hH)
-
-/-- **The checked bound signal keeps the records.** -/
-theorem notificationSignalBoundCrossCoreDispatchChecked {ctx : LabelingContext}
-    {nid : SeLe4n.ObjId} {signaler : SeLe4n.ThreadId} {badge : SeLe4n.Badge} {c : CoreId}
-    {st : SystemState} (hR : ipcReachable st) :
-    RecordsStage st (_root_.SeLe4n.Kernel.notificationSignalBoundCrossCoreDispatchChecked ctx nid
-      signaler badge c st).1 :=
-  RecordsStage.of_step (RecordsStep.notificationSignalBoundCrossCoreDispatchChecked
-    hR.objects_invExt hR.notificationWaiterConsistent) fun _ => by
-    have hB := notificationSignalBoundOnCore_preserves_replyWaitersConsistent nid badge c st
-      hR.objects_invExt hR.replyWaitersConsistent
-      (fun _ _ hG hH => notificationHead_serverFree hR.notificationWaiterConsistent hG hH)
-    unfold _root_.SeLe4n.Kernel.notificationSignalBoundCrossCoreDispatchChecked
-    repeat' split
-    all_goals first | exact hB | exact hR.replyWaitersConsistent
 
 /-- **The checked wait keeps the records**, its waiter the running thread. -/
 theorem notificationWaitCrossCoreDispatchChecked {ctx : LabelingContext} {nid : SeLe4n.ObjId}

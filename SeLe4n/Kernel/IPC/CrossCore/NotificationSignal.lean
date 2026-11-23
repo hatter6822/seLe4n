@@ -18,6 +18,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 -- PR #822 review: `boundDeliveryTarget?` (the bound-delivery resolver) so the
 -- canonical signal footprint covers the bound-delivery endpoint/TCB writes.
 import SeLe4n.Kernel.IPC.Operations.NotificationBind
+import SeLe4n.Kernel.SchedContext.NotificationDonation
 
 /-!
 # WS-SM SM6.B — Notification across cores
@@ -939,37 +940,107 @@ def schedLockSet_notificationSignalOnCore (st : SystemState) (notificationId : S
     List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (notificationSignalWriteSet st notificationId) []
 
+/-- The cores a wait's completion donates on: the waiter's home core where the
+notification the wait names holds a word (`notificationPending`: the wait
+consumes it and completes) and seL4's `maybeDonateSchedContext` guard holds on
+it (`signalDonationCores`); none for a wait that blocks or names no
+notification. -/
+def waitDonationCores (st : SystemState) (notificationId? : Option SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) : List CoreId :=
+  (notificationId?.map fun n =>
+    if notificationPending st n then signalDonationCores st n waiter else []).getD []
+
+/-- The replenish queue a blocking wait's return writes, read on the wait's entry
+state: the purge's, where the notification the wait names holds no word (the
+wait blocks) and seL4's `maybeReturnSchedContext` guard holds on it.  The return
+writes no run queue, current slot or active domain
+(`maybeReturnSchedContext_runSlots`), so it adds no run-queue lock. -/
+def waitReturnReplenishCores (st : SystemState) (notificationId? : Option SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) : List CoreId :=
+  (notificationId?.map fun n =>
+    if notificationPending st n then [] else signalReturnReplenishCores st n waiter).getD []
+
 /-- **WS-RR RR8.12**: the scheduler-domain footprint of a cross-core
 `notificationWaitOnCore` — the object-store table write lock and the **executing**
-core's run-queue write lock.
+core's run-queue write lock — and, since WS-SX SX8.2, the donation's: seL4-MCS's
+`completeSignal` ends in `maybeDonateSchedContext`, which binds the
+notification's context to the waiter and places it on the waiter's home core.
 
-The wait writes no other core, in either direction: the block path removes the
-caller from its own core's run queue and the badge-consume path keeps it runnable
-and writes no scheduler slot at all (`notificationWaitOnCore_confinedToCores`,
-stated at `[executingCore]`).  So the footprint is state-independent, which is
-why — unlike the signal's — it takes no `SystemState`; the object-domain
-`lockSet_notificationWaitOnCore` is state-independent for the same reason. -/
-def schedLockSet_notificationWaitOnCore (executingCore : CoreId) :
-    List (LockKey × Concurrency.AccessMode) :=
-  schedFootprintOfCores [executingCore] []
+The wait itself writes no other core, in either direction: the block path
+removes the caller from its own core's run queue and the badge-consume path keeps
+it runnable and writes no scheduler slot at all
+(`notificationWaitOnCore_confinedToCores`, stated at `[executingCore]`).  The
+donation writes the waiter's home core's run and replenish queues, and does so
+exactly when seL4's guard holds; the guard and the home core read nothing the
+consumption writes (`completeSignalArm_signalDonationCores_eq`), so the cores are
+read off the state the wait is handed.  A wait that blocks ends, as seL4's
+`receiveSignal` does, in `maybeReturnSchedContext`, which takes the context back
+from the waiter where seL4's guard holds: two binding links, a reschedule flag
+and the purge's replenish queue (`waitReturnReplenishCores`), no run queue.  The
+block writes nothing the return's guard or release core reads
+(`notificationWaitOnCore_blocked_signalReturn_eq`). -/
+def schedLockSet_notificationWaitOnCore (st : SystemState)
+    (notificationId? : Option SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (executingCore : CoreId) : List (LockKey × Concurrency.AccessMode) :=
+  schedFootprintOfCores
+    (executingCore :: waitDonationCores st notificationId? waiter)
+    (waitDonationCores st notificationId? waiter ++
+      waitReturnReplenishCores st notificationId? waiter)
 
 /-- **WS-RR RR8.12**: the wait footprint names the executing core's run-queue
 write lock — the one the block path's `removeRunnableOnCore` writes under. -/
 theorem schedLockSet_notificationWaitOnCore_contains_executing_runQueue_write
+    (st : SystemState) (notificationId? : Option SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (executingCore : CoreId) :
     (LockKey.runQueue executingCore, Concurrency.AccessMode.write)
-      ∈ schedLockSet_notificationWaitOnCore executingCore :=
+      ∈ schedLockSet_notificationWaitOnCore st notificationId? waiter executingCore :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ executingCore).mpr (by simp)
+
+/-- WS-SX SX8.2: ...and the donation's cores, run and replenish queues both. -/
+theorem schedLockSet_notificationWaitOnCore_contains_donation_writes
+    (st : SystemState) (notificationId? : Option SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (executingCore d : CoreId) (hd : d ∈ waitDonationCores st notificationId? waiter) :
+    (LockKey.runQueue d, Concurrency.AccessMode.write)
+        ∈ schedLockSet_notificationWaitOnCore st notificationId? waiter executingCore ∧
+      (LockKey.replenishQueue d, Concurrency.AccessMode.write)
+        ∈ schedLockSet_notificationWaitOnCore st notificationId? waiter executingCore :=
+  ⟨(mem_schedFootprintOfCores_runQueue_iff _ _ d).mpr
+      (List.mem_cons_of_mem _ hd),
+    (mem_schedFootprintOfCores_replenishQueue_iff _ _ d).mpr (List.mem_append_left _ hd)⟩
+
+/-- WS-SX SX8.2: ...and the return's replenish queue. -/
+theorem schedLockSet_notificationWaitOnCore_contains_return_writes
+    (st : SystemState) (notificationId? : Option SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (executingCore : CoreId) :
+    ∀ d ∈ waitReturnReplenishCores st notificationId? waiter,
+      (LockKey.replenishQueue d, Concurrency.AccessMode.write)
+        ∈ schedLockSet_notificationWaitOnCore st notificationId? waiter executingCore :=
+  fun d hd => (mem_schedFootprintOfCores_replenishQueue_iff _ _ d).mpr
+    (List.mem_append_right _ hd)
 
 /-- **WS-RR RR8.12**: and it names no other core's, so the footprint is not
 merely sound but *exact* on this arm — the negative half, and the one a widened
 footprint would fail. -/
 theorem schedLockSet_notificationWaitOnCore_no_other_runQueue
-    (executingCore d : CoreId) (hne : d ≠ executingCore) :
+    (st : SystemState) (notificationId? : Option SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (executingCore d : CoreId) (hne : d ≠ executingCore)
+    (hNd : d ∉ waitDonationCores st notificationId? waiter) :
     (LockKey.runQueue d, Concurrency.AccessMode.write)
-      ∉ schedLockSet_notificationWaitOnCore executingCore := by
+      ∉ schedLockSet_notificationWaitOnCore st notificationId? waiter executingCore := by
   rw [schedLockSet_notificationWaitOnCore, mem_schedFootprintOfCores_runQueue_iff]
-  simpa using hne
+  simp only [List.mem_cons, not_or]
+  exact ⟨hne, hNd⟩
+
+/-- WS-SX SX8.2: and no replenish queue but the donation's. -/
+theorem schedLockSet_notificationWaitOnCore_no_other_replenishQueue
+    (st : SystemState) (notificationId? : Option SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (executingCore d : CoreId) (hNd : d ∉ waitDonationCores st notificationId? waiter)
+    (hNr : d ∉ waitReturnReplenishCores st notificationId? waiter) :
+    (LockKey.replenishQueue d, Concurrency.AccessMode.write)
+      ∉ schedLockSet_notificationWaitOnCore st notificationId? waiter executingCore := by
+  rw [schedLockSet_notificationWaitOnCore, mem_schedFootprintOfCores_replenishQueue_iff]
+  simp only [List.mem_append, not_or]
+  exact ⟨hNd, hNr⟩
 
 /-- **WS-RR RR8.12**: the signal footprint names the woken waiter's home core. -/
 theorem schedLockSet_notificationSignalOnCore_contains_waiter_runQueue_write

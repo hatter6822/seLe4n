@@ -104,9 +104,10 @@ def resolverExemptions : List (Name × String) :=
        `.notificationSignal` through `notificationSignalBoundCrossCoreDispatch`, so the \
        resolver names `schedLockSet_notificationSignalBoundOnCore`; the two genuinely \
        differ, because on the bound-delivery path the woken thread is the BOUND TCB, \
-       whose home core the bare signal's set does not name.  \
-       `schedLockSet_notificationSignalBoundOnCore_of_no_target` is the relation off \
-       that path, where the two are definitionally equal")
+       whose home core the bare signal's set does not name, and because seL4's \
+       `sendSignal` donates the notification's context to the woken thread, whose \
+       home core's run and replenish queues the bound footprint names \
+       (`signalWakeDonationCores`) and the bare one does not")
   , (``SeLe4n.Kernel.schedLockSet_endpointReplyOnCore,
       "the DISPATCH-level reply footprint.  `.reply`'s live arm is seL4's \
        `doReplyTransfer` (`replyTransferOnCore`), whose footprint sits OVER this one: \
@@ -295,7 +296,7 @@ private def censusPlantedInlined (executingCore : SeLe4n.Kernel.Concurrency.Core
 footprint.  `namedBy` must contain it. -/
 private def censusPlantedNamer :
     List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode) :=
-  SeLe4n.Kernel.schedLockSet_notificationWaitOnCore SeLe4n.Kernel.Concurrency.bootCoreId
+  SeLe4n.Kernel.schedLockSet_yieldOnCore SeLe4n.Kernel.Concurrency.bootCoreId
 
 /-- …and a planted **indirect** one, which names only the namer.
 
@@ -345,14 +346,14 @@ run_cmd Command.liftTermElabM do
   -- transitively reaches.  A closure would count a footprint as consumed because
   -- a helper mentions it, which is *reached* rather than *dispatched to*.
   if !(namedBy env ``censusPlantedNamer).contains
-      ``SeLe4n.Kernel.schedLockSet_notificationWaitOnCore then
+      ``SeLe4n.Kernel.schedLockSet_yieldOnCore then
     failures := failures.push "the direct plant's own footprint is not in its named set, \
       so `namedBy` misses a constant the definition literally applies"
   if !(namedBy env ``censusPlantedIndirectNamer).contains ``censusPlantedNamer then
     failures := failures.push "the indirect plant does not name the direct one, so the \
       plant pair cannot witness anything"
   if (namedBy env ``censusPlantedIndirectNamer).contains
-      ``SeLe4n.Kernel.schedLockSet_notificationWaitOnCore then
+      ``SeLe4n.Kernel.schedLockSet_yieldOnCore then
     failures := failures.push "the indirect plant's named set reaches THROUGH the direct \
       one, so `namedBy` is a transitive closure — it answers `reached`, and this census's \
       claim is `dispatched to`"

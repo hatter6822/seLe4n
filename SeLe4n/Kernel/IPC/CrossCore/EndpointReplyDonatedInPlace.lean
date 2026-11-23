@@ -148,7 +148,7 @@ theorem applyReplyDonationOnCore_eq_inPlace (S : SystemState) (rid : SeLe4n.Repl
   have hhv' := SeLe4n.ThreadId.toValid?_some_val_eq _ _ hhv
   unfold applyReplyDonationOnCore
   rw [replyDonationRecipientHome_of_head S rid c scId holder hHolder, hHolder]
-  simp only [hhv, hcv, hRecipEq]
+  simp only [hhv, hcv, hRecipEq, hRecip, ↓reduceIte]
   rw [hhv', returnDonatedSchedContextResolved_eq_inPlace S holder c scId sc rid r ot ht hSc hB hHead
     hR hNext hBelow hOuter hRecip hORes hHRes hOT hHT hNeOH hLsc hFsc hLr hFr hLo hFo hLh]
   rfl
@@ -196,7 +196,7 @@ theorem replyRecvPopDonation_eq_inPlace (S : SystemState) (rid : SeLe4n.ReplyId)
     ((SeLe4n.ThreadId.toValid?_isSome_iff c).mpr hORes)
   unfold replyRecvPopDonation
   rw [hHolder]
-  simp only [hhv, hcv, hRecipEq]
+  simp only [hhv, hcv, hRecipEq, hRecip, ↓reduceIte]
   rw [returnDonatedSchedContextResolved_eq_inPlace S holder c scId sc rid r ot ht hSc hB hHead
     hR hNext hBelow hOuter hRecip hORes hHRes hOT hHT hNeOH hLsc hFsc hLr hFr hLo hFo hLh]
   rfl
@@ -295,20 +295,6 @@ theorem returnDonatedSchedContextInPlace_msg (r : SeLe4n.ThreadId)
 section SettleMoves
 variable (r : SeLe4n.ThreadId) (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile)
   (μ : Option IpcMessage → Option IpcMessage) (π : Nat → Nat)
-
-theorem releaseCoreOf_mapTcbInPlace (st : SystemState) (g : TCB → TCB) (s : SeLe4n.SchedContextId) :
-    (st.mapTcbInPlace r g).releaseCoreOf s = st.releaseCoreOf s := by
-  unfold SystemState.releaseCoreOf; rw [SystemState.getSchedContext?_mapTcbInPlace]
-
-theorem releaseRemoveAnywhere_mapTcbInPlace (st : SystemState) (g : TCB → TCB)
-    (s : SeLe4n.SchedContextId) :
-    (st.mapTcbInPlace r g).releaseRemoveAnywhere s =
-      (st.releaseRemoveAnywhere s).mapTcbInPlace r g := by
-  unfold SystemState.releaseRemoveAnywhere
-  rw [releaseCoreOf_mapTcbInPlace]
-  split
-  · exact releaseRemoveOn_mapTcbInPlace r g st _ s
-  · rfl
 
 theorem releasePlace_mapTcbInPlace (st : SystemState) (g : TCB → TCB) (c : CoreId)
     (s : SeLe4n.SchedContextId) :
@@ -466,8 +452,9 @@ theorem outerTestAt_of_view {s s' : SystemState} {x : SeLe4n.ThreadId}
       rw [h']
       have a := congrArg TCB.ipcStateCode e1
       have b := congrArg TCB.scBindingScCode e1
-      simp only [TCB.withoutRunLinks] at a b
-      simp only [a, b]
+      have c := congrArg TCB.scBindingOwnerCode e1
+      simp only [TCB.withoutRunLinks] at a b c
+      simp only [a, b, c]
     | _ =>
       rw [agreeAt_of_not_tcb h (fun _ e => by cases e) e]
 

@@ -214,7 +214,7 @@ endpointFlowGate ctx ep src dst  =  twoWayLabelGate src dst  &&  override ep src
 twoWayLabelGate a b              =  securityFlowsTo a b  &&  securityFlowsTo b a   -- a = b
 ```
 
-The lattice conjunct is **two-way** (since `v0.37.35`): an endpoint carries
+The lattice conjunct is **two-way** (since `v0.37.37`): an endpoint carries
 traffic only between threads of its own label, and so does a notification's
 wait queue and bound thread (`notificationFlowGate`).  Plan cross-label traffic
 on notifications: `Signal` keeps the one-way check (`thread ⊑ notification`)

@@ -305,13 +305,6 @@ private theorem schedContextUnbind_ok_char
       cases hTcb : st.getTcb? tid with
       | some tcb =>
         rw [hTcb] at h; simp only [] at h
-        -- `v0.35.4`: a donated holder is refused, so a successful unbind saw a
-        -- binding that is not a donation.
-        have hNotDon : tcb.schedContextBinding.isDonated = false := by
-          cases hD : tcb.schedContextBinding.isDonated with
-          | false => rfl
-          | true => rw [hD] at h; simp at h
-        simp only [hNotDon, Bool.false_eq_true, if_false] at h
         cases h
         refine ⟨?_, ?_, Or.inl ⟨tcb, rfl, ?_⟩⟩
         · -- the replenish queues: only the purge touches them, on the core
@@ -579,24 +572,11 @@ private theorem schedContextBind_ok_char
     | none =>
       rw [hBT] at h
       simp only [Option.isSome_none, Bool.false_eq_true, if_false] at h
-      -- `v0.35.4`: a context heading a reply stack is refused, so a successful
-      -- bind saw none.
-      have hNoHead : sc.scReply.isSome = false := by
-        cases hH : sc.scReply.isSome with
-        | false => rfl
-        | true => rw [hH] at h; simp at h
-      simp only [hNoHead, Bool.false_eq_true, if_false] at h
       refine ⟨sc, rfl, hBT, ?_⟩
       cases hTcb : st.getTcb? vThreadId.val with
       | none => rw [hTcb] at h; cases h
       | some tcb =>
         rw [hTcb] at h; simp only [] at h
-        -- `v0.35.4`: and a thread whose reply frame is on a live stack is refused.
-        have hNoLive : replyFrameOnLiveStack st tcb = false := by
-          cases hL : replyFrameOnLiveStack st tcb with
-          | false => rfl
-          | true => rw [hL] at h; simp at h
-        simp only [hNoLive, Bool.false_eq_true, if_false] at h
         refine ⟨tcb, rfl, ?_⟩
         cases hBind : tcb.schedContextBinding with
         | bound scb => rw [hBind] at h; cases h

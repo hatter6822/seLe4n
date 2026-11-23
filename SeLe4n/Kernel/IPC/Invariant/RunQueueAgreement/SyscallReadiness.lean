@@ -101,6 +101,7 @@ theorem notificationWait_block_readyKeptStage {st st1 st2 st3 : SystemState}
     (hN : st.getNotification? notificationId = some ntfn)
     (hT : lookupTcb st waiter = some tcb)
     (hS1 : storeObject notificationId (.notification n') st = .ok ((), st1))
+    (hCode : n'.schedContextCode = ntfn.schedContextCode)
     (hS2 : storeTcbIpcStateAndMessage_fromTcb st1 waiter tcb s m = .ok st2)
     (hL : linkNtfnWaiter st2 waiter tail = .ok st3)
     (hCur : st.scheduler.currentOnCore c = some waiter) (hNI : isIdleThreadId waiter = false) :
@@ -110,7 +111,7 @@ theorem notificationWait_block_readyKeptStage {st st1 st2 st3 : SystemState}
   have hC3 : st3.scheduler.currentOnCore c = some waiter :=
     currentOnCore_of_scheduler_eq (linkNtfnWaiter_scheduler_eq hL)
       (currentOnCore_of_scheduler_eq (storeTcbIpcStateAndMessage_fromTcb_scheduler_eq hS2) hC1)
-  have hNs := storeObject_notificationOver_runQueueStage hN hS1
+  have hNs := storeObject_notificationOver_runQueueStage hN hS1 hCode
   have w : SystemState.RunQueueWindowStage (.block c) st st2 :=
     SystemState.RunQueueWindowStage.of_invExt fun hInv => by
       have hNo := (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mp hN
@@ -147,7 +148,7 @@ theorem notificationWaitOnCore_readyKeptStage (notificationId : SeLe4n.ObjId)
     | exact .of_stage ((storeObject_notificationOver_runQueueStage (by assumption)
          (by assumption)).trans (storeTcbIpcState_runQueueStage (by assumption) rfl))
     | exact notificationWait_block_readyKeptStage (by assumption) (by assumption)
-         (by assumption) (by assumption) (by assumption) hCur hNI
+         (by assumption) (by first | rfl | simp_all) (by assumption) (by assumption) hCur hNI
 
 /-- The fault reply's outcome blocks no thread: a restart frame, or the abandon's
 deschedule and `.Inactive` mark. -/
@@ -243,7 +244,7 @@ theorem replyTransferOnCoreChecked_readyKeptStage {S : SeLe4n.ThreadId → Prop}
 
 /-- `ReplyRecv` blocks only its caller: the reply, the donation pop and the reply
 leg's capability transfer are stages, and the receive half blocks the caller. -/
-theorem endpointReplyRecvOnCore_readyKeptStage {answer : Option Architecture.FaultReplyOutcome}
+theorem endpointReplyRecvOnCore_readyKeptStage {lend : Bool} {answer : Option Architecture.FaultReplyOutcome}
     {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool}
     {c : CoreId}
@@ -251,7 +252,7 @@ theorem endpointReplyRecvOnCore_readyKeptStage {answer : Option Architecture.Fau
     (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
     (hQ : queueHeadBlockedConsistent st)
     (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant c st =
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant c st lend =
       .ok (s, st')) :
     readyKeptStage (· = tid) st st' := by
   have hE := endpointReplyOnCore_runQueueStage tid prevCaller msg c st
@@ -305,11 +306,17 @@ theorem endpointReplyRecvOnCore_readyKeptStage {answer : Option Architecture.Fau
   have hAp : st1p.activeAt tid :=
     let ⟨hI1, hR1⟩ := hE.1.links hInv hRf
     activeKeptStage.of_stage hPopS hI1 hR1 tid hA1
+  -- seL4-MCS `receiveIPC`'s `maybeReturnSchedContext`, before the receive leg.
+  have RR := receiveReturnSchedContext_runQueueStage true st1p tid
+  obtain ⟨hHR, hCurR, hActR⟩ := receiveReturnSchedContext_receiveEntryFacts true
+    (let ⟨hI1, hR1⟩ := hE.1.links hInv hRf; (hPopS.1.links hI1 hR1).1) hH2
+    ((hPC c).trans hC1) hAp
   have hR := endpointReceiveDualWithCapsOnCore_runQueueEntryStage epId tid (some rid) c
-    st1p hH2 ((hPC c).trans hC1) hNI hAp
+    (receiveReturnSchedContext true st1p tid) hHR hCurR hNI hActR
   have rR := endpointReceiveDualWithCapsOnCore_readyKeptStage epId tid (some rid) c
-    st1p hH2 ((hPC c).trans hC1) hNI hAp
-  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) c st1p = q at hR rR h
+    (receiveReturnSchedContext true st1p tid) hHR hCurR hNI hActR
+  generalize endpointReceiveDualWithCapsOnCore epId tid (some rid) c
+    (receiveReturnSchedContext true st1p tid) = q at hR rR h
   obtain ⟨st2, r2⟩ := q
   dsimp only at hR rR
   rcases r2 with _ | ⟨nt, sm, _⟩ <;> dsimp only at h
@@ -318,7 +325,7 @@ theorem endpointReplyRecvOnCore_readyKeptStage {answer : Option Architecture.Fau
   · cases h
   rename_i st3 hPost
   cases h
-  have A := hE.trans hPopS
+  have A := (hE.trans hPopS).trans RR
   -- The post-receive donor is blocked on its reply and every thread stays
   -- coherent, so it is not suspended.
   have hAll := A.entry.trans hR
@@ -999,6 +1006,42 @@ theorem dispatchCapabilityOnly_readyKeptStage {S : SeLe4n.ThreadId → Prop}
                   cases hStep
                   exact schedContextUnbindAllOnCore_readyKeptStage hD hUn
     all_goals try cases hStep
+  case schedContextUnbindObject =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object scId =>
+      try dsimp only [] at hStep
+      cases hN : resolveSchedContextBindNotificationCode tid
+          (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+      | succ k =>
+          simp only [hN] at hStep
+          cases hVal : validateObjIdArg scId with
+          | error e => simp only [hVal] at hStep; cases hStep
+          | ok vScId =>
+              simp only [hVal] at hStep
+              obtain ⟨-, rfl⟩ := SchedContextOps.schedContextUnbindNotificationObject_ok hStep
+              exact .of_stage (unbindSchedContextNotification_runQueueStage _ _)
+      | zero =>
+          simp only [hN] at hStep
+          cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
+          | error e => simp only [hRes] at hStep; cases hStep
+          | ok vThreadId =>
+              simp only [hRes] at hStep
+              cases hVal : validateObjIdArg scId with
+              | error e => simp only [hVal] at hStep; cases hStep
+              | ok vScId =>
+                  simp only [hVal] at hStep
+                  cases hUn : SchedContextOps.schedContextUnbindThreadObjectOnCore vScId
+                      vThreadId.val executingCore st with
+                  | error e => simp only [hUn] at hStep; cases hStep
+                  | ok pair =>
+                      obtain ⟨stU, sgiU⟩ := pair
+                      simp only [hUn] at hStep
+                      cases hStep
+                      exact readyKeptStage.of_stage
+                        (SchedContextOps.schedContextUnbind_runQueueStage_of_dequeued vScId st _ hD
+                          (SchedContextOps.schedContextUnbindOnCore_ok
+                            (SchedContextOps.schedContextUnbindThreadObjectOnCore_ok hUn)).2.1)
+    all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>
@@ -1308,7 +1351,7 @@ theorem endpointCallCrossCoreDispatchChecked_readyKeptStage (ctx : LabelingConte
   unfold endpointCallCrossCoreDispatchChecked
   split
   · exact endpointCallCrossCoreDispatch_readyKeptStage _ _ _ _ _ P.endpointHeads
-      P.current P.notIdle
+      P.current P.notIdle _
   · exact .refl _
 
 theorem notificationWaitCrossCoreDispatchChecked_readyKeptStage (ctx : LabelingContext)
@@ -1376,7 +1419,8 @@ theorem receiveResolvedArm_readyKeptStage (ctx : LabelingContext)
         (notificationWaitOnCore_readyKeptStage _ tid executingCore stC hCurC P.notIdle) hI).trans
         (runQueueStage_of_pair_eq
           (notificationWaitOnCore_runQueueEntryStage _ tid executingCore stC hCurC P.notIdle) hI).1
-        (.of_stage (writeReturnFrameToTcb_runQueueStage _ _ _)))
+        (.of_stage ((writeReturnFrameToTcb_runQueueStage _ _ _).trans
+          (maybeDonateSchedContextFlowing_runQueueStage _ _ _))))
   simp only [Bool.not_eq_true] at hSig
   by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
   · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
@@ -1398,16 +1442,24 @@ theorem receiveResolvedArm_readyKeptStage (ctx : LabelingContext)
     · cases h
     rename_i stDon hHand
     cases h
+    -- **WS-SX SX8.2**: seL4-MCS `receiveIPC`'s `maybeReturnSchedContext` first.
+    have R := receiveReturnSchedContext_runQueueStage
+      (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid
+    obtain ⟨hIR, hRR⟩ := R.1.links hIC hRC
+    have hDR := R.entry.2 hIC hRC hRR hDC
+    obtain ⟨hHR, hCurR, hActR⟩ := receiveReturnSchedContext_receiveEntryFacts
+      (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) hIC hHC hCurC hActC
     have E := runQueueStage_of_pair_eq
-      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ hHC
-        hCurC P.notIdle hActC) hRecv
-    obtain ⟨_, hR2⟩ := E.1.links hIC hRC
-    exact readyKeptStage.trans hS.1 hK ((runQueueStage_of_pair_eq
-      (endpointReceiveDualWithCapsOnCore_readyKeptStage _ _ _ _ _ hHC
-        hCurC P.notIdle hActC) hRecv).trans E.1
+      (endpointReceiveDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ hHR
+        hCurR P.notIdle hActR) hRecv
+    obtain ⟨_, hR2⟩ := E.1.links hIR hRR
+    exact readyKeptStage.trans hS.1 hK (readyKeptStage.trans R.1 (.of_stage R)
+      ((runQueueStage_of_pair_eq
+      (endpointReceiveDualWithCapsOnCore_readyKeptStage _ _ _ _ _ hHR
+        hCurR P.notIdle hActR) hRecv).trans E.1
       (.of_stage ((applyReceiveRendezvousHandoff_runQueueStage
-          ((E.2 hIC hRC hR2 hDC).coherent _) hHand).trans
-        (stageDeliveredMessage_runQueueStage _ _ _))))
+          ((E.2 hIR hRR hR2 hDR).coherent _) hHand).trans
+        (stageDeliveredMessage_runQueueStage _ _ _)))))
   · cases h
 
 /-- A reply-receive whose receive completes its bound notification blocks no
@@ -1427,7 +1479,8 @@ theorem replyRecvCompletesSignalArm_readyKeptStage {S : SeLe4n.ThreadId → Prop
   · have hQ := notificationWaitOnCore_consumed_runQueueStage
       (notificationWaitCrossCoreDispatchChecked_ok_inner hW)
     exact hK.trans hE.1 ((readyKeptStage.of_stage hQ).trans hQ.entry.1
-      (.of_stage (writeReturnFrameToTcb_runQueueStage _ _ _)))
+      (.of_stage ((writeReturnFrameToTcb_runQueueStage _ _ _).trans
+          (maybeDonateSchedContextFlowing_runQueueStage _ _ _))))
 
 /-- **The reply keeps the receive's test**: a reply that leaves the replier's
 bound notification active and the replier ready in IPC on the entry state
@@ -1448,7 +1501,7 @@ theorem replyTransferOnCoreChecked_keeps_receiveCompletesSignal {ctx : LabelingC
   obtain ⟨t, hT, hReady⟩ := (receiverIpcReady_iff st tid).mp hRdy
   have hTo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
   -- the replier's TCB survives with its bound-notification code
-  have hB := K.2 tid.toObjId
+  have hB := K.2.1 tid.toObjId
   rw [hTo] at hB
   unfold receiveCompletesSignal at hSig
   rw [hT] at hSig
@@ -1517,6 +1570,15 @@ theorem replyRecvCompletesSignalArm_completes {ctx : LabelingContext}
     obtain ⟨h1, h2, h3⟩ := replyTransferOnCoreChecked_keeps_receiveCompletesSignal
       hInv hRf hD hSig hRdy hR
     simp only [h1, h2, Bool.and_self, ↓reduceIte, h3]
+
+/-- **seL4's `maybeReturnSchedContext` blocks no thread**: the identity's frame,
+or seL4's writes and the purge (`schedContextReturnPerform_runQueueStage`). -/
+theorem maybeReturnSchedContext_readyKeptStage {S : SeLe4n.ThreadId → Prop} {st : SystemState}
+    (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) :
+    readyKeptStage S st (maybeReturnSchedContext st n tid) :=
+  maybeReturnSchedContext_induct (fun a b => readyKeptStage S a b) st n tid
+    (readyKeptStage.refl _)
+    (fun vS vT hT hA => .of_stage (schedContextReturnPerform_runQueueStage st vS tid vT hT hA))
 
 /-- **Every arm `dispatchWithCapChecked` routes blocks only the caller**: the
 send, receive, call, notification-wait and reply-receive arms block it, and no
@@ -1643,6 +1705,7 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
   case none.notificationWait.object notifId =>
     split at h
     · cases h; exact .of_stage (writeReturnFrameToTcb_runQueueStage _ _ _)
+    unfold completeSignalArm at h
     split at h
     · rename_i hW
       cases h
@@ -1650,11 +1713,17 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
         (notificationWaitCrossCoreDispatchChecked_readyKeptStage _ _ _ _ _ P) hW).trans
         (runQueueStage_of_pair_eq
           (notificationWaitCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ P) hW).1
-        (.of_stage (writeReturnFrameToTcb_runQueueStage _ _ _))
+        (.of_stage ((writeReturnFrameToTcb_runQueueStage _ _ _).trans
+          (maybeDonateSchedContextFlowing_runQueueStage _ _ _)))
     · rename_i hW
       cases h
-      exact runQueueStage_of_pair_eq
-        (notificationWaitCrossCoreDispatchChecked_readyKeptStage _ _ _ _ _ P) hW
+      -- seL4's `maybeReturnSchedContext` after the block: seL4's writes and
+      -- the purge block no thread.
+      have E := runQueueStage_of_pair_eq
+        (notificationWaitCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ P) hW
+      exact (runQueueStage_of_pair_eq
+        (notificationWaitCrossCoreDispatchChecked_readyKeptStage _ _ _ _ _ P) hW).trans E.1
+        (fun hI1 hR1 => maybeReturnSchedContext_readyKeptStage _ _ hI1 hR1)
     · cases h
   case none.replyRecv.object epId =>
     split at h
@@ -1694,7 +1763,7 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     · rename_i hSig
       cases h
       exact .of_stage (runQueueStage_of_pair_eq
-        (notificationSignalDeclassifiedOnCore_runQueueStage _ _ _ _ _ _ P.ntfnHeads
+        (notificationSignalDeclassifiedCrossCoreDispatch_runQueueStage _ _ _ _ _ _ P.ntfnHeads
           P.blocked) hSig)
     · cases h
 

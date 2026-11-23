@@ -1,4 +1,4 @@
-## v0.37.35 — Endpoints and notification waits join only equal labels
+## v0.37.37 — Endpoints and notification waits join only equal labels
 
 Security fix (Medium): three high-to-low storage channels through endpoint and
 notification queues are closed by making every gate that can enqueue a thread,
@@ -23,7 +23,12 @@ or make a later operation's result depend on it, a **two-way label gate**.
   negative anchor keeps them out of the gate sites.
 - **Bind is policy-gated.** `.tcbBindNotification` runs
   `bindNotificationChecked` (new; the enforcement boundary is 16 policy-gated,
-  35 capability-only), refused `flowDenied` before any write.
+  36 capability-only), refused `flowDenied` before any write.
+- **One owner for the lend check too.** SX8's `donationContextFlows` (a
+  notification lends its context only to a thread of the context's label)
+  asked the same two-way question by hand; it is now `twoWayLabelGate`.
+  SX8's other lend gates (`callLendAdmits`, `receiveLendAdmits`,
+  `schedContextBindLabelAdmits`) ask one-way questions and are unchanged.
 - **Signal stays one-way.** It never blocks the signaller and returns nothing
   that depends on a receiver.  Cross-label traffic uses notifications.
 - **Proofs.** An admitted Wait or receive needs no hypothesis that the object is
@@ -43,7 +48,7 @@ or make a later operation's result depend on it, a **two-way label gate**.
   and a later lower `Signal` has the effect it has without it, and that each
   call is admitted at equal labels; one existing check that expected an upward
   Wait to be admitted now expects `flowDenied`.  The SMP information-flow
-  fixture's boundary-count line is regenerated (15/36 → 16/35).
+  fixture's boundary-count line is regenerated (15/37 → 16/36).
 - **Exerciser.** The declassification scenario's boot-domain waits on the
   upper notification are now refused: `declassified-wait-pending`,
   `declassified-wait-blocks` and `declassified-signal-wakes` become
@@ -59,6 +64,298 @@ or make a later operation's result depend on it, a **two-way label gate**.
   notifications).  Registered: the queue label-uniformity state invariant (the
   teardown's neighbour clause is still a hypothesis), and the declassified
   signal's second hop, which can no longer be a downgrade.
+
+## v0.37.36 — notification context donation and the seL4 conformance table
+
+WS-SX SX8 (`docs/planning/SEL4_ABI_FIDELITY_PLAN.md`), the whole row: SX8.1
+(the conformance table), SX8.2 (a notification's context lent and returned)
+and SX8.3 (label 36 and the unbind of a donated holder, the owner's decision
+D22, "Match seL4", 2026-11-19), with the lenders' flow, seL4's held reply_pop
+arm and the destroy's unbind the owner's decisions D25–D30 brought into the
+row. SX8 closes here by the owner's decision D32 ("Wrap up SX8",
+2026-11-23); its remainder is the new rows SX9–SX11. Stacks on SX7
+(`v0.37.33`).
+
+### The conformance table (SX8.1)
+- `SeLe4n/Testing/Sel4ConformanceTable.lean`: one row per seL4-MCS syscall
+  (11) and per invocation label (seL4's 56 for aarch64 MCS SMP, then the
+  model's 57–66), sourced from seL4 release 17.0.0 (commit `62e345c2`): the
+  decode function with file and line, the registers or message words and
+  extra capabilities read, the success return, the seL4 errors with their
+  payload words, whether it blocks, and seLe4n's status (implemented, a
+  seLe4n hardening, a deviation a later row owns, absent, or model-only).
+- `sel4LabelRows_agree` and `sel4SyscallRows_agree` decide every row against
+  the label round trip, `Syscall.selectOperation` (Call, Send, NBSend),
+  `truncationMinimum`, `syscallReturnShape` and the `Syscall` predicates;
+  `sel4LabelRows_cover` proves every labelled operation has its row.
+- `tests/Sel4ConformanceSuite.lean` (`sel4_conformance_suite`, Tier 2): the
+  same rows at run time, the register reads of `decodeSyscallArgs`
+  (x0, x1, x2–x5, x6, `canReply` from x7), each seL4 error's payload and error
+  frame, the message-info clamp and the two word-first decodes.
+
+### seL4 behaviour the table exposed, fixed here
+- A message-info length past 120 is clamped to 120, as seL4's
+  `messageInfoFromWord` (`include/api/types.h:83`) clamps it; it was refused
+  `invalidMessageInfo`. `MessageInfo.decode`, `decodeMsgInfoWord` (now always
+  `.ok`, `decodeMsgInfoWord_ok`), `overflowStopImpl` and `routedLength` clamp.
+  A Signal with such a word now signals (`bad-message-info`).
+
+### Word-first decodes (raw-slot debt families (2) and (7), closed)
+- `mintReplyCap`'s two slots are read through `windowWordOf`; the service
+  register's interface id is tested on its word and refused
+  `invalidArgument 0` at or past `2 ^ 62`. Round trips below the bound.
+- QEMU scenarios `mint-reply-cap-wide-slot` and
+  `service-register-wide-interface` pass a word `≥ 2^63`.
+
+### SX8.2 refactor
+- `dispatchWithCapChecked`'s `.notificationWait` arm calls `completeSignalArm`
+  instead of inlining its body, so the wait and the receive that completes
+  its bound notification share one body (no behaviour change).
+
+### Donation and return (SX8.2)
+- seL4-MCS's `maybeDonateSchedContext`: a signal that wakes a waiter or a
+  bound receiver, and a receive that completes a signal, lend the
+  notification's context to a thread holding none, recorded as the thread's
+  `.bound` binding with the notification link kept (D19); wake first, then the
+  bind's admitted / perform pair under a word guard, allocation-free.
+- seL4-MCS's `maybeReturnSchedContext`: a blocking Wait, a blocking receive
+  and ReplyRecv's receive leg return the context the thread holds, by binding
+  or by donation, before the endpoint is looked at.
+- `notificationLinksAgree` (the two link words name each other) is the
+  proof-layer bundle's 23rd conjunct, carried by every entry's run-queue
+  stages; the boot's Prop object shapes carry the two zero codes the Bool
+  checks already required.
+- Lock sets: the donation writes the receiver's home core only, proven at the
+  call site; no over-approximation. Non-interference: the lent context is
+  read through the wake a hidden signal makes (`boundSignalHidden.woken`), and
+  the bind has a real projection frame
+  (`schedContextBind_preserves_projection`).
+- The checked kernel lends a notification's context only to a thread whose
+  label equals the context's (`maybeDonateSchedContextFlowing`,
+  `donationContextFlows`: each label flows to the other; D26, D27, D30),
+  otherwise it donates nothing (seL4's "do nothing" branch). The check
+  reads static labels and the notification's context word, and no reply
+  object (`donationContextFlows_congr`). It runs on the checked signal, the
+  wait and receive completions, the declassifying signal and the interrupt
+  entry, which reads the labelling context. Where every lender on a context's
+  stack flows to its label (`contextLendersFlow`), every lender flows to the
+  thread the context is lent to (`donationContextFlows_lenders`).
+
+### Label 36 and the unbind of a donated holder (SX8.3, D22)
+- `SchedContext_UnbindObject` (`SyscallId` 48, label 36): a thread or a
+  notification as extra capability 0. On a thread it unbinds that thread
+  alone, as seL4's `unbindTCB`; on a notification it clears the link.
+- SchedContext_Unbind takes the context from a holder that has it by donation
+  (seL4's `schedContext_unbindTCB`): the `isDonated` refusal is retired on the
+  live and frozen surfaces with its proofs. The unbind then lets go of the
+  reply stack the context heads: `schedContextUnbindReply`
+  (`SchedContext/ReplyLink.lean`, seL4's `schedContext_unbindReply`, with its
+  in-place `@[csimp]` form), which was the finalisation's
+  `finaliseSchedContextUnstack`; the two paths now share it.
+- `donationOwnerValid` and `donationChainWellFormed` are unchanged: both
+  already admit the state the unbind leaves (the holder unbound, its caller
+  blocked on a reply no context heads), which context finalisation already
+  reached.
+- The return guard reads the context the thread holds, by binding or by
+  donation (`SchedContextBinding.scId?`).
+- Frozen twins: `frozenSchedContextUnbind` with the notification half, the
+  reply unlink (`frozenSchedContextUnbindReply`, registered in the reply-stack
+  write census as the live one's mirror) and success on a context bound to
+  no thread.
+
+### SchedContext_Bind under the context-label rule (D25, D27)
+- SchedContext_Bind binds a context that heads a reply stack, as seL4-MCS's
+  `decodeSchedContext_Bind` does: the `scReply` refusal is retired from
+  `schedContextBind`, its admitted check and `frozenSchedContextBind`, with
+  the proofs that consumed it.
+- The checked dispatch admits such a bind only where the context's label
+  flows to the bound thread (`schedContextBindLabelGate`, beside the service
+  gates in `dispatchCapabilityOnlyChecked`), and refuses it `flowDenied`
+  otherwise, before the bind reads or writes anything else. With every lender
+  on the stack flowing to the context's label (`contextLendersFlow`), every
+  lender then flows to the thread the reply later takes the context back
+  from. A context heading no stack binds as before.
+
+### Allocation fixes found by the heap gate
+- The compiled signal copied the object store; the blocking receive's return
+  copied it; the wide-slot mint refusal built records. Each now writes in
+  place under a proven equality, and every reading is 0.
+- A reply to a caller recording no server whose reply object is linked to
+  nothing (the state the donated unbind leaves once the server is finalised)
+  fell to the general arm and copied the object store twice; it is answered
+  in place (`replyUnlinkedAdmits`, `performReplyUnlinkedDelivered`,
+  `replyTransferChecked_unlinked_inPlace`). The same reply is answered in
+  place on its other shapes too: to a faulted caller
+  (`performFaultReplyUnlinkedAnswer`), at a long message
+  (`performReplyUnlinkedCapsDeliveredLong`, and
+  `performFaultReplyUnlinkedAnswerLong` for a long fault reply) and with a
+  capability transfer (`performReplyUnlinkedCapsDelivered`). Each in-place
+  state is proven the specification's, all through one shared derivation
+  of the dispatch (`replyDispatch_unlinked_inPlace`). This copy is also on
+  `main`.
+- The reply-receive through such a reply object copied the object store on
+  every shape. It is answered in place on each, the receive leg blocking the
+  replier: the four-word reply-receive (`replyRecvUnlinkedAdmits`,
+  `performReplyRecvUnlinkedDelivered`), to a faulted caller
+  (`performReplyRecvUnlinkedFaultAnswer`), with a capability transfer
+  (`performReplyRecvUnlinkedCapsDelivered`) and their long forms
+  (`performReplyRecvUnlinkedDeliveredLong`,
+  `performReplyRecvUnlinkedFaultAnswerLong`,
+  `performReplyRecvUnlinkedCapsDeliveredLong`). Each is proven the
+  specification's through one composite (`replyRecvAnsweringOnCore_unlinked_inPlace`,
+  the receive's guard carried across the reply leg by
+  `storeReplyLeg_receiveGuard`), with the six arms' `_eq` proofs extended.
+- When that reply-receive's receive leg met a sender already queued, it took
+  the general arm, which allocates; so did the same on a reply object heading
+  a stack no thread holds. Both now take the sender in place
+  (`performReplyRecvUnlinkedTakeDelivered`, `performReplyRecvUnheldTakeDelivered`
+  and the capability-carrying `..TakeCapsDelivered`), the take's guard carried
+  across the reply leg alone (`storeReplyLeg_takeGuard`) and across the unheld
+  pop and its settle (`popUnheldSettled_takeGuard`), each proven the
+  specification's (`IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean`) and
+  routed unheld take, then unlinked take, then the take answering a recorded
+  server.
+- The exerciser's no-operation code was still 48 after label 36 took that
+  number, so the route coverage read every refused selection as
+  `SchedContext_UnbindObject`; it is `SyscallId::ENCODING_BOUND` (49), held
+  by a host test.
+
+### The lenders' flow (D26, D27, D28)
+- `contextLendersFlow`: every caller on a frame of a context's reply stack
+  flows to the context's label (D27, "Adopt A*"). It is carried by every
+  kernel entry: the checked syscall entry and dispatch, the capability-only
+  table, the fault and unknown-syscall entries, the interrupt, the timer, the
+  reschedule and the FP access (`ContextLenders/`). Each entry reads the
+  chain facts it needs (`donationChainWellFormed`,
+  `replyCallerLinkageReciprocal`, `objects.invExt`) as premises on the state
+  it runs from; carrying them across a trace is registered in
+  `docs/REGISTERED_DEBT.md` table C and owned by WS-PK (D29, "Register and
+  follow"), with the dispatch payoff's caller-premise witnesses beside it.
+- With the invariant, every lend is checked on two static labels and reads no
+  reply object. A Call, a fault and a receive that takes a parked Call lend
+  the caller's context only where the caller flows to it (`callLendAdmits`,
+  `receiveLendAdmits`); a refused lend proceeds and lends nothing (D28,
+  "Donate nothing"), and is answered in place on every shape the admitted
+  lend is (`callWakesUnlentInPlace`, `receiveCallTakesUnlentInPlace`,
+  `replyRecvUnlentArmR`). The notification lend's first check, the stack's
+  top lender against the waiter (D26), gave way to the static form.
+- The reply-stack write census requires a lender result of every writer,
+  and of every writer that links a caller into a reply object; the census
+  derives the writers from their bodies and fails closed.
+
+### seL4's held reply_pop arm
+- seL4-MCS's `reply_pop` gives a context back only to a recipient holding
+  none; otherwise the head is popped and the context stays with its holder.
+  `keepDonatedSchedContext` is that arm, on the reply leg, the reply-receive
+  pop, the cancelled caller's reclaim, the pre-receive cleanup, the final
+  delete's head pop and the frozen reply, and a `.bound` holder stays
+  `.bound` (it writes nothing to the holder, as seL4 does).
+- `donationOwnerValid`'s owner clause, and the outer-caller checks beside it,
+  read "not donated" where they read `.unbound`, the one weakening the held
+  arm needs; `donationRecipientAcceptable_of_donationOwnerValid` is deleted.
+- The held arm runs in place at every site
+  (`keepDonatedSchedContextInPlace`, through proven `@[csimp]`s), and a
+  four-word reply or reply-receive to a caller holding its own context is
+  composed in place (`performReplyHeldDelivered`,
+  `performReplyRecvHeldDelivered`).
+
+### Destroy unbinds a lent context
+- The destroy path's donated arm (`cancelDonatedDonationOnCore`) returned a
+  lent context to its recorded owner and refused when that owner could not
+  take it. It is now the bound arm on the owner-cleared view of the holder,
+  as seL4-MCS's `schedContext_unbindTCB`: the context is left unheld at the
+  head of its stack, and the destroy never refuses
+  (`cancelDonationArmOnCore_ok`). `cleanupDonatedSchedContext` and its
+  lemmas, the donated arm's lock set and the donated section of the
+  cancellation non-interference are deleted. `main_trace_smoke.expected`'s
+  `[Z7D-007]` line expects the unbind (rationale: the destroy no longer hands
+  the context back).
+- This had to land before the Bind lift below: with a lender bindable, the
+  return-to-owner arm would have let a lender's controller make a server's
+  destroy fail (a cross-authority denial of service). It never shipped.
+
+### SchedContext_Bind's second refusal lifted (D25)
+- The bind no longer refuses a thread whose reply frame is on a live stack,
+  as `decodeSchedContext_Bind` does not. `schedContextBindAdmitted` is
+  retired; `schedContextDonateAdmitted` is the one guard. The held pop's
+  outer-caller check reads the holder's own binding (`heldPopOuter?`), and
+  the dispatch pack's `boundThreadNotDonationOwner` field is retired.
+
+### Retired: the donation cancellation
+- No live operation ran `cancelBoundDonation`, `cancelDonatedDonation`,
+  `cancelDonation`, `cancelDonationValid` or `cancelDonationOnCore` since the
+  suspend took seL4's shape; they are deleted with their theorems, census
+  rows, tests and anchors. The `.tcbSuspend` footprint's tail is the context
+  the victim's binding names, and the `cancelledCallerAlreadyBound` refusal is
+  gone.
+
+### The notification lend at equal labels (D30)
+- A lend is decided by the woken thread's own binding and writes the
+  context's thread end, which the context's domain reads back, so a context
+  labelled below the thread showed that domain one bit of the thread's
+  state. The lend now needs the two labels equal
+  (`donationContextFlows_context_back`,
+  `donationContextFlows_false_of_not_back`); a cross-label lend is skipped
+  and the signal is still delivered.
+
+### Compiled size
+- The receive arm's resolved leg compiled the whole rendezvous twice at every
+  inline site. The leg after a return now runs out of line
+  (`endpointReceiveReturnedRendezvousR`): `RefusalCarryingEndpoint.c` 16.3 MB
+  to 11.3 MB, `RefusalCarryingReplyRecv.c` 30.1 MB to 22.5 MB (23.7 MB on
+  `main`).
+
+### A heap regression found and fixed on the branch
+- The label check read the notification's context through
+  `notificationContext?`, which built a fresh `some` when the store's entry
+  was shared: one 16-byte cell on every bound and donation-partner signal
+  (the heap gate's reading on the branch). The checks now read the context word in place,
+  joined to the specification by `@[csimp]`.
+
+### Conformance behaviour rows (D21)
+- `sel4BehaviourRows`: the signal and Wait lends, the Wait's return, a Call's
+  lend to a passive server and the destroyed thread's unbind, each with its
+  seL4 source and status, and a kernel scenario per row in
+  `sel4_conformance_suite` (both halves for a hardening).
+
+### SX8's remainder (D32)
+- New plan rows, the rows after them renumbered (SX9–SX17 become SX12–SX20):
+  SX9, the notification lend's assurance (the two-run theorem for every
+  observer, the remaining behaviour rows, the label-refused heap scenarios);
+  SX10, the donation-origin redirect deleted (D31, "Match seL4"), which fixes
+  a middle-frame recipient divergence also on `main`; SX11, one composed
+  in-place ReplyRecv path.
+
+### Tests and fixtures
+- `frozen_ops_suite`: FO-SX8.3 rows for the donated-holder unbind (live
+  against frozen, whole state) and FO-SX8.3b for UnbindObject.
+- QEMU scenarios: donation on a signal to a waiter, on a bound wake and on a
+  completed receive; return at a blocking Wait, receive and reply-receive;
+  UnbindObject on a thread and on a notification; and
+  `sched-context-unbind-donated`, the unbind of a server holding a lent
+  context, whose caller is then answered on a stack no context heads; that
+  caller answered again at 120 words (`unlinked-long-root-replies`), by a
+  reply that installs a capability (`unlinked-reply-installs-cap`) and,
+  after a capability fault lent the context, by a fault reply
+  (`unlinked-fault-root-replies`) and a long fault reply
+  (`unlinked-fault-root-replies-long`). The reply-receive on the same state,
+  the context bound to the caller again so it can wake the replier: plain
+  (`unlinked-reply-recv`), installing (`unlinked-reply-recv-installs-cap`),
+  long (`unlinked-long-reply-recv`, `unlinked-long-reply-recv-installs-cap`)
+  and to a faulted caller at one word and at 120
+  (`unlinked-fault-root-reply-recv`, `unlinked-fault-root-reply-recv-long`).
+  The same with a third thread's send queued first, so the receive leg takes
+  it: `orphan-reply-recv-takes`, `unlinked-reply-recv-takes` and the
+  installing `unheld-reply-recv-takes-installs-cap`,
+  `unlinked-reply-recv-takes-installs-cap`.
+- Three Tier 3 anchors restated as relation checks over the reply unlink and
+  the receive leg's return; the frozen `isDonated` anchor replaced by a
+  negative over both unbinds.
+- `main_trace_smoke.expected`: `[IMB-001]` now reads "oversized registers
+  clamped to 120: true" (rationale: the clamp above); checksum regenerated.
+- NegativeStateSuite J1-NEG-07/08/16, SmpIpcSuite and the kernel-error
+  matrix's `invalidMessageInfo` row (now `requireMsgReg` past the message)
+  follow the clamp.
 
 ## v0.37.34 — README brought up to date
 

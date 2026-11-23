@@ -408,12 +408,16 @@ private theorem returnDonationToCancelledCaller_getSchedContext?_ne (st : System
   | none => rfl
   | some _ =>
     dsimp only
-    cases hRet : returnDonatedSchedContextResolved st holder scId v with
+    cases hRet : popHeldReplyHead st holder scId v with
     | error _ => rfl
     | ok st' =>
-      obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-      exact returnDonatedSchedContext_getSchedContext?_ne _ st' holder scId scId₀ v hne hInv
-        newOwner? hPop
+      dsimp only
+      apply popHeldReplyHead_liftPops hRet
+      · intro newOwner? _ hPop
+        exact returnDonatedSchedContext_getSchedContext?_ne _ _ holder scId scId₀ v hne hInv
+          newOwner? hPop
+      · intro _ _ hK
+        exact keepDonatedSchedContext_getSchedContext?_ne hInv hK scId₀ hne
 
 /-- **WS-RR RR8.11: the teardown writes a scheduling context only through the
 reclaim.**
@@ -518,11 +522,15 @@ theorem returnDonationToCancelledCaller_releaseStateAgree (st : SystemState)
     | none => exact .refl st
     | some _ =>
       dsimp only
-      cases hRet : returnDonatedSchedContextResolved st holder scId v with
+      cases hRet : popHeldReplyHead st holder scId v with
       | error _ => exact .refl st
       | ok st' =>
-        obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        exact returnDonatedSchedContext_releaseStateAgree hInv hPop
+        dsimp only
+        apply popHeldReplyHead_liftPops hRet
+        · intro _ _ hPop
+          exact returnDonatedSchedContext_releaseStateAgree hInv hPop
+        · intro _ _ hK
+          exact keepDonatedSchedContext_releaseStateAgree hInv hK
 
 /-- WS-ZA ZA6.3: **the teardown holds the release queues** — it writes a
 context only through the reclaim, which keeps its release fields, and no
@@ -608,11 +616,15 @@ theorem returnDonationToCancelledCaller_refillsKeptOff (st : SystemState)
     | none => exact .refl P st
     | some _ =>
       dsimp only
-      cases hRet : returnDonatedSchedContextResolved st holder scId v with
+      cases hRet : popHeldReplyHead st holder scId v with
       | error _ => exact .refl P st
       | ok st' =>
-        obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        exact (returnDonatedSchedContext_refillsKeptOff hInv hPop).mono fun x hx => by subst hx; exact hS
+        dsimp only
+        apply popHeldReplyHead_liftPops hRet
+        · intro _ _ hPop
+          exact (returnDonatedSchedContext_refillsKeptOff hInv hPop).mono fun x hx => by subst hx; exact hS
+        · intro _ _ hK
+          exact (keepDonatedSchedContext_refillsKeptOff hInv hK).mono fun x hx => by subst hx; exact hS
 
 /-- WS-ZA ZA6.33: **everything the teardown does but the return keeps every
 refill view** — the queue removals and the frame cut write no context and no
@@ -674,6 +686,27 @@ theorem cancelIpcBlocking_refillViewsKept (st : SystemState) (v : SeLe4n.ThreadI
   have h := cancelIpcBlocking_refillViewsKept_of_return st v tcbV hInv
   rwa [Lifecycle.Suspend.returnDonationToCancelledCaller_none st v tcbV hD] at h
 
+/-- WS-SX SX8: **where the victim holds a context of its own, the reclaim keeps
+every refill view**: its pop is the held pop, which hands nothing back
+(`keepDonatedSchedContext_refillViewsKept`), or it refuses and writes nothing. -/
+theorem returnDonationToCancelledCaller_refillViewsKept_of_not_acceptable (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt)
+    (hA : donationRecipientAcceptable st v = false) :
+    RefillViewsKept (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) st :=
+  Lifecycle.Suspend.returnDonationToCancelledCaller_elim (P := fun s => RefillViewsKept s st)
+    (st := st) (tid := v) (tcb := tcbV) (.refl _) fun _ _ _ _ hPop => by
+      rw [popHeldReplyHead_of_not_acceptable hA] at hPop
+      exact keepDonatedSchedContextResolved_lift (P := fun s => RefillViewsKept s st) hPop
+        fun _ _ hK => keepDonatedSchedContext_refillViewsKept hInv hK
+
+/-- ...so the teardown keeps every refill view there too. -/
+theorem cancelIpcBlocking_refillViewsKept_of_not_acceptable (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt)
+    (hA : donationRecipientAcceptable st v = false) :
+    RefillViewsKept (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) st :=
+  (cancelIpcBlocking_refillViewsKept_of_return st v tcbV hInv).trans
+    (returnDonationToCancelledCaller_refillViewsKept_of_not_acceptable st v tcbV hInv hA)
+
 /-- WS-ZA ZA6.33: **the teardown keeps every context's refills off the one it
 returns**. -/
 theorem cancelIpcBlocking_refillsKeptOff (st : SystemState) (v : SeLe4n.ThreadId)
@@ -711,11 +744,15 @@ theorem returnDonationToCancelledCaller_yieldLinksKept (st : SystemState)
     | none => exact .refl st
     | some _ =>
       dsimp only
-      cases hRet : returnDonatedSchedContextResolved st holder scId v with
+      cases hRet : popHeldReplyHead st holder scId v with
       | error _ => exact .refl st
       | ok st' =>
-        obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        exact returnDonatedSchedContext_yieldLinksKept hInv hPop
+        dsimp only
+        apply popHeldReplyHead_liftPops hRet
+        · intro _ _ hPop
+          exact returnDonatedSchedContext_yieldLinksKept hInv hPop
+        · intro _ _ hK
+          exact keepDonatedSchedContext_yieldLinksKept hInv hK
 
 /-- WS-ZA ZA6.6: **the teardown keeps every yield code** — it patches queue
 links, IPC fields, bindings and the reply link, never a yield end. -/
@@ -760,6 +797,146 @@ theorem cancelIpcBlocking_yieldLinksKept (st : SystemState) (v : SeLe4n.ThreadId
     exact (YieldLinksKept.of_getTcb?_eq (cutThreadReplyFrameOut_getTcb?_eq _ tcbV hR)
       (cutThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR)).trans
       (returnDonationToCancelledCaller_yieldLinksKept st v tcbV hInv)
+
+/-- WS-SX SX8.3: the restore writes one thread. -/
+theorem restoreToReadyStaging_notificationLinksKept (st : SystemState) (tid : SeLe4n.ThreadId)
+    (restart : Bool) (hInv : st.objects.invExt) :
+    NotificationLinksKept (Lifecycle.Suspend.restoreToReadyStaging st tid restart) st := by
+  unfold Lifecycle.Suspend.restoreToReadyStaging
+  exact .updateTcb st tid _ hInv
+
+/-- WS-SX SX8.3: the cancelled caller's donation return keeps every
+notification-link code (`returnDonatedSchedContext_notificationLinksKept`). -/
+theorem returnDonationToCancelledCaller_notificationLinksKept (st : SystemState)
+    (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt) :
+    NotificationLinksKept (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) st := by
+  cases hD : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV with
+  | none =>
+    rw [Lifecycle.Suspend.returnDonationToCancelledCaller_none st v tcbV hD]; exact .refl st
+  | some p =>
+    obtain ⟨scId, holder⟩ := p
+    unfold Lifecycle.Suspend.returnDonationToCancelledCaller
+    rw [hD]
+    cases hT : st.getTcb? v with
+    | none => exact .refl st
+    | some _ =>
+      dsimp only
+      cases hRet : popHeldReplyHead st holder scId v with
+      | error _ => exact .refl st
+      | ok st' =>
+        dsimp only
+        apply popHeldReplyHead_liftPops hRet
+        · intro _ _ hPop
+          exact returnDonatedSchedContext_notificationLinksKept hInv hPop
+        · intro _ _ hK
+          exact keepDonatedSchedContext_notificationLinksKept hInv hK
+
+/-- WS-SX SX8.3: the reply consume writes a reply over a reply and a thread
+over a thread. -/
+theorem consumeCallerReply_notificationLinksKept (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st')) : NotificationLinksKept st' st := by
+  unfold SystemState.consumeCallerReply at hStep
+  cases hCons : SystemState.consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have hMid : NotificationLinksKept st1 st := by
+      unfold SystemState.consumeReply at hCons
+      cases hG : st.getReply? rid with
+      | none => rw [hG] at hCons; cases hCons; exact .refl _
+      | some r0 =>
+        rw [hG] at hCons
+        exact .storeObject hObjInv hCons (by rw [(SystemState.getReply?_eq_some_iff _ _ _).mp hG]; rfl)
+    have hInv1 := SystemState.consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact hMid
+    | some tcb =>
+      simp only [hT] at hStep
+      exact (NotificationLinksKept.storeObject hInv1 hStep
+        (by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hT]; rfl)).trans hMid
+
+/-- WS-SX SX8.3: the reply-link teardown is the reply path's consume. -/
+theorem consumeReplyLink_notificationLinksKept (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (hInv : st.objects.invExt) :
+    NotificationLinksKept (Lifecycle.Suspend.consumeReplyLink st tid tcb) st := by
+  unfold Lifecycle.Suspend.consumeReplyLink
+  cases tcb.replyObject with
+  | none => exact .refl _
+  | some rid =>
+    exact consumeCallerReply_notificationLinksKept _ _ tid rid hInv
+      (SystemState.consumeCallerReply_eq_link _ tid rid)
+
+/-- WS-SX SX8.3: the frame cut writes replies over replies. -/
+theorem cutThreadReplyFrameOut_notificationLinksKept (st : SystemState) (tcb : TCB)
+    (hInv : st.objects.invExt) : NotificationLinksKept (cutThreadReplyFrameOut st tcb) st := by
+  unfold cutThreadReplyFrameOut
+  cases tcb.replyObject with
+  | none => exact .refl _
+  | some rid =>
+    intro k
+    rcases cutReplyFrameOutOrSelf_objects_rewrite st rid hInv k with h | ⟨_, _, hPre, hPost, _⟩
+    · rw [h]
+    · rw [hPre, hPost]; rfl
+
+/-- WS-SX SX8.3: **the teardown keeps every notification-link code** — it
+writes queue links, IPC fields, bindings, a notification's waiters and the reply
+link, never a link word. -/
+theorem cancelIpcBlocking_notificationLinksKept (st : SystemState) (v : SeLe4n.ThreadId)
+    (tcbV : TCB) (hInv : st.objects.invExt) :
+    NotificationLinksKept (Lifecycle.Suspend.cancelIpcBlocking st v tcbV) st := by
+  have hEp : ∀ e, NotificationLinksKept (removeFromBlockingEndpoint st v e) st := fun e =>
+    have hExt := spliceOutMidQueueNode_preserves_objects_invExt st v hInv
+    .of_kindFrames
+      (fun a n ha => ((removeFromBlockingEndpoint_nonEndpoint st v e hExt a _
+          (fun _ hc => KernelObject.noConfusion hc)).mpr
+        ((spliceOutMidQueueNode_nonTcb st v hInv a _ (fun _ hc => KernelObject.noConfusion hc)).mpr ha)))
+      (fun a n ha => (spliceOutMidQueueNode_nonTcb st v hInv a _
+          (fun _ hc => KernelObject.noConfusion hc)).mp
+        ((removeFromBlockingEndpoint_nonEndpoint st v e hExt a _
+          (fun _ hc => KernelObject.noConfusion hc)).mp ha))
+      (fun a sc ha => ((removeFromBlockingEndpoint_nonEndpoint st v e hExt a _
+          (fun _ hc => KernelObject.noConfusion hc)).mpr
+        ((spliceOutMidQueueNode_nonTcb st v hInv a _ (fun _ hc => KernelObject.noConfusion hc)).mpr ha)))
+      (fun a sc ha => (spliceOutMidQueueNode_nonTcb st v hInv a _
+          (fun _ hc => KernelObject.noConfusion hc)).mp
+        ((removeFromBlockingEndpoint_nonEndpoint st v e hExt a _
+          (fun _ hc => KernelObject.noConfusion hc)).mp ha))
+  have hEpR := fun e => (restoreToReadyStaging_notificationLinksKept _ v true
+    (removeFromBlockingEndpoint_preserves_objects_invExt st v e hInv)).trans (hEp e)
+  unfold Lifecycle.Suspend.cancelIpcBlocking Lifecycle.Suspend.restoreToReadyCancelled
+  cases hIp : tcbV.ipcState with
+  | ready => exact .refl _
+  | blockedOnSend e => exact hEpR e
+  | blockedOnReceive e => exact hEpR e
+  | blockedOnCall e => exact hEpR e
+  | blockedOnNotification _ =>
+    refine (restoreToReadyStaging_notificationLinksKept _ v _
+      (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv)).trans ?_
+    intro k
+    rcases (removeFromNotificationWaitQueue_reach st v hInv).2 k with
+      h | ⟨n, n', hn, hn', _, _, _, hs⟩ | ⟨t, t', ht, ht', _⟩
+    · rw [h]
+    · rw [hn, hn']; simp only [objNotificationLinkCodes, hs]
+    · rw [ht, ht']; rfl
+  | blockedOnReply ep rt =>
+    have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
+      st v tcbV hInv
+    have hS := cutThreadReplyFrameOut_preserves_objects_invExt
+      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
+    have hU := Lifecycle.Suspend.restoreToReadyStaging_invExt _ v
+      true hS
+    dsimp only
+    refine NotificationLinksKept.trans (.of_map KernelObject.withoutReplyLinks
+      (fun o => by cases o <;> rfl)
+      (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks _ v _)) ?_
+    refine NotificationLinksKept.trans (consumeReplyLink_notificationLinksKept _ v tcbV hU) ?_
+    refine NotificationLinksKept.trans (restoreToReadyStaging_notificationLinksKept _ v _ hS) ?_
+    exact (cutThreadReplyFrameOut_notificationLinksKept _ tcbV hR).trans
+      (returnDonationToCancelledCaller_notificationLinksKept st v tcbV hInv)
 
 /-- WS-SM SM6.E (resolution frame) / **WS-RR RR8.11**: the teardown never moves
 **any** thread's home core.
@@ -946,11 +1123,15 @@ theorem returnDonationToCancelledCaller_tableReferenceFrame (st : SystemState)
     | none => exact .refl _
     | some _ =>
       dsimp only
-      cases hRet : returnDonatedSchedContextResolved st holder scId v with
+      cases hRet : popHeldReplyHead st holder scId v with
       | error _ => exact .refl _
       | ok st' =>
-        obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        exact returnDonatedSchedContext_tableReferenceFrame hInv hPop
+        dsimp only
+        apply popHeldReplyHead_liftPops hRet
+        · intro _ _ hPop
+          exact returnDonatedSchedContext_tableReferenceFrame hInv hPop
+        · intro _ _ hK
+          exact keepDonatedSchedContext_tableReferenceFrame hInv hK
 
 /-- **The IPC teardown keeps the reference tables and every object's
 back-links**: each of its writes rewrites a thread, a reply, a scheduling
@@ -1001,12 +1182,13 @@ theorem cancelIpcBlocking_runQueueFrameStage (st : SystemState) (victim : SeLe4n
     (fun hInv => cancelIpcBlocking_releaseStateAgree st victim tcb hInv)
     (fun hInv => cancelIpcBlocking_refillsKeptOff st victim tcb hInv P hP)
     (fun hInv => cancelIpcBlocking_yieldLinksKept st victim tcb hInv)
+    (fun hInv => cancelIpcBlocking_notificationLinksKept st victim tcb hInv)
     (hRes := by rw [Lifecycle.Suspend.cancelIpcBlocking_machine_eq st victim tcb])
 
-/-- ...and a stage when it returns nothing: every arm but a reply arm whose
-caller had donated. -/
-theorem cancelIpcBlocking_runQueueStage (st : SystemState) (victim : SeLe4n.ThreadId)
-    (tcb : TCB) (hD : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = none) :
+/-- ...and a stage wherever it keeps every refill view. -/
+theorem cancelIpcBlocking_runQueueStage_of_kept (st : SystemState) (victim : SeLe4n.ThreadId)
+    (tcb : TCB)
+    (hK : st.objects.invExt → RefillViewsKept (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) st) :
     SystemState.RunQueueStage st (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) :=
   have hS := Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq st victim tcb
   SystemState.RunQueueStage.of_placement
@@ -1015,9 +1197,18 @@ theorem cancelIpcBlocking_runQueueStage (st : SystemState) (victim : SeLe4n.Thre
     (fun hInv x => cancelIpcBlocking_placement_frame st victim tcb hInv x)
     (fun hInv => cancelIpcBlocking_stateMono st victim tcb hInv)
     (fun hInv => cancelIpcBlocking_releaseStateAgree st victim tcb hInv)
-    (fun hInv => cancelIpcBlocking_refillViewsKept st victim tcb hInv hD)
+    hK
     (fun hInv => cancelIpcBlocking_yieldLinksKept st victim tcb hInv)
+    (fun hInv => cancelIpcBlocking_notificationLinksKept st victim tcb hInv)
     (hRes := by rw [Lifecycle.Suspend.cancelIpcBlocking_machine_eq st victim tcb])
+
+/-- ...so it is a stage when it returns nothing: every arm but a reply arm whose
+caller had donated. -/
+theorem cancelIpcBlocking_runQueueStage (st : SystemState) (victim : SeLe4n.ThreadId)
+    (tcb : TCB) (hD : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = none) :
+    SystemState.RunQueueStage st (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) :=
+  cancelIpcBlocking_runQueueStage_of_kept st victim tcb fun hInv =>
+    cancelIpcBlocking_refillViewsKept st victim tcb hInv hD
 
 /-- WS-ZA ZA6.33: the context the teardown returns is well formed after it
 wherever it was before: the return rebinds it and keeps its refills. -/
@@ -1035,16 +1226,28 @@ theorem cancelIpcBlocking_returned_refillsView (st : SystemState) (victim : SeLe
     · rename_i s0 holder _ _ _
       split at hc
       · rename_i st' hRet
-        obtain ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        by_cases hs : scId = s0
-        · subst hs
-          obtain ⟨b, a', hb, -, ha', -, hv⟩ := returnDonatedSchedContext_rebinds hInv hPop
-          rw [ha'] at hc; cases hc; exact ⟨b, hb, hv⟩
-        · obtain ⟨b, hb, hv⟩ := (returnDonatedSchedContext_refillsKeptOff hInv hPop).1 scId c hs hc
-          exact ⟨b, hb, by
-            show ({ c.refillView with boundThreadCode := 0 } : SchedContext) =
-              { b.refillView with boundThreadCode := 0 }
-            rw [hv]⟩
+        revert hc
+        refine popHeldReplyHead_liftPops (P := fun s => s.getSchedContext? scId = some c →
+          ∃ b, st.getSchedContext? scId = some b ∧ c.refillsView = b.refillsView) hRet
+          (fun _ _ hPop hc => ?_) (fun _ _ hK hc => ?_)
+        · by_cases hs : scId = s0
+          · subst hs
+            obtain ⟨b, a', hb, -, ha', -, hv⟩ := returnDonatedSchedContext_rebinds hInv hPop
+            rw [ha'] at hc; cases hc; exact ⟨b, hb, hv⟩
+          · obtain ⟨b, hb, hv⟩ := (returnDonatedSchedContext_refillsKeptOff hInv hPop).1 scId c hs hc
+            exact ⟨b, hb, by
+              show ({ c.refillView with boundThreadCode := 0 } : SchedContext) =
+                { b.refillView with boundThreadCode := 0 }
+              rw [hv]⟩
+        · by_cases hs : scId = s0
+          · subst hs
+            obtain ⟨b, a', hb, ha', hv⟩ := keepDonatedSchedContext_refillsView hInv hK
+            rw [ha'] at hc; cases hc; exact ⟨b, hb, hv⟩
+          · obtain ⟨b, hb, hv⟩ := (keepDonatedSchedContext_refillsKeptOff hInv hK).1 scId c hs hc
+            exact ⟨b, hb, by
+              show ({ c.refillView with boundThreadCode := 0 } : SchedContext) =
+                { b.refillView with boundThreadCode := 0 }
+              rw [hv]⟩
       · exact ⟨c, hc, rfl⟩
     · exact ⟨c, hc, rfl⟩
   obtain ⟨b, hb, hv⟩ := hR b1 hb1
@@ -1064,6 +1267,12 @@ theorem cancelIpcBlockingMigrated_runQueueStage (st : SystemState) (victim : SeL
   | some p =>
     obtain ⟨scId, holder⟩ := p
     dsimp only
+    cases hA : donationRecipientAcceptable st victim with
+    | false =>
+      exact cancelIpcBlocking_runQueueStage_of_kept st victim tcb fun hInv =>
+        cancelIpcBlocking_refillViewsKept_of_not_acceptable st victim tcb hInv hA
+    | true =>
+    rw [if_pos rfl]
     refine SchedContextOps.settleReturnedContext_runQueueStage
       (cancelIpcBlocking_runQueueFrameStage st victim tcb (· = scId)
         (fun p h => by rw [hD] at h; cases h; rfl)) ?_
@@ -1108,6 +1317,22 @@ theorem cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_s
   | some p =>
     obtain ⟨scId, holder⟩ := p
     dsimp only
+    cases hA : donationRecipientAcceptable st victim with
+    | false =>
+      -- The held pop: nothing settled, every context keeps its holder.
+      have hK := cancelIpcBlocking_refillViewsKept_of_not_acceptable st victim tcb hInv hA
+      rw [if_neg (by decide)]
+      intro c' s0 t0 hMem sc hSc tid hB
+      have hQ : (Lifecycle.Suspend.cancelIpcBlocking st victim tcb).scheduler.replenishQueueOnCore c'
+          = st.scheduler.replenishQueueOnCore c' := by
+        rw [Lifecycle.Suspend.cancelIpcBlocking_scheduler_eq]; rfl
+      rw [hQ] at hMem
+      obtain ⟨b, hb, hv⟩ := hK.getSchedContext? hSc
+      rw [cancelIpcBlocking_determineTargetCore_eq st victim tcb hInv tid]
+      refine hCons c' s0 t0 hMem b hb tid ?_
+      rw [← SchedContext.boundThread_refillView, hv, SchedContext.boundThread_refillView]; exact hB
+    | true =>
+    rw [if_pos rfl]
     refine settleReturnedContext_preserves_affinityConsistent_smp _ _ scId
       ((cancelIpcBlocking_releaseStateAgree st victim tcb hInv).refined hRef)
       (replenishHomeOfSchedContext_spec _ scId _) ?_

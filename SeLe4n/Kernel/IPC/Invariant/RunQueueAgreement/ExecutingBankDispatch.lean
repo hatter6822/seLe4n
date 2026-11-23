@@ -293,12 +293,16 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
           (hBank := banksKeptOffCore_of_eq (by rw [schedContextBindNotification_machine h])))
     | exact hF (untypedRetypeFromCap_savedRegsKept hInv h)
          (untypedRetypeFromCap_stepCovers e' hInv hBi hPlaced h)
+    | exact hX (schedContextUnbindNotificationObject_savedRegsKeptExcept hInv h)
+        (schedContextUnbindNotificationObject_stepCovers (e := e') hInv h)
     | (cases h; rename_i hS
        first
         | (rw [lookupServiceByRecordedRegistration_preserves_state _ _ _ _ hS]
            exact (bankFrame.writeCallReturnWord_caller _ hInv).bankAgree hA)
         | exact hX (schedContextUnbindAllOnCore_savedRegsKeptExcept hInv hS)
             (schedContextUnbindAllOnCore_stepCovers _ _ _ e' _ hInv hS)
+        | exact hX (schedContextUnbindThreadObjectOnCore_savedRegsKeptExcept hInv hS)
+            (schedContextUnbindThreadObjectOnCore_stepCovers _ _ _ e' _ hInv hS)
         | exact schedContextConsumedOnCore_bankAgree hne hInv P.current hA hS
         | exact schedContextYieldToOnCore_bankAgree hne hInv hYA hYN P.current hA hS
         | exact hX (unbindNotification_savedRegsKeptExcept hInv hS)
@@ -316,6 +320,28 @@ theorem dispatchCapabilityOnly_bankAgree {decoded : SyscallDecodeResult}
             (setIPCBufferOp_savedRegsKeptOffCore hB.1.2.1 hS)
         | exact hO (copyThreadSpacesZombie_stepCovers _ _ _ _ _ _ _ _ _ hB hS).1
             (copyThreadSpacesZombie_savedRegsKeptOffCore B hB hS))
+
+/-- **A completion's donation keeps another core's bank agreement**: the
+donation (seL4-MCS `maybeDonateSchedContext`) is covered at `e'`, on a state
+where the consumption and the badge register left the binding pair as the
+completion was handed it, and it writes no saved register. -/
+theorem completeSignalArm_donation_bankFrame {e e' : CoreId} {c0 : SeLe4n.ThreadId}
+    (hne : e ≠ e') {ctx : LabelingContext} {notifId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+    (n : SeLe4n.ObjId) {c : CoreId} {st st1 : SystemState} {badge : SeLe4n.Badge}
+    (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hW : notificationWaitCrossCoreDispatchChecked ctx notifId tid c st = (st1, .ok (some badge))) :
+    bankFrame e c0 (Architecture.writeReturnFrameToTcb st1 tid
+        (Architecture.badgeReturnFrame st1 tid badge))
+      (maybeDonateSchedContextFlowing ctx (Architecture.writeReturnFrameToTcb st1 tid
+        (Architecture.badgeReturnFrame st1 tid badge)) n tid) := by
+  have hW' := notificationWaitCrossCoreDispatchChecked_ok_inner hW
+  have hI := completeSignalArm_donationPre_objects_invExt hInv hW'
+  have hB := schedContextBindingBidirectional.of_scIdLinksAgree
+    (scIdLinksAgree.of_schedLinkFrame (completeSignalArm_donationPre_schedLinkFrame hInv hW')) hBi
+  refine maybeDonateSchedContextFlowing_induct (bankFrame e c0 _) ctx _ n tid
+    (bankFrame.refl _) ?_
+  exact bankFrame.of_kept hne (maybeDonateSchedContext_stepCovers e' _ n tid hI hB).1
+    (maybeDonateSchedContext_savedRegsKeptExcept n tid hI)
 
 /-- WS-ZA ZA6.28: **every arm `dispatchWithCapChecked` routes keeps the executing
 core's agreement**: the capability-only arms by
@@ -372,7 +398,9 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
           fun _ h => offCoreFree_of_sendHead_cancelReplyHolder hInv P.dequeued hRT hBNR
             P.toEntryPremises.queueHeadCancelFacts h⟩
     obtain ⟨c0, w0, hIC, hHC⟩ := hSC
-    generalize cancelRecvBusyReply ctx tid gate decoded ec st = stC at h c0 w0 hIC hHC
+    have hBiC : schedContextBindingBidirectional (cancelRecvBusyReply ctx tid gate decoded ec st) :=
+      cancelRecvBusyReply_bidirectional hInv hB.bidirectional
+    generalize cancelRecvBusyReply ctx tid gate decoded ec st = stC at h c0 w0 hIC hHC hBiC
     by_cases hSig : receiveCompletesSignal ctx stC tid = true
     · -- seL4-MCS `receiveIPC`: the bound notification is active, so the
       -- receive completes it -- the wait writes no saved register, then the
@@ -389,8 +417,9 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
       have h1 := notificationWaitCrossCoreDispatchChecked_savedRegsUnwritten ctx
         (receiverBoundNotification stC tid) tid ec hIC
       rw [hWt] at h1
-      exact ((hW (stepCovers_trans c0 hS) (w0.trans h1.writtenFree)).trans
-        (bankFrame.writeReturnFrameToTcb_caller _ h1.2)).bankAgree hA
+      exact (((hW (stepCovers_trans c0 hS) (w0.trans h1.writtenFree)).trans
+        (bankFrame.writeReturnFrameToTcb_caller _ h1.2)).trans
+        (completeSignalArm_donation_bankFrame hne _ hIC hBiC hWt)).bankAgree hA
     simp only [Bool.not_eq_true] at hSig
     by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
     · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the caller's
@@ -413,12 +442,17 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
       · cases h
       rename_i stDon hHand
       cases h
+      -- **WS-SX SX8.2**: seL4-MCS `receiveIPC`'s `maybeReturnSchedContext` first.
+      obtain ⟨hRt, hRtInv⟩ := receiveReturnSchedContext_stepCovers e'
+        (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid hIC
       obtain ⟨hV, hVInv⟩ := stepCovers_of_pair_eq
-        (endpointReceiveDualWithCapsOnCore_stepCovers e' hIC) hRecv
+        (endpointReceiveDualWithCapsOnCore_stepCovers e' hRtInv) hRecv
       obtain ⟨hD, hDInv⟩ := applyReceiveRendezvousHandoff_stepCovers e' hVInv hHand
       obtain ⟨w1, i1⟩ := receiveArmCompletion_savedRegsWrittenFree (e := e') (base := st)
-        hIC hHC hRecv hHand
-      exact ((hW (stepCovers_trans c0 (stepCovers_trans hV hD)) (w0.trans w1)).trans
+        hRtInv (fun w hw => hHC w (by
+          rw [← receiveReturnSchedContext_getEndpoint? _ stC tid hIC]; exact hw)) hRecv hHand
+      exact ((hW (stepCovers_trans c0 (stepCovers_trans hRt (stepCovers_trans hV hD)))
+        (w0.trans ((savedRegsWrittenFree.receiveReturn _ stC tid hIC).trans w1))).trans
         (bankFrame.stageDeliveredMessage_caller _ i1)).bankAgree hA
     · cases h
   cases hId : decoded.syscallId <;> rw [hId] at h <;> dsimp only at h
@@ -530,13 +564,14 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     split at h
     · rename_i hSig
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
-        (notificationSignalBoundCrossCoreDispatchChecked_stepCovers e' hInv) hSig
+        (notificationSignalBoundCrossCoreDispatchChecked_stepCovers e' hInv hB.bidirectional) hSig
       cases h
       exact (hW hS (notificationSignalArm_savedRegsWrittenFree P hRT hBNR hSig)).bankAgree hA
     · cases h
   case none.notificationWait.object notifId =>
     split at h
     · cases h; exact (bankFrame.writeReturnFrameToTcb_caller _ hInv).bankAgree hA
+    unfold completeSignalArm at h
     split at h
     · rename_i hWt
       cases h
@@ -545,15 +580,21 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
       have h1 := notificationWaitCrossCoreDispatchChecked_savedRegsUnwritten ctx notifId tid ec
         P.objInv
       rw [hWt] at h1
-      exact ((bankFrame.of_unwritten hne hS h1).trans
-        (bankFrame.writeReturnFrameToTcb_caller _ h1.2)).bankAgree hA
+      exact (((bankFrame.of_unwritten hne hS h1).trans
+        (bankFrame.writeReturnFrameToTcb_caller _ h1.2)).trans
+        (completeSignalArm_donation_bankFrame hne _ hInv hB.bidirectional hWt)).bankAgree hA
     · rename_i hWt
       cases h
       have h1 := notificationWaitCrossCoreDispatchChecked_savedRegsUnwritten ctx notifId tid ec
         P.objInv
       rw [hWt] at h1
-      exact (bankFrame.of_unwritten hne (stepCovers_of_pair_eq
-        (notificationWaitCrossCoreDispatchChecked_stepCovers e' hInv) hWt).1 h1).bankAgree hA
+      have hI1 : (notificationWaitOnCore notifId tid ec st).1.objects.invExt :=
+        notificationWaitOnCore_preserves_objects_invExt notifId tid ec st hInv
+      rw [notificationWaitCrossCoreDispatchChecked_ok_inner hWt] at hI1
+      exact ((bankFrame.of_unwritten hne (stepCovers_of_pair_eq
+        (notificationWaitCrossCoreDispatchChecked_stepCovers e' hInv) hWt).1 h1).trans
+        (bankFrame.of_kept hne (maybeReturnSchedContext_stepCovers e' _ notifId tid hI1).1
+          (maybeReturnSchedContext_savedRegsKeptExcept notifId tid hI1))).bankAgree hA
     · cases h
   case none.replyRecv.object epId =>
     split at h
@@ -582,8 +623,11 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
         have h1 := notificationWaitCrossCoreDispatchChecked_savedRegsUnwritten ctx
           (receiverBoundNotification st1 tid) tid ec hI1
         rw [hWt] at h1
-        exact ((hW (stepCovers_trans hC1 hS) (w1.trans h1.writtenFree)).trans
-          (bankFrame.writeReturnFrameToTcb_caller _ h1.2)).bankAgree hA
+        exact (((hW (stepCovers_trans hC1 hS) (w1.trans h1.writtenFree)).trans
+          (bankFrame.writeReturnFrameToTcb_caller _ h1.2)).trans
+          (completeSignalArm_donation_bankFrame hne _ hI1
+            (replyTransferOnCoreChecked_bindingPair hInv (schedContextBindingPair_of_consistent
+              hB.2.binding hB.1.1.donationOwnerValid) hR).1 hWt)).bankAgree hA
     rename_i summ stR hRR
     cases h
     obtain ⟨hS, hSInv⟩ := endpointReplyRecvOnCore_stepCovers e' hInv hRR
@@ -605,7 +649,7 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
     split at h
     · rename_i hSig
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
-        (notificationSignalDeclassifiedOnCore_stepCovers e' hInv) hSig
+        (notificationSignalDeclassifiedCrossCoreDispatch_stepCovers e' hInv hB.bidirectional) hSig
       cases h
       exact (hW hS (declassifySignalArm_savedRegsWrittenFree P hRT hBNR hSig)).bankAgree hA
     · cases h
