@@ -7665,7 +7665,7 @@ theorem keepDonatedSchedContext_preserves_donationOwnerValid (hObjInv : st.objec
       rw [hN] at hBdT
       simp only [donationReturnBinding_some, SchedContextBinding.donated.injEq] at hBdT
       obtain ⟨rfl, rfl⟩ := hBdT
-      rw [(heldPopOwner?_some hN).2] at hOut
+      rw [heldPopOuter?_of_getTcb ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hHt), hN] at hOut
       obtain ⟨hNeO, -, oT, hOt, hU, hR⟩ := outerCallerAcceptable_some_char st tid tid _ hOut
       exact ⟨⟨_, hSc', hB0⟩, oT,
         tFwd _ _ (fun e => hNeO (SeLe4n.ThreadId.toObjId_injective _ _ e))
@@ -8832,7 +8832,7 @@ theorem keepDonatedSchedContext_ok_of_holderBinding {st : SystemState}
     (hG : ht.schedContextBinding.scId? = some scId)
     (hScObj : st.objects[scId.toObjId]? = some (.schedContext sc))
     (hB : sc.boundThread = some holder)
-    (hOut : outerCallerAcceptable st holder holder newOwner? = true) :
+    (hOut : outerCallerAcceptable st holder holder (heldPopOuter? st holder newOwner?) = true) :
     ∃ st', keepDonatedSchedContext st holder scId newOwner? = .ok st' := by
   obtain ⟨head?, hHead, hBelow⟩ := hHeadRes sc hScObj
   obtain ⟨s1, hS1⟩ := storeObject_isOk st scId.toObjId
@@ -9074,6 +9074,8 @@ theorem cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull
           (lookupTcb_some_objects st receiver recvTcb hLk) hBind
         exact keepDonatedSchedContext_ok_of_holderBinding hObjInv
           (donationHeadResolves_of_chainWellFormed st scId hChain) hLk
-          (by rw [hBind]; rfl) hSc hScB (outerCallerAcceptable_self_of hOuter.1)
+          (by rw [hBind]; rfl) hSc hScB
+          (by rw [heldPopOuter?_of_donated (lookupTcb_some_objects st receiver recvTcb hLk) hBind]
+              exact outerCallerAcceptable_self_of hOuter.1)
 
 end SeLe4n.Kernel

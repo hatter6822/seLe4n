@@ -327,7 +327,8 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
         have hLkHolder : lookupTcb st holder = some tcb := by rw [← hTidEq]; exact hLkTid
         obtain ⟨st', hOk⟩ := keepDonatedSchedContext_ok_of_holderBinding hInv hHeadResA hLkHolder
           (by rw [hBind, ← hScIdEq]; rfl) hScA (by simpa using hBt)
-          (outerCallerAcceptable_self_of hOutV)
+          (by rw [heldPopOuter?_of_donated (lookupTcb_some_objects st holder tcb hLkHolder) hBind]
+              exact outerCallerAcceptable_self_of hOutV)
         rw [hOk] at hK; cases hK
       | ok st' =>
         rw [hK] at hTcb

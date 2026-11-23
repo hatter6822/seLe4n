@@ -92,7 +92,7 @@ theorem keepDonatedSchedContextResolved_eq_inPlace (st : SystemState)
       storeLeavesIndexAndTypes st b.toObjId .reply = true ∧
       st.objects.findsInPlace b.toObjId = true)
     (hOuter : outerCallerAcceptable st holder holder
-      (SeLe4n.ThreadId.ofOptCode (popOuterCode st r)) = true)
+      (heldPopOuter? st holder (SeLe4n.ThreadId.ofOptCode (popOuterCode st r))) = true)
     (hHRes : holder.isReserved = false) (hHT : st.getTcb? holder = some ht)
     (hHB : ht.scBindingScCode = scId.val + 1)
     (hLsc : storeLeavesIndexAndTypes st scId.toObjId .schedContext = true)
@@ -217,6 +217,14 @@ theorem keepDonatedSchedContextResolved_eq_inPlace (st : SystemState)
     storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLTo),
     SystemState.updateTcb_eq_of_some hTOt]
 
+/-- The owner code `holder` holds (`0` where it is not stored): the code
+`heldPopOwnerCode` reads, so the gate asks the pop's outer check of the caller
+the pop records, as the specification does (`heldPopOuter?`). -/
+@[inline] def heldHolderOwnerCode (st : SystemState) (holder : SeLe4n.ThreadId) : Nat :=
+  match st.getTcb? holder with
+  | some ht => ht.scBindingOwnerCode
+  | none => 0
+
 /-- **A held pop that may write in place**, read on the pre-state: `holder` an
 unreserved thread whose slot is local and whose binding names the context; the
 context's slot local, the context bound to `holder` and heading the stack of a
@@ -253,7 +261,8 @@ a code, so the test builds nothing. -/
                  (match bR.next with
                   | some (.frame f) => f.val == rid.val
                   | _ => false) &&
-                 bR.callerCode != 0 && outerCallerAcceptableCode st holder holder bR.callerCode
+                 bR.callerCode != 0 && outerCallerAcceptableCode st holder holder
+                   (heldPopOwnerCode (heldHolderOwnerCode st holder) bR.callerCode)
                | none => false))
          | none => false)
       | none => false)
@@ -271,7 +280,8 @@ theorem keptPopsInPlace_spec (st : SystemState) (holder : SeLe4n.ThreadId)
         bR.next = some (.frame rid) ∧ bR.callerCode ≠ 0) ∧
         storeLeavesIndexAndTypes st b.toObjId .reply = true ∧
         st.objects.findsInPlace b.toObjId = true) ∧
-      outerCallerAcceptableCode st holder holder (popOuterCode st rp) = true ∧
+      outerCallerAcceptableCode st holder holder
+        (heldPopOwnerCode ht.scBindingOwnerCode (popOuterCode st rp)) = true ∧
       holder.isReserved = false ∧ st.getTcb? holder = some ht ∧
       ht.scBindingScCode = scId.val + 1 ∧
       storeLeavesIndexAndTypes st scId.toObjId .schedContext = true ∧
@@ -350,10 +360,11 @@ theorem keptPopsInPlace_spec (st : SystemState) (holder : SeLe4n.ThreadId)
           have : f = rid := by cases f; cases rid; simp only [beq_iff_eq] at e; subst e; rfl
           rw [this]
     · simpa only [bne_iff_ne, ne_eq] using hBC
-  have hOuter : outerCallerAcceptableCode st holder holder (popOuterCode st rp) = true := by
+  have hOuter : outerCallerAcceptableCode st holder holder
+      (heldPopOwnerCode ht.scBindingOwnerCode (popOuterCode st rp)) = true := by
     unfold popOuterCode
     cases hP : rp.prev with
-    | none => rfl
+    | none => unfold heldPopOwnerCode; split <;> rfl
     | some b =>
       rw [hP] at hBl
       dsimp only at hBl
@@ -366,7 +377,7 @@ theorem keptPopsInPlace_spec (st : SystemState) (holder : SeLe4n.ThreadId)
       dsimp only at hBm
       simp only [Bool.and_eq_true] at hBm
       simp only [hBg]
-      exact hBm.2
+      simpa only [heldHolderOwnerCode, hTg] using hBm.2
   exact ⟨sc, rid, rp, ht, rfl, hB, hHd, hRg, hN, hBelow, hOuter, hHRes, rfl, hHB, hLsc, hFsc,
     hLR, hFR, hLH⟩
 
@@ -381,8 +392,12 @@ theorem keptPopsInPlace_pop (st : SystemState) (holder : SeLe4n.ThreadId)
   obtain ⟨sc, rid, rp, ht, hScg, hB, hHd, hRg, hN, hBelow, hOuterC, hHRes, hTg, hHB, hLsc, hFsc,
     hLR, hFR, hLH⟩ := keptPopsInPlace_spec st holder scId hG
   have hOuter : outerCallerAcceptable st holder holder
-      (SeLe4n.ThreadId.ofOptCode (popOuterCode st rp)) = true := by
-    rw [← outerCallerAcceptableCode_eq]; exact hOuterC
+      (heldPopOuter? st holder (SeLe4n.ThreadId.ofOptCode (popOuterCode st rp))) = true := by
+    have hBind : ht.schedContextBinding = SchedContextBinding.ofCodes (scId.val + 1)
+        ht.scBindingOwnerCode := by
+      unfold TCB.schedContextBinding; rw [hHB]
+    rw [heldPopOuter?_of_getTcb hTg, hBind, heldPopOwner?_ofCodes, ← outerCallerAcceptableCode_eq]
+    exact hOuterC
   have hLk : lookupTcb st holder = some ht := by unfold lookupTcb; rw [hHRes]; exact hTg
   have hScQ : ht.schedContextBinding.scId? = some scId := by
     unfold TCB.schedContextBinding; rw [hHB]; unfold SchedContextBinding.ofCodes

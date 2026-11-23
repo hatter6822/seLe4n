@@ -1403,7 +1403,8 @@ holds a context of its own — the head popped, the context kept by `holder`.
 
 `keepDonatedSchedContext`'s counterpart, write for write and guard for guard, in
 the live order: refused on a context not bound to `holder` and on an outer
-caller the pop would refuse, before any write; the record keeps its holder
+caller the pop would refuse (asked, as `heldPopOuter?` asks it, only of a holder
+that has the context on loan), before any write; the record keeps its holder
 (`donationSeverSchedContext`, the **live** function), the head is popped, and
 the holder's binding becomes `donationReturnBinding` at `heldPopOwner?` (the live
 functions again: a `.bound` holder stays `.bound`), behind the live internal guard that the holder's binding names the context. -/
@@ -1414,7 +1415,10 @@ def frozenKeepDonatedSchedContext (st : FrozenSystemState) (holder : SeLe4n.Thre
   | none => .error .objectNotFound
   | some sc =>
     if sc.boundThread != some holder then .error (.invalidArgument 0)
-    else if !frozenOuterCallerAcceptable st holder holder newOwner? then
+    else if !frozenOuterCallerAcceptable st holder holder
+        (match st.getTcb? holder with
+         | some ht => SeLe4n.Kernel.heldPopOwner? ht.schedContextBinding newOwner?
+         | none => newOwner?) then
       .error (.invalidArgument 0)
     else
       match frozenDonationHeadOf? st scId sc with

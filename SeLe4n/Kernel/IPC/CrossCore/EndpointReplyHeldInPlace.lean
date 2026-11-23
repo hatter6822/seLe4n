@@ -229,7 +229,7 @@ theorem applyReplyDonationOnCore_eq_held (S : SystemState) (rid : SeLe4n.ReplyId
       storeLeavesIndexAndTypes S b.toObjId .reply = true ∧
       S.objects.findsInPlace b.toObjId = true)
     (hOuter : outerCallerAcceptable S holder holder
-      (SeLe4n.ThreadId.ofOptCode (popOuterCode S r)) = true)
+      (heldPopOuter? S holder (SeLe4n.ThreadId.ofOptCode (popOuterCode S r))) = true)
     (hRecip : donationRecipientAcceptable S c = false)
     (hHRes : holder.isReserved = false) (hHT : S.getTcb? holder = some ht)
     (hHB : ht.scBindingScCode = scId.val + 1)
@@ -271,7 +271,7 @@ theorem replyRecvPopDonation_eq_held (S : SystemState) (rid : SeLe4n.ReplyId)
       storeLeavesIndexAndTypes S b.toObjId .reply = true ∧
       S.objects.findsInPlace b.toObjId = true)
     (hOuter : outerCallerAcceptable S holder holder
-      (SeLe4n.ThreadId.ofOptCode (popOuterCode S r)) = true)
+      (heldPopOuter? S holder (SeLe4n.ThreadId.ofOptCode (popOuterCode S r))) = true)
     (hRecip : donationRecipientAcceptable S c = false)
     (hHRes : holder.isReserved = false) (hHT : S.getTcb? holder = some ht)
     (hHB : ht.scBindingScCode = scId.val + 1)
@@ -493,12 +493,25 @@ theorem replyHeldPopsInPlace_pop (st : SystemState) (c server : SeLe4n.ThreadId)
     cases hP : rp.prev with
     | none => rfl
     | some b => dsimp only; rw [hBelowRead b hP]
+  have hOwnT : htT.scBindingOwnerCode = ht.scBindingOwnerCode := by
+    have h := congrArg TCB.scBindingOwnerCode ehT; exact h
   have hOuter : outerCallerAcceptable T server server
-      (SeLe4n.ThreadId.ofOptCode (popOuterCode T rp.consumed)) = true := by
-    rw [← outerCallerAcceptableCode_eq, hPopT]
-    generalize popOuterCode st rp = k at hOuterC hOutNe ⊢
+      (heldPopOuter? T server (SeLe4n.ThreadId.ofOptCode (popOuterCode T rp.consumed))) = true := by
+    have hBindT : htT.schedContextBinding =
+        SchedContextBinding.ofCodes (scId.val + 1) htT.scBindingOwnerCode := by
+      unfold TCB.schedContextBinding; rw [hHBT]
+    rw [heldPopOuter?_of_getTcb hHT, hBindT, heldPopOwner?_ofCodes, ← outerCallerAcceptableCode_eq,
+      hPopT, hOwnT]
+    -- The pop records the stack's answer only on a holder on loan; a holder that
+    -- owns the context checks the bottom answer, which passes.
+    have hOutNe' : (heldPopOwnerCode ht.scBindingOwnerCode (popOuterCode st rp) != c.val + 1)
+        = true := by
+      unfold heldPopOwnerCode; split
+      · simp
+      · exact hOutNe
+    generalize heldPopOwnerCode ht.scBindingOwnerCode (popOuterCode st rp) = k at hOuterC hOutNe' ⊢
     have hk := hOuterC
-    have hkc := hOutNe
+    have hkc := hOutNe'
     cases k with
     | zero => rfl
     | succ o =>

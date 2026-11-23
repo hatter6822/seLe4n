@@ -246,7 +246,7 @@ so the bind's own family lemmas apply to it. -/
 theorem maybeDonateSchedContext_eq_bind {st : SystemState} {n : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {vS : SeLe4n.ValidObjId} {vT : SeLe4n.ValidThreadId}
     (h : maybeDonateSchedContext st n tid = SchedContextOps.schedContextBindPerform st vS vT)
-    (hA : SchedContextOps.schedContextBindAdmitted st vS vT = true) :
+    (hA : SchedContextOps.schedContextDonateAdmitted st vS vT = true) :
     SchedContextOps.schedContextBind vS vT st = .ok ((), maybeDonateSchedContext st n tid) := by
   rw [h]; exact SchedContextOps.schedContextBind_of_admitted st vS vT hA
 

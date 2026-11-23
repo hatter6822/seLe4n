@@ -3063,12 +3063,13 @@ private def differentialSchedContextBindPlacesParked : IO Unit := do
       (!SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere fzBound diffA)
 
 /-- FO-047c: the refusals the frozen bind did not carry, and what the binds
-admit: a context heading a stack and a thread in another domain.
+admit: a context heading a stack, a thread in another domain, and a lender.
 
 Each refusal drives a state the live bind refuses and asserts the frozen mirror
 refuses it **with the same error code**, beside a control establishing that the
 live side really refuses rather than both sides sharing a success.  A thread in
-another domain is admitted by both, as seL4-MCS's bind checks no domain. -/
+another domain and a thread whose reply frame is on a live stack are admitted by
+both, as seL4-MCS's bind checks neither. -/
 private def differentialSchedContextBindRefusalsAgree : IO Unit := do
   let errOf {α : Type} : Except KernelError α → Option KernelError
     | .ok _ => none
@@ -3123,7 +3124,9 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
   expect "FO-047c: the label rule admits a context heading no stack under any labels"
     (SeLe4n.Kernel.schedContextBindLabelAdmits ctxHigh istDomain.state diffScId.toObjId diffA)
   -- (3) the thread's own reply frame is on a LIVE stack — reciprocated, so the
-  -- pop that reaches it will write this thread's binding.
+  -- thread lends a context.  seL4-MCS's `decodeSchedContext_Bind` binds a lender
+  -- (WS-SX SX8), and the pop that reaches its frame keeps the loaned context with
+  -- its holder (`reply_pop`'s held arm), so both binds ADMIT it.
   let ownRid : SeLe4n.ReplyId := ⟨71⟩
   let aboveRid : SeLe4n.ReplyId := ⟨72⟩
   let ownReply : SeLe4n.Kernel.Reply :=
@@ -3139,30 +3142,12 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
     ownRid ownReply) aboveRid aboveReply) diffScId scDomainZero
   expect "FO-047c control: the frame above really answers this one (a LIVE stack)"
     (SeLe4n.Kernel.FrozenOps.frozenReplyFrameOnLiveStack (freeze istOwed) owedTcb)
-  expect "FO-047c control: the live bind refuses a thread owed a context"
-    (liveErr istOwed.state == some KernelError.illegalState)
-  expect "FO-047c: ...and the frozen bind refuses it identically"
-    (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istOwed))
-      == some KernelError.illegalState)
-  -- ...and the NEGATIVE that keeps the guard from degenerating into "any reply
-  -- link refuses": a frame whose upward link nothing answers is owed nothing, and
-  -- binding it is an operation both sides support.
-  let staleTcb : TCB :=
-    (TCB.setIpcState { diffTcb 62 with
-      replyObjectCode := SeLe4n.ReplyId.optCode (some ownRid)
-      } (.blockedOnReply diffEpId diffB))
-  let staleAbove : SeLe4n.Kernel.Reply := { replyId := aboveRid, callerCode := SeLe4n.ThreadId.optCode (some diffB) }
-  let istStale := diffAddSchedContext (diffAddReply (diffAddReply
-    (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) staleTcb) (diffTcb 63))
-    ownRid ownReply) aboveRid staleAbove) diffScId scDomainZero
-  expect "FO-047c control: a stale upward link is NOT a live stack"
-    (!(SeLe4n.Kernel.FrozenOps.frozenReplyFrameOnLiveStack (freeze istStale) staleTcb))
   -- SUCCESS on both sides, not "no error": `liveErr` answers `none` for an
   -- unpromotable id as well as for an accepted bind, so the weaker form could
   -- pass on a fixture the live operation never ran at all.
-  expect "FO-047c NEGATIVE: both sides ADMIT a thread whose frame is off every stack"
-    ((liveSchedContextBindState istStale.state diffScId diffA).isSome
-      && (frozenSchedContextBind diffScId.toObjId diffA (freeze istStale)).toOption.isSome)
+  expect "FO-047c: both sides ADMIT a thread whose frame is on a live stack (seL4 binds a lender)"
+    ((liveSchedContextBindState istOwed.state diffScId diffA).isSome
+      && (frozenSchedContextBind diffScId.toObjId diffA (freeze istOwed)).toOption.isSome)
 
 /-- **The live `schedContextConfigure`, in the `Option SystemState` shape the
 SchedContext scenarios compare.**  `none` is "did not run" -- an unpromotable id

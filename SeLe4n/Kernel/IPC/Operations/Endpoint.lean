@@ -8022,6 +8022,34 @@ theorem heldPopOwner?_some {b : SchedContextBinding} {newOwner? : Option SeLe4n.
     b.isDonated = true ∧ newOwner? = some o := by
   unfold heldPopOwner? at h; split at h <;> simp_all
 
+/-- **The caller the held pop checks as the outer one**: `heldPopOwner?` at the
+holder's stored binding, read before any write — the stack's answer where the
+holder has the context on loan (it comes to owe that caller), none where it owns
+it (it keeps owning it, and seL4-MCS's `reply_pop` checks nothing of the frame
+below).  A holder that is not stored is checked against the stack's answer, so
+the refusal order is the one the pop had. -/
+@[inline] def heldPopOuter? (st : SystemState) (holder : SeLe4n.ThreadId)
+    (newOwner? : Option SeLe4n.ThreadId) : Option SeLe4n.ThreadId :=
+  match st.getTcb? holder with
+  | some ht => heldPopOwner? ht.schedContextBinding newOwner?
+  | none => newOwner?
+
+/-- On a stored holder, the outer caller the held pop checks is the owner it
+records. -/
+theorem heldPopOuter?_of_getTcb {st : SystemState} {holder : SeLe4n.ThreadId} {ht : TCB}
+    (h : st.getTcb? holder = some ht) (newOwner? : Option SeLe4n.ThreadId) :
+    heldPopOuter? st holder newOwner? = heldPopOwner? ht.schedContextBinding newOwner? := by
+  unfold heldPopOuter?; rw [h]
+
+/-- On a holder that has the context on loan, the outer caller the held pop
+checks is the stack's answer. -/
+theorem heldPopOuter?_of_donated {st : SystemState} {holder : SeLe4n.ThreadId} {ht : TCB}
+    (h : st.objects[holder.toObjId]? = some (.tcb ht)) {scId : SeLe4n.SchedContextId}
+    {owner : SeLe4n.ThreadId} (hB : ht.schedContextBinding = .donated scId owner)
+    (newOwner? : Option SeLe4n.ThreadId) :
+    heldPopOuter? st holder newOwner? = newOwner? := by
+  rw [heldPopOuter?_of_getTcb ((SystemState.getTcb?_eq_some_iff _ _ _).mpr h), hB]; rfl
+
 /-- **seL4-MCS's `reply_pop` at a held head whose recipient holds a context of
 its own.**  `reply_pop` donates the context back only when the thread it answers
 holds none (`if (tcb->tcbSchedContext == NULL) schedContext_donate(sc, tcb)`);
@@ -8033,7 +8061,9 @@ that owns it (`.bound`) stays `.bound`, as seL4 writes nothing to it, and a
 holder that has it on loan owes it to the frame below (`donationReturnBinding`
 at `heldPopOwner?`: its own at the bottom of the stack, a loan from the outer
 caller above it).  The recipient is not written.  Refused, before any write, on a context not bound to `holder`, an
-outer caller the donation pop would refuse (`outerCallerAcceptable`), and a head
+outer caller the donation pop would refuse (`outerCallerAcceptable`, asked only
+of a holder that has the context on loan, `heldPopOuter?`: a holder that owns it
+records no owner, and seL4 checks nothing of the frame below), and a head
 that does not name the context back.  Its internal holder guard (the holder's
 binding names the context) never refuses where the binding pair holds
 (`keepDonatedSchedContext_ok_of_schedContextBindingConsistent`). -/
@@ -8044,7 +8074,8 @@ def keepDonatedSchedContext (st : SystemState) (holder : SeLe4n.ThreadId)
   | some sc =>
     if sc.boundThread != some holder then .error (.invalidArgument 0)
     else
-    if !outerCallerAcceptable st holder holder newOwner? then .error (.invalidArgument 0)
+    if !outerCallerAcceptable st holder holder (heldPopOuter? st holder newOwner?) then
+      .error (.invalidArgument 0)
     else
     match donationHeadOf? st scId sc with
     | .error e => .error e
@@ -8204,7 +8235,7 @@ theorem keepDonatedSchedContext_ok_storeChainGuarded {st st' : SystemState}
       (s1 s2 : SystemState), ht.schedContextBinding.scId? = some scId ∧
       st.objects[scId.toObjId]? = some (.schedContext sc) ∧
       sc.boundThread = some holder ∧
-      outerCallerAcceptable st holder holder newOwner? = true ∧
+      outerCallerAcceptable st holder holder (heldPopOuter? st holder newOwner?) = true ∧
       donationHeadOf? st scId sc = .ok head? ∧
       storeObject scId.toObjId
         (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
@@ -8225,10 +8256,10 @@ theorem keepDonatedSchedContext_ok_storeChainGuarded {st st' : SystemState}
     · rw [if_pos hB] at h; cases h
     · rw [if_neg hB] at h
       have hB' : sc.boundThread = some holder := by simpa using hB
-      by_cases hO : (!outerCallerAcceptable st holder holder newOwner?) = true
+      by_cases hO : (!outerCallerAcceptable st holder holder (heldPopOuter? st holder newOwner?)) = true
       · rw [if_pos hO] at h; cases h
       · rw [if_neg hO] at h
-        have hO' : outerCallerAcceptable st holder holder newOwner? = true := by simpa using hO
+        have hO' : outerCallerAcceptable st holder holder (heldPopOuter? st holder newOwner?) = true := by simpa using hO
         cases hH : donationHeadOf? st scId sc with
         | error e => rw [hH] at h; cases h
         | ok head? =>
@@ -8277,7 +8308,7 @@ theorem keepDonatedSchedContext_ok_storeChain {st st' : SystemState}
       (s1 s2 : SystemState),
       st.objects[scId.toObjId]? = some (.schedContext sc) ∧
       sc.boundThread = some holder ∧
-      outerCallerAcceptable st holder holder newOwner? = true ∧
+      outerCallerAcceptable st holder holder (heldPopOuter? st holder newOwner?) = true ∧
       donationHeadOf? st scId sc = .ok head? ∧
       storeObject scId.toObjId
         (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
@@ -8396,7 +8427,7 @@ theorem keepDonatedSchedContext_objects (hObjInv : st.objects.invExt)
     (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
     ∃ (sc : SchedContext) (head? : Option (SeLe4n.ReplyId × Reply)) (ht : TCB),
       st.objects[scId.toObjId]? = some (.schedContext sc) ∧ sc.boundThread = some holder ∧
-      outerCallerAcceptable st holder holder newOwner? = true ∧
+      outerCallerAcceptable st holder holder (heldPopOuter? st holder newOwner?) = true ∧
       donationHeadOf? st scId sc = .ok head? ∧
       st.objects[holder.toObjId]? = some (.tcb ht) ∧ ¬ holder.isReserved ∧
       st'.objects[scId.toObjId]? = some (.schedContext
@@ -8807,7 +8838,7 @@ def keptPopCommits (st : SystemState) (holder : SeLe4n.ThreadId)
     | none => false
     | some sc =>
       sc.boundThread == some holder &&
-        outerCallerAcceptable st holder holder newOwner? &&
+        outerCallerAcceptable st holder holder (heldPopOuter? st holder newOwner?) &&
         ((lookupTcb st holder).bind (fun ht => ht.schedContextBinding.scId?) == some scId)
 
 /-- **Whether the held-head pop commits, read on the state it runs on**: the

@@ -813,11 +813,6 @@ private theorem receiveResolvedArm_cancelled_preserves_ipcInvariantFull
           (writeReturnFrameToTcb_preserves_ipcInvariantFull st1 tid _ hObjInv1 hWaitInv)
           (schedContextBindingBidirectional_of_consistent hPack.capOnly.schedContextLinks.binding
             hInv.donationOwnerValid)
-          hInv
-          (fun tcb hTcb => by
-            rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hTcb] at hTC
-            obtain rfl := Option.some.inj hTC
-            exact readyThread_notBlockedOnReply _ hReadyC)
       simp only [Bool.not_eq_true] at hSig
       by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord st tid)) st
           epId = true
@@ -967,11 +962,7 @@ theorem replyRecvCompletesSignalArm_preserves_ipcInvariantFull (ctx : LabelingCo
     exact completeSignalArm_donation_preserves_ipcInvariantFull _ hObj1
       (notificationWaitCrossCoreDispatchChecked_ok_inner hW)
       (writeReturnFrameToTcb_preserves_ipcInvariantFull st2 tid _ hObjInv2 hWaitInv)
-      hP1.1 hInv1
-      (fun tcb hTcb => by
-        rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hTcb] at hTC
-        obtain rfl := Option.some.inj hTC
-        exact readyThread_notBlockedOnReply _ hReadyC)
+      hP1.1
 
 /-- WS-RR RR3.24 (**the dispatch payoff**): every syscall
 `dispatchWithCapChecked` routes preserves `ipcInvariantFull`.  The
@@ -1357,11 +1348,6 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                                 hObjInv1 hWaitInv)
                               (schedContextBindingBidirectional_of_consistent
                                 hPack.capOnly.schedContextLinks.binding hInv.donationOwnerValid)
-                              hInv
-                              (fun tcb hTcb => by
-                                rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr hTcb] at hTC
-                                obtain rfl := Option.some.inj hTC
-                                exact readyThread_notBlockedOnReply _ hReadyC)
               · simp only [notificationWaitCrossCoreDispatchChecked, hFlow, hBound,
                   ↓reduceIte] at hStep
                 cases hStep
@@ -1769,24 +1755,16 @@ private theorem witnessInv3 : ipcInvariantFull witnessSt3 := by
             simp [beq_eq_false_iff_ne]; exact fun h => hNeS h.symm,
           show (witnessTid.toObjId == oid) = false from by
             simp [beq_eq_false_iff_ne]; exact fun h => hNeT h.symm]
-  · refine Or.inl ⟨rfl, rfl, rfl, rfl, ?_, ?_⟩
-    · intro s sTcb sc0 hLk
-      rw [witnessSt2_lookup] at hLk
-      split at hLk
+  · refine Or.inl ⟨rfl, rfl, rfl, rfl, ?_⟩
+    intro t' tcb2 hNe hLk
+    rw [witnessSt2_lookup] at hLk
+    split at hLk
+    · cases hLk
+    · split at hLk
+      · next h2 =>
+          cases hLk
+          exact absurd (SeLe4n.ThreadId.toObjId_injective _ _ (eq_of_beq h2)).symm hNe
       · cases hLk
-      · split at hLk
-        · cases hLk
-          simp [witnessTcbFresh]
-        · cases hLk
-    · intro t' tcb2 hNe hLk
-      rw [witnessSt2_lookup] at hLk
-      split at hLk
-      · cases hLk
-      · split at hLk
-        · next h2 =>
-            cases hLk
-            exact absurd (SeLe4n.ThreadId.toObjId_injective _ _ (eq_of_beq h2)).symm hNe
-        · cases hLk
 
 private theorem witnessSt3_getTcb :
     witnessSt3.getTcb? witnessTid = some witnessTcbBound := by
@@ -1987,17 +1965,9 @@ private theorem witnessSt3_links : schedContextLinkInvariant witnessSt3 := by
 
 private theorem witnessCapOnly :
     capabilityDispatchQuiescence witnessDecoded witnessCap witnessSt3 := by
-  refine ⟨witnessSt3_links, ?_, ?_,
+  refine ⟨witnessSt3_links, ?_,
     replyStackOuterCallerValid_of_no_stacks witnessSt3 witnessSt3_noStacks,
     .of_no_loans witnessSt3_noLoans⟩
-  · intro _ vThreadId _ _ s sTcb sc0 hLk
-    rw [witnessSt3_lookup] at hLk
-    split at hLk
-    · cases hLk
-    · split at hLk
-      · cases hLk
-        simp [witnessTcbBound, witnessTcbFresh]
-      · cases hLk
   · intro objId _ hTgt
     simp [witnessCap] at hTgt
 
@@ -2134,10 +2104,8 @@ private theorem witnessCapOnlySignal :
     capabilityDispatchQuiescence witnessDecodedSignal witnessCapTcbObject
       witnessSt3 := by
   refine ⟨witnessCapOnly.schedContextLinks,
-    ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
+    ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
     witnessCapOnly.lentContextsHeadedByLender⟩
-  · intro _ _ hSy _
-    simp [witnessDecodedSignal] at hSy
   · intro objId _ hTgt vtid hVal
     injection hTgt with hObj
     subst hObj
@@ -2302,10 +2270,8 @@ private theorem witnessCapOnlyEndpointOf (decoded : SyscallDecodeResult)
     (hSid : decoded.syscallId ≠ .schedContextBind) :
     capabilityDispatchQuiescence decoded witnessCapEndpoint witnessSt3 := by
   refine ⟨witnessCapOnly.schedContextLinks,
-    ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
+    ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
     witnessCapOnly.lentContextsHeadedByLender⟩
-  · intro _ _ hSy
-    exact absurd hSy hSid
   · intro objId _ hTgt vtid hVal
     injection hTgt with hObj
     subst hObj
@@ -2502,10 +2468,8 @@ private def witnessGateMint : SyscallGate :=
 private theorem witnessCapOnlyMint :
     capabilityDispatchQuiescence witnessDecodedMint witnessCap witnessSt3 := by
   refine ⟨witnessCapOnly.schedContextLinks,
-    ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
+    ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
     witnessCapOnly.lentContextsHeadedByLender⟩
-  · intro _ _ hSy _
-    simp [witnessDecodedMint] at hSy
   · intro objId _ hTgt
     simp [witnessCap] at hTgt
 
@@ -2562,10 +2526,8 @@ private theorem witnessCapOnlyDeclassifySignal :
     capabilityDispatchQuiescence witnessDecodedDeclassifySignal
       witnessCapTcbObject witnessSt3 := by
   refine ⟨witnessCapOnly.schedContextLinks,
-    ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
+    ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
     witnessCapOnly.lentContextsHeadedByLender⟩
-  · intro _ _ hSy _
-    simp [witnessDecodedDeclassifySignal] at hSy
   · intro objId _ hTgt vtid hVal
     injection hTgt with hObj
     subst hObj
@@ -2796,15 +2758,13 @@ private theorem witnessSt4_links : schedContextLinkInvariant witnessSt4 := by
 private theorem witnessCapOnlyReply :
     capabilityDispatchQuiescence witnessDecodedReply witnessCapReply
       witnessSt4 := by
-  refine ⟨witnessSt4_links, ?_, ?_,
+  refine ⟨witnessSt4_links, ?_,
     replyStackOuterCallerValid_of_no_stacks witnessSt4 witnessSt4_noStacks,
     .of_no_loans fun tid tcb scId owner hLk => by
       rw [witnessSt4_lookup] at hLk
       split at hLk
       · cases hLk
       · exact witnessSt3_noLoans tid tcb scId owner hLk⟩
-  · intro _ _ hSy _
-    simp [witnessDecodedReply] at hSy
   · intro objId _ hTgt
     simp [witnessCapReply] at hTgt
 
@@ -2870,16 +2830,8 @@ private def witnessGateBind : SyscallGate :=
 private theorem witnessCapOnlyBind :
     capabilityDispatchQuiescence witnessDecodedBind witnessCap witnessSt3 := by
   refine ⟨witnessCapOnly.schedContextLinks,
-    ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
+    ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
     witnessCapOnly.lentContextsHeadedByLender⟩
-  · intro _ vThreadId _ _ s sTcb sc0 hLk
-    rw [witnessSt3_lookup] at hLk
-    split at hLk
-    · cases hLk
-    · split at hLk
-      · cases hLk
-        simp [witnessTcbBound, witnessTcbFresh]
-      · cases hLk
   · intro objId _ hTgt
     simp [witnessCap] at hTgt
 
@@ -2934,10 +2886,8 @@ private theorem witnessCapOnlySuspend :
     capabilityDispatchQuiescence witnessDecodedSuspend witnessCapTcbObject
       witnessSt3 := by
   refine ⟨witnessCapOnly.schedContextLinks,
-    ?_, ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
+    ?_, witnessCapOnly.replyStacksSettleOnWaitingDonors,
     witnessCapOnly.lentContextsHeadedByLender⟩
-  · intro _ _ hSy _
-    simp [witnessDecodedSuspend] at hSy
   · intro objId _ hTgt vtid hVal
     injection hTgt with hObj
     subst hObj

@@ -41,21 +41,6 @@ theorem schedContextBindingBidirectional.of_bindingLinksAgree {st st' : SystemSt
   obtain ⟨sc', hs', e'⟩ := hB.symm.sc_back h0
   exact ⟨sc', hs', e'.trans hbt⟩
 
-/-- **A thread lends no context after a step that keeps every binding link**,
-when it lent none before: the loan record names an owner blocked on a reply
-(`donationOwnerValid`), and the thread was not. -/
-theorem notDonationOwner_of_bindingLinksAgree {st st' : SystemState} {tid : SeLe4n.ThreadId}
-    (hB : bindingLinksAgree st st') (hD : donationOwnerValid st)
-    (hNotReply : ∀ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) →
-      ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt) :
-    ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
-      st'.objects[s.toObjId]? = some (.tcb sTcb) →
-      sTcb.schedContextBinding ≠ .donated sc0 tid := by
-  intro s sTcb sc0 hS hb
-  obtain ⟨u, hu, e⟩ := hB.tcb_back hS
-  obtain ⟨-, ownerTcb, hO, -, ep, rt, hR⟩ := hD s u sc0 tid hu (e.trans hb)
-  exact hNotReply ownerTcb hO ep rt hR
-
 /-- **The badge register's write keeps every scheduling link.** -/
 theorem SchedLinkFrame.writeReturnFrameToTcb (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : Architecture.SyscallReturnFrame) (hInv : st.objects.invExt) :
@@ -143,13 +128,11 @@ holds and the receiver lends no context: the identity, or the bind's writes
 under seL4's guard (`schedContextBindPerform_preserves_ipcInvariantFull`). -/
 theorem maybeDonateSchedContext_preserves_ipcInvariantFull (st : SystemState)
     (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
-    (hInv : ipcInvariantFull st) (hBidir : schedContextBindingBidirectional st)
-    (hNotOwner : ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
-      st.objects[s.toObjId]? = some (.tcb sTcb) → sTcb.schedContextBinding ≠ .donated sc0 tid) :
+    (hInv : ipcInvariantFull st) (hBidir : schedContextBindingBidirectional st) :
     ipcInvariantFull (maybeDonateSchedContext st n tid) :=
   maybeDonateSchedContext_induct (fun _ s' => ipcInvariantFull s') st n tid hInv
-    (fun vS vT hT hA => schedContextBindPerform_preserves_ipcInvariantFull st vS vT hObjInv hInv
-      hBidir (by subst hT; exact hNotOwner) hA)
+    (fun vS vT _ hA => schedContextBindPerform_preserves_ipcInvariantFull st vS vT hObjInv hInv
+      hBidir hA)
 
 /-- **seL4's return on a running receiver keeps the IPC bundle**: the binding
 pair cleared in the unbind direction (`schedContextUnbindTail_preserves_ipcInvariantFull`,
@@ -245,8 +228,8 @@ theorem completeSignalArm_donationPre_objects_invExt {notifId : SeLe4n.ObjId}
 
 /-- **The completion's donation keeps the IPC bundle**, on the dispatch's
 pre-state facts: the bundle holds on the state the consumption and the badge
-register leave and on the state handed to the completion, where the binding
-pair holds and the receiver is not blocked on a reply. -/
+register leave, and the binding pair holds on the state handed to the
+completion. -/
 theorem completeSignalArm_donation_preserves_ipcInvariantFull {ctx : LabelingContext}
     {notifId : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {c : Concurrency.CoreId} {st st1 : SystemState}
@@ -254,9 +237,7 @@ theorem completeSignalArm_donation_preserves_ipcInvariantFull {ctx : LabelingCon
     (h : notificationWaitOnCore notifId tid c st = (st1, .ok (some badge)))
     (hInv2 : ipcInvariantFull (Architecture.writeReturnFrameToTcb st1 tid
       (Architecture.badgeReturnFrame st1 tid badge)))
-    (hBi : schedContextBindingBidirectional st) (hInv : ipcInvariantFull st)
-    (hNotReply : ∀ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) →
-      ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt) :
+    (hBi : schedContextBindingBidirectional st) :
     ipcInvariantFull (maybeDonateSchedContextFlowing ctx (Architecture.writeReturnFrameToTcb st1 tid
       (Architecture.badgeReturnFrame st1 tid badge)) n tid) := by
   have F := completeSignalArm_donationPre_schedLinkFrame hObjInv h
@@ -264,7 +245,6 @@ theorem completeSignalArm_donation_preserves_ipcInvariantFull {ctx : LabelingCon
   exact maybeDonateSchedContext_preserves_ipcInvariantFull _ n tid
     (completeSignalArm_donationPre_objects_invExt hObjInv h) hInv2
     (schedContextBindingBidirectional.of_bindingLinksAgree F.binding hBi)
-    (notDonationOwner_of_bindingLinksAgree F.binding hInv.donationOwnerValid hNotReply)
 
 /-! ### The context each thread runs on and each context's thread
 
@@ -593,26 +573,21 @@ theorem completeSignalArm_signalDonationCores_eq {notifId : SeLe4n.ObjId}
 /-! ### seL4's `sendSignal`: the wake, then the donation
 
 The wake writes no scheduling link (`notificationSignalBoundOnCore_schedLinkFrame`),
-so the donation after it finds the binding pair the signal was handed, and the
-thread it donates to was blocked on a receive or a notification, never on a
-reply, so it owns no donation. -/
+so the donation after it finds the binding pair the signal was handed. -/
 
 /-- **seL4's `sendSignal` keeps the IPC bundle**: the wake's lemma, then the
 donation's on the state the wake leaves. -/
 theorem sendSignalOnCore_preserves_ipcInvariantFull (n : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (c : Concurrency.CoreId) (st : SystemState) (hObjInv : st.objects.invExt)
     (hWake : ipcInvariantFull (notificationSignalBoundOnCore n badge c st).1)
-    (hBi : schedContextBindingBidirectional st) (hInv : ipcInvariantFull st)
-    (hNWC : notificationWaiterConsistent st) :
+    (hBi : schedContextBindingBidirectional st) :
     ipcInvariantFull (sendSignalOnCore n badge c st).1 := by
   have F := notificationSignalBoundOnCore_schedLinkFrame n badge c st hObjInv
   refine sendSignalOnCore_induct (fun s => ipcInvariantFull s) n badge c st hWake
-    (fun t _ hT _ => ?_)
+    (fun t _ _ _ => ?_)
   exact maybeDonateSchedContext_preserves_ipcInvariantFull _ n t
     (notificationSignalBoundOnCore_preserves_objects_invExt n badge c st hObjInv) hWake
     (schedContextBindingBidirectional.of_bindingLinksAgree F.binding hBi)
-    (notDonationOwner_of_bindingLinksAgree F.binding hInv.donationOwnerValid
-      (signalWokenThread?_not_blockedOnReply hNWC hT))
 
 /-- **The checked `sendSignal` keeps the IPC bundle**: its donation is the
 donation or nothing. -/
@@ -620,17 +595,14 @@ theorem sendSignalOnCoreFlowing_preserves_ipcInvariantFull (ctx : LabelingContex
     (n : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (c : Concurrency.CoreId) (st : SystemState) (hObjInv : st.objects.invExt)
     (hWake : ipcInvariantFull (notificationSignalBoundOnCore n badge c st).1)
-    (hBi : schedContextBindingBidirectional st) (hInv : ipcInvariantFull st)
-    (hNWC : notificationWaiterConsistent st) :
+    (hBi : schedContextBindingBidirectional st) :
     ipcInvariantFull (sendSignalOnCoreFlowing ctx n badge c st).1 := by
   have F := notificationSignalBoundOnCore_schedLinkFrame n badge c st hObjInv
   refine sendSignalOnCoreFlowing_induct (fun s => ipcInvariantFull s) ctx n badge c st hWake
-    (fun t _ hT _ => ?_)
+    (fun t _ _ _ => ?_)
   exact maybeDonateSchedContext_preserves_ipcInvariantFull _ n t
     (notificationSignalBoundOnCore_preserves_objects_invExt n badge c st hObjInv) hWake
     (schedContextBindingBidirectional.of_bindingLinksAgree F.binding hBi)
-    (notDonationOwner_of_bindingLinksAgree F.binding hInv.donationOwnerValid
-      (signalWokenThread?_not_blockedOnReply hNWC hT))
 
 /-- **WS-RR RR7.22 (residual)**: the unchecked bound-signal dispatch preserves
 the whole bundle.  The dispatch is seL4's `sendSignal` (`sendSignalOnCore`) at
@@ -650,7 +622,7 @@ theorem notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull
       (notificationSignalBoundCrossCoreDispatch notificationId badge executingCore st).1 :=
   sendSignalOnCore_preserves_ipcInvariantFull notificationId badge executingCore st hObjInv
     (notificationSignalBoundOnCore_preserves_ipcInvariantFull notificationId badge
-      executingCore st hInv hObjInv hNWC hAllBudgetsNone hPred) hBi hInv hNWC
+      executingCore st hInv hObjInv hNWC hAllBudgetsNone hPred) hBi
 
 /-- **WS-RR RR7.22 (residual)**: the *flow-checked* bound-signal dispatch, the
 form the live arm runs, preserves the bundle: a refused gate returns the
@@ -673,7 +645,7 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFu
     notificationId signaler badge executingCore st hInv
     (sendSignalOnCoreFlowing_preserves_ipcInvariantFull ctx notificationId badge executingCore st
       hObjInv (notificationSignalBoundOnCore_preserves_ipcInvariantFull notificationId badge
-        executingCore st hInv hObjInv hNWC hAllBudgetsNone hPred) hBi hInv hNWC)
+        executingCore st hInv hObjInv hNWC hAllBudgetsNone hPred) hBi)
 
 /-- **A successful declassifying signal's state agrees with the wake's on every
 object**: the record writes the audit trail alone
@@ -732,7 +704,7 @@ theorem notificationSignalDeclassifiedCrossCoreDispatch_preserves_ipcInvariantFu
       have F := notificationSignalBoundOnCore_schedLinkFrame n badge c st hObjInv
       have hB : bindingLinksAgree st s0 := fun oid => by rw [hObj]; exact F.binding oid
       unfold donateToSignalledFlowingGeneric
-      cases hT : signalWokenThread? st n with
+      cases signalWokenThread? st n with
       | none => exact hS0
       | some t =>
         refine maybeDonateSchedContextFlowingGeneric_induct (fun s => ipcInvariantFull s) ctx _ n t
@@ -740,7 +712,5 @@ theorem notificationSignalDeclassifiedCrossCoreDispatch_preserves_ipcInvariantFu
         exact maybeDonateSchedContext_preserves_ipcInvariantFull _ n t
           (hObj ▸ notificationSignalBoundOnCore_preserves_objects_invExt n badge c st hObjInv) hS0
           (schedContextBindingBidirectional.of_bindingLinksAgree hB hBi)
-          (notDonationOwner_of_bindingLinksAgree hB hInv.donationOwnerValid
-            (signalWokenThread?_not_blockedOnReply hNWC hT))
 
 end SeLe4n.Kernel

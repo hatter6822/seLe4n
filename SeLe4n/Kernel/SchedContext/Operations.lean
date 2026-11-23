@@ -1132,14 +1132,11 @@ theorem schedContextConfigure_of_admitted (st : SystemState) (vScId : ValidObjId
 -- Z5-G1/G2/G3: schedContextBind
 -- ============================================================================
 
--- **Tombstone (`v0.35.157`)**: `replyFrameOnLiveStack` — the bind guard's
--- "is this thread's reply frame on a live stack" test — lives in
--- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` beside `replyFrameHeadContext?`,
--- whose reciprocity check is its `.head` arm.  It moved when the reply pop's
--- origin redirect started asking the same question (`donationOriginRebindable`
--- is `¬ replyFrameOnLiveStack` at the origin): one question, one answer, and
--- the endpoint operations cannot import this module.  `schedContextBind` below
--- reads it under its unqualified name through `open SeLe4n.Kernel`.
+-- **WS-SX SX8**: `schedContextBind` refuses no thread for its reply frame.
+-- seL4-MCS's `decodeSchedContext_Bind` does not, and `reply_pop` donates back
+-- only to a caller that holds no context (`reply_pop`'s held arm,
+-- `keepDonatedSchedContext`), so a lender that is bound here keeps the context
+-- it is bound to and the loaned one stays with its holder.
 
 
 /-- A thread the bind places is no idle thread: an idle thread is never queued. -/
@@ -1248,9 +1245,10 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
         | some tcb =>
           -- WS-SX SX6.4: no domain check: seL4-MCS's `decodeSchedContext_Bind`
           -- refuses a bound context, a bound thread, and a blocked thread with
-          -- an unreleased context, and a context carries no domain.
-          if replyFrameOnLiveStack st tcb then .error .illegalState
-          else
+          -- an unreleased context, and a context carries no domain.  WS-SX SX8:
+          -- nor a lender: a thread whose reply frame is on a live stack binds,
+          -- and the pop that reaches its frame keeps the loaned context with its
+          -- holder (`reply_pop`'s held arm).
           -- Z5-G1: Precondition check — TCB must be unbound.
           -- AI6-D (L-13): `schedContextBind` checks `tcb.schedContextBinding`
           -- (binding state: `.unbound`) but NOT the thread's operational state
@@ -1321,13 +1319,15 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
         | none => .error .objectNotFound
     | none => .error .objectNotFound
 
-/-- **WS-ZA ZA5.2**: `schedContextBind`'s checks, read before anything is
-written: the context is stored and binds no thread; the
-thread is stored, is owed no context by a live reply stack, and is unbound.  When they pass the operation's state is
-`schedContextBindPerform` (`schedContextBind_of_admitted`), so the routed arm
-writes the context and the thread in place instead of holding the pre-state for
-a refusal that cannot come. -/
-@[inline] def schedContextBindAdmitted (st : SystemState) (vScId : ValidObjId)
+/-- **`schedContextBind`'s checks, and seL4-MCS `maybeDonateSchedContext`'s
+guard** (`decodeSchedContext_Bind`, `notification.c`), read before anything is
+written: the context is stored and bound to no thread, and the thread is stored
+and holds no context.  Neither seL4 site asks more (WS-SX SX8: a lender binds),
+so the bind and the donation are `schedContextBindPerform` under this guard
+alone (`schedContextBind_of_admitted`), and the routed arm writes the context
+and the thread in place instead of holding the pre-state for a refusal that
+cannot come. -/
+@[inline] def schedContextDonateAdmitted (st : SystemState) (vScId : ValidObjId)
     (vThreadId : ValidThreadId) : Bool :=
   match st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
   | none => false
@@ -1337,11 +1337,9 @@ a refusal that cannot come. -/
       match st.getTcb? vThreadId.val with
       | none => false
       | some tcb =>
-        if replyFrameOnLiveStack st tcb then false
-        else
-          match tcb.schedContextBinding with
-          | .unbound => true
-          | _ => false
+        match tcb.schedContextBinding with
+        | .unbound => true
+        | _ => false
 
 /-- **WS-ZA ZA5.2**: `schedContextBind`'s writes, the operation's success arm
 written out over the same lookups: the context names the thread, the thread is
@@ -1371,9 +1369,9 @@ bound, and a parked runnable thread is placed on its home core. -/
 
 /-- **WS-ZA ZA5.2**: an admitted bind succeeds, and its state is the perform's. -/
 theorem schedContextBind_of_admitted (st : SystemState) (vScId : ValidObjId)
-    (vThreadId : ValidThreadId) (h : schedContextBindAdmitted st vScId vThreadId = true) :
+    (vThreadId : ValidThreadId) (h : schedContextDonateAdmitted st vScId vThreadId = true) :
     schedContextBind vScId vThreadId st = .ok ((), schedContextBindPerform st vScId vThreadId) := by
-  unfold schedContextBindAdmitted at h
+  unfold schedContextDonateAdmitted at h
   unfold schedContextBind schedContextBindPerform
   cases hW : st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
   | none => simp [hW] at h
@@ -1387,9 +1385,6 @@ theorem schedContextBind_of_admitted (st : SystemState) (vScId : ValidObjId)
     | none => simp [hT] at h
     | some tcb =>
       simp only [hT] at h ⊢
-      by_cases hL : replyFrameOnLiveStack st tcb = true
-      · simp [hL] at h
-      simp only [hL, Bool.false_eq_true, ↓reduceIte] at h ⊢
       cases hBind : tcb.schedContextBinding with
       | unbound => rfl
       | bound _ => simp [hBind] at h
@@ -1460,57 +1455,11 @@ placement reads the written state only (`schedContextBindPerform_eq_impl`). -/
       rw [hF]
       rfl
 
-/-- **seL4-MCS `maybeDonateSchedContext`'s guard** (`notification.c`): the
-context is stored and bound to no thread, and the thread is stored and holds no
-context.  `schedContext_donate` asks nothing more, so the donation is
-`schedContextBindPerform` under this guard alone: the bind's further refusal
-(a thread owed a context by a live reply stack) is the bind's, not the
-donation's.  A
-bind the checks admit is a donation the guard admits
-(`schedContextDonateAdmitted_of_bindAdmitted`), so every family lemma stated
-over the perform under this guard covers the bind. -/
-@[inline] def schedContextDonateAdmitted (st : SystemState) (vScId : ValidObjId)
-    (vThreadId : ValidThreadId) : Bool :=
-  match st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
-  | none => false
-  | some ⟨sc, _⟩ =>
-    if sc.boundThread.isSome then false
-    else
-      match st.getTcb? vThreadId.val with
-      | none => false
-      | some tcb =>
-        match tcb.schedContextBinding with
-        | .unbound => true
-        | _ => false
-
-/-- A bind its checks admit is a donation seL4's guard admits. -/
-theorem schedContextDonateAdmitted_of_bindAdmitted (st : SystemState) (vScId : ValidObjId)
-    (vThreadId : ValidThreadId) (h : schedContextBindAdmitted st vScId vThreadId = true) :
-    schedContextDonateAdmitted st vScId vThreadId = true := by
-  unfold schedContextBindAdmitted at h
-  unfold schedContextDonateAdmitted
-  cases hW : st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
-  | none => simp [hW] at h
-  | some w =>
-    obtain ⟨sc, _⟩ := w
-    simp only [hW] at h ⊢
-    by_cases hB : sc.boundThread.isSome = true
-    · simp [hB] at h
-    simp only [hB, Bool.false_eq_true, ↓reduceIte] at h ⊢
-    cases hT : st.getTcb? vThreadId.val with
-    | none => simp [hT] at h
-    | some tcb =>
-      simp only [hT] at h ⊢
-      by_cases hL : replyFrameOnLiveStack st tcb = true
-      · simp [hL] at h
-      simp only [hL, Bool.false_eq_true, ↓reduceIte] at h
-      exact h
-
 /-- A bind its checks refuse is refused. -/
 theorem schedContextBind_error_of_not_admitted (st : SystemState) (vS : ValidObjId)
-    (vT : ValidThreadId) (h : schedContextBindAdmitted st vS vT = false) :
+    (vT : ValidThreadId) (h : schedContextDonateAdmitted st vS vT = false) :
     ∃ e, schedContextBind vS vT st = .error e := by
-  unfold schedContextBindAdmitted at h
+  unfold schedContextDonateAdmitted at h
   unfold schedContextBind
   cases hW : st.getSchedContextWitnessed? (SchedContextId.ofObjId vS.val) with
   | none => exact ⟨_, rfl⟩
@@ -1524,9 +1473,6 @@ theorem schedContextBind_error_of_not_admitted (st : SystemState) (vS : ValidObj
     | none => exact ⟨_, rfl⟩
     | some tcb =>
       simp only [hT] at h ⊢
-      by_cases hL : replyFrameOnLiveStack st tcb = true
-      · simp only [hL, ↓reduceIte]; exact ⟨_, rfl⟩
-      simp only [hL, Bool.false_eq_true, ↓reduceIte] at h ⊢
       cases hBind : tcb.schedContextBinding with
       | unbound => simp [hBind] at h
       | bound _ => exact ⟨_, rfl⟩
@@ -1536,10 +1482,10 @@ theorem schedContextBind_error_of_not_admitted (st : SystemState) (vS : ValidObj
 perform's.** -/
 theorem schedContextBind_ok_iff (st st' : SystemState) (vS : ValidObjId) (vT : ValidThreadId) :
     schedContextBind vS vT st = .ok ((), st') ↔
-      schedContextBindAdmitted st vS vT = true ∧ st' = schedContextBindPerform st vS vT := by
+      schedContextDonateAdmitted st vS vT = true ∧ st' = schedContextBindPerform st vS vT := by
   constructor
   · intro h
-    cases hA : schedContextBindAdmitted st vS vT with
+    cases hA : schedContextDonateAdmitted st vS vT with
     | true =>
       rw [schedContextBind_of_admitted st vS vT hA] at h
       cases h
@@ -1556,8 +1502,7 @@ bind family lemma is read off. -/
 theorem schedContextBind_ok_donate {st st' : SystemState} {vS : ValidObjId} {vT : ValidThreadId}
     (h : schedContextBind vS vT st = .ok ((), st')) :
     schedContextDonateAdmitted st vS vT = true ∧ st' = schedContextBindPerform st vS vT :=
-  let h' := (schedContextBind_ok_iff st st' vS vT).mp h
-  ⟨schedContextDonateAdmitted_of_bindAdmitted st vS vT h'.1, h'.2⟩
+  (schedContextBind_ok_iff st st' vS vT).mp h
 
 /-- **The perform under seL4's guard, written out**: the context and the thread
 it reads, the guard's two facts, and the writes.  The prologue every family
@@ -2127,37 +2072,35 @@ theorem schedContextBind_places_parked_thread
       · rename_i tcb' hTcb'
         obtain rfl : tcb' = tcb := by rw [hTcb'] at hTcb; exact Option.some.inj hTcb
         split at h
+        · dsimp only at h
+          rw [Except.ok.injEq, Prod.mk.injEq] at h
+          rw [← h.2, releasePlace_runnableOnSomeCore]
+          -- The guard transports from the pre-state: both of the bind's
+          -- writes are object rewrites, so the intermediate state's
+          -- scheduler IS the pre-state's.
+          have hSched : ∀ (a : SystemState) (b : SeLe4n.ObjId) (o : KernelObject)
+              (pf : _) (f : TCB → TCB),
+              ((a.rewriteObject b o pf).updateTcb vThreadId.val f).scheduler
+                = a.scheduler := by
+            intro a b o pf f
+            rw [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
+          split
+          · -- The placement arm: Cut B2's own write.
+            rename_i hPlace
+            refine runnableOnSomeCore_of_enqueue_marked _ _ _ _ _ ?_
+              (bindPlacesParkedThread_not_idle hPlace)
+            exact (bindWrites_runQueueRefined st _ _ _ _ _
+              (by intro _ _; rfl) hInv hR (by rw [hTcb]; rfl)).2
+          · -- The identity arm is UNREACHABLE under the hypothesis: the
+            -- guard is the pre-state's, which this arm's condition denies.
+            rename_i hParkArm
+            exfalso
+            rw [bindPlacesParkedThread_congr _ _ _ (hSched _ _ _ _ _)
+              (bindWrites_runCoresAgree st _ _ _ _ _ ?_ hInv)] at hParkArm
+            rotate_left; · intro _; rfl
+            rw [hPark] at hParkArm
+            simp at hParkArm
         · exact absurd h (by simp)
-        · split at h
-          · dsimp only at h
-            rw [Except.ok.injEq, Prod.mk.injEq] at h
-            rw [← h.2, releasePlace_runnableOnSomeCore]
-            -- The guard transports from the pre-state: both of the bind's
-            -- writes are object rewrites, so the intermediate state's
-            -- scheduler IS the pre-state's.
-            have hSched : ∀ (a : SystemState) (b : SeLe4n.ObjId) (o : KernelObject)
-                (pf : _) (f : TCB → TCB),
-                ((a.rewriteObject b o pf).updateTcb vThreadId.val f).scheduler
-                  = a.scheduler := by
-              intro a b o pf f
-              rw [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
-            split
-            · -- The placement arm: Cut B2's own write.
-              rename_i hPlace
-              refine runnableOnSomeCore_of_enqueue_marked _ _ _ _ _ ?_
-                (bindPlacesParkedThread_not_idle hPlace)
-              exact (bindWrites_runQueueRefined st _ _ _ _ _
-                (by intro _ _; rfl) hInv hR (by rw [hTcb]; rfl)).2
-            · -- The identity arm is UNREACHABLE under the hypothesis: the
-              -- guard is the pre-state's, which this arm's condition denies.
-              rename_i hParkArm
-              exfalso
-              rw [bindPlacesParkedThread_congr _ _ _ (hSched _ _ _ _ _)
-                (bindWrites_runCoresAgree st _ _ _ _ _ ?_ hInv)] at hParkArm
-              rotate_left; · intro _; rfl
-              rw [hPark] at hParkArm
-              simp at hParkArm
-          · exact absurd h (by simp)
       · exact absurd h (by simp)
   · exact absurd h (by simp)
 
@@ -2215,30 +2158,28 @@ theorem schedContextBind_leaves_unplaced_of_exhausted
     · split at h
       · rename_i tcb _
         split at h
+        · dsimp only at h
+          rw [Except.ok.injEq, Prod.mk.injEq] at h
+          rw [← h.2, releasePlace_placedCoreOf?]
+          have hSched : ∀ (a : SystemState) (b : SeLe4n.ObjId) (o : KernelObject)
+              (pf : _) (f : TCB → TCB),
+              ((a.rewriteObject b o pf).updateTcb vThreadId.val f).scheduler
+                = a.scheduler := by
+            intro a b o pf f
+            rw [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
+          split
+          · -- The placement arm needs the guard, whose budget conjunct is false.
+            rename_i hParkArm
+            exfalso
+            rw [bindPlacesParkedThread_of_exhausted _ _ _ _ hExhausted] at hParkArm
+            exact Bool.false_ne_true hParkArm
+          · -- The identity arm moves no scheduler slot.
+            refine (hPlacedCongr _ st ?_ ?_).trans hUnplaced
+            · show (((st.rewriteObject _ _ _).updateTcb _ _).scheduler) = st.scheduler
+              exact hSched _ _ _ _ _
+            · exact SystemState.RunCoresAgree.trans (SystemState.RunCoresAgree.of_objects rfl)
+                (bindWrites_runCoresAgree st _ _ _ _ _ (by intro _; rfl) hInv)
         · exact absurd h (by simp)
-        · split at h
-          · dsimp only at h
-            rw [Except.ok.injEq, Prod.mk.injEq] at h
-            rw [← h.2, releasePlace_placedCoreOf?]
-            have hSched : ∀ (a : SystemState) (b : SeLe4n.ObjId) (o : KernelObject)
-                (pf : _) (f : TCB → TCB),
-                ((a.rewriteObject b o pf).updateTcb vThreadId.val f).scheduler
-                  = a.scheduler := by
-              intro a b o pf f
-              rw [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
-            split
-            · -- The placement arm needs the guard, whose budget conjunct is false.
-              rename_i hParkArm
-              exfalso
-              rw [bindPlacesParkedThread_of_exhausted _ _ _ _ hExhausted] at hParkArm
-              exact Bool.false_ne_true hParkArm
-            · -- The identity arm moves no scheduler slot.
-              refine (hPlacedCongr _ st ?_ ?_).trans hUnplaced
-              · show (((st.rewriteObject _ _ _).updateTcb _ _).scheduler) = st.scheduler
-                exact hSched _ _ _ _ _
-              · exact SystemState.RunCoresAgree.trans (SystemState.RunCoresAgree.of_objects rfl)
-                  (bindWrites_runCoresAgree st _ _ _ _ _ (by intro _; rfl) hInv)
-          · exact absurd h (by simp)
       · exact absurd h (by simp)
   · exact absurd h (by simp)
 

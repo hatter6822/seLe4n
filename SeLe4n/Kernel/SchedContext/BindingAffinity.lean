@@ -577,12 +577,6 @@ private theorem schedContextBind_ok_char
       | none => rw [hTcb] at h; cases h
       | some tcb =>
         rw [hTcb] at h; simp only [] at h
-        -- `v0.35.4`: and a thread whose reply frame is on a live stack is refused.
-        have hNoLive : replyFrameOnLiveStack st tcb = false := by
-          cases hL : replyFrameOnLiveStack st tcb with
-          | false => rfl
-          | true => rw [hL] at h; simp at h
-        simp only [hNoLive, Bool.false_eq_true, if_false] at h
         refine ⟨tcb, rfl, ?_⟩
         cases hBind : tcb.schedContextBinding with
         | bound scb => rw [hBind] at h; cases h

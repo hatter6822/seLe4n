@@ -75,7 +75,7 @@ theorem keepDonatedSchedContext_ok_of_schedContextBindingConsistent
     {ht : TCB}
     (hSc : st.objects[scId.toObjId]? = some (.schedContext sc))
     (hB : sc.boundThread = some holder)
-    (hOut : outerCallerAcceptable st holder holder newOwner? = true)
+    (hOut : outerCallerAcceptable st holder holder (heldPopOuter? st holder newOwner?) = true)
     (hHead : donationHeadOf? st scId sc = .ok head?)
     (hS1 : storeObject scId.toObjId
         (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
@@ -136,6 +136,7 @@ theorem keepDonatedSchedContext_establishes_ipcInvariantFull_of_except
   subst hEqT
   -- The holder holds the context on loan, so it comes to owe the frame below.
   have hHP : heldPopOwner? pTcb.schedContextBinding newOwner? = newOwner? := by rw [hPB]; rfl
+  rw [heldPopOuter?_of_donated hPObj hPB] at hOut
   rw [hHP] at hHt'
   have hAgree := keepDonatedSchedContext_donationReadAgreement hObjInv h
   have hBd := donationReturnBinding_stored pTcb scId newOwner?

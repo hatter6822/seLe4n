@@ -783,7 +783,7 @@ refusal is read where it is, never rebuilt. -/
                         | .error e => .error (e, st)
                         | .ok vScId =>
                           RefusalCarrying.ofChecked
-                            (SchedContextOps.schedContextBindAdmitted st vScId vThreadId)
+                            (SchedContextOps.schedContextDonateAdmitted st vScId vThreadId)
                             (fun st => SchedContextOps.schedContextBindPerform st vScId vThreadId)
                             (dispatchInvocationBy ctx sid capAddr xc layout regs tid executingCore cap) st
                   | _ => .error (.invalidCapability bindThreadCapNumber, st)

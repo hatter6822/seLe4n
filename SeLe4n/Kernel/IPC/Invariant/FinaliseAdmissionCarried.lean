@@ -304,11 +304,16 @@ theorem lookupTcb_scId? (y : SeLe4n.ThreadId) :
   · rfl
   · rcases h.getTcb? y with ⟨e1, e2⟩ | ⟨t, b, e1, e2⟩ <;> simp only [e1, e2] <;> rfl
 
+theorem heldPopOuter?_eq (y : SeLe4n.ThreadId) (n : Option SeLe4n.ThreadId) :
+    heldPopOuter? s' y n = heldPopOuter? s y n := by
+  unfold heldPopOuter?
+  rcases h.getTcb? y with ⟨e1, e2⟩ | ⟨t, b, e1, e2⟩ <;> simp only [e1, e2] <;> rfl
+
 theorem keptPopCommits_eq (srv : SeLe4n.ThreadId) (c : SeLe4n.SchedContextId) :
     keptPopCommits s' srv c = keptPopCommits s srv c := by
   unfold keptPopCommits
   simp only [h.replyStackOuterCaller?_eq, h.schedContext, h.outerCallerAcceptable_eq,
-    h.lookupTcb_scId?]
+    h.lookupTcb_scId?, h.heldPopOuter?_eq]
 
 theorem heldPopCommits_eq (srv : SeLe4n.ThreadId) (c : SeLe4n.SchedContextId)
     (own : SeLe4n.ThreadId) : heldPopCommits s' srv c own = heldPopCommits s srv c own := by

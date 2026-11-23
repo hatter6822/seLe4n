@@ -5362,19 +5362,6 @@ structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
   pair's thread-side half the arms read is their consequence with the IPC
   bundle's loan record (`schedContextBindingBidirectional_of_consistent`). -/
   schedContextLinks : schedContextLinkInvariant st
-  /-- **`v0.35.204`**: keyed to the resolver the arm binds through, quantified
-  over the caller — the pack carries no caller, and a fact about *every* thread
-  any caller's CSpace resolves its extra capability 0 to is a pre-state fact
-  all the same. -/
-  boundThreadNotDonationOwner : ∀ (callerTid : SeLe4n.ThreadId)
-      (vThreadId : SeLe4n.ValidThreadId),
-    decoded.syscallId = .schedContextBind →
-    resolveSchedContextBindThread callerTid
-      (schedContextBindArgsOf st callerTid decoded.msgInfo.extraCaps) st =
-      .ok vThreadId →
-    ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
-      st.objects[s.toObjId]? = some (.tcb sTcb) →
-      sTcb.schedContextBinding ≠ .donated sc0 vThreadId.val
   targetThreadQuiescent : ∀ (objId : SeLe4n.ObjId),
     decoded.syscallId = .tcbSuspend ∨ decoded.syscallId = .tcbResume →
     cap.target = .object objId →
@@ -5601,8 +5588,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   simp only [hVal] at hStep
                   exact schedContextBind_preserves_ipcInvariantFull st st' vScId vThreadId
                     hObjInv hInv (schedContextBindingBidirectional_of_consistent
-                      hPack.schedContextLinks.binding hInv.donationOwnerValid)
-                    (hPack.boundThreadNotDonationOwner tid vThreadId hSy hRes) hStep
+                      hPack.schedContextLinks.binding hInv.donationOwnerValid) hStep
     all_goals try cases hStep
   case schedContextUnbind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

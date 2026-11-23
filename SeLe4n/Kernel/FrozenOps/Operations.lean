@@ -1598,14 +1598,10 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
         match st.getTcb? threadId with
         | some tcb =>
           -- WS-SX SX6.4: no domain check, as the live bind has none (seL4-MCS's
-          -- `decodeSchedContext_Bind`): a context carries no domain.
-          --
-          -- WS-OD (`v0.35.4`): a thread blocked on a reply whose frame is on a
-          -- live stack is owed a context by the pop that reaches that frame, and
-          -- that pop writes its binding; a second context now would be
-          -- overwritten by it and orphaned.
-          if frozenReplyFrameOnLiveStack st tcb then .error .illegalState
-          else
+          -- `decodeSchedContext_Bind`): a context carries no domain.  WS-SX SX8:
+          -- and no lender refusal, as the live bind has none: the pop that
+          -- reaches a bound lender's frame keeps the loaned context with its
+          -- holder.
           match tcb.schedContextBinding with
           | .unbound =>
             let scIdTyped : SeLe4n.SchedContextId := ⟨scId.toNat⟩

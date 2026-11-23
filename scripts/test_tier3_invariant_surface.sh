@@ -19163,14 +19163,32 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind \([^\n]*
 # label rule is the checked dispatch's gate, anchored after it.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*sc\.scReply\.isSome then \.error" SeLe4n/Kernel/FrozenOps/Operations.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind \([^\n]*(\n([ \t][^\n]*)?)*sc\.scReply\.isSome then \.error" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def schedContextBindAdmitted \([^\n]*(\n([ \t][^\n]*)?)*sc\.scReply\.isSome then false" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def schedContextDonateAdmitted \([^\n]*(\n([ \t][^\n]*)?)*sc\.scReply\.isSome then false" SeLe4n/Kernel/SchedContext/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def schedContextBindLabelGate \([^\n]*(\n([ \t][^\n]*)?)*\| \.ok vT => if schedContextBindLabelAdmits ctx st scId vT\.val then k st else \.error \.flowDenied" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.ok vThreadId =>\s+if !schedContextBindLabelAdmits ctx st scObjId vThreadId\.val then\s+\.error \(\.flowDenied, st\)" SeLe4n/Kernel/RefusalCarryingInvocation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchInvocationBy \([^\n]*(\n([ \t][^\n]*)?)*\| \.object scId =>\s+schedContextBindLabelGate ctx xc tid scId \(fun st =>" SeLe4n/Kernel/RefusalCarryingInvocation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchCapabilityOnlyChecked \([^\n]*(\n([ \t][^\n]*)?)*\| \.schedContextBind =>\n    match cap\.target with\n    \| \.object scId => schedContextBindLabelGate ctx xc tid scId k" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" rg -n '^theorem schedContextBindLabelGate_admits ' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem schedContextBindLabelAdmits_flows ' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*if frozenReplyFrameOnLiveStack st tcb then \.error \.illegalState" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# WS-SX SX8: a lender binds on both sides, as seL4-MCS's
+# `decodeSchedContext_Bind` binds it; the bind's checks and the donation's are
+# ONE guard (`schedContextDonateAdmitted`), so the retired bind-only guard and
+# its proxy for "is this a lender" must not come back.  NEGATIVE.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*ReplyFrameOnLiveStack" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind \([^\n]*(\n([ \t][^\n]*)?)*replyFrameOnLiveStack" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_negative_check "INVARIANT" rg -n '^@\[inline\] def schedContextBindAdmitted ' SeLe4n/Kernel/SchedContext/Operations.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextBind_ok_iff [^\n]*(\n([ \t][^\n]*)?)*schedContextDonateAdmitted st vS vT = true" SeLe4n/Kernel/SchedContext/Operations.lean'
+# ...and the held pop asks its outer check only of a holder on loan
+# (`heldPopOuter?`), so binding a lender never makes the pop that reaches its
+# frame refuse: the specification, its commit test, the in-place gate and the
+# frozen mirror all read the recorded owner, not the stack's raw answer.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def keepDonatedSchedContext \([^\n]*(\n([ \t][^\n]*)?)*if !outerCallerAcceptable st holder holder \(heldPopOuter\? st holder newOwner\?\) then" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def keptPopCommits \([^\n]*(\n([ \t][^\n]*)?)*outerCallerAcceptable st holder holder \(heldPopOuter\? st holder newOwner\?\) &&" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def heldPopOuter\? [^\n]*(\n([ \t][^\n]*)?)*\| some ht => heldPopOwner\? ht\.schedContextBinding newOwner\?" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def keptPopsInPlace \([^\n]*(\n([ \t][^\n]*)?)*outerCallerAcceptableCode st holder holder\n *\(heldPopOwnerCode \(heldHolderOwnerCode st holder\) bR\.callerCode\)" SeLe4n/Kernel/IPC/Operations/HeldContextPopInPlace.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenKeepDonatedSchedContext \([^\n]*(\n([ \t][^\n]*)?)*frozenOuterCallerAcceptable st holder holder\n *\(match st\.getTcb\? holder with\n *\| some ht => SeLe4n\.Kernel\.heldPopOwner\? ht\.schedContextBinding newOwner\?" SeLe4n/Kernel/FrozenOps/Core.lean'
+# NEGATIVE: the pack no longer carries the "bound thread lends nothing" premise.
+run_negative_check "INVARIANT" rg -n '^  boundThreadNotDonationOwner :' SeLe4n/Kernel/API.lean
 # The bind writes no priority: since WS-SX SX6.4 the thread's TCB is its only
 # home, so the mirror has no reservation field to copy.  NEGATIVE.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*priority := sc\." SeLe4n/Kernel/FrozenOps/Operations.lean'

@@ -1715,9 +1715,6 @@ theorem ipcInvariantFull_of_schedBindingRewrite
     (hCase :
       (tcb.schedContextBinding = .unbound ∧ tcb'.schedContextBinding = .bound scId ∧
         sc.boundThread = none ∧ sc'.boundThread = some tid ∧
-        (∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
-          st.objects[s.toObjId]? = some (.tcb sTcb) →
-          sTcb.schedContextBinding ≠ .donated sc0 tid) ∧
         (∀ (t' : SeLe4n.ThreadId) (tcb2 : TCB), t' ≠ tid →
           st.objects[t'.toObjId]? = some (.tcb tcb2) →
           tcb2.schedContextBinding.scId? ≠ some scId)) ∨
@@ -1894,17 +1891,19 @@ theorem ipcInvariantFull_of_schedBindingRewrite
             exact hTt (this ▸ rfl)
         · exact ⟨scD, (hScNe s0.toObjId scD hS0).mpr hScD, hBoundD⟩
       · by_cases hOt : owner.toObjId = tid.toObjId
-        · have hOwnerIsTid : owner = tid := SeLe4n.ThreadId.toObjId_injective _ _ hOt
-          rcases hCase with ⟨_, _, _, _, hNotOwner, _⟩ | ⟨hUnb, _, _⟩
-          · exact absurd (hOwnerIsTid ▸ hBpre) (hNotOwner t y s0 hy)
-          · subst hOwnerIsTid
-            have hOEq : oTcb = tcb := by
-              have h2 := hO
-              rw [hOt] at h2
-              have := h2.symm.trans (hOt ▸ hPreT)
-              simpa only [Option.some.injEq, KernelObject.tcb.injEq] using this
-            refine ⟨tcb', hOt ▸ hAtT, by rw [hUnb]; rfl, ?_⟩
-            rw [hIpc]
+        · -- The owner is the rewritten thread: the rewrite leaves it `.bound` or
+          -- `.unbound`, never `.donated` (seL4-MCS binds a lender), and its
+          -- `ipcState` is the one it had.
+          have hOwnerIsTid : owner = tid := SeLe4n.ThreadId.toObjId_injective _ _ hOt
+          subst hOwnerIsTid
+          have hOEq : oTcb = tcb := by
+            have h2 := hO
+            rw [hOt] at h2
+            have := h2.symm.trans (hOt ▸ hPreT)
+            simpa only [Option.some.injEq, KernelObject.tcb.injEq] using this
+          refine ⟨tcb', hOt ▸ hAtT, ?_, ?_⟩
+          · rcases hCase with ⟨_, hB, _⟩ | ⟨hB, _⟩ <;> rw [hB] <;> rfl
+          · rw [hIpc]
             exact hOEq ▸ hOB
         · obtain ⟨oTcb', hO', hOIpc, hOBind⟩ := hFwd owner.toObjId oTcb hO
           exact ⟨oTcb', hO', by rw [hOBind hOt]; exact hOU, by rw [hOIpc]; exact hOB⟩
@@ -1917,7 +1916,7 @@ theorem ipcInvariantFull_of_schedBindingRewrite
       rw [hT1, hAtT] at h1
       obtain rfl : tcb' = tcb1 := by
         simpa only [Option.some.injEq, KernelObject.tcb.injEq] using h1
-      rcases hCase with ⟨_, hB, _, _, _, hNoOther⟩ | ⟨hB, _, _⟩
+      rcases hCase with ⟨_, hB, _, _, hNoOther⟩ | ⟨hB, _, _⟩
       · have hs0 : s0 = scId := by
           rw [hB] at hS1
           simp only [SchedContextBinding.scId?, Option.some.injEq] at hS1
@@ -1933,7 +1932,7 @@ theorem ipcInvariantFull_of_schedBindingRewrite
         rw [hT2, hAtT] at h2
         obtain rfl : tcb' = tcb2 := by
           simpa only [Option.some.injEq, KernelObject.tcb.injEq] using h2
-        rcases hCase with ⟨_, hB, _, _, _, hNoOther⟩ | ⟨hB, _, _⟩
+        rcases hCase with ⟨_, hB, _, _, hNoOther⟩ | ⟨hB, _, _⟩
         · have hs0 : s0 = scId := by
             rw [hB] at hS2
             simp only [SchedContextBinding.scId?, Option.some.injEq] at hS2
@@ -1965,19 +1964,15 @@ theorem ipcInvariantFull_of_schedBindingRewrite
 binding-rewrite lever, the optional re-bucket over the re-key lever, and the
 thread-index write over the objects/scheduler frame.
 
-The two donation-side conditions are pre-state facts: `hBidir` (with the
-guard's "SC free") rules out another holder, and `hNotOwner` rules out
-binding a thread that is the recorded owner of an in-flight donation — on
-the seL4-MCS discipline such a thread is mid-`Call`, and handing it a fresh
-SchedContext there would corrupt the donation bookkeeping the reply's
-return path depends on. -/
+The donation-side condition is a pre-state fact: `hBidir` (with the guard's
+"SC free") rules out another holder.  A thread that is the recorded owner of
+an in-flight loan binds, as seL4-MCS binds it: the binding is `.bound`, which
+`donationOwnerValid` asks of an owner ("not donated"), and the pop that reaches
+its frame keeps the loaned context with its holder (`reply_pop`'s held arm). -/
 theorem schedContextBindPerform_preserves_ipcInvariantFull
     (st : SystemState) (vScId : SeLe4n.ValidObjId) (vThreadId : SeLe4n.ValidThreadId)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hBidir : schedContextBindingBidirectional st)
-    (hNotOwner : ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
-      st.objects[s.toObjId]? = some (.tcb sTcb) →
-      sTcb.schedContextBinding ≠ .donated sc0 vThreadId.val)
     (hA : SchedContextOps.schedContextDonateAdmitted st vScId vThreadId = true) :
     ipcInvariantFull (SchedContextOps.schedContextBindPerform st vScId vThreadId) := by
   obtain ⟨sc, hSc, tcb, hFreeGuard, hT, hUnbound, hEq⟩ :=
@@ -2042,7 +2037,7 @@ theorem schedContextBindPerform_preserves_ipcInvariantFull
     sc { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }
     hInv hPreT hAtT2 hPreS hAtS2 hFrame2
     rfl rfl rfl rfl rfl rfl rfl rfl
-    (Or.inl ⟨hUnbound, rfl, hFree, rfl, hNotOwner, hNoOther⟩)
+    (Or.inl ⟨hUnbound, rfl, hFree, rfl, hNoOther⟩)
   -- The release placement at the bind's end writes release links
   -- alone (WS-ZA ZA6.4).
   refine ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
@@ -2061,14 +2056,11 @@ theorem schedContextBind_preserves_ipcInvariantFull
     (st st' : SystemState) (vScId : SeLe4n.ValidObjId) (vThreadId : SeLe4n.ValidThreadId)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hBidir : schedContextBindingBidirectional st)
-    (hNotOwner : ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
-      st.objects[s.toObjId]? = some (.tcb sTcb) →
-      sTcb.schedContextBinding ≠ .donated sc0 vThreadId.val)
     (hStep : SchedContextOps.schedContextBind vScId vThreadId st = .ok ((), st')) :
     ipcInvariantFull st' := by
   obtain ⟨hA, rfl⟩ := SchedContextOps.schedContextBind_ok_donate hStep
   exact schedContextBindPerform_preserves_ipcInvariantFull st vScId vThreadId hObjInv hInv
-    hBidir hNotOwner hA
+    hBidir hA
 
 -- ============================================================================
 -- §12  The scheduler switch chain (shared by the unbind, suspend and resume

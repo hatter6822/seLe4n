@@ -502,6 +502,8 @@ theorem finaliseReply_armPremises {s : SystemState} {x : SeLe4n.ObjId} {r : Repl
         rw [hResN, hSc] at hC'
         simp only [Bool.and_eq_true] at hC'
         obtain ⟨⟨-, hOutS⟩, hL⟩ := hC'
+        -- The holder has the head on loan, so the pop checks the stack's answer.
+        rw [heldPopOuter?_of_donated hTdO hBd] at hOutS
         refine ⟨n, hResN, outerCallerAcceptable_of_self hOutS (fun o hn => ?_), ?_⟩
         · subst hn
           exact replyStackOuterCaller_ne_headCaller hFull.replyCallerLinkage.1 hX hRN hT hRO hResN
