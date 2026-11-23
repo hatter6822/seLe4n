@@ -505,10 +505,14 @@ structure BehaviourRow where
 /-- `src/object/<file>` at a line. -/
 def objectC (fn file : String) (line : Nat) : SourceRef := ⟨fn, "src/object/" ++ file, line⟩
 
-/-- **The scheduling-context lends, returns and unbinds** (WS-SX SX8): seL4-MCS's
-`maybeDonateSchedContext` in `sendSignal` and `completeSignal`, its
-`maybeReturnSchedContext` on a blocking `Wait`, `sendIPC`'s donation to a
-passive server, and `finaliseCap`'s unbind of a destroyed thread's context. -/
+/-- **The scheduling-context lends, returns and unbinds** (WS-SX SX8, SX9.2):
+seL4-MCS's `maybeDonateSchedContext` in `sendSignal` and `completeSignal`, its
+`maybeReturnSchedContext` on a blocking `Wait` and a blocking receive,
+`sendIPC`'s donation to a passive server, `finaliseCap`'s unbind of a destroyed
+thread's context, `reply_pop`'s arm for a caller holding a context of its own,
+SchedContext_Unbind of a lent context (`schedContext_unbindReply`), `suspend`,
+which leaves the binding, and SchedContext_Bind of a thread whose Call frame is
+on a live reply stack. -/
 def sel4BehaviourRows : List BehaviourRow := [
   { name := "signal-lends-context",
     source := objectC "sendSignal (maybeDonateSchedContext)" "notification.c" 62,
@@ -527,6 +531,21 @@ def sel4BehaviourRows : List BehaviourRow := [
       "flow gate: a caller lends only a context its own label flows to; the call goes on either way" },
   { name := "destroy-unbinds-context",
     source := objectC "finaliseCap (schedContext_unbindTCB)" "objecttype.c" 195,
-    status := .implemented .cspaceDelete } ]
+    status := .implemented .cspaceDelete },
+  { name := "reply-pop-held-keeps-context",
+    source := objectC "reply_pop (the caller holds a context)" "reply.c" 56,
+    status := .implemented .reply },
+  { name := "unbind-donated-holder",
+    source := objectC "invokeSchedContext_Unbind (schedContext_unbindReply)" "schedcontext.c" 142,
+    status := .implemented .schedContextUnbind },
+  { name := "suspend-keeps-binding",
+    source := ⟨"suspend", "src/kernel/thread.c", 72⟩,
+    status := .implemented .tcbSuspend },
+  { name := "receive-block-returns-context",
+    source := objectC "receiveIPC (maybeReturnSchedContext)" "endpoint.c" 171,
+    status := .implemented .receive },
+  { name := "bind-lender",
+    source := objectC "decodeSchedContext_Bind" "schedcontext.c" 87,
+    status := .implemented .schedContextBind } ]
 
 end SeLe4n.Testing.Sel4Conformance
