@@ -4516,6 +4516,12 @@ run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_donated_delivered($|[ ({:\
 run_check "INVARIANT" rg -n -U '      else replyRecvDonatedArmR epId tid c rid badge grant layout rf len label executingCore st\n    else \.error \(\.replyCapInvalid, st\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    if replyRecvDonatedAdmits epId tid c rid grant layout len st then\n      \.ok \(\(\), performReplyRecvDonatedDelivered st c tid rid' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '    if replyDonatedAdmits ctx layout len tid c server rid cBinding cFault st then\n      \.ok \(\(\), performReplyDonatedDelivered st c server rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
+# A reply to a caller holding a context of its own takes reply_pop's held arm in
+# place (the head popped, the context kept by the server), proven the
+# specification's and routed after the donated arm.
+run_check "INVARIANT" rg -n '^theorem replyHeldPopsInPlace_pop($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyHeldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferChecked_held_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyHeldInPlace.lean
+run_check "INVARIANT" rg -n -U '    else if replyHeldAdmits ctx layout len tid c server rid cBinding cFault st then\n      \.ok \(\(\), performReplyHeldDelivered st c server rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n '^  , \(`SeLe4n\.Kernel\.returnDonatedSchedContextInPlace,$' SeLe4n/Testing/ReplyStackWriteCensus.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem consumed_eq_impl' SeLe4n/Model/Object/Reply.lean
 # WS-ZA ZA6.34: a reply to a caller recording no server (its server finalised)
@@ -4536,7 +4542,14 @@ run_check "INVARIANT" rg -n '^theorem returnUnheldSchedContextInPlace_popFrame($
 run_check "INVARIANT" rg -n '^theorem popUnheldSettled_receiveGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvUnheldInPlace.lean
-run_check "INVARIANT" rg -n -U '        executingCore\)\n    else replyRecvDonatedCallTakeArmR epId tid c rid badge grant layout rf len label executingCore\n      st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+# A reply-receive to a caller holding a context of its own runs reply_pop's
+# held arm in place (the head popped, the context kept by the server, which
+# then blocks), proven the specification's and routed after the donated arm;
+# any other shape falls through to the call-take arm.
+run_check "INVARIANT" rg -n '^theorem keepHeldPop_receiveGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyHeldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_held_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyHeldInPlace.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_held_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyHeldInPlace.lean
+run_check "INVARIANT" rg -n -U '    else if replyRecvHeldAdmits epId tid c rid grant layout len st then\n      \.ok \(\(\), performReplyRecvHeldDelivered st c tid rid ⟨replyHeadContextCode st rid - 1⟩\n        epId \(receiveQueueTailCode st epId\) layout rf len badge executingCore\)\n    else replyRecvDonatedCallTakeArmR epId tid c rid badge grant layout rf len label executingCore\n      st' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 # A donated reply-receive whose receive leg takes a caller queued by a Call is
 # donated that caller's context in place, every check read on the pre-state and
 # carried across the reply leg and the pop; any other shape falls through to the

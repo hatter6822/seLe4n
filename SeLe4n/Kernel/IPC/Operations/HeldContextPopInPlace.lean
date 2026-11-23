@@ -259,14 +259,26 @@ a code, so the test builds nothing. -/
       | none => false)
    | none => false)
 
-/-- **The gate's pop, on the state it reads**: under `keptPopsInPlace` the
-specification's commit test passes and its resolved held pop commits with
-`keepDonatedSchedContextInPlace`'s state. -/
-theorem keptPopsInPlace_pop (st : SystemState) (holder : SeLe4n.ThreadId)
+/-- **What the gate reads**: under `keptPopsInPlace` the context is bound to
+`holder` and heads the stack of a reply that names it back, the frame below (if
+any) links up to it with a caller the pop's outer check accepts (as a code), and
+`holder`'s binding names the context, every write's slot local. -/
+theorem keptPopsInPlace_spec (st : SystemState) (holder : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (hG : keptPopsInPlace st holder scId = true) :
-    keptPopCommits st holder scId = true ∧
-      keepDonatedSchedContextResolved st holder scId =
-        .ok (keepDonatedSchedContextInPlace st holder scId) := by
+    ∃ sc rid rp ht, st.getSchedContext? scId = some sc ∧ sc.boundThread = some holder ∧
+      sc.scReply = some rid ∧ st.getReply? rid = some rp ∧ rp.next = some (.head scId) ∧
+      (∀ b, rp.prev = some b → b ≠ rid ∧ (∃ bR, st.getReply? b = some bR ∧
+        bR.next = some (.frame rid) ∧ bR.callerCode ≠ 0) ∧
+        storeLeavesIndexAndTypes st b.toObjId .reply = true ∧
+        st.objects.findsInPlace b.toObjId = true) ∧
+      outerCallerAcceptableCode st holder holder (popOuterCode st rp) = true ∧
+      holder.isReserved = false ∧ st.getTcb? holder = some ht ∧
+      ht.scBindingScCode = scId.val + 1 ∧
+      storeLeavesIndexAndTypes st scId.toObjId .schedContext = true ∧
+      st.objects.findsInPlace scId.toObjId = true ∧
+      storeLeavesIndexAndTypes st rid.toObjId .reply = true ∧
+      st.objects.findsInPlace rid.toObjId = true ∧
+      storeLeavesIndexAndTypes st holder.toObjId .tcb = true := by
   unfold keptPopsInPlace at hG
   simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
   obtain ⟨⟨⟨⟨⟨hHRes, hLH⟩, hLsc⟩, hFsc⟩, hHm⟩, hM⟩ := hG
@@ -338,9 +350,7 @@ theorem keptPopsInPlace_pop (st : SystemState) (holder : SeLe4n.ThreadId)
           have : f = rid := by cases f; cases rid; simp only [beq_iff_eq] at e; subst e; rfl
           rw [this]
     · simpa only [bne_iff_ne, ne_eq] using hBC
-  have hOuter : outerCallerAcceptable st holder holder
-      (SeLe4n.ThreadId.ofOptCode (popOuterCode st rp)) = true := by
-    rw [← outerCallerAcceptableCode_eq]
+  have hOuter : outerCallerAcceptableCode st holder holder (popOuterCode st rp) = true := by
     unfold popOuterCode
     cases hP : rp.prev with
     | none => rfl
@@ -357,6 +367,22 @@ theorem keptPopsInPlace_pop (st : SystemState) (holder : SeLe4n.ThreadId)
       simp only [Bool.and_eq_true] at hBm
       simp only [hBg]
       exact hBm.2
+  exact ⟨sc, rid, rp, ht, rfl, hB, hHd, hRg, hN, hBelow, hOuter, hHRes, rfl, hHB, hLsc, hFsc,
+    hLR, hFR, hLH⟩
+
+/-- **The gate's pop, on the state it reads**: under `keptPopsInPlace` the
+specification's commit test passes and its resolved held pop commits with
+`keepDonatedSchedContextInPlace`'s state. -/
+theorem keptPopsInPlace_pop (st : SystemState) (holder : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (hG : keptPopsInPlace st holder scId = true) :
+    keptPopCommits st holder scId = true ∧
+      keepDonatedSchedContextResolved st holder scId =
+        .ok (keepDonatedSchedContextInPlace st holder scId) := by
+  obtain ⟨sc, rid, rp, ht, hScg, hB, hHd, hRg, hN, hBelow, hOuterC, hHRes, hTg, hHB, hLsc, hFsc,
+    hLR, hFR, hLH⟩ := keptPopsInPlace_spec st holder scId hG
+  have hOuter : outerCallerAcceptable st holder holder
+      (SeLe4n.ThreadId.ofOptCode (popOuterCode st rp)) = true := by
+    rw [← outerCallerAcceptableCode_eq]; exact hOuterC
   have hLk : lookupTcb st holder = some ht := by unfold lookupTcb; rw [hHRes]; exact hTg
   have hScQ : ht.schedContextBinding.scId? = some scId := by
     unfold TCB.schedContextBinding; rw [hHB]; unfold SchedContextBinding.ofCodes

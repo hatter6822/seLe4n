@@ -12,6 +12,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInPlace
 import SeLe4n.Kernel.IPC.CrossCore.DeliveredInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDonatingInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDonatedInPlace
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyHeldInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyUnheldInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReceiveInPlace
 import SeLe4n.Kernel.IPC.CrossCore.FaultReceiveInPlace
@@ -2557,8 +2558,24 @@ so nothing the writes rewrite is held across them. -/
     securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
     !server.isReserved && !cFault && replyPopsInPlace st c cBinding server rid
 
+/-- The checked reply arm on a reply whose reply object heads the stack of the
+context its server holds, to a caller holding a context of its own (seL4-MCS's
+`reply_pop` held arm: the head popped, the context kept by the server): a
+reply of at most four words whose checks all pass before any write
+(`replyHeldPopsInPlace`) writes in place (`performReplyHeldDelivered`,
+`replyTransferChecked_held_inPlace`).  Out of line, taking the caller's binding
+code and fault flag rather than its TCB, as `replyDonatedAdmits` does. -/
+@[noinline] def replyHeldAdmits (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) (tid : SeLe4n.ThreadId)
+    (c server : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (cBinding : Nat) (cFault : Bool)
+    (st : SystemState) : Bool :=
+  decide (Architecture.regMessageLength layout len ≤ 4) &&
+    securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
+    !cFault && replyHeldPopsInPlace st c cBinding server rid
+
 /-- The donated reply's arm: the checks of `replyDonatedAdmits`, then the
-in-place writes or the general arm. -/
+in-place writes; else, for a caller holding a context of its own, the checks of
+`replyHeldAdmits` and the held pop's in-place writes; or the general arm. -/
 @[inline] def endpointReplyDonatedArmR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len extraCaps label : Nat)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
@@ -2568,6 +2585,9 @@ in-place writes or the general arm. -/
     if replyDonatedAdmits ctx layout len tid c server rid cBinding cFault st then
       .ok ((), performReplyDonatedDelivered st c server rid
         ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)
+        layout rf len cap.badgeWord cap.badged executingCore)
+    else if replyHeldAdmits ctx layout len tid c server rid cBinding cFault st then
+      .ok ((), performReplyHeldDelivered st c server rid ⟨replyHeadContextCode st rid - 1⟩
         layout rf len cap.badgeWord cap.badged executingCore)
     else endpointReplyCheckedArmRegsR ctx layout rf len extraCaps label tid executingCore cap st
 
@@ -3107,7 +3127,23 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext)
                     _ rfl (by simp only [maxMessageRegisters]; omega) hSz4
                     ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hP hNoF
                     (replyTransferInert_of_W hI) hFlow]
-                · rfl
+                · split
+                  · next hG =>
+                    unfold replyHeldAdmits at hG
+                    simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hG
+                    obtain ⟨⟨⟨hSz4, hFlow⟩, hNoF⟩, hP⟩ := hG
+                    have hAns : replyAnsweredCaller? st rid0 = some c := by
+                      rw [replyAnsweredCaller?_of_getReply st rid0 rp0 hR0, hC]
+                    simp only [endpointReplyCheckedArmGeneralR, hTgt, hAns, hFlow, ↓reduceIte]
+                    rw [replyTransferChecked_held_inPlace ctx st tid c server ct ep rid
+                      { length := len, extraCaps := extraCaps, label := label }
+                      (Architecture.regMessageRegs layout rf) layout rf len cap.badgeWord cap.badged
+                      executingCore
+                      { registers := extractMessageRegisters (Architecture.regMessageRegs layout rf) { length := len, extraCaps := extraCaps, label := label }, badge := cap.badge }
+                      _ rfl (by simp only [maxMessageRegisters]; omega) hSz4
+                      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hP hNoF
+                      (replyTransferInert_of_W hI) hFlow]
+                  · rfl
             · rfl
           · next ep hIpc =>
             split

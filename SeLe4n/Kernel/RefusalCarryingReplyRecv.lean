@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.RefusalCarryingEndpoint
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvDonatedInPlace
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyHeldInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvUnheldInPlace
 import SeLe4n.Kernel.IPC.CrossCore.FaultAnswerInPlace
 import SeLe4n.Kernel.IPC.CrossCore.LongReplyRecvInPlace
@@ -2008,12 +2009,26 @@ call and nothing they read is held across the writes. -/
   decide (Architecture.regMessageLength layout len ≤ 4) && replyRecvDonatedBlocks st epId tid c rid &&
     replyRecvReplyInertW st tid c grant
 
+/-- Whether a held reply-receive of at most four words may block in place
+(`replyRecvHeldBlocks`: the caller holds a context of its own, so `reply_pop`
+pops the head and the server keeps the context), its reply leg transferring no
+capability (`replyRecvReplyInertW`).  Out of line, as `replyRecvDonatedAdmits`
+is. -/
+@[noinline] def replyRecvHeldAdmits (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (grant : Bool) (layout : SeLe4n.SyscallRegisterLayout) (len : Nat)
+    (st : SystemState) : Bool :=
+  decide (Architecture.regMessageLength layout len ≤ 4) && replyRecvHeldBlocks st epId tid c rid &&
+    replyRecvReplyInertW st tid c grant
+
 /-- The checked reply-receive on a reply whose reply object heads the stack of
 the context the server holds on loan (seL4-MCS's `reply_pop` between the legs):
 in place when `replyRecvDonatedAdmits` passes (`performReplyRecvDonatedDelivered`,
 `replyRecvOnCore_donated_delivered`), the context the reply object heads and
-the caller's home read on the pre-state; when a caller is queued instead, the
-arm that takes it and is donated its context (`replyRecvDonatedCallTakeArmR`). -/
+the caller's home read on the pre-state; in place when the caller holds a
+context of its own and `replyRecvHeldAdmits` passes (`reply_pop`'s held arm,
+`performReplyRecvHeldDelivered`, `replyRecvOnCore_held_delivered`); when a
+caller is queued instead, the arm that takes it and is donated its context
+(`replyRecvDonatedCallTakeArmR`). -/
 @[inline] def replyRecvDonatedArmR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
@@ -2023,6 +2038,9 @@ arm that takes it and is donated its context (`replyRecvDonatedCallTakeArmR`). -
       .ok ((), performReplyRecvDonatedDelivered st c tid rid ⟨replyHeadContextCode st rid - 1⟩
         (determineTargetCore st c) epId (receiveQueueTailCode st epId) layout rf len badge
         executingCore)
+    else if replyRecvHeldAdmits epId tid c rid grant layout len st then
+      .ok ((), performReplyRecvHeldDelivered st c tid rid ⟨replyHeadContextCode st rid - 1⟩
+        epId (receiveQueueTailCode st epId) layout rf len badge executingCore)
     else replyRecvDonatedCallTakeArmR epId tid c rid badge grant layout rf len label executingCore
       st
 
@@ -2653,7 +2671,38 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
                 rfl
               · show ¬ (Architecture.regMessageBody layout rf len).size > maxMessageRegisters
                 unfold maxMessageRegisters; omega
-            · by_cases hDT : replyRecvDonatedCallTakeAdmits epId tid c rid grant layout len st
+            · split
+              · next hG =>
+                unfold replyRecvHeldAdmits at hG
+                simp only [Bool.and_eq_true, decide_eq_true_eq] at hG
+                obtain ⟨⟨hSz, hF⟩, hI⟩ := hG
+                obtain ⟨ct, ep0, rt, ep, rp, hT, hIpc, hRO, hP, hSRes, hE, hS, hR, hOwn, hA, hEnq,
+                  hRp, hStash, hRecR⟩ := replyRecvHeldBlocks_spec hF
+                have hInert := replyRecvReplyInertW_spec hI hT
+                have hTail : receiveQueueTailCode st epId = ep.recvTailCode := by
+                  simp only [receiveQueueTailCode, (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE]
+                have hSz4 : (Architecture.regMessageBody layout rf len).size ≤ 4 := by
+                  rw [Architecture.regMessageBody_size]; exact hSz
+                have h := replyRecvOnCore_held_delivered st epId tid c rid
+                  { registers := Architecture.regMessageBody layout rf len,
+                    badge := badge } grant executingCore
+                  ct ep0 rt ep rp (by simp only; unfold maxMessageRegisters; omega) hSz4 hT hIpc
+                  hRO hSRes hP hE hS hR hOwn hA hEnq hRp hStash hRecR hInert
+                rw [Architecture.returnFrameOfMessage_regMessageBody,
+                  (replyRecvOnCore_held_inPlace st epId tid c rid _ _ _ ct ep0 rt ep rp
+                    (by simp only; unfold maxMessageRegisters; omega) hT hIpc hRO hSRes hP hE hS hR
+                    hOwn hA hEnq hRp hStash hRecR hInert).1] at h
+                simp only [CapTransferSummary.capInfo_empty] at h
+                rw [hTail, (replyRecvOnCore_held_inPlace st epId tid c rid _ _ _ ct ep0 rt ep rp
+                    ?_ hT hIpc hRO hSRes hP hE hS hR hOwn hA hEnq hRp hStash hRecR hInert).1]
+                · simp only [CapTransferSummary.capInfo_empty]
+                  have h2 := congrArg Prod.snd (Except.ok.inj h)
+                  dsimp only at h2
+                  rw [h2]
+                  rfl
+                · show ¬ (Architecture.regMessageBody layout rf len).size > maxMessageRegisters
+                  unfold maxMessageRegisters; omega
+              by_cases hDT : replyRecvDonatedCallTakeAdmits epId tid c rid grant layout len st
               · rw [replyRecvDonatedCallTakeArmR_of_admits epId tid c rid badge grant layout rf len
                   label executingCore st (by simpa using hNoFault) hDT]
                 simp only [replyRecvRendezvousR]
