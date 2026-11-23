@@ -2023,22 +2023,28 @@ A receiver that still holds a loaned context (`.donated s owner`) has the loan
 popped before it blocks (`cleanupPreReceiveDonation`, then `popHeldReplyHead`),
 and the pop hands `s` back to `owner`, or keeps it.  The projection shows binding
 words to an observer cleared for the context they name (D34), so the return is
-invisible to an observer that sees neither the receiver nor this premise's
-disjuncts' subject: the context `s`, or the thread `owner` it returns to.
+invisible when the context `s`, or the thread `owner` it returns to, is hidden.
 
-This is a **per-step premise**, the receive path's counterpart of
-`chargeHidden`.  It is the holder-flow fact (every binding pair has the holder's
-label at or below its context's) read at one step: a hidden receiver holding `s`
-makes `s` hidden.  No reachable-state invariant carries that fact yet; its owner
-is the registered-debt row for the holder-flow invariant
-(`docs/REGISTERED_DEBT.md`), whose acceptance is this premise's removal. -/
+The shape the receive theorems consume.  It is derived, not assumed: a hidden
+receiver with equal binding labels (`bindingLabelsEqual`, D37) holds a hidden
+context (`receiveLoanReturnHidden_of_bindingLabelsEqual`). -/
 def receiveLoanReturnHidden (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (receiver : SeLe4n.ThreadId) : Prop :=
   ∀ tcb s owner, lookupTcb st receiver = some tcb →
     tcb.schedContextBinding = .donated s owner →
     objectObservable ctx observer s.toObjId = false ∨ threadObservable ctx observer owner = false
 
-/-- The premise is read off the receiver's binding alone, so a step that keeps
+/-- **The receive's loan return is hidden where binding labels are equal**: the
+receiver is hidden, and the context it holds carries its label. -/
+theorem receiveLoanReturnHidden_of_bindingLabelsEqual {ctx : LabelingContext}
+    {observer : IfObserver} {st : SystemState} {receiver : SeLe4n.ThreadId}
+    (hEq : bindingLabelsEqual ctx st) (hR : threadObservable ctx observer receiver = false) :
+    receiveLoanReturnHidden ctx observer st receiver := by
+  intro tcb s owner hLk hB
+  exact .inl (hEq.threadContextHidden (lookupTcb_some_objects _ _ _ hLk)
+    (TCB.scBindingScCode_of_donated hB) hR)
+
+/-- The shape is read off the receiver's binding alone, so a step that keeps
 every binding carries it. -/
 theorem receiveLoanReturnHidden_of_sameSchedContextBindings {ctx : LabelingContext}
     {observer : IfObserver} {s s' : SystemState} {r : SeLe4n.ThreadId}

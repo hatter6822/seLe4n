@@ -7,17 +7,17 @@
 > SX8 at `v0.37.36` (SX8.1 the conformance table, SX8.2 donation and return,
 > SX8.3 label 36 and the unbind of a donated holder, D22), which split its own
 > remainder into SX9, SX11 and SX12 (D32). The rows after SX8 were renumbered then:
-> SX9–SX17 became SX12–SX20. SX9 added a row, SX10 (the holder-flow invariant,
-> D36), and SX10–SX20 became SX11–SX21; the decisions below cite the new numbers.
+> SX9–SX17 became SX12–SX20. SX9 added a row, SX10 (the binding-labels invariant,
+> D36, D37), and SX10–SX20 became SX11–SX21; the decisions below cite the new numbers.
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
 > **Rows**: SX1–SX21, numbered in the order they are implemented, one PR each.
 > Each row consumes only lower-numbered rows. A row that changes a transition
 > carries the proofs that cover it. No two rows run in parallel.
-> **Decisions**: D1–D32, D34 and D36 (§3). D1–D17 are each **default taken; owner card open**;
+> **Decisions**: D1–D32, D34, D36 and D37 (§3). D1–D17 are each **default taken; owner card open**;
 > D7 follows the owner's standing rule (implement seL4's behaviour, never defer
 > it). D18–D21 were decided by the owner when SX7 closed; D22 when SX8 started;
-> D23–D32 during SX8; D34 when SX9 started; D36 during SX9.
+> D23–D32 during SX8; D34 when SX9 started; D36 and D37 during SX9.
 > **Supersedes**: the "Next PR" scope in
 > `docs/agent_guide/WORKSTREAM_CONTEXT.md` (the root task's boot IPC buffer
 > and the guard in the capability with `CNode_Mutate`). Both are rows here
@@ -113,7 +113,7 @@ facts it rests on are restated here.
 
 ## 3. Owner decisions
 
-D1–D17 are each **default taken; owner card open**; D18–D32, D34 and D36 are the owner's.
+D1–D17 are each **default taken; owner card open**; D18–D32, D34 and D36 are the owner's; D37 is default taken, owner card open.
 A different answer changes only the rows that cite it.
 
 - **D1. The error label.** *Default:* **seL4's error codes (1–10) in the
@@ -271,7 +271,23 @@ A different answer changes only the rows that cite it.
   per-step premise, `receiveLoanReturnHidden`, registered in
   `docs/REGISTERED_DEBT.md`; the new row SX10 holds the invariant and its
   acceptance is that premise's removal. SX10 runs next, so the rows after it
-  are renumbered (SX10–SX20 became SX11–SX21).
+  are renumbered (SX10–SX20 became SX11–SX21). D37 replaces the one-way
+  relation with equality and the premise with `bindingLabelsEqual`.
+- **D37. Equal binding labels.** *Default taken; owner card open (2026-11-23,
+  "Equal labels"):* SX9.1's two-run theorem showed that the one-way relation
+  of D36 is too weak. The lend's admission reads the context's thread word and
+  the waiting thread's own binding word, and D34 shows each only where the
+  object it names is visible. A pair of runs in which a visible thread is bound
+  to a hidden context in one run and unbound in the other is low-equivalent,
+  satisfies `L(holder) ⊑ L(context)`, and diverges at the lend. So the
+  relation is equality: every binding pair (a thread holding a context, bound
+  or lent; a context's thread word; a notification bound to a context) has
+  equal labels (`bindingLabelsEqual`, read through `twoWayLabelGate_iff_eq`).
+  SX9 replaces `receiveLoanReturnHidden` as the receive steps' premise with
+  this one predicate, from which the loan-return shape is derived
+  (`receiveLoanReturnHidden_of_bindingLabelsEqual`), and the two-run theorem
+  takes it of both runs. Still one premise. SX10's invariant becomes this
+  equality.
 
 ## 4. Rows
 
@@ -485,7 +501,7 @@ SX8's remainder on the lend's evidence (D32). No transition changes.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX9.1 | **The two-run theorem for every observer** over the checked notification lend (`maybeDonateSchedContextFlowing`, D30). An observer the context's label does not flow to: the single-run `maybeDonateSchedContext_lowEquivalent` (`InformationFlow/PerCoreSchedulerNonInterference.lean:1956`) closes it, given that the woken thread is hidden (a thread/object label coherence fact). An observer cleared for the context (so, by D30, for the thread): the lend's writes are visible, and the projection erases the inputs that decide it (`Notification.schedContextCode`, `InformationFlow/Projection.lean:371`; `TCB.scBinding*`, `:214`). **Ruled by the owner (D34):** a finer projection for that observer, which shows those words. The lend's visible writes read three more inputs, ruled when the row started: the thread's `cpuAffinity` (which core it is placed on) is shown with the binding words to an observer cleared for the thread, as D34's principle gives; the machine timer (the context's `releaseReadyHead`) stays outside the projection (covert channel CC-2), and the theorem takes the two runs' agreement on it as a premise, as the tree's one two-run theorem over an unprojected read does (`activateThreadOnCore_lowEquivalent_pair`); the thread's run-core word is read off the run-queue refinement invariant. The NI theorems that were unconditional only because the projection erased those words (the donation push, pop and keep, the Call donation, the affinity write: WS-RR RR7.22, WS-OD OD3.2 and OD4.1, WS-SM SM5.H.4) are restated with the observability hypotheses they need, superseded by D34; each consumer step discharges them from the flow gates it passes (D27, D28, D30), or, where the step makes a legitimate visible flow, is proven in the two-run form with the pair lemmas. **One consumer could not be discharged** (D36): the receive's no-sender path (`endpointReceiveDual_preserves_projection`: `cleanupPreReceiveDonation`, then `popHeldReplyHead`, then return or keep) hands a hidden receiver's loaned context back to its owner, and no gate relates the receiver's label to the context's. It takes the per-step premise `receiveLoanReturnHidden` (the returned context or its owner is hidden), on the `endpointReceiveDualHigh` and `endpointReplyRecvHigh` steps, until SX10 removes it. | The theorem; pair lemmas (two runs, one write) for `rewriteObject`, `updateTcb`, `runEnqueueOnCore`, `releasePlace` and `markReschedulePending`, none in the tree. | Tier 3 anchors on the theorem and its five pair lemmas |
+| SX9.1 | **The two-run theorem for every observer** over the checked notification lend (`maybeDonateSchedContextFlowing`, D30). An observer the context's label does not flow to: the single-run `maybeDonateSchedContext_lowEquivalent` (`InformationFlow/PerCoreSchedulerNonInterference.lean:1956`) closes it, given that the woken thread is hidden (a thread/object label coherence fact). An observer cleared for the context (so, by D30, for the thread): the lend's writes are visible, and the projection erases the inputs that decide it (`Notification.schedContextCode`, `InformationFlow/Projection.lean:371`; `TCB.scBinding*`, `:214`). **Ruled by the owner (D34):** a finer projection for that observer, which shows those words. The lend's visible writes read three more inputs, ruled when the row started: the thread's `cpuAffinity` (which core it is placed on) is shown with the binding words to an observer cleared for the thread, as D34's principle gives; the machine timer (the context's `releaseReadyHead`) stays outside the projection (covert channel CC-2), and the theorem takes the two runs' agreement on it as a premise, as the tree's one two-run theorem over an unprojected read does (`activateThreadOnCore_lowEquivalent_pair`); the thread's run-core word is read off the run-queue refinement invariant. The NI theorems that were unconditional only because the projection erased those words (the donation push, pop and keep, the Call donation, the affinity write: WS-RR RR7.22, WS-OD OD3.2 and OD4.1, WS-SM SM5.H.4) are restated with the observability hypotheses they need, superseded by D34; each consumer step discharges them from the flow gates it passes (D27, D28, D30), or, where the step makes a legitimate visible flow, is proven in the two-run form with the pair lemmas. **One consumer could not be discharged** (D36): the receive's no-sender path (`endpointReceiveDual_preserves_projection`: `cleanupPreReceiveDonation`, then `popHeldReplyHead`, then return or keep) hands a hidden receiver's loaned context back to its owner, and no gate relates the receiver's label to the context's. It takes the per-step premise `bindingLabelsEqual` (D37: every binding pair has equal labels), from which the shape the receive theorems consume, `receiveLoanReturnHidden` (the returned context or its owner is hidden), is derived, on the `endpointReceiveDualHigh` and `endpointReplyRecvHigh` steps; the two-run theorem takes the same predicate of both runs; SX10 removes it. | The theorem; pair lemmas (two runs, one write) for `rewriteObject`, `updateTcb`, `runEnqueueOnCore`, `releasePlace` and `markReschedulePending`, none in the tree. | Tier 3 anchors on the theorem and its five pair lemmas |
 | SX9.2 | **The remaining D21 behaviour rows** in `sel4BehaviourRows` (`Testing/Sel4ConformanceTable.lean:512`), each with its scenario in `runBehaviourRows` (`tests/Sel4ConformanceSuite.lean:301`): reply_pop's held arm; SchedContext_Unbind of a donated holder with `unbindReply` (D22); suspend keeps the victim's binding; a blocking receive returns the context; SchedContext_Bind of a lender. | none (rows and scenarios) | `sel4_conformance_suite` |
 | SX9.3 | **Heap scenarios on the two labelled bands** of `Exerciser.deploymentLabeling` (`Platform/Exerciser/Deployment.lean:162`): a Call whose lend the label check refuses (D28); a notification lend refused low to high and high to low (D30); SchedContext_Bind of a context heading a stack (D25). | none | `scripts/qemu_exerciser_lib.sh` expected set; QEMU: each reads 0 |
 
@@ -494,24 +510,24 @@ SX8's remainder on the lend's evidence (D32). No transition changes.
   cleared observer recorded here;
 - five new behaviour rows, each with a passing scenario;
 - four new heap steps, each reading 0 on both lanes, twice;
-- the one receive premise (`receiveLoanReturnHidden`) registered, owned by
-  SX10.
+- the one premise (`bindingLabelsEqual`, D37) registered, owned by SX10: on
+  the two receive steps and on the two-run theorem.
 
-### SX10 — The holder-flow invariant (D36)
+### SX10 — The equal-binding-labels invariant (D36, D37)
 
 SX9's remainder on the lend's evidence: the reachable-state fact that removes
 the premise SX9 ships with. It runs next for that reason.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX10.1 | **The boot base case**: the boot coherence check (`notificationLabelsCoherent`, gate PR #1096) is extended to the binding pairs. Today it reads the notification queues and the bound thread only; it does not check the thread-to-context or notification-to-context bindings (Low finding, reported 2026-11-23 during SX9): a boot image binding a thread to a context labelled below it boots. The extension refuses every binding pair whose holder's label does not flow to its context's. | The check's soundness: a booted state satisfies the invariant. | Boot fixtures; a boot-refusal test for a holder above its context |
-| SX10.2 | **The holder-flow invariant**: every binding pair (a TCB's `scBindingScCode` naming a context, bound or lent; a notification's `schedContextCode`) has `L(holder) ⊑ L(context)`. Threaded through the one frame family per ruling (ag): `contextStackViewsAgree` gains the binding views. Measured at `v0.37.37`: SX8's context-lender cut (`ContextLenders/*`, `IPC/Invariant/ContextLender*`, `SchedContext/Invariant/ContextLenders`) is about 8,300 lines, and `contextLendersFlow` is threaded through 20 files (347 references); the writers of the binding views outside `InformationFlow/` and `Testing/` are 61 files (224 TCB binding-word write sites, 14 files writing the notification word), of which 33 write none of SX8's stack views and so turn from frame steps into creator or shrink proofs: SchedContext Bind, Unbind and BindingAffinity; notification bind, link, donation and signal; the lifecycle cleanup and finalise (`KernelRecords/Finalise`, `Lifecycle/Operations/Cleanup*`); `ReschedulePendingArms`; the in-place fast forms (`ReceiveReturnInPlace`, `ReplyRecv*TakeInPlace`, `EndpointReplyRecvInPlace`); `FrozenOps`. The creating sites carry it from their gates: the Call lend (`callLend_holderFlowsToContext`), the receive-take lend, the notification lend (D30), Bind (D35), the return to an owner (`contextLendersFlow`) and the keep. | Preservation over every writer; the frame proofs over the threaded files show the binding views agree. | Tier 3 anchors on the invariant and its preservation |
-| SX10.3 | **The premise removed**: `receiveLoanReturnHidden` is discharged from the invariant (a hidden receiver holding a context makes the context hidden) and deleted from `endpointReceiveDualHigh`, `endpointReplyRecvHigh` and the receive theorems; its `docs/REGISTERED_DEBT.md` row closes. | `endpointReceiveDual_preserves_projection` and `endpointReplyRecv_preserves_projection` without it. | Tier 3 anchor refusing the retired premise |
+| SX10.1 | **The boot base case**: the boot coherence check (`notificationLabelsCoherent`, gate PR #1096) is extended to the binding pairs. Today it reads the notification queues and the bound thread only; it does not check the thread-to-context or notification-to-context bindings (Low finding, reported 2026-11-23 during SX9): a boot image binding a thread to a context of another label boots. The extension refuses every binding pair whose holder's and context's labels differ (D37). | The check's soundness: a booted state satisfies the invariant. | Boot fixtures; a boot-refusal test for each kind of binding pair with unequal labels |
+| SX10.2 | **The equal-binding-labels invariant** (`bindingLabelsEqual`, D37): every binding pair (a TCB's `scBindingScCode` naming a context, bound or lent; a context's `boundThreadCode`; a notification's `schedContextCode`) has equal labels. Threaded through the one frame family per ruling (ag): `contextStackViewsAgree` gains the binding views. Measured at `v0.37.37`: SX8's context-lender cut (`ContextLenders/*`, `IPC/Invariant/ContextLender*`, `SchedContext/Invariant/ContextLenders`) is about 8,300 lines, and `contextLendersFlow` is threaded through 20 files (347 references); the writers of the binding views outside `InformationFlow/` and `Testing/` are 61 files (224 TCB binding-word write sites, 14 files writing the notification word), of which 33 write none of SX8's stack views and so turn from frame steps into creator or shrink proofs: SchedContext Bind, Unbind and BindingAffinity; notification bind, link, donation and signal; the lifecycle cleanup and finalise (`KernelRecords/Finalise`, `Lifecycle/Operations/Cleanup*`); `ReschedulePendingArms`; the in-place fast forms (`ReceiveReturnInPlace`, `ReplyRecv*TakeInPlace`, `EndpointReplyRecvInPlace`); `FrozenOps`. The creating sites carry it from their gates: Bind (D35) and the notification lend (D30) check equal labels directly; the Call lend and the receive-take lend move the lender's own context to the receiver, so they keep equality only where the lender's binding is already equal-labelled (the invariant itself, inductively) and the step's gates make the receiver's label the lender's; the return to an owner and the keep restore or keep a pair the invariant already covers. | Preservation over every writer; the frame proofs over the threaded files show the binding views agree. | Tier 3 anchors on the invariant and its preservation |
+| SX10.3 | **The premise removed**: `bindingLabelsEqual` is discharged from the invariant and deleted as a premise from `endpointReceiveDualHigh`, `endpointReplyRecvHigh` and the notification lend's two-run theorem (both runs); its `docs/REGISTERED_DEBT.md` row closes. | `endpointReceiveDual_preserves_projection` and `endpointReplyRecv_preserves_projection` without it. | Tier 3 anchor refusing the retired premise |
 
 **Acceptance:**
-- the premise `receiveLoanReturnHidden` is gone from the tree and its debt row
-  closed;
-- the boot check refuses a holder above its context;
+- the premise `bindingLabelsEqual` is gone from both receive steps and the
+  two-run theorem, and its debt row closed;
+- the boot check refuses a binding pair with unequal labels;
 - every writer of a binding view preserves the invariant.
 
 ### SX11 — The origin redirect deleted (D31)

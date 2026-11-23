@@ -1936,12 +1936,12 @@ theorem nonInterference_perCore_endpointReceiveDual (ctx : LabelingContext)
       objectObservable ctx observer nextTid.toObjId = false)
     (hRecvQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
       ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
-    (hLoan : receiveLoanReturnHidden ctx observer st receiver) :
+    (hBind : bindingLabelsEqual ctx st) :
     lowEquivalent_smp ctx observer st' st :=
   nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
     (.endpointReceiveDualHigh endpointId receiver sender replyId hEndpointHigh hReceiverHigh
       hReceiverObjHigh hCoherent hStep hSendQueueHeadHigh hSendQueueNextHigh hRecvQueueTailHigh
-      hLoan)
+      hBind)
     (endpointReceiveDual_confinedToBootCore st st' endpointId receiver sender replyId hStep)
 
 theorem nonInterference_perCore_endpointCall (ctx : LabelingContext) (observer : IfObserver)
@@ -1992,12 +1992,12 @@ theorem nonInterference_perCore_endpointReplyRecv (ctx : LabelingContext) (obser
       objectObservable ctx observer nextTid.toObjId = false)
     (hRecvQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
       ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
-    (hLoan : receiveLoanReturnHidden ctx observer st replierReceiver) :
+    (hBind : bindingLabelsEqual ctx st) :
     lowEquivalent_smp ctx observer st' st :=
   nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
     (.endpointReplyRecvHigh endpointId replierReceiver replyTarget replyMsg replyId hEndpointHigh
       hReceiverHigh hReceiverObjHigh hReplyTargetHigh hReplyTargetObjHigh hCoherent hStep
-      hSendQueueHeadHigh hSendQueueNextHigh hRecvQueueTailHigh hLoan)
+      hSendQueueHeadHigh hSendQueueNextHigh hRecvQueueTailHigh hBind)
     (endpointReplyRecv_confinedToBootCore st st' endpointId replierReceiver replyTarget replyMsg
       replyId hStep)
 

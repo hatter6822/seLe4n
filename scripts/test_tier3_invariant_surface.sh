@@ -2507,10 +2507,14 @@ run_check "INVARIANT" rg -n '^theorem lockSet_endpointCallOnCore_covers_donation
 run_check "INVARIANT" rg -n '^private theorem donateSchedContext_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # WS-SX SX9.1 (D34): the push is invisible only with its context hidden.
 run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem donateSchedContext_preserves_projection( *\n +[^\n]*)*hScHigh : objectObservable" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
-# The receive's loan-pop premise (registered debt, owned by SX10) on both steps.
-run_check "INVARIANT" rg -n '^def receiveLoanReturnHidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
-run_check "INVARIANT" rg -n 'hLoan : receiveLoanReturnHidden ctx observer st receiver' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
-run_check "INVARIANT" rg -n 'hLoan : receiveLoanReturnHidden ctx observer st replierReceiver' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+# The receive steps' one premise (D37, registered debt owned by SX10): equal
+# binding labels, a field of each receive constructor itself; the loan-return
+# shape is derived from it, never a constructor field.
+run_check "INVARIANT" rg -n '^def bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem receiveLoanReturnHidden_of_bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "\| endpointReceiveDualHigh\n(    [^\n]*\n)*?      \(hBind : bindingLabelsEqual ctx st\)\n    : NonInterferenceStep" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| endpointReplyRecvHigh\n(    [^\n]*\n)*?      \(hBind : bindingLabelsEqual ctx st\)\n    : NonInterferenceStep" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_negative_check "INVARIANT" rg -n ': receiveLoanReturnHidden ctx observer st (receiver|replierReceiver)\)' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 # The pack field the resolution added: every capability-gated arm that pops now
 # states the obligation its resolver carries.
 run_check "INVARIANT" bash -lc 'rg -U -n "^structure capabilityDispatchQuiescence[^\n]*(\n([ \t][^\n]*)?)*replyStacksSettleOnWaitingDonors" SeLe4n/Kernel/API.lean'
