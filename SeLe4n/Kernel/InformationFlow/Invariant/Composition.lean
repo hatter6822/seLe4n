@@ -184,6 +184,9 @@ inductive NonInterferenceStep
           objectObservable ctx observer nextTid.toObjId = false)
       (hRecvQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
           ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
+      -- WS-SX SX9.1 (D34): the pre-receive loan pop's return is hidden (a
+      -- registered per-step premise; see `receiveLoanReturnHidden`).
+      (hLoan : receiveLoanReturnHidden ctx observer st receiver)
     : NonInterferenceStep ctx observer st st'
   | endpointCallHigh
       (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
@@ -228,6 +231,7 @@ inductive NonInterferenceStep
           objectObservable ctx observer nextTid.toObjId = false)
       (hRecvQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
           ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
+      (hLoan : receiveLoanReturnHidden ctx observer st replierReceiver)
     : NonInterferenceStep ctx observer st st'
   | storeObjectHigh
       (oid : SeLe4n.ObjId) (obj : KernelObject)
@@ -477,17 +481,17 @@ theorem step_preserves_projection
   | endpointReply replier target msg hTH hTOH hOp =>
     exact endpointReply_preserves_projection ctx observer replier target msg st st' hTH hTOH hObjInv
       hIdxComplete hObjSetInv hOp
-  | endpointReceiveDualHigh eid recv send replyId hEH hRH hROH hCo hOp hSQHH hSQNH hRQTH =>
+  | endpointReceiveDualHigh eid recv send replyId hEH hRH hROH hCo hOp hSQHH hSQNH hRQTH hLoan =>
     exact endpointReceiveDual_preserves_projection ctx observer eid recv replyId st st' send
       hEH hRH hROH hCo hSQHH hSQNH hRQTH hObjInv
-      hIdxComplete hObjSetInv hOp
+      hIdxComplete hObjSetInv hLoan hOp
   | endpointCallHigh eid caller payload hEH hCH hCOH hCo hOp hRQHH hRQNH hSQTH =>
     exact endpointCall_preserves_projection ctx observer eid caller payload st st'
       hEH hCH hCOH hCo hRQHH hRQNH hSQTH hObjInv hIdxComplete hObjSetInv hOp
-  | endpointReplyRecvHigh eid recv target rmsg replyId hEH hRH hROH hRTH hRTOH hCo hOp hSQHH hSQNH hRQTH =>
+  | endpointReplyRecvHigh eid recv target rmsg replyId hEH hRH hROH hRTH hRTOH hCo hOp hSQHH hSQNH hRQTH hLoan =>
     exact endpointReplyRecv_preserves_projection ctx observer eid recv target rmsg replyId st st'
       hEH hRH hROH hRTH hRTOH hCo hSQHH hSQNH hRQTH hObjInv
-      hIdxComplete hObjSetInv hOp
+      hIdxComplete hObjSetInv hLoan hOp
   | storeObjectHigh oid obj hOH hOp =>
     exact storeObject_preserves_projection ctx observer st st' oid obj hOH hObjInv hOp
   | setCurrentThread tid hTidH hCurH hOp =>

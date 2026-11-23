@@ -132,6 +132,56 @@ def capTargetObservable (ctx : LabelingContext) (observer : IfObserver) (target 
   | .serviceRegistry _ => true
   | .irqHandler l => objectObservable ctx observer (irqNodeId l)
 
+/-- WS-SX SX9.1 (D34): a word naming a scheduling context is shown to an
+observer that can see that context, and erased (`0`) for one that cannot.  The
+empty word (`0`) answers `false`: erasing it changes nothing, and "the word is
+hidden" then holds of every unbound thread, which the old-word side of each
+binding store needs. -/
+def scWordShown (ctx : LabelingContext) (observer : IfObserver) (k : Nat) : Bool :=
+  match SeLe4n.SchedContextId.ofOptCode k with
+  | some s => objectObservable ctx observer s.toObjId
+  | none => false
+
+/-- WS-SX SX9.1 (D34): a word naming a thread is shown to an observer that can
+see that thread, and erased (`0`) for one that cannot; the empty word answers
+`false`, as for `scWordShown`. -/
+def threadWordShown (ctx : LabelingContext) (observer : IfObserver) (k : Nat) : Bool :=
+  match SeLe4n.ThreadId.ofOptCode k with
+  | some t => threadObservable ctx observer t
+  | none => false
+
+@[simp] theorem scWordShown_zero (ctx : LabelingContext) (observer : IfObserver) :
+    scWordShown ctx observer 0 = false := rfl
+
+@[simp] theorem threadWordShown_zero (ctx : LabelingContext) (observer : IfObserver) :
+    threadWordShown ctx observer 0 = false := rfl
+
+@[simp] theorem scWordShown_optCode (ctx : LabelingContext) (observer : IfObserver)
+    (o : Option SeLe4n.SchedContextId) :
+    scWordShown ctx observer (SeLe4n.SchedContextId.optCode o)
+      = (match o with
+         | some s => objectObservable ctx observer s.toObjId
+         | none => false) := by
+  cases o <;> simp [scWordShown]
+
+@[simp] theorem threadWordShown_optCode (ctx : LabelingContext) (observer : IfObserver)
+    (o : Option SeLe4n.ThreadId) :
+    threadWordShown ctx observer (SeLe4n.ThreadId.optCode o)
+      = (match o with
+         | some t => threadObservable ctx observer t
+         | none => false) := by
+  cases o <;> simp [threadWordShown]
+
+@[simp] theorem scWordShown_val_succ (ctx : LabelingContext) (observer : IfObserver)
+    (s : SeLe4n.SchedContextId) :
+    scWordShown ctx observer (s.val + 1) = objectObservable ctx observer s.toObjId := by
+  simpa [SeLe4n.SchedContextId.optCode] using scWordShown_optCode ctx observer (some s)
+
+@[simp] theorem threadWordShown_val_succ (ctx : LabelingContext) (observer : IfObserver)
+    (t : SeLe4n.ThreadId) :
+    threadWordShown ctx observer (t.val + 1) = threadObservable ctx observer t := by
+  simpa [SeLe4n.ThreadId.optCode] using threadWordShown_optCode ctx observer (some t)
+
 /-- WS-F3/F-22: Filter a KernelObject to redact high-domain information.
 For CNode objects, removes capability slots whose targets are not observable
 by the given observer. All other object types pass through unchanged.
@@ -211,9 +261,21 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- above (internal IPC/donation plumbing, not the thread's observable
       -- logical identity).  The matching `Reply.caller` back-link is erased by
       -- the `.reply` arm below.
-      .tcb { tcb with registerContext := default, scBindingScCode := 0, scBindingOwnerCode := 0,
+      -- WS-SX SX9.1 (D34): the binding words and the affinity decide the
+      -- notification lend's visible writes, so an observer cleared for the
+      -- context the binding names sees them; the owner word also needs the
+      -- owner visible.  The affinity is the thread's own, seen with it.
+      .tcb { tcb with registerContext := default,
+                       scBindingScCode :=
+                         if scWordShown ctx observer tcb.scBindingScCode then tcb.scBindingScCode
+                         else 0,
+                       scBindingOwnerCode :=
+                         if scWordShown ctx observer tcb.scBindingScCode &&
+                             threadWordShown ctx observer tcb.scBindingOwnerCode then
+                           tcb.scBindingOwnerCode
+                         else 0,
                        pipBoostCode := SeLe4n.Priority.optCode none, pendingMessage := none, timedOut := false,
-                       cpuAffinity := none, replyObjectCode := 0,
+                       replyObjectCode := 0,
                        pendingReceiveReplyCode := 0,
                        -- WS-BP BP7.9: the saved FP/SIMD context is the thread's
                        -- own register state, erased exactly as `registerContext`
@@ -302,7 +364,13 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- (`releaseQueuedOn_eq_of_projectObjects`): the drain refills an
       -- observable context exactly when it is on the queue, and two
       -- low-equivalent states agree on that.
-      .schedContext { sc with boundThreadCode := 0, scReply := none,
+      -- WS-SX SX9.1 (D34): the thread word is shown where that thread is.
+      .schedContext { sc with
+                              boundThreadCode :=
+                                if threadWordShown ctx observer sc.boundThreadCode then
+                                  sc.boundThreadCode
+                                else 0,
+                              scReply := none,
                               donationOrigin := none,
                               releaseNextCode := 0,
                               -- The notification link (seL4-MCS's
@@ -368,7 +436,10 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
   -- Its scheduling-context link (seL4-MCS's `ntfnSchedContext`) names a context
   -- of any domain, and the context's thread end is erased (`boundThreadCode`
   -- above), so the link is erased with the context's own end.
-  | .notification n => .notification { n.withTaintWords {} with schedContextCode := 0 }
+  -- WS-SX SX9.1 (D34): shown where the context it names is.
+  | .notification n => .notification { n.withTaintWords {} with
+      schedContextCode :=
+        if scWordShown ctx observer n.schedContextCode then n.schedContextCode else 0 }
   | .vspaceRoot v => .vspaceRoot v
   | .untyped u => .untyped u
   | .frame f => .frame f
@@ -445,27 +516,11 @@ theorem projectKernelObject_erases_timeout_signal
     | _ => True := by
   simp [projectKernelObject]
 
-/-- WS-SM SM5.B (NI-M01 lineage, PR #805 review P2-4): `projectKernelObject`
-    strips the per-thread CPU-affinity field from projected TCBs (resets it to
-    `none`). Per-thread CPU *placement* is a scheduler resource-management
-    decision — the same class as `schedContextBinding`, `pipBoost`, and register
-    state, all of which the projection already erases. Two states differing only
-    by a (high/scheduler-driven) affinity change therefore project to the *same*
-    low object, so the information-flow projection cannot leak cross-domain
-    placement decisions once `setThreadCpuAffinity` (SM5.C) can change it.
-    Mirrors `projectKernelObject_erases_timeout_signal`. -/
-theorem projectKernelObject_erases_cpuAffinity
-    (ctx : LabelingContext) (observer : IfObserver) (tcb : TCB) :
-    match projectKernelObject ctx observer (.tcb tcb) with
-    | .tcb tcb' => tcb'.cpuAffinity = none
-    | _ => True := by
-  simp [projectKernelObject]
-
 /-- WS-SM SM6.D (PR #822 review, Reply objects): `projectKernelObject` strips the
     forward TCB→Reply link (`replyObject`) from projected TCBs (resets it to
     `none`).  The link names which first-class Reply object a blocked caller is
     waiting on; leaking it would expose the cross-domain Call→Reply rendezvous.
-    Mirrors `projectKernelObject_erases_cpuAffinity`. -/
+    Mirrors `projectKernelObject_erases_timeout_signal`. -/
 theorem projectKernelObject_erases_replyObject
     (ctx : LabelingContext) (observer : IfObserver) (tcb : TCB) :
     match projectKernelObject ctx observer (.tcb tcb) with
@@ -608,31 +663,35 @@ TCB's SchedContext binding — `projectKernelObject` strips the field (AI4-A), s
 donation hand-off is invisible to any observer, not merely to a high one. -/
 theorem projectKernelObject_tcb_schedContextBinding_invariant
     (ctx : LabelingContext) (observer : IfObserver) (t : TCB)
-    (c o : Nat) :
+    (c o : Nat) (hC : scWordShown ctx observer c = false)
+    (hT : scWordShown ctx observer t.scBindingScCode = false) :
     projectKernelObject ctx observer (.tcb { t with scBindingScCode := c, scBindingOwnerCode := o })
       = projectKernelObject ctx observer (.tcb t) := by
-  simp [projectKernelObject]
+  simp [projectKernelObject, hC, hT]
 
 /-- The projection is likewise invariant under the donor's origin back-link
 (`TCB.originScCode`), the third field the donation's donor store writes: the
 `.tcb` arm strips it with the binding. -/
 theorem projectKernelObject_tcb_donorStore_invariant
     (ctx : LabelingContext) (observer : IfObserver) (t : TCB)
-    (c o g : Nat) :
+    (c o g : Nat) (hC : scWordShown ctx observer c = false)
+    (hT : scWordShown ctx observer t.scBindingScCode = false) :
     projectKernelObject ctx observer
         (.tcb { t with scBindingScCode := c, scBindingOwnerCode := o, originScCode := g })
       = projectKernelObject ctx observer (.tcb t) := by
-  simp [projectKernelObject]
+  simp [projectKernelObject, hC, hT]
 
 /-- **WS-RR RR7.22 (residual, remediation)**: the projection is invariant under a
 SchedContext's bound thread — the other half of the donation hand-off's write
 set, stripped for the same reason. -/
 theorem projectKernelObject_schedContext_boundThread_invariant
     (ctx : LabelingContext) (observer : IfObserver) (sc : SchedContext)
-    (bt : Option SeLe4n.ThreadId) :
+    (bt : Option SeLe4n.ThreadId)
+    (hB : threadWordShown ctx observer (SeLe4n.ThreadId.optCode bt) = false)
+    (hS : threadWordShown ctx observer sc.boundThreadCode = false) :
     projectKernelObject ctx observer (.schedContext { sc with boundThreadCode := SeLe4n.ThreadId.optCode (bt) })
       = projectKernelObject ctx observer (.schedContext sc) := by
-  simp [projectKernelObject]
+  simp [projectKernelObject, hB, hS]
 
 /-- **WS-OD OD2.2**: the projection is invariant under a SchedContext's
 reply-stack head — `projectKernelObject` strips `scReply` (OD2.2), so pushing a
@@ -666,12 +725,14 @@ arity; it names the operation class whose write set this is. -/
 theorem projectKernelObject_schedContext_donationWrite_invariant
     (ctx : LabelingContext) (observer : IfObserver) (sc : SchedContext)
     (bt : Option SeLe4n.ThreadId) (rid : Option SeLe4n.ReplyId)
-    (origin : Option SeLe4n.ThreadId) :
+    (origin : Option SeLe4n.ThreadId)
+    (hB : threadWordShown ctx observer (SeLe4n.ThreadId.optCode bt) = false)
+    (hS : threadWordShown ctx observer sc.boundThreadCode = false) :
     projectKernelObject ctx observer
         (.schedContext { sc with boundThreadCode := SeLe4n.ThreadId.optCode (bt), scReply := rid,
                                  donationOrigin := origin })
       = projectKernelObject ctx observer (.schedContext sc) := by
-  simp [projectKernelObject]
+  simp [projectKernelObject, hB, hS]
 
 /-- **WS-HP HP10.3**: the projection is invariant under the recorded origin.
 
