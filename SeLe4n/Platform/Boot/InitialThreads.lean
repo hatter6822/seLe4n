@@ -764,6 +764,44 @@ theorem bootFromPlatformCheckedStartedFor_proofLayerInvariantBundle
     (bootFromPlatformCheckedStartedFor_bootLinkedShape cores hNodup config ist h)
     (bootFromPlatformCheckedStartedFor_objectIndex_length_le cores hNodup config ist h)
 
+/-- **An object of boot shape holds no binding word**: a boot thread is unbound,
+a boot context bound to no thread and a boot notification to no context. -/
+theorem bindingFreeObject_of_bootObjectShapeOffLinks {o : KernelObject}
+    (h : bootObjectShapeOffLinks o) : bindingFreeObject o := by
+  cases o with
+  | tcb t =>
+    have hU := ((h.2.2.2.1 t rfl).2.2.2.2.2.2.1 : t.schedContextBinding = .unbound)
+    show t.scBindingScCode = 0
+    unfold TCB.schedContextBinding SchedContextBinding.ofCodes at hU
+    split at hU
+    · assumption
+    · split at hU <;> cases hU
+  | schedContext sc =>
+    have hB := ((h.2.2.2.2.2.1 sc rfl).2.1 : sc.boundThread = none)
+    show sc.boundThreadCode = 0
+    unfold SchedContext.boundThread SeLe4n.ThreadId.ofOptCode at hB
+    split at hB
+    · assumption
+    · cases hB
+  | notification n => exact (h.2.1 n rfl).2.2.2.2
+  | _ => trivial
+
+/-- WS-SX SX10.1: **the state the started boot installs has equal binding
+labels under every labelling** — the base case of the equal-binding-labels
+invariant.  The checked boot refuses a configured thread bound or lent a
+context, a configured context bound to a thread and a configured notification
+bound to a context (`bootSafeObjectCheck`), and builds none of the three: the
+idle threads, the started threads, the interrupt nodes and the root server
+are unbound.  So the installed state holds no binding pair, and no labelling
+can make one unequal. -/
+theorem bootFromPlatformCheckedStartedFor_bindingLabelsEqual
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (hNodup : cores.Nodup)
+    (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) (ctx : LabelingContext) :
+    bindingLabelsEqual ctx ist.state :=
+  bindingLabelsEqual_of_unbound (fun k o hk => bindingFreeObject_of_bootObjectShapeOffLinks
+    ((bootFromPlatformCheckedStartedFor_bootLinkedShape cores hNodup config ist h).1 k o hk)) ctx
+
 /-- WS-ZA ZA6.8: **the state the started boot installs keeps no linked thread
 current or resident** — the first entry's precondition for
 `syscallDispatchEntryState_preserves_yieldLinkedNotResident` and its siblings. -/
