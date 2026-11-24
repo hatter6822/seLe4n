@@ -23991,6 +23991,8 @@ run_check "INVARIANT" rg -n '^theorem EndpointWaitersGrowFrame\.storeTcbIpcState
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointSendCrossCoreDispatchChecked[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_eq ctx endpointId" SeLe4n/Kernel/EndpointWaiters/Ipc.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatchChecked[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_eq ctx endpointId" SeLe4n/Kernel/EndpointWaiters/Ipc.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDualWithCapsOnCore[^\n]*(\n([ \t][^\n]*)?)*hGate : endpointFlowGate ctx endpointId \(ctx\.endpointLabelOf endpointId\)" SeLe4n/Kernel/EndpointWaiters/Ipc.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultDeliverOnCoreChecked[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_eq ctx tgt\.endpoint" SeLe4n/Kernel/EndpointWaiters/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyRecvTransferOnCore[^\n]*(\n([ \t][^\n]*)?)*hGate : endpointFlowGate ctx epId \(ctx\.endpointLabelOf epId\) \(ctx\.threadLabelOf tid\)" SeLe4n/Kernel/EndpointWaiters/IpcReplyRecv.lean'
 run_check "INVARIANT" rg -n '^theorem ipcReachableUnder_default($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
 # MEASURED: the decisive case keeps the caller's gate passing and the donation
 # minted, and makes the RECEIVER-side fact false -- so the hypothesis the lift
