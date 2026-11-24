@@ -26,6 +26,10 @@ on every arm and on both surfaces (owner decision D31, "Match seL4").
   suspend writes objects in place and changes no table structure, as the
   `.bound` and `.donated` arms already declared.  The suspend's bound is
   seventeen (`lockSet_tcbSuspendOnCore_size_le_seventeen`).
+- **Carve pins.**  A carved thread is one heap cell and 32 bytes smaller
+  (24 cells, 2336 bytes: the origin code and the prebuilt `some tid` cell
+  are gone), and a carved context 8 bytes smaller (8 cells, 432 bytes).  The
+  heap gate's carve pins are moved to match.
 - **Lock ceiling.**  The widest `.replyRecv` footprint is one member narrower.
   `maxLockSetSize` stays at 32, since it is an upper bound.
 - **Docs.**  The spec's §8.12.15 is rewritten for the seL4 outcome; the claim

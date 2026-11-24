@@ -625,8 +625,12 @@ attributed by disassembling the traced image.
   9 scalar bytes fewer, 560 → 552 B), and the slot gets its own spare record
   (seL4-MCS's `tcbFaultHandler` CTE, so SetSpace's fault-endpoint copy writes
   over it in place: a `some` cell, a capability record and its target,
-  16 + 80 + 16 B) in a spare array of four entries (48 → 56 B).  The pin is
-  25 / 2368.
+  16 + 80 + 16 B) in a spare array of four entries (48 → 56 B).  The pin was
+  25 / 2368.  Since WS-SX SX12 (`v0.37.41`) the thread has no reservation
+  origin: the record loses its origin code and its prebuilt `some tid` cell
+  (two boxed fields, 552 → 536 B, and one 16 B cell fewer), and the context
+  loses its origin (one boxed field, its record 288 → 280 B).  The pins are
+  24 / 2336 for a thread and 8 / 432 for a context.
 - **Ghost tables** (UC2): the index row's cons cell (24 B), and a `some` cell
   (16 B) and an `RHEntry` (32 B) in each of the index-set and type tables
   (`withObjectIndexed`, `withObjectIndexSet`, `withObjectType`).  Gone since
