@@ -30,7 +30,8 @@ open SeLe4n.Kernel.Concurrency (CoreId)
 /-- **Every capability-only arm is a labelled step**: a lenders' frame, a
 removal whose pops discharge their owners at their own pre-states (the delete
 chain's finalisation, the suspend's cancel), or a creating bind whose label
-equation the entry's premise pack carries (`hBT`, `hBN`). -/
+equation its label gate admitted (`hBT`, `hBN`: the checked arm's admissions,
+`dispatchCapabilityOnlyChecked_lendersStep`). -/
 theorem dispatchCapabilityOnly_lendersStep (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)
     (executingCore : CoreId) (k : Kernel Unit) (st st' : SystemState)
@@ -38,6 +39,8 @@ theorem dispatchCapabilityOnly_lendersStep (ctx : LabelingContext)
     (hInv : st.objects.invExt) (hStep : k st = .ok ((), st'))
     (hBT : decoded.syscallId = .schedContextBind → ∀ scId vScId vTid,
       cap.target = .object scId → validateObjIdArg scId = .ok vScId →
+      resolveSchedContextBindNotificationCode tid
+        (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st = 0 →
       resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st
         = .ok vTid →
       ctx.threadLabelOf vTid.val = ctx.objectLabelOf vScId.val)
@@ -200,7 +203,7 @@ theorem dispatchCapabilityOnly_lendersStep (ctx : LabelingContext)
               | error e => simp only [hVal] at hStep; cases hStep
               | ok vScId =>
                   simp only [hVal] at hStep
-                  exact LendersStep.schedContextBind hInv hStep (hBT hSy _ vScId vThreadId hTgt hVal hRes)
+                  exact LendersStep.schedContextBind hInv hStep (hBT hSy _ vScId vThreadId hTgt hVal hN hRes)
     all_goals try cases hStep
   case schedContextUnbind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -529,29 +532,76 @@ theorem dispatchCapabilityOnly_lendersStep (ctx : LabelingContext)
     case object objId =>
       exact LendersStep.of_frame <| LendersFrame.pageTableUnmap hInv hStep
     all_goals try cases hStep
-/-- **The capability dispatch keeps the lenders' flow.** -/
+/-- **`SchedContext_Bind`'s label equations are its gate's** (WS-SX SX17, D35):
+a checked capability-only arm that succeeds on the bind passed
+`schedContextBindLabelGate`, which admits the thread, or the notification, the
+resolution answers only when it is labelled as the context. -/
+theorem dispatchCapabilityOnlyChecked_bindLabels {ctx : LabelingContext}
+    {decoded : SyscallDecodeResult} {tid : SeLe4n.ThreadId} {cap : Capability} {k : Kernel Unit}
+    {st : SystemState} {r : Unit × SystemState}
+    (h : dispatchCapabilityOnlyChecked ctx decoded.syscallId decoded.msgInfo.extraCaps tid cap k st
+      = .ok r) :
+    (decoded.syscallId = .schedContextBind → ∀ scId vScId vTid,
+      cap.target = .object scId → validateObjIdArg scId = .ok vScId →
+      resolveSchedContextBindNotificationCode tid
+        (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st = 0 →
+      resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st
+        = .ok vTid →
+      ctx.threadLabelOf vTid.val = ctx.objectLabelOf vScId.val) ∧
+    (decoded.syscallId = .schedContextBind → ∀ scId vScId n,
+      cap.target = .object scId → validateObjIdArg scId = .ok vScId →
+      resolveSchedContextBindNotificationCode tid
+        (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st = n + 1 →
+      ctx.objectLabelOf ⟨n⟩ = ctx.objectLabelOf vScId.val) := by
+  refine ⟨fun hSy scId vScId vTid hT hV hN hR => ?_, fun hSy scId vScId n hT hV hN => ?_⟩
+  · unfold dispatchCapabilityOnlyChecked at h
+    rw [hSy, hT] at h
+    rw [validateObjIdArg_ok_val scId vScId hV]
+    exact (schedContextBindLabelAdmits_eq (schedContextBindLabelGate_admits h hN hR)).symm
+  · unfold dispatchCapabilityOnlyChecked at h
+    rw [hSy, hT] at h
+    rw [validateObjIdArg_ok_val scId vScId hV]
+    exact ((twoWayLabelGate_iff_eq _ _).1 (schedContextBindLabelGate_admits_notification h hN)).symm
+
+/-- **A checked capability-only arm is a labelled step**: the arm it runs, the
+bind's label equations read off the gate it passed. -/
+theorem dispatchCapabilityOnlyChecked_lendersStep (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)
+    (executingCore : CoreId) (k : Kernel Unit) (st st' : SystemState)
+    (hArm : dispatchCapabilityOnly decoded cap tid executingCore = some k)
+    (hInv : st.objects.invExt)
+    (h : dispatchCapabilityOnlyChecked ctx decoded.syscallId decoded.msgInfo.extraCaps tid cap k st
+      = .ok ((), st')) :
+    LendersStep ctx st st' :=
+  dispatchCapabilityOnly_lendersStep ctx decoded cap tid executingCore k st st' hArm hInv
+    (dispatchCapabilityOnlyChecked_ok hArm h) (dispatchCapabilityOnlyChecked_bindLabels h).1
+    (dispatchCapabilityOnlyChecked_bindLabels h).2
+
+/-- **The capability dispatch keeps the lenders' flow**, given the waiters at
+the dispatcher's state. -/
 theorem dispatchWithCapChecked_lendersStage (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (ec : CoreId) (gate : SyscallGate)
     (cap : Capability) (st st' : SystemState)
     (P : LendersDispatchPremises ctx decoded tid ec gate cap st) (hCaller : CallerReady st tid)
+    (hW : endpointWaitersLabelsEqual ctx st)
     (h : dispatchWithCapChecked ctx decoded tid ec gate cap st = .ok ((), st')) :
     LendersStage ctx st st' :=
   dispatchWithCapChecked_lendersStage_of_capabilityOnly ctx decoded tid ec gate cap st st' P hCaller
-    (fun k hC hK => (dispatchCapabilityOnly_lendersStep ctx decoded cap tid ec k st st' hC
-      P.reach.objects_invExt (dispatchCapabilityOnlyChecked_ok hC hK) P.bindThread
-      P.bindNotification).stage) h
+    hW (fun k hC hK => (dispatchCapabilityOnlyChecked_lendersStep ctx decoded cap tid ec k st st' hC
+      P.reach.objects_invExt hK).stage) h
 
-/-- **The checked syscall dispatch keeps the lenders' flow.** -/
+/-- **The checked syscall dispatch keeps the lenders' flow**, given the waiters
+at the dispatcher's state. -/
 theorem dispatchSyscallChecked_lendersStage (ctx : LabelingContext) (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (ec : CoreId) (st st' : SystemState) (hInv : st.objects.invExt)
     (P : ∀ tcb, st.getObject? tid.toObjId = some (.tcb tcb) → ∀ cap,
       LendersDispatchPremises ctx decoded tid ec
         { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr,
           requiredRight := syscallRequiredRight decoded.syscallId } cap st)
-    (hCaller : CallerReady st tid)
+    (hCaller : CallerReady st tid) (hW : endpointWaitersLabelsEqual ctx st)
     (h : dispatchSyscallChecked ctx decoded tid ec st = .ok ((), st')) : LendersStage ctx st st' :=
-  dispatchSyscallChecked_lendersStage_of_capabilityOnly ctx decoded tid ec st st' hInv P hCaller
-    (fun _ cap k st'' P' hC hK => (dispatchCapabilityOnly_lendersStep ctx decoded cap tid ec k st
-      st'' hC hInv (dispatchCapabilityOnlyChecked_ok hC hK) P'.bindThread P'.bindNotification).stage) h
+  dispatchSyscallChecked_lendersStage_of_capabilityOnly ctx decoded tid ec st st' hInv P hCaller hW
+    (fun _ cap k st'' _ hC hK => (dispatchCapabilityOnlyChecked_lendersStep ctx decoded cap tid ec k
+      st st'' hC hInv hK).stage) h
 
 end SeLe4n.Kernel

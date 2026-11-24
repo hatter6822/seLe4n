@@ -18,8 +18,9 @@ lend of the dequeued `Call`'s context).  WS-SX SX16: the pop is a labelled step
 (`LendersStep`), its owner the reply's recorded caller, which the frame's
 lending labels give at the pre-reply state and the reply leg's links shrink
 carries (`calledFrame_labelEq`); the lend is a creating site whose label
-equation the premise pack carries (`ReplyRecvLendersPremises`; WS-SX SX17
-discharges it).  The chain facts the dispatch reads are premises
+equation the receive leg's gate and the dequeued caller's wait give (WS-SX
+SX17, `endpointReceiveDualWithCapsOnCore_dequeued_labelEq`), the waiters and
+the queue heads carried from the reply-receive's state to the receive leg's.  The chain facts the dispatch reads are premises
 (`docs/REGISTERED_DEBT.md` table C, "`ipcReachable` is not carried across a trace
 of kernel entries", owner WS-PK).
 -/
@@ -181,11 +182,9 @@ theorem replyRecvPostReceiveDonation_preserves_lendingLabelsEqual {ctx : Labelin
 /-- **What the reply-receive's answering leg reads at the states it runs
 from**: the donation chain's shape where the receive leg runs (after seL4-MCS's
 return), the chain facts where the lend runs (after the receive leg, and after
-the holder's deschedule where the pop unbound one), and the lend's label
-equation (a creating site: the receiver labelled as the `Call` it dequeues;
-WS-SX SX17 discharges it).  Premises read off those states
-(`docs/REGISTERED_DEBT.md` table C, owner WS-PK). -/
-def ReplyRecvLendersPremises (ctx : LabelingContext) (st : SystemState)
+the holder's deschedule where the pop unbound one).  Premises read off those
+states (`docs/REGISTERED_DEBT.md` table C, owner WS-PK). -/
+def ReplyRecvLendersPremises (st : SystemState)
     (answer : Option Architecture.FaultReplyOutcome) (epId : SeLe4n.ObjId)
     (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
     (msg : IpcMessage) (grant : Bool) (c : CoreId) : Prop :=
@@ -196,25 +195,24 @@ def ReplyRecvLendersPremises (ctx : LabelingContext) (st : SystemState)
       ∀ st2 res, endpointReceiveDualWithCapsOnCore epId tid (some rid) c
           (receiveReturnSchedContext true st1p tid) = (st2, res) →
         LendersPremises st2 ∧
-        (∀ sc holder, ret = some (sc, holder) →
-          LendersPremises (replyRecvHolderDeschedule tid holder st2)) ∧
-        ∀ nextThread summ sgi', res = .ok (nextThread, summ, sgi') →
-          rendezvousDequeuedCall st2 nextThread = true →
-          ∀ s, callDonationSchedContext? st2 nextThread tid = some s →
-            ctx.threadLabelOf tid = ctx.threadLabelOf nextThread
+        ∀ sc holder, ret = some (sc, holder) →
+          LendersPremises (replyRecvHolderDeschedule tid holder st2)
 
 /-- **The reply-receive's answering leg carries equal lending labels** (seL4-MCS
 `handleReplyRecv`): the reply leg, the pop (a labelled step whose owner is the
 reply's recorded caller, read at the pre-reply state through
 `calledFrame_labelEq` and carried across the reply leg's links shrink), the
-reply's capability transfer, the return, the receive leg, the lend, the
-priority hand-off and the answer to the replied-to caller. -/
+reply's capability transfer, the return, the receive leg, the lend (its label
+equation from the receive gate `hG` and the waiters `hW`), the priority
+hand-off and the answer to the replied-to caller. -/
 theorem endpointReplyRecvAnsweringOnCore_lendersStage {ctx : LabelingContext} {lend : Bool}
     {answer : Option Architecture.FaultReplyOutcome} {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool}
     {c : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
     (hInv : st.objects.invExt) (hC : replyAnsweredCaller? st rid = some prevCaller)
-    (hP : ReplyRecvLendersPremises ctx st answer epId tid rid prevCaller msg grant c)
+    (hQ : queueHeadBlockedConsistent st) (hReady : ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
+    (hW : endpointWaitersLabelsEqual ctx st) (hG : ctx.threadLabelOf tid = ctx.endpointLabelOf epId)
+    (hP : ReplyRecvLendersPremises st answer epId tid rid prevCaller msg grant c)
     (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant c st lend
       = .ok (summary, st')) :
     LendersStage ctx st st' := by
@@ -223,14 +221,16 @@ theorem endpointReplyRecvAnsweringOnCore_lendersStage {ctx : LabelingContext} {l
   dsimp only at h
   have A := LendersFrame.endpointReplyOnCore (replier := tid) (target := prevCaller) (msg := msg)
     (c := c) hInv
-  revert h A
+  have AW := EndpointWaitersFrame.endpointReplyOnCore (replier := tid) (target := prevCaller)
+    (msg := msg) (c := c) hInv
+  revert h A AW
   cases hR : endpointReplyOnCore tid prevCaller msg c st with
   | mk st1 res1 =>
   cases res1 with
   | error _ => intro h; cases h
   | ok sgi =>
-  intro h A
-  dsimp only at h A
+  intro h A AW
+  dsimp only at h A AW
   have hP1 := hP st1 sgi hR
   split at h
   · cases h
@@ -249,6 +249,12 @@ theorem endpointReplyRecvAnsweringOnCore_lendersStage {ctx : LabelingContext} {l
   have FR := LendersStep.receiveReturnSchedContext (ctx := ctx) true st1p tid F1.invExt
   have S1 : lendingLabelsEqual ctx (receiveReturnSchedContext true st1p tid) :=
     FR.stage (F1.stage (F0.stage (A.stage hF)))
+  have FW0 := RecordsFrame.replyRecvPopDonation AW.invExt hPop
+  have FW1 := FW0.trans (RecordsFrame.receiveTransferCaps FW0.invExt hX')
+  have hWR := (EndpointWaitersFrame.receiveReturnSchedContext true st1p tid FW1.invExt).stage
+    ((EndpointWaitersFrame.of_frame FW1).stage (AW.stage hW))
+  obtain ⟨hQp, hRp, -⟩ := replyRecvReceiveLegFacts hInv hQ hR hPop hX hReady
+  have hQR := (receiveReturnSchedContext_receiveLegFacts true st1p tid FW1.invExt hQp hRp).1
   revert h
   cases hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) c
       (receiveReturnSchedContext true st1p tid) with
@@ -263,12 +269,13 @@ theorem endpointReplyRecvAnsweringOnCore_lendersStage {ctx : LabelingContext} {l
   · cases h
   rename_i st3 hPost
   cases h
-  obtain ⟨hP3, hPH, hEq⟩ := hP2 st2 _ hRecv
+  obtain ⟨hP3, hPH⟩ := hP2 st2 _ hRecv
+  have hEq := endpointReceiveDualWithCapsOnCore_dequeued_labelEq hQR hWR.1 hG hRecv
   have h1 := endpointReceiveDualWithCapsOnCore_preserves_lendingLabelsEqual epId tid (some rid) c
     _ FR.invExt hChainR S1
   rw [hRecv] at h1
   have h2 := replyRecvPostReceiveDonation_preserves_lendingLabelsEqual hP3 hPH h1
-    (fun _ hCall s hs => hEq nextThread _ _ rfl hCall s hs) hPost
+    (fun _ _ _ _ => hEq) hPost
   have hI3 := (RecordsFrame.replyRecvPostReceiveDonation hP3.invExt hPost).invExt
   have F4 := LendersFrame.applyReceiveLegPipHandoff st3 tid nextThread
     ((recordedReplyServer? st prevCaller).getD tid) c hI3
@@ -281,13 +288,15 @@ theorem replyRecvTransferOnCore_lendersStage {ctx : LabelingContext} {lend : Boo
     {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool} {c : CoreId}
     {st st' : SystemState} {summary : CapTransferSummary}
     (hInv : st.objects.invExt) (hC : replyAnsweredCaller? st rid = some prevCaller)
-    (hP : ReplyRecvLendersPremises ctx st (replyRecvCallerFaultAnswer? st prevCaller label msg)
+    (hQ : queueHeadBlockedConsistent st) (hReady : ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
+    (hW : endpointWaitersLabelsEqual ctx st) (hG : ctx.threadLabelOf tid = ctx.endpointLabelOf epId)
+    (hP : ReplyRecvLendersPremises st (replyRecvCallerFaultAnswer? st prevCaller label msg)
       epId tid rid prevCaller
       (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant c)
     (h : replyRecvTransferOnCore epId tid rid prevCaller label msg grant c st lend
       = .ok (summary, st')) :
     LendersStage ctx st st' := by
   unfold replyRecvTransferOnCore at h
-  exact endpointReplyRecvAnsweringOnCore_lendersStage hInv hC hP h
+  exact endpointReplyRecvAnsweringOnCore_lendersStage hInv hC hQ hReady hW hG hP h
 
 end SeLe4n.Kernel
