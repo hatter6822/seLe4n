@@ -89,8 +89,14 @@ theorem RecordsStep.storeReadyThenInactive {st st2 : SystemState} {t : SeLe4n.Th
       exact H tcb' hT hF
 
 /-- A frame keeps a thread unparked. -/
+theorem NotParkedAt.coreFrame {st st' : SystemState} (F : RecordsCoreFrame st st')
+    {t : SeLe4n.ThreadId} (h : NotParkedAt st t) : NotParkedAt st' t := fun x hx => by
+  obtain ⟨y, hy, hv⟩ := F.getTcb?_view hx
+  rw [← (TcbRecordView.core_eq hv).2.1]; exact h y hy
+
+/-- A frame keeps a thread unparked. -/
 theorem NotParkedAt.frame {st st' : SystemState} (F : RecordsFrame st st') {t : SeLe4n.ThreadId}
-    (h : NotParkedAt st t) : NotParkedAt st' t := F.notParked h
+    (h : NotParkedAt st t) : NotParkedAt st' t := NotParkedAt.coreFrame F.core h
 
 namespace RecordsStep
 

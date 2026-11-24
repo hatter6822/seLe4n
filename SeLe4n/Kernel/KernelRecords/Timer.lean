@@ -232,6 +232,9 @@ namespace RecordsStage
 theorem of_frameK {st st' : SystemState} (F : st.objects.invExt → RecordsFrame st st') :
     RecordsStage st st' := fun h => (F (KernelRecords.objects_invExt h)).preserves h
 
+theorem of_coreFrameK {st st' : SystemState} (F : st.objects.invExt → RecordsCoreFrame st st') :
+    RecordsStage st st' := fun h => (F (KernelRecords.objects_invExt h)).preserves h
+
 /-- **A timeout keeps the records.** -/
 theorem timeoutThread {epId : SeLe4n.ObjId} {isReceiveQ : Bool} {tid : SeLe4n.ThreadId}
     {ec : CoreId} {st : SystemState} {r : SystemState × Option (CoreId × Concurrency.SgiKind)}

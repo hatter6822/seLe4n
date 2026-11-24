@@ -533,7 +533,7 @@ theorem dispatchCapabilityOnly_recordsStage
               | error e => simp only [hCap2] at hStep; cases hStep
               | ok notifId =>
                   simp only [hCap2] at hStep
-                  exact .of_frameK fun hI => RecordsFrame.bindNotification hI hStep
+                  exact .of_coreFrameK fun hI => RecordsCoreFrame.bindNotification hI hStep
     all_goals try cases hStep
   case tcbUnbindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -545,7 +545,7 @@ theorem dispatchCapabilityOnly_recordsStage
           obtain ⟨u, stU⟩ := pair; cases u
           simp only [hUn] at hStep
           cases hStep
-          exact .of_frameK fun hI => RecordsFrame.unbindNotification hI hUn
+          exact .of_coreFrameK fun hI => RecordsCoreFrame.unbindNotification hI hUn
     all_goals try cases hStep
   case tcbSuspend =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

@@ -158,9 +158,17 @@ theorem endpointQueueRemoveDual {st st' : SystemState} {endpointId : SeLe4n.ObjI
                         have f3 := storeEndpointOver hObj f2 hStore2
                         exact f3.trans (storeTcbQueueLinks f3.invExt hFinal)
 
+end RecordsFrame
+
+/-! The writes of a notification queue and of a thread's notification links keep
+every core view; the queue's ends and the links are the notification label
+coherence's to carry. -/
+
+namespace RecordsCoreFrame
+
 /-- A step that rewrites notification-queue links only. -/
 theorem of_ntfnLinksRewritten {st s : SystemState} (h : ntfnLinksRewritten st s) :
-    RecordsFrame st s := by
+    RecordsCoreFrame st s := by
   obtain ⟨hEq, hInv, hK⟩ := h
   refine ⟨fun k => ?_, by rw [hEq], hInv, by rw [hEq]⟩
   rcases hK k with e | ⟨t, t', ht, ht', np, nn, rfl⟩
@@ -168,13 +176,14 @@ theorem of_ntfnLinksRewritten {st s : SystemState} (h : ntfnLinksRewritten st s)
   · rw [ht, ht']; rfl
 
 theorem detachNtfnHead (st : SystemState) (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) : RecordsFrame st (_root_.SeLe4n.Kernel.detachNtfnHead st head next) :=
+    (hInv : st.objects.invExt) :
+    RecordsCoreFrame st (_root_.SeLe4n.Kernel.detachNtfnHead st head next) :=
   of_ntfnLinksRewritten (ntfnLinksRewritten_unlinkNtfnNeighbours
     (ntfnLinksRewritten_clearNtfnLinks (ntfnLinksRewritten.refl hInv) head) none next)
 
 theorem linkNtfnWaiter {st st' : SystemState} {w : SeLe4n.ThreadId} {tail : Option SeLe4n.ThreadId}
     (hInv : st.objects.invExt) (h : _root_.SeLe4n.Kernel.linkNtfnWaiter st w tail = .ok st') :
-    RecordsFrame st st' := by
+    RecordsCoreFrame st st' := by
   unfold _root_.SeLe4n.Kernel.linkNtfnWaiter at h
   split at h
   · cases h
@@ -191,18 +200,24 @@ theorem linkNtfnWaiter {st st' : SystemState} {w : SeLe4n.ThreadId} {tail : Opti
 /-- A notification stored over a notification. -/
 theorem storeNotificationAt {st st' : SystemState} {nid : SeLe4n.ObjId} {n n' : Notification}
     (hInv : st.objects.invExt) (hN : st.getNotification? nid = some n)
-    (h : SeLe4n.Model.storeObject nid (.notification n') st = .ok ((), st')) : RecordsFrame st st' :=
+    (h : SeLe4n.Model.storeObject nid (.notification n') st = .ok ((), st')) :
+    RecordsCoreFrame st st' :=
   storeNotification hInv ((SystemState.getNotification?_eq_some_iff _ _ _).mp hN) h
 
-end RecordsFrame
+/-- A core frame keeps a thread ready. -/
+theorem ready {st st' : SystemState} (F : RecordsCoreFrame st st') {t : SeLe4n.ThreadId}
+    (h : ∀ x, st.getTcb? t = some x → x.ipcState = .ready) :
+    ∀ x, st'.getTcb? t = some x → x.ipcState = .ready := fun x hx => by
+  obtain ⟨y, hy, hv⟩ := F.getTcb?_view hx
+  rw [← (TcbRecordView.core_eq hv).2.1]; exact h y hy
+
+end RecordsCoreFrame
 
 /-- A frame keeps a thread ready. -/
 theorem RecordsFrame.ready {st st' : SystemState} (F : RecordsFrame st st') {t : SeLe4n.ThreadId}
     (h : ∀ x, st.getTcb? t = some x → x.ipcState = .ready) :
-    ∀ x, st'.getTcb? t = some x → x.ipcState = .ready := fun x hx => by
-  obtain ⟨y, hy, hv⟩ := F.getTcb?_view hx
-  have : y.ipcState = x.ipcState := congrArg TcbRecordView.ipc hv
-  rw [← this]; exact h y hy
+    ∀ x, st'.getTcb? t = some x → x.ipcState = .ready :=
+  F.core.ready h
 
 /-- The head of a notification queue is not parked. -/
 theorem notificationHead_notParked {st : SystemState} (hN : notificationWaiterConsistent st)
@@ -228,24 +243,24 @@ theorem notificationSignalOnCore {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge} {c 
       | error _ => exact refl hInv
       | ok p =>
         obtain ⟨⟨⟩, st1⟩ := p
-        have F1 := RecordsFrame.storeNotificationAt hInv hG hS
+        have F1 := RecordsCoreFrame.storeNotificationAt hInv hG hS
         dsimp only
         split
         · exact refl hInv
         · rename_i st2 hT
           have S2 := storeTcbSignalWoken F1.invExt hT
-            ((notificationHead_notParked hN hG hH).frame F1)
+            ((notificationHead_notParked hN hG hH).coreFrame F1)
           obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hT
-          have F3 := RecordsFrame.detachNtfnHead st2 w (ntfnSuccessor? st w) S2.invExt
+          have F3 := RecordsCoreFrame.detachNtfnHead st2 w (ntfnSuccessor? st w) S2.invExt
           have F4 := RecordsFrame.wakeThread _ w c F3.invExt (F3.ready (fun y hy => by
             rw [hx] at hy; cases hy; simp [TCB.signalWoken]))
-          exact (of_frame F1).trans (S2.trans ((of_frame F3).trans (of_frame F4)))
+          exact (of_coreFrame F1).trans (S2.trans ((of_coreFrame F3).trans (of_frame F4)))
     · dsimp only
       cases hS : SeLe4n.Model.storeObject nid _ st with
       | error _ => exact refl hInv
       | ok p =>
         obtain ⟨⟨⟩, st1⟩ := p
-        exact of_frame (RecordsFrame.storeNotificationAt hInv hG hS)
+        exact of_coreFrame (RecordsCoreFrame.storeNotificationAt hInv hG hS)
   · split <;> exact refl hInv
 
 theorem notificationSignalBoundOnCore {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge} {c : CoreId}
@@ -300,12 +315,12 @@ theorem notificationWaitOnCore {nid : SeLe4n.ObjId} {waiter : SeLe4n.ThreadId} {
       split
       · exact refl hInv
       · rename_i st1 hS
-        have F1 := RecordsFrame.storeNotificationAt hInv hG hS
+        have F1 := RecordsCoreFrame.storeNotificationAt hInv hG hS
         split
         · exact refl hInv
         · rename_i st2 hT
-          exact (of_frame F1).trans (storeTcbIpcState F1.invExt hT
-            (fun x hx => .inl (hW.frame F1 x hx)))
+          exact (of_coreFrame F1).trans (storeTcbIpcState F1.invExt hT
+            (fun x hx => .inl (hW.coreFrame F1 x hx)))
     · split
       · exact refl hInv
       · rename_i tcb hL
@@ -315,7 +330,7 @@ theorem notificationWaitOnCore {nid : SeLe4n.ObjId} {waiter : SeLe4n.ThreadId} {
           split
           · exact refl hInv
           · rename_i st1 hS
-            have F1 := RecordsFrame.storeNotificationAt hInv hG hS
+            have F1 := RecordsCoreFrame.storeNotificationAt hInv hG hS
             split
             · exact refl hInv
             · rename_i st2 hT
@@ -341,9 +356,9 @@ theorem notificationWaitOnCore {nid : SeLe4n.ObjId} {waiter : SeLe4n.ThreadId} {
                 split
                 · exact refl hInv
                 · rename_i st4 hLink
-                  have F3 := RecordsFrame.linkNtfnWaiter S2.invExt hLink
+                  have F3 := RecordsCoreFrame.linkNtfnWaiter S2.invExt hLink
                   have F4 := RecordsFrame.removeRunnableOnCore _ waiter c F3.invExt
-                  exact (of_frame F1).trans (S2.trans ((of_frame F3).trans (of_frame F4)))
+                  exact (of_coreFrame F1).trans (S2.trans ((of_coreFrame F3).trans (of_frame F4)))
   · split <;> exact refl hInv
 
 theorem notificationWaitCrossCoreDispatchChecked {ctx : LabelingContext} {nid : SeLe4n.ObjId}

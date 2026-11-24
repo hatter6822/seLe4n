@@ -37,7 +37,7 @@ namespace TcbStaysParked
 theorem of_view {x y : TCB} (h : y.recordView = x.recordView) : TcbStaysParked x y := by
   intro hF H
   simp only [TCB.recordView, TcbRecordView.mk.injEq] at h
-  obtain ⟨-, hi, hs, hf⟩ := h
+  obtain ⟨-, hi, hs, hf, -, -⟩ := h
   have := H (hf ▸ hF)
   unfold TCB.faultParked at this ⊢
   rw [hi, hs]; exact this
@@ -137,11 +137,13 @@ theorem storeEndpoint {st st' : SystemState} {eid : SeLe4n.ObjId} {ep ep' : Endp
     (h : SeLe4n.Model.storeObject eid (.endpoint ep') st = .ok ((), st')) : RecordsFrame st st' :=
   storeObject hInv h (by rw [hObj]; rfl) (fun _ h => by cases h)
 
-/-- A notification stored over a notification. -/
+/-- A notification stored over a notification, keeping its bound thread and its
+queue's ends. -/
 theorem storeNotification {st st' : SystemState} {nid : SeLe4n.ObjId} {n n' : Notification}
     (hInv : st.objects.invExt) (hObj : st.objects[nid]? = some (.notification n))
-    (h : SeLe4n.Model.storeObject nid (.notification n') st = .ok ((), st')) : RecordsFrame st st' :=
-  storeObject hInv h (by rw [hObj]; rfl) (fun _ h => by cases h)
+    (h : SeLe4n.Model.storeObject nid (.notification n') st = .ok ((), st'))
+    (hV : n'.recordView = n.recordView) : RecordsFrame st st' :=
+  storeObject hInv h (by rw [hObj]; simp [hV]) (fun _ h => by cases h)
 
 /-- A reply stored over a reply. -/
 theorem storeReply {st st' : SystemState} {rid : SeLe4n.ObjId} {r r' : Reply}

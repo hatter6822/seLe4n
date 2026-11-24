@@ -81,7 +81,7 @@ theorem notificationWaitOnCore (nid : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (
                 split
                 · exact refl _
                 · rename_i st4 hLink
-                  have I3 := (RecordsFrame.linkNtfnWaiter I2 hLink).invExt
+                  have I3 := (RecordsCoreFrame.linkNtfnWaiter I2 hLink).invExt
                   have K3 : chainObjectsKept s st4 := by
                     unfold linkNtfnWaiter at hLink
                     split at hLink

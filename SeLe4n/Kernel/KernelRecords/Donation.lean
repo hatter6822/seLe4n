@@ -231,7 +231,9 @@ theorem propagatePipChainCrossCore (st : SystemState) (t : SeLe4n.ThreadId) (ec 
     unfold TCB.recordView
     rw [hR, TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hw,
       TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState hw,
-      TCB.proj_eq_of_withoutRunLinks_eq (fun x => x.pendingFault.isSome) hw]
+      TCB.proj_eq_of_withoutRunLinks_eq (fun x => x.pendingFault.isSome) hw,
+      TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnPrevCode hw,
+      TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnNextCode hw]
 
 /-- A store of an object with no record view over a slot with none. -/
 theorem storeObject_noView {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}

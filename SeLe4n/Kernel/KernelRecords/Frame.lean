@@ -48,16 +48,20 @@ open SeLe4n.Model
 -- ============================================================================
 
 /-- What the carried records read of one TCB: its reply view, its IPC state, its
-thread state, and whether it carries a fault. -/
+thread state, whether it carries a fault, and its two notification-queue links
+(as their scalar codes), which notification label coherence reads beside the
+IPC state. -/
 structure TcbRecordView where
   reply : ReplyView
   ipc : ThreadIpcState
   state : ThreadState
   faulted : Bool
+  ntfnPrev : Nat
+  ntfnNext : Nat
 
 /-- A TCB's record view. -/
 def _root_.SeLe4n.Model.TCB.recordView (t : TCB) : TcbRecordView :=
-  ⟨t.replyView, t.ipcState, t.threadState, t.pendingFault.isSome⟩
+  ⟨t.replyView, t.ipcState, t.threadState, t.pendingFault.isSome, t.ntfnPrevCode, t.ntfnNextCode⟩
 
 /-- What the address-space records read of one VSpace root: its ASID, its
 translations and its mapping epochs (the root's half of
@@ -70,23 +74,42 @@ abbrev RootView :=
 def rootViewOf (o : Option KernelObject) : Option RootView :=
   o.bind fun x => x.mappingView.1
 
-/-- What the carried records read of one object slot: a TCB's record view, or a
-VSpace root's ASID, translations and epochs; nothing of any other object. -/
-def recordViewOf : Option KernelObject → Option (TcbRecordView ⊕ RootView)
+/-- What the carried records read of one notification: its bound thread, its
+wait queue's head and its tail, as their scalar codes (the fields notification
+label coherence reads). -/
+abbrev NtfnRecordView := Nat × Nat × Nat
+
+/-- A notification's record view. -/
+def _root_.SeLe4n.Model.Notification.recordView (n : Notification) : NtfnRecordView :=
+  (n.boundTCBCode, n.waitHeadCode, n.waitTailCode)
+
+/-- What the carried records read of one object slot: a TCB's record view, a
+VSpace root's ASID, translations and epochs, or a notification's record view;
+nothing of any other object. -/
+def recordViewOf : Option KernelObject → Option (TcbRecordView ⊕ RootView ⊕ NtfnRecordView)
   | some (.tcb t) => some (.inl t.recordView)
-  | some (.vspaceRoot r) => some (.inr (r.asid, r.mappings, r.mappingEpochs))
+  | some (.vspaceRoot r) => some (.inr (.inl (r.asid, r.mappings, r.mappingEpochs)))
+  | some (.notification n) => some (.inr (.inr n.recordView))
   | _ => none
 
 @[simp] theorem recordViewOf_tcb (t : TCB) :
     recordViewOf (some (.tcb t)) = some (.inl t.recordView) := rfl
 
 @[simp] theorem recordViewOf_vspaceRoot (r : VSpaceRoot) :
-    recordViewOf (some (.vspaceRoot r)) = some (.inr (r.asid, r.mappings, r.mappingEpochs)) :=
+    recordViewOf (some (.vspaceRoot r)) = some (.inr (.inl (r.asid, r.mappings, r.mappingEpochs))) :=
   rfl
+
+@[simp] theorem recordViewOf_notification (n : Notification) :
+    recordViewOf (some (.notification n)) = some (.inr (.inr n.recordView)) := rfl
+
+/-- The address-space half of a record view. -/
+def recordRootView? : TcbRecordView ⊕ RootView ⊕ NtfnRecordView → Option RootView
+  | .inr (.inl r) => some r
+  | _ => none
 
 /-- The address-space view is read off the record view. -/
 theorem rootViewOf_eq_bind (o : Option KernelObject) :
-    rootViewOf o = (recordViewOf o).bind Sum.getRight? := by
+    rootViewOf o = (recordViewOf o).bind recordRootView? := by
   cases o with
   | none => rfl
   | some x => cases x <;> rfl
@@ -206,14 +229,14 @@ theorem tcb_of_view {o : Option KernelObject} {v : TcbRecordView}
     cases o <;> simp only [recordViewOf, Option.some.injEq, reduceCtorEq, Sum.inl.injEq] at h
     exact ⟨_, rfl, h⟩
 
-/-- A slot whose view is a root's holds a root. -/
-theorem root_of_view {o : Option KernelObject} {v : RootView}
-    (h : recordViewOf o = some (.inr v)) : ∃ r, o = some (.vspaceRoot r) := by
+/-- A slot whose view is no TCB's holds no reply view: it holds a root or a
+notification. -/
+theorem objReplyView_none_of_view {o : Option KernelObject} {v : RootView ⊕ NtfnRecordView}
+    (h : recordViewOf o = some (.inr v)) : objReplyView o = none := by
   cases o with
   | none => cases h
   | some o =>
-    cases o <;> simp only [recordViewOf, Option.some.injEq, reduceCtorEq] at h
-    exact ⟨_, rfl⟩
+    cases o <;> simp only [recordViewOf, Option.some.injEq, reduceCtorEq] at h <;> rfl
 
 /-- The reply view of a slot is read off its record view. -/
 theorem objReplyView_eq_of_view {a b : Option KernelObject}
@@ -240,9 +263,7 @@ theorem objReplyView_eq_of_view {a b : Option KernelObject}
         have := congrArg TcbRecordView.reply (hva.trans hvb.symm); exact this
       simp [objReplyView, this]
     | inr r =>
-      obtain ⟨_, rfl⟩ := root_of_view ha
-      obtain ⟨_, rfl⟩ := root_of_view h.symm
-      rfl
+      rw [objReplyView_none_of_view ha, objReplyView_none_of_view h.symm]
 
 end KernelRecords
 
@@ -320,7 +341,7 @@ theorem faultRecordParked {st st' : SystemState} (F : RecordsFrame st st')
   intro t tcb' hT hF
   obtain ⟨tcb, hT0, hv⟩ := F.getTcb?_view hT
   simp only [TCB.recordView, TcbRecordView.mk.injEq] at hv
-  obtain ⟨-, hIpc, hTs, hFl⟩ := hv
+  obtain ⟨-, hIpc, hTs, hFl, -, -⟩ := hv
   rw [← hIpc, ← hTs]
   exact h t tcb hT0 (hFl ▸ hF)
 
@@ -332,6 +353,136 @@ theorem preserves {st st' : SystemState} (F : RecordsFrame st st')
    F.faultRecordParked h.2.2.1, h.2.2.2.of_eq F.width⟩
 
 end RecordsFrame
+
+-- ============================================================================
+-- §2b  The core frame: the records' reads without the notification queues
+-- ============================================================================
+
+/-- A TCB's record view without its notification-queue links. -/
+def TcbRecordView.core (v : TcbRecordView) : TcbRecordView :=
+  { v with ntfnPrev := 0, ntfnNext := 0 }
+
+/-- A record view without the notification queues: a TCB's without its links, a
+notification's erased. -/
+def recordCoreView : TcbRecordView ⊕ RootView ⊕ NtfnRecordView →
+    TcbRecordView ⊕ RootView ⊕ NtfnRecordView
+  | .inl v => .inl v.core
+  | .inr (.inl r) => .inr (.inl r)
+  | .inr (.inr _) => .inr (.inr (0, 0, 0))
+
+/-- **What kernel records read of one slot**: its record view without the
+notification queues (the TCB's two links, the notification's bound thread and
+queue ends), which only notification label coherence reads. -/
+def recordCoreViewOf (o : Option KernelObject) : Option (TcbRecordView ⊕ RootView ⊕ NtfnRecordView) :=
+  (recordViewOf o).map recordCoreView
+
+@[simp] theorem recordCoreViewOf_tcb (t : TCB) :
+    recordCoreViewOf (some (.tcb t)) = some (.inl t.recordView.core) := rfl
+
+@[simp] theorem recordCoreViewOf_notification (n : Notification) :
+    recordCoreViewOf (some (.notification n)) = some (.inr (.inr (0, 0, 0))) := rfl
+
+theorem recordCoreViewOf_congr {a b : Option KernelObject} (h : recordViewOf a = recordViewOf b) :
+    recordCoreViewOf a = recordCoreViewOf b := by
+  unfold recordCoreViewOf; rw [h]
+
+/-- The address-space view is read off the core view. -/
+theorem rootViewOf_eq_core_bind (o : Option KernelObject) :
+    rootViewOf o = (recordCoreViewOf o).bind recordRootView? := by
+  cases o with
+  | none => rfl
+  | some x => cases x <;> rfl
+
+/-- The reply view of a slot is read off its core view. -/
+theorem objReplyView_eq_of_coreView {a b : Option KernelObject}
+    (h : recordCoreViewOf a = recordCoreViewOf b) : objReplyView a = objReplyView b := by
+  cases a with
+  | none =>
+    cases b with
+    | none => rfl
+    | some y => cases y <;> simp_all [recordCoreViewOf, recordViewOf, objReplyView, recordCoreView]
+  | some x =>
+    cases b with
+    | none => cases x <;> simp_all [recordCoreViewOf, recordViewOf, objReplyView, recordCoreView]
+    | some y =>
+      cases x <;> cases y <;>
+        simp_all [recordCoreViewOf, recordViewOf, objReplyView, recordCoreView, TCB.recordView,
+          TcbRecordView.core]
+
+/-- **A step that keeps the kernel records' reads**: every slot's core view,
+the ASID table and the machine's physical-address width, with the store's
+invariant.  The frame of a write to a notification queue or a thread's
+notification links (`RecordsFrame` keeps those too). -/
+structure RecordsCoreFrame (st st' : SystemState) : Prop where
+  views : ∀ k : SeLe4n.ObjId, recordCoreViewOf st'.objects[k]? = recordCoreViewOf st.objects[k]?
+  asid : st'.asidTable = st.asidTable
+  invExt : st'.objects.invExt
+  width : st'.machine.physicalAddressWidth = st.machine.physicalAddressWidth
+
+/-- A frame keeps the core views. -/
+theorem RecordsFrame.core {st st' : SystemState} (F : RecordsFrame st st') :
+    RecordsCoreFrame st st' :=
+  ⟨fun k => recordCoreViewOf_congr (F.views k), F.asid, F.invExt, F.width⟩
+
+namespace RecordsCoreFrame
+
+theorem refl {st : SystemState} (hInv : st.objects.invExt) : RecordsCoreFrame st st :=
+  ⟨fun _ => rfl, rfl, hInv, rfl⟩
+
+theorem trans {a b c : SystemState} (h₁ : RecordsCoreFrame a b) (h₂ : RecordsCoreFrame b c) :
+    RecordsCoreFrame a c :=
+  ⟨fun k => (h₂.views k).trans (h₁.views k), h₂.asid.trans h₁.asid, h₂.invExt,
+    h₂.width.trans h₁.width⟩
+
+/-- The core record views of every thread are the frame's. -/
+theorem getTcb?_view {st st' : SystemState} (F : RecordsCoreFrame st st') {t : SeLe4n.ThreadId}
+    {tcb' : TCB} (h : st'.getTcb? t = some tcb') :
+    ∃ tcb, st.getTcb? t = some tcb ∧ tcb.recordView.core = tcb'.recordView.core := by
+  have hO := (SystemState.getTcb?_eq_some_iff _ _ _).mp h
+  have hv := F.views t.toObjId
+  rw [hO, recordCoreViewOf_tcb] at hv
+  cases hT : st.objects[t.toObjId]? with
+  | none => rw [hT] at hv; cases hv
+  | some o =>
+    rw [hT] at hv
+    cases o <;> simp [recordCoreViewOf, recordViewOf, recordCoreView] at hv
+    exact ⟨_, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT, hv.symm⟩
+
+/-- The kernel records' reads of a thread are the core view's. -/
+theorem _root_.SeLe4n.Kernel.TcbRecordView.core_eq {x y : TCB}
+    (h : x.recordView.core = y.recordView.core) :
+    x.replyView = y.replyView ∧ x.ipcState = y.ipcState ∧ x.threadState = y.threadState ∧
+      x.pendingFault.isSome = y.pendingFault.isSome := by
+  simp only [TCB.recordView, TcbRecordView.core, TcbRecordView.mk.injEq] at h
+  exact ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1⟩
+
+theorem replyViews {st st' : SystemState} (F : RecordsCoreFrame st st') :
+    st'.replyViews = st.replyViews := by
+  funext k
+  unfold SystemState.replyViews SystemState.getObject?
+  simp only [RHTable_getElem?_eq_get?]
+  exact objReplyView_eq_of_coreView (F.views k)
+
+theorem rootViews {st st' : SystemState} (F : RecordsCoreFrame st st') (k : SeLe4n.ObjId) :
+    rootViewOf st'.objects[k]? = rootViewOf st.objects[k]? := by
+  rw [rootViewOf_eq_core_bind, rootViewOf_eq_core_bind, F.views k]
+
+theorem faultRecordParked {st st' : SystemState} (F : RecordsCoreFrame st st')
+    (h : st.faultRecordParked) : st'.faultRecordParked := by
+  intro t tcb' hT hF
+  obtain ⟨tcb, hT0, hv⟩ := F.getTcb?_view hT
+  obtain ⟨-, hIpc, hTs, hFl⟩ := TcbRecordView.core_eq hv
+  rw [← hIpc, ← hTs]
+  exact h t tcb hT0 (hFl ▸ hF)
+
+/-- **A step that keeps the kernel records' reads keeps the records.** -/
+theorem preserves {st st' : SystemState} (F : RecordsCoreFrame st st')
+    (h : st.kernelRecordsSound) : st'.kernelRecordsSound :=
+  ⟨teardownWellFormed_of_rootViews F.invExt F.asid F.rootViews h.1,
+   SystemState.replyWaitersConsistent.of_views F.replyViews h.2.1,
+   F.faultRecordParked h.2.2.1, h.2.2.2.of_eq F.width⟩
+
+end RecordsCoreFrame
 
 -- ============================================================================
 -- §3  The stage
@@ -349,6 +500,9 @@ theorem trans {a b c : SystemState} (h₁ : RecordsStage a b) (h₂ : RecordsSta
     RecordsStage a c := h₂ ∘ h₁
 
 theorem of_frame {st st' : SystemState} (F : RecordsFrame st st') : RecordsStage st st' :=
+  F.preserves
+
+theorem of_coreFrame {st st' : SystemState} (F : RecordsCoreFrame st st') : RecordsStage st st' :=
   F.preserves
 
 theorem of_eq {st st' : SystemState} (h : st' = st) : RecordsStage st st' := h ▸ refl st
@@ -426,6 +580,50 @@ theorem modifyTcb {st st' : SystemState} {t : SeLe4n.ThreadId} {f : TCB → TCB}
 
 end RecordsFrame
 
+namespace RecordsCoreFrame
+
+/-- A store whose object keeps its slot's core view and is no root. -/
+theorem storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
+    (hInv : st.objects.invExt) (h : storeObject k o st = .ok ((), st'))
+    (hV : recordCoreViewOf (some o) = recordCoreViewOf st.objects[k]?)
+    (hNR : ∀ r, o ≠ .vspaceRoot r) : RecordsCoreFrame st st' := by
+  refine ⟨fun x => ?_, ?_, storeObject_preserves_objects_invExt st st' k o hInv h,
+    by rw [storeObject_machine_eq st st' k o h]⟩
+  · by_cases hx : x = k
+    · subst hx; rw [storeObject_objects_eq st st' x o hInv h]; exact hV
+    · rw [storeObject_objects_ne st st' k x o hx hInv h]
+  · rw [storeObject_asidTable_non_vspaceRoot st st' k o hNR h]
+    split
+    · rename_i r hr
+      rw [hr] at hV
+      cases o <;> simp [recordCoreViewOf, recordViewOf, recordCoreView] at hV
+      exact absurd rfl (hNR _)
+    · rfl
+
+/-- A notification stored over a notification. -/
+theorem storeNotification {st st' : SystemState} {nid : SeLe4n.ObjId} {n n' : Notification}
+    (hInv : st.objects.invExt) (hObj : st.objects[nid]? = some (.notification n))
+    (h : SeLe4n.Model.storeObject nid (.notification n') st = .ok ((), st')) :
+    RecordsCoreFrame st st' :=
+  storeObject hInv h (by rw [hObj]; rfl) (fun _ h => by cases h)
+
+/-- **The checked TCB write**, when it keeps every core view. -/
+theorem modifyTcb {st st' : SystemState} {t : SeLe4n.ThreadId} {f : TCB → TCB}
+    (hInv : st.objects.invExt) (hf : ∀ x, (f x).recordView.core = x.recordView.core)
+    (h : _root_.SeLe4n.Kernel.modifyTcb st t f = .ok st') : RecordsCoreFrame st st' := by
+  unfold _root_.SeLe4n.Kernel.modifyTcb at h
+  split at h
+  · cases h
+  · rename_i tcb hL
+    split at h
+    · cases h
+    · rename_i st1 hS
+      cases h
+      have hT : st.objects[t.toObjId]? = some (.tcb tcb) := lookupTcb_some_objects st t tcb hL
+      exact storeObject hInv hS (by rw [hT]; simp [hf]) (fun _ => by simp)
+
+end RecordsCoreFrame
+
 
 -- ============================================================================
 -- §5  The erasure frames
@@ -450,17 +648,21 @@ theorem erasure_taint (o o' : KernelObject) (h : o.eraseTaint = o'.eraseTaint) :
     recordViewOf (some o) = recordViewOf (some o') := by
   cases o <;> cases o' <;>
     simp only [KernelObject.eraseTaint, KernelObject.withTaintWords, reduceCtorEq,
-      KernelObject.tcb.injEq, KernelObject.vspaceRoot.injEq] at h ⊢ <;>
+      KernelObject.tcb.injEq, KernelObject.vspaceRoot.injEq,
+      KernelObject.notification.injEq] at h ⊢ <;>
     first | rfl | (subst h; rfl) | skip
-  rename_i t t'
-  have := congrArg TCB.recordView h
-  simpa [TCB.recordView, TCB.withTaintWords] using this
+  · rename_i t t'
+    have := congrArg TCB.recordView h
+    simpa [TCB.recordView, TCB.withTaintWords] using this
+  · rename_i n n'
+    have := congrArg Notification.recordView h
+    simpa [Notification.recordView, Notification.withTaintWords] using this
 
 theorem erasure_yield (o o' : KernelObject) (h : o.withoutYield = o'.withoutYield) :
     recordViewOf (some o) = recordViewOf (some o') := by
   cases o <;> cases o' <;>
     simp only [KernelObject.withoutYield, reduceCtorEq, KernelObject.tcb.injEq,
-      KernelObject.vspaceRoot.injEq] at h ⊢ <;>
+      KernelObject.vspaceRoot.injEq, KernelObject.notification.injEq] at h ⊢ <;>
     first | rfl | (subst h; rfl) | skip
   rename_i t t'
   have := congrArg TCB.recordView h
@@ -470,7 +672,7 @@ theorem erasure_release (o o' : KernelObject) (h : o.withoutRelease = o'.without
     recordViewOf (some o) = recordViewOf (some o') := by
   cases o <;> cases o' <;>
     simp only [KernelObject.withoutRelease, reduceCtorEq, KernelObject.tcb.injEq,
-      KernelObject.vspaceRoot.injEq] at h ⊢ <;>
+      KernelObject.vspaceRoot.injEq, KernelObject.notification.injEq] at h ⊢ <;>
     first | rfl | (subst h; rfl)
 
 theorem of_agreeOffTaint {st st' : SystemState} (h : st.objectsAgreeOffTaint st')
@@ -504,7 +706,7 @@ theorem view_of_runLinks {a b : Option KernelObject}
   · rename_i o o'
     cases o <;> cases o' <;>
       simp only [KernelObject.withoutRunLinks, reduceCtorEq, KernelObject.tcb.injEq,
-        KernelObject.vspaceRoot.injEq] at hw ⊢ <;>
+        KernelObject.vspaceRoot.injEq, KernelObject.notification.injEq] at hw ⊢ <;>
       first | rfl | (subst hw; rfl) | skip
     rename_i t t'
     simp only [objReplyView, Option.some.injEq] at hr
@@ -512,7 +714,9 @@ theorem view_of_runLinks {a b : Option KernelObject}
     unfold TCB.recordView
     rw [hr, TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hw,
       TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState hw,
-      TCB.proj_eq_of_withoutRunLinks_eq (fun x => x.pendingFault.isSome) hw]
+      TCB.proj_eq_of_withoutRunLinks_eq (fun x => x.pendingFault.isSome) hw,
+      TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnPrevCode hw,
+      TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnNextCode hw]
 
 theorem of_agreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st)
     (hR : st'.replyViews = st.replyViews)
@@ -596,11 +800,15 @@ theorem of_fields {st st' : SystemState}
   unfold TCB.faultParked at this ⊢
   rw [← hs, ← hi]; exact this
 
-theorem of_frame {st st' : SystemState} (F : RecordsFrame st st') : FaultsStayParked st st' :=
+theorem of_coreFrame {st st' : SystemState} (F : RecordsCoreFrame st st') :
+    FaultsStayParked st st' :=
   of_fields fun _ _ hT _ => by
     obtain ⟨tcb, hT0, hv⟩ := F.getTcb?_view hT
-    simp only [TCB.recordView, TcbRecordView.mk.injEq] at hv
-    exact ⟨tcb, hT0, hv.2.2.2, hv.2.2.1, hv.2.1⟩
+    obtain ⟨-, hi, hs, hf⟩ := TcbRecordView.core_eq hv
+    exact ⟨tcb, hT0, hf, hs, hi⟩
+
+theorem of_frame {st st' : SystemState} (F : RecordsFrame st st') : FaultsStayParked st st' :=
+  of_coreFrame F.core
 
 end FaultsStayParked
 
@@ -626,8 +834,11 @@ theorem trans {a b c : SystemState} (h₁ : RecordsStep a b) (h₂ : RecordsStep
   ⟨fun k => (h₂.rootViews k).trans (h₁.rootViews k), h₂.asid.trans h₁.asid, h₂.invExt,
     h₁.faults.trans h₂.faults, h₂.width.trans h₁.width⟩
 
+theorem of_coreFrame {st st' : SystemState} (F : RecordsCoreFrame st st') : RecordsStep st st' :=
+  ⟨F.rootViews, F.asid, F.invExt, FaultsStayParked.of_coreFrame F, F.width⟩
+
 theorem of_frame {st st' : SystemState} (F : RecordsFrame st st') : RecordsStep st st' :=
-  ⟨F.rootViews, F.asid, F.invExt, FaultsStayParked.of_frame F, F.width⟩
+  of_coreFrame F.core
 
 /-- A kind-preserving write keeps every root's address-space view. -/
 theorem rootViews_of_kindPreservingWrite {st st' : SystemState} (h : kindPreservingWrite st st') :
