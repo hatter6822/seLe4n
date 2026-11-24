@@ -44,27 +44,43 @@ structure chainObjectsKept (st st' : SystemState) : Prop where
     st'.objects[x]? = some (.reply r) → st.objects[x]? = some (.reply r)
   schedContext : ∀ (x : SeLe4n.ObjId) (sc : SchedContext),
     st'.objects[x]? = some (.schedContext sc) → st.objects[x]? = some (.schedContext sc)
+  /-- Every thread's and notification's binding word after the step was there
+  before it (a context's is kept with the context). -/
+  binding : bindingViewsShrink st st'
 
 namespace chainObjectsKept
 
 theorem refl (st : SystemState) : chainObjectsKept st st :=
-  ⟨fun _ _ h => h, fun _ _ h => h⟩
+  ⟨fun _ _ h => h, fun _ _ h => h, .refl st⟩
 
 theorem trans {st st' st'' : SystemState} (h1 : chainObjectsKept st st')
     (h2 : chainObjectsKept st' st'') : chainObjectsKept st st'' :=
-  ⟨fun x r h => h1.reply x r (h2.reply x r h), fun x sc h => h1.schedContext x sc (h2.schedContext x sc h)⟩
+  ⟨fun x r h => h1.reply x r (h2.reply x r h), fun x sc h => h1.schedContext x sc (h2.schedContext x sc h),
+   h1.binding.trans h2.binding⟩
 
 theorem of_eq {st st' : SystemState} (h : st' = st) : chainObjectsKept st st' := h ▸ refl st
 
 /-- The relation reads the object store alone. -/
 theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
     chainObjectsKept st st' :=
-  ⟨fun x r hx => by rw [h] at hx; exact hx, fun x sc hx => by rw [h] at hx; exact hx⟩
+  ⟨fun x r hx => by rw [h] at hx; exact hx, fun x sc hx => by rw [h] at hx; exact hx,
+   .of_objects_eq h⟩
+
+/-- **Read off the kept reply objects and contexts and the unchanged binding
+words**: the form a step summarised slot by slot takes. -/
+theorem of_words {st st' : SystemState}
+    (hR : ∀ (x : SeLe4n.ObjId) (r : Reply),
+      st'.objects[x]? = some (.reply r) → st.objects[x]? = some (.reply r))
+    (hS : ∀ (x : SeLe4n.ObjId) (sc : SchedContext),
+      st'.objects[x]? = some (.schedContext sc) → st.objects[x]? = some (.schedContext sc))
+    (hB : ∀ x : SeLe4n.ObjId, objBindingWords st'.objects[x]? = objBindingWords st.objects[x]?) :
+    chainObjectsKept st st' :=
+  ⟨hR, hS, bindingViewsShrink_of_objects fun x => .of_eq (hB x)⟩
 
 /-- **It is a links shrink.** -/
 theorem linksShrink {st st' : SystemState} (h : chainObjectsKept st st') :
     contextStackLinksShrink st st' :=
-  contextStackLinksShrink_of_agree h.reply h.schedContext
+  contextStackLinksShrink_of_agree h.reply h.schedContext h.binding
 
 /-- A reply object read after the step was the same before it. -/
 theorem getReply? {st st' : SystemState} (h : chainObjectsKept st st') {rid : SeLe4n.ReplyId}
@@ -75,14 +91,16 @@ theorem getReply? {st st' : SystemState} (h : chainObjectsKept st st') {rid : Se
 /-- A step agreeing with its pre-state off the run-queue links. -/
 theorem of_objectsAgreeOffRunLinks {st st' : SystemState}
     (h : st'.objectsAgreeOffRunLinks st) : chainObjectsKept st st' :=
-  ⟨fun _ _ hx => h.get_reply_iff.mp hx, fun _ _ hx => h.get_schedContext_iff.mp hx⟩
+  ⟨fun _ _ hx => h.get_reply_iff.mp hx, fun _ _ hx => h.get_schedContext_iff.mp hx,
+   bindingViewsShrink_of_objects fun x => .of_eq (objBindingWords_of_withoutRunLinks (h x))⟩
 
 /-- **One slot written with an object of neither kind.** -/
 theorem of_slot {st st' : SystemState} (k : SeLe4n.ObjId)
     (hNe : ∀ x, x ≠ k → st'.objects[x]? = st.objects[x]?)
-    (hK : ∀ o, st'.objects[k]? = some o → (∀ r, o ≠ .reply r) ∧ (∀ sc, o ≠ .schedContext sc)) :
+    (hK : ∀ o, st'.objects[k]? = some o → (∀ r, o ≠ .reply r) ∧ (∀ sc, o ≠ .schedContext sc))
+    (hB : objBindingShrink st.objects[k]? st'.objects[k]?) :
     chainObjectsKept st st' := by
-  refine ⟨fun x r hx => ?_, fun x sc hx => ?_⟩
+  refine ⟨fun x r hx => ?_, fun x sc hx => ?_, bindingViewsShrink_of_slot k hNe hB⟩
   · by_cases hk : x = k
     · subst hk; exact absurd rfl ((hK _ hx).1 r)
     · rw [hNe x hk] at hx; exact hx
@@ -93,17 +111,41 @@ theorem of_slot {st st' : SystemState} (k : SeLe4n.ObjId)
 /-- **A store of an object of neither kind.** -/
 theorem storeObject_other {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
     (hInv : st.objects.invExt) (h : storeObject k o st = .ok ((), st'))
-    (hRp : ∀ r, o ≠ .reply r) (hSc : ∀ sc, o ≠ .schedContext sc) : chainObjectsKept st st' :=
+    (hRp : ∀ r, o ≠ .reply r) (hSc : ∀ sc, o ≠ .schedContext sc)
+    (hB : objBindingShrink st.objects[k]? (some o) := by
+      first
+        | exact objBindingShrink.of_free rfl
+        | exact objBindingShrink.of_eq rfl
+        | (apply objBindingShrink.ofTcb (by assumption); exact .inr ⟨rfl, rfl⟩)
+        | (apply objBindingShrink.ofTcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp
+            (by assumption)); exact .inr ⟨rfl, rfl⟩)
+        | (apply objBindingShrink.ofTcb (lookupTcb_some_objects _ _ _ (by assumption));
+            exact .inr ⟨rfl, rfl⟩)
+        | (apply objBindingShrink.ofNotification (by assumption); exact .inr rfl)
+        | (apply objBindingShrink.ofSchedContext (by assumption); exact .inr rfl)) :
+    chainObjectsKept st st' :=
   of_slot k (fun x hx => storeObject_objects_ne st st' k x o hx hInv h)
     (fun o' ho => by
       rw [storeObject_objects_eq st st' k o hInv h] at ho; cases ho; exact ⟨hRp, hSc⟩)
+    (by rw [storeObject_objects_eq st st' k o hInv h]; exact hB)
 
 /-- **An in-place write of an object of neither kind.** -/
 theorem insert_other {st : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
-    (hInv : st.objects.invExt) (hRp : ∀ r, o ≠ .reply r) (hSc : ∀ sc, o ≠ .schedContext sc) :
+    (hInv : st.objects.invExt) (hRp : ∀ r, o ≠ .reply r) (hSc : ∀ sc, o ≠ .schedContext sc)
+    (hB : objBindingShrink st.objects[k]? (some o) := by
+      first
+        | exact objBindingShrink.of_free rfl
+        | exact objBindingShrink.of_eq rfl
+        | (apply objBindingShrink.ofTcb (by assumption); exact .inr ⟨rfl, rfl⟩)
+        | (apply objBindingShrink.ofTcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp
+            (by assumption)); exact .inr ⟨rfl, rfl⟩)
+        | (apply objBindingShrink.ofTcb (lookupTcb_some_objects _ _ _ (by assumption));
+            exact .inr ⟨rfl, rfl⟩)
+        | (apply objBindingShrink.ofNotification (by assumption); exact .inr rfl)
+        | (apply objBindingShrink.ofSchedContext (by assumption); exact .inr rfl)) :
     chainObjectsKept st { st with objects := st.objects.insert k o } := by
   refine of_slot (st' := { st with objects := st.objects.insert k o }) k (fun x hx => ?_)
-    (fun o' ho => ?_)
+    (fun o' ho => ?_) ?_
   · show (st.objects.insert k o)[x]? = _
     simp only [RHTable_getElem?_eq_get?]
     exact RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hx (eq_of_beq hb).symm) hInv
@@ -111,6 +153,10 @@ theorem insert_other {st : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
       simp only [RHTable_getElem?_eq_get?]; exact RobinHood.RHTable.getElem?_insert_self _ _ _ hInv
     have : o' = o := Option.some.inj (ho.symm.trans hEq)
     subst this; exact ⟨hRp, hSc⟩
+  · show objBindingShrink _ (st.objects.insert k o)[k]?
+    rw [show (st.objects.insert k o)[k]? = some o by
+      simp only [RHTable_getElem?_eq_get?]; exact RobinHood.RHTable.getElem?_insert_self _ _ _ hInv]
+    exact hB
 
 end chainObjectsKept
 
@@ -121,12 +167,13 @@ structure contextStackLinksShrinkOff (st st' : SystemState) (rid : SeLe4n.ReplyI
   head : ∀ s r, contextStackHead st' s = some r → OnContextStackView st s r
   prev : ∀ r x, replyStackPrev st' r = some x → replyStackPrev st r = some x
   caller : ∀ r l, r ≠ rid → replyStackCaller st' r = some l → replyStackCaller st r = some l
+  binding : bindingViewsShrink st st'
 
 namespace contextStackLinksShrinkOff
 
 theorem of_linksShrink {st st' : SystemState} {rid : SeLe4n.ReplyId}
     (h : contextStackLinksShrink st st') : contextStackLinksShrinkOff st st' rid :=
-  ⟨h.head, h.prev, fun r l _ hC => h.caller r l hC⟩
+  ⟨h.head, h.prev, fun r l _ hC => h.caller r l hC, h.binding⟩
 
 theorem onStack {st st' : SystemState} {rid : SeLe4n.ReplyId} {s : SeLe4n.SchedContextId}
     {r : SeLe4n.ReplyId} (h : contextStackLinksShrinkOff st st' rid)
@@ -139,24 +186,26 @@ theorem shrink_trans {st st' st'' : SystemState} {rid : SeLe4n.ReplyId}
     (h1 : contextStackLinksShrink st st') (h2 : contextStackLinksShrinkOff st' st'' rid) :
     contextStackLinksShrinkOff st st'' rid :=
   ⟨fun s r hH => (h2.head s r hH).of_linksShrink h1, fun r x hP => h1.prev r x (h2.prev r x hP),
-   fun r l hne hC => h1.caller r l (h2.caller r l hne hC)⟩
+   fun r l hne hC => h1.caller r l (h2.caller r l hne hC), h1.binding.trans h2.binding⟩
 
 theorem trans_shrink {st st' st'' : SystemState} {rid : SeLe4n.ReplyId}
     (h1 : contextStackLinksShrinkOff st st' rid) (h2 : contextStackLinksShrink st' st'') :
     contextStackLinksShrinkOff st st'' rid :=
   ⟨fun s r hH => h1.onStack (h2.head s r hH), fun r x hP => h1.prev r x (h2.prev r x hP),
-   fun r l hne hC => h1.caller r l hne (h2.caller r l hC)⟩
+   fun r l hne hC => h1.caller r l hne (h2.caller r l hC), h1.binding.trans h2.binding⟩
 
 end contextStackLinksShrinkOff
 
 /-- **A caller linked on a free reply object adds no lender**: the step's
 links shrink everywhere but the caller at `rid`, and `rid` is free at the
 pre-state, where the chain holds, so it is on no context's stack. -/
-theorem contextLendersFlow_of_linksShrinkOff {ctx : LabelingContext} {st st' : SystemState}
+theorem lendingLabelsEqual_of_linksShrinkOff {ctx : LabelingContext} {st st' : SystemState}
     {rid : SeLe4n.ReplyId} {rep : Reply} (hChain : donationChainWellFormed st)
-    (hFlow : contextLendersFlow ctx st) (hR : st.getReply? rid = some rep) (hN : rep.next = none)
-    (h : contextStackLinksShrinkOff st st' rid) : contextLendersFlow ctx st' := by
-  rw [contextLendersFlow_iff_views] at hFlow ⊢
+    (hFlow : lendingLabelsEqual ctx st) (hR : st.getReply? rid = some rep) (hN : rep.next = none)
+    (h : contextStackLinksShrinkOff st st' rid) : lendingLabelsEqual ctx st' := by
+  refine ⟨?_, bindingLabelsEqual_of_shrink hFlow.2 h.binding⟩
+  have hFlow := hFlow.1
+  rw [contextLendersLabelsEqual_iff_views] at hFlow ⊢
   intro s r l hOn hC
   have hOn0 := h.onStack hOn
   by_cases hr : r = rid
@@ -169,7 +218,9 @@ namespace chainObjectsKept
 
 /-- A thread record rewritten through `modifyTcb`. -/
 theorem modifyTcb {st st' : SystemState} {tid : SeLe4n.ThreadId} {f : TCB → TCB}
-    (hInv : st.objects.invExt) (h : SeLe4n.Kernel.modifyTcb st tid f = .ok st') :
+    (hInv : st.objects.invExt) (h : SeLe4n.Kernel.modifyTcb st tid f = .ok st')
+    (hf : ∀ t : TCB, (f t).scBindingScCode = t.scBindingScCode ∧
+      (f t).scBindingOwnerCode = t.scBindingOwnerCode := by intro _; exact ⟨rfl, rfl⟩) :
     chainObjectsKept st st' := by
   unfold SeLe4n.Kernel.modifyTcb at h
   cases hL : lookupTcb st tid with
@@ -182,6 +233,7 @@ theorem modifyTcb {st st' : SystemState} {tid : SeLe4n.ThreadId} {f : TCB → TC
       obtain ⟨⟨⟩, s⟩ := p
       rw [hS] at h; cases h
       exact storeObject_other hInv hS (fun _ e => by cases e) (fun _ e => by cases e)
+        (.ofTcb (lookupTcb_some_objects st tid t hL) (.inr (hf t)))
 
 theorem storeTcbQueueLinks {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {prev : Option SeLe4n.ThreadId} {pprev : Option QueuePPrev} {next : Option SeLe4n.ThreadId}
@@ -198,14 +250,20 @@ theorem storeTcbReceiveComplete {st st' : SystemState} {tid : SeLe4n.ThreadId}
     (h : SeLe4n.Kernel.storeTcbReceiveComplete st tid msg = .ok st') :
     chainObjectsKept st st' := modifyTcb hInv h
 
-/-- A thread record rewritten in its slot. -/
+/-- A thread record rewritten in its slot, keeping both its binding words or
+clearing its context word. -/
 theorem updateTcb (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
-    (hInv : st.objects.invExt) : chainObjectsKept st (st.updateTcb t f) := by
+    (hInv : st.objects.invExt)
+    (hf : ∀ x : TCB, (f x).scBindingScCode = 0 ∨ ((f x).scBindingScCode = x.scBindingScCode ∧
+      (f x).scBindingOwnerCode = x.scBindingOwnerCode) := by
+      intro _; first | exact .inr ⟨rfl, rfl⟩ | exact .inl rfl) :
+    chainObjectsKept st (st.updateTcb t f) := by
   cases hT : st.getTcb? t with
   | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact refl _
   | some x =>
     rw [SystemState.updateTcb_eq_of_some hT]
     exact insert_other hInv (fun _ e => by cases e) (fun _ e => by cases e)
+      (.ofTcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) (hf x))
 
 /-- **A wake** writes thread records and the scheduler alone. -/
 theorem enqueueRunnableOnCore (st : SystemState) (c : Concurrency.CoreId) (t : SeLe4n.ThreadId)
@@ -243,7 +301,8 @@ and a context as they are and makes neither kind out of another. -/
 theorem modifyObject {st : SystemState} {k : SeLe4n.ObjId} {f : KernelObject → KernelObject}
     (hInv : st.objects.invExt)
     (hf : ∀ o, st.objects[k]? = some o → (∀ r, f o = .reply r → o = .reply r) ∧
-      (∀ sc, f o = .schedContext sc → o = .schedContext sc)) :
+      (∀ sc, f o = .schedContext sc → o = .schedContext sc) ∧
+      objBindingWords (some (f o)) = objBindingWords (some o)) :
     chainObjectsKept st (st.modifyObject k f) := by
   unfold SystemState.modifyObject RobinHood.RHTable.modify
   cases hG : st.objects.get? k with
@@ -256,7 +315,8 @@ theorem modifyObject {st : SystemState} {k : SeLe4n.ObjId} {f : KernelObject →
     have hNe : ∀ x, x ≠ k → (st.objects.insert k (f v))[x]? = st.objects[x]? := fun x hx => by
       simp only [RHTable_getElem?_eq_get?]
       exact RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hx (eq_of_beq hb).symm) hInv
-    refine ⟨fun x r hx => ?_, fun x sc hx => ?_⟩
+    refine ⟨fun x r hx => ?_, fun x sc hx => ?_, bindingViewsShrink_of_slot k hNe
+      (.of_eq (by rw [hEq, hPre]; exact (hf v hPre).2.2))⟩
     · by_cases hk : x = k
       · subst hk
         have : f v = .reply r := Option.some.inj (hEq.symm.trans hx)
@@ -265,7 +325,7 @@ theorem modifyObject {st : SystemState} {k : SeLe4n.ObjId} {f : KernelObject →
     · by_cases hk : x = k
       · subst hk
         have : f v = .schedContext sc := Option.some.inj (hEq.symm.trans hx)
-        rw [hPre, (hf v hPre).2 sc this]
+        rw [hPre, (hf v hPre).2.1 sc this]
       · exact (hNe x hk) ▸ hx
 
 /-- **The in-place pop** writes the endpoint and two thread records. -/
@@ -275,7 +335,7 @@ theorem storePopHead (st : SystemState) (e : SeLe4n.ObjId) (isRecv : Bool) (h : 
   unfold SeLe4n.Kernel.storePopHead; dsimp only
   have h1 : chainObjectsKept st (st.modifyObject e (popEndpoint isRecv (SeLe4n.ThreadId.optCode n))) :=
     modifyObject hInv (fun o _ => by
-      cases o <;> simp only [popEndpoint] <;> (try split) <;> simp)
+      cases o <;> simp only [popEndpoint] <;> (try split) <;> simp [objBindingWords])
   have hI1 := modifyObject_preserves_objects_invExt (k := e)
     (f := popEndpoint isRecv (SeLe4n.ThreadId.optCode n)) hInv
   cases n with
@@ -353,7 +413,8 @@ theorem contextStackLinksShrinkOff_of_replyCaller {st st' : SystemState} {rid : 
     (hEq : st'.objects[rid.toObjId]? = some (.reply r'))
     (hNe : ∀ x, x ≠ rid.toObjId → st'.objects[x]? = st.objects[x]?) (hP : r'.prev = r.prev) :
     contextStackLinksShrinkOff st st' rid := by
-  refine ⟨fun s x hH => .head ?_, fun x y hP' => ?_, fun x l hx hC => ?_⟩
+  refine ⟨fun s x hH => .head ?_, fun x y hP' => ?_, fun x l hx hC => ?_,
+    bindingViewsShrink_of_slot _ hNe (.of_eq (by rw [hEq, hR]; rfl))⟩
   · rw [contextStackHead_eq_obj] at hH ⊢
     by_cases hk : s.toObjId = rid.toObjId
     · rw [hk, hEq] at hH; cases hH
@@ -430,13 +491,13 @@ theorem linkServerStashedReply_linksShrinkOff {st st' : SystemState}
           storeObject_preserves_objects_invExt s1 st' _ _ hI1 h⟩
 
 /-- **The lenders across `linkServerStashedReply`.** -/
-theorem linkServerStashedReply_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem linkServerStashedReply_preserves_lendingLabelsEqual {ctx : LabelingContext}
     {st st' : SystemState} {caller server : SeLe4n.ThreadId} (hInv : st.objects.invExt)
-    (hChain : donationChainWellFormed st) (hFlow : contextLendersFlow ctx st)
+    (hChain : donationChainWellFormed st) (hFlow : lendingLabelsEqual ctx st)
     (h : SystemState.linkServerStashedReply caller server st = .ok ((), st')) :
-    contextLendersFlow ctx st' := by
+    lendingLabelsEqual ctx st' := by
   obtain ⟨_, ⟨rep, hR, hN⟩, hOff, _⟩ := linkServerStashedReply_linksShrinkOff hInv h
-  exact contextLendersFlow_of_linksShrinkOff hChain hFlow hR hN hOff
+  exact lendingLabelsEqual_of_linksShrinkOff hChain hFlow hR hN hOff
 
 /-- **A reply object's caller written in its slot** (`replyWithCaller`, the
 in-place link); an object of another kind is left as it is. -/
@@ -460,7 +521,7 @@ theorem modifyObject_replyWithCaller_linksShrinkOff (st : SystemState) (rid : Se
         exact RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hx (eq_of_beq hb).symm) hInv
     | _ =>
       exact .of_linksShrink (chainObjectsKept.modifyObject hInv (fun o ho => by
-        rw [hO] at ho; cases ho; simp [replyWithCaller])).linksShrink
+        rw [hO] at ho; cases ho; simp [replyWithCaller, objBindingWords])).linksShrink
   | none =>
     exact .of_linksShrink (chainObjectsKept.modifyObject hInv (fun o ho => by
       rw [hO] at ho; cases ho)).linksShrink
@@ -480,13 +541,13 @@ theorem storePopHead_preserves_objects_invExt' (st : SystemState) (e : SeLe4n.Ob
 /-- **The lenders across the in-place call rendezvous** (`storeCallRendezvous`):
 the caller is linked on a reply object free at the pre-state, which is what
 `callWakesInPlace` / `callTakesReplyInPlace` check. -/
-theorem storeCallRendezvous_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem storeCallRendezvous_preserves_lendingLabelsEqual {ctx : LabelingContext}
     {st : SystemState} {endpointId : SeLe4n.ObjId} {caller r : SeLe4n.ThreadId}
     {next : Option SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {msg : IpcMessage}
     {core : Concurrency.CoreId} {rep : Reply} (hInv : st.objects.invExt)
-    (hChain : donationChainWellFormed st) (hFlow : contextLendersFlow ctx st)
+    (hChain : donationChainWellFormed st) (hFlow : lendingLabelsEqual ctx st)
     (hR : st.getReply? rid = some rep) (hFree : rep.isFree = true) :
-    contextLendersFlow ctx (storeCallRendezvous st endpointId caller r next rid msg core) := by
+    lendingLabelsEqual ctx (storeCallRendezvous st endpointId caller r next rid msg core) := by
   unfold storeCallRendezvous; dsimp only
   have hI0 := storePopHead_preserves_objects_invExt' st endpointId true r next hInv
   have hK0 := chainObjectsKept.storePopHead st endpointId true r next hInv
@@ -513,32 +574,32 @@ theorem storeCallRendezvous_preserves_contextLendersFlow {ctx : LabelingContext}
   generalize s5.updateTcb r (fun t => { t with pendingReceiveReplyCode := 0 }) = s6 at hK6
   have hK7 := hK6.trans ((chainObjectsKept.removeRunnableOnCore s6 caller core).trans
     (chainObjectsKept.linkReplyWaiter _ caller r))
-  exact contextLendersFlow_of_linksShrinkOff hChain hFlow hR ((Reply.isFree_iff rep).mp hFree).2.2
+  exact lendingLabelsEqual_of_linksShrinkOff hChain hFlow hR ((Reply.isFree_iff rep).mp hFree).2.2
     (hOff.trans_shrink hK7.linksShrink)
 
 /-- **The in-place link between writers of neither kind**: the lenders across a
 step that writes no reply object and no context, links a caller in place on a
 reply object free at the pre-state, and again writes neither kind. -/
-theorem contextLendersFlow_of_inPlaceLink {ctx : LabelingContext} {st s st' : SystemState}
+theorem lendingLabelsEqual_of_inPlaceLink {ctx : LabelingContext} {st s st' : SystemState}
     {rid : SeLe4n.ReplyId} {caller : SeLe4n.ThreadId} {rep : Reply}
-    (hChain : donationChainWellFormed st) (hFlow : contextLendersFlow ctx st)
+    (hChain : donationChainWellFormed st) (hFlow : lendingLabelsEqual ctx st)
     (hR : st.getReply? rid = some rep) (hFree : rep.isFree = true)
     (hK1 : chainObjectsKept st s) (hI : s.objects.invExt)
     (hK2 : chainObjectsKept (s.modifyObject rid.toObjId (replyWithCaller caller)) st') :
-    contextLendersFlow ctx st' :=
-  contextLendersFlow_of_linksShrinkOff hChain hFlow hR ((Reply.isFree_iff rep).mp hFree).2.2
+    lendingLabelsEqual ctx st' :=
+  lendingLabelsEqual_of_linksShrinkOff hChain hFlow hR ((Reply.isFree_iff rep).mp hFree).2.2
     ((contextStackLinksShrinkOff.shrink_trans hK1.linksShrink
       (modifyObject_replyWithCaller_linksShrinkOff s rid caller hI)).trans_shrink hK2.linksShrink)
 
 /-- **The lenders across `storeCallRendezvousReady`**: `storeCallRendezvous`
 with the receiver holding no message. -/
-theorem storeCallRendezvousReady_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem storeCallRendezvousReady_preserves_lendingLabelsEqual {ctx : LabelingContext}
     {st : SystemState} {endpointId : SeLe4n.ObjId} {caller r : SeLe4n.ThreadId}
     {nextCode : Nat} {rid : SeLe4n.ReplyId} {core : Concurrency.CoreId} {rep : Reply}
     (hInv : st.objects.invExt) (hChain : donationChainWellFormed st)
-    (hFlow : contextLendersFlow ctx st) (hR : st.getReply? rid = some rep)
+    (hFlow : lendingLabelsEqual ctx st) (hR : st.getReply? rid = some rep)
     (hFree : rep.isFree = true) :
-    contextLendersFlow ctx (storeCallRendezvousReady st endpointId caller r nextCode rid core) := by
+    lendingLabelsEqual ctx (storeCallRendezvousReady st endpointId caller r nextCode rid core) := by
   unfold storeCallRendezvousReady; dsimp only
   have hI0 := storePopHead_preserves_objects_invExt' st endpointId true r
     (ThreadId.ofOptCode nextCode) hInv
@@ -553,7 +614,7 @@ theorem storeCallRendezvousReady_preserves_contextLendersFlow {ctx : LabelingCon
   have hK3 := hK2.trans (chainObjectsKept.updateTcb s2 caller (callCallerTcb endpointId r) hI2)
   have hI3 := SystemState.updateTcb_preserves_objects_invExt s2 caller (callCallerTcb endpointId r) hI2
   generalize s2.updateTcb caller (callCallerTcb endpointId r) = s3 at hI3 hK3
-  refine contextLendersFlow_of_inPlaceLink (caller := caller) hChain hFlow hR hFree hK3 hI3 ?_
+  refine lendingLabelsEqual_of_inPlaceLink (caller := caller) hChain hFlow hR hFree hK3 hI3 ?_
   have hI4 := modifyObject_preserves_objects_invExt (k := rid.toObjId) (f := replyWithCaller caller) hI3
   generalize s3.modifyObject rid.toObjId (replyWithCaller caller) = s4 at hI4
   have hK5 := chainObjectsKept.updateTcb s4 caller
@@ -566,13 +627,13 @@ theorem storeCallRendezvousReady_preserves_contextLendersFlow {ctx : LabelingCon
 
 /-- **The lenders across the receive's in-place take of a queued caller**
 (`storeReceiveCallReady`). -/
-theorem storeReceiveCallReady_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem storeReceiveCallReady_preserves_lendingLabelsEqual {ctx : LabelingContext}
     {st : SystemState} {endpointId : SeLe4n.ObjId} {s : SeLe4n.ThreadId} {nextCode : Nat}
     {receiver : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {rep : Reply}
     (hInv : st.objects.invExt) (hChain : donationChainWellFormed st)
-    (hFlow : contextLendersFlow ctx st) (hR : st.getReply? rid = some rep)
+    (hFlow : lendingLabelsEqual ctx st) (hR : st.getReply? rid = some rep)
     (hFree : rep.isFree = true) :
-    contextLendersFlow ctx (storeReceiveCallReady st endpointId s nextCode receiver rid) := by
+    lendingLabelsEqual ctx (storeReceiveCallReady st endpointId s nextCode receiver rid) := by
   unfold storeReceiveCallReady; dsimp only
   have hI0 := storePopHead_preserves_objects_invExt' st endpointId false s
     (ThreadId.ofOptCode nextCode) hInv
@@ -581,7 +642,7 @@ theorem storeReceiveCallReady_preserves_contextLendersFlow {ctx : LabelingContex
   have hK1 := hK0.trans (chainObjectsKept.updateTcb s0 s (callCallerTcb endpointId receiver) hI0)
   have hI1 := SystemState.updateTcb_preserves_objects_invExt s0 s (callCallerTcb endpointId receiver) hI0
   generalize s0.updateTcb s (callCallerTcb endpointId receiver) = s1 at hI1 hK1
-  refine contextLendersFlow_of_inPlaceLink (caller := s) hChain hFlow hR hFree hK1 hI1 ?_
+  refine lendingLabelsEqual_of_inPlaceLink (caller := s) hChain hFlow hR hFree hK1 hI1 ?_
   have hI2 := modifyObject_preserves_objects_invExt (k := rid.toObjId) (f := replyWithCaller s) hI1
   generalize s1.modifyObject rid.toObjId (replyWithCaller s) = s2 at hI2
   have hK3 := chainObjectsKept.updateTcb s2 s
@@ -594,13 +655,13 @@ theorem storeReceiveCallReady_preserves_contextLendersFlow {ctx : LabelingContex
 
 /-- **The lenders across the specification's take of a queued caller**
 (`receiveCallTakeState`). -/
-theorem receiveCallTakeState_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem receiveCallTakeState_preserves_lendingLabelsEqual {ctx : LabelingContext}
     {st : SystemState} {endpointId : SeLe4n.ObjId} {s : SeLe4n.ThreadId} {sTcb : TCB}
     {receiver : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {rep : Reply}
     (hInv : st.objects.invExt) (hChain : donationChainWellFormed st)
-    (hFlow : contextLendersFlow ctx st) (hR : st.getReply? rid = some rep)
+    (hFlow : lendingLabelsEqual ctx st) (hR : st.getReply? rid = some rep)
     (hFree : rep.isFree = true) :
-    contextLendersFlow ctx (receiveCallTakeState st endpointId s sTcb receiver rid) := by
+    lendingLabelsEqual ctx (receiveCallTakeState st endpointId s sTcb receiver rid) := by
   unfold receiveCallTakeState
   have hI0 := storePopHead_preserves_objects_invExt' st endpointId false s sTcb.queueNext hInv
   have hK0 := chainObjectsKept.storePopHead st endpointId false s sTcb.queueNext hInv
@@ -608,7 +669,7 @@ theorem receiveCallTakeState_preserves_contextLendersFlow {ctx : LabelingContext
   have hK1 := hK0.trans (chainObjectsKept.updateTcb s0 s (callCallerTcb endpointId receiver) hI0)
   have hI1 := SystemState.updateTcb_preserves_objects_invExt s0 s (callCallerTcb endpointId receiver) hI0
   generalize s0.updateTcb s (callCallerTcb endpointId receiver) = s1 at hI1 hK1
-  refine contextLendersFlow_of_inPlaceLink (caller := s) hChain hFlow hR hFree hK1 hI1 ?_
+  refine lendingLabelsEqual_of_inPlaceLink (caller := s) hChain hFlow hR hFree hK1 hI1 ?_
   have hI2 := modifyObject_preserves_objects_invExt (k := rid.toObjId) (f := replyWithCaller s) hI1
   generalize s1.modifyObject rid.toObjId (replyWithCaller s) = s2 at hI2
   have hK3 := chainObjectsKept.updateTcb s2 s
@@ -622,23 +683,23 @@ theorem receiveCallTakeState_preserves_contextLendersFlow {ctx : LabelingContext
 /-- **The link between writers of neither kind**, the monadic form: the
 freeness the link checks at its own state is read back at the pre-state, where
 the chain holds. -/
-theorem contextLendersFlow_of_keptLink {ctx : LabelingContext} {st s s' st' : SystemState}
+theorem lendingLabelsEqual_of_keptLink {ctx : LabelingContext} {st s s' st' : SystemState}
     {rid : SeLe4n.ReplyId} {rep : Reply} (hChain : donationChainWellFormed st)
-    (hFlow : contextLendersFlow ctx st) (hK1 : chainObjectsKept st s)
+    (hFlow : lendingLabelsEqual ctx st) (hK1 : chainObjectsKept st s)
     (hR : s.getReply? rid = some rep) (hN : rep.next = none)
     (hOff : contextStackLinksShrinkOff s s' rid) (hK2 : chainObjectsKept s' st') :
-    contextLendersFlow ctx st' :=
-  contextLendersFlow_of_linksShrinkOff hChain hFlow (hK1.getReply? hR) hN
+    lendingLabelsEqual ctx st' :=
+  lendingLabelsEqual_of_linksShrinkOff hChain hFlow (hK1.getReply? hR) hN
     ((contextStackLinksShrinkOff.shrink_trans hK1.linksShrink hOff).trans_shrink hK2.linksShrink)
 
 /-- **The lenders across the per-core call** (`endpointCallOnCore`): the
 rendezvous links the caller on the reply object its server stashed, which is
 free; every other write is a thread record, an endpoint or the scheduler. -/
-theorem endpointCallOnCore_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem endpointCallOnCore_preserves_lendingLabelsEqual {ctx : LabelingContext}
     {st : SystemState} {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId}
     {payload : SendPayload} {core : Concurrency.CoreId} (hInv : st.objects.invExt)
-    (hChain : donationChainWellFormed st) (hFlow : contextLendersFlow ctx st) :
-    contextLendersFlow ctx (endpointCallOnCore endpointId caller payload core st).1 := by
+    (hChain : donationChainWellFormed st) (hFlow : lendingLabelsEqual ctx st) :
+    lendingLabelsEqual ctx (endpointCallOnCore endpointId caller payload core st).1 := by
   unfold endpointCallOnCore
   split
   · split
@@ -664,7 +725,7 @@ theorem endpointCallOnCore_preserves_contextLendersFlow {ctx : LabelingContext}
               · exact hFlow
               · rename_i st5 hL
                 obtain ⟨rid, ⟨rep, hR, hN⟩, hOff, _⟩ := linkServerStashedReply_linksShrinkOff hI4 hL
-                exact contextLendersFlow_of_keptLink hChain hFlow hK4 hR hN hOff
+                exact lendingLabelsEqual_of_keptLink hChain hFlow hK4 hR hN hOff
                   ((chainObjectsKept.removeRunnableOnCore st5 caller core).trans
                     (chainObjectsKept.linkReplyWaiter _ caller receiver))
       · split
@@ -682,7 +743,7 @@ theorem endpointCallOnCore_preserves_contextLendersFlow {ctx : LabelingContext}
             · dsimp only
               have hK3 := hK2.trans (chainObjectsKept.wakeThread st2 receiver core hI2)
               have hI3 := wakeThread_preserves_objects_invExt st2 receiver core hI2
-              exact contextLendersFlow_of_linksShrink hFlow
+              exact lendingLabelsEqual_of_linksShrink hFlow
                 ((hK3.trans ((chainObjectsKept.removeRunnableOnCore _ caller core).trans
                   (chainObjectsKept.updateTcb _ caller _
                     (removeRunnableOnCore_objects_invExt _ caller core hI3)))).linksShrink)
@@ -694,19 +755,19 @@ theorem endpointCallOnCore_preserves_contextLendersFlow {ctx : LabelingContext}
         split
         · exact hFlow
         · rename_i st2 hS2
-          exact contextLendersFlow_of_linksShrink hFlow
+          exact lendingLabelsEqual_of_linksShrink hFlow
             ((hK1.trans ((chainObjectsKept.storeTcbIpcStateAndMessage hI1 hS2).trans
               ((chainObjectsKept.removeRunnableOnCore _ caller core).trans
                 (chainObjectsKept.recordSendCap _ caller _ _ _)))).linksShrink)
   · split <;> exact hFlow
 
 /-- **The lenders across the single-core call** (`endpointCall`). -/
-theorem endpointCall_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem endpointCall_preserves_lendingLabelsEqual {ctx : LabelingContext}
     {st st' : SystemState} {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId}
     {payload : SendPayload} (hInv : st.objects.invExt)
-    (hChain : donationChainWellFormed st) (hFlow : contextLendersFlow ctx st)
+    (hChain : donationChainWellFormed st) (hFlow : lendingLabelsEqual ctx st)
     (h : endpointCall endpointId caller payload st = .ok ((), st')) :
-    contextLendersFlow ctx st' := by
+    lendingLabelsEqual ctx st' := by
   unfold endpointCall at h
   split at h <;> try cases h
   split at h
@@ -730,7 +791,7 @@ theorem endpointCall_preserves_contextLendersFlow {ctx : LabelingContext}
       split at h <;> try cases h
       rename_i st5 hL
       obtain ⟨rid, ⟨rep, hR, hN⟩, hOff, _⟩ := linkServerStashedReply_linksShrinkOff hI4 hL
-      exact contextLendersFlow_of_keptLink hChain hFlow hK4 hR hN hOff
+      exact lendingLabelsEqual_of_keptLink hChain hFlow hK4 hR hN hOff
         ((chainObjectsKept.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st5 caller)).trans
           (chainObjectsKept.linkReplyWaiter _ caller receiver))
     · split at h <;> try cases h
@@ -743,7 +804,7 @@ theorem endpointCall_preserves_contextLendersFlow {ctx : LabelingContext}
       have hI2 := storeTcbReceiveComplete_preserves_objects_invExt _ _ _ _ hI1 hS2
       split at h <;> try cases h
       have hI3 := removeRunnable_objects_invExt _ caller (ensureRunnable_objects_invExt st2 receiver hI2)
-      exact contextLendersFlow_of_linksShrink hFlow
+      exact lendingLabelsEqual_of_linksShrink hFlow
         ((hK2.trans ((chainObjectsKept.of_objectsAgreeOffRunLinks
           (ensureRunnable_objectsAgreeOffRunLinks st2 receiver)).trans
           ((chainObjectsKept.of_objectsAgreeOffRunLinks
@@ -755,7 +816,7 @@ theorem endpointCall_preserves_contextLendersFlow {ctx : LabelingContext}
     have hI1 := endpointQueueEnqueue_preserves_objects_invExt _ _ _ _ _ hInv hE
     split at h <;> try cases h
     rename_i st2 hS2
-    exact contextLendersFlow_of_linksShrink hFlow
+    exact lendingLabelsEqual_of_linksShrink hFlow
       ((hK1.trans ((chainObjectsKept.storeTcbIpcStateAndMessage hI1 hS2).trans
         ((chainObjectsKept.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks _ caller)).trans
           (chainObjectsKept.recordSendCap _ caller _ _ _)))).linksShrink)
@@ -781,24 +842,38 @@ theorem contextStackViewsAgree_of_objectsAgreeOffReleaseLinks {st st' : SystemSt
     have b := objStackViews_map_withoutRelease st.objects[x]?
     rw [h x] at a
     exact ⟨a.1.symm.trans b.1, a.2.1.symm.trans b.2.1, a.2.2.symm.trans b.2.2⟩
-  refine ⟨fun s => ?_, fun r => ?_, fun r => ?_⟩
+  have keyB : ∀ o : Option KernelObject,
+      objBindingWords (o.map KernelObject.withoutRelease) = objBindingWords o := by
+    intro o; cases o with
+    | none => rfl
+    | some o => cases o <;> rfl
+  refine ⟨fun s => ?_, fun r => ?_, fun r => ?_, fun x => ?_⟩
   · rw [contextStackHead_eq_obj, contextStackHead_eq_obj]; exact (key _).1
   · rw [replyStackPrev_eq_obj, replyStackPrev_eq_obj]; exact (key _).2.1
   · rw [replyStackCaller_eq_obj, replyStackCaller_eq_obj]; exact (key _).2.2
+  · rw [← keyB st'.objects[x]?, ← keyB st.objects[x]?, h x]
 
-/-- **The receive's pre-block return of a lent context** shrinks the stacks: a
-held-head pop (the donation return or the held pop). -/
-theorem cleanupPreReceiveDonationChecked_linksShrink {st st' : SystemState}
-    {receiver : SeLe4n.ThreadId} (hInv : st.objects.invExt)
-    (h : cleanupPreReceiveDonationChecked st receiver = .ok st') :
-    contextStackLinksShrink st st' := by
+/-- **The receive's pre-block return of a lent context** carries equal lending
+labels: a held-head pop (the donation return or the held pop) to the owner its
+binding records, labelled as the context by the owner clause. -/
+theorem cleanupPreReceiveDonationChecked_preserves_lendingLabelsEqual {ctx : LabelingContext}
+    {st st' : SystemState} {receiver : SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (hFlow : lendingLabelsEqual ctx st)
+    (h : cleanupPreReceiveDonationChecked st receiver = .ok st') : lendingLabelsEqual ctx st' := by
   unfold cleanupPreReceiveDonationChecked at h
-  split at h
-  · cases h; exact .refl _
-  · split at h
-    · exact popHeldReplyHead_liftPops h (fun _ _ hRet => returnDonatedSchedContext_linksShrink hInv hRet)
-        (fun _ _ hK => keepDonatedSchedContext_linksShrink hInv hK)
-    · cases h; exact .refl _
+  cases hLk : lookupTcb st receiver with
+  | none => rw [hLk] at h; cases h; exact hFlow
+  | some recvTcb =>
+    rw [hLk] at h; simp only [] at h
+    cases hB : recvTcb.schedContextBinding with
+    | donated scId owner =>
+      rw [hB] at h; simp only [] at h
+      have hOwner := (hFlow.2.donated (lookupTcb_some_objects st receiver recvTcb hLk) hB).2
+      exact popHeldReplyHead_lift h
+        (fun _ _ hR => returnDonatedSchedContextResolved_preserves_lendingLabelsEqual hInv hFlow
+          hOwner hR)
+        (fun _ _ hK => keepDonatedSchedContextResolved_preserves_lendingLabelsEqual hInv hFlow hK)
+    | _ => rw [hB] at h; cases h; exact hFlow
 
 theorem cleanupPreReceiveDonationChecked_objects_invExt {st st' : SystemState}
     {receiver : SeLe4n.ThreadId} (hInv : st.objects.invExt)
@@ -807,17 +882,17 @@ theorem cleanupPreReceiveDonationChecked_objects_invExt {st st' : SystemState}
   rwa [cleanupPreReceiveDonationChecked_ok_eq_cleanup st st' receiver h] at this
 
 /-- ...and its per-core form, the pop then the replenishment migration. -/
-theorem cleanupPreReceiveDonationMigrated_linksShrink {st st' : SystemState}
-    {receiver : SeLe4n.ThreadId} (hInv : st.objects.invExt)
-    (h : cleanupPreReceiveDonationMigrated st receiver = .ok st') :
-    contextStackLinksShrink st st' := by
+theorem cleanupPreReceiveDonationMigrated_preserves_lendingLabelsEqual {ctx : LabelingContext}
+    {st st' : SystemState} {receiver : SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (hFlow : lendingLabelsEqual ctx st)
+    (h : cleanupPreReceiveDonationMigrated st receiver = .ok st') : lendingLabelsEqual ctx st' := by
   obtain ⟨stClean, hC, rfl⟩ := cleanupPreReceiveDonationMigrated_ok_decompose h
-  have hS := cleanupPreReceiveDonationChecked_linksShrink hInv hC
+  have hS := cleanupPreReceiveDonationChecked_preserves_lendingLabelsEqual hInv hFlow hC
   unfold preReceiveReturnMigration
   split
-  · exact hS.trans (contextStackLinksShrink_of_viewsAgree
+  · exact lendingLabelsEqual_of_viewsAgree hS
       (contextStackViewsAgree_of_objectsAgreeOffReleaseLinks
-        (migrateSchedContextReplenishment_agree _ _ _ _)))
+        (migrateSchedContextReplenishment_agree _ _ _ _))
   · exact hS
 
 /-- **The stasher record** writes one reply object's `stasherCode` alone. -/
@@ -839,11 +914,11 @@ theorem recordReplyStasher_linksShrink (st : SystemState) (code : Nat)
 a dequeued caller is linked on the reply object the receive supplies, which
 `linkCallerReply` refuses unless free; the block returns a lent context
 (a pop) and records the stash. -/
-theorem endpointReceiveDualOnCore_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem endpointReceiveDualOnCore_preserves_lendingLabelsEqual {ctx : LabelingContext}
     {st : SystemState} {endpointId : SeLe4n.ObjId} {receiver : SeLe4n.ThreadId}
     {replyId : Option SeLe4n.ReplyId} {core : Concurrency.CoreId} (hInv : st.objects.invExt)
-    (hChain : donationChainWellFormed st) (hFlow : contextLendersFlow ctx st) :
-    contextLendersFlow ctx (endpointReceiveDualOnCore endpointId receiver replyId core st).1 := by
+    (hChain : donationChainWellFormed st) (hFlow : lendingLabelsEqual ctx st) :
+    lendingLabelsEqual ctx (endpointReceiveDualOnCore endpointId receiver replyId core st).1 := by
   unfold endpointReceiveDualOnCore
   split
   · split
@@ -870,10 +945,11 @@ theorem endpointReceiveDualOnCore_preserves_contextLendersFlow {ctx : LabelingCo
                   obtain ⟨⟨rep, hR, hN⟩, hOff, hI3⟩ := linkCallerReply_linksShrinkOff hI2 hL
                   split
                   · rename_i st4 hS4
-                    exact contextLendersFlow_of_keptLink hChain hFlow hK2 hR hN
+                    exact lendingLabelsEqual_of_keptLink hChain hFlow hK2 hR hN
                       (hOff.trans_shrink (contextStackLinksShrink_of_agree
                         (chainObjectsKept.storeTcbIpcStateAndMessage hI3 hS4).reply
-                        (chainObjectsKept.storeTcbIpcStateAndMessage hI3 hS4).schedContext))
+                        (chainObjectsKept.storeTcbIpcStateAndMessage hI3 hS4).schedContext
+                        (chainObjectsKept.storeTcbIpcStateAndMessage hI3 hS4).binding))
                       (chainObjectsKept.linkReplyWaiter _ sender receiver)
                   · exact hFlow
           · split
@@ -887,7 +963,7 @@ theorem endpointReceiveDualOnCore_preserves_contextLendersFlow {ctx : LabelingCo
                 (fun t => { t with threadState := .Inactive }) hI2
               split
               · rename_i st4 hS4
-                exact contextLendersFlow_of_linksShrink hFlow
+                exact lendingLabelsEqual_of_linksShrink hFlow
                   (hK3.trans (chainObjectsKept.storeTcbIpcStateAndMessage hI3 hS4)).linksShrink
               · exact hFlow
         · simp only [Bool.false_eq_true, ↓reduceIte]
@@ -900,13 +976,13 @@ theorem endpointReceiveDualOnCore_preserves_contextLendersFlow {ctx : LabelingCo
             have hI3 := wakeThread_preserves_objects_invExt st2 sender core hI2
             split
             · rename_i st4 hS4
-              exact contextLendersFlow_of_linksShrink hFlow
+              exact lendingLabelsEqual_of_linksShrink hFlow
                 (hK3.trans (chainObjectsKept.storeTcbIpcStateAndMessage hI3 hS4)).linksShrink
             · exact hFlow
     · split
       · exact hFlow
       · rename_i stC hC
-        have hS0 := cleanupPreReceiveDonationMigrated_linksShrink hInv hC
+        have hF0 := cleanupPreReceiveDonationMigrated_preserves_lendingLabelsEqual hInv hFlow hC
         have hI0 := cleanupPreReceiveDonationMigrated_preserves_objects_invExt _ _ _ hInv hC
         split
         · exact hFlow
@@ -918,31 +994,33 @@ theorem endpointReceiveDualOnCore_preserves_contextLendersFlow {ctx : LabelingCo
           · rename_i st2 hS2
             have hK2 := hK1.trans (chainObjectsKept.storeTcbIpcStateAndMessage hI1 hS2)
             have hI2 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hI1 hS2
-            have hS2' := hS0.trans hK2.linksShrink
+            have hS2' := hK2.linksShrink
             split
-            · exact contextLendersFlow_of_linksShrink hFlow
+            · exact lendingLabelsEqual_of_linksShrink hF0
                 (hS2'.trans (chainObjectsKept.removeRunnableOnCore _ receiver core).linksShrink)
             · split
               · split
                 · exact hFlow
-                · rename_i st3 hS3
+                · rename_i hT3 _ _ st3 hS3
                   have hI3 := SystemState.recordReplyStasher_objects_invExt st2
                     (SeLe4n.ReplyId.optCode replyId) receiver hI2
-                  exact contextLendersFlow_of_linksShrink hFlow (hS2'.trans
+                  exact lendingLabelsEqual_of_linksShrink hF0 (hS2'.trans
                     ((recordReplyStasher_linksShrink st2 _ receiver hI2).trans
                     ((contextStackLinksShrink_storeObject_other hI3 hS3 (fun _ e => by cases e)
-                      (fun _ e => by cases e)).trans
+                      (fun _ e => by cases e) (.ofTcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp
+                        ((SystemState.recordReplyStasher_getTcb? st2 _ receiver hI2 receiver).trans
+                          hT3)) (.inr ⟨rfl, rfl⟩))).trans
                       (chainObjectsKept.removeRunnableOnCore _ receiver core).linksShrink)))
               · exact hFlow
   · split <;> exact hFlow
 
 /-- **The lenders across the single-core receive** (`endpointReceiveDual`). -/
-theorem endpointReceiveDual_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem endpointReceiveDual_preserves_lendingLabelsEqual {ctx : LabelingContext}
     {st st' : SystemState} {endpointId : SeLe4n.ObjId} {receiver t : SeLe4n.ThreadId}
     {replyId : Option SeLe4n.ReplyId} (hInv : st.objects.invExt)
-    (hChain : donationChainWellFormed st) (hFlow : contextLendersFlow ctx st)
+    (hChain : donationChainWellFormed st) (hFlow : lendingLabelsEqual ctx st)
     (h : endpointReceiveDual endpointId receiver replyId st = .ok (t, st')) :
-    contextLendersFlow ctx st' := by
+    lendingLabelsEqual ctx st' := by
   unfold endpointReceiveDual at h
   split at h <;> try cases h
   split at h
@@ -964,7 +1042,7 @@ theorem endpointReceiveDual_preserves_contextLendersFlow {ctx : LabelingContext}
         obtain ⟨⟨rep, hR, hN⟩, hOff, hI3⟩ := linkCallerReply_linksShrinkOff hI2 hL
         split at h <;> try cases h
         rename_i st4 hS4
-        exact contextLendersFlow_of_keptLink hChain hFlow hK2 hR hN
+        exact lendingLabelsEqual_of_keptLink hChain hFlow hK2 hR hN
           (hOff.trans_shrink (chainObjectsKept.storeTcbIpcStateAndMessage hI3 hS4).linksShrink)
           (chainObjectsKept.linkReplyWaiter _ _ receiver)
       · split at h <;> try cases h
@@ -977,7 +1055,7 @@ theorem endpointReceiveDual_preserves_contextLendersFlow {ctx : LabelingContext}
           (fun t => { t with threadState := .Inactive }) hI2
         split at h <;> try cases h
         rename_i st4 hS4
-        exact contextLendersFlow_of_linksShrink hFlow
+        exact lendingLabelsEqual_of_linksShrink hFlow
           (hK3.trans (chainObjectsKept.storeTcbIpcStateAndMessage hI3 hS4)).linksShrink
     · simp only [Bool.false_eq_true, ↓reduceIte] at h
       split at h <;> try cases h
@@ -989,11 +1067,11 @@ theorem endpointReceiveDual_preserves_contextLendersFlow {ctx : LabelingContext}
       have hI3 := ensureRunnable_objects_invExt st2 sender hI2
       split at h <;> try cases h
       rename_i st4 hS4
-      exact contextLendersFlow_of_linksShrink hFlow
+      exact lendingLabelsEqual_of_linksShrink hFlow
         (hK3.trans (chainObjectsKept.storeTcbIpcStateAndMessage hI3 hS4)).linksShrink
   · split at h <;> try cases h
     rename_i stC hC
-    have hS0 := cleanupPreReceiveDonationChecked_linksShrink hInv hC
+    have hF0 := cleanupPreReceiveDonationChecked_preserves_lendingLabelsEqual hInv hFlow hC
     have hI0 := cleanupPreReceiveDonationChecked_objects_invExt hInv hC
     split at h <;> try cases h
     rename_i st1 hE
@@ -1003,21 +1081,23 @@ theorem endpointReceiveDual_preserves_contextLendersFlow {ctx : LabelingContext}
     rename_i st2 hS2
     have hK2 := hK1.trans (chainObjectsKept.storeTcbIpcStateAndMessage hI1 hS2)
     have hI2 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hI1 hS2
-    have hS2' := hS0.trans hK2.linksShrink
+    have hS2' := hK2.linksShrink
     split at h
     · cases h
-      exact contextLendersFlow_of_linksShrink hFlow (hS2'.trans
+      exact lendingLabelsEqual_of_linksShrink hF0 (hS2'.trans
         (chainObjectsKept.of_objectsAgreeOffRunLinks
           (removeRunnable_objectsAgreeOffRunLinks _ receiver)).linksShrink)
     · split at h
       · split at h <;> try cases h
-        rename_i st3 hS3
+        rename_i hT3 _ _ st3 hS3
         have hI3 := SystemState.recordReplyStasher_objects_invExt st2
           (SeLe4n.ReplyId.optCode replyId) receiver hI2
-        exact contextLendersFlow_of_linksShrink hFlow (hS2'.trans
+        exact lendingLabelsEqual_of_linksShrink hF0 (hS2'.trans
           ((recordReplyStasher_linksShrink st2 _ receiver hI2).trans
           ((contextStackLinksShrink_storeObject_other hI3 hS3 (fun _ e => by cases e)
-            (fun _ e => by cases e)).trans
+            (fun _ e => by cases e) (.ofTcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp
+              ((SystemState.recordReplyStasher_getTcb? st2 _ receiver hI2 receiver).trans
+                hT3)) (.inr ⟨rfl, rfl⟩))).trans
             (chainObjectsKept.of_objectsAgreeOffRunLinks
               (removeRunnable_objectsAgreeOffRunLinks _ receiver)).linksShrink)))
       · cases h

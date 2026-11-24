@@ -1391,15 +1391,15 @@ theorem schedContextRetirable.replenishQueuedNowhere {st : SystemState}
 
 /-! ### The depth-2 chain fixture -/
 
-/-- **The fixture's lenders flow wherever its two callers flow to its context**:
-its one context heads the inner frame above the outer one, and those two frames'
-callers are its only lenders. -/
-theorem donationChainWitness_contextLendersFlow (ctx : LabelingContext)
-    (hInner : securityFlowsTo (ctx.threadLabelOf donationChainWitnessInnerCaller)
-      (ctx.objectLabelOf donationChainWitnessContext.toObjId) = true)
-    (hOuter : securityFlowsTo (ctx.threadLabelOf donationChainWitnessOuterCaller)
-      (ctx.objectLabelOf donationChainWitnessContext.toObjId) = true) :
-    contextLendersFlow ctx donationChainWitness := by
+/-- **The fixture's lenders carry its context's label wherever its two callers
+do**: its one context heads the inner frame above the outer one, and those two
+frames' callers are its only lenders. -/
+theorem donationChainWitness_contextLendersLabelsEqual (ctx : LabelingContext)
+    (hInner : ctx.threadLabelOf donationChainWitnessInnerCaller =
+      ctx.objectLabelOf donationChainWitnessContext.toObjId)
+    (hOuter : ctx.threadLabelOf donationChainWitnessOuterCaller =
+      ctx.objectLabelOf donationChainWitnessContext.toObjId) :
+    contextLendersLabelsEqual ctx donationChainWitness := by
   have hS : ∀ s r, OnContextStackView donationChainWitness s r → s = donationChainWitnessContext := by
     intro s r hOn
     induction hOn with
@@ -1410,7 +1410,7 @@ theorem donationChainWitness_contextLendersFlow (ctx : LabelingContext)
       · simp only [beq_iff_eq, h3, if_false] at hH
         split at hH <;> (try split at hH) <;> simp [objStackHead] at hH
     | lower _ _ ih => exact ih
-  rw [contextLendersFlow_iff_views]
+  rw [contextLendersLabelsEqual_iff_views]
   intro s r l hOn hC
   rw [hS s r hOn]
   rw [replyStackCaller_eq_obj, donationChainWitness_lookup_cases] at hC

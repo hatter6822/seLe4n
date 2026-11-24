@@ -34,14 +34,15 @@ theorem contextStackViewsAgree_insert {st : SystemState} {k : SeLe4n.ObjId} {o :
     (hInv : st.objects.invExt)
     (hH : objStackHead (some o) = objStackHead st.objects[k]?)
     (hP : objStackPrev (some o) = objStackPrev st.objects[k]?)
-    (hC : objStackCaller (some o) = objStackCaller st.objects[k]?) :
+    (hC : objStackCaller (some o) = objStackCaller st.objects[k]?)
+    (hB : objBindingWords (some o) = objBindingWords st.objects[k]?) :
     contextStackViewsAgree st { st with objects := st.objects.insert k o } := by
   have hIns : (st.objects.insert k o)[k]? = some o := by
     simp only [RHTable_getElem?_eq_get?]; exact RobinHood.RHTable.getElem?_insert_self _ _ _ hInv
   have hNe : ∀ x, ¬ k = x → (st.objects.insert k o)[x]? = st.objects[x]? := fun x hx => by
     simp only [RHTable_getElem?_eq_get?]
     exact RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hx (eq_of_beq hb)) hInv
-  refine ⟨fun s => ?_, fun r => ?_, fun r => ?_⟩
+  refine ⟨fun s => ?_, fun r => ?_, fun r => ?_, fun x => ?_⟩
   · rw [contextStackHead_eq_obj, contextStackHead_eq_obj]
     show objStackHead (st.objects.insert k o)[s.toObjId]? = _
     by_cases hx : k = s.toObjId
@@ -56,6 +57,10 @@ theorem contextStackViewsAgree_insert {st : SystemState} {k : SeLe4n.ObjId} {o :
     show objStackCaller (st.objects.insert k o)[r.toObjId]? = _
     by_cases hx : k = r.toObjId
     · rw [← hx, hIns]; exact hC
+    · rw [hNe _ hx]
+  · show objBindingWords (st.objects.insert k o)[x]? = _
+    by_cases hx : k = x
+    · rw [← hx, hIns]; exact hB
     · rw [hNe _ hx]
 
 /-- **A step that only shrinks the stack views and keeps the store's invariant**:
@@ -84,25 +89,46 @@ theorem of_views {st st' : SystemState} (V : contextStackViewsAgree st st')
 theorem stage {ctx : LabelingContext} {st st' : SystemState} (F : LendersFrame st st') :
     LendersStage ctx st st' := LendersStage.of_linksShrink F.links
 
+/-- The charge and the refill keep a context's thread word. -/
+theorem chargeBudget_boundThreadCode (sc : SchedContext) (start usage now : Nat) :
+    (sc.chargeBudget start usage now).boundThreadCode = sc.boundThreadCode :=
+  (SchedContext.fields_of_refillsErased (sc.chargeBudget_refillsErased start usage now)).2.2.2.2.2.2.1
+
+theorem releaseReadyHead_boundThreadCode (sc : SchedContext) (now : Nat) :
+    (sc.releaseReadyHead now).boundThreadCode = sc.boundThreadCode :=
+  (SchedContext.fields_of_refillsErased (sc.releaseReadyHead_refillsErased now)).2.2.2.2.2.2.1
+
 /-- A context rewritten keeping its stack head. -/
 theorem rewriteObject_schedContext {st : SystemState} {scId : SeLe4n.SchedContextId}
     {sc : SchedContext} (h : st.getSchedContext? scId = some sc) (sc' : SchedContext)
     (hR : sc'.scReply = sc.scReply)
-    (hA : st.rewriteAdmissible scId.toObjId (.schedContext sc')) (hInv : st.objects.invExt) :
+    (hA : st.rewriteAdmissible scId.toObjId (.schedContext sc')) (hInv : st.objects.invExt)
+    (hB : sc'.boundThreadCode = sc.boundThreadCode := by
+      first
+        | rfl
+        | exact chargeBudget_boundThreadCode _ _ _ _
+        | exact releaseReadyHead_boundThreadCode _ _) :
     LendersFrame st (st.rewriteObject scId.toObjId (.schedContext sc') hA) := by
   have hRaw := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp h
   exact of_views (contextStackViewsAgree_insert hInv (by rw [hRaw]; exact hR)
-      (by rw [hRaw]; rfl) (by rw [hRaw]; rfl))
+      (by rw [hRaw]; rfl) (by rw [hRaw]; rfl) (by rw [hRaw]; simp only [objBindingWords, hB]))
     (RecordsFrame.rewriteObject_schedContext h sc' hA hInv).invExt
 
 /-- A context's read-modify-write keeping its stack head. -/
 theorem updateSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
     (f : SchedContext → SchedContext) (hf : ∀ x, (f x).scReply = x.scReply)
-    (hInv : st.objects.invExt) : LendersFrame st (st.updateSchedContext scId f) := by
+    (hInv : st.objects.invExt)
+    (hfB : ∀ x, (f x).boundThreadCode = x.boundThreadCode := by
+      intro x
+      first
+        | rfl
+        | exact chargeBudget_boundThreadCode _ _ _ _
+        | exact releaseReadyHead_boundThreadCode _ _) :
+    LendersFrame st (st.updateSchedContext scId f) := by
   unfold SystemState.updateSchedContext
   split
   · rename_i sc h _
-    exact rewriteObject_schedContext h _ (hf sc) _ hInv
+    exact rewriteObject_schedContext h _ (hf sc) _ hInv (hfB sc)
   · exact refl hInv
 
 /-- The charge and the refill keep a context's stack head. -/
@@ -150,9 +176,13 @@ theorem saveOutgoingContextOnCore (st : SystemState) (c : CoreId) (hInv : st.obj
 
 theorem rewriteObject_tcb {st : SystemState} {t : SeLe4n.ThreadId} {x : TCB}
     (h : st.getTcb? t = some x) (x' : TCB) (hV : x'.recordView = x.recordView)
-    (hA : st.rewriteAdmissible t.toObjId (.tcb x')) (hInv : st.objects.invExt) :
+    (hA : st.rewriteAdmissible t.toObjId (.tcb x')) (hInv : st.objects.invExt)
+    (hB : x'.scBindingScCode = x.scBindingScCode ∧ x'.scBindingOwnerCode = x.scBindingOwnerCode :=
+      by exact ⟨rfl, rfl⟩) :
     LendersFrame st (st.rewriteObject t.toObjId (.tcb x') hA) :=
-  of_kept (chainObjectsKept.rewriteObject_tcb hA hInv) (RecordsFrame.rewriteObject_tcb h x' hV hA hInv)
+  of_kept (chainObjectsKept.rewriteObject_tcb hA hInv
+      (objBindingShrink.ofTcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp h) (.inr hB)))
+    (RecordsFrame.rewriteObject_tcb h x' hV hA hInv)
 
 theorem releasePlace (st : SystemState) (c : CoreId) (s : SeLe4n.SchedContextId)
     (hInv : st.objects.invExt) : LendersFrame st (st.releasePlace c s) :=
@@ -216,6 +246,117 @@ theorem handleRescheduleSgiOnCore {st st' : SystemState} {c : CoreId} (hInv : st
 
 end LendersFrame
 
+/-- **A labelled step** (WS-SX SX16.2): the lenders' stage carried from `st` to
+`st'`, and the store's invariant at `st'`.  The unit a chain composes once it
+holds a pop, which grows the binding views and so is no links shrink: each pop
+discharges its owner obligation inside its step, at its own pre-state. -/
+structure LendersStep (ctx : LabelingContext) (st st' : SystemState) : Prop where
+  stage : LendersStage ctx st st'
+  invExt : st'.objects.invExt
+
+namespace LendersStep
+
+variable {ctx : LabelingContext}
+
+theorem refl {st : SystemState} (h : st.objects.invExt) : LendersStep ctx st st :=
+  ⟨LendersStage.refl _, h⟩
+
+theorem andThen {a b c : SystemState} (F : LendersStep ctx a b)
+    (G : b.objects.invExt → LendersStep ctx b c) : LendersStep ctx a c :=
+  ⟨F.stage.trans (G F.invExt).stage, (G F.invExt).invExt⟩
+
+/-- A frame read as a labelled step. -/
+theorem of_frame {st st' : SystemState} (F : LendersFrame st st') : LendersStep ctx st st' :=
+  ⟨F.stage, F.invExt⟩
+
+end LendersStep
+
+namespace LendersFrame
+
+/-- A frame followed by a labelled step. -/
+theorem andThenStep {ctx : LabelingContext} {a b c : SystemState} (F : LendersFrame a b)
+    (G : b.objects.invExt → LendersStep ctx b c) : LendersStep ctx a c :=
+  (LendersStep.of_frame F).andThen G
+
+end LendersFrame
+
+namespace LendersStep
+
+variable {ctx : LabelingContext}
+
+/-- **One slot written keeping its three stack views**, its binding words grown
+with equal labels: a creating write read as a labelled step. -/
+theorem of_insert {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
+    (hInv : st.objects.invExt) (hObj : st'.objects = st.objects.insert k o)
+    (hH : objStackHead (some o) = objStackHead st.objects[k]?)
+    (hP : objStackPrev (some o) = objStackPrev st.objects[k]?)
+    (hC : objStackCaller (some o) = objStackCaller st.objects[k]?)
+    (hG : bindingViewsGrow ctx st st') (hI : st'.objects.invExt) : LendersStep ctx st st' := by
+  have hIns : st'.objects[k]? = some o := by
+    rw [hObj]; simp only [RHTable_getElem?_eq_get?]
+    exact RobinHood.RHTable.getElem?_insert_self _ _ _ hInv
+  have hNe : ∀ x, x ≠ k → st'.objects[x]? = st.objects[x]? := fun x hx => by
+    rw [hObj]; simp only [RHTable_getElem?_eq_get?]
+    exact RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hx (eq_of_beq hb).symm) hInv
+  refine ⟨fun hL => lendingLabelsEqual_of_grow hL (contextStacksShrink_of_slot k hNe ?_ ?_ ?_) hG, hI⟩
+  · intro s r hs hr
+    rw [hIns, hH] at hr
+    exact .head (by rw [contextStackHead_eq_obj, hs]; exact hr)
+  · intro x hx; rw [hIns, hP] at hx; exact hx
+  · intro l hl; rw [hIns, hC] at hl; exact hl
+
+/-- **A thread record rewritten**, its binding words naming contexts labelled
+as the thread and owners labelled as those contexts. -/
+theorem updateTcb_grow (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt)
+    (hT : ∀ (x : TCB) (s : SeLe4n.SchedContextId), st.getTcb? t = some x →
+      (f x).scBindingScCode = s.val + 1 → ctx.threadLabelOf t = ctx.objectLabelOf s.toObjId)
+    (hO : ∀ (x : TCB) (s : SeLe4n.SchedContextId) (o : SeLe4n.ThreadId), st.getTcb? t = some x →
+      (f x).scBindingScCode = s.val + 1 → (f x).scBindingOwnerCode = o.val + 1 →
+      ctx.threadLabelOf o = ctx.objectLabelOf s.toObjId) :
+    LendersStep ctx st (st.updateTcb t f) := by
+  cases hG : st.getTcb? t with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hG]; exact refl hInv
+  | some x =>
+    have hI := SystemState.updateTcb_preserves_objects_invExt st t f hInv
+    rw [SystemState.updateTcb_eq_of_some hG] at hI ⊢
+    have hO0 := (SystemState.getTcb?_eq_some_iff st t x).mp hG
+    have hObj : ({ st with objects := st.objects.insert t.toObjId (.tcb (f x)) } : SystemState).objects
+        = st.objects.insert t.toObjId (.tcb (f x)) := rfl
+    have hIns : ({ st with objects := st.objects.insert t.toObjId (.tcb (f x)) } : SystemState).objects[t.toObjId]?
+        = some (.tcb (f x)) := by
+      simp only [RHTable_getElem?_eq_get?]
+      exact RobinHood.RHTable.getElem?_insert_self _ _ _ hInv
+    refine of_insert hInv hObj (by rw [hO0]; rfl) (by rw [hO0]; rfl) (by rw [hO0]; rfl)
+      (bindingViewsGrow_of_tcbSlot (fun y hy => ?_) hIns (fun s hs => hT x s hG hs)
+        (fun s o hs ho => hO x s o hG hs ho)) hI
+    show objBindingWords (st.objects.insert t.toObjId _)[y]? = _
+    simp only [RHTable_getElem?_eq_get?]
+    rw [RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hy (eq_of_beq hb).symm) hInv]
+
+/-- **A context rewritten keeping its stack head**, its thread word naming a
+thread labelled as the context. -/
+theorem rewriteObject_schedContext_grow {st : SystemState} {scId : SeLe4n.SchedContextId}
+    {sc : SchedContext} (h : st.getSchedContext? scId = some sc) (sc' : SchedContext)
+    (hR : sc'.scReply = sc.scReply)
+    (hA : st.rewriteAdmissible scId.toObjId (.schedContext sc')) (hInv : st.objects.invExt)
+    (hC : ∀ t : SeLe4n.ThreadId, sc'.boundThreadCode = t.val + 1 →
+      ctx.threadLabelOf t = ctx.objectLabelOf scId.toObjId) :
+    LendersStep ctx st (st.rewriteObject scId.toObjId (.schedContext sc') hA) := by
+  have hRaw := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp h
+  have hObj := SystemState.rewriteObject_objects st scId.toObjId (.schedContext sc') hA
+  have hIns : (st.rewriteObject scId.toObjId (.schedContext sc') hA).objects[scId.toObjId]?
+      = some (.schedContext sc') := by
+    rw [hObj]; simp only [RHTable_getElem?_eq_get?]
+    exact RobinHood.RHTable.getElem?_insert_self _ _ _ hInv
+  refine of_insert hInv hObj (by rw [hRaw]; exact hR) (by rw [hRaw]; rfl) (by rw [hRaw]; rfl)
+    (bindingViewsGrow_of_schedContextSlot (fun y hy => ?_) hIns hC)
+    (RecordsFrame.rewriteObject_schedContext h sc' hA hInv).invExt
+  rw [hObj]; simp only [RHTable_getElem?_eq_get?]
+  rw [RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hy (eq_of_beq hb).symm) hInv]
+
+end LendersStep
+
 namespace LendersFrame
 
 /-! ### The replenishments -/
@@ -271,7 +412,23 @@ theorem abortPendingIpcOnEndpoint {epId : SeLe4n.ObjId} {isReceiveQ : Bool}
    fun x sc hx => abortPendingIpcOnEndpoint_unwritten_kind_backward
       (fun o => ∃ sc, o = .schedContext sc)
       (fun _ ⟨_, e⟩ => by cases e) (fun _ ⟨_, e⟩ => by cases e) epId isReceiveQ tid st st' hInv h x _
-      ⟨sc, rfl⟩ hx⟩
+      ⟨sc, rfl⟩ hx,
+   bindingViewsShrink_of_objects fun x => by
+    cases hx : st'.objects[x]? with
+    | none => exact .of_free rfl
+    | some o =>
+      cases o with
+      | tcb t' =>
+        obtain ⟨t, ht, hb⟩ := abortPendingIpcOnEndpoint_binding_backward epId isReceiveQ tid st st'
+          hInv h x t' hx
+        exact .ofTcbBinding ht hb.symm
+      | notification n =>
+        exact .of_eq (by
+          rw [abortPendingIpcOnEndpoint_notification_backward epId isReceiveQ tid st st' hInv h x n hx])
+      | schedContext sc =>
+        exact .of_eq (by
+          rw [abortPendingIpcOnEndpoint_schedContext_backward epId isReceiveQ tid st st' hInv h x sc hx])
+      | _ => exact .of_free rfl⟩
 
 theorem unlinkReplyWaiter (st : SystemState) (w s : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
     LendersFrame st (st.unlinkReplyWaiter w s) :=
@@ -284,7 +441,12 @@ theorem updatePipBoostOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadI
   of_kept ⟨fun x r hx =>
       ((PriorityInheritance.updatePipBoostOnCore_reply_schedContext_iff st c t hInv x).1 r).mp hx,
     fun x sc hx =>
-      ((PriorityInheritance.updatePipBoostOnCore_reply_schedContext_iff st c t hInv x).2 sc).mp hx⟩
+      ((PriorityInheritance.updatePipBoostOnCore_reply_schedContext_iff st c t hInv x).2 sc).mp hx,
+    bindingViewsShrink_of_objects fun x => by
+      rcases PriorityInheritance.updatePipBoostOnCore_keepsScBindingAt st c t hInv x with
+        e | ⟨pre, post, h1, h2, hS, hO⟩
+      · exact .of_eq (by rw [e])
+      · rw [h2]; exact .ofTcb h1 (.inr ⟨hS, hO⟩)⟩
     (RecordsFrame.updatePipBoostOnCore st c t hInv)
 
 theorem revertPriorityInheritance (st : SystemState) (t : SeLe4n.ThreadId) (fuel : Nat)

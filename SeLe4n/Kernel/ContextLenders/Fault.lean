@@ -86,10 +86,14 @@ end chainObjectsKept
 /-- **What a fault's delivery lends from**, at the state it runs from: the
 store's invariant and the donation chain there, and the lenders' premises at
 the state the handler rendezvous leaves, for the handler the thread resolves. -/
-structure FaultLendPremises (st : SystemState) (tid : SeLe4n.ThreadId) (f : Fault)
-    (fctx : FaultContext) (c : CoreId) : Prop where
+structure FaultLendPremises (ctx : LabelingContext) (st : SystemState) (tid : SeLe4n.ThreadId)
+    (f : Fault) (fctx : FaultContext) (c : CoreId) : Prop where
   invExt : st.objects.invExt
   chain : donationChainWellFormed st
+  /-- The handler Call's lend: every thread blocked receiving carries its
+  endpoint's label (a creating site's label equation, WS-SX SX17 discharges it). -/
+  waiters : blockedReceiverLabelsEqual ctx st
+  queueHeads : queueHeadBlockedConsistent st
   mid : ∀ tgt : FaultHandlerTarget, resolveFaultHandler st tid = .ok tgt →
     LendersPremises (endpointCallWithCapsOnCore tgt.endpoint tid
       (.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st).1
@@ -97,19 +101,21 @@ structure FaultLendPremises (st : SystemState) (tid : SeLe4n.ThreadId) (f : Faul
 /-- **The fault delivery carries the lenders' flow**: a suspension writes the
 faulting thread's record, and a delivery is the handler Call, then the woken
 handler's frame and the recorded fault. -/
-theorem faultDeliverOnCore_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem faultDeliverOnCore_preserves_lendingLabelsEqual {ctx : LabelingContext}
     (st : SystemState) (tid : SeLe4n.ThreadId) (f : Fault) (fctx : FaultContext) (c : CoreId)
-    (lend : Bool) (hP : FaultLendPremises st tid f fctx c)
-    (hAdm : lend = true → callLendAdmits ctx st tid = true) (hFlow : contextLendersFlow ctx st) :
-    contextLendersFlow ctx (faultDeliverOnCore st tid f fctx c lend).1 := by
+    (lend : Bool) (hP : FaultLendPremises ctx st tid f fctx c)
+    (hGate : ∀ tgt, resolveFaultHandler st tid = .ok tgt →
+      ctx.threadLabelOf tid = ctx.endpointLabelOf tgt.endpoint)
+    (hFlow : lendingLabelsEqual ctx st) :
+    lendingLabelsEqual ctx (faultDeliverOnCore st tid f fctx c lend).1 := by
   unfold faultDeliverOnCore
   split
   · exact LendersStage.of_kept (chainObjectsKept.faultSuspended st tid c _ hP.invExt) hFlow
   · rename_i tgt hRes
     dsimp only
-    have hD := endpointCallCrossCoreDispatch_preserves_contextLendersFlow tgt.endpoint tid
+    have hD := endpointCallCrossCoreDispatch_preserves_lendingLabelsEqual tgt.endpoint tid
       (.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st lend hP.invExt hP.chain
-      (hP.mid tgt hRes) hAdm hFlow
+      (hP.mid tgt hRes) hP.waiters hP.queueHeads (hGate tgt hRes) hFlow
     have hI := endpointCallCrossCoreDispatch_preserves_objects_invExt tgt.endpoint tid
       (.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st hP.invExt lend
     split
@@ -123,24 +129,30 @@ theorem faultDeliverOnCore_preserves_contextLendersFlow {ctx : LabelingContext}
 
 /-- **The flow-checked delivery** the fault entries run: the admission is read
 on the state the delivery starts from. -/
-theorem faultDeliverOnCoreChecked_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem faultDeliverOnCoreChecked_preserves_lendingLabelsEqual {ctx : LabelingContext}
     (st : SystemState) (tid : SeLe4n.ThreadId) (f : Fault) (fctx : FaultContext) (c : CoreId)
-    (hP : FaultLendPremises st tid f fctx c) (hFlow : contextLendersFlow ctx st) :
-    contextLendersFlow ctx (faultDeliverOnCoreChecked ctx st tid f fctx c).1 := by
+    (hP : FaultLendPremises ctx st tid f fctx c) (hFlow : lendingLabelsEqual ctx st) :
+    lendingLabelsEqual ctx (faultDeliverOnCoreChecked ctx st tid f fctx c).1 := by
   unfold faultDeliverOnCoreChecked
   split
   · exact LendersStage.of_kept (chainObjectsKept.faultSuspended st tid c _ hP.invExt) hFlow
-  · split
-    · exact faultDeliverOnCore_preserves_contextLendersFlow st tid f fctx c _ hP id hFlow
+  · rename_i tgt hRes
+    split
+    · rename_i hG
+      refine faultDeliverOnCore_preserves_lendingLabelsEqual st tid f fctx c _ hP
+        (fun tgt' hR' => ?_) hFlow
+      rw [hRes] at hR'; cases hR'
+      exact endpointFlowGate_implies_eq ctx _ _ _ hG
     · exact LendersStage.of_kept (chainObjectsKept.faultSuspended st tid c _ hP.invExt) hFlow
 
 /-- **What a fault entry's delivery lends from**: for the thread current on the
 core, the delivery's premises at the state its registers are spilled to, with
 the context read off the spilled registers (`faultDeliveredState`). -/
-def FaultEntryLendPremises (st : SystemState) (f : Fault) (ectx : Architecture.ExceptionContext)
+def FaultEntryLendPremises (ctx : LabelingContext) (st : SystemState) (f : Fault)
+    (ectx : Architecture.ExceptionContext)
     (w : FaultRegisterWindow) (c : CoreId) : Prop :=
   ∀ tid, st.scheduler.currentOnCore c = some tid →
-    FaultLendPremises (_root_.SeLe4n.Kernel.writeFaultRegistersToTcb st tid w) tid f
+    FaultLendPremises ctx (_root_.SeLe4n.Kernel.writeFaultRegistersToTcb st tid w) tid f
       (faultContextOfThread (_root_.SeLe4n.Kernel.writeFaultRegistersToTcb st tid w) tid
         ectx.elr ectx.spsr) c
 
@@ -148,18 +160,18 @@ def FaultEntryLendPremises (st : SystemState) (f : Fault) (ectx : Architecture.E
 theorem LendersStage.faultDeliveredState {ctx : LabelingContext} (st : SystemState) (f : Fault)
     (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
-    (hP : FaultLendPremises (_root_.SeLe4n.Kernel.writeFaultRegistersToTcb st tid w) tid f
+    (hP : FaultLendPremises ctx (_root_.SeLe4n.Kernel.writeFaultRegistersToTcb st tid w) tid f
       (faultContextOfThread (_root_.SeLe4n.Kernel.writeFaultRegistersToTcb st tid w) tid
         ectx.elr ectx.spsr) c) :
     LendersStage ctx st (_root_.SeLe4n.Kernel.faultDeliveredState ctx st f ectx w c tid) :=
-  fun hF => faultDeliverOnCoreChecked_preserves_contextLendersFlow _ tid f _ c hP
+  fun hF => faultDeliverOnCoreChecked_preserves_lendingLabelsEqual _ tid f _ c hP
     (LendersStage.of_kept (chainObjectsKept.writeFaultRegistersToTcb st tid w hInv) hF)
 
 /-- The delivery both fault entries share: a vacated core's dispatch, or the
 delivery and the core's own scheduling point. -/
 theorem LendersStage.faultEntryDeliver {ctx : LabelingContext} (st : SystemState) (f : Fault)
     (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
-    (hInv : st.objects.invExt) (hP : FaultEntryLendPremises st f ectx w c) :
+    (hInv : st.objects.invExt) (hP : FaultEntryLendPremises ctx st f ectx w c) :
     LendersStage ctx st (_root_.SeLe4n.Kernel.faultEntryDeliver ctx st f ectx w c).2 := by
   unfold _root_.SeLe4n.Kernel.faultEntryDeliver
   split
@@ -218,7 +230,7 @@ theorem LendersStage.faultEntryStep {ctx : LabelingContext} (st : SystemState)
     (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (coreId : UInt64)
     (hInv : st.objects.invExt)
     (hP : ∀ (f : Fault) (c : CoreId), faultOfExceptionContext ectx = some f →
-      c.val = coreId.toNat → FaultEntryLendPremises st f ectx w c) :
+      c.val = coreId.toNat → FaultEntryLendPremises ctx st f ectx w c) :
     LendersStage ctx st (_root_.SeLe4n.Kernel.faultEntryStep ctx st ectx w coreId).2 := by
   unfold _root_.SeLe4n.Kernel.faultEntryStep
   split
@@ -234,7 +246,7 @@ theorem LendersStage.unknownSyscallEntryStep {ctx : LabelingContext} (st : Syste
     (ectx : Architecture.ExceptionContext) (w : FaultRegisterWindow) (coreId : UInt64)
     (hInv : st.objects.invExt)
     (hP : ∀ c : CoreId, c.val = coreId.toNat →
-      FaultEntryLendPremises st (.unknownSyscall (w.gprAt 7)) (unknownSyscallContext ectx) w c) :
+      FaultEntryLendPremises ctx st (.unknownSyscall (w.gprAt 7)) (unknownSyscallContext ectx) w c) :
     LendersStage ctx st (_root_.SeLe4n.Kernel.unknownSyscallEntryStep ctx st ectx w coreId).2 := by
   unfold _root_.SeLe4n.Kernel.unknownSyscallEntryStep
   split
@@ -250,7 +262,7 @@ theorem faultEntryState_lendersStage (ctx : LabelingContext) (coreId : UInt64)
     (w : FaultRegisterWindow) (st : SystemState) (hInv : st.objects.invExt)
     (hP : ∀ (f : Fault) (c : CoreId), faultOfExceptionContext ectx = some f →
       c.val = coreId.toNat →
-      FaultEntryLendPremises (Concurrency.saveCapturedTrapFrameAt st coreId (some frame)) f ectx w c) :
+      FaultEntryLendPremises ctx (Concurrency.saveCapturedTrapFrameAt st coreId (some frame)) f ectx w c) :
     LendersStage ctx st (Architecture.clearIcacheMaintenance
       (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
         (faultEntryStep ctx (Concurrency.saveCapturedTrapFrameAt st coreId (some frame)) ectx w
@@ -266,7 +278,7 @@ theorem unknownSyscallEntryState_lendersStage (ctx : LabelingContext) (coreId : 
     (frame : Architecture.InFlightContext) (ectx : Architecture.ExceptionContext)
     (w : FaultRegisterWindow) (st : SystemState) (hInv : st.objects.invExt)
     (hP : ∀ c : CoreId, c.val = coreId.toNat →
-      FaultEntryLendPremises (Concurrency.saveCapturedSyscallFrameAt st coreId (some frame))
+      FaultEntryLendPremises ctx (Concurrency.saveCapturedSyscallFrameAt st coreId (some frame))
         (.unknownSyscall (w.gprAt 7)) (unknownSyscallContext ectx) w c) :
     LendersStage ctx st (Architecture.clearIcacheMaintenance
       (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt

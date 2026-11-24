@@ -302,7 +302,7 @@ callers below keep waiting on a stack no context heads, a state both
 `donationOwnerValid` and `donationChainWellFormed` already admit, so neither
 was restated.
 The same row added the stack's **lenders** beside the chain: every caller on a
-frame of a context's stack flows to the context's label (`contextLendersFlow`,
+frame of a context's stack flows to the context's label (`contextLendersLabelsEqual`,
 [`NotificationDonationContextLabel.lean`](../../SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean)),
 carried by every kernel entry and required of every reply-stack writer by the
 write census, so the lend and bind checks read static labels only. reply_pop

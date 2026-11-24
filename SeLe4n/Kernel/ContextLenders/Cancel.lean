@@ -41,7 +41,14 @@ theorem removeFromBlockingEndpoint (st : SystemState) (t : SeLe4n.ThreadId) (e :
         (spliceOutMidQueueNode_preserves_objects_invExt st t hInv) k o hE).mp h)
   exact of_shrink (chainObjectsKept.linksShrink
       ⟨fun x r h => key x _ (fun _ e => by cases e) (fun _ e => by cases e) h,
-       fun x sc h => key x _ (fun _ e => by cases e) (fun _ e => by cases e) h⟩)
+       fun x sc h => key x _ (fun _ e => by cases e) (fun _ e => by cases e) h,
+       bindingViewsShrink_of_tcbBinding (removeFromBlockingEndpoint_binding_frame st t e hInv)
+         (fun s sc h => (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
+           (key _ _ (fun _ e => by cases e) (fun _ e => by cases e)
+             ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp h)))
+         (fun n ntfn h => (SystemState.getNotification?_eq_some_iff _ _ _).mpr
+           (key _ _ (fun _ e => by cases e) (fun _ e => by cases e)
+             ((SystemState.getNotification?_eq_some_iff _ _ _).mp h)))⟩)
     (removeFromBlockingEndpoint_preserves_objects_invExt st t e hInv)
 
 theorem removeFromNotificationWaitQueue (st : SystemState) (t : SeLe4n.ThreadId)
@@ -51,7 +58,13 @@ theorem removeFromNotificationWaitQueue (st : SystemState) (t : SeLe4n.ThreadId)
       ⟨fun x r h => (removeFromNotificationWaitQueue_other_slot st t hInv x _
           (fun _ e => by cases e) (fun _ e => by cases e)).mp h,
        fun x sc h => (removeFromNotificationWaitQueue_other_slot st t hInv x _
-          (fun _ e => by cases e) (fun _ e => by cases e)).mp h⟩)
+          (fun _ e => by cases e) (fun _ e => by cases e)).mp h,
+       bindingViewsShrink_of_objects fun x => .of_eq (by
+         rcases (removeFromNotificationWaitQueue_reach st t hInv).2 x with
+           h | ⟨n, n', hn, hn', -, -, -, hS⟩ | ⟨t1, t2, ht, ht', np, nn, hR⟩
+         · rw [h]
+         · rw [hn, hn']; simp only [objBindingWords, hS]
+         · rw [ht, ht', hR]; rfl)⟩)
     (removeFromNotificationWaitQueue_preserves_objects_invExt st t hInv)
 
 theorem restoreToReadyCancelled (st : SystemState) (t : SeLe4n.ThreadId)
@@ -78,14 +91,6 @@ theorem consumeReplyLink (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
   · exact .refl _
   · exact consumeCallerReplyLink_linksShrink st c _ hInv
 
-theorem returnDonationToCancelledCaller (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
-    (hInv : st.objects.invExt) :
-    LendersFrame st (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) := by
-  refine of_shrink ?_ (FinaliseFrameAny.returnDonationToCancelledCaller st c t hInv).invExt
-  exact Lifecycle.Suspend.returnDonationToCancelledCaller_elimPops (.refl _)
-    (fun _ _ _ _ _ hPop => returnDonatedSchedContext_linksShrink hInv hPop)
-    (fun _ _ _ _ _ hK => keepDonatedSchedContext_linksShrink hInv hK)
-
 theorem cutCancelledCallerHead (st : SystemState) (t : TCB) (hInv : st.objects.invExt) :
     LendersFrame st (Lifecycle.Suspend.cutCancelledCallerHead st t) := by
   refine of_shrink ?_ (RecordsFrame.cutCancelledCallerHead st t hInv).invExt
@@ -97,54 +102,77 @@ theorem cutCancelledCallerHead (st : SystemState) (t : TCB) (hInv : st.objects.i
     · exact cutHeadFrameKeepingContext_linksShrink st _ hInv
   · exact .refl _
 
-/-- **The IPC teardown is a links shrink**: every arm of `cancelIpcBlocking`. -/
-theorem cancelIpcBlocking (st : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB)
-    (hInv : st.objects.invExt) : LendersFrame st (Lifecycle.Suspend.cancelIpcBlocking st t tcb) := by
-  cases hB : tcb.ipcState with
-  | ready => unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]; exact refl hInv
-  | blockedOnSend e | blockedOnReceive e | blockedOnCall e =>
-    unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
-    exact (removeFromBlockingEndpoint st t e hInv).andThen fun h => restoreToReadyCancelled _ t h
-  | blockedOnReply ep rt =>
-    rw [cancelIpcBlocking_replyArm_unfold st t tcb hB]
-    exact ((((returnDonationToCancelledCaller st t tcb hInv).andThen fun h =>
-      cutThreadReplyFrameOut _ tcb h).andThen fun h => restoreToReadyCancelled _ t h).andThen
-        fun h => consumeReplyLink _ t tcb h).andThen fun h => unlinkReplyWaiterOpt _ t _ h
-  | blockedOnNotification n =>
-    unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
-    exact (removeFromNotificationWaitQueue st t hInv).andThen fun h => restoreToReadyCancelled _ t h
-
-/-- **seL4-MCS's `cancelIPC` as the suspend runs it**: the head cut, then the
-teardown. -/
-theorem cancelIpcKeepingContexts (st : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB)
-    (hInv : st.objects.invExt) :
-    LendersFrame st (Lifecycle.Suspend.cancelIpcKeepingContexts st t tcb) :=
-  (cutCancelledCallerHead st tcb hInv).andThen fun h => cancelIpcBlocking _ t tcb h
-
 theorem propagatePipChainCrossCore (st : SystemState) (t : SeLe4n.ThreadId) (ec : CoreId)
     (fuel : Nat) (hInv : st.objects.invExt) :
     LendersFrame st (PriorityInheritance.propagatePipChainCrossCore st t ec fuel).1 :=
   of_kept (chainObjectsKept.propagatePipChainCrossCore st t ec fuel hInv)
     (RecordsFrame.propagatePipChainCrossCore st t ec fuel hInv)
 
+end LendersFrame
+
+namespace LendersStep
+
+variable {ctx : LabelingContext}
+
+/-- **The cancel's donation return, a labelled step** (WS-SX SX16; SX14.1's D41 guard): the
+pop's recipient is the frame's recorded caller, so its owner obligation is
+`contextLendersLabelsEqual` at the pop's own pre-state; no premise. -/
+theorem returnDonationToCancelledCaller (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
+    (hInv : st.objects.invExt) :
+    LendersStep ctx st (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) :=
+  ⟨fun h => returnDonationToCancelledCaller_preserves_lendingLabelsEqual hInv h,
+   (FinaliseFrameAny.returnDonationToCancelledCaller st c t hInv).invExt⟩
+
+/-- **The IPC teardown is a labelled step**: every arm of `cancelIpcBlocking`;
+the reply arm's donation return is its one pop. -/
+theorem cancelIpcBlocking (st : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt) :
+    LendersStep ctx st (Lifecycle.Suspend.cancelIpcBlocking st t tcb) := by
+  cases hB : tcb.ipcState with
+  | ready => unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]; exact refl hInv
+  | blockedOnSend e | blockedOnReceive e | blockedOnCall e =>
+    unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
+    exact of_frame ((LendersFrame.removeFromBlockingEndpoint st t e hInv).andThen fun h =>
+      LendersFrame.restoreToReadyCancelled _ t h)
+  | blockedOnReply ep rt =>
+    rw [cancelIpcBlocking_replyArm_unfold st t tcb hB]
+    exact (returnDonationToCancelledCaller st t tcb hInv).andThen fun h => of_frame
+      (((LendersFrame.cutThreadReplyFrameOut _ tcb h).andThen fun h =>
+        LendersFrame.restoreToReadyCancelled _ t h).andThen fun h =>
+          (LendersFrame.consumeReplyLink _ t tcb h).andThen fun h =>
+            LendersFrame.unlinkReplyWaiterOpt _ t _ h)
+  | blockedOnNotification n =>
+    unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
+    exact of_frame ((LendersFrame.removeFromNotificationWaitQueue st t hInv).andThen fun h =>
+      LendersFrame.restoreToReadyCancelled _ t h)
+
+/-- **seL4-MCS's `cancelIPC` as the suspend runs it**: the head cut, then the
+teardown. -/
+theorem cancelIpcKeepingContexts (st : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt) :
+    LendersStep ctx st (Lifecycle.Suspend.cancelIpcKeepingContexts st t tcb) :=
+  (LendersFrame.cutCancelledCallerHead st tcb hInv).andThenStep fun h => cancelIpcBlocking _ t tcb h
+
 /-- The suspend's cancel and its priority revert. -/
 theorem suspendCancelRevert (st : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB) (ec : CoreId)
     (hInv : st.objects.invExt) :
-    LendersFrame st (Lifecycle.Suspend.suspendCancelRevert st t tcb ec) := by
+    LendersStep ctx st (Lifecycle.Suspend.suspendCancelRevert st t tcb ec) := by
   unfold Lifecycle.Suspend.suspendCancelRevert; dsimp only; split
-  · exact (cancelIpcKeepingContexts st t tcb hInv).andThen fun h => propagatePipChainCrossCore _ _ ec _ h
+  · exact (cancelIpcKeepingContexts st t tcb hInv).andThen fun h =>
+      of_frame (LendersFrame.propagatePipChainCrossCore _ _ ec _ h)
   · exact cancelIpcKeepingContexts st t tcb hInv
 
 /-- **A reply holder's cancel** (seL4-MCS `cancelIPC` on the reply's holder):
 the suspend's cancel and revert, then the `Inactive` write. -/
 theorem cancelReplyHolder (st : SystemState) (holder : SeLe4n.ThreadId) (ec : CoreId)
-    (hInv : st.objects.invExt) : LendersFrame st (SeLe4n.Kernel.cancelReplyHolder st holder ec) := by
+    (hInv : st.objects.invExt) :
+    LendersStep ctx st (SeLe4n.Kernel.cancelReplyHolder st holder ec) := by
   rcases cancelReplyHolder_cases st holder ec with e | ⟨tcb, -, -, e⟩ <;> rw [e]
   · exact refl hInv
   · exact (suspendCancelRevert st holder tcb ec hInv).andThen fun h =>
-      of_shrink (chainObjectsKept.updateTcb _ holder _ h).linksShrink
-        (SystemState.updateTcb_preserves_objects_invExt _ _ _ h)
+      of_frame (LendersFrame.of_shrink (chainObjectsKept.updateTcb _ holder _ h).linksShrink
+        (SystemState.updateTcb_preserves_objects_invExt _ _ _ h))
 
-end LendersFrame
+end LendersStep
 
 end SeLe4n.Kernel

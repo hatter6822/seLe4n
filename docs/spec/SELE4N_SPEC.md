@@ -1356,7 +1356,7 @@ internal; nothing a thread writes names one.
     (`maybeReturnSchedContext`, seL4's `maybeReturnSchedContext`) whenever
     it holds the notification's context, by binding or by donation.
   - The checked kernel flow-checks every lend on static labels, beside the
-    invariant `contextLendersFlow` (every lender on a context's reply stack
+    invariant `contextLendersLabelsEqual` (every lender on a context's reply stack
     flows to the context's label), which every kernel entry carries. A
     notification lends only where the context's label and the woken
     thread's are equal (`donationContextFlows`, owner decision D30); a Call,
@@ -5906,7 +5906,7 @@ read 0.  SchedContext_Bind binds a context heading a reply stack, as seL4's
 the checked dispatch admits it only where the context's label flows to the
 bound thread (`schedContextBindLabelGate`, refusing `flowDenied` before the
 bind reads or writes anything else), so with every lender on the stack flowing
-to the context's label (`contextLendersFlow`) every lender flows to the thread
+to the context's label (`contextLendersLabelsEqual`) every lender flows to the thread
 the reply later takes the context back from.  Since `v0.37.36` the bind also
 binds a thread whose reply frame is on a live stack (a lender), as seL4 does:
 reply_pop takes seL4's held arm where its recipient already holds a context

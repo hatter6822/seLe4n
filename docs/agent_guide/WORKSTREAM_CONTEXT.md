@@ -282,7 +282,7 @@ notification, then the reply stack the context heads
 in place every reply shape to a caller recording no server on a reply object
 linked to nothing (`replyDispatch_unlinked_inPlace`), and every reply-receive
 shape on it (`replyRecvAnsweringOnCore_unlinked_inPlace`). Under the owner's
-decisions D25–D30 it also carries `contextLendersFlow` (every lender on a
+decisions D25–D30 it also carries `contextLendersLabelsEqual` (every lender on a
 context's stack flows to the context's label) across every kernel entry, so a
 lend or a bind of a stack's head is checked on two static labels: a Call,
 received Call or fault lends only where the caller flows to the context
@@ -303,7 +303,7 @@ UnbindObject on a thread does not, as seL4 does not; a reply-stack writer
 registers in `SeLe4n/Testing/ReplyStackWriteCensus.lean` with its chain and
 lender results, and a frozen one as the `.mirrors` of its live twin; a new
 writer of a context's stack head, a reply's `prev` or a reply's `caller`
-proves `contextLendersFlow` across itself; a new lend runs its label check
+proves `contextLendersLabelsEqual` across itself; a new lend runs its label check
 before it reads any thread's state and lends nothing where the check refuses;
 the reply pop gives a context to the caller of the frame it answers, and no
 state records a donor beyond the holder's binding (SX12 at `v0.37.41`); a new
@@ -348,7 +348,7 @@ checked form.
 `ipcReachable` (the IPC bundle, `objects.invExt`, the donation-chain facts,
 `replyCallerLinkageReciprocal` among them) is proved across one transition but
 concluded at no entry's committed state, so the per-entry theorems that read
-the chain facts, `contextLendersFlow`'s first, take them as entry premises.
+the chain facts, `contextLendersLabelsEqual`'s first, take them as entry premises.
 WS-PK adds a stage family for the pack on the `KernelRecords/` template and
 re-states those theorems to read it from the previous entry. It owns the two
 `docs/REGISTERED_DEBT.md` table C rows "`ipcReachable` is not carried across a

@@ -42,7 +42,8 @@ theorem storeCNodeWith (st : SystemState) (k : SeLe4n.ObjId) (f : CNode → CNod
 theorem withCdt (st : SystemState) (c : CapDerivationTree) :
     chainObjectsKept st { st with cdt := c } := of_objects_eq rfl
 
-/-- **Slot-link writes rewrite CNodes and threads alone.** -/
+/-- **Slot-link writes rewrite CNodes and threads alone**, keeping every binding
+word. -/
 theorem of_linkReach {st₀ st : SystemState} (hR : SystemState.linkReach st₀ st)
     (hInv : st₀.objects.invExt) : chainObjectsKept st₀ st := by
   have key : ∀ (x : SeLe4n.ObjId) (o : KernelObject), st.objects[x]? = some o →
@@ -54,7 +55,9 @@ theorem of_linkReach {st₀ st : SystemState} (hR : SystemState.linkReach st₀ 
       | (rw [ha] at hx; cases hx; first | exact absurd rfl (hC _) | exact absurd rfl (hT _))
       | (rw [hb] at hx; cases hx; first | exact absurd rfl (hC _) | exact absurd rfl (hT _))
   exact ⟨fun x r hx => key x _ hx (fun _ e => by cases e) (fun _ e => by cases e),
-    fun x sc hx => key x _ hx (fun _ e => by cases e) (fun _ e => by cases e)⟩
+    fun x sc hx => key x _ hx (fun _ e => by cases e) (fun _ e => by cases e),
+    bindingViewsShrink_of_objects fun x =>
+      .of_eq (hR.agree hInv x).objBindingWords⟩
 
 theorem cdtAddChild (st : SystemState) (p c : SlotRef) (op : DerivationOp)
     (hInv : st.objects.invExt) : chainObjectsKept st (st.cdtAddChild p c op) :=
@@ -117,8 +120,9 @@ theorem cspaceCopy {src dst : CSpaceAddr} {mask : AccessRightSet} {st st' : Syst
 theorem cspaceDeleteSlotCore {addr : CSpaceAddr} {st st' : SystemState} (hInv : st.objects.invExt)
     (hStep : _root_.SeLe4n.Kernel.cspaceDeleteSlotCore addr st = .ok ((), st')) :
     chainObjectsKept st st' := by
-  obtain ⟨o, -, hH, hS⟩ := cspaceDeleteSlotCore_ok hStep
-  refine storeObject_other hInv hS (fun r e => ?_) (fun sc e => ?_) <;>
+  obtain ⟨o, hO, hH, hS⟩ := cspaceDeleteSlotCore_ok hStep
+  refine storeObject_other hInv hS (fun r e => ?_) (fun sc e => ?_)
+    (.of_eq (by rw [hO]; cases o <;> rfl)) <;>
     cases o <;> simp_all [KernelObject.removeSlotCap, KernelObject.holdsSlots]
 
 theorem cspaceMove {src dst : CSpaceAddr} {st st' : SystemState} (hInv : st.objects.invExt)

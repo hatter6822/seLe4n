@@ -2592,10 +2592,11 @@ run_check "INVARIANT" rg -n '^theorem objBindingWords_storeObject_ne($|[ ({:\[\]
 run_check "INVARIANT" rg -n '^theorem contextStacksShrink_bindingViewsGrow_storeTcb($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/ContextLenders.lean
 run_check "INVARIANT" rg -n '^theorem contextStacksShrink_bindingViewsGrow_storeNotification($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/ContextLenders.lean
 run_check "INVARIANT" rg -n '^theorem contextStacksShrink_bindingViewsGrow_storeSchedContext($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/ContextLenders.lean
-run_check "INVARIANT" rg -n '^theorem contextLendersFlow_bindingLabelsEqual_of_grow($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/ContextLenders.lean
-# The carrying theorem takes both invariants, the stack shrink and the binding
-# grow from the state before the step to the state after, bounded to its header.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem contextLendersFlow_bindingLabelsEqual_of_grow [^\n]*( *\n +[^\n]*)*\(hL : contextLendersFlow ctx st\) \(hB : bindingLabelsEqual ctx st\)\n +\(hS : contextStacksShrink st st'"'"'\) \(hG : bindingViewsGrow ctx st st'"'"'\) :\n +contextLendersFlow ctx st'"'"' ∧ bindingLabelsEqual ctx st'"'"' :=" SeLe4n/Kernel/SchedContext/Invariant/ContextLenders.lean'
+run_check "INVARIANT" rg -n '^theorem lendingLabelsEqual_of_grow($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/ContextLenders.lean
+# WS-SX SX16: the carrying theorem takes the lending labels, the stack shrink and
+# the binding grow from the state before the step to the state after, bounded to
+# its header.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lendingLabelsEqual_of_grow [^\n]*( *\n +[^\n]*)*\(hInv : lendingLabelsEqual ctx st\) \(hS : contextStacksShrink st st'"'"'\)\n +\(hG : bindingViewsGrow ctx st st'"'"'\) : lendingLabelsEqual ctx st'"'"' :=" SeLe4n/Kernel/SchedContext/Invariant/ContextLenders.lean'
 
 # ============================================================================
 # WS-OD OD5 -- chain-aware teardown, reply reuse, and the middle-caller policy
@@ -11302,8 +11303,8 @@ open SeLe4n.Kernel.Concurrency
 #check @donationContextFlows_false_of_not_back
 #check @donationContextFlows_congr
 #check @OnContextStack
-#check @contextLendersFlow
-#check @contextLendersFlow_of_no_stacks
+#check @contextLendersLabelsEqual
+#check @contextLendersLabelsEqual_of_no_stacks
 #check @donationContextFlows_lenders
 #check @callLendAdmits
 #check @callLendAdmits_congr
@@ -11343,41 +11344,41 @@ open SeLe4n.Kernel.Concurrency
 #check @replyRecvUnlentArmR
 #check @replyRecvUnlentArmR_eq
 #check @OnContextStack_iff_views
-#check @contextLendersFlow_iff_views
+#check @contextLendersLabelsEqual_iff_views
 #check @contextStacksShrink
-#check @contextLendersFlow_of_shrink
+#check @contextLendersLabelsEqual_of_shrink
 #check @contextStackViewsAgree
-#check @contextLendersFlow_of_viewsAgree
+#check @contextLendersLabelsEqual_of_viewsAgree
 #check @contextStackViewsAgree_of_chainFrame
 #check @contextStackLinksShrink
-#check @contextLendersFlow_of_linksShrink
-#check @contextLendersFlow_of_push
+#check @contextLendersLabelsEqual_of_linksShrink
+#check @contextLendersLabelsEqual_of_push
 #check @not_onContextStack_of_next_none
-#check @cutReplyFrameOut_preserves_contextLendersFlow
-#check @removeCallerReplyFrame_preserves_contextLendersFlow
-#check @returnDonatedSchedContext_preserves_contextLendersFlow
-#check @donateSchedContext_preserves_contextLendersFlow
-#check @donateSchedContextInPlace_preserves_contextLendersFlow
-#check @returnUnheldSchedContext_preserves_contextLendersFlow
-#check @severUnheldSchedContext_preserves_contextLendersFlow
-#check @cutHeadFrameKeepingContext_preserves_contextLendersFlow
-#check @schedContextUnbindReply_preserves_contextLendersFlow
-#check @storeReplyLeg_preserves_contextLendersFlow
-#check @linkReply_preserves_contextLendersFlow
-#check @linkCallerReply_preserves_contextLendersFlow
-#check @contextLendersFlow_of_linksShrinkOff
+#check @cutReplyFrameOut_preserves_lendingLabelsEqual
+#check @removeCallerReplyFrame_preserves_lendingLabelsEqual
+#check @returnDonatedSchedContext_preserves_lendingLabelsEqual
+#check @donateSchedContext_preserves_lendingLabelsEqual
+#check @donateSchedContextInPlace_preserves_lendingLabelsEqual
+#check @returnUnheldSchedContext_preserves_lendingLabelsEqual
+#check @severUnheldSchedContext_preserves_lendingLabelsEqual
+#check @cutHeadFrameKeepingContext_preserves_lendingLabelsEqual
+#check @schedContextUnbindReply_preserves_lendingLabelsEqual
+#check @storeReplyLeg_preserves_lendingLabelsEqual
+#check @linkReply_preserves_lendingLabelsEqual
+#check @linkCallerReply_preserves_lendingLabelsEqual
+#check @lendingLabelsEqual_of_linksShrinkOff
 #check @chainObjectsKept.endpointQueuePopHead
 #check @chainObjectsKept.endpointQueueEnqueue
-#check @linkServerStashedReply_preserves_contextLendersFlow
-#check @storeCallRendezvous_preserves_contextLendersFlow
-#check @storeCallRendezvousReady_preserves_contextLendersFlow
-#check @storeReceiveCallReady_preserves_contextLendersFlow
-#check @receiveCallTakeState_preserves_contextLendersFlow
-#check @endpointCall_preserves_contextLendersFlow
-#check @endpointCallOnCore_preserves_contextLendersFlow
-#check @endpointReceiveDual_preserves_contextLendersFlow
-#check @endpointReceiveDualOnCore_preserves_contextLendersFlow
-#check @cleanupPreReceiveDonationMigrated_linksShrink
+#check @linkServerStashedReply_preserves_lendingLabelsEqual
+#check @storeCallRendezvous_preserves_lendingLabelsEqual
+#check @storeCallRendezvousReady_preserves_lendingLabelsEqual
+#check @storeReceiveCallReady_preserves_lendingLabelsEqual
+#check @receiveCallTakeState_preserves_lendingLabelsEqual
+#check @endpointCall_preserves_lendingLabelsEqual
+#check @endpointCallOnCore_preserves_lendingLabelsEqual
+#check @endpointReceiveDual_preserves_lendingLabelsEqual
+#check @endpointReceiveDualOnCore_preserves_lendingLabelsEqual
+#check @cleanupPreReceiveDonationMigrated_preserves_lendingLabelsEqual
 #check @LendersStage
 #check @LendersPremises
 #check @LendersStage.of_linksShrink
@@ -11391,48 +11392,45 @@ open SeLe4n.Kernel.Concurrency
 #check @LendersFrame.timeoutThread
 #check @LendersFrame.timerTickOnCore
 #check @perCoreTimerTickEntryState_lendersStage
-#check @LendersFrame.schedContextBindPerform
-#check @LendersFrame.sendSignalOnCoreFlowing
+#check @LendersStep.schedContextBindPerform
+#check @LendersStep.sendSignalOnCoreFlowing
 #check @interruptEntryState_lendersStage
 #check @chainObjectsKept.receiveTransferCaps
 #check @chainObjectsKept.propagatePipChainCrossCore
-#check @applyCallDonation_preserves_contextLendersFlow
-#check @endpointCallWithCapsOnCore_preserves_contextLendersFlow
-#check @endpointCallCrossCoreDispatch_preserves_contextLendersFlow
-#check @endpointCallCrossCoreDispatchChecked_preserves_contextLendersFlow
+#check @applyCallDonation_preserves_lendingLabelsEqual
+#check @endpointCallWithCapsOnCore_preserves_lendingLabelsEqual
+#check @endpointCallCrossCoreDispatch_preserves_lendingLabelsEqual
+#check @endpointCallCrossCoreDispatchChecked_preserves_lendingLabelsEqual
 #check @FaultLendPremises
-#check @faultDeliverOnCoreChecked_preserves_contextLendersFlow
+#check @faultDeliverOnCoreChecked_preserves_lendingLabelsEqual
 #check @faultEntryState_lendersStage
 #check @unknownSyscallEntryState_lendersStage
-#check @applyReceiveRendezvousHandoff_preserves_contextLendersFlow
-#check @endpointReceiveDualWithCapsOnCore_preserves_contextLendersFlow
+#check @applyReceiveRendezvousHandoff_preserves_lendingLabelsEqual
+#check @endpointReceiveDualWithCapsOnCore_preserves_lendingLabelsEqual
 #check @chainObjectsKept.endpointSendDualOnCore
 #check @endpointSendCrossCoreDispatchChecked_lendersStage
-#check @LendersFrame.notificationSignalBoundCrossCoreDispatchChecked
-#check @LendersFrame.notificationSignalDeclassifiedCrossCoreDispatch
-#check @LendersFrame.cancelIpcKeepingContexts
-#check @LendersFrame.suspendCancelRevert
-#check @LendersFrame.cancelReplyHolder
+#check @LendersStep.notificationSignalBoundCrossCoreDispatchChecked
+#check @LendersStep.notificationSignalDeclassifiedCrossCoreDispatch
+#check @LendersStep.cancelIpcKeepingContexts
+#check @LendersStep.suspendCancelRevert
+#check @LendersStep.cancelReplyHolder
 #check @chainObjectsKept.notificationWaitOnCore
 #check @LendersFrame.notificationWaitCrossCoreDispatchChecked
-#check @LendersFrame.schedContextReturnPerform
-#check @LendersFrame.maybeReturnSchedContext
-#check @LendersFrame.receiveReturnSchedContext
-#check @LendersFrame.maybeDonateSchedContextFlowing
-#check @LendersFrame.completeSignalArm
-#check @LendersFrame.applyReplyDonationOnCore
+#check @LendersStep.schedContextReturnPerform
+#check @LendersStep.maybeReturnSchedContext
+#check @LendersStep.receiveReturnSchedContext
+#check @LendersStep.maybeDonateSchedContextFlowing
+#check @LendersStep.completeSignalArm
+#check @LendersStep.applyReplyDonationOnCore
 #check @LendersFrame.endpointReplyOnCore
-#check @LendersFrame.endpointReplyCrossCoreDispatchChecked
-#check @LendersFrame.faultReplyOnCore
-#check @LendersFrame.replyTransferOnCoreChecked
-#check @receiveLendAdmits_flows_dequeued
+#check @LendersStep.endpointReplyCrossCoreDispatchChecked
+#check @LendersStep.faultReplyOnCore
+#check @LendersStep.replyTransferOnCoreChecked
 #check @ReceiveLendersPremises
 #check @receiveResolvedArm_lendersStage
-#check @LendersFrame.replyRecvCompletesSignalArm
-#check @replyRecvPopDonation_binding_cases
-#check @replyRecvLendAdmits_flows_dequeued
-#check @LendersFrame.replyRecvPopDonation
-#check @replyRecvPostReceiveDonation_preserves_contextLendersFlow
+#check @LendersStep.replyRecvCompletesSignalArm
+#check @LendersStep.replyRecvPopDonation
+#check @replyRecvPostReceiveDonation_preserves_lendingLabelsEqual
 #check @ReplyRecvLendersPremises
 #check @endpointReplyRecvAnsweringOnCore_lendersStage
 #check @replyRecvTransferOnCore_lendersStage
@@ -11460,20 +11458,20 @@ open SeLe4n.Kernel.Concurrency
 #check @LendersFrame.pageTableMap
 #check @LendersFrame.pageTableUnmap
 #check @LendersFrame.irqControlGetFromCap
-#check @LendersFrame.suspendThreadOnCore
+#check @LendersStep.suspendThreadOnCore
 #check @LendersFrame.resumeThreadOnCore
-#check @LendersFrame.restartThreadOnCore
+#check @LendersStep.restartThreadOnCore
 #check @LendersFrame.untypedRetypeFromCap
-#check @contextStackViewsAgree_of_finaliseWrite
-#check @LendersFrame.finaliseFinalObject
-#check @LendersFrame.retireFinalisedObject
-#check @LendersFrame.cspaceDeleteSlotZombie
-#check @LendersFrame.cspaceRevokeCdtFinalising
-#check @LendersFrame.copyThreadSpacesZombie
+#check @contextStackLinksShrink_of_finaliseWrite
+#check @LendersStep.finaliseFinalObject
+#check @LendersStep.retireFinalisedObject
+#check @LendersStep.cspaceDeleteSlotZombie
+#check @LendersStep.cspaceRevokeCdtFinalising
+#check @LendersStep.copyThreadSpacesZombie
 #check @LendersFrame.setIPCBufferOp
-#check @LendersFrame.irqHandlerSetNotification
-#check @LendersFrame.irqHandlerClear
-#check @dispatchCapabilityOnly_lendersFrame
+#check @LendersStep.irqHandlerSetNotification
+#check @LendersStep.irqHandlerClear
+#check @dispatchCapabilityOnly_lendersStep
 #check @dispatchWithCapChecked_lendersStage
 #check @dispatchSyscallChecked_lendersStage
 #check @syscallEntryChecked_lendersStage
@@ -11574,7 +11572,37 @@ open SeLe4n.Kernel.Concurrency
 #check @replyTransferOnCoreChecked_congr_words
 #check @Architecture.decodeFaultReply_congr
 #check @endpointReplyLongCheckedArmR_eq_general
+#check @LendersStep
+#check @LendersStep.of_frame
+#check @LendersFrame.andThenStep
+#check @LendersStep.of_insert
+#check @LendersStep.updateTcb_grow
+#check @LendersStep.rewriteObject_schedContext_grow
+#check @calledFrame_labelEq
+#check @answeredFrame_labelEq
+#check @LendersStep.schedContextBind
+#check @LendersStep.schedContextBindNotification
+#check @LendersStep.finaliseReplyCancel
+#check @LendersStep.finaliseReplyUnheldPop
+#check @LendersFrame.of_finaliseFrame
+#check @LendersStep.popUnheldReplyHead
+#check @LendersStep.returnDonationToCancelledCaller
+#check @LendersStep.cancelReceiveBusyReply
+#check @LendersStep.endpointReplyCrossCoreDispatch
+#check @LendersStep.maybeDonateSchedContext
+#check @LendersStep.keepDonatedSchedContextResolved
+#check @LendersStep.returnDonatedSchedContextResolved
+#check @notificationContext?_of_bindingShrink
 EOF'
+# WS-SX SX16 (D42 row B): a pop is a labelled step -- the lending labels
+# carried from the state before it to the state after it, and the object table
+# kept well formed -- not a links shrink.
+run_check "INVARIANT" bash -lc 'rg -U -n "^structure LendersStep \(ctx : LabelingContext\) \(st st'"'"' : SystemState\) : Prop where\n  stage : LendersStage ctx st st'"'"'\n  invExt : st'"'"'.objects.invExt" SeLe4n/Kernel/ContextLenders/Timer.lean'
+# The links shrink carries the binding words: a frame never grows one.
+run_check "INVARIANT" bash -lc 'rg -U -n "^structure contextStackLinksShrink \(st st'"'"' : SystemState\) : Prop where\n(  [^\n]*\n)*  binding : bindingViewsShrink st st'"'"'" SeLe4n/Kernel/SchedContext/Invariant/ContextLenders.lean'
+# A reply pop's owner is read at the pre-reply state (the frame's recorded
+# caller under its lending labels) and carried across the reply leg's shrink.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem calledFrame_labelEq [^\n]*( *\n +[^\n]*)*\(hL : contextLendersLabelsEqual ctx st\) \(hC : replyStackCaller st rid = some target\)\n +\(hS : contextStackLinksShrink st st1\) :\n +∀ s, replyFrameHeadContext\? st1 rid = some s →" SeLe4n/Kernel/ContextLenders/Reply.lean'
 # The receive-side footprints carry the state-level member on the SAME flag the
 # transition branches on, so the declaration tracks the write rather than being
 # unconditionally present.

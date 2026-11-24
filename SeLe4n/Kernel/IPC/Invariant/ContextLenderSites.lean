@@ -34,7 +34,9 @@ open SeLe4n.Model
 /-- A context rewritten in its slot with its head cleared or kept. -/
 theorem contextStackLinksShrink_updateSchedContext (st : SystemState)
     (scId : SeLe4n.SchedContextId) (f : SchedContext → SchedContext)
-    (hInv : st.objects.invExt) (hf : ∀ sc, (f sc).scReply = none ∨ (f sc).scReply = sc.scReply) :
+    (hInv : st.objects.invExt) (hf : ∀ sc, (f sc).scReply = none ∨ (f sc).scReply = sc.scReply)
+    (hfB : ∀ sc, (f sc).boundThreadCode = 0 ∨ (f sc).boundThreadCode = sc.boundThreadCode := by
+      intro _; exact .inr rfl) :
     contextStackLinksShrink st (st.updateSchedContext scId f) := by
   cases hS : st.getSchedContext? scId with
   | none => rw [SystemState.updateSchedContext_eq_self_of_none hS]; exact .refl _
@@ -42,7 +44,7 @@ theorem contextStackLinksShrink_updateSchedContext (st : SystemState)
     rw [SystemState.updateSchedContext_eq_of_some hS]
     have hO := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS
     refine contextStackLinksShrink_insert hInv (fun s r hk hr => ?_) (fun _ hx => ?_)
-      (fun _ hl => ?_)
+      (fun _ hl => ?_) (.ofSchedContext hO (hfB sc))
     · simp only [objStackHead] at hr
       rcases hf sc with h | h <;> rw [h] at hr
       · cases hr
@@ -70,7 +72,9 @@ theorem contextStackLinksShrink_storeReplyWith (st : SystemState) (rid : SeLe4n.
 /-- **The in-place reply leg's shape is a links shrink**: two thread writes, a
 wake, and the reply object consumed in its slot. -/
 theorem contextStackLinksShrink_replyLegShape (st : SystemState) (c : SeLe4n.ThreadId)
-    (rid : SeLe4n.ReplyId) (f : TCB → TCB) (hInv : st.objects.invExt) :
+    (rid : SeLe4n.ReplyId) (f : TCB → TCB) (hInv : st.objects.invExt)
+    (hf : ∀ x : TCB, (f x).scBindingScCode = x.scBindingScCode ∧
+      (f x).scBindingOwnerCode = x.scBindingOwnerCode := by intro _; exact ⟨rfl, rfl⟩) :
     contextStackLinksShrink st
       (((enqueueRunnableOnCore (st.updateTcb c f) (determineTargetCore (st.updateTcb c f) c) c
         ).modifyObject rid.toObjId replyConsumedObject).updateTcb c
@@ -79,36 +83,36 @@ theorem contextStackLinksShrink_replyLegShape (st : SystemState) (c : SeLe4n.Thr
   have hI2 := enqueueRunnableOnCore_preserves_objects_invExt _
     (determineTargetCore (st.updateTcb c f) c) c hI1
   have hI3 := modifyObject_preserves_objects_invExt (k := rid.toObjId) (f := replyConsumedObject) hI2
-  exact (((contextStackLinksShrink_updateTcb st c f hInv).trans
+  exact (((contextStackLinksShrink_updateTcb st c f hInv hf).trans
     (contextStackLinksShrink_enqueueRunnableOnCore _ _ c hI1)).trans
     (contextStackLinksShrink_modifyObject_consumed _ rid hI2)).trans
     (contextStackLinksShrink_updateTcb _ c _ hI3)
 
-theorem storeReplyLeg_preserves_contextLendersFlow {ctx : LabelingContext} (st : SystemState)
+theorem storeReplyLeg_preserves_lendingLabelsEqual {ctx : LabelingContext} (st : SystemState)
     (c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage) (hInv : st.objects.invExt)
-    (hFlow : contextLendersFlow ctx st) :
-    contextLendersFlow ctx (storeReplyLeg st c rid msg) :=
-  contextLendersFlow_of_linksShrink hFlow (contextStackLinksShrink_replyLegShape st c rid _ hInv)
+    (hFlow : lendingLabelsEqual ctx st) :
+    lendingLabelsEqual ctx (storeReplyLeg st c rid msg) :=
+  lendingLabelsEqual_of_linksShrink hFlow (contextStackLinksShrink_replyLegShape st c rid _ hInv)
 
-theorem storeReplyLegReady_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem storeReplyLegReady_preserves_lendingLabelsEqual {ctx : LabelingContext}
     (st : SystemState) (c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt)
-    (hFlow : contextLendersFlow ctx st) :
-    contextLendersFlow ctx (storeReplyLegReady st c rid) :=
-  contextLendersFlow_of_linksShrink hFlow (contextStackLinksShrink_replyLegShape st c rid _ hInv)
+    (hFlow : lendingLabelsEqual ctx st) :
+    lendingLabelsEqual ctx (storeReplyLegReady st c rid) :=
+  lendingLabelsEqual_of_linksShrink hFlow (contextStackLinksShrink_replyLegShape st c rid _ hInv)
 
-theorem storeFaultReplyLeg_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem storeFaultReplyLeg_preserves_lendingLabelsEqual {ctx : LabelingContext}
     (st : SystemState) (c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt)
-    (hFlow : contextLendersFlow ctx st) :
-    contextLendersFlow ctx (storeFaultReplyLeg st c rid) :=
-  contextLendersFlow_of_linksShrink hFlow (contextStackLinksShrink_replyLegShape st c rid _ hInv)
+    (hFlow : lendingLabelsEqual ctx st) :
+    lendingLabelsEqual ctx (storeFaultReplyLeg st c rid) :=
+  lendingLabelsEqual_of_linksShrink hFlow (contextStackLinksShrink_replyLegShape st c rid _ hInv)
 
 /-- The compiled consume is the consume (`consumeCallerReplyInPlace_eq`). -/
-theorem consumeCallerReplyInPlace_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem consumeCallerReplyInPlace_preserves_lendingLabelsEqual {ctx : LabelingContext}
     (st : SystemState) (c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt)
-    (hFlow : contextLendersFlow ctx st) :
-    contextLendersFlow ctx (consumeCallerReplyInPlace st c rid) := by
+    (hFlow : lendingLabelsEqual ctx st) :
+    lendingLabelsEqual ctx (consumeCallerReplyInPlace st c rid) := by
   rw [consumeCallerReplyInPlace_eq]
-  exact consumeCallerReplyLink_preserves_contextLendersFlow st c rid hInv hFlow
+  exact consumeCallerReplyLink_preserves_lendingLabelsEqual st c rid hInv hFlow
 
 /-! ### The unheld pops -/
 
@@ -134,20 +138,78 @@ theorem severUnheldSchedContext_linksShrink {st st' : SystemState}
         obtain ⟨⟨⟩, s1⟩ := p
         rw [hS1] at h; simp only [] at h
         exact (contextStackLinksShrink_storeHeadBelow hObjInv
-          ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS) hH rfl hS1).trans
+          ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS) hH rfl hS1
+          (.ofSchedContext ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS) (.inr rfl))).trans
           (storeDonationHeadPop_linksShrink
             (storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1) h)
 
-theorem severUnheldSchedContext_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem severUnheldSchedContext_preserves_lendingLabelsEqual {ctx : LabelingContext}
     {st st' : SystemState} {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
-    (hObjInv : st.objects.invExt) (hInv : contextLendersFlow ctx st)
-    (h : severUnheldSchedContext st scId newOwner? = .ok st') : contextLendersFlow ctx st' :=
-  contextLendersFlow_of_linksShrink hInv (severUnheldSchedContext_linksShrink hObjInv h)
+    (hObjInv : st.objects.invExt) (hInv : lendingLabelsEqual ctx st)
+    (h : severUnheldSchedContext st scId newOwner? = .ok st') : lendingLabelsEqual ctx st' :=
+  lendingLabelsEqual_of_linksShrink hInv (severUnheldSchedContext_linksShrink hObjInv h)
 
-theorem returnUnheldSchedContext_linksShrink {st st' : SystemState}
-    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId} {newOwner? : Option SeLe4n.ThreadId}
-    (hObjInv : st.objects.invExt) (h : returnUnheldSchedContext st scId owner newOwner? = .ok st') :
-    contextStackLinksShrink st st' := by
+/-- Two successor codes that agree name the same context. -/
+theorem schedContextId_eq_of_succ {a b : SeLe4n.SchedContextId} (e : a.val + 1 = b.val + 1) :
+    b = a := by
+  have hv : b.val = a.val := by omega
+  cases a; cases b; simp only at hv; subst hv; rfl
+
+/-- Two successor codes that agree name the same thread. -/
+theorem threadId_eq_of_succ {a b : SeLe4n.ThreadId} (e : a.val + 1 = b.val + 1) : b = a := by
+  have hv : b.val = a.val := by omega
+  cases a; cases b; simp only at hv; subst hv; rfl
+
+/-- **A rebinding store's grow**: the thread record at `t0` written with the
+binding a pop hands back (`donationReturnBinding`), every other slot's binding
+words unchanged, given the thread's and the next owner's labels. -/
+theorem bindingViewsGrow_returnBinding {ctx : LabelingContext} {st st' : SystemState}
+    {t0 : SeLe4n.ThreadId} {tcb : TCB} {scId : SeLe4n.SchedContextId}
+    {n? : Option SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (h : storeObject t0.toObjId (.tcb { tcb with
+      scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId n?),
+      scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId n?) }) st
+        = .ok ((), st'))
+    (hT : ctx.threadLabelOf t0 = ctx.objectLabelOf scId.toObjId)
+    (hNew : ∀ o, n? = some o → ctx.threadLabelOf o = ctx.objectLabelOf scId.toObjId) :
+    bindingViewsGrow ctx st st' :=
+  bindingViewsGrow_of_tcbSlot (fun x hx => by rw [storeObject_objects_ne st st' _ x _ hx hInv h])
+    (storeObject_objects_eq st st' _ _ hInv h)
+    (fun s hs => by
+      cases n? <;> simp only [donationReturnBinding, SchedContextBinding.scCode] at hs <;>
+        rw [schedContextId_eq_of_succ hs] <;> exact hT)
+    (fun s o hs ho => by
+      cases hN : n? with
+      | none => simp only [hN, donationReturnBinding, SchedContextBinding.ownerCode] at ho; omega
+      | some o' =>
+        simp only [hN, donationReturnBinding, SchedContextBinding.scCode,
+          SchedContextBinding.ownerCode] at hs ho
+        rw [schedContextId_eq_of_succ hs, threadId_eq_of_succ ho]; exact hNew o' hN)
+
+/-- **A context's thread word written to `t`** at its slot, every other slot's
+binding words unchanged: the grow, given `t`'s label. -/
+theorem bindingViewsGrow_storeReturnContext {ctx : LabelingContext} {st st' : SystemState}
+    {scId : SeLe4n.SchedContextId} {sc : SchedContext} {t : SeLe4n.ThreadId}
+    {n? : Option SeLe4n.ReplyId} (hInv : st.objects.invExt)
+    (h : storeObject scId.toObjId (.schedContext (donationReturnSchedContext sc t n?)) st
+      = .ok ((), st'))
+    (hT : ctx.threadLabelOf t = ctx.objectLabelOf scId.toObjId) :
+    bindingViewsGrow ctx st st' :=
+  bindingViewsGrow_of_schedContextSlot
+    (fun x hx => by rw [storeObject_objects_ne st st' _ x _ hx hInv h])
+    (storeObject_objects_eq st st' _ _ hInv h) (fun t' ht => by
+      simp only [donationReturnSchedContext, SeLe4n.ThreadId.optCode] at ht
+      rw [threadId_eq_of_succ ht]; exact hT)
+
+/-- **The unheld pop carries equal lending labels**, given the owner's and the
+next owner's labels. -/
+theorem returnUnheldSchedContext_preserves_lendingLabelsEqual {ctx : LabelingContext}
+    {st st' : SystemState} {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt) (hInv : lendingLabelsEqual ctx st)
+    (hOwner : ctx.threadLabelOf owner = ctx.objectLabelOf scId.toObjId)
+    (hNew : ∀ o, newOwner? = some o → ctx.threadLabelOf o = ctx.objectLabelOf scId.toObjId)
+    (h : returnUnheldSchedContext st scId owner newOwner? = .ok st') : lendingLabelsEqual ctx st' := by
   unfold returnUnheldSchedContext at h
   cases hS : st.getSchedContext? scId with
   | none => rw [hS] at h; cases h
@@ -170,8 +232,7 @@ theorem returnUnheldSchedContext_linksShrink {st st' : SystemState}
         obtain ⟨⟨⟩, s1⟩ := p
         rw [hS1] at h; simp only [] at h
         have hI1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-        have hA := contextStackLinksShrink_storeHeadBelow hObjInv
-          ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS) hH rfl hS1
+        have hScO := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hS
         cases hS2 : storeDonationHeadPop scId head? s1 with
         | error e => rw [hS2] at h; cases h
         | ok s2 =>
@@ -183,77 +244,138 @@ theorem returnUnheldSchedContext_linksShrink {st st' : SystemState}
           · split at h
             · cases h
             · rename_i hS3; cases h
-              exact (hA.trans hB).trans ((contextStackLinksShrink_storeObject_other hI2 hS3
-                (fun _ e => by cases e) (fun _ e => by cases e)).trans
-                (contextStackLinksShrink_of_objects_eq (markKeyChangeFrom_objects _ _ _)))
+              exact lendingLabelsEqual_of_grow hInv
+                ((((contextStacksShrink_storeSchedContext hObjInv hS1
+                  (onContextStack_headBelow hScO hH rfl)).trans
+                  (contextStacksShrink_of_linksShrink hB)).trans
+                  (contextStacksShrink_storeObject_other hI2 hS3 (fun _ e => by cases e)
+                    (fun _ e => by cases e))).trans (contextStacksShrink_of_linksShrink
+                    (contextStackLinksShrink_of_objects_eq (markKeyChangeFrom_objects _ _ _))))
+                ((((bindingViewsGrow_storeReturnContext hObjInv hS1 hOwner).trans
+                  (.of_shrink hB.binding)).trans
+                  (bindingViewsGrow_returnBinding hI2 hS3 hOwner hNew)).trans (.of_shrink
+                    (bindingViewsShrink.of_objects_eq (markKeyChangeFrom_objects _ _ _))))
 
-/-- **The held pop shrinks the stack links**: the sever's head pop, then the
-holder's binding store, which writes no reply and no context. -/
-theorem keepDonatedSchedContext_linksShrink {st st' : SystemState}
-    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
-    (hObjInv : st.objects.invExt) (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') :
-    contextStackLinksShrink st st' := by
-  obtain ⟨sc, head?, _, s1, s2, hSc, -, -, hH, hS1, hS2, -, hS3⟩ :=
-    keepDonatedSchedContext_ok_storeChain h
-  have hI1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-  have hI2 := storeDonationHeadPop_preserves_objects_invExt hI1 hS2
-  exact ((contextStackLinksShrink_storeHeadBelow hObjInv hSc hH rfl hS1).trans
-    (storeDonationHeadPop_linksShrink hI1 hS2)).trans
-    (contextStackLinksShrink_storeObject_other hI2 hS3 (fun _ e => by cases e) (fun _ e => by cases e))
-
-/-- **The held pop keeps every lender flowing to its context**: it shrinks the
-stack links. -/
-theorem keepDonatedSchedContext_preserves_contextLendersFlow {ctx : LabelingContext}
+/-- **The held pop carries equal lending labels**, given the next owner's label:
+the holder keeps the context it already held, its owner word moves to the
+next owner. -/
+theorem keepDonatedSchedContext_preserves_lendingLabelsEqual {ctx : LabelingContext}
     {st st' : SystemState} {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
     {newOwner? : Option SeLe4n.ThreadId}
-    (hObjInv : st.objects.invExt) (hInv : contextLendersFlow ctx st)
-    (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') : contextLendersFlow ctx st' :=
-  contextLendersFlow_of_linksShrink hInv (keepDonatedSchedContext_linksShrink hObjInv h)
+    (hObjInv : st.objects.invExt) (hInv : lendingLabelsEqual ctx st)
+    (hNew : ∀ o, newOwner? = some o → ctx.threadLabelOf o = ctx.objectLabelOf scId.toObjId)
+    (h : keepDonatedSchedContext st holder scId newOwner? = .ok st') : lendingLabelsEqual ctx st' := by
+  obtain ⟨sc, head?, ht, s1, s2, -, hSc, hBound, -, hH, hS1, hS2, -, hS3⟩ :=
+    keepDonatedSchedContext_ok_storeChainGuarded h
+  have hHolder : ctx.threadLabelOf holder = ctx.objectLabelOf scId.toObjId :=
+    hInv.2.2.1 scId sc holder hSc ((SeLe4n.ThreadId.ofOptCode_eq_some_iff _ _).mp hBound)
+  have hI1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  have hI2 := storeDonationHeadPop_preserves_objects_invExt hI1 hS2
+  have hA := (contextStackLinksShrink_storeHeadBelow hObjInv hSc hH rfl hS1).trans
+    (storeDonationHeadPop_linksShrink hI1 hS2)
+  refine lendingLabelsEqual_of_grow hInv ((contextStacksShrink_of_linksShrink hA).trans
+    (contextStacksShrink_storeObject_other hI2 hS3 (fun _ e => by cases e) (fun _ e => by cases e)))
+    ((bindingViewsGrow.of_shrink hA.binding).trans
+      (bindingViewsGrow_returnBinding hI2 hS3 hHolder fun o ho => ?_))
+  unfold heldPopOwner? at ho
+  split at ho
+  · exact hNew o ho
+  · cases ho
 
-/-- The resolved held pop shrinks the stack links. -/
-theorem keepDonatedSchedContextResolved_linksShrink {st st' : SystemState}
-    {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} (hObjInv : st.objects.invExt)
-    (h : keepDonatedSchedContextResolved st holder scId = .ok st') : contextStackLinksShrink st st' :=
-  keepDonatedSchedContextResolved_lift h fun _ _ hP => keepDonatedSchedContext_linksShrink hObjInv hP
+/-- **The resolved held pop carries equal lending labels**: its next owner is
+resolved off the stack. -/
+theorem keepDonatedSchedContextResolved_preserves_lendingLabelsEqual {ctx : LabelingContext}
+    {st st' : SystemState} {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    (hObjInv : st.objects.invExt) (hInv : lendingLabelsEqual ctx st)
+    (h : keepDonatedSchedContextResolved st holder scId = .ok st') : lendingLabelsEqual ctx st' := by
+  obtain ⟨n, hN, hK⟩ := keepDonatedSchedContextResolved_ok_decompose h
+  exact keepDonatedSchedContext_preserves_lendingLabelsEqual hObjInv hInv
+    (replyStackOuterCaller?_labelEq hInv.1 hN) hK
 
-theorem returnUnheldSchedContext_preserves_contextLendersFlow {ctx : LabelingContext}
+/-- **The held-head pop carries equal lending labels**, given the recipient's
+label (seL4-MCS's `reply_pop` on either arm): the return where the recipient
+holds no context, the held pop where it holds one. -/
+theorem popHeldReplyHead_preserves_lendingLabelsEqual {ctx : LabelingContext}
+    {st st' : SystemState} {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {recipient : SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt) (hInv : lendingLabelsEqual ctx st)
+    (hOwner : ctx.threadLabelOf recipient = ctx.objectLabelOf scId.toObjId)
+    (h : popHeldReplyHead st holder scId recipient = .ok st') : lendingLabelsEqual ctx st' := by
+  rcases popHeldReplyHead_ok_cases h with ⟨-, h⟩ | ⟨-, h⟩
+  · exact returnDonatedSchedContextResolved_preserves_lendingLabelsEqual hObjInv hInv hOwner h
+  · exact keepDonatedSchedContextResolved_preserves_lendingLabelsEqual hObjInv hInv h
+
+/-- **WS-SX SX14.1 (D41): the cancel's recipient carries the context's label.**
+The cancel resolves a donation only from a frame recording the cancelled
+thread as its caller, and that frame heads the context, so the cancelled
+thread is a lender on the context's stack (`contextLendersLabelsEqual`). -/
+theorem cancelledCallerDonation?_recipientLabelEq {ctx : LabelingContext} {st : SystemState}
+    {c : SeLe4n.ThreadId} {t : TCB} {scId : SeLe4n.SchedContextId} {holder : SeLe4n.ThreadId}
+    (hL : contextLendersLabelsEqual ctx st)
+    (h : Lifecycle.Suspend.cancelledCallerDonation? st c t = some (scId, holder)) :
+    ctx.threadLabelOf c = ctx.objectLabelOf scId.toObjId := by
+  obtain ⟨-, rid, -, hRec, hH⟩ := Lifecycle.Suspend.cancelledCallerDonation?_eq_some h
+  obtain ⟨hHead, -⟩ := replyFrameHeadHolder?_eq_some hH
+  obtain ⟨r, sc, hR, -, hSc, hScR⟩ := replyFrameHeadContext?_eq_some hHead
+  obtain ⟨r', hR', hC⟩ := (Lifecycle.Suspend.replyRecordsCaller_eq_true_iff st rid c).mp hRec
+  rw [hR] at hR'
+  cases hR'
+  exact hL scId rid r c (.head hSc hScR) hR hC
+
+/-- **WS-SX SX14.1 (D41): the cancel's donation return carries equal lending
+labels with no premise**: the recipient is the frame's recorded caller
+(`cancelledCallerDonation?_recipientLabelEq`), the next owner the stack's outer
+caller (`replyStackOuterCaller?_labelEq`). -/
+theorem returnDonationToCancelledCaller_preserves_lendingLabelsEqual {ctx : LabelingContext}
+    {st : SystemState} {c : SeLe4n.ThreadId} {t : TCB}
+    (hObjInv : st.objects.invExt) (hInv : lendingLabelsEqual ctx st) :
+    lendingLabelsEqual ctx (Lifecycle.Suspend.returnDonationToCancelledCaller st c t) :=
+  Lifecycle.Suspend.returnDonationToCancelledCaller_elim hInv fun _ _ _ hD hP =>
+    popHeldReplyHead_preserves_lendingLabelsEqual hObjInv hInv
+      (cancelledCallerDonation?_recipientLabelEq hInv.1 hD) hP
+
+/-- **The resolved unheld pop carries equal lending labels**, given the owner's
+label. -/
+theorem returnUnheldSchedContextResolved_preserves_lendingLabelsEqual {ctx : LabelingContext}
     {st st' : SystemState} {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
-    {newOwner? : Option SeLe4n.ThreadId}
-    (hObjInv : st.objects.invExt) (hInv : contextLendersFlow ctx st)
-    (h : returnUnheldSchedContext st scId owner newOwner? = .ok st') : contextLendersFlow ctx st' :=
-  contextLendersFlow_of_linksShrink hInv (returnUnheldSchedContext_linksShrink hObjInv h)
-
-/-- The compiled unheld pop is the resolved pop on the states its gate admits
-(`unheldPopsInPlace_pop`). -/
-theorem returnUnheldSchedContextInPlace_preserves_contextLendersFlow {ctx : LabelingContext}
-    (st : SystemState) (scId : SeLe4n.SchedContextId) (c : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) (hFlow : contextLendersFlow ctx st)
-    (hG : unheldPopsInPlace st scId c = true) :
-    contextLendersFlow ctx (returnUnheldSchedContextInPlace st c scId) := by
-  have h := (unheldPopsInPlace_pop st scId c hG).2
+    (hObjInv : st.objects.invExt) (hInv : lendingLabelsEqual ctx st)
+    (hOwner : ctx.threadLabelOf owner = ctx.objectLabelOf scId.toObjId)
+    (h : returnUnheldSchedContextResolved st scId owner = .ok st') : lendingLabelsEqual ctx st' := by
   unfold returnUnheldSchedContextResolved at h
   cases hO : replyStackOuterCaller? st scId with
   | error e => rw [hO] at h; cases h
   | ok n =>
     rw [hO] at h; simp only [] at h
-    exact returnUnheldSchedContext_preserves_contextLendersFlow hInv hFlow h
+    exact returnUnheldSchedContext_preserves_lendingLabelsEqual hObjInv hInv hOwner
+      (replyStackOuterCaller?_labelEq hInv.1 hO) h
+
+/-- The compiled unheld pop is the resolved pop on the states its gate admits
+(`unheldPopsInPlace_pop`). -/
+theorem returnUnheldSchedContextInPlace_preserves_lendingLabelsEqual {ctx : LabelingContext}
+    (st : SystemState) (scId : SeLe4n.SchedContextId) (c : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (hFlow : lendingLabelsEqual ctx st)
+    (hOwner : ctx.threadLabelOf c = ctx.objectLabelOf scId.toObjId)
+    (hG : unheldPopsInPlace st scId c = true) :
+    lendingLabelsEqual ctx (returnUnheldSchedContextInPlace st c scId) :=
+  returnUnheldSchedContextResolved_preserves_lendingLabelsEqual hInv hFlow hOwner
+    (unheldPopsInPlace_pop st scId c hG).2
 
 /-- The compiled held pop is the resolved held pop on the states its gate
 admits (`keptPopsInPlace_pop`). -/
-theorem keepDonatedSchedContextInPlace_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem keepDonatedSchedContextInPlace_preserves_lendingLabelsEqual {ctx : LabelingContext}
     (st : SystemState) (holder : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
-    (hInv : st.objects.invExt) (hFlow : contextLendersFlow ctx st)
+    (hInv : st.objects.invExt) (hFlow : lendingLabelsEqual ctx st)
     (hG : keptPopsInPlace st holder scId = true) :
-    contextLendersFlow ctx (keepDonatedSchedContextInPlace st holder scId) :=
-  keepDonatedSchedContextResolved_lift (keptPopsInPlace_pop st holder scId hG).2
-    fun _ _ hP => keepDonatedSchedContext_preserves_contextLendersFlow hInv hFlow hP
+    lendingLabelsEqual ctx (keepDonatedSchedContextInPlace st holder scId) :=
+  keepDonatedSchedContextResolved_preserves_lendingLabelsEqual hInv hFlow
+    (keptPopsInPlace_pop st holder scId hG).2
 
 /-! ### The compiled push and pop -/
 
 /-- **The compiled push carries the lenders' flow where the donor flows to the
 context**: on the states its checks pass it is the push's state
 (`donateSchedContext_eq_inPlace`). -/
-theorem donateSchedContextInPlace_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem donateSchedContextInPlace_preserves_lendingLabelsEqual {ctx : LabelingContext}
     (st : SystemState) (client server : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (sc : SchedContext) (donor srv : TCB)
     (rid : SeLe4n.ReplyId) (pr : Reply)
@@ -274,16 +396,16 @@ theorem donateSchedContextInPlace_preserves_contextLendersFlow {ctx : LabelingCo
     (hFc : st.objects.findsInPlace client.toObjId = true)
     (hLs : storeLeavesIndexAndTypes st server.toObjId .tcb = true)
     (hObjInv : st.objects.invExt) (hChain : donationChainWellFormed st)
-    (hRecip : replyCallerLinkageReciprocal st) (hInv : contextLendersFlow ctx st)
-    (hFlow : securityFlowsTo (ctx.threadLabelOf client) (ctx.objectLabelOf scId.toObjId) = true) :
-    contextLendersFlow ctx (donateSchedContextInPlace st client server scId) :=
-  donateSchedContext_preserves_contextLendersFlow hObjInv hChain hRecip hInv hFlow
+    (hRecip : replyCallerLinkageReciprocal st) (hInv : lendingLabelsEqual ctx st)
+    (hServer : ctx.threadLabelOf server = ctx.objectLabelOf scId.toObjId) :
+    lendingLabelsEqual ctx (donateSchedContextInPlace st client server scId) :=
+  donateSchedContext_preserves_lendingLabelsEqual hObjInv hChain hRecip hInv hServer
     (donateSchedContext_eq_inPlace st client server scId sc donor srv rid pr hSc hB hC hRO hR
       hPrev hNext hCaller hNe hOld hS hSRes hLsc hFsc hLr hFr hLc hFc hLs)
 
 /-- **The compiled pop is a links shrink** on the states its checks pass: it is
 the resolved pop's state (`returnDonatedSchedContextResolved_eq_inPlace`). -/
-theorem returnDonatedSchedContextInPlace_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem returnDonatedSchedContextInPlace_preserves_lendingLabelsEqual {ctx : LabelingContext}
     (st : SystemState)
     (holder owner : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (sc : SchedContext)
     (hr : SeLe4n.ReplyId) (r : Reply) (ot ht : TCB)
@@ -307,23 +429,23 @@ theorem returnDonatedSchedContextInPlace_preserves_contextLendersFlow {ctx : Lab
     (hLo : storeLeavesIndexAndTypes st owner.toObjId .tcb = true)
     (hFo : st.objects.findsInPlace owner.toObjId = true)
     (hLh : storeLeavesIndexAndTypes st holder.toObjId .tcb = true)
-    (hObjInv : st.objects.invExt) (hInv : contextLendersFlow ctx st) :
-    contextLendersFlow ctx (returnDonatedSchedContextInPlace st holder owner scId) := by
-  obtain ⟨newOwner?, _, h⟩ := returnDonatedSchedContextResolved_ok_decompose
+    (hObjInv : st.objects.invExt) (hInv : lendingLabelsEqual ctx st)
+    (hOwner : ctx.threadLabelOf owner = ctx.objectLabelOf scId.toObjId) :
+    lendingLabelsEqual ctx (returnDonatedSchedContextInPlace st holder owner scId) :=
+  returnDonatedSchedContextResolved_preserves_lendingLabelsEqual hObjInv hInv hOwner
     (returnDonatedSchedContextResolved_eq_inPlace st holder owner scId sc hr r ot ht hSc hB hHead
       hR hNext hBelow hOuter hRecip hORes hHRes hOT hHT hNeOH hLsc hFsc hLr hFr hLo hFo hLh)
-  exact returnDonatedSchedContext_preserves_contextLendersFlow hObjInv hInv h
 
 /-! ### The suspend's cuts and the context's let-go -/
 
-theorem consumeReplyLink_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem consumeReplyLink_preserves_lendingLabelsEqual {ctx : LabelingContext}
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
-    (hFlow : contextLendersFlow ctx st) :
-    contextLendersFlow ctx (Lifecycle.Suspend.consumeReplyLink st tid tcb) := by
+    (hFlow : lendingLabelsEqual ctx st) :
+    lendingLabelsEqual ctx (Lifecycle.Suspend.consumeReplyLink st tid tcb) := by
   unfold Lifecycle.Suspend.consumeReplyLink
   split
   · exact hFlow
-  · exact consumeCallerReplyLink_preserves_contextLendersFlow st tid _ hInv hFlow
+  · exact consumeCallerReplyLink_preserves_lendingLabelsEqual st tid _ hInv hFlow
 
 /-- **seL4-MCS's `reply_remove_tcb` on a head is a links shrink**: the head's
 upward link and the context's head cleared, a holder's owner record cleared. -/
@@ -356,24 +478,24 @@ theorem cutHeadFrameKeepingContext_linksShrink (st : SystemState) (rid : SeLe4n.
           · exact hAB
           · split
             · split
-              · exact hAB.trans ((contextStackLinksShrink_updateTcb _ _ _ hI2).trans
+              · exact hAB.trans ((contextStackLinksShrink_updateTcb_clearOwner _ _ hI2).trans
                   (contextStackLinksShrink_of_objects_eq (markKeyChangeFrom_objects _ _ _)))
               · exact hAB
             · exact hAB
 
-theorem cutHeadFrameKeepingContext_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem cutHeadFrameKeepingContext_preserves_lendingLabelsEqual {ctx : LabelingContext}
     (st : SystemState) (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt)
-    (hFlow : contextLendersFlow ctx st) :
-    contextLendersFlow ctx (Lifecycle.Suspend.cutHeadFrameKeepingContext st rid) :=
-  contextLendersFlow_of_linksShrink hFlow (cutHeadFrameKeepingContext_linksShrink st rid hInv)
+    (hFlow : lendingLabelsEqual ctx st) :
+    lendingLabelsEqual ctx (Lifecycle.Suspend.cutHeadFrameKeepingContext st rid) :=
+  lendingLabelsEqual_of_linksShrink hFlow (cutHeadFrameKeepingContext_linksShrink st rid hInv)
 
 /-- Its compiled form is the cut (`cutHeadFrameKeepingContext_eq_impl`). -/
-theorem cutHeadFrameKeepingContextImpl_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem cutHeadFrameKeepingContextImpl_preserves_lendingLabelsEqual {ctx : LabelingContext}
     (st : SystemState) (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt)
-    (hFlow : contextLendersFlow ctx st) :
-    contextLendersFlow ctx (Lifecycle.Suspend.cutHeadFrameKeepingContextImpl st rid) := by
+    (hFlow : lendingLabelsEqual ctx st) :
+    lendingLabelsEqual ctx (Lifecycle.Suspend.cutHeadFrameKeepingContextImpl st rid) := by
   rw [← Lifecycle.Suspend.cutHeadFrameKeepingContext_eq_impl]
-  exact cutHeadFrameKeepingContext_preserves_contextLendersFlow st rid hInv hFlow
+  exact cutHeadFrameKeepingContext_preserves_lendingLabelsEqual st rid hInv hFlow
 
 /-- **seL4's `schedContext_unbindReply` is a links shrink**: the head's upward
 link cleared, then the context's head. -/
@@ -396,10 +518,10 @@ theorem schedContextUnbindReply_linksShrink (st : SystemState) (x : SeLe4n.ObjId
     · exact .refl _
   · exact .refl _
 
-theorem schedContextUnbindReply_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem schedContextUnbindReply_preserves_lendingLabelsEqual {ctx : LabelingContext}
     (st : SystemState) (x : SeLe4n.ObjId) (hInv : st.objects.invExt)
-    (hFlow : contextLendersFlow ctx st) : contextLendersFlow ctx (schedContextUnbindReply st x) :=
-  contextLendersFlow_of_linksShrink hFlow (schedContextUnbindReply_linksShrink st x hInv)
+    (hFlow : lendingLabelsEqual ctx st) : lendingLabelsEqual ctx (schedContextUnbindReply st x) :=
+  lendingLabelsEqual_of_linksShrink hFlow (schedContextUnbindReply_linksShrink st x hInv)
 
 /-! ### The caller link -/
 
@@ -409,10 +531,10 @@ object is on no context's stack (`not_onContextStack_of_next_none`), so every
 lender after the link was one before it.  This is the "callers kept" fact for
 every writer that links a caller: none can rewrite the caller of a frame on a
 stack. -/
-theorem linkReply_preserves_contextLendersFlow {ctx : LabelingContext} {st st' : SystemState}
+theorem linkReply_preserves_lendingLabelsEqual {ctx : LabelingContext} {st st' : SystemState}
     {rid : SeLe4n.ReplyId} {caller : SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
-    (hChain : donationChainWellFormed st) (hFlow : contextLendersFlow ctx st)
-    (h : SystemState.linkReply rid caller st = .ok ((), st')) : contextLendersFlow ctx st' := by
+    (hChain : donationChainWellFormed st) (hFlow : lendingLabelsEqual ctx st)
+    (h : SystemState.linkReply rid caller st = .ok ((), st')) : lendingLabelsEqual ctx st' := by
   unfold SystemState.linkReply at h
   cases hR : st.getReply? rid with
   | none => rw [hR] at h; cases h
@@ -441,7 +563,10 @@ theorem linkReply_preserves_contextLendersFlow {ctx : LabelingContext} {st st' :
           by_cases hk : x.toObjId = rid.toObjId
           · rw [hk, hEq] at hP; rw [hk, hO]; exact hP
           · rw [hNe _ hk] at hP; exact hP
-      rw [contextLendersFlow_iff_views] at hFlow ⊢
+      refine ⟨?_, bindingLabelsEqual_of_shrink hFlow.2
+        (bindingViewsShrink_of_slot _ hNe (by rw [hEq, hO]; exact .of_eq rfl))⟩
+      have hFlow := hFlow.1
+      rw [contextLendersLabelsEqual_iff_views] at hFlow ⊢
       intro s x l hOn hC
       have hOn0 := hPath s x hOn
       by_cases hk : x.toObjId = rid.toObjId
@@ -453,18 +578,18 @@ theorem linkReply_preserves_contextLendersFlow {ctx : LabelingContext} {st st' :
 
 /-- **`linkCallerReply` adds no lender**: the caller link, then the caller's
 own reply link (a thread record). -/
-theorem linkCallerReply_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem linkCallerReply_preserves_lendingLabelsEqual {ctx : LabelingContext}
     {st st' : SystemState} {caller : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
     (hObjInv : st.objects.invExt) (hChain : donationChainWellFormed st)
-    (hFlow : contextLendersFlow ctx st)
-    (h : SystemState.linkCallerReply caller rid st = .ok ((), st')) : contextLendersFlow ctx st' := by
+    (hFlow : lendingLabelsEqual ctx st)
+    (h : SystemState.linkCallerReply caller rid st = .ok ((), st')) : lendingLabelsEqual ctx st' := by
   unfold SystemState.linkCallerReply at h
   cases h1 : SystemState.linkReply rid caller st with
   | error e => rw [h1] at h; cases h
   | ok p =>
     obtain ⟨⟨⟩, s1⟩ := p
     rw [h1] at h; simp only [] at h
-    have hF1 := linkReply_preserves_contextLendersFlow hObjInv hChain hFlow h1
+    have hF1 := linkReply_preserves_lendingLabelsEqual hObjInv hChain hFlow h1
     have hI1 : s1.objects.invExt := by
       unfold SystemState.linkReply at h1
       split at h1
@@ -475,7 +600,7 @@ theorem linkCallerReply_preserves_contextLendersFlow {ctx : LabelingContext}
     split at h
     · cases h
     · split at h
-      · exact contextLendersFlow_of_linksShrink hF1
+      · exact lendingLabelsEqual_of_linksShrink hF1
           (contextStackLinksShrink_storeObject_other hI1 h (fun _ e => by cases e)
             (fun _ e => by cases e))
       · cases h
