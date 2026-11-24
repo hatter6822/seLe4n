@@ -620,10 +620,12 @@ run_check "INVARIANT" rg -n '^\s*activeDomain' SeLe4n/Kernel/InformationFlow/Pro
 # CNode slot filtering safety theorems (F-22):
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_idempotent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_objectType($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
-# WS-SM SM5.B (PR #805 review P2-4): cpuAffinity must be stripped by the NI projection.
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_erases_cpuAffinity($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
-# WS-SM SM5.B (PR #805 review P2-4): cpuAffinity must be stripped by the NI projection.
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_erases_cpuAffinity($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+# WS-SX SX9.1 (D34): the projection shows the affinity with the thread, so the
+# SM5.B erasure theorem is retired; refuse its return.
+run_negative_check "INVARIANT" rg -n '^theorem projectKernelObject_erases_cpuAffinity($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+# The lend words are shown exactly where what they name is seen.
+run_check "INVARIANT" rg -n '^def scWordShown($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^def threadWordShown($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 # NI theorems (CRIT-03/F-21):
 run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
@@ -1483,7 +1485,7 @@ run_negative_check "INVARIANT" rg -n 'abortHolderPendingIpc|abortHolderProjectio
 # per-core slice and frames, and the dispatch-time current-thread admission it
 # needed are gone from the code view.
 run_negative_check "INVARIANT" rg -n 'passiveServerIdle|ipcCodesIdleAllowed|currentRequeueAdmitted|CurrentPlacementFrame|scheduledNowhere' --glob '*.lean' SeLe4n tests
-run_check "INVARIANT" bash -lc 'rg -U -n "\(hObjSetInv : st.objectIndexSet.table.invExt\) :\n    projectState ctx observer \(Lifecycle\.Suspend\.returnDonationToCancelledCaller st victim tcb\)" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\(hObjSetInv : st.objectIndexSet.table.invExt\)\n    \(hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb\)\n    \(hOwed : ∀ rid, tcb.replyObject = some rid → replyFrameHeadHolderDonation st rid victim\) :\n    projectState ctx observer \(Lifecycle\.Suspend\.returnDonationToCancelledCaller st victim tcb\)" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
 # The splice creates no key, which is what carries the identity registry across
 # an operation that writes `objects` directly rather than through `storeObject`.
 run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_objects_present_backward($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Core.lean
@@ -1569,7 +1571,7 @@ run_check "INVARIANT" rg -n '^theorem descheduleUnboundHolder_runQueueOnCore_ne(
 # projection keeps that context's release core.
 run_check "INVARIANT" rg -n '^def descheduledHolderHigh($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
 run_check "INVARIANT" rg -n '^theorem descheduledHolderHigh_of_no_donation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlockingOnCore_reply_cancellation_NI[^\n]*(\n([ \t][^\n]*)?)*hHolderHigh : descheduledHolderHigh ctx observer st victim tcb\)\n    \(hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb\) :\n    projectState" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlockingOnCore_reply_cancellation_NI[^\n]*(\n([ \t][^\n]*)?)*hHolderHigh : descheduledHolderHigh ctx observer st victim tcb\)\n    \(hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb\)\n    \(hOwed : ∀ rid, tcb.replyObject = some rid → replyFrameHeadHolderDonation st rid victim\) :\n    projectState" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
 # ...and the removal owes the bundle nothing: the cross-core steps agree with
 # the teardown off the run links, and no conjunct reads the scheduler.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*ipcInvariantFull_of_objectsAgreeOffSchedulerLinks\n    \(cancelIpcBlockingOnCore_objectsAgreeOffSchedulerLinks victim tcb executingCore st\)" SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean'
@@ -1622,7 +1624,7 @@ run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_next_invariant($
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_prev_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 # ...and the pair read as one projection, which is what the chain frame consumes.
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_stackLinks_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "\.schedContext \{ sc with boundThreadCode := 0, scReply := none," SeLe4n/Kernel/InformationFlow/Projection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\.schedContext \{ sc with\n +boundThreadCode :=\n +if threadWordShown ctx observer sc\.boundThreadCode then\n +sc\.boundThreadCode\n +else 0,\n +scReply := none," SeLe4n/Kernel/InformationFlow/Projection.lean'
 # NEGATIVE: the pre-OD2.2 arm, which erased `boundThread` alone.  The mutation
 # that finds this keeps the arm and the erasure it already had, and drops the
 # head — deleting the whole arm would be caught by the positive above.
@@ -2338,7 +2340,10 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi
 # the negative fired on a file where the hypothesis had been removed exactly as
 # intended.  A region-scoped presence check is still a presence check, and an
 # unscoped one is not even that.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^private theorem returnDonatedSchedContext_preserves_projection( *\n +[^\n]*)*hReceiverObjHigh : objectObservable" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
+# WS-SX SX9.1 (D34) supersedes the unconditional form: the return takes the
+# hidden-server and hidden-return hypotheses, scoped to its own header.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem returnDonatedSchedContext_preserves_projection( *\n +[^\n]*)*hServerHidden : objectObservable" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem returnDonatedSchedContext_preserves_projection( *\n +[^\n]*)*hReturned : objectObservable" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_stackLinks_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_donationWrite_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 
@@ -2500,7 +2505,16 @@ run_check "INVARIANT" rg -n '^theorem lockSet_endpointCallOnCore_covers_donation
 # a claim about a `.bound` donor that OD4.2's arm does not even have.  The gap is
 # bounded to the declaration's own header and its indented continuations.
 run_check "INVARIANT" rg -n '^private theorem donateSchedContext_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^private theorem donateSchedContext_preserves_projection( *\n +[^\n]*)*objectObservable" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
+# WS-SX SX9.1 (D34): the push is invisible only with its context hidden.
+run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem donateSchedContext_preserves_projection( *\n +[^\n]*)*hScHigh : objectObservable" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
+# The receive steps' one premise (D37, registered debt owned by SX10): equal
+# binding labels, a field of each receive constructor itself; the loan-return
+# shape is derived from it, never a constructor field.
+run_check "INVARIANT" rg -n '^def bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem receiveLoanReturnHidden_of_bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "\| endpointReceiveDualHigh\n(    [^\n]*\n)*?      \(hBind : bindingLabelsEqual ctx st\)\n    : NonInterferenceStep" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| endpointReplyRecvHigh\n(    [^\n]*\n)*?      \(hBind : bindingLabelsEqual ctx st\)\n    : NonInterferenceStep" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_negative_check "INVARIANT" rg -n ': receiveLoanReturnHidden ctx observer st (receiver|replierReceiver)\)' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 # The pack field the resolution added: every capability-gated arm that pops now
 # states the obligation its resolver carries.
 run_check "INVARIANT" bash -lc 'rg -U -n "^structure capabilityDispatchQuiescence[^\n]*(\n([ \t][^\n]*)?)*replyStacksSettleOnWaitingDonors" SeLe4n/Kernel/API.lean'
@@ -4470,6 +4484,10 @@ run_check "INVARIANT" rg -n '^theorem cutCancelledCallerHead_bindingBack($|[ ({:
 run_check "INVARIANT" rg -n '^theorem finaliseCutReplyCaller_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem finaliseCutReplyCaller_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^theorem cutCancelledCallerHead_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
+# WS-SX SX9.1 (D34): the head cut is invisible only where the context the
+# frame heads is hidden, so a thread's finalisation asks it of that context.
+run_check "INVARIANT" rg -n '^def replyHeadContextHidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "threadObservable ctx observer ⟨x.val⟩ = false ∧\n    replyHeadContextHidden ctx observer st t\n" SeLe4n/Kernel/InformationFlow/Invariant/FinaliseProjection.lean'
 run_check "INVARIANT" rg -n '^      finaliseCutReplyCaller \(Lifecycle\.Suspend\.cutCancelledCallerHead st t\) c$' SeLe4n/Kernel/IPC/Operations/CancelAll.lean
 run_check "INVARIANT" rg -n '^def bindingBack($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FinaliseAdmissionCarried.lean
 run_check "INVARIANT" rg -n '^theorem finaliseThreadSuspend($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/SchedLinkFrame.lean
@@ -7719,6 +7737,28 @@ run_check "INVARIANT" rg -n '^theorem timerTickBudgetOnCore_lowEquivalent($|[ ({
 run_check "INVARIANT" rg -n '^theorem yieldChargeOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem yieldOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalent_smp_pair_of_storeAndQueueWrite($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
+run_check "INVARIANT" rg -n '^theorem rewriteObject_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
+run_check "INVARIANT" rg -n '^theorem updateTcb_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
+run_check "INVARIANT" rg -n '^theorem runEnqueueOnCore_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
+# WS-SX SX9.1: the enqueue pair takes each run's own priority (the boost it
+# reads is erased; the filtered queue ignores priority).
+run_check "INVARIANT" bash -lc 'rg -U -n "\(t : SeLe4n.ThreadId\) \(p₁ p₂ : SeLe4n.Priority\)[^\n]*\n(    [^\n]*\n)*?    lowEquivalent_smp ctx observer \(s₁.runEnqueueOnCore c t p₁\) \(s₂.runEnqueueOnCore c t p₂\)" SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean'
+# The two-run theorem's static labelling hypothesis, its deployment discharge,
+# and the hidden-thread half.
+run_check "INVARIANT" rg -n '^def threadObjectLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem deploymentLabelingContext_threadObjectLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContextFlowing_lowEquivalent_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContextFlowing_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContextFlowing_lowEquivalent_pair_deployment($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem schedContextBindPerform_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem schedContextDonateAdmitted_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem notificationContext\?_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem runEnqueueAdmits_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem placedCoreOf\?_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem project_bindContextWrite_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem releasePlace_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
+run_check "INVARIANT" rg -n '^theorem markReschedulePendingOnCore_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_eq_read($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem schedContextYieldToOnCore_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean

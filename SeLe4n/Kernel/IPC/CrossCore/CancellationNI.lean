@@ -516,75 +516,55 @@ theorem consumeReplyLink_preserves_projection_high
     exact consumeCallerReply_preserves_projection ctx observer st _ tid rid hTidObjHigh
       hObjInv (SystemState.consumeCallerReply_eq_link st tid rid)
 
-/-- **WS-RR RR7.22 (residual, remediation)**: the donation return's own writes are
-invisible to **every** observer, high or low.
+/-- The cancelled caller's donation return is invisible when the returned context
+is hidden.
 
-Not an accident and not a hypothesis: `projectKernelObject` erases exactly the two
-fields the return writes — `TCB.schedContextBinding` (AI4-A) and
-`SchedContext.boundThread` (AI4-A) — so all three of its stores are
-projection-stable, and `storeObject_projectionStable_preserves_projection` carries
-each one at a key of any label.
-
-Worth stating plainly, because the obvious worry about this remediation is the
-opposite: returning a high caller's SchedContext writes the *server's* TCB, and a
-low server would then see a high thread's cancellation.  It does not, because the
-donation binding is not part of what the projection shows.
-
-The hypotheses are structural: the identity registry is complete and
-well-formed, so `storeObject` extends neither.  (`v0.36.136` retired the one that
-was not, `abortHolderProjectionStable`: the reclaim no longer ends the holder's
-send or call, so it writes no queue state the projection keeps.) -/
+WS-SX SX9.1 (D34) supersedes WS-RR RR7.22's unconditional form: the projection
+shows a binding word to an observer cleared for the context it names, so the
+return is invisible exactly where that context is hidden
+(`cancelledDonationContextHigh`, the obligation the cancel's migration already
+carries), and the holder's word it clears names that context
+(`replyFrameHeadHolderDonation`, the reply head's coherence the reclaim's
+trigger reads).  The other hypotheses are structural: the identity registry is
+complete and well-formed, so `storeObject` extends neither. -/
 theorem returnDonationToCancelledCaller_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (victim : SeLe4n.ThreadId) (tcb : TCB)
     (hObjInv : st.objects.invExt)
     (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
-    (hObjSetInv : st.objectIndexSet.table.invExt) :
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb)
+    (hOwed : ∀ rid, tcb.replyObject = some rid → replyFrameHeadHolderDonation st rid victim) :
     projectState ctx observer (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb)
       = projectState ctx observer st := by
-  unfold Lifecycle.Suspend.returnDonationToCancelledCaller
-  split
-  · rename_i scId holder _ _ _
-    split
-    · rename_i st' h
-      apply popHeldReplyHead_liftPops h
-      · intro n st' hPop
-        -- WS-OD OD3.2: the chain is four object writes now — the head clear sits
-        -- between the SchedContext store and the client's binding, and is
-        -- projection-stable for the same reason the other three are (every field
-        -- the return touches is stripped by `projectKernelObject`).
-        obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-          hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
-          returnDonatedSchedContext_ok_storeChain _ st' holder scId victim n hPop
-        have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt _ s1 _ _ hObjInv hS1
-        have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
-        have hInv3 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
-        have hSet1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt _ s1 _ _
-          hObjSetInv hS1
-        have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete _ s1 _ _ hObjInv
-          hObjSetInv hIdxComplete hS1
-        have hP1 := storeObject_projectionStable_preserves_projection ctx observer _ s1
-          scId.toObjId _ (.schedContext sc) hSc
-          (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _)
-          hObjInv hS1
-        have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
-        have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
-          victim.toObjId _ (.tcb clientTcb) (lookupTcb_some_objects s2 victim clientTcb hL1)
-          (projectKernelObject_tcb_schedContextBinding_invariant ctx observer clientTcb _ _)
-          hInv2 hS3
-        have hP4 := storeObject_projectionStable_preserves_projection ctx observer s3 s4
-          holder.toObjId _ (.tcb serverTcb) (lookupTcb_some_objects s3 holder serverTcb hL2)
-          (projectKernelObject_tcb_schedContextBinding_invariant ctx observer serverTcb _ _)
-          hInv3 hS4
-        have hFinal : projectState ctx observer st' = projectState ctx observer s4 := by
-          rw [hEq]
-          rfl
-        rw [hFinal, hP4, hP3, hP2, hP1]
-      · intro n _ hK
-        exact keepDonatedSchedContext_preserves_projection ctx observer _ _ holder scId n hObjInv
-          hK hIdxComplete hObjSetInv
-    · rfl
-  · rfl
+  refine Lifecycle.Suspend.returnDonationToCancelledCaller_elim
+    (P := fun s => projectState ctx observer s = projectState ctx observer st) rfl ?_
+  intro scId holder s hRes hPop
+  have hS := hCtxHigh scId holder hRes
+  apply popHeldReplyHead_liftPops hPop
+  · -- WS-SX SX9.1 (D34): the returned context is hidden (the migration's own
+    -- obligation), and the holder's binding word names it (the reply head's
+    -- coherence, `replyFrameHeadHolderDonation`).
+    intro n s' hRet
+    refine returnDonatedSchedContext_preserves_projection ctx observer st s' holder scId victim
+      hObjInv n hRet hIdxComplete hObjSetInv (.inr fun t hT => ?_) (.inl hS)
+    have hR := cancelledCallerDonation?_holder_holds_victim_donation st victim tcb scId holder
+      hOwed hRes
+    unfold replyDonationReturn? at hR
+    split at hR
+    · rename_i ht hL
+      split at hR
+      · rename_i s0 o0 hB
+        cases hR
+        rw [lookupTcb_some_objects st holder ht hL] at hT
+        cases hT
+        rw [TCB.scBindingScCode_of_donated hB]
+        simpa using hS
+      all_goals cases hR
+    · cases hR
+  · intro n _ hK
+    exact keepDonatedSchedContext_preserves_projection ctx observer _ _ holder scId n hObjInv
+      hK hIdxComplete hObjSetInv (.inr hS)
 
 /-- `v0.35.4`, restated for the splice at **WS-HP HP6.4**: the cancelled caller's
 frame removal preserves the projection — the identity where there is nothing to
@@ -627,7 +607,9 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
     (hVictimHigh : threadObservable ctx observer victim = false)
     (hObjInv : st.objects.invExt)
     (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
-    (hObjSetInv : st.objectIndexSet.table.invExt) :
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb)
+    (hOwed : ∀ rid, tcb.replyObject = some rid → replyFrameHeadHolderDonation st rid victim) :
     projectState ctx observer (Lifecycle.Suspend.cancelIpcBlocking st victim tcb)
       = projectState ctx observer st := by
   have hObjHigh : objectObservable ctx observer victim.toObjId = false :=
@@ -635,14 +617,13 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
   unfold Lifecycle.Suspend.cancelIpcBlocking
   rw [hBlocked]
   simp only []
-  -- WS-RR RR7.22 (residual, remediation): the arm's fourth write is the donation
-  -- return, and it is invisible to *every* observer rather than only to a high
-  -- one — the projection erases the binding fields it touches.
+  -- The arm's fourth write is the donation return, invisible when the
+  -- returned context is hidden (D34 shows the binding words where their
+  -- context is): `hCtxHigh` and `hOwed`.
   have hInvR : (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb).objects.invExt :=
     returnDonationToCancelledCaller_preserves_objects_invExt st victim tcb hObjInv
   -- `v0.35.4`: the arm's fifth write is the frame cut, invisible to every
-  -- observer for the same reason as the return — it writes Reply stack links
-  -- only, which the projection strips.  It reads the index completeness the return
+  -- observer — it writes Reply stack links only, which the projection strips.  It reads the index completeness the return
   -- carries forward.
   have hCompR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objectIndexSetComplete
     st victim tcb hObjInv hObjSetInv hIdxComplete
@@ -675,7 +656,7 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
       ((cutThreadReplyFrameOut_preserves_projection ctx observer _ tcb hCompR hSetInvR
         hInvR).trans
         (returnDonationToCancelledCaller_preserves_projection ctx observer st victim tcb hObjInv
-          hIdxComplete hObjSetInv)))
+          hIdxComplete hObjSetInv hCtxHigh hOwed)))
 
 
 /-- **WS-RR RR2.18 (boot-core form, fully substantive)**: cancelling a
@@ -733,13 +714,14 @@ theorem cancelIpcBlockingOnCore_reply_cancellation_NI
     (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hHolderHigh : descheduledHolderHigh ctx observer st victim tcb)
-    (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb) :
+    (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb)
+    (hOwed : ∀ rid, tcb.replyObject = some rid → replyFrameHeadHolderDonation st rid victim) :
     projectState ctx observer
         (cancelIpcBlockingOnCore victim tcb executingCore st).1
       = projectState ctx observer st :=
   cancelIpcBlockingOnCore_cancellation_NI ctx observer victim tcb executingCore st hVictimHigh
     (cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer st victim tcb ep rt
-      hBlocked hValid hVictimHigh hObjInv hIdxComplete hObjSetInv)
+      hBlocked hValid hVictimHigh hObjInv hIdxComplete hObjSetInv hCtxHigh hOwed)
     hHolderHigh hCtxHigh
 
 -- ============================================================================

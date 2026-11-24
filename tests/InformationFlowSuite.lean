@@ -197,13 +197,10 @@ def test_schedContext_configure_budget_held_once : IO Bool := do
 #check @SeLe4n.Kernel.releaseWriteAt
 #check @SeLe4n.Kernel.projectObjects_of_releaseWriteAt
 #check @SeLe4n.Kernel.releaseQueuedOn_eq_of_projectObjects
--- SM5.H.4 audit-pass-2: the *unconditional* affinity-write NI — the affinity write
--- preserves the projection for ANY target (high OR low), because the projection
--- erases cpuAffinity (`projectKernelObject_tcb_cpuAffinity_irrelevant`).  Strictly
--- stronger than the high-target form above.
-#check @SeLe4n.Kernel.projectKernelObject_tcb_cpuAffinity_irrelevant
+-- WS-SX SX9.1 (D34): the projection shows a thread's affinity to an observer
+-- cleared for the thread, so the affinity write is invisible only at a hidden
+-- target (the high-target form above); the unconditional form is retired.
 #check @SeLe4n.Kernel.objects_insert_preserves_projection_of_proj_eq
-#check @SeLe4n.Kernel.setThreadCpuAffinity_preserves_projection_unconditional
 
 -- WS-SM SM8.C: the two enforcement families, completed.  Both were documented
 -- as covering "all policy-gated operations" while covering seven of twelve —

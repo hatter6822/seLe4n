@@ -1935,11 +1935,13 @@ theorem nonInterference_perCore_endpointReceiveDual (ctx : LabelingContext)
       st.objects[sender.toObjId]? = some (.tcb senderTcb) → senderTcb.queueNext = some nextTid →
       objectObservable ctx observer nextTid.toObjId = false)
     (hRecvQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
-      ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false) :
+      ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
+    (hBind : bindingLabelsEqual ctx st) :
     lowEquivalent_smp ctx observer st' st :=
   nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
     (.endpointReceiveDualHigh endpointId receiver sender replyId hEndpointHigh hReceiverHigh
-      hReceiverObjHigh hCoherent hStep hSendQueueHeadHigh hSendQueueNextHigh hRecvQueueTailHigh)
+      hReceiverObjHigh hCoherent hStep hSendQueueHeadHigh hSendQueueNextHigh hRecvQueueTailHigh
+      hBind)
     (endpointReceiveDual_confinedToBootCore st st' endpointId receiver sender replyId hStep)
 
 theorem nonInterference_perCore_endpointCall (ctx : LabelingContext) (observer : IfObserver)
@@ -1989,12 +1991,13 @@ theorem nonInterference_perCore_endpointReplyRecv (ctx : LabelingContext) (obser
       st.objects[sender.toObjId]? = some (.tcb senderTcb) → senderTcb.queueNext = some nextTid →
       objectObservable ctx observer nextTid.toObjId = false)
     (hRecvQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
-      ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false) :
+      ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
+    (hBind : bindingLabelsEqual ctx st) :
     lowEquivalent_smp ctx observer st' st :=
   nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
     (.endpointReplyRecvHigh endpointId replierReceiver replyTarget replyMsg replyId hEndpointHigh
       hReceiverHigh hReceiverObjHigh hReplyTargetHigh hReplyTargetObjHigh hCoherent hStep
-      hSendQueueHeadHigh hSendQueueNextHigh hRecvQueueTailHigh)
+      hSendQueueHeadHigh hSendQueueNextHigh hRecvQueueTailHigh hBind)
     (endpointReplyRecv_confinedToBootCore st st' endpointId replierReceiver replyTarget replyMsg
       replyId hStep)
 

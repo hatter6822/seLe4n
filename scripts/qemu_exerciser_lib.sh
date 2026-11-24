@@ -329,6 +329,7 @@ for driver in drivers:
             "cspace-delete", "cspace-mint", "cspace-move", "cspace-revoke",
             "declassified-signal", "declassified-signal-bound", "declassified-signal-pending",
             "declassified-wait-refused", "bind-upper-notification-refused",
+            "sched-context-bind-upper-notification-refused", "sched-context-bind-upper-thread-refused",
             "declassify", "declassify-refused", "declassify-guard-mismatch-refused",
             "declassified-signal-guard-mismatch-refused",
             "endpoint-delete", "exhaust-drain-tick",

@@ -2284,6 +2284,24 @@ example (ctx : LabelingContext) (c : CoreId) (L₁ L₂ : SecurityLabel)
     (ObservableState.onCore ctx c L₂ s).current = some t :=
   (onCore_label_monotone ctx c hFlow s).current t ht
 
+/-- An endpoint carries no lend word, so an object that agrees with it up to the
+lend words (D34) is that endpoint. -/
+private theorem eq_endpoint_of_lendWordsZeroed {o : KernelObject} {e : Endpoint}
+    (h : (KernelObject.endpoint e).lendWordsZeroed = o.lendWordsZeroed) :
+    o = .endpoint e := by
+  cases o <;> simp [KernelObject.lendWordsZeroed] at h ⊢
+  exact h.symm
+
+/-- From the order alone, a visible endpoint keeps its value at the wider
+clearance: the visibility order agrees up to the lend words, and an endpoint has
+none. -/
+private theorem visibilityLe_endpoint_eq {v₁ v₂ : ObservableState}
+    (h : v₁.visibilityLe v₂) {oid : SeLe4n.ObjId} {e : Endpoint}
+    (hGet : v₁.objects oid = some (.endpoint e)) : v₂.objects oid = some (.endpoint e) := by
+  obtain ⟨o, hO, hZ⟩ := ObservableState.visibilityLe_objects_eq_of_not_cnode h hGet
+    (fun _ => KernelObject.noConfusion)
+  rw [hO, eq_endpoint_of_lendWordsZeroed hZ]
+
 -- SM8.A.5: monotonicity, extracted at the `objects` component — presence.
 example (ctx : LabelingContext) (c : CoreId) (L₁ L₂ : SecurityLabel)
     (hFlow : securityFlowsTo L₁ L₂ = true) (s : SystemState) (oid : SeLe4n.ObjId)
@@ -2299,8 +2317,7 @@ example (ctx : LabelingContext) (c : CoreId) (L₁ L₂ : SecurityLabel)
     (hFlow : securityFlowsTo L₁ L₂ = true) (s : SystemState) (oid : SeLe4n.ObjId)
     (e : Endpoint) (h : (ObservableState.onCore ctx c L₁ s).objects oid = some (.endpoint e)) :
     (ObservableState.onCore ctx c L₂ s).objects oid = some (.endpoint e) :=
-  ObservableState.visibilityLe_objects_eq_of_not_cnode
-    (onCore_label_monotone ctx c hFlow s) h (fun _ => KernelObject.noConfusion)
+  visibilityLe_endpoint_eq (onCore_label_monotone ctx c hFlow s) h
 
 -- SM8.A.5: the four scheduling components are *equal* across clearances, from
 -- the order alone.  Omitting these clauses (pre-v0.33.4) left two states with
@@ -2325,14 +2342,15 @@ example (ctx : LabelingContext) (L₁ L₂ : SecurityLabel) (hFlow : securityFlo
   projectCNode_lookup_monotone ctx hFlow cn slot cap h
 
 -- SM8.A.5: off the CNode arm, a visible object projects to the SAME value at
--- the wider clearance — the widening is confined to CNode slot redaction.
+-- the wider clearance up to the lend words (D34) — the widening is confined to
+-- CNode slot redaction and the lend words.
 example (ctx : LabelingContext) (c : CoreId) (L₁ L₂ : SecurityLabel)
     (hFlow : securityFlowsTo L₁ L₂ = true) (s : SystemState) (oid : SeLe4n.ObjId)
     (obj : KernelObject) (hGet : s.objects[oid]? = some obj)
     (hNotCNode : ∀ cn, obj ≠ .cnode cn)
     (hVisible : ((ObservableState.onCore ctx c L₁ s).objects oid).isSome = true) :
-    (ObservableState.onCore ctx c L₂ s).objects oid
-      = (ObservableState.onCore ctx c L₁ s).objects oid :=
+    ((ObservableState.onCore ctx c L₂ s).objects oid).map KernelObject.lendWordsZeroed
+      = ((ObservableState.onCore ctx c L₁ s).objects oid).map KernelObject.lendWordsZeroed :=
   onCore_objects_label_invariant_off_cnode ctx c hFlow s oid obj hGet hNotCNode hVisible
 
 -- SM8.A.5: the scheduling components pass through UNFILTERED — the observer
@@ -3163,9 +3181,9 @@ clause: off the CNode arm a wider clearance may not change what it shows. -/
 private theorem lowEndpoint_view_high :
     (ObservableState.onCore probeLabeling c0 highLabel probeState).objects lowEndpoint
       = some (.endpoint {}) :=
-  ObservableState.visibilityLe_objects_eq_of_not_cnode
+  visibilityLe_endpoint_eq
     (onCore_label_monotone probeLabeling c0 lowLabel_flowsTo_highLabel probeState)
-    lowEndpoint_view_low (fun _ => KernelObject.noConfusion)
+    lowEndpoint_view_low
 
 /-- The substitution an `isSome`-only clause would have accepted (§3.13). -/
 private theorem endpoint_not_visibilityLe_notification (e : Endpoint) (n : Notification) :
@@ -3918,9 +3936,8 @@ private def runObjectContentOrderChecks : IO Unit := do
             = some (.endpoint e) →
           (ObservableState.onCore probeLabeling c highLabel probeState).objects lowEndpoint
             = some (.endpoint e) := fun _ h =>
-        ObservableState.visibilityLe_objects_eq_of_not_cnode
+        visibilityLe_endpoint_eq
           (onCore_label_monotone probeLabeling c lowLabel_flowsTo_highLabel probeState) h
-          (fun _ => KernelObject.noConfusion)
       true))
   -- The load-bearing negatives: an `isSome`-preserving relation would accept
   -- both of these substitutions.  `objectVisibilityLe` accepts neither.

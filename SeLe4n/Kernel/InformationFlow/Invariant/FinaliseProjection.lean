@@ -172,6 +172,24 @@ theorem updateTcb (s : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
       exact congrArg some (hf x)
   · rw [SystemState.updateTcb_objects_ne _ _ _ _ e hInv]
 
+/-- A thread rewritten by an update the projection erases on the thread the
+slot holds. -/
+theorem updateTcbAt (s : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : s.objects.invExt)
+    (hf : ∀ x, s.getTcb? t = some x → projectKernelObject ctx observer (.tcb (f x)) =
+      projectKernelObject ctx observer (.tcb x)) :
+    projectedObjectsWrite ctx observer s (s.updateTcb t f) := by
+  refine ⟨SystemState.updateTcb_eq_objects_update s t f, fun k _ => ?_⟩
+  by_cases e : t.toObjId = k
+  · subst e
+    cases hT : s.getTcb? t with
+    | none => rw [SystemState.updateTcb_eq_self_of_none hT]
+    | some x =>
+      have hO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+      rw [updateTcb_objects_self_of_tcb f hInv hO, hO]
+      exact congrArg some (hf x hT)
+  · rw [SystemState.updateTcb_objects_ne _ _ _ _ e hInv]
+
 /-- A context rewritten by an update the projection erases. -/
 theorem updateSchedContext (s : SystemState) (c : SeLe4n.SchedContextId)
     (f : SchedContext → SchedContext) (hInv : s.objects.invExt)
@@ -193,36 +211,76 @@ theorem updateSchedContext (s : SystemState) (c : SeLe4n.SchedContextId)
       exact congrArg some (hf x)
   · rw [SystemState.updateSchedContext_objects_ne _ _ _ _ e hInv]
 
-/-- The notification unbind read from a context's end: both link words are
-erased by the projection (`projectKernelObject` clears a context's
-`notificationCode` and a notification's `schedContextCode`). -/
+/-- The notification unbind read from a context's end.  The context's
+`notificationCode` is erased by the projection; the notification's
+`schedContextCode` names the context, so it is shown exactly where the context
+is (D34), and the write is invisible when the context is hidden or the
+notification the context names is. -/
 theorem unbindSchedContextNotification (s : SystemState) (c : SeLe4n.SchedContextId)
-    (hInv : s.objects.invExt) :
+    (hInv : s.objects.invExt)
+    (hH : objectObservable ctx observer c.toObjId = false ∨
+      ∀ sc, s.getSchedContext? c = some sc →
+        objectObservable ctx observer ⟨sc.notificationCode - 1⟩ = false) :
     projectedObjectsWrite ctx observer s (SeLe4n.Kernel.unbindSchedContextNotification s c) := by
   have h1 := updateSchedContext (ctx := ctx) (observer := observer) s c
     (fun c => { c with notificationCode := 0 }) hInv (fun _ => rfl)
   have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt s c
     (fun c => { c with notificationCode := 0 }) hInv
-  rcases unbindSchedContextNotification_shape s c hInv with e | ⟨-, -, e | ⟨n, ntfn, hN, e⟩⟩
-  · rw [e]; exact refl s
-  · rw [e]; exact h1
-  · rw [e]
-    generalize s.updateSchedContext c (fun c => { c with notificationCode := 0 }) = s1
-      at h1 hInv1 hN
-    refine h1.trans ⟨rfl, fun k _ => ?_⟩
-    show ((s1.objects.insert n
-      (KernelObject.notification { ntfn with schedContextCode := 0 }))[k]?).map _ = _
-    by_cases hk : n = k
-    · subst hk
-      have e2 : (s1.objects.insert n
-          (KernelObject.notification { ntfn with schedContextCode := 0 }))[n]? =
-          some (KernelObject.notification { ntfn with schedContextCode := 0 }) :=
-        RobinHood.RHTable.getElem?_insert_self _ _ _ hInv1
-      rw [e2, hN]; rfl
-    · have e2 : (s1.objects.insert n
-          (KernelObject.notification { ntfn with schedContextCode := 0 }))[k]? = s1.objects[k]? :=
-        RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun h => hk (eq_of_beq h)) hInv1
-      rw [e2]
+  unfold SeLe4n.Kernel.unbindSchedContextNotification
+  cases hS : s.getSchedContext? c with
+  | none => exact refl s
+  | some sc =>
+    simp only []
+    cases hC : sc.notificationCode with
+    | zero => exact refl s
+    | succ k =>
+      simp only []
+      cases hN : SeLe4n.Kernel.notificationNamesSchedContext s ⟨k⟩ c with
+      | false => simpa using h1
+      | true =>
+        simp only [↓reduceIte]
+        unfold SeLe4n.Kernel.notificationNamesSchedContext at hN
+        cases hG : s.getNotification? ⟨k⟩ with
+        | none => rw [hG] at hN; cases hN
+        | some ntfn =>
+          rw [hG] at hN
+          have hW : ntfn.schedContextCode = c.val + 1 := by simpa using hN
+          have hSraw := (SystemState.getSchedContext?_eq_some_iff s c sc).mp hS
+          have hNraw := (SystemState.getNotification?_eq_some_iff s ⟨k⟩ ntfn).mp hG
+          have hNe : c.toObjId ≠ ⟨k⟩ := by
+            intro e; rw [e, hNraw] at hSraw; cases hSraw
+          have hN1 : (s.updateSchedContext c (fun c => { c with notificationCode := 0 })).objects[(⟨k⟩ : SeLe4n.ObjId)]? =
+              some (.notification ntfn) := by
+            rw [SystemState.updateSchedContext_objects_ne _ _ _ _ hNe hInv]; exact hNraw
+          rw [SeLe4n.Kernel.modifyObject_mapNotificationSchedContext_eq hN1 0]
+          generalize s.updateSchedContext c (fun c => { c with notificationCode := 0 }) = s1
+            at h1 hInv1 hN1
+          refine h1.trans ⟨rfl, fun j hj => ?_⟩
+          show ((s1.objects.insert ⟨k⟩
+            (KernelObject.notification { ntfn with schedContextCode := 0 }))[j]?).map _ = _
+          by_cases hk : (⟨k⟩ : SeLe4n.ObjId) = j
+          · subst hk
+            have e2 : (s1.objects.insert ⟨k⟩
+                (KernelObject.notification { ntfn with schedContextCode := 0 }))[(⟨k⟩ : SeLe4n.ObjId)]? =
+                some (KernelObject.notification { ntfn with schedContextCode := 0 }) :=
+              RobinHood.RHTable.getElem?_insert_self _ _ _ hInv1
+            have hCh : objectObservable ctx observer c.toObjId = false := by
+              rcases hH with h | h
+              · exact h
+              · have := h sc hS
+                rw [hC] at this
+                simp at this
+                rw [this] at hj; cases hj
+            rw [e2, hN1]
+            show some (projectKernelObject ctx observer _) = some (projectKernelObject ctx observer _)
+            have hsw : scWordShown ctx observer ntfn.schedContextCode = false := by
+              rw [hW, scWordShown_val_succ]; exact hCh
+            simp only [projectKernelObject, scWordShown_zero, hsw]
+            try rfl
+          · have e2 : (s1.objects.insert ⟨k⟩
+                (KernelObject.notification { ntfn with schedContextCode := 0 }))[j]? = s1.objects[j]? :=
+              RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun h => hk (eq_of_beq h)) hInv1
+            rw [e2]
 
 /-- The thread's yield link cancelled: both ends are erased by the projection. -/
 theorem cancelYieldTo (s : SystemState) (t : SeLe4n.ThreadId) (hInv : s.objects.invExt) :
@@ -644,7 +702,8 @@ theorem finaliseThreadUnbindNotification_hidden (ctx : LabelingContext)
         t'.ipcState = t.ipcState ∧ t'.ntfnPrev = t.ntfnPrev ∧ t'.ntfnNext = t.ntfnNext ∧
         t'.queuePPrev = t.queuePPrev ∧ t'.queueNext = t.queueNext ∧
         t'.scBindingScCode = t.scBindingScCode ∧
-        t'.scBindingOwnerCode = t.scBindingOwnerCode := by
+        t'.scBindingOwnerCode = t.scBindingOwnerCode ∧
+        t'.replyObjectCode = t.replyObjectCode := by
   have hTo := (SystemState.getTcb?_eq_some_iff s tid t).mp hT
   have hc : boundNotificationCodeOf s tid = t.boundNotificationCode := by
     unfold boundNotificationCodeOf; rw [hT]
@@ -652,7 +711,7 @@ theorem finaliseThreadUnbindNotification_hidden (ctx : LabelingContext)
   dsimp only
   rw [hc]
   split
-  · exact ⟨rfl, hInv, t, hT, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  · exact ⟨rfl, hInv, t, hT, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
   next h0 =>
   have hne : t.boundNotificationCode ≠ 0 := by simpa using h0
   obtain ⟨n, hN⟩ := notificationUnbindAdmitted_notification hG hne
@@ -662,7 +721,7 @@ theorem finaliseThreadUnbindNotification_hidden (ctx : LabelingContext)
   have hI1 := SystemState.updateTcb_preserves_objects_invExt s tid
     (fun y => { y with boundNotificationCode := 0 }) hInv
   refine ⟨hP, modifyObject_preserves_objects_invExt hI1,
-    { t with boundNotificationCode := 0 }, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    { t with boundNotificationCode := 0 }, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
   have hNe : (⟨t.boundNotificationCode - 1⟩ : SeLe4n.ObjId) ≠ tid.toObjId := by
     intro e; rw [e, hTo] at hNo; cases hNo
   refine (SystemState.getTcb?_eq_some_iff _ _ _).mpr ?_
@@ -843,48 +902,114 @@ theorem cutCancelledCallerHead_objectIndexFacts (s : SystemState) (t : TCB)
       · rw [markKeyChangeFrom_objectIndexSet, SystemState.updateTcb_objectIndexSet]; exact hS)
     s t ⟨hInv, hIdx, hSet⟩
 
-/-- **The thread-side head cut is invisible to every observer** (WS-ZA ZA6.34):
-the reply stored over
-itself with its upward link cleared (a stack link, which the projection strips:
-`projectKernelObject_reply_next_invariant`), the context's head and origin
-cleared, and a holder's owner code cleared (binding fields, which it erases),
-then the key hook, which writes the scheduler's flags alone. -/
+/-- **The context a thread's reply frame heads is hidden** (D34): the head cut
+of a cancelled caller rewrites that context's holder's owner word, which the
+projection shows where the context is. -/
+def replyHeadContextHidden (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (t : TCB) : Prop :=
+  ∀ r sc, st.getObject? ⟨t.replyObjectCode - 1⟩ = some (.reply r) →
+    r.next = some (.head sc) → objectObservable ctx observer sc.toObjId = false
+
+/-- A thread's reply object is the one its code names. -/
+theorem TCB.replyObject_eq_some {t : TCB} {rid : SeLe4n.ReplyId}
+    (h : t.replyObject = some rid) : rid = ⟨t.replyObjectCode - 1⟩ := by
+  unfold TCB.replyObject SeLe4n.ReplyId.ofOptCode at h
+  cases e : t.replyObjectCode with
+  | zero => rw [e] at h; cases h
+  | succ k => rw [e] at h; cases h; rfl
+
+/-- The fact read as the head cut asks it: the frame the thread's reply object
+heads. -/
+theorem replyHeadContextHidden.frameHead {ctx : LabelingContext} {observer : IfObserver}
+    {s : SystemState} {t : TCB} (h : replyHeadContextHidden ctx observer s t) :
+    ∀ rid scId, t.replyObject = some rid →
+      replyFrameHeadContext? s rid = some scId → objectObservable ctx observer scId.toObjId = false := by
+  intro rid scId hRo hH
+  obtain ⟨r, _, hR, hN, -, -⟩ := replyFrameHeadContext?_eq_some hH
+  have e := TCB.replyObject_eq_some hRo
+  subst e
+  exact h r scId ((SystemState.getReply?_eq_some_iff _ _ _).mp hR) hN
+
+/-- A frame whose reply heads no stack heads no context. -/
+theorem replyFrameHeadContext?_none_of_not_head {s : SystemState} {x : SeLe4n.ObjId}
+    {r : Reply} (hX : s.getObject? x = some (.reply r))
+    (hNH : replyStackLinkIsHead r.next = false) :
+    replyFrameHeadContext? s ⟨x.val⟩ = none := by
+  have hR : s.getReply? ⟨x.val⟩ = some r :=
+    (SystemState.getReply?_eq_some_iff _ _ _).mpr hX
+  unfold replyFrameHeadContext?
+  rw [hR]
+  simp only []
+  split
+  · next h => rw [h] at hNH; cases hNH
+  · rfl
+
+/-- ...so a caller whose frame is that reply has no donation to hand back. -/
+theorem cancelledCallerDonation?_none_of_not_head {s : SystemState} {x : SeLe4n.ObjId}
+    {r : Reply} {c : SeLe4n.ThreadId} {t : TCB} (hX : s.getObject? x = some (.reply r))
+    (hNH : replyStackLinkIsHead r.next = false) (hRo : t.replyObject = some ⟨x.val⟩) :
+    Lifecycle.Suspend.cancelledCallerDonation? s c t = none := by
+  unfold Lifecycle.Suspend.cancelledCallerDonation?
+  split
+  · rw [hRo]
+    exact replyFrameHeadHolder?_of_no_head s _ (replyFrameHeadContext?_none_of_not_head hX hNH)
+  · rfl
+
+/-- ...and owes none. -/
+theorem replyFrameHeadHolderDonation_of_not_head {s : SystemState} {x : SeLe4n.ObjId}
+    {r : Reply} {c : SeLe4n.ThreadId} {t : TCB} (hX : s.getObject? x = some (.reply r))
+    (hNH : replyStackLinkIsHead r.next = false) (hRo : t.replyObject = some ⟨x.val⟩) :
+    ∀ rid, t.replyObject = some rid → replyFrameHeadHolderDonation s rid c := by
+  intro rid h
+  rw [hRo] at h; cases h
+  exact replyFrameHeadHolderDonation_of_no_head s _ c
+    (replyFrameHeadHolder?_of_no_head s _ (replyFrameHeadContext?_none_of_not_head hX hNH))
+
+/-- **The thread-side head cut is invisible** when the context the frame heads
+is hidden (WS-ZA ZA6.34; D34 shows a holder's binding words where the context
+is): the reply stored over itself with its upward link cleared (a stack link,
+which the projection strips: `projectKernelObject_reply_next_invariant`), the
+context's head and origin cleared, and a holder's owner code cleared (a word
+shown only with the hidden context), then the key hook, which writes the
+scheduler's flags alone. -/
 theorem cutCancelledCallerHead_hidden (ctx : LabelingContext) (observer : IfObserver)
     (s : SystemState) (t : TCB) (hInv : s.objects.invExt)
-    (hIdx : SeLe4n.Model.objectIndexSetComplete s) (hSet : s.objectIndexSet.table.invExt) :
+    (hHead : ∀ rid scId, t.replyObject = some rid →
+      replyFrameHeadContext? s rid = some scId → objectObservable ctx observer scId.toObjId = false) :
     projectState ctx observer (Lifecycle.Suspend.cutCancelledCallerHead s t) =
-        projectState ctx observer s :=
-  (Lifecycle.Suspend.cutCancelledCallerHead_closed
-    (fun s' => projectState ctx observer s' = projectState ctx observer s ∧ s'.objects.invExt ∧
-      SeLe4n.Model.objectIndexSetComplete s' ∧ s'.objectIndexSet.table.invExt)
-    (fun s0 s1 rid r scId ⟨hP, hI, hC, hS⟩ _ hR hSt => by
-      have hRo := (SystemState.getReply?_eq_some_iff _ _ _).mp hR
-      have hI1 := SeLe4n.Model.storeObject_preserves_objects_invExt s0 s1 _ _ hI hSt
-      have hP1 := storeObject_projectionStable_preserves_projection ctx observer s0 s1
-        rid.toObjId _ (.reply r) hRo (projectKernelObject_reply_next_invariant ctx observer r _) hI hSt
-      have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s0 s1 _ _ hI hS hC hSt
-      have hS1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s0 s1 _ _ hS hSt
-      have hW := projectedObjectsWrite.updateSchedContext (ctx := ctx) (observer := observer) s1
-        scId (fun sc => { sc with scReply := none, donationOrigin := none }) hI1
-        (fun _ => by simp [projectKernelObject])
-      refine ⟨hW.projection.trans (hP1.trans hP),
-        SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hI1,
-        SystemState.updateSchedContext_preserves_objectIndexSetComplete _ _ _ hI1 hC1, ?_⟩
-      rw [SystemState.updateSchedContext_objectIndexSet]; exact hS1)
-    (fun s0 _ holder _ _ ⟨hP, hI, hC, hS⟩ _ _ _ => by
-      have hW := projectedObjectsWrite.updateTcb (ctx := ctx) (observer := observer) s0 holder
-        (fun t => { t with scBindingOwnerCode := 0 }) hI
-        (fun x => projectKernelObject_tcb_schedContextBinding_invariant ctx observer x _ 0)
-      refine ⟨(markKeyChangeFrom_extract_frame (projectState ctx observer) _ _ holder
-          (fun _ _ => rfl)).trans (hW.projection.trans hP), ?_, ?_, ?_⟩
-      · rw [markKeyChangeFrom_objects]
-        exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hI
-      · intro k hk
-        rw [markKeyChangeFrom_objects] at hk
-        rw [markKeyChangeFrom_objectIndexSet]
-        exact SystemState.updateTcb_preserves_objectIndexSetComplete _ _ _ hI hC k hk
-      · rw [markKeyChangeFrom_objectIndexSet, SystemState.updateTcb_objectIndexSet]; exact hS)
-    s t ⟨rfl, hInv, hIdx, hSet⟩).1
+        projectState ctx observer s := by
+  unfold Lifecycle.Suspend.cutCancelledCallerHead
+  split
+  rotate_left
+  · rfl
+  unfold Lifecycle.Suspend.cutThreadHeadFrameKeepingContext
+  cases hRo : t.replyObject with
+  | none => rfl
+  | some rid =>
+    dsimp only
+    rcases Lifecycle.Suspend.cutHeadFrameKeepingContext_cases s rid with
+      e | ⟨scId, r, s1, hH, hR, hSt, hRest⟩
+    · rw [e]
+    have hRo' := (SystemState.getReply?_eq_some_iff _ _ _).mp hR
+    have hI1 := SeLe4n.Model.storeObject_preserves_objects_invExt s s1 _ _ hInv hSt
+    have hP1 := storeObject_projectionStable_preserves_projection ctx observer s s1
+      rid.toObjId _ (.reply r) hRo' (projectKernelObject_reply_next_invariant ctx observer r _) hInv hSt
+    have hW := projectedObjectsWrite.updateSchedContext (ctx := ctx) (observer := observer) s1
+      scId (fun sc => { sc with scReply := none, donationOrigin := none }) hI1
+      (fun _ => by simp [projectKernelObject])
+    rcases hRest with e | ⟨holder, ht, o, hB, hT, hb, e⟩ <;> rw [e]
+    · exact hW.projection.trans hP1
+    · have hX := hHead rid scId hRo hH
+      have hI2 := SystemState.updateSchedContext_preserves_objects_invExt s1 scId
+        (fun sc => { sc with scReply := none, donationOrigin := none }) hI1
+      have hW2 := projectedObjectsWrite.updateTcbAt (ctx := ctx) (observer := observer) _ holder
+        (fun t => { t with scBindingOwnerCode := 0 }) hI2
+        (fun x hx => by
+          rw [hT] at hx; cases hx
+          have hc := TCB.scBindingScCode_of_donated hb
+          simp [projectKernelObject, hc, hX])
+      exact (markKeyChangeFrom_extract_frame (projectState ctx observer) _ _ holder
+          (fun _ _ => rfl)).trans (hW2.projection.trans (hW.projection.trans hP1))
 
 /-- **A reply-blocked caller's cancel and revert keep the object index
 complete and well formed** (`finaliseReplyCallerCancel`, WS-ZA ZA6.34): the head
@@ -1217,7 +1342,8 @@ theorem finaliseReplyCallerCancel_hidden (ctx : LabelingContext) (observer : IfO
       threadObservable ctx observer t = false →
       PriorityInheritance.blockingServer s t = some server →
       threadObservable ctx observer server = false)
-    (hT : s.getTcb? c = some t) (hHigh : threadObservable ctx observer c = false) :
+    (hT : s.getTcb? c = some t) (hHigh : threadObservable ctx observer c = false)
+    (hRh : replyHeadContextHidden ctx observer s t) :
     projectState ctx observer (finaliseReplyCallerCancel s c t) = projectState ctx observer s := by
   unfold finaliseReplyCallerCancel
   split
@@ -1229,18 +1355,23 @@ theorem finaliseReplyCallerCancel_hidden (ctx : LabelingContext) (observer : IfO
   · rfl
   next hG =>
   have hC := beq_iff_eq.mp ((Bool.and_eq_true _ _).mp hG).1
-  obtain ⟨r1, t1, -, -, hT1, hF1, hNH1, -, hE⟩ :=
+  obtain ⟨r1, t1, hX1, -, hT1, hF1, hNH1, -, hE⟩ :=
     finaliseCutReplyCaller_eq hInv hX hC hT ((Bool.and_eq_true _ _).mp hG).2
   rw [hE]
-  have hP0 := cutCancelledCallerHead_hidden ctx observer s t hInv hIdx hSet
+  have hP0 := cutCancelledCallerHead_hidden ctx observer s t hInv hRh.frameHead
+  have hRo1 := (replyCallerFinalisable_parts hF1).2.2.2.2.2.1
+  have hNoDon := cancelledCallerDonation?_none_of_not_head (c := c) hX1 hNH1 hRo1
+  have hNoOwe := replyFrameHeadHolderDonation_of_not_head (c := c) hX1 hNH1 hRo1
   obtain ⟨hI0, hC0, hS0⟩ := cutCancelledCallerHead_objectIndexFacts s t hInv hIdx hSet
-  generalize Lifecycle.Suspend.cutCancelledCallerHead s t = S at hP0 hI0 hC0 hS0 hT1 hF1
+  generalize Lifecycle.Suspend.cutCancelledCallerHead s t = S at hP0 hI0 hC0 hS0 hT1 hF1 hNoDon hNoOwe
   obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -⟩ := replyCallerFinalisable_parts hF1
   have eC : finaliseReplyCancel S r1 c t1 = Lifecycle.Suspend.cancelIpcBlocking S c t1 := by
     unfold finaliseReplyCancel; rw [hNH1]; rfl
   rw [eC]
+  -- Cut, the frame heads nothing: no donation to return, none owed.
   have hP1 := cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer S
     c t1 ep rt hB hValid hHigh hI0 hC0 hS0
+    (cancelledDonationContextHigh_of_no_donation ctx observer S c t1 hNoDon) hNoOwe
   have hI1 := Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt S c t1 hI0
   unfold finaliseReplyRevert
   cases hSv : t1.blockingServer? with
@@ -1271,7 +1402,8 @@ theorem finaliseThreadCancel_hidden (ctx : LabelingContext) (observer : IfObserv
     (hNp : ∀ b, t.ntfnPrev = some b → objectObservable ctx observer b.toObjId = false)
     (hNx : ∀ b, t.ntfnNext = some b → objectObservable ctx observer b.toObjId = false)
     (hQp : ∀ p, t.queuePPrev = some (.tcbNext p) → objectObservable ctx observer p.toObjId = false)
-    (hQn : ∀ b, t.queueNext = some b → objectObservable ctx observer b.toObjId = false) :
+    (hQn : ∀ b, t.queueNext = some b → objectObservable ctx observer b.toObjId = false)
+    (hRh : replyHeadContextHidden ctx observer s t) :
     projectState ctx observer (finaliseThreadCancel s tid) = projectState ctx observer s ∧
       (finaliseThreadCancel s tid).objects.invExt := by
   have hEnd : ∀ e q, objectObservable ctx observer e = false →
@@ -1303,7 +1435,7 @@ theorem finaliseThreadCancel_hidden (ctx : LabelingContext) (observer : IfObserv
   · next e hB => exact hEnd e false (hW e (by simp [waitsOn, hB]))
   · next e hB => exact hEnd e false (hW e (by simp [waitsOn, hB]))
   · exact ⟨finaliseReplyCallerCancel_hidden ctx observer hInv hValid hIdx hSet
-      hBlockingChainHigh hT hThr, (finaliseReplyCallerCancel_binding hInv hT).1⟩
+      hBlockingChainHigh hT hThr hRh, (finaliseReplyCallerCancel_binding hInv hT).1⟩
   · exact ⟨rfl, hInv⟩
 
 /-- **A finalised thread's IPC cancel keeps the object index complete and well
@@ -1572,7 +1704,8 @@ def threadFinaliseHidden (ctx : LabelingContext) (observer : IfObserver)
     (∀ (s : SystemState) (w : SeLe4n.ThreadId),
       PriorityInheritance.blockingServer s w = some ⟨x.val⟩ →
       objectObservable ctx observer w.toObjId = false) ∧
-    threadObservable ctx observer ⟨x.val⟩ = false
+    threadObservable ctx observer ⟨x.val⟩ = false ∧
+    replyHeadContextHidden ctx observer st t
 
 /-- **What a scheduling context's finalisation writes, besides the context**:
 the thread bound to it — hidden, as an object (the unbind rewrites it) and as a
@@ -1634,13 +1767,13 @@ theorem finaliseThread_hidden (ctx : LabelingContext) (observer : IfObserver)
       split at hAd
       · exact ⟨_, ‹_›⟩
       · cases hAd
-    obtain ⟨h1, h2, h3, h4, h5, h6, h7, hWait, h8⟩ := hH t hO
+    obtain ⟨h1, h2, h3, h4, h5, h6, h7, hWait, h8, h9⟩ := hH t hO
     have hT : st.getTcb? ⟨x.val⟩ = some t :=
       (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO
     have hG : notificationUnbindAdmitted st ⟨x.val⟩ t = true := by
       obtain ⟨t', hT', hG'⟩ := threadFinaliseAdmitted_notificationUnbind hAd
       rw [hT] at hT'; cases hT'; exact hG'
-    obtain ⟨hP1, hI1, t1, hT1, e1, e2, e3, e4, e5, e6, -⟩ :=
+    obtain ⟨hP1, hI1, t1, hT1, e1, e2, e3, e4, e5, e6, -, e7⟩ :=
       finaliseThreadUnbindNotification_hidden ctx observer hInv hT hG hX h1
     have hIdx1 := finaliseThreadUnbindNotification_index hInv hT hG hIdx
     have hSet1 : (finaliseThreadUnbindNotification st ⟨x.val⟩).objectIndexSet.table.invExt := by
@@ -1649,6 +1782,14 @@ theorem finaliseThread_hidden (ctx : LabelingContext) (observer : IfObserver)
       hBlockingChainHigh h8 hX
       (by rw [e1]; exact h3) (by rw [e2]; exact h4) (by rw [e3]; exact h5)
       (by rw [e4]; exact h6) (by rw [e5]; exact h7)
+      (fun r sc hR hN => h9 r sc (by
+        rw [e7] at hR
+        rcases (finaliseThreadUnbindNotification_slots hInv hT hG).2
+          ⟨t.replyObjectCode - 1⟩ with e | ⟨_, _, _, e⟩ | ⟨_, _, _, e⟩
+        · show st.objects[_]? = _
+          rw [← e]; exact hR
+        · exact absurd (hR.symm.trans e) (by simp)
+        · exact absurd (hR.symm.trans e) (by simp)) hN)
     obtain ⟨t2, hT2, f2⟩ := finaliseThreadCancel_scBinding hI1 hT1
     -- The walk orphans the waiters.
     obtain ⟨hIdx2, hSet2⟩ := finaliseThreadCancel_objectIndexFacts (tid := ⟨x.val⟩) hI1 hIdx1 hSet1
@@ -1775,7 +1916,8 @@ theorem finaliseSchedContext_hidden (ctx : LabelingContext) (observer : IfObserv
       (FinaliseFrameAny.unstackStep st) x st (.refl hInv) hA _ rfl hF.any
     have hU := hFU.invExt
     refine ((projectedObjectsWrite.unbindSchedContextNotification _ _
-      ((FinaliseFrameAny.yieldStep st).schedContextCleanup _ x hFU).invExt).projection).trans ?_
+      ((FinaliseFrameAny.yieldStep st).schedContextCleanup _ x hFU).invExt
+      (Or.inl hX)).projection).trans ?_
     refine (finaliseSchedContextCleanupImpl_hidden ctx observer hU hX).trans
       ((schedContextUnbindReply_hidden ctx observer hF.invExt hX).trans
         ((finaliseSchedContextUnbind_hidden ctx observer hD.invExt hX hH.deschedule).trans
@@ -1816,21 +1958,23 @@ theorem finaliseReplyUnstash_hidden (ctx : LabelingContext) (observer : IfObserv
       · rfl
     · rfl
 
-/-- **The unheld pop is invisible to every observer**, as the donation return is
-(`returnDonationToCancelledCaller_preserves_projection`): the projection erases
-the two fields it writes, the context's binding and the recipient's
-(`projectKernelObject_schedContext_donationWrite_invariant`,
-`projectKernelObject_tcb_schedContextBinding_invariant`), and the pop's reply
-stores are stack links (`storeDonationHeadPop_preserves_projection`).  Each store
+/-- **The unheld pop is invisible** when the context it returns is hidden, as
+the donation return is (`returnDonationToCancelledCaller_preserves_projection`):
+the context is stored in its hidden slot, the recipient's binding words name
+the hidden context where they named nothing before (the recipient is unbound,
+`donationRecipientAcceptable`; D34 shows a binding word where its context is),
+and the pop's reply stores are stack links
+(`storeDonationHeadPop_preserves_projection`).  Each store
 is at an indexed key, so the object index stays complete and well formed. -/
 theorem returnUnheldSchedContext_preserves_projection (ctx : LabelingContext)
     (observer : IfObserver) {st st' : SystemState} {s : SeLe4n.SchedContextId}
     {c : SeLe4n.ThreadId} {n : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
     (hIdx : SeLe4n.Model.objectIndexSetComplete st) (hSet : st.objectIndexSet.table.invExt)
-    (hPop : returnUnheldSchedContext st s c n = .ok st') :
+    (hPop : returnUnheldSchedContext st s c n = .ok st')
+    (hS : objectObservable ctx observer s.toObjId = false) :
     projectState ctx observer st' = projectState ctx observer st ∧
       SeLe4n.Model.objectIndexSetComplete st' ∧ st'.objectIndexSet.table.invExt := by
-  obtain ⟨sc, head?, ot, s1, s2, s3, hSc, -, -, -, -, hS1, hClear, hL1, hS3, hEq⟩ :=
+  obtain ⟨sc, head?, ot, s1, s2, s3, hSc, -, -, hRecip, -, hS1, hClear, hL1, hS3, hEq⟩ :=
     returnUnheldSchedContext_ok_storeChain _ _ s c n hPop
   have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt _ s1 _ _ hObjInv hS1
   have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
@@ -1842,14 +1986,37 @@ theorem returnUnheldSchedContext_preserves_projection (ctx : LabelingContext)
   have hC2 := storeDonationHeadPop_preserves_objectIndexSetComplete hInv1 hSet1 hC1 hClear
   have hC3 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s2 s3 _ _ hInv2
     hSet2 hC2 hS3
-  have hP1 := storeObject_projectionStable_preserves_projection ctx observer _ s1
-    s.toObjId _ (.schedContext sc) hSc
-    (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _) hObjInv hS1
+  have hP1 := storeObject_preserves_projection ctx observer _ s1 _ _ hS hObjInv hS1
   have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
-  have hP3 := storeObject_projectionStable_preserves_projection ctx observer s2 s3
-    c.toObjId _ (.tcb ot) (lookupTcb_some_objects s2 c ot hL1)
-    (projectKernelObject_tcb_schedContextBinding_invariant ctx observer ot _ _)
-    hInv2 hS3
+  have hOtSt : st.objects[c.toObjId]? = some (.tcb ot) := by
+    have hk := storeDonationHeadPop_tcb_backward hInv1 hClear _ ot
+      (lookupTcb_some_objects s2 c ot hL1)
+    have hNe1 : c.toObjId ≠ s.toObjId := by
+      intro hE
+      rw [hE, SeLe4n.Model.storeObject_objects_eq _ s1 _ _ hObjInv hS1] at hk
+      cases hk
+    rwa [SeLe4n.Model.storeObject_objects_ne _ s1 s.toObjId _ _ hNe1 hObjInv hS1] at hk
+  have hP3 := storeObject_tcbBindingWords_preserves_projection ctx observer
+    (lookupTcb_some_objects s2 c ot hL1) (by
+      refine .inr ⟨?_, ?_⟩
+      · cases n <;> simp [donationReturnBinding, SeLe4n.Kernel.SchedContextBinding.scCode, hS]
+      · have hLk : lookupTcb st c = some ot := by
+          have hL1' := hL1
+          unfold lookupTcb SystemState.getTcb? at hL1' ⊢
+          split at hL1'
+          · cases hL1'
+          · rw [if_neg (by assumption), hOtSt]
+        have hU := (donationRecipientAcceptable_eq_of_some st c ot hLk).symm.trans hRecip
+        have hU' : ot.schedContextBinding = .unbound := by
+          revert hU
+          cases ot.schedContextBinding <;> intro hU
+          · rfl
+          all_goals nomatch hU
+        have h0 : ot.scBindingScCode = 0 := by
+          have e := congrArg SeLe4n.Kernel.SchedContextBinding.scCode hU'
+          unfold TCB.schedContextBinding at e
+          rwa [SeLe4n.Kernel.SchedContextBinding.scCode_ofCodes] at e
+        rw [h0]; rfl) hInv2 hS3
   subst hEq
   refine ⟨?_, fun k hk => ?_, by rw [markKeyChangeFrom_objectIndexSet]; exact hSet3⟩
   · rw [markKeyChangeFrom_extract_frame (projectState ctx observer) _ _ _
@@ -1933,6 +2100,7 @@ theorem finaliseReplyUnheldPop_hidden (ctx : LabelingContext) (observer : IfObse
     exact ⟨rx, by rw [SystemState.getObject?_eq_getElem]; exact hx⟩
   rw [e]
   obtain ⟨hP, hC, hS⟩ := returnUnheldSchedContext_preserves_projection ctx observer hInv hIdx hSet hPop
+    (hScHigh s hN)
   have hInv' := (FinaliseFrameAny.returnUnheldSchedContext hInv hPop).invExt
   have hRo := SchedContextOps.settleReturnedContext_releaseOnlyWrite st' (determineTargetCore st' c) s
   have hF := FinaliseFrame.of_releaseOnlyWrite hRo
@@ -1989,9 +2157,12 @@ theorem finaliseReplyUnheld_hidden (ctx : LabelingContext) (observer : IfObserve
             rw [hT] at hT1; cases hT1
             rw [hF0] at hF; cases hF
           · rw [hx] at hX1; cases hX1; rfl
-        obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, -, -, -, -⟩ := replyCallerFinalisable_parts hF
+        obtain ⟨-, -, -, -, ⟨ep, rt, hB⟩, hRo1, -, -, -⟩ := replyCallerFinalisable_parts hF
         have hP1 := cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer st1
           c t1 ep rt hB hValid hHigh hI1 hC1 hS1
+          (cancelledDonationContextHigh_of_no_donation ctx observer st1 c t1
+            (cancelledCallerDonation?_none_of_not_head hX1 hHead hRo1))
+          (replyFrameHeadHolderDonation_of_not_head hX1 hHead hRo1)
         have hI2 := Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st1 c t1 hI1
         have eC : finaliseReplyCancel st1 r1 c t1 = Lifecycle.Suspend.cancelIpcBlocking st1 c t1 := by
           unfold finaliseReplyCancel; rw [hHead]; rfl
@@ -2051,6 +2222,8 @@ theorem finaliseReply_hidden (ctx : LabelingContext) (observer : IfObserver)
           have hHigh := hH.1 r hX (by simpa using h0)
           have hP1 := cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer st
             ⟨r.callerCode - 1⟩ t ep rt hB hValid hHigh hInv hIdx hSet
+            (cancelledDonationContextHigh_of_replyHeadHidden ctx observer hX hF
+              (fun sc => hH.2.2 r sc hX)) hOwed
           have hPR : projectState ctx observer (cancelIpcBlockingReclaimed ⟨r.callerCode - 1⟩ t st) =
               projectState ctx observer st := by
             unfold cancelIpcBlockingReclaimed
@@ -2140,17 +2313,35 @@ theorem finaliseFinalObject_preserves_projection (ctx : LabelingContext) (observ
   split
   · split
     · exact (hEp true _ _ (hEp false _ _ hP0)).2.2
-    · have hLk : ∀ s c, P s → P (unbindSchedContextNotification s c) := fun s c hP =>
+    · have hLk : ∀ s c, P s → (objectObservable ctx observer c.toObjId = false ∨
+          ∀ sc, s.getSchedContext? c = some sc →
+            objectObservable ctx observer ⟨sc.notificationCode - 1⟩ = false) →
+          P (unbindSchedContextNotification s c) := fun s c hP hHc =>
         ⟨(hP.1.notificationLink c).1, (fun t tcb ht hw => by
           obtain ⟨o0, h0', r | ⟨_, rfl, r⟩ | ⟨_, rfl, r⟩⟩ :=
             unbindSchedContextNotification_objects_back s c hP.1.2.1 _ _ ht
           · exact hP.2.1 t tcb (by rw [r]; exact h0') hw
           · cases r
           · cases r),
-         ((projectedObjectsWrite.unbindSchedContextNotification s c hP.1.2.1).projection).trans
+         ((projectedObjectsWrite.unbindSchedContextNotification s c hP.1.2.1 hHc).projection).trans
            hP.2.2⟩
-      have hP1 : P (unbindNotificationSchedContext st x) :=
-        unbindNotificationSchedContext_closed P hLk st x hP0
+      -- The context unbound is the one that names `x` back, so the
+      -- notification whose word is cleared is `x` itself, hidden.
+      have hP1 : P (unbindNotificationSchedContext st x) := by
+        unfold unbindNotificationSchedContext
+        split
+        · split
+          · exact hP0
+          · next k _ =>
+            split
+            · next hNm =>
+              refine hLk st ⟨k⟩ hP0 (Or.inr fun sc hS => ?_)
+              unfold schedContextNamesNotification at hNm
+              rw [hS] at hNm
+              rw [beq_iff_eq.mp hNm]
+              simpa using hX
+            · exact hP0
+        · exact hP0
       have hBd1 : ∀ (n : Notification) (t : SeLe4n.ThreadId),
           (unbindNotificationSchedContext st x).getNotification? x = some n →
           n.boundTCB = some t → objectObservable ctx observer t.toObjId = false := by

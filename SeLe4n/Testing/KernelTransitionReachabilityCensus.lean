@@ -1132,6 +1132,10 @@ def nonExecutedTransitionsPlain : List Name :=
   -- (`auditedArmSpec_declassify_trail`, `auditedArmSpec_declassifySignal_trail`),
   -- so no arm runs the specification itself.
   , `SeLe4n.Kernel.auditedArmSpec
+  -- WS-SX SX9.1: the bind perform's writes over the context and thread it
+  -- read, the two-run theorem's statement of `schedContextBindPerform`, proven
+  -- equal to it (`schedContextBindPerform_eq_body`); the kernel runs the perform.
+  , `SeLe4n.Kernel.bindPerformBody
   , `SeLe4n.Kernel.cancelIpcBlockingOnCore
   , `SeLe4n.Kernel.chooseThread
   , `SeLe4n.Kernel.chooseThreadEffective

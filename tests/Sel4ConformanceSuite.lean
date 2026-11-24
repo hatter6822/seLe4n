@@ -291,6 +291,151 @@ private def bCheckDestroyUnbinds : Bool :=
       (st'.getTcb? lender).any (fun t => decide (t.schedContextBinding = .unbound))
   | .error _ => false
 
+/-- The endpoint every reply-stack scenario names. -/
+private def bEp : SeLe4n.ObjId := ⟨90⟩
+
+private def bScAt (obj : Nat) (bound : Option SeLe4n.ThreadId) (head : Option SeLe4n.ReplyId) :
+    SeLe4n.ObjId × KernelObject :=
+  let scId := SeLe4n.SchedContextId.ofObjId ⟨obj⟩
+  (⟨obj⟩, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with
+    boundThreadCode := SeLe4n.ThreadId.optCode bound, scReply := head, isActive := true })
+
+private def bBinding (st : SystemState) (t : SeLe4n.ThreadId) : Option SeLe4n.SchedContextId :=
+  (st.getTcb? t).bind (fun x => x.schedContextBinding.scId?)
+
+private def bBoundTo (st : SystemState) (obj : Nat) : Option SeLe4n.ThreadId :=
+  (st.getSchedContext? (SeLe4n.SchedContextId.ofObjId ⟨obj⟩)).bind (·.boundThread)
+
+private def bHeadOf (st : SystemState) (obj : Nat) : Option SeLe4n.ReplyId :=
+  (st.getSchedContext? (SeLe4n.SchedContextId.ofObjId ⟨obj⟩)).bind (·.scReply)
+
+/-- Caller 7, holding context 65 of its own, called server 8 and lent it
+context 64 through reply 93.  The reply pops the head; seL4's `reply_pop`
+donates back only to a caller holding no context, so the server keeps 64 and
+the caller wakes holding 65. -/
+private def bCheckReplyPopHeld : Bool :=
+  let caller : SeLe4n.ThreadId := ⟨7⟩
+  let server : SeLe4n.ThreadId := ⟨8⟩
+  let rid : SeLe4n.ReplyId := ⟨93⟩
+  let lent := SeLe4n.SchedContextId.ofObjId ⟨64⟩
+  let own := SeLe4n.SchedContextId.ofObjId ⟨65⟩
+  let lentBinding : SeLe4n.Kernel.SchedContextBinding := .donated lent caller
+  let st := bState [
+    (bEp, .endpoint {}),
+    (caller.toObjId, .tcb (TCB.setIpcState { bTcb 7 with
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound own),
+      replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply bEp (some server)))),
+    (server.toObjId, .tcb { bTcb 8 with
+      scBindingScCode := lentBinding.scCode, scBindingOwnerCode := lentBinding.ownerCode }),
+    (rid.toObjId, .reply { replyId := rid, next := some (.head lent),
+                           callerCode := SeLe4n.ThreadId.optCode (some caller) }),
+    bScAt 64 (some server) (some rid), bScAt 65 (some caller) none]
+  let msg : IpcMessage := { registers := #[SeLe4n.RegValue.ofNat 7], badge := none }
+  match SeLe4n.Kernel.endpointReplyCrossCoreDispatch server caller msg bootCoreId st with
+  | (st', .ok _) =>
+    bBinding st' caller == some own && bBoundTo st' 64 == some server &&
+      bBinding st' server == some lent && bHeadOf st' 64 == none &&
+      (st'.getTcb? caller).any (fun t => decide (t.ipcState = .ready))
+  | (_, .error _) => false
+
+/-- Thread 5 holds context 62 on loan from thread 6, whose Call heads the
+context's stack through reply 95.  SchedContext_Unbind succeeds: the holder is
+unbound and the context leaves the stack (`schedContext_unbindReply`, D22). -/
+private def bCheckUnbindDonated : Bool :=
+  let holder : SeLe4n.ThreadId := ⟨5⟩
+  let lender : SeLe4n.ThreadId := ⟨6⟩
+  let rid : SeLe4n.ReplyId := ⟨95⟩
+  let scId := SeLe4n.SchedContextId.ofObjId ⟨62⟩
+  let binding : SeLe4n.Kernel.SchedContextBinding := .donated scId lender
+  let st := bState [
+    (bEp, .endpoint {}),
+    (holder.toObjId, .tcb { bTcb 5 with
+      scBindingScCode := binding.scCode, scBindingOwnerCode := binding.ownerCode }),
+    (lender.toObjId, .tcb (TCB.setIpcState { bTcb 6 with
+      replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply bEp (some holder)))),
+    (rid.toObjId, .reply { replyId := rid, next := some (.head scId),
+                           callerCode := SeLe4n.ThreadId.optCode (some lender) }),
+    bScAt 62 (some holder) (some rid)]
+  match scId.toObjId.toValid? with
+  | some vS =>
+    match SeLe4n.Kernel.SchedContextOps.schedContextUnbindAllOnCore vS bootCoreId st with
+    | .ok (st', _) =>
+      bBoundTo st' 62 == none && bHeadOf st' 62 == none && bBinding st' holder == none &&
+        (st'.getReply? rid).any (fun r => decide (r.next = none))
+    | .error _ => false
+  | none => false
+
+/-- Thread 9, bound to context 66, is suspended: seL4's `suspend` leaves the
+binding alone (`schedContext_unbindTCB` runs only on destroy), so the thread and
+the context still name each other. -/
+private def bCheckSuspendKeeps : Bool :=
+  let victim : SeLe4n.ThreadId := ⟨9⟩
+  let scId := SeLe4n.SchedContextId.ofObjId ⟨66⟩
+  let st := bState [
+    (victim.toObjId, .tcb { bTcb 9 with
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId) }),
+    bScAt 66 (some victim) none]
+  match victim.toValid? with
+  | some vV =>
+    match SeLe4n.Kernel.Lifecycle.Suspend.suspendThreadOnCore st vV bootCoreId with
+    | .ok (st', _) =>
+      bBinding st' victim == some scId && bBoundTo st' 66 == some victim &&
+        (st'.getTcb? victim).any (fun t => decide (t.threadState = .Inactive))
+    | .error _ => false
+  | none => false
+
+/-- Waiter 2 holds context 60, lent by its bound notification 80, and receives
+on an empty endpoint: the receive blocks, so seL4's `receiveIPC` returns the
+context first (`maybeReturnSchedContext`); both links are cleared and the
+notification keeps its own. -/
+private def bCheckReceiveReturns : Bool :=
+  let st := bState [
+    (bEp, .endpoint {}),
+    (bWaiter.toObjId, .tcb { bTcb 2 with
+      boundNotificationCode := bNtfn.val + 1,
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound bScId) }),
+    (bScObj, .schedContext { SeLe4n.Kernel.SchedContext.empty bScId with
+      notificationCode := bNtfn.val + 1, boundThreadCode := bWaiter.val + 1 }),
+    (bNtfn, .notification { bNtfnObject false with boundTCBCode := bWaiter.val + 1 })]
+  let returned := SeLe4n.Kernel.receiveReturnSchedContext true st bWaiter
+  match SeLe4n.Kernel.endpointReceiveDualOnCore bEp bWaiter none bootCoreId returned with
+  | (st', .ok _) =>
+    bHolds st && bHoldsNothing st' &&
+      (st'.getTcb? bWaiter).any (fun t => decide (t.ipcState = .blockedOnReceive bEp)) &&
+      (st'.getNotification? bNtfn).any (fun n => n.schedContextCode == bScId.val + 1)
+  | (_, .error _) => false
+
+/-- Lender 3 called server 4 and lent it context 61 through reply 63, so its
+frame is on a live stack.  SchedContext_Bind binds context 67 to it, as seL4's
+`decodeSchedContext_Bind` does: the lender binds, and the loan stays with the
+server. -/
+private def bCheckBindLender : Bool :=
+  let lender : SeLe4n.ThreadId := ⟨3⟩
+  let server : SeLe4n.ThreadId := ⟨4⟩
+  let rid : SeLe4n.ReplyId := ⟨63⟩
+  let lent := SeLe4n.SchedContextId.ofObjId ⟨61⟩
+  let fresh := SeLe4n.SchedContextId.ofObjId ⟨67⟩
+  let binding : SeLe4n.Kernel.SchedContextBinding := .donated lent lender
+  let st := bState [
+    (bEp, .endpoint {}),
+    (lender.toObjId, .tcb (TCB.setIpcState { bTcb 3 with
+      replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply bEp (some server)))),
+    (server.toObjId, .tcb { bTcb 4 with
+      scBindingScCode := binding.scCode, scBindingOwnerCode := binding.ownerCode }),
+    (rid.toObjId, .reply { replyId := rid, next := some (.head lent),
+                           callerCode := SeLe4n.ThreadId.optCode (some lender) }),
+    bScAt 61 (some server) (some rid),
+    (⟨67⟩, .schedContext { SeLe4n.Kernel.SchedContext.empty fresh with
+      budgetRemaining := ⟨5⟩, isActive := true })]
+  match fresh.toObjId.toValid?, lender.toValid? with
+  | some vS, some vT =>
+    match SeLe4n.Kernel.SchedContextOps.schedContextBind vS vT st with
+    | .ok ((), st') =>
+      bBinding st' lender == some fresh && bBoundTo st' 67 == some lender &&
+        bBinding st' server == some lent && bHeadOf st' 61 == some rid
+    | .error _ => false
+  | _, _ => false
+
 /-- Object 90 public, every thread and every other object secret: the
 cross-label fixture for the label-gate rows. -/
 private def bLabelObj : SeLe4n.ObjId := ⟨90⟩
@@ -340,6 +485,11 @@ private def behaviourChecks : List (String × Bool) := [
   ("wait-block-returns-context", bCheckWaitReturn),
   ("call-lends-context", bCheckCallLend),
   ("destroy-unbinds-context", bCheckDestroyUnbinds),
+  ("reply-pop-held-keeps-context", bCheckReplyPopHeld),
+  ("unbind-donated-holder", bCheckUnbindDonated),
+  ("suspend-keeps-binding", bCheckSuspendKeeps),
+  ("receive-block-returns-context", bCheckReceiveReturns),
+  ("bind-lender", bCheckBindLender),
   ("cross-label-send-refused", bCheckCrossSend),
   ("cross-label-receive-refused", bCheckCrossReceive),
   ("cross-label-wait-refused", bCheckCrossWait),

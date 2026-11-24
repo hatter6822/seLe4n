@@ -15002,6 +15002,70 @@ const BIND_UPPER_TO_BOUND_THREAD_REFUSED: RoundTrip = RoundTrip {
         ROOT_IPC_BUFFER,
     )
 };
+/// The image's scheduling context bound to the upper notification, measured:
+/// refused `flowDenied` before any write, since the context's label is not the
+/// notification's (`schedContextBindNotificationLabelAdmits`, the two-way label
+/// gate, WS-SX D35).  This gate, with the thread arm's below, is why the
+/// notification lend's label refusal (D30) and the Call lend's (D28) are
+/// unreachable from a booted image: a notification and its context, and a
+/// thread and the context it holds, carry equal labels (D37), so no waiter's
+/// lend and no caller's lend is ever refused (WS-SX SX9.3).
+#[cfg(feature = "hw_target")]
+const SCHED_CONTEXT_BIND_UPPER_NOTIFICATION_REFUSED: RoundTrip = RoundTrip {
+    returns: Some((
+        (crate::svc_dispatch::ERROR_LABEL_BASE + FLOW_DENIED) << 12,
+        [None; 4],
+    )),
+    ..cap_argument(
+        "sched-context-bind-upper-notification-refused",
+        SCHED_CONTEXT_BIND,
+        SCHED_CONTEXT_CAP,
+        FRAME_CAP,
+        ROOT_IPC_BUFFER,
+    )
+};
+/// The id the bound scenario carves its upper-domain thread at, past the
+/// exerciser labeling's boundary beside [`UPPER_NOTIFICATION_ID`].
+#[cfg(feature = "hw_target")]
+const UPPER_THREAD_ID: u64 = 0x10_0011;
+/// A root slot no other scenario names: the upper-domain thread's.
+#[cfg(feature = "hw_target")]
+const UPPER_THREAD_SLOT: u64 = 61;
+#[cfg(feature = "hw_target")]
+const UPPER_THREAD_CAP: u64 = cap_address(UPPER_THREAD_SLOT);
+/// The upper-domain thread's carve, unmeasured.
+#[cfg(feature = "hw_target")]
+const UPPER_THREAD_CARVE: RoundTrip = retype(
+    "untyped-retype-upper-thread",
+    UNTYPED_CAP,
+    [TCB_TYPE, UPPER_THREAD_ID, CNODE_CAP, UPPER_THREAD_SLOT],
+    ROOT_IPC_BUFFER,
+);
+/// The image's scheduling context bound to the upper-domain thread, measured:
+/// refused `flowDenied` before any write, since the context's label is not the
+/// thread's (`schedContextBindLabelAdmits`, D35).
+#[cfg(feature = "hw_target")]
+const SCHED_CONTEXT_BIND_UPPER_THREAD_REFUSED: RoundTrip = RoundTrip {
+    returns: Some((
+        (crate::svc_dispatch::ERROR_LABEL_BASE + FLOW_DENIED) << 12,
+        [None; 4],
+    )),
+    ..cap_argument(
+        "sched-context-bind-upper-thread-refused",
+        SCHED_CONTEXT_BIND,
+        SCHED_CONTEXT_CAP,
+        UPPER_THREAD_CAP,
+        ROOT_IPC_BUFFER,
+    )
+};
+/// The upper-domain thread's only capability deleted, unmeasured.
+#[cfg(feature = "hw_target")]
+const UPPER_THREAD_DELETE: RoundTrip = invocation(
+    "upper-thread-delete",
+    CSPACE_DELETE,
+    CNODE_CAP,
+    [UPPER_THREAD_SLOT, 0, 0, 0],
+);
 /// The slots emptied again, unmeasured: the bound line's handler cleared and
 /// deleted, the second thread's capability deleted (its finalisation cancels its
 /// receive and unbinds its notification), then the endpoint's and the two
@@ -15067,9 +15131,13 @@ const BOUND_SIGNAL_TEARDOWN: [RoundTrip; 6] = [
 ///   before any write: the thread's label is not the notification's, so a
 ///   declassified signal's delivery can never reach a thread of another
 ///   label.
+/// - the image's scheduling context bound to the upper notification, and to a
+///   thread carved at an upper id, each refused `flowDenied` before any write
+///   (WS-SX SX9.3): a context binds only to a holder of its own label.
 ///
-/// The three deliveries and the refusal are measured; the setup, the switches
-/// and the deletes that leave the slots empty again are not.
+/// The three deliveries and the three refusals are measured; the setup, the
+/// upper thread's carve, the switches and the deletes that leave the slots empty
+/// again are not.
 ///
 /// One run (`which` names the first call); the caller masks the timer across
 /// it.
@@ -15137,6 +15205,18 @@ fn bound_declassified_signals(which: &str) -> bool {
             "the second thread's receive did not block",
         )
         || heap_allocations_round_trip(&BIND_UPPER_TO_BOUND_THREAD_REFUSED, which) != Some(true)
+        || heap_allocations_round_trip(&SCHED_CONTEXT_BIND_UPPER_NOTIFICATION_REFUSED, which)
+            != Some(true)
+        || !unmeasured(
+            &UPPER_THREAD_CARVE,
+            "the upper-domain thread was not carved",
+        )
+        || heap_allocations_round_trip(&SCHED_CONTEXT_BIND_UPPER_THREAD_REFUSED, which)
+            != Some(true)
+        || !unmeasured(
+            &UPPER_THREAD_DELETE,
+            "the upper-domain thread was not deleted",
+        )
     {
         return false;
     }

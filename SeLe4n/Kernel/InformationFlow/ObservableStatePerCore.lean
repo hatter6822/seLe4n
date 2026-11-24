@@ -1168,17 +1168,33 @@ theorem projectCNode_lookup_monotone (ctx : LabelingContext) {L₁ L₂ : Securi
   obtain ⟨hOrig, hPred⟩ := h
   exact ⟨hOrig, capTargetObservable_monotone ctx hFlow _ hPred⟩
 
-/-- SM8.A.5: off the CNode arm, `projectKernelObject` does not read the
-observer at all — the TCB / SchedContext / Reply erasures are structural and
-every other object passes through unchanged.  So for a non-CNode object,
-visibility is the *only* thing the clearance controls. -/
+/-- **The lend words zeroed**: a kernel object with its scheduling-context binding
+words (the TCB's binding pair, the context's thread word, the notification's
+context word) set to the empty word, and nothing else changed.
+
+WS-SX SX9.1 (D34): these are the only words `projectKernelObject` reads the
+observer for off the CNode arm (each is shown exactly to an observer cleared for
+the context, and thread, it names), so two observers' projections of one
+non-CNode object agree once they are zeroed. -/
+def _root_.SeLe4n.Model.KernelObject.lendWordsZeroed : KernelObject → KernelObject
+  | .tcb t => .tcb { t with scBindingScCode := 0, scBindingOwnerCode := 0 }
+  | .schedContext sc => .schedContext { sc with boundThreadCode := 0 }
+  | .notification n => .notification { n with schedContextCode := 0 }
+  | o => o
+
+/-- SM8.A.5, restated by WS-SX SX9.1 (D34) **up to the lend words**: off the
+CNode arm, `projectKernelObject` reads the observer only for the binding words
+the notification lend decides by, so two observers' projections of a non-CNode
+object agree once those words are zeroed.  Before D34 this was an equality; the
+finer projection shows each lend word to an observer cleared for what it names. -/
 theorem projectKernelObject_observer_independent_off_cnode
     (ctx : LabelingContext) (o₁ o₂ : IfObserver) (obj : KernelObject)
     (hNotCNode : ∀ cn, obj ≠ .cnode cn) :
-    projectKernelObject ctx o₁ obj = projectKernelObject ctx o₂ obj := by
+    (projectKernelObject ctx o₁ obj).lendWordsZeroed
+      = (projectKernelObject ctx o₂ obj).lendWordsZeroed := by
   cases obj
   case cnode cn => exact absurd rfl (hNotCNode cn)
-  all_goals rfl
+  all_goals simp [projectKernelObject, KernelObject.lendWordsZeroed]
 
 /-! ### Object-content refinement
 
@@ -1256,10 +1272,12 @@ def objectVisibilityLe (o₁ o₂ : KernelObject) : Prop :=
       match o₂ with
       | .cnode cn₂ => cnodeVisibilityLe cn₁ cn₂
       | _ => False
-  | _ => o₁ = o₂
+  -- WS-SX SX9.1 (D34): equal, or differing only in the lend words a wider
+  -- clearance un-redacts.
+  | _ => o₁.lendWordsZeroed = o₂.lendWordsZeroed
 
 theorem objectVisibilityLe_refl (o : KernelObject) : objectVisibilityLe o o := by
-  cases o <;> first | exact cnodeVisibilityLe_refl _ | rfl
+  cases o <;> first | exact cnodeVisibilityLe_refl _ | exact Eq.refl _
 
 theorem objectVisibilityLe_trans {o₁ o₂ o₃ : KernelObject}
     (h₁ : objectVisibilityLe o₁ o₂) (h₂ : objectVisibilityLe o₂ o₃) :
@@ -1272,7 +1290,10 @@ theorem objectVisibilityLe_trans {o₁ o₂ o₃ : KernelObject}
       case cnode cn₃ => exact cnodeVisibilityLe_trans h₁ h₂
       all_goals exact h₂.elim
     all_goals exact h₁.elim
-  all_goals (cases h₁; exact h₂)
+  all_goals
+    cases o₂
+    case cnode cn₂ => simp [objectVisibilityLe, KernelObject.lendWordsZeroed] at h₁
+    all_goals exact Eq.trans h₁ h₂
 
 /-- SM8.A.5: off the CNode arm the object order **is** equality.  This is the
 property a consumer needs in order to know that a visible endpoint or TCB
@@ -1280,7 +1301,8 @@ cannot be swapped for something else by a wider clearance — and, unlike
 `onCore_objects_label_invariant_off_cnode`, it follows from a `visibilityLe`
 hypothesis alone, with no access to the underlying state. -/
 theorem eq_of_objectVisibilityLe_of_not_cnode {o₁ o₂ : KernelObject}
-    (h : objectVisibilityLe o₁ o₂) (hNotCNode : ∀ cn, o₁ ≠ .cnode cn) : o₁ = o₂ := by
+    (h : objectVisibilityLe o₁ o₂) (hNotCNode : ∀ cn, o₁ ≠ .cnode cn) :
+    o₁.lendWordsZeroed = o₂.lendWordsZeroed := by
   cases o₁
   case cnode cn => exact absurd rfl (hNotCNode cn)
   all_goals exact h
@@ -1315,7 +1337,10 @@ theorem projectKernelObject_visibilityLe_monotone (ctx : LabelingContext)
   cases obj
   case cnode cn =>
     simpa only [projectKernelObject_cnode] using projectCNode_visibilityLe_monotone ctx hFlow cn
-  all_goals exact objectVisibilityLe_refl _
+  all_goals
+    first
+    | exact projectKernelObject_observer_independent_off_cnode ctx _ _ _ (by simp)
+    | simp [objectVisibilityLe, projectKernelObject, KernelObject.lendWordsZeroed]
 
 /-- A widening filter predicate yields a **sublist**, not merely a superset.
 
@@ -1454,9 +1479,9 @@ in the order, which is what an SM8.B consumer holding only `visibilityLe` has. -
 theorem ObservableState.visibilityLe_objects_eq_of_not_cnode {v₁ v₂ : ObservableState}
     (h : v₁.visibilityLe v₂) {oid : SeLe4n.ObjId} {obj : KernelObject}
     (hGet : v₁.objects oid = some obj) (hNotCNode : ∀ cn, obj ≠ .cnode cn) :
-    v₂.objects oid = some obj := by
+    ∃ obj₂, v₂.objects oid = some obj₂ ∧ obj.lendWordsZeroed = obj₂.lendWordsZeroed := by
   obtain ⟨obj₂, hGet₂, hLe⟩ := h.objects oid obj hGet
-  rw [hGet₂, eq_of_objectVisibilityLe_of_not_cnode hLe hNotCNode]
+  exact ⟨obj₂, hGet₂, eq_of_objectVisibilityLe_of_not_cnode hLe hNotCNode⟩
 
 /-- SM8.A.5: from the order **alone**, a visible CNode slot keeps its
 capability.  The `visibilityLe`-hypothesis form of
@@ -1599,8 +1624,8 @@ theorem onCore_objects_label_invariant_off_cnode (ctx : LabelingContext) (c : Co
     (hGet : s.objects[oid]? = some obj)
     (hNotCNode : ∀ cn, obj ≠ .cnode cn)
     (hVisible : ((ObservableState.onCore ctx c L₁ s).objects oid).isSome = true) :
-    (ObservableState.onCore ctx c L₂ s).objects oid
-      = (ObservableState.onCore ctx c L₁ s).objects oid := by
+    ((ObservableState.onCore ctx c L₂ s).objects oid).map KernelObject.lendWordsZeroed
+      = ((ObservableState.onCore ctx c L₁ s).objects oid).map KernelObject.lendWordsZeroed := by
   have hSome := hVisible
   simp only [onCore_objects, projectObjects, SystemState.getObject?] at hSome ⊢
   by_cases hObs : objectObservable ctx (IfObserver.ofLabel L₁) oid = true

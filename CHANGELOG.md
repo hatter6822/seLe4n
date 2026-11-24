@@ -1,3 +1,56 @@
+## v0.37.38 — The notification lend's assurance (WS-SX SX9)
+
+The checked notification lend (`maybeDonateSchedContextFlowing`, D30) is
+proved non-interfering in two runs for every observer, over a projection that
+shows the binding words to an observer cleared for what they name.  No
+transition changes.
+
+- **Finer projection (D34).** A thread's binding words, a context's thread word
+  and a notification's context word are shown where the object the word names
+  is seen and erased otherwise (`scWordShown`, `threadWordShown`, both `false`
+  on the empty word); a thread's `cpuAffinity` is shown with the thread.  The
+  NI theorems that were unconditional only because the words were erased take
+  the hidden hypotheses they need: the donation push, pop and keep, the Call
+  donation and the affinity write (superseding WS-RR RR7.22, WS-OD OD3.2 and
+  OD4.1, WS-SM SM5.H.4); the unconditional affinity theorem is deleted.
+  `objectVisibilityLe` gains an "equal up to the lend words" arm, and four
+  visibility lemmas of `ObservableStatePerCore` are restated up to the lend
+  words (a weakening).
+- **Equal binding labels (D37).** `bindingLabelsEqual`: every binding pair has
+  equal labels, so a binding word is shown exactly where its holder is.  It is
+  the one premise of `endpointReceiveDualHigh` and `endpointReplyRecvHigh`
+  (the receive's no-sender loan return, D36), from which the shape the receive
+  theorems consume (`receiveLoanReturnHidden`) is derived.  Registered in
+  `docs/REGISTERED_DEBT.md`, owned by the new row SX10.
+- **The two-run theorem.** `maybeDonateSchedContextFlowing_lowEquivalent_pair`
+  (`InformationFlow/NotificationLendTwoRun.lean`, staged): two low-equivalent
+  runs stay low-equivalent across the checked lend, given equal binding labels
+  in both, agreement on the timer (covert channel CC-2), run queues agreeing
+  with their threads (`runQueueRefined`) and each thread carrying its TCB's
+  label (`threadObjectLabelsEqual`), which the deployment corollary
+  (`maybeDonateSchedContextFlowing_lowEquivalent_pair_deployment`) discharges.
+  The visible case transfers the decision and the admission between the runs
+  and pairs the bind's writes; the pair lemmas (`LowEquivalencePairs.lean`)
+  take each run's own enqueue priority, and the rewrite pair two objects that
+  project the same.
+- **Behaviour rows (SX9.2).** Five rows in `sel4BehaviourRows`, each with its
+  scenario: reply_pop for a caller holding its own context, SchedContext_Unbind
+  of a lent context (D22), suspend leaving the binding, `receiveIPC`'s
+  `maybeReturnSchedContext`, and SchedContext_Bind of a thread whose Call
+  frame is on a live stack.
+- **Heap steps (SX9.3, substituted by owner's ruling).** The row's refused
+  Call lend and refused notification lend cannot be reached from a booted
+  image under D33, D35 and D37, so the gates that make them unreachable are
+  measured instead: `sched-context-bind-upper-notification-refused` and
+  `sched-context-bind-upper-thread-refused`, each refused `flowDenied`, each
+  reading 0.  D25's thread half is the existing `held-pop-bind-lender`; its
+  context half is unreachable.  The refusal branches stay until SX10.4
+  deletes them.
+- **Plan.** D34, D36 and D37 recorded as the owner's decisions; new row SX10
+  (the equal-binding-labels invariant, with the boot check's extension as its
+  base case, a Low finding: the boot does not check binding pairs); SX10–SX20
+  renumbered to SX11–SX21.
+
 ## v0.37.37 — Endpoints and notification waits join only equal labels
 
 Security fix (Medium): three high-to-low storage channels through endpoint and
