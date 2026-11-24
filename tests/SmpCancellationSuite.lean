@@ -613,7 +613,7 @@ example (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
     (holder : SeLe4n.ThreadId) (holderTcb : TCB) (sc : SeLe4n.SchedContextId)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st victim = some tcb)
     (hBlocked : tcb.ipcState = .blockedOnReply ep rt)
-    (hOwner : donationOwnerValid st)
+    (hOwner : donationOwnerValid st) (hLink : replyCallerLinkageReciprocal st)
     (hChain : donationChainWellFormed st)
     (hHolder : donatedContextIsOwnerFrameHead st victim)
     -- **WS-OD OD4.4**: the reclaim resolves its new owner off the holder's reply
@@ -625,7 +625,7 @@ example (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
       = some (.tcb holderTcb)) :
     holderTcb.schedContextBinding ≠ .donated sc victim :=
   cancelIpcBlocking_reply_no_donation_to_victim st victim tcb ep rt hInv hLookup hBlocked
-    hOwner (cancelDonationResolves_of_chainWellFormed st victim tcb hChain) hHolder hStack
+    hOwner hLink (cancelDonationResolves_of_chainWellFormed st victim tcb hChain) hHolder hStack
     holder holderTcb sc hTcb
 
 /-- **WS-RR RR8.7: the whole bundle across the cancellation's reply arm, applied**
@@ -2028,6 +2028,26 @@ private def stFrameHeadReclaim : SystemState :=
       |>.build)
   withReleaseEntryOnCore base core2 scId 42
 
+/-- **WS-SX SX14.1: the same shape, the frame recording another caller** (the
+server), which no reachable state has under the reply linkage: the witness that
+the cancel reads the frame's recorded caller, as seL4's `reply_pop` donates to
+`reply->replyTCB`. -/
+private def stForeignHeadReclaim : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject rId.toObjId (.reply
+          { replyId := rId, callerCode := SeLe4n.ThreadId.optCode (some serverTid), next := some (.head scId) })
+      |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 30 (some core1) with
+          threadState := .BlockedReply,
+          replyObjectCode := SeLe4n.ReplyId.optCode (some rId),
+          scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply epId (some serverTid))))
+      |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
+          scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId victimTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId victimTid) })
+      |>.withObject scId.toObjId (.schedContext (mkStackedSc (some serverTid) (some rId)))
+      |>.build)
+  withReleaseEntryOnCore base core2 scId 42
+
 /-- **The shape on which the two triggers disagree** — and the reason HP5 has to
 land before HP6.
 
@@ -2078,10 +2098,11 @@ from the local copy above — so the assertions are known to discriminate rather
 assumed to.
 
 **On the mutation discipline.**  Reverting `cancelledCallerDonation?` to the binding
-reading does not reach these assertions: it fails to elaborate four theorems in
-`Lifecycle/Suspend.lean` first (`_independent_of_victim`,
-`_eq_answeredFrameHeadContext?` and the two `rfl`s inside it), because HP5 states the
-head reading rather than merely computing it.  That is the stronger outcome — a
+reading does not reach these assertions: it fails to elaborate the theorems in
+`Lifecycle/Suspend.lean` that state the head reading (`_eq_some`, `_eq_unguarded`,
+`_eq_answeredFrameHeadContext?`), because HP5 states the head reading rather than
+merely computing it.  Since WS-SX SX14.1 the reading also checks that the frame
+records the victim as its caller, which (v) exhibits.  That is the stronger outcome — a
 behavioural revert is refused by the proof surface before any test runs — and it is
 why the discrimination is exhibited *inside* the witness instead of by mutating
 production. -/
@@ -2164,6 +2185,20 @@ private def runFrameHeadReclaimChecks : IO Unit := do
   assertBool "...and the reservation is the victim's again"
     (match stOrphan'.getTcb? victimTid with
      | some t => decide (t.schedContextBinding = .bound scId)
+     | none => false)
+  -- (v) WS-SX SX14.1 (D41, seL4's `reply_pop` donates to `reply->replyTCB`): a
+  -- frame recording another thread as its caller hands the victim nothing, and
+  -- the reclaim writes nothing.
+  let stForeign := stForeignHeadReclaim
+  assertBool "setup: the frame still heads the context, but records another caller"
+    (decide (replyFrameHeadHolder? stForeign rId = some (scId, serverTid)
+      ∧ Lifecycle.Suspend.replyRecordsCaller stForeign rId victimTid = false))
+  assertBool "a frame recording another caller resolves no donation for the victim"
+    (decide (Lifecycle.Suspend.cancelledCallerDonation? stForeign victimTid tcb = none))
+  assertBool "...and the reclaim leaves the server holding the context"
+    (match (Lifecycle.Suspend.returnDonationToCancelledCaller stForeign victimTid tcb).getTcb?
+        serverTid with
+     | some t => decide (t.schedContextBinding = .donated scId victimTid)
      | none => false)
 
 -- ----------------------------------------------------------------------------

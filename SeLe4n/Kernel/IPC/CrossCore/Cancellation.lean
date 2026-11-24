@@ -1059,6 +1059,10 @@ theorem cancelReclaimHead?_eq_replyObject (st : SystemState)
     | none => rw [hRO] at h; cases h
     | some rid =>
       rw [hRO] at h
+      replace h : replyFrameHeadHolder? st rid = some (scId, holder) := by
+        dsimp only at h; split at h
+        · exact h
+        · cases h
       obtain ⟨hHead, _⟩ := replyFrameHeadHolder?_eq_some h
       obtain ⟨_, sc, _, _, hSc, hRec⟩ := replyFrameHeadContext?_eq_some hHead
       unfold replyStackHead?
@@ -1133,6 +1137,10 @@ theorem cancelSplicedFrameAbove?_of_donation (st : SystemState)
     | none => rw [hRO] at h; cases h
     | some rid =>
       rw [hRO] at h
+      replace h : replyFrameHeadHolder? st rid = some (scId, holder) := by
+        dsimp only at h; split at h
+        · exact h
+        · cases h
       obtain ⟨hHead, _⟩ := replyFrameHeadHolder?_eq_some h
       simpa using replyFrameAbove?_of_headContext st rid scId hHead
   -- Every other arm returns `none` outright, so the member agrees with no appeal
@@ -1157,6 +1165,10 @@ theorem cancelCutFrameBelow?_of_donation (st : SystemState)
     | none => rw [hRO] at h; cases h
     | some rid =>
       rw [hRO] at h
+      replace h : replyFrameHeadHolder? st rid = some (scId, holder) := by
+        dsimp only at h; split at h
+        · exact h
+        · cases h
       obtain ⟨hHead, _⟩ := replyFrameHeadHolder?_eq_some h
       simpa using replyFrameBelow?_of_headContext st rid scId hHead
   -- Every other arm returns `none` outright, so the member agrees with no appeal

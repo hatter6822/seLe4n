@@ -19744,7 +19744,9 @@ run_prose_check "TRACE" rg -n 'the frozen composite refuses it with the same err
 # resolver's body must be `replyFrameHeadHolder?` of `tcb.replyObject`, and the
 # `.blockedOnReply` arm gate must survive (it is the ARM selector, which every
 # exclusivity lemma in the cancellation family reads).
-run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelledCallerDonation\?[^\n]*(\n([ \t][^\n]*)?)*\| \.blockedOnReply _ _ =>[^\n]*(\n([ \t][^\n]*)?)*\| some rid => replyFrameHeadHolder\? st rid" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+# WS-SX SX14.1 (D41): the frame is read only where it records the victim as its
+# caller (seL4's `reply_pop` donates to `reply->replyTCB`).
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelledCallerDonation\?[^\n]*(\n([ \t][^\n]*)?)*\| \.blockedOnReply _ _ =>[^\n]*(\n([ \t][^\n]*)?)*\| some rid => if replyRecordsCaller st rid tid then replyFrameHeadHolder\? st rid else none" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 # NEGATIVE: the retired binding-driven body -- token-preserving, since it keeps the
 # arm gate and the pair and changes only WHERE the holder comes from.  This is the
 # reading that declines on an orphan head, which is the state HP6's splice creates.
@@ -19752,15 +19754,17 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cancelledCallerDonation\
 # NEGATIVE: and it must not read the frame of the RECORDED REPLY TARGET instead of
 # the victim's own -- the provenance mutation, which keeps `replyFrameHeadHolder?`.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cancelledCallerDonation\?[^\n]*(\n([ \t][^\n]*)?)*\(st\.getTcb\? holder\)\.bind \(·\.replyObject\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
-# (2) The victim's id is not consulted, pinned rather than left to an underscore:
-# the binding reading's `owner == tid` check is what the structure replaces.  A
-# plain theorem, not a `@[simp]` lemma (the post-landing audit's second pass,
-# `v0.35.62`): its right-hand side has a variable the left does not, which simp
-# can never instantiate, so the attribute it carried could never fire.
-run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_independent_of_victim' SeLe4n/Kernel/Lifecycle/Suspend.lean
-# NEGATIVE: the inert attribute must not come back -- token-preserving, since it
-# keeps the theorem and changes only the attribute list in front of it.
-run_negative_check "INVARIANT" rg -n '^@\[[^]]*simp[^]]*\] theorem cancelledCallerDonation\?_independent_of_victim' SeLe4n/Kernel/Lifecycle/Suspend.lean
+# (2) WS-SX SX14.1 (D41, "Match seL4"): the victim's id IS consulted -- the frame
+# must record it as its caller -- and `_independent_of_victim` is retired.  The
+# test is a word compare of the stored reply's caller code; the guard agrees with
+# the unguarded read wherever the reply linkage holds.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def replyRecordsCaller[^\n]*(\n([ \t][^\n]*)?)*\| some r => r\.callerCode == tid\.val \+ 1" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_negative_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_independent_of_victim' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_eq_some($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_eq_unguarded_of_linkage($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem replyRecordsCaller_of_linkage($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
+# The compiled head cancel keeps the same guard, so the `@[csimp]` form agrees.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def headReplyCancelInPlace[^\n]*(\n([ \t][^\n]*)?)*Lifecycle\.Suspend\.replyRecordsCaller st ⟨t\.replyObjectCode - 1⟩ c" SeLe4n/Kernel/IPC/Operations/DonationPopInPlace.lean'
 run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_eq_answeredFrameHeadContext\?' SeLe4n/Kernel/Lifecycle/Suspend.lean
 # (3) HP5.2: the generalised success lemma takes the context and its bound thread
 # as ARGUMENTS, so the head reading can supply them; the binding-keyed form is its

@@ -1945,7 +1945,7 @@ theorem reply {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Threa
   have n0 := NtfnFrame.returnDonationToCancelledCaller s c t h.2.1
   have hC0 := returnDonationToCancelledCaller_preserves_donationChainWellFormed s c t h.2.1
     h.2.2.2.2.1
-  obtain ⟨rR, hPreR, hNotHeadPre⟩ := finaliseReplyReturn_replyUnheaded h.2.1 hX hT hF
+  obtain ⟨rR, hPreR, hNotHeadPre⟩ := finaliseReplyReturn_replyUnheaded h.2.1 hX hT hF hC
   obtain ⟨tR, hAtR, hRw⟩ := returnDonationToCancelledCaller_victim_tcb_rewrite s c t h.2.1 hLk
   have hIpcR : tR.ipcState = t.ipcState := by obtain ⟨_, _, e⟩ := hRw; rw [e]
   have hEq := cancelIpcBlocking_replyArm_unfold s c t hB

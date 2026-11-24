@@ -760,6 +760,32 @@ theorem consumeReplyLink_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) (
 -- lifecycle invariant's preservation states; nothing in the tree consumed the
 -- definitional form.
 
+/-- **Whether the reply `rid` records `tid` as its caller** (seL4's
+`reply->replyTCB == tcb`): the reply is stored and its caller word is `tid`'s.
+A word compare on the stored record, so the test builds nothing. -/
+@[inline] def replyRecordsCaller (st : SystemState) (rid : SeLe4n.ReplyId)
+    (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getReply? rid with
+  | some r => r.callerCode == tid.val + 1
+  | none => false
+
+/-- What a `true` answer asserts: the reply is stored and names `tid` as its
+caller. -/
+theorem replyRecordsCaller_eq_true_iff (st : SystemState) (rid : SeLe4n.ReplyId)
+    (tid : SeLe4n.ThreadId) :
+    replyRecordsCaller st rid tid = true ↔
+      ∃ r, st.getReply? rid = some r ∧ r.caller = some tid := by
+  unfold replyRecordsCaller
+  cases st.getReply? rid with
+  | none => simp
+  | some r => simp [Reply.caller]
+
+/-- The recorded-caller test is a function of the reply it reads. -/
+theorem replyRecordsCaller_congr {s1 s2 : SystemState} (rid : SeLe4n.ReplyId)
+    (tid : SeLe4n.ThreadId) (h : s2.getReply? rid = s1.getReply? rid) :
+    replyRecordsCaller s2 rid tid = replyRecordsCaller s1 rid tid := by
+  unfold replyRecordsCaller; rw [h]
+
 /-- **WS-RR RR7.22 (residual, remediation)**: the donation a cancelled caller is
 owed back, resolved from the pre-state.
 
@@ -795,19 +821,25 @@ thread it is owed to, so HP4's component-swap hazard has no instance here.  And
 the `.blockedOnReply` gate stays, because it is the **arm** selector — every
 exclusivity lemma below reads only it, which is why they transfer verbatim.
 
-**`tid` is deliberately unused.**  The victim's identity was the binding reading's
-check (`owner == tid`); under the head reading the structure says it — the frame
-this reclaim reads *is* the victim's own — so nothing consults the id, and
-`cancelledCallerDonation?_independent_of_victim` pins that rather than leaving a
-reader to infer it from an underscore.  What keeps the *write* safe is HP4.6's
-`donationRecipientAcceptable`, which refuses a recipient already holding a
-binding. -/
-def cancelledCallerDonation? (st : SystemState) (_tid : SeLe4n.ThreadId) (tcb : TCB) :
+**The frame must record `tid` as its caller** (WS-SX SX14.1, D41 "Match
+seL4").  seL4's `reply_pop` donates to `reply->replyTCB`, the frame's recorded
+caller, so the pop's recipient is read off the frame rather than handed in:
+`replyRecordsCaller` compares the frame's caller word with `tid`'s, and a frame
+recording another thread (or none) declines.  On every state where the reply
+linkage holds (`replyCallerLinkageReciprocal`) the frame a reply-blocked thread
+names records that thread, so the guard never declines there
+(`cancelledCallerDonation?_eq_unguarded_of_linkage`); what it buys is that the
+thread the context is handed back to is the frame's own caller as a fact of the
+pop's state, which is what the labelled pop's owner obligation reads
+(`contextLendersLabelsEqual` names the frame's caller).  What keeps the *write*
+safe besides is HP4.6's `donationRecipientAcceptable`, which refuses a recipient
+already holding a binding. -/
+def cancelledCallerDonation? (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
     Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
   match tcb.ipcState with
   | .blockedOnReply _ _ =>
     match tcb.replyObject with
-    | some rid => replyFrameHeadHolder? st rid
+    | some rid => if replyRecordsCaller st rid tid then replyFrameHeadHolder? st rid else none
     | none => none
   | _ => none
 
@@ -823,21 +855,88 @@ the reclaim's two scheduler steps. -/
   unfold cancelledCallerDonation?
   rw [h]
 
-/-- **WS-HP HP5.1**: the reclaim's trigger does not read the victim's id.
+/-- **WS-SX SX14.1: what a `some` answer asserts** -- the victim is blocked on
+a reply, holds the reply `rid`, `rid` records the victim as its caller, and the
+frame heads `scId` held by `holder`. -/
+theorem cancelledCallerDonation?_eq_some {st : SystemState} {tid : SeLe4n.ThreadId}
+    {tcb : TCB} {scId : SeLe4n.SchedContextId} {holder : SeLe4n.ThreadId}
+    (h : cancelledCallerDonation? st tid tcb = some (scId, holder)) :
+    (∃ ep rt, tcb.ipcState = .blockedOnReply ep rt) ∧
+      ∃ rid, tcb.replyObject = some rid ∧ replyRecordsCaller st rid tid = true ∧
+        replyFrameHeadHolder? st rid = some (scId, holder) := by
+  unfold cancelledCallerDonation? at h
+  split at h
+  · next ep rt hIp =>
+    split at h
+    · next rid hRo =>
+      split at h
+      · next hRec => exact ⟨⟨ep, rt, hIp⟩, rid, hRo, hRec, h⟩
+      · cases h
+    · cases h
+  · cases h
 
-The binding reading's `owner == tid` check is what the head reading replaces with
-structure, so the parameter survives only to keep 93 call sites and every
-statement's arity unchanged.  Pinned rather than left to an underscore, for the
-reason `endpointReplyCrossCoreDispatch_independent_of_replier` is: a reader cannot
-tell from a name whether an argument is consulted, and a later cut that starts
-reading it would silently reintroduce the identity check this flip removed.
+/-- **WS-SX SX14.1: the guard agrees with the unguarded frame read** wherever the
+frame the victim holds records it as its caller -- the agreement the reply
+linkage supplies on every reachable state
+(`cancelledCallerDonation?_eq_unguarded_of_linkage`). -/
+theorem cancelledCallerDonation?_eq_unguarded (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB)
+    (hRec : ∀ rid, tcb.replyObject = some rid → replyRecordsCaller st rid tid = true) :
+    cancelledCallerDonation? st tid tcb =
+      match tcb.ipcState with
+      | .blockedOnReply _ _ =>
+        match tcb.replyObject with
+        | some rid => replyFrameHeadHolder? st rid
+        | none => none
+      | _ => none := by
+  unfold cancelledCallerDonation?
+  split
+  · split
+    · next rid hRo => rw [hRec rid hRo]; rfl
+    · rfl
+  · rfl
 
-A plain theorem, not a `@[simp]` lemma (the post-landing audit, `v0.35.62`): its
-right-hand side has a variable the left does not, which simp can never
-instantiate, so the attribute it carried could never fire. -/
-theorem cancelledCallerDonation?_independent_of_victim
-    (st : SystemState) (t₁ t₂ : SeLe4n.ThreadId) (tcb : TCB) :
-    cancelledCallerDonation? st t₁ tcb = cancelledCallerDonation? st t₂ tcb := rfl
+/-- **WS-SX SX14.1: the reply linkage makes the cancel's guard true** -- the reply
+a stored thread holds records that thread as its caller
+(`replyCallerLinkageReciprocal`'s forward clause). -/
+theorem replyRecordsCaller_of_linkage {st : SystemState} (hLink : replyCallerLinkageReciprocal st)
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hT : st.objects[tid.toObjId]? = some (.tcb tcb))
+    {rid : SeLe4n.ReplyId} (hRO : tcb.replyObject = some rid) :
+    replyRecordsCaller st rid tid = true := by
+  obtain ⟨r, hR, hC⟩ := hLink.1 tid tcb rid hT hRO
+  exact (replyRecordsCaller_eq_true_iff st rid tid).mpr
+    ⟨r, (SystemState.getReply?_eq_some_iff st rid r).mpr hR, hC⟩
+
+/-- A reply stored at `x` that the test finds recording `c` has `c`'s caller
+word. -/
+theorem callerCode_of_replyRecordsCaller {st : SystemState} {x : SeLe4n.ObjId} {r : Reply}
+    {c : SeLe4n.ThreadId} (hX : st.getObject? x = some (.reply r))
+    (h : replyRecordsCaller st ⟨x.val⟩ c = true) : r.callerCode = c.val + 1 := by
+  obtain ⟨r', hR', hC⟩ := (replyRecordsCaller_eq_true_iff st _ c).mp h
+  have hGR : st.getReply? ⟨x.val⟩ = some r := by
+    unfold SystemState.getReply?
+    rw [show (⟨x.val⟩ : SeLe4n.ReplyId).toObjId = x from rfl, ← SystemState.getObject?_eq_getElem,
+      hX]
+  rw [hGR] at hR'
+  cases hR'
+  exact (SeLe4n.ThreadId.ofOptCode_eq_some_iff _ _).mp hC
+
+/-- **WS-SX SX14.1 (D41, "Match seL4"): the guarded cancel agrees with the
+unguarded frame read on every state the reply linkage holds of**, for the
+victim's stored record -- so the guard changes no behaviour there, as OD1.4's
+caller-lookup guard changed none. -/
+theorem cancelledCallerDonation?_eq_unguarded_of_linkage {st : SystemState}
+    (hLink : replyCallerLinkageReciprocal st) {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hT : st.objects[tid.toObjId]? = some (.tcb tcb)) :
+    cancelledCallerDonation? st tid tcb =
+      match tcb.ipcState with
+      | .blockedOnReply _ _ =>
+        match tcb.replyObject with
+        | some rid => replyFrameHeadHolder? st rid
+        | none => none
+      | _ => none :=
+  cancelledCallerDonation?_eq_unguarded st tid tcb
+    fun _ hRO => replyRecordsCaller_of_linkage hLink hT hRO
 
 /-- **WS-HP HP5.1**: the reclaim's trigger is the reply path's, one lookup later.
 
@@ -850,14 +949,18 @@ form uses to reach the other.
 
 Conditioned on the `.blockedOnReply` arm gate, because `answeredFrameHeadContext?`
 has none: it is the reply path's resolver and its callers have already established
-that the target is being replied to. -/
+that the target is being replied to; and on the frame recording the victim as
+its caller (WS-SX SX14.1), because the reply path reads no caller word: the
+answered caller is the one the frame records by construction. -/
 theorem cancelledCallerDonation?_eq_answeredFrameHeadContext?
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hLk : lookupTcb st tid = some tcb)
     (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
-    (hIp : tcb.ipcState = .blockedOnReply ep rt) :
+    (hIp : tcb.ipcState = .blockedOnReply ep rt)
+    (hRec : ∀ rid, tcb.replyObject = some rid → replyRecordsCaller st rid tid = true) :
     cancelledCallerDonation? st tid tcb = answeredFrameHeadContext? st tid := by
-  unfold cancelledCallerDonation? answeredFrameHeadContext? answeredReplyObject?
+  rw [cancelledCallerDonation?_eq_unguarded st tid tcb hRec]
+  unfold answeredFrameHeadContext? answeredReplyObject?
   rw [hIp, getTcb?_of_lookupTcb st tid tcb hLk]
   simp only [Option.bind_some]
   cases hRO : tcb.replyObject <;> rfl
@@ -1547,8 +1650,10 @@ theorem cancelledCallerDonation?_cutCancelledCallerHead (st : SystemState)
     | none => rfl
     | some rid =>
       dsimp only
-      rw [replyFrameHeadHolder?_of_no_head _ _
-        (replyFrameHeadContext?_cutHeadFrameKeepingContext st rid hInv)]
+      split
+      · rw [replyFrameHeadHolder?_of_no_head _ _
+          (replyFrameHeadContext?_cutHeadFrameKeepingContext st rid hInv)]
+      · rfl
   | _ => rfl
 
 /-- WS-ZA ZA6.33: **the reply arm, unfolded**: the head cut, then the cut off
@@ -2324,11 +2429,8 @@ theorem cancelledCallerDonation?_blockedOnReply (st : SystemState)
     (r : SeLe4n.SchedContextId × SeLe4n.ThreadId)
     (h : Lifecycle.Suspend.cancelledCallerDonation? st tid tcb = some r) :
     ∃ ep rt, tcb.ipcState = ThreadIpcState.blockedOnReply ep rt := by
-  simp only [Lifecycle.Suspend.cancelledCallerDonation?] at h
-  cases hI : tcb.ipcState <;> rw [hI] at h <;>
-    first
-      | exact ⟨_, _, rfl⟩
-      | cases h
+  obtain ⟨scId, holder⟩ := r
+  exact (Lifecycle.Suspend.cancelledCallerDonation?_eq_some h).1
 
 -- `v0.35.158`: `cancelHolderBlockedEndpoint?_isSome_blocked`,
 -- `cancelAbortedHolderWake?_some_decompose` and `cancelAbortedHolderWake?_ne_victim`

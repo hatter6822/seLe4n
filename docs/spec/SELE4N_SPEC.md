@@ -10899,13 +10899,18 @@ state that reading cannot see.
 
 Six properties of the surface this leaves.
 
-1. **The victim's id is not consulted.**  The binding reading's `owner == tid`
-   check is what the structure replaces — the frame the reclaim reads *is* the
-   victim's own — so nothing reads the parameter, and
-   `cancelledCallerDonation?_independent_of_victim` pins that rather than leaving
-   a reader to infer it from an underscore.  What keeps the *write* safe is
-   HP4.6's `donationRecipientAcceptable`, which refuses a recipient already
-   holding a binding.
+1. **The frame must record the victim as its caller** (WS-SX SX14.1, D41,
+   "Match seL4": seL4's `reply_pop` donates to `reply->replyTCB`).  The binding
+   reading's `owner == tid` check is gone, and the head reading reads the frame
+   the victim holds only where that frame records the victim as its caller
+   (`replyRecordsCaller`, a word compare); a frame recording another thread
+   declines.  On every state where the reply linkage holds the guard never
+   declines (`cancelledCallerDonation?_eq_unguarded_of_linkage`), so it changes no
+   reachable behaviour; it makes the recipient of the pop the frame's recorded
+   caller as a fact of the pop's own state, which the labelled pop's owner
+   obligation reads.  `cancelledCallerDonation?_independent_of_victim` is retired.
+   What keeps the *write* safe besides is HP4.6's `donationRecipientAcceptable`,
+   which refuses a recipient already holding a binding.
 
 2. **`donationHolderIsReplyTarget` is retired**, not kept beside the new reading:
    it stated a fact about a recorded reply target nothing now reads.  Its

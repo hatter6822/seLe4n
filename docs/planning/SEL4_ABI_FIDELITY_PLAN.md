@@ -30,11 +30,11 @@
 > **Rows**: SX1–SX26, numbered in the order they are implemented, one PR each.
 > Each row consumes only lower-numbered rows. A row that changes a transition
 > carries the proofs that cover it. No two rows run in parallel.
-> **Decisions**: D1–D32, D34, D36–D40 (§3). D1–D17 and D40 are each **default taken; owner card open**;
+> **Decisions**: D1–D32, D34, D36–D41 (§3). D1–D17, D40 and D41 are each **default taken; owner card open**;
 > D7 follows the owner's standing rule (implement seL4's behaviour, never defer
 > it). D18–D21 were decided by the owner when SX7 closed; D22 when SX8 started;
 > D23–D32 during SX8; D34 when SX9 started; D36 and D37 during SX9; D38 during SX10; D39 when the binding-invariant row
-> started; D40 during SX13.
+> started; D40 during SX13; D41 during SX14.
 > **Supersedes**: the "Next PR" scope in
 > `docs/agent_guide/WORKSTREAM_CONTEXT.md` (the root task's boot IPC buffer
 > and the guard in the capability with `CNode_Mutate`). Both are rows here
@@ -130,7 +130,7 @@ facts it rests on are restated here.
 
 ## 3. Owner decisions
 
-D1–D17 and D40 are each **default taken; owner card open**; D18–D32, D34 and D36–D39 are the owner's.
+D1–D17, D40 and D41 are each **default taken; owner card open**; D18–D32, D34 and D36–D39 are the owner's.
 A different answer changes only the rows that cite it.
 
 - **D1. The error label.** *Default:* **seL4's error codes (1–10) in the
@@ -362,6 +362,31 @@ A different answer changes only the rows that cite it.
   and SX13.3 as first stated). The rows after SX13 are renumbered (SX14–SX23
   became SX17–SX26). No live path lends a context across unequal labels; the
   gap is in the proof, not the kernel.
+- **D41. The cancel's pop returns to the frame's recorded caller ("Match
+  seL4").** *Default taken (2026-11-24); owner card open.* The cancel's
+  donation return (`returnDonationToCancelledCaller`) popped to the cancelled
+  thread itself, read from the thread's own reply link, and nothing in the
+  pop's pre-state tied that thread to the frame it pops: the labelled pop's
+  owner obligation (the recipient's label equals the context's) was not
+  dischargeable from the carried invariant, since `contextLendersLabelsEqual`
+  names the frame's recorded caller and the owner word, not the cancelled
+  thread. seL4's `reply_pop` donates to `reply->replyTCB`, the frame's
+  recorded caller. So the cancel's resolver (`cancelledCallerDonation?`) also
+  requires the frame to record the cancelled thread as its caller
+  (`replyRecordsCaller`, a word compare, allocation-free), and declines
+  otherwise; the compiled head cancel (`headReplyCancelInPlace`) reads the same
+  word. On every state where the reply linkage holds the two readings agree
+  (`cancelledCallerDonation?_eq_unguarded_of_linkage`), as OD1.4's guard did;
+  `cancelledCallerDonation?_independent_of_victim` is retired. The other pops
+  already pop to a word their own pre-state names: the finalisation's unheld
+  pop and head cancel to the reply's recorded caller (`finaliseReply` reads
+  `c` off the reply), the pre-receive cleanup to the owner word, and the reply
+  to the answered caller, whose obligation the dispatch premise pack's linkage
+  discharges with the carry lemma across the reply leg. Alternatives not taken:
+  a linkage premise at each cancel's pre-state (unnameable inside the
+  finalisation fold, and the row's acceptance allows label equations only), or
+  carrying the reply linkage in the lenders stage (its preservation over every
+  writer).
 
 ## 4. Rows
 
@@ -698,8 +723,9 @@ keep it.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX14.1 | **The frame family threaded** per ruling (ag): SX8's `contextLendersFlow` is strengthened in place to label equality and renamed `contextLendersLabelsEqual` (D37's second consequence); the carried stage is its conjunction with `bindingLabelsEqual` (`lendingLabelsEqual`). `contextStackViewsAgree` and `contextStackLinksShrink` gain the binding words, `chainObjectsKept` keeps them on thread and notification slots, and the leaf lemmas take a slot's binding shrink (SX13's toolkit). The sibling lemmas for the summaries that forget the binding words, measured at 12 sites in about 8 files: the capability transfer's object cases, the priority-inheritance walk (landed in SX13.2), the splice and notification-queue cleanups, the slot links' reach, the VSpace-root-only write, the final retire, the off-taint agreement, the timeout abort and the frame insert. The finalisation steps (about 11) carry a separate binding shrink beside `finaliseWrite`, not a new conjunct of it (129 `rcases` sites). Every creating site takes its label equation as a hypothesis of its step, surfaced in the entry's premise pack, which SX15 discharges; no step is stubbed. | The frames and shrinks over the lender cut: of the 37 measured declarations, the 25 that create no binding (Call 2, Timer 4, Cancel 4, Reply 3, Capability 2, `CapabilityOnly` 8, `SyscallDispatch` 1, Receive 1) and the census witness. | Tier 3 anchors on the strengthened predicate and the threaded frame |
-| SX14.2 | **The pops as labelled steps.** A labelled step (`LendersStep ctx st st'`: the stage carried from `st` to `st'`, and the store's invariant at `st'`), with its identity, composition, the frame read as a step and the stage. The 30 `LendersFrame` theorems that chain a pop are restated as labelled steps, each pop discharging its owner obligation inside the step at its own pre-state (FINDING 1: proof obligations, not premises): the cancel's return to the owner from the owner word (`bindingLabelsEqual.donated`), the reply's return from the answered caller (since SX12, the frame heading the context, through `contextLendersLabelsEqual` at the pre-reply state), the next owner from `replyStackOuterCaller?` through `contextLendersLabelsEqual`; the keep and the clears are shrinks. | Preservation by every pop, in place and cross-core. | Tier 3 anchors on the labelled step and the pops |
+| SX14.1 | **The cancel pops to the frame's recorded caller** (D41, "Match seL4": seL4's `reply_pop` donates to `reply->replyTCB`). `cancelledCallerDonation?` reads the victim's frame only where it records the victim as its caller (`replyRecordsCaller`, a word compare of the stored reply's caller code, allocation-free), and the compiled head cancel's gate (`headReplyCancelInPlace`) reads the same word, so the `@[csimp]` form agrees. The guard agrees with the unguarded read wherever the reply linkage holds (`cancelledCallerDonation?_eq_unguarded_of_linkage`, from `replyRecordsCaller_of_linkage`); its consumers that read the head case take the linkage from `ipcInvariantFull` or the reply's recorded caller from the finalisation (`replyCallerFinalisable_cases`). `cancelledCallerDonation?_independent_of_victim` is retired. So the cancel's pop recipient is the frame's recorded caller, whose label `contextLendersLabelsEqual` equates with the context's (SX14.3 discharges the owner obligation from it). | The agreement lemma; the guard's `some`/`none` cases; the in-place equality. | Tier 3 anchors on the guard, its agreement and the in-place gate; the cancellation suite's foreign-caller witness |
+| SX14.2 | **The frame family threaded** per ruling (ag): SX8's `contextLendersFlow` is strengthened in place to label equality and renamed `contextLendersLabelsEqual` (D37's second consequence); the carried stage is its conjunction with `bindingLabelsEqual` (`lendingLabelsEqual`). `contextStackViewsAgree` and `contextStackLinksShrink` gain the binding words, `chainObjectsKept` keeps them on thread and notification slots, and the leaf lemmas take a slot's binding shrink (SX13's toolkit). The sibling lemmas for the summaries that forget the binding words, measured at 12 sites in about 8 files: the capability transfer's object cases, the priority-inheritance walk (landed in SX13.2), the splice and notification-queue cleanups, the slot links' reach, the VSpace-root-only write, the final retire, the off-taint agreement, the timeout abort and the frame insert. The finalisation steps (about 11) carry a separate binding shrink beside `finaliseWrite`, not a new conjunct of it (129 `rcases` sites). Every creating site takes its label equation as a hypothesis of its step, surfaced in the entry's premise pack, which SX15 discharges; no step is stubbed. | The frames and shrinks over the lender cut: of the 37 measured declarations, the 25 that create no binding (Call 2, Timer 4, Cancel 4, Reply 3, Capability 2, `CapabilityOnly` 8, `SyscallDispatch` 1, Receive 1) and the census witness. | Tier 3 anchors on the strengthened predicate and the threaded frame |
+| SX14.3 | **The pops as labelled steps.** A labelled step (`LendersStep ctx st st'`: the stage carried from `st` to `st'`, and the store's invariant at `st'`), with its identity, composition, the frame read as a step and the stage. The 30 `LendersFrame` theorems that chain a pop are restated as labelled steps, each pop discharging its owner obligation inside the step at its own pre-state (FINDING 1: proof obligations, not premises): the cancel's return to the frame's recorded caller (D41: the cancel's guard makes the recipient the frame's caller, so `contextLendersLabelsEqual` names it), the reply's return from the answered caller (since SX12, the frame heading the context, through `contextLendersLabelsEqual` at the pre-reply state), the next owner from `replyStackOuterCaller?` through `contextLendersLabelsEqual`; the keep and the clears are shrinks. | Preservation by every pop, in place and cross-core. | Tier 3 anchors on the labelled step and the pops |
 
 **Acceptance:**
 - every lender module builds over the threaded frame family, with no stub;
