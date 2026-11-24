@@ -2220,6 +2220,290 @@ theorem unbindSchedContextNotification (st : SystemState) (s : SeLe4n.SchedConte
       · exact h1
 end FinaliseFrame
 
+/-! ### The finalisation steps' binding shrink (WS-SX SX15.1)
+
+`finaliseWrite` forgets the binding words: it says what kind each written slot
+keeps, not which binding words.  Each finalisation step carries its binding
+shrink here, beside its `FinaliseFrame` lemma and separately from it (not a new
+conjunct of `finaliseWrite`, which 129 `rcases` sites take apart): every slot
+keeps its binding words or holds none (`bindingWordsKeptOrCleared`).  The
+primitive writes come first, then each step the finalisation's fold takes. -/
+
+namespace bindingWordsKeptOrCleared
+
+/-- One slot written, keeping or clearing its binding words. -/
+theorem of_insert {st st' : SystemState} {k : SeLe4n.ObjId} {o o' : KernelObject}
+    (hInv : st.objects.invExt) (hSt : st'.objects = st.objects.insert k o')
+    (hO : st.objects[k]? = some o)
+    (hW : objBindingWords (some o') = objBindingWords (some o) ∨
+      objBindingWords (some o') = (0, 0, 0, 0)) :
+    bindingWordsKeptOrCleared st st' := fun x => by
+  rw [hSt]
+  rw [RHTable_getElem?_eq_get?] at hO
+  simp only [RHTable_getElem?_eq_get?]
+  by_cases hx : x = k
+  · subst hx; rw [RobinHood.RHTable.getElem?_insert_self st.objects x o' hInv, hO]; exact hW
+  · rw [RobinHood.RHTable.getElem?_insert_ne st.objects k x o'
+      (by intro h; exact hx (eq_of_beq h).symm) hInv]
+    exact .inl rfl
+
+/-- A thread record keeping both its binding words, or clearing both. -/
+theorem tcbWords {t t' : TCB}
+    (h : (t'.scBindingScCode = t.scBindingScCode ∧ t'.scBindingOwnerCode = t.scBindingOwnerCode) ∨
+      (t'.scBindingScCode = 0 ∧ t'.scBindingOwnerCode = 0)) :
+    objBindingWords (some (.tcb t')) = objBindingWords (some (.tcb t)) ∨
+      objBindingWords (some (.tcb t')) = (0, 0, 0, 0) := by
+  rcases h with ⟨a, b⟩ | ⟨a, b⟩
+  · exact .inl (show (t'.scBindingScCode, t'.scBindingOwnerCode, 0, 0) =
+      (t.scBindingScCode, t.scBindingOwnerCode, 0, 0) by rw [a, b])
+  · exact .inr (show (t'.scBindingScCode, t'.scBindingOwnerCode, 0, 0) = (0, 0, 0, 0) by rw [a, b])
+
+/-- A thread rewritten in its slot, keeping or clearing its binding words. -/
+theorem updateTcb (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt)
+    (hB : ∀ x : TCB, ((f x).scBindingScCode = x.scBindingScCode ∧
+        (f x).scBindingOwnerCode = x.scBindingOwnerCode) ∨
+      ((f x).scBindingScCode = 0 ∧ (f x).scBindingOwnerCode = 0) := by
+      intro _; exact .inl ⟨rfl, rfl⟩) :
+    bindingWordsKeptOrCleared st (st.updateTcb t f) := by
+  cases hG : st.getTcb? t with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hG]; exact refl _
+  | some x =>
+    rw [SystemState.updateTcb_eq_of_some hG]
+    exact of_insert hInv rfl ((SystemState.getTcb?_eq_some_iff st t x).mp hG) (tcbWords (hB x))
+
+/-- A thread rewritten in its slot in place. -/
+theorem mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hB : ∀ x : TCB, ((f x).scBindingScCode = x.scBindingScCode ∧
+        (f x).scBindingOwnerCode = x.scBindingOwnerCode) ∨
+      ((f x).scBindingScCode = 0 ∧ (f x).scBindingOwnerCode = 0) := by
+      intro _; exact .inl ⟨rfl, rfl⟩) :
+    bindingWordsKeptOrCleared st (st.mapTcbInPlace t f) := fun x => by
+  rw [SystemState.objects_mapTcbInPlace]
+  split
+  · cases st.objects[x]? with
+    | none => exact .inl rfl
+    | some o =>
+      cases o with
+      | tcb y => exact tcbWords (hB y)
+      | _ => exact .inl rfl
+  · exact .inl rfl
+
+/-- An object rewritten in its slot, keeping or clearing its binding words. -/
+theorem modifyObject (st : SystemState) (k : SeLe4n.ObjId) (f : KernelObject → KernelObject)
+    (hInv : st.objects.invExt)
+    (hB : ∀ o, objBindingWords (some (f o)) = objBindingWords (some o) ∨
+      objBindingWords (some (f o)) = (0, 0, 0, 0)) :
+    bindingWordsKeptOrCleared st (st.modifyObject k f) := by
+  unfold SystemState.modifyObject
+  cases hG : st.objects[k]? with
+  | none =>
+    have e : st.objects.modify k f = st.objects := by
+      unfold RobinHood.RHTable.modify; rw [← RHTable_getElem?_eq_get?, hG]
+    exact of_objects_eq e
+  | some o =>
+    rw [RobinHood.RHTable.modify_of_get? hG]
+    exact of_insert hInv rfl hG (hB o)
+
+/-- A context rewritten in its slot, keeping or clearing its thread word. -/
+theorem updateSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SchedContext → SchedContext) (hInv : st.objects.invExt)
+    (hB : ∀ x : SchedContext, (f x).boundThreadCode = x.boundThreadCode ∨
+      (f x).boundThreadCode = 0 := by intro _; exact .inl rfl) :
+    bindingWordsKeptOrCleared st (st.updateSchedContext scId f) := by
+  cases hG : st.getSchedContext? scId with
+  | none => rw [SystemState.updateSchedContext_eq_self_of_none hG]; exact refl _
+  | some x =>
+    rw [SystemState.updateSchedContext_eq_of_some hG]
+    refine of_insert hInv rfl ((SystemState.getSchedContext?_eq_some_iff st scId x).mp hG) ?_
+    rcases hB x with h | h
+    · exact .inl (show (0, 0, (f x).boundThreadCode, 0) = (0, 0, x.boundThreadCode, 0) by rw [h])
+    · exact .inr (show (0, 0, (f x).boundThreadCode, 0) = (0, 0, 0, 0) by rw [h])
+
+theorem of_agreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st) :
+    bindingWordsKeptOrCleared st st' := of_words h.objBindingWords
+
+theorem of_agreeOffReleaseLinks {st st' : SystemState} (h : st'.objectsAgreeOffReleaseLinks st) :
+    bindingWordsKeptOrCleared st st' := of_words h.objBindingWords
+
+theorem of_ntfnUnlinkReach {st st' : SystemState} (h : ntfnUnlinkReach st st') :
+    bindingWordsKeptOrCleared st st' := of_words h.objBindingWords
+
+/-- The wake: a run-queue insert and the `.ready` mark. -/
+theorem enqueueRunnableOnCore (st : SystemState) (c : Concurrency.CoreId) (t : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    bindingWordsKeptOrCleared st (SeLe4n.Kernel.enqueueRunnableOnCore st c t) := by
+  cases hT : st.getTcb? t with
+  | none =>
+    simp only [SeLe4n.Kernel.enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hT]
+    exact refl _
+  | some tcb =>
+    cases hD : wakeDeclines st c t with
+    | true =>
+      simp only [SeLe4n.Kernel.enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hT, hD,
+        if_true]
+      exact refl _
+    | false =>
+      exact (of_insert
+          (st' := { st with objects := st.objects.insert t.toObjId (.tcb (tcb.setIpcState .ready)) })
+          hInv rfl ((SystemState.getTcb?_eq_some_iff st t tcb).mp hT) (.inl rfl)).trans
+        (of_agreeOffRunLinks (enqueueRunnableOnCore_objectsAgree_marked st c t tcb hT hD))
+
+theorem wakeCancelledWaiter (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    bindingWordsKeptOrCleared st (SeLe4n.Kernel.wakeCancelledWaiter st t) :=
+  enqueueRunnableOnCore st _ t hInv
+
+/-- The pop of an endpoint queue's head. -/
+theorem storePopHead (st : SystemState) (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    bindingWordsKeptOrCleared st (SeLe4n.Kernel.storePopHead st endpointId isReceiveQ head next) := by
+  have hP : ∀ o, objBindingWords (some (popEndpoint isReceiveQ (SeLe4n.ThreadId.optCode next) o)) =
+      objBindingWords (some o) := fun o => by
+    cases o with
+    | endpoint e => simp only [popEndpoint]; split <;> rfl
+    | _ => rfl
+  have h1 := modifyObject st endpointId _ hInv (fun o => .inl (hP o))
+  have hI1 : (st.modifyObject endpointId
+      (popEndpoint isReceiveQ (SeLe4n.ThreadId.optCode next))).objects.invExt := by
+    unfold SystemState.modifyObject
+    cases hG : st.objects[endpointId]? with
+    | none =>
+      have e : st.objects.modify endpointId
+          (popEndpoint isReceiveQ (SeLe4n.ThreadId.optCode next)) = st.objects := by
+        unfold RobinHood.RHTable.modify; rw [← RHTable_getElem?_eq_get?, hG]
+      rw [e]; exact hInv
+    | some o => rw [RobinHood.RHTable.modify_of_get? hG]; exact RHTable_insert_preserves_invExt _ _ _ hInv
+  cases next with
+  | none =>
+    simp only [SeLe4n.Kernel.storePopHead]
+    exact h1.trans (updateTcb _ _ _ hI1)
+  | some n =>
+    simp only [SeLe4n.Kernel.storePopHead]
+    have h2 := h1.trans (updateTcb _ n tcbAsQueueHead hI1)
+    exact h2.trans (updateTcb _ _ _ (SystemState.updateTcb_preserves_objects_invExt _ _ _ hI1))
+
+/-- An endpoint waiter's cancel: the pop, the thread's IPC ended, the wake. -/
+theorem storeEndpointWaiterCancelled (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (t : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (faulted : Bool)
+    (hInv : st.objects.invExt) :
+    bindingWordsKeptOrCleared st
+      (SeLe4n.Kernel.storeEndpointWaiterCancelled st endpointId isReceiveQ t next faulted) := by
+  have h1 := storePopHead st endpointId isReceiveQ t next hInv
+  have i1 := (FinaliseFrame.storePopHead st endpointId isReceiveQ t next hInv).invExt
+  unfold SeLe4n.Kernel.storeEndpointWaiterCancelled
+  split
+  · unfold SeLe4n.Kernel.storeEndpointWaiterFaulted
+    exact h1.trans (updateTcb _ t faultedEndpointWaiterTcb i1)
+  · unfold SeLe4n.Kernel.storeEndpointWaiterRestarted
+    have h2 := h1.trans (updateTcb _ t cancelledEndpointWaiterTcb i1)
+    exact h2.trans (wakeCancelledWaiter _ t
+      (SystemState.updateTcb_preserves_objects_invExt _ _ _ i1))
+
+/-- The removal of a waiter from anywhere in an endpoint queue. -/
+theorem storeQueueRemove (st : SystemState) (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (ep : Endpoint) (tcb : TCB) (hInv : st.objects.invExt) :
+    bindingWordsKeptOrCleared st
+      (SeLe4n.Kernel.storeQueueRemove st endpointId isReceiveQ tid ep tcb) := by
+  have hHead : ∀ (s : SystemState) (c : Nat), s.objects.invExt →
+      bindingWordsKeptOrCleared s (s.modifyObject endpointId (headAdvancedEndpoint isReceiveQ c)) :=
+    fun s c hI => modifyObject s endpointId _ hI (fun o => by
+      cases o with
+      | endpoint e => simp only [headAdvancedEndpoint]; split <;> exact .inl rfl
+      | _ => exact .inl rfl)
+  have hEnds : ∀ (s : SystemState) (h t : Nat), s.objects.invExt →
+      bindingWordsKeptOrCleared s (s.modifyObject endpointId (endsSetEndpoint isReceiveQ h t)) :=
+    fun s h t hI => modifyObject s endpointId _ hI (fun o => by
+      cases o with
+      | endpoint e => simp only [endsSetEndpoint]; split <;> exact .inl rfl
+      | _ => exact .inl rfl)
+  have F := FinaliseFrame.storeQueueRemove st endpointId isReceiveQ tid ep tcb hInv
+  have h1 : bindingWordsKeptOrCleared st (match tcb.queuePPrev with
+      | some .endpointHead =>
+        st.modifyObject endpointId (headAdvancedEndpoint isReceiveQ tcb.queueNextCode)
+      | some (.tcbNext p) => st.updateTcb p (queueUnlinkPredecessor tcb)
+      | none => st) := by
+    split
+    · exact hHead st _ hInv
+    · exact updateTcb st _ _ hInv
+    · exact refl _
+  have i1 : (match tcb.queuePPrev with
+      | some .endpointHead =>
+        st.modifyObject endpointId (headAdvancedEndpoint isReceiveQ tcb.queueNextCode)
+      | some (.tcbNext p) => st.updateTcb p (queueUnlinkPredecessor tcb)
+      | none => st).objects.invExt := by
+    split
+    · exact (FinaliseFrame.modifyObject st endpointId _ hInv (fun o => by
+        cases o with
+        | endpoint e =>
+          right; simp only [headAdvancedEndpoint]
+          split <;> exact ⟨rfl, rfl, rfl, Or.inr (Or.inl rfl), by simp [KernelObject.objectType]⟩
+        | _ => exact Or.inl rfl)).invExt
+    · exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
+    · exact hInv
+  clear F
+  have hFin : ∀ (s2 : SystemState) (h t : Nat), s2.objects.invExt →
+      bindingWordsKeptOrCleared st s2 →
+      bindingWordsKeptOrCleared st
+        ((s2.modifyObject endpointId (endsSetEndpoint isReceiveQ h t)).updateTcb tid tcbOffQueue) :=
+    fun s2 h t hI h2 =>
+      have i3 := (FinaliseFrame.modifyObject s2 endpointId (endsSetEndpoint isReceiveQ h t) hI
+        (fun o => by
+          cases o with
+          | endpoint e =>
+            right; simp only [endsSetEndpoint]
+            split <;> exact ⟨rfl, rfl, rfl, Or.inr (Or.inl rfl), by simp [KernelObject.objectType]⟩
+          | _ => exact Or.inl rfl)).invExt
+      (h2.trans (hEnds s2 h t hI)).trans (updateTcb _ tid tcbOffQueue i3)
+  have hNext : ∀ (s1 : SystemState), s1.objects.invExt → bindingWordsKeptOrCleared st s1 →
+      (match tcb.queueNext with
+        | some n => s1.updateTcb n (queueUnlinkSuccessor tcb)
+        | none => s1).objects.invExt ∧
+      bindingWordsKeptOrCleared st (match tcb.queueNext with
+        | some n => s1.updateTcb n (queueUnlinkSuccessor tcb)
+        | none => s1) := by
+    intro s1 hI h1
+    split
+    · exact ⟨SystemState.updateTcb_preserves_objects_invExt _ _ _ hI,
+        h1.trans (updateTcb s1 _ _ hI)⟩
+    · exact ⟨hI, h1⟩
+  unfold SeLe4n.Kernel.storeQueueRemove
+  have hN := hNext _ i1 h1
+  exact hFin _ _ _ hN.1 hN.2
+
+/-- A thread's endpoint cancel: the removal, then its IPC ended. -/
+theorem storeEndpointBlockedCancelled (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (ep : Endpoint) (tcb : TCB)
+    (hInv : st.objects.invExt) :
+    bindingWordsKeptOrCleared st
+      (SeLe4n.Kernel.storeEndpointBlockedCancelled st endpointId isReceiveQ tid ep tcb) := by
+  unfold SeLe4n.Kernel.storeEndpointBlockedCancelled
+  exact (storeQueueRemove st endpointId isReceiveQ tid ep tcb hInv).trans (updateTcb _ tid _
+    (FinaliseFrame.storeQueueRemove st endpointId isReceiveQ tid ep tcb hInv).invExt)
+
+/-- A notification waiter's cancel: it leaves the queue and is restored. -/
+theorem notificationCancel (st : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB)
+    (n : SeLe4n.ObjId) (hInv : st.objects.invExt)
+    (hB : tcb.ipcState = .blockedOnNotification n) :
+    bindingWordsKeptOrCleared st (Lifecycle.Suspend.cancelIpcBlocking st t tcb) := by
+  have hEq : Lifecycle.Suspend.cancelIpcBlocking st t tcb =
+      Lifecycle.Suspend.restoreToReadyCancelled (removeFromNotificationWaitQueue st t) t := by
+    unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
+  rw [hEq]
+  have hR := removeFromNotificationWaitQueue_reach st t hInv
+  exact (of_words (removeFromNotificationWaitQueue_objBindingWords st t hInv)).trans
+    (updateTcb _ _ _ hR.1)
+
+/-- The unbind: the thread's notification word, then the notification's link. -/
+theorem storeUnbindNotification (st : SystemState) (t : SeLe4n.ThreadId) (n : SeLe4n.ObjId)
+    (hInv : st.objects.invExt) :
+    bindingWordsKeptOrCleared st (SeLe4n.Kernel.storeUnbindNotification st t n) := by
+  unfold SeLe4n.Kernel.storeUnbindNotification
+  exact (updateTcb st t (fun x => { x with boundNotificationCode := 0 }) hInv).trans
+    (modifyObject _ n _ (SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv) (fun o => by
+      cases o <;> exact .inl rfl))
+
+end bindingWordsKeptOrCleared
+
 namespace FinaliseFrameAny
 
 /-- The splice of a reply off its stack: at most three replies rewritten. -/

@@ -2246,6 +2246,17 @@ theorem retireFinalObject_key (ec : Concurrency.CoreId) (target recorder : Nat)
   · exact .inr ⟨fun o hO s => (by rw [hU] at hO; cases hO; rfl),
       fun t hT => (by rw [hU] at hT; cases hT), .inr ⟨_, hU'⟩⟩
 
+/-- **The retire keeps or clears every slot's binding words** (WS-SX SX15.1):
+the sibling of `retireFinalObject_key`, which forgets them; a key it writes is
+left empty or holding an untyped, neither of which holds a binding word. -/
+theorem retireFinalObject_bindingWordsKeptOrCleared (ec : Concurrency.CoreId)
+    (target recorder : Nat) (st : SystemState) (hInv : st.objects.invExt) :
+    bindingWordsKeptOrCleared st (retireFinalObject ec target recorder st) := fun x => by
+  rcases retireFinalObject_key ec target recorder st hInv x with e | ⟨-, -, hn | ⟨U, hU⟩⟩
+  · exact .inl (by rw [e])
+  · exact .inr (by rw [hn]; rfl)
+  · exact .inr (by rw [hU]; rfl)
+
 /-- **The retire makes no thread**: a thread after it was there before. -/
 theorem retireFinalObject_tcb_back (ec : Concurrency.CoreId) (target recorder : Nat)
     (st : SystemState) (hInv : st.objects.invExt) {oid : SeLe4n.ObjId} {t : TCB}

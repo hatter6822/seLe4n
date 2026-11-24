@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.InformationFlow.Policy
+import SeLe4n.Model.SlotLinks
 
 /-!
 # Equal binding labels
@@ -418,6 +419,122 @@ theorem bindingViewsShrink_of_tcbBinding {st st' : SystemState}
     unfold threadContextView threadOwnerView
     rw [h1] at hW; rw [h2]
     exact ⟨hk, ho.symm.trans hW⟩
+
+/-! ### The binding words kept or cleared: the summaries' siblings
+
+A summary that forgets the binding words (a frame stated up to some fields, a
+key-by-key write relation) is complemented by a sibling lemma that reads them
+(WS-SX SX15.1), stated beside the summary, never as a widened summary.  A
+sibling concludes an exact frame of every slot's binding words, or the
+slot-by-slot keep-or-clear below, which is a binding shrink
+(`bindingWordsKeptOrCleared.bindingShrink`). -/
+
+/-- **Every slot keeps its binding words or holds none after the step.** -/
+def bindingWordsKeptOrCleared (st st' : SystemState) : Prop :=
+  ∀ x : SeLe4n.ObjId, objBindingWords st'.objects[x]? = objBindingWords st.objects[x]? ∨
+    objBindingWords st'.objects[x]? = (0, 0, 0, 0)
+
+namespace bindingWordsKeptOrCleared
+
+theorem refl (st : SystemState) : bindingWordsKeptOrCleared st st := fun _ => .inl rfl
+
+theorem trans {st st' st'' : SystemState} (h1 : bindingWordsKeptOrCleared st st')
+    (h2 : bindingWordsKeptOrCleared st' st'') : bindingWordsKeptOrCleared st st'' := fun x =>
+  (h2 x).elim (fun e => (h1 x).elim (fun e1 => .inl (e.trans e1)) (fun z => .inr (e.trans z))) .inr
+
+/-- An exact frame of the binding words keeps them. -/
+theorem of_words {st st' : SystemState}
+    (h : ∀ x : SeLe4n.ObjId, objBindingWords st'.objects[x]? = objBindingWords st.objects[x]?) :
+    bindingWordsKeptOrCleared st st' := fun x => .inl (h x)
+
+theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
+    bindingWordsKeptOrCleared st st' := of_words fun x => by rw [h]
+
+/-- **It is a binding shrink.** -/
+theorem bindingShrink {st st' : SystemState} (h : bindingWordsKeptOrCleared st st') :
+    bindingViewsShrink st st' :=
+  bindingViewsShrink_of_objects fun x => (h x).elim objBindingShrink.of_eq objBindingShrink.of_free
+
+end bindingWordsKeptOrCleared
+
+/-- **Two slots read alike through a map that keeps the binding words hold the
+same binding words.** -/
+theorem objBindingWords_eq_of_map {g : KernelObject → KernelObject}
+    (hg : ∀ o, objBindingWords (some (g o)) = objBindingWords (some o))
+    {a b : Option KernelObject} (h : a.map g = b.map g) : objBindingWords a = objBindingWords b := by
+  cases a with
+  | none => cases b with
+    | none => rfl
+    | some _ => cases h
+  | some x => cases b with
+    | none => cases h
+    | some y =>
+      rw [← hg x, ← hg y]
+      exact congrArg (fun o => objBindingWords (some o)) (Option.some.inj h)
+
+/-- **A slot whose thread is rewritten keeping its binding words, and whose
+every other object is kept, keeps its binding words**: the reading a thread-link
+frame (a splice, a queue removal) gives at one slot. -/
+theorem objBindingWords_eq_of_tcbFrame {a b : Option KernelObject}
+    (fwd : ∀ t0, a = some (.tcb t0) → ∃ t', b = some (.tcb t') ∧
+      t'.scBindingScCode = t0.scBindingScCode ∧ t'.scBindingOwnerCode = t0.scBindingOwnerCode)
+    (bwd : ∀ t', b = some (.tcb t') → ∃ t0, a = some (.tcb t0))
+    (other : ∀ o, (∀ t, o ≠ .tcb t) → (b = some o ↔ a = some o)) :
+    objBindingWords b = objBindingWords a := by
+  cases a with
+  | none =>
+    cases b with
+    | none => rfl
+    | some o =>
+      by_cases hT : ∃ t, o = .tcb t
+      · obtain ⟨t, rfl⟩ := hT
+        obtain ⟨_, h0⟩ := bwd t rfl
+        cases h0
+      · cases (other o (fun t e => hT ⟨t, e⟩)).mp rfl
+  | some x =>
+    by_cases hT : ∃ t, x = .tcb t
+    · obtain ⟨t0, rfl⟩ := hT
+      obtain ⟨t', hb, e1, e2⟩ := fwd t0 rfl
+      rw [hb]; simp only [objBindingWords, e1, e2]
+    · rw [(other x (fun t e => hT ⟨t, e⟩)).mpr rfl]
+
+/-- **The off-taint agreement keeps every slot's binding words**: the sibling
+of `SystemState.objectsAgreeOffTaint`, which reads the objects up to their
+taint words. -/
+theorem _root_.SeLe4n.Model.SystemState.objectsAgreeOffTaint.objBindingWords
+    {st st' : SystemState} (h : st.objectsAgreeOffTaint st') (x : SeLe4n.ObjId) :
+    objBindingWords st'.objects[x]? = objBindingWords st.objects[x]? :=
+  objBindingWords_eq_of_map (g := KernelObject.eraseTaint) (fun o => by cases o <;> rfl) (h x)
+
+/-- **A slot agreeing off its derivation links keeps its binding words**: a
+CNode holds none, and a thread differs only in its links. -/
+theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationLinksAt.objBindingWords
+    {st st' : SystemState} {oid : SeLe4n.ObjId}
+    (h : SystemState.objectAgreesOffDerivationLinksAt st' st oid) :
+    objBindingWords st'.objects[oid]? = objBindingWords st.objects[oid]? :=
+  objBindingWords_eq_of_map (g := KernelObject.withoutLinks) (fun o => by cases o <;> rfl)
+    h.map_withoutLinks
+
+/-- **A slot agreeing off its derivation metadata keeps its binding words**: a
+CNode holds none on either side, and a thread differs only in its links. -/
+theorem _root_.SeLe4n.Model.SystemState.objectAgreesOffDerivationMetadataAt.objBindingWords
+    {st st' : SystemState} {oid : SeLe4n.ObjId}
+    (h : SystemState.objectAgreesOffDerivationMetadataAt st' st oid) :
+    objBindingWords st'.objects[oid]? = objBindingWords st.objects[oid]? := by
+  rcases h with e | ⟨_, _, ha, hb, _⟩ | ⟨t, t', ha, hb, hw⟩
+  · rw [e]
+  · rw [ha, hb]; rfl
+  · rw [ha, hb]
+    exact objBindingWords_eq_of_map (g := KernelObject.withoutLinks) (fun o => by cases o <;> rfl)
+      (by simp only [Option.map_some, KernelObject.withoutLinks, hw])
+
+/-- **The slot links' reach keeps every slot's binding words**: the sibling of
+`SystemState.linkReach.agree`, whose writes rewrite CNode and thread links
+alone. -/
+theorem _root_.SeLe4n.Model.SystemState.linkReach.objBindingWords {st₀ st : SystemState}
+    (h : SystemState.linkReach st₀ st) (hInv : st₀.objects.invExt) (x : SeLe4n.ObjId) :
+    objBindingWords st.objects[x]? = objBindingWords st₀.objects[x]? :=
+  (h.agree hInv x).objBindingWords
 
 /-! ### The binding grow: the step a creating site is
 

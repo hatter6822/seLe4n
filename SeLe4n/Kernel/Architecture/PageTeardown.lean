@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Architecture.VSpaceUnmapPerform
 import SeLe4n.Model.TableReferences
+import SeLe4n.Kernel.SchedContext.Invariant.BindingLabels
 
 /-!
 # Page teardown — removing a list of mappings through the verified unmap
@@ -407,6 +408,16 @@ theorem vspaceRootOnlyWrite.trans {s1 s2 s3 : SystemState}
   · exact Or.inr ⟨by rw [← e12]; exact r2', r3⟩
   · exact Or.inr ⟨r1, by rw [e23]; exact r2⟩
   · exact Or.inr ⟨r1, r3⟩
+
+/-- **A VSpace-root-only write keeps every slot's binding words** (WS-SX
+SX15.1): the sibling of `vspaceRootOnlyWrite`, which forgets them; a VSpace
+root holds none. -/
+theorem vspaceRootOnlyWrite.objBindingWords {st st' : SystemState}
+    (h : vspaceRootOnlyWrite st st') (oid : SeLe4n.ObjId) :
+    objBindingWords st'.objects[oid]? = objBindingWords st.objects[oid]? := by
+  rcases h oid with e | ⟨⟨_, h1⟩, ⟨_, h2⟩⟩
+  · rw [e]
+  · rw [h1, h2]; rfl
 
 /-- A key a VSpace-root-only write leaves unchanged: every key that does not hold
 a VSpace root beforehand. -/

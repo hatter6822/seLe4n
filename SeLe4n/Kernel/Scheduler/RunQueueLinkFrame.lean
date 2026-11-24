@@ -3,6 +3,7 @@ Copyright (C) 2026 seLe4n contributors
 SPDX-License-Identifier: GPL-3.0-or-later
 -/
 import SeLe4n.Kernel.Scheduler.RunQueueThreadLinks
+import SeLe4n.Kernel.SchedContext.Invariant.BindingLabels
 
 /-!
 # Run-queue writes leave every other object field alone
@@ -233,6 +234,16 @@ theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
 theorem of_getElem_eq {st st' : SystemState}
     (h : ∀ x : SeLe4n.ObjId, st'.objects[x]? = st.objects[x]?) :
     objectsAgreeOffRunLinks st' st := fun x => by rw [h x]
+
+/-- **The run-link agreement keeps every slot's binding words** (WS-SX SX15.1):
+the sibling of the relation, which reads the objects up to run-queue fields a
+thread's binding words are not among. -/
+theorem objBindingWords {st st' : SystemState} (h : objectsAgreeOffRunLinks st' st)
+    (x : SeLe4n.ObjId) :
+    _root_.SeLe4n.Kernel.objBindingWords st'.objects[x]? =
+      _root_.SeLe4n.Kernel.objBindingWords st.objects[x]? :=
+  _root_.SeLe4n.Kernel.objBindingWords_eq_of_map (g := KernelObject.withoutRunLinks)
+    (fun o => by cases o <;> rfl) (h x)
 
 /-- The relation reads the object store alone. -/
 theorem congr {a a' b b' : SystemState} (ha : a'.objects = a.objects)

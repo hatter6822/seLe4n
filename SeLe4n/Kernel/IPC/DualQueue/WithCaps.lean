@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.IPC.DualQueue.Transport
 import SeLe4n.Kernel.IPC.Operations.CapTransfer
+import SeLe4n.Kernel.SchedContext.Invariant.BindingLabels
 
 /-! # IPC Dual-Queue WithCaps Wrappers (M-D01 / WS-M3)
 
@@ -302,6 +303,19 @@ theorem receiveTransferCaps_object_cases
       | some t =>
         obtain ⟨rtcb, slot?⟩ := t
         simpa using ipcUnwrapCaps_object_cases _ _ _ _ _ _ _ oid hObjInv h
+
+/-- **A transfer keeps every slot's binding words** (WS-SX SX15.1): the sibling
+of `receiveTransferCaps_object_cases`, which forgets them; the CNode it writes
+holds none, and a thread differs only in its links. -/
+theorem receiveTransferCaps_objBindingWords
+    {req : Option (Capability × Array SeLe4n.CPtr)} {endpointId : Option SeLe4n.ObjId}
+    {target? : Option (TCB × Option CSpaceAddr)} {st st' : SystemState}
+    {summary : CapTransferSummary} (oid : SeLe4n.ObjId) (hObjInv : st.objects.invExt)
+    (h : receiveTransferCaps req endpointId target? st = .ok (summary, st')) :
+    objBindingWords st'.objects[oid]? = objBindingWords st.objects[oid]? := by
+  rcases receiveTransferCaps_object_cases oid hObjInv h with hA | ⟨_, -, -, ⟨_, h1⟩, _, h2⟩
+  · exact hA.objBindingWords
+  · rw [h1, h2]; rfl
 
 /-- **WS-RR RR7.8**: the CNode a send's transfer writes is the one its lock
 footprint names: when the pre-state names a destination, the transfer writes

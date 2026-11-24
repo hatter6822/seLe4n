@@ -11,6 +11,7 @@ import SeLe4n.Kernel.IPC.DualQueue.Core
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 import SeLe4n.Kernel.Scheduler.Operations.Selection
 import SeLe4n.Kernel.Architecture.SyscallReturn
+import SeLe4n.Kernel.SchedContext.Invariant.BindingLabels
 
 namespace SeLe4n.Kernel
 
@@ -321,6 +322,47 @@ theorem abortPendingIpcOnEndpoint_binding_backward
         k t1 h1
       exact ⟨t0, h0, hb0.trans hb1⟩
 
+/-- **The abort keeps every thread's binding words** (WS-SX SX15.1): the
+sibling of `abortPendingIpcOnEndpoint_binding_backward`, read at the two words
+themselves rather than through `schedContextBinding` (which forgets the owner
+word of a thread holding no context). -/
+theorem abortPendingIpcOnEndpoint_scBindingWords_backward
+    (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st')
+    (k : SeLe4n.ObjId) (t' : TCB) (hPost : st'.objects[k]? = some (.tcb t')) :
+    ∃ t, st.objects[k]? = some (.tcb t) ∧
+      (t.scBindingScCode, t.scBindingOwnerCode) = (t'.scBindingScCode, t'.scBindingOwnerCode) := by
+  unfold abortPendingIpcOnEndpoint at h
+  split at h
+  · simp at h
+  · rename_i st1 hER
+    have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hER
+    split at h
+    · simp at h
+    · rename_i tcb hLk
+      simp only [storeObject] at h
+      simp only [Except.ok.injEq] at h
+      subst h
+      have hMid : ∃ t1, st1.objects[k]? = some (.tcb t1) ∧
+          (t1.scBindingScCode, t1.scBindingOwnerCode) =
+            (t'.scBindingScCode, t'.scBindingOwnerCode) := by
+        by_cases hEq : k = tid.toObjId
+        · subst hEq
+          rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ hInv1,
+            if_pos (beq_self_eq_true tid.toObjId)] at hPost
+          obtain rfl : t' = _ := (KernelObject.tcb.inj (Option.some.inj hPost)).symm
+          exact ⟨tcb, lookupTcb_some_objects st1 tid tcb hLk, rfl⟩
+        · rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ hInv1,
+            if_neg (by intro hc; exact hEq (eq_of_beq hc).symm),
+            ← RHTable_getElem?_eq_get?] at hPost
+          exact ⟨t', hPost, rfl⟩
+      obtain ⟨t1, h1, hb1⟩ := hMid
+      obtain ⟨t0, h0, hb0⟩ := endpointQueueRemove_getTcb_backward_upToField
+        (fun t => (t.scBindingScCode, t.scBindingOwnerCode)) (fun _ _ _ _ => rfl) epId isReceiveQ
+        tid st st1 hInv hER k t1 h1
+      exact ⟨t0, h0, hb0.trans hb1⟩
+
 /-- WS-OD OD1.4: away from the aborted thread's own key, the abort changes
 neither `ipcState` nor `schedContextBinding`.
 
@@ -388,6 +430,36 @@ theorem abortPendingIpcOnEndpoint_schedContext_backward
     (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
     (fun _ hc => by obtain ⟨_, hc⟩ := hc; cases hc)
     epId isReceiveQ tid st st' hInv h oid _ ⟨sc, rfl⟩ hPost
+
+/-- **The abort keeps or clears every slot's binding words** (WS-SX SX15.1):
+the sibling of the abort's backward frames, which read each kind apart; every
+thread, notification and context after it was there before it with the same
+words, and every other slot holds none. -/
+theorem abortPendingIpcOnEndpoint_bindingWordsKeptOrCleared
+    (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
+    bindingWordsKeptOrCleared st st' := fun x => by
+  cases hx : st'.objects[x]? with
+  | none => exact .inr rfl
+  | some o =>
+    cases o with
+    | tcb t' =>
+      obtain ⟨t, ht, hb⟩ := abortPendingIpcOnEndpoint_scBindingWords_backward epId isReceiveQ tid
+        st st' hInv h x t' hx
+      refine .inl ?_
+      rw [ht]
+      show (t'.scBindingScCode, t'.scBindingOwnerCode, 0, 0) =
+        (t.scBindingScCode, t.scBindingOwnerCode, 0, 0)
+      obtain ⟨e1, e2⟩ := Prod.mk.inj hb
+      rw [e1, e2]
+    | notification n =>
+      exact .inl (by
+        rw [abortPendingIpcOnEndpoint_notification_backward epId isReceiveQ tid st st' hInv h x n hx])
+    | schedContext sc =>
+      exact .inl (by
+        rw [abortPendingIpcOnEndpoint_schedContext_backward epId isReceiveQ tid st st' hInv h x sc hx])
+    | _ => exact .inr rfl
 
 /-- WS-OD OD1.4: the abort writes only TCBs and one endpoint, so every object of
 any other kind carries across it **forwards** as well.
