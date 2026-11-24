@@ -126,7 +126,7 @@ facts it rests on are restated here.
 
 ## 3. Owner decisions
 
-D1–D17 are each **default taken; owner card open**; D18–D32, D34, D36 and D37 are the owner's.
+D1–D17 are each **default taken; owner card open**; D18–D32, D34 and D36–D39 are the owner's.
 A different answer changes only the rows that cite it.
 
 - **D1. The error label.** *Default:* **seL4's error codes (1–10) in the
@@ -330,7 +330,7 @@ A different answer changes only the rows that cite it.
   SX10 are renumbered (SX11–SX21 became SX13–SX23). No live path was found
   that admits a donating Call or a receive take without the gate on both
   sides; the gap is in the proof, not the kernel.
-- **D39. The redirect first.** *Default taken; owner card open.* The
+- **D39. The redirect first.** *Decided by the owner (2026-11-24, "Redirect first").* The
   binding-invariant row (then SX12) stopped at its reply path: the reply's pop
   hands a lent context to `replyDonationRecipient`, which at the bottom of a
   depth-2 out-of-order stack is the context's recorded `donationOrigin` (the
