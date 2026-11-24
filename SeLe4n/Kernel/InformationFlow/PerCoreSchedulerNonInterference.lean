@@ -2233,7 +2233,8 @@ per-core scheduler steps, each under the hypotheses its theorem takes. -/
 inductive PerCoreNonInterferenceStep (ctx : LabelingContext) (observer : IfObserver) :
     SystemState → SystemState → Prop where
   | kernel {st st' : SystemState} (hObjInv : st.objects.invExt) (hIdx : objectIndexSetComplete st)
-      (hSet : st.objectIndexSet.table.invExt) (hStep : NonInterferenceStep ctx observer st st')
+      (hSet : st.objectIndexSet.table.invExt) (hBind : bindingLabelsEqual ctx st)
+      (hStep : NonInterferenceStep ctx observer st st')
       (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
       PerCoreNonInterferenceStep ctx observer st st'
   | tick {st : SystemState} (c : CoreId) (h : tickHidden ctx observer st c) :
@@ -2287,8 +2288,8 @@ theorem perCoreNonInterferenceStep_sound {ctx : LabelingContext} {observer : IfO
     {st st' : SystemState} (h : PerCoreNonInterferenceStep ctx observer st st') :
     lowEquivalent_smp ctx observer st' st := by
   cases h with
-  | kernel hObjInv hIdx hSet hStep hConfined =>
-    exact nonInterference_perCore ctx observer _ _ hObjInv hIdx hSet hStep hConfined
+  | kernel hObjInv hIdx hSet hBind hStep hConfined =>
+    exact nonInterference_perCore ctx observer _ _ hObjInv hIdx hSet hBind hStep hConfined
   | tick c h => exact timerTickOnCore_lowEquivalent _ c h
   | replenishmentDrain c now hInv hRef hRH =>
     exact processReplenishmentsDueOnCore_lowEquivalent _ c now hInv hRef hRH

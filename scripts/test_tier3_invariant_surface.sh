@@ -2511,9 +2511,9 @@ run_check "INVARIANT" rg -n '^theorem lockSet_endpointCallOnCore_covers_donation
 run_check "INVARIANT" rg -n '^private theorem donateSchedContext_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # WS-SX SX9.1 (D34): the push is invisible only with its context hidden.
 run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem donateSchedContext_preserves_projection( *\n +[^\n]*)*hScHigh : objectObservable" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
-# The receive steps' one premise (D37, registered debt owned by SX18): equal
-# binding labels, a field of each receive constructor itself; the loan-return
-# shape is derived from it, never a constructor field.
+# Equal binding labels (D37): the predicate, its boot base case and its toolkit;
+# the receive steps' loan-return shape is derived from it, never a constructor
+# field (the per-state slot it stands in is anchored below, SX18.1).
 run_check "INVARIANT" rg -n '^def bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
 run_negative_check "INVARIANT" rg -n '^def bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^theorem bindingLabelsEqual_of_unbound($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
@@ -2543,8 +2543,15 @@ run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_keepsScBindingA
 run_check "INVARIANT" rg -n '^theorem bindingFreeObject_of_bootObjectShapeOffLinks($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem receiveLoanReturnHidden_of_bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "\| endpointReceiveDualHigh\n(    [^\n]*\n)*?      \(hBind : bindingLabelsEqual ctx st\)\n    : NonInterferenceStep" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "\| endpointReplyRecvHigh\n(    [^\n]*\n)*?      \(hBind : bindingLabelsEqual ctx st\)\n    : NonInterferenceStep" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+# WS-SX SX18.1 (ruling (a) under D29): equal binding labels stand in the
+# per-state slot beside the object-store invariant; no NI step constructor
+# carries them, and the one-sided theorem, the trace's cons, the per-core
+# headline and its per-core step take them of each state.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^inductive NonInterferenceStep[^\n]*(\n([ \t][^\n]*)?)*bindingLabelsEqual" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem step_preserves_projection\n(    [^\n]*\n)*?    \(hObjSetInv : st\.objectIndexSet\.table\.invExt\)\n    \(hBind : bindingLabelsEqual ctx st\)\n    \(hStep : NonInterferenceStep ctx observer st st'"'"'\) :" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  \| cons \(st₁ st₂ st₃ : SystemState\)\n(      [^\n]*\n)*?      \(hBind : bindingLabelsEqual ctx st₁\)\n      \(hStep : NonInterferenceStep ctx observer st₁ st₂\)" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem nonInterference_perCore \(ctx : LabelingContext\)[^\n]*\n(    [^\n]*\n)*?    \(hBind : bindingLabelsEqual ctx st\)\n    \(hStep : NonInterferenceStep ctx observer st st'"'"'\)" SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  \| kernel \{st st'"'"' : SystemState\}[^\n]*\n(      [^\n]*\n)*?      \(hSet : st\.objectIndexSet\.table\.invExt\) \(hBind : bindingLabelsEqual ctx st\)\n      \(hStep : NonInterferenceStep ctx observer st st'"'"'\)" SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean'
 run_negative_check "INVARIANT" rg -n ': receiveLoanReturnHidden ctx observer st (receiver|replierReceiver)\)' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 # The pack field the resolution added: every capability-gated arm that pops now
 # states the obligation its resolver carries.

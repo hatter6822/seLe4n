@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sécurité" /></a>
-  <img src="https://img.shields.io/badge/version-0.37.46-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.37.47-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Licence" /></a>
 </p>
@@ -166,9 +166,9 @@ points ci-dessous y renvoient.
 
 | Attribut | Valeur |
 |----------|--------|
-| **Version** | `0.37.46` |
+| **Version** | `0.37.47` |
 | **Chaîne d'outils Lean** | `v4.28.0` |
-| **LoC Lean de production** | 685 332 réparties sur 703 fichiers |
+| **LoC Lean de production** | 685 382 réparties sur 703 fichiers |
 | **LoC Lean de test** | 92 060 réparties sur 71 suites de tests |
 | **Déclarations prouvées** | 26 322 déclarations theorem/lemma (zéro sorry/axiom) |
 | **Crates Rust** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (enveloppes en espace utilisateur), `sele4n-hal` (la couche matérielle du noyau), et le test hôte `sele4n-lean-boundary` |

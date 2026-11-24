@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.37.46-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.37.47-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -141,9 +141,9 @@ Rust 하드웨어 계층과 함께 대상 기기에서 부팅되는 커널 이�
 
 | 항목 | 값 |
 |------|-----|
-| **버전** | `0.37.46` |
+| **버전** | `0.37.47` |
 | **Lean 툴체인** | `v4.28.0` |
-| **프로덕션 Lean LoC** | 703개 파일, 685,332줄 |
+| **프로덕션 Lean LoC** | 703개 파일, 685,382줄 |
 | **테스트 Lean LoC** | 71개 테스트 스위트, 92,060줄 |
 | **증명된 선언** | 26,322개 theorem/lemma 선언 (sorry/axiom 제로) |
 | **Rust 크레이트** | `sele4n-types`, `sele4n-abi`, `sele4n-sys`(사용자 공간 래퍼), `sele4n-hal`(커널의 하드웨어 계층), 호스트 테스트 `sele4n-lean-boundary` |

@@ -1,3 +1,63 @@
+## v0.37.47 — The binding-labels premise moved to the standing per-state slot (WS-SX SX18, wrapped at SX18.1)
+
+SX18 is SX13's remainder, last part (D40), on SX17. Every committing entry now
+carries equal binding labels, so the receive steps no longer take them as a
+per-step premise: the fact stands beside the object-store invariant, in the
+per-state slot of the NI composition.  The row wraps there (D44, under the
+owner's D32 rule), and its refusal deletions move to three new rows.  No
+transition changes.
+
+- **The premise moved (SX18.1, ruling (a) under D29).**
+  `NonInterferenceStep.endpointReceiveDualHigh` and `endpointReplyRecvHigh`
+  lose `hBind`.  `bindingLabelsEqual ctx st` is now a parameter of:
+  - `step_preserves_projection`, beside `objects.invExt`, the index-set
+    completeness and the index-set table invariant;
+  - `NonInterferenceTrace.cons`, of each step's pre-state;
+  - `composedNonInterference_step`, `composedNI_withSwitchDomain`,
+    `composedNI_two_steps` and `syscallNI_coverage_witness`, of each state they
+    take the object-store invariant of;
+  - `nonInterference_perCore`, its observer and two-sided forms, and every
+    per-operation lift (38 signatures);
+  - `PerCoreNonInterferenceStep.kernel` and
+    `syscallEntryChecked_success_perCore_NI`.
+
+  The receive steps read the hidden loan return off the slot
+  (`receiveLoanReturnHidden_of_bindingLabelsEqual`).  The notification lend's
+  two-run theorem keeps it of both runs, unchanged.
+- **D43, "Prove first" (the owner's).**  The notification lend's label check
+  (`donationContextFlows`, D30) is not unreachable under the carried
+  invariants, so it stays.
+  - The lend goes to the thread the signal wakes: the notification's bound
+    thread, blocked receiving, or its wait-queue head.
+  - `bindingLabelsEqual` relates the notification to the context.  It does not
+    relate the thread to the notification: that is
+    `notificationLabelsCoherent`, which the boot checks and no entry carries.
+  - The live kernel never reaches the refusal, because the wait and bind gates
+    are two-way.  The gap is in the proof.
+  - New row SX20 carries the coherence across every entry, which closes the
+    queue-label-uniformity row of `docs/REGISTERED_DEBT.md`.  New row SX21 then
+    deletes the check at its three sites.
+- **D44, SX18's wrap.**  The Call lend's refusal (`callLendAdmits`, D28) is
+  unreachable under the invariant.  Its answer is threaded as a `lend : Bool`
+  argument through 219 declarations in 57 files, measured before any edit.
+  Retiring it becomes new row SX19.  The rows after SX18 are renumbered
+  (SX19–SX28 became SX22–SX31); the conformance table's owner strings, the
+  plan, the debt register, the workstream context, the spec and the
+  context-by-value plan cite the new numbers.
+- **The debt row narrowed.**  The `bindingLabelsEqual` row of
+  `docs/REGISTERED_DEBT.md` table C is now the trace form alone (carrying the
+  per-entry stage across a trace), owned by WS-PK with the `ipcReachable` row.
+- **Gates.**  Tier 3 drops the two anchors that pinned `hBind` on the receive
+  constructors.  New anchors:
+  - a negative anchor: no `NonInterferenceStep` constructor names
+    `bindingLabelsEqual`;
+  - relation anchors on the slot in `step_preserves_projection`,
+    `NonInterferenceTrace.cons`, `nonInterference_perCore` and
+    `PerCoreNonInterferenceStep.kernel`.
+
+  Each anchor was tested by breaking the relation with its tokens kept: the
+  premise put back on a constructor, or the slot read at the post-state.
+
 ## v0.37.46 — The creating sites' label equations proved, and every committing entry carries the lending labels (WS-SX SX17)
 
 SX17 is SX13's remainder, second half (D40), on SX16: every step that writes a
