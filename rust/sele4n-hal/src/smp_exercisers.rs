@@ -15006,10 +15006,11 @@ const BIND_UPPER_TO_BOUND_THREAD_REFUSED: RoundTrip = RoundTrip {
 /// refused `flowDenied` before any write, since the context's label is not the
 /// notification's (`schedContextBindNotificationLabelAdmits`, the two-way label
 /// gate, WS-SX D35).  This gate, with the thread arm's below, is why the
-/// notification lend's label refusal (D30) and the Call lend's (D28) are
-/// unreachable from a booted image: a notification and its context, and a
-/// thread and the context it holds, carry equal labels (D37), so no waiter's
-/// lend and no caller's lend is ever refused (WS-SX SX9.3).
+/// notification lend's label refusal (D30) is unreachable from a booted image,
+/// and why the Call lend's (D28) was, until WS-SX SX19 deleted it: a
+/// notification and its context, and a thread and the context it holds, carry
+/// equal labels (D37), so no waiter's lend and no caller's lend is ever
+/// refused (WS-SX SX9.3).
 #[cfg(feature = "hw_target")]
 const SCHED_CONTEXT_BIND_UPPER_NOTIFICATION_REFUSED: RoundTrip = RoundTrip {
     returns: Some((

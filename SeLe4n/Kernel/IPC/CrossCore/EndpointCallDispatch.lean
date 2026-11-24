@@ -17,7 +17,7 @@
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 import SeLe4n.Kernel.IPC.DualQueue.WithCaps
 import SeLe4n.Kernel.IPC.Operations.Donation
-import SeLe4n.Kernel.IPC.Operations.CallLendLabel
+import SeLe4n.Kernel.InformationFlow.Policy
 import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 import SeLe4n.Kernel.InformationFlow.Enforcement.Wrappers
@@ -99,7 +99,7 @@ the invariant holds on every core afterwards. -/
 def endpointCallCrossCoreDispatch
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
-    (executingCore : CoreId) (st : SystemState) (lend : Bool := true) :
+    (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
   let maybeReceiver := match st.getEndpoint? endpointId with
     | some ep => ep.receiveQ.head
@@ -130,10 +130,10 @@ def endpointCallCrossCoreDispatch
             -- the reading at the donation site. Donor and donee on one core makes
             -- the migration a definitional no-op, which is every single-core
             -- configuration.
-            -- The checked kernel's lend admission (`lend`, `callLendAdmits`):
-            -- where the caller may not lend its context the call goes on and
-            -- lends nothing (`applyCallDonationOnCoreWhen`).
-            match applyCallDonationOnCoreWhen lend st' callerV receiverV
+            -- The lend is seL4-MCS's, unchecked (WS-SX SX19, D28): every
+            -- caller holding a context carries its label (`bindingLabelsEqual`),
+            -- so no label check can refuse it.
+            match applyCallDonationOnCore st' callerV receiverV
                 (determineTargetCore st caller) (determineTargetCore st receiverTid) with
             | .error e => (st', .error e)
             | .ok st'' =>
@@ -165,9 +165,9 @@ SGI. This is the operation the live `dispatchWithCapChecked` `.call` arm routes
 through, replacing the boot-pinned `endpointCallChecked` so the receiver is woken
 on its *home* core.
 
-The donation runs under the lend admission (`callLendAdmits`, read on the
-state the call starts from): a caller whose label does not flow to its
-context's label lends nothing, and the call goes on. -/
+The donation is seL4-MCS's, with no label check of its own (WS-SX SX19): a
+caller holding a context carries the context's label (`bindingLabelsEqual`),
+so the lend reads nothing the endpoint gate has not already admitted. -/
 def endpointCallCrossCoreDispatchChecked
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
@@ -177,7 +177,6 @@ def endpointCallCrossCoreDispatchChecked
   if endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) then
     endpointCallCrossCoreDispatch endpointId caller payload executingCore st
-      (callLendAdmits ctx st caller)
   else
     (st, .error .flowDenied)
 
@@ -208,7 +207,7 @@ theorem endpointCallCrossCoreDispatchChecked_flow_allowed
     endpointCallCrossCoreDispatchChecked ctx endpointId caller payload
         executingCore st
       = endpointCallCrossCoreDispatch endpointId caller payload
-          executingCore st (callLendAdmits ctx st caller) := by
+          executingCore st := by
   simp [endpointCallCrossCoreDispatchChecked,
     endpointFlowGate_of ctx endpointId _ _ hAllow hOverride]
 
@@ -241,9 +240,9 @@ theorem endpointCallCrossCoreDispatch_no_receiver
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
     (hNoRecv : (match st.getEndpoint? endpointId with
-      | some ep => ep.receiveQ.head | none => none) = none) (lend : Bool := true) :
+      | some ep => ep.receiveQ.head | none => none) = none) :
     endpointCallCrossCoreDispatch endpointId caller payload
-        executingCore st lend
+        executingCore st
       = endpointCallWithCapsOnCore endpointId caller payload
           executingCore st := by
   unfold endpointCallCrossCoreDispatch
@@ -328,7 +327,7 @@ WS-LS LS2.3. -/
 def endpointCallDispatchChainWriteSet
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId)
-    (st : SystemState) (lend : Bool := true) : List CoreId :=
+    (st : SystemState) : List CoreId :=
   let maybeReceiver := match st.getEndpoint? endpointId with
     | some ep => ep.receiveQ.head
     | none => none
@@ -343,7 +342,7 @@ def endpointCallDispatchChainWriteSet
           | some callerV, some receiverV =>
             -- WS-RR RR2.7: mirrors the dispatch's own migrating donation, so the
             -- chain state named here is the state the dispatch really walks from.
-            match applyCallDonationOnCoreWhen lend st' callerV receiverV
+            match applyCallDonationOnCore st' callerV receiverV
                 (determineTargetCore st caller) (determineTargetCore st receiverTid) with
             | .error _ => []
             | .ok st'' =>
@@ -364,10 +363,10 @@ WS-LS LS2.3. -/
 def endpointCallDispatchWriteSet
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId)
-    (st : SystemState) (lend : Bool := true) : List CoreId :=
+    (st : SystemState) : List CoreId :=
   endpointCallWriteSet st endpointId executingCore
     ++ endpointCallDispatchChainWriteSet endpointId caller payload
-        executingCore st lend
+        executingCore st
 
 /-- **WS-RR RR8.16 (`v0.35.189`)**: and installing the call's capabilities writes
 no binding either (`ipcUnwrapCaps_sameSchedContextBindings`), so the whole leg the
@@ -456,7 +455,7 @@ its operation — the over-declaration Cut C1 removed from the `.receive` segmen
 def endpointCallDispatchReplenishCores
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId)
-    (st : SystemState) (lend : Bool := true) : List CoreId :=
+    (st : SystemState) : List CoreId :=
   let maybeReceiver := match st.getEndpoint? endpointId with
     | some ep => ep.receiveQ.head
     | none => none
@@ -469,7 +468,7 @@ def endpointCallDispatchReplenishCores
         if callRendezvousLinks st receiverTid payload then
           match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
           | some callerV, some receiverV =>
-            match callLendSchedContext? lend st' callerV.val receiverV.val with
+            match callDonationSchedContext? st' callerV.val receiverV.val with
             | some _ => [determineTargetCore st caller, determineTargetCore st receiverTid]
             | none => []
           | _, _ => []
@@ -490,9 +489,9 @@ theorem endpointCallDispatchReplenishCores_of_donation (endpointId : SeLe4n.ObjI
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
     (hLinks : callRendezvousLinks st receiverTid payload = true)
-    (lend : Bool) (hSc : callLendSchedContext? lend stWith callerV.val receiverV.val = some scId) :
+    (hSc : callDonationSchedContext? stWith callerV.val receiverV.val = some scId) :
     endpointCallDispatchReplenishCores endpointId caller payload
-        executingCore st lend
+        executingCore st
       = [determineTargetCore st caller, determineTargetCore st receiverTid] := by
   have hRecv' : (match st.getEndpoint? endpointId with
       | some ep => ep.receiveQ.head
@@ -512,9 +511,9 @@ theorem endpointCallDispatchReplenishCores_of_no_donation (endpointId : SeLe4n.O
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
     (hLinks : callRendezvousLinks st receiverTid payload = true)
-    (lend : Bool) (hNone : callLendSchedContext? lend stWith callerV.val receiverV.val = none) :
+    (hNone : callDonationSchedContext? stWith callerV.val receiverV.val = none) :
     endpointCallDispatchReplenishCores endpointId caller payload
-        executingCore st lend = [] := by
+        executingCore st = [] := by
   have hRecv' : (match st.getEndpoint? endpointId with
       | some ep => ep.receiveQ.head
       | none => none) = some receiverTid := hRecv
@@ -524,10 +523,10 @@ theorem endpointCallDispatchReplenishCores_of_no_donation (endpointId : SeLe4n.O
 /-- And with no receiver — the block path — none either, whatever the leg did. -/
 theorem endpointCallDispatchReplenishCores_of_no_receiver (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (executingCore : CoreId) (st : SystemState) (lend : Bool)
+    (executingCore : CoreId) (st : SystemState)
     (hRecv : endpointCallReceiver? st endpointId = none) :
     endpointCallDispatchReplenishCores endpointId caller payload
-        executingCore st lend = [] := by
+        executingCore st = [] := by
   have hRecv' : (match st.getEndpoint? endpointId with
       | some ep => ep.receiveQ.head
       | none => none) = none := hRecv
@@ -538,35 +537,6 @@ theorem endpointCallDispatchReplenishCores_of_no_receiver (endpointId : SeLe4n.O
     cases res with
     | error e => rfl
     | ok pair => simp only [hRecv']
-
-/-- Where the lend is refused, the call migrates no replenishment: no core. -/
-theorem endpointCallDispatchReplenishCores_false (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (payload : SendPayload) (executingCore : CoreId)
-    (st : SystemState) :
-    endpointCallDispatchReplenishCores endpointId caller payload executingCore st false = [] := by
-  unfold endpointCallDispatchReplenishCores
-  cases endpointCallWithCapsOnCore endpointId caller payload executingCore st with
-  | mk st' res =>
-    cases res with
-    | error e => rfl
-    | ok pair =>
-      simp only [callLendSchedContext?_false]
-      split
-      · split
-        · split <;> rfl
-        · rfl
-      · rfl
-
-/-- **The lend admission only narrows the replenish segment**: whatever it
-answers, the call migrates between no core the lending call does not name. -/
-theorem endpointCallDispatchReplenishCores_subset_true (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (payload : SendPayload) (executingCore : CoreId)
-    (st : SystemState) (lend : Bool) (d : CoreId)
-    (hd : d ∈ endpointCallDispatchReplenishCores endpointId caller payload executingCore st lend) :
-    d ∈ endpointCallDispatchReplenishCores endpointId caller payload executingCore st := by
-  cases lend with
-  | true => exact hd
-  | false => rw [endpointCallDispatchReplenishCores_false] at hd; cases hd
 
 /-- **WS-RR RR8.12 Cut C3a**: the scheduler-domain footprint of the live `.call`
 arm — the object-store table write lock, the run-queue write locks of every core
@@ -593,24 +563,14 @@ per-member TCB write lock, which no scheduler footprint can name.  The RR2.4
 parametric `endpointCallCrossCoreDispatchLockSet` is the shape this refines:
 on the rendezvous arm whose donation resolves, this footprint covers it at the
 resolved cores (`…_covers_parametric`), and names besides the chain members the
-parametric form left to the walker.
-
-**One footprint for both answers of the lend admission.**  The checked call
-lends only where `callLendAdmits` passes; where it does not, the chain walk
-starts from the state the donation would have changed
-(`endpointCallDispatchChainWriteSet … false`).  The footprint names both
-chains and the lending replenish pair, so it reads no label and covers the
-call whichever way the admission answers
-(`schedLockSet_endpointCallOnCore_coversWrites`): a proven superset, wider than
-the transition only where the lend is refused. -/
+parametric form left to the walker. -/
 def schedLockSet_endpointCallOnCore
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId)
     (st : SystemState) : List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores
     (endpointCallDispatchWriteSet endpointId caller payload
-      executingCore st
-      ++ endpointCallDispatchChainWriteSet endpointId caller payload executingCore st false)
+      executingCore st)
     (endpointCallDispatchReplenishCores endpointId caller payload
       executingCore st)
 
@@ -626,7 +586,7 @@ theorem schedLockSet_endpointCallOnCore_contains_executing_runQueue_write
     (LockKey.runQueue executingCore, Concurrency.AccessMode.write)
       ∈ schedLockSet_endpointCallOnCore endpointId caller payload
           executingCore st := by
-  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr (List.mem_append_left _ ?_)
+  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   unfold endpointCallDispatchWriteSet
   exact List.mem_append.mpr
     (Or.inl (executingCore_mem_endpointCallWriteSet st endpointId executingCore))
@@ -641,7 +601,7 @@ theorem schedLockSet_endpointCallOnCore_contains_receiver_runQueue_write
     (LockKey.runQueue (determineTargetCore st receiver), Concurrency.AccessMode.write)
       ∈ schedLockSet_endpointCallOnCore endpointId caller payload
           executingCore st := by
-  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr (List.mem_append_left _ ?_)
+  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   unfold endpointCallDispatchWriteSet
   rw [endpointCallWriteSet_of_receiver st endpointId executingCore receiver hRecv]
   simp
@@ -674,7 +634,7 @@ theorem schedLockSet_endpointCallOnCore_covers_donation (endpointId : SeLe4n.Obj
             executingCore st := by
   have hSeg := endpointCallDispatchReplenishCores_of_donation endpointId caller payload
     executingCore st stWith receiverTid callerV receiverV
-    summary sgi scId hRecv hWith hCallerV hRecvV hLinks true hSc
+    summary sgi scId hRecv hWith hCallerV hRecvV hLinks hSc
   unfold applyCallDonationOnCoreLockSet schedLockSet_endpointCallOnCore
   rw [hSeg]
   exact schedFootprintOfCores_subset (fun _ h => absurd h (by simp)) (fun _ h => h)
@@ -706,7 +666,7 @@ theorem schedLockSet_endpointCallOnCore_covers_parametric (endpointId : SeLe4n.O
             executingCore st := by
   have hSeg := endpointCallDispatchReplenishCores_of_donation endpointId caller payload
     executingCore st stWith receiverTid callerV receiverV
-    summary sgi scId hRecv hWith hCallerV hRecvV hLinks true hSc
+    summary sgi scId hRecv hWith hCallerV hRecvV hLinks hSc
   unfold endpointCallCrossCoreDispatchLockSet schedLockSet_endpointCallOnCore
   rw [hSeg]
   refine schedFootprintOfCores_subset (fun c hc => ?_) (fun _ h => h)
@@ -741,7 +701,7 @@ theorem schedLockSet_endpointCallOnCore_no_replenishQueue_of_no_donation
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
   rw [endpointCallDispatchReplenishCores_of_no_donation endpointId caller payload
     executingCore st stWith receiverTid callerV receiverV summary sgi hRecv
-    hWith hCallerV hRecvV hLinks true hNone] at this
+    hWith hCallerV hRecvV hLinks hNone] at this
   simp at this
 
 /-- **WS-RR RR8.12 Cut C3a**: and on the block path — no receiver, so no
@@ -756,7 +716,7 @@ theorem schedLockSet_endpointCallOnCore_no_replenishQueue_of_no_receiver
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
   rw [endpointCallDispatchReplenishCores_of_no_receiver endpointId caller payload
-    executingCore st true hRecv] at this
+    executingCore st hRecv] at this
   simp at this
 
 /-- **WS-RR RR8.12 Cut C3a (the empty segment, transition side)**: on the block
@@ -765,12 +725,12 @@ path the live dispatch is the WithCaps leg alone
 theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_receiver
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
-    (hRecv : endpointCallReceiver? st endpointId = none) (c : CoreId) (lend : Bool := true) :
+    (hRecv : endpointCallReceiver? st endpointId = none) (c : CoreId) :
     (endpointCallCrossCoreDispatch endpointId caller payload
-        executingCore st lend).1.scheduler.replenishQueueOnCore c
+        executingCore st).1.scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
   rw [endpointCallCrossCoreDispatch_no_receiver endpointId caller payload
-    executingCore st hRecv lend]
+    executingCore st hRecv]
   exact endpointCallWithCapsOnCore_replenishQueueOnCore endpointId caller payload
     executingCore st c
 
@@ -795,9 +755,9 @@ theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_donation
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
     (hLinks : callRendezvousLinks st receiverTid payload = true)
-    (lend : Bool) (hNone : callLendSchedContext? lend stWith callerV.val receiverV.val = none)
+    (hNone : callDonationSchedContext? stWith callerV.val receiverV.val = none)
     (hDisp : endpointCallCrossCoreDispatch endpointId caller payload
-      executingCore st lend = (stDisp, res)) (c : CoreId) :
+      executingCore st = (stDisp, res)) (c : CoreId) :
     stDisp.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   have hRecv' : (match st.getEndpoint? endpointId with
       | some ep => ep.receiveQ.head
@@ -810,7 +770,7 @@ theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_donation
     exact h
   unfold endpointCallCrossCoreDispatch at hDisp
   simp only [hWith, hRecv', hLinks, ↓reduceIte, hCallerV, hRecvV] at hDisp
-  cases hDon : applyCallDonationOnCoreWhen lend stWith callerV receiverV
+  cases hDon : applyCallDonationOnCore stWith callerV receiverV
       (determineTargetCore st caller) (determineTargetCore st receiverTid) with
   | error e =>
     rw [hDon] at hDisp
@@ -822,7 +782,7 @@ theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_donation
     simp only [] at hDisp
     rw [← (Prod.mk.inj hDisp).1,
       PriorityInheritance.propagatePipChainCrossCore_replenishQueueOnCore,
-      applyCallDonationOnCoreWhen_replenishQueueOnCore_of_no_donation lend stWith stDon callerV
+      applyCallDonationOnCore_replenishQueueOnCore_of_no_donation stWith stDon callerV
         receiverV _ _ hNone hDon c]
     exact hWithRep
 
@@ -837,11 +797,11 @@ segment empty and the step's own frame applies, and the resolving arm is the
 migration's `_other` frame at exactly the pair the segment names. -/
 theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_ne (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (executingCore : CoreId) (st : SystemState) (c : CoreId) (lend : Bool)
+    (executingCore : CoreId) (st : SystemState) (c : CoreId)
     (hne : c ∉ endpointCallDispatchReplenishCores endpointId caller payload
-      executingCore st lend) :
+      executingCore st) :
     (endpointCallCrossCoreDispatch endpointId caller payload
-        executingCore st lend).1.scheduler.replenishQueueOnCore c
+        executingCore st).1.scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
   unfold endpointCallCrossCoreDispatch endpointCallDispatchReplenishCores at *
   cases hW : endpointCallWithCapsOnCore endpointId caller payload
@@ -874,16 +834,16 @@ theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_ne (endpointId : SeLe
             · exact hFrame
             · rename_i st'' hDon
               simp only [PriorityInheritance.propagatePipChainCrossCore_replenishQueueOnCore]
-              cases hSc : callLendSchedContext? lend stW callerV.val receiverV.val with
+              cases hSc : callDonationSchedContext? stW callerV.val receiverV.val with
               | none =>
-                  rw [applyCallDonationOnCoreWhen_replenishQueueOnCore_of_no_donation lend stW st''
+                  rw [applyCallDonationOnCore_replenishQueueOnCore_of_no_donation stW st''
                     callerV receiverV (determineTargetCore st caller)
                     (determineTargetCore st receiverTid) hSc hDon c]
                   exact hFrame
               | some scId =>
                   rw [hSc] at hne
                   simp only [List.mem_cons, List.not_mem_nil, or_false, not_or] at hne
-                  rw [applyCallDonationOnCoreWhen_replenishQueueOnCore_ne lend stW st'' callerV receiverV
+                  rw [applyCallDonationOnCore_replenishQueueOnCore_ne stW st'' callerV receiverV
                     (determineTargetCore st caller) (determineTargetCore st receiverTid) c
                     hne.1 hne.2 hDon]
                   exact hFrame
@@ -1053,9 +1013,9 @@ onto the chain's post-state, and that write is an `insert`. -/
 theorem endpointCallCrossCoreDispatch_preserves_objects_invExt
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
-    (hObjInv : st.objects.invExt) (lend : Bool := true) :
+    (hObjInv : st.objects.invExt) :
     (endpointCallCrossCoreDispatch endpointId caller payload
-      executingCore st lend).1.objects.invExt := by
+      executingCore st).1.objects.invExt := by
   have hWc := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload
     executingCore st hObjInv
   unfold endpointCallCrossCoreDispatch
@@ -1077,8 +1037,7 @@ theorem endpointCallCrossCoreDispatch_preserves_objects_invExt
                 · rename_i stD hDon
                   exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt
                     _ _ _ _
-                    (applyCallDonationOnCoreWhen_induct (·.objects.invExt) hDon hWc
-                      (applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hWc))
+                    (((applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hWc) hDon))
               · exact hWc
             · exact hWc
           · exact hWc
@@ -1151,9 +1110,9 @@ theorem endpointCallCrossCoreDispatch_preserves_schedulerInvariantBase_smp
     (hNotCur : ∀ ep, st.getEndpoint? endpointId = some ep →
       ∀ r, ep.receiveQ.head = some r →
         st.scheduler.currentOnCore (determineTargetCore st r) ≠ some r)
-    (h : schedulerInvariantBase_smp st) (lend : Bool := true) :
+    (h : schedulerInvariantBase_smp st) :
     schedulerInvariantBase_smp (endpointCallCrossCoreDispatch endpointId caller payload
-      executingCore st lend).1 := by
+      executingCore st).1 := by
   have hWc := endpointCallWithCapsOnCore_preserves_schedulerInvariantBase_smp endpointId caller
     payload executingCore st hObjInv hNotCur h
   have hWcInv := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload
@@ -1176,11 +1135,9 @@ theorem endpointCallCrossCoreDispatch_preserves_schedulerInvariantBase_smp
                 · exact hWc
                 · rename_i stD hDon
                   exact propagatePipChainCrossCore_preserves_schedulerInvariantBase_smp _ _ _ _
-                    (applyCallDonationOnCoreWhen_induct (·.objects.invExt) hDon hWcInv
-                      (applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hWcInv))
-                    (applyCallDonationOnCoreWhen_induct schedulerInvariantBase_smp hDon hWc
-                      (applyCallDonationOnCore_preserves_schedulerInvariantBase_smp _ _ _ _ _ _
-                        hWcInv hWc))
+                    (((applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hWcInv) hDon))
+                    (((applyCallDonationOnCore_preserves_schedulerInvariantBase_smp _ _ _ _ _ _
+                        hWcInv hWc) hDon))
               · exact hWc
             · exact hWc
           · exact hWc
@@ -1199,9 +1156,9 @@ theorem endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle
     (executingCore : CoreId) (st : SystemState)
     (hTransfer : receiveTransferCapsPreservesCapabilityBundle
       (sendCapRequest st endpointId caller payload) endpointId)
-    (h : capabilityInvariantBundle st) (lend : Bool := true) :
+    (h : capabilityInvariantBundle st) :
     capabilityInvariantBundle (endpointCallCrossCoreDispatch endpointId caller payload
-      executingCore st lend).1 := by
+      executingCore st).1 := by
   have hWc := endpointCallWithCapsOnCore_preserves_capabilityInvariantBundle endpointId caller
     payload executingCore st hTransfer h
   unfold endpointCallCrossCoreDispatch
@@ -1222,9 +1179,8 @@ theorem endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle
                 · exact hWc
                 · rename_i stD hDon
                   exact propagatePipChainCrossCore_preserves_capabilityInvariantBundle _ _ _ _
-                    (applyCallDonationOnCoreWhen_induct capabilityInvariantBundle hDon hWc
-                      (applyCallDonationOnCore_preserves_capabilityInvariantBundle _ _ _ _ _ _
-                        hWc))
+                    (((applyCallDonationOnCore_preserves_capabilityInvariantBundle _ _ _ _ _ _
+                        hWc) hDon))
               · exact hWc
             · exact hWc
           · exact hWc
@@ -1254,9 +1210,9 @@ theorem endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle_of_no_
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
     (hNoCaps : sendCapRequest st endpointId caller payload = none)
-    (h : capabilityInvariantBundle st) (lend : Bool := true) :
+    (h : capabilityInvariantBundle st) :
     capabilityInvariantBundle (endpointCallCrossCoreDispatch endpointId caller payload
-      executingCore st lend).1 := by
+      executingCore st).1 := by
   have hWc := endpointCallWithCapsOnCore_preserves_capabilityInvariantBundle_of_no_caps
     endpointId caller payload executingCore st hNoCaps h
   unfold endpointCallCrossCoreDispatch
@@ -1277,9 +1233,8 @@ theorem endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle_of_no_
                 · exact hWc
                 · rename_i stD hDon
                   exact propagatePipChainCrossCore_preserves_capabilityInvariantBundle _ _ _ _
-                    (applyCallDonationOnCoreWhen_induct capabilityInvariantBundle hDon hWc
-                      (applyCallDonationOnCore_preserves_capabilityInvariantBundle _ _ _ _ _ _
-                        hWc))
+                    (((applyCallDonationOnCore_preserves_capabilityInvariantBundle _ _ _ _ _ _
+                        hWc) hDon))
               · exact hWc
             · exact hWc
           · exact hWc

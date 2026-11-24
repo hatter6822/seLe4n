@@ -151,13 +151,13 @@ slot at all (`applyCallDonationOnCore_runQueue_current_eq`); and the
 priority-inheritance walk migrates buckets of threads already queued and
 touches no `current` slot (§1).  So the caller comes out of the chain exactly
 as the rendezvous left it. -/
-theorem endpointCallCrossCoreDispatch_caller_not_runnable {lend : Bool}
+theorem endpointCallCrossCoreDispatch_caller_not_runnable
     (epId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st st' : SystemState)
     (summary : CapTransferSummary) (sgi? : Option (CoreId × SgiKind))
     (hNoCaps : sendCapRequest st epId caller payload = none)
     (hStep : endpointCallCrossCoreDispatch epId caller payload
-        executingCore st lend = (st', .ok (summary, sgi?))) :
+        executingCore st = (st', .ok (summary, sgi?))) :
     caller ∉ st'.scheduler.runQueueOnCore executingCore ∧
     st'.scheduler.currentOnCore executingCore ≠ some caller := by
   unfold endpointCallCrossCoreDispatch at hStep
@@ -187,13 +187,8 @@ theorem endpointCallCrossCoreDispatch_caller_not_runnable {lend : Bool}
                         stW.scheduler.runQueueOnCore executingCore ∧
                       stD.scheduler.currentOnCore executingCore =
                         stW.scheduler.currentOnCore executingCore :=
-                    applyCallDonationOnCoreWhen_induct (fun X =>
-                      X.scheduler.runQueueOnCore executingCore =
-                        stW.scheduler.runQueueOnCore executingCore ∧
-                      X.scheduler.currentOnCore executingCore =
-                        stW.scheduler.currentOnCore executingCore) hDon ⟨rfl, rfl⟩
-                      (applyCallDonationOnCore_runQueue_current_eq stW stD
-                        callerV receiverV _ _ executingCore)
+                    ((applyCallDonationOnCore_runQueue_current_eq stW stD
+                        callerV receiverV _ _ executingCore) hDon)
                   have hEq : (PriorityInheritance.propagatePipChainCrossCore stD receiverTid
                       executingCore).1 = st' := congrArg Prod.fst hStep
                   subst hEq
@@ -232,16 +227,16 @@ error arm, so there is no path on which a faulting thread returns to its
 faulting instruction: getting back requires a *later* transition to make it
 runnable, and §RR4.14/RR4.15 show the only one that does is the handler's
 reply. -/
-theorem faultDeliverOnCore_not_dispatchable {lend : Bool} (st : SystemState)
+theorem faultDeliverOnCore_not_dispatchable (st : SystemState)
     (tid : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (c : CoreId) :
-    ¬ dispatchableOnCore (faultDeliverOnCore st tid f ctx c lend).1 tid c := by
-  have hNot : tid ∉ (faultDeliverOnCore st tid f ctx c lend).1.scheduler.runQueueOnCore c ∧
-      (faultDeliverOnCore st tid f ctx c lend).1.scheduler.currentOnCore c ≠ some tid := by
+    ¬ dispatchableOnCore (faultDeliverOnCore st tid f ctx c).1 tid c := by
+  have hNot : tid ∉ (faultDeliverOnCore st tid f ctx c).1.scheduler.runQueueOnCore c ∧
+      (faultDeliverOnCore st tid f ctx c).1.scheduler.currentOnCore c ≠ some tid := by
     rcases hRes : resolveFaultHandler st tid with e | tgt
     · simp only [faultDeliverOnCore, hRes, recordPendingFault_scheduler_eq]
       exact faultSuspendOnCore_not_runnable _ tid c
     · rcases hCall : endpointCallCrossCoreDispatch tgt.endpoint tid
-          (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st lend with ⟨stC, res⟩
+          (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st with ⟨stC, res⟩
       cases res with
       | error e =>
           simp only [faultDeliverOnCore, hRes, hCall, recordPendingFault_scheduler_eq]
@@ -250,7 +245,7 @@ theorem faultDeliverOnCore_not_dispatchable {lend : Bool} (st : SystemState)
           obtain ⟨summary, sgi?⟩ := r
           simp only [faultDeliverOnCore, hRes, hCall, recordPendingFault_scheduler_eq,
             Architecture.stageWokenDelivery_scheduler_eq]
-          exact endpointCallCrossCoreDispatch_caller_not_runnable (lend := lend) tgt.endpoint tid _
+          exact endpointCallCrossCoreDispatch_caller_not_runnable tgt.endpoint tid _
             c st stC summary sgi?
             (sendCapRequest_fault _ _ _ _ _ _ _) hCall
   rintro (hQ | hC)
@@ -259,11 +254,11 @@ theorem faultDeliverOnCore_not_dispatchable {lend : Bool} (st : SystemState)
 
 /-- WS-RR RR4.19: the same statement in the shape the callers use — the two
 conjuncts rather than the negated disjunction. -/
-theorem faultDeliverOnCore_leaves_thread_not_runnable {lend : Bool} (st : SystemState)
+theorem faultDeliverOnCore_leaves_thread_not_runnable (st : SystemState)
     (tid : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (c : CoreId) :
-    tid ∉ (faultDeliverOnCore st tid f ctx c lend).1.scheduler.runQueueOnCore c ∧
-    (faultDeliverOnCore st tid f ctx c lend).1.scheduler.currentOnCore c ≠ some tid := by
-  have h := faultDeliverOnCore_not_dispatchable (lend := lend) st tid f ctx c
+    tid ∉ (faultDeliverOnCore st tid f ctx c).1.scheduler.runQueueOnCore c ∧
+    (faultDeliverOnCore st tid f ctx c).1.scheduler.currentOnCore c ≠ some tid := by
+  have h := faultDeliverOnCore_not_dispatchable st tid f ctx c
   unfold dispatchableOnCore at h
   exact ⟨fun hQ => h (Or.inl hQ), fun hC => h (Or.inr hC)⟩
 

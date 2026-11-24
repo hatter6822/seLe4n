@@ -275,7 +275,7 @@ saved registers (`hMsgs`), the receive takes the in-place writes, the
 rendezvous hands off no donation, and staging the receiver's message writes
 `performReceiveDelivered`'s state, the frame's
 words read from the sender's saved registers. -/
-theorem receiveTake_delivered_of_message {lend : Bool} (st : SystemState) (endpointId : SeLe4n.ObjId)
+theorem receiveTake_delivered_of_message (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
@@ -291,7 +291,7 @@ theorem receiveTake_delivered_of_message {lend : Bool} (st : SystemState) (endpo
     let f := Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext
       mi.length sTcb.ipcBadgeView
     endpointReceiveDualOnCore endpointId receiver replyId core st = (S4, .ok (s, W.2)) ∧
-      applyReceiveRendezvousHandoff S4 receiver s core lend = .ok S4 ∧
+      applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
       Architecture.stageDeliveredMessage S4
           receiver 0 =
         performReceiveDelivered st endpointId s sTcb.queueNextCode receiver core
@@ -381,7 +381,7 @@ theorem receiveTake_delivered_of_message {lend : Bool} (st : SystemState) (endpo
 /-- The take of a sender blocked by a routed capability-free send, not
 delivering a fault: as `receiveTake_delivered_of_message`, the WithCaps receive
 installing nothing. -/
-theorem receiveTake_delivered {lend : Bool} (st : SystemState) (endpointId : SeLe4n.ObjId) (ep : Endpoint)
+theorem receiveTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId) (ep : Endpoint)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB)
     (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
@@ -399,7 +399,7 @@ theorem receiveTake_delivered {lend : Bool} (st : SystemState) (endpointId : SeL
       mi.length sTcb.ipcBadgeView
     endpointReceiveDualWithCapsOnCore endpointId receiver replyId core st =
         (S4, .ok (s, { results := #[] }, W.2)) ∧
-      applyReceiveRendezvousHandoff S4 receiver s core lend = .ok S4 ∧
+      applyReceiveRendezvousHandoff S4 receiver s core = .ok S4 ∧
       Architecture.stageDeliveredMessage S4
           receiver 0 =
         performReceiveDelivered st endpointId s sTcb.queueNextCode receiver core

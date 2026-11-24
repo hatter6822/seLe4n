@@ -236,11 +236,11 @@ theorem CallerReady.updateTcb {st : SystemState} {t u : SeLe4n.ThreadId} {f : TC
 /-- **The fault delivery keeps the reply-waiter queues**, for a faulting thread
 `.ready` in IPC: it waits on no server, and no receive queue it meets has it at
 the head. -/
-theorem faultDeliverOnCore_preserves_replyWaitersConsistent_of_ready {lend : Bool} {st : SystemState}
+theorem faultDeliverOnCore_preserves_replyWaitersConsistent_of_ready {st : SystemState}
     {tid : SeLe4n.ThreadId} {f : Fault} {fctx : FaultContext} {c : CoreId}
     (hI : st.objects.invExt) (hC : st.replyWaitersConsistent) (hQ : queueHeadBlockedConsistent st)
-    (hRd : CallerReady st tid) : (faultDeliverOnCore st tid f fctx c lend).1.replyWaitersConsistent :=
-  faultDeliverOnCore_preserves_replyWaitersConsistent (lend := lend) st tid f fctx c hI hC
+    (hRd : CallerReady st tid) : (faultDeliverOnCore st tid f fctx c).1.replyWaitersConsistent :=
+  faultDeliverOnCore_preserves_replyWaitersConsistent st tid f fctx c hI hC
     hRd.serverFree
     (fun eid ep r hE hH => ⟨(fun hEq => by
         subst hEq

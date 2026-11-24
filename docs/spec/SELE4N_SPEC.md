@@ -1360,10 +1360,10 @@ internal; nothing a thread writes names one.
     carries the context's label), which every kernel entry carries. A
     notification lends only where the context's label and the woken
     thread's are equal (`donationContextFlows`, owner decision D30); a Call,
-    a received Call and a fault lend the caller's context only where the
-    caller flows to it (`callLendAdmits`, `receiveLendAdmits`); where the
-    check refuses, the operation proceeds and lends nothing (seL4's "do
-    nothing" branch, D28). SchedContext_Bind binds a context heading a
+    a received Call and a fault lend the caller's context as seL4-MCS does,
+    with no check of their own: the caller carries the context's label
+    (`bindingLabelsEqual`), so D28's refusal was unreachable and SX19
+    (`v0.37.48`) deleted it with the `lend` argument it fed. SchedContext_Bind binds a context heading a
     reply stack, and a thread lending its own frame's context, as seL4
     does; the checked dispatch admits a stack's head only where the
     context's label flows to the thread (`schedContextBindLabelGate`, D25).
@@ -12391,9 +12391,10 @@ receive leg dequeues the receiver itself or its send queue's head, which is
 blocked on the endpoint (`endpointReceiveDualWithCapsOnCore_dequeued_labelEq`).
 SchedContext_Bind reads its label gate, the notification lend its check, and
 the declassified signal's lend the same check under the lifted context the
-dispatch runs it with.  The Call lend's refusal is unreachable under the
-invariant (the caller carries the context's label), and SX19 deletes it with
-the `lend` argument it feeds.  The notification lend's check also needs the
+dispatch runs it with.  The Call lend's refusal was unreachable under the
+invariant (the caller carries the context's label), and SX19 (`v0.37.48`)
+deleted it with the `lend` argument it fed: every Call, fault and receive-take
+lend is seL4's.  The notification lend's check also needs the
 thread the signal wakes to carry the notification's label
 (`notificationLabelsCoherent`), which the boot checks and no entry carries
 yet, so it stays until SX20 carries that coherence and SX21 deletes it (D43).

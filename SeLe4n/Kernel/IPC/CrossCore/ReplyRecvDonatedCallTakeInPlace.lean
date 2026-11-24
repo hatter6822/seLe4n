@@ -544,69 +544,53 @@ end Commute
 
 section LendInPlace
 
-/-- **A taken caller's context lent in place, at the lend admission's answer**:
-admitted (`lend = true`), the donation of `scS` from `donor` to `donee` and its
-replenishment migrated from `donorHome` to `doneeHome`; refused, nothing (the
-specification's `applyRendezvousCallDonation` at `lend := false`,
-`applyRendezvousCallDonation_lendInPlace`).  A Bool, so no closure is built. -/
-@[inline] def lendSchedContextInPlaceWhen (lend : Bool) (X : SystemState)
+/-- **A taken caller's context lent in place**: the donation of `scS` from
+`donor` to `donee` and its replenishment migrated from `donorHome` to
+`doneeHome` (the specification's `applyRendezvousCallDonation`,
+`applyRendezvousCallDonation_lendInPlace`). -/
+@[inline] def lendSchedContextInPlace (X : SystemState)
     (donor donee : SeLe4n.ThreadId) (scS : SeLe4n.SchedContextId) (donorHome doneeHome : CoreId) :
     SystemState :=
-  if lend then
-    migrateSchedContextReplenishment (donateSchedContextInPlace X donor donee scS) scS donorHome
-      doneeHome
-  else X
+  migrateSchedContextReplenishment (donateSchedContextInPlace X donor donee scS) scS donorHome
+    doneeHome
 
-/-- **The rendezvous donation at the admission's answer, in place**: where the
-admitted lend is the in-place donation and migration, the lend at either answer
-is `lendSchedContextInPlaceWhen`. -/
-theorem applyRendezvousCallDonation_lendInPlace {lend : Bool} {X : SystemState}
+/-- **The rendezvous donation, in place**: where the lend is the in-place
+donation and migration, it is `lendSchedContextInPlace`. -/
+theorem applyRendezvousCallDonation_lendInPlace {X : SystemState}
     {receiver donor : SeLe4n.ThreadId} {scS : SeLe4n.SchedContextId} {donorHome doneeHome : CoreId}
     (h : applyRendezvousCallDonation X receiver donor =
       .ok (migrateSchedContextReplenishment (donateSchedContextInPlace X donor receiver scS) scS
         donorHome doneeHome)) :
-    applyRendezvousCallDonation X receiver donor lend =
-      .ok (lendSchedContextInPlaceWhen lend X donor receiver scS donorHome doneeHome) := by
-  cases lend with
-  | true => exact h
-  | false => exact applyRendezvousCallDonation_false_of_ok h
+    applyRendezvousCallDonation X receiver donor =
+      .ok (lendSchedContextInPlace X donor receiver scS donorHome doneeHome) := h
 
-theorem lendSchedContextInPlaceWhen_msg (r : SeLe4n.ThreadId)
+theorem lendSchedContextInPlace_msg (r : SeLe4n.ThreadId)
     (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile) (μ : Option IpcMessage → Option IpcMessage)
-    (π : Nat → Nat) (lend : Bool) (X : SystemState) (donor donee : SeLe4n.ThreadId)
+    (π : Nat → Nat) (X : SystemState) (donor donee : SeLe4n.ThreadId)
     (scS : SeLe4n.SchedContextId) (donorHome doneeHome : CoreId) (hNo : X.objects.noResizeDue)
     (hC : r ≠ donor) :
-    lendSchedContextInPlaceWhen lend (X.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)) donor donee
+    lendSchedContextInPlace (X.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)) donor donee
         scS donorHome doneeHome =
-      (lendSchedContextInPlaceWhen lend X donor donee scS donorHome doneeHome).mapTcbInPlace r
+      (lendSchedContextInPlace X donor donee scS donorHome doneeHome).mapTcbInPlace r
         (TCB.withMessageSlots ρ μ π) := by
-  cases lend with
-  | false => rfl
-  | true =>
-    simp only [lendSchedContextInPlaceWhen, ↓reduceIte]
-    rw [donateSchedContextInPlace_msg r ρ μ π X donor donee scS hNo hC,
-      migrateSchedContextReplenishment_mapTcbInPlace]
+  simp only [lendSchedContextInPlace]
+  rw [donateSchedContextInPlace_msg r ρ μ π X donor donee scS hNo hC,
+    migrateSchedContextReplenishment_mapTcbInPlace]
 
-theorem lendSchedContextInPlaceWhen_noResizeDue (lend : Bool) (X : SystemState)
+theorem lendSchedContextInPlace_noResizeDue (X : SystemState)
     (donor donee : SeLe4n.ThreadId) (scS : SeLe4n.SchedContextId) (donorHome doneeHome : CoreId)
     (hNo : X.objects.noResizeDue) :
-    (lendSchedContextInPlaceWhen lend X donor donee scS donorHome doneeHome).objects.noResizeDue := by
-  cases lend with
-  | false => exact hNo
-  | true =>
-    exact migrateSchedContextReplenishment_noResizeDue _ scS donorHome doneeHome
-      (donateSchedContextInPlace_noResizeDue X donor donee scS hNo)
+    (lendSchedContextInPlace X donor donee scS donorHome doneeHome).objects.noResizeDue :=
+  migrateSchedContextReplenishment_noResizeDue _ scS donorHome doneeHome
+    (donateSchedContextInPlace_noResizeDue X donor donee scS hNo)
 
-theorem lendSchedContextInPlaceWhen_ipcStateCarried (lend : Bool) (X : SystemState)
+theorem lendSchedContextInPlace_ipcStateCarried (X : SystemState)
     (donor donee : SeLe4n.ThreadId) (scS : SeLe4n.SchedContextId) (donorHome doneeHome : CoreId)
     (hNo : X.objects.noResizeDue) :
-    ipcStateCarried X (lendSchedContextInPlaceWhen lend X donor donee scS donorHome doneeHome) := by
-  cases lend with
-  | false => exact ipcStateCarried_refl X
-  | true =>
-    intro t x hx
-    obtain ⟨x1, hx1, e1⟩ := donateSchedContextInPlace_ipcStateCarried X donor donee scS hNo t x hx
-    exact ⟨x1, (migrateSchedContextReplenishment_getTcb? _ scS donorHome doneeHome t).trans hx1, e1⟩
+    ipcStateCarried X (lendSchedContextInPlace X donor donee scS donorHome doneeHome) := by
+  intro t x hx
+  obtain ⟨x1, hx1, e1⟩ := donateSchedContextInPlace_ipcStateCarried X donor donee scS hNo t x hx
+  exact ⟨x1, (migrateSchedContextReplenishment_getTcb? _ scS donorHome doneeHome t).trans hx1, e1⟩
 
 end LendInPlace
 
@@ -694,7 +678,7 @@ theorem replyRecvDonatedCallTakes_spec {st : SystemState} {epId : SeLe4n.ObjId}
   simp only [TCB.replyObject, beq_iff_eq.mp hRO, SeLe4n.ReplyId.ofOptCode]
 
 /-- The reply leg's writes, the pop and its settle, the receive leg's take of
-the queued caller `s`, the lend of `s`'s context at the admission's answer (`lendSchedContextInPlaceWhen`) to the server, its
+the queued caller `s`, the lend of `s`'s context (`lendSchedContextInPlace`) to the server, its
 replenishment migrated from `donorHome` to `doneeHome`, the server's priority
 walk, then the answered caller's frame, read from the server's saved registers
 `rf`.  Out of line from the server's own frame (`writeReceiverMessageFrame`):
@@ -702,11 +686,11 @@ walk, then the answered caller's frame, read from the server's saved registers
 frame's write finds it unshared. -/
 @[noinline] def replyRecvDonatedCallTakeLegs (st : SystemState) (c tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (home : CoreId) (epId : SeLe4n.ObjId)
-    (s : SeLe4n.ThreadId) (nextCode : Nat) (scS : SeLe4n.SchedContextId) (lend : Bool)
+    (s : SeLe4n.ThreadId) (nextCode : Nat) (scS : SeLe4n.SchedContextId)
     (donorHome doneeHome core : CoreId) (layout : SeLe4n.SyscallRegisterLayout)
     (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) : SystemState :=
   let Y := (PriorityInheritance.propagatePipChainCrossCore
-      (lendSchedContextInPlaceWhen lend (storeReceiveCallReady
+      (lendSchedContextInPlace (storeReceiveCallReady
           (popDonationSettledInPlace (storeReplyRendezvousReady st c tid rid) c tid scId home)
           epId s nextCode tid rid) s tid scS donorHome doneeHome) tid core).1
   writeDeliveredFrameIfReady Y c (Architecture.regMessageFrame layout rf len badge)
@@ -730,12 +714,12 @@ receiver is, unexpectedly, not ready. -/
 @[inline] def performReplyRecvDonatedCallTakeDelivered (st : SystemState)
     (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId)
     (home : CoreId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId) (nextCode : Nat)
-    (scS : SeLe4n.SchedContextId) (lend : Bool) (donorHome doneeHome core : CoreId)
+    (scS : SeLe4n.SchedContextId) (donorHome doneeHome core : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (sRf : SeLe4n.RegisterFile) (sLen : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool) : SystemState :=
   writeReceiverMessageFrame
-    (replyRecvDonatedCallTakeLegs st c tid rid scId home epId s nextCode scS lend donorHome
+    (replyRecvDonatedCallTakeLegs st c tid rid scId home epId s nextCode scS donorHome
       doneeHome core layout rf len badge) tid sRf sLen badgeWord badged
 
 end DonatedCallTake
@@ -758,7 +742,7 @@ leg and the pop leave in place (each read on the pre-state and carried by
 `popDonationSettled_callDonationGuard`), the checked arm's result is
 `performReplyRecvDonatedCallTakeDelivered`, every context, core and word it
 takes read on the pre-state. -/
-theorem replyRecvOnCore_donatedCallTake_delivered {lend : Bool} (st : SystemState) (epId : SeLe4n.ObjId)
+theorem replyRecvOnCore_donatedCallTake_delivered (st : SystemState) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (layout : SeLe4n.SyscallRegisterLayout)
     (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) (grant : Bool)
     (core : CoreId) (ct : TCB) (ep0 : SeLe4n.ObjId) (ep : Endpoint) (s : SeLe4n.ThreadId)
@@ -778,15 +762,14 @@ theorem replyRecvOnCore_donatedCallTake_delivered {lend : Bool} (st : SystemStat
       (SeLe4n.Kernel.Architecture.RegisterDecode.blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext) SeLe4n.arm64DefaultLayout sTcb.registerContext 32 =
       .call capAddr mi) :
     (match endpointReplyRecvOnCore epId tid rid c
-        { registers := Architecture.regMessageBody layout rf len, badge := badge } grant core st
-        lend with
+        { registers := Architecture.regMessageBody layout rf len, badge := badge } grant core st with
       | .ok (summary, st') =>
           (.ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo) :
             Except KernelError (Unit × SystemState))
       | .error e => .error e) =
       .ok ((), performReplyRecvDonatedCallTakeDelivered st c tid rid
         ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) epId s sTcb.queueNextCode
-        ⟨sTcb.scBindingScCode - 1⟩ lend (determineTargetCore st s) (determineTargetCore st tid) core
+        ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s) (determineTargetCore st tid) core
         layout rf len badge sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge)
         sTcb.ipcBadged) := by
   generalize hM : ({ registers := Architecture.regMessageBody layout rf len, badge := badge } :
@@ -812,7 +795,7 @@ theorem replyRecvOnCore_donatedCallTake_delivered {lend : Bool} (st : SystemStat
   have hF' : sTcbP.ipcFaultSend = false := by rw [hKept.faultSend]; exact hF
   obtain ⟨hRecv, -, -, hCallT, hDonE⟩ := receiveCallDonatingTake_delivered _ epId ep tid rid core s
     sTcbP capAddr mi hEP hH hSP hGP hF' hR'
-  have hDonL := applyRendezvousCallDonation_lendInPlace (lend := lend) hDonE
+  have hDonL := applyRendezvousCallDonation_lendInPlace hDonE
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hXf := replyRecvReplyTransfer_of_inert none st tid c grant ct hTc (fun _ => hInert)
   have hRecS : recordedReplyServer? st c = some tid := by
@@ -865,19 +848,19 @@ theorem replyRecvOnCore_donatedCallTake_delivered {lend : Bool} (st : SystemStat
     sTcb.queueNextCode tid rid = R at hx hNoR ⊢
   have hNoRc : (R.mapTcbInPlace c (holdMessage msg)).objects.noResizeDue :=
     (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoR
-  rw [lendSchedContextInPlaceWhen_msg tid id _ id lend _ s tid scS _ _ hNoRc hst.symm,
-    lendSchedContextInPlaceWhen_msg c id _ id lend R s tid scS _ _ hNoR hcs]
-  have hNoM := lendSchedContextInPlaceWhen_noResizeDue lend R s tid scS (determineTargetCore st s)
+  rw [lendSchedContextInPlace_msg tid id _ id _ s tid scS _ _ hNoRc hst.symm,
+    lendSchedContextInPlace_msg c id _ id R s tid scS _ _ hNoR hcs]
+  have hNoM := lendSchedContextInPlace_noResizeDue R s tid scS (determineTargetCore st s)
     (determineTargetCore st tid) hNoR
   rw [propagatePipChainCrossCore_msg _ _ _ _ _ _ _ ?_, propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoM]
   rotate_left
   · exact (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoM
   -- the caller's state carried to the walk's
-  obtain ⟨x1, hx2, e1⟩ := lendSchedContextInPlaceWhen_ipcStateCarried lend R s tid scS
+  obtain ⟨x1, hx2, e1⟩ := lendSchedContextInPlace_ipcStateCarried R s tid scS
     (determineTargetCore st s) (determineTargetCore st tid) hNoR s x hx
   obtain ⟨x', hx', e'⟩ := propagatePipChainCrossCore_ipcStateCarried _ tid core hNoM s x1 hx2
   have hNoY := propagatePipChainCrossCore_noResizeDue _ tid core hNoM
-  generalize (PriorityInheritance.propagatePipChainCrossCore (lendSchedContextInPlaceWhen lend
+  generalize (PriorityInheritance.propagatePipChainCrossCore (lendSchedContextInPlace
     R s tid scS (determineTargetCore st s) (determineTargetCore st tid)) tid core).1 = Y0
     at hx' hNoY ⊢
   rw [show ∀ m : IpcMessage, TCB.withMessageSlots id (fun _ => some m) id = holdMessage m from

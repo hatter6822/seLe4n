@@ -124,16 +124,16 @@ theorem replyRecvHolderDeschedule_objectsAgreeOffRunLinks (tid holder : SeLe4n.T
 run-queue links alone, so the lend and its admission read the same thread
 records), or the deschedule, then the priority walk. -/
 theorem replyRecvPostReceiveDonation_preserves_lendingLabelsEqual {ctx : LabelingContext}
-    {lend : Bool} {tid recordedServer nextThread : SeLe4n.ThreadId} {serverCore : CoreId}
+    {tid recordedServer nextThread : SeLe4n.ThreadId} {serverCore : CoreId}
     {returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {st st' : SystemState}
     (hP : LendersPremises st)
     (hPH : ∀ sc holder, returned? = some (sc, holder) →
       LendersPremises (replyRecvHolderDeschedule tid holder st))
     (hIn : lendingLabelsEqual ctx st)
-    (hFlow : lend = true → rendezvousDequeuedCall st nextThread = true →
+    (hFlow : rendezvousDequeuedCall st nextThread = true →
       ∀ s, callDonationSchedContext? st nextThread tid = some s →
       ctx.threadLabelOf tid = ctx.threadLabelOf nextThread)
-    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st lend
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
       = .ok ((), st')) :
     lendingLabelsEqual ctx st' := by
   unfold replyRecvPostReceiveDonation at h
@@ -144,7 +144,7 @@ theorem replyRecvPostReceiveDonation_preserves_lendingLabelsEqual {ctx : Labelin
       · cases h
       rename_i st2 hD
       cases h
-      have hD' : applyReceiveRendezvousDonation st tid nextThread lend = .ok st2 := by
+      have hD' : applyReceiveRendezvousDonation st tid nextThread = .ok st2 := by
         unfold applyReceiveRendezvousDonation; rw [hCall]; exact hD
       have h1 := applyReceiveRendezvousDonation_preserves_lendingLabelsEqual hP hIn hFlow hD'
       exact LendersStage.of_kept (chainObjectsKept.propagatePipChainCrossCore _ _ _ _
@@ -166,10 +166,10 @@ theorem replyRecvPostReceiveDonation_preserves_lendingLabelsEqual {ctx : Labelin
       have hCallX : rendezvousDequeuedCall (replyRecvHolderDeschedule tid holder st) nextThread
           = true := by rw [rendezvousDequeuedCall_of_objectsAgreeOffRunLinks hRL]; exact hCall
       have hD' : applyReceiveRendezvousDonation (replyRecvHolderDeschedule tid holder st) tid
-          nextThread lend = .ok st2 := by
+          nextThread = .ok st2 := by
         unfold applyReceiveRendezvousDonation; rw [hCallX]; exact hD
       have h1 := applyReceiveRendezvousDonation_preserves_lendingLabelsEqual hPX hInX
-        (fun hL _ s hS => hFlow hL hCall s
+        (fun _ s hS => hFlow hCall s
           (callDonationSchedContext?_some_of_sameSchedContextBindings
             (sameSchedContextBindings.of_objectsAgreeOffRunLinks hRL) nextThread tid s hS)) hD'
       exact LendersStage.of_kept (chainObjectsKept.propagatePipChainCrossCore _ _ _ _
@@ -205,7 +205,7 @@ reply's recorded caller, read at the pre-reply state through
 reply's capability transfer, the return, the receive leg, the lend (its label
 equation from the receive gate `hG` and the waiters `hW`), the priority
 hand-off and the answer to the replied-to caller. -/
-theorem endpointReplyRecvAnsweringOnCore_lendersStage {ctx : LabelingContext} {lend : Bool}
+theorem endpointReplyRecvAnsweringOnCore_lendersStage {ctx : LabelingContext}
     {answer : Option Architecture.FaultReplyOutcome} {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool}
     {c : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
@@ -213,7 +213,7 @@ theorem endpointReplyRecvAnsweringOnCore_lendersStage {ctx : LabelingContext} {l
     (hQ : queueHeadBlockedConsistent st) (hReady : ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
     (hW : endpointWaitersLabelsEqual ctx st) (hG : ctx.threadLabelOf tid = ctx.endpointLabelOf epId)
     (hP : ReplyRecvLendersPremises st answer epId tid rid prevCaller msg grant c)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant c st lend
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant c st
       = .ok (summary, st')) :
     LendersStage ctx st st' := by
   intro hF
@@ -275,7 +275,7 @@ theorem endpointReplyRecvAnsweringOnCore_lendersStage {ctx : LabelingContext} {l
     _ FR.invExt hChainR S1
   rw [hRecv] at h1
   have h2 := replyRecvPostReceiveDonation_preserves_lendingLabelsEqual hP3 hPH h1
-    (fun _ _ _ _ => hEq) hPost
+    (fun _ _ _ => hEq) hPost
   have hI3 := (RecordsFrame.replyRecvPostReceiveDonation hP3.invExt hPost).invExt
   have F4 := LendersFrame.applyReceiveLegPipHandoff st3 tid nextThread
     ((recordedReplyServer? st prevCaller).getD tid) c hI3
@@ -283,7 +283,7 @@ theorem endpointReplyRecvAnsweringOnCore_lendersStage {ctx : LabelingContext} {l
 
 /-- **The `.replyRecv` arm's transition carries equal lending labels**: the
 answering leg at the answer the replied-to caller's fault record selects. -/
-theorem replyRecvTransferOnCore_lendersStage {ctx : LabelingContext} {lend : Bool}
+theorem replyRecvTransferOnCore_lendersStage {ctx : LabelingContext}
     {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
     {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage} {grant : Bool} {c : CoreId}
     {st st' : SystemState} {summary : CapTransferSummary}
@@ -293,7 +293,7 @@ theorem replyRecvTransferOnCore_lendersStage {ctx : LabelingContext} {lend : Boo
     (hP : ReplyRecvLendersPremises st (replyRecvCallerFaultAnswer? st prevCaller label msg)
       epId tid rid prevCaller
       (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant c)
-    (h : replyRecvTransferOnCore epId tid rid prevCaller label msg grant c st lend
+    (h : replyRecvTransferOnCore epId tid rid prevCaller label msg grant c st
       = .ok (summary, st')) :
     LendersStage ctx st st' := by
   unfold replyRecvTransferOnCore at h

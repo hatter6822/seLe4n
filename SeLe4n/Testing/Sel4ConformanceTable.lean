@@ -527,8 +527,7 @@ def sel4BehaviourRows : List BehaviourRow := [
     status := .implemented .notificationWait },
   { name := "call-lends-context",
     source := objectC "sendIPC (schedContext_donate)" "endpoint.c" 101,
-    status := .hardening .call
-      "flow gate: a caller lends only a context its own label flows to; the call goes on either way" },
+    status := .implemented .call },
   { name := "destroy-unbinds-context",
     source := objectC "finaliseCap (schedContext_unbindTCB)" "objecttype.c" 195,
     status := .implemented .cspaceDelete },

@@ -445,30 +445,19 @@ theorem schedLockSet_endpointCallOnCore_coversWrites (endpointId : SeLe4n.ObjId)
     (executingCore : CoreId) (st : SystemState)
     (S : LockSet) (hObjInv : st.objects.invExt)
     (hS : LockSet.ofList? (schedLockSet_endpointCallOnCore endpointId caller payload
-      executingCore st) = some S) (lend : Bool := true) :
+      executingCore st) = some S) :
     footprintCoversWrites S st
       (endpointCallCrossCoreDispatch endpointId caller payload
-        executingCore st lend).1 :=
+        executingCore st).1 :=
   footprintCoversWrites_of_confined S
     (endpointCallDispatchWriteSet endpointId caller payload
-      executingCore st
-      ++ endpointCallDispatchChainWriteSet endpointId caller payload executingCore st false)
+      executingCore st)
     (endpointCallDispatchReplenishCores endpointId caller payload
       executingCore st) st _ (LockSet.ofList?_pairs hS)
-    (observableSlotsConfinedToCores_mono (fun d hd => by
-        unfold endpointCallDispatchWriteSet at hd ⊢
-        cases lend with
-        | true => exact List.mem_append_left _ hd
-        | false =>
-          rcases List.mem_append.mp hd with h | h
-          · exact List.mem_append_left _ (List.mem_append_left _ h)
-          · exact List.mem_append_right _ h)
-      (endpointCallCrossCoreDispatch_confinedToCores endpointId caller payload
-        executingCore st hObjInv lend))
+    (endpointCallCrossCoreDispatch_confinedToCores endpointId caller payload
+      executingCore st hObjInv)
     (fun d hd => endpointCallCrossCoreDispatch_replenishQueueOnCore_ne endpointId caller payload
-      executingCore st d lend (fun h => hd
-        (endpointCallDispatchReplenishCores_subset_true endpointId caller payload executingCore
-          st lend d h)))
+      executingCore st d hd)
 
 /-- **WS-RR RR8.12 Cut C6d**: `.reply`'s footprint covers its writes — of the
 **arm**, `replyTransferOnCore`, not of the dispatch beneath it.
@@ -520,7 +509,7 @@ declared arm whose walk sits outside its run segment.
 The replenish half is the four-stage composition: the pop's pair, the block path's
 pair, the re-donation's pair, each read at the state its own stage runs on, with
 the tail writing no replenish queue at all. -/
-theorem schedLockSet_endpointReplyRecvOnCore_coversWrites {lend : Bool}
+theorem schedLockSet_endpointReplyRecvOnCore_coversWrites
     {answer : Option Architecture.FaultReplyOutcome} (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
     (msg : IpcMessage) (grant : Bool)
@@ -532,7 +521,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_coversWrites {lend : Bool}
       (replyRecvHandoffReplenishCores answer endpointId receiver replyId prevCaller msg grant
         executingCore st)) = some S)
     (hStep : endpointReplyRecvAnsweringOnCore answer endpointId receiver replyId prevCaller msg
-      grant executingCore st lend = .ok (summary, st')) :
+      grant executingCore st = .ok (summary, st')) :
     footprintCoversWrites S st st' :=
   footprintCoversWrites_of_confined S
     (endpointReplyRecvAnsweringWriteSet answer endpointId receiver replyId prevCaller msg grant
@@ -547,7 +536,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_coversWrites {lend : Bool}
 /-- The `.replyRecv` arm's transition is covered by its declared footprint: the
 composite at the answer the caller's fault record selects, so a faulted caller's
 restart or abandon lands on the cores `replyRecvAnswerCores` names. -/
-theorem schedLockSet_replyRecvTransferOnCore_coversWrites {lend : Bool} (endpointId : SeLe4n.ObjId)
+theorem schedLockSet_replyRecvTransferOnCore_coversWrites (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
     (label : Nat) (msg : IpcMessage) (grant : Bool)
     (executingCore : CoreId) (st st' : SystemState)
@@ -555,7 +544,7 @@ theorem schedLockSet_replyRecvTransferOnCore_coversWrites {lend : Bool} (endpoin
     (hS : LockSet.ofList? (schedLockSet_replyRecvTransferOnCore endpointId receiver replyId
       prevCaller label msg grant executingCore st) = some S)
     (hStep : replyRecvTransferOnCore endpointId receiver replyId prevCaller label msg grant
-      executingCore st lend = .ok (summary, st')) :
+      executingCore st = .ok (summary, st')) :
     footprintCoversWrites S st st' :=
   schedLockSet_endpointReplyRecvOnCore_coversWrites endpointId receiver replyId prevCaller _ grant
     executingCore st st' summary S hObjInv hS hStep
@@ -572,18 +561,18 @@ post-donation state, which is exactly how the arm composes
 (`applyReceiveRendezvousHandoff_ok_decompose`); the replenish segment is the
 donation's pair, and the walk moves no scheduling context
 (`propagatePipChainCrossCore_replenishQueueOnCore`). -/
-theorem schedLockSet_endpointReceiveOnCore_coversWrites {lend : Bool} (endpointId : SeLe4n.ObjId)
+theorem schedLockSet_endpointReceiveOnCore_coversWrites (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (executingCore : CoreId) (st st1 st' : SystemState) (dequeued : SeLe4n.ThreadId)
     (summary : CapTransferSummary) (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet)
     (hObjInv : st.objects.invExt) (hHeads : queueHeadBlockedConsistent st)
     (hS : LockSet.ofList? (schedLockSet_endpointReceiveOnCore st endpointId receiver replyId executingCore) = some S)
     (hLeg : endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st = (st1, .ok (dequeued, summary, sgi)))
-    (hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore lend = .ok st') :
+    (hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore = .ok st') :
     footprintCoversWrites S st st' := by
   obtain ⟨stDon, hDon, hEq⟩ :=
     applyReceiveRendezvousHandoff_ok_decompose st1 st' receiver dequeued executingCore hHand
-  have hChain : endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore lend
+  have hChain : endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore
       = if rendezvousDequeuedCall st1 dequeued then
           pipChainWriteSet stDon receiver executingCore stDon.objects.size
         else [] := by
@@ -603,18 +592,13 @@ theorem schedLockSet_endpointReceiveOnCore_coversWrites {lend : Bool} (endpointI
       hObjInv hHeads hd hLeg hDon
   refine footprintCoversWrites_of_confined S
     (endpointReceiveDualWriteSet st endpointId executingCore
-      ++ endpointReceiveHandoffChainCores st endpointId receiver replyId executingCore)
+      ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore)
     (endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome) st st'
     (LockSet.ofList?_pairs hS) ?_ ?_
   · refine observableSlotsConfinedToCores_mono (cs := endpointReceiveDualWriteSet st endpointId
       executingCore ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId
-      executingCore lend) ?_ ?_
-    · intro c hc
-      rcases List.mem_append.mp hc with h | h
-      · exact List.mem_append_left _ h
-      · exact List.mem_append_right _
-          (endpointReceiveHandoffChainWriteSet_subset_cores st endpointId receiver replyId
-            executingCore lend c h)
+      executingCore) ?_ ?_
+    · exact fun c hc => hc
     rw [hChain]
     subst hEq
     cases hCall : rendezvousDequeuedCall st1 dequeued
@@ -642,14 +626,14 @@ names** (`endpointReceiveLegReplenishCores`): the leg's own pre-receive return
 and the donation of the `Call` it dequeues; the chain walk moves none
 (`propagatePipChainCrossCore_replenishQueueOnCore`).  No queue-head premise: the
 segment is read off the leg's own run, not predicted from the endpoint. -/
-theorem endpointReceiveLegAndHandoff_replenishQueueOnCore_ne {lend : Bool} (endpointId : SeLe4n.ObjId)
+theorem endpointReceiveLegAndHandoff_replenishQueueOnCore_ne (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
     (st st1 st' : SystemState) (dequeued : SeLe4n.ThreadId) (summary : CapTransferSummary)
     (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId) (hObjInv : st.objects.invExt)
     (hne : c ∉ endpointReceiveLegReplenishCores st endpointId receiver replyId executingCore)
     (hLeg : endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st =
       (st1, .ok (dequeued, summary, sgi)))
-    (hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore lend = .ok st') :
+    (hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore = .ok st') :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold endpointReceiveLegReplenishCores at hne
   rw [hLeg] at hne
@@ -696,7 +680,7 @@ theorem footprintCoversWrites_receiveLegState (S : LockSet) (st : SystemState)
 which moves no reservation, then the receive's return (`receiveLegState`), which
 moves the one its purge names, then the receive's leg and hand-off on the state
 it leaves, which move the ones the leg re-run there names. -/
-theorem schedLockSet_receiveCancellingHolder_coversWrites {lend : Bool} (endpointId : SeLe4n.ObjId)
+theorem schedLockSet_receiveCancellingHolder_coversWrites (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
     (holder : SeLe4n.ThreadId) (st st1 st' : SystemState) (dequeued : SeLe4n.ThreadId)
     (summary : CapTransferSummary) (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet)
@@ -709,7 +693,7 @@ theorem schedLockSet_receiveCancellingHolder_coversWrites {lend : Bool} (endpoin
     (hLeg : endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore
       (receiveLegState (cancelReplyHolder st holder executingCore) receiver) =
         (st1, .ok (dequeued, summary, sgi)))
-    (hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore lend = .ok st') :
+    (hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore = .ok st') :
     footprintCoversWrites S st st' :=
   footprintCoversWrites_of_allCores S _ st st' hS fun d hd => by
     simp only [List.mem_append, not_or] at hd

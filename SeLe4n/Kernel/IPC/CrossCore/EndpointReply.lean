@@ -6154,11 +6154,11 @@ writes, so `schedLockSet_endpointReceiveOnCore_coversWrites` is stated of the
 arm's step and not of its donation half. -/
 def endpointReceiveHandoffChainWriteSet (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (executingCore : CoreId) (lend : Bool := true) : List CoreId :=
+    (executingCore : CoreId) : List CoreId :=
   match endpointReceiveDualWithCapsOnCore endpointId receiver replyId executingCore st with
   | (_, .error _) => []
   | (st1, .ok (dequeued, _, _)) =>
-    match applyReceiveRendezvousDonation st1 receiver dequeued lend with
+    match applyReceiveRendezvousDonation st1 receiver dequeued with
     | .error _ => []
     | .ok stDon =>
       if rendezvousDequeuedCall st1 dequeued then
@@ -6166,36 +6166,13 @@ def endpointReceiveHandoffChainWriteSet (st : SystemState) (endpointId : SeLe4n.
           stDon.objects.size
       else []
 
-/-- **The chain walk's cores at both answers of the lend admission.**  The
-checked receive lends the caller's context only where the caller's label flows
-to it (`receiveLendAdmits`); a footprint resolved without the labels names the
-walk at both answers, so it is one label-free footprint (a proven superset of
-the cores the arm writes at either answer, `endpointReceiveHandoffChainWriteSet_subset_cores`). -/
-def endpointReceiveHandoffChainCores (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (executingCore : CoreId) : List CoreId :=
-  endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore true
-    ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore false
-
-/-- The walk at either answer is among the footprint's chain cores. -/
-theorem endpointReceiveHandoffChainWriteSet_subset_cores (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (executingCore : CoreId) (lend : Bool) :
-    ∀ c ∈ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore lend,
-      c ∈ endpointReceiveHandoffChainCores st endpointId receiver replyId executingCore := by
-  intro c hc
-  unfold endpointReceiveHandoffChainCores
-  cases lend
-  · exact List.mem_append_right _ hc
-  · exact List.mem_append_left _ hc
-
 def schedLockSet_endpointReceiveOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (executingCore : CoreId) :
     List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores
     (endpointReceiveDualWriteSet st endpointId executingCore
-      ++ endpointReceiveHandoffChainCores st endpointId receiver replyId executingCore)
+      ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId executingCore)
     (endpointReceiveHandoffReplenishCores st endpointId receiver replyId.isSome)
 
 -- No `_write_only` / `_pairwise_le` restatement here, and that is deliberate: both

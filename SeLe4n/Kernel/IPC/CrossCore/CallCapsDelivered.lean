@@ -345,7 +345,7 @@ theorem callDispatchChecked_inPlace_transfer (ctx : LabelingContext) (st : Syste
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
     (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
     (hGr : payload.canLinkReply = true)
-    (hG : callWakesUnlentInPlace (callLendAdmits ctx st caller) st endpointId caller r rt rid
+    (hG : callWakesInPlace st endpointId caller r rt rid
       = true)
     (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true) :
@@ -357,7 +357,7 @@ theorem callDispatchChecked_inPlace_transfer (ctx : LabelingContext) (st : Syste
         ((PriorityInheritance.propagatePipChainCrossCore st'' r core).1, .ok (s, sgi))
       | .error e => (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core,
           .error e) := by
-  have hG' := callWakesUnlentInPlace_takesReply hG
+  have hG' := (callWakesInPlace_takesReply hG).1
   simp only [callTakesReplyInPlace, sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG'
   have hCRes : caller.isReserved = false := hG'.1.1.1.1.1.1.1.1.2
   have hRRes : r.isReserved = false := hG'.1.1.1.1.1.1.1.1.1.1.1.1.1.1
@@ -369,10 +369,10 @@ theorem callDispatchChecked_inPlace_transfer (ctx : LabelingContext) (st : Syste
       (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core) := by
     apply KeepsBindings.refl
     rw [storeCallRendezvous_eq_hold _ _ _ _ _ _ _ _ hNo
-      (callTakesReplyInPlace_ne (callWakesUnlentInPlace_takesReply hG))]
+      (callTakesReplyInPlace_ne ((callWakesInPlace_takesReply hG).1))]
     exact (SystemState.mapTcbInPlace_noResizeDue _ _ _).mpr
       (storeCallRendezvousReady_noResizeDue _ _ _ _ _ _ _ hNo)
-  obtain ⟨hEq, hDon⟩ := callRendezvous_inPlace_unlent st endpointId ep caller r rt rid payload msg
+  obtain ⟨hEq, hDon⟩ := callRendezvous_inPlace st endpointId ep caller r rt rid payload msg
     core hM hE hH hT hRid hGr hG
   obtain ⟨cv, hcv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff caller).mpr hCRes)
   obtain ⟨rv, hrv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff r).mpr hRRes)
@@ -383,8 +383,8 @@ theorem callDispatchChecked_inPlace_transfer (ctx : LabelingContext) (st : Syste
   obtain ⟨s, st'', hTr⟩ := receiveTransferCaps_ok (sendCapRequest st endpointId caller payload)
     (some endpointId) (receiverCapTarget? st r)
     (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core)
-  have hDon' := hDon.imp_left (callDonationSchedContext?_none_of_sameSchedContextBindings
-    (receiveTransferCaps_keepsBindings _ _ _ hK0 hTr).sameSchedContextBindings caller r)
+  have hDon' := callDonationSchedContext?_none_of_sameSchedContextBindings
+    (receiveTransferCaps_keepsBindings _ _ _ hK0 hTr).sameSchedContextBindings caller r hDon
   rw [hTr]
   unfold endpointCallCrossCoreDispatchChecked
   rw [if_pos hFlow]
@@ -400,11 +400,11 @@ theorem callDispatchChecked_inPlace_transfer (ctx : LabelingContext) (st : Syste
     simp only [receiveTransferCaps, Except.ok.injEq, Prod.mk.injEq] at hTr
     obtain ⟨rfl, rfl⟩ := hTr
     simp only [Option.isNone_none, ↓reduceIte]
-    rw [applyCallDonationOnCoreWhen_ok_self (by rw [hcv', hrv']; exact hDon')]
+    rw [applyCallDonationOnCore_ok_self_of_no_donation (by rw [hcv', hrv']; exact hDon)]
   | some q =>
     rw [hReq] at hTr
     simp only [Option.isNone_some, Bool.false_eq_true, ↓reduceIte, hTr]
-    rw [applyCallDonationOnCoreWhen_ok_self (by rw [hcv', hrv']; exact hDon')]
+    rw [applyCallDonationOnCore_ok_self_of_no_donation (by rw [hcv', hrv']; exact hDon')]
 
 /-! ## The call that links no reply, with a transfer -/
 

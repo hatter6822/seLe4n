@@ -16,8 +16,7 @@ import SeLe4n.Kernel.EndpointWaiters.ThreadLifecycle
 
 WS-SX SX8.  seL4's `handleFault`: the faulting thread's registers are spilled,
 then the fault is sent to its handler as a Call (`faultDeliverOnCore`), which
-lends the faulting thread's context where the admission passes
-(`callLendAdmits`, read on the spilled state) — or, with no handler or a
+lends the faulting thread's context — or, with no handler or a
 refused flow, the thread is suspended.  The lend reads the chain facts at the
 state the delivery runs from and at the state its rendezvous leaves
 (`FaultLendPremises`), as `Stage.lean` describes.  The handler Call's lend is a
@@ -105,21 +104,21 @@ handler's frame and the recorded fault.  The Call's lend reads the blocked
 receivers' labels (`hW`). -/
 theorem faultDeliverOnCore_preserves_lendingLabelsEqual {ctx : LabelingContext}
     (st : SystemState) (tid : SeLe4n.ThreadId) (f : Fault) (fctx : FaultContext) (c : CoreId)
-    (lend : Bool) (hP : FaultLendPremises st tid f fctx c) (hW : blockedReceiverLabelsEqual ctx st)
+    (hP : FaultLendPremises st tid f fctx c) (hW : blockedReceiverLabelsEqual ctx st)
     (hGate : ∀ tgt, resolveFaultHandler st tid = .ok tgt →
       ctx.threadLabelOf tid = ctx.endpointLabelOf tgt.endpoint)
     (hFlow : lendingLabelsEqual ctx st) :
-    lendingLabelsEqual ctx (faultDeliverOnCore st tid f fctx c lend).1 := by
+    lendingLabelsEqual ctx (faultDeliverOnCore st tid f fctx c).1 := by
   unfold faultDeliverOnCore
   split
   · exact LendersStage.of_kept (chainObjectsKept.faultSuspended st tid c _ hP.invExt) hFlow
   · rename_i tgt hRes
     dsimp only
     have hD := endpointCallCrossCoreDispatch_preserves_lendingLabelsEqual tgt.endpoint tid
-      (.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st lend hP.invExt hP.chain
+      (.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st hP.invExt hP.chain
       (hP.mid tgt hRes) hW hP.queueHeads (hGate tgt hRes) hFlow
     have hI := endpointCallCrossCoreDispatch_preserves_objects_invExt tgt.endpoint tid
-      (.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st hP.invExt lend
+      (.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st hP.invExt
     split
     · exact LendersStage.of_kept (chainObjectsKept.faultSuspended st tid c _ hP.invExt) hFlow
     · rename_i st' summary sgi? hEq
@@ -142,7 +141,7 @@ theorem faultDeliverOnCoreChecked_preserves_lendingLabelsEqual {ctx : LabelingCo
   · rename_i tgt hRes
     split
     · rename_i hG
-      refine faultDeliverOnCore_preserves_lendingLabelsEqual st tid f fctx c _ hP hW
+      refine faultDeliverOnCore_preserves_lendingLabelsEqual st tid f fctx c hP hW
         (fun tgt' hR' => ?_) hFlow
       rw [hRes] at hR'; cases hR'
       exact endpointFlowGate_implies_eq ctx _ _ _ hG

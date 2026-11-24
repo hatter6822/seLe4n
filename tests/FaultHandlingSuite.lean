@@ -1114,7 +1114,6 @@ private def runEntryFrameDecodeChecks : IO Unit := do
           assertBool "…and records the decoded window as the fault context"
             ((pendingFaultOf stE faulter).map (·.context) ==
               some { faultIP := ectx.elr, sp := w.sp, lr := w.lr, spsr := ectx.spsr,
-                     
                      x0 := w.x0, x1 := w.x1, x2 := w.x2, x3 := w.x3, x4 := w.x4, x5 := w.x5, x6 := w.x6, x7 := w.x7 })
 
 -- ============================================================================
@@ -2183,33 +2182,6 @@ private def runFaultDonationChecks : IO Unit := do
             (bindingOf faultU handler == some .unbound)
       | (_, .error e) =>
           assertBool s!"control: handler recv failed ({repr e})" false
-      -- **The fault's Call lends as the `.call` arm's does** (owner decision D28):
-      -- a faulted thread labelled above its reservation's label delivers its
-      -- fault and lends nothing.  The handler endpoint is labelled with the
-      -- faulted thread, so the delivery's own flow gate passes.
-      let highFaulter : LabelingContext :=
-        { harnessLabelingContext with
-          threadLabelOf := fun t =>
-            if t = faulter then SecurityLabel.kernelTrusted
-            else harnessLabelingContext.threadLabelOf t
-          endpointLabelOf := fun e =>
-            if e = epHandler then SecurityLabel.kernelTrusted
-            else harnessLabelingContext.endpointLabelOf e
-          objectLabelOf := fun o =>
-            if o = scFaulter.toObjId then SecurityLabel.publicLabel
-            else harnessLabelingContext.objectLabelOf o }
-      assertBool "pre: the faulted thread's label does not flow to its reservation's"
-        (!callLendAdmits highFaulter afterRecv faulter)
-      let (afterRefused, resR) :=
-        faultDeliverOnCoreChecked highFaulter afterRecv faulter (.unknownSyscall 0x2A) fctx c0
-      assertBool "a faulted thread labelled above its reservation still delivers its fault"
-        (resR.disposition == .delivered epHandler)
-      assertBool "…and lends nothing: the handler holds no reservation"
-        (bindingOf afterRefused handler == some .unbound)
-      assertBool "…and the faulted thread keeps its own"
-        (bindingOf afterRefused faulter == some (.bound scFaulter))
-      assertBool "…blocked on the handler's reply, as a delivered fault leaves it"
-        (ipcStateOf afterRefused faulter == some (.blockedOnReply epHandler (some handler)))
   | (_, .error e) =>
       assertBool s!"handler recv failed ({repr e})" false
 

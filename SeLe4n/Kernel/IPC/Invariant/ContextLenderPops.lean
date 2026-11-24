@@ -18,8 +18,8 @@ so it carries the lenders' flow with no label hypothesis.  The push makes a fram
 on no stack the context's new head: it adds a lender, the pushed frame's caller,
 which is the donor (`replyCallerLinkageReciprocal`), so it carries the flow
 exactly where the donor flows to the context's label
-(`donateSchedContext_preserves_lendingLabelsEqual`) — the fact the lend
-admission (`callLendAdmits`) checks before every lend.
+(`donateSchedContext_preserves_lendingLabelsEqual`) — the fact
+`bindingLabelsEqual` gives every lend (WS-SX SX19).
 -/
 
 namespace SeLe4n.Kernel

@@ -177,7 +177,7 @@ theorem receiveResolvedArm_lendersStage (ctx : LabelingContext) (decoded : Sysca
       hChainR hF
     rw [hRecv] at h1
     have h2 := applyReceiveRendezvousHandoff_preserves_lendingLabelsEqual hPM h1
-      (fun _ _ _ _ => hEq) hHand
+      (fun _ _ _ => hEq) hHand
     exact LendersStage.of_kept (chainObjectsKept.stageDeliveredMessage _ _ _
       (applyReceiveRendezvousHandoff_preserves_objects_invExt _ _ _ _ _ hPM.invExt hHand)) h2
   · cases h

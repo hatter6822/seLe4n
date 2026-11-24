@@ -469,71 +469,15 @@ theorem applyCallDonationOnCore_eq_of_sharedHome
     | none => rfl
     | some scId => simp only [migrateSchedContextReplenishment_noop]
 
-/-- **The call donation where the lend is admitted, nothing where it is not.**
-
-`lend` is the checked kernel's answer to "may this caller lend its context":
-the caller's label flows to its effective context's label
-(`callLendAdmits`, `IPC/Operations/CallLendLabel.lean`).  Where it may not,
-the call goes on and lends nothing, seL4-MCS's own "do nothing" branch of
-`reply_push`'s donation: the receiver keeps no context, exactly as after a call
-by a caller that holds none.  The ctx-free kernel lends wherever seL4 does
-(`lend := true`, `applyCallDonationOnCoreWhen_true`). -/
-def applyCallDonationOnCoreWhen (lend : Bool) (st : SystemState)
-    (callerVtid receiverVtid : SeLe4n.ValidThreadId) (donorHome doneeHome : CoreId) :
-    Except KernelError SystemState :=
-  if lend then applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome
-  else .ok st
-
-@[simp] theorem applyCallDonationOnCoreWhen_true (st : SystemState)
-    (callerVtid receiverVtid : SeLe4n.ValidThreadId) (donorHome doneeHome : CoreId) :
-    applyCallDonationOnCoreWhen true st callerVtid receiverVtid donorHome doneeHome =
-      applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome := rfl
-
-@[simp] theorem applyCallDonationOnCoreWhen_false (st : SystemState)
-    (callerVtid receiverVtid : SeLe4n.ValidThreadId) (donorHome doneeHome : CoreId) :
-    applyCallDonationOnCoreWhen false st callerVtid receiverVtid donorHome doneeHome =
-      .ok st := rfl
-
-/-- **A gated donation is the donation or nothing**: every consumer's frame and
-preservation obligation splits here, the donation arm by the ungated donation's
-lemma and the other by reflexivity. -/
-theorem applyCallDonationOnCoreWhen_cases {lend : Bool} {st st'' : SystemState}
+/-- **A call donation that lends nothing commits nothing**: where the call
+donates no context, the cross-core donation is the state it was handed. -/
+theorem applyCallDonationOnCore_ok_self_of_no_donation {st : SystemState}
     {callerVtid receiverVtid : SeLe4n.ValidThreadId} {donorHome doneeHome : CoreId}
-    (h : applyCallDonationOnCoreWhen lend st callerVtid receiverVtid donorHome doneeHome =
-      .ok st'') :
-    (lend = true ∧
-      applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') ∨
-      (lend = false ∧ st'' = st) := by
-  cases lend with
-  | true => exact Or.inl ⟨rfl, h⟩
-  | false => exact Or.inr ⟨rfl, (Except.ok.inj h).symm⟩
-
-/-- **A gated donation that lends nothing commits nothing**: where the call
-donates no context, or the lend is refused, the gated donation is the state it
-was handed. -/
-theorem applyCallDonationOnCoreWhen_ok_self {lend : Bool} {st : SystemState}
-    {callerVtid receiverVtid : SeLe4n.ValidThreadId} {donorHome doneeHome : CoreId}
-    (h : callDonationSchedContext? st callerVtid.val receiverVtid.val = none ∨ lend = false) :
-    applyCallDonationOnCoreWhen lend st callerVtid receiverVtid donorHome doneeHome = .ok st := by
-  rcases h with h | rfl
-  · unfold applyCallDonationOnCoreWhen applyCallDonationOnCore
-    rw [applyCallDonation_eq_ok_self_of_no_donation _ _ _ h]
-    simp only [h, ite_self]
-  · rfl
-
-/-- **A property the donation and the identity carry, the gated donation
-carries.** -/
-theorem applyCallDonationOnCoreWhen_induct (P : SystemState → Prop) {lend : Bool}
-    {st st'' : SystemState} {callerVtid receiverVtid : SeLe4n.ValidThreadId}
-    {donorHome doneeHome : CoreId}
-    (h : applyCallDonationOnCoreWhen lend st callerVtid receiverVtid donorHome doneeHome =
-      .ok st'')
-    (hId : P st)
-    (hDonate : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome =
-      .ok st'' → P st'') : P st'' := by
-  rcases applyCallDonationOnCoreWhen_cases h with ⟨_, h⟩ | ⟨_, rfl⟩
-  · exact hDonate h
-  · exact hId
+    (h : callDonationSchedContext? st callerVtid.val receiverVtid.val = none) :
+    applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st := by
+  unfold applyCallDonationOnCore
+  rw [applyCallDonation_eq_ok_self_of_no_donation _ _ _ h]
+  simp only [h]
 
 /-- WS-RR RR2.1 (decomposition): a successful cross-core call donation is the
 successful single-core donation, optionally followed by the migration. -/
@@ -808,40 +752,12 @@ which is what lets every result taken before OD3.6 survive on the states it held
 for.  `.invalidArgument` is reserved for a reserved (idle) thread id, which
 `ThreadId.toValid?` refuses and which no rendezvous can produce. -/
 def applyRendezvousCallDonation (st : SystemState)
-    (receiver donor : SeLe4n.ThreadId) (lend : Bool := true) : Except KernelError SystemState :=
+    (receiver donor : SeLe4n.ThreadId) : Except KernelError SystemState :=
   match donor.toValid?, receiver.toValid? with
   | some donorV, some receiverV =>
-      applyCallDonationOnCoreWhen lend st donorV receiverV
+      applyCallDonationOnCore st donorV receiverV
         (determineTargetCore st donor) (determineTargetCore st receiver)
   | _, _ => .error (.invalidArgument 0)
-
-/-- **The rendezvous donation at either answer of the lend admission**: lent,
-it is the donation; refused, it commits nothing. -/
-theorem applyRendezvousCallDonation_cases {st st' : SystemState}
-    {receiver donor : SeLe4n.ThreadId} {lend : Bool}
-    (h : applyRendezvousCallDonation st receiver donor lend = .ok st') :
-    applyRendezvousCallDonation st receiver donor = .ok st' ∨ st' = st := by
-  cases lend with
-  | true => exact Or.inl h
-  | false =>
-    right
-    unfold applyRendezvousCallDonation at h
-    split at h
-    · simp only [applyCallDonationOnCoreWhen_false, Except.ok.injEq] at h
-      exact h.symm
-    · cases h
-
-/-- **A refused lend commits nothing where the lend would have committed**: a
-rendezvous whose donation succeeds at an admitted lend is, at a refused one, the
-state it was handed. -/
-theorem applyRendezvousCallDonation_false_of_ok {st st' : SystemState}
-    {receiver donor : SeLe4n.ThreadId}
-    (h : applyRendezvousCallDonation st receiver donor = .ok st') :
-    applyRendezvousCallDonation st receiver donor false = .ok st := by
-  unfold applyRendezvousCallDonation at h ⊢
-  cases hd : donor.toValid? <;> cases hr : receiver.toValid? <;>
-    simp only [hd, hr, reduceCtorEq] at h ⊢
-  rfl
 
 /-- **WS-OD OD5.5: `.replyRecv`'s (and `.receive`'s) re-donation is a PUSH at
 every chain depth.**
@@ -931,17 +847,17 @@ theorem rendezvousDequeuedCall_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
 /-- **WS-OD OD3.6**: the guarded step — donate when the rendezvous dequeued a
 `Call`, and otherwise change nothing.  This is what a receiving arm calls. -/
 def applyReceiveRendezvousDonation (st : SystemState)
-    (receiver dequeued : SeLe4n.ThreadId) (lend : Bool := true) : Except KernelError SystemState :=
+    (receiver dequeued : SeLe4n.ThreadId) : Except KernelError SystemState :=
   if rendezvousDequeuedCall st dequeued then
-    applyRendezvousCallDonation st receiver dequeued lend
+    applyRendezvousCallDonation st receiver dequeued
   else
     .ok st
 
 /-- WS-OD OD3.6: a receive that dequeued no `Call` commits nothing at all. -/
 @[simp] theorem applyReceiveRendezvousDonation_of_no_call (st : SystemState)
     (receiver dequeued : SeLe4n.ThreadId)
-    (h : rendezvousDequeuedCall st dequeued = false) {lend : Bool} :
-    applyReceiveRendezvousDonation st receiver dequeued lend = .ok st := by
+    (h : rendezvousDequeuedCall st dequeued = false) :
+    applyReceiveRendezvousDonation st receiver dequeued = .ok st := by
   unfold applyReceiveRendezvousDonation
   rw [h]
   rfl
@@ -958,8 +874,8 @@ its footprint's licence transports the resolver's answer to. -/
 theorem applyReceiveRendezvousDonation_of_no_donation (st : SystemState)
     (receiver dequeued : SeLe4n.ThreadId) (dequeuedV receiverV : SeLe4n.ValidThreadId)
     (hDV : dequeued.toValid? = some dequeuedV) (hRV : receiver.toValid? = some receiverV)
-    (hNone : callDonationSchedContext? st dequeued receiver = none) {lend : Bool} :
-    applyReceiveRendezvousDonation st receiver dequeued lend = .ok st := by
+    (hNone : callDonationSchedContext? st dequeued receiver = none) :
+    applyReceiveRendezvousDonation st receiver dequeued = .ok st := by
   unfold applyReceiveRendezvousDonation
   cases hCall : rendezvousDequeuedCall st dequeued with
   | false => simp only [Bool.false_eq_true, if_false]
@@ -968,11 +884,7 @@ theorem applyReceiveRendezvousDonation_of_no_donation (st : SystemState)
     unfold applyRendezvousCallDonation
     rw [hDV, hRV]
     simp only []
-    cases lend with
-    | false => rfl
-    | true =>
-    unfold applyCallDonationOnCoreWhen applyCallDonationOnCore
-    simp only [↓reduceIte]
+    unfold applyCallDonationOnCore
     have hNoneV : callDonationSchedContext? st dequeuedV.val receiverV.val = none := by
       rw [SeLe4n.ThreadId.toValid?_some_val_eq dequeued dequeuedV hDV,
         SeLe4n.ThreadId.toValid?_some_val_eq receiver receiverV hRV]
@@ -980,25 +892,12 @@ theorem applyReceiveRendezvousDonation_of_no_donation (st : SystemState)
     rw [applyCallDonation_eq_ok_self_of_no_donation st dequeuedV receiverV hNoneV]
     simp only [hNoneV]
 
-/-- **A rendezvous that lends nothing commits nothing**: no context to donate,
-or the lend refused (`lend = false`). -/
-theorem applyReceiveRendezvousDonation_of_lendsNothing (st : SystemState)
-    (receiver dequeued : SeLe4n.ThreadId) (dequeuedV receiverV : SeLe4n.ValidThreadId)
-    (hDV : dequeued.toValid? = some dequeuedV) (hRV : receiver.toValid? = some receiverV)
-    {lend : Bool} (hNone : callDonationSchedContext? st dequeued receiver = none ∨ lend = false) :
-    applyReceiveRendezvousDonation st receiver dequeued lend = .ok st := by
-  rcases hNone with hNone | rfl
-  · exact applyReceiveRendezvousDonation_of_no_donation st receiver dequeued dequeuedV receiverV
-      hDV hRV hNone
-  · unfold applyReceiveRendezvousDonation applyRendezvousCallDonation
-    split <;> simp only [hDV, hRV, applyCallDonationOnCoreWhen_false]
-
 /-- WS-OD OD3.6: and on a `Call` rendezvous it is exactly the donation. -/
 @[simp] theorem applyReceiveRendezvousDonation_of_call (st : SystemState)
     (receiver dequeued : SeLe4n.ThreadId)
-    (h : rendezvousDequeuedCall st dequeued = true) {lend : Bool} :
-    applyReceiveRendezvousDonation st receiver dequeued lend
-      = applyRendezvousCallDonation st receiver dequeued lend := by
+    (h : rendezvousDequeuedCall st dequeued = true) :
+    applyReceiveRendezvousDonation st receiver dequeued
+      = applyRendezvousCallDonation st receiver dequeued := by
   unfold applyReceiveRendezvousDonation
   rw [h]
   rfl
@@ -1113,34 +1012,6 @@ theorem applyCallDonationOnCore_replenishQueueOnCore_ne
       doneeHome c (Ne.symm hFrom) (Ne.symm hTo),
       applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hDon]; rfl
 
-/-- The gated donation's replenish-queue frame where the gated resolver lends
-nothing. -/
-theorem applyCallDonationOnCoreWhen_replenishQueueOnCore_of_no_donation (lend : Bool)
-    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
-    (donorHome doneeHome : CoreId)
-    (hNone : callLendSchedContext? lend st callerVtid.val receiverVtid.val = none)
-    (h : applyCallDonationOnCoreWhen lend st callerVtid receiverVtid donorHome doneeHome =
-      .ok st'')
-    (c : CoreId) :
-    st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
-  rcases applyCallDonationOnCoreWhen_cases h with ⟨rfl, h⟩ | ⟨_, rfl⟩
-  · exact applyCallDonationOnCore_replenishQueueOnCore_of_no_donation st st'' callerVtid
-      receiverVtid donorHome doneeHome hNone h c
-  · rfl
-
-/-- The gated donation's replenish-queue frame off the two homes. -/
-theorem applyCallDonationOnCoreWhen_replenishQueueOnCore_ne (lend : Bool)
-    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
-    (donorHome doneeHome c : CoreId)
-    (hFrom : c ≠ donorHome) (hTo : c ≠ doneeHome)
-    (h : applyCallDonationOnCoreWhen lend st callerVtid receiverVtid donorHome doneeHome =
-      .ok st'') :
-    st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
-  rcases applyCallDonationOnCoreWhen_cases h with ⟨_, h⟩ | ⟨_, rfl⟩
-  · exact applyCallDonationOnCore_replenishQueueOnCore_ne st st'' callerVtid receiverVtid
-      donorHome doneeHome c hFrom hTo h
-  · rfl
-
 /-- **WS-RR RR8.12 Cut C2 (the licence)**: a successful hand-off whose resolver
 answers `some` **is** the single-core donation followed by the SM5.H migration between
 exactly the two cores `rendezvousCallDonationReplenishCores` names — so a footprint
@@ -1164,14 +1035,11 @@ theorem applyRendezvousCallDonation_ok_migrates
 moves no replenishment on any core — the single-core donation writes objects only,
 and the migration arm is not taken.  The empty segment is therefore exact rather
 than merely narrow. -/
-theorem applyRendezvousCallDonation_replenishQueueOnCore_of_no_donation {lend : Bool}
+theorem applyRendezvousCallDonation_replenishQueueOnCore_of_no_donation
     (st st'' : SystemState) (receiver donor : SeLe4n.ThreadId)
     (hNone : callDonationSchedContext? st donor receiver = none)
-    (h : applyRendezvousCallDonation st receiver donor lend = .ok st'') (c : CoreId) :
+    (h : applyRendezvousCallDonation st receiver donor = .ok st'') (c : CoreId) :
     st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
-  rcases applyRendezvousCallDonation_cases h with h | rfl
-  rotate_left
-  · rfl
   obtain ⟨donorV, receiverV, hDv, hRv, hCore⟩ :=
     applyRendezvousCallDonation_ok_decompose st st'' receiver donor h
   obtain ⟨st', hDon, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' donorV receiverV _ _ hCore
@@ -1190,14 +1058,11 @@ resolver declines; this says *where* it moves when it answers, which is what the
 replenish clause of `footprintCoversWrites` needs.  Neither implies the
 other, and both directions matter: the first keeps the empty segment exact, the
 second keeps the non-empty one true. -/
-theorem applyRendezvousCallDonation_replenishQueueOnCore_ne {lend : Bool} (st st'' : SystemState)
+theorem applyRendezvousCallDonation_replenishQueueOnCore_ne (st st'' : SystemState)
     (receiver donor : SeLe4n.ThreadId) (c : CoreId)
     (hne : c ∉ rendezvousCallDonationReplenishCores st receiver donor)
-    (h : applyRendezvousCallDonation st receiver donor lend = .ok st'') :
+    (h : applyRendezvousCallDonation st receiver donor = .ok st'') :
     st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
-  rcases applyRendezvousCallDonation_cases h with h | rfl
-  rotate_left
-  · rfl
   cases hDon : callDonationSchedContext? st donor receiver with
   | none =>
     exact applyRendezvousCallDonation_replenishQueueOnCore_of_no_donation st st'' receiver donor
@@ -1218,10 +1083,10 @@ theorem applyRendezvousCallDonation_replenishQueueOnCore_ne {lend : Bool} (st st
 donation writes no replenish queue outside `rendezvousCallDonationReplenishCores` —
 the FOOTPRINT's own segment.  The guarded form's `false` arm is the identity, so
 this is the unguarded frame plus one case. -/
-theorem applyReceiveRendezvousDonation_replenishQueueOnCore_ne {lend : Bool} (st st'' : SystemState)
+theorem applyReceiveRendezvousDonation_replenishQueueOnCore_ne (st st'' : SystemState)
     (receiver dequeued : SeLe4n.ThreadId) (c : CoreId)
     (hne : c ∉ rendezvousCallDonationReplenishCores st receiver dequeued)
-    (h : applyReceiveRendezvousDonation st receiver dequeued lend = .ok st'') :
+    (h : applyReceiveRendezvousDonation st receiver dequeued = .ok st'') :
     st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold applyReceiveRendezvousDonation at h
   by_cases hCall : rendezvousDequeuedCall st dequeued
@@ -1234,26 +1099,23 @@ theorem applyReceiveRendezvousDonation_replenishQueueOnCore_ne {lend : Bool} (st
 affinity, because the primitive it composes does and both home cores are read
 off the very state the donation runs on — the `rfl` instantiation of the
 primitive's two hypotheses. -/
-theorem applyRendezvousCallDonation_preserves_replenishQueueAffinityConsistent_smp {lend : Bool}
+theorem applyRendezvousCallDonation_preserves_replenishQueueAffinityConsistent_smp
     (st st'' : SystemState) (receiver donor : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hCons : replenishQueueAffinityConsistent_smp st)
-    (h : applyRendezvousCallDonation st receiver donor lend = .ok st'') :
+    (h : applyRendezvousCallDonation st receiver donor = .ok st'') :
     replenishQueueAffinityConsistent_smp st'' := by
-  rcases applyRendezvousCallDonation_cases h with h | rfl
-  rotate_left
-  · exact hCons
   obtain ⟨donorV, receiverV, hDv, hRv, hDon⟩ :=
     applyRendezvousCallDonation_ok_decompose st st'' receiver donor h
   exact applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
     st st'' donorV receiverV _ _ hObjInv hCons (by rw [hDv]) (by rw [hRv]) hDon
 
 /-- WS-OD OD3.6: and so does the guarded form, whose other arm changes nothing. -/
-theorem applyReceiveRendezvousDonation_preserves_replenishQueueAffinityConsistent_smp {lend : Bool}
+theorem applyReceiveRendezvousDonation_preserves_replenishQueueAffinityConsistent_smp
     (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hCons : replenishQueueAffinityConsistent_smp st)
-    (h : applyReceiveRendezvousDonation st receiver dequeued lend = .ok st'') :
+    (h : applyReceiveRendezvousDonation st receiver dequeued = .ok st'') :
     replenishQueueAffinityConsistent_smp st'' := by
   unfold applyReceiveRendezvousDonation at h
   cases hCall : rendezvousDequeuedCall st dequeued with
@@ -1344,9 +1206,9 @@ Total, and inert where it must be: on a receive that blocked, and on a plain
 every result taken before OD3.14 survives on the states it held for, exactly as
 OD3.6's donation did. -/
 def applyReceiveRendezvousHandoff (st : SystemState)
-    (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId) (lend : Bool := true) :
+    (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId) :
     Except KernelError SystemState :=
-  match applyReceiveRendezvousDonation st receiver dequeued lend with
+  match applyReceiveRendezvousDonation st receiver dequeued with
   | .error e => .error e
   | .ok stDon =>
       .ok (if rendezvousDequeuedCall st dequeued then
@@ -1357,8 +1219,8 @@ def applyReceiveRendezvousHandoff (st : SystemState)
 neither a donation nor a boost. -/
 @[simp] theorem applyReceiveRendezvousHandoff_of_no_call (st : SystemState)
     (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
-    (h : rendezvousDequeuedCall st dequeued = false) {lend : Bool} :
-    applyReceiveRendezvousHandoff st receiver dequeued executingCore lend = .ok st := by
+    (h : rendezvousDequeuedCall st dequeued = false) :
+    applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st := by
   unfold applyReceiveRendezvousHandoff
   rw [applyReceiveRendezvousDonation_of_no_call st receiver dequeued h]
   simp only [h, Bool.false_eq_true, if_false]
@@ -1368,9 +1230,8 @@ the chain walk from the receiver. -/
 theorem applyReceiveRendezvousHandoff_of_call (st stDon : SystemState)
     (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
     (hCall : rendezvousDequeuedCall st dequeued = true)
-    {lend : Bool}
-    (hDon : applyRendezvousCallDonation st receiver dequeued lend = .ok stDon) :
-    applyReceiveRendezvousHandoff st receiver dequeued executingCore lend =
+    (hDon : applyRendezvousCallDonation st receiver dequeued = .ok stDon) :
+    applyReceiveRendezvousHandoff st receiver dequeued executingCore =
       .ok (applyReceiverPipHandoff stDon receiver executingCore) := by
   unfold applyReceiveRendezvousHandoff
   rw [applyReceiveRendezvousDonation_of_call st receiver dequeued hCall, hDon]
@@ -1385,14 +1246,13 @@ decomposition rather than a restatement: a consumer that has already branched on
 `rendezvousDequeuedCall` rewrites it away. -/
 theorem applyReceiveRendezvousHandoff_ok_decompose (st st'' : SystemState)
     (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
-    {lend : Bool}
-    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore lend = .ok st'') :
-    ∃ stDon, applyReceiveRendezvousDonation st receiver dequeued lend = .ok stDon ∧
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st'') :
+    ∃ stDon, applyReceiveRendezvousDonation st receiver dequeued = .ok stDon ∧
       st'' = (if rendezvousDequeuedCall st dequeued then
                 applyReceiverPipHandoff stDon receiver executingCore
               else stDon) := by
   unfold applyReceiveRendezvousHandoff at h
-  cases hDon : applyReceiveRendezvousDonation st receiver dequeued lend with
+  cases hDon : applyReceiveRendezvousDonation st receiver dequeued with
   | error e => rw [hDon] at h; simp only [] at h; cases h
   | ok stDon =>
       rw [hDon] at h
@@ -1406,13 +1266,13 @@ donation does (OD3.6) and the chain walk is a frame over it (RR2.20).
 argument reads it, and `Donation.lean` sits below the module that proves the
 donation preserves it, so it is a hypothesis here and discharged at the composite
 in `IPC/Invariant/DonationPreservation.lean`. -/
-theorem applyReceiveRendezvousHandoff_preserves_replenishQueueAffinityConsistent_smp {lend : Bool}
+theorem applyReceiveRendezvousHandoff_preserves_replenishQueueAffinityConsistent_smp
     (st st'' : SystemState) (receiver dequeued : SeLe4n.ThreadId) (executingCore : CoreId)
     (hObjInv : st.objects.invExt)
-    (hObjInvDon : ∀ stDon, applyReceiveRendezvousDonation st receiver dequeued lend = .ok stDon →
+    (hObjInvDon : ∀ stDon, applyReceiveRendezvousDonation st receiver dequeued = .ok stDon →
       stDon.objects.invExt)
     (hCons : replenishQueueAffinityConsistent_smp st)
-    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore lend = .ok st'') :
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st'') :
     replenishQueueAffinityConsistent_smp st'' := by
   obtain ⟨stDon, hDon, hEq⟩ :=
     applyReceiveRendezvousHandoff_ok_decompose st st'' receiver dequeued executingCore h

@@ -119,13 +119,12 @@ post-donation state — `endpointCallLive_confinedToCores` instantiated at the
 receiver `ep.receiveQ.head` and the state `applyCallDonation` returns. -/
 theorem endpointCallCrossCoreDispatch_confinedToCores (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt)
-    (lend : Bool := true) :
+    (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
     observableSlotsConfinedToCores st
       (endpointCallCrossCoreDispatch endpointId caller payload
-        executingCore st lend).1
+        executingCore st).1
       (endpointCallDispatchWriteSet endpointId caller payload
-        executingCore st lend) := by
+        executingCore st) := by
   have hCaps := endpointCallWithCapsOnCore_confinedToCores endpointId caller payload
     executingCore st hObjInv
   -- A core outside the union is outside the endpoint-call leg, which is what
@@ -169,14 +168,14 @@ theorem endpointCallCrossCoreDispatch_confinedToCores (endpointId : SeLe4n.ObjId
             | none => simp only []; exact hWiden _ _ hCaps
             | some receiverV =>
               simp only []
-              cases hDon : applyCallDonationOnCoreWhen lend stWith callerV receiverV
+              cases hDon : applyCallDonationOnCore stWith callerV receiverV
                   (determineTargetCore st caller) (determineTargetCore st receiverTid) with
               | error e => simp only []; exact hWiden _ _ hCaps
               | ok stDon =>
                 simp only []
                 exact endpointCallLive_confinedToCores st stWith stDon endpointId
                   executingCore receiverTid hCaps
-                  (applyCallDonationOnCoreWhen_confinedToCores lend stWith stDon callerV receiverV
+                  (applyCallDonationOnCore_confinedToCores stWith stDon callerV receiverV
                     (determineTargetCore st caller) (determineTargetCore st receiverTid) hDon)
 
 /-- SM8.B.2: on the rendezvous path the live write set **is** the §5a union,
@@ -198,11 +197,10 @@ theorem endpointCallDispatchWriteSet_eq_live_of_rendezvous (endpointId : SeLe4n.
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hLinks : callRendezvousLinks st receiverTid payload = true)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
-    (lend : Bool)
-    (hDon : applyCallDonationOnCoreWhen lend stWith callerV receiverV
+    (hDon : applyCallDonationOnCore stWith callerV receiverV
       (determineTargetCore st caller) (determineTargetCore st receiverTid) = .ok stDon) :
     endpointCallDispatchWriteSet endpointId caller payload
-        executingCore st lend
+        executingCore st
       = endpointCallLiveWriteSet st endpointId executingCore stDon receiverTid := by
   unfold endpointCallDispatchWriteSet endpointCallDispatchChainWriteSet endpointCallLiveWriteSet
   cases hEp : st.getEndpoint? endpointId with
@@ -684,11 +682,11 @@ theorem replyRecvHolderDeschedule_confinedToCores (tid holder : SeLe4n.ThreadId)
 inside its write set.  The re-donation and *its* replenishment migration are
 per-core silent; what is not silent is the recorded server's deschedule and the
 chain reversion, and both are named. -/
-theorem replyRecvPostReceiveDonation_confinedToCores {lend : Bool}
+theorem replyRecvPostReceiveDonation_confinedToCores
     (tid recordedServer nextThread : SeLe4n.ThreadId) (serverCore : CoreId)
     (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
     (st st' : SystemState) (u : Unit)
-    (hStep : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st lend
+    (hStep : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
       = .ok (u, st')) :
     observableSlotsConfinedToCores st st'
       (replyRecvPostReceiveDonationWriteSet tid recordedServer nextThread serverCore
@@ -704,11 +702,8 @@ theorem replyRecvPostReceiveDonation_confinedToCores {lend : Bool}
     split
     · next hCall =>
       simp only [hCall, if_true] at hStep
-      -- The arm runs at one lend; the write set names both lends' chains.
-      refine observableSlotsConfinedToCores_mono
-        (replyRecvRendezvousChainCores_subset st tid nextThread recordedServer serverCore lend) ?_
       unfold replyRecvRendezvousChainCores
-      cases hDon : applyRendezvousCallDonation st tid nextThread lend with
+      cases hDon : applyRendezvousCallDonation st tid nextThread with
       | error e => simp only [hDon] at hStep; exact absurd hStep (by simp)
       | ok st2 =>
         simp only [hDon] at hStep
@@ -728,16 +723,9 @@ theorem replyRecvPostReceiveDonation_confinedToCores {lend : Bool}
     split
     · next hCall =>
       simp only [hCall, if_true] at hStep
-      -- The deschedule's cores, then the chain at the arm's lend inside both lends'.
-      refine observableSlotsConfinedToCores_mono (cs := replyRecvHolderDescheduleWriteSet tid holder st ++
-          replyRecvRendezvousChainCores (replyRecvHolderDeschedule tid holder st) tid nextThread
-            recordedServer serverCore lend) (fun c hc => by
-          rcases List.mem_append.mp hc with h | h
-          · exact List.mem_append_left _ h
-          · exact List.mem_append_right _ (replyRecvRendezvousChainCores_subset _ _ _ _ _ lend c h)) ?_
       unfold replyRecvRendezvousChainCores
       cases hDon : applyRendezvousCallDonation (replyRecvHolderDeschedule tid holder st) tid
-          nextThread lend with
+          nextThread with
       | error e => simp only [hDon] at hStep; exact absurd hStep (by simp)
       | ok st2 =>
         simp only [hDon] at hStep

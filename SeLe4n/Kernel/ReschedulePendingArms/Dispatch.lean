@@ -1800,13 +1800,13 @@ theorem receiveReturnSchedContext_stepCovers (e : CoreId) (blocks : Bool) (st : 
 donation pop, the reply leg's capability transfer, seL4-MCS `receiveIPC`'s return,
 the receive leg, the post-receive donation, the chain walk and the
 staging. -/
-theorem endpointReplyRecvOnCore_stepCovers {lend : Bool} (e : CoreId)
+theorem endpointReplyRecvOnCore_stepCovers (e : CoreId)
     {answer : Option Architecture.FaultReplyOutcome} {epId : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
     {msg : IpcMessage} {grant : Bool}
     {executingCore : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
     (hInv : st.objects.invExt)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant executingCore st lend = .ok (summary, st')) :
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant executingCore st = .ok (summary, st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold endpointReplyRecvAnsweringOnCore at h
   dsimp only at h

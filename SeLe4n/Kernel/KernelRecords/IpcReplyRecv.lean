@@ -74,11 +74,11 @@ theorem replyRecvHolderDeschedule (tid holder : SeLe4n.ThreadId) (st : SystemSta
   · exact descheduleAtPlacement st holder hInv
 
 /-- The post-receive donation and the chain walk. -/
-theorem replyRecvPostReceiveDonation {lend : Bool} {tid recordedServer nextThread : SeLe4n.ThreadId}
+theorem replyRecvPostReceiveDonation {tid recordedServer nextThread : SeLe4n.ThreadId}
     {serverCore : CoreId} {returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.replyRecvPostReceiveDonation tid recordedServer nextThread
-      serverCore returned? st lend = .ok ((), st')) :
+      serverCore returned? st = .ok ((), st')) :
     RecordsFrame st st' := by
   unfold _root_.SeLe4n.Kernel.replyRecvPostReceiveDonation at h
   split at h

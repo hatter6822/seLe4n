@@ -155,45 +155,18 @@ theorem receiveCallTakesReplyInPlace_of_inPlace {st : SystemState} {endpointId :
   · next rt hR => rw [hR]; rfl
   · cases hRT
 
-/-- **A take of a queued caller that lends nothing, in place**: one
-`receiveCallTakesInPlace` admits, or, where the lend is refused (`lend = false`,
-the checked kernel's `receiveLendAdmits`), one whose slots alone pass
-(`receiveCallTakesReplyInPlace`).  Such a take lends no context either way. -/
-@[inline] def receiveCallTakesUnlentInPlace (lend : Bool) (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (receiver s : SeLe4n.ThreadId) (sTcb : TCB)
-    (rid : SeLe4n.ReplyId) : Bool :=
-  receiveCallTakesInPlace st endpointId receiver s sTcb rid ||
-    (!lend && receiveCallTakesReplyInPlace st endpointId receiver s sTcb rid)
-
-/-- A take that lends nothing is a take of the reply's slots. -/
-theorem receiveCallTakesUnlentInPlace_takesReply {lend : Bool} {st : SystemState}
-    {endpointId : SeLe4n.ObjId} {receiver s : SeLe4n.ThreadId} {sTcb : TCB}
-    {rid : SeLe4n.ReplyId}
-    (h : receiveCallTakesUnlentInPlace lend st endpointId receiver s sTcb rid = true) :
-    receiveCallTakesReplyInPlace st endpointId receiver s sTcb rid = true := by
-  unfold receiveCallTakesUnlentInPlace at h
-  simp only [Bool.or_eq_true, Bool.and_eq_true] at h
-  rcases h with h | ⟨-, h⟩
-  · exact receiveCallTakesReplyInPlace_of_inPlace h
-  · exact h
-
-/-- **What a take that lends nothing lends**: the caller and the receiver donate
-nothing to each other, or the lend is refused. -/
-theorem receiveCallTakesUnlentInPlace_lendsNothing {lend : Bool} {st : SystemState}
+/-- **What an in-place take of a queued caller lends**: the caller and the
+receiver donate nothing to each other. -/
+theorem receiveCallTakesInPlace_lendsNothing {st : SystemState}
     {endpointId : SeLe4n.ObjId} {receiver s : SeLe4n.ThreadId} {sTcb rt : TCB}
     {rid : SeLe4n.ReplyId}
-    (h : receiveCallTakesUnlentInPlace lend st endpointId receiver s sTcb rid = true)
+    (h : receiveCallTakesInPlace st endpointId receiver s sTcb rid = true)
     (hR : st.getTcb? receiver = some rt) :
-    callDonatesNothing sTcb rt = true ∨ lend = false := by
-  unfold receiveCallTakesUnlentInPlace at h
-  simp only [Bool.or_eq_true, Bool.and_eq_true, Bool.not_eq_true'] at h
-  rcases h with h | ⟨h, -⟩
-  · left
-    simp only [receiveCallTakesInPlace, Bool.and_eq_true] at h
-    have hRT := h.1.1.2
-    simp only [hR] at hRT
-    exact hRT
-  · exact Or.inr h
+    callDonatesNothing sTcb rt = true := by
+  simp only [receiveCallTakesInPlace, Bool.and_eq_true] at h
+  have hRT := h.1.1.2
+  simp only [hR] at hRT
+  exact hRT
 
 /-- The receive's writes taking a queued caller, each in its slot: the caller
 popped and blocked on the reply, the reply object linked to it, the caller
@@ -627,17 +600,17 @@ a fault, the WithCaps receive installs nothing and commits the take, the
 rendezvous hands off no SchedContext and runs the receiver's priority walk, the
 caller is left blocked on the reply, and staging the receiver's message writes `performFaultReceiveDelivered`'s state, the fault's
 words read from the caller's TCB. -/
-theorem receiveFaultTake_delivered {lend : Bool} (st : SystemState) (endpointId : SeLe4n.ObjId)
+theorem receiveFaultTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (core : CoreId) (s : SeLe4n.ThreadId) (sTcb : TCB) (f : Fault)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
     (hT : st.objects[s.toObjId]? = some (.tcb sTcb))
-    (hG : receiveCallTakesUnlentInPlace lend st endpointId receiver s sTcb rid = true)
+    (hG : receiveCallTakesInPlace st endpointId receiver s sTcb rid = true)
     (hF : sTcb.ipcFaultSend = true) (hf : sTcb.faultWords.fault? = some f) :
     endpointReceiveDualWithCapsOnCore endpointId receiver (some rid) core st =
         (receiveCallTakeState st endpointId s sTcb receiver rid,
           .ok (s, { results := #[] }, none)) ∧
       applyReceiveRendezvousHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
-          receiver s core lend =
+          receiver s core =
         .ok (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
           receiver core) ∧
       Architecture.stageDeliveredMessage (applyReceiverPipHandoff (receiveCallTakeState st endpointId s sTcb receiver rid)
@@ -647,7 +620,7 @@ theorem receiveFaultTake_delivered {lend : Bool} (st : SystemState) (endpointId 
           sTcb.faultWord0 sTcb.faultWord1 sTcb.faultLookup sTcb.faultIp sTcb.faultSp sTcb.faultLr
           sTcb.faultSpsr sTcb.faultX0 sTcb.faultX1 sTcb.faultX2 sTcb.faultX3 sTcb.faultX4
           sTcb.faultX5 sTcb.faultX6 sTcb.faultX7 := by
-  have hGR := receiveCallTakesUnlentInPlace_takesReply hG
+  have hGR := receiveCallTakesReplyInPlace_of_inPlace hG
   obtain ⟨hTake, hIpc, hBs, hBr⟩ :=
     receiveCallTake_inPlace st endpointId ep receiver rid core s sTcb hE hH hT hGR
   have hG' := hGR
@@ -659,7 +632,7 @@ theorem receiveFaultTake_delivered {lend : Bool} (st : SystemState) (endpointId 
   obtain ⟨⟨⟨⟨⟨hSRes, _⟩, hFE⟩, _⟩, _⟩, _⟩ := hSG'
   have hNo : st.objects.noResizeDue := RHTable.noResizeDue_of_findsInPlace hFE
   obtain ⟨rt, hRTo⟩ := Option.isSome_iff_exists.mp hRT
-  have hDN := receiveCallTakesUnlentInPlace_lendsNothing hG hRTo
+  have hDN := receiveCallTakesInPlace_lendsNothing hG hRTo
   have hTs : st.getTcb? s = some sTcb := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   obtain ⟨x, hx, hxI⟩ := Option.map_eq_some_iff.mp hIpc
   refine ⟨?_, ?_, ?_⟩
@@ -683,7 +656,7 @@ theorem receiveFaultTake_delivered {lend : Bool} (st : SystemState) (endpointId 
     obtain ⟨rv, hrv⟩ := Option.isSome_iff_exists.mp
       ((SeLe4n.ThreadId.toValid?_isSome_iff receiver).mpr hRRes)
     have hNone : callDonationSchedContext? (receiveCallTakeState st endpointId s sTcb receiver rid)
-        s receiver = none ∨ lend = false := hDN.imp_left fun hDN => by
+        s receiver = none := by
       rw [callDonationSchedContext?_congr (s := st) hBs hBr, callDonationSchedContext?_eq_bindings]
       simp only [lookupTcb, hRRes, hSRes, Bool.false_eq_true, ↓reduceIte, hRTo, hTs,
         Option.map_some]
@@ -692,7 +665,7 @@ theorem receiveFaultTake_delivered {lend : Bool} (st : SystemState) (endpointId 
       cases rt.schedContextBinding <;> cases sTcb.schedContextBinding <;>
         simp [donationOfBindings, SchedContextBinding.scId?]
     unfold applyReceiveRendezvousHandoff
-    rw [applyReceiveRendezvousDonation_of_lendsNothing _ receiver s sv rv hsv hrv hNone]
+    rw [applyReceiveRendezvousDonation_of_no_donation _ receiver s sv rv hsv hrv hNone]
     simp only [hCall, ↓reduceIte]
   · have hNoS := storeReceiveCallReady_noResizeDue st endpointId s sTcb.queueNextCode receiver
       rid hNo

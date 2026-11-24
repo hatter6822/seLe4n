@@ -921,7 +921,7 @@ namespace RecordsStep
 parked**: the reply leg unparks its caller, every step after it keeps the
 records, and the answer either finds the caller carrying no fault record or
 clears the one it answers. -/
-theorem endpointReplyRecvAnsweringOnCore {lend : Bool} {answer : Option Architecture.FaultReplyOutcome}
+theorem endpointReplyRecvAnsweringOnCore {answer : Option Architecture.FaultReplyOutcome}
     {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
     {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool}
     {c : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
@@ -929,7 +929,7 @@ theorem endpointReplyRecvAnsweringOnCore {lend : Bool} {answer : Option Architec
     (hReady : ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
     (hAns : answer = none → NoFaultAt st prevCaller)
     (h : _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg
-      grant c st lend = .ok (summary, st')) :
+      grant c st = .ok (summary, st')) :
     RecordsStep st st' := by
   unfold _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore at h
   dsimp only at h
@@ -1008,14 +1008,14 @@ end CallerReady
 open SeLe4n.Model.SystemState in
 /-- **The reply-receive keeps the records**, its server the running thread: an
 answer to a faulted caller clears its fault record, any other answer finds none. -/
-theorem RecordsStage.endpointReplyRecvAnsweringOnCore {lend : Bool}
+theorem RecordsStage.endpointReplyRecvAnsweringOnCore
     {answer : Option Architecture.FaultReplyOutcome} {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool}
     {c : CoreId} {st st' : SystemState}
     {summary : CapTransferSummary} (hR : ipcReachable st) (hC : CallerReady st tid)
     (hAns : answer = none → NoFaultAt st prevCaller)
     (h : _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg
-      grant c st lend = .ok (summary, st')) : RecordsStage st st' :=
+      grant c st = .ok (summary, st')) : RecordsStage st st' :=
   have hQ := hR.ipcInvariantFull.queueHeadBlockedConsistent
   RecordsStage.of_step (RecordsStep.endpointReplyRecvAnsweringOnCore hR.objects_invExt hQ hC.ready hAns h)
     fun hW => by
@@ -1069,12 +1069,12 @@ theorem RecordsStage.endpointReplyRecvAnsweringOnCore {lend : Bool}
 /-- **The `.replyRecv` arm's transition keeps the records**: the answer the
 caller's own fault record selects, so a caller answered with its message
 carries no fault record. -/
-theorem RecordsStage.replyRecvTransferOnCore {lend : Bool} {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+theorem RecordsStage.replyRecvTransferOnCore {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage}
     {grant : Bool} {c : CoreId} {st st' : SystemState}
     {summary : CapTransferSummary} (hR : ipcReachable st) (hC : CallerReady st tid)
     (h : _root_.SeLe4n.Kernel.replyRecvTransferOnCore epId tid rid prevCaller label msg
-      grant c st lend = .ok (summary, st')) : RecordsStage st st' := by
+      grant c st = .ok (summary, st')) : RecordsStage st st' := by
   unfold _root_.SeLe4n.Kernel.replyRecvTransferOnCore at h
   refine RecordsStage.endpointReplyRecvAnsweringOnCore hR hC (fun hA x hx => ?_) h
   cases hF : x.pendingFault with

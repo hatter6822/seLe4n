@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31; SX6 v0.37.32; SX7 v0.37.33, its remainder split into SX8 and SX23–SX26; SX8 v0.37.36, which split its own remainder into SX9, SX12 and SX22 (D32); SX9 v0.37.38, which added SX10 (D36, D37); SX10 v0.37.39, wrapped (D38), its remainder split into SX11 and SX13; SX11 v0.37.40; SX12 and SX13 swapped by D39; SX12 v0.37.41; SX13 v0.37.42, wrapped (D40), its remainder split into SX14, SX17 and SX18; SX14.1 v0.37.43, SX14 wrapped there (D32), its remainder split into SX15 and SX16 (D42); SX15 v0.37.44; SX16 v0.37.45; SX17 v0.37.46; SX18 v0.37.47, wrapped at SX18.1 (D44), its remainder split into SX19, SX20 and SX21 (D43))
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31; SX6 v0.37.32; SX7 v0.37.33, its remainder split into SX8 and SX23–SX26; SX8 v0.37.36, which split its own remainder into SX9, SX12 and SX22 (D32); SX9 v0.37.38, which added SX10 (D36, D37); SX10 v0.37.39, wrapped (D38), its remainder split into SX11 and SX13; SX11 v0.37.40; SX12 and SX13 swapped by D39; SX12 v0.37.41; SX13 v0.37.42, wrapped (D40), its remainder split into SX14, SX17 and SX18; SX14.1 v0.37.43, SX14 wrapped there (D32), its remainder split into SX15 and SX16 (D42); SX15 v0.37.44; SX16 v0.37.45; SX17 v0.37.46; SX18 v0.37.47, wrapped at SX18.1 (D44), its remainder split into SX19, SX20 and SX21 (D43); SX19 v0.37.48)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -288,8 +288,9 @@ decisions D25–D30 it also carries `contextLendersLabelsEqual` (every lender on
 context's stack carries the context's label, equality since SX16) across every
 kernel entry, so a
 lend or a bind of a stack's head is checked on two static labels: a Call,
-received Call or fault lends only where the caller flows to the context
-(`callLendAdmits`, `receiveLendAdmits`; otherwise it lends nothing, D28), a
+received Call or fault lends as seL4-MCS does, with no check of its own (the
+caller carries the context's label, `bindingLabelsEqual`; D28's refusal was
+deleted as unreachable at SX19, `v0.37.48`), a
 notification lends only at equal labels (`donationContextFlows`, D30), and
 SchedContext_Bind binds a stack's head only where the context flows to the
 thread (`schedContextBindLabelGate`, D25), with both of the bind's refusals
@@ -331,11 +332,12 @@ per-state slot beside the object-store invariant (`step_preserves_projection`,
 `NonInterferenceTrace.cons`, `nonInterference_perCore`), so no
 `NonInterferenceStep` constructor carries it (a new NI theorem that needs it
 takes it from that slot), and the two-run theorem takes it of both runs; the
-Call lend's refusal (`callLendAdmits`, `receiveLendAdmits` and the `lend`
-argument they feed) stays until SX19 deletes it, and the notification lend's
-label check (`donationContextFlows`) stays until SX20 carries notification
-label coherence and SX21 deletes it (D43): a new consumer of either must not
-assume it is gone. Every thread
+Call lend's refusal is gone since SX19 (`v0.37.48`: no lend admission and no
+`lend` argument remain, so a new Call, fault, receive or ReplyRecv path lends
+unconditionally and takes its label equation from `bindingLabelsEqual`), and
+the notification lend's label check (`donationContextFlows`) stays until SX20
+carries notification label coherence and SX21 deletes it (D43): a new consumer
+must not assume it is gone. Every thread
 blocked sending, calling or receiving on an endpoint has that endpoint's label
 (`endpointWaitersLabelsEqual`, SX11 at `v0.37.40`): a new writer that blocks a
 thread on an endpoint does so only past a two-way `endpointFlowGate` on that

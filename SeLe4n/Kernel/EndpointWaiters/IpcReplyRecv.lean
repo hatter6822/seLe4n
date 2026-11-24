@@ -28,13 +28,13 @@ open SeLe4n.Kernel.Concurrency (CoreId)
 namespace EndpointWaitersGrowFrame
 
 /-- **The reply-receive blocks at most its server, on its endpoint.** -/
-theorem endpointReplyRecvAnsweringOnCore {lend : Bool}
+theorem endpointReplyRecvAnsweringOnCore
     {answer : Option Architecture.FaultReplyOutcome} {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool}
     {c : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
     (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg
-      grant c st lend = .ok (summary, st')) :
+      grant c st = .ok (summary, st')) :
     EndpointWaitersGrowFrame tid epId st st' := by
   unfold _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore at h
   dsimp only at h
@@ -97,13 +97,13 @@ variable {ctx : LabelingContext}
 
 /-- **A reply-receive admitted by its gate carries the waiters' labels**: the
 receive leg's gate, two-way, gives the server the endpoint's label. -/
-theorem replyRecvTransferOnCore {lend : Bool} {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+theorem replyRecvTransferOnCore {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage}
     {grant : Bool} {c : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
     (hInv : st.objects.invExt)
     (hGate : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
     (h : _root_.SeLe4n.Kernel.replyRecvTransferOnCore epId tid rid prevCaller label msg
-      grant c st lend = .ok (summary, st')) : EndpointWaitersStage ctx st st' := by
+      grant c st = .ok (summary, st')) : EndpointWaitersStage ctx st st' := by
   unfold _root_.SeLe4n.Kernel.replyRecvTransferOnCore at h
   exact (EndpointWaitersGrowFrame.endpointReplyRecvAnsweringOnCore hInv h).stage
     (endpointFlowGate_implies_eq ctx epId _ _ hGate).symm

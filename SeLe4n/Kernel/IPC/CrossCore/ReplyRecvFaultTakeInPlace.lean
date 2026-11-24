@@ -125,7 +125,7 @@ theorem replyRecvTransferOnCore_fault_take_transfer (st : SystemState) (epId : S
     rw [replyFrameHeadHolder?_of_no_head _ _ hHead]
     simp only [popUnheldReplyHead_of_no_head _ _ _ _ hHead]
   have hEp2 : Q.getEndpoint? epId = some ep := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE2
-  obtain ⟨hRecv, -, -⟩ := receiveTake_delivered (lend := true) Q epId ep tid (some rid) core s sTcb2 capAddr mi
+  obtain ⟨hRecv, -, -⟩ := receiveTake_delivered Q epId ep tid (some rid) core s sTcb2 capAddr mi
     hE2 hH hT2 hG2 hR hF
   have hNoCall := receiveTake_dequeuedNoCall Q epId ep tid core s sTcb2
     (blockedSenderMessage (storePopHead Q epId false s sTcb2.queueNext) s sTcb2) hE2 hH hT2 hG2

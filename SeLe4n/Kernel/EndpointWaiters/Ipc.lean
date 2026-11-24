@@ -178,10 +178,10 @@ theorem endpointCallWithCapsOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.
          exact S.thenFrame (.of_frame (RecordsFrame.receiveTransferCaps S.invExt hU)))
 
 theorem endpointCallCrossCoreDispatch {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId}
-    {payload : SendPayload} {c : CoreId} {st : SystemState} {lend : Bool}
+    {payload : SendPayload} {c : CoreId} {st : SystemState}
     (hInv : st.objects.invExt) :
     EndpointWaitersGrowFrame caller endpointId st
-      (_root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch endpointId caller payload c st lend).1 := by
+      (_root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch endpointId caller payload c st).1 := by
   unfold _root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch
   have S := endpointCallWithCapsOnCore (endpointId := endpointId) (caller := caller)
     (payload := payload) (c := c) hInv
@@ -198,8 +198,7 @@ theorem endpointCallCrossCoreDispatch {endpointId : SeLe4n.ObjId} {caller : SeLe
     all_goals first
       | exact S
       | (rename_i hD
-         have F := applyCallDonationOnCoreWhen_induct (RecordsFrame _) hD
-           (RecordsFrame.refl S.invExt) (RecordsFrame.applyCallDonationOnCore S.invExt)
+         have F := ((RecordsFrame.applyCallDonationOnCore S.invExt) hD)
          exact S.thenFrame (.of_frame (F.trans
            (RecordsFrame.propagatePipChainCrossCore _ _ _ _ F.invExt))))
 
