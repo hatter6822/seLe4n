@@ -408,11 +408,12 @@ theorem nonInterference_perCore (ctx : LabelingContext) (observer : IfObserver)
     (hObjInv : st.objects.invExt)
     (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hStep : NonInterferenceStep ctx observer st st')
     (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
     lowEquivalent_smp ctx observer st' st :=
   lowEquivalent_smp_of_projection_and_confinement ctx observer
-    (step_preserves_projection ctx observer st st' hObjInv hIdxComplete hObjSetInv hStep)
+    (step_preserves_projection ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind hStep)
     hConfined
 
 /-- SM8.B.1 (observer form): the per-core headline, stated at one observer. -/
@@ -421,10 +422,11 @@ theorem nonInterference_perCore_observer (ctx : LabelingContext) (o : PerCoreObs
     (hObjInv : st.objects.invExt)
     (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hStep : NonInterferenceStep ctx o.toIfObserver st st')
     (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
     lowEquivalentForObserver ctx o st' st :=
-  nonInterference_perCore ctx o.toIfObserver st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx o.toIfObserver st st' hObjInv hIdxComplete hObjSetInv hBind
     hStep hConfined o.core
 
 /-- SM8.B.1 (two-sided): the per-core lift of `composedNonInterference_step`.
@@ -437,15 +439,16 @@ theorem composedNonInterference_step_perCore (ctx : LabelingContext) (observer :
     (hIdxComplete₁ : objectIndexSetComplete s₁) (hIdxComplete₂ : objectIndexSetComplete s₂)
     (hObjSetInv₁ : s₁.objectIndexSet.table.invExt)
     (hObjSetInv₂ : s₂.objectIndexSet.table.invExt)
+    (hBind₁ : bindingLabelsEqual ctx s₁) (hBind₂ : bindingLabelsEqual ctx s₂)
     (hStep₁ : NonInterferenceStep ctx observer s₁ s₁')
     (hStep₂ : NonInterferenceStep ctx observer s₂ s₂')
     (hConfined₁ : observableSlotsConfinedToCore s₁ s₁' bootCoreId)
     (hConfined₂ : observableSlotsConfinedToCore s₂ s₂' bootCoreId) :
     lowEquivalent_smp ctx observer s₁' s₂' := by
   intro c
-  have h₁ := nonInterference_perCore ctx observer s₁ s₁' hObjInv₁ hIdxComplete₁ hObjSetInv₁
+  have h₁ := nonInterference_perCore ctx observer s₁ s₁' hObjInv₁ hIdxComplete₁ hObjSetInv₁ hBind₁
     hStep₁ hConfined₁ c
-  have h₂ := nonInterference_perCore ctx observer s₂ s₂' hObjInv₂ hIdxComplete₂ hObjSetInv₂
+  have h₂ := nonInterference_perCore ctx observer s₂ s₂' hObjInv₂ hIdxComplete₂ hObjSetInv₂ hBind₂
     hStep₂ hConfined₂ c
   exact lowEquivalentOnCore_trans h₁ (lowEquivalentOnCore_trans (hLow c) (h₂.symm))
 
@@ -1709,15 +1712,17 @@ theorem nonInterference_perCore_chooseThread (ctx : LabelingContext) (observer :
     (st st' : SystemState) (next : Option SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hStep : SeLe4n.Kernel.chooseThread st = .ok (next, st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.chooseThread next hStep) (chooseThread_confinedToCore st st' next bootCoreId hStep)
 
 theorem nonInterference_perCore_endpointSendDual (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (eid : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hEndpointHigh : objectObservable ctx observer eid = false)
     (hSenderHigh : threadObservable ctx observer sender = false)
     (hSenderObjHigh : objectObservable ctx observer sender.toObjId = false)
@@ -1733,7 +1738,7 @@ theorem nonInterference_perCore_endpointSendDual (ctx : LabelingContext) (observ
     (hSendQueueTailHigh : ∀ ep tailTid, st.objects[eid]? = some (.endpoint ep) →
       ep.sendQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.endpointSendDual eid sender payload hEndpointHigh hSenderHigh hSenderObjHigh hCoherent hStep
       hRecvQueueHeadHigh hRecvQueueNextHigh hSendQueueTailHigh)
     (endpointSendDual_confinedToBootCore st st' eid sender payload hStep)
@@ -1743,11 +1748,12 @@ theorem nonInterference_perCore_cspaceMint (ctx : LabelingContext) (observer : I
     (badge : Option SeLe4n.Badge)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hSrcHigh : objectObservable ctx observer src.cnode = false)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
     (hStep : SeLe4n.Kernel.cspaceMint src dst rights badge st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.cspaceMint src dst rights badge hSrcHigh hDstHigh hStep)
     (cspaceMint_confinedToCore st st' src dst rights badge bootCoreId hStep)
 
@@ -1755,10 +1761,11 @@ theorem nonInterference_perCore_cspaceRevoke (ctx : LabelingContext) (observer :
     (st st' : SystemState) (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hAddrHigh : objectObservable ctx observer addr.cnode = false)
     (hStep : SeLe4n.Kernel.cspaceRevoke addr st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.cspaceRevoke addr hAddrHigh hStep)
     (cspaceRevoke_confinedToCore st st' addr bootCoreId hStep)
 
@@ -1767,12 +1774,13 @@ theorem nonInterference_perCore_retypeFromUntyped (ctx : LabelingContext)
     (untypedId childId : SeLe4n.ObjId) (newObj : KernelObject) (allocSize : Nat)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hUntypedHigh : objectObservable ctx observer untypedId = false)
     (hChildHigh : objectObservable ctx observer childId = false)
     (hAuthorityHigh : objectObservable ctx observer authority.cnode = false)
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.retypeFromUntyped authority untypedId childId newObj allocSize hUntypedHigh hChildHigh
       hAuthorityHigh hStep)
     (retypeFromUntyped_confinedToCore st st' authority untypedId childId newObj allocSize
@@ -1782,6 +1790,7 @@ theorem nonInterference_perCore_notificationSignal (ctx : LabelingContext) (obse
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hNtfnHigh : objectObservable ctx observer notificationId = false)
     (hCoherent : ∀ tid : SeLe4n.ThreadId, threadObservable ctx observer tid = false →
       objectObservable ctx observer tid.toObjId = false)
@@ -1791,7 +1800,7 @@ theorem nonInterference_perCore_notificationSignal (ctx : LabelingContext) (obse
       objectObservable ctx observer t.toObjId = false)
     (hStep : SeLe4n.Kernel.notificationSignal notificationId badge st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.notificationSignal notificationId badge hNtfnHigh hCoherent hWaiterDomain hSuccHigh hStep)
     (notificationSignal_confinedToBootCore st st' notificationId badge hStep)
 
@@ -1800,6 +1809,7 @@ theorem nonInterference_perCore_notificationWait (ctx : LabelingContext) (observ
     (result : Option SeLe4n.Badge)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hNtfnHigh : objectObservable ctx observer notificationId = false)
     (hWaiterHigh : threadObservable ctx observer waiter = false)
     (hWaiterObjHigh : objectObservable ctx observer waiter.toObjId = false)
@@ -1807,7 +1817,7 @@ theorem nonInterference_perCore_notificationWait (ctx : LabelingContext) (observ
       objectObservable ctx observer t.toObjId = false)
     (hStep : SeLe4n.Kernel.notificationWait notificationId waiter st = .ok (result, st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.notificationWait notificationId waiter result hNtfnHigh hWaiterHigh hWaiterObjHigh
       hTailHigh hStep)
     (notificationWait_confinedToBootCore st st' notificationId waiter result hStep)
@@ -1816,10 +1826,11 @@ theorem nonInterference_perCore_cspaceInsertSlot (ctx : LabelingContext) (observ
     (st st' : SystemState) (dst : CSpaceAddr) (cap : Capability)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
     (hStep : cspaceInsertSlot dst cap st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.cspaceInsertSlot dst cap hDstHigh hStep)
     (cspaceInsertSlot_confinedToCore st st' dst cap bootCoreId hStep)
 
@@ -1827,24 +1838,26 @@ theorem nonInterference_perCore_schedule (ctx : LabelingContext) (observer : IfO
     (st st' : SystemState)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hCurrentHigh : ∀ t, st.scheduler.currentOnCore bootCoreId = some t →
       threadObservable ctx observer t = false)
     (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable →
       threadObservable ctx observer tid = false)
     (hStep : SeLe4n.Kernel.schedule st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.schedule hCurrentHigh hAllRunnable hStep) (schedule_confinedToBootCore st st' hStep)
 
 theorem nonInterference_perCore_vspaceMapPage (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hRootHigh : ∀ rootId root, Architecture.resolveAsidRoot st asid = some (rootId, root) →
       objectObservable ctx observer rootId = false)
     (hStep : Architecture.vspaceMapPage asid vaddr paddr default st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.vspaceMapPage asid vaddr paddr hRootHigh hStep)
     (vspaceMapPage_confinedToCore st st' asid vaddr paddr default bootCoreId hStep)
 
@@ -1852,11 +1865,12 @@ theorem nonInterference_perCore_vspaceUnmapPage (ctx : LabelingContext) (observe
     (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hRootHigh : ∀ rootId root, Architecture.resolveAsidRoot st asid = some (rootId, root) →
       objectObservable ctx observer rootId = false)
     (hStep : Architecture.vspaceUnmapPage asid vaddr st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.vspaceUnmapPage asid vaddr hRootHigh hStep)
     (vspaceUnmapPage_confinedToCore st st' asid vaddr bootCoreId hStep)
 
@@ -1864,9 +1878,10 @@ theorem nonInterference_perCore_vspaceLookup (ctx : LabelingContext) (observer :
     (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hStep : Architecture.vspaceLookup asid vaddr st = .ok (paddr, st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.vspaceLookup asid vaddr paddr hStep)
     (vspaceLookup_confinedToCore st st' asid vaddr paddr bootCoreId hStep)
 
@@ -1874,11 +1889,12 @@ theorem nonInterference_perCore_cspaceCopy (ctx : LabelingContext) (observer : I
     (st st' : SystemState) (src dst : CSpaceAddr) (mask : AccessRightSet)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hSrcHigh : objectObservable ctx observer src.cnode = false)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
     (hStep : SeLe4n.Kernel.cspaceCopy src dst mask st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.cspaceCopy src dst mask hSrcHigh hDstHigh hStep)
     (cspaceCopy_confinedToCore st st' src dst mask bootCoreId hStep)
 
@@ -1886,11 +1902,12 @@ theorem nonInterference_perCore_cspaceMove (ctx : LabelingContext) (observer : I
     (st st' : SystemState) (src dst : CSpaceAddr)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hSrcHigh : objectObservable ctx observer src.cnode = false)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
     (hStep : SeLe4n.Kernel.cspaceMove src dst st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.cspaceMove src dst hSrcHigh hDstHigh hStep)
     (cspaceMove_confinedToCore st st' src dst bootCoreId hStep)
 
@@ -1898,10 +1915,11 @@ theorem nonInterference_perCore_cspaceDeleteSlot (ctx : LabelingContext) (observ
     (st st' : SystemState) (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hAddrHigh : objectObservable ctx observer addr.cnode = false)
     (hStep : SeLe4n.Kernel.cspaceDeleteSlot addr st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.cspaceDeleteSlot addr hAddrHigh hStep)
     (cspaceDeleteSlot_confinedToCore st st' addr bootCoreId hStep)
 
@@ -1909,11 +1927,12 @@ theorem nonInterference_perCore_endpointReply (ctx : LabelingContext) (observer 
     (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hTargetHigh : threadObservable ctx observer target = false)
     (hTargetObjHigh : objectObservable ctx observer target.toObjId = false)
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.endpointReply replier target msg hTargetHigh hTargetObjHigh hStep)
     (endpointReply_confinedToBootCore st st' replier target msg hStep)
 
@@ -1922,6 +1941,7 @@ theorem nonInterference_perCore_endpointReceiveDual (ctx : LabelingContext)
     (receiver sender : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hEndpointHigh : objectObservable ctx observer endpointId = false)
     (hReceiverHigh : threadObservable ctx observer receiver = false)
     (hReceiverObjHigh : objectObservable ctx observer receiver.toObjId = false)
@@ -1935,13 +1955,11 @@ theorem nonInterference_perCore_endpointReceiveDual (ctx : LabelingContext)
       st.objects[sender.toObjId]? = some (.tcb senderTcb) → senderTcb.queueNext = some nextTid →
       objectObservable ctx observer nextTid.toObjId = false)
     (hRecvQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
-      ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
-    (hBind : bindingLabelsEqual ctx st) :
+      ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.endpointReceiveDualHigh endpointId receiver sender replyId hEndpointHigh hReceiverHigh
-      hReceiverObjHigh hCoherent hStep hSendQueueHeadHigh hSendQueueNextHigh hRecvQueueTailHigh
-      hBind)
+      hReceiverObjHigh hCoherent hStep hSendQueueHeadHigh hSendQueueNextHigh hRecvQueueTailHigh)
     (endpointReceiveDual_confinedToBootCore st st' endpointId receiver sender replyId hStep)
 
 theorem nonInterference_perCore_endpointCall (ctx : LabelingContext) (observer : IfObserver)
@@ -1949,6 +1967,7 @@ theorem nonInterference_perCore_endpointCall (ctx : LabelingContext) (observer :
     (payload : SendPayload)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hEndpointHigh : objectObservable ctx observer endpointId = false)
     (hCallerHigh : threadObservable ctx observer caller = false)
     (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
@@ -1964,7 +1983,7 @@ theorem nonInterference_perCore_endpointCall (ctx : LabelingContext) (observer :
     (hSendQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
       ep.sendQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.endpointCallHigh endpointId caller payload hEndpointHigh hCallerHigh hCallerObjHigh hCoherent
       hStep hRecvQueueHeadHigh hRecvQueueNextHigh hSendQueueTailHigh)
     (endpointCall_confinedToBootCore st st' endpointId caller payload hStep)
@@ -1975,6 +1994,7 @@ theorem nonInterference_perCore_endpointReplyRecv (ctx : LabelingContext) (obser
     (replyId : Option SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hEndpointHigh : objectObservable ctx observer endpointId = false)
     (hReceiverHigh : threadObservable ctx observer replierReceiver = false)
     (hReceiverObjHigh : objectObservable ctx observer replierReceiver.toObjId = false)
@@ -1991,13 +2011,12 @@ theorem nonInterference_perCore_endpointReplyRecv (ctx : LabelingContext) (obser
       st.objects[sender.toObjId]? = some (.tcb senderTcb) → senderTcb.queueNext = some nextTid →
       objectObservable ctx observer nextTid.toObjId = false)
     (hRecvQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
-      ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
-    (hBind : bindingLabelsEqual ctx st) :
+      ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.endpointReplyRecvHigh endpointId replierReceiver replyTarget replyMsg replyId hEndpointHigh
       hReceiverHigh hReceiverObjHigh hReplyTargetHigh hReplyTargetObjHigh hCoherent hStep
-      hSendQueueHeadHigh hSendQueueNextHigh hRecvQueueTailHigh hBind)
+      hSendQueueHeadHigh hSendQueueNextHigh hRecvQueueTailHigh)
     (endpointReplyRecv_confinedToBootCore st st' endpointId replierReceiver replyTarget replyMsg
       replyId hStep)
 
@@ -2005,10 +2024,11 @@ theorem nonInterference_perCore_storeObject (ctx : LabelingContext) (observer : 
     (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hOidHigh : objectObservable ctx observer oid = false)
     (hStep : storeObject oid obj st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.storeObjectHigh oid obj hOidHigh hStep)
     (storeObject_confinedToCore st st' oid obj bootCoreId hStep)
 
@@ -2016,12 +2036,13 @@ theorem nonInterference_perCore_setCurrentThread (ctx : LabelingContext) (observ
     (st st' : SystemState) (tid : Option SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hTidHigh : ∀ t, tid = some t → threadObservable ctx observer t = false)
     (hCurrentHigh : ∀ t, st.scheduler.currentOnCore bootCoreId = some t →
       threadObservable ctx observer t = false)
     (hStep : setCurrentThread tid st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.setCurrentThread tid hTidHigh hCurrentHigh hStep)
     (setCurrentThread_confinedToBootCore st st' tid hStep)
 
@@ -2029,10 +2050,11 @@ theorem nonInterference_perCore_ensureRunnable (ctx : LabelingContext) (observer
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hTidHigh : threadObservable ctx observer tid = false)
     (hEq : st' = ensureRunnable st tid) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.ensureRunnableHigh tid hTidHigh hEq)
     (hEq ▸ ensureRunnable_confinedToBootCore st tid)
 
@@ -2040,10 +2062,11 @@ theorem nonInterference_perCore_removeRunnable (ctx : LabelingContext) (observer
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hTidHigh : threadObservable ctx observer tid = false)
     (hEq : st' = removeRunnable st tid) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.removeRunnableHigh tid hTidHigh hEq)
     (hEq ▸ removeRunnable_confinedToBootCore st tid)
 
@@ -2052,10 +2075,11 @@ theorem nonInterference_perCore_storeTcbIpcStateAndMessage (ctx : LabelingContex
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.storeTcbIpcStateAndMessageHigh tid ipc msg hTidObjHigh hStep)
     (storeTcbIpcStateAndMessage_confinedToCore st st' tid ipc msg bootCoreId hStep)
 
@@ -2064,10 +2088,11 @@ theorem nonInterference_perCore_storeTcbQueueLinks (ctx : LabelingContext) (obse
     (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
     (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.storeTcbQueueLinksHigh tid prev pprev next hTidObjHigh hStep)
     (storeTcbQueueLinks_confinedToCore st st' tid prev pprev next bootCoreId hStep)
 
@@ -2076,10 +2101,11 @@ theorem nonInterference_perCore_cspaceMutate (ctx : LabelingContext) (observer :
     (badge : Option SeLe4n.Badge)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hAddrHigh : objectObservable ctx observer addr.cnode = false)
     (hStep : SeLe4n.Kernel.cspaceMutate addr rights badge st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.cspaceMutateHigh addr rights badge hAddrHigh hStep)
     (cspaceMutate_confinedToCore st st' addr rights badge bootCoreId hStep)
 
@@ -2087,19 +2113,21 @@ theorem nonInterference_perCore_handleYield (ctx : LabelingContext) (observer : 
     (st st' : SystemState)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hCurrentHigh : ∀ t, st.scheduler.currentOnCore bootCoreId = some t →
       threadObservable ctx observer t = false)
     (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable →
       threadObservable ctx observer tid = false)
     (hStep : SeLe4n.Kernel.handleYield st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.handleYield hCurrentHigh hAllRunnable hStep) (handleYield_confinedToBootCore st st' hStep)
 
 theorem nonInterference_perCore_timerTick (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hCurrentHigh : ∀ t, st.scheduler.currentOnCore bootCoreId = some t →
       threadObservable ctx observer t = false)
     (hCurrentObjHigh : ∀ t, st.scheduler.currentOnCore bootCoreId = some t →
@@ -2108,7 +2136,7 @@ theorem nonInterference_perCore_timerTick (ctx : LabelingContext) (observer : If
       threadObservable ctx observer tid = false)
     (hStep : SeLe4n.Kernel.timerTick st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.timerTick hCurrentHigh hCurrentObjHigh hAllRunnable hStep)
     (timerTick_confinedToBootCore st st' hStep)
 
@@ -2116,9 +2144,10 @@ theorem nonInterference_perCore_syscallDecodeError (ctx : LabelingContext) (obse
     (st st' : SystemState)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hEq : st' = st) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.syscallDecodeError hEq) (observableSlotsConfinedToCore_of_eq bootCoreId hEq)
 
 theorem nonInterference_perCore_registerServiceChecked (ctx : LabelingContext)
@@ -2126,10 +2155,11 @@ theorem nonInterference_perCore_registerServiceChecked (ctx : LabelingContext)
     (reg : ServiceRegistration)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hCallerHigh : threadObservable ctx observer caller = false)
     (hStep : registerServiceChecked ctx caller reg st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.registerServiceChecked caller reg hCallerHigh hStep)
     (registerServiceChecked_confinedToCore ctx st st' caller reg bootCoreId hStep)
 
@@ -2138,10 +2168,11 @@ theorem nonInterference_perCore_revokeServiceChecked (ctx : LabelingContext)
     (epId : SeLe4n.ObjId)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hCallerHigh : threadObservable ctx observer caller = false)
     (hStep : revokeServiceChecked ctx caller epId st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.revokeServiceChecked caller epId hCallerHigh hStep)
     (revokeServiceChecked_confinedToCore ctx st st' caller epId bootCoreId hStep)
 
@@ -2150,9 +2181,10 @@ theorem nonInterference_perCore_serviceQueryChecked (ctx : LabelingContext)
     (epId : SeLe4n.ObjId)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hStep : serviceQueryStaged ctx caller epId st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.serviceQueryChecked caller epId hStep)
     (serviceQueryStaged_confinedToCore ctx st st' caller epId bootCoreId hStep)
 
@@ -2170,42 +2202,46 @@ theorem nonInterference_perCore_syscallDispatch (ctx : LabelingContext) (observe
     (st st' : SystemState)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hCurrentHigh : ∀ t, st.scheduler.currentOnCore bootCoreId = some t →
       threadObservable ctx observer t = false)
     (hProj : projectState ctx observer st' = projectState ctx observer st)
     (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.syscallDispatchHigh hCurrentHigh hProj) hConfined
 
 theorem nonInterference_perCore_endpointCallWithDonation (ctx : LabelingContext)
     (observer : IfObserver) (st st' : SystemState)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hCurrentHigh : ∀ t, st.scheduler.currentOnCore bootCoreId = some t →
       threadObservable ctx observer t = false)
     (hProj : projectState ctx observer st' = projectState ctx observer st)
     (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.endpointCallWithDonationHigh hCurrentHigh hProj) hConfined
 
 theorem nonInterference_perCore_endpointReplyWithReversion (ctx : LabelingContext)
     (observer : IfObserver) (st st' : SystemState)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hCurrentHigh : ∀ t, st.scheduler.currentOnCore bootCoreId = some t →
       threadObservable ctx observer t = false)
     (hProj : projectState ctx observer st' = projectState ctx observer st)
     (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.endpointReplyWithReversionHigh hCurrentHigh hProj) hConfined
 
 theorem nonInterference_perCore_handleInterrupt (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hCurrentHigh : ∀ t, st.scheduler.currentOnCore bootCoreId = some t →
       threadObservable ctx observer t = false)
     (hCurrentObjHigh : ∀ t, st.scheduler.currentOnCore bootCoreId = some t →
@@ -2215,7 +2251,7 @@ theorem nonInterference_perCore_handleInterrupt (ctx : LabelingContext) (observe
     (hProj : projectState ctx observer st' = projectState ctx observer st)
     (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (.handleInterrupt hCurrentHigh hCurrentObjHigh hAllRunnable hProj) hConfined
 
 -- ============================================================================
@@ -2358,7 +2394,7 @@ theorem niStepCoverage_perCore (ctx : LabelingContext) (observer : IfObserver)
       NonInterferenceStep ctx observer st st' ∧
       observableSlotsConfinedToCore st st' bootCoreId ∧
       (st.objects.invExt → objectIndexSetComplete st → st.objectIndexSet.table.invExt →
-        lowEquivalent_smp ctx observer st' st) := by
+        bindingLabelsEqual ctx st → lowEquivalent_smp ctx observer st' st) := by
   intro
     | .chooseThread | .endpointSendDual | .cspaceMint | .cspaceRevoke
     | .retypeFromUntyped | .notificationSignal
@@ -2374,8 +2410,8 @@ theorem niStepCoverage_perCore (ctx : LabelingContext) (observer : IfObserver)
     | .endpointCallWithDonationHigh | .endpointReplyWithReversionHigh
     | .handleInterrupt
       => exact ⟨st, .syscallDecodeError rfl, observableSlotsConfinedToCore_refl st bootCoreId,
-          fun hObjInv hIdx hSet =>
-            nonInterference_perCore ctx observer st st hObjInv hIdx hSet
+          fun hObjInv hIdx hSet hBind =>
+            nonInterference_perCore ctx observer st st hObjInv hIdx hSet hBind
               (.syscallDecodeError rfl) (observableSlotsConfinedToCore_refl st bootCoreId)⟩
 
 -- ============================================================================

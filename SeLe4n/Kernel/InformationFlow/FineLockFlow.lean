@@ -1628,6 +1628,7 @@ theorem syscallEntryChecked_success_perCore_NI (ctx : LabelingContext)
     (executingCore : CoreId) (regCount : Nat) (st st' : SystemState)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hOk : syscallEntryChecked ctx layout executingCore regCount st = .ok ((), st'))
     (hCurrentHigh : ∀ t, st.scheduler.currentOnCore bootCoreId = some t →
       threadObservable ctx observer t = false)
@@ -1640,7 +1641,7 @@ theorem syscallEntryChecked_success_perCore_NI (ctx : LabelingContext)
               st)
     (hConfined : observableSlotsConfinedToCore st st' bootCoreId) :
     lowEquivalent_smp ctx observer st' st :=
-  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
+  nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv hBind
     (syscallEntryChecked_success_yields_NI_step ctx observer layout executingCore regCount
       st st' hOk hCurrentHigh hDispatchProj)
     hConfined

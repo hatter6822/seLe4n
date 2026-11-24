@@ -184,10 +184,6 @@ inductive NonInterferenceStep
           objectObservable ctx observer nextTid.toObjId = false)
       (hRecvQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
           ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
-      -- WS-SX SX9.1 (D34, D37): the step's one registered premise; the
-      -- pre-receive loan pop's return is hidden by it
-      -- (`receiveLoanReturnHidden_of_bindingLabelsEqual`).
-      (hBind : bindingLabelsEqual ctx st)
     : NonInterferenceStep ctx observer st st'
   | endpointCallHigh
       (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
@@ -232,8 +228,6 @@ inductive NonInterferenceStep
           objectObservable ctx observer nextTid.toObjId = false)
       (hRecvQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
           ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
-      -- WS-SX SX9.1 (D34, D37): the step's one registered premise.
-      (hBind : bindingLabelsEqual ctx st)
     : NonInterferenceStep ctx observer st st'
   | storeObjectHigh
       (oid : SeLe4n.ObjId) (obj : KernelObject)
@@ -373,13 +367,20 @@ inductive NonInterferenceStep
     : NonInterferenceStep ctx observer st st'
 
 /-- WS-F3/H-05/H-09: A single non-interference step preserves the observer's
-projection (one-sided version). -/
+projection (one-sided version).
+
+WS-SX SX18.1 (ruling (a) under D29): equal binding labels (`bindingLabelsEqual`,
+D37) stand beside the object-store invariant as a per-state fact, carried by
+every committing entry (the lenders stage); the receive steps read the hidden
+loan return off it (`receiveLoanReturnHidden_of_bindingLabelsEqual`), so no
+step constructor carries it. -/
 theorem step_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState)
     (hObjInv : st.objects.invExt)
     (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st)
     (hStep : NonInterferenceStep ctx observer st st') :
     projectState ctx observer st' = projectState ctx observer st := by
   cases hStep with
@@ -483,14 +484,14 @@ theorem step_preserves_projection
   | endpointReply replier target msg hTH hTOH hOp =>
     exact endpointReply_preserves_projection ctx observer replier target msg st st' hTH hTOH hObjInv
       hIdxComplete hObjSetInv hOp
-  | endpointReceiveDualHigh eid recv send replyId hEH hRH hROH hCo hOp hSQHH hSQNH hRQTH hBind =>
+  | endpointReceiveDualHigh eid recv send replyId hEH hRH hROH hCo hOp hSQHH hSQNH hRQTH =>
     exact endpointReceiveDual_preserves_projection ctx observer eid recv replyId st st' send
       hEH hRH hROH hCo hSQHH hSQNH hRQTH hObjInv
       hIdxComplete hObjSetInv (receiveLoanReturnHidden_of_bindingLabelsEqual hBind hRH) hOp
   | endpointCallHigh eid caller payload hEH hCH hCOH hCo hOp hRQHH hRQNH hSQTH =>
     exact endpointCall_preserves_projection ctx observer eid caller payload st st'
       hEH hCH hCOH hCo hRQHH hRQNH hSQTH hObjInv hIdxComplete hObjSetInv hOp
-  | endpointReplyRecvHigh eid recv target rmsg replyId hEH hRH hROH hRTH hRTOH hCo hOp hSQHH hSQNH hRQTH hBind =>
+  | endpointReplyRecvHigh eid recv target rmsg replyId hEH hRH hROH hRTH hRTOH hCo hOp hSQHH hSQNH hRQTH =>
     exact endpointReplyRecv_preserves_projection ctx observer eid recv target rmsg replyId st st'
       hEH hRH hROH hRTH hRTOH hCo hSQHH hSQNH hRQTH hObjInv
       hIdxComplete hObjSetInv (receiveLoanReturnHidden_of_bindingLabelsEqual hBind hRH) hOp
@@ -559,11 +560,14 @@ theorem composedNonInterference_step
     (hIdxComplete₂ : objectIndexSetComplete s₂)
     (hObjSetInv₁ : s₁.objectIndexSet.table.invExt)
     (hObjSetInv₂ : s₂.objectIndexSet.table.invExt)
+    (hBind₁ : bindingLabelsEqual ctx s₁) (hBind₂ : bindingLabelsEqual ctx s₂)
     (hStep₁ : NonInterferenceStep ctx observer s₁ s₁')
     (hStep₂ : NonInterferenceStep ctx observer s₂ s₂') :
     lowEquivalent ctx observer s₁' s₂' := by
-  have h₁ := step_preserves_projection ctx observer s₁ s₁' hObjInv₁ hIdxComplete₁ hObjSetInv₁ hStep₁
-  have h₂ := step_preserves_projection ctx observer s₂ s₂' hObjInv₂ hIdxComplete₂ hObjSetInv₂ hStep₂
+  have h₁ := step_preserves_projection ctx observer s₁ s₁' hObjInv₁ hIdxComplete₁ hObjSetInv₁
+    hBind₁ hStep₁
+  have h₂ := step_preserves_projection ctx observer s₂ s₂' hObjInv₂ hIdxComplete₂ hObjSetInv₂
+    hBind₂ hStep₂
   unfold lowEquivalent; rw [h₁, h₂]; exact hLow
 
 /-- WS-F3/H-05: Multi-step trace of non-interference steps. -/
@@ -575,6 +579,7 @@ inductive NonInterferenceTrace
       (hObjInv : st₁.objects.invExt)
       (hIdxComplete : objectIndexSetComplete st₁)
       (hObjSetInv : st₁.objectIndexSet.table.invExt)
+      (hBind : bindingLabelsEqual ctx st₁)
       (hStep : NonInterferenceStep ctx observer st₁ st₂)
       (hTail : NonInterferenceTrace ctx observer st₂ st₃)
     : NonInterferenceTrace ctx observer st₁ st₃
@@ -587,8 +592,8 @@ theorem trace_preserves_projection
     projectState ctx observer st' = projectState ctx observer st := by
   induction hTrace with
   | nil _ => rfl
-  | cons _ st₂ _ hObjInv hIdxComplete hObjSetInv hStep _ ih =>
-    rw [ih, step_preserves_projection ctx observer _ st₂ hObjInv hIdxComplete hObjSetInv hStep]
+  | cons _ st₂ _ hObjInv hIdxComplete hObjSetInv hBind hStep _ ih =>
+    rw [ih, step_preserves_projection ctx observer _ st₂ hObjInv hIdxComplete hObjSetInv hBind hStep]
 
 /-- WS-F3/H-05: Trace-level IF-M4 composition theorem. -/
 theorem composedNonInterference_trace
@@ -658,12 +663,14 @@ theorem composedNI_withSwitchDomain
     (hIdxComplete₂ : objectIndexSetComplete s₂)
     (hObjSetInv₁ : s₁.objectIndexSet.table.invExt)
     (hObjSetInv₂ : s₂.objectIndexSet.table.invExt)
+    (hBind₁ : bindingLabelsEqual ctx s₁) (hBind₂ : bindingLabelsEqual ctx s₂)
     (hStep : ComposedNonInterferenceStep ctx observer s₁ s₂ s₁' s₂') :
     lowEquivalent ctx observer s₁' s₂' := by
   cases hStep with
   | projectionPreserving h₁ h₂ =>
     exact composedNonInterference_step ctx observer s₁ s₂ s₁' s₂'
-      hLow hObjInv₁ hObjInv₂ hIdxComplete₁ hIdxComplete₂ hObjSetInv₁ hObjSetInv₂ h₁ h₂
+      hLow hObjInv₁ hObjInv₂ hIdxComplete₁ hIdxComplete₂ hObjSetInv₁ hObjSetInv₂ hBind₁ hBind₂
+      h₁ h₂
   | switchDomain hCH₁ hCH₂ hS₁ hS₂ =>
     exact switchDomain_preserves_lowEquivalent ctx observer s₁ s₂ s₁' s₂'
       hLow hCH₁ hCH₂ hObjInv₁ hObjInv₂ hS₁ hS₂
@@ -677,16 +684,19 @@ theorem composedNI_two_steps
     (hObjInv₁ : s₁.objects.invExt) (hObjInv₂ : s₂.objects.invExt)
     (hIdxComplete₁ : objectIndexSetComplete s₁) (hIdxComplete₂ : objectIndexSetComplete s₂)
     (hObjSetInv₁ : s₁.objectIndexSet.table.invExt) (hObjSetInv₂ : s₂.objectIndexSet.table.invExt)
+    (hBind₁ : bindingLabelsEqual ctx s₁) (hBind₂ : bindingLabelsEqual ctx s₂)
     (hObjInvMid₁ : s₁_mid.objects.invExt) (hObjInvMid₂ : s₂_mid.objects.invExt)
     (hIdxCompleteMid₁ : objectIndexSetComplete s₁_mid) (hIdxCompleteMid₂ : objectIndexSetComplete s₂_mid)
     (hObjSetInvMid₁ : s₁_mid.objectIndexSet.table.invExt) (hObjSetInvMid₂ : s₂_mid.objectIndexSet.table.invExt)
+    (hBindMid₁ : bindingLabelsEqual ctx s₁_mid) (hBindMid₂ : bindingLabelsEqual ctx s₂_mid)
     (hStep₁ : ComposedNonInterferenceStep ctx observer s₁ s₂ s₁_mid s₂_mid)
     (hStep₂ : ComposedNonInterferenceStep ctx observer s₁_mid s₂_mid s₁' s₂') :
     lowEquivalent ctx observer s₁' s₂' :=
   composedNI_withSwitchDomain ctx observer s₁_mid s₂_mid s₁' s₂'
     (composedNI_withSwitchDomain ctx observer s₁ s₂ s₁_mid s₂_mid hLow hObjInv₁ hObjInv₂
-      hIdxComplete₁ hIdxComplete₂ hObjSetInv₁ hObjSetInv₂ hStep₁)
-    hObjInvMid₁ hObjInvMid₂ hIdxCompleteMid₁ hIdxCompleteMid₂ hObjSetInvMid₁ hObjSetInvMid₂ hStep₂
+      hIdxComplete₁ hIdxComplete₂ hObjSetInv₁ hObjSetInv₂ hBind₁ hBind₂ hStep₁)
+    hObjInvMid₁ hObjInvMid₂ hIdxCompleteMid₁ hIdxCompleteMid₂ hObjSetInvMid₁ hObjSetInvMid₂
+    hBindMid₁ hBindMid₂ hStep₂
 
 -- ============================================================================
 -- AE1-G2: Projection-preserving operations preserve low-equivalence
@@ -1373,7 +1383,8 @@ theorem syscallNI_coverage_witness
     (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hIdxComplete : objectIndexSetComplete st)
-    (hObjSetInv : st.objectIndexSet.table.invExt) :
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hBind : bindingLabelsEqual ctx st) :
     -- Decode error path is always a valid NI step (state unchanged)
     NonInterferenceStep ctx observer st st ∧
     -- Every NI step composes into a single-step trace
@@ -1383,8 +1394,9 @@ theorem syscallNI_coverage_witness
     (∀ st' (_ : NonInterferenceStep ctx observer st st'),
       projectState ctx observer st' = projectState ctx observer st) :=
   ⟨.syscallDecodeError rfl,
-   fun st' hStep => .cons st st' st' hObjInv hIdxComplete hObjSetInv hStep (.nil st'),
-   fun st' hStep => step_preserves_projection ctx observer st st' hObjInv hIdxComplete hObjSetInv hStep⟩
+   fun st' hStep => .cons st st' st' hObjInv hIdxComplete hObjSetInv hBind hStep (.nil st'),
+   fun st' hStep => step_preserves_projection ctx observer st st' hObjInv hIdxComplete hObjSetInv
+     hBind hStep⟩
 
 -- ============================================================================
 -- U4-E / U-H10: KernelOperation enumeration for NI completeness checking
