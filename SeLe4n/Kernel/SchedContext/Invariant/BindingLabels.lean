@@ -301,6 +301,25 @@ theorem ofTcb {old : Option KernelObject} {t t' : TCB} (hOld : old = some (.tcb 
       fun _ _ hk _ => (by simp only [objBindingWords, h] at hk; omega)⟩
   · exact of_eq (by simp only [objBindingWords, h1, h2])
 
+/-- **A thread record written keeping its binding** (`TCB.schedContextBinding`):
+the context word is the binding's, and the owner word is read back from it
+wherever the context word names a context. -/
+theorem ofTcbBinding {old : Option KernelObject} {t t' : TCB} (hOld : old = some (.tcb t))
+    (h : t'.schedContextBinding = t.schedContextBinding) :
+    objBindingShrink old (some (.tcb t')) := by
+  subst hOld
+  have hc : t'.scBindingScCode = t.scBindingScCode := by
+    have := congrArg SchedContextBinding.scCode h
+    simpa only [TCB.schedContextBinding, SchedContextBinding.scCode_ofCodes] using this
+  refine ⟨fun _ hk => (by simp only [objBindingWords, hc] at hk ⊢; exact hk),
+    fun _ hk => (by simp only [objBindingWords] at hk; omega),
+    fun _ hk => (by simp only [objBindingWords] at hk; omega), fun k o hk ho => ?_⟩
+  simp only [objBindingWords] at hk ho ⊢
+  have hk' : t.scBindingScCode = k + 1 := hc ▸ hk
+  have := congrArg SchedContextBinding.ownerCode h
+  simp only [TCB.schedContextBinding, hk, hk', SchedContextBinding.ownerCode_ofCodes_succ] at this
+  exact ⟨hk', this ▸ ho⟩
+
 /-- **A thread record written keeping its context word and clearing its owner
 word** (a holder whose lender has gone). -/
 theorem ofTcbOwnerCleared {old : Option KernelObject} {t t' : TCB} (hOld : old = some (.tcb t))
@@ -354,6 +373,53 @@ theorem bindingViewsShrink_of_slot {st st' : SystemState} (k : SeLe4n.ObjId)
     · rw [hNe x hx]; exact .of_eq rfl
 
 /-! ### The binding grow: the step a creating site is
+/-- **Each thread keeps its binding, and each context and notification after
+the step was there before it**: the form a step's thread-binding frame and its
+non-thread frame give, read as a shrink. -/
+theorem bindingViewsShrink_of_tcbBinding {st st' : SystemState}
+    (hT : ∀ x : SeLe4n.ThreadId,
+      (st'.getTcb? x).map (·.schedContextBinding) = (st.getTcb? x).map (·.schedContextBinding))
+    (hS : ∀ s sc, st'.getSchedContext? s = some sc → st.getSchedContext? s = some sc)
+    (hN : ∀ n ntfn, st'.getNotification? n = some ntfn → st.getNotification? n = some ntfn) :
+    bindingViewsShrink st st' := by
+  have key : ∀ t k, threadContextView st' t = k + 1 →
+      ∃ a b, st'.getTcb? t = some a ∧ st.getTcb? t = some b ∧ a.scBindingScCode = k + 1 ∧
+        b.scBindingScCode = k + 1 ∧ a.scBindingOwnerCode = b.scBindingOwnerCode := by
+    intro t k hV
+    unfold threadContextView at hV
+    have h := hT t
+    cases h1 : st'.getTcb? t with
+    | none => rw [h1] at hV; cases hV
+    | some a =>
+      rw [h1] at hV h
+      cases h2 : st.getTcb? t with
+      | none => rw [h2] at h; cases h
+      | some b =>
+        rw [h2] at h
+        have hE := Option.some.inj h
+        have hb := congrArg SchedContextBinding.scCode hE
+        simp only [TCB.schedContextBinding, SchedContextBinding.scCode_ofCodes] at hb
+        have hk : b.scBindingScCode = k + 1 := hb ▸ hV
+        have ho := congrArg SchedContextBinding.ownerCode hE
+        simp only [TCB.schedContextBinding, hV, hk, SchedContextBinding.ownerCode_ofCodes_succ] at ho
+        exact ⟨a, b, rfl, rfl, hV, hk, ho⟩
+  refine ⟨fun t k hV => ?_, fun s k hV => ?_, fun n k hV => ?_, fun t k o hV hW => ?_⟩
+  · obtain ⟨a, b, -, h2, -, hk, -⟩ := key t k hV
+    unfold threadContextView; rw [h2]; exact hk
+  · unfold contextThreadView at hV ⊢
+    cases h1 : st'.getSchedContext? s with
+    | none => rw [h1] at hV; cases hV
+    | some sc => rw [h1] at hV; rw [hS s sc h1]; exact hV
+  · unfold notificationContextView at hV ⊢
+    cases h1 : st'.getNotification? n with
+    | none => rw [h1] at hV; cases hV
+    | some ntfn => rw [h1] at hV; rw [hN n ntfn h1]; exact hV
+  · obtain ⟨a, b, h1, h2, -, hk, ho⟩ := key t k hV
+    unfold threadOwnerView at hW
+    unfold threadContextView threadOwnerView
+    rw [h1] at hW; rw [h2]
+    exact ⟨hk, ho ▸ hW⟩
+
 
 A step that writes a binding word to a new value (a bind, a lend, the return to
 an owner) is not a shrink.  It carries the predicate when every word after it
