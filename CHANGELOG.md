@@ -1,3 +1,50 @@
+## v0.37.48 — The Call lend's refusal deleted as unreachable, the lend argument retired (WS-SX SX19)
+
+SX19 is SX18.2's first half (D44), on SX18.  The Call lend's label refusal
+(`callLendAdmits`, D28) and the receive side's (`receiveLendAdmits`) are
+deleted, with the `lend : Bool` argument their answer was threaded through.
+Every Call, fault and receive-take lend is now seL4's unconditional lend.  The
+deletion is on unreachable branches only: no reachable behaviour changes.
+
+- **Proved first.**  At every committing entry the admission reads a state
+  where `bindingLabelsEqual` holds: the Call, receive and ReplyRecv legs read
+  the pre-state, and the fault legs (the fault entry and the FFI capability
+  fault) read the register-spilled state, which keeps `lendingLabelsEqual`
+  (`faultDeliverOnCoreChecked_preserves_lendingLabelsEqual`).  There the
+  holder's label is the context's (`.bound` / `.donated`), so the admission is
+  `securityFlowsTo_refl`.  No site was reachable.
+- **Measured first.**  295 declarations in 73 files took or forwarded the
+  argument (1.35x SX18's 219/57, under D32's wrap), so the row lands whole.
+- **Deleted.**
+  - The admissions and their module (`CallLendLabel.lean`).
+  - The gated donation `applyCallDonationOnCoreWhen` and resolver
+    `callLendSchedContext?`, with their `_true` / `_false` / `_cases` /
+    `_induct` lemmas; the in-place unlent arms (`callWakesUnlentInPlace`,
+    `receiveCallTakesUnlentInPlace`, the ReplyRecv unlent arms
+    `replyRecvUnlentArmR`, `replyRecvUnlentRendezvousR`,
+    `replyRecvLongUnlentRendezvousR`) and the `!receiveLendAdmits` branches
+    of the ReplyRecv resolvers.
+  - The union footprints over both lend answers: the Call lock set no longer
+    carries the refused chain's segment, and the `_subset` lemmas that joined
+    the two answers are gone.
+  - The test that exercised the refusal (`callLend_admission`) and the
+    refused-lend fault block.
+- **Restated.**  Each consumer is over the unconditional lend:
+  `applyCallDonationOnCore`, `callDonationSchedContext?`, `callWakesInPlace`,
+  `receiveCallTakesInPlace` and `lendSchedContextInPlace` (was
+  `lendSchedContextInPlaceWhen`).  The compiled forms keep their `@[csimp]`
+  agreements; the NI case splits on `lend` are gone.  The conformance table's
+  `call-lends-context` row is `.implemented .call`, and its check now asserts
+  the lend.  D30 (`donationContextFlows`) is untouched.
+- **Heap gate.**  No scenario measured D28's refusal (it was unreachable from a
+  booted image), so the expected set is unchanged; every non-retype reading is
+  still 0.
+- **Gates.**  The Tier 3 `#check` block and anchors follow the new names; the
+  anchors on deleted code go.  New negative anchors refuse the deleted
+  definitions over `SeLe4n/`, their names over `SeLe4n/` and `tests/`, a
+  `lend : Bool` binder, and the label-flow theorem the admission rested on;
+  each was tested by putting a deleted definition back in code.
+
 ## v0.37.47 — The binding-labels premise moved to the standing per-state slot (WS-SX SX18, wrapped at SX18.1)
 
 SX18 is SX13's remainder, last part (D40), on SX17. Every committing entry now

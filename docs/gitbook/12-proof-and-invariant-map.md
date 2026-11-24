@@ -309,7 +309,8 @@ write census, so the lend and bind checks read static labels only; since WS-SX
 SX16 it is carried with equal binding labels (`lendingLabelsEqual`), every pop a
 labelled step reading its recipient's label at its own pre-state, and since
 SX17 every creating site proves its label equation from the gate it checks and
-the endpoint waiters. reply_pop
+the endpoint waiters, so since SX19 the Call lend has no label check at all
+(D28's refusal was unreachable and is deleted). reply_pop
 gained seL4's held arm (a recipient that holds a context keeps it, the head is
 popped), and `donationOwnerValid`'s owner clause reads "not donated" in place
 of `.unbound`, the one weakening the held arm needs; the canonical statement is
