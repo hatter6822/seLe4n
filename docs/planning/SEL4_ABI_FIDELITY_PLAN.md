@@ -31,7 +31,8 @@
 > became SX17–SX28. SX15 landed at `v0.37.44` (the binding siblings, the
 > finalisation's binding shrink and the one-slot grow toolkit). SX16 landed at
 > `v0.37.45` (the frame family threaded with the binding words, the pops as
-> labelled steps).
+> labelled steps). SX17 landed at `v0.37.46` (the creating sites' label
+> equations proved from their gates and SX11's waiters).
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
 > **Rows**: SX1–SX28, numbered in the order they are implemented, one PR each.
@@ -846,6 +847,23 @@ hypotheses threaded into the entries' premise packs: about three sessions.
 
 ### SX17 — The creating sites, and preservation over every writer (D40)
 
+**LANDED at `v0.37.46`.** Within the measured scope (17 declarations in 7
+lender files, against the plan's 12), with no transition change and no stub.
+The receive take and the reply-receive take read the dequeued thread at the
+receive leg's own state: the receiver itself, or the send queue's head, which
+is blocked on the endpoint and so has its label
+(`endpointReceiveDualWithCapsOnCore_dequeued_labelEq`, from the receive gate,
+`queueHeadBlockedConsistent` and SX11's `blockedSenderLabelsEqual`).  The Call
+lend and the fault delivery read the waiters each entry takes at its own state
+beside the records.  Bind reads its label gate
+(`dispatchCapabilityOnlyChecked_bindLabels`).  The declassified signal's lend
+was found checked, not unchecked: the dispatch runs it under the lifted
+context, whose generic check is `donationContextFlows`, so its step takes no
+premise.  The packs carry no label equation (Tier 3 negative anchors).  The 41
+writer files that write no stack view needed no new theorem: every writer a
+committing entry reaches is covered inside that entry's labelled steps since
+SX16, and the in-place files are proof support for the `@[csimp]` fast forms.
+
 SX13's remainder, second half: the label equation of every step that writes a
 binding word to a new value, discharged, so the stage holds of every committing
 entry with no added hypothesis.
@@ -995,7 +1013,7 @@ every new path measured at 0.
 | SX14 | 3 (landed) |
 | SX15 | 1–2 (landed) |
 | SX16 | 3 (landed) |
-| SX17 | 2–3 |
+| SX17 | 2–3 (landed) |
 | SX18 | 2 |
 | SX19 | 3 |
 | SX20 | 2 |

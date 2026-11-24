@@ -1,3 +1,47 @@
+## v0.37.46 — The creating sites' label equations proved, and every committing entry carries the lending labels (WS-SX SX17)
+
+SX17 is SX13's remainder, second half (D40), on SX16: every step that writes a
+binding word to a new value now derives its label equation from the gate it
+checks and SX11's endpoint waiters, so the premise packs carry no label
+equation and every committing entry carries `lendingLabelsEqual` under the
+records' and the waiters' stages alone.  No transition changes.
+
+- **The receive take and the reply-receive take.**  The receive leg dequeues
+  the receiver itself or the head of the endpoint's send queue at the state
+  the leg runs from, with its record there
+  (`endpointReceiveDualWithCapsOnCore_dequeued_cases`); the head is blocked
+  sending or calling on the endpoint (`queueHeadBlockedConsistent`), so it has
+  the endpoint's label (`blockedSenderLabelsEqual`), and the receive gate,
+  two-way, gives the receiver the same label
+  (`endpointReceiveDualWithCapsOnCore_dequeued_labelEq`).  The waiters and the
+  queue heads are carried from the dispatcher's state to the leg's by SX11's
+  frames and the records' receive-leg facts.
+- **The Call lend and the fault delivery** read the blocked receivers' labels
+  from the waiters each entry takes at its own state, carried across the
+  spill, the busy-reply cancel and the fault-register spill.
+- **SchedContext_Bind** reads its label gate: a checked capability-only arm
+  that succeeds on the bind passed `schedContextBindLabelGate`
+  (`dispatchCapabilityOnlyChecked_bindLabels`,
+  `dispatchCapabilityOnlyChecked_lendersStep`).
+- **The declassified signal's lend is checked.**  The dispatch runs it under
+  the lifted context, on which the generic check is `donationContextFlows`
+  (D30), so its step is `LendersStep.maybeDonateSchedContextFlowing`'s and takes
+  no premise.  No lend in the tree crosses unequal labels unchecked.
+- **The packs.**  `LendersDispatchPremises` loses `waiters`, `bindThread`,
+  `bindNotification` and `declassifySignal`; `ReceiveLendersPremises`,
+  `ReplyRecvLendersPremises` and `FaultLendPremises` lose their label fields.
+  The entries (`syscallDispatchEntryState_lendersStage`,
+  `faultEntryState_lendersStage`, `unknownSyscallEntryState_lendersStage`) take
+  `endpointWaitersLabelsEqual` at their own state beside the records; the
+  timer, reschedule, FP/SIMD and interrupt entries need nothing new.
+- **Retired:** `notificationContext?_of_bindingShrink` and its view lemma,
+  which only the old declassified-signal premise read.
+- **Gates.**  Tier 3 checks the four new results, with negative anchors that
+  no premise pack carries a label equation or label invariant and relation
+  anchors on the receive take's equation, the checked bind step, the
+  declassified signal's step and the three entries' waiters; each was tested
+  by breaking the relation with its tokens kept.
+
 ## v0.37.45 — The lenders' frame family carries the binding words, and the pops are labelled steps (WS-SX SX16)
 
 SX16 is the second half of SX14's remainder (D42, the owner's decision), on

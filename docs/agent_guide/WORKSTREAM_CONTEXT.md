@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31; SX6 v0.37.32; SX7 v0.37.33, its remainder split into SX8 and SX20–SX23; SX8 v0.37.36, which split its own remainder into SX9, SX12 and SX19 (D32); SX9 v0.37.38, which added SX10 (D36, D37); SX10 v0.37.39, wrapped (D38), its remainder split into SX11 and SX13; SX11 v0.37.40; SX12 and SX13 swapped by D39; SX12 v0.37.41; SX13 v0.37.42, wrapped (D40), its remainder split into SX14, SX17 and SX18; SX14.1 v0.37.43, SX14 wrapped there (D32), its remainder split into SX15 and SX16 (D42); SX15 v0.37.44; SX16 v0.37.45)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31; SX6 v0.37.32; SX7 v0.37.33, its remainder split into SX8 and SX20–SX23; SX8 v0.37.36, which split its own remainder into SX9, SX12 and SX19 (D32); SX9 v0.37.38, which added SX10 (D36, D37); SX10 v0.37.39, wrapped (D38), its remainder split into SX11 and SX13; SX11 v0.37.40; SX12 and SX13 swapped by D39; SX12 v0.37.41; SX13 v0.37.42, wrapped (D40), its remainder split into SX14, SX17 and SX18; SX14.1 v0.37.43, SX14 wrapped there (D32), its remainder split into SX15 and SX16 (D42); SX15 v0.37.44; SX16 v0.37.45; SX17 v0.37.46)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -320,9 +320,12 @@ thread word, a notification's context word) carries equal labels (D37,
 before it writes, as Bind and the notification lend do, and a lent binding's
 owner word names a thread with the context's label; SX10 (`v0.37.39`) proved
 it of every booted image; SX16 (`v0.37.45`) carries it across every lender
-step with the creating sites' label equations as entry premises, and until
-SX17 discharges those (on SX11's waiter labels), the receive steps and the two-run theorem
-take it as their one premise, and SX18.1 moves it to the standing per-state
+step, and SX17 (`v0.37.46`) proves each creating site's label equation from
+the gate it checks and the endpoint waiters, which the syscall and fault
+entries take at their own state beside the records, so no premise pack carries
+a label equation (a new creating site derives its equation from a gate it
+checks, never from a pack field); until SX18.1, the receive steps and the
+two-run theorem take it as their one premise, and SX18.1 moves it to the standing per-state
 slot; the lend refusals (`callLendAdmits`' refusal, the notification lend's
 label check) stay until SX18.2 deletes them. Every thread
 blocked sending, calling or receiving on an endpoint has that endpoint's label
