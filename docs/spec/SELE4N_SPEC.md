@@ -1300,7 +1300,7 @@ internal; nothing a thread writes names one.
     (`syscallReturnOutcome`, `syscallSuccessOutcome_returns_runnable`). The
     core resumes the thread the committed state runs on it
     (`restoreTargetOnCore`). Where a caller stopped inside its own syscall
-    resumes is WS-SX SX20.1.
+    resumes is WS-SX SX22.1.
   - NBSend, NBRecv and NBWait do not block. An NBSend to an endpoint with no
     receiver drops the message, and its drop decision is non-interfering
     (`sendDropsMessage_lowEquivalent`).
@@ -12368,12 +12368,14 @@ predicate also says a lent binding's owner carries the context's label (the
 return to the owner binds the owner).  A step that writes a binding word to a
 new value carries it when every new word pairs equal labels (the binding grow,
 `bindingLabelsEqual_of_grow`, WS-SX SX13, `v0.37.42`).  Its preservation by
-every committing entry is the plan's SX14 (the lenders' frame family carrying
-the binding words, the pops as labelled steps) and SX15 (the creating sites),
+every committing entry is the plan's SX15 (the binding siblings of the
+summaries that forget the binding words, and the one-slot grow toolkit), SX16
+(the lenders' frame family carrying the binding words, the pops as labelled
+steps) and SX17 (the creating sites),
 on SX11's invariant (`v0.37.40`, below) that every thread blocked on an
 endpoint carries the endpoint's label: the gate at a Call or receive-take lend
 checks one side of the endpoint, and the other side was checked when the
-waiting thread blocked.  SX16 then moves the premise and deletes both
+waiting thread blocked.  SX18 then moves the premise and deletes both
 refusals.
 
 **What the gate checked is recorded in the state, on both sides (WS-RR RR8.16,
