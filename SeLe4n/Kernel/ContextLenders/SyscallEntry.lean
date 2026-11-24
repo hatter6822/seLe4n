@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.ContextLenders.CapabilityDispatch
 import SeLe4n.Kernel.ContextLenders.Fault
 import SeLe4n.Kernel.KernelRecords.SyscallEntry
+import SeLe4n.Kernel.EndpointWaiters.Entry
 
 /-! # The syscall entry keeps the lenders' flow
 
@@ -25,7 +26,10 @@ The checked dispatch's premises (`LendersDispatchPremises`) and the capability
 fault's delivery premises (`FaultLendPremises`) are read off the states those
 steps run from, as the other entries read theirs (`docs/REGISTERED_DEBT.md`
 table C, "`ipcReachable` is not carried across a trace of kernel entries",
-owner WS-PK).
+owner WS-PK).  The creating sites' label equations read the endpoint waiters'
+labels (`endpointWaitersLabelsEqual`, WS-SX SX11), taken at the entry's own
+state beside the records and carried to the dispatch's and the delivery's
+states by SX11's frames (WS-SX SX17).
 -/
 
 namespace SeLe4n.Kernel
@@ -52,6 +56,7 @@ theorem syscallEntryChecked_lendersStage {ctx : LabelingContext}
     {layout : SeLe4n.SyscallRegisterLayout} {e : CoreId} {regCount : Nat}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (P : SyscallEntryLendPremises ctx layout e regCount st) (hR : CurrentReady st)
+    (hW : endpointWaitersLabelsEqual ctx st)
     (h : syscallEntryChecked ctx layout e regCount st = .ok ((), st')) :
     LendersStage ctx st st' := by
   unfold syscallEntryChecked at h
@@ -67,7 +72,7 @@ theorem syscallEntryChecked_lendersStage {ctx : LabelingContext}
   · cases h
   rename_i decoded hDec
   exact dispatchSyscallChecked_lendersStage ctx decoded tid e st st' hInv
-    (P tid (regs, s0) decoded hCur hP hDec) (hR e tid hCur) h
+    (P tid (regs, s0) decoded hCur hP hDec) (hR e tid hCur) hW h
 
 
 /-- **A refused receive's busy-reply cancel**, a labelled step: nothing, or a
@@ -93,17 +98,19 @@ structure SyscallAbiLendPremises (ctx : LabelingContext) (e : CoreId) (syscallId
     let stW := writeFaultRegistersToTcb (_root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e
       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid
       (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)
-    FaultLendPremises ctx stW tid f
+    FaultLendPremises stW tid f
       (Architecture.faultContextOfThread stW tid (Platform.FFI.svcFaultIP elr) spsr) e
 
 /-- **The ABI dispatch keeps the lenders' flow**: the argument spill, then the
 checked entry, or the busy-reply cancel and a dropped fault's record, a
-capability fault's delivery or the refusal's record. -/
+capability fault's delivery or the refusal's record.  The waiters (`hW`) are
+carried across the spill, and across the cancel and the fault-register spill to
+the delivery. -/
 theorem syscallDispatchFromAbi_lendersStage {ctx : LabelingContext} {e : CoreId}
     {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome} (hInv : st.objects.invExt)
     (P : SyscallAbiLendPremises ctx e syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st)
-    (hR : CurrentReady st)
+    (hR : CurrentReady st) (hW : endpointWaitersLabelsEqual ctx st)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     LendersStage ctx st st' := by
@@ -118,6 +125,10 @@ theorem syscallDispatchFromAbi_lendersStage {ctx : LabelingContext} {e : CoreId}
     unfold Platform.FFI.writeFfiRegistersToTcb
     exact LendersFrame.updateTcb st tid _ hInv
   have hR1 := hR.writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 x6 hInv
+  have W1 : EndpointWaitersFrame st
+      (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
+    unfold Platform.FFI.writeFfiRegistersToTcb
+    exact EndpointWaitersFrame.updateTcb st tid hInv fun _ => TcbWaitsKept.of_ipc rfl
   dsimp only at h
   split at h
   · have F := (LendersStep.of_frame (ctx := ctx) F1).andThen fun hI =>
@@ -132,8 +143,11 @@ theorem syscallDispatchFromAbi_lendersStage {ctx : LabelingContext} {e : CoreId}
         exact F.stage.trans (LendersStage.of_kept (chainObjectsKept.of_objects_eq rfl))
       · cases h
         unfold Platform.FFI.deliverSyscallCapFault
+        have W := (W1.andThen fun hI => EndpointWaitersFrame.cancelReceiveBusyReply ctx e _ hI).andThen
+          fun hI => EndpointWaitersFrame.writeFaultRegistersToTcb _ tid
+            (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30) hI
         exact F.stage.trans fun hFl => faultDeliverOnCoreChecked_preserves_lendingLabelsEqual _ tid _ _
-          e (P.capFault tid _ hCur)
+          e (P.capFault tid _ hCur) (W.stage hW).2
           (LendersStage.of_kept (chainObjectsKept.writeFaultRegistersToTcb _ tid _ F.invExt) hFl)
     · split at h
       · cases h
@@ -145,18 +159,20 @@ theorem syscallDispatchFromAbi_lendersStage {ctx : LabelingContext} {e : CoreId}
           (Platform.FFI.recordSyscallRefusal_objects_eq _ _ _ _ _ _ _)))
   · rename_i hE
     cases h
-    exact F1.stage.trans (syscallEntryChecked_lendersStage F1.invExt (P.entry tid hCur) hR1 hE)
+    exact F1.stage.trans (syscallEntryChecked_lendersStage F1.invExt (P.entry tid hCur) hR1
+      (W1.stage hW) hE)
 
 
 /-- **The syscall step keeps the lenders' flow**: the ABI dispatch, the
 caller's return staging, the local scheduling point, the residency settlement,
 the activation and the ledger drains.  The store's invariant after the dispatch
-is the records' own (`syscallDispatchFromAbi_recordsStage`). -/
+is the records' own (`syscallDispatchFromAbi_recordsStage`); the waiters are the
+step's own state's. -/
 theorem syscallDispatchCrossCoreStep_lendersStage {ctx : LabelingContext} {e : CoreId}
     {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st : SystemState} (hK : st.kernelRecordsSound) (PR : RecordsArmPremises st)
     (P : SyscallAbiLendPremises ctx e syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st)
-    (hR : CurrentReady st) :
+    (hR : CurrentReady st) (hW : endpointWaitersLabelsEqual ctx st) :
     LendersStage ctx st (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2 x3 x4 x5
       x6 elr spsr spEl0 x30 st).2 := by
   obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e syscallId
@@ -166,7 +182,7 @@ theorem syscallDispatchCrossCoreStep_lendersStage {ctx : LabelingContext} {e : C
   have F1 := RecordsFrame.stageCallerReturnFor (st.scheduler.currentOnCore e) _ e outcome hI
   have F2 := F1.trans (RecordsFrame.scheduleLocalSuccessorFrom (st.scheduler.currentOnCore e) _ e F1.invExt)
   have F3 := F2.trans (RecordsFrame.settleResidencyOnCore _ e F2.invExt)
-  exact (syscallDispatchFromAbi_lendersStage (KernelRecords.objects_invExt hK) P hR hD).trans
+  exact (syscallDispatchFromAbi_lendersStage (KernelRecords.objects_invExt hK) P hR hW hD).trans
     ((((LendersStage.of_kept (chainObjectsKept.stageCallerReturnFor _ _ e outcome hI)).trans
       (LendersStage.of_kept (chainObjectsKept.scheduleLocalSuccessorFrom _ _ e F1.invExt))).trans
       (LendersStage.of_kept (chainObjectsKept.settleResidencyOnCore _ e F2.invExt))).trans
@@ -176,11 +192,12 @@ theorem syscallDispatchCrossCoreStep_lendersStage {ctx : LabelingContext} {e : C
 /-- **The syscall entry's committed state keeps the lenders' flow**: the
 trap-frame save, the entry's IPC-buffer words handed to the state, the step,
 and the committed state dropping the words.  The premises are read off the
-state the step runs from. -/
+state the step runs from; the waiters are the entry's own state's (`hW`), beside
+the records, and the save and the words keep them. -/
 theorem syscallDispatchEntryState_lendersStage (ctx : LabelingContext) (e : CoreId)
     (trapped : Architecture.InFlightContext)
     (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
-    (st : SystemState) (hK : st.kernelRecordsSound)
+    (st : SystemState) (hK : st.kernelRecordsSound) (hW : endpointWaitersLabelsEqual ctx st)
     (PR : RecordsArmPremises (Architecture.IpcBufferRead.syncUserWords
       (Architecture.saveCapturedSyscallFrame st e frame) bytes n))
     (P : ∀ syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30,
@@ -200,7 +217,10 @@ theorem syscallDispatchEntryState_lendersStage (ctx : LabelingContext) (e : Core
   have hS := (LendersStage.of_kept (ctx := ctx)
     ((chainObjectsKept.saveCapturedSyscallFrame st e frame hI).trans
       (chainObjectsKept.syncUserWords _ bytes n)))
-  exact (hS.trans (syscallDispatchCrossCoreStep_lendersStage hK1 PR (P _ _ _ _ _ _ _ _ _ _ _ _) hR)).trans
+  have W := (RecordsFrame.saveCapturedSyscallFrame st e frame hI).trans
+    (RecordsFrame.syncUserWords _ bytes n (RecordsFrame.saveCapturedSyscallFrame st e frame hI).invExt)
+  exact (hS.trans (syscallDispatchCrossCoreStep_lendersStage hK1 PR (P _ _ _ _ _ _ _ _ _ _ _ _) hR
+    ((EndpointWaitersFrame.of_frame W).stage hW))).trans
     (LendersStage.of_kept (chainObjectsKept.clearUserWords _))
 
 end SeLe4n.Kernel

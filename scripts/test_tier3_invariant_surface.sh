@@ -11592,7 +11592,10 @@ open SeLe4n.Kernel.Concurrency
 #check @LendersStep.maybeDonateSchedContext
 #check @LendersStep.keepDonatedSchedContextResolved
 #check @LendersStep.returnDonatedSchedContextResolved
-#check @notificationContext?_of_bindingShrink
+#check @endpointReceiveDualWithCapsOnCore_dequeued_cases
+#check @endpointReceiveDualWithCapsOnCore_dequeued_labelEq
+#check @dispatchCapabilityOnlyChecked_bindLabels
+#check @dispatchCapabilityOnlyChecked_lendersStep
 EOF'
 # WS-SX SX16 (D42 row B): a pop is a labelled step -- the lending labels
 # carried from the state before it to the state after it, and the object table
@@ -11603,6 +11606,24 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^structure contextStackLinksShrink \(s
 # A reply pop's owner is read at the pre-reply state (the frame's recorded
 # caller under its lending labels) and carried across the reply leg's shrink.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem calledFrame_labelEq [^\n]*( *\n +[^\n]*)*\(hL : contextLendersLabelsEqual ctx st\) \(hC : replyStackCaller st rid = some target\)\n +\(hS : contextStackLinksShrink st st1\) :\n +∀ s, replyFrameHeadContext\? st1 rid = some s →" SeLe4n/Kernel/ContextLenders/Reply.lean'
+# WS-SX SX17: the creating sites' label equations are proved, not premised.
+# No premise pack carries a label equation or a label invariant: the entries
+# take the endpoint waiters at their own states beside the records.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^structure LendersDispatchPremises [^\n]*(\n([ \t][^\n]*)?)*(LabelOf|LabelsEqual)" SeLe4n/Kernel/ContextLenders/SyscallDispatch.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^structure FaultLendPremises [^\n]*(\n([ \t][^\n]*)?)*(LabelOf|LabelsEqual)" SeLe4n/Kernel/ContextLenders/Fault.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def ReceiveLendersPremises [^\n]*(\n([ \t][^\n]*)?)*(LabelOf|LabelsEqual)" SeLe4n/Kernel/ContextLenders/Dispatch.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def ReplyRecvLendersPremises [^\n]*(\n([ \t][^\n]*)?)*(LabelOf|LabelsEqual)" SeLe4n/Kernel/ContextLenders/ReplyRecv.lean'
+# The receive take: the receiver the gate admitted and the thread its leg
+# dequeues, read at the leg's own state, have equal labels.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDualWithCapsOnCore_dequeued_labelEq [^\n]*( *\n +[^\n]*)*\(hQ : queueHeadBlockedConsistent s\) \(hW : blockedSenderLabelsEqual ctx s\)\n +\(hG : ctx\.threadLabelOf tid = ctx\.endpointLabelOf epId\)\n +\(h : endpointReceiveDualWithCapsOnCore epId tid r ec s = \(st1, \.ok \(dequeued, summ, sgi\)\)\) :\n +ctx\.threadLabelOf tid = ctx\.threadLabelOf dequeued :=" SeLe4n/Kernel/ContextLenders/Dispatch.lean'
+# SchedContext_Bind: the checked arm is a labelled step from its own success alone.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem dispatchCapabilityOnlyChecked_lendersStep [^\n]*( *\n +[^\n]*)*\(hInv : st\.objects\.invExt\)\n +\(h : dispatchCapabilityOnlyChecked ctx decoded\.syscallId decoded\.msgInfo\.extraCaps tid cap k st\n += \.ok \(\(\), st'"'"'\)\) :\n +LendersStep ctx st st'"'"' :=" SeLe4n/Kernel/ContextLenders/CapabilityDispatch.lean'
+# The declassified signal's lend is checked under the context the dispatch lifts.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem LendersStep\.notificationSignalDeclassifiedCrossCoreDispatch [^\n]*( *\n +[^\n]*)*\(st : SystemState\) \(hInv : st\.objects\.invExt\) :\n +LendersStep lctx st\n +\(_root_\.SeLe4n\.Kernel\.notificationSignalDeclassifiedCrossCoreDispatch \(liftLegacyContext lctx\)" SeLe4n/Kernel/ContextLenders/Notification.lean'
+# The entries read the waiters at their own state.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem syscallDispatchEntryState_lendersStage [^\n]*( *\n +[^\n]*)*\(st : SystemState\) \(hK : st\.kernelRecordsSound\) \(hW : endpointWaitersLabelsEqual ctx st\)" SeLe4n/Kernel/ContextLenders/SyscallEntry.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultEntryState_lendersStage [^\n]*( *\n +[^\n]*)*\(st : SystemState\) \(hInv : st\.objects\.invExt\)\n +\(hW : endpointWaitersLabelsEqual ctx st\)" SeLe4n/Kernel/ContextLenders/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem unknownSyscallEntryState_lendersStage [^\n]*( *\n +[^\n]*)*\(st : SystemState\) \(hInv : st\.objects\.invExt\)\n +\(hW : endpointWaitersLabelsEqual ctx st\)" SeLe4n/Kernel/ContextLenders/Fault.lean'
 # The receive-side footprints carry the state-level member on the SAME flag the
 # transition branches on, so the declaration tracks the write rather than being
 # unconditionally present.

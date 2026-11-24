@@ -11,6 +11,7 @@ import SeLe4n.Kernel.ContextLenders.Receive
 import SeLe4n.Kernel.ContextLenders.Fault
 import SeLe4n.Kernel.ContextLenders.Reply
 import SeLe4n.Kernel.KernelRecords.Dispatch
+import SeLe4n.Kernel.EndpointWaiters.Dispatch
 
 /-! # The checked dispatch's IPC arms carry the lenders' flow
 
@@ -19,9 +20,11 @@ WS-SX SX8.  The twin of `KernelRecords/Dispatch.lean`'s IPC arms for
 holder cancelled, the bound notification completed or the context returned, the
 rendezvous, and the lend of the dequeued `Call`'s context to the receiver: a
 creating site, whose label equation (the receiver labelled as the caller it
-dequeues) the arm's premise pack carries at the state the lend runs from
-(`ReceiveLendersPremises`; WS-SX SX17 discharges it from the receive gate and
-the dequeued caller's wait).
+dequeues) the receive gate and the dequeued caller's wait give (WS-SX SX17): the
+gate, two-way, gives the receiver the endpoint's label, and the caller headed
+the endpoint's send queue, so it was blocked sending or calling on it
+(`queueHeadBlockedConsistent`) and has the endpoint's label too
+(`blockedSenderLabelsEqual`, SX11's waiters carried to the receive's state).
 
 The steps that link or lend read the chain facts at the state they run from
 (`LendersPremises`), as premises (`docs/REGISTERED_DEBT.md` table C,
@@ -33,34 +36,80 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 
+/-- **The receive leg's dequeued thread**: the receiver itself (the leg blocked
+and dequeued nobody), or the head of the endpoint's send queue at the state the
+leg runs from, with its record there (a head with no record fails the pop). -/
+theorem endpointReceiveDualWithCapsOnCore_dequeued_cases {epId : SeLe4n.ObjId}
+    {tid : SeLe4n.ThreadId} {r : Option SeLe4n.ReplyId} {ec : CoreId} {s st1 : SystemState}
+    {dequeued : SeLe4n.ThreadId} {summ : CapTransferSummary} {sgi : Option (CoreId × Concurrency.SgiKind)}
+    (h : endpointReceiveDualWithCapsOnCore epId tid r ec s = (st1, .ok (dequeued, summ, sgi))) :
+    dequeued = tid ∨ ∃ ep tcb, s.objects[epId]? = some (.endpoint ep) ∧
+      ep.sendQ.head = some dequeued ∧ lookupTcb s dequeued = some tcb := by
+  cases hEp : s.getEndpoint? epId with
+  | none =>
+    exact .inl (endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_receiver_of_blocked epId tid r ec
+      s st1 dequeued summ sgi (by simp [receiveRendezvousSender?, hEp]) h)
+  | some ep =>
+    cases hH : ep.sendQ.head with
+    | none =>
+      exact .inl (endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_receiver_of_blocked epId tid r
+        ec s st1 dequeued summ sgi (by simp [receiveRendezvousSender?, hEp, hH]) h)
+    | some sender =>
+      have hD := endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_head epId tid r ec s st1
+        dequeued summ sgi ep sender hEp hH h
+      subst hD
+      have hEpObj := (SystemState.getEndpoint?_eq_some_iff s epId ep).mp hEp
+      cases hT : lookupTcb s dequeued with
+      | some tcb => exact .inr ⟨ep, tcb, hEpObj, hH, rfl⟩
+      | none =>
+        exfalso
+        have hPop : endpointQueuePopHead epId false s = .error .objectNotFound := by
+          unfold endpointQueuePopHead SystemState.getObject?
+          simp [hEpObj, hH, hT]
+        unfold endpointReceiveDualWithCapsOnCore endpointReceiveDualOnCore at h
+        simp [hEp, hH, hPop] at h
+
+/-- **The receive take's label equation** (a creating site, WS-SX SX17): the
+receiver the gate admitted has the endpoint's label, and the thread its leg
+dequeues is itself or a sender blocked on that endpoint, which has the
+endpoint's label too. -/
+theorem endpointReceiveDualWithCapsOnCore_dequeued_labelEq {ctx : LabelingContext}
+    {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId} {r : Option SeLe4n.ReplyId} {ec : CoreId}
+    {s st1 : SystemState} {dequeued : SeLe4n.ThreadId} {summ : CapTransferSummary}
+    {sgi : Option (CoreId × Concurrency.SgiKind)}
+    (hQ : queueHeadBlockedConsistent s) (hW : blockedSenderLabelsEqual ctx s)
+    (hG : ctx.threadLabelOf tid = ctx.endpointLabelOf epId)
+    (h : endpointReceiveDualWithCapsOnCore epId tid r ec s = (st1, .ok (dequeued, summ, sgi))) :
+    ctx.threadLabelOf tid = ctx.threadLabelOf dequeued := by
+  rcases endpointReceiveDualWithCapsOnCore_dequeued_cases h with rfl | ⟨ep, tcb, hEp, hH, hT⟩
+  · rfl
+  · rw [hG, hW dequeued tcb epId hT
+      ((hQ epId ep dequeued tcb hEp (lookupTcb_some_objects s dequeued tcb hT)).2 hH)]
+
 /-- **What the receive's lending steps read at the states they run from**: the
 donation chain's shape where the rendezvous runs (after seL4-MCS's return), and
 the chain facts where the lend runs (after the rendezvous), for the reply
-object the arm resolved, with the lend's label equation (a creating site: the
-receiver labelled as the `Call` it dequeues, WS-SX SX17 discharges it).
-Premises read off those states (WS-PK row above). -/
-def ReceiveLendersPremises (ctx : LabelingContext) (stC : SystemState) (tid : SeLe4n.ThreadId)
+object the arm resolved.  Premises read off those states (WS-PK row above). -/
+def ReceiveLendersPremises (stC : SystemState) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (decoded : SyscallDecodeResult) (epId : SeLe4n.ObjId) (ec : CoreId) : Prop :=
   donationChainWellFormed
       (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid) ∧
     ∀ r, resolveRecvReplyId gate decoded stC = .ok r → ∀ st1 res,
       endpointReceiveDualWithCapsOnCore epId tid r ec
         (receiveReturnSchedContext (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid)
-        = (st1, res) → LendersPremises st1 ∧
-      ∀ dequeued summ sgi, res = .ok (dequeued, summ, sgi) →
-        rendezvousDequeuedCall st1 dequeued = true →
-        ∀ s, callDonationSchedContext? st1 dequeued tid = some s →
-          ctx.threadLabelOf tid = ctx.threadLabelOf dequeued
+        = (st1, res) → LendersPremises st1
 
 /-- **A receive run on its busy-reply-cancelled state carries the lenders'
 flow** (seL4-MCS `receiveIPC`): the holder's cancel, then the notification's
 completion, the non-blocking miss, or the return, the rendezvous and the lend at
-the receive's admission. -/
+the receive's admission, whose label equation the receive gate (`hG`) and the
+waiters at the dispatcher's state (`hW`, carried to the rendezvous) give. -/
 theorem receiveResolvedArm_lendersStage (ctx : LabelingContext) (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (ec : CoreId) (gate : SyscallGate) (epId : SeLe4n.ObjId)
     (st st' : SystemState) (hInv : st.objects.invExt) (hIpc : ipcInvariantFull st)
-    (hCaller : CallerReady st tid)
-    (hP : ReceiveLendersPremises ctx (cancelRecvBusyReply ctx tid gate decoded ec st) tid gate
+    (hCaller : CallerReady st tid) (hW : endpointWaitersLabelsEqual ctx st)
+    (hG : ctx.threadLabelOf tid = ctx.endpointLabelOf epId)
+    (hP : ReceiveLendersPremises (cancelRecvBusyReply ctx tid gate decoded ec st) tid gate
       decoded epId ec)
     (h : receiveResolvedArm ctx decoded gate tid epId ec
       (cancelRecvBusyReply ctx tid gate decoded ec st) = .ok ((), st')) :
@@ -76,7 +125,8 @@ theorem receiveResolvedArm_lendersStage (ctx : LabelingContext) (decoded : Sysca
         hCaller.cancelReplyHolder hInv (Ne.symm hne)⟩
   obtain ⟨hS, hQC, hCC⟩ := hSC
   have hIC := hS.invExt
-  generalize cancelRecvBusyReply ctx tid gate decoded ec st = stC at h hP hS hIC hQC hCC
+  have hWC := (EndpointWaitersFrame.cancelRecvBusyReply ctx tid gate decoded ec st hInv).stage hW
+  generalize cancelRecvBusyReply ctx tid gate decoded ec st = stC at h hP hS hIC hQC hCC hWC
   by_cases hSig : receiveCompletesSignal ctx stC tid = true
   · cases hRes : resolveRecvReplyId gate decoded stC with
     | error _ => rw [hRes] at h; cases h
@@ -114,7 +164,12 @@ theorem receiveResolvedArm_lendersStage (ctx : LabelingContext) (decoded : Sysca
       rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hx] at hT
       cases hT
       exact hR
-    obtain ⟨hPM, hEq⟩ := hMid r hRes st1 _ hRecv
+    have hPM := hMid r hRes st1 _ hRecv
+    have hWR := (EndpointWaitersFrame.receiveReturnSchedContext
+      (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid hIC).stage hWC
+    have hQR := (receiveReturnSchedContext_receivePremises
+      (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid hIC hQC hCC).2.1
+    have hEq := endpointReceiveDualWithCapsOnCore_dequeued_labelEq hQR hWR.1 hG hRecv
     refine hS.stage.trans ((LendersStep.receiveReturnSchedContext
       (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid hIC).stage.trans ?_)
     intro hF
@@ -122,7 +177,7 @@ theorem receiveResolvedArm_lendersStage (ctx : LabelingContext) (decoded : Sysca
       hChainR hF
     rw [hRecv] at h1
     have h2 := applyReceiveRendezvousHandoff_preserves_lendingLabelsEqual hPM h1
-      (fun _ hCall s hs => hEq dequeued summ sgi rfl hCall s hs) hHand
+      (fun _ _ _ _ => hEq) hHand
     exact LendersStage.of_kept (chainObjectsKept.stageDeliveredMessage _ _ _
       (applyReceiveRendezvousHandoff_preserves_objects_invExt _ _ _ _ _ hPM.invExt hHand)) h2
   · cases h
