@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "sel4-origin-redirect",
-      "commit_sha": "4b23d9eabc4b38c5ce6689f5dfb40b44e6708c7d",
-      "tree_sha": "9000875c40ee24f89b49353aa13fd20b3ddf3791",
-      "committed_at_utc": "2026-11-24T09:23:05+00:00"
+      "branch": "sel4-binding-invariant",
+      "commit_sha": "8777fcf6108461ce2977be890c3c30124addaa08",
+      "tree_sha": "3eb0ea31c7a9e877ae52cc7b4048bddebe562297",
+      "committed_at_utc": "2026-11-24T12:30:24+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "cc5db19a2285f4a3b7c326c222a1ea412fd259d6fe03a48d9f59c0dd1818688a"
+    "source_digest": "6e4ce0bf6482fc00bd0be5e9fc48831a657a80ca0e2ab2692d648674adb16424"
   },
   "summary": {
     "module_count": 774,
-    "declaration_count": 39302
+    "declaration_count": 39318
   },
   "readme_sync": {
-    "version": "0.37.41",
+    "version": "0.37.42",
     "lean_toolchain": "v4.28.0",
     "production_files": 703,
-    "production_loc": 682798,
+    "production_loc": 683105,
     "test_files": 71,
     "test_loc": 92025,
-    "proved_theorem_lemma_decls": 26191,
+    "proved_theorem_lemma_decls": 26205,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -391373,7 +391373,7 @@
     {
       "module": "SeLe4n.Kernel.SchedContext.Invariant.BindingLabels",
       "path": "SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean",
-      "declaration_count": 26,
+      "declaration_count": 38,
       "declarations": [
         {
           "kind": "def",
@@ -391417,10 +391417,47 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "bindingLabelsEqual.donated",
+          "full_name": "SeLe4n.Kernel.bindingLabelsEqual.donated",
+          "line": 76,
+          "called": [
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.SchedContextBinding",
+            "SeLe4n.Kernel.SchedContextBinding.ownerCode",
+            "SeLe4n.Kernel.SchedContextBinding.ownerCode_ofCodes_succ",
+            "SeLe4n.Kernel.SchedContextBinding.scCode",
+            "SeLe4n.Kernel.SchedContextBinding.scCode_ofCodes",
+            "SeLe4n.Kernel.bindingLabelsEqual",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.schedContextBinding",
+            "SeLe4n.SchedContextId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bindingLabelsEqual.bound",
+          "full_name": "SeLe4n.Kernel.bindingLabelsEqual.bound",
+          "line": 93,
+          "called": [
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.SchedContextBinding.ofCodes",
+            "SeLe4n.Kernel.SchedContextBinding.scId?",
+            "SeLe4n.Kernel.bindingLabelsEqual",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.schedContextBinding",
+            "SeLe4n.SchedContextId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
           "kind": "def",
           "name": "threadContextView",
           "full_name": "SeLe4n.Kernel.threadContextView",
-          "line": 86,
+          "line": 117,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -391431,7 +391468,7 @@
           "kind": "def",
           "name": "threadOwnerView",
           "full_name": "SeLe4n.Kernel.threadOwnerView",
-          "line": 92,
+          "line": 123,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -391442,7 +391479,7 @@
           "kind": "def",
           "name": "contextThreadView",
           "full_name": "SeLe4n.Kernel.contextThreadView",
-          "line": 98,
+          "line": 129,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getSchedContext?",
@@ -391453,7 +391490,7 @@
           "kind": "def",
           "name": "notificationContextView",
           "full_name": "SeLe4n.Kernel.notificationContextView",
-          "line": 104,
+          "line": 135,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getNotification?",
@@ -391464,7 +391501,7 @@
           "kind": "theorem",
           "name": "bindingLabelsEqual_iff_views",
           "full_name": "SeLe4n.Kernel.bindingLabelsEqual_iff_views",
-          "line": 110,
+          "line": 141,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.bindingLabelsEqual",
@@ -391484,7 +391521,7 @@
           "kind": "structure",
           "name": "bindingViewsShrink",
           "full_name": "SeLe4n.Kernel.bindingViewsShrink",
-          "line": 153,
+          "line": 184,
           "called": [
             "SeLe4n.Kernel.contextThreadView",
             "SeLe4n.Kernel.notificationContextView",
@@ -391497,7 +391534,7 @@
           "kind": "theorem",
           "name": "refl",
           "full_name": "SeLe4n.Kernel.bindingViewsShrink.refl",
-          "line": 163,
+          "line": 194,
           "called": [
             "SeLe4n.Kernel.bindingViewsShrink",
             "SeLe4n.Model.SystemState"
@@ -391507,7 +391544,7 @@
           "kind": "theorem",
           "name": "trans",
           "full_name": "SeLe4n.Kernel.bindingViewsShrink.trans",
-          "line": 166,
+          "line": 197,
           "called": [
             "SeLe4n.Kernel.bindingViewsShrink",
             "SeLe4n.Model.SystemState"
@@ -391517,7 +391554,7 @@
           "kind": "theorem",
           "name": "of_objects_eq",
           "full_name": "SeLe4n.Kernel.bindingViewsShrink.of_objects_eq",
-          "line": 172,
+          "line": 203,
           "called": [
             "SeLe4n.Kernel.bindingViewsShrink",
             "SeLe4n.Kernel.contextThreadView",
@@ -391534,7 +391571,7 @@
           "kind": "theorem",
           "name": "bindingLabelsEqual_of_shrink",
           "full_name": "SeLe4n.Kernel.bindingLabelsEqual_of_shrink",
-          "line": 184,
+          "line": 215,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.bindingLabelsEqual",
@@ -391547,7 +391584,7 @@
           "kind": "def",
           "name": "objBindingWords",
           "full_name": "SeLe4n.Kernel.objBindingWords",
-          "line": 203,
+          "line": 234,
           "called": [
             "SeLe4n.Model.KernelObject"
           ]
@@ -391556,7 +391593,7 @@
           "kind": "theorem",
           "name": "threadContextView_eq_obj",
           "full_name": "SeLe4n.Kernel.threadContextView_eq_obj",
-          "line": 209,
+          "line": 240,
           "called": [
             "SeLe4n.Kernel.objBindingWords",
             "SeLe4n.Kernel.threadContextView",
@@ -391570,7 +391607,7 @@
           "kind": "theorem",
           "name": "threadOwnerView_eq_obj",
           "full_name": "SeLe4n.Kernel.threadOwnerView_eq_obj",
-          "line": 216,
+          "line": 247,
           "called": [
             "SeLe4n.Kernel.objBindingWords",
             "SeLe4n.Kernel.threadOwnerView",
@@ -391584,7 +391621,7 @@
           "kind": "theorem",
           "name": "contextThreadView_eq_obj",
           "full_name": "SeLe4n.Kernel.contextThreadView_eq_obj",
-          "line": 223,
+          "line": 254,
           "called": [
             "SeLe4n.Kernel.contextThreadView",
             "SeLe4n.Kernel.objBindingWords",
@@ -391598,7 +391635,7 @@
           "kind": "theorem",
           "name": "notificationContextView_eq_obj",
           "full_name": "SeLe4n.Kernel.notificationContextView_eq_obj",
-          "line": 230,
+          "line": 261,
           "called": [
             "SeLe4n.Kernel.notificationContextView",
             "SeLe4n.Kernel.objBindingWords",
@@ -391611,7 +391648,7 @@
           "kind": "structure",
           "name": "objBindingShrink",
           "full_name": "SeLe4n.Kernel.objBindingShrink",
-          "line": 239,
+          "line": 270,
           "called": [
             "SeLe4n.Kernel.objBindingWords",
             "SeLe4n.Model.KernelObject"
@@ -391621,7 +391658,7 @@
           "kind": "theorem",
           "name": "of_eq",
           "full_name": "SeLe4n.Kernel.objBindingShrink.of_eq",
-          "line": 249,
+          "line": 280,
           "called": [
             "SeLe4n.Kernel.objBindingShrink",
             "SeLe4n.Kernel.objBindingWords",
@@ -391632,7 +391669,7 @@
           "kind": "theorem",
           "name": "of_free",
           "full_name": "SeLe4n.Kernel.objBindingShrink.of_free",
-          "line": 254,
+          "line": 285,
           "called": [
             "SeLe4n.Kernel.objBindingShrink",
             "SeLe4n.Kernel.objBindingWords",
@@ -391643,7 +391680,7 @@
           "kind": "theorem",
           "name": "ofTcb",
           "full_name": "SeLe4n.Kernel.objBindingShrink.ofTcb",
-          "line": 261,
+          "line": 292,
           "called": [
             "SeLe4n.Kernel.objBindingShrink",
             "SeLe4n.Kernel.objBindingShrink.of_eq",
@@ -391654,9 +391691,38 @@
         },
         {
           "kind": "theorem",
+          "name": "ofTcbBinding",
+          "full_name": "SeLe4n.Kernel.objBindingShrink.ofTcbBinding",
+          "line": 307,
+          "called": [
+            "SeLe4n.Kernel.SchedContextBinding.ownerCode",
+            "SeLe4n.Kernel.SchedContextBinding.ownerCode_ofCodes_succ",
+            "SeLe4n.Kernel.SchedContextBinding.scCode",
+            "SeLe4n.Kernel.SchedContextBinding.scCode_ofCodes",
+            "SeLe4n.Kernel.objBindingShrink",
+            "SeLe4n.Kernel.objBindingWords",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.schedContextBinding"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ofTcbOwnerCleared",
+          "full_name": "SeLe4n.Kernel.objBindingShrink.ofTcbOwnerCleared",
+          "line": 325,
+          "called": [
+            "SeLe4n.Kernel.objBindingShrink",
+            "SeLe4n.Kernel.objBindingWords",
+            "SeLe4n.Model.KernelObject",
+            "SeLe4n.Model.TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "ofNotification",
           "full_name": "SeLe4n.Kernel.objBindingShrink.ofNotification",
-          "line": 274,
+          "line": 335,
           "called": [
             "SeLe4n.Kernel.objBindingShrink",
             "SeLe4n.Kernel.objBindingShrink.of_eq",
@@ -391670,7 +391736,7 @@
           "kind": "theorem",
           "name": "ofSchedContext",
           "full_name": "SeLe4n.Kernel.objBindingShrink.ofSchedContext",
-          "line": 284,
+          "line": 345,
           "called": [
             "SeLe4n.Kernel.SchedContext",
             "SeLe4n.Kernel.objBindingShrink",
@@ -391684,7 +391750,7 @@
           "kind": "theorem",
           "name": "bindingViewsShrink_of_objects",
           "full_name": "SeLe4n.Kernel.bindingViewsShrink_of_objects",
-          "line": 296,
+          "line": 357,
           "called": [
             "SeLe4n.Kernel.bindingViewsShrink",
             "SeLe4n.Kernel.contextThreadView_eq_obj",
@@ -391700,7 +391766,7 @@
           "kind": "theorem",
           "name": "bindingViewsShrink_of_slot",
           "full_name": "SeLe4n.Kernel.bindingViewsShrink_of_slot",
-          "line": 306,
+          "line": 367,
           "called": [
             "SeLe4n.Kernel.bindingViewsShrink",
             "SeLe4n.Kernel.bindingViewsShrink_of_objects",
@@ -391708,6 +391774,142 @@
             "SeLe4n.Kernel.objBindingShrink.of_eq",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bindingViewsShrink_of_tcbBinding",
+          "full_name": "SeLe4n.Kernel.bindingViewsShrink_of_tcbBinding",
+          "line": 378,
+          "called": [
+            "SeLe4n.Kernel.SchedContextBinding.ownerCode",
+            "SeLe4n.Kernel.SchedContextBinding.ownerCode_ofCodes_succ",
+            "SeLe4n.Kernel.SchedContextBinding.scCode",
+            "SeLe4n.Kernel.SchedContextBinding.scCode_ofCodes",
+            "SeLe4n.Kernel.bindingViewsShrink",
+            "SeLe4n.Kernel.contextThreadView",
+            "SeLe4n.Kernel.notificationContextView",
+            "SeLe4n.Kernel.threadContextView",
+            "SeLe4n.Kernel.threadOwnerView",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getNotification?",
+            "SeLe4n.Model.SystemState.getSchedContext?",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.schedContextBinding",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "bindingViewsGrow",
+          "full_name": "SeLe4n.Kernel.bindingViewsGrow",
+          "line": 432,
+          "called": [
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.contextThreadView",
+            "SeLe4n.Kernel.notificationContextView",
+            "SeLe4n.Kernel.threadContextView",
+            "SeLe4n.Kernel.threadOwnerView",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.SchedContextId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "of_shrink",
+          "full_name": "SeLe4n.Kernel.bindingViewsGrow.of_shrink",
+          "line": 446,
+          "called": [
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.bindingViewsGrow",
+            "SeLe4n.Kernel.bindingViewsShrink",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "trans",
+          "full_name": "SeLe4n.Kernel.bindingViewsGrow.trans",
+          "line": 451,
+          "called": [
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.bindingViewsGrow",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bindingLabelsEqual_of_grow",
+          "full_name": "SeLe4n.Kernel.bindingLabelsEqual_of_grow",
+          "line": 461,
+          "called": [
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.bindingLabelsEqual",
+            "SeLe4n.Kernel.bindingLabelsEqual_iff_views",
+            "SeLe4n.Kernel.bindingViewsGrow",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bindingViewsGrow_of_tcbSlot",
+          "full_name": "SeLe4n.Kernel.bindingViewsGrow_of_tcbSlot",
+          "line": 473,
+          "called": [
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.bindingViewsGrow",
+            "SeLe4n.Kernel.contextThreadView_eq_obj",
+            "SeLe4n.Kernel.notificationContextView_eq_obj",
+            "SeLe4n.Kernel.objBindingWords",
+            "SeLe4n.Kernel.threadContextView_eq_obj",
+            "SeLe4n.Kernel.threadOwnerView_eq_obj",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.SchedContextId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId_injective"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bindingViewsGrow_of_schedContextSlot",
+          "full_name": "SeLe4n.Kernel.bindingViewsGrow_of_schedContextSlot",
+          "line": 502,
+          "called": [
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.SchedContext",
+            "SeLe4n.Kernel.bindingViewsGrow",
+            "SeLe4n.Kernel.contextThreadView_eq_obj",
+            "SeLe4n.Kernel.notificationContextView_eq_obj",
+            "SeLe4n.Kernel.objBindingWords",
+            "SeLe4n.Kernel.threadContextView_eq_obj",
+            "SeLe4n.Kernel.threadOwnerView_eq_obj",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.SchedContextId",
+            "SeLe4n.SchedContextId.toObjId_injective",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bindingViewsGrow_of_notificationSlot",
+          "full_name": "SeLe4n.Kernel.bindingViewsGrow_of_notificationSlot",
+          "line": 530,
+          "called": [
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.bindingViewsGrow",
+            "SeLe4n.Kernel.contextThreadView_eq_obj",
+            "SeLe4n.Kernel.notificationContextView_eq_obj",
+            "SeLe4n.Kernel.objBindingWords",
+            "SeLe4n.Kernel.threadContextView_eq_obj",
+            "SeLe4n.Kernel.threadOwnerView_eq_obj",
+            "SeLe4n.Model.Notification",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.SchedContextId",
+            "SeLe4n.SchedContextId.toObjId"
           ]
         }
       ]
@@ -459988,7 +460190,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate",
       "path": "SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean",
-      "declaration_count": 96,
+      "declaration_count": 100,
       "declarations": [
         {
           "kind": "def",
@@ -461500,10 +461702,79 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "keepsScBindingAt",
+          "full_name": "SeLe4n.Kernel.PriorityInheritance.keepsScBindingAt",
+          "line": 1657,
+          "called": [
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "keepsScBindingAt.trans",
+          "full_name": "SeLe4n.Kernel.PriorityInheritance.keepsScBindingAt.trans",
+          "line": 1662,
+          "called": [
+            "SeLe4n.Kernel.PriorityInheritance.keepsScBindingAt",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updatePipBoostOnCore_keepsScBindingAt",
+          "full_name": "SeLe4n.Kernel.PriorityInheritance.updatePipBoostOnCore_keepsScBindingAt",
+          "line": 1674,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.PriorityInheritance.keepsScBindingAt",
+            "SeLe4n.Kernel.PriorityInheritance.pipBoostWrite",
+            "SeLe4n.Kernel.PriorityInheritance.pipBoostWrite_eq_self_of_getTcb?_none",
+            "SeLe4n.Kernel.PriorityInheritance.pipBoostWrite_objects_at",
+            "SeLe4n.Kernel.PriorityInheritance.pipBoostWrite_objects_ne",
+            "SeLe4n.Kernel.PriorityInheritance.updatePipBoostOnCore",
+            "SeLe4n.Kernel.PriorityInheritance.updatePipBoostOnCore_objectsAgreeOffRunLinks",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Model.SystemState.getTcb?",
+            "SeLe4n.Model.SystemState.getTcb?_eq_some_iff",
+            "SeLe4n.Model.TCB",
+            "SeLe4n.Model.TCB.withoutRunLinks",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "propagatePipChainCrossCore_keepsScBindingAt",
+          "full_name": "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_keepsScBindingAt",
+          "line": 1701,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.PriorityInheritance.blockingServer",
+            "SeLe4n.Kernel.PriorityInheritance.keepsScBindingAt",
+            "SeLe4n.Kernel.PriorityInheritance.pipBoostWithWake",
+            "SeLe4n.Kernel.PriorityInheritance.pipBoostWithWake_preserves_objects_invExt",
+            "SeLe4n.Kernel.PriorityInheritance.pipBoostWithWake_state",
+            "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore",
+            "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_step",
+            "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_zero",
+            "SeLe4n.Kernel.PriorityInheritance.updatePipBoostOnCore_keepsScBindingAt",
+            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ObjId",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "updatePipBoostOnCore_getTcb?_isSome",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.updatePipBoostOnCore_getTcb?_isSome",
-          "line": 1657,
+          "line": 1723,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.pipBoostWrite",
@@ -461523,7 +461794,7 @@
           "kind": "theorem",
           "name": "pipBoostWithWake_getTcb?_isSome",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.pipBoostWithWake_getTcb?_isSome",
-          "line": 1676,
+          "line": 1742,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.pipBoostWithWake",
@@ -461539,7 +461810,7 @@
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_getTcb?_isSome",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_getTcb?_isSome",
-          "line": 1685,
+          "line": 1751,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.blockingServer",
@@ -461559,7 +461830,7 @@
           "kind": "def",
           "name": "pipChainWriteSet",
           "full_name": "SeLe4n.Kernel.pipChainWriteSet",
-          "line": 1716,
+          "line": 1782,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.blockingServer",
@@ -461573,7 +461844,7 @@
           "kind": "def",
           "name": "waiterChainWriteSet",
           "full_name": "SeLe4n.Kernel.waiterChainWriteSet",
-          "line": 1729,
+          "line": 1795,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.blockingServer",
@@ -461586,7 +461857,7 @@
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_onlyObjectsSchedulerDiffer",
           "full_name": "SeLe4n.Kernel.propagatePipChainCrossCore_onlyObjectsSchedulerDiffer",
-          "line": 1737,
+          "line": 1803,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.blockingServer",
@@ -461605,7 +461876,7 @@
           "kind": "theorem",
           "name": "le_propagatePipChainCrossCore_objects_capacity",
           "full_name": "SeLe4n.Kernel.le_propagatePipChainCrossCore_objects_capacity",
-          "line": 1754,
+          "line": 1820,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.blockingServer",

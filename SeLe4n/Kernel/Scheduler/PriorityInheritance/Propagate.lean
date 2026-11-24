@@ -1650,7 +1650,7 @@ theorem propagatePipChainCrossCore_objects_pointwise :
               exact Or.inr ⟨preH, postT, hPreH, hPostT, hC'.trans hC, hL'.trans hL,
                 hB'.trans hB, hW'.trans hW⟩
 
-/-- **A key whose thread keeps its context binding words** (WS-SX SX13.1): the
+/-- **A key whose thread keeps its context binding words** (WS-SX SX13.2): the
 slot is unchanged, or a thread rewritten as a thread keeping its context word
 and its owner word.  The binding-words reading the pointwise summaries above
 leave out. -/

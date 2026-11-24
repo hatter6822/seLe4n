@@ -108,7 +108,7 @@ theorem bindingLabelsEqual.bound {ctx : LabelingContext} {st : SystemState}
 `bindingLabelsEqual` restated over four views of the object store, each a
 binding word read at a slot (`0` where the slot holds no object of that kind).
 The frame family of the lenders' flow (`contextStackViewsAgree`) is to carry
-them (WS-SX SX13.1, the `bindingLabelsEqual` row of `docs/REGISTERED_DEBT.md`),
+them (WS-SX SX14, the `bindingLabelsEqual` row of `docs/REGISTERED_DEBT.md`),
 so a step that writes none of the four words carries the predicate, and a step
 after which every binding word was already there before it (a removal, a
 clear) carries it too (`bindingLabelsEqual_of_shrink`). -/
@@ -372,7 +372,6 @@ theorem bindingViewsShrink_of_slot {st st' : SystemState} (k : SeLe4n.ObjId)
     · subst hx; exact hK
     · rw [hNe x hx]; exact .of_eq rfl
 
-/-! ### The binding grow: the step a creating site is
 /-- **Each thread keeps its binding, and each context and notification after
 the step was there before it**: the form a step's thread-binding frame and its
 non-thread frame give, read as a shrink. -/
@@ -418,8 +417,9 @@ theorem bindingViewsShrink_of_tcbBinding {st st' : SystemState}
     unfold threadOwnerView at hW
     unfold threadContextView threadOwnerView
     rw [h1] at hW; rw [h2]
-    exact ⟨hk, ho ▸ hW⟩
+    exact ⟨hk, ho.symm.trans hW⟩
 
+/-! ### The binding grow: the step a creating site is
 
 A step that writes a binding word to a new value (a bind, a lend, the return to
 an owner) is not a shrink.  It carries the predicate when every word after it
