@@ -12440,10 +12440,10 @@ checked boot refuses every configured binding pair and creates none
 (`bootFromPlatformCheckedStartedFor_bindingLabelsEqual`, `v0.37.39`), and the
 predicate also says a lent binding's owner carries the context's label (the
 return to the owner binds the owner).  Its preservation by every committing
-entry is the plan's SX12, on SX11's invariant (`v0.37.40`, below) that every
+entry is the plan's SX13, on SX11's invariant (`v0.37.40`, below) that every
 thread blocked on an endpoint carries the endpoint's label: the gate at a Call
 or receive-take lend checks one side of the endpoint, and the other side was
-checked when the waiting thread blocked.  SX12 then deletes both refusals.
+checked when the waiting thread blocked.  SX13 then deletes both refusals.
 
 **What the gate checked is recorded in the state, on both sides (WS-RR RR8.16,
 `v0.35.191` and `v0.35.196`; equalities and carried by every entry since WS-SX

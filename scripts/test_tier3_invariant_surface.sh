@@ -2507,7 +2507,7 @@ run_check "INVARIANT" rg -n '^theorem lockSet_endpointCallOnCore_covers_donation
 run_check "INVARIANT" rg -n '^private theorem donateSchedContext_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # WS-SX SX9.1 (D34): the push is invisible only with its context hidden.
 run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem donateSchedContext_preserves_projection( *\n +[^\n]*)*hScHigh : objectObservable" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
-# The receive steps' one premise (D37, registered debt owned by SX12): equal
+# The receive steps' one premise (D37, registered debt owned by SX13): equal
 # binding labels, a field of each receive constructor itself; the loan-return
 # shape is derived from it, never a constructor field.
 run_check "INVARIANT" rg -n '^def bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
