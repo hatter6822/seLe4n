@@ -28,7 +28,8 @@
 > frame's recorded caller, D41), wrapped at its validated point; its remainder
 > became SX15 (the binding siblings and the one-slot grow toolkit) and SX16 (the
 > frame family threaded, the pops as labelled steps) (D42), and SX15–SX26
-> became SX17–SX28.
+> became SX17–SX28. SX15 landed at `v0.37.44` (the binding siblings, the
+> finalisation's binding shrink and the one-slot grow toolkit).
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
 > **Rows**: SX1–SX28, numbered in the order they are implemented, one PR each.
@@ -773,6 +774,15 @@ every lender module after Cancel consumes the frame family it changes.
   cancellation suite's foreign-caller witness.
 
 ### SX15 — The binding siblings and the one-slot grow toolkit (D40, D42)
+
+**LANDED at `v0.37.44`.** Every sibling, the finalisation's binding shrink and
+the toolkit landed as stated, within the measured scope; no transition changes.
+The finalisation's binding shrink (`FinaliseBindingShrink`) takes one step
+lemma per hypothesis of the finalisation's closure except the two reply pops
+(`FinaliseReplyStep`, `FinaliseUnheldStep`), which hand a donated context back
+and so write binding words anew: they are SX16's labelled steps.  The cut's
+owner-word clear is read as a binding shrink (`bindingViewsShrink.ownerCleared`),
+since it keeps the slot's context word.
 
 SX14's remainder, first half (D42): what the frame family needs that does not
 depend on threading it, landed alone on the committed base. Each sibling is a

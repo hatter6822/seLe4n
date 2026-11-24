@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sicherheit" /></a>
-  <img src="https://img.shields.io/badge/version-0.37.43-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.37.44-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Lizenz" /></a>
 </p>
@@ -163,11 +163,11 @@ folgenden Punkte verweisen darauf.
 
 | Attribut | Wert |
 |----------|------|
-| **Version** | `0.37.43` |
+| **Version** | `0.37.44` |
 | **Lean-Toolchain** | `v4.28.0` |
-| **Produktions-LoC (Lean)** | 683.255 über 703 Dateien |
+| **Produktions-LoC (Lean)** | 684.216 über 703 Dateien |
 | **Test-LoC (Lean)** | 92.060 über 71 Testsuiten |
-| **Bewiesene Deklarationen** | 26.211 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
+| **Bewiesene Deklarationen** | 26.291 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Rust-Crates** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (Userspace-Wrapper), `sele4n-hal` (die Hardwareschicht des Kernels) und der Host-Test `sele4n-lean-boundary` |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Boot-Lanes** | Jede QEMU-Lane bootet zuerst das Raspberry-Pi-5-Image auf der Maschine `raspi5b` von [rpi5_machine](https://github.com/hatter6822/rpi5_machine), dann das `virt`-Image auf QEMUs `virt` |

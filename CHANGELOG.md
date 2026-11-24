@@ -1,3 +1,33 @@
+## v0.37.44 — The binding siblings, the finalisation's binding shrink and the one-slot grow toolkit (WS-SX SX15)
+
+SX15 is the first half of SX14's remainder (D42, the owner's decision): what
+the frame family needs that does not depend on threading it, landed alone.  No
+transition changes; nothing in the frame family changes.
+
+- **The binding siblings (SX15.1).**  Each summary that forgets the binding
+  words gets a sibling beside it, never a widened summary: the capability
+  transfer's object cases (`receiveTransferCaps_objBindingWords`), the
+  notification-queue removal and the mid-queue splice, the blocking-endpoint
+  removal, the VSpace-root-only write, the slot links' reach, the off-taint and
+  derivation-link agreements, the run- and release-link agreements (exact
+  frames of every slot's binding words, `objBindingWords`), and the final
+  retire and the timeout abort (`bindingWordsKeptOrCleared`: every slot keeps
+  its binding words or holds none, a binding shrink).
+- **The finalisation's binding shrink (SX15.1).**  `FinaliseBindingShrink`
+  carries `bindingViewsShrink` beside the object table's well-formedness, with
+  one step lemma per hypothesis of the finalisation's closure, on the primitive
+  writes they compose, separate from `finaliseWrite` (not a new conjunct of it).
+  The cut's owner-word clear is a shrink (`bindingViewsShrink.ownerCleared`).
+  The two reply pops hand a donated context back, writing binding words anew,
+  and are SX16's labelled steps.
+- **The one-slot grow toolkit (SX15.2).**  A thread, notification or context
+  record stored is read as a stack shrink with a binding grow
+  (`contextStacksShrink_bindingViewsGrow_storeTcb`, `_storeNotification`,
+  `_storeSchedContext`), each form taking its creating site's label equation;
+  `contextLendersFlow_bindingLabelsEqual_of_grow` carries the lenders' flow and
+  equal binding labels across such a step.  Tier 3 anchors every lemma, and a
+  relation anchor holds the carrying theorem's header.
+
 ## v0.37.43 — The cancel pops to the frame's recorded caller, and the row wrapped (WS-SX SX14.1)
 
 SX14 lands its first sub-task, a transition change, then wraps at that point
