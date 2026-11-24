@@ -1,3 +1,51 @@
+## v0.37.49 — The records view extended with the notification queues (WS-SX SX20)
+
+SX20 is on SX19 and runs before notification label coherence is carried
+(D45).  Coherence (`notificationLabelsCoherent`) is not carried yet.  The records view now holds
+every field coherence reads, so the records frames that SX11's waiters reused
+for free keep those fields as well.  No transition changes.
+
+- **Measured first (D45, the owner's "Extend records view").**  Coherence
+  reads a thread's two notification-queue links and a notification's bound
+  thread and queue ends.  No frame carried per entry kept them: the records
+  view held a thread's reply view, IPC state, thread state and fault flag, and
+  nothing of a notification.  A coherence stage over the 228 records frames
+  would have been about 380 theorems, some 2.5x SX11.  Extending the view
+  instead touched 17 files (358 lines added, 118 removed).
+- **Extended.**  `TcbRecordView` gains `ntfnPrev` and `ntfnNext` (the
+  thread's link codes), and `recordViewOf` gains a notification's view
+  (`Notification.recordView`: its bound thread, queue head and queue tail).
+  Every records frame is re-proved against the extended view; the erasure
+  frames (taint, yield, release, run links, slot links) keep it.
+- **Restated as core frames.**  The writes of those fields cannot be records
+  frames now.  They are core frames (`RecordsCoreFrame`: the view with the
+  links erased and the notification view constant), which keep the kernel
+  records (`RecordsCoreFrame.preserves`):
+  - the bind and the unbind (`RecordsCoreFrame.bindNotification`,
+    `unbindNotification`);
+  - the notification stores of the signal and the wait
+    (`storeNotification`, `storeNotificationAt`);
+  - the waiter's link (`linkNtfnWaiter`), the head's detach
+    (`detachNtfnHead`) and the link-only rewrites
+    (`of_ntfnLinksRewritten`).
+  Each consumer of a frame has a core sibling: `RecordsStage.of_coreFrame`,
+  `RecordsStep.of_coreFrame`, `FaultsStayParked.of_coreFrame`,
+  `RecordsStage.of_coreFrameK`, `NotParkedAt.coreFrame`,
+  `FaultParkedAt.coreFrame`, `RecordsCoreFrame.ready`, the waiters'
+  `of_coreFrame` and `LendersFrame.of_keptCore`.
+- **Deleted.**  `RecordsFrame.of_kept` and `recordViewOf_congr` (with
+  `tcbAt`), which nothing used.
+- **Gates.**  New Tier 3 anchors pin the TCB's and the notification's record
+  views, the notification arm of `recordViewOf`, `RecordsCoreFrame`, and the
+  bind, unbind and waiter-link writers as core frames.  A negative anchor
+  refuses the deleted lemmas.  Each was tested by breaking its relation in a
+  copy of the file.
+- **Plan.**  D45 is recorded.  SX20 is this row.  Coherence carried is SX21,
+  which also retires the coherence hypotheses where they fall out of the
+  stage.  The notification lend's check deleted (D30) is SX22.  SX22–SX31
+  became SX23–SX32; the conformance table's owner strings follow.  The
+  queue-label-uniformity row stays open, owned by SX21.
+
 ## v0.37.48 — The Call lend's refusal deleted as unreachable, the lend argument retired (WS-SX SX19)
 
 SX19 is SX18.2's first half (D44), on SX18.  The Call lend's label refusal
