@@ -949,7 +949,7 @@ theorem finaliseReplyStep_runQueueEntryStage (st : SystemState) :
       (finaliseReplyRevert_runQueueStage _ _)).entry
 
 /-- WS-ZA ZA6.33: **the head cut is a run-queue stage**: a reply stored over
-itself, a context's head and origin cleared (no refill field), and a holder's
+itself, a context's head cleared (no refill field), and a holder's
 owner code cleared under the key hook. -/
 theorem cutCancelledCallerHead_runQueueStage (st : SystemState) (tcb : TCB) :
     RunQueueStage st (Lifecycle.Suspend.cutCancelledCallerHead st tcb) :=

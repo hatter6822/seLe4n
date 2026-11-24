@@ -350,7 +350,7 @@ theorem schedContextBindingBidirectional.of_scIdLinksAgree {st st' : SystemState
       exact ⟨sc, (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hq, hs'.trans hbt⟩
 
 /-- **The head cut keeps both projections**: a reply stored over itself, the
-context's head and origin cleared, and a holder's loan made its own — the
+context's head cleared, and a holder's loan made its own — the
 context its binding names unchanged. -/
 theorem cutCancelledCallerHead_scIdLinksAgree (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) :
@@ -363,7 +363,7 @@ theorem cutCancelledCallerHead_scIdLinksAgree (st : SystemState) (tcb : TCB)
   · have F1 := SchedLinkFrame.storeReplyOver hI ((SystemState.getReply?_eq_some_iff _ _ _).mp hR) hS
     have hI1 := storeObject_preserves_objects_invExt s s1 _ _ hI hS
     have F2 := SchedLinkFrame.updateSchedContext s1 scId
-      (fun sc => { sc with scReply := none, donationOrigin := none }) hI1 (fun _ => rfl)
+      (fun sc => { sc with scReply := none }) hI1 (fun _ => rfl)
     exact ⟨hA.trans (scIdLinksAgree.of_schedLinkFrame (F1.trans F2)),
       SystemState.updateSchedContext_preserves_objects_invExt _ scId _ hI1⟩
   · refine ⟨hA.trans ((scIdLinksAgree.updateTcb s holder

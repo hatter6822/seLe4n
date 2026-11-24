@@ -1775,7 +1775,7 @@ theorem returnDonatedSchedContext_preserves_projection
     · exact storeObject_preserves_projection ctx observer st s1 _ _ hS hObjInv hS1
     · refine storeObject_projectionStable_preserves_projection ctx observer st s1
         scId.toObjId _ (.schedContext sc) hSc
-        (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _
+        (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _
           (by simp [hOT]) ?_) hObjInv hS1
       have hCode : sc.boundThreadCode = SeLe4n.ThreadId.optCode (some serverTid) := by
         rw [← hBound]; simp [SchedContext.boundThread]
@@ -1830,7 +1830,7 @@ theorem returnDonatedSchedContext_preserves_projection
   rw [hFinal, hP4, hP3, hP2, hP1]
 
 /-- The held pop preserves the projection when the holder is hidden, or the
-context it keeps is: the context's `scReply` and origin and the replies' stack
+context it keeps is: the context's `scReply` and the replies' stack
 links are erased for every observer, and the holder's binding words name the
 kept context both before and after (WS-SX SX9.1, D34, superseding the
 unconditional form). -/

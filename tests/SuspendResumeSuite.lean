@@ -1052,7 +1052,7 @@ private def sr040_liveFrozenSuspendAgree : IO Unit := do
             (.bound (SeLe4n.SchedContextId.ofNat 50)) && t.scBindingOwnerCode == 0)
       expect "SR-040 the frozen suspend keeps it the same way"
         (fb.boundThreadCode == b.boundThreadCode && fb.isActive == b.isActive &&
-          fb.donationOrigin == b.donationOrigin && ft.scBindingScCode == t.scBindingScCode &&
+          ft.scBindingScCode == t.scBindingScCode &&
           ft.scBindingOwnerCode == t.scBindingOwnerCode)
       expect "SR-040 both cancel the yield link at both ends"
         (t.yieldToCode == 0 && y.yieldFromCode == 0 &&

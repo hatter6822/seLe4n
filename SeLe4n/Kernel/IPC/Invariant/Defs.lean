@@ -3417,9 +3417,8 @@ frame above reads `none` and binds that caller `.bound scId`
 (`cancelledMiddleCaller_severs_at_cut`).  From `v0.35.45` to `v0.36.196` this
 kernel cut the frame out instead (WS-HP HP6.8), which kept a middle
 caller's reservation travelling outward; that was a divergence from upstream,
-and WS-ZA ZA6.33 removes it.  The reservation's recorded origin
-(`SchedContext.donationOrigin`) is unaffected: the pop still consults it when the
-stack bottoms out. -/
+and WS-ZA ZA6.33 removes it.  Every pop gives the context to the caller of the
+frame it answers, as seL4-MCS's `reply_pop` does (WS-SX SX12). -/
 def cancelledMiddleCallerPolicy : CancelledMiddleCallerPolicy := .severAtCut
 
 /-- WS-OD OD5.2: the decision is checkable, not merely declared: a cut that
@@ -8548,11 +8547,10 @@ theorem returnDonatedSchedContext_ok_of_boundAndRecipient
   rw [hHead]
   simp only []
   -- **WS-RR RR8**: the record the store receives is `donationReturnSchedContext`
-  -- -- HP10.4's bottom-arm origin clear and the priority mirror included, since
-  -- it is one definition rather than a literal this proof has to reproduce.
+  -- -- the priority mirror included, since it is one definition rather than a literal this proof has to reproduce.
   generalize hS1 : storeObject scId.toObjId
       (.schedContext (donationReturnSchedContext sc owner
-        (head?.bind (fun p => p.2.prev)) newOwner?)) st = result1
+        (head?.bind (fun p => p.2.prev)))) st = result1
   match result1, hS1 with
   | .ok pair1, hS1 =>
     have hInv1 : pair1.2.objects.invExt :=
@@ -8637,7 +8635,7 @@ theorem keepDonatedSchedContext_ok_of_holderBinding {st : SystemState}
     ∃ st', keepDonatedSchedContext st holder scId newOwner? = .ok st' := by
   obtain ⟨head?, hHead, hBelow⟩ := hHeadRes sc hScObj
   obtain ⟨s1, hS1⟩ := storeObject_isOk st scId.toObjId
-    (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
+    (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev))))
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   obtain ⟨s2, hS2⟩ : ∃ s2, storeDonationHeadPop scId head? s1 = .ok s2 := by
     refine storeDonationHeadPop_ok_of_reply scId s1 head? hInv1 ?_ ?_

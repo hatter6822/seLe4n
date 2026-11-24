@@ -786,11 +786,10 @@ theorem donationChainWitness_pop_wellFormed
   donationHeadPop_preserves_donationChainWellFormed
     (head? := some (donationChainWitnessInner, witnessChainInnerReply))
     donationChainWitness_objects_invExt donationChainWitness_wellFormed
-    -- **WS-RR RR8 (`v0.35.100`)**: the read-set hypothesis.  This witness is why
-    -- the lemma states the read set rather than the pop's own record: the record
-    -- it stores KEEPS its `donationOrigin`, which no value of the pop's arm
-    -- selector produces, so a lemma stated over that record refuses a witness
-    -- whose only job is to exercise the store surface it is stated over.
+    -- **WS-RR RR8 (`v0.35.100`)**: the read-set hypothesis.  The lemma states the
+    -- read set rather than the pop's own record, so it accepts any stored record
+    -- whose fields its proof reads, which is what a witness of the store surface
+    -- needs.
     witnessChainContextObject witnessChainValidatedHead (by rfl) hS1 hPop
 
 /-- WS-OD OD3.8: ...and the stack the popped context heads is **exactly the tail**

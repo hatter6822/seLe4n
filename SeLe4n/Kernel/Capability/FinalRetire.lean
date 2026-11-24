@@ -720,7 +720,7 @@ replenishment queue holds is bound — so no object names an admitted context
 @[inline] def schedContextRetirable (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   match st.getObject? x with
   | some (.schedContext sc) =>
-    sc.boundThreadCode == 0 && sc.donationOrigin.isNone && sc.scReply.isNone &&
+    sc.boundThreadCode == 0 && sc.scReply.isNone &&
       sc.releaseCoreCode == 0 && sc.yieldFromCode == 0 && sc.notificationCode == 0
   | _ => false
 
@@ -2059,7 +2059,7 @@ theorem threadRetirable_currentNowhere {st : SystemState} {x : SeLe4n.ObjId}
 theorem schedContextRetirable_parts {st : SystemState} {x : SeLe4n.ObjId}
     (h : schedContextRetirable st x = true) :
     ∃ sc, st.objects[x]? = some (.schedContext sc) ∧ sc.boundThreadCode = 0 ∧
-      sc.donationOrigin = none ∧ sc.scReply = none ∧ sc.releaseCoreCode = 0 ∧
+      sc.scReply = none ∧ sc.releaseCoreCode = 0 ∧
       sc.yieldFromCode = 0 ∧ sc.notificationCode = 0 := by
   unfold schedContextRetirable SystemState.getObject? at h
   cases hO : st.objects[x]? with
@@ -2069,7 +2069,7 @@ theorem schedContextRetirable_parts {st : SystemState} {x : SeLe4n.ObjId}
     cases o with
     | schedContext sc =>
       simp only [Bool.and_eq_true, beq_iff_eq, Option.isNone_iff_eq_none] at h
-      exact ⟨sc, rfl, h.1.1.1.1.1, h.1.1.1.1.2, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
+      exact ⟨sc, rfl, h.1.1.1.1, h.1.1.1.2, h.1.1.2, h.1.2, h.2⟩
     | _ => cases h
 
 /-- A thread the scan admits is the one `threadRetirable` reads. -/
@@ -2854,7 +2854,7 @@ theorem retireFinalObject_releaseStateAgree (ec : Concurrency.CoreId) (target re
     | schedContext sc =>
       rcases retireFinalObject_schedContext_cases ec target recorder st hInv hP with e | ⟨e, hR⟩
       · rw [e]
-      · obtain ⟨sc', hS', -, -, -, h0, -⟩ := schedContextRetirable_parts hR
+      · obtain ⟨sc', hS', -, -, h0, -⟩ := schedContextRetirable_parts hR
         rw [hP] at hS'; cases hS'
         rw [e]
         simp [SystemState.objReleaseLinkOn, SchedContext.releaseLinkOn, h0]
@@ -2890,7 +2890,7 @@ theorem retireFinalObject_yieldLinksKept (ec : Concurrency.CoreId) (target recor
           threadQuiescent_codes hQ
         simp [objYieldCodes, h0]
       | schedContext sc =>
-        obtain ⟨sc', hS', -, -, -, -, h0⟩ :=
+        obtain ⟨sc', hS', -, -, -, h0⟩ :=
           schedContextRetirable_parts (schedulingObjectRetirable_schedContext hR hP)
         rw [hP] at hS'; cases hS'
         simp [objYieldCodes, h0]
@@ -2928,7 +2928,7 @@ theorem retireFinalObject_notificationLinksKept (ec : Concurrency.CoreId) (targe
         rcases retireFinalObject_schedContext_cases ec target recorder st hInv hP with e | ⟨-, hR⟩
         · rw [e] at hpost
           rcases hpost with hn | ⟨U, hU⟩ <;> first | cases hn | cases hU
-        · obtain ⟨sc', hS', -, -, -, -, -, h0⟩ := schedContextRetirable_parts hR
+        · obtain ⟨sc', hS', -, -, -, -, h0⟩ := schedContextRetirable_parts hR
           rw [hP] at hS'; cases hS'
           simp [objNotificationLinkCodes, h0]
       | _ => rfl

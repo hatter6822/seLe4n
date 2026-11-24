@@ -314,9 +314,6 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
                        -- erased as `pendingMessage`, the field they replace, is.
                        ipcBadge := 0, ipcBadged := false, ipcCanGrant := false,
                        ipcCanGrantReply := false, ipcFaultSend := false,
-                       -- The context the thread is the recorded origin of is
-                       -- erased, as the context's own `donationOrigin` is.
-                       originScCode := 0,
                        -- The derivation links of the thread's three space slots
                        -- are cleared, as a CNode's are: the tree they encode is
                        -- not projected.  The space capabilities stay visible.
@@ -350,17 +347,6 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- push writes this head, and an un-erased head would make a high caller's
       -- Call visible through a low-visible scheduling context.
       --
-      -- **WS-HP HP10.3**: strip `donationOrigin` for the third time over the same
-      -- reason, and again in the cut that adds the field.  It is a **ThreadId** —
-      -- the thread that owned this reservation when it first left — so it names a
-      -- possibly-high caller directly, which is the linkage `boundThread` above
-      -- and the `.reply` arm's `caller` below are erased for.  Landing the
-      -- erasure with the field is what keeps the HP10 write unobservable: the
-      -- origin is recorded by a `Call` that donates and cleared when the loan
-      -- ends, so an un-erased origin would make a high client's Call visible
-      -- through a low-visible scheduling context for as long as the loan lasts —
-      -- strictly longer than the `scReply` head, which moves with every push.
-      --
       -- **WS-ZA ZA6.3 / ZA6.30**: strip the release-queue successor link —
       -- `releaseNextCode` (seL4-MCS's intrusive release-queue successor).  One
       -- core's release queue interleaves contexts of every domain, so a low
@@ -380,7 +366,6 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
                                   sc.boundThreadCode
                                 else 0,
                               scReply := none,
-                              donationOrigin := none,
                               releaseNextCode := 0,
                               -- The notification link (seL4-MCS's
                               -- `scNotification`) names a notification of any
@@ -678,18 +663,6 @@ theorem projectKernelObject_tcb_schedContextBinding_invariant
       = projectKernelObject ctx observer (.tcb t) := by
   simp [projectKernelObject, hC, hT]
 
-/-- The projection is likewise invariant under the donor's origin back-link
-(`TCB.originScCode`), the third field the donation's donor store writes: the
-`.tcb` arm strips it with the binding. -/
-theorem projectKernelObject_tcb_donorStore_invariant
-    (ctx : LabelingContext) (observer : IfObserver) (t : TCB)
-    (c o g : Nat) (hC : scWordShown ctx observer c = false)
-    (hT : scWordShown ctx observer t.scBindingScCode = false) :
-    projectKernelObject ctx observer
-        (.tcb { t with scBindingScCode := c, scBindingOwnerCode := o, originScCode := g })
-      = projectKernelObject ctx observer (.tcb t) := by
-  simp [projectKernelObject, hC, hT]
-
 /-- **WS-RR RR7.22 (residual, remediation)**: the projection is invariant under a
 SchedContext's bound thread — the other half of the donation hand-off's write
 set, stripped for the same reason. -/
@@ -720,42 +693,20 @@ theorem projectKernelObject_schedContext_scReply_invariant
   simp [projectKernelObject]
 
 /-- **WS-OD OD3.2**: the projection is invariant under the whole of a donation
-step's SchedContext write — the rebind, the reply-stack link and the recorded
-origin together.  The grouping is the operation's actual write set, so a projection
-hop over it is one rewrite rather than three, and a hop stated over fewer fields
-than the store writes does not apply at all.
-
-**WS-HP HP10.4** widened it from two fields to three rather than adding a second,
-push-specific lemma: the *push* and the *pop* write the same three fields — the
-push records the origin on a first donation and the pop clears it when the loan
-ends — so this is one question with one answer, and a `…PushWrite…` sibling beside
-it would be the duplicate this project retires.  The name does not promise an
-arity; it names the operation class whose write set this is. -/
+step's SchedContext write — the rebind and the reply-stack link together.  The
+grouping is the operation's actual write set, so a projection hop over it is one
+rewrite rather than two, and a hop stated over fewer fields than the store writes
+does not apply at all.  The push and the pop write the same two fields, so this is
+one question with one answer. -/
 theorem projectKernelObject_schedContext_donationWrite_invariant
     (ctx : LabelingContext) (observer : IfObserver) (sc : SchedContext)
     (bt : Option SeLe4n.ThreadId) (rid : Option SeLe4n.ReplyId)
-    (origin : Option SeLe4n.ThreadId)
     (hB : threadWordShown ctx observer (SeLe4n.ThreadId.optCode bt) = false)
     (hS : threadWordShown ctx observer sc.boundThreadCode = false) :
     projectKernelObject ctx observer
-        (.schedContext { sc with boundThreadCode := SeLe4n.ThreadId.optCode (bt), scReply := rid,
-                                 donationOrigin := origin })
+        (.schedContext { sc with boundThreadCode := SeLe4n.ThreadId.optCode (bt), scReply := rid })
       = projectKernelObject ctx observer (.schedContext sc) := by
   simp [projectKernelObject, hB, hS]
-
-/-- **WS-HP HP10.3**: the projection is invariant under the recorded origin.
-
-Stated on its own account beside the two above, because the origin is written and
-cleared by steps whose write sets are not the donation return's: the `Call` that
-first donates records it, and `schedContextBind` / `schedContextUnbind` /
-`lifecyclePreRetypeCleanup` clear it.  A hop over the donation return's pair would
-not cover any of those. -/
-theorem projectKernelObject_schedContext_donationOrigin_invariant
-    (ctx : LabelingContext) (observer : IfObserver) (sc : SchedContext)
-    (origin : Option SeLe4n.ThreadId) :
-    projectKernelObject ctx observer (.schedContext { sc with donationOrigin := origin })
-      = projectKernelObject ctx observer (.schedContext sc) := by
-  simp [projectKernelObject]
 
 /-- Project object store to observer-visible subset.
 

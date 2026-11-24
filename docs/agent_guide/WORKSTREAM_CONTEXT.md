@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31; SX6 v0.37.32; SX7 v0.37.33, its remainder split into SX8 and SX15–SX18; SX8 v0.37.36, which split its own remainder into SX9, SX12 and SX14 (D32); SX9 v0.37.38, which added SX10 (D36, D37); SX10 v0.37.39, wrapped (D38), its remainder split into SX11 and SX13; SX11 v0.37.40; SX12 and SX13 swapped by D39)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31; SX6 v0.37.32; SX7 v0.37.33, its remainder split into SX8 and SX15–SX18; SX8 v0.37.36, which split its own remainder into SX9, SX12 and SX14 (D32); SX9 v0.37.38, which added SX10 (D36, D37); SX10 v0.37.39, wrapped (D38), its remainder split into SX11 and SX13; SX11 v0.37.40; SX12 and SX13 swapped by D39; SX12 v0.37.41)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -301,7 +301,9 @@ lender results, and a frozen one as the `.mirrors` of its live twin; a new
 writer of a context's stack head, a reply's `prev` or a reply's `caller`
 proves `contextLendersFlow` across itself; a new lend runs its label check
 before it reads any thread's state and lends nothing where the check refuses;
-new code reads no `donationOrigin` (SX12 deletes it).
+the reply pop gives a context to the caller of the frame it answers, and no
+state records a donor beyond the holder's binding (SX12 at `v0.37.41`); a new
+footprint member is proven needed by a coverage theorem or not declared.
 SX9 (`v0.37.38`) showed the binding words to an observer cleared for what
 they name (D34) and proved the checked notification lend's two-run theorem
 (`maybeDonateSchedContextFlowing_lowEquivalent_pair`). **Standing constraints

@@ -1217,13 +1217,10 @@ def frozenReturnDonatedSchedContext (st : FrozenSystemState)
         -- **WS-RR RR8**: the record is `donationReturnSchedContext` -- the
         -- **live** function, as `donationReturnBinding` below is -- so the two
         -- surfaces cannot disagree about what a return writes into the
-        -- reservation.  HP10.4's bottom-arm origin clear travels with it: this
-        -- mirror did not carry that clause until FO-044 gave the frozen surface
-        -- its first state with a recorded origin and the differential reported
-        -- the divergence, and sharing the definition is what stops the next such
-        -- clause from needing its own correction one cut later.
+        -- reservation, and a clause added to the record reaches both surfaces
+        -- by construction.
         let sc' := SeLe4n.Kernel.donationReturnSchedContext sc originalOwner
-          (head?.bind (fun p => p.2.prev)) newOwner?
+          (head?.bind (fun p => p.2.prev))
         match frozenWithObjectStored st scId.toObjId (.schedContext sc') with
         | .error e => .error e
         | .ok rebound =>
@@ -1296,7 +1293,7 @@ def frozenKeepDonatedSchedContext (st : FrozenSystemState) (holder : SeLe4n.Thre
       | .ok head? =>
         match frozenWithObjectStored st scId.toObjId
             (.schedContext (SeLe4n.Kernel.donationSeverSchedContext sc
-              (head?.bind (fun p => p.2.prev)) newOwner?)) with
+              (head?.bind (fun p => p.2.prev)))) with
         | .error e => .error e
         | .ok st1 =>
           match frozenStoreDonationHeadPop st1 scId head? with
@@ -1350,7 +1347,7 @@ def frozenReturnUnheldSchedContext (st : FrozenSystemState)
       | .error e => .error e
       | .ok head? =>
         let sc' := SeLe4n.Kernel.donationReturnSchedContext sc owner
-          (head?.bind (fun p => p.2.prev)) newOwner?
+          (head?.bind (fun p => p.2.prev))
         match frozenWithObjectStored st scId.toObjId (.schedContext sc') with
         | .error e => .error e
         | .ok rebound =>
@@ -1388,8 +1385,7 @@ def frozenSeverUnheldSchedContext (st : FrozenSystemState)
       | .error e => .error e
       | .ok head? =>
         match frozenWithObjectStored st scId.toObjId (.schedContext
-            (SeLe4n.Kernel.donationSeverSchedContext sc (head?.bind (fun p => p.2.prev))
-              newOwner?)) with
+            (SeLe4n.Kernel.donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)))) with
         | .error e => .error e
         | .ok st1 => frozenStoreDonationHeadPop st1 scId head?
 

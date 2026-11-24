@@ -1346,7 +1346,7 @@ theorem cancelIpcBlocking_preserves_ipcInvariant
 -- WS-ZA ZA6.33: the suspend's head cut — what it keeps
 -- ============================================================================
 
-/-- WS-ZA ZA6.33: a context's head and origin cleared is a kind-preserving
+/-- WS-ZA ZA6.33: a context's head cleared is a kind-preserving
 write. -/
 theorem updateSchedContext_kindPreservingWrite (st : SystemState)
     (scId : SeLe4n.SchedContextId) (f : SchedContext → SchedContext)

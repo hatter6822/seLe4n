@@ -100,12 +100,12 @@ theorem schedContextBindPerform_runQueueStage (st : SystemState) (vScId : SeLe4n
   try dsimp only []
   have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
     (SchedContextId.ofObjId vScId.val) sc).mp hSc
-  obtain ⟨-, -, -, -, -, -, -, -, -, hRel1, hRel2, hRel3⟩ :=
+  obtain ⟨-, -, -, -, -, -, -, -, hRel1, hRel2, hRel3⟩ :=
     SchedContext.fields_of_refillsErased (sc.releaseReadyHead_refillsErased st.machine.timer)
   -- The context written bound (a frame off it: its refills may be
   -- pending off every queue until the placement closes the write).
   have hIns : SystemState.RunQueueFrameStage (· = SchedContextId.ofObjId vScId.val) st
-      (st.rewriteObject vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none })
+      (st.rewriteObject vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val) })
         (SystemState.rewriteAdmissible_schedContext hSc _)) :=
     SystemState.RunQueueFrameStage.insert rfl rfl rfl
       (fun c => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
@@ -138,10 +138,10 @@ theorem schedContextBindPerform_runQueueStage (st : SystemState) (vScId : SeLe4n
       have : a = sc := Option.some.inj (ha.symm.trans hSc)
       subst this
       exact hUnb hb
-    have hYs : (st.rewriteObject vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none }) (SystemState.rewriteAdmissible_schedContext hSc _)).getSchedContext? ⟨vScId.val.toNat⟩ = some { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none } :=
+    have hYs : (st.rewriteObject vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val) }) (SystemState.rewriteAdmissible_schedContext hSc _)).getSchedContext? ⟨vScId.val.toNat⟩ = some { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val) } :=
       SystemState.rewriteObject_schedContext_getSchedContext?_self st
         (SchedContextId.ofObjId vScId.val) _ (SystemState.rewriteAdmissible_schedContext hSc _) hI
-    have hWF : schedContextWellFormed { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none } :=
+    have hWF : schedContextWellFormed { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val) } :=
       releaseReadyHead_preserves_schedContextWellFormed sc _ (hS.1 _ sc hs hSc)
     split
     · intro hXR

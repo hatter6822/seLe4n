@@ -445,7 +445,7 @@ theorem returnUnheldSchedContext_runQueueFrameStage {st st' : SystemState}
   exact (f1.trans (f2.toFrame _)).trans ((f3.trans (markKeyChangeFrom_runQueueStage st s3 owner)).toFrame _)
 
 /-- **The sever is a run-queue stage**: the context stored over itself with a
-new head and origin, its refills, release and yield links kept, then the head
+new head, its refills, release and yield links kept, then the head
 pop. -/
 theorem severUnheldSchedContext_runQueueStage {st st' : SystemState}
     {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}

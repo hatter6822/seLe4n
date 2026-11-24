@@ -238,7 +238,7 @@ theorem returnDonatedSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
         simp only []
         cases hS1 : storeObject scId.toObjId
             (.schedContext (donationReturnSchedContext sc originalOwner
-              (head?.bind (fun p => p.2.prev)) newOwner?)) st with
+              (head?.bind (fun p => p.2.prev)))) st with
         | error _ => intro h; cases h
         | ok p1 =>
           simp only []
@@ -269,7 +269,7 @@ theorem returnDonatedSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
                     cases h
                     obtain ⟨hK, hS, hI, hR, hTk⟩ := returnStoreChain_keys
                       (sc' := donationReturnSchedContext sc originalOwner
-                        (head?.bind (fun p => p.2.prev)) newOwner?)
+                        (head?.bind (fun p => p.2.prev)))
                       (ct' := { clientTcb with
                         scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donationReturnBinding scId newOwner?), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) })
                       (stcb' := { serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) hInv hObj rfl
@@ -642,15 +642,15 @@ theorem cancelBoundDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
     injection h with h
     subst h
     have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt st scId
-      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
+      (fun sc => { sc with boundThreadCode := 0, isActive := false }) hInv
     have k1 := updateSchedContext_keyInputsEq st scId
-      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
+      (fun sc => { sc with boundThreadCode := 0, isActive := false }) hInv
     have hS1 := SystemState.updateSchedContext_scheduler st scId
-      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
+      (fun sc => { sc with boundThreadCode := 0, isActive := false })
     have hInvP := SchedContextOps.purgeReplenishment_objects_invExt _ scId hInv1
     have k := keyInputsEq_trans k1 (keyInputsEq_of_objectsAgreeOffReleaseLinks
       (SchedContextOps.purgeReplenishment_agree (st.updateSchedContext scId
-        (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })) scId))
+        (fun sc => { sc with boundThreadCode := 0, isActive := false })) scId))
     refine ⟨stepCovers_markKeyChangeFrom (fun t ht => ?_)
       ((SystemState.RunCoresAgree.updateTcb (tid := tid)
         (f := fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) (by exact hInvP)

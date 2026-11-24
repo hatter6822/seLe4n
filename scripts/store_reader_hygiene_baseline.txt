@@ -954,7 +954,6 @@ STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/Defs.lean|donationChainWellForm
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/Defs.lean|donationChain_no_extension|2
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/Defs.lean|donationHeadOf?_of_reciprocal|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/Defs.lean|donationHeadResolves|2
-STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/Defs.lean|donationOriginRebindable_no_owner|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/Defs.lean|donationOuterUnowned|1
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/Defs.lean|donationOwnerFrame|4
 STORE_READ_SPEC_SITE=SeLe4n/Kernel/IPC/Invariant/Defs.lean|donationOwnerFrameExcept|4

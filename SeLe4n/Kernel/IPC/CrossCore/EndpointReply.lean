@@ -1398,7 +1398,7 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
   -- `applyReplyDonationOnCore` itself reads, so the footprint and the transition
   -- cannot disagree about which context is popped or which thread is unbound.
   -- **WS-ZA ZA6.34**: the context members (the context, its stack head, the
-  -- frames below it and the recorded origin) read the context half alone,
+  -- frames below it) read the context half alone,
   -- `answeredFrameHeadContextId?`, because the pop writes them whether or not a
   -- thread holds the context (`popUnheldReplyHead` where none does); only the
   -- holder member reads the holder.

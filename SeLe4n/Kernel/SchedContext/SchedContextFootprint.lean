@@ -428,7 +428,7 @@ theorem schedContextUnbind_replenishQueueOnCore_ne_of_link (st st' : SystemState
         simp only [hTcb] at h
         rw [Except.ok.injEq, Prod.mk.injEq] at h
         rw [← h.2, SchedContextOps.purgeReplenishment_replenishQueueOnCore_ne _ _ _
-          (hLink _ rfl { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+          (hLink _ rfl { sc with boundThreadCode := 0, isActive := false }
             rfl _), SystemState.rewriteObject_scheduler]
 
 /-- **`v0.35.168`: ...and the live per-core arm writes the same one**: its state

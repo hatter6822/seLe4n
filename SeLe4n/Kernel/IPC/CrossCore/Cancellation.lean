@@ -2437,10 +2437,10 @@ theorem cancelBoundDonationOnCore_preserves_ipcInvariant
     refine ipcInvariant_of_objectsAgreeOffSchedulerLinks
       (.of_releaseLinks (cancelBoundDonationOnCore_objects st st' tid tcb scId hB hInv h)) ?_
     have hInv1 : (st.updateSchedContext scId fun sc =>
-        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }).objects.invExt :=
+        { sc with boundThreadCode := 0, isActive := false }).objects.invExt :=
       SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
     have hIpc1 : ipcInvariant (st.updateSchedContext scId fun sc =>
-        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) := by
+        { sc with boundThreadCode := 0, isActive := false }) := by
       unfold SystemState.updateSchedContext
       split
       · intro oid ntfn hL

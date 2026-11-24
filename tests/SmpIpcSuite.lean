@@ -4618,7 +4618,7 @@ private def runRetypeReservationChecks : IO Unit := do
     | some stNew =>
       assertBool "(b) PAYOFF: the context is unbound and inactive after the retype"
         (match stNew.getSchedContext? scClient with
-         | some sc => sc.boundThread.isNone && !sc.isActive && sc.donationOrigin.isNone
+         | some sc => sc.boundThread.isNone && !sc.isActive
          | none => false)
       assertBool "(b) PAYOFF: the replenishment was purged from the destroyed thread's home"
         (allCores.all (fun c => replenishCountFor stNew c scClient == 0))

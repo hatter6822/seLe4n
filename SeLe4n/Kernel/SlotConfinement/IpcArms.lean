@@ -1253,9 +1253,9 @@ theorem cutCancelledCallerHead_confinedToCores (s : SystemState) (tcb : TCB) :
         (storeObject_scheduler_eq x x1 _ _ hS) (storeObject_machine_eq x x1 _ _ hS)
     have h2 := observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
       (SystemState.updateSchedContext_scheduler x1 scId
-        fun sc => { sc with scReply := none, donationOrigin := none })
+        fun sc => { sc with scReply := none })
       (SystemState.updateSchedContext_machine x1 scId
-        fun sc => { sc with scReply := none, donationOrigin := none })
+        fun sc => { sc with scReply := none })
     simpa only [List.nil_append] using
       observableSlotsConfinedToCores_trans (observableSlotsConfinedToCores_trans hx h1) h2
   · intro x scId holder ht o hx _ _ _

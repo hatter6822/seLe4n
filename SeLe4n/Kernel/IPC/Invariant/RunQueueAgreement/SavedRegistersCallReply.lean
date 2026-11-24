@@ -147,7 +147,7 @@ theorem of_donateSchedContext {st st' : SystemState} {clientTid serverTid : SeLe
     {clientScId : SeLe4n.SchedContextId} (hInv : st.objects.invExt)
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
     savedRegsUnwritten st st' :=
-  ⟨.of_map (donateSchedContext_getTcb?_map_eq TCB.registerContext (fun _ _ _ _ => rfl) st st'
+  ⟨.of_map (donateSchedContext_getTcb?_map_eq TCB.registerContext (fun _ _ _ => rfl) st st'
       clientTid serverTid clientScId hInv h),
     donateSchedContext_preserves_objects_invExt _ _ _ _ _ hInv h⟩
 

@@ -1593,8 +1593,8 @@ run_check "INVARIANT" rg -n '^  scReply : Option SeLe4n\.ReplyId := none$' SeLe4
 run_check "INVARIANT" rg -n 'a\.scReply == b\.scReply &&' SeLe4n/Kernel/SchedContext/Types.lean
 # The two exhaustive positional patterns keep their arity pin: a field added to
 # `SchedContext` fails these definitions rather than defaulting to "unread".
-run_check "INVARIANT" bash -lc 'rg -U -n "_refillSlot7Amount, _refillSlot7EligibleAt,\n\s*boundThreadCode, scReply, donationOrigin, _isActive,\n\s*releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode,\n\s*_notificationCode, _headLinkCell, _hHeadLinkCell⟩" SeLe4n/Platform/Boot.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "_refillSlot7Amount, _refillSlot7EligibleAt,\n\s*_boundThread, _scReply, _donationOrigin, _isActive,\n\s*_releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode,\n\s*_notificationCode, _headLinkCell, _hHeadLinkCell⟩" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "_refillSlot7Amount, _refillSlot7EligibleAt,\n\s*boundThreadCode, scReply, _isActive,\n\s*releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode,\n\s*_notificationCode, _headLinkCell, _hHeadLinkCell⟩" SeLe4n/Platform/Boot.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "_refillSlot7Amount, _refillSlot7EligibleAt,\n\s*_boundThread, _scReply, _isActive,\n\s*_releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode,\n\s*_notificationCode, _headLinkCell, _hHeadLinkCell⟩" SeLe4n/Platform/Boot.lean'
 # WS-ZA ZA6.5: the consumed time takes part in structural equality (the frozen
 # differential compares it) and a boot context must carry none.
 run_check "INVARIANT" rg -n '^    a\.consumed == b\.consumed &&$' SeLe4n/Kernel/SchedContext/Types.lean
@@ -1785,11 +1785,11 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "if r\.next != some \(\.head s
 # The pop writes the rebind and the stack head as ONE SchedContext store: a frame
 # stated over either half alone would be false of the operation.  `v0.35.100`
 # repointed this from the live pop's inlined literal to the shared record, which is
-# where "one store, three fields" now lives -- the FOURTH artefact in that cut found
+# where "one store, two fields" now lives -- the FOURTH artefact in that cut found
 # to be pinning something the cut retired, and the only one of the four that failed
 # LOUDLY (a positive on a vanished literal), which is why the other three had to be
 # swept for rather than waited for.
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def donationReturnSchedContext[^\n]*(\n([ \t][^\n]*)?)*boundThreadCode := SeLe4n\.ThreadId\.optCode \(some originalOwner\),\n\s*scReply := nextHead\?,\n\s*donationOrigin :=" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def donationReturnSchedContext[^\n]*(\n([ \t][^\n]*)?)*boundThreadCode := SeLe4n\.ThreadId\.optCode \(some originalOwner\),\n\s*scReply := nextHead\? \}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # The head clear is its own step with its own frames, so a downstream frame
 # extends by one rewrite rather than by a second arm through the whole proof.
 run_check "INVARIANT" rg -n '^def storeDonationHeadClear($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
@@ -2380,7 +2380,7 @@ run_check "INVARIANT" rg -n '^theorem donationPushFrame\?_ok' SeLe4n/Kernel/IPC/
 # The push writes the head and the frame, and the frame's `prev` is the OLD head
 # -- read out of the same SchedContext object the store rewrites.  Relation, not
 # presence: the mutation keeps both stores and drops the link.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def donateSchedContext[^\n]*(\n([ \t][^\n]*)?)*scReply := some pushRid," SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def donateSchedContext[^\n]*(\n([ \t][^\n]*)?)*scReply := some pushRid \}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def donateSchedContext[^\n]*(\n([ \t][^\n]*)?)*storeDonationFramePush clientScId pushRid pushReply sc\.scReply st1" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def storeDonationFramePush[^\n]*(\n([ \t][^\n]*)?)*prev := oldHead\?, next := some \(\.head scId\) \}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # ...and the FIFTH store: the old head stops heading the context and links up to
@@ -2611,15 +2611,12 @@ run_check "INVARIANT" bash -lc 'rg -n "SEVER: pop one settles the context .[.]bo
 # retires one artefact over.  That relation is carried by the contiguous-run anchor
 # in the WS-OD block above, which names every runner of this group in order, so no
 # standalone presence check is added here.
-# **WS-HP HP10.3/HP10.4/HP10.5**: the reservation's ORIGIN field.  WS-SX SX12
-# retired the reply pop's redirect to it: seL4-MCS's `reply_pop` gives the
-# context to the caller of the frame it answers, so nothing reads the field to
-# choose a recipient.
-run_check "INVARIANT" rg -n '^  donationOrigin : Option SeLe4n.ThreadId := none' SeLe4n/Kernel/SchedContext/Types.lean
-# It is ERASED by the projection, in the cut that added it -- a `ThreadId` naming a
-# possibly-high caller is the linkage `boundThread` and `Reply.caller` are erased for.
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_donationOrigin_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "donationOrigin := none,\n *releaseNextCode := 0,\n" SeLe4n/Kernel/InformationFlow/Projection.lean'
+# **WS-HP HP10.3/HP10.4/HP10.5** recorded a reservation ORIGIN, the field the
+# reply pop redirected to.  WS-SX SX12 (D31) deleted the redirect and then the
+# field, its TCB back-link and every write, clear and projection clause of
+# them: seL4-MCS `reply_pop` gives the context to the caller of the frame it
+# answers, so no state records a donor beyond the holder's binding.  The
+# code-view negative below refuses every name of them.
 # WS-ZA ZA6.30: only the successor link is erased; the context's release core and
 # release time stay in the projection, so each core's release queue is projected
 # filtered to the observable contexts.  Mutation: erase `releaseCoreCode` again.
@@ -2640,16 +2637,6 @@ run_check "INVARIANT" rg -n -U '^theorem releaseRemoveOn_preserves_projection [^
 run_check "INVARIANT" rg -n -U '^theorem releasePlace_preserves_projection [^\n]*(\n([ \t][^\n]*)?)*  projectState_of_releaseOnlyWrite ctx observer\n' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n -U '^theorem purgeReplenishment_preserves_projection [^\n]*(\n([ \t][^\n]*)?)*  projectState_of_releaseOnlyWrite ctx observer\n' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n -U '^theorem replenishOnCore_preserves_projection [^\n]*(\n([ \t][^\n]*)?)*  projectState_of_releaseOnlyWrite ctx observer\n' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
-# ...and REFUSED on a boot SchedContext: a boot state has made no loan.
-run_check "INVARIANT" bash -lc 'rg -n "sc.donationOrigin.isNone" SeLe4n/Platform/Boot.lean'
-# The write asks its question ONCE, through a named definition, because the operation
-# branches on it and `_ok_storeChain` -- the only description of that operation --
-# must name the same question.
-run_check "INVARIANT" rg -n '^@\[inline\] def donationFirstPush' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-# NEGATIVE: and no chain conjunct is stated over the origin.  The field is validated
-# at the pop, never asserted by the invariant; a conjunct would be false on the
-# removal states this phase exists for.
-run_negative_check "INVARIANT" bash -lc 'rg -n "donationOrigin" SeLe4n/Kernel/IPC/Invariant/Defs.lean | rg -n "donationChainWellFormed|prevLinkReciprocal|headTerminates"'
 # The reply stack's links are reciprocal BOTH ways (seL4's `sym_refs` over
 # `replyNext` / `replyPrev`): a frame's `next` naming a frame above is answered by
 # that frame's `prev`, so no retire or splice can leave a dangling upward link.
@@ -2659,18 +2646,12 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^structure donationChainWellFormed \(s
 run_check "INVARIANT" rg -n '^theorem donationChainWellFormed\.not_of_dangling_next($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^theorem cutReplyFrameOutOrSelf_cut_prev_none($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 run_check "INVARIANT" rg -n '^theorem passiveObjectQuiescent\.namedByNone ' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
-# The donor store record (the back-link the retired resolver counted).
-run_check "INVARIANT" rg -n '^@\[inline\] def donorOriginCode \(donorTcb : TCB\) \(scId : SeLe4n\.SchedContextId\)' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def donateSchedContext[^\n]*(\n([ \t][^\n]*)?)*originScCode := donorOriginCode donorTcb clientScId clientTcb\.originScCode \}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
-# NEGATIVE: so the destroy path reads no context's origin to find the thread --
-# no sweep of the object table for origins naming it.
-run_negative_check "INVARIANT" rg -n 'donationOrigin == some' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
 
 # **WS-SX SX12 (D31, "Match seL4")**: the redirect is retired.  The pop hands the
 # context to the answered frame's caller on every arm, so no resolver, guard,
 # frame-coherence premise, footprint member or bound reads the origin.  Code view,
 # so a name surviving in prose that explains the retirement does not trip it.
-run_negative_check "INVARIANT" rg -n 'donationOriginRecipient|replyDonationRecipient|donationOriginRebindable|donationOriginCounted|redirectedOriginFrameCoherent|frozenReplyDonationRecipient|frozenDonationOriginRecipient|frozenDonationOriginRebindable|originRecipient|_of_except_redirected|donationAccountingPreserved_atCallDepthTwo' SeLe4n tests
+run_negative_check "INVARIANT" rg -n 'donationOrigin|originScCode|donationFirstPush|donorOriginCode|donationOriginRecipient|replyDonationRecipient|donationOriginRebindable|donationOriginCounted|redirectedOriginFrameCoherent|frozenReplyDonationRecipient|frozenDonationOriginRecipient|frozenDonationOriginRebindable|originRecipient|_of_except_redirected|donationAccountingPreserved_atCallDepthTwo' SeLe4n tests
 # The reachable bounds' exclusion that stays: no frame below the head where the
 # stack walk reports no outer caller.
 run_check "INVARIANT" rg -n '^theorem replyStackBelowHead\?_of_outer_none' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
@@ -2692,20 +2673,11 @@ run_check "INVARIANT" rg -F -n 'SEL4: the live reply spine settles the reservati
 run_check "INVARIANT" rg -F -n 'FO-044: the live pop binds the context to the ANSWERED caller' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -F -n 'FO-044 NEGATIVE: ...and unbound on the frozen surface too' tests/FrozenOpsSuite.lean
 
-# **HP10.4's origin clear, on the frozen surface.**  It was live-only until FO-044
-# gave the frozen side its first state with a recorded origin and the differential
-# reported the divergence -- a field added to a SHARED record is a sweep of both
-# surfaces, not of the one whose transition motivated it.
-#
-# `v0.35.100` repointed this pair.  The clause moved into the shared
-# `donationReturnSchedContext`, which is where both surfaces now read it, so an
-# anchor on the frozen body's own inlined literal would have failed outright --
-# this project's *sweep what was pinning the thing you deleted* rule, arriving
-# one cut after the two it is written about.  The relation is that the frozen pop
-# stores the LIVE definition and does not re-inline the clause, which is what
-# makes a future field added there reach both surfaces by construction.
+# **The frozen pop stores the LIVE record.**  `v0.35.100` moved the pop's context
+# record into the shared `donationReturnSchedContext`, which both surfaces read, so
+# the frozen body does not re-inline it and a field added there reaches both
+# surfaces by construction.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*SeLe4n\.Kernel\.donationReturnSchedContext sc originalOwner" SeLe4n/Kernel/FrozenOps/Core.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*donationOrigin :=" SeLe4n/Kernel/FrozenOps/Core.lean'
 # The structural half: removing a BOTTOM frame clears the downward link of the
 # frame above it, so that frame becomes the bottom of what is left.  The
 # sever-direction sibling of `removeCallerReplyFrame_breaks_chain`, and
@@ -4595,10 +4567,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def (keepDonated
 # The compiled reply's held arm is reached through that module: the dispatch that
 # holds `applyReplyDonationOnCore` imports it.
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.IPC\.Operations\.HeldContextPopInPlace$' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
-# WS-ZA ZA6.33 / WS-SX SX12: the in-place pop hands the context to the answered
-# caller on every arm and its gate reads no origin; moving a thread off the core
-# it runs on writes the old core's scheduler in its cell.
-run_negative_check "INVARIANT" rg -n 'match sc\.donationOrigin with' SeLe4n/Kernel/IPC/Operations/DonationPopInPlace.lean
+# WS-ZA ZA6.33: moving a thread off the core it runs on writes the old core's
+# scheduler in its cell.
 run_check "INVARIANT" rg -n '^    \{ st with scheduler := vacatedScheduler st\.scheduler oldCore \}$' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n -U 'obtain ⟨sgi, hD⟩ := callDispatchChecked_donating_inPlace ctx st epId ep tid r rt rid' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n -U '^  runContextlessStackChecks\n  runMiddleReplyFinaliseChecks$' tests/VSpaceCapabilityBindingSuite.lean
@@ -5160,7 +5130,7 @@ run_negative_check "INVARIANT" rg -n 'storeNamesNone|storeNamesThreadNone' SeLe4
 # scTCB and scReply), with no walk of the object table or the replenishment
 # queues; the scheduling links that make those the whole truth are carried along
 # the whole delete chain, and an admitted context is proven named by none.
-run_check "INVARIANT" rg -n -U '  \| some \(\.schedContext sc\) =>\n    sc\.boundThreadCode == 0 && sc\.donationOrigin\.isNone && sc\.scReply\.isNone &&\n      sc\.releaseCoreCode == 0 && sc\.yieldFromCode == 0 && sc\.notificationCode == 0\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n -U '  \| some \(\.schedContext sc\) =>\n    sc\.boundThreadCode == 0 && sc\.scReply\.isNone &&\n      sc\.releaseCoreCode == 0 && sc\.yieldFromCode == 0 && sc\.notificationCode == 0\n  \| _ => false' SeLe4n/Kernel/Capability/FinalRetire.lean
 # A notification or a context still bound to the other is not retired: the
 # finalisation clears both link words first (seL4-MCS `schedContext_unbindNtfn`).
 # Mutation: drop the notification arm's `schedContextCode` conjunct.
@@ -18941,11 +18911,8 @@ run_check "INVARIANT" rg -n '^theorem donationHeadPop_preserves_donationChainWel
 # subject is unchanged and is now the lemma's own hypothesis rather than a record
 # literal in it: the lemma quantifies over the STORED RECORD and constrains the one
 # field its proof reads, which is the shape `donationChainFrame` has for the same
-# reason.  Stating it over the pop's own `donationReturnSchedContext` was strictly
-# narrower and was measured so -- the depth-2 witness in
-# `tests/SmpCrossCoreCallSuite.lean` stores a record that keeps its
-# `donationOrigin`, which no value of the pop's arm selector produces, so the named
-# form refused a witness whose whole job is to exercise this store surface.
+# reason: a lemma that does not mention the record costs nothing when a field of
+# the pop's record changes.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationHeadPop_preserves_donationChainWellFormed[^\n]*(\n([ \t][^\n]*)?)*\(hStoredHead : scStored\.scReply = head\?\.bind \(fun p => p\.2\.prev\)\)" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
 # ...and the store receives that PARAMETER, not a record.  Without this the
 # hypothesis above could sit beside a record-valued store and constrain nothing.
@@ -19025,14 +18992,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind [^\n]*(\
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\\[inline\\] def schedContextUnbindAllPerform [^\n]*\n[^\n]*\n  schedContextUnbindReply \(unbindSchedContextNotification \(schedContextUnbindPerform st vScId\)" SeLe4n/Kernel/SchedContext/OperationsPerCore.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (frozenSchedContextUnbind|schedContextUnbind) [^\n]*(\n([ \t][^\n]*)?)*isDonated" SeLe4n/Kernel/FrozenOps/Operations.lean SeLe4n/Kernel/SchedContext/Operations.lean'
 #
-# (3) PR #897 review -- **the same mirror, swept.**  Two things the review's own
-# finding named and two the sweep found.  `SchedContext.donationOrigin` is a field
-# of the LIVE record and `freeze` copies it verbatim, so a frozen state taken
-# mid-chain carries one; WS-HP HP10.4 landed the field's clears on the live side
-# at three sites and both frozen mirrors kept the history the kernel erases, so
-# `frozenDonationOriginRecipient?` could still name a thread whose loan had ended.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind \([^\n]*(\n([ \t][^\n]*)?)*boundThreadCode := SeLe4n\.ThreadId\.optCode \(some threadId\),(\n([ \t][^\n]*)?)*donationOrigin := none" SeLe4n/Kernel/FrozenOps/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextUnbind \([^\n]*(\n([ \t][^\n]*)?)*boundThreadCode := 0, isActive := false,(\n([ \t][^\n]*)?)*donationOrigin := none" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# (3) PR #897 review -- **the same mirror, swept.**  The frozen binds once also
+# cleared the reservation origin the live ones cleared; WS-SX SX12 (D31) deleted
+# that field, so what stays of the sweep is the refusals.
 # ...and the three refusals the mirror did not carry.  The live bind refuses four
 # things and this one refused one, so on three concrete states it SUCCEEDED where
 # the kernel refuses -- the direction that matters on a differential surface, and

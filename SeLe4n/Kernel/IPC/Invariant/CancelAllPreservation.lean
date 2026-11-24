@@ -949,8 +949,8 @@ theorem updateTcb_ownerCleared_preserves_ipcInvariantFull (st : SystemState)
 
 /-- **The thread-side cut keeps the bundle the delete carries** (WS-ZA ZA6.34):
 the head reply's upward link is a stack link
-(`storeObject_reply_stackLinks_preserves_ipcInvariantFull`), the context's head and
-origin are content the bundle does not read
+(`storeObject_reply_stackLinks_preserves_ipcInvariantFull`), the context's head is
+content the bundle does not read
 (`insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull`), and a
 holder's loan made its own is `updateTcb_ownerCleared_preserves_ipcInvariantFull`.
 The lent-context fact loses the cut frame's head (`of_headLetGo`): after the cut
@@ -983,7 +983,7 @@ theorem cutHeadFrameKeepingContext_preserves_finaliseLoanBundle (s : SystemState
   have hSk : scId.toObjId ≠ rid.toObjId := by intro e; rw [e, hRo] at hSco; cases hSco
   have hSc1 : s1.objects[scId.toObjId]? = some (.schedContext sc0) := by
     rw [storeObject_objects_ne s s1 _ _ _ hSk hInv hS]; exact hSco
-  let f : SchedContext → SchedContext := fun sc => { sc with scReply := none, donationOrigin := none }
+  let f : SchedContext → SchedContext := fun sc => { sc with scReply := none }
   have hSc1' : s1.getSchedContext? scId = some sc0 := (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hSc1
   have e2 : s1.updateSchedContext scId f =
       { s1 with objects := s1.objects.insert scId.toObjId (.schedContext (f sc0)) } :=

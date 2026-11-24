@@ -1241,7 +1241,7 @@ theorem cancelBoundDonationOnCore_replenishQueue_purged
   · have := SchedContextOps.purgeReplenishment_entries_subset _ scId c e he
     rwa [SystemState.updateSchedContext_scheduler] at this
   · rw [← SystemState.releaseCoreOf_updateSchedContext st scId
-      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
+      (fun sc => { sc with boundThreadCode := 0, isActive := false })
       hInv (fun _ => rfl) scId]
     exact SchedContextOps.purgeReplenishment_entries_self _ scId c e he hs
 
@@ -1273,9 +1273,9 @@ theorem cancelBoundDonationOnCore_refined {st st' : SystemState}
   · rename_i scId _
     cases h
     have hMid := SystemState.updateSchedContext_preserves_objects_invExt st scId
-      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
+      (fun sc => { sc with boundThreadCode := 0, isActive := false }) hInv
     have h1 := (SystemState.releaseStateAgree.updateSchedContext st scId
-      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
+      (fun sc => { sc with boundThreadCode := 0, isActive := false }) hInv
       (fun _ => ⟨rfl, rfl, rfl⟩)).refined hRef
     have h2 := SchedContextOps.purgeReplenishment_refined h1 scId
     have hX := SchedContextOps.purgeReplenishment_objects_invExt _ scId hMid
@@ -1541,9 +1541,9 @@ theorem cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
     (fun x => determineTargetCore_congr _ _ x (by rw [markKeyChangeFrom_getTcb?]))).mpr ?_
   simp only [markKeyChangeFrom_replenishQueueOnCore] at hSub
   have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt st scId
-    (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
+    (fun sc => { sc with boundThreadCode := 0, isActive := false }) hInv
   exact unbind_shape_preserves_replenishQueueAffinityConsistent_smp st _ scId
-    (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
+    (fun sc => { sc with boundThreadCode := 0, isActive := false })
     (fun _ => rfl) tid (fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 })
     (fun _ => rfl) hInv (SchedContextOps.purgeReplenishment_objects_invExt _ _ hInv1) hSub
     (SchedContextOps.purgeReplenishment_agree _ _) hCons
@@ -2792,8 +2792,7 @@ theorem spliceOutMidQueueNode_placement_frame (st : SystemState)
 
 The splice writes link fields, so a thread's binding crosses it untouched — and
 that is the *whole* of what the destroy path's reference sweep needs from this
-step, since the sweep's other three phases write endpoints, notifications and
-`SchedContext.donationOrigin`. -/
+step, since the sweep's other phases write endpoints and notifications. -/
 theorem spliceOutMidQueueNode_binding_frame (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
     ((spliceOutMidQueueNode st tid).getTcb? x).map (·.schedContextBinding)
@@ -3486,7 +3485,7 @@ theorem cancelBoundDonationOnCore_runQueueStage {st st' : SystemState}
         (markKeyChangeFrom_runQueueStage st _ tid))
     apply key
     have hU := SystemState.updateSchedContext_scheduler st scId
-      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
+      (fun sc => { sc with boundThreadCode := 0, isActive := false })
     cases hG : st.getSchedContext? scId with
     | none =>
       rw [SystemState.updateSchedContext_eq_self_of_none hG]
@@ -3547,7 +3546,7 @@ theorem cancelBoundDonationOnCore_runCoresAgree {st st' : SystemState}
   · rename_i scId _
     cases h
     have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt st scId
-      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
+      (fun sc => { sc with boundThreadCode := 0, isActive := false }) hInv
     refine SystemState.RunCoresAgree.trans
       (SystemState.RunCoresAgree.of_objects (markKeyChangeFrom_objects _ _ _)) ?_
     refine SystemState.RunCoresAgree.trans
@@ -3555,7 +3554,7 @@ theorem cancelBoundDonationOnCore_runCoresAgree {st st' : SystemState}
         (SchedContextOps.purgeReplenishment_objects_invExt _ _ hInv1)) ?_
     exact SystemState.RunCoresAgree.trans
       (s2 := st.updateSchedContext scId
-          (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }))
+          (fun sc => { sc with boundThreadCode := 0, isActive := false }))
       (fun y => by rw [SchedContextOps.purgeReplenishment_getTcb?])
       (fun y => by rw [SystemState.updateSchedContext_getTcb? _ _ _ hInv])
   · cases h

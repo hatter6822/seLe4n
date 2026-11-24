@@ -61,7 +61,7 @@ leaves the context's release link. -/
 theorem SchedContext.releaseLinkOn_of_refillsErased {sc x : SchedContext}
     (h : x.refillsErased = sc.refillsErased) (c : Concurrency.CoreId) :
     x.releaseLinkOn c = sc.releaseLinkOn c := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, h1, h2, h3⟩ := SchedContext.fields_of_refillsErased h
+  obtain ⟨-, -, -, -, -, -, -, -, h1, h2, h3⟩ := SchedContext.fields_of_refillsErased h
   unfold SchedContext.releaseLinkOn; rw [h1, h2, h3]
 
 end SeLe4n.Kernel

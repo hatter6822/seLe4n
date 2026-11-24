@@ -663,7 +663,7 @@ reads, and the only two.**
 field of either record and no key outside the two it quantifies over.  So a step
 that fixes those two projections **pointwise** carries it whole, whatever else it
 rewrites — which is what every step of the destroy path but three does (queue
-links, `ipcState`, endpoints, notifications, `SchedContext.donationOrigin`, CDT
+links, `ipcState`, endpoints, notifications, CDT
 edges, the service registry, the scheduler).
 
 Stated as a transfer over the projections rather than as a named `sameBindingGraph`

@@ -2325,33 +2325,6 @@ theorem storeDonationFramePush_scheduler_eq
   · have e2 : st'.scheduler = s1.scheduler := by unfold storeObject at hS2; cases hS2; rfl
     rw [e2, e1]
 
-/-- **WS-HP HP10.4: is this donation the FIRST push of this reservation?**
-
-A first push is one where the donor still *owns* the context it is lending, which
-is decidable from the donor's own binding: `SchedContextBinding.ownScId?` is `some`
-exactly on `.bound` and `none` on `.unbound` and `.donated` (`v0.35.3`), so
-`= some scId` says "this donor owns the very context in question".  An **onward**
-push — a passive server that Calls in turn, which is what makes the chain
-transitive — answers `false`.
-
-One definition rather than an inline test, because `donateSchedContext` branches on
-it and every statement about that operation's write set must name the same
-question; two spellings of it would be free to drift, and the store-chain
-decomposition is the *only* description of the operation. -/
-@[inline] def donationFirstPush (donorTcb : TCB) (scId : SeLe4n.SchedContextId) : Bool :=
-  donorTcb.schedContextBinding.ownScId? == some scId
-
-/-- **The donor's origin back-link after it lends `scId`**: the lent context on a
-first push, the back-link it already had on an onward push.  A first push records
-the donor as the context's origin (`SchedContext.donationOrigin`), and the origin
-counts only while this back-link names the context (`donationOriginCounted`), so
-the two writes are one fact on the two ends.  A donor that was already the origin
-of another context moves its back-link here, which supersedes that context's
-origin: it settles as seL4's `reply_pop` settles a context, without the redirect. -/
-@[inline] def donorOriginCode (donorTcb : TCB) (scId : SeLe4n.SchedContextId)
-    (prior : Nat) : Nat :=
-  if donationFirstPush donorTcb scId then scId.val + 1 else prior
-
 -- ============================================================================
 -- The SchedContext-binding frame (IPC de-threading D6; declared here since
 -- WS-RR RR8.12 Cut C1, `v0.35.160`)
@@ -2712,30 +2685,12 @@ def donateSchedContext
         -- donor's reply the new head of its donation stack (WS-OD OD4.1).  One
         -- store: the rebinding and the push are the same fact about the same
         -- object, and splitting them would admit an intermediate state whose
-        -- stack head and bound thread disagree.
-        -- **WS-HP HP10.4: record the reservation's ORIGIN on a FIRST push.**
-        --
-        -- A first push is one where the donor still *owns* the context, which is
-        -- decidable from its own binding: `SchedContextBinding.ownScId?` is
-        -- `some` exactly on `.bound` and `none` on `.unbound` and `.donated`
-        -- (`v0.35.3`), so `= some clientScId` says "this donor owns the very
-        -- context it is lending".  An **onward** push -- a passive server that
-        -- Calls in turn, which is what makes the chain transitive -- leaves the
-        -- field alone, and that is precisely what makes it the *origin* rather
-        -- than the immediate donor: the immediate donor is already recoverable
-        -- from `.donated scId owner`, and a field recording it would be the
-        -- duplicate this project retires.
-        --
-        -- A first push also *repairs* a stale origin rather than preserving it:
-        -- the donor owning the context means the previous loan ended, and every
-        -- step that ends one clears the field, so a `some` found here would be
-        -- residue.  Writing unconditionally on this arm is therefore the
-        -- fail-safe direction as well as the simple one.
+        -- stack head and bound thread disagree.  The context records no
+        -- donor beyond its holder's `.donated scId owner`, as seL4-MCS's
+        -- `schedContext_donate` records none: the pop gives the context to the
+        -- caller its frame answers.
         let sc' := { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid),
-                             scReply := some pushRid,
-                             donationOrigin :=
-                               if donationFirstPush donorTcb clientScId then some clientTid
-                               else sc.donationOrigin }
+                             scReply := some pushRid }
         match storeObject clientScId.toObjId (.schedContext sc') st with
         | .error e => .error e
         | .ok ((), st1) =>
@@ -2754,8 +2709,7 @@ def donateSchedContext
             | none => .error .objectNotFound
             | some clientTcb =>
               let clientTcb' := { clientTcb with
-                scBindingScCode := 0, scBindingOwnerCode := 0,
-                originScCode := donorOriginCode donorTcb clientScId clientTcb.originScCode }
+                scBindingScCode := 0, scBindingOwnerCode := 0 }
               match storeObject clientTid.toObjId (.tcb clientTcb') st2 with
               | .error e => .error e
               | .ok ((), st3) =>
@@ -2810,23 +2764,13 @@ theorem donateSchedContext_ok_storeChain
       donationPushFrame? st donorTcb = .ok (pushRid, pushReply) ∧
       storeObject clientScId.toObjId
         (.schedContext { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid),
-                                 scReply := some pushRid,
-                                 -- **WS-HP HP10.4**: and the origin, on a first
-                                 -- push only.  Named in the decomposition rather
-                                 -- than abstracted, because this lemma is the
-                                 -- *only* description of the operation and a
-                                 -- component it does not mention is a write no
-                                 -- consumer can reason about.
-                                 donationOrigin :=
-                                   if donationFirstPush donorTcb clientScId
-                                   then some clientTid else sc.donationOrigin }) st
+                                 scReply := some pushRid }) st
         = .ok ((), s1) ∧
       storeDonationFramePush clientScId pushRid pushReply sc.scReply s1 = .ok s2 ∧
       lookupTcb s2 clientTid = some clientTcb ∧
       storeObject clientTid.toObjId
         (.tcb { clientTcb with
-                scBindingScCode := 0, scBindingOwnerCode := 0,
-                originScCode := donorOriginCode donorTcb clientScId clientTcb.originScCode }) s2 = .ok ((), s3) ∧
+                scBindingScCode := 0, scBindingOwnerCode := 0 }) s2 = .ok ((), s3) ∧
       lookupTcb s3 serverTid = some serverTcb ∧
       storeObject serverTid.toObjId
         (.tcb { serverTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) })
@@ -2854,11 +2798,7 @@ theorem donateSchedContext_ok_storeChain
             simp only []
             cases hS1 : storeObject clientScId.toObjId
                 (.schedContext { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid),
-                                         scReply := some pushRid,
-                                         donationOrigin :=
-                                           if donationFirstPush donorTcb clientScId
-                                           then some clientTid
-                                           else sc.donationOrigin }) st with
+                                         scReply := some pushRid }) st with
             | error _ => intro h; cases h
             | ok p1 =>
               simp only []
@@ -2872,8 +2812,7 @@ theorem donateSchedContext_ok_storeChain
                   simp only []
                   cases hS3 : storeObject clientTid.toObjId
                       (.tcb { clientTcb with
-                        scBindingScCode := 0, scBindingOwnerCode := 0,
-                        originScCode := donorOriginCode donorTcb clientScId clientTcb.originScCode }) s2 with
+                        scBindingScCode := 0, scBindingOwnerCode := 0 }) s2 with
                   | error _ => intro h; cases h
                   | ok p3 =>
                     simp only []
@@ -2999,16 +2938,11 @@ theorem donateSchedContext_ok_pushedHead
       lookupTcb st clientTid = some donorTcb ∧
       st.getReply? pushRid = some pushReply ∧
       pushReply.prev = none ∧ pushReply.next = none ∧
-      -- **WS-HP HP10.4**: the donor's TCB is exposed so the post-state record can
-      -- be named in full, origin included, rather than the origin being
-      -- abstracted away.  This theorem is a corollary of `_ok_storeChain` and
-      -- inherits its standard: a component the description does not mention is a
-      -- write no consumer can reason about.
+      -- The post-state record is named in full: this theorem is a corollary of
+      -- `_ok_storeChain` and inherits its standard, that a component the
+      -- description does not mention is a write no consumer can reason about.
       st'.getSchedContext? clientScId =
-        some { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid), scReply := some pushRid,
-                       donationOrigin :=
-                         if donationFirstPush donorTcb clientScId then some clientTid
-                         else sc.donationOrigin } ∧
+        some { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid), scReply := some pushRid } ∧
       st'.getReply? pushRid =
         some { pushReply with prev := sc.scReply, next := some (.head clientScId) } := by
   obtain ⟨sc, donorTcb, clientTcb, serverTcb, pushRid, pushReply, s1, s2, s3, s4,
@@ -3028,10 +2962,7 @@ theorem donateSchedContext_ok_pushedHead
     exact (SystemState.getReply?_eq_some_iff st pushRid pushReply).mp hRepPre
   -- Both readings are written by their own store and framed by the other three.
   have hSc1 : s1.getSchedContext? clientScId
-      = some { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid), scReply := some pushRid,
-                       donationOrigin :=
-                         if donationFirstPush donorTcb clientScId then some clientTid
-                         else sc.donationOrigin } := by
+      = some { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid), scReply := some pushRid } := by
     rw [SystemState.getSchedContext?_eq_some_iff,
       storeObject_objects_eq st s1 clientScId.toObjId _ hObjInv hS1]
   have hSc2 := storeDonationFramePush_getSchedContext?_eq hInv1 hRep1 hS2 clientScId
@@ -3097,12 +3028,9 @@ lemmas (`donationHeadPop_preserves_donationChainWellFormed{,_of_except}`) are
 statements about the STORE SURFACE the pop is built from rather than about the pop,
 so they quantify over the stored record and constrain the one field their proof
 reads -- which is more general than either record spelling and is what
-`donationChainFrame` does for the same reason.  Stating them over this record was
-measured to be strictly narrower: the depth-2 witness in
-`tests/SmpCrossCoreCallSuite.lean` stores a record that KEEPS its `donationOrigin`,
-which no value of `newOwner?` produces, so the named form refused it.
+`donationChainFrame` does for the same reason.
 
-Three fields:
+Two fields:
 
 * `boundThread` names the recipient, which is what "the reservation is owned
   again" means at the bottom of a stack and what "the loan moved outward one
@@ -3111,10 +3039,6 @@ Three fields:
   the caller from `donationHeadOf?`, because the head's own links are what the
   validation read and re-reading them here would be a second answer to that
   question.
-* `donationOrigin` clears **exactly** on the bottom arm (WS-HP HP10.4): there the
-  loan has ended, so a recorded origin is stale history and the thread-id-reuse
-  hazard its own docstring names; above it the loan is still travelling outward
-  and the origin is the fact the field exists to carry.
 
 **It writes neither the reservation's parameters nor the recipient's own
 priority or domain**: a scheduling context carries budget and period alone
@@ -3122,29 +3046,25 @@ priority or domain**: a scheduling context carries budget and period alone
 partition are its TCB's, so the recipient resumes at its own band in its own
 partition with nothing to reconcile. -/
 @[inline] def donationReturnSchedContext (sc : SchedContext)
-    (originalOwner : SeLe4n.ThreadId) (nextHead? : Option SeLe4n.ReplyId)
-    (newOwner? : Option SeLe4n.ThreadId) : SchedContext :=
+    (originalOwner : SeLe4n.ThreadId) (nextHead? : Option SeLe4n.ReplyId) : SchedContext :=
   { sc with
       boundThreadCode := SeLe4n.ThreadId.optCode (some originalOwner),
-      scReply := nextHead?,
-      donationOrigin := if newOwner?.isNone then none else sc.donationOrigin }
+      scReply := nextHead? }
 
 @[simp] theorem donationReturnSchedContext_scReply (sc : SchedContext)
-    (originalOwner : SeLe4n.ThreadId) (nextHead? : Option SeLe4n.ReplyId)
-    (newOwner? : Option SeLe4n.ThreadId) :
-    (donationReturnSchedContext sc originalOwner nextHead? newOwner?).scReply
+    (originalOwner : SeLe4n.ThreadId) (nextHead? : Option SeLe4n.ReplyId) :
+    (donationReturnSchedContext sc originalOwner nextHead?).scReply
       = nextHead? := rfl
 
 /-- **The context record `reply_pop` stores when it hands nothing back**: the
 head moves to the frame below, the holder is left as it is (none where the
-context is unheld, the holder where it keeps the context), and the origin is kept only while an outer caller remains, as the
-donation pop's record keeps it (`donationReturnSchedContext`, which also names
-the recipient as holder). -/
-@[inline] def donationSeverSchedContext (sc : SchedContext) (nextHead? : Option SeLe4n.ReplyId)
-    (newOwner? : Option SeLe4n.ThreadId) : SchedContext :=
+context is unheld, the holder where it keeps the context), as the donation
+pop's record moves it (`donationReturnSchedContext`, which also names the
+recipient as holder). -/
+@[inline] def donationSeverSchedContext (sc : SchedContext) (nextHead? : Option SeLe4n.ReplyId) :
+    SchedContext :=
   { sc with
-      scReply := nextHead?,
-      donationOrigin := if newOwner?.isNone then none else sc.donationOrigin }
+      scReply := nextHead? }
 
 /-- WS-OD OD4.4: **the donor shape the pop requires of an outer caller.**
 
@@ -7301,12 +7221,11 @@ def returnDonatedSchedContext
     | .error e => .error e
     | .ok head? =>
       -- **WS-RR RR8**: the reservation's record is `donationReturnSchedContext`,
-      -- whose docstring carries what each of its three fields is for -- HP10.4's
-      -- bottom-arm origin clear among them, and why the priority mirror is not a
-      -- fourth.  The frozen mirror stores the *same* definition, so the two
+      -- whose docstring carries what each of its two fields is for, and why the
+      -- priority mirror is not a third.  The frozen mirror stores the *same* definition, so the two
       -- surfaces cannot disagree about what a return writes here.
       let sc' := donationReturnSchedContext sc originalOwner
-        (head?.bind (fun p => p.2.prev)) newOwner?
+        (head?.bind (fun p => p.2.prev))
       match storeObject scId.toObjId (.schedContext sc') st with
       | .error e => .error e
       | .ok ((), st1) =>
@@ -7526,7 +7445,7 @@ def keepDonatedSchedContext (st : SystemState) (holder : SeLe4n.ThreadId)
     | .error e => .error e
     | .ok head? =>
       match storeObject scId.toObjId
-          (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
+          (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev))))
           st with
       | .error e => .error e
       | .ok ((), st1) =>
@@ -7683,7 +7602,7 @@ theorem keepDonatedSchedContext_ok_storeChainGuarded {st st' : SystemState}
       outerCallerAcceptable st holder holder (heldPopOuter? st holder newOwner?) = true ∧
       donationHeadOf? st scId sc = .ok head? ∧
       storeObject scId.toObjId
-        (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
+        (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev))))
         st = .ok ((), s1) ∧
       storeDonationHeadPop scId head? s1 = .ok s2 ∧
       lookupTcb s2 holder = some ht ∧
@@ -7711,7 +7630,7 @@ theorem keepDonatedSchedContext_ok_storeChainGuarded {st st' : SystemState}
           rw [hH] at h
           simp only [] at h
           cases hS1 : storeObject scId.toObjId (.schedContext (donationSeverSchedContext sc
-              (head?.bind (fun p => p.2.prev)) newOwner?)) st with
+              (head?.bind (fun p => p.2.prev)))) st with
           | error e => rw [hS1] at h; cases h
           | ok r1 =>
             obtain ⟨⟨⟩, s1⟩ := r1
@@ -7756,7 +7675,7 @@ theorem keepDonatedSchedContext_ok_storeChain {st st' : SystemState}
       outerCallerAcceptable st holder holder (heldPopOuter? st holder newOwner?) = true ∧
       donationHeadOf? st scId sc = .ok head? ∧
       storeObject scId.toObjId
-        (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
+        (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev))))
         st = .ok ((), s1) ∧
       storeDonationHeadPop scId head? s1 = .ok s2 ∧
       lookupTcb s2 holder = some ht ∧
@@ -7876,7 +7795,7 @@ theorem keepDonatedSchedContext_objects (hObjInv : st.objects.invExt)
       donationHeadOf? st scId sc = .ok head? ∧
       st.objects[holder.toObjId]? = some (.tcb ht) ∧ ¬ holder.isReserved ∧
       st'.objects[scId.toObjId]? = some (.schedContext
-        (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?)) ∧
+        (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)))) ∧
       st'.objects[holder.toObjId]? = some (.tcb { ht with
           scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)),
           scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId (heldPopOwner? ht.schedContextBinding newOwner?)) }) ∧
@@ -7898,10 +7817,10 @@ theorem keepDonatedSchedContext_objects (hObjInv : st.objects.invExt)
   have hO : st.objects[holder.toObjId]? = some (.tcb ot) := by
     rw [← storeObject_objects_ne st s1 _ _ _ hNe hObjInv hS1]; exact hO1
   have hSc2 : s2.objects[scId.toObjId]? = some (.schedContext
-      (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?)) := by
+      (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)))) := by
     have e := storeDonationHeadPop_getSchedContext?_eq hInv1 hS2 scId
     have e1 : s1.getSchedContext? scId = some
-        (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?) :=
+        (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev))) :=
       (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
         (storeObject_objects_eq st s1 _ _ hObjInv hS1)
     exact (SystemState.getSchedContext?_eq_some_iff _ _ _).mp (e.trans e1)
@@ -8430,7 +8349,7 @@ theorem returnDonatedSchedContextResolved_ok_of_commits {st : SystemState}
       rw [hH]
       simp only []
       obtain ⟨st1, hS1⟩ : ∃ st1, storeObject scId.toObjId (.schedContext
-          (donationReturnSchedContext sc originalOwner (head?.bind (fun p => p.2.prev)) newOwner?))
+          (donationReturnSchedContext sc originalOwner (head?.bind (fun p => p.2.prev))))
           st = .ok ((), st1) := ⟨_, rfl⟩
       rw [hS1]
       simp only []
@@ -8868,7 +8787,7 @@ theorem returnDonatedSchedContext_ok_storeChain
       donationHeadOf? st scId sc = .ok head? ∧
       storeObject scId.toObjId
         (.schedContext (donationReturnSchedContext sc originalOwner
-   (head?.bind (fun p => p.2.prev)) newOwner?)) st = .ok ((), s1) ∧
+   (head?.bind (fun p => p.2.prev)))) st = .ok ((), s1) ∧
       storeDonationHeadPop scId head? s1 = .ok s2 ∧
       lookupTcb s2 originalOwner = some clientTcb ∧
       storeObject originalOwner.toObjId
@@ -8906,7 +8825,7 @@ theorem returnDonatedSchedContext_ok_storeChain
           simp only []
           cases hS1 : storeObject scId.toObjId
               (.schedContext (donationReturnSchedContext sc originalOwner
-   (head?.bind (fun p => p.2.prev)) newOwner?)) st with
+   (head?.bind (fun p => p.2.prev)))) st with
           | error _ => intro h; cases h
           | ok p1 =>
             simp only []
@@ -9120,15 +9039,6 @@ theorem returnDonatedSchedContext_eq_legacy_of_none
     (sc : SchedContext)
     (hSc : st.objects[scId.toObjId]? = some (.schedContext sc))
     (hNoHead : sc.scReply = none)
-    -- **WS-HP HP10.4**: and no recorded reservation origin.  The bottom arm clears
-    -- the origin — that is where the loan ends — so on a state carrying one the
-    -- operation genuinely differs from the pre-OD3 body by that clear.  Stated as a
-    -- hypothesis for the reason HP4.6 states the recipient guard as one: an
-    -- equation whose right-hand side grows a field every time the operation does
-    -- stops being a statement about the legacy shape.  Discharged on every state
-    -- before a first donation records one, and by `bootSafeSchedContextCheck` at
-    -- boot.
-    (hNoOrigin : sc.donationOrigin = none)
     (hRecip : donationRecipientAcceptable st originalOwner = true) :
     returnDonatedSchedContext st serverTid scId originalOwner none =
       (if sc.boundThread != some serverTid then .error (.invalidArgument 0)
@@ -9154,12 +9064,11 @@ theorem returnDonatedSchedContext_eq_legacy_of_none
                    .ok (markKeyChangeFrom st (markKeyChangeFrom st
                      st3 originalOwner) serverTid)) := by
   have hSame : donationReturnSchedContext sc originalOwner
-      ((none : Option (SeLe4n.ReplyId × Reply)).bind (fun p => p.2.prev)) none
+      ((none : Option (SeLe4n.ReplyId × Reply)).bind (fun p => p.2.prev))
       = { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some originalOwner) } := by
     show ({ sc with boundThreadCode := SeLe4n.ThreadId.optCode (some originalOwner),
-                    scReply := (none : Option SeLe4n.ReplyId),
-                    donationOrigin := (none : Option SeLe4n.ThreadId) } : SchedContext) = _
-    rw [← hNoHead, ← hNoOrigin]
+                    scReply := (none : Option SeLe4n.ReplyId) } : SchedContext) = _
+    rw [← hNoHead]
   unfold returnDonatedSchedContext SystemState.getSchedContext?
   rw [hSc]
   -- WS-OD OD4.4: at the bottom of the reply stack the outer-caller guard demands
@@ -9993,7 +9902,7 @@ theorem returnDonatedSchedContext_post_schedContext
       st.objects[scId.toObjId]? = some (.schedContext sc) ∧
       st'.objects[scId.toObjId]? =
         some (.schedContext (donationReturnSchedContext sc originalOwner
-   (head?.bind (fun p => p.2.prev)) newOwner?)) := by
+   (head?.bind (fun p => p.2.prev)))) := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
     hSc, _, _, hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
@@ -10004,7 +9913,7 @@ theorem returnDonatedSchedContext_post_schedContext
   -- First write: the rebind and the pop.
   have e1 : s1.objects[scId.toObjId]? =
       some (.schedContext (donationReturnSchedContext sc originalOwner
-   (head?.bind (fun p => p.2.prev)) newOwner?)) :=
+   (head?.bind (fun p => p.2.prev)))) :=
     storeObject_objects_eq' st scId.toObjId _ _ hObjInv hS1
   -- Second write: the head clear, which lands on a Reply key, never a SchedContext one.
   have e2 : s2.objects[scId.toObjId]? = s1.objects[scId.toObjId]? :=
@@ -10041,7 +9950,7 @@ theorem returnDonatedSchedContext_post_getSchedContext?
       st.getSchedContext? scId = some sc ∧
       st'.getSchedContext? scId =
         some (donationReturnSchedContext sc originalOwner
-   (head?.bind (fun p => p.2.prev)) newOwner?) := by
+   (head?.bind (fun p => p.2.prev))) := by
   obtain ⟨sc, head?, hPre, hPost⟩ :=
     returnDonatedSchedContext_post_schedContext st st' serverTid scId originalOwner hObjInv
       newOwner? h

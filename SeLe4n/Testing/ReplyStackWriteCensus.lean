@@ -382,7 +382,7 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.releaseSchedContextBinding,
       "the TCB's binding codes and the purge's release-link writes (`purgeReplenishment`); `scReply` is untouched")
   , (`SeLe4n.Kernel.cancelDonationArmReplenishCores,
-      "a footprint: reads the cores a purge would move at `{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }` and returns them; stores nothing")
+      "a footprint: reads the cores a purge would move at `{ sc with boundThreadCode := 0, isActive := false }` and returns them; stores nothing")
     -- ---------------------------------------------------------------------
     -- Reached through the RAW table write, which the frontier started seeing at
     -- `v0.35.20`.  `objectStoreSpellings` named four helpers and the FROZEN
@@ -405,13 +405,13 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.SchedContextOps.schedContextConfigurePerformImpl,
       "the compiled form of the same configure, written one field at a time in the slot; `scReply` is untouched")
   , (`SeLe4n.Kernel.SchedContextOps.schedContextBindPerform,
-      "`{ sc with boundThreadCode := _, donationOrigin := none }` and the TCB's binding codes; `scReply` is untouched")
+      "`{ sc with boundThreadCode := _ }` and the TCB's binding codes; `scReply` is untouched")
   , (`SeLe4n.Kernel.SchedContextOps.schedContextBindPerformImpl,
       "the compiled form of the same bind; same reason")
     -- WS-SX SX9.1: the two-run theorem's statement of the same bind's writes
     -- over the context and thread it read (`schedContextBindPerform_eq_body`).
   , (`SeLe4n.Kernel.bindPerformBody,
-      "the bind's perform over the context and thread it read, proven equal to it: stores `bindContextWrite`, `{ sc.releaseReadyHead τ with boundThreadCode := _, donationOrigin := none }`, and the TCB's binding codes; `scReply` is untouched")
+      "the bind's perform over the context and thread it read, proven equal to it: stores `bindContextWrite`, `{ sc.releaseReadyHead τ with boundThreadCode := _ }`, and the TCB's binding codes; `scReply` is untouched")
   , (`SeLe4n.Kernel.schedContextReturnLinks,
       "seL4-MCS `maybeReturnSchedContext`'s writes on a running receiver: `{ sc with boundThreadCode := 0 }`, the TCB's binding codes and reschedule flags; `scReply` is untouched")
   , (`SeLe4n.Kernel.schedContextReturnLinksImpl,
@@ -419,7 +419,7 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.declassifySignalBoundWrites,
       "a declassified bound delivery: the endpoint removal, the bound thread's TCB, its wake and the audit records, then seL4's `sendSignal` donation (`maybeDonateSchedContextFast`, the bind's perform above); `scReply` is untouched")
   , (`SeLe4n.Kernel.SchedContextOps.schedContextUnbindPerform,
-      "`{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }` and the TCB's binding codes; `scReply` is untouched")
+      "`{ sc with boundThreadCode := 0, isActive := false }` and the TCB's binding codes; `scReply` is untouched")
   , (`SeLe4n.Kernel.SchedContextOps.schedContextUnbindPerformImpl,
       "the compiled form of the same unbind; same reason")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.resumeContext,
@@ -443,7 +443,7 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.cancelBoundDonationOnCore,
       "`{ sc with boundThread := none, isActive := false }` and the TCB's `schedContextBinding`; the binding graph, not the stack")
   , (`SeLe4n.Kernel.cancelBoundDonationPerform,
-      "the in-place state of the same per-core binding cancel (`cancelBoundDonationOnCore_of_bound`): `{ sc with boundThreadCode := 0, isActive := false, donationOrigin := none }`; `scReply` is untouched")
+      "the in-place state of the same per-core binding cancel (`cancelBoundDonationOnCore_of_bound`): `{ sc with boundThreadCode := 0, isActive := false }`; `scReply` is untouched")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendThread,
       "composes `consumeReplyLink`, which is registered; writes no chain field in its own body (its direct store is `updateTcb`, which the frontier reaches since v0.35.66 — the entry left this list at v0.35.64, when the frontier did not, and that gap was the fail-open direction)")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendThreadOnCore,

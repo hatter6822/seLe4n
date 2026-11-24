@@ -658,7 +658,7 @@ receiver that is still running, before it looks at the endpoint, and
 writes exactly three things: the thread's context pointer, the context's thread
 pointer, and — the thread being the current one — `rescheduleRequired()`.  It
 is not an unbind: it clears no current slot, dequeues nothing and leaves the
-context's `isActive` and donation origin as they were.  So seLe4n's return is
+context's `isActive` as it was.  So seLe4n's return is
 those writes and the release-queue purge seLe4n's unbind runs
 (`schedContextReturnPerform`), and both callers run it
 (`maybeReturnSchedContext`).
@@ -828,7 +828,7 @@ theorem schedContextReturnLinks_releaseLinksAgree (st : SystemState) (vS : SeLe4
 /-- **seL4-MCS `maybeReturnSchedContext`'s writes, as seLe4n runs them**: seL4's three writes (`schedContextReturnLinks`), then the
 context off whichever replenish queue holds it (`purgeReplenishment`, seLe4n's
 unbind's purge; a no-op when it is queued nowhere).  The context's refills,
-budget, `isActive` and donation origin are untouched, as in seL4. -/
+budget and `isActive` are untouched, as in seL4. -/
 @[inline] def schedContextReturnPerform (st : SystemState) (vS : SeLe4n.ValidObjId)
     (tid : SeLe4n.ThreadId) : SystemState :=
   SchedContextOps.purgeReplenishment (schedContextReturnLinks st vS tid)

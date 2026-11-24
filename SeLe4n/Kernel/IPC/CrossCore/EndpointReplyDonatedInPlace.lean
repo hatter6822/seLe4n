@@ -67,8 +67,7 @@ theorem returnDonatedSchedContextInPlace_preserves_donationChainWellFormed (st :
 
 /-- **The reply's donation, in place**: on a state where the answered reply heads
 the stack of a context its holder holds, the frame below (if any) links up to it
-with a caller, the context at the bottom of the stack records no origin other
-than the answered caller, and every check of the pop passes, the reply's donation step returns
+with a caller, and every check of the pop passes, the reply's donation step returns
 `replyDonationPopInPlace`'s state. -/
 theorem applyReplyDonationOnCore_eq_inPlace (S : SystemState) (rid : SeLe4n.ReplyId)
     (cv : SeLe4n.ValidThreadId) (c holder : SeLe4n.ThreadId) (hcv : cv.val = c)

@@ -39,7 +39,7 @@ open SeLe4n.Model
 
 /-- **The head cut keeps the IPC bundle**: the cut frame's upward link is a
 stack link (`storeObject_reply_stackLinks_preserves_ipcInvariantFull`), the
-context's head and origin are content the bundle does not read
+context's head is content the bundle does not read
 (`insertObjects_schedContextContentUpdate_preserves_ipcInvariantFull`), and a
 holder's loan made its own is `updateTcb_ownerCleared_preserves_ipcInvariantFull`. -/
 theorem cutCancelledCallerHead_preserves_ipcInvariantFull (st : SystemState) (tcb : TCB)

@@ -1089,8 +1089,7 @@ bound back to it, as its own (`.bound`) or on loan (`.donated`), is no core's
 idle thread, is ready (queued, current on a core, or neither: the deschedule
 takes it off whichever core places it) or else on no core, whatever it waits
 on: a thread blocked sending or calling keeps waiting with no reservation, as
-seL4's `schedContext_unbindTCB` leaves it; and a context bound to no thread is
-lent by no one. -/
+seL4's `schedContext_unbindTCB` leaves it. -/
 @[inline] def schedContextFinaliseAdmitted (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   match st.getObject? x with
   | some (.schedContext sc) =>
@@ -1100,7 +1099,7 @@ lent by no one. -/
         match st.getReply? rid with
         | some r => replyStackLinkHeads x r.next
         | none => false) &&
-    (if sc.boundThreadCode == 0 then sc.donationOrigin.isNone
+    (if sc.boundThreadCode == 0 then true
      else
       let tid : SeLe4n.ThreadId := ⟨sc.boundThreadCode - 1⟩
       match st.getTcb? tid with

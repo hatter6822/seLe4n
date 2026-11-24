@@ -177,7 +177,7 @@ theorem keepDonatedSchedContextInPlace_exact (S : SystemState) (holder : SeLe4n.
   unfold keepDonatedSchedContextInPlace
   simp only [hSc, hH, hR, hHt]
   generalize popOuterCode S r = k
-  generalize (fun s : SchedContext => ({ s with scReply := r.prev, donationOrigin := if (k == 0) = true then none else s.donationOrigin } : SchedContext)) = f
+  generalize (fun s : SchedContext => ({ s with scReply := r.prev } : SchedContext)) = f
   have h1 := updateSchedContext_noResizeDue S scId f hNo
   have hF1 := popFrame_updateSchedContext S scId f hNo
   have hS1R : (S.updateSchedContext scId f).objects[hr.toObjId]? = S.objects[hr.toObjId]? := by
@@ -212,8 +212,7 @@ section HeldPopSpec
 
 /-- **The reply's held pop, in place**: on a state where the answered reply
 heads the stack of a context `holder` holds, the frame below (if any) links up
-to it with a caller, the context at the bottom of the stack records no origin
-other than the answered caller, that caller holds a context of its own, and
+to it with a caller, that caller holds a context of its own, and
 every check of the held pop passes, the reply's donation step returns
 `keepDonatedSchedContextInPlace`'s state: the holder keeps the context and
 stays where it runs. -/

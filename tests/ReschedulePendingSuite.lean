@@ -305,7 +305,7 @@ private def runAffinityChecks : IO Unit := do
 private def scLent : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 300
 /-- The server holding the lent context, running on core 0. -/
 private def lendSrv : SeLe4n.ThreadId := ThreadId.ofNat 230
-/-- The recorded origin the return hands the context to: unbound, queued on core 1. -/
+/-- The answered caller the return hands the context to: unbound, queued on core 1. -/
 private def lendOrigin : SeLe4n.ThreadId := ThreadId.ofNat 231
 
 private def stLent : SystemState :=

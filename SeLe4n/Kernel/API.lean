@@ -6367,8 +6367,7 @@ context-label check (`maybeDonateSchedContextFlowing`): the notification's
 context is lent only to a receiver the context's label flows to.  A wait that finds no word blocks,
 and then, as seL4-MCS's `receiveSignal` does, returns the notification's context
 where it is the waiter's own (`maybeReturnSchedContext`: seL4's writes and the
-purge under seL4's guard, the receive's return; `isActive` and the donation
-origin are kept).  The consumption is the one a
+purge under seL4's guard, the receive's return; `isActive` is kept).  The consumption is the one a
 `Wait` on an active notification performs
 (`notificationWaitCrossCoreDispatchChecked`), so a receive and a wait that
 take a notification's word ask one transition. -/

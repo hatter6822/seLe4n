@@ -575,7 +575,7 @@ theorem cancelEndpointBlocked_bindings (s : SystemState) (e : SeLe4n.ObjId) (q :
   · exact fun _ => rfl
 
 /-- **The head cut keeps a thread's context bound back** (WS-ZA ZA6.34): the
-reply stored over itself and the context's head and origin cleared write no
+reply stored over itself and the context's head cleared write no
 binding, and a holder's owner code cleared keeps its context code, and the
 context's holder, as they were. -/
 theorem cutCancelledCallerHead_bindingBack (s : SystemState) (t : TCB) (x : SeLe4n.ThreadId)
@@ -589,7 +589,7 @@ theorem cutCancelledCallerHead_bindingBack (s : SystemState) (t : TCB) (x : SeLe
         (by rw [hRo]; rfl)
       have hI1 := storeObject_preserves_objects_invExt s0 s1 _ _ h0.1 hS
       have F2 := SchedLinkFrame.updateSchedContext s1 scId
-        (fun sc => { sc with scReply := none, donationOrigin := none }) hI1 (fun _ => rfl)
+        (fun sc => { sc with scReply := none }) hI1 (fun _ => rfl)
       exact ⟨SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hI1,
         bindingBack.transport (F1.trans F2).binding h0.2⟩)
     (fun s0 _ holder ht _ h0 _ hT _ => by

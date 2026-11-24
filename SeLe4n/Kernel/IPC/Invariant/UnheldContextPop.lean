@@ -21,7 +21,7 @@ no thread holds the context as its own (the context is bound to none,
 the outer caller.
 
 `severUnheldSchedContext` (`reply_pop` where the caller holds a context of its
-own, so nothing is donated) writes the context's head and origin and the two
+own, so nothing is donated) writes the context's head and the two
 replies, and no thread: it keeps the bundle, the donation chains and the lender
 frames with no hypothesis beyond them.
 -/
@@ -46,7 +46,7 @@ theorem returnUnheldSchedContext_objects (hObjInv : st.objects.invExt)
       donationRecipientAcceptable st owner = true ∧
       st.objects[owner.toObjId]? = some (.tcb ot) ∧ ¬ owner.isReserved ∧
       st'.objects[scId.toObjId]? = some (.schedContext
-        (donationReturnSchedContext sc owner (head?.bind (fun p => p.2.prev)) newOwner?)) ∧
+        (donationReturnSchedContext sc owner (head?.bind (fun p => p.2.prev)))) ∧
       st'.objects[owner.toObjId]? = some (.tcb { ot with
           scBindingScCode := SchedContextBinding.scCode (donationReturnBinding scId newOwner?),
           scBindingOwnerCode := SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }) ∧
@@ -69,10 +69,10 @@ theorem returnUnheldSchedContext_objects (hObjInv : st.objects.invExt)
     rw [← storeObject_objects_ne st s1 _ _ _ hNe hObjInv hS1]; exact hO1
   have eO : st'.objects = s3.objects := by rw [hEq, markKeyChangeFrom_objects]
   have hSc2 : s2.objects[scId.toObjId]? = some (.schedContext
-      (donationReturnSchedContext sc owner (head?.bind (fun p => p.2.prev)) newOwner?)) := by
+      (donationReturnSchedContext sc owner (head?.bind (fun p => p.2.prev)))) := by
     have e := storeDonationHeadPop_getSchedContext?_eq hInv1 hS2 scId
     have e1 : s1.getSchedContext? scId = some
-        (donationReturnSchedContext sc owner (head?.bind (fun p => p.2.prev)) newOwner?) :=
+        (donationReturnSchedContext sc owner (head?.bind (fun p => p.2.prev))) :=
       (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
         (storeObject_objects_eq st s1 _ _ hObjInv hS1)
     exact (SystemState.getSchedContext?_eq_some_iff _ _ _).mp (e.trans e1)
@@ -126,7 +126,7 @@ theorem returnUnheldSchedContext_donationReadAgreement (hObjInv : st.objects.inv
   have a1 := donationReadAgreement_of_schedContextStore st s1 scId.toObjId sc _ hSc hObjInv hS1
   have a2 := donationReadAgreement_of_headPop hInv1 hS2
   have a3 := donationReadAgreement_of_tcbBindingStore s2 s3 owner.toObjId ot
-    (donationReturnBinding scId newOwner?) ot.originScCode
+    (donationReturnBinding scId newOwner?)
     (lookupTcb_some_objects s2 owner ot hL) hInv2 hS3
   exact donationReadAgreement_of_objects_eq (by rw [hEq, markKeyChangeFrom_objects])
     ((a1.trans a2).trans a3)
@@ -266,7 +266,7 @@ theorem severUnheldSchedContext_objects (hObjInv : st.objects.invExt)
       st.objects[scId.toObjId]? = some (.schedContext sc) ∧ sc.boundThreadCode = 0 ∧
       donationHeadOf? st scId sc = .ok head? ∧
       st'.objects[scId.toObjId]? = some (.schedContext
-        (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?)) ∧
+        (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)))) ∧
       (∀ (k : SeLe4n.ObjId) (t : TCB), st'.objects[k]? = some (.tcb t) →
         st.objects[k]? = some (.tcb t)) ∧
       (∀ (k : SeLe4n.ObjId) (t : TCB), st.objects[k]? = some (.tcb t) →
@@ -278,10 +278,10 @@ theorem severUnheldSchedContext_objects (hObjInv : st.objects.invExt)
   obtain ⟨sc, head?, s1, hSc, hB, hHead, hS1, hS2⟩ := severUnheldSchedContext_ok_storeChain h
   have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hSc2 : st'.objects[scId.toObjId]? = some (.schedContext
-      (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?)) := by
+      (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)))) := by
     have e := storeDonationHeadPop_getSchedContext?_eq hInv1 hS2 scId
     have e1 : s1.getSchedContext? scId = some
-        (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?) :=
+        (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev))) :=
       (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
         (storeObject_objects_eq st s1 _ _ hObjInv hS1)
     exact (SystemState.getSchedContext?_eq_some_iff _ _ _).mp (e.trans e1)

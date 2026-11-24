@@ -185,8 +185,8 @@ theorem returnUnheldSchedContext_bindingPair {st st' : SystemState}
       (lookupTcb_of_objects_of_not_reserved st owner ot hO hNR)
     rw [hRcp] at e
     revert e; cases ot.schedContextBinding <;> simp [BEq.beq]
-  have hPostBt : (donationReturnSchedContext sc owner (head?.bind (fun p => p.2.prev))
-      newOwner?).boundThread = some owner := by
+  have hPostBt : (donationReturnSchedContext sc owner (head?.bind (fun p => p.2.prev))).boundThread
+      = some owner := by
     unfold SchedContext.boundThread donationReturnSchedContext
     simp only [SeLe4n.ThreadId.optCode, SeLe4n.ThreadId.ofOptCode]
   refine ⟨fun y x' s hx' hs => ?_, fun s sc' t hs hb x hx => ?_⟩
@@ -960,7 +960,7 @@ theorem endpointQueueRemoveDual {st st' : SystemState} {endpointId : SeLe4n.ObjI
 end ntfnContextsAgree
 
 /-- **The head cut keeps every context word**: a reply stored over itself, a
-context's head and origin cleared, a holder's loan made its own. -/
+context's head cleared, a holder's loan made its own. -/
 theorem cutCancelledCallerHead_ntfnContextsAgree (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) :
     ntfnContextsAgree st (Lifecycle.Suspend.cutCancelledCallerHead st tcb) ∧

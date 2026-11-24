@@ -701,15 +701,13 @@ the admission names a holder bound back to it, the deschedule keeps the
 binding, and the in-place unbind of the holder read
 as the context's own (`cancelBoundDonationOnCore` on a `.bound` view) always
 runs and clears the context's binding.  So the unstack that follows runs on a
-context no thread holds, as its own or on loan, and lent from no one: an
-admitted context bound to nothing records no lender, and the unbind clears the
-lender with the binding. -/
+context no thread holds, as its own or on loan. -/
 theorem finaliseSchedContextUnbind_released {st : SystemState} {x : SeLe4n.ObjId}
     (hInv : st.objects.invExt) (hA : schedContextFinaliseAdmitted st x = true)
     {sc : SchedContext}
     (hSc : (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x).getSchedContext?
       ⟨x.val⟩ = some sc) :
-    sc.boundThreadCode = 0 ∧ sc.donationOrigin = none := by
+    sc.boundThreadCode = 0 := by
   have hD := finaliseSchedContextDeschedule_objectsAgreeOffRunLinks st x
   have hInv1 : (finaliseSchedContextDeschedule st x).objects.invExt :=
     finaliseSchedContextDeschedule_closed_any (fun s => s.objects.invExt)
@@ -717,7 +715,7 @@ theorem finaliseSchedContextUnbind_released {st : SystemState} {x : SeLe4n.ObjId
   generalize finaliseSchedContextDeschedule st x = s1 at hD hInv1 hSc
   unfold schedContextFinaliseAdmitted at hA
   obtain ⟨sc0, hO, hB⟩ : ∃ sc0, st.objects[x]? = some (.schedContext sc0) ∧
-      (if sc0.boundThreadCode == 0 then sc0.donationOrigin.isNone
+      (if sc0.boundThreadCode == 0 then true
        else
         match st.getTcb? ⟨sc0.boundThreadCode - 1⟩ with
         | some t =>
@@ -738,8 +736,7 @@ theorem finaliseSchedContextUnbind_released {st : SystemState} {x : SeLe4n.ObjId
   · rw [if_pos (by rw [hb]; rfl)] at hSc
     rw [SystemState.getSchedContext?_eq_some_iff] at hSc
     rw [show (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x from rfl, hO1] at hSc
-    rw [if_pos (by rw [hb]; rfl)] at hB
-    cases hSc; exact ⟨hb, Option.isNone_iff_eq_none.mp hB⟩
+    cases hSc; exact hb
   rw [if_neg (by simpa using hb)] at hSc
   rw [if_neg (by simpa using hb)] at hB
   try dsimp only at hSc
@@ -786,8 +783,7 @@ theorem finaliseSchedContextUnbind_released {st : SystemState} {x : SeLe4n.ObjId
   rw [show (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x from rfl,
     RHTable_getElem?_eq_get?, RobinHood.RHTable.getElem?_insert_self _ _ _ hInv1] at hSc₁
   cases hSc₁
-  exact ⟨SchedContext.proj_eq_of_withoutRelease_eq (·.boundThreadCode) hE,
-    SchedContext.proj_eq_of_withoutRelease_eq (·.donationOrigin) hE⟩
+  exact SchedContext.proj_eq_of_withoutRelease_eq (·.boundThreadCode) hE
 
 /-- **An admitted context is bound to no thread once its holder is unbound**
 (`finaliseSchedContextUnbind_released`). -/
@@ -797,7 +793,7 @@ theorem finaliseSchedContextUnbind_unbound {st : SystemState} {x : SeLe4n.ObjId}
     (hSc : (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x).getSchedContext?
       ⟨x.val⟩ = some sc) :
     sc.boundThreadCode = 0 :=
-  (finaliseSchedContextUnbind_released hInv hA hSc).1
+  finaliseSchedContextUnbind_released hInv hA hSc
 
 /-- **A property the deschedule, the release and the unstack keep holds after
 the scheduling-context finalisation.** -/
@@ -2061,7 +2057,7 @@ theorem cancelBoundDonationOnCore {st st' : SystemState} {t : SeLe4n.ThreadId} {
   · rename_i scId _
     injection h with h; subst h
     have h1 := updateSchedContext st scId
-      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
+      (fun sc => { sc with boundThreadCode := 0, isActive := false })
       hInv (fun _ => rfl)
     generalize st.updateSchedContext scId _ = st1 at h1 ⊢
     have h2 := h1.trans (FinaliseFrame.of_releaseOnlyWrite
@@ -2466,13 +2462,13 @@ theorem _root_.SeLe4n.Model.TCB.ownerCleared_not_donated (t : TCB)
   cases t.scBindingScCode <;> simp
 
 /-- **The thread-side cut's unstack** (WS-ZA ZA6.34): the head reply's upward
-link cleared, then the context's head and reservation origin. -/
+link cleared, then the context's head. -/
 theorem cutUnstack {s s1 : SystemState} {scId : SeLe4n.SchedContextId}
     {rid : SeLe4n.ReplyId} {r : Reply} (hInv : s.objects.invExt)
     (hR : s.getReply? rid = some r)
     (hS : SeLe4n.Model.storeObject rid.toObjId (.reply { r with next := none }) s = .ok ((), s1)) :
     FinaliseFrameAny s (s1.updateSchedContext scId fun sc =>
-      { sc with scReply := none, donationOrigin := none }) := by
+      { sc with scReply := none }) := by
   have f1 := storeObject hInv ((SystemState.getReply?_eq_some_iff _ _ _).mp hR)
     (finaliseWritableAny_reply r) hS rfl rfl
   refine f1.trans ?_
@@ -2483,7 +2479,7 @@ theorem cutUnstack {s s1 : SystemState} {scId : SeLe4n.SchedContextId}
     have hI := f1.invExt
     exact ⟨rfl, rfl, RHTable_insert_preserves_invExt _ _ _ hI,
       finaliseWriteAny.of_insert
-        (o' := .schedContext { y with scReply := none, donationOrigin := none }) hI
+        (o' := .schedContext { y with scReply := none }) hI
         ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hG)
         (Or.inl (finaliseWritable_schedContext y)) rfl rfl
         (by dsimp only; rw [RHTable_getElem?_eq_get?]
@@ -2702,7 +2698,7 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
       Lifecycle.Suspend.cutCancelledCallerHead_closed (fun s => s.cdt = st.cdt)
         (fun s0 s1 _ _ scId h0 _ _ hS => by
           have e : (s1.updateSchedContext scId fun sc =>
-              { sc with scReply := none, donationOrigin := none }).cdt = s1.cdt := by
+              { sc with scReply := none }).cdt = s1.cdt := by
             unfold SystemState.updateSchedContext; split <;> rfl
           exact e.trans ((hSt hS).trans h0))
         (fun s0 _ holder _ _ h0 _ _ _ => by
@@ -2744,7 +2740,7 @@ theorem finaliseFinalObject_cdt (target : Nat) (st : SystemState) :
     · rename_i scId _
       injection hOk with hOk; subst hOk
       have h1 := hS s scId
-        (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
+        (fun sc => { sc with boundThreadCode := 0, isActive := false })
       generalize s.updateSchedContext scId _ = s1 at h1 ⊢
       have h2 : SystemState.onlyObjectsSchedulerDiffer
           (SchedContextOps.purgeReplenishment s1 scId) s :=

@@ -697,15 +697,15 @@ private theorem storeObject_schedContext_getSchedContext?_ne
 
 Its three stores are: the SchedContext's `boundThread` (a non-TCB slot whose
 previous occupant is also a SchedContext), the donor TCB's
-`schedContextBinding` and origin back-link (`originScCode`), and the donee TCB's
+`schedContextBinding`, and the donee TCB's
 `schedContextBinding` — each a
 record update that leaves the placement fields alone.  So the SM5.C.9 home-core
 reading `determineTargetCore` is the same before and after the rebinding, which
 is what lets the replenishment migration's endpoints be resolved from the
 pre-state. -/
 theorem donateSchedContext_getTcb?_map_eq {β : Type} (p : TCB → β)
-    (hp : ∀ x c o g, p { x with
-      scBindingScCode := c, scBindingOwnerCode := o, originScCode := g } = p x)
+    (hp : ∀ x c o, p { x with
+      scBindingScCode := c, scBindingOwnerCode := o } = p x)
     (st st' : SystemState)
     (clientTid serverTid : SeLe4n.ThreadId)
     (clientScId : SeLe4n.SchedContextId)
@@ -740,10 +740,10 @@ theorem donateSchedContext_getTcb?_map_eq {β : Type} (p : TCB → β)
   have e1 := storeObject_schedContextAt_getTcb?_eq st s1 clientScId sc _ hObj hObjInv hS1 tid
   have e2 := storeDonationFramePush_getTcb?_eq hInv1 hRep1 hS2 tid
   have e3 := storeObject_tcbAt_getTcb?_map_eq p s2 s3 clientTid clientTcb
-    _ hRaw1 (hp _ _ _ _) hInv2 hS3 tid
+    _ hRaw1 (hp _ _ _) hInv2 hS3 tid
   have e4 := storeObject_tcbAt_getTcb?_map_eq p s3 s4 serverTid serverTcb
     { serverTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) }
-    hRaw2 (hp _ _ _ serverTcb.originScCode) hInv3 hS4 tid
+    hRaw2 (hp _ _ _) hInv3 hS4 tid
   -- The reschedule-flag write at the end is not an object write.
   rw [hEq]
   show (s4.getTcb? tid).map p = _
@@ -757,7 +757,7 @@ theorem donateSchedContext_getTcb?_placement_eq
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st')
     (tid : SeLe4n.ThreadId) :
     (st'.getTcb? tid).map TCB.placement = (st.getTcb? tid).map TCB.placement :=
-  donateSchedContext_getTcb?_map_eq TCB.placement (fun _ _ _ _ => rfl) st st' clientTid serverTid clientScId hObjInv h tid
+  donateSchedContext_getTcb?_map_eq TCB.placement (fun _ _ _ => rfl) st st' clientTid serverTid clientScId hObjInv h tid
 
 /-- **WS-ZA ZA4.5**: the binding rewrite leaves every thread's IPC and thread
 state alone. -/
@@ -770,7 +770,7 @@ theorem donateSchedContext_getTcb?_stateFields_eq
     (tid : SeLe4n.ThreadId) :
     (st'.getTcb? tid).map (fun x => (x.ipcState, x.threadState, x.cpuAffinity)) =
       (st.getTcb? tid).map (fun x => (x.ipcState, x.threadState, x.cpuAffinity)) :=
-  donateSchedContext_getTcb?_map_eq _ (fun _ _ _ _ => rfl) st st' clientTid serverTid clientScId hObjInv h tid
+  donateSchedContext_getTcb?_map_eq _ (fun _ _ _ => rfl) st st' clientTid serverTid clientScId hObjInv h tid
 
 /-- WS-RR RR2.3: `donateSchedContext` frames every SchedContext **other than**
 the one it rebinds. -/
@@ -854,16 +854,10 @@ theorem donateSchedContext_post_boundThread
     getTcb?_of_lookupTcb s2 clientTid clientTcb hLC
   have hRaw2 : s3.getTcb? serverTid = some serverTcb :=
     getTcb?_of_lookupTcb s3 serverTid serverTcb hL
-  -- **WS-HP HP10.4**: the stored record carries the origin write too.  This
-  -- theorem's *conclusion* is about `boundThread` alone, so the origin is carried
-  -- through the rewrite and discharged by the `rfl` on the projection rather than
-  -- being abstracted away — the record named here is the one the store actually
-  -- wrote, which is what keeps `_ok_storeChain` the single description.
+  -- The record named here is the one the store actually wrote, which is what
+  -- keeps `_ok_storeChain` the single description.
   have e1 : s1.getSchedContext? clientScId
-      = some { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid), scReply := some pushRid,
-                       donationOrigin :=
-                         if donationFirstPush donorTcb clientScId then some clientTid
-                         else sc.donationOrigin } := by
+      = some { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid), scReply := some pushRid } := by
     rw [SystemState.getSchedContext?_eq_some_iff,
       storeObject_objects_eq st s1 clientScId.toObjId _ hObjInv hS1]
   have e2 := storeDonationFramePush_getSchedContext?_eq hInv1 hRep1 hS2 clientScId
@@ -872,10 +866,7 @@ theorem donateSchedContext_post_boundThread
   have e4 := storeObject_tcbAt_getSchedContext?_eq s3 s4 serverTid serverTcb
     { serverTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) }
     hRaw2 hInv3 hS4 clientScId
-  refine ⟨{ sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid), scReply := some pushRid,
-                    donationOrigin :=
-                      if donationFirstPush donorTcb clientScId then some clientTid
-                      else sc.donationOrigin }, ?_, rfl⟩
+  refine ⟨{ sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid), scReply := some pushRid }, ?_, rfl⟩
   rw [hEq]
   show s4.getSchedContext? clientScId = _
   rw [e4, e3, e2, e1]
@@ -918,11 +909,11 @@ theorem returnDonatedSchedContext_ok_implies_sc_bound
 
 /-- WS-ZA ZA6.33: the hand-back's context record keeps its refills
 (`SchedContext.refillsView`): it rebinds the context and rewrites its stack
-head and origin. -/
+head. -/
 theorem donationReturnSchedContext_refillsView (sc : SchedContext)
     (originalOwner : SeLe4n.ThreadId) (nextHead? : Option SeLe4n.ReplyId)
     (newOwner? : Option SeLe4n.ThreadId) :
-    (donationReturnSchedContext sc originalOwner nextHead? newOwner?).refillsView =
+    (donationReturnSchedContext sc originalOwner nextHead?).refillsView =
       sc.refillsView := rfl
 
 /-- WS-ZA ZA6.33: `returnDonatedSchedContext` keeps every context's refill view
@@ -1031,7 +1022,7 @@ theorem keepDonatedSchedContext_refillsKeptOff
   exact (SystemState.RefillsKeptOff.of_kept (a3.trans a2) hQ).trans a1
 
 /-- WS-SX SX8: **the held pop keeps every refill view**: the context keeps
-its refills and its holder (the record rewrites the head and the origin), the
+its refills and its holder (the record rewrites the head), the
 head pop writes replies, and the holder's store rewrites its binding words, not
 its thread state. -/
 theorem keepDonatedSchedContext_refillViewsKept
@@ -1085,7 +1076,7 @@ theorem keepDonatedSchedContext_notificationLinksKept
   exact a3.trans (a2.trans a1)
 
 /-- WS-SX SX8: the held pop keeps the popped context's refills: it rewrites the
-head and the origin only. -/
+head only. -/
 theorem keepDonatedSchedContext_refillsView
     {st st' : SystemState} {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
     {newOwner? : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)

@@ -56,8 +56,7 @@ which it is the specification's). -/
           let outer := popOuterCode st r
           let kept := heldPopOwnerCode ht.scBindingOwnerCode outer
           let s1 := st.updateSchedContext scId fun s =>
-            { s with scReply := rprev,
-                     donationOrigin := if outer == 0 then none else s.donationOrigin }
+            { s with scReply := rprev }
           let s2 := s1.modifyObject hr.toObjId
             (SystemState.mapReplyObject fun x => { x with prev := none, next := none })
           let s3 := match rprev with
@@ -114,8 +113,6 @@ theorem keepDonatedSchedContextResolved_eq_inPlace (st : SystemState)
   have hScH : scId.toObjId ≠ holder.toObjId := fun h => by rw [h, hHO] at hScO; cases hScO
   have hRH : hr.toObjId ≠ holder.toObjId := fun h => by rw [h, hHO] at hRO; cases hRO
   have hBNe : (sc.boundThread != some holder) = false := by rw [hBT]; simp
-  have hIso : ∀ k : Nat, (SeLe4n.ThreadId.ofOptCode k).isNone = (k == 0) := by
-    intro k; cases k <;> rfl
   have hLkH : ∀ s : SystemState, s.getTcb? holder = some ht → lookupTcb s holder = some ht :=
     fun s h => by unfold lookupTcb; rw [hHRes]; exact h
   have hBind : ht.schedContextBinding = SchedContextBinding.ofCodes (scId.val + 1)
@@ -135,12 +132,11 @@ theorem keepDonatedSchedContextResolved_eq_inPlace (st : SystemState)
   obtain ⟨hC1, hC2⟩ := donationReturnBinding_ofOptCode_codes scId
     (heldPopOwnerCode ht.scBindingOwnerCode k)
   unfold donationSeverSchedContext
-  rw [hIso k, storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLsc),
+  rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLsc),
     SystemState.updateSchedContext_eq_of_some hSc]
   simp only []
   generalize hS1 : ({ st with objects := st.objects.insert scId.toObjId (.schedContext
-    { sc with scReply := r.prev,
-              donationOrigin := if (k == 0) = true then none else sc.donationOrigin }) } :
+    { sc with scReply := r.prev }) } :
       SystemState) = S1
   have hO1 : ∀ x, scId.toObjId ≠ x → S1.objects[x]? = st.objects[x]? := fun x hx => by
     rw [← hS1]; exact RobinHood.RHTable.get?_insert_ne_of_findsInPlace x _ hFsc hx

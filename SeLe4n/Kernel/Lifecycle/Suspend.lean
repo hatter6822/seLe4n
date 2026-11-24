@@ -1122,7 +1122,7 @@ caller's reply frame that heads a scheduling context's stack is cut off it
 the server running on the caller's donation keeps running on it; this kernel's
 binding names the lender (`.donated scId caller`), and the lender has just
 stopped waiting on the reply, so the holder's binding becomes its own
-(`.bound scId`) and the context's reservation origin is cleared with it: the
+(`.bound scId`): the
 loan has no lender to go back to.  The holder's binding moved, so the write
 ends in the key hook (`markKeyChangeFrom`).  A frame heading no context is left
 alone, and so is a holder whose binding is not this context's loan. -/
@@ -1137,7 +1137,7 @@ def cutHeadFrameKeepingContext (st : SystemState) (rid : SeLe4n.ReplyId) : Syste
       | .error _ => st
       | .ok ((), st1) =>
         let st2 := st1.updateSchedContext scId fun sc =>
-          { sc with scReply := none, donationOrigin := none }
+          { sc with scReply := none }
         match (st2.getSchedContext? scId).bind (·.boundThread) with
         | none => st2
         | some holder =>
@@ -1200,7 +1200,7 @@ theorem replyFrameHeadContextCode_reply {st : SystemState} {rid : SeLe4n.ReplyId
   | some r => exact ⟨r, rfl⟩
 
 /-- **`cutHeadFrameKeepingContext`, each write in its slot**: the head read as
-a code, the frame's upward link and the context's head and origin rewritten
+a code, the frame's upward link and the context's head rewritten
 where they stand (`SystemState.storeReplyWith`, `SystemState.updateSchedContext`),
 the holder read from the context's code, and the holder's old key read as its
 parts before its binding is written, so neither the state nor a record is held
@@ -1213,7 +1213,7 @@ across a write (`cutHeadFrameKeepingContext_eq_impl`). -/
     let scId : SeLe4n.SchedContextId := ⟨k⟩
     let st1 := st.storeReplyWith rid.toObjId fun r => { r with next := none }
     let st2 := st1.updateSchedContext scId fun sc =>
-      { sc with scReply := none, donationOrigin := none }
+      { sc with scReply := none }
     match st2.getSchedContext? scId with
     | none => st2
     | some sc =>
@@ -1254,7 +1254,7 @@ across a write (`cutHeadFrameKeepingContext_eq_impl`). -/
     rw [hS]
     dsimp only
     generalize (st.storeReplyWith rid.toObjId fun r => { r with next := none }).updateSchedContext
-      ⟨k⟩ (fun sc => { sc with scReply := none, donationOrigin := none }) = st2
+      ⟨k⟩ (fun sc => { sc with scReply := none }) = st2
     cases st2.getSchedContext? ⟨k⟩ with
     | none => rfl
     | some sc =>
@@ -1308,7 +1308,7 @@ def cancelIpcKeepingContexts (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : T
 
 /-- WS-ZA ZA6.33: **the head cut, decomposed**: the identity, or the frame's
 upward link cleared (`storeObject` of the reply over itself), then the
-context's head and origin cleared, then — when the context's holder holds it on
+context's head cleared, then — when the context's holder holds it on
 loan — the holder's binding made its own, ending in the key hook. -/
 theorem cutHeadFrameKeepingContext_cases (st : SystemState) (rid : SeLe4n.ReplyId) :
     cutHeadFrameKeepingContext st rid = st ∨
@@ -1316,19 +1316,19 @@ theorem cutHeadFrameKeepingContext_cases (st : SystemState) (rid : SeLe4n.ReplyI
       replyFrameHeadContext? st rid = some scId ∧ st.getReply? rid = some r ∧
       storeObject rid.toObjId (.reply { r with next := none }) st = .ok ((), st1) ∧
       (cutHeadFrameKeepingContext st rid = st1.updateSchedContext scId (fun sc =>
-          { sc with scReply := none, donationOrigin := none }) ∨
+          { sc with scReply := none }) ∨
        ∃ (holder : SeLe4n.ThreadId) (ht : TCB) (o : SeLe4n.ThreadId),
          ((st1.updateSchedContext scId fun sc =>
-            { sc with scReply := none, donationOrigin := none }).getSchedContext? scId).bind
+            { sc with scReply := none }).getSchedContext? scId).bind
               (·.boundThread) = some holder ∧
          (st1.updateSchedContext scId fun sc =>
-            { sc with scReply := none, donationOrigin := none }).getTcb? holder = some ht ∧
+            { sc with scReply := none }).getTcb? holder = some ht ∧
          ht.schedContextBinding = .donated scId o ∧
          cutHeadFrameKeepingContext st rid =
            markKeyChangeFrom (st1.updateSchedContext scId fun sc =>
-               { sc with scReply := none, donationOrigin := none })
+               { sc with scReply := none })
              ((st1.updateSchedContext scId fun sc =>
-               { sc with scReply := none, donationOrigin := none }).updateTcb holder
+               { sc with scReply := none }).updateTcb holder
                  fun t => { t with scBindingOwnerCode := 0 }) holder) := by
   unfold cutHeadFrameKeepingContext
   cases hH : replyFrameHeadContext? st rid with
@@ -1345,7 +1345,7 @@ theorem cutHeadFrameKeepingContext_cases (st : SystemState) (rid : SeLe4n.ReplyI
         refine .inr ⟨scId, r, st1, rfl, rfl, hS, ?_⟩
         dsimp only
         generalize st1.updateSchedContext scId (fun sc =>
-          { sc with scReply := none, donationOrigin := none }) = st2
+          { sc with scReply := none }) = st2
         cases hB : (st2.getSchedContext? scId).bind (·.boundThread) with
         | none => exact .inl rfl
         | some holder =>
@@ -1365,7 +1365,7 @@ theorem cutHeadFrameKeepingContext_cases (st : SystemState) (rid : SeLe4n.ReplyI
               · exact .inl (by simp [hs])
 
 /-- WS-ZA ZA6.33: **a property each of the head cut's writes keeps holds after
-it**: the reply store over a reply held there, the context's head and origin
+it**: the reply store over a reply held there, the context's head
 cleared on the context the frame heads, and the holder's binding made its own —
 asked only of a holder bound to that context on loan. -/
 theorem cutHeadFrameKeepingContext_closed (P : SystemState → Prop)
@@ -1373,7 +1373,7 @@ theorem cutHeadFrameKeepingContext_closed (P : SystemState → Prop)
       (scId : SeLe4n.SchedContextId), P s → replyFrameHeadContext? s rid = some scId →
       s.getReply? rid = some r →
       storeObject rid.toObjId (.reply { r with next := none }) s = .ok ((), s1) →
-      P (s1.updateSchedContext scId fun sc => { sc with scReply := none, donationOrigin := none }))
+      P (s1.updateSchedContext scId fun sc => { sc with scReply := none }))
     (hHolder : ∀ (s : SystemState) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
       (ht : TCB) (o : SeLe4n.ThreadId), P s →
       (s.getSchedContext? scId).bind (·.boundThread) = some holder →
@@ -1393,7 +1393,7 @@ theorem cutThreadHeadFrameKeepingContext_closed (P : SystemState → Prop)
       (scId : SeLe4n.SchedContextId), P s → replyFrameHeadContext? s rid = some scId →
       s.getReply? rid = some r →
       storeObject rid.toObjId (.reply { r with next := none }) s = .ok ((), s1) →
-      P (s1.updateSchedContext scId fun sc => { sc with scReply := none, donationOrigin := none }))
+      P (s1.updateSchedContext scId fun sc => { sc with scReply := none }))
     (hHolder : ∀ (s : SystemState) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
       (ht : TCB) (o : SeLe4n.ThreadId), P s →
       (s.getSchedContext? scId).bind (·.boundThread) = some holder →
@@ -1414,7 +1414,7 @@ theorem cutCancelledCallerHead_closed (P : SystemState → Prop)
       (scId : SeLe4n.SchedContextId), P s → replyFrameHeadContext? s rid = some scId →
       s.getReply? rid = some r →
       storeObject rid.toObjId (.reply { r with next := none }) s = .ok ((), s1) →
-      P (s1.updateSchedContext scId fun sc => { sc with scReply := none, donationOrigin := none }))
+      P (s1.updateSchedContext scId fun sc => { sc with scReply := none }))
     (hHolder : ∀ (s : SystemState) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
       (ht : TCB) (o : SeLe4n.ThreadId), P s →
       (s.getSchedContext? scId).bind (·.boundThread) = some holder →
@@ -1429,7 +1429,7 @@ theorem cutCancelledCallerHead_closed (P : SystemState → Prop)
   · exact h
 
 /-- WS-ZA ZA6.33: the head cut writes no replenish queue: a reply store, a
-context's head and origin, a thread's binding and the key hook's flags. -/
+context's head, a thread's binding and the key hook's flags. -/
 theorem cutCancelledCallerHead_replenishQueueOnCore (st : SystemState) (tcb : TCB)
     (c : CoreId) :
     (cutCancelledCallerHead st tcb).scheduler.replenishQueueOnCore c =
@@ -1500,10 +1500,10 @@ theorem cutHeadFrameKeepingContext_getReply? (st : SystemState) (rid : SeLe4n.Re
   have hI1 := storeObject_preserves_objects_invExt st _ _ _ hInv hS
   have h1 := storeObject_objects_eq st _ _ _ hInv hS
   have h2 := updateSchedContext_objects_of_not_sc _ scId
-    (fun sc => { sc with scReply := none, donationOrigin := none }) hI1 _ _ h1
+    (fun sc => { sc with scReply := none }) hI1 _ _ h1
     (fun _ h => by cases h)
   have hI2 := SystemState.updateSchedContext_preserves_objects_invExt _ scId
-    (fun sc => { sc with scReply := none, donationOrigin := none }) hI1
+    (fun sc => { sc with scReply := none }) hI1
   unfold cutHeadFrameKeepingContext
   rw [hH, hR]
   simp only [hS]

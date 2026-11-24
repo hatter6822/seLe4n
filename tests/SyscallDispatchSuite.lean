@@ -2023,8 +2023,8 @@ bound notification is 80.
   thread are bound both ways; seL4's guard false (the thread already holds a
   context, or the context already serves a thread) writes nothing.
 * **Return on a blocking `Wait`**: the receive's return (seL4 runs one
-  `maybeReturnSchedContext`): both links cleared, the context's `isActive` and
-  donation origin kept — it is not an unbind.
+  `maybeReturnSchedContext`): both links cleared, the context's `isActive`
+  kept — it is not an unbind.
 * **Return on a blocking receive** (`receiveReturnSchedContext`): both links
   cleared, the receiver keeps its current slot; a non-blocking receive, or a
   thread whose context is not the notification's, writes nothing.
@@ -2079,14 +2079,13 @@ private def notificationDonation_seL4_semantics : IO Unit := do
       (waiter.toObjId,
         .tcb { mkTcb 2 with boundNotificationCode := nA.val + 1, scBindingScCode := scId.val + 1 }),
       (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with
-        boundThreadCode := waiter.val + 1, notificationCode := nA.val + 1, isActive := true,
-        donationOrigin := some ⟨9⟩ }),
+        boundThreadCode := waiter.val + 1, notificationCode := nA.val + 1, isActive := true }),
       (nA, .notification ntfn)] none
   let stA' := maybeReturnSchedContext stA nA waiter
-  expect "ntfn_return_on_wait_keeps_isActive_and_origin"
+  expect "ntfn_return_on_wait_keeps_isActive"
     (unbound stA' && (stA'.getSchedContext? scId).any
-      (fun sc => sc.isActive && sc.donationOrigin == some ⟨9⟩))
-    "the Wait's return clears the two links and keeps isActive and the donation origin"
+      (fun sc => sc.isActive))
+    "the Wait's return clears the two links and keeps isActive"
   -- Return on a blocking receive: the receiver is current and stays so.
   let stR := mkSt (waiter.val + 1) (scId.val + 1) (some waiter)
   let stR' := receiveReturnSchedContext true stR waiter

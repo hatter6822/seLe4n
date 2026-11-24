@@ -38,11 +38,11 @@ open SeLe4n.Model
 -- ============================================================================
 
 /-- **A finalised scheduling context's own record is released**: the context
-at `x` is stored, bound to no thread, lent from no one, heading no reply
+at `x` is stored, bound to no thread, heading no reply
 stack and recording no yielder — the record half of `schedContextRetirable`. -/
 def schedContextRecordReleased (st : SystemState) (x : SeLe4n.ObjId) : Prop :=
   ∃ sc, st.objects[x]? = some (.schedContext sc) ∧ sc.boundThreadCode = 0 ∧
-    sc.donationOrigin = none ∧ sc.scReply = none ∧ sc.yieldFromCode = 0
+    sc.scReply = none ∧ sc.yieldFromCode = 0
 
 /-- **The holder's unbind keeps the context, its reply-stack head and every
 reply**: it rewrites the context's binding fields and the holder's TCB alone. -/
@@ -85,12 +85,12 @@ theorem finaliseSchedContextUnbind_keeps {s : SystemState} {x : SeLe4n.ObjId}
   have hG' : s.getSchedContext? ⟨x.val⟩ = some sc := by
     rw [SystemState.getSchedContext?_eq_some_iff]; exact hO
   have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt s ⟨x.val⟩
-    (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
+    (fun sc => { sc with boundThreadCode := 0, isActive := false }) hInv
   have hMidX : ((s.updateSchedContext ⟨x.val⟩
-        (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).updateTcb
+        (fun sc => { sc with boundThreadCode := 0, isActive := false })).updateTcb
         tid (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })).objects[x]? =
       some (.schedContext
-        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) := by
+        { sc with boundThreadCode := 0, isActive := false }) := by
     rw [SystemState.updateTcb_objects_ne _ _ _ _ hNe hInv1,
       SystemState.updateSchedContext_eq_of_some hG']
     dsimp only
@@ -120,13 +120,13 @@ theorem finaliseSchedContextDeschedule_keeps {s : SystemState} {x k : SeLe4n.Obj
   (finaliseSchedContextDeschedule_objectsAgreeOffRunLinks s x).get_of_not_tcb hNot hk
 
 /-- **The destroy cleanup releases a released context's yield** (WS-ZA ZA6.6):
-on a context bound to no thread, lent from no one and heading no reply stack,
+on a context bound to no thread and heading no reply stack,
 the cleanup completes the yield the context records
 (`finaliseSchedContextCleanupImpl`, `completeYieldFrom`), which writes the yield
 writes alone and leaves the context recording no yielder. -/
 theorem finaliseSchedContextCleanupImpl_releases {s : SystemState} {x : SeLe4n.ObjId}
     (hInv : s.objects.invExt) {sc : SchedContext} (hO : s.objects[x]? = some (.schedContext sc))
-    (hB : sc.boundThreadCode = 0) (hD : sc.donationOrigin = none) (hR : sc.scReply = none) :
+    (hB : sc.boundThreadCode = 0) (hR : sc.scReply = none) :
     schedContextRecordReleased (finaliseSchedContextCleanupImpl s x) x := by
   unfold finaliseSchedContextCleanupImpl
   rw [SystemState.getObject?_eq_getElem, hO]
@@ -135,7 +135,7 @@ theorem finaliseSchedContextCleanupImpl_releases {s : SystemState} {x : SeLe4n.O
     rw [SystemState.getSchedContext?_eq_some_iff]; exact hO
   have e := (SystemState.completeYieldFrom_objectsAgreeOffYield s
     (SeLe4n.SchedContextId.ofObjId x) hInv).getSchedContext?_map
-    (fun u => (u.boundThreadCode, u.donationOrigin, u.scReply)) (fun _ => rfl)
+    (fun u => (u.boundThreadCode, u.scReply)) (fun _ => rfl)
     (SeLe4n.SchedContextId.ofObjId x)
   rw [hG] at e
   cases hG' : (completeYieldFrom s (SeLe4n.SchedContextId.ofObjId x)).getSchedContext?
@@ -144,9 +144,9 @@ theorem finaliseSchedContextCleanupImpl_releases {s : SystemState} {x : SeLe4n.O
   | some sc' =>
     rw [hG'] at e
     simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at e
-    obtain ⟨e1, e2, e3⟩ := e
+    obtain ⟨e1, e2⟩ := e
     exact ⟨sc', (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hG', e1.trans hB,
-      e2.trans hD, e3.trans hR, SystemState.completeYieldFrom_yieldFromCode_self _ _ hInv hG'⟩
+      e2.trans hR, SystemState.completeYieldFrom_yieldFromCode_self _ _ hInv hG'⟩
 
 /-- **The notification unbind keeps a released context released**: it rewrites
 a context's notification link and a notification's link back, no other field. -/
@@ -154,7 +154,7 @@ theorem schedContextRecordReleased.unbindSchedContextNotification {s : SystemSta
     {x : SeLe4n.ObjId} (hInv : s.objects.invExt) (h : schedContextRecordReleased s x)
     (c : SeLe4n.SchedContextId) :
     schedContextRecordReleased (SeLe4n.Kernel.unbindSchedContextNotification s c) x := by
-  obtain ⟨sc, hO, h1, h2, h3, h4⟩ := h
+  obtain ⟨sc, hO, h1, h2, h3⟩ := h
   have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt s c
     (fun c => { c with notificationCode := 0 }) hInv
   have hSc : schedContextRecordReleased
@@ -162,27 +162,27 @@ theorem schedContextRecordReleased.unbindSchedContextNotification {s : SystemSta
     by_cases hx : c.toObjId = x
     · subst hx
       cases hG : s.getSchedContext? c with
-      | none => rw [SystemState.updateSchedContext_eq_self_of_none hG]; exact ⟨sc, hO, h1, h2, h3, h4⟩
+      | none => rw [SystemState.updateSchedContext_eq_self_of_none hG]; exact ⟨sc, hO, h1, h2, h3⟩
       | some sc0 =>
         have hSraw := (SystemState.getSchedContext?_eq_some_iff s c sc0).mp hG
         rw [hSraw] at hO; cases hO
         rw [SystemState.updateSchedContext_eq_of_some hG]
-        exact ⟨_, RobinHood.RHTable.getElem?_insert_self _ _ _ hInv, h1, h2, h3, h4⟩
+        exact ⟨_, RobinHood.RHTable.getElem?_insert_self _ _ _ hInv, h1, h2, h3⟩
     · exact ⟨sc, (SystemState.updateSchedContext_objects_ne _ _ _ _ hx hInv).trans hO,
-        h1, h2, h3, h4⟩
+        h1, h2, h3⟩
   rcases unbindSchedContextNotification_shape s c hInv with e | ⟨-, -, e | ⟨n, ntfn, hN, e⟩⟩
-  · rw [e]; exact ⟨sc, hO, h1, h2, h3, h4⟩
+  · rw [e]; exact ⟨sc, hO, h1, h2, h3⟩
   · rw [e]; exact hSc
   · rw [e]
-    obtain ⟨sc', hO', a, b, c', d⟩ := hSc
+    obtain ⟨sc', hO', a, b, c'⟩ := hSc
     have hne : n ≠ x := by intro hn; rw [hn, hO'] at hN; cases hN
     exact ⟨sc', (RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun h => hne (eq_of_beq h))
-      hInv1).trans hO', a, b, c', d⟩
+      hInv1).trans hO', a, b, c'⟩
 
 /-- **A finalised scheduling context's own record is released**
 (WS-ZA ZA5.4 part 26): on a state its admission admits, the finalisation
-leaves the context at `x` bound to no thread and lent from no one — the
-holder's unbind clears both (`finaliseSchedContextUnbind_released`) — and
+leaves the context at `x` bound to no thread — the holder's unbind clears
+the binding (`finaliseSchedContextUnbind_released`) — and
 heading no reply stack: the head reply the admission reads still names the
 context as its head after the deschedule and the unbind, which write no reply,
 so the unstack runs and clears the head; the destroy cleanup then completes
@@ -201,9 +201,9 @@ theorem finaliseSchedContext_releases (x : SeLe4n.ObjId) (st : SystemState)
     ((FinaliseFrameAny.yieldStep st).schedContextCleanup _ x hFU).invExt ?_ _
   suffices hU : ∃ sc, (schedContextUnbindReply (finaliseSchedContextUnbind
       (finaliseSchedContextDeschedule st x) x) x).objects[x]? = some (.schedContext sc) ∧
-      sc.boundThreadCode = 0 ∧ sc.donationOrigin = none ∧ sc.scReply = none by
-    obtain ⟨sc, h1, h2, h3, h4⟩ := hU
-    exact finaliseSchedContextCleanupImpl_releases hInvU h1 h2 h3 h4
+      sc.boundThreadCode = 0 ∧ sc.scReply = none by
+    obtain ⟨sc, h1, h2, h3⟩ := hU
+    exact finaliseSchedContextCleanupImpl_releases hInvU h1 h2 h3
   have hA0 := hA
   unfold schedContextFinaliseAdmitted at hA0
   obtain ⟨sc0, hO, hRep⟩ : ∃ sc0, st.objects[x]? = some (.schedContext sc0) ∧
@@ -230,14 +230,14 @@ theorem finaliseSchedContext_releases (x : SeLe4n.ObjId) (st : SystemState)
   have hG2 : (finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x).getSchedContext?
       ⟨x.val⟩ = some sc2 := by
     rw [SystemState.getSchedContext?_eq_some_iff]; exact hO2
-  obtain ⟨hB2, hD2⟩ := finaliseSchedContextUnbind_released hInv hA hG2
+  have hB2 := finaliseSchedContextUnbind_released hInv hA hG2
   generalize finaliseSchedContextUnbind (finaliseSchedContextDeschedule st x) x = s2
     at hO2 hKeep hInv2 hG2
   unfold schedContextUnbindReply
   rw [hG2]
   dsimp only
   cases hS : sc2.scReply with
-  | none => exact ⟨sc2, hO2, hB2, hD2, hS⟩
+  | none => exact ⟨sc2, hO2, hB2, hS⟩
   | some rid =>
   dsimp only
   rw [hR2] at hS
@@ -264,7 +264,7 @@ theorem finaliseSchedContext_releases (x : SeLe4n.ObjId) (st : SystemState)
   have hInv3 := storeObject_preserves_objects_invExt s2 s3 rid.toObjId _ hInv2 hS3
   have hG3 : s3.getSchedContext? ⟨x.val⟩ = some sc2 := by
     rw [SystemState.getSchedContext?_eq_some_iff]; exact hO3
-  refine ⟨{ sc2 with scReply := none }, ?_, hB2, hD2, rfl⟩
+  refine ⟨{ sc2 with scReply := none }, ?_, hB2, rfl⟩
   rw [SystemState.updateSchedContext_eq_of_some hG3]
   dsimp only
   rw [show (⟨x.val⟩ : SeLe4n.SchedContextId).toObjId = x from rfl,

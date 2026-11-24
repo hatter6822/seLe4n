@@ -13,7 +13,7 @@ thread holds, where the thread the pop answers holds a context of its own: the
 head is popped off the context, and the context stays with its holder: a holder
 that owns it stays `.bound` (seL4 writes nothing to it), and a holder that has it
 on loan owes it to the frame below (`donationReturnBinding` at `heldPopOwner?`).  It writes the context's
-head and origin, the two replies, and the holder's binding, and no other thread.
+head, the two replies, and the holder's binding, and no other thread.
 
 The bundle's conjuncts that read no binding carry across the read agreement the
 three stores keep; the four donation conjuncts are proved on the post-state.  The
@@ -78,7 +78,7 @@ theorem keepDonatedSchedContext_ok_of_schedContextBindingConsistent
     (hOut : outerCallerAcceptable st holder holder (heldPopOuter? st holder newOwner?) = true)
     (hHead : donationHeadOf? st scId sc = .ok head?)
     (hS1 : storeObject scId.toObjId
-        (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
+        (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev))))
         st = .ok ((), s1))
     (hS2 : storeDonationHeadPop scId head? s1 = .ok s2)
     (hL : lookupTcb s2 holder = some ht)
@@ -110,7 +110,7 @@ theorem keepDonatedSchedContext_donationReadAgreement (hObjInv : st.objects.invE
   have a1 := donationReadAgreement_of_schedContextStore st s1 scId.toObjId sc _ hSc hObjInv hS1
   have a2 := donationReadAgreement_of_headPop hInv1 hS2
   have a3 := donationReadAgreement_of_tcbBindingStore s2 st' holder.toObjId ot
-    (donationReturnBinding scId (heldPopOwner? ot.schedContextBinding newOwner?)) ot.originScCode
+    (donationReturnBinding scId (heldPopOwner? ot.schedContextBinding newOwner?))
     (lookupTcb_some_objects s2 holder ot hL) hInv2 hS3
   exact (a1.trans a2).trans a3
 

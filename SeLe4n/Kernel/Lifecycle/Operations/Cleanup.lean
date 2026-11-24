@@ -647,9 +647,7 @@ def cancelBoundDonationOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
   match tcb.schedContextBinding with
   | .bound scId =>
     let st1 : SystemState := st.updateSchedContext scId fun sc =>
-      -- **WS-HP HP10.4**: and the origin, as the single-core spelling does — the
-      -- `_bootCoreId` bridge is `rfl`, so the two cannot differ by a field.
-      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+      { sc with boundThreadCode := 0, isActive := false }
     let st2 := SchedContextOps.purgeReplenishment st1 scId
     -- The binding write moves `tid`'s key (its deadline is no longer the
     -- context's), so it ends in the key hook (KSC-1), as the donation writers do.
@@ -672,7 +670,7 @@ spelling (`cancelBoundDonationOnCore_of_bound`). -/
     let dom0 := t0.domain
     let e0 := hasSufficientBudget st t0
     let st1 := st.updateSchedContext scId fun sc =>
-      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+      { sc with boundThreadCode := 0, isActive := false }
     let st2 := SchedContextOps.purgeReplenishment st1 scId
     markKeyChangeParts
       (markCandidacyGainFor
@@ -681,7 +679,7 @@ spelling (`cancelBoundDonationOnCore_of_bound`). -/
       tid p0 d0 dom0
   | none =>
     let st1 : SystemState := st.updateSchedContext scId fun sc =>
-      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+      { sc with boundThreadCode := 0, isActive := false }
     let st2 := SchedContextOps.purgeReplenishment st1 scId
     markKeyChangeFrom st
       (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) tid
@@ -712,13 +710,13 @@ theorem cancelBoundDonationOnCore_objects (st st' : SystemState)
     (scId : SeLe4n.SchedContextId) (hBinding : tcb.schedContextBinding = .bound scId)
     (hInv : st.objects.invExt)
     (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
-    st'.objectsAgreeOffReleaseLinks ((st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).updateTcb tid
+    st'.objectsAgreeOffReleaseLinks ((st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false })).updateTcb tid
       (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })) := by
   simp only [cancelBoundDonationOnCore, hBinding] at h
   injection h with h
   subst h
   have hMid := SystemState.updateSchedContext_preserves_objects_invExt st scId
-    (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
+    (fun sc => { sc with boundThreadCode := 0, isActive := false }) hInv
   -- The key hook writes flags alone; the purge agrees off the release links.
   exact SystemState.objectsAgreeOffReleaseLinks.congr (markKeyChangeFrom_objects _ _ _)
     ((SchedContextOps.purgeReplenishment_agree _ scId).updateTcb
@@ -737,10 +735,10 @@ theorem cancelBoundDonationOnCore_getTcb? (st st' : SystemState)
         = (st.getTcb? tid).map (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
       ∧ ∀ x : SeLe4n.ThreadId, x.toObjId ≠ tid.toObjId → st'.getTcb? x = st.getTcb? x := by
   have hObjs := cancelBoundDonationOnCore_objects st st' tid tcb scId hBinding hInv h
-  have hMid : (st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).objects.invExt :=
+  have hMid : (st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false })).objects.invExt :=
     SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
   have hRead : ∀ x : SeLe4n.ThreadId, st'.getTcb? x
-      = ((st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).updateTcb tid
+      = ((st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false })).updateTcb tid
           (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })).getTcb? x :=
     fun x => hObjs.getTcb? x
   refine ⟨?_, fun x hNe => ?_⟩
@@ -765,7 +763,7 @@ theorem cancelBoundDonationOnCore_getSchedContext? (st st' : SystemState)
           (st'.getSchedContext? s).map SchedContext.withoutRelease =
             (st.getSchedContext? s).map SchedContext.withoutRelease := by
   have hObjs := cancelBoundDonationOnCore_objects st st' tid tcb scId hBinding hInv h
-  have hMid : (st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).objects.invExt :=
+  have hMid : (st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false })).objects.invExt :=
     SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
   refine ⟨?_, fun s hNe => ?_⟩
   · rw [hObjs.getSchedContext?_map (·.boundThread) (fun _ => rfl) scId,
