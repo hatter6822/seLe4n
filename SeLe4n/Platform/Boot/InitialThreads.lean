@@ -802,6 +802,25 @@ theorem bootFromPlatformCheckedStartedFor_bindingLabelsEqual
   bindingLabelsEqual_of_unbound (fun k o hk => bindingFreeObject_of_bootObjectShapeOffLinks
     ((bootFromPlatformCheckedStartedFor_bootLinkedShape cores hNodup config ist h).1 k o hk)) ctx
 
+/-- WS-SX SX11.1: **the state the started boot installs blocks no thread**, so
+under every labelling each thread blocked on an endpoint has the endpoint's
+label — the base case of `endpointWaitersLabelsEqual`.  Every boot thread is of
+boot shape, whose IPC state is `.ready` (`bootTcbShape`): the configured
+threads (`bootSafeTcbCheck`), the idle threads and the started threads alike,
+so the predicate's antecedent is empty. -/
+theorem bootFromPlatformCheckedStartedFor_endpointWaitersLabelsEqual
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (hNodup : cores.Nodup)
+    (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) (ctx : LabelingContext) :
+    endpointWaitersLabelsEqual ctx ist.state := by
+  have hReady : ∀ tid t, lookupTcb ist.state tid = some t → t.ipcState = .ready :=
+    fun tid t hLook => (((bootFromPlatformCheckedStartedFor_bootLinkedShape cores hNodup config
+      ist h).1 _ _ (lookupTcb_some_objects _ tid t hLook)).2.2.2.1 t rfl).2.1
+  refine ⟨blockedSenderLabelsEqual_of_none_blocked fun tid t epId hL => ?_,
+    blockedReceiverLabelsEqual_of_none_blocked fun tid t epId hL => ?_⟩
+  · rw [hReady tid t hL]; exact ⟨by simp, by simp⟩
+  · rw [hReady tid t hL]; simp
+
 /-- WS-ZA ZA6.8: **the state the started boot installs keeps no linked thread
 current or resident** — the first entry's precondition for
 `syscallDispatchEntryState_preserves_yieldLinkedNotResident` and its siblings. -/

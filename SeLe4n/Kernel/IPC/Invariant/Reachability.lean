@@ -172,8 +172,8 @@ in `IPC/Invariant/BlockedSenderPreservation.lean` give is each conjunct across o
 transition, which is what a consumer composes by hand until that debt closes. -/
 def ipcReachableUnder (ctx : LabelingContext) (st : SystemState) : Prop :=
   ipcReachable st ∧
-  blockedSenderFlowsToEndpoint ctx st ∧
-  blockedReceiverFlowsFromEndpoint ctx st ∧
+  blockedSenderLabelsEqual ctx st ∧
+  blockedReceiverLabelsEqual ctx st ∧
   donationOwnerFlowsToHolder ctx st
 
 namespace ipcReachableUnder
@@ -185,11 +185,11 @@ theorem reachable {ctx : LabelingContext} {st : SystemState}
 
 theorem blockedSenders {ctx : LabelingContext} {st : SystemState}
     (h : ipcReachableUnder ctx st) :
-    _root_.SeLe4n.Kernel.blockedSenderFlowsToEndpoint ctx st := h.2.1
+    _root_.SeLe4n.Kernel.blockedSenderLabelsEqual ctx st := h.2.1
 
 theorem blockedReceivers {ctx : LabelingContext} {st : SystemState}
     (h : ipcReachableUnder ctx st) :
-    _root_.SeLe4n.Kernel.blockedReceiverFlowsFromEndpoint ctx st := h.2.2.1
+    _root_.SeLe4n.Kernel.blockedReceiverLabelsEqual ctx st := h.2.2.1
 
 theorem donationFlow {ctx : LabelingContext} {st : SystemState}
     (h : ipcReachableUnder ctx st) :
@@ -400,14 +400,14 @@ labelling: a deployment's own context is admitted by the boot's witness check
 theorem ipcReachableUnder_default (ctx : LabelingContext) :
     ipcReachableUnder ctx (default : SystemState) := by
   refine ⟨ipcReachable_default, ?_, ?_, ?_⟩
-  · refine blockedSenderFlowsToEndpoint_of_none_blocked ?_
+  · refine blockedSenderLabelsEqual_of_none_blocked ?_
     intro tid tcb epId hLook
     rw [lookupTcb] at hLook
     split at hLook
     · cases hLook
     · rw [SystemState.getTcb?, Architecture.default_objects_none] at hLook
       cases hLook
-  · refine blockedReceiverFlowsFromEndpoint_of_none_blocked ?_
+  · refine blockedReceiverLabelsEqual_of_none_blocked ?_
     intro tid tcb epId hLook
     rw [lookupTcb] at hLook
     split at hLook

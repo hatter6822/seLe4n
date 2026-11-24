@@ -11812,13 +11812,13 @@ grep '^\\[declassification-taint\\]' > {declassificationTaintFixturePath}"
 
 /-! ### §15 — what the receiver's gate recorded, and why the `.call` arm needed it
 
-`blockedSenderFlowsToEndpoint` records what the **sending** gate checked.  Nothing
+`blockedSenderLabelsEqual` records what the **sending** gate checked.  Nothing
 recorded what the **receiving** gate checked, so `donationFlowFromBlockedDonor`
 had to take that half as an argument and
 `endpointCallCrossCoreDispatchChecked` — the one transition that *mints* a
 donation — could carry no `donationOwnerFlowsToHolder` at all (register row 183).
 
-`blockedReceiverFlowsFromEndpoint` is that record, and these checks are what makes
+`blockedReceiverLabelsEqual` (once a one-way flow, an equality since WS-SX SX11.1) is that record, and these checks are what makes
 it load-bearing rather than decorative: three labellings over **one** fixture, a
 passive server blocked at an endpoint's receive-queue head and a client holding a
 reservation, driven through the **live** checked dispatch.
@@ -11830,7 +11830,7 @@ reservation, driven through the **live** checked dispatch.
 3. **RECEIVER-FACT-FALSE** — the caller's gate passes and the donation *is*
    minted, and the conclusion `client ⊑ server` is **FALSE**.  The state is one no
    `.receive` gate would have produced, which is exactly what
-   `blockedReceiverFlowsFromEndpoint` excludes — so the hypothesis is doing work,
+   `blockedReceiverLabelsEqual` excludes — so the hypothesis is doing work,
    and dropping it from the lift would make the lift false rather than merely
    weaker.
 -/
@@ -11869,7 +11869,7 @@ private def flowBase : SystemState :=
 /-- The state the checks run on, built by the **live** receive rather than by
 hand: the server blocks at `flowEp` with a reply object stashed, which is the
 shape `queueHeadBlockedConsistent` constrains and the premise
-`blockedReceiverFlowsFromEndpoint` is quantified over. -/
+`blockedReceiverLabelsEqual` is quantified over. -/
 private def flowState : SystemState :=
   (endpointReceiveDualOnCore flowEp flowServer (some flowReply) bootCoreId flowBase).1
 

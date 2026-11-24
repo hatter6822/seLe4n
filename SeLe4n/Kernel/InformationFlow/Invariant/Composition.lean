@@ -1034,27 +1034,38 @@ theorem donationHolderHigh_of_donorHigh
   · simp only [Bool.not_eq_true] at hH
     exact hH
 
-/-- **WS-RR RR8.8**: a thread blocked sending or calling on an endpoint has a
-label that flows to that endpoint's.
+/-- **WS-SX SX11.1**: a thread blocked sending or calling on an endpoint has
+that endpoint's label.
 
-The second labelling fact, and the one that reaches the *endpoint object* a queue
-teardown rewrites.  Like `donationOwnerFlowsToHolder` it is what the live gate
-checked at the transition and the state does not record: a thread reaches
-`.blockedOnSend epId` / `.blockedOnCall epId` only through
-`endpointSendCrossCoreDispatchChecked` / `endpointCallCrossCoreDispatchChecked`,
-whose gate is `endpointFlowGate ctx epId (threadLabelOf tid) (endpointLabelOf
-epId)`, so `endpointFlowGate_implies_securityFlowsTo` gives the conclusion at the
-instant the thread blocks.
+The equality form of WS-RR RR8.8's one-way fact (D38), and the fact a queue
+teardown and a Call's lend read off the *endpoint object*.  Like
+`donationOwnerFlowsToHolder` it is what the live gate checked at the transition
+and the state does not record: a thread reaches `.blockedOnSend epId` /
+`.blockedOnCall epId` only through `endpointSendCrossCoreDispatchChecked` /
+`endpointCallCrossCoreDispatchChecked` (or the checked fault delivery), whose
+gate is `endpointFlowGate ctx epId (threadLabelOf tid) (endpointLabelOf epId)`,
+and that gate is two-way, so `endpointFlowGate_implies_eq` gives the conclusion
+at the instant the thread blocks.
 
 The two blocked states are the ones that name a *send* queue, which is the queue
-`abortPendingIpcOnEndpoint` splices; `.blockedOnReceive` is deliberately absent, its gate running in the
-other direction (`endpointLabelOf ⊑ threadLabelOf`). -/
-def blockedSenderFlowsToEndpoint (ctx : LabelingContext) (st : SystemState) : Prop :=
+`abortPendingIpcOnEndpoint` splices; `.blockedOnReceive` is
+`blockedReceiverLabelsEqual`'s. -/
+def blockedSenderLabelsEqual (ctx : LabelingContext) (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (t : TCB) (epId : SeLe4n.ObjId),
     lookupTcb st tid = some t →
     (t.ipcState = ThreadIpcState.blockedOnSend epId ∨
       t.ipcState = ThreadIpcState.blockedOnCall epId) →
-      securityFlowsTo (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId) = true
+      ctx.threadLabelOf tid = ctx.endpointLabelOf epId
+
+/-- **WS-SX SX11.1**: the one-way form, a corollary: a blocked sender's label
+flows to its endpoint's. -/
+theorem blockedSenderLabelsEqual.flowsToEndpoint {ctx : LabelingContext} {st : SystemState}
+    (h : blockedSenderLabelsEqual ctx st) {tid : SeLe4n.ThreadId} {t : TCB}
+    {epId : SeLe4n.ObjId} (hLook : lookupTcb st tid = some t)
+    (hBlocked : t.ipcState = ThreadIpcState.blockedOnSend epId ∨
+      t.ipcState = ThreadIpcState.blockedOnCall epId) :
+    securityFlowsTo (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId) = true := by
+  rw [h tid t epId hLook hBlocked]; exact securityFlowsTo_refl _
 
 /-- **WS-RR RR8.8**: the endpoint a non-observable thread is blocked sending or
 calling on is itself non-observable, composed from the two facts above. -/
@@ -1062,16 +1073,21 @@ theorem blockedSenderEndpointObjectHigh
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (tid : SeLe4n.ThreadId) (t : TCB) (epId : SeLe4n.ObjId)
     (hValid : LabelingContextValid ctx)
-    (hFlow : blockedSenderFlowsToEndpoint ctx st)
-    (hLookup : lookupTcb st tid = some t)
+    (hEq : blockedSenderLabelsEqual ctx st)
+    (hLook : lookupTcb st tid = some t)
     (hBlocked : t.ipcState = ThreadIpcState.blockedOnSend epId ∨
       t.ipcState = ThreadIpcState.blockedOnCall epId)
     (hThreadHigh : threadObservable ctx observer tid = false) :
     objectObservable ctx observer epId = false :=
   endpointObjectHigh_of_admittedThreadHigh ctx observer epId tid hValid
-    (hFlow tid t epId hLookup hBlocked) hThreadHigh
+    (hEq.flowsToEndpoint hLook hBlocked) hThreadHigh
 
-/-! ### WS-RR RR8.16: establishing and preserving the two flow facts
+/-! ### WS-RR RR8.16: establishing and preserving the two label facts
+
+WS-SX SX11.1 restated both as equalities (D38): each endpoint gate is two-way,
+so a blocked thread has its endpoint's label, and the one-way forms are
+corollaries (`blockedSenderLabelsEqual.flowsToEndpoint`,
+`blockedReceiverLabelsEqual.flowsFromEndpoint`).
 
 `v0.35.83`/`v0.35.84` introduced the two predicates above and consumed them as
 **hypotheses**: no theorem established either one where the fact is created, none
@@ -1097,7 +1113,7 @@ that only ONE of the two needs an independent story:
 Weaker than `ipcStateFrame`, and the weakening is the point: the send rendezvous
 writes the receiver's `ipcState` to `.ready` and the wake writes a runnable one, so
 neither frames every `ipcState` while both leave the blocked-sender set no larger.
-That is exactly what `blockedSenderFlowsToEndpoint` needs, since the predicate says
+That is exactly what `blockedSenderLabelsEqual` needs, since the predicate says
 nothing about a thread that is not blocked sending or calling.
 
 Stated with the ENDPOINT carried through: a step that moved a thread from
@@ -1135,7 +1151,7 @@ theorem blockedSenderShrinks_of_ipcStateFrame {st st' : SystemState}
   rw [hEq]
   exact hB
 
-/-- WS-RR RR8.16: **the write that creates a blocked sender carries the flow fact,
+/-- WS-RR RR8.16: **the write that creates a blocked sender carries the label fact,
 given the gate that admitted it.**
 
 `storeTcbIpcStateAndMessage st tid ipc msg` is the one production write of a
@@ -1153,23 +1169,23 @@ RR8.16 moved it beside the primitive it frames.
 The gate is an argument rather than a hypothesis on the state, because it is a
 transition-time check the store records no trace of; the caller that holds it is the
 checked dispatch, whose `endpointFlowGate ctx epId (threadLabelOf tid)
-(endpointLabelOf epId)` is exactly `hGate` after
-`endpointFlowGate_implies_securityFlowsTo`.
+(endpointLabelOf epId)` is exactly `hGate` after `endpointFlowGate_implies_eq`
+(WS-SX SX11.1: the gate is two-way, so it records equality).
 
 Stated for an arbitrary `ipc`: where the written state is not a blocking one the
 `hGate` argument is vacuous, so a non-blocking store transports the fact through the
 same theorem rather than through a second one. -/
-theorem storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint
+theorem storeTcbIpcStateAndMessage_preserves_blockedSenderLabelsEqual
     (ctx : LabelingContext) (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
-    (hPre : blockedSenderFlowsToEndpoint ctx st)
+    (hPre : blockedSenderLabelsEqual ctx st)
     (hGate : ∀ epId : SeLe4n.ObjId,
       (ipc = ThreadIpcState.blockedOnSend epId ∨
         ipc = ThreadIpcState.blockedOnCall epId) →
-      securityFlowsTo (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId) = true) :
-    blockedSenderFlowsToEndpoint ctx st' := by
+      ctx.threadLabelOf tid = ctx.endpointLabelOf epId) :
+    blockedSenderLabelsEqual ctx st' := by
   intro other t' epId hLook hB
   have hNotRes : ¬ other.isReserved := lookupTcb_some_not_reserved st' other t' hLook
   obtain ⟨ty, hPreObj, _, _, hCase⟩ :=
@@ -1200,11 +1216,11 @@ theorem storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint
 
 /-- WS-RR RR8.16: the flow fact transports across any step that introduces no
 blocked sender. -/
-theorem blockedSenderFlowsToEndpoint_of_shrinks {ctx : LabelingContext}
+theorem blockedSenderLabelsEqual_of_shrinks {ctx : LabelingContext}
     {st st' : SystemState}
-    (hPre : blockedSenderFlowsToEndpoint ctx st)
+    (hPre : blockedSenderLabelsEqual ctx st)
     (hShrink : blockedSenderShrinks st st') :
-    blockedSenderFlowsToEndpoint ctx st' := by
+    blockedSenderLabelsEqual ctx st' := by
   intro tid t' epId hLook hB
   obtain ⟨t, hPreLook, hPreB⟩ := hShrink tid t' epId hLook hB
   exact hPre tid t epId hPreLook hPreB
@@ -1212,13 +1228,13 @@ theorem blockedSenderFlowsToEndpoint_of_shrinks {ctx : LabelingContext}
 /-- WS-RR RR8.16: the base case.  A state with no blocked sender satisfies the fact
 outright, which is what makes the boot state an inhabitant rather than an
 assumption. -/
-theorem blockedSenderFlowsToEndpoint_of_none_blocked {ctx : LabelingContext}
+theorem blockedSenderLabelsEqual_of_none_blocked {ctx : LabelingContext}
     {st : SystemState}
     (hNone : ∀ (tid : SeLe4n.ThreadId) (t : TCB) (epId : SeLe4n.ObjId),
       lookupTcb st tid = some t →
       t.ipcState ≠ ThreadIpcState.blockedOnSend epId ∧
         t.ipcState ≠ ThreadIpcState.blockedOnCall epId) :
-    blockedSenderFlowsToEndpoint ctx st := by
+    blockedSenderLabelsEqual ctx st := by
   intro tid t epId hLook hB
   rcases hB with h | h
   · exact absurd h (hNone tid t epId hLook).1
@@ -1230,8 +1246,8 @@ a blocked caller.**
 This is what makes `donationOwnerFlowsToHolder` a consequence rather than a second
 assumption.  A `.donated scId owner` binding is minted only by `donateSchedContext`,
 reached through a `Call` rendezvous in which the donor is `.blockedOnCall` on the
-endpoint — so `blockedSenderFlowsToEndpoint` gives `threadLabelOf owner ⊑
-endpointLabelOf ep`, and the receiving side's own gate gives `endpointLabelOf ep ⊑
+endpoint — so `blockedSenderLabelsEqual` gives `threadLabelOf owner =
+endpointLabelOf ep` (read here in its one-way form), and the receiving side's own gate gives `endpointLabelOf ep ⊑
 threadLabelOf holder`.  Composed, that is the conclusion.
 
 The receiving gate is an argument rather than a hypothesis on the state, because it
@@ -1239,7 +1255,7 @@ is a transition-time check the store records no trace of; the caller that has it
 scope is the checked dispatch. -/
 theorem donationFlowFromBlockedDonor {ctx : LabelingContext} {st : SystemState}
     {owner holder : SeLe4n.ThreadId} {ownerTcb : TCB} {epId : SeLe4n.ObjId}
-    (hBlockedSenders : blockedSenderFlowsToEndpoint ctx st)
+    (hBlockedSenders : blockedSenderLabelsEqual ctx st)
     (hOwner : lookupTcb st owner = some ownerTcb)
     (hOwnerBlocked : ownerTcb.ipcState = ThreadIpcState.blockedOnSend epId ∨
       ownerTcb.ipcState = ThreadIpcState.blockedOnCall epId)
@@ -1247,12 +1263,12 @@ theorem donationFlowFromBlockedDonor {ctx : LabelingContext} {st : SystemState}
       (ctx.threadLabelOf holder) = true) :
     securityFlowsTo (ctx.threadLabelOf owner) (ctx.threadLabelOf holder) = true :=
   securityFlowsTo_trans _ _ _
-    (hBlockedSenders owner ownerTcb epId hOwner hOwnerBlocked) hReceiveGate
+    (hBlockedSenders.flowsToEndpoint hOwner hOwnerBlocked) hReceiveGate
 
 
 /-! ### WS-RR RR8.16 (`v0.35.196`): the RECEIVING side of the same gate
 
-Register row 183's part (1).  `blockedSenderFlowsToEndpoint` records what the
+Register row 183's part (1).  `blockedSenderLabelsEqual` records what the
 *sending* gate checked; nothing recorded what the **receiving** gate checked, so
 `donationFlowFromBlockedDonor` had to take `hReceiveGate` as an argument and the
 `.call` dispatch — the one transition that *mints* a donation — could carry no
@@ -1268,23 +1284,39 @@ none.  Saying which side of the difference a hypothesis comes from is the point 
 stating it rather than assuming it away.
 -/
 
-/-- **WS-RR RR8.16 (`v0.35.196`)**: every thread blocked *receiving* on an endpoint
-carries a label that endpoint's flows to.
+/-- **WS-RR RR8.16 (`v0.35.196`), WS-SX SX11.1**: every thread blocked
+*receiving* on an endpoint has that endpoint's label (the equality form, D38).
 
-The receive-side twin of `blockedSenderFlowsToEndpoint`, and the fact the donation
+The receive-side twin of `blockedSenderLabelsEqual`, and the fact the donation
 composition needs at its far end.  A thread reaches `.blockedOnReceive epId` only
 through the `.receive` / `.replyRecv` arms, whose gate is
 `endpointFlowGate ctx epId (endpointLabelOf epId) (threadLabelOf tid)` — the same
-check in the other direction — so `endpointFlowGate_implies_securityFlowsTo` gives
+check in the other direction, and two-way — so `endpointFlowGate_implies_eq` gives
 the conclusion at the instant the thread blocks.
 
 `.blockedOnNotification` is deliberately absent: it names a notification rather
 than an endpoint, and no donation crosses it. -/
-def blockedReceiverFlowsFromEndpoint (ctx : LabelingContext) (st : SystemState) : Prop :=
+def blockedReceiverLabelsEqual (ctx : LabelingContext) (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (t : TCB) (epId : SeLe4n.ObjId),
     lookupTcb st tid = some t →
     t.ipcState = ThreadIpcState.blockedOnReceive epId →
-      securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true
+      ctx.threadLabelOf tid = ctx.endpointLabelOf epId
+
+/-- **WS-SX SX11.1**: the one-way form, a corollary: a blocked receiver's
+endpoint's label flows to the receiver's. -/
+theorem blockedReceiverLabelsEqual.flowsFromEndpoint {ctx : LabelingContext} {st : SystemState}
+    (h : blockedReceiverLabelsEqual ctx st) {tid : SeLe4n.ThreadId} {t : TCB}
+    {epId : SeLe4n.ObjId} (hLook : lookupTcb st tid = some t)
+    (hBlocked : t.ipcState = ThreadIpcState.blockedOnReceive epId) :
+    securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true := by
+  rw [h tid t epId hLook hBlocked]; exact securityFlowsTo_refl _
+
+/-- **WS-SX SX11.1: blocked threads carry their endpoint's label** (D38): the two
+equality forms together, the state fact a Call's lend and a receive's take read
+of the thread the rendezvous finds on a queue, whose gate ran at its own,
+earlier block. -/
+def endpointWaitersLabelsEqual (ctx : LabelingContext) (st : SystemState) : Prop :=
+  blockedSenderLabelsEqual ctx st ∧ blockedReceiverLabelsEqual ctx st
 
 /-- **WS-RR RR8.16 (`v0.35.196`)**: a step introduces no blocked receiver it did
 not already have.
@@ -1325,7 +1357,7 @@ theorem blockedReceiverShrinks_of_ipcStateFrame {st st' : SystemState}
   exact hB
 
 /-- **WS-RR RR8.16 (`v0.35.196`)**: the write that creates a blocked receiver
-carries the flow fact, given the gate that admitted it.
+carries the label fact, given the gate that admitted it.
 
 The same store as its sender-side twin, and that is the whole reason both facts
 have a single establishment point rather than one per arm:
@@ -1334,17 +1366,17 @@ whatever the blocking is.  `hGate` is an argument for the sender's reason — a
 transition-time check the store records no trace of — and here the caller that
 holds it is the `.receive` / `.replyRecv` dispatch arm, whose
 `endpointFlowGate ctx epId (endpointLabelOf epId) (threadLabelOf tid)` is exactly
-`hGate` after `endpointFlowGate_implies_securityFlowsTo`. -/
-theorem storeTcbIpcStateAndMessage_preserves_blockedReceiverFlowsFromEndpoint
+`hGate` after `endpointFlowGate_implies_eq` (read symmetrically). -/
+theorem storeTcbIpcStateAndMessage_preserves_blockedReceiverLabelsEqual
     (ctx : LabelingContext) (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (hObjInv : st.objects.invExt)
     (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
-    (hPre : blockedReceiverFlowsFromEndpoint ctx st)
+    (hPre : blockedReceiverLabelsEqual ctx st)
     (hGate : ∀ epId : SeLe4n.ObjId,
       ipc = ThreadIpcState.blockedOnReceive epId →
-      securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true) :
-    blockedReceiverFlowsFromEndpoint ctx st' := by
+      ctx.threadLabelOf tid = ctx.endpointLabelOf epId) :
+    blockedReceiverLabelsEqual ctx st' := by
   intro other t' epId hLook hB
   have hNotRes : ¬ other.isReserved := lookupTcb_some_not_reserved st' other t' hLook
   obtain ⟨ty, hPreObj, _, _, hCase⟩ :=
@@ -1370,23 +1402,23 @@ theorem storeTcbIpcStateAndMessage_preserves_blockedReceiverFlowsFromEndpoint
 
 /-- WS-RR RR8.16: the receive-side flow fact transports across any step that
 introduces no blocked receiver. -/
-theorem blockedReceiverFlowsFromEndpoint_of_shrinks {ctx : LabelingContext}
+theorem blockedReceiverLabelsEqual_of_shrinks {ctx : LabelingContext}
     {st st' : SystemState}
-    (hPre : blockedReceiverFlowsFromEndpoint ctx st)
+    (hPre : blockedReceiverLabelsEqual ctx st)
     (hShrink : blockedReceiverShrinks st st') :
-    blockedReceiverFlowsFromEndpoint ctx st' := by
+    blockedReceiverLabelsEqual ctx st' := by
   intro tid t' epId hLook hB
   obtain ⟨t, hPreLook, hPreB⟩ := hShrink tid t' epId hLook hB
   exact hPre tid t epId hPreLook hPreB
 
 /-- WS-RR RR8.16: the base case — a state with no blocked receiver satisfies the
 fact outright, which is what makes the boot state an inhabitant. -/
-theorem blockedReceiverFlowsFromEndpoint_of_none_blocked {ctx : LabelingContext}
+theorem blockedReceiverLabelsEqual_of_none_blocked {ctx : LabelingContext}
     {st : SystemState}
     (hNone : ∀ (tid : SeLe4n.ThreadId) (t : TCB) (epId : SeLe4n.ObjId),
       lookupTcb st tid = some t →
       t.ipcState ≠ ThreadIpcState.blockedOnReceive epId) :
-    blockedReceiverFlowsFromEndpoint ctx st := by
+    blockedReceiverLabelsEqual ctx st := by
   intro tid t epId hLook hB
   exact absurd hB (hNone tid t epId hLook)
 
@@ -1395,24 +1427,24 @@ because the donor's gate and the donee's gate compose — with **both** ends rea
 the state.
 
 `donationFlowFromBlockedDonor` above reads the donor's end off
-`blockedSenderFlowsToEndpoint` and takes the receiving gate as an argument, which
+`blockedSenderLabelsEqual` and takes the receiving gate as an argument, which
 is what a *blocked* donor's reclaim needs.  The `.call` rendezvous is the other
 shape: its donor is the invoking thread, so its gate is in the dispatch's own hand
 and needs no state predicate, while its donee is a thread the rendezvous found on
 the endpoint's receive queue and whose gate only the state records.  So this form
 takes the sending gate as an argument and reads the receiving one off
-`blockedReceiverFlowsFromEndpoint`, which is the exact mirror image — and the two
+`blockedReceiverLabelsEqual`, which is the exact mirror image — and the two
 together are why the `.call` arm can carry the donation fact at all. -/
 theorem donationFlowToBlockedReceiver {ctx : LabelingContext} {st : SystemState}
     {owner holder : SeLe4n.ThreadId} {holderTcb : TCB} {epId : SeLe4n.ObjId}
-    (hBlockedReceivers : blockedReceiverFlowsFromEndpoint ctx st)
+    (hBlockedReceivers : blockedReceiverLabelsEqual ctx st)
     (hSendGate : securityFlowsTo (ctx.threadLabelOf owner)
       (ctx.endpointLabelOf epId) = true)
     (hHolder : lookupTcb st holder = some holderTcb)
     (hHolderBlocked : holderTcb.ipcState = ThreadIpcState.blockedOnReceive epId) :
     securityFlowsTo (ctx.threadLabelOf owner) (ctx.threadLabelOf holder) = true :=
   securityFlowsTo_trans _ _ _ hSendGate
-    (hBlockedReceivers holder holderTcb epId hHolder hHolderBlocked)
+    (hBlockedReceivers.flowsFromEndpoint hHolder hHolderBlocked)
 
 /-- WS-RR RR8.16: the donation flow fact transports across any step that leaves
 every thread's `schedContextBinding` alone — which is what the tree's own

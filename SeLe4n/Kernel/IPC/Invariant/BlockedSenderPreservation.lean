@@ -15,7 +15,7 @@ import SeLe4n.Kernel.InformationFlow.Invariant.Composition
 /-!
 # WS-RR RR8.16 — the blocked-sender flow fact across the two blocking dispatches
 
-`blockedSenderFlowsToEndpoint` says that every thread blocked *sending* or
+`blockedSenderLabelsEqual` says that every thread blocked *sending* or
 *calling* on an endpoint has a label the endpoint's dominates — the fact the live
 `endpointFlowGate` checked at the transition and the state records no trace of.
 `v0.35.126` gave it a transport relation, an establishment at the one write that
@@ -39,7 +39,7 @@ a module of their own, which is the shape `SyscallSchedContainment.lean` and
 `IPC/Invariant/CancellationBundle.lean` already have: **a claim about several arms
 that no single arm's module can host.**
 
-Nothing is relocated to make that work.  `blockedSenderFlowsToEndpoint`,
+Nothing is relocated to make that work.  `blockedSenderLabelsEqual`,
 `blockedSenderShrinks` and the store establishment stay in
 `InformationFlow/Invariant/Composition.lean`, because this module *can see them* —
 the layering rule is that an owner whose asker cannot reach it is in the wrong
@@ -61,7 +61,7 @@ classification is the content:
    it, and they get `blockedSenderShrinks` directly.
 3. **It writes the blocking state** — `storeTcbIpcStateAndMessage`, the one
    production write that creates a blocked sender.  It carries the fact through
-   `storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint`, whose
+   `storeTcbIpcStateAndMessage_preserves_blockedSenderLabelsEqual`, whose
    `hGate` argument is discharged from the checked dispatch's own
    `endpointFlowGate` — which is why the lift is stated of the **checked** arm
    and is false of the unchecked one.
@@ -339,13 +339,13 @@ reaching here.  Both bounds rejections and every error arm return the pre-state.
 Stated of the **unchecked** operation with the gate as an argument rather than of
 the checked one alone, because the caps-carrying wrapper composes this one and the
 gate is the same value at both levels. -/
-theorem endpointSendDualOnCore_preserves_blockedSenderFlowsToEndpoint
+theorem endpointSendDualOnCore_preserves_blockedSenderLabelsEqual
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload) (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
-    (hPre : blockedSenderFlowsToEndpoint ctx st)
-    (hGate : securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true) :
-    blockedSenderFlowsToEndpoint ctx
+    (hPre : blockedSenderLabelsEqual ctx st)
+    (hGate : ctx.threadLabelOf sender = ctx.endpointLabelOf endpointId) :
+    blockedSenderLabelsEqual ctx
       (endpointSendDualOnCore endpointId sender payload executingCore st).1 := by
   unfold endpointSendDualOnCore
   cases hEp : st.getEndpoint? endpointId with
@@ -361,8 +361,8 @@ theorem endpointSendDualOnCore_preserves_blockedSenderFlowsToEndpoint
         simp only []
         have hInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false
           sender st st1 hObjInv hEnq
-        have hPre1 : blockedSenderFlowsToEndpoint ctx st1 :=
-          blockedSenderFlowsToEndpoint_of_shrinks hPre
+        have hPre1 : blockedSenderLabelsEqual ctx st1 :=
+          blockedSenderLabelsEqual_of_shrinks hPre
             (blockedSenderShrinks_of_ipcStateFrame
               (endpointQueueEnqueue_ipcStateFrame endpointId false sender st st1
                 hObjInv hEnq))
@@ -371,14 +371,14 @@ theorem endpointSendDualOnCore_preserves_blockedSenderFlowsToEndpoint
         | error e => exact hPre
         | ok st2 =>
           simp only []
-          have hPre2 : blockedSenderFlowsToEndpoint ctx st2 :=
-            storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint ctx st1 st2
+          have hPre2 : blockedSenderLabelsEqual ctx st2 :=
+            storeTcbIpcStateAndMessage_preserves_blockedSenderLabelsEqual ctx st1 st2
               sender _ none hInv1 hIpc hPre1
               (by
                 rintro ep' (h | h)
                 · injection h with h'; subst h'; exact hGate
                 · exact absurd h (by simp))
-          exact blockedSenderFlowsToEndpoint_of_shrinks hPre2
+          exact blockedSenderLabelsEqual_of_shrinks hPre2
             (blockedSenderShrinks_of_ipcStateFrame
               (ipcStateFrame_of_objectsAgreeOffRunLinks
                 (SystemState.objectsAgreeOffRunLinks.trans
@@ -397,8 +397,8 @@ theorem endpointSendDualOnCore_preserves_blockedSenderFlowsToEndpoint
           simp only []
           have hInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true
             st st1 receiver headTcb hObjInv hPop
-          have hPre1 : blockedSenderFlowsToEndpoint ctx st1 :=
-            blockedSenderFlowsToEndpoint_of_shrinks hPre
+          have hPre1 : blockedSenderLabelsEqual ctx st1 :=
+            blockedSenderLabelsEqual_of_shrinks hPre
               (blockedSenderShrinks_of_ipcStateFrame
                 (endpointQueuePopHead_ipcStateFrame endpointId true st st1 receiver
                   headTcb hObjInv hPop))
@@ -408,11 +408,11 @@ theorem endpointSendDualOnCore_preserves_blockedSenderFlowsToEndpoint
             simp only []
             have hInv2 := storeTcbReceiveComplete_preserves_objects_invExt st1 st2
               receiver (some (sendPayloadMessage st sender payload)) hInv1 hRecv
-            have hPre2 : blockedSenderFlowsToEndpoint ctx st2 :=
-              blockedSenderFlowsToEndpoint_of_shrinks hPre1
+            have hPre2 : blockedSenderLabelsEqual ctx st2 :=
+              blockedSenderLabelsEqual_of_shrinks hPre1
                 (storeTcbReceiveComplete_blockedSenderShrinks st1 st2 receiver
                   (some (sendPayloadMessage st sender payload)) hInv1 hRecv)
-            exact blockedSenderFlowsToEndpoint_of_shrinks hPre2
+            exact blockedSenderLabelsEqual_of_shrinks hPre2
               (wakeThread_blockedSenderShrinks st2 receiver executingCore hInv2)
 
 /-- WS-RR RR8.16: and so does the caps-carrying form — the capability transfer
@@ -420,17 +420,17 @@ writes the receiver's CSpace and the derivation tree, never an `ipcState`.
 
 Its error arm returns the *post-send* state rather than the pre-state, which is
 why the fact is established at that state first and the transfer extends it. -/
-theorem endpointSendDualWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint
+theorem endpointSendDualWithCapsOnCore_preserves_blockedSenderLabelsEqual
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
-    (hPre : blockedSenderFlowsToEndpoint ctx st)
-    (hGate : securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true) :
-    blockedSenderFlowsToEndpoint ctx
+    (hPre : blockedSenderLabelsEqual ctx st)
+    (hGate : ctx.threadLabelOf sender = ctx.endpointLabelOf endpointId) :
+    blockedSenderLabelsEqual ctx
       (endpointSendDualWithCapsOnCore endpointId sender payload
         executingCore st).1 := by
-  have hSendPre := endpointSendDualOnCore_preserves_blockedSenderFlowsToEndpoint ctx
+  have hSendPre := endpointSendDualOnCore_preserves_blockedSenderLabelsEqual ctx
     endpointId sender payload executingCore st
     hObjInv hPre hGate
   have hSendInv := endpointSendDualOnCore_preserves_objects_invExt endpointId sender
@@ -449,7 +449,7 @@ theorem endpointSendDualWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint
       all_goals first
         | exact hSendPre
         | (rename_i hT
-           exact blockedSenderFlowsToEndpoint_of_shrinks hSendPre
+           exact blockedSenderLabelsEqual_of_shrinks hSendPre
              (blockedSenderShrinks_of_ipcStateFrame
                (receiveTransferCaps_ipcStateFrame hSendInv hT)))
 
@@ -462,21 +462,21 @@ condition supplies, through `endpointFlowGate_implies_securityFlowsTo`.
 
 It is a theorem about the **checked** arm and is false of the unchecked one: what
 discharges the blocking store's obligation is the gate this dispatch evaluates. -/
-theorem endpointSendCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint
+theorem endpointSendCrossCoreDispatchChecked_preserves_blockedSenderLabelsEqual
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
-    (hPre : blockedSenderFlowsToEndpoint ctx st) :
-    blockedSenderFlowsToEndpoint ctx
+    (hPre : blockedSenderLabelsEqual ctx st) :
+    blockedSenderLabelsEqual ctx
       (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
         executingCore st).1 := by
   unfold endpointSendCrossCoreDispatchChecked
   split
   · rename_i hGate
-    exact endpointSendDualWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint ctx
+    exact endpointSendDualWithCapsOnCore_preserves_blockedSenderLabelsEqual ctx
       endpointId sender payload executingCore st hObjInv hPre
-      (endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate)
+      (endpointFlowGate_implies_eq ctx endpointId _ _ hGate)
   · exact hPre
 
 -- ============================================================================
@@ -496,13 +496,13 @@ which is not a blocked *sender* — a caller waiting on a reply is queued on no
 endpoint's send queue and reaches no endpoint object.  Both of those stores go
 through the same establishment lemma with a **vacuous** `hGate` argument, which is
 exactly what that lemma's "stated for an arbitrary `ipc`" clause is for. -/
-theorem endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint
+theorem endpointCallOnCore_preserves_blockedSenderLabelsEqual
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload) (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
-    (hPre : blockedSenderFlowsToEndpoint ctx st)
-    (hGate : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = true) :
-    blockedSenderFlowsToEndpoint ctx
+    (hPre : blockedSenderLabelsEqual ctx st)
+    (hGate : ctx.threadLabelOf caller = ctx.endpointLabelOf endpointId) :
+    blockedSenderLabelsEqual ctx
       (endpointCallOnCore endpointId caller payload executingCore st).1 := by
   unfold endpointCallOnCore
   cases hEp : st.getEndpoint? endpointId with
@@ -518,8 +518,8 @@ theorem endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint
         simp only []
         have hInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false
           caller st st1 hObjInv hEnq
-        have hPre1 : blockedSenderFlowsToEndpoint ctx st1 :=
-          blockedSenderFlowsToEndpoint_of_shrinks hPre
+        have hPre1 : blockedSenderLabelsEqual ctx st1 :=
+          blockedSenderLabelsEqual_of_shrinks hPre
             (blockedSenderShrinks_of_ipcStateFrame
               (endpointQueueEnqueue_ipcStateFrame endpointId false caller st st1
                 hObjInv hEnq))
@@ -528,14 +528,14 @@ theorem endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint
         | error e => exact hPre
         | ok st2 =>
           simp only []
-          have hPre2 : blockedSenderFlowsToEndpoint ctx st2 :=
-            storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint ctx st1 st2
+          have hPre2 : blockedSenderLabelsEqual ctx st2 :=
+            storeTcbIpcStateAndMessage_preserves_blockedSenderLabelsEqual ctx st1 st2
               caller _ none hInv1 hIpc hPre1
               (by
                 rintro ep' (h | h)
                 · exact absurd h (by simp)
                 · injection h with h'; subst h'; exact hGate)
-          exact blockedSenderFlowsToEndpoint_of_shrinks hPre2
+          exact blockedSenderLabelsEqual_of_shrinks hPre2
             (blockedSenderShrinks_of_ipcStateFrame
               (ipcStateFrame_of_objectsAgreeOffRunLinks
                 (SystemState.objectsAgreeOffRunLinks.trans
@@ -553,8 +553,8 @@ theorem endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint
           simp only []
           have hInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true
             st st1 receiver headTcb hObjInv hPop
-          have hPre1 : blockedSenderFlowsToEndpoint ctx st1 :=
-            blockedSenderFlowsToEndpoint_of_shrinks hPre
+          have hPre1 : blockedSenderLabelsEqual ctx st1 :=
+            blockedSenderLabelsEqual_of_shrinks hPre
               (blockedSenderShrinks_of_ipcStateFrame
                 (endpointQueuePopHead_ipcStateFrame endpointId true st st1 receiver
                   headTcb hObjInv hPop))
@@ -565,11 +565,11 @@ theorem endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint
             rcases hCl : lookupTcb st caller with _ | _
             · exact hPre
             simp only
-            have hPre2 : blockedSenderFlowsToEndpoint ctx st2 :=
-              blockedSenderFlowsToEndpoint_of_shrinks hPre1
+            have hPre2 : blockedSenderLabelsEqual ctx st2 :=
+              blockedSenderLabelsEqual_of_shrinks hPre1
                 (storeTcbReceiveComplete_blockedSenderShrinks st1 st2 receiver
                   (some (sendPayloadMessage st caller payload)) hInv1 hRecv)
-            exact blockedSenderFlowsToEndpoint_of_shrinks hPre2
+            exact blockedSenderLabelsEqual_of_shrinks hPre2
               (blockedSenderShrinks_of_ipcStateFrame
                 ((ipcStateFrame_of_objectsAgreeOffRunLinks
                   (endpointCallOnCore_noReply_objectsAgree st1 st2 receiver _ caller
@@ -588,8 +588,8 @@ theorem endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint
         simp only []
         have hInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true
           st st1 receiver headTcb hObjInv hPop
-        have hPre1 : blockedSenderFlowsToEndpoint ctx st1 :=
-          blockedSenderFlowsToEndpoint_of_shrinks hPre
+        have hPre1 : blockedSenderLabelsEqual ctx st1 :=
+          blockedSenderLabelsEqual_of_shrinks hPre
             (blockedSenderShrinks_of_ipcStateFrame
               (endpointQueuePopHead_ipcStateFrame endpointId true st st1 receiver
                 headTcb hObjInv hPop))
@@ -599,17 +599,17 @@ theorem endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint
           simp only []
           have hInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2
             receiver _ (some (sendPayloadMessage st caller payload)) hInv1 hReady
-          have hPre2 : blockedSenderFlowsToEndpoint ctx st2 :=
-            storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint ctx st1 st2
+          have hPre2 : blockedSenderLabelsEqual ctx st2 :=
+            storeTcbIpcStateAndMessage_preserves_blockedSenderLabelsEqual ctx st1 st2
               receiver _ (some (sendPayloadMessage st caller payload)) hInv1 hReady hPre1
               (by rintro ep' (h | h) <;> exact absurd h (by simp))
           have hInv3 : (wakeThread st2 receiver executingCore).1.objects.invExt := by
             rw [wakeThread_state_eq_enqueue]
             exact enqueueRunnableOnCore_preserves_objects_invExt st2
               (determineTargetCore st2 receiver) receiver hInv2
-          have hPre3 : blockedSenderFlowsToEndpoint ctx
+          have hPre3 : blockedSenderLabelsEqual ctx
               (wakeThread st2 receiver executingCore).1 :=
-            blockedSenderFlowsToEndpoint_of_shrinks hPre2
+            blockedSenderLabelsEqual_of_shrinks hPre2
               (wakeThread_blockedSenderShrinks st2 receiver executingCore hInv2)
           cases hReply : storeTcbIpcStateAndMessage (wakeThread st2 receiver executingCore).1
               caller (.blockedOnReply endpointId (some receiver)) none with
@@ -618,8 +618,8 @@ theorem endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint
             simp only []
             have hInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ st4
               caller _ none hInv3 hReply
-            have hPre4 : blockedSenderFlowsToEndpoint ctx st4 :=
-              storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint ctx _ st4
+            have hPre4 : blockedSenderLabelsEqual ctx st4 :=
+              storeTcbIpcStateAndMessage_preserves_blockedSenderLabelsEqual ctx _ st4
                 caller _ none hInv3 hReply hPre3
                 (by rintro ep' (h | h) <;> exact absurd h (by simp))
             cases hLink : SystemState.linkServerStashedReply caller receiver st4 with
@@ -627,29 +627,29 @@ theorem endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint
             | ok pair =>
               obtain ⟨u, st5⟩ := pair
               simp only []
-              have hPre5 : blockedSenderFlowsToEndpoint ctx st5 :=
-                blockedSenderFlowsToEndpoint_of_shrinks hPre4
+              have hPre5 : blockedSenderLabelsEqual ctx st5 :=
+                blockedSenderLabelsEqual_of_shrinks hPre4
                   (blockedSenderShrinks_of_ipcStateFrame
                     (linkServerStashedReply_ipcStateFrame st4 st5 caller receiver
                       hInv4 hLink))
-              exact blockedSenderFlowsToEndpoint_of_shrinks hPre5
+              exact blockedSenderLabelsEqual_of_shrinks hPre5
                 (blockedSenderShrinks_of_ipcStateFrame
                   (ipcStateFrame_of_objectsAgreeOffRunLinks
                     ((SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ caller receiver).trans
                       (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore))))
 
 /-- WS-RR RR8.16: and the caps-carrying call form, for the send's reason. -/
-theorem endpointCallWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint
+theorem endpointCallWithCapsOnCore_preserves_blockedSenderLabelsEqual
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
-    (hPre : blockedSenderFlowsToEndpoint ctx st)
-    (hGate : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = true) :
-    blockedSenderFlowsToEndpoint ctx
+    (hPre : blockedSenderLabelsEqual ctx st)
+    (hGate : ctx.threadLabelOf caller = ctx.endpointLabelOf endpointId) :
+    blockedSenderLabelsEqual ctx
       (endpointCallWithCapsOnCore endpointId caller payload
         executingCore st).1 := by
-  have hCallPre := endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint ctx endpointId
+  have hCallPre := endpointCallOnCore_preserves_blockedSenderLabelsEqual ctx endpointId
     caller payload executingCore st hObjInv
     hPre hGate
   have hCallInv := endpointCallOnCore_preserves_objects_invExt endpointId caller
@@ -668,7 +668,7 @@ theorem endpointCallWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint
       all_goals first
         | exact hCallPre
         | (rename_i hT
-           exact blockedSenderFlowsToEndpoint_of_shrinks hCallPre
+           exact blockedSenderLabelsEqual_of_shrinks hCallPre
              (blockedSenderShrinks_of_ipcStateFrame
                (receiveTransferCaps_ipcStateFrame hCallInv hT)))
 
@@ -679,18 +679,18 @@ priority-inheritance chain walk, and neither writes an `ipcState`: the donation'
 own `donationReadAgreement` states that conjunct outright, and the walk writes
 `pipBoost` and run-queue buckets — the fact its own definition already relies on
 when it reads `blockingServer` from the pre-mutation state. -/
-theorem endpointCallCrossCoreDispatch_preserves_blockedSenderFlowsToEndpoint
+theorem endpointCallCrossCoreDispatch_preserves_blockedSenderLabelsEqual
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
-    (hPre : blockedSenderFlowsToEndpoint ctx st)
-    (hGate : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = true)
+    (hPre : blockedSenderLabelsEqual ctx st)
+    (hGate : ctx.threadLabelOf caller = ctx.endpointLabelOf endpointId)
     (lend : Bool := true) :
-    blockedSenderFlowsToEndpoint ctx
+    blockedSenderLabelsEqual ctx
       (endpointCallCrossCoreDispatch endpointId caller payload
         executingCore st lend).1 := by
-  have hWcPre := endpointCallWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint ctx
+  have hWcPre := endpointCallWithCapsOnCore_preserves_blockedSenderLabelsEqual ctx
     endpointId caller payload executingCore st hObjInv hPre hGate
   have hWcInv := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload
     executingCore st hObjInv
@@ -717,13 +717,13 @@ theorem endpointCallCrossCoreDispatch_preserves_blockedSenderFlowsToEndpoint
               rcases applyCallDonationOnCoreWhen_cases hDon with ⟨_, hDon⟩ | ⟨_, rfl⟩
               · have hDonInv := applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _
                   hWcInv hDon
-                refine blockedSenderFlowsToEndpoint_of_shrinks ?_
+                refine blockedSenderLabelsEqual_of_shrinks ?_
                   (blockedSenderShrinks_of_ipcStateFrame
                     (propagatePipChainCrossCore_ipcStateFrame _ _ executingCore _ hDonInv))
-                exact blockedSenderFlowsToEndpoint_of_shrinks hWcPre
+                exact blockedSenderLabelsEqual_of_shrinks hWcPre
                   (blockedSenderShrinks_of_ipcStateFrame
                     (applyCallDonationOnCore_ipcStateFrame _ _ _ _ _ _ hWcInv hDon))
-              · exact blockedSenderFlowsToEndpoint_of_shrinks hWcPre
+              · exact blockedSenderLabelsEqual_of_shrinks hWcPre
                   (blockedSenderShrinks_of_ipcStateFrame
                     (propagatePipChainCrossCore_ipcStateFrame _ _ executingCore _ hWcInv))
           all_goals exact hWcPre
@@ -735,21 +735,21 @@ theorem endpointCallCrossCoreDispatch_preserves_blockedSenderFlowsToEndpoint
 The second half of the lift the `v0.35.126` register row named as owed.  The
 denial returns the pre-state; the admitted branch is the full cross-core dispatch
 under the gate the branch condition supplies. -/
-theorem endpointCallCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint
+theorem endpointCallCrossCoreDispatchChecked_preserves_blockedSenderLabelsEqual
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
-    (hPre : blockedSenderFlowsToEndpoint ctx st) :
-    blockedSenderFlowsToEndpoint ctx
+    (hPre : blockedSenderLabelsEqual ctx st) :
+    blockedSenderLabelsEqual ctx
       (endpointCallCrossCoreDispatchChecked ctx endpointId caller payload
         executingCore st).1 := by
   unfold endpointCallCrossCoreDispatchChecked
   split
   · rename_i hGate
-    exact endpointCallCrossCoreDispatch_preserves_blockedSenderFlowsToEndpoint ctx endpointId
+    exact endpointCallCrossCoreDispatch_preserves_blockedSenderLabelsEqual ctx endpointId
       caller payload executingCore st hObjInv hPre
-      (endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate) _
+      (endpointFlowGate_implies_eq ctx endpointId _ _ hGate) _
   · exact hPre
 
 -- ============================================================================
@@ -863,7 +863,7 @@ dispatch **mints** a donation, so the fact at the post-state is about a binding
 the pre-state does not have, and what makes the two ends comparable is the
 *receiving* gate the server passed when it blocked on its own `Recv` —
 `donationFlowFromBlockedDonor`'s `hReceiveGate` argument, which no state recorded.
-`v0.35.196` recorded it (`blockedReceiverFlowsFromEndpoint`, established at the
+`v0.35.196` recorded it (`blockedReceiverLabelsEqual`, established at the
 same store from the receive arm's own gate), so the `.call` lift exists too and
 is §6 below; the two differ in the direction their derivation reads, not in
 strength. -/
@@ -918,7 +918,7 @@ reads through (where the pre-state fact applies).
 `hFlow` is an argument rather than a hypothesis on the state because it is the
 composition of two **transition-time** gates, and the caller that can discharge it
 is the checked dispatch — through `donationFlowToBlockedReceiver`, which reads the
-receiving half off `blockedReceiverFlowsFromEndpoint`.  It is demanded only under
+receiving half off `blockedReceiverLabelsEqual`.  It is demanded only under
 the donation's own guard, which is what lets a caller discharge it from the
 receiver's TCB: a `some` there **is** `lookupTcb`-resolution of both principals
 (`callDonationSchedContext?_some_char`), and where the guard declines the step is
@@ -996,7 +996,7 @@ The `.call` rendezvous donates the invoking thread's reservation to the endpoint
 **receive-queue head**, so the flow the donation needs is the composition of two
 gates that ran at two different times: the caller's, which the dispatch is
 evaluating now, and the receiver's, which ran when *it* blocked and which only
-`blockedReceiverFlowsFromEndpoint` records.
+`blockedReceiverLabelsEqual` records.
 
 `queueHeadBlockedConsistent` is what joins them — it says a receive queue's head is
 `.blockedOnReceive` on **that** endpoint, which is the premise the receiver-side
@@ -1008,7 +1008,7 @@ is a queue fact rather than a gate fact. -/
 theorem rendezvousReceiverFlow {ctx : LabelingContext} {st : SystemState}
     {endpointId : SeLe4n.ObjId} {caller receiverTid : SeLe4n.ThreadId}
     {ep : Endpoint} {rTcb : TCB}
-    (hBlockedReceivers : blockedReceiverFlowsFromEndpoint ctx st)
+    (hBlockedReceivers : blockedReceiverLabelsEqual ctx st)
     (hQueueHeads : queueHeadBlockedConsistent st)
     (hGate : securityFlowsTo (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true)
@@ -1047,7 +1047,7 @@ theorem endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder
     (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : donationOwnerFlowsToHolder ctx st)
-    (hBlockedReceivers : blockedReceiverFlowsFromEndpoint ctx st)
+    (hBlockedReceivers : blockedReceiverLabelsEqual ctx st)
     (hQueueHeads : queueHeadBlockedConsistent st)
     (hGate : securityFlowsTo (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true) (lend : Bool := true) :
@@ -1125,7 +1125,7 @@ theorem endpointCallCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolde
     (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : donationOwnerFlowsToHolder ctx st)
-    (hBlockedReceivers : blockedReceiverFlowsFromEndpoint ctx st)
+    (hBlockedReceivers : blockedReceiverLabelsEqual ctx st)
     (hQueueHeads : queueHeadBlockedConsistent st) :
     donationOwnerFlowsToHolder ctx
       (endpointCallCrossCoreDispatchChecked ctx endpointId caller payload

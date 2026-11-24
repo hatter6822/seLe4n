@@ -20220,8 +20220,8 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def donationOwnerFlowsToHolder[^\n]*(
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def donationOwnerFlowsToHolder[^\n]*(\n([ \t][^\n]*)?)*schedContextBinding = .donated" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
 # The endpoint-flow invariant covers BOTH blocked-sender states.  Dropping either
 # keeps the definition and silently exempts one of the two arms.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def blockedSenderFlowsToEndpoint[^\n]*(\n([ \t][^\n]*)?)*\(t.ipcState = ThreadIpcState.blockedOnSend epId ∨" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def blockedSenderFlowsToEndpoint[^\n]*(\n([ \t][^\n]*)?)*ThreadIpcState.blockedOnCall epId\)" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def blockedSenderLabelsEqual[^\n]*(\n([ \t][^\n]*)?)*\(t.ipcState = ThreadIpcState.blockedOnSend epId ∨" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def blockedSenderLabelsEqual[^\n]*(\n([ \t][^\n]*)?)*ThreadIpcState.blockedOnCall epId\)" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
 # RR8.9 is DISCHARGED, and the load-bearing half of that claim is what the
 # discharge does NOT take: a run-queue removal (`v0.35.158`; an insert until
 # then) is filtered by the removed thread's own observability, so nothing here
@@ -21776,7 +21776,7 @@ run_negative_check "INVARIANT" rg -F -n '`SeLe4n.Model.SystemState._sizeOf_inst'
 # WS-RR RR8.16 (v0.35.126, PR #897 review): the two information-flow gate facts
 # are ESTABLISHED and TRANSPORTED, not only consumed
 # ===========================================================================
-# `v0.35.83`/`v0.35.84` introduced `blockedSenderFlowsToEndpoint` and
+# `v0.35.83`/`v0.35.84` introduced `blockedSenderLabelsEqual` and
 # `donationOwnerFlowsToHolder` and consumed both as hypotheses and nothing else --
 # no theorem established either where the fact is created, none transported it
 # across a step, no state inhabited either -- so the cancellation-NI reductions
@@ -21790,7 +21790,7 @@ run_negative_check "INVARIANT" rg -F -n '`SeLe4n.Model.SystemState._sizeOf_inst'
 run_check "INVARIANT" rg -F -n 'def blockedSenderShrinks (st st' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -F -n '      ∃ t, lookupTcb st tid = some t ∧' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -F -n 'theorem blockedSenderShrinks_of_ipcStateFrame {st st' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
-run_check "INVARIANT" rg -F -n 'theorem blockedSenderFlowsToEndpoint_of_shrinks {ctx : LabelingContext}' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -F -n 'theorem blockedSenderLabelsEqual_of_shrinks {ctx : LabelingContext}' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 # (2) THE DONATION FACT IS A CONSEQUENCE, not a second assumption: the donor own
 # admission gate composed with the receiving side, which is what makes a
 # donation two ends comparable at all.
@@ -21800,7 +21800,7 @@ run_check "INVARIANT" rg -F -n 'theorem donationOwnerFlowsToHolder_of_sameSchedC
 # (3) ESTABLISHMENT IS AT THE ONE WRITE, with the gate as an argument QUANTIFIED
 # over the endpoint -- a hypothesis at one fixed endpoint would say nothing about a
 # store of a different blocking state, and the store records no trace of the gate.
-run_check "INVARIANT" rg -F -n 'theorem storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -F -n 'theorem storeTcbIpcStateAndMessage_preserves_blockedSenderLabelsEqual' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -F -n '    (hGate : ∀ epId : SeLe4n.ObjId,' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 # ...and the frame that makes it ONE case split now lives beside the primitive it
 # frames, not in the cross-core arm module the information-flow layer cannot reach
@@ -21813,9 +21813,9 @@ run_negative_check "INVARIANT" rg -F -n 'theorem storeTcbIpcStateAndMessage_tcb_
 # `bootSafeTcbCheck` refuses a blocked or bound config TCB and the idle fold
 # installs neither.
 run_check "INVARIANT" rg -F -n 'theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_tcb_quiescent' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -F -n 'theorem bootFromPlatformCheckedWithIdleThreadsFor_blockedSenderFlowsToEndpoint' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -F -n 'theorem bootFromPlatformCheckedWithIdleThreadsFor_blockedSenderLabelsEqual' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -F -n 'theorem bootFromPlatformCheckedWithIdleThreadsFor_donationOwnerFlowsToHolder' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -F -n '    blockedSenderFlowsToEndpoint ctx ist.state ∧' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -F -n '    blockedSenderLabelsEqual ctx ist.state ∧' SeLe4n/Platform/Boot.lean
 # ...over the fold AT-ANY-KEY characterisation, so the per-TCB statement is a
 # case analysis rather than a `Nodup` argument.
 run_check "INVARIANT" rg -F -n 'theorem foldl_storeIdleThread_objects_cases' SeLe4n/Platform/Boot.lean
@@ -21836,16 +21836,16 @@ run_check "INVARIANT" rg -F -n '  let hTcb := bootFromPlatformChecked_ok_tcb_boo
 # (1) THE LIFT IS AT THE CHECKED ARM, and is false of the unchecked one: what
 # discharges the blocking store's obligation is the gate the dispatch evaluates,
 # read through `endpointFlowGate_implies_securityFlowsTo`.
-run_check "INVARIANT" rg -F -n 'theorem endpointSendCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
-run_check "INVARIANT" rg -F -n 'theorem endpointCallCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointSendCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_securityFlowsTo" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_securityFlowsTo" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
+run_check "INVARIANT" rg -F -n 'theorem endpointSendCrossCoreDispatchChecked_preserves_blockedSenderLabelsEqual' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+run_check "INVARIANT" rg -F -n 'theorem endpointCallCrossCoreDispatchChecked_preserves_blockedSenderLabelsEqual' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointSendCrossCoreDispatchChecked_preserves_blockedSenderLabelsEqual[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_eq" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatchChecked_preserves_blockedSenderLabelsEqual[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_eq" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
 # (2) THE BLOCKING STORE IS THE ONLY STEP THAT NEEDS THE GATE.  Both composites
-# reach `storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint`; the
+# reach `storeTcbIpcStateAndMessage_preserves_blockedSenderLabelsEqual`; the
 # `.call` rendezvous reaches it TWICE with a vacuous gate, because `.ready` and
 # `.blockedOnReply` are not blocked-sender states.  A revert that hypothesised the
 # fact at the post-state instead would not name this lemma at all.
-run_check "INVARIANT" rg -F -n 'storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint ctx st1 st2' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+run_check "INVARIANT" rg -F -n 'storeTcbIpcStateAndMessage_preserves_blockedSenderLabelsEqual ctx st1 st2' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
 run_check "INVARIANT" rg -F -n "                rintro ep' (h | h)" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
 # (3) THE `.ready` WRITERS SHRINK RATHER THAN FRAME.  A wake and a receive
 # completion write `.ready`, which is neither blocked-sender state — so they are
@@ -23916,39 +23916,39 @@ run_check "INVARIANT" bash -lc 'rg -U -n "  runReplySeamChecks\n  runReplyRecvFa
 # WS-RR RR8.16 (`v0.35.196`) — the RECEIVING side of the endpoint gate
 # ============================================================================
 #
-# Register row 183's two parts.  (1) `blockedSenderFlowsToEndpoint` records what
+# Register row 183's two parts.  (1) `blockedSenderLabelsEqual` records what
 # the SENDING gate checked; nothing recorded what the RECEIVING gate checked, so
 # the one transition that MINTS a donation could carry no flow fact.  (2)
 # `ipcReachable` is not parametrised by a `LabelingContext`, so neither fact
 # could be a field of it.
 #
-# DIRECTION is the whole content of the predicate: the sender's gate reads
-# `thread ⊑ endpoint` and the receiver's reads `endpoint ⊑ thread`, so a
-# mutation that swaps the two arguments gives the sibling's reading and the
-# transitivity in `donationFlowToBlockedReceiver` stops composing.  The gap is
-# bounded to the declaration.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def blockedReceiverFlowsFromEndpoint[^\n]*(\n([ \t][^\n]*)?)*securityFlowsTo \(ctx\.endpointLabelOf epId\) \(ctx\.threadLabelOf tid\)" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def blockedReceiverFlowsFromEndpoint[^\n]*(\n([ \t][^\n]*)?)*ThreadIpcState\.blockedOnReceive epId" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+# WS-SX SX11.1 (D38): the predicate is an EQUALITY -- each endpoint gate is
+# two-way (`endpointFlowGate_implies_eq`), so a blocked receiver has its
+# endpoint's label, and the one-way reading `endpoint ⊑ thread` is the
+# corollary `blockedReceiverLabelsEqual.flowsFromEndpoint`.  The gap is bounded
+# to the declaration.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def blockedReceiverLabelsEqual[^\n]*(\n([ \t][^\n]*)?)*ctx\.threadLabelOf tid = ctx\.endpointLabelOf epId" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def blockedReceiverLabelsEqual[^\n]*(\n([ \t][^\n]*)?)*ThreadIpcState\.blockedOnReceive epId" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
 # ESTABLISHED AT THE SAME WRITE as its sibling -- one production store of a
 # blocking `ipcState`, so a second establishment site is a second answer.
-run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_preserves_blockedReceiverFlowsFromEndpoint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
-run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_preserves_blockedReceiverLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_preserves_blockedSenderLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -n '^theorem blockedReceiverShrinks_of_ipcStateFrame($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
-run_check "INVARIANT" rg -n '^theorem blockedReceiverFlowsFromEndpoint_of_shrinks($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
-run_check "INVARIANT" rg -n '^theorem blockedReceiverFlowsFromEndpoint_of_none_blocked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem blockedReceiverLabelsEqual_of_shrinks($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem blockedReceiverLabelsEqual_of_none_blocked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 # RELATION: the new derivation reads the receive half OFF THE STATE.  Its
 # `v0.35.126` sibling `donationFlowFromBlockedDonor` takes the same fact as an
 # ARGUMENT (`hReceiveGate`), which is exactly why no dispatch could discharge
 # it; a mutation that restores that shape here keeps every token and reopens
 # the row.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationFlowToBlockedReceiver[^\n]*(\n([ \t][^\n]*)?)*hBlockedReceivers : blockedReceiverFlowsFromEndpoint ctx st" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationFlowToBlockedReceiver[^\n]*(\n([ \t][^\n]*)?)*hBlockedReceivers : blockedReceiverLabelsEqual ctx st" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationFlowToBlockedReceiver[^\n]*(\n([ \t][^\n]*)?)*hReceiveGate" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
 # The rendezvous resolution: the receiver is the endpoint's receive-queue head,
 # and `queueHeadBlockedConsistent` -- an `ipcInvariantFull` conjunct -- is what
 # says that thread is `.blockedOnReceive` on THAT endpoint.  That conjunct is
 # the premise the row predicted the lift would have to take.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem rendezvousReceiverFlow[^\n]*(\n([ \t][^\n]*)?)*hQueueHeads : queueHeadBlockedConsistent st" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder[^\n]*(\n([ \t][^\n]*)?)*hBlockedReceivers : blockedReceiverFlowsFromEndpoint ctx st" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder[^\n]*(\n([ \t][^\n]*)?)*hBlockedReceivers : blockedReceiverLabelsEqual ctx st" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder[^\n]*(\n([ \t][^\n]*)?)*hQueueHeads : queueHeadBlockedConsistent st" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
 # ...and the CHECKED arm supplies the caller's gate from its own branch
 # condition rather than taking it, which is the shape the send's lift already
@@ -23969,7 +23969,17 @@ run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_tcb_backward($|
 # (2) The labelled pack is OPT-IN: `ipcReachable` is unchanged and projects out
 # of it, so no existing consumer carries a `ctx` it does not read.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def ipcReachableUnder[^\n]*(\n([ \t][^\n]*)?)*ipcReachable st ." SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def ipcReachableUnder[^\n]*(\n([ \t][^\n]*)?)*blockedReceiverFlowsFromEndpoint ctx st" SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def ipcReachableUnder[^\n]*(\n([ \t][^\n]*)?)*blockedReceiverLabelsEqual ctx st" SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
+# WS-SX SX11.1 (D38): blocked threads carry their endpoint's label.  Both
+# predicates are equalities, bounded to the definition; the one-way forms are
+# corollaries and their definitions are retired; the pair is the carried fact,
+# and the started boot inhabits it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def blockedSenderLabelsEqual[^\n]*(\n([ \t][^\n]*)?)*ctx\.threadLabelOf tid = ctx\.endpointLabelOf epId" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_negative_check "INVARIANT" rg -n '^def (blockedSenderFlowsToEndpoint|blockedReceiverFlowsFromEndpoint)($|[ ({:\[\]])' SeLe4n
+run_check "INVARIANT" rg -n '^theorem blockedSenderLabelsEqual\.flowsToEndpoint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem blockedReceiverLabelsEqual\.flowsFromEndpoint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointWaitersLabelsEqual[^\n]*\n  blockedSenderLabelsEqual ctx st ∧ blockedReceiverLabelsEqual ctx st" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_endpointWaitersLabelsEqual($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem ipcReachableUnder_default($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
 # MEASURED: the decisive case keeps the caller's gate passing and the donation
 # minted, and makes the RECEIVER-side fact false -- so the hypothesis the lift

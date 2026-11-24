@@ -718,7 +718,7 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore
 -- **WS-RR RR8.16**: `storeTcbIpcStateAndMessage_tcb_backward_fields` used to be
 -- declared here.  It is a **frame over a primitive**, and it sat in a cross-core
 -- *arm* module that the information-flow layer cannot reach -- so the establishment
--- of `blockedSenderFlowsToEndpoint` at the one write that creates a blocked sender
+-- of `blockedSenderLabelsEqual` at the one write that creates a blocked sender
 -- was unstateable beside the predicate.  It now lives beside
 -- `storeTcbIpcStateAndMessage` in `IPC/Operations/Endpoint.lean`, next to its two
 -- existing siblings (`_preserves_objects_ne` and `storeTcbIpcState`'s own frames,
