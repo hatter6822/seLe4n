@@ -147,8 +147,8 @@ core (SX20), the compound syscalls' invoke phase (SX21), timeout faults with
 SetTimeoutEndpoint and SetSchedParams (SX22), the full CNode invocation set
 (SX23), seL4's error codes in the label (SX24), seL4's remaining
 invocations (SX25) and closure (SX26). Rows and
-decisions D1–D40 (D1–D17 and D40 each default taken, owner card open; D18–D32,
-D34 and D36–D39 the owner's) are in
+decisions D1–D41 (D1–D17 each default taken, owner card open; D18–D32,
+D34 and D36–D41 the owner's) are in
 [`SEL4_ABI_FIDELITY_PLAN.md`](../planning/SEL4_ABI_FIDELITY_PLAN.md). It
 supersedes WS-UC's "next PR" scope.
 

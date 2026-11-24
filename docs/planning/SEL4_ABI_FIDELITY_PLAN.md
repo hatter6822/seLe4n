@@ -30,11 +30,12 @@
 > **Rows**: SX1–SX26, numbered in the order they are implemented, one PR each.
 > Each row consumes only lower-numbered rows. A row that changes a transition
 > carries the proofs that cover it. No two rows run in parallel.
-> **Decisions**: D1–D32, D34, D36–D41 (§3). D1–D17, D40 and D41 are each **default taken; owner card open**;
+> **Decisions**: D1–D32, D34, D36–D41 (§3). D1–D17 are each **default taken; owner card open**;
 > D7 follows the owner's standing rule (implement seL4's behaviour, never defer
 > it). D18–D21 were decided by the owner when SX7 closed; D22 when SX8 started;
 > D23–D32 during SX8; D34 when SX9 started; D36 and D37 during SX9; D38 during SX10; D39 when the binding-invariant row
-> started; D40 during SX13; D41 during SX14.
+> started; D40 during SX13 (confirmed by the owner's merge of PR #1101); D41 during SX14
+> (confirmed by the owner, 2026-11-24).
 > **Supersedes**: the "Next PR" scope in
 > `docs/agent_guide/WORKSTREAM_CONTEXT.md` (the root task's boot IPC buffer
 > and the guard in the capability with `CNode_Mutate`). Both are rows here
@@ -130,7 +131,7 @@ facts it rests on are restated here.
 
 ## 3. Owner decisions
 
-D1–D17, D40 and D41 are each **default taken; owner card open**; D18–D32, D34 and D36–D39 are the owner's.
+D1–D17 are each **default taken; owner card open**; D18–D32, D34 and D36–D41 are the owner's.
 A different answer changes only the rows that cite it.
 
 - **D1. The error label.** *Default:* **seL4's error codes (1–10) in the
@@ -348,8 +349,8 @@ A different answer changes only the rows that cite it.
   redirect deleted becomes SX12 and the binding invariant completed becomes
   SX13. The alternative, a fifth clause naming the origin, would be deleted with
   the field one row later.
-- **D40. SX13's wrap.** *Default taken (2026-11-24, "Wrap, new rows"); owner
-  card open.* SX13 closes at `v0.37.42` at its validated point: the binding
+- **D40. SX13's wrap.** *The owner's ("Wrap, new rows"; default taken
+  2026-11-24, confirmed by the owner's merge of PR #1101).* SX13 closes at `v0.37.42` at its validated point: the binding
   grow and the binding-words leaf lemmas. Its first cut, measured by stubbing
   every failing lender declaration to a fixpoint, needs 37 declarations in 9
   files and a census witness, about 10 sibling lemmas for the summaries that
@@ -363,7 +364,8 @@ A different answer changes only the rows that cite it.
   became SX17–SX26). No live path lends a context across unequal labels; the
   gap is in the proof, not the kernel.
 - **D41. The cancel's pop returns to the frame's recorded caller ("Match
-  seL4").** *Default taken (2026-11-24); owner card open.* The cancel's
+  seL4").** *The owner's (default taken 2026-11-24, confirmed by the owner
+  the same day).* The cancel's
   donation return (`returnDonationToCancelledCaller`) popped to the cancelled
   thread itself, read from the thread's own reply link, and nothing in the
   pop's pre-state tied that thread to the frame it pops: the labelled pop's

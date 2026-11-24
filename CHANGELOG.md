@@ -1,7 +1,8 @@
 ## v0.37.43 — The cancel pops to the frame's recorded caller, and the row wrapped (WS-SX SX14.1)
 
 SX14 lands its first sub-task, a transition change, then wraps at that point
-(D32).  D41 ("Match seL4") is a default taken with the owner's card open.
+(D32).  D41 ("Match seL4") is the owner's decision (confirmed 2026-11-24),
+as is D40 ("Wrap, new rows", confirmed by the merge of SX13).
 
 - **The cancel's pop reads the frame's recorded caller (SX14.1, D41).**
   seL4's `reply_pop` donates to `reply->replyTCB`.  The cancel's donation
