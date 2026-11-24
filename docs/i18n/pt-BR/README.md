@@ -165,7 +165,7 @@ apontam para ela.
 |----------|-------|
 | **Versão** | `0.37.38` |
 | **Toolchain Lean** | `v4.28.0` |
-| **LoC Lean de produção** | 682.225 em 689 arquivos |
+| **LoC Lean de produção** | 682.233 em 689 arquivos |
 | **LoC Lean de testes** | 92.633 em 71 suítes de testes |
 | **Declarações provadas** | 26.075 declarações de teorema/lema (zero sorry/axiom) |
 | **Crates Rust** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (wrappers em espaço de usuário), `sele4n-hal` (a camada de hardware do núcleo) e o teste de host `sele4n-lean-boundary` |

@@ -165,7 +165,7 @@ folgenden Punkte verweisen darauf.
 |----------|------|
 | **Version** | `0.37.38` |
 | **Lean-Toolchain** | `v4.28.0` |
-| **Produktions-LoC (Lean)** | 682.225 über 689 Dateien |
+| **Produktions-LoC (Lean)** | 682.233 über 689 Dateien |
 | **Test-LoC (Lean)** | 92.633 über 71 Testsuiten |
 | **Bewiesene Deklarationen** | 26.075 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Rust-Crates** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (Userspace-Wrapper), `sele4n-hal` (die Hardwareschicht des Kernels) und der Host-Test `sele4n-lean-boundary` |

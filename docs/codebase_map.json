@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "sel4-lend-assurance",
-      "commit_sha": "12e9e0eda3d8cc1e29e6e90c9b591fea766ba288",
-      "tree_sha": "d3a53e47bd2ef107bf389f37bd1f16f35d467a2f",
-      "committed_at_utc": "2026-11-24T00:00:04+00:00"
+      "commit_sha": "5672b3824a1381084e0f311b19339f491ed877db",
+      "tree_sha": "18399135810578dd79ae748b69f4a2c269454c09",
+      "committed_at_utc": "2026-11-24T01:23:35+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "926fa0263263946dffff6219963a419415dad79fb052a74f936e5d2129140c59"
+    "source_digest": "0a4eb435a7c66aa6a62cbc772d7efbe41e074c9c4bb768db062a6771f9247cdd"
   },
   "summary": {
     "module_count": 760,
@@ -27,7 +27,7 @@
     "version": "0.37.38",
     "lean_toolchain": "v4.28.0",
     "production_files": 689,
-    "production_loc": 682225,
+    "production_loc": 682233,
     "test_files": 71,
     "test_loc": 92633,
     "proved_theorem_lemma_decls": 26075,
@@ -561314,7 +561314,7 @@
           "kind": "def",
           "name": "nonExecutedTransitionsPrivate",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPrivate",
-          "line": 1485,
+          "line": 1489,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.privateIn"
           ]
@@ -561323,7 +561323,7 @@
           "kind": "def",
           "name": "nonExecutedTransitions",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitions",
-          "line": 1531,
+          "line": 1535,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPlain",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPrivate"
@@ -561333,21 +561333,21 @@
           "kind": "def",
           "name": "standsBesideLive",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.standsBesideLive",
-          "line": 1557,
+          "line": 1561,
           "called": []
         },
         {
           "kind": "def",
           "name": "reconciliationViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.reconciliationViolations",
-          "line": 1576,
+          "line": 1580,
           "called": []
         },
         {
           "kind": "def",
           "name": "pinSides",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinSides",
-          "line": 1609,
+          "line": 1613,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.conclusionOf"
           ]
@@ -561356,7 +561356,7 @@
           "kind": "def",
           "name": "pinRelatesPrograms",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinRelatesPrograms",
-          "line": 1641,
+          "line": 1645,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinSides"
           ]
@@ -561365,7 +561365,7 @@
           "kind": "def",
           "name": "pinViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinViolations",
-          "line": 1654,
+          "line": 1658,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinRelatesPrograms"
           ]
@@ -561374,7 +561374,7 @@
           "kind": "theorem",
           "name": "pinWitnessConjunctionOfReflexivity",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessConjunctionOfReflexivity",
-          "line": 1694,
+          "line": 1698,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -561384,7 +561384,7 @@
           "kind": "theorem",
           "name": "pinWitnessReflexiveOverBoth",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessReflexiveOverBoth",
-          "line": 1702,
+          "line": 1706,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -561394,7 +561394,7 @@
           "kind": "theorem",
           "name": "pinWitnessBothOnOneSide",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessBothOnOneSide",
-          "line": 1709,
+          "line": 1713,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -561404,7 +561404,7 @@
           "kind": "def",
           "name": "pinCheckWitnesses",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinCheckWitnesses",
-          "line": 1714,
+          "line": 1718,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessBothOnOneSide",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessConjunctionOfReflexivity",
@@ -561415,7 +561415,7 @@
           "kind": "def",
           "name": "pinCheckWitnessViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinCheckWitnessViolations",
-          "line": 1726,
+          "line": 1730,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.carrierFixpointRefusalViolations",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.committingExports",
@@ -562728,7 +562728,7 @@
           "kind": "def",
           "name": "primitiveCoverageViolations",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.primitiveCoverageViolations",
-          "line": 488,
+          "line": 492,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.chainWritePrimitives"
           ]
@@ -562737,28 +562737,28 @@
           "kind": "def",
           "name": "isProjectConstant",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.isProjectConstant",
-          "line": 508,
+          "line": 512,
           "called": []
         },
         {
           "kind": "def",
           "name": "isAuxiliary",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.isAuxiliary",
-          "line": 540,
+          "line": 544,
           "called": []
         },
         {
           "kind": "def",
           "name": "usesDirectly",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.usesDirectly",
-          "line": 545,
+          "line": 549,
           "called": []
         },
         {
           "kind": "def",
           "name": "storesVia",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.storesVia",
-          "line": 577,
+          "line": 581,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.isProjectConstant",
             "SeLe4n.Testing.ReplyStackWriteCensus.usesDirectly"
@@ -562768,7 +562768,7 @@
           "kind": "def",
           "name": "storesObject",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.storesObject",
-          "line": 585,
+          "line": 589,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.objectStoreSpellings",
             "SeLe4n.Testing.ReplyStackWriteCensus.storesVia"
@@ -562778,14 +562778,14 @@
           "kind": "def",
           "name": "chainWriteFrontier",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.chainWriteFrontier",
-          "line": 589,
+          "line": 593,
           "called": []
         },
         {
           "kind": "def",
           "name": "directWriteCandidates",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.directWriteCandidates",
-          "line": 609,
+          "line": 613,
           "called": [
             "SeLe4n.Testing.DeclarationKind.bodyBearingName",
             "SeLe4n.Testing.ReplyStackWriteCensus.chainWritePrimitives",
@@ -562798,7 +562798,7 @@
           "kind": "def",
           "name": "constructsChainRecord",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.constructsChainRecord",
-          "line": 621,
+          "line": 625,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.chainRecordConstructors",
             "SeLe4n.Testing.ReplyStackWriteCensus.usesDirectly"
@@ -562808,7 +562808,7 @@
           "kind": "def",
           "name": "reachesChainConstructor",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.reachesChainConstructor",
-          "line": 642,
+          "line": 646,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.chainRecordConstructors",
             "SeLe4n.Testing.ReplyStackWriteCensus.isProjectConstant"
@@ -562818,7 +562818,7 @@
           "kind": "def",
           "name": "recordConstructingStoreCandidates",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.recordConstructingStoreCandidates",
-          "line": 663,
+          "line": 667,
           "called": [
             "SeLe4n.Testing.DeclarationKind.bodyBearingName",
             "SeLe4n.Testing.ReplyStackWriteCensus.constructsChainRecord",
@@ -562834,28 +562834,28 @@
           "kind": "inductive",
           "name": "ChainDiscipline",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.ChainDiscipline",
-          "line": 681,
+          "line": 685,
           "called": []
         },
         {
           "kind": "def",
           "name": "isChainForm",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.isChainForm",
-          "line": 715,
+          "line": 719,
           "called": []
         },
         {
           "kind": "def",
           "name": "conclusionOf",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.conclusionOf",
-          "line": 721,
+          "line": 725,
           "called": []
         },
         {
           "kind": "def",
           "name": "isPredicate",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.isPredicate",
-          "line": 728,
+          "line": 732,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.conclusionOf"
           ]
@@ -562864,7 +562864,7 @@
           "kind": "def",
           "name": "isChainPredicate",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.isChainPredicate",
-          "line": 739,
+          "line": 743,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.isChainForm",
             "SeLe4n.Testing.ReplyStackWriteCensus.isPredicate"
@@ -562874,7 +562874,7 @@
           "kind": "def",
           "name": "resultViolations",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.resultViolations",
-          "line": 748,
+          "line": 752,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.conclusionOf",
             "SeLe4n.Testing.ReplyStackWriteCensus.isChainPredicate"
@@ -562884,14 +562884,14 @@
           "kind": "def",
           "name": "lenderPredicates",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.lenderPredicates",
-          "line": 775,
+          "line": 779,
           "called": []
         },
         {
           "kind": "def",
           "name": "lenderResultViolations",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.lenderResultViolations",
-          "line": 783,
+          "line": 787,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.conclusionOf",
             "SeLe4n.Testing.ReplyStackWriteCensus.lenderPredicates"
@@ -562901,7 +562901,7 @@
           "kind": "def",
           "name": "chainWriteRegistry",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.chainWriteRegistry",
-          "line": 806,
+          "line": 810,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.ChainDiscipline",
             "SeLe4n.Testing.ReplyStackWriteCensus.privateIn"
@@ -562911,7 +562911,7 @@
           "kind": "def",
           "name": "halfStepResolves",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.halfStepResolves",
-          "line": 1082,
+          "line": 1086,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.ChainDiscipline"
           ]
@@ -562920,14 +562920,14 @@
           "kind": "def",
           "name": "halfStepResolves.go",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.halfStepResolves.go",
-          "line": 1085,
+          "line": 1089,
           "called": []
         },
         {
           "kind": "def",
           "name": "disciplineViolations",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.disciplineViolations",
-          "line": 1098,
+          "line": 1102,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.ChainDiscipline",
             "SeLe4n.Testing.ReplyStackWriteCensus.halfStepResolves",
@@ -562940,35 +562940,35 @@
           "kind": "def",
           "name": "reconciliationViolations",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.reconciliationViolations",
-          "line": 1142,
+          "line": 1146,
           "called": []
         },
         {
           "kind": "def",
           "name": "lenderFields",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.lenderFields",
-          "line": 1186,
+          "line": 1190,
           "called": []
         },
         {
           "kind": "def",
           "name": "isFieldCopy",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.isFieldCopy",
-          "line": 1192,
+          "line": 1196,
           "called": []
         },
         {
           "kind": "def",
           "name": "isEmptyFieldValue",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.isEmptyFieldValue",
-          "line": 1199,
+          "line": 1203,
           "called": []
         },
         {
           "kind": "def",
           "name": "writesLenderField",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.writesLenderField",
-          "line": 1207,
+          "line": 1211,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.isEmptyFieldValue",
             "SeLe4n.Testing.ReplyStackWriteCensus.isFieldCopy",
@@ -562979,14 +562979,14 @@
           "kind": "def",
           "name": "computationalConstants",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.computationalConstants",
-          "line": 1224,
+          "line": 1228,
           "called": []
         },
         {
           "kind": "def",
           "name": "lenderFieldWriter",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.lenderFieldWriter",
-          "line": 1236,
+          "line": 1240,
           "called": [
             "SeLe4n.Testing.DeclarationKind.bodyBearingName",
             "SeLe4n.Testing.ReplyStackWriteCensus.computationalConstants",
@@ -562998,14 +562998,14 @@
           "kind": "inductive",
           "name": "LenderRecord",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.LenderRecord",
-          "line": 1253,
+          "line": 1257,
           "called": []
         },
         {
           "kind": "def",
           "name": "neutralLenderRecords",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.neutralLenderRecords",
-          "line": 1264,
+          "line": 1268,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.LenderRecord"
           ]
@@ -563014,7 +563014,7 @@
           "kind": "def",
           "name": "lenderRecordViolations",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.lenderRecordViolations",
-          "line": 1296,
+          "line": 1300,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.LenderRecord",
             "SeLe4n.Testing.ReplyStackWriteCensus.lenderResultViolations"
@@ -563024,7 +563024,7 @@
           "kind": "def",
           "name": "censusWitnessBareConsume",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessBareConsume",
-          "line": 1330,
+          "line": 1334,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.SystemState.consumeCallerReply",
@@ -563037,7 +563037,7 @@
           "kind": "def",
           "name": "censusWitnessDirectLinkWrite",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDirectLinkWrite",
-          "line": 1341,
+          "line": 1345,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
@@ -563050,7 +563050,7 @@
           "kind": "def",
           "name": "censusWitnessRawTableWrite",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessRawTableWrite",
-          "line": 1360,
+          "line": 1364,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -563064,7 +563064,7 @@
           "kind": "def",
           "name": "censusWitnessSplitHelper",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessSplitHelper",
-          "line": 1370,
+          "line": 1374,
           "called": [
             "SeLe4n.Kernel.Reply"
           ],
@@ -563074,7 +563074,7 @@
           "kind": "def",
           "name": "censusWitnessSplitWriter",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessSplitWriter",
-          "line": 1377,
+          "line": 1381,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
@@ -563088,7 +563088,7 @@
           "kind": "def",
           "name": "censusWitnessDelegatedStoreHelper",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDelegatedStoreHelper",
-          "line": 1390,
+          "line": 1394,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.KernelObject",
@@ -563101,7 +563101,7 @@
           "kind": "def",
           "name": "censusWitnessDelegatedStoreWriter",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDelegatedStoreWriter",
-          "line": 1394,
+          "line": 1398,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.ReplyId",
@@ -563114,7 +563114,7 @@
           "kind": "def",
           "name": "eq_censusWitnessUserNamed",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.eq_censusWitnessUserNamed",
-          "line": 1406,
+          "line": 1410,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
@@ -563127,7 +563127,7 @@
           "kind": "def",
           "name": "eq_1",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.eq_1",
-          "line": 1421,
+          "line": 1425,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
@@ -563140,7 +563140,7 @@
           "kind": "def",
           "name": "censusWitnessNoWrite",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessNoWrite",
-          "line": 1428,
+          "line": 1432,
           "called": [
             "SeLe4n.Kernel.Reply",
             "SeLe4n.Model.SystemState",
@@ -563153,7 +563153,7 @@
           "kind": "def",
           "name": "censusWitnessCallerLink",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessCallerLink",
-          "line": 1434,
+          "line": 1438,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
@@ -563167,7 +563167,7 @@
           "kind": "def",
           "name": "censusWitnessDelegatedCallerLink",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessDelegatedCallerLink",
-          "line": 1443,
+          "line": 1447,
           "called": [
             "SeLe4n.Kernel.replyWithCaller",
             "SeLe4n.Model.SystemState",
@@ -563181,7 +563181,7 @@
           "kind": "def",
           "name": "censusWitnessStasherOnly",
           "full_name": "SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessStasherOnly",
-          "line": 1449,
+          "line": 1453,
           "called": [
             "SeLe4n.Model.Kernel",
             "SeLe4n.Model.storeObject",
