@@ -1288,6 +1288,74 @@ private def bootRefusesCrossLabelNotificationBinding : IO Unit := do
            | none => false))
         "the installed state keeps the binding and is label-coherent"
 
+/-- A configured thread, context or notification at id `id`. -/
+private def tcbEntryAt (id : Nat) (t : TCB) : SeLe4n.Platform.Boot.ObjectEntry :=
+  { id := ⟨id⟩, obj := .tcb t, hSlots := fun _ h => KernelObject.noConfusion h,
+    hMappings := fun _ h => KernelObject.noConfusion h }
+
+private def schedContextEntryAt (id : Nat) (c : SchedContext) : SeLe4n.Platform.Boot.ObjectEntry :=
+  { id := ⟨id⟩, obj := .schedContext c, hSlots := fun _ h => KernelObject.noConfusion h,
+    hMappings := fun _ h => KernelObject.noConfusion h }
+
+private def notificationEntryAt (id : Nat) (n : Notification) : SeLe4n.Platform.Boot.ObjectEntry :=
+  { id := ⟨id⟩, obj := .notification n, hSlots := fun _ h => KernelObject.noConfusion h,
+    hMappings := fun _ h => KernelObject.noConfusion h }
+
+/-- **The boot refuses every binding pair, and so every unequal one** (WS-SX
+SX10.1, D37).  A context at id `3` (the harness labeling's lower partition)
+and the upper witness thread: the thread bound to the context, the thread lent
+it, the context bound to the thread, and a notification at an upper id bound
+to the context are each a binding pair with unequal labels, and the checked
+boot refuses each before it installs anything (`bootSafeObjectCheck`: a boot
+thread is unbound, a boot context binds no thread, a boot notification binds
+no context).  The same objects with no binding word boot, and the installed
+state holds no binding word: the boot base case
+(`bootFromPlatformCheckedStartedFor_bindingLabelsEqual`). -/
+private def bootRefusesUnequalBindingPairs : IO Unit := do
+  let ctx := SeLe4n.Kernel.harnessLabelingContext
+  let lower := SeLe4n.Kernel.harnessLowerWitnessIndex
+  let upper := harnessUpperWitness
+  let upperNtfn := upper + 1
+  let scId : SeLe4n.SchedContextId := ⟨3⟩
+  expect "boot_binding_pairs_labels_unequal"
+    (ctx.threadLabelOf ⟨upper⟩ != ctx.objectLabelOf scId.toObjId &&
+      ctx.objectLabelOf ⟨upperNtfn⟩ != ctx.objectLabelOf scId.toObjId)
+    "the upper thread and notification must not share the context's label"
+  let sc : SchedContext := SeLe4n.Kernel.SchedContext.empty scId
+  let ntfn : Notification := { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
+  let cfgOf (t : TCB) (c : SchedContext) (n : Notification) : SeLe4n.Platform.Boot.PlatformConfig :=
+    { initialObjects :=
+        [ witnessEntry lower, tcbEntryAt upper t, schedContextEntryAt 3 c,
+          notificationEntryAt upperNtfn n ] }
+  let pairs : List (String × SeLe4n.Platform.Boot.PlatformConfig) :=
+    [ ("thread_bound", cfgOf { witnessTcb upper with scBindingScCode := 4 } sc ntfn),
+      ("thread_lent", cfgOf
+          { witnessTcb upper with scBindingScCode := 4, scBindingOwnerCode := lower + 1 } sc ntfn),
+      ("context_bound", cfgOf (witnessTcb upper)
+          { sc with boundThreadCode := upper + 1 }
+          ntfn),
+      ("notification_bound", cfgOf (witnessTcb upper) sc { ntfn with schedContextCode := 4 }) ]
+  for (name, cfg) in pairs do
+    match ← bootAndInitialiseFromPlatform cfg ctx with
+    | Except.error e =>
+        expect s!"boot_binding_{name}_refused"
+          (e == "boot: object fails bootSafe check (invalid state for boot)")
+          s!"expected the boot-safety refusal, got: {e}"
+    | Except.ok _ =>
+        failLine s!"boot_binding_{name}_unexpected_success"
+          "a boot binding a pair with unequal labels must be refused"
+  match ← bootAndInitialiseFromPlatform (cfgOf (witnessTcb upper) sc ntfn) ctx with
+  | Except.error e =>
+      failLine "boot_binding_free_unexpected_error" s!"the unbound objects should boot, got: {e}"
+  | Except.ok st =>
+      expect "boot_binding_free_installs_no_binding_word"
+        (st.objects.fold true fun acc _ o => acc && (match o with
+          | .tcb t => t.scBindingScCode == 0
+          | .schedContext c => c.boundThreadCode == 0
+          | .notification n => n.schedContextCode == 0
+          | _ => true))
+        "the installed state holds no binding word"
+
 /-- SD-056 (PR #889 review round 5): **the declared witnesses are not the boot
 VSpace root's id, and the binding's core count is structural.**
 
@@ -3371,6 +3439,7 @@ def main : IO Unit := do
   sd056_witnesses_off_boot_root_and_structural_cores
   IO.println "--- a configured notification binding must be at equal labels ---"
   bootRefusesCrossLabelNotificationBinding
+  bootRefusesUnequalBindingPairs
   IO.println "--- WS-RR RR7.29: .mintReplyCap through the syscall gate ---"
   sd058_mintReplyCapThroughTheSyscallGate
   sd059_cspaceRevokeThroughTheSyscallGate

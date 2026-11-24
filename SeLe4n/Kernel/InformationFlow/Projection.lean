@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.InformationFlow.Policy
+import SeLe4n.Kernel.SchedContext.Invariant.BindingLabels
 import Std.Data.HashSet
 
 /-!
@@ -181,30 +182,6 @@ def threadWordShown (ctx : LabelingContext) (observer : IfObserver) (k : Nat) : 
     (t : SeLe4n.ThreadId) :
     threadWordShown ctx observer (t.val + 1) = threadObservable ctx observer t := by
   simpa [SeLe4n.ThreadId.optCode] using threadWordShown_optCode ctx observer (some t)
-
-/-- **Every binding pair carries equal labels** (WS-SX SX9.1, D37): a thread
-holding a context (its binding word, bound or lent), a context's thread word,
-and a notification bound to a context each name an object labelled as the
-holder is.  The finer projection (D34) shows a binding word exactly where the
-object it names is seen, so with equal labels a binding word is shown exactly
-where its holder is: no observer sees a holder and misses what it holds, or the
-reverse.
-
-A state predicate, not yet an invariant: the receive steps of
-`NonInterferenceStep` carry it as their one premise and the notification lend's
-two-run theorem takes it of both runs, until the invariant that keeps it over
-every writer, with the boot check as its base case, lands (registered in
-`docs/REGISTERED_DEBT.md`). -/
-def bindingLabelsEqual (ctx : LabelingContext) (st : SystemState) : Prop :=
-  (∀ (t : SeLe4n.ThreadId) (tcb : TCB) (s : SeLe4n.SchedContextId),
-    st.objects[t.toObjId]? = some (.tcb tcb) → tcb.scBindingScCode = s.val + 1 →
-    ctx.threadLabelOf t = ctx.objectLabelOf s.toObjId) ∧
-  (∀ (s : SeLe4n.SchedContextId) (sc : SchedContext) (t : SeLe4n.ThreadId),
-    st.objects[s.toObjId]? = some (.schedContext sc) → sc.boundThreadCode = t.val + 1 →
-    ctx.threadLabelOf t = ctx.objectLabelOf s.toObjId) ∧
-  (∀ (n : SeLe4n.ObjId) (ntfn : Notification) (s : SeLe4n.SchedContextId),
-    st.objects[n]? = some (.notification ntfn) → ntfn.schedContextCode = s.val + 1 →
-    ctx.objectLabelOf n = ctx.objectLabelOf s.toObjId)
 
 /-- A hidden thread's bound or lent context is hidden. -/
 theorem bindingLabelsEqual.threadContextHidden {ctx : LabelingContext} {observer : IfObserver}

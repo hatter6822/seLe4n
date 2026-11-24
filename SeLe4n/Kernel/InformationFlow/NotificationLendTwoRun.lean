@@ -687,7 +687,7 @@ theorem notificationContext?_pair {s₁ s₂ : SystemState} {n : SeLe4n.ObjId}
     have hCo : objectObservable ctx observer c.toObjId = true := by
       unfold objectObservable; rw [hE]; exact hT
     have hNo : objectObservable ctx observer n = true := by
-      unfold objectObservable; rw [hB₁.2.2 n m₁ c hO₁ hW₁]; exact hCo
+      unfold objectObservable; rw [hB₁.2.2.1 n m₁ c hO₁ hW₁]; exact hCo
     have hk := hL.slot hNo
     rw [hO₁] at hk
     cases hO₂ : s₂.objects[n]? with

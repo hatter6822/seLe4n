@@ -1,3 +1,52 @@
+## v0.37.39 — Equal binding labels begun, and the row wrapped (WS-SX SX10)
+
+SX10 lands the boot base case of equal binding labels, the owner clause and
+the slot toolkit, then wraps at that point by the owner's decision D38.  No
+transition changes.
+
+- **The boot base case (SX10.1).**  Every booted image has equal binding
+  labels, under every labelling
+  (`bootFromPlatformCheckedStartedFor_bindingLabelsEqual`,
+  `Platform/Boot/InitialThreads.lean`).  The checked boot already refuses
+  every configured binding pair, with equal labels or not, and no boot stage
+  creates one, so no label check is added: it could never refuse.  The Low
+  finding recorded at `v0.37.38` (a boot image binding unequal labels boots)
+  is withdrawn.  `bindingLabelsEqual` moves to its own module
+  (`SchedContext/Invariant/BindingLabels.lean`) below the projection.
+  `syscall_dispatch_suite` checks that the boot refuses a thread bound, a
+  thread lent, a context bound and a notification bound across unequal labels,
+  and that the unbound control boots.
+- **The owner clause (SX10.2).**  `bindingLabelsEqual` gains a fourth
+  conjunct: a lent binding's owner word names a thread with the context's
+  label, because the return to the owner binds the owner (D37).  Its views
+  read the binding words through the typed readers, owner word included
+  (`threadOwnerView`, `bindingViewsShrink.owner`).
+- **The slot toolkit (SX10.2).**  The four binding words of one slot
+  (`objBindingWords`), each view as a read of its slot, a slot's binding
+  shrink (`objBindingShrink`, with its free, unchanged, thread, notification
+  and context forms), and their lift to the views
+  (`bindingViewsShrink_of_objects`, `bindingViewsShrink_of_slot`).
+- **The wrap (D38).**  The invariant's preservation cannot be discharged at
+  the Call and receive-take lends from the carried invariant.  The lend gives
+  the receiver the lender's context, so it needs the receiver's label equal to
+  the lender's.  The gate at the lend checks only one side of the endpoint;
+  the other side was checked when the waiting thread blocked, and the state
+  keeps no trace of it.  No live path was found that skips the gate on either
+  side, so the gap is in the proof, not the kernel.  The premise
+  `bindingLabelsEqual` stays on the two receive steps and the two-run theorem.
+- **Plan.**  D38 recorded.  SX10 is rewritten to what landed.  The new row
+  SX11 makes every thread blocked on an endpoint carry the endpoint's label,
+  as a per-entry stage.  Measured: 135 files write a thread's IPC state, and
+  17 of them write a blocking state.  It narrows part of table C's
+  `ipcReachable` row; carrying the pack across a trace stays WS-PK's.  The new
+  row SX12 completes the invariant on SX11: its preservation over the 78
+  binding-view writer files (41 of them write no stack view), the premise
+  moved by ruling (a), and the unreachable refusals deleted.  SX11–SX21 are
+  renumbered SX13–SX23, and the conformance table's owner strings follow.
+  The debt row on `bindingLabelsEqual` moves to SX12.
+- **Tier 3.**  Anchors on the owner clause, bounded to the definition, and on
+  the slot toolkit.
+
 ## v0.37.38 — The notification lend's assurance (WS-SX SX9)
 
 The checked notification lend (`maybeDonateSchedContextFlowing`, D30) is

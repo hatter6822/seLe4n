@@ -2507,10 +2507,24 @@ run_check "INVARIANT" rg -n '^theorem lockSet_endpointCallOnCore_covers_donation
 run_check "INVARIANT" rg -n '^private theorem donateSchedContext_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # WS-SX SX9.1 (D34): the push is invisible only with its context hidden.
 run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem donateSchedContext_preserves_projection( *\n +[^\n]*)*hScHigh : objectObservable" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
-# The receive steps' one premise (D37, registered debt owned by SX10): equal
+# The receive steps' one premise (D37, registered debt owned by SX12): equal
 # binding labels, a field of each receive constructor itself; the loan-return
 # shape is derived from it, never a constructor field.
-run_check "INVARIANT" rg -n '^def bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^def bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_negative_check "INVARIANT" rg -n '^def bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem bindingLabelsEqual_of_unbound($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^theorem bindingLabelsEqual_iff_views($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^theorem bindingLabelsEqual_of_shrink($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^def threadOwnerView($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+# WS-SX SX10.2 (D37): the owner clause is a conjunct of the predicate itself,
+# bounded to the definition's indented continuations; the slot toolkit.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def bindingLabelsEqual [^\n]*( *\n +[^\n]*)*tcb\.scBindingOwnerCode = o\.val \+ 1 → ctx\.threadLabelOf o = ctx\.objectLabelOf s\.toObjId" SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean'
+run_check "INVARIANT" rg -n '^def objBindingWords($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^structure objBindingShrink($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^theorem bindingViewsShrink_of_objects($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^theorem bindingViewsShrink_of_slot($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^theorem bindingFreeObject_of_bootObjectShapeOffLinks($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem receiveLoanReturnHidden_of_bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "\| endpointReceiveDualHigh\n(    [^\n]*\n)*?      \(hBind : bindingLabelsEqual ctx st\)\n    : NonInterferenceStep" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\| endpointReplyRecvHigh\n(    [^\n]*\n)*?      \(hBind : bindingLabelsEqual ctx st\)\n    : NonInterferenceStep" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
