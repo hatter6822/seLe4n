@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.37.39-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.37.40-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -136,11 +136,11 @@ seLe4n 是一个用 Lean 4 从零构建的微内核。每个内核转换都是�
 
 | 属性 | 值 |
 |------|-----|
-| **版本** | `0.37.39` |
+| **版本** | `0.37.40` |
 | **Lean 工具链** | `v4.28.0` |
-| **生产代码行数** | 682,562 行，分布于 690 个文件 |
+| **生产代码行数** | 685,256 行，分布于 703 个文件 |
 | **测试代码行数** | 92,702 行，分布于 71 个测试套件 |
-| **已证明的声明** | 26,094 个定理/引理声明（零 sorry/axiom） |
+| **已证明的声明** | 26,240 个定理/引理声明（零 sorry/axiom） |
 | **Rust crate** | `sele4n-types`、`sele4n-abi`、`sele4n-sys`（用户态封装）、`sele4n-hal`（内核硬件层），以及主机测试 `sele4n-lean-boundary` |
 | **目标硬件** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **启动通道** | 每条 QEMU 通道先在 [rpi5_machine](https://github.com/hatter6822/rpi5_machine) 的 `raspi5b` 机器上启动 Raspberry Pi 5 镜像，再在 QEMU 的 `virt` 上启动 `virt` 镜像 |

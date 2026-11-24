@@ -13,7 +13,9 @@
 > at its validated point (D38: the boot base case, the owner clause, the slot
 > toolkit); its remainder became SX11 (blocked threads carry their endpoint's
 > label) and SX12 (the equal-binding-labels invariant, completed), and SX11–SX21
-> became SX13–SX23; the decisions below cite the new numbers.
+> became SX13–SX23; the decisions below cite the new numbers. SX11 landed at
+> `v0.37.40` (blocked threads carry their endpoint's label, at boot and across
+> every committing entry).
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
 > **Rows**: SX1–SX23, numbered in the order they are implemented, one PR each.
@@ -568,6 +570,11 @@ invariant.
 
 ### SX11 — Blocked threads carry their endpoint's label (D38)
 
+**LANDED at `v0.37.40`.** `endpointWaitersLabelsEqual` holds of every booted
+state and is carried by every committing entry (`EndpointWaitersStage`,
+`SeLe4n/Kernel/EndpointWaiters/`). The per-dispatch blocked-sender lifts and
+both shrink relations it supersedes are retired.
+
 The state fact the Call and receive-take lends need, which no gate at the lend
 can give: every endpoint gate is two-way (`endpointFlowGate`, so equality by
 `endpointFlowGate_implies_eq`), and each thread waiting on an endpoint passed
@@ -575,8 +582,8 @@ it when it blocked.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX11.1 | **The equality forms** of `blockedSenderFlowsToEndpoint` and `blockedReceiverFlowsFromEndpoint` (`InformationFlow/Invariant/Composition.lean`): every thread blocked sending, calling or receiving on an endpoint has the endpoint's label. The one-way forms are derived from them and retired where nothing else reads them. **The boot base case**: a booted state blocks no thread. | The boot base case; the one-way forms as corollaries. | Tier 3 anchors |
-| SX11.2 | **A per-entry stage** over every writer of a thread's blocked state: a frame where the write keeps the thread's IPC state, a shrink where it writes a non-blocking state, a creator where it writes a blocking state, discharged from the gate the entry checks on that thread (the send, call, receive and reply-receive arms and fault delivery). Measured on the tree at `v0.37.39`, outside `InformationFlow/` and `Testing/`: 135 files write a thread's IPC state (3,428 matching lines, 76 files outside the invariant and proof modules); 17 files write a blocking state on the line (162 sites), the creators. The existing one-way facts have 111 references in 5 files. It narrows part of `docs/REGISTERED_DEBT.md` table C ("`ipcReachable` is not carried across a trace") to these two conjuncts per entry; carrying the pack across a trace stays WS-PK's. | Preservation by every committing entry. | Tier 3 anchors on the stage and the creators |
+| SX11.1 | **LANDED.** **The equality forms** of `blockedSenderFlowsToEndpoint` and `blockedReceiverFlowsFromEndpoint` (`InformationFlow/Invariant/Composition.lean`): every thread blocked sending, calling or receiving on an endpoint has the endpoint's label. The one-way forms are derived from them and retired where nothing else reads them. **The boot base case**: a booted state blocks no thread. | The boot base case; the one-way forms as corollaries. | Tier 3 anchors |
+| SX11.2 | **LANDED.** **A per-entry stage** over every writer of a thread's blocked state: a frame where the write keeps the thread's IPC state, a shrink where it writes a non-blocking state, a creator where it writes a blocking state, discharged from the gate the entry checks on that thread (the send, call, receive and reply-receive arms and fault delivery). Measured on the tree at `v0.37.39`, outside `InformationFlow/` and `Testing/`: 135 files write a thread's IPC state (3,428 matching lines, 76 files outside the invariant and proof modules); 17 files write a blocking state on the line (162 sites), the creators. The existing one-way facts have 111 references in 5 files. It narrows part of `docs/REGISTERED_DEBT.md` table C ("`ipcReachable` is not carried across a trace") to these two conjuncts per entry; carrying the pack across a trace stays WS-PK's. As landed: the frames are the records' frames (the record view holds the IPC state) and the writes that keep every thread's IPC state; the shrinks are the cancellations, restores, timeouts, signal wakes, the finalisation, the carve (a fresh thread is `.ready`) and the delete chain; the creators are the checked send, call and fault delivery, each from its own gate, and the receive and reply-receive, from the gate the dispatch checks before either runs. The capability table is a frame on every arm. Every entry reads the store's invariant at the state it runs from; the syscall entry reads it after the dispatch off the records' stage, as the lenders' entry does. | Preservation by every committing entry. | Tier 3 anchors on the stage and the creators |
 
 **Acceptance:**
 - the equality forms hold of every booted state and are kept by every
