@@ -74,10 +74,11 @@ theorem bindingLabelsEqual_of_unbound {st : SystemState}
 
 /-! ### The binding views
 
-`bindingLabelsEqual` restated over three views of the object store, each a
-binding word read at a slot (`0` where the slot holds no object of that kind):
-the frame family of the lenders' flow (`contextStackViewsAgree`) carries them,
-so a step that writes none of the three words carries the predicate, and a step
+`bindingLabelsEqual` restated over four views of the object store, each a
+binding word read at a slot (`0` where the slot holds no object of that kind).
+The frame family of the lenders' flow (`contextStackViewsAgree`) is to carry
+them (WS-SX SX12.1, the `bindingLabelsEqual` row of `docs/REGISTERED_DEBT.md`),
+so a step that writes none of the four words carries the predicate, and a step
 after which every binding word was already there before it (a removal, a
 clear) carries it too (`bindingLabelsEqual_of_shrink`). -/
 
