@@ -2515,6 +2515,7 @@ run_negative_check "INVARIANT" rg -n '^def bindingLabelsEqual($|[ ({:\[\]])' SeL
 run_check "INVARIANT" rg -n '^theorem bindingLabelsEqual_of_unbound($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
 run_check "INVARIANT" rg -n '^theorem bindingLabelsEqual_iff_views($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
 run_check "INVARIANT" rg -n '^theorem bindingLabelsEqual_of_shrink($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^def threadOwnerView($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
 run_check "INVARIANT" rg -n '^theorem bindingFreeObject_of_bootObjectShapeOffLinks($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem receiveLoanReturnHidden_of_bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean

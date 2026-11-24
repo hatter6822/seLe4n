@@ -46,7 +46,10 @@ def bindingLabelsEqual (ctx : LabelingContext) (st : SystemState) : Prop :=
     ctx.threadLabelOf t = ctx.objectLabelOf s.toObjId) ∧
   (∀ (n : SeLe4n.ObjId) (ntfn : Notification) (s : SeLe4n.SchedContextId),
     st.objects[n]? = some (.notification ntfn) → ntfn.schedContextCode = s.val + 1 →
-    ctx.objectLabelOf n = ctx.objectLabelOf s.toObjId)
+    ctx.objectLabelOf n = ctx.objectLabelOf s.toObjId) ∧
+  (∀ (t : SeLe4n.ThreadId) (tcb : TCB) (s : SeLe4n.SchedContextId) (o : SeLe4n.ThreadId),
+    st.objects[t.toObjId]? = some (.tcb tcb) → tcb.scBindingScCode = s.val + 1 →
+    tcb.scBindingOwnerCode = o.val + 1 → ctx.threadLabelOf o = ctx.objectLabelOf s.toObjId)
 
 /-- **An object holding no binding word**: a thread bound or lent no context, a
 context bound to no thread, a notification bound to no context, or any other
@@ -62,10 +65,12 @@ labelling: there is no pair to compare. -/
 theorem bindingLabelsEqual_of_unbound {st : SystemState}
     (h : ∀ (k : SeLe4n.ObjId) (o : KernelObject), st.objects[k]? = some o → bindingFreeObject o)
     (ctx : LabelingContext) : bindingLabelsEqual ctx st := by
-  refine ⟨fun t tcb s hT hC => ?_, fun s sc t hS hC => ?_, fun n ntfn s hN hC => ?_⟩
+  refine ⟨fun t tcb s hT hC => ?_, fun s sc t hS hC => ?_, fun n ntfn s hN hC => ?_,
+    fun t tcb s o hT hC _ => ?_⟩
   · have := h _ _ hT; simp only [bindingFreeObject] at this; omega
   · have := h _ _ hS; simp only [bindingFreeObject] at this; omega
   · have := h _ _ hN; simp only [bindingFreeObject] at this; omega
+  · have := h _ _ hT; simp only [bindingFreeObject] at this; omega
 
 /-! ### The binding views
 
@@ -80,6 +85,12 @@ clear) carries it too (`bindingLabelsEqual_of_shrink`). -/
 def threadContextView (st : SystemState) (t : SeLe4n.ThreadId) : Nat :=
   match st.getTcb? t with
   | some tcb => tcb.scBindingScCode
+  | none => 0
+
+/-- A thread's owner word: the thread its lent context goes back to. -/
+def threadOwnerView (st : SystemState) (t : SeLe4n.ThreadId) : Nat :=
+  match st.getTcb? t with
+  | some tcb => tcb.scBindingOwnerCode
   | none => 0
 
 /-- A context's thread word. -/
@@ -102,10 +113,12 @@ theorem bindingLabelsEqual_iff_views {ctx : LabelingContext} {st : SystemState} 
       (∀ s (t : SeLe4n.ThreadId), contextThreadView st s = t.val + 1 →
         ctx.threadLabelOf t = ctx.objectLabelOf s.toObjId) ∧
       (∀ n (s : SeLe4n.SchedContextId), notificationContextView st n = s.val + 1 →
-        ctx.objectLabelOf n = ctx.objectLabelOf s.toObjId) := by
+        ctx.objectLabelOf n = ctx.objectLabelOf s.toObjId) ∧
+      (∀ t (s : SeLe4n.SchedContextId) (o : SeLe4n.ThreadId), threadContextView st t = s.val + 1 →
+        threadOwnerView st t = o.val + 1 → ctx.threadLabelOf o = ctx.objectLabelOf s.toObjId) := by
   constructor
-  · rintro ⟨h1, h2, h3⟩
-    refine ⟨fun t s hV => ?_, fun s t hV => ?_, fun n s hV => ?_⟩
+  · rintro ⟨h1, h2, h3, h4⟩
+    refine ⟨fun t s hV => ?_, fun s t hV => ?_, fun n s hV => ?_, fun t s o hV hW => ?_⟩
     · unfold threadContextView at hV
       split at hV
       · next tcb hO => exact h1 t tcb s ((SystemState.getTcb?_eq_some_iff _ _ _).mp hO) hV
@@ -118,12 +131,20 @@ theorem bindingLabelsEqual_iff_views {ctx : LabelingContext} {st : SystemState} 
       split at hV
       · next ntfn hO => exact h3 n ntfn s ((SystemState.getNotification?_eq_some_iff _ _ _).mp hO) hV
       · omega
-  · rintro ⟨h1, h2, h3⟩
+    · unfold threadContextView at hV; unfold threadOwnerView at hW
+      split at hV
+      · next tcb hO =>
+        rw [hO] at hW
+        exact h4 t tcb s o ((SystemState.getTcb?_eq_some_iff _ _ _).mp hO) hV hW
+      · omega
+  · rintro ⟨h1, h2, h3, h4⟩
     refine ⟨fun t tcb s hO hC => h1 t s ?_, fun s sc t hO hC => h2 s t ?_,
-      fun n ntfn s hO hC => h3 n s ?_⟩
+      fun n ntfn s hO hC => h3 n s ?_, fun t tcb s o hO hC hW => h4 t s o ?_ ?_⟩
     · simp only [threadContextView, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO, hC]
     · simp only [contextThreadView, (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hO, hC]
     · simp only [notificationContextView, (SystemState.getNotification?_eq_some_iff _ _ _).mpr hO, hC]
+    · simp only [threadContextView, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO, hC]
+    · simp only [threadOwnerView, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO, hW]
 
 /-- **The binding shrink**: every binding word after the step was the same word
 before it.  A clear, a removal and a frame are shrinks; a word written to a new
@@ -133,22 +154,28 @@ structure bindingViewsShrink (st st' : SystemState) : Prop where
   context : ∀ s k, contextThreadView st' s = k + 1 → contextThreadView st s = k + 1
   notification : ∀ n k, notificationContextView st' n = k + 1 →
     notificationContextView st n = k + 1
+  owner : ∀ t k o, threadContextView st' t = k + 1 → threadOwnerView st' t = o + 1 →
+    threadContextView st t = k + 1 ∧ threadOwnerView st t = o + 1
 
 namespace bindingViewsShrink
 
 theorem refl (st : SystemState) : bindingViewsShrink st st :=
-  ⟨fun _ _ h => h, fun _ _ h => h, fun _ _ h => h⟩
+  ⟨fun _ _ h => h, fun _ _ h => h, fun _ _ h => h, fun _ _ _ h h' => ⟨h, h'⟩⟩
 
 theorem trans {st st' st'' : SystemState} (h1 : bindingViewsShrink st st')
     (h2 : bindingViewsShrink st' st'') : bindingViewsShrink st st'' :=
   ⟨fun t k h => h1.thread t k (h2.thread t k h), fun s k h => h1.context s k (h2.context s k h),
-   fun n k h => h1.notification n k (h2.notification n k h)⟩
+   fun n k h => h1.notification n k (h2.notification n k h),
+   fun t k o h h' => let p := h2.owner t k o h h'; h1.owner t k o p.1 p.2⟩
 
 theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
     bindingViewsShrink st st' :=
   ⟨fun t k hV => by simpa only [threadContextView, SystemState.getTcb?, h] using hV,
    fun s k hV => by simpa only [contextThreadView, SystemState.getSchedContext?, h] using hV,
-   fun n k hV => by simpa only [notificationContextView, SystemState.getNotification?, h] using hV⟩
+   fun n k hV => by simpa only [notificationContextView, SystemState.getNotification?, h] using hV,
+   fun t k o hV hW => by
+     simp only [threadContextView, threadOwnerView, SystemState.getTcb?, h] at hV hW ⊢
+     exact ⟨hV, hW⟩⟩
 
 end bindingViewsShrink
 
@@ -158,6 +185,7 @@ theorem bindingLabelsEqual_of_shrink {ctx : LabelingContext} {st st' : SystemSta
     bindingLabelsEqual ctx st' := by
   rw [bindingLabelsEqual_iff_views] at hInv ⊢
   exact ⟨fun t s hV => hInv.1 t s (h.thread t _ hV), fun s t hV => hInv.2.1 s t (h.context s _ hV),
-    fun n s hV => hInv.2.2 n s (h.notification n _ hV)⟩
+    fun n s hV => hInv.2.2.1 n s (h.notification n _ hV),
+    fun t s o hV hW => let p := h.owner t _ _ hV hW; hInv.2.2.2 t s o p.1 p.2⟩
 
 end SeLe4n.Kernel
