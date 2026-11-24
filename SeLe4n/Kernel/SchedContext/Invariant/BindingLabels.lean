@@ -188,4 +188,126 @@ theorem bindingLabelsEqual_of_shrink {ctx : LabelingContext} {st st' : SystemSta
     fun n s hV => hInv.2.2.1 n s (h.notification n _ hV),
     fun t s o hV hW => let p := h.owner t _ _ hV hW; hInv.2.2.2 t s o p.1 p.2⟩
 
+/-! ### The binding words read slot by slot
+
+The four views read one slot each: a thread's two words at its slot, a
+context's at its slot and a notification's at its slot.  `objBindingWords` is
+the four read off one slot, so a step that writes one slot carries the views
+everywhere else and is judged at that slot alone (`bindingViewsShrink_of_slot`).
+-/
+
+/-- **A slot's binding words**: a thread's context and owner words, a context's
+thread word and a notification's context word, `0` where the slot holds no
+object of that kind. -/
+def objBindingWords : Option KernelObject → Nat × Nat × Nat × Nat
+  | some (.tcb t) => (t.scBindingScCode, t.scBindingOwnerCode, 0, 0)
+  | some (.schedContext sc) => (0, 0, sc.boundThreadCode, 0)
+  | some (.notification n) => (0, 0, 0, n.schedContextCode)
+  | _ => (0, 0, 0, 0)
+
+theorem threadContextView_eq_obj (st : SystemState) (t : SeLe4n.ThreadId) :
+    threadContextView st t = (objBindingWords st.objects[t.toObjId]?).1 := by
+  unfold threadContextView SystemState.getTcb?
+  cases st.objects[t.toObjId]? with
+  | none => rfl
+  | some o => cases o <;> rfl
+
+theorem threadOwnerView_eq_obj (st : SystemState) (t : SeLe4n.ThreadId) :
+    threadOwnerView st t = (objBindingWords st.objects[t.toObjId]?).2.1 := by
+  unfold threadOwnerView SystemState.getTcb?
+  cases st.objects[t.toObjId]? with
+  | none => rfl
+  | some o => cases o <;> rfl
+
+theorem contextThreadView_eq_obj (st : SystemState) (s : SeLe4n.SchedContextId) :
+    contextThreadView st s = (objBindingWords st.objects[s.toObjId]?).2.2.1 := by
+  unfold contextThreadView SystemState.getSchedContext?
+  cases st.objects[s.toObjId]? with
+  | none => rfl
+  | some o => cases o <;> rfl
+
+theorem notificationContextView_eq_obj (st : SystemState) (n : SeLe4n.ObjId) :
+    notificationContextView st n = (objBindingWords st.objects[n]?).2.2.2 := by
+  unfold notificationContextView SystemState.getNotification?
+  cases st.objects[n]? with
+  | none => rfl
+  | some o => cases o <;> rfl
+
+/-- **One slot's binding words shrink**: every word the slot holds after the
+step it held before it (the owner word read together with the context word). -/
+structure objBindingShrink (old new : Option KernelObject) : Prop where
+  thread : ∀ k, (objBindingWords new).1 = k + 1 → (objBindingWords old).1 = k + 1
+  context : ∀ k, (objBindingWords new).2.2.1 = k + 1 → (objBindingWords old).2.2.1 = k + 1
+  notification : ∀ k, (objBindingWords new).2.2.2 = k + 1 → (objBindingWords old).2.2.2 = k + 1
+  owner : ∀ k o, (objBindingWords new).1 = k + 1 → (objBindingWords new).2.1 = o + 1 →
+    (objBindingWords old).1 = k + 1 ∧ (objBindingWords old).2.1 = o + 1
+
+namespace objBindingShrink
+
+/-- Equal words shrink. -/
+theorem of_eq {old new : Option KernelObject} (h : objBindingWords new = objBindingWords old) :
+    objBindingShrink old new :=
+  ⟨fun _ hk => h ▸ hk, fun _ hk => h ▸ hk, fun _ hk => h ▸ hk, fun _ _ hk ho => h ▸ ⟨hk, ho⟩⟩
+
+/-- A slot left holding no binding word shrinks. -/
+theorem of_free {old new : Option KernelObject} (h : objBindingWords new = (0, 0, 0, 0)) :
+    objBindingShrink old new :=
+  ⟨fun _ hk => (by rw [h] at hk; cases hk), fun _ hk => (by rw [h] at hk; cases hk),
+   fun _ hk => (by rw [h] at hk; cases hk), fun _ _ hk _ => (by rw [h] at hk; cases hk)⟩
+
+/-- **A thread record written keeping both its words, or clearing its context
+word.** -/
+theorem ofTcb {old : Option KernelObject} {t t' : TCB} (hOld : old = some (.tcb t))
+    (h : t'.scBindingScCode = 0 ∨
+      (t'.scBindingScCode = t.scBindingScCode ∧ t'.scBindingOwnerCode = t.scBindingOwnerCode)) :
+    objBindingShrink old (some (.tcb t')) := by
+  subst hOld
+  rcases h with h | ⟨h1, h2⟩
+  · exact ⟨fun _ hk => (by simp only [objBindingWords, h] at hk; omega),
+      fun _ hk => (by simp only [objBindingWords] at hk; omega),
+      fun _ hk => (by simp only [objBindingWords] at hk; omega),
+      fun _ _ hk _ => (by simp only [objBindingWords, h] at hk; omega)⟩
+  · exact of_eq (by simp only [objBindingWords, h1, h2])
+
+/-- **A notification written keeping or clearing its context word.** -/
+theorem ofNotification {old : Option KernelObject} {n n' : Notification}
+    (hOld : old = some (.notification n))
+    (h : n'.schedContextCode = 0 ∨ n'.schedContextCode = n.schedContextCode) :
+    objBindingShrink old (some (.notification n')) := by
+  subst hOld
+  rcases h with h | h
+  · exact of_free (by simp only [objBindingWords, h])
+  · exact of_eq (by simp only [objBindingWords, h])
+
+/-- **A context written keeping or clearing its thread word.** -/
+theorem ofSchedContext {old : Option KernelObject} {sc sc' : SchedContext}
+    (hOld : old = some (.schedContext sc))
+    (h : sc'.boundThreadCode = 0 ∨ sc'.boundThreadCode = sc.boundThreadCode) :
+    objBindingShrink old (some (.schedContext sc')) := by
+  subst hOld
+  rcases h with h | h
+  · exact of_free (by simp only [objBindingWords, h])
+  · exact of_eq (by simp only [objBindingWords, h])
+
+end objBindingShrink
+
+/-- **The binding shrink read slot by slot.** -/
+theorem bindingViewsShrink_of_objects {st st' : SystemState}
+    (h : ∀ x : SeLe4n.ObjId, objBindingShrink st.objects[x]? st'.objects[x]?) : bindingViewsShrink st st' :=
+  ⟨fun t k hV => by rw [threadContextView_eq_obj] at hV ⊢; exact (h _).thread k hV,
+   fun s k hV => by rw [contextThreadView_eq_obj] at hV ⊢; exact (h _).context k hV,
+   fun n k hV => by rw [notificationContextView_eq_obj] at hV ⊢; exact (h _).notification k hV,
+   fun t k o hV hW => by
+     rw [threadContextView_eq_obj] at hV ⊢; rw [threadOwnerView_eq_obj] at hW ⊢
+     exact (h _).owner k o hV hW⟩
+
+/-- **One slot written**: the binding shrink is judged at that slot alone. -/
+theorem bindingViewsShrink_of_slot {st st' : SystemState} (k : SeLe4n.ObjId)
+    (hNe : ∀ x, x ≠ k → st'.objects[x]? = st.objects[x]?)
+    (hK : objBindingShrink st.objects[k]? st'.objects[k]?) : bindingViewsShrink st st' :=
+  bindingViewsShrink_of_objects fun x => by
+    by_cases hx : x = k
+    · subst hx; exact hK
+    · rw [hNe x hx]; exact .of_eq rfl
+
 end SeLe4n.Kernel
