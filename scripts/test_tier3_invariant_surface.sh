@@ -2511,7 +2511,7 @@ run_check "INVARIANT" rg -n '^theorem lockSet_endpointCallOnCore_covers_donation
 run_check "INVARIANT" rg -n '^private theorem donateSchedContext_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # WS-SX SX9.1 (D34): the push is invisible only with its context hidden.
 run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem donateSchedContext_preserves_projection( *\n +[^\n]*)*hScHigh : objectObservable" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
-# The receive steps' one premise (D37, registered debt owned by SX13): equal
+# The receive steps' one premise (D37, registered debt owned by SX16): equal
 # binding labels, a field of each receive constructor itself; the loan-return
 # shape is derived from it, never a constructor field.
 run_check "INVARIANT" rg -n '^def bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
@@ -2527,6 +2527,19 @@ run_check "INVARIANT" rg -n '^def objBindingWords($|[ ({:\[\]])' SeLe4n/Kernel/S
 run_check "INVARIANT" rg -n '^structure objBindingShrink($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
 run_check "INVARIANT" rg -n '^theorem bindingViewsShrink_of_objects($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
 run_check "INVARIANT" rg -n '^theorem bindingViewsShrink_of_slot($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+# WS-SX SX13.1 (D40): the binding grow a creating site proves, and its slot
+# forms; SX13.2: the binding-words leaf lemmas the frame family's summaries need.
+run_check "INVARIANT" rg -n '^structure bindingViewsGrow($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^theorem bindingLabelsEqual_of_grow($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+# The grow carries the predicate from the state before it to the state after,
+# bounded to the theorem's own header and its indented continuations.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem bindingLabelsEqual_of_grow [^\n]*( *\n +[^\n]*)*\(hInv : bindingLabelsEqual ctx st\) \(h : bindingViewsGrow ctx st st'"'"'\) :\n +bindingLabelsEqual ctx st'"'"' :=" SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean'
+run_check "INVARIANT" rg -n '^theorem bindingViewsGrow_of_tcbSlot($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^theorem bindingViewsGrow_of_schedContextSlot($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^theorem bindingViewsGrow_of_notificationSlot($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^theorem bindingViewsShrink_of_tcbBinding($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^def keepsScBindingAt($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_keepsScBindingAt($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
 run_check "INVARIANT" rg -n '^theorem bindingFreeObject_of_bootObjectShapeOffLinks($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
 run_check "INVARIANT" rg -n '^theorem receiveLoanReturnHidden_of_bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean

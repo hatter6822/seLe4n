@@ -1,3 +1,44 @@
+## v0.37.42 — The binding grow and leaf lemmas, and the row wrapped (WS-SX SX13)
+
+SX13 lands the toolkit the equal-binding-labels invariant's creating sites
+and summaries need, then wraps at that point (D40, default taken, owner card
+open).  No transition changes.
+
+- **The binding grow (SX13.1).**  A step that writes a binding word to a new
+  value (a bind, a lend, the return to an owner) is no shrink.  It carries
+  `bindingLabelsEqual` when every word after it was there before it or pairs
+  equal labels (`bindingViewsGrow`, `bindingLabelsEqual_of_grow`).  One slot
+  written, read as a grow: `bindingViewsGrow_of_tcbSlot`,
+  `_of_schedContextSlot` and `_of_notificationSlot`, each taking the label
+  equation its creating site proves.  The invariant read at a holder:
+  `bindingLabelsEqual.donated` and `.bound`.  A holder whose lender has gone:
+  `objBindingShrink.ofTcbOwnerCleared`.
+- **The binding-words leaf lemmas (SX13.2).**  A thread record written
+  keeping its binding is a slot shrink (`objBindingShrink.ofTcbBinding`,
+  `bindingViewsShrink_of_tcbBinding`), and the priority-inheritance walk keeps
+  every thread's context and owner words (`keepsScBindingAt`,
+  `propagatePipChainCrossCore_keepsScBindingAt`): a sibling of the walk's
+  pointwise summary, which stays as it is.
+- **The wrap (D40).**  The frame family's first cut was measured by building
+  every lender module on it and stubbing each failing declaration to a
+  fixpoint: 37 declarations in 9 files and one census witness, about 10
+  sibling lemmas for summaries that forget the binding words, and 30
+  `LendersFrame` theorems to restate, because the pops grow the binding views
+  and are no longer links shrinks.  That is well over 1.5 times the row.
+  Nothing outside the lender cut fails.  The cut is kept as a patch for the
+  next row; it cannot land alone, since every lender module after the timer
+  entry consumes the frame family it changes.  No live path lends a context
+  across unequal labels: the gap is in the proof, not the kernel.
+- **Plan.**  D40 recorded.  SX13 is rewritten to what landed.  New rows: SX14
+  (the frame family threaded, the pops as labelled steps), SX15 (the creating
+  sites, and preservation over every writer) and SX16 (the premise moved per
+  ruling (a), and the unreachable refusals deleted).  SX14–SX23 are
+  renumbered SX17–SX26, and the conformance table's owner strings follow.
+  The debt row on `bindingLabelsEqual` moves to SX16.
+- **Tier 3.**  Anchors on the grow and its slot forms, a relation anchor on
+  the grow's carrying theorem bounded to its header, and anchors on the leaf
+  lemmas.
+
 ## v0.37.41 — The reply pop gives the context to the caller it answers (WS-SX SX12)
 
 seL4-MCS's `reply_pop` gives a scheduling context to the caller of the frame

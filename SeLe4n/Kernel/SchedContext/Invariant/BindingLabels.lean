@@ -72,12 +72,43 @@ theorem bindingLabelsEqual_of_unbound {st : SystemState}
   · have := h _ _ hN; simp only [bindingFreeObject] at this; omega
   · have := h _ _ hT; simp only [bindingFreeObject] at this; omega
 
+/-- **A lent binding's holder and owner carry the context's label.** -/
+theorem bindingLabelsEqual.donated {ctx : LabelingContext} {st : SystemState}
+    (hB : bindingLabelsEqual ctx st) {t : SeLe4n.ThreadId} {tcb : TCB}
+    {s : SeLe4n.SchedContextId} {o : SeLe4n.ThreadId}
+    (hT : st.objects[t.toObjId]? = some (.tcb tcb)) (hD : tcb.schedContextBinding = .donated s o) :
+    ctx.threadLabelOf t = ctx.objectLabelOf s.toObjId ∧
+      ctx.threadLabelOf o = ctx.objectLabelOf s.toObjId := by
+  have hc : tcb.scBindingScCode = s.val + 1 := by
+    have := congrArg SchedContextBinding.scCode hD
+    rw [TCB.schedContextBinding, SchedContextBinding.scCode_ofCodes] at this
+    exact this
+  have ho : tcb.scBindingOwnerCode = o.val + 1 := by
+    have := congrArg SchedContextBinding.ownerCode hD
+    simp only [TCB.schedContextBinding, hc, SchedContextBinding.ownerCode_ofCodes_succ] at this
+    simpa [SchedContextBinding.ownerCode] using this
+  exact ⟨hB.1 t tcb s hT hc, hB.2.2.2 t tcb s o hT hc ho⟩
+
+/-- **A bound binding's holder carries the context's label.** -/
+theorem bindingLabelsEqual.bound {ctx : LabelingContext} {st : SystemState}
+    (hB : bindingLabelsEqual ctx st) {t : SeLe4n.ThreadId} {tcb : TCB}
+    {s : SeLe4n.SchedContextId}
+    (hT : st.objects[t.toObjId]? = some (.tcb tcb)) (hD : tcb.schedContextBinding.scId? = some s) :
+    ctx.threadLabelOf t = ctx.objectLabelOf s.toObjId := by
+  refine hB.1 t tcb s hT ?_
+  simp only [TCB.schedContextBinding, SchedContextBinding.ofCodes] at hD
+  split at hD
+  · simp [SchedContextBinding.scId?] at hD
+  · rename_i k hk
+    rw [hk]
+    split at hD <;> simp only [SchedContextBinding.scId?, Option.some.injEq] at hD <;> subst hD <;> rfl
+
 /-! ### The binding views
 
 `bindingLabelsEqual` restated over four views of the object store, each a
 binding word read at a slot (`0` where the slot holds no object of that kind).
 The frame family of the lenders' flow (`contextStackViewsAgree`) is to carry
-them (WS-SX SX13.1, the `bindingLabelsEqual` row of `docs/REGISTERED_DEBT.md`),
+them (WS-SX SX14, the `bindingLabelsEqual` row of `docs/REGISTERED_DEBT.md`),
 so a step that writes none of the four words carries the predicate, and a step
 after which every binding word was already there before it (a removal, a
 clear) carries it too (`bindingLabelsEqual_of_shrink`). -/
@@ -270,6 +301,36 @@ theorem ofTcb {old : Option KernelObject} {t t' : TCB} (hOld : old = some (.tcb 
       fun _ _ hk _ => (by simp only [objBindingWords, h] at hk; omega)⟩
   · exact of_eq (by simp only [objBindingWords, h1, h2])
 
+/-- **A thread record written keeping its binding** (`TCB.schedContextBinding`):
+the context word is the binding's, and the owner word is read back from it
+wherever the context word names a context. -/
+theorem ofTcbBinding {old : Option KernelObject} {t t' : TCB} (hOld : old = some (.tcb t))
+    (h : t'.schedContextBinding = t.schedContextBinding) :
+    objBindingShrink old (some (.tcb t')) := by
+  subst hOld
+  have hc : t'.scBindingScCode = t.scBindingScCode := by
+    have := congrArg SchedContextBinding.scCode h
+    simpa only [TCB.schedContextBinding, SchedContextBinding.scCode_ofCodes] using this
+  refine ⟨fun _ hk => (by simp only [objBindingWords, hc] at hk ⊢; exact hk),
+    fun _ hk => (by simp only [objBindingWords] at hk; omega),
+    fun _ hk => (by simp only [objBindingWords] at hk; omega), fun k o hk ho => ?_⟩
+  simp only [objBindingWords] at hk ho ⊢
+  have hk' : t.scBindingScCode = k + 1 := hc ▸ hk
+  have := congrArg SchedContextBinding.ownerCode h
+  simp only [TCB.schedContextBinding, hk, hk', SchedContextBinding.ownerCode_ofCodes_succ] at this
+  exact ⟨hk', this ▸ ho⟩
+
+/-- **A thread record written keeping its context word and clearing its owner
+word** (a holder whose lender has gone). -/
+theorem ofTcbOwnerCleared {old : Option KernelObject} {t t' : TCB} (hOld : old = some (.tcb t))
+    (h1 : t'.scBindingScCode = t.scBindingScCode) (h2 : t'.scBindingOwnerCode = 0) :
+    objBindingShrink old (some (.tcb t')) := by
+  subst hOld
+  exact ⟨fun _ hk => (by simp only [objBindingWords, h1] at hk ⊢; exact hk),
+    fun _ hk => (by simp only [objBindingWords] at hk; omega),
+    fun _ hk => (by simp only [objBindingWords] at hk; omega),
+    fun _ _ _ ho => (by simp only [objBindingWords, h2] at ho; omega)⟩
+
 /-- **A notification written keeping or clearing its context word.** -/
 theorem ofNotification {old : Option KernelObject} {n n' : Notification}
     (hOld : old = some (.notification n))
@@ -310,5 +371,185 @@ theorem bindingViewsShrink_of_slot {st st' : SystemState} (k : SeLe4n.ObjId)
     by_cases hx : x = k
     · subst hx; exact hK
     · rw [hNe x hx]; exact .of_eq rfl
+
+/-- **Each thread keeps its binding, and each context and notification after
+the step was there before it**: the form a step's thread-binding frame and its
+non-thread frame give, read as a shrink. -/
+theorem bindingViewsShrink_of_tcbBinding {st st' : SystemState}
+    (hT : ∀ x : SeLe4n.ThreadId,
+      (st'.getTcb? x).map (·.schedContextBinding) = (st.getTcb? x).map (·.schedContextBinding))
+    (hS : ∀ s sc, st'.getSchedContext? s = some sc → st.getSchedContext? s = some sc)
+    (hN : ∀ n ntfn, st'.getNotification? n = some ntfn → st.getNotification? n = some ntfn) :
+    bindingViewsShrink st st' := by
+  have key : ∀ t k, threadContextView st' t = k + 1 →
+      ∃ a b, st'.getTcb? t = some a ∧ st.getTcb? t = some b ∧ a.scBindingScCode = k + 1 ∧
+        b.scBindingScCode = k + 1 ∧ a.scBindingOwnerCode = b.scBindingOwnerCode := by
+    intro t k hV
+    unfold threadContextView at hV
+    have h := hT t
+    cases h1 : st'.getTcb? t with
+    | none => rw [h1] at hV; cases hV
+    | some a =>
+      rw [h1] at hV h
+      cases h2 : st.getTcb? t with
+      | none => rw [h2] at h; cases h
+      | some b =>
+        rw [h2] at h
+        have hE := Option.some.inj h
+        have hb := congrArg SchedContextBinding.scCode hE
+        simp only [TCB.schedContextBinding, SchedContextBinding.scCode_ofCodes] at hb
+        have hk : b.scBindingScCode = k + 1 := hb ▸ hV
+        have ho := congrArg SchedContextBinding.ownerCode hE
+        simp only [TCB.schedContextBinding, hV, hk, SchedContextBinding.ownerCode_ofCodes_succ] at ho
+        exact ⟨a, b, rfl, rfl, hV, hk, ho⟩
+  refine ⟨fun t k hV => ?_, fun s k hV => ?_, fun n k hV => ?_, fun t k o hV hW => ?_⟩
+  · obtain ⟨a, b, -, h2, -, hk, -⟩ := key t k hV
+    unfold threadContextView; rw [h2]; exact hk
+  · unfold contextThreadView at hV ⊢
+    cases h1 : st'.getSchedContext? s with
+    | none => rw [h1] at hV; cases hV
+    | some sc => rw [h1] at hV; rw [hS s sc h1]; exact hV
+  · unfold notificationContextView at hV ⊢
+    cases h1 : st'.getNotification? n with
+    | none => rw [h1] at hV; cases hV
+    | some ntfn => rw [h1] at hV; rw [hN n ntfn h1]; exact hV
+  · obtain ⟨a, b, h1, h2, -, hk, ho⟩ := key t k hV
+    unfold threadOwnerView at hW
+    unfold threadContextView threadOwnerView
+    rw [h1] at hW; rw [h2]
+    exact ⟨hk, ho.symm.trans hW⟩
+
+/-! ### The binding grow: the step a creating site is
+
+A step that writes a binding word to a new value (a bind, a lend, the return to
+an owner) is not a shrink.  It carries the predicate when every word after it
+is either one the state already had or names an object labelled as the holder
+(`bindingLabelsEqual_of_grow`): the label equation a creating site proves from
+its gate or from the invariant it is carried under. -/
+
+/-- **The binding grow**: every binding word after the step was there before
+it or pairs equal labels. -/
+structure bindingViewsGrow (ctx : LabelingContext) (st st' : SystemState) : Prop where
+  thread : ∀ t (s : SeLe4n.SchedContextId), threadContextView st' t = s.val + 1 →
+    threadContextView st t = s.val + 1 ∨ ctx.threadLabelOf t = ctx.objectLabelOf s.toObjId
+  context : ∀ s (t : SeLe4n.ThreadId), contextThreadView st' s = t.val + 1 →
+    contextThreadView st s = t.val + 1 ∨ ctx.threadLabelOf t = ctx.objectLabelOf s.toObjId
+  notification : ∀ n (s : SeLe4n.SchedContextId), notificationContextView st' n = s.val + 1 →
+    notificationContextView st n = s.val + 1 ∨ ctx.objectLabelOf n = ctx.objectLabelOf s.toObjId
+  owner : ∀ t (s : SeLe4n.SchedContextId) (o : SeLe4n.ThreadId),
+    threadContextView st' t = s.val + 1 → threadOwnerView st' t = o.val + 1 →
+    (threadContextView st t = s.val + 1 ∧ threadOwnerView st t = o.val + 1) ∨
+      ctx.threadLabelOf o = ctx.objectLabelOf s.toObjId
+
+namespace bindingViewsGrow
+
+theorem of_shrink {ctx : LabelingContext} {st st' : SystemState} (h : bindingViewsShrink st st') :
+    bindingViewsGrow ctx st st' :=
+  ⟨fun t _ hV => .inl (h.thread t _ hV), fun s _ hV => .inl (h.context s _ hV),
+   fun n _ hV => .inl (h.notification n _ hV), fun t _ _ hV hW => .inl (h.owner t _ _ hV hW)⟩
+
+theorem trans {ctx : LabelingContext} {st st' st'' : SystemState} (h1 : bindingViewsGrow ctx st st')
+    (h2 : bindingViewsGrow ctx st' st'') : bindingViewsGrow ctx st st'' :=
+  ⟨fun t s hV => (h2.thread t s hV).elim (h1.thread t s) .inr,
+   fun s t hV => (h2.context s t hV).elim (h1.context s t) .inr,
+   fun n s hV => (h2.notification n s hV).elim (h1.notification n s) .inr,
+   fun t s o hV hW => (h2.owner t s o hV hW).elim (fun p => h1.owner t s o p.1 p.2) .inr⟩
+
+end bindingViewsGrow
+
+/-- **A grow carries equal binding labels.** -/
+theorem bindingLabelsEqual_of_grow {ctx : LabelingContext} {st st' : SystemState}
+    (hInv : bindingLabelsEqual ctx st) (h : bindingViewsGrow ctx st st') :
+    bindingLabelsEqual ctx st' := by
+  rw [bindingLabelsEqual_iff_views] at hInv ⊢
+  exact ⟨fun t s hV => (h.thread t s hV).elim (hInv.1 t s) id,
+    fun s t hV => (h.context s t hV).elim (hInv.2.1 s t) id,
+    fun n s hV => (h.notification n s hV).elim (hInv.2.2.1 n s) id,
+    fun t s o hV hW => (h.owner t s o hV hW).elim (fun p => hInv.2.2.2 t s o p.1 p.2) id⟩
+
+/-- **A thread record written at one slot**, every other slot's binding words unchanged: the
+grow holds where the record's context word names a context labelled as the
+thread and its owner word an owner labelled as that context. -/
+theorem bindingViewsGrow_of_tcbSlot {ctx : LabelingContext} {st st' : SystemState}
+    {t0 : SeLe4n.ThreadId} {tcb' : TCB}
+    (hNe : ∀ x, x ≠ t0.toObjId → objBindingWords st'.objects[x]? = objBindingWords st.objects[x]?)
+    (hK : st'.objects[t0.toObjId]? = some (.tcb tcb'))
+    (hT : ∀ s : SeLe4n.SchedContextId, tcb'.scBindingScCode = s.val + 1 →
+      ctx.threadLabelOf t0 = ctx.objectLabelOf s.toObjId)
+    (hO : ∀ (s : SeLe4n.SchedContextId) (o : SeLe4n.ThreadId), tcb'.scBindingScCode = s.val + 1 →
+      tcb'.scBindingOwnerCode = o.val + 1 → ctx.threadLabelOf o = ctx.objectLabelOf s.toObjId) :
+    bindingViewsGrow ctx st st' := by
+  refine ⟨fun t s hV => ?_, fun s t hV => ?_, fun n s hV => ?_, fun t s o hV hW => ?_⟩
+  · rw [threadContextView_eq_obj] at hV ⊢
+    by_cases hx : t.toObjId = t0.toObjId
+    · rw [hx, hK] at hV; rw [SeLe4n.ThreadId.toObjId_injective _ _ hx]; exact .inr (hT s hV)
+    · rw [hNe _ hx] at hV; exact .inl hV
+  · rw [contextThreadView_eq_obj] at hV ⊢
+    by_cases hx : s.toObjId = t0.toObjId
+    · rw [hx, hK] at hV; cases hV
+    · rw [hNe _ hx] at hV; exact .inl hV
+  · rw [notificationContextView_eq_obj] at hV ⊢
+    by_cases hx : n = t0.toObjId
+    · rw [hx, hK] at hV; cases hV
+    · rw [hNe _ hx] at hV; exact .inl hV
+  · rw [threadContextView_eq_obj] at hV ⊢; rw [threadOwnerView_eq_obj] at hW ⊢
+    by_cases hx : t.toObjId = t0.toObjId
+    · rw [hx, hK] at hV hW; exact .inr (hO s o hV hW)
+    · rw [hNe _ hx] at hV hW; exact .inl ⟨hV, hW⟩
+
+/-- **A context record written at one slot**, every other slot's binding words unchanged: the
+grow holds where its thread word names a thread labelled as the context. -/
+theorem bindingViewsGrow_of_schedContextSlot {ctx : LabelingContext} {st st' : SystemState}
+    {s0 : SeLe4n.SchedContextId} {sc' : SchedContext}
+    (hNe : ∀ x, x ≠ s0.toObjId → objBindingWords st'.objects[x]? = objBindingWords st.objects[x]?)
+    (hK : st'.objects[s0.toObjId]? = some (.schedContext sc'))
+    (hC : ∀ t : SeLe4n.ThreadId, sc'.boundThreadCode = t.val + 1 →
+      ctx.threadLabelOf t = ctx.objectLabelOf s0.toObjId) :
+    bindingViewsGrow ctx st st' := by
+  refine ⟨fun t s hV => ?_, fun s t hV => ?_, fun n s hV => ?_, fun t s o hV hW => ?_⟩
+  · rw [threadContextView_eq_obj] at hV ⊢
+    by_cases hx : t.toObjId = s0.toObjId
+    · rw [hx, hK] at hV; cases hV
+    · rw [hNe _ hx] at hV; exact .inl hV
+  · rw [contextThreadView_eq_obj] at hV ⊢
+    by_cases hx : s.toObjId = s0.toObjId
+    · rw [hx, hK] at hV; rw [SeLe4n.SchedContextId.toObjId_injective _ _ hx]; exact .inr (hC t hV)
+    · rw [hNe _ hx] at hV; exact .inl hV
+  · rw [notificationContextView_eq_obj] at hV ⊢
+    by_cases hx : n = s0.toObjId
+    · rw [hx, hK] at hV; cases hV
+    · rw [hNe _ hx] at hV; exact .inl hV
+  · rw [threadContextView_eq_obj] at hV ⊢; rw [threadOwnerView_eq_obj] at hW ⊢
+    by_cases hx : t.toObjId = s0.toObjId
+    · rw [hx, hK] at hV; cases hV
+    · rw [hNe _ hx] at hV hW; exact .inl ⟨hV, hW⟩
+
+/-- **A notification written at one slot**, every other slot's binding words unchanged: the
+grow holds where its context word names a context labelled as the
+notification. -/
+theorem bindingViewsGrow_of_notificationSlot {ctx : LabelingContext} {st st' : SystemState}
+    {n0 : SeLe4n.ObjId} {ntfn' : Notification}
+    (hNe : ∀ x, x ≠ n0 → objBindingWords st'.objects[x]? = objBindingWords st.objects[x]?)
+    (hK : st'.objects[n0]? = some (.notification ntfn'))
+    (hN : ∀ s : SeLe4n.SchedContextId, ntfn'.schedContextCode = s.val + 1 →
+      ctx.objectLabelOf n0 = ctx.objectLabelOf s.toObjId) :
+    bindingViewsGrow ctx st st' := by
+  refine ⟨fun t s hV => ?_, fun s t hV => ?_, fun n s hV => ?_, fun t s o hV hW => ?_⟩
+  · rw [threadContextView_eq_obj] at hV ⊢
+    by_cases hx : t.toObjId = n0
+    · rw [hx, hK] at hV; cases hV
+    · rw [hNe _ hx] at hV; exact .inl hV
+  · rw [contextThreadView_eq_obj] at hV ⊢
+    by_cases hx : s.toObjId = n0
+    · rw [hx, hK] at hV; cases hV
+    · rw [hNe _ hx] at hV; exact .inl hV
+  · rw [notificationContextView_eq_obj] at hV ⊢
+    by_cases hx : n = n0
+    · subst hx; rw [hK] at hV; exact .inr (hN s hV)
+    · rw [hNe _ hx] at hV; exact .inl hV
+  · rw [threadContextView_eq_obj] at hV ⊢; rw [threadOwnerView_eq_obj] at hW ⊢
+    by_cases hx : t.toObjId = n0
+    · rw [hx, hK] at hV; cases hV
+    · rw [hNe _ hx] at hV hW; exact .inl ⟨hV, hW⟩
 
 end SeLe4n.Kernel

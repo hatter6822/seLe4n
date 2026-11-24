@@ -1650,6 +1650,72 @@ theorem propagatePipChainCrossCore_objects_pointwise :
               exact Or.inr ⟨preH, postT, hPreH, hPostT, hC'.trans hC, hL'.trans hL,
                 hB'.trans hB, hW'.trans hW⟩
 
+/-- **A key whose thread keeps its context binding words** (WS-SX SX13.2): the
+slot is unchanged, or a thread rewritten as a thread keeping its context word
+and its owner word.  The binding-words reading the pointwise summaries above
+leave out. -/
+def keepsScBindingAt (st st' : SystemState) (oid : ObjId) : Prop :=
+  st'.objects[oid]? = st.objects[oid]? ∨
+    ∃ pre post : TCB, st.objects[oid]? = some (.tcb pre) ∧ st'.objects[oid]? = some (.tcb post) ∧
+      post.scBindingScCode = pre.scBindingScCode ∧ post.scBindingOwnerCode = pre.scBindingOwnerCode
+
+theorem keepsScBindingAt.trans {a b c : SystemState} {oid : ObjId}
+    (h1 : keepsScBindingAt a b oid) (h2 : keepsScBindingAt b c oid) : keepsScBindingAt a c oid := by
+  rcases h1 with h1 | ⟨p1, q1, hPre1, hPost1, s1, o1⟩ <;>
+    rcases h2 with h2 | ⟨p2, q2, hPre2, hPost2, s2, o2⟩
+  · exact .inl (h2.trans h1)
+  · exact .inr ⟨p2, q2, by rw [← h1]; exact hPre2, hPost2, s2, o2⟩
+  · exact .inr ⟨p1, q1, hPre1, by rw [h2]; exact hPost1, s1, o1⟩
+  · rw [hPost1] at hPre2; cases hPre2
+    exact .inr ⟨p1, q2, hPre1, hPost2, s2.trans s1, o2.trans o1⟩
+
+/-- **The boost keeps every context binding word**: it rewrites a thread's
+boost word, and its run-queue re-key writes run links alone. -/
+theorem updatePipBoostOnCore_keepsScBindingAt (st : SystemState) (c : CoreId)
+    (tid : ThreadId) (hInv : st.objects.invExt) (oid : ObjId) :
+    keepsScBindingAt st (updatePipBoostOnCore st c tid) oid := by
+  have hRef : keepsScBindingAt st (pipBoostWrite st tid) oid := by
+    cases hT : st.getTcb? tid with
+    | none => left; rw [pipBoostWrite_eq_self_of_getTcb?_none st tid hT]
+    | some tcb =>
+        by_cases hEq : oid = tid.toObjId
+        · subst hEq
+          obtain ⟨p, hAt⟩ := pipBoostWrite_objects_at st tid tcb hT hInv
+          rw [SystemState.getTcb?_eq_some_iff] at hAt
+          exact Or.inr ⟨tcb, { tcb with pipBoostCode := p },
+            (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT, hAt, rfl, rfl⟩
+        · left
+          exact pipBoostWrite_objects_ne st tid oid
+            (by simp only [beq_iff_eq]; exact fun e => hEq e.symm) hInv
+  have hA := updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid
+  refine hRef.trans ?_
+  rcases hA.pointwise oid with hT | ⟨preT, postT, hPreT, hPostT⟩
+  · exact .inl hT
+  · obtain ⟨t, ht, hw⟩ := hA.get_tcb' hPostT
+    rw [hPreT] at ht; cases ht
+    exact .inr ⟨preT, postT, hPreT, hPostT,
+      by simpa [TCB.withoutRunLinks] using congrArg TCB.scBindingScCode hw,
+      by simpa [TCB.withoutRunLinks] using congrArg TCB.scBindingOwnerCode hw⟩
+
+/-- ...and the whole walk. -/
+theorem propagatePipChainCrossCore_keepsScBindingAt :
+    ∀ (fuel : Nat) (st : SystemState) (startTid : ThreadId) (ec : CoreId)
+      (_hInv : st.objects.invExt) (oid : ObjId),
+      keepsScBindingAt st (propagatePipChainCrossCore st startTid ec fuel).1 oid
+  | 0, st, startTid, ec, _hInv, oid => by
+      left; rw [propagatePipChainCrossCore_zero]
+  | n + 1, st, startTid, ec, hInv, oid => by
+      rw [propagatePipChainCrossCore_step]
+      simp only
+      have hHead : keepsScBindingAt st (pipBoostWithWake st startTid ec).1 oid := by
+        rw [pipBoostWithWake_state]; exact updatePipBoostOnCore_keepsScBindingAt st _ startTid hInv oid
+      cases hb : blockingServer st startTid with
+      | none => simpa using hHead
+      | some nextServer =>
+          exact hHead.trans (propagatePipChainCrossCore_keepsScBindingAt n
+            (pipBoostWithWake st startTid ec).1 nextServer ec
+            (pipBoostWithWake_preserves_objects_invExt st startTid ec hInv) oid)
+
 /-- WS-RR RR8.16 (`v0.35.197`): the boost resolves every thread the pre-state
 resolved.  Its only object write replaces a TCB with a TCB, so no key stops
 holding one -- the forward reading of `updatePipBoostOnCore_tcb_backward`, which
