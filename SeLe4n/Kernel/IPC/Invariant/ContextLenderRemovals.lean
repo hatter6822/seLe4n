@@ -18,7 +18,7 @@ WS-SX SX8 (D27): every reply-stack write that takes a frame off a stack, cuts a
 stack or consumes a caller is a **links shrink** (`contextStackLinksShrink`): a
 `prev` link is cleared or kept, a caller is cleared or kept, and no context
 heads a frame it did not have on its stack.  So each carries the lenders' flow
-(`contextLendersFlow_of_linksShrink`) with no hypothesis on the labels.  These
+(`lendingLabelsEqual_of_linksShrink`) with no hypothesis on the labels.  These
 are the lender results `SeLe4n.Testing.ReplyStackWriteCensus` names for the
 removal sites.
 -/
@@ -38,7 +38,7 @@ def replySlotShrinks (st st' : SystemState) (k : SeLe4n.ObjId) : Prop :=
 theorem contextStackLinksShrink_of_replySlots {st st' : SystemState}
     (h : ∀ k, replySlotShrinks st st' k) : contextStackLinksShrink st st' := by
   refine contextStackLinksShrink_of_objects (fun s r hH => ?_) (fun r x hP => ?_)
-    (fun r l hC => ?_)
+    (fun r l hC => ?_) (bindingViewsShrink_of_objects fun k => ?_)
   · rcases h s.toObjId with hEq | ⟨o, o', _, hPost, _⟩
     · rw [hEq] at hH; exact .head (by rw [contextStackHead_eq_obj]; exact hH)
     · rw [hPost] at hH; cases hH
@@ -51,6 +51,9 @@ theorem contextStackLinksShrink_of_replySlots {st st' : SystemState}
   · rcases h r.toObjId with hEq | ⟨o, o', hPre, hPost, hCl, _⟩
     · rw [hEq] at hC; exact hC
     · rw [hPost] at hC; rw [hPre]; simp only [objStackCaller] at hC ⊢; rw [← hCl]; exact hC
+  · rcases h k with hEq | ⟨o, o', hPre, hPost, _⟩
+    · exact .of_eq (by rw [hEq])
+    · exact .of_eq (by rw [hPre, hPost]; rfl)
 
 theorem replySlotShrinks.of_eq {st st' : SystemState} {k : SeLe4n.ObjId}
     (h : st'.objects[k]? = st.objects[k]?) : replySlotShrinks st st' k := .inl h
@@ -114,11 +117,11 @@ theorem cutReplyFrameOut_linksShrink {st st' : SystemState} {rid : SeLe4n.ReplyI
   · exact cutReplyFrameStores_linksShrink hObjInv hR hN hA hP hS
   · exact severReplyFrameBelowStores_linksShrink hObjInv hR hN hB hBn hS
 
-theorem cutReplyFrameOut_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem cutReplyFrameOut_preserves_lendingLabelsEqual {ctx : LabelingContext}
     {st st' : SystemState} {rid : SeLe4n.ReplyId} (hObjInv : st.objects.invExt)
-    (hInv : contextLendersFlow ctx st) (h : cutReplyFrameOut st rid = .ok st') :
-    contextLendersFlow ctx st' :=
-  contextLendersFlow_of_linksShrink hInv (cutReplyFrameOut_linksShrink hObjInv h)
+    (hInv : lendingLabelsEqual ctx st) (h : cutReplyFrameOut st rid = .ok st') :
+    lendingLabelsEqual ctx st' :=
+  lendingLabelsEqual_of_linksShrink hInv (cutReplyFrameOut_linksShrink hObjInv h)
 
 theorem cutReplyFrameOutOrSelf_linksShrink (st : SystemState) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt) : contextStackLinksShrink st (cutReplyFrameOutOrSelf st rid) := by
@@ -126,10 +129,10 @@ theorem cutReplyFrameOutOrSelf_linksShrink (st : SystemState) (rid : SeLe4n.Repl
   · exact .of_eq h
   · exact cutReplyFrameOut_linksShrink hObjInv h
 
-theorem cutReplyFrameOutOrSelf_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem cutReplyFrameOutOrSelf_preserves_lendingLabelsEqual {ctx : LabelingContext}
     (st : SystemState) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
-    (hInv : contextLendersFlow ctx st) : contextLendersFlow ctx (cutReplyFrameOutOrSelf st rid) :=
-  contextLendersFlow_of_linksShrink hInv (cutReplyFrameOutOrSelf_linksShrink st rid hObjInv)
+    (hInv : lendingLabelsEqual ctx st) : lendingLabelsEqual ctx (cutReplyFrameOutOrSelf st rid) :=
+  lendingLabelsEqual_of_linksShrink hInv (cutReplyFrameOutOrSelf_linksShrink st rid hObjInv)
 
 theorem cutThreadReplyFrameOut_linksShrink (st : SystemState) (tcb : TCB)
     (hObjInv : st.objects.invExt) : contextStackLinksShrink st (cutThreadReplyFrameOut st tcb) := by
@@ -138,10 +141,10 @@ theorem cutThreadReplyFrameOut_linksShrink (st : SystemState) (tcb : TCB)
   · exact .refl _
   · exact cutReplyFrameOutOrSelf_linksShrink st _ hObjInv
 
-theorem cutThreadReplyFrameOut_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem cutThreadReplyFrameOut_preserves_lendingLabelsEqual {ctx : LabelingContext}
     (st : SystemState) (tcb : TCB) (hObjInv : st.objects.invExt)
-    (hInv : contextLendersFlow ctx st) : contextLendersFlow ctx (cutThreadReplyFrameOut st tcb) :=
-  contextLendersFlow_of_linksShrink hInv (cutThreadReplyFrameOut_linksShrink st tcb hObjInv)
+    (hInv : lendingLabelsEqual ctx st) : lendingLabelsEqual ctx (cutThreadReplyFrameOut st tcb) :=
+  lendingLabelsEqual_of_linksShrink hInv (cutThreadReplyFrameOut_linksShrink st tcb hObjInv)
 
 /-! ### The consume -/
 
@@ -185,23 +188,23 @@ theorem consumeCallerReply_linksShrink {st st' : SystemState} {caller : SeLe4n.T
     · exact hS1.trans (contextStackLinksShrink_storeObject_other hInv1 h
         (fun _ e => by cases e) (fun _ e => by cases e))
 
-theorem consumeCallerReply_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem consumeCallerReply_preserves_lendingLabelsEqual {ctx : LabelingContext}
     {st st' : SystemState} {caller : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
-    (hObjInv : st.objects.invExt) (hInv : contextLendersFlow ctx st)
+    (hObjInv : st.objects.invExt) (hInv : lendingLabelsEqual ctx st)
     (h : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
-    contextLendersFlow ctx st' :=
-  contextLendersFlow_of_linksShrink hInv (consumeCallerReply_linksShrink hObjInv h)
+    lendingLabelsEqual ctx st' :=
+  lendingLabelsEqual_of_linksShrink hInv (consumeCallerReply_linksShrink hObjInv h)
 
 theorem consumeCallerReplyLink_linksShrink (st : SystemState) (caller : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt) :
     contextStackLinksShrink st (st.consumeCallerReplyLink caller rid) :=
   consumeCallerReply_linksShrink hObjInv (SystemState.consumeCallerReply_eq_link st caller rid)
 
-theorem consumeCallerReplyLink_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem consumeCallerReplyLink_preserves_lendingLabelsEqual {ctx : LabelingContext}
     (st : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (hObjInv : st.objects.invExt) (hInv : contextLendersFlow ctx st) :
-    contextLendersFlow ctx (st.consumeCallerReplyLink caller rid) :=
-  contextLendersFlow_of_linksShrink hInv (consumeCallerReplyLink_linksShrink st caller rid hObjInv)
+    (hObjInv : st.objects.invExt) (hInv : lendingLabelsEqual ctx st) :
+    lendingLabelsEqual ctx (st.consumeCallerReplyLink caller rid) :=
+  lendingLabelsEqual_of_linksShrink hInv (consumeCallerReplyLink_linksShrink st caller rid hObjInv)
 
 /-- **seL4's `reply_remove` is a links shrink**: the cut, then the consume. -/
 theorem removeCallerReplyFrame_linksShrink {st st' : SystemState} {caller : SeLe4n.ThreadId}
@@ -211,12 +214,12 @@ theorem removeCallerReplyFrame_linksShrink {st st' : SystemState} {caller : SeLe
   (cutReplyFrameOutOrSelf_linksShrink st rid hObjInv).trans
     (consumeCallerReply_linksShrink (cutReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) h)
 
-theorem removeCallerReplyFrame_preserves_contextLendersFlow {ctx : LabelingContext}
+theorem removeCallerReplyFrame_preserves_lendingLabelsEqual {ctx : LabelingContext}
     {st st' : SystemState} {caller : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
-    (hObjInv : st.objects.invExt) (hInv : contextLendersFlow ctx st)
+    (hObjInv : st.objects.invExt) (hInv : lendingLabelsEqual ctx st)
     (h : removeCallerReplyFrame caller rid st = .ok ((), st')) :
-    contextLendersFlow ctx st' :=
-  contextLendersFlow_of_linksShrink hInv (removeCallerReplyFrame_linksShrink hObjInv h)
+    lendingLabelsEqual ctx st' :=
+  lendingLabelsEqual_of_linksShrink hInv (removeCallerReplyFrame_linksShrink hObjInv h)
 
 /-! ### Writers of no stack view -/
 
@@ -227,10 +230,11 @@ theorem contextStackLinksShrink_of_agree {st st' : SystemState}
       st.objects[x]? = some (KernelObject.reply r))
     (hSc : ∀ (x : SeLe4n.ObjId) (sc : SchedContext),
       st'.objects[x]? = some (KernelObject.schedContext sc) →
-      st.objects[x]? = some (KernelObject.schedContext sc)) :
+      st.objects[x]? = some (KernelObject.schedContext sc))
+    (hBind : bindingViewsShrink st st') :
     contextStackLinksShrink st st' := by
   refine contextStackLinksShrink_of_objects (fun s r hH => ?_) (fun r x hP => ?_)
-    (fun r l hC => ?_)
+    (fun r l hC => ?_) hBind
   · cases h : st'.objects[s.toObjId]? with
     | none => rw [h] at hH; cases hH
     | some o =>
@@ -247,6 +251,25 @@ theorem contextStackLinksShrink_of_agree {st st' : SystemState}
       cases o <;> rw [h] at hC <;> simp only [objStackCaller, reduceCtorEq] at hC
       rw [hRp _ _ h]; exact hC
 
+/-- **Clearing the run-queue links keeps every binding word.** -/
+theorem objBindingWords_of_withoutRunLinks {a b : Option KernelObject}
+    (h : a.map KernelObject.withoutRunLinks = b.map KernelObject.withoutRunLinks) :
+    objBindingWords a = objBindingWords b := by
+  have key : ∀ o : Option KernelObject,
+      objBindingWords (o.map KernelObject.withoutRunLinks) = objBindingWords o := by
+    intro o; cases o with
+    | none => rfl
+    | some o => cases o <;> rfl
+  rw [← key a, ← key b, h]
+
+/-- **A step agreeing with its pre-state off the run-queue links** is a links
+shrink. -/
+theorem contextStackLinksShrink_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st) : contextStackLinksShrink st st' :=
+  contextStackLinksShrink_of_agree (fun _ _ hx => h.get_reply_iff.mp hx)
+    (fun _ _ hx => h.get_schedContext_iff.mp hx)
+    (bindingViewsShrink_of_objects fun x => .of_eq (objBindingWords_of_withoutRunLinks (h x)))
+
 /-- **One slot written in place**: `contextStackLinksShrink_of_slot` at a table
 insert. -/
 theorem contextStackLinksShrink_insert {st : SystemState} {k : SeLe4n.ObjId}
@@ -254,13 +277,24 @@ theorem contextStackLinksShrink_insert {st : SystemState} {k : SeLe4n.ObjId}
     (hHead : ∀ (s : SeLe4n.SchedContextId) r, s.toObjId = k →
       objStackHead (some o) = some r → OnContextStackView st s r)
     (hPrev : ∀ x, objStackPrev (some o) = some x → objStackPrev st.objects[k]? = some x)
-    (hCaller : ∀ l, objStackCaller (some o) = some l → objStackCaller st.objects[k]? = some l) :
+    (hCaller : ∀ l, objStackCaller (some o) = some l → objStackCaller st.objects[k]? = some l)
+    (hBind : objBindingShrink st.objects[k]? (some o) := by
+      first
+        | exact objBindingShrink.of_free rfl
+        | exact objBindingShrink.of_eq rfl
+        | (apply objBindingShrink.ofTcb (by assumption); exact .inr ⟨rfl, rfl⟩)
+        | (apply objBindingShrink.ofTcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp
+            (by assumption)); exact .inr ⟨rfl, rfl⟩)
+        | (apply objBindingShrink.ofTcb (lookupTcb_some_objects _ _ _ (by assumption));
+            exact .inr ⟨rfl, rfl⟩)
+        | (apply objBindingShrink.ofNotification (by assumption); exact .inr rfl)
+        | (apply objBindingShrink.ofSchedContext (by assumption); exact .inr rfl)) :
     contextStackLinksShrink st { st with objects := st.objects.insert k o } := by
   have hEq : (st.objects.insert k o)[k]? = some o := by
     simp only [RHTable_getElem?_eq_get?]; exact RobinHood.RHTable.getElem?_insert_self _ _ _ hInv
   refine contextStackLinksShrink_of_slot (st' := { st with objects := st.objects.insert k o }) k
     (fun x hx => ?_) (fun s r hk hr => hHead s r hk (hEq ▸ hr)) (fun x hx => hPrev x (hEq ▸ hx))
-    (fun l hl => hCaller l (hEq ▸ hl))
+    (fun l hl => hCaller l (hEq ▸ hl)) (by show objBindingShrink _ (st.objects.insert k o)[k]?; rw [hEq]; exact hBind)
   show (st.objects.insert k o)[x]? = _
   simp only [RHTable_getElem?_eq_get?]
   exact RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hx (eq_of_beq hb).symm) hInv
@@ -269,20 +303,45 @@ theorem contextStackLinksShrink_insert {st : SystemState} {k : SeLe4n.ObjId}
 object. -/
 theorem contextStackLinksShrink_insert_other {st : SystemState} {k : SeLe4n.ObjId}
     {o : KernelObject} (hInv : st.objects.invExt)
-    (hSc : ∀ sc, o ≠ .schedContext sc) (hRp : ∀ r, o ≠ .reply r) :
+    (hSc : ∀ sc, o ≠ .schedContext sc) (hRp : ∀ r, o ≠ .reply r)
+    (hBind : objBindingShrink st.objects[k]? (some o) := by
+      first
+        | exact objBindingShrink.of_free rfl
+        | exact objBindingShrink.of_eq rfl
+        | (apply objBindingShrink.ofTcb (by assumption); exact .inr ⟨rfl, rfl⟩)
+        | (apply objBindingShrink.ofTcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp
+            (by assumption)); exact .inr ⟨rfl, rfl⟩)
+        | (apply objBindingShrink.ofTcb (lookupTcb_some_objects _ _ _ (by assumption));
+            exact .inr ⟨rfl, rfl⟩)
+        | (apply objBindingShrink.ofNotification (by assumption); exact .inr rfl)
+        | (apply objBindingShrink.ofSchedContext (by assumption); exact .inr rfl)) :
     contextStackLinksShrink st { st with objects := st.objects.insert k o } := by
   refine contextStackLinksShrink_insert hInv (fun _ _ _ hr => ?_) (fun _ hx => ?_)
-    (fun _ hl => ?_) <;> cases o <;> simp_all [objStackHead, objStackPrev, objStackCaller]
+    (fun _ hl => ?_) hBind <;> cases o <;> simp_all [objStackHead, objStackPrev, objStackCaller]
 
 /-- **A thread record write** takes no stack view. -/
 theorem contextStackLinksShrink_updateTcb (st : SystemState) (t : SeLe4n.ThreadId)
-    (f : TCB → TCB) (hInv : st.objects.invExt) :
+    (f : TCB → TCB) (hInv : st.objects.invExt)
+    (hf : ∀ x : TCB, (f x).scBindingScCode = x.scBindingScCode ∧
+      (f x).scBindingOwnerCode = x.scBindingOwnerCode := by intro _; exact ⟨rfl, rfl⟩) :
     contextStackLinksShrink st (st.updateTcb t f) := by
   cases hT : st.getTcb? t with
   | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact .refl _
   | some x =>
     rw [SystemState.updateTcb_eq_of_some hT]
     exact contextStackLinksShrink_insert_other hInv (fun _ e => by cases e) (fun _ e => by cases e)
+      (.ofTcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) (.inr (hf x)))
+
+/-- **A thread record's owner word cleared**, its context word kept. -/
+theorem contextStackLinksShrink_updateTcb_clearOwner (st : SystemState) (t : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    contextStackLinksShrink st (st.updateTcb t fun x => { x with scBindingOwnerCode := 0 }) := by
+  cases hT : st.getTcb? t with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact .refl _
+  | some x =>
+    rw [SystemState.updateTcb_eq_of_some hT]
+    exact contextStackLinksShrink_insert_other hInv (fun _ e => by cases e) (fun _ e => by cases e)
+      (.ofTcbOwnerCleared ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) rfl rfl)
 
 /-- **A wake** writes thread records and the scheduler alone. -/
 theorem contextStackLinksShrink_enqueueRunnableOnCore (st : SystemState)
@@ -300,8 +359,7 @@ theorem contextStackLinksShrink_enqueueRunnableOnCore (st : SystemState)
       exact (contextStackLinksShrink_insert_other (k := t.toObjId)
         (o := .tcb (tcb.setIpcState .ready)) hInv (fun _ e => by cases e)
         (fun _ e => by cases e)).trans
-        (contextStackLinksShrink_of_agree (fun _ _ h => hAg.get_reply_iff.mp h)
-          (fun _ _ h => hAg.get_schedContext_iff.mp h))
+        (contextStackLinksShrink_of_objectsAgreeOffRunLinks hAg)
 
 /-- **A reply object consumed in its slot** (the in-place reply's write). -/
 theorem contextStackLinksShrink_modifyObject_consumed (st : SystemState) (rid : SeLe4n.ReplyId)

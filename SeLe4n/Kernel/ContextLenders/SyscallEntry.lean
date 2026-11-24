@@ -70,14 +70,14 @@ theorem syscallEntryChecked_lendersStage {ctx : LabelingContext}
     (P tid (regs, s0) decoded hCur hP hDec) (hR e tid hCur) h
 
 
-/-- **A refused receive's busy-reply cancel**: nothing, or a reply holder's
-cancel. -/
-theorem LendersFrame.cancelReceiveBusyReply (ctx : LabelingContext) (e : CoreId)
+/-- **A refused receive's busy-reply cancel**, a labelled step: nothing, or a
+reply holder's cancel (its reply arm's pop to the frame's recorded caller). -/
+theorem LendersStep.cancelReceiveBusyReply (ctx : LabelingContext) (e : CoreId)
     (st : SystemState) (hInv : st.objects.invExt) :
-    LendersFrame st (_root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e st) := by
+    LendersStep ctx st (_root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e st) := by
   rcases cancelReceiveBusyReply_cases_holder ctx e st with hE | ⟨_, holder, -, -, hE⟩ <;> rw [hE]
-  · exact LendersFrame.refl hInv
-  · exact LendersFrame.cancelReplyHolder st holder e hInv
+  · exact LendersStep.refl hInv
+  · exact LendersStep.cancelReplyHolder st holder e hInv
 
 /-- **What the ABI dispatch reads**: for the caller the core runs, the checked
 entry's premises at the state the arguments are spilled to, and a capability
@@ -93,7 +93,7 @@ structure SyscallAbiLendPremises (ctx : LabelingContext) (e : CoreId) (syscallId
     let stW := writeFaultRegistersToTcb (_root_.SeLe4n.Kernel.cancelReceiveBusyReply ctx e
       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6)) tid
       (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30)
-    FaultLendPremises stW tid f
+    FaultLendPremises ctx stW tid f
       (Architecture.faultContextOfThread stW tid (Platform.FFI.svcFaultIP elr) spsr) e
 
 /-- **The ABI dispatch keeps the lenders' flow**: the argument spill, then the
@@ -120,7 +120,8 @@ theorem syscallDispatchFromAbi_lendersStage {ctx : LabelingContext} {e : CoreId}
   have hR1 := hR.writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 x6 hInv
   dsimp only at h
   split at h
-  · have F := F1.andThen fun hI => LendersFrame.cancelReceiveBusyReply ctx e _ hI
+  · have F := (LendersStep.of_frame (ctx := ctx) F1).andThen fun hI =>
+      LendersStep.cancelReceiveBusyReply ctx e _ hI
     split at h
     · split at h
       · cases h
@@ -131,7 +132,7 @@ theorem syscallDispatchFromAbi_lendersStage {ctx : LabelingContext} {e : CoreId}
         exact F.stage.trans (LendersStage.of_kept (chainObjectsKept.of_objects_eq rfl))
       · cases h
         unfold Platform.FFI.deliverSyscallCapFault
-        exact F.stage.trans fun hFl => faultDeliverOnCoreChecked_preserves_contextLendersFlow _ tid _ _
+        exact F.stage.trans fun hFl => faultDeliverOnCoreChecked_preserves_lendingLabelsEqual _ tid _ _
           e (P.capFault tid _ hCur)
           (LendersStage.of_kept (chainObjectsKept.writeFaultRegistersToTcb _ tid _ F.invExt) hFl)
     · split at h

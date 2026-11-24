@@ -33,12 +33,15 @@ theorem notificationWaitOnCore (nid : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (
     chainObjectsKept st (_root_.SeLe4n.Kernel.notificationWaitOnCore nid waiter c st).1 := by
   unfold _root_.SeLe4n.Kernel.notificationWaitOnCore
   split
-  · split
+  · rename_i ntfn hN
+    have hNO := (SystemState.getNotification?_eq_some_iff _ _ _).mp hN
+    split
     · dsimp only
       split
       · exact refl _
       · rename_i st1 hS
         have K1 := storeObject_other hInv hS (fun _ e => by cases e) (fun _ e => by cases e)
+          (.ofNotification hNO (.inr rfl))
         have I1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hS
         split
         · exact refl _
@@ -46,13 +49,19 @@ theorem notificationWaitOnCore (nid : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (
           exact K1.trans (modifyTcb I1 hT)
     · split
       · exact refl _
-      · split
+      · rename_i tcb hTcb
+        have hTO := lookupTcb_some_objects _ _ _ hTcb
+        split
         · exact refl _
         · dsimp only
           split
           · exact refl _
           · rename_i st1 hS
             have K1 := storeObject_other hInv hS (fun _ e => by cases e) (fun _ e => by cases e)
+              (.ofNotification hNO (.inr rfl))
+            have hT1 : st1.objects[waiter.toObjId]? = some (.tcb tcb) := by
+              rw [storeObject_objects_ne st st1 _ _ _ (fun e => by rw [e] at hTO; rw [hTO] at hNO; cases hNO)
+                hInv hS]; exact hTO
             have I1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hS
             split
             · exact refl _
@@ -67,6 +76,7 @@ theorem notificationWaitOnCore (nid : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (
                 have he := Except.ok.inj h
                 subst he
                 have K2 := storeObject_other I1 hSt (fun _ e => by cases e) (fun _ e => by cases e)
+                  (.ofTcb hT1 (.inr ⟨rfl, rfl⟩))
                 have I2 := storeObject_preserves_objects_invExt _ _ _ _ I1 hSt
                 split
                 · exact refl _
@@ -103,29 +113,31 @@ theorem notificationWaitCrossCoreDispatchChecked (ctx : LabelingContext) (nid : 
     · exact (chainObjectsKept.notificationWaitOnCore nid waiter c st hInv).linksShrink
   · exact .refl _
 
-theorem maybeDonateSchedContextFlowing (ctx : LabelingContext) (st : SystemState) (n : SeLe4n.ObjId)
-    (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    LendersFrame st (_root_.SeLe4n.Kernel.maybeDonateSchedContextFlowing ctx st n t) :=
-  maybeDonateSchedContextFlowing_induct (LendersFrame st) ctx st n t (refl hInv)
-    (maybeDonateSchedContext st n t hInv)
-
 theorem writeReturnFrameToTcb (st : SystemState) (t : SeLe4n.ThreadId)
     (f : Architecture.SyscallReturnFrame) (hInv : st.objects.invExt) :
     LendersFrame st (Architecture.writeReturnFrameToTcb st t f) :=
   of_kept (chainObjectsKept.writeReturnFrameToTcb st t f hInv)
     (RecordsFrame.writeReturnFrameToTcb st t f hInv)
 
+end LendersFrame
+
+namespace LendersStep
+
+variable {ctx : LabelingContext}
+
 /-- **seL4's return of a context**: its thread link and the thread's binding
 cleared in place, then the reschedule flags; the context keeps its head. -/
 theorem schedContextReturnLinks (st : SystemState) (vS : SeLe4n.ValidObjId) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) :
-    LendersFrame st (SeLe4n.Kernel.schedContextReturnLinks st vS tid) := by
-  have hU : ∀ S : SystemState, S.objects.invExt → LendersFrame S
+    LendersStep ctx st (SeLe4n.Kernel.schedContextReturnLinks st vS tid) := by
+  have hU : ∀ S : SystemState, S.objects.invExt → LendersStep ctx S
       (S.updateTcb tid fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 }) :=
-    fun S h => of_kept (chainObjectsKept.updateTcb _ _ _ h) (RecordsFrame.updateTcb _ _ h fun _ => rfl)
+    fun S h => updateTcb_grow S tid _ h (fun _ _ _ hs => by simp at hs)
+      (fun _ _ _ _ hs _ => by simp at hs)
   have hM : ∀ (S : SystemState) (c : CoreId), S.objects.invExt →
-      LendersFrame S (S.markReschedulePendingOnCore c) := fun S c h =>
-    of_kept (chainObjectsKept.of_objects_eq rfl) (RecordsFrame.markReschedulePendingOnCore S c h)
+      LendersStep ctx S (S.markReschedulePendingOnCore c) := fun S c h =>
+    of_frame (LendersFrame.of_kept (chainObjectsKept.of_objects_eq rfl)
+      (RecordsFrame.markReschedulePendingOnCore S c h))
   unfold SeLe4n.Kernel.schedContextReturnLinks
   split
   · exact refl hInv
@@ -133,54 +145,55 @@ theorem schedContextReturnLinks (st : SystemState) (vS : SeLe4n.ValidObjId) (tid
   split
   · exact refl hInv
   dsimp only
-  refine LendersFrame.andThen ?_ fun h => markKeyChangeFor _ _ _ h
-  refine LendersFrame.andThen ?_ fun h => of_kept
+  refine LendersStep.andThen ?_ fun h => of_frame (LendersFrame.markKeyChangeFor _ _ _ h)
+  refine LendersStep.andThen ?_ fun h => of_frame (LendersFrame.of_kept
     (chainObjectsKept.of_objects_eq (markCandidacyGainFor_objects _ _ _))
-    (RecordsFrame.markCandidacyGainFor _ _ _ h)
+    (RecordsFrame.markCandidacyGainFor _ _ _ h))
   split
-  · exact ((rewriteObject_schedContext hSc { sc with boundThreadCode := 0 } rfl _ hInv).andThen fun h => hU _ h).andThen
-      fun h => hM _ _ h
-  · exact (rewriteObject_schedContext hSc { sc with boundThreadCode := 0 } rfl _ hInv).andThen fun h => hU _ h
+  · exact ((rewriteObject_schedContext_grow hSc { sc with boundThreadCode := 0 } rfl _ hInv
+      (fun _ ht => by simp at ht)).andThen fun h => hU _ h).andThen fun h => hM _ _ h
+  · exact (rewriteObject_schedContext_grow hSc { sc with boundThreadCode := 0 } rfl _ hInv
+      (fun _ ht => by simp at ht)).andThen fun h => hU _ h
 
 theorem schedContextReturnPerform (st : SystemState) (vS : SeLe4n.ValidObjId) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) :
-    LendersFrame st (SeLe4n.Kernel.schedContextReturnPerform st vS tid) :=
+    LendersStep ctx st (SeLe4n.Kernel.schedContextReturnPerform st vS tid) :=
   (schedContextReturnLinks st vS tid hInv).andThen fun h =>
-    of_views (contextStackViewsAgree_of_objectsAgreeOffReleaseLinks
+    of_frame (LendersFrame.of_views (contextStackViewsAgree_of_objectsAgreeOffReleaseLinks
       (SchedContextOps.purgeReplenishment_agree _ _))
-      (SchedContextOps.purgeReplenishment_objects_invExt _ _ h)
+      (SchedContextOps.purgeReplenishment_objects_invExt _ _ h))
 
 theorem maybeReturnSchedContext (st : SystemState) (n : SeLe4n.ObjId) (t : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) : LendersFrame st (SeLe4n.Kernel.maybeReturnSchedContext st n t) :=
-  maybeReturnSchedContext_induct (fun a b => LendersFrame a b) st n t (refl hInv)
+    (hInv : st.objects.invExt) : LendersStep ctx st (SeLe4n.Kernel.maybeReturnSchedContext st n t) :=
+  maybeReturnSchedContext_induct (fun a b => LendersStep ctx a b) st n t (refl hInv)
     (fun vS _ _ _ => schedContextReturnPerform st vS t hInv)
 
 theorem receiveReturnSchedContext (blocks : Bool) (st : SystemState) (t : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) :
-    LendersFrame st (SeLe4n.Kernel.receiveReturnSchedContext blocks st t) :=
-  receiveReturnSchedContext_induct (fun a b => LendersFrame a b) blocks st t (refl hInv)
+    LendersStep ctx st (SeLe4n.Kernel.receiveReturnSchedContext blocks st t) :=
+  receiveReturnSchedContext_induct (fun a b => LendersStep ctx a b) blocks st t (refl hInv)
     (fun vS _ _ _ => schedContextReturnPerform st vS t hInv)
 
 /-- **A receive that completes its bound notification** (seL4-MCS
-`completeSignal`): the checked wait, then the badge written and the donation,
-or the context returned. -/
-theorem completeSignalArm {ctx : LabelingContext} {tid : SeLe4n.ThreadId} {nid : SeLe4n.ObjId}
+`completeSignal`): the checked wait, then the badge written and the checked
+donation (its check is its label equation), or the context returned. -/
+theorem completeSignalArm {tid : SeLe4n.ThreadId} {nid : SeLe4n.ObjId}
     {c : CoreId} {st st' : SystemState} (hInv : st.objects.invExt) (hW : NotParkedAt st tid)
-    (h : SeLe4n.Kernel.completeSignalArm ctx tid nid c st = .ok ((), st')) : LendersFrame st st' := by
-  have W := notificationWaitCrossCoreDispatchChecked ctx nid tid c st hInv hW
+    (h : SeLe4n.Kernel.completeSignalArm ctx tid nid c st = .ok ((), st')) : LendersStep ctx st st' := by
+  have W := LendersFrame.notificationWaitCrossCoreDispatchChecked ctx nid tid c st hInv hW
   unfold SeLe4n.Kernel.completeSignalArm at h
   split at h
   · rename_i hR
     cases h
     rw [hR] at W
-    exact (W.andThen fun h => writeReturnFrameToTcb _ _ _ h).andThen fun h =>
-      maybeDonateSchedContextFlowing ctx _ nid tid h
+    exact (of_frame (W.andThen fun h => LendersFrame.writeReturnFrameToTcb _ _ _ h)).andThen
+      fun h => maybeDonateSchedContextFlowing _ nid tid h
   · rename_i hR
     cases h
     rw [hR] at W
-    exact W.andThen fun h => maybeReturnSchedContext _ nid tid h
+    exact (of_frame W).andThen fun h => maybeReturnSchedContext _ nid tid h
   · cases h
 
-end LendersFrame
+end LendersStep
 
 end SeLe4n.Kernel

@@ -11,9 +11,11 @@ import SeLe4n.Kernel.ContextLenders.CapabilityOnly
 
 /-! # The capability-only table keeps the lenders' flow on every arm
 
-WS-SX SX8.  Each arm of `dispatchCapabilityOnly` is a `LendersFrame`: its
-writes keep or shrink every context stack's head, `prev` link and caller
-(`ContextLenders.CapabilityOnly`).  The case split mirrors the records'
+WS-SX SX8, SX16.  Each arm of `dispatchCapabilityOnly` is a labelled step
+(`LendersStep`): a `LendersFrame`, whose writes keep or shrink every context
+stack's head, `prev` link, caller and binding word
+(`ContextLenders.CapabilityOnly`); a removal whose pops discharge their owners
+at their own pre-states; or a creating bind given its label equation.  The case split mirrors the records'
 (`dispatchCapabilityOnly_recordsStage`).  The checked dispatch then needs no
 capability-only hypothesis.
 -/
@@ -25,13 +27,26 @@ open Architecture.RegisterDecode
 open Architecture.SyscallArgDecode
 open SeLe4n.Kernel.Concurrency (CoreId)
 
-/-- **Every capability-only arm is a lenders' frame.** -/
-theorem dispatchCapabilityOnly_lendersFrame
+/-- **Every capability-only arm is a labelled step**: a lenders' frame, a
+removal whose pops discharge their owners at their own pre-states (the delete
+chain's finalisation, the suspend's cancel), or a creating bind whose label
+equation the entry's premise pack carries (`hBT`, `hBN`). -/
+theorem dispatchCapabilityOnly_lendersStep (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)
     (executingCore : CoreId) (k : Kernel Unit) (st st' : SystemState)
     (hArm : dispatchCapabilityOnly decoded cap tid executingCore = some k)
-    (hInv : st.objects.invExt) (hStep : k st = .ok ((), st')) :
-    LendersFrame st st' := by
+    (hInv : st.objects.invExt) (hStep : k st = .ok ((), st'))
+    (hBT : decoded.syscallId = .schedContextBind → ∀ scId vScId vTid,
+      cap.target = .object scId → validateObjIdArg scId = .ok vScId →
+      resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st
+        = .ok vTid →
+      ctx.threadLabelOf vTid.val = ctx.objectLabelOf vScId.val)
+    (hBN : decoded.syscallId = .schedContextBind → ∀ scId vScId k,
+      cap.target = .object scId → validateObjIdArg scId = .ok vScId →
+      resolveSchedContextBindNotificationCode tid
+        (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st = k + 1 →
+      ctx.objectLabelOf ⟨k⟩ = ctx.objectLabelOf vScId.val) :
+    LendersStep ctx st st' := by
   unfold dispatchCapabilityOnly at hArm
   cases hSy : decoded.syscallId <;> simp only [hSy] at hArm <;> try cases hArm
   case cspaceDelete =>
@@ -44,7 +59,7 @@ theorem dispatchCapabilityOnly_lendersFrame
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          exact LendersFrame.cspaceDeleteSlotZombie hInv hStep
+          exact LendersStep.cspaceDeleteSlotZombie hInv hStep
     all_goals try cases hStep
   case cspaceRevoke =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -56,7 +71,7 @@ theorem dispatchCapabilityOnly_lendersFrame
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          exact LendersFrame.cspaceRevokeCdtFinalising hInv hStep
+          exact LendersStep.cspaceRevokeCdtFinalising hInv hStep
     all_goals try cases hStep
   case mintReplyCap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -68,12 +83,12 @@ theorem dispatchCapabilityOnly_lendersFrame
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          exact LendersFrame.of_kept (chainObjectsKept.mintReplyCapWithCdt hInv hStep) (RecordsFrame.mintReplyCapWithCdt hInv hStep)
+          exact LendersStep.of_frame <| LendersFrame.of_kept (chainObjectsKept.mintReplyCapWithCdt hInv hStep) (RecordsFrame.mintReplyCapWithCdt hInv hStep)
     all_goals try cases hStep
   case untypedRetype =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object _ =>
-      exact LendersFrame.untypedRetypeFromCap hInv hStep
+      exact LendersStep.of_frame <| LendersFrame.untypedRetypeFromCap hInv hStep
     all_goals try cases hStep
   case vspaceMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -92,7 +107,7 @@ theorem dispatchCapabilityOnly_lendersFrame
             | ok p =>
               obtain ⟨_, args⟩ := p
               simp only [hOps] at hStep
-              exact LendersFrame.vspaceMapOrRemapFromFrameCap hInv hStep
+              exact LendersStep.of_frame <| LendersFrame.vspaceMapOrRemapFromFrameCap hInv hStep
     all_goals try cases hStep
   case vspaceUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -103,7 +118,7 @@ theorem dispatchCapabilityOnly_lendersFrame
       | ok r =>
           obtain ⟨slot, _, _⟩ := r
           simp only [hR] at hStep
-          exact LendersFrame.vspaceUnmapFrameCap hInv hStep
+          exact LendersStep.of_frame <| LendersFrame.vspaceUnmapFrameCap hInv hStep
     all_goals try cases hStep
   case vspaceUnifyInstruction =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -115,7 +130,7 @@ theorem dispatchCapabilityOnly_lendersFrame
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          · exact LendersFrame.vspaceUnifyInstructionPage hInv hStep
+          · exact LendersStep.of_frame <| LendersFrame.vspaceUnifyInstructionPage hInv hStep
     all_goals try cases hStep
   case serviceRevoke =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -124,7 +139,7 @@ theorem dispatchCapabilityOnly_lendersFrame
       obtain ⟨_, oid, -, hStep⟩ := hStep
       try dsimp only [] at hStep
       obtain ⟨_, hRev⟩ := revokeServiceByRecordedRegistration_revokeService hStep
-      exact LendersFrame.of_kept (chainObjectsKept.revokeService hInv hRev) (RecordsFrame.revokeService hInv hRev)
+      exact LendersStep.of_frame <| LendersFrame.of_kept (chainObjectsKept.revokeService hInv hRev) (RecordsFrame.revokeService hInv hRev)
     all_goals try cases hStep
   case serviceQuery =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -141,7 +156,7 @@ theorem dispatchCapabilityOnly_lendersFrame
           subst hStEq
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
           subst hStep
-          exact LendersFrame.writeCallReturnWord _ _ _ hInv
+          exact LendersStep.of_frame <| LendersFrame.writeCallReturnWord _ _ _ hInv
     all_goals try cases hStep
   case schedContextConfigure =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -159,7 +174,7 @@ theorem dispatchCapabilityOnly_lendersFrame
           | ok args =>
               simp only [hDec] at hStep
               split at hStep
-              · exact LendersFrame.schedControlConfigure hInv hStep
+              · exact LendersStep.of_frame <| LendersFrame.schedControlConfigure hInv hStep
               · cases hStep
     all_goals try cases hStep
   case schedContextBind =>
@@ -174,7 +189,7 @@ theorem dispatchCapabilityOnly_lendersFrame
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              exact LendersFrame.schedContextBindNotification hInv hStep
+              exact LendersStep.schedContextBindNotification hInv hStep (hBN hSy _ vScId k hTgt hVal hN)
       | zero =>
           simp only [hN] at hStep
           cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
@@ -185,7 +200,7 @@ theorem dispatchCapabilityOnly_lendersFrame
               | error e => simp only [hVal] at hStep; cases hStep
               | ok vScId =>
                   simp only [hVal] at hStep
-                  exact LendersFrame.schedContextBind hInv hStep
+                  exact LendersStep.schedContextBind hInv hStep (hBT hSy _ vScId vThreadId hTgt hVal hRes)
     all_goals try cases hStep
   case schedContextUnbind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -206,7 +221,7 @@ theorem dispatchCapabilityOnly_lendersFrame
                   obtain ⟨stU, sgiU⟩ := pair
                   simp only [hUn] at hStep
                   cases hStep
-                  exact LendersFrame.schedContextUnbindAllOnCore hInv hUn
+                  exact LendersStep.of_frame <| LendersFrame.schedContextUnbindAllOnCore hInv hUn
     all_goals try cases hStep
   case schedContextUnbindObject =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -220,7 +235,7 @@ theorem dispatchCapabilityOnly_lendersFrame
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              exact LendersFrame.schedContextUnbindNotificationObject hInv hStep
+              exact LendersStep.of_frame <| LendersFrame.schedContextUnbindNotificationObject hInv hStep
       | zero =>
           simp only [hN] at hStep
           cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
@@ -238,7 +253,7 @@ theorem dispatchCapabilityOnly_lendersFrame
                       obtain ⟨stU, sgiU⟩ := pair
                       simp only [hUn] at hStep
                       cases hStep
-                      exact LendersFrame.schedContextUnbindThreadObjectOnCore hInv hUn
+                      exact LendersStep.of_frame <| LendersFrame.schedContextUnbindThreadObjectOnCore hInv hUn
     all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -254,7 +269,7 @@ theorem dispatchCapabilityOnly_lendersFrame
           | ok stC =>
               simp only [hC] at hStep
               cases hStep
-              exact LendersFrame.schedContextConsumedOnCore hInv hC
+              exact LendersStep.of_frame <| LendersFrame.schedContextConsumedOnCore hInv hC
     all_goals try cases hStep
   case schedContextYieldTo =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -270,28 +285,28 @@ theorem dispatchCapabilityOnly_lendersFrame
           | ok stC =>
               simp only [hC] at hStep
               cases hStep
-              exact LendersFrame.schedContextYieldToOnCore hInv hC
+              exact LendersStep.of_frame <| LendersFrame.schedContextYieldToOnCore hInv hC
     all_goals try cases hStep
   case irqHandlerAck =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case irqHandler line =>
       rw [Architecture.irqHandlerAck_ok hStep]
       have hO := Architecture.setInterruptLineMask_objects st line false
-      exact ⟨(chainObjectsKept.of_objects_eq hO).linksShrink, hO ▸ hInv⟩
+      exact .of_frame ⟨(chainObjectsKept.of_objects_eq hO).linksShrink, hO ▸ hInv⟩
     all_goals try cases hStep
   case irqControlGet =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case irqControl => exact LendersFrame.irqControlGetFromCap hInv hStep
+    case irqControl => exact LendersStep.of_frame <| LendersFrame.irqControlGetFromCap hInv hStep
     all_goals try cases hStep
   case irqHandlerSetNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case irqHandler line =>
       obtain ⟨_, _, _, hS⟩ := irqHandlerSetNotificationFromCap_ok tid executingCore line _ st st' hStep
-      exact LendersFrame.irqHandlerSetNotification hInv hS
+      exact LendersStep.irqHandlerSetNotification hInv hS
     all_goals try cases hStep
   case irqHandlerClear =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case irqHandler line => exact LendersFrame.irqHandlerClear hInv hStep
+    case irqHandler line => exact LendersStep.irqHandlerClear hInv hStep
     all_goals try cases hStep
   case tcbBindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -311,7 +326,7 @@ theorem dispatchCapabilityOnly_lendersFrame
               | error e => simp only [hCap2] at hStep; cases hStep
               | ok notifId =>
                   simp only [hCap2] at hStep
-                  exact LendersFrame.of_kept (chainObjectsKept.bindNotification hInv hStep) (RecordsFrame.bindNotification hInv hStep)
+                  exact LendersStep.of_frame <| LendersFrame.of_kept (chainObjectsKept.bindNotification hInv hStep) (RecordsFrame.bindNotification hInv hStep)
     all_goals try cases hStep
   case tcbUnbindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -323,7 +338,7 @@ theorem dispatchCapabilityOnly_lendersFrame
           obtain ⟨u, stU⟩ := pair; cases u
           simp only [hUn] at hStep
           cases hStep
-          exact LendersFrame.of_kept (chainObjectsKept.unbindNotification hInv hUn) (RecordsFrame.unbindNotification hInv hUn)
+          exact LendersStep.of_frame <| LendersFrame.of_kept (chainObjectsKept.unbindNotification hInv hUn) (RecordsFrame.unbindNotification hInv hUn)
     all_goals try cases hStep
   case tcbSuspend =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -344,7 +359,7 @@ theorem dispatchCapabilityOnly_lendersFrame
                   obtain ⟨stU, sgiU⟩ := pair
                   simp only [hSus] at hStep
                   cases hStep
-                  exact LendersFrame.suspendThreadOnCore hInv hSus
+                  exact LendersStep.suspendThreadOnCore hInv hSus
     all_goals try cases hStep
   case tcbResume =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -364,7 +379,7 @@ theorem dispatchCapabilityOnly_lendersFrame
               obtain ⟨stU, sgiU⟩ := pair
               simp only [hRes] at hStep
               cases hStep
-              exact LendersFrame.restartThreadOnCore hInv hRes
+              exact LendersStep.restartThreadOnCore hInv hRes
     all_goals try cases hStep
   case tcbSetPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -391,7 +406,7 @@ theorem dispatchCapabilityOnly_lendersFrame
                       obtain ⟨stU, sgiU⟩ := pair
                       simp only [hSet] at hStep
                       cases hStep
-                      exact LendersFrame.setPriorityOnCore hInv hSet
+                      exact LendersStep.of_frame <| LendersFrame.setPriorityOnCore hInv hSet
     all_goals try cases hStep
   case tcbSetMCPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -418,7 +433,7 @@ theorem dispatchCapabilityOnly_lendersFrame
                       obtain ⟨stU, sgiU⟩ := pair
                       simp only [hSet] at hStep
                       cases hStep
-                      exact LendersFrame.setMCPriorityOnCore hInv hSet
+                      exact LendersStep.of_frame <| LendersFrame.setMCPriorityOnCore hInv hSet
     all_goals try cases hStep
   case tcbSetIPCBuffer =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -439,7 +454,7 @@ theorem dispatchCapabilityOnly_lendersFrame
               | ok stU =>
                   simp only [hSet] at hStep
                   cases hStep
-                  exact LendersFrame.setIPCBufferOp executingCore hInv hSet
+                  exact LendersStep.of_frame <| LendersFrame.setIPCBufferOp executingCore hInv hSet
     all_goals try cases hStep
   case tcbSetAffinity =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -464,7 +479,7 @@ theorem dispatchCapabilityOnly_lendersFrame
                       obtain ⟨stU, sgiU⟩ := pair
                       simp only [hSet] at hStep
                       cases hStep
-                      exact LendersFrame.setThreadCpuAffinityOnCore hInv hSet
+                      exact LendersStep.of_frame <| LendersFrame.setThreadCpuAffinityOnCore hInv hSet
     all_goals try cases hStep
   case tcbSetSpace =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -488,7 +503,7 @@ theorem dispatchCapabilityOnly_lendersFrame
                   | ok stU =>
                       simp only [hSet] at hStep
                       cases hStep
-                      exact LendersFrame.copyThreadSpacesZombie executingCore hInv hSet
+                      exact LendersStep.copyThreadSpacesZombie executingCore hInv hSet
     all_goals try cases hStep
   case pageTableMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -507,12 +522,12 @@ theorem dispatchCapabilityOnly_lendersFrame
             | ok p =>
                 obtain ⟨_, rootId⟩ := p
                 simp only [hR] at hStep
-                exact LendersFrame.pageTableMap hInv hStep
+                exact LendersStep.of_frame <| LendersFrame.pageTableMap hInv hStep
     all_goals try cases hStep
   case pageTableUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object objId =>
-      exact LendersFrame.pageTableUnmap hInv hStep
+      exact LendersStep.of_frame <| LendersFrame.pageTableUnmap hInv hStep
     all_goals try cases hStep
 /-- **The capability dispatch keeps the lenders' flow.** -/
 theorem dispatchWithCapChecked_lendersStage (ctx : LabelingContext)
@@ -522,8 +537,9 @@ theorem dispatchWithCapChecked_lendersStage (ctx : LabelingContext)
     (h : dispatchWithCapChecked ctx decoded tid ec gate cap st = .ok ((), st')) :
     LendersStage ctx st st' :=
   dispatchWithCapChecked_lendersStage_of_capabilityOnly ctx decoded tid ec gate cap st st' P hCaller
-    (fun k hC hK => (dispatchCapabilityOnly_lendersFrame decoded cap tid ec k st st' hC
-      P.reach.objects_invExt (dispatchCapabilityOnlyChecked_ok hC hK)).stage) h
+    (fun k hC hK => (dispatchCapabilityOnly_lendersStep ctx decoded cap tid ec k st st' hC
+      P.reach.objects_invExt (dispatchCapabilityOnlyChecked_ok hC hK) P.bindThread
+      P.bindNotification).stage) h
 
 /-- **The checked syscall dispatch keeps the lenders' flow.** -/
 theorem dispatchSyscallChecked_lendersStage (ctx : LabelingContext) (decoded : SyscallDecodeResult)
@@ -535,7 +551,7 @@ theorem dispatchSyscallChecked_lendersStage (ctx : LabelingContext) (decoded : S
     (hCaller : CallerReady st tid)
     (h : dispatchSyscallChecked ctx decoded tid ec st = .ok ((), st')) : LendersStage ctx st st' :=
   dispatchSyscallChecked_lendersStage_of_capabilityOnly ctx decoded tid ec st st' hInv P hCaller
-    (fun cap k st'' hC hK => (dispatchCapabilityOnly_lendersFrame decoded cap tid ec k st st'' hC
-      hInv (dispatchCapabilityOnlyChecked_ok hC hK)).stage) h
+    (fun _ cap k st'' P' hC hK => (dispatchCapabilityOnly_lendersStep ctx decoded cap tid ec k st
+      st'' hC hInv (dispatchCapabilityOnlyChecked_ok hC hK) P'.bindThread P'.bindNotification).stage) h
 
 end SeLe4n.Kernel

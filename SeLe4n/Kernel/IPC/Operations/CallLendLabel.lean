@@ -21,7 +21,7 @@ it only where **the caller's label flows to the context's label**
 is never refused on this ground.
 
 With every lender on a context's stack flowing to the context's label
-(`contextLendersFlow`), the notification's context-label check gives every such
+(`lendingLabelsEqual`), the notification's context-label check gives every such
 lender flowing to the thread the context is later lent to, with no read of the
 stack (`donationContextFlows_lenders`).  This admission is what keeps that
 predicate on a live trace: each push of a lender under a context is one of

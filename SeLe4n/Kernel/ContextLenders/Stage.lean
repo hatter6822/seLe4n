@@ -12,7 +12,7 @@ import SeLe4n.Kernel.KernelRecords.Tails
 
 /-! # The lenders' stage: the unit a kernel entry chains
 
-WS-SX SX8 (ruling (aa) of the notification-donation row).  `contextLendersFlow`
+WS-SX SX8 (ruling (aa) of the notification-donation row).  `lendingLabelsEqual`
 (every lender on a context's stack flows to the context's label) is carried
 across a kernel entry the way the kernel records are (`RecordsStage`,
 `KernelRecords/Frame.lean`): each step of the entry is a `LendersStage`, and the
@@ -46,7 +46,7 @@ structure LendersPremises (st : SystemState) : Prop where
 
 /-- **A step that carries the lenders' flow**: the unit a kernel entry chains. -/
 def LendersStage (ctx : LabelingContext) (st st' : SystemState) : Prop :=
-  contextLendersFlow ctx st → contextLendersFlow ctx st'
+  lendingLabelsEqual ctx st → lendingLabelsEqual ctx st'
 
 namespace LendersStage
 
@@ -60,13 +60,13 @@ theorem trans {a b c : SystemState} (h₁ : LendersStage ctx a b) (h₂ : Lender
 theorem of_eq {st st' : SystemState} (h : st' = st) : LendersStage ctx st st' := by subst h; exact refl _
 
 theorem of_linksShrink {st st' : SystemState} (h : contextStackLinksShrink st st') :
-    LendersStage ctx st st' := fun hF => contextLendersFlow_of_linksShrink hF h
+    LendersStage ctx st st' := fun hF => lendingLabelsEqual_of_linksShrink hF h
 
 theorem of_kept {st st' : SystemState} (h : chainObjectsKept st st') :
     LendersStage ctx st st' := of_linksShrink h.linksShrink
 
 theorem of_viewsAgree {st st' : SystemState} (h : contextStackViewsAgree st st') :
-    LendersStage ctx st st' := fun hF => contextLendersFlow_of_viewsAgree hF h
+    LendersStage ctx st st' := fun hF => lendingLabelsEqual_of_viewsAgree hF h
 
 /-- A stage onto a transition's state is a stage onto the state it returns. -/
 theorem of_fst_eq {α : Type} {st st' : SystemState} {p : SystemState × α} {r : α}
@@ -93,9 +93,18 @@ theorem withScheduler (st : SystemState) (s : SchedulerState) :
     chainObjectsKept st { st with scheduler := s } := of_objects_eq rfl
 
 theorem rewriteObject_tcb {st : SystemState} {k : SeLe4n.ObjId} {x : TCB}
-    (hA : st.rewriteAdmissible k (.tcb x)) (hInv : st.objects.invExt) :
+    (hA : st.rewriteAdmissible k (.tcb x)) (hInv : st.objects.invExt)
+    (hB : objBindingShrink st.objects[k]? (some (.tcb x)) := by
+      first
+        | exact objBindingShrink.of_free rfl
+        | exact objBindingShrink.of_eq rfl
+        | (apply objBindingShrink.ofTcb (by assumption); exact .inr ⟨rfl, rfl⟩)
+        | (apply objBindingShrink.ofTcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp
+            (by assumption)); exact .inr ⟨rfl, rfl⟩)
+        | (apply objBindingShrink.ofTcb (lookupTcb_some_objects _ _ _ (by assumption));
+            exact .inr ⟨rfl, rfl⟩)) :
     chainObjectsKept st (st.rewriteObject k (.tcb x) hA) :=
-  insert_other hInv (fun _ e => by cases e) (fun _ e => by cases e)
+  insert_other hInv (fun _ e => by cases e) (fun _ e => by cases e) hB
 
 theorem runEnqueueOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) : chainObjectsKept st (st.runEnqueueOnCore c t p) :=
@@ -241,10 +250,16 @@ theorem contextStackViewsAgree_of_objectsAgreeOffYield {st st' : SystemState}
     have b := objStackViews_map_withoutYield st.objects[x]?
     rw [h x] at a
     exact ⟨a.1.symm.trans b.1, a.2.1.symm.trans b.2.1, a.2.2.symm.trans b.2.2⟩
-  refine ⟨fun s => ?_, fun r => ?_, fun r => ?_⟩
+  have keyB : ∀ o : Option KernelObject,
+      objBindingWords (o.map KernelObject.withoutYield) = objBindingWords o := by
+    intro o; cases o with
+    | none => rfl
+    | some o => cases o <;> rfl
+  refine ⟨fun s => ?_, fun r => ?_, fun r => ?_, fun x => ?_⟩
   · rw [contextStackHead_eq_obj, contextStackHead_eq_obj]; exact (key _).1
   · rw [replyStackPrev_eq_obj, replyStackPrev_eq_obj]; exact (key _).2.1
   · rw [replyStackCaller_eq_obj, replyStackCaller_eq_obj]; exact (key _).2.2
+  · rw [← keyB st'.objects[x]?, ← keyB st.objects[x]?, h x]
 
 namespace chainObjectsKept
 

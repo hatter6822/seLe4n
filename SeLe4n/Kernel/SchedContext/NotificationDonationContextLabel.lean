@@ -37,7 +37,7 @@ stack (a thread bound to it called a server and lent it, and the server is
 gone), and the reply to that stack's lender later takes the context back from
 the thread it was lent to.  That is a flow from every lender on the stack to
 `W`.  Where every lender `T` on a context's stack flows to the context's label
-(`contextLendersFlow`), the check makes it one: `T ⊑ L(sc) ⊑ W`
+(`contextLendersLabelsEqual`), the check makes it one: `T ⊑ L(sc) ⊑ W`
 (`donationContextFlows_lenders`), with no read of the stack.
 
 The check is the checked kernel's, like every flow gate: it needs the
@@ -275,7 +275,7 @@ theorem maybeDonateSchedContextFlowingGeneric_induct (P : SystemState → Prop)
 
 A context's reply stack is the chain of reply objects from its head
 (`SchedContext.scReply`) down the `prev` links; each frame's caller lent the
-context through a `Call`.  `contextLendersFlow` says every such lender flows to
+context through a `Call`.  `contextLendersLabelsEqual` says every such lender flows to
 the context's label; with it, the context-label check gives every lender on the
 stack flowing to the thread the context is lent to
 (`donationContextFlows_lenders`), with no read of the stack. -/
@@ -290,19 +290,21 @@ inductive OnContextStack (st : SystemState) (s : SeLe4n.SchedContextId) :
       OnContextStack st s r → st.getReply? r = some rep → rep.prev = some r' →
         OnContextStack st s r'
 
-/-- **Every lender on a context's stack flows to the context's label**: the
-caller of every reply object on the stack of every context. -/
-def contextLendersFlow (ctx : LabelingContext) (st : SystemState) : Prop :=
+/-- **Every lender on a context's stack carries the context's label**: the
+caller of every reply object on the stack of every context (WS-SX SX10, D37:
+a lender lent the context while holding it, and a holder carries its context's
+label, so the one-way flow of D27 is an equality). -/
+def contextLendersLabelsEqual (ctx : LabelingContext) (st : SystemState) : Prop :=
   ∀ (s : SeLe4n.SchedContextId) (r : SeLe4n.ReplyId) (rep : Reply) (lender : SeLe4n.ThreadId),
     OnContextStack st s r → st.getReply? r = some rep → rep.caller = some lender →
-      securityFlowsTo (ctx.threadLabelOf lender) (ctx.objectLabelOf s.toObjId) = true
+      ctx.threadLabelOf lender = ctx.objectLabelOf s.toObjId
 
 /-- **A state whose contexts head no stack has no lender**: the predicate holds
 outright (every boot state, every state before the first donating `Call`). -/
-theorem contextLendersFlow_of_no_stacks (ctx : LabelingContext) (st : SystemState)
+theorem contextLendersLabelsEqual_of_no_stacks (ctx : LabelingContext) (st : SystemState)
     (hNoHeads : ∀ (s : SeLe4n.SchedContextId) (sc : SchedContext),
       st.getSchedContext? s = some sc → sc.scReply = none) :
-    contextLendersFlow ctx st := by
+    contextLendersLabelsEqual ctx st := by
   intro s r rep lender hOn
   exfalso
   induction hOn with
@@ -316,14 +318,13 @@ thread it is lent to.  The reply the lender later answers takes the context
 back from that thread, so this is the flow the take-back is. -/
 theorem donationContextFlows_lenders {ctx : LabelingContext} {st : SystemState}
     {n : SeLe4n.ObjId} {tid : SeLe4n.ThreadId} {s : SeLe4n.SchedContextId}
-    (hInv : contextLendersFlow ctx st)
+    (hInv : contextLendersLabelsEqual ctx st)
     (h : donationContextFlows ctx st n tid = true)
     (hS : notificationContext? st n = some s)
     {r : SeLe4n.ReplyId} {rep : Reply} {lender : SeLe4n.ThreadId}
     (hOn : OnContextStack st s r) (hRep : st.getReply? r = some rep)
     (hC : rep.caller = some lender) :
     securityFlowsTo (ctx.threadLabelOf lender) (ctx.threadLabelOf tid) = true :=
-  securityFlowsTo_trans _ _ _ (hInv s r rep lender hOn hRep hC)
-    (donationContextFlows_context h hS)
+  (hInv s r rep lender hOn hRep hC) ▸ donationContextFlows_context h hS
 
 end SeLe4n.Kernel

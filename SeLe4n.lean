@@ -148,7 +148,7 @@ import SeLe4n.Kernel.SyscallSchedFootprint
 -- here to sit inside every Tier 1 census's environment.
 import SeLe4n.Kernel.SchedContext.Invariant.NotificationLinkAgree
 -- WS-SX SX8 (D27): the transport relations of the lender invariant
--- `contextLendersFlow`; rooted here to sit inside every Tier 1 census's environment.
+-- `contextLendersLabelsEqual`; rooted here to sit inside every Tier 1 census's environment.
 import SeLe4n.Kernel.SchedContext.Invariant.ContextLenders
 import SeLe4n.Kernel.IPC.Invariant.ContextLenderRemovals
 import SeLe4n.Kernel.IPC.Invariant.ContextLenderPops

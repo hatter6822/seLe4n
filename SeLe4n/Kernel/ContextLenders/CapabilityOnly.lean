@@ -61,20 +61,29 @@ theorem bindNotification {st st' : SystemState} {nid : SeLe4n.ObjId} {tcbId : Se
     chainObjectsKept st st' := by
   unfold _root_.SeLe4n.Kernel.bindNotification at h
   split at h
-  · split at h
+  · rename_i ntfn hN
+    have hNO := (SystemState.getNotification?_eq_some_iff _ _ _).mp hN
+    split at h
     · cases h
-    · split at h
+    · rename_i tcb hTcb
+      have hTO := lookupTcb_some_objects _ _ _ hTcb
+      split at h
       · cases h
       · split at h
         · cases h
         · rename_i st1 hStore1
+          have hT1 : st1.objects[tcbId.toObjId]? = some (.tcb tcb) := by
+            rw [storeObject_objects_ne st st1 _ _ _
+              (fun e => by rw [e] at hTO; rw [hTO] at hNO; cases hNO) hInv hStore1]
+            exact hTO
           split at h
           · cases h
           · rename_i st2 hStore2
             cases h
-            exact (storeObject_other hInv hStore1 (fun _ e => by cases e) (fun _ e => by cases e)).trans
+            exact (storeObject_other hInv hStore1 (fun _ e => by cases e) (fun _ e => by cases e)
+              (.ofNotification hNO (.inr rfl))).trans
               (storeObject_other (storeObject_preserves_objects_invExt _ _ _ _ hInv hStore1) hStore2
-                (fun _ e => by cases e) (fun _ e => by cases e))
+                (fun _ e => by cases e) (fun _ e => by cases e) (.ofTcb hT1 (.inr ⟨rfl, rfl⟩)))
   · split at h <;> cases h
 
 theorem unbindNotification {st st' : SystemState} {tcbId : SeLe4n.ThreadId}
@@ -84,20 +93,25 @@ theorem unbindNotification {st st' : SystemState} {tcbId : SeLe4n.ThreadId}
   unfold _root_.SeLe4n.Kernel.unbindNotification at h
   split at h
   · cases h
-  · split at h
+  · rename_i tcb hTcb
+    have hTO := lookupTcb_some_objects _ _ _ hTcb
+    split at h
     · cases h
     · split at h
       · cases h
       · rename_i st1 hStore1
         have K1 := storeObject_other hInv hStore1 (fun _ e => by cases e) (fun _ e => by cases e)
+          (.ofTcb hTO (.inr ⟨rfl, rfl⟩))
         have hI1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hStore1
         split at h
-        · split at h
+        · rename_i ntfn hN
+          split at h
           · cases h
           · rename_i st2 hStore2
             cases h
             exact K1.trans (storeObject_other hI1 hStore2 (fun _ e => by cases e)
-              (fun _ e => by cases e))
+              (fun _ e => by cases e)
+              (.ofNotification ((SystemState.getNotification?_eq_some_iff _ _ _).mp hN) (.inr rfl)))
         · cases h; exact K1
 
 end chainObjectsKept
@@ -112,8 +126,12 @@ theorem runRequeueOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (RecordsFrame.runRequeueOnCore st c t p hInv)
 
 theorem updateTcb (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
-    (hInv : st.objects.invExt) : LendersFrame st (st.updateTcb t f) :=
-  ⟨(chainObjectsKept.updateTcb st t f hInv).linksShrink,
+    (hInv : st.objects.invExt)
+    (hf : ∀ x : TCB, (f x).scBindingScCode = 0 ∨ ((f x).scBindingScCode = x.scBindingScCode ∧
+      (f x).scBindingOwnerCode = x.scBindingOwnerCode) := by
+      intro _; first | exact .inr ⟨rfl, rfl⟩ | exact .inl rfl) :
+    LendersFrame st (st.updateTcb t f) :=
+  ⟨(chainObjectsKept.updateTcb st t f hInv hf).linksShrink,
    SystemState.updateTcb_preserves_objects_invExt st t f hInv⟩
 
 theorem repropagateFromWaiter (st : SystemState) (t : SeLe4n.ThreadId) (ec : CoreId)
@@ -299,11 +317,6 @@ theorem schedContextYieldToOnCore {s : SeLe4n.SchedContextId} {c : CoreId}
           · exact yieldToLink _ _ _ _ _ _ _ hI
         · exact setConsumed _ _ _ hI
 
-theorem schedContextBind {vScId : SeLe4n.ValidObjId} {vTid : SeLe4n.ValidThreadId}
-    {st st' : SystemState} (hInv : st.objects.invExt)
-    (h : SchedContextOps.schedContextBind vScId vTid st = .ok ((), st')) : LendersFrame st st' := by
-  rw [(SchedContextOps.schedContextBind_ok_donate h).2]
-  exact schedContextBindPerform st vScId vTid hInv
 
 theorem configureResumeBound (st : SystemState) (t : SeLe4n.ThreadId) (sc : SchedContext)
     (hInv : st.objects.invExt) : LendersFrame st (SchedContextOps.configureResumeBound st t sc) := by
@@ -330,14 +343,21 @@ theorem chain {a b c : SystemState} (F : a.objects.invExt → LendersFrame a b)
     (G : b.objects.invExt → LendersFrame b c) : a.objects.invExt → LendersFrame a c :=
   fun h => (F h).andThen G
 
-/-- A context rewritten in place keeping its stack head. -/
+/-- A context rewritten in place keeping its stack head, and keeping or
+clearing its thread word. -/
 theorem rewriteObject_sc {st : SystemState} {k : SeLe4n.ObjId} {sc sc' : SchedContext}
     (hOld : st.objects[k]? = some (.schedContext sc)) (hR : sc'.scReply = sc.scReply)
-    (hA : st.rewriteAdmissible k (.schedContext sc')) (hInv : st.objects.invExt) :
+    (hA : st.rewriteAdmissible k (.schedContext sc')) (hInv : st.objects.invExt)
+    (hB : sc'.boundThreadCode = 0 ∨ sc'.boundThreadCode = sc.boundThreadCode := by
+      first | exact .inr rfl | exact .inl rfl) :
     LendersFrame st (st.rewriteObject k (.schedContext sc') hA) :=
-  of_views (contextStackViewsAgree_insert hInv (by rw [hOld]; exact hR) (by rw [hOld]; rfl)
-      (by rw [hOld]; rfl))
-    (SystemState.rewriteObject_preserves_objects_invExt st k _ hA hInv)
+  ⟨contextStackLinksShrink_insert hInv
+      (fun s r hk hr => .head (by
+        rw [contextStackHead_eq_obj, hk, hOld]; simpa only [objStackHead, hR] using hr))
+      (fun x hx => by simp only [objStackPrev, reduceCtorEq] at hx)
+      (fun l hl => by simp only [objStackCaller, reduceCtorEq] at hl)
+      (.ofSchedContext hOld hB),
+    SystemState.rewriteObject_preserves_objects_invExt st k _ hA hInv⟩
 
 theorem schedContextUnbindQueueStage (st : SystemState) (home : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) (w : Bool) (hInv : st.objects.invExt) :
@@ -382,21 +402,36 @@ theorem schedContextUnbindOnCore {vScId : SeLe4n.ValidObjId} {ec : CoreId}
 
 end LendersFrame
 
+/-- **`SchedContext_Bind`** (seL4-MCS `schedContext_bindTCB`), a creating site:
+the thread takes the context, given the thread is labelled as it (the entry's
+premise pack carries the equation; WS-SX SX17 discharges it). -/
+theorem LendersStep.schedContextBind {ctx : LabelingContext} {vScId : SeLe4n.ValidObjId}
+    {vTid : SeLe4n.ValidThreadId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : SchedContextOps.schedContextBind vScId vTid st = .ok ((), st'))
+    (hL : ctx.threadLabelOf vTid.val = ctx.objectLabelOf vScId.val) : LendersStep ctx st st' := by
+  rw [(SchedContextOps.schedContextBind_ok_donate h).2]
+  exact LendersStep.schedContextBindPerform st vScId vTid hInv hL
+
 namespace LendersFrame
 
 /-- A notification rewritten in place: no stack view moves. -/
 theorem insert_notification {st : SystemState} {k : SeLe4n.ObjId} {n n' : Notification}
-    (hOld : st.objects[k]? = some (.notification n)) (hInv : st.objects.invExt) :
+    (hOld : st.objects[k]? = some (.notification n)) (hInv : st.objects.invExt)
+    (hB : n'.schedContextCode = 0 ∨ n'.schedContextCode = n.schedContextCode := by
+      first | exact .inr rfl | exact .inl rfl) :
     LendersFrame st { st with objects := st.objects.insert k (.notification n') } :=
-  of_views (contextStackViewsAgree_insert hInv (by rw [hOld]; rfl) (by rw [hOld]; rfl)
-      (by rw [hOld]; rfl))
-    (RHTable_insert_preserves_invExt _ _ _ hInv)
+  ⟨contextStackLinksShrink_insert hInv (fun s r _ hr => by simp only [objStackHead, reduceCtorEq] at hr)
+      (fun x hx => by simp only [objStackPrev, reduceCtorEq] at hx)
+      (fun l hl => by simp only [objStackCaller, reduceCtorEq] at hl) (.ofNotification hOld hB),
+    RHTable_insert_preserves_invExt _ _ _ hInv⟩
 
 /-- **A context's head cleared or kept**: the links shrink, since a head after
 the write is the head the context had. -/
 theorem updateSchedContext_clearHead (st : SystemState) (scId : SeLe4n.SchedContextId)
     (f : SchedContext → SchedContext)
-    (hf : ∀ x, (f x).scReply = none ∨ (f x).scReply = x.scReply) (hInv : st.objects.invExt) :
+    (hf : ∀ x, (f x).scReply = none ∨ (f x).scReply = x.scReply) (hInv : st.objects.invExt)
+    (hfB : ∀ x, (f x).boundThreadCode = 0 ∨ (f x).boundThreadCode = x.boundThreadCode := by
+      intro _; first | exact .inr rfl | exact .inl rfl) :
     LendersFrame st (st.updateSchedContext scId f) := by
   unfold SystemState.updateSchedContext
   split
@@ -406,7 +441,7 @@ theorem updateSchedContext_clearHead (st : SystemState) (scId : SeLe4n.SchedCont
         some (.schedContext (f sc)) := by
       simp only [RHTable_getElem?_eq_get?]; exact RobinHood.RHTable.getElem?_insert_self _ _ _ hInv
     refine ⟨contextStackLinksShrink_of_slot scId.toObjId (fun x hx => ?_) (fun s r hk hr => ?_)
-      (fun x hx => ?_) (fun l hl => ?_),
+      (fun x hx => ?_) (fun l hl => ?_) ?_,
       SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv⟩
     · show (st.objects.insert scId.toObjId _)[x]? = _
       simp only [RHTable_getElem?_eq_get?]
@@ -424,6 +459,8 @@ theorem updateSchedContext_clearHead (st : SystemState) (scId : SeLe4n.SchedCont
       rw [hIns] at hx; cases hx
     · change objStackCaller (st.objects.insert scId.toObjId _)[scId.toObjId]? = some l at hl
       rw [hIns] at hl; cases hl
+    · change objBindingShrink _ (st.objects.insert scId.toObjId _)[scId.toObjId]?
+      rw [hIns]; exact .ofSchedContext hRaw (hfB sc)
   · exact refl hInv
 
 /-- **A context's reply-stack unlink** (seL4-MCS `schedContext_unbindReply`):
@@ -444,17 +481,37 @@ theorem unbindSchedContextNotification (st : SystemState) (s : SeLe4n.SchedConte
     exact (updateSchedContext st s (fun c => { c with notificationCode := 0 }) (fun _ => rfl)
       hInv).andThen fun h' => insert_notification h1 h'
 
-theorem schedContextBindNotification {vScId : SeLe4n.ValidObjId}
-    {n : SeLe4n.ObjId} {st st' : SystemState} (hInv : st.objects.invExt)
-    (h : _root_.SeLe4n.Kernel.schedContextBindNotification vScId n st = .ok ((), st')) :
-    LendersFrame st st' := by
+
+end LendersFrame
+
+/-- **`SchedContext_Bind` on a notification** (seL4-MCS `schedContext_bindNtfn`),
+a creating site: the notification takes the context, given the two are
+labelled alike (the entry's premise pack carries the equation; WS-SX SX17
+discharges it). -/
+theorem LendersStep.schedContextBindNotification {ctx : LabelingContext}
+    {vScId : SeLe4n.ValidObjId} {n : SeLe4n.ObjId} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.schedContextBindNotification vScId n st = .ok ((), st'))
+    (hL : ctx.objectLabelOf n = ctx.objectLabelOf vScId.val) : LendersStep ctx st st' := by
   obtain ⟨hA, rfl⟩ := schedContextBindNotification_ok_admitted h
-  obtain ⟨_, _, hS, -, hN, -⟩ := schedContextBindNotificationAdmitted_facts hA
+  obtain ⟨_, ntfn, hS, -, hN, -⟩ := schedContextBindNotificationAdmitted_facts hA
   obtain ⟨h1, hEq⟩ := bindNotificationSchedLink_eq hS hN hInv
   rw [hEq]
-  exact (updateSchedContext st (SeLe4n.SchedContextId.ofObjId vScId.val)
-    (fun sc => { sc with notificationCode := n.val + 1 }) (fun _ => rfl) hInv).andThen
-    fun h' => insert_notification h1 h'
+  have F := LendersFrame.updateSchedContext st (SeLe4n.SchedContextId.ofObjId vScId.val)
+    (fun sc => { sc with notificationCode := n.val + 1 }) (fun _ => rfl) hInv
+  refine (LendersStep.of_frame F).andThen fun h' => ?_
+  refine LendersStep.of_insert h' rfl (by rw [h1]; rfl) (by rw [h1]; rfl) (by rw [h1]; rfl)
+    (bindingViewsGrow_of_notificationSlot (fun x hx => ?_) (by
+      simp only [RHTable_getElem?_eq_get?]; exact RobinHood.RHTable.getElem?_insert_self _ _ _ h')
+      (fun s hs => ?_))
+    (RHTable_insert_preserves_invExt _ _ _ h')
+  · simp only [RHTable_getElem?_eq_get?]
+    rw [RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hx (eq_of_beq hb).symm) h']
+  · have e : s = SeLe4n.SchedContextId.ofObjId vScId.val := by
+      cases s; simp only [SeLe4n.SchedContextId.ofObjId] at hs ⊢; congr; omega
+    subst e; exact hL
+
+namespace LendersFrame
 
 /-- **`SchedContext_Unbind`**: the thread unbind, the notification unbind and
 the reply-stack unlink. -/
@@ -503,8 +560,10 @@ namespace LendersFrame
 theorem storeSchedContext_keepHead {st st' : SystemState} {s : SeLe4n.SchedContextId}
     {sc' : SchedContext} (hInv : st.objects.invExt)
     (h : storeObject s.toObjId (.schedContext sc') st = .ok ((), st'))
-    (hH : contextStackHead st s = sc'.scReply) : LendersFrame st st' :=
-  ⟨contextStackLinksShrink_storeSchedContext hInv h (fun _ hr => .head (hH.trans hr)),
+    (hH : contextStackHead st s = sc'.scReply)
+    (hB : objBindingWords (some (.schedContext sc')) = objBindingWords st.objects[s.toObjId]?) :
+    LendersFrame st st' :=
+  ⟨contextStackLinksShrink_storeSchedContext hInv h (fun _ hr => .head (hH.trans hr)) (.of_eq hB),
    storeObject_preserves_objects_invExt _ _ _ _ hInv h⟩
 
 /-- The configure purges the context's replenishment, stores the reconfigured
@@ -541,7 +600,9 @@ theorem schedContextConfigure {vScId : SeLe4n.ValidObjId}
               rw [configuredSchedContext_scReply]
               refine (V.head _).trans ?_
               rw [contextStackHead_eq_obj]
-              exact congrArg objStackHead hScRaw)
+              exact congrArg objStackHead hScRaw) (by
+              rw [V.binding, hScRaw]
+              simp only [objBindingWords, (SchedContextOps.configuredSchedContext_binding _ _ _ _ _ _ _ _).1])
           split at h
           · rw [Except.ok.injEq, Prod.mk.injEq] at h
             rw [← h.2]; exact F1
@@ -640,10 +701,13 @@ namespace chainObjectsKept
 /-- **A write of VSpace roots alone** rewrites no reply object and no context. -/
 theorem of_vspaceRootOnlyWrite {st st' : SystemState} (h : vspaceRootOnlyWrite st st') :
     chainObjectsKept st st' := by
-  refine ⟨fun x r hx => ?_, fun x sc hx => ?_⟩ <;> rcases h x with e | ⟨-, r', hr'⟩
+  refine ⟨fun x r hx => ?_, fun x sc hx => ?_, bindingViewsShrink_of_objects fun x => .of_eq ?_⟩
+  all_goals rcases h x with e | ⟨⟨r0, hr0⟩, r', hr'⟩
   all_goals first
     | (rw [← e]; exact hx)
     | (rw [hr'] at hx; cases hx)
+    | rw [e]
+    | (rw [hr0, hr']; rfl)
 
 end chainObjectsKept
 
@@ -652,8 +716,19 @@ namespace LendersFrame
 /-- A store of an object of neither chain kind. -/
 theorem storeObject_other {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
     (hInv : st.objects.invExt) (h : storeObject k o st = .ok ((), st'))
-    (hRp : ∀ r, o ≠ .reply r) (hSc : ∀ sc, o ≠ .schedContext sc) : LendersFrame st st' :=
-  ⟨(chainObjectsKept.storeObject_other hInv h hRp hSc).linksShrink,
+    (hRp : ∀ r, o ≠ .reply r) (hSc : ∀ sc, o ≠ .schedContext sc)
+    (hB : objBindingShrink st.objects[k]? (some o) := by
+      first
+        | exact objBindingShrink.of_free rfl
+        | exact objBindingShrink.of_eq rfl
+        | (apply objBindingShrink.ofTcb (by assumption); exact .inr ⟨rfl, rfl⟩)
+        | (apply objBindingShrink.ofTcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp
+            (by assumption)); exact .inr ⟨rfl, rfl⟩)
+        | (apply objBindingShrink.ofTcb (lookupTcb_some_objects _ _ _ (by assumption));
+            exact .inr ⟨rfl, rfl⟩)
+        | (apply objBindingShrink.ofNotification (by assumption); exact .inr rfl)) :
+    LendersFrame st st' :=
+  ⟨(chainObjectsKept.storeObject_other hInv h hRp hSc hB).linksShrink,
    storeObject_preserves_objects_invExt _ _ _ _ hInv h⟩
 
 theorem of_vspaceRootOnlyWrite {st st' : SystemState} (h : vspaceRootOnlyWrite st st')
@@ -835,41 +910,46 @@ theorem suspendRescheduleOnCore {st st' : SystemState} {runningCore executingCor
         exact handleRescheduleSgiOnCore hInv hH)
     | (rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]; exact refl hInv)
 
-/-- **The thread suspend** (seL4 `suspend`): seL4-MCS's `cancelIPC` (a links
-shrink), the priority revert, the deschedule, the state writes, the release
-removal, the yield cancel and the scheduling point. -/
-theorem suspendThreadOnCore {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
-    {executingCore : CoreId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
-    (hInv : st.objects.invExt)
+end LendersFrame
+
+/-- **The thread suspend** (seL4 `suspend`), a labelled step: seL4-MCS's
+`cancelIPC` (its reply arm's donation return the one pop), the priority revert,
+the deschedule, the state writes, the release removal, the yield cancel and the
+scheduling point. -/
+theorem LendersStep.suspendThreadOnCore {ctx : LabelingContext} {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {executingCore : CoreId}
+    {sgi? : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
     (hStep : Lifecycle.Suspend.suspendThreadOnCore st vtid executingCore = .ok (st', sgi?)) :
-    LendersFrame st st' := by
+    LendersStep ctx st st' := by
   simp only [Lifecycle.Suspend.suspendThreadOnCore] at hStep
   split at hStep
   case h_2 => exact absurd hStep (by simp)
   case h_1 tcb hT =>
     split at hStep
-    case isTrue => cases hStep; exact refl hInv
+    case isTrue => cases hStep; exact .refl hInv
     case isFalse hA =>
-      have S1 := cancelIpcKeepingContexts st vtid.val tcb hInv
-      have S2 : LendersFrame st
+      have S1 := LendersStep.cancelIpcKeepingContexts (ctx := ctx) st vtid.val tcb hInv
+      have S2 : LendersStep ctx st
           (match PriorityInheritance.blockingServer st vtid.val with
            | some serverId => (PriorityInheritance.propagatePipChainCrossCore
                (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) serverId executingCore).1
            | none => Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) := by
         cases PriorityInheritance.blockingServer st vtid.val with
         | none => exact S1
-        | some serverId => exact S1.andThen fun h => propagatePipChainCrossCore _ _ _ _ h
-      have S3 := S2.andThen fun h => descheduleAt _ vtid.val (placedCoreOf? st vtid.val) h
-      have S4 := S3.andThen fun h =>
+        | some serverId =>
+          exact S1.andThen fun h => .of_frame (LendersFrame.propagatePipChainCrossCore _ _ _ _ h)
+      have S3 := S2.andThen fun h =>
+        LendersStep.of_frame (LendersFrame.descheduleAt _ vtid.val (placedCoreOf? st vtid.val) h)
+      have S4 := S3.andThen fun h => LendersStep.of_frame
         (show LendersFrame _ (Lifecycle.Suspend.clearPendingStateValid _ vtid) by
           unfold Lifecycle.Suspend.clearPendingStateValid Lifecycle.Suspend.clearPendingState
-          exact updateTcb _ _ _ h)
-      have S5 := S4.andThen fun h => updateTcb _ vtid.val (fun t => { t with threadState := .Inactive }) h
-      have S6 := S5.andThen fun h => releaseRemoveThread _ vtid.val h
-      have S7 := S6.andThen fun h => cancelYieldTo _ vtid.val h
-      exact S7.andThen fun h => suspendRescheduleOnCore h hStep
+          exact LendersFrame.updateTcb _ _ _ h)
+      have S5 := S4.andThen fun h => LendersStep.of_frame
+        (LendersFrame.updateTcb _ vtid.val (fun t => { t with threadState := .Inactive }) h)
+      have S6 := S5.andThen fun h => LendersStep.of_frame (LendersFrame.releaseRemoveThread _ vtid.val h)
+      have S7 := S6.andThen fun h => LendersStep.of_frame (LendersFrame.cancelYieldTo _ vtid.val h)
+      exact S7.andThen fun h => LendersStep.of_frame (LendersFrame.suspendRescheduleOnCore h hStep)
 
-end LendersFrame
 
 namespace LendersFrame
 
@@ -890,7 +970,9 @@ theorem resumeContext (st : SystemState) (t : SeLe4n.ThreadId) (home : CoreId)
   · exact refl hInv
   · exact (updateSchedContext st s (fun sc => sc.refillUnblockCheck st.machine.timer)
       (fun sc => (SchedContext.fields_of_refillsErased
-        (SchedContext.refillUnblockCheck_refillsErased sc _)).2.2.2.2.2.2.2.1) hInv).andThen
+        (SchedContext.refillUnblockCheck_refillsErased sc _)).2.2.2.2.2.2.2.1) hInv
+      (fun sc => (SchedContext.fields_of_refillsErased
+        (SchedContext.refillUnblockCheck_refillsErased sc _)).2.2.2.2.2.2.1)).andThen
       fun h => settleReturnedContext _ home s h
 
 theorem resumeReadyMidState (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
@@ -940,20 +1022,22 @@ theorem resumeThreadOnCore {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
       · rw [Except.ok.injEq, Prod.mk.injEq] at h; rw [← h.1]; exact S0
   · cases h
 
-/-- **The thread restart** (seL4 `restart`): a resume, or a suspend then a
-resume, each after the fault retire; or nothing. -/
-theorem restartThreadOnCore {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
-    {executingCore : CoreId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
-    (hInv : st.objects.invExt)
-    (h : Lifecycle.Suspend.restartThreadOnCore st vtid executingCore = .ok (st', sgi?)) :
-    LendersFrame st st' := by
-  rcases Lifecycle.Suspend.restartThreadOnCore_cases h with hRes | ⟨st1, _, hSus, hRes⟩ | ⟨rfl, _⟩
-  · exact (retirePendingFaultForResume st vtid.val hInv).andThen fun h' => resumeThreadOnCore h' hRes
-  · exact ((suspendThreadOnCore hInv hSus).andThen fun h' =>
-      retirePendingFaultForResume st1 vtid.val h').andThen fun h' => resumeThreadOnCore h' hRes
-  · exact refl hInv
-
 end LendersFrame
+
+/-- **The thread restart** (seL4 `restart`), a labelled step: a resume, or a
+suspend then a resume, each after the fault retire; or nothing. -/
+theorem LendersStep.restartThreadOnCore {ctx : LabelingContext} {st st' : SystemState}
+    {vtid : SeLe4n.ValidThreadId} {executingCore : CoreId}
+    {sgi? : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
+    (h : Lifecycle.Suspend.restartThreadOnCore st vtid executingCore = .ok (st', sgi?)) :
+    LendersStep ctx st st' := by
+  rcases Lifecycle.Suspend.restartThreadOnCore_cases h with hRes | ⟨st1, _, hSus, hRes⟩ | ⟨rfl, _⟩
+  · exact .of_frame ((LendersFrame.retirePendingFaultForResume st vtid.val hInv).andThen fun h' =>
+      LendersFrame.resumeThreadOnCore h' hRes)
+  · exact (LendersStep.suspendThreadOnCore hInv hSus).andThen fun h' => .of_frame
+      ((LendersFrame.retirePendingFaultForResume st1 vtid.val h').andThen fun h' =>
+        LendersFrame.resumeThreadOnCore h' hRes)
+  · exact .refl hInv
 
 /-- **A carve shrinks the links**: the watermark, the fresh child (a new reply
 object or context is born with no link and no caller, seL4's zeroed object),
@@ -973,7 +1057,7 @@ theorem untypedRetypeObject_linksShrink {src dst : CSpaceAddr} {childId : SeLe4n
     (fun _ e => by cases e)).linksShrink
   have L2 : contextStackLinksShrink stUt stCh := by
     refine contextStackLinksShrink_storeObject hI1 hStCh (fun _ r _ hr => ?_) (fun x hx => ?_)
-      (fun l hl => ?_)
+      (fun l hl => ?_) (.of_free (by cases req <;> rfl))
     · cases req <;> simp [CarveRequest.object, objStackHead,
         SeLe4n.Kernel.SchedContext.empty] at hr
     · cases req <;> simp [CarveRequest.object, objStackPrev, SeLe4n.Kernel.Reply.empty] at hx
@@ -1009,9 +1093,10 @@ theorem untypedRetypeFromCap {tid : SeLe4n.ThreadId} {ec : CoreId}
 end LendersFrame
 
 /-- **A finalisation write** (threads, endpoints, notifications and contexts
-alone, each context keeping its head) moves none of the three stack views. -/
-theorem contextStackViewsAgree_of_finaliseWrite {st st' : SystemState}
-    (h : finaliseWrite st st') : contextStackViewsAgree st st' := by
+alone, each context keeping its head) moves none of the three stack views, so
+with its binding shrink it is a links shrink. -/
+theorem contextStackLinksShrink_of_finaliseWrite {st st' : SystemState}
+    (h : finaliseWrite st st') (hB : bindingViewsShrink st st') : contextStackLinksShrink st st' := by
   have key : ∀ x : SeLe4n.ObjId, objStackHead st'.objects[x]? = objStackHead st.objects[x]? ∧
       objStackPrev st'.objects[x]? = objStackPrev st.objects[x]? ∧
       objStackCaller st'.objects[x]? = objStackCaller st.objects[x]? := fun x => by
@@ -1022,85 +1107,157 @@ theorem contextStackViewsAgree_of_finaliseWrite {st st' : SystemState}
         cases pre <;> simp only [KernelObject.objectType, reduceCtorEq] at hw <;>
         cases post <;> simp only [KernelObject.objectType, reduceCtorEq] at ht <;>
         simp_all [objStackHead, objStackPrev, objStackCaller, schedContextStackHead?]
-  refine ⟨fun s => ?_, fun r => ?_, fun r => ?_⟩
-  · rw [contextStackHead_eq_obj, contextStackHead_eq_obj]; exact (key _).1
-  · rw [replyStackPrev_eq_obj, replyStackPrev_eq_obj]; exact (key _).2.1
-  · rw [replyStackCaller_eq_obj, replyStackCaller_eq_obj]; exact (key _).2.2
+  refine ⟨fun s r hH => .head ?_, fun r x hP => ?_, fun r l hC => ?_, hB⟩
+  · rw [contextStackHead_eq_obj] at hH ⊢; rw [← (key _).1]; exact hH
+  · rw [replyStackPrev_eq_obj] at hP ⊢; rw [← (key _).2.1]; exact hP
+  · rw [replyStackCaller_eq_obj] at hC ⊢; rw [← (key _).2.2]; exact hC
 
 namespace LendersFrame
 
-theorem of_finaliseFrame {st st' : SystemState} (F : FinaliseFrame st st') : LendersFrame st st' :=
-  of_views (contextStackViewsAgree_of_finaliseWrite F.write) F.invExt
+/-- **A finalisation step** (`FinaliseFrame`: no stack view moves) with its
+binding shrink (`FinaliseBindingShrink`, the step lemmas of WS-SX SX15) is a
+links shrink. -/
+theorem of_finaliseFrame {st st' : SystemState} (F : FinaliseFrame st st')
+    (B : FinaliseBindingShrink st st') : LendersFrame st st' :=
+  of_shrink (contextStackLinksShrink_of_finaliseWrite F.write B.shrink) F.invExt
 
-/-- A reply-blocked caller's cancel, its lent context handed back and its
-holder descheduled, then its server's boost reverted. -/
+end LendersFrame
+
+namespace LendersStep
+
+variable {ctx : LabelingContext}
+
+/-- **A reply-blocked caller's cancel**, its lent context handed back to it (the
+cancel's pop, to the frame's recorded caller: D41) and its holder descheduled,
+then its server's boost reverted. -/
 theorem finaliseReplyCancel (s : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
     (hInv : s.objects.invExt) :
-    LendersFrame s (finaliseReplyRevert (cancelIpcBlockingReclaimed c t s) t.blockingServer?) := by
-  have S1 : LendersFrame s (cancelIpcBlockingMigrated c t s) := by
-    have S := cancelIpcBlocking s c t hInv
+    LendersStep ctx s (finaliseReplyRevert (cancelIpcBlockingReclaimed c t s) t.blockingServer?) := by
+  have S1 : LendersStep ctx s (cancelIpcBlockingMigrated c t s) := by
+    have S := cancelIpcBlocking (ctx := ctx) s c t hInv
     rcases cancelIpcBlockingMigrated_cases c t s with h | ⟨_, _, _, _, h⟩ <;> rw [h]
     · exact S
-    · exact S.andThen fun h => settleReturnedContext _ _ _ h
-  have S2 : LendersFrame s (cancelIpcBlockingReclaimed c t s) := by
+    · exact S.andThen fun h => of_frame (LendersFrame.settleReturnedContext _ _ _ h)
+  have S2 : LendersStep ctx s (cancelIpcBlockingReclaimed c t s) := by
     unfold cancelIpcBlockingReclaimed descheduleUnboundHolder
     split
     · exact S1
-    · exact S1.andThen fun h => of_finaliseFrame (FinaliseFrame.descheduleAt _ _ _ h)
-  exact S2.andThen fun h => of_finaliseFrame (FinaliseFrame.finaliseReplyRevert _ _ h)
+    · exact S1.andThen fun h => of_frame (LendersFrame.of_finaliseFrame
+        (FinaliseFrame.descheduleAt _ _ _ h)
+        (FinaliseBindingShrink.refl h |>.step (bindingWordsKeptOrCleared.descheduleAt _ _ _)
+          (FinaliseFrame.descheduleAt _ _ _ h).invExt))
+  exact S2.andThen fun h => of_frame (LendersFrame.of_finaliseFrame
+    (FinaliseFrame.finaliseReplyRevert _ _ h)
+    (FinaliseBindingShrink.refl h |>.step (bindingWordsKeptOrCleared.finaliseReplyRevert _ _ h)
+      (FinaliseFrame.finaliseReplyRevert _ _ h).invExt))
 
-theorem finaliseReplyUnheldPop (st : SystemState) (r : Reply) (c : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) :
-    LendersFrame st (_root_.SeLe4n.Kernel.finaliseReplyUnheldPop st r c) := by
-  rcases finaliseReplyUnheldPop_cases st r c with e | ⟨_, _, _, _, _, hP, e⟩ |
-      ⟨_, _, _, _, _, _, hP, e⟩
-  · rw [e]; exact refl hInv
-  · rw [e]
-    have F := RecordsFrame.returnUnheldSchedContext hInv hP
-    exact (of_shrink (returnUnheldSchedContext_linksShrink hInv hP) F.invExt).andThen
-      fun h => settleReturnedContext _ _ _ h
-  · rw [e]
-    exact of_shrink (severUnheldSchedContext_linksShrink hInv hP)
-      (RecordsFrame.severUnheldSchedContext hInv hP).invExt
+/-- **The pop of a reply heading a context no thread holds**, a labelled step:
+the admission reads the reply as its context's head, so its recorded caller,
+the pop's recipient, is a lender on the context's stack
+(`contextLendersLabelsEqual` at the pop's own pre-state). -/
+theorem finaliseReplyUnheldPop (st : SystemState) (x : SeLe4n.ObjId) (r : Reply)
+    (c : SeLe4n.ThreadId) (t : TCB) (hInv : st.objects.invExt)
+    (hX : st.getObject? x = some (.reply r)) (hC : r.callerCode = c.val + 1)
+    (hAd : replyUnheldPopAdmitted st x r c t = true) :
+    LendersStep ctx st (_root_.SeLe4n.Kernel.finaliseReplyUnheldPop st r c) := by
+  have hOwner : contextLendersLabelsEqual ctx st → ∀ s, r.next = some (.head s) →
+      ctx.threadLabelOf c = ctx.objectLabelOf s.toObjId := by
+    intro hL s hN
+    unfold replyUnheldPopAdmitted at hAd
+    rw [hN] at hAd
+    simp only [Bool.and_eq_true] at hAd
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hHd, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩ := hAd
+    cases hS : st.getSchedContext? s with
+    | none => rw [hS] at hHd; cases hHd
+    | some sc =>
+      rw [hS] at hHd; simp only [] at hHd
+      cases hR : sc.scReply with
+      | none => rw [hR] at hHd; cases hHd
+      | some rid =>
+        rw [hR] at hHd
+        have hx : rid.toObjId = x := by
+          have := beq_iff_eq.mp hHd; cases rid; cases x; simp_all [SeLe4n.ReplyId.toObjId]; rfl
+        have hRp : st.getReply? rid = some r := by
+          rw [SystemState.getReply?_eq_some_iff, hx]
+          rw [SystemState.getObject?_eq_getElem] at hX; exact hX
+        exact hL s rid r c (.head hS hR) hRp ((SeLe4n.ThreadId.ofOptCode_eq_some_iff _ _).mpr hC)
+  rcases finaliseReplyUnheldPop_cases st r c with e | ⟨s, n, st1, hN, hO, hP, e⟩ |
+      ⟨s, n, st1, hN, -, hO, hP, e⟩ <;> rw [e]
+  · exact refl hInv
+  · have F := RecordsFrame.returnUnheldSchedContext hInv hP
+    refine (⟨fun hL => returnUnheldSchedContext_preserves_lendingLabelsEqual hInv hL
+      (hOwner hL.1 s hN) (replyStackOuterCaller?_labelEq hL.1 hO) hP, F.invExt⟩ :
+        LendersStep ctx st st1).andThen fun h => of_frame (LendersFrame.settleReturnedContext _ _ _ h)
+  · exact ⟨fun hL => severUnheldSchedContext_preserves_lendingLabelsEqual hInv hL hP,
+      (RecordsFrame.severUnheldSchedContext hInv hP).invExt⟩
 
-/-- **The finalisation** (seL4 `finaliseCap` on the object's last capability)
-shrinks the links: every step writes threads, endpoints, notifications and
-contexts keeping their heads, or is one of the removals (the cancel of a
-reply's caller, the cut, the unstack, the unheld pop). -/
+/-- **The finalisation** (seL4 `finaliseCap` on the object's last capability) is
+a labelled step: every step writes threads, endpoints, notifications and
+contexts keeping their heads, its binding words shrinking by the step lemmas of
+`FinaliseBindingShrink`, or is one of the removals (the cut, the unstack), or
+one of the two pops (the cancel of a reply's caller, the unheld pop), each
+discharging its owner obligation at its own pre-state. -/
 theorem finaliseFinalObject (target : Nat) (st : SystemState) (hInv : st.objects.invExt) :
-    LendersFrame st (_root_.SeLe4n.Kernel.finaliseFinalObject target st) :=
-  finaliseFinalObject_closed (LendersFrame st)
-    (fun _ _ _ _ _ _ h _ _ _ _ => h.andThen fun hI =>
-      of_finaliseFrame (FinaliseFrame.storeEndpointWaiterCancelled _ _ _ _ _ _ hI))
-    (fun _ s _ t tcb h _ _ _ _ => (h.andThen fun hI => cancelIpcBlocking s t tcb hI).andThen
-      fun hI => of_finaliseFrame (FinaliseFrame.wakeCancelledWaiter _ _ hI))
-    (fun _ s _ t h _ _ _ _ => h.andThen fun hI =>
-      of_finaliseFrame (FinaliseFrame.storeUnbindNotification s t _ hI))
-    (fun s t _ h _ _ _ _ => h.andThen fun hI => of_finaliseFrame (FinaliseFrame.descheduleAt s t _ hI))
-    (fun s s' t tcb sc x h hT hS hSc hB hOk => h.andThen fun hI =>
-      of_finaliseFrame (FinaliseFrame.releaseStep s s s' t tcb sc x (.refl hI) hT hS hSc hB hOk))
-    (fun s _ t tcb _ h _ _ _ _ => h.andThen fun hI => cancelIpcBlocking s t tcb hI)
-    (fun s e q t ep tcb h _ _ _ => h.andThen fun hI =>
-      of_finaliseFrame (FinaliseFrame.storeEndpointBlockedCancelled s e q t ep tcb hI))
-    (fun s t _ h _ _ _ _ _ => h.andThen fun hI => of_finaliseFrame (FinaliseFrame.suspend s t hI))
-    (fun s t h => h.andThen fun hI => of_finaliseFrame (FinaliseFrame.releaseCores s t hI))
-    (fun s s1 _ _ _ r h _ _ hR _ hS _ _ _ _ => h.andThen fun hI =>
-      (show LendersFrame s s1 from
-        of_shrink (contextStackLinksShrink_storeReply hI hR hS (Or.inr rfl) (Or.inr rfl))
+    LendersStep ctx st (_root_.SeLe4n.Kernel.finaliseFinalObject target st) :=
+  finaliseFinalObject_closed (LendersStep ctx st)
+    (fun e q s next t faulted h _ _ _ _ => h.andThen fun hI => of_frame (LendersFrame.of_finaliseFrame
+      (FinaliseFrame.storeEndpointWaiterCancelled _ _ _ _ _ _ hI)
+      (FinaliseBindingShrink.endpointWaiter (.refl hI) _ _ _ _ _)))
+    (fun _ s _ t tcb h _ _ _ hC => h.andThen fun hI =>
+      have hB := notificationWaiterCancellable_blocked hC
+      have F := FinaliseFrame.notificationCancel s t tcb _ hI hB
+      of_frame (LendersFrame.of_finaliseFrame (F.trans (.wakeCancelledWaiter _ _ F.invExt))
+        (FinaliseBindingShrink.notificationWaiter (.refl hI) t tcb _ hB)))
+    (fun a s b t h c d e f => h.andThen fun hI => of_frame (LendersFrame.of_finaliseFrame
+      (FinaliseFrame.storeUnbindNotification s t _ hI)
+      (FinaliseBindingShrink.unbindStep _ a s b t (.refl hI) c d e f)))
+    (fun s t tcb h a b c d => h.andThen fun hI => of_frame (LendersFrame.of_finaliseFrame
+      (FinaliseFrame.descheduleAt s t _ hI)
+      (FinaliseBindingShrink.scDescheduleStep _ s t tcb (.refl hI) a b c d)))
+    (fun s s' t tcb sc x h hT hS hSc hB hOk => h.andThen fun hI => of_frame
+      (LendersFrame.of_finaliseFrame
+        (FinaliseFrame.releaseStep s s s' t tcb sc x (.refl hI) hT hS hSc hB hOk)
+        (FinaliseBindingShrink.scReleaseStep _ s s' t tcb sc x (.refl hI) hT hS hSc hB hOk)))
+    (fun s n t tcb ntfn h a b c d => h.andThen fun hI => of_frame (LendersFrame.of_finaliseFrame
+      (FinaliseFrame.notificationCancel s t tcb n hI b)
+      (FinaliseBindingShrink.notificationCancelStep _ s n t tcb ntfn (.refl hI) a b c d)))
+    (fun s e q t ep tcb h a b c => h.andThen fun hI => of_frame (LendersFrame.of_finaliseFrame
+      (FinaliseFrame.storeEndpointBlockedCancelled s e q t ep tcb hI)
+      (FinaliseBindingShrink.endpointCancelStep _ s e q t ep tcb (.refl hI) a b c)))
+    (fun s t tcb h a b c d e => h.andThen fun hI => of_frame (LendersFrame.of_finaliseFrame
+      (FinaliseFrame.suspend s t hI)
+      (FinaliseBindingShrink.suspendStep _ s t tcb (.refl hI) a b c d e)))
+    (fun s t h => h.andThen fun hI => of_frame (LendersFrame.of_finaliseFrame
+      (FinaliseFrame.releaseCores s t hI) (FinaliseBindingShrink.releaseStep _ s t (.refl hI))))
+    (fun s s1 _ _ _ r h _ _ hR _ hS _ _ _ _ => h.andThen fun hI => of_frame
+      ((show LendersFrame s s1 from
+        LendersFrame.of_shrink (contextStackLinksShrink_storeReply hI hR hS (Or.inr rfl) (Or.inr rfl))
           (storeObject_preserves_objects_invExt _ _ _ _ hI hS)).andThen fun h' =>
-        updateSchedContext_clearHead _ _ _ (fun _ => Or.inl rfl) h')
+        LendersFrame.updateSchedContext_clearHead _ _ _ (fun _ => Or.inl rfl) h'))
     (fun s _ _ c t h _ _ _ _ => h.andThen fun hI => finaliseReplyCancel s c t hI)
-    (fun s s1 _ tid _ h _ _ hEq => by
-      subst hEq; exact h.andThen fun hI => of_finaliseFrame (FinaliseFrame.updateTcb s tid _ hI))
-    ⟨fun s t h => h.andThen fun hI => cancelYieldTo s t hI,
-     fun s c h => h.andThen fun hI => completeYieldFrom s c hI⟩
-    (fun s w x _ h _ _ _ => h.andThen fun hI => of_finaliseFrame (FinaliseFrame.orphanReplyWaiter s w x hI))
-    (fun s _ r c _ h _ _ _ _ => h.andThen fun hI => finaliseReplyUnheldPop s r c hI)
-    (fun s _ _ _ t h _ _ _ _ => h.andThen fun hI => cutCancelledCallerHead s t hI)
-    (fun s c h => h.andThen fun hI => unbindSchedContextNotification s c hI)
+    (fun s s1 x tid t h a b e => by
+      subst e
+      exact h.andThen fun hI => of_frame (LendersFrame.of_finaliseFrame
+        (FinaliseFrame.updateTcb s tid _ hI)
+        (FinaliseBindingShrink.unstashStep _ s _ x tid t (.refl hI) a b rfl)))
+    ⟨fun s t h => h.andThen fun hI => of_frame (LendersFrame.of_finaliseFrame
+        (FinaliseFrame.cancelYieldTo s t hI) ((FinaliseBindingShrink.yieldStep s).1 s t (.refl hI))),
+     fun s c h => h.andThen fun hI => of_frame (LendersFrame.of_finaliseFrame
+        (FinaliseFrame.completeYieldFrom s c hI)
+        ((FinaliseBindingShrink.yieldStep s).2 s c (.refl hI)))⟩
+    (fun s w x t h a b c => h.andThen fun hI => of_frame (LendersFrame.of_finaliseFrame
+      (FinaliseFrame.orphanReplyWaiter s w x hI)
+      (FinaliseBindingShrink.orphanStep _ s w x t (.refl hI) a b c)))
+    (fun s x r c t h hX hC _ hAd => h.andThen fun hI =>
+      finaliseReplyUnheldPop s x r c t hI hX hC hAd)
+    (fun s _ _ _ t h _ _ _ _ => h.andThen fun hI =>
+      of_frame (LendersFrame.cutCancelledCallerHead s t hI))
+    (fun s c h => h.andThen fun hI => of_frame (LendersFrame.of_finaliseFrame
+      (FinaliseFrame.unbindSchedContextNotification s c hI)
+      (FinaliseBindingShrink.notificationLinkStep _ s c (.refl hI))))
     target st (refl hInv)
 
-end LendersFrame
+end LendersStep
 
 /-! ### The delete chain
 
@@ -1123,12 +1280,15 @@ theorem cspaceDeleteSlot {addr : CSpaceAddr} {st st' : SystemState} (hInv : st.o
 theorem retireFinalObject (ec : CoreId) (target recorder : Nat) (st : SystemState)
     (hInv : st.objects.invExt) :
     chainObjectsKept st (_root_.SeLe4n.Kernel.retireFinalObject ec target recorder st) := by
-  refine ⟨fun x r hx => ?_, fun x sc hx => ?_⟩ <;>
+  refine ⟨fun x r hx => ?_, fun x sc hx => ?_, bindingViewsShrink_of_objects fun x => ?_⟩ <;>
     rcases retireFinalObject_key ec target recorder st hInv x with e | ⟨-, -, hn | ⟨U, hU⟩⟩
   all_goals first
     | (rw [← e]; exact hx)
     | (rw [hn] at hx; cases hx)
     | (rw [hU] at hx; cases hx)
+    | exact .of_eq (by rw [e])
+    | exact .of_free (by rw [hn]; rfl)
+    | exact .of_free (by rw [hU]; rfl)
 
 end chainObjectsKept
 
@@ -1138,21 +1298,28 @@ theorem cspaceDeleteSlot {addr : CSpaceAddr} {st st' : SystemState} (hInv : st.o
     (h : _root_.SeLe4n.Kernel.cspaceDeleteSlot addr st = .ok ((), st')) : LendersFrame st st' :=
   of_kept (chainObjectsKept.cspaceDeleteSlot hInv h) (RecordsFrame.cspaceDeleteSlot hInv h)
 
-/-- **The retire of what a final delete destroyed**: a node's line, or the
-registration's release, the finalisation and the object's retire. -/
+end LendersFrame
+
+namespace LendersStep
+
+variable {ctx : LabelingContext}
+
+/-- **The retire of what a final delete destroyed**, a labelled step: a node's
+line, or the registration's release, the finalisation (whose two reply pops are
+its labelled steps) and the object's retire. -/
 theorem retireFinalisedObject (ec : CoreId) (target recorder : Nat) (st : SystemState)
     (hInv : st.objects.invExt) :
-    LendersFrame st (_root_.SeLe4n.Kernel.retireFinalisedObject ec target recorder st) := by
+    LendersStep ctx st (_root_.SeLe4n.Kernel.retireFinalisedObject ec target recorder st) := by
   rcases retireFinalisedObject_cases ec target recorder st with ⟨-, hE⟩ | ⟨-, hE⟩ <;> rw [hE]
-  · exact ⟨(chainObjectsKept.of_objects_eq (retireIrqNode_objects _ _)).linksShrink,
+  · exact of_frame ⟨(chainObjectsKept.of_objects_eq (retireIrqNode_objects _ _)).linksShrink,
       by rw [retireIrqNode_objects]; exact hInv⟩
   · have F1 : LendersFrame st (releaseFinalRegistration target st) :=
       releaseFinalRegistration_closed (LendersFrame st)
         (fun _ _ _ F hR => F.andThen fun hI =>
-          of_kept (chainObjectsKept.revokeService hI hR) (RecordsFrame.revokeService hI hR))
-        target st (refl hInv)
-    exact (F1.andThen fun hI => finaliseFinalObject target _ hI).andThen fun hI =>
-      ⟨(chainObjectsKept.retireFinalObject ec target recorder _ hI).linksShrink,
+          .of_kept (chainObjectsKept.revokeService hI hR) (RecordsFrame.revokeService hI hR))
+        target st (.refl hInv)
+    exact (F1.andThenStep fun hI => finaliseFinalObject target _ hI).andThen fun hI =>
+      of_frame ⟨(chainObjectsKept.retireFinalObject ec target recorder _ hI).linksShrink,
         (retireFinalObject_frame ec target recorder _ hI).1⟩
 
 /-- **The finalising delete**: the slot's delete, the destroyed capabilities'
@@ -1160,30 +1327,30 @@ finalisation, then the retire. -/
 theorem cspaceDeleteSlotFinalising {ec : CoreId} {addr : CSpaceAddr} {st st' : SystemState}
     (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
-    LendersFrame st st' := by
+    LendersStep ctx st st' := by
   obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st _ h
-  have F1 := cspaceDeleteSlot hInv hD
+  have F1 := LendersFrame.cspaceDeleteSlot hInv hD
   obtain ⟨hI2, hW2, -⟩ := finaliseDestroyedCapabilities_ok_frame ec _ _ st1 st2 F1.invExt hF
-  exact (F1.andThen fun _ => of_vspaceRootOnlyWrite hW2 hI2).andThen fun hI =>
+  exact (F1.andThen fun _ => LendersFrame.of_vspaceRootOnlyWrite hW2 hI2).andThenStep fun hI =>
     retireFinalisedObject ec _ _ st2 hI
 
 theorem cspaceDeleteSlotZombie {ec : CoreId} {addr : CSpaceAddr} {st st' : SystemState}
     (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.cspaceDeleteSlotZombie ec addr st = .ok ((), st')) :
-    LendersFrame st st' :=
-  cspaceDeleteSlotZombie_closed (LendersFrame st)
+    LendersStep ctx st st' :=
+  cspaceDeleteSlotZombie_closed (LendersStep ctx st)
     (fun _ _ _ F hD => F.andThen fun hI => cspaceDeleteSlotFinalising hI hD)
     (fun d _ F => F.andThen fun hI => finaliseFinalObject d _ hI) (refl hInv) h
 
 theorem cspaceRevokeCdtFinalising {ec : CoreId} {addr : CSpaceAddr} {st st' : SystemState}
     (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
-    LendersFrame st st' :=
-  cspaceRevokeCdtFinalising_closed (LendersFrame st)
+    LendersStep ctx st st' :=
+  cspaceRevokeCdtFinalising_closed (LendersStep ctx st)
     (fun _ _ _ F hD => F.andThen fun hI => cspaceDeleteSlotFinalising hI hD)
     (fun d _ F => F.andThen fun hI => finaliseFinalObject d _ hI) (refl hInv) h
 
-end LendersFrame
+end LendersStep
 
 
 /-! ### The thread-space set and the handler arms
@@ -1241,19 +1408,6 @@ theorem copyThreadSpaces (ec : CoreId) {st st' : SystemState} {vtid : SeLe4n.Val
   exact ((threadSlotSet ec hInv hT _ _ _ _ _).andThen fun _ => threadSlotSet ec hI1 hT1 _ _ _ _ _).andThen
     fun _ => threadSlotSet ec hI2 hT2 _ _ _ _ _
 
-theorem copyThreadSpacesZombie (ec : CoreId) {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
-    {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr} (hInv : st.objects.invExt)
-    (hStep : _root_.SeLe4n.Kernel.copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
-    LendersFrame st st' := by
-  have hChain : ∀ n s, ZombieRun ec n st s → LendersFrame st s := fun _ _ hR =>
-    hR.chain.closed (LendersFrame st)
-      (fun _ _ _ F hD => F.andThen fun hI => cspaceDeleteSlotFinalising hI hD)
-      (fun d _ F => F.andThen fun hI => finaliseFinalObject d _ hI) (refl hInv)
-  rcases copyThreadSpacesZombie_cases hStep with h1 | ⟨n, s, hR, rfl | h2⟩
-  · exact copyThreadSpaces ec hInv h1
-  · exact hChain n _ hR
-  · exact (hChain n s hR).andThen fun hI => copyThreadSpaces ec hI h2
-
 theorem setIPCBufferOp (ec : CoreId) {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
     {callerTid : SeLe4n.ThreadId} {bufferCap? : Option SeLe4n.CPtr} {addr : SeLe4n.VAddr}
     (hInv : st.objects.invExt)
@@ -1264,22 +1418,41 @@ theorem setIPCBufferOp (ec : CoreId) {st st' : SystemState} {vtid : SeLe4n.Valid
   exact (threadSlotSet ec hInv hT _ _ _ _ _).andThen fun hI =>
     updateTcb _ vtid.val (fun t => { t with ipcBuffer := addr }) hI
 
+end LendersFrame
+
+namespace LendersStep
+
+variable {ctx : LabelingContext}
+
+theorem copyThreadSpacesZombie (ec : CoreId) {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
+    {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr} (hInv : st.objects.invExt)
+    (hStep : _root_.SeLe4n.Kernel.copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
+    LendersStep ctx st st' := by
+  have hChain : ∀ n s, ZombieRun ec n st s → LendersStep ctx st s := fun _ _ hR =>
+    hR.chain.closed (LendersStep ctx st)
+      (fun _ _ _ F hD => F.andThen fun hI => cspaceDeleteSlotFinalising hI hD)
+      (fun d _ F => F.andThen fun hI => finaliseFinalObject d _ hI) (refl hInv)
+  rcases copyThreadSpacesZombie_cases hStep with h1 | ⟨n, s, hR, rfl | h2⟩
+  · exact of_frame (LendersFrame.copyThreadSpaces ec hInv h1)
+  · exact hChain n _ hR
+  · exact (hChain n s hR).andThen fun hI => of_frame (LendersFrame.copyThreadSpaces ec hI h2)
+
 theorem irqHandlerSetNotification {ec : CoreId} {line : Nat} {src : CSpaceAddr}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (hStep : _root_.SeLe4n.Kernel.irqHandlerSetNotification ec line src st = .ok ((), st')) :
-    LendersFrame st st' := by
+    LendersStep ctx st st' := by
   obtain ⟨-, st1, -, -, -, hZ, hC⟩ := irqHandlerSetNotification_ok hInv hStep
-  exact (cspaceDeleteSlotZombie hInv hZ).andThen fun hI => cspaceCopy hI hC
+  exact (cspaceDeleteSlotZombie hInv hZ).andThen fun hI => of_frame (LendersFrame.cspaceCopy hI hC)
 
 theorem irqHandlerClear {ec : CoreId} {line : Nat} {st st' : SystemState}
     (hInv : st.objects.invExt)
     (hStep : _root_.SeLe4n.Kernel.irqHandlerClear ec line st = .ok ((), st')) :
-    LendersFrame st st' := by
+    LendersStep ctx st st' := by
   unfold _root_.SeLe4n.Kernel.irqHandlerClear at hStep
   split at hStep
   · cases hStep
   exact cspaceDeleteSlotZombie hInv hStep
 
-end LendersFrame
+end LendersStep
 
 end SeLe4n.Kernel

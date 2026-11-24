@@ -302,10 +302,12 @@ callers below keep waiting on a stack no context heads, a state both
 `donationOwnerValid` and `donationChainWellFormed` already admit, so neither
 was restated.
 The same row added the stack's **lenders** beside the chain: every caller on a
-frame of a context's stack flows to the context's label (`contextLendersFlow`,
+frame of a context's stack carries the context's label (`contextLendersLabelsEqual`,
 [`NotificationDonationContextLabel.lean`](../../SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean)),
 carried by every kernel entry and required of every reply-stack writer by the
-write census, so the lend and bind checks read static labels only. reply_pop
+write census, so the lend and bind checks read static labels only; since WS-SX
+SX16 it is carried with equal binding labels (`lendingLabelsEqual`), every pop a
+labelled step reading its recipient's label at its own pre-state. reply_pop
 gained seL4's held arm (a recipient that holds a context keeps it, the head is
 popped), and `donationOwnerValid`'s owner clause reads "not donated" in place
 of `.unbound`, the one weakening the held arm needs; the canonical statement is

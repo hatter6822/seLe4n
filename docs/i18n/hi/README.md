@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="सुरक्षा" /></a>
-  <img src="https://img.shields.io/badge/version-0.37.44-blue" alt="संस्करण" />
+  <img src="https://img.shields.io/badge/version-0.37.45-blue" alt="संस्करण" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="लाइसेंस" /></a>
 </p>
@@ -139,11 +139,11 @@ seLe4n Lean 4 में शुरू से बनाया गया एक म
 
 | विशेषता | मान |
 |---------|-----|
-| **संस्करण** | `0.37.44` |
+| **संस्करण** | `0.37.45` |
 | **Lean टूलचेन** | `v4.28.0` |
-| **उत्पादन Lean LoC** | 703 फ़ाइलों में 684,216 |
+| **उत्पादन Lean LoC** | 703 फ़ाइलों में 685,210 |
 | **परीक्षण Lean LoC** | 71 परीक्षण सुइट्स में 92,060 |
-| **प्रमाणित घोषणाएँ** | 26,291 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
+| **प्रमाणित घोषणाएँ** | 26,320 प्रमेय/लेम्मा घोषणाएँ (शून्य sorry/axiom) |
 | **Rust क्रेट** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (उपयोगकर्ता-स्थान रैपर), `sele4n-hal` (कर्नेल की हार्डवेयर परत), और होस्ट परीक्षण `sele4n-lean-boundary` |
 | **लक्ष्य हार्डवेयर** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **बूट लेन** | हर QEMU लेन पहले [rpi5_machine](https://github.com/hatter6822/rpi5_machine) की `raspi5b` मशीन पर Raspberry Pi 5 इमेज बूट करती है, फिर QEMU की `virt` पर `virt` इमेज |

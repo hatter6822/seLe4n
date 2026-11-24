@@ -12,7 +12,7 @@ import SeLe4n.Kernel.ContextLenders.Capability
 /-! # The checked capability dispatch carries the lenders' flow
 
 WS-SX SX8.  The twin of `dispatchWithCapChecked_recordsStage`
-(`KernelRecords/Dispatch.lean`) for `contextLendersFlow`, over every arm the
+(`KernelRecords/Dispatch.lean`) for `lendingLabelsEqual`, over every arm the
 capability dispatch routes past the capability-only table: the IPC arms, the
 signal and wait, the audit read and drain, the declassifications, and the
 capability writes the dispatch runs itself.
@@ -41,16 +41,42 @@ structure LendersDispatchPremises (ctx : LabelingContext) (decoded : SyscallDeco
   call : ∀ epId, cap.target = .object epId →
     LendersPremises (endpointCallWithCapsOnCore epId tid
       (.frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply)) ec st).1
+  /-- The `Call` lend's label equation (a creating site): a receiver blocked on
+  an endpoint is labelled as it, so the caller the gate admitted is labelled as
+  the receiver it lends to (WS-SX SX17 discharges it). -/
+  waiters : blockedReceiverLabelsEqual ctx st
   receive : ∀ epId, cap.target = .object epId →
-    ReceiveLendersPremises (cancelRecvBusyReply ctx tid gate decoded ec st) tid gate decoded epId ec
+    ReceiveLendersPremises ctx (cancelRecvBusyReply ctx tid gate decoded ec st) tid gate decoded
+      epId ec
   replyRecv : ∀ epId rid prevCaller replyBadge replyGrant, cap.target = .object epId →
     resolveReplyRecvReply gate decoded st = .ok (some (rid, prevCaller, replyBadge, replyGrant)) →
     let msg : IpcMessage :=
       { registers := Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs decoded.msgInfo, badge := replyBadge }
-    ReplyRecvLendersPremises st
+    ReplyRecvLendersPremises ctx st
       (replyRecvCallerFaultAnswer? st prevCaller decoded.msgInfo.label msg) epId tid rid prevCaller
       (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller decoded.msgInfo.label msg) msg)
       replyGrant ec
+  /-- `SchedContext_Bind` on a thread (a creating site): the thread the arm
+  resolves is labelled as the context (WS-SX SX17 discharges it). -/
+  bindThread : decoded.syscallId = .schedContextBind → ∀ scId vScId vTid,
+    cap.target = .object scId → validateObjIdArg scId = .ok vScId →
+    resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st
+      = .ok vTid →
+    ctx.threadLabelOf vTid.val = ctx.objectLabelOf vScId.val
+  /-- `SchedContext_Bind` on a notification (a creating site): the notification
+  the arm resolves is labelled as the context (WS-SX SX17 discharges it). -/
+  bindNotification : decoded.syscallId = .schedContextBind → ∀ scId vScId k,
+    cap.target = .object scId → validateObjIdArg scId = .ok vScId →
+    resolveSchedContextBindNotificationCode tid
+      (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st = k + 1 →
+    ctx.objectLabelOf ⟨k⟩ = ctx.objectLabelOf vScId.val
+  /-- The declassified signal's unchecked lend (a creating site): the thread its
+  wake takes the notification's context to is labelled as that context (WS-SX
+  SX17 discharges it). -/
+  declassifySignal : ∀ ntfnCap notifId,
+    resolveDeclassifySignalTarget tid decoded.msgInfo.extraCaps st = .ok (ntfnCap, notifId) →
+    ∀ t s, signalWokenThread? st notifId = some t → notificationContext? st notifId = some s →
+      ctx.threadLabelOf t = ctx.objectLabelOf s.toObjId
 
 /-- The tail every waking arm ends with: clear the woken receiver's stash, then
 stage the delivered frames. -/
@@ -136,8 +162,9 @@ theorem dispatchWithCapChecked_lendersStage_of_capabilityOnly (ctx : LabelingCon
     · rename_i hCall
       cases h
       intro hF
-      have h1 := endpointCallCrossCoreDispatchChecked_preserves_contextLendersFlow epId tid _ ec st
-        hInv P.reach.donationChainWellFormed (P.call epId hT) hF
+      have h1 := endpointCallCrossCoreDispatchChecked_preserves_lendingLabelsEqual epId tid _ ec st
+        hInv P.reach.donationChainWellFormed (P.call epId hT) P.waiters
+        hIpc.queueHeadBlockedConsistent hF
       have hI := (RecordsStep.endpointCallCrossCoreDispatchChecked (ctx := ctx) (endpointId := epId)
         (caller := tid) (payload := .frame cap.badge (cap.rights.mem .grant) (cap.rights.mem .grantReply))
         (c := ec) hInv hIpc.queueHeadBlockedConsistent).invExt
@@ -147,7 +174,7 @@ theorem dispatchWithCapChecked_lendersStage_of_capabilityOnly (ctx : LabelingCon
   case reply.replyCap rid =>
     repeat' split at h
     all_goals first | (cases h; done) | skip
-    exact (LendersFrame.replyTransferOnCoreChecked hInv h).stage
+    exact (LendersStep.replyTransferOnCoreChecked hInv hIpc.replyCallerLinkage.1 h).stage
   case replyRecv.object epId =>
     split at h
     · cases h
@@ -161,11 +188,12 @@ theorem dispatchWithCapChecked_lendersStage_of_capabilityOnly (ctx : LabelingCon
     rename_i rid prevCaller replyBadge replyGrant hRes
     repeat' split at h
     all_goals first | (cases h; done) | skip
-    · exact (LendersFrame.replyRecvCompletesSignalArm hInv h).stage
+    · exact (LendersStep.replyRecvCompletesSignalArm hInv hIpc.replyCallerLinkage.1 h).stage
     rename_i hX
     cases h
-    have hS := replyRecvTransferOnCore_lendersStage hInv hIpc.queueHeadBlockedConsistent
-      hCaller.ready (P.replyRecv epId rid prevCaller replyBadge replyGrant hT hRes) id hX
+    have hS := replyRecvTransferOnCore_lendersStage hInv
+      (resolveReplyRecvReply_answered _ _ _ _ _ _ _ hRes)
+      (P.replyRecv epId rid prevCaller replyBadge replyGrant hT hRes) hX
     have hI : _ := hX
     unfold replyRecvTransferOnCore at hI
     exact hS.trans (LendersFrame.stageDeliveredMessage _ _ _
@@ -211,12 +239,12 @@ theorem dispatchWithCapChecked_lendersStage_of_capabilityOnly (ctx : LabelingCon
     · rename_i hSig
       cases h
       exact LendersStage.of_fst_eq
-        (LendersFrame.notificationSignalBoundCrossCoreDispatchChecked ctx _ _ _ _ st hInv).stage hSig
+        (LendersStep.notificationSignalBoundCrossCoreDispatchChecked ctx _ _ _ _ st hInv).stage hSig
     · cases h
   case notificationWait.object notifId =>
     split at h
     · cases h; exact (LendersFrame.writeReturnFrameToTcb _ _ _ hInv).stage
-    exact (LendersFrame.completeSignalArm hInv hCaller.notParked h).stage
+    exact (LendersStep.completeSignalArm hInv hCaller.notParked h).stage
   case declassify.auditTrail code =>
     split at h
     · cases h
@@ -224,12 +252,14 @@ theorem dispatchWithCapChecked_lendersStage_of_capabilityOnly (ctx : LabelingCon
   case declassifySignal.auditTrail code =>
     split at h
     · cases h
+    rename_i ntfnCap notifId hRes
     try dsimp only at h
     split at h
     · rename_i hSig
       cases h
       exact LendersStage.of_fst_eq
-        (LendersFrame.notificationSignalDeclassifiedCrossCoreDispatch _ _ _ _ _ st hInv).stage hSig
+        (LendersStep.notificationSignalDeclassifiedCrossCoreDispatch ctx _ _ _ _ _ st hInv
+          (P.declassifySignal ntfnCap notifId hRes)).stage hSig
     · cases h
 
 namespace LendersFrame
@@ -283,7 +313,7 @@ theorem contextStackViewsAgree_of_objectsAgreeOffTaint {st st' : SystemState}
     have b := objStackViews_map_eraseTaint st.objects[x]?
     rw [h x] at a
     exact ⟨a.1.symm.trans b.1, a.2.1.symm.trans b.2.1, a.2.2.symm.trans b.2.2⟩
-  refine ⟨fun s => ?_, fun r => ?_, fun r => ?_⟩
+  refine ⟨fun s => ?_, fun r => ?_, fun r => ?_, h.objBindingWords⟩
   · rw [contextStackHead_eq_obj, contextStackHead_eq_obj]; exact (key _).1
   · rw [replyStackPrev_eq_obj, replyStackPrev_eq_obj]; exact (key _).2.1
   · rw [replyStackCaller_eq_obj, replyStackCaller_eq_obj]; exact (key _).2.2
@@ -307,7 +337,8 @@ theorem dispatchSyscallChecked_lendersStage_of_capabilityOnly (ctx : LabelingCon
         { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr,
           requiredRight := syscallRequiredRight decoded.syscallId } cap st)
     (hCaller : CallerReady st tid)
-    (hCapOnly : ∀ cap k st'', dispatchCapabilityOnly decoded cap tid ec = some k →
+    (hCapOnly : ∀ gate cap k st'', LendersDispatchPremises ctx decoded tid ec gate cap st →
+      dispatchCapabilityOnly decoded cap tid ec = some k →
       dispatchCapabilityOnlyChecked ctx decoded.syscallId decoded.msgInfo.extraCaps tid cap k st
         = .ok ((), st'') → LendersStage ctx st st'')
     (h : dispatchSyscallChecked ctx decoded tid ec st = .ok ((), st')) :
@@ -332,6 +363,6 @@ theorem dispatchSyscallChecked_lendersStage_of_capabilityOnly (ctx : LabelingCon
   refine LendersStage.trans (b := stPost) ?_ (applySyscallTaint_lendersStage _ _ _)
   obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
   exact dispatchWithCapChecked_lendersStage_of_capabilityOnly ctx decoded tid ec _ cap st stPost
-    (P tcb hTcb cap) hCaller (fun k hk => hCapOnly cap k stPost hk) hD
+    (P tcb hTcb cap) hCaller (fun k hk => hCapOnly _ cap k stPost (P tcb hTcb cap) hk) hD
 
 end SeLe4n.Kernel
