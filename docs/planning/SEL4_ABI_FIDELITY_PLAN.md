@@ -29,7 +29,9 @@
 > became SX15 (the binding siblings and the one-slot grow toolkit) and SX16 (the
 > frame family threaded, the pops as labelled steps) (D42), and SX15–SX26
 > became SX17–SX28. SX15 landed at `v0.37.44` (the binding siblings, the
-> finalisation's binding shrink and the one-slot grow toolkit).
+> finalisation's binding shrink and the one-slot grow toolkit). SX16 landed at
+> `v0.37.45` (the frame family threaded with the binding words, the pops as
+> labelled steps).
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
 > **Rows**: SX1–SX28, numbered in the order they are implemented, one PR each.
@@ -806,6 +808,22 @@ compose), and the toolkit's three slot forms with the carrying theorem.
 
 ### SX16 — The frame family threaded, the pops as labelled steps (D40, D42)
 
+**LANDED at `v0.37.45`.** Both sub-tasks landed as one unit, within the
+measured scope, with no transition change and no stub.  The links shrink's
+binding field is a keep-or-clear of every slot's binding words; SX15's
+carrying theorem is restated over the lending labels
+(`lendingLabelsEqual_of_grow`) with its stack half a stack-only slot lemma
+(`contextStacksShrink_of_slot`), and the old form is retired.  The reply pops'
+owner is the frame's recorded caller at the pre-reply state, carried across
+the reply leg's links shrink (`calledFrame_labelEq`) from the reply linkage of
+the dispatch's IPC bundle; the finalisation's two reply pops are labelled
+steps, the unheld pop's owner read from its own admission
+(`LendersStep.finaliseReplyUnheldPop`).  The creating sites' label equations
+sit in the entries' premise packs (`LendersDispatchPremises`: `waiters`,
+`bindThread`, `bindNotification`, `declassifySignal`; `ReceiveLendersPremises`,
+`ReplyRecvLendersPremises`, `FaultLendPremises`), and the flow bridges they
+replace are retired; SX17 discharges them.
+
 SX14's remainder, second half (D42), on SX15. The frame family carries both
 halves of the lending invariant, and every step that does not create a binding
 is shown to keep it. One unit: every lender module after Cancel consumes the
@@ -975,8 +993,8 @@ every new path measured at 0.
 | SX12 | 3 |
 | SX13 | 3 (landed) |
 | SX14 | 3 (landed) |
-| SX15 | 1–2 |
-| SX16 | 3 |
+| SX15 | 1–2 (landed) |
+| SX16 | 3 (landed) |
 | SX17 | 2–3 |
 | SX18 | 2 |
 | SX19 | 3 |

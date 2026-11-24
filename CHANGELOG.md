@@ -1,3 +1,58 @@
+## v0.37.45 — The lenders' frame family carries the binding words, and the pops are labelled steps (WS-SX SX16)
+
+SX16 is the second half of SX14's remainder (D42, the owner's decision), on
+SX15: the lenders' frame family carries both halves of the lending invariant,
+and every pop is a labelled step that discharges its owner obligation at its
+own pre-state.  No transition changes.
+
+- **The invariant strengthened in place (SX16.1, ruling (ag)).**  SX8's
+  `contextLendersFlow` becomes label equality and is renamed
+  `contextLendersLabelsEqual`: every lender on a context's reply stack carries
+  the context's label.  The carried stage is its conjunction with
+  `bindingLabelsEqual` (`lendingLabelsEqual`), and every lender result that
+  concluded the old predicate now concludes the pair
+  (`…_preserves_lendingLabelsEqual`); no form of the old predicate is kept.
+- **The frame family threaded (SX16.1).**  `contextStackLinksShrink` gains a
+  `binding` field (`bindingViewsShrink`), so a frame keeps or clears every
+  binding word and never grows one; `contextStackViewsAgree` reads the binding
+  words, and `chainObjectsKept` keeps them on thread and notification slots.
+  The leaf writes take their slot's binding shrink as a keep-or-clear, and the
+  summaries read the binding words through SX15's siblings.  SX15's carrying
+  theorem is restated over the lending labels (`lendingLabelsEqual_of_grow`,
+  from a stack shrink and a binding grow); its stack half is a stack-only slot
+  lemma (`contextStacksShrink_of_slot`), and the old form is retired.
+- **The pops as labelled steps (SX16.2).**  `LendersStep ctx st st'` is the
+  stage carried from `st` to `st'` with the object table well formed at `st'`,
+  with its identity, composition and a frame read as a step.  Every theorem
+  that chains a pop is a labelled step.  The cancel's pop to the frame's
+  recorded caller reads its recipient's label from `contextLendersLabelsEqual`
+  through the D41 guard (`cancelledCallerDonation?_recipientLabelEq`).  The
+  reply's pops read the frame's recorded caller at the pre-reply state and
+  carry it across the reply leg's links shrink (`calledFrame_labelEq`,
+  `answeredFrame_labelEq`), from the reply linkage the dispatch's IPC bundle
+  holds.  The next owner is read through `replyStackOuterCaller?_labelEq`.  The
+  keep and the clears are shrinks.
+- **The finalisation's whole fold is a labelled step.**  Each of its steps
+  pairs SX15's `FinaliseBindingShrink` step lemma with its finalise write
+  (`LendersFrame.of_finaliseFrame`); the two reply pops SX15 left are labelled
+  steps: the cancel of a reply's caller (`LendersStep.finaliseReplyCancel`) and
+  the unheld pop, whose owner the pop's own admission reads as its context's
+  head (`LendersStep.finaliseReplyUnheldPop`).
+- **The creating sites take their label equation as an entry premise.**
+  SchedContext_Bind of a thread and of a notification, the declassified
+  signal's lend, the Call lend (`blockedReceiverLabelsEqual`), the receive-take
+  and reply-receive lends and fault delivery each take the equation in the
+  entry's premise pack (`LendersDispatchPremises`, `ReceiveLendersPremises`,
+  `ReplyRecvLendersPremises`, `FaultLendPremises`); SX17 discharges them.  The flow bridges these
+  premises replace (`callLendAdmits_flows_of_binding`,
+  `receiveLendAdmits_flows_dequeued`, `replyRecvLendAdmits_flows_dequeued`,
+  `replyRecvPopDonation_binding_cases`) are retired.
+- **Gates.**  The reply-stack write census accepts the stack half as a lender
+  predicate (the depth-2 fixture, which binds nothing, states it alone).  Tier
+  3 checks every renamed and new lender result, with relation anchors on the
+  labelled step's shape, the links shrink's binding field, the reply owner's
+  carry and the carrying theorem's header.
+
 ## v0.37.44 — The binding siblings, the finalisation's binding shrink and the one-slot grow toolkit (WS-SX SX15)
 
 SX15 is the first half of SX14's remainder (D42, the owner's decision): what
