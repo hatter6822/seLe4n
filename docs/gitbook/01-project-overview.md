@@ -19,7 +19,7 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.37.46): 685,332 lines of production Lean across 703 files, 92,060 lines across 71 Lean test suites,
+Current state (as of v0.37.47): 685,382 lines of production Lean across 703 files, 92,060 lines across 71 Lean test suites,
 26,322 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../codebase_map.json) (`readme_sync` key).
 

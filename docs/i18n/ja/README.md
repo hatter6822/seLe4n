@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.37.46-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.37.47-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -154,9 +154,9 @@ seL4 のユーザーから見える ABI そのものを保ちながら、Lean �
 
 | 項目 | 値 |
 |------|-----|
-| **バージョン** | `0.37.46` |
+| **バージョン** | `0.37.47` |
 | **Lean ツールチェーン** | `v4.28.0` |
-| **本番 Lean コード行数** | 703 ファイルにわたる 685,332 行 |
+| **本番 Lean コード行数** | 703 ファイルにわたる 685,382 行 |
 | **テスト Lean コード行数** | 71 テストスイートにわたる 92,060 行 |
 | **証明済み宣言数** | 26,322 件の定理/補題宣言（sorry/axiom ゼロ） |
 | **Rust クレート** | `sele4n-types`、`sele4n-abi`、`sele4n-sys`（ユーザー空間ラッパー）、`sele4n-hal`（カーネルのハードウェア層）、およびホストテスト `sele4n-lean-boundary` |

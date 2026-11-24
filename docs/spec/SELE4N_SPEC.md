@@ -49,9 +49,9 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.46` (`lakefile.toml`) |
+| **Package version** | `0.37.47` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 685,332 across 703 Lean files |
+| **Production LoC** | 685,382 across 703 Lean files |
 | **Test LoC** | 92,060 across 71 Lean test suites |
 | **Proved declarations** | 26,322 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -1300,7 +1300,7 @@ internal; nothing a thread writes names one.
     (`syscallReturnOutcome`, `syscallSuccessOutcome_returns_runnable`). The
     core resumes the thread the committed state runs on it
     (`restoreTargetOnCore`). Where a caller stopped inside its own syscall
-    resumes is WS-SX SX22.1.
+    resumes is WS-SX SX25.1.
   - NBSend, NBRecv and NBWait do not block. An NBSend to an endpoint with no
     receiver drops the message, and its drop decision is non-interfering
     (`sendDropsMessage_lowEquivalent`).
@@ -12352,7 +12352,11 @@ object the word names, and erases them otherwise (`scWordShown`,
 equal labels on every binding pair (`bindingLabelsEqual`, D37) a binding word
 is shown exactly where its holder is.  The NI theorems that were unconditional
 only because the words were erased take the hidden-context hypotheses they
-need, and the receive steps take `bindingLabelsEqual` as their one premise.
+need, and the NI composition takes `bindingLabelsEqual` of each state it
+steps from, in the standing per-state slot beside the object-store invariant
+(`step_preserves_projection`, `NonInterferenceTrace.cons`,
+`nonInterference_perCore`; WS-SX SX18, `v0.37.47`), where the receive steps
+read the hidden loan return off it; no step carries it as a premise.
 The checked notification lend, made in two low-equivalent runs, leaves them
 low-equivalent for every observer
 (`maybeDonateSchedContextFlowing_lowEquivalent_pair`), given equal binding
@@ -12387,8 +12391,12 @@ receive leg dequeues the receiver itself or its send queue's head, which is
 blocked on the endpoint (`endpointReceiveDualWithCapsOnCore_dequeued_labelEq`).
 SchedContext_Bind reads its label gate, the notification lend its check, and
 the declassified signal's lend the same check under the lifted context the
-dispatch runs it with.  SX18 then moves the premise and deletes both
-refusals.
+dispatch runs it with.  The Call lend's refusal is unreachable under the
+invariant (the caller carries the context's label), and SX19 deletes it with
+the `lend` argument it feeds.  The notification lend's check also needs the
+thread the signal wakes to carry the notification's label
+(`notificationLabelsCoherent`), which the boot checks and no entry carries
+yet, so it stays until SX20 carries that coherence and SX21 deletes it (D43).
 
 **What the gate checked is recorded in the state, on both sides (WS-RR RR8.16,
 `v0.35.191` and `v0.35.196`; equalities and carried by every entry since WS-SX
