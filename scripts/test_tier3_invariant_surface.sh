@@ -7749,6 +7749,14 @@ run_check "INVARIANT" bash -lc 'rg -U -n "\(t : SeLe4n.ThreadId\) \(p₁ p₂ : 
 run_check "INVARIANT" rg -n '^def threadObjectLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
 run_check "INVARIANT" rg -n '^theorem deploymentLabelingContext_threadObjectLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
 run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContextFlowing_lowEquivalent_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContextFlowing_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContextFlowing_lowEquivalent_pair_deployment($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem schedContextBindPerform_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem schedContextDonateAdmitted_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem notificationContext\?_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem runEnqueueAdmits_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem placedCoreOf\?_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem project_bindContextWrite_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
 run_check "INVARIANT" rg -n '^theorem releasePlace_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
 run_check "INVARIANT" rg -n '^theorem markReschedulePendingOnCore_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/LowEquivalencePairs.lean
 run_check "INVARIANT" rg -n '^theorem activateThreadOnCore_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean

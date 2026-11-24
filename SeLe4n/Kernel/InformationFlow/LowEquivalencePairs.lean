@@ -133,13 +133,16 @@ theorem markReschedulePendingOnCore_lowEquivalent_pair {s₁ s₂ : SystemState}
     (lowEquivalent_smp_trans hL (lowEquivalent_smp_symm
       (markReschedulePendingOnCore_lowEquivalent s₂ c)))
 
-/-- **One object rewritten in two runs**: the slot projects as the object
-written in both, or is hidden in both; every other slot is kept. -/
+/-- **One object rewritten in two runs**, with two objects the observer sees
+the same (`hP`, needed only where it sees the slot): the slot projects the same
+in both, or is hidden in both; every other slot is kept. -/
 theorem rewriteObject_lowEquivalent_pair {s₁ s₂ : SystemState} (x : SeLe4n.ObjId)
-    (o : KernelObject) (h₁ : s₁.rewriteAdmissible x o) (h₂ : s₂.rewriteAdmissible x o)
+    (o₁ o₂ : KernelObject) (h₁ : s₁.rewriteAdmissible x o₁) (h₂ : s₂.rewriteAdmissible x o₂)
+    (hP : objectObservable ctx observer x = true →
+      projectKernelObject ctx observer o₁ = projectKernelObject ctx observer o₂)
     (hI₁ : s₁.objects.invExt) (hI₂ : s₂.objects.invExt)
     (hL : lowEquivalent_smp ctx observer s₁ s₂) :
-    lowEquivalent_smp ctx observer (s₁.rewriteObject x o h₁) (s₂.rewriteObject x o h₂) := by
+    lowEquivalent_smp ctx observer (s₁.rewriteObject x o₁ h₁) (s₂.rewriteObject x o₂ h₂) := by
   refine lowEquivalent_smp_pair_of_storeAndQueueWrite hL (storeAndQueueWrite.of_objects rfl)
     (storeAndQueueWrite.of_objects rfl) ?_ (fun c => hL.runnable c)
   funext k
@@ -152,6 +155,7 @@ theorem rewriteObject_lowEquivalent_pair {s₁ s₂ : SystemState} (x : SeLe4n.O
     · subst e
       rw [SystemState.rewriteObject_objects_self _ _ _ _ hI₁,
         SystemState.rewriteObject_objects_self _ _ _ _ hI₂]
+      exact congrArg some (hP hO)
     · rw [SystemState.rewriteObject_objects_ne _ _ _ _ _ e hI₁,
         SystemState.rewriteObject_objects_ne _ _ _ _ _ e hI₂]
       exact hk
