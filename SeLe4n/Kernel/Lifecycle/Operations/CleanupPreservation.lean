@@ -561,6 +561,29 @@ theorem removeFromNotificationWaitQueue_reach (st : SystemState) (tid : SeLe4n.T
     · exact hRefl
   · exact hRefl
 
+/-- **One slot of the notification unlink keeps its binding words** (WS-SX
+SX15.1): the sibling of `ntfnUnlinkSlotRel`; a notification keeps its context
+word, and a thread is rewritten in its notification links alone. -/
+theorem ntfnUnlinkSlotRel.objBindingWords {o o' : Option KernelObject}
+    (h : ntfnUnlinkSlotRel o o') : objBindingWords o' = objBindingWords o := by
+  rcases h with rfl | ⟨n, n', rfl, rfl, -, -, -, hS⟩ | ⟨t, t', rfl, rfl, np, nn, rfl⟩
+  · rfl
+  · show (0, 0, 0, n'.schedContextCode) = (0, 0, 0, n.schedContextCode); rw [hS]
+  · rfl
+
+/-- **The notification unlink's reach keeps every slot's binding words.** -/
+theorem ntfnUnlinkReach.objBindingWords {st s : SystemState} (h : ntfnUnlinkReach st s)
+    (x : SeLe4n.ObjId) : objBindingWords s.objects[x]? = objBindingWords st.objects[x]? :=
+  (h.2 x).objBindingWords
+
+/-- **The notification-queue removal keeps every slot's binding words** (WS-SX
+SX15.1). -/
+theorem removeFromNotificationWaitQueue_objBindingWords (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ObjId) :
+    objBindingWords (removeFromNotificationWaitQueue st tid).objects[x]? =
+      objBindingWords st.objects[x]? :=
+  (removeFromNotificationWaitQueue_reach st tid hInv).objBindingWords x
+
 /-- WS-SM SM6.E: `removeFromNotificationWaitQueue` preserves
 `objects.invExt` — every write of the unlink is an in-place rewrite
 (`removeFromNotificationWaitQueue_reach`). -/
@@ -2799,6 +2822,19 @@ theorem spliceOutMidQueueNode_binding_frame (st : SystemState)
       = (st.getTcb? x).map (·.schedContextBinding) :=
   spliceOutMidQueueNode_tcbField_frame (·.schedContextBinding) (fun _ _ _ _ _ _ => rfl)
     st tid hInv x
+
+/-- **The mid-queue splice keeps every slot's binding words** (WS-SX SX15.1):
+the slot-by-slot sibling of `spliceOutMidQueueNode_binding_frame`; it rewrites
+queue links of threads alone. -/
+theorem spliceOutMidQueueNode_objBindingWords (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) :
+    objBindingWords (spliceOutMidQueueNode st tid).objects[k]? = objBindingWords st.objects[k]? :=
+  objBindingWords_eq_of_tcbFrame
+    (fun t0 h => by
+      obtain ⟨t', h', _, _, _, _, _, rfl⟩ := spliceOutMidQueueNode_tcb_lookup st tid k t0 hInv h
+      exact ⟨_, h', rfl, rfl⟩)
+    (fun t' h => let ⟨t0, h0, _⟩ := spliceOutMidQueueNode_tcb_backward st tid k t' hInv h; ⟨t0, h0⟩)
+    (fun o hT => spliceOutMidQueueNode_nonTcb st tid hInv k o hT)
 
 -- The precise per-key readings of the two neighbour patches: what the splice
 -- installs at each key it touches, and what it leaves at every key it does not.

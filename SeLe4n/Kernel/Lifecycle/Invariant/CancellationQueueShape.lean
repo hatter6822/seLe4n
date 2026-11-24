@@ -1132,6 +1132,21 @@ theorem removeFromBlockingEndpoint_binding_frame (st : SystemState)
   rw [removeFromBlockingEndpoint_getTcb?_eq_splice st tid e hInv x]
   exact spliceOutMidQueueNode_binding_frame st tid hInv x
 
+/-- **The targeted dequeue keeps every slot's binding words** (WS-SX SX15.1):
+the slot-by-slot sibling of `removeFromBlockingEndpoint_binding_frame`; the
+splice keeps them, and its one rewrite is an endpoint, which holds none. -/
+theorem removeFromBlockingEndpoint_objBindingWords (st : SystemState)
+    (tid : SeLe4n.ThreadId) (e : SeLe4n.ObjId) (hInv : st.objects.invExt) (k : SeLe4n.ObjId) :
+    objBindingWords (removeFromBlockingEndpoint st tid e).objects[k]? =
+      objBindingWords st.objects[k]? := by
+  have hExt := spliceOutMidQueueNode_preserves_objects_invExt st tid hInv
+  rw [← spliceOutMidQueueNode_objBindingWords st tid hInv k]
+  rcases removeFromBlockingEndpoint_cases st tid e with h | ⟨ep, hA, hE, h⟩ <;> rw [h]
+  by_cases hK : e = k
+  · subst hK
+    rw [SystemState.rewriteObject_objects_self _ e _ _ hExt, hE]; rfl
+  · rw [SystemState.rewriteObject_objects_ne _ e k _ _ hK hExt]
+
 /-- The composite leaves every object that is neither a TCB nor an endpoint
 exactly as it found it — which is what carries the notification, CNode, Reply and
 SchedContext conjuncts across without an argument of their own. -/

@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.SchedContext.NotificationDonationContextLabel
 import SeLe4n.Kernel.IPC.Invariant.Defs
+import SeLe4n.Kernel.SchedContext.Invariant.BindingLabels
 
 /-!
 # The lenders on a context's stack: the transport relations
@@ -456,5 +457,70 @@ theorem contextLendersFlow_of_push {ctx : LabelingContext} {st st' : SystemState
   rcases key s r hOn with ⟨rfl, rfl⟩ | hOn0
   · exact hFlow l hC
   · exact hInv s r l hOn0 hC
+
+/-! ### The one-slot grow toolkit
+
+A store of one thread, notification or context record, read as a step that
+only takes stack views away (`contextStacksShrink`) and grows the binding views
+only where the new words pair equal labels (`bindingViewsGrow`); the two carry
+the lenders' flow and the equal binding labels together
+(`contextLendersFlow_bindingLabelsEqual_of_grow`).  The stack half is the
+links-shrink store lemmas above, read through `contextStacksShrink_of_linksShrink`. -/
+
+/-- **The one-slot step carries both invariants**: a stack shrink carries the
+lenders' flow, a binding grow the equal binding labels. -/
+theorem contextLendersFlow_bindingLabelsEqual_of_grow {ctx : LabelingContext}
+    {st st' : SystemState} (hL : contextLendersFlow ctx st) (hB : bindingLabelsEqual ctx st)
+    (hS : contextStacksShrink st st') (hG : bindingViewsGrow ctx st st') :
+    contextLendersFlow ctx st' ∧ bindingLabelsEqual ctx st' :=
+  ⟨contextLendersFlow_of_shrink hL hS, bindingLabelsEqual_of_grow hB hG⟩
+
+/-- Every slot but the stored one keeps its binding words. -/
+theorem objBindingWords_storeObject_ne {st st' : SystemState} {k : SeLe4n.ObjId}
+    {o : KernelObject} (hInv : st.objects.invExt) (h : storeObject k o st = .ok ((), st')) :
+    ∀ x, x ≠ k → objBindingWords st'.objects[x]? = objBindingWords st.objects[x]? :=
+  fun x hx => congrArg objBindingWords (storeObject_objects_ne st st' k x o hx hInv h)
+
+/-- **A thread record stored**: no stack view gained, the binding views grown
+where its words pair equal labels. -/
+theorem contextStacksShrink_bindingViewsGrow_storeTcb {ctx : LabelingContext}
+    {st st' : SystemState} {t0 : SeLe4n.ThreadId} {tcb' : TCB} (hInv : st.objects.invExt)
+    (h : storeObject t0.toObjId (.tcb tcb') st = .ok ((), st'))
+    (hT : ∀ s : SeLe4n.SchedContextId, tcb'.scBindingScCode = s.val + 1 →
+      ctx.threadLabelOf t0 = ctx.objectLabelOf s.toObjId)
+    (hO : ∀ (s : SeLe4n.SchedContextId) (o : SeLe4n.ThreadId), tcb'.scBindingScCode = s.val + 1 →
+      tcb'.scBindingOwnerCode = o.val + 1 → ctx.threadLabelOf o = ctx.objectLabelOf s.toObjId) :
+    contextStacksShrink st st' ∧ bindingViewsGrow ctx st st' :=
+  ⟨contextStacksShrink_of_linksShrink (contextStackLinksShrink_storeObject_other hInv h
+      (fun _ e => by cases e) (fun _ e => by cases e)),
+   bindingViewsGrow_of_tcbSlot (objBindingWords_storeObject_ne hInv h)
+      (storeObject_objects_eq st st' _ _ hInv h) hT hO⟩
+
+/-- **A notification stored**: no stack view gained, the binding views grown
+where its context word pairs equal labels. -/
+theorem contextStacksShrink_bindingViewsGrow_storeNotification {ctx : LabelingContext}
+    {st st' : SystemState} {n0 : SeLe4n.ObjId} {ntfn' : Notification} (hInv : st.objects.invExt)
+    (h : storeObject n0 (.notification ntfn') st = .ok ((), st'))
+    (hN : ∀ s : SeLe4n.SchedContextId, ntfn'.schedContextCode = s.val + 1 →
+      ctx.objectLabelOf n0 = ctx.objectLabelOf s.toObjId) :
+    contextStacksShrink st st' ∧ bindingViewsGrow ctx st st' :=
+  ⟨contextStacksShrink_of_linksShrink (contextStackLinksShrink_storeObject_other hInv h
+      (fun _ e => by cases e) (fun _ e => by cases e)),
+   bindingViewsGrow_of_notificationSlot (objBindingWords_storeObject_ne hInv h)
+      (storeObject_objects_eq st st' _ _ hInv h) hN⟩
+
+/-- **A context record stored** with its head cleared, kept or moved down its
+own stack: no stack view gained, the binding views grown where its thread word
+pairs equal labels. -/
+theorem contextStacksShrink_bindingViewsGrow_storeSchedContext {ctx : LabelingContext}
+    {st st' : SystemState} {s0 : SeLe4n.SchedContextId} {sc' : SchedContext}
+    (hInv : st.objects.invExt) (h : storeObject s0.toObjId (.schedContext sc') st = .ok ((), st'))
+    (hH : ∀ r, sc'.scReply = some r → OnContextStackView st s0 r)
+    (hC : ∀ t : SeLe4n.ThreadId, sc'.boundThreadCode = t.val + 1 →
+      ctx.threadLabelOf t = ctx.objectLabelOf s0.toObjId) :
+    contextStacksShrink st st' ∧ bindingViewsGrow ctx st st' :=
+  ⟨contextStacksShrink_of_linksShrink (contextStackLinksShrink_storeSchedContext hInv h hH),
+   bindingViewsGrow_of_schedContextSlot (objBindingWords_storeObject_ne hInv h)
+      (storeObject_objects_eq st st' _ _ hInv h) hC⟩
 
 end SeLe4n.Kernel

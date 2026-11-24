@@ -2511,7 +2511,7 @@ run_check "INVARIANT" rg -n '^theorem lockSet_endpointCallOnCore_covers_donation
 run_check "INVARIANT" rg -n '^private theorem donateSchedContext_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # WS-SX SX9.1 (D34): the push is invisible only with its context hidden.
 run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem donateSchedContext_preserves_projection( *\n +[^\n]*)*hScHigh : objectObservable" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
-# The receive steps' one premise (D37, registered debt owned by SX16): equal
+# The receive steps' one premise (D37, registered debt owned by SX18): equal
 # binding labels, a field of each receive constructor itself; the loan-return
 # shape is derived from it, never a constructor field.
 run_check "INVARIANT" rg -n '^def bindingLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
@@ -2549,6 +2549,53 @@ run_negative_check "INVARIANT" rg -n ': receiveLoanReturnHidden ctx observer st 
 # The pack field the resolution added: every capability-gated arm that pops now
 # states the obligation its resolver carries.
 run_check "INVARIANT" bash -lc 'rg -U -n "^structure capabilityDispatchQuiescence[^\n]*(\n([ \t][^\n]*)?)*replyStacksSettleOnWaitingDonors" SeLe4n/Kernel/API.lean'
+# WS-SX SX15.1 (D42): the binding siblings, each beside the summary that
+# forgets the binding words, and the finalisation's binding shrink.
+run_check "INVARIANT" rg -n '^def bindingWordsKeptOrCleared($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^theorem objBindingWords_eq_of_map($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^theorem objBindingWords_eq_of_tcbFrame($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^theorem _root_\.SeLe4n\.Model\.SystemState\.objectsAgreeOffTaint\.objBindingWords($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^theorem _root_\.SeLe4n\.Model\.SystemState\.objectAgreesOffDerivationLinksAt\.objBindingWords($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^theorem _root_\.SeLe4n\.Model\.SystemState\.objectAgreesOffDerivationMetadataAt\.objBindingWords($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^theorem _root_\.SeLe4n\.Model\.SystemState\.linkReach\.objBindingWords($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/BindingLabels.lean
+run_check "INVARIANT" rg -n '^theorem receiveTransferCaps_objBindingWords($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+run_check "INVARIANT" rg -n '^theorem vspaceRootOnlyWrite\.objBindingWords($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PageTeardown.lean
+run_check "INVARIANT" rg -n '^theorem retireFinalObject_bindingWordsKeptOrCleared($|[ ({:\[\]])' SeLe4n/Kernel/Capability/FinalRetire.lean
+run_check "INVARIANT" rg -n '^theorem ntfnUnlinkSlotRel\.objBindingWords($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem ntfnUnlinkReach\.objBindingWords($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeFromNotificationWaitQueue_objBindingWords($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_objBindingWords($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeFromBlockingEndpoint_objBindingWords($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_scBindingWords_backward($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Timeout.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_bindingWordsKeptOrCleared($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Timeout.lean
+run_check "INVARIANT" rg -n '^theorem bindingViewsShrink\.ownerCleared($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -n '^theorem bindingWordsKeptOrCleared\.storeObject($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -n "^theorem objBindingWords \{st st' : SystemState\} \(h : objectsAgreeOffRunLinks st' st\)" SeLe4n/Kernel/Scheduler/RunQueueLinkFrame.lean
+run_check "INVARIANT" rg -n "^theorem objBindingWords \{st st' : SystemState\} \(h : objectsAgreeOffReleaseLinks st' st\)" SeLe4n/Kernel/SchedContext/ReleaseLinks.lean
+run_check "INVARIANT" rg -n '^namespace bindingWordsKeptOrCleared$' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -n '^structure FinaliseBindingShrink($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -U -n '^theorem unbindStep \(st : SystemState\) :\s+FinaliseUnbindStep \(FinaliseBindingShrink st\)' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -U -n '^theorem scDescheduleStep \(st : SystemState\) :\s+FinaliseScDescheduleStep \(FinaliseBindingShrink st\)' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -U -n '^theorem scReleaseStep \(st : SystemState\) :\s+FinaliseScReleaseStep \(FinaliseBindingShrink st\)' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -U -n '^theorem notificationCancelStep \(st : SystemState\) :\s+FinaliseNotificationCancelStep \(FinaliseBindingShrink st\)' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -U -n '^theorem endpointCancelStep \(st : SystemState\) :\s+FinaliseEndpointCancelStep \(FinaliseBindingShrink st\)' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -U -n '^theorem suspendStep \(st : SystemState\) :\s+FinaliseSuspendStep \(FinaliseBindingShrink st\)' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -U -n '^theorem releaseStep \(st : SystemState\) :\s+FinaliseReleaseStep \(FinaliseBindingShrink st\)' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -U -n '^theorem unstackStep \(st : SystemState\) :\s+FinaliseUnstackStep \(FinaliseBindingShrink st\)' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -U -n '^theorem cutStep \(st : SystemState\) :\s+FinaliseCutStep \(FinaliseBindingShrink st\)' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -U -n '^theorem unstashStep \(st : SystemState\) :\s+FinaliseUnstashStep \(FinaliseBindingShrink st\)' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -U -n '^theorem yieldStep \(st : SystemState\) :\s+FinaliseYieldStep \(FinaliseBindingShrink st\)' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -U -n '^theorem orphanStep \(st : SystemState\) :\s+FinaliseOrphanStep \(FinaliseBindingShrink st\)' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+run_check "INVARIANT" rg -U -n '^theorem notificationLinkStep \(st : SystemState\) :\s+FinaliseNotificationLinkStep \(FinaliseBindingShrink st\)' SeLe4n/Kernel/IPC/Invariant/CancelAllFrame.lean
+# WS-SX SX15.2 (D42): the one-slot grow toolkit.
+run_check "INVARIANT" rg -n '^theorem objBindingWords_storeObject_ne($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/ContextLenders.lean
+run_check "INVARIANT" rg -n '^theorem contextStacksShrink_bindingViewsGrow_storeTcb($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/ContextLenders.lean
+run_check "INVARIANT" rg -n '^theorem contextStacksShrink_bindingViewsGrow_storeNotification($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/ContextLenders.lean
+run_check "INVARIANT" rg -n '^theorem contextStacksShrink_bindingViewsGrow_storeSchedContext($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/ContextLenders.lean
+run_check "INVARIANT" rg -n '^theorem contextLendersFlow_bindingLabelsEqual_of_grow($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/ContextLenders.lean
+# The carrying theorem takes both invariants, the stack shrink and the binding
+# grow from the state before the step to the state after, bounded to its header.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem contextLendersFlow_bindingLabelsEqual_of_grow [^\n]*( *\n +[^\n]*)*\(hL : contextLendersFlow ctx st\) \(hB : bindingLabelsEqual ctx st\)\n +\(hS : contextStacksShrink st st'"'"'\) \(hG : bindingViewsGrow ctx st st'"'"'\) :\n +contextLendersFlow ctx st'"'"' ∧ bindingLabelsEqual ctx st'"'"' :=" SeLe4n/Kernel/SchedContext/Invariant/ContextLenders.lean'
 
 # ============================================================================
 # WS-OD OD5 -- chain-aware teardown, reply reuse, and the middle-caller policy

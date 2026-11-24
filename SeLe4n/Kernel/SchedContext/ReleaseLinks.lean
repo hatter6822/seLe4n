@@ -11,6 +11,7 @@ import SeLe4n.Model.State
 import SeLe4n.Kernel.RobinHood.Invariant.MapValueAt
 import SeLe4n.Kernel.SchedContext.ReleaseChain
 import SeLe4n.Kernel.SchedContext.Budget
+import SeLe4n.Kernel.SchedContext.Invariant.BindingLabels
 
 /-!
 # The release queue's links in the scheduling contexts (WS-ZA ZA6.3)
@@ -194,6 +195,16 @@ def objectsAgreeOffReleaseLinks (st' st : SystemState) : Prop :=
 namespace objectsAgreeOffReleaseLinks
 
 theorem refl (st : SystemState) : objectsAgreeOffReleaseLinks st st := fun _ => rfl
+
+/-- **The release-link agreement keeps every slot's binding words** (WS-SX
+SX15.1): the sibling of the relation, which reads the objects up to a context's
+release-queue fields, its thread word not among them. -/
+theorem objBindingWords {st st' : SystemState} (h : objectsAgreeOffReleaseLinks st' st)
+    (x : SeLe4n.ObjId) :
+    _root_.SeLe4n.Kernel.objBindingWords st'.objects[x]? =
+      _root_.SeLe4n.Kernel.objBindingWords st.objects[x]? :=
+  _root_.SeLe4n.Kernel.objBindingWords_eq_of_map (g := KernelObject.withoutRelease)
+    (fun o => by cases o <;> rfl) (h x)
 
 theorem trans {a b d : SystemState} (h₁ : objectsAgreeOffReleaseLinks a b)
     (h₂ : objectsAgreeOffReleaseLinks b d) : objectsAgreeOffReleaseLinks a d :=
