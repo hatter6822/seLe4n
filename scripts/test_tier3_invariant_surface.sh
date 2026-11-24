@@ -23980,6 +23980,17 @@ run_check "INVARIANT" rg -n '^theorem blockedSenderLabelsEqual\.flowsToEndpoint(
 run_check "INVARIANT" rg -n '^theorem blockedReceiverLabelsEqual\.flowsFromEndpoint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointWaitersLabelsEqual[^\n]*\n  blockedSenderLabelsEqual ctx st ∧ blockedReceiverLabelsEqual ctx st" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_endpointWaitersLabelsEqual($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+# WS-SX SX11.2: the waiters' stage.  The records' frame keeps every thread's
+# IPC state, so it is a waiters' frame; a growth carries the labels only given
+# the new waiter's label equation; the checked send and call discharge it from
+# their own two-way gate, and the receive takes the gate it was admitted by.
+run_check "INVARIANT" rg -n '^def EndpointWaitersStage($|[ ({:\[\]])' SeLe4n/Kernel/EndpointWaiters/Stage.lean
+run_check "INVARIANT" rg -n '^theorem of_frame \{st st'"'"' : SystemState\} \(F : RecordsFrame st st'"'"'\) : EndpointWaitersShrink st st'"'"'' SeLe4n/Kernel/EndpointWaiters/Stage.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem stage \{ctx : LabelingContext\} \{st st'"'"' : SystemState\} \(h : EndpointWaitersGrowAt w e st st'"'"'\)\n    \(hL : ctx\.threadLabelOf w = ctx\.endpointLabelOf e\)" SeLe4n/Kernel/EndpointWaiters/Stage.lean'
+run_check "INVARIANT" rg -n '^theorem EndpointWaitersGrowFrame\.storeTcbIpcStateAndMessage($|[ ({:\[\]])' SeLe4n/Kernel/EndpointWaiters/Stage.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointSendCrossCoreDispatchChecked[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_eq ctx endpointId" SeLe4n/Kernel/EndpointWaiters/Ipc.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatchChecked[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_eq ctx endpointId" SeLe4n/Kernel/EndpointWaiters/Ipc.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDualWithCapsOnCore[^\n]*(\n([ \t][^\n]*)?)*hGate : endpointFlowGate ctx endpointId \(ctx\.endpointLabelOf endpointId\)" SeLe4n/Kernel/EndpointWaiters/Ipc.lean'
 run_check "INVARIANT" rg -n '^theorem ipcReachableUnder_default($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
 # MEASURED: the decisive case keeps the caller's gate passing and the donation
 # minted, and makes the RECEIVER-side fact false -- so the hypothesis the lift
