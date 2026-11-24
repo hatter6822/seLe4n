@@ -1,3 +1,51 @@
+## v0.37.40 — Blocked threads carry their endpoint's label (WS-SX SX11)
+
+Every thread blocked sending, calling or receiving on an endpoint has that
+endpoint's label, at boot and after every committing entry.  This is the state
+fact the Call and receive-take lends need (D38).  No transition changes.
+
+- **The equality forms (SX11.1).**  `blockedSenderLabelsEqual` and
+  `blockedReceiverLabelsEqual` are equalities: each endpoint gate is two-way
+  (`endpointFlowGate_implies_eq`).  The one-way forms are corollaries
+  (`blockedSenderLabelsEqual.flowsToEndpoint`,
+  `blockedReceiverLabelsEqual.flowsFromEndpoint`), and their old definitions
+  are retired.  The pair is `endpointWaitersLabelsEqual`.  A booted state
+  blocks no thread, so it holds there under every labelling
+  (`bootFromPlatformCheckedStartedFor_endpointWaitersLabelsEqual`).
+- **The per-entry stage (SX11.2).**  `EndpointWaitersStage`
+  (`SeLe4n/Kernel/EndpointWaiters/`) is carried across every writer of a
+  thread's IPC state.  There are three kinds of writer:
+  - A **frame** keeps every thread's IPC state.  Every records' frame is one
+    for free, because the record view holds the IPC state.
+  - A **shrink** writes a state that waits on no endpoint.  These are the
+    cancellations, the restores, the timeouts, the signal wakes, the
+    finalisation cascade, the carve (a fresh thread is `.ready`) and the
+    delete chain.
+  - A **creator** blocks one thread on one endpoint.  Each creator gets the
+    new waiter's label from the gate its entry checks.  The checked send, the
+    checked call and the checked fault delivery check their own gate.  The
+    receive and the reply-receive use the gate the dispatch checks before
+    either one runs.
+- **Every committing entry.**  The stage covers the capability table (every
+  arm is a frame), the checked capability and syscall dispatch, and the seven
+  committed entry states: timer, reschedule, FP/SIMD, interrupt, fault,
+  unknown syscall and syscall.  Six of them read only the store's invariant at
+  the state they run from.  The syscall entry also reads that invariant after
+  the dispatch, from the records' own stage.
+- **Retired.**  The waiters' stage replaces the per-dispatch blocked-sender
+  lifts (`IPC/Invariant/BlockedSenderPreservation.lean` §1–§4), so they are
+  removed.  So are both shrink relations (`blockedSenderShrinks`,
+  `blockedReceiverShrinks`) and their store establishments, which only Tier 3
+  anchors pinned.  The walk's `ipcState` frame stays, because the
+  reply-holder cancel reads it.
+- **Debt.**  This narrows table C's "`ipcReachable` is not carried across a
+  trace" row by the two waiter conjuncts.  Carrying the pack across a trace
+  stays WS-PK's.
+- **Tier 3.**  The anchors require each entry theorem to conclude the
+  waiters' stage.  Only the syscall entry may read the records.  The receive
+  arm discharges the new waiter's label from the gate.  Negative anchors fail
+  if any retired lift returns.
+
 ## v0.37.39 — Equal binding labels begun, and the row wrapped (WS-SX SX10)
 
 SX10 lands the boot base case of equal binding labels, the owner clause and

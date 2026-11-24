@@ -7175,7 +7175,7 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_tcb_quiescent
       subst hEq
       exact ⟨rfl, rfl⟩
 
-/-- **WS-RR RR8.16**: the boot state satisfies `blockedSenderFlowsToEndpoint`, for
+/-- **WS-RR RR8.16**: the boot state satisfies `blockedSenderLabelsEqual`, for
     **every** labelling context.
 
     The base case, and the reason it is unconditional in `ctx`: a state with no
@@ -7185,13 +7185,13 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_tcb_quiescent
     state instead of from a hypothesis — which is what the PR #897 review found
     missing, and what this project's own rule demands of a stated fact: *a hypothesis
     nothing exhibits is indistinguishable from one that cannot hold.* -/
-theorem bootFromPlatformCheckedWithIdleThreadsFor_blockedSenderFlowsToEndpoint
+theorem bootFromPlatformCheckedWithIdleThreadsFor_blockedSenderLabelsEqual
     (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
     (ist : IntermediateState)
     (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist)
     (ctx : LabelingContext) :
-    blockedSenderFlowsToEndpoint ctx ist.state := by
-  refine blockedSenderFlowsToEndpoint_of_none_blocked ?_
+    blockedSenderLabelsEqual ctx ist.state := by
+  refine blockedSenderLabelsEqual_of_none_blocked ?_
   intro tid t epId hLook
   have hReady :=
     (bootFromPlatformCheckedWithIdleThreadsFor_ok_tcb_quiescent cores config ist h
@@ -7232,10 +7232,10 @@ theorem bootFromPlatformCheckedWithIdleThreads_flowGateFacts
     (config : PlatformConfig) (ist : IntermediateState)
     (h : bootFromPlatformCheckedWithIdleThreads config = .ok ist)
     (ctx : LabelingContext) :
-    blockedSenderFlowsToEndpoint ctx ist.state ∧
+    blockedSenderLabelsEqual ctx ist.state ∧
       donationOwnerFlowsToHolder ctx ist.state := by
   rw [← bootFromPlatformCheckedWithIdleThreadsFor_allCores] at h
-  exact ⟨bootFromPlatformCheckedWithIdleThreadsFor_blockedSenderFlowsToEndpoint _ config ist h ctx,
+  exact ⟨bootFromPlatformCheckedWithIdleThreadsFor_blockedSenderLabelsEqual _ config ist h ctx,
     bootFromPlatformCheckedWithIdleThreadsFor_donationOwnerFlowsToHolder _ config ist h ctx⟩
 
 /-- **PR #889 review**: two states that neither run nor queue `tid` classify it

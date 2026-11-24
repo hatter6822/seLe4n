@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31; SX6 v0.37.32; SX7 v0.37.33, its remainder split into SX8 and SX15–SX18; SX8 v0.37.36, which split its own remainder into SX9, SX13 and SX14 (D32); SX9 v0.37.38, which added SX10 (D36, D37); SX10 v0.37.39, wrapped (D38), its remainder split into SX11 and SX12)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31; SX6 v0.37.32; SX7 v0.37.33, its remainder split into SX8 and SX15–SX18; SX8 v0.37.36, which split its own remainder into SX9, SX13 and SX14 (D32); SX9 v0.37.38, which added SX10 (D36, D37); SX10 v0.37.39, wrapped (D38), its remainder split into SX11 and SX12; SX11 v0.37.40)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -310,10 +310,14 @@ thread word, a notification's context word) carries equal labels (D37,
 before it writes, as Bind and the notification lend do, and a lent binding's
 owner word names a thread with the context's label; SX10 (`v0.37.39`) proved
 it of every booted image; until SX12 proves every committing entry keeps it
-(on SX11: every thread blocked on an endpoint carries the endpoint's label),
-the receive steps and the two-run theorem take it as their one premise; the
-lend refusals (`callLendAdmits`' refusal, the notification lend's label check)
-stay until SX12.3 deletes them.
+(on SX11's waiter labels), the receive steps and the two-run theorem take it
+as their one premise; the lend refusals (`callLendAdmits`' refusal, the
+notification lend's label check) stay until SX12.3 deletes them. Every thread
+blocked sending, calling or receiving on an endpoint has that endpoint's label
+(`endpointWaitersLabelsEqual`, SX11 at `v0.37.40`): a new writer that blocks a
+thread on an endpoint does so only past a two-way `endpointFlowGate` on that
+thread and endpoint, and proves its step an `EndpointWaitersStage` (a frame, a
+shrink, or a growth at that pair discharged from the gate).
 
 Beside WS-SX, `v0.37.22` retired the unchecked register-sourced entry (owner
 decision 2026-11-13): `syscallEntry`, `dispatchSyscall` and the unchecked

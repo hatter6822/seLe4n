@@ -220,7 +220,7 @@ import SeLe4n.Kernel.IPC.Invariant.CapTransferBundle
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatchInvariant
 -- **WS-RR RR8.16**: the blocked-sender flow fact across the two blocking
 -- dispatches (`IPC.Invariant.BlockedSenderPreservation`).  The per-transition
--- lift the `v0.35.126` register row named as owed: `blockedSenderFlowsToEndpoint`
+-- lift the `v0.35.126` register row named as owed: `blockedSenderLabelsEqual`
 -- is carried by `endpointSendCrossCoreDispatchChecked` and
 -- `endpointCallCrossCoreDispatchChecked`, each under its own `endpointFlowGate`,
 -- with the `ipcState` frames every step of both composites needs.  It is its own

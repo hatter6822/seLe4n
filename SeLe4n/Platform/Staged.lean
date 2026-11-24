@@ -735,6 +735,19 @@ import SeLe4n.Kernel.InformationFlow.DeclassificationPerCore
 import SeLe4n.Kernel.InformationFlow.FineLockFlow
 import SeLe4n.Kernel.IPC.Invariant.FaultPreservation
 import SeLe4n.Kernel.InformationFlow.FaultFlow
+import SeLe4n.Kernel.EndpointWaiters.Stage
+import SeLe4n.Kernel.EndpointWaiters.Ipc
+import SeLe4n.Kernel.EndpointWaiters.Fault
+import SeLe4n.Kernel.EndpointWaiters.IpcReply
+import SeLe4n.Kernel.EndpointWaiters.IpcReplyRecv
+import SeLe4n.Kernel.EndpointWaiters.Cancellation
+import SeLe4n.Kernel.EndpointWaiters.ThreadLifecycle
+import SeLe4n.Kernel.EndpointWaiters.IpcNotification
+import SeLe4n.Kernel.EndpointWaiters.Finalise
+import SeLe4n.Kernel.EndpointWaiters.Timer
+import SeLe4n.Kernel.EndpointWaiters.Capability
+import SeLe4n.Kernel.EndpointWaiters.Dispatch
+import SeLe4n.Kernel.EndpointWaiters.Entry
 -- WS-SM SM6.A: the cross-core-aware syscall dispatch entry —
 -- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
 -- Runs the verified `syscallDispatchFromAbi` atomically via `modifyGetKernelState`,

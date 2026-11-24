@@ -1071,7 +1071,7 @@ definitionally and at every other key the store is untouched — which is the fa
 
 Stated at the **record** rather than at one field (`v0.35.196`): the walk frames
 every field but `pipBoost`, so a consumer that wants `ipcState`
-(`blockedSenderShrinks`) and one that wants `schedContextBinding`
+(`propagatePipChainCrossCore_ipcStateFrame`) and one that wants `schedContextBinding`
 (`donationOwnerFlowsToHolder`) are two instances of one proof rather than two
 copies of it.  Stated pointwise rather than through `ipcStateFrame` or
 `sameSchedContextBindings`, because both relations are declared in the IPC layer
