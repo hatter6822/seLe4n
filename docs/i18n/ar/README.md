@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.37.37-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.37.38-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -134,11 +134,11 @@ seLe4n نواة مصغّرة (microkernel) مبنية من الصفر بلغة L
 
 | السمة | القيمة |
 |-------|--------|
-| **الإصدار** | `0.37.37` |
+| **الإصدار** | `0.37.38` |
 | **سلسلة أدوات Lean** | `v4.28.0` |
-| **أسطر Lean الإنتاجية** | 680,393 عبر 687 ملفًا |
-| **أسطر Lean للاختبارات** | 92,469 عبر 71 مجموعة اختبار |
-| **الإعلانات المُبرهَنة** | 25,997 إعلانًا theorem/lemma (صفر sorry/axiom) |
+| **أسطر Lean الإنتاجية** | 682,225 عبر 689 ملفًا |
+| **أسطر Lean للاختبارات** | 92,633 عبر 71 مجموعة اختبار |
+| **الإعلانات المُبرهَنة** | 26,075 إعلانًا theorem/lemma (صفر sorry/axiom) |
 | **حزم Rust** | `sele4n-types` و`sele4n-abi` و`sele4n-sys` (أغلفة فضاء المستخدم) و`sele4n-hal` (طبقة عتاد النواة)، واختبار المضيف `sele4n-lean-boundary` |
 | **العتاد المستهدف** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **مسارات الإقلاع** | كل مسار QEMU يُقلع أولًا صورة Raspberry Pi 5 على الآلة `raspi5b` من [rpi5_machine](https://github.com/hatter6822/rpi5_machine)، ثم صورة `virt` على آلة `virt` في QEMU |
