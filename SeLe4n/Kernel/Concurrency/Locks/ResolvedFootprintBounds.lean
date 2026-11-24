@@ -96,7 +96,7 @@ theorem lockSet_endpointReplyOnCore_size_le (st : SystemState)
     (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).size
       ≤ maxLockSetSize := by
   unfold lockSet_endpointReplyOnCore
-  exact lockSet_endpointReply_extendOpt_extendOpt_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_endpointReply_extendOpt_extendOpt_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- The `replyRecv` resolved footprint — the widest IPC footprint the kernel
 declares.  **Twenty-one** members over all argument values on the widest path: a
@@ -229,11 +229,9 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_onEveryState (st : SystemState)
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) (Nat.succ_le_succ ?_)
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) (Nat.succ_le_succ ?_)
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) (Nat.succ_le_succ ?_)
-  -- **WS-HP HP10.6**: split on the pop's trigger first, so the origin member and
-  -- the two below-head members are decided by one answer.  A frame that heads no
-  -- context contributes neither; one that does contributes the origin exactly when
-  -- the pop is at the bottom of its stack, and there the below-head pair is absent
-  -- (`replyStackBelowHead?_of_originRecipient`).
+  -- Split on the pop's trigger first: a frame that heads no context contributes
+  -- none of the pop's members.  (WS-SX SX12, D31, deleted the origin member that
+  -- HP10.6 had split on beside it.)
   cases hHead : answeredFrameHeadContextId? st target with
   | none =>
       simp only [Option.bind_none]
@@ -243,7 +241,7 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_onEveryState (st : SystemState)
             receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
           simp only [Option.map_none]
           exact Nat.le_trans
-            (lockSet_replyRecv_size_le_twentytwo_of_no_preReturn_of_no_origin
+            (lockSet_replyRecv_size_le_twentytwo_of_no_preReturn
               _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
             (by decide)
       | none =>
@@ -252,51 +250,29 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_onEveryState (st : SystemState)
                 receiveCapRequest_of_no_queued_sender st endpointObjId hS]
           simp only [Option.bind_none]
           exact Nat.le_trans
-            (lockSet_replyRecv_size_le_twentytwo_of_no_sender_of_no_origin
+            (lockSet_replyRecv_size_le_twentytwo_of_no_sender
               _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
             (by decide)
   | some scId =>
       simp only [Option.bind_some]
-      cases hOrigin : donationOriginRecipient? st scId with
+      cases hS : receiveRendezvousSender? st endpointObjId with
+      | some sender =>
+          rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
+            receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
+          simp only [Option.map_none]
+          exact Nat.le_trans
+            (lockSet_replyRecv_size_le_twentytwo_of_no_preReturn
+              _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+            (by decide)
       | none =>
-          cases hS : receiveRendezvousSender? st endpointObjId with
-          | some sender =>
-              rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
-                receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
-              simp only [Option.map_none]
-              exact Nat.le_trans
-                (lockSet_replyRecv_size_le_twentytwo_of_no_preReturn_of_no_origin
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-                (by decide)
-          | none =>
-              rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier true hS,
-                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier true hS,
-                receiveCapRequest_of_no_queued_sender st endpointObjId hS]
-              simp only [Option.bind_none]
-              exact Nat.le_trans
-                (lockSet_replyRecv_size_le_twentytwo_of_no_sender_of_no_origin
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-                (by decide)
-      | some origin =>
-          rw [replyStackBelowHead?_of_originRecipient st hOrigin]
-          cases hS : receiveRendezvousSender? st endpointObjId with
-          | some sender =>
-              rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
-                receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
-              simp only [Option.map_none]
-              exact Nat.le_trans
-                (lockSet_replyRecv_size_le_twentyone_of_no_preReturn_of_no_belowHead
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-                (by decide)
-          | none =>
-              rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier true hS,
-                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier true hS,
-                receiveCapRequest_of_no_queued_sender st endpointObjId hS]
-              simp only [Option.bind_none]
-              exact Nat.le_trans
-                (lockSet_replyRecv_size_le_twentyone_of_no_sender_of_no_belowHead
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-                (by decide)
+          rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier true hS,
+            receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier true hS,
+            receiveCapRequest_of_no_queued_sender st endpointObjId hS]
+          simp only [Option.bind_none]
+          exact Nat.le_trans
+            (lockSet_replyRecv_size_le_twentytwo_of_no_sender
+              _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+            (by decide)
 
 /-- **WS-RM (`v0.35.6`): eighteen — and since WS-HP HP6.2 (`v0.35.44`) with **no
 hypothesis at all**.**
@@ -323,8 +299,8 @@ tombstone above.
 
 **WS-ZA ZA4.7**: the dequeued sender's CSpace root is live on the rendezvous
 branches only, and each of them already has two members it provably lacks — the
-below-head pair where no context heads a stack or the redirect fires, the splice's
-pair where one does (`lockSet_replyRecv_size_le_twenty_of_no_preReturn_of_no_frameAbove_of_no_origin`)
+below-head pair where no context heads a stack, the splice's
+pair where one does (`lockSet_replyRecv_size_le_twenty_of_no_preReturn_of_no_frameAbove`)
 — so the new member fits under the same figure.
 
 **`v0.37.6`**: the CNode the reply leg's capability transfer installs into
@@ -345,9 +321,7 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_sharp (st : SystemState)
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) (Nat.succ_le_succ ?_)
   cases hHead : answeredFrameHeadContextId? st target with
   | none =>
-      -- The pop contributes nothing -- no context, no head, no below-head pair
-      -- and (WS-HP HP10.6) no origin, since the origin member is `bind`ed on this
-      -- very answer.
+      -- The pop contributes nothing -- no context, no head, no below-head pair.
       simp only [Option.bind_none]
       cases hS : receiveRendezvousSender? st endpointObjId with
       | some sender =>
@@ -358,8 +332,8 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_sharp (st : SystemState)
           -- below-head pair is not (no context heads a stack), so the bound
           -- stated with that pair absent covers it.
           exact Nat.le_trans
-            (lockSet_replyRecv_size_le_twentyone_of_no_preReturn_of_no_belowHead
-              _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+            (lockSet_replyRecv_size_le_twenty_of_no_preReturn_of_no_belowHead
+              _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
             (by decide)
       | none =>
           rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier true hS,
@@ -367,7 +341,7 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_sharp (st : SystemState)
                 receiveCapRequest_of_no_queued_sender st endpointObjId hS]
           simp only [Option.bind_none]
           exact Nat.le_trans
-            (lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_head_of_no_origin
+            (lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_head
               _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
             (by decide)
   | some scId =>
@@ -378,51 +352,26 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_sharp (st : SystemState)
       rw [answeredReplyFrameAbove?_none_of_headContext st target scId hHead,
         answeredReplyFrameBelow?_none_of_headContext st target scId hHead]
       simp only [Option.bind_some]
-      cases hOrigin : donationOriginRecipient? st scId with
+      cases hS : receiveRendezvousSender? st endpointObjId with
+      | some sender =>
+          rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
+            receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
+          simp only [Option.map_none]
+          -- **WS-ZA ZA4.7**: the sender's CSpace root is live here, and the
+          -- splice's two members are not (rewritten away above).
+          exact Nat.le_trans
+            (lockSet_replyRecv_size_le_twenty_of_no_preReturn_of_no_frameAbove
+              _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+            (by decide)
       | none =>
-          cases hS : receiveRendezvousSender? st endpointObjId with
-          | some sender =>
-              rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
-                receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
-              simp only [Option.map_none]
-              -- **WS-ZA ZA4.7**: the sender's CSpace root is live here, and the
-              -- splice's two members are not (rewritten away above).
-              exact Nat.le_trans
-                (lockSet_replyRecv_size_le_twenty_of_no_preReturn_of_no_frameAbove_of_no_origin
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-                (by decide)
-          | none =>
-              rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier true hS,
-                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier true hS,
-                receiveCapRequest_of_no_queued_sender st endpointObjId hS]
-              simp only [Option.bind_none]
-              exact Nat.le_trans
-                (lockSet_replyRecv_size_le_twenty_of_no_sender_of_no_frameAbove_of_no_origin
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-                (by decide)
-      | some origin =>
-          -- **WS-HP HP10.6**: the redirect fires, so the pop is at the bottom of
-          -- its stack and the two below-head members are absent -- two members
-          -- traded for one, which is why the reachable figure does not move.
-          rw [replyStackBelowHead?_of_originRecipient st hOrigin]
-          cases hS : receiveRendezvousSender? st endpointObjId with
-          | some sender =>
-              rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
-                receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
-              simp only [Option.map_none]
-              exact Nat.le_trans
-                (lockSet_replyRecv_size_le_twentyone_of_no_preReturn_of_no_belowHead
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-                (by decide)
-          | none =>
-              rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier true hS,
-                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier true hS,
-                receiveCapRequest_of_no_queued_sender st endpointObjId hS]
-              simp only [Option.bind_none]
-              exact Nat.le_trans
-                (lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_frameAbove_of_no_belowHead
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-                (by decide)
+          rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier true hS,
+            receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier true hS,
+            receiveCapRequest_of_no_queued_sender st endpointObjId hS]
+          simp only [Option.bind_none]
+          exact Nat.le_trans
+            (lockSet_replyRecv_size_le_twenty_of_no_sender_of_no_frameAbove
+              _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+            (by decide)
 
 /-! **WS-HP HP6.2 (`v0.35.44`): `lockSet_endpointReplyRecvOnCore_size_le_seventeen`
 is retired, and the reason is the whole of what the repoint costs.**
@@ -731,29 +680,28 @@ theorem Concurrency.lockSet_receiveCancellingHolder_size_le (st : SystemState) (
 -- §4  The `.tcbSuspend` footprint — the widest the kernel declares
 -- ============================================================================
 
-/-- **WS-OD (`v0.35.4`), WS-HP HP3.1, WS-ZA ZA4.6, ZA6.6: the resolved
-`.tcbSuspend` footprint is at most eighteen** (seventeen until ZA6.6 added the
-context the victim's yield link names; twenty from ZA4.6 until `v0.36.136`,
-seventeen before ZA4.6, sixteen before HP3.1).
+/-- **WS-OD (`v0.35.4`), WS-HP HP3.1, WS-ZA ZA4.6, ZA6.6, WS-SX SX12.3: the
+resolved `.tcbSuspend` footprint is at most seventeen** (eighteen from ZA6.6,
+which added the context the victim's yield link names, until SX12.3 removed the
+state-level lock; twenty from ZA4.6 until `v0.36.136`, seventeen before ZA4.6,
+sixteen before HP3.1).
 
 The cancellation root is at most thirteen
-(`lockSet_cancelIpcBlockingOnCore_size_le_thirteen`), and the pipeline adds five
+(`lockSet_cancelIpcBlockingOnCore_size_le_thirteen`), and the pipeline adds four
 extensions over it, each at most one: the caller's two reads, the context the
-victim's binding names, the state-level lock and the context its yield link
-names.  The donation cancellation's owner, head, frame-below and outer-caller
+victim's binding names and the context its yield link names.  The donation cancellation's owner, head, frame-below and outer-caller
 members left the footprint with that retired arm; seL4's `suspend` keeps the
 victim's context and pops nothing.
 
 It is **not** the footprint that sets the ceiling: since PR #894 and WS-RM that
 is `lockSet_endpointReplyRecvOnCore`, at twenty-seven since WS-ZA ZA4.6. -/
-theorem lockSet_tcbSuspendOnCore_size_le_eighteen (st : SystemState)
+theorem lockSet_tcbSuspendOnCore_size_le_seventeen (st : SystemState)
     (callerTid : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (targetTid : SeLe4n.ThreadId) :
-    (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).size ≤ 18 := by
+    (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).size ≤ 17 := by
   have hRoot := lockSet_cancelIpcBlockingOnCore_size_le_thirteen st targetTid
   unfold lockSet_tcbSuspendOnCore
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
-  refine Nat.succ_le_succ (Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_)
   refine Nat.succ_le_succ (Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_)
   refine Nat.succ_le_succ (Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_)
   refine Nat.succ_le_succ (Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_)
@@ -764,7 +712,7 @@ theorem and the WCRT surface consume. -/
 theorem lockSet_tcbSuspendOnCore_size_le (st : SystemState) (callerTid : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (targetTid : SeLe4n.ThreadId) :
     (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).size ≤ maxLockSetSize :=
-  Nat.le_trans (lockSet_tcbSuspendOnCore_size_le_eighteen st callerTid cnodeRootObjId targetTid)
+  Nat.le_trans (lockSet_tcbSuspendOnCore_size_le_seventeen st callerTid cnodeRootObjId targetTid)
     (by unfold maxLockSetSize; omega)
 
 /-- WS-SM SM3.D.6 / WS-OD (`v0.35.4`): the `KernelOperation` for a `.tcbSuspend`,

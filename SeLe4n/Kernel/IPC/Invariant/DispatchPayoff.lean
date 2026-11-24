@@ -142,9 +142,6 @@ def ReplyLegPremises (replier callerTid : SeLe4n.ThreadId) (msg : IpcMessage)
     replyStackOuterCallerValid (endpointReplyOnCore replier callerTid msg c st).1
       scId serverTid originalOwner) ∧
   (∀ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid →
-    redirectedOriginFrameCoherent (endpointReplyOnCore replier callerTid msg c st).1 hid
-      callerTid) ∧
-  (∀ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid →
     unheldReplyHeadBoundByNone (endpointReplyOnCore replier callerTid msg c st).1 hid)
 
 /-- **seL4 `doReplyTransfer` keeps the IPC bundle**: the fault reply's restart or
@@ -164,9 +161,9 @@ theorem replyTransferOnCore_preserves_ipcInvariantFull
     ipcInvariantFull st' ∧ st'.objects.invExt := by
   by_cases hF : threadHasPendingFault st callerTid = true
   · rw [replyTransferOnCore_of_fault replier callerTid mi regs msg grant c st hF] at hStep
-    obtain ⟨hFDon, hFHolderDon, hFStack, hFOrigin, hFUnheld⟩ := hFaultP hF
+    obtain ⟨hFDon, hFHolderDon, hFStack, hFUnheld⟩ := hFaultP hF
     have hFaultInv := faultReplyOnCore_preserves_ipcInvariantFull replier callerTid mi regs c st
-      hInv hObjInv hBudgets hFDon hFHolderDon hFStack hFOrigin
+      hInv hObjInv hBudgets hFDon hFHolderDon hFStack
       (unheldReplyPopCoherent_of_answered hFDon hFUnheld)
     have hFaultObj := faultReplyOnCore_preserves_objects_invExt replier callerTid mi regs c st
       hObjInv
@@ -180,10 +177,10 @@ theorem replyTransferOnCore_preserves_ipcInvariantFull
         rw [← hStep]
         exact ⟨hFaultInv, hFaultObj⟩
   · rw [Bool.not_eq_true] at hF
-    obtain ⟨hDon, hHolderDon, hReplyStack, hOriginCoh, hUnheldB⟩ := hReplyP hF
+    obtain ⟨hDon, hHolderDon, hReplyStack, hUnheldB⟩ := hReplyP hF
     rw [replyTransferOnCore_of_no_fault replier callerTid mi regs msg grant c st hF] at hStep
     have hReplyInv := endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier
-      callerTid msg c st hInv hObjInv hDon hHolderDon hBudgets hReplyStack hOriginCoh
+      callerTid msg c st hInv hObjInv hDon hHolderDon hBudgets hReplyStack
       (unheldReplyPopCoherent_of_answered hDon hUnheldB)
     have hReplyObj := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier callerTid
       msg c st hObjInv
@@ -284,11 +281,6 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull {lend : Bool}
     (hStackValid1 : ∀ scId serverTid originalOwner,
       replyStackOuterCallerValid (endpointReplyOnCore tid prevCaller msg ec st).1
         scId serverTid originalOwner)
-    -- **`v0.35.157`**: the pop's origin redirect is guarded by the bind's own
-    -- admissibility, and this is the coherence fact that makes the guard sound,
-    -- at the state the pop runs on.
-    (hOriginCoherent1 : redirectedOriginFrameCoherent
-      (endpointReplyOnCore tid prevCaller msg ec st).1 rid prevCaller)
     -- **WS-ZA ZA6.34**: the pop at a head no thread holds donates the context to
     -- the answered caller; no thread may bind that context as its own.  The
     -- loan half of the pop's coherence is `hNoEdge1`.
@@ -340,7 +332,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull {lend : Bool}
     ipcInvariantFull_of_exceptDonationOwner_of_no_edge _ prevCaller hExc1 hNoEdge1
   cases hReply : endpointReplyOnCore tid prevCaller msg ec st with
   | mk st1 res1 =>
-      rw [hReply] at hStep hInv1 hObjInv1 hHolderDonation1 hStackValid1 hOriginCoherent1 hNoEdge1 hUnheldBound1 hCleanupStack1 hReceiverReady1 hBudgets1 hReplyIdValid1 hReturnStage
+      rw [hReply] at hStep hInv1 hObjInv1 hHolderDonation1 hStackValid1 hNoEdge1 hUnheldBound1 hCleanupStack1 hReceiverReady1 hBudgets1 hReplyIdValid1 hReturnStage
       cases res1 with
       | error e => simp only [] at hStep; cases hStep
       | ok u =>
@@ -362,7 +354,7 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull {lend : Bool}
             have hInv1q : ipcInvariantFull st1q :=
               replyRecvPopDonation_preserves_ipcInvariantFull
                 rid prevCaller st1 st1q returnedSc?
-                hObjInv1 hInv1 hHolderDonation1 hStackValid1 hOriginCoherent1
+                hObjInv1 hInv1 hHolderDonation1 hStackValid1
                 (unheldReplyPopCoherent_of_boundByNone hUnheldBound1 fun _ => hNoEdge1) hPop
             have hObjInv1q : st1q.objects.invExt :=
               replyRecvPopDonation_preserves_objects_invExt
@@ -529,14 +521,6 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
           { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
             badge := cap.badge } executingCore st).1
         scId serverTid originalOwner) ∧
-    -- **`v0.35.157`**: the origin redirect's coherence obligation -- the
-    -- binding → head fact at the resolved origin, gated on the trigger, the
-    -- resolver and the distinctness, at the state the pop runs on.
-    (∀ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid →
-      redirectedOriginFrameCoherent (endpointReplyOnCore tid callerTid
-          { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-            badge := cap.badge } executingCore st).1
-        hid callerTid) ∧
     -- **WS-ZA ZA6.34**: the pop at a head no thread holds donates the context to
     -- the answered caller; no thread binds that context as its own.
     (∀ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid →
@@ -573,11 +557,6 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
       replyStackOuterCallerValid (endpointReplyOnCore tid prevCaller
         (replyRecvArmLegMessage decoded st prevCaller replyBadge)
         executingCore st).1 scId serverTid originalOwner) ∧
-    -- **`v0.35.157`**: the origin redirect's coherence obligation, as in
-    -- `replyStage`, at the state the pop between the legs runs on.
-    redirectedOriginFrameCoherent (endpointReplyOnCore tid prevCaller
-        (replyRecvArmLegMessage decoded st prevCaller replyBadge)
-        executingCore st).1 rid prevCaller ∧
     -- **WS-ZA ZA6.34**: the binding half of the unheld pop's coherence, as in
     -- `replyStage`; the loan half is the no-edge conjunct above.
     unheldReplyHeadBoundByNone (endpointReplyOnCore tid prevCaller
@@ -702,9 +681,6 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
     (∀ scId serverTid originalOwner,
       replyStackOuterCallerValid (endpointReplyOnCore tid callerTid IpcMessage.empty
           executingCore st).1 scId serverTid originalOwner) ∧
-    (∀ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid →
-      redirectedOriginFrameCoherent (endpointReplyOnCore tid callerTid IpcMessage.empty
-          executingCore st).1 hid callerTid) ∧
     (∀ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid →
       unheldReplyHeadBoundByNone (endpointReplyOnCore tid callerTid IpcMessage.empty
           executingCore st).1 hid)
@@ -1159,12 +1135,12 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                     refine (replyTransferOnCore_preserves_ipcInvariantFull tid callerTid
                       decoded.msgInfo decoded.msgRegs _ _ executingCore st st' hInv hObjInv
                       hBudgets (fun hF => ?_) (fun hF => ?_) hStep).1
-                    · obtain ⟨hFDon, hFHolderDon, hFStack, hFOrigin, hFUnheld⟩ :=
+                    · obtain ⟨hFDon, hFHolderDon, hFStack, hFUnheld⟩ :=
                         hPack.replyFaultStage rid reply callerTid hSy hTgt hRep hCaller hF
-                      exact ⟨hFDon, hFHolderDon, hFStack, hFOrigin, hFUnheld⟩
-                    · obtain ⟨hDon, hHolderDon, hReplyStack, hOriginCoh, hUnheldB⟩ :=
+                      exact ⟨hFDon, hFHolderDon, hFStack, hFUnheld⟩
+                    · obtain ⟨hDon, hHolderDon, hReplyStack, hUnheldB⟩ :=
                         hPack.replyStage rid reply callerTid hSy hTgt hRep hCaller
-                      exact ⟨hDon, hHolderDon, hReplyStack, hOriginCoh, hUnheldB⟩
+                      exact ⟨hDon, hHolderDon, hReplyStack, hUnheldB⟩
                   next => cases hStep
         all_goals cases hStep
       case cspaceMint =>
@@ -1390,7 +1366,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                     (schedContextBindingPair_of_consistent hPack.capOnly.schedContextLinks.binding
                       hInv.donationOwnerValid) hRF hFP hRP hB1 hStep
                 rw [if_neg hSigR] at hStep
-                obtain ⟨hNoEdge1, hHolderDon1, hStackValid1, hOriginCoh1, hUnheldB1,
+                obtain ⟨hNoEdge1, hHolderDon1, hStackValid1, hUnheldB1,
                     hCleanupStack1, hReady1, hBudgets1, hRidFresh1, hRetStage⟩ :=
                   hPack.replyRecvStage rid prevCaller replyBadge replyGrant epId hSy hTgt hRR
                 cases hBody : replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label
@@ -1405,7 +1381,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                       epId tid rid prevCaller _ replyGrant
                       executingCore st stB summary
                       hPack.reachable hNoEdge1 hHolderDon1 hStackValid1
-                      hOriginCoh1 hUnheldB1 hCleanupStack1 hReady1 hBudgets1 hRidFresh1
+                      hUnheldB1 hCleanupStack1 hReady1 hBudgets1 hRidFresh1
                       (fun n s2 g st2 h => (hRetStage n s2 g st2 h).imp_right
                         (fun h' => h'.imp_right (fun h'' => h'' _)))
                       (by unfold replyRecvTransferOnCore at hBody; exact hBody)

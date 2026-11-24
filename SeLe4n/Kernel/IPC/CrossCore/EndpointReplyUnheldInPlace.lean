@@ -417,8 +417,8 @@ theorem replyUnheldPopsInPlace_pop (st : SystemState) (c : SeLe4n.ThreadId)
       (∀ cv : SeLe4n.ValidThreadId, cv.val = c →
         applyReplyDonationOnCore
             ((storeReplyLegReady st c rid).mapTcbInPlace c (holdMessage msg)) rid cv
-            (replyDonationRecipientHome
-              ((storeReplyLegReady st c rid).mapTcbInPlace c (holdMessage msg)) rid c) =
+            (determineTargetCore
+              ((storeReplyLegReady st c rid).mapTcbInPlace c (holdMessage msg)) c) =
           .ok (SchedContextOps.settleReturnedContext
             (returnUnheldSchedContextInPlace
               ((storeReplyLegReady st c rid).mapTcbInPlace c (holdMessage msg)) c scId)
@@ -544,7 +544,7 @@ theorem replyUnheldPopsInPlace_pop (st : SystemState) (c : SeLe4n.ThreadId)
     simp only [hPopT]
   intro cv hcv
   subst hcv
-  unfold applyReplyDonationOnCore replyDonationRecipientHome
+  unfold applyReplyDonationOnCore
   rw [hHolder]
   simp only []
   exact hPopT

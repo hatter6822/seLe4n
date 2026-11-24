@@ -33,7 +33,7 @@ Tier-2 (runtime) + Tier-3 (surface anchor) coverage for the WS-SM Phase SM6.E
   `cancellation_cross_core_correct` flagship, SGI emission, 2PL atomicity)
   to verified inputs.
 * **§3 Runtime assertions** — `lake exe smp_cancellation_suite` exercises the
-  actual `cancelIpcBlockingOnCore` / `cancelDonationOnCore` /
+  actual `cancelIpcBlockingOnCore` / `cancelDonationArmOnCore` /
   `lockSet_cancelIpcBlocking` computations on the SM6.E cancellation
   scenarios: cancelling endpoint-blocked / notification-blocked /
   reply-blocked victims homed on a remote core, descheduling an actively
@@ -408,7 +408,7 @@ open SeLe4n.Testing
 #check @lockSet_cancelIpcBlockingOnCore_size_le_thirteen
 #check @lockSet_cancelIpcBlockingOnCore_size_le_of_no_donation
 #check @lockSet_cancelIpcBlockingOnCore_size_le_of_donation
-#check @lockSet_tcbSuspendOnCore_size_le_eighteen
+#check @lockSet_tcbSuspendOnCore_size_le_seventeen
 #check @lockSet_tcbSuspendOnCore_size_le
 -- ...and the frames that license it: the arms that declare no neighbour write
 -- none.

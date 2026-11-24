@@ -241,22 +241,16 @@ def applyReplyDonation (st : SystemState) (rid : SeLe4n.ReplyId)
           -- context settles on the thread that is still owed it instead of on
           -- the intermediate donor — which would otherwise acquire another
           -- domain's reservation permanently (plan §3.2).
-          -- **WS-HP HP10.7**: and the recipient at the BOTTOM of the stack is the
-          -- reservation's recorded origin rather than the thread reachability
-          -- names.  `replyDonationRecipient` is the identity wherever no origin
-          -- is recorded or usable and on every `some`-arm pop, so this is the
-          -- pre-HP10.7 body verbatim on every state before HP10.4 recorded one
-          -- (`applyReplyDonation_eq_legacy_of_no_origin`); where it differs is
-          -- the out-of-order removal of plan §3.2, in which the client's own
-          -- frame left the stack and the surviving bottom frame names the
-          -- intermediate caller.
+          -- The recipient is the answered caller on every arm, as seL4-MCS's
+          -- `reply_pop` gives the context to the thread the reply answers
+          -- (WS-SX SX12, D31: the origin redirect is deleted).
           -- seL4-MCS's `reply_pop` donates the context back only to a thread
           -- that holds none; one that holds a context of its own is handed
           -- nothing, and the head is popped off the context, which stays with
           -- its holder (`keepDonatedSchedContextResolved`).
-          if donationRecipientAcceptable st (replyDonationRecipient st scId target) then
+          if donationRecipientAcceptable st target then
             match returnDonatedSchedContextResolved st holderVtid.val scId
-                    (replyDonationRecipient st scId target) with
+                    target with
             | .error e => .error e
             | .ok st' =>
                 -- WS-ZA ZA6.33: seL4's `schedContext_donate` tail on the boot
@@ -545,7 +539,7 @@ theorem applyReplyDonation_machine_eq
         have hHEq : holderVtid.val = holder :=
           SeLe4n.ThreadId.toValid?_some_val_eq holder holderVtid hHV
         simp only [hHV, hHEq] at h
-        cases hA : donationRecipientAcceptable st (replyDonationRecipient st scId targetVtid.val) with
+        cases hA : donationRecipientAcceptable st targetVtid.val with
         | false =>
           simp only [hA, Bool.false_eq_true, ↓reduceIte] at h
           exact keepDonatedSchedContextResolved_machine_eq h
@@ -554,15 +548,14 @@ theorem applyReplyDonation_machine_eq
         -- WS-OD OD4.4: the split is on the *resolved* return, which is the
         -- operation the arm now runs; the frame is lifted through its own
         -- decomposition rather than restated at a fixed `newOwner?`.
-        -- **WS-HP HP10.7**: the recipient is the redirect, not the argument.
         cases hReturn : returnDonatedSchedContextResolved st holder scId
-            (replyDonationRecipient st scId targetVtid.val) with
+            targetVtid.val with
         | error _ => simp only [hReturn] at h; cases h
         | ok st'' =>
           simp only [hReturn] at h; cases h
           obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hReturn
           have hMach := returnDonatedSchedContext_machine_eq st st'' holder scId
-            (replyDonationRecipient st scId targetVtid.val) n hPop
+            targetVtid.val n hPop
           have hRem := removeRunnable_machine_eq
             (SchedContextOps.settleReturnedContext st'' Concurrency.bootCoreId scId) holder
           exact (hRem.trans (SchedContextOps.settleReturnedContext_machine _ _ _)).trans hMach

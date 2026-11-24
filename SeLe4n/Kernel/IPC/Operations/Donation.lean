@@ -396,16 +396,11 @@ theorem applyReplyDonation_characterisation
                   -- operation onto the reply-stack resolver, or it is a model of
                   -- a different program.  **WS-HP HP4.2**: the thread that loses
                   -- the context is the pair's `holder`, and the one that gains it
-                  -- is the argument -- **WS-HP HP10.7**: or, at the bottom of
-                  -- the stack, the reservation's recorded origin, which is what
-                  -- `replyDonationRecipient` resolves.  The model follows the
-                  -- operation onto the redirect for the same reason OD4.4 moved
-                  -- it onto the stack resolver: a characterisation stated at the
-                  -- argument is a model of a different program.
+                  -- is the argument, on every arm (WS-SX SX12, D31).
                   (if donationRecipientAcceptable st
-                      (replyDonationRecipient st scId targetVtid.val) then
+                      targetVtid.val then
                     (match returnDonatedSchedContextResolved st holderVtid.val scId
-                        (replyDonationRecipient st scId targetVtid.val) with
+                        targetVtid.val with
                      | .error e => .error e
                      | .ok st' => .ok (removeRunnable
                          (SchedContextOps.settleReturnedContext st'
@@ -428,7 +423,7 @@ theorem applyReplyDonation_characterisation
         rw [SeLe4n.ThreadId.toValid?_some_val_eq holder holderVtid hHV]
         split
         · cases returnDonatedSchedContextResolved st holder _
-            (replyDonationRecipient st _ targetVtid.val) <;> rfl
+            targetVtid.val <;> rfl
         · rfl
 
 /-- WS-RR RR2.1 / RR2.2 (operation): the cross-core `.call` SchedContext

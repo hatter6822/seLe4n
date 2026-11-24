@@ -390,7 +390,7 @@ run_check_with_timeout "TRACE" lake exe smp_cross_core_notification_suite
 run_check_with_timeout "TRACE" lake exe smp_cross_core_reply_suite
 
 # WS-SM SM6.E cross-core cancellation: exercises the cancelIpcBlockingOnCore /
-# cancelDonationOnCore / lockSet_cancelIpcBlocking computations on the SM6.E
+# cancelDonationArmOnCore / lockSet_cancelIpcBlocking computations on the SM6.E
 # scenarios — cancelling endpoint- / notification- / reply-blocked victims
 # homed on a remote core, the actively-running remote victim's `.reschedule`
 # SGI (vs the local / not-current no-SGI duals), the per-core bound-donation

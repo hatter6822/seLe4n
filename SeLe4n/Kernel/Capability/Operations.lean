@@ -31,9 +31,10 @@ findings for the capability subsystem that were addressed in Phase AK8-K.
   Phase AK8 LOW-tier batch budgets for any single item and is recorded
   here as a post-1.0 hardening candidate, registered in the *Registered
   debt index* (table C.1) in `docs/REGISTERED_DEBT.md`, row 32.
-- **C-L4 (`cleanupDonatedSchedContext` asymmetry):** handled inline by
+- **C-L4 (bound/donated context-cleanup asymmetry):** handled inline by
   the AJ1-A + AH2-A/B cascade which aligned bound/donated cleanup
-  error-propagation through `cleanupPreReceiveDonationChecked`.
+  error-propagation through `cleanupPreReceiveDonationChecked`; the
+  destroy path now ends a reservation through `cancelDonationArmOnCore`.
 - **C-L5 (IPC buffer canonical upper bound):** addressed by
   `ipcBuffer_within_page` theorem (AE4-I) in
   `Architecture/IpcBufferValidation.lean`.

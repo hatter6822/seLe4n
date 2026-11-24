@@ -21,14 +21,10 @@ across the reply leg and the pop.
 
 **The pop's binding frame** (`replyRecvPopDonation_binding_cases`): a thread
 bound after the pop held the same context before it, or is the thread the pop
-gave its context to — the answered caller, or the context's recorded origin
-(`replyDonationRecipient`).  The answered caller is `.ready` after the reply leg,
-so it is not the send queue's head the receive dequeues.  The recorded origin
-may be: it is an unbound thread named by the context's origin record, free to
-have called again since its frame was cut out.  It receives back a context it
-lent itself, so the flow its label has to the context is the flow its own lend
-was admitted at; the dispatch takes that fact at the pop's state as a premise
-(`ReplyRecvLendersPremises.originFlows`), beside the chain facts
+gave its context to, which is the answered caller (seL4-MCS `reply_pop`,
+`schedContext_donate(sc, tcb)`; WS-SX SX12, D31).  The answered caller is
+`.ready` after the reply leg, so it is not the send queue's head the receive
+dequeues.  The chain facts the dispatch reads are premises
 (`docs/REGISTERED_DEBT.md` table C, "`ipcReachable` is not carried across a trace
 of kernel entries", owner WS-PK).
 -/
@@ -46,7 +42,7 @@ theorem replyRecvPopDonation_binding_cases {rid : SeLe4n.ReplyId} {target : SeLe
     (y : SeLe4n.ThreadId) (t' : TCB) (s : SeLe4n.SchedContextId)
     (hT : st'.objects[y.toObjId]? = some (.tcb t')) (hS : t'.schedContextBinding.scId? = some s) :
     (∃ t0, st.objects[y.toObjId]? = some (.tcb t0) ∧ t0.schedContextBinding.scId? = some s) ∨
-    (∃ sc holder, r = some (sc, holder) ∧ y = replyDonationRecipient st sc target ∧ s = sc) ∨
+    (∃ sc holder, r = some (sc, holder) ∧ y = target ∧ s = sc) ∨
     (r = none ∧ y = target) := by
   rcases r with _ | ⟨oldScId, holder⟩
   · rcases replyRecvPopDonation_ok_none_decompose rid target st st' h with ⟨-, hPop⟩ |
@@ -69,7 +65,7 @@ theorem replyRecvPopDonation_binding_cases {rid : SeLe4n.ReplyId} {target : SeLe
     replyRecvPopDonation_ok_some_decompose rid target st st' oldScId holder h
   replace hT := (SchedContextOps.settleReturnedContext_agree _ _ _).symm.get_of_not_sc
     (fun _ e => KernelObject.noConfusion e) hT
-  by_cases hy : y = replyDonationRecipient st oldScId target
+  by_cases hy : y = target
   · refine .inr (.inl ⟨oldScId, holder, rfl, hy, ?_⟩)
     refine returnDonatedSchedContextResolved_lift (P := fun s1 =>
       s1.objects[y.toObjId]? = some (.tcb t') → s = oldScId) hRet (fun n s1 hS1 hT1 => ?_) hT
@@ -94,10 +90,8 @@ theorem replyRecvPopDonation_binding_cases {rid : SeLe4n.ReplyId} {target : SeLe
 admission, read on the state the arm is handed (before the reply leg), passes,
 the context a dequeued `Call` lends at the receive leg is one its caller's label
 flows to.  The dequeued call is the send queue's head the admission read, and it
-holds there the context it lends, unless the pop handed it that context: then it
-is the context's recorded origin, whose flow `hOrigin` gives (the answered
-caller the pop may also hand it to is `.ready`, so it is dequeued by no
-receive). -/
+holds there the context it lends: the only thread the pop hands a context to is
+the answered caller, which is `.ready`, so it is dequeued by no receive. -/
 theorem replyRecvLendAdmits_flows_dequeued {ctx : LabelingContext}
     {answer : Option Architecture.FaultReplyOutcome} {epId : SeLe4n.ObjId}
     {tid prevCaller nextThread : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {msg : IpcMessage}
@@ -111,8 +105,6 @@ theorem replyRecvLendAdmits_flows_dequeued {ctx : LabelingContext}
     (hX : replyRecvReplyTransfer answer st tid prevCaller grant st1q = .ok (xs, st1p))
     (hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) c
       (receiveReturnSchedContext true st1p tid) = (st2, .ok (nextThread, summ, sgi')))
-    (hOrigin : ∀ sc o, donationOriginRecipient? st1 sc = some o →
-      securityFlowsTo (ctx.threadLabelOf o) (ctx.objectLabelOf sc.toObjId) = true)
     (hAdm : receiveLendAdmits ctx st epId = true) :
     rendezvousDequeuedCall st2 nextThread = true →
       ∀ s, callDonationSchedContext? st2 nextThread tid = some s →
@@ -205,14 +197,7 @@ theorem replyRecvLendAdmits_flows_dequeued {ctx : LabelingContext}
       rw [receiveLendAdmits_of_head ((SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hEpSt) hHead
         hZL hZCall] at hAdm
       exact callLendAdmits_flows_of_binding hAdm hZL (by rw [hZB]; exact hY0B)
-    · cases hO : donationOriginRecipient? st1 s with
-      | none =>
-        rw [replyDonationRecipient_eq_of_no_origin _ _ _ hO] at hRec
-        exact absurd hRec hNotPrev
-      | some o =>
-        rw [replyDonationRecipient_eq_origin _ hO] at hRec
-        subst hRec
-        exact hOrigin s _ hO
+    · exact absurd hRec hNotPrev
     · exact absurd hRec hNotPrev
 
 namespace LendersFrame
@@ -226,8 +211,7 @@ theorem replyRecvPopDonation {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId}
     LendersFrame st st' := by
   unfold _root_.SeLe4n.Kernel.replyRecvPopDonation at h
   split at h
-  · dsimp only at h
-    split at h
+  · split at h
     · split at h
       · split at h
         · cases h
@@ -353,18 +337,15 @@ theorem replyRecvPostReceiveDonation_preserves_contextLendersFlow {ctx : Labelin
         serverCore _ hI).stage hIn
 
 /-- **What the reply-receive's answering leg reads at the states it runs
-from**: the recorded origin's flow to its context where the pop runs, the
-donation chain's shape where the receive leg runs (after seL4-MCS's return), and
+from**: the donation chain's shape where the receive leg runs (after seL4-MCS's return), and
 the chain facts where the lend runs (after the receive leg, and after the
 holder's deschedule where the pop unbound one).  Premises read off those
 states (`docs/REGISTERED_DEBT.md` table C, owner WS-PK). -/
-def ReplyRecvLendersPremises (ctx : LabelingContext) (st : SystemState)
+def ReplyRecvLendersPremises (st : SystemState)
     (answer : Option Architecture.FaultReplyOutcome) (epId : SeLe4n.ObjId)
     (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
     (msg : IpcMessage) (grant : Bool) (c : CoreId) : Prop :=
   ∀ st1 sgi, endpointReplyOnCore tid prevCaller msg c st = (st1, .ok sgi) →
-    (∀ sc o, donationOriginRecipient? st1 sc = some o →
-      securityFlowsTo (ctx.threadLabelOf o) (ctx.objectLabelOf sc.toObjId) = true) ∧
     ∀ ret st1q, replyRecvPopDonation rid prevCaller st1 = .ok (ret, st1q) →
     ∀ xs st1p, replyRecvReplyTransfer answer st tid prevCaller grant st1q = .ok (xs, st1p) →
       donationChainWellFormed (receiveReturnSchedContext true st1p tid) ∧
@@ -384,7 +365,7 @@ theorem endpointReplyRecvAnsweringOnCore_lendersStage {ctx : LabelingContext} {l
     {c : CoreId} {st st' : SystemState} {summary : CapTransferSummary}
     (hInv : st.objects.invExt) (hQ : queueHeadBlockedConsistent st)
     (hReady : ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
-    (hP : ReplyRecvLendersPremises ctx st answer epId tid rid prevCaller msg grant c)
+    (hP : ReplyRecvLendersPremises st answer epId tid rid prevCaller msg grant c)
     (hLend : lend = true → receiveLendAdmits ctx st epId = true)
     (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant c st lend
       = .ok (summary, st')) :
@@ -401,7 +382,7 @@ theorem endpointReplyRecvAnsweringOnCore_lendersStage {ctx : LabelingContext} {l
   | ok sgi =>
   intro h A
   dsimp only at h A
-  obtain ⟨hOrig, hP1⟩ := hP st1 sgi hR
+  have hP1 := hP st1 sgi hR
   split at h
   · cases h
   rename_i ret st1q hPop
@@ -438,7 +419,7 @@ theorem endpointReplyRecvAnsweringOnCore_lendersStage {ctx : LabelingContext} {l
     _ FR.invExt hChainR (S1 hF)
   rw [hRecv] at h1
   have h2 := replyRecvPostReceiveDonation_preserves_contextLendersFlow hP3 hPH h1
-    (fun hL => replyRecvLendAdmits_flows_dequeued hInv hQ hReady hR hPop hX hRecv hOrig
+    (fun hL => replyRecvLendAdmits_flows_dequeued hInv hQ hReady hR hPop hX hRecv
       (hLend hL)) hPost
   have hI3 := (RecordsFrame.replyRecvPostReceiveDonation hP3.invExt hPost).invExt
   have F4 := LendersFrame.applyReceiveLegPipHandoff st3 tid nextThread
@@ -453,7 +434,7 @@ theorem replyRecvTransferOnCore_lendersStage {ctx : LabelingContext} {lend : Boo
     {st st' : SystemState} {summary : CapTransferSummary}
     (hInv : st.objects.invExt) (hQ : queueHeadBlockedConsistent st)
     (hReady : ∀ x, st.getTcb? tid = some x → x.ipcState = .ready)
-    (hP : ReplyRecvLendersPremises ctx st (replyRecvCallerFaultAnswer? st prevCaller label msg)
+    (hP : ReplyRecvLendersPremises st (replyRecvCallerFaultAnswer? st prevCaller label msg)
       epId tid rid prevCaller
       (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant c)
     (hLend : lend = true → receiveLendAdmits ctx st epId = true)

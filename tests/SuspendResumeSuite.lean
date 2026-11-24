@@ -459,7 +459,7 @@ private def sr021_frozenRoundtrip : IO Unit := do
   | .error e => throw <| IO.userError s!"frozen suspend failed: {repr e}"
 
 -- ============================================================================
--- R5.A (DEEP-SUSP-02): cancelDonation split into two named arms
+-- R5.A (DEEP-SUSP-02): the donation arm split into two named arms
 -- ============================================================================
 
 /-- SR-022: `cancelBoundDonationOnCore` on a `.bound scId` TCB clears the binding. -/
@@ -478,13 +478,13 @@ private def sr022_cancelBoundDonationClearsBinding : IO Unit := do
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
       expect "TCB binding is unbound" (tcb'.schedContextBinding == .unbound)
-    | _ => throw <| IO.userError "TCB not found after cancelBoundDonation"
+    | _ => throw <| IO.userError "TCB not found after cancelBoundDonationOnCore"
     match st'.objects[scId.toObjId]? with
     | some (.schedContext sc') =>
       expect "SC boundThread is none" sc'.boundThread.isNone
       expect "SC isActive is false" (!sc'.isActive)
-    | _ => throw <| IO.userError "SC not found after cancelBoundDonation"
-  | .error e => throw <| IO.userError s!"cancelBoundDonation failed: {repr e}"
+    | _ => throw <| IO.userError "SC not found after cancelBoundDonationOnCore"
+  | .error e => throw <| IO.userError s!"cancelBoundDonationOnCore failed: {repr e}"
 
 /-- SR-023: `cancelBoundDonationOnCore` on a `.donated` TCB returns `.illegalState`
     — the dispatcher chooses the wrong arm. -/
@@ -495,9 +495,9 @@ private def sr023_cancelBoundDonationRejectsDonated : IO Unit := do
   let tcb := { mkTcb 1 .Ready with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId donor), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId donor) }
   let st := mkState [(⟨1⟩, .tcb tcb)]
   match SeLe4n.Kernel.cancelBoundDonationOnCore st tid tcb with
-  | .ok _ => throw <| IO.userError "cancelBoundDonation should reject .donated"
+  | .ok _ => throw <| IO.userError "cancelBoundDonationOnCore should reject .donated"
   | .error e =>
-    expect "cancelBoundDonation rejects .donated with illegalState"
+    expect "cancelBoundDonationOnCore rejects .donated with illegalState"
       (e == .illegalState)
 
 /-- SR-024: `cancelDonatedDonationOnCore` on a `.bound` TCB returns `.illegalState`
@@ -508,9 +508,9 @@ private def sr024_cancelDonatedDonationRejectsBound : IO Unit := do
   let tcb := { mkTcb 1 .Ready with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let st := mkState [(⟨1⟩, .tcb tcb)]
   match SeLe4n.Kernel.cancelDonatedDonationOnCore st tid tcb with
-  | .ok _ => throw <| IO.userError "cancelDonatedDonation should reject .bound"
+  | .ok _ => throw <| IO.userError "cancelDonatedDonationOnCore should reject .bound"
   | .error e =>
-    expect "cancelDonatedDonation rejects .bound with illegalState"
+    expect "cancelDonatedDonationOnCore rejects .bound with illegalState"
       (e == .illegalState)
 
 /-- SR-025: The destroy path's reservation arm (`cancelDonationArmOnCore`) on `.unbound` is identity. -/
@@ -521,9 +521,9 @@ private def sr025_cancelDonationUnboundIdentity : IO Unit := do
   match SeLe4n.Kernel.cancelDonationArmOnCore st tid tcb with
   | .ok st' =>
     -- State should be identical to input.
-    expect "cancelDonation .unbound returns identity"
+    expect "cancelDonationArmOnCore .unbound returns identity"
       ((st'.objects[tid.toObjId]?).isSome)
-  | .error e => throw <| IO.userError s!"cancelDonation .unbound failed: {repr e}"
+  | .error e => throw <| IO.userError s!"cancelDonationArmOnCore .unbound failed: {repr e}"
 
 -- ============================================================================
 -- R5.B (DEEP-SUSP-01): PIP recomputation on resume
@@ -1669,7 +1669,7 @@ def main : IO Unit := do
   frozenRestartOfBlockedThreadResumesAtSvc
   frozenSuspendPcAgreesWithLive
   sr021_frozenRoundtrip
-  IO.println "--- R5.A: cancelDonation split ---"
+  IO.println "--- R5.A: cancelDonationArmOnCore split ---"
   sr022_cancelBoundDonationClearsBinding
   sr023_cancelBoundDonationRejectsDonated
   sr024_cancelDonatedDonationRejectsBound

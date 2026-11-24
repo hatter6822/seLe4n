@@ -589,8 +589,7 @@ def removeFromNotificationWaitQueue (st : SystemState) (tid : SeLe4n.ThreadId) :
     3. All notification waiting lists (`removeFromNotificationWaitQueue`)
     Note: the thread's reservation is ended separately in
     `lifecyclePreRetypeCleanup` BEFORE this function is called
-    (`cancelDonationArmOnCore` since `v0.35.164`; the bare
-    `cleanupDonatedSchedContext` until then), because `storeObject` modifies
+    (`cancelDonationArmOnCore`), because `storeObject` modifies
     lifecycle metadata and `cleanupTcbReferences` must preserve lifecycle for
     its proofs.
     This prevents dangling-reference scenarios after a TCB is retyped. -/
@@ -602,10 +601,6 @@ def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
   -- `chooseBestRunnableBy` failed that core's entire selection scan forever.
   let st := removeRunnableFromAllCores st tid
   let st := removeFromAllEndpointQueues st tid
-  -- A context that records this thread as its reservation's origin is left as it
-  -- is: that origin counts only while the thread's own back-link names the
-  -- context (`donationOriginRecipient?`), and a thread made at this id starts
-  -- with none, so the destroyed thread's id hands nothing on.
   removeFromNotificationWaitQueue st tid
 
 -- ============================================================================
@@ -619,8 +614,8 @@ def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
 -- (`CleanupPreservation.lean`) is the destroy path's asker, and that module
 -- cannot import the cancellation layer — *when a question has one owner and an
 -- asker that cannot see it, the owner is in the wrong layer* (`v0.35.59`).
--- What the destroy path did instead is the finding this version records: the
--- bare `cleanupDonatedSchedContext` on a `.donated` holder, a return that
+-- What the destroy path did instead is the finding this version records: a
+-- context cleanup on a `.donated` holder, a return that
 -- migrates no replenishment (register row 57's class on the destroy path), and
 -- an index-only removal on a `.bound` thread, which left the SchedContext bound
 -- to a destroyed thread with its replenishment stranded on that thread's home
@@ -628,9 +623,7 @@ def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
 -- `replenishQueueAffinityConsistent_smp` both false after a successful retype.
 -- seL4's `finaliseCap` runs `unbindFromSc` on a TCB; this is that, per core.
 --
--- The theorems that read `ipcInvariant` of these arms, the single-core bridges
--- (`cancelBoundDonationOnCore_eq_cancelBoundDonation`,
--- `cancelDonatedDonationOnCore_eq_of_sharedHome`) and the suspend footprint
+-- The theorems that read `ipcInvariant` of these arms and the suspend footprint
 -- stay in `Cancellation.lean`; the frames the destroy path's proofs read
 -- (`_runQueue_current_eq`, `_replenishQueue_{purged,ne}`,
 -- `_preserves_objects_invExt`, `_machine_eq`, `_tlbShootdown_eq`) are in
@@ -639,12 +632,12 @@ def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
 /-- WS-SM SM6.E.3 (plan §3.1): the R5.A in-place SchedContext unbind arm,
 across cores.
 
-Textual twin of `cancelBoundDonation`.  The replenish-queue purge is exact
+seL4's `schedContext_unbindTCB` on a bound thread.  The replenish-queue purge is exact
 (`SchedContextOps.purgeReplenishment`): it takes the context off the release
 queue its own link names, so the arm is handed no core — WS-ZA ZA6.3 removed the
 purge-core parameter the dispatchers used to resolve with `determineTargetCore`,
-which the exact removal never read.  The single-core form is the same function
-(`cancelBoundDonationOnCore_eq_cancelBoundDonation`, `IPC/CrossCore/Cancellation.lean`).
+which the exact removal never read.  It is the only form: no single-core twin
+remains.
 
 Relocated from `Cancellation.lean` at `v0.35.164` so the destroy path can run
 it — see the section note above. -/
@@ -994,7 +987,7 @@ thread runs on the context), so the step never refuses
 (`cancelDonationArmOnCore_ok`).
 
 Two spellings of one dispatcher exist deliberately, and one is defined through
-the other: `cancelDonationOnCore` (`IPC/CrossCore/Cancellation.lean`) is this
+the other: the bracket form in `IPC/CrossCore/Cancellation.lean` is this
 arm in the `withLockSet` bracket convention — the post-state paired with the
 outcome, the **pre**-state on an error so a bracket still releases cleanly —
 and its body is one `match` over this definition, so a step added here reaches

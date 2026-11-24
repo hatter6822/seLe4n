@@ -5624,14 +5624,6 @@ theorem schedContextUnbind_preserves_projection
   hProjEq st' hStep
 
 -- ============================================================================
--- AK6-F.17: cancelDonation preservation (closure form, sub-helper for suspend)
--- ============================================================================
-
--- ============================================================================
--- WS-RC R5.A (DEEP-SUSP-02): split-arm preservation helpers (closure form)
--- ============================================================================
-
--- ============================================================================
 -- AK6-F.18: suspendThread preservation (closure form)
 -- ============================================================================
 
@@ -5663,13 +5655,12 @@ theorem schedContextUnbind_preserves_projection
       this obligation as its `hTeardownProj` hypothesis; see
       `docs/REGISTERED_DEBT.md`.
     - **G4 re-lookup**: no state change.
-    - **G5 `cancelDonation` (WS-RC R5.A split)**: post-R5.A the G5 step
-      dispatches explicitly on `schedContextBinding`:
+    - **G5 the donation arm** (`cancelDonationArmOnCore`, WS-RC R5.A
+      split): dispatches on `schedContextBinding`:
       `.unbound` → identity (no projection obligation);
-      `.bound _` → `cancelBoundDonation_preserves_projection`;
-      `.donated _ _` → `cancelDonatedDonation_preserves_projection`.
-      AK6-F.17 `cancelDonation_preserves_projection` remains valid for
-      callers that route through the (retained) thin dispatcher.
+      `.bound _` / `.donated _ _` → the in-place unbind
+      (`cancelBoundDonationOnCore` / `cancelDonatedDonationOnCore`) of the
+      high victim's context, discharged by the caller as G3 is.
     - **G6 `removeRunnable`**: `removeRunnable_preserves_projection`
       at thread-high tid.
     - **G7 `clearPendingState`**: `storeObject` at high TCB; `projectKernelObject`

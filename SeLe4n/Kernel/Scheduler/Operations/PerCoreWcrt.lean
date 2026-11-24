@@ -334,11 +334,9 @@ for the receive leg's install CNode as resolved after the reply leg's transfer
 
 How much of the ceiling no reachable state takes up is stated where the
 footprint is, not here: `lockSet_endpointReplyRecvOnCore_size_le_onEveryState` and
-`…_size_le_sharp` (twenty and eighteen before WS-ZA ZA4.6), **both unmoved by HP3.1 and by HP10.6** — the splice's
-member and the pop's three are mutually exclusive on any state, and HP10.6's
-origin member is live only at the bottom of a stack, where the two below-head
-members are absent (`replyStackBelowHead?_of_originRecipient`), so a reachable
-footprint trades two members for one. -/
+`…_size_le_sharp` (twenty and eighteen before WS-ZA ZA4.6), **both unmoved by HP3.1** — the splice's
+member and the pop's three are mutually exclusive on any state.  (HP10.6's origin
+member, live only at the bottom of a stack, is gone since WS-SX SX12, D31.) -/
 theorem admissibleCriticalSection_rpi5Tick :
     admissibleCriticalSection rpi5TickBudgetMicros = 10 := by decide
 

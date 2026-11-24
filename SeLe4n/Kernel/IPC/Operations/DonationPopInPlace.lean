@@ -403,11 +403,8 @@ theorem outerCallerAcceptableCode_eq (st : SystemState) (server c : SeLe4n.Threa
 answered caller `c` (an unreserved thread, unbound) and the server distinct, the
 caller's, its reply object's and the server's slots local, the reply object
 heading the stack of a context the server is bound to, and the frame below (if
-any) another local reply linked up to it whose caller passes the pop's checks;
-at the bottom of the stack (no frame below) the context records no origin other
-than the caller, since only there is the recorded origin the recipient
-(`donationOriginRecipient?`).  Every read is a code, so the
-test builds nothing. -/
+any) another local reply linked up to it whose caller passes the pop's checks.
+Every read is a code, so the test builds nothing. -/
 @[inline] def replyPopsInPlace (st : SystemState) (c : SeLe4n.ThreadId) (cBinding : Nat)
     (server : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) : Bool :=
   !c.isReserved && c.val != server.val && cBinding == 0 &&
@@ -429,10 +426,6 @@ test builds nothing. -/
            | some h => h.val == rid.val
            | none => false) &&
           sc.boundThreadCode == server.val + 1 &&
-          (rp.prev.isSome ||
-            match sc.donationOrigin with
-            | some o => o.val == c.val
-            | none => true) &&
           (match rp.prev with
            | none => true
            | some b =>
@@ -502,7 +495,7 @@ theorem replyPopsInPlace_pop (st : SystemState) (c server : SeLe4n.ThreadId)
   rw [hScg] at hM
   dsimp only at hM
   simp only [Bool.and_eq_true] at hM
-  obtain ⟨⟨⟨hHd, hBT⟩, _⟩, hBl⟩ := hM
+  obtain ⟨⟨hHd, hBT⟩, hBl⟩ := hM
   have hHead : sc.scReply = some rid := by
     revert hHd
     cases sc.scReply with

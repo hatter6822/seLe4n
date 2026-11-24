@@ -336,13 +336,13 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
           | some targetV =>
             simp only []
             cases hDon : applyReplyDonationOnCore st1 rid targetV
-                (replyDonationRecipientHome st1 rid target) with
+                (determineTargetCore st1 target) with
             | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
             | ok st2 =>
               simp only []
               exact observableSlotsConfinedToCores_trans hReply
                 (applyReplyDonationOnCore_confinedToCores st1 st2 rid targetV
-                  (replyDonationRecipientHome st1 rid target)
+                  (determineTargetCore st1 target)
                   (by
                     have h1 := endpointReplyOnCore_preserves_objects_invExt replier target msg
                       executingCore st hObjInv
@@ -366,14 +366,14 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
             | some targetV =>
               simp only []
               cases hDon : applyReplyDonationOnCore st1 rid targetV
-                  (replyDonationRecipientHome st1 rid target) with
+                  (determineTargetCore st1 target) with
               | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
               | ok st2 =>
                 simp only []
                 exact observableSlotsConfinedToCores_trans
                   (observableSlotsConfinedToCores_trans hReply
                     (applyReplyDonationOnCore_confinedToCores st1 st2 rid targetV
-                      (replyDonationRecipientHome st1 rid target)
+                      (determineTargetCore st1 target)
                       (by
                         have h1 := endpointReplyOnCore_preserves_objects_invExt replier target msg
                           executingCore st hObjInv
@@ -634,7 +634,7 @@ theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
               (by rw [keepDonatedSchedContextResolved_scheduler_eq hK])
               (keepDonatedSchedContextResolved_machine_eq hK)
         cases hRet : returnDonatedSchedContextResolved st holder oldScId
-            (replyDonationRecipient st oldScId target) with
+            target with
         | error e => rw [hRet] at hStep; simp only [] at hStep; cases hStep
         | ok st1' =>
           rw [hRet] at hStep
@@ -644,7 +644,7 @@ theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
               (returnDonatedSchedContext_scheduler_eq st st1' _ _ _ n hPopN)
               (returnDonatedSchedContext_machine_eq st st1' _ _ _ n hPopN)
           have hEq : SchedContextOps.settleReturnedContext st1'
-                (determineTargetCore st (replyDonationRecipient st oldScId target)) oldScId
+                (determineTargetCore st target) oldScId
               = st' :=
             (by simpa using hStep : some (oldScId, holder) = returned? ∧ _).2
           rw [← hEq]

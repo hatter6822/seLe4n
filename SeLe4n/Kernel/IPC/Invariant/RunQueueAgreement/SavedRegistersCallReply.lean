@@ -685,8 +685,7 @@ theorem replyRecvPopDonation_savedRegsUnwritten {rid : SeLe4n.ReplyId} {target :
     savedRegsUnwritten st st' := by
   unfold replyRecvPopDonation at h
   split at h
-  · dsimp only at h
-    split at h
+  · split at h
     · split at h
       · split at h
         · cases h

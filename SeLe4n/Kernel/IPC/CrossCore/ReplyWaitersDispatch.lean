@@ -507,7 +507,6 @@ theorem replyRecvPopDonation_replyViews_eq {rid : SeLe4n.ReplyId} {t : SeLe4n.Th
     (hInv : st.objects.invExt) (h : replyRecvPopDonation rid t st = .ok (ret, st')) :
     st'.replyViews = st.replyViews := by
   unfold replyRecvPopDonation at h
-  dsimp only at h
   split at h
   · split at h
     · split at h

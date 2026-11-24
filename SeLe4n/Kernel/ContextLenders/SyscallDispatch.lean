@@ -47,7 +47,7 @@ structure LendersDispatchPremises (ctx : LabelingContext) (decoded : SyscallDeco
     resolveReplyRecvReply gate decoded st = .ok (some (rid, prevCaller, replyBadge, replyGrant)) →
     let msg : IpcMessage :=
       { registers := Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs decoded.msgInfo, badge := replyBadge }
-    ReplyRecvLendersPremises ctx st
+    ReplyRecvLendersPremises st
       (replyRecvCallerFaultAnswer? st prevCaller decoded.msgInfo.label msg) epId tid rid prevCaller
       (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller decoded.msgInfo.label msg) msg)
       replyGrant ec

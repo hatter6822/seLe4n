@@ -1058,9 +1058,6 @@ express delegation — `diffB` *is* the recorded server in every fixture here, w
 is exactly why the round-15 operation differential could not see the divergence
 round 22 found. -/
 private def diffDelegate : SeLe4n.ThreadId := ⟨65⟩
-/-- **`v0.35.61`**: a thread id the fixtures store nothing under, so a
-`donationOrigin` naming it is a **stale** origin -- FO-044's third half. -/
-private def diffStaleOrigin : SeLe4n.ThreadId := ⟨68⟩
 
 /-- The actors share one CSpace root holding the operand capability at slot 0.
 
@@ -1135,22 +1132,6 @@ private def liveSchedContextBindState (st : SystemState) (scId : SeLe4n.SchedCon
   match SeLe4n.Kernel.SchedContextOps.schedContextBind vSc vTid st with
   | .ok (_, st') => some st'
   | .error _ => none
-
-private def liveSchedContextUnbindState (st : SystemState)
-    (scId : SeLe4n.SchedContextId) : Option SystemState := do
-  let vSc ← scId.toObjId.toValid?
-  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind vSc st with
-  | .ok (_, st') => some st'
-  | .error _ => none
-
-/-- The recorded origin of a live reservation; the outer `none` is "no such
-reservation", which is a different answer from "no loan is recorded". -/
-private def originOf (st : SystemState) (scId : SeLe4n.SchedContextId) :
-    Option (Option SeLe4n.ThreadId) := (st.getSchedContext? scId).map (·.donationOrigin)
-
-/-- ...and its frozen counterpart, over the **same** `SchedContext` record. -/
-private def frozenOriginOf (st : FrozenSystemState) (scId : SeLe4n.SchedContextId) :
-    Option (Option SeLe4n.ThreadId) := (st.getSchedContext? scId).map (·.donationOrigin)
 
 /-- **WS-HP HP8.1**: the donated scheduling context the FO-042 halves below move.
 
@@ -1976,182 +1957,80 @@ private def differentialEndpointReplyMiddleFrameSevers : IO Unit := do
           | none   => false)
      | none => false)
 
-/-- FO-044 (**WS-HP HP10.8**): **the pop's recipient is the recorded ORIGIN**, on
-a state where that is not the answered caller.
+/-- FO-044 (**WS-SX SX12, D31**): **the pop's recipient is the answered caller**,
+on both surfaces, at the bottom of a stack where a thread that once lent the
+context is awake and holds nothing.
 
-HP10.7 flipped the live arm and this scenario is why the frozen arm had to flip
-with it: `frozenBranchOperationChecked .endpointReplyToBlockedCaller = true` is a
-machine-checked claim that the two programs are run beside each other, and a
-window in which the live one redirects and the mirror does not makes that claim an
-over-claim rather than a failing test — every existing scenario keeps passing,
-because none of them records an origin that differs from the answered caller.
+seL4-MCS's `reply_pop` gives the context to the caller of the frame it answers
+(`schedContext_donate(sc, tcb)`).  From `v0.35.53` to `v0.37.40` both surfaces
+redirected a bottom-of-stack return to the context's recorded origin instead, and
+this scenario asserted that the bystander below received it; it now asserts the
+answered caller does, on the live arm and on the mirror, and that the whole
+frozen operation agrees with the live one.
 
-**Three halves, and the second is what makes the first decisive.**  A selector that
-fired unconditionally — handing the reservation to whatever the origin field says
-regardless of the guards — would pass a half that only checks "the origin gets
-it", so the second half fixes the origin *at* the answered caller and requires the
-identity.  That is the shape §3.9b was built against, one surface over.  The third
-(`v0.35.61`) records an origin the store does not hold and requires both surfaces
-to decline it and fall back, because both guards pass such a thread and only the
-resolver's own resolution check can be what declines it.
-
-The stack is a single frame, which is the bottom of its own stack: the redirect
-fires exactly there (`donationOriginRecipient?` answers only at
-`replyStackOuterCaller? = .ok none`), and it is the depth-2 residue's shape after
-the client's frame has been removed. -/
-private def differentialEndpointReplyRedirectsToOrigin : IO Unit := do
+The stack is a single frame, which is the bottom of its own stack: the depth-2
+residue's shape after the client's frame has been removed. -/
+private def differentialEndpointReplyGivesAnsweredCaller : IO Unit := do
   let rid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofNat 71
   let msg : IpcMessage := { registers := #[], badge := Badge.ofNatMasked 0 }
   -- The answered caller: reply-blocked on the recorded server, holding nothing.
   let caller : TCB := (TCB.setIpcState { diffTcb 62 with
     replyObjectCode := SeLe4n.ReplyId.optCode (some rid),
-    scBindingScCode := 0, scBindingOwnerCode := 0,
-    originScCode := diffScId.val + 1 } (.blockedOnReply diffEpId (some diffB)))
+    scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply diffEpId (some diffB)))
   -- The recorded server, holding the donation.
   let server : TCB := { diffTcb 63 with
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated diffScId diffA), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated diffScId diffA) }
-  -- **The origin**: a thread whose own frame left the stack, so it is awake, holds
-  -- nothing, and is on no stack.  Both guards admit it — which is the state the
-  -- depth-2 defect leaves behind.
-  let origin : TCB := { diffTcb 65 with
-    scBindingScCode := 0, scBindingOwnerCode := 0,
-    originScCode := diffScId.val + 1 }
-  -- ### Half one: the origin DIFFERS from the answered caller.
-  let redirected := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb (diffAddTcb
-    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {}) caller) server) origin)
+  -- **The bystander**: a thread whose own frame left the stack, so it is awake,
+  -- holds nothing, and is on no stack -- the thread the retired redirect chose.
+  let bystander : TCB := { diffTcb 65 with scBindingScCode := 0, scBindingOwnerCode := 0 }
+  let st := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb (diffAddTcb
+    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {}) caller) server) bystander)
     rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA), next := some (.head diffScId) })
-    diffScId { diffDonatedSc (some rid) with donationOrigin := some diffDelegate }
+    diffScId (diffDonatedSc (some rid))
   expect "FO-044 control: the answered frame heads the donated context"
-    (SeLe4n.Kernel.replyFrameHeadHolder? redirected.state rid == some (diffScId, diffB))
-  expect "FO-044 control: ...and it is the BOTTOM of its stack, where the redirect fires"
-    (match SeLe4n.Kernel.replyStackOuterCaller? redirected.state diffScId with
+    (SeLe4n.Kernel.replyFrameHeadHolder? st.state rid == some (diffScId, diffB))
+  expect "FO-044 control: ...and it is the BOTTOM of its stack"
+    (match SeLe4n.Kernel.replyStackOuterCaller? st.state diffScId with
      | .ok none => true
      | _        => false)
-  expect "FO-044 control: the recorded origin is NOT the answered caller"
-    (!(diffDelegate == diffA))
-  -- **The live arm redirects** (HP10.7), asserted here so the agreement below is
-  -- agreement with a redirect rather than between two unredirected pops.
-  expect "FO-044: the live resolver answers the recorded origin"
-    (SeLe4n.Kernel.donationOriginRecipient? redirected.state diffScId == some diffDelegate)
-  expect "FO-044: ...and so does the frozen one"
-    (frozenDonationOriginRecipient? (freeze redirected) diffScId == some diffDelegate)
   expect "FO-044 control: the live operation succeeds"
-    (liveReplySpine diffB diffA msg redirected.state).toOption.isSome
+    (liveReplySpine diffB diffA msg st.state).toOption.isSome
   expect "FO-044 control: and so does the frozen composite"
-    (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze redirected)).toOption.isSome
-  -- **PAYOFF**: the reservation settles on the ORIGIN, on both surfaces — not on
-  -- the answered caller, which is what stack reachability alone would name.
-  expect "FO-044: the live pop binds the context to the ORIGIN"
-    (match (liveReplySpine diffB diffA msg redirected.state).toOption with
+    (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze st)).toOption.isSome
+  expect "FO-044: the live pop binds the context to the ANSWERED caller"
+    (match (liveReplySpine diffB diffA msg st.state).toOption with
      | some (_, post) =>
-         (match post.getTcb? diffDelegate with
+         (match post.getTcb? diffA with
           | some t => t.schedContextBinding == .bound diffScId
           | none   => false)
      | none => false)
   expect "FO-044: ...and the frozen pop binds it to the same thread"
-    (match (frozenEndpointReplyWithDonationReturn diffB diffA rid msg
-              (freeze redirected)).toOption with
+    (match (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze st)).toOption with
      | some (_, post) =>
-         (match post.getTcb? diffDelegate with
+         (match post.getTcb? diffA with
           | some t => t.schedContextBinding == .bound diffScId
           | none   => false)
      | none => false)
-  -- NEGATIVE: and the answered caller does NOT receive it, on either surface.  A
-  -- mirror that ignored the origin would bind `diffA` and pass every control above.
-  expect "FO-044 NEGATIVE: the answered caller is left unbound (live)"
-    (match (liveReplySpine diffB diffA msg redirected.state).toOption with
+  -- NEGATIVE: and the bystander does NOT receive it, on either surface.
+  expect "FO-044 NEGATIVE: the bystander is left unbound (live)"
+    (match (liveReplySpine diffB diffA msg st.state).toOption with
      | some (_, post) =>
-         (match post.getTcb? diffA with
+         (match post.getTcb? diffDelegate with
           | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
           | none   => false)
      | none => false)
   expect "FO-044 NEGATIVE: ...and unbound on the frozen surface too"
-    (match (frozenEndpointReplyWithDonationReturn diffB diffA rid msg
-              (freeze redirected)).toOption with
+    (match (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze st)).toOption with
      | some (_, post) =>
-         (match post.getTcb? diffA with
+         (match post.getTcb? diffDelegate with
           | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
           | none   => false)
      | none => false)
   expect "FO-044: and the whole frozen OPERATION agrees with the live one"
     (frozenRunAgrees unitResultAgrees
-      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze redirected))
+      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze st))
       (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
-        (liveReplySpine diffB diffA msg) redirected.state))
-  -- ### Half two: the origin IS the answered caller, so the redirect is the
-  -- identity.  A selector that fired unconditionally passes half one and breaks
-  -- this, which is what makes the pair decisive rather than merely green.
-  let sameOrigin := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb (diffAddTcb
-    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {}) caller) server) origin)
-    rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA), next := some (.head diffScId) })
-    diffScId { diffDonatedSc (some rid) with donationOrigin := some diffA }
-  -- **The resolver DECLINES here, and that is the point.**  The answered caller's
-  -- own frame HEADS the context at the state the resolver reads — it is waiting on
-  -- this very reply — so its frame is on a live stack and `donationOriginRebindable`
-  -- (the bind's own admissibility since `v0.35.157`) refuses it; the recipient
-  -- comes from the FALLBACK rather than from the origin field.  The outcome is the
-  -- same thread by a different route, which is exactly what makes this half
-  -- discriminating: a selector that fired unconditionally would answer
-  -- `some diffA`, pass every outcome assertion, and fail this one.
-  expect "FO-044 half two: the resolver DECLINES an origin whose frame heads the context"
-    (frozenDonationOriginRecipient? (freeze sameOrigin) diffScId == none
-      && SeLe4n.Kernel.donationOriginRecipient? sameOrigin.state diffScId == none)
-  expect "FO-044 half two: ...so the recipient is the answered caller by FALLBACK, on both surfaces"
-    (SeLe4n.Kernel.replyDonationRecipient sameOrigin.state diffScId diffA == diffA
-      && frozenReplyDonationRecipient (freeze sameOrigin) diffScId diffA == diffA)
-  expect "FO-044 half two: the answered caller receives the reservation (frozen)"
-    (match (frozenEndpointReplyWithDonationReturn diffB diffA rid msg
-              (freeze sameOrigin)).toOption with
-     | some (_, post) =>
-         (match post.getTcb? diffA with
-          | some t => t.schedContextBinding == .bound diffScId
-          | none   => false)
-     | none => false)
-  expect "FO-044 half two: and the operations still agree"
-    (frozenRunAgrees unitResultAgrees
-      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze sameOrigin))
-      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
-        (liveReplySpine diffB diffA msg) sameOrigin.state))
-  -- ### Half three (`v0.35.61`, the post-landing audit): the origin no longer
-  -- RESOLVES, so it is not a candidate on either surface.  Both guards pass a
-  -- thread with no TCB (their `_of_none` arms), so a resolver that consulted the
-  -- guards alone would name `diffStaleOrigin` and the pop's own lookup would then
-  -- refuse the whole reply -- a refusal where the design promises a fallback.
-  -- Reachable only through a stale field, which the origin's back-link check
-  -- (`originScCode`) refuses as well; the differential pins the two surfaces to
-  -- one reading of "stale".
-  let staleOrigin := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
-    (diffAddEndpoint (mkEmptyIntermediateState ()) diffEpId {}) caller) server)
-    rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA), next := some (.head diffScId) })
-    diffScId { diffDonatedSc (some rid) with donationOrigin := some diffStaleOrigin }
-  expect "FO-044 half three control: the recorded origin resolves to no thread on either surface"
-    ((SeLe4n.Kernel.lookupTcb staleOrigin.state diffStaleOrigin).isNone
-      && (frozenLookupTcb (freeze staleOrigin) diffStaleOrigin).isNone)
-  expect "FO-044 half three control: ...and both guards admit it, vacuously, on both surfaces"
-    (SeLe4n.Kernel.donationRecipientAcceptable staleOrigin.state diffStaleOrigin
-      && SeLe4n.Kernel.donationOriginRebindable staleOrigin.state diffStaleOrigin
-      && frozenDonationRecipientAcceptable (freeze staleOrigin) diffStaleOrigin
-      && frozenDonationOriginRebindable (freeze staleOrigin) diffStaleOrigin)
-  expect "FO-044 half three: both resolvers DECLINE a stale origin"
-    (SeLe4n.Kernel.donationOriginRecipient? staleOrigin.state diffScId == none
-      && frozenDonationOriginRecipient? (freeze staleOrigin) diffScId == none)
-  expect "FO-044 half three: ...so the reply SUCCEEDS on both surfaces (a fallback, not a refusal)"
-    ((liveReplySpine diffB diffA msg staleOrigin.state).toOption.isSome
-      && (frozenEndpointReplyWithDonationReturn diffB diffA rid msg
-            (freeze staleOrigin)).toOption.isSome)
-  expect "FO-044 half three: ...binding the reservation to the answered caller (frozen)"
-    (match (frozenEndpointReplyWithDonationReturn diffB diffA rid msg
-              (freeze staleOrigin)).toOption with
-     | some (_, post) =>
-         (match post.getTcb? diffA with
-          | some t => t.schedContextBinding == .bound diffScId
-          | none   => false)
-     | none => false)
-  expect "FO-044 half three: and the operations agree"
-    (frozenRunAgrees unitResultAgrees
-      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze staleOrigin))
-      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
-        (liveReplySpine diffB diffA msg) staleOrigin.state))
+        (liveReplySpine diffB diffA msg) st.state))
 
 /-- FO-035: **a receive that dequeues a `.blockedOnCall` caller** (PR #873
 round 17).
@@ -2635,61 +2514,26 @@ private def differentialQueueNeighbourResolutionAgrees : IO Unit := do
          | .ok (_, post) => (frozenQueueRemove diffEpId true diffB post).toOption.isSome
          | .error _ => false))
 
-/-- FO-047 (**PR #897 review**): **the frozen bind and unbind clear the
-reservation's recorded origin, and the bind refuses what the live bind refuses.**
+/-- FO-047 (**PR #897 review**): **the frozen bind agrees with the live bind** on an
+unbound reservation heading no stack.
 
-`SchedContext.donationOrigin` is a field of the **live** record, and `freeze`
-copies a live state's SchedContexts verbatim, so a frozen state taken mid-chain
-really carries one.  WS-HP HP10.4 landed the field's clears on the live side at
-three sites -- `schedContextBind` and both arms of `schedContextUnbind` -- and the
-frozen mirrors kept the history the kernel erases, so
-`frozenDonationOriginRecipient?` could still name a thread whose loan had ended
-and hand it a later bottom-of-stack return.  *A field added to a shared record is
-a sweep of both surfaces.*
-
-The **payoff** half is the assertion worth having: the field is only interesting
-because a resolver reads it, so the control establishes that the resolver names
-the recorded origin before the operation and the payoff that it names nobody
-after.  Asserting the field alone would pass against a mirror whose resolver had
-drifted instead.
-
-The **refusal** halves are the sweep the origin fix owed.  The live bind refuses
-four things; this mirror refused one, so on three concrete states it *succeeded
-where the kernel refuses*.  Each half is paired with a control establishing that
-the live side really refuses, so a shared success cannot read as agreement. -/
-private def differentialSchedContextBindClearsOrigin : IO Unit := do
-  -- The reservation: unbound, heading no stack, carrying an origin from a loan
-  -- that has ended.  `diffB` is stored and `.unbound`, so it passes both of
-  -- `frozenDonationOriginRecipient?`'s guards and the resolver really fires.
-  let scWithOrigin : SeLe4n.Kernel.SchedContext :=
+`freeze` copies a live state's SchedContexts verbatim, so the two binds read the
+same record; the halves below pin what the bind writes (no priority, the run-queue
+bucket kept) and the whole post-bind state.  Until `v0.37.40` this scenario also
+pinned that both binds cleared the reservation's recorded origin, a field WS-SX
+SX12 (D31) deleted with the redirect that read it. -/
+private def differentialSchedContextBindAgrees : IO Unit := do
+  -- The reservation: unbound, heading no stack.
+  let scUnbound : SeLe4n.Kernel.SchedContext :=
     { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
-      boundThreadCode := 0, scReply := none, donationOrigin := some diffB,
-      isActive := false }
+      boundThreadCode := 0, scReply := none, isActive := false }
   let ist := diffAddSchedContext
-    (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) (diffTcb 62))
-      { diffTcb 63 with originScCode := diffScId.val + 1 })
-    diffScId scWithOrigin
-  expect "FO-047 control: the frozen reservation starts with a recorded origin"
-    (frozenOriginOf (freeze ist) diffScId == some (some diffB))
-  expect "FO-047 control: ...and the resolver would redirect a bottom-of-stack return to it"
-    (SeLe4n.Kernel.FrozenOps.frozenDonationOriginRecipient? (freeze ist) diffScId
-      == some diffB)
+    (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) (diffTcb 62)) (diffTcb 63))
+    diffScId scUnbound
   expect "FO-047 control: the live bind succeeds on the counterpart state"
     (liveSchedContextBindState ist.state diffScId diffA).isSome
   expect "FO-047 control: and so does the frozen bind"
     (frozenSchedContextBind diffScId.toObjId diffA (freeze ist)).toOption.isSome
-  expect "FO-047: the live bind clears the origin"
-    ((liveSchedContextBindState ist.state diffScId diffA).bind
-      (originOf · diffScId) == some none)
-  expect "FO-047: ...and so does the frozen bind"
-    (match frozenSchedContextBind diffScId.toObjId diffA (freeze ist) with
-     | .ok (_, st') => frozenOriginOf st' diffScId == some none
-     | .error _ => false)
-  expect "FO-047 PAYOFF: ...so the frozen resolver names nobody after the bind"
-    (match frozenSchedContextBind diffScId.toObjId diffA (freeze ist) with
-     | .ok (_, st') =>
-         (SeLe4n.Kernel.FrozenOps.frozenDonationOriginRecipient? st' diffScId).isNone
-     | .error _ => false)
   -- seL4-MCS's bind writes no priority (a scheduling context carries none since
   -- WS-SX SX6.4): the bound thread keeps its own priority and its run-queue
   -- bucket, live and frozen alike.
@@ -2721,33 +2565,6 @@ private def differentialSchedContextBindClearsOrigin : IO Unit := do
                    | some v => pure v
                    | none => throw (KernelError.invalidArgument 0)
         SeLe4n.Kernel.SchedContextOps.schedContextBind vSc vTid ist.state))
-
-/-- FO-047b: the unbind half — both arms of the live unbind clear the origin. -/
-private def differentialSchedContextUnbindClearsOrigin : IO Unit := do
-  let boundTcb : TCB :=
-    { diffTcb 62 with
-      priority := ⟨40⟩,
-      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SeLe4n.Kernel.SchedContextBinding.bound diffScId), scBindingOwnerCode := 0 }
-  let scBoundWithOrigin : SeLe4n.Kernel.SchedContext :=
-    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, budgetRemaining := ⟨50⟩,
-      boundThreadCode := SeLe4n.ThreadId.optCode (some diffA), scReply := none, donationOrigin := some diffB,
-      isActive := true }
-  let ist := diffAddSchedContext
-    (diffAddTcb (diffAddTcb (mkEmptyIntermediateState ()) boundTcb) (diffTcb 63))
-    diffScId scBoundWithOrigin
-  expect "FO-047b control: the frozen reservation starts with a recorded origin"
-    (frozenOriginOf (freeze ist) diffScId == some (some diffB))
-  expect "FO-047b control: the live unbind succeeds on the counterpart state"
-    (liveSchedContextUnbindState ist.state diffScId).isSome
-  expect "FO-047b control: and so does the frozen unbind"
-    (frozenSchedContextUnbind diffScId.toObjId (freeze ist)).toOption.isSome
-  expect "FO-047b: the live unbind clears the origin"
-    ((liveSchedContextUnbindState ist.state diffScId).bind
-      (originOf · diffScId) == some none)
-  expect "FO-047b: ...and so does the frozen unbind"
-    (match frozenSchedContextUnbind diffScId.toObjId (freeze ist) with
-     | .ok (_, st') => frozenOriginOf st' diffScId == some none
-     | .error _ => false)
 
 /-- WS-SX SX8.3: the live `SchedContext_Bind` on a notification capability. -/
 private def liveBindNotification (st : SystemState) :
@@ -3910,7 +3727,7 @@ private def operationDifferentialScenarios :
   [ (.endpointReplyToBlockedCaller,     differentialEndpointReplyOperationAgrees),
     (.endpointReplyToBlockedCaller,     differentialEndpointReplyDonationAgrees),
     (.endpointReplyToBlockedCaller,     differentialEndpointReplyMiddleFrameSevers),
-    (.endpointReplyToBlockedCaller,     differentialEndpointReplyRedirectsToOrigin),
+    (.endpointReplyToBlockedCaller,     differentialEndpointReplyGivesAnsweredCaller),
     (.endpointReplyToBlockedCaller,     differentialEndpointReplyPopsUnheldHead) ]
 
 /-- The claim and the scenarios name the same syscalls, in both directions: a
@@ -4044,8 +3861,7 @@ def main : IO Unit := do
   differentialRemovalGuardRefusalsAgree
   differentialRemovalRefusalSetAgrees
   differentialQueueNeighbourResolutionAgrees
-  differentialSchedContextBindClearsOrigin
-  differentialSchedContextUnbindClearsOrigin
+  differentialSchedContextBindAgrees
   differentialSchedContextNotificationLinkAgrees
   differentialDonatedHolderUnbindAgrees
   liveSchedContextUnbindObjectArms

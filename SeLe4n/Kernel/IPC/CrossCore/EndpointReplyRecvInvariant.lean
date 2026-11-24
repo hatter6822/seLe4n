@@ -126,7 +126,7 @@ theorem replyRecvPopDonation_holder_eq_frameHead (rid : SeLe4n.ReplyId)
         rotate_left
         · split at h <;> simp at h
         cases hRet : returnDonatedSchedContextResolved st holder0 scId0
-            (replyDonationRecipient st scId0 target) with
+            target with
         | error e => rw [hRet] at h; simp only [] at h; cases h
         | ok st1' =>
           rw [hRet] at h
@@ -141,16 +141,16 @@ resolved return followed by the settle of the returned context on the recipient'
 home (WS-ZA ZA6.33), read off the pop's own pre-state — the decomposition the
 scheduler-domain footprint's coverage theorem
 (`schedLockSet_endpointReplyRecvOnCore_covers_pop`) consumes.  The recipient is
-`replyDonationRecipient` (WS-HP HP10.7), the one answer to which thread receives the
-context, so the settle's destination and the footprint's cannot differ. -/
+the answered caller (seL4-MCS `reply_pop`; WS-SX SX12, D31), so the settle's
+destination and the footprint's cannot differ. -/
 theorem replyRecvPopDonation_ok_some_decompose (rid : SeLe4n.ReplyId)
     (target : SeLe4n.ThreadId) (st st' : SystemState)
     (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
     (h : replyRecvPopDonation rid target st = .ok (some (scId, holder), st')) :
     ∃ st1', returnDonatedSchedContextResolved st holder scId
-        (replyDonationRecipient st scId target) = .ok st1' ∧
+        target = .ok st1' ∧
       st' = SchedContextOps.settleReturnedContext st1'
-        (determineTargetCore st (replyDonationRecipient st scId target)) scId := by
+        (determineTargetCore st target) scId := by
   have hHead := replyRecvPopDonation_holder_eq_frameHead rid target st st' scId holder h
   unfold replyRecvPopDonation at h
   rw [hHead] at h
@@ -167,7 +167,7 @@ theorem replyRecvPopDonation_ok_some_decompose (rid : SeLe4n.ReplyId)
       rotate_left
       · split at h <;> simp at h
       cases hRet : returnDonatedSchedContextResolved st holder scId
-          (replyDonationRecipient st scId target) with
+          target with
       | error e => rw [hRet] at h; simp only [] at h; cases h
       | ok st1' =>
         rw [hRet] at h
@@ -186,7 +186,7 @@ theorem replyRecvPopDonation_ok_none_decompose (rid : SeLe4n.ReplyId) (target : 
     (replyFrameHeadHolder? st rid = none ∧
       popUnheldReplyHead st rid target (determineTargetCore st target) = .ok st') ∨
     ∃ scId holder, replyFrameHeadHolder? st rid = some (scId, holder) ∧
-      donationRecipientAcceptable st (replyDonationRecipient st scId target) = false ∧
+      donationRecipientAcceptable st target = false ∧
       keepDonatedSchedContextResolved st holder scId = .ok st' := by
   unfold replyRecvPopDonation at h
   cases hHead : replyFrameHeadHolder? st rid with
@@ -214,7 +214,7 @@ theorem replyRecvPopDonation_ok_none_decompose (rid : SeLe4n.ReplyId) (target : 
         simp only [] at h
         split at h
         · cases hRet : returnDonatedSchedContextResolved st holder oldScId
-              (replyDonationRecipient st oldScId target) with
+              target with
           | error e => rw [hRet] at h; simp only [] at h; cases h
           | ok st1' =>
             rw [hRet] at h
@@ -286,9 +286,9 @@ theorem replyRecvPopDonation_replenishQueueOnCore_ne (rid : SeLe4n.ReplyId)
     have hP : c ∉ SchedContextOps.purgeReplenishCores st1' scId := by
       rw [returnDonatedSchedContext_purgeReplenishCores hObjInv hPop]; exact hFrom
     rw [hEq, SchedContextOps.settleReturnedContext_replenishQueueOnCore_ne st1'
-      (determineTargetCore st (replyDonationRecipient st scId target)) scId c hP hTo,
+      (determineTargetCore st target) scId c hP hTo,
       returnDonatedSchedContext_scheduler_eq st st1' holder scId
-        (replyDonationRecipient st scId target) newOwner? hPop]
+        target newOwner? hPop]
     rfl
 
 /-- **WS-RM (`v0.35.6`)**: the pop preserves object-store integrity — the return
@@ -329,13 +329,13 @@ theorem replyRecvPopDonation_preserves_objects_invExt (rid : SeLe4n.ReplyId)
         · split at hStep <;> simp at hStep
           exact absurd hStep.1.symm hR
         cases hRet : returnDonatedSchedContextResolved st holder oldScId
-              (replyDonationRecipient st oldScId target) with
+              target with
         | error e => rw [hRet] at hStep; simp only [] at hStep; cases hStep
         | ok st1' =>
           rw [hRet] at hStep
           obtain ⟨n, _, hPopN⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
           have hEq : SchedContextOps.settleReturnedContext st1'
-                (determineTargetCore st (replyDonationRecipient st oldScId target)) oldScId
+                (determineTargetCore st target) oldScId
               = st' :=
             (by simpa using hStep : some (oldScId, holder) = returned? ∧ _).2
           rw [← hEq]
@@ -398,7 +398,7 @@ theorem replyRecvPopDonation_preserves_replenishQueueAffinityConsistent_smp
         · split at h <;> simp at h
           exact absurd h.1.symm hR
         cases hRet : returnDonatedSchedContextResolved st holder oldScId
-            (replyDonationRecipient st oldScId target) with
+            target with
         | error e =>
             rw [hRet] at h
             simp only [] at h
@@ -408,12 +408,12 @@ theorem replyRecvPopDonation_preserves_replenishQueueAffinityConsistent_smp
             simp only [] at h
             obtain ⟨n, _, hPopN⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
             have hEq : SchedContextOps.settleReturnedContext st1'
-                  (determineTargetCore st (replyDonationRecipient st oldScId target)) oldScId
+                  (determineTargetCore st target) oldScId
                 = st' :=
               (by simpa using h : some (oldScId, holder) = returned? ∧ _).2
             rw [← hEq]
             exact returnDonatedSchedContext_settle_preserves_replenishQueueAffinityConsistent_smp
-              st st1' holder oldScId (replyDonationRecipient st oldScId target) _
+              st st1' holder oldScId target _
               hObjInv hRef hCons rfl n hPopN
 
 /-- **WS-RR RR2.20 / WS-RM (`v0.35.6`): the post-receive half restores it too.**
@@ -566,7 +566,7 @@ inductive PerCoreDonationStep (st st' : SystemState) : Prop
   | reply (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
       (ownerHome : Concurrency.CoreId)
       (hOwnerHome : ∀ scId holder, replyFrameHeadHolder? st rid = some (scId, holder) →
-          determineTargetCore st (replyDonationRecipient st scId targetVtid.val) = ownerHome)
+          determineTargetCore st targetVtid.val = ownerHome)
       (hUnheldHome : ∀ scId, replyFrameHeadHolder? st rid = none →
           replyFrameHeadContext? st rid = some scId →
           determineTargetCore st targetVtid.val = ownerHome)
@@ -672,9 +672,6 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
     -- stack; this is the obligation that resolution carries.
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid st scId serverTid originalOwner)
-    -- **`v0.35.157`**: the origin redirect's coherence obligation -- see
-    -- `applyReplyDonation_preserves_ipcInvariantFull`.
-    (hOriginCoherent : redirectedOriginFrameCoherent st rid target)
     -- **WS-ZA ZA6.34**: the unheld pop's coherence obligation -- see
     -- `applyReplyDonation_preserves_ipcInvariantFull`.
     (hUnheld : unheldReplyPopCoherent st rid target)
@@ -714,7 +711,7 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
         have hHEq : holderV.val = holder :=
           SeLe4n.ThreadId.toValid?_some_val_eq holder holderV hHV
         cases hRet : returnDonatedSchedContextResolved st holder oldScId
-            (replyDonationRecipient st oldScId target) with
+            target with
         | error e =>
             rw [hRet] at h
             simp only [] at h
@@ -726,7 +723,7 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
             have hRetW : replyDonationReturn? st holder = some (oldScId, target) :=
               hHolderDonation oldScId holder hHead
             have hRetV : returnDonatedSchedContext st holderV.val oldScId
-                (replyDonationRecipient st oldScId target) n = .ok st1' := by
+                target n = .ok st1' := by
               rw [hHEq]; exact hPopN
             have hRetWV : replyDonationReturn? st holderV.val = some (oldScId, target) := by
               rw [hHEq]; exact hRetW
@@ -734,38 +731,13 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
             -- an origin that *is* the answered caller, and a distinct origin, the
             -- last taking the generalised bundle under the redirect's own guard.
             have hInv1' : ipcInvariantFull st1' := by
-              by_cases hNoOrigin : donationOriginRecipient? st oldScId = none
-              · rw [replyDonationRecipient_eq_of_no_origin st oldScId target hNoOrigin] at hRetV
-                exact returnDonatedSchedContext_preserves_ipcInvariantFull st st1' holderV oldScId
-                  target hObjInv hInv hRetWV n
-                  (donationReturnOuterValid_of_stackValid
-                    (hStackValid oldScId holderV.val target) hResN) hRetV
-              · obtain ⟨o, hOrigin⟩ : ∃ o, donationOriginRecipient? st oldScId = some o := by
-                  cases hc : donationOriginRecipient? st oldScId with
-                  | none => exact absurd hc hNoOrigin
-                  | some o => exact ⟨o, rfl⟩
-                have hRecipEq : replyDonationRecipient st oldScId target = o :=
-                  replyDonationRecipient_eq_origin st hOrigin
-                by_cases hSame : o = target
-                · rw [hRecipEq, hSame] at hRetV
-                  exact returnDonatedSchedContext_preserves_ipcInvariantFull st st1' holderV oldScId
-                    target hObjInv hInv hRetWV n
-                    (donationReturnOuterValid_of_stackValid
-                      (hStackValid oldScId holderV.val target) hResN) hRetV
-                · rw [hRecipEq] at hRetV
-                  exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirected
-                    st st1' holderV oldScId target o hObjInv
-                    (ipcInvariantFullExceptDonationOwner_of_full target hInv) hRetWV
-                    (donationOriginRebindable_no_owner
-                      (hOriginCoherent oldScId holder o hHead hOrigin hSame)
-                      (donationOriginRecipient?_resolves st hOrigin)
-                      (donationOriginRecipient?_rebindable st hOrigin))
-                    n
-                    (donationReturnOuterValid_of_stackValid
-                      (hStackValid oldScId holderV.val o) hResN) hRetV
+              exact returnDonatedSchedContext_preserves_ipcInvariantFull st st1' holderV oldScId
+                target hObjInv hInv hRetWV n
+                (donationReturnOuterValid_of_stackValid
+                  (hStackValid oldScId holderV.val target) hResN) hRetV
             -- The settle is invisible to every bundle reading.
             have hInvM : ipcInvariantFull (SchedContextOps.settleReturnedContext st1'
-                (determineTargetCore st (replyDonationRecipient st oldScId target)) oldScId) :=
+                (determineTargetCore st target) oldScId) :=
               ipcInvariantFull_of_objectsAgreeOffSchedulerLinks
                 (.of_releaseLinks (SchedContextOps.settleReturnedContext_agree _ _ _)) hInv1'
             exact h.2 ▸ hInvM
@@ -2127,7 +2099,6 @@ theorem endpointReplyRecvOnCore_observer_atomic {lend : Bool}
     (preReturnHead? preReturnBelowHead? : Option SeLe4n.ReplyId)
     (preReturnOuterCaller? : Option SeLe4n.ThreadId)
     (answeredFrameAbove? answeredFrameBelow? : Option SeLe4n.ReplyId)
-    (originRecipient? : Option SeLe4n.ThreadId)
     -- **WS-ZA ZA4.6/ZA4.7**: and at the reply-waiter and sender-CSpace-root
     -- arities, rather than at their defaults.
     (rwPrev? rwNext? rwHead? : Option SeLe4n.ThreadId) (senderRoot? : Option SeLe4n.ObjId)
@@ -2136,7 +2107,7 @@ theorem endpointReplyRecvOnCore_observer_atomic {lend : Bool}
       donatedOwner? (some replyId) installsCaps donationServer? redonatedSc?
       belowHeadReply? outerCaller? queueNeighbour? redonationOldHead? donatedHead?
       preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead?
-      preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient?
+      preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow?
       rwPrev? rwNext? rwHead? senderRoot?
     let action : SystemState → SystemState × Except KernelError CapTransferSummary :=
       fun s' => match endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg grant

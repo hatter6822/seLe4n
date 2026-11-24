@@ -1288,17 +1288,9 @@ def frozenEndpointReplyWithDonationReturn (replierId : SeLe4n.ThreadId)
     | .ok ((), st') =>
       match headHolder?, server? with
       | some (scId, holder), some server =>
-          -- **WS-HP HP10.8**: the recipient at the BOTTOM of the stack is the
-          -- reservation's recorded origin, exactly as the live arm has read it
-          -- since HP10.7.  The resolver is read on the PRE-state `st`, because
-          -- `frozenEndpointReply` has already consumed the answered caller's
-          -- reply link by the time `st'` exists -- the same reason the live
-          -- trigger takes its frame as an argument.  A window in which the live
-          -- arm redirects and this one does not makes
-          -- `frozenBranchOperationChecked .endpointReplyToBlockedCaller = true`
-          -- an over-claim, which is HP4.7's situation verbatim.
-          match frozenApplyReplyDonation st' holder scId
-                  (frozenReplyDonationRecipient st scId targetId) with
+          -- The recipient is the answered caller, as seL4-MCS's `reply_pop`
+          -- and the live arm give it (WS-SX SX12, D31).
+          match frozenApplyReplyDonation st' holder scId targetId with
           | .error e => .error e
           | .ok st'' => .ok ((), frozenRevertPriorityInheritance st'' server)
       -- **WS-ZA ZA6.34**: a frame heading a context no thread holds -- its
@@ -1317,8 +1309,7 @@ def frozenEndpointReplyWithDonationReturn (replierId : SeLe4n.ThreadId)
       -- the reply leg, then the pop at the answered frame, and no reversion,
       -- since the walk starts at a server and none is recorded.
       | some (scId, holder), none =>
-          match frozenApplyReplyDonation st' holder scId
-                  (frozenReplyDonationRecipient st scId targetId) with
+          match frozenApplyReplyDonation st' holder scId targetId with
           | .error e => .error e
           | .ok st'' => .ok ((), st'')
       | none, none =>

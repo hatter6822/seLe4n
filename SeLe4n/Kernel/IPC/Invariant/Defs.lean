@@ -3367,9 +3367,9 @@ inductive CancelledMiddleCallerPolicy where
   chain and its owner is left `.unbound` for good.  At depth two the frame below
   the cut is the bottom of the stack, so this and `spliceOutTheCut` write the same
   value into the frame above and the two cannot be told apart there — which is why
-  the splice provably does not reach the depth-2 loss.  That residue is closed by the
-  reservation's recorded **origin** rather than by a removal policy
-  (`donationAccountingPreserved_atCallDepthTwo`, WS-HP HP10.9).
+  the splice provably does not reach the depth-2 loss.  That residue is
+  seL4-MCS's own outcome: the context settles on the answered caller (WS-SX SX12
+  retired the origin redirect WS-HP HP10.9 had closed it with).
 
   **This is what seL4-MCS does**, re-verified at `v0.35.40` against upstream
   source at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0 — every release that has
@@ -5531,18 +5531,9 @@ the owner's frame heads the context.  It is true on the seL4-MCS path because
 `replyObject` as that context's stack head in **one** step, and every later writer
 of either — the pop, the splice, the cancellation reclaim — keeps them together.
 The one window in which it fails is the reply leg's, at the thread the reply just
-woke (its frame consumed while the holder's binding still names it), which is why
-the reply path states it gated away from that thread
-(`redirectedOriginFrameCoherent`).  Registered in `docs/REGISTERED_DEBT.md`
-table C beside `replyFrameHeadHolderDonation`, its head → binding sibling.
-
-**What it buys since `v0.35.157`.**  The pop's origin redirect is guarded by the
-bind's own admissibility, `¬ replyFrameOnLiveStack` at the origin, and this fact
-is what makes that guard *sound*: a live binding's owner has its frame heading the
-context (this fact), a frame heading a context is on a live stack
-(`replyFrameOnLiveStack_of_head`), so a thread the guard admits is named by no
-live binding (`donationOriginRebindable_no_owner`) and the pop's write cannot
-falsify `donationOwnerValid`'s owner clause. -/
+woke (its frame consumed while the holder's binding still names it).  Registered in
+`docs/REGISTERED_DEBT.md` table C beside `replyFrameHeadHolderDonation`, its
+head → binding sibling. -/
 def donatedContextIsOwnerFrameHead (st : SystemState) (owner : SeLe4n.ThreadId) : Prop :=
   ∀ ownerTcb, lookupTcb st owner = some ownerTcb →
     ∀ (holder : SeLe4n.ThreadId) (holderTcb : TCB) (scId : SeLe4n.SchedContextId),
@@ -5601,90 +5592,6 @@ theorem donatedContextIsOwnerFrameHead_of_donationOwnerValid (st : SystemState)
     simpa using hRO
   · rw [(SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hScObj]
     simpa using hScBound
-
-/-- **WS-HP HP10.7 / `v0.35.157`: a rebindable origin is named as owner by no live
-donation.**
-
-The fact the reply path's redirect rests on, and the reason
-`donationOriginRebindable` exists beside `donationRecipientAcceptable` rather than
-being folded into it.  The recipient guard asks that the origin hold no binding of
-its **own**; this asks that no *other* thread's binding be counting on it -- two
-different questions, and the redirect would falsify `donationOwnerValid` without
-the second (see `donationOriginRebindable` for the reachable sequence).
-
-**Derived from the coherence fact, not from the bundle** (`v0.35.157`).  Until then
-this read `donationOwnerValidExcept` and the guard's `.blockedOnReply` proxy: a
-live binding's owner is reply-blocked, the proxy refused reply-blocked threads, so
-an admitted thread was named by none -- sound, and refusing every re-called client
-with it (PR #897's review, `v0.35.141`).  The structural guard admits a thread whose
-frame is on no live stack, and what makes *that* sound is
-`donatedContextIsOwnerFrameHead`: a live binding's owner has its own frame heading
-the context, a frame heading a context is on a live stack
-(`replyFrameOnLiveStack_of_head`), and the guard says the origin's is not.  The
-origin must resolve, which every caller has from
-`donationOriginRecipient?_resolves`. -/
-theorem donationOriginRebindable_no_owner
-    {st : SystemState} {origin : SeLe4n.ThreadId}
-    (hCoh : donatedContextIsOwnerFrameHead st origin)
-    (hRes : ∃ tcb, lookupTcb st origin = some tcb)
-    (h : donationOriginRebindable st origin = true) :
-    ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId' : SeLe4n.SchedContextId),
-      st.objects[tid.toObjId]? = some (.tcb tcb) →
-      tcb.schedContextBinding ≠ .donated scId' origin := by
-  intro tid tcb scId' hObj hBind
-  obtain ⟨originTcb, hLk⟩ := hRes
-  have hGet : st.getTcb? origin = some originTcb := getTcb?_of_lookupTcb st origin originTcb hLk
-  obtain ⟨hHead, _⟩ := hCoh originTcb hLk tid tcb scId' hObj hBind
-  obtain ⟨rid, hRid, hHeadCtx, _⟩ := answeredFrameHeadContext?_eq_some hHead
-  have hRO : originTcb.replyObject = some rid := by
-    unfold answeredReplyObject? at hRid
-    rw [hGet] at hRid
-    simpa using hRid
-  have hLive := replyFrameOnLiveStack_of_head st originTcb rid scId' hRO hHeadCtx
-  rw [donationOriginRebindable_not_onLiveStack st hGet h] at hLive
-  cases hLive
-
-/-- **`v0.35.157`: the reply path's coherence obligation for the origin redirect.**
-
-Whenever the answered frame `rid` heads a context and the redirect resolves that
-context's recorded origin to a thread other than the answered caller, the
-binding → head fact holds at that origin.  Gated on the trigger, on the resolver
-and on the distinctness, so it is vacuous on every reply that pops nothing, on
-every pop whose stack still names an outer caller, on every context recording no
-origin, and at depth 1 (where the origin *is* the answered caller and the
-redirect is the identity) — and it says nothing about the answered caller itself,
-whose frame the reply leg has just consumed while the holder's binding still names
-it: that is the one thread the fact is genuinely false at in the pop's own state,
-which is why the gated shape is the honest one and an unconditional
-`∀ owner, donatedContextIsOwnerFrameHead st owner` would be vacuous.
-
-The reply-path sibling of the cancellation pack's `holder` field
-(`cancelReplyArmPremises.holder`), stated at the state the pop runs on and consumed
-through `donationOriginRebindable_no_owner`. -/
-def redirectedOriginFrameCoherent (st : SystemState) (rid : SeLe4n.ReplyId)
-    (target : SeLe4n.ThreadId) : Prop :=
-  ∀ (scId : SeLe4n.SchedContextId) (holder origin : SeLe4n.ThreadId),
-    replyFrameHeadHolder? st rid = some (scId, holder) →
-    donationOriginRecipient? st scId = some origin →
-    origin ≠ target →
-    donatedContextIsOwnerFrameHead st origin
-
-/-- Vacuous where the answered frame heads nothing -- every reply that pops nothing. -/
-theorem redirectedOriginFrameCoherent_of_no_head (st : SystemState) (rid : SeLe4n.ReplyId)
-    (target : SeLe4n.ThreadId) (h : replyFrameHeadHolder? st rid = none) :
-    redirectedOriginFrameCoherent st rid target := by
-  intro scId holder origin hHead
-  rw [h] at hHead; cases hHead
-
-/-- ...and where the redirect resolves nothing -- no origin recorded, or a stack that
-still names an outer caller. -/
-theorem redirectedOriginFrameCoherent_of_no_origin (st : SystemState) (rid : SeLe4n.ReplyId)
-    (target : SeLe4n.ThreadId)
-    (h : ∀ scId holder, replyFrameHeadHolder? st rid = some (scId, holder) →
-      donationOriginRecipient? st scId = none) :
-    redirectedOriginFrameCoherent st rid target := by
-  intro scId holder origin hHead hOrigin
-  rw [h scId holder hHead] at hOrigin; cases hOrigin
 
 /-- WS-RR RR3.12: the relaxed form is the full one once nothing is donated **by**
 the relaxed thread — the state the donation return leaves behind, and the state a
@@ -7878,112 +7785,6 @@ theorem returnDonatedSchedContext_establishes_donationOwnerValid_of_except
       owner'.toObjId hOwnerNSc hOwnerNO hOwnerNS
       (fun r hr => by rw [hOwner0] at hr; cases hr)]; exact hOwner0
 
-
-/-- **WS-HP HP10.7: `donationOwnerValid`, with the RECIPIENT split from the
-binding's recorded owner.**
-
-The generalisation the reply path's redirect needs.  Every pop before HP10.7
-handed the reservation to the thread the holder's own `.donated scId owner`
-binding named, so one thread played three roles at once — the operation's
-`originalOwner` argument, the binding's recorded owner, and the relaxation point
-of `donationOwnerValidExcept`.  At the bottom of a reply stack the redirect makes
-the first of those the reservation's recorded **origin**, and the three come
-apart.
-
-Two hypotheses replace what the conflation used to supply for free, and each
-names the fact it stands for rather than a thread:
-
-* `hRecipientStored` — the recipient resolves to a TCB.  The pop's own
-  `lookupTcb` witnesses this on success; it is a hypothesis here so the lemma
-  says what it needs instead of re-deriving it.
-* `hNoOwner` — **no live binding names the recipient as its owner**.  This is the
-  load-bearing one, and it is exactly what `donationOriginRebindable_no_owner`
-  delivers.  Without it the redirect is unsound rather than merely unproved: a
-  thread that is `.unbound` (so it passes `donationRecipientAcceptable`) may
-  still be the owner some other thread's `.donated` binding is counting on, and
-  writing `.bound scId` there falsifies that binding's owner clause.  The
-  conflated form got this from `donationOwnerUnique` for free, because the
-  recipient *was* the server's own recorded owner.
-
-`hUnique` still does the other half of the old argument — that a surviving
-donation's owner is not the **binding's** owner — because the relaxed invariant's
-escape disjunct is keyed there, not at the recipient.
-
-The conflated form is the instance `recipient = bindingOwner`
-(`returnDonatedSchedContext_establishes_donationOwnerValid_of_except`), which is
-every pop this tree performed before HP10.7 and every one where the redirect is
-the identity. -/
-theorem returnDonatedSchedContext_establishes_donationOwnerValid_of_except_redirected
-    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
-    (scId : SeLe4n.SchedContextId) (bindingOwner recipient : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (stcb : TCB)
-    (hServerObj : st.objects[serverTid.toObjId]? = some (.tcb stcb))
-    (hServerBind : stcb.schedContextBinding = .donated scId bindingOwner)
-    (hUnique : donationOwnerUnique st)
-    (hInv : donationOwnerValidExcept st bindingOwner)
-    (hRecipientStored : ∃ rTcb, st.objects[recipient.toObjId]? = some (.tcb rTcb))
-    (hNoOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId' : SeLe4n.SchedContextId),
-      st.objects[tid.toObjId]? = some (.tcb tcb) →
-      tcb.schedContextBinding ≠ .donated scId' recipient)
-    (newOwner? : Option SeLe4n.ThreadId)
-    (hOuter : donationReturnOuterValid st serverTid recipient newOwner?)
-    (h : returnDonatedSchedContext st serverTid scId recipient newOwner? = .ok st') :
-    donationOwnerValid st' := by
-  intro tid tcb scId' owner' hTcb hBinding
-  have hBack := returnDonatedSchedContext_tcb_schedContextBinding_backward st st' serverTid scId
-    recipient hObjInv newOwner? h tid.toObjId tcb hTcb
-  have hTidNS : tid.toObjId ≠ serverTid.toObjId := by
-    intro hEq; rw [hBack.1 hEq] at hBinding; cases hBinding
-  by_cases hTidO : tid.toObjId = recipient.toObjId
-  · exact returnDonatedSchedContext_donationOwnerValid_at_target st st' serverTid scId
-      recipient hObjInv newOwner? hOuter h tid tcb scId' owner' hTcb
-      (hBack.2.1 hTidNS hTidO) hBinding hTidO
-  have hTidNO : tid.toObjId ≠ recipient.toObjId := hTidO
-  obtain ⟨tcb0, hTcb0, hBind0⟩ := hBack.2.2 hTidNS hTidNO
-  have hBind0' : tcb0.schedContextBinding = .donated scId' owner' := hBind0.trans hBinding
-  obtain ⟨⟨sc', hSc', hBound'⟩, ⟨ownerTcb, hOwner0, hUnbound0, hCase0⟩⟩ :=
-    hInv tid tcb0 scId' owner' hTcb0 hBind0'
-  obtain ⟨⟨scS, hScS, hBoundS⟩, _⟩ :=
-    hInv serverTid stcb scId bindingOwner hServerObj hServerBind
-  obtain ⟨rTcb, hRecipObj⟩ := hRecipientStored
-  have hScIdNe : scId'.toObjId ≠ scId.toObjId := by
-    intro hEq; rw [hEq, hScS] at hSc'
-    obtain rfl := KernelObject.schedContext.inj (Option.some.inj hSc')
-    rw [hBoundS] at hBound'
-    exact hTidNS (by rw [(Option.some.inj hBound').symm])
-  -- The recipient is a TCB slot, so `tid`'s SchedContext is not it.
-  have hScNeO : scId'.toObjId ≠ recipient.toObjId := by
-    intro hEq; rw [hEq, hRecipObj] at hSc'; cases hSc'
-  have hScNeS : scId'.toObjId ≠ serverTid.toObjId := by
-    intro hEq; rw [hEq, hServerObj] at hSc'; cases hSc'
-  have hOwnerNS : owner'.toObjId ≠ serverTid.toObjId := by
-    intro hEq; rw [hEq, hServerObj] at hOwner0
-    obtain rfl := KernelObject.tcb.inj (Option.some.inj hOwner0)
-    rw [hServerBind] at hUnbound0; cases hUnbound0
-  -- **The redirect's own hypothesis**: no surviving donation names the recipient.
-  have hOwnerNO : owner'.toObjId ≠ recipient.toObjId := by
-    intro hEq
-    have hOwnerEq : owner' = recipient := ThreadId.toObjId_injective owner' recipient hEq
-    exact hNoOwner tid tcb0 scId' hTcb0 (hOwnerEq ▸ hBind0')
-  -- And the relaxed disjunct is keyed at the BINDING's owner, which uniqueness excludes.
-  have hOwnerNB : owner' ≠ bindingOwner := by
-    intro hOwnerEq
-    have := hUnique tid serverTid tcb0 stcb scId' scId bindingOwner hTcb0 hServerObj
-      (hOwnerEq ▸ hBind0') hServerBind
-    exact hTidNS (by rw [this])
-  have hOwnerNSc : owner'.toObjId ≠ scId.toObjId := by
-    intro hEq; rw [hEq, hScS] at hOwner0; cases hOwner0
-  obtain ⟨ep, rt, hReply0⟩ : ∃ epId replyTarget,
-      ownerTcb.ipcState = .blockedOnReply epId replyTarget :=
-    hCase0.resolve_left hOwnerNB
-  refine ⟨⟨sc', ?_, hBound'⟩, ⟨ownerTcb, ?_, hUnbound0, ep, rt, hReply0⟩⟩
-  · rw [returnDonatedSchedContext_objects_ne st st' serverTid scId recipient hObjInv newOwner? h
-      scId'.toObjId hScIdNe hScNeO hScNeS
-      (fun r hr => by rw [hSc'] at hr; cases hr)]; exact hSc'
-  · rw [returnDonatedSchedContext_objects_ne st st' serverTid scId recipient hObjInv newOwner? h
-      owner'.toObjId hOwnerNSc hOwnerNO hOwnerNS
-      (fun r hr => by rw [hOwner0] at hr; cases hr)]; exact hOwner0
 
 /-- IPC de-threading D6: `returnDonatedSchedContext` preserves `donationOwnerValid` — the
 unrelaxed instance of the establisher above (the full invariant implies the relaxed one at
