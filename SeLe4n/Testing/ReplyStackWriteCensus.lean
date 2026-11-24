@@ -408,6 +408,10 @@ def chainNeutralConstructors : List (Name × String) :=
       "`{ sc with boundThreadCode := _, donationOrigin := none }` and the TCB's binding codes; `scReply` is untouched")
   , (`SeLe4n.Kernel.SchedContextOps.schedContextBindPerformImpl,
       "the compiled form of the same bind; same reason")
+    -- WS-SX SX9.1: the two-run theorem's statement of the same bind's writes
+    -- over the context and thread it read (`schedContextBindPerform_eq_body`).
+  , (`SeLe4n.Kernel.bindPerformBody,
+      "the bind's perform over the context and thread it read, proven equal to it: stores `bindContextWrite`, `{ sc.releaseReadyHead τ with boundThreadCode := _, donationOrigin := none }`, and the TCB's binding codes; `scReply` is untouched")
   , (`SeLe4n.Kernel.schedContextReturnLinks,
       "seL4-MCS `maybeReturnSchedContext`'s writes on a running receiver: `{ sc with boundThreadCode := 0 }`, the TCB's binding codes and reschedule flags; `scReply` is untouched")
   , (`SeLe4n.Kernel.schedContextReturnLinksImpl,
