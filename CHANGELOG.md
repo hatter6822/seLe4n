@@ -1,3 +1,34 @@
+## v0.37.43 — The cancel pops to the frame's recorded caller, and the row wrapped (WS-SX SX14.1)
+
+SX14 lands its first sub-task, a transition change, then wraps at that point
+(D32).  D41 ("Match seL4") is the owner's decision (confirmed 2026-11-24),
+as is D40 ("Wrap, new rows", confirmed by the merge of SX13).
+
+- **The cancel's pop reads the frame's recorded caller (SX14.1, D41).**
+  seL4's `reply_pop` donates to `reply->replyTCB`.  The cancel's donation
+  resolver (`cancelledCallerDonation?`) now reads the victim's frame only where
+  the stored reply records the victim as its caller (`replyRecordsCaller`, a
+  word compare of the reply's caller code; nothing is allocated), and declines
+  otherwise.  The compiled head cancel's gate (`headReplyCancelInPlace`) reads
+  the same word, so the `@[csimp]` form still agrees.  Wherever the reply
+  linkage holds the guard never declines
+  (`cancelledCallerDonation?_eq_unguarded_of_linkage`, from
+  `replyRecordsCaller_of_linkage`), so no reachable behaviour changes; the
+  head-case consumers take the linkage from `ipcInvariantFull`, or the reply's
+  recorded caller from the finalisation (`replyCallerFinalisable_cases`).
+  `cancelledCallerDonation?_independent_of_victim` is retired.  The
+  cancellation suite gains a witness: a frame recording another caller
+  resolves no donation and the reclaim writes nothing.  The pop's recipient is
+  now the frame's caller, whose label `contextLendersLabelsEqual` names, so the
+  cancel's owner obligation needs no premise.
+- **The wrap (D32).**  On the guard, the frame family's cut builds through
+  Call, Timer and Cancel.  Stubbed to a fixpoint, 45 lender declarations in 10
+  files and the census witness still fail, beside about 24 pops still stated
+  as frames and the creating sites' hypotheses still to thread: about four
+  more sessions against a 3–4 session row with two spent.  The cut is kept as a
+  patch beside the row's notes; SX14.2 and SX14.3 stay open pending the
+  owner's split.
+
 ## v0.37.42 — The binding grow and leaf lemmas, and the row wrapped (WS-SX SX13)
 
 SX13 lands the toolkit the equal-binding-labels invariant's creating sites

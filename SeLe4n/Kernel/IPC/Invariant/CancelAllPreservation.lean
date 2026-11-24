@@ -455,11 +455,16 @@ theorem finaliseReply_armPremises {s : SystemState} {x : SeLe4n.ObjId} {r : Repl
   obtain ⟨-, hNotRes, -, -, ⟨ep, rt, hB⟩, hRO, -, -, -⟩ := replyCallerFinalisable_parts hF
   have hTo := (SystemState.getTcb?_eq_some_iff s c t).mp hT
   have hLk : lookupTcb s c = some t := lookupTcb_of_objects_of_not_reserved s c t hTo hNotRes
+  have hRecAll : ∀ rid, t.replyObject = some rid →
+      Lifecycle.Suspend.replyRecordsCaller s rid c = true := fun _ e =>
+    Lifecycle.Suspend.replyRecordsCaller_of_linkage hFull.replyCallerLinkage.1 hTo e
+  have hCc : r.callerCode = c.val + 1 :=
+    Lifecycle.Suspend.callerCode_of_replyRecordsCaller hX (hRecAll _ hRO)
   have hDonEq : Lifecycle.Suspend.cancelledCallerDonation? s c t =
       replyFrameHeadHolder? s ⟨x.val⟩ := by
     unfold Lifecycle.Suspend.cancelledCallerDonation?
     rw [hB]
-    simp only [hRO]
+    simp only [hRO, hRecAll _ hRO, if_true]
   rcases replyCallerFinalisable_cases hX hF with ⟨hHd, hD⟩ |
     ⟨sd, sc, hd, htd, hRN, hSc, -, hBt, hTd, hBd, hC, hD⟩
   · have hNo := replyCaller_lendsNone hW hX hT hHd hRO
@@ -469,7 +474,8 @@ theorem finaliseReply_armPremises {s : SystemState} {x : SeLe4n.ObjId} {r : Repl
     rw [hRO] at e
     cases e
     exact replyFrameHeadHolderDonation_of_no_head _ _ _ (hDonEq.symm.trans hD)
-  · have hTdO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTd
+  · replace hD := hD hCc
+    have hTdO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTd
     have hLkOf : ∀ t', lookupTcb s hd = some t' → lookupTcb s hd = some htd := by
       intro t' ht'
       rw [ht']
@@ -534,7 +540,7 @@ theorem finaliseReply_armPremises {s : SystemState} {x : SeLe4n.ObjId} {r : Repl
       have eO : ot = t := Option.some.inj (hLkc.symm.trans hLk)
       subst eO
       exact ⟨by rw [← Lifecycle.Suspend.cancelledCallerDonation?_eq_answeredFrameHeadContext? s c ot
-        hLkc ep rt hB, hD], hLkd⟩
+        hLkc ep rt hB hRecAll, hD], hLkd⟩
     · rw [hD] at e
       obtain ⟨e1, e2⟩ := Prod.mk.inj (Option.some.inj e)
       subst e1 e2

@@ -106,6 +106,10 @@ theorem cancelledCallerDonation?_some (st : SystemState) (tid : SeLe4n.ThreadId)
     | none => rw [hRO] at h; cases h
     | some rid =>
       rw [hRO] at h
+      replace h : replyFrameHeadHolder? st rid = some (scId, holder) := by
+        dsimp only at h; split at h
+        · exact h
+        · cases h
       obtain ⟨hHead, hBt⟩ := replyFrameHeadHolder?_eq_some h
       obtain ⟨r, sc, hR, hN, hSc, hRec⟩ := replyFrameHeadContext?_eq_some hHead
       refine ⟨⟨ep, rt, rfl⟩, rid, r, sc, rfl, hR, hN, hSc, hRec, ?_⟩
@@ -136,7 +140,7 @@ theorem donatedContextIsOwnerFrameHead_cancelledCallerDonation? (st : SystemStat
     (owner : SeLe4n.ThreadId) (ownerTcb : TCB)
     (hHolder : donatedContextIsOwnerFrameHead st owner)
     (hLk : lookupTcb st owner = some ownerTcb)
-    (hOwnerValid : donationOwnerValid st)
+    (hOwnerValid : donationOwnerValid st) (hLink : replyCallerLinkageReciprocal st)
     (holder : SeLe4n.ThreadId) (holderTcb : TCB) (scId : SeLe4n.SchedContextId)
     (hAt : st.objects[holder.toObjId]? = some (.tcb holderTcb))
     (hBind : holderTcb.schedContextBinding = .donated scId owner) :
@@ -151,7 +155,8 @@ theorem donatedContextIsOwnerFrameHead_cancelledCallerDonation? (st : SystemStat
   rw [hOwnerSame] at hIp0
   refine ⟨?_, hLkHolder⟩
   rw [Lifecycle.Suspend.cancelledCallerDonation?_eq_answeredFrameHeadContext? st owner ownerTcb
-    hLk ep rt hIp0]
+    hLk ep rt hIp0
+    fun _ hRO => Lifecycle.Suspend.replyRecordsCaller_of_linkage hLink (lookupTcb_some_objects st owner ownerTcb hLk) hRO]
   exact hHead
 
 /-- **WS-OD OD4.4: the outer-caller obligation for the cancellation reclaim.**
@@ -254,7 +259,7 @@ therefore cannot have refused.  The committed branch needs no such argument. -/
 theorem returnDonationToCancelledCaller_no_donation_to_victim
     (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
-    (hOwner : donationOwnerValid st)
+    (hOwner : donationOwnerValid st) (hLink : replyCallerLinkageReciprocal st)
     -- WS-OD OD3.2: the reclaim's hand-back runs `returnDonatedSchedContext`, whose
     -- reply-stack head validation the resolver's answer settles; the chain
     -- invariant gives that answer (`cancelDonationResolves_of_chainWellFormed`),
@@ -282,7 +287,7 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
     rw [hRes] at hTcb
     simp only at hTcb
     exact absurd ((donatedContextIsOwnerFrameHead_cancelledCallerDonation? st v tcbV hHolder
-      hLookup hOwner tid tcb scId hTcb hBind).1.symm.trans hRes)
+      hLookup hOwner hLink tid tcb scId hTcb hBind).1.symm.trans hRes)
       (by intro hc; cases hc)
   | some p =>
     obtain ⟨scId0, holder⟩ := p
@@ -320,7 +325,7 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
         rw [hK] at hTcb
         simp only at hTcb
         obtain ⟨hResEq, hLkTid⟩ := donatedContextIsOwnerFrameHead_cancelledCallerDonation? st v
-          tcbV hHolder hLookup hOwner tid tcb scId hTcb hBind
+          tcbV hHolder hLookup hOwner hLink tid tcb scId hTcb hBind
         have hPair : (scId, tid) = (scId0, holder) := Option.some.inj (hResEq.symm.trans hRes)
         have hScIdEq : scId = scId0 := congrArg Prod.fst hPair
         have hTidEq : tid = holder := congrArg Prod.snd hPair
@@ -344,7 +349,7 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
             simp only [donationReturnBinding, SchedContextBinding.donated.injEq] at hBind
             exact (outerCallerAcceptable_some_char _ holder v outer hOutV).1 hBind.2
         · obtain ⟨hResEq, _⟩ := donatedContextIsOwnerFrameHead_cancelledCallerDonation? st v tcbV
-            hHolder hLookup hOwner tid tcb scId hAtA hBind
+            hHolder hLookup hOwner hLink tid tcb scId hAtA hBind
           exact hH (congrArg Prod.snd (Option.some.inj (hResEq.symm.trans hRes)))
     rw [popHeldReplyHead_of_acceptable (by simpa using hAcc),
       returnDonatedSchedContextResolved_of_resolved hResN] at hTcb
@@ -359,7 +364,7 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
       rw [hRet] at hTcb
       simp only at hTcb
       obtain ⟨hResEq, hLkTid⟩ := donatedContextIsOwnerFrameHead_cancelledCallerDonation? st v tcbV
-        hHolder hLookup hOwner tid tcb scId hTcb hBind
+        hHolder hLookup hOwner hLink tid tcb scId hTcb hBind
       have hPair : (scId, tid) = (scId0, holder) :=
         Option.some.inj (hResEq.symm.trans hRes)
       have hScIdEq : scId = scId0 := congrArg Prod.fst hPair
@@ -424,7 +429,7 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
           -- is not.
           obtain ⟨tA, hAtA, hEqA⟩ := hOther hH hV
           obtain ⟨hResEq, _⟩ := donatedContextIsOwnerFrameHead_cancelledCallerDonation? st v tcbV
-            hHolder hLookup hOwner tid tA scId hAtA (by rw [hEqA]; exact hBind)
+            hHolder hLookup hOwner hLink tid tA scId hAtA (by rw [hEqA]; exact hBind)
           have hPair : (scId, tid) = (scId0, holder) :=
             Option.some.inj (hResEq.symm.trans hRes)
           have hTidEq : tid = holder := congrArg Prod.snd hPair
@@ -475,7 +480,7 @@ theorem cancelIpcBlocking_reply_no_donation_to_victim
     (rt : Option SeLe4n.ThreadId)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (hBlocked : tcbV.ipcState = .blockedOnReply ep rt)
-    (hOwner : donationOwnerValid st)
+    (hOwner : donationOwnerValid st) (hLink : replyCallerLinkageReciprocal st)
     (hResolves : cancelDonationResolves st v tcbV)
     (hHolder : donatedContextIsOwnerFrameHead st v)
     -- **WS-OD OD4.4**: see `returnDonationToCancelledCaller_no_donation_to_victim`.
@@ -511,7 +516,7 @@ theorem cancelIpcBlocking_reply_no_donation_to_victim
   obtain ⟨t0, h0, hEqB⟩ := hSame tid tcbU hTcbU
   intro hBind
   exact returnDonationToCancelledCaller_no_donation_to_victim st v tcbV hInv hLookup hOwner
-    hResolves hHolder hStack tid t0 scId h0 (by rw [hEqB]; exact hBind)
+    hLink hResolves hHolder hStack tid t0 scId h0 (by rw [hEqB]; exact hBind)
 
 -- ============================================================================
 -- WS-OD OD3.5 — the reply arm relinks no queue neighbour
@@ -779,10 +784,12 @@ theorem cancelledCallerDonation?_some_of_frame_head
     (hRO : tcb.replyObject = some rid)
     (hHead : replyFrameHeadContext? st rid = some scId)
     (hSc : st.getSchedContext? scId = some sc)
-    (hBound : sc.boundThread = some holder) :
+    (hBound : sc.boundThread = some holder)
+    (hRec : Lifecycle.Suspend.replyRecordsCaller st rid tid = true) :
     Lifecycle.Suspend.cancelledCallerDonation? st tid tcb = some (scId, holder) := by
   unfold Lifecycle.Suspend.cancelledCallerDonation?
   rw [hIpc, hRO]
+  simp only [hRec, if_true]
   exact replyFrameHeadHolder?_of_head st rid scId holder hHead (by rw [hSc]; simpa using hBound)
 
 /-- **WS-OD OD5.2 / WS-HP HP5.3: below the cut the reclaim declines, and that is
@@ -819,8 +826,8 @@ theorem cancelledCallerDonation?_none_below_the_cut
   have hNone : Lifecycle.Suspend.cancelledCallerDonation? st tid tcb = none := by
     unfold Lifecycle.Suspend.cancelledCallerDonation?
     rw [hIpc, hRO]
-    exact replyFrameHeadHolder?_of_no_head st rid
-      (replyFrameHeadContext?_of_frameAbove st rid above hDonatedOnward)
+    simp only [replyFrameHeadHolder?_of_no_head st rid
+      (replyFrameHeadContext?_of_frameAbove st rid above hDonatedOnward), ite_self]
   exact ⟨rfl, hNone, Lifecycle.Suspend.returnDonationToCancelledCaller_none st tid tcb hNone⟩
 
 /-- **WS-OD OD5.2 / `v0.35.4`: and the whole cancellation arm reclaims nothing
@@ -3113,12 +3120,7 @@ theorem cancelledCallerDonation?_holder_holds_victim_donation (st : SystemState)
     (hOwed : ∀ rid, tcbV.replyObject = some rid → replyFrameHeadHolderDonation st rid v)
     (hRes : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = some (scId, holder)) :
     replyDonationReturn? st holder = some (scId, v) := by
-  obtain ⟨⟨ep0, rt0, hIp⟩, rid, _, _, hRO, _, _, _, _, _⟩ :=
-    cancelledCallerDonation?_some st v tcbV scId holder hRes
-  have hHead : replyFrameHeadHolder? st rid = some (scId, holder) := by
-    unfold Lifecycle.Suspend.cancelledCallerDonation? at hRes
-    rw [hIp, hRO] at hRes
-    exact hRes
+  obtain ⟨-, rid, hRO, -, hHead⟩ := Lifecycle.Suspend.cancelledCallerDonation?_eq_some hRes
   exact hOwed rid hRO scId holder hHead
 
 open SeLe4n.Model.SystemState in
@@ -3333,7 +3335,7 @@ theorem cancelIpcBlocking_replyArm_preserves_ipcInvariantFull
           = some (.tcb tcb) → tcb.schedContextBinding ≠ .donated scId v := by
     intro tid tcb scId hAt
     exact returnDonationToCancelledCaller_no_donation_to_victim st v tcbV hObjInv hLookup
-      hBundle.donationOwnerValid hResolves hHolder hStack tid tcb scId
+      hBundle.donationOwnerValid hBundle.replyCallerLinkage.1 hResolves hHolder hStack tid tcb scId
       (cutThreadReplyFrameOut_tcb_backward _ tcbV hInvR tid.toObjId tcb hAt)
   -- And the queue-coherence fact, which survives because only the binding moved.
   have hOffS : sweptThreadOffQueueChains (cutThreadReplyFrameOut

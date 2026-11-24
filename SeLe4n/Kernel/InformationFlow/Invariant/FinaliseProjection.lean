@@ -952,7 +952,8 @@ theorem cancelledCallerDonation?_none_of_not_head {s : SystemState} {x : SeLe4n.
   unfold Lifecycle.Suspend.cancelledCallerDonation?
   split
   · rw [hRo]
-    exact replyFrameHeadHolder?_of_no_head s _ (replyFrameHeadContext?_none_of_not_head hX hNH)
+    simp only [replyFrameHeadHolder?_of_no_head s _ (replyFrameHeadContext?_none_of_not_head hX hNH),
+      ite_self]
   · rfl
 
 /-- ...and owes none. -/
@@ -1320,12 +1321,19 @@ theorem cancelledDonationContextHigh_of_replyHeadHidden (ctx : LabelingContext)
     (hHead : ∀ sc, r.next = some (.head sc) → objectObservable ctx observer sc.toObjId = false) :
     cancelledDonationContextHigh ctx observer s c t := by
   intro scId holder hRes
-  rcases replyCallerFinalisable_cases hX hF with ⟨-, hD⟩ |
-      ⟨s', sc, hd, ht, hN, -, -, -, -, -, -, hD⟩
-  · rw [hD] at hRes; cases hRes
-  · rw [hD] at hRes
-    cases hRes
-    exact hHead _ hN
+  obtain ⟨-, rid, hRO', -, hH⟩ := Lifecycle.Suspend.cancelledCallerDonation?_eq_some hRes
+  obtain ⟨-, -, -, -, -, hRO, -, -, -⟩ := replyCallerFinalisable_parts hF
+  rw [hRO] at hRO'
+  cases hRO'
+  obtain ⟨hHd, -⟩ := replyFrameHeadHolder?_eq_some hH
+  obtain ⟨r', -, hR', hN', -, -⟩ := replyFrameHeadContext?_eq_some hHd
+  have hGR : s.getReply? ⟨x.val⟩ = some r := by
+    unfold SystemState.getReply?
+    rw [show (⟨x.val⟩ : SeLe4n.ReplyId).toObjId = x from rfl, ← SystemState.getObject?_eq_getElem,
+      hX]
+  rw [hGR] at hR'
+  cases hR'
+  exact hHead _ hN'
 
 /-- **A reply-blocked caller's cancel is invisible** when the caller is hidden
 and so is every server on its blocking chain (WS-ZA ZA6.34): the head cut, which

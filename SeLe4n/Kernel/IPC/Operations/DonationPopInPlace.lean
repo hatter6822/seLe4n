@@ -638,10 +638,12 @@ heads a context's stack may write in place**, read on the pre-state as codes:
 `c` is blocked on a reply its reply code names, its recorded server is no
 reserved thread, and the pop of that reply's context from the server back to
 `c` passes every check of `replyPopsInPlace`, read with `c`'s own binding code
-off the store. -/
+off the store; and the reply records `c` as its caller, the cancel's own guard
+(`Lifecycle.Suspend.replyRecordsCaller`, WS-SX SX14.1). -/
 @[inline] def headReplyCancelInPlace (st : SystemState) (c : SeLe4n.ThreadId) (t : TCB) :
     Bool :=
   decide (4 ≤ t.ipcStateCode) && t.replyObjectCode != 0 &&
+    Lifecycle.Suspend.replyRecordsCaller st ⟨t.replyObjectCode - 1⟩ c &&
     match replyCallerServerCode t with
     | 0 => false
     | s + 1 =>
@@ -682,7 +684,7 @@ theorem cancelIpcBlockingReclaimed_eq_inPlace (st : SystemState) (c : SeLe4n.Thr
         (replyCallerServerCode t) (determineTargetCore st ⟨replyCallerServerCode t - 1⟩) := by
   unfold headReplyCancelInPlace at h
   simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at h
-  obtain ⟨⟨h4, hRc⟩, hM⟩ := h
+  obtain ⟨⟨⟨h4, hRc⟩, hRec⟩, hM⟩ := h
   cases hS : replyCallerServerCode t with
   | zero => rw [hS] at hM; cases hM
   | succ s =>
@@ -715,7 +717,7 @@ theorem cancelIpcBlockingReclaimed_eq_inPlace (st : SystemState) (c : SeLe4n.Thr
   have hDon : Lifecycle.Suspend.cancelledCallerDonation? st c t = some (scId, ⟨s⟩) := by
     unfold Lifecycle.Suspend.cancelledCallerDonation?
     rw [hIpc]
-    simp only [hRO, hHolder]
+    simp only [hRO, hRec, hHolder, if_true]
   have hRet : Lifecycle.Suspend.returnDonationToCancelledCaller st c t =
       returnDonatedSchedContextInPlace st ⟨s⟩ c scId := by
     unfold Lifecycle.Suspend.returnDonationToCancelledCaller

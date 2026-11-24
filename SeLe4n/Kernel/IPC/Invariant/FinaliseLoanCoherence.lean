@@ -589,13 +589,18 @@ theorem finaliseReplyReturn_keepsLentContextHeads {s : SystemState} {x : SeLe4n.
         (Lifecycle.Suspend.returnDonationToCancelledCaller s c t).objects[holder.toObjId]? =
           some (.tcb ht) → ht.schedContextBinding ≠ .donated sd c := by
   obtain ⟨-, -, -, -, -, hRO, -, -, -⟩ := replyCallerFinalisable_parts hF
+  have hCc : r.callerCode = c.val + 1 :=
+    Lifecycle.Suspend.callerCode_of_replyRecordsCaller hX
+      (Lifecycle.Suspend.replyRecordsCaller_of_linkage hFull.replyCallerLinkage.1
+        ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRO)
   rcases replyCallerFinalisable_cases hX hF with ⟨hHd, hD⟩ |
     ⟨sd, sc, hd, htd, hRN, hSc, -, hBt, hTd, hBd, hC, hD⟩
   · have hNone : Lifecycle.Suspend.returnDonationToCancelledCaller s c t = s := by
       unfold Lifecycle.Suspend.returnDonationToCancelledCaller; rw [hD]
     rw [hNone]
     exact ⟨hW, replyCaller_lendsNone hW hX hT hHd hRO⟩
-  · have hScO := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc
+  · replace hD := hD hCc
+    have hScO := (SystemState.getSchedContext?_eq_some_iff _ _ _).mp hSc
     have hBound : ∀ sc', s.objects[sd.toObjId]? = some (.schedContext sc') →
         sc'.boundThread = some hd := fun sc' h' => by
       rw [hScO] at h'
@@ -660,7 +665,7 @@ link (`replyStackOuterCaller?`), and the head's link is a head link. -/
 theorem finaliseReplyReturn_replyUnheaded {s : SystemState} {x : SeLe4n.ObjId} {r : Reply}
     {c : SeLe4n.ThreadId} {t : TCB} (hInv : s.objects.invExt)
     (hX : s.getObject? x = some (.reply r)) (hT : s.getTcb? c = some t)
-    (hF : replyCallerFinalisable s x r c t = true) :
+    (hF : replyCallerFinalisable s x r c t = true) (hCc : r.callerCode = c.val + 1) :
     ∃ rR, (Lifecycle.Suspend.returnDonationToCancelledCaller s c t).objects[x]? =
       some (.reply rR) ∧ ∀ sc, rR.next ≠ some (.head sc) := by
   have hXo : s.objects[x]? = some (.reply r) := by rw [← SystemState.getObject?_eq_getElem]; exact hX
@@ -670,7 +675,8 @@ theorem finaliseReplyReturn_replyUnheaded {s : SystemState} {x : SeLe4n.ObjId} {
       unfold Lifecycle.Suspend.returnDonationToCancelledCaller; rw [hD]
     rw [hNone]
     exact ⟨r, hXo, fun sc e => by rw [e] at hHd; simp [replyStackLinkIsHead] at hHd⟩
-  · obtain ⟨st', hOk, hEq⟩ := replyHeadPop_commits hInv hT hD hC
+  · replace hD := hD hCc
+    obtain ⟨st', hOk, hEq⟩ := replyHeadPop_commits hInv hT hD hC
     rw [hEq]
     -- Both arms of the pop (seL4's `reply_pop`) unlink the head the same way.
     have hArms : ∃ (n : Option SeLe4n.ThreadId) (sc0 : SchedContext)

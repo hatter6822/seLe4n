@@ -395,7 +395,9 @@ theorem replyHeadPopCommits_head {st : SystemState} {x : SeLe4n.ObjId} {r : Repl
 
 /-- **What a finalised reply's cancel hands back**: nothing, for a reply heading
 no stack; for a head reply, the context it heads, from the thread holding it on
-loan from the caller, through a return that commits. -/
+loan from the caller, through a return that commits -- resolved by the cancel
+when the reply records the caller (WS-SX SX14.1, the cancel's guard), which
+`finaliseReply` reads the caller off. -/
 theorem replyCallerFinalisable_cases {st : SystemState} {x : SeLe4n.ObjId} {r : Reply}
     {c : SeLe4n.ThreadId} {t : TCB} (hX : st.getObject? x = some (.reply r))
     (h : replyCallerFinalisable st x r c t = true) :
@@ -406,32 +408,42 @@ theorem replyCallerFinalisable_cases {st : SystemState} {x : SeLe4n.ObjId} {r : 
       sc.scReply = some ⟨x.val⟩ ∧ sc.boundThread = some hd ∧
       st.getTcb? hd = some ht ∧ ht.schedContextBinding = .donated s c ∧
       heldPopCommits st hd s c = true ∧
-      Lifecycle.Suspend.cancelledCallerDonation? st c t = some (s, hd) := by
+      (r.callerCode = c.val + 1 →
+        Lifecycle.Suspend.cancelledCallerDonation? st c t = some (s, hd)) := by
   obtain ⟨hHd, -, -, -, ⟨ep, rt, hB⟩, hRO, -, -, -⟩ := replyCallerFinalisable_parts h
   have hGR : st.getReply? ⟨x.val⟩ = some r := by
     unfold SystemState.getReply?
     rw [show (⟨x.val⟩ : SeLe4n.ReplyId).toObjId = x from rfl, ← SystemState.getObject?_eq_getElem,
       hX]
-  have hDon : Lifecycle.Suspend.cancelledCallerDonation? st c t =
-      replyFrameHeadHolder? st ⟨x.val⟩ := by
+  have hNoHead : replyFrameHeadContext? st ⟨x.val⟩ = none →
+      Lifecycle.Suspend.cancelledCallerDonation? st c t = none := by
+    intro hNH
     unfold Lifecycle.Suspend.cancelledCallerDonation?
     rw [hB]
-    simp only [hRO]
+    simp only [hRO, replyFrameHeadHolder?_of_no_head _ _ hNH, ite_self]
+  have hDon : r.callerCode = c.val + 1 → Lifecycle.Suspend.cancelledCallerDonation? st c t =
+      replyFrameHeadHolder? st ⟨x.val⟩ := by
+    intro hCc
+    have hRec : Lifecycle.Suspend.replyRecordsCaller st ⟨x.val⟩ c = true := by
+      unfold Lifecycle.Suspend.replyRecordsCaller; rw [hGR]; simp [hCc]
+    unfold Lifecycle.Suspend.cancelledCallerDonation?
+    rw [hB]
+    simp only [hRO, hRec, if_true]
   cases hN : r.next with
   | none =>
     refine Or.inl ⟨rfl, ?_⟩
-    rw [hDon]; apply replyFrameHeadHolder?_of_no_head
+    apply hNoHead
     unfold replyFrameHeadContext?; rw [hGR]; simp only [hN]
   | some l =>
     cases l with
     | frame _ =>
       refine Or.inl ⟨rfl, ?_⟩
-      rw [hDon]; apply replyFrameHeadHolder?_of_no_head
+      apply hNoHead
       unfold replyFrameHeadContext?; rw [hGR]; simp only [hN]
     | head s =>
       obtain ⟨sc, hd, ht, hSc, hRp, hBt, hT, hBind, hC⟩ := replyHeadPopCommits_head hN hHd
-      refine Or.inr ⟨s, sc, hd, ht, rfl, hSc, hRp, hBt, hT, hBind, hC, ?_⟩
-      rw [hDon]
+      refine Or.inr ⟨s, sc, hd, ht, rfl, hSc, hRp, hBt, hT, hBind, hC, fun hCc => ?_⟩
+      rw [hDon hCc]
       unfold replyFrameHeadHolder? replyFrameHeadContext?
       rw [hGR]
       simp only [hN, hSc, hRp, beq_self_eq_true, ↓reduceIte, Option.bind_some, hBt]
