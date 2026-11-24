@@ -1901,7 +1901,7 @@ theorem schedContextBindPerform_lowEquivalent (st : SystemState) (vS : SeLe4n.Va
     · dsimp only
       have hAdm := SystemState.rewriteAdmissible_schedContext hSc
         { sc.releaseReadyHead st.machine.timer with
-          boundThreadCode := SeLe4n.ThreadId.optCode (some vT.val), donationOrigin := none }
+          boundThreadCode := SeLe4n.ThreadId.optCode (some vT.val) }
       have hL1 := rewriteObject_lowEquivalent (ctx := ctx) (observer := observer) st vS.val _
         hAdm hInv hS
       have hI1 := SystemState.rewriteObject_preserves_objects_invExt st vS.val _ hAdm hInv

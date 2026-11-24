@@ -153,7 +153,7 @@ theorem schedContextBindPerform_confinedToCores (vScId : SeLe4n.ValidObjId)
   let sc1 : SchedContext :=
     { sc.releaseReadyHead st.machine.timer with
       boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val)
-      donationOrigin := none }
+      }
   let scObj : KernelObject := .schedContext sc1
   let st1 : SystemState := { st with objects := st.objects.insert vScId.val scObj }
   let tcb1 : TCB :=

@@ -128,7 +128,7 @@ theorem severUnheldSchedContext_linksShrink {st st' : SystemState}
     | ok head? =>
       rw [hH] at h; simp only [] at h
       cases hS1 : storeObject scId.toObjId (.schedContext (donationSeverSchedContext sc
-          (head?.bind (fun p => p.2.prev)) newOwner?)) st with
+          (head?.bind (fun p => p.2.prev)))) st with
       | error e => rw [hS1] at h; cases h
       | ok p =>
         obtain ⟨⟨⟩, s1⟩ := p
@@ -164,7 +164,7 @@ theorem returnUnheldSchedContext_linksShrink {st st' : SystemState}
     | ok head? =>
       rw [hH] at h; simp only [] at h
       cases hS1 : storeObject scId.toObjId (.schedContext (donationReturnSchedContext sc owner
-          (head?.bind (fun p => p.2.prev)) newOwner?)) st with
+          (head?.bind (fun p => p.2.prev)))) st with
       | error e => rw [hS1] at h; cases h
       | ok p =>
         obtain ⟨⟨⟩, s1⟩ := p
@@ -347,9 +347,9 @@ theorem cutHeadFrameKeepingContext_linksShrink (st : SystemState) (rid : SeLe4n.
         have hI1 := storeObject_preserves_objects_invExt st st1 _ _ hInv hS1
         have hAB := (contextStackLinksShrink_storeReply hInv hR hS1 (.inr rfl) (.inr rfl)).trans
           (contextStackLinksShrink_updateSchedContext st1 scId
-            (fun sc => { sc with scReply := none, donationOrigin := none }) hI1 (fun _ => .inl rfl))
+            (fun sc => { sc with scReply := none }) hI1 (fun _ => .inl rfl))
         have hI2 := SystemState.updateSchedContext_preserves_objects_invExt st1 scId
-          (fun sc => { sc with scReply := none, donationOrigin := none }) hI1
+          (fun sc => { sc with scReply := none }) hI1
         split
         · exact hAB
         · split

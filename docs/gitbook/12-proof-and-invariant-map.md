@@ -425,9 +425,8 @@ pre-WS-HP one; a stale upward link is excluded on every reachable state since
 checks.  **Depth 2 was not closed by the splice** — both policies write
 `none` into the frame above a bottom frame — and that §3.20's depth-two halves and
 the golden trace passed byte-identically across the flip is the measurement that
-that change was confined to depth ≥ 3.  Closing depth 2 needed the reservation's
-*origin* on the `SchedContext` rather than stack reachability, which is HP10 and
-which landed at `v0.35.53` (below).
+that change was confined to depth ≥ 3.  Depth 2 is settled as seL4-MCS settles it
+(below).
 
 **HP9 (`v0.35.48`) showed the splice COMPOSES**, which depth 3 cannot.  The splice
 writes the frame below's `next` and leaves its own `prev` untouched, so on a
@@ -446,54 +445,20 @@ implying a mutation-verification that is not available.  HP9 also moved the thre
 upstream facts this workstream rests on — the non-head branch's write, the pop's
 trigger, and `reply_pop`'s `tcbSchedContext == NULL` guard — to
 `donationRecipientAcceptable`'s own docstring, each with the revisions it was read at,
-which is what `v0.35.40`'s retraction-of-a-retraction cost.  **Depth 2 was HP10's**,
-and the register row was closed at `v0.35.54` on both halves being earned — was
-**re-opened at `v0.35.141`** on the depth-2 half, and is **closed again at
-`v0.35.157`**, see the correction below.
+which is what `v0.35.40`'s retraction-of-a-retraction cost.
 
-**HP10.9 (`v0.35.53`) addressed depth 2**, which the splice provably could not reach:
-the frame a depth-2 removal takes off the stack *is* the bottom, so nothing sits
-below it to reconnect and either policy writes the same `none` above it
-(`removeCallerReplyFrame_clears_prev_of_bottom_frame`).
-`donationAccountingPreserved_atCallDepthTwo` is the payoff — with the reservation's
-origin recorded on the `SchedContext` and read in place of stack reachability, a
-delegate answering the client out of order no longer costs that client its
-reservation.  Upstream has the same loss at this depth (`reply_pop` donates to the
-answered frame's own `replyTCB`), so this is an improvement on seL4-MCS too.  The
-theorem **derives** the reachability answer from the removal and, since `v0.35.157`,
-the owner's rebindability too (the removal cleared its `replyObject`), and
-**hypothesises** the recipient guard.
-
-**And that guard was a PROXY, so the depth-2 claim was retracted — and restored**
-(PR #897's review, `v0.35.141`; closed `v0.35.157`).  Until `v0.35.157`
-`donationOriginRebindable` read the origin's `ipcState` alone, standing in for
-"some live `.donated _ origin` binding names it".  A client woken by the
-out-of-order reply is an ordinary runnable thread: its next Call is `.unbound`, so
-it donates nothing and no binding names it, while putting it `.blockedOnReply`
-again — and the proxy refused it.  The pop then fell back to the answered caller
-and **transferred** the reservation to the intermediate caller, clearing
-`donationOrigin`.  The guard is now `schedContextBind`'s own admissibility, asked
-of the origin — its reply frame is on no **live** stack (`replyFrameOnLiveStack`,
-on both surfaces) — which admits the re-called client and refuses a frame that
-heads a context or sits inside a live stack; its soundness is the binding → head
-fact `donatedContextIsOwnerFrameHead`, relocated upstream and carried by the reply
-path as `redirectedOriginFrameCoherent`.  Measured on the live pop at
-`tests/SmpIpcSuite.lean` §3.25's PAYOFF group, with the retired proxy computed
-beside the live guard so the assertions discriminate.  The accounting holds at
-every reply-stack depth.
-§3.20's accounting halves inverted from COST to PAYOFF and now drive the live
-`.reply` spine rather than `returnDonatedSchedContextResolved`, which was an
-accurate proxy for the pop while nothing redirected and omits the redirect since
-HP10.7.  **No mutation of the production code is available** — every relevant
-definition is pinned as a theorem, so a mutation fails to *elaborate*, exactly as
-§3.23 records for the splice's stores — so the decisive comparison is a differential
-within the suite: one function applied to a chain that recorded an origin and to one
-that predates the field, a single field apart and opposite outcomes.  The same cut
-gave HP10.4's production write its first measurement, running the live push twice
-and asserting both directions.  §3.22, §3.23 and the golden trace are
-byte-identical, which is *structural* rather than lucky: at depth ≥ 3 the pop sits
-at a `some` arm, where `replyDonationRecipient_eq_of_outer_some` makes the redirect
-the identity by theorem.
+**Depth 2 is seL4-MCS's outcome.**  The frame a depth-2 removal takes off the stack
+*is* the bottom, so nothing sits below it to reconnect and either policy writes the
+same `none` above it (`removeCallerReplyFrame_clears_prev_of_bottom_frame`).  From
+`v0.35.53` (WS-HP HP10.9) to `v0.37.40` the pop redirected that return to a donor
+the context recorded, so the client kept its reservation; WS-SX SX12 (D31, "Match
+seL4") deleted the redirect, its guards and the recorded fields at `v0.37.41`.  The
+pop now gives the context to the caller of the frame it answers on every arm and
+on both surfaces, as `reply_pop` does, so an out-of-order answer at depth 2 costs the
+client its reservation as it does upstream.  `tests/SmpIpcSuite.lean` §3.20 asserts
+that outcome on the live `.reply` spine, and `runMiddleFrameRecipientChecks` drives
+the middle-frame shape on which the redirect had given the context to a thread whose
+frame had left the stack.
 
 See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.8 for the canonical text,
 §8.12.9 for the head-driven reply pop, §8.12.10 for the cancellation reclaim,
@@ -856,12 +821,9 @@ platform rather than with the lock.
 > canonical account is `SELE4N_SPEC.md` §8.12.6.
 >
 > WS-HP HP10.6 (`v0.35.50`) moved the ceiling 23 → 24 for the TCB a
-> bottom-of-stack pop will redirect a reservation to, and that eighteen **did not
-> move**: the origin member is live only where the pop is at the bottom of its
-> stack, and there the two below-head members are both absent
-> (`replyStackBelowHead?_of_originRecipient`), so a reachable footprint trades two
-> members for one.  `tests/LockSetSuite.lean` exhibits the redirecting shape at
-> seventeen, one *narrower* than the popping shape measured at the same operands.
+> bottom-of-stack pop then redirected a reservation to; WS-SX SX12 (`v0.37.41`)
+> deleted that redirect and its footprint member, and left the ceiling where the
+> later raises put it, since it is an upper bound.
 >
 > At HEAD, the declared lock-set ceiling is **32**, the RPi5 tick admits **10 µs** per lock, and the uniform 60 µs envelope is **5760 µs**. See
 > [`docs/spec/SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §SM3.C.9 for the

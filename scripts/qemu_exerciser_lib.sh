@@ -279,9 +279,14 @@ for driver in drivers:
         # 75 = 123 bytes, the 128-byte cell (was 4 boxed fields, 115 bytes, the
         # 120-byte cell), and the context's `lean_alloc_ctor(0, 33, 11)`, 283
         # bytes, the 288-byte cell (was 280).  Cell counts are unchanged.
+        # WS-SX SX12 deleted the reservation origin: the context lost a boxed
+        # field (`lean_alloc_ctor(0, 32, 11)`, the 280-byte cell again, 432
+        # bytes), and the thread lost its origin code and its prebuilt
+        # `some tid` cell (two boxed fields, the 536-byte record cell, was 552,
+        # and one 16-byte cell fewer: 24 cells, 2336 bytes).
         carve_cells = {
             "endpoint/0": (6, 248), "notification/0": (6, 248), "reply/0": (10, 256),
-            "tcb/0": (25, 2368), "sched-context/7": (8, 440), "cnode/2": (23, 1136),
+            "tcb/0": (24, 2336), "sched-context/7": (8, 432), "cnode/2": (23, 1136),
             "frame/0": (6, 152), "page-table/0": (8, 232), "vspace-root/0": (101, 3568),
             "untyped/12": (7, 184),
         }

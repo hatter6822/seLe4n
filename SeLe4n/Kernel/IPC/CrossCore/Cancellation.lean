@@ -54,23 +54,19 @@ lock-set discipline:
   between the two, resting on `cancelIpcBlocking_scheduler_eq` (the teardown
   never touches the scheduler) and on the holder deschedule removing a thread
   that is never the victim (`cancelUnboundHolder?_ne_victim`).
-* **`cancelBoundDonationOnCore` / `cancelDonationOnCore`** — the per-core
-  generalisation of the R5.A donation-cancellation arms (plan SM6.E.3): the
-  bound-arm's replenish-queue purge is parametrised by the core whose queue
-  holds the SchedContext's replenishments (SM5.H
-  `replenishQueueAffinityConsistentOnCore`: the bound thread's home core)
-  instead of the single-core form's hardcoded `bootCoreId`;
-  `cancelBoundDonationOnCore … bootCoreId = cancelBoundDonation` definitionally
-  (the SM5.A backward-compatibility bridge pattern).  The donated arm
+* **`cancelBoundDonationOnCore` / `cancelDonatedDonationOnCore`** — the
+  per-core donation-cancellation arms (plan SM6.E.3): the bound arm's
+  replenish-queue purge is exact (`SchedContextOps.purgeReplenishment` takes
+  the context off the release queue its own link names), and no single-core
+  twin remains.  The donated arm
   (`cancelDonatedDonationOnCore`) is seL4's `schedContext_unbindTCB`: it is
   the bound arm run on the owner-cleared view of the holder, so the context is
   unbound from the holder, never returned to the recorded lender.  **Since
   `v0.35.164` the two arms and their `Except`-shaped dispatcher
   `cancelDonationArmOnCore` are defined in `Lifecycle/Operations/Cleanup.lean`**,
   because the destroy path (`lifecyclePreRetypeCleanup`) runs them too and
-  cannot import this module; this module keeps the bracket-shaped
-  `cancelDonationOnCore` — defined through the arm — and every theorem that
-  reads `ipcInvariant` of them.
+  cannot import this module; this module keeps every theorem that reads
+  `ipcInvariant` of them.
 
 ## Lock-set footprints (plan §3.1)
 
@@ -88,11 +84,9 @@ The cancellation rows of the plan's lock-set table:
   re-heading it — and the outer caller's TCB (R); and (WS-OD `v0.35.4`) the
   head the reclaim clears (W) and the frame above the cancelled caller's own,
   which the splice rewrites (W).
-* `lockSet_cancelDonation` — donor (victim) TCB (W); bound/donated
-  SchedContext (W); donated-arm original-owner TCB (W) (the plan row's
-  "receiver TCB"); and (WS-OD `v0.35.4`) the donated arm's pop: the head it
-  clears (W), the frame below it re-heads (W) and the outer caller it validates
-  (R).
+* The donation-cancellation step has no footprint of its own: it runs inside
+  the suspend (`lockSet_tcbSuspendOnCore`) and the destroy path, whose
+  footprints carry the victim and its context.
 
 The `.tcbSuspend` syscall's footprint, `lockSet_tcbSuspendOnCore` (§8), is
 **defined over** the state-resolved `lockSet_cancelIpcBlockingOnCore` — the
@@ -434,7 +428,7 @@ current runtime every transition is serialised through the single global state
 ref (`modifyGetKernelState`; the per-object runtime acquisition is the
 SM3.C.9/SM5.I deferral).  The same argument covers `suspendThreadOnCore`'s
 pre-resolved reads (`placedCoreOf?`, `runningCoreOf?`, the `execCurPre`
-capture) and `cancelDonationOnCore`'s home resolution.
+capture) and its donation arm's home resolution.
 
 Returns the post-state paired with the optional cross-core SGI to emit after
 the state commit.  Total (the single-core teardown is pure), so a
@@ -2100,8 +2094,8 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_splicedFrameBelow (st : SystemSta
 -- §7c  Coverage of the state-resolved donation-cancellation footprint
 -- ============================================================================
 -- Swept here at the WS-RM post-landing audit.  Every parametric member of
--- `lockSet_cancelDonation` had its write-membership lemma and the `OnCore` form
--- had none, so nothing tied a member to the **resolver** the footprint reads it
+-- the donation-cancellation footprint had its write-membership lemma and the
+-- per-core form had none, so nothing tied a member to the **resolver** the footprint reads it
 -- from -- which is the whole content of a resolved coverage theorem, and the
 -- shape `lockSet_cancelIpcBlockingOnCore` above and both reply footprints carry.
 -- `_correct` and `_size_le` do not stand in for it: one is about the *kinds* of
@@ -2167,8 +2161,8 @@ def suspendDonationCancelTailOf? (st : SystemState) (victimTid : SeLe4n.ThreadId
 /-- **WS-OD (`v0.35.4`): the concrete lock-set the `.tcbSuspend` syscall
 acquires** — the state-resolved cancellation footprint, the caller's two read
 locks (its TCB and the CSpace root the capability was resolved through), the
-context the victim's binding names with the state-level lock, and the context
-the victim's yield link names.
+context the victim's binding names, and the context the victim's yield link
+names.
 
 Rooted at `lockSet_cancelIpcBlockingOnCore` rather than restating its members:
 `lockSet_tcbSuspendOnCore_covers_cancelIpcBlockingOnCore` is the whole coverage
@@ -2180,23 +2174,30 @@ cap-resolution root `syscallLookupCap` reads to turn the caller's capability
 pointer into the target capability.
 
 WS-ZA ZA6.6: the last member is the context the victim's yield link names, the
-one the suspend's yield-link cancel writes (`yieldToContextOf?`). -/
+one the suspend's yield-link cancel writes (`yieldToContextOf?`).
+
+WS-SX SX12.3: the state-level lock is **not** a member.  It was declared beside
+the context member for the retired donation cancellation, whose return wrote
+the state-level context-to-threads index (retired at WS-ZA ZA5.2).  What the
+pipeline adds beyond the teardown writes no state-level structure: the release
+removal rewrites the context's record and its release-queue links
+(`releaseRemoveThread`, whose queue is the scheduler footprint's
+`suspendThreadReplenishCores`), and the yield-link cancel the context its link
+names, each an in-place store of an object already in the table — the shape
+`lockSet_schedContextConfigure` declares without that lock. -/
 def lockSet_tcbSuspendOnCore (st : SystemState) (callerTid : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (targetTid : SeLe4n.ThreadId) : LockSet :=
-  lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+  lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSet_cancelIpcBlockingOnCore st targetTid)
       (some (tcbLock callerTid, AccessMode.read)))
       (some (cnodeLock cnodeRootObjId, AccessMode.read)))
       ((suspendDonationCancelTailOf? st targetTid).scId?.map
         (fun sc => (schedContextLock sc, AccessMode.write))))
-    (if (suspendDonationCancelTailOf? st targetTid).scId?.isSome then
-       some (stateLevelLock, AccessMode.write) else none))
     ((yieldToContextOf? st targetTid).map fun sc => (schedContextLock sc, AccessMode.write))
 
 /-- WS-OD (`v0.35.4`): the suspend footprint's kinds are all permitted for
 `.tcbSuspend` — the cancellation root's by `lockSet_cancelIpcBlockingOnCore_correct`,
-and the extensions are a TCB, a CNode, a SchedContext, the state-level lock and a
-SchedContext. -/
+and the extensions are a TCB, a CNode, a SchedContext and a SchedContext. -/
 theorem lockSet_tcbSuspendOnCore_correct (st : SystemState) (callerTid : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (targetTid : SeLe4n.ThreadId) :
     ∀ p ∈ (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).pairs,
@@ -2207,8 +2208,8 @@ theorem lockSet_tcbSuspendOnCore_correct (st : SystemState) (callerTid : SeLe4n.
     | none => rw [h] at hEq; cases hEq
     | some sc => rw [h] at hEq; injection hEq with h'; rw [← h']; simp; decide)
   refine lockSet_consistent_extendOpt _ _ _ (lockSet_consistent_extendOpt _ _ _
-    (lockSet_consistent_extendOpt _ _ _ (lockSet_consistent_extendOpt _ _ _
-      (lockSet_cancelIpcBlockingOnCore_correct st targetTid) ?_) ?_) ?_) ?_
+    (lockSet_consistent_extendOpt _ _ _
+      (lockSet_cancelIpcBlockingOnCore_correct st targetTid) ?_) ?_) ?_
   · intro pp hEq; injection hEq with h; rw [← h]
     show (tcbLock callerTid).kind ∈ permittedKinds .tcbSuspend
     rw [tcbLock_kind]; decide
@@ -2219,10 +2220,6 @@ theorem lockSet_tcbSuspendOnCore_correct (st : SystemState) (callerTid : SeLe4n.
     cases h : (suspendDonationCancelTailOf? st targetTid).scId? with
     | none => rw [h] at hEq; cases hEq
     | some sc => rw [h] at hEq; injection hEq with h'; rw [← h']; simp; decide
-  · intro pp hEq
-    cases h : (suspendDonationCancelTailOf? st targetTid).scId?.isSome with
-    | false => rw [h] at hEq; cases hEq
-    | true => rw [h] at hEq; injection hEq with h'; rw [← h']; simp [stateLevelLock]; decide
 /-- **WS-OD (`v0.35.4`): every write the cancellation footprint declares is a
 write the suspend footprint declares.**  The whole of what §8 used to prove
 member by member, as one lift — the suspend footprint is *built over* the
@@ -2235,7 +2232,7 @@ theorem lockSet_tcbSuspendOnCore_covers_cancelIpcBlockingOnCore (st : SystemStat
     (l, AccessMode.write)
       ∈ (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).pairs := by
   unfold lockSet_tcbSuspendOnCore
-  iterate 5 apply mem_write_lockSetExtendOpt
+  iterate 4 apply mem_write_lockSetExtendOpt
   exact hMem
 
 /-- WS-OD (`v0.35.4`): and a key the cancellation footprint holds, in any mode,
@@ -2246,7 +2243,7 @@ theorem lockSet_tcbSuspendOnCore_containsKey_of_cancelIpcBlockingOnCore (st : Sy
     (hKey : (lockSet_cancelIpcBlockingOnCore st targetTid).containsKey l = true) :
     (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).containsKey l = true := by
   unfold lockSet_tcbSuspendOnCore
-  iterate 5 apply containsKey_lockSetExtendOpt_of_containsKey
+  iterate 4 apply containsKey_lockSetExtendOpt_of_containsKey
   exact hKey
 
 /-- WS-OD (`v0.35.4`): the victim's TCB write lock — the one member every
@@ -2274,30 +2271,20 @@ theorem lockSet_tcbSuspendOnCore_covers_yieldCancel (st : SystemState)
   simp only [lockSetExtendOpt, Option.map_some]
   exact self_write_mem_insertOrMerge _ (schedContextLock sc)
 
-/-- **The tail's members are declared in the modes it names them**: the
-context write and the state-level write. -/
+/-- **The tail's member is declared in the mode it names it**: the context
+write. -/
 theorem lockSet_tcbSuspendOnCore_covers_tail (st : SystemState)
     (callerTid : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (targetTid : SeLe4n.ThreadId) :
-    (∀ sc, (suspendDonationCancelTailOf? st targetTid).scId? = some sc →
+    ∀ sc, (suspendDonationCancelTailOf? st targetTid).scId? = some sc →
       (schedContextLock sc, AccessMode.write)
-        ∈ (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).pairs) ∧
-    (∀ sc, (suspendDonationCancelTailOf? st targetTid).scId? = some sc →
-      (stateLevelLock, AccessMode.write)
-        ∈ (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).pairs) := by
-  refine ⟨?_, ?_⟩
-  · intro sc h
-    unfold lockSet_tcbSuspendOnCore
-    rw [h]
-    iterate 2 apply mem_write_lockSetExtendOpt
-    simp only [lockSetExtendOpt, Option.map_some]
-    exact self_write_mem_insertOrMerge _ (schedContextLock sc)
-  · intro sc h
-    unfold lockSet_tcbSuspendOnCore
-    rw [h]
-    apply mem_write_lockSetExtendOpt
-    simp only [Option.isSome_some, if_true]
-    exact LockSet.mem_insertOrMerge_write_self _ _
+        ∈ (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).pairs := by
+  intro sc h
+  unfold lockSet_tcbSuspendOnCore
+  rw [h]
+  apply mem_write_lockSetExtendOpt
+  simp only [lockSetExtendOpt, Option.map_some]
+  exact self_write_mem_insertOrMerge _ (schedContextLock sc)
 
 /-- The tail on a victim holding a context, own or on loan, is that context. -/
 theorem suspendDonationCancelTailOf?_of_scId (st : SystemState)
@@ -2320,21 +2307,18 @@ theorem suspendDonationCancelTailOf?_of_unbound (st : SystemState)
   simp only [hU, SchedContextBinding.scId?]
 
 /-- **The release removal's context is declared**: a victim holding `scId`, own
-or on loan, has the context under a declared write lock, with the state-level
-lock (its own TCB is `lockSet_tcbSuspendOnCore_covers_victim`). -/
+or on loan, has the context under a declared write lock (its own TCB is
+`lockSet_tcbSuspendOnCore_covers_victim`; the queue the removal edits is the
+scheduler footprint's, `suspendThreadReplenishCores`). -/
 theorem lockSet_tcbSuspendOnCore_covers_releaseRemove (st : SystemState)
     (callerTid : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (targetTid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
     (hT : st.getTcb? targetTid = some tcb)
     (hS : tcb.schedContextBinding.scId? = some scId) :
     (schedContextLock scId, AccessMode.write)
-        ∈ (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).pairs ∧
-    (stateLevelLock, AccessMode.write)
-        ∈ (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).pairs := by
-  have hTail := suspendDonationCancelTailOf?_of_scId st targetTid tcb scId hT hS
-  obtain ⟨hSc, hState⟩ :=
-    lockSet_tcbSuspendOnCore_covers_tail st callerTid cnodeRootObjId targetTid
-  exact ⟨hSc scId (by rw [hTail]), hState scId (by rw [hTail])⟩
+        ∈ (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).pairs :=
+  lockSet_tcbSuspendOnCore_covers_tail st callerTid cnodeRootObjId targetTid scId
+    (by rw [suspendDonationCancelTailOf?_of_scId st targetTid tcb scId hT hS])
 
 
 -- ============================================================================
@@ -2453,10 +2437,10 @@ theorem cancelBoundDonationOnCore_preserves_ipcInvariant
     refine ipcInvariant_of_objectsAgreeOffSchedulerLinks
       (.of_releaseLinks (cancelBoundDonationOnCore_objects st st' tid tcb scId hB hInv h)) ?_
     have hInv1 : (st.updateSchedContext scId fun sc =>
-        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }).objects.invExt :=
+        { sc with boundThreadCode := 0, isActive := false }).objects.invExt :=
       SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
     have hIpc1 : ipcInvariant (st.updateSchedContext scId fun sc =>
-        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) := by
+        { sc with boundThreadCode := 0, isActive := false }) := by
       unfold SystemState.updateSchedContext
       split
       · intro oid ntfn hL
@@ -2961,11 +2945,10 @@ theorem cancelBoundDonationOnCoreLockSet_pairwise_le (purgeCore : CoreId) :
 
 /-- **WS-RR RR8.12**: the suspend pipeline's G3 **is** this dispatcher.
 
-G3 spells the three-way binding match out again rather than calling
-`cancelDonationOnCore`, because the pipeline threads `Except KernelError
-SystemState` while the dispatcher answers a pair — a second spelling of one
-question, and the very shape that produced RR8.12's finding one level up: a step
-added to the dispatcher would not reach the live path.  The two cannot be
+G3 spells the three-way binding match out again rather than calling the
+dispatcher — a second spelling of one question, and the very shape that
+produced RR8.12's finding one level up: a step added to the dispatcher would
+not reach the live path.  The two cannot be
 collapsed without restating `cancelSuspendDonation_ipcInvariantStage` and every
 proof that splits on G3's match, so they are **pinned** instead, which is what
 this project prescribes when a second implementation must exist.
@@ -2975,9 +2958,7 @@ written.
 
 **`v0.35.164`**: the three-way match has a name now — `cancelDonationArmOnCore`
 (`Lifecycle/Operations/Cleanup.lean`), the arm the destroy path runs — and
-`suspendDonationArm_eq_cancelDonationArmOnCore` is the direct pin; this one
-survives as the bracket-shaped corollary, since `cancelDonationOnCore` is
-defined through the arm. -/
+`suspendDonationArm_eq_cancelDonationArmOnCore` is the direct pin. -/
 theorem suspendDonationArm_eq_cancelDonationArmOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) :
     (match tcb.schedContextBinding with
@@ -3466,7 +3447,7 @@ theorem currentDeboostedFrom_eq_code (st post : SystemState) (ec : CoreId) :
 -- §14  WS-RR RR2.17 — the `.tcbSuspend` operation preserves `ipcInvariant`
 -- ============================================================================
 -- SM6.E closed `ipcInvariant` over the *cancellation composite*
--- (`cancelIpcBlockingOnCore`, `cancelDonationOnCore`).  The operation the live
+-- (`cancelIpcBlockingOnCore`, `cancelDonationArmOnCore`).  The operation the live
 -- `.tcbSuspend` arm actually runs is `suspendThreadOnCore`, which is that
 -- composite plus five more stages: the cross-core priority-inheritance revert,
 -- two home/running-core deschedules, the pending-state clear, the
@@ -3997,7 +3978,7 @@ theorem updateTcb_ipcInvariantStage (s : SystemState) (tid : SeLe4n.ThreadId)
 `IpcInvariantStage` end to end.**
 
 SM6.E closed `ipcInvariant` over the *cancellation composite*
-(`cancelIpcBlockingOnCore`, `cancelDonationOnCore`).  What the dispatch entry
+(`cancelIpcBlockingOnCore`, `cancelDonationArmOnCore`).  What the dispatch entry
 actually calls is `suspendThreadOnCore`, which is that composite plus six more
 stages: the cross-core priority-inheritance revert, the donated-context return,
 the placement deschedule, the pending-state clear, the

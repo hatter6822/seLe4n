@@ -460,8 +460,6 @@ private def runCompositeScenarios : IO Unit := do
     let base := (BootstrapBuilder.empty.withObject (ThreadId.ofNat 300).toObjId
       (.tcb { tcb0 with
         tid := ThreadId.ofNat 300
-        idCell := some (ThreadId.ofNat 300)
-        idCell_eq := rfl
         scBindingScCode := 0
         scBindingOwnerCode := 0 })).build
     base

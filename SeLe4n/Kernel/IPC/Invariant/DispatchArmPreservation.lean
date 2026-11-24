@@ -1997,23 +1997,23 @@ theorem schedContextBindPerform_preserves_ipcInvariantFull
     rw [h, hPreS] at hPreT
     exact absurd (Option.some.inj hPreT) (fun hx => KernelObject.noConfusion hx)
   have hObjInv1 := RobinHood.RHTable.insert_preserves_invExt st.objects
-    vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }) hObjInv
-  have hAtS2 : (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) } : SystemState)).objects[(⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId]?
-      = some (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }) := by
-    have h1 : (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }))[(⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId]? = some (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }) := by
+    vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val) }) hObjInv
+  have hAtS2 : (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val) })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) } : SystemState)).objects[(⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId]?
+      = some (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val) }) := by
+    have h1 : (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val) }))[(⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId]? = some (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val) }) := by
       simp only [RHTable_getElem?_eq_get?]
       exact RobinHood.RHTable.getElem?_insert_self st.objects _ _ hObjInv
     simp only [RHTable_getElem?_eq_get?] at h1 ⊢
     rw [RobinHood.RHTable.getElem?_insert_ne _ vThreadId.val.toObjId _ _
       (by simp only [beq_iff_eq]; exact hNeIds) hObjInv1]
     exact h1
-  have hAtT2 : (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) } : SystemState)).objects[vThreadId.val.toObjId]?
+  have hAtT2 : (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val) })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) } : SystemState)).objects[vThreadId.val.toObjId]?
       = some (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) := by
     simp only [RHTable_getElem?_eq_get?]
     exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv1
   have hFrame2 : ∀ oid : SeLe4n.ObjId, oid ≠ vThreadId.val.toObjId →
       oid ≠ (⟨vScId.val.toNat⟩ : SeLe4n.SchedContextId).toObjId →
-      (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) } : SystemState)).objects[oid]?
+      (( { st with objects := (st.objects.insert vScId.val (.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val) })).insert vThreadId.val.toObjId (.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) } : SystemState)).objects[oid]?
         = st.objects[oid]? := by
     intro oid hNeT hNeS
     simp only [RHTable_getElem?_eq_get?]
@@ -2034,7 +2034,7 @@ theorem schedContextBindPerform_preserves_ipcInvariantFull
   have hInv2 := ipcInvariantFull_of_schedBindingRewrite st _ vThreadId.val
     ⟨vScId.val.toNat⟩ tcb
     { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }
-    sc { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }
+    sc { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val) }
     hInv hPreT hAtT2 hPreS hAtS2 hFrame2
     rfl rfl rfl rfl rfl rfl rfl rfl
     (Or.inl ⟨hUnbound, rfl, hFree, rfl, hNoOther⟩)
@@ -2527,7 +2527,7 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
           rw [(SystemState.getTcb?_eq_some_iff st tid tcbT).mpr hT] at hTcbNone
           cases hTcbNone
         have hInv1 := insertObjects_schedContextClear_preserves_ipcInvariantFull st
-          vScId.val sc { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+          vScId.val sc { sc with boundThreadCode := 0, isActive := false }
           hObjInv hInv hScRaw hNoRef
         have hInv2 := purgeReplenishment_preserves_ipcInvariantFull _ ⟨vScId.val.toNat⟩ hInv1
         refine ipcInvariantFull_of_objects_eq ?_ hInv2
@@ -5118,13 +5118,13 @@ theorem cancelBoundDonationOnCore_view_preserves_ipcInvariantFull
         rw [hEq, hScPre] at hStored
         cases hStored
       have hObjInv1 : (st.objects.insert scId.toObjId
-          (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).invExt :=
+          (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false })).invExt :=
         RHTable_insert_preserves_invExt _ _ _ hObjInv
       -- The purge writes release links alone: the bundle reads the store
       -- off them, so it is read on the store without the purge.
-      have hT2 : ({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).getTcb? tid = some tcb := by
+      have hT2 : ({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false }) } : SystemState).getTcb? tid = some tcb := by
         refine (SystemState.getTcb?_eq_some_iff _ tid tcb).mpr ?_
-        show (st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }))[tid.toObjId]? = some (.tcb tcb)
+        show (st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false }))[tid.toObjId]? = some (.tcb tcb)
         simp only [RHTable_getElem?_eq_get?]
         rw [RobinHood.RHTable.getElem?_insert_ne st.objects scId.toObjId tid.toObjId _
           (by simp; exact fun h => hNeTS h.symm) hObjInv]
@@ -5139,18 +5139,18 @@ theorem cancelBoundDonationOnCore_view_preserves_ipcInvariantFull
       dsimp only []
       refine ipcInvariantFull_of_schedBindingRewrite st _ tid scId tcb
         { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 } sc
-        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none } hInv hStored ?_ hScPre ?_ ?_
+        { sc with boundThreadCode := 0, isActive := false } hInv hStored ?_ hScPre ?_ ?_
         rfl rfl rfl rfl rfl rfl rfl rfl (Or.inr ⟨rfl, hScBack, rfl⟩)
-      · show ((st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).insert tid.toObjId (KernelObject.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }))[tid.toObjId]? = some (KernelObject.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 })
+      · show ((st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false })).insert tid.toObjId (KernelObject.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }))[tid.toObjId]? = some (KernelObject.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 })
         simp only [RHTable_getElem?_eq_get?]
         exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv1
-      · show ((st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).insert tid.toObjId (KernelObject.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }))[scId.toObjId]? = some (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
+      · show ((st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false })).insert tid.toObjId (KernelObject.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }))[scId.toObjId]? = some (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false })
         simp only [RHTable_getElem?_eq_get?]
         rw [RobinHood.RHTable.getElem?_insert_ne _ tid.toObjId scId.toObjId _
           (by simp; exact fun h => hNeTS h) hObjInv1]
         exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv
       · intro oid hNeT hNeS
-        show ((st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).insert tid.toObjId (KernelObject.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }))[oid]? = st.objects[oid]?
+        show ((st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false })).insert tid.toObjId (KernelObject.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }))[oid]? = st.objects[oid]?
         simp only [RHTable_getElem?_eq_get?]
         rw [RobinHood.RHTable.getElem?_insert_ne _ tid.toObjId oid _
           (by simp; exact fun h => hNeT h.symm) hObjInv1]

@@ -411,11 +411,6 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
         replyStackOuterCallerValid
           (endpointReplyOnCore replier faulted IpcMessage.empty c st).1
           scId serverTid originalOwner)
-    -- **`v0.35.157`**: the origin redirect's coherence obligation, at the same
-    -- state and quantified over the answered frame like the trigger's own fields.
-    (hOriginCoherent : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st faulted = some rid →
-      redirectedOriginFrameCoherent
-        (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid faulted)
     -- **WS-ZA ZA6.34**: the unheld pop's coherence obligation, at the same state.
     (hUnheld : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st faulted = some rid →
       unheldReplyPopCoherent
@@ -429,7 +424,7 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
       | some tf =>
           have hRep := endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier
             faulted IpcMessage.empty c st hInv hObjInv hDonationReturned hHolderDonation
-            hAllBudgetsNone hStackValid hOriginCoherent hUnheld
+            hAllBudgetsNone hStackValid hUnheld
           have hRepObj := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier
             faulted IpcMessage.empty c st hObjInv
           rcases hStep : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st

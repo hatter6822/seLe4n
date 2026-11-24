@@ -589,8 +589,7 @@ def removeFromNotificationWaitQueue (st : SystemState) (tid : SeLe4n.ThreadId) :
     3. All notification waiting lists (`removeFromNotificationWaitQueue`)
     Note: the thread's reservation is ended separately in
     `lifecyclePreRetypeCleanup` BEFORE this function is called
-    (`cancelDonationArmOnCore` since `v0.35.164`; the bare
-    `cleanupDonatedSchedContext` until then), because `storeObject` modifies
+    (`cancelDonationArmOnCore`), because `storeObject` modifies
     lifecycle metadata and `cleanupTcbReferences` must preserve lifecycle for
     its proofs.
     This prevents dangling-reference scenarios after a TCB is retyped. -/
@@ -602,10 +601,6 @@ def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
   -- `chooseBestRunnableBy` failed that core's entire selection scan forever.
   let st := removeRunnableFromAllCores st tid
   let st := removeFromAllEndpointQueues st tid
-  -- A context that records this thread as its reservation's origin is left as it
-  -- is: that origin counts only while the thread's own back-link names the
-  -- context (`donationOriginRecipient?`), and a thread made at this id starts
-  -- with none, so the destroyed thread's id hands nothing on.
   removeFromNotificationWaitQueue st tid
 
 -- ============================================================================
@@ -619,8 +614,8 @@ def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
 -- (`CleanupPreservation.lean`) is the destroy path's asker, and that module
 -- cannot import the cancellation layer — *when a question has one owner and an
 -- asker that cannot see it, the owner is in the wrong layer* (`v0.35.59`).
--- What the destroy path did instead is the finding this version records: the
--- bare `cleanupDonatedSchedContext` on a `.donated` holder, a return that
+-- What the destroy path did instead is the finding this version records: a
+-- context cleanup on a `.donated` holder, a return that
 -- migrates no replenishment (register row 57's class on the destroy path), and
 -- an index-only removal on a `.bound` thread, which left the SchedContext bound
 -- to a destroyed thread with its replenishment stranded on that thread's home
@@ -628,9 +623,7 @@ def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
 -- `replenishQueueAffinityConsistent_smp` both false after a successful retype.
 -- seL4's `finaliseCap` runs `unbindFromSc` on a TCB; this is that, per core.
 --
--- The theorems that read `ipcInvariant` of these arms, the single-core bridges
--- (`cancelBoundDonationOnCore_eq_cancelBoundDonation`,
--- `cancelDonatedDonationOnCore_eq_of_sharedHome`) and the suspend footprint
+-- The theorems that read `ipcInvariant` of these arms and the suspend footprint
 -- stay in `Cancellation.lean`; the frames the destroy path's proofs read
 -- (`_runQueue_current_eq`, `_replenishQueue_{purged,ne}`,
 -- `_preserves_objects_invExt`, `_machine_eq`, `_tlbShootdown_eq`) are in
@@ -639,12 +632,12 @@ def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
 /-- WS-SM SM6.E.3 (plan §3.1): the R5.A in-place SchedContext unbind arm,
 across cores.
 
-Textual twin of `cancelBoundDonation`.  The replenish-queue purge is exact
+seL4's `schedContext_unbindTCB` on a bound thread.  The replenish-queue purge is exact
 (`SchedContextOps.purgeReplenishment`): it takes the context off the release
 queue its own link names, so the arm is handed no core — WS-ZA ZA6.3 removed the
 purge-core parameter the dispatchers used to resolve with `determineTargetCore`,
-which the exact removal never read.  The single-core form is the same function
-(`cancelBoundDonationOnCore_eq_cancelBoundDonation`, `IPC/CrossCore/Cancellation.lean`).
+which the exact removal never read.  It is the only form: no single-core twin
+remains.
 
 Relocated from `Cancellation.lean` at `v0.35.164` so the destroy path can run
 it — see the section note above. -/
@@ -654,9 +647,7 @@ def cancelBoundDonationOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
   match tcb.schedContextBinding with
   | .bound scId =>
     let st1 : SystemState := st.updateSchedContext scId fun sc =>
-      -- **WS-HP HP10.4**: and the origin, as the single-core spelling does — the
-      -- `_bootCoreId` bridge is `rfl`, so the two cannot differ by a field.
-      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+      { sc with boundThreadCode := 0, isActive := false }
     let st2 := SchedContextOps.purgeReplenishment st1 scId
     -- The binding write moves `tid`'s key (its deadline is no longer the
     -- context's), so it ends in the key hook (KSC-1), as the donation writers do.
@@ -679,7 +670,7 @@ spelling (`cancelBoundDonationOnCore_of_bound`). -/
     let dom0 := t0.domain
     let e0 := hasSufficientBudget st t0
     let st1 := st.updateSchedContext scId fun sc =>
-      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+      { sc with boundThreadCode := 0, isActive := false }
     let st2 := SchedContextOps.purgeReplenishment st1 scId
     markKeyChangeParts
       (markCandidacyGainFor
@@ -688,7 +679,7 @@ spelling (`cancelBoundDonationOnCore_of_bound`). -/
       tid p0 d0 dom0
   | none =>
     let st1 : SystemState := st.updateSchedContext scId fun sc =>
-      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+      { sc with boundThreadCode := 0, isActive := false }
     let st2 := SchedContextOps.purgeReplenishment st1 scId
     markKeyChangeFrom st
       (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) tid
@@ -719,13 +710,13 @@ theorem cancelBoundDonationOnCore_objects (st st' : SystemState)
     (scId : SeLe4n.SchedContextId) (hBinding : tcb.schedContextBinding = .bound scId)
     (hInv : st.objects.invExt)
     (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
-    st'.objectsAgreeOffReleaseLinks ((st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).updateTcb tid
+    st'.objectsAgreeOffReleaseLinks ((st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false })).updateTcb tid
       (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })) := by
   simp only [cancelBoundDonationOnCore, hBinding] at h
   injection h with h
   subst h
   have hMid := SystemState.updateSchedContext_preserves_objects_invExt st scId
-    (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
+    (fun sc => { sc with boundThreadCode := 0, isActive := false }) hInv
   -- The key hook writes flags alone; the purge agrees off the release links.
   exact SystemState.objectsAgreeOffReleaseLinks.congr (markKeyChangeFrom_objects _ _ _)
     ((SchedContextOps.purgeReplenishment_agree _ scId).updateTcb
@@ -744,10 +735,10 @@ theorem cancelBoundDonationOnCore_getTcb? (st st' : SystemState)
         = (st.getTcb? tid).map (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
       ∧ ∀ x : SeLe4n.ThreadId, x.toObjId ≠ tid.toObjId → st'.getTcb? x = st.getTcb? x := by
   have hObjs := cancelBoundDonationOnCore_objects st st' tid tcb scId hBinding hInv h
-  have hMid : (st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).objects.invExt :=
+  have hMid : (st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false })).objects.invExt :=
     SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
   have hRead : ∀ x : SeLe4n.ThreadId, st'.getTcb? x
-      = ((st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).updateTcb tid
+      = ((st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false })).updateTcb tid
           (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })).getTcb? x :=
     fun x => hObjs.getTcb? x
   refine ⟨?_, fun x hNe => ?_⟩
@@ -772,7 +763,7 @@ theorem cancelBoundDonationOnCore_getSchedContext? (st st' : SystemState)
           (st'.getSchedContext? s).map SchedContext.withoutRelease =
             (st.getSchedContext? s).map SchedContext.withoutRelease := by
   have hObjs := cancelBoundDonationOnCore_objects st st' tid tcb scId hBinding hInv h
-  have hMid : (st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).objects.invExt :=
+  have hMid : (st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false })).objects.invExt :=
     SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
   refine ⟨?_, fun s hNe => ?_⟩
   · rw [hObjs.getSchedContext?_map (·.boundThread) (fun _ => rfl) scId,
@@ -994,7 +985,7 @@ thread runs on the context), so the step never refuses
 (`cancelDonationArmOnCore_ok`).
 
 Two spellings of one dispatcher exist deliberately, and one is defined through
-the other: `cancelDonationOnCore` (`IPC/CrossCore/Cancellation.lean`) is this
+the other: the bracket form in `IPC/CrossCore/Cancellation.lean` is this
 arm in the `withLockSet` bracket convention — the post-state paired with the
 outcome, the **pre**-state on an error so a bracket still releases cleanly —
 and its body is one `match` over this definition, so a step added here reaches

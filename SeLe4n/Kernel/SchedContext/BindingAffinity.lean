@@ -285,13 +285,11 @@ private theorem schedContextUnbind_ok_char
     st'.objects.invExt ∧
     ((∃ tcb, st.getTcb? tid = some tcb ∧
         st'.objectsAgreeOffSchedulerLinks { st with objects := ((st.objects.insert vScId.val
-            (.schedContext { sc with boundThreadCode := 0, isActive := false,
-                                     donationOrigin := none })).insert
+            (.schedContext { sc with boundThreadCode := 0, isActive := false })).insert
             tid.toObjId (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 })) })
      ∨ (st.getTcb? tid = none ∧
         st'.objectsAgreeOffReleaseLinks { st with objects := (st.objects.insert vScId.val
-            (.schedContext { sc with boundThreadCode := 0, isActive := false,
-                                     donationOrigin := none })) })) := by
+            (.schedContext { sc with boundThreadCode := 0, isActive := false })) })) := by
   simp only [schedContextUnbind] at h
   cases hSc : st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
   | none => rw [SystemState.getSchedContextWitnessed?_eq_none hSc] at h; cases h
@@ -505,24 +503,24 @@ private theorem unbind_read_frame (vScId : ValidObjId) (st st' : SystemState)
       (∀ scId, scId ≠ SchedContextId.ofObjId vScId.val →
         D.getSchedContext? scId = st.getSchedContext? scId) ∧
       D.getSchedContext? (SchedContextId.ofObjId vScId.val) =
-        some { sc with boundThreadCode := 0, isActive := false, donationOrigin := none } ∧
+        some { sc with boundThreadCode := 0, isActive := false } ∧
       (∀ t, determineTargetCore D t = determineTargetCore st t) := by
     rcases hArm with ⟨tcb, hTcb, hA⟩ | ⟨_, hA⟩
     · have hTcbRaw : st.objects.get? tid.toObjId = some (KernelObject.tcb tcb) :=
         (getTcb?_eq_some_iff st _ tcb).mp hTcb
       obtain ⟨hOff, hSelf, hTgt⟩ := double_insert_read_frame st
         ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext
-            { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) })
+            { sc with boundThreadCode := 0, isActive := false }) })
         (SchedContextId.ofObjId vScId.val) sc
-        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+        { sc with boundThreadCode := 0, isActive := false }
         tid tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }
-        hObjInv hScRaw hTcbRaw rfl rfl (st' := { st with objects := ((st.objects.insert vScId.val (.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).insert tid.toObjId (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 })) }) rfl
+        hObjInv hScRaw hTcbRaw rfl rfl (st' := { st with objects := ((st.objects.insert vScId.val (.schedContext { sc with boundThreadCode := 0, isActive := false })).insert tid.toObjId (.tcb { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 })) }) rfl
       exact ⟨_, hA, hOff, hSelf, hTgt⟩
     · obtain ⟨hOff, hSelf, hTgt⟩ := sc_insert_read_frame st
         { st with objects := (st.objects.insert vScId.val (.schedContext
-            { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })) }
+            { sc with boundThreadCode := 0, isActive := false })) }
         (SchedContextId.ofObjId vScId.val) sc
-        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+        { sc with boundThreadCode := 0, isActive := false }
         hObjInv hScRaw rfl
       exact ⟨_, .of_releaseLinks hA, hOff, hSelf, hTgt⟩
   obtain ⟨D, hA, hOff, hSelf, hTgt⟩ := key
@@ -547,8 +545,7 @@ private theorem schedContextBind_ok_char
     ∃ mid : SystemState,
       mid.objectsAgreeOffRunLinks { st with objects := ((st.objects.insert vScId.val
           (.schedContext { sc.releaseReadyHead st.machine.timer with
-                             boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val),
-                             donationOrigin := none })).insert
+                             boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val) })).insert
           vThreadId.val.toObjId
           (.tcb { tcb with
             scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 })) } ∧
@@ -556,8 +553,7 @@ private theorem schedContextBind_ok_char
       (∀ c, mid.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c) ∧
       st' = mid.releasePlace (determineTargetCore { st with objects := ((st.objects.insert vScId.val
           (.schedContext { sc.releaseReadyHead st.machine.timer with
-                             boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val),
-                             donationOrigin := none })).insert
+                             boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val) })).insert
           vThreadId.val.toObjId
           (.tcb { tcb with
             scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 })) } vThreadId.val)
@@ -639,10 +635,10 @@ private theorem schedContextBind_read_frame
   -- writes are invisible to every reading below (WS-ZA ZA4.5).
   obtain ⟨hOff, hSelf, hTgt⟩ := double_insert_read_frame st
     ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext
-        { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }) })
-    { st with objects := (st.objects.insert vScId.val (KernelObject.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none })).insert vThreadId.val.toObjId (KernelObject.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) }
+        { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val) }) })
+    { st with objects := (st.objects.insert vScId.val (KernelObject.schedContext { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val) })).insert vThreadId.val.toObjId (KernelObject.tcb { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }) }
     (SchedContextId.ofObjId vScId.val) sc
-    { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val), donationOrigin := none }
+    { sc.releaseReadyHead st.machine.timer with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val) }
     vThreadId.val tcb
     { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 }
     hObjInv hScRaw hTcbRaw rfl rfl rfl
@@ -653,8 +649,7 @@ private theorem schedContextBind_read_frame
   · rw [hst] at he
     by_cases hc : c = determineTargetCore { st with objects := ((st.objects.insert vScId.val
           (.schedContext { sc.releaseReadyHead st.machine.timer with
-                             boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val),
-                             donationOrigin := none })).insert
+                             boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val) })).insert
           vThreadId.val.toObjId
           (.tcb { tcb with
             scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0 })) } vThreadId.val

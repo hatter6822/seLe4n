@@ -155,8 +155,8 @@ theorem cleanupTcbReferences_preserves_schedContextBindingConsistent
 /-- `v0.35.166`: the reference sweep moves no thread's home core.
 
 `determineTargetCore` reads `cpuAffinity` through `getTcb?`, and the sweep writes
-intrusive queue links (through the splice), endpoints, notifications and
-`donationOrigin` — no affinity.  Stated in the `Option.map` form
+intrusive queue links (through the splice), endpoints and notifications — no
+affinity.  Stated in the `Option.map` form
 `determineTargetCore_congr` consumes. -/
 theorem cleanupTcbReferences_affinity_frame (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :

@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.40` (`lakefile.toml`) |
+| **Package version** | `0.37.41` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 685,256 across 703 Lean files |
-| **Test LoC** | 92,702 across 71 Lean test suites |
-| **Proved declarations** | 26,240 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 682,798 across 703 Lean files |
+| **Test LoC** | 92,025 across 71 Lean test suites |
+| **Proved declarations** | 26,191 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -5820,11 +5820,9 @@ splice write each link in its slot: `severReplyFrameBelowStoresInPlace`,
 `spliceReplyFrameStoresInPlace`), so the removed reply is named
 by no other object and is retired, and the frame below becomes the new top.  The
 footprints declare the frame below on that arm too (`replyFrameBelow?` is the
-frame's `prev` unless it heads a stack).  A thread that lent a context from the bottom of a
-stack is that context's recorded origin, and the record counts only while the
-thread's own back-link (`TCB.originScCode`) names the context, so the thread's
-delete writes no context on its behalf and the admission scans no other object
-for origins naming it.  The yield link is kept at both ends, seL4-MCS's
+frame's `prev` unless it heads a stack).  A context records no donor beyond its
+holder's binding, so a thread's delete writes no context on a lender's behalf and
+the admission scans no other object for one.  The yield link is kept at both ends, seL4-MCS's
 `tcbYieldTo` and `scYieldFrom` (`TCB.yieldToCode`, `SchedContext.yieldFromCode`,
 code 0 for none, `n+1` for object `n`), and the two always name each other
 (`SystemState.yieldLinksAgree`, the proof-layer bundle's 21st conjunct, carried
@@ -9308,8 +9306,8 @@ reply frame is on a live stack (`.illegalState`, decided by
 `frozenReplyFrameOnLiveStack`, which asks one-step **reciprocity** rather than
 `next.isSome`); it propagates `sc.priority` to the bound TCB, as AK2-B's live
 write does, so a frozen post-bind state no longer falsifies
-`boundThreadPriorityConsistent`; and both operations clear
-`SchedContext.donationOrigin`, which WS-HP HP10.4 clears at three live sites.
+`boundThreadPriorityConsistent`.  (Both operations also cleared the reservation
+origin the live ones cleared, until WS-SX SX12 deleted that field.)
 Before this cut the mirror carried one of the four refusals, neither write, and so
 **succeeded where the kernel refuses** — the direction that matters on a
 differential surface.  Witnessed by `FO-047` / `FO-047b` / `FO-047c`, each refusal
@@ -10754,9 +10752,10 @@ respect.
    `donationAccountingPreserved_atCallDepthThree` is the statement: at depth ≥ 3 a
    middle removal leaves the reservation **owed outward** and the pop that answers
    the bottom frame delivers it home.  Depth **2** was the residue the splice
-   provably could not reach, and it is closed at `v0.35.53` by the reservation's
-   recorded origin (§8.12.15) — so the interim contract *do not read a successful
-   pop at depth 2 as evidence that the context reached its owner* is retired.
+   provably could not reach.  From `v0.35.53` to `v0.37.40` a recorded origin
+   closed it; WS-SX SX12 deleted that redirect to match seL4-MCS (§8.12.15), so a
+   successful pop at depth 2 gives the context to the answered caller, not to the
+   owner.
 
    **It was the policy's, not the chain's, and depth two cannot show that.**  A
    two-frame stack's lower frame is its bottom, so `severAtCut` and
@@ -10785,7 +10784,7 @@ respect.
    `v0.35.39` (§8.12.10); the splice is HP6.
 
    **And the splice does not close depth two** (re-scoped at `v0.35.42`; the depth-2
-   half is closed at `v0.35.53` by §8.12.15, not by a removal policy).  The
+   half is seL4-MCS's outcome since `v0.37.41`, §8.12.15).  The
    paragraph above says why: a bottom frame's removal writes the same `none` under
    either policy, so a client answered out of order at depth 2 still lost its
    reservation to the intermediate caller after HP6, and §3.20 — which exercises
@@ -10793,10 +10792,9 @@ respect.
    accounting halves.  The defect is therefore
    *reachability-based ownership* rather than the removal policy, which is why
    upstream has it too (`reply_pop` donates to the answered frame's own
-   `replyTCB`).  **WS-HP HP10 closed it at `v0.35.53`** (§8.12.15) with one
-   `SchedContext` field recording the reservation's origin and one arm reading it,
-   the answered caller being the fallback; that is an improvement on seL4-MCS at
-   every depth, and the claim above is written unscoped for that reason.
+   `replyTCB`).  WS-HP HP10 closed it at `v0.35.53` with a recorded origin the pop
+   redirected to; WS-SX SX12 deleted that redirect at `v0.37.41` to match seL4-MCS
+   (§8.12.15), so at depth 2 the pop gives the context to the answered caller.
 
 #### 8.12.9 The donation pop is head-driven — WS-HP HP4 (`v0.35.38`)
 
@@ -11048,9 +11046,8 @@ client out of order, the client's frame leaves the stack, and the later in-order
 pop binds the reservation to the *intermediate* caller.  `tests/SmpIpcSuite.lean`
 §3.20's depth-two halves passed **byte-identically** across this flip, and the
 golden trace is byte-identical, which was exactly that measurement (HP10.9 then
-inverted those halves — §8.12.15).  Closing depth two needed the reservation's
-**origin** recorded on the `SchedContext` rather than derived from stack
-reachability, and WS-HP HP10.9 landed it at `v0.35.53`.  §3.22 inverted from a COST witness to a
+inverted those halves, and WS-SX SX12 restated them to seL4-MCS's outcome —
+§8.12.15).  §3.22 inverted from a COST witness to a
 PAYOFF witness in the same cut, keeping the in-order half — restated as an
 **agreement**, since the two now coincide — and gaining two negatives that spell
 the retired sever's values so the assertions are known to discriminate.
@@ -11202,115 +11199,39 @@ docstrings that had been right.
 **What HP9 does not close.**  At depth 2 the removal takes the client's frame off
 the *bottom* of its stack, both removal policies write `none` into the frame above a
 bottom frame, and the splice therefore provably cannot reach that loss.  What HP9
-earned is the depth-≥ 3 half; the depth-2 half is **closed at `v0.35.53`** by the
-reservation's recorded origin (§8.12.15), with the register row's own closure the
-last step (HP10.10).
+earned is the depth-≥ 3 half.  The depth-2 half was closed at `v0.35.53` by a
+recorded origin and reopened, to match seL4-MCS, when WS-SX SX12 deleted it at
+`v0.37.41` (§8.12.15).
 
-#### 8.12.15 The depth-two payoff — WS-HP HP10.9 (`v0.35.53`)
+#### 8.12.15 The pop gives the context to the caller it answers — WS-SX SX12 (`v0.37.41`)
 
-At reply-stack depth 2 the frame a removal takes off the stack **is** the stack's
-bottom, so there is nothing below it to reconnect: `spliceFrameBelow?` answers
-`none`, the splice degenerates to the sever
-(`removeCallerReplyFrame_clears_prev_of_bottom_frame`), and
-`cancelledMiddleCallerPolicy` writes the same `none` into the frame above whichever
-value it holds.  The sentence that explains why §3.20 cannot *measure* the depth-≥ 3
-defect (§8.12.11) is the reason the depth-2 defect survived the fix for it.
+seL4-MCS's `reply_pop` gives the context to the caller of the frame it answers
+(`schedContext_donate(sc, tcb)`), and so does this kernel, on every arm and on
+both surfaces.  From `v0.35.53` (WS-HP HP10.9) to `v0.37.40` the pop instead
+redirected a bottom-of-stack return to a donor the context recorded
+(`SchedContext.donationOrigin`, validated through a TCB back-link), so that a
+client answered out of order kept its reservation at depth two.  WS-SX SX12
+(decision D31, "Match seL4") deleted that redirect, the resolver and guards that
+fed it, the two fields, every write, clear, projection clause and frozen mirror of
+them, the footprint member and lock-set bound that counted the redirected
+recipient, and the depth-two theorem that stated the payoff.
 
-`donationAccountingPreserved_atCallDepthTwo` closes it, and the claim now holds at
-**every** depth: with the reservation's origin recorded on the `SchedContext`
-(`SchedContext.donationOrigin`, written by the *first* push and cleared by every
-step that ends the loan) and read in place of stack reachability
-(`replyDonationRecipient`, §8.12.12's successor tier), a delegate answering the
-client out of order no longer costs that client its reservation — the pop hands it
-to the thread that owned it.  Upstream has the same loss at this depth, `reply_pop`
-donating to the answered frame's own `replyTCB`, so this too is an improvement on
-seL4-MCS rather than parity with it.
+What stays is seL4's outcome, measured on the live surfaces:
 
-**What the theorem derives and what it must hypothesise.**
-`replyStackOuterCaller? st' scId = .ok none` — the reachability answer that names
-the *wrong* thread — is a **conclusion**, read off the removal, so no hypothesis
-hands the payoff over.  So is the owner's rebindability since `v0.35.157`: the
-guard asks whether the owner's reply frame is on a live stack, and the removal that
-fires the redirect has just taken that frame off the stack and cleared the owner's
-`replyObject` (`removeCallerReplyFrame_replyObject_none`,
-`donationOriginRebindable_of_no_reply`).  What stays a **hypothesis** is the
-recipient guard — the owner holds no reservation of its own — which nothing about
-the removal supplies.  (Until `v0.35.157` the rebindability was hypothesised too,
-and had to be: the guard read the owner's `ipcState`, which is `.blockedOnReply` at
-the pre-state and again the moment the owner re-Calls.)  Tier 3 negatives refuse
-hypothesising any derived fact, because each turns the payoff into a theorem whose
-conclusion is one of its own premises.
+- the dispatch's replenishment migration goes to the answered caller's home core
+  (`replyDonationReturnReplenishCores` names `determineTargetCore st target`);
+- the frozen composite reads the same caller (`FO-044`,
+  `differentialEndpointReplyGivesAnsweredCaller`);
+- `tests/SmpIpcSuite.lean` §3.20 settles the reservation on the answered caller on
+  the live reply spine, and `runMiddleFrameRecipientChecks` drives the middle-frame
+  shape (O → M → N under a server holding the context; a live suspend of M, then a
+  live reply to N) and asserts that N is given the context and O stays unbound.
+  That shape is where the redirect gave the context to O, a thread whose frame had
+  left the stack (the middle-frame recipient bug, Low, reported 2026-11-23).
 
-**And the resolver decides its own contract** (`v0.35.61`, the post-landing
-audit).  `donationOriginRecipient?` resolves the recorded origin through
-`lookupTcb` before it consults either guard: both guards pass a thread with no
-TCB (their `_of_none` arms exist so the *operation's* argument keeps its own
-error code), so as first landed a stale origin naming no thread was answered as a
-candidate and the pop's own lookup refused the reply with `.objectNotFound` — a
-refusal on the one shape the redirect exists to make a fallback.  Unreachable
-today, because an origin counts only while the thread it names carries the
-back-link (`TCB.originScCode`) the donor's first push writes, and a thread made
-at a reused id starts with none, and closed on both surfaces anyway: `donationOriginRecipient?_eq_some_iff` carries resolution as its fourth
-fact, `replyDonationRecipient_resolves` says the pop's recipient resolves whenever
-the answered caller does, `donationAccountingPreserved_atCallDepthTwo` takes the
-origin's existence at the post-removal state as its third hypothesis, the frozen
-mirror resolves through `frozenLookupTcb`, and `tests/SmpIpcSuite.lean` §3.25 and
-`FO-044`'s third half are the witnesses, each with the two-guard CONTROL that
-makes the decline attributable to the resolution check alone.
-
-**Measured on the live spine, and the decisive comparison is not a mutation.**
-`tests/SmpIpcSuite.lean` §3.20's accounting halves inverted from COST to PAYOFF and
-now drive `endpointReplyCrossCoreDispatch` — leg, pop, priority-inheritance
-reversion and replenishment migration together — where they drove
-`returnDonatedSchedContextResolved` directly, which was an accurate proxy for the
-pop while nothing redirected and is a proxy that *omits* the redirect since HP10.7.
-No mutation of the production code is available: the origin write, the resolver, the
-three reply-path pops and the dispatch's recipient are each pinned as theorems, so a
-mutation fails to **elaborate** rather than failing the suite, exactly as §8.12.14
-records for the splice's stores.  What discriminates is a differential *within* the
-suite — one function applied to a chain whose first push recorded an origin and to
-one that predates the field, a single field apart, opposite outcomes.
-
-**And the production write is measured, which it was not before.**  Every fixture
-that carried an origin set the field by hand, so nothing asserted that
-`donateSchedContext` records one.  §3.20 now runs the live push **twice** from a
-state where the owner still holds the reservation, asserting both directions — a
-*first* push records the origin, an *onward* push leaves it alone, which is what
-distinguishes an origin from a duplicate of `.donated scId owner` — and that the
-first push reproduces the hand-built depth-1 fixture's own shape, so that fixture is
-known to be a state the kernel reaches.
-
-§3.22, §3.23 and the golden trace are **byte-identical**, which is the measurement
-that this cut is confined to the reachability gap rather than changing the chain.
-It is structural rather than lucky: at depth ≥ 3 the pop sits at a `some` arm, where
-`replyDonationRecipient_eq_of_outer_some` makes the redirect the identity by
-theorem.
-
-**And the payoff held only under a guard that was a PROXY — closed at
-`v0.35.157`** (PR #897's review, `v0.35.141`).  Until `v0.35.157`
-`donationOriginRebindable` refused an origin that is `.blockedOnReply`, as a proxy
-for "some live `.donated _ origin` binding names it" — and a client answered out of
-order and re-called is reply-blocked while owning nothing, because its Call is
-`.unbound` and so donates nothing.  The pop then fell back to the answered caller
-and **transferred** the reservation to the intermediate caller, clearing
-`donationOrigin` with it.  The guard is now `schedContextBind`'s own admissibility,
-asked of the origin: its reply frame is on no **live** stack (`replyFrameOnLiveStack`,
-one-step reciprocity, on both surfaces).  That admits the re-called client, whose
-fresh frame is on no stack, and refuses the two shapes the proxy could not
-distinguish from it — a frame that *heads* a context (a live owner) and a frame
-*inside* a live stack (owed a pop that a binding made now would make refuse).  Its
-soundness is the binding → head coherence fact `donatedContextIsOwnerFrameHead`,
-relocated upstream to `IPC/Invariant/Defs.lean` and carried by the reply path as
-`redirectedOriginFrameCoherent` (gated on the trigger, the resolver and the
-distinctness from the answered caller); `donationOriginRebindable_no_owner` derives
-"named by no live binding" from the guard under it.  `tests/SmpIpcSuite.lean` §3.25
-drives the live pop on the re-called client with the retired proxy computed beside
-the live guard, and plants the two refused shapes with the control that the
-recipient guard alone admits them.  So the donation accounting holds at every
-reply-stack depth: v1.0.0 **may** claim that completing a call chain returns a
-client's reservation at every depth — the depth-≥ 3 half by the splice, the depth-2
-half by the recorded origin under a guard that is the fact.  Closed in
-`docs/REGISTERED_DEBT.md` table C.
+A client answered out of order at depth two therefore loses its reservation to
+the caller its frame's answerer called, as it does upstream.  The depth-≥ 3
+splice (§8.12.14) is unchanged.
 
 #### 8.12.16 The teardown's bundle statement is honest about its own state — WS-RR RR8.7 (`v0.35.80`)
 
@@ -12440,10 +12361,10 @@ checked boot refuses every configured binding pair and creates none
 (`bootFromPlatformCheckedStartedFor_bindingLabelsEqual`, `v0.37.39`), and the
 predicate also says a lent binding's owner carries the context's label (the
 return to the owner binds the owner).  Its preservation by every committing
-entry is the plan's SX12, on SX11's invariant (`v0.37.40`, below) that every
+entry is the plan's SX13, on SX11's invariant (`v0.37.40`, below) that every
 thread blocked on an endpoint carries the endpoint's label: the gate at a Call
 or receive-take lend checks one side of the endpoint, and the other side was
-checked when the waiting thread blocked.  SX12 then deletes both refusals.
+checked when the waiting thread blocked.  SX13 then deletes both refusals.
 
 **What the gate checked is recorded in the state, on both sides (WS-RR RR8.16,
 `v0.35.191` and `v0.35.196`; equalities and carried by every entry since WS-SX

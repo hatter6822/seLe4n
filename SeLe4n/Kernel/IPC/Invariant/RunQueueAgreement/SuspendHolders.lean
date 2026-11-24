@@ -258,7 +258,7 @@ theorem suspendRescheduleOnCore_bindingLinksAgree {st st' : SystemState}
 -- ============================================================================
 
 /-- **The head cut keeps every context named by its holder**: the reply stored
-over itself and the context's head and origin cleared write no binding, and a
+over itself and the context's head cleared write no binding, and a
 holder's owner code cleared keeps the context its binding names. -/
 theorem cutCancelledCallerHead_holdersNameTheirContexts (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) (hH : holdersNameTheirContexts st) :
@@ -271,7 +271,7 @@ theorem cutCancelledCallerHead_holdersNameTheirContexts (st : SystemState) (tcb 
         (by rw [hRo]; rfl)
       have hI1 := storeObject_preserves_objects_invExt s0 s1 _ _ h0.1 hS
       have F2 := SchedLinkFrame.updateSchedContext s1 scId
-        (fun sc => { sc with scReply := none, donationOrigin := none }) hI1 (fun _ => rfl)
+        (fun sc => { sc with scReply := none }) hI1 (fun _ => rfl)
       exact ⟨SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hI1,
         holdersNameTheirContexts.of_binding (F1.trans F2).binding h0.2⟩)
     (fun s0 _ holder ht _ h0 _ hT _ => by

@@ -123,7 +123,7 @@ theorem processOneReplenishmentOnCore_releaseStateAgree (st : SystemState) (ec :
     SystemState.releaseStateAgree (processOneReplenishmentOnCore st ec scId now) st := by
   have hR : SystemState.releaseStateAgree (refillSchedContext st scId now) st :=
     SystemState.releaseStateAgree.updateSchedContext st scId _ hInv (fun sc => by
-      obtain ⟨-, -, -, -, -, -, -, -, -, h4, h5, h6⟩ :=
+      obtain ⟨-, -, -, -, -, -, -, -, h4, h5, h6⟩ :=
         SchedContext.fields_of_refillsErased (sc.releaseReadyHead_refillsErased now)
       exact ⟨h4, h5, h6⟩)
   refine SystemState.releaseStateAgree.trans ⟨?_, ?_⟩ hR

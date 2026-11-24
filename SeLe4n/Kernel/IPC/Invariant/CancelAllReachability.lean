@@ -1120,7 +1120,7 @@ theorem cancelBoundDonationOnCore_reachFieldFrame {st st' : SystemState} {t : Se
   cases hBind : tcb.schedContextBinding with
   | bound scId =>
     let g : SchedContext → SchedContext := fun sc =>
-      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
+      { sc with boundThreadCode := 0, isActive := false }
     have h1 := ReachFieldFrame.updateSchedContext st scId g hInv
     have hI1 : (st.updateSchedContext scId g).objects.invExt :=
       (FinaliseFrame.updateSchedContext st scId g hInv (fun _ => rfl)).invExt
@@ -1651,7 +1651,7 @@ theorem cutHeadFrameKeepingContext_preserves_donationChainWellFormed (st : Syste
     exact donationChainWellFormed_of_frame
       (donationChainFrame_updateSchedContext_sameHead s1 ⟨scId.toObjId.val⟩
         (fun sc => { sc with scReply := none })
-        (fun sc => { sc with scReply := none, donationOrigin := none }) hI1 (fun _ => rfl)) hU
+        (fun sc => { sc with scReply := none }) hI1 (fun _ => rfl)) hU
   · intro s _ holder ht _ ⟨h, hCs⟩ _ hT _
     have hI := SystemState.updateTcb_preserves_objects_invExt s holder
       (fun t => { t with scBindingOwnerCode := 0 }) h
@@ -2161,7 +2161,7 @@ theorem unheld {s : SystemState} {x : SeLe4n.ObjId} {r : Reply} {c : SeLe4n.Thre
       q1.2.trans q2.2.1⟩
 
 /-- **The thread-side cut keeps what the reachable parts read of every thread**
-(WS-ZA ZA6.34): the reply stored over itself, the context's head and origin, a
+(WS-ZA ZA6.34): the reply stored over itself, the context's head, a
 holder's owner code, and the key hook's flags. -/
 theorem _root_.SeLe4n.Kernel.ReachFieldFrame.cutCancelledCallerHead (s : SystemState) (t : TCB)
     (hInv : s.objects.invExt) :

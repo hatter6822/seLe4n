@@ -786,11 +786,10 @@ theorem donationChainWitness_pop_wellFormed
   donationHeadPop_preserves_donationChainWellFormed
     (head? := some (donationChainWitnessInner, witnessChainInnerReply))
     donationChainWitness_objects_invExt donationChainWitness_wellFormed
-    -- **WS-RR RR8 (`v0.35.100`)**: the read-set hypothesis.  This witness is why
-    -- the lemma states the read set rather than the pop's own record: the record
-    -- it stores KEEPS its `donationOrigin`, which no value of the pop's arm
-    -- selector produces, so a lemma stated over that record refuses a witness
-    -- whose only job is to exercise the store surface it is stated over.
+    -- **WS-RR RR8 (`v0.35.100`)**: the read-set hypothesis.  The lemma states the
+    -- read set rather than the pop's own record, so it accepts any stored record
+    -- whose fields its proof reads, which is what a witness of the store surface
+    -- needs.
     witnessChainContextObject witnessChainValidatedHead (by rfl) hS1 hPop
 
 /-- WS-OD OD3.8: ...and the stack the popped context heads is **exactly the tail**
@@ -914,11 +913,6 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
     (hStackValid : ∀ scId serverTid originalOwner,
       replyStackOuterCallerValid (endpointReplyOnCore replier target msg ec st).fst
         scId serverTid originalOwner)
-    -- **`v0.35.157`**: the origin redirect's coherence obligation, gated on the
-    -- trigger and the resolver, so a reply that redirects nothing owes nothing.
-    (hOriginCoherent : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st target = some rid →
-      redirectedOriginFrameCoherent (endpointReplyOnCore replier target msg ec st).fst
-        rid target)
     -- **WS-ZA ZA6.34**: a frame heading a context no thread holds is popped to
     -- the answered caller, which asks that no thread bind the context as its own
     -- and none hold one on loan from the caller.
@@ -927,7 +921,7 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
     ipcInvariantFull (endpointReplyCrossCoreDispatch replier target msg ec st).1 :=
   endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier target msg ec st hInv
     hObjInv hDonationReturned hHolderDonation hAllBudgetsNone hStackValid
-    hOriginCoherent hUnheld
+    hUnheld
 
 /-- WS-RR RR3.12: the donation return **upgrades** the relaxed invariant back to the
 full one — the other half of the reply chain's honest statement, and the reason the

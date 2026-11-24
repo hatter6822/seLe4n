@@ -1125,7 +1125,7 @@ theorem schedContextBindPerform_stepCovers (st : SystemState) (vScId : SeLe4n.Va
   have hAdm : st.rewriteAdmissible vScId.val (.schedContext
       { sc.releaseReadyHead st.machine.timer with
         boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val)
-        donationOrigin := none }) :=
+        }) :=
     SystemState.rewriteAdmissible_schedContext hSc _
   have hInv1 := SystemState.rewriteObject_preserves_objects_invExt st _ _ hAdm hObjInv
   -- No thread's binding names the context: it named no bound thread.
@@ -1403,7 +1403,7 @@ theorem unbindTail_stepCovers (e : CoreId) (st1 : SystemState) (vScId : SeLe4n.V
     (hSc : st1.objects[vScId.val]? = some (.schedContext sc))
     (hT : st1.getTcb? tid = some tcb)
     (hAdm : st1.rewriteAdmissible vScId.val (.schedContext
-      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })) :
+      { sc with boundThreadCode := 0, isActive := false })) :
     stepCovers e st1 (markKeyChangeFor (markCandidacyGainFor
       (SchedContextOps.purgeReplenishment
           (SchedContextOps.schedContextUnbindQueueStage
@@ -1490,7 +1490,7 @@ theorem schedContextUnbind_stepCovers (st st' : SystemState) (vScId : SeLe4n.Val
           exact hObjInv
       · cases hStep
         have hAdm : st.rewriteAdmissible vScId.val (.schedContext
-            { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) :=
+            { sc with boundThreadCode := 0, isActive := false }) :=
           SystemState.rewriteAdmissible_schedContext hSc _
         have hK1 : keyInputsEq st (st.rewriteObject vScId.val _ hAdm) :=
           keyInputsEq_rewriteObject hAdm hObjInv (by rw [hScRaw]; rfl)

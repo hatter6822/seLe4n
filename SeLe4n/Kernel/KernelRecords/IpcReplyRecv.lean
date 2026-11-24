@@ -44,8 +44,7 @@ theorem replyRecvPopDonation {rid : SeLe4n.ReplyId} {target : SeLe4n.ThreadId}
     RecordsFrame st st' := by
   unfold _root_.SeLe4n.Kernel.replyRecvPopDonation at h
   split at h
-  · dsimp only at h
-    split at h
+  · split at h
     · split at h
       · split at h
         · cases h

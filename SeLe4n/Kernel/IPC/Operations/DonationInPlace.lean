@@ -22,33 +22,6 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- Whether a donor lends a context it owns (`donationFirstPush`), read from its
-binding's codes, so the test builds no binding and no `some`. -/
-@[inline] def donationFirstPushCode (donor : TCB) (scId : SeLe4n.SchedContextId) : Bool :=
-  donor.scBindingScCode == scId.val + 1 && donor.scBindingOwnerCode == 0
-
-theorem donationFirstPushCode_eq (donor : TCB) (scId : SeLe4n.SchedContextId) :
-    donationFirstPushCode donor scId = donationFirstPush donor scId := by
-  unfold donationFirstPushCode donationFirstPush
-  show _ = ((SchedContextBinding.ofCodes donor.scBindingScCode
-    donor.scBindingOwnerCode).ownScId? == some scId)
-  cases h1 : donor.scBindingScCode with
-  | zero => simp [SchedContextBinding.ofCodes, SchedContextBinding.ownScId?]
-  | succ s =>
-    cases h2 : donor.scBindingOwnerCode with
-    | zero =>
-      obtain ⟨v⟩ := scId
-      simp only [SchedContextBinding.ofCodes, SchedContextBinding.ownScId?, beq_self_eq_true,
-        Bool.and_true]
-      by_cases h : s = v
-      · subst h; simp
-      · have hne : ({ val := s } : SeLe4n.SchedContextId) ≠ { val := v } :=
-          fun e => h (by cases e; rfl)
-        rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq]
-        exact ⟨fun e => absurd (Nat.succ.inj e) h,
-          fun e => absurd (Option.some.inj e) hne⟩
-    | succ o => simp [SchedContextBinding.ofCodes, SchedContextBinding.ownScId?]
-
 /-- **The donation push, in place.**  `donateSchedContext`'s writes on a state
 whose checks pass: the identity where a read the specification refuses on finds
 nothing (`donateSchedContext_eq_inPlace` states the states on which it is the
@@ -75,8 +48,6 @@ specification's). -/
             let headC := ReplyStackLink.reuseHead sc.headLinkCell scId
             let ridC := SeLe4n.reuseSome pr.idCell rid
             let frameC := ReplyStackLink.reuseFrame pr.frameLinkCell rid
-            let first := donationFirstPushCode donor scId
-            let originC := SeLe4n.reuseSome donor.idCell client
             let cp := donor.boostedPriority
             let cd := donor.deadline
             let cdom := donor.domain
@@ -86,8 +57,7 @@ specification's). -/
             let sdom := srv.domain
             let se := hasSufficientBudget st srv
             let s1 := st.updateSchedContext scId fun s =>
-              { s with boundThreadCode := SeLe4n.ThreadId.optCode (some server), scReply := ridC,
-                       donationOrigin := if first then originC else s.donationOrigin }
+              { s with boundThreadCode := SeLe4n.ThreadId.optCode (some server), scReply := ridC }
             let s2 := s1.modifyObject rid.toObjId
               (SystemState.mapReplyObject fun r => { r with prev := below, next := headC })
             let s3 := match below with
@@ -95,8 +65,7 @@ specification's). -/
               | some old => s2.modifyObject old.toObjId
                   (SystemState.mapReplyObject fun r => { r with next := frameC })
             let s4 := s3.updateTcb client fun t =>
-              { t with scBindingScCode := 0, scBindingOwnerCode := 0,
-                       originScCode := if first then scId.val + 1 else t.originScCode }
+              { t with scBindingScCode := 0, scBindingOwnerCode := 0 }
             let s5 := s4.updateTcb server fun t =>
               { t with
                 scBindingScCode := SchedContextBinding.scCode (.donated scId client),
@@ -182,8 +151,6 @@ theorem donateSchedContext_eq_inPlace (st : SystemState) (client server : SeLe4n
       rw [h] at hNe
       simp only [beq_eq_false_iff_ne, ne_eq]
       exact hNe
-  have hFirst : ∀ p, donorOriginCode donor scId p =
-      if donationFirstPush donor scId then scId.val + 1 else p := fun _ => rfl
   -- The two sides, read off.
   unfold donateSchedContextInPlace donateSchedContext
   rw [hSc]
@@ -194,8 +161,7 @@ theorem donateSchedContext_eq_inPlace (st : SystemState) (client server : SeLe4n
   dsimp only
   rw [show (⟨rid.val⟩ : SeLe4n.ReplyId) = rid from rfl, hR, hS]
   dsimp only
-  simp only [SeLe4n.reuseSome_eq, ReplyStackLink.reuseHead_eq, ReplyStackLink.reuseFrame_eq,
-    donationFirstPushCode_eq]
+  simp only [SeLe4n.reuseSome_eq, ReplyStackLink.reuseHead_eq, ReplyStackLink.reuseFrame_eq]
   -- The context's store.
   rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLsc),
     SystemState.updateSchedContext_eq_of_some hSc]
@@ -204,9 +170,7 @@ theorem donateSchedContext_eq_inPlace (st : SystemState) (client server : SeLe4n
   rw [hHNe]
   simp only [Bool.false_eq_true, ↓reduceIte]
   generalize hS1 : ({ st with objects := st.objects.insert scId.toObjId (.schedContext
-    { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some server), scReply := some rid,
-              donationOrigin := if donationFirstPush donor scId then some client
-                else sc.donationOrigin }) } : SystemState) = S1
+    { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some server), scReply := some rid }) } : SystemState) = S1
   have hO1 : ∀ k, scId.toObjId ≠ k → S1.objects[k]? = st.objects[k]? := fun k hk' => by
     rw [← hS1]; exact RobinHood.RHTable.get?_insert_ne_of_findsInPlace k _ hFsc hk'
   have hK1 : ∀ k, S1.objects.findsInPlace k = st.objects.findsInPlace k := fun k => by
@@ -251,14 +215,11 @@ theorem donateSchedContext_eq_inPlace (st : SystemState) (client server : SeLe4n
       unfold lookupTcb; rw [hCRes]; exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hTC
     rw [hLk]
     dsimp only
-    simp only [hFirst]
     rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLTc),
       SystemState.updateTcb_eq_of_some ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hTC)]
     dsimp only
     generalize hT3 : ({ T with objects := T.objects.insert client.toObjId (.tcb
-      { donor with scBindingScCode := 0, scBindingOwnerCode := 0,
-                   originScCode := if donationFirstPush donor scId then scId.val + 1
-                     else donor.originScCode }) } : SystemState) = T3
+      { donor with scBindingScCode := 0, scBindingOwnerCode := 0 }) } : SystemState) = T3
     obtain ⟨x, hX⟩ : ∃ x, T3.objects[server.toObjId]? = some (.tcb x) := by
       by_cases hEq : client.toObjId = server.toObjId
       · rw [← hEq, ← hT3]
@@ -323,14 +284,11 @@ theorem donateSchedContext_eq_inPlace (st : SystemState) (client server : SeLe4n
       unfold lookupTcb; rw [hCRes]; exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hTC
     rw [hLk]
     dsimp only
-    simp only [hFirst]
     rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLTc),
       SystemState.updateTcb_eq_of_some ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hTC)]
     dsimp only
     generalize hT3 : ({ T with objects := T.objects.insert client.toObjId (.tcb
-      { donor with scBindingScCode := 0, scBindingOwnerCode := 0,
-                   originScCode := if donationFirstPush donor scId then scId.val + 1
-                     else donor.originScCode }) } : SystemState) = T3
+      { donor with scBindingScCode := 0, scBindingOwnerCode := 0 }) } : SystemState) = T3
     obtain ⟨x, hX⟩ : ∃ x, T3.objects[server.toObjId]? = some (.tcb x) := by
       by_cases hEq : client.toObjId = server.toObjId
       · rw [← hEq, ← hT3]

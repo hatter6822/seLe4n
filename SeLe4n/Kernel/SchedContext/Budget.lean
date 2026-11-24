@@ -434,7 +434,7 @@ theorem SchedContext.fields_of_pendingErased {sc sc' : SchedContext}
       sc'.badge = sc.badge ∧ sc'.sporadic = sc.sporadic ∧ sc'.yieldFromCode = sc.yieldFromCode ∧
       sc'.budgetRemaining = sc.budgetRemaining ∧ sc'.periodStart = sc.periodStart ∧
       sc'.boundThreadCode = sc.boundThreadCode ∧ sc'.scReply = sc.scReply ∧
-      sc'.donationOrigin = sc.donationOrigin ∧ sc'.isActive = sc.isActive ∧
+      sc'.isActive = sc.isActive ∧
       sc'.releaseNextCode = sc.releaseNextCode ∧ sc'.releaseCoreCode = sc.releaseCoreCode ∧
       sc'.releaseAt = sc.releaseAt := by
   have f : ∀ {α : Type} (g : SchedContext → α), (∀ s, g s.pendingErased = g s) →
@@ -443,7 +443,7 @@ theorem SchedContext.fields_of_pendingErased {sc sc' : SchedContext}
     f (·.badge) (fun _ => rfl), f (·.sporadic) (fun _ => rfl), f (·.yieldFromCode) (fun _ => rfl),
     f (·.budgetRemaining) (fun _ => rfl), f (·.periodStart) (fun _ => rfl),
     f (·.boundThreadCode) (fun _ => rfl), f (·.scReply) (fun _ => rfl),
-    f (·.donationOrigin) (fun _ => rfl), f (·.isActive) (fun _ => rfl),
+    f (·.isActive) (fun _ => rfl),
     f (·.releaseNextCode) (fun _ => rfl), f (·.releaseCoreCode) (fun _ => rfl),
     f (·.releaseAt) (fun _ => rfl)⟩
 
@@ -853,7 +853,6 @@ theorem SchedContext.fields_of_refillsErased {sc sc' : SchedContext}
     sc'.scId = sc.scId ∧ sc'.budget = sc.budget ∧ sc'.period = sc.period ∧
       sc'.badge = sc.badge ∧ sc'.sporadic = sc.sporadic ∧ sc'.yieldFromCode = sc.yieldFromCode ∧
       sc'.boundThreadCode = sc.boundThreadCode ∧ sc'.scReply = sc.scReply ∧
-      sc'.donationOrigin = sc.donationOrigin ∧
       sc'.releaseNextCode = sc.releaseNextCode ∧ sc'.releaseCoreCode = sc.releaseCoreCode ∧
       sc'.releaseAt = sc.releaseAt := by
   have f : ∀ {α : Type} (g : SchedContext → α), (∀ s, g s.refillsErased = g s) →
@@ -861,7 +860,6 @@ theorem SchedContext.fields_of_refillsErased {sc sc' : SchedContext}
   exact ⟨f (·.scId) (fun _ => rfl), f (·.budget) (fun _ => rfl), f (·.period) (fun _ => rfl),
     f (·.badge) (fun _ => rfl), f (·.sporadic) (fun _ => rfl), f (·.yieldFromCode) (fun _ => rfl),
     f (·.boundThreadCode) (fun _ => rfl), f (·.scReply) (fun _ => rfl),
-    f (·.donationOrigin) (fun _ => rfl),
     f (·.releaseNextCode) (fun _ => rfl), f (·.releaseCoreCode) (fun _ => rfl),
     f (·.releaseAt) (fun _ => rfl)⟩
 
@@ -2122,7 +2120,7 @@ theorem spendRecord_release (sc : SchedContext) (start ticks now : Nat) :
     (sc.chargeBudget start ticks now).releaseNextCode = sc.releaseNextCode ∧
       (sc.chargeBudget start ticks now).releaseCoreCode = sc.releaseCoreCode ∧
       (sc.chargeBudget start ticks now).releaseAt = sc.releaseAt := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, h4, h5, h6⟩ :=
+  obtain ⟨-, -, -, -, -, -, -, -, h4, h5, h6⟩ :=
     SchedContext.fields_of_refillsErased (sc.chargeBudget_refillsErased start ticks now)
   exact ⟨h4, h5, h6⟩
 
@@ -2132,7 +2130,7 @@ theorem refillRecord_release (sc : SchedContext) (now : Nat) :
     (sc.releaseReadyHead now).releaseNextCode = sc.releaseNextCode ∧
       (sc.releaseReadyHead now).releaseCoreCode = sc.releaseCoreCode ∧
       (sc.releaseReadyHead now).releaseAt = sc.releaseAt := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, h4, h5, h6⟩ :=
+  obtain ⟨-, -, -, -, -, -, -, -, h4, h5, h6⟩ :=
     SchedContext.fields_of_refillsErased (sc.releaseReadyHead_refillsErased now)
   exact ⟨h4, h5, h6⟩
 

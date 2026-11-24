@@ -657,9 +657,9 @@ theorem cancelBoundDonationOnCore_hidden (ctx : LabelingContext) (observer : IfO
   rw [markKeyChangeFrom_extract_frame (projectState ctx observer) _ _ _
     (fun s c => markReschedulePendingOnCore_preserves_projection ctx observer s c)]
   have hI1 := SystemState.updateSchedContext_preserves_objects_invExt s scId
-    (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
+    (fun sc => { sc with boundThreadCode := 0, isActive := false }) hInv
   have hA : hiddenObjectsWrite ctx observer s (s.updateSchedContext scId
-      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })) :=
+      (fun sc => { sc with boundThreadCode := 0, isActive := false })) :=
     ⟨SystemState.updateSchedContext_eq_objects_update _ _ _, fun k hk =>
       SystemState.updateSchedContext_objects_ne _ _ _ k
         (fun e => by rw [← e, hSc] at hk; cases hk) hInv⟩
@@ -969,7 +969,7 @@ theorem replyFrameHeadHolderDonation_of_not_head {s : SystemState} {x : SeLe4n.O
 is hidden (WS-ZA ZA6.34; D34 shows a holder's binding words where the context
 is): the reply stored over itself with its upward link cleared (a stack link,
 which the projection strips: `projectKernelObject_reply_next_invariant`), the
-context's head and origin cleared, and a holder's owner code cleared (a word
+context's head cleared, and a holder's owner code cleared (a word
 shown only with the hidden context), then the key hook, which writes the
 scheduler's flags alone. -/
 theorem cutCancelledCallerHead_hidden (ctx : LabelingContext) (observer : IfObserver)
@@ -995,13 +995,13 @@ theorem cutCancelledCallerHead_hidden (ctx : LabelingContext) (observer : IfObse
     have hP1 := storeObject_projectionStable_preserves_projection ctx observer s s1
       rid.toObjId _ (.reply r) hRo' (projectKernelObject_reply_next_invariant ctx observer r _) hInv hSt
     have hW := projectedObjectsWrite.updateSchedContext (ctx := ctx) (observer := observer) s1
-      scId (fun sc => { sc with scReply := none, donationOrigin := none }) hI1
+      scId (fun sc => { sc with scReply := none }) hI1
       (fun _ => by simp [projectKernelObject])
     rcases hRest with e | ⟨holder, ht, o, hB, hT, hb, e⟩ <;> rw [e]
     · exact hW.projection.trans hP1
     · have hX := hHead rid scId hRo hH
       have hI2 := SystemState.updateSchedContext_preserves_objects_invExt s1 scId
-        (fun sc => { sc with scReply := none, donationOrigin := none }) hI1
+        (fun sc => { sc with scReply := none }) hI1
       have hW2 := projectedObjectsWrite.updateTcbAt (ctx := ctx) (observer := observer) _ holder
         (fun t => { t with scBindingOwnerCode := 0 }) hI2
         (fun x hx => by
@@ -2026,8 +2026,8 @@ theorem returnUnheldSchedContext_preserves_projection (ctx : LabelingContext)
     rw [markKeyChangeFrom_objectIndexSet]
     exact hC3 k hk
 
-/-- **The sever is invisible to every observer**: the projection erases the two
-context fields it writes, the head and the origin, and the pop's reply stores
+/-- **The sever is invisible to every observer**: the projection erases the
+context field it writes, the head, and the pop's reply stores
 are stack links (`storeDonationHeadPop_preserves_projection`).  Each store is at
 an indexed key, so the object index stays complete and well formed. -/
 theorem severUnheldSchedContext_preserves_projection (ctx : LabelingContext)

@@ -53,8 +53,7 @@ states the states on which it is the specification's). -/
           let odom := ot.domain
           let oe := hasSufficientBudget st ot
           let s1 := st.updateSchedContext scId fun s =>
-            { s with boundThreadCode := SeLe4n.ThreadId.optCode (some owner), scReply := rprev,
-                     donationOrigin := if outer == 0 then none else s.donationOrigin }
+            { s with boundThreadCode := SeLe4n.ThreadId.optCode (some owner), scReply := rprev }
           let s2 := s1.modifyObject hr.toObjId
             (SystemState.mapReplyObject fun x => { x with prev := none, next := none })
           let s3 := match rprev with
@@ -104,8 +103,6 @@ theorem returnUnheldSchedContextResolved_eq_inPlace (st : SystemState)
   have hScOw : scId.toObjId ≠ owner.toObjId := fun h => by rw [h, hOO] at hScO; cases hScO
   have hROw : hr.toObjId ≠ owner.toObjId := fun h => by rw [h, hOO] at hRO; cases hRO
   have hBNe : (sc.boundThreadCode != 0) = false := by rw [hBT]; rfl
-  have hIso : ∀ k : Nat, (SeLe4n.ThreadId.ofOptCode k).isNone = (k == 0) := by
-    intro k; cases k <;> rfl
   have hLkO : ∀ s : SystemState, s.getTcb? owner = some ot → lookupTcb s owner = some ot :=
     fun s h => by unfold lookupTcb; rw [hORes]; exact h
   unfold returnUnheldSchedContextResolved
@@ -118,12 +115,11 @@ theorem returnUnheldSchedContextResolved_eq_inPlace (st : SystemState)
   generalize hk : popOuterCode st r = k at *
   obtain ⟨hC1, hC2⟩ := donationReturnBinding_ofOptCode_codes scId k
   unfold donationReturnSchedContext
-  rw [hIso k, storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLsc),
+  rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLsc),
     SystemState.updateSchedContext_eq_of_some hSc]
   simp only []
   generalize hS1 : ({ st with objects := st.objects.insert scId.toObjId (.schedContext
-    { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some owner), scReply := r.prev,
-              donationOrigin := if (k == 0) = true then none else sc.donationOrigin }) } :
+    { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some owner), scReply := r.prev }) } :
       SystemState) = S1
   have hO1 : ∀ x, scId.toObjId ≠ x → S1.objects[x]? = st.objects[x]? := fun x hx => by
     rw [← hS1]; exact RobinHood.RHTable.get?_insert_ne_of_findsInPlace x _ hFsc hx

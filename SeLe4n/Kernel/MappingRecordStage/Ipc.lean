@@ -733,8 +733,7 @@ theorem replyRecvPopDonation_mappingStage {rid : SeLe4n.ReplyId} {target : SeLe4
     (h : replyRecvPopDonation rid target st = .ok (r, st')) : MappingStage st st' := by
   unfold replyRecvPopDonation at h
   split at h
-  · dsimp only at h
-    split at h
+  · split at h
     · split at h
       · split at h
         · cases h

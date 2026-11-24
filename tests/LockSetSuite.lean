@@ -304,7 +304,7 @@ example :
 a single (TCB, write) entry. -/
 
 example :
-    let S := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none none none none none none
+    let S := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none none none none none
     S.size = 2 := by decide
 
 -- ============================================================================
@@ -1127,7 +1127,7 @@ private def runLubMergeChecks : IO Unit := do
       [(.object ⟨.cnode, ObjId.ofNat 10⟩, .read),
        (.object ⟨.tcb, ObjId.ofNat 5⟩, .write)]))
   -- endpointReply(caller=replyTarget) collapses.
-  let selfReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none none none none none none
+  let selfReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none none none none none
   assertBool "endpointReply(caller=replyTarget) collapses to 2 locks"
     (decide (selfReply.size = 2))
   -- Audit-pass-3+4: endpointReply with donation-return.
@@ -1136,19 +1136,19 @@ private def runLubMergeChecks : IO Unit := do
   -- WS-OD OD3.5: five, not four — a reply that returns a donation also holds
   -- the state-level lock, for the `scThreadIndex` maintenance the return ends in.
   let donReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                    (some ⟨42⟩) (some ⟨7⟩) none none none none none none none
+                    (some ⟨42⟩) (some ⟨7⟩) none none none none none none
   assertBool "endpointReply(caller=5, target=7, donatedSc=42, owner=7=target) has 5 locks (lub-collapse)"
     (decide (donReply.size = 5))
   -- Audit-pass-4: under hypothetical invariant violation where
   -- originalOwner ≠ replyTarget, the lockSet correctly covers both.
   let donReplyDrift := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                         (some ⟨42⟩) (some ⟨9⟩) none none none none none none none
+                         (some ⟨42⟩) (some ⟨9⟩) none none none none none none
   assertBool "endpointReply(caller=5, target=7, owner=9≠target) has 6 locks (drift case)"
     (decide (donReplyDrift.size = 6))
   -- WS-OD OD3.5: a reply that returns *nothing* holds no state-level lock — the
   -- member is conditioned on the donation, not unconditional, and a check that
   -- only ever saw the donating shape could not tell the two apart.
-  let bareReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ none none none none none none none none none
+  let bareReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ none none none none none none none none
   assertBool "endpointReply with no donation has 3 locks (no state-level member)"
     (decide (bareReply.size = 3))
   -- Audit-pass-3+4: replyRecv with full donation extension.
@@ -1156,7 +1156,7 @@ private def runLubMergeChecks : IO Unit := do
   let donReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                        (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
                        none none none none none none none none none none none none none none
-                       none (senderCnodeRootObjId := none)
+                       (senderCnodeRootObjId := none)
   assertBool "replyRecv (sender + donation + owner=target=7 collapse) has 7 locks"
     (decide (donReplyRecv.size = 7))
   -- WS-OD OD3.5: a **non-delegated** reply names its recorded server, and that
@@ -1164,7 +1164,7 @@ private def runLubMergeChecks : IO Unit := do
   let selfServedReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                               (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
                               (some ⟨5⟩) none none none none none none none none none none none none none
-                              none (senderCnodeRootObjId := none)
+                              (senderCnodeRootObjId := none)
   assertBool "replyRecv with a non-delegated recorded server still has 7 locks (lub-collapse)"
     (decide (selfServedReplyRecv.size = 7))
   -- ...and a **delegated** one names a third thread, which is the member PR #892
@@ -1172,7 +1172,7 @@ private def runLubMergeChecks : IO Unit := do
   let delegatedReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                              (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
                              (some ⟨9⟩) none none none none none none none none none none none none none
-                             none (senderCnodeRootObjId := none)
+                             (senderCnodeRootObjId := none)
   assertBool "replyRecv with a delegated recorded server has 8 locks"
     (decide (delegatedReplyRecv.size = 8))
   -- ...and the second SchedContext hand-off — the member whose absence made this
@@ -1180,7 +1180,7 @@ private def runLubMergeChecks : IO Unit := do
   let redonatingReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                               (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
                               (some ⟨9⟩) (some ⟨43⟩) none none none none none none none none none none none none
-                              none (senderCnodeRootObjId := none)
+                              (senderCnodeRootObjId := none)
   assertBool "replyRecv that also re-donates has 9 locks (the second hand-off's SC)"
     (decide (redonatingReplyRecv.size = 9))
   -- WS-OD OD3.7: and the two objects the donation return reads *below* the
@@ -1190,13 +1190,13 @@ private def runLubMergeChecks : IO Unit := do
   let belowHeadReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                              (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
                              (some ⟨9⟩) (some ⟨43⟩) (some ⟨44⟩) none none none none none none none none none none none
-                             none (senderCnodeRootObjId := none)
+                             (senderCnodeRootObjId := none)
   assertBool "replyRecv that reads the Reply below the head has 10 locks"
     (decide (belowHeadReplyRecv.size = 10))
   let outerCallerReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                                (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
                                (some ⟨9⟩) (some ⟨43⟩) none (some ⟨12⟩) none none none none none none none none none none
-                               none (senderCnodeRootObjId := none)
+                               (senderCnodeRootObjId := none)
   assertBool "replyRecv that also validates the outer caller's TCB has 10 locks"
     (decide (outerCallerReplyRecv.size = 10))
   -- The widest shape the arm can declare: a delegated, re-donating, caps-carrying
@@ -1206,88 +1206,75 @@ private def runLubMergeChecks : IO Unit := do
   -- re-donation's push rewrites, and — PR #894's review — the five objects the
   -- INVOKING receiver's own pre-receive return touches, and (WS-ZA ZA4.6) the
   -- three reply-waiter TCBs its unlink and link rewrite, and (WS-ZA ZA4.7) the
-  -- dequeued sender's CSpace root: twenty-eight, four below `maxLockSetSize`;
-  -- the resolved footprint adds the receive slot's CNode beside it
-  -- (`lockSet_endpointReplyRecvOnCore`), which is the twenty-ninth, the receive
-  -- slot's CNode as resolved after the reply leg's capability transfer, the
-  -- thirtieth, the CNode that transfer installs into, the thirty-first, and
-  -- that install's CDT lock, counted as a thirty-second.
+  -- dequeued sender's CSpace root: twenty-seven, five below `maxLockSetSize`
+  -- since WS-SX SX12 (D31) deleted the origin member (the ceiling is an upper
+  -- bound and was not lowered with it); the resolved footprint adds the receive
+  -- slot's CNode beside it (`lockSet_endpointReplyRecvOnCore`), which is the
+  -- twenty-eighth, the receive slot's CNode as resolved after the reply leg's
+  -- capability transfer, the twenty-ninth, the CNode that transfer installs into,
+  -- the thirtieth, and that install's CDT lock, counted as a thirty-first.
   let widestReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                           (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨11⟩)
                           (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
                           (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
                           (some ⟨45⟩) (some ⟨46⟩)
                           (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
-                          (some ⟨15⟩) (some ⟨50⟩) (some ⟨51⟩) (some ⟨16⟩)
+                          (some ⟨15⟩) (some ⟨50⟩) (some ⟨51⟩)
                           -- WS-ZA ZA4.6: the answered caller's two reply-waiter
                           -- links and the old head of the receive leg's server.
                           (some ⟨17⟩) (some ⟨18⟩) (some ⟨19⟩)
                           -- WS-ZA ZA4.7: the dequeued sender's CSpace root.
                           (some (ObjId.ofNat 30))
-  assertBool "the widest declarable .replyRecv has 28 locks (= maxLockSetSize - 4)"
-    (decide (widestReplyRecv.size = 28 && widestReplyRecv.size = maxLockSetSize - 4))
+  assertBool "the widest declarable .replyRecv has 27 locks (= maxLockSetSize - 5)"
+    (decide (widestReplyRecv.size = 27 && widestReplyRecv.size = maxLockSetSize - 5))
   -- …and the receive slot's CNode, a CNode no other member names, is the
-  -- twenty-ninth.
+  -- twenty-eighth.
   let widestWithSlot := lockSetExtendOpt widestReplyRecv
                           (some (cnodeLock (ObjId.ofNat 31), AccessMode.write))
-  assertBool "…and with the receive slot's CNode it has 29 (= maxLockSetSize - 3)"
-    (decide (widestWithSlot.size = 29 && widestWithSlot.size = maxLockSetSize - 3))
+  assertBool "…and with the receive slot's CNode it has 28 (= maxLockSetSize - 4)"
+    (decide (widestWithSlot.size = 28 && widestWithSlot.size = maxLockSetSize - 4))
   -- …and the receive slot's CNode as the receive leg resolves it after the
   -- reply leg's capability transfer (`receiveInstallCNodeAfterReply?`): a CNode
   -- the transfer made reachable, distinct from every other member, the
-  -- thirtieth.
+  -- twenty-ninth.
   let widestWithSlotAfterReply := lockSetExtendOpt widestWithSlot
                           (some (cnodeLock (ObjId.ofNat 33), AccessMode.write))
-  assertBool "…and with the receive slot's CNode after the reply transfer it has 30 (= maxLockSetSize - 2)"
-    (decide (widestWithSlotAfterReply.size = 30
-      && widestWithSlotAfterReply.size = maxLockSetSize - 2))
+  assertBool "…and with the receive slot's CNode after the reply transfer it has 29 (= maxLockSetSize - 3)"
+    (decide (widestWithSlotAfterReply.size = 29
+      && widestWithSlotAfterReply.size = maxLockSetSize - 3))
   -- …and the answered caller's receive slot's CNode, which the reply leg's
-  -- capability transfer installs into, is the thirty-first.
+  -- capability transfer installs into, is the thirtieth.
   let widestWithReplyInstall := lockSetExtendOpt widestWithSlotAfterReply
                           (some (cnodeLock (ObjId.ofNat 32), AccessMode.write))
-  assertBool "…and with the reply install's CNode it has 31 (= maxLockSetSize - 1)"
-    (decide (widestWithReplyInstall.size = 31 && widestWithReplyInstall.size = maxLockSetSize - 1))
+  assertBool "…and with the reply install's CNode it has 30 (= maxLockSetSize - 2)"
+    (decide (widestWithReplyInstall.size = 30 && widestWithReplyInstall.size = maxLockSetSize - 2))
   -- …and that install's CDT lock (`replyInstallCdtLock?`).  The ceiling counts
   -- it as a member of its own; on this shape the receive leg's install already
   -- declares `stateLevelLock` for write, so `insertOrMerge` collapses it and
-  -- the footprint stays at thirty-one, with the lock declared WRITE.
+  -- the footprint stays at thirty, with the lock declared WRITE.
   let widestWithReplyCdt := lockSetExtendOpt widestWithReplyInstall
                           (some (stateLevelLock, AccessMode.write))
-  assertBool "…and with the reply install's CDT lock it stays 31, the lock merged"
-    (decide (widestWithReplyCdt.size = 31 && widestWithReplyCdt.size ≤ maxLockSetSize))
+  assertBool "…and with the reply install's CDT lock it stays 30, the lock merged"
+    (decide (widestWithReplyCdt.size = 30 && widestWithReplyCdt.size ≤ maxLockSetSize))
   assertBool "the reply install's CDT lock is declared WRITE"
     (decide ((stateLevelLock, AccessMode.write) ∈ widestWithReplyCdt.pairs))
   -- **WS-HP HP3.1**: and the frame *below* the answered reply is a member of its
   -- own -- dropping it alone drops the widest shape by exactly one, so the
   -- `22 -> 23` raise is a genuine `+1` and not a member that merges with the
   -- frame above it or with the head the pop clears.
-  assertBool "…and dropping only the frame below the answered reply drops it to 26"
+  assertBool "…and dropping only the frame below the answered reply drops it to 25"
     (decide ((lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                 (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨11⟩)
                 (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
                 (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
                 (some ⟨45⟩) (some ⟨46⟩)
                 (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
-                (some ⟨15⟩) (some ⟨50⟩) none (some ⟨16⟩)
-                (some ⟨17⟩) (some ⟨18⟩) (some ⟨19⟩) (senderCnodeRootObjId := none)).size = 26))
+                (some ⟨15⟩) (some ⟨50⟩) none
+                (some ⟨17⟩) (some ⟨18⟩) (some ⟨19⟩) (senderCnodeRootObjId := none)).size = 25))
   assertBool "the frame below the answered reply is declared WRITE"
     (decide ((replyLock ⟨51⟩, AccessMode.write) ∈ widestReplyRecv.pairs))
-  -- **WS-HP HP10.6**: and so is the origin a bottom-of-stack pop redirects the
-  -- reservation to -- dropping it alone drops the widest shape by exactly one, so
-  -- the `23 -> 24` raise is a genuine `+1` and not a member that merges with the
-  -- answered caller's TCB or the holder's.
-  assertBool "…and dropping only the redirect's origin drops it to 23"
-    (decide ((lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨11⟩)
-                (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
-                (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
-                (some ⟨45⟩) (some ⟨46⟩)
-                (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
-                (some ⟨15⟩) (some ⟨50⟩) (some ⟨51⟩) none (senderCnodeRootObjId := none)).size = 23))
-  assertBool "the redirect's origin is declared WRITE (the pop rebinds that TCB)"
-    (decide ((tcbLock ⟨16⟩, AccessMode.write) ∈ widestReplyRecv.pairs))
-  assertBool "...and that is exactly four below maxLockSetSize"
-    (decide (widestReplyRecv.size + 4 = maxLockSetSize))
+  assertBool "...and that is exactly five below maxLockSetSize"
+    (decide (widestReplyRecv.size + 5 = maxLockSetSize))
   -- **PR #894 review**: and no *reachable* state declares all twenty-two --
   -- the re-donation members are live exactly when the endpoint has a queued
   -- sender and the invoker's pre-receive return exactly when it does not.  The
@@ -1309,35 +1296,9 @@ private def runLubMergeChecks : IO Unit := do
                             (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
                             none (some ⟨46⟩)
                             (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
-                            (some ⟨15⟩) none none none (senderCnodeRootObjId := none)
+                            (some ⟨15⟩) none none (senderCnodeRootObjId := none)
   assertBool "the widest reachable blocking .replyRecv that pops has 18 locks"
     (decide (blockingReplyRecv.size = 18))
-  -- **WS-HP HP10.6: and the redirect's shape is one NARROWER, not one wider.**
-  -- The origin member is live only where the pop is at the bottom of its stack,
-  -- and there it reads nothing below the head -- so the same footprint with the
-  -- redirect live drops the Reply below the head and that frame's caller's TCB
-  -- and gains one member: seventeen.  That is the whole content of "the ceiling
-  -- moved and the reachable figures did not", exercised at the same operands so
-  -- the difference is attributable to the exclusion and nothing else.
-  let blockingReplyRecvRedirecting := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                            (ObjId.ofNat 20) none (some ⟨42⟩) (some ⟨11⟩)
-                            (some ⟨60⟩) true (some ⟨9⟩) none
-                            none none (some ⟨13⟩)
-                            none (some ⟨46⟩)
-                            (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
-                            (some ⟨15⟩) none none (some ⟨16⟩) (senderCnodeRootObjId := none)
-  assertBool "the widest reachable blocking .replyRecv that REDIRECTS has 17 locks"
-    (decide (blockingReplyRecvRedirecting.size = 17))
-  assertBool "…so the redirect costs the reachable footprint nothing: two out, one in"
-    (decide (blockingReplyRecvRedirecting.size + 1 = blockingReplyRecv.size))
-  assertBool "…and the origin is declared there, in WRITE mode"
-    (decide ((tcbLock ⟨16⟩, AccessMode.write) ∈ blockingReplyRecvRedirecting.pairs))
-  -- NEGATIVE: the redirecting shape does NOT declare the two below-head members.
-  -- A footprint that named them anyway would pass the size assertions above only
-  -- by accident, and this is the direction that would break.
-  assertBool "NEGATIVE: a redirecting .replyRecv declares no frame below its head"
-    (!decide ((replyLock ⟨44⟩, AccessMode.write) ∈ blockingReplyRecvRedirecting.pairs
-              || (tcbLock ⟨12⟩, AccessMode.read) ∈ blockingReplyRecvRedirecting.pairs))
   -- WS-RM (`v0.35.6`): the *other* half of the exclusion -- the arm removes a
   -- mid-stack frame, so the pop's head, the frame below it and that frame's
   -- caller are all absent while the removal's members are present.  **WS-HP
@@ -1351,7 +1312,7 @@ private def runLubMergeChecks : IO Unit := do
                             none none (some ⟨13⟩)
                             none none
                             (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
-                            (some ⟨15⟩) (some ⟨50⟩) (some ⟨51⟩) none (senderCnodeRootObjId := none)
+                            (some ⟨15⟩) (some ⟨50⟩) (some ⟨51⟩) (senderCnodeRootObjId := none)
   assertBool "the widest reachable blocking .replyRecv that splices has 17 locks"
     (decide (blockingReplyRecvSplicing.size = 17))
   assertBool "…so the splice costs the reachable footprint nothing: it is one narrower"
@@ -1364,7 +1325,7 @@ private def runLubMergeChecks : IO Unit := do
                               (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
                               (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
                               (some ⟨45⟩) (some ⟨46⟩)
-                              none none none none none (some ⟨50⟩) (some ⟨51⟩) none (senderCnodeRootObjId := none)
+                              none none none none none (some ⟨50⟩) (some ⟨51⟩) (senderCnodeRootObjId := none)
   assertBool "the widest UNMERGED rendezvous .replyRecv shape has 18 locks"
     (decide (rendezvousReplyRecv.size = 18))
   -- …and this witness is deliberately the *unmerged* one: its
@@ -1390,7 +1351,7 @@ private def runLubMergeChecks : IO Unit := do
                 (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
                 (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
                 (some ⟨45⟩) (some ⟨46⟩)
-                none none none none none (some ⟨50⟩) (some ⟨51⟩) none (senderCnodeRootObjId := none)).size + 1
+                none none none none none (some ⟨50⟩) (some ⟨51⟩) (senderCnodeRootObjId := none)).size + 1
              = rendezvousReplyRecv.size))
   -- NEGATIVE: no reachable shape reaches the ceiling, which is the whole
   -- content of `lockSet_endpointReplyRecvOnCore_size_le_sharp` -- a witness
@@ -1398,7 +1359,6 @@ private def runLubMergeChecks : IO Unit := do
   assertBool "NEGATIVE: no reachable .replyRecv shape reaches maxLockSetSize"
     (!decide (blockingReplyRecv.size = maxLockSetSize
               || blockingReplyRecvSplicing.size = maxLockSetSize
-              || blockingReplyRecvRedirecting.size = maxLockSetSize
               || rendezvousReplyRecv.size = maxLockSetSize))
 
 private def runUnionChecks : IO Unit := do
@@ -1489,7 +1449,6 @@ private def runConsistencyRuntimeChecks : IO Unit := do
   -- chain-free one.
   let replyDon := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                     (some ⟨42⟩) (some ⟨7⟩) none (some ⟨44⟩) (some ⟨12⟩) none none none
-                    (some ⟨13⟩)
   let allOk_replyDon := replyDon.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .reply))
   assertBool "lockSet_endpointReply (with donation + owner): all kinds in permittedKinds .reply"
@@ -1806,7 +1765,7 @@ private def runPipChainStartChecks : IO Unit := do
     (let st := pipChainStart_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                  none none
      let ls := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                 none none none none none none none none none
+                 none none none none none none none none
      match st with
      | none => true
      | some tid => decide (ls.containsKey (.object ⟨.tcb, ObjId.ofNat tid.toNat⟩) = true))

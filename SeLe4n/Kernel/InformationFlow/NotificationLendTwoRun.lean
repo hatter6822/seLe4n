@@ -89,7 +89,7 @@ theorem shownWord_eq {P : Nat → Bool} {w₁ w₂ : Nat}
 /-- A context with the fields the projection erases or decides on its own
 (the thread word) zeroed: two contexts projecting the same agree here. -/
 def schedContextLinksErased (x : SchedContext) : SchedContext :=
-  { x with boundThreadCode := 0, scReply := none, donationOrigin := none, releaseNextCode := 0,
+  { x with boundThreadCode := 0, scReply := none, releaseNextCode := 0,
            notificationCode := 0, yieldFromCode := 0 }
 
 /-- The release reads and writes the refill fields only. -/
@@ -130,7 +130,7 @@ theorem schedContextLinksErased_of_project {x y : SchedContext}
 
 /-- The bind's context rewrite, as `schedContextBindPerform` writes it. -/
 def bindContextWrite (x : SchedContext) (τ k : Nat) : SchedContext :=
-  { x.releaseReadyHead τ with boundThreadCode := k, donationOrigin := none }
+  { x.releaseReadyHead τ with boundThreadCode := k }
 
 /-- The context rewrite keeps two contexts projecting the same: the release
 reads the timer, which both runs pass in, and the refill fields, which the

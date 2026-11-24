@@ -105,7 +105,7 @@ theorem applyReplyDonationOnCore_preserves_donationChainWellFormed_of_except
   · have hCtx := (replyFrameHeadHolder?_eq_some hHead).1
     have hChain' : donationChainWellFormed st' :=
       returnDonatedSchedContext_preserves_donationChainWellFormed_of_except st st'
-        holderVtid.val scId (replyDonationRecipient st scId targetVtid.val) n hObjInv
+        holderVtid.val scId targetVtid.val n hObjInv
         (hChainNone scId · hCtx)
         (hChainHead scId · · · hCtx) hRet
     rw [hEq]
@@ -241,9 +241,6 @@ theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
     -- stack, so at depth ≥ 2 it mints a `.donated` binding at the outer caller.
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid st scId serverTid originalOwner)
-    -- **`v0.35.157`**: the origin redirect's coherence obligation -- see the
-    -- single-core `applyReplyDonation_preserves_ipcInvariantFull`.
-    (hOriginCoherent : redirectedOriginFrameCoherent st rid targetVtid.val)
     -- **WS-ZA ZA6.34**: the unheld pop's coherence obligation -- see the
     -- single-core `applyReplyDonation_preserves_ipcInvariantFull`.
     (hUnheld : unheldReplyPopCoherent st rid targetVtid.val)
@@ -260,34 +257,10 @@ theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
       hHolderDonation scId holderVtid.val hHead
     -- **WS-HP HP10.7**: three cases, as in the single-core spine.
     have hFull' : ipcInvariantFull st' := by
-      by_cases hNoOrigin : donationOriginRecipient? st scId = none
-      · rw [replyDonationRecipient_eq_of_no_origin st scId targetVtid.val hNoOrigin] at hR
-        exact returnDonatedSchedContext_preserves_ipcInvariantFull st st' holderVtid scId
-          targetVtid.val hObjInv hInv hRet n
-          (donationReturnOuterValid_of_stackValid
-            (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
-      · obtain ⟨o, hOrigin⟩ : ∃ o, donationOriginRecipient? st scId = some o := by
-          cases hc : donationOriginRecipient? st scId with
-          | none => exact absurd hc hNoOrigin
-          | some o => exact ⟨o, rfl⟩
-        have hRecipEq : replyDonationRecipient st scId targetVtid.val = o :=
-          replyDonationRecipient_eq_origin st hOrigin
-        by_cases hSame : o = targetVtid.val
-        · rw [hRecipEq, hSame] at hR
-          exact returnDonatedSchedContext_preserves_ipcInvariantFull st st' holderVtid scId
-            targetVtid.val hObjInv hInv hRet n
-            (donationReturnOuterValid_of_stackValid
-              (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
-        · rw [hRecipEq] at hR
-          exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirected
-            st st' holderVtid scId targetVtid.val o hObjInv
-            (ipcInvariantFullExceptDonationOwner_of_full targetVtid.val hInv) hRet
-            (donationOriginRebindable_no_owner
-              (hOriginCoherent scId holderVtid.val o hHead hOrigin hSame)
-              (donationOriginRecipient?_resolves st hOrigin)
-              (donationOriginRecipient?_rebindable st hOrigin))
-            n
-            (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
+      exact returnDonatedSchedContext_preserves_ipcInvariantFull st st' holderVtid scId
+        targetVtid.val hObjInv hInv hRet n
+        (donationReturnOuterValid_of_stackValid
+          (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
     -- The migration writes only release-queue links; the deschedule
     -- writes only run-queue links.
     rw [hEq]
@@ -323,8 +296,6 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
     -- stack, so at depth ≥ 2 it mints a `.donated` binding at the outer caller.
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid st scId serverTid originalOwner)
-    -- **`v0.35.157`**: see `applyReplyDonationOnCore_preserves_ipcInvariantFull`.
-    (hOriginCoherent : redirectedOriginFrameCoherent st rid targetVtid.val)
     -- **WS-ZA ZA6.34**: see `applyReplyDonationOnCore_preserves_ipcInvariantFull`.
     (hUnheld : unheldReplyPopCoherent st rid targetVtid.val)
     (h : applyReplyDonationOnCore st rid targetVtid ownerHome = .ok st'') :
@@ -362,33 +333,10 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
           scId scId hRet hS0 hB0).2
       subst hWoken
       have hFull' : ipcInvariantFull st' := by
-        by_cases hNoOrigin : donationOriginRecipient? st scId = none
-        · rw [replyDonationRecipient_eq_of_no_origin st scId targetVtid.val hNoOrigin] at hR
-          exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st' holderVtid
-            scId targetVtid.val hObjInv hInv hRet n
-            (donationReturnOuterValid_of_stackValid
-              (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
-        · obtain ⟨o, hOrigin⟩ : ∃ o, donationOriginRecipient? st scId = some o := by
-            cases hc : donationOriginRecipient? st scId with
-            | none => exact absurd hc hNoOrigin
-            | some o => exact ⟨o, rfl⟩
-          have hRecipEq : replyDonationRecipient st scId targetVtid.val = o :=
-            replyDonationRecipient_eq_origin st hOrigin
-          by_cases hSame : o = targetVtid.val
-          · rw [hRecipEq, hSame] at hR
-            exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st'
-              holderVtid scId targetVtid.val hObjInv hInv hRet n
-              (donationReturnOuterValid_of_stackValid
-                (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
-          · rw [hRecipEq] at hR
-            exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirected
-              st st' holderVtid scId targetVtid.val o hObjInv hInv hRet
-              (donationOriginRebindable_no_owner
-                (hOriginCoherent scId holderVtid.val o hHead hOrigin hSame)
-                (donationOriginRecipient?_resolves st hOrigin)
-                (donationOriginRecipient?_rebindable st hOrigin))
-              n
-              (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
+        exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st' holderVtid
+          scId targetVtid.val hObjInv hInv hRet n
+          (donationReturnOuterValid_of_stackValid
+            (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
       -- The migration writes only release-queue links; the deschedule
       -- writes only run-queue links.
       rw [hEq]
@@ -401,7 +349,7 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
       (ipcInvariantFull_of_exceptDonationOwner hInv
         (donationOwnerValid_of_except_of_no_donation_owned_by hInv.donationOwnerValidExcept
           (fun tid tcb sc hTcb hBind => hAny ⟨tid, tcb, sc, hTcb, hBind⟩)))
-      hHolderDonation hStackValid hOriginCoherent hUnheld h
+      hHolderDonation hStackValid hUnheld h
 
 -- ============================================================================
 -- §5  RR2.11 — the cross-core `.reply` chain
@@ -421,7 +369,7 @@ theorem applyReplyDonationOnCore_preserves_objects_invExt
   · exact keepDonatedSchedContext_objects_invExt hObjInv hK
   · exact popUnheldReplyHead_objects_invExt hObjInv hPop
   · have hInv' := returnDonatedSchedContext_preserves_objects_invExt st st' holderVtid.val scId
-      (replyDonationRecipient st scId targetVtid.val) hObjInv n hR
+      targetVtid.val hObjInv n hR
     rw [hEq]
     exact descheduleAtPlacement_preserves_objects_invExt _ _
       (SchedContextOps.settleReturnedContext_objects_invExt _ _ _ hInv')
@@ -461,7 +409,7 @@ theorem applyReplyDonationOnCore_tcb_ipcState_backward
   · obtain ⟨t0, hT0, hE⟩ := hObj.get_tcb' hTcb'
     obtain ⟨tcb, hPre, hIpc, _⟩ :=
       returnDonatedSchedContext_tcb_ipcState_replyObject_backward st st' holder scId
-        (replyDonationRecipient st scId targetVtid.val) hObjInv newOwner? hRet t t0 hT0
+        targetVtid.val hObjInv newOwner? hRet t t0 hT0
     exact ⟨tcb, hPre, hIpc.trans (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE).symm⟩
 
 /-- **WS-RR RR8.16 (`v0.35.195`)**: a successful cross-core reply leaves the thread
@@ -518,7 +466,7 @@ theorem endpointReplyCrossCoreDispatch_ok_target_ready
             rw [hTV] at hOk hTcb
             simp only at hOk hTcb
             cases hDon : applyReplyDonationOnCore st1 rid targetV
-                (replyDonationRecipientHome st1 rid target) with
+                (determineTargetCore st1 target) with
             | error e => rw [hDon] at hOk; exact absurd hOk (by simp)
             | ok st2 =>
               rw [hDon] at hTcb
@@ -556,7 +504,7 @@ theorem endpointReplyCrossCoreDispatch_ok_target_ready
               rw [hTV] at hOk hTcb
               simp only at hOk hTcb
               cases hDon : applyReplyDonationOnCore st1 rid targetV
-                  (replyDonationRecipientHome st1 rid target) with
+                  (determineTargetCore st1 target) with
               | error e => rw [hDon] at hOk; exact absurd hOk (by simp)
               | ok st2 =>
                 rw [hDon] at hTcb
@@ -635,11 +583,6 @@ theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid (endpointReplyOnCore replier target msg executingCore st).1
           scId serverTid originalOwner)
-    -- **`v0.35.157`**: the origin redirect's coherence obligation, at the same
-    -- state and quantified over the answered frame like the trigger's own fields.
-    (hOriginCoherent : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st target = some rid →
-      redirectedOriginFrameCoherent (endpointReplyOnCore replier target msg executingCore st).1
-        rid target)
     -- **WS-ZA ZA6.34**: the unheld pop's coherence obligation, at the same state.
     (hUnheld : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st target = some rid →
       unheldReplyPopCoherent (endpointReplyOnCore replier target msg executingCore st).1
@@ -654,7 +597,7 @@ theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
   unfold endpointReplyCrossCoreDispatch
   cases hRep : endpointReplyOnCore replier target msg executingCore st with
   | mk st1 res =>
-    rw [hRep] at hReplyExc hReplyInv hStackValid hDonationReturned hHolderDonation hOriginCoherent hUnheld
+    rw [hRep] at hReplyExc hReplyInv hStackValid hDonationReturned hHolderDonation hUnheld
     cases res with
     | error e => exact hInv
     | ok replySgi =>
@@ -672,7 +615,7 @@ theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
       have hPopFull : ∀ (rid : SeLe4n.ReplyId) (targetV : SeLe4n.ValidThreadId)
           (st2 : SystemState), answeredReplyObject? st target = some rid →
           SeLe4n.ThreadId.toValid? target = some targetV →
-          applyReplyDonationOnCore st1 rid targetV (replyDonationRecipientHome st1 rid target)
+          applyReplyDonationOnCore st1 rid targetV (determineTargetCore st1 target)
             = .ok st2 → ipcInvariantFull st2 := by
         intro rid targetV st2 hRid hTV hDon
         have hTEq : targetV.val = target :=
@@ -684,7 +627,7 @@ theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
             rw [hRid] at hRid0
             exact (Option.some.inj hRid0) ▸ hHead0)
           (by rw [hTEq]; exact hHolderDonation rid hRid)
-          hStackValid (by rw [hTEq]; exact hOriginCoherent rid hRid)
+          hStackValid
           (by rw [hTEq]; exact hUnheld rid hRid) hDon
       cases hRec : recordedReplyServer? st target with
       | none =>
@@ -698,7 +641,7 @@ theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
           | some targetV =>
             simp only
             cases hDon : applyReplyDonationOnCore st1 rid targetV
-                (replyDonationRecipientHome st1 rid target) with
+                (determineTargetCore st1 target) with
             | error e => simp only; exact hInv
             | ok st2 => simp only; exact hPopFull rid targetV st2 hRid hTV hDon
       | some expected =>
@@ -719,7 +662,7 @@ theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
             | some targetV =>
               simp only
               cases hDon : applyReplyDonationOnCore st1 rid targetV
-                  (replyDonationRecipientHome st1 rid target) with
+                  (determineTargetCore st1 target) with
               | error e => simp only; exact hInv
               | ok st2 =>
                 simp only
@@ -783,8 +726,6 @@ theorem endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull
       (replyFrameHeadHolder?_of_no_head _ rid (hNoHead rid hRid)))
     hAllBudgetsNone
     hStackValid
-    (fun rid hRid scId holder origin hHead _ _ => by
-      rw [replyFrameHeadHolder?_of_no_head _ rid (hNoHead rid hRid)] at hHead; cases hHead)
     (fun rid hRid => unheldReplyPopCoherent_of_no_head target (hNoHead rid hRid))
 
 -- ============================================================================
@@ -989,7 +930,7 @@ theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed
       -- the frame it resolves, whether a thread holds the context or none does.
       have hPopChain : ∀ (rid : SeLe4n.ReplyId) (targetV : SeLe4n.ValidThreadId)
           (st2 : SystemState), answeredReplyObject? st target = some rid →
-          applyReplyDonationOnCore st1 rid targetV (replyDonationRecipientHome st1 rid target)
+          applyReplyDonationOnCore st1 rid targetV (determineTargetCore st1 target)
             = .ok st2 → donationChainWellFormed st2 := by
         intro rid targetV st2 hRid hApply
         have hDon : donationChainWellFormed st1 ∨
@@ -1048,7 +989,7 @@ theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed
           | some targetV =>
             simp only
             cases hApply : applyReplyDonationOnCore st1 rid targetV
-                (replyDonationRecipientHome st1 rid target) with
+                (determineTargetCore st1 target) with
             | error e => simp only; exact hChain
             | ok st2 => simp only; exact hPopChain rid targetV st2 hRid hApply
       | some expected =>
@@ -1069,7 +1010,7 @@ theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed
             | some targetV =>
               simp only
               cases hApply : applyReplyDonationOnCore st1 rid targetV
-                  (replyDonationRecipientHome st1 rid target) with
+                  (determineTargetCore st1 target) with
               | error e => simp only; exact hChain
               | ok st2 =>
                 simp only

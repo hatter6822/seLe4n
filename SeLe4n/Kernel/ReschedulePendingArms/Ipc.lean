@@ -718,8 +718,7 @@ theorem donateSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
               simp only []
               cases hS3 : storeObject clientTid.toObjId
                   (.tcb { clientTcb with
-                    scBindingScCode := 0, scBindingOwnerCode := 0,
-                    originScCode := donorOriginCode donorTcb clientScId clientTcb.originScCode }) s2 with
+                    scBindingScCode := 0, scBindingOwnerCode := 0 }) s2 with
               | error _ => intro h; cases h
               | ok p3 =>
                 obtain ⟨⟨⟩, s3⟩ := p3
@@ -1636,8 +1635,7 @@ theorem replyRecvPopDonation_stepCovers (e : CoreId) {rid : SeLe4n.ReplyId}
     stepCovers e st st' ∧ st'.objects.invExt := by
   unfold replyRecvPopDonation at h
   split at h
-  · dsimp only at h
-    split at h
+  · split at h
     · split at h
       · split at h
         · cases h

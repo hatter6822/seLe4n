@@ -133,7 +133,7 @@ theorem cancelBoundDonationOnCore {st st' : SystemState} {t : SeLe4n.ThreadId} {
   · rename_i scId _
     cases h
     have F1 := updateSchedContext st scId
-      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
+      (fun sc => { sc with boundThreadCode := 0, isActive := false }) hInv
     have F2 := F1.trans (purgeReplenishment _ scId F1.invExt)
     have F3 := F2.trans (updateTcb _ t
       (f := fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) F2.invExt

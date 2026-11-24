@@ -143,28 +143,19 @@ def replyRecvPopDonation (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId) :
         -- reconcile them).
         match holder.toValid?, target.toValid? with
         | some _, some _ =>
-            -- **WS-HP HP10.7**: the recipient at the bottom of the stack is the
-            -- reservation's recorded origin, and the migration's DESTINATION is
-            -- that thread's home core rather than the answered caller's.  Both
-            -- read `replyDonationRecipient`, which is the identity wherever no
-            -- origin is recorded -- so this is the pre-HP10.7 body verbatim on
-            -- every state before HP10.4 recorded one.  `oldScId` is in scope
-            -- here, so these are the same expressions the live `.reply` spine
-            -- resolves through `replyDonationRecipientHome`
-            -- (`replyDonationRecipientHome_of_head` is the tie).  One binding,
-            -- because "which thread receives the context" is one question and
-            -- the return and the migration must not be free to answer it twice.
-            let recipient := replyDonationRecipient st oldScId target
+            -- The recipient is the answered caller, as seL4-MCS's `reply_pop`
+            -- gives it (WS-SX SX12, D31), and the migration's destination is its
+            -- home core, as the live `.reply` spine resolves it.
             -- seL4-MCS's `reply_pop` donates only to a recipient holding no
             -- context; one that holds its own leaves the context with its holder,
             -- the head popped (`keepDonatedSchedContext`).  No thread loses a
             -- context there, so there is no holder to deschedule.
-            if donationRecipientAcceptable st recipient then
-              match returnDonatedSchedContextResolved st holder oldScId recipient with
+            if donationRecipientAcceptable st target then
+              match returnDonatedSchedContextResolved st holder oldScId target with
               | .error e => .error e
               | .ok st1' =>
                   .ok (some (oldScId, holder), SchedContextOps.settleReturnedContext st1'
-                    (determineTargetCore st recipient) oldScId)
+                    (determineTargetCore st target) oldScId)
             else
               match keepDonatedSchedContextResolved st holder oldScId with
               | .error e => .error e
@@ -949,8 +940,7 @@ def replyRecvTransferWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
 -- rewrites the receiver's binding between the reply leg and the receive leg, so a
 -- pre-state reading of the receive leg's donation guard would be a proxy for the
 -- guard the transition reads two legs later (*a proxy is not the fact*).  Reading
--- each leg at its own state is what `endpointReplyRecvWriteSet` has done since SM8.B.2,
--- and it is what WS-HP HP10.8 registered the reply arm's ORIGIN member for lacking;
+-- each leg at its own state is what `endpointReplyRecvWriteSet` has done since SM8.B.2;
 -- this footprint has no such asymmetry, because its resolution and the
 -- transition's are the same computation.
 --

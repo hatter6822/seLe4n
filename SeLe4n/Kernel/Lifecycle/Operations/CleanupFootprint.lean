@@ -74,7 +74,7 @@ def cancelDonationArmReplenishCores (st : SystemState) (_tid : SeLe4n.ThreadId)
   | .unbound => []
   | .bound scId | .donated scId _ =>
       SchedContextOps.purgeReplenishCores (st.updateSchedContext scId fun sc =>
-        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) scId
+        { sc with boundThreadCode := 0, isActive := false }) scId
 
 /-- **`v0.35.169`: the core a binding release moves a RESERVATION on.**
 
@@ -104,7 +104,7 @@ theorem cancelBoundDonationOnCore_replenishQueueOnCore_ne (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (c : CoreId) (scId : SeLe4n.SchedContextId)
     (hBind : tcb.schedContextBinding = .bound scId)
     (hne : c ∉ SchedContextOps.purgeReplenishCores (st.updateSchedContext scId fun sc =>
-        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) scId)
+        { sc with boundThreadCode := 0, isActive := false }) scId)
     (h : cancelBoundDonationOnCore st tid tcb = .ok st') :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   unfold cancelBoundDonationOnCore at h
@@ -122,7 +122,7 @@ theorem cancelDonatedDonationOnCore_replenishQueueOnCore_ne (st st' : SystemStat
     (owner : SeLe4n.ThreadId)
     (hBind : tcb.schedContextBinding = .donated scId owner)
     (hne : c ∉ SchedContextOps.purgeReplenishCores (st.updateSchedContext scId fun sc =>
-        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) scId)
+        { sc with boundThreadCode := 0, isActive := false }) scId)
     (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c :=
   cancelBoundDonationOnCore_replenishQueueOnCore_ne st st' tid _ c scId

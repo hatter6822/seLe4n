@@ -1207,13 +1207,11 @@ theorem endpointReplyOnCore_observer_atomic
     (donatedHead? answeredFrameAbove? : Option SeLe4n.ReplyId)
     -- **WS-HP HP3.1**: and at the frame-below arity.
     (answeredFrameBelow? : Option SeLe4n.ReplyId)
-    -- **WS-HP HP10.6**: and at the origin-recipient arity.
-    (originRecipient? : Option SeLe4n.ThreadId)
     (s : LockedSystemState) :
     threadIpcStateObserver observed
         (withLockSet
           (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? replyId
-            belowHeadReply? outerCaller? donatedHead? answeredFrameAbove? answeredFrameBelow? originRecipient?)
+            belowHeadReply? outerCaller? donatedHead? answeredFrameAbove? answeredFrameBelow?)
           executingCore (endpointReplyOnCore replier target msg executingCore) s).1.kernel
       = threadIpcStateObserver observed
           (endpointReplyOnCore replier target msg executingCore s.kernel).1 :=

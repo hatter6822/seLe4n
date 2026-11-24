@@ -814,10 +814,7 @@ its space slots may hold capabilities, which the zombie loop deletes after
 the finalisation, by the finalising delete (`zombiePasses`); a bound
 notification and a bound scheduling context are bound back to it, and a thread
 naming no context names no lender either (its binding codes read as the binding
-they encode).  A context that records it as a reservation's origin is no reason to refuse it: that origin
-counts only while the thread's own back-link names the context
-(`donationOriginRecipient?`), so the thread's record leaving with it ends the
-origin.  The admission is carried across the finalisation's own steps
+they encode).  The admission is carried across the finalisation's own steps
 (`finaliseThread_quiesces`): the notification unbind, run first on this state,
 reads nothing more (`notificationUnbindAdmitted`); the later steps keep their
 own guards, which the reply finalisation's steps share and the compiled context
@@ -1092,8 +1089,7 @@ bound back to it, as its own (`.bound`) or on loan (`.donated`), is no core's
 idle thread, is ready (queued, current on a core, or neither: the deschedule
 takes it off whichever core places it) or else on no core, whatever it waits
 on: a thread blocked sending or calling keeps waiting with no reservation, as
-seL4's `schedContext_unbindTCB` leaves it; and a context bound to no thread is
-lent by no one. -/
+seL4's `schedContext_unbindTCB` leaves it. -/
 @[inline] def schedContextFinaliseAdmitted (st : SystemState) (x : SeLe4n.ObjId) : Bool :=
   match st.getObject? x with
   | some (.schedContext sc) =>
@@ -1103,7 +1099,7 @@ lent by no one. -/
         match st.getReply? rid with
         | some r => replyStackLinkHeads x r.next
         | none => false) &&
-    (if sc.boundThreadCode == 0 then sc.donationOrigin.isNone
+    (if sc.boundThreadCode == 0 then true
      else
       let tid : SeLe4n.ThreadId := ⟨sc.boundThreadCode - 1⟩
       match st.getTcb? tid with

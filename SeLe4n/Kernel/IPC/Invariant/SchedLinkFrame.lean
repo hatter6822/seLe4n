@@ -958,9 +958,9 @@ theorem finaliseScRelease_preserves_schedContextLinkInvariant {s s' : SystemStat
   -- The budgets and affinities: two slot rewrites keeping them.
   have hAux : schedAuxAgree s s' := by
     have h1 := schedAuxAgree.updateSchedContext s scId
-      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
+      (fun sc => { sc with boundThreadCode := 0, isActive := false }) hInv
     have h2 := schedAuxAgree.updateTcb (s.updateSchedContext scId
-      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })) t
+      (fun sc => { sc with boundThreadCode := 0, isActive := false })) t
       (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
       (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv) (fun _ => ⟨rfl, rfl⟩)
     exact (h1.trans h2).trans (schedAuxAgree.of_objectsAgreeOffReleaseLinks hObjs)
@@ -1310,7 +1310,7 @@ theorem SchedLinkFrame.storeDonationHeadPop {st st' : SystemState} {scId : SeLe4
     by rw [storeDonationHeadPop_scheduler_eq h]⟩
 
 /-- **The sever writes no scheduling link**: the context stored over itself
-with a new head and origin — no budget, binding code or release field — then
+with a new head — no budget, binding code or release field — then
 the head pop. -/
 theorem SchedLinkFrame.severUnheldSchedContext {st st' : SystemState}
     {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
@@ -1321,7 +1321,7 @@ theorem SchedLinkFrame.severUnheldSchedContext {st st' : SystemState}
   have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hInv hS1
   have p1 : ∀ {α : Type} (p : Option KernelObject → α),
       (p (some (.schedContext (donationSeverSchedContext sc
-        (head?.bind (fun q => q.2.prev)) newOwner?))) = p (some (.schedContext sc))) →
+        (head?.bind (fun q => q.2.prev))))) = p (some (.schedContext sc))) →
       ∀ oid : SeLe4n.ObjId, p s1.objects[oid]? = p st.objects[oid]? := by
     intro α p hp oid
     by_cases e : oid = scId.toObjId
@@ -1331,7 +1331,7 @@ theorem SchedLinkFrame.severUnheldSchedContext {st st' : SystemState}
     SchedLinkFrame st s1).trans (SchedLinkFrame.storeDonationHeadPop hInv1 hS2)
 
 /-- **The held pop writes no budget, affinity or release field**: the context
-stored over itself with a new head and origin, the head pop, and the holder's
+stored over itself with a new head, the head pop, and the holder's
 binding codes. -/
 theorem keepDonatedSchedContext_auxReleaseAgree {st st' : SystemState}
     {holder : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId} {newOwner? : Option SeLe4n.ThreadId}
@@ -1347,7 +1347,7 @@ theorem keepDonatedSchedContext_auxReleaseAgree {st st' : SystemState}
   have F2 := SchedLinkFrame.storeDonationHeadPop hInv1 hS2
   have p1 : ∀ {α : Type} (p : Option KernelObject → α),
       (p (some (.schedContext (donationSeverSchedContext sc
-        (head?.bind (fun q => q.2.prev)) newOwner?))) = p (some (.schedContext sc))) →
+        (head?.bind (fun q => q.2.prev))))) = p (some (.schedContext sc))) →
       ∀ oid : SeLe4n.ObjId, p s1.objects[oid]? = p st.objects[oid]? := by
     intro α p hp oid
     by_cases e : oid = scId.toObjId
@@ -1420,7 +1420,7 @@ theorem returnUnheldSchedContext_preserves_schedContextLinkInvariant {st st' : S
   have eO : st'.objects = s3.objects := by rw [hEq, markKeyChangeFrom_objects]
   have p1 : ∀ {α : Type} (p : Option KernelObject → α),
       (p (some (.schedContext (donationReturnSchedContext sc owner
-        (head?.bind (fun q => q.2.prev)) newOwner?))) = p (some (.schedContext sc))) →
+        (head?.bind (fun q => q.2.prev))))) = p (some (.schedContext sc))) →
       ∀ oid : SeLe4n.ObjId, p s1.objects[oid]? = p st.objects[oid]? := by
     intro α p hp oid
     by_cases e : oid = scId.toObjId
@@ -1468,7 +1468,7 @@ theorem returnUnheldSchedContext_preserves_schedContextLinkInvariant {st st' : S
     rw [‹donationRecipientAcceptable st owner = true›] at e
     revert e; cases ot0.schedContextBinding <;> simp [BEq.beq]
   have hBd := donationReturnBinding_stored ot0 scId newOwner?
-  have hPostBt : ∀ nh, (donationReturnSchedContext sc owner nh newOwner?).boundThread
+  have hPostBt : ∀ nh, (donationReturnSchedContext sc owner nh).boundThread
       = some owner := by
     intro nh
     unfold SchedContext.boundThread donationReturnSchedContext
@@ -1694,7 +1694,7 @@ theorem ownerCleared_preserves_schedContextLinkInvariant (s : SystemState)
     exact h.replenishAffinity c s' t hMem sc hS tid hb'
 
 /-- **The thread-side cut keeps every scheduling-link invariant** (WS-ZA
-ZA6.34): the reply stored over itself and the context's head and origin cleared
+ZA6.34): the reply stored over itself and the context's head cleared
 write nothing the invariants read; the holder's loan made its own is
 `ownerCleared_preserves_schedContextLinkInvariant`; the key hook writes the
 scheduler's flags alone. -/
@@ -1709,7 +1709,7 @@ theorem cutCancelledCallerHead_preserves_schedContextLinkInvariant (s : SystemSt
         (by rw [hRo]; rfl)
       have hI1 := storeObject_preserves_objects_invExt s0 s1 _ _ h0.1 hS
       have F2 := SchedLinkFrame.updateSchedContext s1 scId
-        (fun sc => { sc with scReply := none, donationOrigin := none }) hI1 (fun _ => rfl)
+        (fun sc => { sc with scReply := none }) hI1 (fun _ => rfl)
       exact ⟨SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hI1,
         (F1.trans F2).preserves h0.2⟩)
     (fun s0 scId holder ht o h0 hBt hT hb => by

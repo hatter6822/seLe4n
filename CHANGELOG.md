@@ -1,3 +1,42 @@
+## v0.37.41 — The reply pop gives the context to the caller it answers (WS-SX SX12)
+
+seL4-MCS's `reply_pop` gives a scheduling context to the caller of the frame
+it answers (`schedContext_donate(sc, tcb)`).  This kernel now does the same,
+on every arm and on both surfaces (owner decision D31, "Match seL4").
+
+- **The redirect is deleted (SX12.1).**  From `v0.35.53` (WS-HP HP10.9) a
+  bottom-of-stack pop gave the context to a donor the context recorded
+  (`SchedContext.donationOrigin`, checked against `TCB.originScCode`).  On a
+  middle-frame shape that gave the context to a thread whose frame had already
+  left the stack (the middle-frame recipient bug, Low).  The redirect's
+  resolver and guards, both fields, every write, clear, projection clause,
+  boot shape and frozen mirror of them, the reply-path footprint member and
+  bound that counted the redirected recipient, and the depth-two payoff
+  theorem are removed.  The reply-receive lenders premise lost its origin
+  conjunct.  The dispatch's replenishment migration goes to the answered
+  caller's home core, and the frozen composite reads the same caller.
+- **The middle-frame witness is permanent.**  `runMiddleFrameRecipientChecks`
+  (`tests/SmpIpcSuite.lean`) builds O → M → N under a server holding the
+  context, runs the live suspend of M and the live reply to N, and asserts
+  that N is given the context and O stays unbound.  §3.20 and `FO-044` assert
+  the answered caller on the live spine and on the frozen surface.
+- **Prose sweep (SX12.2).**  Comments and printed labels no longer name the
+  donation cancellation SX8 retired, or the deleted origin.
+- **The suspend footprint (SX12.3).**  Its state-level member is deleted: the
+  suspend writes objects in place and changes no table structure, as the
+  `.bound` and `.donated` arms already declared.  The suspend's bound is
+  seventeen (`lockSet_tcbSuspendOnCore_size_le_seventeen`).
+- **Carve pins.**  A carved thread is one heap cell and 32 bytes smaller
+  (24 cells, 2336 bytes: the origin code and the prebuilt `some tid` cell
+  are gone), and a carved context 8 bytes smaller (8 cells, 432 bytes).  The
+  heap gate's carve pins are moved to match.
+- **Lock ceiling.**  The widest `.replyRecv` footprint is one member narrower.
+  `maxLockSetSize` stays at 32, since it is an upper bound.
+- **Docs.**  The spec's §8.12.15 is rewritten for the seL4 outcome; the claim
+  index row for the depth-2 payoff is replaced; the debt register's origin
+  member row is closed and the depth-2 accounting row notes the withdrawal;
+  the plan marks SX12 landed.
+
 ## v0.37.40 — Blocked threads carry their endpoint's label (WS-SX SX11)
 
 Every thread blocked sending, calling or receiving on an endpoint has that

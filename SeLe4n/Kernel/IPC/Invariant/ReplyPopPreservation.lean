@@ -49,11 +49,6 @@ theorem applyReplyDonation_preserves_ipcInvariantFull
     -- This is the half of that obligation no O(1) guard can decide.
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid st scId serverTid originalOwner)
-    -- **`v0.35.157`**: the origin redirect's guard is the bind's own admissibility,
-    -- and what makes it sound is the binding → head coherence fact at the resolved
-    -- origin -- gated on the trigger, the resolver and the distinctness, so it
-    -- costs every reply that redirects nothing exactly nothing.
-    (hOriginCoherent : redirectedOriginFrameCoherent st rid targetVtid.val)
     -- **WS-ZA ZA6.34**: the unheld pop's obligation, vacuous where the frame
     -- heads nothing or a held context.
     (hUnheld : unheldReplyPopCoherent st rid targetVtid.val)
@@ -70,40 +65,11 @@ theorem applyReplyDonation_preserves_ipcInvariantFull
   · exact popUnheldReplyHead_preserves_ipcInvariantFull hObjInv hInv hStackValid hUnheld hNoH hEq
   · have hRet : replyDonationReturn? st holderVtid.val = some (scId, targetVtid.val) :=
       hHolderDonation scId holderVtid.val hHead
-    -- **WS-HP HP10.7: three cases, and only the third is new.**  No origin
-    -- recorded, or one that *is* the answered caller, both reduce the redirect to
-    -- the identity and run the pre-HP10.7 argument verbatim; a distinct origin
-    -- takes the generalised bundle, whose extra hypothesis is exactly what the
-    -- redirect's own `donationOriginRebindable` guard supplies.
-    have hFull' : ipcInvariantFull st' := by
-      by_cases hNoOrigin : donationOriginRecipient? st scId = none
-      · rw [replyDonationRecipient_eq_of_no_origin st scId targetVtid.val hNoOrigin] at hR
-        exact returnDonatedSchedContext_preserves_ipcInvariantFull st st' holderVtid scId
-          targetVtid.val hObjInv hInv hRet newOwner?
-          (donationReturnOuterValid_of_stackValid
-            (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
-      · obtain ⟨o, hOrigin⟩ : ∃ o, donationOriginRecipient? st scId = some o := by
-          cases hc : donationOriginRecipient? st scId with
-          | none => exact absurd hc hNoOrigin
-          | some o => exact ⟨o, rfl⟩
-        have hRecipEq : replyDonationRecipient st scId targetVtid.val = o :=
-          replyDonationRecipient_eq_origin st hOrigin
-        by_cases hSame : o = targetVtid.val
-        · rw [hRecipEq, hSame] at hR
-          exact returnDonatedSchedContext_preserves_ipcInvariantFull st st' holderVtid scId
-            targetVtid.val hObjInv hInv hRet newOwner?
-            (donationReturnOuterValid_of_stackValid
-              (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
-        · rw [hRecipEq] at hR
-          exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirected
-            st st' holderVtid scId targetVtid.val o hObjInv
-            (ipcInvariantFullExceptDonationOwner_of_full targetVtid.val hInv) hRet
-            (donationOriginRebindable_no_owner
-              (hOriginCoherent scId holderVtid.val o hHead hOrigin hSame)
-              (donationOriginRecipient?_resolves st hOrigin)
-              (donationOriginRecipient?_rebindable st hOrigin))
-            newOwner?
-            (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
+    have hFull' : ipcInvariantFull st' :=
+      returnDonatedSchedContext_preserves_ipcInvariantFull st st' holderVtid scId
+        targetVtid.val hObjInv hInv hRet newOwner?
+        (donationReturnOuterValid_of_stackValid
+          (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
     rw [hEq]
     exact ipcInvariantFull_of_objectsAgreeOffRunLinks
       (removeRunnable_objectsAgreeOffRunLinks _ holderVtid.val)
@@ -144,8 +110,6 @@ theorem applyReplyDonation_establishes_ipcInvariantFull_of_except
     -- **WS-OD OD4.4**: see `applyReplyDonation_preserves_ipcInvariantFull`.
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid st scId serverTid originalOwner)
-    -- **`v0.35.157`**: see `applyReplyDonation_preserves_ipcInvariantFull`.
-    (hOriginCoherent : redirectedOriginFrameCoherent st rid targetVtid.val)
     -- **WS-ZA ZA6.34**: see `applyReplyDonation_preserves_ipcInvariantFull`.
     (hUnheld : unheldReplyPopCoherent st rid targetVtid.val)
     (h : applyReplyDonation st rid targetVtid = .ok st'') :
@@ -185,34 +149,11 @@ theorem applyReplyDonation_establishes_ipcInvariantFull_of_except
         (answeredHeadHolder_donation_owner_eq st targetVtid.val holderVtid.val woken sTcb0
           scId scId hRet hS0 hB0).2
       subst hWoken
-      have hFull' : ipcInvariantFull st' := by
-        by_cases hNoOrigin : donationOriginRecipient? st scId = none
-        · rw [replyDonationRecipient_eq_of_no_origin st scId targetVtid.val hNoOrigin] at hR
-          exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st' holderVtid
-            scId targetVtid.val hObjInv hInv hRet newOwner?
-            (donationReturnOuterValid_of_stackValid
-              (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
-        · obtain ⟨o, hOrigin⟩ : ∃ o, donationOriginRecipient? st scId = some o := by
-            cases hc : donationOriginRecipient? st scId with
-            | none => exact absurd hc hNoOrigin
-            | some o => exact ⟨o, rfl⟩
-          have hRecipEq : replyDonationRecipient st scId targetVtid.val = o :=
-            replyDonationRecipient_eq_origin st hOrigin
-          by_cases hSame : o = targetVtid.val
-          · rw [hRecipEq, hSame] at hR
-            exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st'
-              holderVtid scId targetVtid.val hObjInv hInv hRet newOwner?
-              (donationReturnOuterValid_of_stackValid
-                (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
-          · rw [hRecipEq] at hR
-            exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirected
-              st st' holderVtid scId targetVtid.val o hObjInv hInv hRet
-              (donationOriginRebindable_no_owner
-                (hOriginCoherent scId holderVtid.val o hHead hOrigin hSame)
-                (donationOriginRecipient?_resolves st hOrigin)
-                (donationOriginRecipient?_rebindable st hOrigin))
-              newOwner?
-              (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
+      have hFull' : ipcInvariantFull st' :=
+        returnDonatedSchedContext_establishes_ipcInvariantFull_of_except st st' holderVtid
+          scId targetVtid.val hObjInv hInv hRet newOwner?
+          (donationReturnOuterValid_of_stackValid
+            (hStackValid scId holderVtid.val targetVtid.val) hRes) hR
       rw [hEq]
       exact ipcInvariantFull_of_objectsAgreeOffRunLinks
         (removeRunnable_objectsAgreeOffRunLinks _ holderVtid.val)
@@ -224,6 +165,6 @@ theorem applyReplyDonation_establishes_ipcInvariantFull_of_except
       (ipcInvariantFull_of_exceptDonationOwner hInv
         (donationOwnerValid_of_except_of_no_donation_owned_by hInv.donationOwnerValidExcept
           (fun tid tcb sc hTcb hBind => hAny ⟨tid, tcb, sc, hTcb, hBind⟩)))
-      hHolderDonation hStackValid hOriginCoherent hUnheld h
+      hHolderDonation hStackValid hUnheld h
 
 end SeLe4n.Kernel

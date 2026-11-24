@@ -196,7 +196,7 @@ theorem cancelIpcBlockingReclaimed_stepCovers (e : CoreId) (st : SystemState)
   · exact stepCovers_trans hMig (descheduleAt_stepCovers e _ _ _)
 
 /-- WS-ZA ZA6.33: **the head cut covers**: the reply store and the context's
-head and origin move no key input, and the holder's binding made its own ends
+head move no key input, and the holder's binding made its own ends
 in the key hook. -/
 theorem cutCancelledCallerHead_stepCovers (e : CoreId) (st : SystemState) (tcb : TCB)
     (hInv : st.objects.invExt) :

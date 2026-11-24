@@ -1074,17 +1074,13 @@ are unmoved at eighteen and seventeen; what absorbs it is the unconditional
 admissible section: `1000 / (23 · 3) = 14` µs, and the uniform 60 µs envelope
 moves 3960 → 4140 µs.
 
-**WS-HP HP10.6 takes it to twenty-four**, for the TCB a bottom-of-stack pop
-redirects the reservation to (`donationOriginRecipient?`): HP10.7 hands a
-reservation back to its recorded *origin* rather than to the thread stack
-reachability names, which is a different TCB exactly on the out-of-order removal
-that phase exists for, so the pop writes an object no member covered.  Declared
-one phase ahead of the arm, as HP3.2 was.  The reachable figures do not move —
-the origin member is live only at the bottom of a stack, where the two below-head
-members are absent (`replyStackBelowHead?_of_originRecipient`), so a reachable
-footprint trades two members for one — and the cost is the admissible section
-again: `1000 / (24 · 3) = 13` µs, with the uniform 60 µs envelope moving
-4140 → 4320 µs.
+**WS-HP HP10.6 took it to twenty-four**, for the TCB a bottom-of-stack pop then
+redirected the reservation to, its recorded origin: `1000 / (24 · 3) = 13` µs,
+with the uniform 60 µs envelope moving 4140 → 4320 µs.  **WS-SX SX12 (D31)
+deleted that redirect and its member** — the pop gives the context to the
+answered caller, as seL4-MCS `reply_pop` does — and the ceiling was left where
+the later raises below put it, since it is an upper bound and the arity under it
+only fell.
 
 **WS-ZA ZA4.6 takes it to twenty-seven**, for the reply-waiter queue that
 priority inheritance walks: the reply leg's `unlinkReplyWaiter` links the

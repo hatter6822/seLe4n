@@ -970,15 +970,13 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
      _faultX4, _faultX5, _faultX6, _faultX7, _fpContext, ntfnPrevCode, ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
      replyWaiterPrevCode, replyWaiterNextCode, replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
-     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend, _originScCode,
+     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend,
      -- The space slots' spare records are no slot's capability (`SpareCells`).
      _spaceSpare,
      -- The taint words name no object.
      _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated, _yieldToCode,
      -- The grant-reply bit of a blocked sender names no object.
-     _ipcCanGrantReply,
-     -- The id cell is the thread's own id (`TCB.idCell_eq`).
-     _idCell, _hIdCell⟩ =>
+     _ipcCanGrantReply⟩ =>
     SeLe4n.Kernel.isIdleThreadId tid ||
     SeLe4n.Kernel.isIdleObjId (TCB.spaceCellObject spaceCells[0]) ||
     SeLe4n.Kernel.isIdleObjId (TCB.spaceCellObject spaceCells[1]) ||
@@ -1088,7 +1086,7 @@ def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
      _refillSlot3Amount, _refillSlot3EligibleAt, _refillSlot4Amount, _refillSlot4EligibleAt,
      _refillSlot5Amount, _refillSlot5EligibleAt, _refillSlot6Amount, _refillSlot6EligibleAt,
      _refillSlot7Amount, _refillSlot7EligibleAt,
-     boundThreadCode, scReply, donationOrigin, _isActive,
+     boundThreadCode, scReply, _isActive,
      releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode,
      _notificationCode, _headLinkCell, _hHeadLinkCell⟩ =>
     SeLe4n.Kernel.isIdleObjId scId.toObjId ||
@@ -1096,12 +1094,7 @@ def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
     -- context by its code (`0` is none, `s + 1` is `s`).
     (releaseNextCode != 0 && SeLe4n.Kernel.isIdleObjId (SeLe4n.ObjId.ofNat (releaseNextCode - 1))) ||
     (SeLe4n.ThreadId.ofOptCode boundThreadCode).any SeLe4n.Kernel.isIdleThreadId ||
-    scReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
-    -- **WS-HP HP10.3**: and the recorded reservation origin, which is a
-    -- `ThreadId` and so can name a reserved idle thread exactly as `boundThread`
-    -- can.  Classified here because the constructor destructuring above refused
-    -- to elaborate until it was -- the PR #889 round-8 pin doing its job.
-    donationOrigin.any SeLe4n.Kernel.isIdleThreadId
+    scReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId)
 
 /-- PR #889 review round 8: a boot **Reply**'s own id, its blocked caller and its
     two reply-stack links — `prev` (a reply object id the round-6 arm did not
@@ -2357,7 +2350,7 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
      _faultX4, _faultX5, _faultX6, _faultX7, _fpContext, _ntfnPrevCode, _ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
      _replyWaiterPrevCode, _replyWaiterNextCode, _replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
-     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend, _originScCode,
+     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend,
      -- The space slots' spare records are no slot's capability (`SpareCells`).
      _spaceSpare,
      -- The taint words name no object.
@@ -2365,9 +2358,7 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
      -- The yield link is empty (WS-ZA ZA6.6): a boot state has yielded to nothing.
      _yieldToCode,
      -- The grant-reply bit of a blocked sender names no object.
-     _ipcCanGrantReply,
-     -- The id cell is the thread's own id (`TCB.idCell_eq`).
-     _idCell, _hIdCell⟩ =>
+     _ipcCanGrantReply⟩ =>
     tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
     tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&
     tcb.timeoutBudget.isNone &&
@@ -2487,7 +2478,7 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
      _refillSlot3Amount, _refillSlot3EligibleAt, _refillSlot4Amount, _refillSlot4EligibleAt,
      _refillSlot5Amount, _refillSlot5EligibleAt, _refillSlot6Amount, _refillSlot6EligibleAt,
      _refillSlot7Amount, _refillSlot7EligibleAt,
-     _boundThread, _scReply, _donationOrigin, _isActive,
+     _boundThread, _scReply, _isActive,
      _releaseNextCode, _releaseCoreCode, _releaseAt, _consumed, _yieldFromCode,
      _notificationCode, _headLinkCell, _hHeadLinkCell⟩ =>
     sc.period.isPositive &&
@@ -2498,11 +2489,6 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
     sc.replenishments.all (fun r => decide (r.amount.val ≤ sc.budget.val)) &&
     sc.boundThread.isNone &&
     sc.scReply.isNone &&
-    -- **WS-HP HP10.3**: and no recorded reservation origin.  The origin names the
-    -- thread a loan came from, and a boot state has made no loan -- every
-    -- admissible boot SchedContext is unbound with an empty reply stack, so a
-    -- config-supplied origin could only name a loan that does not exist.
-    sc.donationOrigin.isNone &&
     -- **WS-ZA ZA6.3**: and on no release queue.  Boot installs every core's
     -- release queue empty, so a config-supplied core could only name a queue
     -- place that does not exist.
@@ -2534,7 +2520,6 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
        sc.replenishments.all (fun r => decide (r.amount.val ≤ sc.budget.val)) &&
        sc.boundThread.isNone &&
        sc.scReply.isNone &&
-       sc.donationOrigin.isNone &&
        sc.releaseCoreCode == 0 &&
        decide (sc.refillTotal = sc.budget.val) &&
        decide (sc.refillSize ≤ sc.refillLimit) &&
@@ -2658,8 +2643,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
     -- reply stack
     (∀ sc, obj = .schedContext sc →
       schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
-      -- **WS-HP HP10.3**: and no recorded reservation origin.
-      sc.donationOrigin = none ∧ sc.releaseCoreCode = 0 ∧ sc.consumed = 0 ∧
+      sc.releaseCoreCode = 0 ∧ sc.consumed = 0 ∧
       sc.yieldFromCode = 0 ∧ sc.notificationCode = 0) ∧
     -- WS-SM SM6.D / PR #822: a boot Reply is inert — no blocked caller and no
     -- reply-stack link in either direction.
@@ -2745,15 +2729,15 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   | schedContext sc =>
     simp only [bootSafeObjectCheck, bootSafeSchedContextCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩,
-      hUnbound⟩, hNoReplyStack⟩, hNoOrigin⟩, hNoRelease⟩, hTot⟩, hFit⟩, hNoConsumed⟩, hNoYield⟩, hNoNtfn⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩,
+      hUnbound⟩, hNoReplyStack⟩, hNoRelease⟩, hTot⟩, hFit⟩, hNoConsumed⟩, hNoYield⟩, hNoNtfn⟩ := h
     refine ⟨fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun s hs => ?_,
             fun _ he => by injection he, fun _ he => by injection he⟩
     injection hs; subst_vars
     refine ⟨?_, Option.eq_none_of_isNone hUnbound, Option.eq_none_of_isNone hNoReplyStack,
-            Option.eq_none_of_isNone hNoOrigin, by simpa using hNoRelease,
+            by simpa using hNoRelease,
             by simpa using hNoConsumed, by simpa using hNoYield, by simpa using hNoNtfn⟩
     unfold schedContextWellFormed
     refine ⟨⟨hPeriod, hBudgetPeriod, hRemaining, hRepLen⟩, ⟨hRemaining, hBudgetPeriod⟩,
@@ -2811,7 +2795,7 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
       SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot vs) ∧
     (∀ sc, obj = .schedContext sc →
       schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
-      sc.donationOrigin = none ∧ sc.releaseCoreCode = 0 ∧ sc.consumed = 0 ∧
+      sc.releaseCoreCode = 0 ∧ sc.consumed = 0 ∧
       sc.yieldFromCode = 0 ∧ sc.notificationCode = 0) ∧
     (∀ r, obj = .reply r →
       r.caller = none ∧ r.prev = none ∧ r.next = none) ∧
@@ -4295,15 +4279,13 @@ def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : T
      _faultX4, _faultX5, _faultX6, _faultX7, _fpContext, _ntfnPrevCode, _ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
      _replyWaiterPrevCode, _replyWaiterNextCode, _replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
-     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend, _originScCode,
+     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend,
      -- The space slots' spare records are no slot's capability (`SpareCells`).
      _spaceSpare,
      -- The taint words name no object.
      _taintTag0, _taintTag1, _taintTag2, _taintTag3, _taintTag4, _taintTag5, _taintTag6, _taintTag7, _taintCount, _taintSaturated, _yieldToCode,
      -- The grant-reply bit of a blocked sender names no object.
-     _ipcCanGrantReply,
-     -- The id cell is the thread's own id (`TCB.idCell_eq`).
-     _idCell, _hIdCell⟩ =>
+     _ipcCanGrantReply⟩ =>
     match tcb.cpuAffinity with
     | some c => cores.contains c
     | none   => true
@@ -5646,18 +5628,10 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   -- OD2.1 — must head no reply stack: every admissible boot Reply is inert,
   -- so a config-supplied `scReply` could only dangle.
   --
-  -- **WS-HP HP10.3, corrected at `v0.35.97`**: and no recorded reservation
-  -- origin.  HP10.3 added that conjunct to the Bool mirror
-  -- (`bootSafeSchedContextCheck`) and to the soundness bridge
-  -- (`bootSafeObjectCheck_sound`, then `…_sound_structural`) and **not here**, so this
-  -- Prop-level API — the one the post-boot safety theorems are stated over —
-  -- certified a configuration the live validator rejects, carrying a loan
-  -- history no boot state can have made.  One question, two answers, with the
-  -- executable side the stricter: the direction that reads as coverage.
   -- WS-ZA ZA6.5: and no consumed time, as the executable check refuses one.
   (∀ sc, obj = .schedContext sc →
     schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
-      sc.donationOrigin = none ∧ sc.releaseCoreCode = 0 ∧ sc.consumed = 0 ∧
+      sc.releaseCoreCode = 0 ∧ sc.consumed = 0 ∧
       sc.yieldFromCode = 0 ∧ sc.notificationCode = 0) ∧
   -- WS-SM SM6.D: a boot Reply is inert — no blocked caller and no reply-stack
   -- link in either direction.
@@ -5744,7 +5718,7 @@ def bootObjectShapeOffLinks (obj : KernelObject) : Prop :=
     SeLe4n.Platform.RPi5.VSpaceBoot.bootVSpaceRootMappingsSafe vs) ∧
   (∀ sc, obj = .schedContext sc →
     schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
-      sc.donationOrigin = none ∧ sc.releaseCoreCode = 0 ∧ sc.consumed = 0 ∧
+      sc.releaseCoreCode = 0 ∧ sc.consumed = 0 ∧
       sc.yieldFromCode = 0 ∧ sc.notificationCode = 0) ∧
   (∀ r, obj = .reply r →
     r.caller = none ∧ r.prev = none ∧ r.next = none) ∧
@@ -6597,7 +6571,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         rw [((hShape _ _ hO).2.2.2.1 t rfl).2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1]
       | schedContext sc =>
         show (0, sc.yieldFromCode) = (0, 0)
-        rw [((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2.2.2.2.1]
+        rw [((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2.2.2.1]
       | _ => rfl
   -- 22. bookkeepingAgrees (WS-UC UC2): every intermediate state carries the
   -- agreement, and the caller bounds the object count.
@@ -6613,7 +6587,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         rw [((hShape _ _ hO).2.1 n rfl).2.2.2.2]
       | schedContext sc =>
         show (0, sc.notificationCode) = (0, 0)
-        rw [((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2.2.2.2.2]
+        rw [((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2.2.2.2]
       | _ => rfl
   -- Compose all 23 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
@@ -8886,7 +8860,7 @@ theorem proofLayerInvariantBundle_of_bootLinkedShape (ist : IntermediateState)
       | some o =>
         cases o with
         | schedContext sc =>
-          have h0 := ((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2.2
+          have h0 := ((hShape _ _ hO).2.2.2.2.2.1 sc rfl).2.2.2
           simp [h0]
         | _ => rfl)
   -- WS-ZA ZA6.4: no boot context is bound, every one is well formed, and the

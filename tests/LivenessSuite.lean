@@ -179,7 +179,7 @@ open SeLe4n.Model
 -- ============================================================================
 -- Surface anchor: WS-RC R5 (Phase R5) — Scheduler / Lifecycle behaviour symmetry
 -- ============================================================================
--- R5.A (DEEP-SUSP-02): cancelDonation split into two named arms.
+-- R5.A (DEEP-SUSP-02): the donation arm split into two named arms.
 -- R5.B (DEEP-SUSP-01): PIP recomputation on resume — structural witnesses.
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_objectIndex_eq
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_objects_eq_at_tid
@@ -386,6 +386,6 @@ def main : IO Unit := do
   IO.println "  ✓ AN5-E.1: DeploymentSchedulingConfig.wellFormed rejects degenerate configs"
   IO.println "  ✓ AN5-E.3: functional tests — concrete CanonicalDeploymentProgress"
   IO.println "  ✓ AN5-D: rpi5_cbs_window_replenishments_bounded + _concrete (SC-M01)"
-  IO.println "  ✓ WS-RC R5: cancelDonation split, restoreToReady, effectiveSchedParams, domain propagation"
+  IO.println "  ✓ WS-RC R5: the donation arm split, restoreToReady, effectiveSchedParams, domain propagation"
   IO.println "=== All surface anchors verified (95 base + R5 additions) ==="
   return ()

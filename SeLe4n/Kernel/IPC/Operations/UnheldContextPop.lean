@@ -53,7 +53,7 @@ def returnUnheldSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
     match donationHeadOf? st scId sc with
     | .error e => .error e
     | .ok head? =>
-      let sc' := donationReturnSchedContext sc owner (head?.bind (fun p => p.2.prev)) newOwner?
+      let sc' := donationReturnSchedContext sc owner (head?.bind (fun p => p.2.prev))
       match storeObject scId.toObjId (.schedContext sc') st with
       | .error e => .error e
       | .ok ((), st1) =>
@@ -101,7 +101,7 @@ def severUnheldSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
     | .error e => .error e
     | .ok head? =>
       match storeObject scId.toObjId
-          (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
+          (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev))))
           st with
       | .error e => .error e
       | .ok ((), st1) => storeDonationHeadPop scId head? st1
@@ -178,7 +178,7 @@ theorem returnUnheldSchedContext_ok_storeChain
       donationHeadOf? st scId sc = .ok head? ∧
       storeObject scId.toObjId
         (.schedContext (donationReturnSchedContext sc owner
-          (head?.bind (fun p => p.2.prev)) newOwner?)) st = .ok ((), s1) ∧
+          (head?.bind (fun p => p.2.prev)))) st = .ok ((), s1) ∧
       storeDonationHeadPop scId head? s1 = .ok s2 ∧
       lookupTcb s2 owner = some ot ∧
       storeObject owner.toObjId
@@ -212,7 +212,7 @@ theorem returnUnheldSchedContext_ok_storeChain
         simp only []
         cases hS1 : storeObject scId.toObjId
             (.schedContext (donationReturnSchedContext sc owner
-              (head?.bind (fun p => p.2.prev)) newOwner?)) st with
+              (head?.bind (fun p => p.2.prev)))) st with
         | error _ => intro h; cases h
         | ok p1 =>
           simp only []
@@ -301,7 +301,7 @@ theorem returnUnheldSchedContextResolved_ok_of_commits {st : SystemState}
       rw [hH]
       simp only []
       obtain ⟨st1, hS1⟩ : ∃ st1, storeObject scId.toObjId (.schedContext
-          (donationReturnSchedContext sc owner (head?.bind (fun p => p.2.prev)) newOwner?))
+          (donationReturnSchedContext sc owner (head?.bind (fun p => p.2.prev))))
           st = .ok ((), st1) := ⟨_, rfl⟩
       rw [hS1]
       simp only []
@@ -354,7 +354,7 @@ theorem severUnheldSchedContext_ok_storeChain {st st' : SystemState}
       st.objects[scId.toObjId]? = some (.schedContext sc) ∧ sc.boundThreadCode = 0 ∧
       donationHeadOf? st scId sc = .ok head? ∧
       storeObject scId.toObjId
-        (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
+        (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev))))
         st = .ok ((), s1) ∧
       storeDonationHeadPop scId head? s1 = .ok st' := by
   unfold severUnheldSchedContext SystemState.getSchedContext? at h
@@ -373,7 +373,7 @@ theorem severUnheldSchedContext_ok_storeChain {st st' : SystemState}
       | ok head? =>
         simp only []
         cases hS1 : storeObject scId.toObjId
-            (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
+            (.schedContext (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev))))
             st with
         | error _ => intro h; cases h
         | ok p1 =>
@@ -425,7 +425,7 @@ theorem severUnheldSchedContextResolved_ok_of_commits {st : SystemState}
         rw [hH] at hRes
         simp only []
         obtain ⟨st1, hS1⟩ : ∃ st1, storeObject scId.toObjId (.schedContext
-            (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev)) newOwner?))
+            (donationSeverSchedContext sc (head?.bind (fun p => p.2.prev))))
             st = .ok ((), st1) := ⟨_, rfl⟩
         rw [hS1]
         simp only []

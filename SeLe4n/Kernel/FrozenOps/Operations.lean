@@ -1288,17 +1288,9 @@ def frozenEndpointReplyWithDonationReturn (replierId : SeLe4n.ThreadId)
     | .ok ((), st') =>
       match headHolder?, server? with
       | some (scId, holder), some server =>
-          -- **WS-HP HP10.8**: the recipient at the BOTTOM of the stack is the
-          -- reservation's recorded origin, exactly as the live arm has read it
-          -- since HP10.7.  The resolver is read on the PRE-state `st`, because
-          -- `frozenEndpointReply` has already consumed the answered caller's
-          -- reply link by the time `st'` exists -- the same reason the live
-          -- trigger takes its frame as an argument.  A window in which the live
-          -- arm redirects and this one does not makes
-          -- `frozenBranchOperationChecked .endpointReplyToBlockedCaller = true`
-          -- an over-claim, which is HP4.7's situation verbatim.
-          match frozenApplyReplyDonation st' holder scId
-                  (frozenReplyDonationRecipient st scId targetId) with
+          -- The recipient is the answered caller, as seL4-MCS's `reply_pop`
+          -- and the live arm give it (WS-SX SX12, D31).
+          match frozenApplyReplyDonation st' holder scId targetId with
           | .error e => .error e
           | .ok st'' => .ok ((), frozenRevertPriorityInheritance st'' server)
       -- **WS-ZA ZA6.34**: a frame heading a context no thread holds -- its
@@ -1317,8 +1309,7 @@ def frozenEndpointReplyWithDonationReturn (replierId : SeLe4n.ThreadId)
       -- the reply leg, then the pop at the answered frame, and no reversion,
       -- since the walk starts at a server and none is recorded.
       | some (scId, holder), none =>
-          match frozenApplyReplyDonation st' holder scId
-                  (frozenReplyDonationRecipient st scId targetId) with
+          match frozenApplyReplyDonation st' holder scId targetId with
           | .error e => .error e
           | .ok st'' => .ok ((), st'')
       | none, none =>
@@ -1590,7 +1581,7 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
     match st.getObject? scId with
     | some (.schedContext sc) =>
       if sc.boundThread.isSome then .error .illegalState
-      -- **PR #897 review, the sweep the origin fix owed.**  The live bind's
+      -- **PR #897 review.**  The live bind's
       -- guards in the live order, so the two agree on the error code as well as
       -- on the verdict.  WS-SX SX8 (D25): a context heading a reply stack binds,
       -- as the live bind does; its label rule is the checked dispatch's.
@@ -1605,18 +1596,7 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
           match tcb.schedContextBinding with
           | .unbound =>
             let scIdTyped : SeLe4n.SchedContextId := ⟨scId.toNat⟩
-            -- **WS-HP HP10.4, frozen mirror (PR #897 review).**  A bind ends any
-            -- loan, so the recorded origin clears — the live clause, which this
-            -- mirror did not carry.  `FrozenSystemState` holds the **live**
-            -- `SchedContext` record and `Model.freeze` copies it verbatim, so a
-            -- frozen state taken mid-chain really does carry an origin; leaving it
-            -- here would let `frozenDonationOriginRecipient?` hand a later
-            -- bottom-of-stack return to a thread this bind has nothing to do with,
-            -- which is the thread-id-reuse hazard the field's own docstring names.
-            -- A field added to a shared record is a sweep of **both** surfaces,
-            -- not of the one whose transition motivated it.
-            let updatedSc := { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some threadId),
-                                       donationOrigin := none }
+            let updatedSc := { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some threadId) }
             let updatedTcb := { tcb with
               scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SeLe4n.Kernel.SchedContextBinding.bound scIdTyped), scBindingOwnerCode := 0 }
             match frozenWithObjectStored st scId (.schedContext updatedSc) with
@@ -1755,14 +1735,7 @@ def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
           -- WS-SX SX8.3 (D22): a holder that received the context by donation
           -- is unbound like any other, as the live `schedContextUnbind` does.
           -- AK8-H Phase 2: Both lookups succeeded; apply all writes atomically.
-          -- **WS-HP HP10.4, frozen mirror (PR #897 review)**: and the origin,
-          -- for the bind's reason in the other direction — the reservation stops
-          -- being owned at all, so a recorded departure from ownership has no
-          -- subject.  Both live arms of `schedContextUnbind` clear it; a mirror
-          -- that keeps history the kernel erases is a mirror that answers a later
-          -- pop differently.
-          let updatedSc := { sc with boundThreadCode := 0, isActive := false,
-                                     donationOrigin := none }
+          let updatedSc := { sc with boundThreadCode := 0, isActive := false }
           let updatedTcb := { tcb with
             scBindingScCode := 0, scBindingOwnerCode := 0 }
           match frozenWithObjectStored st scId (.schedContext updatedSc) with
@@ -1909,7 +1882,7 @@ def frozenRemoveFromNotificationWaitQueue (st : FrozenSystemState) (tid : SeLe4n
 /-- WS-SX SX4: **a cancelled caller's frame cut off the context it heads, the
 context staying with its holder** — the frozen mirror of
 `cutHeadFrameKeepingContext` (seL4-MCS `reply_remove_tcb`'s head branch): the
-frame's upward link cleared, the context's head and origin cleared, and a holder
+frame's upward link cleared, the context's head cleared, and a holder
 holding the context on loan made its owner.  (The live cut also raises the
 holder's reschedule-pending flags, which the frozen surface does not keep.) -/
 def frozenCutHeadFrameKeepingContext (st : FrozenSystemState) (rid : SeLe4n.ReplyId) :
@@ -1923,7 +1896,7 @@ def frozenCutHeadFrameKeepingContext (st : FrozenSystemState) (rid : SeLe4n.Repl
       let st1 := frozenRewriteObject st rid.toObjId (.reply { r with next := none })
       let st2 := match st1.getSchedContext? scId with
         | some sc => frozenRewriteObject st1 scId.toObjId
-            (.schedContext { sc with scReply := none, donationOrigin := none })
+            (.schedContext { sc with scReply := none })
         | none => st1
       match (st2.getSchedContext? scId).bind (·.boundThread) with
       | none => st2
