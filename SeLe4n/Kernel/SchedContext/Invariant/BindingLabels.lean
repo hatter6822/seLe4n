@@ -78,21 +78,21 @@ clear) carries it too (`bindingLabelsEqual_of_shrink`). -/
 
 /-- A thread's binding word: the context it holds, bound or lent. -/
 def threadContextView (st : SystemState) (t : SeLe4n.ThreadId) : Nat :=
-  match st.objects[t.toObjId]? with
-  | some (.tcb tcb) => tcb.scBindingScCode
-  | _ => 0
+  match st.getTcb? t with
+  | some tcb => tcb.scBindingScCode
+  | none => 0
 
 /-- A context's thread word. -/
 def contextThreadView (st : SystemState) (s : SeLe4n.SchedContextId) : Nat :=
-  match st.objects[s.toObjId]? with
-  | some (.schedContext sc) => sc.boundThreadCode
-  | _ => 0
+  match st.getSchedContext? s with
+  | some sc => sc.boundThreadCode
+  | none => 0
 
 /-- A notification's context word. -/
 def notificationContextView (st : SystemState) (n : SeLe4n.ObjId) : Nat :=
-  match st.objects[n]? with
-  | some (.notification ntfn) => ntfn.schedContextCode
-  | _ => 0
+  match st.getNotification? n with
+  | some ntfn => ntfn.schedContextCode
+  | none => 0
 
 /-- **`bindingLabelsEqual` in the views.** -/
 theorem bindingLabelsEqual_iff_views {ctx : LabelingContext} {st : SystemState} :
@@ -108,22 +108,22 @@ theorem bindingLabelsEqual_iff_views {ctx : LabelingContext} {st : SystemState} 
     refine ⟨fun t s hV => ?_, fun s t hV => ?_, fun n s hV => ?_⟩
     · unfold threadContextView at hV
       split at hV
-      · next tcb hO => exact h1 t tcb s hO hV
+      · next tcb hO => exact h1 t tcb s ((SystemState.getTcb?_eq_some_iff _ _ _).mp hO) hV
       · omega
     · unfold contextThreadView at hV
       split at hV
-      · next sc hO => exact h2 s sc t hO hV
+      · next sc hO => exact h2 s sc t ((SystemState.getSchedContext?_eq_some_iff _ _ _).mp hO) hV
       · omega
     · unfold notificationContextView at hV
       split at hV
-      · next ntfn hO => exact h3 n ntfn s hO hV
+      · next ntfn hO => exact h3 n ntfn s ((SystemState.getNotification?_eq_some_iff _ _ _).mp hO) hV
       · omega
   · rintro ⟨h1, h2, h3⟩
     refine ⟨fun t tcb s hO hC => h1 t s ?_, fun s sc t hO hC => h2 s t ?_,
       fun n ntfn s hO hC => h3 n s ?_⟩
-    · simp only [threadContextView, hO, hC]
-    · simp only [contextThreadView, hO, hC]
-    · simp only [notificationContextView, hO, hC]
+    · simp only [threadContextView, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hO, hC]
+    · simp only [contextThreadView, (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr hO, hC]
+    · simp only [notificationContextView, (SystemState.getNotification?_eq_some_iff _ _ _).mpr hO, hC]
 
 /-- **The binding shrink**: every binding word after the step was the same word
 before it.  A clear, a removal and a frame are shrinks; a word written to a new
@@ -146,9 +146,9 @@ theorem trans {st st' st'' : SystemState} (h1 : bindingViewsShrink st st')
 
 theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
     bindingViewsShrink st st' :=
-  ⟨fun t k hV => by simpa only [threadContextView, h] using hV,
-   fun s k hV => by simpa only [contextThreadView, h] using hV,
-   fun n k hV => by simpa only [notificationContextView, h] using hV⟩
+  ⟨fun t k hV => by simpa only [threadContextView, SystemState.getTcb?, h] using hV,
+   fun s k hV => by simpa only [contextThreadView, SystemState.getSchedContext?, h] using hV,
+   fun n k hV => by simpa only [notificationContextView, SystemState.getNotification?, h] using hV⟩
 
 end bindingViewsShrink
 
