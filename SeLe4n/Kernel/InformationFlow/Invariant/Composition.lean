@@ -1109,7 +1109,7 @@ is the right argument and was not a theorem.
 What follows is that argument, machine-checked:
 
 * the pair is carried across every kernel entry by the waiters' stage
-  (`EndpointWaitersStage`, WS-SX SX11.2), whose creators take the new waiter's
+  (`QueueLabelsStage`, WS-SX SX11.2), whose creators take the new waiter's
   label from the gate each entry checks;
 * the boot state inhabits it with no blocked thread at all;
 * and `donationOwnerFlowsToHolder` is then a **consequence** of its sibling and the

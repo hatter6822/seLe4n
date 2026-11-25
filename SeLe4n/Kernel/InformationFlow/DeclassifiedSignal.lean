@@ -1324,14 +1324,14 @@ is stated on the states it is proved for. -/
 theorem declassifiedSignalReceiver_flow_ordinary_of_coherent (ctx : LabelingContext)
     (declPolicy : DeclassificationPolicy) (st : SystemState)
     (notificationId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (hCoherent : notificationLabelsCoherent st ctx = true)
+    (hAgree : notificationLabelsAgree ctx st)
     (hRecv : declassifiedSignalReceiver? st notificationId = some receiver) :
     (liftLegacyContext ctx).objectDomainOf notificationId =
         (liftLegacyContext ctx).threadDomainOf receiver ∧
       declassifiedSignalHopAuthorization (liftLegacyContext ctx) declPolicy
         ((liftLegacyContext ctx).objectDomainOf notificationId)
         ((liftLegacyContext ctx).threadDomainOf receiver) = .ok .ordinary := by
-  have hLabel := notificationLabelsCoherent_signalReceiver_label hCoherent
+  have hLabel := notificationLabelsAgree_signalReceiver_label hAgree
     (by unfold declassifiedSignalReceiver? at hRecv; exact hRecv)
   have hDom : (liftLegacyContext ctx).objectDomainOf notificationId =
       (liftLegacyContext ctx).threadDomainOf receiver := by

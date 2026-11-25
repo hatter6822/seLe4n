@@ -7,14 +7,14 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
-import SeLe4n.Kernel.EndpointWaiters.Timer
+import SeLe4n.Kernel.QueueLabels.Timer
 import SeLe4n.Kernel.KernelRecords.Dispatch
 
 /-! # The capability-only arms keep the endpoint waiters
 
 WS-SX SX11.2 (D38).  The arms the capability table routes write capabilities,
 address spaces, contexts and thread records, and none of them blocks a thread
-on an endpoint.  Most are records' frames (`EndpointWaitersFrame.of_frame`);
+on an endpoint.  Most are records' frames (`QueueLabelsFrame.of_frame`);
 the rest write objects that are no thread (a VSpace root, a page table, an
 untyped, a CNode), store a fresh thread `.ready` in IPC (the carve), or retire
 objects (the delete chain), and every thread after each of them was the same
@@ -45,27 +45,174 @@ theorem of_vspaceRootOnlyWrite {st st' : SystemState} (h : vspaceRootOnlyWrite s
 
 end EndpointWaitersShrink
 
-namespace EndpointWaitersFrame
+namespace NtfnLabelsKept
+
+/-- **A step after which every thread and every notification is one it was
+before.** -/
+theorem of_back {st st' : SystemState}
+    (h : ∀ (k : SeLe4n.ObjId) (o : KernelObject), st'.objects[k]? = some o →
+      (∃ t, o = .tcb t) ∨ (∃ n, o = .notification n) → st.objects[k]? = some o) :
+    NtfnLabelsKept st st' := fun _ H k o hO => by
+  cases o with
+  | tcb t => exact H k _ (h k _ hO (.inl ⟨t, rfl⟩))
+  | notification n => exact H k _ (h k _ hO (.inr ⟨n, rfl⟩))
+  | _ => trivial
+
+/-- A write of VSpace roots alone. -/
+theorem of_vspaceRootOnlyWrite {st st' : SystemState} (h : vspaceRootOnlyWrite st st') :
+    NtfnLabelsKept st st' :=
+  of_back fun k o hO hK => by
+    rcases h k with e | ⟨-, r', hr'⟩
+    · rw [← e]; exact hO
+    · rw [hr'] at hO; cases hO; rcases hK with ⟨_, e⟩ | ⟨_, e⟩ <;> cases e
+
+/-- **A store of an object whose share holds under every labelling.** -/
+theorem storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
+    (hInv : st.objects.invExt) (h : SeLe4n.Model.storeObject k o st = .ok ((), st'))
+    (hNo : ∀ ctx, notificationEntryLabelsAgree ctx k o) : NtfnLabelsKept st st' :=
+  fun ctx H => notificationLabelsAgree.storeObject hInv h H (hNo ctx)
+
+/-- **The unbind** clears the thread's binding and the notification's bound
+thread: no share asks anything of either field once it is empty. -/
+theorem unbindNotification {st st' : SystemState} {tcbId : SeLe4n.ThreadId}
+    (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.unbindNotification tcbId st = .ok ((), st')) :
+    NtfnLabelsKept st st' := by
+  unfold _root_.SeLe4n.Kernel.unbindNotification at h
+  split at h
+  · cases h
+  · rename_i tcb hT
+    split at h
+    · cases h
+    · rename_i nid hBound
+      split at h
+      · cases h
+      · rename_i st1 hStore1
+        have K1 := storeObject_tcb hInv (lookupTcb_some_objects st tcbId tcb hT) hStore1
+          (TcbNtfnKept.of_fields rfl rfl rfl)
+        have hInv1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hStore1
+        split at h
+        · rename_i ntfn hN1
+          split at h
+          · cases h
+          · rename_i st2 hStore2
+            cases h
+            have hO := (SystemState.getNotification?_eq_some_iff _ nid ntfn).mp hN1
+            exact K1.trans fun ctx H => notificationLabelsAgree.storeObject hInv1 hStore2 H
+              ⟨fun _ hb => by simp [Notification.boundTCB] at hb, (H nid _ hO).2.1, (H nid _ hO).2.2⟩
+        · cases h; exact K1
+
+end NtfnLabelsKept
+
+/-- **The bind**, admitted by the two-way gate between the notification and the
+thread, writes a bound thread of the notification's label. -/
+theorem notificationLabelsAgree.bindNotification {ctx : LabelingContext} {st st' : SystemState}
+    {nid : SeLe4n.ObjId} {tcbId : SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (hG : notificationFlowGate ctx nid tcbId = true)
+    (h : _root_.SeLe4n.Kernel.bindNotification nid tcbId st = .ok ((), st'))
+    (H : notificationLabelsAgree ctx st) : notificationLabelsAgree ctx st' := by
+  unfold _root_.SeLe4n.Kernel.bindNotification at h
+  split at h
+  · rename_i ntfn hN
+    split at h
+    · cases h
+    · rename_i tcb hT
+      split at h
+      · cases h
+      · split at h
+        · cases h
+        · rename_i st1 hStore1
+          split at h
+          · cases h
+          · rename_i st2 hStore2
+            cases h
+            have hNraw := (SystemState.getNotification?_eq_some_iff st nid ntfn).mp hN
+            have hTraw := lookupTcb_some_objects st tcbId tcb hT
+            have hNeIds : tcbId.toObjId ≠ nid := by
+              intro hEq
+              rw [hEq, hNraw] at hTraw
+              exact absurd (Option.some.inj hTraw) (fun hx => KernelObject.noConfusion hx)
+            have H1 := notificationLabelsAgree.storeObject hInv hStore1 H
+              ⟨fun t hb => by
+                  simp only [Notification.boundTCB, SeLe4n.ThreadId.ofOptCode_optCode,
+                    Option.some.injEq] at hb
+                  subst hb; exact hG,
+                (H nid _ hNraw).2.1, (H nid _ hNraw).2.2⟩
+            have hPre1 : st1.objects[tcbId.toObjId]? = some (.tcb tcb) := by
+              rw [storeObject_objects_ne st _ nid tcbId.toObjId _ hNeIds hInv hStore1]
+              exact hTraw
+            exact NtfnLabelsKept.storeObject_tcb
+              (storeObject_preserves_objects_invExt _ _ _ _ hInv hStore1) hPre1 hStore2
+              (TcbNtfnKept.of_fields rfl rfl rfl) ctx H1
+  · split at h <;> cases h
+
+/-- **The bind adds at most its thread to its notification**: the bound thread
+it writes is the one thread a two-way gate at the notification must admit. -/
+theorem QueueLabelsNtfnGrowFrame.bindNotification {st st' : SystemState} {nid : SeLe4n.ObjId}
+    {tcbId : SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.bindNotification nid tcbId st = .ok ((), st')) :
+    QueueLabelsNtfnGrowFrame tcbId nid st st' :=
+  ⟨.of_coreFrame (RecordsCoreFrame.bindNotification hInv h),
+    fun _ hG H => notificationLabelsAgree.bindNotification hInv hG h H,
+    (RecordsCoreFrame.bindNotification hInv h).invExt⟩
+
+/-- A bind arm that succeeds runs its bind on the state it was handed. -/
+theorem tcbBindNotificationArm_ok_bind {bind : SeLe4n.ObjId → SeLe4n.ThreadId → Kernel Unit}
+    {tid : SeLe4n.ThreadId} {xc : Nat} {tcbObjId : SeLe4n.ObjId} {st : SystemState}
+    {r : Unit × SystemState} (h : tcbBindNotificationArm bind tid xc tcbObjId st = .ok r) :
+    ∃ n t, bind n t st = .ok r := by
+  unfold tcbBindNotificationArm at h
+  cases hA : tcbBindNotificationArgsOf st tid xc with
+  | error e => simp [hA] at h
+  | ok args =>
+    simp only [hA] at h
+    cases hT : st.getTcb? tid with
+    | none => simp [hT] at h
+    | some callerTcb =>
+      simp only [hT] at h
+      split at h
+      · cases h
+      · exact ⟨_, _, h⟩
+
+/-- **The checked bind arm keeps the labels under the labelling it checks**:
+`bindNotificationChecked` binds only a thread its gate admits. -/
+theorem QueueLabelsGatedFrame.tcbBindNotificationArmChecked {ctx : LabelingContext}
+    {tid : SeLe4n.ThreadId} {xc : Nat} {tcbObjId : SeLe4n.ObjId} {st st' : SystemState}
+    (hInv : st.objects.invExt)
+    (h : tcbBindNotificationArm (bindNotificationChecked ctx) tid xc tcbObjId st = .ok ((), st')) :
+    QueueLabelsGatedFrame ctx st st' := by
+  obtain ⟨n, t, hb⟩ := tcbBindNotificationArm_ok_bind h
+  unfold bindNotificationChecked at hb
+  split at hb
+  · rename_i hG
+    exact (QueueLabelsNtfnGrowFrame.bindNotification hInv hb).gated hG
+  · cases hb
+
+namespace QueueLabelsFrame
 
 theorem of_tcb_back {st st' : SystemState}
     (h : ∀ (k : SeLe4n.ObjId) (t : TCB), st'.objects[k]? = some (.tcb t) →
-      st.objects[k]? = some (.tcb t)) (hI : st'.objects.invExt) : EndpointWaitersFrame st st' :=
-  ⟨.of_tcb_back h, hI⟩
+      st.objects[k]? = some (.tcb t)) (hN : NtfnLabelsKept st st') (hI : st'.objects.invExt) :
+    QueueLabelsFrame st st' :=
+  ⟨.of_tcb_back h, hN, hI⟩
 
 theorem of_vspaceRootOnlyWrite {st st' : SystemState} (h : vspaceRootOnlyWrite st st')
-    (hI : st'.objects.invExt) : EndpointWaitersFrame st st' :=
-  ⟨.of_vspaceRootOnlyWrite h, hI⟩
+    (hI : st'.objects.invExt) : QueueLabelsFrame st st' :=
+  ⟨.of_vspaceRootOnlyWrite h, .of_vspaceRootOnlyWrite h, hI⟩
 
 theorem of_objects_eq {st st' : SystemState} (hInv : st.objects.invExt)
-    (h : st'.objects = st.objects) : EndpointWaitersFrame st st' :=
-  ⟨.of_objects_eq h, h ▸ hInv⟩
+    (h : st'.objects = st.objects) : QueueLabelsFrame st st' :=
+  ⟨.of_objects_eq h, .of_objects_eq h, h ▸ hInv⟩
 
 /-- **A store of an object that waits on no endpoint**: no thread, or a thread
 blocked on none. -/
 theorem storeObject_noWait {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
     (hInv : st.objects.invExt) (h : storeObject k o st = .ok ((), st'))
-    (hO : ∀ t, o = .tcb t → ∀ e, ¬ ipcWaitsOnEndpoint t.ipcState e) : EndpointWaitersFrame st st' := by
-  refine ⟨fun u t' e hT hW => ?_, storeObject_preserves_objects_invExt _ _ _ _ hInv h⟩
+    (hO : ∀ t, o = .tcb t → ∀ e, ¬ ipcWaitsOnEndpoint t.ipcState e)
+    (hNo : ∀ ctx, notificationEntryLabelsAgree ctx k o := by intro; trivial) :
+    QueueLabelsFrame st st' := by
+  refine ⟨fun u t' e hT hW => ?_, NtfnLabelsKept.storeObject hInv h hNo,
+    storeObject_preserves_objects_invExt _ _ _ _ hInv h⟩
   have hO' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
   by_cases hk : u.toObjId = k
   · rw [hk, storeObject_objects_eq st st' _ _ hInv h] at hO'
@@ -76,27 +223,30 @@ theorem storeObject_noWait {st st' : SystemState} {k : SeLe4n.ObjId} {o : Kernel
 /-- A store of an object that is no thread. -/
 theorem storeObject_other {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
     (hInv : st.objects.invExt) (h : storeObject k o st = .ok ((), st'))
-    (hO : ∀ t, o ≠ .tcb t) : EndpointWaitersFrame st st' :=
-  storeObject_noWait hInv h fun t e => absurd e (hO t)
+    (hO : ∀ t, o ≠ .tcb t) (hNo : ∀ ctx, notificationEntryLabelsAgree ctx k o := by intro; trivial) :
+    QueueLabelsFrame st st' :=
+  storeObject_noWait hInv h (fun t e => absurd e (hO t)) hNo
 
 /-- The final retire keeps or erases each object, so every thread after it was
 there before it. -/
 theorem retireFinalObject (ec : CoreId) (target recorder : Nat) (st : SystemState)
     (hInv : st.objects.invExt) :
-    EndpointWaitersFrame st (_root_.SeLe4n.Kernel.retireFinalObject ec target recorder st) :=
+    QueueLabelsFrame st (_root_.SeLe4n.Kernel.retireFinalObject ec target recorder st) :=
   of_tcb_back (fun _ _ hT => retireFinalObject_tcb_back ec target recorder st hInv hT)
+    (NtfnLabelsKept.of_back fun _ _ hO hK => retireFinalObject_back ec target recorder st hInv hO
+      (by rcases hK with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> intro U e <;> cases e))
     (retireFinalObject_frame ec target recorder st hInv).1
 
-end EndpointWaitersFrame
+end QueueLabelsFrame
 
 /-! ### The address-space arms -/
 
-namespace EndpointWaitersFrame
+namespace QueueLabelsFrame
 
 theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast {ec : CoreId}
     {asid : SeLe4n.ASID} {vaddr : SeLe4n.VAddr} {st st' : SystemState} (hInv : st.objects.invExt)
     (h : Architecture.vspaceUnmapPageWithShootdownAndIcacheBroadcast ec asid vaddr st
-      = .ok ((), st')) : EndpointWaitersFrame st st' :=
+      = .ok ((), st')) : QueueLabelsFrame st st' :=
   have hF := vspaceUnmapPageWithShootdownAndIcacheBroadcast_ok_frame ec asid vaddr st st' hInv h
   of_vspaceRootOnlyWrite hF.2.1 hF.1
 
@@ -104,7 +254,7 @@ theorem vspaceMapFromFrameCap {tid : SeLe4n.ThreadId} {ec : CoreId}
     {args : Architecture.SyscallArgDecode.VSpaceMapArgs} {st st' : SystemState}
     (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.vspaceMapFromFrameCap tid ec args st = .ok ((), st')) :
-    EndpointWaitersFrame st st' := by
+    QueueLabelsFrame st st' := by
   obtain ⟨_, _, _, st1, _, _, _, _, _, hMap, epoch, st2, hT, hRec⟩ :=
     vspaceMapFromFrameCap_ok tid ec args st st' h
   obtain ⟨cn, _, -, -, hS⟩ := cspaceRecordFrameMapping_ok_decompose _ _ st2 st' hRec
@@ -119,8 +269,8 @@ theorem vspaceMapOrRemapFromFrameCap {tid : SeLe4n.ThreadId} {ec : CoreId}
     {args : Architecture.SyscallArgDecode.VSpaceMapArgs} {st st' : SystemState}
     (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.vspaceMapOrRemapFromFrameCap tid ec args st = .ok ((), st')) :
-    EndpointWaitersFrame st st' :=
-  vspaceMapOrRemapFromFrameCap_closed (fun a b => a.objects.invExt → EndpointWaitersFrame a b)
+    QueueLabelsFrame st st' :=
+  vspaceMapOrRemapFromFrameCap_closed (fun a b => a.objects.invExt → QueueLabelsFrame a b)
     (fun _ _ h hI => vspaceMapFromFrameCap hI h)
     (fun _ _ h hI => vspaceUnmapPageWithShootdownAndIcacheBroadcast hI h)
     (fun _ _ _ h₁ h₂ hI => (h₁ hI).andThen h₂) h hInv
@@ -128,7 +278,7 @@ theorem vspaceMapOrRemapFromFrameCap {tid : SeLe4n.ThreadId} {ec : CoreId}
 theorem vspaceUnmapFrameCap {ec : CoreId} {addr : CSpaceAddr} {st st' : SystemState}
     (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.vspaceUnmapFrameCap ec addr st = .ok ((), st')) :
-    EndpointWaitersFrame st st' := by
+    QueueLabelsFrame st st' := by
   obtain ⟨st1, hU, hC⟩ := vspaceUnmapFrameCap_cases h
   obtain ⟨cn, _, -, -, hS⟩ := cspaceClearFrameMapping_ok_decompose _ st1 st' hC
   obtain ⟨hI1, hV, -⟩ := unmapLivePages_ok_frame ec _ st st1 hInv hU
@@ -138,23 +288,23 @@ theorem vspaceUnmapFrameCap {ec : CoreId} {addr : CSpaceAddr} {st st' : SystemSt
 theorem pageTableMap {tableId rootId : SeLe4n.ObjId} {vaddr : SeLe4n.VAddr} {st st' : SystemState}
     (hInv : st.objects.invExt)
     (h : Architecture.pageTableMap tableId rootId vaddr st = .ok ((), st')) :
-    EndpointWaitersFrame st st' := by
+    QueueLabelsFrame st st' := by
   obtain ⟨table, root, level, st1, -, -, -, -, -, -, hS1, hS2⟩ :=
     Architecture.pageTableMap_ok tableId rootId vaddr st st' h
   have F1 := storeObject_other hInv hS1 (fun _ e => by cases e)
-  have F2 : ∀ ws, EndpointWaitersFrame st1 (Architecture.recordPhysicalWrites st1 ws) := fun _ =>
+  have F2 : ∀ ws, QueueLabelsFrame st1 (Architecture.recordPhysicalWrites st1 ws) := fun _ =>
     of_objects_eq F1.invExt rfl
   exact (F1.andThen fun _ => F2 _).andThen fun hI =>
     storeObject_other hI hS2 (fun _ e => by cases e)
 
 theorem pageTableUnmap {tableId : SeLe4n.ObjId} {st st' : SystemState} (hInv : st.objects.invExt)
-    (h : Architecture.pageTableUnmap tableId st = .ok ((), st')) : EndpointWaitersFrame st st' := by
+    (h : Architecture.pageTableUnmap tableId st = .ok ((), st')) : QueueLabelsFrame st st' := by
   unfold Architecture.pageTableUnmap at h
   cases hT : st.getPageTable? tableId with
   | none => rw [hT] at h; cases h
   | some table =>
     have Ft : ∀ {s : SystemState}, storeObject tableId (.pageTable table.uninstalled) st =
-        .ok ((), s) → EndpointWaitersFrame st s :=
+        .ok ((), s) → QueueLabelsFrame st s :=
       fun hS => storeObject_other hInv hS (fun _ e => by cases e)
     rw [hT] at h
     simp only at h
@@ -172,13 +322,13 @@ theorem pageTableUnmap {tableId : SeLe4n.ObjId} {st st' : SystemState} (hInv : s
               rw [hS1] at h
               simp only at h
               have F1 := Ft hS1
-              have F2 : ∀ ws, EndpointWaitersFrame st1 (Architecture.recordPhysicalWrites st1 ws) :=
+              have F2 : ∀ ws, QueueLabelsFrame st1 (Architecture.recordPhysicalWrites st1 ws) :=
                 fun _ => of_objects_eq F1.invExt rfl
               exact (F1.andThen fun _ => F2 _).andThen fun hI =>
                 storeObject_other hI h (fun _ e => by cases e)
         · exact Ft h
 
-end EndpointWaitersFrame
+end QueueLabelsFrame
 
 /-! ### The carve, the delete chain, the space set and the handler arms -/
 
@@ -186,7 +336,7 @@ end EndpointWaitersFrame
 theorem carvedTcb_ipcState (childId : SeLe4n.ObjId) (d : SeLe4n.DomainId) (c : CoreId) :
     (carvedTcb childId d c).ipcState = .ready := rfl
 
-namespace EndpointWaitersFrame
+namespace QueueLabelsFrame
 
 /-- **The carve**: the watermark, the fresh child (a thread is born `.ready` in
 IPC, seL4's zeroed TCB), the free index, the scrub, the capability insert and
@@ -194,15 +344,22 @@ the derivation edge. -/
 theorem untypedRetypeObject {src dst : CSpaceAddr} {childId : SeLe4n.ObjId}
     {req : CarveRequest} {st st' : SystemState} (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.untypedRetypeObject src childId dst req st = .ok ((), st')) :
-    EndpointWaitersFrame st st' := by
+    QueueLabelsFrame st st' := by
   obtain ⟨utCap, untypedId, ut, st1, st2, _, _, _, hRt, hIns, rfl⟩ :=
     untypedRetypeObject_ok_decompose src dst childId req st st' hInv h
   obtain ⟨ut₀, ut', cap, stUt, _, stCh, cn, hUt, _, _, _, _, _, _, hLk, _, _, hStUt, hStCh, hOCh,
     hStIdx⟩ := retypeFromUntyped_ok_stores st st1 src untypedId childId _ _ hInv hRt
   have F1 := storeObject_other hInv hStUt (fun _ e => by cases e)
-  have F2 := F1.andThen fun hI => storeObject_noWait hI hStCh fun t ht e => by
+  have F2 := F1.andThen fun hI => storeObject_noWait hI hStCh (fun t ht e => by
     cases req <;> simp only [CarveRequest.object, KernelObject.tcb.injEq, reduceCtorEq] at ht
-    subst ht; simp [carvedTcb_ipcState]
+    subst ht; simp [carvedTcb_ipcState]) (fun _ => by
+    cases req <;> simp only [CarveRequest.object, notificationEntryLabelsAgree] <;> try trivial
+    · refine ⟨fun _ h => ?_, fun _ h => ?_, fun _ h => ?_⟩
+      · rw [carvedTcb_ipcState] at h; cases h
+      · rw [show (carvedTcb _ _ _).ntfnPrev = none from rfl] at h; cases h
+      · rw [show (carvedTcb _ _ _).ntfnNext = none from rfl] at h; cases h
+    · refine ⟨fun _ h => ?_, fun _ h => ?_, fun _ h => ?_⟩ <;>
+        simp [Notification.boundTCB, Notification.waitHead, Notification.waitTail] at h)
   have F3 := F2.andThen fun hI => storeObject_other hI hStIdx (fun _ e => by cases e)
   have F4 := F3.trans (of_objects_eq F3.invExt (CarveRequest.scrub_objects st1 ut
     (req.carveIndex ut (retypeFreeIndex st src utCap)) req))
@@ -215,9 +372,9 @@ theorem untypedRetypeFromCap {tid : SeLe4n.ThreadId} {ec : CoreId}
     {args? : Except KernelError SeLe4n.Kernel.Architecture.SyscallArgDecode.UntypedRetypeArgs}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.untypedRetypeFromCap tid ec srcAddr root? args? st = .ok ((), st')) :
-    EndpointWaitersFrame st st' :=
+    QueueLabelsFrame st st' :=
   (untypedRetypeFromCap_chain h).rel (P := fun s => s.objects.invExt)
-    (R := fun a b => a.objects.invExt → EndpointWaitersFrame a b) (fun _ => refl)
+    (R := fun a b => a.objects.invExt → QueueLabelsFrame a b) (fun _ => refl)
     (fun h1 h2 hI => (h1 hI).andThen h2)
     (fun hP hC => untypedRetypeObject_preserves_objects_invExt hP hC)
     (fun hP hC _ => untypedRetypeObject hP hC) hInv hInv
@@ -226,11 +383,11 @@ theorem untypedRetypeFromCap {tid : SeLe4n.ThreadId} {ec : CoreId}
 registration's release, the finalisation and the object's retire. -/
 theorem retireFinalisedObject (ec : CoreId) (target recorder : Nat) (st : SystemState)
     (hInv : st.objects.invExt) :
-    EndpointWaitersFrame st (_root_.SeLe4n.Kernel.retireFinalisedObject ec target recorder st) := by
+    QueueLabelsFrame st (_root_.SeLe4n.Kernel.retireFinalisedObject ec target recorder st) := by
   rcases retireFinalisedObject_cases ec target recorder st with ⟨-, hE⟩ | ⟨-, hE⟩ <;> rw [hE]
   · exact of_objects_eq hInv (retireIrqNode_objects _ _)
-  · have F1 : EndpointWaitersFrame st (releaseFinalRegistration target st) :=
-      releaseFinalRegistration_closed (EndpointWaitersFrame st)
+  · have F1 : QueueLabelsFrame st (releaseFinalRegistration target st) :=
+      releaseFinalRegistration_closed (QueueLabelsFrame st)
         (fun _ _ _ F hR => F.andThen fun hI => of_frame (RecordsFrame.revokeService hI hR))
         target st (refl hInv)
     exact (F1.andThen fun hI => finaliseFinalObject target _ hI).andThen fun hI =>
@@ -241,7 +398,7 @@ finalisation (VSpace roots alone), then the retire. -/
 theorem cspaceDeleteSlotFinalising {ec : CoreId} {addr : CSpaceAddr} {st st' : SystemState}
     (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.cspaceDeleteSlotFinalising ec addr st = .ok ((), st')) :
-    EndpointWaitersFrame st st' := by
+    QueueLabelsFrame st st' := by
   obtain ⟨st1, st2, hD, hF, rfl⟩ := cspaceDeleteSlotFinalising_ok ec addr st _ h
   have F1 := of_frame (RecordsFrame.cspaceDeleteSlot hInv hD)
   obtain ⟨hI2, hW2, -⟩ := finaliseDestroyedCapabilities_ok_frame ec _ _ st1 st2 F1.invExt hF
@@ -251,23 +408,23 @@ theorem cspaceDeleteSlotFinalising {ec : CoreId} {addr : CSpaceAddr} {st st' : S
 theorem cspaceDeleteSlotZombie {ec : CoreId} {addr : CSpaceAddr} {st st' : SystemState}
     (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.cspaceDeleteSlotZombie ec addr st = .ok ((), st')) :
-    EndpointWaitersFrame st st' :=
-  cspaceDeleteSlotZombie_closed (EndpointWaitersFrame st)
+    QueueLabelsFrame st st' :=
+  cspaceDeleteSlotZombie_closed (QueueLabelsFrame st)
     (fun _ _ _ F hD => F.andThen fun hI => cspaceDeleteSlotFinalising hI hD)
     (fun d _ F => F.andThen fun hI => finaliseFinalObject d _ hI) (refl hInv) h
 
 theorem cspaceRevokeCdtFinalising {ec : CoreId} {addr : CSpaceAddr} {st st' : SystemState}
     (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.cspaceRevokeCdtFinalising ec addr st = .ok ((), st')) :
-    EndpointWaitersFrame st st' :=
-  cspaceRevokeCdtFinalising_closed (EndpointWaitersFrame st)
+    QueueLabelsFrame st st' :=
+  cspaceRevokeCdtFinalising_closed (QueueLabelsFrame st)
     (fun _ _ _ F hD => F.andThen fun hI => cspaceDeleteSlotFinalising hI hD)
     (fun d _ F => F.andThen fun hI => finaliseFinalObject d _ hI) (refl hInv) h
 
 theorem threadSlotSet (ec : CoreId) {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
     (hInv : st.objects.invExt) (hT : st.getTcb? tid = some t) (slot : SeLe4n.Slot)
     (srcCNode : SeLe4n.ObjId) (srcSlot : SeLe4n.Slot) (rights : AccessRightSet) (data : UInt64) :
-    EndpointWaitersFrame st
+    QueueLabelsFrame st
       (_root_.SeLe4n.Kernel.threadSlotSet ec st tid slot srcCNode srcSlot rights data) := by
   have F := RecordsFrame.threadSlotCopied hInv hT slot srcCNode srcSlot rights data
   unfold _root_.SeLe4n.Kernel.threadSlotSet
@@ -276,7 +433,7 @@ theorem threadSlotSet (ec : CoreId) {st : SystemState} {tid : SeLe4n.ThreadId} {
 theorem copyThreadSpaces (ec : CoreId) {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
     {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr} (hInv : st.objects.invExt)
     (hStep : _root_.SeLe4n.Kernel.copyThreadSpaces ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
-    EndpointWaitersFrame st st' := by
+    QueueLabelsFrame st st' := by
   obtain ⟨tcb, t1, t2, hT, -, -, -, hT1, hI1, hT2, hI2, rfl⟩ := copyThreadSpaces_ok_steps hInv hStep
   exact ((threadSlotSet ec hInv hT _ _ _ _ _).andThen fun _ => threadSlotSet ec hI1 hT1 _ _ _ _ _).andThen
     fun _ => threadSlotSet ec hI2 hT2 _ _ _ _ _
@@ -284,9 +441,9 @@ theorem copyThreadSpaces (ec : CoreId) {st st' : SystemState} {vtid : SeLe4n.Val
 theorem copyThreadSpacesZombie (ec : CoreId) {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
     {cnSrc vrSrc : CSpaceAddr} {cnData : UInt64} {fhSrc : CSpaceAddr} (hInv : st.objects.invExt)
     (hStep : _root_.SeLe4n.Kernel.copyThreadSpacesZombie ec st vtid cnSrc vrSrc cnData fhSrc = .ok st') :
-    EndpointWaitersFrame st st' := by
-  have hChain : ∀ n s, ZombieRun ec n st s → EndpointWaitersFrame st s := fun _ _ hR =>
-    hR.chain.closed (EndpointWaitersFrame st)
+    QueueLabelsFrame st st' := by
+  have hChain : ∀ n s, ZombieRun ec n st s → QueueLabelsFrame st s := fun _ _ hR =>
+    hR.chain.closed (QueueLabelsFrame st)
       (fun _ _ _ F hD => F.andThen fun hI => cspaceDeleteSlotFinalising hI hD)
       (fun d _ F => F.andThen fun hI => finaliseFinalObject d _ hI) (refl hInv)
   rcases copyThreadSpacesZombie_cases hStep with h1 | ⟨n, s, hR, rfl | h2⟩
@@ -298,7 +455,7 @@ theorem setIPCBufferOp (ec : CoreId) {st st' : SystemState} {vtid : SeLe4n.Valid
     {callerTid : SeLe4n.ThreadId} {bufferCap? : Option SeLe4n.CPtr} {addr : SeLe4n.VAddr}
     (hInv : st.objects.invExt)
     (hStep : Architecture.IpcBufferValidation.setIPCBufferOp ec st vtid callerTid bufferCap? addr
-      = .ok st') : EndpointWaitersFrame st st' := by
+      = .ok st') : QueueLabelsFrame st st' := by
   obtain ⟨c, s, t, hT, -, rfl⟩ := Architecture.IpcBufferValidation.setIPCBufferOp_ok_perform hStep
   unfold Architecture.IpcBufferValidation.setIPCBufferPerform
   exact (threadSlotSet ec hInv hT _ _ _ _ _).andThen fun hI =>
@@ -307,14 +464,14 @@ theorem setIPCBufferOp (ec : CoreId) {st st' : SystemState} {vtid : SeLe4n.Valid
 theorem irqHandlerSetNotification {ec : CoreId} {line : Nat} {src : CSpaceAddr}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (hStep : _root_.SeLe4n.Kernel.irqHandlerSetNotification ec line src st = .ok ((), st')) :
-    EndpointWaitersFrame st st' := by
+    QueueLabelsFrame st st' := by
   obtain ⟨-, st1, -, -, -, hZ, hC⟩ := irqHandlerSetNotification_ok hInv hStep
   exact (cspaceDeleteSlotZombie hInv hZ).andThen fun hI => of_frame (RecordsFrame.cspaceCopy hI hC)
 
 theorem irqHandlerClear {ec : CoreId} {line : Nat} {st st' : SystemState}
     (hInv : st.objects.invExt)
     (hStep : _root_.SeLe4n.Kernel.irqHandlerClear ec line st = .ok ((), st')) :
-    EndpointWaitersFrame st st' := by
+    QueueLabelsFrame st st' := by
   unfold _root_.SeLe4n.Kernel.irqHandlerClear at hStep
   split at hStep
   · cases hStep
@@ -326,26 +483,27 @@ theorem restartThreadOnCore {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
     {executingCore : CoreId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
     (hInv : st.objects.invExt)
     (h : Lifecycle.Suspend.restartThreadOnCore st vtid executingCore = .ok (st', sgi?)) :
-    EndpointWaitersFrame st st' := by
+    QueueLabelsFrame st st' := by
   rcases Lifecycle.Suspend.restartThreadOnCore_cases h with hRes | ⟨st1, _, hSus, hRes⟩ | ⟨rfl, _⟩
   · exact (retirePendingFaultForResume st vtid.val hInv).andThen fun h' => resumeThreadOnCore h' hRes
   · exact ((suspendThreadOnCore hInv hSus).andThen fun h' =>
       retirePendingFaultForResume st1 vtid.val h').andThen fun h' => resumeThreadOnCore h' hRes
   · exact refl hInv
 
-end EndpointWaitersFrame
+end QueueLabelsFrame
 
 open Architecture.RegisterDecode
 open Architecture.SyscallArgDecode
 
 /-- **Every capability-only arm is a waiters' frame**: none blocks a thread on an
 endpoint. -/
-theorem dispatchCapabilityOnly_endpointWaitersFrame
+theorem dispatchCapabilityOnly_queueLabelsFrame
     (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)
     (executingCore : CoreId) (k : Kernel Unit) (st st' : SystemState)
     (hArm : dispatchCapabilityOnly decoded cap tid executingCore = some k)
+    (hNB : ∀ o, decoded.syscallId = .tcbBindNotification → cap.target ≠ .object o)
     (hInv : st.objects.invExt) (hStep : k st = .ok ((), st')) :
-    EndpointWaitersFrame st st' := by
+    QueueLabelsFrame st st' := by
   unfold dispatchCapabilityOnly at hArm
   cases hSy : decoded.syscallId <;> simp only [hSy] at hArm <;> try cases hArm
   case cspaceDelete =>
@@ -358,7 +516,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          exact EndpointWaitersFrame.cspaceDeleteSlotZombie hInv hStep
+          exact QueueLabelsFrame.cspaceDeleteSlotZombie hInv hStep
     all_goals try cases hStep
   case cspaceRevoke =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -370,7 +528,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          exact EndpointWaitersFrame.cspaceRevokeCdtFinalising hInv hStep
+          exact QueueLabelsFrame.cspaceRevokeCdtFinalising hInv hStep
     all_goals try cases hStep
   case mintReplyCap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -382,12 +540,12 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          exact EndpointWaitersFrame.of_frame (RecordsFrame.mintReplyCapWithCdt hInv hStep)
+          exact QueueLabelsFrame.of_frame (RecordsFrame.mintReplyCapWithCdt hInv hStep)
     all_goals try cases hStep
   case untypedRetype =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object _ =>
-      exact EndpointWaitersFrame.untypedRetypeFromCap hInv hStep
+      exact QueueLabelsFrame.untypedRetypeFromCap hInv hStep
     all_goals try cases hStep
   case vspaceMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -406,7 +564,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
             | ok p =>
               obtain ⟨_, args⟩ := p
               simp only [hOps] at hStep
-              exact EndpointWaitersFrame.vspaceMapOrRemapFromFrameCap hInv hStep
+              exact QueueLabelsFrame.vspaceMapOrRemapFromFrameCap hInv hStep
     all_goals try cases hStep
   case vspaceUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -417,7 +575,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
       | ok r =>
           obtain ⟨slot, _, _⟩ := r
           simp only [hR] at hStep
-          exact EndpointWaitersFrame.vspaceUnmapFrameCap hInv hStep
+          exact QueueLabelsFrame.vspaceUnmapFrameCap hInv hStep
     all_goals try cases hStep
   case vspaceUnifyInstruction =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -429,7 +587,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
           simp only [hDec] at hStep
           split at hStep
           · cases hStep
-          · exact EndpointWaitersFrame.of_frame (RecordsFrame.vspaceUnifyInstructionPage hInv hStep)
+          · exact QueueLabelsFrame.of_frame (RecordsFrame.vspaceUnifyInstructionPage hInv hStep)
     all_goals try cases hStep
   case serviceRevoke =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -438,7 +596,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
       obtain ⟨_, oid, -, hStep⟩ := hStep
       try dsimp only [] at hStep
       obtain ⟨_, hRev⟩ := revokeServiceByRecordedRegistration_revokeService hStep
-      exact EndpointWaitersFrame.of_frame (RecordsFrame.revokeService hInv hRev)
+      exact QueueLabelsFrame.of_frame (RecordsFrame.revokeService hInv hRev)
     all_goals try cases hStep
   case serviceQuery =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -455,7 +613,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
           subst hStEq
           simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
           subst hStep
-          exact EndpointWaitersFrame.of_frame (RecordsFrame.writeCallReturnWord _ _ _ hInv)
+          exact QueueLabelsFrame.of_frame (RecordsFrame.writeCallReturnWord _ _ _ hInv)
     all_goals try cases hStep
   case schedContextConfigure =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -473,7 +631,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
           | ok args =>
               simp only [hDec] at hStep
               split at hStep
-              · exact EndpointWaitersFrame.of_frame (RecordsFrame.schedControlConfigure hInv hStep)
+              · exact QueueLabelsFrame.of_frame (RecordsFrame.schedControlConfigure hInv hStep)
               · cases hStep
     all_goals try cases hStep
   case schedContextBind =>
@@ -488,7 +646,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              exact EndpointWaitersFrame.of_frame (RecordsFrame.schedContextBindNotification hInv hStep)
+              exact QueueLabelsFrame.of_frame (RecordsFrame.schedContextBindNotification hInv hStep)
       | zero =>
           simp only [hN] at hStep
           cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
@@ -499,7 +657,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
               | error e => simp only [hVal] at hStep; cases hStep
               | ok vScId =>
                   simp only [hVal] at hStep
-                  exact EndpointWaitersFrame.of_frame (RecordsFrame.schedContextBind hInv hStep)
+                  exact QueueLabelsFrame.of_frame (RecordsFrame.schedContextBind hInv hStep)
     all_goals try cases hStep
   case schedContextUnbind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -520,7 +678,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
                   obtain ⟨stU, sgiU⟩ := pair
                   simp only [hUn] at hStep
                   cases hStep
-                  exact EndpointWaitersFrame.of_frame (RecordsFrame.schedContextUnbindAllOnCore hInv hUn)
+                  exact QueueLabelsFrame.of_frame (RecordsFrame.schedContextUnbindAllOnCore hInv hUn)
     all_goals try cases hStep
   case schedContextUnbindObject =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -534,7 +692,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              exact EndpointWaitersFrame.of_frame (RecordsFrame.schedContextUnbindNotificationObject hInv hStep)
+              exact QueueLabelsFrame.of_frame (RecordsFrame.schedContextUnbindNotificationObject hInv hStep)
       | zero =>
           simp only [hN] at hStep
           cases hRes : resolveSchedContextBindThread tid (schedContextBindArgsOf st tid decoded.msgInfo.extraCaps) st with
@@ -552,7 +710,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
                       obtain ⟨stU, sgiU⟩ := pair
                       simp only [hUn] at hStep
                       cases hStep
-                      exact EndpointWaitersFrame.of_frame (RecordsFrame.schedContextUnbindThreadObjectOnCore hInv hUn)
+                      exact QueueLabelsFrame.of_frame (RecordsFrame.schedContextUnbindThreadObjectOnCore hInv hUn)
     all_goals try cases hStep
   case schedContextConsumed =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -568,7 +726,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
           | ok stC =>
               simp only [hC] at hStep
               cases hStep
-              exact EndpointWaitersFrame.of_frame (RecordsFrame.schedContextConsumedOnCore hInv hC)
+              exact QueueLabelsFrame.of_frame (RecordsFrame.schedContextConsumedOnCore hInv hC)
     all_goals try cases hStep
   case schedContextYieldTo =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -584,48 +742,32 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
           | ok stC =>
               simp only [hC] at hStep
               cases hStep
-              exact EndpointWaitersFrame.of_frame (RecordsFrame.schedContextYieldToOnCore hInv hC)
+              exact QueueLabelsFrame.of_frame (RecordsFrame.schedContextYieldToOnCore hInv hC)
     all_goals try cases hStep
   case irqHandlerAck =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case irqHandler line =>
       rw [Architecture.irqHandlerAck_ok hStep]
       have hO := Architecture.setInterruptLineMask_objects st line false
-      exact EndpointWaitersFrame.of_objects_eq hInv hO
+      exact QueueLabelsFrame.of_objects_eq hInv hO
     all_goals try cases hStep
   case irqControlGet =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case irqControl => exact EndpointWaitersFrame.of_frame (RecordsFrame.irqControlGetFromCap hInv hStep)
+    case irqControl => exact QueueLabelsFrame.of_frame (RecordsFrame.irqControlGetFromCap hInv hStep)
     all_goals try cases hStep
   case irqHandlerSetNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case irqHandler line =>
       obtain ⟨_, _, _, hS⟩ := irqHandlerSetNotificationFromCap_ok tid executingCore line _ st st' hStep
-      exact EndpointWaitersFrame.irqHandlerSetNotification hInv hS
+      exact QueueLabelsFrame.irqHandlerSetNotification hInv hS
     all_goals try cases hStep
   case irqHandlerClear =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case irqHandler line => exact EndpointWaitersFrame.irqHandlerClear hInv hStep
+    case irqHandler line => exact QueueLabelsFrame.irqHandlerClear hInv hStep
     all_goals try cases hStep
   case tcbBindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
-    case object tcbObjId =>
-      simp only [tcbBindNotificationArm] at hStep
-      try dsimp only [] at hStep
-      cases hDec : tcbBindNotificationArgsOf st tid decoded.msgInfo.extraCaps with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
-          cases hCaller : st.getTcb? tid with
-          | none => simp only [hCaller] at hStep; cases hStep
-          | some callerTcb =>
-              simp only [hCaller] at hStep
-              try dsimp only [] at hStep
-              cases hCap2 : resolveBindNotificationCap { callerId := tid, cspaceRootCap := callerTcb.spaceCells[0], capAddr := args.notificationCPtr, requiredRight := .read } st with
-              | error e => simp only [hCap2] at hStep; cases hStep
-              | ok notifId =>
-                  simp only [hCap2] at hStep
-                  exact EndpointWaitersFrame.of_coreFrame (RecordsCoreFrame.bindNotification hInv hStep)
+    case object o => exact absurd hTgt (hNB o hSy)
     all_goals try cases hStep
   case tcbUnbindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -637,7 +779,8 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
           obtain ⟨u, stU⟩ := pair; cases u
           simp only [hUn] at hStep
           cases hStep
-          exact EndpointWaitersFrame.of_coreFrame (RecordsCoreFrame.unbindNotification hInv hUn)
+          exact QueueLabelsFrame.of_coreFrame (RecordsCoreFrame.unbindNotification hInv hUn)
+            (NtfnLabelsKept.unbindNotification hInv hUn)
     all_goals try cases hStep
   case tcbSuspend =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -658,7 +801,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
                   obtain ⟨stU, sgiU⟩ := pair
                   simp only [hSus] at hStep
                   cases hStep
-                  exact EndpointWaitersFrame.suspendThreadOnCore hInv hSus
+                  exact QueueLabelsFrame.suspendThreadOnCore hInv hSus
     all_goals try cases hStep
   case tcbResume =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -678,7 +821,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
               obtain ⟨stU, sgiU⟩ := pair
               simp only [hRes] at hStep
               cases hStep
-              exact EndpointWaitersFrame.restartThreadOnCore hInv hRes
+              exact QueueLabelsFrame.restartThreadOnCore hInv hRes
     all_goals try cases hStep
   case tcbSetPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -705,7 +848,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
                       obtain ⟨stU, sgiU⟩ := pair
                       simp only [hSet] at hStep
                       cases hStep
-                      exact EndpointWaitersFrame.of_frame (RecordsFrame.setPriorityOnCore hInv hSet)
+                      exact QueueLabelsFrame.of_frame (RecordsFrame.setPriorityOnCore hInv hSet)
     all_goals try cases hStep
   case tcbSetMCPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -732,7 +875,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
                       obtain ⟨stU, sgiU⟩ := pair
                       simp only [hSet] at hStep
                       cases hStep
-                      exact EndpointWaitersFrame.of_frame (RecordsFrame.setMCPriorityOnCore hInv hSet)
+                      exact QueueLabelsFrame.of_frame (RecordsFrame.setMCPriorityOnCore hInv hSet)
     all_goals try cases hStep
   case tcbSetIPCBuffer =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -753,7 +896,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
               | ok stU =>
                   simp only [hSet] at hStep
                   cases hStep
-                  exact EndpointWaitersFrame.setIPCBufferOp executingCore hInv hSet
+                  exact QueueLabelsFrame.setIPCBufferOp executingCore hInv hSet
     all_goals try cases hStep
   case tcbSetAffinity =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -778,7 +921,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
                       obtain ⟨stU, sgiU⟩ := pair
                       simp only [hSet] at hStep
                       cases hStep
-                      exact EndpointWaitersFrame.of_frame (RecordsFrame.setThreadCpuAffinityOnCore hInv hSet)
+                      exact QueueLabelsFrame.of_frame (RecordsFrame.setThreadCpuAffinityOnCore hInv hSet)
     all_goals try cases hStep
   case tcbSetSpace =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -802,7 +945,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
                   | ok stU =>
                       simp only [hSet] at hStep
                       cases hStep
-                      exact EndpointWaitersFrame.copyThreadSpacesZombie executingCore hInv hSet
+                      exact QueueLabelsFrame.copyThreadSpacesZombie executingCore hInv hSet
     all_goals try cases hStep
   case pageTableMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -821,12 +964,12 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
             | ok p =>
                 obtain ⟨_, rootId⟩ := p
                 simp only [hR] at hStep
-                exact EndpointWaitersFrame.pageTableMap hInv hStep
+                exact QueueLabelsFrame.pageTableMap hInv hStep
     all_goals try cases hStep
   case pageTableUnmap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object objId =>
-      exact EndpointWaitersFrame.pageTableUnmap hInv hStep
+      exact QueueLabelsFrame.pageTableUnmap hInv hStep
     all_goals try cases hStep
 
 end SeLe4n.Kernel

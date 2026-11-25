@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
-import SeLe4n.Kernel.EndpointWaiters.Ipc
+import SeLe4n.Kernel.QueueLabels.Ipc
 import SeLe4n.Kernel.KernelRecords.Fault
 
 /-! # The fault delivery: a creator
@@ -29,14 +29,14 @@ open SeLe4n.Kernel.Concurrency (CoreId)
 -- The fault delivery
 -- ============================================================================
 
-namespace EndpointWaitersFrame
+namespace QueueLabelsFrame
 
 /-- **The fail-closed suspend and the record** move no thread onto an
 endpoint: the suspend writes the thread's scheduling state, the record its
 fault, and neither its IPC state. -/
 theorem faultSuspendRecord (st : SystemState) (t : SeLe4n.ThreadId) (c : CoreId)
     (tf : ThreadFault) (hInv : st.objects.invExt) :
-    EndpointWaitersFrame st (_root_.SeLe4n.Kernel.recordPendingFault
+    QueueLabelsFrame st (_root_.SeLe4n.Kernel.recordPendingFault
       (_root_.SeLe4n.Kernel.faultSuspendOnCore st t c) t tf) := by
   unfold _root_.SeLe4n.Kernel.recordPendingFault _root_.SeLe4n.Kernel.faultSuspendOnCore
   exact ((of_frame (RecordsFrame.removeRunnableOnCore st t c hInv)).andThen fun h =>
@@ -45,18 +45,18 @@ theorem faultSuspendRecord (st : SystemState) (t : SeLe4n.ThreadId) (c : CoreId)
     updateTcb _ t (f := fun tcb => { tcb.setPendingFault (some tf) with ipcFaultSend := true }) h
       fun _ => TcbWaitsKept.of_ipc rfl
 
-end EndpointWaitersFrame
+end QueueLabelsFrame
 
-namespace EndpointWaitersGrowFrame
+namespace QueueLabelsGrowFrame
 
 /-- **The fault delivery to a resolved handler blocks at most the faulting
 thread, on the handler's endpoint**: it is the handler call, or the suspend. -/
 theorem faultDeliverOnCore {st : SystemState} {t : SeLe4n.ThreadId} {f : Fault}
     {fctx : FaultContext} {c : CoreId} {tgt : FaultHandlerTarget} (hInv : st.objects.invExt)
     (hR : resolveFaultHandler st t = .ok tgt) :
-    EndpointWaitersGrowFrame t tgt.endpoint st
+    QueueLabelsGrowFrame t tgt.endpoint st
       (_root_.SeLe4n.Kernel.faultDeliverOnCore st t f fctx c).1 := by
-  have sus := (EndpointWaitersFrame.faultSuspendRecord st t c { fault := f, context := fctx } hInv).growAt
+  have sus := (QueueLabelsFrame.faultSuspendRecord st t c { fault := f, context := fctx } hInv).growAt
     t tgt.endpoint
   unfold _root_.SeLe4n.Kernel.faultDeliverOnCore
   rw [hR]
@@ -76,9 +76,9 @@ theorem faultDeliverOnCore {st : SystemState} {t : SeLe4n.ThreadId} {f : Fault}
         { tcb.setPendingFault (some { fault := f, context := fctx }) with ipcFaultSend := true }) h
         fun _ => TcbWaitsKept.of_ipc rfl
 
-end EndpointWaitersGrowFrame
+end QueueLabelsGrowFrame
 
-namespace EndpointWaitersStage
+namespace QueueLabelsStage
 
 variable {ctx : LabelingContext}
 
@@ -88,8 +88,8 @@ the endpoint's label before the handler call can block it; a denied flow
 suspends. -/
 theorem faultDeliverOnCoreChecked {st : SystemState} {t : SeLe4n.ThreadId} {f : Fault}
     {fctx : FaultContext} {c : CoreId} (hInv : st.objects.invExt) :
-    EndpointWaitersStage ctx st (_root_.SeLe4n.Kernel.faultDeliverOnCoreChecked ctx st t f fctx c).1 := by
-  have sus := (EndpointWaitersFrame.faultSuspendRecord st t c { fault := f, context := fctx } hInv).stage
+    QueueLabelsStage ctx st (_root_.SeLe4n.Kernel.faultDeliverOnCoreChecked ctx st t f fctx c).1 := by
+  have sus := (QueueLabelsFrame.faultSuspendRecord st t c { fault := f, context := fctx } hInv).stage
     (ctx := ctx)
   unfold _root_.SeLe4n.Kernel.faultDeliverOnCoreChecked
   split
@@ -97,10 +97,10 @@ theorem faultDeliverOnCoreChecked {st : SystemState} {t : SeLe4n.ThreadId} {f : 
   · rename_i tgt hR
     split
     · rename_i hGate
-      exact (EndpointWaitersGrowFrame.faultDeliverOnCore hInv hR).stage
+      exact (QueueLabelsGrowFrame.faultDeliverOnCore hInv hR).stage
         (endpointFlowGate_implies_eq ctx tgt.endpoint _ _ hGate)
     · exact sus
 
-end EndpointWaitersStage
+end QueueLabelsStage
 
 end SeLe4n.Kernel

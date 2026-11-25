@@ -10,7 +10,7 @@
 import SeLe4n.Kernel.ContextLenders.CapabilityDispatch
 import SeLe4n.Kernel.ContextLenders.Fault
 import SeLe4n.Kernel.KernelRecords.SyscallEntry
-import SeLe4n.Kernel.EndpointWaiters.Entry
+import SeLe4n.Kernel.QueueLabels.Entry
 
 /-! # The syscall entry keeps the lenders' flow
 
@@ -125,10 +125,10 @@ theorem syscallDispatchFromAbi_lendersStage {ctx : LabelingContext} {e : CoreId}
     unfold Platform.FFI.writeFfiRegistersToTcb
     exact LendersFrame.updateTcb st tid _ hInv
   have hR1 := hR.writeFfiRegistersToTcb tid syscallId x0 x1 x2 x3 x4 x5 x6 hInv
-  have W1 : EndpointWaitersFrame st
+  have W1 : QueueLabelsFrame st
       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 x6) := by
     unfold Platform.FFI.writeFfiRegistersToTcb
-    exact EndpointWaitersFrame.updateTcb st tid hInv fun _ => TcbWaitsKept.of_ipc rfl
+    exact QueueLabelsFrame.updateTcb st tid hInv fun _ => TcbWaitsKept.of_ipc rfl
   dsimp only at h
   split at h
   · have F := (LendersStep.of_frame (ctx := ctx) F1).andThen fun hI =>
@@ -143,11 +143,11 @@ theorem syscallDispatchFromAbi_lendersStage {ctx : LabelingContext} {e : CoreId}
         exact F.stage.trans (LendersStage.of_kept (chainObjectsKept.of_objects_eq rfl))
       · cases h
         unfold Platform.FFI.deliverSyscallCapFault
-        have W := (W1.andThen fun hI => EndpointWaitersFrame.cancelReceiveBusyReply ctx e _ hI).andThen
-          fun hI => EndpointWaitersFrame.writeFaultRegistersToTcb _ tid
+        have W := (W1.andThen fun hI => QueueLabelsFrame.cancelReceiveBusyReply ctx e _ hI).andThen
+          fun hI => QueueLabelsFrame.writeFaultRegistersToTcb _ tid
             (Platform.FFI.syscallWindow syscallId x0 x1 x2 x3 x4 x5 x6 spEl0 x30) hI
         exact F.stage.trans fun hFl => faultDeliverOnCoreChecked_preserves_lendingLabelsEqual _ tid _ _
-          e (P.capFault tid _ hCur) (W.stage hW).2
+          e (P.capFault tid _ hCur) (W.waiters hW).2
           (LendersStage.of_kept (chainObjectsKept.writeFaultRegistersToTcb _ tid _ F.invExt) hFl)
     · split at h
       · cases h
@@ -160,7 +160,7 @@ theorem syscallDispatchFromAbi_lendersStage {ctx : LabelingContext} {e : CoreId}
   · rename_i hE
     cases h
     exact F1.stage.trans (syscallEntryChecked_lendersStage F1.invExt (P.entry tid hCur) hR1
-      (W1.stage hW) hE)
+      (W1.waiters hW) hE)
 
 
 /-- **The syscall step keeps the lenders' flow**: the ABI dispatch, the
@@ -220,7 +220,7 @@ theorem syscallDispatchEntryState_lendersStage (ctx : LabelingContext) (e : Core
   have W := (RecordsFrame.saveCapturedSyscallFrame st e frame hI).trans
     (RecordsFrame.syncUserWords _ bytes n (RecordsFrame.saveCapturedSyscallFrame st e frame hI).invExt)
   exact (hS.trans (syscallDispatchCrossCoreStep_lendersStage hK1 PR (P _ _ _ _ _ _ _ _ _ _ _ _) hR
-    ((EndpointWaitersFrame.of_frame W).stage hW))).trans
+    ((QueueLabelsFrame.of_frame W).waiters hW))).trans
     (LendersStage.of_kept (chainObjectsKept.clearUserWords _))
 
 end SeLe4n.Kernel

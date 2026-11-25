@@ -13276,7 +13276,7 @@ run_negative_check "INVARIANT" rg -U -n 'Except\.ok ist =>\n(( +[^\n]*)?\n)*? +i
 run_check "INVARIANT" rg -n '^theorem drainBootPhysicalWrites_notificationLabelsCoherent($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem bootAndInitialiseFromPlatformOn_incoherent($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^  bootRefusesCrossLabelNotificationBinding$' tests/SyscallDispatchSuite.lean
-run_check "INVARIANT" rg -n '^theorem notificationLabelsCoherent_signalReceiver($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
+run_check "INVARIANT" rg -n '^theorem notificationLabelsAgree_signalReceiver($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
 run_check "INVARIANT" rg -n '^theorem bootPipeline_notificationInertObjects($|[ ({:\[\]])' SeLe4n/Platform/Boot/NotificationLabels.lean
 run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootStateAt_notificationLabelsCoherent($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem qemuVirtDeploymentBootState_notificationLabelsCoherent($|[ ({:\[\]])' SeLe4n/Platform/QemuVirt/Deployment.lean
@@ -23740,50 +23740,50 @@ run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_endpoint
 # IPC state, so it is a waiters' frame; a growth carries the labels only given
 # the new waiter's label equation; the checked send and call discharge it from
 # their own two-way gate, and the receive takes the gate it was admitted by.
-run_check "INVARIANT" rg -n '^def EndpointWaitersStage($|[ ({:\[\]])' SeLe4n/Kernel/EndpointWaiters/Stage.lean
-run_check "INVARIANT" rg -n '^theorem of_frame \{st st'"'"' : SystemState\} \(F : RecordsFrame st st'"'"'\) : EndpointWaitersShrink st st'"'"'' SeLe4n/Kernel/EndpointWaiters/Stage.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem stage \{ctx : LabelingContext\} \{st st'"'"' : SystemState\} \(h : EndpointWaitersGrowAt w e st st'"'"'\)\n    \(hL : ctx\.threadLabelOf w = ctx\.endpointLabelOf e\)" SeLe4n/Kernel/EndpointWaiters/Stage.lean'
-run_check "INVARIANT" rg -n '^theorem EndpointWaitersGrowFrame\.storeTcbIpcStateAndMessage($|[ ({:\[\]])' SeLe4n/Kernel/EndpointWaiters/Stage.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointSendCrossCoreDispatchChecked[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_eq ctx endpointId" SeLe4n/Kernel/EndpointWaiters/Ipc.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatchChecked[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_eq ctx endpointId" SeLe4n/Kernel/EndpointWaiters/Ipc.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDualWithCapsOnCore[^\n]*(\n([ \t][^\n]*)?)*hGate : endpointFlowGate ctx endpointId \(ctx\.endpointLabelOf endpointId\)" SeLe4n/Kernel/EndpointWaiters/Ipc.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultDeliverOnCoreChecked[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_eq ctx tgt\.endpoint" SeLe4n/Kernel/EndpointWaiters/Fault.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyRecvTransferOnCore[^\n]*(\n([ \t][^\n]*)?)*hGate : endpointFlowGate ctx epId \(ctx\.endpointLabelOf epId\) \(ctx\.threadLabelOf tid\)" SeLe4n/Kernel/EndpointWaiters/IpcReplyRecv.lean'
+run_check "INVARIANT" rg -n '^def QueueLabelsStage($|[ ({:\[\]])' SeLe4n/Kernel/QueueLabels/Stage.lean
+run_check "INVARIANT" rg -n '^theorem of_frame \{st st'"'"' : SystemState\} \(F : RecordsFrame st st'"'"'\) : EndpointWaitersShrink st st'"'"'' SeLe4n/Kernel/QueueLabels/Stage.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem waiters \{ctx : LabelingContext\} \{st st'"'"' : SystemState\} \(h : EndpointWaitersGrowAt w e st st'"'"'\)\n    \(hL : ctx\.threadLabelOf w = ctx\.endpointLabelOf e\)" SeLe4n/Kernel/QueueLabels/Stage.lean'
+run_check "INVARIANT" rg -n '^theorem QueueLabelsGrowFrame\.storeTcbIpcStateAndMessage($|[ ({:\[\]])' SeLe4n/Kernel/QueueLabels/Stage.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointSendCrossCoreDispatchChecked[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_eq ctx endpointId" SeLe4n/Kernel/QueueLabels/Ipc.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatchChecked[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_eq ctx endpointId" SeLe4n/Kernel/QueueLabels/Ipc.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDualWithCapsOnCore[^\n]*(\n([ \t][^\n]*)?)*hGate : endpointFlowGate ctx endpointId \(ctx\.endpointLabelOf endpointId\)" SeLe4n/Kernel/QueueLabels/Ipc.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultDeliverOnCoreChecked[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_eq ctx tgt\.endpoint" SeLe4n/Kernel/QueueLabels/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyRecvTransferOnCore[^\n]*(\n([ \t][^\n]*)?)*hGate : endpointFlowGate ctx epId \(ctx\.endpointLabelOf epId\) \(ctx\.threadLabelOf tid\)" SeLe4n/Kernel/QueueLabels/IpcReplyRecv.lean'
 # WS-SX SX11.2: every committing entry carries the waiters' labels.  Each of the
 # seven committed entry states is bounded to a theorem concluding the waiters'
 # stage; only the syscall entry reads the records (for the store's invariant
 # after the dispatch), the rest the store's invariant alone.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem perCoreTimerTickEntryState_endpointWaitersStage[^\n]*(\n([ \t][^\n]*)?)*\n    EndpointWaitersStage ctx st " SeLe4n/Kernel/EndpointWaiters/Entry.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem perCoreRescheduleEntryState_endpointWaitersStage[^\n]*(\n([ \t][^\n]*)?)*\n    EndpointWaitersStage ctx st " SeLe4n/Kernel/EndpointWaiters/Entry.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem fpAccessEntryState_endpointWaitersStage[^\n]*(\n([ \t][^\n]*)?)*\n    EndpointWaitersStage ctx st " SeLe4n/Kernel/EndpointWaiters/Entry.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem interruptEntryState_endpointWaitersStage[^\n]*(\n([ \t][^\n]*)?)*\n    EndpointWaitersStage lctx st " SeLe4n/Kernel/EndpointWaiters/Entry.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultEntryState_endpointWaitersStage[^\n]*(\n([ \t][^\n]*)?)*\n    EndpointWaitersStage ctx st " SeLe4n/Kernel/EndpointWaiters/Entry.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem unknownSyscallEntryState_endpointWaitersStage[^\n]*(\n([ \t][^\n]*)?)*\n    EndpointWaitersStage ctx st " SeLe4n/Kernel/EndpointWaiters/Entry.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem syscallDispatchEntryState_endpointWaitersStage[^\n]*(\n([ \t][^\n]*)?)*\n    EndpointWaitersStage ctx st " SeLe4n/Kernel/EndpointWaiters/Entry.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem perCoreTimerTickEntryState_endpointWaitersStage[^\n]*(\n([ \t][^\n]*)?)*kernelRecordsSound" SeLe4n/Kernel/EndpointWaiters/Entry.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem perCoreRescheduleEntryState_endpointWaitersStage[^\n]*(\n([ \t][^\n]*)?)*kernelRecordsSound" SeLe4n/Kernel/EndpointWaiters/Entry.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem fpAccessEntryState_endpointWaitersStage[^\n]*(\n([ \t][^\n]*)?)*kernelRecordsSound" SeLe4n/Kernel/EndpointWaiters/Entry.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem interruptEntryState_endpointWaitersStage[^\n]*(\n([ \t][^\n]*)?)*kernelRecordsSound" SeLe4n/Kernel/EndpointWaiters/Entry.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultEntryState_endpointWaitersStage[^\n]*(\n([ \t][^\n]*)?)*kernelRecordsSound" SeLe4n/Kernel/EndpointWaiters/Entry.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem unknownSyscallEntryState_endpointWaitersStage[^\n]*(\n([ \t][^\n]*)?)*kernelRecordsSound" SeLe4n/Kernel/EndpointWaiters/Entry.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem perCoreTimerTickEntryState_queueLabelsStage[^\n]*(\n([ \t][^\n]*)?)*\n    QueueLabelsStage ctx st " SeLe4n/Kernel/QueueLabels/Entry.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem perCoreRescheduleEntryState_queueLabelsStage[^\n]*(\n([ \t][^\n]*)?)*\n    QueueLabelsStage ctx st " SeLe4n/Kernel/QueueLabels/Entry.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem fpAccessEntryState_queueLabelsStage[^\n]*(\n([ \t][^\n]*)?)*\n    QueueLabelsStage ctx st " SeLe4n/Kernel/QueueLabels/Entry.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem interruptEntryState_queueLabelsStage[^\n]*(\n([ \t][^\n]*)?)*\n    QueueLabelsStage lctx st " SeLe4n/Kernel/QueueLabels/Entry.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultEntryState_queueLabelsStage[^\n]*(\n([ \t][^\n]*)?)*\n    QueueLabelsStage ctx st " SeLe4n/Kernel/QueueLabels/Entry.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem unknownSyscallEntryState_queueLabelsStage[^\n]*(\n([ \t][^\n]*)?)*\n    QueueLabelsStage ctx st " SeLe4n/Kernel/QueueLabels/Entry.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem syscallDispatchEntryState_queueLabelsStage[^\n]*(\n([ \t][^\n]*)?)*\n    QueueLabelsStage ctx st " SeLe4n/Kernel/QueueLabels/Entry.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem perCoreTimerTickEntryState_queueLabelsStage[^\n]*(\n([ \t][^\n]*)?)*kernelRecordsSound" SeLe4n/Kernel/QueueLabels/Entry.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem perCoreRescheduleEntryState_queueLabelsStage[^\n]*(\n([ \t][^\n]*)?)*kernelRecordsSound" SeLe4n/Kernel/QueueLabels/Entry.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem fpAccessEntryState_queueLabelsStage[^\n]*(\n([ \t][^\n]*)?)*kernelRecordsSound" SeLe4n/Kernel/QueueLabels/Entry.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem interruptEntryState_queueLabelsStage[^\n]*(\n([ \t][^\n]*)?)*kernelRecordsSound" SeLe4n/Kernel/QueueLabels/Entry.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultEntryState_queueLabelsStage[^\n]*(\n([ \t][^\n]*)?)*kernelRecordsSound" SeLe4n/Kernel/QueueLabels/Entry.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem unknownSyscallEntryState_queueLabelsStage[^\n]*(\n([ \t][^\n]*)?)*kernelRecordsSound" SeLe4n/Kernel/QueueLabels/Entry.lean'
 # ...the receive and the reply-receive arms discharge the new waiter's label
 # from the gate the dispatch checks before either runs, and the capability
 # table is a frame on every arm.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem receiveResolvedArm[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_eq ctx epId" SeLe4n/Kernel/EndpointWaiters/Dispatch.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem dispatchWithCapChecked_endpointWaitersStage[^\n]*(\n([ \t][^\n]*)?)*dispatchCapabilityOnly_endpointWaitersFrame" SeLe4n/Kernel/EndpointWaiters/Dispatch.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem dispatchCapabilityOnly_endpointWaitersFrame[^\n]*(\n([ \t][^\n]*)?)*\n    EndpointWaitersFrame st st. := by" SeLe4n/Kernel/EndpointWaiters/Capability.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem receiveResolvedArm[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_eq ctx epId" SeLe4n/Kernel/QueueLabels/Dispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem dispatchWithCapChecked_queueLabelsStage[^\n]*(\n([ \t][^\n]*)?)*dispatchCapabilityOnly_queueLabelsFrame" SeLe4n/Kernel/QueueLabels/Dispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem dispatchCapabilityOnly_queueLabelsFrame[^\n]*(\n([ \t][^\n]*)?)*\n    QueueLabelsFrame st st. := by" SeLe4n/Kernel/QueueLabels/Capability.lean'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
-import SeLe4n.Kernel.EndpointWaiters.Entry
+import SeLe4n.Kernel.QueueLabels.Entry
 open SeLe4n.Kernel
-#check @perCoreTimerTickEntryState_endpointWaitersStage
-#check @perCoreRescheduleEntryState_endpointWaitersStage
-#check @fpAccessEntryState_endpointWaitersStage
-#check @interruptEntryState_endpointWaitersStage
-#check @faultEntryState_endpointWaitersStage
-#check @unknownSyscallEntryState_endpointWaitersStage
-#check @syscallDispatchEntryState_endpointWaitersStage
-#check @dispatchSyscallChecked_endpointWaitersStage
-#check @dispatchCapabilityOnly_endpointWaitersFrame
+#check @perCoreTimerTickEntryState_queueLabelsStage
+#check @perCoreRescheduleEntryState_queueLabelsStage
+#check @fpAccessEntryState_queueLabelsStage
+#check @interruptEntryState_queueLabelsStage
+#check @faultEntryState_queueLabelsStage
+#check @unknownSyscallEntryState_queueLabelsStage
+#check @syscallDispatchEntryState_queueLabelsStage
+#check @dispatchSyscallChecked_queueLabelsStage
+#check @dispatchCapabilityOnly_queueLabelsFrame
 EOF'
 run_check "INVARIANT" rg -n '^theorem ipcReachableUnder_default($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
 # MEASURED: the decisive case keeps the caller's gate passing and the donation

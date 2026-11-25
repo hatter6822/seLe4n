@@ -24,7 +24,7 @@ and the receiver's (`rendezvousReceiverFlow`).
 
 The blocked-sender label fact these dispatches also carry is no longer lifted
 here: WS-SX SX11.2 carries the pair `endpointWaitersLabelsEqual` across every
-kernel entry (`EndpointWaitersStage`), each new waiter admitted by the gate its
+kernel entry (`QueueLabelsStage`), each new waiter admitted by the gate its
 entry checks, and that stage superseded the per-dispatch sender lifts this
 module held.  What remains of them is the walk's `ipcState` frame, which the
 reply-holder cancel reads.

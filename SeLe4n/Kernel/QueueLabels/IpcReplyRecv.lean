@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
-import SeLe4n.Kernel.EndpointWaiters.IpcReply
+import SeLe4n.Kernel.QueueLabels.IpcReply
 import SeLe4n.Kernel.KernelRecords.Dispatch
 
 /-! # The reply-receive: a creator
@@ -25,7 +25,7 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 
-namespace EndpointWaitersGrowFrame
+namespace QueueLabelsGrowFrame
 
 /-- **The reply-receive blocks at most its server, on its endpoint.** -/
 theorem endpointReplyRecvAnsweringOnCore
@@ -35,10 +35,10 @@ theorem endpointReplyRecvAnsweringOnCore
     (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg
       grant c st = .ok (summary, st')) :
-    EndpointWaitersGrowFrame tid epId st st' := by
+    QueueLabelsGrowFrame tid epId st st' := by
   unfold _root_.SeLe4n.Kernel.endpointReplyRecvAnsweringOnCore at h
   dsimp only at h
-  have A := EndpointWaitersFrame.endpointReplyOnCore (replier := tid) (target := prevCaller)
+  have A := QueueLabelsFrame.endpointReplyOnCore (replier := tid) (target := prevCaller)
     (msg := msg) (c := c) hInv
   revert h A
   cases hR : _root_.SeLe4n.Kernel.endpointReplyOnCore tid prevCaller msg c st with
@@ -80,18 +80,18 @@ theorem endpointReplyRecvAnsweringOnCore
   have F3 := RecordsFrame.replyRecvPostReceiveDonation S2.invExt hPost
   have F4 := RecordsFrame.applyReceiveLegPipHandoff st3 tid nextThread
     ((recordedReplyServer? st prevCaller).getD tid) c F3.invExt
-  have Mid : EndpointWaitersGrowFrame tid epId st _ :=
+  have Mid : QueueLabelsGrowFrame tid epId st _ :=
     ((A.trans (.of_frame (F1.trans FR))).thenGrow S2).thenFrame (.of_frame (F3.trans F4))
   cases answer with
   | none =>
     exact Mid.thenFrame (.of_frame (RecordsFrame.stageDeliveredMessage _ prevCaller xs.capInfo
       F4.invExt))
   | some o =>
-    exact Mid.thenFrame (EndpointWaitersFrame.faultReplyApplyOnCore _ prevCaller o F4.invExt)
+    exact Mid.thenFrame (QueueLabelsFrame.faultReplyApplyOnCore _ prevCaller o F4.invExt)
 
-end EndpointWaitersGrowFrame
+end QueueLabelsGrowFrame
 
-namespace EndpointWaitersStage
+namespace QueueLabelsStage
 
 variable {ctx : LabelingContext}
 
@@ -103,11 +103,11 @@ theorem replyRecvTransferOnCore {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     (hInv : st.objects.invExt)
     (hGate : endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
     (h : _root_.SeLe4n.Kernel.replyRecvTransferOnCore epId tid rid prevCaller label msg
-      grant c st = .ok (summary, st')) : EndpointWaitersStage ctx st st' := by
+      grant c st = .ok (summary, st')) : QueueLabelsStage ctx st st' := by
   unfold _root_.SeLe4n.Kernel.replyRecvTransferOnCore at h
-  exact (EndpointWaitersGrowFrame.endpointReplyRecvAnsweringOnCore hInv h).stage
+  exact (QueueLabelsGrowFrame.endpointReplyRecvAnsweringOnCore hInv h).stage
     (endpointFlowGate_implies_eq ctx epId _ _ hGate).symm
 
-end EndpointWaitersStage
+end QueueLabelsStage
 
 end SeLe4n.Kernel

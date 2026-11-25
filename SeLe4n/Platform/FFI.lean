@@ -1293,6 +1293,15 @@ theorem drainBootPhysicalWrites_notificationLabelsCoherent (ist : IntermediateSt
     (ctx : LabelingContext) (h : notificationLabelsCoherent ist.state ctx = true) :
     notificationLabelsCoherent (drainBootPhysicalWrites ist).state ctx = true := h
 
+/-- WS-SX SX21 (D46): **an accepted boot installs the labels every entry
+carries** — the coherence the boot checks implies the label agreement
+(`notificationLabelsCoherent_agree`), the notification half of
+`QueueLabelsStage`'s domain, so the first entry starts inside it. -/
+theorem drainBootPhysicalWrites_notificationLabelsAgree (ist : IntermediateState)
+    (ctx : LabelingContext) (h : notificationLabelsCoherent ist.state ctx = true) :
+    notificationLabelsAgree ctx (drainBootPhysicalWrites ist).state :=
+  notificationLabelsCoherent_agree (drainBootPhysicalWrites_notificationLabelsCoherent ist ctx h)
+
 /-- **A boot state that is not coherent is refused before any install**: when
 the checked boot accepts the configuration and its witnesses are installed, but
 some notification queues or binds a thread of another label, the wrapper is the

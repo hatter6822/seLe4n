@@ -7,13 +7,13 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
-import SeLe4n.Kernel.EndpointWaiters.Cancellation
+import SeLe4n.Kernel.QueueLabels.Cancellation
 import SeLe4n.Kernel.KernelRecords.Thread
 
 /-! # The suspend and the resume: frames
 
 WS-SX SX11.2.  The suspend cancels the thread's IPC (a frame,
-`EndpointWaitersFrame.cancelIpcBlocking`) and marks it `.Inactive`; the resume
+`QueueLabelsFrame.cancelIpcBlocking`) and marks it `.Inactive`; the resume
 restores it `.ready`.  Every other write they make keeps every thread's IPC
 state.  The proofs follow the records' own (`KernelRecords/ThreadLifecycle.lean`).
 -/
@@ -23,13 +23,13 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 
-namespace EndpointWaitersFrame
+namespace QueueLabelsFrame
 
 /-- seL4-MCS's `cancelIPC` as the suspend runs it: the head cut, then the
 teardown. -/
 theorem cancelIpcKeepingContexts (st : SystemState) (t : SeLe4n.ThreadId) (tcb : TCB)
     (hInv : st.objects.invExt) :
-    EndpointWaitersFrame st (Lifecycle.Suspend.cancelIpcKeepingContexts st t tcb) :=
+    QueueLabelsFrame st (Lifecycle.Suspend.cancelIpcKeepingContexts st t tcb) :=
   have F := RecordsFrame.cutCancelledCallerHead st tcb hInv
   (of_frame F).trans (cancelIpcBlocking _ t tcb F.invExt)
 
@@ -38,7 +38,7 @@ theorem suspendThreadOnCore {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
     {executingCore : CoreId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
     (hInv : st.objects.invExt)
     (hStep : Lifecycle.Suspend.suspendThreadOnCore st vtid executingCore = .ok (st', sgi?)) :
-    EndpointWaitersFrame st st' := by
+    QueueLabelsFrame st st' := by
   simp only [Lifecycle.Suspend.suspendThreadOnCore] at hStep
   split at hStep
   case h_2 => exact absurd hStep (by simp)
@@ -47,7 +47,7 @@ theorem suspendThreadOnCore {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
     case isTrue => cases hStep; exact refl hInv
     case isFalse hA =>
       have S1 := cancelIpcKeepingContexts st vtid.val tcb hInv
-      have S2 : EndpointWaitersFrame st
+      have S2 : QueueLabelsFrame st
           (match PriorityInheritance.blockingServer st vtid.val with
            | some serverId => (PriorityInheritance.propagatePipChainCrossCore
                (Lifecycle.Suspend.cancelIpcKeepingContexts st vtid.val tcb) serverId executingCore).1
@@ -58,7 +58,7 @@ theorem suspendThreadOnCore {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
           exact S1.trans (of_frame (RecordsFrame.propagatePipChainCrossCore _ _ _ _ S1.invExt))
       have S3 := S2.trans (of_frame (RecordsFrame.descheduleAt _ vtid.val
         (placedCoreOf? st vtid.val) S2.invExt))
-      have S4 := S3.trans (show EndpointWaitersFrame _
+      have S4 := S3.trans (show QueueLabelsFrame _
           (Lifecycle.Suspend.clearPendingStateValid _ vtid) by
         unfold Lifecycle.Suspend.clearPendingStateValid Lifecycle.Suspend.clearPendingState
         exact updateTcb _ _ S3.invExt fun _ => TcbWaitsKept.of_ipc rfl)
@@ -70,7 +70,7 @@ theorem suspendThreadOnCore {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
 
 /-- The resume's ready mark: the restore, then the thread state and boost. -/
 theorem resumeReadyMidState (st : SystemState) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    EndpointWaitersFrame st (Lifecycle.Suspend.resumeReadyMidState st t) := by
+    QueueLabelsFrame st (Lifecycle.Suspend.resumeReadyMidState st t) := by
   have S := restoreToReadyStaging st t false hInv
   unfold Lifecycle.Suspend.resumeReadyMidState
   dsimp only
@@ -81,7 +81,7 @@ theorem resumeThreadOnCore {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
     {executingCore : CoreId} {sgi? : Option (CoreId × Concurrency.SgiKind)}
     (hInv : st.objects.invExt)
     (h : Lifecycle.Suspend.resumeThreadOnCore st vtid executingCore = .ok (st', sgi?)) :
-    EndpointWaitersFrame st st' := by
+    QueueLabelsFrame st st' := by
   unfold Lifecycle.Suspend.resumeThreadOnCore at h
   dsimp only at h
   split at h
@@ -114,7 +114,7 @@ theorem resumeThreadOnCore {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
 /-- The resume's fault retire writes the thread's fault record and registers. -/
 theorem retirePendingFaultForResume (st : SystemState) (t : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) :
-    EndpointWaitersFrame st (_root_.SeLe4n.Kernel.retirePendingFaultForResume st t) := by
+    QueueLabelsFrame st (_root_.SeLe4n.Kernel.retirePendingFaultForResume st t) := by
   unfold _root_.SeLe4n.Kernel.retirePendingFaultForResume
   split
   · split
@@ -130,10 +130,10 @@ theorem retirePendingFaultForResume (st : SystemState) (t : SeLe4n.ThreadId)
 /-- The fault-register spill writes the thread's registers. -/
 theorem writeFaultRegistersToTcb (st : SystemState) (t : SeLe4n.ThreadId)
     (w : FaultRegisterWindow) (hInv : st.objects.invExt) :
-    EndpointWaitersFrame st (_root_.SeLe4n.Kernel.writeFaultRegistersToTcb st t w) :=
+    QueueLabelsFrame st (_root_.SeLe4n.Kernel.writeFaultRegistersToTcb st t w) :=
   updateTcb st t (f := fun tcb => { tcb with registerContext := w.spill tcb.registerContext }) hInv
     fun _ => TcbWaitsKept.of_ipc rfl
 
-end EndpointWaitersFrame
+end QueueLabelsFrame
 
 end SeLe4n.Kernel

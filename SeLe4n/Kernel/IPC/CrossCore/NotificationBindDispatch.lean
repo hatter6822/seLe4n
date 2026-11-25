@@ -354,13 +354,88 @@ theorem notificationLabelsCoherent_blocked {st : SystemState} {ctx : LabelingCon
   obtain ⟨⟨hSelf, hP⟩, hN⟩ := hE
   exact ⟨hSelf, fun u hu => hP u hu, fun u hu => hN u hu⟩
 
+-- ============================================================================
+-- Notification label agreement: the label part of coherence, carried per entry
+-- ============================================================================
+
+/-- **One object's share of notification label agreement**: the label clauses
+of `notificationEntryLabelsCoherent`.  A notification's bound thread and queue
+ends meet it under the two-way gate; a thread blocked on a notification meets
+it; a thread's queue neighbours carry its own label.  The queue's shape (a
+thread blocked on no notification holds no links) is not a label fact and is
+left to the IPC invariants. -/
+def notificationEntryLabelsAgree (ctx : LabelingContext) (oid : SeLe4n.ObjId) :
+    KernelObject → Prop
+  | .notification n =>
+      (∀ t, n.boundTCB = some t → notificationFlowGate ctx oid t = true) ∧
+        (∀ t, n.waitHead = some t → notificationFlowGate ctx oid t = true) ∧
+        (∀ t, n.waitTail = some t → notificationFlowGate ctx oid t = true)
+  | .tcb t =>
+      (∀ nid, t.ipcState = .blockedOnNotification nid →
+          notificationFlowGate ctx nid (SeLe4n.ThreadId.ofObjId oid) = true) ∧
+        (∀ u, t.ntfnPrev = some u →
+          ctx.threadLabelOf u = ctx.threadLabelOf (SeLe4n.ThreadId.ofObjId oid)) ∧
+        (∀ u, t.ntfnNext = some u →
+          ctx.threadLabelOf u = ctx.threadLabelOf (SeLe4n.ThreadId.ofObjId oid))
+  | _ => True
+
+/-- **Every notification's bound thread and queue ends carry its label, every
+thread blocked on a notification carries the notification's, and every queue
+link joins threads of one label** (`notificationEntryLabelsAgree` of every
+stored object).  The label part of `notificationLabelsCoherent`, which the boot
+checks (`notificationLabelsCoherent_agree`), carried across every kernel
+entry. -/
+def notificationLabelsAgree (ctx : LabelingContext) (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (obj : KernelObject), st.objects[oid]? = some obj →
+    notificationEntryLabelsAgree ctx oid obj
+
+/-- **Coherence implies agreement**, object by object. -/
+theorem notificationEntryLabelsCoherent_agree {ctx : LabelingContext} {oid : SeLe4n.ObjId}
+    {obj : KernelObject} (h : notificationEntryLabelsCoherent ctx oid obj = true) :
+    notificationEntryLabelsAgree ctx oid obj := by
+  cases obj with
+  | notification n =>
+    simp only [notificationEntryLabelsCoherent, Bool.and_eq_true, Option.all_eq_true] at h
+    obtain ⟨⟨hB, hH⟩, hT⟩ := h
+    exact ⟨fun t ht => hB t ht, fun t ht => hH t ht, fun t ht => hT t ht⟩
+  | tcb t =>
+    simp only [notificationEntryLabelsCoherent] at h
+    split at h
+    · rename_i nid hI
+      simp only [Bool.and_eq_true, Option.all_eq_true] at h
+      obtain ⟨⟨hS, hP⟩, hN⟩ := h
+      have eS := (twoWayLabelGate_iff_eq _ _).mp hS
+      refine ⟨fun n hn => by rw [hI] at hn; cases hn; exact hS, fun u hu => ?_, fun u hu => ?_⟩
+      · exact ((twoWayLabelGate_iff_eq _ _).mp (hP u hu)).symm.trans eS
+      · exact ((twoWayLabelGate_iff_eq _ _).mp (hN u hu)).symm.trans eS
+    · rename_i hNot
+      simp only [Bool.and_eq_true, beq_iff_eq] at h
+      refine ⟨fun n hn => absurd hn (hNot n), fun u hu => ?_, fun u hu => ?_⟩
+      · simp [TCB.ntfnPrev, h.1, SeLe4n.ThreadId.ofOptCode] at hu
+      · simp [TCB.ntfnNext, h.2, SeLe4n.ThreadId.ofOptCode] at hu
+  | _ => trivial
+
+/-- **The boot's check gives the carried form.** -/
+theorem notificationLabelsCoherent_agree {st : SystemState} {ctx : LabelingContext}
+    (h : notificationLabelsCoherent st ctx = true) : notificationLabelsAgree ctx st :=
+  fun _ _ hO => notificationEntryLabelsCoherent_agree (notificationLabelsCoherent_entry h hO)
+
+/-- What agreement says of a stored notification. -/
+theorem notificationLabelsAgree_notification {st : SystemState} {ctx : LabelingContext}
+    (h : notificationLabelsAgree ctx st) {nid : SeLe4n.ObjId} {ntfn : Notification}
+    (hN : st.getNotification? nid = some ntfn) :
+    (∀ t, ntfn.boundTCB = some t → notificationFlowGate ctx nid t = true) ∧
+      (∀ t, ntfn.waitHead = some t → notificationFlowGate ctx nid t = true) ∧
+      (∀ t, ntfn.waitTail = some t → notificationFlowGate ctx nid t = true) :=
+  h nid _ ((SystemState.getNotification?_eq_some_iff _ _ _).mp hN)
+
 /-- **A coherent state's signal receiver meets the notification**: the thread a
 signal on `notificationId` delivers to — the bound thread on the bound-delivery
 path (`boundDeliveryTarget?`), otherwise the queue head
 (`notificationSignalWaiter?`) — passes the two-way gate against it, so the
 notification-to-receiver flow is between equal labels. -/
-theorem notificationLabelsCoherent_signalReceiver {st : SystemState} {ctx : LabelingContext}
-    (h : notificationLabelsCoherent st ctx = true) {nid : SeLe4n.ObjId}
+theorem notificationLabelsAgree_signalReceiver {st : SystemState} {ctx : LabelingContext}
+    (h : notificationLabelsAgree ctx st) {nid : SeLe4n.ObjId}
     {receiver : SeLe4n.ThreadId}
     (hR : (match boundDeliveryTarget? st nid with
       | some (t, _) => some t
@@ -373,7 +448,7 @@ theorem notificationLabelsCoherent_signalReceiver {st : SystemState} {ctx : Labe
     rw [hN] at hR
     simp at hR
   | some ntfn =>
-    obtain ⟨hB, hH, _⟩ := notificationLabelsCoherent_notification h hN
+    obtain ⟨hB, hH, _⟩ := notificationLabelsAgree_notification h hN
     cases hT : boundDeliveryTarget? st nid with
     | some p =>
       rw [hT] at hR
@@ -399,15 +474,15 @@ theorem notificationLabelsCoherent_signalReceiver {st : SystemState} {ctx : Labe
       rw [hN] at hR
       exact hH _ hR
 
-/-- The receiver half of `notificationLabelsCoherent_signalReceiver` as label
+/-- The receiver half of `notificationLabelsAgree_signalReceiver` as label
 equality. -/
-theorem notificationLabelsCoherent_signalReceiver_label {st : SystemState}
-    {ctx : LabelingContext} (h : notificationLabelsCoherent st ctx = true)
+theorem notificationLabelsAgree_signalReceiver_label {st : SystemState}
+    {ctx : LabelingContext} (h : notificationLabelsAgree ctx st)
     {nid : SeLe4n.ObjId} {receiver : SeLe4n.ThreadId}
     (hR : (match boundDeliveryTarget? st nid with
       | some (t, _) => some t
       | none => notificationSignalWaiter? st nid) = some receiver) :
     ctx.objectLabelOf nid = ctx.threadLabelOf receiver :=
-  (twoWayLabelGate_iff_eq _ _).mp (notificationLabelsCoherent_signalReceiver h hR)
+  (twoWayLabelGate_iff_eq _ _).mp (notificationLabelsAgree_signalReceiver h hR)
 
 end SeLe4n.Kernel

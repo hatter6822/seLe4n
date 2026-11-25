@@ -910,7 +910,7 @@ coherence is this theorem's hypothesis rather than its conclusion. -/
 theorem footprint_receiver_at_notification_label (ctx : LabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
     (st : SystemState) (receiver : SeLe4n.ThreadId)
-    (hCoherent : notificationLabelsCoherent st ctx = true)
+    (hAgree : notificationLabelsAgree ctx st)
     (hIn : (declassifiedSignalEffectFootprint st notificationId).receiver = some receiver) :
     (liftLegacyContext ctx).objectDomainOf notificationId =
         (liftLegacyContext ctx).threadDomainOf receiver ∧
@@ -918,7 +918,7 @@ theorem footprint_receiver_at_notification_label (ctx : LabelingContext)
         ((liftLegacyContext ctx).objectDomainOf notificationId)
         ((liftLegacyContext ctx).threadDomainOf receiver) = .ok .ordinary :=
   declassifiedSignalReceiver_flow_ordinary_of_coherent ctx declPolicy st notificationId receiver
-    hCoherent (by simpa using hIn)
+    hAgree (by simpa using hIn)
 
 /-- WS-SM SM9.C.6: and the converse half — **authorization does not widen the
 footprint.**
