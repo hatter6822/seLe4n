@@ -1202,7 +1202,7 @@ is 21,021,237 bytes and compiles in 769 s.
 **Acceptance:**
 - every ReplyRecv shape (5 reply arms × 3 receive legs × 3 answers × 2 lengths, 90) answered in place under one proof per receive leg;
 - the per-arm Call-take modules deleted;
-- `RefusalCarryingReplyRecv.c` and its compile time no larger than SX26's (met at `v0.37.56`: 12,235,396 bytes, @SECS@ s, against 13,204,415 bytes and 535 s);
+- `RefusalCarryingReplyRecv.c` and its compile time no larger than SX26's (met at `v0.37.56`: 11,824,216 bytes, 492 s, against 13,204,415 bytes and 535 s);
 - every heap reading 0.
 
 ### SX28 — The composed path's remaining QEMU scenarios (D49)

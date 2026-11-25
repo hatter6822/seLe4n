@@ -1,3 +1,49 @@
+## v0.37.56 — The Call take composed over every reply arm, and the composed reply-receive's acceptance (WS-SX SX27)
+
+SX27 is on SX26.  Measured before the bulk: 27 Call-take shapes still to
+bring in place (3 of 30 in place under three per-arm modules), about
+4.5–5.5 sessions against the row's 2–3, so the row was wrapped under the
+owner's D32 rule (D49): SX27 keeps the Call take and the composed path's
+acceptance, and a new SX28 takes the remaining QEMU scenarios and the
+context-holding server's measurement.
+
+- **One composed Call take.**  Over SX25's reply leg and guard family, the
+  reply-receive whose receive leg meets a caller queued by a capability-free
+  `Call` takes it in place on every arm, answer and length, joined to the
+  specification by one equality (`replyRecvAnsweringOnCore_arm_callTake`,
+  `ReplyRecvCallTakeComposed.lean`), as seL4-MCS's `receiveIPC` does with
+  `reply_push (canDonate)`: the caller's context is lent to a server holding
+  none (`ReplyRecvArm.callLend`); on the held arm the server keeps its own
+  and nothing is lent.  One performer per answer and length
+  (`performReplyRecvArmCall{Take,TakeCaps,FaultTake}Delivered` and their
+  long forms).  With it all 90 reply-receive shapes are in place.
+- **One selector.**  The Call-take arms of `RefusalCarryingReplyRecv.lean`
+  route through `replyRecvCallTakeArmCode` (out of line), which reads each
+  arm's leg guard and Call-take guard (`ReplyRecvArm.callGuard`) once on the
+  pre-state, ahead of the Send take.  The short and long Call-take and
+  Call-fault arms are out of line too.  The per-arm Call-take arms and their
+  route are deleted.
+- **Retired.**  `ReplyRecvCallTakeInPlace`, `ReplyRecvDonatedCallTakeInPlace`
+  and `ReplyRecvUnlinkedCallTakeInPlace`, with their performers and
+  equalities.  What surviving modules read moved first, measured by a Lean
+  environment closure, into `ReplyRecvCallTakeFrame.lean`.
+- **QEMU.**  The donated and unlinked arms' Call takes at 120 words,
+  granting a capability, and both get a measured step, each 0.  Their four
+  fault-answer Call takes need a fault lane whose server holds no context,
+  and moved to SX28.1 with the other new scenarios.
+- **Gates.**  Tier 3 anchors pin the selector, its specification, every
+  routed answer and the out-of-line arms, and refuse the retired names and
+  imports (break-tested by breaking the relation with the tokens kept).  The
+  store-reader baseline's rows for the touched files are re-read.
+- **Measured.**  `RefusalCarryingReplyRecv.c` 11,824,216 bytes, compiled in
+  492 s standalone on a quiet machine (`leanc -c -O3 -DNDEBUG`), against
+  13,204,415 bytes and 535 s at `v0.37.55` and 21,021,237 bytes and 769 s at
+  SX25's baseline.  With the Call-take arms inlined it was 14,178,424 bytes
+  and 706 s, so they are out of line.
+- **Plan.**  D49 recorded; SX28 added; SX28–SX37 renumbered SX29–SX38 in
+  the plan, REGISTERED_DEBT, WORKSTREAM_CONTEXT, the spec,
+  CONTEXT_BY_VALUE_PLAN and the conformance table's row strings.
+
 ## v0.37.55 — The Send-take receive leg composed over every reply arm (WS-SX SX26)
 
 SX26 is on SX25.  Measured before the bulk: 30 Send-take shapes (five reply
