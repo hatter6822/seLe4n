@@ -698,4 +698,522 @@ theorem replyRecvAnsweringOnCore_arm_callTake (arm : ReplyRecvArm)
   exact ⟨sTcb2, hE2, hS2, hK, hG2, replyRecvAnsweringOnCore_callTake_of_pop arm answer st epId tid
     c rid msg grant core s hRecS hEq hPop hXf hRecv hC hD⟩
 
+/-! ### The Call take's writes after the reply leg and pop, in place -/
+
+theorem ReplyRecvArm.callLend_msg (arm : ReplyRecvArm) (r : SeLe4n.ThreadId)
+    (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile) (μ : Option IpcMessage → Option IpcMessage)
+    (π : Nat → Nat) (X : SystemState) (s tid : SeLe4n.ThreadId) (scS : SeLe4n.SchedContextId)
+    (dh rh : CoreId) (hNo : X.objects.noResizeDue) (hS : r ≠ s) :
+    arm.callLend (X.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)) s tid scS dh rh =
+      (arm.callLend X s tid scS dh rh).mapTcbInPlace r (TCB.withMessageSlots ρ μ π) := by
+  unfold ReplyRecvArm.callLend
+  split
+  · exact lendSchedContextInPlace_msg r ρ μ π X s tid scS dh rh hNo hS
+  · rfl
+
+theorem ReplyRecvArm.callLend_noResizeDue (arm : ReplyRecvArm) (X : SystemState)
+    (s tid : SeLe4n.ThreadId) (scS : SeLe4n.SchedContextId) (dh rh : CoreId)
+    (hNo : X.objects.noResizeDue) : (arm.callLend X s tid scS dh rh).objects.noResizeDue := by
+  unfold ReplyRecvArm.callLend
+  split
+  · exact lendSchedContextInPlace_noResizeDue X s tid scS dh rh hNo
+  · exact hNo
+
+/-- **The Call take's writes before the server's own frame, over the arm**: the
+caller popped, blocked on the reply and linked, the server made ready, the
+arm's lend, the server's priority walk, then the answered caller's frame with
+the transfer's report (read from the server's saved registers `rf`). -/
+@[inline] def ReplyRecvArm.callTakeLegs (arm : ReplyRecvArm) (capInfo : Nat) (Y : SystemState)
+    (c tid s : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (nextCode : Nat)
+    (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) : SystemState :=
+  deliverReplyRecvCapsFrame capInfo (PriorityInheritance.propagatePipChainCrossCore
+    (arm.callLend (storeReceiveCallReady Y epId s nextCode tid rid) s tid scS dh rh) tid core).1
+    c layout rf len badge
+
+/-- **The Call take's tail, over the arm, stages the caller's held reply and
+the server's message as frames**, the take, the lend and the walk committed
+past both writes. -/
+theorem ReplyRecvArm.callTakeFrame_staged (arm : ReplyRecvArm) (Y : SystemState)
+    (c tid s : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (sTcb : TCB)
+    (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) (capInfo : Nat) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hNo : Y.objects.noResizeDue) (hNe : tid ≠ c) (hSC : s ≠ c) (hST : s ≠ tid)
+    (hSz4 : Architecture.regMessageLength layout len ≤ 4)
+    (hR : registerRoutedSyscall (blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext)
+      SeLe4n.arm64DefaultLayout sTcb.registerContext 32 = .call capAddr mi)
+    (hF : sTcb.ipcFaultSend = false) :
+    Architecture.stageDeliveredMessage (Architecture.stageDeliveredMessage
+        (PriorityInheritance.propagatePipChainCrossCore (arm.callLend
+          (receiveCallTakeState (Y.mapTcbInPlace c (holdMessage
+            { registers := Architecture.regMessageBody layout rf len, badge := badge }))
+            epId s sTcb tid rid) s tid scS dh rh) tid core).1 c capInfo) tid 0 =
+      writeReceiverMessageFrame
+        (arm.callTakeLegs capInfo Y c tid s rid epId sTcb.queueNextCode scS dh rh core layout rf
+          len badge) tid sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge)
+        sTcb.ipcBadged := by
+  generalize hM : ({ registers := Architecture.regMessageBody layout rf len, badge := badge } :
+    IpcMessage) = m
+  unfold ReplyRecvArm.callTakeLegs writeReceiverMessageFrame
+  have hcs : c ≠ s := fun e => hSC e.symm
+  have hct : c ≠ tid := fun e => hNe e.symm
+  have hNoC : (Y.mapTcbInPlace c (holdMessage m)).objects.noResizeDue :=
+    (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNo
+  rw [receiveCallTakeState_eq_hold _ _ _ _ _ _ hNoC]
+  rw [(blockedSender_of_routedCall _ s sTcb capAddr mi hR hF).2]
+  rw [storeReceiveCallReady_msg c id _ id _ epId s _ tid rid hNo hcs hct]
+  have hNoR := storeReceiveCallReady_noResizeDue Y epId s sTcb.queueNextCode tid rid hNo
+  generalize storeReceiveCallReady Y epId s sTcb.queueNextCode tid rid = R at hNoR
+  generalize hMS :
+    ({ registers := Architecture.regMessageBody arm64DefaultLayout sTcb.registerContext mi.length,
+       badge := sTcb.ipcBadgeView } : IpcMessage) = mS
+  have hNoRc : (R.mapTcbInPlace c (holdMessage m)).objects.noResizeDue :=
+    (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoR
+  rw [arm.callLend_msg tid id _ id _ s tid scS dh rh hNoRc hST.symm,
+    arm.callLend_msg c id _ id R s tid scS dh rh hNoR hcs]
+  have hNoM := arm.callLend_noResizeDue R s tid scS dh rh hNoR
+  rw [propagatePipChainCrossCore_msg _ _ _ _ _ _ _ ?_,
+    propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoM]
+  rotate_left
+  · exact (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoM
+  have hNoY := propagatePipChainCrossCore_noResizeDue _ tid core hNoM
+  generalize (PriorityInheritance.propagatePipChainCrossCore (arm.callLend R s tid scS dh rh) tid
+    core).1 = Z at hNoY ⊢
+  rw [show ∀ m : IpcMessage, TCB.withMessageSlots id (fun _ => some m) id = holdMessage m from
+    fun _ => rfl]
+  rw [SystemState.mapTcbInPlace_swap Z _ _ (fun h => absurd h hNe)]
+  have hNoZt : (Z.mapTcbInPlace tid (holdMessage mS)).objects.noResizeDue :=
+    (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoY
+  rw [stageDeliveredMessage_holdMessage_caps _ c _ _ hNoZt
+      (by rw [← hM, Architecture.regMessageBody_size]; exact hSz4),
+    writeDeliveredFrameIfReady_mapTcbInPlace Z c tid _ _ _ hct,
+    ← hM, returnFrameOfMessage_regMessageBody_capsOpt]
+  rw [show writeDeliveredFrameIfReady Z c (regMessageFrameCapsOpt layout rf len badge capInfo)
+      (fun _ => Z.mapTcbInPlace c (holdMessage
+        { registers := Architecture.regMessageBody layout rf len, badge := badge })) =
+      deliverReplyRecvCapsFrame capInfo Z c layout rf len badge from rfl]
+  have hNoD := deliverReplyRecvCapsFrame_noResizeDue capInfo Z c layout rf len badge hNoY
+  generalize deliverReplyRecvCapsFrame capInfo Z c layout rf len badge = D at hNoD ⊢
+  have hSzS : mS.registers.size ≤ 4 := by
+    rw [← hMS]
+    simp only [Architecture.regMessageBody_size, Architecture.regMessageLength]
+    have : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
+    omega
+  rw [stageDeliveredMessage_holdMessage _ tid _ hNoD hSzS, ← hMS,
+    Architecture.returnFrameOfMessage_regMessageBody, Architecture.regMessageFrameW_eq,
+    TCB.ipcBadgeView_eq_opt]
+
+/-- The Call take's guard on the state the receive runs on asks the take's
+slots of the receive whatever the arm lends. -/
+theorem ReplyRecvArm.CallReady.takesReply {arm : ReplyRecvArm} {Q : SystemState}
+    {epId : SeLe4n.ObjId} {tid s : SeLe4n.ThreadId} {sTcb : TCB} {rid : SeLe4n.ReplyId}
+    (h : arm.CallReady Q epId tid s sTcb rid) :
+    receiveCallTakesReplyInPlace Q epId tid s sTcb rid = true := by
+  unfold ReplyRecvArm.CallReady at h
+  split at h
+  · simp only [receiveCallDonatesInPlace, Bool.and_eq_true] at h; exact h.1
+  · exact receiveCallTakesReplyInPlace_of_inPlace h
+
+theorem ReplyRecvArm.CallReady.ne {arm : ReplyRecvArm} {Q : SystemState}
+    {epId : SeLe4n.ObjId} {tid s : SeLe4n.ThreadId} {sTcb : TCB} {rid : SeLe4n.ReplyId}
+    (h : arm.CallReady Q epId tid s sTcb rid) : s ≠ tid := fun e => by
+  have h' := h.takesReply
+  simp only [receiveCallTakesReplyInPlace, Bool.and_eq_true, bne_iff_ne, ne_eq] at h'
+  exact h'.1.1.1.1.1.1.1.1.1.2 e.symm
+
+/-- **The reply-receive taking a queued caller, over every arm, its reply
+transferring nothing, delivered**: the arm's reply leg and pop, the server's
+context return, the take, the arm's lend, the server's priority walk and the
+caller's frame (`ReplyRecvArm.callTakeLegs`). -/
+@[noinline] def performReplyRecvArmCallTakeLegs (arm : ReplyRecvArm)
+    (scId : SeLe4n.SchedContextId) (home : CoreId) (st : SystemState)
+    (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId)
+    (nextCode : Nat) (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) : SystemState :=
+  arm.callTakeLegs 0 (receiveReturnSchedContextFast true
+    (arm.pop (arm.legReady st c tid rid) c tid scId home) tid.val) c tid s rid epId nextCode scS
+    dh rh core layout rf len badge
+
+/-- The inert Call take over the arm: the legs (`performReplyRecvArmCallTakeLegs`)
+and then the server's frame (`writeReceiverMessageFrame`), each out of line so
+the arm releases the server's register file between them. -/
+@[inline] def performReplyRecvArmCallTakeDelivered (arm : ReplyRecvArm)
+    (scId : SeLe4n.SchedContextId) (home : CoreId) (st : SystemState)
+    (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId)
+    (nextCode : Nat) (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) (sRf : SeLe4n.RegisterFile) (sLen : Nat)
+    (badgeWord : SeLe4n.Badge) (badged : Bool) : SystemState :=
+  writeReceiverMessageFrame (performReplyRecvArmCallTakeLegs arm scId home st c tid rid epId s
+    nextCode scS dh rh core layout rf len badge) tid sRf sLen badgeWord badged
+
+/-- **The reply-receive taking a queued caller, its reply transferring nothing,
+is the specification's, over every arm**: under the arm's reply-leg guard and
+Call-take guard, a reply of at most four words transferring no capability, and
+a caller `s` at the head of the send queue blocked by a routed capability-free
+call, not delivering a fault (every check read on the pre-state), the checked
+arm's result is `performReplyRecvArmCallTakeDelivered`, every context, core and
+word it takes read on the pre-state. -/
+theorem replyRecvOnCore_arm_callTakeDelivered (arm : ReplyRecvArm)
+    {scId : SeLe4n.SchedContextId} {home : CoreId} (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) (grant : Bool)
+    (core : CoreId) (ct : TCB) (rp : Reply) (ep : Endpoint) (s : SeLe4n.ThreadId) (sTcb : TCB)
+    (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hAd : arm.LegAdmits scId home st tid c rid ct)
+    (hCA : arm.CallAdmits st epId tid s sTcb rid)
+    (hSz4 : Architecture.regMessageLength layout len ≤ 4)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hRO : ct.replyObject = some rid)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hInert : replyTransferInert st tid ct grant = true)
+    (hE : st.objects[epId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
+    (hS : st.objects[s.toObjId]? = some (.tcb sTcb)) (hSC : s ≠ c)
+    (hR : registerRoutedSyscall (blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext)
+      SeLe4n.arm64DefaultLayout sTcb.registerContext 32 = .call capAddr mi)
+    (hF : sTcb.ipcFaultSend = false) :
+    (match endpointReplyRecvOnCore epId tid rid c
+        { registers := Architecture.regMessageBody layout rf len, badge := badge } grant core st with
+      | .ok (summary, st') =>
+          (.ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo) :
+            Except KernelError (Unit × SystemState))
+      | .error e => .error e) =
+      .ok ((), performReplyRecvArmCallTakeDelivered arm scId home st c tid rid epId s
+        sTcb.queueNextCode ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s)
+        (determineTargetCore st tid) core layout rf len badge sTcb.registerContext mi.length
+        (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged) := by
+  have hSz : ¬ (Architecture.regMessageBody layout rf len).size > maxMessageRegisters := by
+    rw [Architecture.regMessageBody_size]; unfold maxMessageRegisters; omega
+  obtain ⟨-, hNe, hNo, -, -⟩ :=
+    arm.legPop (scId := scId) (home := home) st tid c rid
+      { registers := Architecture.regMessageBody layout rf len, badge := badge } core ct rp hAd
+      hSz hT hRO hRp
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hNoX := arm.pop_noResizeDue (scId := scId) (home := home) _ c tid
+    (arm.legReady_noResizeDue st c tid rid hNo)
+  have hNoP : (arm.pop (arm.leg st c tid rid
+      { registers := Architecture.regMessageBody layout rf len, badge := badge }) c tid scId
+      home).objects.noResizeDue := by
+    rw [arm.pop_leg_hold st c tid rid _ hNo hNe]
+    exact (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoX
+  have hXf := replyRecvReplyTransfer_of_inert none st tid c grant ct hTc (fun _ => hInert)
+    (arm.pop (arm.leg st c tid rid
+      { registers := Architecture.regMessageBody layout rf len, badge := badge }) c tid scId home)
+  obtain ⟨sTcb2, -, -, hK, hG2, hEq⟩ := replyRecvAnsweringOnCore_arm_callTake arm none st epId
+    tid c rid _ grant core ct rp ep s sTcb capAddr mi hAd hCA hSz hT hRO hRp hE hH hS hSC hR hF
+    hXf (transferFrame.refl _) hNoP
+  have hR2 : registerRoutedSyscall
+      (blockedSenderCode SeLe4n.arm64DefaultLayout sTcb2.registerContext)
+      SeLe4n.arm64DefaultLayout sTcb2.registerContext 32 = .call capAddr mi := by
+    rw [hK.regs]; exact hR
+  have hF2 : sTcb2.ipcFaultSend = false := by rw [hK.faultSend]; exact hF
+  have hST := hG2.ne
+  unfold endpointReplyRecvOnCore
+  rw [hEq]
+  dsimp only
+  rw [CapTransferSummary.capInfo_empty, replyRecvAnswerCaller_none]
+  rw [arm.pop_leg_hold st c tid rid _ hNo hNe,
+    receiveReturnSchedContext_msg c id _ id true _ tid hNoX hNe.symm]
+  rw [arm.callTakeFrame_staged _ c tid s rid epId sTcb2 _ _ _ core layout rf len badge 0 capAddr mi
+    (receiveReturnSchedContext_noResizeDue true _ tid hNoX) hNe hSC hST hSz4 hR2 hF2,
+    hK.queueNext, hK.regs, hK.badge, hK.badged]
+  unfold performReplyRecvArmCallTakeDelivered performReplyRecvArmCallTakeLegs
+  rw [receiveReturnSchedContextFast_eq]
+
+/-- **The reply-receive taking a queued caller, over every arm, its reply leg
+transferring, delivered**: the arm's reply leg and pop, the transfer in place
+on no endpoint, the server's context return, the take, the arm's lend, the
+server's priority walk, then the caller's frame with the transfer's report.
+The replier and the caller enter as the words the transfer reads of them, all
+read before the reply's writes. -/
+@[noinline] def performReplyRecvArmCallTakeCapsLegs (arm : ReplyRecvArm)
+    (scId : SeLe4n.SchedContextId) (home : CoreId) (st : SystemState)
+    (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId)
+    (nextCode : Nat) (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge)
+    (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
+  let X := arm.pop (arm.legReady st c tid rid) c tid scId home
+  capTransferK X c.toObjId sv sb sroot count rv rb rroot
+    fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
+    arm.callTakeLegs (capStepsInfo c.toObjId false x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+      (receiveReturnSchedContextFast true
+        (capStepsApply c.toObjId false rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X) tid.val)
+      c tid s rid epId nextCode scS dh rh core layout rf len badge
+
+/-- The installing Call take over the arm, its legs
+(`performReplyRecvArmCallTakeCapsLegs`) and then the server's frame
+(`writeReceiverMessageFrame`). -/
+@[inline] def performReplyRecvArmCallTakeCapsDelivered (arm : ReplyRecvArm)
+    (scId : SeLe4n.SchedContextId) (home : CoreId) (st : SystemState)
+    (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId)
+    (nextCode : Nat) (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) (sRf : SeLe4n.RegisterFile) (sLen : Nat)
+    (badgeWord : SeLe4n.Badge) (badged : Bool)
+    (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
+    (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
+  writeReceiverMessageFrame (performReplyRecvArmCallTakeCapsLegs arm scId home st c tid rid epId s
+    nextCode scS dh rh core layout rf len badge sv sb sroot count rv rb rroot) tid sRf sLen
+    badgeWord badged
+
+/-- **The reply-receive taking a queued caller, its reply leg transferring, is
+the specification's, over every arm**: under the guard of
+`replyRecvOnCore_arm_callTakeDelivered` (its inert transfer replaced by a
+granting replier whose frame asks for `count` capabilities, `hReq`), the
+checked arm's result is `performReplyRecvArmCallTakeCapsDelivered`. -/
+theorem replyRecvOnCore_arm_callTakeCapsDelivered (arm : ReplyRecvArm)
+    {scId : SeLe4n.SchedContextId} {home : CoreId} (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge)
+    (core : CoreId) (ct : TCB) (rp : Reply) (ep : Endpoint) (s : SeLe4n.ThreadId) (sTcb : TCB)
+    (capAddr : SeLe4n.CPtr) (mi : MessageInfo) (stcb : TCB) (count : Nat)
+    (hAd : arm.LegAdmits scId home st tid c rid ct)
+    (hCA : arm.CallAdmits st epId tid s sTcb rid)
+    (hSz4 : Architecture.regMessageLength layout len ≤ 4)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hRO : ct.replyObject = some rid)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hE : st.objects[epId]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s)
+    (hS : st.objects[s.toObjId]? = some (.tcb sTcb)) (hSC : s ≠ c)
+    (hR : registerRoutedSyscall (blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext)
+      SeLe4n.arm64DefaultLayout sTcb.registerContext 32 = .call capAddr mi)
+    (hF : sTcb.ipcFaultSend = false)
+    (hReq : replyCapRequest st tid true = frameCapRequestOf st stcb count) :
+    (match endpointReplyRecvOnCore epId tid rid c
+        { registers := Architecture.regMessageBody layout rf len, badge := badge } true core st with
+      | .ok (summary, st') =>
+          (.ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo) :
+            Except KernelError (Unit × SystemState))
+      | .error e => .error e) =
+      .ok ((), performReplyRecvArmCallTakeCapsDelivered arm scId home st c tid rid epId s
+        sTcb.queueNextCode ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s)
+        (determineTargetCore st tid) core layout rf len badge sTcb.registerContext mi.length
+        (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
+        stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0] count ct.spaceCells[2] ct.ipcBuffer
+        ct.spaceCells[0]) := by
+  have hSz : ¬ (Architecture.regMessageBody layout rf len).size > maxMessageRegisters := by
+    rw [Architecture.regMessageBody_size]; unfold maxMessageRegisters; omega
+  obtain ⟨-, hNe, hNo, -, -⟩ :=
+    arm.legPop (scId := scId) (home := home) st tid c rid
+      { registers := Architecture.regMessageBody layout rf len, badge := badge } core ct rp hAd
+      hSz hT hRO hRp
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hTgt : receiverCapTarget? st c = capTargetOf st ct := by
+    unfold receiverCapTarget? capTargetOf; rw [hTc]
+  have hP1 := arm.pop_leg_hold (scId := scId) (home := home) st c tid rid
+    { registers := Architecture.regMessageBody layout rf len, badge := badge } hNo hNe
+  have hNoX := arm.legReady_noResizeDue st c tid rid hNo
+  have hAP := (arm.ipcBufferReadsAgree_pop (scId := scId) (home := home) _ c tid hNoX).trans
+    (arm.ipcBufferReadsAgree_legReady st c tid rid hNo)
+  have hNoP := arm.pop_noResizeDue (scId := scId) (home := home) _ c tid hNoX
+  generalize hX : arm.pop (arm.legReady st c tid rid) c tid scId home = X at hP1 hNoP hAP
+  generalize hMsg : ({ registers := Architecture.regMessageBody layout rf len, badge := badge } :
+    IpcMessage) = msg at hP1
+  obtain ⟨sm, Y1, hT1⟩ := receiveTransferCaps_ok (frameCapRequestOf st stcb count) none
+    (capTargetOf st ct) X
+  have hNoY := receiveTransferCaps_noResizeDue _ _ _ X Y1 sm hNoP hT1
+  have hHT : receiveTransferCaps (frameCapRequestOf st stcb count) none (capTargetOf st ct)
+      (X.mapTcbInPlace c (holdMessage msg)) = .ok (sm, Y1.mapTcbInPlace c (holdMessage msg)) := by
+    rw [receiveTransferCaps_mapTcbInPlace (LinkBlindWrite.withMessageSlots _ _ _) c _ _ _ X hNoP, hT1]
+    rfl
+  have hFr := (receiveTransferCaps_reply_transferFrame (S := X.mapTcbInPlace c (holdMessage msg))
+    ((ipcBufferReadsAgree_mapTcbInPlace X c (holdMessage msg) (fun _ => ⟨rfl, rfl⟩)).trans hAP)
+    ((RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoP) c.toObjId stcb ct count hHT).1
+  have hXf : replyRecvReplyTransfer none st tid c true
+      (arm.pop (arm.leg st c tid rid msg) c tid scId home) =
+      .ok (sm, Y1.mapTcbInPlace c (holdMessage msg)) := by
+    show replyTransferCaps st tid c true _ = _
+    unfold replyTransferCaps
+    rw [hReq, hTgt, hP1, hHT]
+  rw [← hP1] at hFr
+  subst hMsg
+  obtain ⟨sTcb2, -, -, hK, hG2, hEq⟩ := replyRecvAnsweringOnCore_arm_callTake arm none st epId
+    tid c rid _ true core ct rp ep s sTcb capAddr mi hAd hCA hSz hT hRO hRp hE hH hS hSC hR hF hXf
+    hFr ((SystemState.mapTcbInPlace_noResizeDue _ _ _).mpr hNoY)
+  have hR2 : registerRoutedSyscall
+      (blockedSenderCode SeLe4n.arm64DefaultLayout sTcb2.registerContext)
+      SeLe4n.arm64DefaultLayout sTcb2.registerContext 32 = .call capAddr mi := by
+    rw [hK.regs]; exact hR
+  have hF2 : sTcb2.ipcFaultSend = false := by rw [hK.faultSend]; exact hF
+  have hST := hG2.ne
+  unfold endpointReplyRecvOnCore
+  rw [hEq]
+  dsimp only
+  rw [CapTransferSummary.capInfo_empty, replyRecvAnswerCaller_none]
+  rw [receiveReturnSchedContext_msg c id _ id true Y1 tid hNoY hNe.symm]
+  rw [arm.callTakeFrame_staged _ c tid s rid epId sTcb2 _ _ _ core layout rf len badge sm.capInfo
+    capAddr mi (receiveReturnSchedContext_noResizeDue true Y1 tid hNoY) hNe hSC hST hSz4 hR2 hF2,
+    hK.queueNext, hK.regs, hK.badge, hK.badged, ← receiveReturnSchedContextFast_eq]
+  have hKl := capTransferK_eq_at X c.toObjId false stcb count ct
+    (fun i Y => arm.callTakeLegs i (receiveReturnSchedContextFast true Y tid.val) c tid s rid epId
+      sTcb.queueNextCode ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s)
+      (determineTargetCore st tid) core layout rf len badge)
+  simp only [transferEndpoint?, Bool.false_eq_true, ↓reduceIte] at hKl
+  rw [hAP.frameCapRequestOf, hAP.capTargetOf, hT1] at hKl
+  unfold performReplyRecvArmCallTakeCapsDelivered performReplyRecvArmCallTakeCapsLegs
+  rw [hX]
+  dsimp only
+  rw [hKl]
+
+/-! ### The long message -/
+
+/-- **The in-place donation reads no IPC buffer**: it rewrites a context, the
+taken caller's reply frame and the frame below it, two threads' binding codes
+and the scheduler's marks, never a VSpace root, a buffer address, a frame, a
+CNode or the machine. -/
+theorem ipcBufferReadsAgree_donateSchedContextInPlace (st : SystemState)
+    (client server : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (hNo : st.objects.noResizeDue) :
+    ipcBufferReadsAgree (donateSchedContextInPlace st client server scId) st := by
+  unfold donateSchedContextInPlace
+  split
+  · exact .refl st
+  rename_i sc _
+  split
+  · exact .refl st
+  split
+  · exact .refl st
+  split
+  · exact .refl st
+  split
+  · exact .refl st
+  dsimp only
+  refine (ipcBufferReadsAgree_markKeyChangeParts _ _ _ _ _).trans ?_
+  refine (ipcBufferReadsAgree_markCandidacyGainFor _ _ _).trans ?_
+  refine (ipcBufferReadsAgree_markKeyChangeParts _ _ _ _ _).trans ?_
+  refine (ipcBufferReadsAgree_markCandidacyGainFor _ _ _).trans ?_
+  have hRV : ∀ (g : Reply → Reply) (o : KernelObject),
+      ipcBufferViewOf (SystemState.mapReplyObject g o) = ipcBufferViewOf o := by
+    intro g o; cases o <;> rfl
+  have U : ∀ (f : SchedContext → SchedContext) (k : SeLe4n.ObjId) (g : Reply → Reply),
+      ((st.updateSchedContext scId f).modifyObject k (SystemState.mapReplyObject g)).objects.noResizeDue ∧
+      ipcBufferReadsAgree ((st.updateSchedContext scId f).modifyObject k
+        (SystemState.mapReplyObject g)) st := fun f k g =>
+    ⟨modifyObject_noResizeDue _ _ _ (updateSchedContext_noResizeDue st scId f hNo),
+      (ipcBufferReadsAgree_modifyObject _ _ _ (hRV g) (updateSchedContext_noResizeDue st scId f hNo)).trans
+        (ipcBufferReadsAgree_updateSchedContext st scId f hNo)⟩
+  split
+  · refine (ipcBufferReadsAgree_updateTcb _ _ _ ?_ ?_).trans
+      ((ipcBufferReadsAgree_updateTcb _ _ _ ?_ ?_).trans ?_)
+    · exact fun _ => ⟨rfl, rfl⟩
+    · exact updateTcb_noResizeDue _ _ _ (U _ _ _).1
+    · exact fun _ => ⟨rfl, rfl⟩
+    · exact (U _ _ _).1
+    · exact (U _ _ _).2
+  · refine (ipcBufferReadsAgree_updateTcb _ _ _ ?_ ?_).trans
+      ((ipcBufferReadsAgree_updateTcb _ _ _ ?_ ?_).trans
+        ((ipcBufferReadsAgree_modifyObject _ _ _ (hRV _) ?_).trans ?_))
+    · exact fun _ => ⟨rfl, rfl⟩
+    · exact updateTcb_noResizeDue _ _ _ (modifyObject_noResizeDue _ _ _ (U _ _ _).1)
+    · exact fun _ => ⟨rfl, rfl⟩
+    · exact modifyObject_noResizeDue _ _ _ (U _ _ _).1
+    · exact (U _ _ _).1
+    · exact (U _ _ _).2
+
+theorem ipcBufferReadsAgree_lendSchedContextInPlace (X : SystemState)
+    (donor donee : SeLe4n.ThreadId) (scS : SeLe4n.SchedContextId) (dh rh : CoreId)
+    (hNo : X.objects.noResizeDue) :
+    ipcBufferReadsAgree (lendSchedContextInPlace X donor donee scS dh rh) X :=
+  (ipcBufferReadsAgree_of_offReleaseLinks (migrateSchedContextReplenishment_agree _ scS dh rh)
+    (migrateSchedContextReplenishment_machine _ scS dh rh)).trans
+    (ipcBufferReadsAgree_donateSchedContextInPlace X donor donee scS hNo)
+
+theorem ReplyRecvArm.ipcBufferReadsAgree_callLend (arm : ReplyRecvArm) (X : SystemState)
+    (s tid : SeLe4n.ThreadId) (scS : SeLe4n.SchedContextId) (dh rh : CoreId)
+    (hNo : X.objects.noResizeDue) : ipcBufferReadsAgree (arm.callLend X s tid scS dh rh) X := by
+  unfold ReplyRecvArm.callLend
+  split
+  · exact ipcBufferReadsAgree_lendSchedContextInPlace X s tid scS dh rh hNo
+  · exact .refl X
+
+/-- **The long Call take's writes before the server's own frame, over the
+arm**: as `ReplyRecvArm.callTakeLegs`, the caller's long frame with the
+replier's overflow words copied into its buffer (`deliverLongReplyRecvFrame`). -/
+@[inline] def ReplyRecvArm.callTakeLegsLong (arm : ReplyRecvArm) (capInfo : Nat) (Y : SystemState)
+    (c tid s : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (nextCode : Nat)
+    (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
+    (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) : SystemState :=
+  deliverLongReplyRecvFrame (PriorityInheritance.propagatePipChainCrossCore
+    (arm.callLend (storeReceiveCallReady Y epId s nextCode tid rid) s tid scS dh rh) tid core).1
+    c rf len tid badge capInfo
+
+/-- **The long Call take's tail, over the arm**, stages the caller's held reply
+and the server's message as frames. -/
+theorem ReplyRecvArm.callTakeFrame_stagedLong (arm : ReplyRecvArm) (st0 Y : SystemState)
+    (c tid s : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (sTcb : TCB)
+    (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
+    (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) (capInfo : Nat) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (hNo : Y.objects.noResizeDue) (hAY : ipcWordReadsAgree Y st0) (hNe : tid ≠ c) (hSC : s ≠ c)
+    (hST : s ≠ tid) (hLen : 4 ≤ len)
+    (hR : registerRoutedSyscall (blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext)
+      SeLe4n.arm64DefaultLayout sTcb.registerContext 32 = .call capAddr mi)
+    (hF : sTcb.ipcFaultSend = false) :
+    Architecture.stageDeliveredMessage (Architecture.stageDeliveredMessage
+        (PriorityInheritance.propagatePipChainCrossCore (arm.callLend
+          (receiveCallTakeState (Y.mapTcbInPlace c (holdMessage
+            { registers := longReplyRecvRegs rf st0 tid len, badge := badge }))
+            epId s sTcb tid rid) s tid scS dh rh) tid core).1 c capInfo) tid 0 =
+      writeReceiverMessageFrame
+        (arm.callTakeLegsLong capInfo Y c tid s rid epId sTcb.queueNextCode scS dh rh core rf
+          len badge) tid sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge)
+        sTcb.ipcBadged := by
+  unfold ReplyRecvArm.callTakeLegsLong writeReceiverMessageFrame
+  generalize hM : ({ registers := longReplyRecvRegs rf st0 tid len, badge := badge } :
+    IpcMessage) = m
+  have hcs : c ≠ s := fun e => hSC e.symm
+  have hct : c ≠ tid := fun e => hNe e.symm
+  have hNoC : (Y.mapTcbInPlace c (holdMessage m)).objects.noResizeDue :=
+    (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNo
+  rw [receiveCallTakeState_eq_hold _ _ _ _ _ _ hNoC]
+  rw [(blockedSender_of_routedCall _ s sTcb capAddr mi hR hF).2]
+  rw [storeReceiveCallReady_msg c id _ id _ epId s _ tid rid hNo hcs hct]
+  have hAR := ipcBufferReadsAgree_storeReceiveCallReady Y epId s sTcb.queueNextCode tid rid hNo
+  have hNoR := storeReceiveCallReady_noResizeDue Y epId s sTcb.queueNextCode tid rid hNo
+  generalize storeReceiveCallReady Y epId s sTcb.queueNextCode tid rid = R at hNoR hAR
+  generalize hMS :
+    ({ registers := Architecture.regMessageBody arm64DefaultLayout sTcb.registerContext mi.length,
+       badge := sTcb.ipcBadgeView } : IpcMessage) = mS
+  have hNoRc : (R.mapTcbInPlace c (holdMessage m)).objects.noResizeDue :=
+    (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoR
+  rw [arm.callLend_msg tid id _ id _ s tid scS dh rh hNoRc hST.symm,
+    arm.callLend_msg c id _ id R s tid scS dh rh hNoR hcs]
+  have hNoM := arm.callLend_noResizeDue R s tid scS dh rh hNoR
+  rw [propagatePipChainCrossCore_msg _ _ _ _ _ _ _ ?_,
+    propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoM]
+  rotate_left
+  · exact (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoM
+  have hNoY := propagatePipChainCrossCore_noResizeDue _ tid core hNoM
+  have hAZ : ipcWordReadsAgree (PriorityInheritance.propagatePipChainCrossCore
+      (arm.callLend R s tid scS dh rh) tid core).1 st0 :=
+    ((ipcBufferReadsAgree_propagatePipChainCrossCore _ tid core hNoM).trans
+      ((arm.ipcBufferReadsAgree_callLend R s tid scS dh rh hNoR).trans hAR)).words.trans hAY
+  generalize (PriorityInheritance.propagatePipChainCrossCore (arm.callLend R s tid scS dh rh) tid
+    core).1 = Z at hNoY hAZ ⊢
+  rw [show ∀ m : IpcMessage, TCB.withMessageSlots id (fun _ => some m) id = holdMessage m from
+    fun _ => rfl]
+  rw [SystemState.mapTcbInPlace_swap Z _ _ (fun h => absurd h hNe)]
+  have hNoZt : (Z.mapTcbInPlace tid (holdMessage mS)).objects.noResizeDue :=
+    (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNoY
+  have hAZs := (ipcBufferReadsAgree_mapTcbInPlace _ tid (holdMessage mS)
+    (fun _ => ⟨rfl, rfl⟩)).words.trans hAZ
+  rw [← hM, ← deliverLongReplyRecvFrame_eq _ st0 c tid rf len badge capInfo hNoZt hAZs hLen,
+    deliverLongReplyRecvFrame_mapTcbInPlace _ c tid tid rf len badge capInfo (holdMessage mS)
+      (fun _ => ⟨rfl, rfl⟩) hct]
+  have hNoD := deliverLongReplyRecvFrame_noResizeDue Z c rf len tid badge capInfo hNoY
+  generalize deliverLongReplyRecvFrame Z c rf len tid badge capInfo = D at hNoD ⊢
+  have hSzS : mS.registers.size ≤ 4 := by
+    rw [← hMS]
+    simp only [Architecture.regMessageBody_size, Architecture.regMessageLength]
+    have : SeLe4n.arm64DefaultLayout.msgRegs.size = 4 := rfl
+    omega
+  rw [stageDeliveredMessage_holdMessage _ tid _ hNoD hSzS, ← hMS,
+    Architecture.returnFrameOfMessage_regMessageBody, Architecture.regMessageFrameW_eq,
+    TCB.ipcBadgeView_eq_opt]
+
 end SeLe4n.Kernel
