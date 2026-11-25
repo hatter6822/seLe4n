@@ -1591,7 +1591,7 @@ def Admits : ReplyRecvArm → SeLe4n.SchedContextId → CoreId → SystemState �
   | .rendezvous, _, _, st, tid, c, rid, ct, rt, rp =>
       (∃ ep0, ct.ipcState = .blockedOnReply ep0 (some tid)) ∧
       replyWakesInPlace st c ct rid = true ∧ tid ≠ c ∧ receiveBlockAdmits rt = true ∧
-      rp.consumed.isFree = true
+      rp.consumedIsFree = true
   | .donated, scId, home, st, tid, c, rid, ct, rt, _ =>
       (∃ ep0, ct.ipcState = .blockedOnReply ep0 (some tid)) ∧ tid.isReserved = false ∧
       replyPopsInPlace st c ct.scBindingScCode tid rid = true ∧ enqueueAdmits rt = true ∧
@@ -1668,6 +1668,7 @@ theorem replyRecvAnsweringOnCore_arm_inPlace (arm : ReplyRecvArm)
   cases arm with
   | rendezvous =>
     obtain ⟨⟨ep0, hIpc⟩, hG, hNe, hA, hFree⟩ := hAd
+    rw [Reply.consumedIsFree_eq] at hFree
     refine ⟨replyRecvAnsweringOnCore_blocks_inPlace answer st epId tid c rid msg grant core ct ep0
       rt ep rp hSz hT hIpc hRO hG hNe hE hS hR hA hEnq hRp hFree hStash hRec hInert, ?_⟩
     have hNo := replyWakesInPlace_noResizeDue hG
@@ -2254,6 +2255,7 @@ theorem ReplyRecvArm.receiveGuard (arm : ReplyRecvArm)
   cases arm with
   | rendezvous =>
     obtain ⟨-, hG, hNe, hA, hFree⟩ := hAd
+    rw [Reply.consumedIsFree_eq] at hFree
     have hNo := replyWakesInPlace_noResizeDue hG
     have hFC : st.objects.findsInPlace c.toObjId = true := by
       simp only [replyWakesInPlace, Bool.and_eq_true] at hG

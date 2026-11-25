@@ -679,8 +679,8 @@ theorem replyRecvBlockArmCode_spec {st : SystemState} {epId : SeLe4n.ObjId}
   · obtain ⟨ct, ep0, rt, ep, rp, hT, hIpc, hRO, hW, hNe, hE, hS, hR, hA, hEnq, hRp, hFree,
       hStash, hRec, hTail⟩ := replyRecvBlocksFast_spec h1
     simp only [h1, ↓reduceIte]
-    exact ⟨ct, rt, ep, rp, ⟨⟨ep0, hIpc⟩, hW, hNe, hA, hFree⟩, hT, hRO, hE, hS, hR, hEnq, hRp,
-      hStash, hRec, hTail⟩
+    exact ⟨ct, rt, ep, rp, ⟨⟨ep0, hIpc⟩, hW, hNe, hA, (Reply.consumedIsFree_eq rp).trans hFree⟩,
+      hT, hRO, hE, hS, hR, hEnq, hRp, hStash, hRec, hTail⟩
   simp only [h1, Bool.false_eq_true, ↓reduceIte] at h ⊢
   by_cases h2 : replyRecvDonatedBlocks st epId tid c rid = true
   · obtain ⟨ct, ep0, rt, ep, rp, hT, hIpc, hRO, hP, hSRes, hE, hS, hR, hA, hEnq, hRp, hStash,
