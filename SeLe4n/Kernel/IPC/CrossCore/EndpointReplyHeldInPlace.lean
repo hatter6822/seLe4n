@@ -614,13 +614,20 @@ end HeldReplyDelivered
 
 section HeldReplyRecvGuard
 
+/-- Whether reply object `rid` has no frame below it on its context's stack, so
+a pop of it leaves the context with no loan owed. -/
+@[inline] def replyIsStackBottom (st : SystemState) (rid : SeLe4n.ReplyId) : Bool :=
+  match st.getReply? rid with
+  | some rp => rp.prev.isNone
+  | none => false
+
 /-- **A held reply-receive that may block in place**, read on the pre-state:
 the caller blocked on a reply from the receiver through reply object `rid`, the
 held pop's checks (`replyHeldPopsInPlace`), no sender waiting on the endpoint,
-the receiver an unreserved thread that owns the context it holds (so the held
-pop leaves it `.bound` and it may block) and whose block writes in place, and
-its reply object not stashed and in its slot for the stasher record.  Every
-read is a code. -/
+the receiver an unreserved thread the held pop leaves `.bound` (it owns the
+context it holds, or the popped frame is the stack's last, so the context it
+keeps is its own) and whose block writes in place, and its reply object not
+stashed and in its slot for the stasher record.  Every read is a code. -/
 @[inline] def replyRecvHeldBlocks (st : SystemState) (epId : SeLe4n.ObjId)
     (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) : Bool :=
   (match st.getTcb? c with
@@ -636,8 +643,8 @@ read is a code. -/
    | some ep =>
        ep.sendQ.head.isNone &&
        (match st.getTcb? tid with
-        | some rt => rt.scBindingOwnerCode == 0 && enqueueAdmits rt &&
-            enqueuesInPlaceCode st epId tid ep.recvTailCode
+        | some rt => (rt.scBindingOwnerCode == 0 || replyIsStackBottom st rid) &&
+            enqueueAdmits rt && enqueuesInPlaceCode st epId tid ep.recvTailCode
         | none => false)
    | none => false) &&
   (match st.getReply? rid with
@@ -652,8 +659,8 @@ theorem replyRecvHeldBlocks_spec {st : SystemState} {epId : SeLe4n.ObjId}
       ct.ipcState = .blockedOnReply ep0 (some tid) ∧ ct.replyObject = some rid ∧
       replyHeldPopsInPlace st c ct.scBindingScCode tid rid = true ∧ tid.isReserved = false ∧
       st.objects[epId]? = some (.endpoint ep) ∧ ep.sendQ.head = none ∧
-      st.objects[tid.toObjId]? = some (.tcb rt) ∧ rt.scBindingOwnerCode = 0 ∧
-      enqueueAdmits rt = true ∧
+      st.objects[tid.toObjId]? = some (.tcb rt) ∧
+      (rt.scBindingOwnerCode = 0 ∨ rp.prev = none) ∧ enqueueAdmits rt = true ∧
       enqueuesInPlace st epId tid ep.receiveQ.tail = true ∧
       st.objects[rid.toObjId]? = some (.reply rp) ∧
       st.replyStashedAt rid rp = false ∧ replyRecordsInPlace st (rid.val + 1) = true := by
@@ -696,9 +703,12 @@ theorem replyRecvHeldBlocks_spec {st : SystemState} {epId : SeLe4n.ObjId}
   obtain ⟨hStash, hRecR⟩ := hRp
   refine ⟨ct, ep0, rt, ep, rp, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTc, hIpc', ?_, hW,
     hSRes, (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp, hS,
-    (SystemState.getTcb?_eq_some_iff _ _ _).mp hTt, beq_iff_eq.mp hOwn, hA, ?_,
+    (SystemState.getTcb?_eq_some_iff _ _ _).mp hTt, ?_, hA, ?_,
     (SystemState.getReply?_eq_some_iff _ _ _).mp hR, hStash, hRecR⟩
   · simp only [TCB.replyObject, beq_iff_eq.mp hRO, SeLe4n.ReplyId.ofOptCode]
+  · simp only [Bool.or_eq_true, beq_iff_eq, replyIsStackBottom, hR,
+      Option.isNone_iff_eq_none] at hOwn
+    exact hOwn
   · rw [enqueuesInPlaceCode_eq, Endpoint.ofOptCode_recvTailCode] at hEnq; exact hEnq
 
 /-- **The held pop carries the receive's guard**: on the state a held reply
@@ -717,7 +727,8 @@ theorem keepHeldPop_receiveGuard (st : SystemState) (c tid : SeLe4n.ThreadId)
     (hBelow : ∀ b, rp.prev = some b → b ≠ rid)
     (hNe : tid ≠ c)
     (hE : st.objects[epId]? = some (.endpoint ep))
-    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hOwn : rt.scBindingOwnerCode = 0)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt))
+    (hOwn : rt.scBindingOwnerCode = 0 ∨ rp.prev = none)
     (hA : enqueueAdmits rt = true)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hStash : st.replyStashedAt rid rp = false)
@@ -767,8 +778,11 @@ theorem keepHeldPop_receiveGuard (st : SystemState) (c tid : SeLe4n.ThreadId)
     ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hRtT)
     (fun b hb => hBelow b (by rw [hHeadC] at hb; exact hb))
   have hF := keepDonatedSchedContextInPlace_popFrame T tid scId hNoT
-  have hOwnT : rtT.scBindingOwnerCode = 0 := by
-    have h := congrArg TCB.scBindingOwnerCode eRtT; exact h.trans hOwn
+  have hOwnT : heldPopOwnerCode rtT.scBindingOwnerCode (popOuterCode T rp.consumed) = 0 := by
+    rcases hOwn with h | h
+    · have h' : rtT.scBindingOwnerCode = 0 := (congrArg TCB.scBindingOwnerCode eRtT).trans h
+      rw [h']; rfl
+    · rw [hHeadC]; simp only [popOuterCode, h]; unfold heldPopOwnerCode; split <;> rfl
   rw [hOwnT] at hB1
   generalize keepDonatedSchedContextInPlace T tid scId = P at hPt' hPr' hF
   have hComb : ∀ x, x ≠ c.toObjId → x ≠ rid.toObjId →
@@ -783,7 +797,7 @@ theorem keepHeldPop_receiveGuard (st : SystemState) (c tid : SeLe4n.ThreadId)
     rw [← enqueueAdmits_popView t, e', enqueueAdmits_popView, hA]
     have hU : t.schedContextBinding = .bound scId := by
       unfold TCB.schedContextBinding SchedContextBinding.ofCodes
-      rw [hB0, hB1]; rfl
+      rw [hB0, hB1]
     rw [hU]
     rfl
   · obtain ⟨t', h', e'⟩ := popAgreeAt_tcb (hComb _ hTc' hTr) hR
@@ -867,7 +881,8 @@ theorem replyRecvAnsweringOnCore_held_inPlace
     (hSRes : tid.isReserved = false)
     (hG : replyHeldPopsInPlace st c ct.scBindingScCode tid rid = true)
     (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
-    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hOwn : rt.scBindingOwnerCode = 0)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt))
+    (hOwn : rt.scBindingOwnerCode = 0 ∨ rp.prev = none)
     (hA : enqueueAdmits rt = true)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
@@ -945,7 +960,8 @@ theorem replyRecvOnCore_held_inPlace (st : SystemState) (epId : SeLe4n.ObjId)
     (hSRes : tid.isReserved = false)
     (hG : replyHeldPopsInPlace st c ct.scBindingScCode tid rid = true)
     (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
-    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hOwn : rt.scBindingOwnerCode = 0)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt))
+    (hOwn : rt.scBindingOwnerCode = 0 ∨ rp.prev = none)
     (hA : enqueueAdmits rt = true)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))
@@ -1003,7 +1019,8 @@ theorem replyRecvOnCore_held_delivered (st : SystemState) (epId : SeLe4n.ObjId)
     (hSRes : tid.isReserved = false)
     (hG : replyHeldPopsInPlace st c ct.scBindingScCode tid rid = true)
     (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
-    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hOwn : rt.scBindingOwnerCode = 0)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt))
+    (hOwn : rt.scBindingOwnerCode = 0 ∨ rp.prev = none)
     (hA : enqueueAdmits rt = true)
     (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
     (hRp : st.objects[rid.toObjId]? = some (.reply rp))

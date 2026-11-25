@@ -477,11 +477,11 @@ for driver in drivers:
             "untyped-retype-held-reply-recv-installs-cap-context",
             "held-reply-recv-installs-cap-carved-configure",
             "held-reply-recv-installs-cap-bind-lender",
-            "held-reply-recv-installs-cap-receive-path", "held-reply-recv-installs-cap",
+            "held-reply-recv-installs-cap",
             "held-reply-recv-installs-cap-installed-signal",
             "held-reply-recv-installs-cap-installed-wait",
             "held-reply-recv-installs-cap-installed-delete",
-            "held-reply-recv-installs-cap-receive-path-closed",
+           
             "held-reply-recv-installs-cap-partner-wakes-root",
             "held-reply-recv-installs-cap-partner-waits",
             "held-reply-recv-installs-cap-suspend-partner",
@@ -498,12 +498,12 @@ for driver in drivers:
             "untyped-retype-held-long-reply-recv-installs-cap-context",
             "held-long-reply-recv-installs-cap-carved-configure",
             "held-long-reply-recv-installs-cap-bind-lender",
-            "held-long-reply-recv-installs-cap-receive-path",
+           
             "held-long-reply-recv-installs-cap",
             "held-long-reply-recv-installs-cap-installed-signal",
             "held-long-reply-recv-installs-cap-installed-wait",
             "held-long-reply-recv-installs-cap-installed-delete",
-            "held-long-reply-recv-installs-cap-receive-path-closed",
+           
             "held-long-reply-recv-installs-cap-partner-wakes-root",
             "held-long-reply-recv-installs-cap-partner-waits",
             "held-long-reply-recv-installs-cap-suspend-partner",

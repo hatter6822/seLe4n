@@ -303,9 +303,10 @@ def Admits : ReplyRecvArm → SeLe4n.SchedContextId → CoreId → SystemState �
       (∃ ep0, ct.ipcState = .blockedOnReply ep0 (some tid)) ∧ tid.isReserved = false ∧
       replyPopsInPlace st c ct.scBindingScCode tid rid = true ∧ enqueueAdmits rt = true ∧
       scId = ⟨replyHeadContextCode st rid - 1⟩ ∧ home = determineTargetCore st c
-  | .held, scId, _, st, tid, c, rid, ct, rt, _ =>
+  | .held, scId, _, st, tid, c, rid, ct, rt, rp =>
       (∃ ep0, ct.ipcState = .blockedOnReply ep0 (some tid)) ∧ tid.isReserved = false ∧
-      replyHeldPopsInPlace st c ct.scBindingScCode tid rid = true ∧ rt.scBindingOwnerCode = 0 ∧
+      replyHeldPopsInPlace st c ct.scBindingScCode tid rid = true ∧
+      (rt.scBindingOwnerCode = 0 ∨ rp.prev = none) ∧
       enqueueAdmits rt = true ∧ scId = ⟨replyHeadContextCode st rid - 1⟩
   | .unheld, scId, home, st, tid, c, rid, ct, rt, _ =>
       (∃ ep0, ct.ipcState = .blockedOnReply ep0 none) ∧

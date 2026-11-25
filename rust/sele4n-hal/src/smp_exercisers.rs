@@ -19658,12 +19658,6 @@ fn fault_entries() -> Option<bool> {
     ];
     let held_fault_teardown = [
         invocation(
-            "held-fault-suspend-partner",
-            TCB_SUSPEND,
-            PARTNER_TCB_CAP,
-            [0; 4],
-        ),
-        invocation(
             "held-fault-carved-delete",
             CSPACE_DELETE,
             CNODE_CAP,
@@ -19707,6 +19701,7 @@ fn fault_entries() -> Option<bool> {
                 || heap_allocations_round_trip_resuming(reply_recv, which, Some(fault_restart(2)))
                     != Some(true)
                 || !unmeasured(&wake_handler, "the waiting handler was not woken")
+                || !suspend_partner()
                 || !unmeasured_all(&held_fault_teardown, "the held fault's teardown failed")
             {
                 return Some(false);
