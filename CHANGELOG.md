@@ -38,7 +38,10 @@ whole, since the per-arm modules it supersedes are deleted in the same cut.
   guards into `ReplyRecvBlockComposed`.
 - **Gates.**  Tier 3 anchors pin the composed routing and the held guard's
   disjunction and refuse the retired names and imports (each break-tested
-  with the tokens kept).  QEMU: six held reply-receive steps, each 0.
+  with the tokens kept).  The arms' admission predicate reads
+  `Reply.consumedIsFree`, not the chain-write primitive `Reply.consumed`, so
+  the reply-stack write census holds.  QEMU: six held reply-receive steps,
+  each 0.
 - **Acceptance.**  `RefusalCarryingReplyRecv.c` is 14,643,899 bytes and compiles in 607 s
   (`leanc -c -O3 -DNDEBUG`, standalone), against 21,021,237 bytes and 769 s at
   `v0.37.53`; every heap reading is 0.
