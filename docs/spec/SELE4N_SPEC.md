@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.37.53` (`lakefile.toml`) |
+| **Package version** | `0.37.54` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 686,949 across 703 Lean files |
+| **Production LoC** | 685,251 across 704 Lean files |
 | **Test LoC** | 91,877 across 71 Lean test suites |
-| **Proved declarations** | 26,456 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 26,455 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1300,7 +1300,7 @@ internal; nothing a thread writes names one.
     (`syscallReturnOutcome`, `syscallSuccessOutcome_returns_runnable`). The
     core resumes the thread the committed state runs on it
     (`restoreTargetOnCore`). Where a caller stopped inside its own syscall
-    resumes is WS-SX SX28.1.
+    resumes is WS-SX SX30.1.
   - NBSend, NBRecv and NBWait do not block. An NBSend to an endpoint with no
     receiver drops the message, and its drop decision is non-interfering
     (`sendDropsMessage_lowEquivalent`).
@@ -5870,7 +5870,7 @@ which is bound to no one (`severUnheldSchedContext`).  Where the answered
 reply object heads a context no thread holds, both spines write in place: the
 reply (`performReplyUnheldDelivered`, `replyTransferChecked_unheld_inPlace`)
 and the reply-receive, which then blocks the replier on its endpoint
-(`performReplyRecvUnheldDelivered`, `replyRecvOnCore_unheld_delivered`, the
+(`performReplyRecvArmDelivered`, `replyRecvOnCore_arm_delivered`, the
 receive's checks read on the pre-state and carried across the reply leg and the
 pop by `popUnheldSettled_receiveGuard`), so `orphan-root-answers-server` and
 `orphan-reply-recv` read 0.  A reply to a caller recording no server whose
@@ -5886,14 +5886,28 @@ through one derivation of the dispatch (`replyDispatch_unlinked_inPlace`), so
 `unlinked-fault-root-replies` read 0, as does the long fault reply
 (`unlinked-fault-root-replies-long`).  The reply-receive on such a reply object
 writes in place on the same shapes, the receive leg blocking the replier
-(`performReplyRecvUnlinkedDelivered`, `performReplyRecvUnlinkedFaultAnswer`,
-`performReplyRecvUnlinkedCapsDelivered` and their long forms), each proven the
+(`performReplyRecvArmDelivered`, `performReplyRecvArmFaultAnswer`,
+`performReplyRecvArmCapsDelivered` and their long forms), each proven the
 specification's through one composite
 (`replyRecvAnsweringOnCore_unlinked_inPlace`, the receive's checks carried
 across the reply leg by `storeReplyLeg_receiveGuard`), so `unlinked-reply-recv`,
 `unlinked-reply-recv-installs-cap`, `unlinked-long-reply-recv`,
 `unlinked-long-reply-recv-installs-cap`, `unlinked-fault-root-reply-recv` and
-`unlinked-fault-root-reply-recv-long` read 0.  When the receive leg instead meets a
+`unlinked-fault-root-reply-recv-long` read 0.  Since WS-SX SX25 (`v0.37.54`,
+D48) the blocking reply-receive is one composed path over every reply arm: the
+arm is read once on the pre-state (`replyRecvBlockArmCode`: no pop, donated,
+held, unheld, unlinked), each answer and length has one arm-generic performer
+(`performReplyRecvArm{Delivered,CapsDelivered,FaultAnswer}` and their long
+forms), and one equality joins them to the specification
+(`replyRecvAnsweringOnCore_arm_inPlace`, casing over each arm's leg equality),
+the receive's checks carried across each arm's leg and pop by one guard family
+(`ReplyRecvLegGuards.lean`).  The held arm (the answered caller holding a
+context of its own, the replier keeping the loaned one) blocks in place on
+every shape: its guard admits a replier the pop leaves `.bound`, which owns the
+context or pops the stack's last frame (`replyIsStackBottom`), so
+`held-reply-recv`, `held-reply-recv-long`, `held-reply-recv-installs-cap`,
+`held-long-reply-recv-installs-cap`, `held-fault-root-reply-recv` and
+`held-fault-root-reply-recv-long` read 0.  When the receive leg instead meets a
 sender already queued, the reply-receive to a caller recording no server takes it
 in place on both shapes, a reply object linked to nothing and one heading a stack
 no thread holds (`performReplyRecvUnlinkedTakeDelivered`,
@@ -6326,7 +6340,7 @@ Every kernel object has a decidable well-formedness predicate:
 - **Reply-receive on the registers** (`v0.36.93`, WS-ZA ZA4.7).  The entry
   decodes a reply-receive from the register file, and one whose reply is at
   most four words and whose receive leg blocks performs the reply's in-place
-  writes followed by the receive's (`replyRecvOnCore_blocks_inPlace`), proven
+  writes followed by the receive's (`replyRecvAnsweringOnCore_arm_inPlace`), proven
   equal to the specification arm (`dispatchReplyRecvCheckedR_eq`).  The
   receive leg's checks, including the scan for a stashed reply, are decided
   on the pre-state and carried across the reply leg
@@ -7189,7 +7203,7 @@ Every kernel object has a decidable well-formedness predicate:
   reply or reply-receive whose frame heads the loaned context's stack
   (seL4's `reply_pop`: `returnDonatedSchedContextInPlace`,
   `popDonationSettledInPlace`, `replyTransferChecked_donated_inPlace`,
-  `replyRecvOnCore_donated_delivered`).
+  `replyRecvOnCore_arm_delivered`).
   Since `v0.36.203` (ZA6.34) the final deletes that end a reply stack's
   callers write in place, as seL4-MCS's `reply_remove` does: a head reply's
   pops the loaned context back to its caller (`cancelHeadReplyCaller`), a
@@ -7295,9 +7309,8 @@ Every kernel object has a decidable well-formedness predicate:
   reply object or to a caller recording no server), then the transfer in
   place, then the receive's block, with the receive leg's guard and the pop's
   carried across the transfer (`receiveTransferCaps_reply_transferFrame`,
-  `receiveGuard_of_transferFrame`; `performReplyRecvBlockCapsDelivered`,
-  `performReplyRecvDonatedCapsDelivered`, `performReplyRecvUnheldCapsDelivered`
-  and, past four words, `performReplyRecvBlockCapsDeliveredLong`;
+  `receiveGuard_of_transferFrame`; `performReplyRecvArmCapsDelivered`
+  and, past four words, `performReplyRecvArmCapsDeliveredLong`;
   `ReplyRecvCapsFrame.lean`, `ReplyRecvCapsDelivered.lean`).  The arm runs
   them when its pre-state checks pass (`replyRecvCapsArmR_blocks_inPlace`,
   `replyRecvCapsArmR_donated_inPlace`, `replyRecvCapsArmR_unheld_inPlace`),
@@ -7314,14 +7327,13 @@ Every kernel object has a decidable well-formedness predicate:
   server's register file, which it reads the reply from.  The long
   reply-receive on a donated reply object or to a caller recording no server
   writes in place too, inert and installing
-  (`replyRecvOnCore_donated_deliveredLong`,
-  `replyRecvOnCore_unheld_deliveredLong` and their installing forms;
-  `LongReplyRecvPopInPlace.lean`).  A long reply or reply-receive answering a
+  (`replyRecvOnCore_arm_deliveredLong` and their installing forms;
+  `ReplyRecvBlockComposed.lean`).  A long reply or reply-receive answering a
   faulted caller answers it in place on each shape the short answer does, as
   seL4's `handleFaultReply` does, its restart words past the fourth read from
   the replier's IPC buffer (`performFaultAnswerLong`, `faultReplyWordLong`;
   `faultReplyTransferChecked_inPlaceLong` and its donated and unheld forms,
-  `replyRecvTransferOnCore_fault_blocks_inPlaceLong` and its donated and
+  `replyRecvTransferOnCore_arm_fault_inPlaceLong` and its donated and
   unheld forms; `LongFaultAnswerInPlace.lean`).  Since `v0.37.15` (WS-UC
   UC2) every in-place arm's store guard (`storeLeavesIndexAndTypes`) asks
   only that the key keep its kind (`storeKeepsKind`): the object-index set
@@ -8333,9 +8345,8 @@ no grant right, a replier whose saved message info names no extra capability
 or no receive slot.  A granting reply leg that installs takes the installing
 arms (`replyRecvCapsArmR`, and the long arm's blocking branch), which run the
 transfer in place between the reply's writes and the receive leg, each proven
-equal to the specification (`replyRecvOnCore_blocks_capsDelivered`,
-`replyRecvOnCore_donated_capsDelivered`, `replyRecvOnCore_unheld_capsDelivered`,
-`replyRecvOnCore_blocks_capsDeliveredLong`, and the take's and the long donated
+equal to the specification (`replyRecvOnCore_arm_capsDelivered`,
+`replyRecvOnCore_arm_capsDeliveredLong`, and the take's and the long donated
 and unheld forms); a reply-receive whose pre-state checks fail runs the
 specification.
 
@@ -9361,7 +9372,7 @@ caller's **base** priority; `resolveEffectivePrioDeadline` is
 `max basePrio pipBoost`, so the caller's inherited **boost** — what
 `propagatePipChainCrossCore` installs by walking `blockingServer` — travelled by
 no route at all on the `.receive` arm. A chain `D → C → S`, with `D` blocked on
-`C` and `C` dequeued into `.blockedOnReply` on the passive server `S`, therefore
+`C` dequeued into `.blockedOnReply` on the passive server `S`, therefore
 left `D`'s priority stopping dead at `C`: **unbounded priority inversion**, on
 the arm a passive server takes its first request with, and biting even with no
 donation, since `applyCallDonation` is the identity for an already-`.bound`

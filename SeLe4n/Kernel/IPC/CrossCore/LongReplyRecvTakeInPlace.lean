@@ -8,7 +8,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvTakeInPlace
-import SeLe4n.Kernel.IPC.CrossCore.LongReplyRecvInPlace
+import SeLe4n.Kernel.IPC.CrossCore.LongReplyRecvFrame
 
 /-!
 # The long reply-receive whose receive leg meets a waiting sender, in place

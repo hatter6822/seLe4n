@@ -1,3 +1,51 @@
+## v0.37.54 — One in-place ReplyRecv reply leg and the composed blocking receive (WS-SX SX25)
+
+SX25 is on SX24.  Measured before the bulk, one composed ReplyRecv path over
+all 90 shapes (five reply arms, three receive legs, three answers, two
+lengths) was 6–8 sessions against the row's 3, so the row was wrapped under
+the owner's D32 rule (D48): this row keeps the reply leg over every arm and
+the composed blocking receive, SX26 composes the Send-take leg and SX27 the
+Call take with the composed path's acceptance, and SX26–SX34 became
+SX28–SX36.  The narrowed row ran about twice its estimate and was finished
+whole, since the per-arm modules it supersedes are deleted in the same cut.
+
+- **One reply leg over the five arms, one guard family.**  No pop, donated,
+  held, unheld and unlinked each carry the receive guard, the Send-take
+  guard and the Call-take guard across their leg and pop
+  (`ReplyRecvLegGuards.lean`; the four missing cells filled, 15 of 15).
+- **The composed blocking receive.**  The arm is an enumeration read once
+  on the pre-state (`replyRecvBlockArmCode`, out of line), each answer and
+  length has one arm-generic performer (`performReplyRecvArm{Delivered,
+  CapsDelivered,FaultAnswer}` and their long forms), and one equality joins
+  them to the specification (`replyRecvAnsweringOnCore_arm_inPlace`).  The
+  blocking arms of `RefusalCarryingReplyRecv.lean` are restated over it.
+- **The held arm made reachable.**  The first QEMU run of the held shapes
+  read 107 to 981 allocations: the held guard asked the replier to own the
+  context it holds, and a server lent its context by the call it answers
+  holds it on loan.  The pop leaves the replier `.bound` also when it pops
+  the stack's last frame, so the guard takes either (`replyIsStackBottom`,
+  `keepHeldPop_receiveGuard` over the disjunction).  The held reply-receive
+  now blocks in place at one and 120 words, installing at one and 120 words,
+  and answering a fault at one and 120 words.
+- **Retired.**  `EndpointReplyRecv{,Donated,Unheld}InPlace`,
+  `LongReplyRecv{,Pop}InPlace`, the ReplyRecv half of
+  `EndpointReplyHeldInPlace` and the per-arm blocking performers of
+  `ReplyRecvCapsDelivered`, `FaultAnswerInPlace` and `LongFaultAnswerInPlace`,
+  with their equalities.  What surviving files read moved first, measured over
+  the constants they use: the reply leg's and the pops' frames into
+  `ReplyLegFrame`, `ReplyPopFrame`, `ReplyUnheldPopFrame` and
+  `LongReplyRecvFrame`; the per-arm leg equalities, receive guards and arm
+  guards into `ReplyRecvBlockComposed`.
+- **Gates.**  Tier 3 anchors pin the composed routing and the held guard's
+  disjunction and refuse the retired names and imports (each break-tested
+  with the tokens kept).  The arms' admission predicate reads
+  `Reply.consumedIsFree`, not the chain-write primitive `Reply.consumed`, so
+  the reply-stack write census holds.  QEMU: six held reply-receive steps,
+  each 0.
+- **Acceptance.**  `RefusalCarryingReplyRecv.c` is 14,643,899 bytes and compiles in 607 s
+  (`leanc -c -O3 -DNDEBUG`, standalone), against 21,021,237 bytes and 769 s at
+  `v0.37.53`; every heap reading is 0.
+
 ## v0.37.53 — The endpoint queue links' labels carried, the queue arms' teardown discharged (WS-SX SX24)
 
 SX24 is on SX23, whose records view holds the endpoint queue links.  It

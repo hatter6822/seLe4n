@@ -12,7 +12,7 @@ import SeLe4n.Kernel.IPC.CrossCore.DeliveredInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInPlace
 import SeLe4n.Kernel.IPC.CrossCore.CallNoReplyInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDonatingInPlace
-import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyLegFrame
 
 /-!
 # Fault delivery, carried as words
