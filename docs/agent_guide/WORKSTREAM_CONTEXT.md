@@ -154,7 +154,8 @@ per-invocation rights as `Option AccessRight` (SX29), the Running state per
 core (SX30), the compound syscalls' invoke phase (SX31), timeout faults with
 SetTimeoutEndpoint and SetSchedParams (SX32), the full CNode invocation set
 (SX33), seL4's error codes in the label (SX34), seL4's remaining
-invocations (SX35) and closure (SX36). Rows and
+invocations (SX35), closure (SX36) and the lock-set ceiling lowered to the
+kernel's largest footprint (SX37). Rows and
 decisions D1–D48 (D1–D17 and D46 each default taken, owner card open;
 D18–D32, D34 and D36–D45 the owner's; D47 SX22's and D48 SX25's wraps under
 the owner's D32 rule) are in
