@@ -1002,13 +1002,6 @@ theorem maybeDonateSchedContext_runQueueStage (st : SystemState) (n : SeLe4n.Obj
   maybeDonateSchedContext_induct (fun a b => RunQueueStage a b) st n tid (RunQueueStage.refl _)
     (fun vS vT _ hA => schedContextBindPerform_runQueueStage st vS vT hA)
 
-/-- …and so does the checked donation. -/
-theorem maybeDonateSchedContextFlowing_runQueueStage {ctx : LabelingContext} (st : SystemState)
-    (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) :
-    RunQueueStage st (maybeDonateSchedContextFlowing ctx st n tid) :=
-  maybeDonateSchedContextFlowing_induct (RunQueueStage st) ctx st n tid (RunQueueStage.refl _)
-    (maybeDonateSchedContext_runQueueStage st n tid)
-
 /-- **seL4's three writes are a frame stage off the returned context**: its
 thread link written in place (no run, release or yield link moves), the thread's
 binding written in place, then reschedule flags. -/
@@ -1095,12 +1088,12 @@ theorem maybeReturnSchedContext_runQueueEntryStage (st : SystemState) (n : SeLe4
 
 /-- **seL4's `sendSignal` keeps the run queues in agreement with the threads'
 links**: the wake's stage, then the donation's. -/
-theorem sendSignalOnCoreFlowing_runQueueStage (ctx : LabelingContext) (n : SeLe4n.ObjId)
+theorem sendSignalOnCore_runQueueStage (n : SeLe4n.ObjId)
     (badge : SeLe4n.Badge) (c : Concurrency.CoreId) (st : SystemState)
     (hHeads : notificationHeadsWakeable st) (hBlk : blockedCurrentNowhere st) :
-    RunQueueStage st (sendSignalOnCoreFlowing ctx n badge c st).1 :=
+    RunQueueStage st (sendSignalOnCore n badge c st).1 :=
   have hW := notificationSignalBoundOnCore_runQueueStage n badge c st hHeads hBlk
-  sendSignalOnCoreFlowing_induct (fun s => RunQueueStage st s) ctx n badge c st hW
+  sendSignalOnCore_induct (fun s => RunQueueStage st s) n badge c st hW
     (fun t _ _ _ => hW.trans (maybeDonateSchedContext_runQueueStage _ n t))
 
 /-- **The declassifying dispatch keeps the run queues in agreement with the
@@ -1125,7 +1118,7 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_runQueueStage (ctx : Lab
       signaler badge c st).1 :=
   notificationSignalBoundCrossCoreDispatchChecked_induct (fun s => RunQueueStage st s) ctx
     notificationId signaler badge c st (RunQueueStage.refl _)
-    (sendSignalOnCoreFlowing_runQueueStage ctx notificationId badge c st hHeads hBlk)
+    (sendSignalOnCore_runQueueStage notificationId badge c st hHeads hBlk)
 
 /-- A reply-receive whose receive completes its bound notification keeps the run
 queues in agreement with the threads' links: the reply leg, the wait's
@@ -1143,7 +1136,7 @@ theorem replyRecvCompletesSignalArm_runQueueEntryStage {ctx : LabelingContext}
   · exact ((hS.trans (notificationWaitOnCore_consumed_runQueueStage
       (notificationWaitCrossCoreDispatchChecked_ok_inner hW)).entry).trans
       (writeReturnFrameToTcb_runQueueStage _ _ _).entry).trans
-      (maybeDonateSchedContextFlowing_runQueueStage _ _ _).entry
+      (maybeDonateSchedContext_runQueueStage _ _ _).entry
 
 /-- **seL4 `receiveIPC`'s return keeps what the per-core receive asks of its
 state**: every endpoint head wakeable, the receiver current where it was and
@@ -1340,7 +1333,7 @@ theorem receiveResolvedArm_runQueueEntryStage (ctx : LabelingContext)
       (notificationWaitOnCore_runQueueEntryStage _ tid executingCore stC hCurC P.notIdle)
       (notificationWaitCrossCoreDispatchChecked_ok_inner hW))).trans
       (writeReturnFrameToTcb_runQueueStage _ _ _).entry).trans
-      (maybeDonateSchedContextFlowing_runQueueStage _ _ _).entry
+      (maybeDonateSchedContext_runQueueStage _ _ _).entry
   simp only [Bool.not_eq_true] at hSig
   by_cases hNb : receiveFindsNothing (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC epId = true
   · -- WS-SX SX7.2: `NBRecv` with no sender waiting writes the badge register.
@@ -1512,7 +1505,7 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
       exact ((runQueueStage_of_pair_eq
         (notificationWaitCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ P) hW).trans
         (writeReturnFrameToTcb_runQueueStage _ _ _).entry).trans
-        (maybeDonateSchedContextFlowing_runQueueStage _ _ _).entry
+        (maybeDonateSchedContext_runQueueStage _ _ _).entry
     · rename_i hW
       cases h
       exact (runQueueStage_of_pair_eq

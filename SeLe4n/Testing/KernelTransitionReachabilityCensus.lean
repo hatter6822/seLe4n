@@ -1334,12 +1334,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.notificationSignal
   , `SeLe4n.Kernel.notificationSignalBound
   , `SeLe4n.Kernel.notificationSignalBoundCrossCoreDispatch
-  -- WS-SX SX8: seL4's ctx-free `sendSignal` (the donation unchecked), the
-  -- unchecked dispatch's; every seam runs the checked signal
-  -- (`sendSignalOnCoreFlowing`), whose donation asks the context-label check.
-  , `SeLe4n.Kernel.donateToSignalled
-  , `SeLe4n.Kernel.sendSignalOnCore
-  , `SeLe4n.Kernel.sendSignalOnCoreImpl
   , `SeLe4n.Kernel.notificationSignalChecked
   , `SeLe4n.Kernel.notificationWait
   , `SeLe4n.Kernel.notificationWaitChecked

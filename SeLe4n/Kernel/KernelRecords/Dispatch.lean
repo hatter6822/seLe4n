@@ -813,13 +813,6 @@ theorem maybeDonateSchedContext_recordsStage (x : SystemState) (n : SeLe4n.ObjId
   .of_frameK fun hI => maybeDonateSchedContext_induct (fun a b => RecordsFrame a b) x n t
     (RecordsFrame.refl hI) (fun vS vT _ _ => RecordsFrame.schedContextBindPerform x vS vT hI)
 
-/-- …and so does the checked donation. -/
-theorem maybeDonateSchedContextFlowing_recordsStage {ctx : LabelingContext} (x : SystemState)
-    (n : SeLe4n.ObjId) (t : SeLe4n.ThreadId) :
-    RecordsStage x (maybeDonateSchedContextFlowing ctx x n t) :=
-  maybeDonateSchedContextFlowing_induct (RecordsStage x) ctx x n t (RecordsStage.refl _)
-    (maybeDonateSchedContext_recordsStage x n t)
-
 /-- **seL4's return on a running receiver keeps the records**: the context's
 thread link and the thread's binding written in place, then reschedule flags. -/
 theorem RecordsFrame.schedContextReturnLinks {st : SystemState} (vS : SeLe4n.ValidObjId)
@@ -1093,10 +1086,10 @@ theorem maybeReturnSchedContext_recordsStage (x : SystemState) (n : SeLe4n.ObjId
 
 /-- **seL4's `sendSignal` keeps the records**: the wake's step, then the
 donation's. -/
-theorem sendSignalOnCoreFlowing_recordsStage {ctx : LabelingContext} {n : SeLe4n.ObjId}
+theorem sendSignalOnCore_recordsStage {n : SeLe4n.ObjId}
     {badge : SeLe4n.Badge} {c : Concurrency.CoreId} {st : SystemState} (hR : ipcReachable st) :
-    RecordsStage st (sendSignalOnCoreFlowing ctx n badge c st).1 :=
-  sendSignalOnCoreFlowing_induct (RecordsStage st) ctx n badge c st
+    RecordsStage st (sendSignalOnCore n badge c st).1 :=
+  sendSignalOnCore_induct (RecordsStage st) n badge c st
     (RecordsStage.notificationSignalBoundOnCore hR)
     (fun t _ _ _ => (RecordsStage.notificationSignalBoundOnCore hR).trans
       (maybeDonateSchedContext_recordsStage _ n t))
@@ -1119,7 +1112,7 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_recordsStage {ctx : Labe
     {c : Concurrency.CoreId} {st : SystemState} (hR : ipcReachable st) :
     RecordsStage st (notificationSignalBoundCrossCoreDispatchChecked ctx nid signaler badge c st).1 :=
   notificationSignalBoundCrossCoreDispatchChecked_induct (RecordsStage st) ctx nid signaler badge
-    c st (RecordsStage.refl _) (sendSignalOnCoreFlowing_recordsStage hR)
+    c st (RecordsStage.refl _) (sendSignalOnCore_recordsStage hR)
 
 /-- The `Call`-gated reply write keeps the records. -/
 theorem writeCallReturnWord_recordsStage (x : SystemState) (t : SeLe4n.ThreadId)
@@ -1150,7 +1143,7 @@ theorem completeSignalArm_recordsStage {ctx : LabelingContext} {tid : SeLe4n.Thr
   · rename_i hR
     cases h
     exact ((RecordsStage.of_fst_eq hW hR).trans (writeReturnFrameToTcb_recordsStage _ _ _)).trans
-      (maybeDonateSchedContextFlowing_recordsStage _ _ _)
+      (maybeDonateSchedContext_recordsStage _ _ _)
   · rename_i hR
     cases h
     exact (RecordsStage.of_fst_eq hW hR).trans (maybeReturnSchedContext_recordsStage _ _ _)
@@ -1374,7 +1367,7 @@ theorem dispatchWithCapChecked_recordsStage (ctx : LabelingContext)
       exact ((RecordsStage.of_fst_eq
         (RecordsStage.notificationWaitCrossCoreDispatchChecked P.deletes.1 hCaller) hW).trans
         (writeReturnFrameToTcb_recordsStage _ _ _)).trans
-        (maybeDonateSchedContextFlowing_recordsStage _ _ _)
+        (maybeDonateSchedContext_recordsStage _ _ _)
     · rename_i hW
       cases h
       exact (RecordsStage.of_fst_eq

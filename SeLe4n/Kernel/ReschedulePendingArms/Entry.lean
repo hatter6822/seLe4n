@@ -355,30 +355,30 @@ theorem setInterruptLineMask_stepCovers (e : CoreId) (st : SystemState) (line : 
     (hRes := rfl) (hBank := banksKeptOffCore_of_eq rfl)
 
 /-- WS-ZA ZA6.32: **the interrupt step covers** on any core, on a state where
-the binding pair holds: the checked `sendSignal` coverage (`sendSignalOnCoreFlowing_stepCovers`,
+the binding pair holds: the `sendSignal` coverage (`sendSignalOnCore_stepCovers`,
 the bound-aware signal and the donation to the thread it woke), then the
 mask. -/
-theorem handleInterruptOnCore_stepCovers (e : CoreId) (ctx : LabelingContext) (st : SystemState)
+theorem handleInterruptOnCore_stepCovers (e : CoreId) (st : SystemState)
     (c : CoreId) (line : Nat) (hInv : st.objects.invExt)
     (hBi : schedContextBindingBidirectional st) :
-    stepCovers e st (handleInterruptOnCore ctx st c line) ∧
-      (handleInterruptOnCore ctx st c line).objects.invExt := by
+    stepCovers e st (handleInterruptOnCore st c line) ∧
+      (handleInterruptOnCore st c line).objects.invExt := by
   unfold handleInterruptOnCore
   split
   · rename_i ntfn badge _
-    obtain ⟨h1, hI⟩ := sendSignalOnCoreFlowing_stepCovers e (ctx := ctx) (n := ntfn) (badge := badge)
+    obtain ⟨h1, hI⟩ := sendSignalOnCore_stepCovers e (n := ntfn) (badge := badge)
       (c := c) hInv hBi
-    have hSig : stepCovers e st (interruptSignal ctx ntfn badge c st) ∧
-        (interruptSignal ctx ntfn badge c st).objects.invExt := ⟨h1, hI⟩
+    have hSig : stepCovers e st (interruptSignal ntfn badge c st) ∧
+        (interruptSignal ntfn badge c st).objects.invExt := ⟨h1, hI⟩
     exact stepCoversInv_trans hSig.1 (setInterruptLineMask_stepCovers e _ line true hSig.2)
   · exact setInterruptLineMask_stepCovers e st line true hInv
 
 /-- …and the raw step's. -/
-theorem interruptEntryStep_stepCovers (ctx : LabelingContext) (e : CoreId) (st : SystemState) (coreId intId : UInt64)
+theorem interruptEntryStep_stepCovers (e : CoreId) (st : SystemState) (coreId intId : UInt64)
     (hInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st) :
-    stepCovers e st (interruptEntryStep ctx st coreId intId) :=
-  interruptEntryStep_of (P := stepCovers e st) ctx st coreId intId (stepCovers_refl e st)
-    (fun c _ _ => (handleInterruptOnCore_stepCovers e ctx st c _ hInv hBi).1)
+    stepCovers e st (interruptEntryStep st coreId intId) :=
+  interruptEntryStep_of (P := stepCovers e st) st coreId intId (stepCovers_refl e st)
+    (fun c _ _ => (handleInterruptOnCore_stepCovers e st c _ hInv hBi).1)
 
 /-! ### The seams fire from the flags, and the flags cover the diff
 

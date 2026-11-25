@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.37.50-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.37.51-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -154,11 +154,11 @@ seL4 のユーザーから見える ABI そのものを保ちながら、Lean �
 
 | 項目 | 値 |
 |------|-----|
-| **バージョン** | `0.37.50` |
+| **バージョン** | `0.37.51` |
 | **Lean ツールチェーン** | `v4.28.0` |
-| **本番 Lean コード行数** | 703 ファイルにわたる 685,831 行 |
-| **テスト Lean コード行数** | 71 テストスイートにわたる 91,917 行 |
-| **証明済み宣言数** | 26,398 件の定理/補題宣言（sorry/axiom ゼロ） |
+| **本番 Lean コード行数** | 702 ファイルにわたる 685,373 行 |
+| **テスト Lean コード行数** | 71 テストスイートにわたる 91,877 行 |
+| **証明済み宣言数** | 26,369 件の定理/補題宣言（sorry/axiom ゼロ） |
 | **Rust クレート** | `sele4n-types`、`sele4n-abi`、`sele4n-sys`（ユーザー空間ラッパー）、`sele4n-hal`（カーネルのハードウェア層）、およびホストテスト `sele4n-lean-boundary` |
 | **ターゲットハードウェア** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **起動レーン** | すべての QEMU レーンは、まず [rpi5_machine](https://github.com/hatter6822/rpi5_machine) の `raspi5b` マシンで Raspberry Pi 5 イメージを起動し、次に QEMU の `virt` で `virt` イメージを起動します |

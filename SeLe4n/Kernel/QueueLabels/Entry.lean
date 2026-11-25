@@ -97,24 +97,24 @@ theorem fpAccessEntryState_queueLabelsStage (ctx : LabelingContext) (coreId : UI
 
 /-- The interrupt step: seL4's `sendSignal`, which blocks no thread on an
 endpoint, then the mask. -/
-theorem QueueLabelsFrame.interruptEntryStep (ctx : LabelingContext) (st : SystemState)
+theorem QueueLabelsFrame.interruptEntryStep (st : SystemState)
     (coreId intId : UInt64) (hInv : st.objects.invExt) :
-    QueueLabelsFrame st (_root_.SeLe4n.Kernel.interruptEntryStep ctx st coreId intId) :=
-  interruptEntryStep_of (P := QueueLabelsFrame st) ctx st coreId intId (.refl hInv) fun c _ _ =>
-    handleInterruptOnCore_of (P := QueueLabelsFrame st) ctx st c _
+    QueueLabelsFrame st (_root_.SeLe4n.Kernel.interruptEntryStep st coreId intId) :=
+  interruptEntryStep_of (P := QueueLabelsFrame st) st coreId intId (.refl hInv) fun c _ _ =>
+    handleInterruptOnCore_of (P := QueueLabelsFrame st) st c _
       (fun _ h => h.andThen fun hI => .of_objects_eq hI rfl) (.refl hInv)
-      (fun _ _ _ => QueueLabelsFrame.sendSignalOnCoreFlowing hInv)
+      (fun _ _ _ => QueueLabelsFrame.sendSignalOnCore hInv)
 
 /-- **The interrupt entry's committed state keeps the endpoint waiters'
 labels.** -/
-theorem interruptEntryState_queueLabelsStage (ctx lctx : LabelingContext) (coreId intId : UInt64)
+theorem interruptEntryState_queueLabelsStage (lctx : LabelingContext) (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState) (hInv : st.objects.invExt) :
     QueueLabelsStage lctx st (Architecture.clearIcacheMaintenance
       (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
-        (interruptEntryStep ctx (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
         coreId) coreId))) :=
   ((QueueLabelsFrame.of_frame (RecordsFrame.saveCapturedTrapFrameAt st coreId frame hInv)).andThen
-    fun h => (QueueLabelsFrame.interruptEntryStep ctx _ coreId intId h).andThen fun h' =>
+    fun h => (QueueLabelsFrame.interruptEntryStep _ coreId intId h).andThen fun h' =>
       QueueLabelsFrame.entryTail _ coreId h').stage
 
 /-! ### The fault entries

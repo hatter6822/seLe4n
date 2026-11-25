@@ -16,8 +16,11 @@ WS-SX SX8.  seL4's `sendSignal`, flow-checked (the syscall's `.notificationSigna
 arm) and declassifying (its `.declassifySignal` arm): the wake writes thread
 records, the notification and the woken thread's endpoint queue, and the
 donation to the woken thread binds a context without touching its stack head
-(`LendersFrame.maybeDonateSchedContext`).  Neither lends a frame, so the
-only premise is the store's invariant. -/
+(`LendersFrame.maybeDonateSchedContext`).  Neither lends a frame.  The woken
+thread carries the notification's label (`notificationLabelsAgree`, carried by
+every entry), and the notification its context's (`bindingLabelsEqual`), so the
+lend is between equal labels; the premises are the store's invariant and that
+agreement. -/
 
 namespace SeLe4n.Kernel
 open SeLe4n.Model
@@ -25,16 +28,16 @@ open SeLe4n.Kernel.Concurrency (CoreId)
 
 namespace LendersStep
 
-/-- The flow-checked signal: a refused gate returns the state; the checked
-donation's check is its label equation. -/
+/-- The flow-checked signal: a refused gate returns the state; the woken thread
+carries the notification's label (`notificationLabelsAgree`). -/
 theorem notificationSignalBoundCrossCoreDispatchChecked (ctx : LabelingContext)
     (n : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge) (c : CoreId)
-    (st : SystemState) (hInv : st.objects.invExt) :
+    (st : SystemState) (hInv : st.objects.invExt) (hA : notificationLabelsAgree ctx st) :
     LendersStep ctx st
       (_root_.SeLe4n.Kernel.notificationSignalBoundCrossCoreDispatchChecked ctx n signaler badge c
         st).1 :=
   notificationSignalBoundCrossCoreDispatchChecked_induct (fun s => LendersStep ctx st s) ctx n
-    signaler badge c st (refl hInv) (sendSignalOnCoreFlowing ctx n badge c st hInv)
+    signaler badge c st (refl hInv) (sendSignalOnCore n badge c st hInv hA)
 
 end LendersStep
 
@@ -65,32 +68,23 @@ theorem notificationSignalDeclassifiedOnCore (ctx : GenericLabelingContext)
 end LendersFrame
 
 /-- **The declassifying signal**: the declassifying wake, then the donation to
-the woken thread, checked under the lifted context the dispatch runs it with
-(`dispatchWithCapChecked`'s `.declassifySignal` arm): on a lifted context the
-generic check is `donationContextFlows`, whose admission is the woken thread
-labelled as the notification's context (D30), so the donation is
-`LendersStep.maybeDonateSchedContextFlowing`'s labelled step. -/
+the woken thread, which carries the notification's label
+(`notificationLabelsAgree`): the declassification downgrades the signaller's
+hop, never the woken thread's. -/
 theorem LendersStep.notificationSignalDeclassifiedCrossCoreDispatch (lctx : LabelingContext)
     (declPolicy : DeclassificationPolicy) (n : SeLe4n.ObjId)
-    (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState) (hInv : st.objects.invExt) :
+    (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState) (hInv : st.objects.invExt)
+    (hA : notificationLabelsAgree lctx st) :
     LendersStep lctx st
       (_root_.SeLe4n.Kernel.notificationSignalDeclassifiedCrossCoreDispatch (liftLegacyContext lctx)
         declPolicy n badge c st).1 := by
   have S := LendersFrame.notificationSignalDeclassifiedOnCore (liftLegacyContext lctx) declPolicy n
     badge c st hInv
-  unfold _root_.SeLe4n.Kernel.notificationSignalDeclassifiedCrossCoreDispatch
-  generalize _root_.SeLe4n.Kernel.notificationSignalDeclassifiedOnCore (liftLegacyContext lctx)
-    declPolicy n badge c st = r at S ⊢
-  obtain ⟨st1, res⟩ := r
-  cases res with
-  | error _ => exact .of_frame S
-  | ok _ =>
-    dsimp only
-    unfold donateToSignalledFlowingGeneric
-    split
-    · rw [maybeDonateSchedContextFlowingGeneric_liftLegacyContext]
-      exact (LendersStep.of_frame S).andThen fun h =>
-        LendersStep.maybeDonateSchedContextFlowing _ n _ h
-    · exact .of_frame S
+  refine notificationSignalDeclassifiedCrossCoreDispatch_induct (fun s => LendersStep lctx st s)
+    (liftLegacyContext lctx) declPolicy n badge c st (.of_frame S) ?_
+  intro t _ hT _
+  exact (LendersStep.of_frame S).andThen fun h =>
+    LendersStep.maybeDonateSchedContext_ofNotificationLabel _ n t h
+      (notificationLabelsAgree_signalWokenThread hA hT)
 
 end SeLe4n.Kernel

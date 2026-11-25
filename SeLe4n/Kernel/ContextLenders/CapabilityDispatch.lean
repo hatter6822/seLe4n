@@ -584,10 +584,11 @@ theorem dispatchWithCapChecked_lendersStage (ctx : LabelingContext)
     (cap : Capability) (st st' : SystemState)
     (P : LendersDispatchPremises ctx decoded tid ec gate cap st) (hCaller : CallerReady st tid)
     (hW : endpointWaitersLabelsEqual ctx st)
+    (hA : notificationLabelsAgree ctx st)
     (h : dispatchWithCapChecked ctx decoded tid ec gate cap st = .ok ((), st')) :
     LendersStage ctx st st' :=
   dispatchWithCapChecked_lendersStage_of_capabilityOnly ctx decoded tid ec gate cap st st' P hCaller
-    hW (fun k hC hK => (dispatchCapabilityOnlyChecked_lendersStep ctx decoded cap tid ec k st st' hC
+    hW hA (fun k hC hK => (dispatchCapabilityOnlyChecked_lendersStep ctx decoded cap tid ec k st st' hC
       P.reach.objects_invExt hK).stage) h
 
 /-- **The checked syscall dispatch keeps the lenders' flow**, given the waiters
@@ -599,8 +600,9 @@ theorem dispatchSyscallChecked_lendersStage (ctx : LabelingContext) (decoded : S
         { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr,
           requiredRight := syscallRequiredRight decoded.syscallId } cap st)
     (hCaller : CallerReady st tid) (hW : endpointWaitersLabelsEqual ctx st)
+    (hA : notificationLabelsAgree ctx st)
     (h : dispatchSyscallChecked ctx decoded tid ec st = .ok ((), st')) : LendersStage ctx st st' :=
-  dispatchSyscallChecked_lendersStage_of_capabilityOnly ctx decoded tid ec st st' hInv P hCaller hW
+  dispatchSyscallChecked_lendersStage_of_capabilityOnly ctx decoded tid ec st st' hInv P hCaller hW hA
     (fun _ cap k st'' _ hC hK => (dispatchCapabilityOnlyChecked_lendersStep ctx decoded cap tid ec k
       st st'' hC hInv hK).stage) h
 

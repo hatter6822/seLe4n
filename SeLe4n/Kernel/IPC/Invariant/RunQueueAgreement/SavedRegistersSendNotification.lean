@@ -623,16 +623,15 @@ theorem notificationSignalBoundOnCore_savedRegsKept (notificationId : SeLe4n.Obj
 /-- **The checked `sendSignal` writes the saved registers of the thread it
 wakes alone**: the wake's writes, and the donation writes no saved register
 (`maybeDonateSchedContext_savedRegsKeptExcept`). -/
-theorem sendSignalOnCoreFlowing_savedRegsKept (ctx : LabelingContext)
+theorem sendSignalOnCore_savedRegsKept
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (c : CoreId) {st : SystemState} (hInv : st.objects.invExt) :
     savedRegsKeptExcept (signalWritten st notificationId) st
-        (sendSignalOnCoreFlowing ctx notificationId badge c st).1 ∧
-      (sendSignalOnCoreFlowing ctx notificationId badge c st).1.objects.invExt :=
+        (sendSignalOnCore notificationId badge c st).1 ∧
+      (sendSignalOnCore notificationId badge c st).1.objects.invExt :=
   have hW := notificationSignalBoundOnCore_savedRegsKept notificationId badge c hInv
-  sendSignalOnCoreFlowing_induct
-    (fun s => savedRegsKeptExcept (signalWritten st notificationId) st s ∧ s.objects.invExt)
-    ctx notificationId badge c st hW
+  sendSignalOnCore_induct
+    (fun s => savedRegsKeptExcept (signalWritten st notificationId) st s ∧ s.objects.invExt) notificationId badge c st hW
     (fun t _ _ _ => ⟨hW.1.trans (maybeDonateSchedContext_savedRegsKeptExcept notificationId t hW.2),
       maybeDonateSchedContext_preserves_objects_invExt _ notificationId t hW.2⟩)
 
@@ -647,7 +646,7 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_savedRegsKept
   notificationSignalBoundCrossCoreDispatchChecked_induct
     (fun s => savedRegsKeptExcept (signalWritten st notificationId) st s ∧ s.objects.invExt)
     ctx notificationId signaler badge c st ⟨.refl _, hInv⟩
-    (sendSignalOnCoreFlowing_savedRegsKept ctx notificationId badge c hInv)
+    (sendSignalOnCore_savedRegsKept notificationId badge c hInv)
 
 /-- The declassifying signal writes the saved registers of the thread it wakes
 alone: the bound signal, then the audit trail. -/
@@ -674,12 +673,9 @@ theorem notificationSignalDeclassifiedCrossCoreDispatch_savedRegsKept
         rw [hF]
       have hI0 : s0.objects.invExt := by rw [hO]; exact i
       -- seL4's `sendSignal` donation writes no saved register.
-      unfold donateToSignalledFlowingGeneric
+      unfold donateToSignalled
       split
-      · exact maybeDonateSchedContextFlowingGeneric_induct
-          (fun s => savedRegsKeptExcept (signalWritten st notificationId) st s ∧ s.objects.invExt)
-          ctx s0 notificationId _ ⟨k.trans (.of_objects_eq hO), hI0⟩
-          ⟨(k.trans (.of_objects_eq hO)).trans
+      · exact ⟨(k.trans (.of_objects_eq hO)).trans
             (maybeDonateSchedContext_savedRegsKeptExcept notificationId _ hI0),
             maybeDonateSchedContext_preserves_objects_invExt _ notificationId _ hI0⟩
       · exact ⟨k.trans (.of_objects_eq hO), hI0⟩
@@ -941,26 +937,26 @@ wakes**: seL4's `handleInterrupt` signals the bound notification
 blocked on receive or of the notification's head waiter, both blocked at the
 entry's start, and whose stash clear and donation write no saved register; the mask writes
 the machine's mask words and the physical-write ledger only. -/
-theorem handleInterruptOnCore_savedRegsWrittenFree (ctx : LabelingContext) {e : CoreId} (st : SystemState) (c : CoreId)
+theorem handleInterruptOnCore_savedRegsWrittenFree {e : CoreId} (st : SystemState) (c : CoreId)
     (line : Nat) (E : EntryPremises st) (hRT : st.residentsHaveTcbs)
     (hBNR : st.blockedNotResident) :
-    savedRegsWrittenFree e st st (handleInterruptOnCore ctx st c line) := by
+    savedRegsWrittenFree e st st (handleInterruptOnCore st c line) := by
   have hM : ∀ s, savedRegsWrittenFree e st st s →
       savedRegsWrittenFree e st st (Architecture.setInterruptLineMask s line true) :=
     fun _ hs t => hs t
-  have h1 := fun ntfn badge => sendSignalOnCoreFlowing_savedRegsKept ctx ntfn badge c E.objInv
+  have h1 := fun ntfn badge => sendSignalOnCore_savedRegsKept ntfn badge c E.objInv
   unfold handleInterruptOnCore
   split
   · exact hM _ ((.of_kept (h1 _ _).1 fun _ h => offCoreFree_of_signalWritten E hRT hBNR h))
   · exact hM _ (.refl _)
 
 /-- …and so does the raw step. -/
-theorem interruptEntryStep_savedRegsWrittenFree (ctx : LabelingContext) {e : CoreId} (st : SystemState)
+theorem interruptEntryStep_savedRegsWrittenFree {e : CoreId} (st : SystemState)
     (coreId intId : UInt64) (E : EntryPremises st) (hRT : st.residentsHaveTcbs)
     (hBNR : st.blockedNotResident) :
-    savedRegsWrittenFree e st st (interruptEntryStep ctx st coreId intId) :=
-  interruptEntryStep_of (P := savedRegsWrittenFree e st st) ctx st coreId intId (.refl _)
-    (fun c _ _ => handleInterruptOnCore_savedRegsWrittenFree ctx st c _ E hRT hBNR)
+    savedRegsWrittenFree e st st (interruptEntryStep st coreId intId) :=
+  interruptEntryStep_of (P := savedRegsWrittenFree e st st) st coreId intId (.refl _)
+    (fun c _ _ => handleInterruptOnCore_savedRegsWrittenFree st c _ E hRT hBNR)
 
 /-- WS-ZA ZA6.26: **the wait arm writes only the caller**: the checked wait
 writes no saved register, and a consumed badge is staged into the caller, the

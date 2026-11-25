@@ -2856,27 +2856,27 @@ theorem recordDeclassifiedHops_signalRecord (c : Concurrency.CoreId) (tid : SeLe
 /-- **A declassified signal's wake**: the head waiter woken with the badge in
 its badge register (`storeSignalWoken`), then the record the caller's hop owes
 written over the trail (`declassifySignalWoken_eq_writes`). -/
-@[inline] def declassifySignalWokenWrites (ctx : LabelingContext) (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+@[inline] def declassifySignalWokenWrites (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
     (actorDomain notifDomain : SecurityDomain) (nid : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) (nextCode : Nat) (badge : SeLe4n.Badge) (hop : Bool)
     (st : SystemState) : SystemState :=
-  maybeDonateSchedContextFlowingFast ctx
+  maybeDonateSchedContextFast
     (declassifySignalRecord c tid actorDomain notifDomain nid hop
       (wakeThread (storeSignalWoken st nid waiter (SeLe4n.ThreadId.ofOptCode nextCode) badge)
         waiter c).1) nid.val waiter.val
 
 /-- The specification's woken signal and its records is the written form. -/
-theorem declassifySignalWoken_eq_writes (ctx : LabelingContext) (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+theorem declassifySignalWoken_eq_writes (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
     (actorDomain notifDomain : SecurityDomain) (nid : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (badge : SeLe4n.Badge)
     (hop : Bool) (st : SystemState) :
-    maybeDonateSchedContextFlowing ctx
+    maybeDonateSchedContext
         (declassifySignalRecord c tid actorDomain notifDomain nid hop
           (wakeThread (storeSignalWoken st nid waiter next badge) waiter c).1) nid waiter =
-      declassifySignalWokenWrites ctx c tid actorDomain notifDomain nid waiter
+      declassifySignalWokenWrites c tid actorDomain notifDomain nid waiter
         (SeLe4n.ThreadId.optCode next) badge hop st := by
   unfold declassifySignalWokenWrites
-  rw [SeLe4n.ThreadId.ofOptCode_optCode, maybeDonateSchedContextFlowingFast_eq]
+  rw [SeLe4n.ThreadId.ofOptCode_optCode, maybeDonateSchedContextFast_eq]
 
 /-- Whether a `.declassifySignal` to `nid` that wakes the notification's head
 waiter `waiter` is admitted in place: the core runs the caller, no bound
@@ -2897,7 +2897,7 @@ in the trail for the record a downgrade owes. -/
 /-- **An admitted woken `.declassifySignal`'s writes**: the wake delivered with
 its records (`declassifySignalWokenWrites`), then the fused taint step over the
 caller's and the notification's words captured before the signal. -/
-@[noinline] def declassifySignalWokenPerform (ctx : LabelingContext) (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+@[noinline] def declassifySignalWokenPerform (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
     (actorDomain notifDomain : SecurityDomain) (nid : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) (nextCode : Nat) (badge : SeLe4n.Badge) (hop : Bool)
     (epoch len : Nat) (a0 a1 a2 a3 a4 a5 a6 a7 : UInt64) (ac : Nat) (as : Bool)
@@ -2905,7 +2905,7 @@ caller's and the notification's words captured before the signal. -/
     SystemState :=
   declassifySignalTaintStep (.toWaiter waiter) nid tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩
     ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩ epoch len
-    (declassifySignalWokenWrites ctx c tid actorDomain notifDomain nid waiter nextCode badge
+    (declassifySignalWokenWrites c tid actorDomain notifDomain nid waiter nextCode badge
       hop st)
 
 /-- **A declassified signal's bound delivery**: the bound thread `t` taken off
@@ -2913,11 +2913,11 @@ the receive queue of the endpoint `epId` it is blocked on, made ready with the
 badge in its badge register (`TCB.signalBoundWoken`), woken, then the record
 the caller's hop owes written over the trail.  The wake drops the thread's reply
 stash itself (`TCB.signalBoundWoken`). -/
-@[inline] def declassifySignalBoundWrites (ctx : LabelingContext) (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+@[inline] def declassifySignalBoundWrites (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
     (actorDomain notifDomain : SecurityDomain) (nid : SeLe4n.ObjId)
     (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) (ep : Endpoint) (tcb : TCB)
     (badge : SeLe4n.Badge) (hop : Bool) (st : SystemState) : SystemState :=
-  maybeDonateSchedContextFlowingFast ctx
+  maybeDonateSchedContextFast
     (declassifySignalRecord c tid actorDomain notifDomain nid hop
       (wakeThread ((storeQueueRemove st epId true t ep tcb).updateTcb t
         (TCB.signalBoundWoken badge)) t c).1) nid.val t.val
@@ -2942,7 +2942,7 @@ owes. -/
 /-- **An admitted bound `.declassifySignal`'s writes**: the bound delivery with
 its records (`declassifySignalBoundWrites`), then the fused taint step over the
 caller's and the notification's words captured before the signal. -/
-@[noinline] def declassifySignalBoundPerform (ctx : LabelingContext) (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+@[noinline] def declassifySignalBoundPerform (c : Concurrency.CoreId) (tid : SeLe4n.ThreadId)
     (actorDomain notifDomain : SecurityDomain) (nid : SeLe4n.ObjId)
     (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId) (ep : Endpoint) (tcb : TCB)
     (badge : SeLe4n.Badge) (hop : Bool) (epoch len : Nat)
@@ -2951,7 +2951,7 @@ caller's and the notification's words captured before the signal. -/
     SystemState :=
   declassifySignalTaintStep (.toBound t) nid tid ⟨a0, a1, a2, a3, a4, a5, a6, a7, ac, as⟩
     ⟨b0, b1, b2, b3, b4, b5, b6, b7, bc, bs⟩ epoch len
-    (declassifySignalBoundWrites ctx c tid actorDomain notifDomain nid t epId ep tcb badge
+    (declassifySignalBoundWrites c tid actorDomain notifDomain nid t epId ep tcb badge
       hop st)
 
 /-- A notification with a bound-delivery target has no waiter. -/
@@ -2983,7 +2983,7 @@ theorem auditedArmSpec_declassifySignal_bound (ctx : LabelingContext)
     (hTT : st.objects[t.toObjId]? = some (.tcb tcb))
     (hA : declassifySignalBoundAdmitted ctx st tid signaler nid t epId ep tcb = true) :
     declassifySignalTargetSpec ctx executingCore cap st =
-      .ok ((), maybeDonateSchedContextFlowing ctx (declassifySignalRecord executingCore tid
+      .ok ((), maybeDonateSchedContext (declassifySignalRecord executingCore tid
             (embedLegacyLabel (ctx.threadLabelOf tid)) (embedLegacyLabel (ctx.objectLabelOf nid))
             nid (!securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf nid))
             (wakeThread ((storeQueueRemove st epId true t ep tcb).updateTcb t
@@ -3015,8 +3015,7 @@ theorem auditedArmSpec_declassifySignal_bound (ctx : LabelingContext)
     liftLegacyContext_threadDomainOf, liftLegacyContext_objectDomainOf, declassifiedSignalPlan,
     declassifiedSignalHopAuthorization, liftLegacyContext_policy, legacyLattice_canFlow_embed,
     hTarget, hS,
-    Architecture.stageWokenDelivery_none, donateToSignalledFlowingGeneric,
-    maybeDonateSchedContextFlowingGeneric_liftLegacyContext, signalWokenThread?]
+    Architecture.stageWokenDelivery_none, donateToSignalled, signalWokenThread?]
   by_cases hF1 : securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf nid) = true <;>
   simp only [hF1, ↓reduceIte, Bool.not_true, Bool.not_false, Bool.false_eq_true,
     declassificationDecision, liftLegacyContext_policy, legacyLattice_canFlow_embed,
@@ -3162,7 +3161,7 @@ writing the record the caller's downgrade owes), or else the general one
             if declassifySignalWokenAdmitted ctx st tid signaler nid ⟨k⟩ then
               withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
               withTaintWordsAt st nid fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
-              .ok ((), declassifySignalWokenPerform ctx executingCore tid
+              .ok ((), declassifySignalWokenPerform executingCore tid
                 (embedLegacyLabel (ctx.threadLabelOf tid))
                 (embedLegacyLabel (ctx.objectLabelOf nid)) nid ⟨k⟩ (ntfnSuccessorCode st ⟨k⟩)
                 cap.signalBadge
@@ -3183,7 +3182,7 @@ writing the record the caller's downgrade owes), or else the general one
                         ⟨tcb.ipcObjectCode⟩ ep tcb then
                       withTaintWordsAt st tid.toObjId fun a0 a1 a2 a3 a4 a5 a6 a7 ac as =>
                       withTaintWordsAt st nid fun b0 b1 b2 b3 b4 b5 b6 b7 bc bs =>
-                      .ok ((), declassifySignalBoundPerform ctx executingCore tid
+                      .ok ((), declassifySignalBoundPerform executingCore tid
                         (embedLegacyLabel (ctx.threadLabelOf tid))
                         (embedLegacyLabel (ctx.objectLabelOf nid)) nid ⟨k⟩
                         ⟨tcb.ipcObjectCode⟩ ep tcb cap.signalBadge
@@ -3226,7 +3225,7 @@ theorem auditedArmSpec_declassifySignal_stored (ctx : LabelingContext)
   have hWk : signalWokenThread? st nid = none := by
     simp only [signalWokenThread?, hBound]
     simpa only [notificationSignalWaiter?, hN, Option.bind_some] using hWait
-  simp only [donateToSignalledFlowingGeneric, hWk]
+  simp only [donateToSignalled, hWk]
   have hLen := congrArg List.length (notificationSignalBoundOnCore_declassificationAuditLog_eq nid
     cap.signalBadge executingCore st)
   simp only [SystemState.declassificationAuditLog, AuditRing.length_toList] at hLen
@@ -3265,7 +3264,7 @@ theorem auditedArmSpec_declassifySignal_woken (ctx : LabelingContext)
     (hN : st.getNotification? nid = some ntfn) (hK : ntfn.waitHeadCode = k + 1)
     (hA : declassifySignalWokenAdmitted ctx st tid signaler nid ⟨k⟩ = true) :
     declassifySignalTargetSpec ctx executingCore cap st =
-      .ok ((), maybeDonateSchedContextFlowing ctx (declassifySignalRecord executingCore tid
+      .ok ((), maybeDonateSchedContext (declassifySignalRecord executingCore tid
           (embedLegacyLabel (ctx.threadLabelOf tid)) (embedLegacyLabel (ctx.objectLabelOf nid))
           nid (!securityFlowsTo (ctx.threadLabelOf tid) (ctx.objectLabelOf nid))
           (wakeThread (storeSignalWoken st nid ⟨k⟩ (ntfnSuccessor? st ⟨k⟩)
@@ -3306,8 +3305,7 @@ theorem auditedArmSpec_declassifySignal_woken (ctx : LabelingContext)
     liftLegacyContext_threadDomainOf, liftLegacyContext_objectDomainOf, declassifiedSignalPlan,
     declassifiedSignalHopAuthorization, liftLegacyContext_policy, legacyLattice_canFlow_embed,
     hBound, hS,
-    Architecture.stageWokenDelivery_none, donateToSignalledFlowingGeneric,
-    maybeDonateSchedContextFlowingGeneric_liftLegacyContext, signalWokenThread?, Option.bind_some,
+    Architecture.stageWokenDelivery_none, donateToSignalled, signalWokenThread?, Option.bind_some,
     hHead]
   by_cases hF1 : securityFlowsTo (ctx.threadLabelOf signaler) (ctx.objectLabelOf nid) = true <;>
   simp only [hF1, ↓reduceIte, Bool.not_true, Bool.not_false, Bool.false_eq_true,
@@ -3374,7 +3372,7 @@ theorem declassifySignalTargetArmR_eq (ctx : LabelingContext) (tid : SeLe4n.Thre
                     hWait]
                 rw [auditedArmSpec_declassifySignal_woken ctx tid executingCore
                   cap st nid signaler ntfn k hT hCur hN hK hA, withTaintWordsAt_eq,
-                  withTaintWordsAt_eq, hCase, declassifySignalWoken_eq_writes _ _ _ _ _ _ _ _ _ _ st,
+                  withTaintWordsAt_eq, hCase, declassifySignalWoken_eq_writes _ _ _ _ _ _ _ _ _ st,
                   ← optCode_ntfnSuccessor?]
                 simp only [declassifySignalWokenPerform, TaintWords.mk_fields, operandObjectId,
                   capObjectId, hT]
@@ -3409,7 +3407,7 @@ theorem declassifySignalTargetArmR_eq (ctx : LabelingContext) (tid : SeLe4n.Thre
                           executingCore cap st nid signaler ⟨k⟩ ⟨tcb.ipcObjectCode⟩ ep tcb hT hCur hBT
                           hE hTT hA, withTaintWordsAt_eq, withTaintWordsAt_eq, hCase]
                         simp only [declassifySignalBoundPerform, declassifySignalBoundWrites,
-                          maybeDonateSchedContextFlowingFast_eq_code, TaintWords.mk_fields, operandObjectId,
+                          maybeDonateSchedContextFast_eq_code, TaintWords.mk_fields, operandObjectId,
                           capObjectId, hT]
                       all_goals
                         unfold declassifySignalGeneralR

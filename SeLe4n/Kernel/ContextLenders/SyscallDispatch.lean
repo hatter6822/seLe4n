@@ -30,8 +30,10 @@ the dispatch checks and the waiters it is handed (`endpointWaitersLabelsEqual`
 at the dispatcher's state, SX11): the `Call`'s lend from the waiters' receivers
 and the caller's gate, the receive take and the reply-receive's from the
 receive gate and the dequeued caller's wait, `SchedContext_Bind` from its label
-gate (`schedContextBindLabelGate`), and the declassified signal's lend from the
-check it runs under the lifted context (`donationContextFlows`).
+gate (`schedContextBindLabelGate`), and the signals' lends (plain and
+declassified) from the woken thread's notification label
+(`notificationLabelsAgree`) and the notification's context label
+(`bindingLabelsEqual`).
 -/
 
 namespace SeLe4n.Kernel
@@ -89,6 +91,7 @@ theorem dispatchWithCapChecked_lendersStage_of_capabilityOnly (ctx : LabelingCon
     (cap : Capability) (st st' : SystemState)
     (P : LendersDispatchPremises ctx decoded tid ec gate cap st) (hCaller : CallerReady st tid)
     (hW : endpointWaitersLabelsEqual ctx st)
+    (hA : notificationLabelsAgree ctx st)
     (hCapOnly : ∀ k, dispatchCapabilityOnly decoded cap tid ec = some k →
       dispatchCapabilityOnlyChecked ctx decoded.syscallId decoded.msgInfo.extraCaps tid cap k st
         = .ok ((), st') → LendersStage ctx st st')
@@ -229,7 +232,7 @@ theorem dispatchWithCapChecked_lendersStage_of_capabilityOnly (ctx : LabelingCon
     · rename_i hSig
       cases h
       exact LendersStage.of_fst_eq
-        (LendersStep.notificationSignalBoundCrossCoreDispatchChecked ctx _ _ _ _ st hInv).stage hSig
+        (LendersStep.notificationSignalBoundCrossCoreDispatchChecked ctx _ _ _ _ st hInv hA).stage hSig
     · cases h
   case notificationWait.object notifId =>
     split at h
@@ -247,7 +250,7 @@ theorem dispatchWithCapChecked_lendersStage_of_capabilityOnly (ctx : LabelingCon
     · rename_i hSig
       cases h
       exact LendersStage.of_fst_eq
-        (LendersStep.notificationSignalDeclassifiedCrossCoreDispatch ctx _ _ _ _ st hInv).stage hSig
+        (LendersStep.notificationSignalDeclassifiedCrossCoreDispatch ctx _ _ _ _ st hInv hA).stage hSig
     · cases h
 
 namespace LendersFrame
@@ -325,6 +328,7 @@ theorem dispatchSyscallChecked_lendersStage_of_capabilityOnly (ctx : LabelingCon
         { callerId := tid, cspaceRootCap := tcb.spaceCells[0], capAddr := decoded.capAddr,
           requiredRight := syscallRequiredRight decoded.syscallId } cap st)
     (hCaller : CallerReady st tid) (hW : endpointWaitersLabelsEqual ctx st)
+    (hA : notificationLabelsAgree ctx st)
     (hCapOnly : ∀ gate cap k st'', LendersDispatchPremises ctx decoded tid ec gate cap st →
       dispatchCapabilityOnly decoded cap tid ec = some k →
       dispatchCapabilityOnlyChecked ctx decoded.syscallId decoded.msgInfo.extraCaps tid cap k st
@@ -351,6 +355,6 @@ theorem dispatchSyscallChecked_lendersStage_of_capabilityOnly (ctx : LabelingCon
   refine LendersStage.trans (b := stPost) ?_ (applySyscallTaint_lendersStage _ _ _)
   obtain ⟨cap, -, -, hD⟩ := syscallInvokeTyped_ok _ _ _ st () stPost hD
   exact dispatchWithCapChecked_lendersStage_of_capabilityOnly ctx decoded tid ec _ cap st stPost
-    (P tcb hTcb cap) hCaller hW (fun k hk => hCapOnly _ cap k stPost (P tcb hTcb cap) hk) hD
+    (P tcb hTcb cap) hCaller hW hA (fun k hk => hCapOnly _ cap k stPost (P tcb hTcb cap) hk) hD
 
 end SeLe4n.Kernel

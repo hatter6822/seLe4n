@@ -8,7 +8,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.CrossCore.NotificationBind
-import SeLe4n.Kernel.SchedContext.NotificationDonationContextLabel
+import SeLe4n.Kernel.SchedContext.NotificationDonation
 
 /-!
 # seL4's `sendSignal`, its donations included
@@ -125,127 +125,13 @@ theorem sendSignalOnCore_fst_of_error {n : SeLe4n.ObjId} {badge : SeLe4n.Badge} 
     (sendSignalOnCore n badge c st).1 = (notificationSignalBoundOnCore n badge c st).1 := by
   rw [sendSignalOnCore_fst, h]
 
-/-! ### The checked signal: the donation under the context-label check
-
-The checked kernel's `sendSignal` (`sendSignalOnCoreFlowing`): the same wake,
-then the donation to the thread it woke under the context-label check
-(`maybeDonateSchedContextFlowing`), so the notification's context is lent only
-to a thread its label flows to, and otherwise the wake alone is made, seL4's
-"do nothing" branch of the donation. -/
-
-/-- **The checked donation after a signal.** -/
-def donateToSignalledFlowing (ctx : LabelingContext) (st st' : SystemState) (n : SeLe4n.ObjId) :
-    SystemState :=
-  match signalWokenThread? st n with
-  | some t => maybeDonateSchedContextFlowing ctx st' n t
-  | none => st'
-
-/-- **The checked donation after a signal, under a generic labelling context**
-(the declassifying signal's). -/
-def donateToSignalledFlowingGeneric (gctx : GenericLabelingContext) (st st' : SystemState)
-    (n : SeLe4n.ObjId) : SystemState :=
-  match signalWokenThread? st n with
-  | some t => maybeDonateSchedContextFlowingGeneric gctx st' n t
-  | none => st'
-
-/-- The checked donations after a signal keep the declassification audit
-trail, as the donation does. -/
-theorem donateToSignalledFlowing_declassificationAuditLog_eq (ctx : LabelingContext)
-    (st st' : SystemState) (n : SeLe4n.ObjId) :
-    (donateToSignalledFlowing ctx st st' n).declassificationAuditLog =
-      st'.declassificationAuditLog := by
-  unfold donateToSignalledFlowing
+/-- The donation after a signal keeps the declassification audit trail, as the
+donation does. -/
+theorem donateToSignalled_declassificationAuditLog_eq (st st' : SystemState) (n : SeLe4n.ObjId) :
+    (donateToSignalled st st' n).declassificationAuditLog = st'.declassificationAuditLog := by
+  unfold donateToSignalled
   split
-  · exact maybeDonateSchedContextFlowing_induct
-      (fun s => s.declassificationAuditLog = st'.declassificationAuditLog) ctx st' n _ rfl
-      (maybeDonateSchedContext_declassificationAuditLog_eq _ _ _)
+  · exact maybeDonateSchedContext_declassificationAuditLog_eq _ _ _
   · rfl
-
-theorem donateToSignalledFlowingGeneric_declassificationAuditLog_eq
-    (gctx : GenericLabelingContext) (st st' : SystemState) (n : SeLe4n.ObjId) :
-    (donateToSignalledFlowingGeneric gctx st st' n).declassificationAuditLog =
-      st'.declassificationAuditLog := by
-  unfold donateToSignalledFlowingGeneric
-  split
-  · exact maybeDonateSchedContextFlowingGeneric_induct
-      (fun s => s.declassificationAuditLog = st'.declassificationAuditLog) gctx st' n _ rfl
-      (maybeDonateSchedContext_declassificationAuditLog_eq _ _ _)
-  · rfl
-
-/-- **The checked `sendSignal`**: the signal (`notificationSignalBoundOnCore`),
-and on success the checked donation to the thread it woke. -/
-def sendSignalOnCoreFlowing (ctx : LabelingContext) (n : SeLe4n.ObjId) (badge : SeLe4n.Badge)
-    (executingCore : CoreId) (st : SystemState) :
-    SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
-  match notificationSignalBoundOnCore n badge executingCore st with
-  | (st', .ok sgi) => (donateToSignalledFlowing ctx st st' n, .ok sgi)
-  | (st', .error e) => (st', .error e)
-
-/-- **The compiled checked `sendSignal`**: the woken thread read before the
-signal, as `sendSignalOnCoreImpl` does, and the donation in its compiled form. -/
-@[inline] def sendSignalOnCoreFlowingImpl (ctx : LabelingContext) (n : SeLe4n.ObjId)
-    (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState) :
-    SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
-  match signalWokenThread? st n with
-  | none => notificationSignalBoundOnCore n badge executingCore st
-  | some t =>
-    match notificationSignalBoundOnCore n badge executingCore st with
-    | (st', .ok sgi) => (maybeDonateSchedContextFlowingFast ctx st' n.val t.val, .ok sgi)
-    | (st', .error e) => (st', .error e)
-
-@[csimp] theorem sendSignalOnCoreFlowing_eq_impl :
-    @sendSignalOnCoreFlowing = @sendSignalOnCoreFlowingImpl := by
-  funext ctx n badge c st
-  unfold sendSignalOnCoreFlowing sendSignalOnCoreFlowingImpl donateToSignalledFlowing
-  cases hW : signalWokenThread? st n with
-  | none =>
-    simp only []
-    rcases notificationSignalBoundOnCore n badge c st with ⟨st', r⟩
-    cases r <;> rfl
-  | some t =>
-    simp only [maybeDonateSchedContextFlowingFast_eq]
-
-/-- The checked signal's answer is the wake's. -/
-theorem sendSignalOnCoreFlowing_snd (ctx : LabelingContext) (n : SeLe4n.ObjId)
-    (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState) :
-    (sendSignalOnCoreFlowing ctx n badge c st).2 = (sendSignalOnCore n badge c st).2 := by
-  rw [sendSignalOnCore_snd]
-  unfold sendSignalOnCoreFlowing
-  rcases notificationSignalBoundOnCore n badge c st with ⟨st', r⟩
-  cases r <;> rfl
-
-/-- **The checked signal's state is the wake's, or the donation on it.** -/
-theorem sendSignalOnCoreFlowing_induct (P : SystemState → Prop) (ctx : LabelingContext)
-    (n : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState)
-    (hWake : P (notificationSignalBoundOnCore n badge c st).1)
-    (hDonate : ∀ t sgi, signalWokenThread? st n = some t →
-      (notificationSignalBoundOnCore n badge c st).2 = .ok sgi →
-      P (maybeDonateSchedContext (notificationSignalBoundOnCore n badge c st).1 n t)) :
-    P (sendSignalOnCoreFlowing ctx n badge c st).1 := by
-  unfold sendSignalOnCoreFlowing
-  cases hS : notificationSignalBoundOnCore n badge c st with
-  | mk st' r =>
-    rw [hS] at hWake hDonate
-    cases r with
-    | error e => exact hWake
-    | ok sgi =>
-      dsimp only
-      unfold donateToSignalledFlowing
-      cases hW : signalWokenThread? st n with
-      | none => exact hWake
-      | some t =>
-        exact maybeDonateSchedContextFlowing_induct P ctx st' n t hWake (hDonate t sgi hW rfl)
-
-/-- A refused checked signal donates nothing: its state is the wake's. -/
-theorem sendSignalOnCoreFlowing_fst_of_error {ctx : LabelingContext} {n : SeLe4n.ObjId}
-    {badge : SeLe4n.Badge} {c : CoreId} {st : SystemState} {e : KernelError}
-    (h : (notificationSignalBoundOnCore n badge c st).2 = .error e) :
-    (sendSignalOnCoreFlowing ctx n badge c st).1 = (notificationSignalBoundOnCore n badge c st).1 := by
-  unfold sendSignalOnCoreFlowing
-  rcases hS : notificationSignalBoundOnCore n badge c st with ⟨st', r⟩
-  rw [hS] at h
-  cases r with
-  | error e' => rfl
-  | ok _ => cases h
 
 end SeLe4n.Kernel
