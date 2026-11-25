@@ -4552,19 +4552,23 @@ run_check "INVARIANT" rg -n -U 'executingCore st\n    else replyRecvCapsArmR epI
 # A reply-receive whose receive leg meets a waiting sender (the server loop under
 # load) takes it in place after the reply leg and its transfer: the sender's
 # message words kept across the reply's writes, the take's guard carried across
-# both, proven the specification's and routed after the unheld and unlinked arms.
+# both, proven the specification's; one selector (`replyRecvTakeArmCode`) names
+# the reply arm and the arm's composed take runs, on the short, long, capability
+# and fault answers alike.
 run_check "INVARIANT" rg -n '^theorem storeReplyRendezvousReady_keepsSendCaps($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem storeReplyRendezvous_takeGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem takeGuard_of_transferFrame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvTakeFrame_staged($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_take_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_take_capsDelivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeInPlace.lean
-run_check "INVARIANT" rg -n '^theorem replyRecvTakeArmR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def replyRecvTakeArmCode($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvTakeArmCode_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvArmTakeR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 # A reply-receive to a caller recording no server whose receive leg meets a waiting
 # sender takes it in place, on a reply object heading a stack no thread holds
 # (the unheld pop between the legs) and on one linked to nothing: the take's guard
 # carried across the reply leg alone and across the pop, proven the
-# specification's, and routed unheld take -> unlinked take -> take.
+# specification's; the retired per-arm take selectors are refused.
 run_check "INVARIANT" rg -n '^theorem storeReplyLegReady_keepsSendCaps($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem storeReplyLeg_takeGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unlinked_take_transfer($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean
@@ -4575,16 +4579,9 @@ run_check "INVARIANT" rg -n '^theorem popUnheldSettled_takeGuard($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_take_transfer($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_take_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unheld_take_capsDelivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedTakeInPlace.lean
-run_check "INVARIANT" rg -n '^theorem replyRecvUnlinkedTakes_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n '^theorem replyRecvUnheldTakes_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n '^theorem replyRecvUnlinkedTakeArmR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n '^theorem replyRecvUnheldTakeArmR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '    else replyRecvUnlinkedTakeArmR epId tid c rid badge grant layout rf len label executingCore st\n\n[ ]*\ntheorem replyRecvUnheldTakeArmR_eq ' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '    else replyRecvTakeArmR epId tid c rid badge grant layout rf len label executingCore st\n\n[ ]*\ntheorem replyRecvUnlinkedTakeArmR_eq ' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '                \.ok \(\(\), performReplyRecvUnheldTakeDelivered st c tid rid\n                  ⟨replyHeadContextCode st rid - 1⟩ \(determineTargetCore st c\) epId s' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '                \.ok \(\(\), performReplyRecvUnlinkedTakeDelivered st c tid rid epId s' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '              if replyRecvReplyInertW st tid c grant then\n(                [^\n]*\n){1,2}                \.ok \(\(\), performReplyRecvTakeDelivered st c tid rid epId s' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '                        \.ok \(\(\), performReplyRecvTakeCapsDelivered st c tid rid epId s' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '        replyRecvTakeArmCode st epId tid c rid != 0 then\n(      [^\n]*\n){1,14}                \.ok \(\(\), performReplyRecvArmTakeDelivered\n                  \(ReplyRecvArm\.ofCode \(replyRecvTakeArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '                        \.ok \(\(\), performReplyRecvArmTakeCapsDelivered\n                          \(ReplyRecvArm\.ofCode \(replyRecvTakeArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_negative_check "INVARIANT" rg -n '\b(replyRecvTakes(_spec)?|replyRecv(Unlinked|Unheld)Takes(_spec)?|replyRecv(Unlinked|Unheld)?TakeArmR(_eq)?|replyRecv(Unlinked|Unheld)?TakeAdmits)\b' SeLe4n tests Main.lean
 # The long reply-receive whose reply pops a donation (the server's loan, or a
 # context no thread holds) writes in place with the long frame, inert and
 # installing, its buffer reads kept across every write before the copy.
@@ -4596,12 +4593,16 @@ run_check "INVARIANT" rg -n '^theorem replyRecvTakeFrame_stagedLong($|[ ({:\[\]]
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_take_deliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_take_capsDeliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReplyRecvTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvLongTakeArmR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '  !threadHasPendingFault st c && replyRecvTakeArmCode st epId tid c rid != 0\n' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '                \.ok \(\(\), performReplyRecvArmTakeDeliveredLong\n                  \(ReplyRecvArm\.ofCode \(replyRecvTakeArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '                    \.ok \(\(\), performReplyRecvArmTakeCapsDeliveredLong\n                      \(ReplyRecvArm\.ofCode \(replyRecvTakeArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 # The reply-receive answering a fault whose receive leg takes a queued sender writes in place.
 run_check "INVARIANT" rg -n '^theorem performFaultAnswer_msg($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvFaultTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_fault_take_transfer($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvFaultTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvFaultTakeFrame_staged($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvFaultTakeInPlace.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_fault_take_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvFaultTakeInPlace.lean
-run_check "INVARIANT" rg -n -U '        else if replyRecvTakes st epId tid c rid then\n(          [^\n]*\n){1,14}                  \.ok \(\(\), performReplyRecvFaultTakeDelivered st c tid rid epId s' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '        else if replyRecvTakeArmCode st epId tid c rid != 0 then\n(          [^\n]*\n){1,14}                  \.ok \(\(\), performReplyRecvArmFaultTakeDelivered\n                    \(ReplyRecvArm\.ofCode \(replyRecvTakeArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '        else if replyRecvTakeArmCode st epId tid c rid != 0 then\n(          [^\n]*\n){1,14}                  \.ok \(\(\), performReplyRecvArmFaultTakeDeliveredLong\n                    \(ReplyRecvArm\.ofCode \(replyRecvTakeArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '      \| none => replyRecvLongRendezvousR epId tid c rid badge grant rf len label executingCore st\n    else replyRecvLongTakeArmR epId tid c rid badge grant rf len label executingCore st\n' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 # The reply-receive on an unlinked reply object whose receive leg takes a queued Call writes in place.
 run_check "INVARIANT" rg -n '^theorem storeReplyLeg_callDonationGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedCallTakeInPlace.lean
@@ -4610,7 +4611,7 @@ run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unlinked_callTake_delivere
 run_check "INVARIANT" rg -n '^theorem replyRecvUnlinkedCallTakeArmR_of_admits($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvUnlinkedCallTakeArmR_eq($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '            \| \.call _ mi =>\n              \.ok \(\(\), performReplyRecvUnlinkedCallTakeDelivered st c tid rid epId s' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n -U '    else replyRecvUnheldTakeArmR epId tid c rid badge grant layout rf len label executingCore st\n\ntheorem replyRecvUnlinkedCallTakeArmR_of_not_admits ' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '    else replyRecvArmTakeR epId tid c rid badge grant layout rf len label executingCore st\n\ntheorem replyRecvUnlinkedCallTakeArmR_of_not_admits ' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_negative_check "INVARIANT" rg -n '\b(replyTransferStoresInPlace|cnodeStoreInPlace)\b' SeLe4n tests Main.lean
 # A fault answered by a long reply or reply-receive runs in place on every shape
 # the short answer does, its restart words past the fourth read from the
