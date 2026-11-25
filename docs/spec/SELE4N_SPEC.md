@@ -1300,7 +1300,7 @@ internal; nothing a thread writes names one.
     (`syscallReturnOutcome`, `syscallSuccessOutcome_returns_runnable`). The
     core resumes the thread the committed state runs on it
     (`restoreTargetOnCore`). Where a caller stopped inside its own syscall
-    resumes is WS-SX SX30.1.
+    resumes is WS-SX SX31.1.
   - NBSend, NBRecv and NBWait do not block. An NBSend to an endpoint with no
     receiver drops the message, and its drop decision is non-interfering
     (`sendDropsMessage_lowEquivalent`).
@@ -5923,7 +5923,25 @@ installing forms), the held arm's four takes read 0 (`held-take-reply-recv`,
 `held-take-reply-recv-long`, `held-take-reply-recv-installs-cap`,
 `held-take-long-reply-recv-installs-cap`), and the fault answer's take reads 0
 on the rendezvous arm at 120 words and on the held and unlinked arms at one and
-120 words.  SchedContext_Bind binds a context heading a reply stack, as seL4's
+120 words.  When the receive leg meets a caller queued by a capability-free
+`Call`, the reply-receive takes it in place over the same arms through one
+composed Call take (WS-SX SX27, `ReplyRecvCallTakeComposed.lean`), as
+seL4-MCS's `receiveIPC` does with `reply_push (canDonate)`: the arm is read
+once on the pre-state (`replyRecvCallTakeArmCode`, reading each arm's leg
+guard and its Call-take guard `ReplyRecvArm.callGuard`), the caller's context
+is lent to a server holding none (`callLend`; on the held arm, whose server
+keeps its own context, the take lends nothing), and one equality joins the
+Call take to the specification for every answer and length
+(`replyRecvAnsweringOnCore_arm_callTake`,
+`performReplyRecvArmCall{Take,TakeCaps,FaultTake}Delivered` and their long
+forms).  With it every one of the 90 reply-receive shapes (five reply arms,
+three receive legs, three answers, two lengths) is in place.  The donated
+and unlinked arms' Call takes read 0 at 120 words, granting a capability and
+both (`queued-caller-long-reply-recv`, `queued-caller-reply-recv-installs-cap`,
+`queued-caller-long-reply-recv-installs-cap`,
+`unlinked-long-reply-recv-takes-call`,
+`unlinked-reply-recv-takes-call-installs-cap`,
+`unlinked-long-reply-recv-takes-call-installs-cap`).  SchedContext_Bind binds a context heading a reply stack, as seL4's
 `decodeSchedContext_Bind` does, under the static form of decision D25 (D27):
 the checked dispatch admits it only where the context's label flows to the
 bound thread (`schedContextBindLabelGate`, refusing `flowDenied` before the
