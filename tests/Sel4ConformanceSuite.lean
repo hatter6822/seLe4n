@@ -200,7 +200,7 @@ private def bSignalled (ctx : LabelingContext) : Option SystemState :=
   match SeLe4n.Kernel.notificationWaitCrossCoreDispatchChecked ctx bNtfn bWaiter
       bootCoreId (bNtfnState false) with
   | (st1, .ok none) =>
-    match SeLe4n.Kernel.sendSignalOnCoreFlowing ctx bNtfn (SeLe4n.Badge.ofNatMasked 5)
+    match SeLe4n.Kernel.sendSignalOnCore bNtfn (SeLe4n.Badge.ofNatMasked 5)
         bootCoreId st1 with
     | (st2, .ok _) => some st2
     | _ => none

@@ -6362,9 +6362,10 @@ consumed and written to the badge register (`x0`), every other register as it
 was, and then seL4-MCS's `maybeDonateSchedContext`: a context bound to the
 notification and to no thread is donated to a receiver holding none
 (`maybeDonateSchedContext`, the bind's ok-state, the receiver's `.bound`
-binding with the notification link kept), under the checked kernel's
-context-label check (`maybeDonateSchedContextFlowing`): the notification's
-context is lent only to a receiver the context's label flows to.  A wait that finds no word blocks,
+binding with the notification link kept).  The receiver passed the wait's
+two-way gate, so it carries the notification's label and, under equal binding
+labels, the context's: the lend is between equal labels with no check of its
+own (WS-SX SX22).  A wait that finds no word blocks,
 and then, as seL4-MCS's `receiveSignal` does, returns the notification's context
 where it is the waiter's own (`maybeReturnSchedContext`: seL4's writes and the
 purge under seL4's guard, the receive's return; `isActive` is kept).  The consumption is the one a
@@ -6376,7 +6377,7 @@ take a notification's word ask one transition. -/
   fun st =>
     match notificationWaitCrossCoreDispatchChecked ctx notifId tid executingCore st with
     | (st', .ok (some badge)) =>
-        .ok ((), maybeDonateSchedContextFlowing ctx (Architecture.writeReturnFrameToTcb st' tid
+        .ok ((), maybeDonateSchedContext (Architecture.writeReturnFrameToTcb st' tid
           (Architecture.badgeReturnFrame st' tid badge)) notifId tid)
     | (st', .ok none) => .ok ((), maybeReturnSchedContext st' notifId tid)
     | (_, .error e) => .error e
@@ -6463,7 +6464,7 @@ theorem completeSignalArm_consumes {ctx : LabelingContext} {tid : SeLe4n.ThreadI
       notificationWaitCrossCoreDispatchChecked ctx (receiverBoundNotification st tid) tid c st =
         (st1, .ok (some badge)) ∧
       st1.scheduler = st.scheduler ∧
-      st' = maybeDonateSchedContextFlowing ctx
+      st' = maybeDonateSchedContext
         (Architecture.writeReturnFrameToTcb st1 tid (Architecture.badgeReturnFrame st1 tid badge))
         (receiverBoundNotification st tid) tid := by
   unfold completeSignalArm at h
@@ -6497,7 +6498,7 @@ theorem completeSignalArm_consumes {ctx : LabelingContext} {tid : SeLe4n.ThreadI
 /-- **The completion's scheduler change is the donation's**: the wait's
 consumption keeps the scheduler (`notificationWaitOnCore_consumed_scheduler_eq`,
 which stays the wait's own statement) and so does the badge frame, so the arm's
-state is the checked donation (`maybeDonateSchedContextFlowing`) over a state
+state is the donation (`maybeDonateSchedContext`) over a state
 whose scheduler is the entry state's.  Every scheduler write the arm makes is the
 bind's. -/
 theorem completeSignalArm_scheduler_of_donation {ctx : LabelingContext} {tid : SeLe4n.ThreadId}
@@ -6505,7 +6506,7 @@ theorem completeSignalArm_scheduler_of_donation {ctx : LabelingContext} {tid : S
     (hSig : receiveCompletesSignal ctx st tid = true)
     (h : completeSignalArm ctx tid (receiverBoundNotification st tid) c st = .ok ((), st')) :
     ∃ stD, stD.scheduler = st.scheduler ∧
-      st' = maybeDonateSchedContextFlowing ctx stD (receiverBoundNotification st tid) tid := by
+      st' = maybeDonateSchedContext stD (receiverBoundNotification st tid) tid := by
   obtain ⟨st1, badge, -, hS, rfl⟩ := completeSignalArm_consumes hSig h
   exact ⟨_, (Architecture.writeReturnFrameToTcb_scheduler_eq _ _ _).trans hS, rfl⟩
 
@@ -6772,7 +6773,7 @@ theorem replyRecvCompletesSignalArm_cases {ctx : LabelingContext}
           notificationWaitCrossCoreDispatchChecked ctx (receiverBoundNotification st1 tid) tid c
             st1 = (st2, .ok (some badge)) ∧
           st2.scheduler = st1.scheduler ∧
-          st' = maybeDonateSchedContextFlowing ctx (Architecture.writeReturnFrameToTcb st2 tid
+          st' = maybeDonateSchedContext (Architecture.writeReturnFrameToTcb st2 tid
             (Architecture.badgeReturnFrame st2 tid badge)) (receiverBoundNotification st1 tid) tid) := by
   obtain ⟨st1, hR, hOr⟩ := replyRecvCompletesSignalArm_split h
   refine ⟨st1, hR, ?_⟩
@@ -8344,15 +8345,6 @@ theorem readReturnFrame_maybeDonateSchedContext (st : SystemState) (n : SeLe4n.O
       simp only [Option.map_some, Option.some.injEq] at h
       simp only [h]
 
-/-- **A checked donation leaves every return frame**, as the donation does. -/
-theorem readReturnFrame_maybeDonateSchedContextFlowing (ctx : LabelingContext) (st : SystemState)
-    (n : SeLe4n.ObjId) (tid t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    Architecture.readReturnFrame (maybeDonateSchedContextFlowing ctx st n tid) t =
-      Architecture.readReturnFrame st t :=
-  maybeDonateSchedContextFlowing_induct
-    (fun s => Architecture.readReturnFrame s t = Architecture.readReturnFrame st t) ctx st n tid
-    rfl (readReturnFrame_maybeDonateSchedContext st n tid t hInv)
-
 /-- RA.B.8, `.notificationWait` (`.badge`): the arm's badge-consume path
 stages exactly the consumed badge, and the boundary read recovers it. -/
 theorem dispatchArm_notificationWait_matches_returnShape
@@ -8369,12 +8361,12 @@ theorem dispatchArm_notificationWait_matches_returnShape
     ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid
         = Architecture.badgeReturnFrame st1 tid badge := by
-  refine ⟨rfl, maybeDonateSchedContextFlowing ctx
+  refine ⟨rfl, maybeDonateSchedContext
     (Architecture.writeReturnFrameToTcb st1 tid (Architecture.badgeReturnFrame st1 tid badge))
     notifId tid, ?_, ?_⟩
   · simp [dispatchWithCapChecked, dispatchCapabilityOnly, completeSignalArm, hSyscall, hTarget, hDispatch,
       waitFindsNothing_of_consumed _ hDispatch]
-  · rw [readReturnFrame_maybeDonateSchedContextFlowing _ _ _ _ _
+  · rw [readReturnFrame_maybeDonateSchedContext _ _ _ _
       (writeReturnFrameToTcb_preserves_objects_invExt _ _ _ hObjInv)]
     exact Architecture.readReturnFrame_writeReturnFrame st1 tid _ tcb hTcb hObjInv
 
@@ -8611,7 +8603,7 @@ theorem dispatchArm_replyRecv_signal_matches_returnShape
     Architecture.syscallReturnShape .replyRecv = .message ∧
     ∃ stPost, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stPost) ∧
       Architecture.readReturnFrame stPost tid = Architecture.badgeReturnFrame st2 tid badge := by
-  refine ⟨rfl, maybeDonateSchedContextFlowing ctx
+  refine ⟨rfl, maybeDonateSchedContext
     (Architecture.writeReturnFrameToTcb st2 tid (Architecture.badgeReturnFrame st2 tid badge))
     (receiverBoundNotification st1 tid) tid, ?_, ?_⟩
   · simp only [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hTarget, hFlow,
@@ -8619,7 +8611,7 @@ theorem dispatchArm_replyRecv_signal_matches_returnShape
     unfold replyRecvCompletesSignalArm
     rw [hReply]
     simp only [hSig1, hReady1, Bool.and_self, ↓reduceIte, completeSignalArm, hWait]
-  · rw [readReturnFrame_maybeDonateSchedContextFlowing _ _ _ _ _
+  · rw [readReturnFrame_maybeDonateSchedContext _ _ _ _
       (writeReturnFrameToTcb_preserves_objects_invExt _ _ _ hObjInv)]
     exact Architecture.readReturnFrame_writeReturnFrame st2 tid _ tcb hTcb hObjInv
 
@@ -9291,7 +9283,7 @@ theorem dispatchWithCapChecked_declassifySignal_default_no_downgrade
     simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
     obtain ⟨-, hSt'⟩ := hStep
     -- seL4's `sendSignal` donation after the record writes no audit entry.
-    rw [← hSt', donateToSignalledFlowingGeneric_declassificationAuditLog_eq]
+    rw [← hSt', donateToSignalled_declassificationAuditLog_eq]
     exact hTrail
 
 /-- **WS-SM SM9.A.10: the live `.auditRead` arm routes to `auditReadFromCore`,

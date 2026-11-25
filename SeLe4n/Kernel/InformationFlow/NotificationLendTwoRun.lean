@@ -8,14 +8,21 @@
 -/
 
 import SeLe4n.Kernel.InformationFlow.LowEquivalencePairs
-import SeLe4n.Kernel.SchedContext.NotificationDonationContextLabel
+import SeLe4n.Kernel.SchedContext.NotificationDonation
+import SeLe4n.Kernel.SchedContext.Invariant.ContextLenders
 
 /-!
-# The checked notification lend, in two runs
+# The notification lend, in two runs
 
-WS-SX SX9.1: the checked notification lend (`maybeDonateSchedContextFlowing`,
-D30) made in two low-equivalent runs leaves them low-equivalent, for every
-observer.  Its hypotheses: equal binding labels in both runs
+WS-SX SX9.1, restated by SX22 over seL4's unchecked lend: the notification lend
+(`maybeDonateSchedContext`) to a thread labelled as the notification made in two
+low-equivalent runs leaves them low-equivalent, for every observer.  The thread
+carries the notification's label at every lend the kernel makes: the woken
+thread of a signal by the carried agreement
+(`notificationLabelsAgree_signalWokenThread`), a receive's waiter by its wait's
+two-way gate; under equal binding labels the notification carries its
+context's, so the lend is between equal labels (D30's check, which always
+passed, is deleted).  Its other hypotheses: equal binding labels in both runs
 (`bindingLabelsEqual`, D37), the two runs' agreement on the machine timer (the
 context's release reads it, and the timer is outside the projection, covert
 channel CC-2), that each run's run queues agree with its threads
@@ -53,21 +60,19 @@ section NotificationLendTwoRun
 
 variable {ctx : LabelingContext} {observer : IfObserver}
 
-/-- **The checked lend to a hidden thread is no view's**: the label check admits
-only a context labelled as the thread is, so the context is hidden too. -/
-theorem maybeDonateSchedContextFlowing_lowEquivalent_hidden (st : SystemState)
+/-- **The lend to a hidden thread is no view's**: under equal binding labels a
+notification carries its context's label, so the context lent to a thread
+labelled as the notification is hidden too. -/
+theorem maybeDonateSchedContext_lowEquivalent_hidden (st : SystemState)
     (n : SeLe4n.ObjId) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (hB : bindingLabelsEqual ctx st) (hTN : ctx.threadLabelOf t = ctx.objectLabelOf n)
     (hT : threadObservable ctx observer t = false)
     (hTo : objectObservable ctx observer t.toObjId = false) :
-    lowEquivalent_smp ctx observer (maybeDonateSchedContextFlowing ctx st n t) st := by
-  unfold maybeDonateSchedContextFlowing
-  split
-  · next hG =>
-    refine maybeDonateSchedContext_lowEquivalent st n t hInv hT hTo (fun s hs => ?_)
-    unfold donationContextFlows at hG
-    rw [hs, twoWayLabelGate_iff_eq] at hG
-    unfold objectObservable; rw [hG]; exact hT
-  · exact lowEquivalent_smp_refl st
+    lowEquivalent_smp ctx observer (maybeDonateSchedContext st n t) st := by
+  refine maybeDonateSchedContext_lowEquivalent st n t hInv hT hTo (fun s hs => ?_)
+  unfold objectObservable
+  rw [← bindingLabelsEqual.notificationContext hB hs, ← hTN]
+  exact hT
 
 /-- Two low-equivalent states agree, up to the projection, on every slot the
 observer sees. -/
@@ -611,49 +616,30 @@ theorem schedContextDonateAdmitted_pair {s₁ s₂ : SystemState} (vS : SeLe4n.V
 
 /-! ### The decision, in two runs -/
 
-/-- The lend's decision: the notification lends a context labelled as the thread. -/
-def lendsLabelled (ctx : LabelingContext) (st : SystemState) (n : SeLe4n.ObjId)
-    (t : SeLe4n.ThreadId) : Prop :=
-  ∃ c, notificationContext? st n = some c ∧ ctx.objectLabelOf c.toObjId = ctx.threadLabelOf t
-
-/-- With no such context the checked lend changes nothing. -/
-theorem maybeDonateSchedContextFlowing_of_not_lendsLabelled {st : SystemState}
-    {n : SeLe4n.ObjId} {t : SeLe4n.ThreadId} (h : ¬ lendsLabelled ctx st n t) :
-    maybeDonateSchedContextFlowing ctx st n t = st := by
-  unfold maybeDonateSchedContextFlowing donationContextFlows
-  cases hC : notificationContext? st n with
-  | some c =>
-    have hG : twoWayLabelGate (ctx.objectLabelOf c.toObjId) (ctx.threadLabelOf t) = false := by
-      cases e : twoWayLabelGate (ctx.objectLabelOf c.toObjId) (ctx.threadLabelOf t) with
-      | false => rfl
-      | true => exact absurd ⟨c, hC, (twoWayLabelGate_iff_eq _ _).mp e⟩ h
-    simp only [hG, Bool.false_eq_true, ↓reduceIte]
-  | none =>
-    simp only [↓reduceIte]
-    unfold maybeDonateSchedContext
-    unfold notificationContext? at hC
-    cases hN : st.getNotification? n with
-    | none => rfl
-    | some m =>
-      rw [hN] at hC
-      simp only [Option.bind_some] at hC
-      simp only [hC]
+/-- With no context the lend changes nothing. -/
+theorem maybeDonateSchedContext_of_no_context {st : SystemState}
+    {n : SeLe4n.ObjId} {t : SeLe4n.ThreadId} (hC : notificationContext? st n = none) :
+    maybeDonateSchedContext st n t = st := by
+  unfold maybeDonateSchedContext
+  unfold notificationContext? at hC
+  cases hN : st.getNotification? n with
+  | none => rfl
+  | some m =>
+    rw [hN] at hC
+    simp only [Option.bind_some] at hC
+    simp only [hC]
 
 /-- With one, it is the lend over that context. -/
-theorem maybeDonateSchedContextFlowing_of_lendsLabelled {st : SystemState}
+theorem maybeDonateSchedContext_of_context {st : SystemState}
     {n : SeLe4n.ObjId} {t : SeLe4n.ThreadId} {c : SeLe4n.SchedContextId}
-    (hC : notificationContext? st n = some c)
-    (hE : ctx.objectLabelOf c.toObjId = ctx.threadLabelOf t) :
-    maybeDonateSchedContextFlowing ctx st n t =
+    (hC : notificationContext? st n = some c) :
+    maybeDonateSchedContext st n t =
       match c.toObjId.toValid?, t.toValid? with
       | some vS, some vT =>
         if SchedContextOps.schedContextDonateAdmitted st vS vT then
           SchedContextOps.schedContextBindPerform st vS vT
         else st
       | _, _ => st := by
-  unfold maybeDonateSchedContextFlowing donationContextFlows
-  rw [hC]
-  simp only [(twoWayLabelGate_iff_eq _ _).mpr hE, ↓reduceIte]
   unfold maybeDonateSchedContext
   unfold notificationContext? at hC
   cases hN : st.getNotification? n with
@@ -709,7 +695,7 @@ theorem notificationContext?_pair {s₁ s₂ : SystemState} {n : SeLe4n.ObjId}
       simp only [Option.bind_some, Notification.schedContext, hW₂]
       rfl
 
-/-! ### The checked lend, in two runs -/
+/-! ### The lend, in two runs -/
 
 private theorem objId_toValid?_val {o : SeLe4n.ObjId} {v : SeLe4n.ValidObjId}
     (h : o.toValid? = some v) : v.val = o := by
@@ -718,36 +704,41 @@ private theorem objId_toValid?_val {o : SeLe4n.ObjId} {v : SeLe4n.ValidObjId}
   · cases h
   · cases h; rfl
 
-/-- **The checked notification lend, made in two low-equivalent runs, leaves
-them low-equivalent**, for every observer: both runs hold equal binding labels
-(`bindingLabelsEqual`), keep their run queues agreeing with their threads
-(`runQueueRefined`) and agree on the timer the context's release reads; each
-thread carries its own TCB's label (`threadObjectLabelsEqual`). -/
-theorem maybeDonateSchedContextFlowing_lowEquivalent_pair {s₁ s₂ : SystemState}
+/-- **The notification lend to a thread labelled as the notification, made in
+two low-equivalent runs, leaves them low-equivalent**, for every observer: both
+runs hold equal binding labels (`bindingLabelsEqual`), keep their run queues
+agreeing with their threads (`runQueueRefined`) and agree on the timer the
+context's release reads; each thread carries its own TCB's label
+(`threadObjectLabelsEqual`).  The thread's label equation with the notification
+is a fact of the labelling, the same in both runs. -/
+theorem maybeDonateSchedContext_lowEquivalent_pair {s₁ s₂ : SystemState}
     (n : SeLe4n.ObjId) (t : SeLe4n.ThreadId)
     (hL : lowEquivalent_smp ctx observer s₁ s₂)
     (hI₁ : s₁.objects.invExt) (hI₂ : s₂.objects.invExt)
     (hR₁ : s₁.runQueueRefined) (hR₂ : s₂.runQueueRefined)
     (hτ : s₁.machine.timer = s₂.machine.timer)
     (hB₁ : bindingLabelsEqual ctx s₁) (hB₂ : bindingLabelsEqual ctx s₂)
-    (hTO : threadObjectLabelsEqual ctx) :
-    lowEquivalent_smp ctx observer (maybeDonateSchedContextFlowing ctx s₁ n t)
-      (maybeDonateSchedContextFlowing ctx s₂ n t) := by
+    (hTO : threadObjectLabelsEqual ctx) (hTN : ctx.threadLabelOf t = ctx.objectLabelOf n) :
+    lowEquivalent_smp ctx observer (maybeDonateSchedContext s₁ n t)
+      (maybeDonateSchedContext s₂ n t) := by
   have hToEq : objectObservable ctx observer t.toObjId = threadObservable ctx observer t := by
     unfold objectObservable threadObservable; rw [hTO t]
+  have hE : ∀ {s : SystemState} {c : SeLe4n.SchedContextId}, bindingLabelsEqual ctx s →
+      notificationContext? s n = some c → ctx.objectLabelOf c.toObjId = ctx.threadLabelOf t :=
+    fun hB hC => (bindingLabelsEqual.notificationContext hB hC).symm.trans hTN.symm
   cases hT : threadObservable ctx observer t with
   | false =>
     have hTo : objectObservable ctx observer t.toObjId = false := hToEq.trans hT
-    exact lowEquivalent_smp_trans (maybeDonateSchedContextFlowing_lowEquivalent_hidden s₁ n t hI₁ hT hTo)
+    exact lowEquivalent_smp_trans (maybeDonateSchedContext_lowEquivalent_hidden s₁ n t hI₁ hB₁ hTN hT hTo)
       (lowEquivalent_smp_trans hL (lowEquivalent_smp_symm
-        (maybeDonateSchedContextFlowing_lowEquivalent_hidden s₂ n t hI₂ hT hTo)))
+        (maybeDonateSchedContext_lowEquivalent_hidden s₂ n t hI₂ hB₂ hTN hT hTo)))
   | true =>
     have hTo : objectObservable ctx observer t.toObjId = true := hToEq.trans hT
-    by_cases hD : lendsLabelled ctx s₁ n t
-    · obtain ⟨c, hC₁, hE⟩ := hD
-      have hC₂ := notificationContext?_pair hL hB₁ hT hC₁ hE
-      rw [maybeDonateSchedContextFlowing_of_lendsLabelled hC₁ hE,
-        maybeDonateSchedContextFlowing_of_lendsLabelled hC₂ hE]
+    cases hC₁ : notificationContext? s₁ n with
+    | some c =>
+      have hEc := hE hB₁ hC₁
+      have hC₂ := notificationContext?_pair hL hB₁ hT hC₁ hEc
+      rw [maybeDonateSchedContext_of_context hC₁, maybeDonateSchedContext_of_context hC₂]
       cases hvS : c.toObjId.toValid? with
       | none => exact hL
       | some vS =>
@@ -758,7 +749,7 @@ theorem maybeDonateSchedContextFlowing_lowEquivalent_pair {s₁ s₂ : SystemSta
           have eS := objId_toValid?_val hvS
           have eT := SeLe4n.ThreadId.toValid?_some_val_eq _ _ hvT
           have hS : objectObservable ctx observer vS.val = true := by
-            rw [eS]; unfold objectObservable; rw [hE]; exact hT
+            rw [eS]; unfold objectObservable; rw [hEc]; exact hT
           have hT' : threadObservable ctx observer vT.val = true := by rw [eT]; exact hT
           have hTo' : objectObservable ctx observer vT.val.toObjId = true := by rw [eT]; exact hTo
           rw [schedContextDonateAdmitted_pair vS vT hL hB₁ hB₂ hS hT' hTo']
@@ -768,16 +759,20 @@ theorem maybeDonateSchedContextFlowing_lowEquivalent_pair {s₁ s₂ : SystemSta
             have hA₁ := (schedContextDonateAdmitted_pair vS vT hL hB₁ hB₂ hS hT' hTo').trans hA
             exact schedContextBindPerform_lowEquivalent_pair vS vT hL hI₁ hI₂ hR₁ hR₂ hτ hS hT'
               hTo' hA₁ hA
-    · have hD₂ : ¬ lendsLabelled ctx s₂ n t := fun ⟨c, hC₂, hE⟩ =>
-        hD ⟨c, notificationContext?_pair (lowEquivalent_smp_symm hL) hB₂ hT hC₂ hE, hE⟩
-      rw [maybeDonateSchedContextFlowing_of_not_lendsLabelled hD,
-        maybeDonateSchedContextFlowing_of_not_lendsLabelled hD₂]
+    | none =>
+      have hC₂ : notificationContext? s₂ n = none := by
+        cases h₂ : notificationContext? s₂ n with
+        | none => rfl
+        | some c =>
+          have := notificationContext?_pair (lowEquivalent_smp_symm hL) hB₂ hT h₂ (hE hB₂ h₂)
+          rw [hC₁] at this; cases this
+      rw [maybeDonateSchedContext_of_no_context hC₁, maybeDonateSchedContext_of_no_context hC₂]
       exact hL
 
 /-- **Over a deployment's labelling**: the labelling hypothesis is discharged,
-leaving equal binding labels in both runs, the run-queue agreement and the
-timer. -/
-theorem maybeDonateSchedContextFlowing_lowEquivalent_pair_deployment
+leaving equal binding labels in both runs, the run-queue agreement, the timer and
+the thread's label equation with the notification. -/
+theorem maybeDonateSchedContext_lowEquivalent_pair_deployment
     (d : DeploymentLabeling) {observer : IfObserver} {s₁ s₂ : SystemState}
     (n : SeLe4n.ObjId) (t : SeLe4n.ThreadId)
     (hL : lowEquivalent_smp (deploymentLabelingContext d) observer s₁ s₂)
@@ -785,12 +780,13 @@ theorem maybeDonateSchedContextFlowing_lowEquivalent_pair_deployment
     (hR₁ : s₁.runQueueRefined) (hR₂ : s₂.runQueueRefined)
     (hτ : s₁.machine.timer = s₂.machine.timer)
     (hB₁ : bindingLabelsEqual (deploymentLabelingContext d) s₁)
-    (hB₂ : bindingLabelsEqual (deploymentLabelingContext d) s₂) :
+    (hB₂ : bindingLabelsEqual (deploymentLabelingContext d) s₂)
+    (hTN : (deploymentLabelingContext d).threadLabelOf t =
+      (deploymentLabelingContext d).objectLabelOf n) :
     lowEquivalent_smp (deploymentLabelingContext d) observer
-      (maybeDonateSchedContextFlowing (deploymentLabelingContext d) s₁ n t)
-      (maybeDonateSchedContextFlowing (deploymentLabelingContext d) s₂ n t) :=
-  maybeDonateSchedContextFlowing_lowEquivalent_pair n t hL hI₁ hI₂ hR₁ hR₂ hτ hB₁ hB₂
-    (deploymentLabelingContext_threadObjectLabelsEqual d)
+      (maybeDonateSchedContext s₁ n t) (maybeDonateSchedContext s₂ n t) :=
+  maybeDonateSchedContext_lowEquivalent_pair n t hL hI₁ hI₂ hR₁ hR₂ hτ hB₁ hB₂
+    (deploymentLabelingContext_threadObjectLabelsEqual d) hTN
 
 end NotificationLendTwoRun
 

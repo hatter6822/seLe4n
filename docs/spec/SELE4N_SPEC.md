@@ -1300,7 +1300,7 @@ internal; nothing a thread writes names one.
     (`syscallReturnOutcome`, `syscallSuccessOutcome_returns_runnable`). The
     core resumes the thread the committed state runs on it
     (`restoreTargetOnCore`). Where a caller stopped inside its own syscall
-    resumes is WS-SX SX26.1.
+    resumes is WS-SX SX28.1.
   - NBSend, NBRecv and NBWait do not block. An NBSend to an endpoint with no
     receiver drops the message, and its drop decision is non-interfering
     (`sendDropsMessage_lowEquivalent`).
@@ -1358,9 +1358,10 @@ internal; nothing a thread writes names one.
   - The checked kernel flow-checks every lend on static labels, beside the
     invariant `contextLendersLabelsEqual` (every lender on a context's reply stack
     carries the context's label), which every kernel entry carries. A
-    notification lends only where the context's label and the woken
-    thread's are equal (`donationContextFlows`, owner decision D30); a Call,
-    a received Call and a fault lend the caller's context as seL4-MCS does,
+    notification lends as seL4-MCS does, unchecked: the woken thread carries
+    the notification's label (`notificationLabelsAgree`) and the notification
+    the context's, so D30's check was unreachable and SX22 (`v0.37.51`)
+    deleted it; a Call, a received Call and a fault lend the caller's context as seL4-MCS does,
     with no check of their own: the caller carries the context's label
     (`bindingLabelsEqual`), so D28's refusal was unreachable and SX19
     (`v0.37.48`) deleted it with the `lend` argument it fed. SchedContext_Bind binds a context heading a
@@ -12357,16 +12358,15 @@ steps from, in the standing per-state slot beside the object-store invariant
 (`step_preserves_projection`, `NonInterferenceTrace.cons`,
 `nonInterference_perCore`; WS-SX SX18, `v0.37.47`), where the receive steps
 read the hidden loan return off it; no step carries it as a premise.
-The checked notification lend, made in two low-equivalent runs, leaves them
+The notification lend, made in two low-equivalent runs, leaves them
 low-equivalent for every observer
-(`maybeDonateSchedContextFlowing_lowEquivalent_pair`), given equal binding
-labels in both runs, the runs' agreement on the timer (covert channel CC-2),
+(`maybeDonateSchedContext_lowEquivalent_pair`), given equal binding
+labels in both runs, the woken thread carrying the notification's label, the runs' agreement on the timer (covert channel CC-2),
 run queues agreeing with their threads, and each thread carrying its TCB's
 label, which every deployment context meets
-(`maybeDonateSchedContextFlowing_lowEquivalent_pair_deployment`).  Under these
-gates no committing step is known to reach the notification lend's label
-refusal; the Call lend's was proved unreachable and is deleted (WS-SX SX19,
-`v0.37.48`).  Every booted image has equal binding labels: the
+(`maybeDonateSchedContext_lowEquivalent_pair_deployment`).  Both lends'
+label refusals were proved unreachable and are deleted (the Call lend's, WS-SX
+SX19, `v0.37.48`; the notification lend's, SX22, `v0.37.51`).  Every booted image has equal binding labels: the
 checked boot refuses every configured binding pair and creates none
 (`bootFromPlatformCheckedStartedFor_bindingLabelsEqual`, `v0.37.39`), and the
 predicate also says a lent binding's owner carries the context's label (the
@@ -12390,16 +12390,17 @@ records.  The gate at a Call or receive-take lend checks one side of the
 endpoint, and the other side was checked when the waiting thread blocked: the
 receive leg dequeues the receiver itself or its send queue's head, which is
 blocked on the endpoint (`endpointReceiveDualWithCapsOnCore_dequeued_labelEq`).
-SchedContext_Bind reads its label gate, the notification lend its check, and
-the declassified signal's lend the same check under the lifted context the
-dispatch runs it with.  The Call lend's refusal was unreachable under the
+SchedContext_Bind reads its label gate.  The Call lend's refusal was unreachable under the
 invariant (the caller carries the context's label), and SX19 (`v0.37.48`)
 deleted it with the `lend` argument it fed: every Call, fault and receive-take
-lend is seL4's.  The notification lend's check also needs the
-thread the signal wakes to carry the notification's label
-(`notificationLabelsCoherent`), which the boot checks and, since SX21
-(`v0.37.50`), every entry carries in its label part (below); it stays until
-SX22 deletes it (D43).
+lend is seL4's.  The notification lend's label check was unreachable
+too: the thread the signal wakes carries the notification's label
+(`notificationLabelsAgree`, which every entry carries since SX21, below), and
+the notification its context's (`bindingLabelsEqual`), so SX22 (`v0.37.51`,
+D47) deleted it at its four sites (the signal arm, the declassified signal,
+the interrupt delivery and the completed-signal arm of a receive): every
+notification lend is seL4's, and the interrupt entry reads no labelling
+context.
 Since SX20 (`v0.37.49`, D45) the kernel records' view holds every field
 coherence reads: a thread's two notification-queue links and a notification's
 bound thread, queue head and queue tail (`TcbRecordView`,

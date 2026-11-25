@@ -190,11 +190,11 @@ theorem maybeDonateSchedContext_preserves_objects_invExt (st : SystemState) (n :
   maybeDonateSchedContext_induct (fun _ b => b.objects.invExt) st n tid hInv
     (fun vS vT _ _ => schedContextBindPerform_preserves_objects_invExt st vS vT hInv)
 
-/-- …and so does the checked signal. -/
-theorem sendSignalOnCoreFlowing_preserves_objects_invExt (ctx : LabelingContext)
+/-- …and so does seL4's `sendSignal`. -/
+theorem sendSignalOnCore_preserves_objects_invExt
     (n : SeLe4n.ObjId) (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState)
-    (hInv : st.objects.invExt) : (sendSignalOnCoreFlowing ctx n badge c st).1.objects.invExt :=
-  sendSignalOnCoreFlowing_induct (fun s => s.objects.invExt) ctx n badge c st
+    (hInv : st.objects.invExt) : (sendSignalOnCore n badge c st).1.objects.invExt :=
+  sendSignalOnCore_induct (fun s => s.objects.invExt) n badge c st
     (notificationSignalBoundOnCore_preserves_objects_invExt n badge c st hInv)
     (fun t _ _ _ => maybeDonateSchedContext_preserves_objects_invExt _ n t
       (notificationSignalBoundOnCore_preserves_objects_invExt n badge c st hInv))

@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
-import SeLe4n.Kernel.SchedContext.NotificationDonationContextLabel
+import SeLe4n.Kernel.SchedContext.NotificationDonation
 import SeLe4n.Kernel.IPC.Invariant.Defs
 import SeLe4n.Kernel.SchedContext.Invariant.BindingLabels
 
@@ -38,6 +38,62 @@ push carries the predicate because its lender carries the context's label
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+
+/-- **A notification carries the label of the context it lends**: the
+notification clause of equal binding labels, read through
+`notificationContext?`. -/
+theorem bindingLabelsEqual.notificationContext {ctx : LabelingContext} {st : SystemState}
+    (hB : bindingLabelsEqual ctx st) {n : SeLe4n.ObjId} {s : SeLe4n.SchedContextId}
+    (hS : notificationContext? st n = some s) :
+    ctx.objectLabelOf n = ctx.objectLabelOf s.toObjId := by
+  unfold notificationContext? at hS
+  cases hN : st.getNotification? n with
+  | none => rw [hN] at hS; cases hS
+  | some m =>
+    rw [hN] at hS
+    simp only [Option.bind_some] at hS
+    have hW : m.schedContextCode = s.val + 1 := by
+      have := congrArg SeLe4n.SchedContextId.optCode hS
+      simpa [Notification.schedContext] using this
+    exact hB.2.2.1 n m s ((SystemState.getNotification?_eq_some_iff _ _ _).mp hN) hW
+
+/-! ### The lenders on a context's stack
+
+A context's reply stack is the chain of reply objects from its head
+(`SchedContext.scReply`) down the `prev` links; each frame's caller lent the
+context through a `Call`.  `contextLendersLabelsEqual` says every such lender
+carries the context's label. -/
+
+/-- **A reply object on a context's stack**: the head the context names, or a
+frame below one on it (`Reply.prev`). -/
+inductive OnContextStack (st : SystemState) (s : SeLe4n.SchedContextId) :
+    SeLe4n.ReplyId → Prop where
+  | head {sc : SchedContext} {r : SeLe4n.ReplyId} :
+      st.getSchedContext? s = some sc → sc.scReply = some r → OnContextStack st s r
+  | lower {r r' : SeLe4n.ReplyId} {rep : Reply} :
+      OnContextStack st s r → st.getReply? r = some rep → rep.prev = some r' →
+        OnContextStack st s r'
+
+/-- **Every lender on a context's stack carries the context's label**: the
+caller of every reply object on the stack of every context (WS-SX SX10, D37:
+a lender lent the context while holding it, and a holder carries its context's
+label, so the one-way flow of D27 is an equality). -/
+def contextLendersLabelsEqual (ctx : LabelingContext) (st : SystemState) : Prop :=
+  ∀ (s : SeLe4n.SchedContextId) (r : SeLe4n.ReplyId) (rep : Reply) (lender : SeLe4n.ThreadId),
+    OnContextStack st s r → st.getReply? r = some rep → rep.caller = some lender →
+      ctx.threadLabelOf lender = ctx.objectLabelOf s.toObjId
+
+/-- **A state whose contexts head no stack has no lender**: the predicate holds
+outright (every boot state, every state before the first donating `Call`). -/
+theorem contextLendersLabelsEqual_of_no_stacks (ctx : LabelingContext) (st : SystemState)
+    (hNoHeads : ∀ (s : SeLe4n.SchedContextId) (sc : SchedContext),
+      st.getSchedContext? s = some sc → sc.scReply = none) :
+    contextLendersLabelsEqual ctx st := by
+  intro s r rep lender hOn
+  exfalso
+  induction hOn with
+  | head hSc hR => rw [hNoHeads _ _ hSc] at hR; cases hR
+  | lower _ _ _ ih => exact ih
 
 /-- A context's stack head. -/
 def contextStackHead (st : SystemState) (s : SeLe4n.SchedContextId) : Option SeLe4n.ReplyId :=

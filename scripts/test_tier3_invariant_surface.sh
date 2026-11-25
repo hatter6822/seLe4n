@@ -7608,9 +7608,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "\(t : SeLe4n.ThreadId\) \(p₁ p₂ : 
 # and the hidden-thread half.
 run_check "INVARIANT" rg -n '^def threadObjectLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
 run_check "INVARIANT" rg -n '^theorem deploymentLabelingContext_threadObjectLabelsEqual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
-run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContextFlowing_lowEquivalent_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
-run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContextFlowing_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
-run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContextFlowing_lowEquivalent_pair_deployment($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContext_lowEquivalent_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContext_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContext_lowEquivalent_pair_deployment($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
 run_check "INVARIANT" rg -n '^theorem schedContextBindPerform_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
 run_check "INVARIANT" rg -n '^theorem schedContextDonateAdmitted_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
 run_check "INVARIANT" rg -n '^theorem notificationContext\?_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
@@ -10485,8 +10485,8 @@ run_check "INVARIANT" rg -n 'cores := sendSignalWriteSet st notificationId' SeLe
 # WS-SX SX8.2: the live `.notificationSignal` arm is seL4's sendSignal (wake then
 # donation); its confinement and cross-core non-interference, and the write set.
 run_check "INVARIANT" rg -n '^def sendSignalWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
-run_check "INVARIANT" rg -n '^theorem sendSignalOnCoreFlowing_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem sendSignalOnCoreFlowing_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem sendSignalOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem sendSignalOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContext_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/SchedContextArms.lean
 run_check "INVARIANT" rg -n '^theorem schedContextBind_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/PerCoreSchedulerNonInterference.lean
 run_check "INVARIANT" rg -n '^theorem completeSignalArm_scheduler_of_donation($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
@@ -11312,19 +11312,17 @@ open SeLe4n.Kernel.Concurrency
 #check @signalWokenThread?
 #check @donateToSignalled
 #check @notificationContext?
-#check @donationContextFlows
-#check @maybeDonateSchedContextFlowing
-#check @maybeDonateSchedContextFlowing_induct
-#check @maybeDonateSchedContextFlowing_of_flows_false
-#check @maybeDonateSchedContextFlowingFast_eq
-#check @donationContextFlows_context
-#check @donationContextFlows_context_back
-#check @donationContextFlows_false_of_not_back
-#check @donationContextFlows_congr
+#check @bindingLabelsEqual.notificationContext
+#check @notificationLabelsAgree_signalWokenThread
+#check @notificationWaitCrossCoreDispatchChecked_label_of_ok
+#check @maybeDonateSchedContextFast_eq
+#check @donateToSignalled_declassificationAuditLog_eq
+#check @sendSignalOnCore_error_state
+#check @maybeDonateSchedContext_of_no_context
+#check @maybeDonateSchedContext_of_context
 #check @OnContextStack
 #check @contextLendersLabelsEqual
 #check @contextLendersLabelsEqual_of_no_stacks
-#check @donationContextFlows_lenders
 #check @schedLockSet_endpointCallOnCore_coversWrites
 #check @schedLockSet_endpointReceiveOnCore_coversWrites
 #check @receiveCallTakesInPlace_lendsNothing
@@ -11383,7 +11381,7 @@ open SeLe4n.Kernel.Concurrency
 #check @LendersFrame.timerTickOnCore
 #check @perCoreTimerTickEntryState_lendersStage
 #check @LendersStep.schedContextBindPerform
-#check @LendersStep.sendSignalOnCoreFlowing
+#check @LendersStep.sendSignalOnCore
 #check @interruptEntryState_lendersStage
 #check @chainObjectsKept.receiveTransferCaps
 #check @chainObjectsKept.propagatePipChainCrossCore
@@ -11409,7 +11407,7 @@ open SeLe4n.Kernel.Concurrency
 #check @LendersStep.schedContextReturnPerform
 #check @LendersStep.maybeReturnSchedContext
 #check @LendersStep.receiveReturnSchedContext
-#check @LendersStep.maybeDonateSchedContextFlowing
+#check @LendersStep.maybeDonateSchedContext_ofNotificationLabel
 #check @LendersStep.completeSignalArm
 #check @LendersStep.applyReplyDonationOnCore
 #check @LendersFrame.endpointReplyOnCore
@@ -11468,13 +11466,6 @@ open SeLe4n.Kernel.Concurrency
 #check @syscallDispatchFromAbi_lendersStage
 #check @syscallDispatchCrossCoreStep_lendersStage
 #check @syscallDispatchEntryState_lendersStage
-#check @donationContextFlowsGeneric_liftLegacyContext
-#check @donationContextFlows_eq_impl
-#check @donationContextFlowsGeneric_eq_impl
-#check @donateToSignalledFlowing
-#check @sendSignalOnCoreFlowing
-#check @sendSignalOnCoreFlowing_eq_impl
-#check @sendSignalOnCoreFlowing_induct
 #check @sendSignalOnCore_snd
 #check @sendSignalOnCore_induct
 #check @sendSignalOnCore_preserves_ipcInvariantFull
@@ -11485,24 +11476,24 @@ open SeLe4n.Kernel.Concurrency
 #check @maybeDonateSchedContext_preserves_objects_invExt
 #check @signalWokenThread?_not_blockedOnReply
 #check @notificationSignalBoundCrossCoreDispatchChecked_induct
-#check @sendSignalOnCoreFlowing_stepCovers
-#check @sendSignalOnCoreFlowing_runQueueStage
-#check @sendSignalOnCoreFlowing_mappingStage
-#check @sendSignalOnCoreFlowing_recordsStage
-#check @sendSignalOnCoreFlowing_savedRegsKept
+#check @sendSignalOnCore_stepCovers
+#check @sendSignalOnCore_runQueueStage
+#check @sendSignalOnCore_mappingStage
+#check @sendSignalOnCore_recordsStage
+#check @sendSignalOnCore_savedRegsKept
 #check @notificationSignalBoundOnCore_ntfnContextsAgree
 #check @notificationSignalBoundOnCore_signalDonationCores_eq
 #check @notificationSignalBoundOnCore_signalDonationContext?_eq
 #check @signalWakeDonationCores
 #check @signalWakeDonationContext?
-#check @schedLockSet_sendSignalOnCoreFlowing_coversWrites
+#check @schedLockSet_sendSignalOnCore_coversWrites
 #check @footprintCoversWrites_of_cores_subset
 #check @interruptReplenishCores
 #check @schedContextBindPerform_lowEquivalent
 #check @schedContextBind_lowEquivalent
 #check @maybeDonateSchedContext_lowEquivalent
 #check @boundSignalHidden.woken
-#check @sendSignalOnCoreFlowing_lowEquivalent
+#check @sendSignalOnCore_lowEquivalent
 #check @lockSetForSyscall_notificationSignal_covers_donationContext
 #check @notificationSignalDeclassifiedCrossCoreDispatch_induct
 #check @notificationSignalDeclassifiedCrossCoreDispatch_snd
@@ -11608,8 +11599,9 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def ReplyRecvLendersPremises
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDualWithCapsOnCore_dequeued_labelEq [^\n]*( *\n +[^\n]*)*\(hQ : queueHeadBlockedConsistent s\) \(hW : blockedSenderLabelsEqual ctx s\)\n +\(hG : ctx\.threadLabelOf tid = ctx\.endpointLabelOf epId\)\n +\(h : endpointReceiveDualWithCapsOnCore epId tid r ec s = \(st1, \.ok \(dequeued, summ, sgi\)\)\) :\n +ctx\.threadLabelOf tid = ctx\.threadLabelOf dequeued :=" SeLe4n/Kernel/ContextLenders/Dispatch.lean'
 # SchedContext_Bind: the checked arm is a labelled step from its own success alone.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem dispatchCapabilityOnlyChecked_lendersStep [^\n]*( *\n +[^\n]*)*\(hInv : st\.objects\.invExt\)\n +\(h : dispatchCapabilityOnlyChecked ctx decoded\.syscallId decoded\.msgInfo\.extraCaps tid cap k st\n += \.ok \(\(\), st'"'"'\)\) :\n +LendersStep ctx st st'"'"' :=" SeLe4n/Kernel/ContextLenders/CapabilityDispatch.lean'
-# The declassified signal's lend is checked under the context the dispatch lifts.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem LendersStep\.notificationSignalDeclassifiedCrossCoreDispatch [^\n]*( *\n +[^\n]*)*\(st : SystemState\) \(hInv : st\.objects\.invExt\) :\n +LendersStep lctx st\n +\(_root_\.SeLe4n\.Kernel\.notificationSignalDeclassifiedCrossCoreDispatch \(liftLegacyContext lctx\)" SeLe4n/Kernel/ContextLenders/Notification.lean'
+# The declassified signal's lend is seL4's under the context the dispatch lifts: its
+# label equation is the notification labels' agreement at the dispatch's state.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem LendersStep\.notificationSignalDeclassifiedCrossCoreDispatch [^\n]*( *\n +[^\n]*)*\(st : SystemState\) \(hInv : st\.objects\.invExt\)\n +\(hA : notificationLabelsAgree lctx st\) :\n +LendersStep lctx st\n +\(_root_\.SeLe4n\.Kernel\.notificationSignalDeclassifiedCrossCoreDispatch \(liftLegacyContext lctx\)" SeLe4n/Kernel/ContextLenders/Notification.lean'
 # The entries read the waiters at their own state.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem syscallDispatchEntryState_lendersStage [^\n]*( *\n +[^\n]*)*\(st : SystemState\) \(hK : st\.kernelRecordsSound\) \(hW : endpointWaitersLabelsEqual ctx st\)" SeLe4n/Kernel/ContextLenders/SyscallEntry.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultEntryState_lendersStage [^\n]*( *\n +[^\n]*)*\(st : SystemState\) \(hInv : st\.objects\.invExt\)\n +\(hW : endpointWaitersLabelsEqual ctx st\)" SeLe4n/Kernel/ContextLenders/Fault.lean'
@@ -19112,16 +19104,21 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchInvocationBy \([^\n]*(\n(
 run_check "INVARIANT" bash -lc 'rg -U -n "^def dispatchCapabilityOnlyChecked \([^\n]*(\n([ \t][^\n]*)?)*\| \.schedContextBind =>\n    match cap\.target with\n    \| \.object scId => schedContextBindLabelGate ctx xc tid scId k" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" rg -n '^theorem schedContextBindLabelGate_admits ' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem schedContextBindLabelAdmits_flows ' SeLe4n/Kernel/API.lean
-# WS-SX SX8 (av): the notification lend admits only equal labels -- both directions, in the
-# spec, its compiled form and the generic form; the label test runs before the donation reads
-# the waiter's binding.
-# Both directions through the one owner (`twoWayLabelGate`), not restated by hand.
-run_check "INVARIANT" rg -n '^  \| some s => twoWayLabelGate \(ctx\.objectLabelOf s\.toObjId\) \(ctx\.threadLabelOf tid\)$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
-run_check "INVARIANT" rg -n '^    \| some s => twoWayLabelGate \(ctx\.objectLabelOf s\.toObjId\) \(ctx\.threadLabelOf tid\)$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
-run_check "INVARIANT" rg -n -U '^  \| some s => genericFlowCheck gctx \(gctx\.objectDomainOf s\.toObjId\) \(gctx\.threadDomainOf tid\) &&\n      genericFlowCheck gctx \(gctx\.threadDomainOf tid\) \(gctx\.objectDomainOf s\.toObjId\)$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
-run_check "INVARIANT" rg -n '^  if donationContextFlows ctx st n tid then maybeDonateSchedContext st n tid else st$' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
-run_check "INVARIANT" rg -n '^theorem donationContextFlows_context_back ' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
-run_check "INVARIANT" rg -n '^theorem donationContextFlows_false_of_not_back ' SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean
+# WS-SX SX22.1 (D30 retired): the notification lends are seL4-MCS's, unchecked.
+# The woken thread has its notification's label (`notificationLabelsAgree`) and
+# the notification its context's (`bindingLabelsEqual`), so the lend's two-way
+# context-label check never refused; it, its compiled and generic forms, and the
+# checked signal built on it are gone, and none remains.  NEGATIVE.
+run_negative_check "INVARIANT" rg -n '^(@\[[a-z]+\] )?(private )?def (donationContextFlows|donationContextFlowsImpl|donationContextFlowsGeneric|donationContextFlowsGenericImpl|maybeDonateSchedContextFlowing|maybeDonateSchedContextFlowingFast|maybeDonateSchedContextFlowingGeneric|donateToSignalledFlowing|donateToSignalledFlowingGeneric|sendSignalOnCoreFlowing|sendSignalOnCoreFlowingImpl) ' SeLe4n/ tests/
+run_negative_check "INVARIANT" rg -n '\b(donationContextFlows|donationContextFlowsImpl|donationContextFlowsGeneric|donationContextFlowsGenericImpl|maybeDonateSchedContextFlowing|maybeDonateSchedContextFlowingFast|maybeDonateSchedContextFlowingGeneric|donateToSignalledFlowing|donateToSignalledFlowingGeneric|sendSignalOnCoreFlowing|sendSignalOnCoreFlowingImpl)\b' SeLe4n/ tests/
+run_negative_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.SchedContext\.NotificationDonationContextLabel$' SeLe4n/ tests/ Main.lean SeLe4n.lean
+# The labels the retired check asked for, from the carried invariants: the
+# notification's context's label, the signalled thread's, and the completed
+# wait's; every lend consumer derives its label equation from them.
+run_check "INVARIANT" rg -n '^theorem bindingLabelsEqual\.notificationContext($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Invariant/ContextLenders.lean
+run_check "INVARIANT" rg -n '^theorem notificationLabelsAgree_signalWokenThread($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
+run_check "INVARIANT" rg -n '^theorem notificationWaitCrossCoreDispatchChecked_label_of_ok($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem maybeDonateSchedContext_ofNotificationLabel [^\n]*(\n([ \t][^\n]*)?)*?    \(hE : ctx\.threadLabelOf t = ctx\.objectLabelOf n\) :\n    LendersStep ctx st \(_root_\.SeLe4n\.Kernel\.maybeDonateSchedContext st n t\)" SeLe4n/Kernel/ContextLenders/Interrupt.lean'
 # WS-SX SX8: a lender binds on both sides, as seL4-MCS's
 # `decodeSchedContext_Bind` binds it; the bind's checks and the donation's are
 # ONE guard (`schedContextDonateAdmitted`), so the retired bind-only guard and
@@ -24660,9 +24657,9 @@ run_check "INVARIANT" rg -n '^          match SchedContextOps\.schedContextYield
 # WS-ZA ZA6.37: the reference interrupt dispatch runs the live entries' handlers
 # on the executing core — the timer arm the per-core tick, every other line
 # seL4's handleInterrupt on that core — and takes no handler parameter.
-run_check "INVARIANT" rg -n -U '^def handleInterrupt \(ctx : LabelingContext\) \(st : SystemState\) \(c : Concurrency\.CoreId\) \(intId : InterruptId\) :\n    SystemState :=\n  if intId = timerInterruptId then timerTickOnCore st c\n  else handleInterruptOnCore ctx st c intId\.val$' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
-run_check "INVARIANT" rg -n '^    \.ok \(\(\), handleInterrupt ctx stEoi c intId\)$' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
-run_check "INVARIANT" rg -n '^      match interruptDispatchSequence ctx st executingCore rawIntId with$' SeLe4n/Kernel/Architecture/ExceptionModel.lean
+run_check "INVARIANT" rg -n -U '^def handleInterrupt \(st : SystemState\) \(c : Concurrency\.CoreId\) \(intId : InterruptId\) :\n    SystemState :=\n  if intId = timerInterruptId then timerTickOnCore st c\n  else handleInterruptOnCore st c intId\.val$' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
+run_check "INVARIANT" rg -n '^    \.ok \(\(\), handleInterrupt stEoi c intId\)$' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
+run_check "INVARIANT" rg -n '^      match interruptDispatchSequence st executingCore rawIntId with$' SeLe4n/Kernel/Architecture/ExceptionModel.lean
 run_check "INVARIANT" rg -n '^theorem handleInterrupt_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/InterruptDispatch.lean
 run_check "INVARIANT" rg -n '^theorem timerTickOnCore_machine_interruptsEnabled($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/ExceptionModel.lean
 run_negative_check "INVARIANT" rg -n '^(noncomputable )?def (handleInterruptWith|interruptDispatchSequenceWith|dispatchExceptionWith) ' SeLe4n/Kernel/Architecture

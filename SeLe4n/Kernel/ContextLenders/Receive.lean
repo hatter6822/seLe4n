@@ -175,8 +175,9 @@ theorem receiveReturnSchedContext (blocks : Bool) (st : SystemState) (t : SeLe4n
     (fun vS _ _ _ => schedContextReturnPerform st vS t hInv)
 
 /-- **A receive that completes its bound notification** (seL4-MCS
-`completeSignal`): the checked wait, then the badge written and the checked
-donation (its check is its label equation), or the context returned. -/
+`completeSignal`): the checked wait, then the badge written and the donation
+to the waiter, which the wait's two-way gate labels as the notification, or the
+context returned. -/
 theorem completeSignalArm {tid : SeLe4n.ThreadId} {nid : SeLe4n.ObjId}
     {c : CoreId} {st st' : SystemState} (hInv : st.objects.invExt) (hW : NotParkedAt st tid)
     (h : SeLe4n.Kernel.completeSignalArm ctx tid nid c st = .ok ((), st')) : LendersStep ctx st st' := by
@@ -187,7 +188,8 @@ theorem completeSignalArm {tid : SeLe4n.ThreadId} {nid : SeLe4n.ObjId}
     cases h
     rw [hR] at W
     exact (of_frame (W.andThen fun h => LendersFrame.writeReturnFrameToTcb _ _ _ h)).andThen
-      fun h => maybeDonateSchedContextFlowing _ nid tid h
+      fun h => maybeDonateSchedContext_ofNotificationLabel _ nid tid h
+        (notificationWaitCrossCoreDispatchChecked_label_of_ok hR)
   · rename_i hR
     cases h
     rw [hR] at W

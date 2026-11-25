@@ -139,13 +139,13 @@ theorem boundDeliveryTarget?_of_codes (st : SystemState) (nid : SeLe4n.ObjId) (n
   simp only [boundDeliveryTarget?, hN, hK0, ↓reduceIte, Notification.boundTCB, hB,
     SeLe4n.ThreadId.ofOptCode, hTg, hBl]
 
-/-- A checked signal that the wake refuses returns its own state and error. -/
-theorem sendSignalOnCoreFlowing_error_state (ctx : LabelingContext) (n : SeLe4n.ObjId)
+/-- A signal that the wake refuses returns its own state and error. -/
+theorem sendSignalOnCore_error_state (n : SeLe4n.ObjId)
     (badge : SeLe4n.Badge) (c : Concurrency.CoreId) (st : SystemState) (e : KernelError)
-    (h : (sendSignalOnCoreFlowing ctx n badge c st).2 = .error e) :
-    (sendSignalOnCoreFlowing ctx n badge c st).1 = st := by
-  rw [sendSignalOnCoreFlowing_snd, sendSignalOnCore_snd] at h
-  rw [sendSignalOnCoreFlowing_fst_of_error h]
+    (h : (sendSignalOnCore n badge c st).2 = .error e) :
+    (sendSignalOnCore n badge c st).1 = st := by
+  rw [sendSignalOnCore_snd] at h
+  rw [sendSignalOnCore_fst_of_error h]
   exact notificationSignalBoundOnCore_error_state _ _ _ st e h
 
 /-- The checked cross-core signal answers a refusal with the state it was
@@ -164,13 +164,13 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_error_state (ctx : Label
     cases hTarget : boundDeliveryTarget? st notificationId with
     | none =>
       simp only [hTarget] at h ⊢
-      exact sendSignalOnCoreFlowing_error_state _ _ _ _ st e h
+      exact sendSignalOnCore_error_state _ _ _ st e h
     | some target =>
       obtain ⟨receiver, _⟩ := target
       simp only [hTarget] at h ⊢
       by_cases hRecv : notificationFlowGate ctx notificationId receiver
       · simp only [hRecv, ↓reduceIte] at h ⊢
-        exact sendSignalOnCoreFlowing_error_state _ _ _ _ st e h
+        exact sendSignalOnCore_error_state _ _ _ st e h
       · simp only [hRecv, Bool.false_eq_true, ↓reduceIte]
   · simp only [hFlow, Bool.false_eq_true, ↓reduceIte]
 
@@ -214,7 +214,7 @@ other signal takes the general arm. -/
               match ntfn.waitHeadCode with
               | k + 1 =>
                   if signalWakesInPlace st notifId ⟨k⟩ then
-                    .ok ((), maybeDonateSchedContextFlowingFast ctx (performSignalWoken st notifId ⟨k⟩
+                    .ok ((), maybeDonateSchedContextFast (performSignalWoken st notifId ⟨k⟩
                       (ntfnSuccessorCode st ⟨k⟩) cap.signalBadge executingCore) notifId.val k)
                   else notificationSignalCheckedArmGeneralR ctx tid executingCore cap st
               | 0 => notificationSignalCheckedArmGeneralR ctx tid executingCore cap st
@@ -232,7 +232,7 @@ other signal takes the general arm. -/
                         | some ep =>
                             if notificationFlowGate ctx notifId ⟨k⟩ &&
                                 queueRemoveInPlace st ⟨tcb.ipcObjectCode⟩ true ⟨k⟩ ep tcb then
-                              .ok ((), maybeDonateSchedContextFlowingFast ctx
+                              .ok ((), maybeDonateSchedContextFast
                                 (performSignalBoundDelivered executingCore ⟨k⟩
                                   ⟨tcb.ipcObjectCode⟩ ep tcb cap.signalBadge st) notifId.val k)
                             else notificationSignalCheckedArmGeneralR ctx tid executingCore
@@ -273,11 +273,11 @@ theorem notificationSignalCheckedArmR_eq_general (ctx : LabelingContext)
               have hWk : signalWokenThread? st notifId = some ⟨k⟩ := by
                 simp only [signalWokenThread?, hBound, hN, Option.bind_some, hHead]
               simp only [notificationSignalBoundCrossCoreDispatchChecked, hFlow,
-                ↓reduceIte, hBound, sendSignalOnCoreFlowing, notificationSignalBoundOnCore,
+                ↓reduceIte, hBound, sendSignalOnCore, notificationSignalBoundOnCore,
                 notificationSignalOnCore_eq_impl, notificationSignalOnCoreImpl, hN, hHead, hW,
-                donateToSignalledFlowing, hWk]
+                donateToSignalled, hWk]
               rw [← optCode_ntfnSuccessor?, ← signalWoken_eq_perform,
-                maybeDonateSchedContextFlowingFast_eq]
+                maybeDonateSchedContextFast_eq]
             · rfl
           · rfl
         · rfl
@@ -306,9 +306,9 @@ theorem notificationSignalCheckedArmR_eq_general (ctx : LabelingContext)
                       have hWk : signalWokenThread? st notifId = some ⟨k⟩ := by
                         simp only [signalWokenThread?, hBT]
                       simp only [notificationSignalBoundCrossCoreDispatchChecked, hFlow, hBT,
-                        hFlow2, ↓reduceIte, sendSignalOnCoreFlowing, hS, donateToSignalledFlowing,
+                        hFlow2, ↓reduceIte, sendSignalOnCore, hS, donateToSignalled,
                         hWk]
-                      rw [maybeDonateSchedContextFlowingFast_eq]
+                      rw [maybeDonateSchedContextFast_eq]
                       rfl
                     · rfl
                   all_goals rfl
@@ -529,12 +529,12 @@ theorem stageBadgeReturn_eq (st : SystemState) (tid : SeLe4n.ThreadId)
 /-- The wait arm's specification form, refusing in the state it was handed
 (`notificationWaitOnCore_error_state`): the path every wait takes that does
 not consume its badge in place. -/
-def notificationWaitArmGeneralR (ctx : LabelingContext) (notifId : SeLe4n.ObjId)
+def notificationWaitArmGeneralR (notifId : SeLe4n.ObjId)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
     match notificationWaitOnCore notifId tid executingCore st with
     | (st', .ok (some badge)) =>
-        .ok ((), maybeDonateSchedContextFlowingFast ctx (Architecture.writeReturnFrameToTcb st' tid
+        .ok ((), maybeDonateSchedContextFast (Architecture.writeReturnFrameToTcb st' tid
           (Architecture.badgeReturnFrame st' tid badge)) notifId.val tid.val)
     | (st', .ok none) => .ok ((), maybeReturnSchedContextFast st' notifId.val tid.val)
     | (st', .error e) => .error (e, st')
@@ -556,22 +556,22 @@ writes the same way; every other wait takes the specification's form. -/
               match ntfn.pendingBadge with
               | some badge =>
                   if waitConsumesInPlace st notifId tid then
-                    .ok ((), maybeDonateSchedContextFlowingFast ctx
+                    .ok ((), maybeDonateSchedContextFast
                       (stageBadgeReturn (storeWaitConsumed st notifId tid) tid badge)
                       notifId.val tid.val)
-                  else notificationWaitArmGeneralR ctx notifId tid executingCore st
+                  else notificationWaitArmGeneralR notifId tid executingCore st
               | none =>
                   match lookupTcb st tid with
                   | some tcb =>
                       if tcb.ipcState = .blockedOnNotification notifId then
-                        notificationWaitArmGeneralR ctx notifId tid executingCore st
+                        notificationWaitArmGeneralR notifId tid executingCore st
                       else if waitBlocksInPlace st notifId tid ntfn.waitTailCode then
                         .ok ((), maybeReturnSchedContextFast (removeRunnableOnCore
                           (storeWaitBlocked st notifId tid ntfn.waitTailCode) tid executingCore)
                           notifId.val tid.val)
-                      else notificationWaitArmGeneralR ctx notifId tid executingCore st
-                  | none => notificationWaitArmGeneralR ctx notifId tid executingCore st
-          | none => notificationWaitArmGeneralR ctx notifId tid executingCore st
+                      else notificationWaitArmGeneralR notifId tid executingCore st
+                  | none => notificationWaitArmGeneralR notifId tid executingCore st
+          | none => notificationWaitArmGeneralR notifId tid executingCore st
         else .error (.flowDenied, st)
 
 /-- The checked wait arm (`dispatchWithCapChecked`'s `.notificationWait` case),
@@ -588,17 +588,17 @@ failure, else the gated wait (`notificationWaitGatedR`). -/
         else notificationWaitGatedR ctx tid notifId executingCore st
     | _ => .error (.invalidCapability 0, st)
 
-theorem notificationWaitArmGeneralR_eq (ctx : LabelingContext) (notifId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+theorem notificationWaitArmGeneralR_eq (notifId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (st : SystemState) :
-    notificationWaitArmGeneralR ctx notifId tid executingCore st =
+    notificationWaitArmGeneralR notifId tid executingCore st =
       RefusalCarrying.ofKernel (fun st =>
         match notificationWaitOnCore notifId tid executingCore st with
         | (st', .ok (some badge)) =>
-            .ok ((), maybeDonateSchedContextFlowing ctx (Architecture.writeReturnFrameToTcb st' tid
+            .ok ((), maybeDonateSchedContext (Architecture.writeReturnFrameToTcb st' tid
               (Architecture.badgeReturnFrame st' tid badge)) notifId tid)
         | (st', .ok none) => .ok ((), maybeReturnSchedContext st' notifId tid)
         | (_, .error e) => .error e) st := by
-  simp only [notificationWaitArmGeneralR, RefusalCarrying.ofKernel, maybeDonateSchedContextFlowingFast_eq,
+  simp only [notificationWaitArmGeneralR, RefusalCarrying.ofKernel, maybeDonateSchedContextFast_eq,
     maybeReturnSchedContextFast_eq]
   rcases hRun : notificationWaitOnCore notifId tid executingCore st with ⟨st', _ | _ | badge⟩
   · have hst := notificationWaitOnCore_error_state notifId tid executingCore st _
@@ -621,7 +621,7 @@ theorem notificationWaitGatedR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId
     by_cases hBound : notificationBoundElsewhere st notifId tid = true
     · simp only [hBound, ↓reduceIte, RefusalCarrying.ofKernel]
     simp only [hBound, Bool.false_eq_true, ↓reduceIte]
-    have hGen := notificationWaitArmGeneralR_eq ctx notifId tid executingCore st
+    have hGen := notificationWaitArmGeneralR_eq notifId tid executingCore st
     simp only [RefusalCarrying.ofKernel] at hGen ⊢
     split
     · next ntfn hN =>
@@ -631,7 +631,7 @@ theorem notificationWaitGatedR_eq (ctx : LabelingContext) (tid : SeLe4n.ThreadId
         · next hG =>
           rw [notificationWaitOnCore_eq_impl]
           simp only [notificationWaitOnCoreImpl, hN, hB, hG, ↓reduceIte,
-            stageBadgeReturn_eq, maybeDonateSchedContextFlowingFast_eq]
+            stageBadgeReturn_eq, maybeDonateSchedContextFast_eq]
         · exact hGen
       · next hB =>
         split

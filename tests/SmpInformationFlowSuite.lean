@@ -1826,8 +1826,8 @@ set_option maxRecDepth 8192
 #check @declassificationRelativeNonInterference
 #check @declassifiedSignalDispatch_confinedToCores
 #check @declassifiedSignalDispatch_crossCoreNonInterference
-#check @sendSignalOnCoreFlowing_confinedToCores
-#check @sendSignalOnCoreFlowing_crossCoreNonInterference
+#check @sendSignalOnCore_confinedToCores
+#check @sendSignalOnCore_crossCoreNonInterference
 
 -- SM9.C.8 / SM9.C.9 — the ABI, the live arm and its registries.
 #check @dispatchWithCapChecked_declassifySignal_delegates

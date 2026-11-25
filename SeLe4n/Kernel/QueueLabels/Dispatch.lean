@@ -87,12 +87,6 @@ theorem maybeDonateSchedContext (x : SystemState) (n : SeLe4n.ObjId) (t : SeLe4n
   of_frame (maybeDonateSchedContext_induct (fun a b => RecordsFrame a b) x n t
     (RecordsFrame.refl hI) (fun vS vT _ _ => RecordsFrame.schedContextBindPerform x vS vT hI))
 
-theorem maybeDonateSchedContextFlowing {ctx : LabelingContext} (x : SystemState)
-    (n : SeLe4n.ObjId) (t : SeLe4n.ThreadId) (hI : x.objects.invExt) :
-    QueueLabelsFrame x (SeLe4n.Kernel.maybeDonateSchedContextFlowing ctx x n t) :=
-  maybeDonateSchedContextFlowing_induct (QueueLabelsFrame x) ctx x n t (refl hI)
-    (maybeDonateSchedContext x n t hI)
-
 theorem maybeReturnSchedContext (x : SystemState) (n : SeLe4n.ObjId) (t : SeLe4n.ThreadId)
     (hI : x.objects.invExt) : QueueLabelsFrame x (SeLe4n.Kernel.maybeReturnSchedContext x n t) :=
   of_frame (maybeReturnSchedContext_induct (fun a b => RecordsFrame a b) x n t
@@ -120,7 +114,7 @@ theorem _root_.SeLe4n.Kernel.QueueLabelsGatedFrame.completeSignalArm {ctx : Labe
     rw [hR] at hW
     exact (hW.andThen fun hI => QueueLabelsFrame.of_frame
       (RecordsFrame.writeReturnFrameToTcb _ _ _ hI)).andThen
-      fun hI => QueueLabelsFrame.maybeDonateSchedContextFlowing _ _ _ hI
+      fun hI => QueueLabelsFrame.maybeDonateSchedContext _ _ _ hI
   · rename_i hR
     cases h
     rw [hR] at hW
@@ -128,10 +122,10 @@ theorem _root_.SeLe4n.Kernel.QueueLabelsGatedFrame.completeSignalArm {ctx : Labe
   · cases h
 
 /-- **seL4's `sendSignal`**: the wake's step, then the donation's. -/
-theorem sendSignalOnCoreFlowing {ctx : LabelingContext} {n : SeLe4n.ObjId}
+theorem sendSignalOnCore {n : SeLe4n.ObjId}
     {badge : SeLe4n.Badge} {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) :
-    QueueLabelsFrame st (SeLe4n.Kernel.sendSignalOnCoreFlowing ctx n badge c st).1 :=
-  sendSignalOnCoreFlowing_induct (QueueLabelsFrame st) ctx n badge c st
+    QueueLabelsFrame st (SeLe4n.Kernel.sendSignalOnCore n badge c st).1 :=
+  sendSignalOnCore_induct (QueueLabelsFrame st) n badge c st
     (notificationSignalBoundOnCore hInv)
     (fun t _ _ _ => (notificationSignalBoundOnCore hInv).andThen fun hI =>
       maybeDonateSchedContext _ n t hI)
@@ -152,7 +146,7 @@ theorem notificationSignalBoundCrossCoreDispatchChecked {ctx : LabelingContext}
     QueueLabelsFrame st
       (SeLe4n.Kernel.notificationSignalBoundCrossCoreDispatchChecked ctx nid signaler badge c st).1 :=
   notificationSignalBoundCrossCoreDispatchChecked_induct (QueueLabelsFrame st) ctx nid signaler
-    badge c st (refl hInv) (sendSignalOnCoreFlowing hInv)
+    badge c st (refl hInv) (sendSignalOnCore hInv)
 
 /-- **A reply-receive whose receive completes its bound notification**: the
 reply leg, then the completion. -/

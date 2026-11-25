@@ -57,6 +57,7 @@ theorem syscallEntryChecked_lendersStage {ctx : LabelingContext}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (P : SyscallEntryLendPremises ctx layout e regCount st) (hR : CurrentReady st)
     (hW : endpointWaitersLabelsEqual ctx st)
+    (hA : notificationLabelsAgree ctx st)
     (h : syscallEntryChecked ctx layout e regCount st = .ok ((), st')) :
     LendersStage ctx st st' := by
   unfold syscallEntryChecked at h
@@ -72,7 +73,7 @@ theorem syscallEntryChecked_lendersStage {ctx : LabelingContext}
   · cases h
   rename_i decoded hDec
   exact dispatchSyscallChecked_lendersStage ctx decoded tid e st st' hInv
-    (P tid (regs, s0) decoded hCur hP hDec) (hR e tid hCur) hW h
+    (P tid (regs, s0) decoded hCur hP hDec) (hR e tid hCur) hW hA h
 
 
 /-- **A refused receive's busy-reply cancel**, a labelled step: nothing, or a
@@ -111,6 +112,7 @@ theorem syscallDispatchFromAbi_lendersStage {ctx : LabelingContext} {e : CoreId}
     {st st' : SystemState} {outcome : Architecture.SyscallOutcome} (hInv : st.objects.invExt)
     (P : SyscallAbiLendPremises ctx e syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st)
     (hR : CurrentReady st) (hW : endpointWaitersLabelsEqual ctx st)
+    (hA : notificationLabelsAgree ctx st)
     (h : Platform.FFI.syscallDispatchFromAbi ctx e syscallId x0 x1 x2 x3 x4 x5
       x6 elr spsr spEl0 x30 st = .ok (outcome, st')) :
     LendersStage ctx st st' := by
@@ -160,7 +162,7 @@ theorem syscallDispatchFromAbi_lendersStage {ctx : LabelingContext} {e : CoreId}
   · rename_i hE
     cases h
     exact F1.stage.trans (syscallEntryChecked_lendersStage F1.invExt (P.entry tid hCur) hR1
-      (W1.waiters hW) hE)
+      (W1.waiters hW) (W1.ntfn ctx hA) hE)
 
 
 /-- **The syscall step keeps the lenders' flow**: the ABI dispatch, the
@@ -172,7 +174,8 @@ theorem syscallDispatchCrossCoreStep_lendersStage {ctx : LabelingContext} {e : C
     {syscallId : UInt32} {x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 : UInt64}
     {st : SystemState} (hK : st.kernelRecordsSound) (PR : RecordsArmPremises st)
     (P : SyscallAbiLendPremises ctx e syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30 st)
-    (hR : CurrentReady st) (hW : endpointWaitersLabelsEqual ctx st) :
+    (hR : CurrentReady st) (hW : endpointWaitersLabelsEqual ctx st)
+    (hA : notificationLabelsAgree ctx st) :
     LendersStage ctx st (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2 x3 x4 x5
       x6 elr spsr spEl0 x30 st).2 := by
   obtain ⟨outcome, st', hD⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx e syscallId
@@ -182,7 +185,7 @@ theorem syscallDispatchCrossCoreStep_lendersStage {ctx : LabelingContext} {e : C
   have F1 := RecordsFrame.stageCallerReturnFor (st.scheduler.currentOnCore e) _ e outcome hI
   have F2 := F1.trans (RecordsFrame.scheduleLocalSuccessorFrom (st.scheduler.currentOnCore e) _ e F1.invExt)
   have F3 := F2.trans (RecordsFrame.settleResidencyOnCore _ e F2.invExt)
-  exact (syscallDispatchFromAbi_lendersStage (KernelRecords.objects_invExt hK) P hR hW hD).trans
+  exact (syscallDispatchFromAbi_lendersStage (KernelRecords.objects_invExt hK) P hR hW hA hD).trans
     ((((LendersStage.of_kept (chainObjectsKept.stageCallerReturnFor _ _ e outcome hI)).trans
       (LendersStage.of_kept (chainObjectsKept.scheduleLocalSuccessorFrom _ _ e F1.invExt))).trans
       (LendersStage.of_kept (chainObjectsKept.settleResidencyOnCore _ e F2.invExt))).trans
@@ -198,6 +201,7 @@ theorem syscallDispatchEntryState_lendersStage (ctx : LabelingContext) (e : Core
     (trapped : Architecture.InFlightContext)
     (frame : Option Architecture.InFlightContext) (bytes : ByteArray) (n : Nat)
     (st : SystemState) (hK : st.kernelRecordsSound) (hW : endpointWaitersLabelsEqual ctx st)
+    (hA : notificationLabelsAgree ctx st)
     (PR : RecordsArmPremises (Architecture.IpcBufferRead.syncUserWords
       (Architecture.saveCapturedSyscallFrame st e frame) bytes n))
     (P : ∀ syscallId x0 x1 x2 x3 x4 x5 x6 elr spsr spEl0 x30,
@@ -220,7 +224,7 @@ theorem syscallDispatchEntryState_lendersStage (ctx : LabelingContext) (e : Core
   have W := (RecordsFrame.saveCapturedSyscallFrame st e frame hI).trans
     (RecordsFrame.syncUserWords _ bytes n (RecordsFrame.saveCapturedSyscallFrame st e frame hI).invExt)
   exact (hS.trans (syscallDispatchCrossCoreStep_lendersStage hK1 PR (P _ _ _ _ _ _ _ _ _ _ _ _) hR
-    ((QueueLabelsFrame.of_frame W).waiters hW))).trans
+    ((QueueLabelsFrame.of_frame W).waiters hW) ((QueueLabelsFrame.of_frame W).ntfn ctx hA))).trans
     (LendersStage.of_kept (chainObjectsKept.clearUserWords _))
 
 end SeLe4n.Kernel

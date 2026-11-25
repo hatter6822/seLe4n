@@ -1035,7 +1035,7 @@ theorem declassifiedSignalDispatch_confinedToCores
       badge executingCore st stD sgi' hObjInv hD
     have hF := notificationSignalDeclassifiedOnCore_frame gctx declPolicy notificationId badge
       executingCore st stD sgi' hD
-    unfold donateToSignalledFlowingGeneric
+    unfold donateToSignalled
     cases hW : signalWokenThread? st notificationId with
     | none => exact h1
     | some t =>
@@ -1060,12 +1060,9 @@ theorem declassifiedSignalDispatch_confinedToCores
         exact hA.trans (notificationSignalBoundOnCore_signalDonationCores_eq notificationId badge
           executingCore st hObjInv t)
       have h2 : observableSlotsConfinedToCores stD
-          (maybeDonateSchedContextFlowingGeneric gctx stD notificationId t)
+          (maybeDonateSchedContext stD notificationId t)
           (signalDonationCores stD notificationId t) :=
-        maybeDonateSchedContextFlowingGeneric_induct
-          (fun s => observableSlotsConfinedToCores stD s (signalDonationCores stD notificationId t))
-          gctx stD notificationId t (observableSlotsConfinedToCores_refl stD _)
-          (maybeDonateSchedContext_confinedToCores stD notificationId t hInvD)
+        (maybeDonateSchedContext_confinedToCores stD notificationId t hInvD)
       rw [hC] at h2
       refine observableSlotsConfinedToCores_mono ?_ (observableSlotsConfinedToCores_trans h1 h2)
       intro x hx
@@ -1099,23 +1096,21 @@ theorem declassifiedSignalDispatch_crossCoreNonInterference
     (declassifiedSignalDispatch_confinedToCores gctx declPolicy notificationId badge
       executingCore st stT sgi hObjInv hStep) hShared
 
-/-- WS-SX SX8.2 (**the live `.notificationSignal` arm**): the checked seL4-MCS `sendSignal`
-(`sendSignalOnCoreFlowing`) writes no core outside its write set: the wake's
+/-- WS-SX SX8.2 (**the live `.notificationSignal` arm**): seL4-MCS `sendSignal`
+(`sendSignalOnCore`) writes no core outside its write set: the wake's
 (`notificationSignalBoundOnCore_confinedToCores`) and the donation's, the home
-core of the thread it woke where seL4's guard and the context-label check hold
-(`maybeDonateSchedContext_confinedToCores`), read on the entry state.  Where the
-context-label check refuses, nothing is donated and the write set
-over-approximates the wake's. -/
-theorem sendSignalOnCoreFlowing_confinedToCores (fctx : LabelingContext)
+core of the thread it woke where seL4's guard holds
+(`maybeDonateSchedContext_confinedToCores`), read on the entry state. -/
+theorem sendSignalOnCore_confinedToCores
     (notificationId : SeLe4n.ObjId)
     (badge : SeLe4n.Badge) (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt) :
     observableSlotsConfinedToCores st
-      (sendSignalOnCoreFlowing fctx notificationId badge executingCore st).1
+      (sendSignalOnCore notificationId badge executingCore st).1
       (sendSignalWriteSet st notificationId) := by
   have hW := notificationSignalBoundOnCore_confinedToCores notificationId badge executingCore st
     hObjInv
-  refine sendSignalOnCoreFlowing_induct (fun s => observableSlotsConfinedToCores st s _) fctx
+  refine sendSignalOnCore_induct (fun s => observableSlotsConfinedToCores st s _)
     notificationId badge executingCore st
     (observableSlotsConfinedToCores_mono (fun x hx => List.mem_append.mpr (Or.inl hx)) hW) ?_
   intro t _ hT _
@@ -1131,23 +1126,23 @@ theorem sendSignalOnCoreFlowing_confinedToCores (fctx : LabelingContext)
   exact observableSlotsConfinedToCores_trans hW h2
 
 /-- WS-SX SX8.2 (**the inventory's citation for the live `.notificationSignal`
-arm**): the checked seL4 `sendSignal`, which the arm runs
-(`notificationSignalBoundCrossCoreDispatchChecked` runs `sendSignalOnCoreFlowing`
+arm**): seL4's `sendSignal`, which the arm runs
+(`notificationSignalBoundCrossCoreDispatchChecked` runs `sendSignalOnCore`
 once its flow gates pass), is invisible
 to any core outside its write set: the bound TCB's or the waiter's home core,
 and the home core of the thread the notification's context is donated to. -/
-theorem sendSignalOnCoreFlowing_crossCoreNonInterference (ctx : LabelingContext)
+theorem sendSignalOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (executingCore : CoreId) (st : SystemState) (c : CoreId)
     (hObjInv : st.objects.invExt)
     (hne : c ∉ sendSignalWriteSet st notificationId)
     (hShared : sharedViewUnchanged ctx observer st
-      (sendSignalOnCoreFlowing ctx notificationId badge executingCore st).1) :
+      (sendSignalOnCore notificationId badge executingCore st).1) :
     projectStateOnCore ctx observer
-      (sendSignalOnCoreFlowing ctx notificationId badge executingCore st).1 c
+      (sendSignalOnCore notificationId badge executingCore st).1 c
       = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
-    (sendSignalOnCoreFlowing_confinedToCores ctx notificationId badge executingCore st hObjInv)
+    (sendSignalOnCore_confinedToCores notificationId badge executingCore st hObjInv)
     hShared
 
 /-- WS-SX SX8.2: **the cores the live `.wait` arm writes**, read on its entry
@@ -1186,7 +1181,7 @@ theorem completeSignalArm_confinedToCores (ctx : LabelingContext) (tid : SeLe4n.
     have hFr := observableSlotsConfinedToCores_of_framed_suffix
       (Architecture.writeReturnFrameToTcb_scheduler_eq _ tid (Architecture.badgeReturnFrame st1 tid badge))
       (Architecture.writeReturnFrameToTcb_machine_eq _ tid _) hWait
-    have hD := maybeDonateSchedContextFlowing_confinedToCores (ctx := ctx) _ n tid
+    have hD := maybeDonateSchedContext_confinedToCores _ n tid
       (completeSignalArm_donationPre_objects_invExt hObjInv hW')
     rw [completeSignalArm_signalDonationCores_eq n hObjInv hW'] at hD
     have hPend := notificationWaitOnCore_notificationPending hW'
@@ -1482,7 +1477,7 @@ inductive CrossCoreTransition where
   | notificationSignalBound
   /-- WS-SX SX8.2 — the **live** `.signal` arm: seL4-MCS `sendSignal`, the
   bound-aware wake then the donation of the notification's context to the
-  thread it woke, under the context-label check (`sendSignalOnCoreFlowing`). -/
+  thread it woke (`sendSignalOnCore`). -/
   | sendSignalDispatch
   /-- SM6.B — the notification wait: the wait alone, a below-API leg of the
   live `.wait` arm since WS-SX SX8.2. -/
@@ -1658,7 +1653,7 @@ def crossCoreNiTheorem : CrossCoreTransition → String
       niName! schedControlConfigure_crossCoreNonInterference
   | .notificationSignal => niName! notificationSignalOnCore_crossCoreNonInterference
   | .notificationSignalBound => niName! notificationSignalBoundOnCore_crossCoreNonInterference
-  | .sendSignalDispatch => niName! sendSignalOnCoreFlowing_crossCoreNonInterference
+  | .sendSignalDispatch => niName! sendSignalOnCore_crossCoreNonInterference
   | .waitDispatch => niName! completeSignalArm_crossCoreNonInterference
   | .notificationWait => niName! notificationWaitOnCore_crossCoreNonInterference
   | .endpointReply => niName! endpointReplyOnCore_crossCoreNonInterference
@@ -1735,9 +1730,10 @@ below-API transition it wraps, so the narrower theorem never bounded it.
 
 One entry is a different case and is *not* re-pointed, because its live arm
 calls the `…OnCore` transition **directly**:
-`notificationSignalBoundCrossCoreDispatchChecked` runs `sendSignalOnCoreFlowing
-ctx … executingCore st` once its flow gates pass (seL4-MCS `sendSignal`: the
-bound-aware wake, then the donation under the context-label check, WS-SX SX8.2). For it the `…OnCore` theorem is a statement about the
+`notificationSignalBoundCrossCoreDispatchChecked` runs `sendSignalOnCore
+… executingCore st` once its flow gates pass (seL4-MCS `sendSignal`: the
+bound-aware wake, then the donation, WS-SX SX8.2; its context-label check
+retired as unreachable, WS-SX SX22.1). For it the `…OnCore` theorem is a statement about the
 live arm already; the bound-aware wake on its own (`.notificationSignalBound`) is
 a below-API leg.  The `.wait` arm runs `completeSignalArm` — the checked wait,
 then seL4-MCS's `completeSignal` donation or `receiveSignal`'s
@@ -1766,7 +1762,7 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .schedContextConfigureDispatch => true
   | .setThreadCpuAffinityDispatch => true
   | .notificationSignal => false
-  -- WS-SX SX8.2: the bound-aware wake is a leg of `sendSignalOnCoreFlowing` now
+  -- WS-SX SX8.2: the bound-aware wake is a leg of `sendSignalOnCore` now
   | .notificationSignalBound => false
   | .sendSignalDispatch => true
   -- WS-SX SX8.2: the wait is a leg of `completeSignalArm` now
@@ -1929,7 +1925,7 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
   | .notificationSignal => .readOffTheArm "below-API transition; live arm is .sendSignalDispatch"
   | .notificationSignalBound => .readOffTheArm "below-API transition; live arm is .sendSignalDispatch"
   | .sendSignalDispatch =>
-      .readOffTheArm "checked `.signal` arm; wrapper runs sendSignalOnCoreFlowing; delegation theorem pending"
+      .readOffTheArm "checked `.signal` arm; wrapper runs sendSignalOnCore; delegation theorem pending"
   | .notificationWait => .readOffTheArm "below-API transition; live arm is .waitDispatch"
   | .waitDispatch =>
       .readOffTheArm "checked `.wait` arm calls completeSignalArm; delegation theorem pending"

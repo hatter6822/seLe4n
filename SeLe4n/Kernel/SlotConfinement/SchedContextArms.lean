@@ -12,7 +12,6 @@ import SeLe4n.Kernel.SchedContext.SchedContextFootprint
 import SeLe4n.Kernel.Scheduler.Operations.AffinityFootprint
 import SeLe4n.Kernel.SchedContext.SchedControlFootprint
 import SeLe4n.Kernel.SchedContext.NotificationDonation
-import SeLe4n.Kernel.SchedContext.NotificationDonationContextLabel
 
 /-!
 # Per-core slot confinement — the live SchedContext arms
@@ -253,15 +252,6 @@ theorem maybeDonateSchedContext_confinedToCores (st : SystemState) (n : SeLe4n.O
     intro vS vT hT hA
     subst hT
     exact schedContextBindPerform_confinedToCores vS vT st hObjInv hA
-
-/-- …and so does the checked donation, the donation or nothing. -/
-theorem maybeDonateSchedContextFlowing_confinedToCores {ctx : LabelingContext} (st : SystemState)
-    (n : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
-    observableSlotsConfinedToCores st (maybeDonateSchedContextFlowing ctx st n tid)
-      (signalDonationCores st n tid) :=
-  maybeDonateSchedContextFlowing_induct
-    (fun s => observableSlotsConfinedToCores st s (signalDonationCores st n tid)) ctx st n tid
-    (observableSlotsConfinedToCores_refl st _) (maybeDonateSchedContext_confinedToCores st n tid hObjInv)
 
 /-- WS-SX SX8.2: **seL4-MCS `maybeReturnSchedContext` writes no observable slot
 of any core**: its two object writes, a reschedule flag and the purge's replenish

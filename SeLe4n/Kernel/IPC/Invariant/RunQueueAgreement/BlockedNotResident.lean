@@ -334,22 +334,22 @@ theorem perCoreRescheduleEntryState_preserves_blockedNotResident (coreId : UInt6
 /-- WS-ZA ZA6.32: **the interrupt entry keeps a thread blocked in IPC resident on
 no core**: its signal wakes a thread and blocks none, and its mask writes no
 thread. -/
-theorem interruptEntryState_preserves_blockedNotResident (ctx : LabelingContext) (coreId intId : UInt64)
+theorem interruptEntryState_preserves_blockedNotResident (coreId intId : UInt64)
     (frame : Option Architecture.InFlightContext) (st : SystemState) (E : EntryPremises st)
     (hBi : schedContextBindingBidirectional (Concurrency.saveCapturedTrapFrameAt st coreId frame))
     (hInv0 : st.objects.invExt) (hR0 : st.runQueueRefined) (hD0 : st.currentDequeuedUnique)
     (hC : st.currentNotResidentElsewhere) (hB : st.blockedNotResident) :
     (Architecture.clearIcacheMaintenance
       (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
-        (interruptEntryStep ctx (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
         coreId) coreId))).blockedNotResident := by
-  have S := interruptEntryState_runQueueEntryStage ctx coreId intId frame st E
+  have S := interruptEntryState_runQueueEntryStage coreId intId frame st E
   have hD := S.2 hInv0 hR0 (S.1.links hInv0 hR0).2 hD0
   have hSv := saveCapturedTrapFrameAt_runQueueStage st coreId frame
   obtain ⟨hInvS, hRS⟩ := hSv.1.links hInv0 hR0
   have ES := E.of_ipcFrame hSv (saveCapturedTrapFrameAt_ipcFrame st coreId frame)
-  have hStep := interruptEntryStep_runQueueStage ctx _ coreId intId ES
-  have hM : SystemState.StateMono st (interruptEntryStep ctx
+  have hStep := interruptEntryStep_runQueueStage _ coreId intId ES
+  have hM : SystemState.StateMono st (interruptEntryStep
       (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId) :=
     (hSv.2.2 hInv0 hR0).trans (hStep.2.2 hInvS hRS)
   obtain ⟨hInvM, hRM⟩ := hStep.1.links hInvS hRS
@@ -359,10 +359,10 @@ theorem interruptEntryState_preserves_blockedNotResident (ctx : LabelingContext)
   · intro c hc
     exact ⟨(keptOffCore_of_save_stepCovers (saveCapturedTrapFrameAt_scheduler st coreId frame)
       (saveCapturedTrapFrameAt_residentCode st coreId frame)
-      (interruptEntryStep_stepCovers ctx c _ coreId intId hInvS hBi)).2, .of_stateMono hM⟩
+      (interruptEntryStep_stepCovers c _ coreId intId hInvS hBi)).2, .of_stateMono hM⟩
   · intro hc
     refine ⟨?_, .of_stateMono hM⟩
-    rw [interruptEntryStep_invalid_core ctx _ coreId intId hc]
+    rw [interruptEntryStep_invalid_core _ coreId intId hc]
     exact saveCapturedTrapFrameAt_residentCode st coreId frame
 
 /-- WS-ZA ZA6.18: **the FP/SIMD entry keeps a thread blocked in IPC resident on

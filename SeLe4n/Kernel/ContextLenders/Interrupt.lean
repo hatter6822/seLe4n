@@ -8,18 +8,22 @@
 -/
 
 import SeLe4n.Kernel.ContextLenders.Timer
+import SeLe4n.Kernel.QueueLabels.Stage
 
 /-! # The interrupt entry keeps the lenders' flow
 
 WS-SX SX8.  The interrupt's step is seL4's `sendSignal` on the line's bound
 notification (the wake of a waiter or of the bound receiver, through thread
-and notification records and the scheduler), then the checked donation, which
-is seL4's `schedContext_donate` (`schedContextBindPerform`): the context names
+and notification records and the scheduler), then the donation, which is
+seL4's `schedContext_donate` (`schedContextBindPerform`): the context names
 its new thread, the thread its context, a parked thread is placed, and the
 context is placed.  The donation moves the context between holders and keeps
 its stack head, so the stacks and their lenders are unchanged; the flow every
 lender has to the context's label is a fact about the label, not the holder.
-The entry needs no premise but the store's invariant at the state it runs from.
+The woken thread carries the notification's label and the notification its
+context's (`notificationLabelsAgree`, `bindingLabelsEqual`), so the lend is
+between equal labels.  The entry's premises are the store's invariant and the
+notification labels' agreement at the state it runs from.
 -/
 
 namespace SeLe4n.Kernel
@@ -156,69 +160,65 @@ theorem maybeDonateSchedContext {ctx : LabelingContext} (st : SystemState) (n : 
     rw [hT, ← hV]
     exact hL s (by simp only [notificationContext?, hN, Option.bind_some, hS])
 
-/-- **The checked donation**: the check is the label equation. -/
-theorem maybeDonateSchedContextFlowing {ctx : LabelingContext} (st : SystemState)
-    (n : SeLe4n.ObjId) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    LendersStep ctx st (_root_.SeLe4n.Kernel.maybeDonateSchedContextFlowing ctx st n t) := by
-  unfold _root_.SeLe4n.Kernel.maybeDonateSchedContextFlowing
-  split
-  · rename_i hF
-    refine maybeDonateSchedContext st n t hInv fun s hs => ?_
-    unfold donationContextFlows at hF
-    rw [hs] at hF
-    exact ((twoWayLabelGate_iff_eq _ _).mp hF).symm
-  · exact refl hInv
+/-- **The lend to a thread labelled as the notification**: equal binding labels
+give the notification its context's label (`bindingLabelsEqual`'s notification
+clause), so the donation's label equation is the thread's with the notification.
+The equation is read on the state the donation runs on, under the stage's
+premise. -/
+theorem maybeDonateSchedContext_ofNotificationLabel {ctx : LabelingContext} (st : SystemState)
+    (n : SeLe4n.ObjId) (t : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (hE : ctx.threadLabelOf t = ctx.objectLabelOf n) :
+    LendersStep ctx st (_root_.SeLe4n.Kernel.maybeDonateSchedContext st n t) :=
+  ⟨fun hL => (maybeDonateSchedContext st n t hInv fun s hs =>
+      hE.trans (bindingLabelsEqual.notificationContext hL.2 hs)).stage hL,
+    maybeDonateSchedContext_preserves_objects_invExt st n t hInv⟩
 
 end LendersStep
 
 namespace LendersStep
 
-/-- **The checked signal** (seL4 `sendSignal` with the checked lend): the wake,
-then the checked donation to the woken thread, whose check is its label
-equation. -/
-theorem sendSignalOnCoreFlowing (ctx : LabelingContext) (n : SeLe4n.ObjId) (badge : SeLe4n.Badge)
-    (c : CoreId) (st : SystemState) (hInv : st.objects.invExt) :
-    LendersStep ctx st (_root_.SeLe4n.Kernel.sendSignalOnCoreFlowing ctx n badge c st).1 := by
+/-- **seL4-MCS `sendSignal`**: the wake, then the donation to the woken thread,
+which carries the notification's label (`notificationLabelsAgree`, carried by
+every entry), so the lend is between equal labels. -/
+theorem sendSignalOnCore {ctx : LabelingContext} (n : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (c : CoreId) (st : SystemState) (hInv : st.objects.invExt) (hA : notificationLabelsAgree ctx st) :
+    LendersStep ctx st (_root_.SeLe4n.Kernel.sendSignalOnCore n badge c st).1 := by
   have W : LendersFrame st (_root_.SeLe4n.Kernel.notificationSignalBoundOnCore n badge c st).1 :=
     ⟨(chainObjectsKept.notificationSignalBoundOnCore n badge c st hInv).linksShrink,
      notificationSignalBoundOnCore_preserves_objects_invExt n badge c st hInv⟩
-  unfold _root_.SeLe4n.Kernel.sendSignalOnCoreFlowing
-  generalize _root_.SeLe4n.Kernel.notificationSignalBoundOnCore n badge c st = r at W
-  obtain ⟨st1, res⟩ := r
-  cases res with
-  | error _ => exact of_frame W
-  | ok _ =>
-    dsimp only
-    unfold donateToSignalledFlowing
-    split
-    · exact (of_frame W).andThen fun h => maybeDonateSchedContextFlowing _ n _ h
-    · exact of_frame W
+  refine sendSignalOnCore_induct (fun s => LendersStep ctx st s) n badge c st (of_frame W) ?_
+  intro t _ hT _
+  exact (of_frame W).andThen fun h => maybeDonateSchedContext_ofNotificationLabel _ n t h
+    (notificationLabelsAgree_signalWokenThread hA hT)
 
 end LendersStep
 
-/-- The interrupt's step: the bound signal and the checked donation, then the
-mask; the donation's check is its label equation, under the entry's context. -/
+/-- The interrupt's step: the bound signal and the donation, then the mask; the
+woken thread carries the notification's label (`notificationLabelsAgree` at the
+state the step runs from). -/
 theorem LendersStep.interruptEntryStep (ctx : LabelingContext) (st : SystemState)
-    (coreId intId : UInt64) (hInv : st.objects.invExt) :
-    LendersStep ctx st (_root_.SeLe4n.Kernel.interruptEntryStep ctx st coreId intId) :=
-  interruptEntryStep_of (P := LendersStep ctx st) ctx st coreId intId (.refl hInv) fun c _ _ =>
-    handleInterruptOnCore_of (P := LendersStep ctx st) ctx st c _
+    (coreId intId : UInt64) (hInv : st.objects.invExt) (hA : notificationLabelsAgree ctx st) :
+    LendersStep ctx st (_root_.SeLe4n.Kernel.interruptEntryStep st coreId intId) :=
+  interruptEntryStep_of (P := LendersStep ctx st) st coreId intId (.refl hInv) fun c _ _ =>
+    handleInterruptOnCore_of (P := LendersStep ctx st) st c _
       (fun _ h => h.andThen fun hI => LendersStep.of_frame
         (LendersFrame.of_kept (chainObjectsKept.of_objects_eq rfl) (RecordsFrame.of_objects_eq hI rfl rfl)))
       (.refl hInv)
-      (fun ntfn badge _ => LendersStep.sendSignalOnCoreFlowing ctx ntfn badge c st hInv)
+      (fun ntfn badge _ => LendersStep.sendSignalOnCore ntfn badge c st hInv hA)
 
 /-- **The interrupt entry's committed state keeps the lending labels**, from the
-store's invariant at the state the entry runs from, under the context the
-entry's checked donation reads. -/
+store's invariant and the notification labels' agreement at the state the entry
+runs from (both carried by every entry). -/
 theorem interruptEntryState_lendersStage (ctx : LabelingContext) (coreId intId : UInt64)
-    (frame : Option Architecture.InFlightContext) (st : SystemState) (hInv : st.objects.invExt) :
+    (frame : Option Architecture.InFlightContext) (st : SystemState) (hInv : st.objects.invExt)
+    (hA : notificationLabelsAgree ctx st) :
     LendersStage ctx st (Architecture.clearIcacheMaintenance
       (Architecture.clearPhysicalWrites (activateThreadAt (PriorityInheritance.settleResidencyAt
-        (interruptEntryStep ctx (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
+        (interruptEntryStep (Concurrency.saveCapturedTrapFrameAt st coreId frame) coreId intId)
         coreId) coreId))) := by
   have F1 := RecordsFrame.saveCapturedTrapFrameAt st coreId frame hInv
   have L := LendersStep.interruptEntryStep ctx _ coreId intId F1.invExt
+    (NtfnLabelsKept.of_frame F1 ctx hA)
   exact ((LendersStage.of_kept (chainObjectsKept.saveCapturedTrapFrameAt st coreId frame hInv)).trans
     L.stage).trans (LendersStage.entryTail _ coreId L.invExt)
 

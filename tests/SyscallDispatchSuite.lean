@@ -2107,22 +2107,17 @@ private def notificationDonation_seL4_semantics : IO Unit := do
     ((maybeReturnSchedContext stQ nA waiter).releaseCoreOf scId == none)
     "the Wait's return, the receive's return, purges it too"
 
-/-- **The notification donation's context-label check**
-(`maybeDonateSchedContextFlowing`).  Notification 80 is bound to context 60,
-which may head a reply stack: its head reply 90 names thread 5 as its caller,
-the thread that lent the context through a `Call`, and no thread holds the
-context.  Thread 2 takes the notification's word.
+/-- **The notification donation** (`maybeDonateSchedContext`, seL4-MCS's
+unchecked lend).  Notification 80 is bound to context 60, which may head a
+reply stack: its head reply 90 names thread 5 as its caller, the thread that
+lent the context through a `Call`, and no thread holds the context.  Thread 2
+takes the notification's word.
 
-* A context whose label flows to the waiter: the context is lent, both links
-  written, as `maybeDonateSchedContext` does, whoever lent it before.
-* A context labelled above the waiter: nothing is donated, seL4's "do
-  nothing" branch — the state is returned as it was.
-* A context labelled below the waiter: nothing is donated either.  The lend is
-  decided by the waiter's own binding and writes the context's thread end,
-  which the context's domain reads back, so the labels must be equal.
-* The check reads the labels and the notification's context word alone: a
-  stack's lender changes nothing (`donationContextFlows_congr`). -/
-private def notificationDonation_contextLabelCheck : IO Unit := do
+* The context is lent, both links written, whoever lent it before: a stack's
+  lender changes nothing.  The kernel lends only to a thread labelled as the
+  notification (the woken thread by `notificationLabelsAgree`, a receive's
+  waiter by its wait's two-way gate), so the lend is between equal labels. -/
+private def notificationDonation_lendsContext : IO Unit := do
   let waiter : SeLe4n.ThreadId := ⟨2⟩
   let lender : SeLe4n.ThreadId := ⟨5⟩
   let scObj : SeLe4n.ObjId := ⟨60⟩
@@ -2144,46 +2139,17 @@ private def notificationDonation_contextLabelCheck : IO Unit := do
   let bound (st : SystemState) : Bool :=
     (st.getTcb? waiter).any (fun t => decide (t.schedContextBinding = .bound scId)) &&
       (st.getSchedContext? scId).any (fun sc => decide (sc.boundThread = some waiter))
-  let highContext : LabelingContext :=
-    { defaultLabelingContext with
-      objectLabelOf := fun o =>
-        if o = scObj then SecurityLabel.kernelTrusted else SecurityLabel.publicLabel }
-  let highLender : LabelingContext :=
-    { defaultLabelingContext with
-      threadLabelOf := fun t =>
-        if t = lender then SecurityLabel.kernelTrusted else SecurityLabel.publicLabel }
   let stStack := mkSt (some rid)
   expect "ntfn_donate_context_found"
     (notificationContext? stStack nA == some scId)
-    "the check reads the context the notification lends"
-  expect "ntfn_donate_context_flows_lends"
-    (bound (maybeDonateSchedContextFlowing defaultLabelingContext stStack nA waiter))
-    "a context whose label flows to the waiter: the context is lent, both links written"
-  expect "ntfn_donate_context_not_flowing_donates_nothing"
-    (!donationContextFlows highContext stStack nA waiter &&
-      !bound (maybeDonateSchedContextFlowing highContext stStack nA waiter) &&
-      ((maybeDonateSchedContextFlowing highContext stStack nA waiter).getTcb? waiter).any
-        (fun t => t.scBindingScCode == 0) &&
-      ((maybeDonateSchedContextFlowing highContext stStack nA waiter).getSchedContext?
-        scId).any (fun sc => decide (sc.boundThread = none)))
-    "a context labelled above the waiter is not lent: nothing donated (seL4's do-nothing branch)"
-  let highWaiter : LabelingContext :=
-    { defaultLabelingContext with
-      threadLabelOf := fun t =>
-        if t = waiter then SecurityLabel.kernelTrusted else SecurityLabel.publicLabel }
-  expect "ntfn_donate_context_below_waiter_donates_nothing"
-    (!donationContextFlows highWaiter stStack nA waiter &&
-      !bound (maybeDonateSchedContextFlowing highWaiter stStack nA waiter) &&
-      ((maybeDonateSchedContextFlowing highWaiter stStack nA waiter).getTcb? waiter).any
-        (fun t => t.scBindingScCode == 0) &&
-      ((maybeDonateSchedContextFlowing highWaiter stStack nA waiter).getSchedContext?
-        scId).any (fun sc => decide (sc.boundThread = none)))
-    "a context labelled below the waiter is not lent: the labels must be equal"
-  expect "ntfn_donate_check_reads_no_stack"
-    (donationContextFlows highLender stStack nA waiter ==
-        donationContextFlows highLender (mkSt none) nA waiter &&
-      bound (maybeDonateSchedContextFlowing highLender stStack nA waiter))
-    "the check reads no reply object: a stack's lender changes nothing"
+    "the lend reads the context the notification lends"
+  expect "ntfn_donate_context_lends"
+    (bound (maybeDonateSchedContext stStack nA waiter))
+    "the context is lent, both links written"
+  expect "ntfn_donate_reads_no_stack"
+    (bound (maybeDonateSchedContext (mkSt none) nA waiter) &&
+      bound (maybeDonateSchedContext stStack nA waiter))
+    "the lend reads no reply object: a stack's lender changes nothing"
 
 /-- SD-060 (`v0.35.204`): **`.schedContextBind` binds only a thread the caller
 holds a WRITABLE TCB capability to.**
@@ -3344,7 +3310,7 @@ def main : IO Unit := do
   schedContextBind_notification_capability
   schedContextUnbind_seL4_semantics
   notificationDonation_seL4_semantics
-  notificationDonation_contextLabelCheck
+  notificationDonation_lendsContext
   finalise_clears_notification_link
   IO.println "--- WS-ZA ZA6.4: a configure takes a core's scheduling control ---"
   sd063_schedContextConfigure_requires_sched_control

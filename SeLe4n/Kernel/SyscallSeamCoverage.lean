@@ -587,7 +587,7 @@ theorem replyRecvCompletesSignalArm_coversWrites (ctx : LabelingContext)
   refine footprintCoversWrites_trans S hRep (footprintCoversWrites_trans S
     (footprintCoversWrites_of_scheduler_eq S hTable
       (by rw [Architecture.writeReturnFrameToTcb_scheduler_eq]; exact hS2))
-    (maybeDonateSchedContextFlowing_coversWrites S _ _ receiver
+    (maybeDonateSchedContext_coversWrites S _ _ receiver
       (completeSignalArm_donationPre_objects_invExt hObj1 hW') hTable fun d hd => ?_))
   -- The donation writes the receiver's home core on the state the completion
   -- hands it, which is its home core on the entry state: neither the reply
@@ -687,7 +687,7 @@ theorem receiveResolvedArm_coversWrites (ctx : LabelingContext)
         (footprintCoversWrites_trans S
           (footprintCoversWrites_of_scheduler_eq S hTable
             (by rw [Architecture.writeReturnFrameToTcb_scheduler_eq, hSch]))
-          (maybeDonateSchedContextFlowing_coversWrites S _ _ tid
+          (maybeDonateSchedContext_coversWrites S _ _ tid
             (completeSignalArm_donationPre_objects_invExt hObjInv hW') hTable fun d hd => ?_))
       rw [completeSignalArm_signalDonationCores_eq _ hObjInv hW'] at hd
       have hD : d ∈ receiveDonationCores st tid r e := by
@@ -711,7 +711,7 @@ theorem receiveResolvedArm_coversWrites (ctx : LabelingContext)
           (footprintCoversWrites_trans S
             (footprintCoversWrites_of_scheduler_eq S hTable
               (by rw [Architecture.writeReturnFrameToTcb_scheduler_eq, hSch]))
-            (maybeDonateSchedContextFlowing_coversWrites S _ _ tid
+            (maybeDonateSchedContext_coversWrites S _ _ tid
               (completeSignalArm_donationPre_objects_invExt hObjC hW') hTable fun d hd => ?_))
         rw [completeSignalArm_signalDonationCores_eq _ hObjC hW'] at hd
         have hD : d ∈ receiveDonationCores st tid (recvReplyLookup? gate decoded st) e := by
@@ -1178,7 +1178,7 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
       have h₁ := notificationSignalBoundCrossCoreDispatchChecked_fst_of_ok ctx nId tid
         cap.signalBadge e st st₁ r hSig
       rw [← h₁]
-      exact schedLockSet_sendSignalOnCoreFlowing_coversWrites ctx nId cap.signalBadge e st S
+      exact schedLockSet_sendSignalOnCore_coversWrites nId cap.signalBadge e st S
         hObjInv hSched
     · exact absurd hDisp (by simp)
   -- ---- `.notificationWait` ------------------------------------------------
@@ -1213,7 +1213,7 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
       refine footprintCoversWrites_trans S hWaitCov (footprintCoversWrites_trans S
         (footprintCoversWrites_of_scheduler_eq S hTable
           (Architecture.writeReturnFrameToTcb_scheduler_eq _ _ _))
-        (maybeDonateSchedContextFlowing_coversWrites S _ nId tid
+        (maybeDonateSchedContext_coversWrites S _ nId tid
           (completeSignalArm_donationPre_objects_invExt hObjInv hW') hTable fun d hd => ?_))
       rw [completeSignalArm_signalDonationCores_eq nId hObjInv hW'] at hd
       rw [LockSet.ofList?_pairs hSched]
@@ -1773,18 +1773,18 @@ its declared footprint**: the step's own coverage
 (`interruptEntryStep_coversWrites`), and the settle and the activation under
 the table write lock and the executing core's run queue, which the footprint
 always names (`declaredLockSetForInterrupt_objStore`, `_runQueue`). -/
-theorem interruptEntryTail_coversWrites (ctx : LabelingContext) (st : SystemState)
+theorem interruptEntryTail_coversWrites (st : SystemState)
     (coreId intId : UInt64)
     (c : CoreId) (hc : Concurrency.coreIdOfUInt64? coreId = some c) (S : LockSet)
     (hInv : st.objects.invExt) (hS : declaredLockSetForInterrupt coreId intId st = some S) :
     footprintCoversWrites S st (activateThreadAt (PriorityInheritance.settleResidencyAt
-      ((interruptBracket ctx coreId intId).run st).2 coreId) coreId) := by
+      ((interruptBracket coreId intId).run st).2 coreId) coreId) := by
   have hTable := declaredLockSetForInterrupt_objStore hS
   have hRun := declaredLockSetForInterrupt_runQueue hS c hc
   unfold activateThreadAt PriorityInheritance.settleResidencyAt
   rw [hc]
   exact footprintCoversWrites_trans _
-    (footprintCoversWrites_trans _ (interruptEntryStep_coversWrites ctx coreId intId st S hInv hS)
+    (footprintCoversWrites_trans _ (interruptEntryStep_coversWrites coreId intId st S hInv hS)
       (settleResidencyOnCore_coversWrites _ _ _ hTable hRun))
     (activateThreadOnCore_coversWrites _ _ _ hTable)
 
