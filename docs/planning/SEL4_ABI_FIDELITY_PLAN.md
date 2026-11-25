@@ -524,6 +524,21 @@ A different answer changes only the rows that cite it.
   as D45 extended it with the notification fields) and SX24 (the endpoint
   queue links' labels carried, the queue arms' `hTeardownProj` discharged).
   The rows after SX22 are renumbered (SX23–SX32 became SX25–SX34).
+- **D48. SX25's wrap.** *The owner's D32 rule (2026-11-25), applied before
+  the bulk was written.* Measured before any edit: a reply-receive has five
+  reply arms (no pop, donated, held, unheld, unlinked), three receive legs
+  (block, Send take, Call take), three answers (message, capabilities, fault)
+  and two lengths, 90 shapes in all; 37 are in place under 46 per-shape
+  functions (16,891 lines across the thirteen modules, `RefusalCarryingReplyRecv`
+  and the four modules that build on them), and 11 of the 15 guards the
+  receive legs read across the reply arms exist, each written for its shape.
+  One composed path over all 90 measured at 6–8 sessions against the row's 3.
+  SX25 keeps the reply leg over all five arms, its guard family (the four
+  missing guards filled), and the composed blocking receive for every answer
+  and length under one `_eq`, and retires the blocking modules. The remainder
+  becomes two rows: SX26 (the Send-take leg composed) and SX27 (the Call take
+  with its donation and holder deschedule, and the row's final acceptance).
+  The rows after SX25 are renumbered (SX26–SX34 became SX28–SX36).
 
 ## 4. Rows
 

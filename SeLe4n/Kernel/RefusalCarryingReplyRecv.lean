@@ -23,6 +23,7 @@ import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvFaultTakeInPlace
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvDonatedCallTakeInPlace
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvCallTakeInPlace
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvUnlinkedCallTakeInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvLegGuards
 
 /-!
 # Reply-receive, refusing in the state it was refused in
