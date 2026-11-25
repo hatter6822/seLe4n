@@ -2564,24 +2564,6 @@ needed, because the resolver refuses on the pre-state shape alone. -/
     | bound scId => simp only [hB]
     | donated scId owner => simp only [hB]
 
-/-- **The context a call lends, under the lend admission**: the resolver's
-context where the lend is admitted (`lend`, the checked kernel's
-`callLendAdmits`), none where it is not.  Every reader of "which context does
-this call lend" in the checked kernel (the donation, the replenish-queue cores,
-the footprints) asks it here, with the same `lend`, so the declared footprint
-and the executed write stay one set. -/
-def callLendSchedContext? (lend : Bool) (st : SystemState) (caller receiver : SeLe4n.ThreadId) :
-    Option SeLe4n.SchedContextId :=
-  if lend then callDonationSchedContext? st caller receiver else none
-
-@[simp] theorem callLendSchedContext?_true (st : SystemState) (caller receiver : SeLe4n.ThreadId) :
-    callLendSchedContext? true st caller receiver = callDonationSchedContext? st caller receiver :=
-  rfl
-
-@[simp] theorem callLendSchedContext?_false (st : SystemState)
-    (caller receiver : SeLe4n.ThreadId) :
-    callLendSchedContext? false st caller receiver = none := rfl
-
 /-- Z7-B2: Transfer a client's SchedContext to a passive server during IPC Call.
 
 Performs the full ownership transfer of the SchedContext from donor to server,

@@ -384,9 +384,9 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
     (hCallerNotReply : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hNe : ∀ ep receiverTid, st.getEndpoint? endpointId = some ep →
-      ep.receiveQ.head = some receiverTid → caller ≠ receiverTid) (lend : Bool := true) :
+      ep.receiveQ.head = some receiverTid → caller ≠ receiverTid) :
     ipcInvariantFull (endpointCallCrossCoreDispatch endpointId caller payload
-      executingCore st lend).1 := by
+      executingCore st).1 := by
   have hWithCaps : ipcInvariantFull (endpointCallWithCapsOnCore endpointId caller payload
       executingCore st).1 :=
     endpointCallWithCapsOnCore_preserves_ipcInvariantFull endpointId caller payload
@@ -478,19 +478,17 @@ theorem endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
                 rw [hCallerV]
                 exact notDonationOwner_of_notBlockedOnReply hInv.donationOwnerValid hBnd
                   hCallerNotReply
-              cases hDon : applyCallDonationOnCoreWhen lend stWc callerV receiverV
+              cases hDon : applyCallDonationOnCore stWc callerV receiverV
                   (determineTargetCore st caller) (determineTargetCore st receiverTid) with
               | error e => simp only; exact hWithCaps
               | ok stDon =>
                 simp only
                 have hDonFull : ipcInvariantFull stDon :=
-                  applyCallDonationOnCoreWhen_induct ipcInvariantFull hDon hWithCaps
-                    (applyCallDonationOnCore_preserves_ipcInvariantFull stWc stDon callerV receiverV
-                      _ _ hWithCapsInv hWithCaps hDon1 hDon2 hDon3)
+                  ((applyCallDonationOnCore_preserves_ipcInvariantFull stWc stDon callerV receiverV
+                      _ _ hWithCapsInv hWithCaps hDon1 hDon2 hDon3) hDon)
                 have hDonInv : stDon.objects.invExt :=
-                  applyCallDonationOnCoreWhen_induct (·.objects.invExt) hDon hWithCapsInv
-                    (applyCallDonationOnCore_preserves_objects_invExt stWc stDon callerV receiverV
-                      _ _ hWithCapsInv)
+                  ((applyCallDonationOnCore_preserves_objects_invExt stWc stDon callerV receiverV
+                      _ _ hWithCapsInv) hDon)
                 exact propagatePipChainCrossCore_preserves_ipcInvariantFull stDon receiverTid
                   executingCore _ hDonInv hDonFull
 

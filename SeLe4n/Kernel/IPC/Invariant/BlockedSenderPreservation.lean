@@ -347,10 +347,10 @@ theorem endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder
     (hBlockedReceivers : blockedReceiverLabelsEqual ctx st)
     (hQueueHeads : queueHeadBlockedConsistent st)
     (hGate : securityFlowsTo (ctx.threadLabelOf caller)
-      (ctx.endpointLabelOf endpointId) = true) (lend : Bool := true) :
+      (ctx.endpointLabelOf endpointId) = true) :
     donationOwnerFlowsToHolder ctx
       (endpointCallCrossCoreDispatch endpointId caller payload
-        executingCore st lend).1 := by
+        executingCore st).1 := by
   have hWcFrame := endpointCallWithCapsOnCore_sameSchedContextBindings endpointId caller payload
     executingCore st hObjInv
   have hWcInv := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload
@@ -376,10 +376,6 @@ theorem endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder
             split
             · exact hMid
             · rename_i st'' hDon
-              rcases applyCallDonationOnCoreWhen_cases hDon with ⟨_, hDon⟩ | ⟨_, rfl⟩
-              rotate_left
-              · exact donationOwnerFlowsToHolder_of_sameSchedContextBindings hMid
-                  (propagatePipChainCrossCore_sameSchedContextBindings _ _ executingCore _ hWcInv)
               have hDonInv := applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _
                 hWcInv hDon
               refine donationOwnerFlowsToHolder_of_sameSchedContextBindings ?_
@@ -433,7 +429,7 @@ theorem endpointCallCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolde
     exact endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder ctx endpointId
       caller payload executingCore st hObjInv hPre
       hBlockedReceivers hQueueHeads
-      (endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate) _
+      (endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate)
   · exact hPre
 
 end SeLe4n.Kernel

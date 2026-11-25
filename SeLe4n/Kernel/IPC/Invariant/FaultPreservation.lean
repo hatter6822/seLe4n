@@ -196,7 +196,7 @@ endpoints, in the RR3 de-threaded style: nothing is threaded on a post-state.
 `hCallerReady` is the running-thread fact the trap path knows by construction
 (a thread that faults was executing), and it discharges `hCallerNotRecv` and
 `hCallerNotReply` on the spot. -/
-theorem faultDeliverOnCore_preserves_ipcInvariantFull {lend : Bool}
+theorem faultDeliverOnCore_preserves_ipcInvariantFull
     (st : SystemState) (tid : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext)
     (c : CoreId)
     (hInv : ipcInvariantFull st)
@@ -218,7 +218,7 @@ theorem faultDeliverOnCore_preserves_ipcInvariantFull {lend : Bool}
     (hNotSelf : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint) (receiverTid : SeLe4n.ThreadId),
       st.getEndpoint? epId = some ep → ep.receiveQ.head = some receiverTid →
       tid ≠ receiverTid) :
-    ipcInvariantFull (faultDeliverOnCore st tid f ctx c lend).1 := by
+    ipcInvariantFull (faultDeliverOnCore st tid f ctx c).1 := by
   have hNotRecv : ∀ (tcb : TCB), st.getTcb? tid = some tcb →
       ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep := by
     intro tcb hTcb ep; rw [hCallerReady tcb hTcb]; exact fun h => by cases h
@@ -230,16 +230,16 @@ theorem faultDeliverOnCore_preserves_ipcInvariantFull {lend : Bool}
     exact recordPendingFault_preserves_ipcInvariantFull _ tid _
       (faultSuspendOnCore_preserves_objects_invExt st tid c hObjInv)
       (faultSuspendOnCore_preserves_ipcInvariantFull st tid c hObjInv hInv)
-  · have hCall := endpointCallCrossCoreDispatch_preserves_ipcInvariantFull (lend := lend) tgt.endpoint tid
+  · have hCall := endpointCallCrossCoreDispatch_preserves_ipcInvariantFull tgt.endpoint tid
       (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply)
       c st hInv hObjInv hAllBudgetsNone
       hFreshCaller (hSendTailFresh tgt.endpoint) hNotRecv hCallerReady hNotReply
       (fun ep r hEp hHead => hNotSelf tgt.endpoint ep r hEp hHead)
-    have hCallObj := endpointCallCrossCoreDispatch_preserves_objects_invExt (lend := lend) tgt.endpoint tid
+    have hCallObj := endpointCallCrossCoreDispatch_preserves_objects_invExt tgt.endpoint tid
       (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply)
       c st hObjInv
     rcases hStep : endpointCallCrossCoreDispatch tgt.endpoint tid
-        (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st lend with ⟨stC, res⟩
+        (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st with ⟨stC, res⟩
     rw [hStep] at hCall hCallObj
     simp only at hCall hCallObj
     cases res with
@@ -256,19 +256,19 @@ theorem faultDeliverOnCore_preserves_ipcInvariantFull {lend : Bool}
           (stageWokenDelivery_preserves_ipcInvariantFull stC _ _ hCallObj hCall)
 
 /-- WS-RR RR4.17: and the delivery preserves the object-store invariant. -/
-theorem faultDeliverOnCore_preserves_objects_invExt {lend : Bool}
+theorem faultDeliverOnCore_preserves_objects_invExt
     (st : SystemState) (tid : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext)
     (c : CoreId) (hObjInv : st.objects.invExt) :
-    (faultDeliverOnCore st tid f ctx c lend).1.objects.invExt := by
+    (faultDeliverOnCore st tid f ctx c).1.objects.invExt := by
   rcases hRes : resolveFaultHandler st tid with e | tgt
   · simp only [faultDeliverOnCore, hRes]
     exact recordPendingFault_preserves_objects_invExt _ tid _
       (faultSuspendOnCore_preserves_objects_invExt st tid c hObjInv)
-  · have hCallObj := endpointCallCrossCoreDispatch_preserves_objects_invExt (lend := lend) tgt.endpoint tid
+  · have hCallObj := endpointCallCrossCoreDispatch_preserves_objects_invExt tgt.endpoint tid
       (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply)
       c st hObjInv
     rcases hStep : endpointCallCrossCoreDispatch tgt.endpoint tid
-        (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st lend with ⟨stC, res⟩
+        (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st with ⟨stC, res⟩
     rw [hStep] at hCallObj
     simp only at hCallObj
     cases res with

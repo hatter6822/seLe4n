@@ -51,20 +51,20 @@ namespace EndpointWaitersGrowFrame
 
 /-- **The fault delivery to a resolved handler blocks at most the faulting
 thread, on the handler's endpoint**: it is the handler call, or the suspend. -/
-theorem faultDeliverOnCore {lend : Bool} {st : SystemState} {t : SeLe4n.ThreadId} {f : Fault}
+theorem faultDeliverOnCore {st : SystemState} {t : SeLe4n.ThreadId} {f : Fault}
     {fctx : FaultContext} {c : CoreId} {tgt : FaultHandlerTarget} (hInv : st.objects.invExt)
     (hR : resolveFaultHandler st t = .ok tgt) :
     EndpointWaitersGrowFrame t tgt.endpoint st
-      (_root_.SeLe4n.Kernel.faultDeliverOnCore st t f fctx c lend).1 := by
+      (_root_.SeLe4n.Kernel.faultDeliverOnCore st t f fctx c).1 := by
   have sus := (EndpointWaitersFrame.faultSuspendRecord st t c { fault := f, context := fctx } hInv).growAt
     t tgt.endpoint
   unfold _root_.SeLe4n.Kernel.faultDeliverOnCore
   rw [hR]
   dsimp only
   have S := endpointCallCrossCoreDispatch (endpointId := tgt.endpoint) (caller := t)
-    (payload := .fault f fctx tgt.cap.badge tgt.cap.canLinkReply) (c := c) (lend := lend) hInv
+    (payload := .fault f fctx tgt.cap.badge tgt.cap.canLinkReply) (c := c) hInv
   generalize _root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch tgt.endpoint t
-    (.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st lend = r at S ⊢
+    (.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st = r at S ⊢
   obtain ⟨st1, res⟩ := r
   dsimp only at S ⊢
   cases res with

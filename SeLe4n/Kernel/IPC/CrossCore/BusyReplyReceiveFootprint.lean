@@ -88,7 +88,7 @@ def schedLockSet_receiveCancellingHolderOnCore (st : SystemState) (endpointId : 
   schedFootprintOfCores
     ((match busyReplyHolder? st receiver replyId with
       | none => endpointReceiveDualWriteSet (receiveLegState st receiver) endpointId executingCore
-          ++ endpointReceiveHandoffChainCores (receiveLegState st receiver) endpointId receiver
+          ++ endpointReceiveHandoffChainWriteSet (receiveLegState st receiver) endpointId receiver
             replyId executingCore
       | some _ => Concurrency.allCores) ++ receiveDonationCores st receiver replyId executingCore)
     ((match busyReplyHolder? st receiver replyId with

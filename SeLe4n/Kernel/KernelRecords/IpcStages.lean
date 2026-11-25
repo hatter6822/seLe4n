@@ -132,7 +132,7 @@ theorem endpointCallCrossCoreDispatchChecked {ctx : LabelingContext} {endpointId
     split
     · obtain ⟨tcb, hT, hRd⟩ := hC
       exact endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent_of_reachable _ _ _ _
-        st hR tcb hT hRd _
+        st hR tcb hT hRd
     · exact hR.replyWaitersConsistent
 
 /-- **The checked reply keeps the records**: the fault reply, or the reply and

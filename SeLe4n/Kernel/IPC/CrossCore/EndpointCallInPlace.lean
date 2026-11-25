@@ -671,56 +671,6 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
   cases rt.schedContextBinding <;> cases ct.schedContextBinding <;>
     simp [donationOfBindings, SchedContextBinding.scId?]
 
-/-- **The rendezvous that lends nothing, in place**: one `callWakesInPlace`
-admits, or, where the lend is refused (`lend = false`, the checked kernel's
-`callLendAdmits`), one whose slots alone pass (`callTakesReplyInPlace`).  Such a
-call lends no context either way, so its writes are the rendezvous's alone. -/
-@[inline] def callWakesUnlentInPlace (lend : Bool) (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (caller r : SeLe4n.ThreadId) (rt : TCB)
-    (rid : SeLe4n.ReplyId) : Bool :=
-  callWakesInPlace st endpointId caller r rt rid ||
-    (!lend && callTakesReplyInPlace st endpointId caller r rt rid)
-
-/-- A rendezvous that lends nothing takes its slots in place. -/
-theorem callWakesUnlentInPlace_takesReply {lend : Bool} {st : SystemState}
-    {endpointId : SeLe4n.ObjId} {caller r : SeLe4n.ThreadId} {rt : TCB} {rid : SeLe4n.ReplyId}
-    (h : callWakesUnlentInPlace lend st endpointId caller r rt rid = true) :
-    callTakesReplyInPlace st endpointId caller r rt rid = true := by
-  unfold callWakesUnlentInPlace at h
-  simp only [Bool.or_eq_true, Bool.and_eq_true] at h
-  rcases h with h | ⟨-, h⟩
-  · exact (callWakesInPlace_takesReply h).1
-  · exact h
-
-/-- **The rendezvous that lends nothing, as the specification writes it**: the
-in-place rendezvous, and either it donates no context or the lend is refused. -/
-theorem callRendezvous_inPlace_unlent {lend : Bool} (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (ep : Endpoint)
-    (caller r : SeLe4n.ThreadId) (rt : TCB) (rid : SeLe4n.ReplyId) (payload : SendPayload)
-    (msg : IpcMessage) (core : Concurrency.CoreId)
-    (hM : sendPayloadMessage st caller payload = msg)
-    (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
-    (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
-    (hGr : payload.canLinkReply = true)
-    (hG : callWakesUnlentInPlace lend st endpointId caller r rt rid = true) :
-    endpointCallOnCore endpointId caller payload core st =
-        (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core,
-         .ok (wakeThread ((storePopHead st endpointId true r rt.queueNext).updateTcb r
-           (callReceiverTcb msg)) r core).2) ∧
-      (callDonationSchedContext?
-        (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core) caller r = none ∨
-        lend = false) := by
-  cases hW : callWakesInPlace st endpointId caller r rt rid with
-  | true =>
-    obtain ⟨hEq, hDon⟩ := callRendezvous_inPlace st endpointId ep caller r rt rid payload msg core
-      hM hE hH hT hRid hGr hW
-    exact ⟨hEq, Or.inl hDon⟩
-  | false =>
-    unfold callWakesUnlentInPlace at hG
-    rw [hW, Bool.false_or, Bool.and_eq_true, Bool.not_eq_true'] at hG
-    exact ⟨(callRendezvous_inPlace_facts st endpointId ep caller r rt rid payload msg core hM
-      hE hH hT hRid hGr hG.2).1, Or.inr hG.1⟩
-
 /-- The call rendezvous's state after the receiver's priority walk: what the
 call dispatch commits on a rendezvous that donates nothing. -/
 @[noinline] def performCallRendezvous (st : SystemState) (endpointId : SeLe4n.ObjId)
@@ -741,20 +691,20 @@ theorem callDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
     (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
     (hGr : payload.canLinkReply = true)
-    (hG : callWakesUnlentInPlace (callLendAdmits ctx st caller) st endpointId caller r rt rid
+    (hG : callWakesInPlace st endpointId caller r rt rid
       = true)
     (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true) :
     ∃ sgi, endpointCallCrossCoreDispatchChecked ctx endpointId caller payload core st =
       (performCallRendezvous st endpointId caller r rt.queueNext rid msg core,
        .ok ({ results := #[] }, sgi)) := by
-  have hG' := callWakesUnlentInPlace_takesReply hG
+  have hG' := (callWakesInPlace_takesReply hG).1
   simp only [callTakesReplyInPlace, sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG'
   have hCRes : caller.isReserved = false := hG'.1.1.1.1.1.1.1.1.2
   have hRRes : r.isReserved = false := hG'.1.1.1.1.1.1.1.1.1.1.1.1.1.1
   have hEp : st.getEndpoint? endpointId = some ep :=
     (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE
-  obtain ⟨hEq, hDon⟩ := callRendezvous_inPlace_unlent st endpointId ep caller r rt rid payload msg
+  obtain ⟨hEq, hDon⟩ := callRendezvous_inPlace st endpointId ep caller r rt rid payload msg
     core hM hE hH hT hRid hGr hG
   have hLk : callRendezvousLinks st r payload = true := by
     rw [callRendezvousLinks_of_stash payload ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT) hRid]
@@ -770,7 +720,7 @@ theorem callDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
   unfold endpointCallCrossCoreDispatch
   rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _ hReq, hEq]
   simp only [Except.map, hEp, hH, hLk, ↓reduceIte, hcv, hrv]
-  rw [applyCallDonationOnCoreWhen_ok_self (by rw [hcv', hrv']; exact hDon)]
+  rw [applyCallDonationOnCore_ok_self_of_no_donation (by rw [hcv', hrv']; exact hDon)]
   rfl
 
 end SeLe4n.Kernel

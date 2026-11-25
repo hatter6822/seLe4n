@@ -1108,14 +1108,6 @@ theorem applyCallDonationOnCore_runQueueFrameStage {st st' : SystemState}
   · exact h1
   · exact h1.trans ((migrateSchedContextReplenishment_runQueueStage _ _ _ _).toFrame _)
 
-/-- …and the gated donation, which is it or nothing. -/
-theorem applyCallDonationOnCoreWhen_runQueueFrameStage {lend : Bool} {st st' : SystemState}
-    {callerV receiverV : SeLe4n.ValidThreadId} {donorHome doneeHome : Concurrency.CoreId}
-    (h : applyCallDonationOnCoreWhen lend st callerV receiverV donorHome doneeHome = .ok st') :
-    SystemState.RunQueueFrameStage (fun _ => True) st st' :=
-  applyCallDonationOnCoreWhen_induct (SystemState.RunQueueFrameStage (fun _ => True) st) h
-    ((RunQueueStage.refl _).toFrame _) applyCallDonationOnCore_runQueueFrameStage
-
 -- ============================================================================
 -- Activity frames (WS-ZA ZA6.33)
 -- ============================================================================
@@ -1306,10 +1298,9 @@ theorem endpointCallCrossCoreDispatch_runQueueEntryStage (endpointId : SeLe4n.Ob
     (c : Concurrency.CoreId) (st : SystemState)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some caller)
     (hNI : isIdleThreadId caller = false)
-    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hAct : st.activeAt caller)
-    (lend : Bool := true) :
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hAct : st.activeAt caller) :
     SystemState.RunQueueEntryStage st
-      (endpointCallCrossCoreDispatch endpointId caller payload c st lend).1 := by
+      (endpointCallCrossCoreDispatch endpointId caller payload c st).1 := by
   have s0 := endpointCallWithCapsOnCore_runQueueEntryStage endpointId caller payload c st
     hHeads hCur hNI
   have a0 := fun hKeep => endpointCallWithCapsOnCore_activeKeptStage endpointId caller
@@ -1324,11 +1315,10 @@ theorem endpointCallCrossCoreDispatch_runQueueEntryStage (endpointId : SeLe4n.Ob
     repeat' split
     all_goals first
       | exact s0
-      | (rename_i hD; exact s0.trans ((applyCallDonationOnCoreWhen_induct (RunQueueStage _) hD
-          (RunQueueStage.refl _) (applyCallDonationOnCore_runQueueStage
+      | (rename_i hD; exact s0.trans ((((applyCallDonationOnCore_runQueueStage
           (by
             rw [SeLe4n.ThreadId.toValid?_some_val_eq caller _ (by assumption)]
-            exact a0 (callKeepsCallerActive_of_head (by assumption) (by assumption))))).trans
+            exact a0 (callKeepsCallerActive_of_head (by assumption) (by assumption)))) hD)).trans
           (PriorityInheritance.propagatePipChainCrossCore_runQueueStage _ _ _ _)).entry)
 
 -- ============================================================================
@@ -1521,22 +1511,22 @@ theorem writeFaultRegistersToTcb_runQueueStage (st : SystemState) (tid : SeLe4n.
 
 /-- The fault delivery for core `c`'s current thread: the handler call, or the
 fail-closed suspend; then the woken handler's frame and the fault record. -/
-theorem faultDeliverOnCore_runQueueEntryStage {lend : Bool} (st : SystemState) (tid : SeLe4n.ThreadId)
+theorem faultDeliverOnCore_runQueueEntryStage (st : SystemState) (tid : SeLe4n.ThreadId)
     (f : Fault) (fctx : FaultContext) (c : Concurrency.CoreId)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some tid)
     (hNI : isIdleThreadId tid = false)
     (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hAct : st.activeAt tid) :
-    SystemState.RunQueueEntryStage st (faultDeliverOnCore st tid f fctx c lend).1 := by
+    SystemState.RunQueueEntryStage st (faultDeliverOnCore st tid f fctx c).1 := by
   have sus := (faultSuspendOnCore_runQueueEntryStage st tid c hCur hNI).trans
     (recordPendingFault_runQueueStage _ tid { fault := f, context := fctx }).entry
   unfold faultDeliverOnCore
   split
   · exact sus
   · rename_i tgt _
-    have s0 := endpointCallCrossCoreDispatch_runQueueEntryStage (lend := lend) tgt.endpoint tid
+    have s0 := endpointCallCrossCoreDispatch_runQueueEntryStage tgt.endpoint tid
       (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st hHeads hCur hNI hInv hR hAct
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid
-      (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st lend = r at s0 ⊢
+      (SendPayload.fault f fctx tgt.cap.badge tgt.cap.canLinkReply) c st = r at s0 ⊢
     obtain ⟨st1, r⟩ := r
     cases r with
     | error e => exact sus

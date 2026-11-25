@@ -235,8 +235,8 @@ private def bCheckWaitReturn : Bool :=
     | .error _ => false
   | none => false
 
-/-- Caller 3 holds context 61 and has called through reply 63; server 4 holds none.  Labelled with its
-context, the caller lends it; labelled above it, the call lends nothing. -/
+/-- Caller 3 holds context 61 and has called through reply 63; server 4 holds none.  The call
+lends the context, as seL4-MCS's `reply_push` does: no label check refuses it. -/
 private def bCheckCallLend : Bool :=
   let caller : SeLe4n.ThreadId := ⟨3⟩
   let server : SeLe4n.ThreadId := ⟨4⟩
@@ -250,23 +250,13 @@ private def bCheckCallLend : Bool :=
     (server.toObjId, .tcb (bTcb 4)),
     (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with
       boundThreadCode := caller.val + 1, isActive := true })]
-  let highCaller : LabelingContext :=
-    { defaultLabelingContext with
-      threadLabelOf := fun t =>
-        if t = caller then SecurityLabel.kernelTrusted else SecurityLabel.publicLabel }
-  let lend (ctx : LabelingContext) : Option SystemState :=
-    match caller.toValid?, server.toValid? with
-    | some cV, some sV =>
-      match SeLe4n.Kernel.applyCallDonationOnCoreWhen (SeLe4n.Kernel.callLendAdmits ctx st caller)
-          st cV sV bootCoreId bootCoreId with
-      | .ok st' => some st'
-      | .error _ => none
-    | _, _ => none
-  (lend defaultLabelingContext).any (fun st' =>
-      (st'.getTcb? server).any (fun t => decide (t.schedContextBinding = .donated scId caller))) &&
-    (lend highCaller).any (fun st' =>
-      (st'.getTcb? server).any (fun t => t.scBindingScCode == 0) &&
-        (st'.getTcb? caller).any (fun t => decide (t.schedContextBinding = .bound scId)))
+  match caller.toValid?, server.toValid? with
+  | some cV, some sV =>
+    match SeLe4n.Kernel.applyCallDonationOnCore st cV sV bootCoreId bootCoreId with
+    | .ok st' =>
+      (st'.getTcb? server).any (fun t => decide (t.schedContextBinding = .donated scId caller))
+    | .error _ => false
+  | _, _ => false
 
 /-- Thread 5 holds context 62 on loan from thread 6.  Its destruction unbinds
 the context, which stays unheld; the lender is not handed it back. -/

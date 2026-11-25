@@ -185,27 +185,17 @@ theorem applyCallDonationOnCore_replyViews_eq {st st' : SystemState}
   · exact hV
   · rw [migrateSchedContextReplenishment_replyViews_eq, hV]
 
-theorem applyCallDonationOnCoreWhen_replyViews_eq {lend : Bool} {st st' : SystemState}
-    {c r : SeLe4n.ValidThreadId} {a b : CoreId} (hInv : st.objects.invExt)
-    (h : applyCallDonationOnCoreWhen lend st c r a b = .ok st') :
-    st'.replyViews = st.replyViews :=
-  applyCallDonationOnCoreWhen_induct (·.replyViews = st.replyViews) h rfl
-    (applyCallDonationOnCore_replyViews_eq hInv)
-
-theorem applyRendezvousCallDonation_replyViews_eq {lend : Bool} {st st' : SystemState}
+theorem applyRendezvousCallDonation_replyViews_eq {st st' : SystemState}
     {r d : SeLe4n.ThreadId} (hInv : st.objects.invExt)
-    (h : applyRendezvousCallDonation st r d lend = .ok st') : st'.replyViews = st.replyViews := by
-  rcases applyRendezvousCallDonation_cases h with h | rfl
-  rotate_left
-  · rfl
+    (h : applyRendezvousCallDonation st r d = .ok st') : st'.replyViews = st.replyViews := by
   unfold applyRendezvousCallDonation at h
   split at h
   · exact applyCallDonationOnCore_replyViews_eq hInv h
   · cases h
 
-theorem applyReceiveRendezvousDonation_replyViews_eq {lend : Bool} {st st' : SystemState}
+theorem applyReceiveRendezvousDonation_replyViews_eq {st st' : SystemState}
     {r d : SeLe4n.ThreadId} (hInv : st.objects.invExt)
-    (h : applyReceiveRendezvousDonation st r d lend = .ok st') : st'.replyViews = st.replyViews := by
+    (h : applyReceiveRendezvousDonation st r d = .ok st') : st'.replyViews = st.replyViews := by
   unfold applyReceiveRendezvousDonation at h
   split at h
   · exact applyRendezvousCallDonation_replyViews_eq hInv h
@@ -216,9 +206,9 @@ theorem applyReceiverPipHandoff_replyViews_eq (st : SystemState) (r : SeLe4n.Thr
     (applyReceiverPipHandoff st r c).replyViews = st.replyViews :=
   propagatePipChainCrossCore_replyViews_eq _ _ _ _ hInv
 
-theorem applyReceiveRendezvousHandoff_replyViews_eq {lend : Bool} {st st' : SystemState}
+theorem applyReceiveRendezvousHandoff_replyViews_eq {st st' : SystemState}
     {r d : SeLe4n.ThreadId} {c : CoreId} (hInv : st.objects.invExt)
-    (h : applyReceiveRendezvousHandoff st r d c lend = .ok st') : st'.replyViews = st.replyViews := by
+    (h : applyReceiveRendezvousHandoff st r d c = .ok st') : st'.replyViews = st.replyViews := by
   unfold applyReceiveRendezvousHandoff at h
   split at h
   · cases h
@@ -374,9 +364,9 @@ theorem endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent
     (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent)
     (hCaller : ReplyViews.serverFree st.replyViews caller)
     (hHead : ∀ ep r, st.objects[endpointId]? = some (.endpoint ep) → ep.receiveQ.head = some r →
-      r ≠ caller ∧ ReplyViews.serverFree st.replyViews r) (lend : Bool := true) :
+      r ≠ caller ∧ ReplyViews.serverFree st.replyViews r) :
     (endpointCallCrossCoreDispatch endpointId caller payload c
-      st lend).1.replyWaitersConsistent := by
+      st).1.replyWaitersConsistent := by
   have hB := endpointCallWithCapsOnCore_preserves_replyWaitersConsistent endpointId caller payload
     c st hInv hC hCaller hHead
   have hI := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload
@@ -395,8 +385,8 @@ theorem endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent
         | (rename_i hD
            exact replyWaitersConsistent.of_views
             ((propagatePipChainCrossCore_replyViews_eq _ _ _ _
-              (applyCallDonationOnCoreWhen_preserves_objects_invExt _ _ _ _ _ _ _ hI hD)).trans
-              (applyCallDonationOnCoreWhen_replyViews_eq hI hD)) hB)
+              (applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hI hD)).trans
+              (applyCallDonationOnCore_replyViews_eq hI hD)) hB)
 
 /-- **The live reply keeps the reply-waiter queues consistent**: the reply
 unlinks the answered caller; the donation return and the priority reversion
@@ -433,14 +423,14 @@ theorem endpointReplyCrossCoreDispatch_preserves_replyWaitersConsistent
 /-- **Fault delivery keeps the reply-waiter queues consistent**: it is the live
 call on the handler's endpoint, or the fail-closed suspend; the fault record and
 the woken handler's return frame keep the views. -/
-theorem faultDeliverOnCore_preserves_replyWaitersConsistent {lend : Bool} (st : SystemState)
+theorem faultDeliverOnCore_preserves_replyWaitersConsistent (st : SystemState)
     (tid : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (c : CoreId)
     (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent)
     (hFaulted : ReplyViews.serverFree st.replyViews tid)
     (hHead : ∀ (eid : SeLe4n.ObjId) (ep : Endpoint) (r : SeLe4n.ThreadId),
       st.objects[eid]? = some (.endpoint ep) → ep.receiveQ.head = some r →
       r ≠ tid ∧ ReplyViews.serverFree st.replyViews r) :
-    (faultDeliverOnCore st tid f ctx c lend).1.replyWaitersConsistent := by
+    (faultDeliverOnCore st tid f ctx c).1.replyWaitersConsistent := by
   have hSus : (recordPendingFault (faultSuspendOnCore st tid c) tid
       { fault := f, context := ctx }).replyWaitersConsistent :=
     replyWaitersConsistent.of_views
@@ -451,13 +441,13 @@ theorem faultDeliverOnCore_preserves_replyWaitersConsistent {lend : Bool} (st : 
   split
   · exact hSus
   · rename_i tgt _
-    have hB := endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent (lend := lend) tgt.endpoint tid
+    have hB := endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent tgt.endpoint tid
       (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st hInv hC
       hFaulted (hHead tgt.endpoint)
-    have hI := endpointCallCrossCoreDispatch_preserves_objects_invExt (lend := lend) tgt.endpoint tid
+    have hI := endpointCallCrossCoreDispatch_preserves_objects_invExt tgt.endpoint tid
       (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply) c st hInv
     cases hR : endpointCallCrossCoreDispatch tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge tgt.cap.canLinkReply)
-        c st lend with
+        c st with
     | mk s1 res =>
       rw [hR] at hB hI
       cases res with
@@ -542,10 +532,10 @@ theorem replyRecvHolderDeschedule_objects_invExt (t h : SeLe4n.ThreadId) (st : S
   · exact hInv
   · exact descheduleAtPlacement_preserves_objects_invExt _ _ hInv
 
-theorem replyRecvPostReceiveDonation_replyViews_eq {lend : Bool} {t srv nxt : SeLe4n.ThreadId} {c : CoreId}
+theorem replyRecvPostReceiveDonation_replyViews_eq {t srv nxt : SeLe4n.ThreadId} {c : CoreId}
     {ret : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {st st' : SystemState}
     (hInv : st.objects.invExt)
-    (h : replyRecvPostReceiveDonation t srv nxt c ret st lend = .ok ((), st')) :
+    (h : replyRecvPostReceiveDonation t srv nxt c ret st = .ok ((), st')) :
     st'.replyViews = st.replyViews := by
   unfold replyRecvPostReceiveDonation at h
   split at h
@@ -604,7 +594,7 @@ The receive leg's two facts are stated at the state it runs on, the reply leg's
 commit with the donation pop, the reply leg's capability transfer and the
 bound notification's context return applied (`replyRecvReceiveLegState`), as the arm's
 other composite theorems state theirs. -/
-theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent {lend : Bool}
+theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent
     {answer : Option Architecture.FaultReplyOutcome}
     (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (grant : Bool)
@@ -616,7 +606,7 @@ theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent {lend : Bool}
         (endpointReplyOnCore tid prevCaller msg ec st).1).objects[epId]? = some (.endpoint ep) →
       ep.sendQ.head = some s → s ≠ tid ∧ ReplyViews.serverFree (replyRecvReceiveLegState answer
         st tid grant rid prevCaller (endpointReplyOnCore tid prevCaller msg ec st).1).replyViews s)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant ec st lend
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant ec st
       = .ok (summary, stOut)) :
     stOut.replyWaitersConsistent := by
   have hB1 := endpointReplyOnCore_preserves_replyWaitersConsistent tid prevCaller msg ec st hInv hC

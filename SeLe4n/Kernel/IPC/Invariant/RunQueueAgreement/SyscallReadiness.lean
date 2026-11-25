@@ -244,7 +244,7 @@ theorem replyTransferOnCoreChecked_readyKeptStage {S : SeLe4n.ThreadId → Prop}
 
 /-- `ReplyRecv` blocks only its caller: the reply, the donation pop and the reply
 leg's capability transfer are stages, and the receive half blocks the caller. -/
-theorem endpointReplyRecvOnCore_readyKeptStage {lend : Bool} {answer : Option Architecture.FaultReplyOutcome}
+theorem endpointReplyRecvOnCore_readyKeptStage {answer : Option Architecture.FaultReplyOutcome}
     {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {msg : IpcMessage} {grant : Bool}
     {c : CoreId}
@@ -252,7 +252,7 @@ theorem endpointReplyRecvOnCore_readyKeptStage {lend : Bool} {answer : Option Ar
     (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hD : st.currentDequeuedUnique)
     (hQ : queueHeadBlockedConsistent st)
     (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant c st lend =
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant c st =
       .ok (s, st')) :
     readyKeptStage (· = tid) st st' := by
   have hE := endpointReplyOnCore_runQueueStage tid prevCaller msg c st
@@ -1351,7 +1351,7 @@ theorem endpointCallCrossCoreDispatchChecked_readyKeptStage (ctx : LabelingConte
   unfold endpointCallCrossCoreDispatchChecked
   split
   · exact endpointCallCrossCoreDispatch_readyKeptStage _ _ _ _ _ P.endpointHeads
-      P.current P.notIdle _
+      P.current P.notIdle
   · exact .refl _
 
 theorem notificationWaitCrossCoreDispatchChecked_readyKeptStage (ctx : LabelingContext)

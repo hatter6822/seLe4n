@@ -173,21 +173,9 @@ theorem of_applyCallDonationOnCore {st st' : SystemState}
   · exact h1
   · exact h1.trans (of_migrate _ _ _ _ h1.2)
 
-theorem of_applyCallDonationOnCoreWhen {lend : Bool} {st st' : SystemState}
-    {callerVtid receiverVtid : SeLe4n.ValidThreadId} {donorHome doneeHome : CoreId}
-    (hInv : st.objects.invExt)
-    (h : applyCallDonationOnCoreWhen lend st callerVtid receiverVtid donorHome doneeHome =
-      .ok st') :
-    savedRegsUnwritten st st' :=
-  applyCallDonationOnCoreWhen_induct (savedRegsUnwritten st) h (.refl hInv)
-    (of_applyCallDonationOnCore hInv)
-
-theorem of_applyRendezvousCallDonation {lend : Bool} {st st' : SystemState} {receiver donor : SeLe4n.ThreadId}
-    (hInv : st.objects.invExt) (h : applyRendezvousCallDonation st receiver donor lend = .ok st') :
+theorem of_applyRendezvousCallDonation {st st' : SystemState} {receiver donor : SeLe4n.ThreadId}
+    (hInv : st.objects.invExt) (h : applyRendezvousCallDonation st receiver donor = .ok st') :
     savedRegsUnwritten st st' := by
-  rcases applyRendezvousCallDonation_cases h with h | rfl
-  rotate_left
-  · exact refl hInv
   unfold applyRendezvousCallDonation at h
   split at h
   · exact of_applyCallDonationOnCore hInv h
@@ -279,8 +267,8 @@ theorem endpointCallWithCapsOnCore_savedRegsUnwritten (endpointId : SeLe4n.ObjId
 passive receiver, and the chain walk from it. -/
 theorem endpointCallCrossCoreDispatch_savedRegsUnwritten (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (payload : SendPayload) (c : CoreId)
-    {st : SystemState} (hInv : st.objects.invExt) (lend : Bool := true) :
-    savedRegsUnwritten st (endpointCallCrossCoreDispatch endpointId caller payload c st lend).1 := by
+    {st : SystemState} (hInv : st.objects.invExt) :
+    savedRegsUnwritten st (endpointCallCrossCoreDispatch endpointId caller payload c st).1 := by
   have h0 := endpointCallWithCapsOnCore_savedRegsUnwritten endpointId caller payload c hInv
   unfold endpointCallCrossCoreDispatch
   generalize endpointCallWithCapsOnCore endpointId caller payload c st = r at h0
@@ -294,7 +282,7 @@ theorem endpointCallCrossCoreDispatch_savedRegsUnwritten (endpointId : SeLe4n.Ob
     all_goals first
       | exact h0
       | (rename_i hD
-         have h1 := h0.trans (savedRegsUnwritten.of_applyCallDonationOnCoreWhen h0.2 hD)
+         have h1 := h0.trans (savedRegsUnwritten.of_applyCallDonationOnCore h0.2 hD)
          exact h1.trans (savedRegsUnwritten.of_propagate _ _ _ _ h1.2))
 
 theorem endpointCallCrossCoreDispatchChecked_savedRegsUnwritten (ctx : LabelingContext)
@@ -304,7 +292,7 @@ theorem endpointCallCrossCoreDispatchChecked_savedRegsUnwritten (ctx : LabelingC
       (endpointCallCrossCoreDispatchChecked ctx endpointId caller payload c st).1 := by
   unfold endpointCallCrossCoreDispatchChecked
   split
-  · exact endpointCallCrossCoreDispatch_savedRegsUnwritten _ _ _ _ hInv _
+  · exact endpointCallCrossCoreDispatch_savedRegsUnwritten _ _ _ _ hInv
   · exact .refl hInv
 
 /-! ### The donation returns and the reply objects -/
@@ -578,9 +566,9 @@ theorem endpointReceiveDualWithCapsOnCore_savedRegsUnwritten (endpointId : SeLe4
 
 /-- The receive rendezvous' hand-off writes no saved register: the lend, then
 the chain walk. -/
-theorem applyReceiveRendezvousHandoff_savedRegsUnwritten {lend : Bool} {st st' : SystemState}
+theorem applyReceiveRendezvousHandoff_savedRegsUnwritten {st st' : SystemState}
     {receiver dequeued : SeLe4n.ThreadId} {c : CoreId} (hInv : st.objects.invExt)
-    (h : applyReceiveRendezvousHandoff st receiver dequeued c lend = .ok st') :
+    (h : applyReceiveRendezvousHandoff st receiver dequeued c = .ok st') :
     savedRegsUnwritten st st' := by
   obtain ⟨stDon, hDon, rfl⟩ := applyReceiveRendezvousHandoff_ok_decompose _ _ _ _ _ h
   have h1 : savedRegsUnwritten st stDon := by
@@ -705,11 +693,11 @@ theorem replyRecvPopDonation_savedRegsUnwritten {rid : SeLe4n.ReplyId} {target :
       cases h
       exact savedRegsUnwritten.of_popUnheldReplyHead hInv hPop
 
-theorem replyRecvPostReceiveDonation_savedRegsUnwritten {lend : Bool}
+theorem replyRecvPostReceiveDonation_savedRegsUnwritten
     {tid recordedServer nextThread : SeLe4n.ThreadId} {serverCore : CoreId}
     {returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {st st' : SystemState}
     (hInv : st.objects.invExt)
-    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st lend
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
       = .ok ((), st')) :
     savedRegsUnwritten st st' := by
   unfold replyRecvPostReceiveDonation at h
@@ -820,14 +808,14 @@ theorem callArm_savedRegsWrittenFree {ctx : LabelingContext} {epId : SeLe4n.ObjI
 sender**: the receive and its hand-off write no saved register, and the send's
 completion names the send queue's head at the entry's start, which is blocked
 there, so it is free of every core. -/
-theorem receiveArmCompletion_savedRegsWrittenFree {lend : Bool} {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+theorem receiveArmCompletion_savedRegsWrittenFree {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {replyId : Option SeLe4n.ReplyId} {ec e : CoreId}
     {base st s1 stDon : SystemState} {dequeued : SeLe4n.ThreadId} {summary : CapTransferSummary}
     {sgi : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt)
     (hHead : ∀ w, (st.getEndpoint? epId).bind (·.sendQ.head) = some w → offCoreFree e base w)
     (hRecv : endpointReceiveDualWithCapsOnCore epId tid replyId ec st
       = (s1, .ok (dequeued, summary, sgi)))
-    (hHand : applyReceiveRendezvousHandoff s1 tid dequeued ec lend = .ok stDon) :
+    (hHand : applyReceiveRendezvousHandoff s1 tid dequeued ec = .ok stDon) :
     savedRegsWrittenFree e base st
       stDon ∧
     stDon.objects.invExt := by
@@ -840,7 +828,7 @@ theorem receiveArmCompletion_savedRegsWrittenFree {lend : Bool} {epId : SeLe4n.O
 caller**: up to the caller's staging it writes only the woken sender
 (`receiveArmCompletion_savedRegsWrittenFree`), and the delivered message is
 staged into the caller, the executing core's current thread. -/
-theorem receiveArm_savedRegsWrittenFree {lend : Bool} {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+theorem receiveArm_savedRegsWrittenFree {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
     {replyId : Option SeLe4n.ReplyId} {ec : CoreId}
     {base st s1 stDon : SystemState} {dequeued : SeLe4n.ThreadId} {summary : CapTransferSummary}
     {sgi : Option (CoreId × Concurrency.SgiKind)} (n : Nat) (hInv : st.objects.invExt)
@@ -848,7 +836,7 @@ theorem receiveArm_savedRegsWrittenFree {lend : Bool} {epId : SeLe4n.ObjId} {tid
     (hCaller : offCoreFree ec base tid)
     (hRecv : endpointReceiveDualWithCapsOnCore epId tid replyId ec st
       = (s1, .ok (dequeued, summary, sgi)))
-    (hHand : applyReceiveRendezvousHandoff s1 tid dequeued ec lend = .ok stDon) :
+    (hHand : applyReceiveRendezvousHandoff s1 tid dequeued ec = .ok stDon) :
     savedRegsWrittenFree ec base st (Architecture.stageDeliveredMessage
       stDon
       tid n) := by
@@ -971,14 +959,14 @@ the woken sender**: its legs write no saved register; the reply's staging names
 the caller the reply leg found blocked on its reply, and the send's completion
 names the send queue's head after the reply leg, the donation pop and the reply
 leg's capability transfer, which write no endpoint, so the head the entry began from, blocked there. -/
-theorem endpointReplyRecvOnCore_savedRegsWrittenFree {lend : Bool} {epId : SeLe4n.ObjId}
+theorem endpointReplyRecvOnCore_savedRegsWrittenFree {epId : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
     {msg : IpcMessage} {grant : Bool} {ec e : CoreId}
     {st st' : SystemState} {summary : CapTransferSummary}
     {answer : Option Architecture.FaultReplyOutcome}
     (hD : st.currentDequeuedUnique) (hQ : queueHeadBlockedConsistent st)
     (hRT : st.residentsHaveTcbs) (hBNR : st.blockedNotResident) (hInv : st.objects.invExt)
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant ec st lend
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant ec st
       = .ok (summary, st')) :
     savedRegsWrittenFree e st st st' ∧ st'.objects.invExt := by
   unfold endpointReplyRecvAnsweringOnCore at h

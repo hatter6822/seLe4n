@@ -764,12 +764,12 @@ theorem receiveReturnSchedContext_mappingStage (blocks : Bool) (st : SystemState
 pop, the reply's capability transfer, seL4-MCS `receiveIPC`'s return, the
 receive leg, the post-receive donation, the priority hand-off and the answered
 caller, each a mapping stage. -/
-theorem endpointReplyRecvOnCore_mappingStage {lend : Bool} {answer : Option Architecture.FaultReplyOutcome}
+theorem endpointReplyRecvOnCore_mappingStage {answer : Option Architecture.FaultReplyOutcome}
     {epId : SeLe4n.ObjId}
     {tid : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId}
     {msg : IpcMessage} {grant : Bool}
     {executingCore : Concurrency.CoreId} {st st' : SystemState} {summary : CapTransferSummary}
-    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant executingCore st lend
+    (h : endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant executingCore st
       = .ok (summary, st')) : MappingStage st st' := by
   unfold endpointReplyRecvAnsweringOnCore at h
   dsimp only at h

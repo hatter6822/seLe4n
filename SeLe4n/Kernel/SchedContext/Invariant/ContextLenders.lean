@@ -31,8 +31,8 @@ preservation goes through (WS-SX SX8, the lender invariant of D27):
   not, which is the case the relation is there to refuse.
 
 A push of a new frame under a context is neither: its lender is new, and the
-push carries the predicate only where the lend admission passed
-(`callLendAdmits`).
+push carries the predicate because its lender carries the context's label
+(`bindingLabelsEqual`, WS-SX SX19).
 -/
 
 namespace SeLe4n.Kernel

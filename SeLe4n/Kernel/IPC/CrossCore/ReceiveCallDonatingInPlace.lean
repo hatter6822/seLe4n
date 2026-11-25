@@ -217,7 +217,6 @@ theorem receiveCallDonatingTake_delivered (st : SystemState) (endpointId : SeLe4
         (determineTargetCore st s) (determineTargetCore st receiver)) := by
     unfold applyRendezvousCallDonation
     simp only [hsv, hrv]
-    rw [applyCallDonationOnCoreWhen_true]
     unfold applyCallDonationOnCore
     rw [applyCallDonation_characterisation, hsv', hrv', hDonId]
     dsimp only

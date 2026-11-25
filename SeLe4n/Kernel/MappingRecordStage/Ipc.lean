@@ -338,20 +338,18 @@ theorem applyCallDonationOnCore_mappingStage {st st' : SystemState}
     (fun hI => applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hI h)
     (fun hI => applyCallDonationOnCore_kindPreservingWrite _ _ _ _ _ _ hI h)
 
-theorem applyReceiveRendezvousHandoff_mappingStage {lend : Bool} {st st' : SystemState}
+theorem applyReceiveRendezvousHandoff_mappingStage {st st' : SystemState}
     {receiver dequeued : SeLe4n.ThreadId} {executingCore : CoreId}
-    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore lend = .ok st') :
+    (h : applyReceiveRendezvousHandoff st receiver dequeued executingCore = .ok st') :
     MappingStage st st' := by
   obtain ⟨stDon, hDon, rfl⟩ := applyReceiveRendezvousHandoff_ok_decompose _ _ _ _ _ h
   have hD : MappingStage st stDon := by
     unfold applyReceiveRendezvousDonation at hDon
     split at hDon
-    · rcases applyRendezvousCallDonation_cases hDon with hDon | rfl
-      · unfold applyRendezvousCallDonation at hDon
-        split at hDon
-        · exact applyCallDonationOnCore_mappingStage hDon
-        · cases hDon
-      · exact MappingStage.refl _
+    · unfold applyRendezvousCallDonation at hDon
+      split at hDon
+      · exact applyCallDonationOnCore_mappingStage hDon
+      · cases hDon
     · cases hDon; exact MappingStage.refl _
   split
   · exact hD.trans propagatePipChainCrossCore_mappingStage
@@ -389,9 +387,9 @@ theorem endpointCallWithCapsOnCore_mappingStage {endpointId : SeLe4n.ObjId}
 
 theorem endpointCallCrossCoreDispatch_mappingStage {endpointId : SeLe4n.ObjId}
     {caller : SeLe4n.ThreadId} {payload : SendPayload}
-    {executingCore : CoreId} {st : SystemState} {lend : Bool} :
+    {executingCore : CoreId} {st : SystemState} :
     MappingStage st (endpointCallCrossCoreDispatch endpointId caller payload
-      executingCore st lend).1 := by
+      executingCore st).1 := by
   unfold endpointCallCrossCoreDispatch
   have hC := endpointCallWithCapsOnCore_mappingStage (endpointId := endpointId)
     (caller := caller) (payload := payload)
@@ -409,8 +407,7 @@ theorem endpointCallCrossCoreDispatch_mappingStage {endpointId : SeLe4n.ObjId}
     all_goals first
       | exact hC
       | (rename_i hD
-         exact (hC.trans (applyCallDonationOnCoreWhen_induct (MappingStage _) hD
-           (MappingStage.refl _) applyCallDonationOnCore_mappingStage)).trans
+         exact (hC.trans ((applyCallDonationOnCore_mappingStage hD))).trans
            propagatePipChainCrossCore_mappingStage)
 
 theorem endpointCallCrossCoreDispatchChecked_mappingStage {ctx : LabelingContext}
@@ -717,12 +714,9 @@ theorem notificationWaitCrossCoreDispatchChecked_mappingStage {ctx : LabelingCon
 
 /-! ### ReplyRecv -/
 
-theorem applyRendezvousCallDonation_mappingStage {lend : Bool} {st st' : SystemState}
+theorem applyRendezvousCallDonation_mappingStage {st st' : SystemState}
     {receiver donor : SeLe4n.ThreadId}
-    (h : applyRendezvousCallDonation st receiver donor lend = .ok st') : MappingStage st st' := by
-  rcases applyRendezvousCallDonation_cases h with h | rfl
-  rotate_left
-  · exact MappingStage.refl _
+    (h : applyRendezvousCallDonation st receiver donor = .ok st') : MappingStage st st' := by
   unfold applyRendezvousCallDonation at h
   split at h
   · exact applyCallDonationOnCore_mappingStage h
@@ -758,10 +752,10 @@ theorem replyRecvPopDonation_mappingStage {rid : SeLe4n.ReplyId} {target : SeLe4
       cases h
       exact popUnheldReplyHead_mappingStage hPop
 
-theorem replyRecvPostReceiveDonation_mappingStage {lend : Bool}
+theorem replyRecvPostReceiveDonation_mappingStage
     {tid recordedServer nextThread : SeLe4n.ThreadId} {serverCore : CoreId}
     {returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)} {st st' : SystemState}
-    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st lend
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
       = .ok ((), st')) : MappingStage st st' := by
   unfold replyRecvPostReceiveDonation at h
   split at h

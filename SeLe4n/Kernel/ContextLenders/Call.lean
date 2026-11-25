@@ -9,21 +9,20 @@
 
 import SeLe4n.Kernel.ContextLenders.Stage
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
-import SeLe4n.Kernel.IPC.Operations.CallLendLabel
+import SeLe4n.Kernel.InformationFlow.Policy
 
 /-! # The cross-core Call keeps the lenders' flow
 
 WS-SX SX8.  seL4's `sendIPC` for a Call: the rendezvous (`endpointCallOnCore`,
 which links the caller on the reply object its server stashed), the capability
-transfer, then — where the call links a reply and the lend is admitted — the
+transfer, then — where the call links a reply — the
 context's donation to the passive server (`donateSchedContext`, a frame
 pushed with the caller as its lender), the replenishment migration and the
 priority walk.  The fault delivery and the syscall's `.call` arm both run it.
 
 The donation reads the chain facts at the state the rendezvous leaves
-(`LendersPremises`), as `Stage.lean` describes; the lend admission
-(`callLendAdmits`) is read on the state the call starts from, which holds the
-caller's binding unchanged (`endpointCallWithCapsOnCore_sameSchedContextBindings`). -/
+(`LendersPremises`), as `Stage.lean` describes.  The lend is seL4-MCS's,
+with no label check of its own (WS-SX SX19, D28). -/
 
 namespace SeLe4n.Kernel
 open SeLe4n.Model
@@ -171,14 +170,14 @@ receiving on the endpoint, so carrying the endpoint's label
 (`blockedReceiverLabelsEqual`, SX11), which the caller's own gate equals. -/
 theorem endpointCallCrossCoreDispatch_preserves_lendingLabelsEqual {ctx : LabelingContext}
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
-    (executingCore : CoreId) (st : SystemState) (lend : Bool)
+    (executingCore : CoreId) (st : SystemState)
     (hInv : st.objects.invExt) (hChain : donationChainWellFormed st)
     (hMid : LendersPremises (endpointCallWithCapsOnCore endpointId caller payload executingCore st).1)
     (hWait : blockedReceiverLabelsEqual ctx st) (hQ : queueHeadBlockedConsistent st)
     (hGate : ctx.threadLabelOf caller = ctx.endpointLabelOf endpointId)
     (hFlow : lendingLabelsEqual ctx st) :
     lendingLabelsEqual ctx (endpointCallCrossCoreDispatch endpointId caller payload executingCore st
-      lend).1 := by
+).1 := by
   have h1 := endpointCallWithCapsOnCore_preserves_lendingLabelsEqual endpointId caller payload
     executingCore st hInv hChain hFlow
   have hFrame := endpointCallWithCapsOnCore_sameSchedContextBindings endpointId caller payload
@@ -201,34 +200,31 @@ theorem endpointCallCrossCoreDispatch_preserves_lendingLabelsEqual {ctx : Labeli
             split
             · exact h1
             · rename_i st'' hDon
-              rcases applyCallDonationOnCoreWhen_cases hDon with ⟨-, hDon⟩ | ⟨_, rfl⟩
-              · have h2 := applyCallDonationOnCore_preserves_lendingLabelsEqual hMid h1
-                  (fun rT' hRLook' => by
-                    obtain ⟨rTcb, hRObj, -⟩ :=
-                      hFrame receiverV.val rT' (lookupTcb_some_objects st' receiverV.val rT' hRLook')
-                    have hRLook : lookupTcb st receiverV.val = some rTcb :=
-                      lookupTcb_of_objects_of_not_reserved st receiverV.val rTcb hRObj
-                        (lookupTcb_some_not_reserved st' receiverV.val rT' hRLook')
-                    have hCallerEq : callerV.val = caller :=
-                      SeLe4n.ThreadId.toValid?_some_val_eq caller callerV hCV
-                    have hRecvEq : receiverV.val = receiverTid :=
-                      SeLe4n.ThreadId.toValid?_some_val_eq receiverTid receiverV hRV
-                    cases hEp : st.getEndpoint? endpointId with
-                    | none => rw [hEp] at hRecvTid; exact absurd hRecvTid (by simp)
-                    | some ep =>
-                      rw [hEp] at hRecvTid
-                      simp only at hRecvTid
-                      have hEpObj := (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
-                      rw [hRecvEq] at hRLook ⊢
-                      rw [hCallerEq, hGate]
-                      exact hWait receiverTid rTcb endpointId hRLook
-                        ((hQ endpointId ep receiverTid rTcb hEpObj
-                          (lookupTcb_some_objects st receiverTid rTcb hRLook)).1 hRecvTid)) hDon
-                have hI2 := applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _
-                  hMid.invExt hDon
-                exact LendersStage.of_kept (chainObjectsKept.propagatePipChainCrossCore _ _ _ _ hI2) h2
-              · exact LendersStage.of_kept
-                  (chainObjectsKept.propagatePipChainCrossCore _ _ _ _ hMid.invExt) h1
+              have h2 := applyCallDonationOnCore_preserves_lendingLabelsEqual hMid h1
+                (fun rT' hRLook' => by
+                  obtain ⟨rTcb, hRObj, -⟩ :=
+                    hFrame receiverV.val rT' (lookupTcb_some_objects st' receiverV.val rT' hRLook')
+                  have hRLook : lookupTcb st receiverV.val = some rTcb :=
+                    lookupTcb_of_objects_of_not_reserved st receiverV.val rTcb hRObj
+                      (lookupTcb_some_not_reserved st' receiverV.val rT' hRLook')
+                  have hCallerEq : callerV.val = caller :=
+                    SeLe4n.ThreadId.toValid?_some_val_eq caller callerV hCV
+                  have hRecvEq : receiverV.val = receiverTid :=
+                    SeLe4n.ThreadId.toValid?_some_val_eq receiverTid receiverV hRV
+                  cases hEp : st.getEndpoint? endpointId with
+                  | none => rw [hEp] at hRecvTid; exact absurd hRecvTid (by simp)
+                  | some ep =>
+                    rw [hEp] at hRecvTid
+                    simp only at hRecvTid
+                    have hEpObj := (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
+                    rw [hRecvEq] at hRLook ⊢
+                    rw [hCallerEq, hGate]
+                    exact hWait receiverTid rTcb endpointId hRLook
+                      ((hQ endpointId ep receiverTid rTcb hEpObj
+                        (lookupTcb_some_objects st receiverTid rTcb hRLook)).1 hRecvTid)) hDon
+              have hI2 := applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _
+                hMid.invExt hDon
+              exact LendersStage.of_kept (chainObjectsKept.propagatePipChainCrossCore _ _ _ _ hI2) h2
           all_goals exact h1
         · exact h1
       · exact h1
@@ -249,39 +245,37 @@ theorem endpointCallCrossCoreDispatchChecked_preserves_lendingLabelsEqual {ctx :
   split
   · rename_i hG
     exact endpointCallCrossCoreDispatch_preserves_lendingLabelsEqual endpointId caller payload
-      executingCore st _ hInv hChain hMid hWait hQ
+      executingCore st hInv hChain hMid hWait hQ
       (endpointFlowGate_implies_eq ctx endpointId _ _ hG) hFlow
   · exact hFlow
 
-/-- **The rendezvous lend carries the lenders' flow**, lent or refused: lent, it
-is the call donation, whose donor flows to every context it holds. -/
+/-- **The rendezvous lend carries the lenders' flow**: it is the call
+donation, whose donor flows to every context it holds. -/
 theorem applyRendezvousCallDonation_preserves_lendingLabelsEqual {ctx : LabelingContext}
-    {st st' : SystemState} {receiver donor : SeLe4n.ThreadId} {lend : Bool}
+    {st st' : SystemState} {receiver donor : SeLe4n.ThreadId}
     (hP : LendersPremises st) (hInv : lendingLabelsEqual ctx st)
-    (hRecv : lend = true → ctx.threadLabelOf receiver = ctx.threadLabelOf donor)
-    (h : applyRendezvousCallDonation st receiver donor lend = .ok st') :
+    (hRecv : ctx.threadLabelOf receiver = ctx.threadLabelOf donor)
+    (h : applyRendezvousCallDonation st receiver donor = .ok st') :
     lendingLabelsEqual ctx st' := by
   unfold applyRendezvousCallDonation at h
   split at h
   · rename_i donorV receiverV hD hR
     have hEq : donorV.val = donor := SeLe4n.ThreadId.toValid?_some_val_eq donor donorV hD
     have hEqR : receiverV.val = receiver := SeLe4n.ThreadId.toValid?_some_val_eq receiver receiverV hR
-    rcases applyCallDonationOnCoreWhen_cases h with ⟨hL, h⟩ | ⟨_, rfl⟩
-    · exact applyCallDonationOnCore_preserves_lendingLabelsEqual hP hInv
-        (fun _ _ => by rw [hEq, hEqR]; exact hRecv hL) h
-    · exact hInv
+    exact applyCallDonationOnCore_preserves_lendingLabelsEqual hP hInv
+      (fun _ _ => by rw [hEq, hEqR]; exact hRecv) h
   · cases h
 
 /-- And the receive's guarded form: a receive that dequeued no `Call` lends
 nothing, and a dequeued `Call` lends only the context the donation resolves
 (`callDonationSchedContext?`), so the flow is asked of that context alone. -/
 theorem applyReceiveRendezvousDonation_preserves_lendingLabelsEqual {ctx : LabelingContext}
-    {st st' : SystemState} {receiver dequeued : SeLe4n.ThreadId} {lend : Bool}
+    {st st' : SystemState} {receiver dequeued : SeLe4n.ThreadId}
     (hP : LendersPremises st) (hInv : lendingLabelsEqual ctx st)
-    (hRecv : lend = true → rendezvousDequeuedCall st dequeued = true →
+    (hRecv : rendezvousDequeuedCall st dequeued = true →
       ∀ s, callDonationSchedContext? st dequeued receiver = some s →
       ctx.threadLabelOf receiver = ctx.threadLabelOf dequeued)
-    (h : applyReceiveRendezvousDonation st receiver dequeued lend = .ok st') :
+    (h : applyReceiveRendezvousDonation st receiver dequeued = .ok st') :
     lendingLabelsEqual ctx st' := by
   cases hS : callDonationSchedContext? st dequeued receiver with
   | none =>
@@ -306,18 +300,18 @@ theorem applyReceiveRendezvousDonation_preserves_lendingLabelsEqual {ctx : Label
     split at h
     · rename_i hCall
       exact applyRendezvousCallDonation_preserves_lendingLabelsEqual hP hInv
-        (fun hL => hRecv hL hCall s hS) h
+        (hRecv hCall s hS) h
     · cases h; exact hInv
 
 /-- **The receive rendezvous' hand-off carries the lenders' flow**: the lend,
 then the priority walk. -/
 theorem applyReceiveRendezvousHandoff_preserves_lendingLabelsEqual {ctx : LabelingContext}
-    {st st' : SystemState} {receiver dequeued : SeLe4n.ThreadId} {ec : CoreId} {lend : Bool}
+    {st st' : SystemState} {receiver dequeued : SeLe4n.ThreadId} {ec : CoreId}
     (hP : LendersPremises st) (hInv : lendingLabelsEqual ctx st)
-    (hRecv : lend = true → rendezvousDequeuedCall st dequeued = true →
+    (hRecv : rendezvousDequeuedCall st dequeued = true →
       ∀ s, callDonationSchedContext? st dequeued receiver = some s →
       ctx.threadLabelOf receiver = ctx.threadLabelOf dequeued)
-    (h : applyReceiveRendezvousHandoff st receiver dequeued ec lend = .ok st') :
+    (h : applyReceiveRendezvousHandoff st receiver dequeued ec = .ok st') :
     lendingLabelsEqual ctx st' := by
   obtain ⟨stDon, hDon, rfl⟩ := applyReceiveRendezvousHandoff_ok_decompose _ _ _ _ _ h
   have h1 := applyReceiveRendezvousDonation_preserves_lendingLabelsEqual hP hInv hRecv hDon

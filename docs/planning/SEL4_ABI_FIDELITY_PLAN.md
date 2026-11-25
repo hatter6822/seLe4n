@@ -38,7 +38,9 @@
 > notification waiters' labels are carried (D43); its remainder became SX19
 > (the Call lend's refusal deleted, the lend parameter retired), SX20
 > (notification label coherence carried) and SX21 (the notification lend's
-> check deleted), and SX19–SX28 became SX22–SX31.
+> check deleted), and SX19–SX28 became SX22–SX31. SX19 landed at
+> `v0.37.48` (the Call lend's refusal deleted as unreachable, the lend
+> parameter retired).
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
 > **Rows**: SX1–SX31, numbered in the order they are implemented, one PR each.
@@ -949,9 +951,16 @@ unreachable: D43).
 
 SX18.2's first half, as measured (D44).
 
+**LANDED at `v0.37.48`.** Measured before the cut: 295 declarations in 73
+files (1.35x SX18's 219/57, under D32's wrap). The admission was first
+proved true at every committing entry's arm state from `bindingLabelsEqual`
+(the fault leg reads the spilled state, which keeps it), so no reachable
+behaviour changed. No heap scenario measured D28's refusal (unreachable from
+a booted image), so the heap gate's expected set is unchanged.
+
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX19.1 | **The Call lend's refusal deleted** as retired code: `callLendAdmits`' refusal (D28) and `receiveLendAdmits` with it, and the `lend : Bool` argument they feed: the gated donation (`applyCallDonationOnCoreWhen`) and resolver (`callLendSchedContext?`), the in-place unlent arms (`callWakesUnlentInPlace`, `receiveCallTakesUnlentInPlace`, the ReplyRecv unlent arms), the Call, fault, receive and ReplyRecv legs' argument, their compiled forms, NI case splits, refusal rows and heap scenarios. Measured at SX18: 219 declarations in 57 files take the argument. | Each consumer restated over the unchecked lend; the Call lend's label equation stays SX17's (the waiters and the gate). | Tier 3 negative anchors on the deleted definitions; the census and anchor sweep over every file the cut touches; the heap gate's expected set |
+| SX19.1 | **LANDED at `v0.37.48`.** **The Call lend's refusal deleted** as retired code: `callLendAdmits`' refusal (D28) and `receiveLendAdmits` with it, and the `lend : Bool` argument they feed: the gated donation (`applyCallDonationOnCoreWhen`) and resolver (`callLendSchedContext?`), the in-place unlent arms (`callWakesUnlentInPlace`, `receiveCallTakesUnlentInPlace`, the ReplyRecv unlent arms), the Call, fault, receive and ReplyRecv legs' argument, their compiled forms, NI case splits, refusal rows and heap scenarios. Measured at SX18: 219 declarations in 57 files take the argument. | Each consumer restated over the unchecked lend; the Call lend's label equation stays SX17's (the waiters and the gate). | Tier 3 negative anchors on the deleted definitions; the census and anchor sweep over every file the cut touches; the heap gate's expected set |
 
 **Acceptance:**
 - no lend admission and no `lend` argument remain; every Call, fault and
@@ -1102,7 +1111,7 @@ every new path measured at 0.
 | SX16 | 3 (landed) |
 | SX17 | 2–3 (landed) |
 | SX18 | 1 (landed) |
-| SX19 | 3–4 |
+| SX19 | 3–4 (landed) |
 | SX20 | 2–3 |
 | SX21 | 1–2 |
 | SX22 | 3 |

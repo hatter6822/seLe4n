@@ -6656,14 +6656,10 @@ def receiveResolvedArm (ctx : LabelingContext) (decoded : SyscallDecodeResult) (
             with
         | (st', .ok (dequeued, summary, _sgi)) =>
             -- **WS-OD OD3.6**: the checked twin of the unchecked arm's
-            -- `maybeDonateSchedContext` step, and the *same* definition, at
-            -- the lend admission of the caller it takes (WS-SX ruling (u)):
-            -- the call's context is lent only where the caller's label flows
-            -- to the context's (`receiveLendAdmits`, the call's admission of
-            -- the send queue's head on the state the arm is handed); otherwise
-            -- the receive goes on and lends nothing, as at the call
-            -- rendezvous.  The admission reads that caller's own binding and
-            -- static labels alone (`callLendAdmits_congr`).
+            -- `maybeDonateSchedContext` step, and the *same* definition: the
+            -- call's context is lent as seL4-MCS lends it, with no label check
+            -- of its own (WS-SX SX19, D28 retired), since the caller carries
+            -- its context's label (`bindingLabelsEqual`).
             --
             -- **WS-OD OD3.14**: the priority half runs on every `Call`
             -- rendezvous, lent or not -- `projectKernelObject` strips
@@ -6672,7 +6668,7 @@ def receiveResolvedArm (ctx : LabelingContext) (decoded : SyscallDecodeResult) (
             -- exactly as the flow-checked `.call` arm's own walk is bounded
             -- by `endpointCallLiveWriteSet`.
             match applyReceiveRendezvousHandoff st' tid dequeued executingCore
-                (receiveLendAdmits ctx st epId) with
+                with
             | .error e => .error e
             | .ok stDon =>
               -- WS-RA RA.B.6: stage the non-blocking consume's delivery (the
@@ -7141,12 +7137,10 @@ def dispatchWithCapChecked (ctx : LabelingContext)
                 -- WS-RA RA.B.6: stage the receive leg's delivery (the checked
                 -- twin of the unchecked arm's staging; the receive leg's own
                 -- flow gate governs the consumed message).
-                -- WS-SX ruling D28: the receive leg lends a taken `Call`'s
-                -- context only at the call's admission of the send queue's head
-                -- (`receiveLendAdmits`), read on the state the arm is handed,
-                -- as the `.receive` arm reads it.
+                -- The receive leg lends a taken `Call`'s context unchecked,
+                -- as the `.receive` arm does (WS-SX SX19).
                 match replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label msg
-                replyGrant executingCore st (receiveLendAdmits ctx st epId) with
+                replyGrant executingCore st with
                 -- PR #873 round 7: the checked twin of the unchecked arm's
                 -- WithCaps receive leg — the endpoint→receiver flow is gated
                 -- above, so the *unchecked* per-core WithCaps receive inside
@@ -8521,7 +8515,7 @@ theorem dispatchArm_receive_matches_returnShape
     -- walk writes `pipBoost` and run-queue buckets, neither of which is a
     -- register context, so the frame conclusion is unchanged.
     (hDon : applyReceiveRendezvousHandoff st' tid next executingCore
-        (receiveLendAdmits ctx st epId) = .ok stDon)
+        = .ok stDon)
     (hTcb : stDon.getTcb? tid = some tcb)
     (hReady : tcb.ipcState = .ready)
     (hMsg : tcb.pendingMessage = some msg)
@@ -8563,7 +8557,7 @@ theorem dispatchArm_replyRecv_matches_returnShape
     (hBody : replyRecvTransferOnCore epId tid rid prevCaller decoded.msgInfo.label
         { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
           badge := replyBadge }
-        replyGrant executingCore st (receiveLendAdmits ctx st epId) = .ok (summary, stB))
+        replyGrant executingCore st = .ok (summary, stB))
     (hTcb : stB.getTcb? tid = some tcb)
     (hReady : tcb.ipcState = .ready)
     (hMsg : tcb.pendingMessage = some msg)
@@ -9849,7 +9843,7 @@ theorem dispatchWithCapChecked_receive_delegates
           with
        | (st', .ok (dequeued, summary, _)) =>
            (match applyReceiveRendezvousHandoff st' tid dequeued
-                    executingCore (receiveLendAdmits ctx st epId) with
+                    executingCore with
             | .error e => .error e
             | .ok stDon =>
                 .ok ((), Architecture.stageDeliveredMessage
@@ -10064,7 +10058,7 @@ def syscallDelegates : SyscallId → Prop
            -- a step would be a claim about a different program.
            | (st', .ok (dequeued, summary, _)) =>
                (match applyReceiveRendezvousHandoff st' tid dequeued
-                        executingCore (receiveLendAdmits ctx st epId) with
+                        executingCore with
                 | .error e => .error e
                 | .ok stDon =>
                     .ok ((), Architecture.stageDeliveredMessage

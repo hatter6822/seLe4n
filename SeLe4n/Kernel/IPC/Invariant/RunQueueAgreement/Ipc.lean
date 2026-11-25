@@ -56,8 +56,7 @@ macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
 theorem storeObject_notificationOver_runQueueStage {st st' : SystemState} {k : SeLe4n.ObjId}
     {n n' : Notification} (hOld : st.getNotification? k = some n)
     (hS : storeObject k (.notification n') st = .ok ((), st'))
-    (hC : n'.schedContextCode = n.schedContextCode := by first | rfl | simp_all)
- : RunQueueStage st st' :=
+    (hC : n'.schedContextCode = n.schedContextCode := by first | rfl | simp_all) : RunQueueStage st st' :=
   RunQueueStage.storeObject hS (fun c => by
     rw [(SystemState.getNotification?_eq_some_iff st k n).mp hOld]; rfl)
     (SystemState.objStateMono_nonTcb
@@ -528,12 +527,9 @@ theorem rendezvousDequeuedCall_activeAt {st : SystemState} {t : SeLe4n.ThreadId}
     refine ⟨tcb, hG, (hC tcb hG).resolve_left fun hr => ?_⟩
     rw [hr] at h; cases h
 
-theorem applyRendezvousCallDonation_runQueueStage {lend : Bool} {st st' : SystemState}
+theorem applyRendezvousCallDonation_runQueueStage {st st' : SystemState}
     {receiver donor : SeLe4n.ThreadId} (hD : st.activeAt donor)
-    (h : applyRendezvousCallDonation st receiver donor lend = .ok st') : RunQueueStage st st' := by
-  rcases applyRendezvousCallDonation_cases h with h | rfl
-  rotate_left
-  · exact RunQueueStage.refl _
+    (h : applyRendezvousCallDonation st receiver donor = .ok st') : RunQueueStage st st' := by
   unfold applyRendezvousCallDonation at h
   split at h
   · rename_i donorV _ hV _
@@ -541,10 +537,10 @@ theorem applyRendezvousCallDonation_runQueueStage {lend : Bool} {st st' : System
       (by rw [SeLe4n.ThreadId.toValid?_some_val_eq donor donorV hV]; exact hD) h
   · cases h
 
-theorem applyReceiveRendezvousHandoff_runQueueStage {lend : Bool} {st st' : SystemState}
+theorem applyReceiveRendezvousHandoff_runQueueStage {st st' : SystemState}
     {receiver dequeued : SeLe4n.ThreadId} {c : Concurrency.CoreId}
     (hC : st.coherentAt dequeued)
-    (h : applyReceiveRendezvousHandoff st receiver dequeued c lend = .ok st') :
+    (h : applyReceiveRendezvousHandoff st receiver dequeued c = .ok st') :
     RunQueueStage st st' := by
   obtain ⟨stDon, hDon, rfl⟩ := applyReceiveRendezvousHandoff_ok_decompose st st' receiver
     dequeued c h
@@ -597,11 +593,11 @@ theorem replyRecvHolderDeschedule_runQueueStage (tid holder : SeLe4n.ThreadId)
   · exact RunQueueStage.refl _
   · exact descheduleAt_runQueueStage _ _ _
 
-theorem replyRecvPostReceiveDonation_runQueueStage {lend : Bool} {tid recordedServer nextThread : SeLe4n.ThreadId}
+theorem replyRecvPostReceiveDonation_runQueueStage {tid recordedServer nextThread : SeLe4n.ThreadId}
     {c : Concurrency.CoreId} {returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)}
     {st st' : SystemState}
     (hInv : st.objects.invExt) (hRf : st.runQueueRefined) (hC : st.coherentAt nextThread)
-    (h : replyRecvPostReceiveDonation tid recordedServer nextThread c returned? st lend = .ok ((), st')) :
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread c returned? st = .ok ((), st')) :
     RunQueueStage st st' := by
   unfold replyRecvPostReceiveDonation at h
   repeat' (first | split at h | dsimp only at h)
