@@ -1,3 +1,62 @@
+## v0.37.52 — The records view extended with the endpoint queue links (WS-SX SX23)
+
+SX23 is on SX22 and runs before the endpoint queue links' labels are carried
+(SX24, D47).  The records view now holds every field those labels read, so
+every records frame keeps them, as D45 did for the notification fields.
+Nothing new is carried yet, and no transition changes.
+
+- **Measured first.**  The queue arms' teardown reads the victim's two
+  endpoint-queue neighbours and the endpoint's queue ends, and no frame
+  carried per entry kept them.  The stub pass to a fixpoint over the 75
+  `SeLe4n/` modules downstream of `KernelRecords/Frame.lean` is the cut
+  itself: 18 Lean files (386 lines added, 148 removed), the size of SX20's
+  extension and inside the row's estimate.
+- **Extended.**  `TcbRecordView` gains `queuePrev` and `queueNext` (the
+  thread's endpoint-queue link codes).  `recordViewOf` gains an endpoint's
+  view (`Endpoint.recordView`: its send and receive queues' heads and tails),
+  over the named sum `RecordView`.  The back-pointer (`queuePPrevCode`) stays
+  out: it names the same predecessor, or the endpoint's head, which the view
+  already holds.  The erasure frames (taint, yield, release, run links, slot
+  links) and the priority-inheritance walk keep the wider view.
+- **The core view widened.**  `RecordsCoreFrame` stays the one core frame.
+  Its view (`TcbRecordView.core`, `recordCoreView`) now erases the endpoint
+  queue links and an endpoint's queue ends beside the notification fields.
+- **The endpoint-queue frame.**  SX21's queue labels family took the
+  endpoint queues' writes as records frames, so they carried notification
+  label coherence for free.  As core frames they would not.
+  `RecordsEndpointFrame` is a core frame that also keeps every slot's
+  notification-queue reads (`recordNtfnViewOf`).  `NtfnLabelsKept.of_endpointFrame`
+  and `QueueLabelsFrame.of_endpointFrame` take coherence across it with no new
+  proof.
+- **Restated.**  These writes of the links or the ends are endpoint-queue
+  frames:
+  - `storeTcbQueueLinks`;
+  - the dual queue's pop, append and removal (`endpointQueuePopHead`,
+    `endpointQueueEnqueue`, `endpointQueueRemoveDual`);
+  - the timeout's removal and its neighbour patches (`endpointQueueRemove`,
+    `neighbourPatch`);
+  - the cancel's in-place pop (`storePopHead`).
+  The records, waiters and lenders families chain them through SX20's core
+  siblings.  The suspend's target-ready proof reads the pending-state clear
+  as a core frame.  The other writer modules the row names (the in-place pops
+  and enqueues, the transport, the Call legs, the ReplyRecv takes, the
+  lifecycle's cleanup and suspend, the cancellation arms) reach the records
+  family only as `RecordsStep`s, which claim no view, or through these
+  primitives.
+- **Deleted.**  `RecordsFrame.storeEndpoint`, `RecordsFrame.notParked` and
+  `RecordsFrame.modifyObject`, which nothing used once the writers moved.
+- **Gates.**
+  - New Tier 3 anchors pin the TCB's and the endpoint's record views, the
+    endpoint arm of `recordViewOf`, the core view's erasure,
+    `RecordsEndpointFrame` and its six writers, and
+    `NtfnLabelsKept.of_endpointFrame`.
+  - The TCB-view and notification-arm anchors follow the wider view.
+  - Negative anchors refuse the deleted lemmas.
+  - Each was tested by breaking its relation and keeping its tokens.
+  - Every anchor on the cut's files was swept and run (116).
+- **Plan.**  SX23 is landed.  The summary of decisions now records D47 as
+  SX22's wrap under the owner's D32 rule, as its §3 entry says.
+
 ## v0.37.51 — The notification lend's label check deleted as unreachable (WS-SX SX22)
 
 SX22 is on SX21.  The notification lend is seL4-MCS's, unchecked, at every
