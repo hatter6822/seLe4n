@@ -36,24 +36,34 @@ end RecordsStep
 
 namespace RecordsFrame
 
-/-- An object rewritten in its slot by an update keeping every record view. -/
+end RecordsFrame
+
+namespace RecordsEndpointFrame
+
+/-- An object rewritten in its slot by an update keeping every core view and the
+notification-queue reads. -/
 theorem modifyObject (st : SystemState) (k : SeLe4n.ObjId) {f : KernelObject → KernelObject}
-    (hInv : st.objects.invExt) (hV : ∀ o, recordViewOf (some (f o)) = recordViewOf (some o)) :
-    RecordsFrame st (st.modifyObject k f) := by
-  refine ⟨fun x => ?_, rfl, modifyObject_preserves_objects_invExt hInv, rfl⟩
-  rw [modifyObject_objects_getElem hInv]
-  split
+    (hInv : st.objects.invExt) (hV : ∀ o, recordCoreViewOf (some (f o)) = recordCoreViewOf (some o))
+    (hN : ∀ o, recordNtfnViewOf (some (f o)) = recordNtfnViewOf (some o)) :
+    RecordsEndpointFrame st (st.modifyObject k f) := by
+  refine ⟨⟨fun x => ?_, rfl, modifyObject_preserves_objects_invExt hInv, rfl⟩, fun x => ?_⟩ <;>
+  rw [modifyObject_objects_getElem hInv] <;> split
   · rename_i h; subst h
     cases st.objects[k]? with
     | none => rfl
     | some o => exact hV o
   · rfl
+  · rename_i h; subst h
+    cases st.objects[k]? with
+    | none => rfl
+    | some o => exact hN o
+  · rfl
 
-/-- An endpoint's queue head popped in place: the endpoint, the successor's and
-the head's queue links. -/
+/-- **An endpoint's queue head popped in place** keeps every core view and the
+notification queues: the endpoint, the successor's and the head's queue links. -/
 theorem storePopHead (st : SystemState) (e : SeLe4n.ObjId) (q : Bool) (head : SeLe4n.ThreadId)
     (next : Option SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    RecordsFrame st (SeLe4n.Kernel.storePopHead st e q head next) := by
+    RecordsEndpointFrame st (SeLe4n.Kernel.storePopHead st e q head next) := by
   unfold SeLe4n.Kernel.storePopHead
   dsimp only
   have F1 := modifyObject st e (f := popEndpoint q (SeLe4n.ThreadId.optCode next)) hInv
@@ -61,13 +71,20 @@ theorem storePopHead (st : SystemState) (e : SeLe4n.ObjId) (q : Bool) (head : Se
       cases o <;> try rfl
       unfold popEndpoint
       cases q <;> cases SeLe4n.ThreadId.optCode next <;> rfl)
+    (fun o => by
+      cases o <;> try rfl
+      unfold popEndpoint
+      cases q <;> cases SeLe4n.ThreadId.optCode next <;> rfl)
   cases next with
-  | none => exact F1.trans (updateTcb _ head (f := tcbOffQueue) F1.invExt fun _ => rfl)
+  | none => exact F1.trans (updateTcb _ head (f := tcbOffQueue) F1.invExt (fun _ => rfl)
+      fun _ => ⟨rfl, rfl⟩)
   | some n =>
-    have F2 := F1.trans (updateTcb _ n (f := tcbAsQueueHead) F1.invExt fun _ => rfl)
-    exact F2.trans (updateTcb _ head (f := tcbOffQueue) F2.invExt fun _ => rfl)
+    have F2 := F1.trans (updateTcb _ n (f := tcbAsQueueHead) F1.invExt (fun _ => rfl)
+      fun _ => ⟨rfl, rfl⟩)
+    exact F2.trans (updateTcb _ head (f := tcbOffQueue) F2.invExt (fun _ => rfl)
+      fun _ => ⟨rfl, rfl⟩)
 
-end RecordsFrame
+end RecordsEndpointFrame
 
 /-- **The notification unbind keeps the records**: neither link word is in a
 record view. -/
@@ -101,15 +118,15 @@ theorem storeEndpointWaiterCancelled (st : SystemState) (e : SeLe4n.ObjId) (q : 
     (t : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (faulted : Bool)
     (hInv : st.objects.invExt) :
     RecordsStep st (SeLe4n.Kernel.storeEndpointWaiterCancelled st e q t next faulted) := by
-  have F1 := RecordsFrame.storePopHead st e q t next hInv
+  have F1 := (RecordsEndpointFrame.storePopHead st e q t next hInv).core
   unfold SeLe4n.Kernel.storeEndpointWaiterCancelled
   split
   · -- A faulted waiter is left `Inactive` with its fault, which parks the record.
     unfold SeLe4n.Kernel.storeEndpointWaiterFaulted
-    exact (of_frame F1).trans (updateTcb _ t (f := faultedEndpointWaiterTcb) F1.invExt
+    exact (of_coreFrame F1).trans (updateTcb _ t (f := faultedEndpointWaiterTcb) F1.invExt
       (fun _ _ => TcbStaysParked.of_parked (.inl rfl)))
   unfold SeLe4n.Kernel.storeEndpointWaiterRestarted
-  have S2 := (of_frame F1).trans (updateTcb _ t (f := cancelledEndpointWaiterTcb) F1.invExt
+  have S2 := (of_coreFrame F1).trans (updateTcb _ t (f := cancelledEndpointWaiterTcb) F1.invExt
     (fun _ _ => TcbStaysParked.of_noFault (TCB.pendingFault_setPendingFault _ none)))
   refine S2.trans (of_frame (RecordsFrame.enqueueRunnableOnCore _ _ t S2.invExt fun x hx => ?_))
   rw [SystemState.updateTcb_getTcb?_self _ _ _ F1.invExt] at hx

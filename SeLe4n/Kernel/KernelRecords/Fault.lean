@@ -104,7 +104,7 @@ theorem endpointCallOnCore_callerParked {endpointId : SeLe4n.ObjId} {caller : Se
           have hRh : receiver = hd := endpointQueuePopHead_popped_eq_head _ true _ _ ep _ _ _
             hEpO (by simpa using hHead) hPop
           subst hRh
-          have F1 := RecordsFrame.endpointQueuePopHead hInv hPop
+          have F1 := (RecordsEndpointFrame.endpointQueuePopHead hInv hPop).core
           split
           · intro _ h; cases h
           · rename_i st2 hRdy
@@ -134,7 +134,7 @@ theorem endpointCallOnCore_callerParked {endpointId : SeLe4n.ObjId} {caller : Se
           have hRh : receiver = hd := endpointQueuePopHead_popped_eq_head _ true _ _ ep _ _ _
             hEpO (by simpa using hHead) hPop
           subst hRh
-          have F1 := RecordsFrame.endpointQueuePopHead hInv hPop
+          have F1 := (RecordsEndpointFrame.endpointQueuePopHead hInv hPop).core
           split
           · intro _ h; cases h
           · rename_i st2 hRC
@@ -153,7 +153,7 @@ theorem endpointCallOnCore_callerParked {endpointId : SeLe4n.ObjId} {caller : Se
         split
         · intro _ h; cases h
         · rename_i st2 hBlk
-          have F1 := RecordsFrame.endpointQueueEnqueue hInv hEnq
+          have F1 := (RecordsEndpointFrame.endpointQueueEnqueue hInv hEnq).core
           have S2 := RecordsStep.storeTcbIpcStateAndMessage F1.invExt hBlk
             (fun _ _ => .inr (by simp))
           have F3 := RecordsFrame.removeRunnableOnCore st2 caller c S2.invExt

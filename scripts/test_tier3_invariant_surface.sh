@@ -4174,13 +4174,32 @@ run_check "INVARIANT" rg -n '^theorem RecordsStage\.of_step($|[ ({:\[\]])' SeLe4
 # notification-queue links and a notification's bound thread and queue ends, so
 # every records frame keeps them; the writes of those fields are core frames
 # (`RecordsCoreFrame`, the view without them), which keep the kernel records only.
-run_check "INVARIANT" rg -U -n '^def _root_\.SeLe4n\.Model\.TCB\.recordView \(t : TCB\) : TcbRecordView :=\n  ⟨t\.replyView, t\.ipcState, t\.threadState, t\.pendingFault\.isSome, t\.ntfnPrevCode, t\.ntfnNextCode⟩$' SeLe4n/Kernel/KernelRecords/Frame.lean
+run_check "INVARIANT" rg -U -n '^def _root_\.SeLe4n\.Model\.TCB\.recordView \(t : TCB\) : TcbRecordView :=\n  ⟨t\.replyView, t\.ipcState, t\.threadState, t\.pendingFault\.isSome, t\.ntfnPrevCode, t\.ntfnNextCode,\n    t\.queuePrevCode, t\.queueNextCode⟩$' SeLe4n/Kernel/KernelRecords/Frame.lean
 run_check "INVARIANT" rg -U -n '^def _root_\.SeLe4n\.Model\.Notification\.recordView \(n : Notification\) : NtfnRecordView :=\n  \(n\.boundTCBCode, n\.waitHeadCode, n\.waitTailCode\)$' SeLe4n/Kernel/KernelRecords/Frame.lean
-run_check "INVARIANT" rg -n '^  \| some \(\.notification n\) => some \(\.inr \(\.inr n\.recordView\)\)$' SeLe4n/Kernel/KernelRecords/Frame.lean
+run_check "INVARIANT" rg -n '^  \| some \(\.notification n\) => some \(\.inr \(\.inr \(\.inl n\.recordView\)\)\)$' SeLe4n/Kernel/KernelRecords/Frame.lean
 run_check "INVARIANT" rg -n '^structure RecordsCoreFrame($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Frame.lean
 run_check "INVARIANT" rg -U -n '^theorem bindNotification \{[^\n]*\n(    [^\n]*\n)*    RecordsCoreFrame st st'"'"' := by$' SeLe4n/Kernel/KernelRecords/Thread.lean
 run_check "INVARIANT" rg -U -n '^theorem unbindNotification \{[^\n]*\n(    [^\n]*\n)*    RecordsCoreFrame st st'"'"' := by$' SeLe4n/Kernel/KernelRecords/Thread.lean
 run_check "INVARIANT" rg -U -n '^theorem linkNtfnWaiter \{[^\n]*\n(    [^\n]*\n)*    RecordsCoreFrame st st'"'"' := by$' SeLe4n/Kernel/KernelRecords/IpcNotification.lean
+# The records view also holds what the endpoint queue's link labels read: a
+# TCB's two endpoint-queue links and an endpoint's four queue ends, so every
+# records frame keeps them.  The core view erases them beside the notification
+# fields, and the writes of the endpoint queues are endpoint-queue frames
+# (`RecordsEndpointFrame`: a core frame that keeps the notification queues).
+run_check "INVARIANT" rg -U -n '^def _root_\.SeLe4n\.Model\.Endpoint\.recordView \(e : Endpoint\) : EndpointRecordView :=\n  \(e\.sendHeadCode, e\.sendTailCode, e\.recvHeadCode, e\.recvTailCode\)$' SeLe4n/Kernel/KernelRecords/Frame.lean
+run_check "INVARIANT" rg -n '^  \| some \(\.endpoint e\) => some \(\.inr \(\.inr \(\.inr e\.recordView\)\)\)$' SeLe4n/Kernel/KernelRecords/Frame.lean
+run_check "INVARIANT" rg -U -n '^def TcbRecordView\.core \(v : TcbRecordView\) : TcbRecordView :=\n  \{ v with ntfnPrev := 0, ntfnNext := 0, queuePrev := 0, queueNext := 0 \}$' SeLe4n/Kernel/KernelRecords/Frame.lean
+run_check "INVARIANT" rg -n '^  \| \.inr \(\.inr \(\.inr _\)\) => \.inr \(\.inr \(\.inr \(0, 0, 0, 0\)\)\)$' SeLe4n/Kernel/KernelRecords/Frame.lean
+run_check "INVARIANT" rg -U -n '^structure RecordsEndpointFrame \(st st'"'"' : SystemState\) : Prop where\n  core : RecordsCoreFrame st st'"'"'\n  ntfnViews : ∀ k : SeLe4n\.ObjId, recordNtfnViewOf st'"'"'\.objects\[k\]\? = recordNtfnViewOf st\.objects\[k\]\?$' SeLe4n/Kernel/KernelRecords/Frame.lean
+run_check "INVARIANT" rg -U -n '^theorem storeTcbQueueLinks \{[^\n]*\n(    [^\n]*\n)*    RecordsEndpointFrame st st'"'"' :=$' SeLe4n/Kernel/KernelRecords/IpcPrimitives.lean
+run_check "INVARIANT" rg -U -n '^theorem endpointQueuePopHead \{[^\n]*\n(    [^\n]*\n)*    RecordsEndpointFrame st st'"'"' := by$' SeLe4n/Kernel/KernelRecords/IpcPrimitives.lean
+run_check "INVARIANT" rg -U -n '^theorem endpointQueueEnqueue \{[^\n]*\n(    [^\n]*\n)*    RecordsEndpointFrame st st'"'"' := by$' SeLe4n/Kernel/KernelRecords/IpcPrimitives.lean
+run_check "INVARIANT" rg -U -n '^theorem endpointQueueRemoveDual \{[^\n]*\n(    [^\n]*\n)*    RecordsEndpointFrame st st'"'"' := by$' SeLe4n/Kernel/KernelRecords/IpcNotification.lean
+run_check "INVARIANT" rg -U -n '^theorem endpointQueueRemove \{[^\n]*\n(    [^\n]*\n)*    RecordsEndpointFrame st st'"'"' := by$' SeLe4n/Kernel/KernelRecords/Timer.lean
+run_check "INVARIANT" rg -U -n '^theorem storePopHead \([^\n]*\n(    [^\n]*\n)*    RecordsEndpointFrame st \(SeLe4n\.Kernel\.storePopHead st e q head next\) := by$' SeLe4n/Kernel/KernelRecords/Finalise.lean
+run_check "INVARIANT" rg -U -n '^theorem of_endpointFrame \{st st'"'"' : SystemState\} \(F : RecordsEndpointFrame st st'"'"'\) :\n    NtfnLabelsKept st st'"'"' := ' SeLe4n/Kernel/QueueLabels/Stage.lean
+run_negative_check "INVARIANT" rg -n '^theorem RecordsFrame\.notParked($|[ ({:\[\]])' SeLe4n/
+run_negative_check "INVARIANT" rg -U -n '^theorem (storeEndpoint|modifyObject) [^\n]*\n(    [^\n]*\n)*    [^\n]*RecordsFrame st ' SeLe4n/
 run_negative_check "INVARIANT" rg -n '^theorem (RecordsFrame\.of_kept|recordViewOf_congr)($|[ ({:\[\]])' SeLe4n/
 run_check "INVARIANT" rg -n '^theorem bootTcbShape_replyView_idle($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Boot.lean
 run_check "INVARIANT" rg -n '^theorem replyWaitersConsistent_of_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Boot.lean

@@ -72,7 +72,7 @@ theorem notificationSignalBoundOnCore_preserves_replyWaitersConsistent (nid : Se
     split
     · exact hC
     · rename_i st1 hRm
-      have F := RecordsFrame.endpointQueueRemoveDual hInv hRm
+      have F := (RecordsEndpointFrame.endpointQueueRemoveDual hInv hRm).core
       split
       · exact hC
       · rename_i st2 hS

@@ -171,11 +171,11 @@ theorem suspendThreadOnCore_target_ipcReady {st st' : SystemState}
     (hActive : ∀ t, st.getTcb? vtid.val = some t → t.threadState ≠ .Inactive)
     (hStep : Lifecycle.Suspend.suspendThreadOnCore st vtid c = .ok (st', sgi?)) :
     ∀ x, st'.getTcb? vtid.val = some x → x.ipcState = .ready := by
-  have back : ∀ {a b : SystemState}, RecordsFrame a b →
+  have back : ∀ {a b : SystemState}, RecordsCoreFrame a b →
       (∀ x, a.getTcb? vtid.val = some x → x.ipcState = .ready) →
       ∀ y, b.getTcb? vtid.val = some y → y.ipcState = .ready := fun F h y hy => by
     obtain ⟨x, hx, hv⟩ := F.getTcb?_view hy
-    rw [← h x hx]; exact (congrArg TcbRecordView.ipc hv).symm
+    rw [← h x hx]; exact (TcbRecordView.core_eq hv).2.1.symm
   simp only [Lifecycle.Suspend.suspendThreadOnCore] at hStep
   split at hStep
   case h_2 => exact absurd hStep (by simp)
@@ -210,11 +210,14 @@ theorem suspendThreadOnCore_target_ipcReady {st st' : SystemState}
         | some serverId => exact RecordsFrame.propagatePipChainCrossCore _ _ _ _ hI1
       have F3 := F2.trans (RecordsFrame.descheduleAt _ vtid.val (placedCoreOf? st vtid.val)
         F2.invExt)
-      have F4 := F3.trans (show RecordsFrame _ (Lifecycle.Suspend.clearPendingStateValid _ vtid) by
+      have F4 := F3.core.trans (show RecordsCoreFrame _
+          (Lifecycle.Suspend.clearPendingStateValid _ vtid) by
         unfold Lifecycle.Suspend.clearPendingStateValid Lifecycle.Suspend.clearPendingState
-        exact RecordsFrame.updateTcb _ _ F3.invExt fun _ => rfl)
+        refine (RecordsEndpointFrame.updateTcb _ vtid.val F3.invExt ?_ ?_).core <;> intro _
+        · rfl
+        · exact ⟨rfl, rfl⟩)
       have R4 := back F4 R1
-      have upd : ∀ {a b : SystemState} {f : TCB → TCB}, RecordsFrame (a.updateTcb vtid.val f) b →
+      have upd : ∀ {a b : SystemState} {f : TCB → TCB}, RecordsCoreFrame (a.updateTcb vtid.val f) b →
           a.objects.invExt → (∀ t, (f t).ipcState = t.ipcState) →
           (∀ x, a.getTcb? vtid.val = some x → x.ipcState = .ready) →
           ∀ y, b.getTcb? vtid.val = some y → y.ipcState = .ready := fun F hI hf hR => by
@@ -226,7 +229,8 @@ theorem suspendThreadOnCore_target_ipcReady {st st' : SystemState}
         (fun t => { t with threadState := .Inactive }) F4.invExt
       have F6 := (RecordsFrame.releaseRemoveThread _ vtid.val hI5).trans
         (RecordsFrame.cancelYieldTo _ vtid.val (RecordsFrame.releaseRemoveThread _ vtid.val hI5).invExt)
-      exact upd (F6.trans (RecordsStep.suspendRescheduleOnCore F6.invExt hStep)) F4.invExt
+      have F7 := F6.trans (RecordsStep.suspendRescheduleOnCore F6.invExt hStep)
+      exact upd F7.core F4.invExt
         (fun _ => rfl) R4
 
 /-- A resume that commits found its target `.Inactive`, so quiescent in IPC. -/

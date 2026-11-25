@@ -264,6 +264,40 @@ theorem of_views {st st' : SystemState}
 theorem of_frame {st st' : SystemState} (F : RecordsFrame st st') : NtfnLabelsKept st st' :=
   of_views F.views
 
+/-- What one object's coherence reads is its core view and its notification-queue
+reads. -/
+theorem _root_.SeLe4n.Kernel.notificationEntryLabelsAgree_of_coreView
+    {ctx : LabelingContext} {oid : SeLe4n.ObjId} {a b : KernelObject}
+    (hC : recordCoreViewOf (some a) = recordCoreViewOf (some b))
+    (hN : recordNtfnViewOf (some a) = recordNtfnViewOf (some b)) :
+    notificationEntryLabelsAgree ctx oid a = notificationEntryLabelsAgree ctx oid b := by
+  cases a <;> cases b <;> simp only [recordCoreViewOf, recordViewOf, recordCoreView,
+    recordNtfnViewOf, Option.map_some, Option.map_none, reduceCtorEq, Option.some.injEq,
+    Sum.inl.injEq, Sum.inr.injEq] at hC hN <;> try rfl
+  · rename_i x y
+    simp only [TCB.recordView, TcbRecordView.core, TcbRecordView.mk.injEq] at hC
+    simp only [Prod.mk.injEq] at hN
+    simp only [notificationEntryLabelsAgree, TCB.ntfnPrev, TCB.ntfnNext, hC.2.1, hN.1, hN.2]
+  · rename_i x y
+    simp only [Notification.recordView, Prod.mk.injEq] at hN
+    obtain ⟨hB, hH, hT⟩ := hN
+    simp only [notificationEntryLabelsAgree, Notification.boundTCB, Notification.waitHead,
+      Notification.waitTail, hB, hH, hT]
+
+/-- **An endpoint-queue write keeps coherence**, with no new proof. -/
+theorem of_endpointFrame {st st' : SystemState} (F : RecordsEndpointFrame st st') :
+    NtfnLabelsKept st st' := fun _ H oid obj' hO => by
+  have hc := F.core.views oid
+  have hn := F.ntfnViews oid
+  rw [hO] at hc hn
+  cases hS : st.objects[oid]? with
+  | none => rw [hS] at hc; cases obj' <;> simp [recordCoreViewOf, recordViewOf] at hc <;>
+      simp [notificationEntryLabelsAgree]
+  | some obj =>
+    rw [hS] at hc hn
+    rw [notificationEntryLabelsAgree_of_coreView hc hn]
+    exact H oid obj hS
+
 /-- A kept step is a growth at any member. -/
 theorem growAt {st st' : SystemState} (h : NtfnLabelsKept st st') (w : SeLe4n.ThreadId)
     (n : SeLe4n.ObjId) : NtfnLabelsGrowAt w n st st' := fun ctx _ H => h ctx H
@@ -376,6 +410,11 @@ theorem of_frame {st st' : SystemState} (F : RecordsFrame st st') : QueueLabelsF
 theorem of_coreFrame {st st' : SystemState} (F : RecordsCoreFrame st st')
     (hN : NtfnLabelsKept st st') : QueueLabelsFrame st st' :=
   ⟨.of_coreFrame F, hN, F.invExt⟩
+
+/-- An endpoint-queue write. -/
+theorem of_endpointFrame {st st' : SystemState} (F : RecordsEndpointFrame st st') :
+    QueueLabelsFrame st st' :=
+  of_coreFrame F.core (.of_endpointFrame F)
 
 theorem of_eq {st st' : SystemState} (hInv : st.objects.invExt) (h : st' = st) :
     QueueLabelsFrame st st' := by subst h; exact refl hInv

@@ -120,7 +120,7 @@ theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n
         subst hSh
         have hSO := endpointQueuePopHead_returns_pre_tcb _ false _ ep _ _ _ hEpO hPop
         have hSQ := (hQ endpointId ep sender senderTcb hEpO hSO).2 hHead
-        have F1 := RecordsFrame.endpointQueuePopHead hInv hPop
+        have F1 := (RecordsEndpointFrame.endpointQueuePopHead hInv hPop).core
         dsimp only
         split
         · -- the sender called
@@ -135,7 +135,7 @@ theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n
             · exact refl hInv
             · rename_i st2 hBlk
               have S2 := storeTcbIpcStateAndMessage F1.invExt hBlk (fun _ _ => .inr (by simp))
-              have N2 := NotParkedAt.modifyTcb_ne F1.invExt hBlk hne (hRcv.frame F1)
+              have N2 := NotParkedAt.modifyTcb_ne F1.invExt hBlk hne (hRcv.coreFrame F1)
               split
               · exact refl hInv
               · split
@@ -146,7 +146,7 @@ theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n
                   · rename_i st4 hRdy
                     have S4 := storeTcbIpcStateAndMessage F3.invExt hRdy
                       (fun x hx => .inl (N2.frame F3 x hx))
-                    exact (of_frame F1).trans (S2.trans ((of_frame F3).trans (S4.trans
+                    exact (of_coreFrame F1).trans (S2.trans ((of_frame F3).trans (S4.trans
                       (linkReplyWaiter _ _ _ S4.invExt))))
                   · exact refl hInv
           · -- a Call that links no reply: the caller completed `Inactive`
@@ -154,7 +154,7 @@ theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n
             · exact refl hInv
             · rename_i st2 hRdy
               have S3 := RecordsStep.storeReadyThenInactive F1.invExt hRdy
-              have N2 := NotParkedAt.modifyTcb_ne F1.invExt hRdy hne (hRcv.frame F1)
+              have N2 := NotParkedAt.modifyTcb_ne F1.invExt hRdy hne (hRcv.coreFrame F1)
               have hInv2 := modifyTcb_preserves_objects_invExt F1.invExt hRdy
               have N3 : NotParkedAt (st2.updateTcb sender
                   fun x => { x with threadState := .Inactive }) receiver := fun x hx =>
@@ -166,7 +166,7 @@ theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n
               · rename_i st4 hRcvd
                 have S4 := storeTcbIpcStateAndMessage S3.invExt hRcvd
                   (fun x hx => .inl (N3 x hx))
-                exact (of_frame F1).trans (S3.trans S4)
+                exact (of_coreFrame F1).trans (S3.trans S4)
               · exact refl hInv
         · -- the sender sent
           rename_i hNotCall
@@ -184,7 +184,7 @@ theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n
               rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hy] at hSO
               cases hSO
               rw [← this, hSend]; simp))
-            have N2 := NotParkedAt.modifyTcb F1.invExt hRdy (fun x _ => by simp) (hRcv.frame F1)
+            have N2 := NotParkedAt.modifyTcb F1.invExt hRdy (fun x _ => by simp) (hRcv.coreFrame F1)
             obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hRdy
             have F3 := RecordsFrame.wakeThread st2 sender c S2.invExt (fun y hy => by
               rw [hx] at hy; cases hy; simp)
@@ -192,7 +192,7 @@ theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n
             · rename_i st4 hRcvd
               have S4 := storeTcbIpcStateAndMessage F3.invExt hRcvd
                 (fun x hx => .inl (N2.frame F3 x hx))
-              exact (of_frame F1).trans (S2.trans ((of_frame F3).trans S4))
+              exact (of_coreFrame F1).trans (S2.trans ((of_frame F3).trans S4))
             · exact refl hInv
     · -- no sender: block
       split
@@ -202,13 +202,13 @@ theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n
         split
         · exact refl hInv
         · rename_i st1 hEnq
-          have F1 := F0.trans (RecordsFrame.endpointQueueEnqueue F0.invExt hEnq)
+          have F1 := F0.core.trans (RecordsEndpointFrame.endpointQueueEnqueue F0.invExt hEnq).core
           split
           · exact refl hInv
           · rename_i st2 hBlk
             have S2 := storeTcbIpcStateAndMessage F1.invExt hBlk
-              (fun x hx => .inl (hRcv.frame F1 x hx))
-            have P := (of_frame F1).trans S2
+              (fun x hx => .inl (hRcv.coreFrame F1 x hx))
+            have P := (of_coreFrame F1).trans S2
             split
             · exact P.trans (of_frame (RecordsFrame.removeRunnableOnCore _ _ _ S2.invExt))
             · rename_i rTcb hT

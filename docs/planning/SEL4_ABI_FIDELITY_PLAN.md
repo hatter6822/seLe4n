@@ -52,7 +52,10 @@
 > found that no carried frame keeps an endpoint queue's links, so its remainder
 > became SX23 (the records view extended with the endpoint queue links) and
 > SX24 (the endpoint queue links' labels carried, the queue arms' teardown
-> projection discharged), and SX23–SX32 became SX25–SX34.
+> projection discharged), and SX23–SX32 became SX25–SX34. SX23 landed at
+> `v0.37.52` (the records view extended with the endpoint queue links; their
+> writers are endpoint-queue frames, core frames that keep the notification
+> queues).
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
 > **Rows**: SX1–SX34, numbered in the order they are implemented, one PR each.
@@ -65,7 +68,8 @@
 > started; D40 during SX13 (confirmed by the owner's merge of PR #1101); D41 and D42 during SX14
 > (each confirmed by the owner, 2026-11-24); D43 and D44 during SX18 (the owner's,
 > 2026-11-24); D45 during SX20 (the owner's, 2026-11-24); D46 during SX21
-> (default taken, 2026-11-25); D47 during SX22 (the owner's, 2026-11-25).
+> (default taken, 2026-11-25); D47 during SX22 (SX22's wrap under the owner's D32 rule,
+> 2026-11-25).
 > **Supersedes**: the "Next PR" scope in
 > `docs/agent_guide/WORKSTREAM_CONTEXT.md` (the root task's boot IPC buffer
 > and the guard in the capability with `CNode_Mutate`). Both are rows here
@@ -1072,6 +1076,10 @@ the boot implication, inside the row's estimate. The carried form is
 
 ### SX23 — The records view extended with the endpoint queue links (D45, D47)
 
+**LANDED at `v0.37.52`.** Measured by a stub pass to its fixpoint over the 75
+modules downstream of the records view: 18 Lean files (386 lines added, 148
+removed), the size of SX20's extension. No transition changes.
+
 Measured when SX22.2 started: the queue arms' teardown reads the victim's two
 endpoint-queue neighbours and the endpoint's queue ends, and no frame carried
 per entry keeps them (`TcbRecordView` holds a thread's reply view, IPC state,
@@ -1082,7 +1090,7 @@ frames. No transition changes.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX23.1 | **The records view gains a thread's endpoint-queue links** (`queuePrev`, `queueNext`) and an endpoint's queue ends, so every records frame keeps them. The writers of them are restated as core frames (`RecordsCoreFrame`): the dual queue's enqueue and remove (`IPC/DualQueue/Core`), the in-place pops and enqueues (`PopInPlace`, `EndpointEnqueueInPlace`), the transport and the Call legs, the four ReplyRecv take-in-place modules, the lifecycle's cleanup and suspend, and the cancellation arms (`ReschedulePendingArms/Cancellation`). | Each writer's core frame; the records family's existing frames re-proved over the wider view where they read it. | Tier 3 anchors on the view's new fields and the core frames |
+| SX23.1 | **LANDED at `v0.37.52`** (the view holds `queuePrevCode`, `queueNextCode` and `Endpoint.recordView`, the four queue-end codes; the back-pointer stays out, naming the same predecessor or the endpoint's head; the writers are `RecordsEndpointFrame`s, core frames that keep the notification queues' reads, so SX21's notification coherence still crosses them with no new proof; the modules named below that also write an IPC state reach the records family as `RecordsStep`s, which claim no view, or through the restated primitives: `storeTcbQueueLinks`, `endpointQueuePopHead`, `endpointQueueEnqueue`, `endpointQueueRemoveDual`, `endpointQueueRemove` with its neighbour patches, and `storePopHead`; `RecordsFrame.storeEndpoint`, `notParked` and `modifyObject` deleted as unused). **The records view gains a thread's endpoint-queue links** (`queuePrev`, `queueNext`) and an endpoint's queue ends, so every records frame keeps them. The writers of them are restated as core frames (`RecordsCoreFrame`): the dual queue's enqueue and remove (`IPC/DualQueue/Core`), the in-place pops and enqueues (`PopInPlace`, `EndpointEnqueueInPlace`), the transport and the Call legs, the four ReplyRecv take-in-place modules, the lifecycle's cleanup and suspend, and the cancellation arms (`ReschedulePendingArms/Cancellation`). | Each writer's core frame; the records family's existing frames re-proved over the wider view where they read it. | Tier 3 anchors on the view's new fields and the core frames |
 
 **Acceptance:**
 - every records frame keeps the endpoint queue links and ends, and every writer
@@ -1227,7 +1235,7 @@ every new path measured at 0.
 | SX20 | 1 (landed) |
 | SX21 | 2–3 (landed) |
 | SX22 | 1 (landed) |
-| SX23 | 1–2 |
+| SX23 | 1–2 (landed) |
 | SX24 | 2–3 |
 | SX25 | 3 |
 | SX26 | 2 |

@@ -115,7 +115,7 @@ theorem notificationSignalBoundOnCore {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge
     split
     · exact refl hInv
     · rename_i st1 hRm
-      have F1 := RecordsFrame.endpointQueueRemoveDual hInv hRm
+      have F1 := RecordsEndpointFrame.endpointQueueRemoveDual hInv hRm
       split
       · exact refl hInv
       · rename_i st2 hC
@@ -123,7 +123,7 @@ theorem notificationSignalBoundOnCore {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge
         obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hC
         have F3 := RecordsFrame.wakeThread st2 t c S2.invExt (fun y hy => by
           rw [hx] at hy; cases hy; simp [TCB.signalBoundWoken])
-        exact (of_frame F1).trans (S2.trans (of_frame F3))
+        exact (of_endpointFrame F1).trans (S2.trans (of_frame F3))
   · exact notificationSignalOnCore hInv
 
 theorem notificationSignalDeclassifiedOnCore {ctx : GenericLabelingContext}

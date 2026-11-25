@@ -46,25 +46,25 @@ theorem endpointSendDualOnCore {endpointId : SeLe4n.ObjId} {sender : SeLe4n.Thre
           split
           · exact refl hInv
           · rename_i st2 hRecv
-            have F1 := RecordsFrame.endpointQueuePopHead hInv hPop
+            have F1 := RecordsEndpointFrame.endpointQueuePopHead hInv hPop
             have S2 := QueueLabelsFrame.storeTcbReceiveComplete F1.invExt hRecv
             obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hRecv
             have F3 := RecordsFrame.wakeThread st2 receiver c S2.invExt (fun y hy => by
               rw [hx] at hy; cases hy; simp)
-            exact (((QueueLabelsFrame.of_frame F1).trans S2).trans (.of_frame F3)).growAt _ _
+            exact (((QueueLabelsFrame.of_endpointFrame F1).trans S2).trans (.of_frame F3)).growAt _ _
     · split
       · exact refl hInv
       · rename_i st1 hEnq
         split
         · exact refl hInv
         · rename_i st2 hBlk
-          have F1 := RecordsFrame.endpointQueueEnqueue hInv hEnq
+          have F1 := RecordsEndpointFrame.endpointQueueEnqueue hInv hEnq
           have G2 := storeTcbIpcStateAndMessage (e0 := endpointId) F1.invExt hBlk
             (fun _ h => ipcWaitsOnEndpoint_blockedOnSend h)
           have F3 := RecordsFrame.removeRunnableOnCore st2 sender c G2.invExt
           have F4 := RecordsFrame.recordSendCap _ sender payload.badge payload.grant
             payload.grantReply F3.invExt
-          exact ((QueueLabelsFrame.of_frame F1).thenGrow G2).thenFrame
+          exact ((QueueLabelsFrame.of_endpointFrame F1).thenGrow G2).thenFrame
             ((QueueLabelsFrame.of_frame F3).trans (.of_frame F4))
   · split <;> exact refl hInv
 
@@ -102,7 +102,7 @@ theorem endpointCallOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId
       · split
         · exact refl hInv
         · rename_i receiver _tcb st1 hPop
-          have F1 := RecordsFrame.endpointQueuePopHead hInv hPop
+          have F1 := RecordsEndpointFrame.endpointQueuePopHead hInv hPop
           split
           · exact refl hInv
           · rename_i st2 hRdy
@@ -120,13 +120,13 @@ theorem endpointCallOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId
                 have F5 := RecordsFrame.linkServerStashedReply S4.invExt hLink
                 have F6 := RecordsFrame.removeRunnableOnCore st5 caller c F5.invExt
                 have W7 := QueueLabelsFrame.linkReplyWaiter _ caller receiver F6.invExt
-                exact (((((QueueLabelsFrame.of_frame F1).trans S2).trans (.of_frame F3)).trans
+                exact (((((QueueLabelsFrame.of_endpointFrame F1).trans S2).trans (.of_frame F3)).trans
                   S4).trans ((QueueLabelsFrame.of_frame F5).trans ((QueueLabelsFrame.of_frame F6).trans
                   W7))).growAt _ _
       · split
         · exact refl hInv
         · rename_i receiver _tcb st1 hPop
-          have F1 := RecordsFrame.endpointQueuePopHead hInv hPop
+          have F1 := RecordsEndpointFrame.endpointQueuePopHead hInv hPop
           split
           · exact refl hInv
           · rename_i st2 hRC
@@ -137,7 +137,7 @@ theorem endpointCallOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId
             have F3 := RecordsFrame.wakeThread st2 receiver c S2.invExt (fun y hy => by
               rw [hx] at hy; cases hy; simp)
             have F4 := RecordsFrame.removeRunnableOnCore _ caller c F3.invExt
-            exact (((((QueueLabelsFrame.of_frame F1).trans S2).trans (.of_frame F3)).trans
+            exact (((((QueueLabelsFrame.of_endpointFrame F1).trans S2).trans (.of_frame F3)).trans
               (.of_frame F4)).trans (QueueLabelsFrame.updateTcb _ caller F4.invExt
                 (f := fun t => { t with threadState := .Inactive })
                 fun _ => TcbWaitsKept.of_ipc rfl)).growAt _ _
@@ -147,13 +147,13 @@ theorem endpointCallOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId
         split
         · exact refl hInv
         · rename_i st2 hBlk
-          have F1 := RecordsFrame.endpointQueueEnqueue hInv hEnq
+          have F1 := RecordsEndpointFrame.endpointQueueEnqueue hInv hEnq
           have G2 := storeTcbIpcStateAndMessage (e0 := endpointId) F1.invExt hBlk
             (fun _ h => ipcWaitsOnEndpoint_blockedOnCall h)
           have F3 := RecordsFrame.removeRunnableOnCore st2 caller c G2.invExt
           have F4 := RecordsFrame.recordSendCap _ caller payload.badge payload.grant
             payload.grantReply F3.invExt
-          exact ((QueueLabelsFrame.of_frame F1).thenGrow G2).thenFrame
+          exact ((QueueLabelsFrame.of_endpointFrame F1).thenGrow G2).thenFrame
             ((QueueLabelsFrame.of_frame F3).trans (.of_frame F4))
   · split <;> exact refl hInv
 
@@ -214,7 +214,7 @@ theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n
     · split
       · exact refl hInv
       · rename_i sender senderTcb st1 hPop
-        have F1 := QueueLabelsFrame.of_frame (RecordsFrame.endpointQueuePopHead hInv hPop)
+        have F1 := QueueLabelsFrame.of_endpointFrame (RecordsEndpointFrame.endpointQueuePopHead hInv hPop)
         dsimp only
         split
         · simp only [↓reduceIte]
@@ -264,7 +264,7 @@ theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n
         split
         · exact refl hInv
         · rename_i st1 hEnq
-          have F1 := QueueLabelsFrame.of_frame (F0.trans (RecordsFrame.endpointQueueEnqueue F0.invExt hEnq))
+          have F1 := QueueLabelsFrame.of_endpointFrame ((RecordsEndpointFrame.of_frame F0).trans (RecordsEndpointFrame.endpointQueueEnqueue F0.invExt hEnq))
           split
           · exact refl hInv
           · rename_i st2 hBlk
