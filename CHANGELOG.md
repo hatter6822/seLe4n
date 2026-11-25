@@ -43,8 +43,10 @@ context-holding server's measurement.
   returns the state (`replyRecvCallTakeAnswer`, `replyRecvLongCallTakeAnswer`,
   `replyRecvCallFaultTakeAnswer`, `replyRecvLongCallFaultTakeAnswer`), each
   arm's `_eq` restated over them.  The answers take the replier's register
-  file owned (`replyRecvOwnedRegisters`) and release it once the legs have
-  read it, so the server's frame write does not copy it.  `RefusalCarryingReplyRecv.c` is
+  file owned (their unreachable fallback stores it,
+  `replyRecvLoadReplierRegisters`) and release it once the legs have read
+  it, so the server's frame write does not copy it; the reply leg's
+  no-transfer test is one out-of-line copy (`replyRecvCallTakeReplyInert`).  `RefusalCarryingReplyRecv.c` is
   13,195,173 bytes against 13,204,415 at `v0.37.55` (SX25's baseline:
   21,021,237 bytes, 769 s), and compiles standalone (`leanc -c -O3
   -DNDEBUG`) in 537 s and 567 s on two runs on a quiet machine against
