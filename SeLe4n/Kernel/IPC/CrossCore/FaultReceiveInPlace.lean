@@ -9,7 +9,7 @@
 
 import SeLe4n.Kernel.IPC.CrossCore.FaultInPlace
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReceiveInPlace
-import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyLegFrame
 
 /-!
 # A receive that takes a queued fault, written in place

@@ -2,12 +2,11 @@
 Copyright (C) 2026 seLe4n contributors
 SPDX-License-Identifier: GPL-3.0-or-later
 -/
-import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvInPlace
-import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvDonatedInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyLegFrame
+import SeLe4n.Kernel.IPC.CrossCore.ReplyPopFrame
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyHeldInPlace
-import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvUnheldInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyUnheldPopFrame
 import SeLe4n.Kernel.IPC.CrossCore.ReplyCapsReturnDelivered
-import SeLe4n.Kernel.IPC.CrossCore.LongReplyRecvPopInPlace
 import SeLe4n.Kernel.IPC.CrossCore.LongFaultAnswerInPlace
 
 /-!
@@ -30,6 +29,1300 @@ it, and joined to the specification through one equality per arm
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model SeLe4n.Kernel.RobinHood SeLe4n.Kernel.Concurrency
+
+theorem ipcBufferReadsAgree_descheduleAtPlacement (s : SystemState) (t : SeLe4n.ThreadId) :
+    ipcBufferReadsAgree (descheduleAtPlacement s t) s := by
+  unfold descheduleAtPlacement descheduleAt
+  split
+  · exact ipcBufferReadsAgree_removeRunnableOnCore _ _ _
+  · exact .refl _
+
+/-! ## The per-arm reply legs, blocking
+
+Each reply arm's guard, the receive guard its leg carries, and its leg's
+equality to the specification, which `replyRecvAnsweringOnCore_arm_inPlace`
+cases over. -/
+
+/-- The state after a reply leg whose caller is `c` and whose reply object is
+`rid`, holding message `msg`: the facts the receive leg's guard reads, carried
+over from the pre-state. -/
+theorem storeReplyRendezvous_receiveGuard (st : SystemState) (c tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (msg : IpcMessage) (ct : TCB) (rp : Reply)
+    (epId : SeLe4n.ObjId) (ep : Endpoint) (rt : TCB)
+    (hNo : st.objects.noResizeDue)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hFC : st.objects.findsInPlace c.toObjId = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hNe : tid ≠ c)
+    (hE : st.objects[epId]? = some (.endpoint ep))
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hFree : rp.consumed.isFree = true) (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
+    (storeReplyRendezvous st c tid rid msg).objects[epId]? = some (.endpoint ep) ∧
+      (∃ rt1, (storeReplyRendezvous st c tid rid msg).objects[tid.toObjId]? = some (.tcb rt1) ∧
+        receiveBlockAdmits rt1 = true ∧ rt1.boundNotificationCode = rt.boundNotificationCode) ∧
+      receiveBlocksInPlace (storeReplyRendezvous st c tid rid msg) epId tid ep.receiveQ.tail
+        (some rid) = true := by
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hRc : rid.toObjId ≠ c.toObjId := fun e => by rw [e, hT] at hRp; cases hRp
+  have hEc : epId ≠ c.toObjId := fun e => by rw [e, hT] at hE; cases hE
+  have hEr : epId ≠ rid.toObjId := fun e => by rw [e, hRp] at hE; cases hE
+  have hTc' : tid.toObjId ≠ c.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e)
+  have hTr : tid.toObjId ≠ rid.toObjId := fun e => by rw [e, hRp] at hR; cases hR
+  rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo]
+  generalize hS1 : storeReplyRendezvousReady st c tid rid = S1
+  have hAg := fun x hx hy => hS1 ▸ storeReplyRendezvousReady_agree st c tid rid ct hNo hTc hFC x hx hy
+  have hHold : ∀ x, x ≠ c.toObjId →
+      (S1.mapTcbInPlace c (holdMessage msg)).objects[x]? = S1.objects[x]? := fun x hx => by
+    rw [SystemState.objects_mapTcbInPlace, if_neg (fun h => hx (beq_iff_eq.mp h).symm)]
+  refine ⟨?_, ?_, ?_⟩
+  · rw [hHold _ hEc]; exact agreeAt_of_not_tcb (hAg _ hEc hEr) (fun _ e => by cases e) hE
+  · obtain ⟨rt1, h1, e1⟩ := agreeAt_tcb (hAg _ hTc' hTr) hR
+    refine ⟨rt1, by rw [hHold _ hTc']; exact h1, ?_, ?_⟩
+    · have : receiveBlockAdmits rt1 = receiveBlockAdmits rt1.withoutRunLinks := rfl
+      rw [this, e1]; exact hA
+    · show rt1.withoutRunLinks.boundNotificationCode = rt.withoutRunLinks.boundNotificationCode
+      rw [e1]
+  · unfold receiveBlocksInPlace
+    rw [Bool.and_eq_true, Bool.and_eq_true]
+    have hK : S1.objectsKeepFinds st := hS1 ▸ storeReplyRendezvousReady_keepsFinds st c tid rid hNo hFC
+    obtain ⟨tc1, htc1, hc1⟩ := hS1 ▸ storeReplyRendezvousReady_caller st c tid rid ct hNo hTc hFC hRc
+    have hR1 : S1.objects[rid.toObjId]? = some (.reply rp.consumed) :=
+      hS1 ▸ storeReplyRendezvousReady_reply st c tid rid ct rp hNo hTc hFC hRp hRc
+    -- every key: the caller and its reply object by name, the rest by agreement
+    have hAt : ∀ x, (x = c.toObjId ∧
+          ∃ t, (S1.mapTcbInPlace c (holdMessage msg)).objects[x]? = some (.tcb t) ∧
+            t.ipcStateCode = (receiverReady ct).ipcStateCode) ∨
+        (x = rid.toObjId ∧
+          (S1.mapTcbInPlace c (holdMessage msg)).objects[x]? = some (.reply rp.consumed)) ∨
+        ((S1.mapTcbInPlace c (holdMessage msg)).objects[x]?).map KernelObject.withoutRunLinks =
+          (st.objects[x]?).map KernelObject.withoutRunLinks := by
+      intro x
+      by_cases hxc : x = c.toObjId
+      · subst hxc
+        left
+        refine ⟨rfl, holdMessage msg tc1, ?_, hc1⟩
+        rw [SystemState.objects_mapTcbInPlace, if_pos (beq_self_eq_true _), htc1]; rfl
+      · by_cases hxr : x = rid.toObjId
+        · subst hxr; right; left; rw [hHold _ hxc]; exact ⟨rfl, hR1⟩
+        · right; right; rw [hHold _ hxc]; exact hAg x hxc hxr
+    have hV : ∀ x, (S1.mapTcbInPlace c (holdMessage msg)).getObjectType? x =
+        st.getObjectType? x := by
+      intro x
+      rcases hAt x with ⟨e, t, h, _⟩ | ⟨e, h⟩ | h
+      · subst e; unfold SystemState.getObjectType?; rw [h, hT]; rfl
+      · subst e; unfold SystemState.getObjectType?; rw [h, hRp]; rfl
+      · exact getObjectType?_of_view h
+    have hKF : (S1.mapTcbInPlace c (holdMessage msg)).objectsKeepFinds st :=
+      (SystemState.mapTcbInPlace_keepsFinds _ _ _).trans hK
+    refine ⟨⟨enqueuesInPlace_of_frame _ _ _ hKF hV ?_ hEnq, ?_⟩, ?_⟩
+    · intro p hp
+      obtain ⟨t, ht⟩ := Option.isSome_iff_exists.mp hp
+      have h1 := (SystemState.getTcb?_eq_some_iff _ _ _).mp ht
+      rcases hAt p.toObjId with ⟨_, t', h, _⟩ | ⟨e, _⟩ | h
+      · exact Option.isSome_iff_exists.mpr ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mpr h⟩
+      · rw [e, hRp] at h1; cases h1
+      · obtain ⟨t', h', _⟩ := agreeAt_tcb h h1
+        exact Option.isSome_iff_exists.mpr ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mpr h'⟩
+    · -- The Reply records the thread that stashes it; that thread is the
+      -- caller (now ready), the Reply's own key (no thread) or a thread the
+      -- reply leg leaves as it was off its run-queue links.
+      have hSt : (S1.mapTcbInPlace c (holdMessage msg)).replyStashedAt rid rp.consumed = false := by
+        rw [replyStashedAt_eq_stasherTestAt, Reply.consumed_stasherCode]
+        rw [replyStashedAt_eq_stasherTestAt] at hStash
+        revert hStash
+        cases rp.stasherCode with
+        | zero => intro _; rfl
+        | succ k =>
+          intro hStash
+          dsimp only at hStash ⊢
+          rcases hAt (⟨k⟩ : SeLe4n.ThreadId).toObjId with ⟨_, t, h, hc⟩ | ⟨_, h⟩ | h
+          · unfold stasherTestAt SystemState.getTcb?; rw [h]
+            simp only [hc, receiverReady, TCB.setIpcState_ipcStateCode]
+            rfl
+          · unfold stasherTestAt SystemState.getTcb?; rw [h]
+          · rw [stasherTestAt_of_view h]; exact hStash
+      simp only [SystemState.replyStashValid]
+      rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr (by rw [hHold _ hRc]; exact hR1)]
+      simp only [hSt, hFree]
+      rfl
+    · show replyRecordsInPlace _ (rid.val + 1) = true
+      simp only [replyRecordsInPlace, Bool.and_eq_true] at hRec ⊢
+      exact ⟨(hKF _).trans hRec.1, storeLeavesIndexAndTypes_of_frame
+        (s' := S1.mapTcbInPlace c (holdMessage msg)) hV hRec.2⟩
+
+/-- **The reply-receive that blocks, in place, on either answer**: under the reply's guard
+(`replyWakesInPlace`), with the receiver the server the caller recorded, no
+sender waiting and the receive's block admissible (read on the pre-state and
+carried across the reply leg, `storeReplyRendezvous_receiveGuard`), the
+composite answering the caller with `answer` is the reply's writes, the
+receive's block, the server's priority walk and the caller answered
+(`replyRecvAnswerCaller`). -/
+theorem replyRecvAnsweringOnCore_blocks_inPlace
+    (answer : Option Architecture.FaultReplyOutcome) (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage) (grant : Bool)
+    (core : CoreId)
+    (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep0 (some tid))
+    (hRO : ct.replyObject = some rid)
+    (hG : replyWakesInPlace st c ct rid = true)
+    (hNe : tid ≠ c)
+    (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hFree : rp.consumed.isFree = true) (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true)
+    (hInert : answer = none →
+      replyTransferInert st tid ct grant = true) :
+    endpointReplyRecvAnsweringOnCore answer epId tid rid c msg grant core st =
+      .ok ({ results := #[] }, replyRecvAnswerCaller answer
+        (PriorityInheritance.propagatePipChainCrossCore
+          (removeRunnableOnCore (storeReceiveBlock
+            (receiveReturnSchedContext true (storeReplyRendezvous st c tid rid msg) tid) epId tid
+            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1 c 0) := by
+  have hNo := replyWakesInPlace_noResizeDue hG
+  have hFC : st.objects.findsInPlace c.toObjId = true := by
+    simp only [replyWakesInPlace, Bool.and_eq_true] at hG
+    exact hG.1.1.1.2
+  obtain ⟨hEq, hHead⟩ := replyOnCore_inPlace st tid c tid ct ep0 rid msg core hSz
+    hT hIpc hRO hG
+  obtain ⟨hE0, ⟨rt0, hR0, hA0, -⟩, hG0⟩ := storeReplyRendezvous_receiveGuard st c tid rid msg ct rp
+    epId ep rt hNo hT hFC hRp hNe hE hR hA hEnq hFree hStash hRec
+  have hNo1 := storeReplyRendezvous_noResizeDue st c tid rid msg hNo
+  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := receiveReturnSchedContext_receiveGuard true _ tid hNo1
+    hE0 hR0 hA0 hG0
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hXf := replyRecvReplyTransfer_of_inert answer st tid c grant ct hTc hInert
+  have hRec : recordedReplyServer? st c = some tid := by
+    simp only [recordedReplyServer?, hTc, hIpc]
+  generalize hS1 : storeReplyRendezvous st c tid rid msg = S1 at hEq hHead hE1 hR1 hG1
+  have hPop : replyRecvPopDonation rid c S1 = .ok (none, S1) := by
+    unfold replyRecvPopDonation
+    rw [replyFrameHeadHolder?_of_no_head _ _ hHead]
+    simp only [popUnheldReplyHead_of_no_head _ _ _ _ hHead]
+  have hEp1 : (receiveReturnSchedContext true S1 tid).getEndpoint? epId = some ep :=
+    (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE1
+  have hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) core
+      (receiveReturnSchedContext true S1 tid) =
+      (removeRunnableOnCore (storeReceiveBlock (receiveReturnSchedContext true S1 tid) epId tid
+        ep.recvTailCode
+        (SeLe4n.ReplyId.optCode (some rid))) tid core, .ok (tid, { results := #[] }, none)) := by
+    unfold endpointReceiveDualWithCapsOnCore
+    rw [receiveBlock_inPlace_eq _ epId ep tid rt1 (some rid) core hE1 hS hR1 hA1 hG1]
+    have hSnd : (receiveRendezvousSender? (receiveReturnSchedContext true S1 tid) epId).isNone =
+        true := by
+      simp [receiveRendezvousSender?, hEp1, hS]
+    simp only [hSnd, ↓reduceIte]
+  have hRes : tid.isReserved = false := by
+    have h := hG1
+    simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at h
+    exact h.1.1.1.1.1.1.1
+  unfold endpointReplyRecvAnsweringOnCore
+  simp only [hRec, Option.getD_some, hEq, hPop, hXf, hRecv, Option.bind_some, hS,
+    replyRecvPostReceiveDonation_none_self _ _ _ _ hRes]
+  simp [applyReceiveLegPipHandoff]
+
+/-- **A donated reply-receive that may block in place**, read on the
+pre-state: the caller blocked on a reply from the receiver through reply object
+`rid`, the pop's checks (`replyPopsInPlace`), no sender waiting on the
+endpoint, the receiver an unreserved thread that may block there in place once
+the pop unbinds it, and its reply object not stashed and in its slot for the
+stasher record.  Every read is a code. -/
+@[inline] def replyRecvDonatedBlocks (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) : Bool :=
+  (match st.getTcb? c with
+   | some ct =>
+       (match ct.ipcState with
+        | .blockedOnReply _ (some server) => server.val == tid.val
+        | _ => false) &&
+       ct.replyObjectCode == rid.val + 1 &&
+       replyPopsInPlace st c ct.scBindingScCode tid rid
+   | none => false) &&
+  !tid.isReserved &&
+  (match st.getEndpoint? epId with
+   | some ep =>
+       ep.sendQ.head.isNone &&
+       (match st.getTcb? tid with
+        | some rt => enqueueAdmits rt && enqueuesInPlaceCode st epId tid ep.recvTailCode
+        | none => false)
+   | none => false) &&
+  (match st.getReply? rid with
+   | some rp => !st.replyStashedAt rid rp && replyRecordsInPlace st (rid.val + 1)
+   | none => false)
+
+theorem replyRecvDonatedBlocks_spec {st : SystemState} {epId : SeLe4n.ObjId}
+    {tid c : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
+    (h : replyRecvDonatedBlocks st epId tid c rid = true) :
+    ∃ (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply),
+      st.objects[c.toObjId]? = some (.tcb ct) ∧
+      ct.ipcState = .blockedOnReply ep0 (some tid) ∧ ct.replyObject = some rid ∧
+      replyPopsInPlace st c ct.scBindingScCode tid rid = true ∧ tid.isReserved = false ∧
+      st.objects[epId]? = some (.endpoint ep) ∧ ep.sendQ.head = none ∧
+      st.objects[tid.toObjId]? = some (.tcb rt) ∧ enqueueAdmits rt = true ∧
+      enqueuesInPlace st epId tid ep.receiveQ.tail = true ∧
+      st.objects[rid.toObjId]? = some (.reply rp) ∧
+      st.replyStashedAt rid rp = false ∧ replyRecordsInPlace st (rid.val + 1) = true := by
+  unfold replyRecvDonatedBlocks at h
+  simp only [Bool.and_eq_true, Bool.not_eq_true'] at h
+  obtain ⟨⟨⟨hC, hSRes⟩, hE⟩, hRp⟩ := h
+  cases hTc : st.getTcb? c with
+  | none => rw [hTc] at hC; cases hC
+  | some ct =>
+  rw [hTc] at hC
+  simp only [Bool.and_eq_true] at hC
+  obtain ⟨⟨hIpc, hRO⟩, hW⟩ := hC
+  obtain ⟨ep0, hIpc'⟩ : ∃ ep0, ct.ipcState = .blockedOnReply ep0 (some tid) := by
+    revert hIpc
+    split
+    · next ep0 server hS =>
+      intro e
+      have : server = tid := by
+        cases server; cases tid; simp only [beq_iff_eq] at e; subst e; rfl
+      subst this
+      exact ⟨ep0, hS⟩
+    · intro e; cases e
+  cases hEp : st.getEndpoint? epId with
+  | none => rw [hEp] at hE; cases hE
+  | some ep =>
+  rw [hEp] at hE
+  simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hE
+  obtain ⟨hS, hT⟩ := hE
+  cases hTt : st.getTcb? tid with
+  | none => rw [hTt] at hT; cases hT
+  | some rt =>
+  rw [hTt] at hT
+  simp only [Bool.and_eq_true] at hT
+  obtain ⟨hA, hEnq⟩ := hT
+  cases hR : st.getReply? rid with
+  | none => rw [hR] at hRp; cases hRp
+  | some rp =>
+  rw [hR] at hRp
+  simp only [Bool.and_eq_true, Bool.not_eq_true'] at hRp
+  obtain ⟨hStash, hRecR⟩ := hRp
+  refine ⟨ct, ep0, rt, ep, rp, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTc, hIpc', ?_, hW,
+    hSRes, (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp, hS,
+    (SystemState.getTcb?_eq_some_iff _ _ _).mp hTt, hA, ?_,
+    (SystemState.getReply?_eq_some_iff _ _ _).mp hR, hStash, hRecR⟩
+  · simp only [TCB.replyObject, beq_iff_eq.mp hRO, SeLe4n.ReplyId.ofOptCode]
+  · rw [enqueuesInPlaceCode_eq, Endpoint.ofOptCode_recvTailCode] at hEnq; exact hEnq
+
+/-- **The donation pop carries the receive's guard**: on the state a donated
+reply leg and its pop leave, the endpoint is as it was, the server (unbound by
+the pop) may block on it and its block writes in place, each read on the
+pre-state. -/
+theorem popDonationSettled_receiveGuard (st : SystemState) (c tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (msg : IpcMessage) (ct : TCB) (rp : Reply)
+    (epId : SeLe4n.ObjId) (ep : Endpoint) (rt : TCB) (scId : SeLe4n.SchedContextId)
+    (sc : SchedContext) (home : CoreId)
+    (hNo : st.objects.noResizeDue)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hFC : st.objects.findsInPlace c.toObjId = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp)) (hNext : rp.next = some (.head scId))
+    (hScO : st.objects[scId.toObjId]? = some (.schedContext sc)) (hHead : sc.scReply = some rid)
+    (hBelow : ∀ b, rp.prev = some b → b ≠ rid)
+    (hNe : tid ≠ c)
+    (hE : st.objects[epId]? = some (.endpoint ep))
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : enqueueAdmits rt = true)
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
+    (popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid scId home).objects[epId]? =
+        some (.endpoint ep) ∧
+      (∃ rt1, (popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid scId
+          home).objects[tid.toObjId]? = some (.tcb rt1) ∧ receiveBlockAdmits rt1 = true ∧
+          rt1.boundNotificationCode = rt.boundNotificationCode) ∧
+      receiveBlocksInPlace (popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid
+        scId home) epId tid ep.receiveQ.tail (some rid) = true := by
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hRc : rid.toObjId ≠ c.toObjId := fun e => by rw [e, hT] at hRp; cases hRp
+  have hEc : epId ≠ c.toObjId := fun e => by rw [e, hT] at hE; cases hE
+  have hEr : epId ≠ rid.toObjId := fun e => by rw [e, hRp] at hE; cases hE
+  have hTc' : tid.toObjId ≠ c.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e)
+  have hTr : tid.toObjId ≠ rid.toObjId := fun e => by rw [e, hRp] at hR; cases hR
+  have hSc' : scId.toObjId ≠ c.toObjId := fun e => by rw [e, hT] at hScO; cases hScO
+  have hSr : scId.toObjId ≠ rid.toObjId := fun e => by rw [e, hRp] at hScO; cases hScO
+  rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo]
+  generalize hS1 : storeReplyRendezvousReady st c tid rid = S1
+  have hAg := fun x hx hy => hS1 ▸ storeReplyRendezvousReady_agree st c tid rid ct hNo hTc hFC x hx hy
+  have hNo1 : S1.objects.noResizeDue := hS1 ▸ storeReplyRendezvousReady_noResizeDue st c tid rid hNo
+  have hK : S1.objectsKeepFinds st := hS1 ▸ storeReplyRendezvousReady_keepsFinds st c tid rid hNo hFC
+  obtain ⟨tc1, htc1, hc1⟩ := hS1 ▸ storeReplyRendezvousReady_caller st c tid rid ct hNo hTc hFC hRc
+  have hR1 : S1.objects[rid.toObjId]? = some (.reply rp.consumed) :=
+    hS1 ▸ storeReplyRendezvousReady_reply st c tid rid ct rp hNo hTc hFC hRp hRc
+  generalize hTdef : S1.mapTcbInPlace c (holdMessage msg) = T
+  have hNoT : T.objects.noResizeDue := by rw [← hTdef]; exact hNo1
+  have hHold : ∀ x, x ≠ c.toObjId → T.objects[x]? = S1.objects[x]? := fun x hx => by
+    rw [← hTdef, SystemState.objects_mapTcbInPlace, if_neg (fun h => hx (beq_iff_eq.mp h).symm)]
+  have hTC : T.objects[c.toObjId]? = some (.tcb (holdMessage msg tc1)) := by
+    rw [← hTdef, SystemState.objects_mapTcbInPlace, if_pos (beq_self_eq_true _), htc1]; rfl
+  have hView : ∀ x, x ≠ c.toObjId → x ≠ rid.toObjId →
+      (T.objects[x]?).map KernelObject.withoutRunLinks =
+        (st.objects[x]?).map KernelObject.withoutRunLinks := fun x hx hy => by
+    rw [hHold _ hx]; exact hAg x hx hy
+  have hTR : T.objects[rid.toObjId]? = some (.reply rp.consumed) := by rw [hHold _ hRc]; exact hR1
+  have hKT : T.objectsKeepFinds st := by
+    rw [← hTdef]; exact (SystemState.mapTcbInPlace_keepsFinds _ _ _).trans hK
+  -- the pop's reads on `T`
+  have hScT : T.getSchedContext? scId = some sc := (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
+    (agreeAt_of_not_tcb (hView _ hSc' hSr) (fun _ e => by cases e) hScO)
+  obtain ⟨rtT, hRtT, _⟩ := agreeAt_tcb (hView _ hTc' hTr) hR
+  have hHeadC : rp.consumed = { rp with callerCode := 0 } := Reply.consumed_of_head rp scId hNext
+  obtain ⟨⟨t, hPt, hB0⟩, hPr⟩ := returnDonatedSchedContextInPlace_exact T tid c scId sc rid rp.consumed
+    (holdMessage msg tc1) rtT hNoT hScT hHead ((SystemState.getReply?_eq_some_iff _ _ _).mpr hTR)
+    ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hTC) ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hRtT)
+    (fun b hb => hBelow b (by rw [hHeadC] at hb; exact hb))
+  have hFr := returnDonatedSchedContextInPlace_popFrame T tid c scId hNoT
+  unfold popDonationSettledInPlace
+  generalize returnDonatedSchedContextInPlace T tid c scId = Rr at hPt hPr hFr
+  have hAgS := SchedContextOps.settleReturnedContext_agree Rr home scId
+  have hF := (settleReturnedContext_popFrame Rr home scId).trans hFr
+  generalize SchedContextOps.settleReturnedContext Rr home scId = P at hAgS hF
+  have hPt' : P.objects[tid.toObjId]? = some (.tcb t) :=
+    releaseAgreeAt_of_not_sc hAgS hPt (fun _ e => by cases e)
+  have hPr' : P.objects[rid.toObjId]? =
+      some (.reply { rp.consumed with prev := none, next := none }) :=
+    releaseAgreeAt_of_not_sc hAgS hPr (fun _ e => by cases e)
+  have hComb : ∀ x, x ≠ c.toObjId → x ≠ rid.toObjId →
+      (P.objects[x]?).map popFieldsView = (st.objects[x]?).map popFieldsView :=
+    fun x hx hy => (hF.2.2.2 x).trans (popAgreeAt_of_runLinks (hView x hx hy))
+  obtain ⟨tcP, hPC, ecP⟩ := popAgreeAt_tcb (hF.2.2.2 c.toObjId) hTC
+  refine ⟨popAgreeAt_endpoint (hComb _ hEc hEr) hE, ⟨t, hPt', ?_, ?_⟩, ?_⟩
+  · obtain ⟨t', h', e'⟩ := popAgreeAt_tcb (hComb _ hTc' hTr) hR
+    rw [hPt'] at h'
+    cases h'
+    unfold receiveBlockAdmits
+    rw [← enqueueAdmits_popView t, e', enqueueAdmits_popView, hA]
+    have hU : t.schedContextBinding = .unbound := by
+      unfold TCB.schedContextBinding SchedContextBinding.ofCodes; rw [hB0]
+    rw [hU]
+    rfl
+  · obtain ⟨t', h', e'⟩ := popAgreeAt_tcb (hComb _ hTc' hTr) hR
+    rw [hPt'] at h'
+    cases h'
+    have := congrArg TCB.boundNotificationCode e'
+    exact this
+  · unfold receiveBlocksInPlace
+    have hKP : P.objectsKeepFinds st := hF.2.2.1.trans hKT
+    have hV : ∀ x, P.getObjectType? x = st.getObjectType? x := by
+      intro x
+      by_cases hxc : x = c.toObjId
+      · subst hxc; unfold SystemState.getObjectType?
+        rw [hPC, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTc]; rfl
+      · by_cases hxr : x = rid.toObjId
+        · subst hxr; unfold SystemState.getObjectType?; rw [hPr', hRp]; rfl
+        · exact getObjectType?_of_popAgree (hComb x hxc hxr)
+    rw [Bool.and_eq_true, Bool.and_eq_true]
+    refine ⟨⟨enqueuesInPlace_of_frame _ _ _ hKP hV ?_ hEnq, ?_⟩, ?_⟩
+    · intro p hp
+      by_cases hpc : p.toObjId = c.toObjId
+      · exact Option.isSome_iff_exists.mpr
+          ⟨tcP, (SystemState.getTcb?_eq_some_iff _ _ _).mpr (hpc ▸ hPC)⟩
+      · by_cases hpr : p.toObjId = rid.toObjId
+        · obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp hp
+          have := (SystemState.getTcb?_eq_some_iff _ _ _).mp hx
+          rw [hpr, hRp] at this; cases this
+        · exact getTcb?_isSome_of_popAgree (hComb _ hpc hpr) hp
+    · have hFree : ({ rp.consumed with prev := none, next := none } : Reply).isFree = true := by
+        have h := Reply.consumed_caller rp
+        simp only [Reply.caller] at h
+        simp only [Reply.isFree, Reply.caller, h, Option.isNone_none, Bool.and_self]
+      have hSt : P.replyStashedAt rid { rp.consumed with prev := none, next := none } = false := by
+        rw [replyStashedAt_eq_stasherTestAt]
+        rw [replyStashedAt_eq_stasherTestAt] at hStash
+        show (match rp.consumed.stasherCode with
+          | 0 => false
+          | k + 1 => stasherTestAt P (⟨k⟩ : SeLe4n.ThreadId) (rid.val + 1)) = false
+        rw [Reply.consumed_stasherCode]
+        revert hStash
+        cases rp.stasherCode with
+        | zero => intro _; rfl
+        | succ k =>
+          intro hStash
+          dsimp only at hStash ⊢
+          by_cases hkc : (⟨k⟩ : SeLe4n.ThreadId).toObjId = c.toObjId
+          · unfold stasherTestAt SystemState.getTcb?
+            rw [hkc, hPC]
+            have e := congrArg TCB.ipcStateCode ecP
+            simp only [TCB.withoutRunLinks] at e
+            simp only [e]
+            show ((holdMessage msg tc1).ipcStateCode == 1 && _) = false
+            have e2 : (holdMessage msg tc1).ipcStateCode = tc1.ipcStateCode := rfl
+            simp only [e2, hc1, receiverReady, TCB.setIpcState_ipcStateCode]
+            rfl
+          · by_cases hkr : (⟨k⟩ : SeLe4n.ThreadId).toObjId = rid.toObjId
+            · unfold stasherTestAt SystemState.getTcb?; rw [hkr, hPr']
+            · rw [stasherTestAt_of_popAgree (hComb _ hkc hkr)]; exact hStash
+      simp only [SystemState.replyStashValid]
+      rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr hPr']
+      simp only [hSt, hFree]
+      rfl
+    · show replyRecordsInPlace _ (rid.val + 1) = true
+      simp only [replyRecordsInPlace, Bool.and_eq_true] at hRec ⊢
+      exact ⟨(hKP _).trans hRec.1, storeLeavesIndexAndTypes_of_frame hV hRec.2⟩
+
+/-- **The donated reply-receive that blocks, in place**: under the pop's guard
+(`replyPopsInPlace`) with the receiver the server the caller recorded, no sender
+waiting and the receive's block admissible once the pop unbinds the server, each
+read on the pre-state and carried across the reply leg and the pop
+(`popDonationSettled_receiveGuard`), the specification's reply-receive is the
+reply's writes, the pop and its settle, the receive's block, the server taken
+off its core, its priority walk and the caller's staged message. -/
+theorem replyRecvAnsweringOnCore_donated_inPlace
+    (answer : Option Architecture.FaultReplyOutcome) (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage) (grant : Bool)
+    (core : CoreId)
+    (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep0 (some tid))
+    (hRO : ct.replyObject = some rid)
+    (hSRes : tid.isReserved = false)
+    (hG : replyPopsInPlace st c ct.scBindingScCode tid rid = true)
+    (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : enqueueAdmits rt = true)
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true)
+    (hInert : answer = none →
+      replyTransferInert st tid ct grant = true) :
+    endpointReplyRecvAnsweringOnCore answer epId tid rid c msg grant core st =
+      .ok ({ results := #[] }, replyRecvAnswerCaller answer
+        (PriorityInheritance.propagatePipChainCrossCore
+          (descheduleAtPlacement (removeRunnableOnCore (storeReceiveBlock
+            (receiveReturnSchedContext true
+              (popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid
+                ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)) tid) epId tid
+            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid) tid core).1 c 0) ∧
+      ∃ x, (removeRunnableOnCore (storeReceiveBlock
+            (receiveReturnSchedContext true
+              (popDonationSettledInPlace (storeReplyRendezvous st c tid rid msg) c tid
+                ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c)) tid) epId tid
+            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core).getTcb? tid = some x ∧
+        x.ipcState = .blockedOnReceive epId := by
+  obtain ⟨rp', scId, sc, hRp', hN, hScO, hHead, hBelow, hCode, hCRes, hNe, hNo, hLC, hFC, hLR, hFR,
+    _, hPop⟩ := replyPopsInPlace_donation st c tid rid msg ct hT hSRes hG
+  rw [hRp] at hRp'
+  cases hRp'
+  have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by
+    rw [hCode]; rfl
+  rw [hSc]
+  obtain ⟨hEq, _⟩ := replyOnCore_eq_store st tid c tid ct ep0 rid rp msg core hSz hT hIpc hRO
+    hCRes hLC hFC hLR hFR hRp (Or.inr ⟨scId, hN⟩)
+  obtain ⟨hE1, ⟨rt1, hR1, hA1, hB1⟩, hG1⟩ := popDonationSettled_receiveGuard st c tid rid msg ct rp
+    epId ep rt scId sc (determineTargetCore st c) hNo hT hFC hRp hN hScO hHead hBelow
+    (fun e => hNe e.symm) hE hR hA hEnq hStash hRec
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hXf := replyRecvReplyTransfer_of_inert answer st tid c grant ct hTc hInert
+  have hRecS : recordedReplyServer? st c = some tid := by
+    simp only [recordedReplyServer?, hTc, hIpc]
+  have hNoP := popDonationSettledInPlace_noResizeDue _ c tid scId (determineTargetCore st c)
+    (storeReplyRendezvous_noResizeDue st c tid rid msg hNo)
+  rw [← storeReplyRendezvous_eq_hold _ _ _ _ _ hNo] at hPop
+  generalize hS1 : storeReplyRendezvous st c tid rid msg = S1 at hEq hPop hE1 hR1 hG1 hNoP
+  generalize hP : popDonationSettledInPlace S1 c tid scId (determineTargetCore st c) = P
+    at hPop hE1 hR1 hG1 hNoP
+  obtain ⟨hE2, ⟨rt2, hR2, hA2⟩, hG2⟩ := receiveReturnSchedContext_receiveGuard true P tid hNoP
+    hE1 hR1 hA1 hG1
+  generalize hQ : receiveReturnSchedContext true P tid = Q at hE2 hR2 hG2
+  have hEp1 : Q.getEndpoint? epId = some ep := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE2
+  have hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) core Q =
+      (removeRunnableOnCore (storeReceiveBlock Q epId tid ep.recvTailCode
+        (SeLe4n.ReplyId.optCode (some rid))) tid core, .ok (tid, { results := #[] }, none)) := by
+    unfold endpointReceiveDualWithCapsOnCore
+    rw [receiveBlock_inPlace_eq Q epId ep tid rt2 (some rid) core hE2 hS hR2 hA2 hG2]
+    have hSnd : (receiveRendezvousSender? Q epId).isNone = true := by
+      simp [receiveRendezvousSender?, hEp1, hS]
+    simp only [hSnd, ↓reduceIte]
+  obtain ⟨tb, hTb, hBk⟩ := receiveBlock_receiver_blocked Q epId ep tid rt2 (some rid) core hE2 hR2
+    hA2 hG2
+  have hDq : rendezvousDequeuedCall (removeRunnableOnCore (storeReceiveBlock Q epId tid
+      ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid = false := by
+    unfold rendezvousDequeuedCall lookupTcb
+    simp only [hSRes, Bool.false_eq_true, ↓reduceIte, hTb, hBk]
+  refine ⟨?_, tb, hTb, hBk⟩
+  unfold endpointReplyRecvAnsweringOnCore
+  simp only [hRecS, Option.getD_some, hEq, hPop, hXf, hQ, hRecv, hEp1, Option.bind_some, hS]
+  simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff]
+
+/-- Whether reply object `rid` has no frame below it on its context's stack, so
+a pop of it leaves the context with no loan owed. -/
+@[inline] def replyIsStackBottom (st : SystemState) (rid : SeLe4n.ReplyId) : Bool :=
+  match st.getReply? rid with
+  | some rp => rp.prev.isNone
+  | none => false
+
+/-- **A held reply-receive that may block in place**, read on the pre-state:
+the caller blocked on a reply from the receiver through reply object `rid`, the
+held pop's checks (`replyHeldPopsInPlace`), no sender waiting on the endpoint,
+the receiver an unreserved thread the held pop leaves `.bound` (it owns the
+context it holds, or the popped frame is the stack's last, so the context it
+keeps is its own) and whose block writes in place, and its reply object not
+stashed and in its slot for the stasher record.  Every read is a code. -/
+@[inline] def replyRecvHeldBlocks (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) : Bool :=
+  (match st.getTcb? c with
+   | some ct =>
+       (match ct.ipcState with
+        | .blockedOnReply _ (some server) => server.val == tid.val
+        | _ => false) &&
+       ct.replyObjectCode == rid.val + 1 &&
+       replyHeldPopsInPlace st c ct.scBindingScCode tid rid
+   | none => false) &&
+  !tid.isReserved &&
+  (match st.getEndpoint? epId with
+   | some ep =>
+       ep.sendQ.head.isNone &&
+       (match st.getTcb? tid with
+        | some rt => (rt.scBindingOwnerCode == 0 || replyIsStackBottom st rid) &&
+            enqueueAdmits rt && enqueuesInPlaceCode st epId tid ep.recvTailCode
+        | none => false)
+   | none => false) &&
+  (match st.getReply? rid with
+   | some rp => !st.replyStashedAt rid rp && replyRecordsInPlace st (rid.val + 1)
+   | none => false)
+
+theorem replyRecvHeldBlocks_spec {st : SystemState} {epId : SeLe4n.ObjId}
+    {tid c : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
+    (h : replyRecvHeldBlocks st epId tid c rid = true) :
+    ∃ (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply),
+      st.objects[c.toObjId]? = some (.tcb ct) ∧
+      ct.ipcState = .blockedOnReply ep0 (some tid) ∧ ct.replyObject = some rid ∧
+      replyHeldPopsInPlace st c ct.scBindingScCode tid rid = true ∧ tid.isReserved = false ∧
+      st.objects[epId]? = some (.endpoint ep) ∧ ep.sendQ.head = none ∧
+      st.objects[tid.toObjId]? = some (.tcb rt) ∧
+      (rt.scBindingOwnerCode = 0 ∨ rp.prev = none) ∧ enqueueAdmits rt = true ∧
+      enqueuesInPlace st epId tid ep.receiveQ.tail = true ∧
+      st.objects[rid.toObjId]? = some (.reply rp) ∧
+      st.replyStashedAt rid rp = false ∧ replyRecordsInPlace st (rid.val + 1) = true := by
+  unfold replyRecvHeldBlocks at h
+  simp only [Bool.and_eq_true, Bool.not_eq_true'] at h
+  obtain ⟨⟨⟨hC, hSRes⟩, hE⟩, hRp⟩ := h
+  cases hTc : st.getTcb? c with
+  | none => rw [hTc] at hC; cases hC
+  | some ct =>
+  rw [hTc] at hC
+  simp only [Bool.and_eq_true] at hC
+  obtain ⟨⟨hIpc, hRO⟩, hW⟩ := hC
+  obtain ⟨ep0, hIpc'⟩ : ∃ ep0, ct.ipcState = .blockedOnReply ep0 (some tid) := by
+    revert hIpc
+    split
+    · next ep0 server hS =>
+      intro e
+      have : server = tid := by
+        cases server; cases tid; simp only [beq_iff_eq] at e; subst e; rfl
+      subst this
+      exact ⟨ep0, hS⟩
+    · intro e; cases e
+  cases hEp : st.getEndpoint? epId with
+  | none => rw [hEp] at hE; cases hE
+  | some ep =>
+  rw [hEp] at hE
+  simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hE
+  obtain ⟨hS, hT⟩ := hE
+  cases hTt : st.getTcb? tid with
+  | none => rw [hTt] at hT; cases hT
+  | some rt =>
+  rw [hTt] at hT
+  simp only [Bool.and_eq_true] at hT
+  obtain ⟨⟨hOwn, hA⟩, hEnq⟩ := hT
+  cases hR : st.getReply? rid with
+  | none => rw [hR] at hRp; cases hRp
+  | some rp =>
+  rw [hR] at hRp
+  simp only [Bool.and_eq_true, Bool.not_eq_true'] at hRp
+  obtain ⟨hStash, hRecR⟩ := hRp
+  refine ⟨ct, ep0, rt, ep, rp, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTc, hIpc', ?_, hW,
+    hSRes, (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp, hS,
+    (SystemState.getTcb?_eq_some_iff _ _ _).mp hTt, ?_, hA, ?_,
+    (SystemState.getReply?_eq_some_iff _ _ _).mp hR, hStash, hRecR⟩
+  · simp only [TCB.replyObject, beq_iff_eq.mp hRO, SeLe4n.ReplyId.ofOptCode]
+  · simp only [Bool.or_eq_true, beq_iff_eq, replyIsStackBottom, hR,
+      Option.isNone_iff_eq_none] at hOwn
+    exact hOwn
+  · rw [enqueuesInPlaceCode_eq, Endpoint.ofOptCode_recvTailCode] at hEnq; exact hEnq
+
+/-- **The held pop carries the receive's guard**: on the state a held reply
+leg and its pop leave, the endpoint is as it was, the server (still `.bound` to
+the context it owns) may block on it and its block writes in place, each read
+on the pre-state. -/
+theorem keepHeldPop_receiveGuard (st : SystemState) (c tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (msg : IpcMessage) (ct : TCB) (rp : Reply)
+    (epId : SeLe4n.ObjId) (ep : Endpoint) (rt : TCB) (scId : SeLe4n.SchedContextId)
+    (sc : SchedContext)
+    (hNo : st.objects.noResizeDue)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hFC : st.objects.findsInPlace c.toObjId = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp)) (hNext : rp.next = some (.head scId))
+    (hScO : st.objects[scId.toObjId]? = some (.schedContext sc)) (hHead : sc.scReply = some rid)
+    (hBelow : ∀ b, rp.prev = some b → b ≠ rid)
+    (hNe : tid ≠ c)
+    (hE : st.objects[epId]? = some (.endpoint ep))
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt))
+    (hOwn : rt.scBindingOwnerCode = 0 ∨ rp.prev = none)
+    (hA : enqueueAdmits rt = true)
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
+    (keepDonatedSchedContextInPlace (storeReplyRendezvous st c tid rid msg) tid scId).objects[epId]? =
+        some (.endpoint ep) ∧
+      (∃ rt1, (keepDonatedSchedContextInPlace (storeReplyRendezvous st c tid rid msg) tid scId).objects[tid.toObjId]? = some (.tcb rt1) ∧ receiveBlockAdmits rt1 = true ∧
+          rt1.boundNotificationCode = rt.boundNotificationCode) ∧
+      receiveBlocksInPlace (keepDonatedSchedContextInPlace (storeReplyRendezvous st c tid rid msg)
+        tid scId) epId tid ep.receiveQ.tail (some rid) = true := by
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hRc : rid.toObjId ≠ c.toObjId := fun e => by rw [e, hT] at hRp; cases hRp
+  have hEc : epId ≠ c.toObjId := fun e => by rw [e, hT] at hE; cases hE
+  have hEr : epId ≠ rid.toObjId := fun e => by rw [e, hRp] at hE; cases hE
+  have hTc' : tid.toObjId ≠ c.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e)
+  have hTr : tid.toObjId ≠ rid.toObjId := fun e => by rw [e, hRp] at hR; cases hR
+  have hSc' : scId.toObjId ≠ c.toObjId := fun e => by rw [e, hT] at hScO; cases hScO
+  have hSr : scId.toObjId ≠ rid.toObjId := fun e => by rw [e, hRp] at hScO; cases hScO
+  rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo]
+  generalize hS1 : storeReplyRendezvousReady st c tid rid = S1
+  have hAg := fun x hx hy => hS1 ▸ storeReplyRendezvousReady_agree st c tid rid ct hNo hTc hFC x hx hy
+  have hNo1 : S1.objects.noResizeDue := hS1 ▸ storeReplyRendezvousReady_noResizeDue st c tid rid hNo
+  have hK : S1.objectsKeepFinds st := hS1 ▸ storeReplyRendezvousReady_keepsFinds st c tid rid hNo hFC
+  obtain ⟨tc1, htc1, hc1⟩ := hS1 ▸ storeReplyRendezvousReady_caller st c tid rid ct hNo hTc hFC hRc
+  have hR1 : S1.objects[rid.toObjId]? = some (.reply rp.consumed) :=
+    hS1 ▸ storeReplyRendezvousReady_reply st c tid rid ct rp hNo hTc hFC hRp hRc
+  generalize hTdef : S1.mapTcbInPlace c (holdMessage msg) = T
+  have hNoT : T.objects.noResizeDue := by rw [← hTdef]; exact hNo1
+  have hHold : ∀ x, x ≠ c.toObjId → T.objects[x]? = S1.objects[x]? := fun x hx => by
+    rw [← hTdef, SystemState.objects_mapTcbInPlace, if_neg (fun h => hx (beq_iff_eq.mp h).symm)]
+  have hTC : T.objects[c.toObjId]? = some (.tcb (holdMessage msg tc1)) := by
+    rw [← hTdef, SystemState.objects_mapTcbInPlace, if_pos (beq_self_eq_true _), htc1]; rfl
+  have hView : ∀ x, x ≠ c.toObjId → x ≠ rid.toObjId →
+      (T.objects[x]?).map KernelObject.withoutRunLinks =
+        (st.objects[x]?).map KernelObject.withoutRunLinks := fun x hx hy => by
+    rw [hHold _ hx]; exact hAg x hx hy
+  have hTR : T.objects[rid.toObjId]? = some (.reply rp.consumed) := by rw [hHold _ hRc]; exact hR1
+  have hKT : T.objectsKeepFinds st := by
+    rw [← hTdef]; exact (SystemState.mapTcbInPlace_keepsFinds _ _ _).trans hK
+  -- the pop's reads on `T`
+  have hScT : T.getSchedContext? scId = some sc := (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
+    (agreeAt_of_not_tcb (hView _ hSc' hSr) (fun _ e => by cases e) hScO)
+  obtain ⟨rtT, hRtT, eRtT⟩ := agreeAt_tcb (hView _ hTc' hTr) hR
+  have hHeadC : rp.consumed = { rp with callerCode := 0 } := Reply.consumed_of_head rp scId hNext
+  obtain ⟨⟨t, hPt', hB0, hB1, _⟩, hPr'⟩ := keepDonatedSchedContextInPlace_exact T tid scId sc rid
+    rp.consumed rtT hNoT hScT hHead ((SystemState.getReply?_eq_some_iff _ _ _).mpr hTR)
+    ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hRtT)
+    (fun b hb => hBelow b (by rw [hHeadC] at hb; exact hb))
+  have hF := keepDonatedSchedContextInPlace_popFrame T tid scId hNoT
+  have hOwnT : heldPopOwnerCode rtT.scBindingOwnerCode (popOuterCode T rp.consumed) = 0 := by
+    rcases hOwn with h | h
+    · have h' : rtT.scBindingOwnerCode = 0 := (congrArg TCB.scBindingOwnerCode eRtT).trans h
+      rw [h']; rfl
+    · rw [hHeadC]; simp only [popOuterCode, h]; unfold heldPopOwnerCode; split <;> rfl
+  rw [hOwnT] at hB1
+  generalize keepDonatedSchedContextInPlace T tid scId = P at hPt' hPr' hF
+  have hComb : ∀ x, x ≠ c.toObjId → x ≠ rid.toObjId →
+      (P.objects[x]?).map popFieldsView = (st.objects[x]?).map popFieldsView :=
+    fun x hx hy => (hF.2.2.2 x).trans (popAgreeAt_of_runLinks (hView x hx hy))
+  obtain ⟨tcP, hPC, ecP⟩ := popAgreeAt_tcb (hF.2.2.2 c.toObjId) hTC
+  refine ⟨popAgreeAt_endpoint (hComb _ hEc hEr) hE, ⟨t, hPt', ?_, ?_⟩, ?_⟩
+  · obtain ⟨t', h', e'⟩ := popAgreeAt_tcb (hComb _ hTc' hTr) hR
+    rw [hPt'] at h'
+    cases h'
+    unfold receiveBlockAdmits
+    rw [← enqueueAdmits_popView t, e', enqueueAdmits_popView, hA]
+    have hU : t.schedContextBinding = .bound scId := by
+      unfold TCB.schedContextBinding SchedContextBinding.ofCodes
+      rw [hB0, hB1]
+    rw [hU]
+    rfl
+  · obtain ⟨t', h', e'⟩ := popAgreeAt_tcb (hComb _ hTc' hTr) hR
+    rw [hPt'] at h'
+    cases h'
+    have := congrArg TCB.boundNotificationCode e'
+    exact this
+  · unfold receiveBlocksInPlace
+    have hKP : P.objectsKeepFinds st := hF.2.2.1.trans hKT
+    have hV : ∀ x, P.getObjectType? x = st.getObjectType? x := by
+      intro x
+      by_cases hxc : x = c.toObjId
+      · subst hxc; unfold SystemState.getObjectType?
+        rw [hPC, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTc]; rfl
+      · by_cases hxr : x = rid.toObjId
+        · subst hxr; unfold SystemState.getObjectType?; rw [hPr', hRp]; rfl
+        · exact getObjectType?_of_popAgree (hComb x hxc hxr)
+    rw [Bool.and_eq_true, Bool.and_eq_true]
+    refine ⟨⟨enqueuesInPlace_of_frame _ _ _ hKP hV ?_ hEnq, ?_⟩, ?_⟩
+    · intro p hp
+      by_cases hpc : p.toObjId = c.toObjId
+      · exact Option.isSome_iff_exists.mpr
+          ⟨tcP, (SystemState.getTcb?_eq_some_iff _ _ _).mpr (hpc ▸ hPC)⟩
+      · by_cases hpr : p.toObjId = rid.toObjId
+        · obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp hp
+          have := (SystemState.getTcb?_eq_some_iff _ _ _).mp hx
+          rw [hpr, hRp] at this; cases this
+        · exact getTcb?_isSome_of_popAgree (hComb _ hpc hpr) hp
+    · have hFree : ({ rp.consumed with prev := none, next := none } : Reply).isFree = true := by
+        have h := Reply.consumed_caller rp
+        simp only [Reply.caller] at h
+        simp only [Reply.isFree, Reply.caller, h, Option.isNone_none, Bool.and_self]
+      have hSt : P.replyStashedAt rid { rp.consumed with prev := none, next := none } = false := by
+        rw [replyStashedAt_eq_stasherTestAt]
+        rw [replyStashedAt_eq_stasherTestAt] at hStash
+        show (match rp.consumed.stasherCode with
+          | 0 => false
+          | k + 1 => stasherTestAt P (⟨k⟩ : SeLe4n.ThreadId) (rid.val + 1)) = false
+        rw [Reply.consumed_stasherCode]
+        revert hStash
+        cases rp.stasherCode with
+        | zero => intro _; rfl
+        | succ k =>
+          intro hStash
+          dsimp only at hStash ⊢
+          by_cases hkc : (⟨k⟩ : SeLe4n.ThreadId).toObjId = c.toObjId
+          · unfold stasherTestAt SystemState.getTcb?
+            rw [hkc, hPC]
+            have e := congrArg TCB.ipcStateCode ecP
+            simp only [TCB.withoutRunLinks] at e
+            simp only [e]
+            show ((holdMessage msg tc1).ipcStateCode == 1 && _) = false
+            have e2 : (holdMessage msg tc1).ipcStateCode = tc1.ipcStateCode := rfl
+            simp only [e2, hc1, receiverReady, TCB.setIpcState_ipcStateCode]
+            rfl
+          · by_cases hkr : (⟨k⟩ : SeLe4n.ThreadId).toObjId = rid.toObjId
+            · unfold stasherTestAt SystemState.getTcb?; rw [hkr, hPr']
+            · rw [stasherTestAt_of_popAgree (hComb _ hkc hkr)]; exact hStash
+      simp only [SystemState.replyStashValid]
+      rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr hPr']
+      simp only [hSt, hFree]
+      rfl
+    · show replyRecordsInPlace _ (rid.val + 1) = true
+      simp only [replyRecordsInPlace, Bool.and_eq_true] at hRec ⊢
+      exact ⟨(hKP _).trans hRec.1, storeLeavesIndexAndTypes_of_frame hV hRec.2⟩
+
+theorem replyRecvAnsweringOnCore_held_inPlace
+    (answer : Option Architecture.FaultReplyOutcome) (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage) (grant : Bool)
+    (core : CoreId)
+    (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep0 (some tid))
+    (hRO : ct.replyObject = some rid)
+    (hSRes : tid.isReserved = false)
+    (hG : replyHeldPopsInPlace st c ct.scBindingScCode tid rid = true)
+    (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt))
+    (hOwn : rt.scBindingOwnerCode = 0 ∨ rp.prev = none)
+    (hA : enqueueAdmits rt = true)
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true)
+    (hInert : answer = none →
+      replyTransferInert st tid ct grant = true) :
+    endpointReplyRecvAnsweringOnCore answer epId tid rid c msg grant core st =
+      .ok ({ results := #[] }, replyRecvAnswerCaller answer
+        (PriorityInheritance.propagatePipChainCrossCore
+          (removeRunnableOnCore (storeReceiveBlock
+            (receiveReturnSchedContext true
+              (keepDonatedSchedContextInPlace (storeReplyRendezvous st c tid rid msg) tid
+                ⟨replyHeadContextCode st rid - 1⟩) tid) epId tid
+            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1 c 0) ∧
+      ∃ x, (removeRunnableOnCore (storeReceiveBlock
+            (receiveReturnSchedContext true
+              (keepDonatedSchedContextInPlace (storeReplyRendezvous st c tid rid msg) tid
+                ⟨replyHeadContextCode st rid - 1⟩) tid) epId tid
+            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core).getTcb? tid = some x ∧
+        x.ipcState = .blockedOnReceive epId := by
+  obtain ⟨rp', scId, sc, _, hRp', hN, hScO, hHead, hBelow, hCode, hCRes, _, hNe, hNo, _, _, hLC, hFC,
+    hLR, hFR, _, hPop⟩ := replyHeldPopsInPlace_pop st c tid rid msg ct hT hG
+  rw [hRp] at hRp'
+  cases hRp'
+  have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by
+    rw [hCode]; rfl
+  rw [hSc]
+  obtain ⟨hEq, _⟩ := replyOnCore_eq_store st tid c tid ct ep0 rid rp msg core hSz hT hIpc hRO
+    hCRes hLC hFC hLR hFR hRp (Or.inr ⟨scId, hN⟩)
+  obtain ⟨hE1, ⟨rt1, hR1, hA1, hB1⟩, hG1⟩ := keepHeldPop_receiveGuard st c tid rid msg ct rp
+    epId ep rt scId sc hNo hT hFC hRp hN hScO hHead hBelow
+    (fun e => hNe e.symm) hE hR hOwn hA hEnq hStash hRec
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hXf := replyRecvReplyTransfer_of_inert answer st tid c grant ct hTc hInert
+  have hRecS : recordedReplyServer? st c = some tid := by
+    simp only [recordedReplyServer?, hTc, hIpc]
+  have hNoP := keepDonatedSchedContextInPlace_noResizeDue _ tid scId
+    (storeReplyRendezvous_noResizeDue st c tid rid msg hNo)
+  rw [← storeReplyRendezvous_eq_hold _ _ _ _ _ hNo] at hPop
+  generalize hS1 : storeReplyRendezvous st c tid rid msg = S1 at hEq hPop hE1 hR1 hG1 hNoP
+  generalize hP : keepDonatedSchedContextInPlace S1 tid scId = P
+    at hPop hE1 hR1 hG1 hNoP
+  obtain ⟨hE2, ⟨rt2, hR2, hA2⟩, hG2⟩ := receiveReturnSchedContext_receiveGuard true P tid hNoP
+    hE1 hR1 hA1 hG1
+  generalize hQ : receiveReturnSchedContext true P tid = Q at hE2 hR2 hG2
+  have hEp1 : Q.getEndpoint? epId = some ep := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE2
+  have hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) core Q =
+      (removeRunnableOnCore (storeReceiveBlock Q epId tid ep.recvTailCode
+        (SeLe4n.ReplyId.optCode (some rid))) tid core, .ok (tid, { results := #[] }, none)) := by
+    unfold endpointReceiveDualWithCapsOnCore
+    rw [receiveBlock_inPlace_eq Q epId ep tid rt2 (some rid) core hE2 hS hR2 hA2 hG2]
+    have hSnd : (receiveRendezvousSender? Q epId).isNone = true := by
+      simp [receiveRendezvousSender?, hEp1, hS]
+    simp only [hSnd, ↓reduceIte]
+  obtain ⟨tb, hTb, hBk⟩ := receiveBlock_receiver_blocked Q epId ep tid rt2 (some rid) core hE2 hR2
+    hA2 hG2
+  have hDq : rendezvousDequeuedCall (removeRunnableOnCore (storeReceiveBlock Q epId tid
+      ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid = false := by
+    unfold rendezvousDequeuedCall lookupTcb
+    simp only [hSRes, Bool.false_eq_true, ↓reduceIte, hTb, hBk]
+  refine ⟨?_, tb, hTb, hBk⟩
+  unfold endpointReplyRecvAnsweringOnCore
+  simp only [hRecS, Option.getD_some, hEq, hPop, hXf, hQ, hRecv, hEp1, Option.bind_some, hS]
+  simp [replyRecvPostReceiveDonation, hDq, applyReceiveLegPipHandoff]
+
+/-- **The unheld pop carries the receive's guard**: on the state the reply leg
+to a caller recording no server and its unheld pop leave, the endpoint is as it
+was, the replier may block on it and its block writes in place, each read on
+the pre-state. -/
+theorem popUnheldSettled_receiveGuard (st : SystemState) (c tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (msg : IpcMessage) (ct : TCB) (rp : Reply)
+    (epId : SeLe4n.ObjId) (ep : Endpoint) (rt : TCB) (scId : SeLe4n.SchedContextId)
+    (sc : SchedContext) (home : CoreId)
+    (hNo : st.objects.noResizeDue)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hFC : st.objects.findsInPlace c.toObjId = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp)) (hNext : rp.next = some (.head scId))
+    (hScO : st.objects[scId.toObjId]? = some (.schedContext sc)) (hHead : sc.scReply = some rid)
+    (hBelow : ∀ b, rp.prev = some b → b ≠ rid)
+    (hNe : tid ≠ c)
+    (hE : st.objects[epId]? = some (.endpoint ep))
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
+    (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
+        (storeReplyLeg st c rid msg) c scId) home scId).objects[epId]? = some (.endpoint ep) ∧
+      (∃ rt1, (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
+          (storeReplyLeg st c rid msg) c scId) home scId).objects[tid.toObjId]? = some (.tcb rt1) ∧
+        receiveBlockAdmits rt1 = true ∧ rt1.boundNotificationCode = rt.boundNotificationCode) ∧
+      receiveBlocksInPlace (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
+        (storeReplyLeg st c rid msg) c scId) home scId) epId tid ep.receiveQ.tail (some rid) =
+        true := by
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hRc : rid.toObjId ≠ c.toObjId := fun e => by rw [e, hT] at hRp; cases hRp
+  have hEc : epId ≠ c.toObjId := fun e => by rw [e, hT] at hE; cases hE
+  have hEr : epId ≠ rid.toObjId := fun e => by rw [e, hRp] at hE; cases hE
+  have hTc' : tid.toObjId ≠ c.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e)
+  have hTr : tid.toObjId ≠ rid.toObjId := fun e => by rw [e, hRp] at hR; cases hR
+  have hSc' : scId.toObjId ≠ c.toObjId := fun e => by rw [e, hT] at hScO; cases hScO
+  have hSr : scId.toObjId ≠ rid.toObjId := fun e => by rw [e, hRp] at hScO; cases hScO
+  rw [storeReplyLeg_eq_hold _ _ _ _ hNo]
+  generalize hS1 : storeReplyLegReady st c rid = S1
+  have hAg := fun x hx hy => hS1 ▸ storeReplyLegReady_agree st c rid ct hNo hTc hFC x hx hy
+  have hNo1 : S1.objects.noResizeDue := hS1 ▸ storeReplyLegReady_noResizeDue st c rid hNo
+  have hK : S1.objectsKeepFinds st := hS1 ▸ storeReplyLegReady_keepsFinds st c rid hNo hFC
+  obtain ⟨tc1, htc1, hcv⟩ := hS1 ▸ storeReplyLegReady_callerView st c rid ct hNo hTc hFC hRc
+  have hc1 : tc1.ipcStateCode = (receiverReady ct).ipcStateCode := by
+    have h := congrArg TCB.ipcStateCode hcv; exact h
+  have hR1 : S1.objects[rid.toObjId]? = some (.reply rp.consumed) :=
+    hS1 ▸ storeReplyLegReady_reply st c rid ct rp hNo hTc hFC hRp hRc
+  generalize hTdef : S1.mapTcbInPlace c (holdMessage msg) = T
+  have hNoT : T.objects.noResizeDue := by rw [← hTdef]; exact hNo1
+  have hHold : ∀ x, x ≠ c.toObjId → T.objects[x]? = S1.objects[x]? := fun x hx => by
+    rw [← hTdef, SystemState.objects_mapTcbInPlace, if_neg (fun h => hx (beq_iff_eq.mp h).symm)]
+  have hTC : T.objects[c.toObjId]? = some (.tcb (holdMessage msg tc1)) := by
+    rw [← hTdef, SystemState.objects_mapTcbInPlace, if_pos (beq_self_eq_true _), htc1]; rfl
+  have hView : ∀ x, x ≠ c.toObjId → x ≠ rid.toObjId →
+      (T.objects[x]?).map KernelObject.withoutRunLinks =
+        (st.objects[x]?).map KernelObject.withoutRunLinks := fun x hx hy => by
+    rw [hHold _ hx]; exact hAg x hx hy
+  have hTR : T.objects[rid.toObjId]? = some (.reply rp.consumed) := by rw [hHold _ hRc]; exact hR1
+  have hKT : T.objectsKeepFinds st := by
+    rw [← hTdef]; exact (SystemState.mapTcbInPlace_keepsFinds _ _ _).trans hK
+  -- the pop's reads on `T`
+  have hScT : T.getSchedContext? scId = some sc := (SystemState.getSchedContext?_eq_some_iff _ _ _).mpr
+    (agreeAt_of_not_tcb (hView _ hSc' hSr) (fun _ e => by cases e) hScO)
+  obtain ⟨rtT, hRtT, eT⟩ := agreeAt_tcb (hView _ hTc' hTr) hR
+  have hHeadC : rp.consumed = { rp with callerCode := 0 } := Reply.consumed_of_head rp scId hNext
+  have hPr := returnUnheldSchedContextInPlace_reply T c scId sc rid rp.consumed (holdMessage msg tc1)
+    hNoT hScT hHead ((SystemState.getReply?_eq_some_iff _ _ _).mpr hTR)
+    ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hTC)
+    (fun b hb => hBelow b (by rw [hHeadC] at hb; exact hb))
+  have hPt := returnUnheldSchedContextInPlace_tcbAt T c scId hNoT hTc' hRtT
+  have hFr := returnUnheldSchedContextInPlace_popFrame T c scId hNoT
+  generalize returnUnheldSchedContextInPlace T c scId = Rr at hPt hPr hFr
+  have hAgS := SchedContextOps.settleReturnedContext_agree Rr home scId
+  have hF := (settleReturnedContext_popFrame Rr home scId).trans hFr
+  generalize SchedContextOps.settleReturnedContext Rr home scId = P at hAgS hF
+  have hPt' : P.objects[tid.toObjId]? = some (.tcb rtT) :=
+    releaseAgreeAt_of_not_sc hAgS hPt (fun _ e => by cases e)
+  have hPr' : P.objects[rid.toObjId]? =
+      some (.reply { rp.consumed with prev := none, next := none }) :=
+    releaseAgreeAt_of_not_sc hAgS hPr (fun _ e => by cases e)
+  have hComb : ∀ x, x ≠ c.toObjId → x ≠ rid.toObjId →
+      (P.objects[x]?).map popFieldsView = (st.objects[x]?).map popFieldsView :=
+    fun x hx hy => (hF.2.2.2 x).trans (popAgreeAt_of_runLinks (hView x hx hy))
+  obtain ⟨tcP, hPC, ecP⟩ := popAgreeAt_tcb (hF.2.2.2 c.toObjId) hTC
+  refine ⟨popAgreeAt_endpoint (hComb _ hEc hEr) hE, ⟨rtT, hPt', ?_, ?_⟩, ?_⟩
+  · have : receiveBlockAdmits rtT = receiveBlockAdmits rtT.withoutRunLinks := rfl
+    rw [this, eT]; exact hA
+  · show rtT.withoutRunLinks.boundNotificationCode = rt.withoutRunLinks.boundNotificationCode
+    rw [eT]
+  · unfold receiveBlocksInPlace
+    have hKP : P.objectsKeepFinds st := hF.2.2.1.trans hKT
+    have hV : ∀ x, P.getObjectType? x = st.getObjectType? x := by
+      intro x
+      by_cases hxc : x = c.toObjId
+      · subst hxc; unfold SystemState.getObjectType?; rw [hPC, hT]; rfl
+      · by_cases hxr : x = rid.toObjId
+        · subst hxr; unfold SystemState.getObjectType?; rw [hPr', hRp]; rfl
+        · exact getObjectType?_of_popAgree (hComb x hxc hxr)
+    rw [Bool.and_eq_true, Bool.and_eq_true]
+    refine ⟨⟨enqueuesInPlace_of_frame _ _ _ hKP hV ?_ hEnq, ?_⟩, ?_⟩
+    · intro p hp
+      by_cases hpc : p.toObjId = c.toObjId
+      · exact Option.isSome_iff_exists.mpr
+          ⟨tcP, (SystemState.getTcb?_eq_some_iff _ _ _).mpr (hpc ▸ hPC)⟩
+      · by_cases hpr : p.toObjId = rid.toObjId
+        · obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp hp
+          have := (SystemState.getTcb?_eq_some_iff _ _ _).mp hx
+          rw [hpr, hRp] at this; cases this
+        · exact getTcb?_isSome_of_popAgree (hComb _ hpc hpr) hp
+    · have hFree : ({ rp.consumed with prev := none, next := none } : Reply).isFree = true := by
+        have h := Reply.consumed_caller rp
+        simp only [Reply.caller] at h
+        simp only [Reply.isFree, Reply.caller, h, Option.isNone_none, Bool.and_self]
+      have hSt : P.replyStashedAt rid { rp.consumed with prev := none, next := none } = false := by
+        rw [replyStashedAt_eq_stasherTestAt]
+        rw [replyStashedAt_eq_stasherTestAt] at hStash
+        show (match rp.consumed.stasherCode with
+          | 0 => false
+          | k + 1 => stasherTestAt P (⟨k⟩ : SeLe4n.ThreadId) (rid.val + 1)) = false
+        rw [Reply.consumed_stasherCode]
+        revert hStash
+        cases rp.stasherCode with
+        | zero => intro _; rfl
+        | succ k =>
+          intro hStash
+          dsimp only at hStash ⊢
+          by_cases hkc : (⟨k⟩ : SeLe4n.ThreadId).toObjId = c.toObjId
+          · unfold stasherTestAt SystemState.getTcb?
+            rw [hkc, hPC]
+            have e := congrArg TCB.ipcStateCode ecP
+            simp only [TCB.withoutRunLinks] at e
+            simp only [e]
+            show ((holdMessage msg tc1).ipcStateCode == 1 && _) = false
+            have e2 : (holdMessage msg tc1).ipcStateCode = tc1.ipcStateCode := rfl
+            simp only [e2, hc1, receiverReady, TCB.setIpcState_ipcStateCode]
+            rfl
+          · by_cases hkr : (⟨k⟩ : SeLe4n.ThreadId).toObjId = rid.toObjId
+            · unfold stasherTestAt SystemState.getTcb?; rw [hkr, hPr']
+            · rw [stasherTestAt_of_popAgree (hComb _ hkc hkr)]; exact hStash
+      simp only [SystemState.replyStashValid]
+      rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr hPr']
+      simp only [hSt, hFree]
+      rfl
+    · show replyRecordsInPlace _ (rid.val + 1) = true
+      simp only [replyRecordsInPlace, Bool.and_eq_true] at hRec ⊢
+      exact ⟨(hKP _).trans hRec.1, storeLeavesIndexAndTypes_of_frame hV hRec.2⟩
+
+/-- **The reply-receive answering a caller recording no server, in place**:
+under `replyUnheldPopsInPlace`, with no sender waiting and the replier's block
+admissible (read on the pre-state and carried across the reply leg and the
+pop, `popUnheldSettled_receiveGuard`), the specification's reply-receive is
+the reply leg's writes, the unheld pop and its settle on the caller's home
+core, the replier's block, its priority walk and the caller's staged message.
+No holder loses a context, so none is taken off its core. -/
+theorem replyRecvAnsweringOnCore_unheld_inPlace
+    (answer : Option Architecture.FaultReplyOutcome) (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage) (grant : Bool)
+    (core : CoreId)
+    (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep0 none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyUnheldPopsInPlace st c rid = true)
+    (hNe : tid ≠ c)
+    (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true)
+    (hInert : answer = none →
+      replyTransferInert st tid ct grant = true) :
+    endpointReplyRecvAnsweringOnCore answer epId tid rid c msg grant core st =
+      .ok ({ results := #[] }, replyRecvAnswerCaller answer
+        (PriorityInheritance.propagatePipChainCrossCore
+          (removeRunnableOnCore (storeReceiveBlock
+            (receiveReturnSchedContext true
+              (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
+                (storeReplyLeg st c rid msg) c ⟨replyHeadContextCode st rid - 1⟩)
+                (determineTargetCore st c) ⟨replyHeadContextCode st rid - 1⟩) tid) epId tid
+            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1 c 0) ∧
+      ∃ x, (removeRunnableOnCore (storeReceiveBlock
+            (receiveReturnSchedContext true
+              (SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace
+                (storeReplyLeg st c rid msg) c ⟨replyHeadContextCode st rid - 1⟩)
+                (determineTargetCore st c) ⟨replyHeadContextCode st rid - 1⟩) tid) epId tid
+            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core).getTcb? tid = some x ∧
+        x.ipcState = .blockedOnReceive epId := by
+  obtain ⟨rp', scId, hRp', hN, hCode, hCRes, hNo, hLC, hFC, hLR, hFR, hPopR, hAppl⟩ :=
+    replyUnheldPopsInPlace_pop st c rid msg ct hT hG
+  rw [hRp] at hRp'
+  cases hRp'
+  obtain ⟨rp2, scId2, sc, hRp2, hN2, hScO, hHead, hBelow⟩ := replyUnheldPopsInPlace_stack st c rid hG
+  rw [hRp] at hRp2
+  cases hRp2
+  rw [hN] at hN2
+  injection hN2 with hN2
+  injection hN2 with hN2
+  subst hN2
+  have hSc : (⟨replyHeadContextCode st rid - 1⟩ : SeLe4n.SchedContextId) = scId := by
+    rw [hCode]; rfl
+  rw [hSc]
+  obtain ⟨hEq, _⟩ := replyOnCore_eq_storeLeg st tid c none ct ep0 rid rp msg core hSz hT hIpc hRO
+    hCRes hLC hFC hLR hFR hRp (Or.inr ⟨scId, hN⟩)
+  obtain ⟨hE1, ⟨rt1, hR1, hA1, hB1⟩, hG1⟩ := popUnheldSettled_receiveGuard st c tid rid msg ct rp
+    epId ep rt scId sc (determineTargetCore st c) hNo hT hFC hRp hN hScO hHead hBelow hNe hE hR
+    hA hEnq hStash hRec
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hXf := replyRecvReplyTransfer_of_inert answer st tid c grant ct hTc hInert
+  have hRecS : recordedReplyServer? st c = none := by
+    simp only [recordedReplyServer?, hTc, hIpc]
+  have hNoP := settleReturnedContext_noResizeDue _ (determineTargetCore st c) scId
+    (returnUnheldSchedContextInPlace_noResizeDue _ c scId (storeReplyLeg_noResizeDue st c rid msg hNo))
+  rw [← storeReplyLeg_eq_hold _ _ _ _ hNo] at hPopR
+  simp only [SystemState.unlinkReplyWaiterOpt] at hEq
+  generalize hS1 : storeReplyLeg st c rid msg = S1 at hEq hPopR hE1 hR1 hG1 hNoP
+  generalize hP : SchedContextOps.settleReturnedContext (returnUnheldSchedContextInPlace S1 c scId)
+    (determineTargetCore st c) scId = P at hPopR hE1 hR1 hG1 hNoP
+  obtain ⟨hE2, ⟨rt2, hR2, hA2⟩, hG2⟩ := receiveReturnSchedContext_receiveGuard true P tid hNoP
+    hE1 hR1 hA1 hG1
+  generalize hQ : receiveReturnSchedContext true P tid = Q at hE2 hR2 hG2
+  have hEp1 : Q.getEndpoint? epId = some ep := (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE2
+  have hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) core Q =
+      (removeRunnableOnCore (storeReceiveBlock Q epId tid ep.recvTailCode
+        (SeLe4n.ReplyId.optCode (some rid))) tid core, .ok (tid, { results := #[] }, none)) := by
+    unfold endpointReceiveDualWithCapsOnCore
+    rw [receiveBlock_inPlace_eq Q epId ep tid rt2 (some rid) core hE2 hS hR2 hA2 hG2]
+    have hSnd : (receiveRendezvousSender? Q epId).isNone = true := by
+      simp [receiveRendezvousSender?, hEp1, hS]
+    simp only [hSnd, ↓reduceIte]
+  obtain ⟨tb, hTb, hBk⟩ := receiveBlock_receiver_blocked Q epId ep tid rt2 (some rid) core hE2 hR2
+    hA2 hG2
+  refine ⟨?_, tb, hTb, hBk⟩
+  have hRes : tid.isReserved = false := by
+    have h := hG2
+    simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at h
+    exact h.1.1.1.1.1.1.1
+  unfold endpointReplyRecvAnsweringOnCore
+  simp only [hRecS, Option.getD_none, hEq, hPopR, hXf, hQ, hRecv, hEp1, Option.bind_some, hS,
+    replyRecvPostReceiveDonation_none_self _ _ _ _ hRes]
+  simp [applyReceiveLegPipHandoff]
+
+/-- **The reply leg to a caller recording no server carries the receive's
+guard** (WS-SX SX8.3): on the state the reply leg alone leaves (`storeReplyLeg`,
+no server's reply waiters to leave and no pop), the endpoint is as it was, the
+replier may block on it and its block writes in place, each read on the
+pre-state.  `storeReplyRendezvous_receiveGuard` without the unlink. -/
+theorem storeReplyLeg_receiveGuard (st : SystemState) (c tid : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (msg : IpcMessage) (ct : TCB) (rp : Reply)
+    (epId : SeLe4n.ObjId) (ep : Endpoint) (rt : TCB)
+    (hNo : st.objects.noResizeDue)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hFC : st.objects.findsInPlace c.toObjId = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hNe : tid ≠ c)
+    (hE : st.objects[epId]? = some (.endpoint ep))
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hFree : rp.consumed.isFree = true) (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true) :
+    (storeReplyLeg st c rid msg).objects[epId]? = some (.endpoint ep) ∧
+      (∃ rt1, (storeReplyLeg st c rid msg).objects[tid.toObjId]? = some (.tcb rt1) ∧
+        receiveBlockAdmits rt1 = true ∧ rt1.boundNotificationCode = rt.boundNotificationCode) ∧
+      receiveBlocksInPlace (storeReplyLeg st c rid msg) epId tid ep.receiveQ.tail
+        (some rid) = true := by
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hRc : rid.toObjId ≠ c.toObjId := fun e => by rw [e, hT] at hRp; cases hRp
+  have hEc : epId ≠ c.toObjId := fun e => by rw [e, hT] at hE; cases hE
+  have hEr : epId ≠ rid.toObjId := fun e => by rw [e, hRp] at hE; cases hE
+  have hTc' : tid.toObjId ≠ c.toObjId := fun e => hNe (SeLe4n.ThreadId.toObjId_injective _ _ e)
+  have hTr : tid.toObjId ≠ rid.toObjId := fun e => by rw [e, hRp] at hR; cases hR
+  rw [storeReplyLeg_eq_hold _ _ _ _ hNo]
+  generalize hS1 : storeReplyLegReady st c rid = S1
+  have hAg := fun x hx hy => hS1 ▸ storeReplyLegReady_agree st c rid ct hNo hTc hFC x hx hy
+  have hHold : ∀ x, x ≠ c.toObjId →
+      (S1.mapTcbInPlace c (holdMessage msg)).objects[x]? = S1.objects[x]? := fun x hx => by
+    rw [SystemState.objects_mapTcbInPlace, if_neg (fun h => hx (beq_iff_eq.mp h).symm)]
+  refine ⟨?_, ?_, ?_⟩
+  · rw [hHold _ hEc]; exact agreeAt_of_not_tcb (hAg _ hEc hEr) (fun _ e => by cases e) hE
+  · obtain ⟨rt1, h1, e1⟩ := agreeAt_tcb (hAg _ hTc' hTr) hR
+    refine ⟨rt1, by rw [hHold _ hTc']; exact h1, ?_, ?_⟩
+    · have : receiveBlockAdmits rt1 = receiveBlockAdmits rt1.withoutRunLinks := rfl
+      rw [this, e1]; exact hA
+    · show rt1.withoutRunLinks.boundNotificationCode = rt.withoutRunLinks.boundNotificationCode
+      rw [e1]
+  · unfold receiveBlocksInPlace
+    rw [Bool.and_eq_true, Bool.and_eq_true]
+    have hK : S1.objectsKeepFinds st := hS1 ▸ storeReplyLegReady_keepsFinds st c rid hNo hFC
+    obtain ⟨tc1, htc1, hcv⟩ := hS1 ▸ storeReplyLegReady_callerView st c rid ct hNo hTc hFC hRc
+    have hc1 : tc1.ipcStateCode = (receiverReady ct).ipcStateCode := by
+      have h := congrArg TCB.ipcStateCode hcv; exact h
+    have hR1 : S1.objects[rid.toObjId]? = some (.reply rp.consumed) :=
+      hS1 ▸ storeReplyLegReady_reply st c rid ct rp hNo hTc hFC hRp hRc
+    have hAt : ∀ x, (x = c.toObjId ∧
+          ∃ t, (S1.mapTcbInPlace c (holdMessage msg)).objects[x]? = some (.tcb t) ∧
+            t.ipcStateCode = (receiverReady ct).ipcStateCode) ∨
+        (x = rid.toObjId ∧
+          (S1.mapTcbInPlace c (holdMessage msg)).objects[x]? = some (.reply rp.consumed)) ∨
+        ((S1.mapTcbInPlace c (holdMessage msg)).objects[x]?).map KernelObject.withoutRunLinks =
+          (st.objects[x]?).map KernelObject.withoutRunLinks := by
+      intro x
+      by_cases hxc : x = c.toObjId
+      · subst hxc
+        left
+        refine ⟨rfl, holdMessage msg tc1, ?_, hc1⟩
+        rw [SystemState.objects_mapTcbInPlace, if_pos (beq_self_eq_true _), htc1]; rfl
+      · by_cases hxr : x = rid.toObjId
+        · subst hxr; right; left; rw [hHold _ hxc]; exact ⟨rfl, hR1⟩
+        · right; right; rw [hHold _ hxc]; exact hAg x hxc hxr
+    have hV : ∀ x, (S1.mapTcbInPlace c (holdMessage msg)).getObjectType? x =
+        st.getObjectType? x := by
+      intro x
+      rcases hAt x with ⟨e, t, h, _⟩ | ⟨e, h⟩ | h
+      · subst e; unfold SystemState.getObjectType?; rw [h, hT]; rfl
+      · subst e; unfold SystemState.getObjectType?; rw [h, hRp]; rfl
+      · exact getObjectType?_of_view h
+    have hKF : (S1.mapTcbInPlace c (holdMessage msg)).objectsKeepFinds st :=
+      (SystemState.mapTcbInPlace_keepsFinds _ _ _).trans hK
+    refine ⟨⟨enqueuesInPlace_of_frame _ _ _ hKF hV ?_ hEnq, ?_⟩, ?_⟩
+    · intro p hp
+      obtain ⟨t, ht⟩ := Option.isSome_iff_exists.mp hp
+      have h1 := (SystemState.getTcb?_eq_some_iff _ _ _).mp ht
+      rcases hAt p.toObjId with ⟨_, t', h, _⟩ | ⟨e, _⟩ | h
+      · exact Option.isSome_iff_exists.mpr ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mpr h⟩
+      · rw [e, hRp] at h1; cases h1
+      · obtain ⟨t', h', _⟩ := agreeAt_tcb h h1
+        exact Option.isSome_iff_exists.mpr ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mpr h'⟩
+    · have hSt : (S1.mapTcbInPlace c (holdMessage msg)).replyStashedAt rid rp.consumed = false := by
+        rw [replyStashedAt_eq_stasherTestAt, Reply.consumed_stasherCode]
+        rw [replyStashedAt_eq_stasherTestAt] at hStash
+        revert hStash
+        cases rp.stasherCode with
+        | zero => intro _; rfl
+        | succ k =>
+          intro hStash
+          dsimp only at hStash ⊢
+          rcases hAt (⟨k⟩ : SeLe4n.ThreadId).toObjId with ⟨_, t, h, hc⟩ | ⟨_, h⟩ | h
+          · unfold stasherTestAt SystemState.getTcb?; rw [h]
+            simp only [hc, receiverReady, TCB.setIpcState_ipcStateCode]
+            rfl
+          · unfold stasherTestAt SystemState.getTcb?; rw [h]
+          · rw [stasherTestAt_of_view h]; exact hStash
+      simp only [SystemState.replyStashValid]
+      rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr (by rw [hHold _ hRc]; exact hR1)]
+      simp only [hSt, hFree]
+      rfl
+    · show replyRecordsInPlace _ (rid.val + 1) = true
+      simp only [replyRecordsInPlace, Bool.and_eq_true] at hRec ⊢
+      exact ⟨(hKF _).trans hRec.1, storeLeavesIndexAndTypes_of_frame
+        (s' := S1.mapTcbInPlace c (holdMessage msg)) hV hRec.2⟩
+
+/-- **The reply-receive answering a caller recording no server whose reply
+object is linked to nothing, in place** (WS-SX SX8.3): seL4-MCS's
+`doReplyTransfer` with `reply_remove` on a reply object neither heading a stack
+nor sitting on one (nothing to pop), then `receiveIPC` blocking the replier.
+Under `replyUnlinkedInPlace`, with no sender waiting and the replier's block
+admissible (read on the pre-state, carried across the reply leg by
+`storeReplyLeg_receiveGuard`), the composite answering the caller with
+`answer` is the reply leg's writes, the replier's block, its priority walk and
+the caller answered. -/
+theorem replyRecvAnsweringOnCore_unlinked_inPlace
+    (answer : Option Architecture.FaultReplyOutcome) (st : SystemState) (epId : SeLe4n.ObjId)
+    (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (msg : IpcMessage) (grant : Bool)
+    (core : CoreId)
+    (ct : TCB) (ep0 : SeLe4n.ObjId) (rt : TCB) (ep : Endpoint) (rp : Reply)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep0 none)
+    (hRO : ct.replyObject = some rid)
+    (hG : replyUnlinkedInPlace st c rid = true)
+    (hNe : tid ≠ c)
+    (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt)) (hA : receiveBlockAdmits rt = true)
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true)
+    (hInert : answer = none →
+      replyTransferInert st tid ct grant = true) :
+    endpointReplyRecvAnsweringOnCore answer epId tid rid c msg grant core st =
+      .ok ({ results := #[] }, replyRecvAnswerCaller answer
+        (PriorityInheritance.propagatePipChainCrossCore
+          (removeRunnableOnCore (storeReceiveBlock
+            (receiveReturnSchedContext true (storeReplyLeg st c rid msg) tid) epId tid
+            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core) tid core).1 c 0) ∧
+      ∃ x, (removeRunnableOnCore (storeReceiveBlock
+            (receiveReturnSchedContext true (storeReplyLeg st c rid msg) tid) epId tid
+            ep.recvTailCode (SeLe4n.ReplyId.optCode (some rid))) tid core).getTcb? tid = some x ∧
+        x.ipcState = .blockedOnReceive epId := by
+  have hW : replyWakesInPlace st c ct rid = true := hG
+  have hNo := replyWakesInPlace_noResizeDue hW
+  have hG' := hG
+  simp only [replyUnlinkedInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG'
+  obtain ⟨⟨⟨⟨⟨hCRes, hLC⟩, hFC⟩, hLR⟩, hFR⟩, hRpG⟩ := hG'
+  rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr hRp] at hRpG
+  simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hRpG
+  obtain ⟨hNext, hPrev⟩ := hRpG
+  have hFree : rp.consumed.isFree = true := by
+    rw [← Reply.consumedIsFree_eq]; simp only [Reply.consumedIsFree, hNext]
+  obtain ⟨hEq, hR5⟩ := replyOnCore_eq_storeLeg st tid c none ct ep0 rid rp msg core hSz hT hIpc
+    hRO hCRes hLC hFC hLR hFR hRp (Or.inl ⟨hNext, hPrev⟩)
+  simp only [SystemState.unlinkReplyWaiterOpt] at hEq hR5
+  have hHead : replyFrameHeadContext? (storeReplyLeg st c rid msg) rid = none := by
+    unfold replyFrameHeadContext?
+    rw [hR5]
+    simp only [Reply.consumed, hNext]
+  obtain ⟨hE0, ⟨rt0, hR0, hA0, -⟩, hG0⟩ := storeReplyLeg_receiveGuard st c tid rid msg ct rp
+    epId ep rt hNo hT hFC hRp hNe hE hR hA hEnq hFree hStash hRec
+  have hNo1 := storeReplyLeg_noResizeDue st c rid msg hNo
+  obtain ⟨hE1, ⟨rt1, hR1, hA1⟩, hG1⟩ := receiveReturnSchedContext_receiveGuard true _ tid hNo1
+    hE0 hR0 hA0 hG0
+  have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  have hXf := replyRecvReplyTransfer_of_inert answer st tid c grant ct hTc hInert
+  have hRecS : recordedReplyServer? st c = none := by
+    simp only [recordedReplyServer?, hTc, hIpc]
+  generalize hS1 : storeReplyLeg st c rid msg = S1 at hEq hHead hE1 hR1 hG1
+  have hPop : replyRecvPopDonation rid c S1 = .ok (none, S1) := by
+    unfold replyRecvPopDonation
+    rw [replyFrameHeadHolder?_of_no_head _ _ hHead]
+    simp only [popUnheldReplyHead_of_no_head _ _ _ _ hHead]
+  have hEp1 : (receiveReturnSchedContext true S1 tid).getEndpoint? epId = some ep :=
+    (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE1
+  have hRecv : endpointReceiveDualWithCapsOnCore epId tid (some rid) core
+      (receiveReturnSchedContext true S1 tid) =
+      (removeRunnableOnCore (storeReceiveBlock (receiveReturnSchedContext true S1 tid) epId tid
+        ep.recvTailCode
+        (SeLe4n.ReplyId.optCode (some rid))) tid core, .ok (tid, { results := #[] }, none)) := by
+    unfold endpointReceiveDualWithCapsOnCore
+    rw [receiveBlock_inPlace_eq _ epId ep tid rt1 (some rid) core hE1 hS hR1 hA1 hG1]
+    have hSnd : (receiveRendezvousSender? (receiveReturnSchedContext true S1 tid) epId).isNone =
+        true := by
+      simp [receiveRendezvousSender?, hEp1, hS]
+    simp only [hSnd, ↓reduceIte]
+  obtain ⟨tb, hTb, hBk⟩ := receiveBlock_receiver_blocked _ epId ep tid rt1 (some rid) core hE1 hR1
+    hA1 hG1
+  refine ⟨?_, tb, hTb, hBk⟩
+  have hRes : tid.isReserved = false := by
+    have h := hG1
+    simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at h
+    exact h.1.1.1.1.1.1.1
+  unfold endpointReplyRecvAnsweringOnCore
+  simp only [hRecS, Option.getD_none, hEq, hPop, hXf, hRecv, hEp1, Option.bind_some, hS,
+    replyRecvPostReceiveDonation_none_self _ _ _ _ hRes]
+  simp [applyReceiveLegPipHandoff]
 
 /-- **The reply arm of a reply-receive**: what the reply leg pops, read on the
 pre-state.  An enumeration, so choosing an arm allocates nothing: the context

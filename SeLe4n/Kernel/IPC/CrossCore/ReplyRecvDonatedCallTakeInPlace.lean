@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
-import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvDonatedInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyPopFrame
 import SeLe4n.Kernel.IPC.CrossCore.ReceiveCallDonatingInPlace
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvTakeInPlace
 

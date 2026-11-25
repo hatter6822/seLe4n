@@ -8,7 +8,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.CrossCore.CapTransferDelivered
-import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyLegFrame
 
 /-!
 # The reply transfer's frame, for the receive leg after it

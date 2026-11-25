@@ -8,16 +8,15 @@
 -/
 
 import SeLe4n.Kernel.RefusalCarryingEndpoint
-import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvInPlace
-import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvDonatedInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyLegFrame
+import SeLe4n.Kernel.IPC.CrossCore.ReplyPopFrame
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyHeldInPlace
-import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvUnheldInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyUnheldPopFrame
 import SeLe4n.Kernel.IPC.CrossCore.FaultAnswerInPlace
-import SeLe4n.Kernel.IPC.CrossCore.LongReplyRecvInPlace
+import SeLe4n.Kernel.IPC.CrossCore.LongReplyRecvFrame
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvCapsDelivered
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvTakeInPlace
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvUnlinkedTakeInPlace
-import SeLe4n.Kernel.IPC.CrossCore.LongReplyRecvPopInPlace
 import SeLe4n.Kernel.IPC.CrossCore.LongReplyRecvTakeInPlace
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvFaultTakeInPlace
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvDonatedCallTakeInPlace

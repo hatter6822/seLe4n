@@ -27,7 +27,7 @@ import SeLe4n.Kernel.IPC.CrossCore.LongCapsDelivered
 import SeLe4n.Kernel.IPC.CrossCore.ReplyCapsLongDelivered
 import SeLe4n.Kernel.IPC.CrossCore.LongFaultAnswerInPlace
 import SeLe4n.Kernel.IPC.CrossCore.ReceiveCallDonatingInPlace
-import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyRecvInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyLegFrame
 
 /-!
 # The endpoint syscalls, refusing in the state they were refused in
