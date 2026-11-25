@@ -1356,6 +1356,13 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.removeRunnable
   , `SeLe4n.Kernel.removeRunnableValid
   , `SeLe4n.Kernel.replyRecvReceiveLegState
+  -- WS-SX SX25: the composed blocking reply-receive's reply leg and receive
+  -- tail as the specification runs them, which the arm-generic performers
+  -- are proven equal to (`replyRecvAnsweringOnCore_arm_inPlace`,
+  -- `ReplyRecvArm.tailFast_eq`); the performers run `legReady` and `tailFast`.
+  , `SeLe4n.Kernel.ReplyRecvArm.blocked
+  , `SeLe4n.Kernel.ReplyRecvArm.leg
+  , `SeLe4n.Kernel.ReplyRecvArm.tail
   , `SeLe4n.Kernel.replyTransferOnCore
   , `SeLe4n.Kernel.restoreIncomingContext
   , `SeLe4n.Kernel.restoreIncomingContextChecked
