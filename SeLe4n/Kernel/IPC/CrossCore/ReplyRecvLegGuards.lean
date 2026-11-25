@@ -525,7 +525,8 @@ theorem keepHeldPop_callTakeGuard (st : SystemState) (c tid : SeLe4n.ThreadId)
         sTcbP.scBindingScCode = sTcb.scBindingScCode ∧
         determineTargetCore P s = determineTargetCore st s ∧
         determineTargetCore P tid = determineTargetCore st tid ∧
-        receiveCallTakesInPlace P epId tid s sTcbP rid = true := by
+        receiveCallTakesInPlace P epId tid s sTcbP rid = true ∧
+        ∃ rtP, P.getTcb? tid = some rtP ∧ rtP.boundNotificationCode = rt.boundNotificationCode := by
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   have hRc : rid.toObjId ≠ c.toObjId := fun e => by rw [e, hT] at hRp; cases hRp
   have hEc : epId ≠ c.toObjId := fun e => by rw [e, hT] at hE; cases hE
@@ -636,7 +637,12 @@ theorem keepHeldPop_callTakeGuard (st : SystemState) (c tid : SeLe4n.ThreadId)
     rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr h', hRtT]
     dsimp only
     rw [ha]
-  refine ⟨popAgreeAt_endpoint (hComb _ hEc hEr) hE, sTcb1, hsP, hKept, hBind, hDs, hDt, ?_⟩
+  have hBN : ∃ rtP, P.getTcb? tid = some rtP ∧
+      rtP.boundNotificationCode = rt.boundNotificationCode := by
+    obtain ⟨t', h', e'⟩ := popAgreeAt_tcb (hComb _ hTc' hTr) hR
+    exact ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mpr h', by
+      have := congrArg TCB.boundNotificationCode e'; exact this⟩
+  refine ⟨popAgreeAt_endpoint (hComb _ hEc hEr) hE, sTcb1, hsP, hKept, hBind, hDs, hDt, ?_, hBN⟩
   have hFree : ({ rp.consumed with prev := none, next := none } : Reply).isFree = true := by
     have h := Reply.consumed_caller rp
     simp only [Reply.caller] at h
