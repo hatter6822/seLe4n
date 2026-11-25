@@ -31,18 +31,27 @@ context-holding server's measurement.
   fault-answer Call takes need a fault lane whose server holds no context,
   and moved to SX28.1 with the other new scenarios.
 - **Gates.**  Tier 3 anchors pin the selector, its specification, every
-  routed answer and the out-of-line arms, and refuse the retired names and
+  routed answer, the out-of-line admission tests and answers and each arm's
+  route through them, and refuse the retired names and
   imports (break-tested by breaking the relation with the tokens kept).  The
   store-reader baseline's rows for the touched files are re-read.
-- **Measured, acceptance not met.**  `RefusalCarryingReplyRecv.c` is
-  14,178,424 bytes, compiled in 706 s standalone (`leanc -c -O3 -DNDEBUG`),
-  against 13,204,415 bytes and 535 s at `v0.37.55` (SX25's baseline:
-  21,021,237 bytes, 769 s): the inlined Call-take arms are compiled into every
-  checked reply-receive entry.  With the four Call-take and Call-fault arms
-  out of line the file was 11,824,216 bytes and 492 s, but each reply-receive
-  through them then allocated its result (40 bytes, and 328 on the fault
-  takes) and the heap gate failed, so they stay inline.  Bringing the size
-  back under SX26's without an allocation is open (SX27's acceptance).
+- **Measured.**  The four Call-take and Call-fault arms stay inline and
+  call out-of-line pieces that build nothing: a `Bool` admission test for
+  the Call-take shapes (`replyRecvShortCallTakeAdmits`,
+  `replyRecvLongCallTakeAdmits`; the fault arms read
+  `replyRecvCallTakeArmCode`) and an answer per answer and length that
+  returns the state (`replyRecvCallTakeAnswer`, `replyRecvLongCallTakeAnswer`,
+  `replyRecvCallFaultTakeAnswer`, `replyRecvLongCallFaultTakeAnswer`), each
+  arm's `_eq` restated over them.  `RefusalCarryingReplyRecv.c` is
+  13,193,916 bytes against 13,204,415 at `v0.37.55` (SX25's baseline:
+  21,021,237 bytes, 769 s), and compiles standalone (`leanc -c -O3
+  -DNDEBUG`) in 557 s and 536 s on two runs on a quiet machine against
+  `v0.37.55`'s 535 s, equal within the run-to-run noise.  Inline, the
+  arms' result is consumed by the caller and never built, so every heap
+  reading stays 0.  (With the arms themselves out of line the file was
+  11,824,216 bytes, but each reply-receive through them allocated its
+  result and the heap gate failed; with the arms inline and their bodies
+  inline, 14,178,424 bytes and 706 s.)
 - **Plan.**  D49 recorded; SX28 added; SX28–SX37 renumbered SX29–SX38 in
   the plan, REGISTERED_DEBT, WORKSTREAM_CONTEXT, the spec,
   CONTEXT_BY_VALUE_PLAN and the conformance table's row strings.

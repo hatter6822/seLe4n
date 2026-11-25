@@ -170,7 +170,7 @@ los puntos siguientes remiten a ella.
 |----------|-------|
 | **Versión** | `0.37.56` |
 | **Toolchain de Lean** | `v4.28.0` |
-| **LoC de producción en Lean** | 685.888 en 701 archivos |
+| **LoC de producción en Lean** | 685.915 en 701 archivos |
 | **LoC de pruebas en Lean** | 91.877 en 71 suites de pruebas |
 | **Declaraciones demostradas** | 26.488 declaraciones theorem/lemma (cero sorry/axiom) |
 | **Crates de Rust** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (envoltorios en espacio de usuario), `sele4n-hal` (la capa de hardware del núcleo) y la prueba de host `sele4n-lean-boundary` |
