@@ -66,7 +66,10 @@
 > acceptance), and SX26–SX34 became SX28–SX36. SX25 landed at `v0.37.54` (one
 > in-place reply leg over every reply arm, the composed blocking receive for
 > every answer and length under one `_eq`, the held arm reachable in place,
-> and the blocking per-arm modules retired).
+> and the blocking per-arm modules retired). SX26 landed at `v0.37.55` (the
+> Send-take leg composed over every reply arm, answer and length under one
+> `_eq`, the per-arm take modules retired; the QEMU steps of eight take shapes
+> with no scenario to build on carried to SX27.1).
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
 > **Rows**: SX1–SX36, numbered in the order they are implemented, one PR each.
@@ -1157,14 +1160,20 @@ is 21,021,237 bytes and compiles in 769 s.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX26.1 | **The Send-take leg composed for every arm and answer**: a reply-receive whose receive leg meets a queued sender takes it in place over SX25's reply leg and guard family, for the five reply arms, the three answers and both lengths, under one `_eq`. | The take leg's equality over the arm; the take arms of `RefusalCarryingReplyRecv.lean` restated over it. | QEMU: one step per shape it brings in place, each 0 |
-| SX26.2 | **The take modules retired**: `ReplyRecvTakeInPlace`, `LongReplyRecvTakeInPlace`, `ReplyRecvFaultTakeInPlace`, `ReplyRecvUnlinkedTakeInPlace`. | none beyond SX26.1 | Tier 3 anchors refusing the retired names |
+| SX26.1 | **LANDED at `v0.37.55`** (`ReplyRecvTakeComposed.lean`: `replyRecvAnsweringOnCore_arm_take`, one performer per answer and length `performReplyRecvArm{Take,TakeCaps,FaultTake}Delivered{,Long}`; the take arms of `RefusalCarryingReplyRecv.lean` routed by one out-of-line selector `replyRecvTakeArmCode`; QEMU steps for 13 of the 21 shapes it brings in place: the unheld and unlinked takes at 120 words, inert and installing, the held arm's four takes, and the fault answer's take on the rendezvous arm at 120 words and on the held and unlinked arms at one and 120 words, each 0; the donated arm's six take shapes and the unheld fault take's two have no exerciser scenario to build on, so their steps are carried to SX27.1). **The Send-take leg composed for every arm and answer**: a reply-receive whose receive leg meets a queued sender takes it in place over SX25's reply leg and guard family, for the five reply arms, the three answers and both lengths, under one `_eq`. | The take leg's equality over the arm; the take arms of `RefusalCarryingReplyRecv.lean` restated over it. | QEMU: one step per shape it brings in place, each 0 |
+| SX26.2 | **LANDED at `v0.37.55`** (what the Call takes, the leg guards and the composed take read moved first, measured over the constants they use, into `ReplyRecvTakeFrame.lean`). **The take modules retired**: `ReplyRecvTakeInPlace`, `LongReplyRecvTakeInPlace`, `ReplyRecvFaultTakeInPlace`, `ReplyRecvUnlinkedTakeInPlace`. | none beyond SX26.1 | Tier 3 anchors refusing the retired names |
+
+**Acceptance:**
+- every Send-take ReplyRecv shape answered in place over every reply arm, under one proof;
+- the per-arm take modules deleted;
+- `RefusalCarryingReplyRecv.c` and its compile time no larger than SX25's (met at `v0.37.55`: 13,204,415 bytes, 535 s, against 14,643,899 bytes and 607 s);
+- every heap reading 0.
 
 ### SX27 — The Call take composed, and the composed path's acceptance (D48)
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX27.1 | **The Call take with its donation and the holder's deschedule for every arm**, over SX25's leg and SX26's take. | The Call take's equality over the arm; the Call-take arms of `RefusalCarryingReplyRecv.lean` restated. | QEMU: one step per shape it brings in place, each 0 |
+| SX27.1 | **The Call take with its donation and the holder's deschedule for every arm**, over SX25's leg and SX26's take. | The Call take's equality over the arm; the Call-take arms of `RefusalCarryingReplyRecv.lean` restated. | QEMU: one step per shape it brings in place, each 0; and, carried from SX26.1, the Send take's eight shapes with no scenario at `v0.37.55` (the donated arm at one and 120 words, inert, installing and answering a fault; the unheld arm answering a fault at one and 120 words), each 0 |
 | SX27.2 | **The Call-take modules retired**: `ReplyRecv{Call,DonatedCall,UnlinkedCall}TakeInPlace`. The composed path's final acceptance: every ReplyRecv shape (90) in place under one proof; `RefusalCarryingReplyRecv.c` size and compile time against SX25's baseline. | none beyond SX27.1 | Tier 3 anchors refusing the retired names |
 
 ### SX28 — Page-table teardown and per-frame W^X
@@ -1282,7 +1291,7 @@ every new path measured at 0.
 | SX23 | 1–2 (landed) |
 | SX24 | 2–3 |
 | SX25 | 3 (ran about 6, D48) |
-| SX26 | 2–3 |
+| SX26 | 2–3 (landed) |
 | SX27 | 2–3 |
 | SX28 | 2 |
 | SX29 | 1 |
