@@ -72,7 +72,7 @@ theorem endpointCallOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId
           have hRh : receiver = hd := endpointQueuePopHead_popped_eq_head _ true _ _ ep _ _ _
             hEpO (by simpa using hHead) hPop
           subst hRh
-          have F1 := RecordsFrame.endpointQueuePopHead hInv hPop
+          have F1 := (RecordsEndpointFrame.endpointQueuePopHead hInv hPop).core
           split
           · exact refl hInv
           · rename_i st2 hRdy
@@ -90,7 +90,7 @@ theorem endpointCallOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId
               · rename_i st5 hLink
                 have F5 := RecordsFrame.linkServerStashedReply S4.invExt hLink
                 have F6 := RecordsFrame.removeRunnableOnCore st5 caller c F5.invExt
-                exact (of_frame F1).trans (S2.trans ((of_frame F3).trans (S4.trans
+                exact (of_coreFrame F1).trans (S2.trans ((of_frame F3).trans (S4.trans
                   ((of_frame F5).trans ((of_frame F6).trans (linkReplyWaiter _ _ _ F6.invExt))))))
       · split
         · exact refl hInv
@@ -98,7 +98,7 @@ theorem endpointCallOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId
           have hRh : receiver = hd := endpointQueuePopHead_popped_eq_head _ true _ _ ep _ _ _
             hEpO (by simpa using hHead) hPop
           subst hRh
-          have F1 := RecordsFrame.endpointQueuePopHead hInv hPop
+          have F1 := (RecordsEndpointFrame.endpointQueuePopHead hInv hPop).core
           split
           · exact refl hInv
           · rename_i st2 hRC
@@ -110,7 +110,7 @@ theorem endpointCallOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId
             have F3 := RecordsFrame.wakeThread st2 receiver c S2.invExt (fun y hy => by
               rw [hx] at hy; cases hy; simp)
             have F4 := RecordsFrame.removeRunnableOnCore _ caller c F3.invExt
-            exact (of_frame F1).trans (S2.trans ((of_frame F3).trans ((of_frame F4).trans
+            exact (of_coreFrame F1).trans (S2.trans ((of_frame F3).trans ((of_frame F4).trans
               (updateTcb _ caller F4.invExt fun _ _ => TcbStaysParked.of_parked (.inl rfl)))))
     · split
       · exact refl hInv
@@ -118,11 +118,11 @@ theorem endpointCallOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId
         split
         · exact refl hInv
         · rename_i st2 hBlk
-          have F1 := RecordsFrame.endpointQueueEnqueue hInv hEnq
+          have F1 := (RecordsEndpointFrame.endpointQueueEnqueue hInv hEnq).core
           have S2 := storeTcbIpcStateAndMessage F1.invExt hBlk (fun _ _ => .inr (by simp))
           have F3 := RecordsFrame.removeRunnableOnCore st2 caller c S2.invExt
           have F4 := RecordsFrame.recordSendCap _ caller payload.badge payload.grant payload.grantReply F3.invExt
-          exact (of_frame F1).trans (S2.trans ((of_frame F3).trans (of_frame F4)))
+          exact (of_coreFrame F1).trans (S2.trans ((of_frame F3).trans (of_frame F4)))
   · split <;> exact refl hInv
 
 theorem endpointCallWithCapsOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId}

@@ -41,13 +41,12 @@ theorem receiveHead_notParked {st : SystemState} (hQ : queueHeadBlockedConsisten
     ∀ x, st.getTcb? r = some x → ¬ ipcParked x.ipcState := fun x hx => by
   rw [(hQ eid ep r x hE ((SystemState.getTcb?_eq_some_iff _ _ _).mp hx)).1 hH]; simp
 
-/-- A thread's fault-parking reads carried across a frame. -/
-theorem RecordsFrame.notParked {st st' : SystemState} (F : RecordsFrame st st')
+/-- A thread's fault-parking reads carried across a core frame. -/
+theorem RecordsCoreFrame.notParked {st st' : SystemState} (F : RecordsCoreFrame st st')
     {t : SeLe4n.ThreadId} (h : ∀ x, st.getTcb? t = some x → ¬ ipcParked x.ipcState) :
     ∀ x, st'.getTcb? t = some x → ¬ ipcParked x.ipcState := fun x hx => by
   obtain ⟨y, hy, hv⟩ := F.getTcb?_view hx
-  have : y.ipcState = x.ipcState := congrArg TcbRecordView.ipc hv
-  rw [← this]; exact h y hy
+  rw [← (TcbRecordView.core_eq hv).2.1]; exact h y hy
 
 namespace RecordsStep
 
@@ -75,25 +74,25 @@ theorem endpointSendDualOnCore {endpointId : SeLe4n.ObjId} {sender : SeLe4n.Thre
             have hRh : receiver = hd := endpointQueuePopHead_popped_eq_head _ true _ _ ep _ _ _
               hEpO (by simpa using hHead) hPop
             subst hRh
-            have F1 := RecordsFrame.endpointQueuePopHead hInv hPop
+            have F1 := (RecordsEndpointFrame.endpointQueuePopHead hInv hPop).core
             have S2 := storeTcbReceiveComplete F1.invExt hRecv
               (F1.notParked (receiveHead_notParked hQ hEpO hHead))
             obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hRecv
             have F3 := RecordsFrame.wakeThread st2 receiver c S2.invExt (fun y hy => by
               rw [hx] at hy; cases hy; simp)
-            exact (of_frame F1).trans (S2.trans (of_frame F3))
+            exact (of_coreFrame F1).trans (S2.trans (of_frame F3))
     · split
       · exact refl hInv
       · rename_i st1 hEnq
         split
         · exact refl hInv
         · rename_i st2 hBlk
-          have F1 := RecordsFrame.endpointQueueEnqueue hInv hEnq
+          have F1 := (RecordsEndpointFrame.endpointQueueEnqueue hInv hEnq).core
           have S2 := storeTcbIpcStateAndMessage F1.invExt hBlk
             (fun x hx => .inl (F1.notParked hSnd x hx))
           have F3 := RecordsFrame.removeRunnableOnCore st2 sender c S2.invExt
           have F4 := RecordsFrame.recordSendCap _ sender payload.badge payload.grant payload.grantReply F3.invExt
-          exact (of_frame F1).trans (S2.trans ((of_frame F3).trans (of_frame F4)))
+          exact (of_coreFrame F1).trans (S2.trans ((of_frame F3).trans (of_frame F4)))
   · split <;> exact refl hInv
 
 end RecordsStep

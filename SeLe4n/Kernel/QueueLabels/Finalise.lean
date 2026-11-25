@@ -101,15 +101,15 @@ theorem storeEndpointWaiterCancelled (st : SystemState) (e : SeLe4n.ObjId) (q : 
     (t : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (faulted : Bool)
     (hInv : st.objects.invExt) :
     QueueLabelsFrame st (SeLe4n.Kernel.storeEndpointWaiterCancelled st e q t next faulted) := by
-  have F1 := RecordsFrame.storePopHead st e q t next hInv
+  have F1 := RecordsEndpointFrame.storePopHead st e q t next hInv
   unfold SeLe4n.Kernel.storeEndpointWaiterCancelled
   split
   · unfold SeLe4n.Kernel.storeEndpointWaiterFaulted
-    exact (of_frame F1).trans (updateTcb _ t (f := faultedEndpointWaiterTcb) F1.invExt
+    exact (of_endpointFrame F1).trans (updateTcb _ t (f := faultedEndpointWaiterTcb) F1.invExt
       (fun _ => TcbWaitsKept.of_noWait (by simp))
       fun _ _ => TcbNtfnKept.of_notBlocked (fun _ h => by simp [faultedEndpointWaiterTcb] at h))
   unfold SeLe4n.Kernel.storeEndpointWaiterRestarted
-  have S2 := (of_frame F1).trans (updateTcb _ t (f := cancelledEndpointWaiterTcb) F1.invExt
+  have S2 := (of_endpointFrame F1).trans (updateTcb _ t (f := cancelledEndpointWaiterTcb) F1.invExt
     (fun _ => TcbWaitsKept.of_noWait (by simp [cancelledEndpointWaiterTcb]))
     fun _ _ => TcbNtfnKept.of_notBlocked (fun _ h => by simp [cancelledEndpointWaiterTcb] at h))
   refine S2.trans (of_frame (RecordsFrame.enqueueRunnableOnCore _ _ t S2.invExt fun x hx => ?_))

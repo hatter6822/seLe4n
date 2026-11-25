@@ -27,37 +27,43 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 
-namespace RecordsFrame
+namespace RecordsEndpointFrame
 
-/-- One queue neighbour's links patched. -/
+/-- One queue neighbour's endpoint-queue links patched. -/
 theorem neighbourPatch (st : SystemState) (nid? : Option SeLe4n.ThreadId) (upd : TCB → TCB)
-    (hU : ∀ t, (upd t).recordView = t.recordView) (hInv : st.objects.invExt) :
-    RecordsFrame st { st with objects := queueNeighbourPatch st.objects nid? upd } := by
+    (hU : ∀ t, (upd t).recordView.core = t.recordView.core)
+    (hN : ∀ t, (upd t).ntfnPrevCode = t.ntfnPrevCode ∧ (upd t).ntfnNextCode = t.ntfnNextCode)
+    (hInv : st.objects.invExt) :
+    RecordsEndpointFrame st { st with objects := queueNeighbourPatch st.objects nid? upd } := by
   unfold queueNeighbourPatch
   split
   · exact of_objects_eq hInv rfl rfl
   · split
     · rename_i t h
-      exact insert hInv (by rw [h]; simp [hU])
+      exact insert hInv (by rw [h]; simp [hU]) (by rw [h]; simp [recordNtfnViewOf, hN])
     · exact of_objects_eq hInv rfl rfl
 
-/-- **The endpoint-queue removal keeps every record view**: two neighbour
-patches, an endpoint rewrite and the removed thread's links cleared. -/
+/-- **The endpoint-queue removal keeps every core view and the notification
+queues**: two neighbour patches, an endpoint rewrite and the removed thread's
+links cleared. -/
 theorem endpointQueueRemove {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
     {tid : SeLe4n.ThreadId} {st st' : SystemState} (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
-    RecordsFrame st st' := by
+    RecordsEndpointFrame st st' := by
   obtain ⟨ep, ep', tcb, hEp, hT, rfl⟩ := endpointQueueRemove_objects_eq h
   have hTo := lookupTcb_some_objects st tid tcb hT
-  have F1 := neighbourPatch st tcb.queuePrev (queueUnlinkPredecessor tcb) (fun _ => rfl) hInv
+  have F1 := neighbourPatch st tcb.queuePrev (queueUnlinkPredecessor tcb) (fun _ => rfl)
+    (fun _ => ⟨rfl, rfl⟩) hInv
   have F2 := F1.andThen fun h =>
-    neighbourPatch _ tcb.queueNext (queueUnlinkSuccessor tcb) (fun _ => rfl) h
+    neighbourPatch _ tcb.queueNext (queueUnlinkSuccessor tcb) (fun _ => rfl)
+      (fun _ => ⟨rfl, rfl⟩) h
   have F3 := F2.andThen fun h => insert (k := endpointId) (o := .endpoint ep') h
-    (by rw [F2.views, hEp]; rfl)
+    (by rw [F2.core.views, hEp]; rfl) (by rw [F2.ntfnViews, hEp]; rfl)
   exact F3.andThen fun h => insert (k := tid.toObjId)
-    (o := .tcb (tcbWithQueueLinks tcb none none none)) h (by rw [F3.views, hTo]; rfl)
+    (o := .tcb (tcbWithQueueLinks tcb none none none)) h (by rw [F3.core.views, hTo]; rfl)
+    (by rw [F3.ntfnViews, hTo]; rfl)
 
-end RecordsFrame
+end RecordsEndpointFrame
 
 namespace RecordsStep
 
@@ -79,8 +85,8 @@ theorem abortPendingIpcOnEndpoint {epId : SeLe4n.ObjId} {isReceiveQ : Bool}
       · cases h
       · rename_i hS
         cases h
-        have F := RecordsFrame.endpointQueueRemove hInv hR
-        refine ⟨(of_frame F).trans (storeObject_tcb F.invExt (lookupTcb_some_objects _ _ _ hT) hS
+        have F := (RecordsEndpointFrame.endpointQueueRemove hInv hR).core
+        refine ⟨(of_coreFrame F).trans (storeObject_tcb F.invExt (lookupTcb_some_objects _ _ _ hT) hS
           (TcbStaysParked.of_noFault ?_)), fun x hx => ?_⟩
         · exact TCB.pendingFault_setPendingFault _ none
         · have hO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hx

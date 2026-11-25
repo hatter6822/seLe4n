@@ -13,10 +13,13 @@ import SeLe4n.Kernel.KernelRecords.Tails
 # The IPC primitives' record frames
 
 WS-ZA ZA6.37.  The writes the IPC arms are built from, each as the frame it
-keeps: the endpoint-queue links and the stored endpoints keep every record view
-(`RecordsFrame`); a write to a thread's IPC state keeps the address-space
-records and leaves every fault record parked (`RecordsStep`) when the thread
-was not fault-blocked or is fault-blocked after it (`TcbStaysParked`).
+keeps: the endpoint-queue links, the endpoint stores and the endpoint queues'
+writes keep every core view and the notification queues
+(`RecordsEndpointFrame`); the reply, notification and scheduling-context stores
+keep every record view (`RecordsFrame`); a write to a thread's IPC state keeps
+the address-space records and leaves every fault record parked (`RecordsStep`)
+when the thread was not fault-blocked or is fault-blocked after it
+(`TcbStaysParked`).
 -/
 
 namespace SeLe4n.Kernel
@@ -131,12 +134,6 @@ end RecordsStep
 
 namespace RecordsFrame
 
-/-- An endpoint stored over an endpoint. -/
-theorem storeEndpoint {st st' : SystemState} {eid : SeLe4n.ObjId} {ep ep' : Endpoint}
-    (hInv : st.objects.invExt) (hObj : st.objects[eid]? = some (.endpoint ep))
-    (h : SeLe4n.Model.storeObject eid (.endpoint ep') st = .ok ((), st')) : RecordsFrame st st' :=
-  storeObject hInv h (by rw [hObj]; rfl) (fun _ h => by cases h)
-
 /-- A notification stored over a notification, keeping its bound thread and its
 queue's ends. -/
 theorem storeNotification {st st' : SystemState} {nid : SeLe4n.ObjId} {n n' : Notification}
@@ -157,18 +154,25 @@ theorem storeSchedContext {st st' : SystemState} {k : SeLe4n.ObjId} {s s' : Sche
     (h : SeLe4n.Model.storeObject k (.schedContext s') st = .ok ((), st')) : RecordsFrame st st' :=
   storeObject hInv h (by rw [hObj]; rfl) (fun _ h => by cases h)
 
+end RecordsFrame
+
+namespace RecordsEndpointFrame
+
+/-- **A thread's endpoint-queue links written** keep every core view and the
+notification queues. -/
 theorem storeTcbQueueLinks {st st' : SystemState} {t : SeLe4n.ThreadId}
     {prev : Option SeLe4n.ThreadId} {pprev : Option QueuePPrev} {next : Option SeLe4n.ThreadId}
     (hInv : st.objects.invExt) (h : _root_.SeLe4n.Kernel.storeTcbQueueLinks st t prev pprev next = .ok st') :
-    RecordsFrame st st' :=
-  modifyTcb (f := fun tcb => tcbWithQueueLinks tcb prev pprev next) hInv (fun _ => rfl) h
+    RecordsEndpointFrame st st' :=
+  modifyTcb (f := fun tcb => tcbWithQueueLinks tcb prev pprev next) hInv (fun _ => rfl)
+    (fun _ => ⟨rfl, rfl⟩) h
 
-/-- **The endpoint-queue pop keeps every record view**: an endpoint store and two
-queue-link writes. -/
+/-- **The endpoint-queue pop keeps every core view and the notification
+queues**: an endpoint store and two queue-link writes. -/
 theorem endpointQueuePopHead {eid : SeLe4n.ObjId} {isRecv : Bool} {st st' : SystemState}
     {tid : SeLe4n.ThreadId} {tcb : TCB} (hInv : st.objects.invExt)
     (hStep : _root_.SeLe4n.Kernel.endpointQueuePopHead eid isRecv st = .ok (tid, tcb, st')) :
-    RecordsFrame st st' := by
+    RecordsEndpointFrame st st' := by
   unfold _root_.SeLe4n.Kernel.endpointQueuePopHead SystemState.getObject? at hStep
   cases hObj : st.objects[eid]? with
   | none => simp [hObj] at hStep
@@ -219,11 +223,12 @@ theorem endpointQueuePopHead {eid : SeLe4n.ObjId} {isRecv : Bool} {st st' : Syst
                     intro ⟨_, _, rfl⟩
                     exact F2.trans (storeTcbQueueLinks F2.invExt hFinal)
 
-/-- **The endpoint-queue append keeps every record view.** -/
+/-- **The endpoint-queue append keeps every core view and the
+notification queues.** -/
 theorem endpointQueueEnqueue {eid : SeLe4n.ObjId} {isRecv : Bool} {tid : SeLe4n.ThreadId}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.endpointQueueEnqueue eid isRecv tid st = .ok st') :
-    RecordsFrame st st' := by
+    RecordsEndpointFrame st st' := by
   unfold _root_.SeLe4n.Kernel.endpointQueueEnqueue SystemState.getObject? at h
   cases hObj : st.objects[eid]? with
   | none => simp [hObj] at h
@@ -272,7 +277,7 @@ theorem endpointQueueEnqueue {eid : SeLe4n.ObjId} {isRecv : Bool} {tid : SeLe4n.
                 have F2 := F1.trans (storeTcbQueueLinks F1.invExt h2)
                 exact F2.trans (storeTcbQueueLinks F2.invExt h)
 
-end RecordsFrame
+end RecordsEndpointFrame
 
 -- ============================================================================
 -- §3  In-place thread writes, the wake and the dequeue

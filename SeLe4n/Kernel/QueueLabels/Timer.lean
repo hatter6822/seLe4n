@@ -42,8 +42,8 @@ theorem abortPendingIpcOnEndpoint {epId : SeLe4n.ObjId} {isReceiveQ : Bool}
       · cases h
       · rename_i hS
         cases h
-        have F := RecordsFrame.endpointQueueRemove hInv hR
-        exact (of_frame F).trans (storeObject_tcb F.invExt (lookupTcb_some_objects _ _ _ hT) hS
+        have F := RecordsEndpointFrame.endpointQueueRemove hInv hR
+        exact (of_endpointFrame F).trans (storeObject_tcb F.invExt (lookupTcb_some_objects _ _ _ hT) hS
           (TcbWaitsKept.of_noWait (by
             rw [TCB.withReturnFrame_ipcState, TCB.ipcState_setIpcState]; simp)))
 

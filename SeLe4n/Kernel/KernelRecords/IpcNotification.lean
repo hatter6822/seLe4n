@@ -25,22 +25,23 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 
-namespace RecordsFrame
+namespace RecordsEndpointFrame
 
 /-- An endpoint stored over a slot that held an endpoint when the frame began. -/
 theorem storeEndpointOver {st s : SystemState} {oid : SeLe4n.ObjId} {ep ep' : Endpoint}
     {pair : Unit × SystemState} (hObj : st.objects[oid]? = some (.endpoint ep))
-    (F : RecordsFrame st s) (h : SeLe4n.Model.storeObject oid (.endpoint ep') s = .ok pair) :
-    RecordsFrame st pair.2 := by
+    (F : RecordsEndpointFrame st s) (h : SeLe4n.Model.storeObject oid (.endpoint ep') s = .ok pair) :
+    RecordsEndpointFrame st pair.2 := by
   obtain ⟨⟨⟩, s'⟩ := pair
-  exact F.trans (storeObject_noView F.invExt h rfl (by rw [F.views, hObj]; rfl))
+  exact F.trans (storeObject F.invExt h (by rw [F.core.views, hObj]; rfl)
+    (by rw [F.ntfnViews, hObj]; rfl) (fun _ h => by cases h))
 
-/-- **The endpoint-queue removal keeps every record view**: endpoint stores and
-queue-link writes. -/
+/-- **The endpoint-queue removal keeps every core view and the notification
+queues**: endpoint stores and queue-link writes. -/
 theorem endpointQueueRemoveDual {st st' : SystemState} {endpointId : SeLe4n.ObjId}
     {isReceiveQ : Bool} {tid : SeLe4n.ThreadId} (hInv : st.objects.invExt)
     (hStep : _root_.SeLe4n.Kernel.endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
-    RecordsFrame st st' := by
+    RecordsEndpointFrame st st' := by
   unfold _root_.SeLe4n.Kernel.endpointQueueRemoveDual dualQueueRemovalEnabled dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
@@ -158,7 +159,7 @@ theorem endpointQueueRemoveDual {st st' : SystemState} {endpointId : SeLe4n.ObjI
                         have f3 := storeEndpointOver hObj f2 hStore2
                         exact f3.trans (storeTcbQueueLinks f3.invExt hFinal)
 
-end RecordsFrame
+end RecordsEndpointFrame
 
 /-! The writes of a notification queue and of a thread's notification links keep
 every core view; the queue's ends and the links are the notification label
@@ -273,17 +274,17 @@ theorem notificationSignalBoundOnCore {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge
     split
     · exact refl hInv
     · rename_i st1 hRm
-      have F1 := RecordsFrame.endpointQueueRemoveDual hInv hRm
+      have F1 := (RecordsEndpointFrame.endpointQueueRemoveDual hInv hRm).core
       split
       · exact refl hInv
       · rename_i st2 hC
         have hNP : NotParkedAt st t := fun x hx => by
           rw [hT] at hx; cases hx; rw [hR]; simp
-        have S2 := storeTcbSignalBoundWoken F1.invExt hC (hNP.frame F1)
+        have S2 := storeTcbSignalBoundWoken F1.invExt hC (hNP.coreFrame F1)
         obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hC
         have F3 := RecordsFrame.wakeThread st2 t c S2.invExt (fun y hy => by
           rw [hx] at hy; cases hy; simp [TCB.signalBoundWoken])
-        exact (of_frame F1).trans (S2.trans (of_frame F3))
+        exact (of_coreFrame F1).trans (S2.trans (of_frame F3))
   · exact notificationSignalOnCore hInv hN
 
 theorem notificationSignalDeclassifiedOnCore {ctx : GenericLabelingContext}
