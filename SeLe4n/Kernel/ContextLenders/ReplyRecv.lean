@@ -221,7 +221,7 @@ theorem endpointReplyRecvAnsweringOnCore_lendersStage {ctx : LabelingContext}
   dsimp only at h
   have A := LendersFrame.endpointReplyOnCore (replier := tid) (target := prevCaller) (msg := msg)
     (c := c) hInv
-  have AW := EndpointWaitersFrame.endpointReplyOnCore (replier := tid) (target := prevCaller)
+  have AW := QueueLabelsFrame.endpointReplyOnCore (replier := tid) (target := prevCaller)
     (msg := msg) (c := c) hInv
   revert h A AW
   cases hR : endpointReplyOnCore tid prevCaller msg c st with
@@ -251,8 +251,8 @@ theorem endpointReplyRecvAnsweringOnCore_lendersStage {ctx : LabelingContext}
     FR.stage (F1.stage (F0.stage (A.stage hF)))
   have FW0 := RecordsFrame.replyRecvPopDonation AW.invExt hPop
   have FW1 := FW0.trans (RecordsFrame.receiveTransferCaps FW0.invExt hX')
-  have hWR := (EndpointWaitersFrame.receiveReturnSchedContext true st1p tid FW1.invExt).stage
-    ((EndpointWaitersFrame.of_frame FW1).stage (AW.stage hW))
+  have hWR := (QueueLabelsFrame.receiveReturnSchedContext true st1p tid FW1.invExt).waiters
+    ((QueueLabelsFrame.of_frame FW1).waiters (AW.waiters hW))
   obtain ⟨hQp, hRp, -⟩ := replyRecvReceiveLegFacts hInv hQ hR hPop hX hReady
   have hQR := (receiveReturnSchedContext_receiveLegFacts true st1p tid FW1.invExt hQp hRp).1
   revert h

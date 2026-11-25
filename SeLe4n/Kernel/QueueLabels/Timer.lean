@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
-import SeLe4n.Kernel.EndpointWaiters.Finalise
+import SeLe4n.Kernel.QueueLabels.Finalise
 import SeLe4n.Kernel.KernelRecords.Timer
 
 /-! # The timer: frames
@@ -23,13 +23,13 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 
-namespace EndpointWaitersFrame
+namespace QueueLabelsFrame
 
 /-- **The IPC abort**: the queue removal, then the thread made `.ready`. -/
 theorem abortPendingIpcOnEndpoint {epId : SeLe4n.ObjId} {isReceiveQ : Bool}
     {tid : SeLe4n.ThreadId} {st st' : SystemState} (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
-    EndpointWaitersFrame st st' := by
+    QueueLabelsFrame st st' := by
   unfold _root_.SeLe4n.Kernel.abortPendingIpcOnEndpoint at h
   split at h
   · cases h
@@ -53,7 +53,7 @@ theorem timeoutThread {epId : SeLe4n.ObjId} {isReceiveQ : Bool} {tid : SeLe4n.Th
     {ec : CoreId} {st : SystemState} {r : SystemState × Option (CoreId × Concurrency.SgiKind)}
     (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.timeoutThread epId isReceiveQ tid ec st = .ok r) :
-    EndpointWaitersFrame st r.1 := by
+    QueueLabelsFrame st r.1 := by
   unfold _root_.SeLe4n.Kernel.timeoutThread at h
   split at h
   · cases h
@@ -72,12 +72,12 @@ theorem timeoutThread {epId : SeLe4n.ObjId} {isReceiveQ : Bool} {tid : SeLe4n.Th
 /-- The bound-context timeout pass: a fold of timeouts. -/
 theorem timeoutBlockedThreads (st : SystemState) (scId : SeLe4n.SchedContextId) (ec : CoreId)
     (hInv : st.objects.invExt) :
-    EndpointWaitersFrame st (_root_.SeLe4n.Kernel.timeoutBlockedThreads st scId ec).1 := by
+    QueueLabelsFrame st (_root_.SeLe4n.Kernel.timeoutBlockedThreads st scId ec).1 := by
   rw [timeoutBlockedThreads_eq_fold]; delta timeoutBlockedThreadStep
   suffices H : ∀ (l : List SeLe4n.ThreadId)
       (acc : SystemState × List (SeLe4n.ThreadId × KernelError) × List (CoreId × Concurrency.SgiKind)),
-      EndpointWaitersFrame st acc.1 →
-      EndpointWaitersFrame st (l.foldl (fun acc tid =>
+      QueueLabelsFrame st acc.1 →
+      QueueLabelsFrame st (l.foldl (fun acc tid =>
         let (st', errs, sgis) := acc
         match st'.getTcb? tid with
         | some tcb =>
@@ -111,7 +111,7 @@ theorem budgetExhaustOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.Thread
     (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId)
     (scId : SeLe4n.SchedContextId) (sc : SchedContext) (hSc : st.getSchedContext? scId = some sc)
     (ticks : Nat) (hInv : st.objects.invExt) :
-    EndpointWaitersFrame st (_root_.SeLe4n.Kernel.budgetExhaustOnCore st c tid k scId sc hSc ticks) :=
+    QueueLabelsFrame st (_root_.SeLe4n.Kernel.budgetExhaustOnCore st c tid k scId sc hSc ticks) :=
   have F := RecordsFrame.chain (RecordsFrame.spendBudgetOnCore st c tid scId sc hSc _ ticks)
     (RecordsFrame.markKeyChangeFor _ tid k) hInv
   have S := (of_frame F).trans (timeoutBlockedThreads _ scId c F.invExt)
@@ -121,7 +121,7 @@ theorem budgetExhaustOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.Thread
 theorem timerTickBudgetOnCore {st : SystemState} {c : CoreId} {tid : SeLe4n.ThreadId} {tcb : TCB}
     {hTcb : st.getTcb? tid = some tcb} {r : SystemState × Bool} (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.timerTickBudgetOnCore st c tid tcb hTcb = r) :
-    EndpointWaitersFrame st r.1 := by
+    QueueLabelsFrame st r.1 := by
   subst h
   unfold _root_.SeLe4n.Kernel.timerTickBudgetOnCore
   split
@@ -141,12 +141,12 @@ theorem timerTickBudgetOnCore {st : SystemState} {c : CoreId} {tid : SeLe4n.Thre
 
 /-- **The timer tick moves no thread onto an endpoint.** -/
 theorem timerTickOnCore (st : SystemState) (c : CoreId) (hInv : st.objects.invExt) :
-    EndpointWaitersFrame st (_root_.SeLe4n.Kernel.timerTickOnCore st c) := by
-  have hP : EndpointWaitersFrame st (timerTickOnCorePrepared st c) :=
+    QueueLabelsFrame st (_root_.SeLe4n.Kernel.timerTickOnCore st c) := by
+  have hP : QueueLabelsFrame st (timerTickOnCorePrepared st c) :=
     of_frame (RecordsFrame.chain (fun h => RecordsFrame.withScheduler st
       (st.scheduler.setLastTimeoutErrorsOnCore c []) h)
       (RecordsFrame.processReplenishmentsDueOnCore _ c st.machine.timer) hInv)
-  refine timerTickOnCore_of (P := EndpointWaitersFrame st) st c hP ?_ ?_ ?_
+  refine timerTickOnCore_of (P := QueueLabelsFrame st) st c hP ?_ ?_ ?_
   · intro s hs
     exact hs.trans (of_frame
       (RecordsFrame.handleRescheduleSgiOnCore hs.invExt (handleRescheduleSgiOnCore_eq_state s c)))
@@ -156,6 +156,6 @@ theorem timerTickOnCore (st : SystemState) (c : CoreId) (hInv : st.objects.invEx
   · intro tid tcb hTcb st3 b hb
     exact hP.trans (timerTickBudgetOnCore hP.invExt hb)
 
-end EndpointWaitersFrame
+end QueueLabelsFrame
 
 end SeLe4n.Kernel

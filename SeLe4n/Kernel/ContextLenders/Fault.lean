@@ -10,7 +10,7 @@
 import SeLe4n.Kernel.ContextLenders.Call
 import SeLe4n.Kernel.FaultEntry
 import SeLe4n.Kernel.IPC.Invariant.FaultPreservation
-import SeLe4n.Kernel.EndpointWaiters.ThreadLifecycle
+import SeLe4n.Kernel.QueueLabels.ThreadLifecycle
 
 /-! # The fault and unknown-syscall entries keep the lenders' flow
 
@@ -168,7 +168,7 @@ theorem LendersStage.faultDeliveredState {ctx : LabelingContext} (st : SystemSta
         ectx.elr ectx.spsr) c) :
     LendersStage ctx st (_root_.SeLe4n.Kernel.faultDeliveredState ctx st f ectx w c tid) :=
   fun hF => faultDeliverOnCoreChecked_preserves_lendingLabelsEqual _ tid f _ c hP
-    ((EndpointWaitersFrame.writeFaultRegistersToTcb st tid w hInv).stage hW).2
+    ((QueueLabelsFrame.writeFaultRegistersToTcb st tid w hInv).waiters hW).2
     (LendersStage.of_kept (chainObjectsKept.writeFaultRegistersToTcb st tid w hInv) hF)
 
 /-- The delivery both fault entries share: a vacated core's dispatch, or the
@@ -277,7 +277,7 @@ theorem faultEntryState_lendersStage (ctx : LabelingContext) (coreId : UInt64)
   have F1 := RecordsFrame.saveCapturedTrapFrameAt st coreId (some frame) hInv
   refine ((LendersStage.of_kept (chainObjectsKept.saveCapturedTrapFrameAt st coreId _ hInv)).trans
     (LendersStage.faultEntryStep _ ectx w coreId F1.invExt
-      ((EndpointWaitersFrame.of_frame F1).stage hW) hP)).trans
+      ((QueueLabelsFrame.of_frame F1).waiters hW) hP)).trans
     (LendersStage.entryTail _ coreId ?_)
   exact faultEntryStep_invExt ctx _ ectx w coreId F1.invExt
 
@@ -297,7 +297,7 @@ theorem unknownSyscallEntryState_lendersStage (ctx : LabelingContext) (coreId : 
   have F1 := RecordsFrame.saveCapturedSyscallFrameAt st coreId (some frame) hInv
   refine ((LendersStage.of_kept (chainObjectsKept.saveCapturedSyscallFrameAt st coreId _ hInv)).trans
     (LendersStage.unknownSyscallEntryStep _ ectx w coreId F1.invExt
-      ((EndpointWaitersFrame.of_frame F1).stage hW) hP)).trans
+      ((QueueLabelsFrame.of_frame F1).waiters hW) hP)).trans
     (LendersStage.entryTail _ coreId ?_)
   exact unknownSyscallEntryStep_invExt ctx _ ectx w coreId F1.invExt
 

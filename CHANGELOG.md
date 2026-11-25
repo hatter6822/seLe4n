@@ -1,3 +1,66 @@
+## v0.37.50 — Notification label agreement carried as a per-entry stage (WS-SX SX21)
+
+SX21 is on SX20.  The label part of notification label coherence is now a
+state invariant that the boot establishes and every committing entry keeps,
+beside SX11's endpoint waiters, in one stage.  No transition changes.
+
+- **The carried form (D46, default taken).**  `notificationLabelsCoherent`
+  also asks that a thread blocked on no notification hold no queue links.
+  No entry can carry that clause without an added hypothesis: the send pops
+  the receive queue's head and stores it `.ready` without reading its state.
+  The stage therefore carries `notificationLabelsAgree`:
+  - a notification's bound thread and queue ends pass its two-way
+    `notificationFlowGate`;
+  - a thread blocked on a notification passes it;
+  - a thread's queue links name threads of its own label.
+  The boot's check implies it (`notificationLabelsCoherent_agree`,
+  `drainBootPhysicalWrites_notificationLabelsAgree`).  The structural clause
+  is a new table C row owned by WS-PK, beside `ipcReachable`.
+- **One family (renamed).**  SX11's `EndpointWaiters*` family carries both
+  halves and is renamed to match.  The members are:
+  - `QueueLabelsStage`, `QueueLabelsFrame` and `QueueLabelsGrowFrame`,
+    under `SeLe4n/Kernel/QueueLabels/`;
+  - `QueueLabelsNtfnGrowFrame`, for a step that adds one member to a
+    notification;
+  - `QueueLabelsGatedFrame`, for a checked arm under the labelling its gate
+    reads.
+- **Frames, shrinks, creators.**
+  - Every records frame keeps agreement through SX20's view.
+  - The writes proved directly are: the link, detach, unlink and
+    queue-removal writes (`NotificationLinks.lean`), the signal's and the
+    wait's stores, the dequeues, the finalisation's queue removal and
+    unbind, the unbind, and the carve.
+  - The two creators are the Wait (`notificationWaitOnCore`) and the bind
+    (`QueueLabelsNtfnGrowFrame.bindNotification`).  Their checked arms are
+    gated frames, `notificationWaitCrossCoreDispatchChecked` and
+    `tcbBindNotificationArmChecked`, so a new member is always admitted by
+    the two-way gate.
+  - The capability table's theorem excludes the unchecked bind arm.  The
+    checked dispatch routes that arm to the gated checked bind.
+  - All seven entry states carry the conjunction.
+- **Hypotheses.**
+  - `declassifiedSignalReceiver_flow_ordinary_of_coherent` and
+    `footprint_receiver_at_notification_label` take the carried agreement.
+  - `abortHolderProjectionStable_of_neighbourHigh` was already retired, at
+    `v0.36.136`.
+  - The three queue arms' `hTeardownProj` do not fall out of the stage:
+    they need an endpoint queue's link labels and a projection proof of the
+    dequeue.  They are a new plan row, SX22.2.
+- **Measured.**  The stub pass reached its fixpoint inside the row's
+  estimate: the family grew from 3554 to 4602 lines over 14 files.
+- **Gates.**  New Tier 3 anchors pin:
+  - the stage's conjunction;
+  - the boot implication;
+  - the two gated creators;
+  - the capability table's bind exclusion.
+  Each was tested by breaking its relation in a copy.  Two existing
+  anchors follow the renames.  The dethreading gate pins the new tactic
+  macro `tcb_ntfn_kept`.
+- **Debt.**  The queue-label-uniformity row is closed.  What remains of it
+  is:
+  - the structural clause (WS-PK);
+  - the teardown projection (SX22.2).
+
 ## v0.37.49 — The records view extended with the notification queues (WS-SX SX20)
 
 SX20 is on SX19 and runs before notification label coherence is carried

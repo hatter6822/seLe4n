@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
-import SeLe4n.Kernel.EndpointWaiters.Stage
+import SeLe4n.Kernel.QueueLabels.NotificationLinks
 import SeLe4n.Kernel.KernelRecords.IpcCall
 
 /-! # The blocking IPC arms: the creators
@@ -28,12 +28,12 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 
-namespace EndpointWaitersGrowFrame
+namespace QueueLabelsGrowFrame
 
 /-- **The per-core send blocks at most its sender, on its endpoint.** -/
 theorem endpointSendDualOnCore {endpointId : SeLe4n.ObjId} {sender : SeLe4n.ThreadId}
     {payload : SendPayload} {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) :
-    EndpointWaitersGrowFrame sender endpointId st
+    QueueLabelsGrowFrame sender endpointId st
       (_root_.SeLe4n.Kernel.endpointSendDualOnCore endpointId sender payload c st).1 := by
   unfold _root_.SeLe4n.Kernel.endpointSendDualOnCore
   split
@@ -47,11 +47,11 @@ theorem endpointSendDualOnCore {endpointId : SeLe4n.ObjId} {sender : SeLe4n.Thre
           · exact refl hInv
           · rename_i st2 hRecv
             have F1 := RecordsFrame.endpointQueuePopHead hInv hPop
-            have S2 := EndpointWaitersFrame.storeTcbReceiveComplete F1.invExt hRecv
+            have S2 := QueueLabelsFrame.storeTcbReceiveComplete F1.invExt hRecv
             obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hRecv
             have F3 := RecordsFrame.wakeThread st2 receiver c S2.invExt (fun y hy => by
               rw [hx] at hy; cases hy; simp)
-            exact (((EndpointWaitersFrame.of_frame F1).trans S2).trans (.of_frame F3)).growAt _ _
+            exact (((QueueLabelsFrame.of_frame F1).trans S2).trans (.of_frame F3)).growAt _ _
     · split
       · exact refl hInv
       · rename_i st1 hEnq
@@ -64,14 +64,14 @@ theorem endpointSendDualOnCore {endpointId : SeLe4n.ObjId} {sender : SeLe4n.Thre
           have F3 := RecordsFrame.removeRunnableOnCore st2 sender c G2.invExt
           have F4 := RecordsFrame.recordSendCap _ sender payload.badge payload.grant
             payload.grantReply F3.invExt
-          exact ((EndpointWaitersFrame.of_frame F1).thenGrow G2).thenFrame
-            ((EndpointWaitersFrame.of_frame F3).trans (.of_frame F4))
+          exact ((QueueLabelsFrame.of_frame F1).thenGrow G2).thenFrame
+            ((QueueLabelsFrame.of_frame F3).trans (.of_frame F4))
   · split <;> exact refl hInv
 
 /-- The send with capability transfer. -/
 theorem endpointSendDualWithCapsOnCore {endpointId : SeLe4n.ObjId} {sender : SeLe4n.ThreadId}
     {payload : SendPayload} {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) :
-    EndpointWaitersGrowFrame sender endpointId st
+    QueueLabelsGrowFrame sender endpointId st
       (_root_.SeLe4n.Kernel.endpointSendDualWithCapsOnCore endpointId sender payload c st).1 := by
   unfold _root_.SeLe4n.Kernel.endpointSendDualWithCapsOnCore
   have S := endpointSendDualOnCore (endpointId := endpointId) (sender := sender)
@@ -93,7 +93,7 @@ theorem endpointSendDualWithCapsOnCore {endpointId : SeLe4n.ObjId} {sender : SeL
 that meets a receiver blocks on its reply, which waits on no endpoint. -/
 theorem endpointCallOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId}
     {payload : SendPayload} {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) :
-    EndpointWaitersGrowFrame caller endpointId st
+    QueueLabelsGrowFrame caller endpointId st
       (_root_.SeLe4n.Kernel.endpointCallOnCore endpointId caller payload c st).1 := by
   unfold _root_.SeLe4n.Kernel.endpointCallOnCore
   split
@@ -106,22 +106,22 @@ theorem endpointCallOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId
           split
           · exact refl hInv
           · rename_i st2 hRdy
-            have S2 := EndpointWaitersFrame.storeTcbIpcStateAndMessage F1.invExt hRdy
+            have S2 := QueueLabelsFrame.storeTcbIpcStateAndMessage F1.invExt hRdy
             obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hRdy
             have F3 := RecordsFrame.wakeThread st2 receiver c S2.invExt (fun y hy => by
               rw [hx] at hy; cases hy; simp)
             split
             · exact refl hInv
             · rename_i st4 hBlk
-              have S4 := EndpointWaitersFrame.storeTcbIpcStateAndMessage F3.invExt hBlk
+              have S4 := QueueLabelsFrame.storeTcbIpcStateAndMessage F3.invExt hBlk
               split
               · exact refl hInv
               · rename_i st5 hLink
                 have F5 := RecordsFrame.linkServerStashedReply S4.invExt hLink
                 have F6 := RecordsFrame.removeRunnableOnCore st5 caller c F5.invExt
-                have W7 := EndpointWaitersFrame.linkReplyWaiter _ caller receiver F6.invExt
-                exact (((((EndpointWaitersFrame.of_frame F1).trans S2).trans (.of_frame F3)).trans
-                  S4).trans ((EndpointWaitersFrame.of_frame F5).trans ((EndpointWaitersFrame.of_frame F6).trans
+                have W7 := QueueLabelsFrame.linkReplyWaiter _ caller receiver F6.invExt
+                exact (((((QueueLabelsFrame.of_frame F1).trans S2).trans (.of_frame F3)).trans
+                  S4).trans ((QueueLabelsFrame.of_frame F5).trans ((QueueLabelsFrame.of_frame F6).trans
                   W7))).growAt _ _
       · split
         · exact refl hInv
@@ -132,13 +132,13 @@ theorem endpointCallOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId
           · rename_i st2 hRC
             split
             · exact refl hInv
-            have S2 := EndpointWaitersFrame.storeTcbReceiveComplete F1.invExt hRC
+            have S2 := QueueLabelsFrame.storeTcbReceiveComplete F1.invExt hRC
             obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hRC
             have F3 := RecordsFrame.wakeThread st2 receiver c S2.invExt (fun y hy => by
               rw [hx] at hy; cases hy; simp)
             have F4 := RecordsFrame.removeRunnableOnCore _ caller c F3.invExt
-            exact (((((EndpointWaitersFrame.of_frame F1).trans S2).trans (.of_frame F3)).trans
-              (.of_frame F4)).trans (EndpointWaitersFrame.updateTcb _ caller F4.invExt
+            exact (((((QueueLabelsFrame.of_frame F1).trans S2).trans (.of_frame F3)).trans
+              (.of_frame F4)).trans (QueueLabelsFrame.updateTcb _ caller F4.invExt
                 (f := fun t => { t with threadState := .Inactive })
                 fun _ => TcbWaitsKept.of_ipc rfl)).growAt _ _
     · split
@@ -153,13 +153,13 @@ theorem endpointCallOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId
           have F3 := RecordsFrame.removeRunnableOnCore st2 caller c G2.invExt
           have F4 := RecordsFrame.recordSendCap _ caller payload.badge payload.grant
             payload.grantReply F3.invExt
-          exact ((EndpointWaitersFrame.of_frame F1).thenGrow G2).thenFrame
-            ((EndpointWaitersFrame.of_frame F3).trans (.of_frame F4))
+          exact ((QueueLabelsFrame.of_frame F1).thenGrow G2).thenFrame
+            ((QueueLabelsFrame.of_frame F3).trans (.of_frame F4))
   · split <;> exact refl hInv
 
 theorem endpointCallWithCapsOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId}
     {payload : SendPayload} {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) :
-    EndpointWaitersGrowFrame caller endpointId st
+    QueueLabelsGrowFrame caller endpointId st
       (_root_.SeLe4n.Kernel.endpointCallWithCapsOnCore endpointId caller payload c st).1 := by
   unfold _root_.SeLe4n.Kernel.endpointCallWithCapsOnCore
   have S := endpointCallOnCore (endpointId := endpointId) (caller := caller) (payload := payload)
@@ -180,7 +180,7 @@ theorem endpointCallWithCapsOnCore {endpointId : SeLe4n.ObjId} {caller : SeLe4n.
 theorem endpointCallCrossCoreDispatch {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId}
     {payload : SendPayload} {c : CoreId} {st : SystemState}
     (hInv : st.objects.invExt) :
-    EndpointWaitersGrowFrame caller endpointId st
+    QueueLabelsGrowFrame caller endpointId st
       (_root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch endpointId caller payload c st).1 := by
   unfold _root_.SeLe4n.Kernel.endpointCallCrossCoreDispatch
   have S := endpointCallWithCapsOnCore (endpointId := endpointId) (caller := caller)
@@ -206,7 +206,7 @@ theorem endpointCallCrossCoreDispatch {endpointId : SeLe4n.ObjId} {caller : SeLe
 sender it meets is made `.ready` or blocked on its reply. -/
 theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n.ThreadId}
     {replyId : Option SeLe4n.ReplyId} {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) :
-    EndpointWaitersGrowFrame receiver endpointId st
+    QueueLabelsGrowFrame receiver endpointId st
       (_root_.SeLe4n.Kernel.endpointReceiveDualOnCore endpointId receiver replyId c st).1 := by
   unfold _root_.SeLe4n.Kernel.endpointReceiveDualOnCore
   split
@@ -214,7 +214,7 @@ theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n
     · split
       · exact refl hInv
       · rename_i sender senderTcb st1 hPop
-        have F1 := EndpointWaitersFrame.of_frame (RecordsFrame.endpointQueuePopHead hInv hPop)
+        have F1 := QueueLabelsFrame.of_frame (RecordsFrame.endpointQueuePopHead hInv hPop)
         dsimp only
         split
         · simp only [↓reduceIte]
@@ -222,7 +222,7 @@ theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n
           · split
             · exact refl hInv
             · rename_i st2 hBlk
-              have S2 := F1.trans (EndpointWaitersFrame.storeTcbIpcStateAndMessage F1.invExt hBlk)
+              have S2 := F1.trans (QueueLabelsFrame.storeTcbIpcStateAndMessage F1.invExt hBlk)
               split
               · exact refl hInv
               · split
@@ -231,31 +231,31 @@ theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n
                   have F3 := S2.trans (.of_frame (RecordsFrame.linkCallerReply S2.invExt hL))
                   split
                   · rename_i st4 hRdy
-                    have S4 := F3.trans (EndpointWaitersFrame.storeTcbIpcStateAndMessage F3.invExt hRdy)
-                    exact (S4.trans (EndpointWaitersFrame.linkReplyWaiter _ _ _ S4.invExt)).growAt _ _
+                    have S4 := F3.trans (QueueLabelsFrame.storeTcbIpcStateAndMessage F3.invExt hRdy)
+                    exact (S4.trans (QueueLabelsFrame.linkReplyWaiter _ _ _ S4.invExt)).growAt _ _
                   · exact refl hInv
           · split
             · exact refl hInv
             · rename_i st2 hRdy
-              have S2 := F1.trans (EndpointWaitersFrame.storeTcbIpcStateAndMessage F1.invExt hRdy)
-              have S3 := S2.trans (EndpointWaitersFrame.updateTcb _ sender S2.invExt
+              have S2 := F1.trans (QueueLabelsFrame.storeTcbIpcStateAndMessage F1.invExt hRdy)
+              have S3 := S2.trans (QueueLabelsFrame.updateTcb _ sender S2.invExt
                 (f := fun t => { t with threadState := .Inactive })
                 fun _ => TcbWaitsKept.of_ipc rfl)
               split
               · rename_i st4 hRcvd
-                exact (S3.trans (EndpointWaitersFrame.storeTcbIpcStateAndMessage S3.invExt hRcvd)).growAt _ _
+                exact (S3.trans (QueueLabelsFrame.storeTcbIpcStateAndMessage S3.invExt hRcvd)).growAt _ _
               · exact refl hInv
         · simp only [Bool.false_eq_true, ↓reduceIte]
           split
           · exact refl hInv
           · rename_i st2 hRdy
-            have S2 := F1.trans (EndpointWaitersFrame.storeTcbIpcStateAndMessage F1.invExt hRdy)
+            have S2 := F1.trans (QueueLabelsFrame.storeTcbIpcStateAndMessage F1.invExt hRdy)
             obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hRdy
             have F3 := S2.trans (.of_frame (RecordsFrame.wakeThread st2 sender c S2.invExt
               (fun y hy => by rw [hx] at hy; cases hy; simp)))
             split
             · rename_i st4 hRcvd
-              exact (F3.trans (EndpointWaitersFrame.storeTcbIpcStateAndMessage F3.invExt hRcvd)).growAt _ _
+              exact (F3.trans (QueueLabelsFrame.storeTcbIpcStateAndMessage F3.invExt hRcvd)).growAt _ _
             · exact refl hInv
     · split
       · exact refl hInv
@@ -264,7 +264,7 @@ theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n
         split
         · exact refl hInv
         · rename_i st1 hEnq
-          have F1 := EndpointWaitersFrame.of_frame (F0.trans (RecordsFrame.endpointQueueEnqueue F0.invExt hEnq))
+          have F1 := QueueLabelsFrame.of_frame (F0.trans (RecordsFrame.endpointQueueEnqueue F0.invExt hEnq))
           split
           · exact refl hInv
           · rename_i st2 hBlk
@@ -284,14 +284,14 @@ theorem endpointReceiveDualOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n
                     (by rw [SystemState.recordReplyStasher_getTcb? _ _ _ G2.invExt]; exact hT)
                   have F3 := FR.trans (RecordsFrame.storeObject FR.invExt hS (by rw [hTR]; rfl)
                     (fun _ h => by cases h))
-                  exact G2.thenFrame ((EndpointWaitersFrame.of_frame F3).trans
+                  exact G2.thenFrame ((QueueLabelsFrame.of_frame F3).trans
                     (.of_frame (RecordsFrame.removeRunnableOnCore _ _ _ F3.invExt)))
               · exact refl hInv
   · split <;> exact refl hInv
 
 theorem endpointReceiveDualWithCapsOnCore {endpointId : SeLe4n.ObjId} {receiver : SeLe4n.ThreadId}
     {replyId : Option SeLe4n.ReplyId} {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) :
-    EndpointWaitersGrowFrame receiver endpointId st
+    QueueLabelsGrowFrame receiver endpointId st
       (_root_.SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore endpointId receiver replyId c st).1 := by
   unfold _root_.SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore
   have S := endpointReceiveDualOnCore (endpointId := endpointId) (receiver := receiver)
@@ -310,10 +310,10 @@ theorem endpointReceiveDualWithCapsOnCore {endpointId : SeLe4n.ObjId} {receiver 
       | (rename_i hU
          exact S.thenFrame (.of_frame (RecordsFrame.receiveTransferCaps S.invExt hU)))
 
-end EndpointWaitersGrowFrame
+end QueueLabelsGrowFrame
 
 
-namespace EndpointWaitersStage
+namespace QueueLabelsStage
 
 variable {ctx : LabelingContext}
 
@@ -322,12 +322,12 @@ the sender the endpoint's label before the send can block it. -/
 theorem endpointSendCrossCoreDispatchChecked {endpointId : SeLe4n.ObjId}
     {sender : SeLe4n.ThreadId} {payload : SendPayload} {c : CoreId} {st : SystemState}
     (hInv : st.objects.invExt) :
-    EndpointWaitersStage ctx st (_root_.SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked ctx endpointId
+    QueueLabelsStage ctx st (_root_.SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked ctx endpointId
       sender payload c st).1 := by
   unfold _root_.SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked
   split
   · rename_i hGate
-    exact (EndpointWaitersGrowFrame.endpointSendDualWithCapsOnCore hInv).stage
+    exact (QueueLabelsGrowFrame.endpointSendDualWithCapsOnCore hInv).stage
       (endpointFlowGate_implies_eq ctx endpointId _ _ hGate)
   · exact refl _
 
@@ -335,12 +335,12 @@ theorem endpointSendCrossCoreDispatchChecked {endpointId : SeLe4n.ObjId}
 theorem endpointCallCrossCoreDispatchChecked {endpointId : SeLe4n.ObjId}
     {caller : SeLe4n.ThreadId} {payload : SendPayload} {c : CoreId} {st : SystemState}
     (hInv : st.objects.invExt) :
-    EndpointWaitersStage ctx st (_root_.SeLe4n.Kernel.endpointCallCrossCoreDispatchChecked ctx endpointId
+    QueueLabelsStage ctx st (_root_.SeLe4n.Kernel.endpointCallCrossCoreDispatchChecked ctx endpointId
       caller payload c st).1 := by
   unfold _root_.SeLe4n.Kernel.endpointCallCrossCoreDispatchChecked
   split
   · rename_i hGate
-    exact (EndpointWaitersGrowFrame.endpointCallCrossCoreDispatch hInv).stage
+    exact (QueueLabelsGrowFrame.endpointCallCrossCoreDispatch hInv).stage
       (endpointFlowGate_implies_eq ctx endpointId _ _ hGate)
   · exact refl _
 
@@ -351,11 +351,11 @@ theorem endpointReceiveDualWithCapsOnCore {endpointId : SeLe4n.ObjId}
     (hInv : st.objects.invExt)
     (hGate : endpointFlowGate ctx endpointId (ctx.endpointLabelOf endpointId)
       (ctx.threadLabelOf receiver) = true) :
-    EndpointWaitersStage ctx st (_root_.SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore endpointId receiver
+    QueueLabelsStage ctx st (_root_.SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore endpointId receiver
       replyId c st).1 :=
-  (EndpointWaitersGrowFrame.endpointReceiveDualWithCapsOnCore hInv).stage
+  (QueueLabelsGrowFrame.endpointReceiveDualWithCapsOnCore hInv).stage
     (endpointFlowGate_implies_eq ctx endpointId _ _ hGate).symm
 
-end EndpointWaitersStage
+end QueueLabelsStage
 
 end SeLe4n.Kernel

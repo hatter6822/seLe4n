@@ -272,6 +272,10 @@ MACHINERY_PINS = {
     # WS-ZA ZA6.6: the `yield_code_kept` tactic, which discharges "this thread
     # write keeps the yield link"; a tactic macro too.
     ("SeLe4n/Model/Object/Types.lean", "macro"): 2,
+    # WS-SX SX21: the `tcb_ntfn_kept` tactic, which discharges "this thread
+    # write keeps its notification labels' share" (`TcbNtfnKept`); a tactic
+    # macro mints no declaration.
+    ("SeLe4n/Kernel/QueueLabels/Stage.lean", "macro"): 1,
     # WS-UC UC2: the `ghosts_kept` tactic, which discharges "this step moves no
     # bookkeeping ghost" (`SystemState.ghostsKept`), and (WS-UC UC3) the
     # `capacity_kept` tactic it calls, which discharges "this step shrinks no

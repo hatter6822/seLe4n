@@ -44,19 +44,23 @@
 > frame keeps what coherence reads, so the records view is extended first
 > (D45): SX20 became the records view extended, landed at `v0.37.49`;
 > coherence carried became SX21 and the notification lend's check deleted
-> SX22, and SX22–SX31 became SX23–SX32.
+> SX22, and SX22–SX31 became SX23–SX32. SX21 landed at `v0.37.50` (the
+> label part of coherence carried across every committing entry, D46); the
+> queue arms' teardown projection, which does not fall out of it, became
+> SX22.2.
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
 > **Rows**: SX1–SX32, numbered in the order they are implemented, one PR each.
 > Each row consumes only lower-numbered rows. A row that changes a transition
 > carries the proofs that cover it. No two rows run in parallel.
-> **Decisions**: D1–D32, D34, D36–D45 (§3). D1–D17 are each **default taken; owner card open**;
+> **Decisions**: D1–D32, D34, D36–D46 (§3). D1–D17 are each **default taken; owner card open**;
 > D7 follows the owner's standing rule (implement seL4's behaviour, never defer
 > it). D18–D21 were decided by the owner when SX7 closed; D22 when SX8 started;
 > D23–D32 during SX8; D34 when SX9 started; D36 and D37 during SX9; D38 during SX10; D39 when the binding-invariant row
 > started; D40 during SX13 (confirmed by the owner's merge of PR #1101); D41 and D42 during SX14
 > (each confirmed by the owner, 2026-11-24); D43 and D44 during SX18 (the owner's,
-> 2026-11-24); D45 during SX20 (the owner's, 2026-11-24).
+> 2026-11-24); D45 during SX20 (the owner's, 2026-11-24); D46 during SX21
+> (default taken, 2026-11-25).
 > **Supersedes**: the "Next PR" scope in
 > `docs/agent_guide/WORKSTREAM_CONTEXT.md` (the root task's boot IPC buffer
 > and the guard in the capability with `CNode_Mutate`). Both are rows here
@@ -476,6 +480,20 @@ A different answer changes only the rows that cite it.
   The alternatives, a separate coherence frame proved for every arm (a twin
   of the records family) or a smaller invariant whose queue-head clause is
   an entry premise, were not taken.
+- **D46. The label part carried; the queue shape stays with `ipcReachable`.**
+  *Default taken (2026-11-25).* Measured when SX21 started:
+  `notificationLabelsCoherent` also asks that a thread blocked on no
+  notification hold no notification-queue links, and that clause is not
+  carriable with no added hypothesis: the send pops the receive queue's head
+  and stores it `.ready` without reading its state
+  (`endpointSendDualOnCore`), so "it held no links" needs the queues' shape,
+  which `ipcReachable` owns (D29, WS-PK). Every consumer reads only the label
+  clauses, so the stage carries `notificationLabelsAgree`: a notification's
+  bound thread and queue ends pass its two-way gate, a thread blocked on a
+  notification passes it, and a thread's queue links name threads of its own
+  label. The boot keeps the full check, which implies the carried form
+  (`notificationLabelsCoherent_agree`). The structural clause is a table C row
+  of `docs/REGISTERED_DEBT.md`, owned by WS-PK beside `ipcReachable`.
 
 ## 4. Rows
 
@@ -723,8 +741,8 @@ invariant.
 ### SX11 — Blocked threads carry their endpoint's label (D38)
 
 **LANDED at `v0.37.40`.** `endpointWaitersLabelsEqual` holds of every booted
-state and is carried by every committing entry (`EndpointWaitersStage`,
-`SeLe4n/Kernel/EndpointWaiters/`). The per-dispatch blocked-sender lifts and
+state and is carried by every committing entry (`QueueLabelsStage`,
+`SeLe4n/Kernel/QueueLabels/`). The per-dispatch blocked-sender lifts and
 both shrink relations it supersedes are retired.
 
 The state fact the Call and receive-take lends need, which no gate at the lend
@@ -1003,25 +1021,34 @@ changes.
 - every records frame keeps coherence's reads, and every writer of them is a
   core frame.
 
-### SX21 — Notification label coherence carried (D43, D45)
+### SX21 — Notification label coherence carried (D43, D45, D46)
+
+**LANDED at `v0.37.50`.** Measured before the proofs, by a stub pass to its
+fixpoint: the extended family (SX11's, renamed `QueueLabels*`) grew from 3554
+to 4602 lines over 14 files, about 90 more in the agreement's definitions and
+the boot implication, inside the row's estimate. The carried form is
+`notificationLabelsAgree` (D46). No transition changes.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX21.1 | **`notificationLabelsCoherent` as a per-entry stage**: a notification's bound thread, its wait queue's threads and their queue links carry its label (the two-way `notificationFlowGate`), carried across every kernel entry beside SX11's endpoint waiters. Its boot base case is the boot's check (`bootAndInitialiseFromPlatformOn`). Every records frame is a coherence frame (SX20); the stage's own proofs are the core frames (SX20.1) and the records steps and stages, classified as frame, shrink or creator, each creator (the Wait, the bind) taking the new member's label from its two-way gate. Closes the queue-label-uniformity row of `docs/REGISTERED_DEBT.md`. | Preservation over every writer of a notification's bound thread, its wait queue, the threads' queue links and their IPC states; the coherence hypotheses retired if they fall out of the stage: `declassifiedSignalReceiver_flow_ordinary_of_coherent` and `footprint_receiver_at_notification_label` (`InformationFlow/DeclassifiedSignal.lean`, `InformationFlow/NonInterferenceCrossCore.lean`, `API.lean`), and `abortHolderProjectionStable_of_neighbourHigh`'s neighbour clause with the three queue arms' `hTeardownProj` (`IPC/CrossCore/CancellationNI.lean`); any that does not fall out gets its own row. | Tier 3 anchors on the stage and its entry theorems |
+| SX21.1 | **LANDED at `v0.37.50`** (`QueueLabelsStage`, the label part, D46; the three queue arms' `hTeardownProj` moved to SX22.2, `abortHolderProjectionStable_of_neighbourHigh` having been retired with the holder abort at `v0.36.136`). **`notificationLabelsCoherent` as a per-entry stage**: a notification's bound thread, its wait queue's threads and their queue links carry its label (the two-way `notificationFlowGate`), carried across every kernel entry beside SX11's endpoint waiters. Its boot base case is the boot's check (`bootAndInitialiseFromPlatformOn`). Every records frame is a coherence frame (SX20); the stage's own proofs are the core frames (SX20.1) and the records steps and stages, classified as frame, shrink or creator, each creator (the Wait, the bind) taking the new member's label from its two-way gate. Closes the queue-label-uniformity row of `docs/REGISTERED_DEBT.md`. | Preservation over every writer of a notification's bound thread, its wait queue, the threads' queue links and their IPC states; the coherence hypotheses retired if they fall out of the stage: `declassifiedSignalReceiver_flow_ordinary_of_coherent` and `footprint_receiver_at_notification_label` (`InformationFlow/DeclassifiedSignal.lean`, `InformationFlow/NonInterferenceCrossCore.lean`, `API.lean`), and `abortHolderProjectionStable_of_neighbourHigh`'s neighbour clause with the three queue arms' `hTeardownProj` (`IPC/CrossCore/CancellationNI.lean`); any that does not fall out gets its own row. | Tier 3 anchors on the stage and its entry theorems |
 
 **Acceptance:**
 - every committing entry carries notification label coherence with no added
   hypothesis.
 
-### SX22 — The notification lend's check deleted (D30, D43)
+### SX22 — The notification lend's check deleted, the queue arms' teardown discharged (D30, D43, D46)
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
 | SX22.1 | **`donationContextFlows` deleted** as retired code, with `maybeDonateSchedContextFlowing`, its generic and compiled forms, NI case splits and refusal rows, at its three sites: the signal arm, the declassified signal and the interrupt delivery. The woken thread's label equation comes from SX21's coherence and `bindingLabelsEqual`'s notification clause. | Each consumer restated over `maybeDonateSchedContext`; the two-run theorem over `maybeDonateSchedContext`. | Tier 3 negative anchors on the deleted definitions; the census and anchor sweep; the heap gate's expected set |
+| SX22.2 | **The queue arms' teardown projection discharged**: `cancelIpcBlockingOnCore_cancellation_NI` and its SMP form lose `hTeardownProj` for the `.blockedOnSend`, `.blockedOnReceive`, `.blockedOnCall` and `.blockedOnNotification` arms. It did not fall out of SX21: the dequeue rewrites the endpoint or notification object and splices the victim's neighbours, and no theorem proves those writes invisible for a high victim; and an endpoint queue's links carry no label fact (SX11 carries the waiters' labels, SX21 a notification queue's links). So the row carries an endpoint queue's link labels beside `endpointWaitersLabelsEqual`, as `notificationLabelsAgree` carries a notification's, and proves each arm's teardown projection-preserving from them. | The link-label clause carried across every entry; the teardown's projection theorem per arm, from the victim's label, its object's label and its neighbours'. | Tier 3 anchors on the hypothesis-free theorems; the negative anchor on `hTeardownProj` |
 
 **Acceptance:**
 - the notification lend is seL4's, unchecked, and every entry still carries the
   lending labels.
+- cancelling a high thread blocked on an endpoint or a notification is
+  invisible with no teardown-projection hypothesis.
 
 ### SX23 — One composed in-place ReplyRecv path (ruling r)
 
@@ -1150,8 +1177,8 @@ every new path measured at 0.
 | SX18 | 1 (landed) |
 | SX19 | 3–4 (landed) |
 | SX20 | 1 (landed) |
-| SX21 | 2–3 |
-| SX22 | 1–2 |
+| SX21 | 2–3 (landed) |
+| SX22 | 2–3 |
 | SX23 | 3 |
 | SX24 | 2 |
 | SX25 | 1 |

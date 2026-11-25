@@ -11,7 +11,7 @@ import SeLe4n.Kernel.ContextLenders.Receive
 import SeLe4n.Kernel.ContextLenders.Fault
 import SeLe4n.Kernel.ContextLenders.Reply
 import SeLe4n.Kernel.KernelRecords.Dispatch
-import SeLe4n.Kernel.EndpointWaiters.Dispatch
+import SeLe4n.Kernel.QueueLabels.Dispatch
 
 /-! # The checked dispatch's IPC arms carry the lenders' flow
 
@@ -125,7 +125,7 @@ theorem receiveResolvedArm_lendersStage (ctx : LabelingContext) (decoded : Sysca
         hCaller.cancelReplyHolder hInv (Ne.symm hne)⟩
   obtain ⟨hS, hQC, hCC⟩ := hSC
   have hIC := hS.invExt
-  have hWC := (EndpointWaitersFrame.cancelRecvBusyReply ctx tid gate decoded ec st hInv).stage hW
+  have hWC := (QueueLabelsFrame.cancelRecvBusyReply ctx tid gate decoded ec st hInv).waiters hW
   generalize cancelRecvBusyReply ctx tid gate decoded ec st = stC at h hP hS hIC hQC hCC hWC
   by_cases hSig : receiveCompletesSignal ctx stC tid = true
   · cases hRes : resolveRecvReplyId gate decoded stC with
@@ -165,8 +165,8 @@ theorem receiveResolvedArm_lendersStage (ctx : LabelingContext) (decoded : Sysca
       cases hT
       exact hR
     have hPM := hMid r hRes st1 _ hRecv
-    have hWR := (EndpointWaitersFrame.receiveReturnSchedContext
-      (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid hIC).stage hWC
+    have hWR := (QueueLabelsFrame.receiveReturnSchedContext
+      (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid hIC).waiters hWC
     have hQR := (receiveReturnSchedContext_receivePremises
       (Syscall.wordReceiveBlocks (callerSyscallWord stC tid)) stC tid hIC hQC hCC).2.1
     have hEq := endpointReceiveDualWithCapsOnCore_dequeued_labelEq hQR hWR.1 hG hRecv

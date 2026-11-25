@@ -735,19 +735,20 @@ import SeLe4n.Kernel.InformationFlow.DeclassificationPerCore
 import SeLe4n.Kernel.InformationFlow.FineLockFlow
 import SeLe4n.Kernel.IPC.Invariant.FaultPreservation
 import SeLe4n.Kernel.InformationFlow.FaultFlow
-import SeLe4n.Kernel.EndpointWaiters.Stage
-import SeLe4n.Kernel.EndpointWaiters.Ipc
-import SeLe4n.Kernel.EndpointWaiters.Fault
-import SeLe4n.Kernel.EndpointWaiters.IpcReply
-import SeLe4n.Kernel.EndpointWaiters.IpcReplyRecv
-import SeLe4n.Kernel.EndpointWaiters.Cancellation
-import SeLe4n.Kernel.EndpointWaiters.ThreadLifecycle
-import SeLe4n.Kernel.EndpointWaiters.IpcNotification
-import SeLe4n.Kernel.EndpointWaiters.Finalise
-import SeLe4n.Kernel.EndpointWaiters.Timer
-import SeLe4n.Kernel.EndpointWaiters.Capability
-import SeLe4n.Kernel.EndpointWaiters.Dispatch
-import SeLe4n.Kernel.EndpointWaiters.Entry
+import SeLe4n.Kernel.QueueLabels.Stage
+import SeLe4n.Kernel.QueueLabels.NotificationLinks
+import SeLe4n.Kernel.QueueLabels.Ipc
+import SeLe4n.Kernel.QueueLabels.Fault
+import SeLe4n.Kernel.QueueLabels.IpcReply
+import SeLe4n.Kernel.QueueLabels.IpcReplyRecv
+import SeLe4n.Kernel.QueueLabels.Cancellation
+import SeLe4n.Kernel.QueueLabels.ThreadLifecycle
+import SeLe4n.Kernel.QueueLabels.IpcNotification
+import SeLe4n.Kernel.QueueLabels.Finalise
+import SeLe4n.Kernel.QueueLabels.Timer
+import SeLe4n.Kernel.QueueLabels.Capability
+import SeLe4n.Kernel.QueueLabels.Dispatch
+import SeLe4n.Kernel.QueueLabels.Entry
 -- WS-SM SM6.A: the cross-core-aware syscall dispatch entry —
 -- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
 -- Runs the verified `syscallDispatchFromAbi` atomically via `modifyGetKernelState`,

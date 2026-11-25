@@ -1309,29 +1309,30 @@ theorem declassifiedSignal_no_invented_edge (ctx : GenericLabelingContext)
 -- §9  WS-SM SM9.C.1 — the onward delivery is the identity flow
 -- ============================================================================
 
-/-- WS-SM SM9.C.1 (**the second hop is the identity flow**): on a
-notification-label coherent state, the receiver a declassifying signal
-resolves carries the notification's own domain, so the onward flow
-`notification → receiver` is one the base lattice permits and no downgrade —
-its authorization is `.ordinary` under every declassification policy.
+/-- WS-SM SM9.C.1 (**the second hop is the identity flow**): on a state whose
+notification labels agree, the receiver a declassifying signal resolves carries
+the notification's own domain, so the onward flow `notification → receiver` is
+one the base lattice permits and no downgrade — its authorization is
+`.ordinary` under every declassification policy.
 
-This is why the transition gates and records one hop only.  The coherence is a
-hypothesis rather than a consequence of reachability: the boot establishes it
-(`notificationLabelsCoherent`, refused otherwise) and the checked wait and bind
-admit a thread to a notification only at its label (`notificationFlowGate`), but
-the preservation theorem over every transition is registered debt, so the fact
-is stated on the states it is proved for. -/
+This is why the transition gates and records one hop only.  The premise is the
+agreement every kernel entry carries (WS-SX SX21, `QueueLabelsStage`): the boot
+establishes it (`notificationLabelsCoherent`, refused otherwise;
+`drainBootPhysicalWrites_notificationLabelsAgree`), and every entry keeps it,
+the checked wait and bind admitting a thread to a notification only at its
+label (`notificationFlowGate`).  So it holds of every state the kernel runs an
+entry on. -/
 theorem declassifiedSignalReceiver_flow_ordinary_of_coherent (ctx : LabelingContext)
     (declPolicy : DeclassificationPolicy) (st : SystemState)
     (notificationId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (hCoherent : notificationLabelsCoherent st ctx = true)
+    (hAgree : notificationLabelsAgree ctx st)
     (hRecv : declassifiedSignalReceiver? st notificationId = some receiver) :
     (liftLegacyContext ctx).objectDomainOf notificationId =
         (liftLegacyContext ctx).threadDomainOf receiver ∧
       declassifiedSignalHopAuthorization (liftLegacyContext ctx) declPolicy
         ((liftLegacyContext ctx).objectDomainOf notificationId)
         ((liftLegacyContext ctx).threadDomainOf receiver) = .ok .ordinary := by
-  have hLabel := notificationLabelsCoherent_signalReceiver_label hCoherent
+  have hLabel := notificationLabelsAgree_signalReceiver_label hAgree
     (by unfold declassifiedSignalReceiver? at hRecv; exact hRecv)
   have hDom : (liftLegacyContext ctx).objectDomainOf notificationId =
       (liftLegacyContext ctx).threadDomainOf receiver := by

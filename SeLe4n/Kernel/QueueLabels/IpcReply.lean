@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
-import SeLe4n.Kernel.EndpointWaiters.Fault
+import SeLe4n.Kernel.QueueLabels.Fault
 
 /-! # The reply arms: frames
 
@@ -22,14 +22,14 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 
-namespace EndpointWaitersFrame
+namespace QueueLabelsFrame
 
 /-- **The per-core reply leg** makes its target `.ready`. -/
 theorem endpointReplyOnCore {replier target : SeLe4n.ThreadId} {msg : IpcMessage} {c : CoreId}
     {st : SystemState} (hInv : st.objects.invExt) :
-    EndpointWaitersFrame st
+    QueueLabelsFrame st
       (_root_.SeLe4n.Kernel.endpointReplyOnCore replier target msg c st).1 := by
-  have hRefl : EndpointWaitersFrame st st := refl hInv
+  have hRefl : QueueLabelsFrame st st := refl hInv
   unfold _root_.SeLe4n.Kernel.endpointReplyOnCore
   split
   · exact hRefl
@@ -68,9 +68,9 @@ theorem endpointReplyOnCore {replier target : SeLe4n.ThreadId} {msg : IpcMessage
 
 theorem endpointReplyCrossCoreDispatch {replier target : SeLe4n.ThreadId} {msg : IpcMessage}
     {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) :
-    EndpointWaitersFrame st
+    QueueLabelsFrame st
       (_root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatch replier target msg c st).1 := by
-  have hRefl : EndpointWaitersFrame st st := refl hInv
+  have hRefl : QueueLabelsFrame st st := refl hInv
   unfold _root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatch
   have A := endpointReplyOnCore (replier := replier) (target := target) (msg := msg) (c := c) hInv
   generalize _root_.SeLe4n.Kernel.endpointReplyOnCore replier target msg c st = r at A
@@ -95,7 +95,7 @@ theorem endpointReplyCrossCoreDispatch {replier target : SeLe4n.ThreadId} {msg :
 theorem endpointReplyCrossCoreDispatchChecked {ctx : LabelingContext}
     {replier target : SeLe4n.ThreadId} {msg : IpcMessage} {c : CoreId} {st : SystemState}
     (hInv : st.objects.invExt) :
-    EndpointWaitersFrame st
+    QueueLabelsFrame st
       (_root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked ctx replier target msg c st).1 := by
   unfold _root_.SeLe4n.Kernel.endpointReplyCrossCoreDispatchChecked
   split
@@ -106,7 +106,7 @@ theorem endpointReplyCrossCoreDispatchChecked {ctx : LabelingContext}
 the thread's IPC state. -/
 theorem faultReplyApplyOnCore (st : SystemState) (t : SeLe4n.ThreadId)
     (outcome : Architecture.FaultReplyOutcome) (hInv : st.objects.invExt) :
-    EndpointWaitersFrame st (_root_.SeLe4n.Kernel.faultReplyApplyOnCore st t outcome) := by
+    QueueLabelsFrame st (_root_.SeLe4n.Kernel.faultReplyApplyOnCore st t outcome) := by
   unfold _root_.SeLe4n.Kernel.faultReplyApplyOnCore
   split
   · unfold applyFaultRestart
@@ -119,7 +119,7 @@ theorem faultReplyApplyOnCore (st : SystemState) (t : SeLe4n.ThreadId)
 /-- **The fault reply**: the reply chain, then the outcome. -/
 theorem faultReplyOnCore {replier faulted : SeLe4n.ThreadId} {mi : MessageInfo}
     {regs : Array SeLe4n.RegValue} {c : CoreId} {st : SystemState} (hInv : st.objects.invExt) :
-    EndpointWaitersFrame st (_root_.SeLe4n.Kernel.faultReplyOnCore replier faulted mi regs c st).1 := by
+    QueueLabelsFrame st (_root_.SeLe4n.Kernel.faultReplyOnCore replier faulted mi regs c st).1 := by
   unfold _root_.SeLe4n.Kernel.faultReplyOnCore
   split
   · exact refl hInv
@@ -144,7 +144,7 @@ theorem replyTransferOnCoreChecked {ctx : LabelingContext} {replier callerTid : 
     {mi : MessageInfo} {regs : Array SeLe4n.RegValue} {msg : IpcMessage} {grant : Bool}
     {c : CoreId} {st st' : SystemState} (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.replyTransferOnCoreChecked ctx replier callerTid mi regs msg grant c
-      st = .ok ((), st')) : EndpointWaitersFrame st st' := by
+      st = .ok ((), st')) : QueueLabelsFrame st st' := by
   unfold _root_.SeLe4n.Kernel.replyTransferOnCoreChecked at h
   split at h
   · have S := faultReplyOnCore (replier := replier) (faulted := callerTid) (mi := mi)
@@ -172,6 +172,6 @@ theorem replyTransferOnCoreChecked {ctx : LabelingContext} {replier callerTid : 
         have SX := S.trans (of_frame (RecordsFrame.receiveTransferCaps S.invExt hX))
         exact SX.trans (of_frame (RecordsFrame.stageDeliveredMessage _ _ _ SX.invExt))
 
-end EndpointWaitersFrame
+end QueueLabelsFrame
 
 end SeLe4n.Kernel

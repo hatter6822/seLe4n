@@ -896,7 +896,8 @@ different cores. -/
       sendSignalWriteSet st notificationId := rfl
 
 /-- WS-SM SM9.C.6 (**the footprint's receiver is admissible by label, not by
-being named**): on a notification-label coherent state, a receiver inside the
+being named**): on a state whose notification labels agree (the agreement every
+kernel entry carries, WS-SX SX21), a receiver inside the
 authorized effect footprint carries the notification's own domain, so the
 delivery to it is the identity flow and owes no authorization.
 
@@ -910,7 +911,7 @@ coherence is this theorem's hypothesis rather than its conclusion. -/
 theorem footprint_receiver_at_notification_label (ctx : LabelingContext)
     (declPolicy : DeclassificationPolicy) (notificationId : SeLe4n.ObjId)
     (st : SystemState) (receiver : SeLe4n.ThreadId)
-    (hCoherent : notificationLabelsCoherent st ctx = true)
+    (hAgree : notificationLabelsAgree ctx st)
     (hIn : (declassifiedSignalEffectFootprint st notificationId).receiver = some receiver) :
     (liftLegacyContext ctx).objectDomainOf notificationId =
         (liftLegacyContext ctx).threadDomainOf receiver ∧
@@ -918,7 +919,7 @@ theorem footprint_receiver_at_notification_label (ctx : LabelingContext)
         ((liftLegacyContext ctx).objectDomainOf notificationId)
         ((liftLegacyContext ctx).threadDomainOf receiver) = .ok .ordinary :=
   declassifiedSignalReceiver_flow_ordinary_of_coherent ctx declPolicy st notificationId receiver
-    hCoherent (by simpa using hIn)
+    hAgree (by simpa using hIn)
 
 /-- WS-SM SM9.C.6: and the converse half — **authorization does not widen the
 footprint.**
