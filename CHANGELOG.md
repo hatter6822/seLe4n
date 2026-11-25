@@ -46,16 +46,17 @@ context-holding server's measurement.
   file owned (their unreachable fallback stores it,
   `replyRecvLoadReplierRegisters`) and release it once the legs have read
   it, so the server's frame write does not copy it; the reply leg's
-  no-transfer test is one out-of-line copy (`replyRecvCallTakeReplyInert`).  `RefusalCarryingReplyRecv.c` is
-  13,195,173 bytes against 13,204,415 at `v0.37.55` (SX25's baseline:
-  21,021,237 bytes, 769 s), and compiles standalone (`leanc -c -O3
-  -DNDEBUG`) in 537 s and 567 s on two runs on a quiet machine against
-  `v0.37.55`'s 535 s, equal within the run-to-run noise.  Inline, the
-  arms' result is consumed by the caller and never built, so every heap
-  reading stays 0.  (With the arms themselves out of line the file was
-  11,824,216 bytes, but each reply-receive through them allocated its
-  result and the heap gate failed; with the arms inline and their bodies
-  inline, 14,178,424 bytes and 706 s.)
+  no-transfer test is one out-of-line copy (`replyRecvCallTakeReplyInert`).
+  `RefusalCarryingReplyRecv.c` is 13,080,019 bytes against 13,204,415 at
+  `v0.37.55` (SX25's baseline: 21,021,237 bytes, 769 s), and compiles
+  standalone (`leanc -c -O3 -DNDEBUG`) in 486 s and 484 s on two runs on a
+  quiet machine against `v0.37.55`'s 535 s: SX27's acceptance is met.
+  Inline, the arms' result is consumed by the caller and never built, so
+  every heap reading stays 0.  (With the arms themselves out of line the
+  file was 11,824,216 bytes, but each reply-receive through them
+  allocated its result; with the answers taking the register file
+  borrowed, each Call take copied it, 288 bytes; with the arms and their
+  bodies inline, 14,178,424 bytes and 706 s.)
 - **Plan.**  D49 recorded; SX28 added; SX28–SX37 renumbered SX29–SX38 in
   the plan, REGISTERED_DEBT, WORKSTREAM_CONTEXT, the spec,
   CONTEXT_BY_VALUE_PLAN and the conformance table's row strings.
