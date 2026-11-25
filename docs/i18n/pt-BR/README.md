@@ -165,8 +165,8 @@ apontam para ela.
 |----------|-------|
 | **Versão** | `0.37.51` |
 | **Toolchain Lean** | `v4.28.0` |
-| **LoC Lean de produção** | 685.375 em 702 arquivos |
-| **LoC Lean de testes** | 91.883 em 71 suítes de testes |
+| **LoC Lean de produção** | 685.373 em 702 arquivos |
+| **LoC Lean de testes** | 91.877 em 71 suítes de testes |
 | **Declarações provadas** | 26.369 declarações de teorema/lema (zero sorry/axiom) |
 | **Crates Rust** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (wrappers em espaço de usuário), `sele4n-hal` (a camada de hardware do núcleo) e o teste de host `sele4n-lean-boundary` |
 | **Hardware alvo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |

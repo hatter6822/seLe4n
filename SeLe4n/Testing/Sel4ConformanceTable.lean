@@ -516,12 +516,10 @@ on a live reply stack. -/
 def sel4BehaviourRows : List BehaviourRow := [
   { name := "signal-lends-context",
     source := objectC "sendSignal (maybeDonateSchedContext)" "notification.c" 62,
-    status := .hardening .notificationSignal
-      "flow gate: the notification's context is lent only where its label and the woken thread's are equal" },
+    status := .implemented .notificationSignal },
   { name := "wait-consume-lends-context",
     source := objectC "completeSignal (maybeDonateSchedContext)" "notification.c" 325,
-    status := .hardening .notificationWait
-      "flow gate: the notification's context is lent only where its label and the waiter's are equal" },
+    status := .implemented .notificationWait },
   { name := "wait-block-returns-context",
     source := objectC "receiveSignal (maybeReturnSchedContext)" "notification.c" 225,
     status := .implemented .notificationWait },

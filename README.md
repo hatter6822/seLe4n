@@ -160,8 +160,8 @@ pointers into it.
 |-----------|-------|
 | **Version** | `0.37.51` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 685,375 across 702 files |
-| **Test Lean LoC** | 91,883 across 71 test suites |
+| **Production Lean LoC** | 685,373 across 702 files |
+| **Test Lean LoC** | 91,877 across 71 test suites |
 | **Proved declarations** | 26,369 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (user-space wrappers), `sele4n-hal` (the kernel's hardware layer), and the host test `sele4n-lean-boundary` |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |

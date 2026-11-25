@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "sel4-notification-lend-unchecked",
-      "commit_sha": "f504613237eebd51051c7cb1dd3789565684f523",
-      "tree_sha": "53c8c6189b848a983aa41d1e7d8c027b0f95efb9",
-      "committed_at_utc": "2026-11-25T03:31:58+00:00"
+      "commit_sha": "c95e409d76b153a11cd5ca961a14f04279819225",
+      "tree_sha": "f9359b1050f36aac356fcb94dcd5431872844f67",
+      "committed_at_utc": "2026-11-25T03:35:43+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f280c152587e5ba8c12f4e656414372ec816c1062e5cb946bb6643b92e9bffbc"
+    "source_digest": "b656cb8db704455e6dd0bfeaa00bb76426f60ef0324f1f2d48e9f4f076092872"
   },
   "summary": {
     "module_count": 773,
-    "declaration_count": 39478
+    "declaration_count": 39477
   },
   "readme_sync": {
     "version": "0.37.51",
     "lean_toolchain": "v4.28.0",
     "production_files": 702,
-    "production_loc": 685375,
+    "production_loc": 685373,
     "test_files": 71,
-    "test_loc": 91883,
+    "test_loc": 91877,
     "proved_theorem_lemma_decls": 26369,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -597371,7 +597371,7 @@
     {
       "module": "tests.Sel4ConformanceSuite",
       "path": "tests/Sel4ConformanceSuite.lean",
-      "declaration_count": 56,
+      "declaration_count": 55,
       "declarations": [
         {
           "kind": "def",
@@ -597628,29 +597628,16 @@
         },
         {
           "kind": "def",
-          "name": "bContextAbove",
-          "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bContextAbove",
-          "line": 183,
-          "called": [
-            "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.SecurityLabel.kernelTrusted",
-            "SeLe4n.Kernel.SecurityLabel.publicLabel",
-            "SeLe4n.Kernel.defaultLabelingContext",
-            "SeLe4n.Testing.Sel4ConformanceSuite.bScObj"
-          ],
-          "private": true
-        },
-        {
-          "kind": "def",
-          "name": "bWaiterAbove",
-          "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bWaiterAbove",
-          "line": 191,
+          "name": "bLendersAbove",
+          "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bLendersAbove",
+          "line": 187,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.SecurityLabel.kernelTrusted",
             "SeLe4n.Kernel.SecurityLabel.publicLabel",
             "SeLe4n.Kernel.defaultLabelingContext",
             "SeLe4n.Testing.Sel4ConformanceSuite.bNtfn",
+            "SeLe4n.Testing.Sel4ConformanceSuite.bScObj",
             "SeLe4n.Testing.Sel4ConformanceSuite.bWaiter"
           ],
           "private": true
@@ -597659,7 +597646,7 @@
           "kind": "def",
           "name": "bSignalled",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bSignalled",
-          "line": 199,
+          "line": 195,
           "called": [
             "SeLe4n.Badge.ofNatMasked",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -597677,7 +597664,7 @@
           "kind": "def",
           "name": "bWoken",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bWoken",
-          "line": 209,
+          "line": 205,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -597689,14 +597676,12 @@
           "kind": "def",
           "name": "bCheckSignal",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bCheckSignal",
-          "line": 212,
+          "line": 208,
           "called": [
             "SeLe4n.Kernel.defaultLabelingContext",
-            "SeLe4n.Testing.Sel4ConformanceSuite.bContextAbove",
             "SeLe4n.Testing.Sel4ConformanceSuite.bHolds",
-            "SeLe4n.Testing.Sel4ConformanceSuite.bHoldsNothing",
+            "SeLe4n.Testing.Sel4ConformanceSuite.bLendersAbove",
             "SeLe4n.Testing.Sel4ConformanceSuite.bSignalled",
-            "SeLe4n.Testing.Sel4ConformanceSuite.bWaiterAbove",
             "SeLe4n.Testing.Sel4ConformanceSuite.bWoken"
           ],
           "private": true
@@ -597705,7 +597690,7 @@
           "kind": "def",
           "name": "bConsumed",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bConsumed",
-          "line": 217,
+          "line": 212,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.LabelingContext",
@@ -597721,14 +597706,12 @@
           "kind": "def",
           "name": "bCheckWaitConsume",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bCheckWaitConsume",
-          "line": 222,
+          "line": 217,
           "called": [
             "SeLe4n.Kernel.defaultLabelingContext",
             "SeLe4n.Testing.Sel4ConformanceSuite.bConsumed",
-            "SeLe4n.Testing.Sel4ConformanceSuite.bContextAbove",
             "SeLe4n.Testing.Sel4ConformanceSuite.bHolds",
-            "SeLe4n.Testing.Sel4ConformanceSuite.bHoldsNothing",
-            "SeLe4n.Testing.Sel4ConformanceSuite.bWaiterAbove"
+            "SeLe4n.Testing.Sel4ConformanceSuite.bLendersAbove"
           ],
           "private": true
         },
@@ -597736,7 +597719,7 @@
           "kind": "def",
           "name": "bCheckWaitReturn",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bCheckWaitReturn",
-          "line": 229,
+          "line": 223,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.completeSignalArm",
@@ -597753,7 +597736,7 @@
           "kind": "def",
           "name": "bCheckCallLend",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bCheckCallLend",
-          "line": 240,
+          "line": 234,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.SchedContext.empty",
@@ -597774,7 +597757,7 @@
           "kind": "def",
           "name": "bCheckDestroyUnbinds",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bCheckDestroyUnbinds",
-          "line": 263,
+          "line": 257,
           "called": [
             "SeLe4n.Kernel.SchedContext.boundThread",
             "SeLe4n.Kernel.SchedContext.empty",
@@ -597796,7 +597779,7 @@
           "kind": "def",
           "name": "bEp",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bEp",
-          "line": 285,
+          "line": 279,
           "called": [
             "SeLe4n.ObjId"
           ],
@@ -597806,7 +597789,7 @@
           "kind": "def",
           "name": "bScAt",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bScAt",
-          "line": 287,
+          "line": 281,
           "called": [
             "SeLe4n.Kernel.SchedContext.empty",
             "SeLe4n.Model.KernelObject",
@@ -597822,7 +597805,7 @@
           "kind": "def",
           "name": "bBinding",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bBinding",
-          "line": 293,
+          "line": 287,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getTcb?",
@@ -597835,7 +597818,7 @@
           "kind": "def",
           "name": "bBoundTo",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bBoundTo",
-          "line": 296,
+          "line": 290,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getSchedContext?",
@@ -597848,7 +597831,7 @@
           "kind": "def",
           "name": "bHeadOf",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bHeadOf",
-          "line": 299,
+          "line": 293,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.getSchedContext?",
@@ -597861,7 +597844,7 @@
           "kind": "def",
           "name": "bCheckReplyPopHeld",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bCheckReplyPopHeld",
-          "line": 306,
+          "line": 300,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.SchedContextBinding",
@@ -597891,7 +597874,7 @@
           "kind": "def",
           "name": "bCheckUnbindDonated",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bCheckUnbindDonated",
-          "line": 334,
+          "line": 328,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.SchedContextBinding",
@@ -597918,7 +597901,7 @@
           "kind": "def",
           "name": "bCheckSuspendKeeps",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bCheckSuspendKeeps",
-          "line": 361,
+          "line": 355,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.Lifecycle.Suspend.suspendThreadOnCore",
@@ -597938,7 +597921,7 @@
           "kind": "def",
           "name": "bCheckReceiveReturns",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bCheckReceiveReturns",
-          "line": 381,
+          "line": 375,
           "called": [
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.SchedContext.empty",
@@ -597968,7 +597951,7 @@
           "kind": "def",
           "name": "bCheckBindLender",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bCheckBindLender",
-          "line": 402,
+          "line": 396,
           "called": [
             "SeLe4n.Kernel.SchedContext.empty",
             "SeLe4n.Kernel.SchedContextBinding",
@@ -597995,7 +597978,7 @@
           "kind": "def",
           "name": "bLabelObj",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bLabelObj",
-          "line": 431,
+          "line": 425,
           "called": [
             "SeLe4n.ObjId"
           ],
@@ -598005,7 +597988,7 @@
           "kind": "def",
           "name": "bCrossCtx",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bCrossCtx",
-          "line": 432,
+          "line": 426,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.SecurityLabel.kernelTrusted",
@@ -598018,7 +598001,7 @@
           "kind": "def",
           "name": "bUpCtx",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bUpCtx",
-          "line": 438,
+          "line": 432,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.SecurityLabel.kernelTrusted",
@@ -598030,7 +598013,7 @@
           "kind": "def",
           "name": "bSameCtx",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bSameCtx",
-          "line": 442,
+          "line": 436,
           "called": [
             "SeLe4n.Kernel.LabelingContext",
             "SeLe4n.Kernel.SecurityLabel.kernelTrusted"
@@ -598041,7 +598024,7 @@
           "kind": "def",
           "name": "bEpState",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bEpState",
-          "line": 445,
+          "line": 439,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Testing.Sel4ConformanceSuite.bLabelObj",
@@ -598056,7 +598039,7 @@
           "kind": "def",
           "name": "bIdleNtfn",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bIdleNtfn",
-          "line": 446,
+          "line": 440,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.Model.Notification"
@@ -598067,7 +598050,7 @@
           "kind": "def",
           "name": "bNtfnLabelState",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bNtfnLabelState",
-          "line": 448,
+          "line": 442,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Testing.Sel4ConformanceSuite.bIdleNtfn",
@@ -598083,7 +598066,7 @@
           "kind": "def",
           "name": "bRefused",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bRefused",
-          "line": 450,
+          "line": 444,
           "called": [
             "SeLe4n.Model.KernelError"
           ],
@@ -598093,7 +598076,7 @@
           "kind": "def",
           "name": "bCheckCrossSend",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bCheckCrossSend",
-          "line": 453,
+          "line": 447,
           "called": [
             "SeLe4n.Badge.zero",
             "SeLe4n.Kernel.endpointSendDualChecked",
@@ -598110,7 +598093,7 @@
           "kind": "def",
           "name": "bCheckCrossReceive",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bCheckCrossReceive",
-          "line": 456,
+          "line": 450,
           "called": [
             "SeLe4n.Kernel.endpointReceiveDualChecked",
             "SeLe4n.Testing.Sel4ConformanceSuite.bCrossCtx",
@@ -598126,7 +598109,7 @@
           "kind": "def",
           "name": "bCheckCrossWait",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bCheckCrossWait",
-          "line": 459,
+          "line": 453,
           "called": [
             "SeLe4n.Kernel.notificationWaitChecked",
             "SeLe4n.Testing.Sel4ConformanceSuite.bCrossCtx",
@@ -598142,7 +598125,7 @@
           "kind": "def",
           "name": "bCheckCrossNotificationBind",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bCheckCrossNotificationBind",
-          "line": 462,
+          "line": 456,
           "called": [
             "SeLe4n.Kernel.bindNotificationChecked",
             "SeLe4n.Testing.Sel4ConformanceSuite.bCrossCtx",
@@ -598158,7 +598141,7 @@
           "kind": "def",
           "name": "bCheckCrossContextBind",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.bCheckCrossContextBind",
-          "line": 465,
+          "line": 459,
           "called": [
             "SeLe4n.Kernel.schedContextBindLabelAdmits",
             "SeLe4n.Kernel.schedContextBindNotificationLabelAdmits",
@@ -598174,7 +598157,7 @@
           "kind": "def",
           "name": "behaviourChecks",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.behaviourChecks",
-          "line": 472,
+          "line": 466,
           "called": [
             "SeLe4n.Testing.Sel4ConformanceSuite.bCheckBindLender",
             "SeLe4n.Testing.Sel4ConformanceSuite.bCheckCallLend",
@@ -598198,7 +598181,7 @@
           "kind": "def",
           "name": "runBehaviourRows",
           "full_name": "SeLe4n.Testing.Sel4ConformanceSuite.runBehaviourRows",
-          "line": 491,
+          "line": 485,
           "called": [
             "SeLe4n.Testing.Sel4Conformance.sel4BehaviourRows",
             "SeLe4n.Testing.Sel4ConformanceSuite.behaviourChecks",
@@ -598209,7 +598192,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 501,
+          "line": 495,
           "called": [
             "SeLe4n.Testing.Sel4ConformanceSuite.runBehaviourRows",
             "SeLe4n.Testing.Sel4ConformanceSuite.runErrors",

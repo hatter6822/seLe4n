@@ -7611,6 +7611,8 @@ run_check "INVARIANT" rg -n '^theorem deploymentLabelingContext_threadObjectLabe
 run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContext_lowEquivalent_hidden($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
 run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContext_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
 run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContext_lowEquivalent_pair_deployment($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContext_of_no_context($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
+run_check "INVARIANT" rg -n '^theorem maybeDonateSchedContext_of_context($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
 run_check "INVARIANT" rg -n '^theorem schedContextBindPerform_lowEquivalent_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
 run_check "INVARIANT" rg -n '^theorem schedContextDonateAdmitted_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
 run_check "INVARIANT" rg -n '^theorem notificationContext\?_pair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NotificationLendTwoRun.lean
@@ -11318,8 +11320,6 @@ open SeLe4n.Kernel.Concurrency
 #check @maybeDonateSchedContextFast_eq
 #check @donateToSignalled_declassificationAuditLog_eq
 #check @sendSignalOnCore_error_state
-#check @maybeDonateSchedContext_of_no_context
-#check @maybeDonateSchedContext_of_context
 #check @OnContextStack
 #check @contextLendersLabelsEqual
 #check @contextLendersLabelsEqual_of_no_stacks

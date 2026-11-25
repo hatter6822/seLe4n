@@ -170,8 +170,8 @@ los puntos siguientes remiten a ella.
 |----------|-------|
 | **Versión** | `0.37.51` |
 | **Toolchain de Lean** | `v4.28.0` |
-| **LoC de producción en Lean** | 685.375 en 702 archivos |
-| **LoC de pruebas en Lean** | 91.883 en 71 suites de pruebas |
+| **LoC de producción en Lean** | 685.373 en 702 archivos |
+| **LoC de pruebas en Lean** | 91.877 en 71 suites de pruebas |
 | **Declaraciones demostradas** | 26.369 declaraciones theorem/lemma (cero sorry/axiom) |
 | **Crates de Rust** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (envoltorios en espacio de usuario), `sele4n-hal` (la capa de hardware del núcleo) y la prueba de host `sele4n-lean-boundary` |
 | **Hardware objetivo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |

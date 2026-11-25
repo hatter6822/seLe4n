@@ -165,8 +165,8 @@ folgenden Punkte verweisen darauf.
 |----------|------|
 | **Version** | `0.37.51` |
 | **Lean-Toolchain** | `v4.28.0` |
-| **Produktions-LoC (Lean)** | 685.375 über 702 Dateien |
-| **Test-LoC (Lean)** | 91.883 über 71 Testsuiten |
+| **Produktions-LoC (Lean)** | 685.373 über 702 Dateien |
+| **Test-LoC (Lean)** | 91.877 über 71 Testsuiten |
 | **Bewiesene Deklarationen** | 26.369 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Rust-Crates** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (Userspace-Wrapper), `sele4n-hal` (die Hardwareschicht des Kernels) und der Host-Test `sele4n-lean-boundary` |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |

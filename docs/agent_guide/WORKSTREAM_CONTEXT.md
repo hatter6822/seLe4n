@@ -294,7 +294,9 @@ lend or a bind of a stack's head is checked on two static labels: a Call,
 received Call or fault lends as seL4-MCS does, with no check of its own (the
 caller carries the context's label, `bindingLabelsEqual`; D28's refusal was
 deleted as unreachable at SX19, `v0.37.48`), a
-notification lends only at equal labels (`donationContextFlows`, D30), and
+notification lends as seL4-MCS does too (the woken thread carries the
+notification's label and the notification the context's; D30's check was
+deleted as unreachable at SX22, `v0.37.51`), and
 SchedContext_Bind binds a stack's head only where the context flows to the
 thread (`schedContextBindLabelGate`, D25), with both of the bind's refusals
 seL4 does not make lifted. reply_pop takes seL4's held arm at every pop site,

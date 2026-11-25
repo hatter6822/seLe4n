@@ -43,6 +43,13 @@ two new rows.
   `interruptDispatchSequence`) and every theorem that only passed it on.
   `interruptEntry` no longer reads `getKernelLabelingContext`.  The same goes
   for the wait arm's general form and the declassified signal's write plans.
+- **Conformance.**  The seL4 conformance table's `signal-lends-context` and
+  `wait-consume-lends-context` rows move from a hardening (the flow gate) to
+  implemented: seL4's `maybeDonateSchedContext` in `sendSignal` and
+  `completeSignal`.  Their suite scenarios check the lend under the default
+  labelling and under one that labels the notification, its context and the
+  waiter above every other thread; the two off-invariant labellings the
+  refusal was tested on are gone.
 - **Lenders.**  The signal, declassified-signal and interrupt lenders' steps
   take `notificationLabelsAgree` at the step's state, which every entry
   carries.
