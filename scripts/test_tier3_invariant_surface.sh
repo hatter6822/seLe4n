@@ -4466,6 +4466,11 @@ run_check "INVARIANT" rg -n '^@\[noinline\] def replyRecvCallTakeAnswer($|[ ({:\
 run_check "INVARIANT" rg -n '^@\[noinline\] def replyRecvLongCallTakeAnswer($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def replyRecvCallFaultTakeAnswer($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def replyRecvLongCallFaultTakeAnswer($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n '^@\[noinline\] def replyRecvOwnedRegisters \(rf : SeLe4n\.RegisterFile\) : SeLe4n\.RegisterFile := rf$' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def replyRecvCallTakeAnswer[^\n]*(\n([ \t][^\n]*)?)* \(replyRecvOwnedRegisters rf\) len ' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def replyRecvLongCallTakeAnswer[^\n]*(\n([ \t][^\n]*)?)* \(replyRecvOwnedRegisters rf\) len ' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def replyRecvCallFaultTakeAnswer[^\n]*(\n([ \t][^\n]*)?)* \(replyRecvOwnedRegisters rf\) len ' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
+run_check "INVARIANT" rg -n -U '^@\[noinline\] def replyRecvLongCallFaultTakeAnswer[^\n]*(\n([ \t][^\n]*)?)* \(replyRecvOwnedRegisters rf\) len ' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '^@\[noinline\] def replyRecvCallTakeAnswer[^\n]*(\n([ \t][^\n]*)?)*\n +performReplyRecvArmCallTakeDelivered\n\s+\(ReplyRecvArm\.ofCode \(replyRecvCallTakeArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '^@\[noinline\] def replyRecvCallTakeAnswer[^\n]*(\n([ \t][^\n]*)?)*\n +performReplyRecvArmCallTakeCapsDelivered\n\s+\(ReplyRecvArm\.ofCode \(replyRecvCallTakeArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '^@\[noinline\] def replyRecvLongCallTakeAnswer[^\n]*(\n([ \t][^\n]*)?)*\n +performReplyRecvArmCallTakeDeliveredLong\n\s+\(ReplyRecvArm\.ofCode \(replyRecvCallTakeArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean

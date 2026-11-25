@@ -168,7 +168,7 @@ points ci-dessous y renvoient.
 |----------|--------|
 | **Version** | `0.37.56` |
 | **Chaîne d'outils Lean** | `v4.28.0` |
-| **LoC Lean de production** | 685 915 réparties sur 701 fichiers |
+| **LoC Lean de production** | 685 922 réparties sur 701 fichiers |
 | **LoC Lean de test** | 91 877 réparties sur 71 suites de tests |
 | **Déclarations prouvées** | 26 488 déclarations theorem/lemma (zéro sorry/axiom) |
 | **Crates Rust** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (enveloppes en espace utilisateur), `sele4n-hal` (la couche matérielle du noyau), et le test hôte `sele4n-lean-boundary` |

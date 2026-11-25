@@ -42,10 +42,12 @@ context-holding server's measurement.
   `replyRecvCallTakeArmCode`) and an answer per answer and length that
   returns the state (`replyRecvCallTakeAnswer`, `replyRecvLongCallTakeAnswer`,
   `replyRecvCallFaultTakeAnswer`, `replyRecvLongCallFaultTakeAnswer`), each
-  arm's `_eq` restated over them.  `RefusalCarryingReplyRecv.c` is
-  13,193,916 bytes against 13,204,415 at `v0.37.55` (SX25's baseline:
+  arm's `_eq` restated over them.  The answers take the replier's register
+  file owned (`replyRecvOwnedRegisters`) and release it once the legs have
+  read it, so the server's frame write does not copy it.  `RefusalCarryingReplyRecv.c` is
+  13,195,173 bytes against 13,204,415 at `v0.37.55` (SX25's baseline:
   21,021,237 bytes, 769 s), and compiles standalone (`leanc -c -O3
-  -DNDEBUG`) in 557 s and 536 s on two runs on a quiet machine against
+  -DNDEBUG`) in 537 s and 567 s on two runs on a quiet machine against
   `v0.37.55`'s 535 s, equal within the run-to-run noise.  Inline, the
   arms' result is consumed by the caller and never built, so every heap
   reading stays 0.  (With the arms themselves out of line the file was
