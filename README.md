@@ -160,7 +160,7 @@ pointers into it.
 |-----------|-------|
 | **Version** | `0.37.56` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 685,893 across 701 files |
+| **Production Lean LoC** | 685,888 across 701 files |
 | **Test Lean LoC** | 91,877 across 71 test suites |
 | **Proved declarations** | 26,488 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | `sele4n-types`, `sele4n-abi`, `sele4n-sys` (user-space wrappers), `sele4n-hal` (the kernel's hardware layer), and the host test `sele4n-lean-boundary` |

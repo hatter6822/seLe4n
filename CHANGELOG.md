@@ -20,8 +20,7 @@ context-holding server's measurement.
 - **One selector.**  The Call-take arms of `RefusalCarryingReplyRecv.lean`
   route through `replyRecvCallTakeArmCode` (out of line), which reads each
   arm's leg guard and Call-take guard (`ReplyRecvArm.callGuard`) once on the
-  pre-state, ahead of the Send take.  The short and long Call-take and
-  Call-fault arms are out of line too.  The per-arm Call-take arms and their
+  pre-state, ahead of the Send take.  The per-arm Call-take arms and their
   route are deleted.
 - **Retired.**  `ReplyRecvCallTakeInPlace`, `ReplyRecvDonatedCallTakeInPlace`
   and `ReplyRecvUnlinkedCallTakeInPlace`, with their performers and
@@ -35,11 +34,15 @@ context-holding server's measurement.
   routed answer and the out-of-line arms, and refuse the retired names and
   imports (break-tested by breaking the relation with the tokens kept).  The
   store-reader baseline's rows for the touched files are re-read.
-- **Measured.**  `RefusalCarryingReplyRecv.c` 11,824,216 bytes, compiled in
-  492 s standalone on a quiet machine (`leanc -c -O3 -DNDEBUG`), against
-  13,204,415 bytes and 535 s at `v0.37.55` and 21,021,237 bytes and 769 s at
-  SX25's baseline.  With the Call-take arms inlined it was 14,178,424 bytes
-  and 706 s, so they are out of line.
+- **Measured, acceptance not met.**  `RefusalCarryingReplyRecv.c` is
+  14,178,424 bytes, compiled in 706 s standalone (`leanc -c -O3 -DNDEBUG`),
+  against 13,204,415 bytes and 535 s at `v0.37.55` (SX25's baseline:
+  21,021,237 bytes, 769 s): the inlined Call-take arms are compiled into every
+  checked reply-receive entry.  With the four Call-take and Call-fault arms
+  out of line the file was 11,824,216 bytes and 492 s, but each reply-receive
+  through them then allocated its result (40 bytes, and 328 on the fault
+  takes) and the heap gate failed, so they stay inline.  Bringing the size
+  back under SX26's without an allocation is open (SX27's acceptance).
 - **Plan.**  D49 recorded; SX28 added; SX28–SX37 renumbered SX29–SX38 in
   the plan, REGISTERED_DEBT, WORKSTREAM_CONTEXT, the spec,
   CONTEXT_BY_VALUE_PLAN and the conformance table's row strings.

@@ -4458,13 +4458,6 @@ run_check "INVARIANT" rg -n '^theorem replyRecvBlockArmCode_spec($|[ ({:\[\]])' 
 run_check "INVARIANT" rg -n '^@\[noinline\] def replyRecvCallTakeArmCode($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '              if ReplyRecvArm\.rendezvous\.legGuard st tid c rid ct &&\n                  ReplyRecvArm\.rendezvous\.callGuard st epId tid s sTcb rid then 1\n              else if ReplyRecvArm\.donated\.legGuard st tid c rid ct &&\n                  ReplyRecvArm\.donated\.callGuard st epId tid s sTcb rid then 2\n              else if ReplyRecvArm\.held\.legGuard st tid c rid ct &&\n                  ReplyRecvArm\.held\.callGuard st epId tid s sTcb rid then 3\n              else if ReplyRecvArm\.unheld\.legGuard st tid c rid ct &&\n                  ReplyRecvArm\.unheld\.callGuard st epId tid s sTcb rid then 4\n              else if ReplyRecvArm\.unlinked\.legGuard st tid c rid ct &&\n                  ReplyRecvArm\.unlinked\.callGuard st epId tid s sTcb rid then 5\n              else 0' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvCallTakeArmCode_spec($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-# The short and long Call-take and Call-fault arms are out of line, so the Call take and the arms it falls
-# back to are compiled once rather than inlined into every checked reply-receive entry
-# (`RefusalCarryingReplyRecv.c` held at or below the SX26 size).
-run_check "INVARIANT" rg -n '^@\[noinline\] def replyRecvArmCallTakeR($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n '^@\[noinline\] def replyRecvLongCallTakeArmR($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n '^@\[noinline\] def replyRecvCallFaultArmR($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
-run_check "INVARIANT" rg -n '^@\[noinline\] def replyRecvLongCallFaultArmR($|[ ({:\[\]])' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '      else replyRecvArmCallTakeR epId tid c rid badge grant layout rf len label executingCore st\n    else \.error \(\.replyCapInvalid, st\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '        replyRecvCallFaultArmR epId tid c rid badge grant layout rf len label executingCore st\n      else if decide' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '                \.ok \(\(\), performReplyRecvArmCallTakeDelivered\n                  \(ReplyRecvArm\.ofCode \(replyRecvCallTakeArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
