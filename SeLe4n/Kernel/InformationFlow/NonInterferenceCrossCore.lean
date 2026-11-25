@@ -896,7 +896,8 @@ different cores. -/
       sendSignalWriteSet st notificationId := rfl
 
 /-- WS-SM SM9.C.6 (**the footprint's receiver is admissible by label, not by
-being named**): on a notification-label coherent state, a receiver inside the
+being named**): on a state whose notification labels agree (the agreement every
+kernel entry carries, WS-SX SX21), a receiver inside the
 authorized effect footprint carries the notification's own domain, so the
 delivery to it is the identity flow and owes no authorization.
 

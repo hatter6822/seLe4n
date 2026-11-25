@@ -681,10 +681,12 @@ reads, so the object is non-observable whenever any waiter is
 the victim by the gate's two-way form: every admission onto an endpoint's queue
 requires the thread's label to *equal* the endpoint's
 (`endpointAdmissionUniform`), so a low waiter beside a high one on one endpoint
-is no longer admitted.  What this arm still takes as a hypothesis is the state
-invariant that carries that uniformity across every transition (queue label
-uniformity), which the gate now makes establishable but which is not yet
-proved; registered in `docs/REGISTERED_DEBT.md` rather than papered over here.
+is no longer admitted.  The uniformity is now carried across every entry for
+the waiters themselves (`endpointWaitersLabelsEqual`, SX11) and for a
+notification queue's links (`notificationLabelsAgree`, SX21), but not for an
+endpoint queue's links, and no theorem yet proves the dequeue's writes
+invisible from those facts; so the three queue arms still take
+`hTeardownProj`, a plan row of WS-SX (SX22.2) rather than papered over here.
 
 **What this arm carries.**  `v0.36.136` retired the reclaim's holder abort (the
 holder of a returned donation keeps waiting, unbound, as seL4 MCS leaves it), so

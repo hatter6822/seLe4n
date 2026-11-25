@@ -126,7 +126,7 @@ window (plan §2, F1), and nothing may share a carved cell into another object
 (F5). A kind the retype decodes needs a pinned carve scenario and a pinned
 delete of its capability, or the allocation gate fails.
 
-### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31; SX6 v0.37.32; SX7 v0.37.33, its remainder split into SX8 and SX24–SX27; SX8 v0.37.36, which split its own remainder into SX9, SX12 and SX23 (D32); SX9 v0.37.38, which added SX10 (D36, D37); SX10 v0.37.39, wrapped (D38), its remainder split into SX11 and SX13; SX11 v0.37.40; SX12 and SX13 swapped by D39; SX12 v0.37.41; SX13 v0.37.42, wrapped (D40), its remainder split into SX14, SX17 and SX18; SX14.1 v0.37.43, SX14 wrapped there (D32), its remainder split into SX15 and SX16 (D42); SX15 v0.37.44; SX16 v0.37.45; SX17 v0.37.46; SX18 v0.37.47, wrapped at SX18.1 (D44), its remainder split into SX19, SX20 and SX21 (D43); SX19 v0.37.48; SX20 v0.37.49, the records view extended (D45), with the coherence stage SX21 and the notification lend's check deleted SX22 after it, SX22–SX31 renumbered SX23–SX32)
+### WS-SX seL4 ABI fidelity — ACTIVE (registered v0.37.19; SX1 landed v0.37.20, SX1.3 v0.37.21; unchecked entry retired beside it v0.37.22; SX2 landed v0.37.23; SX3 v0.37.24; SX4 v0.37.27; SX5 v0.37.31; SX6 v0.37.32; SX7 v0.37.33, its remainder split into SX8 and SX24–SX27; SX8 v0.37.36, which split its own remainder into SX9, SX12 and SX23 (D32); SX9 v0.37.38, which added SX10 (D36, D37); SX10 v0.37.39, wrapped (D38), its remainder split into SX11 and SX13; SX11 v0.37.40; SX12 and SX13 swapped by D39; SX12 v0.37.41; SX13 v0.37.42, wrapped (D40), its remainder split into SX14, SX17 and SX18; SX14.1 v0.37.43, SX14 wrapped there (D32), its remainder split into SX15 and SX16 (D42); SX15 v0.37.44; SX16 v0.37.45; SX17 v0.37.46; SX18 v0.37.47, wrapped at SX18.1 (D44), its remainder split into SX19, SX20 and SX21 (D43); SX19 v0.37.48; SX20 v0.37.49, the records view extended (D45), with the coherence stage SX21 and the notification lend's check deleted SX22 after it, SX22–SX31 renumbered SX23–SX32; SX21 v0.37.50, the label part of coherence carried (D46), the queue arms' teardown projection moved to SX22.2)
 
 The syscall and invocation ABI made seL4's, one PR per row: error payloads and
 lookup faults (SX1), the guard in the capability with one `resolveAddressBits`
@@ -145,15 +145,16 @@ binding invariant's creating sites (SX17), its premise moved to the standing
 per-state slot (SX18), the Call lend's refusal deleted with the lend argument
 retired (SX19), the records view extended with the notification queues
 (SX20), notification label coherence carried (SX21), the notification
-lend's label check deleted (SX22), one composed in-place ReplyRecv path
+lend's label check deleted with the queue arms' teardown projection
+discharged (SX22), one composed in-place ReplyRecv path
 (SX23), page-table teardown and per-frame W^X (SX24),
 per-invocation rights as `Option AccessRight` (SX25), the Running state per
 core (SX26), the compound syscalls' invoke phase (SX27), timeout faults with
 SetTimeoutEndpoint and SetSchedParams (SX28), the full CNode invocation set
 (SX29), seL4's error codes in the label (SX30), seL4's remaining
 invocations (SX31) and closure (SX32). Rows and
-decisions D1–D45 (D1–D17 each default taken, owner card open; D18–D32,
-D34 and D36–D45 the owner's) are in
+decisions D1–D46 (D1–D17 and D46 each default taken, owner card open;
+D18–D32, D34 and D36–D45 the owner's) are in
 [`SEL4_ABI_FIDELITY_PLAN.md`](../planning/SEL4_ABI_FIDELITY_PLAN.md). It
 supersedes WS-UC's "next PR" scope.
 
@@ -336,9 +337,8 @@ takes it from that slot), and the two-run theorem takes it of both runs; the
 Call lend's refusal is gone since SX19 (`v0.37.48`: no lend admission and no
 `lend` argument remain, so a new Call, fault, receive or ReplyRecv path lends
 unconditionally and takes its label equation from `bindingLabelsEqual`), and
-the notification lend's label check (`donationContextFlows`) stays until SX21
-carries notification label coherence and SX22 deletes it (D43): a new consumer
-must not assume it is gone. Since SX20 (`v0.37.49`, D45) the records view holds
+the notification lend's label check (`donationContextFlows`) stays until SX22
+deletes it (D43): a new consumer must not assume it is gone. Since SX20 (`v0.37.49`, D45) the records view holds
 a thread's two notification-queue links and a notification's bound thread and
 queue ends: a new writer of those fields proves its step a core frame
 (`RecordsCoreFrame`) or a records step or stage, never a `RecordsFrame`, and
@@ -346,8 +346,18 @@ every other new records frame keeps them. Every thread
 blocked sending, calling or receiving on an endpoint has that endpoint's label
 (`endpointWaitersLabelsEqual`, SX11 at `v0.37.40`): a new writer that blocks a
 thread on an endpoint does so only past a two-way `endpointFlowGate` on that
-thread and endpoint, and proves its step an `EndpointWaitersStage` (a frame, a
-shrink, or a growth at that pair discharged from the gate).
+thread and endpoint. Since SX21 (`v0.37.50`, D46) every notification's bound
+thread and queue ends, and every thread blocked on a notification, pass its
+two-way `notificationFlowGate`, and a thread's notification-queue links name
+threads of its own label (`notificationLabelsAgree`). Both halves are one
+per-entry stage, `QueueLabelsStage` (`SeLe4n/Kernel/QueueLabels/`, SX11's
+family renamed): a new writer proves its step a `QueueLabelsFrame` (no new
+endpoint waiter, agreement kept under every labelling), a `QueueLabelsGrowFrame`
+(one endpoint waiter, from the gate), or, for a writer that adds to a
+notification (a wait, a bind), a `QueueLabelsNtfnGrowFrame` whose checked arm
+is a `QueueLabelsGatedFrame` under the labelling its gate reads. Coherence's
+structural clause (an unblocked thread holds no links) is not carried; it is
+WS-PK's, beside `ipcReachable`.
 
 Beside WS-SX, `v0.37.22` retired the unchecked register-sourced entry (owner
 decision 2026-11-13): `syscallEntry`, `dispatchSyscall` and the unchecked
