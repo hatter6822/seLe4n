@@ -1273,4 +1273,39 @@ theorem replyRecvOnCore_arm_capsDeliveredLong (arm : ReplyRecvArm)
   rw [hX]
   exact congrArg (fun Z => (.ok ((), Z) : Except KernelError (Unit × SystemState))) hK.symm
 
+/-- **The blocking reply-receive of a message in registers, delivered, over
+every arm**: `replyRecvOnCore_arm_delivered` for the reply the replier's frame
+holds, its result `performReplyRecvArmDelivered`. -/
+theorem replyRecvOnCore_arm_deliveredRegs (arm : ReplyRecvArm)
+    {scId : SeLe4n.SchedContextId} {home : CoreId} (st : SystemState)
+    (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) (grant : Bool) (core : CoreId) (ct rt : TCB) (ep : Endpoint)
+    (rp : Reply) (hAd : arm.Admits scId home st tid c rid ct rt rp)
+    (hSz4 : Architecture.regMessageLength layout len ≤ 4)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hRO : ct.replyObject = some rid)
+    (hE : st.objects[epId]? = some (.endpoint ep)) (hS : ep.sendQ.head = none)
+    (hR : st.objects[tid.toObjId]? = some (.tcb rt))
+    (hEnq : enqueuesInPlace st epId tid ep.receiveQ.tail = true)
+    (hRp : st.objects[rid.toObjId]? = some (.reply rp))
+    (hStash : st.replyStashedAt rid rp = false)
+    (hRec : replyRecordsInPlace st (rid.val + 1) = true)
+    (hInert : replyTransferInert st tid ct grant = true) :
+    (match endpointReplyRecvOnCore epId tid rid c
+        { registers := Architecture.regMessageBody layout rf len, badge := badge } grant core st with
+      | .ok (summary, st') =>
+          (.ok ((), Architecture.stageDeliveredMessage st' tid summary.capInfo) :
+            Except KernelError (Unit × SystemState))
+      | .error e => .error e) =
+      .ok ((), performReplyRecvArmDelivered arm scId home st c tid rid epId ep.recvTailCode layout
+        rf len badge core) := by
+  have hSz4' : (Architecture.regMessageBody layout rf len).size ≤ 4 := by
+    rw [Architecture.regMessageBody_size]; exact hSz4
+  rw [replyRecvOnCore_arm_delivered arm st epId tid c rid _ grant core ct rt ep rp hAd
+    (by show ¬ (Architecture.regMessageBody layout rf len).size > maxMessageRegisters
+        unfold maxMessageRegisters; omega) hSz4' hT hRO hE hS hR hEnq hRp hStash hRec hInert,
+    Architecture.returnFrameOfMessage_regMessageBody]
+  rfl
+
 end SeLe4n.Kernel
