@@ -4482,6 +4482,10 @@ run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_arm_callTakeDeliveredLong(
 run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_arm_callTakeCapsDeliveredLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeComposed.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_arm_callFaultTake($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeComposed.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_arm_callFaultTakeLong($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeComposed.lean
+# The per-arm Call-take modules and arms are retired: their performers, equalities, admission tests
+# and imports are refused tree-wide.
+run_negative_check "INVARIANT" rg -n '\b(performReplyRecv(Donated|Unlinked)?CallTake(Legs|Delivered)|replyRecv(Donated|Unlinked)?CallTakeArmR(_eq|_of_admits|_of_not_admits)?|replyRecv(Donated|Unlinked)?CallTakeAdmits|replyRecvOnCore_(donatedCallTake|unlinked_callTake|callTake)_delivered|replyRecvQueuedCallRoutes)\b' SeLe4n tests Main.lean
+run_negative_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.IPC\.CrossCore\.ReplyRecv(Donated|Unlinked)?CallTakeInPlace$' SeLe4n tests Main.lean SeLe4n.lean
 run_check "INVARIANT" rg -n '^@\[noinline\] def performReplyRecvArmCall(Fault)?Take(Caps)?Legs(Long)?($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeComposed.lean
 run_check "INVARIANT" rg -n -U '          replyRecvBlockArmCode st epId tid c rid != 0 && replyRecvReplyInertW st tid c grant then\n        \.ok \(\(\), performReplyRecvArmDelivered\n          \(ReplyRecvArm\.ofCode \(replyRecvBlockArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '                    replyRecvBlockArmCode st epId tid c rid != 0 then\n                  \.ok \(\(\), performReplyRecvArmCapsDelivered\n                    \(ReplyRecvArm\.ofCode \(replyRecvBlockArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
@@ -4543,10 +4547,9 @@ run_check "INVARIANT" rg -n '^theorem popUnheldSettled_receiveGuard($|[ ({:\[\]]
 # donated that caller's context in place, every check read on the pre-state and
 # carried across the reply leg and the pop; any other shape falls through to the
 # unheld arm.
-run_check "INVARIANT" rg -n '^theorem popDonationSettled_callDonationGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvDonatedCallTakeInPlace.lean
-run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_donatedCallTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvDonatedCallTakeInPlace.lean
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextInPlace_keepsAt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvDonatedCallTakeInPlace.lean
-run_check "INVARIANT" rg -n '^@\[csimp\] theorem receiveCallDonatesPastPop_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvDonatedCallTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem popDonationSettled_callDonationGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeFrame.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextInPlace_keepsAt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeFrame.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem receiveCallDonatesPastPop_eq_impl($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeFrame.lean
 # A receive taking a caller that donates its context runs in place.
 run_check "INVARIANT" rg -n '^theorem receiveCallDonatingTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReceiveCallDonatingInPlace.lean
 run_check "INVARIANT" rg -n -U 'receiveCallDonatesInPlace st epId tid s sTcb rid then\n\s*\.ok \(\(\), performReceiveCallDonatingDelivered st epId s' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
@@ -4563,11 +4566,9 @@ run_check "INVARIANT" rg -n '^theorem replyRecvCapsArmR_eq($|[ ({:\[\]])' SeLe4n
 # reply_push canDonate) in place: the take's and the donation's guard read on the
 # pre-state and carried across the reply leg, proven the specification's and
 # routed after the send-take arm, falling through to the capability arm.
-run_check "INVARIANT" rg -n '^theorem storeReplyRendezvous_callDonationGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeInPlace.lean
-run_check "INVARIANT" rg -n '^@\[csimp\] theorem receiveCallDonatesPastReply_eq_impl' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeInPlace.lean
-run_check "INVARIANT" rg -n '^theorem replyRecvCallTakes_spec($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeInPlace.lean
-run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_callTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeInPlace.lean
-run_check "INVARIANT" rg -n '^theorem receiveReturnSchedContext_callDonationGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem storeReplyRendezvous_callDonationGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeFrame.lean
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem receiveCallDonatesPastReply_eq_impl' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeFrame.lean
+run_check "INVARIANT" rg -n '^theorem receiveReturnSchedContext_callDonationGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeFrame.lean
 run_check "INVARIANT" rg -n '^theorem receiveReturnSchedContext_agreeOff($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReceiveReturnInPlace.lean
 run_check "INVARIANT" rg -n '^theorem receiveReturnSchedContext_getTcb\?_self_of_fires($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReceiveReturnInPlace.lean
 # A reply-receive whose receive leg meets a waiting sender (the server loop under
@@ -4623,9 +4624,7 @@ run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_arm_faultTakeLong(
 run_check "INVARIANT" rg -n -U '        else if replyRecvTakeArmCode st epId tid c rid != 0 then\n(          [^\n]*\n){1,14}                  \.ok \(\(\), performReplyRecvArmFaultTakeDelivered\n                    \(ReplyRecvArm\.ofCode \(replyRecvTakeArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 run_check "INVARIANT" rg -n -U '        else if replyRecvTakeArmCode st epId tid c rid != 0 then\n(          [^\n]*\n){1,14}                  \.ok \(\(\), performReplyRecvArmFaultTakeDeliveredLong\n                    \(ReplyRecvArm\.ofCode \(replyRecvTakeArmCode st epId tid c rid\)\)' SeLe4n/Kernel/RefusalCarryingReplyRecv.lean
 # The reply-receive on an unlinked reply object whose receive leg takes a queued Call writes in place.
-run_check "INVARIANT" rg -n '^theorem storeReplyLeg_callDonationGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedCallTakeInPlace.lean
-run_check "INVARIANT" rg -n '^theorem replyRecvUnlinkedCallTakes_spec($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedCallTakeInPlace.lean
-run_check "INVARIANT" rg -n '^theorem replyRecvOnCore_unlinked_callTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvUnlinkedCallTakeInPlace.lean
+run_check "INVARIANT" rg -n '^theorem storeReplyLeg_callDonationGuard($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeFrame.lean
 run_negative_check "INVARIANT" rg -n '\b(replyTransferStoresInPlace|cnodeStoreInPlace)\b' SeLe4n tests Main.lean
 # A fault answered by a long reply or reply-receive runs in place on every shape
 # the short answer does, its restart words past the fourth read from the
@@ -13949,7 +13948,7 @@ run_negative_check "INVARIANT" rg -n '\b(callLendAdmits|receiveLendAdmits|applyC
 run_negative_check "INVARIANT" rg -n '[({]lend : Bool' SeLe4n/ tests/
 run_negative_check "INVARIANT" rg -n '^theorem callLend_holderFlowsToContext($|[ ({:\[\]])' SeLe4n/
 # The in-place lend of a reply-receive's taken call is unconditional.
-run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def lendSchedContextInPlace [^\n]*(\n([ \t][^\n]*)?)*\n  migrateSchedContextReplenishment \(donateSchedContextInPlace X donor donee scS\) scS donorHome\n *doneeHome$" SeLe4n/Kernel/IPC/CrossCore/ReplyRecvDonatedCallTakeInPlace.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def lendSchedContextInPlace [^\n]*(\n([ \t][^\n]*)?)*\n  migrateSchedContextReplenishment \(donateSchedContextInPlace X donor donee scS\) scS donorHome\n *doneeHome$" SeLe4n/Kernel/IPC/CrossCore/ReplyRecvCallTakeFrame.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonationWriteSet[^\n]*(\n([ \t][^\n]*)?)*replyRecvRendezvousChainCores st tid nextThread recordedServer serverCore\n *else" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation [^\n]*(\n([ \t][^\n]*)?)*\| none =>\s*(--[^\n]*\s*)*if rendezvousDequeuedCall st nextThread then\n *match applyRendezvousCallDonation st tid nextThread with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def rendezvousCallDonationReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match callDonationSchedContext\? st donor receiver with\n *\| some _ => \[determineTargetCore st donor, determineTargetCore st receiver\]" SeLe4n/Kernel/IPC/Operations/Donation.lean'

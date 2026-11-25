@@ -4,7 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -/
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyHeldInPlace
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvTakeFrame
-import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvDonatedCallTakeInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvCallTakeFrame
 
 /-!
 # The reply leg's guards, one family over every pop arm

@@ -12538,9 +12538,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // server's delete, and a third thread carved in the server's slot is
         // bound the context and queues a Call; the root task, holding none,
         // answers the partner and takes the Call, which lends it the caller's
-        // context (`performReplyRecvUnlinkedCallTakeDelivered`).  The partner
-        // is suspended, the reply returns the context, the caller restarts the
-        // root task and suspends itself, and it is unbound before its delete.
+        // context (`performReplyRecvArmCallTakeDelivered` on the unlinked
+        // arm).  The partner is suspended, the reply returns the context, the
+        // caller restarts the root task and suspends itself, and it is unbound
+        // before its delete.
         retype(
             "untyped-retype-unlinked-call-take-server",
             UNTYPED_CAP,

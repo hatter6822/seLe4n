@@ -907,9 +907,9 @@ sender's six words read from its saved registers before any write.  A reply
 leg transferring no capability (`replyRecvReplyInertW`) runs
 `performReplyRecvArmTakeDelivered`; a granting one whose frame routes as a
 reply-receive, its transfer's stores in place, runs
-`performReplyRecvArmTakeCapsDelivered`.  When the receive leg instead takes a
-caller queued by a `Call` and is donated its context, the call-take arm
-(`replyRecvCallTakeArmR`).  Any other takes the specification's path
+`performReplyRecvArmTakeCapsDelivered`.  A caller queued by a `Call` is taken
+ahead of this arm (`replyRecvArmCallTakeR`); otherwise the capability arm
+(`replyRecvCapsArmR`).  Any other takes the specification's path
 (`replyRecvArmTakeR_eq`). -/
 @[inline] def replyRecvArmTakeR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
@@ -1601,12 +1601,13 @@ theorem replyRecvSignalArmR_eq (ctx : LabelingContext)
 /-- The checked reply-receive once its reply capability resolved to reply object
 `rid`, answering caller `c` with badge `badge`: the reply leg's flow gate, then a
 caller carrying a fault answered through the specification's path (its fault
-reply: `replyRecvFaultArmR`, in place when the receive blocks), and for any
+reply: `replyRecvCallFaultArmR`, in place when the receive blocks or takes a
+queued caller, `replyRecvFaultArmR` when it takes a queued sender), and for any
 other caller the in-place path when
 it may be taken (a reply of at most four words whose reply leg transfers no
 capability, `replyRecvReplyInertW`, on every reply arm whose receive blocks in
 place, `replyRecvBlockArmCode` and `performReplyRecvArmDelivered`; the take arms
-from `replyRecvDonatedCallTakeArmR`; `replyRecvCapsArmR` when the reply leg
+from `replyRecvArmCallTakeR`, the Call take first; `replyRecvCapsArmR` when the reply leg
 installs under the grant right, its transfer run in place between the reply's
 writes and the receive),
 the specification's otherwise.  Every
