@@ -1170,8 +1170,9 @@ word it takes read on the pre-state.  A reply leg transferring no capability
 one whose frame routes as a reply-receive runs
 `performReplyRecvArmCallTakeCapsDelivered`.  Otherwise the take arm
 (`replyRecvArmTakeR`); any other shape the specification's path
-(`replyRecvArmCallTakeR_eq`). -/
-@[inline] def replyRecvArmCallTakeR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+(`replyRecvArmCallTakeR_eq`).  Out of line, so the Call take and every arm it
+falls back to are compiled once, not once per caller. -/
+@[noinline] def replyRecvArmCallTakeR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
@@ -1418,8 +1419,9 @@ routed capability-free call in place on some reply arm
 take, the arm's lend, the fault answered from the caller's words and the
 reply's registers past MR0 (`performReplyRecvArmCallFaultTakeDelivered`), every
 word read on the pre-state; the fault arm (`replyRecvFaultArmR`) otherwise
-(`replyRecvCallFaultArmR_eq`). -/
-@[inline] def replyRecvCallFaultArmR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+(`replyRecvCallFaultArmR_eq`).  Out of line, like the
+Call-take arms. -/
+@[noinline] def replyRecvCallFaultArmR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len label : Nat)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
@@ -2223,16 +2225,18 @@ theorem replyRecvLongTakeArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
 every reply arm** (seL4-MCS's `handleReplyRecv`: `doReplyTransfer`, the reply
 arm's `reply_pop`, then `receiveIPC` taking a caller queued by a `Call`, and
 `reply_push (canDonate)` lending that caller's context to a server holding
-none): when a reply of at most four words takes the caller in place on some
-reply arm (`replyRecvCallTakeArmCode`), the arm's reply leg and pop, the reply
-leg's transfer, the take, the arm's lend and the frames, every context, core and
-word it takes read on the pre-state.  A reply leg transferring no capability
-(`replyRecvReplyInertW`) runs `performReplyRecvArmCallTakeDeliveredLong`; a granting
-one whose frame routes as a reply-receive runs
-`performReplyRecvArmCallTakeCapsDeliveredLong`.  Otherwise the take arm
-(`replyRecvArmTakeR`); any other shape the specification's path
-(`replyRecvLongCallTakeArmR_eq`). -/
-@[inline] def replyRecvLongCallTakeArmR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+none): when a reply longer than four words, to a caller with no pending fault,
+takes the caller in place on some reply arm (`replyRecvCallTakeArmCode`), the
+arm's reply leg and pop, the reply leg's transfer, the take, the arm's lend and
+the frames, every context, core and word it takes read on the pre-state.  A
+reply leg transferring no capability (`replyRecvReplyInertW`) runs
+`performReplyRecvArmCallTakeDeliveredLong`; a granting one whose frame routes
+as a reply-receive runs `performReplyRecvArmCallTakeCapsDeliveredLong`.
+Otherwise the long take arm (`replyRecvLongTakeArmR`); any other shape the
+specification's path (`replyRecvLongCallTakeArmR_eq`).  Out of line, so the
+Call take and every arm it falls back to are compiled once, not once per
+caller. -/
+@[noinline] def replyRecvLongCallTakeArmR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (rf : SeLe4n.RegisterFile) (len label : Nat) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
@@ -2539,8 +2543,9 @@ take, the arm's lend, the fault answered from the caller's words and the
 reply's registers past MR0 (`performReplyRecvArmCallFaultTakeDeliveredLong`, its words past MR3 read from
 the replier's buffer), every
 word read on the pre-state; the fault arm (`replyRecvLongFaultArmR`) otherwise
-(`replyRecvLongCallFaultArmR_eq`). -/
-@[inline] def replyRecvLongCallFaultArmR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
+(`replyRecvLongCallFaultArmR_eq`).  Out of line, like the
+Call-take arms. -/
+@[noinline] def replyRecvLongCallFaultArmR (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (badge : Option SeLe4n.Badge) (grant : Bool)
     (rf : SeLe4n.RegisterFile) (len label : Nat) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
