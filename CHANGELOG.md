@@ -1,3 +1,69 @@
+## v0.37.51 — The notification lend's label check deleted as unreachable (WS-SX SX22)
+
+SX22 is on SX21.  The notification lend is seL4-MCS's, unchecked, at every
+site.  The check never refused on a reachable state, so no reachable
+behaviour changes.  SX22 lands at SX22.1 (D47); the queue arms' teardown is
+two new rows.
+
+- **Proved first.**  Before any edit, the check (`donationContextFlows`, the
+  two-way gate between the woken thread's label and the context's, D30) was
+  proved true at every site, against the pre-cut tree:
+  - the woken thread has its notification's label (`notificationLabelsAgree`,
+    carried since SX21);
+  - the notification has its context's label (`bindingLabelsEqual`).
+  The proofs land as the lemmas the restated consumers use:
+  `bindingLabelsEqual.notificationContext`,
+  `notificationLabelsAgree_signalWokenThread`,
+  `notificationWaitCrossCoreDispatchChecked_label_of_ok` and
+  `LendersStep.maybeDonateSchedContext_ofNotificationLabel`.
+- **Four sites.**  The signal arm (`sendSignalOnCoreFlowing`), the declassified
+  signal (its generic form under the lifted context), the interrupt delivery,
+  and a fourth the plan did not name: the completed-signal arm of a receive
+  (`completeSignalArm`, and the ReplyRecv arm that completes a signal).  Its
+  lend follows the checked wait, whose two-way gate gives the equality.
+- **Deleted.**  `SeLe4n/Kernel/SchedContext/NotificationDonationContextLabel.lean`
+  (its stack invariant, `contextLendersLabelsEqual`, moved to
+  `SchedContext/Invariant/ContextLenders.lean`).  With it:
+  - `donationContextFlows` with its compiled and generic forms and their
+    `@[csimp]` agreements;
+  - `maybeDonateSchedContextFlowing` with its compiled and generic forms;
+  - `donateToSignalledFlowing` and its generic form;
+  - `sendSignalOnCoreFlowing` and its compiled form;
+  - the checked twins of every family lemma, the NI case splits on the
+    check, and the refusal test.
+  Every consumer is restated over `maybeDonateSchedContext`,
+  `donateToSignalled` and `sendSignalOnCore`.
+- **The two-run theorem.**  `maybeDonateSchedContext_lowEquivalent_pair` and
+  its deployment form take the woken thread's label equation in place of the
+  check.
+- **Vestigial context retired.**  The interrupt path read the labelling context
+  only for the check.  It is gone from `interruptSignal`,
+  `handleInterruptOnCore`, `interruptEntryStep`, `interruptBracket`, the
+  staged reference dispatch (`Architecture.handleInterrupt`,
+  `interruptDispatchSequence`) and every theorem that only passed it on.
+  `interruptEntry` no longer reads `getKernelLabelingContext`.  The same goes
+  for the wait arm's general form and the declassified signal's write plans.
+- **Lenders.**  The signal, declassified-signal and interrupt lenders' steps
+  take `notificationLabelsAgree` at the step's state, which every entry
+  carries.
+- **Gates.**
+  - New negative Tier 3 anchors pin the deleted definitions, every use of
+    their names, and the deleted module's import.
+  - New positive anchors pin the four lemmas.
+  - Each was tested by breaking its relation and keeping its tokens.
+  - Every anchor on the cut's files was swept and run.
+- **Heap.**  No heap scenario reached the refusal (it was unreachable from a
+  booted image), so the expected set is unchanged: every non-retype reading
+  is 0.
+- **Plan.**  The queue arms' `hTeardownProj` (SX22.2) needs an endpoint
+  queue's link labels, and no carried frame keeps an endpoint queue's links,
+  which is well over 1.5 times the row's estimate (D32).  The remainder
+  becomes SX23 (the records view extended with the endpoint queue links, as
+  D45 did for the notification fields) and SX24 (their labels carried, the
+  teardown discharged).  SX23–SX32 became SX25–SX34, swept through the plan,
+  the debt register, the workstream context, the spec, the CV plan and the
+  conformance table's row strings.
+
 ## v0.37.50 — Notification label agreement carried as a per-entry stage (WS-SX SX21)
 
 SX21 is on SX20.  The label part of notification label coherence is now a
