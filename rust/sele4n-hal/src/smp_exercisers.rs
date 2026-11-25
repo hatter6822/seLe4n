@@ -7745,14 +7745,145 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // The held arm under a reply-receive (WS-SX SX25): the held-pop set-up
         // above, then the root task's reply-receive pops the head, keeps the
         // loaned context and blocks on the endpoint with it, the reply leg
-        // running in place over the arm (`performReplyRecvArmDeliveredLong`,
-        // `performReplyRecvArmCapsDelivered`, `performReplyRecvArmCapsDeliveredLong`):
-        // at the longest message, 120 words; installing the notification
+        // running in place over the arm (`performReplyRecvArmDelivered`,
+        // `performReplyRecvArmDeliveredLong`, `performReplyRecvArmCapsDelivered`,
+        // `performReplyRecvArmCapsDeliveredLong`): at one word and at the longest
+        // message, 120 words; installing the notification
         // capability in the empty slot the partner's buffer names, then the same
         // at 120 words.  The partner, woken on the context it holds, signals
         // through each installed copy, the wait takes its badge and the copy is
         // deleted; its send wakes the root task and it waits, and the held-pop
         // teardown follows.
+        configure(
+            "held-reply-recv-configure",
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "held-reply-recv-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "held-reply-recv-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "held-reply-recv-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "held-reply-recv-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x6c, 0],
+            true,
+        ),
+        retype(
+            "untyped-retype-held-reply-recv-context",
+            UNTYPED_CAP,
+            [
+                SCHED_CONTEXT_TYPE,
+                THREAD_CHILD_IDS[2],
+                CNODE_CAP,
+                MINT_SLOT,
+            ],
+            FRAME_VADDR,
+        ),
+        configure(
+            "held-reply-recv-carved-configure",
+            FRAME_VADDR,
+            MINT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "held-reply-recv-bind-lender",
+            SCHED_CONTEXT_BIND,
+            MINT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        with_reply(
+            partner_step(
+                "held-reply-recv",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                1,
+                [0x6d, 0],
+                true,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "held-reply-recv-partner-wakes-root",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x6e, 0],
+            false,
+        ),
+        partner_step(
+            "held-reply-recv-partner-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "held-reply-recv-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "held-reply-recv-carved-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MINT_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "held-reply-recv-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "held-reply-recv-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "held-reply-recv-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        signal("held-reply-recv-partner-wakes-root-again"),
+        self_suspend(invocation(
+            "held-reply-recv-partner-suspends",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        )),
         configure(
             "held-reply-recv-long-configure",
             FRAME_VADDR,
