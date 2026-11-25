@@ -1363,6 +1363,15 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.ReplyRecvArm.blocked
   , `SeLe4n.Kernel.ReplyRecvArm.leg
   , `SeLe4n.Kernel.ReplyRecvArm.tail
+  -- WS-SX SX27: the Call take's legs over the replier's register file, as the
+  -- specification reads them, which the word forms the performers run are
+  -- proven equal to (`ReplyRecvArm.callTakeLegsW_eq` and its long and fault
+  -- forms); the performers take the reply's inline words read once on the
+  -- pre-state.
+  , `SeLe4n.Kernel.ReplyRecvArm.callFaultTakeLegs
+  , `SeLe4n.Kernel.ReplyRecvArm.callFaultTakeLegsLong
+  , `SeLe4n.Kernel.ReplyRecvArm.callTakeLegs
+  , `SeLe4n.Kernel.ReplyRecvArm.callTakeLegsLong
   , `SeLe4n.Kernel.replyTransferOnCore
   , `SeLe4n.Kernel.restoreIncomingContext
   , `SeLe4n.Kernel.restoreIncomingContextChecked

@@ -719,6 +719,290 @@ theorem ReplyRecvArm.callLend_noResizeDue (arm : ReplyRecvArm) (X : SystemState)
   · exact lendSchedContextInPlace_noResizeDue X s tid scS dh rh hNo
   · exact hNo
 
+/-! ### The reply's inline words, read once on the pre-state
+
+The Call-take answers take the four words the reply leg reads of the
+replier's message registers (`Architecture.regLayoutWord`, read by the arm on
+the pre-state) in place of its register file, so nothing outside the server's
+TCB holds the register file when the server's frame is written. -/
+
+/-- Word `j` of a reply's four inline words `m0`..`m3`, `0` past them. -/
+@[inline] def replyInlineWord (m0 m1 m2 m3 : UInt64) : Nat → UInt64
+  | 0 => m0
+  | 1 => m1
+  | 2 => m2
+  | 3 => m3
+  | _ => 0
+
+/-- The reply's body built from its four inline words, cut to its length `n`. -/
+@[inline] def replyBodyOfWords (n : Nat) (m0 m1 m2 m3 : UInt64) : Array SeLe4n.RegValue :=
+  (#[⟨m0⟩, ⟨m1⟩, ⟨m2⟩, ⟨m3⟩] : Array SeLe4n.RegValue).extract 0 n
+
+theorem replyInlineWord_regLayoutWord (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (j : Nat) (h : j < 4) :
+    replyInlineWord (Architecture.regLayoutWord layout rf 0) (Architecture.regLayoutWord layout rf 1)
+      (Architecture.regLayoutWord layout rf 2) (Architecture.regLayoutWord layout rf 3) j =
+      Architecture.regLayoutWord layout rf j := by
+  rcases j with _ | _ | _ | _ | j
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+  · omega
+
+theorem regMessageBody_eq_words (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (len : Nat) (h : Architecture.regMessageLength layout len ≤ 4) :
+    Architecture.regMessageBody layout rf len =
+      replyBodyOfWords (Architecture.regMessageLength layout len)
+        (Architecture.regLayoutWord layout rf 0) (Architecture.regLayoutWord layout rf 1)
+        (Architecture.regLayoutWord layout rf 2) (Architecture.regLayoutWord layout rf 3) := by
+  apply Array.ext
+  · rw [Architecture.regMessageBody_size]; simp only [replyBodyOfWords, Array.size_extract,
+      List.size_toArray, List.length_cons, List.length_nil]; omega
+  · intro i h1 h2
+    have hL : i < Architecture.regMessageLength layout len := by
+      rw [Architecture.regMessageBody_size] at h1; exact h1
+    have hw := Architecture.regMessageBody_word layout rf len i
+    rw [Array.getElem?_eq_getElem h1, Option.map_some, Option.getD_some,
+      Architecture.regMessageWord_eq_regLayoutWord _ _ _ _ hL] at hw
+    have e : ((replyBodyOfWords (Architecture.regMessageLength layout len)
+        (Architecture.regLayoutWord layout rf 0) (Architecture.regLayoutWord layout rf 1)
+        (Architecture.regLayoutWord layout rf 2) (Architecture.regLayoutWord layout rf 3))[i]'h2).word
+        = Architecture.regLayoutWord layout rf i := by
+      rw [← replyInlineWord_regLayoutWord layout rf i (by omega)]
+      simp only [replyBodyOfWords, Array.getElem_extract, Nat.zero_add]
+      rcases i with _ | _ | _ | _ | i <;> first | rfl | omega
+    cases hA : (Architecture.regMessageBody layout rf len)[i]
+    cases hB : (replyBodyOfWords (Architecture.regMessageLength layout len)
+        (Architecture.regLayoutWord layout rf 0) (Architecture.regLayoutWord layout rf 1)
+        (Architecture.regLayoutWord layout rf 2) (Architecture.regLayoutWord layout rf 3))[i]
+    rw [hA] at hw; rw [hB] at e
+    simp only [RegValue.mk.injEq]
+    exact hw.trans e.symm
+
+/-- Word `i` of a reply's frame, `0` past its length: its inline word
+(`replyInlineWord`).  Out of line, so it returns a bare machine word, as
+`Architecture.regMessageWord`. -/
+@[noinline] def replyFrameWord (layout : SeLe4n.SyscallRegisterLayout) (len i : Nat)
+    (m0 m1 m2 m3 : UInt64) : UInt64 :=
+  if i < Architecture.regMessageLength layout len then replyInlineWord m0 m1 m2 m3 i else 0
+
+theorem replyFrameWord_regLayoutWord (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (len i : Nat) (hi : i < 4) :
+    replyFrameWord layout len i (Architecture.regLayoutWord layout rf 0)
+      (Architecture.regLayoutWord layout rf 1) (Architecture.regLayoutWord layout rf 2)
+      (Architecture.regLayoutWord layout rf 3) = Architecture.regMessageWord layout rf len i := by
+  unfold replyFrameWord
+  split
+  · next h => rw [replyInlineWord_regLayoutWord layout rf i hi,
+      Architecture.regMessageWord_eq_regLayoutWord _ _ _ _ h]
+  · next h => unfold Architecture.regMessageWord; rw [dif_neg h]
+
+/-- `deliverReplyRecvCapsFrame` of the reply's four inline words, read on the
+pre-state, in place of the replier's register file. -/
+@[noinline] def deliverReplyRecvCapsFrameW (capInfo : Nat) (Y : SystemState)
+    (c : SeLe4n.ThreadId) (layout : SeLe4n.SyscallRegisterLayout) (len : Nat)
+    (badge : Option SeLe4n.Badge) (m0 m1 m2 m3 : UInt64) : SystemState :=
+  writeDeliveredFrameIfReady Y c
+    { x0 := Architecture.badgeWordOrZero badge
+      x1 := regMessageInfoWordCaps layout len capInfo
+      x2 := replyFrameWord layout len 0 m0 m1 m2 m3
+      x3 := replyFrameWord layout len 1 m0 m1 m2 m3
+      x4 := replyFrameWord layout len 2 m0 m1 m2 m3
+      x5 := replyFrameWord layout len 3 m0 m1 m2 m3 }
+    (fun _ => Y.mapTcbInPlace c (holdMessage
+      { registers := replyBodyOfWords (Architecture.regMessageLength layout len) m0 m1 m2 m3,
+        badge := badge }))
+
+theorem deliverReplyRecvCapsFrameW_eq (capInfo : Nat) (Y : SystemState) (c : SeLe4n.ThreadId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) (h : Architecture.regMessageLength layout len ≤ 4) :
+    deliverReplyRecvCapsFrameW capInfo Y c layout len badge
+      (Architecture.regLayoutWord layout rf 0) (Architecture.regLayoutWord layout rf 1)
+      (Architecture.regLayoutWord layout rf 2) (Architecture.regLayoutWord layout rf 3) =
+      deliverReplyRecvCapsFrame capInfo Y c layout rf len badge := by
+  unfold deliverReplyRecvCapsFrameW deliverReplyRecvCapsFrame holdReplyRecvBody
+    regMessageFrameCapsOpt
+  simp only [replyFrameWord_regLayoutWord layout rf len _ (by decide : 0 < 4),
+    replyFrameWord_regLayoutWord layout rf len _ (by decide : 1 < 4),
+    replyFrameWord_regLayoutWord layout rf len _ (by decide : 2 < 4),
+    replyFrameWord_regLayoutWord layout rf len _ (by decide : 3 < 4),
+    ← regMessageBody_eq_words layout rf len h]
+
+/-- Reply word `i` of a fault reply of `n` inline words, or the faulted
+thread's own `fallback` past them (`faultReplyWord` at offset 0, read from the
+four inline words).  Out of line, as `faultReplyWord`. -/
+@[noinline] def faultReplyWordW (n i : Nat) (fallback m0 m1 m2 m3 : UInt64) : UInt64 :=
+  if i < n then replyInlineWord m0 m1 m2 m3 i else fallback
+
+theorem faultReplyWordW_eq (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+    (n i : Nat) (fb : UInt64) (h : n ≤ 4) :
+    faultReplyWordW n i fb (Architecture.regLayoutWord layout rf 0)
+      (Architecture.regLayoutWord layout rf 1) (Architecture.regLayoutWord layout rf 2)
+      (Architecture.regLayoutWord layout rf 3) = faultReplyWord layout rf n 0 i fb := by
+  unfold faultReplyWordW faultReplyWord
+  split
+  · next hi => rw [replyInlineWord_regLayoutWord layout rf i (by omega), Nat.add_zero]
+  · rfl
+
+/-- `performFaultAnswer` of a reply of `n` inline words at offset 0, each word
+read from the reply's four inline words (`faultReplyWordW`) in place of the
+replier's register file. -/
+@[noinline] def performFaultAnswerW (X : SystemState) (c : SeLe4n.ThreadId) (kind label : Nat)
+    (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (n : Nat) (m0 m1 m2 m3 : UInt64) :
+    SystemState :=
+  if kind == 1 || kind == 2 then
+    applyFaultRestart X c
+      { pc := ip, sp := sp, lr := lr, x0 := x0, x1 := x1, x2 := x2, x3 := x3,
+        x4 := x4, x5 := x5, x6 := x6, x7 := x7 }
+  else if label != 0 then faultAbandonOnCore X c (faultAbandonCore X c)
+  else if kind == 3 then
+    applyFaultRestart X c
+      { pc := faultReplyWordW n 8 ip m0 m1 m2 m3, sp := faultReplyWordW n 9 sp m0 m1 m2 m3,
+        lr := faultReplyWordW n 10 lr m0 m1 m2 m3,
+        x0 := faultReplyWordW n 0 x0 m0 m1 m2 m3, x1 := faultReplyWordW n 1 x1 m0 m1 m2 m3,
+        x2 := faultReplyWordW n 2 x2 m0 m1 m2 m3, x3 := faultReplyWordW n 3 x3 m0 m1 m2 m3,
+        x4 := faultReplyWordW n 4 x4 m0 m1 m2 m3, x5 := faultReplyWordW n 5 x5 m0 m1 m2 m3,
+        x6 := faultReplyWordW n 6 x6 m0 m1 m2 m3, x7 := faultReplyWordW n 7 x7 m0 m1 m2 m3 }
+  else
+    applyFaultRestart X c
+      { pc := faultReplyWordW n 0 ip m0 m1 m2 m3, sp := faultReplyWordW n 1 sp m0 m1 m2 m3,
+        lr := lr, x0 := x0, x1 := x1, x2 := x2, x3 := x3,
+        x4 := x4, x5 := x5, x6 := x6, x7 := x7 }
+
+theorem performFaultAnswerW_eq (X : SystemState) (c : SeLe4n.ThreadId) (kind label : Nat)
+    (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (n : Nat) (h : n ≤ 4) :
+    performFaultAnswerW X c kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 n
+      (Architecture.regLayoutWord layout rf 0) (Architecture.regLayoutWord layout rf 1)
+      (Architecture.regLayoutWord layout rf 2) (Architecture.regLayoutWord layout rf 3) =
+      performFaultAnswer X c kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout rf n 0 := by
+  unfold performFaultAnswerW performFaultAnswer
+  simp only [faultReplyWordW_eq layout rf n _ _ h]
+
+/-- Reply word `i` of a long fault reply, its inline words given as the four
+`m0`..`m3` (`faultReplyWordLong` with the replier's registers read once). -/
+@[noinline] def faultReplyWordLongW (X : @& SystemState) (s : SeLe4n.ThreadId) (len i : Nat)
+    (fallback m0 m1 m2 m3 : UInt64) : UInt64 :=
+  if i < len then (if i < 4 then replyInlineWord m0 m1 m2 m3 i else overflowWordAt X s (i - 4))
+  else fallback
+
+theorem faultReplyWordLongW_eq (X : SystemState) (s : SeLe4n.ThreadId)
+    (rf : SeLe4n.RegisterFile) (len i : Nat) (fb : UInt64) :
+    faultReplyWordLongW X s len i fb (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 0)
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 1)
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 2)
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 3) =
+      faultReplyWordLong X s rf len i fb := by
+  unfold faultReplyWordLongW faultReplyWordLong
+  split
+  · split
+    · next hi => rw [replyInlineWord_regLayoutWord _ rf i hi]
+    · rfl
+  · rfl
+
+/-- `performFaultAnswerLong` with each inline reply word read from the four
+`m0`..`m3` (`faultReplyWordLongW`). -/
+@[noinline] def performFaultAnswerLongW (X : SystemState) (c : SeLe4n.ThreadId)
+    (kind label : Nat) (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (s : SeLe4n.ThreadId)
+    (len : Nat) (m0 m1 m2 m3 : UInt64) : SystemState :=
+  if kind == 1 || kind == 2 then
+    applyFaultRestart X c
+      { pc := ip, sp := sp, lr := lr, x0 := x0, x1 := x1, x2 := x2, x3 := x3,
+        x4 := x4, x5 := x5, x6 := x6, x7 := x7 }
+  else if label != 0 then faultAbandonOnCore X c (faultAbandonCore X c)
+  else if kind == 3 then
+    applyFaultRestart X c
+      { pc := faultReplyWordLongW X s len 8 ip m0 m1 m2 m3,
+        sp := faultReplyWordLongW X s len 9 sp m0 m1 m2 m3,
+        lr := faultReplyWordLongW X s len 10 lr m0 m1 m2 m3,
+        x0 := faultReplyWordLongW X s len 0 x0 m0 m1 m2 m3,
+        x1 := faultReplyWordLongW X s len 1 x1 m0 m1 m2 m3,
+        x2 := faultReplyWordLongW X s len 2 x2 m0 m1 m2 m3,
+        x3 := faultReplyWordLongW X s len 3 x3 m0 m1 m2 m3,
+        x4 := faultReplyWordLongW X s len 4 x4 m0 m1 m2 m3,
+        x5 := faultReplyWordLongW X s len 5 x5 m0 m1 m2 m3,
+        x6 := faultReplyWordLongW X s len 6 x6 m0 m1 m2 m3,
+        x7 := faultReplyWordLongW X s len 7 x7 m0 m1 m2 m3 }
+  else
+    applyFaultRestart X c
+      { pc := faultReplyWordLongW X s len 0 ip m0 m1 m2 m3,
+        sp := faultReplyWordLongW X s len 1 sp m0 m1 m2 m3,
+        lr := lr, x0 := x0, x1 := x1, x2 := x2, x3 := x3,
+        x4 := x4, x5 := x5, x6 := x6, x7 := x7 }
+
+theorem performFaultAnswerLongW_eq (X : SystemState) (c : SeLe4n.ThreadId) (kind label : Nat)
+    (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (s : SeLe4n.ThreadId)
+    (rf : SeLe4n.RegisterFile) (len : Nat) :
+    performFaultAnswerLongW X c kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 s len
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 0)
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 1)
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 2)
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 3) =
+      performFaultAnswerLong X c kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 s rf len := by
+  unfold performFaultAnswerLongW performFaultAnswerLong
+  simp only [faultReplyWordLongW_eq X s rf len]
+
+/-- The long reply's four inline words as the layout's message registers
+(`Architecture.regMessageRegs` of the AArch64 layout). -/
+theorem regMessageRegs_arm64_eq_words (rf : SeLe4n.RegisterFile) :
+    Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf =
+      #[⟨Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 0⟩,
+        ⟨Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 1⟩,
+        ⟨Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 2⟩,
+        ⟨Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 3⟩] := by
+  have hS : (Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf).size = 4 := by
+    simp only [Architecture.regMessageRegs, Array.size_map]; rfl
+  apply Array.ext
+  · rw [hS]; rfl
+  · intro i h1 h2
+    have hw := Architecture.regMessageRegs_word SeLe4n.arm64DefaultLayout rf i
+    rw [Array.getElem?_eq_getElem h1, Option.map_some, Option.getD_some] at hw
+    cases hA : (Architecture.regMessageRegs SeLe4n.arm64DefaultLayout rf)[i]
+    rw [hA] at hw
+    rw [hS] at h1
+    rcases i with _ | _ | _ | _ | i <;> first | simpa using hw | omega
+
+/-- `deliverLongReplyRecvFrame` with the reply's four inline words read on the
+pre-state in place of the replier's register file. -/
+@[inline] def deliverLongReplyRecvFrameW (X : SystemState) (r : SeLe4n.ThreadId) (len : Nat)
+    (s : SeLe4n.ThreadId) (badge : Option SeLe4n.Badge) (capInfo : Nat)
+    (m0 m1 m2 m3 : UInt64) : SystemState :=
+  match X.getTcb? r with
+  | some t =>
+    if t.ipcState = .ready then
+      let k := overflowSlotsFrom X r 0 (len - 4)
+      overflowCopyStore
+        (X.mapTcbInPlace r (withFrameWords
+          (Architecture.badgeWordIf (badge.getD SeLe4n.Badge.zero) badge.isSome)
+          (longMessageInfoWord len k capInfo)
+          (replyFrameWord SeLe4n.arm64DefaultLayout len 0 m0 m1 m2 m3)
+          (replyFrameWord SeLe4n.arm64DefaultLayout len 1 m0 m1 m2 m3)
+          (replyFrameWord SeLe4n.arm64DefaultLayout len 2 m0 m1 m2 m3)
+          (replyFrameWord SeLe4n.arm64DefaultLayout len 3 m0 m1 m2 m3)))
+        r s 0 (len - 4)
+    else X.mapTcbInPlace r (holdMessage
+      { registers := #[⟨m0⟩, ⟨m1⟩, ⟨m2⟩, ⟨m3⟩] ++ (overflowRegsFrom X s 0 (len - 4)).toArray,
+        badge := SeLe4n.Badge.opt (badge.getD SeLe4n.Badge.zero) badge.isSome })
+  | none => X
+
+theorem deliverLongReplyRecvFrameW_eq (X : SystemState) (r : SeLe4n.ThreadId)
+    (rf : SeLe4n.RegisterFile) (len : Nat) (s : SeLe4n.ThreadId) (badge : Option SeLe4n.Badge)
+    (capInfo : Nat) :
+    deliverLongReplyRecvFrameW X r len s badge capInfo
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 0)
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 1)
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 2)
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 3) =
+      deliverLongReplyRecvFrame X r rf len s badge capInfo := by
+  unfold deliverLongReplyRecvFrameW deliverLongReplyRecvFrame deliverLongSendFrame
+    holdLongSendMessage longSendMessage
+  simp only [replyFrameWord_regLayoutWord _ rf len _ (by decide : 0 < 4),
+    replyFrameWord_regLayoutWord _ rf len _ (by decide : 1 < 4),
+    replyFrameWord_regLayoutWord _ rf len _ (by decide : 2 < 4),
+    replyFrameWord_regLayoutWord _ rf len _ (by decide : 3 < 4),
+    regMessageRegs_arm64_eq_words rf]
+  rfl
 /-- **The Call take's writes before the server's own frame, over the arm**: the
 caller popped, blocked on the reply and linked, the server made ready, the
 arm's lend, the server's priority walk, then the answered caller's frame with
@@ -731,6 +1015,29 @@ the transfer's report (read from the server's saved registers `rf`). -/
   deliverReplyRecvCapsFrame capInfo (PriorityInheritance.propagatePipChainCrossCore
     (arm.callLend (storeReceiveCallReady Y epId s nextCode tid rid) s tid scS dh rh) tid core).1
     c layout rf len badge
+
+/-- `ReplyRecvArm.callTakeLegs` with the reply's four inline words in place of
+the replier's register file (`deliverReplyRecvCapsFrameW`). -/
+@[inline] def ReplyRecvArm.callTakeLegsW (arm : ReplyRecvArm) (capInfo : Nat) (Y : SystemState)
+    (c tid s : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (nextCode : Nat)
+    (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) (badge : Option SeLe4n.Badge)
+    (m0 m1 m2 m3 : UInt64) : SystemState :=
+  deliverReplyRecvCapsFrameW capInfo (PriorityInheritance.propagatePipChainCrossCore
+    (arm.callLend (storeReceiveCallReady Y epId s nextCode tid rid) s tid scS dh rh) tid core).1
+    c layout len badge m0 m1 m2 m3
+
+theorem ReplyRecvArm.callTakeLegsW_eq (arm : ReplyRecvArm) (capInfo : Nat) (Y : SystemState)
+    (c tid s : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (nextCode : Nat)
+    (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) (h : Architecture.regMessageLength layout len ≤ 4) :
+    arm.callTakeLegsW capInfo Y c tid s rid epId nextCode scS dh rh core layout len badge
+      (Architecture.regLayoutWord layout rf 0) (Architecture.regLayoutWord layout rf 1)
+      (Architecture.regLayoutWord layout rf 2) (Architecture.regLayoutWord layout rf 3) =
+      arm.callTakeLegs capInfo Y c tid s rid epId nextCode scS dh rh core layout rf len badge := by
+  unfold ReplyRecvArm.callTakeLegsW ReplyRecvArm.callTakeLegs
+  rw [deliverReplyRecvCapsFrameW_eq (h := h)]
 
 /-- **The Call take's tail, over the arm, stages the caller's held reply and
 the server's message as frames**, the take, the lend and the walk committed
@@ -831,24 +1138,26 @@ caller's frame (`ReplyRecvArm.callTakeLegs`). -/
     (scId : SeLe4n.SchedContextId) (home : CoreId) (st : SystemState)
     (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId)
     (nextCode : Nat) (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
-    (badge : Option SeLe4n.Badge) : SystemState :=
-  arm.callTakeLegs 0 (receiveReturnSchedContextFast true
+    (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) (badge : Option SeLe4n.Badge)
+    (m0 m1 m2 m3 : UInt64) : SystemState :=
+  arm.callTakeLegsW 0 (receiveReturnSchedContextFast true
     (arm.pop (arm.legReady st c tid rid) c tid scId home) tid.val) c tid s rid epId nextCode scS
-    dh rh core layout rf len badge
+    dh rh core layout len badge m0 m1 m2 m3
 
 /-- The inert Call take over the arm: the legs (`performReplyRecvArmCallTakeLegs`)
-and then the server's frame (`writeReceiverMessageFrame`), each out of line so
-the arm releases the server's register file between them. -/
+and then the server's frame (`writeReceiverMessageFrame`), each out of line; the
+legs take the reply's four inline words, read on the pre-state, and not the
+server's register file, which only the server's TCB holds when its frame is
+written. -/
 @[inline] def performReplyRecvArmCallTakeDelivered (arm : ReplyRecvArm)
     (scId : SeLe4n.SchedContextId) (home : CoreId) (st : SystemState)
     (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId)
     (nextCode : Nat) (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
-    (badge : Option SeLe4n.Badge) (sRf : SeLe4n.RegisterFile) (sLen : Nat)
+    (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) (badge : Option SeLe4n.Badge)
+    (m0 m1 m2 m3 : UInt64) (sRf : SeLe4n.RegisterFile) (sLen : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool) : SystemState :=
   writeReceiverMessageFrame (performReplyRecvArmCallTakeLegs arm scId home st c tid rid epId s
-    nextCode scS dh rh core layout rf len badge) tid sRf sLen badgeWord badged
+    nextCode scS dh rh core layout len badge m0 m1 m2 m3) tid sRf sLen badgeWord badged
 
 /-- **The reply-receive taking a queued caller, its reply transferring nothing,
 is the specification's, over every arm**: under the arm's reply-leg guard and
@@ -883,8 +1192,10 @@ theorem replyRecvOnCore_arm_callTakeDelivered (arm : ReplyRecvArm)
       | .error e => .error e) =
       .ok ((), performReplyRecvArmCallTakeDelivered arm scId home st c tid rid epId s
         sTcb.queueNextCode ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s)
-        (determineTargetCore st tid) core layout rf len badge sTcb.registerContext mi.length
-        (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged) := by
+        (determineTargetCore st tid) core layout len badge (Architecture.regLayoutWord layout rf 0)
+        (Architecture.regLayoutWord layout rf 1) (Architecture.regLayoutWord layout rf 2)
+        (Architecture.regLayoutWord layout rf 3)
+        sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged) := by
   have hSz : ¬ (Architecture.regMessageBody layout rf len).size > maxMessageRegisters := by
     rw [Architecture.regMessageBody_size]; unfold maxMessageRegisters; omega
   obtain ⟨-, hNe, hNo, -, -⟩ :=
@@ -921,7 +1232,8 @@ theorem replyRecvOnCore_arm_callTakeDelivered (arm : ReplyRecvArm)
     (receiveReturnSchedContext_noResizeDue true _ tid hNoX) hNe hSC hST hSz4 hR2 hF2,
     hK.queueNext, hK.regs, hK.badge, hK.badged]
   unfold performReplyRecvArmCallTakeDelivered performReplyRecvArmCallTakeLegs
-  rw [receiveReturnSchedContextFast_eq]
+  rw [ReplyRecvArm.callTakeLegsW_eq (h := hSz4),
+    receiveReturnSchedContextFast_eq]
 
 /-- **The reply-receive taking a queued caller, over every arm, its reply leg
 transferring, delivered**: the arm's reply leg and pop, the transfer in place
@@ -933,17 +1245,17 @@ read before the reply's writes. -/
     (scId : SeLe4n.SchedContextId) (home : CoreId) (st : SystemState)
     (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId)
     (nextCode : Nat) (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
-    (badge : Option SeLe4n.Badge)
+    (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) (badge : Option SeLe4n.Badge)
+    (m0 m1 m2 m3 : UInt64)
     (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
     (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := arm.pop (arm.legReady st c tid rid) c tid scId home
   capTransferK X c.toObjId sv sb sroot count rv rb rroot
     fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
-    arm.callTakeLegs (capStepsInfo c.toObjId false x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+    arm.callTakeLegsW (capStepsInfo c.toObjId false x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
       (receiveReturnSchedContextFast true
         (capStepsApply c.toObjId false rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X) tid.val)
-      c tid s rid epId nextCode scS dh rh core layout rf len badge
+      c tid s rid epId nextCode scS dh rh core layout len badge m0 m1 m2 m3
 
 /-- The installing Call take over the arm, its legs
 (`performReplyRecvArmCallTakeCapsLegs`) and then the server's frame
@@ -952,13 +1264,13 @@ read before the reply's writes. -/
     (scId : SeLe4n.SchedContextId) (home : CoreId) (st : SystemState)
     (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId)
     (nextCode : Nat) (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
-    (badge : Option SeLe4n.Badge) (sRf : SeLe4n.RegisterFile) (sLen : Nat)
+    (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) (badge : Option SeLe4n.Badge)
+    (m0 m1 m2 m3 : UInt64) (sRf : SeLe4n.RegisterFile) (sLen : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool)
     (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
     (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   writeReceiverMessageFrame (performReplyRecvArmCallTakeCapsLegs arm scId home st c tid rid epId s
-    nextCode scS dh rh core layout rf len badge sv sb sroot count rv rb rroot) tid sRf sLen
+    nextCode scS dh rh core layout len badge m0 m1 m2 m3 sv sb sroot count rv rb rroot) tid sRf sLen
     badgeWord badged
 
 /-- **The reply-receive taking a queued caller, its reply leg transferring, is
@@ -992,8 +1304,10 @@ theorem replyRecvOnCore_arm_callTakeCapsDelivered (arm : ReplyRecvArm)
       | .error e => .error e) =
       .ok ((), performReplyRecvArmCallTakeCapsDelivered arm scId home st c tid rid epId s
         sTcb.queueNextCode ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s)
-        (determineTargetCore st tid) core layout rf len badge sTcb.registerContext mi.length
-        (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
+        (determineTargetCore st tid) core layout len badge (Architecture.regLayoutWord layout rf 0)
+        (Architecture.regLayoutWord layout rf 1) (Architecture.regLayoutWord layout rf 2)
+        (Architecture.regLayoutWord layout rf 3)
+        sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
         stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0] count ct.spaceCells[2] ct.ipcBuffer
         ct.spaceCells[0]) := by
   have hSz : ¬ (Architecture.regMessageBody layout rf len).size > maxMessageRegisters := by
@@ -1056,9 +1370,8 @@ theorem replyRecvOnCore_arm_callTakeCapsDelivered (arm : ReplyRecvArm)
   simp only [transferEndpoint?, Bool.false_eq_true, ↓reduceIte] at hKl
   rw [hAP.frameCapRequestOf, hAP.capTargetOf, hT1] at hKl
   unfold performReplyRecvArmCallTakeCapsDelivered performReplyRecvArmCallTakeCapsLegs
-  rw [hX]
-  dsimp only
-  rw [hKl]
+  simp only [ReplyRecvArm.callTakeLegsW_eq (h := hSz4)]
+  rw [hX, hKl]
 
 /-! ### The long message -/
 
@@ -1141,6 +1454,29 @@ replier's overflow words copied into its buffer (`deliverLongReplyRecvFrame`). -
   deliverLongReplyRecvFrame (PriorityInheritance.propagatePipChainCrossCore
     (arm.callLend (storeReceiveCallReady Y epId s nextCode tid rid) s tid scS dh rh) tid core).1
     c rf len tid badge capInfo
+
+/-- `ReplyRecvArm.callTakeLegsLong` with the reply's four inline words in place
+of the replier's register file (`deliverLongReplyRecvFrameW`). -/
+@[inline] def ReplyRecvArm.callTakeLegsLongW (arm : ReplyRecvArm) (capInfo : Nat)
+    (Y : SystemState) (c tid s : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId)
+    (nextCode : Nat) (scS : SeLe4n.SchedContextId) (dh rh core : CoreId) (len : Nat)
+    (badge : Option SeLe4n.Badge) (m0 m1 m2 m3 : UInt64) : SystemState :=
+  deliverLongReplyRecvFrameW (PriorityInheritance.propagatePipChainCrossCore
+    (arm.callLend (storeReceiveCallReady Y epId s nextCode tid rid) s tid scS dh rh) tid core).1
+    c len tid badge capInfo m0 m1 m2 m3
+
+theorem ReplyRecvArm.callTakeLegsLongW_eq (arm : ReplyRecvArm) (capInfo : Nat) (Y : SystemState)
+    (c tid s : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (nextCode : Nat)
+    (scS : SeLe4n.SchedContextId) (dh rh core : CoreId) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) :
+    arm.callTakeLegsLongW capInfo Y c tid s rid epId nextCode scS dh rh core len badge
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 0)
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 1)
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 2)
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 3) =
+      arm.callTakeLegsLong capInfo Y c tid s rid epId nextCode scS dh rh core rf len badge := by
+  unfold ReplyRecvArm.callTakeLegsLongW ReplyRecvArm.callTakeLegsLong
+  rw [deliverLongReplyRecvFrameW_eq]
 
 /-- **The long Call take's tail, over the arm**, stages the caller's held reply
 and the server's message as frames. -/
@@ -1225,10 +1561,10 @@ priority walk and the caller's long frame (`ReplyRecvArm.callTakeLegsLong`). -/
     (scId : SeLe4n.SchedContextId) (home : CoreId) (st : SystemState)
     (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId)
     (nextCode : Nat) (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
-    (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) : SystemState :=
-  arm.callTakeLegsLong 0 (receiveReturnSchedContextFast true
+    (len : Nat) (badge : Option SeLe4n.Badge) (m0 m1 m2 m3 : UInt64) : SystemState :=
+  arm.callTakeLegsLongW 0 (receiveReturnSchedContextFast true
     (arm.pop (arm.legReady st c tid rid) c tid scId home) tid.val) c tid s rid epId nextCode scS
-    dh rh core rf len badge
+    dh rh core len badge m0 m1 m2 m3
 
 /-- The inert long Call take over the arm: the legs
 (`performReplyRecvArmCallTakeLegsLong`) and then the server's frame
@@ -1237,11 +1573,11 @@ priority walk and the caller's long frame (`ReplyRecvArm.callTakeLegsLong`). -/
     (scId : SeLe4n.SchedContextId) (home : CoreId) (st : SystemState)
     (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId)
     (nextCode : Nat) (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
-    (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge)
+    (len : Nat) (badge : Option SeLe4n.Badge) (m0 m1 m2 m3 : UInt64)
     (sRf : SeLe4n.RegisterFile) (sLen : Nat) (badgeWord : SeLe4n.Badge) (badged : Bool) :
     SystemState :=
   writeReceiverMessageFrame (performReplyRecvArmCallTakeLegsLong arm scId home st c tid rid epId
-    s nextCode scS dh rh core rf len badge) tid sRf sLen badgeWord badged
+    s nextCode scS dh rh core len badge m0 m1 m2 m3) tid sRf sLen badgeWord badged
 
 /-- **The reply-receive taking a queued caller at more than four words, its
 reply transferring nothing, is the specification's, over every arm**: as
@@ -1274,8 +1610,11 @@ theorem replyRecvOnCore_arm_callTakeDeliveredLong (arm : ReplyRecvArm)
       | .error e => .error e) =
       .ok ((), performReplyRecvArmCallTakeDeliveredLong arm scId home st c tid rid epId s
         sTcb.queueNextCode ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s)
-        (determineTargetCore st tid) core rf len badge sTcb.registerContext mi.length
-        (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged) := by
+        (determineTargetCore st tid) core len badge (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 0)
+        (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 1)
+        (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 2)
+        (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 3)
+        sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged) := by
   have hSz := hSzL
   obtain ⟨-, hNe, hNo, -, -⟩ :=
     arm.legPop (scId := scId) (home := home) st tid c rid
@@ -1315,23 +1654,22 @@ theorem replyRecvOnCore_arm_callTakeDeliveredLong (arm : ReplyRecvArm)
     (receiveReturnSchedContext_noResizeDue true _ tid hNoX) hAY hNe hSC hST (by omega) hR2 hF2,
     hK.queueNext, hK.regs, hK.badge, hK.badged]
   unfold performReplyRecvArmCallTakeDeliveredLong performReplyRecvArmCallTakeLegsLong
-  rw [receiveReturnSchedContextFast_eq]
+  rw [ReplyRecvArm.callTakeLegsLongW_eq, receiveReturnSchedContextFast_eq]
 
 @[noinline] def performReplyRecvArmCallTakeCapsLegsLong (arm : ReplyRecvArm)
     (scId : SeLe4n.SchedContextId) (home : CoreId) (st : SystemState)
     (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId)
     (nextCode : Nat) (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
-    (rf : SeLe4n.RegisterFile) (len : Nat)
-    (badge : Option SeLe4n.Badge)
+    (len : Nat) (badge : Option SeLe4n.Badge) (m0 m1 m2 m3 : UInt64)
     (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
     (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   let X := arm.pop (arm.legReady st c tid rid) c tid scId home
   capTransferK X c.toObjId sv sb sroot count rv rb rroot
     fun free dcn dsl n x0 x1 x2 a0 b0 a1 b1 a2 b2 =>
-    arm.callTakeLegsLong (capStepsInfo c.toObjId false x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
+    arm.callTakeLegsLongW (capStepsInfo c.toObjId false x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl X 0 n free 0 0)
       (receiveReturnSchedContextFast true
         (capStepsApply c.toObjId false rv rb x0 x1 x2 a0 b0 a1 b1 a2 b2 dcn dsl 0 n free X) tid.val)
-      c tid s rid epId nextCode scS dh rh core rf len badge
+      c tid s rid epId nextCode scS dh rh core len badge m0 m1 m2 m3
 
 /-- The installing Call take over the arm, its legs
 (`performReplyRecvArmCallTakeCapsLegsLong`) and then the server's frame
@@ -1340,13 +1678,13 @@ theorem replyRecvOnCore_arm_callTakeDeliveredLong (arm : ReplyRecvArm)
     (scId : SeLe4n.SchedContextId) (home : CoreId) (st : SystemState)
     (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId)
     (nextCode : Nat) (scS : SeLe4n.SchedContextId) (dh rh core : CoreId)
-    (rf : SeLe4n.RegisterFile) (len : Nat)
-    (badge : Option SeLe4n.Badge) (sRf : SeLe4n.RegisterFile) (sLen : Nat)
+    (len : Nat) (badge : Option SeLe4n.Badge) (m0 m1 m2 m3 : UInt64)
+    (sRf : SeLe4n.RegisterFile) (sLen : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool)
     (sv : Option Capability) (sb : SeLe4n.VAddr) (sroot : Option Capability) (count : Nat)
     (rv : Option Capability) (rb : SeLe4n.VAddr) (rroot : Option Capability) : SystemState :=
   writeReceiverMessageFrame (performReplyRecvArmCallTakeCapsLegsLong arm scId home st c tid rid epId s
-    nextCode scS dh rh core rf len badge sv sb sroot count rv rb rroot) tid sRf sLen
+    nextCode scS dh rh core len badge m0 m1 m2 m3 sv sb sroot count rv rb rroot) tid sRf sLen
     badgeWord badged
 
 /-- **The reply-receive taking a queued caller, its reply leg transferring, is
@@ -1381,8 +1719,11 @@ theorem replyRecvOnCore_arm_callTakeCapsDeliveredLong (arm : ReplyRecvArm)
       | .error e => .error e) =
       .ok ((), performReplyRecvArmCallTakeCapsDeliveredLong arm scId home st c tid rid epId s
         sTcb.queueNextCode ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s)
-        (determineTargetCore st tid) core rf len badge sTcb.registerContext mi.length
-        (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
+        (determineTargetCore st tid) core len badge (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 0)
+        (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 1)
+        (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 2)
+        (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 3)
+        sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged
         stcb.spaceCells[2] stcb.ipcBuffer stcb.spaceCells[0] count ct.spaceCells[2] ct.ipcBuffer
         ct.spaceCells[0]) := by
   have hSz := hSzL
@@ -1447,9 +1788,8 @@ theorem replyRecvOnCore_arm_callTakeCapsDeliveredLong (arm : ReplyRecvArm)
   simp only [transferEndpoint?, Bool.false_eq_true, ↓reduceIte] at hKl
   rw [hAP.frameCapRequestOf, hAP.capTargetOf, hT1] at hKl
   unfold performReplyRecvArmCallTakeCapsDeliveredLong performReplyRecvArmCallTakeCapsLegsLong
-  rw [hX]
-  dsimp only
-  rw [hKl]
+  simp only [ReplyRecvArm.callTakeLegsLongW_eq]
+  rw [hX, hKl]
 
 /-! ### The fault answer -/
 
@@ -1514,6 +1854,30 @@ faulted caller (`performFaultAnswer`). -/
     (arm.callLend (storeReceiveCallReady Y epId s nextCode tid rid) s tid scS dh rh) tid core).1
     c kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout rf n off
 
+/-- `ReplyRecvArm.callFaultTakeLegs` at offset 0 with the reply's four inline
+words in place of the replier's register file (`performFaultAnswerW`). -/
+@[inline] def ReplyRecvArm.callFaultTakeLegsW (arm : ReplyRecvArm) (Y : SystemState)
+    (c tid s : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (nextCode : Nat)
+    (scS : SeLe4n.SchedContextId) (dh rh core : CoreId) (kind label : Nat)
+    (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (n : Nat) (m0 m1 m2 m3 : UInt64) :
+    SystemState :=
+  performFaultAnswerW (PriorityInheritance.propagatePipChainCrossCore
+    (arm.callLend (storeReceiveCallReady Y epId s nextCode tid rid) s tid scS dh rh) tid core).1
+    c kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 n m0 m1 m2 m3
+
+theorem ReplyRecvArm.callFaultTakeLegsW_eq (arm : ReplyRecvArm) (Y : SystemState)
+    (c tid s : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (nextCode : Nat)
+    (scS : SeLe4n.SchedContextId) (dh rh core : CoreId) (kind label : Nat)
+    (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (n : Nat) (h : n ≤ 4) :
+    arm.callFaultTakeLegsW Y c tid s rid epId nextCode scS dh rh core kind label ip sp lr
+      x0 x1 x2 x3 x4 x5 x6 x7 n (Architecture.regLayoutWord layout rf 0) (Architecture.regLayoutWord layout rf 1)
+      (Architecture.regLayoutWord layout rf 2) (Architecture.regLayoutWord layout rf 3) =
+      arm.callFaultTakeLegs Y c tid s rid epId nextCode scS dh rh core kind label ip sp lr
+        x0 x1 x2 x3 x4 x5 x6 x7 layout rf n 0 := by
+  unfold ReplyRecvArm.callFaultTakeLegsW ReplyRecvArm.callFaultTakeLegs
+  rw [performFaultAnswerW_eq (h := h)]
+
 /-- **The reply-receive answering a fault and taking a queued caller, over
 every arm, in place**: the arm's reply leg with no message and pop, the
 server's context return, the take, the arm's lend, the server's priority walk
@@ -1523,11 +1887,11 @@ and the fault answer (`ReplyRecvArm.callFaultTakeLegs`). -/
     (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId)
     (nextCode : Nat) (scS : SeLe4n.SchedContextId) (dh rh core : CoreId) (kind label : Nat)
     (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (layout : SeLe4n.SyscallRegisterLayout)
-    (rf : SeLe4n.RegisterFile) (len : Nat) : SystemState :=
-  arm.callFaultTakeLegs (receiveReturnSchedContextFast true
+    (len : Nat) (m0 m1 m2 m3 : UInt64) : SystemState :=
+  arm.callFaultTakeLegsW (receiveReturnSchedContextFast true
     (arm.pop (arm.faultLeg st c tid rid) c tid scId home) tid.val) c tid s rid epId nextCode scS
-    dh rh core kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout rf
-    (Architecture.regMessageLength layout len) 0
+    dh rh core kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7
+    (Architecture.regMessageLength layout len) m0 m1 m2 m3
 
 /-- The fault Call take over the arm, its legs and then the server's frame
 (`writeReceiverMessageFrame`), each out of line. -/
@@ -1536,11 +1900,11 @@ and the fault answer (`ReplyRecvArm.callFaultTakeLegs`). -/
     (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId)
     (nextCode : Nat) (scS : SeLe4n.SchedContextId) (dh rh core : CoreId) (kind label : Nat)
     (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (layout : SeLe4n.SyscallRegisterLayout)
-    (rf : SeLe4n.RegisterFile) (len : Nat) (sRf : SeLe4n.RegisterFile) (sLen : Nat)
+    (len : Nat) (m0 m1 m2 m3 : UInt64) (sRf : SeLe4n.RegisterFile) (sLen : Nat)
     (badgeWord : SeLe4n.Badge) (badged : Bool) : SystemState :=
   writeReceiverMessageFrame (performReplyRecvArmCallFaultTakeLegs arm scId home st c tid rid epId
-    s nextCode scS dh rh core kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout rf len) tid sRf
-    sLen badgeWord badged
+    s nextCode scS dh rh core kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout len m0 m1 m2 m3)
+    tid sRf sLen badgeWord badged
 
 /-- **The reply-receive answering a fault and taking a queued caller is the
 specification's, over every arm**: under the arm's reply-leg guard and
@@ -1557,6 +1921,7 @@ theorem replyRecvTransferOnCore_arm_callFaultTake (arm : ReplyRecvArm)
     (s : SeLe4n.ThreadId) (sTcb : TCB) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
     (hAd : arm.LegAdmits scId home st tid c rid ct)
     (hCA : arm.CallAdmits st epId tid s sTcb rid)
+    (hSz4 : Architecture.regMessageLength layout len ≤ 4)
     (hPF : ct.pendingFault = some tf)
     (hT : st.objects[c.toObjId]? = some (.tcb ct))
     (hRO : ct.replyObject = some rid)
@@ -1576,8 +1941,10 @@ theorem replyRecvTransferOnCore_arm_callFaultTake (arm : ReplyRecvArm)
         sTcb.queueNextCode ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s)
         (determineTargetCore st tid) core ct.faultKind label ct.faultIp ct.faultSp ct.faultLr
         ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6 ct.faultX7
-        layout rf len sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge)
-        sTcb.ipcBadged) := by
+        layout len (Architecture.regLayoutWord layout rf 0)
+        (Architecture.regLayoutWord layout rf 1) (Architecture.regLayoutWord layout rf 2)
+        (Architecture.regLayoutWord layout rf 3) sTcb.registerContext mi.length
+        (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged) := by
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   obtain ⟨-, hNe, hNo, -, -⟩ := arm.legPop (scId := scId) (home := home) st tid c rid
     IpcMessage.empty core ct rp hAd (by simp [IpcMessage.empty]) hT hRO hRp
@@ -1625,7 +1992,8 @@ theorem replyRecvTransferOnCore_arm_callFaultTake (arm : ReplyRecvArm)
   dsimp only at hSt
   rw [hSt, hK.queueNext, hK.regs, hK.badge, hK.badged]
   unfold performReplyRecvArmCallFaultTakeDelivered performReplyRecvArmCallFaultTakeLegs
-    ReplyRecvArm.callFaultTakeLegs
+  rw [ReplyRecvArm.callFaultTakeLegsW_eq (h := hSz4)]
+  unfold ReplyRecvArm.callFaultTakeLegs
   rw [receiveReturnSchedContextFast_eq, arm.faultLeg_eq]
 
 /-! ### The long fault answer -/
@@ -1665,6 +2033,31 @@ read from the replier's buffer (`performFaultAnswerLong`). -/
     (arm.callLend (storeReceiveCallReady Y epId s nextCode tid rid) s tid scS dh rh) tid core).1
     c kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 tid rf len
 
+/-- `ReplyRecvArm.callFaultTakeLegsLong` with the reply's four inline words in
+place of the replier's register file (`performFaultAnswerLongW`). -/
+@[inline] def ReplyRecvArm.callFaultTakeLegsLongW (arm : ReplyRecvArm) (Y : SystemState)
+    (c tid s : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (nextCode : Nat)
+    (scS : SeLe4n.SchedContextId) (dh rh core : CoreId) (kind label : Nat)
+    (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (len : Nat) (m0 m1 m2 m3 : UInt64) :
+    SystemState :=
+  performFaultAnswerLongW (PriorityInheritance.propagatePipChainCrossCore
+    (arm.callLend (storeReceiveCallReady Y epId s nextCode tid rid) s tid scS dh rh) tid core).1
+    c kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 tid len m0 m1 m2 m3
+
+theorem ReplyRecvArm.callFaultTakeLegsLongW_eq (arm : ReplyRecvArm) (Y : SystemState)
+    (c tid s : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (nextCode : Nat)
+    (scS : SeLe4n.SchedContextId) (dh rh core : CoreId) (kind label : Nat)
+    (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (rf : SeLe4n.RegisterFile) (len : Nat) :
+    arm.callFaultTakeLegsLongW Y c tid s rid epId nextCode scS dh rh core kind label ip sp lr
+      x0 x1 x2 x3 x4 x5 x6 x7 len (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 0)
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 1)
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 2)
+      (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 3) =
+      arm.callFaultTakeLegsLong Y c tid s rid epId nextCode scS dh rh core kind label ip sp lr
+        x0 x1 x2 x3 x4 x5 x6 x7 rf len := by
+  unfold ReplyRecvArm.callFaultTakeLegsLongW ReplyRecvArm.callFaultTakeLegsLong
+  rw [performFaultAnswerLongW_eq]
+
 /-- **The long reply-receive answering a fault and taking a queued caller,
 over every arm, in place**: as `performReplyRecvArmCallFaultTakeLegs`, the
 answer's words past MR3 read from the replier's buffer. -/
@@ -1672,11 +2065,11 @@ answer's words past MR3 read from the replier's buffer. -/
     (scId : SeLe4n.SchedContextId) (home : CoreId) (st : SystemState)
     (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId)
     (nextCode : Nat) (scS : SeLe4n.SchedContextId) (dh rh core : CoreId) (kind label : Nat)
-    (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (rf : SeLe4n.RegisterFile) (len : Nat) :
+    (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (len : Nat) (m0 m1 m2 m3 : UInt64) :
     SystemState :=
-  arm.callFaultTakeLegsLong (receiveReturnSchedContextFast true
+  arm.callFaultTakeLegsLongW (receiveReturnSchedContextFast true
     (arm.pop (arm.faultLeg st c tid rid) c tid scId home) tid.val) c tid s rid epId nextCode scS
-    dh rh core kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 rf len
+    dh rh core kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 len m0 m1 m2 m3
 
 /-- The long fault Call take over the arm, its legs and then the server's
 frame. -/
@@ -1684,12 +2077,12 @@ frame. -/
     (scId : SeLe4n.SchedContextId) (home : CoreId) (st : SystemState)
     (c tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (epId : SeLe4n.ObjId) (s : SeLe4n.ThreadId)
     (nextCode : Nat) (scS : SeLe4n.SchedContextId) (dh rh core : CoreId) (kind label : Nat)
-    (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (len : Nat) (m0 m1 m2 m3 : UInt64)
     (sRf : SeLe4n.RegisterFile) (sLen : Nat) (badgeWord : SeLe4n.Badge) (badged : Bool) :
     SystemState :=
   writeReceiverMessageFrame (performReplyRecvArmCallFaultTakeLegsLong arm scId home st c tid rid
-    epId s nextCode scS dh rh core kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 rf len) tid sRf
-    sLen badgeWord badged
+    epId s nextCode scS dh rh core kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 len m0 m1 m2 m3)
+    tid sRf sLen badgeWord badged
 
 /-- **The long reply-receive answering a fault and taking a queued caller is
 the specification's, over every arm**: as
@@ -1722,8 +2115,11 @@ theorem replyRecvTransferOnCore_arm_callFaultTakeLong (arm : ReplyRecvArm)
         sTcb.queueNextCode ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s)
         (determineTargetCore st tid) core ct.faultKind label ct.faultIp ct.faultSp ct.faultLr
         ct.faultX0 ct.faultX1 ct.faultX2 ct.faultX3 ct.faultX4 ct.faultX5 ct.faultX6 ct.faultX7
-        rf len sTcb.registerContext mi.length (SeLe4n.Badge.ofWord sTcb.ipcBadge)
-        sTcb.ipcBadged) := by
+        len (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 0)
+        (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 1)
+        (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 2)
+        (Architecture.regLayoutWord SeLe4n.arm64DefaultLayout rf 3) sTcb.registerContext mi.length
+        (SeLe4n.Badge.ofWord sTcb.ipcBadge) sTcb.ipcBadged) := by
   have hTc : st.getTcb? c = some ct := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   obtain ⟨-, hNe, hNo, -, -⟩ := arm.legPop (scId := scId) (home := home) st tid c rid
     IpcMessage.empty core ct rp hAd (by simp [IpcMessage.empty]) hT hRO hRp
@@ -1773,7 +2169,8 @@ theorem replyRecvTransferOnCore_arm_callFaultTakeLong (arm : ReplyRecvArm)
   dsimp only at hSt
   rw [hSt, hK.queueNext, hK.regs, hK.badge, hK.badged]
   unfold performReplyRecvArmCallFaultTakeDeliveredLong performReplyRecvArmCallFaultTakeLegsLong
-    ReplyRecvArm.callFaultTakeLegsLong
+  rw [ReplyRecvArm.callFaultTakeLegsLongW_eq]
+  unfold ReplyRecvArm.callFaultTakeLegsLong
   rw [receiveReturnSchedContextFast_eq, arm.faultLeg_eq]
 
 /-! ### The arm's Call-take guard, read on the pre-state -/
