@@ -27,7 +27,7 @@ When a cut lands, update the row's status/version here and write the detail in
 `CHANGELOG.md` and `docs/REGISTERED_DEBT.md`.  A row that grows past one line
 of summary is a sign the narrative belongs in those files instead.
 
-### WS-CV The register context by value — IN FLIGHT (registered v0.36.50; CV0 landed v0.36.59; CV1.1 v0.36.61; CV2.1 v0.36.73; CV3.1–CV3.4 and the save-and-stage half of CV4.3 v0.36.74; the rest recorded landed at the v0.36.205 re-read, which deleted two rows and renumbered; open: CV1.2 and the closure CV5.2, folded into WS-SX as SX36.1 and SX36.2 — WS-CV closes alongside WS-SX at v0.38.0; opens before WS-CB)
+### WS-CV The register context by value — IN FLIGHT (registered v0.36.50; CV0 landed v0.36.59; CV1.1 v0.36.61; CV2.1 v0.36.73; CV3.1–CV3.4 and the save-and-stage half of CV4.3 v0.36.74; the rest recorded landed at the v0.36.205 re-read, which deleted two rows and renumbered; open: CV1.2 and the closure CV5.2, folded into WS-SX as SX37.1 and SX37.2 — WS-CV closes alongside WS-SX at v0.38.0; opens before WS-CB)
 
 The TCB's `registerContext`, the per-core register banks and the Lean boundary
 become one structure: `SeLe4n.RegisterFile` takes `Architecture.TrapContext`'s
@@ -154,8 +154,8 @@ per-invocation rights as `Option AccessRight` (SX29), the Running state per
 core (SX30), the compound syscalls' invoke phase (SX31), timeout faults with
 SetTimeoutEndpoint and SetSchedParams (SX32), the full CNode invocation set
 (SX33), seL4's error codes in the label (SX34), seL4's remaining
-invocations (SX35), closure (SX36) and the lock-set ceiling lowered to the
-kernel's largest footprint (SX37). Rows and
+invocations (SX35), the lock-set ceiling lowered to the kernel's largest
+footprint (SX36) and closure (SX37). Rows and
 decisions D1–D48 (D1–D17 and D46 each default taken, owner card open;
 D18–D32, D34 and D36–D45 the owner's; D47 SX22's and D48 SX25's wraps under
 the owner's D32 rule) are in

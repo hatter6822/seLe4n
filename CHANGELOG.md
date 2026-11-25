@@ -37,10 +37,11 @@ row's 2–3, so the row was not wrapped before the bulk.
 - **Measured.**  `RefusalCarryingReplyRecv.c` 13,204,415 bytes, compiled in
   535 s standalone (`leanc -c -O3 -DNDEBUG`), against 14,643,899 bytes and
   607 s at `v0.37.54`.
-- **Plan.**  SX37 is added as WS-SX's last row (the owner's request of
-  2026-11-25): `Concurrency.maxLockSetSize` lowered from 32 to the largest
-  footprint the static size theorems bound once every WS-SX change has
-  landed, with every bound and bounded-wait consumer re-proved at it.
+- **Plan.**  SX36 is added to WS-SX ahead of the closure, now SX37 (the
+  owner's request of 2026-11-25): `Concurrency.maxLockSetSize` lowered from
+  32 to the largest footprint the static size theorems bound once every
+  other WS-SX change has landed, with every bound and bounded-wait consumer
+  re-proved at it.
 
 ## v0.37.54 — One in-place ReplyRecv reply leg and the composed blocking receive (WS-SX SX25)
 
