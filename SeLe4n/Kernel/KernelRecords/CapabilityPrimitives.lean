@@ -43,7 +43,7 @@ theorem erasure_links (o o' : KernelObject) (h : o.withoutLinks = o'.withoutLink
     recordViewOf (some o) = recordViewOf (some o') := by
   cases o <;> cases o' <;>
     simp only [KernelObject.withoutLinks, reduceCtorEq, KernelObject.tcb.injEq,
-      KernelObject.vspaceRoot.injEq, KernelObject.cnode.injEq] at h ⊢ <;>
+      KernelObject.vspaceRoot.injEq, KernelObject.cnode.injEq, KernelObject.notification.injEq] at h ⊢ <;>
     first | rfl | (subst h; rfl) | skip
   rename_i t t'
   show some (Sum.inl t.recordView) = some (Sum.inl t'.recordView)

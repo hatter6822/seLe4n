@@ -625,7 +625,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
               | error e => simp only [hCap2] at hStep; cases hStep
               | ok notifId =>
                   simp only [hCap2] at hStep
-                  exact EndpointWaitersFrame.of_frame (RecordsFrame.bindNotification hInv hStep)
+                  exact EndpointWaitersFrame.of_coreFrame (RecordsCoreFrame.bindNotification hInv hStep)
     all_goals try cases hStep
   case tcbUnbindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -637,7 +637,7 @@ theorem dispatchCapabilityOnly_endpointWaitersFrame
           obtain ⟨u, stU⟩ := pair; cases u
           simp only [hUn] at hStep
           cases hStep
-          exact EndpointWaitersFrame.of_frame (RecordsFrame.unbindNotification hInv hUn)
+          exact EndpointWaitersFrame.of_coreFrame (RecordsCoreFrame.unbindNotification hInv hUn)
     all_goals try cases hStep
   case tcbSuspend =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

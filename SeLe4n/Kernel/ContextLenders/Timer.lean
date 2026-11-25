@@ -82,6 +82,9 @@ theorem andThen {a b c : SystemState} (F : LendersFrame a b)
 theorem of_kept {st st' : SystemState} (K : chainObjectsKept st st') (R : RecordsFrame st st') :
     LendersFrame st st' := ⟨K.linksShrink, R.invExt⟩
 
+theorem of_keptCore {st st' : SystemState} (K : chainObjectsKept st st')
+    (R : RecordsCoreFrame st st') : LendersFrame st st' := ⟨K.linksShrink, R.invExt⟩
+
 theorem of_views {st st' : SystemState} (V : contextStackViewsAgree st st')
     (h : st'.objects.invExt) : LendersFrame st st' :=
   ⟨contextStackLinksShrink_of_viewsAgree V, h⟩

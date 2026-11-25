@@ -30,13 +30,17 @@ def FaultParkedAt (st : SystemState) (t : SeLe4n.ThreadId) : Prop :=
 namespace FaultParkedAt
 
 /-- A frame keeps a thread parked. -/
-theorem frame {st st' : SystemState} (F : RecordsFrame st st') {t : SeLe4n.ThreadId}
+theorem coreFrame {st st' : SystemState} (F : RecordsCoreFrame st st') {t : SeLe4n.ThreadId}
     (h : FaultParkedAt st t) : FaultParkedAt st' t := fun x hx => by
   obtain ⟨y, hy, hv⟩ := F.getTcb?_view hx
   have := h y hy
-  simp only [TCB.recordView, TcbRecordView.mk.injEq] at hv
+  obtain ⟨-, hi, hs, -⟩ := TcbRecordView.core_eq hv
   unfold TCB.faultParked at this ⊢
-  rw [← hv.2.1, ← hv.2.2.1]; exact this
+  rw [← hi, ← hs]; exact this
+
+/-- A frame keeps a thread parked. -/
+theorem frame {st st' : SystemState} (F : RecordsFrame st st') {t : SeLe4n.ThreadId}
+    (h : FaultParkedAt st t) : FaultParkedAt st' t := coreFrame F.core h
 
 /-- A write of run or reply-waiter links alone keeps a thread parked. -/
 theorem runLinks {st st' : SystemState} (h : SystemState.objectsAgreeOffRunLinks st' st)

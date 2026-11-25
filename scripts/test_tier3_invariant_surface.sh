@@ -4170,6 +4170,18 @@ run_check "INVARIANT" rg -n '^def RecordsStage($|[ ({:\[\]])' SeLe4n/Kernel/Kern
 run_check "INVARIANT" rg -n '^structure RecordsFrame($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Frame.lean
 run_check "INVARIANT" rg -n '^structure RecordsStep($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Frame.lean
 run_check "INVARIANT" rg -n '^theorem RecordsStage\.of_step($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Frame.lean
+# The records view holds what notification label coherence reads: a TCB's two
+# notification-queue links and a notification's bound thread and queue ends, so
+# every records frame keeps them; the writes of those fields are core frames
+# (`RecordsCoreFrame`, the view without them), which keep the kernel records only.
+run_check "INVARIANT" rg -U -n '^def _root_\.SeLe4n\.Model\.TCB\.recordView \(t : TCB\) : TcbRecordView :=\n  ⟨t\.replyView, t\.ipcState, t\.threadState, t\.pendingFault\.isSome, t\.ntfnPrevCode, t\.ntfnNextCode⟩$' SeLe4n/Kernel/KernelRecords/Frame.lean
+run_check "INVARIANT" rg -U -n '^def _root_\.SeLe4n\.Model\.Notification\.recordView \(n : Notification\) : NtfnRecordView :=\n  \(n\.boundTCBCode, n\.waitHeadCode, n\.waitTailCode\)$' SeLe4n/Kernel/KernelRecords/Frame.lean
+run_check "INVARIANT" rg -n '^  \| some \(\.notification n\) => some \(\.inr \(\.inr n\.recordView\)\)$' SeLe4n/Kernel/KernelRecords/Frame.lean
+run_check "INVARIANT" rg -n '^structure RecordsCoreFrame($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Frame.lean
+run_check "INVARIANT" rg -U -n '^theorem bindNotification \{[^\n]*\n(    [^\n]*\n)*    RecordsCoreFrame st st'"'"' := by$' SeLe4n/Kernel/KernelRecords/Thread.lean
+run_check "INVARIANT" rg -U -n '^theorem unbindNotification \{[^\n]*\n(    [^\n]*\n)*    RecordsCoreFrame st st'"'"' := by$' SeLe4n/Kernel/KernelRecords/Thread.lean
+run_check "INVARIANT" rg -U -n '^theorem linkNtfnWaiter \{[^\n]*\n(    [^\n]*\n)*    RecordsCoreFrame st st'"'"' := by$' SeLe4n/Kernel/KernelRecords/IpcNotification.lean
+run_negative_check "INVARIANT" rg -n '^theorem (RecordsFrame\.of_kept|recordViewOf_congr)($|[ ({:\[\]])' SeLe4n/
 run_check "INVARIANT" rg -n '^theorem bootTcbShape_replyView_idle($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Boot.lean
 run_check "INVARIANT" rg -n '^theorem replyWaitersConsistent_of_bootLinkedShape($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Boot.lean
 run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_physicalAddressWidthWithinBound($|[ ({:\[\]])' SeLe4n/Kernel/KernelRecords/Boot.lean

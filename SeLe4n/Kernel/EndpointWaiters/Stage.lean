@@ -127,11 +127,14 @@ theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
 
 /-- **A records frame is a waiters' frame**: it keeps every thread's record
 view, and the view holds the thread's IPC state. -/
-theorem of_frame {st st' : SystemState} (F : RecordsFrame st st') : EndpointWaitersShrink st st' :=
+theorem of_coreFrame {st st' : SystemState} (F : RecordsCoreFrame st st') :
+    EndpointWaitersShrink st st' :=
   fun _ _ _ hT hW => by
     obtain ⟨t, hT0, hv⟩ := F.getTcb?_view hT
-    have hi : t.ipcState = _ := congrArg TcbRecordView.ipc hv
-    exact ⟨t, hT0, hi ▸ hW⟩
+    exact ⟨t, hT0, (TcbRecordView.core_eq hv).2.1 ▸ hW⟩
+
+theorem of_frame {st st' : SystemState} (F : RecordsFrame st st') : EndpointWaitersShrink st st' :=
+  of_coreFrame F.core
 
 /-- A shrink is a growth at any pair. -/
 theorem growAt {st st' : SystemState} (h : EndpointWaitersShrink st st') (w : SeLe4n.ThreadId)
@@ -201,6 +204,10 @@ theorem of_eq {st st' : SystemState} (h : st' = st) : EndpointWaitersStage ctx s
 theorem of_frame {st st' : SystemState} (F : RecordsFrame st st') : EndpointWaitersStage ctx st st' :=
   (EndpointWaitersShrink.of_frame F).stage
 
+theorem of_coreFrame {st st' : SystemState} (F : RecordsCoreFrame st st') :
+    EndpointWaitersStage ctx st st' :=
+  (EndpointWaitersShrink.of_coreFrame F).stage
+
 theorem of_fst_eq {α : Type} {st st' : SystemState} {p : SystemState × α} {r : α}
     (s : EndpointWaitersStage ctx st p.1) (h : p = (st', r)) : EndpointWaitersStage ctx st st' := by
   subst h; exact s
@@ -234,6 +241,10 @@ theorem andThen {a b c : SystemState} (F : EndpointWaitersFrame a b)
 
 theorem of_frame {st st' : SystemState} (F : RecordsFrame st st') : EndpointWaitersFrame st st' :=
   ⟨.of_frame F, F.invExt⟩
+
+theorem of_coreFrame {st st' : SystemState} (F : RecordsCoreFrame st st') :
+    EndpointWaitersFrame st st' :=
+  ⟨.of_coreFrame F, F.invExt⟩
 
 theorem of_eq {st st' : SystemState} (hInv : st.objects.invExt) (h : st' = st) :
     EndpointWaitersFrame st st' := by subst h; exact refl hInv

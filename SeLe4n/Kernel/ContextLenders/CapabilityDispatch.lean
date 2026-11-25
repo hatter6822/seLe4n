@@ -329,7 +329,7 @@ theorem dispatchCapabilityOnly_lendersStep (ctx : LabelingContext)
               | error e => simp only [hCap2] at hStep; cases hStep
               | ok notifId =>
                   simp only [hCap2] at hStep
-                  exact LendersStep.of_frame <| LendersFrame.of_kept (chainObjectsKept.bindNotification hInv hStep) (RecordsFrame.bindNotification hInv hStep)
+                  exact LendersStep.of_frame <| LendersFrame.of_keptCore (chainObjectsKept.bindNotification hInv hStep) (RecordsCoreFrame.bindNotification hInv hStep)
     all_goals try cases hStep
   case tcbUnbindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -341,7 +341,7 @@ theorem dispatchCapabilityOnly_lendersStep (ctx : LabelingContext)
           obtain ⟨u, stU⟩ := pair; cases u
           simp only [hUn] at hStep
           cases hStep
-          exact LendersStep.of_frame <| LendersFrame.of_kept (chainObjectsKept.unbindNotification hInv hUn) (RecordsFrame.unbindNotification hInv hUn)
+          exact LendersStep.of_frame <| LendersFrame.of_keptCore (chainObjectsKept.unbindNotification hInv hUn) (RecordsCoreFrame.unbindNotification hInv hUn)
     all_goals try cases hStep
   case tcbSuspend =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

@@ -31,10 +31,23 @@ theorem storeObject_tcbView {st st' : SystemState} {k : SeLe4n.ObjId} {x y : TCB
     RecordsFrame st st' :=
   storeObject hInv h (by rw [hOld]; simp [hv]) (fun _ h => by cases h)
 
+end RecordsFrame
+
+namespace RecordsCoreFrame
+
+/-- A TCB stored over a TCB keeping its core view. -/
+theorem storeObject_tcbView {st st' : SystemState} {k : SeLe4n.ObjId} {x y : TCB}
+    (hInv : st.objects.invExt) (hOld : st.objects[k]? = some (.tcb x))
+    (h : SeLe4n.Model.storeObject k (.tcb y) st = .ok ((), st'))
+    (hv : y.recordView.core = x.recordView.core) : RecordsCoreFrame st st' :=
+  storeObject hInv h (by rw [hOld]; simp [hv]) (fun _ h => by cases h)
+
+/-- The bind writes the notification's bound thread and the thread's binding:
+it keeps every core view. -/
 theorem bindNotification {st st' : SystemState} {nid : SeLe4n.ObjId} {tcbId : SeLe4n.ThreadId}
     (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.bindNotification nid tcbId st = .ok ((), st')) :
-    RecordsFrame st st' := by
+    RecordsCoreFrame st st' := by
   unfold _root_.SeLe4n.Kernel.bindNotification at h
   split at h
   · rename_i ntfn hN
@@ -56,17 +69,17 @@ theorem bindNotification {st st' : SystemState} {nid : SeLe4n.ObjId} {tcbId : Se
               intro hEq
               rw [hEq, hNraw] at hTraw
               exact absurd (Option.some.inj hTraw) (fun hx => KernelObject.noConfusion hx)
-            have F1 := storeNotification hInv hNraw hStore1
+            have F1 := RecordsCoreFrame.storeNotification hInv hNraw hStore1
             have hPre1 : st1.objects[tcbId.toObjId]? = some (.tcb tcb) := by
               rw [storeObject_objects_ne st _ nid tcbId.toObjId _ hNeIds hInv hStore1]
               exact hTraw
-            exact F1.trans (storeObject_tcbView F1.invExt hPre1 hStore2 rfl)
+            exact F1.trans (RecordsCoreFrame.storeObject_tcbView F1.invExt hPre1 hStore2 rfl)
   · split at h <;> cases h
 
 theorem unbindNotification {st st' : SystemState} {tcbId : SeLe4n.ThreadId}
     (hInv : st.objects.invExt)
     (h : _root_.SeLe4n.Kernel.unbindNotification tcbId st = .ok ((), st')) :
-    RecordsFrame st st' := by
+    RecordsCoreFrame st st' := by
   unfold _root_.SeLe4n.Kernel.unbindNotification at h
   split at h
   · cases h
@@ -77,16 +90,20 @@ theorem unbindNotification {st st' : SystemState} {tcbId : SeLe4n.ThreadId}
       split at h
       · cases h
       · rename_i st1 hStore1
-        have F1 := storeObject_tcbView hInv (lookupTcb_some_objects st tcbId tcb hT) hStore1 rfl
+        have F1 := RecordsCoreFrame.storeObject_tcbView hInv (lookupTcb_some_objects st tcbId tcb hT) hStore1 rfl
         split at h
         · rename_i ntfn hN1
           split at h
           · cases h
           · rename_i st2 hStore2
             cases h
-            exact F1.trans (storeNotification F1.invExt
+            exact F1.trans (RecordsCoreFrame.storeNotification F1.invExt
               ((SystemState.getNotification?_eq_some_iff _ nid ntfn).mp hN1) hStore2)
         · cases h; exact F1
+
+end RecordsCoreFrame
+
+namespace RecordsFrame
 
 /-- The service registration writes an endpoint's record. -/
 theorem registerService {reg : ServiceRegistration} {st st' : SystemState}
