@@ -146,6 +146,88 @@ theorem notificationLabelsAgree.bindNotification {ctx : LabelingContext} {st st'
               (TcbNtfnKept.of_fields rfl rfl rfl) ctx H1
   · split at h <;> cases h
 
+namespace EndpointQueueLabelsKept
+
+/-- **A step after which every thread and every endpoint is one it was
+before.** -/
+theorem of_back {st st' : SystemState}
+    (h : ∀ (k : SeLe4n.ObjId) (o : KernelObject), st'.objects[k]? = some o →
+      (∃ t, o = .tcb t) ∨ (∃ e, o = .endpoint e) → st.objects[k]? = some o) :
+    EndpointQueueLabelsKept st st' := fun _ H k o hO => by
+  cases o with
+  | tcb t => exact H k _ (h k _ hO (.inl ⟨t, rfl⟩))
+  | endpoint e => exact H k _ (h k _ hO (.inr ⟨e, rfl⟩))
+  | _ => trivial
+
+/-- A write of VSpace roots alone. -/
+theorem of_vspaceRootOnlyWrite {st st' : SystemState} (h : vspaceRootOnlyWrite st st') :
+    EndpointQueueLabelsKept st st' :=
+  of_back fun k o hO hK => by
+    rcases h k with e | ⟨-, r', hr'⟩
+    · rw [← e]; exact hO
+    · rw [hr'] at hO; cases hO; rcases hK with ⟨_, e⟩ | ⟨_, e⟩ <;> cases e
+
+/-- **The unbind** writes a binding code and a notification. -/
+theorem unbindNotification {st st' : SystemState} {tcbId : SeLe4n.ThreadId}
+    (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.unbindNotification tcbId st = .ok ((), st')) :
+    EndpointQueueLabelsKept st st' := by
+  unfold _root_.SeLe4n.Kernel.unbindNotification at h
+  split at h
+  · cases h
+  · rename_i tcb hT
+    split at h
+    · cases h
+    · split at h
+      · cases h
+      · rename_i st1 hStore1
+        have K1 := storeObject_tcb hInv (lookupTcb_some_objects st tcbId tcb hT) hStore1
+          (by tcb_endpoint_links_kept)
+        have hInv1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hStore1
+        split at h
+        · split at h
+          · cases h
+          · rename_i st2 hStore2
+            cases h
+            exact K1.trans (storeObject hInv1 hStore2 fun _ _ => trivial)
+        · cases h; exact K1
+
+/-- **The bind** writes a notification and a binding code. -/
+theorem bindNotification {st st' : SystemState} {nid : SeLe4n.ObjId} {tcbId : SeLe4n.ThreadId}
+    (hInv : st.objects.invExt)
+    (h : _root_.SeLe4n.Kernel.bindNotification nid tcbId st = .ok ((), st')) :
+    EndpointQueueLabelsKept st st' := by
+  unfold _root_.SeLe4n.Kernel.bindNotification at h
+  split at h
+  · rename_i ntfn hN
+    split at h
+    · cases h
+    · rename_i tcb hT
+      split at h
+      · cases h
+      · split at h
+        · cases h
+        · rename_i st1 hStore1
+          split at h
+          · cases h
+          · rename_i st2 hStore2
+            cases h
+            have hNraw := (SystemState.getNotification?_eq_some_iff st nid ntfn).mp hN
+            have hTraw := lookupTcb_some_objects st tcbId tcb hT
+            have hNeIds : tcbId.toObjId ≠ nid := by
+              intro hEq
+              rw [hEq, hNraw] at hTraw
+              exact absurd (Option.some.inj hTraw) (fun hx => KernelObject.noConfusion hx)
+            have hPre1 : st1.objects[tcbId.toObjId]? = some (.tcb tcb) := by
+              rw [storeObject_objects_ne st _ nid tcbId.toObjId _ hNeIds hInv hStore1]
+              exact hTraw
+            exact (storeObject hInv hStore1 fun _ _ => trivial).trans
+              (storeObject_tcb (storeObject_preserves_objects_invExt _ _ _ _ hInv hStore1) hPre1
+                hStore2 (by tcb_endpoint_links_kept))
+  · split at h <;> cases h
+
+end EndpointQueueLabelsKept
+
 /-- **The bind adds at most its thread to its notification**: the bound thread
 it writes is the one thread a two-way gate at the notification must admit. -/
 theorem QueueLabelsNtfnGrowFrame.bindNotification {st st' : SystemState} {nid : SeLe4n.ObjId}
@@ -154,6 +236,7 @@ theorem QueueLabelsNtfnGrowFrame.bindNotification {st st' : SystemState} {nid : 
     QueueLabelsNtfnGrowFrame tcbId nid st st' :=
   ⟨.of_coreFrame (RecordsCoreFrame.bindNotification hInv h),
     fun _ hG H => notificationLabelsAgree.bindNotification hInv hG h H,
+    EndpointQueueLabelsKept.bindNotification hInv h,
     (RecordsCoreFrame.bindNotification hInv h).invExt⟩
 
 /-- A bind arm that succeeds runs its bind on the state it was handed. -/
@@ -192,26 +275,28 @@ namespace QueueLabelsFrame
 
 theorem of_tcb_back {st st' : SystemState}
     (h : ∀ (k : SeLe4n.ObjId) (t : TCB), st'.objects[k]? = some (.tcb t) →
-      st.objects[k]? = some (.tcb t)) (hN : NtfnLabelsKept st st') (hI : st'.objects.invExt) :
-    QueueLabelsFrame st st' :=
-  ⟨.of_tcb_back h, hN, hI⟩
+      st.objects[k]? = some (.tcb t)) (hN : NtfnLabelsKept st st')
+    (hQ : EndpointQueueLabelsKept st st') (hI : st'.objects.invExt) : QueueLabelsFrame st st' :=
+  ⟨.of_tcb_back h, hN, hQ, hI⟩
 
 theorem of_vspaceRootOnlyWrite {st st' : SystemState} (h : vspaceRootOnlyWrite st st')
     (hI : st'.objects.invExt) : QueueLabelsFrame st st' :=
-  ⟨.of_vspaceRootOnlyWrite h, .of_vspaceRootOnlyWrite h, hI⟩
+  ⟨.of_vspaceRootOnlyWrite h, .of_vspaceRootOnlyWrite h, .of_vspaceRootOnlyWrite h, hI⟩
 
 theorem of_objects_eq {st st' : SystemState} (hInv : st.objects.invExt)
     (h : st'.objects = st.objects) : QueueLabelsFrame st st' :=
-  ⟨.of_objects_eq h, .of_objects_eq h, h ▸ hInv⟩
+  ⟨.of_objects_eq h, .of_objects_eq h, .of_objects_eq h, h ▸ hInv⟩
 
 /-- **A store of an object that waits on no endpoint**: no thread, or a thread
 blocked on none. -/
 theorem storeObject_noWait {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
     (hInv : st.objects.invExt) (h : storeObject k o st = .ok ((), st'))
     (hO : ∀ t, o = .tcb t → ∀ e, ¬ ipcWaitsOnEndpoint t.ipcState e)
-    (hNo : ∀ ctx, notificationEntryLabelsAgree ctx k o := by intro; trivial) :
+    (hNo : ∀ ctx, notificationEntryLabelsAgree ctx k o := by intro; trivial)
+    (hQo : ∀ ctx, endpointQueueEntryLabelsAgree ctx k o := by intro; trivial) :
     QueueLabelsFrame st st' := by
   refine ⟨fun u t' e hT hW => ?_, NtfnLabelsKept.storeObject hInv h hNo,
+    EndpointQueueLabelsKept.storeObject hInv h fun ctx _ => hQo ctx,
     storeObject_preserves_objects_invExt _ _ _ _ hInv h⟩
   have hO' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
   by_cases hk : u.toObjId = k
@@ -223,9 +308,10 @@ theorem storeObject_noWait {st st' : SystemState} {k : SeLe4n.ObjId} {o : Kernel
 /-- A store of an object that is no thread. -/
 theorem storeObject_other {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
     (hInv : st.objects.invExt) (h : storeObject k o st = .ok ((), st'))
-    (hO : ∀ t, o ≠ .tcb t) (hNo : ∀ ctx, notificationEntryLabelsAgree ctx k o := by intro; trivial) :
+    (hO : ∀ t, o ≠ .tcb t) (hNo : ∀ ctx, notificationEntryLabelsAgree ctx k o := by intro; trivial)
+    (hQo : ∀ ctx, endpointQueueEntryLabelsAgree ctx k o := by intro; trivial) :
     QueueLabelsFrame st st' :=
-  storeObject_noWait hInv h (fun t e => absurd e (hO t)) hNo
+  storeObject_noWait hInv h (fun t e => absurd e (hO t)) hNo hQo
 
 /-- The final retire keeps or erases each object, so every thread after it was
 there before it. -/
@@ -235,6 +321,8 @@ theorem retireFinalObject (ec : CoreId) (target recorder : Nat) (st : SystemStat
   of_tcb_back (fun _ _ hT => retireFinalObject_tcb_back ec target recorder st hInv hT)
     (NtfnLabelsKept.of_back fun _ _ hO hK => retireFinalObject_back ec target recorder st hInv hO
       (by rcases hK with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> intro U e <;> cases e))
+    (EndpointQueueLabelsKept.of_back fun _ _ hO hK => retireFinalObject_back ec target recorder st hInv
+      hO (by rcases hK with ⟨_, rfl⟩ | ⟨_, rfl⟩ <;> intro U e <;> cases e))
     (retireFinalObject_frame ec target recorder st hInv).1
 
 end QueueLabelsFrame
@@ -359,7 +447,12 @@ theorem untypedRetypeObject {src dst : CSpaceAddr} {childId : SeLe4n.ObjId}
       · rw [show (carvedTcb _ _ _).ntfnPrev = none from rfl] at h; cases h
       · rw [show (carvedTcb _ _ _).ntfnNext = none from rfl] at h; cases h
     · refine ⟨fun _ h => ?_, fun _ h => ?_, fun _ h => ?_⟩ <;>
-        simp [Notification.boundTCB, Notification.waitHead, Notification.waitTail] at h)
+        simp [Notification.boundTCB, Notification.waitHead, Notification.waitTail] at h) (fun _ => by
+    cases req <;> simp only [CarveRequest.object, endpointQueueEntryLabelsAgree] <;> try trivial
+    · exact ⟨fun _ h => (by cases h), fun _ h => (by cases h)⟩
+    · exact ⟨⟨fun _ h => (by simp [Endpoint.ofQueues] at h),
+          fun _ h => (by simp [Endpoint.ofQueues] at h)⟩,
+        ⟨fun _ h => (by simp [Endpoint.ofQueues] at h), fun _ h => (by simp [Endpoint.ofQueues] at h)⟩⟩)
   have F3 := F2.andThen fun hI => storeObject_other hI hStIdx (fun _ e => by cases e)
   have F4 := F3.trans (of_objects_eq F3.invExt (CarveRequest.scrub_objects st1 ut
     (req.carveIndex ut (retypeFreeIndex st src utCap)) req))
@@ -781,6 +874,7 @@ theorem dispatchCapabilityOnly_queueLabelsFrame
           cases hStep
           exact QueueLabelsFrame.of_coreFrame (RecordsCoreFrame.unbindNotification hInv hUn)
             (NtfnLabelsKept.unbindNotification hInv hUn)
+            (EndpointQueueLabelsKept.unbindNotification hInv hUn)
     all_goals try cases hStep
   case tcbSuspend =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

@@ -1,3 +1,53 @@
+## v0.37.53 — The endpoint queue links' labels carried, the queue arms' teardown discharged (WS-SX SX24)
+
+SX24 is on SX23, whose records view holds the endpoint queue links.  It
+carries their labels across every committing entry beside the waiters' and
+the notifications' (D46), and with them proves the queue arms' teardown
+invisible for a hidden victim, so the cancellation's non-interference takes
+no teardown-projection hypothesis (D47).  No transition changes.
+
+- **Measured first.**  The stub pass to a fixpoint over the 39 modules
+  downstream of `QueueLabels/Stage.lean` (with the boot, the FFI and the
+  cancellation's non-interference) is the cut itself: 13 files, about 1,600
+  lines added and 220 removed, the size of SX21's carrying cut and inside the
+  row's estimate, so no D32 wrap.
+- **Carried.**  `endpointQueueLabelsAgree` (in
+  `InformationFlow/Invariant/Composition.lean`, beside
+  `endpointWaitersLabelsEqual`): an endpoint's send and receive queues end at
+  threads of its label, and a thread's two endpoint-queue links name threads
+  of its own label.  Label facts only; the queue's shape stays WS-PK's
+  `ipcReachable`.  It is the third part of `QueueLabelsStage`, one family, no
+  twin: each frame (`QueueLabelsFrame`, `QueueLabelsGrowFrame`,
+  `QueueLabelsNtfnGrowFrame`, `QueueLabelsGatedFrame`) gains an
+  `endpointQueue` field, `EndpointQueueLabelsKept` or, on the enqueue,
+  `EndpointQueueLabelsGrowAt` (kept under every labelling that gives the new
+  member its endpoint's label, the equation the two-way gate gives).
+- **Base case.**  `bootFromPlatformCheckedStartedFor_endpointQueueLabelsAgree`:
+  the boot's endpoints have empty queues and its threads clear links.
+- **Kept by every writer** (`QueueLabels/EndpointLinks.lean`,
+  `QueueLabels/Cancellation.lean`): the pop (the successor carries the head's
+  label, the endpoint's), the append (the old tail carries the endpoint's
+  label, by the gate the new member's), the dual removal (its own guard names
+  the ends), the timeout's removal, the targeted dequeue and its splice (each
+  neighbour inherits a link of the removed thread's label), and the cancel's
+  in-place pop and removal through the specification they refine
+  (`popHead_inPlace`, `queueRemove_inPlace`, under the guards they already
+  check).  A thread write that keeps or clears both links closes by the
+  auto-parameter tactic `tcb_endpoint_links_kept`.
+- **The teardown discharged.**  `cancelIpcBlocking_preserves_projection_high`
+  (and its per-core form) proves the teardown invisible on every arm: an
+  endpoint is rewritten only when an end names the victim, so it carries the
+  victim's label (`endpointObjectHigh_of_admittedThreadHigh`); the endpoint
+  and notification neighbours carry the victim's label; a notification the
+  victim waits on admitted it (`notificationObjectHigh_of_admittedThreadHigh`).
+  `cancelIpcBlockingOnCore_cancellation_NI` and its SMP form lose
+  `hTeardownProj` and take the carried labels instead.
+- **Retired.**  `cancelIpcBlockingOnCore_reply_cancellation_NI`, the reply-arm
+  corollary that discharged the premise on one arm, is subsumed and deleted.
+- **Gates.**  Tier 3 anchors on the hypothesis-free theorems, the per-entry
+  clause, its boot base and the enqueue's growth; the negative anchor on
+  `hTeardownProj`; the `QueueLabelsStage` anchor widened.
+
 ## v0.37.52 — The records view extended with the endpoint queue links (WS-SX SX23)
 
 SX23 is on SX22 and runs before the endpoint queue links' labels are carried

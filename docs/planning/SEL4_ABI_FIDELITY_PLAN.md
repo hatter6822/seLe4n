@@ -55,7 +55,10 @@
 > projection discharged), and SX23–SX32 became SX25–SX34. SX23 landed at
 > `v0.37.52` (the records view extended with the endpoint queue links; their
 > writers are endpoint-queue frames, core frames that keep the notification
-> queues).
+> queues). SX24 landed at `v0.37.53` (the endpoint queue links'
+> labels carried beside the waiters' and the notifications', and the queue
+> arms' teardown projection discharged from them: the cancellation's
+> non-interference takes no `hTeardownProj`).
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
 > **Rows**: SX1–SX34, numbered in the order they are implemented, one PR each.
@@ -1100,7 +1103,7 @@ frames. No transition changes.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX24.1 | **The queue arms' teardown projection discharged**: `cancelIpcBlockingOnCore_cancellation_NI` and its SMP form lose `hTeardownProj` for the `.blockedOnSend`, `.blockedOnReceive`, `.blockedOnCall` and `.blockedOnNotification` arms. It did not fall out of SX21 (moved from SX22.2, D47): the dequeue rewrites the endpoint or notification object and splices the victim's neighbours, and no theorem proves those writes invisible for a high victim; and an endpoint queue's links carry no label fact (SX11 carries the waiters' labels, SX21 a notification queue's links). So the row carries, over SX23's view, an endpoint queue's link labels beside `endpointWaitersLabelsEqual`, as `notificationLabelsAgree` carries a notification's, and proves each arm's teardown projection-preserving from them. | The link-label clause carried across every entry; the teardown's projection theorem per arm, from the victim's label, its object's label and its neighbours'. | Tier 3 anchors on the hypothesis-free theorems; the negative anchor on `hTeardownProj` |
+| SX24.1 | **LANDED at `v0.37.53`** (`endpointQueueLabelsAgree`, an endpoint's queue ends at its label and a thread's endpoint-queue links at its own, the third part of `QueueLabelsStage`, its boot base `bootFromPlatformCheckedStartedFor_endpointQueueLabelsAgree`; the enqueue a growth under the gate's label equation, every other writer kept, the cancel's in-place pop and removal through `popHead_inPlace` / `queueRemove_inPlace` under the guards they already check; `cancelIpcBlocking_preserves_projection_high` and its per-core form prove the teardown invisible on every arm, so `cancelIpcBlockingOnCore_cancellation_NI` and its SMP form take the carried labels instead of `hTeardownProj`, and the reply-arm corollary is retired; measured at 13 files, about 1,600 lines added, inside the estimate, no wrap).  **The queue arms' teardown projection discharged**: `cancelIpcBlockingOnCore_cancellation_NI` and its SMP form lose `hTeardownProj` for the `.blockedOnSend`, `.blockedOnReceive`, `.blockedOnCall` and `.blockedOnNotification` arms. It did not fall out of SX21 (moved from SX22.2, D47): the dequeue rewrites the endpoint or notification object and splices the victim's neighbours, and no theorem proves those writes invisible for a high victim; and an endpoint queue's links carry no label fact (SX11 carries the waiters' labels, SX21 a notification queue's links). So the row carries, over SX23's view, an endpoint queue's link labels beside `endpointWaitersLabelsEqual`, as `notificationLabelsAgree` carries a notification's, and proves each arm's teardown projection-preserving from them. | The link-label clause carried across every entry; the teardown's projection theorem per arm, from the victim's label, its object's label and its neighbours'. | Tier 3 anchors on the hypothesis-free theorems; the negative anchor on `hTeardownProj` |
 
 **Acceptance:**
 - cancelling a high thread blocked on an endpoint or a notification is

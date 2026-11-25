@@ -1571,7 +1571,31 @@ run_check "INVARIANT" rg -n '^theorem descheduleUnboundHolder_runQueueOnCore_ne(
 # projection keeps that context's release core.
 run_check "INVARIANT" rg -n '^def descheduledHolderHigh($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
 run_check "INVARIANT" rg -n '^theorem descheduledHolderHigh_of_no_donation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlockingOnCore_reply_cancellation_NI[^\n]*(\n([ \t][^\n]*)?)*hHolderHigh : descheduledHolderHigh ctx observer st victim tcb\)\n    \(hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb\)\n    \(hOwed : ∀ rid, tcb.replyObject = some rid → replyFrameHeadHolderDonation st rid victim\) :\n    projectState" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+# WS-SX SX24 (D47): the cancellation of a hidden victim is invisible on every
+# arm with no teardown-projection hypothesis -- the queue arms read the link
+# labels every entry carries, and the reply-arm corollary is retired.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelIpcBlockingOnCore_cancellation_NI\n[^\n]*\n[^\n]*\n[^\n]*\n    \(hValid : LabelingContextValid ctx\)\n    \(hVictimHigh : threadObservable ctx observer victim = false\)\n    \(hObjInv : st\.objects\.invExt\)\n    \(hQ : endpointQueueLabelsAgree ctx st\) \(hN : notificationLabelsAgree ctx st\)\n" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelIpcBlockingOnCore_cancellation_NI_smp\n[^\n]*\n[^\n]*\n[^\n]*\n    \(hValid : LabelingContextValid ctx\)\n    \(hVictimHigh : threadObservable ctx observer victim = false\)\n    \(hObjInv : st\.objects\.invExt\)\n    \(hQ : endpointQueueLabelsAgree ctx st\) \(hN : notificationLabelsAgree ctx st\)\n" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelIpcBlocking_preserves_projection_high[^\n]*(\n([ \t][^\n]*)?)*removeFromBlockingEndpoint_preserves_projection_high ctx observer st victim e hValid\n        hVictimHigh hQ hObjInv" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelIpcBlocking_preserves_projection_high[^\n]*(\n([ \t][^\n]*)?)*removeFromNotificationWaitQueue_preserves_projection_high ctx observer st victim hValid\n        hVictimHigh hN hObjInv" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem removeFromBlockingEndpoint_preserves_projection_high[^\n]*(\n([ \t][^\n]*)?)*endpointObjectHigh_of_admittedThreadHigh ctx observer e victim hValid" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem spliceOutMidQueueNode_preserves_projection_high[^\n]*(\n([ \t][^\n]*)?)*endpointQueueLabelsAgree\.links hQ" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+run_negative_check "INVARIANT" rg -n 'hTeardownProj|cancelIpcBlockingOnCore_reply_cancellation_NI' --glob '*.lean' SeLe4n tests
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.IPC.CrossCore.CancellationNI
+open SeLe4n.Kernel
+#check @cancelIpcBlockingOnCore_cancellation_NI
+#check @cancelIpcBlockingOnCore_cancellation_NI_smp
+#check @cancelIpcBlocking_preserves_projection_high
+#check @cancelIpcBlocking_preserves_projectionOnCore_high
+EOF'
+# WS-SX SX24 (D46): the endpoint queues' link labels -- an end carries its
+# endpoint's label, a link its thread's -- carried beside the waiters', from
+# the boot's empty queues, each creator adding its member only past the gate.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointQueueEntryLabelsAgree[^\n]*\n[^\n]*\n  \| \.endpoint e =>\n      queueEndsLabelled ctx \(ctx\.endpointLabelOf oid\) e\.sendQ ∧\n        queueEndsLabelled ctx \(ctx\.endpointLabelOf oid\) e\.receiveQ\n  \| \.tcb t =>\n      \(∀ u, t\.queuePrev = some u →\n          ctx\.threadLabelOf u = ctx\.threadLabelOf \(SeLe4n\.ThreadId\.ofObjId oid\)\) ∧\n        \(∀ u, t\.queueNext = some u →\n          ctx\.threadLabelOf u = ctx\.threadLabelOf \(SeLe4n\.ThreadId\.ofObjId oid\)\)" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_endpointQueueLabelsAgree($|[ ({:\[\]])' SeLe4n/Platform/Boot/InitialThreads.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def EndpointQueueLabelsGrowAt[^\n]*\n[^\n]*\n  ∀ ctx : LabelingContext, ctx\.threadLabelOf w = ctx\.endpointLabelOf e →" SeLe4n/Kernel/QueueLabels/Stage.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem QueueLabelsGrowFrame\.endpointQueueEnqueue[^\n]*(\n([ \t][^\n]*)?)*\n    QueueLabelsGrowFrame " SeLe4n/Kernel/QueueLabels/EndpointLinks.lean'
 # ...and the removal owes the bundle nothing: the cross-core steps agree with
 # the teardown off the run links, and no conjunct reads the scheduler.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*ipcInvariantFull_of_objectsAgreeOffSchedulerLinks\n    \(cancelIpcBlockingOnCore_objectsAgreeOffSchedulerLinks victim tcb executingCore st\)" SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean'
@@ -23758,7 +23782,7 @@ run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedStartedFor_endpoint
 # their own two-way gate, and the receive takes the gate it was admitted by.
 run_check "INVARIANT" rg -n '^def QueueLabelsStage($|[ ({:\[\]])' SeLe4n/Kernel/QueueLabels/Stage.lean
 # WS-SX SX21 (D46): the stage carries the notification labels' agreement beside the endpoint waiters', the boot's check implies it, and each creator adds its member only past its two-way gate.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def QueueLabelsStage \(ctx : LabelingContext\) \(st st'"'"' : SystemState\) : Prop :=\n  endpointWaitersLabelsEqual ctx st ∧ notificationLabelsAgree ctx st →\n    endpointWaitersLabelsEqual ctx st'"'"' ∧ notificationLabelsAgree ctx st'"'"'$" SeLe4n/Kernel/QueueLabels/Stage.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def QueueLabelsStage \(ctx : LabelingContext\) \(st st'"'"' : SystemState\) : Prop :=\n  endpointWaitersLabelsEqual ctx st ∧ notificationLabelsAgree ctx st ∧\n      endpointQueueLabelsAgree ctx st →\n    endpointWaitersLabelsEqual ctx st'"'"' ∧ notificationLabelsAgree ctx st'"'"' ∧\n      endpointQueueLabelsAgree ctx st'"'"'$" SeLe4n/Kernel/QueueLabels/Stage.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem notificationLabelsCoherent_agree \{st : SystemState\} \{ctx : LabelingContext\}\n    \(h : notificationLabelsCoherent st ctx = true\) : notificationLabelsAgree ctx st :=" SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem drainBootPhysicalWrites_notificationLabelsAgree[^\n]*\n[^\n]*\(h : notificationLabelsCoherent ist\.state ctx = true\) :\n    notificationLabelsAgree ctx \(drainBootPhysicalWrites ist\)\.state :=" SeLe4n/Platform/FFI.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem notificationWaitCrossCoreDispatchChecked[^\n]*\n[^\n]*\(hInv : st\.objects\.invExt\) :\n    QueueLabelsGatedFrame ctx st \(_root_\.SeLe4n\.Kernel\.notificationWaitCrossCoreDispatchChecked ctx nid" SeLe4n/Kernel/QueueLabels/IpcNotification.lean'

@@ -17,6 +17,9 @@ import SeLe4n.Kernel.InformationFlow.Invariant.Composition
 -- WS-RR RR8.8/RR8.9: the reply-arm shape facts the two discharges consume
 -- (`cancelledCallerDonation?_holder_holds_victim_donation`).
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationReplyShape
+-- WS-SX SX24: the endpoint-queue link labels the queue arms' teardown reads
+-- (`endpointQueueLabelsAgree.spliceOutMidQueueNode`).
+import SeLe4n.Kernel.QueueLabels.Cancellation
 
 /-!
 # WS-SM SM6.E — Cross-core cancellation non-interference
@@ -38,13 +41,11 @@ discharged **substantively** here:
   suspend-of-a-running-thread scenario — the cross-core-relevant case, since
   a blocked victim is neither queued nor current on any core) — §3.
 
-The single-core object-level teardown (`cancelIpcBlocking`'s sweeps and
-reply-link consume) is surface **shared with the single-core suspend pipeline**, whose projection
-preservation is the InformationFlow subsystem's established closure form
-(`suspendThread_preserves_projection` / `cancelDonatedDonation_preserves_projection`,
-AK6-F.17/18).  The composites here (§3) take exactly that single obligation
-as a hypothesis and discharge every cross-core leg substantively — so closing
-the single-core closure forms immediately closes the cross-core NI too.
+The single-core object-level teardown (`cancelIpcBlocking`) is discharged on
+every arm (§5 the reply arm, §5b the queue arms, WS-SX SX24) from the labels
+every kernel entry carries (`endpointQueueLabelsAgree`,
+`notificationLabelsAgree`), so the composites (§5b's close) take no teardown
+hypothesis.
 -/
 
 namespace SeLe4n.Kernel
@@ -312,67 +313,6 @@ theorem descheduleUnboundHolder_preserves_projectionOnCore (ctx : LabelingContex
     exact descheduleAtPlacement_preserves_projectionOnCore ctx observer _ holder c
       (hHigh holder hW)
 
-/-- WS-SM SM6.E (boot-core form): the cross-core cancellation of a high
-victim is invisible, given the single-core teardown's projection preservation
-(the obligation the production closure form
-`suspendThread_preserves_projection` G3 documents; the cross-core deschedule
-leg is discharged substantively).
-
-WS-RR RR2.18: `hTeardownProj` is **discharged** for the two arms whose teardown
-touches only the victim and its Reply object —
-`cancelIpcBlockingOnCore_ready_cancellation_NI` (`.ready`) and
-`cancelIpcBlockingOnCore_reply_cancellation_NI` (`.blockedOnReply`, §5).  It
-remains a hypothesis on the queue arms for a stated reason, given at the second
-of those. -/
-theorem cancelIpcBlockingOnCore_cancellation_NI
-    (ctx : LabelingContext) (observer : IfObserver)
-    (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
-    (st : SystemState)
-    (hVictimHigh : threadObservable ctx observer victim = false)
-    (hTeardownProj : projectState ctx observer (cancelIpcBlocking st victim tcb)
-        = projectState ctx observer st)
-    (hHolderHigh : descheduledHolderHigh ctx observer st victim tcb)
-    (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb) :
-    projectState ctx observer
-        (cancelIpcBlockingOnCore victim tcb executingCore st).1
-      = projectState ctx observer st := by
-  rw [cancelIpcBlockingOnCore_state_eq,
-      descheduleAtPlacement_preserves_projection ctx observer _ victim hVictimHigh]
-  unfold cancelIpcBlockingReclaimed
-  rw [descheduleUnboundHolder_preserves_projection ctx observer st victim tcb hHolderHigh,
-      cancelIpcBlockingMigrated_preserves_projection ctx observer victim tcb st hCtxHigh]
-  exact hTeardownProj
-
-/-- WS-SM SM6.E (∀-core form): the cross-core cancellation of a high victim
-is invisible on *every* core, given the per-core teardown projection.
-
-WS-RR RR2.18: see the boot-core form above for which arms now discharge that
-hypothesis outright. -/
-theorem cancelIpcBlockingOnCore_cancellation_NI_smp
-    (ctx : LabelingContext) (observer : IfObserver)
-    (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
-    (st : SystemState)
-    (hVictimHigh : threadObservable ctx observer victim = false)
-    (hTeardownProj : ∀ c : CoreId,
-        projectStateOnCore ctx observer (cancelIpcBlocking st victim tcb) c
-          = projectStateOnCore ctx observer st c)
-    (hHolderHigh : descheduledHolderHigh ctx observer st victim tcb)
-    (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb) :
-    lowEquivalent_smp ctx observer
-      (cancelIpcBlockingOnCore victim tcb executingCore st).1 st := by
-  intro c
-  show projectStateOnCore ctx observer
-      (cancelIpcBlockingOnCore victim tcb executingCore st).1 c
-    = projectStateOnCore ctx observer st c
-  rw [cancelIpcBlockingOnCore_state_eq,
-      descheduleAtPlacement_preserves_projectionOnCore ctx observer _ victim c
-        hVictimHigh]
-  unfold cancelIpcBlockingReclaimed
-  rw [descheduleUnboundHolder_preserves_projectionOnCore ctx observer st victim tcb c
-        hHolderHigh,
-      cancelIpcBlockingMigrated_preserves_projectionOnCore ctx observer victim tcb st c hCtxHigh]
-  exact hTeardownProj c
-
 /-- WS-SM SM6.E (boot-core form, fully substantive): cancelling a `.ready`
 high victim — the suspend-of-a-running-thread scenario, the cross-core-
 relevant case — is invisible: the teardown is the identity, so the whole
@@ -414,11 +354,10 @@ theorem cancelIpcBlockingOnCore_ready_cancellation_NI_smp
 -- ============================================================================
 -- §5  WS-RR RR2.18 — discharging the teardown projection on the reply arm
 -- ============================================================================
--- `hTeardownProj` above is the cancellation's *own* projection equality, taken
--- as a hypothesis: a closure form that gives back what it is handed.  Below it
--- is **discharged** for the `.blockedOnReply` teardown — the arm the live
--- `.tcbSuspend` of a caller awaiting a reply takes — from the three writes that
--- arm actually makes, each invisible for its own reason:
+-- The cancellation's own teardown projection is proved arm by arm: here the
+-- `.blockedOnReply` teardown — the arm the live `.tcbSuspend` of a caller
+-- awaiting a reply takes — from the writes that arm actually makes, each
+-- invisible for its own reason (the queue arms are §5b):
 --
 --   * the victim's `ipcState` / queue-link reset (`restoreToReady`) and its
 --     `replyObject` clear land on the victim's own TCB, which
@@ -590,8 +529,7 @@ For a victim blocked awaiting a reply, `cancelIpcBlocking`'s writes are the
 victim's own TCB (twice), the Reply's `caller` back-link, and the donation
 return — the first two invisible because the victim is high, the third invisible
 outright, the fourth invisible because the projection erases the binding fields
-it writes.  This is the `hTeardownProj` obligation the cross-core theorems above
-take as a hypothesis, proved rather than assumed.
+it writes.  The reply arm of `cancelIpcBlocking_preserves_projection_high` (§5b).
 
 **WS-RR RR8.5**: the second and third of those writes are the reply path's own
 `consumeCallerReply` now, so their invisibility is
@@ -659,72 +597,300 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
           hIdxComplete hObjSetInv hCtxHigh hOwed)))
 
 
-/-- **WS-RR RR2.18 (boot-core form, fully substantive)**: cancelling a
-`.blockedOnReply` high victim across cores is invisible — no teardown-projection
-hypothesis.
+-- ============================================================================
+-- §5b  WS-SX SX24 — the queue arms' teardown projection, discharged
+-- ============================================================================
+-- The three endpoint arms and the notification arm take the victim off the
+-- queue it waits in: they rewrite that queue's endpoint or notification and
+-- splice the victim's two neighbours.  Each write is at an object the observer
+-- cannot see, read off labels the kernel entries carry (D46, D47):
+--
+--   * the endpoint's: the rewrite runs only when an end of one of its queues
+--     names the victim, and an end carries the endpoint's label
+--     (`endpointQueueLabelsAgree`), so the victim's label is the endpoint's and
+--     `endpointObjectHigh_of_admittedThreadHigh` hides the object;
+--   * the endpoint-queue neighbours': each link of the victim's names a thread
+--     of its label (`endpointQueueLabelsAgree`);
+--   * the notification's: the victim, blocked on it, is one its gate admits
+--     (`notificationLabelsAgree`), so `notificationObjectHigh_of_admittedThreadHigh`
+--     hides it;
+--   * the notification-queue neighbours': each of the victim's notification
+--     links names a thread of its label (`notificationLabelsAgree`);
+--   * the victim's own TCB: hidden with the victim (`LabelingContextValid`).
 
-Together with `cancelIpcBlockingOnCore_ready_cancellation_NI` (the `.ready`
-victim) this covers the two arms whose write set is confined to the victim's own
-TCB and its Reply object.  The three *queue* arms
-(`.blockedOnSend` / `.blockedOnReceive` / `.blockedOnCall`, and
-`.blockedOnNotification`) still take `hTeardownProj`, for two write classes of
-which only one is a labelling question: their teardown rewrites the endpoint or
-notification object the victim was queued on, *and* splices the victim's queue
-**neighbours'** TCBs.
+/-- A thread of a hidden thread's label has a hidden TCB. -/
+theorem objectHigh_of_threadLabel_eq {ctx : LabelingContext} {observer : IfObserver}
+    (hValid : LabelingContextValid ctx) {victim u : SeLe4n.ThreadId}
+    (hVictimHigh : threadObservable ctx observer victim = false)
+    (h : ctx.threadLabelOf u = ctx.threadLabelOf victim) :
+    objectObservable ctx observer u.toObjId = false :=
+  hValid.coherenceImpliesObjectHigh observer u (by
+    unfold threadObservable at hVictimHigh ⊢; rw [h]; exact hVictimHigh)
 
-The endpoint object closes from the admission gate composed with
-`LabelingContextValid.endpointObjectCoherence` — every waiter's label flows to
-its endpoint's *flow* label (`endpointFlowGate_implies_securityFlowsTo`, no
-hypothesis) and that conjunct carries it on to the *object* label the projection
-reads, so the object is non-observable whenever any waiter is
-(`endpointObjectHigh_of_admittedThreadHigh`).  The neighbours are related to
-the victim by the gate's two-way form: every admission onto an endpoint's queue
-requires the thread's label to *equal* the endpoint's
-(`endpointAdmissionUniform`), so a low waiter beside a high one on one endpoint
-is no longer admitted.  The uniformity is now carried across every entry for
-the waiters themselves (`endpointWaitersLabelsEqual`, SX11) and for a
-notification queue's links (`notificationLabelsAgree`, SX21), but not for an
-endpoint queue's links, and no theorem yet proves the dequeue's writes
-invisible from those facts; so the three queue arms still take
-`hTeardownProj`, a plan row of WS-SX (SX22.2) rather than papered over here.
+/-- **A thread rewritten at a hidden TCB** is invisible. -/
+theorem updateTcb_preserves_projection_high (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hHigh : objectObservable ctx observer t.toObjId = false) (hObjInv : st.objects.invExt) :
+    projectState ctx observer (st.updateTcb t f) = projectState ctx observer st := by
+  unfold SystemState.updateTcb
+  split
+  · exact objects_insert_preserves_projection_high ctx observer st t.toObjId _ hHigh hObjInv
+  · rfl
 
-**What this arm carries.**  `v0.36.136` retired the reclaim's holder abort (the
-holder of a returned donation keeps waiting, unbound, as seL4 MCS leaves it), so
-the reply arm no longer reaches the queue-neighbour gap through the holder: its
-object writes are all the victim's own or erased by the projection, and it
-carries two labelling obligations.  The first is `descheduledHolderHigh`, the
-scheduler side.  The second (WS-ZA ZA6.30) is `cancelledDonationContextHigh`:
-the returned context's release entry moves to its owner's home core, and the
-projection keeps release cores, so that context must be hidden.
-The reclaim takes the holder it unbound off the scheduler slot the state places
-it on, and a run-queue removal is filtered by the removed thread's own
-observability.  It quantifies over the resolution (the holder comes out of
-`cancelledCallerDonation?`, not a parameter), it is discharged outright where no
-donation is resolved (`descheduledHolderHigh_of_no_donation`), and it closes in
-general from the `Call`-time flow check
-(`descheduledHolderHigh_of_donationOwnerFlowsToHolder`).  The second is
-discharged where no donation is resolved
-(`cancelledDonationContextHigh_of_no_donation`). -/
-theorem cancelIpcBlockingOnCore_reply_cancellation_NI
-    (ctx : LabelingContext) (observer : IfObserver)
-    (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
-    (st : SystemState) (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
-    (hBlocked : tcb.ipcState = .blockedOnReply ep rt)
+/-- **The mid-queue splice of a hidden thread** is invisible: both neighbours
+it patches carry the thread's label. -/
+theorem spliceOutMidQueueNode_preserves_projection_high (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (victim : SeLe4n.ThreadId)
+    (hValid : LabelingContextValid ctx)
+    (hVictimHigh : threadObservable ctx observer victim = false)
+    (hQ : endpointQueueLabelsAgree ctx st) (hObjInv : st.objects.invExt) :
+    projectState ctx observer (spliceOutMidQueueNode st victim)
+      = projectState ctx observer st := by
+  rw [spliceOutMidQueueNode_eq_patches]
+  split
+  · rfl
+  · rename_i tcb hL
+    obtain ⟨hP, hN⟩ := endpointQueueLabelsAgree.links hQ (lookupTcb_some_objects st victim tcb hL)
+    rw [queueNeighbourPatch_preserves_projection_high ctx observer st _ tcb.queueNext
+      (queueUnlinkSuccessor tcb) (fun n hn => objectHigh_of_threadLabel_eq hValid hVictimHigh
+        (hN n hn)) (queueNeighbourPatch_invExt _ _ _ hObjInv)]
+    exact queueNeighbourPatch_preserves_projection_high ctx observer st st.objects tcb.queuePrev
+      (queueUnlinkPredecessor tcb)
+      (fun p hp => objectHigh_of_threadLabel_eq hValid hVictimHigh (hP p hp)) hObjInv
+
+/-- **The targeted dequeue of a hidden thread** (`removeFromBlockingEndpoint`) is
+invisible: the splice, and an endpoint rewritten only when an end names the
+thread, so it carries the thread's label. -/
+theorem removeFromBlockingEndpoint_preserves_projection_high (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (victim : SeLe4n.ThreadId) (e : SeLe4n.ObjId)
+    (hValid : LabelingContextValid ctx)
+    (hVictimHigh : threadObservable ctx observer victim = false)
+    (hQ : endpointQueueLabelsAgree ctx st) (hObjInv : st.objects.invExt) :
+    projectState ctx observer (removeFromBlockingEndpoint st victim e)
+      = projectState ctx observer st := by
+  have hS := spliceOutMidQueueNode_preserves_projection_high ctx observer st victim hValid
+    hVictimHigh hQ hObjInv
+  have hI := spliceOutMidQueueNode_preserves_objects_invExt st victim hObjInv
+  have hQS := endpointQueueLabelsAgree.spliceOutMidQueueNode victim hObjInv hQ
+  unfold removeFromBlockingEndpoint
+  dsimp only
+  split
+  · rename_i ep hEp hW
+    split
+    · rename_i hG
+      obtain ⟨hSnd, hRcv⟩ := endpointQueueLabelsAgree.ends hQS
+        ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp)
+      have hLab : ctx.threadLabelOf victim = ctx.endpointLabelOf e := by
+        simp only [Bool.or_eq_true, beq_iff_eq] at hG
+        rcases hG with ((h | h) | h) | h
+        · exact hSnd.1 _ h
+        · exact hSnd.2 _ h
+        · exact hRcv.1 _ h
+        · exact hRcv.2 _ h
+      have hEHigh := endpointObjectHigh_of_admittedThreadHigh ctx observer e victim hValid
+        (by rw [hLab]; exact securityFlowsTo_refl _) hVictimHigh
+      exact (objects_insert_preserves_projection_high ctx observer _ e _ hEHigh hI).trans hS
+    · exact hS
+  · exact hS
+
+/-- **The notification-queue neighbours unlinked**, each a hidden thread, is
+invisible. -/
+theorem unlinkNtfnNeighbours_preserves_projection_high (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (prev next : Option SeLe4n.ThreadId)
+    (hP : ∀ p, prev = some p → objectObservable ctx observer p.toObjId = false)
+    (hN : ∀ n, next = some n → objectObservable ctx observer n.toObjId = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (unlinkNtfnNeighbours st prev next)
+      = projectState ctx observer st := by
+  unfold unlinkNtfnNeighbours
+  cases prev with
+  | none =>
+    cases next with
+    | none => rfl
+    | some n => exact updateTcb_preserves_projection_high ctx observer _ n _ (hN n rfl) hObjInv
+  | some p =>
+    cases next with
+    | none => exact updateTcb_preserves_projection_high ctx observer _ p _ (hP p rfl) hObjInv
+    | some n =>
+      exact (updateTcb_preserves_projection_high ctx observer _ n _ (hN n rfl)
+        (SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv)).trans
+        (updateTcb_preserves_projection_high ctx observer _ p _ (hP p rfl) hObjInv)
+
+/-- **A hidden thread taken out of its notification queue** is invisible: the
+notification it waited on admitted it, and its two neighbours carry its label. -/
+theorem removeFromNotificationWaitQueue_preserves_projection_high (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (victim : SeLe4n.ThreadId)
+    (hValid : LabelingContextValid ctx)
+    (hVictimHigh : threadObservable ctx observer victim = false)
+    (hN : notificationLabelsAgree ctx st) (hObjInv : st.objects.invExt) :
+    projectState ctx observer (removeFromNotificationWaitQueue st victim)
+      = projectState ctx observer st := by
+  have hObjHigh := hValid.coherenceImpliesObjectHigh observer victim hVictimHigh
+  unfold removeFromNotificationWaitQueue
+  split
+  · rename_i tcb hT
+    split
+    · rename_i oid hI
+      split
+      · rename_i notif hNt hW
+        dsimp only
+        obtain ⟨hSelf, hP, hNx⟩ := hN _ _ ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
+        have hOHigh := notificationObjectHigh_of_admittedThreadHigh ctx observer oid victim
+          (hSelf oid hI) hVictimHigh
+        refine (unlinkNtfnNeighbours_preserves_projection_high ctx observer _ _ _
+          (fun p hp => ?_) (fun n hn => objectHigh_of_threadLabel_eq hValid hVictimHigh (hNx n hn))
+          (SystemState.updateTcb_preserves_objects_invExt _ _ _
+            (RHTable_insert_preserves_invExt _ _ _ hObjInv))).trans
+          ((updateTcb_preserves_projection_high ctx observer _ victim _ hObjHigh
+            (RHTable_insert_preserves_invExt _ _ _ hObjInv)).trans
+            (objects_insert_preserves_projection_high ctx observer st oid _ hOHigh hObjInv))
+        split at hp
+        · cases hp
+        · exact objectHigh_of_threadLabel_eq hValid hVictimHigh (hP p hp)
+      · rfl
+    · rfl
+  · rfl
+
+/-- **WS-SX SX24 (D47): the IPC teardown of a hidden victim is invisible**, on
+every arm, from the labels every kernel entry carries — no teardown-projection
+hypothesis.  The `.ready` arm writes nothing; the three endpoint arms and the
+notification arm are the queue removals above, then the victim's own restore;
+the `.blockedOnReply` arm is `cancelIpcBlocking_blockedOnReply_preserves_projection`,
+whose obligations (`hCtxHigh`, the index facts, `hOwed`) it alone reads. -/
+theorem cancelIpcBlocking_preserves_projection_high (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (victim : SeLe4n.ThreadId) (tcb : TCB)
     (hValid : LabelingContextValid ctx)
     (hVictimHigh : threadObservable ctx observer victim = false)
     (hObjInv : st.objects.invExt)
+    (hQ : endpointQueueLabelsAgree ctx st) (hN : notificationLabelsAgree ctx st)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb)
+    (hOwed : ∀ ep rt, tcb.ipcState = .blockedOnReply ep rt →
+      ∀ rid, tcb.replyObject = some rid → replyFrameHeadHolderDonation st rid victim) :
+    projectState ctx observer (Lifecycle.Suspend.cancelIpcBlocking st victim tcb)
+      = projectState ctx observer st := by
+  have hObjHigh := hValid.coherenceImpliesObjectHigh observer victim hVictimHigh
+  cases hB : tcb.ipcState with
+  | ready => unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
+  | blockedOnSend e | blockedOnReceive e | blockedOnCall e =>
+    unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
+    exact (restoreToReadyCancelled_preserves_projection_high ctx observer _ victim hObjHigh
+      (removeFromBlockingEndpoint_preserves_objects_invExt st victim e hObjInv)).trans
+      (removeFromBlockingEndpoint_preserves_projection_high ctx observer st victim e hValid
+        hVictimHigh hQ hObjInv)
+  | blockedOnReply ep rt =>
+    exact cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer st victim tcb ep rt
+      hB hValid hVictimHigh hObjInv hIdxComplete hObjSetInv hCtxHigh (hOwed ep rt hB)
+  | blockedOnNotification n =>
+    have hEq : Lifecycle.Suspend.cancelIpcBlocking st victim tcb =
+        Lifecycle.Suspend.restoreToReadyCancelled
+          (removeFromNotificationWaitQueue st victim) victim := by
+      unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hB]
+    rw [hEq]
+    exact (restoreToReadyCancelled_preserves_projection_high ctx observer _ victim hObjHigh
+      (removeFromNotificationWaitQueue_preserves_objects_invExt st victim hObjInv)).trans
+      (removeFromNotificationWaitQueue_preserves_projection_high ctx observer st victim hValid
+        hVictimHigh hN hObjInv)
+
+/-- **The teardown of a hidden victim is invisible on every core**: it writes
+objects alone (`cancelIpcBlocking_scheduler_eq`, `cancelIpcBlocking_machine_eq`),
+so the per-core projection follows from the boot-core one. -/
+theorem cancelIpcBlocking_preserves_projectionOnCore_high (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (hValid : LabelingContextValid ctx)
+    (hVictimHigh : threadObservable ctx observer victim = false)
+    (hObjInv : st.objects.invExt)
+    (hQ : endpointQueueLabelsAgree ctx st) (hN : notificationLabelsAgree ctx st)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb)
+    (hOwed : ∀ ep rt, tcb.ipcState = .blockedOnReply ep rt →
+      ∀ rid, tcb.replyObject = some rid → replyFrameHeadHolderDonation st rid victim)
+    (c : CoreId) :
+    projectStateOnCore ctx observer (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) c
+      = projectStateOnCore ctx observer st c := by
+  have hS := cancelIpcBlocking_scheduler_eq st victim tcb
+  have hM := cancelIpcBlocking_machine_eq st victim tcb
+  exact projectStateOnCore_congr ctx observer
+    (cancelIpcBlocking_preserves_projection_high ctx observer st victim tcb hValid hVictimHigh
+      hObjInv hQ hN hIdxComplete hObjSetInv hCtxHigh hOwed)
+    (by rw [hS]; rfl) (by rw [hS]; rfl) (by rw [hS]; rfl) (by rw [hS]; rfl) (by rw [hS]; rfl)
+    (by rw [hM])
+
+/-- **WS-SM SM6.E (boot-core form): the cross-core cancellation of a hidden
+victim is invisible**, on every arm.
+
+WS-SX SX24 (D47) retires the teardown-projection hypothesis this theorem took
+(and the reply-arm corollary that discharged it for `.blockedOnReply` alone):
+the teardown is `cancelIpcBlocking_preserves_projection_high`, read off the
+labels every kernel entry carries (`endpointQueueLabelsAgree`,
+`notificationLabelsAgree`).  Two labelling obligations remain the reclaim's, on
+the scheduler side: `descheduledHolderHigh` (discharged where no donation is
+resolved, `descheduledHolderHigh_of_no_donation`, and in general from the
+`Call`-time flow check, `descheduledHolderHigh_of_donationOwnerFlowsToHolder`)
+and `cancelledDonationContextHigh` (WS-ZA ZA6.30: the returned context's
+release entry moves to its owner's home core, and the projection keeps release
+cores; discharged where no donation is resolved,
+`cancelledDonationContextHigh_of_no_donation`).  `hOwed` is the reply head's
+coherence the reply arm's donation return reads. -/
+theorem cancelIpcBlockingOnCore_cancellation_NI
+    (ctx : LabelingContext) (observer : IfObserver)
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
+    (st : SystemState)
+    (hValid : LabelingContextValid ctx)
+    (hVictimHigh : threadObservable ctx observer victim = false)
+    (hObjInv : st.objects.invExt)
+    (hQ : endpointQueueLabelsAgree ctx st) (hN : notificationLabelsAgree ctx st)
     (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hHolderHigh : descheduledHolderHigh ctx observer st victim tcb)
     (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb)
-    (hOwed : ∀ rid, tcb.replyObject = some rid → replyFrameHeadHolderDonation st rid victim) :
+    (hOwed : ∀ ep rt, tcb.ipcState = .blockedOnReply ep rt →
+      ∀ rid, tcb.replyObject = some rid → replyFrameHeadHolderDonation st rid victim) :
     projectState ctx observer
         (cancelIpcBlockingOnCore victim tcb executingCore st).1
-      = projectState ctx observer st :=
-  cancelIpcBlockingOnCore_cancellation_NI ctx observer victim tcb executingCore st hVictimHigh
-    (cancelIpcBlocking_blockedOnReply_preserves_projection ctx observer st victim tcb ep rt
-      hBlocked hValid hVictimHigh hObjInv hIdxComplete hObjSetInv hCtxHigh hOwed)
-    hHolderHigh hCtxHigh
+      = projectState ctx observer st := by
+  rw [cancelIpcBlockingOnCore_state_eq,
+      descheduleAtPlacement_preserves_projection ctx observer _ victim hVictimHigh]
+  unfold cancelIpcBlockingReclaimed
+  rw [descheduleUnboundHolder_preserves_projection ctx observer st victim tcb hHolderHigh,
+      cancelIpcBlockingMigrated_preserves_projection ctx observer victim tcb st hCtxHigh]
+  exact cancelIpcBlocking_preserves_projection_high ctx observer st victim tcb hValid hVictimHigh
+    hObjInv hQ hN hIdxComplete hObjSetInv hCtxHigh hOwed
+
+/-- **WS-SM SM6.E (∀-core form): the cross-core cancellation of a hidden victim
+is invisible on every core**, on every arm — the per-core teardown is
+`cancelIpcBlocking_preserves_projectionOnCore_high` (WS-SX SX24). -/
+theorem cancelIpcBlockingOnCore_cancellation_NI_smp
+    (ctx : LabelingContext) (observer : IfObserver)
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
+    (st : SystemState)
+    (hValid : LabelingContextValid ctx)
+    (hVictimHigh : threadObservable ctx observer victim = false)
+    (hObjInv : st.objects.invExt)
+    (hQ : endpointQueueLabelsAgree ctx st) (hN : notificationLabelsAgree ctx st)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hHolderHigh : descheduledHolderHigh ctx observer st victim tcb)
+    (hCtxHigh : cancelledDonationContextHigh ctx observer st victim tcb)
+    (hOwed : ∀ ep rt, tcb.ipcState = .blockedOnReply ep rt →
+      ∀ rid, tcb.replyObject = some rid → replyFrameHeadHolderDonation st rid victim) :
+    lowEquivalent_smp ctx observer
+      (cancelIpcBlockingOnCore victim tcb executingCore st).1 st := by
+  intro c
+  show projectStateOnCore ctx observer
+      (cancelIpcBlockingOnCore victim tcb executingCore st).1 c
+    = projectStateOnCore ctx observer st c
+  rw [cancelIpcBlockingOnCore_state_eq,
+      descheduleAtPlacement_preserves_projectionOnCore ctx observer _ victim c
+        hVictimHigh]
+  unfold cancelIpcBlockingReclaimed
+  rw [descheduleUnboundHolder_preserves_projectionOnCore ctx observer st victim tcb c
+        hHolderHigh,
+      cancelIpcBlockingMigrated_preserves_projectionOnCore ctx observer victim tcb st c hCtxHigh]
+  exact cancelIpcBlocking_preserves_projectionOnCore_high ctx observer st victim tcb hValid
+    hVictimHigh hObjInv hQ hN hIdxComplete hObjSetInv hCtxHigh hOwed c
 
 -- ============================================================================
 -- §6  WS-RR RR8.9 — the deschedule obligation, discharged from the labelling

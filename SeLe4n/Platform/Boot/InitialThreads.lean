@@ -821,6 +821,30 @@ theorem bootFromPlatformCheckedStartedFor_endpointWaitersLabelsEqual
   · rw [hReady tid t hL]; exact ⟨by simp, by simp⟩
   · rw [hReady tid t hL]; simp
 
+/-- WS-SX SX24 (D46): **the state the started boot installs links no thread
+into an endpoint queue**, so under every labelling every endpoint queue's ends
+and every thread's endpoint-queue neighbours carry the label the agreement asks
+for — the base case of `endpointQueueLabelsAgree`, the third part of
+`QueueLabelsStage`'s domain.  Every boot endpoint's queues are empty and every
+boot thread's endpoint-queue links are clear (`bootObjectShapeOffLinks`), so
+each clause's antecedent is empty. -/
+theorem bootFromPlatformCheckedStartedFor_endpointQueueLabelsAgree
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (hNodup : cores.Nodup)
+    (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) (ctx : LabelingContext) :
+    endpointQueueLabelsAgree ctx ist.state := fun k o hk => by
+  have hS := (bootFromPlatformCheckedStartedFor_bootLinkedShape cores hNodup config ist h).1 k o hk
+  cases o with
+  | endpoint ep =>
+    obtain ⟨hSH, hST, hRH, hRT, -⟩ := hS.1 ep rfl
+    exact ⟨⟨fun t ht => (by rw [hSH] at ht; cases ht), fun t ht => (by rw [hST] at ht; cases ht)⟩,
+      ⟨fun t ht => (by rw [hRH] at ht; cases ht), fun t ht => (by rw [hRT] at ht; cases ht)⟩⟩
+  | tcb t =>
+    have hT := hS.2.2.2.1 t rfl
+    exact ⟨fun u hu => (by rw [hT.2.2.2.1] at hu; cases hu),
+      fun u hu => (by rw [hT.2.2.1] at hu; cases hu)⟩
+  | _ => trivial
+
 /-- WS-ZA ZA6.8: **the state the started boot installs keeps no linked thread
 current or resident** — the first entry's precondition for
 `syscallDispatchEntryState_preserves_yieldLinkedNotResident` and its siblings. -/

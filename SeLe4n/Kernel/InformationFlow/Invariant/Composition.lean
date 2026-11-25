@@ -934,8 +934,8 @@ teardown's write set invisible.
 **Only the endpoint half.**  This order alone says nothing relating two threads
 admitted onto one endpoint; the gate's two-way form does (`endpointAdmissionUniform`:
 both carry the endpoint's label).  A teardown's writes to the victim's queue
-**neighbours** are covered once the queue label-uniformity state invariant is
-proved, which `docs/REGISTERED_DEBT.md` tracks. -/
+**neighbours** are covered by the state invariant that carries that uniformity
+across every entry (`endpointQueueLabelsAgree`, WS-SX SX24). -/
 theorem endpointObjectHigh_of_admittedThreadHigh
     (ctx : LabelingContext) (observer : IfObserver)
     (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
@@ -1209,6 +1209,41 @@ of the thread the rendezvous finds on a queue, whose gate ran at its own,
 earlier block. -/
 def endpointWaitersLabelsEqual (ctx : LabelingContext) (st : SystemState) : Prop :=
   blockedSenderLabelsEqual ctx st ∧ blockedReceiverLabelsEqual ctx st
+
+/-! ### The endpoint queues' link labels (WS-SX SX24)
+
+The label part of an endpoint queue's links (D46): its ends name threads of the
+endpoint's label and each queued thread's links name threads of its own.  The
+queue's shape (which threads are linked, in what order) is not a label fact and
+stays with the IPC invariants (`ipcReachable`). -/
+
+/-- **Both ends of a queue name threads of the label `l`.** -/
+def queueEndsLabelled (ctx : LabelingContext) (l : SecurityLabel) (q : IntrusiveQueue) : Prop :=
+  (∀ t, q.head = some t → ctx.threadLabelOf t = l) ∧ (∀ t, q.tail = some t → ctx.threadLabelOf t = l)
+
+/-- **One object's share of the endpoint queues' link labels**: an endpoint's
+send and receive queues end at threads of its label; a thread's two
+endpoint-queue links name threads of its own label. -/
+def endpointQueueEntryLabelsAgree (ctx : LabelingContext) (oid : SeLe4n.ObjId) :
+    KernelObject → Prop
+  | .endpoint e =>
+      queueEndsLabelled ctx (ctx.endpointLabelOf oid) e.sendQ ∧
+        queueEndsLabelled ctx (ctx.endpointLabelOf oid) e.receiveQ
+  | .tcb t =>
+      (∀ u, t.queuePrev = some u →
+          ctx.threadLabelOf u = ctx.threadLabelOf (SeLe4n.ThreadId.ofObjId oid)) ∧
+        (∀ u, t.queueNext = some u →
+          ctx.threadLabelOf u = ctx.threadLabelOf (SeLe4n.ThreadId.ofObjId oid))
+  | _ => True
+
+/-- **Every endpoint queue ends at threads of its endpoint's label, and every
+endpoint-queue link joins threads of one label** (`endpointQueueEntryLabelsAgree`
+of every stored object), carried across every kernel entry beside the waiters'
+labels. -/
+def endpointQueueLabelsAgree (ctx : LabelingContext) (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (obj : KernelObject), st.objects[oid]? = some obj →
+    endpointQueueEntryLabelsAgree ctx oid obj
+
 
 /-- WS-RR RR8.16: the base case — a state with no blocked receiver satisfies the
 fact outright, which is what makes the boot state an inhabitant. -/

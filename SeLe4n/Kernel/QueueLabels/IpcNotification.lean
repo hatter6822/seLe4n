@@ -23,6 +23,39 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId)
 
+namespace EndpointQueueLabelsKept
+
+/-- A notification stored over its slot. -/
+theorem storeNotification {st st' : SystemState} {nid : SeLe4n.ObjId} {n' : Notification}
+    (hInv : st.objects.invExt)
+    (h : SeLe4n.Model.storeObject nid (.notification n') st = .ok ((), st')) :
+    EndpointQueueLabelsKept st st' :=
+  storeObject hInv h fun _ _ => trivial
+
+/-- The woken head's notification links cleared, its successor's unlinked. -/
+theorem detachNtfnHead (st : SystemState) (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    EndpointQueueLabelsKept st (_root_.SeLe4n.Kernel.detachNtfnHead st head next) :=
+  (updateTcb _ head hInv (by tcb_endpoint_links_kept)).trans
+    (unlinkNtfnNeighbours _ (SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv) _ _)
+
+/-- The waiter linked behind the notification's old tail. -/
+theorem linkNtfnWaiter {st st' : SystemState} {w : SeLe4n.ThreadId} {tail : Option SeLe4n.ThreadId}
+    (hInv : st.objects.invExt) (h : _root_.SeLe4n.Kernel.linkNtfnWaiter st w tail = .ok st') :
+    EndpointQueueLabelsKept st st' := by
+  unfold _root_.SeLe4n.Kernel.linkNtfnWaiter at h
+  split at h
+  · cases h
+  · rename_i st3 h3
+    have I3 := modifyTcb_preserves_objects_invExt hInv h3
+    have K1 := modifyTcb hInv h3 (by tcb_endpoint_links_kept)
+    unfold relinkNtfnNext modifyTcbOpt at h
+    split at h
+    · cases h; exact K1
+    · exact K1.trans (modifyTcb I3 h (by tcb_endpoint_links_kept))
+
+end EndpointQueueLabelsKept
+
 /-- **The woken head's notification store**: its successor heads the queue,
 carrying the head's label, which is the notification's. -/
 theorem NtfnLabelsKept.storeHeadPopped {st st1 : SystemState} {nid : SeLe4n.ObjId} {ntfn : Notification}
@@ -57,6 +90,15 @@ theorem NtfnLabelsKept.storeQueueEmptied {st st1 : SystemState} {nid : SeLe4n.Ob
     (fun u hu => hB0 u (by simpa [Notification.boundTCB, hB] using hu))
     (fun u hu => by simp [Notification.waitHead, hHd] at hu)
     (fun u hu => by simp [Notification.waitTail, hTl] at hu))
+
+/-- **The removal.** -/
+theorem QueueLabelsFrame.endpointQueueRemoveDual {st st' : SystemState} {endpointId : SeLe4n.ObjId}
+    {isReceiveQ : Bool} {tid : SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (hStep : _root_.SeLe4n.Kernel.endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
+    QueueLabelsFrame st st' :=
+  .of_endpointFrame (RecordsEndpointFrame.endpointQueueRemoveDual hInv hStep)
+    (EndpointQueueLabelsKept.endpointQueueRemoveDual hInv hStep)
+
 
 namespace QueueLabelsFrame
 
@@ -94,8 +136,10 @@ theorem notificationSignalOnCore {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge} {c 
           have F3 := RecordsCoreFrame.detachNtfnHead st2 w (ntfnSuccessor? st w) S2.invExt
           have F4 := RecordsFrame.wakeThread _ w c F3.invExt (F3.ready (fun y hy => by
             rw [hx] at hy; cases hy; simp [TCB.signalWoken]))
-          exact (of_coreFrame F1 (NtfnLabelsKept.storeHeadPopped hInv hG hH hS)).trans
-            (S2.trans ((of_coreFrame F3 (NtfnLabelsKept.detachNtfnHead _ _ _ S2.invExt)).trans
+          exact (of_coreFrame F1 (NtfnLabelsKept.storeHeadPopped hInv hG hH hS)
+            (EndpointQueueLabelsKept.storeNotification hInv hS)).trans
+            (S2.trans ((of_coreFrame F3 (NtfnLabelsKept.detachNtfnHead _ _ _ S2.invExt)
+              (EndpointQueueLabelsKept.detachNtfnHead _ _ _ S2.invExt)).trans
               (of_frame F4)))
     · dsimp only
       cases hS : SeLe4n.Model.storeObject nid _ st with
@@ -104,6 +148,7 @@ theorem notificationSignalOnCore {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge} {c 
         obtain ⟨⟨⟩, st1⟩ := p
         exact of_coreFrame (RecordsCoreFrame.storeNotificationAt hInv hG hS)
           (NtfnLabelsKept.storeQueueEmptied hInv hG hS rfl rfl rfl)
+          (EndpointQueueLabelsKept.storeNotification hInv hS)
   · split <;> exact refl hInv
 
 theorem notificationSignalBoundOnCore {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge} {c : CoreId}
@@ -123,7 +168,7 @@ theorem notificationSignalBoundOnCore {nid : SeLe4n.ObjId} {badge : SeLe4n.Badge
         obtain ⟨x, -, hx⟩ := modifyTcb_getTcb?_self F1.invExt hC
         have F3 := RecordsFrame.wakeThread st2 t c S2.invExt (fun y hy => by
           rw [hx] at hy; cases hy; simp [TCB.signalBoundWoken])
-        exact (of_endpointFrame F1).trans (S2.trans (of_frame F3))
+        exact (QueueLabelsFrame.endpointQueueRemoveDual hInv hRm).trans (S2.trans (of_frame F3))
   · exact notificationSignalOnCore hInv
 
 theorem notificationSignalDeclassifiedOnCore {ctx : GenericLabelingContext}
@@ -168,7 +213,8 @@ theorem notificationWaitOnCore {nid : SeLe4n.ObjId} {waiter : SeLe4n.ThreadId} {
         · exact refl hInv
         · rename_i st2 hT
           exact ((QueueLabelsFrame.of_coreFrame F1
-            (NtfnLabelsKept.storeQueueEmptied hInv hG hS rfl rfl rfl)).trans
+            (NtfnLabelsKept.storeQueueEmptied hInv hG hS rfl rfl rfl)
+            (EndpointQueueLabelsKept.storeNotification hInv hS)).trans
             (QueueLabelsFrame.storeTcbIpcState F1.invExt hT)).ntfnGrowAt _ _
     · split
       · exact refl hInv
@@ -204,7 +250,10 @@ theorem notificationWaitOnCore {nid : SeLe4n.ObjId} {waiter : SeLe4n.ThreadId} {
                 · rename_i st4 hLink
                   have F3 := RecordsCoreFrame.linkNtfnWaiter I2 hLink
                   have F4 := RecordsFrame.removeRunnableOnCore _ waiter c F3.invExt
-                  refine ⟨?_, fun ctx hGate H => ?_, F4.invExt⟩
+                  refine ⟨?_, fun ctx hGate H => ?_, ((EndpointQueueLabelsKept.storeNotification
+                    hInv hS).trans ((EndpointQueueLabelsKept.storeObject_tcb F1.invExt hO1 hSt
+                    (by tcb_endpoint_links_kept)).trans ((EndpointQueueLabelsKept.linkNtfnWaiter I2
+                    hLink).trans (.of_frame F4)))), F4.invExt⟩
                   · exact ((EndpointWaitersShrink.of_coreFrame F1).trans
                       (EndpointWaitersShrink.storeObject_tcb F1.invExt hO1 hSt
                         (TcbWaitsKept.of_noWait (by simp)))).trans
