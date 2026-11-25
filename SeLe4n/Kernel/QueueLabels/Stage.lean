@@ -98,11 +98,120 @@ def EndpointWaitersGrowAt (w : SeLe4n.ThreadId) (e : SeLe4n.ObjId) (st st' : Sys
     ipcWaitsOnEndpoint t'.ipcState e' →
       (∃ t, st.getTcb? x = some t ∧ ipcWaitsOnEndpoint t.ipcState e') ∨ (x = w ∧ e' = e)
 
-/-- **A step that carries the queue labels**: the endpoint waiters' labels and
-the notifications' (`notificationLabelsAgree`).  The unit a kernel entry chains. -/
+/-! ### The endpoint queues' link labels (`endpointQueueLabelsAgree`, beside
+`endpointWaitersLabelsEqual` in `InformationFlow/Invariant/Composition.lean`) -/
+
+/-- What one object's share reads is its record view. -/
+theorem endpointQueueEntryLabelsAgree_of_view {ctx : LabelingContext} {oid : SeLe4n.ObjId}
+    {a b : KernelObject} (h : recordViewOf (some a) = recordViewOf (some b)) :
+    endpointQueueEntryLabelsAgree ctx oid a = endpointQueueEntryLabelsAgree ctx oid b := by
+  cases a <;> cases b <;> simp only [recordViewOf, reduceCtorEq, Option.some.injEq,
+    Sum.inl.injEq, Sum.inr.injEq] at h <;> try rfl
+  · rename_i x y
+    simp only [TCB.recordView, TcbRecordView.mk.injEq] at h
+    obtain ⟨-, -, -, -, -, -, hP, hN⟩ := h
+    simp only [endpointQueueEntryLabelsAgree, TCB.queuePrev, TCB.queueNext, hP, hN]
+  · rename_i x y
+    simp only [Endpoint.recordView, Prod.mk.injEq] at h
+    obtain ⟨hSH, hST, hRH, hRT⟩ := h
+    simp only [endpointQueueEntryLabelsAgree, Endpoint.sendQ, Endpoint.receiveQ, hSH, hST, hRH, hRT]
+
+/-- An object with no record view carries no obligation. -/
+theorem endpointQueueEntryLabelsAgree_of_view_none {ctx : LabelingContext} {oid : SeLe4n.ObjId}
+    {a : KernelObject} (h : recordViewOf (some a) = none) :
+    endpointQueueEntryLabelsAgree ctx oid a := by
+  cases a <;> simp_all [recordViewOf, endpointQueueEntryLabelsAgree]
+
+/-- **A step that keeps the endpoint queues' link labels**, under every
+labelling. -/
+def EndpointQueueLabelsKept (st st' : SystemState) : Prop :=
+  ∀ ctx : LabelingContext, endpointQueueLabelsAgree ctx st → endpointQueueLabelsAgree ctx st'
+
+/-- **A step that appends at most the thread `w` to a queue of the endpoint
+`e`**: it keeps the link labels under every labelling that gives `w` the
+endpoint's label (the gate the enqueue's entry checks). -/
+def EndpointQueueLabelsGrowAt (w : SeLe4n.ThreadId) (e : SeLe4n.ObjId) (st st' : SystemState) :
+    Prop :=
+  ∀ ctx : LabelingContext, ctx.threadLabelOf w = ctx.endpointLabelOf e →
+    endpointQueueLabelsAgree ctx st → endpointQueueLabelsAgree ctx st'
+
+namespace EndpointQueueLabelsKept
+
+theorem refl (st : SystemState) : EndpointQueueLabelsKept st st := fun _ h => h
+
+theorem trans {a b c : SystemState} (h₁ : EndpointQueueLabelsKept a b)
+    (h₂ : EndpointQueueLabelsKept b c) : EndpointQueueLabelsKept a c := fun ctx h => h₂ ctx (h₁ ctx h)
+
+theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
+    EndpointQueueLabelsKept st st' := fun _ H oid obj hO => H oid obj (h ▸ hO)
+
+theorem of_eq {st st' : SystemState} (h : st' = st) : EndpointQueueLabelsKept st st' := by
+  subst h; exact refl _
+
+/-- **Every slot's record view kept keeps the link labels.** -/
+theorem of_views {st st' : SystemState}
+    (hV : ∀ k : SeLe4n.ObjId, recordViewOf st'.objects[k]? = recordViewOf st.objects[k]?) :
+    EndpointQueueLabelsKept st st' := fun _ H oid obj' hO => by
+  have hv := hV oid
+  rw [hO] at hv
+  cases hS : st.objects[oid]? with
+  | none => rw [hS] at hv; exact endpointQueueEntryLabelsAgree_of_view_none hv
+  | some obj =>
+    rw [hS] at hv
+    rw [endpointQueueEntryLabelsAgree_of_view hv]
+    exact H oid obj hS
+
+/-- **A records frame keeps the link labels**, with no new proof. -/
+theorem of_frame {st st' : SystemState} (F : RecordsFrame st st') : EndpointQueueLabelsKept st st' :=
+  of_views F.views
+
+/-- A kept step is a growth at any member. -/
+theorem growAt {st st' : SystemState} (h : EndpointQueueLabelsKept st st') (w : SeLe4n.ThreadId)
+    (e : SeLe4n.ObjId) : EndpointQueueLabelsGrowAt w e st st' := fun ctx _ H => h ctx H
+
+theorem of_fst_eq {α : Type} {st st' : SystemState} {p : SystemState × α} {r : α}
+    (s : EndpointQueueLabelsKept st p.1) (h : p = (st', r)) : EndpointQueueLabelsKept st st' := by
+  subst h; exact s
+
+/-- **One slot rewritten**: the other slots kept, and the rewritten object's
+share read off the pre-state's. -/
+theorem of_slot {st st' : SystemState} {k : SeLe4n.ObjId}
+    (hNe : ∀ j, j ≠ k → st'.objects[j]? = st.objects[j]?)
+    (hSelf : ∀ ctx, endpointQueueLabelsAgree ctx st → ∀ o', st'.objects[k]? = some o' →
+      endpointQueueEntryLabelsAgree ctx k o') : EndpointQueueLabelsKept st st' :=
+  fun ctx H oid obj' hO => by
+    by_cases hk : oid = k
+    · subst hk; exact hSelf ctx H obj' hO
+    · rw [hNe _ hk] at hO; exact H oid obj' hO
+
+end EndpointQueueLabelsKept
+
+namespace EndpointQueueLabelsGrowAt
+
+variable {w : SeLe4n.ThreadId} {e : SeLe4n.ObjId}
+
+theorem trans_kept {a b c : SystemState} (h₁ : EndpointQueueLabelsGrowAt w e a b)
+    (h₂ : EndpointQueueLabelsKept b c) : EndpointQueueLabelsGrowAt w e a c :=
+  fun ctx hL H => h₂ ctx (h₁ ctx hL H)
+
+theorem kept_trans {a b c : SystemState} (h₁ : EndpointQueueLabelsKept a b)
+    (h₂ : EndpointQueueLabelsGrowAt w e b c) : EndpointQueueLabelsGrowAt w e a c :=
+  fun ctx hL H => h₂ ctx hL (h₁ ctx H)
+
+theorem trans {a b c : SystemState} (h₁ : EndpointQueueLabelsGrowAt w e a b)
+    (h₂ : EndpointQueueLabelsGrowAt w e b c) : EndpointQueueLabelsGrowAt w e a c :=
+  fun ctx hL H => h₂ ctx hL (h₁ ctx hL H)
+
+end EndpointQueueLabelsGrowAt
+
+/-- **A step that carries the queue labels**: the endpoint waiters' labels, the
+notifications' (`notificationLabelsAgree`) and the endpoint queues' links'
+(`endpointQueueLabelsAgree`).  The unit a kernel entry chains. -/
 def QueueLabelsStage (ctx : LabelingContext) (st st' : SystemState) : Prop :=
-  endpointWaitersLabelsEqual ctx st ∧ notificationLabelsAgree ctx st →
-    endpointWaitersLabelsEqual ctx st' ∧ notificationLabelsAgree ctx st'
+  endpointWaitersLabelsEqual ctx st ∧ notificationLabelsAgree ctx st ∧
+      endpointQueueLabelsAgree ctx st →
+    endpointWaitersLabelsEqual ctx st' ∧ notificationLabelsAgree ctx st' ∧
+      endpointQueueLabelsAgree ctx st'
 
 /-- A pre-state waiter read through `getTcb?` is one through `lookupTcb`, the
 reserved identifiers aside. -/
@@ -346,18 +455,22 @@ theorem trans {a b c : SystemState} (h₁ : QueueLabelsStage ctx a b) (h₂ : Qu
 theorem of_eq {st st' : SystemState} (h : st' = st) : QueueLabelsStage ctx st st' := by
   subst h; exact refl _
 
-/-- The two halves, each carried. -/
+/-- The three parts, each carried. -/
 theorem of_parts {st st' : SystemState}
     (hE : endpointWaitersLabelsEqual ctx st → endpointWaitersLabelsEqual ctx st')
-    (hN : notificationLabelsAgree ctx st → notificationLabelsAgree ctx st') : QueueLabelsStage ctx st st' :=
-  fun h => ⟨hE h.1, hN h.2⟩
+    (hN : notificationLabelsAgree ctx st → notificationLabelsAgree ctx st')
+    (hQ : endpointQueueLabelsAgree ctx st → endpointQueueLabelsAgree ctx st') :
+    QueueLabelsStage ctx st st' :=
+  fun h => ⟨hE h.1, hN h.2.1, hQ h.2.2⟩
 
 theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
     QueueLabelsStage ctx st st' :=
   of_parts (EndpointWaitersShrink.of_objects_eq h).waiters (NtfnLabelsKept.of_objects_eq h ctx)
+    (EndpointQueueLabelsKept.of_objects_eq h ctx)
 
 theorem of_frame {st st' : SystemState} (F : RecordsFrame st st') : QueueLabelsStage ctx st st' :=
   of_parts (EndpointWaitersShrink.of_frame F).waiters (NtfnLabelsKept.of_frame F ctx)
+    (EndpointQueueLabelsKept.of_frame F ctx)
 
 theorem of_fst_eq {α : Type} {st st' : SystemState} {p : SystemState × α} {r : α}
     (s : QueueLabelsStage ctx st p.1) (h : p = (st', r)) : QueueLabelsStage ctx st st' := by
@@ -375,6 +488,7 @@ coherence**, with the store's invariant. -/
 structure QueueLabelsFrame (st st' : SystemState) : Prop where
   shrink : EndpointWaitersShrink st st'
   ntfn : NtfnLabelsKept st st'
+  endpointQueue : EndpointQueueLabelsKept st st'
   invExt : st'.objects.invExt
 
 /-- **A step that blocks at most `w` on the endpoint `e`**, keeping coherence,
@@ -382,6 +496,7 @@ with the store's invariant. -/
 structure QueueLabelsGrowFrame (w : SeLe4n.ThreadId) (e : SeLe4n.ObjId) (st st' : SystemState) : Prop where
   grow : EndpointWaitersGrowAt w e st st'
   ntfn : NtfnLabelsKept st st'
+  endpointQueue : EndpointQueueLabelsGrowAt w e st st'
   invExt : st'.objects.invExt
 
 /-- **A step that adds at most `w` to the notification `n`** (a wait, a bind)
@@ -390,53 +505,60 @@ structure QueueLabelsNtfnGrowFrame (w : SeLe4n.ThreadId) (n : SeLe4n.ObjId) (st 
     Prop where
   shrink : EndpointWaitersShrink st st'
   ntfn : NtfnLabelsGrowAt w n st st'
+  endpointQueue : EndpointQueueLabelsKept st st'
   invExt : st'.objects.invExt
 
 namespace QueueLabelsFrame
 
 theorem refl {st : SystemState} (h : st.objects.invExt) : QueueLabelsFrame st st :=
-  ⟨.refl _, .refl _, h⟩
+  ⟨.refl _, .refl _, .refl _, h⟩
 
 theorem trans {a b c : SystemState} (F : QueueLabelsFrame a b) (G : QueueLabelsFrame b c) :
-    QueueLabelsFrame a c := ⟨F.shrink.trans G.shrink, NtfnLabelsKept.trans F.ntfn G.ntfn, G.invExt⟩
+    QueueLabelsFrame a c :=
+  ⟨F.shrink.trans G.shrink, NtfnLabelsKept.trans F.ntfn G.ntfn, F.endpointQueue.trans G.endpointQueue,
+    G.invExt⟩
 
 theorem andThen {a b c : SystemState} (F : QueueLabelsFrame a b)
     (G : b.objects.invExt → QueueLabelsFrame b c) : QueueLabelsFrame a c := F.trans (G F.invExt)
 
 theorem of_frame {st st' : SystemState} (F : RecordsFrame st st') : QueueLabelsFrame st st' :=
-  ⟨.of_frame F, .of_frame F, F.invExt⟩
+  ⟨.of_frame F, .of_frame F, .of_frame F, F.invExt⟩
 
-/-- A core frame, with its coherence proved. -/
+/-- A core frame, with its queue labels proved. -/
 theorem of_coreFrame {st st' : SystemState} (F : RecordsCoreFrame st st')
-    (hN : NtfnLabelsKept st st') : QueueLabelsFrame st st' :=
-  ⟨.of_coreFrame F, hN, F.invExt⟩
+    (hN : NtfnLabelsKept st st') (hQ : EndpointQueueLabelsKept st st') : QueueLabelsFrame st st' :=
+  ⟨.of_coreFrame F, hN, hQ, F.invExt⟩
 
-/-- An endpoint-queue write. -/
-theorem of_endpointFrame {st st' : SystemState} (F : RecordsEndpointFrame st st') :
-    QueueLabelsFrame st st' :=
-  of_coreFrame F.core (.of_endpointFrame F)
+/-- An endpoint-queue write, with its link labels proved. -/
+theorem of_endpointFrame {st st' : SystemState} (F : RecordsEndpointFrame st st')
+    (hQ : EndpointQueueLabelsKept st st') : QueueLabelsFrame st st' :=
+  of_coreFrame F.core (.of_endpointFrame F) hQ
 
 theorem of_eq {st st' : SystemState} (hInv : st.objects.invExt) (h : st' = st) :
     QueueLabelsFrame st st' := by subst h; exact refl hInv
 
 theorem growAt {st st' : SystemState} (F : QueueLabelsFrame st st') (w : SeLe4n.ThreadId)
-    (e : SeLe4n.ObjId) : QueueLabelsGrowFrame w e st st' := ⟨F.shrink.growAt w e, F.ntfn, F.invExt⟩
+    (e : SeLe4n.ObjId) : QueueLabelsGrowFrame w e st st' :=
+  ⟨F.shrink.growAt w e, F.ntfn, F.endpointQueue.growAt w e, F.invExt⟩
 
 theorem ntfnGrowAt {st st' : SystemState} (F : QueueLabelsFrame st st') (w : SeLe4n.ThreadId)
-    (n : SeLe4n.ObjId) : QueueLabelsNtfnGrowFrame w n st st' := ⟨F.shrink, NtfnLabelsKept.growAt F.ntfn w n, F.invExt⟩
+    (n : SeLe4n.ObjId) : QueueLabelsNtfnGrowFrame w n st st' :=
+  ⟨F.shrink, NtfnLabelsKept.growAt F.ntfn w n, F.endpointQueue, F.invExt⟩
 
 /-- A frame followed by a growth is a growth. -/
 theorem thenGrow {a b c : SystemState} {w : SeLe4n.ThreadId} {e : SeLe4n.ObjId}
     (F : QueueLabelsFrame a b) (G : QueueLabelsGrowFrame w e b c) : QueueLabelsGrowFrame w e a c :=
-  ⟨EndpointWaitersGrowAt.shrink_trans F.shrink G.grow, NtfnLabelsKept.trans F.ntfn G.ntfn, G.invExt⟩
+  ⟨EndpointWaitersGrowAt.shrink_trans F.shrink G.grow, NtfnLabelsKept.trans F.ntfn G.ntfn,
+    EndpointQueueLabelsGrowAt.kept_trans F.endpointQueue G.endpointQueue, G.invExt⟩
 
 theorem thenNtfnGrow {a b c : SystemState} {w : SeLe4n.ThreadId} {n : SeLe4n.ObjId}
     (F : QueueLabelsFrame a b) (G : QueueLabelsNtfnGrowFrame w n b c) :
     QueueLabelsNtfnGrowFrame w n a c :=
-  ⟨F.shrink.trans G.shrink, NtfnLabelsGrowAt.kept_trans F.ntfn G.ntfn, G.invExt⟩
+  ⟨F.shrink.trans G.shrink, NtfnLabelsGrowAt.kept_trans F.ntfn G.ntfn,
+    F.endpointQueue.trans G.endpointQueue, G.invExt⟩
 
 theorem stage {ctx : LabelingContext} {st st' : SystemState} (F : QueueLabelsFrame st st') :
-    QueueLabelsStage ctx st st' := .of_parts F.shrink.waiters (F.ntfn ctx)
+    QueueLabelsStage ctx st st' := .of_parts F.shrink.waiters (F.ntfn ctx) (F.endpointQueue ctx)
 
 /-- The endpoint waiters' half alone, for a consumer that reads no notification. -/
 theorem waiters {ctx : LabelingContext} {st st' : SystemState} (F : QueueLabelsFrame st st') :
@@ -452,17 +574,25 @@ namespace QueueLabelsGrowFrame
 variable {w : SeLe4n.ThreadId} {e : SeLe4n.ObjId}
 
 theorem thenFrame {a b c : SystemState} (G : QueueLabelsGrowFrame w e a b) (F : QueueLabelsFrame b c) :
-    QueueLabelsGrowFrame w e a c := ⟨G.grow.trans_shrink F.shrink, NtfnLabelsKept.trans G.ntfn F.ntfn, F.invExt⟩
+    QueueLabelsGrowFrame w e a c :=
+  ⟨G.grow.trans_shrink F.shrink, NtfnLabelsKept.trans G.ntfn F.ntfn,
+    G.endpointQueue.trans_kept F.endpointQueue, F.invExt⟩
 
 theorem andThen {a b c : SystemState} (G : QueueLabelsGrowFrame w e a b)
     (F : b.objects.invExt → QueueLabelsFrame b c) : QueueLabelsGrowFrame w e a c := G.thenFrame (F G.invExt)
+
+/-- Two growths at one pair are a growth at it. -/
+theorem trans {a b c : SystemState} (G : QueueLabelsGrowFrame w e a b) (G' : QueueLabelsGrowFrame w e b c) :
+    QueueLabelsGrowFrame w e a c :=
+  ⟨G.grow.trans G'.grow, NtfnLabelsKept.trans G.ntfn G'.ntfn, G.endpointQueue.trans G'.endpointQueue,
+    G'.invExt⟩
 
 theorem refl {st : SystemState} (h : st.objects.invExt) : QueueLabelsGrowFrame w e st st :=
   (QueueLabelsFrame.refl h).growAt w e
 
 theorem stage {ctx : LabelingContext} {st st' : SystemState} (G : QueueLabelsGrowFrame w e st st')
     (hL : ctx.threadLabelOf w = ctx.endpointLabelOf e) : QueueLabelsStage ctx st st' :=
-  .of_parts (G.grow.waiters hL) (G.ntfn ctx)
+  .of_parts (G.grow.waiters hL) (G.ntfn ctx) (G.endpointQueue ctx hL)
 
 /-- The endpoint waiters' half alone. -/
 theorem waiters {ctx : LabelingContext} {st st' : SystemState} (G : QueueLabelsGrowFrame w e st st')
@@ -480,7 +610,9 @@ namespace QueueLabelsNtfnGrowFrame
 variable {w : SeLe4n.ThreadId} {n : SeLe4n.ObjId}
 
 theorem thenFrame {a b c : SystemState} (G : QueueLabelsNtfnGrowFrame w n a b) (F : QueueLabelsFrame b c) :
-    QueueLabelsNtfnGrowFrame w n a c := ⟨G.shrink.trans F.shrink, NtfnLabelsGrowAt.trans_kept G.ntfn F.ntfn, F.invExt⟩
+    QueueLabelsNtfnGrowFrame w n a c :=
+  ⟨G.shrink.trans F.shrink, NtfnLabelsGrowAt.trans_kept G.ntfn F.ntfn,
+    G.endpointQueue.trans F.endpointQueue, F.invExt⟩
 
 theorem andThen {a b c : SystemState} (G : QueueLabelsNtfnGrowFrame w n a b)
     (F : b.objects.invExt → QueueLabelsFrame b c) : QueueLabelsNtfnGrowFrame w n a c :=
@@ -492,7 +624,7 @@ theorem refl {st : SystemState} (h : st.objects.invExt) : QueueLabelsNtfnGrowFra
 /-- **A growth whose member the gate admitted carries the queue labels.** -/
 theorem stage {ctx : LabelingContext} {st st' : SystemState} (G : QueueLabelsNtfnGrowFrame w n st st')
     (hG : notificationFlowGate ctx n w = true) : QueueLabelsStage ctx st st' :=
-  .of_parts G.shrink.waiters (G.ntfn ctx hG)
+  .of_parts G.shrink.waiters (G.ntfn ctx hG) (G.endpointQueue ctx)
 
 theorem of_fst_eq {α : Type} {st st' : SystemState} {p : SystemState × α} {r : α}
     (s : QueueLabelsNtfnGrowFrame w n st p.1) (h : p = (st', r)) : QueueLabelsNtfnGrowFrame w n st st' := by
@@ -507,6 +639,7 @@ checks, and only that one. -/
 structure QueueLabelsGatedFrame (ctx : LabelingContext) (st st' : SystemState) : Prop where
   shrink : EndpointWaitersShrink st st'
   ntfn : notificationLabelsAgree ctx st → notificationLabelsAgree ctx st'
+  endpointQueue : EndpointQueueLabelsKept st st'
   invExt : st'.objects.invExt
 
 namespace QueueLabelsGatedFrame
@@ -514,20 +647,21 @@ namespace QueueLabelsGatedFrame
 variable {ctx : LabelingContext}
 
 theorem of_frame {st st' : SystemState} (F : QueueLabelsFrame st st') : QueueLabelsGatedFrame ctx st st' :=
-  ⟨F.shrink, F.ntfn ctx, F.invExt⟩
+  ⟨F.shrink, F.ntfn ctx, F.endpointQueue, F.invExt⟩
 
 theorem refl {st : SystemState} (h : st.objects.invExt) : QueueLabelsGatedFrame ctx st st :=
   of_frame (.refl h)
 
 theorem trans {a b c : SystemState} (F : QueueLabelsGatedFrame ctx a b) (G : QueueLabelsGatedFrame ctx b c) :
-    QueueLabelsGatedFrame ctx a c := ⟨F.shrink.trans G.shrink, G.ntfn ∘ F.ntfn, G.invExt⟩
+    QueueLabelsGatedFrame ctx a c :=
+  ⟨F.shrink.trans G.shrink, G.ntfn ∘ F.ntfn, F.endpointQueue.trans G.endpointQueue, G.invExt⟩
 
 theorem andThen {a b c : SystemState} (F : QueueLabelsGatedFrame ctx a b)
     (G : b.objects.invExt → QueueLabelsFrame b c) : QueueLabelsGatedFrame ctx a c :=
   F.trans (of_frame (G F.invExt))
 
 theorem stage {st st' : SystemState} (F : QueueLabelsGatedFrame ctx st st') : QueueLabelsStage ctx st st' :=
-  .of_parts F.shrink.waiters F.ntfn
+  .of_parts F.shrink.waiters F.ntfn (F.endpointQueue ctx)
 
 theorem of_fst_eq {α : Type} {st st' : SystemState} {p : SystemState × α} {r : α}
     (s : QueueLabelsGatedFrame ctx st p.1) (h : p = (st', r)) : QueueLabelsGatedFrame ctx st st' := by
@@ -539,7 +673,7 @@ end QueueLabelsGatedFrame
 theorem QueueLabelsNtfnGrowFrame.gated {ctx : LabelingContext} {w : SeLe4n.ThreadId} {n : SeLe4n.ObjId}
     {st st' : SystemState} (G : QueueLabelsNtfnGrowFrame w n st st')
     (hG : notificationFlowGate ctx n w = true) : QueueLabelsGatedFrame ctx st st' :=
-  ⟨G.shrink, G.ntfn ctx hG, G.invExt⟩
+  ⟨G.shrink, G.ntfn ctx hG, G.endpointQueue, G.invExt⟩
 
 /-! ### One thread's write -/
 
@@ -685,6 +819,111 @@ theorem mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId) {g : TCB → TCB}
 
 end NtfnLabelsKept
 
+/-- **A thread write that keeps its share of the endpoint queues' link
+labels**, under every labelling. -/
+def TcbEndpointLinksKept (x y : TCB) : Prop :=
+  ∀ (ctx : LabelingContext) (oid : SeLe4n.ObjId),
+    endpointQueueEntryLabelsAgree ctx oid (.tcb x) →
+      endpointQueueEntryLabelsAgree ctx oid (.tcb y)
+
+namespace TcbEndpointLinksKept
+
+theorem refl (x : TCB) : TcbEndpointLinksKept x x := fun _ _ h => h
+
+/-- A write of neither endpoint-queue link. -/
+theorem of_links {x y : TCB} (hP : y.queuePrevCode = x.queuePrevCode)
+    (hN : y.queueNextCode = x.queueNextCode) : TcbEndpointLinksKept x y := fun _ _ h => by
+  simp only [endpointQueueEntryLabelsAgree, TCB.queuePrev, TCB.queueNext, hP, hN] at h ⊢
+  exact h
+
+/-- A write that clears both endpoint-queue links. -/
+theorem of_cleared {x y : TCB} (hP : y.queuePrevCode = 0) (hN : y.queueNextCode = 0) :
+    TcbEndpointLinksKept x y := fun _ _ _ =>
+  ⟨fun u hu => by simp [TCB.queuePrev, hP, SeLe4n.ThreadId.ofOptCode] at hu,
+   fun u hu => by simp [TCB.queueNext, hN, SeLe4n.ThreadId.ofOptCode] at hu⟩
+
+end TcbEndpointLinksKept
+
+/-- Closes a thread write's endpoint-link obligation where the write keeps both
+endpoint-queue links or clears them. -/
+macro "tcb_endpoint_links_kept" : tactic =>
+  `(tactic| (intros; first
+    | exact TcbEndpointLinksKept.of_links rfl rfl
+    | (refine TcbEndpointLinksKept.of_links ?_ ?_ <;> simp <;> done)
+    | (refine TcbEndpointLinksKept.of_cleared ?_ ?_ <;> simp <;> done)))
+
+namespace EndpointQueueLabelsKept
+
+/-- **A raw insert over a slot**, its object's share read off the slot's. -/
+theorem insert {st : SystemState} {k : SeLe4n.ObjId} {o : KernelObject} (hInv : st.objects.invExt)
+    (hSelf : ∀ ctx, endpointQueueLabelsAgree ctx st → endpointQueueEntryLabelsAgree ctx k o) :
+    EndpointQueueLabelsKept st { st with objects := st.objects.insert k o } :=
+  of_slot (fun j hj => by
+      show (st.objects.insert k o)[j]? = _
+      simp only [RHTable_getElem?_eq_get?]
+      exact RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hj (eq_of_beq hb).symm) hInv)
+    fun ctx H o' hO => by
+      have : (st.objects.insert k o)[k]? = some o := by
+        simp only [RHTable_getElem?_eq_get?]; exact RobinHood.RHTable.getElem?_insert_self _ _ _ hInv
+      rw [show ({ st with objects := st.objects.insert k o } : SystemState).objects[k]? = _ from this] at hO
+      cases hO; exact hSelf ctx H
+
+/-- **A store over a slot**, its object's share read off the pre-state. -/
+theorem storeObject {st st' : SystemState} {k : SeLe4n.ObjId} {o : KernelObject}
+    (hInv : st.objects.invExt) (h : SeLe4n.Model.storeObject k o st = .ok ((), st'))
+    (hSelf : ∀ ctx, endpointQueueLabelsAgree ctx st → endpointQueueEntryLabelsAgree ctx k o) :
+    EndpointQueueLabelsKept st st' :=
+  of_slot (fun j hj => storeObject_objects_ne st st' k j o hj hInv h) fun ctx H o' hO => by
+    rw [storeObject_objects_eq st st' k o hInv h] at hO
+    cases hO; exact hSelf ctx H
+
+/-- **A TCB stored over a TCB.** -/
+theorem storeObject_tcb {st st' : SystemState} {t : SeLe4n.ThreadId} {x y : TCB}
+    (hInv : st.objects.invExt) (hOld : st.objects[t.toObjId]? = some (.tcb x))
+    (h : SeLe4n.Model.storeObject t.toObjId (.tcb y) st = .ok ((), st')) (hQ : TcbEndpointLinksKept x y) :
+    EndpointQueueLabelsKept st st' :=
+  storeObject hInv h fun ctx H => hQ ctx _ (H _ _ hOld)
+
+/-- **The checked TCB write.** -/
+theorem modifyTcb {st st' : SystemState} {t : SeLe4n.ThreadId} {f : TCB → TCB}
+    (hInv : st.objects.invExt) (h : _root_.SeLe4n.Kernel.modifyTcb st t f = .ok st')
+    (hQ : ∀ x, st.objects[t.toObjId]? = some (.tcb x) → TcbEndpointLinksKept x (f x)) :
+    EndpointQueueLabelsKept st st' := by
+  obtain ⟨tcb, hL, hSt⟩ := modifyTcb_ok_decompose h
+  have hO := lookupTcb_some_objects st t tcb hL
+  exact storeObject_tcb hInv hO hSt (hQ tcb hO)
+
+/-- **The unchecked TCB write.** -/
+theorem updateTcb (st : SystemState) (t : SeLe4n.ThreadId) {f : TCB → TCB}
+    (hInv : st.objects.invExt)
+    (hQ : ∀ x, st.objects[t.toObjId]? = some (.tcb x) → TcbEndpointLinksKept x (f x)) :
+    EndpointQueueLabelsKept st (st.updateTcb t f) := by
+  cases hT : st.getTcb? t with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact refl _
+  | some x =>
+    rw [SystemState.updateTcb_eq_of_some hT]
+    have hO := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+    exact insert hInv fun ctx H => hQ x hO ctx _ (H _ _ hO)
+
+/-- **A thread rewritten in its slot.** -/
+theorem mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId) {g : TCB → TCB}
+    (hQ : ∀ x, st.objects[t.toObjId]? = some (.tcb x) → TcbEndpointLinksKept x (g x)) :
+    EndpointQueueLabelsKept st (st.mapTcbInPlace t g) :=
+  of_slot (k := t.toObjId) (fun j hj => by
+      rw [SystemState.objects_mapTcbInPlace]
+      simp only [beq_iff_eq, show ¬ t.toObjId = j from fun e => hj e.symm, if_false])
+    fun ctx H o' hO => by
+      rw [SystemState.objects_mapTcbInPlace] at hO
+      simp only [beq_self_eq_true, if_true] at hO
+      cases hS : st.objects[t.toObjId]? with
+      | none => rw [hS] at hO; cases hO
+      | some o =>
+        rw [hS] at hO
+        cases o <;> simp only [Option.map_some, KernelObject.mapTcb, Option.some.injEq] at hO <;>
+          subst hO <;> first | exact hQ _ hS ctx _ (H _ _ hS) | exact H _ _ hS
+
+end EndpointQueueLabelsKept
+
 namespace QueueLabelsFrame
 
 /-- **A TCB stored over a TCB**, keeping its waits: the endpoint half. -/
@@ -703,20 +942,24 @@ theorem _root_.SeLe4n.Kernel.EndpointWaitersShrink.storeObject_tcb {st st' : Sys
 theorem storeObject_tcb {st st' : SystemState} {t : SeLe4n.ThreadId} {x y : TCB}
     (hInv : st.objects.invExt) (hOld : st.objects[t.toObjId]? = some (.tcb x))
     (h : storeObject t.toObjId (.tcb y) st = .ok ((), st')) (hS : TcbWaitsKept x y)
-    (hN : TcbNtfnKept x y := by tcb_ntfn_kept) :
+    (hN : TcbNtfnKept x y := by tcb_ntfn_kept)
+    (hQ : TcbEndpointLinksKept x y := by tcb_endpoint_links_kept) :
     QueueLabelsFrame st st' :=
   ⟨.storeObject_tcb hInv hOld h hS, NtfnLabelsKept.storeObject_tcb hInv hOld h hN,
+    EndpointQueueLabelsKept.storeObject_tcb hInv hOld h hQ,
     storeObject_preserves_objects_invExt st st' _ _ hInv h⟩
 
 /-- **The checked TCB write**, keeping the thread's waits. -/
 theorem modifyTcb {st st' : SystemState} {t : SeLe4n.ThreadId} {f : TCB → TCB}
     (hInv : st.objects.invExt) (h : _root_.SeLe4n.Kernel.modifyTcb st t f = .ok st')
     (hS : ∀ x, TcbWaitsKept x (f x))
-    (hN : ∀ x, st.objects[t.toObjId]? = some (.tcb x) → TcbNtfnKept x (f x) := by tcb_ntfn_kept) :
+    (hN : ∀ x, st.objects[t.toObjId]? = some (.tcb x) → TcbNtfnKept x (f x) := by tcb_ntfn_kept)
+    (hQ : ∀ x, st.objects[t.toObjId]? = some (.tcb x) → TcbEndpointLinksKept x (f x) := by
+      tcb_endpoint_links_kept) :
     QueueLabelsFrame st st' := by
   obtain ⟨tcb, hL, hSt⟩ := modifyTcb_ok_decompose h
   have hO := lookupTcb_some_objects st t tcb hL
-  exact storeObject_tcb hInv hO hSt (hS tcb) (hN tcb hO)
+  exact storeObject_tcb hInv hO hSt (hS tcb) (hN tcb hO) (hQ tcb hO)
 
 theorem updateTcb_shrink (st : SystemState) (t : SeLe4n.ThreadId) {f : TCB → TCB}
     (hInv : st.objects.invExt) (hS : ∀ x, TcbWaitsKept x (f x)) :
@@ -734,9 +977,12 @@ theorem updateTcb_shrink (st : SystemState) (t : SeLe4n.ThreadId) {f : TCB → T
 /-- **The unchecked TCB write**, likewise. -/
 theorem updateTcb (st : SystemState) (t : SeLe4n.ThreadId) {f : TCB → TCB}
     (hInv : st.objects.invExt) (hS : ∀ x, TcbWaitsKept x (f x))
-    (hN : ∀ x, st.objects[t.toObjId]? = some (.tcb x) → TcbNtfnKept x (f x) := by tcb_ntfn_kept) :
+    (hN : ∀ x, st.objects[t.toObjId]? = some (.tcb x) → TcbNtfnKept x (f x) := by tcb_ntfn_kept)
+    (hQ : ∀ x, st.objects[t.toObjId]? = some (.tcb x) → TcbEndpointLinksKept x (f x) := by
+      tcb_endpoint_links_kept) :
     QueueLabelsFrame st (st.updateTcb t f) :=
   ⟨updateTcb_shrink st t hInv hS, NtfnLabelsKept.updateTcb st t hInv hN,
+    EndpointQueueLabelsKept.updateTcb st t hInv hQ,
     SystemState.updateTcb_preserves_objects_invExt st t f hInv⟩
 
 /-- An IPC-state and message store of a state waiting on no endpoint. -/
@@ -769,9 +1015,12 @@ theorem storeTcbReceiveComplete {st st' : SystemState} {t : SeLe4n.ThreadId}
 /-- **A thread rewritten in its slot**, keeping its waits. -/
 theorem mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId) {g : TCB → TCB}
     (hInv : st.objects.invExt) (hS : ∀ x, TcbWaitsKept x (g x))
-    (hN : ∀ x, st.objects[t.toObjId]? = some (.tcb x) → TcbNtfnKept x (g x) := by tcb_ntfn_kept) :
+    (hN : ∀ x, st.objects[t.toObjId]? = some (.tcb x) → TcbNtfnKept x (g x) := by tcb_ntfn_kept)
+    (hQ : ∀ x, st.objects[t.toObjId]? = some (.tcb x) → TcbEndpointLinksKept x (g x) := by
+      tcb_endpoint_links_kept) :
     QueueLabelsFrame st (st.mapTcbInPlace t g) := by
   refine ⟨fun u tcb' e hU hW => ?_, NtfnLabelsKept.mapTcbInPlace st t hN,
+    EndpointQueueLabelsKept.mapTcbInPlace st t hQ,
     SystemState.mapTcbInPlace_objects_invExt _ _ _ hInv⟩
   by_cases hk : t.toObjId = u.toObjId
   · have hu : u = t := (SeLe4n.ThreadId.toObjId_injective _ _ hk).symm
@@ -784,12 +1033,13 @@ theorem mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId) {g : TCB → TCB}
     exact ⟨tcb', hU, hW⟩
 
 theorem updateTcbAtCode (st : SystemState) (k : Nat) {g : TCB → TCB} (hInv : st.objects.invExt)
-    (hS : ∀ x, TcbWaitsKept x (g x)) (hN : ∀ x, TcbNtfnKept x (g x) := by tcb_ntfn_kept) :
+    (hS : ∀ x, TcbWaitsKept x (g x)) (hN : ∀ x, TcbNtfnKept x (g x) := by tcb_ntfn_kept)
+    (hQ : ∀ x, TcbEndpointLinksKept x (g x) := by tcb_endpoint_links_kept) :
     QueueLabelsFrame st (st.updateTcbAtCode k g) := by
   unfold SystemState.updateTcbAtCode
   split
   · exact refl hInv
-  · exact mapTcbInPlace st _ hInv hS fun x _ => hN x
+  · exact mapTcbInPlace st _ hInv hS (fun x _ => hN x) fun x _ => hQ x
 
 /-- **The reply-waiter link writes keep every thread's IPC state.** -/
 theorem linkReplyWaiter (st : SystemState) (w s : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
@@ -840,6 +1090,7 @@ theorem QueueLabelsGrowFrame.storeTcbIpcStateAndMessage {st st' : SystemState} {
   obtain ⟨tcb, hL, hSt⟩ := modifyTcb_ok_decompose h
   have hO := lookupTcb_some_objects st t tcb hL
   refine ⟨?_, NtfnLabelsKept.storeObject_tcb hInv hO hSt (hN tcb hO),
+    (EndpointQueueLabelsKept.storeObject_tcb hInv hO hSt (by tcb_endpoint_links_kept)).growAt _ _,
     storeObject_preserves_objects_invExt st st' _ _ hInv hSt⟩
   refine EndpointWaitersGrowAt.of_slot (fun k hk => storeObject_objects_ne st st' _ k _ hk hInv hSt) fun y hy e hW => ?_
   rw [storeObject_objects_eq st st' _ _ hInv hSt] at hy

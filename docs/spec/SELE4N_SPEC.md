@@ -12417,6 +12417,20 @@ queues (the link store, the dual queue's pop, append and removal, the
 timeout's removal and the cancel's in-place pop) are endpoint-queue frames
 (`RecordsEndpointFrame`): core frames that keep every notification-queue read,
 so notification label coherence crosses them with no new proof.
+Since SX24 (`v0.37.53`, D46, D47) every entry carries those links' labels
+beside the waiters' and the notifications': an endpoint's send and receive
+queues end at threads of its label, and a thread's two endpoint-queue links
+name threads of its own (`endpointQueueLabelsAgree`, the third part of
+`QueueLabelsStage`; label facts only, the queue's shape staying with
+`ipcReachable`).  The boot's queues are empty; the append keeps it under the
+label equation its two-way gate gives the new member, and every other writer
+keeps it under every labelling.  With it the IPC teardown of a hidden victim is
+invisible on every arm (`cancelIpcBlocking_preserves_projection_high`): the
+endpoint it rewrites carries the victim's label (an end named the victim), the
+neighbours it splices carry the victim's label, and the notification it leaves
+admitted the victim; so the cross-core cancellation's non-interference
+(`cancelIpcBlockingOnCore_cancellation_NI` and its SMP form) takes the carried
+labels and no teardown-projection hypothesis.
 
 **What the gate checked is recorded in the state, on both sides (WS-RR RR8.16,
 `v0.35.191` and `v0.35.196`; equalities and carried by every entry since WS-SX

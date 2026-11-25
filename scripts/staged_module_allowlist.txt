@@ -131,6 +131,7 @@ SeLe4n.Kernel.ContextLenders.CapabilityDispatch # infra (WS-SX SX8: every capabi
 SeLe4n.Kernel.ContextLenders.SyscallEntry # infra (WS-SX SX8: the syscall entry's committed state keeps lendingLabelsEqual)
 SeLe4n.Kernel.QueueLabels.Stage # infra (WS-SX SX11.2: the waiters' stage, its frames from the records' frames, and the one-thread writes of endpointWaitersLabelsEqual)
 SeLe4n.Kernel.QueueLabels.NotificationLinks # infra (WS-SX SX21: the notification link, detach, unlink and queue-removal writes keep notificationLabelsAgree, each new link of its thread's label)
+SeLe4n.Kernel.QueueLabels.EndpointLinks # infra (WS-SX SX24: the endpoint queue writers keep endpointQueueLabelsAgree; the append grows it under the gate's label equation)
 SeLe4n.Kernel.QueueLabels.Ipc # infra (WS-SX SX11.2: the blocking IPC arms block at most their invoking thread on their endpoint; the checked send, call and receive carry endpointWaitersLabelsEqual from their two-way gates)
 SeLe4n.Kernel.QueueLabels.Fault # infra (WS-SX SX11.2: the fault delivery blocks at most the faulting thread on its handler's endpoint; the checked delivery carries endpointWaitersLabelsEqual from its two-way gate)
 SeLe4n.Kernel.QueueLabels.IpcReply # infra (WS-SX SX11.2: the reply leg, the fault reply and the checked reply transfer write no endpoint wait)

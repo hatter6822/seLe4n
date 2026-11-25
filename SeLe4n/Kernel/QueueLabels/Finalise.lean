@@ -93,31 +93,59 @@ theorem storeUnbindNotification (s : SystemState) (t : SeLe4n.ThreadId) (n : SeL
 
 end NtfnLabelsKept
 
+namespace EndpointQueueLabelsKept
+
+/-- **A waiter's pop, in place**: the specification's pop (`popHead_inPlace`). -/
+theorem storePopHead {st : SystemState} {e : SeLe4n.ObjId} {q : Bool} {ep : Endpoint}
+    {t : SeLe4n.ThreadId} {tcb : TCB} (hInv : st.objects.invExt)
+    (hE : st.getEndpoint? e = some ep) (hH : (endpointWaitQueue ep q).head = some t)
+    (hT : st.getTcb? t = some tcb) (hG : sendWakesInPlace st e t tcb.queueNext = true) :
+    EndpointQueueLabelsKept st (SeLe4n.Kernel.storePopHead st e q t tcb.queueNext) :=
+  endpointQueuePopHead hInv (popHead_inPlace st e q ep t tcb
+    ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG).1
+
+/-- **A blocked thread's removal, in place**: the specification's removal
+(`queueRemove_inPlace`), under the cancel's own guard. -/
+theorem storeQueueRemove {st : SystemState} {e : SeLe4n.ObjId} {q : Bool} {t : SeLe4n.ThreadId}
+    {ep : Endpoint} {tcb : TCB} (hInv : st.objects.invExt) (hE : st.getEndpoint? e = some ep)
+    (hT : st.getTcb? t = some tcb) (hG : endpointBlockedCancellable st e q t ep tcb = true) :
+    EndpointQueueLabelsKept st (SeLe4n.Kernel.storeQueueRemove st e q t ep tcb) :=
+  endpointQueueRemoveDual hInv (queueRemove_inPlace st e q t ep tcb
+    ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE)
+    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
+    (by simp only [endpointBlockedCancellable, Bool.and_eq_true] at hG; exact hG.1.2)).1
+
+end EndpointQueueLabelsKept
+
 namespace QueueLabelsFrame
 
 /-- **An endpoint waiter's cancel**: the pop, the restore or the fault mark,
 and the wake. -/
-theorem storeEndpointWaiterCancelled (st : SystemState) (e : SeLe4n.ObjId) (q : Bool)
-    (t : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (faulted : Bool)
-    (hInv : st.objects.invExt) :
-    QueueLabelsFrame st (SeLe4n.Kernel.storeEndpointWaiterCancelled st e q t next faulted) := by
-  have F1 := RecordsEndpointFrame.storePopHead st e q t next hInv
+theorem storeEndpointWaiterCancelled {st : SystemState} {e : SeLe4n.ObjId} {q : Bool}
+    {ep : Endpoint} {t : SeLe4n.ThreadId} {tcb : TCB} (faulted : Bool) (hInv : st.objects.invExt)
+    (hE : st.getEndpoint? e = some ep) (hH : (endpointWaitQueue ep q).head = some t)
+    (hT : st.getTcb? t = some tcb) (hG : sendWakesInPlace st e t tcb.queueNext = true) :
+    QueueLabelsFrame st
+      (SeLe4n.Kernel.storeEndpointWaiterCancelled st e q t tcb.queueNext faulted) := by
+  have F1 := RecordsEndpointFrame.storePopHead st e q t tcb.queueNext hInv
+  have K1 := EndpointQueueLabelsKept.storePopHead hInv hE hH hT hG
   unfold SeLe4n.Kernel.storeEndpointWaiterCancelled
   split
   · unfold SeLe4n.Kernel.storeEndpointWaiterFaulted
-    exact (of_endpointFrame F1).trans (updateTcb _ t (f := faultedEndpointWaiterTcb) F1.invExt
+    exact (of_endpointFrame F1 K1).trans (updateTcb _ t (f := faultedEndpointWaiterTcb) F1.invExt
       (fun _ => TcbWaitsKept.of_noWait (by simp))
       fun _ _ => TcbNtfnKept.of_notBlocked (fun _ h => by simp [faultedEndpointWaiterTcb] at h))
   unfold SeLe4n.Kernel.storeEndpointWaiterRestarted
-  have S2 := (of_endpointFrame F1).trans (updateTcb _ t (f := cancelledEndpointWaiterTcb) F1.invExt
+  have S2 := (of_endpointFrame F1 K1).trans (updateTcb _ t (f := cancelledEndpointWaiterTcb) F1.invExt
     (fun _ => TcbWaitsKept.of_noWait (by simp [cancelledEndpointWaiterTcb]))
     fun _ _ => TcbNtfnKept.of_notBlocked (fun _ h => by simp [cancelledEndpointWaiterTcb] at h))
   refine S2.trans (of_frame (RecordsFrame.enqueueRunnableOnCore _ _ t S2.invExt fun x hx => ?_))
   rw [SystemState.updateTcb_getTcb?_self _ _ _ F1.invExt] at hx
-  cases hT : (SeLe4n.Kernel.storePopHead st e q t next).getTcb? t with
-  | none => rw [hT] at hx; cases hx
+  cases hT' : (SeLe4n.Kernel.storePopHead st e q t tcb.queueNext).getTcb? t with
+  | none => rw [hT'] at hx; cases hx
   | some y =>
-    rw [hT] at hx; cases hx
+    rw [hT'] at hx; cases hx
     simp [cancelledEndpointWaiterTcb]
 
 /-- **A notification waiter's cancel and wake.** -/
@@ -139,18 +167,25 @@ theorem finaliseSuspend (s : SystemState) (t : SeLe4n.ThreadId) (hInv : s.object
 
 /-- **An endpoint-blocked thread's cancel**: off the queue, restored. -/
 theorem storeEndpointBlockedCancelled (s : SystemState) (e : SeLe4n.ObjId) (q : Bool)
-    (t : SeLe4n.ThreadId) (ep : Endpoint) (tcb : TCB) (hInv : s.objects.invExt) :
+    (t : SeLe4n.ThreadId) (ep : Endpoint) (tcb : TCB) (hInv : s.objects.invExt)
+    (hT : s.getTcb? t = some tcb) (hE : s.getEndpoint? e = some ep)
+    (hG : endpointBlockedCancellable s e q t ep tcb = true) :
     QueueLabelsFrame s (SeLe4n.Kernel.storeEndpointBlockedCancelled s e q t ep tcb) := by
   have hN := NtfnLabelsKept.storeEndpointBlockedCancelled s e q t ep tcb hInv
+  have hQ : EndpointQueueLabelsKept s (SeLe4n.Kernel.storeEndpointBlockedCancelled s e q t ep tcb) :=
+    (EndpointQueueLabelsKept.storeQueueRemove hInv hE hT hG).trans
+      (EndpointQueueLabelsKept.updateTcb _ t (FinaliseFrame.storeQueueRemove s e q t ep tcb hInv).invExt
+        (by tcb_endpoint_links_kept))
   obtain ⟨X, i, k, hEq⟩ := tcbProjKept.storeEndpointBlockedCancelled_split (g := TCB.ipcState)
     s e q t ep tcb hInv (fun _ _ => rfl) (fun _ _ => rfl)
-  rw [hEq] at hN ⊢
+  rw [hEq] at hN hQ ⊢
   have i' := SystemState.updateTcb_preserves_objects_invExt _ t tcbOffQueue i
   have S3 := updateTcb _ t i' (f := cancelledEndpointWaiterTcb)
     (fun _ => TcbWaitsKept.of_noWait (by simp [cancelledEndpointWaiterTcb]))
     fun _ _ => TcbNtfnKept.of_notBlocked (fun _ h => by simp [cancelledEndpointWaiterTcb] at h)
   exact ⟨(EndpointWaitersShrink.of_ipcKept k).trans ((EndpointWaitersShrink.of_ipcKept
-    (tcbProjKept.updateTcb _ t (f := tcbOffQueue) i fun _ => rfl)).trans S3.shrink), hN, S3.invExt⟩
+    (tcbProjKept.updateTcb _ t (f := tcbOffQueue) i fun _ => rfl)).trans S3.shrink), hN, hQ,
+    S3.invExt⟩
 
 /-- **One reply waiter orphaned**: still blocked on its reply. -/
 theorem orphanReplyWaiter (s : SystemState) (w x : SeLe4n.ThreadId) (hInv : s.objects.invExt) :
@@ -185,21 +220,30 @@ theorem finaliseReplyCancel (s : SystemState) (c : SeLe4n.ThreadId) (t : TCB)
 theorem finaliseFinalObject (target : Nat) (st : SystemState) (hInv : st.objects.invExt) :
     QueueLabelsFrame st (SeLe4n.Kernel.finaliseFinalObject target st) :=
   finaliseFinalObject_closed (QueueLabelsFrame st)
-    (fun e q s _ t tcb h _ _ _ _ => h.trans (storeEndpointWaiterCancelled s e q t _ _ h.invExt))
+    (fun e q s _ t tcb h hE hH hT hC => h.trans (storeEndpointWaiterCancelled _ h.invExt hE hH hT
+      (endpointWaiterCancellable_parts hC).2.2))
     (fun n s _ t tcb h _ _ hT hC => h.trans (notificationWaiterCancelled s n t tcb h.invExt hT hC))
     (fun n s _ t h _ _ _ _ => h.trans (of_ipcKept
       (FinaliseFrame.storeUnbindNotification s t n h.invExt).invExt
       (tcbProjKept.storeUnbindNotification s t n h.invExt fun _ => rfl)
-      (NtfnLabelsKept.storeUnbindNotification s t n h.invExt)))
+      (NtfnLabelsKept.storeUnbindNotification s t n h.invExt)
+      (by
+        unfold SeLe4n.Kernel.storeUnbindNotification
+        exact (EndpointQueueLabelsKept.updateTcb s t h.invExt (by tcb_endpoint_links_kept)).trans
+          (EndpointQueueLabelsKept.modifyObject
+            (SystemState.updateTcb_preserves_objects_invExt _ _ _ h.invExt) fun _ o h => by
+              cases o <;> first | exact h | exact trivial))))
     (fun s t _ h _ _ _ _ => h.trans (of_frame (RecordsFrame.descheduleAtPlacement s t h.invExt)))
     (fun _ _ _ _ _ _ h _ _ _ _ hOk =>
       h.trans (of_frame (RecordsFrame.cancelBoundDonationOnCore h.invExt hOk)))
     (fun s _ t tcb _ h _ _ _ _ => h.trans (cancelIpcBlocking s t tcb h.invExt))
-    (fun s e q t ep tcb h _ _ _ => h.trans (storeEndpointBlockedCancelled s e q t ep tcb h.invExt))
+    (fun s e q t ep tcb h hT hE hG => h.trans (storeEndpointBlockedCancelled s e q t ep tcb h.invExt
+      hT hE hG))
     (fun s t _ h _ _ _ _ _ => h.trans (finaliseSuspend s t h.invExt))
     (fun s t h => h.trans (of_ipcKept (FinaliseFrame.releaseCores s t h.invExt).invExt
       (tcbProjKept.of_objects (finaliseThreadReleaseCores_objects s t))
-      (NtfnLabelsKept.of_objects_eq (finaliseThreadReleaseCores_objects s t))))
+      (NtfnLabelsKept.of_objects_eq (finaliseThreadReleaseCores_objects s t))
+      (EndpointQueueLabelsKept.of_objects_eq (finaliseThreadReleaseCores_objects s t))))
     (fun s s1 x _ rid r h _ _ hR _ hS _ _ _ _ => by
       have F := RecordsFrame.storeReply h.invExt
         ((SystemState.getReply?_eq_some_iff _ _ _).mp hR) hS

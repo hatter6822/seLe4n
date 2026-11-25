@@ -5638,22 +5638,16 @@ theorem schedContextUnbind_preserves_projection
     - **G3 `cancelIpcBlocking`**: the victim-TCB writes are covered by the
       high-victim OBJECT gate (`projectKernelObject` does NOT strip
       `ipcState` — the audit-corrected sketch: a high victim's whole object
-      is elided, which is what covers its field rewrites). The open
-      obligation is the **endpoint-queue splice**: `spliceOutMidQueueNode`
-      rewrites the victim's queue-NEIGHBOUR TCBs' `queuePrev`/`queueNext`,
-      and queue-link fields survive projection — so a high victim spliced
-      out from between low-observable neighbours changes the low projection.
-      The invariant this is tracked against — "a queue's members share the
-      endpoint's label" — is establishable now that the live admission gate is
-      two-way (`endpointFlowGate`, label equality): every admission keeps a
-      queue label-uniform (`endpointAdmissionUniform`).  The gate composed
-      with `LabelingContextValid.endpointObjectCoherence` closes the *endpoint
-      object* — non-observable whenever any waiter is,
-      `endpointObjectHigh_of_admittedThreadHigh`; the neighbours are closed by
-      the state invariant that carries the uniformity across every
-      transition, not yet proved.  The SM6.E cancellation-NI module consumes
-      this obligation as its `hTeardownProj` hypothesis; see
-      `docs/REGISTERED_DEBT.md`.
+      is elided, which is what covers its field rewrites). The
+      **endpoint-queue splice** rewrites the victim's queue-NEIGHBOUR TCBs'
+      `queuePrev`/`queueNext`, and queue-link fields survive projection; WS-SX
+      SX24 closes it from the state invariant that carries the label
+      uniformity across every entry (`endpointQueueLabelsAgree`: each link of
+      a thread names a thread of its label, each queue end one of its
+      endpoint's), so a hidden victim's neighbours are hidden and the endpoint
+      object is too (`endpointObjectHigh_of_admittedThreadHigh`).  The SM6.E
+      cancellation-NI module discharges the teardown on every arm
+      (`cancelIpcBlocking_preserves_projection_high`).
     - **G4 re-lookup**: no state change.
     - **G5 the donation arm** (`cancelDonationArmOnCore`, WS-RC R5.A
       split): dispatches on `schedContextBinding`:
