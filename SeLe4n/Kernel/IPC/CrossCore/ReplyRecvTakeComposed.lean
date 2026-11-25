@@ -4,8 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -/
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvBlockComposed
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvLegGuards
-import SeLe4n.Kernel.IPC.CrossCore.LongReplyRecvTakeInPlace
-import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvFaultTakeInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvTakeFrame
 
 /-!
 # The reply-receive whose receive leg takes a waiting sender, composed over its reply arm
@@ -357,8 +356,8 @@ theorem ReplyRecvArm.desched_hold (arm : ReplyRecvArm) (r : SeLe4n.ThreadId) (m 
   arm.desched_msg r id (fun _ => some m) id X tid
 
 /-- **The take's tail, over the arm, stages the caller's held reply and the
-server's message as frames** (`replyRecvTakeFrame_staged` with the arm's
-deschedule). -/
+server's message as frames**, the arm's deschedule committed past both
+writes (`ReplyRecvArm.desched_hold`). -/
 theorem ReplyRecvArm.takeFrame_staged (arm : ReplyRecvArm) (Y : SystemState) (c tid s : SeLe4n.ThreadId)
     (epId : SeLe4n.ObjId) (ep : Endpoint) (sTcb : TCB) (core : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
@@ -778,8 +777,8 @@ overflow words copied into its buffer (`deliverLongReplyRecvFrame`). -/
   deliverLongReplyRecvFrame Z c rf len tid badge capInfo
 
 /-- **The long take's tail, over the arm**, stages the caller's held reply and
-the server's message as frames (`replyRecvTakeFrame_stagedLong` with the arm's
-deschedule). -/
+the server's message as frames, the arm's deschedule committed past both
+writes (`ReplyRecvArm.desched_hold`). -/
 theorem ReplyRecvArm.takeFrame_stagedLong (arm : ReplyRecvArm) (st0 Y : SystemState) (c tid s : SeLe4n.ThreadId)
     (epId : SeLe4n.ObjId) (ep : Endpoint) (sTcb : TCB) (core : CoreId)
     (rf : SeLe4n.RegisterFile) (len : Nat)
@@ -1204,7 +1203,8 @@ deschedule, the server's priority walk, then the fault answer to the caller
   performFaultAnswer Z c kind label ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 layout rf n off
 
 /-- **The fault take's tail, over the arm**, stages the server's message as its
-frame (`replyRecvFaultTakeFrame_staged` with the arm's deschedule). -/
+frame, the arm's deschedule committed past the write
+(`ReplyRecvArm.desched_hold`). -/
 theorem ReplyRecvArm.faultTakeFrame_staged (arm : ReplyRecvArm) (Q : SystemState) (c tid s : SeLe4n.ThreadId)
     (epId : SeLe4n.ObjId) (ep : Endpoint) (sTcb : TCB) (core : CoreId) (kind label : Nat)
     (ip sp lr x0 x1 x2 x3 x4 x5 x6 x7 : UInt64) (layout : SeLe4n.SyscallRegisterLayout)

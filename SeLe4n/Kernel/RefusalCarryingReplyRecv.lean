@@ -15,10 +15,7 @@ import SeLe4n.Kernel.IPC.CrossCore.ReplyUnheldPopFrame
 import SeLe4n.Kernel.IPC.CrossCore.FaultAnswerInPlace
 import SeLe4n.Kernel.IPC.CrossCore.LongReplyRecvFrame
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvCapsDelivered
-import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvTakeInPlace
-import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvUnlinkedTakeInPlace
-import SeLe4n.Kernel.IPC.CrossCore.LongReplyRecvTakeInPlace
-import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvFaultTakeInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvTakeFrame
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvDonatedCallTakeInPlace
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvCallTakeInPlace
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvUnlinkedCallTakeInPlace

@@ -9,7 +9,7 @@
 
 import SeLe4n.Kernel.IPC.CrossCore.ReplyPopFrame
 import SeLe4n.Kernel.IPC.CrossCore.ReceiveCallDonatingInPlace
-import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvTakeInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvTakeFrame
 
 /-!
 # The donated reply-receive whose receive leg takes a donating caller, in place

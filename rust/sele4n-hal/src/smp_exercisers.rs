@@ -9290,7 +9290,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // root task's reply-receive through the orphan's reply capability
         // answers the partner, hands it the context the reply object heads,
         // and its receive leg takes the queued send at once
-        // (`performReplyRecvUnheldTakeDelivered`).  The root task suspends and
+        // (`performReplyRecvArmTakeDelivered` on the unheld arm).  The root task suspends and
         // deletes the third thread and leaves the state the second orphan left.
         retype(
             "untyped-retype-orphan-take-server",
@@ -9653,7 +9653,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // third thread carved in the deleted server's slot queueing its send
         // before the root task's reply-receive, which installs the capability,
         // hands the partner the context and takes the send at once
-        // (`performReplyRecvUnheldTakeCapsDelivered`); the root task signals
+        // (`performReplyRecvArmTakeCapsDelivered` on the unheld arm); the root task signals
         // through the copy, takes the badge and deletes it.
         retype(
             "untyped-retype-unheld-take-caps-server",
@@ -10839,7 +10839,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // receive leg meeting a sender already queued: the scenario above
         // again, a third thread carved in the deleted server's slot queueing
         // its send on the endpoint before the root task's reply-receive, whose
-        // receive leg takes it at once (`performReplyRecvUnlinkedTakeDelivered`).
+        // receive leg takes it at once (`performReplyRecvArmTakeDelivered` on the unlinked arm).
         retype(
             "untyped-retype-unlinked-take-server",
             UNTYPED_CAP,
@@ -11504,7 +11504,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         ),
         // WS-SX SX8.3: the installing reply-receive on an unlinked reply
         // object, its receive leg meeting a sender already queued
-        // (`performReplyRecvUnlinkedTakeCapsDelivered`), as the orphan's above.
+        // (`performReplyRecvArmTakeCapsDelivered` on the unlinked arm), as the orphan's above.
         retype(
             "untyped-retype-unlinked-take-caps-server",
             UNTYPED_CAP,
@@ -12346,8 +12346,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // WS-SX SX8: the two reply-receives above again at the longest
         // message: the root task's reply-receive copies its overflow words
         // into the partner's buffer and takes the queued send in place
-        // (`performReplyRecvTakeDeliveredLong`), then, installing one
-        // capability, `performReplyRecvTakeCapsDeliveredLong`.
+        // (`performReplyRecvArmTakeDeliveredLong`), then, installing one
+        // capability, `performReplyRecvArmTakeCapsDeliveredLong`.
         invocation(
             "queued-sender-long-resume-partner",
             TCB_RESUME,
@@ -19536,7 +19536,7 @@ fn fault_entries() -> Option<bool> {
     // waiting root task, the third thread queues its send while the root task
     // waits on the notification, and the root task's reply-receive restarts
     // the partner and takes the send in place
-    // (`performReplyRecvFaultTakeDelivered`).
+    // (`performReplyRecvArmFaultTakeDelivered`).
     let take_resume_restorer = invocation(
         "cap-fault-take-restorer-resume",
         TCB_RESUME,
