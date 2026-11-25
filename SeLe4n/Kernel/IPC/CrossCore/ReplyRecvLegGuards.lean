@@ -3,7 +3,7 @@ Copyright (C) 2026 seLe4n contributors
 SPDX-License-Identifier: GPL-3.0-or-later
 -/
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyHeldInPlace
-import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvUnlinkedTakeInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvTakeFrame
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvDonatedCallTakeInPlace
 
 /-!

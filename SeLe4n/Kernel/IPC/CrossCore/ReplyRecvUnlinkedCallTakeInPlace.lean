@@ -8,7 +8,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvCallTakeInPlace
-import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvUnlinkedTakeInPlace
+import SeLe4n.Kernel.IPC.CrossCore.ReplyRecvTakeFrame
 
 /-!
 # The reply-receive on an unlinked reply object whose receive leg takes a queued Call

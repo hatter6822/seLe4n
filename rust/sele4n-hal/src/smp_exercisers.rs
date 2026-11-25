@@ -8354,6 +8354,881 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             PARTNER_TCB_CAP,
             [0; 4],
         )),
+        // WS-SX SX26: the held reply-receives above again, each receive leg
+        // meeting a sender already queued: a third thread carved in the chain
+        // slot is resumed, the root task waits so it runs, and it wakes the root
+        // task and queues its send on the endpoint.  The root task's
+        // reply-receive answers the partner over the held arm and its receive
+        // leg takes the queued send in place (`performReplyRecvArmTakeDelivered`,
+        // `performReplyRecvArmTakeDeliveredLong`,
+        // `performReplyRecvArmTakeCapsDelivered`,
+        // `performReplyRecvArmTakeCapsDeliveredLong`); the root task suspends
+        // and deletes the third thread and receives again, so the scenario's
+        // teardown runs as before.
+        configure(
+            "held-take-reply-recv-configure",
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "held-take-reply-recv-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "held-take-reply-recv-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "held-take-reply-recv-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "held-take-reply-recv-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x6c, 0],
+            true,
+        ),
+        retype(
+            "untyped-retype-held-take-reply-recv-context",
+            UNTYPED_CAP,
+            [
+                SCHED_CONTEXT_TYPE,
+                THREAD_CHILD_IDS[2],
+                CNODE_CAP,
+                MINT_SLOT,
+            ],
+            FRAME_VADDR,
+        ),
+        configure(
+            "held-take-reply-recv-carved-configure",
+            FRAME_VADDR,
+            MINT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "held-take-reply-recv-bind-lender",
+            SCHED_CONTEXT_BIND,
+            MINT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        retype(
+            "untyped-retype-held-take-reply-recv-sender",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "held-take-reply-recv-sender-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "held-take-reply-recv-sender-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "held-take-reply-recv-resume-sender",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "held-take-reply-recv-root-waits-sender",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("held-take-reply-recv-sender-wakes-root"),
+        partner_step(
+            "held-take-reply-recv-sender-sends",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0xa2, 0],
+            true,
+        ),
+        with_reply(
+            partner_step(
+                "held-take-reply-recv",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                1,
+                [0x6d, 0],
+                false,
+            ),
+            REPLY_CAP,
+        ),
+        invocation(
+            "held-take-reply-recv-suspend-sender",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "held-take-reply-recv-sender-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        with_reply(
+            partner_step(
+                "held-take-reply-recv-root-receives-again",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "held-take-reply-recv-partner-wakes-root",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x6e, 0],
+            false,
+        ),
+        partner_step(
+            "held-take-reply-recv-partner-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "held-take-reply-recv-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "held-take-reply-recv-carved-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MINT_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "held-take-reply-recv-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "held-take-reply-recv-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "held-take-reply-recv-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        signal("held-take-reply-recv-partner-wakes-root-again"),
+        self_suspend(invocation(
+            "held-take-reply-recv-partner-suspends",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        )),
+        configure(
+            "held-take-reply-recv-long-configure",
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "held-take-reply-recv-long-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "held-take-reply-recv-long-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "held-take-reply-recv-long-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "held-take-reply-recv-long-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x6c, 0],
+            true,
+        ),
+        retype(
+            "untyped-retype-held-take-reply-recv-long-context",
+            UNTYPED_CAP,
+            [
+                SCHED_CONTEXT_TYPE,
+                THREAD_CHILD_IDS[2],
+                CNODE_CAP,
+                MINT_SLOT,
+            ],
+            FRAME_VADDR,
+        ),
+        configure(
+            "held-take-reply-recv-long-carved-configure",
+            FRAME_VADDR,
+            MINT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "held-take-reply-recv-long-bind-lender",
+            SCHED_CONTEXT_BIND,
+            MINT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        retype(
+            "untyped-retype-held-take-reply-recv-long-sender",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "held-take-reply-recv-long-sender-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "held-take-reply-recv-long-sender-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "held-take-reply-recv-long-resume-sender",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "held-take-reply-recv-long-root-waits-sender",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("held-take-reply-recv-long-sender-wakes-root"),
+        partner_step(
+            "held-take-reply-recv-long-sender-sends",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0xa2, 0],
+            true,
+        ),
+        with_reply(
+            partner_step(
+                "held-take-reply-recv-long",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                TAIL_MESSAGE_LENGTH,
+                [0x6d, 0],
+                false,
+            ),
+            REPLY_CAP,
+        ),
+        invocation(
+            "held-take-reply-recv-long-suspend-sender",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "held-take-reply-recv-long-sender-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        with_reply(
+            partner_step(
+                "held-take-reply-recv-long-root-receives-again",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "held-take-reply-recv-long-partner-wakes-root",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x6e, 0],
+            false,
+        ),
+        partner_step(
+            "held-take-reply-recv-long-partner-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "held-take-reply-recv-long-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "held-take-reply-recv-long-carved-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MINT_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "held-take-reply-recv-long-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "held-take-reply-recv-long-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "held-take-reply-recv-long-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        signal("held-take-reply-recv-long-partner-wakes-root-again"),
+        self_suspend(invocation(
+            "held-take-reply-recv-long-partner-suspends",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        )),
+        configure(
+            "held-take-reply-recv-installs-cap-configure",
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "held-take-reply-recv-installs-cap-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "held-take-reply-recv-installs-cap-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "held-take-reply-recv-installs-cap-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "held-take-reply-recv-installs-cap-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x6c, 0],
+            true,
+        ),
+        retype(
+            "untyped-retype-held-take-reply-recv-installs-cap-context",
+            UNTYPED_CAP,
+            [
+                SCHED_CONTEXT_TYPE,
+                THREAD_CHILD_IDS[2],
+                CNODE_CAP,
+                MINT_SLOT,
+            ],
+            FRAME_VADDR,
+        ),
+        configure(
+            "held-take-reply-recv-installs-cap-carved-configure",
+            FRAME_VADDR,
+            MINT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "held-take-reply-recv-installs-cap-bind-lender",
+            SCHED_CONTEXT_BIND,
+            MINT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        retype(
+            "untyped-retype-held-take-reply-recv-installs-cap-sender",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "held-take-reply-recv-installs-cap-sender-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "held-take-reply-recv-installs-cap-sender-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "held-take-reply-recv-installs-cap-resume-sender",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "held-take-reply-recv-installs-cap-root-waits-sender",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("held-take-reply-recv-installs-cap-sender-wakes-root"),
+        partner_step(
+            "held-take-reply-recv-installs-cap-sender-sends",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0xa2, 0],
+            true,
+        ),
+        receive_path(
+            "held-take-reply-recv-installs-cap-receive-path",
+            FRAME_VADDR,
+            [CNODE_CAP, cap_address(EMPTY_SLOT), 64],
+        ),
+        with_caps_keeping_path(
+            with_reply(
+                partner_step(
+                    "held-take-reply-recv-installs-cap",
+                    REPLY_RECV,
+                    ENDPOINT_CAP,
+                    ONE_EXTRA_CAP | 1,
+                    [0x6d, 0],
+                    false,
+                ),
+                REPLY_CAP,
+            ),
+            FRAME_VADDR,
+            [NOTIFICATION_CAP, 0, 0],
+        ),
+        RoundTrip {
+            cptr: cap_address(EMPTY_SLOT),
+            ..signal("held-take-reply-recv-installs-cap-installed-signal")
+        },
+        RoundTrip {
+            name: "held-take-reply-recv-installs-cap-installed-wait",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            reply: None,
+            issued: None,
+            selects: None,
+            msg_len: 1,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            resumes: false,
+            caps_or_badges: None,
+            overflow: None,
+            returns: None,
+        },
+        invocation(
+            "held-take-reply-recv-installs-cap-installed-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [EMPTY_SLOT, 0, 0, 0],
+        ),
+        receive_path(
+            "held-take-reply-recv-installs-cap-receive-path-closed",
+            FRAME_VADDR,
+            [0; 3],
+        ),
+        invocation(
+            "held-take-reply-recv-installs-cap-suspend-sender",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "held-take-reply-recv-installs-cap-sender-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        with_reply(
+            partner_step(
+                "held-take-reply-recv-installs-cap-root-receives-again",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "held-take-reply-recv-installs-cap-partner-wakes-root",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x6e, 0],
+            false,
+        ),
+        partner_step(
+            "held-take-reply-recv-installs-cap-partner-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "held-take-reply-recv-installs-cap-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "held-take-reply-recv-installs-cap-carved-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MINT_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "held-take-reply-recv-installs-cap-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "held-take-reply-recv-installs-cap-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "held-take-reply-recv-installs-cap-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        signal("held-take-reply-recv-installs-cap-partner-wakes-root-again"),
+        self_suspend(invocation(
+            "held-take-reply-recv-installs-cap-partner-suspends",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        )),
+        configure(
+            "held-take-long-reply-recv-installs-cap-configure",
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "held-take-long-reply-recv-installs-cap-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "held-take-long-reply-recv-installs-cap-resume",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "held-take-long-reply-recv-installs-cap-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "held-take-long-reply-recv-installs-cap-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x6c, 0],
+            true,
+        ),
+        retype(
+            "untyped-retype-held-take-long-reply-recv-installs-cap-context",
+            UNTYPED_CAP,
+            [
+                SCHED_CONTEXT_TYPE,
+                THREAD_CHILD_IDS[2],
+                CNODE_CAP,
+                MINT_SLOT,
+            ],
+            FRAME_VADDR,
+        ),
+        configure(
+            "held-take-long-reply-recv-installs-cap-carved-configure",
+            FRAME_VADDR,
+            MINT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "held-take-long-reply-recv-installs-cap-bind-lender",
+            SCHED_CONTEXT_BIND,
+            MINT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        retype(
+            "untyped-retype-held-take-long-reply-recv-installs-cap-sender",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "held-take-long-reply-recv-installs-cap-sender-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "held-take-long-reply-recv-installs-cap-sender-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "held-take-long-reply-recv-installs-cap-resume-sender",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "held-take-long-reply-recv-installs-cap-root-waits-sender",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("held-take-long-reply-recv-installs-cap-sender-wakes-root"),
+        partner_step(
+            "held-take-long-reply-recv-installs-cap-sender-sends",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0xa2, 0],
+            true,
+        ),
+        receive_path(
+            "held-take-long-reply-recv-installs-cap-receive-path",
+            FRAME_VADDR,
+            [CNODE_CAP, cap_address(EMPTY_SLOT), 64],
+        ),
+        with_caps_keeping_path(
+            with_reply(
+                partner_step(
+                    "held-take-long-reply-recv-installs-cap",
+                    REPLY_RECV,
+                    ENDPOINT_CAP,
+                    ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
+                    [0x6d, 0],
+                    false,
+                ),
+                REPLY_CAP,
+            ),
+            FRAME_VADDR,
+            [NOTIFICATION_CAP, 0, 0],
+        ),
+        RoundTrip {
+            cptr: cap_address(EMPTY_SLOT),
+            ..signal("held-take-long-reply-recv-installs-cap-installed-signal")
+        },
+        RoundTrip {
+            name: "held-take-long-reply-recv-installs-cap-installed-wait",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            reply: None,
+            issued: None,
+            selects: None,
+            msg_len: 1,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            resumes: false,
+            caps_or_badges: None,
+            overflow: None,
+            returns: None,
+        },
+        invocation(
+            "held-take-long-reply-recv-installs-cap-installed-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [EMPTY_SLOT, 0, 0, 0],
+        ),
+        receive_path(
+            "held-take-long-reply-recv-installs-cap-receive-path-closed",
+            FRAME_VADDR,
+            [0; 3],
+        ),
+        invocation(
+            "held-take-long-reply-recv-installs-cap-suspend-sender",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "held-take-long-reply-recv-installs-cap-sender-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        with_reply(
+            partner_step(
+                "held-take-long-reply-recv-installs-cap-root-receives-again",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "held-take-long-reply-recv-installs-cap-partner-wakes-root",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0x6e, 0],
+            false,
+        ),
+        partner_step(
+            "held-take-long-reply-recv-installs-cap-partner-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "held-take-long-reply-recv-installs-cap-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "held-take-long-reply-recv-installs-cap-carved-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MINT_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "held-take-long-reply-recv-installs-cap-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "held-take-long-reply-recv-installs-cap-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "held-take-long-reply-recv-installs-cap-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        signal("held-take-long-reply-recv-installs-cap-partner-wakes-root-again"),
+        self_suspend(invocation(
+            "held-take-long-reply-recv-installs-cap-partner-suspends",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        )),
         // A granting reply on a donated reply object that installs: the
         // partner, holding the image's scheduling context, calls and lends it
         // to the root task; the root task's reply, naming the notification
@@ -9290,7 +10165,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // root task's reply-receive through the orphan's reply capability
         // answers the partner, hands it the context the reply object heads,
         // and its receive leg takes the queued send at once
-        // (`performReplyRecvUnheldTakeDelivered`).  The root task suspends and
+        // (`performReplyRecvArmTakeDelivered` on the unheld arm).  The root task suspends and
         // deletes the third thread and leaves the state the second orphan left.
         retype(
             "untyped-retype-orphan-take-server",
@@ -9463,6 +10338,185 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         ),
         invocation(
             "orphan-take-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
+        // WS-SX SX26: the take above again at the longest message, 120 words:
+        // the root task's reply-receive copies its overflow words into the
+        // partner's buffer and takes the queued send in place over the unheld
+        // arm (`performReplyRecvArmTakeDeliveredLong`).
+        retype(
+            "untyped-retype-orphan-long-take-server",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "orphan-long-take-server-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "orphan-long-take-server-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        retype(
+            "untyped-retype-orphan-long-take-reply",
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+            FRAME_VADDR,
+        ),
+        invocation(
+            "orphan-long-take-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        invocation(
+            "orphan-long-take-resume-server",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "orphan-long-take-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "orphan-long-take-server-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "orphan-long-take-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
+        ),
+        partner_step(
+            "orphan-long-take-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x72, 0],
+            true,
+        ),
+        signal("orphan-long-take-server-wakes-root"),
+        partner_step(
+            "orphan-long-take-server-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "orphan-long-take-server-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        retype(
+            "untyped-retype-orphan-long-take-sender",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "orphan-long-take-sender-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "orphan-long-take-sender-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "orphan-long-take-resume-sender",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "orphan-long-take-root-waits-sender",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("orphan-long-take-sender-wakes-root"),
+        partner_step(
+            "orphan-long-take-sender-sends",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0xa2, 0],
+            true,
+        ),
+        with_reply(
+            partner_step(
+                "orphan-long-reply-recv-takes",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                TAIL_MESSAGE_LENGTH,
+                [0x73, 0],
+                false,
+            ),
+            CHAIN_REPLY_CAP,
+        ),
+        invocation(
+            "orphan-long-take-suspend-sender",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "orphan-long-take-sender-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "orphan-long-take-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "orphan-long-take-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "orphan-long-take-reply-delete",
             CSPACE_DELETE,
             CNODE_CAP,
             [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
@@ -9653,7 +10707,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // third thread carved in the deleted server's slot queueing its send
         // before the root task's reply-receive, which installs the capability,
         // hands the partner the context and takes the send at once
-        // (`performReplyRecvUnheldTakeCapsDelivered`); the root task signals
+        // (`performReplyRecvArmTakeCapsDelivered` on the unheld arm); the root task signals
         // through the copy, takes the badge and deletes it.
         retype(
             "untyped-retype-unheld-take-caps-server",
@@ -9862,6 +10916,225 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         ),
         invocation(
             "unheld-take-caps-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
+        // WS-SX SX26: the take above again at the longest message, 120 words:
+        // the root task's reply-receive copies its overflow words into the
+        // partner's buffer and takes the queued send in place over the unheld
+        // arm (`performReplyRecvArmTakeCapsDeliveredLong`).
+        retype(
+            "untyped-retype-unheld-long-take-caps-server",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "unheld-long-take-caps-server-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "unheld-long-take-caps-server-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        retype(
+            "untyped-retype-unheld-long-take-caps-reply",
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unheld-long-take-caps-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        invocation(
+            "unheld-long-take-caps-resume-server",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unheld-long-take-caps-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unheld-long-take-caps-server-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "unheld-long-take-caps-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
+        ),
+        partner_step(
+            "unheld-long-take-caps-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x9c, 0],
+            true,
+        ),
+        signal("unheld-long-take-caps-server-wakes-root"),
+        partner_step(
+            "unheld-long-take-caps-server-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unheld-long-take-caps-server-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        retype(
+            "untyped-retype-unheld-long-take-caps-sender",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "unheld-long-take-caps-sender-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "unheld-long-take-caps-sender-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unheld-long-take-caps-resume-sender",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unheld-long-take-caps-root-waits-sender",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("unheld-long-take-caps-sender-wakes-root"),
+        partner_step(
+            "unheld-long-take-caps-sender-sends",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0xa2, 0],
+            true,
+        ),
+        receive_path(
+            "unheld-long-take-caps-receive-path",
+            FRAME_VADDR,
+            [CNODE_CAP, cap_address(EMPTY_SLOT), 64],
+        ),
+        with_caps_keeping_path(
+            with_reply(
+                partner_step(
+                    "unheld-long-reply-recv-takes-installs-cap",
+                    REPLY_RECV,
+                    ENDPOINT_CAP,
+                    ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
+                    [0x9d, 0],
+                    false,
+                ),
+                CHAIN_REPLY_CAP,
+            ),
+            FRAME_VADDR,
+            [NOTIFICATION_CAP, 0, 0],
+        ),
+        RoundTrip {
+            cptr: cap_address(EMPTY_SLOT),
+            ..signal("unheld-long-reply-recv-takes-installed-signal")
+        },
+        RoundTrip {
+            name: "unheld-long-reply-recv-takes-installed-wait",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            reply: None,
+            issued: None,
+            selects: None,
+            msg_len: 1,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            resumes: false,
+            caps_or_badges: None,
+            overflow: None,
+            returns: None,
+        },
+        invocation(
+            "unheld-long-reply-recv-takes-installed-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [EMPTY_SLOT, 0, 0, 0],
+        ),
+        receive_path(
+            "unheld-long-take-caps-receive-path-closed",
+            FRAME_VADDR,
+            [0; 3],
+        ),
+        invocation(
+            "unheld-long-take-caps-suspend-sender",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unheld-long-take-caps-sender-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unheld-long-take-caps-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unheld-long-take-caps-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unheld-long-take-caps-reply-delete",
             CSPACE_DELETE,
             CNODE_CAP,
             [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
@@ -10839,7 +12112,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // receive leg meeting a sender already queued: the scenario above
         // again, a third thread carved in the deleted server's slot queueing
         // its send on the endpoint before the root task's reply-receive, whose
-        // receive leg takes it at once (`performReplyRecvUnlinkedTakeDelivered`).
+        // receive leg takes it at once (`performReplyRecvArmTakeDelivered` on the unlinked arm).
         retype(
             "untyped-retype-unlinked-take-server",
             UNTYPED_CAP,
@@ -11044,6 +12317,218 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         ),
         invocation(
             "unlinked-take-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
+        // WS-SX SX26: the take above again at the longest message, 120 words:
+        // the root task's reply-receive copies its overflow words into the
+        // partner's buffer and takes the queued send in place over the unlinked
+        // arm (`performReplyRecvArmTakeDeliveredLong`).
+        retype(
+            "untyped-retype-unlinked-long-take-server",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "unlinked-long-take-server-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "unlinked-long-take-server-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        retype(
+            "untyped-retype-unlinked-long-take-reply",
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-long-take-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        configure(
+            "unlinked-long-take-configure",
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "unlinked-long-take-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-long-take-resume-server",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unlinked-long-take-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unlinked-long-take-server-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "unlinked-long-take-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
+        ),
+        partner_step(
+            "unlinked-long-take-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x72, 0],
+            true,
+        ),
+        signal("unlinked-long-take-server-wakes-root"),
+        partner_step(
+            "unlinked-long-take-server-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unlinked-long-take-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-long-take-server-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        cap_argument(
+            "unlinked-long-take-rebind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        retype(
+            "untyped-retype-unlinked-long-take-sender",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "unlinked-long-take-sender-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "unlinked-long-take-sender-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-long-take-resume-sender",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unlinked-long-take-root-waits-sender",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("unlinked-long-take-sender-wakes-root"),
+        partner_step(
+            "unlinked-long-take-sender-sends",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0xa2, 0],
+            true,
+        ),
+        with_reply(
+            partner_step(
+                "unlinked-long-reply-recv-takes",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                TAIL_MESSAGE_LENGTH,
+                [0x73, 0],
+                false,
+            ),
+            CHAIN_REPLY_CAP,
+        ),
+        invocation(
+            "unlinked-long-take-suspend-sender",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-long-take-sender-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unlinked-long-take-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-long-take-unbind-partner",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-long-take-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unlinked-long-take-reply-delete",
             CSPACE_DELETE,
             CNODE_CAP,
             [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
@@ -11504,7 +12989,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         ),
         // WS-SX SX8.3: the installing reply-receive on an unlinked reply
         // object, its receive leg meeting a sender already queued
-        // (`performReplyRecvUnlinkedTakeCapsDelivered`), as the orphan's above.
+        // (`performReplyRecvArmTakeCapsDelivered` on the unlinked arm), as the orphan's above.
         retype(
             "untyped-retype-unlinked-take-caps-server",
             UNTYPED_CAP,
@@ -12131,6 +13616,258 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             CNODE_CAP,
             [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
         ),
+        // WS-SX SX26: the take above again at the longest message, 120 words:
+        // the root task's reply-receive copies its overflow words into the
+        // partner's buffer and takes the queued send in place over the unlinked
+        // arm (`performReplyRecvArmTakeCapsDeliveredLong`).
+        retype(
+            "untyped-retype-unlinked-long-take-caps-server",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "unlinked-long-take-caps-server-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "unlinked-long-take-caps-server-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        retype(
+            "untyped-retype-unlinked-long-take-caps-reply",
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-long-take-caps-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        configure(
+            "unlinked-long-take-caps-configure",
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "unlinked-long-take-caps-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-long-take-caps-resume-server",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unlinked-long-take-caps-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unlinked-long-take-caps-server-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "unlinked-long-take-caps-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
+        ),
+        partner_step(
+            "unlinked-long-take-caps-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x9c, 0],
+            true,
+        ),
+        signal("unlinked-long-take-caps-server-wakes-root"),
+        partner_step(
+            "unlinked-long-take-caps-server-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unlinked-long-take-caps-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-long-take-caps-server-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        cap_argument(
+            "unlinked-long-take-caps-rebind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        retype(
+            "untyped-retype-unlinked-long-take-caps-sender",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "unlinked-long-take-caps-sender-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "unlinked-long-take-caps-sender-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-long-take-caps-resume-sender",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unlinked-long-take-caps-root-waits-sender",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("unlinked-long-take-caps-sender-wakes-root"),
+        partner_step(
+            "unlinked-long-take-caps-sender-sends",
+            SEND,
+            ENDPOINT_CAP,
+            1,
+            [0xa2, 0],
+            true,
+        ),
+        receive_path(
+            "unlinked-long-take-caps-receive-path",
+            FRAME_VADDR,
+            [CNODE_CAP, cap_address(EMPTY_SLOT), 64],
+        ),
+        with_caps_keeping_path(
+            with_reply(
+                partner_step(
+                    "unlinked-long-reply-recv-takes-installs-cap",
+                    REPLY_RECV,
+                    ENDPOINT_CAP,
+                    ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
+                    [0x9d, 0],
+                    false,
+                ),
+                CHAIN_REPLY_CAP,
+            ),
+            FRAME_VADDR,
+            [NOTIFICATION_CAP, 0, 0],
+        ),
+        RoundTrip {
+            cptr: cap_address(EMPTY_SLOT),
+            ..signal("unlinked-long-reply-recv-takes-installed-signal")
+        },
+        RoundTrip {
+            name: "unlinked-long-reply-recv-takes-installed-wait",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            reply: None,
+            issued: None,
+            selects: None,
+            msg_len: 1,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            resumes: false,
+            caps_or_badges: None,
+            overflow: None,
+            returns: None,
+        },
+        invocation(
+            "unlinked-long-reply-recv-takes-installed-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [EMPTY_SLOT, 0, 0, 0],
+        ),
+        receive_path(
+            "unlinked-long-take-caps-receive-path-closed",
+            FRAME_VADDR,
+            [0; 3],
+        ),
+        invocation(
+            "unlinked-long-take-caps-suspend-sender",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-long-take-caps-sender-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unlinked-long-take-caps-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-long-take-caps-unbind-partner",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-long-take-caps-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unlinked-long-take-caps-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
         // The ordinary server loop with a client already queued: the root
         // task takes the partner's call, then a third thread's send queues on
         // the endpoint while the root task waits; the root task's
@@ -12346,8 +14083,8 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // WS-SX SX8: the two reply-receives above again at the longest
         // message: the root task's reply-receive copies its overflow words
         // into the partner's buffer and takes the queued send in place
-        // (`performReplyRecvTakeDeliveredLong`), then, installing one
-        // capability, `performReplyRecvTakeCapsDeliveredLong`.
+        // (`performReplyRecvArmTakeDeliveredLong`), then, installing one
+        // capability, `performReplyRecvArmTakeCapsDeliveredLong`.
         invocation(
             "queued-sender-long-resume-partner",
             TCB_RESUME,
@@ -19536,7 +21273,7 @@ fn fault_entries() -> Option<bool> {
     // waiting root task, the third thread queues its send while the root task
     // waits on the notification, and the root task's reply-receive restarts
     // the partner and takes the send in place
-    // (`performReplyRecvFaultTakeDelivered`).
+    // (`performReplyRecvArmFaultTakeDelivered`).
     let take_resume_restorer = invocation(
         "cap-fault-take-restorer-resume",
         TCB_RESUME,
@@ -19593,6 +21330,43 @@ fn fault_entries() -> Option<bool> {
                 "the third thread's send did not queue",
             )
             || heap_allocations_round_trip(&take_reply_recv, which) != Some(true)
+            || !unmeasured(&take_suspend_restorer, "the third thread was not suspended")
+            || !suspend_partner()
+        {
+            return Some(false);
+        }
+    }
+    // WS-SX SX26: the same at the longest message, 120 words: the root task's
+    // reply-receive restarts the partner with the long fault answer, its words
+    // past the fourth read from the root task's buffer, and takes the queued
+    // send in place (`performReplyRecvArmFaultTakeDeliveredLong`).
+    let take_reply_recv_long = with_reply(
+        partner_step(
+            "cap-fault-take-reply-recv-long",
+            REPLY_RECV,
+            ENDPOINT_CAP,
+            TAIL_MESSAGE_LENGTH,
+            [FAULT_REPLY_WORD, 0],
+            false,
+        ),
+        REPLY_CAP,
+    );
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        if !unmeasured(&PARTNER_SETUP[0], "the partner was not resumed")
+            || !unmeasured(&handler_waits, "the handler did not wait on the endpoint")
+            || heap_allocations_trap(
+                &fault_trip(2, "cap-fault-delivered-to-take-reply-recv-long"),
+                which,
+            ) != Some(true)
+            || !unmeasured(&take_resume_restorer, "the third thread was not resumed")
+            || !unmeasured(&take_root_waits, "the root task did not wait")
+            || !unmeasured(&take_restorer_wakes_root, "the third thread did not signal")
+            || !unmeasured(
+                &take_restorer_sends,
+                "the third thread's send did not queue",
+            )
+            || heap_allocations_round_trip(&take_reply_recv_long, which) != Some(true)
             || !unmeasured(&take_suspend_restorer, "the third thread was not suspended")
             || !suspend_partner()
         {
@@ -19834,6 +21608,105 @@ fn fault_entries() -> Option<bool> {
                 || !unmeasured(&wake_handler, "the waiting handler was not woken")
                 || !suspend_partner()
                 || !unmeasured_all(&held_fault_teardown, "the held fault's teardown failed")
+            {
+                return Some(false);
+            }
+        }
+    }
+    // WS-SX SX26: the held and unlinked fault answers again, each receive leg
+    // meeting a sender already queued: once the fault is delivered (and, held,
+    // the carved context bound to the partner; unlinked, the context unlinked
+    // and bound again) the third thread queues its send while the root task
+    // waits on the notification, and the root task's reply-receive, at one word
+    // and at 120 words, restarts the partner over the arm and takes the send in
+    // place (`performReplyRecvArmFaultTakeDelivered`,
+    // `performReplyRecvArmFaultTakeDeliveredLong`).  The third thread and the
+    // partner are suspended and each scenario's teardown follows.
+    let fault_take_reply_recv = |name: &'static str, len: u64, reply: u64| {
+        with_reply(
+            partner_step(
+                name,
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                len,
+                [FAULT_REPLY_WORD, 0],
+                false,
+            ),
+            reply,
+        )
+    };
+    let held_fault_take_reply_recvs = [
+        fault_take_reply_recv("held-fault-take-root-reply-recv", 1, REPLY_CAP),
+        fault_take_reply_recv(
+            "held-fault-take-root-reply-recv-long",
+            TAIL_MESSAGE_LENGTH,
+            REPLY_CAP,
+        ),
+    ];
+    let held_fault_take_delivered = [
+        "held-cap-fault-delivered-to-take-reply-recv",
+        "held-cap-fault-delivered-to-take-reply-recv-long",
+    ];
+    let unlinked_fault_take_reply_recvs = [
+        fault_take_reply_recv("unlinked-fault-take-root-reply-recv", 1, CHAIN_REPLY_CAP),
+        fault_take_reply_recv(
+            "unlinked-fault-take-root-reply-recv-long",
+            TAIL_MESSAGE_LENGTH,
+            CHAIN_REPLY_CAP,
+        ),
+    ];
+    let unlinked_fault_take_delivered = [
+        "unlinked-cap-fault-delivered-to-take-reply-recv",
+        "unlinked-cap-fault-delivered-to-take-reply-recv-long",
+    ];
+    let queue_take_sender = || {
+        unmeasured(&take_resume_restorer, "the third thread was not resumed")
+            && unmeasured(&take_root_waits, "the root task did not wait")
+            && unmeasured(&take_restorer_wakes_root, "the third thread did not signal")
+            && unmeasured(
+                &take_restorer_sends,
+                "the third thread's send did not queue",
+            )
+    };
+    for first in [true, false] {
+        let which = if first { " (first call)" } else { "" };
+        for (reply_recv, delivered) in held_fault_take_reply_recvs
+            .iter()
+            .zip(held_fault_take_delivered)
+        {
+            if !unmeasured_all(&held_fault_setup, "the held fault's setup failed")
+                || !unmeasured(&handler_waits, "the handler did not wait on the endpoint")
+                || heap_allocations_trap(&fault_trip(2, delivered), which) != Some(true)
+                || !unmeasured_all(&held_fault_lend, "the held fault's carved context failed")
+                || !queue_take_sender()
+                || heap_allocations_round_trip(reply_recv, which) != Some(true)
+                || !unmeasured(&take_suspend_restorer, "the third thread was not suspended")
+                || !suspend_partner()
+                || !unmeasured_all(&held_fault_teardown, "the held fault's teardown failed")
+            {
+                return Some(false);
+            }
+        }
+        for (reply_recv, delivered) in unlinked_fault_take_reply_recvs
+            .iter()
+            .zip(unlinked_fault_take_delivered)
+        {
+            if !unmeasured_all(&unlinked_long_setup, "the unlinked fault's setup failed")
+                || heap_allocations_trap(&fault_trip(2, delivered), which) != Some(true)
+                || !unmeasured_all(&unlinked_long_unlink, "the unlinked fault's unlink failed")
+                || !unmeasured(&unlinked_fault_rebind, "the context was not bound again")
+                || !queue_take_sender()
+                || heap_allocations_round_trip(reply_recv, which) != Some(true)
+                || !unmeasured(&take_suspend_restorer, "the third thread was not suspended")
+                || !suspend_partner()
+                || !unmeasured(
+                    &unlinked_fault_unbind_partner,
+                    "the context was not unbound",
+                )
+                || !unmeasured_all(
+                    &unlinked_fault_teardown[1..],
+                    "the unlinked fault's teardown failed",
+                )
             {
                 return Some(false);
             }

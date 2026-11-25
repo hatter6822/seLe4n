@@ -1,3 +1,48 @@
+## v0.37.55 — The Send-take receive leg composed over every reply arm (WS-SX SX26)
+
+SX26 is on SX25.  Measured before the bulk: 30 Send-take shapes (five reply
+arms, three answers, two lengths), 9 in place under per-arm functions in four
+modules (2,671 lines), so 21 newly in place; about 3 sessions against the
+row's 2–3, so the row was not wrapped before the bulk.
+
+- **One composed take.**  Over SX25's reply leg and guard family, the
+  reply-receive whose receive leg meets a queued sender takes it in place on
+  every arm, answer and length, joined to the specification by one equality
+  (`replyRecvAnsweringOnCore_arm_take`, `ReplyRecvTakeComposed.lean`): the
+  arm's leg and pop, the context return, the take, the arm's deschedule, the
+  priority walk and the answer.  One performer per answer and length
+  (`performReplyRecvArm{Take,TakeCaps,FaultTake}Delivered` and their long
+  forms), each with its legs out of line and the taker's frame written after.
+- **One selector.**  The take arms of `RefusalCarryingReplyRecv.lean` route
+  through `replyRecvTakeArmCode` (out of line): the caller waiting on the
+  reply object, the sender at the queue's head taking in place, and the arm's
+  leg guard, read once on the pre-state.  The fault and long fault arms gain
+  the take branch on every arm.  The per-arm selectors and arms are deleted.
+- **Retired.**  `ReplyRecvTakeInPlace`, `LongReplyRecvTakeInPlace`,
+  `ReplyRecvFaultTakeInPlace` and `ReplyRecvUnlinkedTakeInPlace`, with their
+  performers and equalities.  What the Call takes, the leg guards and the
+  composed take read moved first, measured over the constants they use, into
+  `ReplyRecvTakeFrame.lean` (the sender-words frame and the take guard's
+  carries).
+- **QEMU.**  13 of the 21 shapes get a measured step, each 0: the unheld and
+  unlinked takes at 120 words, inert and installing; the held arm's four
+  takes; the fault answer's take on the rendezvous arm at 120 words and on
+  the held and unlinked arms at one and 120 words.  The donated arm's six and
+  the unheld fault take's two have no exerciser scenario to build on; their
+  steps are carried to SX27.1.
+- **Gates.**  Tier 3 anchors pin the selector, its specification and every
+  routed answer, and refuse the retired selectors, performers, equalities and
+  imports (break-tested by breaking the relation with the tokens kept).  The
+  store-reader baseline's rows for the touched files are re-read.
+- **Measured.**  `RefusalCarryingReplyRecv.c` 13,204,415 bytes, compiled in
+  535 s standalone (`leanc -c -O3 -DNDEBUG`), against 14,643,899 bytes and
+  607 s at `v0.37.54`.
+- **Plan.**  SX36 is added to WS-SX ahead of the closure, now SX37 (the
+  owner's request of 2026-11-25): `Concurrency.maxLockSetSize` lowered from
+  32 to the largest footprint the static size theorems bound once every
+  other WS-SX change has landed, with every bound and bounded-wait consumer
+  re-proved at it.
+
 ## v0.37.54 — One in-place ReplyRecv reply leg and the composed blocking receive (WS-SX SX25)
 
 SX25 is on SX24.  Measured before the bulk, one composed ReplyRecv path over
