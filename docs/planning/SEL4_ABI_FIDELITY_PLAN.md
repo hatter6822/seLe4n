@@ -945,7 +945,12 @@ A different answer changes only the rows that cite it.
   clauses (it is not the holder, and it holds no loan) are the stated coherence
   hypothesis `replyStacksSettleOnWaitingDonors` (`replyStackOuterCallerValid`),
   which the dispatch payoff already takes and which is not derived. Each
-  refusal therefore stays as a defensive check, not deleted.
+  refusal therefore stays as a defensive check, not deleted. *The
+  coordinator's ruling (2026-11-26):* accepted for SX33. Deriving the two
+  clauses from a chain invariant over `Reply.caller`, and stating that nothing
+  is stored at the reserved id, is registered debt ("The reply pop's
+  outer-caller guard rests on a stated hypothesis" in
+  `docs/REGISTERED_DEBT.md`), owned by WS-SX with SX45 as its closure row.
 
 ## 4. Rows
 
