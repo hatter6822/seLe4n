@@ -771,15 +771,15 @@ A different answer changes only the rows that cite it.
     composite are restated, unconditionally, and the invariant and
     non-interference proofs the move touches with them. SX30 also states
     the lemma SX31 needs: the state after the reply step satisfies the
-    invariant families. This is the owner's first card at its default
+    invariant families. This is the owner's ruling, 2026-11-26
     ("seL4 order"). The alternative, a tail on the refusal path only, would
     make SX30 unnecessary.
   - SX31 is the refusal order and its proofs: a refused reply lets the
     receive run, a refused receive reports the state after the reply, the
     12 refusal-carrying wrappers carry their callee's state, the report's
     consumers gain that third case, the non-interference proofs cover it,
-    and the last 1 MB cell goes (old SX30's acceptance). Two owner cards
-    are SX31's, taken at their defaults: a flow-denied reply counts as a
+    and the last 1 MB cell goes (old SX30's acceptance). Two rulings
+    are SX31's, each the owner's ruling, 2026-11-26: a flow-denied reply counts as a
     refused reply, so the receive runs; and a refused reply's error is
     dropped, as in seL4, so the thread sees the receive's outcome.
   - The rows after SX30 are renumbered (SX31–SX42 became SX32–SX43): the

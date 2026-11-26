@@ -421,7 +421,7 @@ takes it as a premise read off the state the step runs from (at a compound
 arm's mid state, a field of the dispatch pack, as `replyRecvStage` does) and
 cites the first of those rows.
 
-### WS-CK Checks first: no state held across a write — PLANNED (registered v0.37.58 by WS-SX SX29, owner decision D51; opens after WS-SX closes, its order beside WS-PK the owner's)
+### WS-CK Checks first: no state held across a write — PLANNED (registered v0.37.58 by WS-SX SX29, owner decision D51; opens after WS-SX closes, after WS-PK, which runs first, D29 kept: the owner's ruling, 2026-11-26)
 
 A caller that keeps the `SystemState` live across a call that would write it
 in place makes the callee copy it, the object store's 1 MB table included.

@@ -5,8 +5,8 @@
 > **Status**: **PLANNED** — registered at `v0.37.58` by WS-SX SX29, under the
 > owner's ruling D51 (2026-11-26) in
 > [`SEL4_ABI_FIDELITY_PLAN.md`](SEL4_ABI_FIDELITY_PLAN.md). It opens after
-> WS-SX closes at `v0.38.0`; its order beside WS-PK, which D29 opens before
-> any other workstream, is the owner's.
+> WS-SX closes at `v0.38.0`, and after WS-PK: WS-PK runs first, and D29 is
+> kept (the owner's ruling, 2026-11-26).
 > **Prefix**: `CK`. `ck<digit>` matches no identifier in the tree (measured at
 > `v0.37.58` over `SeLe4n/`, `tests/`, `rust/` and `scripts/`, `Cargo.lock`
 > excluded), so the identifier-naming gate can enforce the family.
