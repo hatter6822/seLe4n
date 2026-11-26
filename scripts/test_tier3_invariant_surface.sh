@@ -899,6 +899,12 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveDualWithCapsOnCore
 # slot is decided on the entry state, before the pop.
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem endpointReceiveDualOnCore_eq_checked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveDualOnCoreChecked[^\n]*(\n([ \t][^\n]*)?)*if receiveTakesInPlace st endpointId receiver s sTcb then\n[ \t]*let popped := storePopHeadCode st endpointId false s sTcb\.queueNextCode\n[ \t]*let msg := blockedSenderMessage popped s sTcb\n[ \t]*let woken := wakeThread \(popped\.updateTcb s receiverReady\) s executingCore" SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean'
+# A queued caller is decided first too: the no-link take and the take linking
+# it to the reply object, both on the entry state before the pop.
+run_check "INVARIANT" rg -n '^theorem receiveCallNoLinkTake_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean
+run_check "INVARIANT" rg -n '^theorem receiveCallTake_inPlace_facts($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveDualOnCoreChecked[^\n]*(\n([ \t][^\n]*)?)*else if receiveCallNoLinkTakesInPlace st endpointId receiver s sTcb replyId\.isSome then\n[ \t]*let popped := storePopHeadCode st endpointId false s sTcb\.queueNextCode\n[ \t]*let msg := blockedSenderMessage popped s sTcb\n[ \t]*\(\(\(popped\.updateTcb s receiverReady\)\.updateTcb s callerInactive\)\.updateTcb receiver" SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveDualOnCoreChecked[^\n]*(\n([ \t][^\n]*)?)*if receiveCallTakesReplyInPlace st endpointId receiver s sTcb rid then\n[ \t]*let popped := storePopHeadCode st endpointId false s sTcb\.queueNextCode\n[ \t]*let msg := blockedSenderMessage popped s sTcb\n[ \t]*\(\(\(\(\(\(popped\.updateTcb s \(callCallerTcb endpointId receiver\)\)\.modifyObject" SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean'
 # Its block path decides the enqueue, the stash check and the stasher record
 # on the entry state, so a reply object it may not stash refuses before the
 # enqueue writes anything.
@@ -995,7 +1001,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReceiveTakeR[^\n]*(\n([ \t
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReceiveTakeR[^\n]*(\n([ \t][^\n]*)?)*receiveCallNoLinkTakesInPlace st epId tid s sTcb true then" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReceiveTakeR[^\n]*(\n([ \t][^\n]*)?)*receiveCallNoLinkTakesInPlace st epId tid s sTcb false then" SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointReceiveTakeR[^\n]*(\n([ \t][^\n]*)?)*\.ok \(\(\), performReceiveCallNoLinkDelivered " SeLe4n/Kernel/RefusalCarryingEndpoint.lean'
-run_check "INVARIANT" rg -n '\| \.blockedOnCall _ => !\(\(sTcb\.ipcCanGrant \|\| sTcb\.ipcCanGrantReply\) && suppliesReply\)' SeLe4n/Kernel/IPC/CrossCore/LongReceiveInPlace.lean
+run_check "INVARIANT" rg -n '\| \.blockedOnCall _ => !\(\(sTcb\.ipcCanGrant \|\| sTcb\.ipcCanGrantReply\) && suppliesReply\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean
 run_check "INVARIANT" rg -n '^theorem receiveCallNoLinkTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/LongReceiveInPlace.lean
 # A call whose caller has no TCB is refused by every arm with the state unchanged:
 # the arm linking no reply asks for the caller where the linking arm stores it.
@@ -6204,7 +6210,7 @@ run_check "INVARIANT" rg -n -U '^    \(fun d w0 w1 w2 w3 w4 s =>\n      match ca
 # (2) A queued fault's receive takes the call in place and stages the fault's
 # words as the handler's message; its reply restarts the thread with the empty
 # message held as a constant.
-run_check "INVARIANT" rg -n '^theorem receiveCallTake_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultReceiveInPlace.lean
+run_check "INVARIANT" rg -n '^theorem receiveCallTake_inPlace($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean
 run_check "INVARIANT" rg -n '^theorem receiveFaultTake_delivered($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultReceiveInPlace.lean
 run_check "INVARIANT" rg -n -U '^              if receiveCallTakesInPlace st epId tid s sTcb rid then\n                \.ok \(\(\), performFaultReceiveDelivered st epId s sTcb\.queueNextCode tid rid$' SeLe4n/Kernel/RefusalCarryingEndpoint.lean
 run_check "INVARIANT" rg -n '^theorem deliverFaultFrame_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/FaultInPlace.lean
