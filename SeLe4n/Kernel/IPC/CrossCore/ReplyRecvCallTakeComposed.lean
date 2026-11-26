@@ -444,14 +444,23 @@ theorem receiveCallDonatesInPlace_pre {P : SystemState} {epId : SeLe4n.ObjId}
     simp only [callDonationReady_eq_callerContextReady, Bool.and_eq_true, beq_iff_eq] at h2
     exact ⟨h1, h2.2, rt, rfl, Or.inl h2.1⟩
 
-/-- **The held arm's take, lending nothing, through the transfer and the
-receive's return**: a server bound to no notification returns nothing. -/
+/-- The receive's return does not fire for a server bound to no notification. -/
+theorem receiveReturnFires_of_unbound {P : SystemState} {tid : SeLe4n.ThreadId} {rt : TCB}
+    (hRt : P.getTcb? tid = some rt) (hBN : rt.boundNotificationCode = 0) :
+    receiveReturnFires true P tid = false := by
+  unfold receiveReturnFires
+  simp [hRt, hBN]
+
+/-- **A take lending nothing, through the transfer and the receive's return**:
+where the return does not fire on the state the pop leaves (the held arm's
+server, and a server bound to its own context, each bound to no
+notification), the transfer keeps that, so the return writes nothing. -/
 theorem callTakeGuard_through {P S2 : SystemState} (hFr : transferFrame S2 P)
-    {epId : SeLe4n.ObjId} {ep : Endpoint} {tid s : SeLe4n.ThreadId} {sTcbP rtP : TCB}
+    {epId : SeLe4n.ObjId} {ep : Endpoint} {tid s : SeLe4n.ThreadId} {sTcbP : TCB}
     {rid : SeLe4n.ReplyId}
     (hE : P.objects[epId]? = some (.endpoint ep)) (hS : P.objects[s.toObjId]? = some (.tcb sTcbP))
     (hG : receiveCallTakesInPlace P epId tid s sTcbP rid = true)
-    (hRt : P.getTcb? tid = some rtP) (hBN : rtP.boundNotificationCode = 0) :
+    (hNF : receiveReturnFires true P tid = false) :
     ∃ sTcb2, (receiveReturnSchedContext true S2 tid).objects[epId]? = some (.endpoint ep) ∧
       (receiveReturnSchedContext true S2 tid).objects[s.toObjId]? = some (.tcb sTcb2) ∧
       SenderWordsKept sTcb2 sTcbP ∧ sTcb2.scBindingScCode = sTcbP.scBindingScCode ∧
@@ -459,11 +468,8 @@ theorem callTakeGuard_through {P S2 : SystemState} (hFr : transferFrame S2 P)
       determineTargetCore (receiveReturnSchedContext true S2 tid) tid = determineTargetCore P tid ∧
       receiveCallTakesInPlace (receiveReturnSchedContext true S2 tid) epId tid s sTcb2 rid =
         true := by
-  obtain ⟨rt2, hRt2, e2⟩ := hFr.getTcb?_some hRt
-  obtain ⟨-, -, -, hBN2⟩ := withoutLinks_fields e2
-  have hQ : receiveReturnSchedContext true S2 tid = S2 := by
-    unfold receiveReturnSchedContext
-    simp only [↓reduceIte, hRt2, hBN2, hBN]
+  have hQ : receiveReturnSchedContext true S2 tid = S2 :=
+    receiveReturnSchedContext_of_fires_false ((receiveReturnFires_of_transferFrame hFr tid).trans hNF)
   rw [hQ]
   have hE2 := hFr.obj hE rfl (transferView_endpoint_back ep)
   obtain ⟨sTcb2, hS2, e⟩ := hFr.tcb hS
@@ -635,7 +641,7 @@ theorem ReplyRecvArm.callTakeGuard (arm : ReplyRecvArm)
       keepHeldPop_callTakeGuard st c tid rid msg ct rp scId sc epId ep s sTcb rt _ rfl hNo hT hFC
         hRp hN hScO hHead hBelow (fun e => hNe e.symm) hLR hFR hRtT hE hS hSC hCA1
     obtain ⟨sTcb2, hEQ, hSQ, hKQ, hBQ, hDsQ, hDtQ, hGQ⟩ :=
-      callTakeGuard_through hFr hE1 hSP hGP hRtP (hBNP.trans hBN0)
+      callTakeGuard_through hFr hE1 hSP hGP (receiveReturnFires_of_unbound hRtP (hBNP.trans hBN0))
     refine ⟨sTcb2, hEQ, hSQ, hKQ.trans hK, hBQ.trans hB, hDsQ.trans hDs, hDtQ.trans hDt, ?_⟩
     unfold CallReady; exact hGQ
 
