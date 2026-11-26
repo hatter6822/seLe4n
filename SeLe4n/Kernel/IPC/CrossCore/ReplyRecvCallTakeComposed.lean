@@ -2417,19 +2417,24 @@ no notification. -/
   | some rt => rt.scBindingScCode != 0 && rt.boundNotificationCode == 0
   | none => false
 
+/-- The arms whose Call take may meet a server bound to its own context: the
+rendezvous, unlinked and unheld arms.  The donated arm's pop unbinds the
+server's lent context (`donated_serverBound_head`) and the held arm's take
+lends nothing already (`CallAdmitsOwn`). -/
+@[inline] def ReplyRecvArm.takesOwnContext : ReplyRecvArm → Bool
+  | .rendezvous => true
+  | .unlinked => true
+  | .unheld => true
+  | .donated => false
+  | .held => false
+
 /-- **The own-context Call-take guard as a test on the pre-state**
-(`ReplyRecvArm.callOwnGuard_spec`): the rendezvous, unlinked and unheld arms
-only; the donated and held arms have none (`CallAdmitsOwn`). -/
-@[inline] def ReplyRecvArm.callOwnGuard : ReplyRecvArm → SystemState → SeLe4n.ObjId →
-    SeLe4n.ThreadId → SeLe4n.ThreadId → TCB → Bool
-  | .rendezvous, st, epId, tid, s, sTcb =>
-      receiveCallTakesPastPop st epId tid s sTcb && replyRecvServerOwnContext st tid
-  | .unlinked, st, epId, tid, s, sTcb =>
-      receiveCallTakesPastPop st epId tid s sTcb && replyRecvServerOwnContext st tid
-  | .unheld, st, epId, tid, s, sTcb =>
-      receiveCallTakesPastPop st epId tid s sTcb && replyRecvServerOwnContext st tid
-  | .donated, _, _, _, _, _ => false
-  | .held, _, _, _, _, _ => false
+(`ReplyRecvArm.callOwnGuard_spec`), on the arms `takesOwnContext` names; one
+test over the arm, so it is compiled once. -/
+@[noinline] def ReplyRecvArm.callOwnGuard (arm : ReplyRecvArm) (st : SystemState)
+    (epId : SeLe4n.ObjId) (tid s : SeLe4n.ThreadId) (sTcb : TCB) : Bool :=
+  arm.takesOwnContext && receiveCallTakesPastPop st epId tid s sTcb &&
+    replyRecvServerOwnContext st tid
 
 theorem ReplyRecvArm.callOwnGuard_spec {arm : ReplyRecvArm} {st : SystemState}
     {epId : SeLe4n.ObjId} {tid s : SeLe4n.ThreadId} {sTcb : TCB}
@@ -2448,7 +2453,8 @@ theorem ReplyRecvArm.callOwnGuard_spec {arm : ReplyRecvArm} {st : SystemState}
       rw [hT] at h2
       simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at h2
       exact ⟨h1, rt, rfl, h2.1, h2.2⟩
-  cases arm <;> simp only [ReplyRecvArm.callOwnGuard, Bool.and_eq_true, Bool.false_eq_true] at h
+  cases arm <;> simp only [ReplyRecvArm.callOwnGuard, ReplyRecvArm.takesOwnContext,
+    Bool.true_and, Bool.false_and, Bool.and_eq_true, Bool.false_eq_true] at h
   · exact own h.1 h.2
   · exact own h.1 h.2
   · exact own h.1 h.2

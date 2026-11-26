@@ -1054,6 +1054,38 @@ theorem replyRecvArmTakeR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
   · exact replyRecvCapsArmR_eq epId tid c rid badge grant layout rf len label executingCore st
       hNoF
 
+/-- **One arm's Call-take code**: `k` where the arm's reply-leg guard
+(`ReplyRecvArm.legGuard`) and lending Call-take guard (`ReplyRecvArm.callGuard`)
+pass, `kOwn` where its reply-leg guard and own-context guard
+(`ReplyRecvArm.callOwnGuard`, a server bound to its own context taking the
+Call lending nothing) pass, 0 otherwise.  Out of line and over the arm, so each
+arm's guards are compiled once (`replyRecvArmCallCode_spec`). -/
+@[noinline] def replyRecvArmCallCode (arm : ReplyRecvArm) (st : SystemState)
+    (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (ct : TCB)
+    (s : SeLe4n.ThreadId) (sTcb : TCB) (k kOwn : Nat) : Nat :=
+  if arm.legGuard st tid c rid ct then
+    if arm.callGuard st epId tid s sTcb rid then k
+    else if arm.callOwnGuard st epId tid s sTcb then kOwn
+    else 0
+  else 0
+
+theorem replyRecvArmCallCode_spec {arm : ReplyRecvArm} {st : SystemState}
+    {epId : SeLe4n.ObjId} {tid c : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {ct : TCB}
+    {s : SeLe4n.ThreadId} {sTcb : TCB} {k kOwn : Nat}
+    (h : replyRecvArmCallCode arm st epId tid c rid ct s sTcb k kOwn ≠ 0) :
+    (replyRecvArmCallCode arm st epId tid c rid ct s sTcb k kOwn = k ∧
+        (arm.legGuard st tid c rid ct && arm.callGuard st epId tid s sTcb rid) = true) ∨
+      (replyRecvArmCallCode arm st epId tid c rid ct s sTcb k kOwn = kOwn ∧
+        (arm.legGuard st tid c rid ct && arm.callOwnGuard st epId tid s sTcb) = true) := by
+  unfold replyRecvArmCallCode at h ⊢
+  by_cases hL : arm.legGuard st tid c rid ct = true
+  · by_cases hC : arm.callGuard st epId tid s sTcb rid = true
+    · left; simp [hL, hC]
+    · by_cases hO : arm.callOwnGuard st epId tid s sTcb = true
+      · right; simp [hL, hC, hO]
+      · simp [hL, hC, hO] at h
+  · simp [hL] at h
+
 /-- **The reply arm whose reply-receive takes a queued caller in place**, as a
 code read on the pre-state: 1 to 5 for the first arm (the rendezvous, the
 donated, the held, the unheld, the unlinked) whose reply-leg guard
@@ -1075,22 +1107,16 @@ compiled once for every answer and length that reads them. -/
           | some s =>
             match st.getTcb? s with
             | some sTcb =>
-              if ReplyRecvArm.rendezvous.legGuard st tid c rid ct &&
-                  ReplyRecvArm.rendezvous.callGuard st epId tid s sTcb rid then 1
-              else if ReplyRecvArm.donated.legGuard st tid c rid ct &&
-                  ReplyRecvArm.donated.callGuard st epId tid s sTcb rid then 2
-              else if ReplyRecvArm.held.legGuard st tid c rid ct &&
-                  ReplyRecvArm.held.callGuard st epId tid s sTcb rid then 3
-              else if ReplyRecvArm.unheld.legGuard st tid c rid ct &&
-                  ReplyRecvArm.unheld.callGuard st epId tid s sTcb rid then 4
-              else if ReplyRecvArm.unlinked.legGuard st tid c rid ct &&
-                  ReplyRecvArm.unlinked.callGuard st epId tid s sTcb rid then 5
-              else if ReplyRecvArm.rendezvous.legGuard st tid c rid ct &&
-                  ReplyRecvArm.rendezvous.callOwnGuard st epId tid s sTcb then 6
-              else if ReplyRecvArm.unheld.legGuard st tid c rid ct &&
-                  ReplyRecvArm.unheld.callOwnGuard st epId tid s sTcb then 7
-              else if ReplyRecvArm.unlinked.legGuard st tid c rid ct &&
-                  ReplyRecvArm.unlinked.callOwnGuard st epId tid s sTcb then 8
+              if replyRecvArmCallCode .rendezvous st epId tid c rid ct s sTcb 1 6 != 0 then
+                replyRecvArmCallCode .rendezvous st epId tid c rid ct s sTcb 1 6
+              else if replyRecvArmCallCode .donated st epId tid c rid ct s sTcb 2 0 != 0 then
+                replyRecvArmCallCode .donated st epId tid c rid ct s sTcb 2 0
+              else if replyRecvArmCallCode .held st epId tid c rid ct s sTcb 3 0 != 0 then
+                replyRecvArmCallCode .held st epId tid c rid ct s sTcb 3 0
+              else if replyRecvArmCallCode .unheld st epId tid c rid ct s sTcb 4 7 != 0 then
+                replyRecvArmCallCode .unheld st epId tid c rid ct s sTcb 4 7
+              else if replyRecvArmCallCode .unlinked st epId tid c rid ct s sTcb 5 8 != 0 then
+                replyRecvArmCallCode .unlinked st epId tid c rid ct s sTcb 5 8
               else 0
             | none => 0
           | none => 0
@@ -1168,46 +1194,66 @@ theorem replyRecvCallTakeArmCode_spec {st : SystemState} {epId : SeLe4n.ObjId}
           unfold ReplyRecvArm.CallAdmitsAt; rw [if_neg (by rw [hL]; decide)]
           exact ReplyRecvArm.callOwnGuard_spec hA.2⟩
     simp only [hG, ↓reduceIte, hEp, hH, hTs] at hk
-    by_cases h1 : (ReplyRecvArm.rendezvous.legGuard st tid c rid ct &&
-        ReplyRecvArm.rendezvous.callGuard st epId tid s sTcb rid) = true
-    · simp only [h1, ↓reduceIte] at hk; subst hk
-      exact fin _ _ (lend _ h1).1 (lend _ h1).2
-    simp only [h1, Bool.false_eq_true, ↓reduceIte] at hk
-    by_cases h2 : (ReplyRecvArm.donated.legGuard st tid c rid ct &&
-        ReplyRecvArm.donated.callGuard st epId tid s sTcb rid) = true
-    · simp only [h2, ↓reduceIte] at hk; subst hk
-      exact fin _ _ (lend _ h2).1 (lend _ h2).2
-    simp only [h2, Bool.false_eq_true, ↓reduceIte] at hk
-    by_cases h3 : (ReplyRecvArm.held.legGuard st tid c rid ct &&
-        ReplyRecvArm.held.callGuard st epId tid s sTcb rid) = true
-    · simp only [h3, ↓reduceIte] at hk; subst hk
-      exact fin _ _ (lend _ h3).1 (lend _ h3).2
-    simp only [h3, Bool.false_eq_true, ↓reduceIte] at hk
-    by_cases h4 : (ReplyRecvArm.unheld.legGuard st tid c rid ct &&
-        ReplyRecvArm.unheld.callGuard st epId tid s sTcb rid) = true
-    · simp only [h4, ↓reduceIte] at hk; subst hk
-      exact fin _ _ (lend _ h4).1 (lend _ h4).2
-    simp only [h4, Bool.false_eq_true, ↓reduceIte] at hk
-    by_cases h5 : (ReplyRecvArm.unlinked.legGuard st tid c rid ct &&
-        ReplyRecvArm.unlinked.callGuard st epId tid s sTcb rid) = true
-    · simp only [h5, ↓reduceIte] at hk; subst hk
-      exact fin _ _ (lend _ h5).1 (lend _ h5).2
-    simp only [h5, Bool.false_eq_true, ↓reduceIte] at hk
-    by_cases h6 : (ReplyRecvArm.rendezvous.legGuard st tid c rid ct &&
-        ReplyRecvArm.rendezvous.callOwnGuard st epId tid s sTcb) = true
-    · simp only [h6, ↓reduceIte] at hk; subst hk
-      exact fin _ _ (own _ rfl h6).1 (own _ rfl h6).2
-    simp only [h6, Bool.false_eq_true, ↓reduceIte] at hk
-    by_cases h7 : (ReplyRecvArm.unheld.legGuard st tid c rid ct &&
-        ReplyRecvArm.unheld.callOwnGuard st epId tid s sTcb) = true
-    · simp only [h7, ↓reduceIte] at hk; subst hk
-      exact fin _ _ (own _ rfl h7).1 (own _ rfl h7).2
-    simp only [h7, Bool.false_eq_true, ↓reduceIte] at hk
-    by_cases h8 : (ReplyRecvArm.unlinked.legGuard st tid c rid ct &&
-        ReplyRecvArm.unlinked.callOwnGuard st epId tid s sTcb) = true
-    · simp only [h8, ↓reduceIte] at hk; subst hk
-      exact fin _ _ (own _ rfl h8).1 (own _ rfl h8).2
-    simp only [h8, Bool.false_eq_true, ↓reduceIte] at hk
+    generalize hc : replyRecvArmCallCode .rendezvous st epId tid c rid ct s sTcb 1 6 = kA at hk
+    by_cases hA0 : kA = 0
+    case neg =>
+      simp only [hA0, bne_iff_ne, ne_eq, not_false_eq_true, ↓reduceIte] at hk
+      subst hk
+      rcases replyRecvArmCallCode_spec (by rw [hc]; exact hA0) with ⟨e, hB⟩ | ⟨e, hB⟩ <;>
+        rw [hc] at e <;> subst e
+      · exact fin _ _ (lend _ hB).1 (lend _ hB).2
+      · exact fin _ _ (own _ rfl hB).1 (own _ rfl hB).2
+    rw [hA0] at hk
+    simp only [bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at hk
+    clear hc
+    generalize hc : replyRecvArmCallCode .donated st epId tid c rid ct s sTcb 2 0 = kA at hk
+    by_cases hA0 : kA = 0
+    case neg =>
+      simp only [hA0, bne_iff_ne, ne_eq, not_false_eq_true, ↓reduceIte] at hk
+      subst hk
+      rcases replyRecvArmCallCode_spec (by rw [hc]; exact hA0) with ⟨e, hB⟩ | ⟨e, hB⟩ <;>
+        rw [hc] at e <;> subst e
+      · exact fin _ _ (lend _ hB).1 (lend _ hB).2
+      · exact absurd rfl hA0
+    rw [hA0] at hk
+    simp only [bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at hk
+    clear hc
+    generalize hc : replyRecvArmCallCode .held st epId tid c rid ct s sTcb 3 0 = kA at hk
+    by_cases hA0 : kA = 0
+    case neg =>
+      simp only [hA0, bne_iff_ne, ne_eq, not_false_eq_true, ↓reduceIte] at hk
+      subst hk
+      rcases replyRecvArmCallCode_spec (by rw [hc]; exact hA0) with ⟨e, hB⟩ | ⟨e, hB⟩ <;>
+        rw [hc] at e <;> subst e
+      · exact fin _ _ (lend _ hB).1 (lend _ hB).2
+      · exact absurd rfl hA0
+    rw [hA0] at hk
+    simp only [bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at hk
+    clear hc
+    generalize hc : replyRecvArmCallCode .unheld st epId tid c rid ct s sTcb 4 7 = kA at hk
+    by_cases hA0 : kA = 0
+    case neg =>
+      simp only [hA0, bne_iff_ne, ne_eq, not_false_eq_true, ↓reduceIte] at hk
+      subst hk
+      rcases replyRecvArmCallCode_spec (by rw [hc]; exact hA0) with ⟨e, hB⟩ | ⟨e, hB⟩ <;>
+        rw [hc] at e <;> subst e
+      · exact fin _ _ (lend _ hB).1 (lend _ hB).2
+      · exact fin _ _ (own _ rfl hB).1 (own _ rfl hB).2
+    rw [hA0] at hk
+    simp only [bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at hk
+    clear hc
+    generalize hc : replyRecvArmCallCode .unlinked st epId tid c rid ct s sTcb 5 8 = kA at hk
+    by_cases hA0 : kA = 0
+    case neg =>
+      simp only [hA0, bne_iff_ne, ne_eq, not_false_eq_true, ↓reduceIte] at hk
+      subst hk
+      rcases replyRecvArmCallCode_spec (by rw [hc]; exact hA0) with ⟨e, hB⟩ | ⟨e, hB⟩ <;>
+        rw [hc] at e <;> subst e
+      · exact fin _ _ (lend _ hB).1 (lend _ hB).2
+      · exact fin _ _ (own _ rfl hB).1 (own _ rfl hB).2
+    rw [hA0] at hk
+    simp only [bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at hk
+    clear hc
     subst hk; exact absurd rfl h
   · simp only [hG, Bool.false_eq_true, ↓reduceIte] at hk
     subst hk; exact absurd rfl h
