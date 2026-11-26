@@ -170,6 +170,41 @@ def replyRecvPopDonation (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId) :
         | .error e => .error e
         | .ok st' => .ok (none, st')
 
+/-- **The pop, its reads first.**  `replyRecvPopDonation` settles a returned
+context on the answered caller's home core, which it reads off the state the
+pop ran on (`determineTargetCore st target`) — after the return wrote.  This
+form reads that core before the return, where the guard that selects the
+return is read, so no entry state is alive across the return's writes.  It is
+the pop, with no assumption (`replyRecvPopDonation_eq_checked`), through which
+the compiler runs it. -/
+def replyRecvPopDonationChecked (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId) :
+    Kernel (Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) :=
+  fun st =>
+    match replyFrameHeadHolder? st rid with
+    | some (oldScId, holder) =>
+        match holder.toValid?, target.toValid? with
+        | some _, some _ =>
+            if donationRecipientAcceptable st target then
+              let home := determineTargetCore st target
+              match returnDonatedSchedContextResolved st holder oldScId target with
+              | .error e => .error e
+              | .ok st1' =>
+                  .ok (some (oldScId, holder), SchedContextOps.settleReturnedContext st1' home oldScId)
+            else
+              match keepDonatedSchedContextResolved st holder oldScId with
+              | .error e => .error e
+              | .ok st' => .ok (none, st')
+        | _, _ => .error (.invalidArgument 0)
+    | none =>
+        match popUnheldReplyHead st rid target (determineTargetCore st target) with
+        | .error e => .error e
+        | .ok st' => .ok (none, st')
+
+/-- The pop's reads-first form is the pop, with no assumption; the compiler runs
+it in the pop's place. -/
+@[csimp] theorem replyRecvPopDonation_eq_checked :
+    @replyRecvPopDonation = @replyRecvPopDonationChecked := rfl
+
 /-- The deschedule of the thread the pop unbound, on the Call arm of
 `replyRecvPostReceiveDonation`.
 

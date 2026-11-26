@@ -19404,6 +19404,10 @@ run_check "INVARIANT" bash -lc 'rg -n "the RETIRED chain condition.s premise: th
 # once, in this file's HP4 section -- a second copy would be one question with two
 # answers, and a re-keying would then break an anchor that is not about keys.
 run_check "INVARIANT" rg -n '^def replyRecvPopDonation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+# The pop reads the caller's home before the return writes (WS-SX SX29.2), and
+# runs in the specification's place through an unconditional `@[csimp]`.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem replyRecvPopDonation_eq_checked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPopDonationChecked[^\n]*(\n([ \t][^\n]*)?)*let home := determineTargetCore st target\n[ \t]*match returnDonatedSchedContextResolved st holder oldScId target with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 run_check "INVARIANT" rg -n '^def replyRecvPostReceiveDonation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyRecvAnsweringOnCore[^\n]*(\n([ \t][^\n]*)?)*replyRecvPopDonation [^\n]*st1 with[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveDualWithCapsOnCore epId tid \(some rid\) executingCore\s+\(receiveReturnSchedContext true st1p tid\) with" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean'
 # NEGATIVE: the receive leg must not run on the PRE-pop state.  Token-preserving
