@@ -888,6 +888,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem storeObject_mapTcbInPlace_ne[
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem modifyTcb_mapTcbInPlace[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*modifyTcb \(Z\.mapTcbInPlace x G\) t f = \(modifyTcb Z t f\)\.map \(·\.mapTcbInPlace x G\) := by" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem removeRunnableOnCore_ledger[^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*removeRunnableOnCore \(recordPhysicalWrites st ws\) t c = recordPhysicalWrites \(removeRunnableOnCore st t c\) ws := by" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
 run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_ledger($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueuePopHead_answer[^\n]*(\n([ \t][^\n]*)?)*\(hHead : \(if isReceiveQ then ep\.receiveQ else ep\.sendQ\)\.head ≠ some r\)" SeLe4n/Kernel/IPC/CrossCore/AnswerCommute.lean'
 # The reply leg checks first (WS-SX SX29.2): its total form runs in the
 # specification's place through an unconditional `@[csimp]`, over the two
 # state readers and their bridges.

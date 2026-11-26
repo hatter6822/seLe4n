@@ -2,7 +2,7 @@
 Copyright (C) 2026 seLe4n contributors
 SPDX-License-Identifier: GPL-3.0-or-later
 -/
-import SeLe4n.Kernel.IPC.CrossCore.DeliveryCommute
+import SeLe4n.Kernel.IPC.CrossCore.TransferCommute
 
 /-!
 # The answer to a caller commutes with the receive side's writes
@@ -571,7 +571,199 @@ theorem modifyTcb_mapTcbInPlace (Z : SystemState) (t : SeLe4n.ThreadId) (f : TCB
         SystemState.updateTcb_eq_mapTcbInPlace (Z.mapTcbInPlace x G) _ _ hNo]
       exact congrArg Except.ok (SystemState.mapTcbInPlace_swap Z G f hc)
 
+/-- A store of a non-thread object at a present key, which keeps the index and
+the kinds, commutes with the thread write wherever it is. -/
+theorem storeObject_mapTcbInPlace_of_fixed (Z : SystemState) (k : SeLe4n.ObjId) (o0 o : KernelObject)
+    (hk : Z.objects[k]? = some o0) (hNo : Z.objects.noResizeDue)
+    (hFix : KernelObject.mapTcb G o = o) (hFix0 : KernelObject.mapTcb G o0 = o0)
+    (hL : storeLeavesIndexAndTypes Z k o.objectType = true) :
+    storeObject k o (Z.mapTcbInPlace x G) =
+      .ok ((), ({ Z with objects := Z.objects.insert k o } : SystemState).mapTcbInPlace x G) := by
+  have hk' : (Z.mapTcbInPlace x G).objects[k]? = some o0 := by
+    rw [SystemState.objects_mapTcbInPlace, hk]; split <;> simp [hFix0]
+  have hL' : storeLeavesIndexAndTypes (Z.mapTcbInPlace x G) k o.objectType = true := by
+    unfold storeLeavesIndexAndTypes storeKeepsKind at hL ⊢; rw [hk']; rw [hk] at hL; exact hL
+  have hg : Z.objects.get? k = some o0 := by
+    simpa only [RHTable_getElem?_eq_get?] using hk
+  rw [storeObject_eq_of_leaves hL']
+  unfold SystemState.mapTcbInPlace
+  simp only [Except.ok.injEq, Prod.mk.injEq, true_and]
+  rw [SeLe4n.Kernel.RHTable.insert_mapValueAt_comm _ _ _ _ _ _ hNo hg hFix]
+
 end Stores
+
+/-! ## The pop
+
+A receive pops its endpoint queue's head.  The answered thread may sit behind
+the head, whose successor link the pop rewrites; the answer leaves queue links
+alone, so the two commute whenever the head is not the answered thread. -/
+
+section Pop
+
+variable (r : SeLe4n.ThreadId) (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile)
+  (μ : Option IpcMessage → Option IpcMessage) (π : Nat → Nat) (κ : Nat → Nat)
+
+theorem lookupTcb_answer_ne (Z : SystemState) (t : SeLe4n.ThreadId) (h : t ≠ r) :
+    lookupTcb (Z.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) t = lookupTcb Z t := by
+  unfold lookupTcb
+  rw [SystemState.getTcb?_mapTcbInPlace, if_neg (Ne.symm h)]
+
+theorem lookupTcb_answer (Z : SystemState) (t : SeLe4n.ThreadId) :
+    lookupTcb (Z.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) t =
+      if r = t then (lookupTcb Z t).map (TCB.withAnswerSlots ρ μ π κ) else lookupTcb Z t := by
+  unfold lookupTcb
+  rw [SystemState.getTcb?_mapTcbInPlace]
+  split <;> split <;> rfl
+
+theorem storeTcbQueueLinks_answer (Z : SystemState) (t : SeLe4n.ThreadId) (p : Option SeLe4n.ThreadId)
+    (pp : Option QueuePPrev) (n : Option SeLe4n.ThreadId) (hNo : Z.objects.noResizeDue) :
+    storeTcbQueueLinks (Z.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) t p pp n =
+      (storeTcbQueueLinks Z t p pp n).map (·.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) := by
+  unfold storeTcbQueueLinks
+  exact modifyTcb_mapTcbInPlace r Z t _ hNo (fun _ _ => rfl)
+
+theorem getObject?_answer_endpoint (Z : SystemState) (k : SeLe4n.ObjId) (ep : Endpoint)
+    (h : Z.getObject? k = some (.endpoint ep)) :
+    (Z.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)).getObject? k = some (.endpoint ep) := by
+  unfold SystemState.getObject? at h ⊢
+  rw [SystemState.objects_mapTcbInPlace, h]; split <;> rfl
+
+theorem insert_present_noResizeDue (Z : SystemState) (k : SeLe4n.ObjId) (o0 o : KernelObject)
+    (hk : Z.objects[k]? = some o0) (hNo : Z.objects.noResizeDue) :
+    ({ Z with objects := Z.objects.insert k o } : SystemState).objects.noResizeDue := by
+  have hg : Z.objects.get? k = some o0 := by simpa only [RHTable_getElem?_eq_get?] using hk
+  show (Z.objects.insert k o).noResizeDue
+  rw [RHTable.insert_eq_mapValueAt _ (RHTable.findsInPlace_of_get? hNo hg)]
+  exact (RHTable.noResizeDue_mapValueAt _ _ _).mpr hNo
+
+theorem modifyTcb_noResizeDue (Z Z' : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hNo : Z.objects.noResizeDue) (h : modifyTcb Z t f = .ok Z') : Z'.objects.noResizeDue := by
+  by_cases hR : t.isReserved = true
+  · unfold modifyTcb lookupTcb at h; simp only [hR, ↓reduceIte] at h; cases h
+  · have hR' : t.isReserved = false := by simpa using hR
+    cases hT : Z.getTcb? t with
+    | none => unfold modifyTcb lookupTcb at h; simp only [hR', hT, Bool.false_eq_true, ↓reduceIte] at h; cases h
+    | some tcb =>
+      rw [modifyTcb_eq_updateTcb f hR' hT (storeLeavesIndexAndTypes_tcb_of_getTcb? hT)] at h
+      cases h
+      exact updateTcb_noResizeDue _ _ _ hNo
+
+/-- The pop's tail, after the endpoint store: the successor's links, then the
+head's. -/
+
+theorem popTail_answer (st1 : SystemState) (tid : SeLe4n.ThreadId) (headTcb : TCB) (htid : tid ≠ r)
+    (hNo : st1.objects.noResizeDue) :
+    (match (match headTcb.queueNext with
+      | none => Except.ok (st1.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ))
+      | some nextTid =>
+          match lookupTcb (st1.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) nextTid with
+          | none => Except.error KernelError.objectNotFound
+          | some nextTcb => storeTcbQueueLinks (st1.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ))
+              nextTid none (some .endpointHead) nextTcb.queueNext) with
+     | .error e => Except.error e
+     | .ok st2 =>
+        match storeTcbQueueLinks st2 tid none none none with
+        | .error e => Except.error e
+        | .ok st3 => Except.ok (tid, headTcb, st3)) =
+    (match (match (match headTcb.queueNext with
+      | none => Except.ok st1
+      | some nextTid =>
+          match lookupTcb st1 nextTid with
+          | none => Except.error KernelError.objectNotFound
+          | some nextTcb => storeTcbQueueLinks st1 nextTid none (some .endpointHead) nextTcb.queueNext) with
+     | .error e => Except.error e
+     | .ok st2 =>
+        match storeTcbQueueLinks st2 tid none none none with
+        | .error e => Except.error e
+        | .ok st3 => Except.ok (tid, headTcb, st3)) with
+     | .ok (t, tcb, Z') => Except.ok (t, tcb, Z'.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ))
+     | .error e => Except.error e) := by
+  have hTail : ∀ st2 : SystemState, st2.objects.noResizeDue →
+      (match storeTcbQueueLinks (st2.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) tid none none none with
+        | .error e => Except.error e
+        | .ok st3 => Except.ok (tid, headTcb, st3)) =
+      (match (match storeTcbQueueLinks st2 tid none none none with
+        | .error e => Except.error e
+        | .ok st3 => Except.ok (tid, headTcb, st3)) with
+       | .ok (t, tcb, Z') => Except.ok (t, tcb, Z'.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ))
+       | .error e => Except.error e) := by
+    intro st2 hNo2
+    rw [storeTcbQueueLinks_answer r ρ μ π κ st2 tid none none none hNo2]
+    cases storeTcbQueueLinks st2 tid none none none <;> rfl
+  cases hN : headTcb.queueNext with
+  | none => exact hTail st1 hNo
+  | some n =>
+    dsimp only
+    rw [lookupTcb_answer]
+    cases hL : lookupTcb st1 n with
+    | none => simp only [Option.map_none, ite_self]
+    | some nT =>
+      have hQ : ∀ y : TCB, (if r = n then some (TCB.withAnswerSlots ρ μ π κ y) else some y).isSome := by
+        intro y; split <;> rfl
+      have hStep : ∀ nT' : TCB, nT'.queueNext = nT.queueNext →
+          (match storeTcbQueueLinks (st1.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) n none
+              (some .endpointHead) nT'.queueNext with
+            | .error e => Except.error e
+            | .ok st2 => match storeTcbQueueLinks st2 tid none none none with
+                | .error e => Except.error e
+                | .ok st3 => Except.ok (tid, headTcb, st3)) =
+          (match (match storeTcbQueueLinks st1 n none (some .endpointHead) nT.queueNext with
+              | .error e => Except.error e
+              | .ok st2 => match storeTcbQueueLinks st2 tid none none none with
+                  | .error e => Except.error e
+                  | .ok st3 => Except.ok (tid, headTcb, st3)) with
+            | .ok (t, tcb, Z') => Except.ok (t, tcb, Z'.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ))
+            | .error e => Except.error e) := by
+        intro nT' hq
+        rw [hq, storeTcbQueueLinks_answer r ρ μ π κ st1 n _ _ _ hNo]
+        cases hS : storeTcbQueueLinks st1 n none (some .endpointHead) nT.queueNext with
+        | error e => rfl
+        | ok st2 => exact hTail st2 (modifyTcb_noResizeDue _ _ _ _ hNo hS)
+      by_cases hrn : r = n
+      · rw [if_pos hrn, Option.map_some]
+        exact hStep _ rfl
+      · rw [if_neg hrn]
+        exact hStep _ rfl
+
+/-- **The pop commutes with the answer** when the popped head is not the
+answered thread: the answered thread may be the head's successor, whose queue
+links the pop rewrites and the answer leaves alone. -/
+
+theorem endpointQueuePopHead_answer (Z : SystemState) (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (ep : Endpoint) (hEp : Z.getObject? endpointId = some (.endpoint ep))
+    (hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head ≠ some r)
+    (hNo : Z.objects.noResizeDue) :
+    endpointQueuePopHead endpointId isReceiveQ (Z.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ)) =
+      match endpointQueuePopHead endpointId isReceiveQ Z with
+      | .ok (t, tcb, Z') => .ok (t, tcb, Z'.mapTcbInPlace r (TCB.withAnswerSlots ρ μ π κ))
+      | .error e => .error e := by
+  have hEp' := getObject?_answer_endpoint r ρ μ π κ Z endpointId ep hEp
+  have hk : Z.objects[endpointId]? = some (.endpoint ep) := hEp
+  unfold endpointQueuePopHead
+  rw [hEp, hEp']
+  dsimp only
+  cases hH : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+  | none => rfl
+  | some tid =>
+    have htid : tid ≠ r := fun h => hHead (by rw [hH, h])
+    dsimp only
+    rw [lookupTcb_answer_ne r ρ μ π κ Z tid htid]
+    cases hT : lookupTcb Z tid with
+    | none => rfl
+    | some headTcb =>
+      dsimp only
+      have hL : ∀ e : Endpoint, storeLeavesIndexAndTypes Z endpointId
+          (KernelObject.endpoint e).objectType = true := fun e => by
+        unfold storeLeavesIndexAndTypes storeKeepsKind; rw [hk]; rfl
+      have hNo1 : ∀ e : Endpoint,
+          ({ Z with objects := Z.objects.insert endpointId (.endpoint e) } : SystemState).objects.noResizeDue :=
+        fun e => insert_present_noResizeDue Z endpointId _ _ hk hNo
+      rw [storeObject_mapTcbInPlace_of_fixed r Z endpointId _ _ hk hNo rfl rfl (hL _),
+        storeObject_eq_of_leaves (hL _)]
+      dsimp only
+      exact popTail_answer r ρ μ π κ _ tid headTcb htid (hNo1 _)
+
+end Pop
 
 /-! ## The ledger
 
