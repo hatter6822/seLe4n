@@ -1089,45 +1089,6 @@ def endpointReceiveDualWithCapsOnCore
       | .error e => (st', .error e)
       | .ok (summary, st'') => (st'', .ok (senderId, summary, sgi))
 
-/-- **The capability-carrying receive, its reads first.**  Whether the receive
-dequeued a sender, what that sender asks to transfer and the receiver's side
-of it are read off the state the receive ran on; the specification reads the
-first after the receive wrote.  This form branches on it before the receive,
-and binds the transfer's two reads there too, so no entry state is alive
-across the receive's writes.  It is the specification, with no assumption
-(`endpointReceiveDualWithCapsOnCore_eq_checked`), through which the compiler
-runs it. -/
-def endpointReceiveDualWithCapsOnCoreChecked
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId)
-    (executingCore : CoreId) (st : SystemState) :
-    SystemState ×
-      Except KernelError
-        (SeLe4n.ThreadId × CapTransferSummary × Option (CoreId × SgiKind)) :=
-  if (receiveRendezvousSender? st endpointId).isNone then
-    match endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
-    | (st', .error e) => (st', .error e)
-    | (st', .ok (senderId, sgi)) => (st', .ok (senderId, { results := #[] }, sgi))
-  else
-    let req := receiveCapRequest st endpointId
-    let target? := receiverCapTarget? st receiver
-    match endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
-    | (st', .error e) => (st', .error e)
-    | (st', .ok (senderId, sgi)) =>
-        match receiveTransferCaps req endpointId target? st' with
-        | .error e => (st', .error e)
-        | .ok (summary, st'') => (st'', .ok (senderId, summary, sgi))
-
-/-- The capability-carrying receive's reads-first form is the specification,
-with no assumption; the compiler runs it in the specification's place. -/
-@[csimp] theorem endpointReceiveDualWithCapsOnCore_eq_checked :
-    @endpointReceiveDualWithCapsOnCore = @endpointReceiveDualWithCapsOnCoreChecked := by
-  funext endpointId receiver replyId executingCore st
-  unfold endpointReceiveDualWithCapsOnCore endpointReceiveDualWithCapsOnCoreChecked
-  cases (receiveRendezvousSender? st endpointId).isNone <;>
-    rcases endpointReceiveDualOnCore endpointId receiver replyId executingCore st
-      with ⟨st', _ | ⟨senderId, sgi⟩⟩ <;> rfl
-
 /-- WS-SM SM6 (PR #873 round 6): with nothing to install, the WithCaps per-core
 receive is exactly the bare per-core receive — so every capless pin taken against
 the bare transition still describes the live arm.  WS-ZA ZA4.7: "nothing to

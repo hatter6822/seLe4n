@@ -893,8 +893,12 @@ run_check "INVARIANT" rg -n '^theorem severReplyFrameBelowStores_eq_state($|[ ({
 # receive's rendezvous test, each read before the write it used to follow.
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem cleanupPreReceiveDonationMigrated_eq_checked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def cleanupPreReceiveDonationMigratedChecked[^\n]*(\n([ \t][^\n]*)?)*let fromCore := determineTargetCore st receiver\n[ \t]*match cleanupPreReceiveDonationChecked st receiver with" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
-run_check "INVARIANT" rg -n '^@\[csimp\] theorem endpointReceiveDualWithCapsOnCore_eq_checked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveDualWithCapsOnCoreChecked[^\n]*(\n([ \t][^\n]*)?)*if \(receiveRendezvousSender\? st endpointId\)\.isNone then\n[ \t]*match endpointReceiveDualOnCore endpointId receiver replyId executingCore st with" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem endpointReceiveDualWithCapsOnCore_eq_checked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveDualWithCapsOnCoreChecked[^\n]*(\n([ \t][^\n]*)?)*if \(receiveRendezvousSender\? st endpointId\)\.isNone then\n[ \t]*match endpointReceiveDualOnCore endpointId receiver replyId executingCore st with" SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean'
+# The receive body checks first: whether every write of the take stays in its
+# slot is decided on the entry state, before the pop.
+run_check "INVARIANT" rg -n '^@\[csimp\] theorem endpointReceiveDualOnCore_eq_checked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveDualOnCoreChecked[^\n]*(\n([ \t][^\n]*)?)*if receiveTakesInPlace st endpointId receiver s sTcb then\n[ \t]*let popped := storePopHeadCode st endpointId false s sTcb\.queueNextCode\n[ \t]*let msg := blockedSenderMessage popped s sTcb\n[ \t]*let woken := wakeThread \(popped\.updateTcb s receiverReady\) s executingCore" SeLe4n/Kernel/IPC/CrossCore/EndpointReceiveInPlace.lean'
 run_check "INVARIANT" rg -n '^@\[csimp\] theorem applyReceiveRendezvousHandoff_eq_checked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Donation.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def applyReceiveRendezvousHandoffChecked[^\n]*(\n([ \t][^\n]*)?)*if rendezvousDequeuedCall st dequeued then\n[ \t]*match applyReceiveRendezvousDonation st receiver dequeued with" SeLe4n/Kernel/IPC/Operations/Donation.lean'
 run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_receive_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean

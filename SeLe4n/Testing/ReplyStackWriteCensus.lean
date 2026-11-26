@@ -359,6 +359,8 @@ def chainNeutralConstructors : List (Name × String) :=
       "links a dequeued caller through `linkCallerReply`; writes no chain field itself")
   , (`SeLe4n.Kernel.endpointReceiveDualOnCore,
       "the per-core spelling of the same receive; same reason")
+  , (`SeLe4n.Kernel.endpointReceiveDualOnCoreChecked,
+      "the per-core receive's checks-first form (`endpointReceiveDualOnCore_eq_checked`): its own writes are the in-place take of a sender that is no caller (the pop, the sender woken, the receiver handed the message), no chain field; any other receive runs the specification")
     -- ---------------------------------------------------------------------
     -- Inventories of THEOREMS.  Their values embed theorem statements, and a
     -- statement about `storeObject` mentions `storeObject` — so they reach both
@@ -1301,6 +1303,8 @@ def neutralLenderRecords : List (Name × LenderRecord) :=
       .results [`SeLe4n.Kernel.endpointReceiveDual_preserves_lendingLabelsEqual])
   , (`SeLe4n.Kernel.endpointReceiveDualOnCore,
       .results [`SeLe4n.Kernel.endpointReceiveDualOnCore_preserves_lendingLabelsEqual])
+  , (`SeLe4n.Kernel.endpointReceiveDualOnCoreChecked,
+      .results [`SeLe4n.Kernel.endpointReceiveDualOnCoreChecked_preserves_lendingLabelsEqual])
   , (`SeLe4n.Kernel.endpointCall,
       .results [`SeLe4n.Kernel.endpointCall_preserves_lendingLabelsEqual])
   , (`SeLe4n.Kernel.endpointCallOnCore,

@@ -15,6 +15,12 @@ receiver the message the sender kept in its registers
 (`receiveTakesInPlace`), those writes are the in-place pop (`storePopHead`)
 and two TCB writes (`receiveTake_inPlace`); the delivered frame is read
 straight from the sender's saved registers (`performReceiveDelivered`).
+
+The receive body and the capability-carrying receive over it are compiled
+through their checks-first forms here (`endpointReceiveDualOnCoreChecked`,
+`endpointReceiveDualWithCapsOnCoreChecked`): the first decides the take's
+lookups on the entry state with `receiveTakesInPlace` before the pop, so it
+stands after the take's in-place equality it is proved by.
 -/
 
 namespace SeLe4n.Kernel
@@ -421,4 +427,98 @@ theorem receiveTake_delivered (st : SystemState) (endpointId : SeLe4n.ObjId) (ep
   rw [hTake]
   simp only [hSnd, hReq, Option.isNone_some, Bool.false_eq_true, ↓reduceIte]
   rfl
+/-- **The receive body, its checks first.**  The specification's rendezvous
+pops the sender, then looks up the TCBs it writes, refusing with its entry
+state where a lookup fails, so that state is alive across the pop.  Where
+every write stays in its slot (`receiveTakesInPlace`) those lookups succeed,
+so this form decides them on the entry state before the first write and runs
+the take as its writes: the in-place pop, the sender made ready and woken on
+its home core, and the receiver handed the message, read off the state the
+pop left before anything writes the sender (`receiveTake_inPlace`).  Any other
+receive runs the specification.  It is the specification, with no assumption
+(`endpointReceiveDualOnCore_eq_checked`), through which the compiler runs
+it. -/
+def endpointReceiveDualOnCoreChecked (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState) :
+    SystemState × Except KernelError (SeLe4n.ThreadId × Option (CoreId × SgiKind)) :=
+  match st.getEndpoint? endpointId with
+  | some ep =>
+    match ep.sendQ.head with
+    | some s =>
+      match st.getTcb? s with
+      | some sTcb =>
+        if receiveTakesInPlace st endpointId receiver s sTcb then
+          let popped := storePopHeadCode st endpointId false s sTcb.queueNextCode
+          let msg := blockedSenderMessage popped s sTcb
+          let woken := wakeThread (popped.updateTcb s receiverReady) s executingCore
+          (woken.1.updateTcb receiver (callReceiverTcb msg), .ok (s, woken.2))
+        else endpointReceiveDualOnCore endpointId receiver replyId executingCore st
+      | none => endpointReceiveDualOnCore endpointId receiver replyId executingCore st
+    | none => endpointReceiveDualOnCore endpointId receiver replyId executingCore st
+  | none => endpointReceiveDualOnCore endpointId receiver replyId executingCore st
+
+/-- The receive body's checks-first form is the specification, with no
+assumption; the compiler runs it in the specification's place. -/
+@[csimp] theorem endpointReceiveDualOnCore_eq_checked :
+    @endpointReceiveDualOnCore = @endpointReceiveDualOnCoreChecked := by
+  funext endpointId receiver replyId executingCore st
+  unfold endpointReceiveDualOnCoreChecked
+  split
+  · rename_i ep hE
+    split
+    · rename_i s hH
+      split
+      · rename_i sTcb hT
+        split
+        · rename_i hG
+          rw [receiveTake_inPlace st endpointId ep receiver replyId executingCore s sTcb
+            ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+            ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG,
+            storePopHeadCode_eq, TCB.ofOptCode_queueNextCode]
+        · rfl
+      · rfl
+    · rfl
+  · rfl
+
+
+/-- **The capability-carrying receive, its reads first.**  Whether the receive
+dequeued a sender, what that sender asks to transfer and the receiver's side
+of it are read off the state the receive ran on; the specification reads the
+first after the receive wrote.  This form branches on it before the receive,
+and binds the transfer's two reads there too, so no entry state is alive
+across the receive's writes.  It is the specification, with no assumption
+(`endpointReceiveDualWithCapsOnCore_eq_checked`), through which the compiler
+runs it. -/
+def endpointReceiveDualWithCapsOnCoreChecked
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState) :
+    SystemState ×
+      Except KernelError
+        (SeLe4n.ThreadId × CapTransferSummary × Option (CoreId × SgiKind)) :=
+  if (receiveRendezvousSender? st endpointId).isNone then
+    match endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
+    | (st', .error e) => (st', .error e)
+    | (st', .ok (senderId, sgi)) => (st', .ok (senderId, { results := #[] }, sgi))
+  else
+    let req := receiveCapRequest st endpointId
+    let target? := receiverCapTarget? st receiver
+    match endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
+    | (st', .error e) => (st', .error e)
+    | (st', .ok (senderId, sgi)) =>
+        match receiveTransferCaps req endpointId target? st' with
+        | .error e => (st', .error e)
+        | .ok (summary, st'') => (st'', .ok (senderId, summary, sgi))
+
+/-- The capability-carrying receive's reads-first form is the specification,
+with no assumption; the compiler runs it in the specification's place. -/
+@[csimp] theorem endpointReceiveDualWithCapsOnCore_eq_checked :
+    @endpointReceiveDualWithCapsOnCore = @endpointReceiveDualWithCapsOnCoreChecked := by
+  funext endpointId receiver replyId executingCore st
+  unfold endpointReceiveDualWithCapsOnCore endpointReceiveDualWithCapsOnCoreChecked
+  cases (receiveRendezvousSender? st endpointId).isNone <;>
+    rcases endpointReceiveDualOnCore endpointId receiver replyId executingCore st
+      with ⟨st', _ | ⟨senderId, sgi⟩⟩ <;> rfl
+
 end SeLe4n.Kernel

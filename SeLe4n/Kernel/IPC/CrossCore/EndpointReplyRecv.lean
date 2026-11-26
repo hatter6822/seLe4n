@@ -12,6 +12,7 @@ import SeLe4n.Kernel.IPC.Operations.Donation
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Scheduler.Operations
 import SeLe4n.Kernel.SchedContext.NotificationDonation
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReceiveInPlace
 
 /-!
 # The ReplyRecv transition, `endpointReplyRecvOnCore`
