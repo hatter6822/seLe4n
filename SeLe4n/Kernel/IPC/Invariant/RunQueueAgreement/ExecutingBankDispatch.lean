@@ -630,6 +630,7 @@ theorem dispatchWithCapChecked_bankAgree {ctx : LabelingContext}
               hB.2.binding hB.1.1.donationOwnerValid) hR).1 hWt)).bankAgree hA
     rename_i summ stR hRR
     cases h
+    replace hRR := (replyRecvTransferOnCore_ok hRR).2
     obtain ⟨hS, hSInv⟩ := endpointReplyRecvOnCore_stepCovers e' hInv hRR
     obtain ⟨w, i⟩ := endpointReplyRecvOnCore_savedRegsWrittenFree P.dequeued P.queueHeads hRT
       hBNR hInv hRR

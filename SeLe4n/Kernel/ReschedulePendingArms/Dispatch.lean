@@ -2189,7 +2189,7 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
         (schedContextBindingPair_of_consistent hB.2.binding hB.1.1.donationOwnerValid) h
     rename_i summ stR hRR
     cases h
-    obtain ⟨hS, hSInv⟩ := endpointReplyRecvOnCore_stepCovers e hInv hRR
+    obtain ⟨hS, hSInv⟩ := endpointReplyRecvOnCore_stepCovers e hInv (replyRecvTransferOnCore_ok hRR).2
     exact stepCoversInv_trans hS (stageDeliveredMessage_keyFrame _ tid _ hSInv).stepCoversInv
   case none.declassify.auditTrail code =>
     split at h

@@ -4788,6 +4788,15 @@ run_check "INVARIANT" rg -n '^theorem replyRecvReplyStep_runQueueEntryStage($|[ 
 run_check "INVARIANT" rg -n '^theorem replyRecvReplyStep_readyKeptStage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SyscallReadiness.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvReplyStep_savedRegsWrittenFree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/SavedRegistersCallReply.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvReplyStep_lendersStage($|[ ({:\[\]])' SeLe4n/Kernel/ContextLenders/ReplyRecv.lean
+# The pop's admission, read on the entry state before the reply leg writes (WS-SX SX33): the arm's
+# transition tests it ahead of the composite, it is the caller's frame test and the pop's commit test
+# read ahead, exact against the pop, and every arm's in-place guard implies it.
+run_check "INVARIANT" rg -n -U '^def replyRecvTransferOnCore [^\n]*(\n([ \t][^\n]*)?)*\n    if replyRecvPopAdmits st rid prevCaller then\n(      [^\n]*\n)*      endpointReplyRecvAnsweringOnCore \(replyRecvCallerFaultAnswer\? st prevCaller label msg\)\n(        [^\n]*\n){3}    else \.error \(\.invalidArgument 0\)\n' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+run_check "INVARIANT" rg -n -U '^def replyRecvPopAdmits [^\n]*\n  replyRecvCallerFrameIs st c rid && replyRecvPopAdmitsCore st rid c\n' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecv.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_ok_of_admits($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvPopAdmits_of_pop_ok($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
+run_check "INVARIANT" rg -n '^theorem Admits\.popAdmits($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvBlockComposed.lean
+run_check "INVARIANT" rg -n '^theorem LegAdmits\.popAdmits($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeComposed.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvReplyStep_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
 run_check "INVARIANT" rg -n '^theorem ReplyRecvArm\.faultTakeFrame_staged($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeComposed.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvTransferOnCore_arm_faultTake($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyRecvTakeComposed.lean

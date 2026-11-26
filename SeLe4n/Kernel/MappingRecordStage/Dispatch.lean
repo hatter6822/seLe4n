@@ -1025,7 +1025,8 @@ theorem dispatchWithCapChecked_mappingStage (ctx : LabelingContext)
     · exact replyRecvCompletesSignalArm_mappingStage h
     rename_i summ stR hRR
     cases h
-    exact (endpointReplyRecvOnCore_mappingStage hRR).trans (stageDeliveredMessage_mappingStage _ _ _)
+    exact (endpointReplyRecvOnCore_mappingStage (replyRecvTransferOnCore_ok hRR).2).trans
+      (stageDeliveredMessage_mappingStage _ _ _)
   case none.declassify.auditTrail code =>
     split at h
     · cases h

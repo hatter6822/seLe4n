@@ -1444,7 +1444,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                       hPack.reachable hNoEdge1 hHolderDon1 hStackValid1
                       hUnheldB1 hCleanupStack1 hReady1 hBudgets1 hRidFresh1
                       hRetStage
-                      (by unfold replyRecvTransferOnCore at hBody; exact hBody)
+                      (replyRecvTransferOnCore_ok hBody).2
                     rw [← hStep]
                     exact stageDeliveredMessage_preserves_ipcInvariantFull stB tid _
                       hObjInvB hInvB

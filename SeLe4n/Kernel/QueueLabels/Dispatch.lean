@@ -342,7 +342,7 @@ theorem dispatchWithCapChecked_queueLabelsStage (ctx : LabelingContext)
     · exact (QueueLabelsGatedFrame.replyRecvCompletesSignalArm hInv h).stage
     rename_i hX
     cases h
-    unfold replyRecvTransferOnCore at hX
+    replace hX := (replyRecvTransferOnCore_ok hX).2
     exact (QueueLabelsGrowFrame.stage ((QueueLabelsGrowFrame.endpointReplyRecvAnsweringOnCore
       hInv hX).andThen fun hI => .of_frame (RecordsFrame.stageDeliveredMessage _ _ _ hI))
       (endpointFlowGate_implies_eq ctx epId _ _ hGate).symm)

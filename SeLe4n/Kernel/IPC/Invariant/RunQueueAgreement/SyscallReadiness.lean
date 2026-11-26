@@ -1792,6 +1792,7 @@ theorem dispatchWithCapChecked_readyKeptStage (ctx : LabelingContext)
     · exact replyRecvCompletesSignalArm_readyKeptStage P.objInv P.dequeued h
     rename_i summ stR hRR
     cases h
+    replace hRR := (replyRecvTransferOnCore_ok hRR).2
     exact (endpointReplyRecvOnCore_readyKeptStage P.objInv P.refined P.dequeued P.queueHeads
       P.current P.notIdle hRR).trans (endpointReplyRecvOnCore_runQueueEntryStage P.objInv
         P.refined P.dequeued P.queueHeads P.current P.notIdle hRR).1

@@ -1559,6 +1559,7 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     · exact replyRecvCompletesSignalArm_runQueueEntryStage P.objInv P.dequeued h
     rename_i summ stR hRR
     cases h
+    replace hRR := (replyRecvTransferOnCore_ok hRR).2
     exact (endpointReplyRecvOnCore_runQueueEntryStage P.objInv P.refined P.dequeued P.queueHeads
       P.current P.notIdle hRR).trans (stageDeliveredMessage_runQueueStage _ _ _).entry
   case none.declassify.auditTrail code =>

@@ -2534,7 +2534,7 @@ theorem replyRecvTransferOnCore_arm_callFaultTake (arm : ReplyRecvArm) (lends : 
       { registers := Architecture.regMessageBody layout rf len, badge := badge }) Z c 0 = Z :=
     fun Z => by rw [hAns]; rfl
   rw [hFF] at hEq
-  unfold replyRecvTransferOnCore
+  rw [replyRecvTransferOnCore_of_admits (hAd.popAdmits hT hRO)]
   rw [hL, hEq]
   dsimp only
   rw [CapTransferSummary.capInfo_empty, hSL]
@@ -2652,7 +2652,7 @@ theorem replyRecvTransferOnCore_arm_callFaultTakeLong (arm : ReplyRecvArm) (lend
   have hSL : ∀ Z, replyRecvStageLast (replyRecvCallerFaultAnswer? st c label msg) Z c 0 = Z :=
     fun Z => by rw [hAns]; rfl
   rw [hFF] at hEq
-  unfold replyRecvTransferOnCore
+  rw [replyRecvTransferOnCore_of_admits (hAd.popAdmits hT hRO)]
   rw [hL, hEq]
   dsimp only
   rw [CapTransferSummary.capInfo_empty, hSL]

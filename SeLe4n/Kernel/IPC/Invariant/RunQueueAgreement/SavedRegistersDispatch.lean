@@ -465,6 +465,7 @@ theorem dispatchWithCapChecked_savedRegsKeptOffCore {ctx : LabelingContext}
             (notificationWaitCrossCoreDispatchChecked_ok_inner hWt)))
     rename_i summ stR hRR
     cases h
+    replace hRR := (replyRecvTransferOnCore_ok hRR).2
     obtain ⟨w, i⟩ := endpointReplyRecvOnCore_savedRegsWrittenFree P.dequeued P.queueHeads hRT
       hBNR hInv hRR
     exact hW (w.trans (.of_kept (stageDeliveredMessage_savedRegsKeptExcept _ tid _ i).1

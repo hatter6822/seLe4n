@@ -951,6 +951,23 @@ A different answer changes only the rows that cite it.
   is stored at the reserved id, is registered debt ("The reply pop's
   outer-caller guard rests on a stated hypothesis" in
   `docs/REGISTERED_DEBT.md`), owned by WS-SX with SX45 as its closure row.
+  *The check, placed (SX33's second piece).* The arm's transition
+  (`replyRecvTransferOnCore`) reads the pop's admission (`replyRecvPopAdmits`)
+  on its entry state and refuses `.invalidArgument 0` before the reply leg
+  writes. The admission is the pop's own commit test read ahead of the leg
+  (the leg writes no context, no other frame and no binding, and keeps a head
+  frame's links), with one term the leg's wake would change: the kept pop's
+  outer caller must not be the answered caller (`keptPopOuterIsNot`). It is
+  exact against the pop on the leg's state (`replyRecvPopDonation_ok_of_admits`,
+  `replyRecvPopAdmits_of_pop_ok`, under `objects.invExt`), and each fast form's
+  in-place guard implies it with no invariant (`ReplyRecvArm.Admits.popAdmits`,
+  `ReplyRecvArm.LegAdmits.popAdmits`), so every `@[csimp]` stays unconditional.
+  One refusal is new: a caller whose reply link names a frame other than the
+  one answered (`replyRecvCallerFrameIs`) is refused, since the leg's removal
+  would then edit that frame's neighbours, which the admission cannot read
+  ahead. It is off the invariant (`replyCallerLinkageReciprocal`). The
+  composite's post-leg pop refusal arm stays compiled: it cannot run from the
+  arm, but removing it needs a pop that cannot refuse.
 
 ## 4. Rows
 

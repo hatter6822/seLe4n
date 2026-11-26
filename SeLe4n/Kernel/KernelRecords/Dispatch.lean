@@ -1102,7 +1102,7 @@ theorem RecordsStage.replyRecvTransferOnCore {epId : SeLe4n.ObjId} {tid : SeLe4n
     {summary : CapTransferSummary} (hR : ipcReachable st) (hC : CallerReady st tid)
     (h : _root_.SeLe4n.Kernel.replyRecvTransferOnCore epId tid rid prevCaller label msg
       grant c st = .ok (summary, st')) : RecordsStage st st' := by
-  unfold _root_.SeLe4n.Kernel.replyRecvTransferOnCore at h
+  replace h := (_root_.SeLe4n.Kernel.replyRecvTransferOnCore_ok h).2
   refine RecordsStage.endpointReplyRecvAnsweringOnCore hR hC (fun hA x hx => ?_) h
   cases hF : x.pendingFault with
   | none => rfl

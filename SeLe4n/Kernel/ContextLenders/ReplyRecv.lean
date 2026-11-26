@@ -336,7 +336,7 @@ theorem replyRecvTransferOnCore_lendersStage {ctx : LabelingContext}
     (h : replyRecvTransferOnCore epId tid rid prevCaller label msg grant c st
       = .ok (summary, st')) :
     LendersStage ctx st st' := by
-  unfold replyRecvTransferOnCore at h
+  replace h := (replyRecvTransferOnCore_ok h).2
   exact endpointReplyRecvAnsweringOnCore_lendersStage hInv hC hQ hReady hW hG hP h
 
 end SeLe4n.Kernel

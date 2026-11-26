@@ -815,26 +815,66 @@ server choose its program counter and stack pointer.
 
 `label` is the reply's `MessageInfo` label and `msg` its payload (MR1 onward, the
 reply capability's MR0 stripped); the decode reads `msg.registers` as the reply's
-words, exactly as the `.reply` arm's decode reads its MR0 onward. -/
+words, exactly as the `.reply` arm's decode reads its MR0 onward.
+
+**Checks first** (WS-SX SX33, seL4's `reply_pop`, which cannot refuse): the
+pop's admission (`replyRecvPopAdmits`) is read on the entry state, before the
+reply leg writes anything, so a pop the kernel refuses leaves the state as it
+found it.  It is exact against the pop on the leg's state
+(`replyRecvPopDonation_ok_of_admits`, `replyRecvPopAdmits_of_pop_ok`). -/
 def replyRecvTransferOnCore (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
     (grant : Bool) (executingCore : Concurrency.CoreId) (st : SystemState) : Except KernelError (CapTransferSummary × SystemState) :=
-    -- A faulted caller is handed the empty message, as `.reply`'s fault branch
-    -- hands it (`faultReplyOnCore`): a fault reply's payload is registers.
-    endpointReplyRecvAnsweringOnCore (replyRecvCallerFaultAnswer? st prevCaller label msg)
-      epId tid rid prevCaller
-      (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
-      executingCore st
+    if replyRecvPopAdmits st rid prevCaller then
+      -- A faulted caller is handed the empty message, as `.reply`'s fault branch
+      -- hands it (`faultReplyOnCore`): a fault reply's payload is registers.
+      endpointReplyRecvAnsweringOnCore (replyRecvCallerFaultAnswer? st prevCaller label msg)
+        epId tid rid prevCaller
+        (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
+        executingCore st
+    else .error (.invalidArgument 0)
 
-/-- On a caller carrying no fault the arm's transition is the ordinary composite. -/
+/-- Where the pop is admitted, the arm's transition is the composite at the
+caller's answer. -/
+theorem replyRecvTransferOnCore_of_admits {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage}
+    {grant : Bool} {c : Concurrency.CoreId} {st : SystemState}
+    (h : replyRecvPopAdmits st rid prevCaller = true) :
+    replyRecvTransferOnCore epId tid rid prevCaller label msg grant c st =
+      endpointReplyRecvAnsweringOnCore (replyRecvCallerFaultAnswer? st prevCaller label msg)
+        epId tid rid prevCaller
+        (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
+        c st := by
+  unfold replyRecvTransferOnCore; rw [if_pos h]
+
+/-- **What a successful transition is**: the pop admitted on the entry state,
+and the composite's own success. -/
+theorem replyRecvTransferOnCore_ok {epId : SeLe4n.ObjId} {tid : SeLe4n.ThreadId}
+    {rid : SeLe4n.ReplyId} {prevCaller : SeLe4n.ThreadId} {label : Nat} {msg : IpcMessage}
+    {grant : Bool} {c : Concurrency.CoreId} {st : SystemState}
+    {r : CapTransferSummary × SystemState}
+    (h : replyRecvTransferOnCore epId tid rid prevCaller label msg grant c st = .ok r) :
+    replyRecvPopAdmits st rid prevCaller = true ∧
+      endpointReplyRecvAnsweringOnCore (replyRecvCallerFaultAnswer? st prevCaller label msg)
+        epId tid rid prevCaller
+        (replyRecvLegMessage (replyRecvCallerFaultAnswer? st prevCaller label msg) msg) grant
+        c st = .ok r := by
+  unfold replyRecvTransferOnCore at h
+  split at h
+  · next hA => exact ⟨hA, h⟩
+  · cases h
+
+/-- On a caller carrying no fault, its pop admitted, the arm's transition is the
+ordinary composite. -/
 theorem replyRecvTransferOnCore_of_no_fault (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (label : Nat) (msg : IpcMessage)
     (grant : Bool) (c : Concurrency.CoreId) (st : SystemState)
-    (h : threadHasPendingFault st prevCaller = false) :
+    (h : threadHasPendingFault st prevCaller = false)
+    (hA : replyRecvPopAdmits st rid prevCaller = true) :
     replyRecvTransferOnCore epId tid rid prevCaller label msg grant c st =
       endpointReplyRecvOnCore epId tid rid prevCaller msg grant c st := by
-  unfold replyRecvTransferOnCore
-  rw [replyRecvCallerFaultAnswer?_eq_none st prevCaller label msg h]
+  rw [replyRecvTransferOnCore_of_admits hA,
+    replyRecvCallerFaultAnswer?_eq_none st prevCaller label msg h]
   rfl
 
 /-- The arm's transition that succeeds found its caller waiting for the reply. -/
@@ -844,7 +884,7 @@ theorem replyRecvCallerAwaitsReply_of_replyRecvTransferOnCore_ok {epId : SeLe4n.
     {r : CapTransferSummary × SystemState}
     (h : replyRecvTransferOnCore epId tid rid prevCaller label msg grant c st = .ok r) :
     replyRecvCallerAwaitsReply st prevCaller = true :=
-  replyRecvCallerAwaitsReply_of_endpointReplyRecvAnsweringOnCore_ok h
+  replyRecvCallerAwaitsReply_of_endpointReplyRecvAnsweringOnCore_ok (replyRecvTransferOnCore_ok h).2
 
 
 -- ============================================================================

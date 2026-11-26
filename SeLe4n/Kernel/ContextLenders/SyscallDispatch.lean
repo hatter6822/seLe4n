@@ -189,7 +189,7 @@ theorem dispatchWithCapChecked_lendersStage_of_capabilityOnly (ctx : LabelingCon
       hCaller.ready hW hGate
       (P.replyRecv epId rid prevCaller replyBadge replyGrant hT hRes) hX
     have hI : _ := hX
-    unfold replyRecvTransferOnCore at hI
+    replace hI := (replyRecvTransferOnCore_ok hI).2
     exact hS.trans (LendersFrame.stageDeliveredMessage _ _ _
       (endpointReplyRecvOnCore_preserves_objects_invExt _ _ _ _ _ _ _ _ _ _ hInv hI)).stage
   case cspaceMint.object cnodeId =>

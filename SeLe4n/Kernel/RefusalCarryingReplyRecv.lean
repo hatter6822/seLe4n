@@ -802,7 +802,7 @@ theorem replyRecvCapsArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
             replyRecvBlockArmCode_spec hK
           obtain rfl : ct = ct0 := by rw [hT] at hTc0'; cases hTc0'; rfl
           unfold replyRecvRendezvousR
-          rw [replyRecvTransferOnCore_of_no_fault (h := hNoF), hTail]
+          rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO), hTail]
           have h := replyRecvOnCore_arm_capsDelivered _ st epId tid c rid layout rf len badge
             executingCore ct rt ep rp stcb _ hAd hSz hT hRO hE hS' hR' hEnq hRp hStash hRecR hReq
           generalize endpointReplyRecvOnCore epId tid rid c
@@ -1030,7 +1030,7 @@ theorem replyRecvArmTakeR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
           ((Architecture.RegisterDecode.registerRoutedSyscall_default _).trans hR) hF
         rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
         unfold replyRecvRendezvousR
-        rw [replyRecvTransferOnCore_of_no_fault (h := hNoF)]
+        rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO)]
         generalize endpointReplyRecvOnCore epId tid rid c
           { registers := Architecture.regMessageBody layout rf len, badge := badge } grant
           executingCore st = r at h ⊢
@@ -1056,7 +1056,7 @@ theorem replyRecvArmTakeR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
                   hF hReq
                 rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
                 unfold replyRecvRendezvousR
-                rw [replyRecvTransferOnCore_of_no_fault (h := hNoF)]
+                rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO)]
                 generalize endpointReplyRecvOnCore epId tid rid c
                   { registers := Architecture.regMessageBody layout rf len, badge := badge } true
                   executingCore st = r at h ⊢
@@ -1410,7 +1410,7 @@ theorem replyRecvArmCallTakeR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
         grant executingCore ct rp ep s sTcb capAddr mi hAd hCA hSz4 hT hRO hRp
         (replyRecvReplyInertW_spec hI hT) hE hH hS hSC hR' hF
       unfold replyRecvRendezvousR
-      rw [replyRecvTransferOnCore_of_no_fault (h := hNoF)]
+      rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO)]
       generalize endpointReplyRecvOnCore epId tid rid c
         { registers := Architecture.regMessageBody layout rf len, badge := badge } grant
         executingCore st = r at h ⊢
@@ -1434,7 +1434,7 @@ theorem replyRecvArmCallTakeR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
             len badge executingCore ct rp ep s sTcb capAddr mi stcb _ hAd hCA hSz4 hT hRO
             hRp hE hH hS hSC hR' hF hReq
           unfold replyRecvRendezvousR
-          rw [replyRecvTransferOnCore_of_no_fault (h := hNoF)]
+          rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO)]
           generalize endpointReplyRecvOnCore epId tid rid c
             { registers := Architecture.regMessageBody layout rf len, badge := badge } true
             executingCore st = r at h ⊢
@@ -1895,7 +1895,6 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
               executingCore st hFault]
             simp only [replyRecvRendezvousR]
           rename_i hNoFault
-          rw [replyRecvTransferOnCore_of_no_fault (h := by simpa using hNoFault)]
           split
           · next hG =>
             simp only [Bool.and_eq_true, decide_eq_true_eq, bne_iff_ne, ne_eq] at hG
@@ -1905,7 +1904,8 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
             have hInert := replyRecvReplyInertW_spec hI hT
             have h := replyRecvOnCore_arm_deliveredRegs _ st epId tid c rid layout rf len badge grant
               executingCore ct rt ep rp hAd hSz hT hRO hE hS hR hEnq hRp hStash hRecR hInert
-            rw [hTail]
+            rw [replyRecvTransferOnCore_of_no_fault (h := by simpa using hNoFault)
+              (hA := hAd.popAdmits hT hRO), hTail]
             generalize endpointReplyRecvOnCore epId tid rid c
               { registers := Architecture.regMessageBody layout rf len, badge := badge } grant
               executingCore st = r at h ⊢
@@ -1916,7 +1916,6 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
           rw [replyRecvArmCallTakeR_eq epId tid c rid badge grant layout rf len label executingCore
             st (by simpa using hNoFault)]
           simp only [replyRecvRendezvousR]
-          rw [replyRecvTransferOnCore_of_no_fault (h := by simpa using hNoFault)]
         · rfl
   · next hTgt =>
     unfold endpointReplyRecvCheckedArmGeneralR
@@ -2348,7 +2347,7 @@ theorem replyRecvLongTakeArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
           (replyRecvReplyInertW_spec hI hT) hE hH hS hSC hG hR' hF
         rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
         unfold replyRecvLongRendezvousR
-        rw [replyRecvTransferOnCore_of_no_fault (h := hNoF)]
+        rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO)]
         generalize endpointReplyRecvOnCore epId tid rid c
           { registers := longReplyRecvRegs rf st tid len, badge := badge } grant
           executingCore st = r at h ⊢
@@ -2370,7 +2369,7 @@ theorem replyRecvLongTakeArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
                 hRp hE hH hS hSC hG hR' hF (hReqOf stcb hS')
               rw [Architecture.regMessageFrameW_eq, ← TCB.ipcBadgeView_eq_opt]
               unfold replyRecvLongRendezvousR
-              rw [replyRecvTransferOnCore_of_no_fault (h := hNoF)]
+              rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO)]
               generalize endpointReplyRecvOnCore epId tid rid c
                 { registers := longReplyRecvRegs rf st tid len, badge := badge } true
                 executingCore st = r at h ⊢
@@ -2505,7 +2504,7 @@ theorem replyRecvLongCallTakeArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.Threa
         executingCore ct rp ep s sTcb capAddr mi hAd hCA hLen hSzL hT hRO hRp
         (replyRecvReplyInertW_spec hI hT) hE hH hS hSC hR' hF
       unfold replyRecvLongRendezvousR
-      rw [replyRecvTransferOnCore_of_no_fault (h := hNoF)]
+      rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO)]
       generalize endpointReplyRecvOnCore epId tid rid c
         { registers := longReplyRecvRegs rf st tid len, badge := badge } grant
         executingCore st = r at h ⊢
@@ -2524,7 +2523,7 @@ theorem replyRecvLongCallTakeArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.Threa
         badge executingCore ct rp ep s sTcb capAddr mi stcb _ hAd hCA hLen hSzL hT hRO
         hRp hE hH hS hSC hR' hF (hReqOf stcb hS')
       unfold replyRecvLongRendezvousR
-      rw [replyRecvTransferOnCore_of_no_fault (h := hNoF)]
+      rw [replyRecvTransferOnCore_of_no_fault (h := hNoF) (hA := hAd.popAdmits hT hRO)]
       generalize endpointReplyRecvOnCore epId tid rid c
         { registers := longReplyRecvRegs rf st tid len, badge := badge } true
         executingCore st = r at h ⊢
@@ -2590,7 +2589,7 @@ theorem replyRecvLongCapsR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
         obtain rfl : ct = ct0 := by
           rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hTc0] at hT; cases hT; rfl
         unfold replyRecvLongRendezvousR
-        rw [replyRecvTransferOnCore_of_no_fault (h := hNoFault)]
+        rw [replyRecvTransferOnCore_of_no_fault (h := hNoFault) (hA := hAd.popAdmits hT hRO)]
         have h := replyRecvOnCore_arm_capsDeliveredLong _ st epId tid c rid rf len badge
           executingCore ct rt ep rp stcb _ hAd hLen hSzL hT hRO hE hS hR' hEnq hRp hStash hRecR
           (hReqOf stcb hS')
@@ -3051,7 +3050,7 @@ theorem endpointReplyRecvLongCheckedArmR_eq_general (ctx : LabelingContext)
               have h := replyRecvOnCore_arm_deliveredLong _ st epId tid c rid rf mi.length badge
                 grant executingCore ct rt ep rp hAd (by omega) hSzL hT hRO hE hS hR hEnq hRp hStash
                 hRecR hInert
-              rw [replyRecvTransferOnCore_of_no_fault (h := hNoFault), hTail]
+              rw [replyRecvTransferOnCore_of_no_fault (h := hNoFault) (hA := hAd.popAdmits hT hRO), hTail]
               generalize endpointReplyRecvOnCore epId tid rid c
                 { registers := longReplyRecvRegs rf st tid mi.length, badge := badge } grant
                 executingCore st = r at h ⊢
