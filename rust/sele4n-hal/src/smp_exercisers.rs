@@ -12538,9 +12538,10 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         // server's delete, and a third thread carved in the server's slot is
         // bound the context and queues a Call; the root task, holding none,
         // answers the partner and takes the Call, which lends it the caller's
-        // context (`performReplyRecvUnlinkedCallTakeDelivered`).  The partner
-        // is suspended, the reply returns the context, the caller restarts the
-        // root task and suspends itself, and it is unbound before its delete.
+        // context (`performReplyRecvArmCallTakeDelivered` on the unlinked
+        // arm).  The partner is suspended, the reply returns the context, the
+        // caller restarts the root task and suspends itself, and it is unbound
+        // before its delete.
         retype(
             "untyped-retype-unlinked-call-take-server",
             UNTYPED_CAP,
@@ -12774,6 +12775,819 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         ),
         invocation(
             "unlinked-call-take-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
+        // WS-SX SX27: the unlinked arm's Call take above again, the reply at 120
+        // words, its words past the fourth read from the root task's buffer: the
+        // root task's reply-receive answers the partner over the unlinked arm
+        // and its receive leg takes the queued Call in place, the caller's
+        // context lent to it (`performReplyRecvArmCallTakeDeliveredLong`).  The
+        // rest of the scenario runs as before.
+        retype(
+            "untyped-retype-unlinked-call-take-long-server",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "unlinked-call-take-long-server-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "unlinked-call-take-long-server-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        retype(
+            "untyped-retype-unlinked-call-take-long-reply",
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-call-take-long-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        configure(
+            "unlinked-call-take-long-configure",
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "unlinked-call-take-long-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-call-take-long-resume-server",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unlinked-call-take-long-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unlinked-call-take-long-server-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "unlinked-call-take-long-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
+        ),
+        partner_step(
+            "unlinked-call-take-long-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x75, 0],
+            true,
+        ),
+        signal("unlinked-call-take-long-server-wakes-root"),
+        partner_step(
+            "unlinked-call-take-long-server-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unlinked-call-take-long-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-call-take-long-server-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        retype(
+            "untyped-retype-unlinked-call-take-long-caller",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "unlinked-call-take-long-caller-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "unlinked-call-take-long-caller-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        cap_argument(
+            "unlinked-call-take-long-bind-caller",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            CHAIN_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-call-take-long-resume-caller",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unlinked-call-take-long-root-waits-caller",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("unlinked-call-take-long-caller-wakes-root"),
+        partner_step(
+            "unlinked-call-take-long-caller-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xa4, 0],
+            true,
+        ),
+        kernel_step("unlinked-call-take-long-mask-ticks", MASK_TICKS_STEP),
+        with_reply(
+            partner_step(
+                "unlinked-long-reply-recv-takes-call",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                TAIL_MESSAGE_LENGTH,
+                [0x76, 0],
+                false,
+            ),
+            CHAIN_REPLY_CAP,
+        ),
+        // The partner, answered with no context, is suspended before the
+        // root task's reply: the reply returns the caller's context and with
+        // it the root task's priority, so a ready partner would be chosen.
+        invocation(
+            "unlinked-call-take-long-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unlinked-call-take-long-root-replies",
+            REPLY,
+            CHAIN_REPLY_CAP,
+            1,
+            [0x77, 0],
+            false,
+        ),
+        // The reply handed the context back and took the root task off its
+        // core (seL4-MCS: a server whose context returns to its caller no
+        // longer runs), so the caller restarts it before suspending itself,
+        // which leaves the root task current.
+        invocation(
+            "unlinked-call-take-long-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-call-take-long-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        self_suspend(invocation(
+            "unlinked-call-take-long-caller-suspends",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        )),
+        kernel_step("unlinked-call-take-long-unmask-ticks", UNMASK_TICKS_STEP),
+        invocation(
+            "unlinked-call-take-long-unbind-caller",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-call-take-long-caller-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unlinked-call-take-long-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unlinked-call-take-long-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
+        // WS-SX SX27: the unlinked arm's Call take above again, the reply
+        // granting a capability the partner installs (signalled, waited on and
+        // deleted after): the root task's reply-receive answers the partner over
+        // the unlinked arm and its receive leg takes the queued Call in place,
+        // the caller's context lent to it
+        // (`performReplyRecvArmCallTakeCapsDelivered`).  The rest of the
+        // scenario runs as before.
+        retype(
+            "untyped-retype-unlinked-call-take-caps-server",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "unlinked-call-take-caps-server-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "unlinked-call-take-caps-server-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        retype(
+            "untyped-retype-unlinked-call-take-caps-reply",
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-call-take-caps-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        configure(
+            "unlinked-call-take-caps-configure",
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "unlinked-call-take-caps-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-call-take-caps-resume-server",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unlinked-call-take-caps-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unlinked-call-take-caps-server-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "unlinked-call-take-caps-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
+        ),
+        partner_step(
+            "unlinked-call-take-caps-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x75, 0],
+            true,
+        ),
+        signal("unlinked-call-take-caps-server-wakes-root"),
+        partner_step(
+            "unlinked-call-take-caps-server-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unlinked-call-take-caps-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-call-take-caps-server-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        retype(
+            "untyped-retype-unlinked-call-take-caps-caller",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "unlinked-call-take-caps-caller-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "unlinked-call-take-caps-caller-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        cap_argument(
+            "unlinked-call-take-caps-bind-caller",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            CHAIN_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-call-take-caps-resume-caller",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unlinked-call-take-caps-root-waits-caller",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("unlinked-call-take-caps-caller-wakes-root"),
+        partner_step(
+            "unlinked-call-take-caps-caller-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xa4, 0],
+            true,
+        ),
+        kernel_step("unlinked-call-take-caps-mask-ticks", MASK_TICKS_STEP),
+        receive_path(
+            "unlinked-call-take-caps-receive-path",
+            FRAME_VADDR,
+            [CNODE_CAP, cap_address(EMPTY_SLOT), 64],
+        ),
+        with_caps_keeping_path(
+            with_reply(
+                partner_step(
+                    "unlinked-reply-recv-takes-call-installs-cap",
+                    REPLY_RECV,
+                    ENDPOINT_CAP,
+                    ONE_EXTRA_CAP | 1,
+                    [0x76, 0],
+                    false,
+                ),
+                CHAIN_REPLY_CAP,
+            ),
+            FRAME_VADDR,
+            [NOTIFICATION_CAP, 0, 0],
+        ),
+        RoundTrip {
+            cptr: cap_address(EMPTY_SLOT),
+            ..signal("unlinked-reply-recv-takes-call-installs-cap-installed-signal")
+        },
+        RoundTrip {
+            name: "unlinked-reply-recv-takes-call-installs-cap-installed-wait",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            reply: None,
+            issued: None,
+            selects: None,
+            msg_len: 1,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            resumes: false,
+            caps_or_badges: None,
+            overflow: None,
+            returns: None,
+        },
+        invocation(
+            "unlinked-reply-recv-takes-call-installs-cap-installed-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [EMPTY_SLOT, 0, 0, 0],
+        ),
+        receive_path(
+            "unlinked-call-take-caps-receive-path-closed",
+            FRAME_VADDR,
+            [0; 3],
+        ),
+        // The partner, answered with no context, is suspended before the
+        // root task's reply: the reply returns the caller's context and with
+        // it the root task's priority, so a ready partner would be chosen.
+        invocation(
+            "unlinked-call-take-caps-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unlinked-call-take-caps-root-replies",
+            REPLY,
+            CHAIN_REPLY_CAP,
+            1,
+            [0x77, 0],
+            false,
+        ),
+        // The reply handed the context back and took the root task off its
+        // core (seL4-MCS: a server whose context returns to its caller no
+        // longer runs), so the caller restarts it before suspending itself,
+        // which leaves the root task current.
+        invocation(
+            "unlinked-call-take-caps-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-call-take-caps-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        self_suspend(invocation(
+            "unlinked-call-take-caps-caller-suspends",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        )),
+        kernel_step("unlinked-call-take-caps-unmask-ticks", UNMASK_TICKS_STEP),
+        invocation(
+            "unlinked-call-take-caps-unbind-caller",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-call-take-caps-caller-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unlinked-call-take-caps-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unlinked-call-take-caps-reply-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
+        ),
+        // WS-SX SX27: the unlinked arm's Call take above again, the reply at 120
+        // words granting a capability the partner installs: the root task's
+        // reply-receive answers the partner over the unlinked arm and its
+        // receive leg takes the queued Call in place, the caller's context lent
+        // to it (`performReplyRecvArmCallTakeCapsDeliveredLong`).  The rest of
+        // the scenario runs as before.
+        retype(
+            "untyped-retype-unlinked-call-take-long-caps-server",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "unlinked-call-take-long-caps-server-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "unlinked-call-take-long-caps-server-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        retype(
+            "untyped-retype-unlinked-call-take-long-caps-reply",
+            UNTYPED_CAP,
+            [
+                REPLY_TYPE,
+                CHAIN_CHILD_IDS[1],
+                CNODE_CAP,
+                CHAIN_REPLY_OBJECT_SLOT,
+            ],
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-call-take-long-caps-reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [CHAIN_REPLY_OBJECT_SLOT, CHAIN_REPLY_CAP_SLOT, 0, 0],
+        ),
+        configure(
+            "unlinked-call-take-long-caps-configure",
+            FRAME_VADDR,
+            SCHED_CONTEXT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "unlinked-call-take-long-caps-bind-partner",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            PARTNER_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-call-take-long-caps-resume-server",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unlinked-call-take-long-caps-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unlinked-call-take-long-caps-server-resumes-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "unlinked-call-take-long-caps-server-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            CHAIN_REPLY_CAP,
+        ),
+        partner_step(
+            "unlinked-call-take-long-caps-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0x75, 0],
+            true,
+        ),
+        signal("unlinked-call-take-long-caps-server-wakes-root"),
+        partner_step(
+            "unlinked-call-take-long-caps-server-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "unlinked-call-take-long-caps-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-call-take-long-caps-server-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        retype(
+            "untyped-retype-unlinked-call-take-long-caps-caller",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "unlinked-call-take-long-caps-caller-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "unlinked-call-take-long-caps-caller-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        cap_argument(
+            "unlinked-call-take-long-caps-bind-caller",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            CHAIN_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "unlinked-call-take-long-caps-resume-caller",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unlinked-call-take-long-caps-root-waits-caller",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("unlinked-call-take-long-caps-caller-wakes-root"),
+        partner_step(
+            "unlinked-call-take-long-caps-caller-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xa4, 0],
+            true,
+        ),
+        kernel_step("unlinked-call-take-long-caps-mask-ticks", MASK_TICKS_STEP),
+        receive_path(
+            "unlinked-call-take-long-caps-receive-path",
+            FRAME_VADDR,
+            [CNODE_CAP, cap_address(EMPTY_SLOT), 64],
+        ),
+        with_caps_keeping_path(
+            with_reply(
+                partner_step(
+                    "unlinked-long-reply-recv-takes-call-installs-cap",
+                    REPLY_RECV,
+                    ENDPOINT_CAP,
+                    ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
+                    [0x76, 0],
+                    false,
+                ),
+                CHAIN_REPLY_CAP,
+            ),
+            FRAME_VADDR,
+            [NOTIFICATION_CAP, 0, 0],
+        ),
+        RoundTrip {
+            cptr: cap_address(EMPTY_SLOT),
+            ..signal("unlinked-long-reply-recv-takes-call-installs-cap-installed-signal")
+        },
+        RoundTrip {
+            name: "unlinked-long-reply-recv-takes-call-installs-cap-installed-wait",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            reply: None,
+            issued: None,
+            selects: None,
+            msg_len: 1,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            resumes: false,
+            caps_or_badges: None,
+            overflow: None,
+            returns: None,
+        },
+        invocation(
+            "unlinked-long-reply-recv-takes-call-installs-cap-installed-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [EMPTY_SLOT, 0, 0, 0],
+        ),
+        receive_path(
+            "unlinked-call-take-long-caps-receive-path-closed",
+            FRAME_VADDR,
+            [0; 3],
+        ),
+        // The partner, answered with no context, is suspended before the
+        // root task's reply: the reply returns the caller's context and with
+        // it the root task's priority, so a ready partner would be chosen.
+        invocation(
+            "unlinked-call-take-long-caps-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "unlinked-call-take-long-caps-root-replies",
+            REPLY,
+            CHAIN_REPLY_CAP,
+            1,
+            [0x77, 0],
+            false,
+        ),
+        // The reply handed the context back and took the root task off its
+        // core (seL4-MCS: a server whose context returns to its caller no
+        // longer runs), so the caller restarts it before suspending itself,
+        // which leaves the root task current.
+        invocation(
+            "unlinked-call-take-long-caps-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-call-take-long-caps-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        self_suspend(invocation(
+            "unlinked-call-take-long-caps-caller-suspends",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        )),
+        kernel_step(
+            "unlinked-call-take-long-caps-unmask-ticks",
+            UNMASK_TICKS_STEP,
+        ),
+        invocation(
+            "unlinked-call-take-long-caps-unbind-caller",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "unlinked-call-take-long-caps-caller-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unlinked-call-take-long-caps-reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "unlinked-call-take-long-caps-reply-delete",
             CSPACE_DELETE,
             CNODE_CAP,
             [CHAIN_REPLY_OBJECT_SLOT, 0, 0, 0],
@@ -14653,6 +15467,872 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         ),
         invocation(
             "queued-caller-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
+        // WS-SX SX27: the rendezvous arm's Call take above again, the reply at
+        // 120 words, its words past the fourth read from the root task's buffer:
+        // the root task's reply-receive answers the partner, whose call lent
+        // nothing, over the rendezvous arm and its receive leg takes the queued
+        // Call in place, the caller's context lent to it
+        // (`performReplyRecvArmCallTakeDeliveredLong`).  The rest of the
+        // scenario runs as before.
+        kernel_step("mask-ticks", MASK_TICKS_STEP),
+        retype(
+            "untyped-retype-queued-caller-long",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "queued-caller-long-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "queued-caller-long-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        cap_argument(
+            "queued-caller-long-bind",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            CHAIN_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "queued-caller-long-resume-caller",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "queued-caller-long-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("queued-caller-long-caller-wakes-root"),
+        partner_step(
+            "queued-caller-long-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xb2, 0],
+            true,
+        ),
+        with_reply(
+            partner_step(
+                "queued-caller-long-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                false,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "queued-caller-long-root-replies",
+            REPLY,
+            REPLY_CAP,
+            1,
+            [0xb3, 0],
+            false,
+        ),
+        // The reply handed the context back and took the root task off its
+        // core (seL4-MCS: a server whose context returns to its caller no
+        // longer runs), so the third thread restarts it before suspending
+        // itself, which leaves the root task current.
+        invocation(
+            "queued-caller-long-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-long-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        self_suspend(invocation(
+            "queued-caller-long-suspend-caller",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        )),
+        // The root task, serving no one, lowers its own priority below the
+        // ready third thread: rescheduled at once (seL4's `setPriority` of the
+        // current thread), its own result staged as it is switched out
+        // (`stageCallerReturn_stages_switched_out`), so the round trip returns
+        // and the third thread is current after it.  The third thread waits,
+        // and the root task raises its own priority back and wakes it.
+        invocation(
+            "queued-caller-long-resume-lowered",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        set_priority(
+            "queued-caller-long-root-lowers-self",
+            TCB_SET_PRIORITY,
+            ROOT_TCB_CAP,
+            PARTNER_PRIORITY - 1,
+            FRAME_VADDR,
+        ),
+        partner_step(
+            "queued-caller-long-caller-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        set_priority(
+            "queued-caller-long-root-raises-self",
+            TCB_SET_PRIORITY,
+            ROOT_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        signal("queued-caller-long-root-wakes-caller"),
+        invocation(
+            "queued-caller-long-suspend-lowered",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-long-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "queued-caller-long-root-takes-partner",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "queued-caller-long-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xb4, 0],
+            true,
+        ),
+        invocation(
+            "queued-caller-long-resume-caller-again",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        set_priority(
+            "queued-caller-long-lower-ready",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY - 1,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "queued-caller-long-raise-ready",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        partner_step(
+            "queued-caller-long-root-waits-again",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("queued-caller-long-caller-wakes-root-again"),
+        partner_step(
+            "queued-caller-long-calls-again",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xb5, 0],
+            true,
+        ),
+        with_reply(
+            partner_step(
+                "queued-caller-long-reply-recv",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                TAIL_MESSAGE_LENGTH,
+                [0xb6, 0],
+                false,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "queued-caller-long-root-replies-again",
+            REPLY,
+            REPLY_CAP,
+            1,
+            [0xb7, 0],
+            false,
+        ),
+        // The context back with the third thread and the root task off its
+        // core again.  The partner runs first and suspends itself, which
+        // answers it no frame (seL4 replies only to a caller left `Restart`);
+        // the third thread then restarts the root task and suspends itself.
+        self_suspend(invocation(
+            "queued-caller-long-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        )),
+        invocation(
+            "queued-caller-long-suspend-root-again",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-long-resume-root-again",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        self_suspend(invocation(
+            "queued-caller-long-suspend-caller-again",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        )),
+        invocation(
+            "queued-caller-long-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-long-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
+        // WS-SX SX27: the rendezvous arm's Call take above again, the reply
+        // granting a capability the partner installs (signalled, waited on and
+        // deleted after): the root task's reply-receive answers the partner,
+        // whose call lent nothing, over the rendezvous arm and its receive leg
+        // takes the queued Call in place, the caller's context lent to it
+        // (`performReplyRecvArmCallTakeCapsDelivered`).  The rest of the
+        // scenario runs as before.
+        kernel_step("mask-ticks", MASK_TICKS_STEP),
+        retype(
+            "untyped-retype-queued-caller-caps",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "queued-caller-caps-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "queued-caller-caps-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        cap_argument(
+            "queued-caller-caps-bind",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            CHAIN_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "queued-caller-caps-resume-caller",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "queued-caller-caps-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("queued-caller-caps-caller-wakes-root"),
+        partner_step(
+            "queued-caller-caps-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xb2, 0],
+            true,
+        ),
+        with_reply(
+            partner_step(
+                "queued-caller-caps-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                false,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "queued-caller-caps-root-replies",
+            REPLY,
+            REPLY_CAP,
+            1,
+            [0xb3, 0],
+            false,
+        ),
+        // The reply handed the context back and took the root task off its
+        // core (seL4-MCS: a server whose context returns to its caller no
+        // longer runs), so the third thread restarts it before suspending
+        // itself, which leaves the root task current.
+        invocation(
+            "queued-caller-caps-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-caps-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        self_suspend(invocation(
+            "queued-caller-caps-suspend-caller",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        )),
+        // The root task, serving no one, lowers its own priority below the
+        // ready third thread: rescheduled at once (seL4's `setPriority` of the
+        // current thread), its own result staged as it is switched out
+        // (`stageCallerReturn_stages_switched_out`), so the round trip returns
+        // and the third thread is current after it.  The third thread waits,
+        // and the root task raises its own priority back and wakes it.
+        invocation(
+            "queued-caller-caps-resume-lowered",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        set_priority(
+            "queued-caller-caps-root-lowers-self",
+            TCB_SET_PRIORITY,
+            ROOT_TCB_CAP,
+            PARTNER_PRIORITY - 1,
+            FRAME_VADDR,
+        ),
+        partner_step(
+            "queued-caller-caps-caller-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        set_priority(
+            "queued-caller-caps-root-raises-self",
+            TCB_SET_PRIORITY,
+            ROOT_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        signal("queued-caller-caps-root-wakes-caller"),
+        invocation(
+            "queued-caller-caps-suspend-lowered",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-caps-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "queued-caller-caps-root-takes-partner",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "queued-caller-caps-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xb4, 0],
+            true,
+        ),
+        invocation(
+            "queued-caller-caps-resume-caller-again",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        set_priority(
+            "queued-caller-caps-lower-ready",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY - 1,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "queued-caller-caps-raise-ready",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        partner_step(
+            "queued-caller-caps-root-waits-again",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("queued-caller-caps-caller-wakes-root-again"),
+        partner_step(
+            "queued-caller-caps-calls-again",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xb5, 0],
+            true,
+        ),
+        receive_path(
+            "queued-caller-caps-receive-path",
+            FRAME_VADDR,
+            [CNODE_CAP, cap_address(EMPTY_SLOT), 64],
+        ),
+        with_caps_keeping_path(
+            with_reply(
+                partner_step(
+                    "queued-caller-reply-recv-installs-cap",
+                    REPLY_RECV,
+                    ENDPOINT_CAP,
+                    ONE_EXTRA_CAP | 1,
+                    [0xb6, 0],
+                    false,
+                ),
+                REPLY_CAP,
+            ),
+            FRAME_VADDR,
+            [NOTIFICATION_CAP, 0, 0],
+        ),
+        RoundTrip {
+            cptr: cap_address(EMPTY_SLOT),
+            ..signal("queued-caller-reply-recv-installs-cap-installed-signal")
+        },
+        RoundTrip {
+            name: "queued-caller-reply-recv-installs-cap-installed-wait",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            reply: None,
+            issued: None,
+            selects: None,
+            msg_len: 1,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            resumes: false,
+            caps_or_badges: None,
+            overflow: None,
+            returns: None,
+        },
+        invocation(
+            "queued-caller-reply-recv-installs-cap-installed-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [EMPTY_SLOT, 0, 0, 0],
+        ),
+        receive_path(
+            "queued-caller-caps-receive-path-closed",
+            FRAME_VADDR,
+            [0; 3],
+        ),
+        partner_step(
+            "queued-caller-caps-root-replies-again",
+            REPLY,
+            REPLY_CAP,
+            1,
+            [0xb7, 0],
+            false,
+        ),
+        // The context back with the third thread and the root task off its
+        // core again.  The partner runs first and suspends itself, which
+        // answers it no frame (seL4 replies only to a caller left `Restart`);
+        // the third thread then restarts the root task and suspends itself.
+        self_suspend(invocation(
+            "queued-caller-caps-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        )),
+        invocation(
+            "queued-caller-caps-suspend-root-again",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-caps-resume-root-again",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        self_suspend(invocation(
+            "queued-caller-caps-suspend-caller-again",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        )),
+        invocation(
+            "queued-caller-caps-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-caps-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
+        kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
+        // WS-SX SX27: the rendezvous arm's Call take above again, the reply at
+        // 120 words granting a capability the partner installs: the root task's
+        // reply-receive answers the partner, whose call lent nothing, over the
+        // rendezvous arm and its receive leg takes the queued Call in place, the
+        // caller's context lent to it
+        // (`performReplyRecvArmCallTakeCapsDeliveredLong`).  The rest of the
+        // scenario runs as before.
+        kernel_step("mask-ticks", MASK_TICKS_STEP),
+        retype(
+            "untyped-retype-queued-caller-long-caps",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "queued-caller-long-caps-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "queued-caller-long-caps-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        cap_argument(
+            "queued-caller-long-caps-bind",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            CHAIN_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "queued-caller-long-caps-resume-caller",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "queued-caller-long-caps-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("queued-caller-long-caps-caller-wakes-root"),
+        partner_step(
+            "queued-caller-long-caps-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xb2, 0],
+            true,
+        ),
+        with_reply(
+            partner_step(
+                "queued-caller-long-caps-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                false,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "queued-caller-long-caps-root-replies",
+            REPLY,
+            REPLY_CAP,
+            1,
+            [0xb3, 0],
+            false,
+        ),
+        // The reply handed the context back and took the root task off its
+        // core (seL4-MCS: a server whose context returns to its caller no
+        // longer runs), so the third thread restarts it before suspending
+        // itself, which leaves the root task current.
+        invocation(
+            "queued-caller-long-caps-suspend-root",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-long-caps-resume-root",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        self_suspend(invocation(
+            "queued-caller-long-caps-suspend-caller",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        )),
+        // The root task, serving no one, lowers its own priority below the
+        // ready third thread: rescheduled at once (seL4's `setPriority` of the
+        // current thread), its own result staged as it is switched out
+        // (`stageCallerReturn_stages_switched_out`), so the round trip returns
+        // and the third thread is current after it.  The third thread waits,
+        // and the root task raises its own priority back and wakes it.
+        invocation(
+            "queued-caller-long-caps-resume-lowered",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        set_priority(
+            "queued-caller-long-caps-root-lowers-self",
+            TCB_SET_PRIORITY,
+            ROOT_TCB_CAP,
+            PARTNER_PRIORITY - 1,
+            FRAME_VADDR,
+        ),
+        partner_step(
+            "queued-caller-long-caps-caller-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        set_priority(
+            "queued-caller-long-caps-root-raises-self",
+            TCB_SET_PRIORITY,
+            ROOT_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        signal("queued-caller-long-caps-root-wakes-caller"),
+        invocation(
+            "queued-caller-long-caps-suspend-lowered",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-long-caps-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "queued-caller-long-caps-root-takes-partner",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "queued-caller-long-caps-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xb4, 0],
+            true,
+        ),
+        invocation(
+            "queued-caller-long-caps-resume-caller-again",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        set_priority(
+            "queued-caller-long-caps-lower-ready",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY - 1,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "queued-caller-long-caps-raise-ready",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        partner_step(
+            "queued-caller-long-caps-root-waits-again",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("queued-caller-long-caps-caller-wakes-root-again"),
+        partner_step(
+            "queued-caller-long-caps-calls-again",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xb5, 0],
+            true,
+        ),
+        receive_path(
+            "queued-caller-long-caps-receive-path",
+            FRAME_VADDR,
+            [CNODE_CAP, cap_address(EMPTY_SLOT), 64],
+        ),
+        with_caps_keeping_path(
+            with_reply(
+                partner_step(
+                    "queued-caller-long-reply-recv-installs-cap",
+                    REPLY_RECV,
+                    ENDPOINT_CAP,
+                    ONE_EXTRA_CAP | TAIL_MESSAGE_LENGTH,
+                    [0xb6, 0],
+                    false,
+                ),
+                REPLY_CAP,
+            ),
+            FRAME_VADDR,
+            [NOTIFICATION_CAP, 0, 0],
+        ),
+        RoundTrip {
+            cptr: cap_address(EMPTY_SLOT),
+            ..signal("queued-caller-long-reply-recv-installs-cap-installed-signal")
+        },
+        RoundTrip {
+            name: "queued-caller-long-reply-recv-installs-cap-installed-wait",
+            syscall: WAIT,
+            cptr: NOTIFICATION_CAP,
+            reply: None,
+            issued: None,
+            selects: None,
+            msg_len: 1,
+            msg: [0, 0, 0, 0],
+            primed: None,
+            blocks: false,
+            resumes: false,
+            caps_or_badges: None,
+            overflow: None,
+            returns: None,
+        },
+        invocation(
+            "queued-caller-long-reply-recv-installs-cap-installed-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [EMPTY_SLOT, 0, 0, 0],
+        ),
+        receive_path(
+            "queued-caller-long-caps-receive-path-closed",
+            FRAME_VADDR,
+            [0; 3],
+        ),
+        partner_step(
+            "queued-caller-long-caps-root-replies-again",
+            REPLY,
+            REPLY_CAP,
+            1,
+            [0xb7, 0],
+            false,
+        ),
+        // The context back with the third thread and the root task off its
+        // core again.  The partner runs first and suspends itself, which
+        // answers it no frame (seL4 replies only to a caller left `Restart`);
+        // the third thread then restarts the root task and suspends itself.
+        self_suspend(invocation(
+            "queued-caller-long-caps-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        )),
+        invocation(
+            "queued-caller-long-caps-suspend-root-again",
+            TCB_SUSPEND,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-long-caps-resume-root-again",
+            TCB_RESUME,
+            ROOT_TCB_CAP,
+            [0; 4],
+        ),
+        self_suspend(invocation(
+            "queued-caller-long-caps-suspend-caller-again",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        )),
+        invocation(
+            "queued-caller-long-caps-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "queued-caller-long-caps-delete",
             CSPACE_DELETE,
             CNODE_CAP,
             [CHAIN_TCB_SLOT, 0, 0, 0],
