@@ -188,6 +188,55 @@ def endpointReplyOnCore (_replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
                     | .error e => (st, .error e)
       | _ => (st, .error .replyCapInvalid)
 
+/-- **The reply leg, checks first.**  Every refusal of `endpointReplyOnCore`
+is made on its entry state, before the first write: the message's length, the
+caller's lookup, and its `blockedOnReply` state.  What follows never refuses:
+the caller's store is `.ok` by definition (`storeObject_isOk`), and so is the
+reply frame's removal (`removeCallerReplyFrame_eq_state`).  This form reads
+those steps as states, so it keeps no entry state alive across a write for an
+error arm that cannot run, and the store meets a table nothing else holds.  It
+is equal to the specification with no assumption
+(`endpointReplyOnCore_eq_checked`), through which the compiler runs it. -/
+def endpointReplyOnCoreChecked (_replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
+    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState) :
+    SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
+  if msg.registers.size > maxMessageRegisters then (st, .error .ipcMessageTooLarge)
+  else
+  match lookupTcb st target with
+  | none => (st, .error .objectNotFound)
+  | some tcb =>
+      match tcb.ipcState with
+      | .blockedOnReply _ server? =>
+          let w := wakeThread (st.withObjectStored target.toObjId
+            (.tcb (TCB.setIpcState { tcb with pendingMessage := some msg } .ready)))
+            target executingCore
+          match tcb.replyObject with
+          | none => (w.1.unlinkReplyWaiterOpt target server?, .ok w.2)
+          | some rid =>
+              ((removeCallerReplyFrameState target rid w.1).unlinkReplyWaiterOpt target server?,
+               .ok w.2)
+      | _ => (st, .error .replyCapInvalid)
+
+/-- The reply leg's checks-first form is its specification, with no assumption;
+the compiler runs it in the specification's place. -/
+@[csimp] theorem endpointReplyOnCore_eq_checked :
+    @endpointReplyOnCore = @endpointReplyOnCoreChecked := by
+  funext replier target msg core st
+  unfold endpointReplyOnCore endpointReplyOnCoreChecked storeTcbIpcStateAndMessage_fromTcb
+  split
+  · rfl
+  · cases lookupTcb st target with
+    | none => rfl
+    | some tcb =>
+      dsimp only
+      cases tcb.ipcState <;> try rfl
+      dsimp only
+      rw [SystemState.storeObject_eq_withObjectStored]
+      dsimp only
+      cases tcb.replyObject with
+      | none => rfl
+      | some rid => dsimp only; simp only [removeCallerReplyFrame_eq_state]
+
 -- ============================================================================
 -- §0b  `v0.35.161` (register row 57) — the pre-receive donation return, MIGRATED
 -- ============================================================================

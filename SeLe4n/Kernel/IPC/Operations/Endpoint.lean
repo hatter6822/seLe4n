@@ -6616,6 +6616,38 @@ def removeCallerReplyFrame (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) :
     Kernel Unit :=
   fun st => SystemState.consumeCallerReply caller rid (cutReplyFrameOutOrSelf st rid)
 
+/-- **The removal's state.**  `removeCallerReplyFrame` never refuses: the splice
+falls back to the state it was given, and the consume is two stores, each `.ok`
+by definition (`storeObject_isOk`).  So a step that runs the removal after a
+write reads its state here and holds nothing for an error arm
+(`removeCallerReplyFrame_eq_state`). -/
+def removeCallerReplyFrameState (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (st : SystemState) : SystemState :=
+  let st0 := cutReplyFrameOutOrSelf st rid
+  let st1 := match st0.getReply? rid with
+    | some r => st0.withObjectStored rid.toObjId (.reply r.consumed)
+    | none => st0
+  match st1.getTcb? caller with
+  | none => st1
+  | some tcb => st1.withObjectStored caller.toObjId (.tcb { tcb with replyObjectCode := 0 })
+
+/-- The removal is `.ok` at its state, with no assumption. -/
+theorem removeCallerReplyFrame_eq_state (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (st : SystemState) :
+    removeCallerReplyFrame caller rid st = .ok ((), removeCallerReplyFrameState caller rid st) := by
+  unfold removeCallerReplyFrame removeCallerReplyFrameState SystemState.consumeCallerReply
+    SystemState.consumeReply
+  cases hR : (cutReplyFrameOutOrSelf st rid).getReply? rid with
+  | none =>
+    cases hT : (cutReplyFrameOutOrSelf st rid).getTcb? caller with
+    | none => simp only [hR, hT]
+    | some tcb => simp only [hR, hT, SystemState.storeObject_eq_withObjectStored]
+  | some r =>
+    cases hT : ((cutReplyFrameOutOrSelf st rid).withObjectStored rid.toObjId
+        (.reply r.consumed)).getTcb? caller with
+    | none => simp only [hR, hT, SystemState.storeObject_eq_withObjectStored]
+    | some tcb => simp only [hR, hT, SystemState.storeObject_eq_withObjectStored]
+
 -- ----------------------------------------------------------------------------
 -- WS-RM (`v0.35.6`): the folded splice's read/write algebra
 -- ----------------------------------------------------------------------------
