@@ -449,6 +449,36 @@ def cleanupPreReceiveDonationMigrated (st : SystemState) (receiver : SeLe4n.Thre
   | .error e => .error e
   | .ok stClean => .ok (preReceiveReturnMigration st stClean receiver)
 
+/-- **The migrated cleanup, its reads first.**  The migration reads the loan and
+the receiver's home core off the state the cleanup ran on
+(`preReceiveReturnMigration st stClean`), after the cleanup wrote.  This form
+reads both before the cleanup, so no entry state is alive across its writes.
+It is the migrated cleanup, with no assumption
+(`cleanupPreReceiveDonationMigrated_eq_checked`), through which the compiler
+runs it. -/
+def cleanupPreReceiveDonationMigratedChecked (st : SystemState) (receiver : SeLe4n.ThreadId) :
+    Except KernelError SystemState :=
+  match preReceiveDonation? st receiver with
+  | some (scId, _) =>
+      let fromCore := determineTargetCore st receiver
+      match cleanupPreReceiveDonationChecked st receiver with
+      | .error e => .error e
+      | .ok stClean =>
+          .ok (migrateSchedContextReplenishment stClean scId fromCore
+            (replenishHomeOfSchedContext stClean scId fromCore))
+  | none => cleanupPreReceiveDonationChecked st receiver
+
+/-- The migrated cleanup's reads-first form is the migrated cleanup, with no
+assumption; the compiler runs it in its place. -/
+@[csimp] theorem cleanupPreReceiveDonationMigrated_eq_checked :
+    @cleanupPreReceiveDonationMigrated = @cleanupPreReceiveDonationMigratedChecked := by
+  funext st receiver
+  unfold cleanupPreReceiveDonationMigrated cleanupPreReceiveDonationMigratedChecked
+    preReceiveReturnMigration
+  cases preReceiveDonation? st receiver with
+  | none => cases cleanupPreReceiveDonationChecked st receiver <;> rfl
+  | some p => cases cleanupPreReceiveDonationChecked st receiver <;> rfl
+
 /-- A successful migrated cleanup is a successful checked cleanup, migrated. -/
 theorem cleanupPreReceiveDonationMigrated_ok_decompose {st st' : SystemState}
     {receiver : SeLe4n.ThreadId}
@@ -1058,6 +1088,45 @@ def endpointReceiveDualWithCapsOnCore
       match receiveTransferCaps req endpointId target? st' with
       | .error e => (st', .error e)
       | .ok (summary, st'') => (st'', .ok (senderId, summary, sgi))
+
+/-- **The capability-carrying receive, its reads first.**  Whether the receive
+dequeued a sender, what that sender asks to transfer and the receiver's side
+of it are read off the state the receive ran on; the specification reads the
+first after the receive wrote.  This form branches on it before the receive,
+and binds the transfer's two reads there too, so no entry state is alive
+across the receive's writes.  It is the specification, with no assumption
+(`endpointReceiveDualWithCapsOnCore_eq_checked`), through which the compiler
+runs it. -/
+def endpointReceiveDualWithCapsOnCoreChecked
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState) :
+    SystemState ×
+      Except KernelError
+        (SeLe4n.ThreadId × CapTransferSummary × Option (CoreId × SgiKind)) :=
+  if (receiveRendezvousSender? st endpointId).isNone then
+    match endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
+    | (st', .error e) => (st', .error e)
+    | (st', .ok (senderId, sgi)) => (st', .ok (senderId, { results := #[] }, sgi))
+  else
+    let req := receiveCapRequest st endpointId
+    let target? := receiverCapTarget? st receiver
+    match endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
+    | (st', .error e) => (st', .error e)
+    | (st', .ok (senderId, sgi)) =>
+        match receiveTransferCaps req endpointId target? st' with
+        | .error e => (st', .error e)
+        | .ok (summary, st'') => (st'', .ok (senderId, summary, sgi))
+
+/-- The capability-carrying receive's reads-first form is the specification,
+with no assumption; the compiler runs it in the specification's place. -/
+@[csimp] theorem endpointReceiveDualWithCapsOnCore_eq_checked :
+    @endpointReceiveDualWithCapsOnCore = @endpointReceiveDualWithCapsOnCoreChecked := by
+  funext endpointId receiver replyId executingCore st
+  unfold endpointReceiveDualWithCapsOnCore endpointReceiveDualWithCapsOnCoreChecked
+  cases (receiveRendezvousSender? st endpointId).isNone <;>
+    rcases endpointReceiveDualOnCore endpointId receiver replyId executingCore st
+      with ⟨st', _ | ⟨senderId, sgi⟩⟩ <;> rfl
 
 /-- WS-SM SM6 (PR #873 round 6): with nothing to install, the WithCaps per-core
 receive is exactly the bare per-core receive — so every capless pin taken against
