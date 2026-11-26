@@ -1016,6 +1016,22 @@ def storeTcbIpcStateAndMessage_fromTcb (st : SystemState) (tid : SeLe4n.ThreadId
   | .error e => .error e
   | .ok ((), st') => .ok st'
 
+/-- **The state the thread's write leaves.**  `storeTcbIpcStateAndMessage_fromTcb`
+is one store, `.ok` by definition (`storeObject_isOk`), so a step that writes
+the thread and goes on reads its state here
+(`storeTcbIpcStateAndMessage_fromTcb_eq_state`). -/
+def storeTcbIpcStateAndMessageState (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (ipcState : ThreadIpcState) (msg : Option IpcMessage) : SystemState :=
+  st.withObjectStored tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipcState))
+
+/-- The thread's write is `.ok` at its state, with no assumption. -/
+theorem storeTcbIpcStateAndMessage_fromTcb_eq_state (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (ipcState : ThreadIpcState) (msg : Option IpcMessage) :
+    storeTcbIpcStateAndMessage_fromTcb st tid tcb ipcState msg =
+      .ok (storeTcbIpcStateAndMessageState st tid tcb ipcState msg) := by
+  unfold storeTcbIpcStateAndMessage_fromTcb storeTcbIpcStateAndMessageState
+  rw [SystemState.storeObject_eq_withObjectStored]
+
 /-- WS-ZA ZA4.4: a thread's two notification-queue links, written together. -/
 def storeTcbNtfnLinks (st : SystemState) (tid : SeLe4n.ThreadId)
     (prev next : Option SeLe4n.ThreadId) : Except KernelError SystemState :=
@@ -6616,37 +6632,20 @@ def removeCallerReplyFrame (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) :
     Kernel Unit :=
   fun st => SystemState.consumeCallerReply caller rid (cutReplyFrameOutOrSelf st rid)
 
-/-- **The removal's state.**  `removeCallerReplyFrame` never refuses: the splice
-falls back to the state it was given, and the consume is two stores, each `.ok`
-by definition (`storeObject_isOk`).  So a step that runs the removal after a
-write reads its state here and holds nothing for an error arm
-(`removeCallerReplyFrame_eq_state`). -/
+/-- **The removal's state.**  `removeCallerReplyFrame` never refuses
+(`removeCallerReplyFrame_isOk`): the splice falls back to the state it was
+given, and the consume is the pure teardown `consumeCallerReplyLink`.  So a
+step that runs the removal after a write reads its state here and holds nothing
+for an error arm (`removeCallerReplyFrame_eq_state`). -/
 def removeCallerReplyFrameState (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (st : SystemState) : SystemState :=
-  let st0 := cutReplyFrameOutOrSelf st rid
-  let st1 := match st0.getReply? rid with
-    | some r => st0.withObjectStored rid.toObjId (.reply r.consumed)
-    | none => st0
-  match st1.getTcb? caller with
-  | none => st1
-  | some tcb => st1.withObjectStored caller.toObjId (.tcb { tcb with replyObjectCode := 0 })
+  (cutReplyFrameOutOrSelf st rid).consumeCallerReplyLink caller rid
 
 /-- The removal is `.ok` at its state, with no assumption. -/
 theorem removeCallerReplyFrame_eq_state (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (st : SystemState) :
-    removeCallerReplyFrame caller rid st = .ok ((), removeCallerReplyFrameState caller rid st) := by
-  unfold removeCallerReplyFrame removeCallerReplyFrameState SystemState.consumeCallerReply
-    SystemState.consumeReply
-  cases hR : (cutReplyFrameOutOrSelf st rid).getReply? rid with
-  | none =>
-    cases hT : (cutReplyFrameOutOrSelf st rid).getTcb? caller with
-    | none => simp only [hR, hT]
-    | some tcb => simp only [hR, hT, SystemState.storeObject_eq_withObjectStored]
-  | some r =>
-    cases hT : ((cutReplyFrameOutOrSelf st rid).withObjectStored rid.toObjId
-        (.reply r.consumed)).getTcb? caller with
-    | none => simp only [hR, hT, SystemState.storeObject_eq_withObjectStored]
-    | some tcb => simp only [hR, hT, SystemState.storeObject_eq_withObjectStored]
+    removeCallerReplyFrame caller rid st = .ok ((), removeCallerReplyFrameState caller rid st) :=
+  SystemState.consumeCallerReply_eq_link _ _ _
 
 -- ----------------------------------------------------------------------------
 -- WS-RM (`v0.35.6`): the folded splice's read/write algebra

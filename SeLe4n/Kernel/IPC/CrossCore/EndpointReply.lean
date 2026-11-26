@@ -191,8 +191,9 @@ def endpointReplyOnCore (_replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
 /-- **The reply leg, checks first.**  Every refusal of `endpointReplyOnCore`
 is made on its entry state, before the first write: the message's length, the
 caller's lookup, and its `blockedOnReply` state.  What follows never refuses:
-the caller's store is `.ok` by definition (`storeObject_isOk`), and so is the
-reply frame's removal (`removeCallerReplyFrame_eq_state`).  This form reads
+the caller's store is `.ok` by definition
+(`storeTcbIpcStateAndMessage_fromTcb_eq_state`), and so is the reply frame's
+removal (`removeCallerReplyFrame_eq_state`).  This form reads
 those steps as states, so it keeps no entry state alive across a write for an
 error arm that cannot run, and the store meets a table nothing else holds.  It
 is equal to the specification with no assumption
@@ -207,8 +208,7 @@ def endpointReplyOnCoreChecked (_replier : SeLe4n.ThreadId) (target : SeLe4n.Thr
   | some tcb =>
       match tcb.ipcState with
       | .blockedOnReply _ server? =>
-          let w := wakeThread (st.withObjectStored target.toObjId
-            (.tcb (TCB.setIpcState { tcb with pendingMessage := some msg } .ready)))
+          let w := wakeThread (storeTcbIpcStateAndMessageState st target tcb .ready (some msg))
             target executingCore
           match tcb.replyObject with
           | none => (w.1.unlinkReplyWaiterOpt target server?, .ok w.2)
@@ -222,7 +222,7 @@ the compiler runs it in the specification's place. -/
 @[csimp] theorem endpointReplyOnCore_eq_checked :
     @endpointReplyOnCore = @endpointReplyOnCoreChecked := by
   funext replier target msg core st
-  unfold endpointReplyOnCore endpointReplyOnCoreChecked storeTcbIpcStateAndMessage_fromTcb
+  unfold endpointReplyOnCore endpointReplyOnCoreChecked
   split
   · rfl
   · cases lookupTcb st target with
@@ -231,7 +231,7 @@ the compiler runs it in the specification's place. -/
       dsimp only
       cases tcb.ipcState <;> try rfl
       dsimp only
-      rw [SystemState.storeObject_eq_withObjectStored]
+      rw [storeTcbIpcStateAndMessage_fromTcb_eq_state]
       dsimp only
       cases tcb.replyObject with
       | none => rfl

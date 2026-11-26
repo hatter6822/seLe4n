@@ -2234,6 +2234,29 @@ theorem removeCallerReplyFrame_head_preserves_donationChainWellFormedExcept
   exact consumeCallerReply_head_preserves_donationChainWellFormedExcept st st' caller rid r scId
     hInv hChain hR hHead hStep
 
+/-- The removal's state (`removeCallerReplyFrameState`, the reply leg's
+checks-first form) keeps the chain off a head: the removal's own result, at
+the bridge `removeCallerReplyFrame_eq_state`. -/
+theorem removeCallerReplyFrameState_preserves_donationChainWellFormed (st : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st)
+    (hNotHead : ∀ (r : Reply) (sc : SeLe4n.SchedContextId),
+      st.getReply? rid = some r → r.next ≠ some (.head sc)) :
+    donationChainWellFormed (removeCallerReplyFrameState caller rid st) :=
+  removeCallerReplyFrame_preserves_donationChainWellFormed st _ caller rid hInv hChain hNotHead
+    (removeCallerReplyFrame_eq_state caller rid st)
+
+/-- The removal's state at a head: the chain holds except at the frame, as the
+removal's own result says. -/
+theorem removeCallerReplyFrameState_head_preserves_donationChainWellFormedExcept
+    (st : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (r : Reply) (scId : SeLe4n.SchedContextId) (hInv : st.objects.invExt)
+    (hChain : donationChainWellFormed st)
+    (hR : st.getReply? rid = some r) (hHead : r.next = some (.head scId)) :
+    donationChainWellFormedExcept (removeCallerReplyFrameState caller rid st) rid :=
+  removeCallerReplyFrame_head_preserves_donationChainWellFormedExcept st _ caller rid r scId
+    hInv hChain hR hHead (removeCallerReplyFrame_eq_state caller rid st)
+
 -- ============================================================================
 -- WS-RR RR8.7 — §11  The restore's own bundle preservation
 -- ============================================================================

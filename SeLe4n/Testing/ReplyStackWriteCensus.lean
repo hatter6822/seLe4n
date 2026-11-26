@@ -841,6 +841,13 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .states [`SeLe4n.Kernel.removeCallerReplyFrame_preserves_donationChainWellFormed,
                `SeLe4n.Kernel.removeCallerReplyFrame_head_preserves_donationChainWellFormedExcept]
         [`SeLe4n.Kernel.removeCallerReplyFrame_preserves_lendingLabelsEqual])
+    -- The removal's state, the reply leg's checks-first form reads it after
+    -- its first write: the removal's results at the bridge
+    -- `removeCallerReplyFrame_eq_state`.
+  , (`SeLe4n.Kernel.removeCallerReplyFrameState,
+      .states [`SeLe4n.Kernel.removeCallerReplyFrameState_preserves_donationChainWellFormed,
+               `SeLe4n.Kernel.removeCallerReplyFrameState_head_preserves_donationChainWellFormedExcept]
+        [`SeLe4n.Kernel.removeCallerReplyFrameState_preserves_lendingLabelsEqual])
     -- WS-ZA ZA4.7: the in-place reply.  `replyConsumedObject` is the consume
     -- as an object rewrite; the leg that runs it (WS-ZA ZA6.34: factored out
     -- of `storeReplyRendezvous`, which adds only the reply-waiter unlink, so

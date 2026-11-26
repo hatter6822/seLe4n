@@ -221,6 +221,15 @@ theorem removeCallerReplyFrame_preserves_lendingLabelsEqual {ctx : LabelingConte
     lendingLabelsEqual ctx st' :=
   lendingLabelsEqual_of_linksShrink hInv (removeCallerReplyFrame_linksShrink hObjInv h)
 
+/-- The removal's state (`removeCallerReplyFrameState`) keeps the lenders'
+labels equal: the removal's own result, at its bridge. -/
+theorem removeCallerReplyFrameState_preserves_lendingLabelsEqual {ctx : LabelingContext}
+    {st : SystemState} {caller : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId}
+    (hObjInv : st.objects.invExt) (hInv : lendingLabelsEqual ctx st) :
+    lendingLabelsEqual ctx (removeCallerReplyFrameState caller rid st) :=
+  removeCallerReplyFrame_preserves_lendingLabelsEqual hObjInv hInv
+    (removeCallerReplyFrame_eq_state caller rid st)
+
 /-! ### Writers of no stack view -/
 
 /-- **A step after which every context and every reply object was there
