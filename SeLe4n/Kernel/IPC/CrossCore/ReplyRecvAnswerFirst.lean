@@ -2,7 +2,8 @@
 Copyright (C) 2026 seLe4n contributors
 SPDX-License-Identifier: GPL-3.0-or-later
 -/
-import SeLe4n.Kernel.IPC.CrossCore.ReceiveAnswerFrame
+import SeLe4n.Kernel.IPC.CrossCore.ReceiveLedgerCommute
+import SeLe4n.Kernel.IPC.CrossCore.LongSendInPlace
 
 /-!
 # The `.replyRecv` caller answered in the reply step
@@ -335,6 +336,172 @@ theorem replyRecvReceiveTail_restartFirst (c : SeLe4n.ThreadId) (f : FaultRestar
     epId tid rid rs ec ret? Z hNo hc hHead (applyFaultRestart_eq_answerSlots Z c f hNo)
     (fun X hNoX _ => applyFaultRestart_eq_answerSlots X c f hNoX)
 
+/-- The overflow words a delivery writes, on two states that read every IPC
+buffer's words alike, to a thread they read alike. -/
+theorem overflowDeliveryWrites_of_wordReadsAgree {X Z : SystemState} (h : ipcWordReadsAgree X Z)
+    (t t' : TCB) (hv : t'.spaceCells[2] = t.spaceCells[2]) (hb : t'.ipcBuffer = t.ipcBuffer) :
+    ∀ (ws : List SeLe4n.RegValue) (idx : Nat),
+      overflowDeliveryWrites X t' ws idx = overflowDeliveryWrites Z t ws idx
+  | [], _ => rfl
+  | w :: rest, idx => by
+      unfold overflowDeliveryWrites
+      have hP : IpcBufferRead.ipcBufferSlotPAddr? X t' idx true =
+          IpcBufferRead.ipcBufferSlotPAddr? Z t idx true := by
+        unfold IpcBufferRead.ipcBufferSlotPAddr? IpcBufferRead.lookupIPCBuffer
+        rw [hv, hb, IpcBufferRead.bufferFrameBase?_congr h.getFrame?]
+      rw [hP, overflowDeliveryWrites_of_wordReadsAgree h t t' hv hb rest (idx + 1)]
+
+/-- **The caller's overflow words are the same** on two states that read every
+IPC buffer's words alike. -/
+theorem messageOverflowWrites_of_wordReadsAgree {X Z : SystemState} (h : ipcWordReadsAgree X Z)
+    (c : SeLe4n.ThreadId) (t t' : TCB) (hZ : Z.getTcb? c = some t) (hX : X.getTcb? c = some t')
+    (m : IpcMessage) : messageOverflowWrites X t' m = messageOverflowWrites Z t m := by
+  have hT := h.getTcb?_buffer c
+  rw [hX, hZ] at hT
+  simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hT
+  exact overflowDeliveryWrites_of_wordReadsAgree h t t' hT.1 hT.2 _ 0
+
+/-- **An answer that is a slot write and a recording moves ahead of the tail**
+where the dequeued sender asks to transfer nothing: the recording commutes with
+the tail (`replyRecvReceiveTail_ledger`, D58) and the slot write with it
+(`replyRecvReceiveTail_answer`). -/
+theorem replyRecvReceiveTail_recordFirst (c : SeLe4n.ThreadId)
+    (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile) (μ : Option IpcMessage → Option IpcMessage)
+    (κ : Nat → Nat) (W : List PhysicalWrite) (F : SystemState → SystemState)
+    (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (rs : SeLe4n.ThreadId)
+    (ec : CoreId) (ret? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (Z : SystemState)
+    (hNo : Z.objects.noResizeDue) (hc : c ≠ tid)
+    (hHead : receiveRendezvousSender? (receiveReturnSchedContext true Z tid) epId ≠ some c)
+    (hNoCaps : receiveCapRequest (receiveReturnSchedContext true Z tid) epId = none)
+    (hFZ : F Z = recordPhysicalWrites (Z.mapTcbInPlace c (TCB.withAnswerSlots ρ μ id κ)) W)
+    (hFX : ∀ st2 nt summary x st3,
+      endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
+        (receiveReturnSchedContext true Z tid) = (st2, .ok (nt, summary, x)) →
+      replyRecvPostReceiveDonation tid rs nt ec ret? st2 = .ok ((), st3) →
+      F (applyReceiveLegPipHandoff st3 tid nt rs ec) =
+        recordPhysicalWrites ((applyReceiveLegPipHandoff st3 tid nt rs ec).mapTcbInPlace c
+          (TCB.withAnswerSlots ρ μ id κ)) W) :
+    (match endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
+        (receiveReturnSchedContext true (F Z) tid) with
+      | (_, .error e) => (Except.error e : Except KernelError (CapTransferSummary × SystemState))
+      | (st2, .ok (nextThread, summary, _)) =>
+          match replyRecvPostReceiveDonation tid rs nextThread ec ret? st2 with
+          | .error e => .error e
+          | .ok ((), st3) => .ok (summary, applyReceiveLegPipHandoff st3 tid nextThread rs ec)) =
+    (match endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
+        (receiveReturnSchedContext true Z tid) with
+      | (_, .error e) => (Except.error e : Except KernelError (CapTransferSummary × SystemState))
+      | (st2, .ok (nextThread, summary, _)) =>
+          match replyRecvPostReceiveDonation tid rs nextThread ec ret? st2 with
+          | .error e => .error e
+          | .ok ((), st3) => .ok (summary, F (applyReceiveLegPipHandoff st3 tid nextThread rs ec))) := by
+  have hNoCapsM : receiveCapRequest (receiveReturnSchedContext true
+      (Z.mapTcbInPlace c (TCB.withAnswerSlots ρ μ id κ)) tid) epId = none := by
+    rw [receiveReturnSchedContext_answer c ρ μ κ true Z tid hNo hc,
+      receiveCapRequest_answer c ρ μ κ _ epId hHead, hNoCaps]
+  rw [hFZ]
+  refine Eq.trans (replyRecvReceiveTail_ledger W epId tid rid rs ec ret? _ hNoCapsM) ?_
+  refine (congrArg (Except.map _)
+    (replyRecvReceiveTail_answer c ρ μ κ epId tid rid rs ec ret? Z hNo hc hHead)).trans ?_
+  cases hRx : endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
+      (receiveReturnSchedContext true Z tid) with
+  | mk st2 res =>
+    cases res with
+    | error e => rfl
+    | ok v =>
+      obtain ⟨nt, summary, x⟩ := v
+      dsimp only
+      cases hP : replyRecvPostReceiveDonation tid rs nt ec ret? st2 with
+      | error e => rfl
+      | ok w =>
+        obtain ⟨⟨⟩, st3⟩ := w
+        dsimp only [Except.map]
+        rw [hFX st2 nt summary x st3 hRx hP]
+/-- The register writes of a stage reporting `n` with `k` overflow words. -/
+noncomputable abbrev stagedAnswerRegs (m : IpcMessage) (n k : Nat) :
+    SeLe4n.RegisterFile → SeLe4n.RegisterFile :=
+  fun rf => rf.stageDeliveredWords (returnFrameOfMessage m n k).x0
+    (returnFrameOfMessage m n k).x1 (returnFrameOfMessage m n k).x2
+    (returnFrameOfMessage m n k).x3 (returnFrameOfMessage m n k).x4
+    (returnFrameOfMessage m n k).x5
+
+/-- **Staging a message is its slot write and the recording of its overflow
+words**, on a ready thread holding it. -/
+theorem stageDeliveredMessage_of_ready (X : SystemState) (c : SeLe4n.ThreadId) (n : Nat)
+    (t : TCB) (m : IpcMessage) (hNo : X.objects.noResizeDue) (hT : X.getTcb? c = some t)
+    (h1 : t.ipcState = .ready) (h2 : t.pendingMessage = some m) :
+    stageDeliveredMessage X c n =
+      recordPhysicalWrites (X.mapTcbInPlace c (TCB.withAnswerSlots
+        (stagedAnswerRegs m n (messageOverflowWrites X t m).length) (fun _ => none) id id))
+        (messageOverflowWrites X t m) := by
+  rw [stageDeliveredMessage_eq_answerSlots X c n hNo, hT]
+  simp only [h1, h2, ↓reduceIte]
+
+/-- **The ordinary answer moves ahead of the tail where the tail records
+nothing** (D55's second premise, WS-SX D58): the dequeued sender asks to
+transfer nothing, and every state the tail can reach reads the caller's IPC
+buffer as its entry state does, so the stage records the same overflow words
+before the tail and after it. -/
+theorem replyRecvReceiveTail_stageFirst_quiet (c : SeLe4n.ThreadId) (n : Nat)
+    (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (rs : SeLe4n.ThreadId)
+    (ec : CoreId) (ret? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (Z : SystemState)
+    (hNo : Z.objects.noResizeDue) (hc : c ≠ tid)
+    (hHead : receiveRendezvousSender? (receiveReturnSchedContext true Z tid) epId ≠ some c)
+    (hNoCaps : receiveCapRequest (receiveReturnSchedContext true Z tid) epId = none)
+    (hBuf : ∀ st2 nt summary x st3,
+      endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
+        (receiveReturnSchedContext true Z tid) = (st2, .ok (nt, summary, x)) →
+      replyRecvPostReceiveDonation tid rs nt ec ret? st2 = .ok ((), st3) →
+      ipcWordReadsAgree (applyReceiveLegPipHandoff st3 tid nt rs ec) Z) :
+    (match endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
+        (receiveReturnSchedContext true (stageDeliveredMessage Z c n) tid) with
+      | (_, .error e) => (Except.error e : Except KernelError (CapTransferSummary × SystemState))
+      | (st2, .ok (nextThread, summary, _)) =>
+          match replyRecvPostReceiveDonation tid rs nextThread ec ret? st2 with
+          | .error e => .error e
+          | .ok ((), st3) => .ok (summary, applyReceiveLegPipHandoff st3 tid nextThread rs ec)) =
+    (match endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
+        (receiveReturnSchedContext true Z tid) with
+      | (_, .error e) => (Except.error e : Except KernelError (CapTransferSummary × SystemState))
+      | (st2, .ok (nextThread, summary, _)) =>
+          match replyRecvPostReceiveDonation tid rs nextThread ec ret? st2 with
+          | .error e => .error e
+          | .ok ((), st3) => .ok (summary, stageDeliveredMessage
+              (applyReceiveLegPipHandoff st3 tid nextThread rs ec) c n)) := by
+  by_cases hM : ∃ m, (Z.getTcb? c).map tcbAnswerReads = some (.ready, some m)
+  · obtain ⟨m, hm⟩ := hM
+    cases hT : Z.getTcb? c with
+    | none => rw [hT] at hm; cases hm
+    | some t =>
+      rw [hT] at hm
+      simp only [Option.map_some, tcbAnswerReads, Option.some.injEq, Prod.mk.injEq] at hm
+      exact replyRecvReceiveTail_recordFirst c _ _ _ (messageOverflowWrites Z t m)
+        (fun X => stageDeliveredMessage X c n) epId tid rid rs ec ret? Z hNo hc hHead hNoCaps
+        (stageDeliveredMessage_of_ready Z c n t m hNo hT hm.1 hm.2)
+        (fun st2 nt summary x st3 hRx hP => by
+          obtain ⟨hNoF, hKF⟩ := replyRecvReceiveTail_noResizeDue_answerReadsKept c epId tid rid rs
+            ec ret? Z hNo hc hHead st2 nt summary x hRx st3 hP
+          have hK := hKF
+          unfold answerReadsKept at hK
+          rw [hT] at hK
+          cases hX : (applyReceiveLegPipHandoff st3 tid nt rs ec).getTcb? c with
+          | none => rw [hX] at hK; cases hK
+          | some t' =>
+            rw [hX] at hK
+            simp only [Option.map_some, tcbAnswerReads, Option.some.injEq, Prod.mk.injEq] at hK
+            have hW := messageOverflowWrites_of_wordReadsAgree (hBuf st2 nt summary x st3 hRx hP)
+              c t t' hT hX m
+            dsimp only
+            rw [stageDeliveredMessage_of_ready _ c n t' m hNoF hX (hK.1.trans hm.1)
+              (hK.2.trans hm.2), hW])
+  · have hM' : ∀ m, (Z.getTcb? c).map tcbAnswerReads ≠ some (.ready, some m) :=
+      fun m h => hM ⟨m, h⟩
+    exact replyRecvReceiveTail_inertFirst c (fun X => stageDeliveredMessage X c n)
+      epId tid rid rs ec ret? Z hNo hc hHead
+      (stageDeliveredMessage_of_answerReads_inert Z c n hNo hM')
+      (fun X hNoX hK => stageDeliveredMessage_of_answerReads_inert X c n hNoX
+        (fun m h => hM' m (by unfold answerReadsKept at hK; rw [← hK]; exact h)))
+
 end Kinds
 
 /-! ## The composite, answer first -/
@@ -416,8 +583,10 @@ theorem endpointReplyRecvAnsweringOnCore_answerFirst_of_tail
 with the answer before the receive leg is `endpointReplyRecvAnsweringOnCore`.
 On every state the reply step can leave, the caller is not the receiver and not
 the send queue's head at the receive's entry, no resize of the object table is
-due, and, on an ordinary answer, a message the caller holds fits in its
-registers (no overflow word, so the physical-write log is untouched).  A
+due, and, on an ordinary answer, either a message the caller holds fits in its
+registers (no overflow word, so the physical-write log is untouched) or the
+tail records nothing and reads the caller's IPC buffer as the reply step left
+it (WS-SX D55's two premises; the second is D58's).  A
 declined fault reply (`abandon`) is not covered: its downstream proofs are
 restated with the definition switch (WS-SX D57). -/
 theorem endpointReplyRecvAnsweringOnCore_answerFirst
@@ -431,8 +600,17 @@ theorem endpointReplyRecvAnsweringOnCore_answerFirst
       replyRecvReplyTransfer answer st tid prevCaller grant st1q = .ok (replySummary, st1p) →
       st1p.objects.noResizeDue ∧
       receiveRendezvousSender? (receiveReturnSchedContext true st1p tid) epId ≠ some prevCaller ∧
-      (answer = none → ∀ t m, st1p.getTcb? prevCaller = some t → t.pendingMessage = some m →
-        m.registers.size ≤ 4)) :
+      (answer = none →
+        (∀ t m, st1p.getTcb? prevCaller = some t → t.pendingMessage = some m →
+          m.registers.size ≤ 4) ∨
+        (receiveCapRequest (receiveReturnSchedContext true st1p tid) epId = none ∧
+          ∀ st2 nt summary x st3,
+            endpointReceiveDualWithCapsOnCore epId tid (some rid) ec
+              (receiveReturnSchedContext true st1p tid) = (st2, .ok (nt, summary, x)) →
+            replyRecvPostReceiveDonation tid ((recordedReplyServer? st prevCaller).getD tid) nt ec
+              returnedSc? st2 = .ok ((), st3) →
+            ipcWordReadsAgree (applyReceiveLegPipHandoff st3 tid nt
+              ((recordedReplyServer? st prevCaller).getD tid) ec) st1p))) :
     (let recordedServer := (recordedReplyServer? st prevCaller).getD tid
      match endpointReplyOnCore tid prevCaller msg ec st with
      | (_, .error e) => (Except.error e : Except KernelError (CapTransferSummary × SystemState))
@@ -458,8 +636,11 @@ theorem endpointReplyRecvAnsweringOnCore_answerFirst
   obtain ⟨hNo, hHead, hLog⟩ := hStep st1 sgi returnedSc? st1q replySummary st1p h1 h2 h3
   cases answer with
   | none =>
-    exact replyRecvReceiveTail_stageFirst prevCaller replySummary.capInfo epId tid rid _ ec
-      returnedSc? st1p hNo hc hHead (hLog rfl)
+    rcases hLog rfl with hShort | ⟨hNoCaps, hBuf⟩
+    · exact replyRecvReceiveTail_stageFirst prevCaller replySummary.capInfo epId tid rid _ ec
+        returnedSc? st1p hNo hc hHead hShort
+    · exact replyRecvReceiveTail_stageFirst_quiet prevCaller replySummary.capInfo epId tid rid _ ec
+        returnedSc? st1p hNo hc hHead hNoCaps hBuf
   | some o =>
     cases o with
     | restart f =>
