@@ -75,10 +75,11 @@
 > acceptance, its remaining QEMU scenarios and the context-holding server's
 > measurement became a new SX28, and SX28–SX37 became SX29–SX38. SX27
 > landed at `v0.37.56`. SX28's measurement found the context-holding server's
-> Call take reachable and allocating on the lending arms, with about 4–5
-> sessions of QEMU work beside it against 2, so it was wrapped (D50): SX28
-> keeps that Call take in place and its QEMU steps, the remaining QEMU
-> scenarios became a new SX29, and SX29–SX38 became SX30–SX39.
+> Call take reachable and allocating on the rendezvous, unlinked and unheld
+> arms, with QEMU work beside it, so it was wrapped (D50): SX28 keeps that
+> Call take in place (measured at 3.25–4.25 sessions against 2, kept whole)
+> and its QEMU steps, the remaining QEMU scenarios became a new SX29, and
+> SX29–SX38 became SX30–SX39.
 > **Baseline**: the tree at `v0.37.18` (WS-UC UC5). Every `file:line` below was
 > read against it.
 > **Rows**: SX1–SX39, numbered in the order they are implemented, one PR each.
@@ -594,14 +595,23 @@ A different answer changes only the rows that cite it.
   coordinator before the bulk.* SX28.2's measurement was run first: a server
   bound to its own scheduling context whose reply-receive takes a queued
   `Call` on the rendezvous arm read 141 heap cells (3,168,520 bytes) at the
-  first call and at steady state, on both lanes. On the arms whose Call take
-  lends (rendezvous, donated, unheld, unlinked), the Call-take guard admits a
-  server holding no context, or one whose context the receive returns; a
-  server bound to its own falls to the specification's general path. With
-  that path in place beside the QEMU scenarios SX28.1 held, the row measured
-  about 4–5 sessions against 2. SX28 keeps the context-holding server's Call
-  take in place on the lending arms (no lend, as the held arm takes it), its
-  equality over the arm, the restated selector and arms, and its QEMU steps.
+  first call and at steady state, on both lanes; three of the cells (1 MB
+  each) are the object store's table copied on the general path, which
+  writes the store while it still shares it (twice under `storeObject`, once
+  under `enqueueRunnableOnCore`'s `modifyObject`). On the rendezvous and
+  unlinked arms the Call-take guard admits a server holding no context, or
+  one whose context the receive returns, and on the unheld arm a server
+  holding none; a server bound to its own falls to the specification's
+  general path. The donated arm never meets one: its pop's guard
+  (`replyPopsInPlace`) needs the context the reply heads bound to the
+  server, so the server holds the lent context and the pop unbinds it. So
+  18 shapes reach the general path (three arms, three answers, two lengths).
+  The row measured at 3.25–4.25 sessions against 2. The coordinator kept it
+  whole, because the guard split, the lend flag and the selector are shared
+  by the three arms. SX28 keeps the context-holding server's Call take in
+  place on the rendezvous, unlinked and unheld arms (no lend, as the held arm
+  takes it), its equality over the arm, the restated selector and arms, and
+  its QEMU steps.
   The remaining QEMU scenarios (SX28.1, including the donated arm's six Call
   takes) become one new row, SX29. The rows after SX28 are renumbered
   (SX29–SX38 became SX30–SX39).
@@ -1236,10 +1246,10 @@ is 21,021,237 bytes and compiles in 769 s.
 
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
-| SX28.1 | **The Call take for a server bound to its own scheduling context, on the lending arms** (rendezvous, donated, unheld, unlinked): seL4-MCS's `receiveIPC` with `reply_push (canDonate)` and a server that has a context, so nothing is lent and the caller stays bound to its own. It extends the held arm's no-lend shape (`callLends = false`) to the server that holds its own context on the other arms, for every answer and both lengths; the selector and the four Call-take arms of `RefusalCarryingReplyRecv.lean` route it ahead of the specification's general path, in the word form (no register file passed out of line). | The no-lend Call take's equality over the arm to `endpointReplyRecvAnsweringOnCore`; the selector's guard and the four Call-take arms restated over it. | QEMU: the measurement scenario (`own-context-reply-recv-takes-call`) a step, 0 on both lanes, and the other answers and lengths where they build on it, each 0 |
+| SX28.1 | **The Call take for a server bound to its own scheduling context, on the rendezvous, unlinked and unheld arms** (the donated arm never meets one, D50): seL4-MCS's `receiveIPC` with `reply_push (canDonate)` and a server that has a context, so nothing is lent and the caller stays bound to its own. It extends the held arm's no-lend shape (`callLends = false`) to the server that holds its own context on the other arms, for every answer and both lengths; the selector and the four Call-take arms of `RefusalCarryingReplyRecv.lean` route it ahead of the specification's general path, in the word form (no register file passed out of line). | The no-lend Call take's equality over the arm to `endpointReplyRecvAnsweringOnCore`; the selector's guard and the four Call-take arms restated over it. | QEMU: the measurement scenario (`own-context-reply-recv-takes-call`) a step, 0 on both lanes, and the other answers and lengths where they build on it, each 0 |
 
 **Acceptance:**
-- a server bound to its own context taking a capability-free `Call` on every lending arm answered in place, under one proof with the Call take's;
+- a server bound to its own context taking a capability-free `Call` on the rendezvous, unlinked and unheld arms answered in place, under one proof with the Call take's;
 - `RefusalCarryingReplyRecv.c` and its compile time no larger than SX27's (13,074,785 bytes, about 480 s);
 - every heap reading 0.
 
@@ -1380,7 +1390,7 @@ before the closure (SX39).
 | SX25 | 3 (ran about 6, D48) |
 | SX26 | 2–3 (landed) |
 | SX27 | 2–3 (landed, D49) |
-| SX28 | 2 (wrapped, D50) |
+| SX28 | 2 (measured 3.25–4.25, about 3.5, D50) |
 | SX29 | 2–3 |
 | SX30 | 2 |
 | SX31 | 1 |
@@ -1393,7 +1403,7 @@ before the closure (SX39).
 | SX38 | 1–2 |
 | SX39 | 2 |
 
-About 87–104 sessions in all. The largest risks:
+About 88–106 sessions in all. The largest risks:
 - the boot base case (SX5.3);
 - the IPC-buffer read path (SX6.6);
 - keeping refusals at 0 heap cells (D2b).
