@@ -15482,7 +15482,12 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
         retype(
             "untyped-retype-own-context-call-take-context",
             UNTYPED_CAP,
-            [SCHED_CONTEXT_TYPE, THREAD_CHILD_IDS[2], CNODE_CAP, MINT_SLOT],
+            [
+                SCHED_CONTEXT_TYPE,
+                THREAD_CHILD_IDS[2],
+                CNODE_CAP,
+                MINT_SLOT,
+            ],
             FRAME_VADDR,
         ),
         configure(
