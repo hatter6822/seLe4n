@@ -49,7 +49,8 @@ the composite to seL4's order.  The fault abandon is SX32's (D57).
 - **Measurements.**  `RefusalCarryingReplyRecv.c` is byte-identical to
   SX29's kept copy (12,944,474 bytes): it calls the run queue out of line.
   The IR measurement reads 1,498, the same lines.  The compiled run queue
-  adds no allocation on its exclusive path.
+  adds no allocation on its exclusive path, and the heap gate reads 0 on
+  every non-retype syscall (4,490 readings per lane, both lanes, twice).
 
 ## v0.37.59 — The answer's commutation toolkit (WS-SX SX30)
 
