@@ -649,7 +649,19 @@ line, so the five guards are compiled once for every answer that reads them. -/
   | 2 => .donated
   | 3 => .held
   | 4 => .unheld
+  | 6 => .rendezvous
+  | 7 => .unheld
   | _ => .unlinked
+
+/-- Whether the Call take a nonzero `replyRecvCallTakeArmCode` names lends the
+taken caller's context: as its arm does (`ReplyRecvArm.callLends`) on codes 1
+to 5, not on the own-context codes 6 to 8, whose server keeps its own. -/
+@[inline] def replyRecvCallLendsOfCode : Nat → Bool
+  | 3 => false
+  | 6 => false
+  | 7 => false
+  | 8 => false
+  | _ => true
 
 /-- **A nonzero arm code admits its arm**, the context the pop returns or
 keeps and the caller's home read on the pre-state, with the checks every arm
@@ -1073,6 +1085,12 @@ compiled once for every answer and length that reads them. -/
                   ReplyRecvArm.unheld.callGuard st epId tid s sTcb rid then 4
               else if ReplyRecvArm.unlinked.legGuard st tid c rid ct &&
                   ReplyRecvArm.unlinked.callGuard st epId tid s sTcb rid then 5
+              else if ReplyRecvArm.rendezvous.legGuard st tid c rid ct &&
+                  ReplyRecvArm.rendezvous.callOwnGuard st epId tid s sTcb then 6
+              else if ReplyRecvArm.unheld.legGuard st tid c rid ct &&
+                  ReplyRecvArm.unheld.callOwnGuard st epId tid s sTcb then 7
+              else if ReplyRecvArm.unlinked.legGuard st tid c rid ct &&
+                  ReplyRecvArm.unlinked.callOwnGuard st epId tid s sTcb then 8
               else 0
             | none => 0
           | none => 0
@@ -1090,7 +1108,8 @@ theorem replyRecvCallTakeArmCode_spec {st : SystemState} {epId : SeLe4n.ObjId}
       (capAddr : SeLe4n.CPtr) (mi : MessageInfo),
       (ReplyRecvArm.ofCode (replyRecvCallTakeArmCode st epId tid c rid)).LegAdmits
         ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) st tid c rid ct ∧
-      (ReplyRecvArm.ofCode (replyRecvCallTakeArmCode st epId tid c rid)).CallAdmits st epId tid
+      (ReplyRecvArm.ofCode (replyRecvCallTakeArmCode st epId tid c rid)).CallAdmitsAt
+        (replyRecvCallLendsOfCode (replyRecvCallTakeArmCode st epId tid c rid)) st epId tid
         s sTcb rid ∧
       st.objects[c.toObjId]? = some (.tcb ct) ∧ ct.replyObject = some rid ∧
       st.objects[rid.toObjId]? = some (.reply rp) ∧
@@ -1115,13 +1134,13 @@ theorem replyRecvCallTakeArmCode_spec {st : SystemState} {epId : SeLe4n.ObjId}
     obtain ⟨ep, s, sTcb, capAddr, mi, hEp, hH, hTs, hSC, hF, hRt⟩ := replyRecvCallerQueued_spec hQ
     have hRO' : ct.replyObject = some rid := by
       simp only [TCB.replyObject, beq_iff_eq.mp hRO, SeLe4n.ReplyId.ofOptCode]
-    have fin : ∀ arm : ReplyRecvArm, (arm.legGuard st tid c rid ct &&
-        arm.callGuard st epId tid s sTcb rid) = true →
+    have fin : ∀ (arm : ReplyRecvArm) (lends : Bool), arm.legGuard st tid c rid ct = true →
+        arm.CallAdmitsAt lends st epId tid s sTcb rid →
         ∃ (ct' : TCB) (rp : Reply) (ep : Endpoint) (s : SeLe4n.ThreadId) (sTcb : TCB)
           (capAddr : SeLe4n.CPtr) (mi : MessageInfo),
           arm.LegAdmits ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) st tid c
             rid ct' ∧
-          arm.CallAdmits st epId tid s sTcb rid ∧
+          arm.CallAdmitsAt lends st epId tid s sTcb rid ∧
           st.objects[c.toObjId]? = some (.tcb ct') ∧ ct'.replyObject = some rid ∧
           st.objects[rid.toObjId]? = some (.reply rp) ∧
           st.getEndpoint? epId = some ep ∧ ep.sendQ.head = some s ∧ st.getTcb? s = some sTcb ∧
@@ -1129,32 +1148,66 @@ theorem replyRecvCallTakeArmCode_spec {st : SystemState} {epId : SeLe4n.ObjId}
           Architecture.RegisterDecode.registerRoutedSyscallOf
             (blockedSenderCode SeLe4n.arm64DefaultLayout sTcb.registerContext)
             SeLe4n.arm64DefaultLayout sTcb.registerContext = .call capAddr mi :=
+      fun _ _ hA hC =>
+        ⟨ct, rp, ep, s, sTcb, capAddr, mi, ReplyRecvArm.legGuard_spec hA, hC,
+          (SystemState.getTcb?_eq_some_iff _ _ _).mp hTc, hRO',
+          (SystemState.getReply?_eq_some_iff _ _ _).mp hRp, hEp, hH, hTs, hSC, hF, hRt⟩
+    have lend : ∀ arm : ReplyRecvArm, (arm.legGuard st tid c rid ct &&
+        arm.callGuard st epId tid s sTcb rid) = true →
+        arm.legGuard st tid c rid ct = true ∧ arm.CallAdmitsAt arm.callLends st epId tid s sTcb rid :=
       fun _ hA => by
         simp only [Bool.and_eq_true] at hA
-        exact ⟨ct, rp, ep, s, sTcb, capAddr, mi, ReplyRecvArm.legGuard_spec hA.1,
-          ReplyRecvArm.callGuard_spec hA.2, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTc, hRO',
-          (SystemState.getReply?_eq_some_iff _ _ _).mp hRp, hEp, hH, hTs, hSC, hF, hRt⟩
+        exact ⟨hA.1, by
+          unfold ReplyRecvArm.CallAdmitsAt; rw [if_pos rfl]; exact ReplyRecvArm.callGuard_spec hA.2⟩
+    have own : ∀ arm : ReplyRecvArm, arm.callLends = true → (arm.legGuard st tid c rid ct &&
+        arm.callOwnGuard st epId tid s sTcb) = true →
+        arm.legGuard st tid c rid ct = true ∧ arm.CallAdmitsAt false st epId tid s sTcb rid :=
+      fun _ hL hA => by
+        simp only [Bool.and_eq_true] at hA
+        exact ⟨hA.1, by
+          unfold ReplyRecvArm.CallAdmitsAt; rw [if_neg (by rw [hL]; decide)]
+          exact ReplyRecvArm.callOwnGuard_spec hA.2⟩
     simp only [hG, ↓reduceIte, hEp, hH, hTs] at hk
     by_cases h1 : (ReplyRecvArm.rendezvous.legGuard st tid c rid ct &&
         ReplyRecvArm.rendezvous.callGuard st epId tid s sTcb rid) = true
-    · simp only [h1, ↓reduceIte] at hk; subst hk; exact fin _ h1
+    · simp only [h1, ↓reduceIte] at hk; subst hk
+      exact fin _ _ (lend _ h1).1 (lend _ h1).2
     simp only [h1, Bool.false_eq_true, ↓reduceIte] at hk
     by_cases h2 : (ReplyRecvArm.donated.legGuard st tid c rid ct &&
         ReplyRecvArm.donated.callGuard st epId tid s sTcb rid) = true
-    · simp only [h2, ↓reduceIte] at hk; subst hk; exact fin _ h2
+    · simp only [h2, ↓reduceIte] at hk; subst hk
+      exact fin _ _ (lend _ h2).1 (lend _ h2).2
     simp only [h2, Bool.false_eq_true, ↓reduceIte] at hk
     by_cases h3 : (ReplyRecvArm.held.legGuard st tid c rid ct &&
         ReplyRecvArm.held.callGuard st epId tid s sTcb rid) = true
-    · simp only [h3, ↓reduceIte] at hk; subst hk; exact fin _ h3
+    · simp only [h3, ↓reduceIte] at hk; subst hk
+      exact fin _ _ (lend _ h3).1 (lend _ h3).2
     simp only [h3, Bool.false_eq_true, ↓reduceIte] at hk
     by_cases h4 : (ReplyRecvArm.unheld.legGuard st tid c rid ct &&
         ReplyRecvArm.unheld.callGuard st epId tid s sTcb rid) = true
-    · simp only [h4, ↓reduceIte] at hk; subst hk; exact fin _ h4
+    · simp only [h4, ↓reduceIte] at hk; subst hk
+      exact fin _ _ (lend _ h4).1 (lend _ h4).2
     simp only [h4, Bool.false_eq_true, ↓reduceIte] at hk
     by_cases h5 : (ReplyRecvArm.unlinked.legGuard st tid c rid ct &&
         ReplyRecvArm.unlinked.callGuard st epId tid s sTcb rid) = true
-    · simp only [h5, ↓reduceIte] at hk; subst hk; exact fin _ h5
+    · simp only [h5, ↓reduceIte] at hk; subst hk
+      exact fin _ _ (lend _ h5).1 (lend _ h5).2
     simp only [h5, Bool.false_eq_true, ↓reduceIte] at hk
+    by_cases h6 : (ReplyRecvArm.rendezvous.legGuard st tid c rid ct &&
+        ReplyRecvArm.rendezvous.callOwnGuard st epId tid s sTcb) = true
+    · simp only [h6, ↓reduceIte] at hk; subst hk
+      exact fin _ _ (own _ rfl h6).1 (own _ rfl h6).2
+    simp only [h6, Bool.false_eq_true, ↓reduceIte] at hk
+    by_cases h7 : (ReplyRecvArm.unheld.legGuard st tid c rid ct &&
+        ReplyRecvArm.unheld.callOwnGuard st epId tid s sTcb) = true
+    · simp only [h7, ↓reduceIte] at hk; subst hk
+      exact fin _ _ (own _ rfl h7).1 (own _ rfl h7).2
+    simp only [h7, Bool.false_eq_true, ↓reduceIte] at hk
+    by_cases h8 : (ReplyRecvArm.unlinked.legGuard st tid c rid ct &&
+        ReplyRecvArm.unlinked.callOwnGuard st epId tid s sTcb) = true
+    · simp only [h8, ↓reduceIte] at hk; subst hk
+      exact fin _ _ (own _ rfl h8).1 (own _ rfl h8).2
+    simp only [h8, Bool.false_eq_true, ↓reduceIte] at hk
     subst hk; exact absurd rfl h
   · simp only [hG, Bool.false_eq_true, ↓reduceIte] at hk
     subst hk; exact absurd rfl h
@@ -1216,6 +1269,7 @@ when the server's frame is written. -/
           if replyRecvCallTakeReplyInert st tid c grant then
             performReplyRecvArmCallTakeDelivered
               (ReplyRecvArm.ofCode (replyRecvCallTakeArmCode st epId tid c rid))
+              (replyRecvCallLendsOfCode (replyRecvCallTakeArmCode st epId tid c rid))
               ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) st c tid rid epId s
               sTcb.queueNextCode ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s)
               (determineTargetCore st tid) executingCore layout len badge m0 m1 m2 m3
@@ -1228,6 +1282,7 @@ when the server's frame is written. -/
               | some ct =>
                 performReplyRecvArmCallTakeCapsDelivered
                   (ReplyRecvArm.ofCode (replyRecvCallTakeArmCode st epId tid c rid))
+                  (replyRecvCallLendsOfCode (replyRecvCallTakeArmCode st epId tid c rid))
                   ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) st c tid rid
                   epId s sTcb.queueNextCode ⟨sTcb.scBindingScCode - 1⟩
                   (determineTargetCore st s) (determineTargetCore st tid) executingCore
@@ -1287,7 +1342,7 @@ theorem replyRecvArmCallTakeR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
     simp only [hEp, hH, hTs, hRt]
     split
     · next hI =>
-      have h := replyRecvOnCore_arm_callTakeDelivered _ st epId tid c rid layout rf len badge
+      have h := replyRecvOnCore_arm_callTakeDelivered _ _ st epId tid c rid layout rf len badge
         grant executingCore ct rp ep s sTcb capAddr mi hAd hCA hSz4 hT hRO hRp
         (replyRecvReplyInertW_spec hI hT) hE hH hS hSC hR' hF
       unfold replyRecvRendezvousR
@@ -1311,7 +1366,7 @@ theorem replyRecvArmCallTakeR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId)
         · next capAddr' mi' hRr =>
           simp only [hTc]
           have hReq := replyCapRequest_of_routedReplyRecv st tid stcb capAddr' mi' hS' hRr
-          have h := replyRecvOnCore_arm_callTakeCapsDelivered _ st epId tid c rid layout rf
+          have h := replyRecvOnCore_arm_callTakeCapsDelivered _ _ st epId tid c rid layout rf
             len badge executingCore ct rp ep s sTcb capAddr mi stcb _ hAd hCA hSz4 hT hRO
             hRp hE hH hS hSC hR' hF hReq
           unfold replyRecvRendezvousR
@@ -1466,6 +1521,7 @@ when the server's frame is written. -/
           | .call _ mi =>
             performReplyRecvArmCallFaultTakeDelivered
               (ReplyRecvArm.ofCode (replyRecvCallTakeArmCode st epId tid c rid))
+              (replyRecvCallLendsOfCode (replyRecvCallTakeArmCode st epId tid c rid))
               ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) st c tid rid epId s
               sTcb.queueNextCode ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s)
               (determineTargetCore st tid) executingCore ct.faultKind label ct.faultIp
@@ -1522,7 +1578,7 @@ theorem replyRecvCallFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.ThreadId
     have hS := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTs
     unfold replyRecvCallFaultTakeAnswer
     simp only [hTc, hEp, hH, hTs, hRt]
-    have h := replyRecvTransferOnCore_arm_callFaultTake _ st epId tid c rid label layout rf len
+    have h := replyRecvTransferOnCore_arm_callFaultTake _ _ st epId tid c rid label layout rf len
       badge grant executingCore ct rp ep tf s sTcb capAddr mi hAd hCA hSz4 hPF hT hRO hRp hE hH hS
       hSC ((Architecture.RegisterDecode.registerRoutedSyscall_default _).trans hRt) hFs
     unfold replyRecvRendezvousR
@@ -2300,6 +2356,7 @@ when the server's frame is written. -/
           if replyRecvCallTakeReplyInert st tid c grant then
             performReplyRecvArmCallTakeDeliveredLong
               (ReplyRecvArm.ofCode (replyRecvCallTakeArmCode st epId tid c rid))
+              (replyRecvCallLendsOfCode (replyRecvCallTakeArmCode st epId tid c rid))
               ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) st c tid rid epId s
               sTcb.queueNextCode ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s)
               (determineTargetCore st tid) executingCore len badge m0 m1 m2 m3
@@ -2312,6 +2369,7 @@ when the server's frame is written. -/
               | some ct =>
                 performReplyRecvArmCallTakeCapsDeliveredLong
                   (ReplyRecvArm.ofCode (replyRecvCallTakeArmCode st epId tid c rid))
+                  (replyRecvCallLendsOfCode (replyRecvCallTakeArmCode st epId tid c rid))
                   ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) st c tid rid
                   epId s sTcb.queueNextCode ⟨sTcb.scBindingScCode - 1⟩
                   (determineTargetCore st s) (determineTargetCore st tid) executingCore
@@ -2375,7 +2433,7 @@ theorem replyRecvLongCallTakeArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.Threa
     simp only [hEp, hH, hTs, hRt]
     split
     · next hI =>
-      have h := replyRecvOnCore_arm_callTakeDeliveredLong _ st epId tid c rid rf len badge grant
+      have h := replyRecvOnCore_arm_callTakeDeliveredLong _ _ st epId tid c rid rf len badge grant
         executingCore ct rp ep s sTcb capAddr mi hAd hCA hLen hSzL hT hRO hRp
         (replyRecvReplyInertW_spec hI hT) hE hH hS hSC hR' hF
       unfold replyRecvLongRendezvousR
@@ -2394,7 +2452,7 @@ theorem replyRecvLongCallTakeArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.Threa
         · simpa only [Bool.and_eq_true] using h
       obtain ⟨stcb, hS'⟩ := Option.isSome_iff_exists.mp hTid
       simp only [hS', hTc]
-      have h := replyRecvOnCore_arm_callTakeCapsDeliveredLong _ st epId tid c rid rf len
+      have h := replyRecvOnCore_arm_callTakeCapsDeliveredLong _ _ st epId tid c rid rf len
         badge executingCore ct rp ep s sTcb capAddr mi stcb _ hAd hCA hLen hSzL hT hRO
         hRp hE hH hS hSC hR' hF (hReqOf stcb hS')
       unfold replyRecvLongRendezvousR
@@ -2615,6 +2673,7 @@ when the server's frame is written. -/
           | .call _ mi =>
             performReplyRecvArmCallFaultTakeDeliveredLong
               (ReplyRecvArm.ofCode (replyRecvCallTakeArmCode st epId tid c rid))
+              (replyRecvCallLendsOfCode (replyRecvCallTakeArmCode st epId tid c rid))
               ⟨replyHeadContextCode st rid - 1⟩ (determineTargetCore st c) st c tid rid epId s
               sTcb.queueNextCode ⟨sTcb.scBindingScCode - 1⟩ (determineTargetCore st s)
               (determineTargetCore st tid) executingCore ct.faultKind label ct.faultIp
@@ -2665,7 +2724,7 @@ theorem replyRecvLongCallFaultArmR_eq (epId : SeLe4n.ObjId) (tid c : SeLe4n.Thre
     have hS := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTs
     unfold replyRecvLongCallFaultTakeAnswer
     simp only [hTc, hEp, hH, hTs, hRt]
-    have h := replyRecvTransferOnCore_arm_callFaultTakeLong _ st epId tid c rid label rf len
+    have h := replyRecvTransferOnCore_arm_callFaultTakeLong _ _ st epId tid c rid label rf len
       badge grant executingCore ct rp ep tf s sTcb capAddr mi hAd hCA hLen hPF hT hRO hRp hE hH hS
       hSC ((Architecture.RegisterDecode.registerRoutedSyscall_default _).trans hRt) hFs
     unfold replyRecvLongRendezvousR
