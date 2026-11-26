@@ -1300,7 +1300,7 @@ internal; nothing a thread writes names one.
     (`syscallReturnOutcome`, `syscallSuccessOutcome_returns_runnable`). The
     core resumes the thread the committed state runs on it
     (`restoreTargetOnCore`). Where a caller stopped inside its own syscall
-    resumes is WS-SX SX32.1.
+    resumes is WS-SX SX33.1.
   - NBSend, NBRecv and NBWait do not block. An NBSend to an endpoint with no
     receiver drops the message, and its drop decision is non-interfering
     (`sendDropsMessage_lowEquivalent`).
