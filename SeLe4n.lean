@@ -30,6 +30,9 @@ import SeLe4n.Kernel.IPC.CrossCore.AnswerCommute
 -- WS-SX SX31: the rest of the toolkit, the answer slots commuting with the
 -- whole receive leg (its body, the cap transfer and the context return).
 import SeLe4n.Kernel.IPC.CrossCore.ReceiveAnswerCommute
+-- WS-SX SX31: the tail's frame (what the stage reads off the caller) and the
+-- post-receive donation's commutation with the answer.
+import SeLe4n.Kernel.IPC.CrossCore.ReceiveAnswerFrame
 import SeLe4n.Kernel.Architecture.VSpaceBackend
 import SeLe4n.Kernel.Architecture.TlbModel
 import SeLe4n.Kernel.Architecture.RegisterDecode
