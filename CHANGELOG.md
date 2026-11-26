@@ -43,7 +43,9 @@ SX33's.
   store-reader baseline.
 - **Measurements.**  `RefusalCarryingReplyRecv.c` byte-identical to SX29's
   kept copy (12,944,474 bytes).  The IR measurement reads 1,498, the same
-  lines.
+  lines.  The heap gate reads 0 on every non-retype syscall (4,490
+  readings per lane, both lanes, twice; the 312 nonzero readings are all
+  retypes, as at SX31), `own-context-reply-recv-takes-call` among them.
 
 ## v0.37.60 — The answer-first equality, and the run queue's order-independent dequeue (WS-SX SX31)
 
