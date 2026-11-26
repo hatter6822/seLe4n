@@ -15471,6 +15471,178 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 12] = [
             CNODE_CAP,
             [CHAIN_TCB_SLOT, 0, 0, 0],
         ),
+        // WS-SX SX28: a server bound to its own scheduling context taking a
+        // queued Call on the rendezvous arm.  The root task, bound to a carved
+        // context, receives the partner's Call (which lends nothing: the
+        // partner holds no context), the chain thread, bound to the image's
+        // context, queues a Call, and the root task's reply-receive answers the
+        // partner and takes the queued Call in place lending nothing, as
+        // seL4-MCS's `reply_push` lends only to a server holding no context
+        // (selector code 6, `performReplyRecvArmCallTakeDelivered` at no lend).
+        retype(
+            "untyped-retype-own-context-call-take-context",
+            UNTYPED_CAP,
+            [
+                SCHED_CONTEXT_TYPE,
+                THREAD_CHILD_IDS[2],
+                CNODE_CAP,
+                MINT_SLOT,
+            ],
+            FRAME_VADDR,
+        ),
+        configure(
+            "own-context-call-take-configure",
+            FRAME_VADDR,
+            MINT_CAP,
+            SCHED_CONTEXT_BUDGET,
+            SCHED_CONTEXT_PERIOD,
+        ),
+        cap_argument(
+            "own-context-call-take-bind-root",
+            SCHED_CONTEXT_BIND,
+            MINT_CAP,
+            ROOT_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        retype(
+            "untyped-retype-own-context-call-take-caller",
+            UNTYPED_CAP,
+            [TCB_TYPE, CHAIN_CHILD_IDS[0], CNODE_CAP, CHAIN_TCB_SLOT],
+            FRAME_VADDR,
+        ),
+        set_space(
+            "own-context-call-take-caller-set-space",
+            CHAIN_TCB_CAP,
+            [NO_FAULT_HANDLER, CNODE_CAP, VSPACE_CAP],
+            0,
+            FRAME_VADDR,
+        ),
+        set_priority(
+            "own-context-call-take-caller-set-priority",
+            TCB_SET_PRIORITY,
+            CHAIN_TCB_CAP,
+            PARTNER_PRIORITY,
+            FRAME_VADDR,
+        ),
+        cap_argument(
+            "own-context-call-take-bind-caller",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            CHAIN_TCB_CAP,
+            FRAME_VADDR,
+        ),
+        invocation(
+            "own-context-call-take-resume-partner",
+            TCB_RESUME,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        with_reply(
+            partner_step(
+                "own-context-call-take-root-receives",
+                RECEIVE,
+                ENDPOINT_CAP,
+                0,
+                [0, 0],
+                true,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "own-context-call-take-partner-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xd4, 0],
+            true,
+        ),
+        invocation(
+            "own-context-call-take-resume-caller",
+            TCB_RESUME,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "own-context-call-take-root-waits",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        signal("own-context-call-take-caller-wakes-root"),
+        partner_step(
+            "own-context-call-take-calls",
+            CALL,
+            ENDPOINT_CAP,
+            1,
+            [0xd5, 0],
+            true,
+        ),
+        with_reply(
+            partner_step(
+                "own-context-reply-recv-takes-call",
+                REPLY_RECV,
+                ENDPOINT_CAP,
+                1,
+                [0xd6, 0],
+                false,
+            ),
+            REPLY_CAP,
+        ),
+        partner_step(
+            "own-context-call-take-root-replies",
+            REPLY,
+            REPLY_CAP,
+            1,
+            [0xd7, 0],
+            false,
+        ),
+        invocation(
+            "own-context-call-take-suspend-partner",
+            TCB_SUSPEND,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        partner_step(
+            "own-context-call-take-root-waits-again",
+            WAIT,
+            NOTIFICATION_CAP,
+            0,
+            [0, 0],
+            true,
+        ),
+        invocation(
+            "own-context-call-take-unbind-root",
+            SCHED_CONTEXT_UNBIND,
+            MINT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "own-context-call-take-context-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MINT_SLOT, 0, 0, 0],
+        ),
+        signal("own-context-call-take-caller-wakes-root-again"),
+        self_suspend(invocation(
+            "own-context-call-take-caller-suspends",
+            TCB_SUSPEND,
+            CHAIN_TCB_CAP,
+            [0; 4],
+        )),
+        invocation(
+            "own-context-call-take-unbind-caller",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "own-context-call-take-caller-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [CHAIN_TCB_SLOT, 0, 0, 0],
+        ),
         kernel_step("unmask-ticks", UNMASK_TICKS_STEP),
         // WS-SX SX27: the rendezvous arm's Call take above again, the reply at
         // 120 words, its words past the fourth read from the root task's buffer:

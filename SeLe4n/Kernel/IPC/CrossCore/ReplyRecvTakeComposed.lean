@@ -1773,7 +1773,7 @@ theorem replyRecvCallerAwaitsNone_spec {ct : TCB} (h : replyRecvCallerAwaitsNone
 /-- **The arm's reply-leg guard as a test on the pre-state**, the caller `ct`:
 `ReplyRecvArm.LegAdmits` at the context the reply heads and the caller's home
 (`ReplyRecvArm.legGuard_spec`). -/
-@[inline] def ReplyRecvArm.legGuard : ReplyRecvArm → SystemState → SeLe4n.ThreadId →
+@[noinline] def ReplyRecvArm.legGuard : ReplyRecvArm → SystemState → SeLe4n.ThreadId →
     SeLe4n.ThreadId → SeLe4n.ReplyId → TCB → Bool
   | .rendezvous, st, tid, c, rid, ct =>
       replyRecvCallerAwaits ct tid && replyWakesInPlace st c ct rid && tid.val != c.val
