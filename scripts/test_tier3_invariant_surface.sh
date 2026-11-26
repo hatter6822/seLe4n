@@ -911,6 +911,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyRecvPostReceiveDonation_
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyRecvReceiveTail_answerFirst [^\n]*(\n([ \t][^\n]*)?)*\(hFZ : F Z = Z\.mapTcbInPlace c \(TCB\.withAnswerSlots ρ μ id κ\)\)\n[ \t]*\(hFX : ∀ X : SystemState, X\.objects\.noResizeDue → answerReadsKept c Z X →\n[ \t]*F X = X\.mapTcbInPlace c \(TCB\.withAnswerSlots ρ μ id κ\)\) :" SeLe4n/Kernel/IPC/CrossCore/ReplyRecvAnswerFirst.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem stageDeliveredMessage_of_answerReads [^\n]*\n[^\n]*\n[ \t]*\(hR : \(X\.getTcb\? c\)\.map tcbAnswerReads = some \(\.ready, some m\)\)\n[ \t]*\(hS : m\.registers\.size ≤ 4\) :\n[ \t]*stageDeliveredMessage X c n = X\.mapTcbInPlace c \(deliveredAnswerSlots m n\) :=" SeLe4n/Kernel/IPC/CrossCore/ReplyRecvAnswerFirst.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\(receiveReturnSchedContext true\n[ \t]*\(replyRecvAnswerCaller answer st1p prevCaller replySummary\.capInfo\) tid\) with\n[ \t]*\| \(_, \.error e\) => \.error e\n(([ \t][^\n]*)\n)*[ \t]*\.ok \(summary, applyReceiveLegPipHandoff st3 tid nextThread recordedServer ec\)\) =\n[ \t]*endpointReplyRecvAnsweringOnCore answer epId tid rid prevCaller msg grant ec st := by" SeLe4n/Kernel/IPC/CrossCore/ReplyRecvAnswerFirst.lean'
+# A dequeued run-queue entry clears its four links with its flag (WS-SX
+# D56), as seL4's tcb_queue_remove leaves tcbSchedPrev/tcbSchedNext NULL.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def unlinkLinks [^\n]*(\n([ \t][^\n]*)?)*\n[ \t]*setLink l4 t \(fun y =>\n[ \t]*\{ y with queued := false, prev := 0, next := 0, bucketPrev := 0, bucketNext := 0 \}\)\n" SeLe4n/Kernel/Scheduler/RunQueue.lean'
 # The reply leg checks first (WS-SX SX29.2): its total form runs in the
 # specification's place through an unconditional `@[csimp]`, over the two
 # state readers and their bridges.
