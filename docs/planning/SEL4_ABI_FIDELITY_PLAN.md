@@ -730,6 +730,14 @@ A different answer changes only the rows that cite it.
   (`storeObject` under `endpointReplyOnCoreChecked`), because the composite's
   later reads of the pre-state and the wrapper's error arm still hold it.
   That cell is SX30's.
+  *The C.* `RefusalCarryingReplyRecv.c` is 12,944,474 bytes, 2,639 over
+  SX28's 12,941,835, and its standalone compile took 488 s and 500 s on
+  two quiet runs and 542 s cold, against 479 s and 476 s. Its source is
+  unchanged, so the growth is inferred to be the legs' checked forms
+  inlined into it. The bound is carried to SX30, which must bring the
+  file back to 12,941,835 bytes or less and about 480 s or less,
+  measured against a kept copy of SX29's generated C so that the
+  difference can be localized.
   *The fallbacks.* Each checked form falls back to its specification where
   its read-only check fails, and the specification still holds its entry
   state there. The receive body takes the specification when a slot it
@@ -1386,7 +1394,7 @@ is 21,021,237 bytes and compiles in 769 s.
 | Sub-task | Change | Proofs | Gates and fixtures |
 |---|---|---|---|
 | SX29.1 | **Measured** (D51): the holds derived from the Lean IR over the committing exports' closure, 1,548 holds, 327 (caller, callee) pairs, 147 source functions in seven classes; ReplyRecv's 12 class (b) functions and its legs' holds are this row's, the rest WS-CK's. | none | the derived set recorded with the IR it was read from |
-| SX29.2 | **LANDED at `v0.37.58`** (`endpointReplyOnCoreChecked`, `removeCallerReplyFrameState` and `storeTcbIpcStateAndMessageState` for the reply; `cutReplyFrameOutOrSelfChecked` with `cutReplyFrameStoresState` and `severReplyFrameBelowStoresState` for the splice; `replyRecvPopDonationChecked` for the pop; `cleanupPreReceiveDonationMigratedChecked`, `applyReceiveRendezvousHandoffChecked` and `endpointReceiveDualWithCapsOnCoreChecked` for the receive's three steps; `endpointReceiveDualOnCoreChecked` for the receive body, taking plain senders, call senders with a reply link and without one, and blocking receivers in place, with the specification as its fallback (D52); each with an unconditional `@[csimp]` equality; the IR measurement fell from 1,548 holds to 1,498, none with a checked form as its caller; the composite's reply transfer read moved to SX30.1). The legs' checks first. Each leg of the reply-receive path that refuses after a write (`endpointReplyOnCore`, `replyRecvPopDonation`, `endpointReceiveDualOnCore` and `endpointReceiveDualWithCapsOnCore`, `cleanupPreReceiveDonationMigrated`, `applyReceiveRendezvousHandoff`) gets a read-only check on its entry state equal to its post-write refusals, then a perform that writes and does not refuse. | Each leg's unconditional equality to its specification, no invariant assumption. | Tier 3 anchors; the IR measurement shows each leg's hold gone |
+| SX29.2 | **LANDED at `v0.37.58`** (`endpointReplyOnCoreChecked`, `removeCallerReplyFrameState` and `storeTcbIpcStateAndMessageState` for the reply; `cutReplyFrameOutOrSelfChecked` with `cutReplyFrameStoresState` and `severReplyFrameBelowStoresState` for the splice; `replyRecvPopDonationChecked` for the pop; `cleanupPreReceiveDonationMigratedChecked`, `applyReceiveRendezvousHandoffChecked` and `endpointReceiveDualWithCapsOnCoreChecked` for the receive's three steps; `endpointReceiveDualOnCoreChecked` for the receive body, taking plain senders, call senders with a reply link and without one, and blocking receivers in place, with the specification as its fallback (D52); each with an unconditional `@[csimp]` equality; the IR measurement fell from 1,548 holds to 1,498, none with a checked form as its caller; `RefusalCarryingReplyRecv.c` 12,944,474 bytes against SX28's 12,941,835, its standalone compile 488 s and 500 s on two quiet runs against 479 s and 476 s, the bound carried to SX30; the composite's reply transfer read moved to SX30.1). The legs' checks first. Each leg of the reply-receive path that refuses after a write (`endpointReplyOnCore`, `replyRecvPopDonation`, `endpointReceiveDualOnCore` and `endpointReceiveDualWithCapsOnCore`, `cleanupPreReceiveDonationMigrated`, `applyReceiveRendezvousHandoff`) gets a read-only check on its entry state equal to its post-write refusals, then a perform that writes and does not refuse. | Each leg's unconditional equality to its specification, no invariant assumption. | Tier 3 anchors; the IR measurement shows each leg's hold gone |
 
 **Acceptance:**
 - each leg of the reply-receive path checks first, under an unconditional equality to its specification (**met at `v0.37.58`**);
@@ -1403,7 +1411,7 @@ is 21,021,237 bytes and compiles in 769 s.
 **Acceptance:**
 - no hold of the reply-receive chain's state across a writing call, by the IR measurement;
 - ReplyRecv in seL4's order both ways, its invariant and non-interference proofs restated;
-- `RefusalCarryingReplyRecv.c` and its compile time no larger than SX28's;
+- `RefusalCarryingReplyRecv.c` back to 12,941,835 bytes or less and its compile time to about 480 s or less (SX28's), measured against a kept copy of SX29's generated C (12,944,474 bytes, D52) so the difference can be localized;
 - the general path's step reads no 1 MB cell; every other heap reading 0.
 
 ### SX31 — The state-hold gate (D51)
